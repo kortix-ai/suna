@@ -15,6 +15,7 @@ import {
 } from './sandbox-env-snapshot';
 import { runBounded, FANOUT_CONCURRENCY } from './sandbox-env-push';
 import { SANDBOX_SERVICE_PORT, postEnvToDaemon } from './sandbox-env-transport';
+import { claudeTokenForSession } from '../../claude-subscription/store';
 
 export interface ProjectSecretPropagationTarget {
   session_id: string;
@@ -180,6 +181,9 @@ async function runProjectSecretPropagation(
           serviceKey,
           snapshot,
           refreshModels: opts?.refreshModels,
+          // The session person's Claude login, so a push never leaves the box
+          // on a login that was replaced or removed.
+          claudeOauthToken: await claudeTokenForSession(projectId, row.sessionId),
           requireAgentEnvProof: true,
         });
         report.results.push({

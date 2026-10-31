@@ -68,7 +68,7 @@ provider, so neither service imports the other.
 | `src/lib/**` | the shared layer | none |
 | `src/services/<name>/**` | its own folder, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract`. `config-provider`, `runtime-assets`, `tools`: `@kortix/api-contract` |
 | `src/harness/harness.ts` | the harness, all services, the shared layer | none |
-| `src/harness/pi/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract`, `@earendil-works/*`, `typebox`, `quickjs-wasi`, `@silvia-odwyer/photon-node`, `@kortix/sdk/wire-message-id`, `@kortix/shared/peer-message-prompt` and `@kortix/shared/room-prompt` (the prompt envelopes a turn's origin is read from) |
+| `src/harness/pi/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract`, `@earendil-works/*`, `typebox`, `quickjs-wasi`, `@silvia-odwyer/photon-node`, `@anthropic-ai/claude-agent-sdk` and `@modelcontextprotocol/sdk` (Claude subscription models, `pi/claude/`), `@kortix/sdk/wire-message-id`, `@kortix/shared/peer-message-prompt` and `@kortix/shared/room-prompt` (the prompt envelopes a turn's origin is read from) |
 | `src/harness/{contract,shared}/**` | `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract` (the daemon-to-API wire, `runtime-relay`), `@kortix/sdk/wire-message-id` (the session-log boot's restore note) |
 | `src/routes/**` | `src/routes/**`, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `hono`, `@kortix/api-contract` |
 | `src/app/**`, `src/main.ts` | everything above except adapter internals | `hono`, `@kortix/api-contract` |

@@ -448,7 +448,10 @@ these as standing rules whenever you touch the data/runtime layer:
   `runtime:` in `kortix.yaml` selects nothing. OpenCode code that remains in
   apps/api, the SDK and the clients serves old transcripts and old daemons and
   carries `@deprecated`: never call it from new code and never add a feature to
-  it. pi calls models only through the LLM gateway. pi serves
+  it. pi calls models only through the LLM gateway, except Claude
+  subscription models (`claude-agent/<id>`): those run each model step through
+  the unmodified Claude Code program with the session user's own Claude login
+  (`apps/kortix-sandbox-agent-server/src/harness/pi/claude/`). pi serves
   the daemon routes (`/kortix/runtime/*`), the transcript
   (`kortix.transcript.v1`, `packages/api-contract/src/transcript.ts`) and the
   events. New code reads those, never an OpenCode route, type, file or

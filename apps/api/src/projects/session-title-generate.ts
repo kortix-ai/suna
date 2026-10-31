@@ -11,6 +11,7 @@ import {
   deleteGatewayKey,
 } from '../llm-gateway/gateway-keys';
 import { toWireModel } from '../llm-gateway/resolution/effective';
+import { isClaudeAgentModelRef } from '../llm-gateway/resolution/claude-agent';
 import { db } from '../shared/db';
 import { PLACEHOLDER_TITLE_SQL_PATTERN, isPlaceholderOpencodeTitle } from './lib/opencode-title';
 import type { ProjectSessionRow } from './lib/serializers';
@@ -366,7 +367,7 @@ async function resolveFallbackModel(
   for (const candidate of candidates) {
     if (!candidate) continue;
     const model = toWireModel(candidate);
-    if (model === excludedModel) continue;
+    if (model === excludedModel || isClaudeAgentModelRef(model)) continue;
     if (await resolution.isModelServableForAccount({ ...scope, model })) return model;
   }
   return null;
@@ -561,9 +562,12 @@ export async function generateSessionTitleFromFirstPrompt(
     // one is being served right now, the other was validated at create — so
     // only the last resort has to prove itself.
     const shortPrompt = isShortPrompt(promptText);
+    // A Claude subscription model runs only inside the box: the title comes
+    // from a gateway model instead.
+    const gatewayModel = (ref: string | null | undefined) => (ref && !isClaudeAgentModelRef(ref) ? ref : null);
     const model = shortPrompt
       ? null
-      : input.modelHint?.trim() || sessionModel(row) || (await fallbackModel(input)) || null;
+      : gatewayModel(input.modelHint?.trim()) || gatewayModel(sessionModel(row)) || (await fallbackModel(input)) || null;
     let title: string | null = null;
     if (!model) {
       if (!shortPrompt) {

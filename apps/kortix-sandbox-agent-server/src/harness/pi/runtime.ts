@@ -53,7 +53,9 @@ import type { WorkflowControlBody } from '@kortix/api-contract/multi-agent'
 import type { RuntimeCapability } from '@kortix/api-contract/runtime-relay'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule, type SessionPermissionRule } from './interactions'
 import type { CatalogModel, PiModels, SelectedModel } from './model'
-import { compactionSettings, nativeModelId } from './model'
+import { KORTIX_PROVIDER_ID, compactionSettings, nativeModelId, promptModelId, selectId } from './model'
+import { claudeSessions } from './claude/provider'
+import { CLAUDE_AGENT_PROVIDER_ID } from '@kortix/api-contract/claude-agent'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { withAgentSampling } from './sampling'
@@ -103,6 +105,12 @@ export function expandCommandTemplate(template: string, args: string): string {
     .replaceAll('$ARGUMENTS', args)
   if (placeholders.length === 0 && !template.includes('$ARGUMENTS') && args.trim()) text += `\n\n${args}`
   return text.trim()
+}
+
+/** An agent's pinned model as `{ providerID, modelID }`: a Claude subscription model, else a gateway model. */
+function agentModelRef(id: string): { providerID: string; modelID: string } {
+  const prefix = `${CLAUDE_AGENT_PROVIDER_ID}/`
+  return id.startsWith(prefix) ? { providerID: CLAUDE_AGENT_PROVIDER_ID, modelID: id.slice(prefix.length) } : { providerID: 'kortix', modelID: id }
 }
 
 /** A command the agent does not enable (`CompiledCommand.agents`): the route answers 403. */
@@ -627,6 +635,7 @@ export class PiRuntime {
         env: this.env,
         defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
         catalog,
+        claude: this.claudeOptions(),
       })
       this.selected = this.models.select(nativeModelId(this.env.KORTIX_MODEL) ?? nativeModelId(this.compiledAgent()?.model ?? this.compiled?.model))
       // `KORTIX_PI_CODEMODE` (the API sends the session agent's), else the session agent's compiled
@@ -664,8 +673,9 @@ export class PiRuntime {
       if (restored && !restored.entries) for (const message of restored.agentMessages ?? []) sessionManager.appendMessage(message as never)
       if (this.compiledAgent()?.options) logger.warn('[pi] the agent sets `options`; pi does not apply provider options', { agent: this.agentName })
       const agent = new core.Agent({
+        // `sessionId` names the thread, so a Claude subscription model keeps one Claude session per thread.
         streamFn: withAgentSampling(
-          (model, context, options) => this.models!.models.streamSimple(model, context, options),
+          (model, context, options) => this.models!.models.streamSimple(model, context, { ...options, sessionId: this.rootId }),
           () => this.sampling(this.compiledAgent(), this.selected!),
         ),
         convertToLlm,
@@ -710,7 +720,8 @@ export class PiRuntime {
         extensions: [this.nestedCallGate(), this.presentationExtension(), this.turnExtension(), subagents(this.kortixHost()), workflow(this.kortixHost()), ...this.multiAgentExtensions(), ...codemodeExtensions(this.codemodeMode, coding.createCodemodeExtension), ...local, ...project.extensions],
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
-        provider: this.models.models.getProvider(this.selected.providerID),
+        // Every provider a turn may switch to: the gateway, and Claude subscription models.
+        providers: [this.models.models.getProvider(KORTIX_PROVIDER_ID), this.models.models.getProvider(CLAUDE_AGENT_PROVIDER_ID)],
         compaction: (floor) => compactionSettings(this.models!.catalog, floor),
       })
       const extensionsMs = performance.now() - extensionsStartedAt
@@ -807,8 +818,9 @@ export class PiRuntime {
     this.models = await createPiModels({
       env: this.env,
       defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
+      claude: this.claudeOptions(),
     })
-    this.selected = this.models.select(this.selected?.modelID ?? null)
+    this.selected = this.models.select(this.selected ? selectId(this.selected.providerID, this.selected.modelID) : null)
     this.agent.state.model = this.selected.model
     // A model whose limits the catalog now reports differently compacts at a different threshold.
     await this.pi?.applyCompaction((floor) => compactionSettings(this.models!.catalog, floor))
@@ -852,9 +864,9 @@ export class PiRuntime {
     const agentName = this.resolveTurnAgent(input.agent)
     // The prompt's model, else the model the picked agent pins, else the current one.
     const modelId = input.model
-      ? input.model.providerID === this.selected!.providerID ? input.model.modelID : nativeModelId(`${input.model.providerID}/${input.model.modelID}`)
+      ? promptModelId(input.model)
       : input.agent ? nativeModelId(this.compiled?.agent?.[agentName]?.model) : null
-    if (modelId && modelId !== this.selected!.modelID) this.selected = this.models!.select(modelId)
+    if (modelId && modelId !== selectId(this.selected!.providerID, this.selected!.modelID)) this.selected = this.models!.select(modelId)
     this.publishUserMessage(this.rootId, messageId, input, { agent: agentName, selected: this.selected! })
     this.dismissOpenQuestions()
     if (input.noReply) {
@@ -1255,11 +1267,11 @@ export class PiRuntime {
         this.publish({ type: 'session.idle', properties: { sessionID: this.rootId } })
       }
       // Only this turn's messages: an extension command answers without a model call.
-      const last = this.turnAssistant as { stopReason?: string; errorMessage?: string } | null
+      const last = this.turnAssistant as { stopReason?: string; errorMessage?: string; provider?: string } | null
       if (!timedOut && (last?.stopReason === 'aborted' || retry.wasAborted)) outcome = 'aborted'
       else if (!timedOut && last && (last.stopReason === 'error' || last.stopReason === 'length')) {
         outcome = 'error'
-        const wire = assistantMessageError({ stopReason: last.stopReason as never, errorMessage: last.errorMessage })
+        const wire = assistantMessageError({ stopReason: last.stopReason as never, errorMessage: last.errorMessage, provider: last.provider })
         const data = wire?.data as { message?: string; statusCode?: number } | undefined
         error = wire ? { name: wire.name, message: data?.message, statusCode: data?.statusCode, code: wire.code } : undefined
       }
@@ -1287,6 +1299,8 @@ export class PiRuntime {
       this.completedTurns.set(turn.messageId, outcome === 'error' ? 'error' : 'idle')
       this.persist()
       turn.resolve(outcome)
+      // A Claude turn still waiting for tool results gets none from this turn: its idle timer starts.
+      claudeSessions()?.settle(this.rootId)
       this.hooks.onTurnEnd?.({ rootId: this.rootId, messageId: turn.messageId, status: outcome === 'error' ? 'error' : 'idle', ...(error ? { error } : {}) })
     }
     // Started while the live model list was down: fetch it again, so the next turn runs on real limits.
@@ -1956,7 +1970,7 @@ export class PiRuntime {
     })
     const agent = new core.Agent({
       streamFn: withAgentSampling(
-        (m, context, options) => this.models!.models.streamSimple(m, context, options),
+        (m, context, options) => this.models!.models.streamSimple(m, context, { ...options, sessionId: child.id }),
         () => this.sampling(this.compiled?.agent?.[input.agent], selected),
       ),
       toolExecution: 'sequential',
@@ -2013,6 +2027,7 @@ export class PiRuntime {
       logger.error('[pi] child session failed', { sessionId: child.id, err: error })
     } finally {
       input.signal?.removeEventListener('abort', abort)
+      claudeSessions()?.settle(child.id)
       child.agentMessages = agent.state.messages
       child.agent = null
       if (child.status === 'busy') {
@@ -2310,6 +2325,11 @@ export class PiRuntime {
 
   // ── projections ──────────────────────────────────────────────────────────
 
+  /** Where Claude subscription models run: the workspace, with their state beside pi's. */
+  private claudeOptions() {
+    return { stateDir: this.cfg.piStateDir, cwd: this.workspace, env: this.env }
+  }
+
   selectedModel(): SelectedModel | null {
     return this.selected
   }
@@ -2392,7 +2412,7 @@ export class PiRuntime {
         name === this.agentName && selected
           ? { providerID: selected.providerID, modelID: selected.modelID }
           : agent?.model && nativeModelId(agent.model)
-            ? { providerID: 'kortix', modelID: nativeModelId(agent.model)! }
+            ? agentModelRef(nativeModelId(agent.model)!)
             : null,
     }))
     return {

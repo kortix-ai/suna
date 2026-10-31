@@ -1,4 +1,4 @@
-import type { HarnessHealth, RUNTIME_STABLE_MESSAGE_ID_CAPABILITY, RuntimeCapability } from '@kortix/api-contract/runtime-relay'
+import type { HarnessHealth, RUNTIME_CLAUDE_AGENT_CAPABILITY, RUNTIME_STABLE_MESSAGE_ID_CAPABILITY, RuntimeCapability } from '@kortix/api-contract/runtime-relay'
 import type { Config } from '@/lib/config/config'
 import type { SandboxBootState } from './boot-state'
 import type { HarnessConfigReleaseReport } from './control'
@@ -68,7 +68,7 @@ export interface HarnessDiagnosticsService {
    * `runtime.stable_message_id.v1` is how the runtime treats a prompt's id,
    * not a control: apps/api reads it to keep the id it sends.
    */
-  capabilities(): Promise<readonly (RuntimeCapability | typeof RUNTIME_STABLE_MESSAGE_ID_CAPABILITY)[]>
+  capabilities(): Promise<readonly (RuntimeCapability | typeof RUNTIME_STABLE_MESSAGE_ID_CAPABILITY | typeof RUNTIME_CLAUDE_AGENT_CAPABILITY)[]>
   health(context: HarnessDiagnosticsContext, query: HarnessHealthQuery): Promise<HarnessHealthReport>
   report(context: HarnessDiagnosticsContext, tail: number): Promise<HarnessDiagnosticReport>
   logSources(): readonly string[]

@@ -10,6 +10,7 @@ export * from './github';
 export * from './git-backend';
 export * from './access';
 export * from './secrets';
+export * from './claude-subscription';
 export * from './account-secret-resources';
 export * from './connectors';
 export * from './connector-run';

@@ -259,6 +259,13 @@ export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
 export const RUNTIME_TURNS_CAPABILITY = 'runtime.turns.v1' as const;
 
 /**
+ * The box runs Claude subscription models (`claude-agent/<id>`, `./claude-agent`): its image
+ * has the `claude` program and its daemon has the provider. A box without it answers a turn on
+ * such a model with an error, so a client offers those models only where this is listed.
+ */
+export const RUNTIME_CLAUDE_AGENT_CAPABILITY = 'models.claude_agent.v1' as const;
+
+/**
  * The daemon serves `POST /kortix/runtime/messages/:id/:messageId/retract`:
  * take back a user message that no model call has read, on every harness.
  * `200 { retracted: true }` when it is gone, `404` when there is no such

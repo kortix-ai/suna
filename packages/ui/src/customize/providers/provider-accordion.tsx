@@ -89,6 +89,7 @@ import {
 } from '../sections/llm-provider/use-live-catalog';
 import { orderProviderRows } from '../sections/llm-provider/utils';
 import { AccountSecretResourcesPanel } from '../sections/view/account-secret-resources-panel';
+import { ClaudeSubscriptionDialog, useClaudeSubscription } from '../../session/models/claude-subscription-dialog';
 import { useTranslations } from '../../i18n';
 import { LLM_PROVIDERS, LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '../../internal/lib/llm-providers';
 import { cn } from '../../internal/lib/utils';
@@ -703,9 +704,37 @@ function ExpandedBody({
 
   return (
     <div className="flex flex-col gap-0.5 pr-3 pb-3 pl-15.5" data-accordion-body={entry.id}>
+      {entry.id === 'anthropic' ? <ClaudeSubscriptionSubRow projectId={projectId} /> : null}
       {content}
       {enable}
     </div>
+  );
+}
+
+/**
+ * The viewer's own Claude subscription, beside the Anthropic key: Claude models
+ * (`claude-agent/<id>`) run through Claude Code on it, never through the key or
+ * the LLM gateway. Every member manages their own, so it needs no write access.
+ */
+function ClaudeSubscriptionSubRow({ projectId }: { projectId: string }) {
+  const t = useTranslations('providerSheet');
+  const tClaude = useTranslations('claudeSubscription');
+  const status = useClaudeSubscription(projectId);
+  const [open, setOpen] = useState(false);
+  const connected = status.data?.connected === true && status.data.usable;
+  return (
+    <>
+      <AccordionSubRow
+        action={
+          <Button type="button" size="xs" variant={connected ? 'ghost' : 'secondary'} className={connected ? 'text-muted-foreground' : undefined} onClick={() => setOpen(true)}>
+            {connected ? t('disconnect') : tClaude('connectClaude')}
+          </Button>
+        }
+      >
+        {`${t('subscription', { plan: 'Claude Pro or Max' })} · ${connected ? t('signedIn') : t('notConnected')}`}
+      </AccordionSubRow>
+      {open && <ClaudeSubscriptionDialog projectId={projectId} open onOpenChange={setOpen} />}
+    </>
   );
 }
 

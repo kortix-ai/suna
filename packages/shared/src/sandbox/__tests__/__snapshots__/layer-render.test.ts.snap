@@ -146,6 +146,12 @@ RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
 RUN pnpm add -g --allow-build=agent-desktop "agent-desktop@1.0.2" \\
     && agent-desktop version | grep -q '"version":"1.0.2"'
 
+RUN case "$(uname -m)" in x86_64) claude_arch=x64 ;; aarch64|arm64) claude_arch=arm64 ;; *) echo "unsupported Claude Code architecture: $(uname -m)" >&2; exit 1 ;; esac \\
+    && sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/kortix/claude/bin \\
+    && npm install --prefix /opt/kortix/claude --no-save --ignore-scripts --no-audit --no-fund "@anthropic-ai/claude-agent-sdk-linux-\${claude_arch}@0.3.316" \\
+    && ln -sf "/opt/kortix/claude/node_modules/@anthropic-ai/claude-agent-sdk-linux-\${claude_arch}/claude" /opt/kortix/claude/bin/claude \\
+    && /opt/kortix/claude/bin/claude --version | grep -q "^2.1.316 "
+
 USER root
 COPY kortix-agent.gz /tmp/kortix-agent.gz
 COPY kortix.gz /tmp/kortix.gz
@@ -340,6 +346,12 @@ RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
 
 RUN pnpm add -g --allow-build=agent-desktop "agent-desktop@1.0.2" \\
     && agent-desktop version | grep -q '"version":"1.0.2"'
+
+RUN case "$(uname -m)" in x86_64) claude_arch=x64 ;; aarch64|arm64) claude_arch=arm64 ;; *) echo "unsupported Claude Code architecture: $(uname -m)" >&2; exit 1 ;; esac \\
+    && sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/kortix/claude/bin \\
+    && npm install --prefix /opt/kortix/claude --no-save --ignore-scripts --no-audit --no-fund "@anthropic-ai/claude-agent-sdk-linux-\${claude_arch}@0.3.316" \\
+    && ln -sf "/opt/kortix/claude/node_modules/@anthropic-ai/claude-agent-sdk-linux-\${claude_arch}/claude" /opt/kortix/claude/bin/claude \\
+    && /opt/kortix/claude/bin/claude --version | grep -q "^2.1.316 "
 
 USER root
 COPY kortix-agent.gz /tmp/kortix-agent.gz

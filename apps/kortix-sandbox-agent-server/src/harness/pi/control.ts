@@ -3,6 +3,7 @@
  * refresh, abort. pi re-reads its settings in place: there is no process to
  * restart and no turn to interrupt.
  */
+import { setClaudeLogin } from './claude/sdk'
 import { writeAgentEnvFile } from '../shared/agent-env-file'
 import { syncEgressShim } from '@/services/egress-shim'
 import { readRepoInfo, refreshRepo } from '@/lib/git/git'
@@ -106,6 +107,10 @@ export function createPiControlService(
           reconcileProjectEnv(process.env, projectEnv)
           const runtimeEnv = applyRuntimeEnv(body.runtimeEnv, releases.governanceOwned())
           const gatewayEnv = applyLlmGatewayMode(body.llmGatewayEnabled, body.llmGatewayBaseUrl)
+          if (body.claudeOauthToken !== undefined) {
+            if (body.claudeOauthToken !== null && typeof body.claudeOauthToken !== 'string') throw new Error('claudeOauthToken must be a string or null')
+            if (setClaudeLogin(body.claudeOauthToken)) logger.info('[env] Claude subscription login changed', { connected: body.claudeOauthToken !== null })
+          }
           const runtimeEnvChanged = runtimeEnv.changed || gatewayEnv.changed
           const runtimeEnvNames = [...new Set([...runtimeEnv.names, ...gatewayEnv.names])].sort()
           const egressShim = await syncEgressShim().catch((err) => {
