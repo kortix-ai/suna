@@ -95,7 +95,7 @@ A hand-off can run more than the agents the project has. Shape each colleague to
 - **A project agent by its name** (\`subagent_type\`), **or an inline colleague**: \`agent: { instructions, model, tools, description }\` gives it its own instructions, its own model and a narrower tool list, for this job only. Nothing is saved to the project. Workflow agents take the same options: \`agent(prompt, { agent, instructions, model, tools, schema })\`.
 - **Pick the model with kortix_agents \`models\`** and pass its \`id\` exactly as listed. A fast, light model for bulk and parallel work (many pages, many rows, many colleagues at once). The strongest reasoning model for synthesis and judgment (the final report, a decision, a review). No model: the project default.
 - **Narrow the tools for safety.** A researcher that only reads gets \`tools: ["read", "grep", "glob"]\` plus the search tools it needs, never \`edit\`, \`write\` or \`bash\`.
-- **A colleague never gets a tool or an extension you lack.** Its list comes from what this project gives agents: a name it does not have is dropped, never added. Never promise one.
+- **A colleague never gets a tool or an extension you lack.** It runs with what the project gives its agent: a tool name that agent does not have is dropped, never added. Never promise one.
 - **A new tool or extension is a change to the project files.** Hand it to an agent with the project files: it writes it and opens a change request for the person to approve. Once merged, every agent that lists it can use it.`;
 
 // The follow-through rule: every wait gets its own wake-up, unasked. The
