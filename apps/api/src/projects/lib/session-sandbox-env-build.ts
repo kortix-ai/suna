@@ -69,6 +69,7 @@ import { buildSessionRuntimeEnv } from './session-runtime-env';
 import { buildMyKortixConfig } from './my-kortix-agent';
 
 import { resolveSessionPersonalOwner } from './personal-resources';
+import { readClaudeToken } from '../../claude-subscription/store';
 
 
 /**
@@ -442,6 +443,13 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
       configBytes: Buffer.byteLength(compiledAgentConfig, 'utf8'),
     });
   }
+  // Claude Code in a private session runs on its owner's Claude subscription.
+  // A shared or unattended session boots without one; each prompt then pushes
+  // the prompting member's (sandbox-env-push.ts).
+  const claudeOauthToken =
+    secretsPrincipalUserId && !input.platformMetaAgent
+      ? await readClaudeToken(input.accountId, secretsPrincipalUserId)
+      : null;
   const channelEnv = await buildSessionChannelEnv(input.sessionId);
   const sessionContextEnv = await buildSessionRuntimeContextEnv(input.sessionId);
   const featureFlagEnv = await buildFeatureFlagSandboxEnv(input.projectId);
@@ -501,6 +509,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
       projectSnapshotMode: input.projectSnapshotMode,
       projectSnapshotPin: input.projectSnapshotPin,
       projectSnapshotDescriptor: input.projectSnapshotDescriptor,
+      claudeOauthToken,
     }),
     // The platform coordinator uses API-level delegation and never receives a
     // project checkout. Keep this override after buildSessionRuntimeEnv so the

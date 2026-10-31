@@ -617,6 +617,28 @@ test('project(id).secrets covers provider OAuth list, start, poll, and removal',
   expect(last().method).toBe('DELETE');
 });
 
+test('project(id).claudeSubscription covers status, sign-in, token and disconnect', async () => {
+  await kortix.project('PID123').claudeSubscription.get();
+  expect(last().url.endsWith('/projects/PID123/claude-subscription')).toBe(true);
+  expect(last().method).toBe('GET');
+
+  await kortix.project('PID123').claudeSubscription.startLogin();
+  expect(last().url.endsWith('/projects/PID123/claude-subscription/login/start')).toBe(true);
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').claudeSubscription.completeLogin({ flowId: 'F1', code: 'C1' });
+  expect(last().url.endsWith('/projects/PID123/claude-subscription/login/complete')).toBe(true);
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').claudeSubscription.setToken('sk-ant-oat01-x');
+  expect(last().url.endsWith('/projects/PID123/claude-subscription/token')).toBe(true);
+  expect(last().method).toBe('PUT');
+
+  await kortix.project('PID123').claudeSubscription.disconnect();
+  expect(last().url.endsWith('/projects/PID123/claude-subscription')).toBe(true);
+  expect(last().method).toBe('DELETE');
+});
+
 test('project(id).connectors covers credential-mode/sensitive/policies/pipedream', async () => {
   await kortix.project('PID123').connectors.auth.discover({
     slug: 'hubspot',

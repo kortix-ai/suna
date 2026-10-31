@@ -10,6 +10,7 @@ import {
   startClaudeSubscriptionLogin,
   type ClaudeSubscriptionLoginStart,
 } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import { ArrowSquareOutIcon } from '@phosphor-icons/react';
 import { useTranslations } from '../../i18n';
 import { useSessionIds } from '../../providers/session-ids';
@@ -76,9 +77,8 @@ export function ClaudeSubscriptionDialog({
   };
   const stored = async () => {
     await queryClient.invalidateQueries({ queryKey: claudeSubscriptionKey(projectId) });
-    // The picker reads availability from the model list: refetch it.
-    void queryClient.invalidateQueries({ queryKey: ['project-providers'] });
-    void queryClient.invalidateQueries({ queryKey: ['model-picker'] });
+    // The picker reads whether Claude is connected from its model list: refetch it.
+    void queryClient.invalidateQueries({ queryKey: qk.project.modelPicker(projectId) });
     successToast(t('connected'));
     onConnected?.();
     close();
@@ -104,7 +104,7 @@ export function ClaudeSubscriptionDialog({
     mutationFn: () => disconnectClaudeSubscription(projectId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: claudeSubscriptionKey(projectId) });
-      void queryClient.invalidateQueries({ queryKey: ['model-picker'] });
+      void queryClient.invalidateQueries({ queryKey: qk.project.modelPicker(projectId) });
       setConfirmDisconnect(false);
       successToast(t('disconnected'));
     },

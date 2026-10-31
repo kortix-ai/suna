@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { accountTokens } from '@kortix/db';
 import { logger } from '../../lib/logger';
@@ -6,6 +7,7 @@ import { config } from '../../config';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import type { ProviderName } from '../../platform/providers';
 import { postEnvToDaemon } from './sandbox-env-transport';
+import { readClaudeTokenForProject } from '../../claude-subscription/store';
 import { waitForDaemonRuntimeReady } from './sandbox-daemon-ready';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
 import { loadSessionSecretContext } from './session-secret-context';
@@ -178,6 +180,8 @@ function promptModelSignature(input: {
   capabilitiesJson: string;
   llmGatewayBaseUrl: string;
   opencodeEnv?: Record<string, string | null>;
+  /** The session person's Claude token; the signature holds only its digest. */
+  claudeOauthToken: string | null;
 }): string {
   const opencodeEnvEntries = Object.entries(input.opencodeEnv ?? {}).sort(([a], [b]) =>
     a.localeCompare(b),
@@ -187,6 +191,7 @@ function promptModelSignature(input: {
     input.capabilitiesJson,
     input.llmGatewayBaseUrl,
     opencodeEnvEntries,
+    input.claudeOauthToken ? createHash('sha256').update(input.claudeOauthToken).digest('hex') : null,
   ]);
 }
 
@@ -278,6 +283,7 @@ function scheduleBackgroundEnvRefresh(args: {
   snapshot: SandboxEnvSnapshot;
   opencodeEnv?: Record<string, string | null>;
   llmGatewayBaseUrl: string;
+  claudeOauthToken: string | null;
   signature: string;
   agent: string;
   person: string | null;
@@ -299,6 +305,7 @@ function scheduleBackgroundEnvRefresh(args: {
         refreshModels: true,
         opencodeEnv: args.opencodeEnv,
         llmGatewayBaseUrl: args.llmGatewayBaseUrl,
+        claudeOauthToken: args.claudeOauthToken,
       });
       const appliedAtMs = Date.now();
       rememberPromptModelSignature(args.externalId, args.signature, appliedAtMs, args.agent, args.person);
@@ -516,6 +523,11 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
   }
   lap('arm');
   const llmGatewayBaseUrl = resolveLlmGatewayBaseUrl(config.KORTIX_URL);
+  // Claude Code in the box runs on the Claude subscription of the person this
+  // turn acts for. A change of person, a new login or a disconnect changes the
+  // signature, so it is pushed before the turn runs.
+  const claudeOauthToken = person ? await readClaudeTokenForProject(args.projectId, person) : null;
+  lap('claude-login');
   // Only ask the daemon to reload when something that could move ITS
   // `result.changed || opencodeEnvChanged` gate has actually changed since the
   // last CONFIRMED-applied signature for this sandbox. "Confirmed" is checked
@@ -533,6 +545,7 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
     capabilitiesJson: snapshot.capabilitiesJson,
     llmGatewayBaseUrl,
     opencodeEnv: args.opencodeEnv,
+    claudeOauthToken,
   });
   if (mode === 'check') {
     if (lastPromptModelSignature.get(args.externalId)?.signature !== signature) {
@@ -577,6 +590,7 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
         snapshot,
         opencodeEnv: args.opencodeEnv,
         llmGatewayBaseUrl,
+        claudeOauthToken,
         signature,
         agent,
         person,
@@ -599,6 +613,7 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
     refreshModels: true,
     opencodeEnv: args.opencodeEnv,
     llmGatewayBaseUrl,
+    claudeOauthToken,
   });
   // Remember only AFTER a successful push — in-process AND durably. A throw
   // above (network/HTTP failure) must leave BOTH alone so the next prompt, on

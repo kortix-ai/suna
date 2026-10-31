@@ -1,6 +1,7 @@
 /** Session prompt queue: enqueue, list, remove, retry, and hold. */
 import { parseSessionAttachmentRef } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
+import { claudeSubscriptionRequiredBody, missingClaudeSubscription, promptModelRef } from '../../claude-subscription/gate';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
@@ -321,6 +322,18 @@ export function registerSessionPromptsRoutes(): void {
       // The connector CALL denies instead (`connector_not_connected`), naming the
       // connector and carrying a connect link. The turn runs, the agent reports
       // what is missing, and the human fixes it in one click.
+
+      // A Claude subscription model runs on the prompting person's own Claude
+      // login: without one the turn is refused here, with a Connect code.
+      if (!isProjectSessionPrincipal(c)) {
+        const metadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
+        const missing = await missingClaudeSubscription({
+          accountId: loaded.row.accountId,
+          userId: loaded.userId,
+          model: promptModelRef(overrides.model) ?? (typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null),
+        });
+        if (missing) return c.json(claudeSubscriptionRequiredBody(missing), 409);
+      }
 
       // Same gate as start/wake: a prompt spends compute.
       const billing = await checkBillingAdmission(loaded.row.accountId);

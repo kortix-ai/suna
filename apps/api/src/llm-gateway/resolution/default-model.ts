@@ -16,6 +16,7 @@ import {
   toWireModel,
 } from './effective';
 import { resolveCandidates } from './resolve-candidates';
+import { checkClaudeAgentRef, isClaudeAgentModelRef } from './claude-agent';
 import { runtimeModelCatalog } from '../models/runtime-catalog';
 
 // Resolves the account/agent/project-configured default model for a gateway
@@ -159,8 +160,10 @@ export async function resolveDefaultModelForPrincipal(
   const defaults = await cachedAccountDefaults(principal.accountId, principal.projectId);
   const hasAgentDefaults = Object.keys(defaults.agents).length > 0;
   const projectDefault = principal.projectId ? defaults.projects[principal.projectId] : undefined;
-  const probe = (model: string) =>
-    isModelServableForAccount({
+  // The gateway asks for a model IT serves: a Claude subscription default
+  // degrades to the next servable one here.
+  const probe = async (model: string) =>
+    !isClaudeAgentModelRef(model) && isModelServableForAccount({
       userId: principal.userId,
       accountId: principal.accountId,
       projectId: principal.projectId as string,
@@ -237,6 +240,11 @@ export async function isModelServableForAccount(params: {
   restingIsServable?: boolean;
 }): Promise<boolean> {
   if (params.model === 'auto' || params.model === 'kortix/auto') return false;
+  // A Claude subscription model runs in the box on the person's own Claude
+  // login: any known id is usable for every account and tier, an unknown one
+  // never. The connected login is checked when a turn starts.
+  const claudeAgent = checkClaudeAgentRef(params.model);
+  if (claudeAgent.kind !== 'none') return claudeAgent.kind === 'valid';
   // Accept either the opencode ref (`kortix/<id>`) or the bare wire id — the
   // gateway resolves the bare id, so normalize before probing candidates.
   const wire = toWireModel(params.model);

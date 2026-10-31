@@ -30,6 +30,7 @@ import { registerProjectCredentialsRoutes } from './routes/project-credentials';
 import { registerSecretsRoutes } from './routes/secrets';
 import { registerSecretDeliveryRoutes } from './routes/secret-delivery';
 import { registerProviderOauthRoutes } from './routes/provider-oauth';
+import { registerClaudeSubscriptionRoutes } from './routes/claude-subscription';
 import { registerRepositoryReplacementRoutes } from './routes/repository-replacement';
 import { registerSecretBrokerRoutes } from './routes/secret-broker';
 import { registerSecretRelayRoutes } from './routes/secret-relay';
@@ -132,6 +133,7 @@ export function registerAllProjectRoutes(): void {
   registerSecretsRoutes();
   registerSecretDeliveryRoutes();
   registerProviderOauthRoutes();
+  registerClaudeSubscriptionRoutes();
   registerRepositoryReplacementRoutes();
   registerSecretBrokerRoutes();
   registerSecretRelayRoutes();
