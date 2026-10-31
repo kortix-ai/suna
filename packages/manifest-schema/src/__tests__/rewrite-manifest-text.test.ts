@@ -69,3 +69,12 @@ describe('rewriteManifestText', () => {
     expect(rewriteManifestText('agents: [\n', { agents: {} })).toBeNull();
   });
 });
+
+test('a renamed map entry keeps its requested position and surviving entry comments', () => {
+  const source = 'policy_sets:\n  read_only: {}\n  # Outbound permissions stay documented.\n  outreach: {}\n  empty: {}\n';
+  const text = rewriteManifestText(source, { policy_sets: { quiet: {}, outreach: {}, empty: {} } });
+  expect(text).not.toBeNull();
+  const parsed = parseManifestText(text ?? '');
+  expect(Object.keys(parsed.policy_sets ?? {})).toEqual(['quiet', 'outreach', 'empty']);
+  expect(text).toContain('  # Outbound permissions stay documented.\n  outreach: {}');
+});
