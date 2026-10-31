@@ -48,6 +48,8 @@ interface ChildBehavior {
   stall?: boolean
   /** The answer of this turn. Default: `answer: <first prompt>`. */
   answer?: string
+  /** How the API's turn ledger says its last turn ended (`GET …/turn` `last_ended`); absent = no row. */
+  lastEnd?: { reason: string; error?: string }
 }
 
 interface FakeChild {
@@ -103,6 +105,10 @@ function startFakeApi(parent = PARENT_SESSION) {
       }
       if (delayMs) await Bun.sleep(delayMs)
       const now = behavior(child)
+      if (path.endsWith('/turn')) {
+        const end = now.lastEnd
+        return Response.json({ turns: [], ...(end ? { last_ended: { turn_token: 't1', end_reason: end.reason, ended_at: null, ...(end.error ? { error: { name: 'WorkflowError', message: end.error } } : {}) } } : {}) })
+      }
       if (path.endsWith('/transcript')) {
         const user = { role: 'user', text: child.prompts.at(-1) }
         if (now.stall) return Response.json({ messages: [user] })
@@ -768,6 +774,7 @@ describe('pi workflow tool, always in the background from a top-level session', 
     expect(followUp).toContain(JSON.stringify(edited).slice(1, -1))
     const handed = lastWorkflowPart(parent.frames)
     const runId = (handed.metadata as unknown as WorkflowRunMetadata).runId
+    // The same workflow (its title): a resume, not a new run.
     expect(handed.output).toContain(`Resumed run ${runId} in its runner session: 2 finished agents reused when their calls are unchanged; every other call runs.`)
 
     // The runner's next turn: A and C come from its records, B and D run.
@@ -783,6 +790,80 @@ describe('pi workflow tool, always in the background from a top-level session', 
     model.script([{ tool: 'workflow', args: { script: '', resume_run_id: runId } }, { text: 'refused' }])
     expect(await approvedTurn(parent.rt, 'again')).toBe('completed')
     expect(lastWorkflowPart(parent.frames).error).toContain(`Run ${runId} still runs in its runner session child-1. Stop it first`)
+  })
+
+  test('a finished run, then a different workflow: a new runner and a new run id, and the finished record stays done (the notice says completed; the runner\'s words do not count)', async () => {
+    const parent = await boot([
+      { tool: 'workflow', args: { description: 'Three cities, one paragraph', script: "return parallel(['Rome', 'Oslo'].map((c) => () => agent(c)))" } },
+      { text: 'started' },
+      { text: '✅ Done' },
+      { tool: 'workflow', args: { description: 'Fruit sentences', script: "return agent('apple')" } },
+      { text: 'started again' },
+    ])
+    expect(await approvedTurn(parent.rt)).toBe('completed')
+    const firstId = (lastWorkflowPart(parent.frames).metadata as unknown as WorkflowRunMetadata).runId
+    // The runner paraphrased its result: its last words carry no <workflow_result>.
+    api.behave(() => ({ answer: '✅ Done — 2 agents, all finished.' }))
+    // The API's notice: the runner's turn completed, which it does only when its workflow ended done.
+    expect(await parent.rt.admit({ text: 'A background subagent you started has finished. This message is from the platform, not from the user.\ntask_id: child-1\nstatus: completed\n', files: [] }).done).toBe('completed')
+    expect(parent.rt.workflowList()[0]).toMatchObject({ runId: firstId, status: 'done' })
+
+    expect(await approvedTurn(parent.rt, 'now fruit')).toBe('completed')
+    expect(api.creates).toHaveLength(2)
+    expect(api.followUps).toHaveLength(0)
+    const second = lastWorkflowPart(parent.frames).metadata as unknown as WorkflowRunMetadata
+    expect(second.runId).not.toBe(firstId)
+    expect(second).not.toHaveProperty('resumedFrom')
+    expect(second.background).toEqual({ sessionId: 'child-2' })
+    api.keepWorking('child-2')
+    const runs = (await routes(parent.service).list()).runs
+    expect(runs.map((run) => [run.title, run.status])).toEqual([
+      ['Fruit sentences', 'running'],
+      ['Three cities, one paragraph', 'done'],
+    ])
+  })
+
+  test('without a notice, the runner\'s turn end in the API ledger decides: completed is done, whatever the runner wrote', async () => {
+    api.childrenWork()
+    const parent = await boot([runWorkflow("return agent('x')"), { text: 'started' }])
+    expect(await approvedTurn(parent.rt)).toBe('completed')
+    api.behave(() => ({ answer: 'All good, here is a summary.', lastEnd: { reason: 'completed' } }))
+    api.childrenSettle()
+    expect((await routes(parent.service).list()).runs).toMatchObject([{ status: 'done' }])
+  })
+
+  test('an unfinished run, then a different workflow: a new run in a new runner; the unfinished record stays as it was', async () => {
+    const parent = await boot([
+      { tool: 'workflow', args: { script: "export const meta = { name: 'cities', description: 'Three cities' }\nreturn agent('Rome')" } },
+      { text: 'started' },
+      { tool: 'workflow', args: { script: "export const meta = { name: 'fruit', description: 'Fruit sentences' }\nreturn agent('apple')" } },
+      { text: 'started again' },
+    ])
+    expect(await approvedTurn(parent.rt)).toBe('completed')
+    const firstId = (lastWorkflowPart(parent.frames).metadata as unknown as WorkflowRunMetadata).runId
+    // The runner failed its workflow.
+    api.behave(() => ({ answer: '<workflow_error>\nchild session failed\n</workflow_error>', lastEnd: { reason: 'failed', error: 'child session failed' } }))
+    expect(await approvedTurn(parent.rt, 'now fruit')).toBe('completed')
+    expect(api.creates).toHaveLength(2)
+    expect(api.followUps).toHaveLength(0)
+    const second = lastWorkflowPart(parent.frames).metadata as unknown as WorkflowRunMetadata
+    expect(second.runId).not.toBe(firstId)
+    api.keepWorking('child-2')
+    const runs = (await routes(parent.service).list()).runs
+    expect(runs.map((run) => [run.name, run.status])).toEqual([
+      ['fruit', 'running'],
+      ['cities', 'failed'],
+    ])
+    expect(runs[1]!.error).toBe('child session failed')
+  })
+
+  test('a runner whose model never calls the workflow tool fails its turn', async () => {
+    const runnerSide = runnerApi()
+    const context = { 'kortix.workflow.run_id': 'run-skipped-000001', 'kortix.workflow.title': 'Skipped', 'kortix.workflow.max_agents': 1, 'kortix.subagent.depth': 1 }
+    const json = JSON.stringify({ run_id: 'run-skipped-000001', mode: 'start', title: 'Skipped', script: "return agent('x')", max_agents: 1 })
+    const box = await bootRunner({ runtime_context: context }, [{ text: 'I did it myself.' }], runnerSide)
+    expect(await box.rt.admit({ text: `Run it.\n\n<workflow_handoff chars="${json.length}">\n${json}\n</workflow_handoff>`, files: [] }).done).toBe('error')
+    expect(runnerSide.creates).toHaveLength(0)
   })
 
   test('fresh: true starts a new runner even though the latest run did not finish', async () => {
@@ -807,7 +888,8 @@ describe('pi workflow tool, always in the background from a top-level session', 
       join(dir, `${runId}.json`),
       JSON.stringify({
         runId,
-        title: 'Old run',
+        // The same workflow: its title is the new call's.
+        title: 'Research two topics',
         script: "return parallel(['A', 'B'].map((p) => () => agent(p)))",
         maxAgents: 3,
         startedAt: Date.now() - 60_000,
@@ -815,7 +897,7 @@ describe('pi workflow tool, always in the background from a top-level session', 
           { key: key('A'), label: 'A', status: 'done', result: 'saved A' },
           { key: key('B'), label: 'B', status: 'failed' },
         ],
-        doc: { runId, title: 'Old run', status: 'stopped', phases: [], agents: [], startedAt: Date.now() - 60_000 },
+        doc: { runId, title: 'Research two topics', status: 'stopped', phases: [], agents: [], startedAt: Date.now() - 60_000 },
       }),
     )
     expect(await approvedTurn(parent.rt, 'go on')).toBe('completed')

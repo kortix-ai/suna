@@ -44,7 +44,7 @@ import type { ControlPlane } from './extensions/control-plane'
 import { messaging, MESSAGING_TOOLS } from './extensions/messaging'
 import { TEAM_TASK_TOOLS, teamTasks } from './extensions/team-tasks'
 import { BUNDLED_WORKFLOWS } from './extensions/bundled-workflows'
-import { WorkflowRuns, type WorkflowControlAnswer } from './extensions/workflow'
+import { isWorkflowRunner, WorkflowRuns, type WorkflowControlAnswer } from './extensions/workflow'
 import { listCheckout } from './extensions/workflow-store'
 import { promptOrigin, ULTRACODE_SYSTEM_LINE, ultracodeRequested, type PromptOrigin } from './prompt-origin'
 import { enabledFeatureFlags } from '@/lib/config/feature-flags'
@@ -498,6 +498,7 @@ export class PiRuntime {
         const cloud = this.cloudTarget()
         return cloud ? cloudChildReport(cloud, sessionId) : Promise.resolve({ state: 'missing' as const, text: '' })
       },
+      () => isWorkflowRunner(this.env.KORTIX_SESSION_CONTEXT),
     )
     this.now = () => Date.now()
     this.hooks = opts.hooks ?? {}
@@ -1233,7 +1234,9 @@ export class PiRuntime {
     this.steerReads.clear()
     this.status = 'busy'
     this.hooks.onTurnBegin?.({ rootId: this.rootId, messageId: turn.messageId })
-    // A runner's notice starts a turn here: the run it reports ends in the saved list too.
+    // A runner's turn starts failed until its workflow ends done; a runner's notice here ends its run in the saved list.
+    const failure = this.workflows.turnStarted(turn.input.text)
+    if (failure) turn.failure = failure
     void this.workflows.refresh().catch(() => {})
     let outcome: TurnOutcome = 'completed'
     let error: TurnEnd['error'] | undefined
@@ -1732,7 +1735,9 @@ export class PiRuntime {
       turnOrigin: () => this.turnOrigin(),
       turnPrompt: () => this.active?.input.text ?? '',
       failTurn: (failure) => {
-        if (this.active) this.active.failure = failure
+        if (!this.active) return
+        if (failure) this.active.failure = failure
+        else delete this.active.failure
       },
       workflowRuns: () => this.workflows,
       compiledAgents: () => this.compiled?.agent ?? {},

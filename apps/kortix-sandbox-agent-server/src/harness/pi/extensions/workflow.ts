@@ -355,7 +355,7 @@ async function execute(host: KortixHost, toolCallId: string, params: WorkflowPar
     inRunner = runnerContextOf(host) !== null
     const result = await executeCall(host, toolCallId, params, signal, onUpdate)
     const status = result.details?.status
-    if (inRunner && status && status !== 'done') host.failTurn({ name: 'WorkflowError', message: result.details?.error ?? `The workflow ${status}.` })
+    if (inRunner && status) host.failTurn(status === 'done' ? null : { name: 'WorkflowError', message: result.details?.error ?? `The workflow ${status}.` })
     return result
   } catch (err) {
     if (inRunner) host.failTurn({ name: 'WorkflowError', message: err instanceof Error ? err.message : String(err) })
@@ -467,9 +467,6 @@ async function planRun(host: KortixHost, store: RunStore, registry: WorkflowRuns
   } else if (resumeId) {
     previous = store.load(resumeId)
     if (!previous) throw new Error(`nothing to resume: no run ${resumeId} is saved on this computer. Start the workflow as a new run: omit resume_run_id.`)
-  } else if (!inRunner && params.fresh !== true) {
-    previous = await latestUnfinished(store, registry)
-    autoResumed = previous !== null
   }
   const name = (inRunner ? handoff.name : givenName ? checkSavedName(givenName) : undefined) || undefined
   let script = inRunner ? handoff.script : given
@@ -478,6 +475,13 @@ async function planRun(host: KortixHost, store: RunStore, registry: WorkflowRuns
     const read = await saved.read(name)
     if (read === null) throw new Error(`No saved workflow "${name}": there is no ${name}.js in ${saved.where}.`)
     script = read.trim()
+  }
+  if (!inRunner && !resumeId && params.fresh !== true) {
+    // Automatic: only the same workflow resumes (its name, or its title); any other one is a new run.
+    const own = script ? splitMeta(script).meta : null
+    const identity = script ? { name: name ?? own?.name, title: params.description?.trim() || own?.description || name || own?.name } : null
+    previous = await latestUnfinished(store, registry, identity)
+    autoResumed = previous !== null
   }
   // `script: ""` with a run to resume: that run's own script, args and cap.
   const ownScript = !script && previous !== null
@@ -511,17 +515,38 @@ async function planRun(host: KortixHost, store: RunStore, registry: WorkflowRuns
 }
 
 /**
- * This session's latest run, when it did not finish and nothing runs it now:
- * the run a new workflow resumes by itself. A background run's end is read
- * from its runner first (`WorkflowRuns.refresh`): a runner still at work runs
- * it, and one that cannot be read is not resumed.
+ * The run a new workflow resumes by itself: this session's newest run of the
+ * same workflow, when that run did not finish (stopped, failed, or
+ * interrupted) and nothing runs it now. The same workflow: the same name
+ * (`meta.name` or the saved name), else the same title; `identity` null (a
+ * call with `script: ""` and no name) means this session's newest run. A
+ * background run's end is read first (`WorkflowRuns.refresh`): a runner still
+ * at work runs it, and one that cannot be read is not resumed.
  */
-async function latestUnfinished(store: RunStore, registry: WorkflowRuns): Promise<RunRecord | null> {
+async function latestUnfinished(store: RunStore, registry: WorkflowRuns, identity: { name?: string; title?: string } | null): Promise<RunRecord | null> {
   await registry.refresh()
-  const latest = store.list()[0]
+  const records = store.list()
+  const latest = identity ? records.find((record) => sameWorkflow(record, identity)) : records[0]
   if (!latest || registry.has(latest.runId)) return null
   const status = latest.doc?.status
   return status === 'failed' || status === 'stopped' || (status === 'running' && !latest.background) ? latest : null
+}
+
+const sameText = (a: string | undefined, b: string | undefined) => !!a?.trim() && !!b?.trim() && a.trim().toLowerCase() === b.trim().toLowerCase()
+
+/** A record of the workflow `identity` names: both named, the same name; else the same title. */
+function sameWorkflow(record: RunRecord, identity: { name?: string; title?: string }): boolean {
+  const recordName = record.name ?? splitMetaSafe(record.script)?.name
+  if (recordName && identity.name) return sameText(recordName, identity.name)
+  return sameText(record.title, identity.title)
+}
+
+function splitMetaSafe(script: string): WorkflowMeta | null {
+  try {
+    return splitMeta(script).meta
+  } catch {
+    return null
+  }
 }
 
 function approvalQuestion(plan: Plan): RuntimeQuestion {
@@ -1431,21 +1456,41 @@ const RUNNER_RECHECK_MS = 5_000
 /**
  * How a background run ended, read from its runner session; null while the
  * runner works, or when it cannot be read (the state stays as saved). The
- * runner's last answer is the run's tool output: `<workflow_result>` is done,
- * `<workflow_error>` failed (stopped when the person stopped it), and any
- * other answer means the runner ended without running the workflow.
+ * runner's last turn end decides first (the API's ledger): a runner turn
+ * completes only when its workflow ended done, and fails with the workflow's
+ * error otherwise. Without a ledger row, the last answer, which is the tool
+ * output: `<workflow_result>` is done, `<workflow_error>` failed (stopped
+ * when the person stopped it), any other answer failed.
  */
 export function runnerEnd(report: ChildReport): { status: WorkflowRunStatus; error?: string; done?: number } | null {
   if (report.state === 'working' || report.state === 'missing') return null
   const done = reusedCount(report.text)
   const counted = done !== undefined ? { done } : {}
   if (report.state === 'failed') return { status: 'failed', error: 'The runner session failed before the run ended.', ...counted }
-  if (report.text.includes('<workflow_result>')) return { status: 'done', ...counted }
   const error = /<workflow_error>\n([^\n]*)/.exec(report.text)?.[1]?.trim()
+  // The turn's end first: a runner's turn completes only when its workflow ended done, whatever its last words.
+  const end = report.lastEnd
+  if (end?.reason === 'completed' && !error) return { status: 'done', ...counted }
+  if (end?.reason === 'failed') {
+    const why = end.error ?? error ?? 'The runner reported failed.'
+    return { status: why === 'The person stopped the run.' ? 'stopped' : 'failed', error: why, ...counted }
+  }
+  // No turn end on record: the runner's last answer, which is the tool output.
+  if (report.text.includes('<workflow_result>')) return { status: 'done', ...counted }
   if (error) return { status: error === 'The person stopped the run.' ? 'stopped' : 'failed', error, ...counted }
   if (report.state === 'stopped') return { status: 'stopped', error: 'The runner session was stopped before the run ended.', ...counted }
   const said = report.text.trim().split('\n')[0]?.slice(0, SUMMARY_CHARS)
   return { status: 'failed', error: `The runner ended without running the workflow${said ? `: ${said}` : '.'}`, ...counted }
+}
+
+/** `KORTIX_SESSION_CONTEXT` marks a workflow runner (`kortix.workflow.run_id`). */
+export function isWorkflowRunner(rawContext: string | undefined): boolean {
+  try {
+    const context = JSON.parse(rawContext ?? '') as Record<string, unknown> | null
+    return typeof context?.[CONTEXT.runId] === 'string' && (context[CONTEXT.runId] as string).length > 0
+  } catch {
+    return false
+  }
 }
 
 /** The `N done` of a runner's last answer (`agents: 7 (3 done, 4 stopped)`), or undefined. */
@@ -1487,11 +1532,49 @@ export class WorkflowRuns {
   private readonly checked = new Map<string, number>()
   private refreshing: Promise<void> | null = null
 
-  /** `report` reads a runner session (`cloudChildReport`); without it, saved states are listed as written. */
+  /**
+   * `report` reads a runner session (`cloudChildReport`); without it, saved
+   * states are listed as written. `isRunner`: this session is a workflow
+   * runner (`isWorkflowRunner`).
+   */
   constructor(
     private readonly stateDir: () => string,
     private readonly report?: (sessionId: string) => Promise<ChildReport>,
+    private readonly isRunner: () => boolean = () => false,
   ) {}
+
+  /**
+   * A turn starts with `prompt`. On a runner, a prompt that hands over a
+   * workflow returns the failure the turn ends with unless the workflow ends
+   * done (the tool clears it): a runner that never runs its workflow reports
+   * failed, never completed. On a caller, each background-subagent notice in
+   * the prompt (`task_id: <runner>` + `status: …`, apps/api
+   * `subagentNoticeText`) ends the run of that runner in the saved list: a
+   * runner's turn completes only when its workflow ended done.
+   */
+  turnStarted(prompt: string): { name: string; message: string } | null {
+    if (this.isRunner()) {
+      return HANDOFF_OPEN.test(prompt) ? { name: 'WorkflowError', message: 'The runner ended its turn without running the workflow.' } : null
+    }
+    const notices = [...prompt.matchAll(/^task_id: (\S+)\nstatus: (completed|error|stopped|failed)$/gm)]
+    if (notices.length === 0) return null
+    const store = new RunStore(this.stateDir())
+    for (const [, sessionId, status] of notices) {
+      for (const record of store.list()) {
+        if (record.background?.sessionId !== sessionId || record.doc?.status !== 'running' || this.live.has(record.runId)) continue
+        const ended: WorkflowRunStatus = status === 'completed' ? 'done' : status === 'stopped' ? 'stopped' : 'failed'
+        try {
+          store.save({
+            ...record,
+            doc: { ...record.doc, status: ended, endedAt: Date.now(), ...(ended === 'done' ? {} : { error: `The runner session reported ${status}; its report is in this session's messages.` }) },
+          })
+        } catch {
+          // A full disk keeps the old state; the next refresh reads the runner.
+        }
+      }
+    }
+    return null
+  }
 
   /**
    * Heal the saved state of every background run still saved as `running`:

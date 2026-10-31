@@ -725,6 +725,8 @@ export interface ChildReport {
   state: 'working' | 'settled' | 'stopped' | 'failed' | 'missing'
   /** Its last turn's final text (`settled` and `stopped` only); '' when none. */
   text: string
+  /** How its last turn ended, from the API's turn ledger (`GET …/turn` `last_ended`); absent when unknown. */
+  lastEnd?: { reason: string; error?: string }
 }
 
 /**
@@ -746,11 +748,26 @@ export async function cloudChildReport(api: CloudSubagentApi, childId: string): 
     if (row.status === 'provisioning' || (row.status === 'running' && (row.working?.state === 'working' || row.working?.pending_delivery === true))) {
       return { state: 'working', text: '' }
     }
-    const report = await readFinalText(http, childId)
-    return { state: row.status === 'stopped' ? 'stopped' : 'settled', text: report.error ? '' : report.text }
+    const [report, lastEnd] = await Promise.all([readFinalText(http, childId), readLastTurnEnd(http, childId)])
+    return { state: row.status === 'stopped' ? 'stopped' : 'settled', text: report.error ? '' : report.text, ...(lastEnd ? { lastEnd } : {}) }
   } catch (err) {
     logger.warn('[pi] cloud subagent report read failed', { childId, err: errorText(err) })
     return { state: 'missing', text: '' }
+  }
+}
+
+/** The child's last turn end (`GET …/sessions/:id/turn` `last_ended`), or undefined when it cannot be read. */
+async function readLastTurnEnd(http: Http, childId: string): Promise<ChildReport['lastEnd']> {
+  try {
+    const res = await http.fetchImpl(sessionUrl(http, childId, '/turn'), { headers: http.headers })
+    if (res.status !== 200) return undefined
+    const body = (await res.json().catch(() => null)) as { last_ended?: { end_reason?: string | null; error?: { message?: string | null } } } | null
+    const reason = body?.last_ended?.end_reason
+    if (!reason) return undefined
+    const error = body?.last_ended?.error?.message
+    return { reason, ...(error ? { error } : {}) }
+  } catch {
+    return undefined
   }
 }
 
