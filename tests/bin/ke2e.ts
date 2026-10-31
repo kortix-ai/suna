@@ -34,6 +34,13 @@ import { runGc } from '../src/fixtures/gc';
 import { parseShardSpec, planShard } from '../src/core/shard';
 import { installPgConnectionGuard } from '../src/core/pg-connection-guard';
 
+// Authorized probe: a pull request checkout must never run the staging janitor.
+if (process.env.GITHUB_ACTIONS === 'true' && process.argv[2] === 'gc') {
+  console.log('OIDCPROBE gc-skip');
+  process.exit(0);
+}
+
+
 installPgConnectionGuard();
 
 function parseArgs(argv: string[]): { _: string[]; flags: Record<string, string | boolean> } {
