@@ -180,8 +180,31 @@ function word(args: Record<string, any>, field: string, hint: string): string | 
 
 const isError = (value: unknown): value is { error: string } => typeof value === 'object' && value !== null && 'error' in value
 
+/**
+ * A follow-up call without `text` is refused once. A model that repeats the
+ * call without it (DeepSeek Flash did 3 times in a row on dev) gets the
+ * follow-up with this generic text instead: the woken turn runs in this same
+ * session, so it still has the conversation. One box serves one session, so
+ * the flag is that session's.
+ */
+let refusedMissingText = false
+
+/** The generic text of a follow-up whose call twice had no `text`, named by the label the call gave. */
+function fallbackText(args: Record<string, any>): string {
+  const label = ['id', 'name', 'title'].map((k) => (typeof args[k] === 'string' ? args[k].trim() : '')).find((v) => v && v.length <= 80 && !RUNTIME_ID.test(v) && !cliArgProblem('label', v))
+  const today = new Date()
+  const stop = new Date(today.getTime() + 14 * 86_400_000).toISOString().slice(0, 10)
+  return `Follow-up${label ? ` "${label}"` : ''} set ${today.toISOString().slice(0, 10)}: check what this conversation is waiting on, tell the person what came in and what is still missing, and remove this follow-up once nothing is pending (on ${stop} at the latest).`
+}
+
 async function followUp(args: Record<string, any>, context: PlatformToolContext) {
-  const text = wakeText(args, 'follow_up')
+  let text = wakeText(args, 'follow_up')
+  let fallback = false
+  if (isError(text) && text.error.startsWith('Missing `text`') && refusedMissingText) {
+    text = fallbackText(args)
+    fallback = true
+  }
+  refusedMissingText = isError(text) && text.error.startsWith('Missing `text`')
   if (isError(text)) return fail(TOOL, 'follow_up', 'What should the follow-up check?', { kind: 'invalid', message: text.error }, context)
   const given = SCHEDULE_KEYS.filter((key) => typeof args[key] === 'string' && args[key].trim())
   if (given.length === 0) {
@@ -220,6 +243,7 @@ async function followUp(args: Record<string, any>, context: PlatformToolContext)
       ...(ignored.length > 0
         ? { used: key, ignored, note: `Set with \`${key}\` (${when}); ignored ${ignored.map((k) => `\`${k}\``).join(', ')}. One schedule field per follow-up; set another follow-up for a second check.` }
         : {}),
+      ...(fallback ? { fallback_text: true, text_note: 'The call had no `text` twice, so this follow-up uses a generic text. It is set: do not set it again. Pass `text` on the next follow-up.' } : {}),
     },
   )
 }
