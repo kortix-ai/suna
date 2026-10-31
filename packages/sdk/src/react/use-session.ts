@@ -261,8 +261,14 @@ export function sessionPromptFromParts(
   options: SendOptions,
   clientMessageId?: string,
   nowMs: number = Date.now(),
+  /**
+   * The id the host drew its optimistic message under. It becomes the wire id, so the
+   * runtime's user message, the session log and the inbox row all carry it, and the log's
+   * put replaces the optimistic message by id. Omitted: a wire id is minted.
+   */
+  optimisticMessageId?: string,
 ): CreateSessionPromptInput {
-  const messageId = mintSessionWireMessageId(runtimeSessionId, clientMessageId);
+  const messageId = optimisticMessageId ?? mintSessionWireMessageId(runtimeSessionId, clientMessageId);
   const wireParts: SessionPromptPart[] = parts.map((part) => {
     if (part.type === 'file') {
       return {
@@ -1900,6 +1906,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
        * a new submission. See `SendRuntimeMessageArgs.clientMessageId`.
        */
       clientMessageId?: string;
+      /** The id the host drew its optimistic message under; the prompt goes out under it. */
+      messageId?: string;
     },
   ): Promise<void> => {
     if (!runtimeActionReady) throw new RuntimeNotReadyError();
@@ -1922,7 +1930,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       // Every turn start goes through the session's durable prompt inbox, the
       // path the web composer and the CLI use: the server decides when it runs.
       const result = await sendMutation.mutateAsync(
-        sessionPromptFromParts(ocSessionId, parts, opts, override?.clientMessageId),
+        sessionPromptFromParts(ocSessionId, parts, opts, override?.clientMessageId, Date.now(), override?.messageId),
       );
       if (result.state === 'failed') {
         throw new Error('This prompt was refused: its earlier delivery already failed.');
@@ -1957,7 +1965,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // part share one minted id, so the server's echo can be correlated back
     // to it instead of leaving both on screen until the idle sweep.
     const { messageId, parts } = beginOptimisticPlainTextSend(ocSessionId, text);
-    void sendParts(parts, override).catch((error) => {
+    // The optimistic message's id is the prompt's wire id: the log holds the user message
+    // under it, so the log's put replaces the optimistic message by id.
+    void sendParts(parts, { ...override, messageId }).catch((error) => {
       // The send never reached (or was refused by) the server — nothing to
       // rehydrate, so drop the optimistic message outright rather than leave
       // it stranded forever (mirrors `abandonOptimisticSend`).

@@ -1670,6 +1670,23 @@ export async function createSessionPrompt(
   );
 }
 
+/**
+ * A prompt the runtime accepted that the session log does not hold yet, or the session's
+ * `initial_prompt`: it left the inbox at delivery and is in the log once the box journals it.
+ * `message_id` is the id the log will hold it under. `prompt_id` is null for an
+ * `initial_prompt`. Listed by `GET …/prompts` `sent` and the `kortix.control.queue` frame.
+ */
+export interface SessionSentPrompt {
+  message_id: string;
+  /** The id the prompt was sent under (the host's optimistic message), when it differs. Absent from an older API. */
+  wire_message_id?: string | null;
+  prompt_id: string | null;
+  text: string;
+  attachments: Array<{ filename: string; mime: string }>;
+  author_user_id: string | null;
+  created_at: string;
+}
+
 /** Every prompt this session still owes the user, oldest first. Delivered
  *  prompts are omitted — they are in the transcript. `observed_at` is the
  *  SERVER's clock captured BEFORE the read: the ordering stamp this snapshot
@@ -1677,9 +1694,9 @@ export async function createSessionPrompt(
 export async function listSessionPrompts(
   projectId: string,
   sessionId: string,
-): Promise<{ prompts: SessionPrompt[]; observed_at?: string }> {
+): Promise<{ prompts: SessionPrompt[]; sent?: SessionSentPrompt[]; observed_at?: string }> {
   return unwrap(
-    await backendApi.get<{ prompts: SessionPrompt[]; observed_at?: string }>(
+    await backendApi.get<{ prompts: SessionPrompt[]; sent?: SessionSentPrompt[]; observed_at?: string }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts`,
       // A background poll: a failed tick must not toast every second.
       { showErrors: false },

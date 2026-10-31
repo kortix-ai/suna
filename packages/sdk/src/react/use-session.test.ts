@@ -1448,6 +1448,17 @@ describe('sessionPromptFromParts (W5 E4: sendParts goes through the prompt inbox
   });
 });
 
+describe('sessionPromptFromParts: one id from the optimistic message to the session log', () => {
+  test('the id the host drew its optimistic message under is the wire id, so the log replaces it by id', () => {
+    const { messageId, parts } = beginOptimisticPlainTextSend('ses_root', 'hello');
+    const prompt = sessionPromptFromParts('ses_root', parts, {}, undefined, 1_700_000_000_000, messageId);
+    expect(prompt.messageId).toBe(messageId);
+    expect(prompt.clientMessageId).toBe(messageId);
+    // A host queue key stays the idempotency key; the wire id is still the drawn one.
+    expect(sessionPromptFromParts('ses_root', parts, {}, 'queue-9', 1, messageId)).toMatchObject({ clientMessageId: 'queue-9', messageId });
+  });
+});
+
 describe('resolveSendOptions', () => {
   const none = { model: null, agent: null, variant: null };
   const M: ModelKey = { providerID: 'anthropic', modelID: 'claude' };

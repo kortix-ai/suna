@@ -39,6 +39,7 @@ import {
   listInboxPrompts,
   retryInboxPrompt,
 } from '../session-lifecycle';
+import { listSentPrompts } from '../session-lifecycle/sent-prompts';
 import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
 import { markTurnStopRequested } from '../session-turn-ledger';
 import {
@@ -504,9 +505,9 @@ export function registerSessionPromptsRoutes(): void {
       // Scoped to INBOX rows — see `listInboxPrompts`. `continue_session` is also
       // how triggers, Slack and approval-resume deliver, and listing those put an
       // automation's internal prompt in the user's own queue.
-      const rows = await listInboxPrompts(sessionId, PROMPT_LIST_LIMIT);
+      const [rows, sent] = await Promise.all([listInboxPrompts(sessionId, PROMPT_LIST_LIMIT), listSentPrompts(sessionId)]);
 
-      return c.json({ prompts: rows.map(serializePrompt), observed_at: observedAt });
+      return c.json({ prompts: rows.map(serializePrompt), sent, observed_at: observedAt });
     },
   );
 

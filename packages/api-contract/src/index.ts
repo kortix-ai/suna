@@ -2286,8 +2286,29 @@ export const SessionPromptSchema = z.object({
 export type SessionPrompt = z.infer<typeof SessionPromptSchema>;
 
 /** `GET .../prompts`. `observed_at` is the server clock BEFORE the read. */
+/**
+ * A prompt the runtime accepted that the session log does not hold yet, or the session's
+ * `initial_prompt`. It left the inbox (`prompts`) at delivery; the log holds it once the box
+ * journals it (pi: every 5 s while a turn runs). Until then this is the only durable record
+ * a client can draw it from. `message_id` is the id the log will hold it under.
+ */
+export const SessionSentPromptSchema = z.object({
+  message_id: z.string(),
+  /** The id the prompt was sent under (a client's optimistic message) when the server re-minted it; else null. */
+  wire_message_id: z.string().nullable(),
+  /** The inbox row; null for the `initial_prompt` of a session create. */
+  prompt_id: z.string().nullable(),
+  text: z.string(),
+  attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
+  author_user_id: z.string().nullable(),
+  created_at: z.string(),
+});
+export type SessionSentPrompt = z.infer<typeof SessionSentPromptSchema>;
+
 export const SessionPromptListSchema = z.object({
   prompts: z.array(SessionPromptSchema),
+  /** Accepted prompts the session log does not hold yet, oldest first. An older API omits it. */
+  sent: z.array(SessionSentPromptSchema).optional(),
   observed_at: z.string(),
 });
 export type SessionPromptList = z.infer<typeof SessionPromptListSchema>;
