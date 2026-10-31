@@ -53,6 +53,7 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // Titles (`projects/session-title-generate.ts`). Renames use `body.name`.
   'name',
   'title_source',
+  'title_fallback_attempts',
   // A channel thread's top message (`session-create.ts`): the creator's first
   // prompt, shown to every member of the channel.
   'first_prompt',
