@@ -15,6 +15,32 @@ up is the same workflow as dev — only the variables differ.
 `min_capacity = 2` across 2 AZs gives prod the availability + horizontal
 autoscaling expected for SOC 2.
 
+## Scheduled-job worker
+
+Every scheduled job runs on `kortix-prod-worker`, an ECS service in the
+`kortix-prod` cluster (`worker` on `module.api`, `modules/ecs-api`). The API
+tasks serve traffic only.
+
+| Item | Value |
+|---|---|
+| Service / task family / container | `kortix-prod-worker` / `kortix-prod-worker` / `worker` |
+| Size | 2 vCPU / 4 GiB, on-demand Fargate, 1 task, no load balancer |
+| Image and command | the API image, `bun run src/worker.ts` |
+| Environment | copied from the running API task definition by `ecs-deploy.sh --service worker`, without `KORTIX_PROCESS_ROLE` |
+| Logs | `/ecs/kortix-prod`, streams `worker/worker/<task-id>` |
+| Alarms | `kortix-prod-worker-not-running`, `kortix-prod-worker-stale-jobs` → SNS `kortix-compliance-alerts` (eu-west-2, read by `compliance-monitoring/monitoring.tf`; the topic itself is not in Terraform) |
+| Metric | `Kortix/Worker` `StaleJobs`, dimension `Environment = prod` |
+
+Deploy Prod's `deploy-ecs` job (and `rollback-prod.yml`) rolls the worker first, then the
+API. The API gets `KORTIX_PROCESS_ROLE=web` only when the worker runs the same image and has a
+HEALTHY task; otherwise `all` (the API runs the jobs), and `ecs-deploy.sh`
+scales the worker to 0 after the API rollout. A failed worker roll never blocks
+the API: the run shows a `Worker deploy` error annotation.
+
+Kill switch: `bash infra/scripts/ecs-deploy.sh prod <api-image> --process-role all --database-migrated`
+redeploys the API with `all` and scales the worker to 0. The next worker roll
+starts it again.
+
 ## Apply
 
 CI applies this root. `deploy-prod.yml` -> `terraform-prod-api` runs

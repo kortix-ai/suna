@@ -60,6 +60,12 @@ Each permanent environment stores one JSON environment document in AWS Secrets
 Manager. `infra/scripts/ecs-deploy.sh` injects the document through
 `KORTIX_ENV_JSON`. The frontend uses a separate `kortix-<env>-web-env` secret.
 
+`KORTIX_PROCESS_ROLE` is never in that document. `ecs-deploy.sh` sets it on
+every API roll: `web` (the API runs no scheduled job) only when the
+`<prefix>-worker` service runs the same image with a HEALTHY task, else `all`.
+The worker copies the API task's environment at its own roll, without the
+role. `infra/terraform/modules/ecs-api/README.md` has the worker contract.
+
 Dev and staging use the same `WEB_PROTECTION_USERNAME` and
 `WEB_PROTECTION_PASSWORD` values. The password value is never committed in
 plaintext. It lives in dotenvx-encrypted environment files, GitHub Actions
