@@ -415,7 +415,8 @@ harnessFlow(
     ],
   },
   async (ctx, harness) => {
-    const session = await bootSession(ctx, harness);
+    // Git flows need the seeded repository agent, not the default My Kortix workspace.
+    const session = await bootSession(ctx, harness, { agentName: 'worker' });
     const { projectId, sessionId } = session;
     const path = `ke2e-run7-${Date.now()}.md`;
     const content = `ke2e-run7-${crypto.randomUUID()}`;
@@ -835,6 +836,7 @@ flow(
     });
 
     const session = await ctx.fixtures.session(project, {
+      agentName: 'worker',
       prompt: 'add a README.md describing this project',
     });
     let sandboxId = '';

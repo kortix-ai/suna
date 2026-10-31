@@ -256,6 +256,25 @@ describe('kortix_schedules follow-through', () => {
     expect(readFileSync(calls, 'utf8')).toBe('')
   })
 
+  test('follow_up without text: refused once, then set with a generic text named by the call\'s label; a call with text resets it', async () => {
+    fakeKortix(`'loop '*' --in=4d --json') echo '${LOOP('reminder.dddddddddddd', '"every":null,"every_seconds":null,"cron":null,"at":null')}' ;;`)
+    // The call a dev session repeated 3 times: no `text`, an invented `id`.
+    const call = { action: 'follow_up', in: '4d', id: 'bakery-quotes-check' }
+    const first = await run('kortix_schedules', call)
+    expect(first.error?.kind).toBe('invalid')
+    expect(readFileSync(calls, 'utf8')).toBe('')
+    const second = await run('kortix_schedules', call)
+    expect(second.ok).toBe(true)
+    const data = second.data as { text: string; fallback_text: boolean; text_note: string }
+    expect(data.fallback_text).toBe(true)
+    expect(data.text).toStartWith('Follow-up "bakery-quotes-check" set ')
+    expect(data.text_note).toContain('do not remove it, replace it or set it again')
+    expect(argvs()).toEqual([`loop ${data.text} --in=4d --json`])
+    // A call with text in between: the next missing text is refused again.
+    expect((await run('kortix_schedules', { action: 'follow_up', in: '4d', text: TEXT })).ok).toBe(true)
+    expect((await run('kortix_schedules', { action: 'follow_up', in: '4d' })).ok).toBe(false)
+  })
+
   test('follow_up tolerates the call a model makes: an alias for text, an unknown id, and both at and in (at wins, and the result says so)', async () => {
     fakeKortix(`'loop ${TEXT} --at=2026-11-04T08:00:00Z --json') echo '${LOOP('reminder.eeeeeeeeeeee', '"every":null,"every_seconds":null,"cron":null,"at":"2026-11-04T08:00:00Z"')}' ;;
   'loop ${TEXT} --in=4d --json') echo '${LOOP('reminder.ffffffffffff', '"every":null,"every_seconds":null,"cron":null,"at":null')}' ;;

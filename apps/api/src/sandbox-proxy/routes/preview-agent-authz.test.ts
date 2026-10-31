@@ -11,6 +11,7 @@
 // The check must run BEFORE the env sync and BEFORE the re-mint: both are
 // side-effecting, and the re-mint is the thing that grants B.
 import { afterAll, beforeEach, expect, mock, test } from 'bun:test';
+import * as realSandboxProxyBackend from '../backend';
 import * as realRequestContext from '../../lib/request-context';
 import * as realPreviewOwnership from '../../shared/preview-ownership';
 import * as realKortixUserContext from '../../shared/kortix-user-context';
@@ -65,7 +66,11 @@ mock.module('../../iam', () => ({
       : { allowed: false, reason: 'resource_scope_insufficient' };
   },
 }));
+const realSandboxEnvSync = await import('../../projects/lib/sandbox-env-sync');
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
+  // Spread the real module: a hand-listed stub deletes every other export —
+  // the session-open graph imports `pushSessionAgentConfigToSandbox` from it.
+  ...realSandboxEnvSync,
   syncSandboxEnvForPrompt: async (input: { requestedAgent?: string | null }) => {
     envSyncCalls.push({ requestedAgent: input.requestedAgent });
   },
@@ -95,6 +100,7 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
+const realSessionOpen = await import('../../projects/session-open');
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   beginSandboxTurn: async () => 'granted',
@@ -102,10 +108,16 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   abandonSandboxTurn: async () => true,
 }));
 mock.module('../../projects/session-open', () => ({
+  // Spread the real module: a hand-listed stub deletes every other export —
+  // the lifecycle graph imports `openSession` from it.
+  ...realSessionOpen,
   resumeStoppedSandboxByExternalId: async () => true,
   stoppedSandboxWakePending: async () => false,
 }));
 mock.module('../backend', () => ({
+  // Spread the real module: a hand-listed stub deletes every other export —
+  // the projects graph imports `resolveServiceKey`/`invalidateSandbox` from it.
+  ...realSandboxProxyBackend,
   loadSandbox: async () => ({ ...ACTIVE_RECORD, agentName: sessionAgentName }),
   routeSandboxIngress: () => ({ effectivePort: 8000 }),
   resolveSandboxIngress: async () => ({ url: 'http://sandbox.local', headers: {} }),
