@@ -19,6 +19,10 @@ function part(tool: string, input: Record<string, unknown> = {}, output?: string
 }
 
 describe('familyForTool', () => {
+  it('narrates the platform memory tool as memory', () => {
+    expect(familyForTool('kortix_memory')).toBe('memory');
+  });
+
   it('maps the explore family', () => {
     for (const t of ['read', 'glob', 'grep', 'list']) {
       expect(familyForTool(t)).toBe('explore');

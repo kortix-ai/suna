@@ -38,11 +38,11 @@ describe('the Kortix defaults', () => {
     });
   }
 
-  test('My Kortix runs on the platform default\'s base and adds no workstation', () => {
+  test('My Kortix runs on the platform default\'s base with the same workstation', () => {
     const meta = buildMyKortixSandboxDockerfile(ARTIFACTS);
     expect(PLATFORM_DEFAULT_USER_DOCKERFILE).toContain(`FROM ${SANDBOX_BASE_IMAGE}\n`);
     expect(meta).toContain(`FROM ${SANDBOX_BASE_IMAGE}\n`);
-    expect(meta).not.toContain(kortixWorkstationTooling({}));
+    expect(meta).toContain(kortixWorkstationTooling({}));
   });
 
   test('a project agent\'s image is the defaults with the workstation between setup and tail', () => {

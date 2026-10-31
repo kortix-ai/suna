@@ -88,7 +88,7 @@ test('a meta image reports the size it was built with, so metering bills that si
   platinumProvider.listSnapshots = async () => [];
 
   const result = await ensureMyKortixSandboxImage({ source: 'session-start', provider: 'platinum' }, NO_FALLBACK);
-  expect(builtSpec).toEqual({ cpu: 1, memoryGb: 2, diskGb: 8 });
+  expect(builtSpec).toEqual({ cpu: 2, memoryGb: 4, diskGb: 20 });
   expect(result.spec).toEqual(builtSpec as typeof result.spec);
 });
 
