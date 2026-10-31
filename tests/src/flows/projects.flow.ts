@@ -2,6 +2,7 @@
  * Projects — authenticated CRUD + access. Maps to spec §13 (PROJ-1..8).
  */
 import { ProjectSchema } from "@kortix/api-contract";
+import { isMyKortixAgentName } from "../../../packages/shared/src/my-kortix-agent";
 import { Client } from "../core/client";
 import { flow } from "../core/flow";
 import { waitFor } from "../core/poll";
@@ -416,8 +417,8 @@ flow(
         const config =
           r.json<{ config: { agent_discovery: string; agents?: Array<{ name: string; enabled?: boolean; path: string }> } }>().config;
         if (config.agent_discovery !== "declarative") throw new Error(`agent_discovery ${config.agent_discovery}`);
-        // The built-in My Kortix (`meta`) is listed too; the check is about the declared ones.
-        const agents = (config.agents ?? []).filter((a) => a.name !== "meta");
+        // My Kortix is listed too; the check is about the declared agents.
+        const agents = (config.agents ?? []).filter((a) => !isMyKortixAgentName(a.name));
         if (agents.length !== 2) throw new Error(`expected 2 registered agents, got ${JSON.stringify(agents.map((a) => a.name))}`);
         const byName = new Map(agents.map((a) => [a.name, a]));
         const builder = byName.get("builder");
