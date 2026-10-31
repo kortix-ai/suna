@@ -86,6 +86,11 @@ function refused(action: string, title: string, answer: Answer, context: Platfor
   return fail(TOOL, action, title, { kind: 'failed', message }, context)
 }
 
+/** A page name from free text: lower case, words joined by single dashes, at most NAME_MAX characters. */
+function slugOf(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, NAME_MAX).replace(/-+$/g, '')
+}
+
 function badName(name: string): string | null {
   if (!name) return 'Pass `name`: a short slug such as `likes-short-replies`.'
   if (name.length > NAME_MAX || !NAME_RE.test(name)) return '`name` is a short lower-case slug: letters, digits and single dashes (`likes-short-replies`), never a path.'
@@ -117,18 +122,21 @@ async function view(name: string, context: PlatformToolContext) {
 
 async function save(name: string, args: Record<string, any>, context: PlatformToolContext) {
   const text = (key: string) => (typeof args[key] === 'string' ? args[key].trim() : '')
-  const type = text('type')
+  // A missing type is `user`; a wrong one is refused.
+  const type = text('type') || 'user'
   if (!(TYPES as readonly string[]).includes(type)) {
     return fail(TOOL, 'save', 'What kind of memory is it?', { kind: 'invalid', message: `Pass \`type\`: one of ${TYPES.join(', ')}.` }, context)
   }
-  if (!text('body')) return fail(TOOL, 'save', 'What should I remember?', { kind: 'invalid', message: 'Pass `body`: the fact itself.' }, context)
+  // The fact itself; a save with only a description or a title keeps that as the fact.
+  const body = text('body') || text('description') || text('title')
+  if (!body) return fail(TOOL, 'save', 'What should I remember?', { kind: 'invalid', message: 'Pass `body`: the fact itself.' }, context)
   // No description: the title, else the body's first line, stands in, so a save never fails on it.
-  const description = (text('description') || text('title') || text('body').split('\n').find((line) => line.trim()) || '').replace(/\s+/g, ' ').trim().slice(0, 200)
+  const description = (text('description') || text('title') || body.split('\n').find((line) => line.trim()) || '').replace(/\s+/g, ' ').trim().slice(0, 200)
   const answer = await call(context, 'PUT', `/pages/${name}`, {
     ...(text('title') ? { title: text('title') } : {}),
     description,
     type,
-    body: text('body'),
+    body,
   })
   if (answer.status !== 200 && answer.status !== 201) return refused('save', 'Could not remember that', answer, context)
   const page = answer.body.page as Entry & { body: string }
@@ -165,7 +173,7 @@ export default {
     properties: {
       action: { type: 'string', enum: [...ACTIONS], description: 'What to do.' },
       name: { type: 'string', description: 'For view, save and delete: the page slug, e.g. `likes-short-replies` (lower case, digits and dashes).' },
-      type: { type: 'string', enum: [...TYPES], description: 'For save: user, feedback, project or reference.' },
+      type: { type: 'string', enum: [...TYPES], description: 'For save: user, feedback, project or reference. Default: user.' },
       description: { type: 'string', description: 'For save: one line that says what the page is about. You read it later to decide whether the page matters. Default: the title.' },
       body: { type: 'string', description: 'For save: the fact itself, in Markdown. For feedback and project, end with **Why:** and **How to apply:** lines.' },
       title: { type: 'string', description: 'For save: a short title the person reads on the Memory screen. Default: the name.' },
@@ -179,7 +187,9 @@ export default {
       return fail(TOOL, action, 'Unknown action', { kind: 'invalid', message: `Use one of: ${ACTIONS.join(', ')}.` }, context)
     }
     // The index links pages as `<name>.md`: a name copied from it keeps working.
-    const name = typeof args.name === 'string' ? args.name.trim().replace(/\.md$/i, '') : ''
+    // A save with no name takes one from its title or description, so a model that drops it still saves.
+    const given = typeof args.name === 'string' ? args.name.trim().replace(/\.md$/i, '') : ''
+    const name = given || (action === 'save' ? slugOf(String(args.title ?? args.description ?? '')) : '')
     const problem = badName(name)
     if (problem) return fail(TOOL, action, 'Which memory?', { kind: 'invalid', message: problem }, context)
     if (action === 'view') return view(name, context)
