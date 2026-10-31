@@ -885,7 +885,7 @@ One table per domain. The route column shows the method and route template. `any
 | `session.drive_sync.move` | Moved a drive file from a session | `POST /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/move` |
 | `session.drive_sync.read` | Downloaded a drive file to a session | `GET /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/content` |
 | `session.drive_sync.stat` | Checked a drive file from a session | `GET /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/stat` |
-| `session.drive_sync.upload_block` | Uploaded a drive file block | `PUT /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload/:uploadId/blocks/:sha` |
+| `session.drive_sync.upload_block` | Uploaded a session drive-sync file block | `PUT /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload/:uploadId/blocks/:sha` |
 | `session.drive_sync.upload_commit` | Committed a drive upload from a session | `POST /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload/:uploadId/commit` |
 | `session.drive_sync.upload_plan` | Planned a drive upload from a session | `POST /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload` |
 | `session.drive_sync.write` | Uploaded a drive file from a session | `PUT /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/content` |
