@@ -3119,6 +3119,10 @@
         "changeRequests": {
           "read": "Controllo delle richieste di modifica…",
           "change": "Aggiornamento di una richiesta di modifica…"
+        },
+        "memory": {
+          "read": "Controllo della memoria…",
+          "change": "Aggiornamento della memoria…"
         }
       },
       "status": {

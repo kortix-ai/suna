@@ -92,8 +92,8 @@ const DENIED = {
 };
 
 describe('KortixActionTool registration', () => {
-  test('one renderer draws all eight platform tools', () => {
-    expect(KORTIX_PLATFORM_TOOLS).toHaveLength(8);
+  test('one renderer draws all nine platform tools', () => {
+    expect(KORTIX_PLATFORM_TOOLS).toHaveLength(9);
     expect(KORTIX_PLATFORM_TOOLS).toContain('kortix_change_requests');
     for (const name of KORTIX_PLATFORM_TOOLS) expect(ToolRegistry.get(name)).toBe(KortixActionTool);
   });

@@ -1912,6 +1912,10 @@ const catalog = {
         "changeRequests": {
           "read": "Checking change requests…",
           "change": "Updating a change request…"
+        },
+        "memory": {
+          "read": "Checking memory…",
+          "change": "Updating memory…"
         }
       },
       "status": {

@@ -3119,6 +3119,10 @@
         "changeRequests": {
           "read": "Änderungsanfragen werden geprüft…",
           "change": "Änderungsanfrage wird aktualisiert…"
+        },
+        "memory": {
+          "read": "Erinnerungen werden geprüft…",
+          "change": "Erinnerungen werden aktualisiert…"
         }
       },
       "status": {
