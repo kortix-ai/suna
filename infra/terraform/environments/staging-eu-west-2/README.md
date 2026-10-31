@@ -22,7 +22,34 @@ definitions with `infra/scripts/ecs-deploy.sh staging-euw2`. The env blob is
 `kortix-staging-env` in eu-west-2.
 
 **The staging database allows 120 connections.** One API task holds up to 9.
-Keep `api_task_count` × 9 plus a rolling deploy's extra tasks under that limit.
+Keep `api_task_count` × 9 plus a rolling deploy's extra tasks, plus the worker
+(1 task, 2 during its own roll), under that limit.
+
+## Scheduled-job worker
+
+Every scheduled job runs on `kortix-staging-euw2-worker`, an ECS service in the
+`kortix-staging-euw2` cluster (`worker` on `module.api`, `modules/ecs-api`). The API
+tasks serve traffic only.
+
+| Item | Value |
+|---|---|
+| Service / task family / container | `kortix-staging-euw2-worker` / `kortix-staging-euw2-worker` / `worker` |
+| Size | 1 vCPU / 4 GiB, on-demand Fargate, 1 task, no load balancer |
+| Image and command | the API image, `bun run src/worker.ts` |
+| Environment | copied from the running API task definition by `ecs-deploy.sh --service worker`, without `KORTIX_PROCESS_ROLE` |
+| Logs | `/ecs/kortix-staging-euw2`, streams `worker/worker/<task-id>` |
+| Alarms | `kortix-staging-euw2-worker-not-running`, `kortix-staging-euw2-worker-stale-jobs` → SNS `kortix-compliance-alerts` (eu-west-2, read by `compliance-monitoring/monitoring.tf`; the topic itself is not in Terraform) |
+| Metric | `Kortix/Worker` `StaleJobs`, dimension `Environment = staging` |
+
+Deploy Staging's `deploy-ecs` job rolls the worker first, then the
+API. The API gets `KORTIX_PROCESS_ROLE=web` only when the worker runs the same image and has a
+HEALTHY task; otherwise `all` (the API runs the jobs), and `ecs-deploy.sh`
+scales the worker to 0 after the API rollout. A failed worker roll never blocks
+the API: the run shows a `Worker deploy` error annotation.
+
+Kill switch: `bash infra/scripts/ecs-deploy.sh staging-euw2 <api-image> --process-role all`
+redeploys the API with `all` and scales the worker to 0. The next worker roll
+starts it again.
 
 ## Why this exists
 

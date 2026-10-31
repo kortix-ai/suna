@@ -800,3 +800,226 @@ resource "aws_appautoscaling_policy" "requests" {
     scale_out_cooldown = 30
   }
 }
+
+# ── Scheduled-job worker (optional, var.worker) ──────────────────────────────
+# Problem: one API task per environment won the Postgres leader lease and ran
+# every scheduled job (~35) while it also served traffic. On prod that is
+# ~0.73 of the task's 1 vCPU, which held the fleet's average CPU near the 55 %
+# scale-out target, and every scale-in that picked that task killed the leader.
+#
+# The worker runs the same image with its own entrypoint (var.worker.command)
+# in this cluster. It takes no traffic. ecs-deploy.sh deploys the API with
+# KORTIX_PROCESS_ROLE=web only while this service runs the API's exact image
+# and has a HEALTHY task; otherwise the API runs with `all` (jobs included) and
+# the script scales this service to 0 after the API roll.
+locals {
+  worker_name = "${local.name}-worker"
+  # KORTIX_PROCESS_ROLE is an API-only switch: the worker ignores it, and a
+  # value copied here would only mislead a reader of the task definition.
+  worker_environment = { for k, v in local.environment : k => v if k != "KORTIX_PROCESS_ROLE" }
+  worker_alarms      = try(var.worker.alarm_topic_arn, null) != null
+}
+
+resource "aws_ecs_task_definition" "worker" {
+  count                    = var.worker == null ? 0 : 1
+  family                   = local.worker_name
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = var.worker.task_cpu
+  memory                   = var.worker.task_memory
+  # The API's roles: the worker runs the API's jobs, so it needs exactly the
+  # API's grants (secrets blob, snapshots, audit archive, capture, SES).
+  execution_role_arn = aws_iam_role.execution.arn
+  task_role_arn      = aws_iam_role.task.arn
+
+  container_definitions = jsonencode([{
+    name      = "worker"
+    image     = var.image
+    essential = true
+    command   = var.worker.command
+    # The worker hands back the leader lease and its job claims on SIGTERM
+    # before it exits; the same budget as the API.
+    stopTimeout = var.stop_timeout
+    # No load balancer reads this port. The worker serves /health/ready and
+    # /health/live on PORT for the container health check below.
+    portMappings = [{
+      containerPort = var.container_port
+      protocol      = "tcp"
+    }]
+    environment = [for k, v in local.worker_environment : { name = k, value = v }]
+    secrets = var.secrets_blob_arn != "" ? [
+      { name = "KORTIX_ENV_JSON", valueFrom = var.secrets_blob_arn }
+    ] : [for k, v in var.secrets : { name = k, valueFrom = v }]
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = aws_cloudwatch_log_group.this.name
+        "awslogs-region"        = var.aws_region
+        "awslogs-stream-prefix" = "worker"
+      }
+    }
+    # No target group checks this task, so the container health check is the
+    # deployment gate: ECS replaces the old worker only after the new one is
+    # HEALTHY. The image has no curl/wget; bun is the HTTP client.
+    # /health/ready answers 503 until boot finishes and while draining.
+    healthCheck = {
+      command     = ["CMD", "bun", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||8008)+'/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval    = 30
+      timeout     = 5
+      retries     = 3
+      startPeriod = 120
+    }
+  }])
+
+  # Same ownership as aws_ecs_task_definition.this: this resource registers the
+  # first revision only. ecs-deploy.sh --service worker registers every later
+  # one, with the API service's live environment.
+  lifecycle {
+    ignore_changes = [container_definitions]
+  }
+
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = local.worker_name
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
+}
+
+resource "aws_ecs_service" "worker" {
+  count           = var.worker == null ? 0 : 1
+  name            = local.worker_name
+  cluster         = aws_ecs_cluster.this.id
+  task_definition = aws_ecs_task_definition.worker[0].arn
+  # 0 at create, on purpose. Terraform applies BEFORE the database migrations
+  # in every deploy workflow, and this first revision carries only Terraform's
+  # environment. A task started here would run new job code on the old schema
+  # without the deploy overrides. ecs-deploy.sh --service worker sets 1.
+  desired_count = 0
+  launch_type   = null
+
+  # On-demand always, whatever use_fargate_spot says: a Spot reclaim stops the
+  # only task that runs scheduled jobs.
+  capacity_provider_strategy {
+    capacity_provider = "FARGATE"
+    weight            = 1
+    base              = 1
+  }
+
+  # Egress only (the service security group admits nothing but the ALB). The
+  # extra security groups carry VPC-internal ingress rules for API traffic,
+  # which the worker does not take.
+  network_configuration {
+    subnets          = var.private_subnet_ids
+    security_groups  = [aws_security_group.service.id]
+    assign_public_ip = var.assign_public_ip
+  }
+
+  # Start the new worker, wait until it is HEALTHY, then stop the old one. The
+  # old worker hands the lease over on SIGTERM, so the overlap never runs a job
+  # twice.
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  # ecs-deploy.sh owns the revision and the count (1 after a worker roll, 0
+  # after an API roll that fell back to KORTIX_PROCESS_ROLE=all).
+  lifecycle {
+    ignore_changes = [task_definition, desired_count]
+  }
+
+  depends_on = [aws_ecs_cluster_capacity_providers.this]
+
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = local.worker_name
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
+}
+
+# Kortix/Worker StaleJobs. The lease holder writes one JSON line to stdout
+# every 60 s:
+#   {"kortix_metric":"worker_jobs","environment":"prod","stale_jobs":0,"jobs_seen":35,"stale":[]}
+# A filter on the whole log group, not on the worker streams only: while an API
+# task holds the lease (KORTIX_PROCESS_ROLE=all), it writes the same line. The
+# filter exists without alarm_topic_arn so the metric is there for dashboards.
+resource "aws_cloudwatch_log_metric_filter" "worker_stale_jobs" {
+  count          = var.worker == null ? 0 : 1
+  name           = "${local.worker_name}-stale-jobs"
+  log_group_name = aws_cloudwatch_log_group.this.name
+  pattern        = "{ $.kortix_metric = \"worker_jobs\" }"
+
+  metric_transformation {
+    namespace  = "Kortix/Worker"
+    name       = "StaleJobs"
+    value      = "$.stale_jobs"
+    unit       = "Count"
+    dimensions = { Environment = "$.environment" }
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "worker_not_running" {
+  count             = local.worker_alarms && var.worker != null ? 1 : 0
+  alarm_name        = "${local.worker_name}-not-running"
+  alarm_description = "No ${local.worker_name} task has run for 5 minutes, so no process runs scheduled jobs unless the API runs with KORTIX_PROCESS_ROLE=all. Expected after a deploy that printed 'Worker scaled to 0' (the API fell back to all); the next successful worker roll clears it. Otherwise read the service events and the log streams worker/worker/<task-id> in /ecs/${local.name}. Kill switch: redeploy the API with infra/scripts/ecs-deploy.sh <env> <image> --process-role all."
+  namespace         = "ECS/ContainerInsights"
+  metric_name       = "RunningTaskCount"
+  dimensions = {
+    ClusterName = aws_ecs_cluster.this.name
+    ServiceName = aws_ecs_service.worker[0].name
+  }
+  statistic           = "Maximum"
+  period              = 60
+  evaluation_periods  = 5
+  datapoints_to_alarm = 5
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [var.worker.alarm_topic_arn]
+  ok_actions          = [var.worker.alarm_topic_arn]
+
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.worker_name}-not-running"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "worker_stale_jobs" {
+  count             = local.worker_alarms && var.worker != null ? 1 : 0
+  alarm_name        = "${local.worker_name}-stale-jobs"
+  alarm_description = "At least one scheduled job on ${coalesce(try(var.worker.metric_environment, null), "unset")} has been overdue for 5 minutes in a row (Kortix/Worker StaleJobs, Maximum per minute, written by the lease holder every 60 s). The job names are in the `stale` field of the latest {\"kortix_metric\":\"worker_jobs\"} line: log streams worker/worker/<task-id> in /ecs/${local.name}, or api/api/<task-id> while the API runs the jobs. Kill switch: redeploy the API with infra/scripts/ecs-deploy.sh <env> <image> --process-role all, which runs the jobs on the API tasks and scales the worker to 0."
+  namespace         = "Kortix/Worker"
+  metric_name       = "StaleJobs"
+  dimensions = {
+    Environment = try(var.worker.metric_environment, null)
+  }
+  # Only the lease holder writes the line. Maximum keeps one stale report from
+  # being averaged away by a period with several datapoints.
+  statistic           = "Maximum"
+  period              = 60
+  evaluation_periods  = 5
+  datapoints_to_alarm = 5
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [var.worker.alarm_topic_arn]
+  ok_actions          = [var.worker.alarm_topic_arn]
+
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${local.worker_name}-stale-jobs"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", local.name)
+  }
+}
