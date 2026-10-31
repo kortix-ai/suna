@@ -397,7 +397,7 @@ describe('kortix apps — capabilities and links', () => {
     writeFileSync(join(tmp, 'db', 'index.html'), '<h1>db</h1>\n');
     writeFileSync(
       join(tmp, 'kortix.yaml'),
-      ['kortix_version: 2', 'apps:', '  site:', '    path: site', '    type: static', '    uses: [db]', '  db:', '    path: db', '    type: static', '    resources:', '      cpu: 2', ''].join('\n'),
+      ['apps:', '  site:', '    path: site', '    type: static', '    uses: [db]', '  db:', '    path: db', '    type: static', '    resources:', '      cpu: 2', ''].join('\n'),
     );
     const r = await runCli(['apps', 'deploy', ...P], config);
     if (r.code !== 0) console.error(r.stdout, r.stderr);

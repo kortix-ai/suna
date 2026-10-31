@@ -129,6 +129,20 @@ describe('per-resource scoping (iam_resource_grants)', () => {
     expect(acting).toEqual([SCOPED_AGENT, OPEN_AGENT]);
   });
 
+  test('a plain project member with no agent grant may run My Kortix, and only My Kortix', async () => {
+    const erin = await seedMember('member');
+    await insertIntoView(db, projectMembers, { accountId: ACCOUNT, projectId: PROJECT, userId: erin, projectRole: 'member' });
+    // Agents are closed to a member by default; My Kortix (and its slug before the rename) is the one open agent.
+    expect(await canUse(erin, 'mykortix')).toBe(true);
+    expect(await canUse(erin, 'meta')).toBe(true);
+    expect(await canUse(erin, OPEN_AGENT)).toBe(false);
+    expect(await filterAccessibleObjects(actorForUser(erin, ACCOUNT), PROJECT, 'agent', ['mykortix', OPEN_AGENT])).toEqual(['mykortix']);
+    expect((await authorize(actorForUser(erin, ACCOUNT), PROJECT_ACTIONS.PROJECT_AGENT_READ, onAgent('mykortix'))).allowed).toBe(true);
+    // An account member outside the project gets nothing, My Kortix included.
+    const outsider = await seedMember('member');
+    expect(await canUse(outsider, 'mykortix')).toBe(false);
+  });
+
   test('account owner bypasses per-resource scoping (implicit Manager)', async () => {
     const owner = await seedMember('owner');
     // No project grant, no resource grant — still allowed on the scoped agent.

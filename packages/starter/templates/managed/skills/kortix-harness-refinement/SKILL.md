@@ -1,6 +1,6 @@
 ---
 name: kortix-harness-refinement
-description: The continual-harness refinement protocol — how an agent inspects its recent trajectory for failure signatures and improves its own harness (agent prompts, sub-agents, skills, memory) in place, mid-session, landing changes on the session branch immediately and promoting them to `main` only through a change request. Load this skill when a refinement prompt arrives mid-session, when the `harness-reflector` agent runs, or whenever you decide your own scaffolding needs repair. The sub-agent fan-out in this skill is for the top-level `harness-reflector` run only; if you loaded this as a subagent, do the four passes yourself and skip the fan-out.
+description: The continual-harness refinement protocol — how an agent inspects its recent trajectory for failure signatures and improves its own harness (agent prompts, sub-agents, skills, memory) in place, mid-session, landing changes on the session branch immediately and promoting them to `main` only through a change request. Load this skill when a refinement prompt arrives mid-session, when a project's scheduled reflection agent runs, or whenever you decide your own scaffolding needs repair. The sub-agent fan-out in this skill is for a top-level reflection run only; if you loaded this as a subagent, do the four passes yourself and skip the fan-out.
 ---
 
 <skill name="kortix-harness-refinement">
@@ -18,9 +18,7 @@ here. It has five components, all in git:
 | **Memory** | `memory/` | Persistent facts, strategies, observations |
 
 An agent's model, permission and grants live in its `agents.<name>` block
-in `kortix.yaml`. This skill describes a `kortix_version: 3` project. With
-an older `kortix_version`, edit files where they already are;
-`kortix migrate` previews the v3 layout and changes nothing.
+in `kortix.yaml`.
 
 **Refinement** means: read your recent trajectory, find where the harness
 failed you, and fix the harness — not just the immediate task. A memory
@@ -36,14 +34,14 @@ This protocol has two operating modes:
    run a checkpoint on long sessions: after every ~25 turns of work, pause
    and scan your recent turns before continuing. You refine based on YOUR
    OWN trajectory, then resume the task.
-2. **Project-level reflection** — the `harness-reflector` agent runs from
-   the `harness-reflector` cron trigger, fans out `session-reviewer`
-   sub-agents to work through every recent session's full history,
-   aggregates their findings, and refines the shared harness on `main` via
-   a change request. The starter ships that trigger with `enabled: false`,
-   because every run creates a sandbox. `kortix triggers enable
-   harness-reflector` turns it on in `kortix.yaml`; land that through a
-   change request.
+2. **Project-level reflection (optional)** — a new project has no
+   reflection agent and no reflection trigger. A project may add one: an
+   agent (for example `agents/harness-reflector.md`) that a cron trigger in
+   `kortix.yaml` runs. It fans out read-only reviewer subagents to work
+   through every recent session's full history, aggregates their findings,
+   and refines the shared harness on `main` via a change request. Every
+   run creates a sandbox. This skill is its protocol: the agent's prompt
+   only needs to load it.
 </overview>
 
 <failure-signatures>
@@ -92,10 +90,11 @@ tool the trajectory shows raising exceptions. Prefer editing an existing
 skill over creating a near-duplicate. A new skill is a folder named after
 it (`skills/<name>/SKILL.md`), registered under `skills:` and added to the
 `skills` grant of each agent that needs it. A new tool is registered under
-`tools:`. An unregistered file reaches no agent.
+`tools:` and reaches each agent whose `tools` grant includes it. An
+unregistered file reaches no agent.
 
 **Pass 4 — Memory (ΔM).** Follow the `kortix-memory` skill's rubric with
-the `memory` tool: fill gaps the trajectory exposed, update stale
+the file tools on `memory/`: fill gaps the trajectory exposed, update stale
 entries, demote or delete entries about areas the project has moved past.
 Keep `MEMORY.md` in sync.
 
@@ -105,23 +104,23 @@ touch one or two components, not all five.
 </four-passes>
 
 <project-review-fanout>
-This section applies only to the top-level `harness-reflector` run. If you
+This section applies only to a top-level reflection run. If you
 loaded this skill as a subagent, skip the fan-out and review the sessions
-yourself — a subagent has no `task` tool, so it cannot start a subagent.
+yourself.
 
-For project-level reflection (the `harness-reflector` run), do not skim a
+For project-level reflection, do not skim a
 digest and call it a review. Work through every session:
 
 1. **Enumerate** every session in the window:
    `kortix sessions digest --since 24h --json` (add `--all` for a first
    ever run). Note per session: id, agent, status, title, whether a live
    transcript is available.
-2. **Fan out one `session-reviewer` sub-agent per session** (batch a few
-   at a time in parallel; review every session, skip none silently). Each
+2. **Fan out one read-only reviewer subagent per session** with the `agent`
+   tool (at most 4 at a time; review every session, skip none silently). Each
    reviewer gets the session id and returns a structured findings report.
    Reviewers gather the FULL picture for their session:
-   - the transcript (available live for running sessions; for stopped
-     sessions reconstruct from what persists — see next line),
+   - the transcript: `kortix sessions log <id> --json` (a stopped session
+     reads its saved transcript),
    - the session's git branch: its commits, diffs, and files touched,
    - change requests the session opened and their review outcomes.
 3. **Aggregate** all reviewer reports. Deduplicate findings that recur
@@ -131,7 +130,7 @@ digest and call it a review. Work through every session:
    rules below.
 
 Sub-agent review is read-only: reviewers never edit the harness or open
-CRs. Only the orchestrating reflector writes.
+CRs. Only the orchestrating reflection agent writes.
 </project-review-fanout>
 
 <landing-rules>
@@ -164,7 +163,7 @@ CRs. Only the orchestrating reflector writes.
 4. Return to the task. A refinement interruption ends with you resuming
    what you were doing, with the improved harness in effect.
 
-**Project-level reflection (`harness-reflector`):** all edits land only
+**Project-level reflection:** all edits land only
 via a CR against `main`. Nothing applies immediately; the merged CR is
 what future sessions inherit.
 </landing-rules>
@@ -196,9 +195,9 @@ what future sessions inherit.
 <self-invocation>
 Nobody schedules in-session refinement for you — it is your discipline.
 Invoke this protocol the moment a failure signature costs you twice, and
-as a checkpoint on long sessions (roughly every 25 turns of work). The
-scheduled `harness-reflector` run, when its trigger is on, is the
-backstop, not the mechanism: it
+as a checkpoint on long sessions (roughly every 25 turns of work). A
+project's scheduled reflection run, when it has one, is the backstop,
+not the mechanism: it
 only sees what sessions left behind, while you can record the fix while the
 evidence is fresh: memory helps on your next turn, and prompt, skill, and
 tool fixes help every session once the change request merges.

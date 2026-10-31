@@ -99,6 +99,8 @@ export const LIST_OMITTED_SESSION_METADATA_KEYS = [
   // A channel thread's top message: the list already serves it as the
   // top-level `first_prompt` field, so the metadata copy is a duplicate.
   'first_prompt',
+  // Served as the top-level `result_excerpt` (lib/session-board.ts).
+  'result_excerpt',
 ] as const;
 
 function trimSessionMetadataForList(
@@ -342,15 +344,17 @@ export function serializeProject(
     // and SDKs from before then read false as the removed native model mode.
     // `session_log` graduated on 2026-10-22 and stays `true` too: older SDKs, CLIs
     // and mobile builds read false as "serve the v1 transcript". `pi_harness`
-    // graduated on 2026-10-23: every new session runs pi. `connectors_v2` and
-    // `connectors_api_discover` graduated on 2026-10-24: older SDKs and hosts
-    // read false as "show the legacy catalog".
+    // graduated on 2026-10-23: every new session runs pi. `genui` graduated on
+    // 2026-10-24: older web, SDK and mobile clients render blocks only while it is true.
+    // `connectors_v2` and `connectors_api_discover` graduated on 2026-10-24: older SDKs and
+    // hosts read false as "show the legacy catalog".
     experimental: {
       ...resolveFeatureFlags(row.metadata),
       apps: true,
       llm_gateway: true,
       session_log: true,
       pi_harness: true,
+      genui: true,
       connectors_v2: true,
       connectors_api_discover: true,
     },

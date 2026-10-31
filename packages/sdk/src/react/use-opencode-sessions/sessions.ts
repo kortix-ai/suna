@@ -1,6 +1,7 @@
 'use client';
 
 import { qk } from '../query-keys';
+import { activeRuntimeAction, runtimeActionError, runtimeActionPaths } from '../../core/session/runtime-actions';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
 import { isRuntimeConfigInvalidError } from '../../core/http/runtime-errors';
@@ -284,28 +285,18 @@ export function useSummarizeRuntimeSession() {
       providerID?: string;
       modelID?: string;
     }) => {
+      // A box with the session-log actions compacts with the model it runs.
+      const compacted = await activeRuntimeAction('POST', runtimeActionPaths.compact(params.sessionId));
+      if (compacted) {
+        if (!compacted.ok) throw await runtimeActionError(compacted, 'Compacting the session failed');
+        return params.sessionId;
+      }
       const client = getClient();
 
       let { providerID, modelID } = params;
 
-      // 1. Try config default model
-      if (!providerID || !modelID) {
-        try {
-          const configResult = await client.global.config.get();
-          const config = configResult.data;
-          if (config?.model) {
-            const parts = config.model.split('/');
-            if (parts.length >= 2) {
-              providerID = providerID || parts[0];
-              modelID = modelID || parts.slice(1).join('/');
-            }
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      // 2. Try to get model from the session's latest assistant message
+      // The model of the session's last assistant message. pi summarizes with
+      // the model it runs; the request still names one for the wire.
       if (!providerID || !modelID) {
         try {
           const msgs = await client.session.messages({
@@ -321,39 +312,6 @@ export function useSummarizeRuntimeSession() {
               providerID = providerID || m.providerID;
               modelID = modelID || m.modelID;
               break;
-            }
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      // 3. Try first available provider/model from provider list
-      if (!providerID || !modelID) {
-        try {
-          // The provider list's typed shape is `{ all, default, connected }`,
-          // but this fallback has historically walked it as a plain
-          // `{ [providerID]: { models } }` map — keep that exact (best-effort,
-          // try/catch-guarded) duck-typed read via `unknown` rather than
-          // assert a shape that may not match what's actually on the wire.
-          const providerResult = await client.provider.list();
-          const providers: unknown = providerResult.data;
-          if (providers && typeof providers === 'object') {
-            for (const [pid, providerInfo] of Object.entries(
-              providers as Record<string, unknown>,
-            )) {
-              const models =
-                providerInfo && typeof providerInfo === 'object'
-                  ? (providerInfo as Record<string, unknown>).models
-                  : undefined;
-              if (models && typeof models === 'object') {
-                const firstModelId = Object.keys(models)[0];
-                if (firstModelId) {
-                  providerID = pid;
-                  modelID = firstModelId;
-                  break;
-                }
-              }
             }
           }
         } catch {

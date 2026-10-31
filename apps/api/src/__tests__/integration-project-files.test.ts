@@ -127,14 +127,14 @@ describe('folding the earlier drives into the project’s Files', () => {
     const vol = (name: string) => files.get(name) ?? files.set(name, new Map()).get(name)!;
     const bytes = (s: string) => new TextEncoder().encode(s) as Uint8Array<ArrayBuffer>;
     const storage: FoldStorage = {
-      listFiles: async (v) => [...vol(v).entries()].map(([path, b]) => ({ path, size: b.byteLength })),
-      exists: async (v, p) => vol(v).has(p),
-      read: async (v, p) => vol(v).get(p)!,
-      write: async (v, p, b) => void vol(v).set(p, b),
+      listFiles: async (v) => [...vol(v.name).entries()].map(([path, b]) => ({ path, size: b.byteLength })),
+      exists: async (v, p) => vol(v.name).has(p),
+      read: async (v, p) => vol(v.name).get(p)!,
+      write: async (v, p, b) => void vol(v.name).set(p, b),
       writeLarge: async () => {
         throw new Error('no large files here');
       },
-      open: async (d) => d.platinumVolumeName,
+      open: async (d) => ({ name: d.platinumVolumeName, region: null }),
     };
     const legacy = async (values: Partial<typeof drives.$inferInsert> & { kind: string; name: string }) => {
       const driveId = crypto.randomUUID();

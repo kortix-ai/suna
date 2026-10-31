@@ -448,7 +448,7 @@
   },
   "src/channels/model-access.ts": {
     "kortix-api/projects-surface": {
-      "count": 2
+      "count": 1
     },
     "no-console": {
       "count": 1
@@ -789,7 +789,7 @@
   },
   "src/config-releases/release-tree.ts": {
     "kortix-api/projects-surface": {
-      "count": 3
+      "count": 2
     },
     "no-restricted-properties": {
       "count": 1
@@ -1625,11 +1625,6 @@
       "count": 1
     }
   },
-  "src/projects/lib/compile-agent-config.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/projects/lib/connector-approval-decision.ts": {
     "no-console": {
       "count": 2
@@ -1704,7 +1699,7 @@
   },
   "src/projects/lib/session-create.ts": {
     "no-console": {
-      "count": 6
+      "count": 5
     }
   },
   "src/projects/lib/session-reload.ts": {
@@ -1750,14 +1745,6 @@
   "src/projects/lib/session-token-grant.ts": {
     "no-console": {
       "count": 6
-    }
-  },
-  "src/projects/lib/session-transcript-capture.ts": {
-    "kortix-api/replica-local": {
-      "count": 2
-    },
-    "no-console": {
-      "count": 4
     }
   },
   "src/projects/lib/session-transcript.ts": {
@@ -2477,12 +2464,12 @@
   },
   "src/projects/session-lifecycle/queued-continue.ts": {
     "no-console": {
-      "count": 4
+      "count": 3
     }
   },
   "src/projects/session-lifecycle/runtime-client.ts": {
     "no-console": {
-      "count": 6
+      "count": 5
     }
   },
   "src/projects/session-lifecycle/runtime-fetch.ts": {

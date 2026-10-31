@@ -112,6 +112,9 @@ const RULES: readonly Rule[] = [
   // Runtime writes: abort, edit-and-rewind, permission and question replies.
   rule('POST', `${RT}/session/${SEG}/(?:abort|revert)`),
   rule('POST', `${RT}/(?:permission|question)/${SEG}/(?:reply|reject)`),
+  // The same reads and writes on a box with the session-log actions (runtime.actions.v1).
+  rule('GET', `${RT}/kortix/runtime/(?:pending|commands|workspace)`),
+  rule('POST', `${RT}/kortix/runtime/(?:permissions/${SEG}/reply|questions/${SEG}/(?:reply|reject)|sessions/${SEG}/abort)`),
 ];
 
 const RUNTIME_FILE = new RegExp(`^${RT}/(?:file|find)(?:/|$)`);
@@ -283,6 +286,8 @@ const TRANSCRIPT = new RegExp(`^(?:${S}/transcript|${RT}/session/${SEG}/message)
 // The runtime's slash-command list: the platform's own skills (kortix-cli,
 // kortix-apps, …) are not a customer's commands.
 const RUNTIME_COMMANDS = new RegExp(`^${RT}/command$`);
+/** The same list on a box with the session-log actions: `{ commands: [...] }`. */
+const RUNTIME_ACTION_COMMANDS = new RegExp(`^${RT}/kortix/runtime/commands$`);
 const PLATFORM_COMMAND = /kortix|opencode/i;
 
 // The project record and its detail: the feature catalog and the manifest
@@ -322,6 +327,7 @@ export function redactsIdentity(path: string): boolean {
     CHANGE_REQUESTS.test(path) ||
     SESSION_TURN.test(path) ||
     RUNTIME_COMMANDS.test(path) ||
+    RUNTIME_ACTION_COMMANDS.test(path) ||
     PROJECT_RECORD.test(path) ||
     RUNTIME_HEALTH.test(path) ||
     TRANSCRIPT.test(path)
@@ -407,8 +413,9 @@ const KORTIX_WORD = /\bKortix\b/g;
  */
 const OPERATOR_ID_KEYS = new Set(['account_id', 'created_by', 'owner_id', 'owner_user_id', 'user_id', 'updated_by', 'merged_by', 'closed_by', 'deleted_by', 'author_id']);
 // Platform plumbing on the project record: the managed repository and the manifest file.
-// The raw manifest and the feature catalog's descriptions name the platform's own env vars and daemon.
-const PLATFORM_KEYS = new Set(['repo_url', 'manifest_path', 'git_url', 'clone_url', 'git_origin_url', 'dashboard_url', 'manifest_raw']);
+// The raw manifest, its health report (file path, messages with platform docs links) and the
+// feature catalog's descriptions name the platform's own files, env vars and daemon.
+const PLATFORM_KEYS = new Set(['repo_url', 'manifest_path', 'git_url', 'clone_url', 'git_origin_url', 'dashboard_url', 'manifest_raw', 'manifest_health']);
 
 function dropOperatorIds(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(dropOperatorIds);
@@ -508,6 +515,9 @@ export function redactIdentity(path: string, body: unknown, firmAgent = ''): unk
   if (RUNTIME_HEALTH.test(path)) return scrubHealth(body);
   if (TRANSCRIPT.test(path)) return dropRuntimeAliases(scrubInbox(body));
   if (RUNTIME_COMMANDS.test(path) && Array.isArray(body)) return scrubCommands(body);
+  if (RUNTIME_ACTION_COMMANDS.test(path) && isObject(body) && Array.isArray(body.commands)) {
+    return { ...body, commands: scrubCommands(body.commands) };
+  }
   if (PROJECT_DETAIL.test(path)) return scrubPlatform(dropOperatorIds(scopeDetail(body, firmAgent)));
   if (PROJECT_RECORD.test(path) || CHANGE_REQUESTS.test(path)) return scrubPlatform(dropOperatorIds(body));
   if (SESSION_RECORD.test(path) && Array.isArray(body)) return dropOperatorIds(body.map(scrubSession));

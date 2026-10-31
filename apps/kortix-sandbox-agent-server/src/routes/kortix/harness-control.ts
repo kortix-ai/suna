@@ -7,14 +7,13 @@ import type { HarnessService } from '@/harness/harness'
 import { createHealthRouter } from './health'
 import { createRefreshRouter } from './refresh'
 import { createConfigRouter } from './config'
-import { createCatalogRouter } from './catalog'
 import { createAbortRouter } from './abort'
 import { createEnvRouter } from './env'
 import { createPartRouter } from './part'
 import { createLogsRouter } from './logs'
 import { createDiagRouter } from './diag'
 import { createRuntimeRouter } from './runtime'
-import { RUNTIME_RETRACT_CAPABILITY, RUNTIME_TURNS_CAPABILITY } from '@kortix/api-contract/runtime-relay'
+import { RUNTIME_ACTIONS_CAPABILITY, RUNTIME_LOG_CAPABILITY, RUNTIME_RETRACT_CAPABILITY, RUNTIME_TURNS_CAPABILITY } from '@kortix/api-contract/runtime-relay'
 
 export interface HarnessRouteContext {
   cfg: Config
@@ -39,15 +38,18 @@ export function createHarnessControlRouter(harness: HarnessService, context: Har
   // Advertised only by a control that implements it.
   // `runtime.turns.v1`: the Kortix turn verbs below. Both harnesses serve them.
   // `runtime.retract.v1`: the retract verb among them.
+  // `runtime.actions.v1`: the session-log actions and reads (answer, compact, command, grants, log, workspace).
+  // `runtime.log.v1`: the log reads answer whole pages, with queued prompts, and health names the root thread.
   const capabilities = [
     RUNTIME_TURNS_CAPABILITY,
     RUNTIME_RETRACT_CAPABILITY,
+    RUNTIME_ACTIONS_CAPABILITY,
+    RUNTIME_LOG_CAPABILITY,
     ...(control.convergeConfig ? ['config.release.v1'] : []),
   ]
   mount('/health', createHealthRouter(context, harness.diagnostics, capabilities))
   mount('/refresh', createRefreshRouter(context.cfg, control))
   mount('/config', createConfigRouter(context.cfg, control))
-  mount('/catalog', createCatalogRouter(context.cfg, control))
   mount('/abort', createAbortRouter(context.cfg, control))
   mount('/part', createPartRouter(context.cfg, queries.attachments))
   mount('/logs', createLogsRouter(context.cfg, harness.diagnostics))

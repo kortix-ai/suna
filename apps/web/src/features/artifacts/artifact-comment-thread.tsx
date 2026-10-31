@@ -1,6 +1,11 @@
 'use client';
 
-import type { ArtifactComment, ArtifactCommentContext, ArtifactCommentThread } from '@kortix/sdk';
+import {
+  parseArtifactCommentMarks,
+  type ArtifactComment,
+  type ArtifactCommentContext,
+  type ArtifactCommentThread,
+} from '@kortix/sdk';
 import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
 import { MentionChip } from '@kortix/ui/composer';
@@ -25,6 +30,7 @@ import type { ReactNode } from 'react';
 
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { ArtifactCommentComposer, type CommentMentionOption } from './artifact-comment-composer';
+import { SavedArtifactCommentImage } from './artifact-comment-image';
 import { threadDeleted } from './artifact-discussion-logic';
 import { relativeTime } from './artifact-meta';
 
@@ -308,6 +314,15 @@ export function ArtifactCommentThreadView({
                     {commentBody(comment, mentions, t('person'))}
                   </p>
                 )}
+                {!comment.deleted_at && comment.screenshot_key ? (
+                  <SavedArtifactCommentImage
+                    projectId={projectId}
+                    artifactId={thread.artifact_id}
+                    commentId={comment.comment_id}
+                  />
+                ) : !comment.deleted_at && parseArtifactCommentMarks(comment.marks)?.length ? (
+                  <p className="text-muted-foreground text-xs">{t('screenshotMissing')}</p>
+                ) : null}
               </div>
             </li>
           );

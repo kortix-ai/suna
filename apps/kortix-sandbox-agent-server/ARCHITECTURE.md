@@ -32,29 +32,29 @@ provider, so neither service imports the other.
 | --- | --- | --- |
 | `src/main.ts` | app | Entry point. Builds the config, the harness boot context and the HTTP `serve` function. |
 | `src/app/` | app | `server.ts` (Hono app, auth gate, route mounting), `shutdown.ts`, `cli.ts` (management CLI). |
-| `src/routes/kortix/` | app | `/kortix/*`: health, refresh, config, catalog, abort, env, part, logs, diag, the Runtime API (`/kortix/runtime/*`), pty, env-rpc, git. Each route checks its own credential. |
+| `src/routes/kortix/` | app | `/kortix/*`: health, refresh, config, abort, env, part, logs, diag, the Runtime API (`/kortix/runtime/*`), pty, env-rpc, git. Each route checks its own credential. |
 | `src/routes/workspace/` | app | `/file`, `/find`, `/presentation`: daemon-owned access to `/workspace`, behind the user-context gate. |
 | `src/routes/proxy/` | app | `/proxy/:port`, `/web-proxy`, and the catch-all to the harness, behind the user-context gate. |
 | `src/harness/` | harness | `harness.ts` (resolver, `loadConfig`, boot context), `contract/` (ports app and routes call), `shared/` (boot and relay steps that are not pi-specific), `pi/` (the one adapter). See its [README](src/harness/README.md). |
-| `src/services/workspace-provider/` | services | Provides `/workspace` on a boot. `provideWorkspace` (`workspace-provider.ts`) adopts a baked checkout or calls `acquire` (`acquire.ts`), which takes the `git` or S3 transport by mode (`git`, `prefer-s3`, `require-s3`). `git.ts` is the git transport and the warm-pool seeds; `checkout.ts` is the session checkout every transport ends with. |
+| `src/services/workspace-provider/` | services | Provides `/workspace` on a boot. `provideWorkspace` (`workspace-provider.ts`) adopts a baked checkout or calls `acquire` (`acquire.ts`), which takes the `git` or S3 transport by mode (`git`, `prefer-s3`, `require-s3`). `git.ts` is the git transport and the post-boot history backfill; `checkout.ts` is the session checkout every transport ends with. |
 | `src/services/config-provider/` | services | Provides the config release a boot needs: the store outside the repository, its descriptor, notice and API calls. `obtain.ts` builds a release from the store, the checkout, the project snapshot (`src/lib/project-snapshot/`) or the API archive. `compiled-agent-config.ts` reads and writes the compiled agent config in env, raw or gzip-encoded, for every harness and route. |
 | `src/services/runtime-assets/` | services | CLI, agent, skill-overlay and harness-asset convergence (self-update); the runtime-truth ledger. `port.ts` is the contract a harness implements. |
 | `src/services/chrome/` | services | Kortix in Chrome, sandbox side: the bridge socket the user's Chrome extension dials through the preview proxy, and the loopback CDP endpoint `127.0.0.1:9333` it serves to `agent-browser --cdp 9333`. Protocol: `.agents/skills/kortix-chrome/references/protocol.md`. |
 | `src/services/egress-shim/` | services | The in-guest egress proxy that substitutes secret handles. |
-| `src/services/llm-proxy/` | services | Localhost credential-injecting proxies to the LLM gateway and connectors; the inline-image window. |
+| `src/services/llm-proxy/` | services | The localhost credential-injecting proxy to the LLM gateway; the inline-image window. |
 | `src/services/sandbox-env/` | services | The project env store and the secret-capability instruction file. |
-| `src/services/skills/` | services | Image-baked managed Kortix skills and their injection. |
+| `src/services/skills/` | services | Image-baked managed Kortix skills: which ones a feature flag withholds (`withheldManagedSkills`). |
 | `src/services/static-web/` | services | The static file server on port 3211. |
-| `src/services/tools/` | services | The hosted tools: the Kortix tools (`kortix/`: `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`) and the project's kortix.yaml `tools`, one module each, run the same way by every harness. In `kortix_version` 3 every Kortix tool loads and each agent's `tools` grant hides tools; in a v2 project a `tools` key gets only the Kortix tools it lists. |
+| `src/services/tools/` | services | The hosted tools: the Kortix tools (`kortix/`: `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`) and the project's kortix.yaml `tools`, one module each, run the same way by every harness. The My Kortix platform tools (`platform/`: `kortix_agents`, `kortix_sessions`, `kortix_schedules`, `kortix_connectors`, `kortix_people`, `kortix_access`, `kortix_usage`, `kortix_change_requests`) are typed fronts for the in-sandbox `kortix` CLI. They share `platform/platform.ts`, are not ejectable, and load only when the compiled config names them in `kortix_tools`. Every Kortix tool loads unless the compiled set lists `kortix_tools` (then only those), and each agent's `tools` grant hides tools. |
 | `src/services/event-bus/` | services | The daemon event sequencer. |
 | `src/services/resources/` | services | Box resource telemetry (memory, cgroup, load, disk, RSS). |
 | `src/lib/config/` | shared | Host env parsing (`loadHostConfig`), manifest reads, the runtime state directory, the managed-skills directory. |
 | `src/lib/log/` | shared | The daemon logger and log tailing. |
-| `src/lib/git/` | shared | The git runner, identity, credential helper, repo info, and the in-session git operations (commit and push, refresh, sync to base). |
+| `src/lib/git/` | shared | The git runner, identity, credential helper, repo info, and the in-session git operations (commit and push, refresh). |
 | `src/lib/project-snapshot/` | shared | The S3 project snapshot both providers read: descriptor, transfer, archive guard and extraction, verification, the retry loop and the blob hydration. |
 | `src/lib/release-store-lock.ts` | shared | The process-wide lock over the release store and the managed-skill overlay (`config-provider` and `runtime-assets`). |
 | `src/lib/kortix-api/` | shared | Control-plane contracts: relay context, `X-Kortix-User-Context` verification, the dead-token breaker. |
-| `src/lib/shutdown-state.ts` | shared | The process-wide "shutting down" flag. |
+| `src/lib/shutdown-state.ts` | shared | The process-wide one-shutdown claim (`beginDaemonShutdown`). |
 | `src/types/` | shared | Types two modules need that may not import each other: `control-plane.ts` (`InitialTurnClaim`), `config-release.ts` (`ConfigReleaseReport`). Type declarations only. |
 | `src/extensions/codemode/worker.ts` | none (own lint layer) | The codemode sandbox worker: a second `bun build --compile` entrypoint (`scripts/build.sh`). pi starts it by this exact path in a compiled binary. It imports `@earendil-works/pi-codemode/worker` only. |
 | `src/utils/image-resize-worker.ts` | none (own lint layer) | pi's image resize worker: an extra `bun build --compile` entrypoint (`scripts/build.sh`). pi starts it by this exact path in a compiled binary. It imports the photon wasm redirect (`src/harness/pi/images.ts`) and pi's own worker module only. |
@@ -68,7 +68,7 @@ provider, so neither service imports the other.
 | `src/lib/**` | the shared layer | none |
 | `src/services/<name>/**` | its own folder, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract`. `config-provider`, `runtime-assets`, `tools`: `@kortix/api-contract` |
 | `src/harness/harness.ts` | the harness, all services, the shared layer | none |
-| `src/harness/pi/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract`, `@earendil-works/*`, `typebox`, `quickjs-wasi`, `@silvia-odwyer/photon-node`, `@kortix/sdk/wire-message-id` |
+| `src/harness/pi/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract`, `@earendil-works/*`, `typebox`, `quickjs-wasi`, `@silvia-odwyer/photon-node`, `@kortix/sdk/wire-message-id`, `@kortix/shared/peer-message-prompt` and `@kortix/shared/room-prompt` (the prompt envelopes a turn's origin is read from) |
 | `src/harness/{contract,shared}/**` | `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract` (the daemon-to-API wire, `runtime-relay`), `@kortix/sdk/wire-message-id` (the session-log boot's restore note) |
 | `src/routes/**` | `src/routes/**`, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `hono`, `@kortix/api-contract` |
 | `src/app/**`, `src/main.ts` | everything above except adapter internals | `hono`, `@kortix/api-contract` |
@@ -111,8 +111,9 @@ path outside `src/` (another package, `package.json`) stays relative. The
 No other package imports or reads `src/`, and `src/` imports no other app
 (`tests/unit/kortixd-package-boundary.test.ts`). A value the daemon shares with
 apps/api, the CLI or `@kortix/shared` lives in `packages/api-contract` and both
-sides import it. The daemon reaches those files, and the SDK's import-free
-`wire-message-id.ts`, through tsconfig paths. `KORTIXD_SHARED_SOURCES`
+sides import it. The daemon reaches those files, the SDK's import-free
+`wire-message-id.ts` and `@kortix/shared`'s import-free prompt envelopes
+(`peer-message-prompt.ts`, `room-prompt.ts`) through tsconfig paths. `KORTIXD_SHARED_SOURCES`
 (`@kortix/api-contract/sandbox-layout`) lists them: apps/api fingerprints them
 with this source, and the Dockerfiles copy them (`src/__tests__/shared-sources.test.ts`).
 
@@ -124,19 +125,14 @@ identifier or string that matches `/open.?code/i` in `src/lib/`, `src/types/`,
 `src/harness/contract/`, `src/harness/shared/` and `src/harness/pi/`. Tests and
 `src/harness/harness.ts` are out of scope: the resolver names the `opencode` id
 it maps to pi (see the [harness README](src/harness/README.md)). Comments are
-not checked.
-
-`OPENCODE_NAMES_ALLOWED` in `eslint.config.mjs` lists the names that exist
-today, per file. The list only shrinks: an entry whose word no longer occurs in
-its file fails the lint, so the PR that removes a name deletes its entry. Do not
-add an entry; name the new code neutrally.
+not checked. No file is allowlisted: name new code neutrally.
 
 The routes use the Kortix names only (`runtime_*`, `runtime_session_id`,
 `harness_version`). The pre-W3 wire names (`opencode_pid`, `opencodeEnv`,
-`/kortix/opencode`, …) are gone from the daemon since 2026-10-30. The two pi
-entries (`src/harness/pi/config.ts`, `config-release.ts`) name the legacy
-layout's config directory, `.kortix/opencode`, which a project that has not
-moved to the root layout still uses.
+`/kortix/opencode`, …) are gone from the daemon since 2026-10-30. The legacy
+project layout (`.kortix/opencode`, `harnesses/`) is gone since the one
+kortix.yaml schema: the daemon reads its config only from the compiled agent
+set.
 
 ## Where a type goes
 

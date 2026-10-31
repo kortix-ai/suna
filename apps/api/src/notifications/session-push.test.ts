@@ -10,7 +10,7 @@ import type { SessionAccessRow } from './access';
 import type { PushDeviceTokenRow } from './device-tokens';
 import type { ExpoPushMessage } from './expo-push';
 import type { DeliverInput } from './notifier';
-import { buildExpoMessages, buildPushContent, opensRemindersPage } from './push-payload';
+import { buildExpoMessages, buildPushContent } from './push-payload';
 import {
   createSessionNotifier,
   notifySessionEvent,
@@ -92,7 +92,7 @@ describe('sessionEventAudience — who is told (design §3.1)', () => {
     expect(out.recipients).toEqual([]);
   });
 
-  test('unattended turn end: the prompter only, with push (run failures are automation alerts)', () => {
+  test('unattended turn end: the prompter only, with push (run failures are trigger alerts)', () => {
     const out = sessionEventAudience(
       event({ type: 'error', originClass: 'unattended', triggerWatcherIds: [WATCHER] }),
       watchers([CREATOR]),
@@ -504,22 +504,17 @@ describe('Expo copy of the session kinds (Spec §4)', () => {
   });
 });
 
-// The Triggers page lists kortix.yaml triggers only. A reminder is a runtime
-// row (`reminder.<hex>`), so its alert must open the Reminders page.
-describe('the page an automation alert opens', () => {
+// One Triggers page lists kortix.yaml and runtime triggers (2026-10-28):
+// a loop's alert and a kortix.yaml trigger's alert open the same page.
+describe('the page a trigger alert opens', () => {
   const alertUrl = (kind: 'automation_failed' | 'automation_recovered', triggerSlug: string) =>
     buildPushContent({ notificationId: 'n1', kind, title: 'Daily check', body: '', projectId: PROJECT, sessionId: null, triggerSlug }).payload.url;
 
-  test('a reminder alert opens Reminders; a kortix.yaml trigger alert opens Triggers', () => {
+  test('a loop alert and a kortix.yaml trigger alert both open Triggers', () => {
     for (const kind of ['automation_failed', 'automation_recovered'] as const) {
-      expect(alertUrl(kind, 'reminder.0a1b2c3d4e5f')).toBe(`/projects/${PROJECT}/reminders?notification=n1`);
-      expect(alertUrl(kind, 'nightly-report')).toBe(`/projects/${PROJECT}/customize/triggers?notification=n1`);
+      expect(alertUrl(kind, 'reminder.0a1b2c3d4e5f')).toBe(`/projects/${PROJECT}/admin/triggers?notification=n1`);
+      expect(alertUrl(kind, 'automation.0a1b2c3d4e5f')).toBe(`/projects/${PROJECT}/admin/triggers?notification=n1`);
+      expect(alertUrl(kind, 'nightly-report')).toBe(`/projects/${PROJECT}/admin/triggers?notification=n1`);
     }
-  });
-
-  test('opensRemindersPage reads that url back, and only that one', () => {
-    expect(opensRemindersPage(alertUrl('automation_failed', 'reminder.0a1b2c3d4e5f'))).toBe(true);
-    expect(opensRemindersPage(alertUrl('automation_failed', 'nightly-report'))).toBe(false);
-    expect(opensRemindersPage(`/projects/${PROJECT}/sessions/reminders?notification=n1`)).toBe(false);
   });
 });

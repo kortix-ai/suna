@@ -8,26 +8,35 @@ The runtime user is `kortix`. It has passwordless `sudo` access.
 The project repository and its configuration are in `/workspace`.
 
 Use `pnpm` for JavaScript and TypeScript dependencies. Use `pnpm dlx` for temporary package commands.
-Python 3 is available as `python` and `python3`. These packages are pre-installed: lxml, markitdown, openpyxl, pandas, pdf2docx, pdf2image, pdfplumber, pillow (`PIL`), playwright, pymupdf (`fitz`), pypdf, pypdfium2, pytesseract, python-docx (`docx`), python-pptx (`pptx`), reportlab. Run scripts that use them with plain `python3`.
-For any other Python package use `uv run --with "pkg1,pkg2" script.py` — declare dependencies inline, comma-separated, version pins allowed. Do not create venvs or use `pip install` for one-off scripts.
+Python 3 is available as `python` and `python3`. For a Python package that is not pre-installed, use `uv run --with "pkg1,pkg2" script.py` — declare dependencies inline, comma-separated, version pins allowed. Do not create venvs or use `pip install` for one-off scripts.
 The `--with` name is the PyPI name, which often differs from the import name: `pillow`→`PIL`, `pyyaml`→`yaml`, `python-docx`→`docx`, `python-pptx`→`pptx`, `pymupdf`→`fitz`, `opencv-python`→`cv2`, `scikit-learn`→`sklearn`, `beautifulsoup4`→`bs4`, `python-dateutil`→`dateutil`.
-Never use `docx2pdf` (requires MS Word; fails on Linux) — convert Office documents with `soffice --headless --convert-to pdf`.
 Use Bun only when a project requires it.
 
 ## Installed tools
 
-- Node.js, npm, pnpm, Python, uv, Bun, and the `kortix` CLI are on `PATH`.
-- Bundled Python tools run on the pre-installed package floor with plain `python3`.
-- `agent-browser` and Chromium are installed for accessing local pages.
-- Git, curl, tmux, ffmpeg, LibreOffice, Pandoc, LaTeX, Poppler, qpdf, and Tesseract are installed.
-- Shell tools are installed: `rg` (ripgrep), `fd`, `bat`, `jq`, `fzf`, `tree`, `htop`, `lsof`, `rsync`,
+Every Kortix computer has:
+
+- Node.js, npm, pnpm, Python, uv, Bun, and the `kortix` CLI on `PATH`.
+- Git, curl, and tmux.
+- Shell tools: `rg` (ripgrep), `fd`, `bat`, `jq`, `fzf`, `tree`, `htop`, `lsof`, `rsync`,
   `sqlite3`, `wget`, `zip`, `unzip`, `zstd`, `git-lfs`, `ssh`, `nc`, `sponge`, and `nano`.
   Use `rg` to search file contents and `fd` to find files.
 
+A project agent's computer (the default image and custom templates) also has:
+
+- These Python packages, pre-installed: lxml, markitdown, openpyxl, pandas, pdf2docx, pdf2image, pdfplumber, pillow (`PIL`), playwright, pymupdf (`fitz`), pypdf, pypdfium2, pytesseract, python-docx (`docx`), python-pptx (`pptx`), reportlab. Run scripts that use them with plain `python3`.
+- `agent-browser` and Chromium.
+- ffmpeg, LibreOffice, Pandoc, LaTeX, Poppler, qpdf, and Tesseract. Never use `docx2pdf` (requires MS Word; fails on Linux) — convert Office documents with `soffice --headless --convert-to pdf`.
+- The desktop below, on an Ubuntu 24.04 base.
+
+My Kortix's computer has only the first list: it hands project work to a project agent's session.
+
 ## Desktop
 
-This machine runs a graphical desktop (XFCE on display `:1`). The user watches
-it live in the session's **Desktop** panel, streamed from port 6901.
+A project agent's computer on an Ubuntu 24.04 base runs a graphical desktop
+(XFCE on display `:1`); `kortix-desktop status` says whether this one does.
+The user watches it live in the session's **Desktop** panel, streamed from
+port 6901.
 
 - `DISPLAY=:1` is set, so any GUI program you start opens on the desktop.
 - `agent-browser` runs headed (`AGENT_BROWSER_HEADED=true`): the user sees

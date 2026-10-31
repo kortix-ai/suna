@@ -2,9 +2,9 @@
  * pi's own extension system, hosted around the runtime's `Agent`.
  *
  * pi-coding-agent's `AgentSession` owns everything an extension can touch:
- * the loader (npm/git/local packages, `pi` manifests, `.pi/extensions`), the
- * real `ExtensionRunner`, tool wrapping, `before_agent_start`/`input` on
- * prompt, `/skill:` and prompt-template expansion. Kortix keeps the `Agent`
+ * the loader (npm/local packages, `pi` manifests), the real `ExtensionRunner`,
+ * tool wrapping, `before_agent_start`/`input` on prompt, `/skill:` and
+ * prompt-template expansion. Kortix keeps the `Agent`
  * (gateway model, tools, wire) and hands it to the session, so any package
  * from pi.dev runs unmodified — no per-extension code here.
  *
@@ -12,16 +12,17 @@
  * - system (global): `<agentDir>/settings.json`, installed under `<agentDir>/npm`
  *   when the image is built (runtime-versions.json `piSystemPackages`), with
  *   their jiti cache warmed there too (see `warmSystemPackageCache`);
- * - project: kortix.yaml `harnesses.pi.packages` (`KORTIX_PI_PACKAGES`); npm
- *   sources come from the API-built bundle (bundle.ts), unpacked outside the
+ * - project: the session agent's kortix.yaml `extensions` (`KORTIX_PI_PACKAGES`);
+ *   npm sources come from the API-built bundle (bundle.ts), unpacked outside the
  *   repo before the runtime starts; `./` paths are files in the repo.
- * A project pin of a package replaces the system one.
+ * A project pin of a package replaces the system one. pi discovers nothing in
+ * the repository (`.pi/`, `.agents/skills`): a project declares what it loads.
  *
  * Nothing is installed at boot: pi would `npm install` a missing package on
  * load (~13 s for two packages, measured), so a source that is not on disk is
  * dropped and reported in the runtime's extension status instead.
  */
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Agent, AgentOptions, AgentTool } from '@earendil-works/pi-agent-core'
@@ -146,7 +147,7 @@ class ScopedSettingsStorage {
  * follow the compiled agent config). Every skill read in pi — the prompt's
  * skill list and `/skill:` expansion — goes through `getSkills()`.
  */
-/** Holds no project resources: discovery for a config with no tree. */
+/** Holds no project resources: pi's discovery root. */
 const NO_PROJECT_DIR = '/nonexistent/kortix-no-project'
 
 class KortixResourceLoader extends DefaultResourceLoader {
@@ -173,16 +174,9 @@ export interface PiSessionInput {
   ref: RunnerRef
   cwd: string
   agentDir: string
-  projectConfigDir?: string | null
   projectPackages: readonly PackageSource[]
   /** Where a `./` entry of `projectPackages` resolves: the release root while a release runs, else `cwd`. */
   packageRoot?: string
-  /**
-   * Where pi discovers project-local resources (`.pi/{extensions,skills,prompts}`,
-   * `.agents/skills`): the running config's root. Null: none (the image default).
-   * Never `cwd` while a release runs: the workspace is not config.
-   */
-  discoveryRoot: string | null
   /** The unpacked node_modules fallback (`<root>/node_modules/<name>`) for npm entries in `projectPackages`, or null. */
   projectBundleRoot: string | null
   /** Pre-built project packages (prebuilt.ts): their folders for skills/prompts, and their npm names. */
@@ -314,13 +308,6 @@ export function resolveProjectPackages(
 export async function createPiSession(input: PiSessionInput): Promise<PiSession> {
   const globalSettings = readSettings(join(input.agentDir, 'settings.json'))
   const project = resolveProjectPackages(input.projectPackages, { cwd: input.packageRoot ?? input.cwd, bundleRoot: input.projectBundleRoot })
-  const projectSettings = input.projectConfigDir ? readSettings(join(input.projectConfigDir, 'settings.json')) : {}
-  // The repository supplies pi-native settings as-is; explicit agent packages
-  // from the manifest remain additive and are already installed by the API.
-  const localPackages = (Array.isArray(projectSettings.packages) ? projectSettings.packages : []).filter(
-    (entry): entry is string => typeof entry === 'string' && entry.startsWith('./'),
-  )
-  project.kept.push(...localPackages.map((source) => join(input.projectConfigDir!, source)))
   for (const name of input.prebuilt?.names ?? []) project.npmNames.add(name)
   project.kept.push(...(input.prebuilt?.resources ?? []))
   // A package the project pins itself replaces the system one (pi would load both: a path and an npm name differ).
@@ -330,13 +317,10 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
   })
   const system = installedPackages(systemEntries, join(input.agentDir, 'npm'))
   // pi compacts at `window - reserve`; the reserve is the model's output budget (model.ts
-  // `compactionSettings`), so a request always has room for a full answer. A project's own
+  // `compactionSettings`), so a request always has room for a full answer. The image's
   // `compaction.reserveTokens` may ask for an earlier cut, never a later one.
-  const configuredReserve = (settings: Record<string, unknown>): number => {
-    const value = (settings.compaction as { reserveTokens?: unknown } | undefined)?.reserveTokens
-    return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : 0
-  }
-  const reserveFloor = Math.max(configuredReserve(globalSettings), configuredReserve(projectSettings))
+  const configured = (globalSettings.compaction as { reserveTokens?: unknown } | undefined)?.reserveTokens
+  const reserveFloor = typeof configured === 'number' && Number.isSafeInteger(configured) && configured > 0 ? configured : 0
   const globalSettingsJson = (compaction: object | undefined) =>
     JSON.stringify({
       ...globalSettings,
@@ -349,7 +333,7 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
     // double-bill and reorder the wire). `retry` and `compaction` live in storage, not
     // `applyOverrides`: `loader.reload()` re-reads storage and drops overrides.
     global: globalSettingsJson(input.compaction?.(reserveFloor)),
-    project: JSON.stringify({ ...projectSettings, packages: project.kept }),
+    project: JSON.stringify({ packages: project.kept }),
   })
   const settingsManager = SettingsManager.fromStorage(storage, { projectTrusted: true })
   seedJitiCache(input.agentDir)
@@ -360,21 +344,16 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
       agentDir: input.agentDir,
       settingsManager,
       extensionFactories: [...input.extensions],
-      additionalExtensionPaths: input.projectConfigDir && existsSync(join(input.projectConfigDir, 'extensions'))
-        ? readdirSync(join(input.projectConfigDir, 'extensions')).filter((file) => /\.[cm]?[jt]s$/.test(file)).map((file) => join(input.projectConfigDir!, 'extensions', file))
-        : [],
-      additionalPromptTemplatePaths: input.projectConfigDir && existsSync(join(input.projectConfigDir, 'prompts'))
-        ? [join(input.projectConfigDir, 'prompts')] : [],
       noContextFiles: true,
       noThemes: true,
     },
     input.systemPrompt,
     input.skillAllowed,
   )
-  // pi discovers project-local resources from its package manager's cwd, which
-  // is the loader's (the workspace). Only discovery moves to the running config:
-  // extensions keep the workspace as their cwd.
-  ;(loader as unknown as { packageManager: { cwd: string } }).packageManager.cwd = input.discoveryRoot ?? NO_PROJECT_DIR
+  // pi discovers project-local resources (`.pi/`, `.agents/skills`) from its package
+  // manager's cwd, which is the loader's (the workspace). Discovery points at a
+  // directory that holds nothing: extensions keep the workspace as their cwd.
+  ;(loader as unknown as { packageManager: { cwd: string } }).packageManager.cwd = NO_PROJECT_DIR
   await loader.reload()
 
   const modelRuntime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, refreshOnCreate: false })

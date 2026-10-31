@@ -182,7 +182,6 @@ describe('matchesChord', () => {
       true,
     );
     expect(matchesBinding(key('t', { meta: true }), 'panel.terminal')).toBe(true);
-    expect(matchesBinding(key('o', { meta: true }), 'attach')).toBe(true);
     expect(matchesBinding(key('x', { meta: true }), 'terminal.close')).toBe(true);
   });
 

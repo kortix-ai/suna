@@ -1,6 +1,6 @@
 'use client';
 
-// Pause all automations (KRTX-1721): one account switch that stops every
+// Pause all triggers (KRTX-1721): one account switch that stops every
 // schedule, reminder, webhook, app event and monitor in every project of the
 // account. A trigger run by hand still works. Changing it takes account.write
 // (owners and admins by default); everyone else sees the switch in its real

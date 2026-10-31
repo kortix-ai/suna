@@ -1,6 +1,10 @@
 'use client';
 
-import { readArtifactCommentSnapshot, type ArtifactVersion } from '@kortix/sdk';
+import {
+  readArtifactCommentSnapshot,
+  type ArtifactCommentAnchor,
+  type ArtifactVersion,
+} from '@kortix/sdk';
 import {
   useArtifact,
   useArtifactCommentContext,
@@ -10,6 +14,7 @@ import {
   useFeatureFlag,
   useInfiniteArtifactActivity,
 } from '@kortix/sdk/react';
+import { cn } from '@kortix/ui';
 import { reloadFrame } from '@kortix/ui/apps';
 import {
   Breadcrumb,
@@ -65,7 +70,7 @@ import {
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { drivePathToParam } from '@/features/drives/drive-path-param';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -78,10 +83,18 @@ import {
   ArtifactDiscussionSidebar,
   useArtifactDiscussionState,
 } from './artifact-discussion-sidebar';
+import type { DrawingStroke } from './artifact-drawing';
+import { ArtifactDrawingCanvas } from './artifact-drawing-canvas';
+import { prepareDrawingDraft, type ArtifactDrawingDraft } from './artifact-drawing-draft';
+import { ArtifactDrawingLayer } from './artifact-drawing-layer';
 import { VISIBILITY_ICON, relativeTime } from './artifact-meta';
 import { AskAgentSheet } from './ask-agent-sheet';
 import { DocEditor, type DocSaveStatus } from './doc-editor';
 import { ShareArtifactDialog } from './share-artifact-dialog';
+import {
+  useArtifactAnnotations,
+  type ArtifactAnnotationViewport,
+} from './use-artifact-annotations';
 import { useArtifactSelectionCapture } from './use-artifact-selection-capture';
 import { useArtifactUnshare } from './use-artifact-unshare';
 
@@ -155,6 +168,17 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   const artifact = query.data;
   const mutations = useArtifactMutations(projectId);
   const frame = useRef<HTMLDivElement>(null);
+  const [claimedFrame, setClaimedFrame] = useState<HTMLIFrameElement | null>(null);
+  const [annotationMode, setAnnotationMode] = useState<'text' | 'comment'>('text');
+  const [drawingOpen, setDrawingOpen] = useState(false);
+  const [drawingBusy, setDrawingBusy] = useState(false);
+  const [drawingError, setDrawingError] = useState(false);
+  const [drawingViewport, setDrawingViewport] = useState<ArtifactAnnotationViewport | null>(null);
+  const [pendingDrawing, setPendingDrawing] = useState<ArtifactDrawingDraft | null>(null);
+  const drawingRequest = useRef(0);
+  const invalidateDrawingRequest = useCallback(() => {
+    drawingRequest.current++;
+  }, []);
   const [docStatus, setDocStatus] = useState<DocSaveStatus>('saved');
   // Bumped by a conflict's Reload: the editor opens again on the version now in Files.
   const [reloads, setReloads] = useState(0);
@@ -176,9 +200,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   const [renaming, setRenaming] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const versions = useArtifactVersions(projectId, artifactId, historyOpen);
-  const viewUrl = artifact?.version.view_url;
   const viewingOld = !!artifact?.version.id;
-  const frameKey = artifact ? artifactFrameKey(artifact, artifact.version.id) : null;
   const canEdit = !!artifact?.can_edit && !viewingOld;
   const isDoc = artifact?.type === 'doc';
   const sidebar = useOptionalSidebar();
@@ -194,6 +216,31 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     version,
     enabled: discussionEnabled,
   });
+  const annotationVersion =
+    discussionEnabled && artifact && !isDoc ? context.data?.version.commit_id : null;
+  const annotated = useArtifact(
+    annotationVersion ? projectId : null,
+    annotationVersion ? artifactId : null,
+    annotationVersion ?? undefined,
+  );
+  const annotationEnabled = !!annotationVersion;
+  const annotatedUrl = annotationEnabled ? annotated.data?.version.view_url : null;
+  const viewUrl = annotatedUrl
+    ? (() => {
+        const url = new URL(annotatedUrl);
+        url.searchParams.set('annotate', '1');
+        return url.toString();
+      })()
+    : annotationEnabled
+      ? null
+      : artifact?.version.view_url;
+  const frameKey = artifact
+    ? artifactFrameKey(
+        artifact,
+        annotationEnabled ? annotationVersion : artifact.version.id,
+        annotationEnabled,
+      )
+    : null;
   const removal = useArtifactUnshare(
     discussionEnabled
       ? async () => {
@@ -215,6 +262,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   const pendingAnchor = selection.anchor;
   const openVersion = (next: string | undefined) => {
     selection.clear();
+    setAnnotationMode('text');
     setVersion(next);
   };
   const openComments = (comments.data ?? []).filter(
@@ -238,6 +286,83 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     },
     [scope, version, comments.data, clearSelection],
   );
+  const htmlAnnotations = useArtifactAnnotations({
+    enabled: annotationEnabled,
+    frame: claimedFrame,
+    slot: frame,
+    version: annotationVersion,
+    canComment: context.data?.can_comment === true && !version,
+    mode: annotationMode,
+    threads: comments.data,
+    focusedThreadId,
+    focusRevision,
+    onCandidate: (anchor) => {
+      if (drawingOpen) return;
+      setPendingDrawing(null);
+      selection.begin();
+      if (!selection.publish(anchor)) return;
+      defaultPanel.current = scope;
+      setDiscussionOpen(true);
+    },
+    onFocus: focusThread,
+  });
+  const clearCommentSelection = (expected?: ArtifactCommentAnchor) => {
+    selection.clear(expected);
+    setPendingDrawing((current) => (!expected || current?.anchor === expected ? null : current));
+  };
+  const cancelDrawing = () => {
+    drawingRequest.current++;
+    htmlAnnotations.cancelCapture();
+    setDrawingOpen(false);
+    setDrawingBusy(false);
+    setDrawingError(false);
+    setDrawingViewport(null);
+    selection.clear();
+  };
+  const cancelCapture = htmlAnnotations.cancelCapture;
+  useLayoutEffect(() => {
+    invalidateDrawingRequest();
+    cancelCapture();
+    setDrawingOpen(false);
+    setDrawingBusy(false);
+    setDrawingError(false);
+    setDrawingViewport(null);
+    setPendingDrawing(null);
+    clearSelection();
+    return invalidateDrawingRequest;
+  }, [
+    annotationVersion,
+    claimedFrame,
+    version,
+    context.data?.can_comment,
+    cancelCapture,
+    clearSelection,
+    invalidateDrawingRequest,
+  ]);
+  const finishDrawing = async (strokes: DrawingStroke[]) => {
+    if (drawingBusy || !drawingViewport) return;
+    if (!htmlAnnotations.isCurrentViewport(drawingViewport)) {
+      setDrawingError(true);
+      return;
+    }
+    const request = ++drawingRequest.current;
+    setDrawingBusy(true);
+    setDrawingError(false);
+    selection.begin();
+    const drawing = await prepareDrawingDraft(strokes, drawingViewport, htmlAnnotations);
+    if (drawingRequest.current !== request) return;
+    setDrawingBusy(false);
+    if (!drawing || !htmlAnnotations.isCurrentViewport(drawingViewport)) {
+      selection.clear();
+      setDrawingError(true);
+      return;
+    }
+    if (!selection.publish(drawing.anchor)) return;
+    setPendingDrawing(drawing);
+    setDrawingOpen(false);
+    defaultPanel.current = scope;
+    setDiscussionOpen(true);
+  };
   const requestedThread = search.get('thread');
   const requestedFocus = useRef('');
   useEffect(() => {
@@ -261,6 +386,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
         projectId={projectId}
         artifact={artifact}
         comments={comments}
+        displayThreads={annotationEnabled ? htmlAnnotations.threads : undefined}
         context={context.data}
         contextLoading={context.isLoading}
         contextError={context.isError}
@@ -279,7 +405,8 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
         focusRevision={focusRevision}
         onFocusThread={focusThread}
         pendingAnchor={pendingAnchor}
-        onClearAnchor={selection.clear}
+        pendingDrawing={pendingDrawing}
+        onClearAnchor={clearCommentSelection}
         selectionCapture={selection.status}
         readOnly={!!version}
         onOpenVersion={openVersion}
@@ -333,7 +460,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
       >
         {embedded ? null : <SidebarToggle />}
         <Breadcrumb
-          className={`${embedded ? '' : 'kx-titlebar-tabs'}flex h-10 min-w-0 flex-1 items-center px-3`}
+          className={cn(!embedded && 'kx-titlebar-tabs', 'flex h-10 min-w-0 flex-1 items-center px-3')}
         >
           <BreadcrumbList className="min-w-0 flex-nowrap gap-1.5 sm:gap-1.5">
             {embedded ? null : (
@@ -492,6 +619,65 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                 </Button>
               ) : null}
             </ButtonGroup>
+            {annotationEnabled && context.data?.can_comment && !version ? (
+              <Hint
+                label={
+                  htmlAnnotations.status === 'ready'
+                    ? t('discussion.annotationModeHint')
+                    : htmlAnnotations.status === 'loading'
+                      ? t('discussion.annotationLoading')
+                      : t('discussion.annotationUnavailable', {
+                          refresh: t('refresh'),
+                          actions: t('actions'),
+                        })
+                }
+              >
+                <span tabIndex={htmlAnnotations.status === 'ready' ? undefined : 0}>
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    aria-label={t('discussion.annotationMode')}
+                    aria-pressed={
+                      annotationMode === 'comment' && htmlAnnotations.status === 'ready'
+                    }
+                    aria-busy={htmlAnnotations.status === 'loading'}
+                    className="aria-pressed:bg-accent"
+                    disabled={htmlAnnotations.status !== 'ready'}
+                    onClick={() =>
+                      setAnnotationMode((mode) => (mode === 'comment' ? 'text' : 'comment'))
+                    }
+                  >
+                    {htmlAnnotations.status === 'loading' ? (
+                      <Loading className="size-3.5" />
+                    ) : (
+                      <PushPinIcon className="size-3.5" aria-hidden />
+                    )}
+                  </Button>
+                </span>
+              </Hint>
+            ) : null}
+            {annotationEnabled && context.data?.can_comment && !version ? (
+              <Hint label={t('discussion.draw')}>
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  aria-label={t('discussion.draw')}
+                  aria-pressed={drawingOpen}
+                  disabled={htmlAnnotations.status !== 'ready'}
+                  className="aria-pressed:bg-accent"
+                  onClick={() => {
+                    if (drawingOpen) return cancelDrawing();
+                    clearCommentSelection();
+                    setAnnotationMode('text');
+                    setDrawingError(false);
+                    setDrawingViewport(htmlAnnotations.viewport);
+                    setDrawingOpen(true);
+                  }}
+                >
+                  <PencilSimpleIcon className="size-3.5" aria-hidden />
+                </Button>
+              </Hint>
+            ) : null}
             {discussionEnabled ? (
               <Hint label={t(discussionOpen ? 'discussion.hidePanel' : 'discussion.showPanel')}>
                 <Button
@@ -529,7 +715,12 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                     </DropdownMenuItem>
                   )}
                   {!isDoc && viewUrl && frameKey ? (
-                    <DropdownMenuItem onSelect={() => reloadFrame(frameKey, viewUrl)}>
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        htmlAnnotations.reset();
+                        reloadFrame(frameKey, viewUrl);
+                      }}
+                    >
                       <ArrowClockwiseIcon /> {t('refresh')}
                     </DropdownMenuItem>
                   ) : null}
@@ -577,9 +768,10 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
         ) : null}
         {embedded ? (
           <div className="flex shrink-0 items-center">
+            {/* `data-no-panel`: the session's link interceptor would reopen it in this panel. */}
             <Hint label={t('openFullPage')}>
               <Button size="icon-sm" variant="ghost" aria-label={t('openFullPage')} asChild>
-                <Link href={`/projects/${projectId}/artifacts/${artifactId}`}>
+                <Link href={`/projects/${projectId}/artifacts/${artifactId}`} data-no-panel>
                   <ArrowsOutSimpleIcon className="size-3.5" />
                 </Link>
               </Button>
@@ -681,14 +873,73 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
               </div>
             ) : (
               <div className="bg-muted relative min-w-0 flex-1">
-                {viewUrl ? (
+                {annotationEnabled && annotated.isError ? (
+                  <div className="grid h-full place-items-center p-4">
+                    <ErrorState
+                      title={t('discussion.contextLoadError')}
+                      action={
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void annotated.refetch()}
+                        >
+                          {t('discussion.retry')}
+                        </Button>
+                      }
+                    />
+                  </div>
+                ) : viewUrl ? (
                   <ArtifactFrame
                     ref={frame}
+                    onFrame={setClaimedFrame}
                     frameKey={frameKey!}
                     src={viewUrl}
                     title={artifact.title}
                     className="absolute inset-0 size-full border-0"
                   />
+                ) : (
+                  <div className="grid h-full place-items-center">
+                    <Loading className="size-4" />
+                  </div>
+                )}
+                {annotationEnabled ? (
+                  <ArtifactDrawingLayer
+                    viewport={htmlAnnotations.viewport}
+                    regions={htmlAnnotations.regions}
+                    threads={htmlAnnotations.threads}
+                    focusedThreadId={focusedThreadId}
+                  />
+                ) : null}
+                {drawingOpen && drawingViewport ? (
+                  <ArtifactDrawingCanvas
+                    viewport={htmlAnnotations.viewport ?? drawingViewport}
+                    busy={drawingBusy}
+                    stale={htmlAnnotations.viewport !== drawingViewport}
+                    labels={{
+                      canvas: t('discussion.draw'),
+                      pen: t('discussion.drawPen'),
+                      arrow: t('discussion.drawArrow'),
+                      rectangle: t('discussion.drawRectangle'),
+                      black: t('discussion.drawBlack'),
+                      red: t('discussion.drawRed'),
+                      blue: t('discussion.drawBlue'),
+                      undo: t('discussion.drawUndo'),
+                      finish: t('discussion.postComment'),
+                      cancel: t('discussion.cancel'),
+                      pageChanged: t('discussion.drawPageChanged'),
+                      limit: t('discussion.drawLimit'),
+                    }}
+                    onFinish={(strokes) => void finishDrawing(strokes)}
+                    onCancel={cancelDrawing}
+                  />
+                ) : null}
+                {drawingOpen && drawingError ? (
+                  <p
+                    role="alert"
+                    className="bg-popover text-popover-foreground absolute inset-x-3 top-3 rounded-md border p-3 text-xs"
+                  >
+                    {t('discussion.drawPageChanged')}
+                  </p>
                 ) : null}
               </div>
             )}

@@ -14,8 +14,7 @@
  *   gzipped, 16 MB raw) has its longest strings cut, longest first, to their first
  *   16 kB and `JOURNAL_TRUNCATION_MARK` until it fits. The native store keeps the
  *   whole message.
- * - Both harnesses' turn-end relays (`relayTurnEnd`, OpenCode's
- *   `relayTurnEndToApi`) and the daemon shutdown call `flush`, which waits at
+ * - pi's turn-end relay (`relayTurnEnd`) and the daemon shutdown call `flush`, which waits at
  *   most 3 s for the acknowledgement, and returns at the first failed post. A
  *   batch not acknowledged by then keeps retrying in the background; the
  *   native store still holds the messages.
@@ -89,7 +88,7 @@
  * pi-ai sends "No result provided" for them. The restored box's next turn exports the step closed
  * (C2) and replaces the record. The reply pi streams has no entry before its
  * `message_end` and stays out. The first finished step marks the turn `log_durable_at` (apps/api
- * `markDurableTurns`). OpenCode's `fromV1` closes open calls at rest: it collects at turn end only.
+ * `markDurableTurns`).
  *
  * Attachment bytes (P2.13). An adapter exports an image or file as `ref: blob:<sha256>`; its
  * bytes are only in the native store. A collection starts one attachment pass over the sha256s
@@ -193,10 +192,7 @@ export interface SessionLogJournalOptions {
   harness?: HarnessCarry
   /** Per thread, what this box adds to a native seq (a 422 re-sequenced it, see the header). */
   seq_offsets?: Record<string, number>
-  /**
-   * Collect and send at most this long after a turn's message frame (see the header). Off when
-   * absent: an adapter whose export closes open calls (OpenCode's `fromV1` at rest) must not run mid-turn.
-   */
+  /** Collect and send at most this long after a turn's message frame (see the header). Off when absent. */
   midTurnMs?: number
   /** Test seams. */
   blobBudgetMs?: number
@@ -283,6 +279,18 @@ export class SessionLogJournal {
   private shifted(message: SessionLogMessage): SessionLogMessage {
     const offset = this.seqOffsets.get(message.thread_id)
     return offset ? { ...message, seq: message.seq + offset } : message
+  }
+
+  /** The session fields as this journal sends them: the boot's overlay and the restored harness history on top. */
+  private presented(session: SessionLogSessionPatch): SessionLogSessionPatch {
+    const presented = { ...session, ...this.options.session }
+    if (session.harness) presented.harness = carryHarness(this.options.harness, session.harness)
+    return presented
+  }
+
+  /** How the box's own log reads present the log: as this journal sends it to apps/api. */
+  view(): SessionLogView {
+    return { generation: this.options.generation, session: (session) => this.presented(session), message: (message) => this.shifted(message) }
   }
 
   /** Why the journal is off for this boot (`404`, `409`), or null while it runs. */
@@ -372,12 +380,20 @@ export class SessionLogJournal {
     if (typeof part?.id !== 'string' || typeof part.messageID !== 'string' || this.collected(part.messageID)) return
     const row = this.row(part.messageID)
     const before = row.parts.get(part.id)
-    // OpenCode also streams complete text snapshots via message.part.updated.
+    // A text part's `message.part.updated` carries the whole text (pi sends one at the text's end).
     // Publish changed snapshots; a snapshot echoing an applied delta is unchanged.
     row.due ||= !before || before.text !== part.text || toolShape(before) !== toolShape(part)
     // A copy: deltas extend it, and the v1 ring must keep the frame as published.
     row.parts.set(part.id, structuredClone(part))
     if (row.due) this.publishLive()
+  }
+
+  /** A live message whose seq changed (a queued prompt whose turn started): put it again, at its seq now. */
+  relive(messageId: string): void {
+    const row = this.live.get(messageId)
+    if (!row || this.collected(messageId)) return
+    row.due = true
+    this.publishLive()
   }
 
   /** A live message the harness removed before the journal collected it (a retracted prompt, a revert): its tombstone, if a put went out. */
@@ -405,7 +421,10 @@ export class SessionLogJournal {
         if (!known) continue
         row.due = false
         const harness = this.port.capabilities.harness as FromV1Options['harness']
-        const message = this.shifted(liveMessageFromV1({ info: row.info, parts: [...row.parts.values()] }, known, harness))
+        const { queued, ...at } = known
+        const live = liveMessageFromV1({ info: row.info, parts: [...row.parts.values()] }, at, harness)
+        // A queued seq is above every real one already: never shifted (it would pass MAX_SAFE_INTEGER).
+        const message = queued ? live : this.shifted(live)
         row.sent = true
         sessionLogEventBus().publish('log.message', { rev: nextRev(), message } satisfies SessionLogMessageEvent, thread)
       } catch (err) {
@@ -452,8 +471,7 @@ export class SessionLogJournal {
       threads.push(thread)
     }
     if (changes.session) {
-      const session = { ...changes.session, ...this.options.session }
-      if (changes.session.harness) session.harness = carryHarness(this.options.harness, changes.session.harness)
+      const session = this.presented(changes.session)
       this.session = { ...this.session, ...session }
       sessionLogEventBus().publish('log.state', { generation: this.options.generation, session } satisfies SessionLogStateEvent)
     }
@@ -799,8 +817,8 @@ export class SessionLogJournal {
 }
 
 /**
- * `SessionLogPort.changes` for an adapter that rebuilds its whole log on each read (pi,
- * OpenCode): every message after its thread's cursor or with a new native hash, every id a
+ * `SessionLogPort.changes` for an adapter that rebuilds its whole log on each read (pi):
+ * every message after its thread's cursor or with a new native hash, every id a
  * cursor holds that the log no longer has (a tombstone), every thread (the journal drops an
  * unchanged one), and the session fields when their JSON differs from `previousSessionJson`.
  */
@@ -891,7 +909,22 @@ function parseJson(text: string): unknown {
 
 // ── The boot's journal ────────────────────────────────────────────────────
 
+/** The generation, session fields and seqs apps/api stores for the box's log. */
+export interface SessionLogView {
+  generation: number
+  session(session: SessionLogSessionPatch): SessionLogSessionPatch
+  message(message: SessionLogMessage): SessionLogMessage
+}
+
+/** Without a journal (no apps/api to write to): the log as the adapter builds it, at generation 0. */
+const UNJOURNALED: SessionLogView = { generation: 0, session: (session) => session, message: (message) => message }
+
 let active: SessionLogJournal | null = null
+
+/** How the box's own log reads (`GET /kortix/runtime/log`) present the log: as this boot's journal sends it. */
+export function sessionLogView(): SessionLogView {
+  return active?.view() ?? UNJOURNALED
+}
 
 /** Start this boot's journal. An adapter calls it once its native store is ready (after a restore, with its cursors). */
 export function startSessionLogJournal(port: SessionLogPort, options: SessionLogJournalOptions): SessionLogJournal | null {
@@ -907,6 +940,11 @@ export function startSessionLogJournal(port: SessionLogPort, options: SessionLog
 /** Before a turn's end is relayed. True when there is nothing left to acknowledge. */
 export function flushSessionLogJournal(): Promise<boolean> {
   return active ? active.flush() : Promise.resolve(true)
+}
+
+/** A live message's seq changed (a queued prompt whose turn started): the v2 stream gets it again at once. */
+export function reliveSessionLogMessage(messageId: string): void {
+  active?.relive(messageId)
 }
 
 /** Every daemon stop path, before the harness stops. */

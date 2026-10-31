@@ -109,8 +109,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'projects',
             args: '<subcommand>',
-            blurb:
-              'List, link, use, open, rename and configure projects (features, cli-tokens, upgrade)',
+            blurb: 'List, link, use, open, rename and configure projects (features, cli-tokens)',
           },
         ],
       },
@@ -123,11 +122,6 @@ export const TIERS: readonly CommandTier[] = [
             blurb: 'Run, share, queue, inspect, stop and delete project sessions',
           },
           {
-            name: 'connect',
-            args: '[session-id]',
-            blurb: 'Deprecated: attach the OpenCode TUI to an OpenCode session (pi sessions use chat or shell)',
-          },
-          {
             name: 'chat',
             args: '[session-id]',
             blurb: "Talk to a session's agent (REPL or --prompt)",
@@ -137,6 +131,12 @@ export const TIERS: readonly CommandTier[] = [
             args: '<subcommand>',
             blurb: 'Chat rooms where sessions and people talk (join, send, read, next)',
             featureFlag: 'agent_rooms',
+          },
+          {
+            name: 'tasks',
+            args: '[<lead>] <subcommand>',
+            blurb: "An agent team's shared task list: ls, add, claim, done, update, rm",
+            featureFlag: 'agent_teams',
           },
           {
             name: 'peers',
@@ -161,17 +161,12 @@ export const TIERS: readonly CommandTier[] = [
         commands: [
           { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
           { name: 'validate', blurb: "Statically validate this project's kortix.yaml" },
-          { name: 'migrate', args: '[--write]', blurb: 'Convert the manifest from kortix_version 1 or 2 to 3' },
           {
             name: 'doctor',
             args: '[--no-session]',
             blurb: 'End-to-end health check: auth, project, session, agent reply',
           },
-          {
-            name: 'schema',
-            args: '[--version 1|2|3]',
-            blurb: 'Print the canonical kortix.yaml/kortix.toml JSON Schema',
-          },
+          { name: 'schema', args: '[--url]', blurb: 'Print the canonical kortix.yaml JSON Schema' },
         ],
       },
       {
@@ -258,11 +253,15 @@ export const TIERS: readonly CommandTier[] = [
             args: '<subcommand>',
             blurb: "The project's review inbox: approve, reject, request changes",
           },
-          { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
           {
-            name: 'reminders',
+            name: 'triggers',
             args: '<subcommand>',
-            blurb: 'Re-prompt one session later or on repeat (kortix remind "…" --in 24h)',
+            blurb: 'kortix.yaml and runtime triggers: a source (schedule, webhook, event, App, CR merged) plus a target (agent or session)',
+          },
+          {
+            name: 'loops',
+            args: '<subcommand>',
+            blurb: 'A schedule into one session — a loop, a trigger that wakes its session (kortix loop "…" --in 24h; alias: reminders)',
           },
           {
             name: 'chrome',
@@ -273,7 +272,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'goals',
             args: '<subcommand>',
-            blurb: 'Own an outcome until verified done: new, check, ls, status (in a session)',
+            blurb: 'Work a goal until a verifier confirms it done: new, verify, verdict, handover, ls (in a session)',
             featureFlag: 'goals',
           },
           {

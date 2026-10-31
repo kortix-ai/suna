@@ -1,6 +1,6 @@
 /**
- * When the boot restores a session log (P6.4). Both harnesses call `reconcileSessionLog`
- * before their runtime serves a turn and start the journal with what it returns
+ * When the boot restores a session log (P6.4). The pi harness calls `reconcileSessionLog`
+ * before its runtime serves a turn and starts the journal with what it returns
  * (`startSessionLogJournal(port, boot)`). When the manifest cannot be read after its retries
  * (no claim has happened yet), a box whose `held()` is not null boots on its native store at
  * its persisted generation and logs one warning; a box without a store throws. A restore that
@@ -20,7 +20,7 @@
  *   and (1) the adapter's `held()` is null (no store, no pinned root, a lost seq map), or (2) the
  *   manifest generation is above the one this box persisted (another box claimed the session
  *   and wrote at it), or (3) a live message id is neither held nor one the last restore left
- *   unwritten (a `context` record, which pi and OpenCode rebuild themselves).
+ *   unwritten (a `context` record, which pi rebuilds itself).
  * - Never behind for unsent work. Ids only: a message the native store holds that the log
  *   lacks (a turn not yet journaled), a newer version of a message the log holds, and a
  *   message the store deleted after holding it (a revert not yet tombstoned: `held()` keeps

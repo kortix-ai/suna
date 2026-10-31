@@ -1,15 +1,14 @@
 /**
  * Manifest imports — split one `kortix.yaml` across several YAML files.
  *
- *     kortix_version: 2
  *     imports:
  *       - .kortix/triggers/          # a directory: every .yaml/.yml under it
  *       - .kortix/agents.yaml        # a single file
  *
- * An imported file declares any of the four COLLECTIONS — `triggers`,
- * `connectors`, `agents`, `apps` — and may itself carry `imports:` (nesting).
- * Everything else (`kortix_version`, `default_agent`, `project`, `sandbox`,
- * `env`, …) stays in the root file, so there is exactly one place that answers
+ * An imported file declares only the COLLECTIONS — `triggers`, `connectors`,
+ * `agents`, `apps`, `tools`, `skills`, `commands`, `extensions` — and may itself
+ * carry `imports:` (nesting). Everything else (`default_agent`, `project`,
+ * `sandbox`, `env`, …) stays in the root file, so there is exactly one place that answers
  * "which agent is the default" or "which image boots".
  *
  * The rules, all of them:
@@ -41,20 +40,6 @@ export type ImportableKey =
   | (typeof IMPORTABLE_LIST_KEYS)[number]
   | (typeof IMPORTABLE_MAP_KEYS)[number];
 
-/** Top-level keys that must stay in the root manifest. */
-export const ROOT_ONLY_KEYS = [
-  'kortix_version',
-  'default_agent',
-  'runtime',
-  'project',
-  'env',
-  'opencode',
-  'sandbox',
-  'policy',
-  'policies',
-  'approvals',
-] as const;
-
 export const MAX_IMPORT_DEPTH = 8;
 export const MAX_IMPORT_FILES = 200;
 
@@ -83,8 +68,11 @@ export interface ManifestImportReaderSync {
 
 export interface ManifestSourceFile {
   path: string;
+  /** The latest shape (deprecated shapes rewritten). */
   raw: Record<string, unknown>;
   revision?: string | null;
+  /** The file as written, when the resolver read it: its deprecation warnings come from here. */
+  text?: string;
 }
 
 /** For each collection: entry id (slug / map key) → path of the declaring file. */
@@ -187,7 +175,6 @@ const ALL_IMPORTABLE_KEYS: readonly ImportableKey[] = [
 
 /** v2 imports merge only the collections v2 had: skills, commands and
  *  extensions are v3 keys, and a v2 root's own value for them stays as written. */
-const V2_IMPORTABLE_KEYS: readonly ImportableKey[] = [...IMPORTABLE_LIST_KEYS, 'agents', 'apps', 'tools'];
 
 /**
  * Resolve `imports:` for a parsed root manifest. A root without `imports`
@@ -200,9 +187,8 @@ export function resolveManifestImportsSync(
 ): ResolvedManifest {
   const files: ManifestSourceFile[] = [root];
   const origins = emptyOrigins();
-  const importable = root.raw.kortix_version === 3 ? ALL_IMPORTABLE_KEYS : V2_IMPORTABLE_KEYS;
   if (!hasManifestImports(root.raw)) {
-    for (const key of importable) {
+    for (const key of ALL_IMPORTABLE_KEYS) {
       for (const [id] of safeEntries(root.path, key, root.raw[key])) {
         if (id !== null) origins[key][id] = root.path;
       }
@@ -218,7 +204,7 @@ export function resolveManifestImportsSync(
     // A `tools` key selects the Kortix tools, so an empty one in any file
     // still reaches the merged document (`selectedKortixTools`).
     if (file.raw.tools !== undefined) maps.tools ??= {};
-    for (const key of importable) {
+    for (const key of ALL_IMPORTABLE_KEYS) {
       for (const [id, entry] of collectionEntries(file.path, key, file.raw[key])) {
         if (id !== null) {
           const declaredIn = origins[key][id];
@@ -268,33 +254,26 @@ export function resolveManifestImportsSync(
           );
         }
         let raw: Record<string, unknown>;
+        let text: string;
         try {
-          raw = parseManifestText(reader.read(entry.path), 'yaml');
+          text = reader.read(entry.path);
+          raw = parseManifestText(text);
         } catch (error) {
           if (error instanceof ImportReadPending) throw error;
           throw new ManifestImportError(
             `${entry.path}: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
-        // v3 has no silent drop: an imported file holds only importable keys.
-        if (root.raw.kortix_version === 3) {
-          const stray = Object.keys(raw).filter(
-            (key) => key !== MANIFEST_IMPORTS_KEY && !(ALL_IMPORTABLE_KEYS as readonly string[]).includes(key),
+        // No silent drop: an imported file holds only importable keys.
+        const stray = Object.keys(raw).filter(
+          (key) => key !== MANIFEST_IMPORTS_KEY && !(ALL_IMPORTABLE_KEYS as readonly string[]).includes(key),
+        );
+        if (stray.length > 0) {
+          throw new ManifestImportError(
+            `${entry.path}: ${stray.map((key) => `"${key}"`).join(', ')} cannot be in an imported file — an imported file declares ${ALL_IMPORTABLE_KEYS.join(', ')} or imports`,
           );
-          if (stray.length > 0) {
-            throw new ManifestImportError(
-              `${entry.path}: ${stray.map((key) => `"${key}"`).join(', ')} cannot be in an imported file — an imported file declares ${ALL_IMPORTABLE_KEYS.join(', ')} or imports`,
-            );
-          }
         }
-        for (const rootOnly of ROOT_ONLY_KEYS) {
-          if (raw[rootOnly] !== undefined) {
-            throw new ManifestImportError(
-              `${entry.path}: "${rootOnly}" is only allowed in ${root.path} — an imported file declares ${ALL_IMPORTABLE_KEYS.join(', ')} or imports`,
-            );
-          }
-        }
-        const imported: ManifestSourceFile = { path: entry.path, raw, revision: entry.revision };
+        const imported: ManifestSourceFile = { path: entry.path, raw, revision: entry.revision, text };
         files.push(imported);
         visit(imported, [...stack, entry.path]);
       }
@@ -311,7 +290,7 @@ export function resolveManifestImportsSync(
     else if (key in maps) merged[key] = maps[key];
     else merged[key] = value;
   }
-  for (const key of importable) {
+  for (const key of ALL_IMPORTABLE_KEYS) {
     if (key in merged) continue;
     if (lists[key]) merged[key] = lists[key];
     else if (maps[key]) merged[key] = maps[key];

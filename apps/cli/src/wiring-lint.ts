@@ -1,8 +1,7 @@
 /** Local wiring checks that require files and cannot live in the portable manifest schema. */
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { type ManifestIssue, RESERVED_SLUG_PROVIDERS, kortixToolRef } from '@kortix/manifest-schema';
-import { agentFileCandidates, skillDirs } from '@kortix/manifest-schema/layout';
+import { type ManifestIssue, RESERVED_SLUG_PROVIDERS, safeToolFile } from '@kortix/manifest-schema';
 
 type Table = Record<string, unknown>;
 
@@ -11,20 +10,13 @@ function table(value: unknown): Table | null {
 }
 
 export function lintWiring(manifest: Table | null, root: string): ManifestIssue[] {
-  const version = Number(manifest?.kortix_version);
-  if (!manifest || (version !== 2 && version !== 3)) return [];
+  if (!manifest) return [];
   const issues: ManifestIssue[] = [];
   const error = (path: string, message: string) => issues.push({ path, message, severity: 'error' });
   const exists = (path: unknown) => typeof path === 'string' && existsSync(resolve(root, path));
   const missingFile = (path: string, file: unknown) => error(path, `"${String(file)}" does not exist in the project files.`);
 
-  if (version === 3) lintRegistriesV3(manifest, exists, missingFile, error, root);
-  else {
-    for (const [name, file] of Object.entries(table(manifest.tools) ?? {})) {
-      // `kortix:<name>` is a Kortix tool, not a file in the project.
-      if (typeof file === 'string' && kortixToolRef(file) === null && !exists(file)) missingFile(`tools.${name}`, file);
-    }
-  }
+  lintRegistries(manifest, exists, missingFile, error, root);
 
   const env = manifest.env as { required?: string[]; optional?: string[] } | undefined;
   const secrets = new Set([...(env?.required ?? []), ...(env?.optional ?? [])]);
@@ -38,12 +30,8 @@ export function lintWiring(manifest: Table | null, root: string): ManifestIssue[
   for (const [name, value] of Object.entries(table(manifest.agents) ?? {})) {
     const agent = table(value);
     if (!agent) continue;
-    if (version === 3) {
-      // A v3 agent's prompt is inline or in `prompt_file`; neither is required.
-      if (agent.prompt_file !== undefined && !exists(agent.prompt_file)) missingFile(`agents.${name}.prompt_file`, agent.prompt_file);
-    } else if (!agentFileCandidates(manifest, name).some(exists)) {
-      undeclared(`agents.${name}.file`, String(agent.file ?? `agents/${name}.md`), 'the project files');
-    }
+    // An agent's prompt is inline or in `prompt_file`; neither is required.
+    if (agent.prompt_file !== undefined && !exists(agent.prompt_file)) missingFile(`agents.${name}.prompt_file`, agent.prompt_file);
     for (const [field, catalog, source] of [
       ['connectors', connectors, 'connectors'],
       ['connectors_required', connectors, 'connectors'],
@@ -55,12 +43,7 @@ export function lintWiring(manifest: Table | null, root: string): ManifestIssue[
         if (typeof item === 'string' && item !== '*' && !catalog.has(item)) undeclared(`agents.${name}.${field}[${index}]`, item, source);
       });
     }
-    // v3 skills grants name registered skills; the validator checks those.
-    if (version === 2 && Array.isArray(agent.skills)) agent.skills.forEach((item, index) => {
-      if (typeof item !== 'string' || item === '*' || !/^[a-zA-Z0-9_-]+$/.test(item)) return;
-      if (!skillDirs(manifest).some((dir) => existsSync(resolve(root, dir, item, 'SKILL.md'))))
-        undeclared(`agents.${name}.skills[${index}]`, item, 'skills/<name>/SKILL.md');
-    });
+    // A skills grant names registered skills; the validator checks those.
   }
   if (Array.isArray(manifest.triggers)) manifest.triggers.forEach((trigger, index) => {
     const secret = table(trigger)?.secret_env;
@@ -75,8 +58,8 @@ function skillName(text: string): string | null {
   return /^name:[ \t]*["']?([^"'\r\n]*?)["']?[ \t]*$/m.exec(frontmatter)?.[1] ?? null;
 }
 
-/** v3: every file a registry entry names exists; every skill folder holds a SKILL.md named after it. */
-function lintRegistriesV3(
+/** Every file a registry entry names exists; every skill folder holds a SKILL.md named after it. */
+function lintRegistries(
   manifest: Table,
   exists: (path: unknown) => boolean,
   missingFile: (path: string, file: unknown) => void,
@@ -96,7 +79,8 @@ function lintRegistriesV3(
     }
   }
   for (const [name, module] of Object.entries(table(manifest.tools) ?? {})) {
-    if (typeof module === 'string' && !exists(module)) missingFile(`tools.${name}`, module);
+    // A value that is not a module path is the schema's error, not reported twice.
+    if (safeToolFile(module) && !exists(module)) missingFile(`tools.${name}`, module);
   }
   for (const [name, command] of Object.entries(table(manifest.commands) ?? {})) {
     const file = table(command)?.prompt_file;

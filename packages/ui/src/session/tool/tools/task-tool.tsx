@@ -1,10 +1,11 @@
 'use client';
 
-import { SubSessionModal } from '../../thread/sub-session-modal';
+import { SubagentDialog } from '../../agents/subagent-view';
 import {
   BasicTool,
   firstMeaningfulLine,
   partInput,
+  partMetadata,
   partStatus,
   partError,
 } from '../shared/infrastructure';
@@ -21,7 +22,21 @@ import { cn } from '../../../lib/utils';
 import { getChildSessionId, getToolInfo } from '../../../internal/session-types';
 import { KanbanIcon as SquareKanban } from '@phosphor-icons/react';
 import { useCallback, useMemo, useState } from 'react';
-import { subAgentCalls } from '@kortix/sdk';
+import { subAgentCalls, type SessionLogThread } from '@kortix/sdk';
+import { useSessionStateStore } from '@kortix/sdk/react';
+
+/**
+ * Whether a background hand-off's child still works. The child's status is
+ * known while this tab streams it; without it, a child whose last reply has
+ * completed is not working, and any other child is taken as still at work.
+ */
+function useBackgroundWorking(childSessionId: string | undefined, childThread: SessionLogThread | null): boolean {
+  const childStatus = useSessionStateStore((s) => (childSessionId ? s.sessionStatus[childSessionId] : undefined));
+  if (childStatus?.type === 'busy' || childStatus?.type === 'retry') return true;
+  if (childStatus?.type === 'idle') return false;
+  const last = childThread?.messages.findLast((m) => m.role === 'assistant');
+  return !last || last.completed_at === null;
+}
 
 /**
  * The way into the sub-agent's own session, pinned to the right edge of the row.
@@ -81,7 +96,7 @@ function FullViewAction({ onOpen }: { onOpen: () => void }) {
 /**
  * A task call is a disclosure row: what the sub-agent is doing, in place.
  *
- * This row used to be a plain button that opened `SubSessionModal` on any
+ * This row used to be a plain button that opened `SubagentDialog` on any
  * click. That put the only view of a running sub-agent behind a modal — the
  * reader had to leave the transcript to learn what the agent they just
  * dispatched was up to, and had to close it again to get back — while the
@@ -102,6 +117,7 @@ function FullViewAction({ onOpen }: { onOpen: () => void }) {
  */
 export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tAgent = useTranslations('tools.agent');
   const input = partInput(call);
   const status = partStatus(call);
 
@@ -124,6 +140,11 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const childThread = useSubAgentThread(childSessionId);
   const childCalls = useMemo(() => subAgentCalls(childThread), [childThread]);
 
+  // `agent(…, { background: true })` returns as soon as the child exists. The call is
+  // over; the work goes on in the child's own session, and the row says so.
+  const background = partMetadata(call).background === true;
+  const backgroundWorking = useBackgroundWorking(background ? childSessionId : undefined, childThread);
+
   const [modalOpen, setModalOpen] = useState(false);
   const openModal = useCallback(() => setModalOpen(true), []);
 
@@ -144,6 +165,12 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   }, [childCalls]);
 
   const subtitle = isRunning ? (lastActivity ?? description) : description || undefined;
+  const backgroundLabel =
+    background && childSessionId && !errorText
+      ? backgroundWorking
+        ? tAgent('backgroundWorking')
+        : tAgent('backgroundSession')
+      : undefined;
 
   /**
    * Whether this row can show the sub-agent's work WITHOUT leaving the
@@ -166,6 +193,7 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
         trigger={{
           title: tI18nComplete('text9471197a871a', { value0: subagentType }),
           subtitle,
+          args: backgroundLabel ? [backgroundLabel] : undefined,
         }}
         defaultOpen={defaultOpen}
         forceOpen={forceOpen}
@@ -197,7 +225,7 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
       </BasicTool>
       <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />
       {childSessionId && (
-        <SubSessionModal
+        <SubagentDialog
           open={modalOpen}
           onOpenChange={setModalOpen}
           sessionId={childSessionId}
@@ -210,4 +238,5 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
     </>
   );
 }
+// pi's `agent` (`task` is its deprecated alias) reaches this row through its kind (`toolKind`).
 ToolRegistry.register('task', TaskTool);

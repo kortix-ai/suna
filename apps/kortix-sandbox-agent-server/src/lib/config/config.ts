@@ -34,8 +34,8 @@ const Schema = z.object({
   KORTIX_STATIC_PORT: z.coerce.number().int().positive().default(3211),
   KORTIX_WORKSPACE: z.string().default('/workspace'),
   // Project repo is cloned directly into the workspace. The repo's
-  // Kortix-owned files live under <workspace>/.kortix/ (Dockerfile +
-  // opencode config dir) — no intermediate clone-target directory.
+  // Kortix-owned files live under <workspace>/.kortix/ (Dockerfile + pi
+  // config dir) — no intermediate clone-target directory.
   KORTIX_PROJECT_TARGET: z.string().default('/workspace'),
   KORTIX_DEFAULT_BRANCH: z.string().default('main'),
   KORTIX_BRANCH_FETCH_ATTEMPTS: z.coerce.number().int().positive().default(60),
@@ -222,76 +222,30 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
 }
 
-type ManifestFormat = 'yaml' | 'toml'
-
 /**
- * Read the project manifest, preferring the canonical `kortix.yaml` (schema v2)
- * and falling back to the legacy `kortix.toml` (v1) — the same resolution order
- * the API and CLI use. Returns null when neither file exists.
- */
-export async function readProjectManifest(
-  fs: typeof import('node:fs/promises'),
-  projectTarget: string,
-): Promise<{ body: string; format: ManifestFormat } | null> {
-  const candidates: { file: string; format: ManifestFormat }[] = [
-    { file: 'kortix.yaml', format: 'yaml' },
-    { file: 'kortix.yml', format: 'yaml' },
-    { file: 'kortix.toml', format: 'toml' },
-  ]
-  for (const { file, format } of candidates) {
-    try {
-      return { body: await fs.readFile(`${projectTarget}/${file}`, 'utf8'), format }
-    } catch {}
-  }
-  return null
-}
-
-/**
- * Pull a single string value at `<section>.<key>` out of a manifest body without
- * a full parser. Handles both shapes:
- *   YAML — `section:` then an indented `key: value` (value optionally quoted)
- *   TOML — `[section]` then `key = "value"` (value quoted)
- * Returns null if the section/key is absent or the value is empty.
- */
-export function extractNestedString(
-  body: string,
-  format: ManifestFormat,
-  section: string,
-  key: string,
-): string | null {
-  if (format === 'toml') {
-    // The `[section]` table body runs up to the next `[…]` header or EOF.
-    // `(?![\s\S])` is the JS end-of-string anchor (`\Z` matches a literal Z).
-    const sectionMatch = body.match(
-      new RegExp(`^\\[${section}\\]\\s*$([\\s\\S]*?)(?=^\\s*\\[|(?![\\s\\S]))`, 'm'),
-    )
-    const sectionBody = sectionMatch?.[1]
-    if (!sectionBody) return null
-    const keyMatch = sectionBody.match(new RegExp(`^\\s*${key}\\s*=\\s*['"]([^'"]+)['"]`, 'm'))
-    const value = keyMatch?.[1]?.trim()
-    return value && value.length > 0 ? value : null
-  }
-  let parsed: unknown
-  try {
-    parsed = Bun.YAML.parse(body)
-  } catch {
-    return null
-  }
-  const value = (parsed as Record<string, Record<string, unknown>> | null)?.[section]?.[key]
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : null
-}
-
-/**
- * Read `sandbox.on_boot` from the project manifest — a shell command the daemon
- * runs (backgrounded) once the repo is materialized and opencode is up, so a
- * session can auto-start its dev stack (e.g. `on_boot: "pnpm dev"`). Resolves
- * kortix.yaml first, then legacy kortix.toml. Returns null when unset.
+ * Read `sandbox.on_boot` from the project manifest (`kortix.yaml`, else
+ * `kortix.yml`): a shell command the daemon runs (backgrounded) once the repo
+ * is materialized and the proxy is up, so a session can auto-start its dev
+ * stack (e.g. `on_boot: "pnpm dev"`). Null when unset, empty, or the file does
+ * not parse.
  */
 export async function resolveSandboxOnBoot(cfg: Config): Promise<string | null> {
-  const fs = await import('node:fs/promises')
-  const manifest = await readProjectManifest(fs, cfg.projectTarget)
-  if (!manifest) return null
-  return extractNestedString(manifest.body, manifest.format, 'sandbox', 'on_boot')
+  const { readFile } = await import('node:fs/promises')
+  for (const file of ['kortix.yaml', 'kortix.yml']) {
+    let body: string
+    try {
+      body = await readFile(`${cfg.projectTarget}/${file}`, 'utf8')
+    } catch {
+      continue
+    }
+    let parsed: unknown
+    try {
+      parsed = Bun.YAML.parse(body)
+    } catch {
+      return null
+    }
+    const value = (parsed as { sandbox?: { on_boot?: unknown } } | null)?.sandbox?.on_boot
+    return typeof value === 'string' && value.trim() ? value.trim() : null
+  }
+  return null
 }

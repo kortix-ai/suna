@@ -40,6 +40,15 @@ describe('rememberedPanelOf — what the Easy panel is showing, as something it 
     });
   });
 
+  test('an artifact, as the browser request that opens it again', () => {
+    const url = 'https://app.example/projects/p1/artifacts/a1';
+    expect(rememberedPanelOf({ terminalOpen: false, detailKey: `artifact:${url}` })).toEqual({
+      kind: 'view',
+      view: 'browser',
+      target: { url },
+    });
+  });
+
   test('the audit trail', () => {
     expect(rememberedPanelOf({ terminalOpen: false, detailKey: 'audit' })).toEqual({
       kind: 'view',

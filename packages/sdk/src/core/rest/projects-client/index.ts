@@ -3,6 +3,7 @@
 // byte-identical. The `unwrap` helper in `./shared` stays internal.
 
 export * from './accounts';
+export * from './spaces';
 export * from './projects';
 export * from './skills';
 export * from './github';
@@ -19,6 +20,7 @@ export * from './prompt-attachments';
 export * from './git-history';
 export * from './change-requests';
 export * from './sessions';
+export * from './manifest-spaces';
 export * from './spaces';
 export * from './session-groups';
 export * from './memory';
@@ -28,6 +30,7 @@ export * from './session-sandbox';
 export * from './model-defaults';
 export * from './model-enablement';
 export * from './agent-scope';
+export * from './agent-capabilities';
 export * from './agent-config';
 export * from './billing';
 export * from './session-costs';
@@ -45,7 +48,9 @@ export * from './review-items';
 export * from './sandbox-shares';
 export * from './public-session-shares';
 export * from './session-reminders';
+export * from './runtime-triggers';
 export * from './rooms';
+export * from './multi-agent';
 export * from './artifacts';
 export * from './tokens';
 export * from './audit';
@@ -56,6 +61,7 @@ export * from './apps';
 export * from './apps-fleet';
 export * from './drives';
 export * from './goals';
+export * from './goal-file';
 export * from './notifications';
 export * from './chrome';
 

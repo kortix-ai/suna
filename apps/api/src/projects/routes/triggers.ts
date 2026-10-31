@@ -162,10 +162,9 @@ const TRIGGER_MANIFEST_KEYS = [
 export function registerTriggersRoutes(): void {
   // GET /v1/projects/:projectId/triggers
   //
-  // Lists triggers defined as files in `.opencode/triggers/*.md` on the
-  // project's default branch, plus any parse errors and runtime state
-  // (last_fired_at). The repo is the source of truth — POST/PATCH/DELETE
-  // below commit/update/delete the underlying file.
+  // Lists the triggers kortix.yaml declares on the project's default branch,
+  // plus any parse errors and runtime state (last_fired_at). The repo is the
+  // source of truth — POST/PATCH/DELETE below commit the edited kortix.yaml.
 
   projectsApp.openapi(
     createRoute({

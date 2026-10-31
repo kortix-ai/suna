@@ -14,20 +14,20 @@ describe('defaultAgentFromSeedFiles', () => {
     const files = [
       {
         path: 'kortix.yaml',
-        content: 'kortix_version: 2\ndefault_agent: kortix\nagents:\n  kortix: {}\n',
+        content: 'default_agent: kortix\nagents:\n  kortix: {}\n',
       },
     ];
     expect(defaultAgentFromSeedFiles(files, 'kortix.yaml')).toBe('kortix');
   });
 
   test('no default_agent declared → null (not every project needs one)', () => {
-    const files = [{ path: 'kortix.yaml', content: 'kortix_version: 2\nagents:\n  kortix: {}\n' }];
+    const files = [{ path: 'kortix.yaml', content: 'agents:\n  kortix: {}\n' }];
     expect(defaultAgentFromSeedFiles(files, 'kortix.yaml')).toBeNull();
   });
 
   test('falls back to a literal "kortix.yaml" path when manifestPath differs', () => {
     const files = [{ path: 'kortix.yaml', content: 'default_agent: release-bot\n' }];
-    expect(defaultAgentFromSeedFiles(files, 'config/kortix.toml')).toBe('release-bot');
+    expect(defaultAgentFromSeedFiles(files, 'config/kortix.yaml')).toBe('release-bot');
   });
 
   test('no manifest file in the seed list → null, never throws', () => {

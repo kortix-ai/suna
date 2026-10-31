@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 describe('kortix schema', () => {
-  test('with no args prints the combined schema — the single canonical validator reference', () => {
+  test('with no args prints the one schema document', () => {
     const code = runSchema([]);
     expect(code).toBe(0);
     const schema = JSON.parse(stdout);
@@ -35,24 +35,9 @@ describe('kortix schema', () => {
     expect(schema.$schema).toBe('https://json-schema.org/draft/2020-12/schema');
   });
 
-  test('--version 1 prints only the v1 document', () => {
-    const code = runSchema(['--version', '1']);
-    expect(code).toBe(0);
+  test('the document has the agent schema', () => {
+    expect(runSchema([])).toBe(0);
     const schema = JSON.parse(stdout);
-    expect(schema.$id).toBe(`${KORTIX_SCHEMA_BASE_URL}/kortix.v1.schema.json`);
-  });
-
-  test('--version 2 prints only the v2 document', () => {
-    const code = runSchema(['--version', '2']);
-    expect(code).toBe(0);
-    const schema = JSON.parse(stdout);
-    expect(schema.$id).toBe(`${KORTIX_SCHEMA_BASE_URL}/kortix.v2.schema.json`);
-  });
-
-  test('--version 3 exposes YAML-only agent schema', () => {
-    expect(runSchema(['--version', '3'])).toBe(0);
-    const schema = JSON.parse(stdout);
-    expect(schema.$id).toBe(`${KORTIX_SCHEMA_BASE_URL}/kortix.v3.schema.json`);
     expect(schema.properties.agents.additionalProperties.properties.prompt.type).toBe('string');
   });
 
@@ -62,22 +47,16 @@ describe('kortix schema', () => {
     expect(stdout.trim()).toBe(`${KORTIX_SCHEMA_BASE_URL}/kortix.schema.json`);
   });
 
-  test('--version 2 --url prints the v2-specific URL', () => {
-    const code = runSchema(['--version', '2', '--url']);
-    expect(code).toBe(0);
-    expect(stdout.trim()).toBe(`${KORTIX_SCHEMA_BASE_URL}/kortix.v2.schema.json`);
-  });
-
   test('--help prints usage and does not print a schema', () => {
     const code = runSchema(['--help']);
     expect(code).toBe(0);
     expect(stdout).toContain('Usage: kortix schema');
   });
 
-  test('an invalid --version value fails with a clear error', () => {
-    const code = runSchema(['--version', '4']);
+  test('--version is not an option: there is one document', () => {
+    const code = runSchema(['--version', '3']);
     expect(code).toBe(1);
-    expect(stderr).toContain('--version must be');
+    expect(stderr).toContain('unknown option "--version"');
   });
 
   test('an unknown option fails', () => {

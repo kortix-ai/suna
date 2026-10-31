@@ -69,8 +69,8 @@ if (import.meta.main) {
     // Image build only: record which CLI, daemon, skill overlay and harness
     // this image carries, so a box booted from it states that on its FIRST
     // health read instead of after its first reconcile. A missing artifact
-    // fails the build rather than shipping a box that reports a lie. Images
-    // carry no OpenCode, and every new box runs pi, so pi reports its release.
+    // fails the build rather than shipping a box that reports a lie. Every
+    // box runs pi, so pi reports its release.
     registerHarnessAssets(() => resolveHarness(undefined, 'pi').assets)
     bakeRuntimeAssetsState()
       .then((state) => {

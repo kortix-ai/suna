@@ -21,18 +21,15 @@ import { Cursor, Headline, pressed, Window } from './parts';
 const TREE: { depth: number; name: string; dir?: boolean; note?: string }[] = [
   { depth: 0, name: 'northwind', dir: true },
   { depth: 1, name: 'kortix.yaml', note: 'rules, triggers, connectors' },
-  { depth: 1, name: '.kortix', dir: true },
-  { depth: 2, name: 'opencode', dir: true },
-  { depth: 3, name: 'agents', dir: true, note: 'who does the work' },
-  { depth: 4, name: 'invoice-clerk.md' },
-  { depth: 3, name: 'skills', dir: true, note: 'how the company works' },
-  { depth: 4, name: 'reconcile-invoices' },
-  { depth: 2, name: 'memory', dir: true, note: 'what it has learned so far' },
+  { depth: 1, name: 'agents', dir: true, note: 'who does the work' },
+  { depth: 2, name: 'invoice-clerk.md' },
+  { depth: 1, name: 'skills', dir: true, note: 'how the company works' },
+  { depth: 2, name: 'reconcile-invoices' },
+  { depth: 1, name: 'memory', dir: true, note: 'what it has learned so far' },
 ];
 
-/** Every field is real — `company-as-code/content.ts` and the v2 schema. */
+/** Every field is real — `company-as-code/content.ts` and the kortix.yaml schema. */
 const YAML = [
-  ['kortix_version: ', '2'],
   ['project:', ''],
   ['  name: ', 'Northwind'],
   ['', ''],

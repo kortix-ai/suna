@@ -650,7 +650,9 @@ test('trusted capture completion posts the retained draft against its text ancho
   const value = props({ selectionCapture: 'pending' });
   const created: unknown[] = [];
   const cleared: unknown[] = [];
-  value.onClearAnchor = (expected) => { cleared.push(expected); };
+  value.onClearAnchor = (expected) => {
+    cleared.push(expected);
+  };
   value.comments.create = async (input) => {
     created.push(input);
     return item;
@@ -711,4 +713,73 @@ test('an earlier anchored submission cannot discard a later failed capture', asy
   });
   expect(cleared).toBe(0);
   expect(button('Comment').disabled).toBe(true);
+});
+
+test('a drawing belongs only to its exact pending anchor and survives a failed save', async () => {
+  const anchor = {
+    type: 'region' as const,
+    version: 'vc_draw',
+    selector: 'body',
+    snippet: '',
+    viewport_width: 200,
+    scroll: { x: 0, y: 0 },
+    offset: { x: 0, y: 0, width: 1, height: 1 },
+  };
+  const marks = [
+    {
+      tool: 'arrow' as const,
+      color: 'blue' as const,
+      width: 0.01,
+      points: [
+        { x: 0.1, y: 0.2 },
+        { x: 0.8, y: 0.9 },
+      ],
+    },
+  ];
+  const created: unknown[] = [];
+  const value = props({
+    pendingAnchor: anchor,
+    pendingDrawing: { anchor, marks, screenshot_base64: 'aW1hZ2U=', imageFailed: false },
+  });
+  value.comments.create = async (input) => {
+    created.push(input);
+    throw new Error('offline');
+  };
+  await render(value);
+  const input = container.querySelector('textarea[aria-label="Comment"]')! as InstanceType<
+    typeof browser.HTMLTextAreaElement
+  >;
+  await act(async () => {
+    input.value = 'Use this drawing';
+    input.dispatchEvent(new browser.Event('input', { bubbles: true }));
+  });
+  await click(button('Comment'));
+  expect(created[0]).toEqual({
+    body: 'Use this drawing',
+    anchor,
+    marks,
+    screenshot_base64: 'aW1hZ2U=',
+  });
+  expect(input.value).toBe('Use this drawing');
+  await render({ ...value, pendingAnchor: { ...anchor, version: 'vc_other' } });
+  await click(button('Comment'));
+  expect(created[1]).toEqual({
+    body: 'Use this drawing',
+    anchor: { ...anchor, version: 'vc_other' },
+  });
+});
+
+test('screenshot batch rejection keeps the exact batch and shows actionable image limits', async () => {
+  const requests: unknown[] = [];
+  const value = props();
+  value.comments.send = async (input) => {
+    requests.push(input);
+    throw { code: 'artifact_comment_screenshot_limit' };
+  };
+  await render(value);
+  await click(button('Send to agent (1)'));
+  expect(container.textContent).toContain('20 screenshots or 12 MiB');
+  await click(button('Retry send (1)'));
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toEqual(requests[0]);
 });

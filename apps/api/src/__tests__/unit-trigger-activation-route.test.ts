@@ -91,3 +91,45 @@ describe('trigger activation route ordering', () => {
     expect(activationIdx).toBeLessThan(slugIdx);
   });
 });
+
+// The runtime-trigger routes (`routes/runtime-triggers.ts`) live under
+// `/triggers/all` and `/triggers/runtime…` and register AFTER the `:slug`
+// routes. Each has a method + segment count no `:slug` route has, so a
+// kortix.yaml trigger named `all` or `runtime` shadows nothing, and no slug
+// needs reserving. This router registers both sets in the real order.
+describe('runtime trigger routes vs kortix.yaml slugs', () => {
+  const route = (method: 'get' | 'post' | 'patch' | 'delete', path: string) =>
+    createRoute({ method, path, responses: { 200: { description: 'ok' } } });
+  const app = new OpenAPIHono();
+  for (const [method, path] of [
+    ['patch', '/{projectId}/triggers/{slug}'],
+    ['delete', '/{projectId}/triggers/{slug}'],
+    ['post', '/{projectId}/triggers/{slug}/fire'],
+    ['get', '/{projectId}/triggers/{slug}/runs'],
+    ['post', '/{projectId}/triggers/{slug}/runs/{run_id}/replay'],
+    ['get', '/{projectId}/triggers/all'],
+    ['post', '/{projectId}/triggers/runtime'],
+    ['patch', '/{projectId}/triggers/runtime/{id}'],
+    ['delete', '/{projectId}/triggers/runtime/{id}'],
+    ['post', '/{projectId}/triggers/runtime/{id}/run'],
+  ] as const) {
+    app.openapi(route(method, path), (c: any) => c.json({ path }));
+  }
+  const hit = async (method: string, path: string) =>
+    ((await (await app.request(path, { method, headers: { 'content-type': 'application/json' }, body: method === 'GET' ? undefined : '{}' })).json()) as { path: string }).path;
+
+  test('a slug named `runtime` or `all` still reaches the kortix.yaml routes', async () => {
+    expect(await hit('PATCH', '/p1/triggers/runtime')).toBe('/{projectId}/triggers/{slug}');
+    expect(await hit('DELETE', '/p1/triggers/all')).toBe('/{projectId}/triggers/{slug}');
+    expect(await hit('POST', '/p1/triggers/runtime/fire')).toBe('/{projectId}/triggers/{slug}/fire');
+    expect(await hit('GET', '/p1/triggers/runtime/runs')).toBe('/{projectId}/triggers/{slug}/runs');
+  });
+
+  test('the runtime routes reach their own handlers', async () => {
+    expect(await hit('GET', '/p1/triggers/all')).toBe('/{projectId}/triggers/all');
+    expect(await hit('POST', '/p1/triggers/runtime')).toBe('/{projectId}/triggers/runtime');
+    expect(await hit('PATCH', '/p1/triggers/runtime/trigger.0123456789ab')).toBe('/{projectId}/triggers/runtime/{id}');
+    expect(await hit('DELETE', '/p1/triggers/runtime/trigger.0123456789ab')).toBe('/{projectId}/triggers/runtime/{id}');
+    expect(await hit('POST', '/p1/triggers/runtime/trigger.0123456789ab/run')).toBe('/{projectId}/triggers/runtime/{id}/run');
+  });
+});

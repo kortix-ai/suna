@@ -29,7 +29,6 @@ import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
 import { runMarketplace } from './commands/marketplace.ts';
 import { runMembers } from './commands/members.ts';
-import { runMigrate } from './commands/migrate.ts';
 import { runModels } from './commands/models.ts';
 import { runPermissions } from './commands/permissions.ts';
 import { runProjects } from './commands/projects.ts';
@@ -37,6 +36,7 @@ import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runReminders } from './commands/reminders.ts';
 import { runGoals } from './commands/goals.ts';
+import { runTasks } from './commands/tasks.ts';
 import { runArtifacts } from './commands/artifacts.ts';
 import { runReview } from './commands/review.ts';
 import { runRoles } from './commands/roles.ts';
@@ -45,7 +45,6 @@ import { runSchema } from './commands/schema.ts';
 import { runSecrets } from './commands/secrets.ts';
 import { runSelfHost } from './commands/self-host.ts';
 import { runSessionsChat } from './commands/sessions-chat.ts';
-import { runSessionsConnect } from './commands/sessions-connect.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
 import { runSystemSkills } from './commands/system-skills.ts';
@@ -62,7 +61,7 @@ import { runToken, runWhoami } from './commands/whoami.ts';
 import { renderContext, renderHostNotice } from './host-notice.ts';
 import { confirm } from './prompts.ts';
 import { C, header, pad, rule, visibleWidth } from './style.ts';
-import { printPermissionDenialIdentity } from './token-denial.ts';
+import { machineErrors, printPermissionDenialIdentity, withIssues, writeMachineError } from './token-denial.ts';
 import {
   getUpdateNotice,
   isUpdateSnoozed,
@@ -204,8 +203,8 @@ async function offerInteractiveUpdate(): Promise<boolean> {
 
 /**
  * argv[0] → handler for every routed command. Aliases point at the same
- * handler (`deploy`→ship, `attach`→sessions connect, `t`→tui,
- * `perms`→permissions, `session`→sessions); the token-only, remind and
+ * handler (`deploy`→ship, `t`→tui, `perms`→permissions,
+ * `session`→sessions); the token-only, remind and
  * skills adapters keep their extra arguments; `registry` keeps its stderr
  * warning. `help`, `version`, `git-credential` and bare `kortix` stay
  * special-cased in main() — they are landing-screen or protocol verbs, not
@@ -223,7 +222,6 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   ship: (rest) => runShip(rest),
   deploy: (rest) => runShip(rest),
   validate: (rest) => runValidate(rest),
-  migrate: (rest) => runMigrate(rest),
   schema: (rest) => runSchema(rest),
   'self-host': (rest) => runSelfHost(rest),
   login: (rest) => runLogin(rest),
@@ -241,20 +239,22 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   sessions: (rest) => runSessions(rest),
   session: (rest) => runSessions(rest),
   chat: (rest) => runSessionsChat(rest),
-  connect: (rest) => runSessionsConnect(rest),
-  attach: (rest) => runSessionsConnect(rest),
   tui: (rest) => runTui(rest),
   t: (rest) => runTui(rest),
   files: (rest) => runFiles(rest),
   drive: (rest) => runDrive(rest),
   cr: (rest) => runCr(rest),
   review: (rest) => runReview(rest),
+  // Hidden alias, not in the command table: the name `automations` had before Triggers won. Its `add` was runtime.
+  automations: (rest) => runTriggers(rest[0] === 'add' || rest[0] === 'create' ? [...rest, '--runtime'] : rest),
   triggers: (rest) => runTriggers(rest),
+  loops: (rest) => runReminders(rest),
   reminders: (rest) => runReminders(rest),
   chrome: (rest) => runChrome(rest),
   goals: (rest) => runGoals(rest),
   artifacts: (rest) => runArtifacts(rest),
   capture: (rest) => runCapture(rest),
+  loop: (rest) => runReminders(rest, true),
   remind: (rest) => runReminders(rest, true),
   connectors: (rest) => runConnectors(rest),
   secrets: (rest) => runSecrets(rest),
@@ -287,6 +287,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   uninstall: (rest) => runUninstall(rest),
   rooms: (rest) => runRooms(rest),
   peers: (rest) => runPeers(rest),
+  tasks: (rest) => runTasks(rest),
 };
 
 async function main(rawArgv: string[]): Promise<number> {
@@ -315,8 +316,8 @@ async function main(rawArgv: string[]): Promise<number> {
   }
   // Only the LEADING `--version`/`-v` is the global "print the CLI's own
   // version" flag. Scanning the whole argv used to hijack any subcommand's
-  // own same-named flag (e.g. `kortix schema --version 2`, `kortix self-host
-  // update --version <tag>`) before it ever reached the subcommand parser.
+  // own same-named flag (e.g. `kortix self-host update --version <tag>`)
+  // before it ever reached the subcommand parser.
   if (argv[0] === '--version' || argv[0] === '-v') {
     printVersion();
     return 0;
@@ -324,8 +325,7 @@ async function main(rawArgv: string[]): Promise<number> {
   // Bare `kortix` and explicit help are the same landing screen. Only the bare
   // form offers to update: `kortix --help` is what people (and scripts) reach
   // for to READ something, and it must never block on a question. Bare
-  // `kortix` must ALWAYS land here — the interactive session picker is an
-  // explicit verb (`kortix connect`), never the front door.
+  // `kortix` must ALWAYS land here, never an interactive picker.
   //
   // `kortix help <topic>` prints the topic's own help (the git/npm/gh
   // convention, KRTX-2604): a known command's usage, `version`'s version,
@@ -406,8 +406,8 @@ async function main(rawArgv: string[]): Promise<number> {
     return 2;
   }
   // argv[0] → handler. One exact-match dispatch replaces the old 47-branch
-  // if-chain. Aliases point at the same handler (`deploy`→ship, `attach`→
-  // sessions connect, `t`→tui, `perms`→permissions, `session`→sessions);
+  // if-chain. Aliases point at the same handler (`deploy`→ship, `t`→tui,
+  // `perms`→permissions, `session`→sessions);
   // the token-only, remind and skills adapters keep their extra arguments.
   //
   // The record's KEY ORDER is load-bearing for behavior, not cosmetics: the
@@ -488,6 +488,10 @@ function closestCommand(input: string): string | undefined {
 }
 
 function printActiveHostNotice(argv: readonly string[]): void {
+  // An agent in a session box runs the CLI from its shell, which captures
+  // stderr into the chat: the host line repeated on every call. It is for a
+  // person at a terminal, so a box without a TTY gets none.
+  if (process.env.KORTIX_SESSION_ID && !process.stderr.isTTY) return;
   const notice = renderHostNotice(argv);
   if (notice) process.stderr.write(notice);
 }
@@ -537,8 +541,15 @@ main(argvForInvocation(process.argv0 ?? '', process.argv.slice(2)))
     return code;
   })
   .then((code) => finish(code))
-  .catch((err: unknown) => {
+  .catch(async (err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`${C.red}kortix:${C.reset} ${msg}\n`);
+    if (machineErrors()) {
+      // A refused call records its denial before it throws: that line names the action.
+      await printPermissionDenialIdentity();
+      const status = typeof (err as { status?: unknown })?.status === 'number' ? (err as { status: number }).status : undefined;
+      writeMachineError({ kind: 'failed', message: withIssues(msg, (err as { body?: unknown })?.body), ...(status ? { status } : {}) });
+    } else {
+      process.stderr.write(`${C.red}kortix:${C.reset} ${msg}\n`);
+    }
     finish(1);
   });

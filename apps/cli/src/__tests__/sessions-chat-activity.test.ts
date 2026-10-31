@@ -3,33 +3,28 @@
 // actively mid-turn (an in-flight assistant turn, or a running tool from a just-
 // dispatched subagent batch) must NOT be labelled "queued — agent picking up…".
 import { describe, expect, test } from 'bun:test';
-import type { MessageWithParts } from '@kortix/sdk';
+import type { SessionLogMessage } from '@kortix/sdk';
 
 import { deriveActivity } from '../commands/sessions-chat.ts';
 
-function userMsg(created: number, text = 'do the thing'): MessageWithParts {
+const iso = (ms: number) => new Date(ms).toISOString();
+function userMsg(created: number, text = 'do the thing'): SessionLogMessage {
   return {
-    info: { id: `u-${created}`, role: 'user', sessionID: 's', time: { created } },
-    parts: [{ type: 'text', text }],
-  } as MessageWithParts;
+    schema: 'kortix.session/2', v: 0, producer: { harness: 'pi', harness_version: '1', adapter_version: '1' }, message_id: `u-${created}`, thread_id: 's', seq: created, kind: 'turn', role: 'user',
+    status: 'complete', created_at: iso(created), completed_at: iso(created), blocks: [{ type: 'text', id: `t-${created}`, text }],
+  } as SessionLogMessage;
 }
 function assistantMsg(
   created: number,
   opts: { completed?: number; tool?: { name: string; status: string }; text?: string } = {},
-): MessageWithParts {
-  const parts: Array<Record<string, unknown>> = [];
-  if (opts.tool)
-    parts.push({ type: 'tool', tool: opts.tool.name, state: { status: opts.tool.status } });
-  if (opts.text) parts.push({ type: 'text', text: opts.text });
+): SessionLogMessage {
+  const blocks: Array<Record<string, unknown>> = [];
+  if (opts.tool) blocks.push({ type: 'tool_call', id: `c-${created}`, call_id: `c-${created}`, name: opts.tool.name, status: opts.tool.status, input: {} });
+  if (opts.text) blocks.push({ type: 'text', id: `t-${created}`, text: opts.text });
   return {
-    info: {
-      id: `a-${created}`,
-      role: 'assistant',
-      sessionID: 's',
-      time: { created, ...(opts.completed ? { completed: opts.completed } : {}) },
-    },
-    parts,
-  } as unknown as MessageWithParts;
+    schema: 'kortix.session/2', v: 0, producer: { harness: 'pi', harness_version: '1', adapter_version: '1' }, message_id: `a-${created}`, thread_id: 's', seq: created, kind: 'turn', role: 'assistant',
+    status: opts.completed ? 'complete' : 'streaming', created_at: iso(created), completed_at: opts.completed ? iso(opts.completed) : null, blocks,
+  } as unknown as SessionLogMessage;
 }
 
 describe('deriveActivity', () => {

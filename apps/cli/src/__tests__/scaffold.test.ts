@@ -10,7 +10,7 @@ let dir: string;
 const REQUIRED_BASE_PATHS = [
   '.gitignore',
   'memory/MEMORY.md',
-  'agents/kortix.md',
+  'agents/worker.md',
   // `kortix-cli` is the only managed skill scaffolded into a repo; the rest of
   // the `kortix-*` family lives in templates/managed/ and is injected at boot.
   'skills/kortix-cli/SKILL.md',
@@ -73,12 +73,12 @@ describe('applyScaffold', () => {
     expect(manifest).not.toContain('{{projectName}}');
 
     expect(manifest).not.toMatch(/^sandbox:/m);
-    expect(manifest).toContain('kortix_version: 3');
-    expect(manifest).toContain('prompt_file: agents/kortix.md');
+    expect(manifest).not.toContain('kortix_version');
+    expect(manifest).toContain('prompt_file: agents/worker.md');
     expect(manifest).not.toContain('harnesses/opencode');
     expect(result.written.some((p) => p.startsWith('harnesses/'))).toBe(false);
 
-    expect(readFileSync(join(dir, 'agents/kortix.md'), 'utf8')).toContain('Hello World');
+    expect(readFileSync(join(dir, 'agents/worker.md'), 'utf8')).toContain('Hello World');
     expect(result.written.some((p) => p.startsWith('app/'))).toBe(false);
     expect(result.written).not.toContain('memory/overview.md');
     expect(result.written.some((p) => p.startsWith('.kortix/'))).toBe(false);
@@ -108,7 +108,7 @@ describe('applyScaffold', () => {
   test('preserveExisting leaves prior files alone, fills in the rest', () => {
     // Pre-seed shipped files we expect to be preserved.
     mkdirSync(join(dir, 'agents'), { recursive: true });
-    writeFileSync(join(dir, 'agents/kortix.md'), 'CUSTOM PERSONA', 'utf8');
+    writeFileSync(join(dir, 'agents/worker.md'), 'CUSTOM PERSONA', 'utf8');
     writeFileSync(join(dir, 'README.md'), 'CUSTOM README', 'utf8');
 
     const result = applyScaffold({
@@ -117,11 +117,11 @@ describe('applyScaffold', () => {
       preserveExisting: true,
     });
 
-    expect(result.skipped.sort()).toEqual(['README.md', 'agents/kortix.md']);
+    expect(result.skipped.sort()).toEqual(['README.md', 'agents/worker.md']);
     expect(result.written).toContain('kortix.yaml');
     expect(result.written).toContain('memory/MEMORY.md');
 
-    expect(readFileSync(join(dir, 'agents/kortix.md'), 'utf8')).toBe('CUSTOM PERSONA');
+    expect(readFileSync(join(dir, 'agents/worker.md'), 'utf8')).toBe('CUSTOM PERSONA');
     expect(readFileSync(join(dir, 'README.md'), 'utf8')).toBe('CUSTOM README');
   });
 

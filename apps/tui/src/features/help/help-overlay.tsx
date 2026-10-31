@@ -11,7 +11,6 @@
  */
 
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
-import { type RuntimeCapability, runtimeSupports } from '@kortix/sdk';
 import { useMemo, useState } from 'react';
 
 import {
@@ -71,25 +70,6 @@ export function sectionRule(title: string, width: number): string {
 
 export interface HelpOverlayProps {
   onClose: () => void;
-  /** The open session's runtime capabilities; null when unknown (shows every key). */
-  capabilities?: readonly string[] | null;
-}
-
-/** Bindings that need a runtime feature: without it the key only shows a refusal. */
-const BINDING_CAPABILITY: Record<string, RuntimeCapability> = {
-  attach: 'session.attach',
-  'sidebar.attach': 'session.attach',
-};
-
-/** The bindings a runtime with `capabilities` can act on. */
-export function supportedBindings(
-  capabilities: readonly string[] | null | undefined,
-  bindings: readonly Binding[] = allBindings(),
-): readonly Binding[] {
-  return bindings.filter((binding) => {
-    const feature = BINDING_CAPABILITY[binding.id];
-    return !feature || runtimeSupports(capabilities, feature);
-  });
 }
 
 /**
@@ -97,9 +77,9 @@ export function supportedBindings(
  * taller than the terminal — at 24 rows it is, by a lot (the table is ~120
  * lines), so a non-scrolling overlay would hide most of the app's keys.
  */
-export function HelpOverlay({ onClose, capabilities }: HelpOverlayProps) {
+export function HelpOverlay({ onClose }: HelpOverlayProps) {
   const dimensions = useTerminalDimensions();
-  const lines = useMemo(() => helpLines(supportedBindings(capabilities)), [capabilities]);
+  const lines = useMemo(() => helpLines(allBindings()), []);
   const [top, setTop] = useState(0);
 
   const { innerWidth, innerHeight } = modalBox(

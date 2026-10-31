@@ -9,8 +9,7 @@ import {
 import { logger } from '@/lib/log/logger'
 
 // Scrollback replayed to a newly (re)attached viewer, so reattaching after a
-// disconnect shows recent context instead of a blank prompt — same UX the
-// OpenCode-backed terminal already gives today.
+// disconnect shows recent context instead of a blank prompt.
 const SCROLLBACK_MAX_BYTES = 64 * 1024
 
 /**
@@ -65,9 +64,8 @@ export function ptyHasLiveWork(
   return entries.some((e) => !ptyIsAbandoned(e, thresholdMs))
 }
 
-// Matches OpenCode's own `Pty` entity shape (id/title/command/args/cwd/
-// status/pid/exitCode) so web/CLI clients built against that contract don't
-// need to change their types when they swap to this endpoint.
+// The runtime wire's `Pty` shape (id/title/command/args/cwd/status/pid/
+// exitCode), the one web/CLI clients read.
 //
 // `attachedViewers` and `idleMs` are additive to that contract — DEF-D
 // 2026-09-26 — so the swap blocker (and anyone inspecting `GET /kortix/pty`)
@@ -142,8 +140,7 @@ export type AttachOrCreateResult =
 
 /**
  * In-memory PTY registry, owned for the life of the daemon process (a
- * sandbox restart naturally kills every pty in it anyway, matching how the
- * OpenCode-backed terminal already behaves). Entries persist across
+ * sandbox restart naturally kills every pty in it anyway). Entries persist across
  * `server.reload()` config hot-swaps — the registry is constructed once in
  * `startProxy` and threaded through, never rebuilt on reload.
  */
@@ -325,9 +322,9 @@ export function createPtyRegistry(cfg: Config): PtyRegistry {
 }
 
 /**
- * `/kortix/pty` — Kortix's own PTY implementation, independent of whatever
- * agent runtime (OpenCode today) happens to be running. `/kortix/*` is
- * exempted from the global auth middleware in proxy.ts, so — like every
+ * `/kortix/pty` — Kortix's own PTY implementation, independent of the agent
+ * runtime. `/kortix/*` is
+ * exempted from the global auth middleware in app/server.ts, so — like every
  * sibling user-facing router here (`refresh.ts`, `abort.ts`) — every route
  * verifies `X-Kortix-User-Context` itself.
  */

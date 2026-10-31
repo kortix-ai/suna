@@ -169,7 +169,6 @@ mock.module('../projects/git', () => ({
   isRepoFileNotFoundError: () => false,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
-  createRemoteSessionBranch: async () => undefined,
   archiveRepoSubtree: async () => undefined,
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
@@ -202,7 +201,7 @@ mock.module('../projects/git', () => ({
 
 mock.module("../snapshots/builder", () => ({
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
-  ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
+  ensureMyKortixSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],

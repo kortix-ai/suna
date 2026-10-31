@@ -277,9 +277,6 @@ const envSchema = z.object({
   // disables title generation entirely — nothing else writes `metadata.name`,
   // so sessions then stay untitled and clients fall back to their display chain.
   SESSION_TITLE_GENERATION_ENABLED: optBoolTrue,
-  // Generative UI kill switch. On by default; false => no session is taught the genui catalog,
-  // whatever the project flag says. Blocks already in transcripts still render.
-  GENUI_ENABLED: optBoolTrue,
   // Operator switch for the session-log journal ingest (`POST …/sessions/:s/log/journal`).
   // On by default. Off answers 503: each daemon keeps its unacknowledged changes and
   // retries with backoff, so turning it back on loses nothing the boxes still hold.
@@ -307,10 +304,6 @@ const envSchema = z.object({
   // rows 30 days after a delete, 80 days after a subscription end (inert until decision D6b), their files 7 days later.
   // On by default. Off stops the worker's tick; nothing it has not yet purged is touched.
   SESSION_LOG_PURGE_ENABLED: optBoolTrue,
-  // The API task's memory in MiB (prod and dev ECS tasks: 4096). The journal-less capture starts a
-  // conversion thread only while RSS plus its estimate stays under 75 % of this, or of cgroup
-  // memory.max when lower (`projects/lib/thread-memory.ts`).
-  SESSION_LOG_THREAD_MEMORY_MB: optInt(4096),
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
   // On by default — the base API surface is meant to be discoverable. Internal
   // routers (/v1/admin, /v1/ops) are ALWAYS stripped from the spec regardless
@@ -573,6 +566,10 @@ const envSchema = z.object({
   // project's `workspace_volume` flag says. A session that already has one keeps
   // it (platform/services/workspace-volume.ts).
   KORTIX_WORKSPACE_VOLUMES: optStr,
+  // The `us_region` default for a project that has made no choice: true puts
+  // its new Files and sessions in KORTIX_PLATINUM_US_REGION. Off by default;
+  // dev sets it (deploy-dev.yml). Inert while KORTIX_PLATINUM_US_REGION is unset.
+  KORTIX_PLATINUM_US_REGION_DEFAULT: optBoolFalse,
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
   // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
@@ -1303,14 +1300,12 @@ export const config = {
   KORTIX_RELAY_HEADERS_TIMEOUT_MS: env.KORTIX_RELAY_HEADERS_TIMEOUT_MS,
   KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS: env.KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS,
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
-  GENUI_ENABLED: env.GENUI_ENABLED,
   SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   SESSION_LOG_RESTORE_ENABLED: env.SESSION_LOG_RESTORE_ENABLED,
   SESSION_LOG_RESTORE_DEFAULT_ENABLED: env.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
   SESSION_LOG_RESTORE_MAX_BYTES: env.SESSION_LOG_RESTORE_MAX_BYTES,
   SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
-  SESSION_LOG_THREAD_MEMORY_MB: env.SESSION_LOG_THREAD_MEMORY_MB,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
   MOBILE_STORE_URL_IOS: env.MOBILE_STORE_URL_IOS,
@@ -1432,6 +1427,7 @@ export const config = {
   KORTIX_DRIVES_SESSION_MOUNT: env.KORTIX_DRIVES_SESSION_MOUNT,
   KORTIX_DRIVES_SYNC: env.KORTIX_DRIVES_SYNC,
   KORTIX_WORKSPACE_VOLUMES: env.KORTIX_WORKSPACE_VOLUMES,
+  KORTIX_PLATINUM_US_REGION_DEFAULT: env.KORTIX_PLATINUM_US_REGION_DEFAULT,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET,
   KORTIX_PROJECT_SNAPSHOT_S3_REGION: env.KORTIX_PROJECT_SNAPSHOT_S3_REGION,

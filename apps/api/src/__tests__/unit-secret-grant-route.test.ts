@@ -39,40 +39,33 @@ let authType: 'supabase' | 'pat' = 'supabase';
 let sessionId: string | undefined;
 let agentGrant: Record<string, unknown> | null = null;
 
-const GOVERNED_YAML = `kortix_version: 2
-default_agent: support
+const GOVERNED_YAML = `default_agent: support
 agents:
   support:
     connectors: [gmail]
     connectors_required: [gmail]
-    kortix_permissions: [project.cr.open]
+    kortix_permissions: [project.gitops.push]
     skills: all
     secrets: [OTHER_KEY]
+    tools: all
   scout:
     kortix_permissions: all
+    tools: all
 `;
 
-const ALL_GRANT_YAML = `kortix_version: 2
-default_agent: support
+const ALL_GRANT_YAML = `default_agent: support
 agents:
   support:
     secrets: all
 `;
 
-const UNGOVERNED_YAML = `kortix_version: 2
-default_agent: support
+const UNGOVERNED_YAML = `default_agent: support
 project:
   name: demo
 `;
 
-const V1_TOML = `kortix_version = 1
-
-[[agents]]
-name = "support"
-`;
-
 function governedManifest(): ParsedManifest {
-  return parseManifestString(GOVERNED_YAML, 'yaml', 'kortix.yaml', 'sha-governed');
+  return parseManifestString(GOVERNED_YAML, 'kortix.yaml', 'sha-governed');
 }
 
 function agentsOf(raw: Record<string, unknown>) {
@@ -214,10 +207,10 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/grant', () => {
     expect(support.secrets).toEqual(['OTHER_KEY', 'BROKER_KEY']);
     expect(support.connectors).toEqual(['gmail']);
     expect(support.connectors_required).toEqual(['gmail']);
-    expect(support.kortix_permissions).toEqual(['project.cr.open']);
+    expect(support.kortix_permissions).toEqual(['project.gitops.push']);
     expect(support.skills).toBe('all');
     // The other agent's block is untouched.
-    expect(agentsOf(commits[0]!.raw).scout).toEqual({ kortix_permissions: 'all' });
+    expect(agentsOf(commits[0]!.raw).scout).toEqual({ kortix_permissions: 'all', tools: 'all' });
   });
 
   test('creates the entry for an agent the roster does not declare', async () => {
@@ -225,22 +218,22 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/grant', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ agent: 'newcomer', already_granted: false });
-    expect(agentsOf(commits[0]!.raw).newcomer).toEqual({ secrets: ['BROKER_KEY'], workspace: { project_repository: true } });
+    expect(agentsOf(commits[0]!.raw).newcomer).toEqual({ secrets: ['BROKER_KEY'], workspace: { project_repository: false } });
     expect(agentsOf(commits[0]!.raw).support.secrets).toEqual(['OTHER_KEY']);
   });
 
   test('reports adopted_governance on the manifest that gains its FIRST agents block', async () => {
-    manifest = parseManifestString(UNGOVERNED_YAML, 'yaml', 'kortix.yaml', 'sha-ungoverned');
+    manifest = parseManifestString(UNGOVERNED_YAML, 'kortix.yaml', 'sha-ungoverned');
 
     const response = await grant('BROKER_KEY', 'support');
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ adopted_governance: true });
-    expect(agentsOf(commits[0]!.raw)).toEqual({ support: { secrets: ['BROKER_KEY'], workspace: { project_repository: true } } });
+    expect(agentsOf(commits[0]!.raw)).toEqual({ support: { secrets: ['BROKER_KEY'], workspace: { project_repository: false } } });
   });
 
   test('reports adopted_governance when the repo carries no manifest at all', async () => {
-    // What loadManifestForEdit synthesizes for a blank project: a `kortix`
+    // What loadManifestForEdit synthesizes for a blank project: a `worker`
     // agent with `secrets: all` and a null revision. Committing it publishes
     // the project's first roster, so the flag must fire.
     manifest = synthesizeBlankManifest({ name: 'demo', manifestPath: null });
@@ -249,7 +242,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/grant', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ adopted_governance: true });
-    // The synthesized manifest is kortix_version 3: a new agent gets no checkout unless it asks for one.
+    // A new agent gets no checkout unless it asks for one.
     expect(agentsOf(commits[0]!.raw).newcomer).toEqual({ secrets: ['BROKER_KEY'], workspace: { project_repository: false } });
   });
 
@@ -258,8 +251,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/grant', () => {
     expect(await first.json()).toMatchObject({ adopted_governance: false });
 
     manifest = parseManifestString(
-      `kortix_version: 2\ndefault_agent: support\nagents:\n  support:\n    secrets: [BROKER_KEY]\n`,
-      'yaml',
+      `default_agent: support\nagents:\n  support:\n    secrets: [BROKER_KEY]\n`,
       'kortix.yaml',
       'sha-second',
     );
@@ -285,8 +277,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/grant', () => {
 
   test('the admits check is case-insensitive, matching the delivery gate', async () => {
     manifest = parseManifestString(
-      `kortix_version: 2\ndefault_agent: support\nagents:\n  support:\n    secrets: [broker_key]\n`,
-      'yaml',
+      `default_agent: support\nagents:\n  support:\n    secrets: [broker_key]\n`,
       'kortix.yaml',
       'sha-lowercase',
     );
@@ -301,25 +292,13 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/grant', () => {
   });
 
   test("expands `secrets: all` instead of narrowing the agent to one identifier", async () => {
-    manifest = parseManifestString(ALL_GRANT_YAML, 'yaml', 'kortix.yaml', 'sha-all');
+    manifest = parseManifestString(ALL_GRANT_YAML, 'kortix.yaml', 'sha-all');
 
     const response = await grant('BROKER_KEY', 'support');
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ already_granted: false });
     expect(agentsOf(commits[0]!.raw).support.secrets).toEqual(['OTHER_KEY', 'BROKER_KEY']);
-  });
-
-  test('a v1 manifest is a 400, never a 500', async () => {
-    manifest = parseManifestString(V1_TOML, 'toml', 'kortix.toml', 'sha-v1');
-
-    const response = await grant('BROKER_KEY', 'support');
-
-    expect(response.status).toBe(400);
-    const body = (await response.json()) as { code: string; error: string };
-    expect(body.code).toBe('manifest_v1_unsupported');
-    expect(body.error).toContain('kortix.yaml');
-    expect(commits).toHaveLength(0);
   });
 
   test('a denied secret is a 409 and never reaches the manifest', async () => {

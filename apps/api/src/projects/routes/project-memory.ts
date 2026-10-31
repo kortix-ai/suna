@@ -9,6 +9,8 @@
  * the same and the routes keep working; only the Channels UI is hidden.
  * Read and write rights are the Drive folder rights. A session token (an
  * agent) gets 403 `use_files` on every route: agents use their `/drives` mounts.
+ * The one exception is `project-my-memory.ts`: a My Kortix session reads and
+ * writes the memory of the person it acts for.
  */
 import { createRoute, z } from '@hono/zod-openapi';
 import {
@@ -36,6 +38,7 @@ import {
   decodePageId,
   deletePage,
   getPage,
+  isMyKortixSession,
   layerView,
   listPages,
   MemoryError,
@@ -50,6 +53,7 @@ import {
   type Viewer,
 } from '../../memory';
 import { callerKortixSessionId } from '../../middleware/caller-session';
+import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
 import { auth, boundedIssues, errors, json } from '../../openapi';
 import type { AppEnv } from '../../types';
 import { loadProjectForUser, loadVisibleSession } from '../lib/access';
@@ -71,13 +75,27 @@ type Caller = {
  * The project (`session` access), the viewer, then `run`; a `MemoryError` or
  * a Drive storage failure becomes its status and `{error, code}` body.
  */
-export async function withMemoryCaller<R>(c: Context<AppEnv>, run: (caller: Caller) => Promise<R>) {
+export async function withMemoryCaller<R>(
+  c: Context<AppEnv>,
+  run: (caller: Caller) => Promise<R>,
+  options: { myKortixSession?: boolean } = {},
+) {
   const loaded = await loadProjectForUser(c, c.req.param('projectId')!, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (callerKortixSessionId(c)) {
-    return c.json({ error: 'Agents read and write memory as files in their /drives mounts.', code: 'use_files' }, 403);
+  const { row } = loaded;
+  let userId = loaded.userId;
+  const sessionId = callerKortixSessionId(c);
+  if (sessionId) {
+    if (!options.myKortixSession) {
+      return c.json({ error: 'Agents read and write memory as files in their /drives mounts.', code: 'use_files' }, 403);
+    }
+    // `kortix_memory`: a My Kortix session, for the person it acts for (`on_behalf_of`), in that person's own folder.
+    const person = getRequestOnBehalfOf(c);
+    if (!person || !(await isMyKortixSession(row.projectId, sessionId))) {
+      return c.json({ error: 'Only My Kortix keeps memory here, and only for the person it acts for.', code: 'my_kortix_only' }, 403);
+    }
+    userId = person;
   }
-  const { row, userId } = loaded;
   const may = async (action: 'session' | 'write') => {
     try {
       return !!(await loadProjectForUser(c, row.projectId, action));
@@ -102,7 +120,7 @@ export async function withMemoryCaller<R>(c: Context<AppEnv>, run: (caller: Call
 }
 
 /** A zod failure as the memory routes answer every refusal: `{error, code: invalid_input}`. */
-function memoryValidationHook(
+export function memoryValidationHook(
   result: { success: boolean; error?: { issues: { message: string; path: PropertyKey[] }[] } },
   c: Context,
 ) {

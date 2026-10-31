@@ -248,7 +248,7 @@ export function ConnectorPolicySetBar({
         </p>
         {selected ? (
           <div className="flex shrink-0 items-center gap-1">
-            {access.supported && access.canEdit && giveTo.length > 0 ? (
+            {access.canEdit && giveTo.length > 0 ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="xs" disabled={access.pending !== null}>

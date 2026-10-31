@@ -307,7 +307,16 @@ async function costsSummary(
     })}`,
   );
   if (o.json) {
-    emitJson(summary);
+    // `credits`: the same amounts in the unit people see, so a script never converts.
+    emitJson({
+      ...summary,
+      credits: {
+        total: creditAmount(summary.totals.total_cost),
+        previous: creditAmount(summary.previous?.total_cost),
+        llm: creditAmount(summary.totals.llm_cost),
+        compute: creditAmount(summary.totals.compute_cost),
+      },
+    });
     return 0;
   }
   const t = summary.totals;

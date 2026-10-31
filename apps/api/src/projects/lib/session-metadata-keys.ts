@@ -13,6 +13,7 @@
  * and both routes refuse a request that names one (`400`). Add the key here in
  * the same change that adds the server reader.
  */
+import { SUBAGENT_NOTIFY_PARENT_KEY } from '@kortix/api-contract/runtime-relay';
 import { WARM_SESSION_LOCATION_KEY } from './warm-sessions';
 
 export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
@@ -110,11 +111,17 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
  *
  * - `unattended`: the server answers the session's blocking questions at once
  *   (`channels/question-release.ts`), removing the owner's confirmation step.
+ * - `notify_parent`: each finished turn is delivered into the parent session
+ *   (`projects/subagent-notice.ts`, a background subagent).
  */
-export const OWNER_MANAGED_SESSION_METADATA_KEYS = ['unattended'] as const;
+export const OWNER_MANAGED_SESSION_METADATA_KEYS = ['unattended', SUBAGENT_NOTIFY_PARENT_KEY] as const;
 
 export const PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS = [
   ...SERVER_MANAGED_SESSION_METADATA_KEYS,
+  // Agent teams: the lead is fixed when the lead creates the teammate
+  // (`teamCreateMetadataError`); a later PATCH would let a session join
+  // another session's team.
+  'team_lead',
   'workspace_mode',
   'repository_access',
   'repository_generation',

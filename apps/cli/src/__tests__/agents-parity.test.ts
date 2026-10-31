@@ -139,16 +139,26 @@ function startServer(
       if (p === '/agents/reviewer/config' && req.method === 'GET') {
         return Response.json({
           agent: 'reviewer',
-          schema_version: 2,
           editable: true,
           default_agent: defaultAgent,
           block: REVIEWER_BLOCK,
         });
       }
+      if (p === '/agents/meta/config' && req.method === 'GET') {
+        // The built-in view (agent-config.ts builtinAgentConfigView).
+        return Response.json({
+          agent: 'meta',
+          builtin: 'my_kortix',
+          editable: false,
+          default_agent: defaultAgent,
+          block: null,
+          harness: 'pi',
+          ignored_settings: [],
+        });
+      }
       if (p === '/agents/egress/config' && req.method === 'GET') {
         return Response.json({
           agent: 'egress',
-          schema_version: 3,
           editable: true,
           default_agent: defaultAgent,
           block: EGRESS_BLOCK,
@@ -162,13 +172,12 @@ function startServer(
             { status: 400 },
           );
         }
-        return Response.json({ ok: true, agent: 'egress', schema_version: 3, block: body });
+        return Response.json({ ok: true, agent: 'egress', block: body });
       }
       if (p === '/agents/reviewer/config' && req.method === 'PUT') {
         return Response.json({
           ok: true,
           agent: 'reviewer',
-          schema_version: 2,
           block: body,
         });
       }
@@ -311,6 +320,33 @@ describe('kortix agents — default, scope, config', () => {
     expect(r.stderr).toContain('Agent "ghost" is not declared');
   });
 
+  test('scope and config on My Kortix print the built-in grant, not the block defaults', async () => {
+    const config = writeConfig(startServer());
+    const scope = await runCli(['agents', 'scope', 'meta', '--project', PROJECT], config);
+    expect(scope.code).toBe(0);
+    expect(scope.stdout).toContain('My Kortix');
+    expect(scope.stdout).toContain('secrets              none');
+    expect(scope.stdout).toContain('connectors           none');
+    expect(scope.stdout).toContain('builtin_agents: { my_kortix: false }');
+    expect(scope.stdout).not.toContain('all (default)');
+    expect(scope.stdout).not.toContain('Change it');
+
+    const json = await runCli(['agents', 'scope', 'meta', '--json', '--project', PROJECT], config);
+    expect(json.code).toBe(0);
+    expect(JSON.parse(json.stdout)).toMatchObject({
+      agent: 'meta',
+      builtin: 'my_kortix',
+      secrets: 'none',
+      connectors: [],
+      apps: 'none',
+    });
+
+    const cfg = await runCli(['agents', 'config', 'meta', '--project', PROJECT], config);
+    expect(cfg.code).toBe(0);
+    expect(cfg.stdout).toContain('My Kortix');
+    expect(cfg.stdout).not.toContain('read-only');
+  });
+
   test('scope --show prints the block; a write PUTs only the named fields', async () => {
     const config = writeConfig(startServer());
     const show = await runCli(
@@ -437,7 +473,7 @@ describe('kortix agents — default, scope, config', () => {
     expect(r.stderr).toContain('Agent "ghost" is not declared in this project');
   });
 
-  test('config prints the block; --json wraps it with the schema version', async () => {
+  test('config prints the block; --json prints the whole response', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['agents', 'config', 'reviewer', '--project', PROJECT], config);
     expect(r.code).toBe(0);
@@ -447,7 +483,7 @@ describe('kortix agents — default, scope, config', () => {
       ['agents', 'config', 'reviewer', '--project', PROJECT, '--json'],
       config,
     );
-    expect(JSON.parse(j.stdout).schema_version).toBe(2);
+    expect(JSON.parse(j.stdout)).toMatchObject({ agent: 'reviewer', editable: true, block: REVIEWER_BLOCK });
   });
 
   test('config --set reads the current block first and PUTs the WHOLE merged block', async () => {
