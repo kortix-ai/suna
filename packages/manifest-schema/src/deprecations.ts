@@ -319,6 +319,9 @@ function syncNode(doc: Document, node: unknown, value: unknown): unknown {
       if (!pair) node.set(doc.createNode(key), doc.createNode(next));
       else pair.value = syncNode(doc, pair.value, next) as Node;
     }
+    // Keep the caller's authoring order, including a renamed key's original position.
+    const keys = Object.keys(value);
+    node.items.sort((a, b) => keys.indexOf(String(a.key)) - keys.indexOf(String(b.key)));
     return node;
   }
   // An empty `[]` that gains items is written as a block list.
