@@ -816,8 +816,15 @@ locals {
   worker_name = "${local.name}-worker"
   # KORTIX_PROCESS_ROLE is an API-only switch: the worker ignores it, and a
   # value copied here would only mislead a reader of the task definition.
-  worker_environment = { for k, v in local.environment : k => v if k != "KORTIX_PROCESS_ROLE" }
-  worker_alarms      = try(var.worker.alarm_topic_arn, null) != null
+  # KORTIX_WORKER_ENV_FROM is set only by ecs-deploy.sh --service worker: it
+  # marks a revision with the API's live environment, and the API goes `web`
+  # only on such a revision. This first revision has Terraform's environment
+  # (no deploy overrides), so it must never carry it.
+  worker_environment = {
+    for k, v in local.environment : k => v
+    if !contains(["KORTIX_PROCESS_ROLE", "KORTIX_WORKER_ENV_FROM"], k)
+  }
+  worker_alarms = try(var.worker.alarm_topic_arn, null) != null
 }
 
 resource "aws_ecs_task_definition" "worker" {

@@ -62,9 +62,10 @@ Manager. `infra/scripts/ecs-deploy.sh` injects the document through
 
 `KORTIX_PROCESS_ROLE` is never in that document. `ecs-deploy.sh` sets it on
 every API roll: `web` (the API runs no scheduled job) only when the
-`<prefix>-worker` service runs the same image with a HEALTHY task, else `all`.
-The worker copies the API task's environment at its own roll, without the
-role. `infra/terraform/modules/ecs-api/README.md` has the worker contract.
+`<prefix>-worker` service runs a revision `ecs-deploy.sh` registered, on the
+same image, with a HEALTHY task, else `all`. The worker copies the API task's
+environment at its own roll, without the role, and records the source in
+`KORTIX_WORKER_ENV_FROM`. `infra/terraform/modules/ecs-api/README.md` has the worker contract.
 
 Dev and staging use the same `WEB_PROTECTION_USERNAME` and
 `WEB_PROTECTION_PASSWORD` values. The password value is never committed in
@@ -154,6 +155,9 @@ waits for the copy. Kortix staging and production workflows are unchanged.
 
 `rollback-prod.yml` validates that each requested release image exists. It then
 registers new task-definition revisions and rolls the selected ECS services.
+It rolls the API with `--process-role all` and never rolls the scheduled-job
+worker: once the API rollout is stable, `ecs-deploy.sh` scales the worker to 0.
+The next normal release rolls the worker again and switches the API to `web`.
 The workflow does not reverse database migrations. Forward-only migrations must
 remain compatible with the selected application version.
 

@@ -41,7 +41,8 @@ worker_definition() { # $1 = arn, $2 = image, $3 = cpu
 "containerDefinitions":[{"name":"worker","image":"$2","essential":true,
 "command":["bun","run","src/worker.ts"],
 "healthCheck":{"command":["CMD","bun","-e","fetch()"],"interval":30,"timeout":5,"retries":3,"startPeriod":120},
-"environment":[{"name":"STALE_TERRAFORM_ONLY","value":"from-the-first-revision"},{"name":"PORT","value":"8008"}],
+"environment":[{"name":"STALE_TERRAFORM_ONLY","value":"from-the-first-revision"},{"name":"PORT","value":"8008"},
+  {"name":"KORTIX_WORKER_ENV_FROM","value":"$STUB_WORKER_ENV_FROM"}],
 "secrets":[{"name":"KORTIX_ENV_JSON","valueFrom":"arn:old"}],
 "logConfiguration":{"logDriver":"awslogs","options":{"awslogs-group":"/ecs/$P","awslogs-region":"us-east-2","awslogs-stream-prefix":"worker"}}}]}
 JSON
@@ -180,6 +181,9 @@ function deploy(args: string[], stub: Record<string, string> = {}, env: Record<s
         STUB_WORKER_EXISTS: '1',
         STUB_WORKER_DESIRED: '1',
         STUB_WORKER_IMAGE: HEALTHY_WORKER.image,
+        // A revision ecs-deploy.sh registered carries the API task definition
+        // it copied its environment from. '' = Terraform's first revision.
+        STUB_WORKER_ENV_FROM: API_TD,
         STUB_WORKER_FAMILY_CPU: '1024',
         STUB_API_RUNNING_ROLE: 'all',
         STUB_WORKER_SERVICE_JSON: JSON.stringify(HEALTHY_WORKER.services),
@@ -231,11 +235,21 @@ function decide(services: unknown, definition: unknown, tasks: unknown, image = 
   return { role, reason };
 }
 
-const workerDefinition = (arn: string, image: string) => ({
+const workerDefinition = (arn: string, image: string, envFrom: string | null = API_TD) => ({
   taskDefinitionArn: arn,
   family: `${PREFIX}-worker`,
-  containerDefinitions: [{ name: 'worker', image }],
+  containerDefinitions: [
+    {
+      name: 'worker',
+      image,
+      environment: [
+        { name: 'PORT', value: '8008' },
+        ...(envFrom === null ? [] : [{ name: 'KORTIX_WORKER_ENV_FROM', value: envFrom }]),
+      ],
+    },
+  ],
 });
+const NOT_REGISTERED = `the worker runs a revision ecs-deploy.sh did not register (${WORKER_TD} has no KORTIX_WORKER_ENV_FROM)`;
 
 describe('decide_api_process_role (pure)', () => {
   const healthy = () => ({
@@ -263,7 +277,21 @@ describe('decide_api_process_role (pure)', () => {
     ['the task definition read failed', (input) => { input.definition = {}; }, `the worker PRIMARY task definition ${WORKER_TD} could not be read`],
     ['the task definition is another revision', (input) => { input.definition = workerDefinition(WORKER_TD_NEW, IMAGE); }, `the worker PRIMARY task definition ${WORKER_TD} could not be read`],
     ['the worker runs an older image', (input) => { input.definition = workerDefinition(WORKER_TD, 'kortix/kortix-api:dev-old'); }, `the worker PRIMARY task definition ${WORKER_TD} runs kortix/kortix-api:dev-old, not ${IMAGE}`],
-    ['the revision has no worker container', (input) => { input.definition = { taskDefinitionArn: WORKER_TD, containerDefinitions: [{ name: 'api', image: IMAGE }] }; }, /runs no worker container/],
+    ['the revision has no worker container', (input) => { input.definition = { taskDefinitionArn: WORKER_TD, containerDefinitions: [{ name: 'api', image: IMAGE }] }; }, NOT_REGISTERED],
+    // A failed first roll that the circuit breaker rolled back to Terraform's
+    // revision: in prod it runs the release image (var.api_image) with
+    // Terraform's environment. It must never make the API `web`.
+    ['the worker runs Terraform\'s first revision on the release image', (input) => { input.definition = workerDefinition(WORKER_TD, IMAGE, null); }, NOT_REGISTERED],
+    ['the stamp is empty', (input) => { input.definition = workerDefinition(WORKER_TD, IMAGE, ''); }, NOT_REGISTERED],
+    ['the stamp sits on another container', (input) => {
+      input.definition = {
+        taskDefinitionArn: WORKER_TD,
+        containerDefinitions: [
+          { name: 'worker', image: IMAGE, environment: [] },
+          { name: 'sidecar', image: IMAGE, environment: [{ name: 'KORTIX_WORKER_ENV_FROM', value: API_TD }] },
+        ],
+      };
+    }, NOT_REGISTERED],
     ['no task', (input) => { input.tasks = { tasks: [] }; }, `no worker task of ${WORKER_TD} is RUNNING and HEALTHY (lastStatus/healthStatus: no task)`],
     ['the task is not HEALTHY yet', (input) => { input.tasks = { tasks: [workerTask(WORKER_TD, 'RUNNING', 'UNKNOWN')] }; }, /RUNNING\/UNKNOWN/],
     ['the task is still PENDING', (input) => { input.tasks = { tasks: [workerTask(WORKER_TD, 'PENDING', 'UNKNOWN')] }; }, /PENDING\/UNKNOWN/],
@@ -330,6 +358,9 @@ describe('ecs-deploy.sh --service worker', () => {
       { name: 'ADDED', value: 'by-override' },
       { name: 'KORTIX_PLATINUM_US_REGION', value: 'us-east' },
       { name: 'LLM_GATEWAY_PROXY_TARGET', value: 'https://gateway-dev-use2.kortix.com' },
+      // The mark of a revision this script registered: the API task
+      // definition the environment came from.
+      { name: 'KORTIX_WORKER_ENV_FROM', value: API_TD },
       { name: 'KORTIX_VERSION', value: '0.0.2-dev.new' },
     ]);
 
@@ -341,13 +372,17 @@ describe('ecs-deploy.sh --service worker', () => {
     expect(updates[0]).toContain('--force-new-deployment');
   });
 
-  it('removes KORTIX_PROCESS_ROLE even when an override sets it', () => {
+  it('removes KORTIX_PROCESS_ROLE and stamps its own KORTIX_WORKER_ENV_FROM whatever the overrides say', () => {
     const run = deploy(['--service', 'worker'], {
       STUB_WORKER_SERVICE_JSON: JSON.stringify(service([deployment(WORKER_TD_NEW, 'COMPLETED')], { running: 1, desired: 1 })),
-    }, { KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PROCESS_ROLE":"web"}' });
+    }, { KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PROCESS_ROLE":"web","KORTIX_WORKER_ENV_FROM":"forged"}' });
 
     expect(run.status).toBe(0);
-    expect(containerEnv(run.registered, 'worker').map((entry) => entry.name)).not.toContain('KORTIX_PROCESS_ROLE');
+    const environment = containerEnv(run.registered, 'worker');
+    expect(environment.map((entry) => entry.name)).not.toContain('KORTIX_PROCESS_ROLE');
+    expect(environment.filter((entry) => entry.name === 'KORTIX_WORKER_ENV_FROM')).toEqual([
+      { name: 'KORTIX_WORKER_ENV_FROM', value: API_TD },
+    ]);
   });
 
   it('waits stable whatever --wait-for says: a serving new task with the old one still up is not done', () => {
@@ -416,6 +451,19 @@ describe('ecs-deploy.sh --service api: KORTIX_PROCESS_ROLE and the worker scale-
     expect(apiWait).toBeGreaterThan(apiUpdate);
     expect(scaleDowns).toHaveLength(1);
     expect(run.calls.indexOf(scaleDowns[0])).toBeGreaterThan(apiWait);
+  });
+
+  it('falls back to all when the healthy worker runs a revision ecs-deploy.sh did not register', () => {
+    // The circuit breaker rolled a failed first worker roll back to
+    // Terraform's revision: same image, HEALTHY, but no KORTIX_WORKER_ENV_FROM.
+    const run = deploy([], { STUB_WORKER_ENV_FROM: '' });
+
+    expect(run.stderr).not.toContain('unhandled call');
+    expect(run.status).toBe(0);
+    expect(roleIn(run.registered)).toBe('all');
+    expect(run.stdout).toContain(`▶ KORTIX_PROCESS_ROLE=all (${NOT_REGISTERED})`);
+    expect(run.stderr).toContain('::warning title=API process role::');
+    expect(scaleDownCalls(run.calls)).toHaveLength(1);
   });
 
   it('--process-role all forces all and the scale-down even when the worker is healthy', () => {
@@ -541,18 +589,23 @@ describe('deploy workflows roll the worker before the API', () => {
     );
   });
 
-  it('rollback: the worker rolls to the target api image before the API, only for a target that has the worker', () => {
+  it('rollback: rolls only the API, with --process-role all, and never the worker', () => {
     const workflow = read('rollback-prod.yml');
-    const worker = workflow.indexOf('--service worker');
-    const api = workflow.indexOf('Backend — roll ECS services to vTARGET images');
-    expect(worker).toBeGreaterThan(-1);
-    expect(api).toBeGreaterThan(worker);
-    const step = stepOf(workflow, '--service worker');
-    expect(step).toContain('"kortix/kortix-api:${TARGET}"');
-    expect(step).toContain('--database-migrated');
-    expect(step).toContain("if: steps.plan.outputs.roll_worker == 'yes'");
-    expect(step).toContain('continue-on-error: true');
-    expect(between(workflow, step, 'Backend — roll ECS services to vTARGET images')).toContain('::error title=Worker deploy::');
-    expect(workflow).toContain('git cat-file -e "v$TARGET:apps/api/src/worker.ts"');
+    const code = workflow
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('#'))
+      .join('\n');
+    // A rollback starts at once and stops a bad worker: no worker roll to wait
+    // for, and the API roll scales the worker to 0 once it is stable.
+    expect(code).not.toContain('--service worker');
+    expect(code).not.toContain('roll_worker');
+    // Comments stripped: the step explains the flag in a comment of its own.
+    const apiStep = stepOf(code, '"kortix/kortix-api:${TARGET}"');
+    expect(apiStep).toMatch(/"kortix\/kortix-api:\$\{TARGET\}" \\\n(?:\s+--[a-z-]+(?: "[^"]+")? \\\n)*\s+--process-role all\n/);
+    expect(apiStep).toContain('--database-migrated');
+    // The API is the first ECS roll of the rollback.
+    const firstRoll = code.indexOf('bash infra/scripts/ecs-deploy.sh');
+    expect(code.indexOf('"kortix/kortix-api:${TARGET}"')).toBeGreaterThan(firstRoll);
+    expect(code.slice(firstRoll, code.indexOf('"kortix/kortix-api:${TARGET}"'))).not.toContain('kortix/kortix-');
   });
 });
