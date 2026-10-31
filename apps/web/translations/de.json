@@ -24294,8 +24294,7 @@
         "title": "Alle",
         "explainCompany": "Kortix-Speicher: was Agents über dieses Projekt wissen. Sie lesen ihn vor jeder Antwort.",
         "explainChannel": "Kortix-Speicher: was Agents über {place} wissen. Sie lesen ihn vor jeder Antwort.",
-        "explainDm": "Kortix-Speicher: was Agents über dich und {place} wissen. Sie lesen ihn vor jeder Antwort.",
-        "explainMyKortix": "Was My Kortix sich über dich merkt. Es liest das zu Beginn jedes Chats. Nur du siehst es."
+        "explainDm": "Kortix-Speicher: was Agents über dich und {place} wissen. Sie lesen ihn vor jeder Antwort."
       },
       "allPages": "Alle Seiten",
       "noMatches": "Keine Seite passt zu „{query}“.",
@@ -24368,9 +24367,7 @@
         "title": "Noch kein Speicher in {place}",
         "titleDm": "Noch kein Speicher mit {place}",
         "description": "Agents speichern hier, was sie lernen, und lesen es vor jeder Antwort.",
-        "descriptionMyKortix": "Sag My Kortix im Chat „merk dir, dass …“, und es hält es hier fest. Es liest das zu Beginn jedes Chats. Nur du siehst es.",
         "titleCompany": "Noch kein Unternehmensspeicher",
-        "titleMyKortix": "My Kortix weiß noch nichts über dich",
         "openCompany": "Unternehmensspeicher öffnen · {count, plural, one {# Seite} other {# Seiten}}"
       },
       "source": {
@@ -24394,12 +24391,9 @@
       },
       "company": {
         "subtitle": "Was jeder Agent in diesem Projekt weiß.",
-        "subtitleMyKortix": "Was My Kortix sich über dich merkt. Nur du siehst es.",
         "gateDescription": "Der Unternehmensspeicher gehört zu Channels: Jeder Agent in diesem Projekt beginnt jeden Thread mit dem, was das Team hier gesichert hat.",
         "title": "Speicher",
-        "place": "Unternehmen",
-        "placeMyKortix": "My Kortix",
-        "layers": "Gedächtnis"
+        "place": "Unternehmen"
       },
       "rememberThis": {
         "label": "Merken",
@@ -24419,10 +24413,6 @@
       "companyLink": "Unternehmensspeicher · {count, plural, one {# Seite} other {# Seiten}}",
       "companyLinkHint": "Der Agent hier nutzt auch den Unternehmensspeicher.",
       "group": {
-        "user": "Über dich",
-        "feedback": "Wie du es magst",
-        "project": "Deine Arbeit",
-        "reference": "Wo Dinge liegen",
         "other": "Über uns",
         "people": "Personen",
         "decisions": "Entscheidungen",

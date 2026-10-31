@@ -24294,8 +24294,7 @@
         "title": "全部",
         "explainCompany": "Kortix 记忆：智能体对此项目的了解。它们会在每次回复前阅读。",
         "explainChannel": "Kortix 记忆：智能体对 {place} 的了解。它们会在每次回复前阅读。",
-        "explainDm": "Kortix 记忆：智能体对你和 {place} 的了解。它们会在每次回复前阅读。",
-        "explainMyKortix": "My Kortix 记住的关于你的事。每次聊天开始时它都会读取。只有你能看到。"
+        "explainDm": "Kortix 记忆：智能体对你和 {place} 的了解。它们会在每次回复前阅读。"
       },
       "allPages": "所有页面",
       "noMatches": "没有与“{query}”匹配的页面。",
@@ -24368,9 +24367,7 @@
         "title": "{place} 中还没有记忆",
         "titleDm": "与 {place} 还没有记忆",
         "description": "智能体会把学到的内容保存在这里，并在每次回复前阅读。",
-        "descriptionMyKortix": "在聊天中告诉 My Kortix「记住……」，它会保存在这里。每次聊天开始时它都会读取。只有你能看到。",
         "titleCompany": "还没有公司记忆",
-        "titleMyKortix": "My Kortix 还没有记住关于你的任何事",
         "openCompany": "打开公司记忆 · {count, plural, other {# 个页面}}"
       },
       "source": {
@@ -24394,12 +24391,9 @@
       },
       "company": {
         "subtitle": "此项目中每个智能体都知道的内容。",
-        "subtitleMyKortix": "My Kortix 记住的关于你的事。只有你能看到。",
         "gateDescription": "公司记忆随频道功能提供：此项目中的每个智能体在每个线程开始时都会读取团队保存在这里的内容。",
         "title": "记忆",
-        "place": "公司",
-        "placeMyKortix": "My Kortix",
-        "layers": "记忆"
+        "place": "公司"
       },
       "rememberThis": {
         "label": "记住这个",
@@ -24419,10 +24413,6 @@
       "companyLink": "公司记忆 · {count, plural, other {# 个页面}}",
       "companyLinkHint": "这里的智能体也会使用公司记忆。",
       "group": {
-        "user": "关于你",
-        "feedback": "你喜欢的方式",
-        "project": "你的工作",
-        "reference": "东西在哪里",
         "other": "概况",
         "people": "人员",
         "decisions": "决策",

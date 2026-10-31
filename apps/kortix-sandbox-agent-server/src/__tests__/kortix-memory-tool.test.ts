@@ -106,7 +106,8 @@ describe('kortix_memory', () => {
   test('save creates a page, a second save of the same name updates it, list shows one page', async () => {
     const created = await run({ action: 'save', name: 'likes-short-replies', title: 'Likes short replies', ...SHORT })
     expect(created).toMatchObject({ ok: true, tool: 'kortix_memory', action: 'save', card: { title: 'Remembered: Likes short replies', status: 'done' }, data: { created: true, name: 'likes-short-replies', type: 'feedback' } })
-    expect(created.card.links).toEqual([{ label: 'Memory', href: '/projects/proj_1/memory?layer=mykortix&page=pid_likes-short-replies' }])
+    // No screen to link: the person reaches this memory only through My Kortix.
+    expect(created.card.links).toBeUndefined()
     expect(requests[0]).toEqual({
       method: 'PUT',
       path: `${PREFIX}/pages/likes-short-replies`,

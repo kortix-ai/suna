@@ -1,7 +1,7 @@
 /**
  * kortix_memory: what My Kortix remembers about the person it talks to. One
  * fact per page, in the person's own Files folder (`/Users/<person>/Memory/mykortix`),
- * which they see and edit on the Memory screen. A My Kortix platform tool
+ * which the person reaches only through My Kortix: there is no screen for it. A My Kortix platform tool
  * (`platform.ts`), but it calls the API directly with the session token
  * (`/v1/projects/:id/memory/me/agent/mykortix`): the token acts for the
  * session's person, and the API refuses any other folder.
@@ -11,7 +11,7 @@
  * an index of every page starts each My Kortix turn; `save` creates or
  * replaces the page with that name, so the same fact is never saved twice.
  */
-import { fail, ok, projectHref, type PlatformToolContext } from './platform'
+import { fail, ok, type PlatformToolContext } from './platform'
 
 const TOOL = 'kortix_memory' as const
 const ACTIONS = ['list', 'view', 'save', 'delete'] as const
@@ -37,13 +37,6 @@ interface Answer {
   body: any
 }
 
-/** The Memory screen, on the person's My Kortix memory; `page` opens one page. */
-function memoryHref(context: PlatformToolContext, pageId?: string): string {
-  const query = new URLSearchParams({ layer: 'mykortix', ...(pageId ? { page: pageId } : {}) })
-  return projectHref(context.env, `/memory?${query.toString()}`)
-}
-
-const links = (context: PlatformToolContext, pageId?: string) => [{ label: 'Memory', href: memoryHref(context, pageId) }]
 
 async function call(context: PlatformToolContext, method: 'GET' | 'PUT' | 'DELETE', suffix: string, body?: unknown): Promise<Answer> {
   const env = context.env
@@ -107,7 +100,6 @@ async function list(context: PlatformToolContext) {
     {
       title: entries.length === 0 ? 'Nothing remembered yet' : entries.length === 1 ? '1 thing I remember' : `${entries.length} things I remember`,
       rows: entries.slice(0, 12).map((entry) => ({ title: entry.title, detail: entry.description, badge: entry.type })),
-      links: links(context),
     },
     { entries: entries.map(({ name, title, description, type, updated_at }) => ({ name, title, description, type, updated_at })), truncated: answer.body?.truncated === true },
   )
@@ -117,7 +109,7 @@ async function view(name: string, context: PlatformToolContext) {
   const answer = await call(context, 'GET', `/pages/${name}`)
   if (answer.status !== 200) return refused('view', `Could not open “${name}”`, answer, context)
   const page = answer.body as Entry & { body: string }
-  return ok(TOOL, 'view', { title: page.title, subtitle: page.description, links: links(context, page.page_id) }, page)
+  return ok(TOOL, 'view', { title: page.title, subtitle: page.description }, page)
 }
 
 async function save(name: string, args: Record<string, any>, context: PlatformToolContext) {
@@ -144,7 +136,7 @@ async function save(name: string, args: Record<string, any>, context: PlatformTo
   return ok(
     TOOL,
     'save',
-    { title: `${created ? 'Remembered' : 'Updated'}: ${page.title}`, subtitle: page.description, links: links(context, page.page_id) },
+    { title: `${created ? 'Remembered' : 'Updated'}: ${page.title}`, subtitle: page.description },
     { created, name: page.name, title: page.title, description: page.description, type: page.type },
   )
 }
@@ -153,12 +145,12 @@ async function remove(name: string, context: PlatformToolContext) {
   const answer = await call(context, 'DELETE', `/pages/${name}`)
   if (answer.status !== 200) return refused('delete', `Could not forget “${name}”`, answer, context)
   const title = typeof answer.body?.title === 'string' ? answer.body.title : name
-  return ok(TOOL, 'delete', { title: `Forgot: ${title}`, links: links(context) }, { name, title })
+  return ok(TOOL, 'delete', { title: `Forgot: ${title}` }, { name, title })
 }
 
 export default {
   description:
-    'Your memory of the person you talk to, kept across every session with them in this project. One fact per page; they see and edit every page on the Memory screen. ' +
+    'Your memory of the person you talk to, kept across every session with them in this project. One fact per page. The person has no screen for it: they ask you what you remember, to change it, or to forget it. ' +
     'Your turn starts with the index of these pages. Actions: `list` (every page); `view` (name); `save` (name, type, description, body, optional title: creates the page, or replaces the page with that name); `delete` (name).\n\n' +
     'Save when the person states a preference, corrects how you work, tells you something durable about themself, their role or their work, or asks you to remember something. ' +
     '"Forget …" deletes the page. Before you save, check the index: when a page covers it, `save` with that page\'s name to update it, never a second page. Delete a page that turned out wrong.\n\n' +
@@ -176,7 +168,7 @@ export default {
       type: { type: 'string', enum: [...TYPES], description: 'For save: user, feedback, project or reference. Default: user.' },
       description: { type: 'string', description: 'For save: one line that says what the page is about. You read it later to decide whether the page matters. Default: the title.' },
       body: { type: 'string', description: 'For save: the fact itself, in Markdown. For feedback and project, end with **Why:** and **How to apply:** lines.' },
-      title: { type: 'string', description: 'For save: a short title the person reads on the Memory screen. Default: the name.' },
+      title: { type: 'string', description: 'For save: a short title. Default: the name.' },
     },
     required: ['action'],
   },
