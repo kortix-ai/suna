@@ -54,6 +54,7 @@ import { mayPromptSessions, maySeeSessions, loadSessionAccessRows } from '../../
 import { db } from '../../shared/db';
 import { trackDetached } from '../../shared/drain';
 import { isUuid } from '../../shared/validate';
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 import { RESULT_EXCERPT_KEY, RESULT_EXCERPT_MAX_CHARS, plainExcerpt, readSessionBoards, sessionInbound, sessionTeamLead } from '../lib/session-board';
 import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
@@ -593,7 +594,7 @@ export async function firePeerIdleNotices(input: {
     .where(and(
       eq(sessionPeerMessages.toSessionId, input.sessionId),
       gt(sessionPeerMessages.idleNoticeUntil, new Date()),
-      sql`exists (select 1 from ${sessionLifecycleCommands} where ${sessionLifecycleCommands.idempotencyKey} = 'peer:' || ${sessionPeerMessages.id} and ${sessionLifecycleCommands.status} = 'succeeded')`,
+      sql`exists (select 1 from ${sessionLifecycleCommands} where ${sessionLifecycleCommands.idempotencyKey} = 'peer:' || ${qualifiedColumn(sessionPeerMessages.id)} and ${sessionLifecycleCommands.status} = 'succeeded')`,
     ))
     .returning();
   await db.update(sessionPeerMessages)
