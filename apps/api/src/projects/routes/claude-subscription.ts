@@ -1,13 +1,16 @@
-// The caller's Claude subscription login, for Claude Code in their sessions.
+// Claude accounts: a member's Claude Pro or Max login, stored as a named
+// provider account of this project, exactly like a ChatGPT account. The LLM
+// gateway uses it for Claude Code's model calls; no sandbox receives it.
 //
 //   GET    /v1/projects/:projectId/claude-subscription                 status
 //   POST   /v1/projects/:projectId/claude-subscription/login/start     run `claude setup-token`
 //   POST   /v1/projects/:projectId/claude-subscription/login/complete  paste the code
 //   PUT    /v1/projects/:projectId/claude-subscription/token           paste a token
-//   DELETE /v1/projects/:projectId/claude-subscription                 disconnect
+//   DELETE /v1/projects/:projectId/claude-subscription                 delete your own Claude accounts here
 //
-// The project gives the permission context. The login belongs to the caller
-// in the project's account, so it works in every project of that account.
+// A new account is private to its creator unless `sharing` says otherwise.
+// Sharing beyond yourself needs `project.secret.write`. List, share, reconnect
+// and delete one account through /v1/accounts/:accountId/secret-resources.
 // Only a person signs in: a sandbox, session, service-account or API-key
 // credential gets 403. No response carries the token.
 
@@ -15,31 +18,50 @@ import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import type { AppEnv } from '../../types';
 import { auth, errors, json } from '../../openapi';
-import { recordAuditEvent } from '../../shared/audit';
 import { accountMemberRow } from '../../iam/membership-read';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { createProjectSecretWriteRateLimitMiddleware } from '../../middleware/rate-limit';
+import { randomUUID } from 'node:crypto';
+import { PROJECT_ACTIONS } from '../../iam';
+import { assertProjectCapability } from '../lib/http-project-access';
 import { CLAUDE_TOKEN_PATTERN } from '../claude-subscription/setup-token';
 import {
   ClaudeLoginFlowError,
   cancelClaudeLogins,
   completeClaudeLogin,
-  onClaudeLoginChanged,
   startClaudeLogin,
+  storeClaudeAccount,
+  type ClaudeAccountTarget,
 } from '../claude-subscription/flows';
-import { claudeLoginStatus, deleteClaudeLogin, saveClaudeLogin, type ClaudeLoginStatus } from '../../claude-subscription/store';
+import { CLAUDE_ACCOUNT, countUsableClaudeAccounts, deleteOwnClaudeAccounts } from '../../claude-subscription/accounts';
+import { checkNamedConnection } from '../../secrets/provider-accounts';
 
 const Params = z.object({ projectId: z.string() });
 
 const StatusSchema = z
   .object({
-    connected: z.boolean().openapi({ description: 'The caller has a Claude subscription login in this account.' }),
-    source: z.enum(['setup_token', 'pasted']).nullable().openapi({ description: 'How the login was made.' }),
-    connected_at: z.string().nullable().openapi({ description: 'When the login was stored (ISO 8601).' }),
-    usable: z.boolean().openapi({ description: 'False when the stored login cannot be read: sign in again.' }),
+    connected: z.boolean().openapi({ description: 'You may use at least one Claude account in this project: your own or one shared with you.' }),
+    accounts: z.number().int().openapi({ description: 'How many Claude accounts you may use in this project.' }),
   })
   .openapi('ClaudeSubscriptionStatus');
+
+const ConnectedSchema = z
+  .object({
+    connected: z.literal(true),
+    secret_id: z.string().uuid().openapi({ description: 'The Claude account the sign-in created or reconnected.' }),
+  })
+  .openapi('ClaudeSubscriptionConnected');
+
+const AccountFields = {
+  resource_label: z.string().optional().openapi({ description: 'The new account\'s name (1–100 characters). Default "Claude".' }),
+  resource_id: z.string().uuid().optional().openapi({ description: 'Reconnect this Claude account of yours instead of adding one. Send it alone.' }),
+  sharing: z.record(z.string(), z.unknown()).nullable().optional().openapi({
+    description: 'Who may use the new account: `{mode:"private"}` (default), `{mode:"project"}` or `{mode:"members", memberIds:[…]}`.',
+  }),
+};
+
+const StartBody = z.object(AccountFields);
 
 const StartSchema = z
   .object({
@@ -56,13 +78,10 @@ const CompleteBody = z.object({
 
 const TokenBody = z.object({
   token: z.string().openapi({ description: 'The token `claude setup-token` printed (`sk-ant-oat01-…`).' }),
+  ...AccountFields,
 });
 
 type ProjectContext = Context<AppEnv>;
-
-function statusBody(status: ClaudeLoginStatus) {
-  return { connected: status.connected, source: status.source, connected_at: status.connectedAt, usable: status.usable };
-}
 
 /** A person, with a credential of their own: a browser session or a personal token outside any session. */
 function isPersonCredential(c: ProjectContext): boolean {
@@ -93,18 +112,26 @@ async function caller(c: ProjectContext, projectId: string): Promise<Caller | Re
   return { accountId: loaded.row.accountId, userId: loaded.userId, projectId };
 }
 
-async function audit(who: Caller, action: 'secret.claude_subscription.connected' | 'secret.claude_subscription.disconnected', source?: string) {
-  await recordAuditEvent({
-    accountId: who.accountId,
-    projectId: who.projectId,
-    actorUserId: who.userId,
-    actorType: 'human',
-    source: 'api',
-    action,
-    resourceType: 'claude_subscription_login',
-    resourceId: who.userId,
-    metadata: source ? { source } : {},
+async function status(who: Caller) {
+  const accounts = await countUsableClaudeAccounts(who.accountId, who.projectId, who.userId);
+  return { connected: accounts > 0, accounts };
+}
+
+/**
+ * The account a sign-in writes: a new one (named and shared as the body says)
+ * or a reconnect. Sharing beyond the caller needs `project.secret.write`.
+ */
+async function accountTarget(c: ProjectContext, who: Caller, body: { resource_label?: string; resource_id?: string; sharing?: unknown }): Promise<ClaudeAccountTarget | Refusal | { body: { error: string; message: string; code: string }; status: 400 }> {
+  const checked = await checkNamedConnection({
+    accountId: who.accountId, projectId: who.projectId, userId: who.userId, kind: CLAUDE_ACCOUNT,
+    label: body.resource_label, resourceId: body.resource_id, sharing: body.sharing, defaultLabel: 'Claude',
   });
+  if (!checked.ok) return { body: { error: 'invalid_account', message: checked.error, code: 'invalid_account' }, status: checked.status as 400 | 403 | 404 };
+  if (!checked.ownerOnly) {
+    await assertProjectCapability(c, who.userId, who.accountId, who.projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
+  }
+  if (checked.resourceId) return { kind: 'reconnect', secretId: checked.resourceId };
+  return { kind: 'new', secretId: randomUUID(), label: checked.label!, sharing: checked.sharing! };
 }
 
 export function registerClaudeSubscriptionRoutes(): void {
@@ -116,8 +143,8 @@ export function registerClaudeSubscriptionRoutes(): void {
       method: 'get',
       path: '/{projectId}/claude-subscription',
       tags: ['secrets'],
-      summary: 'Read your Claude subscription login status',
-      description: 'Whether you signed in to your Claude subscription for Claude Code in this account. The token is never returned.',
+      summary: 'Read whether you may use a Claude account here',
+      description: 'Whether you may use at least one Claude account in this project: your own or one shared with you. No token is returned.',
       ...auth,
       request: { params: Params },
       responses: { 200: json(StatusSchema, 'Login status'), ...errors(403, 404) },
@@ -126,7 +153,7 @@ export function registerClaudeSubscriptionRoutes(): void {
       const { projectId } = c.req.valid('param');
       const who = await caller(c, projectId);
       if ('body' in who) return c.json(who.body, who.status);
-      return c.json(statusBody(await claudeLoginStatus(who.accountId, who.userId)), 200);
+      return c.json(await status(who), 200);
     },
   );
 
@@ -137,17 +164,20 @@ export function registerClaudeSubscriptionRoutes(): void {
       tags: ['secrets'],
       summary: 'Start a Claude subscription sign-in',
       description:
-        "Runs the unmodified Claude Code binary's `claude setup-token` and returns its claude.com sign-in link. Open the link, approve, then send the code claude.com shows to `login/complete`. A new start replaces your earlier one.",
+        "Runs the unmodified Claude Code binary's `claude setup-token` and returns its claude.com sign-in link. Open the link, approve, then send the code claude.com shows to `login/complete`. The completed sign-in adds a Claude account (private to you unless `sharing` says otherwise) or reconnects `resource_id`. A new start replaces your earlier one.",
       ...auth,
-      request: { params: Params },
-      responses: { 200: json(StartSchema, 'The sign-in link'), ...errors(403, 404, 429, 502, 503) },
+      request: { params: Params, body: { content: { 'application/json': { schema: StartBody } } } },
+      responses: { 200: json(StartSchema, 'The sign-in link'), ...errors(400, 403, 404, 429, 502, 503) },
     }),
     async (c) => {
       const { projectId } = c.req.valid('param');
+      const body = c.req.valid('json');
       const who = await caller(c, projectId);
       if ('body' in who) return c.json(who.body, who.status);
+      const target = await accountTarget(c, who, body);
+      if ('body' in target) return c.json(target.body, target.status);
       try {
-        const started = await startClaudeLogin({ accountId: who.accountId, userId: who.userId });
+        const started = await startClaudeLogin({ ...who, target });
         return c.json({ flow_id: started.flowId, authorize_url: started.authorizeUrl, expires_at: started.expiresAt }, 200);
       } catch (err) {
         if (!(err instanceof ClaudeLoginFlowError)) throw err;
@@ -164,25 +194,26 @@ export function registerClaudeSubscriptionRoutes(): void {
       tags: ['secrets'],
       summary: 'Finish a Claude subscription sign-in',
       description:
-        'Hands the code claude.com showed to the running `claude setup-token`, which exchanges it with Anthropic. On success the login is stored for you only. Errors: `invalid_code`, `expired`, `login_failed`.',
+        'Hands the code claude.com showed to the running `claude setup-token`, which exchanges it with Anthropic. On success the Claude account the start named is stored. Errors: `invalid_code`, `expired`, `login_failed`.',
       ...auth,
       request: { params: Params, body: { content: { 'application/json': { schema: CompleteBody } } } },
-      responses: { 200: json(StatusSchema, 'Signed in'), ...errors(400, 403, 404, 409, 410, 502) },
+      responses: { 200: json(ConnectedSchema, 'Signed in'), ...errors(400, 403, 404, 409, 410, 502) },
     }),
     async (c) => {
       const { projectId } = c.req.valid('param');
       const body = c.req.valid('json');
       const who = await caller(c, projectId);
       if ('body' in who) return c.json(who.body, who.status);
+      let secretId: string | null;
       try {
-        await completeClaudeLogin({ accountId: who.accountId, userId: who.userId, flowId: body.flow_id, code: body.code });
+        ({ secretId } = await completeClaudeLogin({ accountId: who.accountId, userId: who.userId, flowId: body.flow_id, code: body.code }));
       } catch (err) {
         if (!(err instanceof ClaudeLoginFlowError)) throw err;
         const status = err.status === 400 || err.status === 404 || err.status === 409 || err.status === 410 ? err.status : 502;
         return c.json({ error: err.code, message: err.message, code: err.code }, status);
       }
-      await audit(who, 'secret.claude_subscription.connected', 'setup_token');
-      return c.json(statusBody(await claudeLoginStatus(who.accountId, who.userId)), 200);
+      if (!secretId) return c.json({ error: 'login_failed', message: 'This sign-in started before Claude accounts. Start it again.', code: 'login_failed' }, 410);
+      return c.json({ connected: true as const, secret_id: secretId }, 200);
     },
   );
 
@@ -193,14 +224,15 @@ export function registerClaudeSubscriptionRoutes(): void {
       tags: ['secrets'],
       summary: 'Store a Claude subscription token you made',
       description:
-        'Stores the token `claude setup-token` printed on your own computer. It is kept for you only and reaches Claude Code in your sessions. It is never returned.',
+        'Stores the token `claude setup-token` printed on your own computer as a Claude account (private to you unless `sharing` says otherwise), or as the new login of your account `resource_id`. Only the LLM gateway reads it. It is never returned.',
       ...auth,
       request: { params: Params, body: { content: { 'application/json': { schema: TokenBody } } } },
-      responses: { 200: json(StatusSchema, 'Stored'), ...errors(400, 403, 404) },
+      responses: { 200: json(ConnectedSchema, 'Stored'), ...errors(400, 403, 404) },
     }),
     async (c) => {
       const { projectId } = c.req.valid('param');
-      const token = c.req.valid('json').token.trim();
+      const body = c.req.valid('json');
+      const token = body.token.trim();
       const who = await caller(c, projectId);
       if ('body' in who) return c.json(who.body, who.status);
       if (!CLAUDE_TOKEN_PATTERN.test(token)) {
@@ -209,11 +241,11 @@ export function registerClaudeSubscriptionRoutes(): void {
           400,
         );
       }
-      await cancelClaudeLogins(who.accountId, who.userId);
-      await saveClaudeLogin(who.accountId, who.userId, token, 'pasted');
-      await audit(who, 'secret.claude_subscription.connected', 'pasted');
-      void onClaudeLoginChanged(who.accountId, who.userId);
-      return c.json(statusBody(await claudeLoginStatus(who.accountId, who.userId)), 200);
+      const target = await accountTarget(c, who, body);
+      if ('body' in target) return c.json(target.body, target.status);
+      const secretId = await storeClaudeAccount({ ...who, target, token });
+      if (!secretId) return c.json({ error: 'not_found', message: 'This Claude account is no longer available. Add it again.', code: 'not_found' }, 404);
+      return c.json({ connected: true as const, secret_id: secretId }, 200);
     },
   );
 
@@ -222,8 +254,8 @@ export function registerClaudeSubscriptionRoutes(): void {
       method: 'delete',
       path: '/{projectId}/claude-subscription',
       tags: ['secrets'],
-      summary: 'Disconnect your Claude subscription',
-      description: 'Deletes your stored Claude login in this account and removes it from your running sessions.',
+      summary: 'Delete your own Claude accounts in this project',
+      description: 'Deletes every Claude account you added to this project and stops your running Claude sign-ins. Accounts others shared with you stay.',
       ...auth,
       request: { params: Params },
       responses: { 200: json(StatusSchema, 'Disconnected'), ...errors(403, 404) },
@@ -233,11 +265,8 @@ export function registerClaudeSubscriptionRoutes(): void {
       const who = await caller(c, projectId);
       if ('body' in who) return c.json(who.body, who.status);
       await cancelClaudeLogins(who.accountId, who.userId);
-      if (await deleteClaudeLogin(who.accountId, who.userId)) {
-        await audit(who, 'secret.claude_subscription.disconnected');
-        void onClaudeLoginChanged(who.accountId, who.userId);
-      }
-      return c.json(statusBody(await claudeLoginStatus(who.accountId, who.userId)), 200);
+      await deleteOwnClaudeAccounts(who.accountId, who.projectId, who.userId);
+      return c.json(await status(who), 200);
     },
   );
 }

@@ -1367,9 +1367,9 @@ My Kortix, the built-in agent, has nine more tools. Eight run the in-sandbox `ko
 
 | Tool | Actions | CLI it runs |
 | --- | --- | --- |
-| `kortix_agents` | `list`, `get`, `create`, `update`, `set_access` | `kortix agents ls`, `agents config`, `agents scope` |
+| `kortix_agents` | `list`, `models`, `get`, `create`, `update`, `set_access` | `kortix agents ls`, `models ls`, `agents config`, `agents scope` |
 | `kortix_sessions` | `list`, `read`, `message`, `stop` | `kortix sessions ls`, `sessions log`, `sessions chat --queue`, `sessions stop` |
-| `kortix_schedules` | `list`, `create`, `pause`, `resume`, `delete`, `run_now` | `kortix triggers ls`, `triggers add --runtime`, `triggers pause/resume/rm/run` |
+| `kortix_schedules` | `follow_up`, `wake_on`, `events`, `list`, `create`, `pause`, `resume`, `remove` (alias `delete`), `run_now` | `kortix loop`, `triggers add --on …`, `triggers events --connector`, `triggers ls` and `loops ls`, `triggers add --runtime`, `triggers pause/resume/rm/run` |
 | `kortix_connectors` | `list`, `find`, `add`, `connect` | `kortix connectors ls`, `connectors catalog`, `connectors catalog install`, `connectors connect` |
 | `kortix_people` | `list`, `pending`, `invite`, `set_role`, `remove` | `kortix access ls`, `access pending`, `access invite`, `access grant`, `access revoke` |
 | `kortix_access` | `me`, `who_can_grant` | `kortix whoami`, `kortix access ls` |
@@ -1398,7 +1398,7 @@ My Kortix, the built-in agent, has nine more tools. Eight run the in-sandbox `ko
 
 The `workflow` tool runs a JavaScript script that starts and coordinates many agents. The script holds the plan and the intermediate results. The model receives only the script's return value. My Kortix has the tool, and so has every agent that may use the `agent` tool.
 
-The call takes `script` (required), `description`, `args`, `max_agents`, `background`, `resume_run_id`, and `name`. To run a saved workflow by `name`, or to relaunch a run with `resume_run_id`, the call passes `script: ""`.
+The call takes `script` (required), `description`, `args`, `max_agents`, `resume_run_id`, `fresh`, and `name`. To run a saved workflow by `name`, or to resume a run with its own script, the call passes `script: ""`.
 
 ```js
 export const meta = {
@@ -1420,12 +1420,13 @@ return audits.filter(Boolean)
 ```
 
 - **Format.** The optional first statement `export const meta = { name, description, phases }` is a plain literal: no variable, call, or spread. The card lists the phases as pending until `phase(title)` starts each one. The body is plain JavaScript with top-level `await`. It has no `fetch`, no file access, no timers, no `Date.now()` and no `Math.random()`.
-- **Script API.** `agent(prompt, opts)` starts one agent in its own session and resolves to its final answer. The options are `label`, `phase`, `agent` (a project agent's name), `model`, `schema`, and `stallMs`. `parallel([() => …])` runs functions at the same time. `pipeline(items, stage1, stage2, …)` sends each item through the stages. `log(text)` shows a progress line, and `args` is the call's `args` value.
+- **Script API.** `agent(prompt, opts)` starts one agent in its own session and resolves to its final answer. The options are `label`, `phase`, `agent` (a project agent's name), `model`, `instructions`, `tools`, `schema`, `strict`, and `stallMs`.
+- **Custom agents.** `model` (a `provider/model` ref) runs one agent on another model, named agents included. `instructions`, without `agent`, gives the agent its own system prompt: an inline agent for this one call. `tools` limits the agent to the listed tools. Every listed tool must be one the calling session has, so a child never gets more than its caller; a named agent keeps only the listed tools its own definition also allows. A resume reuses an agent only when its prompt and all of these options are unchanged. The `agent` tool takes the same: a top-level `model` for any hand-off, and an inline `agent: { instructions, model, tools }` spec. `parallel([() => …])` runs functions at the same time. `pipeline(items, stage1, stage2, …)` sends each item through the stages. `log(text)` shows a progress line, and `args` is the call's `args` value.
 - **Failures.** `agent()` resolves to `null` when its session was stopped. It throws when the agent failed. Awaited directly, the error ends the run. Inside `parallel()` or `pipeline()`, the failed agent becomes `null` and the run continues.
 - **Approval.** Before the first agent starts, the person sees the title, the phases, and the agent count, with **Run it**, **Run it, and don't ask again in this session**, and **Cancel**. The count is the call's `max_agents`, and the run refuses every `agent()` past it. A child session, for example a background runner, does not ask.
-- **Structured output.** With `schema` (a JSON Schema), the agent must answer with JSON that matches it, and `agent()` resolves to the parsed value. A wrong answer gets a correction in the same session, up to 5 attempts. Kortix checks the keywords `type`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const`, `minItems`, `maxItems`, `minLength`, `maxLength`, `minimum`, and `maximum`. A schema that contradicts itself, for example a `required` key that `additionalProperties: false` rules out, stops the call before the agent starts.
-- **Background.** With `background: true`, the default in a session a person started, the call starts one runner session and returns at once. The runner calls the tool with `script: ""`, which runs the workflow its session context holds, and keeps its own computer awake. The runner is a background subagent: its result arrives in the calling session as a new message when the runner's turn ends, and a `resume_run_id` relaunch returns at once the same way. A background run needs two more session levels below the caller: one for the runner and one for its agents.
-- **Resume.** Each result names a `run_id`. A call with `resume_run_id` runs the script again: agents that completed return their saved results without a new session, and the first agent whose prompt changed or that failed runs again, with every agent after it. A background run resumes in its runner session, and that call waits for the result.
+- **Structured output.** With `schema` (a JSON Schema), the agent must answer with JSON that matches it, and `agent()` resolves to the parsed value. A wrong answer gets a correction in the same session, up to 5 attempts. When the last answer still does not match, `agent()` resolves to `{ schema_error, text }` (the reason and the last answer) and the run continues; a resume asks that agent again. With `strict: true`, `agent()` throws instead. Kortix checks the keywords `type`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const`, `minItems`, `maxItems`, `minLength`, `maxLength`, `minimum`, and `maximum`. A schema that contradicts itself, for example a `required` key that `additionalProperties: false` rules out, stops the call before the agent starts.
+- **Background, always.** Every workflow runs in the background. The call starts one runner session and returns within seconds, so the calling turn ends and the person keeps talking. The runner gets the script in its first message (up to 200,000 characters of script, args and records), runs it, and keeps its own computer awake. A runner runs that one workflow only: a later message to it, the same hand-off included, starts no agent and changes no record, also after its computer restarts. Its result arrives in the calling session as a new message, which starts a new turn there. Stopping the calling turn, sending a new message, and stopping or restarting the calling session do not stop the run. Only the card's **Stop**, the control route, or `task_stop` on the runner session stop it. A runner whose workflow does not finish ends its turn with an error, so the notice says it failed and why. A background run needs two more session levels below the caller: one for the runner and one for its agents. A session without them (a child one level below the depth cap, or a box without a Kortix control plane) runs the script inline, and its result says so.
+- **Resume.** Each result names a `run_id`. When the session's latest run stopped, failed or was interrupted, the next `workflow` call resumes it by itself, with the new script, edited or not (`script: ""` runs its own script). `resume_run_id` resumes a named run the same way, and `fresh: true` starts a new run instead. Every `agent()` call that completed with the same prompt, agent, model and schema returns its saved result without a new session, in any order. Every other call runs. A resume keeps the `run_id` and starts a new runner session, whose first message carries the finished agents' saved results (the ones that do not fit in 200,000 characters run again); the call returns at once again. A run whose runner still works refuses the resume.
 - **Saved workflows.** A saved workflow is `.kortix/workflows/<name>.js` in the project repository. `name` runs one with `args`. A session with a project checkout reads its working tree, and the tool description lists the saved names. My Kortix has no checkout: it reads the file from the project's default branch. The tool does not save workflows. To save one, the person asks, and an agent with access to the repository writes `.kortix/workflows/<name>.js` and opens a change request.
 - **Stalls.** An agent with no new output for `stallMs` (default 15 minutes) stops, and a new session starts with the same prompt. A tool call that is still running counts as output. After 6 attempts, `agent()` throws `agent stalled on all 6 attempts`.
 - **Limits.** One run starts at most 50 agents (`KORTIX_WORKFLOW_MAX_AGENTS`) and runs at most 8 of them at the same time (`KORTIX_WORKFLOW_MAX_CONCURRENT`). The session's subagent limit also applies (`KORTIX_PI_CLOUD_SUBAGENTS_MAX`, 4 by default): the lower number wins. One `parallel()` or `pipeline()` call takes at most 4,096 items. A run ends after 2 hours. The card marks a run with more than 25 agents as large.
@@ -1445,7 +1446,7 @@ The person controls a running workflow from its card. The card calls the box tha
 - **Routes.** `POST /kortix/runtime/workflows/:runId/control` with `{ action: "pause" | "resume" | "restart_agent" | "stop", session_id? }` answers `200 { ok: true, paused }`, and `404` for an unknown run. `restart_agent` needs `session_id`, the agent's child session. `GET /kortix/runtime/workflows` answers `200 { runs }`, the session's runs, newest first. The contract is `WorkflowControlBody` in `@kortix/api-contract/multi-agent`.
 - **Large workflow.** A run with more than 25 agents (`WORKFLOW_LARGE_AGENT_COUNT`) shows a **Large workflow** label on its card. The label does not pause or limit the run.
 - **ultracode.** The word `ultracode` in a message the person types means "run this as a workflow". The composer highlights the word. My Kortix then writes and starts a workflow instead of working step by step. The word has no effect in a message from a trigger, a channel or another session.
-- **Background.** From My Kortix and any session a person started, a workflow runs in the background by default: the call returns at once with the run, and the result arrives later as a new message. `background: false` waits inside the turn, up to 2 hours.
+- **Background.** Every workflow runs in the background: the call returns at once with the run, and the result arrives later as a new message. The strip counts a run as running only while its runner session works: the calling session reads each runner before it lists the runs.
 - **Limits.** 50 agents per run, 8 at the same time, 2 hours per run. See [Workflows](#workflows).
 
 ### Agents working together
@@ -1457,11 +1458,44 @@ Every session runs pi, and pi gives each session the same multi-agent tools. A s
 A session a person started is an orchestrator: nothing it starts blocks its conversation.
 
 - **Hand-offs.** An `agent` call with `session: "separate"` from a session at depth 0 runs in the background by default (`run_in_background` defaults to `true` there). The call returns the child's `task_id` at once. A child session at depth 1 or deeper, and every `agent()` in a workflow script, waits for its result by default.
-- **Workflows.** The `workflow` tool runs in the background by default at depth 0. See [Workflow controls](#workflow-controls).
+- **Workflows.** The `workflow` tool always runs in the background, in a runner session. See [Workflow controls](#workflow-controls).
 - **Teams.** Teammates are background children. Each one sends an idle notice to its lead when its turn ends.
 - **Results arrive as messages.** When a background child, a workflow runner or a teammate finishes, the API delivers one message into the calling session. When the session is idle, that message starts a turn. When several finish together, they arrive together in one turn.
 - **The person keeps talking.** The composer stays enabled while children work. A message the person sends is answered at once, and the notices arrive between turns.
 - **Status without waiting.** `list_agents` and `kortix sessions status` read each child's state. Neither waits for the child to finish.
+
+#### Follow-through: wake on the result
+
+A result that arrives later must wake the session that waits for it. Every agent sets that wake-up itself, before it ends the turn, without being asked: after it sends an email or a message, submits an order or a form, opens a change request, starts a deploy, asks a person, or starts to watch a page. The rule ships in three places: the My Kortix prompt (`apps/api/src/projects/lib/my-kortix-prompt.ts`), the `<scheduling>` section of the managed `kortix-system` skill with its playbook `references/scheduling.md`, and the starter `worker` agent.
+
+| The session waits on | It wakes with | My Kortix (`kortix_schedules`) |
+| --- | --- | --- |
+| A reply to an email or a message | A loop, plus a connector event when the app is connected and the project has `event_triggers` on: `kortix triggers add "<text>" --on event --connector <slug> --event <TYPE>` | `follow_up`; `wake_on` with `on: { connector_event }` (`events` lists the types) |
+| A change request | `kortix triggers add "<text>" --on cr-merged --cr <id>` | `wake_on` with `cr_merged` |
+| A deploy, a CI run, a job | `--on webhook --secret-env <NAME>` (prints the URL to give the system), else a loop every 10 to 30 minutes | `wake_on` with `webhook` (returns the URL) |
+| A person's answer, a slow vendor | A loop | `follow_up` |
+| A page or a status with no events | A loop, or a watcher App and `--on app --app <slug>` | `wake_on` with `app_event` |
+| A hand-off, a teammate, a workflow | Nothing: each reports back by itself | nothing |
+
+- **The fallback loop.** When the event may never come, the agent also sets a loop. The cadence fits the wait: a reply is checked first 2 to 4 hours later in the recipient's working hours, then 2 to 4 times a day; a deploy every 10 to 30 minutes; a slow vendor daily.
+- **The loop text carries the context:** what was sent, to whom, what to check, what to do on each outcome, and an end date (14 days by default). A loop has no expiry or backoff flag: the end date lives in the text, and the agent replaces a loop with a slower one after repeated empty checks.
+- **One line to the person:** "I'll check for replies every 3 hours until 14 Nov, or until all 12 answer."
+- **Each fire** checks, acts and reports what changed. When the condition holds or the end date passes, the agent removes every loop and trigger it set (`kortix loops rm`, `kortix triggers rm`).
+- **The session that can check owns the wake-up.** A background child that sent the emails sets its own loop. Each later turn of that child, a loop fire included, delivers one notice to its parent, so My Kortix hears every check.
+- **Session event triggers** are runtime triggers whose target is the session (`--session`, the default inside one). Sources: `cr-merged`, `webhook`, `event` (a connector), `app`. A fire arrives as `[REMINDER trigger.<id> — … trigger (<source>) …]`; a loop fire as `[REMINDER reminder.<id> — …]`. Neither is a user message.
+- **App events are the 24/7 watcher.** An App runs apart from every session: an `every` trigger calls it (no session, no model), it posts an App event only when the source changed, and a session trigger (`--on app`) or a `kortix.yaml` trigger wakes the agent. An event `id` built from the content makes an unchanged source fire nothing: Kortix accepts each `id` once per trigger for 30 days. See [Triggers and App events](#triggers-and-app-events).
+- **Loops off.** `403 feature_disabled` means the project turned Loops off (flag `reminders`). The agent says so and uses a one-off `at` trigger meanwhile.
+
+**Long jobs: plan, delegate, set wake-ups, keep state, close out.** A job of many parts or many days outlives one turn and one context window, because a session compacts. The same three sources teach one pattern for it:
+
+1. **Plan** the parallel parts and the waiting parts.
+2. **Delegate** with background `agent` calls (named, reused for follow-ups), a `workflow` for many agents, or a team for a shared task list. They report back by themselves.
+3. **Set wake-ups** for every outside wait: an event, plus a fallback loop with an end date.
+4. **Keep state outside the context:** the loop text (pending, next step, stop rule), a status file `out/status.md` in the session (done, pending, next check, open questions), or a Goal (the `kortix-goals` skill) for a multi-day outcome with independent verification. Every woken turn reads the state first, advances it, updates it, and re-arms or removes its wake-ups.
+5. **Set Kortix up when the work repeats:** a project trigger, a watcher App, or a dedicated agent or skill. The agent asks first for anything that runs unattended long-term, spends credits on every run, or widens access. It sets its own session's loops without asking and announces them.
+6. **Close out:** remove every loop and session trigger it set, stop the agents it no longer needs (`task_stop`), and send a short final report.
+
+The worked example is in the `kortix-system` skill, `references/scheduling.md` → Long jobs.
 
 #### Named agents and forks
 
@@ -1471,6 +1505,20 @@ A session a person started is an orchestrator: nothing it starts blocks its conv
 - **Continue a child.** `agent` with a `task_id` sends a finished child a follow-up in its same session. `agent` with the `name` of a finished child (idle, completed or stopped) does the same: no new session starts, and the result says `This continued your earlier subagent "<name>" in its same session` (tool metadata `continued: true`). A `name` whose child still works, or waits for its person, is refused. A failed child frees its name. A message to a finished child wakes it in its same session, and a background child or teammate then sends its next report by itself.
 - **Stop a child.** `task_stop` with the child's `task_id` or name stops its session.
 - **Depth.** A separate child may start its own separate children down to depth 2 (`KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH`). One session runs at most 4 separate children at the same time (`KORTIX_PI_CLOUD_SUBAGENTS_MAX`).
+
+#### Custom subagents
+
+A session shapes each child to its job in the call. Nothing is saved to the project.
+
+| Call | Options |
+| --- | --- |
+| `agent` tool | `subagent_type`: a project agent's name. Or `agent: { instructions, model?, tools?, description? }`: an inline agent for this call only; `subagent_type` is then ignored. A top-level `model` runs the named agent on another model. |
+| workflow `agent(prompt, opts)` | `agent` (a project agent's name), `instructions`, `model`, `tools` and `schema`, plus `label`, `phase`, `strict` and `stallMs`. See [Workflows](#workflows). |
+
+- **Model.** A `provider/model` ref. A gateway model is `kortix/<id>`; a Claude subscription model is `claude-agent/<id>`. My Kortix lists the project's models with `kortix_agents` `models`: each row has the exact `id`, the name, `fast` (from the model name), `reasoning` and `images` when they apply, and the context size. Another agent reads the same catalog with `kortix models ls --json`, by wire id: prefix a gateway id with `kortix/`. With no `model`, the child runs on its agent's model, else on the caller's. Use a fast model for bulk and parallel work and the strongest reasoning model for synthesis and judgment.
+- **Tools.** `tools` is a list of tool names. The child keeps only the names its agent has: a name it lacks is dropped, never added. When the caller's own tools are narrowed, the child also gets only names the caller has (`childToolAllowlist`). No `tools`: the child keeps its agent's tools, inside the caller's when those are narrowed. A read-only researcher gets `["read", "grep", "glob"]`, without `edit`, `write` or `bash`.
+- **Extensions.** The inline spec has no extensions option. A child has the extensions that its agent's grant gives it.
+- **A new tool or extension** is a change to the project files: `tools/<name>.ts`, or `extensions/<name>.ts` or a pinned npm package, registered in `kortix.yaml` (see [tools entries](#tools-entries) and [extensions entries](#extensions-entries)). An agent with the repository writes it and opens a change request. After the merge, every agent whose grant lists it can use it. My Kortix has no checkout: it hands this work to such an agent.
 
 #### Messages between sessions
 
@@ -3191,10 +3239,16 @@ An App can start agents, and triggers can call it.
 | The App called on a schedule or an event | A trigger with `run: { app, path, method, payload }`. Kortix wakes an on-demand App and sends the request. No session, no model. See [Call an App](/docs/guide#triggers). |
 | The App to call itself later | `POST /v1/projects/<project_id>/apps/<app_id>/runs` with the App token: `run_after` or `run_at`. See [Call an App](/docs/guide#triggers). |
 
-To react to the outside world, try a webhook first, then a schedule. Post App
-events only when neither works. An App never starts an agent itself: it posts
-events, and a trigger decides. Deploy a watcher App unlisted: it belongs in the
-Background list.
+To react to the outside world, try a webhook first, then a connector event,
+then a schedule. Build a watcher App when the source sends nothing and must be
+watched around the clock: an `every` trigger calls the App's `/tick`, the App
+posts an App event only when the source changed (an `id` built from the content
+fires once per trigger for 30 days), and a session trigger
+(`kortix triggers add "<text>" --on app --app <slug>`) wakes the session that
+waits, or a `kortix.yaml` trigger starts an agent. An App never starts an agent
+itself: it posts events, and a trigger decides. Deploy a watcher App unlisted
+and on demand: it belongs in the Background list. A complete example is in the
+`kortix-system` skill, `references/scheduling.md` → Watch 24/7.
 
 App events and runs are REST only. They authenticate with the App token, not
 a Kortix token.
@@ -5372,6 +5426,7 @@ curl -X POST "https://api.kortix.com/v1/projects/<project_id>/sessions" \
 - Values are strings (at most 4,096 characters), numbers, booleans or `null`.
 - Keys are 1 to 64 characters: a lowercase letter, then lowercase letters, digits, `.`, `_` or `-`. A key with a segment such as `token`, `secret`, `password`, `credential`, `api_key`, `private_key`, `authorization` or `cookie` is rejected.
 - At most 64 keys and 16 KiB of JSON.
+- Keys that start with `kortix.` are reserved for the platform. Only a session that creates its own child, with its own session token, sets them. Any other create that names one returns `400` `INVALID_SESSION_RUNTIME_CONTEXT`.
 - The sandbox receives the object as JSON in the environment variable `KORTIX_SESSION_CONTEXT`. You set it at create. A rescope does not change it.
 
 `connector_bindings` pins the connector account of each alias, as `{ alias: { connection_id } }`, at most 64 entries. The bindings are all-or-nothing:
@@ -5442,7 +5497,7 @@ const page = await kortix.billing.sessionCosts.list({
 | --- | --- | --- |
 | `400` | `INVALID_SESSION_MODEL` | The model id is malformed, or the account cannot use the model. |
 | `400` | `INVALID_SESSION_CONNECTOR_BINDINGS` | The binding map is malformed. |
-| `400` | `INVALID_SESSION_RUNTIME_CONTEXT` | The runtime context breaks a key, value, entry or size rule. |
+| `400` | `INVALID_SESSION_RUNTIME_CONTEXT` | The runtime context breaks a key, value, entry or size rule, or names a reserved `kortix.` key. |
 | `400` | `INVALID_SESSION_SECRETS` | The secrets list is malformed or has more than 128 identifiers. |
 | `400` | `INVALID_IDEMPOTENCY_KEY` | The `Idempotency-Key` header is longer than 255 characters or has a character outside the allowed set. |
 | `400` | `UNKNOWN_SANDBOX_TEMPLATE` | The sandbox slug names no sandbox in the project. |
@@ -6206,14 +6261,14 @@ function TurnEndLine(props: {
 
 #### Turn-end notifications
 
-`useSession` calls the `onNotify` option of `createKortix` when a turn ends: `{ kind: 'task-complete', sessionId, sessionTitle }` or `{ kind: 'session-error', sessionId, errorTitle, sessionTitle }`. Open questions and tool approvals raise `{ kind: 'question', sessionId, questionText, sessionTitle }` and `{ kind: 'permission', sessionId, toolName, sessionTitle }`. Show a notification only when the person is not looking at that session.
+`useSession` calls the `onNotify` option of `createKortix` when a turn ends: `{ kind: 'task-complete', sessionId, sessionTitle }` or `{ kind: 'session-error', sessionId, errorTitle, sessionTitle }`. Open questions and tool approvals raise `{ kind: 'question', sessionId, questionText, sessionTitle }` and `{ kind: 'permission', sessionId, toolName, sessionTitle }`. Each event also carries `projectId` when the SDK knows the session's project: use it, not your current route, which may already show another project. Show a notification only when the person is not looking at that session.
 
 While the view is mounted, its event stream raises these events. When the view unmounts with a turn still running, `useSession` hands the turn to a watch:
 
-1. The watch listens for `kortix.control.turn` frames on the session's control stream. A hidden window that throttles its timers still receives the end.
-2. While that stream is down, it reads `GET …/turn` every 5 s, and every 15 s after 5 minutes. It stops after 12 hours.
+1. The watch reads `GET …/turn` every 5 s, and every 15 s after 5 minutes. It stops after 12 hours.
+2. A browser throttles the timers of a hidden window, so the end can arrive late there.
 3. When no turn is open, it raises `task-complete`, or `session-error` with the recorded cause. A stop that a person asked for raises nothing.
-4. These events also carry `projectId`. `task-complete` also carries `watchedSinceMs`, the watch start in the host's `Date.now()`. A host that relays completions between tabs skips one it already showed after that time.
+4. `task-complete` also carries `watchedSinceMs`, the watch start in the host's `Date.now()`. A host that relays completions between tabs skips one it already showed after that time.
 5. A new view of the session ends the watch, so one turn end is announced once.
 
 A host without `onNotify` gets no watch and no extra `/turn` reads.

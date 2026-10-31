@@ -16,12 +16,13 @@ import type {
  *
  * THE SOURCE. The control plane's answer to "which turns are open", with
  * `last_ended` saying how the newest one ended. Two ways in, one verdict:
- * - pushed: the session's control stream (`kortix.control.turn` frames on
- *   `GET .../events?channels=control`). A hidden desktop window throttles its
- *   timers (Chromium; macOS App Nap), but a stream frame still arrives, so the
- *   end is announced when it happens, not when a timer next fires.
- * - polled: `GET .../sessions/:id/turn`, the backstop while the stream is not
- *   live (an older API, a reconnect). It stands down while the stream is live.
+ * - polled: `GET .../sessions/:id/turn`, the source after the page leaves. The
+ *   watch asks for no channel of its own, and a `channels=control` connection
+ *   is not a full holder. A hidden desktop window throttles its timers
+ *   (Chromium; macOS App Nap), so the end can be announced late.
+ * - pushed: a `kortix.control.turn` frame, if one arrives. A connection that is
+ *   not a full holder cannot rely on these frames. The poll stands down only
+ *   while the stream reports a full connection (`pushLive`).
  *
  * THE CONTRACT. The page hands its running turn over when it unmounts and takes
  * it back when it mounts again (`release`). While the page is mounted, its

@@ -1,14 +1,15 @@
 /**
- * The Claude Agent SDK, the `claude` binary it drives, and the login it runs with.
+ * The Claude Agent SDK, the `claude` binary it drives, and where its model calls go.
  *
- * Kortix runs the unmodified `claude` program the image installs (`claudeExecutable`) through the public SDK. It never sits between Claude Code and Anthropic
- * and never changes Claude Code's requests: Claude Code makes every model call itself, with
- * the user's own Claude login.
+ * Kortix runs the unmodified `claude` program the image installs (`claudeExecutable`) through
+ * the public SDK, and never changes Claude Code's requests.
  *
- * The login is the session user's Claude subscription token (`claude setup-token`), delivered
- * by apps/api as `KORTIX_CLAUDE_OAUTH_TOKEN` at boot or `claudeOauthToken` on `POST /kortix/env`.
- * It lives in this module only: `takeClaudeLogin` removes it from `process.env` at boot, so no
- * shell the agent runs inherits it, and only the `claude` process gets it.
+ * Claude Code's model calls go to the Kortix LLM gateway, never with a Claude login in this box:
+ * its base URL is the gateway's Claude Code passthrough (`<gateway>/claude-code`) and its login
+ * is this session's gateway credential. The gateway picks the project's Claude account for the
+ * request (the session's selected accounts, the session owner's own, or one shared with the
+ * project), adds that account's token and forwards the request to Anthropic unchanged. No Claude
+ * token is ever in this sandbox.
  */
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -25,39 +26,37 @@ export function loadClaudeSdk(): Promise<typeof SDK> {
   return sdk
 }
 
-let login: string | null = null
-const listeners = new Set<() => void>()
+/**
+ * Claude Code's login when the localhost LLM proxy runs: a fixed, non-secret placeholder in the
+ * shape of a subscription token. The proxy replaces the `Authorization` header with the live
+ * session credential (services/llm-proxy/llm-proxy.ts), so no credential is in Claude Code's env.
+ */
+export const CLAUDE_GATEWAY_PLACEHOLDER_TOKEN = 'sk-ant-oat01-kortix-gateway-placeholder'
 
-/** Boot: move the delivered login out of the process environment. */
-export function takeClaudeLogin(env: NodeJS.ProcessEnv = process.env): void {
-  const token = env.KORTIX_CLAUDE_OAUTH_TOKEN?.trim()
-  delete env.KORTIX_CLAUDE_OAUTH_TOKEN
-  if (token) login = token
+export interface ClaudeGateway {
+  /** Claude Code's `ANTHROPIC_BASE_URL`: the gateway's Claude Code passthrough. */
+  baseUrl: string
+  /** Claude Code's `CLAUDE_CODE_OAUTH_TOKEN`: the placeholder (proxy) or the session's gateway token. */
+  token: string
 }
 
-/** `POST /kortix/env`: the prompting user's login, or null when that user has none. Returns whether it changed. */
-export function setClaudeLogin(token: string | null): boolean {
-  const next = token?.trim() || null
-  if (next === login) return false
-  login = next
-  for (const listener of listeners) listener()
-  return true
+/** Where Claude Code's model calls go: the localhost proxy when it runs, else the gateway itself. Null without a gateway. */
+export function claudeGateway(env: NodeJS.ProcessEnv = process.env): ClaudeGateway | null {
+  const proxy = env.KORTIX_LLM_PROXY_URL?.trim()
+  if (proxy && env.KORTIX_LLM_PROXY_DISABLE !== '1') {
+    return { baseUrl: `${proxy.replace(/\/+$/, '')}/claude-code`, token: CLAUDE_GATEWAY_PLACEHOLDER_TOKEN }
+  }
+  const base = env.KORTIX_LLM_BASE_URL?.trim()
+  const token = env.KORTIX_TOKEN?.trim()
+  if (!base || !token) return null
+  return { baseUrl: `${base.replace(/\/+$/, '')}/claude-code`, token }
 }
 
-export function hasClaudeLogin(): boolean {
-  return login !== null
-}
-
-/** Runs when the login changes, so a running `claude` restarts with the new one. */
-export function onClaudeLoginChange(listener: () => void): () => void {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
-}
-
-/** A short fingerprint of the login, so a process started with another login is restarted. */
-export function claudeLoginKey(): string {
-  if (!login) return 'none'
-  return new Bun.CryptoHasher('sha256').update(login).digest('hex').slice(0, 16)
+/** A short fingerprint of where Claude Code's calls go, so a process started for another gateway or credential restarts. */
+export function claudeLoginKey(env: NodeJS.ProcessEnv = process.env): string {
+  const gateway = claudeGateway(env)
+  if (!gateway) return 'none'
+  return new Bun.CryptoHasher('sha256').update(`${gateway.baseUrl}\n${gateway.token}`).digest('hex').slice(0, 16)
 }
 
 function onPath(name: string, env: NodeJS.ProcessEnv): string | undefined {
@@ -82,8 +81,8 @@ export function claudeExecutable(env: NodeJS.ProcessEnv = process.env): string |
 
 /**
  * The variables that pick another login or another endpoint for Claude Code. Removed, so the
- * delivered subscription login is the one Claude Code uses: a project secret named
- * `ANTHROPIC_API_KEY` would otherwise win over it and bill an API key instead.
+ * gateway is the one endpoint Claude Code uses: a project secret named `ANTHROPIC_API_KEY`
+ * would otherwise win and bill an API key instead of the project's Claude account.
  */
 const OTHER_LOGINS = [
   'ANTHROPIC_API_KEY',
@@ -128,23 +127,28 @@ export function claudeConfigDir(stateDir: string): string {
   return dir
 }
 
-/** The environment of the `claude` process. Errors when there is no login. */
+/** The environment of the `claude` process. Errors when the session has no gateway. */
 export function claudeEnv(stateDir: string, base: NodeJS.ProcessEnv = process.env): Record<string, string> {
-  if (!login) throw new ClaudeLoginMissing()
+  const gateway = claudeGateway(base)
+  if (!gateway) throw new ClaudeLoginMissing()
   const env: Record<string, string | undefined> = { ...base }
   for (const name of OTHER_LOGINS) delete env[name]
   // kortixd's own credentials stay in kortixd: Claude Code runs no tool of its own.
   for (const name of Object.keys(env)) if (name.startsWith('KORTIX_')) delete env[name]
-  Object.assign(env, ISOLATION_ENV, { CLAUDE_CODE_OAUTH_TOKEN: login, CLAUDE_CONFIG_DIR: claudeConfigDir(stateDir) })
+  Object.assign(env, ISOLATION_ENV, {
+    ANTHROPIC_BASE_URL: gateway.baseUrl,
+    CLAUDE_CODE_OAUTH_TOKEN: gateway.token,
+    CLAUDE_CONFIG_DIR: claudeConfigDir(stateDir),
+  })
   return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined))
 }
 
-/** A turn's error when the session user has no Claude subscription login. Clients key the Connect Claude action on it. */
+/** A turn's error when no Claude account is usable for this session. Clients key the Connect Claude action on it. */
 export const CLAUDE_CONNECT_MESSAGE = 'Connect your Claude subscription to use Claude models.'
-/** A turn's error when Anthropic refused the stored login (revoked or expired). Clients key Reconnect Claude on it. */
+/** A turn's error when Anthropic refused the Claude account (revoked or expired). Clients key Reconnect Claude on it. */
 export const CLAUDE_RECONNECT_MESSAGE = 'Your Claude subscription login stopped working. Reconnect Claude to continue.'
 
-/** The session user has not connected a Claude subscription. The message is the user's next step. */
+/** The session has no gateway to reach a Claude account through. The message is the user's next step. */
 export class ClaudeLoginMissing extends Error {
   constructor() {
     super(CLAUDE_CONNECT_MESSAGE)

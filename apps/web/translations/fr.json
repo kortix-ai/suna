@@ -69,7 +69,6 @@
     "oauthExpired": "L’autorisation a expiré. Réessayez.",
     "oauthPrivateDescription": "Utilisez votre abonnement ChatGPT Plus ou Pro dans ce projet. Les nouveaux comptes restent privés jusqu’à ce que vous les partagiez.",
     "chatGptSubscription": "Abonnement ChatGPT",
-    "useYourChatGpt": "Utiliser votre abonnement ChatGPT",
     "manageChatGptAccounts": "Gérer les comptes ChatGPT",
     "connect": "Connecter",
     "connectChatGpt": "Connecter ChatGPT",
@@ -96,7 +95,7 @@
     "deleteError": "Impossible de supprimer le secret",
     "accessError": "Impossible de modifier l’accès",
     "sharedTitle": "Connexions aux fournisseurs",
-    "sharedDescription": "Ajoutez des clés API et des comptes ChatGPT. Les nouveaux restent privés jusqu’à ce que vous les partagiez. Choisissez ceux que chaque session utilise.",
+    "sharedDescription": "Ajoutez des clés API, des comptes ChatGPT et des comptes Claude. Les nouveaux restent privés jusqu’à ce que vous les partagiez. Choisissez ceux que chaque session utilise.",
     "legacyProjectKey": "Clé de projet existante · Utilisée si aucune clé n’est sélectionnée pour cette session",
     "keyCount": "{count, plural, one {# clé} other {# clés}}",
     "providerKeysFor": "Clés API de {provider}",
@@ -163,7 +162,19 @@
     "opencodeGoConnect": "Connecter OpenCode Go",
     "opencodeGoReconnect": "Reconnecter OpenCode Go",
     "opencodeGoDisconnect": "Déconnecter OpenCode Go",
-    "opencodeGoFailed": "Impossible de connecter OpenCode Go"
+    "opencodeGoFailed": "Impossible de connecter OpenCode Go",
+    "claudeAccounts": "Comptes Claude",
+    "noClaudeAccounts": "Aucun compte Claude pour le moment",
+    "connectClaude": "Se connecter avec Claude",
+    "claudeOauthPrivateDescription": "Utilisez votre forfait Claude Pro ou Max pour les modèles Claude de ce projet. Les nouveaux comptes restent privés jusqu’à ce que vous les partagiez.",
+    "claudeOauthCreationDescription": "Connectez-vous avec votre compte Claude Pro ou Max. Kortix stocke la connexion chiffrée et ne l’affiche jamais.",
+    "claudeDefaultAccountLabel": "Claude · {name}",
+    "claudeAccountConnected": "Compte Claude connecté",
+    "claudeAccountReconnected": "Compte Claude reconnecté",
+    "claudeConnectFailed": "La connexion Claude n’a pas abouti. Réessayez.",
+    "claudeReconnectDescription": "Reconnectez-vous avec Claude. Le compte conserve son nom, ses accès et les sélections de session.",
+    "claudeAccountLabelPlaceholder": "p. ex. Mon compte Claude",
+    "claudeDeleteAccountConfirmTitle": "Supprimer ce compte Claude pour tout le monde ?"
   },
   "secrets": {
     "undecryptable": {

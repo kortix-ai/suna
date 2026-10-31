@@ -89,6 +89,39 @@ describe('My Kortix agent', () => {
     );
   });
 
+  // The follow-through rule names the kortixd `kortix_schedules` actions: a renamed action
+  // there leaves My Kortix calling one that does not exist.
+  test('the prompt sets a check-in after every wait, with the kortix_schedules actions', () => {
+    const section = MY_KORTIX_PROMPT.slice(
+      MY_KORTIX_PROMPT.indexOf('## Follow through: never wait blind'),
+      MY_KORTIX_PROMPT.indexOf('## What you remember about this person'),
+    );
+    expect(section.length).toBeGreaterThan(0);
+    for (const name of ['`kortix_schedules`', '`follow_up`', '`wake_on`', '`cr_merged`', '`connector_event`', '`webhook`', '`app_event`', '`events`', '`create`']) {
+      expect(section).toContain(name);
+    }
+    expect(section).toContain('set up the check-in before you end the turn');
+    expect(section).toContain('Delete every loop and wake-up the moment the work is done');
+    expect(MY_KORTIX_PROMPT).toContain('Never guess how Kortix works');
+    // Long jobs: one pattern over hand-offs, workflows, wake-ups, state and clean-up.
+    expect(section).toContain('## Long jobs: plan, delegate, set wake-ups, keep state, close out');
+    for (const name of ['`agent`', '`workflow`', '`kortix-goals`', '`task_stop`']) expect(section).toContain(name);
+  });
+
+  // The section names the kortixd `agent` inline spec, the workflow `agent()` options and the
+  // kortix_agents `models` action: a rename there leaves My Kortix calling what does not exist.
+  test('the prompt shapes colleagues on the fly: inline spec, workflow options, models, narrow tools, new tools through a change request', () => {
+    const start = MY_KORTIX_PROMPT.indexOf('## Custom colleagues on the fly');
+    expect(start).toBeGreaterThan(MY_KORTIX_PROMPT.indexOf('## How you work'));
+    const section = MY_KORTIX_PROMPT.slice(start, MY_KORTIX_PROMPT.indexOf('## Follow through: never wait blind'));
+    for (const name of ['`subagent_type`', '`agent: { instructions, model, tools, description }`', '`agent(prompt, { agent, instructions, model, tools, schema })`', 'kortix_agents `models`', '`edit`', '`write`']) {
+      expect(section).toContain(name);
+    }
+    expect(section).toContain('A colleague never gets a tool or an extension you lack.');
+    expect(section).toContain('opens a change request for the person to approve');
+    expect(section).not.toMatch(/\$|price|cost/i);
+  });
+
   test('forces the meta sandbox and rejects an explicit alternate sandbox', () => {
     expect(resolveMyKortixSandbox(undefined)).toBe('mykortix');
     expect(resolveMyKortixSandbox('mykortix')).toBe('mykortix');

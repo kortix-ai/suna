@@ -22,6 +22,8 @@ interface NotifyCall {
   kind: string;
   [key: string]: unknown;
 }
+/** The fourth argument of a `notify*` sink. Recorded whole, so a test sees what it carries. */
+type NotifyExtra = { projectId?: string; watchedSinceMs?: number };
 let toasts: ToastCall[] = [];
 let notifications: NotifyCall[] = [];
 
@@ -29,32 +31,50 @@ mock.module('../../platform/ui', () => ({
   infoToast: (message: string) => {
     toasts.push({ level: 'info', message });
   },
-  notifyPermissionRequest: (sessionId: string, toolName: string, sessionTitle?: string) => {
+  notifyPermissionRequest: (
+    sessionId: string,
+    toolName: string,
+    sessionTitle?: string,
+    extra?: NotifyExtra,
+  ) => {
     notifications.push({
       kind: 'permission',
       sessionId,
       toolName,
       sessionTitle,
+      ...extra,
     });
   },
-  notifyQuestion: (sessionId: string, questionText: string, sessionTitle?: string) => {
+  notifyQuestion: (
+    sessionId: string,
+    questionText: string,
+    sessionTitle?: string,
+    extra?: NotifyExtra,
+  ) => {
     notifications.push({
       kind: 'question',
       sessionId,
       questionText,
       sessionTitle,
+      ...extra,
     });
   },
-  notifySessionError: (sessionId: string, errorTitle: string, sessionTitle?: string) => {
+  notifySessionError: (
+    sessionId: string,
+    errorTitle: string,
+    sessionTitle?: string,
+    extra?: NotifyExtra,
+  ) => {
     notifications.push({
       kind: 'session-error',
       sessionId,
       errorTitle,
       sessionTitle,
+      ...extra,
     });
   },
-  notifyTaskComplete: (sessionId: string, sessionTitle?: string) => {
-    notifications.push({ kind: 'task-complete', sessionId, sessionTitle });
+  notifyTaskComplete: (sessionId: string, sessionTitle?: string, extra?: NotifyExtra) => {
+    notifications.push({ kind: 'task-complete', sessionId, sessionTitle, ...extra });
   },
 }));
 
@@ -100,6 +120,8 @@ function buildHandler(
     messagesImpl?: () => Promise<{ data?: unknown }>;
     getImpl?: () => Promise<{ data?: unknown }>;
     projectId?: string;
+    /** The stream session's project, when it differs from the route's `projectId`. */
+    notificationProjectId?: string;
     reconcileSessionTail?: Parameters<typeof createEventHandler>[0]['reconcileSessionTail'];
     userPartsGraceMs?: number;
     /** Wire the REAL sync-store reducer instead of the spy, exactly as
@@ -160,6 +182,7 @@ function buildHandler(
     markSessionAbortedLocally: { current: markSessionAbortedLocally.fn },
     fetchLspDiagnosticsDebounced: { current: fetchLspDiagnosticsDebounced.fn },
     projectId: overrides.projectId,
+    notificationProjectId: overrides.notificationProjectId ?? overrides.projectId ?? null,
     sessionId: overrides.sessionId,
     reconcileSessionTail: overrides.reconcileSessionTail,
     userPartsGraceMs: overrides.userPartsGraceMs,
@@ -638,7 +661,7 @@ describe('session stream notifications carry the Kortix session id', () => {
       properties: { sessionID: 'ses_root', status: { type: 'idle' } },
     });
     expect(notifications).toEqual([
-      { kind: 'task-complete', sessionId: KORTIX_ID, sessionTitle: undefined },
+      { kind: 'task-complete', sessionId: KORTIX_ID, sessionTitle: undefined, projectId: PROJECT_ID },
     ]);
   });
 
@@ -664,6 +687,224 @@ describe('session stream notifications carry the Kortix session id', () => {
       properties: { sessionID: 'ses_child', status: { type: 'idle' } },
     });
     expect(notifications).toEqual([]);
+  });
+});
+
+// ============================================================================
+// A notification carries the name the session list shows. The runtime title is
+// "New session" for a session the person named, and it can be absent.
+// ============================================================================
+
+describe('session stream notifications carry the session list name', () => {
+  const PROJECT_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const KORTIX_ID = '11111111-2222-4333-8444-555555555555';
+
+  function namedStream(
+    row: { name?: string | null; custom_name?: string | null },
+    runtimeTitle?: string,
+  ) {
+    const built = buildHandler({ projectId: PROJECT_ID, sessionId: KORTIX_ID });
+    built.queryClient.setQueryData(qk.project.session(PROJECT_ID, KORTIX_ID), {
+      session_id: KORTIX_ID,
+      runtime_session_id: 'ses_root',
+      ...row,
+    });
+    if (runtimeTitle !== undefined) {
+      built.queryClient.setQueryData(runtimeKeys.sessions(), [
+        session('ses_root', { title: runtimeTitle }),
+      ]);
+    }
+    return built;
+  }
+
+  function askQuestion(handleEvent: (event: never) => void, sessionID = 'ses_root') {
+    const properties: QuestionRequest = {
+      id: 'q_1',
+      sessionID,
+      questions: [{ question: 'Should I proceed?', header: 'Proceed?', options: [] }],
+    };
+    handleEvent({ id: 'evt_1', type: 'question.asked', properties } as never);
+  }
+
+  test('question.asked uses the row name over the runtime title', () => {
+    const { handleEvent } = namedStream({ name: 'Onboard me' }, 'New session');
+    askQuestion(handleEvent);
+    expect(notifications).toEqual([
+      {
+        kind: 'question',
+        sessionId: KORTIX_ID,
+        questionText: 'Should I proceed?',
+        sessionTitle: 'Onboard me',
+        projectId: PROJECT_ID,
+      },
+    ]);
+  });
+
+  test('question.asked uses the row name when no runtime title exists', () => {
+    const { handleEvent } = namedStream({ name: 'Onboard me' });
+    askQuestion(handleEvent);
+    expect(notifications.at(-1)).toMatchObject({ kind: 'question', sessionTitle: 'Onboard me' });
+  });
+
+  test('a rename wins over the row name', () => {
+    const { handleEvent } = namedStream(
+      { name: 'Onboard me', custom_name: 'Renamed' },
+      'New session',
+    );
+    askQuestion(handleEvent);
+    expect(notifications.at(-1)).toMatchObject({ kind: 'question', sessionTitle: 'Renamed' });
+  });
+
+  test('permission.asked carries the row name', () => {
+    const { handleEvent } = namedStream({ name: 'Onboard me' }, 'New session');
+    const properties: PermissionRequest = {
+      id: 'perm_1',
+      sessionID: 'ses_root',
+      permission: 'bash',
+      patterns: ['*'],
+      metadata: {},
+      always: [],
+    };
+    handleEvent({ id: 'evt_1', type: 'permission.asked', properties });
+    expect(notifications.at(-1)).toMatchObject({
+      kind: 'permission',
+      sessionId: KORTIX_ID,
+      sessionTitle: 'Onboard me',
+    });
+  });
+
+  test("a sub-agent's question carries the stream session's name", () => {
+    const { handleEvent } = namedStream({ name: 'Onboard me' });
+    askQuestion(handleEvent, 'ses_child');
+    expect(notifications.at(-1)).toMatchObject({
+      kind: 'question',
+      sessionId: KORTIX_ID,
+      sessionTitle: 'Onboard me',
+    });
+  });
+
+  test('a finished turn carries the row name', () => {
+    const { handleEvent } = namedStream({ name: 'Onboard me' }, 'New session');
+    useSyncStore.getState().setStatus('ses_root', { type: 'busy' });
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.status',
+      properties: { sessionID: 'ses_root', status: { type: 'idle' } },
+    });
+    expect(notifications).toEqual([
+      { kind: 'task-complete', sessionId: KORTIX_ID, sessionTitle: 'Onboard me', projectId: PROJECT_ID },
+    ]);
+  });
+
+  test('with no cached name the raw runtime title still arrives', () => {
+    const { handleEvent } = namedStream({ name: null }, 'New session');
+    askQuestion(handleEvent);
+    expect(notifications.at(-1)).toMatchObject({ kind: 'question', sessionTitle: 'New session' });
+  });
+
+  test('with no project the raw runtime title still arrives', () => {
+    const { handleEvent, queryClient } = buildHandler({ sessionId: KORTIX_ID });
+    queryClient.setQueryData(runtimeKeys.sessions(), [session('ses_root', { title: 'Runtime Title' })]);
+    askQuestion(handleEvent);
+    expect(notifications.at(-1)).toMatchObject({ kind: 'question', sessionTitle: 'Runtime Title' });
+  });
+});
+
+// ============================================================================
+// A live-stream notification names the stream's project. The URL may already
+// show the next project when the event lands.
+// ============================================================================
+
+describe('session stream notifications carry the project of the stream', () => {
+  const PROJECT_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const KORTIX_ID = '11111111-2222-4333-8444-555555555555';
+
+  function projectStream(projectId?: string) {
+    const built = buildHandler({ projectId, sessionId: KORTIX_ID });
+    if (projectId) {
+      built.queryClient.setQueryData(qk.project.session(projectId, KORTIX_ID), {
+        session_id: KORTIX_ID,
+        runtime_session_id: 'ses_root',
+      });
+    }
+    return built;
+  }
+
+  const question = (): QuestionRequest => ({
+    id: 'q_1',
+    sessionID: 'ses_root',
+    questions: [{ question: 'Should I proceed?', header: 'Proceed?', options: [] }],
+  });
+  const permission = (): PermissionRequest => ({
+    id: 'perm_1',
+    sessionID: 'ses_root',
+    permission: 'bash',
+    patterns: ['*'],
+    metadata: {},
+    always: [],
+  });
+
+  test('question.asked', () => {
+    const { handleEvent } = projectStream(PROJECT_ID);
+    handleEvent({ id: 'evt_1', type: 'question.asked', properties: question() });
+    expect(notifications.at(-1)).toMatchObject({ kind: 'question', sessionId: KORTIX_ID, projectId: PROJECT_ID });
+  });
+
+  test('permission.asked', () => {
+    const { handleEvent } = projectStream(PROJECT_ID);
+    handleEvent({ id: 'evt_1', type: 'permission.asked', properties: permission() });
+    expect(notifications.at(-1)).toMatchObject({ kind: 'permission', sessionId: KORTIX_ID, projectId: PROJECT_ID });
+  });
+
+  test('a finished turn on session.status, without the watch start', () => {
+    const { handleEvent } = projectStream(PROJECT_ID);
+    useSyncStore.getState().setStatus('ses_root', { type: 'busy' });
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.status',
+      properties: { sessionID: 'ses_root', status: { type: 'idle' } },
+    });
+    expect(notifications).toEqual([
+      { kind: 'task-complete', sessionId: KORTIX_ID, sessionTitle: undefined, projectId: PROJECT_ID },
+    ]);
+    expect(notifications[0]).not.toHaveProperty('watchedSinceMs');
+  });
+
+  test('a finished turn on session.idle, without the watch start', () => {
+    const { handleEvent } = projectStream(PROJECT_ID);
+    useSyncStore.getState().setStatus('ses_root', { type: 'busy' });
+    handleEvent({ id: 'evt_1', type: 'session.idle', properties: { sessionID: 'ses_root' } });
+    expect(notifications).toEqual([
+      { kind: 'task-complete', sessionId: KORTIX_ID, sessionTitle: undefined, projectId: PROJECT_ID },
+    ]);
+    expect(notifications[0]).not.toHaveProperty('watchedSinceMs');
+  });
+
+  test('session.error', () => {
+    const { handleEvent } = projectStream(PROJECT_ID);
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.error',
+      properties: { sessionID: 'ses_root', error: { name: 'UnknownError', data: { message: 'boom' } } },
+    } as never);
+    expect(notifications.at(-1)).toMatchObject({ kind: 'session-error', sessionId: KORTIX_ID, projectId: PROJECT_ID });
+  });
+
+  test("the session's project wins over the route's", () => {
+    const { handleEvent } = buildHandler({
+      projectId: 'route-project',
+      notificationProjectId: PROJECT_ID,
+      sessionId: KORTIX_ID,
+    });
+    handleEvent({ id: 'evt_1', type: 'question.asked', properties: question() });
+    expect(notifications.at(-1)).toMatchObject({ kind: 'question', projectId: PROJECT_ID });
+  });
+
+  test('a stream without a project names none: the host keeps its fallback', () => {
+    const { handleEvent } = projectStream(undefined);
+    handleEvent({ id: 'evt_1', type: 'question.asked', properties: question() });
+    expect(notifications.at(-1)).toMatchObject({ kind: 'question' });
+    expect(notifications.at(-1)).not.toHaveProperty('projectId');
   });
 });
 

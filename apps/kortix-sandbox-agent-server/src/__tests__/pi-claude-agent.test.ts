@@ -6,7 +6,7 @@ import { createAssistantMessageEventStream, type AssistantMessageEvent, type Mes
 import runtimeVersions from '../../../../packages/shared/src/runtime-versions.json' with { type: 'json' }
 import { claudeModelFor } from '@/harness/pi/claude/provider'
 import { CLAUDE_AGENT_SDK_VERSION, CLAUDE_CODE_INTEGRITY, ensureClaudeExecutable, installedClaudeExecutable } from '@/harness/pi/claude/install'
-import { claudeEnv, setClaudeLogin, takeClaudeLogin, ClaudeLoginMissing } from '@/harness/pi/claude/sdk'
+import { CLAUDE_GATEWAY_PLACEHOLDER_TOKEN, claudeEnv, claudeLoginKey, ClaudeLoginMissing } from '@/harness/pi/claude/sdk'
 import { ClaudeReply } from '@/harness/pi/claude/stream'
 import { catchUp, checkpoints, collectResults, decide, type SessionRecord } from '@/harness/pi/claude/sync'
 
@@ -129,20 +129,32 @@ describe('Claude Code output as a pi response', () => {
 })
 
 describe('the Claude login', () => {
-  test('leaves the process environment at boot and reaches only the claude process', () => {
-    const env: NodeJS.ProcessEnv = { KORTIX_CLAUDE_OAUTH_TOKEN: 'sk-ant-oat01-test', PATH: '/usr/bin', ANTHROPIC_API_KEY: 'project-key', KORTIX_TOKEN: 'kortix-token', HOME: '/home/kortix' }
-    takeClaudeLogin(env)
-    expect(env.KORTIX_CLAUDE_OAUTH_TOKEN).toBeUndefined()
+  test('Claude Code calls the gateway through the localhost proxy with a placeholder, and no Kortix credential', () => {
+    const env: NodeJS.ProcessEnv = {
+      KORTIX_LLM_PROXY_URL: 'http://127.0.0.1:4111/', KORTIX_LLM_BASE_URL: 'https://gateway.test/v1/llm',
+      PATH: '/usr/bin', ANTHROPIC_API_KEY: 'project-key', ANTHROPIC_BASE_URL: 'https://elsewhere.test', KORTIX_TOKEN: 'kortix-token', HOME: '/home/kortix',
+    }
     const state = mkdtempSync(join(tmpdir(), 'kortixd-claude-'))
     const child = claudeEnv(state, env)
-    expect(child.CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat01-test')
+    expect(child.ANTHROPIC_BASE_URL).toBe('http://127.0.0.1:4111/claude-code')
+    expect(child.CLAUDE_CODE_OAUTH_TOKEN).toBe(CLAUDE_GATEWAY_PLACEHOLDER_TOKEN)
     // A project secret named ANTHROPIC_API_KEY would bill an API key instead of the subscription.
     expect(child.ANTHROPIC_API_KEY).toBeUndefined()
     expect(child.KORTIX_TOKEN).toBeUndefined()
+    expect(child.KORTIX_LLM_PROXY_URL).toBeUndefined()
     expect(child.PATH).toBe('/usr/bin')
     expect(child.DISABLE_AUTO_COMPACT).toBe('1')
-    setClaudeLogin(null)
-    expect(() => claudeEnv(state, env)).toThrow(ClaudeLoginMissing)
+  })
+
+  test('without the proxy Claude Code calls the gateway with the session credential; without a gateway it cannot run', () => {
+    const state = mkdtempSync(join(tmpdir(), 'kortixd-claude-'))
+    const direct: NodeJS.ProcessEnv = { KORTIX_LLM_PROXY_URL: 'http://127.0.0.1:4111', KORTIX_LLM_PROXY_DISABLE: '1', KORTIX_LLM_BASE_URL: 'https://gateway.test/v1/llm/', KORTIX_TOKEN: 'kortix-token' }
+    const child = claudeEnv(state, direct)
+    expect(child.ANTHROPIC_BASE_URL).toBe('https://gateway.test/v1/llm/claude-code')
+    expect(child.CLAUDE_CODE_OAUTH_TOKEN).toBe('kortix-token')
+    // A changed session credential starts a new claude process.
+    expect(claudeLoginKey(direct)).not.toBe(claudeLoginKey({ ...direct, KORTIX_TOKEN: 'rotated' }))
+    expect(() => claudeEnv(state, { PATH: '/usr/bin' })).toThrow(ClaudeLoginMissing)
   })
 
   test('kortixd pins the Claude Agent SDK every image installs Claude Code from', () => {

@@ -69,7 +69,6 @@
     "oauthExpired": "Време за овлашћење је истекло. Покушајте поново.",
     "oauthPrivateDescription": "Користите свој ChatGPT Plus или Pro план у овом пројекту. Нови налози су приватни док их не поделите.",
     "chatGptSubscription": "ChatGPT претплата",
-    "useYourChatGpt": "Користите своју ChatGPT претплату",
     "manageChatGptAccounts": "Управљајте ChatGPT налозима",
     "connect": "Повежи",
     "connectChatGpt": "Повежи ChatGPT",
@@ -96,7 +95,7 @@
     "deleteError": "Тајна није обрисана",
     "accessError": "Приступ није промењен",
     "sharedTitle": "Везе са добављачима",
-    "sharedDescription": "Додајте API кључеве и ChatGPT налоге. Нове везе су приватне док их не поделите. Изаберите које користи свака сесија.",
+    "sharedDescription": "Dodaj API ključeve, ChatGPT naloge i Claude naloge. Novi su privatni dok ih ne podeliš. Izaberi koje koristi svaka sesija.",
     "legacyProjectKey": "Постојећи кључ пројекта · Користи се када за ову сесију нису изабрани кључеви",
     "keyCount": "{count, plural, one {# кључ} few {# кључа} other {# кључева}}",
     "providerKeysFor": "API кључеви за {provider}",
@@ -163,7 +162,19 @@
     "opencodeGoConnect": "Poveži OpenCode Go",
     "opencodeGoReconnect": "Ponovo poveži OpenCode Go",
     "opencodeGoDisconnect": "Isključi OpenCode Go",
-    "opencodeGoFailed": "Povezivanje OpenCode Go nije uspelo"
+    "opencodeGoFailed": "Povezivanje OpenCode Go nije uspelo",
+    "claudeAccounts": "Claude nalozi",
+    "noClaudeAccounts": "Još nema Claude naloga",
+    "connectClaude": "Prijavi se preko Claude-a",
+    "claudeOauthPrivateDescription": "Koristi svoj Claude Pro ili Max plan za Claude modele u ovom projektu. Novi nalozi su privatni dok ih ne podeliš.",
+    "claudeOauthCreationDescription": "Prijavi se svojim Claude Pro ili Max nalogom. Kortix čuva prijavu šifrovanu i nikada je ne prikazuje.",
+    "claudeDefaultAccountLabel": "Claude · {name}",
+    "claudeAccountConnected": "Claude nalog je povezan",
+    "claudeAccountReconnected": "Claude nalog je ponovo povezan",
+    "claudeConnectFailed": "Prijava preko Claude-a nije završena. Pokušaj ponovo.",
+    "claudeReconnectDescription": "Ponovo se prijavi preko Claude-a. Nalog zadržava ime, pristup i izbore sesija.",
+    "claudeAccountLabelPlaceholder": "npr. Moj Claude nalog",
+    "claudeDeleteAccountConfirmTitle": "Obrisati ovaj Claude nalog za sve?"
   },
   "secrets": {
     "undecryptable": {

@@ -83,8 +83,9 @@ function systemPrompt(request: ClaudeRequest): NonNullable<Options['systemPrompt
   return { type: 'preset', preset: 'claude_code', append: [RUNTIME_NOTE, request.system].filter(Boolean).join('\n\n'), snapshot: false } as never
 }
 
-const launchKey = (request: ClaudeRequest) =>
-  JSON.stringify([claudeLoginKey(), request.system, request.tools.map((tool) => [tool.name, tool.description, tool.parameters])])
+/** What needs a new process to change: where its model calls go, the prompt, the tools. */
+const launchKey = (request: ClaudeRequest, env: NodeJS.ProcessEnv | undefined) =>
+  JSON.stringify([claudeLoginKey(env), request.system, request.tools.map((tool) => [tool.name, tool.description, tool.parameters])])
 
 export class ClaudeSessions {
   private readonly entries = new Map<string, Entry>()
@@ -213,7 +214,7 @@ export class ClaudeSessions {
       if (entry.record?.claudeSessionID) options.resume = entry.record.claudeSessionID
       else options.sessionId = crypto.randomUUID()
       const session = await startClaudeSession(options)
-      entry.process = { session, pending, model: request.model, effort: request.effort, launch: launchKey(request) }
+      entry.process = { session, pending, model: request.model, effort: request.effort, launch: launchKey(request, this.opts.env) }
     }
     const live = entry.process
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -242,7 +243,7 @@ export class ClaudeSessions {
 
   /** Bring the process and the record in step with pi's context; returns where Claude's input starts. */
   private async prepare(entry: Entry, request: ClaudeRequest): Promise<{ start: number; continuation?: { end: number; results: Array<{ id: string; result: ToolOutcome }> } }> {
-    if (entry.process && (entry.process.session.ended || entry.process.launch !== launchKey(request))) await this.stop(entry)
+    if (entry.process && (entry.process.session.ended || entry.process.launch !== launchKey(request, this.opts.env))) await this.stop(entry)
     if (!request.key) return { start: 0 }
     entry.record ??= this.readRecord(request.key)
     const decision = decide(request.messages, entry.record)

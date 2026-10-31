@@ -69,7 +69,6 @@
     "oauthExpired": "授权已超时，请重试。",
     "oauthPrivateDescription": "在此项目中使用您的 ChatGPT Plus 或 Pro 套餐。新账户在您共享之前仅供您自己使用。",
     "chatGptSubscription": "ChatGPT 订阅",
-    "useYourChatGpt": "使用您的 ChatGPT 订阅",
     "manageChatGptAccounts": "管理 ChatGPT 账户",
     "connect": "连接",
     "connectChatGpt": "连接 ChatGPT",
@@ -96,7 +95,7 @@
     "deleteError": "无法删除密钥",
     "accessError": "无法更改访问权限",
     "sharedTitle": "提供商连接",
-    "sharedDescription": "添加 API 密钥和 ChatGPT 账户。新连接在您共享之前仅供您自己使用。为每个会话选择要使用的连接。",
+    "sharedDescription": "添加 API 密钥、ChatGPT 账号和 Claude 账号。新添加的在你共享之前仅自己可用。选择每个会话使用哪些。",
     "legacyProjectKey": "现有项目密钥 · 本会话未选择密钥时使用",
     "keyCount": "{count, plural, other {# 个密钥}}",
     "providerKeysFor": "{provider} API 密钥",
@@ -163,7 +162,19 @@
     "opencodeGoConnect": "连接 OpenCode Go",
     "opencodeGoReconnect": "重新连接 OpenCode Go",
     "opencodeGoDisconnect": "断开 OpenCode Go",
-    "opencodeGoFailed": "无法连接 OpenCode Go"
+    "opencodeGoFailed": "无法连接 OpenCode Go",
+    "claudeAccounts": "Claude 账号",
+    "noClaudeAccounts": "还没有 Claude 账号",
+    "connectClaude": "使用 Claude 登录",
+    "claudeOauthPrivateDescription": "在此项目的 Claude 模型中使用你的 Claude Pro 或 Max 套餐。新账号在你共享之前仅自己可用。",
+    "claudeOauthCreationDescription": "使用你的 Claude Pro 或 Max 账号登录。Kortix 加密保存登录凭据，且从不显示。",
+    "claudeDefaultAccountLabel": "Claude · {name}",
+    "claudeAccountConnected": "已连接 Claude 账号",
+    "claudeAccountReconnected": "已重新连接 Claude 账号",
+    "claudeConnectFailed": "Claude 登录未完成。请重试。",
+    "claudeReconnectDescription": "重新使用 Claude 登录。账号会保留名称、访问权限和会话选择。",
+    "claudeAccountLabelPlaceholder": "例如：我的 Claude 账号",
+    "claudeDeleteAccountConfirmTitle": "要为所有人删除此 Claude 账号吗？"
   },
   "secrets": {
     "undecryptable": {

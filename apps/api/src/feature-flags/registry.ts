@@ -273,10 +273,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
   {
     key: 'pooled_provider_secrets',
     name: 'Pooled Provider Secrets',
-    description: 'Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses.',
+    description: 'Members connect their own ChatGPT and Claude subscriptions and provider keys, share them when needed, and choose which ones each session uses.',
     stability: 'experimental',
     available: () => true,
-    platformDefault: () => false,
+    // On by default since 2026-10-31: every project gets private-by-default
+    // provider accounts. A project that turned it off keeps it off.
+    platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote: 'Session selection and provider credential resolution reject or ignore resource secrets while disabled.',
   },

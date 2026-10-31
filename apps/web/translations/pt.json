@@ -69,7 +69,6 @@
     "oauthExpired": "A autorização expirou. Tente novamente.",
     "oauthPrivateDescription": "Use seu plano ChatGPT Plus ou Pro neste projeto. Novas contas ficam privadas até você compartilhá-las.",
     "chatGptSubscription": "Assinatura do ChatGPT",
-    "useYourChatGpt": "Use sua assinatura do ChatGPT",
     "manageChatGptAccounts": "Gerenciar contas ChatGPT",
     "connect": "Conectar",
     "connectChatGpt": "Conectar ChatGPT",
@@ -96,7 +95,7 @@
     "deleteError": "Não foi possível eliminar o segredo",
     "accessError": "Não foi possível alterar o acesso",
     "sharedTitle": "Conexões de provedores",
-    "sharedDescription": "Adicione chaves de API e contas ChatGPT. As novas ficam privadas até você compartilhá-las. Escolha quais cada sessão usa.",
+    "sharedDescription": "Adicione chaves de API, contas do ChatGPT e contas do Claude. As novas ficam privadas até você compartilhá-las. Escolha quais cada sessão usa.",
     "legacyProjectKey": "Chave existente do projeto · Usada quando esta sessão não tem uma seleção de chaves",
     "keyCount": "{count, plural, one {# chave} other {# chaves}}",
     "providerKeysFor": "Chaves API de {provider}",
@@ -163,7 +162,19 @@
     "opencodeGoConnect": "Conectar OpenCode Go",
     "opencodeGoReconnect": "Reconectar OpenCode Go",
     "opencodeGoDisconnect": "Desconectar OpenCode Go",
-    "opencodeGoFailed": "Não foi possível conectar o OpenCode Go"
+    "opencodeGoFailed": "Não foi possível conectar o OpenCode Go",
+    "claudeAccounts": "Contas do Claude",
+    "noClaudeAccounts": "Ainda não há contas do Claude",
+    "connectClaude": "Entrar com o Claude",
+    "claudeOauthPrivateDescription": "Use seu plano Claude Pro ou Max nos modelos Claude deste projeto. Contas novas ficam privadas até você compartilhá-las.",
+    "claudeOauthCreationDescription": "Entre com sua conta Claude Pro ou Max. A Kortix guarda o login criptografado e nunca o mostra.",
+    "claudeDefaultAccountLabel": "Claude · {name}",
+    "claudeAccountConnected": "Conta do Claude conectada",
+    "claudeAccountReconnected": "Conta do Claude reconectada",
+    "claudeConnectFailed": "O login no Claude não terminou. Tente novamente.",
+    "claudeReconnectDescription": "Entre com o Claude de novo. A conta mantém o nome, o acesso e as seleções de sessão.",
+    "claudeAccountLabelPlaceholder": "ex.: Minha conta do Claude",
+    "claudeDeleteAccountConfirmTitle": "Excluir esta conta do Claude para todos?"
   },
   "secrets": {
     "undecryptable": {
