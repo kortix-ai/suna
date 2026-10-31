@@ -1238,7 +1238,8 @@ export class PiRuntime {
     this.steerReads.clear()
     this.status = 'busy'
     this.hooks.onTurnBegin?.({ rootId: this.rootId, messageId: turn.messageId })
-    // A runner's turn starts failed until its workflow ends done; a runner's notice here ends its run in the saved list.
+    // A runner's turn starts failed until its workflow ends done (a spent runner's: with its run's outcome). On a
+    // caller, a notice header only asks for an API read of that runner now; no prompt text decides a run's end.
     const failure = this.workflows.turnStarted(turn.input.text)
     if (failure) turn.failure = failure
     void this.workflows.refresh().catch(() => {})

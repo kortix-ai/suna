@@ -5426,6 +5426,7 @@ curl -X POST "https://api.kortix.com/v1/projects/<project_id>/sessions" \
 - Values are strings (at most 4,096 characters), numbers, booleans or `null`.
 - Keys are 1 to 64 characters: a lowercase letter, then lowercase letters, digits, `.`, `_` or `-`. A key with a segment such as `token`, `secret`, `password`, `credential`, `api_key`, `private_key`, `authorization` or `cookie` is rejected.
 - At most 64 keys and 16 KiB of JSON.
+- Keys that start with `kortix.` are reserved for the platform. Only a session that creates its own child, with its own session token, sets them. Any other create that names one returns `400` `INVALID_SESSION_RUNTIME_CONTEXT`.
 - The sandbox receives the object as JSON in the environment variable `KORTIX_SESSION_CONTEXT`. You set it at create. A rescope does not change it.
 
 `connector_bindings` pins the connector account of each alias, as `{ alias: { connection_id } }`, at most 64 entries. The bindings are all-or-nothing:
@@ -5496,7 +5497,7 @@ const page = await kortix.billing.sessionCosts.list({
 | --- | --- | --- |
 | `400` | `INVALID_SESSION_MODEL` | The model id is malformed, or the account cannot use the model. |
 | `400` | `INVALID_SESSION_CONNECTOR_BINDINGS` | The binding map is malformed. |
-| `400` | `INVALID_SESSION_RUNTIME_CONTEXT` | The runtime context breaks a key, value, entry or size rule. |
+| `400` | `INVALID_SESSION_RUNTIME_CONTEXT` | The runtime context breaks a key, value, entry or size rule, or names a reserved `kortix.` key. |
 | `400` | `INVALID_SESSION_SECRETS` | The secrets list is malformed or has more than 128 identifiers. |
 | `400` | `INVALID_IDEMPOTENCY_KEY` | The `Idempotency-Key` header is longer than 255 characters or has a character outside the allowed set. |
 | `400` | `UNKNOWN_SANDBOX_TEMPLATE` | The sandbox slug names no sandbox in the project. |

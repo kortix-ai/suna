@@ -1298,7 +1298,14 @@ or a restore brings back), and it took no hand-off before
 (`$KORTIX_RUNTIME_STATE_DIR/workflows/handoff.json`, written before anything
 runs). Any other prompt that carries a block, the same block included, is
 refused with "runs one workflow only": no script, no agent, no record. A
-prompt that is only a block is a `peer` turn. A runner whose workflow does not finish (refused
+prompt that is only a block is a `peer` turn. A prompt with no block runs
+nothing: the runner reads no script, args, cap or agent set from its context.
+Every later turn of a runner ends with its one run's outcome (completed only
+when the run ended done), so the API's last turn end of a runner always tells
+how its run ended. The API accepts `kortix.*` runtime_context keys only from a
+session token creating its own child (`spawned_by_session`), so a person, an
+API key or another session cannot declare a runner, a depth (which skips the
+run approval) or a tool narrowing. A runner whose workflow does not finish (refused
 before any agent, failed, stopped) fails its own turn (`KortixHost.failTurn`),
 so the parent's notice says `error` with the reason. Only a runner, and a
 session that cannot start one (no control plane, or a child one level below
@@ -1481,10 +1488,12 @@ Workflow runs: `GET /kortix/runtime/workflows` → `{ runs: WorkflowRunMetadata[
 (the live runs, then every saved run, newest first; a background run is listed
 on the parent with `background.sessionId`, its runner session, and its last
 known state; before the list, the parent reads each runner of a run still
-saved as `running` and writes how it ended: `<workflow_result>` is done,
-`<workflow_error>` failed or stopped, a stopped or failed runner session
-stopped or failed, any other last answer failed. The same read runs at every
-turn start, so a runner's notice heals the list). `POST /kortix/runtime/workflows/:runId/control`
+saved as `running` from the API and writes how it ended: the runner's last
+turn end in the ledger (`GET …/sessions/:id/turn`: `completed` is done,
+`failed` failed or stopped with its error, `runtime_gone`/`abandoned` failed),
+else a stopped or failed runner session. No text decides: a notice's report
+is model text. The same read runs at every turn start; a notice header at the
+start of the prompt only skips the 5 s recheck window for that runner). `POST /kortix/runtime/workflows/:runId/control`
 (`WorkflowControlBody`) → `200 { ok, paused }`: `pause` (no new `agent()`
 starts; running agents finish), `resume`, `restart_agent` (stop that child and
 start it again with the same prompt, counted as an attempt), `stop`. `404`

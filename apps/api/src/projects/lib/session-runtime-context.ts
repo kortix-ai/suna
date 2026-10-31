@@ -30,6 +30,41 @@ export function parseSessionRuntimeContext(
   return { ok: true, context: parsed.data };
 }
 
+/**
+ * The namespace the platform owns in a runtime_context. kortixd reads keys in
+ * it as facts about the session: `kortix.subagent.depth` (no run approval
+ * below depth 0), `kortix.subagent.tools` (the tool narrowing),
+ * `kortix.agent.handle`, `kortix.team.lead`, `kortix.workflow.run_id` and
+ * `kortix.workflow.handoff_sha256` (a workflow runner and the one hand-off it
+ * runs). Only the box that creates its own child may set them: a create whose
+ * credential is that box's session token, so the box becomes the child's
+ * `spawned_by_session`.
+ */
+export const RESERVED_RUNTIME_CONTEXT_PREFIX = 'kortix.';
+
+/** The reserved (`kortix.`) keys of a runtime_context, sorted. */
+export function reservedRuntimeContextKeys(context: SessionRuntimeContext | undefined): string[] {
+  return Object.keys(context ?? {})
+    .filter((key) => key.startsWith(RESERVED_RUNTIME_CONTEXT_PREFIX))
+    .sort();
+}
+
+/**
+ * Why a create may not carry its runtime_context, or null. Reserved keys come
+ * only from a session token creating its own child (`callerSessionId`, which
+ * becomes the child's `spawned_by_session`); a person, an API key, a service
+ * account or a project token may not declare them.
+ */
+export function reservedRuntimeContextRefusal(
+  context: SessionRuntimeContext | undefined,
+  callerSessionId: string | null | undefined,
+): string | null {
+  if (callerSessionId) return null;
+  const reserved = reservedRuntimeContextKeys(context);
+  if (reserved.length === 0) return null;
+  return `runtime_context keys under "${RESERVED_RUNTIME_CONTEXT_PREFIX}" are reserved for the platform, and only a session creating its own child sets them: ${reserved.slice(0, 5).join(', ')}`;
+}
+
 export function serializeSessionRuntimeContext(context: SessionRuntimeContext): string {
   // Parse again at the persistence/runtime boundary so an internal TypeScript
   // cast cannot bypass the public contract and smuggle nested data or secrets.

@@ -22,8 +22,9 @@
  * (`subagentTypes`: the `permission.task` rule filters it); without one the
  * child runs as an inline agent, which a separate session runs as this
  * session's own agent. On My Kortix's box (`anyProjectAgent`) any project
- * agent may be named, and a background runner it starts inherits that
- * (`kortix.workflow.any_agent`); the API authorizes the name either way.
+ * agent may be named; its background runner is a My Kortix session too, so
+ * its box says the same. Nothing in a session's context widens the agent
+ * set, and the API authorizes the name either way.
  *
  * Agent options: `label`, `phase`, `agent`, `model` (the child create's
  * model), `schema` (structured output: the child is asked for JSON, the answer
@@ -232,9 +233,9 @@ const LABEL_CHARS = 60
 export const HANDOFF_MAX_CHARS = 200_000
 
 /**
- * The runner's `runtime_context` keys: they mark a session as a runner. An
- * older caller also put `script` and `args` (JSON) there, chunked: `<key>.0`,
- * `<key>.1`, …; a runner still reads them when its prompt has no hand-off.
+ * The runner's `runtime_context` keys: they mark a session as a runner. The
+ * runner reads `run_id` and `handoff_sha256`; title, name, cap and planned
+ * count label the session for readers of its context.
  */
 const CONTEXT = {
   runId: 'kortix.workflow.run_id',
@@ -242,11 +243,8 @@ const CONTEXT = {
   name: 'kortix.workflow.name',
   maxAgents: 'kortix.workflow.max_agents',
   planned: 'kortix.workflow.planned',
-  anyAgent: 'kortix.workflow.any_agent',
   /** The sha256 (hex) of the hand-off JSON in the runner's first prompt: the only hand-off it runs. */
   handoffSha256: 'kortix.workflow.handoff_sha256',
-  script: 'kortix.workflow.script',
-  args: 'kortix.workflow.args',
 } as const
 
 const RUN_ONCE = 'Run it'
@@ -388,8 +386,8 @@ async function execute(host: KortixHost, toolCallId: string, params: WorkflowPar
     if (inRunner && status) host.failTurn(status === 'done' ? null : { name: 'WorkflowError', message: result.details?.error ?? `The workflow ${status}.` })
     return result
   } catch (err) {
-    // A second call in the turn that ran the workflow: that turn keeps the outcome of its run.
-    if (inRunner && !(err instanceof SpentInThisTurn)) host.failTurn({ name: 'WorkflowError', message: err instanceof Error ? err.message : String(err) })
+    // A spent runner's turn keeps the outcome of its one run (`turnStarted`, or the call that ran it).
+    if (inRunner && !(err instanceof RunnerSpent)) host.failTurn({ name: 'WorkflowError', message: err instanceof Error ? err.message : String(err) })
     throw err
   }
 }
@@ -418,6 +416,8 @@ async function executeCall(host: KortixHost, toolCallId: string, params: Workflo
   try {
     run.publish()
     // Approval before any agent starts: the only wait a top-level turn has. A child session has nobody to ask.
+    // Its depth is `kortix.subagent.depth` of its runtime_context, which the API accepts only from a session
+    // token creating its own child: a person, an API key or another session cannot declare one.
     if (plan.limits.depth === 0 && !store.consented()) {
       const answers = await host.ask([approvalQuestion(plan)], toolCallId)
       const choice = answers?.[0]?.[0]
@@ -476,7 +476,7 @@ interface Plan {
   inline?: string
   /** This session is the run's runner. */
   inRunner: boolean
-  /** Any project agent may be named (My Kortix, or its runner). */
+  /** Any project agent may be named (My Kortix's box, its runner included). */
   anyAgent: boolean
   /** The run this one resumes; its id is this run's id. */
   previous: RunRecord | null
@@ -495,7 +495,8 @@ async function planRun(host: KortixHost, store: RunStore, registry: WorkflowRuns
   // A runner runs its hand-off, whatever script the model echoed.
   const inRunner = handoff !== null
   if (!inRunner && given && givenName) throw new Error('Pass either a script or a name, not both: with name, pass script "".')
-  const resumeId = (inRunner && handoff.mode === 'legacy' ? params.resume_run_id : inRunner ? undefined : params.resume_run_id)?.trim()
+  // A runner resumes only what its hand-off names.
+  const resumeId = inRunner ? undefined : params.resume_run_id?.trim()
   let previous: RunRecord | null = null
   let autoResumed = false
   if (inRunner && handoff.mode === 'resume') {
@@ -543,7 +544,8 @@ async function planRun(host: KortixHost, store: RunStore, registry: WorkflowRuns
     placement: reason === null && !inRunner ? 'runner' : 'here',
     ...(reason ? { inline: reason } : {}),
     inRunner,
-    anyAgent: host.anyProjectAgent?.() === true || handoff?.anyAgent === true,
+    // Only the box's own agent decides (My Kortix's box, its runner included), never the session context.
+    anyAgent: host.anyProjectAgent?.() === true,
     previous,
     autoResumed,
     legacyBackground: params.background !== undefined,
@@ -671,7 +673,7 @@ async function runHere(plan: Plan, run: WorkflowRun, runSignal: AbortSignal, dea
     : deadline.aborted
       ? `The workflow ran past its ${WORKFLOW_DEADLINE_MS / 3_600_000} h deadline.`
       : run.stoppedByPerson
-        ? 'The person stopped the run.'
+        ? STOPPED_BY_PERSON
         : result.error.message
   return run.finish(status, error, result.ok ? result.value : undefined)
 }
@@ -1218,6 +1220,8 @@ const RUNNER_PROMPT = [
 ].join('\n')
 
 const HANDOFF_OPEN = /<workflow_handoff chars="(\d+)">\n/
+/** The header apps/api `subagentNoticeText` opens a notice with, at the start of the prompt only. */
+const NOTICE_HEADER = /^(?:A background subagent you started has finished|Your teammate [A-Za-z0-9._-]+ finished its turn and is idle)\. This message is from the platform, not from the user\.\ntask_id: (\S+)\nstatus: (?:completed|error|stopped|failed)\n/
 const HANDOFF_CLOSE = '\n</workflow_handoff>'
 
 /** What one prompt to a runner hands over (`<workflow_handoff>`, JSON). */
@@ -1235,17 +1239,16 @@ interface HandoffBody {
   records?: RecordedAgent[]
 }
 
-/** The workflow a runner's turn runs. `legacy`: an older caller put it in the runtime context. */
+/** The workflow a runner's turn runs: its verified hand-off. */
 interface Handoff {
   runId: string
-  mode: 'start' | 'resume' | 'legacy'
+  mode: 'start' | 'resume'
   title?: string
   name?: string
   script: string
   args: unknown
   maxAgents?: number
   planned?: number
-  anyAgent: boolean
   /** The handed-over records, as a run record (a resume). */
   records: RunRecord | null
   /** The turn's prompt without the hand-off: what decides the turn's origin. */
@@ -1324,8 +1327,9 @@ function handoffOf(host: KortixHost, context: RunnerContext): Handoff {
   const prompt = host.turnPrompt()
   const open = HANDOFF_OPEN.exec(prompt)
   if (!open) {
-    // An older caller: the script rode in the runtime context, and a relaunch named resume_run_id.
-    return { runId: context.runId, mode: 'legacy', ...(context.title ? { title: context.title } : {}), ...(context.name ? { name: context.name } : {}), script: context.script, args: context.args, ...(context.maxAgents ? { maxAgents: context.maxAgents } : {}), ...(context.planned ? { planned: context.planned } : {}), anyAgent: context.anyAgent, records: null }
+    // A runner runs only the hand-off its first message carries, whose sha256 its creator stamped in the
+    // context. A script read out of the context itself would be unverified, so none is read from there.
+    throw new Error('This message carries no workflow hand-off, and a workflow runner runs only the hand-off of its first message. No agent started.')
   }
   const start = open.index + open[0].length
   const close = prompt.lastIndexOf(HANDOFF_CLOSE)
@@ -1365,30 +1369,22 @@ function handoffOf(host: KortixHost, context: RunnerContext): Handoff {
     args: body.args,
     ...(typeof body.max_agents === 'number' ? { maxAgents: body.max_agents } : {}),
     ...(typeof body.planned === 'number' ? { planned: body.planned } : {}),
-    anyAgent: context.anyAgent,
     records,
     prompt: prompt.slice(0, open.index) + prompt.slice(end),
   }
 }
 
-function unchunked(context: Record<string, unknown>, prefix: string): string | undefined {
-  let out: string | undefined
-  for (let n = 0; typeof context[`${prefix}.${n}`] === 'string'; n++) out = (out ?? '') + (context[`${prefix}.${n}`] as string)
-  return out
-}
-
+/**
+ * A runner's context: the run id and the sha256 of its hand-off. Nothing else
+ * of the workflow is read from the context: the script, args, cap and title
+ * come from the hand-off those two verify. The API accepts `kortix.*` context
+ * keys only from a session token creating its own child (`spawned_by_session`),
+ * so only the creator can have set them.
+ */
 interface RunnerContext {
   runId: string
-  /** The sha256 of the hand-off JSON its creator sent (absent: an older caller, which sent the script in the context). */
+  /** The sha256 of the hand-off JSON its creator sent. Absent: this runner runs no hand-off. */
   handoffSha256?: string
-  title?: string
-  name?: string
-  /** An older caller's script ('' from a current one: the hand-off carries it). */
-  script: string
-  args: unknown
-  maxAgents?: number
-  planned?: number
-  anyAgent: boolean
 }
 
 /** The runner marks of this session's context, or null: this session is no runner. */
@@ -1396,26 +1392,8 @@ function runnerContextOf(host: KortixHost): RunnerContext | null {
   const context = host.sessionContext()
   const runId = context[CONTEXT.runId]
   if (typeof runId !== 'string' || !runId) return null
-  const args = unchunked(context, CONTEXT.args)
-  let parsedArgs: unknown
-  try {
-    parsedArgs = args === undefined ? undefined : JSON.parse(args)
-  } catch {
-    throw new Error("The workflow args in this session's context are not valid JSON.")
-  }
-  const number = (value: unknown) => (typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined)
   const digest = context[CONTEXT.handoffSha256]
-  return {
-    runId,
-    ...(typeof digest === 'string' && /^[0-9a-f]{64}$/.test(digest) ? { handoffSha256: digest } : {}),
-    ...(typeof context[CONTEXT.title] === 'string' ? { title: context[CONTEXT.title] as string } : {}),
-    ...(typeof context[CONTEXT.name] === 'string' ? { name: checkSavedName(context[CONTEXT.name] as string) } : {}),
-    script: unchunked(context, CONTEXT.script)?.trim() ?? '',
-    args: parsedArgs,
-    ...(number(context[CONTEXT.maxAgents]) ? { maxAgents: number(context[CONTEXT.maxAgents]) } : {}),
-    ...(number(context[CONTEXT.planned]) ? { planned: number(context[CONTEXT.planned]) } : {}),
-    anyAgent: context[CONTEXT.anyAgent] === true,
-  }
+  return { runId, ...(typeof digest === 'string' && /^[0-9a-f]{64}$/.test(digest) ? { handoffSha256: digest } : {}) }
 }
 
 /**
@@ -1438,17 +1416,17 @@ function takeHandoff(host: KortixHost, store: RunStore, handoff: Handoff): void 
   }
 }
 
-/** A call in the turn that already ran the runner's workflow: that call's output is the turn's answer. */
-class SpentInThisTurn extends Error {}
+/** A call on a runner that already ran its workflow. Its turn keeps the outcome of that run. */
+class RunnerSpent extends Error {}
 
 /** Throws when this runner already took its hand-off: it runs one workflow only. */
 function refuseSpent(host: KortixHost, spent: SpentHandoff | null): void {
   if (!spent) return
   const turnId = host.turnId()
   if (turnId && spent.turnId === turnId) {
-    throw new SpentInThisTurn(`This turn already ran the workflow of this runner${spent.runId ? ` (run ${spent.runId})` : ''}. Do not call the workflow tool again: your final message is that call's whole text output.`)
+    throw new RunnerSpent(`This turn already ran the workflow of this runner${spent.runId ? ` (run ${spent.runId})` : ''}. Do not call the workflow tool again: your final message is that call's whole text output.`)
   }
-  throw new Error(
+  throw new RunnerSpent(
     `This session is a workflow runner and runs one workflow only. It already ran ${spent.runId ? `run ${spent.runId}` : 'its workflow'}, so it runs no other: no script, no agent, no record. A workflow starts from the session that wants it, with its own workflow call.`,
   )
 }
@@ -1507,7 +1485,6 @@ async function startRunner(host: KortixHost, store: RunStore, plan: Plan, run: W
     [CONTEXT.maxAgents]: plan.maxAgents,
     ...(plan.planned !== undefined ? { [CONTEXT.planned]: plan.planned } : {}),
     ...(plan.saved && plan.name ? { [CONTEXT.name]: plan.name } : {}),
-    ...(plan.anyAgent ? { [CONTEXT.anyAgent]: true } : {}),
     // The runner runs this hand-off and no other.
     [CONTEXT.handoffSha256]: sha256(json),
   }
@@ -1543,31 +1520,48 @@ async function startRunner(host: KortixHost, store: RunStore, plan: Plan, run: W
 const RUNNER_RECHECK_MS = 5_000
 
 /**
- * How a background run ended, read from its runner session; null while the
- * runner works, or when it cannot be read (the state stays as saved). The
- * runner's last turn end decides first (the API's ledger): a runner turn
- * completes only when its workflow ended done, and fails with the workflow's
- * error otherwise. Without a ledger row, the last answer, which is the tool
- * output: `<workflow_result>` is done, `<workflow_error>` failed (stopped
- * when the person stopped it), any other answer failed.
+ * How a background run ended, read from the API about its runner session;
+ * null while the runner works, or while the API holds no answer (the state
+ * stays as saved). No text decides: the runner's answer and every report in
+ * it are model text over whatever its agents read. The runner's session row
+ * and its last turn end in the API's ledger (`GET …/sessions/:id/turn`)
+ * decide. Every turn of a runner ends with its one run's outcome
+ * (`WorkflowRuns.turnStarted`, `failTurn`): completed only when the workflow
+ * ended done, failed with the workflow's error otherwise, also a later turn
+ * that another session's message started.
  */
 export function runnerEnd(report: ChildReport): { status: WorkflowRunStatus; error?: string } | null {
   if (report.state === 'working' || report.state === 'missing') return null
   if (report.state === 'failed') return { status: 'failed', error: 'The runner session failed before the run ended.' }
-  const error = /<workflow_error>\n([^\n]*)/.exec(report.text)?.[1]?.trim()
-  // The turn's end first: a runner's turn completes only when its workflow ended done, whatever its last words.
   const end = report.lastEnd
-  if (end?.reason === 'completed' && !error) return { status: 'done' }
+  if (end?.reason === 'completed') return { status: 'done' }
   if (end?.reason === 'failed') {
-    const why = end.error ?? error ?? 'The runner reported failed.'
-    return { status: why === 'The person stopped the run.' ? 'stopped' : 'failed', error: why }
+    const why = end.error ?? 'The runner reported failed.'
+    return { status: why === STOPPED_BY_PERSON ? 'stopped' : 'failed', error: why }
   }
-  // No turn end on record: the runner's last answer, which is the tool output.
-  if (report.text.includes('<workflow_result>')) return { status: 'done' }
-  if (error) return { status: error === 'The person stopped the run.' ? 'stopped' : 'failed', error }
+  if (end?.reason === 'runtime_gone' || end?.reason === 'abandoned') return { status: 'failed', error: "The runner session's computer went away before the run ended." }
   if (report.state === 'stopped') return { status: 'stopped', error: 'The runner session was stopped before the run ended.' }
-  const said = report.text.trim().split('\n')[0]?.slice(0, SUMMARY_CHARS)
-  return { status: 'failed', error: `The runner ended without running the workflow${said ? `: ${said}` : '.'}` }
+  return null
+}
+
+const STOPPED_BY_PERSON = 'The person stopped the run.'
+
+/**
+ * The failure every later turn of a spent runner ends with: its one run's
+ * outcome, from its own record (null when the run ended done). A run whose
+ * record is gone or still says `running` did not end on this box.
+ */
+function spentOutcome(store: RunStore, runId: string): { name: string; message: string } | null {
+  let record: RunRecord | null = null
+  try {
+    record = runId ? store.load(runId) : null
+  } catch {
+    record = null
+  }
+  const status = record?.doc?.status
+  if (status === 'done') return null
+  if (status === 'failed' || status === 'stopped') return { name: 'WorkflowError', message: record!.doc!.error ?? `The workflow ${status}.` }
+  return { name: 'WorkflowError', message: 'The runner session ended before its run ended.' }
 }
 
 /** `KORTIX_SESSION_CONTEXT` marks a workflow runner (`kortix.workflow.run_id`). */
@@ -1611,6 +1605,7 @@ export class WorkflowRuns {
   /** When each background run's runner was last read (run id → epoch ms). replica-local: one box, one session. */
   private readonly checked = new Map<string, number>()
   private refreshing: Promise<void> | null = null
+  private again = false
 
   /**
    * `report` reads a runner session (`cloudChildReport`); without it, saved
@@ -1642,34 +1637,30 @@ export class WorkflowRuns {
   }
 
   /**
-   * A turn starts with `prompt`. On a runner, a prompt that hands over a
-   * workflow returns the failure the turn ends with unless the workflow ends
-   * done (the tool clears it): a runner that never runs its workflow reports
-   * failed, never completed. On a caller, each background-subagent notice in
-   * the prompt (`task_id: <runner>` + `status: …`, apps/api
-   * `subagentNoticeText`) ends the run of that runner in the saved list: a
-   * runner's turn completes only when its workflow ended done.
+   * A turn starts with `prompt`; returns the failure the turn ends with unless
+   * a tool clears it. On a runner, a prompt that hands over a workflow starts
+   * failed until the workflow ends done: a runner that never runs its
+   * workflow reports failed, never completed. A runner that already ran its
+   * workflow starts every turn with that run's outcome. On a caller, nothing
+   * here changes a run: a notice header (apps/api `subagentNoticeText`) at the
+   * start of the prompt only lets the turn start's refresh read that runner
+   * from the API now ({@link runnerEnd}).
    */
   turnStarted(prompt: string): { name: string; message: string } | null {
     if (this.isRunner()) {
+      // A runner that ran its workflow ends every later turn with that run's outcome, so its last turn end in
+      // the API always tells its run's end, whoever sent the later message.
+      const store = new RunStore(this.stateDir())
+      const spent = store.spentHandoff()
+      if (spent) return spentOutcome(store, spent.runId)
       return HANDOFF_OPEN.test(prompt) ? { name: 'WorkflowError', message: 'The runner ended its turn without running the workflow.' } : null
     }
-    const notices = [...prompt.matchAll(/^task_id: (\S+)\nstatus: (completed|error|stopped|failed)$/gm)]
-    if (notices.length === 0) return null
-    const store = new RunStore(this.stateDir())
-    for (const [, sessionId, status] of notices) {
-      for (const record of store.list()) {
-        if (record.background?.sessionId !== sessionId || record.doc?.status !== 'running' || this.live.has(record.runId)) continue
-        const ended: WorkflowRunStatus = status === 'completed' ? 'done' : status === 'stopped' ? 'stopped' : 'failed'
-        try {
-          store.save({
-            ...record,
-            doc: { ...record.doc, status: ended, endedAt: Date.now(), ...(ended === 'done' ? {} : { error: `The runner session reported ${status}; its report is in this session's messages.` }) },
-          })
-        } catch {
-          // A full disk keeps the old state; the next refresh reads the runner.
-        }
-      }
+    // A platform notice that a runner finished: read that runner from the API now (the turn start's refresh),
+    // without waiting out the recheck window. The notice text decides nothing: only the header, at the start
+    // of the prompt, names the runner to read, and a forged one only causes one more read.
+    const notice = NOTICE_HEADER.exec(prompt)
+    if (notice) {
+      for (const record of new RunStore(this.stateDir()).list()) if (record.background?.sessionId === notice[1]) this.checked.delete(record.runId)
     }
     return null
   }
@@ -1683,7 +1674,17 @@ export class WorkflowRuns {
    */
   refresh(): Promise<void> {
     if (!this.report) return Promise.resolve()
-    this.refreshing ??= this.heal().finally(() => {
+    if (this.refreshing) {
+      // A refresh asked for while one runs runs once more after it: its reads may predate what asked.
+      this.again = true
+      return this.refreshing
+    }
+    this.refreshing = (async () => {
+      do {
+        this.again = false
+        await this.heal()
+      } while (this.again)
+    })().finally(() => {
       this.refreshing = null
     })
     return this.refreshing
