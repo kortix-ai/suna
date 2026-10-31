@@ -16,9 +16,9 @@ export function shouldShowFreeTag(
  * baked catalog can predate the field (same fallback `pickerGroupId` uses).
  */
 export function isSubscriptionModel(
-  model: Pick<FlatModel, 'modelID'> & { provider?: string | null; providerID?: string },
+  model: Pick<FlatModel, 'modelID'> & { provider?: string | null },
 ): boolean {
-  return model.provider === 'codex' || model.modelID.startsWith('codex/') || isClaudeSubscriptionModel(model);
+  return model.provider === 'codex' || model.modelID.startsWith('codex/');
 }
 
 /**

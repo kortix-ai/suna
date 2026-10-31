@@ -6,7 +6,7 @@ import { formatUsdAsCredits, parseBalanceUsd } from '@kortix/shared';
 import { type ComponentProps, type ReactNode } from 'react';
 import { chatGptConnectionAction } from '../models/chatgpt-connection-action';
 import { ChatGptConnectionSlot } from '../models/chatgpt-connection-button';
-import { ClaudeConnectionSlot, claudeConnectionAction } from '../models/claude-subscription-dialog';
+import { ClaudeConnectionSlot, claudeConnectionAction } from '../models/claude-connection-slot';
 import { AskOwnerForCreditsButton } from '../models/ask-owner-for-credits-button';
 
 import { Button } from '../../primitives/button';

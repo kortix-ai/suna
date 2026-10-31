@@ -93,6 +93,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 /** The subscription each two-way provider signs in with, and how it is named. */
 export const SUBSCRIPTION_BY_PROVIDER: Record<string, { kind: SubscriptionKind; name: string; plan: string }> = {
   openai: { kind: 'chatgpt', name: 'ChatGPT', plan: 'ChatGPT Plus or Pro' },
+  // Claude models run through Claude Code on the member's own plan; the login is the member's own.
+  anthropic: { kind: 'claude', name: 'Claude', plan: 'Claude Pro or Max' },
   'opencode-go': { kind: 'opencode-go', name: 'OpenCode', plan: 'OpenCode Go' },
 };
 
@@ -369,7 +371,8 @@ export function ConnectChoice({
   plan: string;
   providerLabel: string;
   onSignIn: () => void;
-  onUseKey: () => void;
+  /** Absent: the viewer can only sign in (a Claude login is the member's own; a key is a project secret). */
+  onUseKey?: () => void;
 }) {
   const t = useTranslations('providerSheet');
   return (
@@ -386,7 +389,7 @@ export function ConnectChoice({
           {t('signInAction', { name })}
         </Button>
       </div>
-      <div className="border-border space-y-3 rounded-lg border p-4">
+      {onUseKey ? <div className="border-border space-y-3 rounded-lg border p-4">
         <div className="space-y-1.5">
           <Badge variant="muted" size="sm">
             {t('payPerUse')}
@@ -399,8 +402,8 @@ export function ConnectChoice({
         <Button type="button" size="sm" variant="secondary" className="w-full" onClick={onUseKey}>
           {t('keyOptionAction')}
         </Button>
-      </div>
-      <p className="text-muted-foreground text-xs text-pretty">{t('bothHint')}</p>
+      </div> : null}
+      {onUseKey ? <p className="text-muted-foreground text-xs text-pretty">{t('bothHint')}</p> : null}
     </div>
   );
 }
@@ -414,6 +417,71 @@ function hostOf(url: string): string {
 }
 
 /** The device-grant step: the code, where to enter it, and that we are waiting. */
+/**
+ * Claude's step where ChatGPT shows a device code: Kortix ran the unmodified
+ * `claude setup-token`, claude.com is open in a new tab, and the member pastes
+ * the code it shows after the approval.
+ */
+export function ClaudeCodeStep({
+  url,
+  checking,
+  onSubmit,
+}: {
+  url: string | null;
+  checking: boolean;
+  onSubmit: (code: string) => void;
+}) {
+  const t = useTranslations('claudeSubscription');
+  const tSheet = useTranslations('providerSheet');
+  const [code, setCode] = useState('');
+  const canSubmit = !!url && code.trim().length > 0 && !checking;
+  return (
+    <div className="bg-muted/60 space-y-3 rounded-lg p-4" data-provider-claude-code="">
+      <p className="text-muted-foreground text-xs text-pretty">{t('approveDescription')}</p>
+      <form
+        className="flex items-center gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (canSubmit) onSubmit(code.trim());
+        }}
+      >
+        <InputGroup className="h-8 min-w-0 flex-1">
+          <InputGroupInput
+            autoFocus
+            autoComplete="off"
+            spellCheck={false}
+            data-1p-ignore=""
+            data-lpignore="true"
+            aria-label={t('codeLabel')}
+            placeholder={t('codeLabel')}
+            value={code}
+            disabled={!url || checking}
+            onChange={(event) => setCode(event.target.value)}
+            className="font-mono text-xs"
+          />
+        </InputGroup>
+        <Button type="submit" size="sm" disabled={!canSubmit} className="gap-1.5">
+          {checking ? <Loading className="size-3.5 shrink-0" /> : null}
+          {checking ? t('connecting') : t('connect')}
+        </Button>
+      </form>
+      {url ? (
+        <Button size="sm" variant="secondary" className="gap-1.5" asChild>
+          <a href={url} target="_blank" rel="noopener noreferrer">
+            {tSheet('openLink', { host: hostOf(url) })}
+            <ArrowSquareOutIcon className="size-3.5 shrink-0" />
+          </a>
+        </Button>
+      ) : (
+        <p className="text-muted-foreground flex items-center gap-2 text-xs">
+          <Loading className="size-3.5 shrink-0" />
+          {t('starting')}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function DeviceCode({
   name,
   code,
@@ -712,6 +780,8 @@ function SubscriptionBody({ projectId, entry, connected: keyConnected, canWrite,
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const waiting = sign.phase === 'waiting';
   const anyConnected = sign.connected || keyConnected;
+  // A Claude login is the member's own: any member signs in. A shared login or a key needs write access.
+  const canSignIn = canWrite || sign.pastesCode;
 
   const copyCode = () => {
     if (!sign.challenge?.code) return;
@@ -719,10 +789,12 @@ function SubscriptionBody({ projectId, entry, connected: keyConnected, canWrite,
   };
 
   let body: ReactNode;
-  if (!canWrite) {
+  if (!canSignIn) {
     body = anyConnected ? null : <p className="text-muted-foreground text-sm">{t('readOnly')}</p>;
   } else if (waiting) {
-    body = (
+    body = sign.pastesCode ? (
+      <ClaudeCodeStep url={sign.challenge?.url ?? null} checking={sign.checking} onSubmit={(code) => void sign.submitCode(code)} />
+    ) : (
       <DeviceCode
         name={sub.name}
         code={sign.challenge?.code ?? null}
@@ -752,7 +824,7 @@ function SubscriptionBody({ projectId, entry, connected: keyConnected, canWrite,
         plan={sub.plan}
         providerLabel={entry.label}
         onSignIn={() => void sign.start()}
-        onUseKey={() => setAddingKey(true)}
+        onUseKey={canWrite ? () => setAddingKey(true) : undefined}
       />
     );
   }
@@ -765,7 +837,7 @@ function SubscriptionBody({ projectId, entry, connected: keyConnected, canWrite,
             title={t('subscription', { plan: sub.plan })}
             detail={t('signedIn')}
             action={
-              canWrite ? (
+              canSignIn ? (
                 <Button
                   type="button"
                   size="sm"
@@ -804,7 +876,7 @@ function SubscriptionBody({ projectId, entry, connected: keyConnected, canWrite,
           />
         ) : null}
       </ul>
-      {canWrite && !(sign.connected && keyConnected) ? (
+      {(sign.connected ? canWrite && !keyConnected : canSignIn) ? (
         <Button
           type="button"
           size="sm"
