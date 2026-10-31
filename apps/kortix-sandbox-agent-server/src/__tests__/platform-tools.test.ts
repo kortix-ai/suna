@@ -151,6 +151,125 @@ describe('kortix_schedules', () => {
   })
 })
 
+describe('kortix_schedules follow-through', () => {
+  const TEXT = 'Check replies to the quotes sent 2026-10-31 to 12 printers; stop on 2026-11-14.'
+  const LOOP = (id: string, extra: string) => `{"id":"${id}","session_id":"ses_1","source_type":"schedule","name":null,"prompt":"${TEXT}",${extra},"timezone":"UTC","state":"active","next_fire_at":"2026-10-31T15:00:00.000Z","last_fired_at":null,"last_status":null,"last_error":null,"created_by":"u_me","created_at":null}`
+
+  test('follow_up: one `kortix loop` with the schedule as --flag=value; the card says when and the next check', async () => {
+    fakeKortix(`'loop ${TEXT} --in=3h --json') echo '${LOOP('reminder.aaaaaaaaaaaa', '"every":null,"every_seconds":null,"cron":null,"at":null')}' ;;
+  'loop ${TEXT} --cron=0 9 * * 1-5 --timezone=Europe/Berlin --json') echo '${LOOP('reminder.bbbbbbbbbbbb', '"every":null,"every_seconds":null,"cron":"0 9 * * 1-5","at":null')}' ;;`)
+    const once = await run('kortix_schedules', { action: 'follow_up', text: TEXT, in: '3h' })
+    expect(once.ok).toBe(true)
+    expect(once.card.title).toBe('Follow-up set: in 3h')
+    expect(once.card.rows).toEqual([{ title: 'Next check', detail: '2026-10-31 15:00 UTC' }])
+    expect(once.data).toEqual({ id: 'reminder.aaaaaaaaaaaa', schedule: 'in 3h', next_fire: '2026-10-31T15:00:00.000Z', text: TEXT })
+    const weekdays = await run('kortix_schedules', { action: 'follow_up', text: TEXT, cron: '0 9 * * 1-5', timezone: 'Europe/Berlin' })
+    expect(weekdays.card.title).toBe('Follow-up set: cron 0 9 * * 1-5 (Europe/Berlin)')
+    expect(argvs()).toEqual([`loop ${TEXT} --in=3h --json`, `loop ${TEXT} --cron=0 9 * * 1-5 --timezone=Europe/Berlin --json`])
+  })
+
+  test('follow_up and wake_on refuse a missing text, a missing or double schedule, and option-shaped values, before any command runs (CWE-88)', async () => {
+    fakeKortix('')
+    const refused = [
+      { action: 'follow_up', in: '3h' },
+      { action: 'follow_up', text: TEXT },
+      { action: 'follow_up', text: TEXT, in: '3h', every: '4h' },
+      { action: 'follow_up', text: '--help', in: '3h' },
+      { action: 'follow_up', text: TEXT, cron: '0 9 * * *', timezone: '--project' },
+      { action: 'wake_on', text: TEXT },
+      { action: 'wake_on', text: TEXT, on: 'cr_merged' },
+      { action: 'wake_on', text: TEXT, on: 'cr_merged', cr: '--all' },
+      { action: 'wake_on', text: TEXT, on: 'webhook', secret_env: 'A B' },
+      { action: 'wake_on', text: TEXT, on: 'connector_event', connector: '-x', event: 'NEW_MAIL' },
+      { action: 'wake_on', text: TEXT, on: 'connector_event', connector: 'gmail', event: 'NEW_MAIL', config: ['x'] },
+      { action: 'wake_on', text: TEXT, on: 'app_event', app: 'shop', event: '--json' },
+      { action: 'wake_on', text: '-x', on: 'app_event', app: 'shop' },
+      { action: 'events', connector: '--apps' },
+      { action: 'remove', id: '--all' },
+    ]
+    for (const args of refused) {
+      const result = await run('kortix_schedules', args)
+      expect({ args, kind: result.error?.kind, message: result.error?.message }).toMatchObject({ args, kind: "invalid" })
+    }
+    expect(readFileSync(calls, 'utf8')).toBe('')
+  })
+
+  test('wake_on: each `on` is one `kortix triggers add … --on=…`; a webhook returns the URL the outside system calls', async () => {
+    const trigger = (source: string) => `{"id":"trigger.cccccccccccc","origin":"runtime","name":null,"prompt":"x","agent":"meta","state":"active","source":${source},"target":{"kind":"session","session_id":"ses_1","session_name":null},"next_fire_at":null,"last_fired_at":null,"last_status":null,"last_error":null}`
+    fakeKortix(`'triggers add ${TEXT} --on=cr-merged --cr=42 --json') echo '${trigger('{"type":"change_request","cr_id":"42","base":null}')}' ;;
+  'triggers add ${TEXT} --on=webhook --secret-env=ORDERS_SECRET --json') echo '${trigger('{"type":"webhook","secret_env":"ORDERS_SECRET","webhook_url":"https://api.example.com/v1/webhooks/proj_1/trigger.cccccccccccc"}')}' ;;
+  'triggers add ${TEXT} --on=event --connector=gmail --event=GMAIL_NEW_GMAIL_MESSAGE --config={"labelIds":"INBOX"} --json') echo '${trigger('{"type":"event","connector":"gmail","event":"GMAIL_NEW_GMAIL_MESSAGE"}')}' ;;
+  'triggers add ${TEXT}'*' --on=app --app=shop --json') echo '${trigger('{"type":"app","app":"shop"}')}' ;;`)
+    const merged = await run('kortix_schedules', { action: 'wake_on', text: TEXT, on: 'cr_merged', cr: '42' })
+    expect(merged.card.title).toBe('Will wake when change request 42 merges')
+    expect(merged.data).toMatchObject({ id: 'trigger.cccccccccccc', on: 'cr_merged', condition: 'change request 42 merges', next_fire: null })
+    const hook = await run('kortix_schedules', { action: 'wake_on', text: TEXT, on: 'webhook', secret_env: 'ORDERS_SECRET' })
+    expect(hook.card.title).toBe('Will wake when the webhook is called')
+    expect(hook.card.rows).toEqual([{ title: 'Webhook URL', detail: 'https://api.example.com/v1/webhooks/proj_1/trigger.cccccccccccc' }])
+    expect(hook.data).toMatchObject({ webhook_url: 'https://api.example.com/v1/webhooks/proj_1/trigger.cccccccccccc' })
+    const mail = await run('kortix_schedules', { action: 'wake_on', text: TEXT, on: 'connector_event', connector: 'gmail', event: 'GMAIL_NEW_GMAIL_MESSAGE', config: { labelIds: 'INBOX' } })
+    expect(mail.card.title).toBe('Will wake when gmail sends GMAIL_NEW_GMAIL_MESSAGE')
+    // `--on app` has no event filter: the text tells the woken turn which event matters.
+    const app = await run('kortix_schedules', { action: 'wake_on', text: TEXT, on: 'app_event', app: 'shop', event: 'order.paid' })
+    expect(app.card.title).toBe('Will wake when App shop sends order.paid')
+    expect(argvs()[3]).toBe(`triggers add ${TEXT} (This wakes on every event from App shop; act only on "order.paid" and end the turn on any other.) --on=app --app=shop --json`)
+    expect(argvs()).toHaveLength(4)
+  })
+
+  test('events: the event types a connector can wake a session with, one row each, with their config fields in data', async () => {
+    fakeKortix(`'triggers events --connector=gmail --json') echo '{"source":"composio","provider":"composio","app":"gmail","event_types":[{"type":"GMAIL_NEW_GMAIL_MESSAGE","name":"New email","description":"Fires when a new email arrives in the inbox.","app":"gmail","delivery":"poll","config_schema":{"properties":{"labelIds":{"type":"string","description":"Label to watch"}},"required":["labelIds"]},"payload_schema":null}]}' ;;`)
+    const result = await run('kortix_schedules', { action: 'events', connector: 'gmail' })
+    expect(result.card.title).toBe('1 event on gmail')
+    expect(result.card.rows).toEqual([{ title: 'GMAIL_NEW_GMAIL_MESSAGE', detail: 'Fires when a new email arrives in the inbox.' }])
+    expect(result.data).toEqual({ connector: 'gmail', events: [{ type: 'GMAIL_NEW_GMAIL_MESSAGE', name: 'New email', description: 'Fires when a new email arrives in the inbox.', config: [{ name: 'labelIds', required: true, description: 'Label to watch' }] }] })
+  })
+
+  test("list: this session's follow-ups and wake-ons, then the project schedules, each with id, plain schedule or condition and next fire", async () => {
+    fakeKortix(`'triggers ls --json') echo '{"triggers":[{"slug":"weekly-digest","name":"Weekly digest","prompt_template":"Summarize","enabled":true,"cron":"0 9 * * 1","next_fire_at":"2026-11-02T09:00:00.000Z"}],"runtime":[{"id":"reminder.aaaaaaaaaaaa","origin":"runtime","prompt":"${TEXT}","state":"active","source":{"type":"schedule","every":"3h"},"target":{"kind":"session","session_id":"ses_1"},"next_fire_at":"2026-10-31T15:00:00.000Z"},{"id":"trigger.cccccccccccc","origin":"runtime","prompt":"Verify prod","state":"active","source":{"type":"change_request","cr_id":"42","base":null},"target":{"kind":"session","session_id":"ses_1"},"next_fire_at":null},{"id":"reminder.dddddddddddd","origin":"runtime","prompt":"Another session","state":"active","source":{"type":"schedule","every":"1h"},"target":{"kind":"session","session_id":"ses_9"},"next_fire_at":null}]}' ;;
+  'loops ls --json') echo '{"reminders":[${LOOP('reminder.aaaaaaaaaaaa', '"every":"3h","every_seconds":10800,"cron":null,"at":null')},{"id":"trigger.cccccccccccc","session_id":"ses_1","source_type":"change_request","name":null,"prompt":"Verify prod","every":null,"cron":null,"timezone":"UTC","at":null,"state":"active","next_fire_at":null}]}' ;;`)
+    const result = await run('kortix_schedules', { action: 'list' })
+    expect(result.card.title).toBe('1 follow-up, 1 wake-on, 1 schedule')
+    expect(result.data).toEqual({
+      follow_ups: [{ id: 'reminder.aaaaaaaaaaaa', text: TEXT, schedule: 'every 3h', next_fire: '2026-10-31T15:00:00.000Z', state: 'active' }],
+      wake_ons: [{ id: 'trigger.cccccccccccc', text: 'Verify prod', condition: 'change request 42 merges', next_fire: null, state: 'active' }],
+      schedules: [{ id: 'weekly-digest', text: 'Weekly digest', schedule: '0 9 * * 1', agent: null, next_fire: '2026-11-02T09:00:00.000Z', state: 'active' }],
+    })
+    expect(result.card.rows?.map((row) => row.detail)).toEqual(['Follow-up · every 3h · next 2026-10-31 15:00 UTC', 'Wakes when change request 42 merges', '0 9 * * 1 · next 2026-11-02 09:00 UTC'])
+  })
+
+  test('remove routes by id: reminder.<id> → kortix loops, trigger.<id> → kortix triggers, a kortix.yaml slug → --apply; delete is an alias; pause and resume work for loops', async () => {
+    fakeKortix(`'loops rm reminder.aaaaaaaaaaaa') echo 'Removed' ;;
+  'triggers rm trigger.cccccccccccc') echo 'Removed' ;;
+  'triggers rm weekly-digest --apply') echo 'Removed' ;;
+  'loops pause reminder.aaaaaaaaaaaa') echo 'Paused' ;;
+  'loops resume reminder.aaaaaaaaaaaa') echo 'Resumed' ;;
+  'loops run reminder.aaaaaaaaaaaa') echo 'Sent' ;;`)
+    expect((await run('kortix_schedules', { action: 'remove', id: 'reminder.aaaaaaaaaaaa' })).card.title).toBe('Removed')
+    const alias = await run('kortix_schedules', { action: 'delete', id: 'trigger.cccccccccccc' })
+    expect(alias.action).toBe('delete')
+    expect(alias.ok).toBe(true)
+    await run('kortix_schedules', { action: 'remove', id: 'weekly-digest' })
+    await run('kortix_schedules', { action: 'pause', id: 'reminder.aaaaaaaaaaaa' })
+    await run('kortix_schedules', { action: 'resume', id: 'reminder.aaaaaaaaaaaa' })
+    await run('kortix_schedules', { action: 'run_now', id: 'reminder.aaaaaaaaaaaa' })
+    expect(argvs()).toEqual([
+      'loops rm reminder.aaaaaaaaaaaa',
+      'triggers rm trigger.cccccccccccc',
+      'triggers rm weekly-digest --apply',
+      'loops pause reminder.aaaaaaaaaaaa',
+      'loops resume reminder.aaaaaaaaaaaa',
+      'loops run reminder.aaaaaaaaaaaa',
+    ])
+  })
+
+  test('Loops turned off: the refusal says so in plain words and where to turn them on', async () => {
+    fakeKortix(`'loop ${TEXT} --every=4h --json') echo '✗ Loops is not enabled for this project. Enable it in Settings → Feature flags.' >&2; echo '  Turn it on: kortix projects features enable reminders' >&2; exit 1 ;;`)
+    const result = await run('kortix_schedules', { action: 'follow_up', text: TEXT, every: '4h' })
+    expect(result.ok).toBe(false)
+    expect(result.error?.message).toBe('Loops is not enabled for this project. Enable it in Settings → Feature flags. Ask the person or a project admin to turn it on.')
+  })
+})
+
 describe('kortix_people and kortix_access', () => {
   test('set_role resolves a person by email and shows the role change', async () => {
     fakeKortix(`${ROSTER}
