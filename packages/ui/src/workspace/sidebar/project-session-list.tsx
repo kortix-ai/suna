@@ -49,6 +49,7 @@ import {
 import { SessionsEmptyState } from '../sessions/sessions-empty-state';
 import { RenameSessionModal } from './modal/rename-session-modal';
 import { SessionDeleteModal } from '../../session/actions/session-delete-modal';
+import { subagentTitle } from '../../session/header/subagent-hover-card';
 import { SessionLabelsModal } from './modal/session-labels-modal';
 import { ShareSessionModal } from './modal/share-session-modal';
 import {
@@ -154,7 +155,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useUiPathname, useUiRouter, useUiSearchParams, useUiViewerId } from '../../providers/ui-provider';
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSessionListActions } from '../../session/actions/use-session-list-actions';
 import { Separator } from '../../primitives/separator';
 
@@ -357,6 +358,31 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     if (activeSection) setExpanded(projectId, `section:${activeSection}`, true);
   }, [projectId, activeParentId, activeSection, setExpanded]);
 
+  // The session you are in opens when it spawns a session, so the new row is
+  // in view. Only a rise while you watch opens it: a row you closed stays
+  // closed on every later read.
+  const activeChildCount =
+    [sessions, pinnedQuery.sessions, sharedQuery.sessions, automatedQuery.sessions]
+      .flat()
+      .find((session) => session.session_id === activeSessionId)?.child_count ?? null;
+  const seenChildCount = useRef<{ sessionId: string | null; count: number | null }>({
+    sessionId: null,
+    count: null,
+  });
+  useEffect(() => {
+    const seen = seenChildCount.current;
+    if (
+      activeSessionId &&
+      seen.sessionId === activeSessionId &&
+      seen.count !== null &&
+      activeChildCount !== null &&
+      activeChildCount > seen.count
+    ) {
+      setExpanded(projectId, activeSessionId, true);
+    }
+    seenChildCount.current = { sessionId: activeSessionId ?? null, count: activeChildCount };
+  }, [projectId, activeSessionId, activeChildCount, setExpanded]);
+
   // The brief is a session record, not a Review Center inbox. It therefore
   // loads every CR state, not only the ones awaiting review: the newest
   // SIDEBAR_CHANGE_REQUEST_LIMIT of them, which belong to the recent sessions
@@ -500,7 +526,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               beginSessionSwitch(session.session_id);
             }
           }}
-          displayTitle={getSessionDisplayTitle(session)}
+          displayTitle={nested ? subagentTitle(getSessionDisplayTitle(session)) : getSessionDisplayTitle(session)}
           inSharedGroup={inSharedGroup}
           spawned={nested}
           subagentCount={children.length}
