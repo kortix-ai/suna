@@ -1,12 +1,14 @@
 /**
  * kortix_agents: the project's agents — list them, read one, create one,
- * change its settings, and set what it may use. A My Kortix platform tool
- * (`platform.ts`): every action is one `kortix agents …` command.
+ * change its settings, and set what it may use — and the models a project
+ * agent, a hand-off or a workflow agent may run on (`models`). A My Kortix
+ * platform tool (`platform.ts`): every action is one `kortix agents …` or
+ * `kortix models …` command.
  */
-import { agentHref, capRows, cliJson, diff, fail, listArg, ok, show, withJsonFile, cliArgProblem, type PlatformToolContext } from './platform'
+import { adminHref, agentHref, capRows, cliJson, diff, fail, listArg, ok, show, withJsonFile, cliArgProblem, type PlatformToolContext } from './platform'
 
 const TOOL = 'kortix_agents' as const
-const ACTIONS = ['list', 'get', 'create', 'update', 'set_access'] as const
+const ACTIONS = ['list', 'get', 'create', 'update', 'set_access', 'models'] as const
 
 interface ListedAgent {
   name: string
@@ -64,6 +66,120 @@ async function list(context: PlatformToolContext) {
       ),
     },
     read.value,
+  )
+}
+
+/** One entry of `kortix models ls --json` (`GET /projects/:id/model-picker`). Prices are never read. */
+interface PickerModel {
+  name?: string
+  provider?: string
+  provider_name?: string
+  enabled?: boolean
+  available?: boolean
+  reasoning?: boolean
+  attachment?: boolean
+  modalities?: { input?: string[] }
+  limit?: { context?: number }
+  description?: string
+}
+
+interface ModelPicker {
+  models?: Record<string, PickerModel>
+  defaultModel?: string
+  claudeSubscription?: { connected?: boolean; models?: Array<{ id: string; name?: string; description?: string; limit?: { context?: number }; efforts?: string[]; connected?: boolean }> }
+}
+
+/** A model a spawn may name, as the model reads it. */
+interface UsableModel {
+  /** The exact ref an `agent` call, a workflow `agent()` or an agent setting takes. */
+  id: string
+  name: string
+  provider?: string
+  good_for: string[]
+  context?: number
+  default: boolean
+  description?: string
+}
+
+/** Every gateway model is a `kortix/<wire id>` ref (`toWireModel` strips the prefix again). */
+const KORTIX_REF = 'kortix/'
+/** A name that marks a small, quick model. The catalog has no speed field. */
+const FAST_NAME = /\b(flash|mini|nano|lite|haiku|fast|turbo|small|air)\b/i
+
+function contextWords(tokens: number | undefined): string | null {
+  if (!tokens || tokens <= 0) return null
+  return tokens >= 1_000_000 ? `${Math.round(tokens / 100_000) / 10}M context` : `${Math.round(tokens / 1000)}k context`
+}
+
+function strengths(id: string, model: { name?: string; reasoning?: boolean; attachment?: boolean; modalities?: { input?: string[] } }): string[] {
+  const words: string[] = []
+  if (FAST_NAME.test(`${id} ${model.name ?? ''}`.replace(/[-_./]/g, ' '))) words.push('fast')
+  if (model.reasoning) words.push('reasoning')
+  if (model.attachment || model.modalities?.input?.includes('image')) words.push('images')
+  return words
+}
+
+/** The models this project may run: offered, and reachable for this person. Default first. */
+function usableModels(picker: ModelPicker): UsableModel[] {
+  const fallback = picker.defaultModel ? `${KORTIX_REF}${picker.defaultModel.replace(/^kortix\//, '')}` : null
+  const gateway = Object.entries(picker.models ?? {})
+    .filter(([, model]) => model.enabled !== false && model.available !== false)
+    .map(([wire, model]): UsableModel => {
+      const id = `${KORTIX_REF}${wire}`
+      return {
+        id,
+        name: model.name || wire,
+        ...(model.provider_name || model.provider ? { provider: model.provider_name || model.provider } : {}),
+        good_for: strengths(wire, model),
+        ...(model.limit?.context ? { context: model.limit.context } : {}),
+        default: id === fallback,
+        ...(model.description ? { description: model.description } : {}),
+      }
+    })
+  const claude = picker.claudeSubscription?.connected
+    ? (picker.claudeSubscription.models ?? [])
+        .filter((model) => model.connected !== false)
+        .map((model): UsableModel => ({
+          id: model.id,
+          name: model.name || model.id,
+          provider: 'Claude subscription',
+          good_for: strengths(model.id, { name: model.name, reasoning: (model.efforts?.length ?? 0) > 0 }),
+          ...(model.limit?.context ? { context: model.limit.context } : {}),
+          default: false,
+          ...(model.description ? { description: model.description } : {}),
+        }))
+    : []
+  return [...gateway, ...claude].sort((a, b) => Number(b.default) - Number(a.default) || a.name.localeCompare(b.name))
+}
+
+async function models(context: PlatformToolContext) {
+  const read = await cliJson<ModelPicker>(['models', 'ls', '--json'], context)
+  if ('error' in read) return fail(TOOL, 'models', 'Could not list the models', read.error, context)
+  const usable = usableModels(read.value)
+  if (usable.length === 0) {
+    return fail(TOOL, 'models', 'No models to run', { kind: 'failed', message: 'This project offers no model you can run. A project admin connects a provider or turns a model on under Project admin → Models.' }, context)
+  }
+  const fallback = usable.find((model) => model.default)?.id ?? null
+  return ok(
+    TOOL,
+    'models',
+    {
+      title: usable.length === 1 ? '1 model' : `${usable.length} models`,
+      subtitle: 'Pass an id as `model` to a hand-off, a workflow agent or an agent setting.',
+      rows: capRows(
+        usable.map((model) => ({
+          title: model.name,
+          detail: [model.id, ...model.good_for, contextWords(model.context)].filter(Boolean).join(' · '),
+          ...(model.default ? { badge: 'default' } : {}),
+        })),
+      ),
+      links: [{ label: 'Models', href: adminHref(context.env, 'models') }],
+    },
+    {
+      default: fallback,
+      models: usable,
+      note: 'Use `id` exactly as written. Omit `model` to run on the default. Pick a fast model for bulk and parallel work, the strongest reasoning model for synthesis and judgment.',
+    },
   )
 }
 
@@ -163,7 +279,7 @@ async function setAccess(name: string, args: Record<string, any>, context: Platf
 export default {
   description:
     "The project's agents: each one is a colleague with one job, its own instructions and model, and a limited set of connectors, secrets and apps it may use. " +
-    'Actions: `list`; `get` (name); `create` (name, description, instructions, optional model, connectors, skills, tools); ' +
+    'Actions: `list`; `models` (the models a project agent, a hand-off or a workflow agent may run on: each `id` is the exact `model` value, with what it is good for); `get` (name); `create` (name, description, instructions, optional model, connectors, skills, tools); ' +
     '`update` (name, plus only the fields to change); `set_access` (name, connectors / secrets / apps: a list, "all" or "none"). ' +
     'Before `set_access` or an `update` that gives an agent more access, show the person what changes and ask once. ' +
     'The result shows the person a card; tell them the outcome in plain words.',
@@ -171,10 +287,10 @@ export default {
     type: 'object',
     properties: {
       action: { type: 'string', enum: [...ACTIONS], description: 'What to do.' },
-      name: { type: 'string', description: 'The agent name (lowercase, hyphens), for every action except list.' },
+      name: { type: 'string', description: 'The agent name (lowercase, hyphens), for every action except list and models.' },
       description: { type: 'string', description: 'One line: what this agent does.' },
       instructions: { type: 'string', description: "The agent's instructions: who it is, what it does, how it works." },
-      model: { type: 'string', description: 'A model id; omit to follow the project default.' },
+      model: { type: 'string', description: 'A model id exactly as `models` lists it, e.g. `kortix/<model>`; omit to follow the project default.' },
       connectors: { description: 'Connector slugs it may use, "all" or "none".', anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'string' }] },
       secrets: { description: 'Secret names it receives, "all" or "none".', anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'string' }] },
       apps: { description: 'App slugs it may open, "all" or "none".', anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'string' }] },
@@ -190,6 +306,7 @@ export default {
     const action = String(args.action ?? '')
     const name = typeof args.name === 'string' ? args.name.trim() : ''
     if (action === 'list') return list(context)
+    if (action === 'models') return models(context)
     if (!(ACTIONS as readonly string[]).includes(action)) return fail(TOOL, action, 'Unknown action', { kind: 'invalid', message: `Use one of: ${ACTIONS.join(', ')}.` }, context)
     if (!name) return fail(TOOL, action, 'Which agent?', { kind: 'invalid', message: 'Pass the agent name.' }, context)
     const badName = cliArgProblem('name', name)

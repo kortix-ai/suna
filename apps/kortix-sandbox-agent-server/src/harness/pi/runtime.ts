@@ -39,12 +39,12 @@ import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import { SUBAGENT_SPEC_REQUIRED, TASK_STOP_TOOL, type KortixHost, type SpawnSessionInput, type SpawnSessionResult } from './extensions/subagents'
-import { cloudSpawnSession, cloudStopChild, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
+import { cloudChildReport, cloudChildToolDetails, cloudSpawnSession, cloudStopChild, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
 import type { ControlPlane } from './extensions/control-plane'
 import { messaging, MESSAGING_TOOLS } from './extensions/messaging'
 import { TEAM_TASK_TOOLS, teamTasks } from './extensions/team-tasks'
 import { BUNDLED_WORKFLOWS } from './extensions/bundled-workflows'
-import { WorkflowRuns, type WorkflowControlAnswer } from './extensions/workflow'
+import { isWorkflowRunner, WORKFLOW_TOOL, WorkflowRuns, type WorkflowControlAnswer } from './extensions/workflow'
 import { listCheckout } from './extensions/workflow-store'
 import { promptOrigin, ULTRACODE_SYSTEM_LINE, ultracodeRequested, type PromptOrigin } from './prompt-origin'
 import { enabledFeatureFlags } from '@/lib/config/feature-flags'
@@ -322,6 +322,8 @@ interface Turn {
   stopRequested?: boolean
   /** Taken back before it started (`retract`): its queue slot runs nothing. */
   retracted?: boolean
+  /** A tool said the turn failed its task (`KortixHost.failTurn`): a turn that would complete ends `error` with this. */
+  failure?: { name: string; message: string }
 }
 
 /** A steered message no turn has read yet. `message` is the object handed to `agent.steer()`. */
@@ -490,7 +492,18 @@ export class PiRuntime {
     this.cfg = opts.cfg
     this.env = opts.env ?? process.env
     this.subagentContext = subagentContextFrom(this.env.KORTIX_SESSION_CONTEXT)
-    this.workflows = new WorkflowRuns(() => join(resolveKortixRuntimeStateDirectory(this.env), 'workflows'))
+    this.workflows = new WorkflowRuns(
+      () => join(resolveKortixRuntimeStateDirectory(this.env), 'workflows'),
+      (sessionId) => {
+        const cloud = this.cloudTarget()
+        return cloud ? cloudChildReport(cloud, sessionId) : Promise.resolve({ state: 'missing' as const, text: '' })
+      },
+      () => isWorkflowRunner(this.env.KORTIX_SESSION_CONTEXT),
+      (sessionId) => {
+        const cloud = this.cloudTarget()
+        return cloud ? cloudChildToolDetails(cloud, sessionId, WORKFLOW_TOOL) : Promise.resolve(null)
+      },
+    )
     this.now = () => Date.now()
     this.hooks = opts.hooks ?? {}
     this.releases = opts.releases ?? null
@@ -1225,6 +1238,11 @@ export class PiRuntime {
     this.steerReads.clear()
     this.status = 'busy'
     this.hooks.onTurnBegin?.({ rootId: this.rootId, messageId: turn.messageId })
+    // A runner's turn starts failed until its workflow ends done (a spent runner's: with its run's outcome). On a
+    // caller, a notice header only asks for an API read of that runner now; no prompt text decides a run's end.
+    const failure = this.workflows.turnStarted(turn.input.text)
+    if (failure) turn.failure = failure
+    void this.workflows.refresh().catch(() => {})
     let outcome: TurnOutcome = 'completed'
     let error: TurnEnd['error'] | undefined
     this.turnAssistant = null
@@ -1274,6 +1292,10 @@ export class PiRuntime {
         const wire = assistantMessageError({ stopReason: last.stopReason as never, errorMessage: last.errorMessage, provider: last.provider })
         const data = wire?.data as { message?: string; statusCode?: number } | undefined
         error = wire ? { name: wire.name, message: data?.message, statusCode: data?.statusCode, code: wire.code } : undefined
+      }
+      if (outcome === 'completed' && turn.failure) {
+        outcome = 'error'
+        error = turn.failure
       }
     } catch (err) {
       outcome = 'error'
@@ -1679,6 +1701,13 @@ export class PiRuntime {
     return this.workflows.list()
   }
 
+  /** Read the runners of background runs still saved as running (`WorkflowRuns.refresh`), at most `budgetMs`. */
+  async refreshWorkflows(budgetMs = 3_000): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([this.workflows.refresh().catch(() => {}), new Promise<void>((resolve) => (timer = setTimeout(resolve, budgetMs)))])
+    clearTimeout(timer)
+  }
+
   /** `POST /kortix/runtime/workflows/:runId/control`. */
   controlWorkflow(runId: string, body: WorkflowControlBody): WorkflowControlAnswer {
     return this.workflows.control(runId, body)
@@ -1687,6 +1716,16 @@ export class PiRuntime {
   /** Where the running turn's prompt came from; a steered message never changes it. */
   private turnOrigin(): PromptOrigin {
     return this.active ? promptOrigin(this.active.input.text) : 'human'
+  }
+
+  /** The running turn's prompt is the session's first user message (`KortixHost.turnIsFirstPrompt`). */
+  private turnIsFirstPrompt(): boolean {
+    const active = this.active
+    if (!active) return false
+    // A turn or a `noReply` message that ended before this one: this prompt is not the first.
+    for (const messageId of this.completedTurns.keys()) if (messageId !== active.messageId) return false
+    const first = this.transcript.all().find((message) => message.info.role === 'user' && message.info.sessionID === this.rootId)
+    return first?.info.id === active.messageId
   }
 
   /** The `ultracode` system line, for a turn whose own human prompt names it. */
@@ -1709,6 +1748,14 @@ export class PiRuntime {
         return cloudStopChild(cloud, target)
       },
       turnOrigin: () => this.turnOrigin(),
+      turnPrompt: () => this.active?.input.text ?? '',
+      turnId: () => this.active?.messageId ?? null,
+      turnIsFirstPrompt: () => this.turnIsFirstPrompt(),
+      failTurn: (failure) => {
+        if (!this.active) return
+        if (failure) this.active.failure = failure
+        else delete this.active.failure
+      },
       workflowRuns: () => this.workflows,
       compiledAgents: () => this.compiled?.agent ?? {},
       builtInSubagents: () => !this.v3(),
@@ -1717,6 +1764,7 @@ export class PiRuntime {
       // My Kortix's box (the coordinator): its config declares only itself, and every hand-off names a project agent.
       anyProjectAgent: () => this.env.KORTIX_META_AGENT === '1',
       currentAgentName: () => this.agentName,
+      toolNames: () => this.ownToolNames(),
       spawnSession: (input) => this.resolveSpawn(input),
       workflowLimits: () => {
         const cloud = this.cloudTarget()
@@ -1817,6 +1865,14 @@ export class PiRuntime {
     const coordinator = this.env.KORTIX_META_AGENT === '1'
     const declared = Object.prototype.hasOwnProperty.call(this.compiled?.agent ?? {}, this.agentName)
     const narrowed = this.compiledAgent()?.tools !== undefined || this.subagentContext.tools !== undefined
+    return {
+      parentAgent: !coordinator && declared ? this.agentName : undefined,
+      toolAllowlist: narrowed ? this.ownToolNames() : undefined,
+    }
+  }
+
+  /** Every tool the root agent may use on this box: what a child's `tools` may name. */
+  private ownToolNames(): string[] {
     const session = this.pi?.session
     const names = [
       ...this.baseTools.map((tool) => tool.name),
@@ -1824,10 +1880,7 @@ export class PiRuntime {
       ...(session?.getActiveToolNames() ?? []),
       ...this.hiddenTools,
     ]
-    return {
-      parentAgent: !coordinator && declared ? this.agentName : undefined,
-      toolAllowlist: narrowed ? [...new Set(names)].filter((name) => this.rootToolAllowed(name)) : undefined,
-    }
+    return [...new Set(names)].filter((name) => this.rootToolAllowed(name))
   }
 
   /**

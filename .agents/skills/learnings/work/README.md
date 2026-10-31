@@ -18,6 +18,7 @@ planned, in flight, or parked, so another person or agent can pick it up.
 
 | Topic | Status |
 |---|---|
+| [`long-horizon-follow-through/`](long-horizon-follow-through/README.md) | building (`mk2-followup-guide`, `mk2-followup-tools`): every agent sets its own wake-up after each wait: loops, session event triggers, App events |
 | [`my-kortix-multi-agent-parity/`](my-kortix-multi-agent-parity/README.md) | building (`my-kortix-v2`): messages between sessions, agent teams (flag `agent_teams`), agent board, workflow controls; async orchestration |
 | [`goals-and-workflows/`](goals-and-workflows/README.md) | stage 1 merged on dev (flag `goals`); stage 2 planning |
 | [`email-cost-passthrough/`](email-cost-passthrough/README.md) | parked: meter managed Resend inboxes and emails per account |
