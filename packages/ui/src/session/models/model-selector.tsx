@@ -521,12 +521,6 @@ export function ModelSelector({
     () => models.some((m) => m.enabled !== false && !(isClaudeSubscriptionModel(m) && m.available === false)),
     [models],
   );
-  /** Does this member already have ChatGPT subscription models? Then the row
-   *  manages their accounts instead of offering to connect one. */
-  const hasChatGptModels = useMemo(
-    () => models.some((m) => isRunnableModel(m) && pickerGroupId(m) === 'codex'),
-    [models],
-  );
 
   const grouped = useMemo(() => {
     const groups = new Map<
@@ -854,36 +848,6 @@ export function ModelSelector({
                       </Fragment>
                     );
                   })}
-                  {/* The member's own way in to ChatGPT: connect a subscription,
-                      or manage the accounts behind the ChatGPT section above.
-                      Not a search result, so it stays out of a filtered list. */}
-                  {chatGptAvailable && !searching && (
-                    <>
-                      <CommandSeparator />
-                      <CommandGroup forceMount>
-                        <CommandItem
-                          value="chatgpt-subscription"
-                          onSelect={handleOpenChatGpt}
-                          className="cursor-pointer"
-                        >
-                          <ProviderLogo
-                            providerID="codex"
-                            name="ChatGPT"
-                            size="small"
-                            className="size-4 rounded-none bg-transparent"
-                          />
-                          <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
-                            {hasChatGptModels
-                              ? tPooled('manageChatGptAccounts')
-                              : tPooled('useYourChatGpt')}
-                          </span>
-                          {!hasChatGptModels && (
-                            <span className="text-muted-foreground text-xs">{tPooled('connect')}</span>
-                          )}
-                        </CommandItem>
-                      </CommandGroup>
-                    </>
-                  )}
                 </>
               ) : hasAnyModel ? (
                 /* Models ARE connected — the SEARCH matched none of them.
@@ -921,11 +885,6 @@ export function ModelSelector({
                       >
                         <KeyRound className="size-3.5" />
                         {tModel('connectProvider')}
-                      </Button>
-                    )}
-                    {chatGptAvailable && (
-                      <Button type="button" size="xs" variant="outline" onClick={handleOpenChatGpt}>
-                        {tPooled('connectChatGpt')}
                       </Button>
                     )}
                   </div>

@@ -69,7 +69,6 @@
     "oauthExpired": "認証がタイムアウトしました。もう一度お試しください。",
     "oauthPrivateDescription": "このプロジェクトで ChatGPT Plus または Pro プランを使用します。新しいアカウントは共有するまで自分専用です。",
     "chatGptSubscription": "ChatGPT サブスクリプション",
-    "useYourChatGpt": "自分の ChatGPT サブスクリプションを使う",
     "manageChatGptAccounts": "ChatGPT アカウントを管理",
     "connect": "接続",
     "connectChatGpt": "ChatGPT を接続",
