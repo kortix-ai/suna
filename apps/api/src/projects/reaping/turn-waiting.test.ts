@@ -151,6 +151,12 @@ describe('turnWaitingInPending: the same question on a box that serves its sessi
     expect(turnWaitingInPending(pendingDoc({}), 'ses_root')).toBe('none');
   });
 
+  test('an answer about another root (a stale root id): unknown, whatever its asks say', () => {
+    const doc = pendingDoc({ statuses: { ses_other: 'busy' }, questions: ['ses_other'] });
+    expect(turnWaitingInPending(doc, 'ses_root')).toBe('unknown');
+    expect(turnWaitingInPending(pendingDoc({ statuses: {} }), 'ses_root')).toBe('unknown');
+  });
+
   test('a malformed answer: unknown', () => {
     expect(turnWaitingInPending({}, 'ses_root')).toBe('unknown');
     expect(turnWaitingInPending(null, 'ses_root')).toBe('unknown');

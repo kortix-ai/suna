@@ -287,7 +287,9 @@ async function inspectRoot(
 /**
  * `inspectRoot` on a box that serves its own session log (`runtime.log.v1`): the same predicate on
  * log records. The target is the newest assistant message whose `reply_to` is `messageId`; it is
- * open while its status is `streaming` (a retrying model call keeps it streaming).
+ * open while its status is `streaming`. The reaper asks only after the box reported no turn in
+ * flight. pi marks a record `streaming` only while it is busy (an open tool call), and appends a
+ * text message only when it ends, so on pi a husk is exactly a `streaming` record on an idle box.
  */
 async function inspectRootLog(
   endpoint: { url: string; headers: Record<string, string> },

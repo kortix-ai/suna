@@ -110,12 +110,15 @@ export function turnWaitingIn(doc: Record<string, unknown>, rootId: string): Tur
  * thread `rootId` and its subagent threads, each a child of the root (pi files
  * every subagent under the root). `busy` and `compacting` threads run.
  *
- * `unknown` when the answer does not have the `RuntimePending` shape.
+ * `unknown` when the answer does not have the `RuntimePending` shape, or does
+ * not list `rootId`.
  */
 export function turnWaitingInPending(pending: unknown, rootId: string): TurnWaitReading {
   const { statuses, permissions, questions } = (pending ?? {}) as Partial<Record<keyof RuntimePending, unknown>>;
   if (!Array.isArray(permissions) || !Array.isArray(questions)) return 'unknown';
   if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses)) return 'unknown';
+  // The box always lists its root. Without `rootId` it answers about another root (a stale id).
+  if (!(rootId in statuses)) return 'unknown';
   const running = Object.entries(statuses as Record<string, unknown>)
     .filter(([, status]) => status === 'busy' || status === 'compacting')
     .map(([id]) => id);
