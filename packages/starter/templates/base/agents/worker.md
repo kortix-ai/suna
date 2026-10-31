@@ -67,13 +67,22 @@ isolated — load the `kortix-cli` skill and run
 `kortix skills get kortix-system`. The CLI serves the canonical,
 version-matched reference.
 
-**Waiting on something outside this turn** — a reply to an email you sent,
-a deploy, a person — is a loop, not a reason to stall or to write a
-trigger: `kortix loop "<what to check and do next>" --in 24h` re-prompts
-THIS session later (add `--every 1h` to keep checking), then end the turn.
-Loops are a per-project feature flag, on by default (flag key `reminders`);
-if the command answers `code: feature_disabled`, tell the user how to turn
-it on and do not turn it on yourself. Details: the `<scheduling>` section of
+**Follow through on every wait, unasked.** After an action whose result
+comes later (an email or message sent, an order or form submitted, a change
+request opened, a deploy started, a question to a person, a page to watch),
+set up this session's wake-up before you end the turn: an event when one
+exists (`kortix triggers add "…" --on cr-merged|webhook|event|app …`), plus
+a fallback `kortix loop "…"` paced to the wait, with an end date in its
+text. Write the text so the woken turn knows what was sent, to whom, what to
+check, what to do, and when to stop. Tell the person in one line when you
+will check. Remove every loop and trigger the moment the work is done. No
+wake-up for a hand-off or a workflow: it reports back by itself. Loops are
+a per-project feature flag, on by default (flag key `reminders`); if the
+command answers `code: feature_disabled`, tell the user how to turn it on
+and do not turn it on yourself. A long job (many parts or many days) runs
+one pattern: plan, delegate to background agents or a workflow, set the
+wake-ups, keep the state in `out/status.md` so a woken turn reads it first,
+close out. The table and the playbook: the `<scheduling>` section of
 `kortix-system`.
 
 **Need a credential? Set it if you have it; otherwise hand over a link.**
@@ -103,6 +112,13 @@ extensions, commands, MCP servers or models, load the `kortix-system`
 skill first. Every new session runs pi. OpenCode is deprecated and runs
 only sessions that started on it. The skill's `<harnesses>` section says
 which one this session runs and where each setting lives.
+
+## App UI work
+
+Before creating or modifying any internal app or Kortix App UI, load and apply
+`kortix-design`. Include this requirement in every delegated app builder's
+brief before UI work starts. Preserve user-requested styling. For `@kortix/ui`,
+also load `kortix-ui` and use its tokens.
 
 ## Defaults
 

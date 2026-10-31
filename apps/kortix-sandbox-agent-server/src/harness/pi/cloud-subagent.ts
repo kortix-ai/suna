@@ -719,6 +719,102 @@ export async function cloudStopChild(api: CloudSubagentApi, target: { taskId?: s
   return { sessionId, handle, title: row.name ?? null, stopped: true }
 }
 
+/** Where one child of this session stands, for the workflow tool's automatic resume. */
+export interface ChildReport {
+  /** `working`: a turn runs or a prompt waits; `settled`: its last turn ended; `stopped`/`failed`: its lifecycle says so; `missing`: no such child of this session, or unreadable. */
+  state: 'working' | 'settled' | 'stopped' | 'failed' | 'missing'
+  /** Its last turn's final text (`settled` and `stopped` only); '' when none. */
+  text: string
+  /** How its last turn ended, from the API's turn ledger (`GET …/turn` `last_ended`); absent when unknown. */
+  lastEnd?: { reason: string; error?: string }
+}
+
+/**
+ * Read one child of this session: its row, then (unless it still works) its
+ * last turn's final text. Never throws: an unreadable child is `missing`.
+ */
+export async function cloudChildReport(api: CloudSubagentApi, childId: string): Promise<ChildReport> {
+  const http: Http = {
+    fetchImpl: api.fetchImpl ?? fetch,
+    origin: apiOrigin(api.apiUrl),
+    headers: { authorization: `Bearer ${api.token}`, 'content-type': 'application/json' },
+    projectId: api.projectId,
+  }
+  try {
+    const res = await http.fetchImpl(sessionUrl(http, childId), { headers: http.headers })
+    const row = res.status === 200 ? ((await res.json().catch(() => null)) as SessionRow | null) : null
+    if (!row || (api.sessionId && row.parent_session_id !== api.sessionId)) return { state: 'missing', text: '' }
+    if (row.status === 'failed') return { state: 'failed', text: '' }
+    if (row.status === 'provisioning' || (row.status === 'running' && (row.working?.state === 'working' || row.working?.pending_delivery === true))) {
+      return { state: 'working', text: '' }
+    }
+    const [report, lastEnd] = await Promise.all([readFinalText(http, childId), readLastTurnEnd(http, childId)])
+    return { state: row.status === 'stopped' ? 'stopped' : 'settled', text: report.error ? '' : report.text, ...(lastEnd ? { lastEnd } : {}) }
+  } catch (err) {
+    logger.warn('[pi] cloud subagent report read failed', { childId, err: errorText(err) })
+    return { state: 'missing', text: '' }
+  }
+}
+
+/** Messages of a child's saved transcript one `cloudChildToolDetails` read takes, newest last. */
+const TOOL_DETAILS_MESSAGES = 40
+
+/**
+ * The `details` (part `state.metadata`) of each settled call of `tool` in a
+ * child's saved transcript, oldest first: `GET …/sessions/:id/transcript?shape=sync`,
+ * the API's durable copy of its session log, which answers while the child's
+ * box is parked. Null when the child is no child of this session or the read
+ * fails. A workflow runner's final run document carries the agents' saved
+ * results, which a resume hands to the next runner (`extensions/workflow.ts`).
+ */
+export async function cloudChildToolDetails(api: CloudSubagentApi, childId: string, tool: string): Promise<Array<Record<string, unknown>> | null> {
+  const http: Http = {
+    fetchImpl: api.fetchImpl ?? fetch,
+    origin: apiOrigin(api.apiUrl),
+    headers: { authorization: `Bearer ${api.token}`, 'content-type': 'application/json' },
+    projectId: api.projectId,
+  }
+  try {
+    const row = await http.fetchImpl(sessionUrl(http, childId), { headers: http.headers })
+    const session = row.status === 200 ? ((await row.json().catch(() => null)) as SessionRow | null) : null
+    if (!session || (api.sessionId && session.parent_session_id !== api.sessionId)) return null
+    const res = await http.fetchImpl(sessionUrl(http, childId, `/transcript?shape=sync&limit=${TOOL_DETAILS_MESSAGES}`), { headers: http.headers })
+    if (res.status !== 200) return null
+    const body = (await res.json().catch(() => null)) as { messages?: Array<{ parts?: unknown }> } | null
+    if (!Array.isArray(body?.messages)) return null
+    const details: Array<Record<string, unknown>> = []
+    for (const message of body.messages) {
+      for (const part of Array.isArray(message?.parts) ? message.parts : []) {
+        const call = part as { type?: unknown; tool?: unknown; state?: { status?: unknown; metadata?: unknown } } | null
+        if (call?.type !== 'tool' || typeof call.tool !== 'string' || call.tool.replace(/^oc-/, '') !== tool) continue
+        const metadata = call.state?.metadata
+        if ((call.state?.status === 'completed' || call.state?.status === 'error') && metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+          details.push(metadata as Record<string, unknown>)
+        }
+      }
+    }
+    return details
+  } catch (err) {
+    logger.warn('[pi] cloud subagent tool details read failed', { childId, err: errorText(err) })
+    return null
+  }
+}
+
+/** The child's last turn end (`GET …/sessions/:id/turn` `last_ended`), or undefined when it cannot be read. */
+async function readLastTurnEnd(http: Http, childId: string): Promise<ChildReport['lastEnd']> {
+  try {
+    const res = await http.fetchImpl(sessionUrl(http, childId, '/turn'), { headers: http.headers })
+    if (res.status !== 200) return undefined
+    const body = (await res.json().catch(() => null)) as { last_ended?: { end_reason?: string | null; error?: { message?: string | null } } } | null
+    const reason = body?.last_ended?.end_reason
+    if (!reason) return undefined
+    const error = body?.last_ended?.error?.message
+    return { reason, ...(error ? { error } : {}) }
+  } catch {
+    return undefined
+  }
+}
+
 /** Best effort: `POST …/sessions/:childId/stop`. The parent box token owns the child, so it may stop it. */
 async function stopChild(http: Http, childId: string): Promise<void> {
   try {

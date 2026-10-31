@@ -278,6 +278,8 @@ export function projectLlmCatalogToProviderList(
                     variants: Object.fromEntries(model.efforts.map((effort) => [effort, {}])),
                     available: model.connected,
                     availability: 'login',
+                    // The project's on/off switch (Models tab). An older API sends none: on.
+                    enabled: model.enabled !== false,
                   },
                 ]),
               ),

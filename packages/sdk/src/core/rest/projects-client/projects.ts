@@ -423,6 +423,8 @@ export interface ClaudeSubscriptionPickerGroup {
     efforts: string[];
     requires: 'claude_subscription';
     connected: boolean;
+    /** The project's on/off switch for the model (Models tab). Absent from an older API: on. */
+    enabled?: boolean;
   }>;
 }
 

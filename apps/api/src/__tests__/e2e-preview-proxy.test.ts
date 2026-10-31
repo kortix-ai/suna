@@ -981,8 +981,6 @@ describe('Preview proxy: forwarding', () => {
       opencodeEnv: {},
       refreshModels: true,
       revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
-      // The person this turn acts for has no Claude subscription login.
-      claudeOauthToken: null,
     });
     expect(mockFetchCalls[1].url).toBe(
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async?directory=%2Fworkspace',

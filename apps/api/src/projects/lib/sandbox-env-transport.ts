@@ -100,12 +100,6 @@ export async function postEnvToDaemon(args: {
   opencodeEnv?: Record<string, string | null>;
   /** The gateway base the box's model provider points at. */
   llmGatewayBaseUrl?: string;
-  /**
-   * The Claude subscription token of the session's person, for Claude Code in
-   * the box (`claudeOauthToken`); null clears it. Omitted: the box keeps what
-   * it has. Never logged.
-   */
-  claudeOauthToken?: string | null;
   requireAgentEnvProof?: boolean;
 }): Promise<{
   opencodeState: string | null;
@@ -154,7 +148,6 @@ export async function postEnvToDaemon(args: {
       // `llmGatewayEnabled: true` is what switches a box that booted with the
       // gateway off (a mode that no longer exists) over to the gateway.
       ...(args.llmGatewayBaseUrl ? { llmGatewayEnabled: true, llmGatewayBaseUrl: args.llmGatewayBaseUrl } : {}),
-      ...(args.claudeOauthToken !== undefined ? { claudeOauthToken: args.claudeOauthToken } : {}),
     }),
     signal: AbortSignal.timeout(ENV_PUSH_TIMEOUT_MS),
   });
