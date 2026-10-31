@@ -39,7 +39,9 @@ describe('other sign-in paths', () => {
     expect((await authorizeUrl('apple')).searchParams.has('prompt')).toBe(false);
   });
 
-  test('SSO keeps its isolated session', () => {
+  test('every provider except Google keeps its isolated session', () => {
     expect(prefersEphemeralAuthSession('sso')).toBe(true);
+    expect(prefersEphemeralAuthSession('apple')).toBe(true);
+    expect(prefersEphemeralAuthSession('github')).toBe(true);
   });
 });
