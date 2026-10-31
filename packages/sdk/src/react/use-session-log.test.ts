@@ -399,10 +399,13 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
   beforeEach(() => {
     timers = [];
   });
-  function mount(options: { enabled?: boolean; loader?: ((...a: unknown[]) => Promise<unknown>) | null }) {
-    const state = { dialect: '' };
+  type LivePage = ((query: { limit: number }) => Promise<unknown>) | null;
+  function mount(options: { enabled?: boolean; loader?: ((...a: unknown[]) => Promise<unknown>) | null; livePage?: LivePage }) {
+    const state = { dialect: '', setLivePage: (_: LivePage) => {} };
     render(() => {
-      state.dialect = useSessionLogSync(PROJECT, SESSION, { enabled: options.enabled ?? true, loader: options.loader as never, joinStream: joinStream as never, schedule });
+      const [livePage, setLivePage] = useState<LivePage>(() => options.livePage ?? null);
+      state.setLivePage = (next) => setLivePage(() => next);
+      state.dialect = useSessionLogSync(PROJECT, SESSION, { enabled: options.enabled ?? true, loader: options.loader as never, livePage: livePage as never, joinStream: joinStream as never, schedule });
       return null;
     });
     return state;
@@ -587,6 +590,64 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(calls).toBe(2);
     expect(state.dialect).toBe('v2');
     expect(joined.at(-1)!.options.schema).toBe('v2');
+  });
+
+  describe('a box that serves its log (runtime.log.v1): the box page is the newest page', () => {
+    const missing = () => Object.assign(new Error('No session log for this session'), { status: 404, code: 'session_log_missing' });
+    /** The box's page: the API's, plus the reply it streams and a prompt waiting behind it. */
+    const boxPage = () => {
+      const p = page();
+      const last = p.messages.at(-1)!;
+      const streaming = { ...structuredClone(last), message_id: 'msg_box_streaming', role: 'assistant' as const, seq: last.seq + 1, status: 'streaming' as const, blocks: [] };
+      const queued = { ...structuredClone(last), message_id: 'msg_box_queued', role: 'user' as const, seq: Number.MAX_SAFE_INTEGER, status: 'complete' as const, blocks: [{ type: 'text' as const, id: 'q0', text: 'waiting' }] };
+      return { ...p, messages: [...p.messages, streaming, queued] };
+    };
+    const held = () => (useSyncStore.getState().sessionLogs[SESSION]?.messages[page().thread_id] ?? []).map((m) => m.message_id);
+
+    test('a new session the API holds no log for: the box page goes in the store and the stream switches to schema v2 at once', async () => {
+      let boxReads = 0;
+      const state = mount({ loader: async () => { throw missing(); }, livePage: async () => { boxReads++; return boxPage(); } });
+      await flush();
+      expect(boxReads).toBe(1);
+      expect(state.dialect).toBe('v2');
+      expect(held()).toContain('msg_box_streaming');
+      expect(joined.at(-1)!.options.schema).toBe('v2');
+    });
+
+    test('the box page adds the streaming reply and the waiting prompt the API page lacks; a reconnect re-reads the box page, not the API', async () => {
+      let apiReads = 0;
+      let boxReads = 0;
+      mount({ loader: async () => { apiReads++; return page(); }, livePage: async () => { boxReads++; return boxPage(); } });
+      await flush();
+      expect([apiReads, boxReads]).toEqual([1, 1]);
+      expect(held().slice(-2)).toEqual(['msg_box_streaming', 'msg_box_queued']);
+      const v2 = joined.at(-1)!;
+      act(() => v2.options.onConnectionChange(true));
+      act(() => v2.options.onConnectionChange(false));
+      act(() => v2.options.onConnectionChange(true));
+      await flush();
+      expect([apiReads, boxReads]).toEqual([1, 2]);
+    });
+
+    test('the box loader arriving after the first read (the box got ready later) reads the box page then, and a missing log turns v2', async () => {
+      let boxReads = 0;
+      const state = mount({ loader: async () => { throw missing(); } });
+      await flush();
+      expect(state.dialect).toBe('missing');
+      expect(joined.map((j) => j.options.schema)).toEqual([undefined]);
+      act(() => state.setLivePage(async () => { boxReads++; return boxPage(); }));
+      await flush();
+      expect(boxReads).toBe(1);
+      expect(state.dialect).toBe('v2');
+      expect(joined.at(-1)!.options.schema).toBe('v2');
+    });
+
+    test('a box read that fails changes nothing: the API page stays, and the stream stays on schema v2', async () => {
+      mount({ loader: async () => page(), livePage: async () => { throw new Error('daemon 503'); } });
+      await flush();
+      expect(held()).toEqual(page().messages.map((m) => m.message_id));
+      expect(joined.at(-1)!.options.schema).toBe('v2');
+    });
   });
 
   test('session_log_missing while a turn runs: the page is read 6 s after the turn starts, once per turn, not only at its end', async () => {

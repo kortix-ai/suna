@@ -25088,5 +25088,22 @@
       "hint": "Läuft als Workflow aus Agenten",
       "dismiss": "{key}, um es als normalen Prompt zu senden"
     }
+  },
+  "claudeSubscription": {
+    "title": "Claude-Abo verwenden",
+    "description": "Claude-Modelle laufen über Claude Code mit deinem eigenen Claude-Pro- oder -Max-Plan. Nur deine Sitzungen nutzen deinen Plan.",
+    "starting": "Claude wird geöffnet…",
+    "approveDescription": "Melde dich mit dem Claude-Konto an, das deinen Plan hat, bestätige die Anfrage und kopiere den Code, den Claude dir zeigt.",
+    "codeLabel": "Code von claude.com",
+    "connect": "Claude verbinden",
+    "connecting": "Wird verbunden…",
+    "connectedTitle": "Dein Claude-Abo ist verbunden",
+    "connected": "Claude-Abo verbunden",
+    "disconnect": "Claude trennen",
+    "disconnected": "Claude-Abo getrennt",
+    "startError": "Die Claude-Anmeldung konnte nicht gestartet werden. Versuche es erneut.",
+    "codeError": "Claude konnte mit diesem Code nicht verbunden werden. Melde dich erneut an und füge den neuen Code ein.",
+    "connectClaude": "Claude verbinden",
+    "reconnectClaude": "Claude erneut verbinden"
   }
 }

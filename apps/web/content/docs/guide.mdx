@@ -743,7 +743,7 @@ Open **Project admin → Connectors → Computers → Accounts** and select **Sh
 
 <video src="/media/guide/models.mp4" aria-label="Models in Kortix: providers, a custom endpoint and costs" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
-A model is the AI an agent runs on. Use Kortix-managed models, your own provider keys, or a ChatGPT subscription. Set a project default, a model per agent, or a model for one session. Every model request goes through the Kortix LLM gateway, which applies budgets, access rules and cost reports.
+A model is the AI an agent runs on. Use Kortix-managed models, your own provider keys, a ChatGPT subscription, or a Claude subscription. Set a project default, a model per agent, or a model for one session. Every model request goes through the Kortix LLM gateway, which applies budgets, access rules and cost reports. Claude subscription models are the one exception: they go from Claude Code straight to Anthropic (next section).
 
 ### How it works
 
@@ -762,6 +762,17 @@ Kortix-managed models need no key. They are the models Platinum Inference offers
 When a request runs on your own key or subscription, your provider bills it. Every plan, Free included, can use your own key or a ChatGPT subscription. For any Kortix fee on your own keys, see [Plans & credits](/docs/guide#billing).
 
 A provider key belongs to the whole project.
+
+#### Your Claude subscription
+
+Connect your own Claude Pro or Max plan, and Claude models run on it in your sessions: **Claude Opus 5.5**, **Claude Fable 5.1**, **Claude Sonnet 5.5** and **Claude Haiku 5.5** (`claude-agent/opus`, `claude-agent/fable`, `claude-agent/sonnet`, `claude-agent/haiku`).
+
+- Each turn runs through Claude Code, Anthropic's own program, on the session's computer. Claude Code sends the model request with your Claude login straight to Anthropic. The request does not go through the Kortix LLM gateway and uses no credits.
+- Everything else stays the same. The agent's tools, permissions, questions, subagents, skills and pi extensions work as with any other model, and the session shows the same messages and tool calls.
+- Switch between a Claude subscription model and any other model in the same session. The new model sees the whole conversation.
+- The login is yours. It works in every project of the account, and only your sessions use it. In a shared session, each prompt runs on the login of the person who sent it. Kortix stores it encrypted and never shows it again.
+- Your Claude plan sets the limits. When you reach one, the turn ends with "Your Claude subscription limit is reached" and the time it resets.
+- Claude Code features that Kortix has no version of do not apply: plan usage (`/usage`), auto mode and Claude Code's own skills.
 
 **A ChatGPT subscription also generates images.** With a connected ChatGPT account, the `image_gen` tool can use `gpt-image-2` on your plan. ChatGPT sets its own image limit, separate from the plan's chat limit. Reaching the image limit does not pause the account for chat. An OpenAI, Google, xAI or OpenRouter key also generates images. Kortix-managed models do not generate images yet. See [Generate images](/docs/developers#generate-images).
 
@@ -788,6 +799,8 @@ Choose a model in the composer's model picker. A stopped session uses the new mo
 </Step>
 <Step title="Connect your own provider">
 Open **Project admin → Models → Providers** and paste a key. For a ChatGPT subscription, choose **Use your ChatGPT subscription** in the model picker, then **Connect ChatGPT**.
+
+For a Claude subscription, open **Project admin → Models → Providers → Anthropic** and choose **Sign in with Claude**. Approve Kortix on claude.com, paste the code Claude shows you, and choose **Connect Claude**. The Claude models then appear in the model picker under **Claude subscription**. In a terminal, run `kortix providers login claude`. A token you made with `claude setup-token` works too: pipe it to `kortix providers login claude --token-stdin`.
 </Step>
 <Step title="Set a budget">
 Open **Project admin → Models → Costs**. Set a limit per day, week or month. Choose **Block** to refuse new requests at the limit, or **Warn only** to let them run.

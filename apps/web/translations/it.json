@@ -25088,5 +25088,22 @@
       "hint": "Viene eseguito come workflow di agenti",
       "dismiss": "{key} per inviarlo come prompt normale"
     }
+  },
+  "claudeSubscription": {
+    "title": "Usa il tuo abbonamento Claude",
+    "description": "I modelli Claude funzionano tramite Claude Code con il tuo piano Claude Pro o Max. Solo le tue sessioni usano il tuo piano.",
+    "starting": "Apertura di Claude…",
+    "approveDescription": "Accedi con l'account Claude che ha il tuo piano, autorizza la richiesta e copia il codice che Claude ti mostra.",
+    "codeLabel": "Codice da claude.com",
+    "connect": "Connetti Claude",
+    "connecting": "Connessione…",
+    "connectedTitle": "Il tuo abbonamento Claude è connesso",
+    "connected": "Abbonamento Claude connesso",
+    "disconnect": "Disconnetti Claude",
+    "disconnected": "Abbonamento Claude disconnesso",
+    "startError": "Impossibile avviare l'accesso a Claude. Riprova.",
+    "codeError": "Impossibile connettere Claude con quel codice. Accedi di nuovo e incolla il nuovo codice.",
+    "connectClaude": "Connetti Claude",
+    "reconnectClaude": "Riconnetti Claude"
   }
 }

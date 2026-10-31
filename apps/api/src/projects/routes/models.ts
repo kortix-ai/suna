@@ -37,6 +37,8 @@ import { readAgentBlockV2 } from '../lib/agent-config-v2';
 import { loadManifestForEdit } from '../lib/triggers';
 import type { ProjectRow } from '../lib/serializers';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { claudeSubscriptionPickerGroup } from '../claude-subscription/picker';
+import { checkClaudeAgentRef } from '../../llm-gateway/resolution/claude-agent';
 
 // Explicit inference controls are separate from legacy picker visibility.
 const modelAccessChangeBody = z.object({
@@ -201,6 +203,10 @@ export function registerModelsRoutes(): void {
         catalog: unavailableCatalog(gatewayModelCatalog(projectId), catalog.models),
         // Model prices are base prices: the platform fee is stated once, beside them.
         platformFeePercent: Math.round((llmPriceMarkup() - 1) * 1000) / 10,
+        // Claude models on the caller's own Claude subscription. A separate
+        // group, never in `models`: the gateway does not serve them, and the
+        // sandbox's boot list (`servableProjectCatalog`) must not carry them.
+        claudeSubscription: await claudeSubscriptionPickerGroup(accountId, loaded.userId),
       });
     },
   );
@@ -487,6 +493,8 @@ export function registerModelsRoutes(): void {
         if (notDeclared) return c.json(notDeclared, 409);
       }
 
+      const claudeAgent = checkClaudeAgentRef(model);
+      if (claudeAgent.kind === 'invalid') return c.json({ error: claudeAgent.message, code: 'invalid_model' }, 400);
       const freeModelsOnly = !(await accountMayUseManagedModels(ownerAccountId));
       const servable = await isModelServableForAccount({
         userId,

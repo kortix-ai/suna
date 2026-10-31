@@ -405,8 +405,31 @@ export interface GatewayCatalogModel {
   enabled?: boolean;
 }
 
+/**
+ * The Claude subscription models `/model-picker` lists apart from the gateway's
+ * (`claude-agent/<id>`): they run through Claude Code on the caller's own Claude
+ * plan. `connected` is whether the caller signed in to Claude.
+ */
+export interface ClaudeSubscriptionPickerGroup {
+  providerId: string;
+  name: string;
+  connected: boolean;
+  models: Array<{
+    /** `claude-agent/<id>`. */
+    id: string;
+    name: string;
+    description: string;
+    limit: { context: number; output: number };
+    efforts: string[];
+    requires: 'claude_subscription';
+    connected: boolean;
+  }>;
+}
+
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
+  /** Absent from an API without Claude subscription models. */
+  claudeSubscription?: ClaudeSubscriptionPickerGroup;
   /** Kortix's platform fee on managed model usage, in percent of each model's `cost`. */
   platformFeePercent?: number;
   /**

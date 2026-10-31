@@ -30,10 +30,12 @@ import { MESSAGE_READ_CODE, STEER_NO_ACTIVE_TURN_CODE } from '@kortix/api-contra
 import { KORTIX_SERVICE_CALL_HEADER } from '../../shared/kortix-user-context';
 import {
   WORKSPACE,
+  runtimeServesLog,
   runtimeVerbPaths,
   sessionRuntimeFetch,
   type ResolvedSessionRuntime,
 } from './runtime-fetch';
+import type { SessionLogMessage } from '@kortix/api-contract/session-log';
 import { sendQuickQueueControl } from './quick-queue-control';
 import { clearTurnStopRequest, markTurnStopRequested } from '../session-turn-ledger';
 import { db } from '../../shared/db';
@@ -136,6 +138,61 @@ async function readKortixTranscript(
   return pages.flat();
 }
 
+/** Does this session's box serve its own session log (`runtime.log.v1`)? Then it is the transcript read. */
+function servesLog(session: ResolvedSessionRuntime): Promise<boolean> {
+  return runtimeServesLog(session.externalId, async () => session.endpoint);
+}
+
+/**
+ * The newest `limit` messages of the root from the box's own session log, or the whole thread
+ * paged backwards on `before_seq` when `limit` is absent. Oldest first. A prompt the box admitted
+ * behind a running turn is in it already, at a provisional seq above every real one. `null` on a
+ * refused read.
+ */
+async function readRuntimeLogMessages(
+  session: ResolvedSessionRuntime,
+  opts: { limit?: number; timeoutMs?: number },
+): Promise<SessionLogMessage[] | null> {
+  const pages: SessionLogMessage[][] = [];
+  let beforeSeq: number | null = null;
+  for (let page = 0; page < KORTIX_FULL_READ_MAX_PAGES; page++) {
+    const limit = Math.min(opts.limit ?? KORTIX_MESSAGE_PAGE_MAX, KORTIX_MESSAGE_PAGE_MAX);
+    const res = await sessionRuntimeFetch(session.endpoint, 'GET', runtimeVerbPaths.log({ limit, beforeSeq }), {}, opts.timeoutMs);
+    if (!res.ok) return null;
+    const body = (await res.json().catch(() => null)) as { messages?: unknown; has_more?: unknown } | null;
+    if (!Array.isArray(body?.messages)) return null;
+    const messages = body.messages as SessionLogMessage[];
+    pages.unshift(messages);
+    const first = messages[0]?.seq;
+    if (opts.limit !== undefined || body.has_more !== true || typeof first !== 'number') break;
+    beforeSeq = first;
+  }
+  return pages.flat();
+}
+
+const logTime = (iso: string | null | undefined): number | null => {
+  const ms = iso ? Date.parse(iso) : Number.NaN;
+  return Number.isFinite(ms) ? ms : null;
+};
+
+/** Session-log messages as the tip the placement logic reads (what `parsePlacementTip` makes of v1 rows). */
+export function placementTipOfLog(messages: readonly SessionLogMessage[]): PlacementTipMessage[] {
+  return messages.flatMap((message) => {
+    if (typeof message?.message_id !== 'string' || typeof message.role !== 'string') return [];
+    const blocks = Array.isArray(message.blocks) ? message.blocks : [];
+    const autoCompaction = message.kind === 'compaction' && blocks.some((block) => block.type === 'compaction' && block.trigger === 'auto');
+    return [{
+      id: message.message_id,
+      role: message.role,
+      parentID: message.reply_to ?? null,
+      created: logTime(message.created_at),
+      completed: message.status === 'streaming' ? null : logTime(message.completed_at ?? message.created_at),
+      partIds: blocks.flatMap((block) => (typeof block?.id === 'string' ? [block.id] : [])),
+      ...(autoCompaction ? { autoCompaction: true } : {}),
+    }];
+  });
+}
+
 /** `sandboxUrl` on the session row looks like `.../p/<external_id>/8000/...`. */
 function externalIdFromSandboxUrlField(url: string | null): string | null {
   if (!url) return null;
@@ -234,6 +291,10 @@ export async function readSessionMessageTip(
   session: ResolvedSessionRuntime,
   opts: { limit?: number; timeoutMs?: number } = {},
 ): Promise<PlacementTipMessage[] | null> {
+  if (await servesLog(session)) {
+    const log = await readRuntimeLogMessages(session, opts);
+    return log ? placementTipOfLog(log) : null;
+  }
   const messages = await readKortixTranscript(session, opts);
   return messages ? parsePlacementTip(messages) : null;
 }
@@ -443,13 +504,16 @@ export class SteerNotTaken extends Error {
 }
 
 /**
- * One message of the session's root, through the transcript route. `null` when
- * the runtime answers that it does not hold it; throws when it could not be
- * asked (the landing proof's "unknown"). Not the box's session log: a prompt
- * admitted behind a running turn enters the log only when its turn starts.
+ * One message of the session's root. `null` when the runtime answers that it does not hold it;
+ * throws when it could not be asked (the landing proof's "unknown"). A box that serves its log
+ * answers from it (an admitted prompt is in the log from admission there); an older box answers
+ * from its transcript route.
  */
 export async function readRuntimeMessage(session: ResolvedSessionRuntime, messageId: string): Promise<unknown> {
-  const res = await sessionRuntimeFetch(session.endpoint, 'GET', runtimeVerbPaths.message(session.opencodeSessionId, messageId));
+  const path = (await servesLog(session))
+    ? runtimeVerbPaths.logMessage(messageId)
+    : runtimeVerbPaths.message(session.opencodeSessionId, messageId);
+  const res = await sessionRuntimeFetch(session.endpoint, 'GET', path);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`runtime message read failed (${res.status})`);
   return res.json();

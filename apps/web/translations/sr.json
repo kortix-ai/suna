@@ -25088,5 +25088,22 @@
       "hint": "Покреће се као ток рада агената",
       "dismiss": "{key} да га пошаљеш као обичан упит"
     }
+  },
+  "claudeSubscription": {
+    "title": "Koristi svoju Claude pretplatu",
+    "description": "Claude modeli rade kroz Claude Code na tvom Claude Pro ili Max planu. Samo tvoje sesije koriste tvoj plan.",
+    "starting": "Otvaramo Claude…",
+    "approveDescription": "Prijavi se Claude nalogom koji ima tvoj plan, odobri zahtev i kopiraj kod koji ti Claude prikaže.",
+    "codeLabel": "Kod sa claude.com",
+    "connect": "Poveži Claude",
+    "connecting": "Povezivanje…",
+    "connectedTitle": "Tvoja Claude pretplata je povezana",
+    "connected": "Claude pretplata povezana",
+    "disconnect": "Prekini vezu sa Claude",
+    "disconnected": "Veza sa Claude pretplatom prekinuta",
+    "startError": "Nije moguće pokrenuti Claude prijavu. Pokušaj ponovo.",
+    "codeError": "Nije moguće povezati Claude tim kodom. Prijavi se ponovo i nalepi novi kod.",
+    "connectClaude": "Poveži Claude",
+    "reconnectClaude": "Ponovo poveži Claude"
   }
 }

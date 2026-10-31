@@ -1,3 +1,4 @@
+import { takeClaudeLogin } from './claude/sdk'
 import { createHash } from 'node:crypto'
 import { closeSync, constants, existsSync, fstatSync, openSync, readFileSync, realpathSync } from 'node:fs'
 import { join, sep } from 'node:path'
@@ -81,6 +82,8 @@ export const DEFAULT_WORKFLOW_MAX_CONCURRENT = 8
 export const DEFAULT_PI_AGENT_DIR = '/opt/kortix/pi-agent'
 
 export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
+  // The Claude subscription login leaves the environment before any shell exists (claude/sdk.ts).
+  takeClaudeLogin(env)
   const parsed = EnvironmentSchema.parse({
     KORTIX_PI_STATE_DIR: env.KORTIX_PI_STATE_DIR,
     KORTIX_PI_AGENT_DIR: env.KORTIX_PI_AGENT_DIR,

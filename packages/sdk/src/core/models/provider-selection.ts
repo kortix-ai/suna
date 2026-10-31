@@ -245,9 +245,10 @@ export function projectLlmCatalogToProviderList(
       }),
   );
   const firstModelId = Object.keys(models)[0];
+  const claude = catalog.claudeSubscription;
   return {
     default: firstModelId ? { kortix: firstModelId } : {},
-    connected: ['kortix'],
+    connected: claude ? ['kortix', claude.providerId] : ['kortix'],
     all: [
       {
         id: 'kortix',
@@ -255,6 +256,34 @@ export function projectLlmCatalogToProviderList(
         source: 'gateway',
         models,
       },
+      // Claude models on the caller's own Claude plan: runnable once the caller connected Claude.
+      ...(claude
+        ? [
+            {
+              id: claude.providerId,
+              name: claude.name,
+              source: 'claude-subscription',
+              models: Object.fromEntries(
+                claude.models.map((model) => [
+                  model.id.slice(claude.providerId.length + 1),
+                  {
+                    name: model.name,
+                    provider: claude.providerId,
+                    provider_name: claude.name,
+                    description: model.description,
+                    limit: model.limit,
+                    reasoning: true,
+                    attachment: true,
+                    tool_call: true,
+                    variants: Object.fromEntries(model.efforts.map((effort) => [effort, {}])),
+                    available: model.connected,
+                    availability: 'login',
+                  },
+                ]),
+              ),
+            },
+          ]
+        : []),
     ],
   } as unknown as ProviderListResponse;
 }

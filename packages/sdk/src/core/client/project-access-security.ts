@@ -53,6 +53,18 @@ export function bindProjectAccessSecurity(projectId: string) {
       removeProviderOAuth: (provider: string) => P.deleteProjectProviderOAuth(projectId, provider),
     },
 
+    /** The caller's Claude subscription login, for Claude Code in their sessions. The token is never returned. */
+    claudeSubscription: {
+      get: () => P.getClaudeSubscription(projectId),
+      /** Run `claude setup-token` on the server; open `authorize_url`, approve, then `completeLogin`. */
+      startLogin: () => P.startClaudeSubscriptionLogin(projectId),
+      completeLogin: (input: Parameters<typeof P.completeClaudeSubscriptionLogin>[1]) =>
+        P.completeClaudeSubscriptionLogin(projectId, input),
+      /** Store a token made with `claude setup-token` on the caller's own computer. */
+      setToken: (token: string) => P.setClaudeSubscriptionToken(projectId, token),
+      disconnect: () => P.disconnectClaudeSubscription(projectId),
+    },
+
     access: bindProjectMembership(projectId),
   };
 }

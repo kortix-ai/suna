@@ -25088,5 +25088,22 @@
       "hint": "エージェントのワークフローとして実行されます",
       "dismiss": "{key} で通常のプロンプトとして送信"
     }
+  },
+  "claudeSubscription": {
+    "title": "Claude サブスクリプションを使う",
+    "description": "Claude モデルは Claude Code を通じて、あなたの Claude Pro または Max プランで動きます。プランを使うのはあなたのセッションだけです。",
+    "starting": "Claude を開いています…",
+    "approveDescription": "プランのある Claude アカウントでサインインし、リクエストを承認して、Claude に表示されたコードをコピーしてください。",
+    "codeLabel": "claude.com のコード",
+    "connect": "Claude を接続",
+    "connecting": "接続しています…",
+    "connectedTitle": "Claude サブスクリプションは接続済みです",
+    "connected": "Claude サブスクリプションを接続しました",
+    "disconnect": "Claude を切断",
+    "disconnected": "Claude サブスクリプションを切断しました",
+    "startError": "Claude のサインインを開始できませんでした。もう一度お試しください。",
+    "codeError": "そのコードで Claude を接続できませんでした。もう一度サインインし、新しいコードを貼り付けてください。",
+    "connectClaude": "Claude を接続",
+    "reconnectClaude": "Claude を再接続"
   }
 }

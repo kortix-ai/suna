@@ -97,6 +97,16 @@ describe('proxy policy: browser-visible responses carry no platform plumbing', (
     });
     expect(JSON.stringify(out)).toBe('{"runtime_session_id":"ses_9","messages":[{"text":"See one-way-nda.pdf now"}]}');
   });
+
+  test('a session log page, from the API and from the box, names an inbox file by its name only', () => {
+    const page = { thread_id: 'ses_9', messages: [{ blocks: [{ type: 'text', text: 'See /workspace/uploads/.kortix-inbox/a1b2/one-way-nda.pdf now' }] }], has_more: false };
+    for (const path of [`${S}/log`, 'p/sbx_1/8000/kortix/runtime/log']) {
+      expect(redactsIdentity(path)).toBe(true);
+      expect(JSON.stringify(redactIdentity(path, page))).toBe(
+        '{"thread_id":"ses_9","messages":[{"blocks":[{"type":"text","text":"See one-way-nda.pdf now"}]}],"has_more":false}',
+      );
+    }
+  });
 });
 
 describe('proxy policy: what a member token may do', () => {
@@ -152,6 +162,9 @@ describe('proxy policy: what a member token may do', () => {
     ['GET', `${RT}/kortix/runtime/pending`],
     ['GET', `${RT}/kortix/runtime/commands`],
     ['GET', `${RT}/kortix/runtime/workspace`],
+    // The session log, from the API and from the box (runtime.log.v1): the transcript's only source there.
+    ['GET', `${S}/log`],
+    ['GET', `${RT}/kortix/runtime/log`],
     ['POST', `${RT}/kortix/runtime/permissions/perm_1/reply`],
     ['POST', `${RT}/kortix/runtime/questions/que_1/reply`],
     ['POST', `${RT}/kortix/runtime/questions/que_1/reject`],
@@ -168,7 +181,6 @@ describe('proxy policy: what a member token may do', () => {
     ['GET', `${S}/drive-sync/d1/files/content`],
     ['GET', `${S}/drives`],
     ['GET', `${S}/audit`],
-    ['GET', `${S}/log`],
     ['GET', `${S}/log/entries`],
     ['GET', `${S}/config`],
     ['GET', `${S}/participants`],
@@ -196,7 +208,6 @@ describe('proxy policy: what a member token may do', () => {
     ['POST', `${RT}/kortix/runtime/sessions/ses_1/command`],
     ['PUT', `${RT}/kortix/runtime/sessions/ses_1/grants`],
     ['GET', `${RT}/kortix/runtime/workspace/diff`],
-    ['GET', `${RT}/kortix/runtime/log`],
     ['POST', `${RT}/kortix/abort`],
     ['POST', `${RT}/session/ses_1/prompt_async`],
     ['POST', `${RT}/session/ses_1/message`],

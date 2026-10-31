@@ -561,14 +561,15 @@ function resolveSpawn(params: SubagentParams, host: KortixHost): Omit<SpawnSessi
     if (anyProjectAgent && params.session !== 'same') return { title: `${params.description} (default agent)`, agent: INLINE_AGENT, systemPrompt: SUBAGENT_PROMPT }
     throw new Error(anyProjectAgent ? "Set subagent_type to a project agent's name (kortix_agents list shows them), or pass an inline `agent` spec." : SUBAGENT_SPEC_REQUIRED)
   }
+  // The title is the task alone: the child carries its agent as `agent_name`, and every list shows it from there.
   const type = types.get(params.subagent_type)
   // A project agent this box does not compile: the API authorizes the name and the child runs as it.
   if (!type && anyProjectAgent && params.session !== 'same') {
-    return { title: `${params.description} (@${params.subagent_type} subagent)`, agent: params.subagent_type, systemPrompt: SUBAGENT_PROMPT }
+    return { title: params.description, agent: params.subagent_type, systemPrompt: SUBAGENT_PROMPT }
   }
   if (!type) throw new Error(`Unknown subagent_type "${params.subagent_type}". Available: ${[...types.keys()].join(', ')}.`)
   return {
-    title: `${params.description} (@${params.subagent_type} subagent)`,
+    title: params.description,
     agent: params.subagent_type,
     systemPrompt: type.prompt,
     ...(type.model ? { model: type.model } : {}),

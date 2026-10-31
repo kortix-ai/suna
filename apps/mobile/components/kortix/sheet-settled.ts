@@ -24,7 +24,7 @@ import * as React from 'react';
 export const SheetSettledContext = React.createContext(true);
 
 /** Rows mounted while the sheet opens: more than a full-height sheet shows (~14 rows of 52pt). */
-export const SHEET_OPENING_ROWS = 16;
+const SHEET_OPENING_ROWS = 16;
 
 /** How many of `total` rows to render now: all at rest, `SHEET_OPENING_ROWS` while the sheet opens. */
 export function useSheetRowLimit(total: number): number {

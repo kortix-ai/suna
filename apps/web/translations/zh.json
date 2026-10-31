@@ -25088,5 +25088,22 @@
       "hint": "以智能体工作流的方式运行",
       "dismiss": "{key} 作为普通提示词发送"
     }
+  },
+  "claudeSubscription": {
+    "title": "使用你的 Claude 订阅",
+    "description": "Claude 模型通过 Claude Code 在你自己的 Claude Pro 或 Max 方案上运行。只有你的会话使用你的方案。",
+    "starting": "正在打开 Claude…",
+    "approveDescription": "使用拥有你方案的 Claude 账户登录，批准请求，并复制 Claude 显示的代码。",
+    "codeLabel": "来自 claude.com 的代码",
+    "connect": "连接 Claude",
+    "connecting": "正在连接…",
+    "connectedTitle": "你的 Claude 订阅已连接",
+    "connected": "Claude 订阅已连接",
+    "disconnect": "断开 Claude",
+    "disconnected": "Claude 订阅已断开",
+    "startError": "无法开始 Claude 登录。请重试。",
+    "codeError": "无法用该代码连接 Claude。请重新登录并粘贴新代码。",
+    "connectClaude": "连接 Claude",
+    "reconnectClaude": "重新连接 Claude"
   }
 }

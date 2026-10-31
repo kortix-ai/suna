@@ -166,9 +166,10 @@ export function seedConnectionFromReadyStart(
 	capabilities?: readonly string[] | null,
 ) {
 	resetForServerSwitch(serverUrl);
+	// The capabilities first: a hook gated on them must never see a healthy runtime without them.
+	if (capabilities) setRuntimeCapabilities(capabilities);
 	setSandboxStatus("connected");
 	setRuntimeHealth(true);
-	if (capabilities) setRuntimeCapabilities(capabilities);
 }
 
 export function requestRuntimeReconnect() {

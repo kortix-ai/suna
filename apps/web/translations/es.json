@@ -25088,5 +25088,22 @@
       "hint": "Se ejecuta como un flujo de trabajo de agentes",
       "dismiss": "{key} para enviarlo como un prompt normal"
     }
+  },
+  "claudeSubscription": {
+    "title": "Usa tu suscripción de Claude",
+    "description": "Los modelos de Claude se ejecutan con Claude Code en tu propio plan Claude Pro o Max. Solo tus sesiones usan tu plan.",
+    "starting": "Abriendo Claude…",
+    "approveDescription": "Inicia sesión con la cuenta de Claude que tiene tu plan, aprueba la solicitud y copia el código que Claude te muestre.",
+    "codeLabel": "Código de claude.com",
+    "connect": "Conectar Claude",
+    "connecting": "Conectando…",
+    "connectedTitle": "Tu suscripción de Claude está conectada",
+    "connected": "Suscripción de Claude conectada",
+    "disconnect": "Desconectar Claude",
+    "disconnected": "Suscripción de Claude desconectada",
+    "startError": "No se pudo iniciar el inicio de sesión de Claude. Inténtalo de nuevo.",
+    "codeError": "No se pudo conectar Claude con ese código. Vuelve a iniciar sesión y pega el código nuevo.",
+    "connectClaude": "Conectar Claude",
+    "reconnectClaude": "Volver a conectar Claude"
   }
 }

@@ -108,10 +108,13 @@ function buildHandler(
     realSyncStore?: boolean;
     /** The Kortix session of the stream the handler serves. */
     sessionId?: string;
+    /** The box serves its log (`runtime.log.v1`). */
+    logNative?: boolean;
   } = {},
 ) {
   const queryClient = new QueryClient();
   const stopCompaction = makeCalls<[string]>();
+  const startCompaction = makeCalls<[string]>();
   const addPermission = makeCalls<[PermissionRequest]>();
   const removePermission = makeCalls<[string]>();
   const addQuestion = makeCalls<[QuestionRequest]>();
@@ -160,6 +163,8 @@ function buildHandler(
     sessionId: overrides.sessionId,
     reconcileSessionTail: overrides.reconcileSessionTail,
     userPartsGraceMs: overrides.userPartsGraceMs,
+    logNative: overrides.logNative,
+    startCompaction: startCompaction.fn,
   });
 
   return {
@@ -167,6 +172,7 @@ function buildHandler(
     queryClient,
     applySyncEvent,
     stopCompaction,
+    startCompaction,
     addPermission,
     removePermission,
     addQuestion,
@@ -775,6 +781,36 @@ describe('session-log control frames', () => {
     handleEvent({ id: 'evt_1', type: 'log.status', properties: { thread_id: 'ses_1', status: 'idle' } } as never);
     expect(applySyncEvent.calls).toEqual([[{ type: 'session.status', properties: { sessionID: 'ses_1', status: { type: 'idle' } } }]]);
     expect(reconciled).toEqual(['ses_1']);
+  });
+
+  test('a log.status compacting starts the thread compaction, and its next status ends it', () => {
+    const { handleEvent, startCompaction, stopCompaction } = buildHandler({ sessionId: 'kortix-1' });
+    handleEvent({ id: 'evt_c1', type: 'log.status', properties: { thread_id: 'ses_1', status: 'compacting' } } as never);
+    expect(startCompaction.calls).toEqual([['ses_1']]);
+    handleEvent({ id: 'evt_c2', type: 'log.status', properties: { thread_id: 'ses_1', status: 'idle' } } as never);
+    expect(stopCompaction.calls).toEqual([['ses_1']]);
+  });
+
+  test('on a box that serves its log, a turn end, an error and a compaction re-read no transcript tail and no session', async () => {
+    const reconciled: string[] = [];
+    let sessionReads = 0;
+    const { handleEvent } = buildHandler({
+      sessionId: 'kortix-1',
+      logNative: true,
+      reconcileSessionTail: async (sessionID) => {
+        reconciled.push(sessionID);
+      },
+      getImpl: async () => {
+        sessionReads++;
+        return { data: undefined };
+      },
+    });
+    handleEvent({ id: 'evt_n1', type: 'log.status', properties: { thread_id: 'ses_1', status: 'idle' } } as never);
+    handleEvent({ id: 'evt_n2', type: 'session.idle', properties: { sessionID: 'ses_1' } } as never);
+    handleEvent({ id: 'evt_n3', type: 'session.compacted', properties: { sessionID: 'ses_1' } } as never);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reconciled).toEqual([]);
+    expect(sessionReads).toBe(0);
   });
 
   test("a log.state frame's pending asks a new permission and answers one the log dropped", () => {

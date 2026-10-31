@@ -72,6 +72,7 @@ import {
   useProviderMeta,
 } from './provider-connect';
 import {
+  ClaudeCodeStep,
   DeviceCode,
   ProviderKeyForm,
   RemoveKeyDialog,
@@ -510,6 +511,8 @@ function SignInSubRows({
   const sign = useSubscriptionSignIn({ projectId, kind: sub.kind, onConnected: () => undefined });
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const waiting = sign.phase === 'waiting';
+  // A Claude login is the member's own: any member signs in. A shared login needs write access.
+  const canSignIn = canWrite || sign.pastesCode;
 
   const copyCode = () => {
     if (!sign.challenge?.code) return;
@@ -520,7 +523,7 @@ function SignInSubRows({
     <>
       <AccordionSubRow
         action={
-          !canWrite ? null : waiting ? (
+          !canSignIn ? null : waiting ? (
             <Button type="button" size="xs" variant="ghost" onClick={sign.cancel}>
               {t('cancel')}
             </Button>
@@ -548,7 +551,11 @@ function SignInSubRows({
             ? t('signingIn', { name: sub.name })
             : `${t('subscription', { plan: sub.plan })} · ${t('notConnected')}`}
       </AccordionSubRow>
-      {waiting ? (
+      {waiting && sign.pastesCode ? (
+        <div className="border-border border-t py-3">
+          <ClaudeCodeStep url={sign.challenge?.url ?? null} checking={sign.checking} onSubmit={(code) => void sign.submitCode(code)} />
+        </div>
+      ) : waiting ? (
         <div className="border-border border-t py-3">
           <DeviceCode
             name={sub.name}
@@ -660,6 +667,8 @@ function ExpandedBody({
     );
   } else if (pooled.pooledSecretsEnabled && pooled.accountId && supportsPooledProviderKey(entry)) {
     content = (
+      <>
+      {SUBSCRIPTION_BY_PROVIDER[entry.id] ? <SignInSubRows projectId={projectId} entry={entry} canWrite={canWrite} /> : null}
       <div className="border-border border-t py-3">
         <AccountSecretResourcesPanel
           accountId={pooled.accountId}
@@ -670,6 +679,7 @@ function ExpandedBody({
           canWrite
         />
       </div>
+      </>
     );
   } else if (SUBSCRIPTION_BY_PROVIDER[entry.id]) {
     content = (

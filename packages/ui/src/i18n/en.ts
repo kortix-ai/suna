@@ -9530,6 +9530,23 @@ const catalog = {
       "hint": "Runs as a workflow of agents",
       "dismiss": "{key} to send it as a normal prompt"
     }
+  },
+  "claudeSubscription": {
+    "title": "Use your Claude subscription",
+    "description": "Claude models run through Claude Code on your own Claude Pro or Max plan. Only your sessions use your plan.",
+    "starting": "Opening Claude…",
+    "approveDescription": "Sign in with the Claude account that has your plan, approve the request, and copy the code Claude shows you.",
+    "codeLabel": "Code from claude.com",
+    "connect": "Connect Claude",
+    "connecting": "Connecting…",
+    "connectedTitle": "Your Claude subscription is connected",
+    "connected": "Claude subscription connected",
+    "disconnect": "Disconnect Claude",
+    "disconnected": "Claude subscription disconnected",
+    "startError": "Could not start the Claude sign-in. Try again.",
+    "codeError": "Could not connect Claude with that code. Sign in again and paste the new code.",
+    "connectClaude": "Connect Claude",
+    "reconnectClaude": "Reconnect Claude"
   }
 };
 
