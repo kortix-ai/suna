@@ -533,7 +533,9 @@ jobs:
         && needs.migrate-db.result == 'success'
         && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped') }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
-    timeout-minutes: 35
+    # Release gate (25 min cap) + worker roll (17 min cap) + API roll (15 min
+    # wait budget in ecs-deploy.sh) + overhead.
+    timeout-minutes: 60
     permissions:
       id-token: write # OIDC → ECS deploy role
       contents: read
@@ -685,6 +687,21 @@ jobs:
           docker run --rm --pull always --platform linux/amd64 \
             --name "$container" --env-file "$work/container.env" \
             "$API_IMAGE" bun scripts/prepare-platform-default-image.ts
+      # The worker (kortix-dev-use2-worker) runs every scheduled job. It rolls
+      # BEFORE the API, with this job's KORTIX_ECS_ENV_OVERRIDES and the API's
+      # running environment, and always waits until the old worker stopped.
+      # The API roll below sets KORTIX_PROCESS_ROLE=web only when this worker
+      # runs the same image and is HEALTHY; otherwise `all`, and the API runs
+      # the jobs. A failed worker roll therefore never blocks the API: the job
+      # stays green and the next step annotates the run.
+      - name: Roll the dev worker service onto the freshly-built image
+        id: worker
+        continue-on-error: true
+        timeout-minutes: 17
+        run: bash infra/scripts/ecs-deploy.sh dev-use2 "${{ needs.build-api.outputs.image }}" --service worker --version "${{ needs.detect-changes.outputs.version }}"
+      - name: Report a failed worker roll
+        if: steps.worker.outcome == 'failure'
+        run: echo "::error title=Worker deploy::the dev worker did not roll onto ${{ needs.build-api.outputs.image }}. The API rolls with KORTIX_PROCESS_ROLE=all and runs the scheduled jobs; read the step 'Roll the dev worker service onto the freshly-built image'."
       # --version stamps KORTIX_VERSION into the task-def so /v1/health reports
       # the computed dev version even if the image's baked string ever diverges
       # (retags, rebuilds) — same parity rule as staging/prod.
