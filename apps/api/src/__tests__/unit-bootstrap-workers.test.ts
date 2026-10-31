@@ -1,6 +1,8 @@
 import { afterAll, afterEach, expect, mock, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 
+const projectSurface = await import('../projects/surface');
+
 const config = { KORTIX_WORKERS_ENABLED: false };
 const started: string[] = [];
 const record = (name: string) => () => { started.push(name); };
@@ -36,6 +38,7 @@ mock.module('../shared/pg-broadcast', () => ({
   onSessionChanged: record('onSessionChanged'),
 }));
 mock.module('../projects/surface', () => ({
+  ...projectSurface,
   handBackClaims: async () => 0,
   signalSessionRuntimeActive() {},
 }));
