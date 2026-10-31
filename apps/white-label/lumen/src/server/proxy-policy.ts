@@ -94,8 +94,8 @@ const RULES: readonly Rule[] = [
   rule('POST', `projects/${PROJECT}/sessions`),
   // No prompt attachments: a file dropped in a chat goes to the matter's Documents
   // (src/app/providers.tsx `takeFiles`), the one path that makes it citable.
-  // One session: the session, its live stream, transcript, turn, queue, authors, model usage.
-  rule('GET', `${S}(?:/(?:events|snapshot|transcript|turn|prompts|message-authors|model-usage))?`),
+  // One session: the session, its live stream, transcript, session log, turn, queue, authors, model usage.
+  rule('GET', `${S}(?:/(?:events|snapshot|transcript|log|turn|prompts|message-authors|model-usage))?`),
   rule('PATCH DELETE', S),
   rule('POST', `${S}/(?:start|restart|prompts|prompts/hold)`),
   // A queued prompt's edit and removal (the composer's queue; not seen live: prompts steered).
@@ -112,8 +112,9 @@ const RULES: readonly Rule[] = [
   // Runtime writes: abort, edit-and-rewind, permission and question replies.
   rule('POST', `${RT}/session/${SEG}/(?:abort|revert)`),
   rule('POST', `${RT}/(?:permission|question)/${SEG}/(?:reply|reject)`),
-  // The same reads and writes on a box with the session-log actions (runtime.actions.v1).
-  rule('GET', `${RT}/kortix/runtime/(?:pending|commands|workspace)`),
+  // The same reads and writes on a box with the session-log actions (runtime.actions.v1), and
+  // the box's own session log (runtime.log.v1): the transcript's only source on such a box.
+  rule('GET', `${RT}/kortix/runtime/(?:pending|commands|workspace|log)`),
   rule('POST', `${RT}/kortix/runtime/(?:permissions/${SEG}/reply|questions/${SEG}/(?:reply|reject)|sessions/${SEG}/abort)`),
 ];
 
@@ -280,8 +281,8 @@ const CHANGE_REQUESTS = new RegExp(`^projects/${PROJECT}/change-requests$`);
 
 // The runtime's health, fetched on every turn.
 const RUNTIME_HEALTH = new RegExp(`^${RT}/kortix/health$`);
-// The transcript, from the API and from the runtime.
-const TRANSCRIPT = new RegExp(`^(?:${S}/transcript|${RT}/session/${SEG}/message)$`);
+// The transcript, from the API and from the runtime, and the session log page from either.
+const TRANSCRIPT = new RegExp(`^(?:${S}/transcript|${S}/log|${RT}/session/${SEG}/message|${RT}/kortix/runtime/log)$`);
 
 // The runtime's slash-command list: the platform's own skills (kortix-cli,
 // kortix-apps, …) are not a customer's commands.
