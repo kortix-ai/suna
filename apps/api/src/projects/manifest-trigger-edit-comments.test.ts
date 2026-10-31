@@ -28,6 +28,7 @@ agents:
     # Full access — this is the operator agent (grant rationale, do not drop).
     connectors: all
     secrets: all
+    tools: all
 
 # Nightly automation.
 triggers:

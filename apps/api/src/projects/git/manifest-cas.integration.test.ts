@@ -71,7 +71,7 @@ describe('manifest file compare-and-swap', () => {
     await writeFile(join(seedPath, 'skills/pdf/SKILL.md'), 'user edited skill');
     await writeFile(join(seedPath, 'skills/pdf/custom/script.py'), 'custom script');
     await writeFile(join(seedPath, 'tools/shared.ts'), 'shared tool');
-    await writeFile(join(seedPath, 'kortix.yaml'), 'skills:\n  pdf: skills/pdf\nagents:\n  helper:\n    skills: [pdf]\n');
+    await writeFile(join(seedPath, 'kortix.yaml'), 'skills:\n  pdf: skills/pdf\nagents:\n  helper:\n    tools: all\n    skills: [pdf]\n');
     await git(['add', '.'], seedPath);
     await git(['commit', '-m', 'install synthetic skill'], seedPath);
     await git(['push', 'origin', 'main'], seedPath);
@@ -87,7 +87,7 @@ describe('manifest file compare-and-swap', () => {
     expect(await git(['--git-dir', remotePath, 'show', 'main:tools/shared.ts'])).toBe('shared tool');
     const current = await readManifest(project);
     expect(current?.raw.skills).toEqual({});
-    expect(current?.raw.agents).toEqual({ helper: { skills: [] } });
+    expect(current?.raw.agents).toEqual({ helper: { tools: 'all', skills: [] } });
   });
 
   test('pins destructive deletion to the inspected commit, including newly added files', async () => {
