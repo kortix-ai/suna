@@ -84,6 +84,30 @@ describe('kortix_agents', () => {
     expect(result.card.changes).toEqual([{ field: 'prompt', before: 'Old.', after: 'New.' }])
   })
 
+  test('models: each model the project may run, with the exact ref a spawn takes and what it is good for; never a price', async () => {
+    fakeKortix(`'models ls --json') echo '{"models":{"deepseek-v4.1-flash":{"name":"DeepSeek V4.1 Flash","provider":"kortix","enabled":true,"reasoning":false,"limit":{"context":1000000},"cost":{"input":0.1,"output":0.4},"free":true},"openai/gpt-6":{"name":"GPT-6","provider":"openai","provider_name":"OpenAI","enabled":true,"reasoning":true,"attachment":true,"limit":{"context":400000},"cost":{"input":5,"output":20}},"kimi-k3":{"name":"Kimi K3","provider":"kortix","enabled":false},"anthropic/claude-x":{"name":"Claude X","provider":"anthropic","enabled":true,"available":false}},"catalog":{"glm-6":{"availability":"plan"}},"defaultModel":"deepseek-v4.1-flash","platformFeePercent":10,"claudeSubscription":{"providerId":"claude-agent","name":"Claude","connected":true,"models":[{"id":"claude-agent/claude-opus","name":"Claude Opus","description":"Deep work","limit":{"context":200000,"output":32000},"efforts":["low","high"],"requires":"claude_subscription","connected":true}]}}' ;;`)
+    const result = await run('kortix_agents', { action: 'models' })
+    expect(result.ok).toBe(true)
+    expect(result.card.title).toBe('3 models')
+    // The default first; a model the project turned off, or one this person cannot reach, is left out.
+    expect(result.card.rows).toEqual([
+      { title: 'DeepSeek V4.1 Flash', detail: 'kortix/deepseek-v4.1-flash · fast · 1M context', badge: 'default' },
+      { title: 'Claude Opus', detail: 'claude-agent/claude-opus · reasoning · 200k context' },
+      { title: 'GPT-6', detail: 'kortix/openai/gpt-6 · reasoning · images · 400k context' },
+    ])
+    expect(result.data).toMatchObject({
+      default: 'kortix/deepseek-v4.1-flash',
+      models: [
+        { id: 'kortix/deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', good_for: ['fast'], context: 1000000, default: true },
+        { id: 'claude-agent/claude-opus', provider: 'Claude subscription', good_for: ['reasoning'] },
+        { id: 'kortix/openai/gpt-6', provider: 'OpenAI', good_for: ['reasoning', 'images'], default: false },
+      ],
+    })
+    // No price, cost, fee or "free" reaches the model or the card.
+    expect(JSON.stringify(result)).not.toMatch(/cost|price|fee|free|\$/i)
+    expect(argvs()).toEqual(['models ls --json'])
+  })
+
   test('a refusal names who can grant it, read from the project members', async () => {
     fakeKortix(`'agents config writer --json') echo '{"block":{"description":"x"}}' ;;
   'agents config writer --file '*' --json') echo '{"kortix_error":{"kind":"denied","status":403,"code":"forbidden","action":"project.agent.update"}}' >&2; echo '{"kortix_error":{"kind":"failed","status":403,"message":"Forbidden"}}' >&2; exit 1 ;;
@@ -168,12 +192,11 @@ describe('kortix_schedules follow-through', () => {
     expect(argvs()).toEqual([`loop ${TEXT} --in=3h --json`, `loop ${TEXT} --cron=0 9 * * 1-5 --timezone=Europe/Berlin --json`])
   })
 
-  test('follow_up and wake_on refuse a missing text, a missing or double schedule, and option-shaped values, before any command runs (CWE-88)', async () => {
+  test('follow_up and wake_on refuse a missing text, a missing schedule, and option-shaped values, before any command runs (CWE-88)', async () => {
     fakeKortix('')
     const refused = [
       { action: 'follow_up', in: '3h' },
       { action: 'follow_up', text: TEXT },
-      { action: 'follow_up', text: TEXT, in: '3h', every: '4h' },
       { action: 'follow_up', text: '--help', in: '3h' },
       { action: 'follow_up', text: TEXT, cron: '0 9 * * *', timezone: '--project' },
       { action: 'wake_on', text: TEXT },
@@ -192,6 +215,47 @@ describe('kortix_schedules follow-through', () => {
       expect({ args, kind: result.error?.kind, message: result.error?.message }).toMatchObject({ args, kind: "invalid" })
     }
     expect(readFileSync(calls, 'utf8')).toBe('')
+  })
+
+  test('follow_up tolerates the call a model makes: an alias for text, an unknown id, and both at and in (at wins, and the result says so)', async () => {
+    fakeKortix(`'loop ${TEXT} --at=2026-11-04T08:00:00Z --json') echo '${LOOP('reminder.eeeeeeeeeeee', '"every":null,"every_seconds":null,"cron":null,"at":"2026-11-04T08:00:00Z"')}' ;;
+  'loop ${TEXT} --in=4d --json') echo '${LOOP('reminder.ffffffffffff', '"every":null,"every_seconds":null,"cron":null,"at":null')}' ;;
+  'triggers add ${TEXT} --on=cr-merged --cr=42 --json') echo '{"id":"trigger.cccccccccccc","source":{"type":"change_request","cr_id":"42"},"next_fire_at":null}' ;;`)
+    // The call a live session made, with a text alias added: no `text`, both `at` and `in`, an invented `id`.
+    const both = await run('kortix_schedules', { at: '2026-11-04T08:00:00Z', id: 'sticker-quote-check', in: '4d', action: 'follow_up', prompt: TEXT })
+    expect(both.ok).toBe(true)
+    expect(both.card.title).toBe('Follow-up set: at 2026-11-04 08:00 UTC')
+    expect(both.data).toMatchObject({ id: 'reminder.eeeeeeeeeeee', used: 'at', ignored: ['in'] })
+    expect((both.data as { note: string }).note).toContain('ignored `in`')
+    for (const alias of ['message', 'note']) {
+      expect((await run('kortix_schedules', { action: 'follow_up', in: '4d', [alias]: TEXT })).ok).toBe(true)
+    }
+    // One schedule field: no note.
+    const single = await run('kortix_schedules', { action: 'follow_up', in: '4d', note: TEXT })
+    expect(single.data).not.toHaveProperty('note')
+    expect((await run('kortix_schedules', { action: 'wake_on', on: 'cr_merged', cr: '42', message: TEXT, id: 'x' })).ok).toBe(true)
+    expect(argvs()).toEqual([
+      `loop ${TEXT} --at=2026-11-04T08:00:00Z --json`,
+      `loop ${TEXT} --in=4d --json`,
+      `loop ${TEXT} --in=4d --json`,
+      `loop ${TEXT} --in=4d --json`,
+      `triggers add ${TEXT} --on=cr-merged --cr=42 --json`,
+    ])
+  })
+
+  test('follow_up precedence is at > in > cron > every; a truly missing text says what to pass, with a one-line example', async () => {
+    fakeKortix(`'loop ${TEXT} --in=3h --json') echo '${LOOP('reminder.aaaaaaaaaaaa', '"every":null,"every_seconds":null,"cron":null,"at":null')}' ;;
+  'loop ${TEXT} --cron=0 9 * * 1-5 --json') echo '${LOOP('reminder.bbbbbbbbbbbb', '"every":null,"every_seconds":null,"cron":"0 9 * * 1-5","at":null')}' ;;`)
+    expect((await run('kortix_schedules', { action: 'follow_up', text: TEXT, every: '4h', in: '3h', cron: '0 9 * * 1-5' })).data).toMatchObject({ used: 'in', ignored: ['cron', 'every'] })
+    expect((await run('kortix_schedules', { action: 'follow_up', text: TEXT, every: '4h', cron: '0 9 * * 1-5' })).data).toMatchObject({ used: 'cron', ignored: ['every'] })
+    const missing = await run('kortix_schedules', { at: '2026-11-04T08:00:00Z', id: 'sticker-quote-check', in: '4d', action: 'follow_up' })
+    expect(missing.error?.kind).toBe('invalid')
+    expect(missing.error?.message).toStartWith('Missing `text`')
+    // The example is a whole call the model can copy.
+    const example = missing.error!.message.slice(missing.error!.message.indexOf('{'))
+    expect(JSON.parse(example)).toMatchObject({ action: 'follow_up', in: '4d' })
+    expect((await run('kortix_schedules', { action: 'wake_on', on: 'cr_merged', cr: '42' })).error?.message).toContain('{"action":"wake_on"')
+    expect(argvs()).toHaveLength(2)
   })
 
   test('wake_on: each `on` is one `kortix triggers add … --on=…`; a webhook returns the URL the outside system calls', async () => {

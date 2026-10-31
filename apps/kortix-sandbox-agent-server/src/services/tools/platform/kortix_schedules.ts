@@ -133,15 +133,32 @@ async function runJson<T>(args: string[], context: PlatformToolContext): Promise
   return value === null ? { error: { kind: 'failed', message: 'The command answered with no JSON.' } } : { value }
 }
 
-/** The required `text`: what the woken turn reads. */
-function wakeText(args: Record<string, any>): string | { error: string } {
-  const text = typeof args.text === 'string' ? args.text.trim() : ''
+/** Keys a model sends for `text`, in the order one is taken. */
+const TEXT_KEYS = ['text', 'prompt', 'message', 'note'] as const
+
+/** A one-line call that works, per action: what a refusal for a missing `text` shows. */
+const TEXT_EXAMPLE: Record<'follow_up' | 'wake_on', string> = {
+  follow_up: '{"action":"follow_up","in":"4d","text":"Check replies to the sticker quotes sent 2026-10-31. Chase non-responders once; remove this on 2026-11-14."}',
+  wake_on: '{"action":"wake_on","on":"cr_merged","cr":"42","text":"Change request 42 merged: verify the deploy and tell the person."}',
+}
+
+/**
+ * The required `text`: what the woken turn reads. `prompt`, `message` and
+ * `note` count as `text` (a model that guesses the name still sets its
+ * follow-up); every other key the call does not use is ignored.
+ */
+function wakeText(args: Record<string, any>, action: 'follow_up' | 'wake_on'): string | { error: string } {
+  const key = TEXT_KEYS.find((k) => typeof args[k] === 'string' && args[k].trim())
+  const text = key ? String(args[key]).trim() : ''
   if (!text) {
-    return { error: 'Missing `text`. Write what was done, what to check, what to do on each outcome, and when to stop (an end date), e.g. "Check replies to the quotes sent 2026-10-31 to 12 printers (out/printers.md). Summarize new replies; chase non-responders once after 2 days; remove this when all replied or on 2026-11-14."' }
+    return { error: `Missing \`text\`: what the woken turn reads (what was done, what to check, what to do on each outcome, an end date). Call again with it, e.g. ${TEXT_EXAMPLE[action]}` }
   }
   const problem = cliArgProblem('text', text, 'text')
   return problem ? { error: problem } : text
 }
+
+/** The schedule keys of a follow-up, in the order one is used when a call passes several. */
+const SCHEDULE_KEYS = ['at', 'in', 'cron', 'every'] as const
 
 /** A named word parameter, checked, or the reason it cannot go to the CLI. */
 function word(args: Record<string, any>, field: string, hint: string): string | { error: string } {
@@ -155,13 +172,15 @@ function word(args: Record<string, any>, field: string, hint: string): string | 
 const isError = (value: unknown): value is { error: string } => typeof value === 'object' && value !== null && 'error' in value
 
 async function followUp(args: Record<string, any>, context: PlatformToolContext) {
-  const text = wakeText(args)
+  const text = wakeText(args, 'follow_up')
   if (isError(text)) return fail(TOOL, 'follow_up', 'What should the follow-up check?', { kind: 'invalid', message: text.error }, context)
-  const given = (['in', 'at', 'every', 'cron'] as const).filter((key) => typeof args[key] === 'string' && args[key].trim())
-  if (given.length !== 1) {
-    return fail(TOOL, 'follow_up', 'When should it check?', { kind: 'invalid', message: `Pass exactly one of: in ("3h", once), at (an ISO time, once), every ("4h", repeats; at least 5m), cron ("0 9 * * 1-5", repeats, plus timezone). Got ${given.length === 0 ? 'none' : given.join(', ')}.` }, context)
+  const given = SCHEDULE_KEYS.filter((key) => typeof args[key] === 'string' && args[key].trim())
+  if (given.length === 0) {
+    return fail(TOOL, 'follow_up', 'When should it check?', { kind: 'invalid', message: 'Pass one of: in ("3h", once), at (an ISO time, once), every ("4h", repeats; at least 5m), cron ("0 9 * * 1-5", repeats, plus timezone). Got none.' }, context)
   }
+  // Several schedule fields: the first by precedence wins, and the result says which.
   const key = given[0]!
+  const ignored = given.slice(1)
   const value = String(args[key]).trim()
   const flags = [`--${key}=${value}`]
   const timezone = typeof args.timezone === 'string' ? args.timezone.trim() : ''
@@ -184,7 +203,15 @@ async function followUp(args: Record<string, any>, context: PlatformToolContext)
       ...(next ? { rows: [{ title: 'Next check', detail: next }] } : {}),
       links: [{ label: 'Triggers', href: adminHref(context.env, 'triggers') }],
     },
-    { id: loop.id, schedule: when, next_fire: loop.next_fire_at ?? null, text },
+    {
+      id: loop.id,
+      schedule: when,
+      next_fire: loop.next_fire_at ?? null,
+      text,
+      ...(ignored.length > 0
+        ? { used: key, ignored, note: `Set with \`${key}\` (${when}); ignored ${ignored.map((k) => `\`${k}\``).join(', ')}. One schedule field per follow-up; set another follow-up for a second check.` }
+        : {}),
+    },
   )
 }
 
@@ -227,7 +254,7 @@ function wakeFlags(args: Record<string, any>): { flags: string[]; condition: str
 }
 
 async function wakeOn(args: Record<string, any>, context: PlatformToolContext) {
-  const text = wakeText(args)
+  const text = wakeText(args, 'wake_on')
   if (isError(text)) return fail(TOOL, 'wake_on', 'What should the woken turn do?', { kind: 'invalid', message: text.error }, context)
   const spec = wakeFlags(args)
   if (isError(spec)) return fail(TOOL, 'wake_on', 'Wake on what?', { kind: 'invalid', message: spec.error }, context)
@@ -421,14 +448,14 @@ export default {
     '5) On each fire: check, act, report what changed; widen the cadence after repeated empty checks (remove, then a slower follow_up); `remove` every follow-up and wake-on the moment the work is done or the end date passes. ' +
     'No follow-up for work that finishes this turn, for background hand-offs, teammates and workflows (they report back by themselves), or when the person said not to track it. ' +
     'If it answers that Loops are not enabled, tell the person and ask them or a project admin to turn Loops on in Settings → Feature flags. ' +
-    'Actions: `follow_up` (text + exactly ONE of in "3h", at ISO time, every "4h" (min 5m), cron "0 9 * * 1-5" + timezone); ' +
+    'Actions: `follow_up` (text + ONE of in "3h", at ISO time, every "4h" (min 5m), cron "0 9 * * 1-5" + timezone; with several, the first of at, in, cron, every is used); ' +
     '`wake_on` (text + on); `events` (connector); `list` (this session\'s follow-ups and wake-ons, and the project schedules, with ids); ' +
     '`create` (prompt + agent + one schedule: each run starts a new session of that agent); `pause`, `resume`, `run_now`, `remove` (each needs `id` as list shows it; `delete` = remove).',
   parameters: {
     type: 'object',
     properties: {
       action: { type: 'string', enum: [...ACTIONS], description: 'What to do.' },
-      text: { type: 'string', description: 'For follow_up and wake_on: what the woken turn reads. What was done, what to check, what to do on each outcome, when to stop (an end date).' },
+      text: { type: 'string', description: 'For follow_up and wake_on: what the woken turn reads. What was done, what to check, what to do on each outcome, when to stop (an end date). `prompt`, `message` or `note` also work.' },
       on: { type: 'string', enum: [...WAKE_ON], description: 'For wake_on: what wakes this session.' },
       cr: { type: 'string', description: 'For wake_on cr_merged: the change request id or number.' },
       secret_env: { type: 'string', description: 'For wake_on webhook: the name of the project secret that signs the calls.' },
