@@ -9,6 +9,8 @@
  * only — the web client paints eagerly off deltas).
  * Putting both on the bus would render the text twice.
  */
+import { CLAUDE_AGENT_PROVIDER_ID } from '@kortix/api-contract/claude-agent'
+import { CLAUDE_CONNECT_MESSAGE, CLAUDE_RECONNECT_MESSAGE } from './claude/sdk'
 import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage as PiAssistantMessage, Usage } from '@earendil-works/pi-ai'
 import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
@@ -106,9 +108,13 @@ function errorStatus(text: string | null): number | undefined {
 
 /** The `error` of a terminal pi assistant message, with its `TurnErrorCode`, or undefined. */
 export function assistantMessageError(
-  message: Pick<PiAssistantMessage, 'stopReason' | 'errorMessage'>,
+  message: Pick<PiAssistantMessage, 'stopReason' | 'errorMessage'> & { provider?: string },
 ): KortixMessageError | undefined {
   const detail = typeof message.errorMessage === 'string' && message.errorMessage.trim() ? message.errorMessage.trim() : null
+  // A Claude subscription login is missing or Anthropic refused it: the person fixes it in Kortix.
+  if (message.stopReason === 'error' && message.provider === CLAUDE_AGENT_PROVIDER_ID && (detail === CLAUDE_CONNECT_MESSAGE || detail === CLAUDE_RECONNECT_MESSAGE)) {
+    return { name: 'ProviderAuthError', data: { providerID: CLAUDE_AGENT_PROVIDER_ID, message: detail }, code: 'auth' }
+  }
   if (message.stopReason === 'aborted') {
     return { name: 'MessageAbortedError', data: { message: detail ?? 'The message was aborted' }, code: 'aborted' }
   }

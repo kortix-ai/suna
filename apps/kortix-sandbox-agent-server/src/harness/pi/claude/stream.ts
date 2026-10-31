@@ -10,6 +10,7 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { Api, AssistantMessage, AssistantMessageEventStream, Model, TextContent, ThinkingContent, ToolCall, Usage } from '@earendil-works/pi-ai'
 import { original } from './names'
+import { CLAUDE_RECONNECT_MESSAGE } from './sdk'
 
 type Block = { kind: 'text' | 'thinking' | 'tool'; index: number }
 
@@ -282,6 +283,8 @@ export class ClaudeReply {
     const limit = limited && !failure ? `Your Claude ${this.subscription() ? 'subscription' : 'account'} limit is reached${window ? ` (${window})` : ''}.` : failure
     const reset = limited && this.rateLimited?.resetsAt ? ` It resets at ${new Date(this.rateLimited.resetsAt * 1000).toISOString()}.` : ''
     const billing = this.assistantError === 'billing_error' ? ' Check your Claude plan and its extra-usage settings.' : ''
+    // Anthropic refused the login (revoked, expired): the person reconnects Claude in Kortix.
+    if (this.assistantError === 'authentication_failed' || status === 401) return new ClaudeTurnError(CLAUDE_RECONNECT_MESSAGE, this.assistantError, status)
     const message = limit + reset + billing
     if (message) return new ClaudeTurnError(message, this.assistantError, status)
     return new ClaudeTurnError(status ? `Claude Code could not finish its reply (HTTP ${status})` : 'Claude Code could not finish its reply', this.assistantError, status)

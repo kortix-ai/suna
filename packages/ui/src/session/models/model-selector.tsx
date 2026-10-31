@@ -53,7 +53,8 @@ import {
   splitModelLabel,
 } from './model-grouping';
 import { modelInDefaultView } from '@kortix/sdk';
-import { isSubscriptionModel, pickerModelName, shouldShowFreeTag } from './model-tags';
+import { isClaudeSubscriptionModel, isSubscriptionModel, pickerModelName, shouldShowFreeTag } from './model-tags';
+import { ClaudeSubscriptionDialog, useClaudeSubscription } from './claude-subscription-dialog';
 import { useModelConnectionGate } from './use-model-connection-gate';
 
 // Re-export for consumers
@@ -457,6 +458,14 @@ export function ModelSelector({
   const chatGptAvailable =
     chatGptPossible && !(modelAccess.data?.disabledProviders ?? []).includes('codex');
   const [chatGptOpen, setChatGptOpen] = useState(false);
+  // Claude models on the member's own Claude plan (`claude-agent/<id>`): the API lists them
+  // where the member's sessions can run them, unavailable until the member connects Claude.
+  const tClaude = useTranslations('claudeSubscription');
+  const claudeOffered = !!projectId && models.some((m) => m.enabled !== false && isClaudeSubscriptionModel(m));
+  const claudeStatus = useClaudeSubscription(projectId, claudeOffered && open);
+  const [claudeOpen, setClaudeOpen] = useState(false);
+  /** The Claude model the member picked before connecting: chosen once the login is stored. */
+  const [claudePending, setClaudePending] = useState<ModelRef | null>(null);
   // Every write this picker offers is `project.model.write` on the API: the
   // star sets the ACCOUNT default (the default for every member, not a personal
   // one), and "+" / sliders open the provider modal. A member without the leaf
@@ -606,16 +615,26 @@ export function ModelSelector({
     setChatGptOpen(true);
   }, [setOpen]);
 
+  const handleOpenClaude = useCallback(
+    (model: ModelRef | null) => {
+      setOpen(false);
+      setClaudePending(model);
+      setClaudeOpen(true);
+    },
+    [setOpen],
+  );
+
   const handleSelect = useCallback(
     (model: FlatModel) => {
       // An unavailable model is never chosen: the turn would fail after Send.
       const connect = unavailableModelConnection(model, { chatGptAvailable });
       if (connect === 'chatgpt') return handleOpenChatGpt();
+      if (connect === 'claude') return handleOpenClaude({ providerID: model.providerID, modelID: model.modelID });
       if (connect === 'provider') return handleOpenProviderModal('providers');
       onSelect({ providerID: model.providerID, modelID: model.modelID });
       setOpen(false);
     },
-    [onSelect, setOpen, chatGptAvailable, handleOpenChatGpt, handleOpenProviderModal],
+    [onSelect, setOpen, chatGptAvailable, handleOpenChatGpt, handleOpenClaude, handleOpenProviderModal],
   );
 
   const handleUpgrade = useCallback(() => {
@@ -628,6 +647,17 @@ export function ModelSelector({
       {connectionModal}
       {projectId && chatGptPossible && ProviderAccountsModal && (
         <ProviderAccountsModal projectId={projectId} providerId="codex" open={chatGptOpen} onOpenChange={setChatGptOpen} />
+      )}
+      {projectId && claudeOffered && (
+        <ClaudeSubscriptionDialog
+          projectId={projectId}
+          open={claudeOpen}
+          onOpenChange={setClaudeOpen}
+          onConnected={() => {
+            if (claudePending) onSelect(claudePending);
+            setClaudePending(null);
+          }}
+        />
       )}
       <CommandPopover
         open={disabled ? false : open}
@@ -871,6 +901,33 @@ export function ModelSelector({
                               : tPooled('useYourChatGpt')}
                           </span>
                           {!hasChatGptModels && (
+                            <span className="text-muted-foreground text-xs">{tPooled('connect')}</span>
+                          )}
+                        </CommandItem>
+                      </CommandGroup>
+                    </>
+                  )}
+                  {/* The member's own way in to Claude: connect a Claude subscription,
+                      or check and disconnect the one behind the Claude section above. */}
+                  {claudeOffered && !searching && (
+                    <>
+                      <CommandSeparator />
+                      <CommandGroup forceMount>
+                        <CommandItem
+                          value="claude-subscription"
+                          onSelect={() => handleOpenClaude(null)}
+                          className="cursor-pointer"
+                        >
+                          <ProviderLogo
+                            providerID="claude-agent"
+                            name="Claude"
+                            size="small"
+                            className="size-4 rounded-none bg-transparent"
+                          />
+                          <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
+                            {tClaude('title')}
+                          </span>
+                          {claudeStatus.data?.connected !== true && (
                             <span className="text-muted-foreground text-xs">{tPooled('connect')}</span>
                           )}
                         </CommandItem>

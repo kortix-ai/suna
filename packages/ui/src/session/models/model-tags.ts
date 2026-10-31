@@ -16,9 +16,18 @@ export function shouldShowFreeTag(
  * baked catalog can predate the field (same fallback `pickerGroupId` uses).
  */
 export function isSubscriptionModel(
-  model: Pick<FlatModel, 'modelID'> & { provider?: string | null },
+  model: Pick<FlatModel, 'modelID'> & { provider?: string | null; providerID?: string },
 ): boolean {
-  return model.provider === 'codex' || model.modelID.startsWith('codex/');
+  return model.provider === 'codex' || model.modelID.startsWith('codex/') || isClaudeSubscriptionModel(model);
+}
+
+/**
+ * A model that runs through Claude Code on the caller's own Claude Pro or Max
+ * plan (`claude-agent/<id>`, `@kortix/api-contract/claude-agent`). It never
+ * reaches the LLM gateway.
+ */
+export function isClaudeSubscriptionModel(model: { provider?: string | null; providerID?: string }): boolean {
+  return model.providerID === 'claude-agent' || model.provider === 'claude-agent';
 }
 
 /**

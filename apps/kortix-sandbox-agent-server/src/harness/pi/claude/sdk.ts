@@ -139,10 +139,15 @@ export function claudeEnv(stateDir: string, base: NodeJS.ProcessEnv = process.en
   return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined))
 }
 
+/** A turn's error when the session user has no Claude subscription login. Clients key the Connect Claude action on it. */
+export const CLAUDE_CONNECT_MESSAGE = 'Connect your Claude subscription to use Claude models.'
+/** A turn's error when Anthropic refused the stored login (revoked or expired). Clients key Reconnect Claude on it. */
+export const CLAUDE_RECONNECT_MESSAGE = 'Your Claude subscription login stopped working. Reconnect Claude to continue.'
+
 /** The session user has not connected a Claude subscription. The message is the user's next step. */
 export class ClaudeLoginMissing extends Error {
   constructor() {
-    super('Connect your Claude subscription to use Claude models: open the model picker and choose Connect Claude.')
+    super(CLAUDE_CONNECT_MESSAGE)
     this.name = 'ClaudeLoginMissing'
   }
 }
