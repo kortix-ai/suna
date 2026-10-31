@@ -29,11 +29,6 @@ export function sortMemoryPages(pages: readonly ProjectMemoryPageSummary[]): Pro
 
 /** The list's groups, in this order. Empty groups are not shown. */
 const MEMORY_GROUP_ORDER: readonly ProjectMemoryPageType[] = [
-  // My Kortix memory: about the person, how they like the work, their work, where things are.
-  'user',
-  'feedback',
-  'project',
-  'reference',
   'other',
   'people',
   'decisions',
@@ -246,7 +241,7 @@ export function MemoryPageList({
           ) : null}
         </div>
       )}
-      {layerKey === 'company' || layerKey === 'mykortix' ? null : <CompanyMemoryLink projectId={projectId} />}
+      {layerKey === 'company' ? null : <CompanyMemoryLink projectId={projectId} />}
     </nav>
   );
 }

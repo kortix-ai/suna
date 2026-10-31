@@ -8,9 +8,8 @@ import { uiRoutes } from '../../../lib/routes';
 import { useUiPathname } from '../../../providers/ui-provider';
 
 /**
- * The Memory row: the project's Company memory and the viewer's My Kortix
- * memory. The sidebar draws it with `project_channels` or Files (`drives`) on;
- * a host that serves no Memory page gets no row.
+ * The Memory row: the project's Company memory. The sidebar draws it only
+ * with `project_channels` on; a host that serves no Memory page gets no row.
  */
 export function ProjectMemoryNavItem({ projectId }: { projectId: string }) {
   const t = useTranslations('spaces.memory.company');

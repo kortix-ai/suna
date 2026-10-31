@@ -24294,8 +24294,7 @@
         "title": "Tudo",
         "explainCompany": "Memória do Kortix: o que os agentes sabem sobre este projeto. Eles a leem antes de cada resposta.",
         "explainChannel": "Memória do Kortix: o que os agentes sabem sobre {place}. Eles a leem antes de cada resposta.",
-        "explainDm": "Memória do Kortix: o que os agentes sabem sobre você e {place}. Eles a leem antes de cada resposta.",
-        "explainMyKortix": "O que o My Kortix lembra sobre você. Ele lê isso no início de cada chat. Só você vê."
+        "explainDm": "Memória do Kortix: o que os agentes sabem sobre você e {place}. Eles a leem antes de cada resposta."
       },
       "allPages": "Todas as páginas",
       "noMatches": "Nenhuma página corresponde a “{query}”.",
@@ -24368,9 +24367,7 @@
         "title": "Ainda não há memória em {place}",
         "titleDm": "Ainda não há memória com {place}",
         "description": "Os agentes salvam aqui o que aprendem e leem isso antes de cada resposta.",
-        "descriptionMyKortix": "Diga ao My Kortix “lembre que…” em um chat, e ele guarda aqui. Ele lê isso no início de cada chat. Só você vê.",
         "titleCompany": "Ainda não há memória da empresa",
-        "titleMyKortix": "O My Kortix ainda não lembra nada sobre você",
         "openCompany": "Abrir memória da empresa · {count, plural, one {# página} other {# páginas}}"
       },
       "source": {
@@ -24394,12 +24391,9 @@
       },
       "company": {
         "subtitle": "O que todo agente deste projeto sabe.",
-        "subtitleMyKortix": "O que o My Kortix lembra sobre você. Só você vê.",
         "gateDescription": "A memória da empresa vem com os canais: todo agente deste projeto começa cada thread com o que a equipe salvou aqui.",
         "title": "Memória",
-        "place": "Empresa",
-        "placeMyKortix": "My Kortix",
-        "layers": "Memória"
+        "place": "Empresa"
       },
       "rememberThis": {
         "label": "Lembrar isto",
@@ -24419,10 +24413,6 @@
       "companyLink": "Memória da empresa · {count, plural, one {# página} other {# páginas}}",
       "companyLinkHint": "O agente daqui também usa a memória da empresa.",
       "group": {
-        "user": "Sobre você",
-        "feedback": "Como você prefere",
-        "project": "Seu trabalho",
-        "reference": "Onde as coisas estão",
         "other": "Sobre",
         "people": "Pessoas",
         "decisions": "Decisões",

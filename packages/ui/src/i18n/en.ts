@@ -8576,8 +8576,7 @@ const catalog = {
         "title": "All",
         "explainCompany": "Kortix memory: what agents know about this project. They read it before every reply.",
         "explainChannel": "Kortix memory: what agents know about {place}. They read it before every reply.",
-        "explainDm": "Kortix memory: what agents know about you and {place}. They read it before every reply.",
-        "explainMyKortix": "What My Kortix remembers about you. It reads this at the start of every chat. Only you see it."
+        "explainDm": "Kortix memory: what agents know about you and {place}. They read it before every reply."
       },
       "allPages": "All pages",
       "noMatches": "No page matches “{query}”.",
@@ -8650,9 +8649,7 @@ const catalog = {
         "title": "No memory in {place} yet",
         "titleDm": "No memory with {place} yet",
         "description": "Agents save what they learn here, and read it before every reply.",
-        "descriptionMyKortix": "Tell My Kortix “remember that…” in a chat, and it keeps it here. It reads this at the start of every chat. Only you see it.",
         "titleCompany": "No Company memory yet",
-        "titleMyKortix": "My Kortix remembers nothing about you yet",
         "openCompany": "Open Company memory · {count, plural, one {# page} other {# pages}}"
       },
       "source": {
@@ -8676,12 +8673,9 @@ const catalog = {
       },
       "company": {
         "subtitle": "What every agent in this project knows.",
-        "subtitleMyKortix": "What My Kortix remembers about you. Only you see it.",
         "gateDescription": "Company memory comes with Channels: every agent in this project starts each thread with what the team saved here.",
         "title": "Memory",
-        "place": "Company",
-        "placeMyKortix": "My Kortix",
-        "layers": "Memory"
+        "place": "Company"
       },
       "rememberThis": {
         "label": "Remember this",
@@ -8701,10 +8695,6 @@ const catalog = {
       "companyLink": "Company memory · {count, plural, one {# page} other {# pages}}",
       "companyLinkHint": "The agent here also uses Company memory.",
       "group": {
-        "user": "About you",
-        "feedback": "How you like it",
-        "project": "Your work",
-        "reference": "Where things are",
         "other": "About",
         "people": "People",
         "decisions": "Decisions",

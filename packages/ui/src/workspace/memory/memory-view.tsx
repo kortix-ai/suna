@@ -18,11 +18,6 @@ import { MemoryPageList, sortMemoryPages } from './memory-page-list';
 import { MemoryReader, MemoryReaderSkeleton } from './memory-reader';
 import { RememberPopover } from './remember-popover';
 
-/** The layer key of what My Kortix remembers about the viewer (`MY_KORTIX_MEMORY_LAYER_KEY` in `@kortix/api-contract`). */
-export const MY_KORTIX_MEMORY_LAYER = 'mykortix';
-/** The Memory screen's layer, in the URL: `mykortix`, else Company. */
-export const MEMORY_LAYER_PARAM = 'layer';
-
 /** The open page, in the URL so a page can be linked (the thread's "Saved to memory · View" uses it). */
 export const MEMORY_PAGE_PARAM = 'page';
 /** Set with `page`: the page opens with its History beside it. */
@@ -34,7 +29,7 @@ type HistoryState = { versionId: string | null; mode: 'sheet' | 'preview' | 'clo
 
 export interface MemoryViewProps {
   projectId: string;
-  /** `company`, `mykortix`, or the space id of a channel or DM. */
+  /** `company`, or the space id of a channel or DM. */
   layerKey: string;
   /** "#marketing", the DM's agent, or "Company": the copy's name for the layer. */
   place: string;
@@ -165,8 +160,7 @@ export function MemoryView({ projectId, layerKey, place }: MemoryViewProps) {
   }
 
   const canWrite = layer.data.can_write && !layer.data.read_only;
-  // The caller's My Kortix memory reads as its own kind: only they see it, and My Kortix reads it every chat.
-  const kind = layerKey === MY_KORTIX_MEMORY_LAYER ? 'mykortix' : layer.data.scope;
+  const kind = layer.data.scope;
   const rememberProps = {
     projectId,
     layerKey,

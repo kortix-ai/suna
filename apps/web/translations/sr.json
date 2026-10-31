@@ -24294,8 +24294,7 @@
         "title": "Све",
         "explainCompany": "Kortix меморија: шта агенти знају о овом пројекту. Читају је пре сваког одговора.",
         "explainChannel": "Kortix меморија: шта агенти знају о {place}. Читају је пре сваког одговора.",
-        "explainDm": "Kortix меморија: шта агенти знају о теби и {place}. Читају је пре сваког одговора.",
-        "explainMyKortix": "Šta My Kortix pamti o tebi. Čita ovo na početku svakog četa. Samo ti to vidiš."
+        "explainDm": "Kortix меморија: шта агенти знају о теби и {place}. Читају је пре сваког одговора."
       },
       "allPages": "Све странице",
       "noMatches": "Ниједна страница не одговара упиту „{query}“.",
@@ -24368,9 +24367,7 @@
         "title": "Још нема меморије у {place}",
         "titleDm": "Још нема меморије са {place}",
         "description": "Агенти овде чувају оно што науче и читају то пре сваког одговора.",
-        "descriptionMyKortix": "Reci My Kortixu u četu „zapamti da…“ i on će to čuvati ovde. Čita ovo na početku svakog četa. Samo ti to vidiš.",
         "titleCompany": "Још нема меморије компаније",
-        "titleMyKortix": "My Kortix još ne pamti ništa o tebi",
         "openCompany": "Отвори меморију компаније · {count, plural, one {# страница} few {# странице} other {# страница}}"
       },
       "source": {
@@ -24394,12 +24391,9 @@
       },
       "company": {
         "subtitle": "Оно што зна сваки агент у овом пројекту.",
-        "subtitleMyKortix": "Šta My Kortix pamti o tebi. Samo ti to vidiš.",
         "gateDescription": "Меморија компаније долази уз канале: сваки агент у овом пројекту почиње сваку тему са оним што је тим овде сачувао.",
         "title": "Меморија",
-        "place": "Компанија",
-        "placeMyKortix": "My Kortix",
-        "layers": "Memorija"
+        "place": "Компанија"
       },
       "rememberThis": {
         "label": "Запамти ово",
@@ -24419,10 +24413,6 @@
       "companyLink": "Меморија компаније · {count, plural, one {# страница} few {# странице} other {# страница}}",
       "companyLinkHint": "Агент овде користи и меморију компаније.",
       "group": {
-        "user": "O tebi",
-        "feedback": "Kako ti odgovara",
-        "project": "Tvoj posao",
-        "reference": "Gde su stvari",
         "other": "O nama",
         "people": "Ljudi",
         "decisions": "Odluke",

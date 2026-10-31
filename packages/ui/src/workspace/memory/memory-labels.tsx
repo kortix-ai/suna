@@ -1,19 +1,7 @@
 'use client';
 
 import type { ProjectMemoryAuthor, ProjectMemoryPageType } from '@kortix/sdk';
-import {
-  BookmarkSimpleIcon,
-  BookOpenIcon,
-  BriefcaseIcon,
-  ChatCircleTextIcon,
-  FileTextIcon,
-  FlagIcon,
-  type Icon,
-  IdentificationBadgeIcon,
-  NoteIcon,
-  SignpostIcon,
-  UserIcon,
-} from '@phosphor-icons/react';
+import { BookOpenIcon, BriefcaseIcon, FileTextIcon, type Icon, NoteIcon, SignpostIcon, UserIcon } from '@phosphor-icons/react';
 
 import { AgentMark } from '../../internal/components/agent-mark';
 import { useTranslations } from '../../i18n';
@@ -26,13 +14,13 @@ export const MEMORY_TYPE_ICON: Record<ProjectMemoryPageType, Icon> = {
   decisions: SignpostIcon,
   workstreams: BriefcaseIcon,
   playbooks: BookOpenIcon,
-  // What My Kortix remembers about a person (`kortix_memory`).
-  user: IdentificationBadgeIcon,
-  feedback: ChatCircleTextIcon,
-  project: FlagIcon,
-  reference: BookmarkSimpleIcon,
   note: NoteIcon,
   other: FileTextIcon,
+  // My Kortix's own page types: no screen lists them, so they read as any other file.
+  user: FileTextIcon,
+  feedback: FileTextIcon,
+  project: FileTextIcon,
+  reference: FileTextIcon,
 };
 
 /**
