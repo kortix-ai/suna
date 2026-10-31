@@ -54,7 +54,6 @@ const catalog = {
     "oauthExpired": "Authorization timed out. Try again.",
     "oauthPrivateDescription": "Use your ChatGPT Plus or Pro plan in this project. New accounts are private to you until you share them.",
     "chatGptSubscription": "ChatGPT subscription",
-    "useYourChatGpt": "Use your ChatGPT subscription",
     "manageChatGptAccounts": "Manage ChatGPT accounts",
     "connect": "Connect",
     "connectChatGpt": "Connect ChatGPT",
