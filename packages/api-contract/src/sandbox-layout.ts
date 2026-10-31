@@ -24,6 +24,7 @@ export const KORTIXD_SHARED_SOURCES = [
   'packages/shared/src/peer-message-prompt.ts',
   'packages/shared/src/room-prompt.ts',
   'packages/shared/src/ssrf-guard.ts',
+  'packages/api-contract/src/claude-agent.ts',
   'packages/api-contract/src/compiled-agent-config-env.ts',
   'packages/api-contract/src/egress-shim-rules.ts',
   'packages/api-contract/src/fallback-models.ts',
