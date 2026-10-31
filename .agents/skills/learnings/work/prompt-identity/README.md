@@ -1,6 +1,6 @@
 ---
 title: One prompt, one id, visible from accept to answer
-status: building (branch `prompt-identity`): phases 1–3; phase 4 (web) after
+status: phases 1–3 built on branch `prompt-identity` (6a987bea58, 75039b37e1); PR open; phase 4 (web) next
 owner: Marko (decisions), agent sessions (build)
 updated: 2026-10-31
 ---
@@ -55,6 +55,31 @@ pre-written user message is deduplicated into "no turn runs".
    POSTs.
 4. **Web (later):** `session-chat.tsx` reads the merge; `claimFirstTurnRow`, the echo maps
    and the queue-row dedupe go.
+
+## Built (2026-10-31)
+
+- Phase 1: `listSentPrompts` (`apps/api/src/projects/session-lifecycle/sent-prompts.ts`) feeds
+  `sent` on `GET …/prompts` and `kortix.control.queue`. DB suite
+  `apps/api/src/__tests__/integration-session-sent-prompts.test.ts`.
+- Phase 2: capability `runtime.stable_message_id.v1` (`packages/api-contract/src/runtime-relay.ts`),
+  listed by pi; the API keeps the wire id on such a box (`keepsWireIdOnStableRuntime`,
+  `forwarded-placement.ts`). Still re-mints: a continuation, an unreadable transcript, an id the
+  tip holds, an id below a user message on the tip (the web orders turns by id; phase 4 removes
+  that guard).
+- Phase 3: `sessionLogThreadWithPrompts` + `useSessionLogThread(…, { prompts })` (also registers
+  the re-mint pairing, so old daemons need no host code); `useSessionPrompts().sent`; `send()`
+  draws its optimistic message under a wire-codec id. Never `ascendingId` as a wire id: read by
+  the wire clock it is ~3.5 days ahead.
+- TUI on dev reads the inbox through the option.
+
+## Open
+
+- Phase 4: `packages/ui` `session-chat.tsx` adopts the option; delete `claimFirstTurnRow`, the
+  host echo registration, the queue-row dedupe; then drop the id-order guard in phase 2.
+- Branch `tui-session-first` carries an interim text pairing (`7000e36b4e`); delete it once this
+  lands and that branch merges dev.
+- `sent` does not shrink on journal ingest until the next inbox write (no NOTIFY on
+  `session_log_messages`); clients drop it by id, so it is not visible.
 
 ## Pick it up
 
