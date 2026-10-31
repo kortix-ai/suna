@@ -161,6 +161,45 @@ describe('kortix_schedules', () => {
     expect(readFileSync(calls, 'utf8')).toBe('')
   })
 
+  test('an id that is not exactly a runtime id or a schedule slug never reaches the CLI, so it cannot walk the request path to another endpoint (CWE-22)', async () => {
+    fakeKortix(`'loops rm reminder.aaaaaaaaaaaa') echo 'Removed' ;;
+  'triggers run automation.bbbbbbbbbbbb') echo 'Ran' ;;
+  'triggers rm automation.bbbbbbbbbbbb') echo 'Removed' ;;`)
+    const traversal = [
+      'reminder./../../../../secrets/STRIPE_KEY',
+      'reminder.aaaaaaaaaaaa/../../secrets/STRIPE_KEY',
+      'reminder.aaaaaaaaaaaa/run',
+      'reminder.aaaaaaaaaaaa?x=1',
+      'reminder.aaaaaaaaaaaa%2F..',
+      'reminder.AAAAAAAAAAAA',
+      'reminder.aaaaaaaaaaa',
+      'reminder.aaaaaaaaaaaaa',
+      'trigger./../../other-project',
+      'trigger.cccccccccccc/..',
+      '..',
+      '.',
+      'weekly/../digest',
+      'Weekly-Digest',
+      'proj:secret',
+      'a@b',
+      '-x',
+    ]
+    for (const action of ['remove', 'pause', 'resume', 'run_now', 'delete']) {
+      for (const id of traversal) {
+        const result = await run('kortix_schedules', { action, id })
+        expect(result.ok).toBe(false)
+        expect(result.error?.kind).toBe('invalid')
+        expect(result.error?.message).toContain('reminder.<12 hex>, trigger.<12 hex>, or a schedule slug')
+      }
+    }
+    expect(readFileSync(calls, 'utf8')).toBe('')
+    // The shapes the API issues still pass; a legacy runtime id is a runtime trigger, never a kortix.yaml slug (no --apply).
+    expect((await run('kortix_schedules', { action: 'remove', id: 'reminder.aaaaaaaaaaaa' })).ok).toBe(true)
+    expect((await run('kortix_schedules', { action: 'run_now', id: 'automation.bbbbbbbbbbbb' })).ok).toBe(true)
+    expect((await run('kortix_schedules', { action: 'remove', id: 'automation.bbbbbbbbbbbb' })).ok).toBe(true)
+    expect(argvs()).toEqual(['loops rm reminder.aaaaaaaaaaaa', 'triggers run automation.bbbbbbbbbbbb', 'triggers rm automation.bbbbbbbbbbbb'])
+  })
+
   test('message text that starts with "-" goes as --prompt=<text>, never as an option', async () => {
     fakeKortix(`'sessions chat ses_2 --prompt=- first point --queue') echo 'queued' ;;`)
     const sent = await run('kortix_sessions', { action: 'message', session_id: 'ses_2', text: '- first point' })

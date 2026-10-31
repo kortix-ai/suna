@@ -21,6 +21,15 @@ import type { KortixCardRow, KortixToolError } from '@kortix/api-contract/kortix
 import { adminHref, capRows, cliArgProblem, cliError, cliJson, cliRun, fail, ok, parseJson, runKortix, type PlatformToolContext } from './platform'
 
 const TOOL = 'kortix_schedules' as const
+/**
+ * The ids the API issues for runtime rows: `reminder.<12 hex>` (a loop of a
+ * session, `session-reminders.ts`), `trigger.<12 hex>` (`runtime-triggers.ts`),
+ * `automation.<12 hex>` (a runtime trigger from before the rename). The same
+ * shape as the CLI's `RUNTIME_ID`.
+ */
+const RUNTIME_ID = /^(?:reminder|trigger|automation)\.[0-9a-f]{12}$/
+/** A kortix.yaml trigger's slug, the manifest grammar (`@kortix/manifest-schema` `SLUG_RE`). */
+const TRIGGER_SLUG = /^[a-z0-9][a-z0-9_-]{0,127}$/
 const ACTIONS = ['follow_up', 'wake_on', 'events', 'list', 'create', 'pause', 'resume', 'remove', 'delete', 'run_now'] as const
 const WAKE_ON = ['cr_merged', 'webhook', 'connector_event', 'app_event'] as const
 
@@ -431,7 +440,7 @@ async function change(action: string, verb: keyof typeof VERB, id: string, conte
   // (`trigger.<hex>`) as it is; a kortix.yaml trigger needs `--apply` to change the live project.
   const argv = id.startsWith('reminder.')
     ? ['loops', cli.loops, id]
-    : ['triggers', cli.triggers, id, ...(verb === 'remove' && !id.startsWith('trigger.') ? ['--apply'] : [])]
+    : ['triggers', cli.triggers, id, ...(verb === 'remove' && !RUNTIME_ID.test(id) ? ['--apply'] : [])]
   const done = await cliRun(argv, context)
   if ('error' in done) return fail(TOOL, action, `Could not ${action.replace('_', ' ')} it`, done.error, context)
   return ok(TOOL, action, { title: cli.title, subtitle: id, links: [{ label: 'Triggers', href: adminHref(context.env, 'triggers') }] }, { id })
@@ -485,9 +494,18 @@ export default {
     const verb = (action === 'delete' ? 'remove' : action) as keyof typeof VERB
     const id = typeof args.id === 'string' ? args.id.trim() : ''
     if (!id) return fail(TOOL, action, 'Which one?', { kind: 'invalid', message: 'Pass id, as list shows it.' }, context)
-    // An option-shaped id would leave pause/resume with no trigger, and the CLI would flip the project-wide switch.
-    const badId = cliArgProblem('id', id)
-    if (badId) return fail(TOOL, action, 'Which one?', { kind: 'invalid', message: badId }, context)
+    // Exactly the shapes `list` prints. The id goes into the CLI's request path, where `/` or `..` would address
+    // another endpoint (CWE-22), and an option-shaped one would leave pause/resume with no trigger, so the CLI
+    // would flip the project-wide switch (CWE-88). Neither shape can be either.
+    if (!RUNTIME_ID.test(id) && !TRIGGER_SLUG.test(id)) {
+      return fail(
+        TOOL,
+        action,
+        'Which one?',
+        { kind: 'invalid', message: '`id` must be an id exactly as list shows it: reminder.<12 hex>, trigger.<12 hex>, or a schedule slug (lower-case letters, digits, "-" and "_").' },
+        context,
+      )
+    }
     return change(action, verb, id, context)
   },
 }
