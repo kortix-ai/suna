@@ -70,11 +70,14 @@ describe('stylesheet coverage', () => {
   });
 
   test('the committed styles.css matches src (run: pnpm --filter @kortix/ui build:styles)', () => {
+    const stylesheet = join(PKG, 'dist', 'styles.css');
+    const before = readFileSync(stylesheet, 'utf8');
     const run = spawnSync('node', [join(PKG, 'scripts', 'build-styles.mjs'), '--check'], {
       cwd: PKG,
       encoding: 'utf8',
     });
     if (run.status !== 0) throw new Error(`${run.stdout}${run.stderr}`);
     expect(run.stdout).toContain('build-styles: no drift');
+    expect(readFileSync(stylesheet, 'utf8')).toBe(before);
   });
 });
