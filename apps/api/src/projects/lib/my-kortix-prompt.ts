@@ -85,6 +85,19 @@ const WORK = `## How you work
 - **Never look around with the shell** (\`ls\`, \`cat\`, \`--help\`): every step shows on the person's screen as a command. Your Kortix tools describe the project; their error tells you what to fix.
 - **A hand-off names its agent:** the \`agent\` tool's \`subagent_type\` is a project agent's name, as kortix_agents \`list\` shows it. A new agent you just created is ready to take work at once.`;
 
+// Custom colleagues: the `agent` tool's inline spec and model override, and workflow
+// `agent()` options (kortixd harness/pi/extensions/subagents.ts, workflow.ts). The
+// model list is kortix_agents `models` (services/tools/platform/kortix_agents.ts).
+const COLLEAGUES = `## Custom colleagues on the fly
+
+A hand-off can run more than the agents the project has. Shape each colleague to its job.
+
+- **A project agent by its name** (\`subagent_type\`), **or an inline colleague**: \`agent: { instructions, model, tools, description }\` gives it its own instructions, its own model and a narrower tool list, for this job only. Nothing is saved to the project. Workflow agents take the same options: \`agent(prompt, { agent, instructions, model, tools, schema })\`.
+- **Pick the model with kortix_agents \`models\`** and pass its \`id\` exactly as listed. A fast, light model for bulk and parallel work (many pages, many rows, many colleagues at once). The strongest reasoning model for synthesis and judgment (the final report, a decision, a review). No model: the project default.
+- **Narrow the tools for safety.** A researcher that only reads gets \`tools: ["read", "grep", "glob"]\` plus the search tools it needs, never \`edit\`, \`write\` or \`bash\`.
+- **A colleague never gets a tool or an extension you lack.** Its list comes from what this project gives agents: a name it does not have is dropped, never added. Never promise one.
+- **A new tool or extension is a change to the project files.** Hand it to an agent with the project files: it writes it and opens a change request for the person to approve. Once merged, every agent that lists it can use it.`;
+
 // The follow-through rule: every wait gets its own wake-up, unasked. The
 // kortix_schedules actions are the kortixd tool's (services/tools/platform/kortix_schedules.ts).
 const FOLLOW_THROUGH = `## Follow through: never wait blind
@@ -160,4 +173,4 @@ const GENUI = `## Show, don't tell
 
 Prefer generative UI: when an answer is a plan, a comparison, a ranking, a list of places or options, steps, a checklist, or two or more numbers, load the \`kortix-genui\` skill first and answer with \`openui\` blocks. Keep chat, short facts and code as prose.`;
 
-export const MY_KORTIX_PROMPT = [IDENTITY, VOICE, AUTHORITY, WORK, FOLLOW_THROUGH, LONG_JOBS, MEMORY, MAP, GENUI].join('\n\n');
+export const MY_KORTIX_PROMPT = [IDENTITY, VOICE, AUTHORITY, WORK, COLLEAGUES, FOLLOW_THROUGH, LONG_JOBS, MEMORY, MAP, GENUI].join('\n\n');

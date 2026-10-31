@@ -1367,7 +1367,7 @@ My Kortix, the built-in agent, has nine more tools. Eight run the in-sandbox `ko
 
 | Tool | Actions | CLI it runs |
 | --- | --- | --- |
-| `kortix_agents` | `list`, `get`, `create`, `update`, `set_access` | `kortix agents ls`, `agents config`, `agents scope` |
+| `kortix_agents` | `list`, `models`, `get`, `create`, `update`, `set_access` | `kortix agents ls`, `models ls`, `agents config`, `agents scope` |
 | `kortix_sessions` | `list`, `read`, `message`, `stop` | `kortix sessions ls`, `sessions log`, `sessions chat --queue`, `sessions stop` |
 | `kortix_schedules` | `follow_up`, `wake_on`, `events`, `list`, `create`, `pause`, `resume`, `remove` (alias `delete`), `run_now` | `kortix loop`, `triggers add --on â€¦`, `triggers events --connector`, `triggers ls` and `loops ls`, `triggers add --runtime`, `triggers pause/resume/rm/run` |
 | `kortix_connectors` | `list`, `find`, `add`, `connect` | `kortix connectors ls`, `connectors catalog`, `connectors catalog install`, `connectors connect` |
@@ -1504,6 +1504,20 @@ The worked example is in the `kortix-system` skill, `references/scheduling.md` â
 - **Continue a child.** `agent` with a `task_id` sends a finished child a follow-up in its same session. `agent` with the `name` of a finished child (idle, completed or stopped) does the same: no new session starts, and the result says `This continued your earlier subagent "<name>" in its same session` (tool metadata `continued: true`). A `name` whose child still works, or waits for its person, is refused. A failed child frees its name. A message to a finished child wakes it in its same session, and a background child or teammate then sends its next report by itself.
 - **Stop a child.** `task_stop` with the child's `task_id` or name stops its session.
 - **Depth.** A separate child may start its own separate children down to depth 2 (`KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH`). One session runs at most 4 separate children at the same time (`KORTIX_PI_CLOUD_SUBAGENTS_MAX`).
+
+#### Custom subagents
+
+A session shapes each child to its job in the call. Nothing is saved to the project.
+
+| Call | Options |
+| --- | --- |
+| `agent` tool | `subagent_type`: a project agent's name. Or `agent: { instructions, model?, tools?, description? }`: an inline agent for this call only; `subagent_type` is then ignored. A top-level `model` runs the named agent on another model. |
+| workflow `agent(prompt, opts)` | `agent` (a project agent's name), `instructions`, `model`, `tools` and `schema`, plus `label`, `phase`, `strict` and `stallMs`. See [Workflows](#workflows). |
+
+- **Model.** A `provider/model` ref. A gateway model is `kortix/<id>`; a Claude subscription model is `claude-agent/<id>`. My Kortix lists the project's models with `kortix_agents` `models`: each row has the exact `id`, the name, `fast` (from the model name), `reasoning` and `images` when they apply, and the context size. Another agent reads the same catalog with `kortix models ls --json`, by wire id: prefix a gateway id with `kortix/`. With no `model`, the child runs on its agent's model, else on the caller's. Use a fast model for bulk and parallel work and the strongest reasoning model for synthesis and judgment.
+- **Tools.** `tools` is a list of tool names. The child gets the names on that list that the caller also has (`childToolAllowlist`): a name the caller lacks is dropped, never added. No `tools`: the child keeps its agent's tools, inside the caller's. A read-only researcher gets `["read", "grep", "glob"]`, without `edit`, `write` or `bash`.
+- **Extensions.** The inline spec has no extensions option. A child has the extensions that its agent's grant gives it.
+- **A new tool or extension** is a change to the project files: `tools/<name>.ts`, or `extensions/<name>.ts` or a pinned npm package, registered in `kortix.yaml` (see [tools entries](#tools-entries) and [extensions entries](#extensions-entries)). An agent with the repository writes it and opens a change request. After the merge, every agent whose grant lists it can use it. My Kortix has no checkout: it hands this work to such an agent.
 
 #### Messages between sessions
 
