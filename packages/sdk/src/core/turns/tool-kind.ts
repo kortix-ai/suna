@@ -119,7 +119,7 @@ kind('delegate', [
 ]);
 kind('todowrite', ['todowrite', 'todo_write', 'todoread']);
 kind('question', ['question', 'ask']);
-kind('memory', ['memory', 'memory_search', 'mem_search', 'ltm_search', 'get_mem']);
+kind('memory', ['memory', 'kortix_memory', 'memory_search', 'mem_search', 'ltm_search', 'get_mem']);
 kind('connectors', [
   'connector_get',
   'connector_list',
