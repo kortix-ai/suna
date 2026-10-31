@@ -10,9 +10,9 @@
  * removed here.
  */
 import { expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 
 const API_ROOT = new URL('../..', import.meta.url).pathname;
 
@@ -28,9 +28,24 @@ const KNOWN_LEAKS: Record<string, string> = {
   'src/openapi/index.ts': 'domain app.ts modules that services import build their Hono app with it',
 };
 
+/**
+ * Registries a job fires into at runtime. A module registers its delivery at
+ * import, so a process that never imports it drops the notice silently (a
+ * reaped box's turn-lost notice never reaches the parent session).
+ */
+const NOTICE_REGISTRIES = /^(?:registerSessionFailureNotifier|registerTurnLostNotifier|registerSessionPort)\(/m;
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir).flatMap((entry) => {
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) return entry === '__tests__' ? [] : sourceFiles(path);
+    return entry.endsWith('.ts') && !entry.endsWith('.test.ts') ? [path] : [];
+  });
+}
+
 const HTTP_LAYER = /^src\/(?:middleware\/|openapi\/|app\.ts$|index\.ts$|http-middleware\.ts$|[^/]+\/index\.ts$)|\/routes\/|-routes\.ts$/;
 
-test('the worker entry loads no HTTP-layer module beyond the known leaks', () => {
+test('the worker entry loads every notice registration and no HTTP-layer module beyond the known leaks', () => {
   const out = mkdtempSync(join(tmpdir(), 'worker-imports-'));
   try {
     const build = Bun.spawnSync(
@@ -47,6 +62,12 @@ test('the worker entry loads no HTTP-layer module beyond the known leaks', () =>
     // The scheduled jobs and their runtime are in the graph.
     expect(inputs).toContain('src/worker/jobs/index.ts');
     expect(inputs).toContain('src/worker/runtime/jobs.ts');
+    // Every module that registers a notice delivery at import is loaded.
+    const registrations = sourceFiles(join(API_ROOT, 'src'))
+      .filter((file) => NOTICE_REGISTRIES.test(readFileSync(file, 'utf8')))
+      .map((file) => relative(API_ROOT, file));
+    expect(registrations.length).toBeGreaterThan(0);
+    expect(registrations.filter((file) => !inputs.includes(file))).toEqual([]);
   } finally {
     rmSync(out, { recursive: true, force: true });
   }

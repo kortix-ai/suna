@@ -10,7 +10,7 @@ const events: string[] = [];
 
 function job(name: string, drainMs = 0) {
   return {
-    ticks: [name],
+    ticks: { [name]: 10 * 60_000 },
     start: () => void events.push(`start ${name}`),
     stop: () => {
       events.push(`stop ${name}`);

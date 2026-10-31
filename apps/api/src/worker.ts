@@ -4,6 +4,14 @@ import './environment-secret';
 // ─── Observability (must follow environment hydration) ───────────────────────
 import './lib/sentry';
 
+// Notices a job can fire register their delivery at import. A failed box start
+// tells the session's chat (channels/core/session-notice.ts, Telegram's port);
+// the API process imports these through its routes, the worker here. The
+// subagent notices load with projects/surface.ts.
+// unit-worker-entry-imports.test.ts fails when a registration is missing.
+import './channels/core/session-notice';
+import './channels/telegram/session';
+
 /**
  * The worker entry point: `bun run src/worker.ts`.
  *
@@ -25,9 +33,12 @@ import { ensureSchema } from './ensure-schema';
 import { logger } from './lib/logger';
 import { eventLoopLagMs } from './replica/event-loop-lag';
 import { captureServer } from './shared/drain';
+import { runsSingletonWorkers } from './shared/leader-election';
 
-if (!config.KORTIX_WORKERS_ENABLED) {
-  logger.error('[worker] KORTIX_WORKERS_ENABLED=false: a worker that runs no jobs must not start');
+// A worker that would never join the election must not report ready: the
+// deploy would then move the API to `web` and leave no process to run the jobs.
+if (!config.KORTIX_WORKERS_ENABLED || !runsSingletonWorkers()) {
+  logger.error('[worker] background workers are disabled (KORTIX_WORKERS_ENABLED or the KORTIX_*_ENABLED job flags): a worker that runs no jobs must not start');
   await logger.flush();
   process.exit(1);
 }

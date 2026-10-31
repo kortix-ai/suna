@@ -60,11 +60,13 @@ const WORKERS: Record<string, string> = {
   'billing-trial-expiry': 'worker/jobs/billing-rotation.ts',
   'billing-yearly-rotation': 'worker/jobs/billing-rotation.ts',
   'billing-free-tier-rotation': 'worker/jobs/billing-rotation.ts',
+  'legal-subprocessor-notices': 'worker/jobs/billing-rotation.ts',
   'account-deletion': 'worker/jobs/account-deletion.ts',
   'slack-turn-gc': 'worker/jobs/slack-turn-gc.ts',
   'teams-turn-gc': 'worker/jobs/teams-turn-gc.ts',
   'job-queue': 'replica/job-queue.ts',
   'trigger-event-poll': 'replica/trigger-event-poll.ts',
+  'capture-store-bucket': 'worker/jobs/capture.ts',
   'capture-index-reader': 'worker/jobs/capture.ts',
   'capture-maintenance': 'worker/jobs/capture.ts',
   'capture-events-reader': 'worker/jobs/capture.ts',
@@ -161,13 +163,21 @@ function processStarts(): string[] {
 }
 
 // Read from the source: importing the registry would load every job module and the config.
-const registryTicks = [...read('worker/jobs/index.ts').matchAll(/ticks: \[([^\]]*)\]/g)].flatMap((m) =>
-  [...m[1]!.matchAll(/'([^']+)'/g)].map((name) => name[1]!),
+const registryTicks = [...read('worker/jobs/index.ts').matchAll(/ticks: \{([^}]*)\}/g)].flatMap((m) =>
+  [...m[1]!.matchAll(/'([^']+)':/g)].map((name) => name[1]!),
 );
 
 describe('background jobs run as named workers', () => {
   test.each(Object.entries(WORKERS))('%s wraps its tick in runWorkerTick', (name, file) => {
     expect(read(file)).toContain(`runWorkerTick('${name}'`);
+  });
+
+  test('every runWorkerTick name in apps/api/src is a registered worker', () => {
+    const names = sourceFiles(SRC).flatMap((file) =>
+      [...read(file).matchAll(/runWorkerTick\('([a-z][a-z0-9-]*)'/g)].map((m) => m[1]!),
+    );
+    expect(names.length).toBeGreaterThan(0);
+    expect([...new Set(names)].filter((name) => !(name in WORKERS))).toEqual([]);
   });
 
   test('every setInterval in apps/api/src is a registered worker or a classified timer', () => {

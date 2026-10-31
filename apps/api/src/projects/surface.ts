@@ -7,6 +7,12 @@
  * route registrations that index.ts loads.
  */
 
+// The subagent notices register their delivery at import (a reaped or failed
+// box tells the parent session). Every process that runs projects code loads
+// this surface, the worker included, so the registration lives here instead
+// of only behind the routes that also import the module.
+import './subagent-notice';
+
 // Git-proxy public API (consumed by ../git-proxy).
 export {
   withProjectGitAuth,
