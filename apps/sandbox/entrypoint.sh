@@ -35,8 +35,8 @@ export PATH
 DESKTOP_PORT=6901
 DESKTOP_PID=/tmp/kortix-desktop.pid
 DESKTOP_LOG=/tmp/kortix-desktop.log
-# The desktop's session bus, at a fixed address the agent's shell gets too:
-# agent-desktop finds the accessibility bus through it.
+# The desktop's session bus, at a fixed address the agent's shell gets too,
+# so apps the agent opens on the desktop join the desktop's session.
 DESKTOP_BUS=unix:path=/tmp/kortix-desktop-xdg/bus
 desktop() {
   # agent-browser keeps its daemon socket in $XDG_RUNTIME_DIR when that is
