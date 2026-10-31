@@ -35,16 +35,22 @@ export PATH
 DESKTOP_PORT=6901
 DESKTOP_PID=/tmp/kortix-desktop.pid
 DESKTOP_LOG=/tmp/kortix-desktop.log
+# The desktop's session bus, at a fixed address the agent's shell gets too:
+# agent-desktop finds the accessibility bus through it.
+DESKTOP_BUS=unix:path=/tmp/kortix-desktop-xdg/bus
 desktop() {
   # agent-browser keeps its daemon socket in $XDG_RUNTIME_DIR when that is
   # set. Pin it to the agent's default, ~/.agent-browser, or the dock would
   # reach a second daemon and a second browser.
   export DISPLAY="${DISPLAY:-:1}" XDG_RUNTIME_DIR="/tmp/kortix-desktop-xdg" \
+    DBUS_SESSION_BUS_ADDRESS="${DESKTOP_BUS}" \
     AGENT_BROWSER_SOCKET_DIR="${AGENT_BROWSER_SOCKET_DIR:-${HOME}/.agent-browser}"
   case "${1:-status}" in
     run)
       echo $$ > "${DESKTOP_PID}"
       mkdir -p -m 700 "${XDG_RUNTIME_DIR}"
+      rm -f "${XDG_RUNTIME_DIR}/bus"
+      dbus-daemon --session --address="${DBUS_SESSION_BUS_ADDRESS}" --fork --nopidfile
       # The start size is the most voxl can grow to; it shrinks the desktop to
       # each viewer's window (--enable-resize).
       Xvfb "${DISPLAY}" -screen 0 2560x1600x24 -shmem -nolisten tcp &
@@ -54,7 +60,7 @@ desktop() {
       pulseaudio --start --exit-idle-time=-1 \
         && pactl load-module module-null-sink sink_name=output >/dev/null \
         && pactl set-default-sink output || true
-      dbus-launch --exit-with-session startxfce4 &
+      startxfce4 &
       # ponytail: voxl restarts on exit; Xvfb or XFCE dying needs `kortix-desktop stop && kortix-desktop start`.
       while :; do
         voxl --port="${DESKTOP_PORT}" --enable-resize=true --files-root="${HOME}" || true
@@ -551,7 +557,7 @@ fi
 # browser instead of launching a second one (`kortix-desktop browser`). That
 # browser fills the screen and opens no start tab of its own.
 if [ -e /usr/local/bin/kortix-desktop ]; then
-  export DISPLAY=:1 AGENT_BROWSER_HEADED=true \
+  export DISPLAY=:1 AGENT_BROWSER_HEADED=true DBUS_SESSION_BUS_ADDRESS="${DESKTOP_BUS}" \
     AGENT_BROWSER_ARGS="${AGENT_BROWSER_ARGS:+${AGENT_BROWSER_ARGS},}--start-maximized,--no-startup-window"
   ( /usr/local/bin/kortix-desktop start || true ) 9>&- >&2 &
 fi
