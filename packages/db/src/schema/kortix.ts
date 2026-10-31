@@ -8909,6 +8909,16 @@ export const claudeSubscriptionLoginFlows = kortixSchema.table('claude_subscript
   /** The pasted code, encrypted; cleared when the owner reads it. */
   codeEnc: text('code_enc'),
   error: text('error'),
+  /** The project the sign-in adds a Claude account to. Null on a flow from before named accounts. */
+  projectId: uuid('project_id'),
+  /** The new account's label; null when the flow reconnects `resource_id`. */
+  resourceLabel: text('resource_label'),
+  /** The new account's id, minted at start so a repeated completion writes one row; or the account a reconnect refreshes. */
+  resourceId: uuid('resource_id'),
+  /** True when the flow refreshes the login of the existing account `resource_id`. */
+  reconnect: boolean('reconnect').notNull().default(false),
+  /** Who may use the new account (`{mode:'private'|'project'|'members', …}`); null = private. */
+  sharing: jsonb('sharing'),
   /** The owner's last poll: a complete call fails fast when the owner stopped. */
   ownerSeenAt: timestamp('owner_seen_at', { withTimezone: true }).defaultNow().notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),

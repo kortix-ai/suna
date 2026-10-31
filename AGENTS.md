@@ -448,10 +448,11 @@ these as standing rules whenever you touch the data/runtime layer:
   `runtime:` in `kortix.yaml` selects nothing. OpenCode code that remains in
   apps/api, the SDK and the clients serves old transcripts and old daemons and
   carries `@deprecated`: never call it from new code and never add a feature to
-  it. pi calls models only through the LLM gateway, except Claude
-  subscription models (`claude-agent/<id>`): those run each model step through
-  the unmodified Claude Code program with the session user's own Claude login
-  (`apps/kortix-sandbox-agent-server/src/harness/pi/claude/`). pi serves
+  it. pi calls models only through the LLM gateway. Claude subscription
+  models (`claude-agent/<id>`) run each model step through the unmodified
+  Claude Code program (`apps/kortix-sandbox-agent-server/src/harness/pi/claude/`),
+  whose calls go to the gateway's Claude Code passthrough: the gateway adds the
+  project's Claude account and no Claude token enters the sandbox. pi serves
   the daemon routes (`/kortix/runtime/*`), the transcript
   (`kortix.transcript.v1`, `packages/api-contract/src/transcript.ts`) and the
   events. New code reads those, never an OpenCode route, type, file or
@@ -762,6 +763,13 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   rules pending a dedicated audit — expected until that audit lands.
 
 ### Frontend design standard — Jay/Kortix bar
+
+Before creating or modifying any internal app or Kortix App UI, load and apply
+`packages/starter/templates/managed/skills/kortix-design/SKILL.md`. In a Kortix
+session, load the managed `kortix-design` skill instead. This includes delegated
+app builders: put this requirement in their brief before UI work starts.
+Preserve user-requested styling and the existing `kortix-ui`, brand and
+design-system rules below.
 
 #### Canonical design references
 

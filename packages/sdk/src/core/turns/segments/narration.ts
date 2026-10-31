@@ -281,7 +281,7 @@ const PLATFORM_DENIED_VERB: Record<string, string> = { send_message: 'Sending', 
 const PROJECT_OBJECT = { read: 'your project', change: 'your project' };
 
 /** The actions that only read. Every other action changes something; an unknown one is never guessed a read. */
-const PLATFORM_READ_ACTIONS = new Set(['', 'list', 'get', 'read', 'find', 'show', 'search', 'check', 'status', 'pending', 'who']);
+const PLATFORM_READ_ACTIONS = new Set(['', 'list', 'get', 'read', 'find', 'show', 'view', 'events', 'search', 'check', 'status', 'pending', 'who']);
 
 function platformChanges(part: ToolPart): boolean {
   const tool = normalizeName(part.tool);

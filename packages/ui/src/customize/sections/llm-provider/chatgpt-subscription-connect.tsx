@@ -8,9 +8,11 @@ import { errorToast, successToast } from '../../../primitives/toast';
 import { ProviderLogo } from '../../../internal/lib/provider-branding';
 import {
   completeClaudeSubscriptionLogin,
+  deleteAccountSecretResource,
   deleteProjectProviderOAuth,
-  disconnectClaudeSubscription,
   getClaudeSubscription,
+  getProjectDetail,
+  listAccountSecretResources,
   listProjectProviderOAuth,
   listProjectSecrets,
   pollProjectProviderOAuth,
@@ -24,6 +26,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '../../../i18n';
+import { useUiViewer } from '../../../providers/ui-provider';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import {
@@ -52,7 +55,7 @@ const SUBSCRIPTIONS: Record<SubscriptionKind, { oauth: string; providerId: strin
   claude: { oauth: 'claude', providerId: 'claude-agent', logo: 'anthropic', logoName: 'Anthropic' },
 };
 
-/** The caller's own Claude login (`GET /projects/:id/claude-subscription`). */
+/** Whether the caller can use a Claude account in the project (`GET /projects/:id/claude-subscription`). */
 export const claudeSubscriptionKey = (projectId: string) => ['claude-subscription', projectId] as const;
 
 const providerLoginsKey = (projectId: string) => ['project-provider-oauth', projectId] as const;
@@ -74,6 +77,7 @@ export function useSubscriptionSignIn({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tPooled = useTranslations('pooledSecrets');
   const queryClient = useQueryClient();
+  const viewer = useUiViewer();
   const subscription = SUBSCRIPTIONS[kind];
   const chatgpt = kind === 'chatgpt';
   const claude = kind === 'claude';
@@ -144,6 +148,7 @@ export function useSubscriptionSignIn({
     setClaudeFlow(null);
     successToast(copy.connectedToast);
     await queryClient.invalidateQueries({ queryKey: claudeSubscriptionKey(projectId) });
+    void queryClient.invalidateQueries({ queryKey: ['account-secret-resources'] });
     refreshProjectProviderState(queryClient, projectId);
     onConnected(subscription.providerId);
   }, [copy.connectedToast, onConnected, projectId, queryClient, subscription.providerId]);
@@ -227,7 +232,7 @@ export function useSubscriptionSignIn({
     ...contract('config'),
     enabled: !claude,
   });
-  // A Claude login is the member's own, not a project secret.
+  // A Claude account is an account secret resource: own or shared, the server counts the usable ones.
   const claudeQuery = useQuery({
     queryKey: claudeSubscriptionKey(projectId),
     queryFn: () => getClaudeSubscription(projectId),
@@ -242,7 +247,7 @@ export function useSubscriptionSignIn({
     enabled: !chatgpt && !claude,
   });
   const connected = useMemo(() => {
-    if (claude) return claudeQuery.data?.connected === true && claudeQuery.data.usable;
+    if (claude) return claudeQuery.data?.connected === true;
     if (!chatgpt) return (loginsQuery.data ?? []).some((login) => login.provider_id === subscription.oauth);
     const data = secretsQuery.data;
     const items = Array.isArray(data) ? data : (data?.items ?? []);
@@ -254,14 +259,24 @@ export function useSubscriptionSignIn({
     // the credential, audits it, and refreshes the model catalog. Nothing in
     // the product called it.
     mutationFn: async () => {
-      if (claude) await disconnectClaudeSubscription(projectId);
-      else await deleteProjectProviderOAuth(projectId, subscription.oauth);
+      if (claude) {
+        // The caller's own Claude accounts in this project; one shared by someone else stays theirs to remove.
+        const accountId = (await getProjectDetail(projectId)).project?.account_id;
+        if (!accountId) throw new Error(tClaude('startError'));
+        const { secrets } = await listAccountSecretResources(accountId, projectId);
+        for (const secret of secrets.filter((item) => item.provider_id === subscription.providerId && item.created_by === viewer?.id)) {
+          await deleteAccountSecretResource(accountId, secret.secret_id);
+        }
+      } else await deleteProjectProviderOAuth(projectId, subscription.oauth);
     },
     // Returning the promise keeps the button in its pending state until the
     // cache says "disconnected", so the card never shows a live Disconnect
     // button over a credential the server already removed.
     onSuccess: async () => {
-      if (claude) await queryClient.invalidateQueries({ queryKey: claudeSubscriptionKey(projectId) });
+      if (claude) {
+        await queryClient.invalidateQueries({ queryKey: claudeSubscriptionKey(projectId) });
+        void queryClient.invalidateQueries({ queryKey: ['account-secret-resources'] });
+      }
       else if (chatgpt) await forgetSubscriptionCredentials(queryClient, projectId);
       else {
         queryClient.setQueryData(providerLoginsKey(projectId), (logins: Awaited<ReturnType<typeof listProjectProviderOAuth>> | undefined) =>

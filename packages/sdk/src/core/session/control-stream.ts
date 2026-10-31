@@ -135,7 +135,11 @@ interface SharedStream {
   lastStatus: SessionRuntimeStatus | null;
   lastHealth: Record<string, unknown> | null;
   runtimeRefs: number;
-  /** The connection's channels, so a runtime subscriber can upgrade it. */
+  /**
+   * The connection's channels, so a runtime subscriber can upgrade it. Set
+   * when an attempt starts. A runtime subscriber that leaves changes nothing
+   * until the next attempt: the open connection keeps every channel.
+   */
   connectedWithRuntime: boolean;
   /** Subscribers asking for `schema=v2`, and whether the connection carries it. */
   logRefs: number;
@@ -243,19 +247,26 @@ export function openSessionStream(options: SessionControlStreamOptions): Session
 export const openSessionControlStream = openSessionStream;
 
 /**
- * Is this session's stream connected to a server that owns session state? The
- * SDK stands its polls down on this, never on a bare connection: an API from
- * before R5 serves the stream without the turn verdict, title or health frames.
+ * Does this session's stream carry the session state right now? The SDK stands
+ * its polls down on this, never on a bare connection:
+ * - An API from before R5 serves the stream without the turn verdict, title or
+ *   health frames: it never sends `kortix.control.session`.
+ * - A `channels=control` connection serves the queue only. `authoritative`
+ *   outlives the connection that proved it, so the channels count too.
  */
 export function sessionStreamConnected(projectId: string, sessionId: string): boolean {
   const shared = streams.get(`${projectId}/${sessionId}`);
-  return shared?.connected === true && shared.authoritative;
+  return shared?.connected === true && shared.authoritative && shared.connectedWithRuntime;
 }
 
-// replica-local: listeners in this client, told when any stream connects or drops.
+// replica-local: listeners in this client, told when any stream's answer can move.
 const connectionListeners = new Set<() => void>();
 
-/** Called whenever any session stream connects or drops. Returns the unsubscribe. */
+/**
+ * Called whenever the answer of `sessionStreamConnected` can move for any
+ * session: a stream connects, drops, proves the server owns session state, or
+ * changes channels. Returns the unsubscribe.
+ */
 export function subscribeSessionStreamConnections(listener: () => void): () => void {
   connectionListeners.add(listener);
   return () => {
@@ -305,7 +316,13 @@ async function run(options: SessionControlStreamOptions, shared: SharedStream): 
     arm();
     // Read at connect time: a runtime subscriber that joins later upgrades.
     const withRuntime = shared.runtimeRefs > 0;
+    const channelsChanged = shared.connectedWithRuntime !== withRuntime;
     shared.connectedWithRuntime = withRuntime;
+    // A change of channels keeps `connected`, so `setConnected` tells nobody.
+    // The answer of `sessionStreamConnected` moved all the same.
+    if (channelsChanged && shared.connected) {
+      for (const listener of [...connectionListeners]) safely(listener);
+    }
     // The runtime cursor carries across a dialect switch. An API that ignores `schema` resumes
     // the same log with nothing lost; one that serves the v2 log under its own epoch answers the
     // stale cursor with `kortix.resync`, and the view re-reads (`onRuntimeResync`).

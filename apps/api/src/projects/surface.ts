@@ -176,3 +176,5 @@ export { resolveUserIdentities } from './lib/user-identity';
 export { readPublicResponse } from './lib/public-response';
 // Shutdown: the Claude sign-ins this task runs (bootstrap.ts).
 export { drainClaudeLogins } from './claude-subscription/flows';
+// The turn gate for Claude subscription models (sandbox-proxy/forward/turn-start.ts).
+export { missingClaudeSubscription, sessionModelPin } from './claude-subscription/gate';

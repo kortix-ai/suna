@@ -1298,12 +1298,14 @@ interface KortixPlatformConfig {
 
 `onNotify` receives the session events a host shows as notifications:
 `task-complete` (`sessionTitle`), `session-error` (`errorTitle`), `question`
-(`questionText`) and `permission` (`toolName`), each with `sessionId`.
+(`questionText`) and `permission` (`toolName`), each with `sessionId`, and with
+`projectId` when the SDK knows the session's project. A host uses that
+`projectId`, not its current route: the route may already show another project.
 `useSession` raises them from its event stream. When its view unmounts with a
-turn still running, a watch follows the turn on the session's control stream
-(`kortix.control.turn`; `GET …/turn` while the stream is down) and raises
-`task-complete` or `session-error` itself, with `projectId`; `task-complete`
-also carries `watchedSinceMs`, the watch's start in `Date.now()`. Mounting the
+turn still running, a watch reads `GET …/turn` until the turn ends and raises
+`task-complete` or `session-error` itself. A browser throttles the timers of a
+hidden window, so the end can arrive late there. `task-complete` also carries
+`watchedSinceMs`, the watch's start in `Date.now()`. Mounting the
 view again ends the watch. Without `onNotify`, no watch runs. See
 `src/core/session/turn-end-watch.ts`.
 

@@ -2,6 +2,7 @@ import {
   gatewayErrorResponse, gatewayOverloadedResponse, readAdmittedBody,
   releaseWhenResponseEnds, requestTooLargeResponse, type InflightBudget,
 } from '@kortix/llm-gateway';
+import type { ClaudeCodeRequest } from '@kortix/llm-gateway';
 import type { Hono } from 'hono';
 import { cloudflareSafe, messagesAuthorization, perRequestCapBytes } from './server';
 
@@ -13,6 +14,7 @@ type Gateway = {
   responses: (request: InferenceRequest) => Promise<Response>;
   listModels: (authorization: string | undefined, options: { managedOnly: boolean; scope?: 'picker' }) => Promise<Response>;
   images: (request: InferenceRequest & { operation: 'generations' | 'edits' }) => Promise<Response>;
+  claudeCode: (request: ClaudeCodeRequest) => Promise<Response>;
 };
 
 function failure(protocol: Protocol, requestId: string): Response {
@@ -81,6 +83,41 @@ function inference(
 }
 
 /**
+ * Claude Code's own Anthropic requests (`{prefix}claude-code/v1/messages`,
+ * `…/v1/messages/count_tokens`, `…/api/hello`), passed through on a stored
+ * Claude account. The body is admitted against the same in-flight budget as
+ * every inference request and forwarded byte for byte.
+ */
+function claudeCode(gateway: Gateway, inflight: InflightBudget, recordOutcome: (status: number) => void) {
+  return async (c: { req: { raw: Request; path: string } }) => {
+    const raw = c.req.raw;
+    const marker = '/claude-code';
+    const path = c.req.path.slice(c.req.path.indexOf(marker) + marker.length) || '/';
+    const search = new URL(raw.url).search;
+    if (raw.method !== 'POST') return gateway.claudeCode({ method: raw.method, path, search, headers: raw.headers, body: null });
+    const body = await readAdmittedBody(raw, perRequestCapBytes, inflight);
+    if (!body.ok) {
+      const status = body.reason === 'too_large' ? 413 : 503;
+      if (body.reason !== 'client_aborted') recordOutcome(status);
+      return status === 413 ? requestTooLargeResponse() : gatewayOverloadedResponse(body.retryAfterSeconds ?? 1);
+    }
+    try {
+      const bytes = new TextEncoder().encode(body.body);
+      body.body = '';
+      const res = await gateway.claudeCode({ method: 'POST', path, search, headers: raw.headers, body: bytes, signal: raw.signal });
+      recordOutcome(res.status);
+      return releaseWhenResponseEnds(res, body.release);
+    } catch (error) {
+      body.release();
+      console.error('[gateway] claude-code request failed', error);
+      recordOutcome(503);
+      return new Response(JSON.stringify({ type: 'error', error: { type: 'api_error', message: 'Gateway unavailable' } }),
+        { status: 503, headers: { 'content-type': 'application/json' } });
+    }
+  };
+}
+
+/**
  * Every inference route under four alias prefixes. The API reverse proxy
  * exposes `/v1/llm-gateway` as the OpenAI base URL and strips that prefix, so
  * OpenAI-compatible clients reach this service at `/chat/completions`.
@@ -102,7 +139,9 @@ export function registerRoutes(app: Hono, gateway: Gateway, inflight: InflightBu
     inference(inflight, recordOutcome, 'images', (request) => gateway.images({ ...request, operation }));
   const generations = images('generations');
   const edits = images('edits');
+  const claude = claudeCode(gateway, inflight, recordOutcome);
   for (const prefix of ['/', '/v1/', '/v1/llm/', '/v1/openai/']) {
+    app.all(prefix + 'claude-code/*', claude);
     app.post(prefix + 'chat/completions', chat);
     app.post(prefix + 'messages', messages);
     app.post(prefix + 'responses', responses);
