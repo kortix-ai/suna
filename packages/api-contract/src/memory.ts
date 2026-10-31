@@ -370,7 +370,14 @@ export const MyKortixMemorySaveInputSchema = z
   .strict();
 export type MyKortixMemorySaveInput = z.infer<typeof MyKortixMemorySaveInputSchema>;
 
-export const MyKortixMemorySaveResultSchema = z.object({ created: z.boolean(), page: MyKortixMemoryPageSchema }).strict();
+export const MyKortixMemorySaveResultSchema = z
+  .object({
+    created: z.boolean(),
+    /** True when the page already said exactly this: nothing was written. */
+    unchanged: z.literal(true).optional(),
+    page: MyKortixMemoryPageSchema,
+  })
+  .strict();
 export type MyKortixMemorySaveResult = z.infer<typeof MyKortixMemorySaveResultSchema>;
 
 export const MyKortixMemoryDeleteResultSchema = z.object({ ok: z.literal(true), name: z.string(), title: z.string() }).strict();
