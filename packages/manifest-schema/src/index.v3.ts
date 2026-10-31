@@ -1,17 +1,21 @@
 /**
- * `kortix_version` 3 — types + validators.
+ * The kortix.yaml body: types + validators.
  *
- * v3 is the canonical manifest: one YAML (split with `imports:`) defines every
- * agent. The project REGISTERS what exists (`skills`, `tools`, `commands`,
- * `extensions`, plus `connectors`, `apps`, `env` names, `sandbox` templates);
- * each AGENT is the only unit of behavior (prompt, model, `permission`) and
- * ENABLES registered things by name. Nothing is project-wide behavior, and
- * nothing harness-specific lives outside `extensions`. Unknown keys are errors.
+ * One YAML file (split with `imports:`) defines every agent. The project
+ * REGISTERS what exists (`skills`, `tools`, `commands`, `extensions`, plus
+ * `connectors`, `apps`, `env` names, `sandbox` templates); each AGENT is the
+ * only unit of behavior (prompt, model, `permission`) and ENABLES registered
+ * things by name. Nothing is project-wide behavior, and nothing
+ * harness-specific lives outside `extensions`. Unknown keys are errors
+ * (`unknownKey`: a running project ignores them, see `usableManifest`).
  *
- * Section validators shared with v1/v2 (project, env, sandbox, triggers,
- * connectors, apps, imports) come from `./index`; the agent-behavior field
- * rules come from `./index.v2`. Both are plain function declarations, so the
- * import cycle with `./index` is safe (see the header of `./index.v2.ts`).
+ * Shared section validators (project, env, sandbox, triggers, connectors,
+ * apps, imports) come from `./index`; the agent-behavior field rules and grant
+ * types from `./index.v2`. Both are plain function declarations, so the
+ * import cycle with `./index` is safe.
+ *
+ * The `V2`/`V3` suffixes on names here are history, not versions: the format
+ * has one shape.
  */
 
 import { validateAgentPolicySetRefs } from './policy-sets';
@@ -27,6 +31,7 @@ import {
   REGISTRY_NAME_MAX,
   REGISTRY_NAME_RE,
   RETIRED_KORTIX_TOOLS,
+  RETIRED_KORTIX_TOOL_HINTS,
   SLUG_RE,
   SPACE_HEADER_ITEMS,
   SPACE_SLUG_RE,
@@ -36,8 +41,11 @@ import {
 
 export { SPACE_HEADER_ITEMS, SPACE_TAB_TYPES };
 import {
+  didYouMean,
   isTable,
-  type ManifestFormat,
+  validateApprovals,
+  validatePolicyRules,
+  validatePolicySettings,
   type ManifestIssue,
   validateAppsV2,
   validateConnectors,
@@ -64,7 +72,7 @@ import {
   validateTriggerAgentRefsV2,
 } from './index.v2';
 import { safeAgentFile, safeRepoPath, safeToolFile } from './layout';
-import { BUILTIN_AGENT_KEYS, BUILTIN_AGENTS, type BuiltinAgentKey } from '@kortix/shared/meta-agent';
+import { BUILTIN_AGENT_KEYS, BUILTIN_AGENTS, LEGACY_MY_KORTIX_AGENT_NAME, type BuiltinAgentKey } from '@kortix/shared/my-kortix-agent';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -207,7 +215,8 @@ export interface SpaceV3 {
 
 /** The v3 manifest after `imports:` are merged. */
 export interface ManifestV3 {
-  kortix_version: 3;
+  /** Obsolete and ignored: the manifest has no version. */
+  kortix_version?: 3;
   default_agent: string;
   /** @deprecated Selects nothing: every new session runs pi. Remove the line. */
   runtime?: 'opencode' | 'pi';
@@ -282,7 +291,7 @@ const BEHAVIOR_KEYS_V3 = [
   'permission',
 ] as const;
 
-/** Every key an `agents.<name>` block may hold (kortix_version 3). The agent page maps each to a row. */
+/** Every key an `agents.<name>` block may hold. The agent page maps each to a row. */
 export const AGENT_BLOCK_KEYS_V3 = [
   ...BEHAVIOR_KEYS_V3,
   'prompt',
@@ -332,33 +341,33 @@ interface RegistryV3 {
   extensions: Set<string>;
 }
 
-/** Validate a v3 manifest body (after `kortix_version` and the format were checked). */
-export function validateManifestBodyV3(
-  parsed: Record<string, unknown>,
-  format: ManifestFormat,
-  issues: ManifestIssue[],
-): void {
+/** Validate the manifest body (after `kortix_version` was checked). */
+export function validateManifestBody(parsed: Record<string, unknown>, issues: ManifestIssue[]): void {
   for (const key of Object.keys(parsed)) {
     if ((TOP_LEVEL_KEYS_V3 as readonly string[]).includes(key)) continue;
     const replacement = RETIRED_TOP_LEVEL_KEYS_V3[key];
     issues.push({
       path: key,
       message: replacement
-        ? `"${key}" is not a kortix_version 3 key: ${replacement}`
-        : `unknown key "${key}". kortix_version 3 keys: ${TOP_LEVEL_KEYS_V3.join(', ')}.`,
+        ? `"${key}" is not a kortix.yaml key: ${replacement}`
+        : `unknown key "${key}".${didYouMean(key, TOP_LEVEL_KEYS_V3)} kortix.yaml keys: ${TOP_LEVEL_KEYS_V3.join(', ')}.`,
       severity: 'error',
+      ...(replacement ? {} : { unknownKey: true }),
     });
   }
 
   validateImports(parsed.imports, 'imports', issues);
   validateProject(parsed.project, 'project', issues);
   validateEnv(parsed.env, 'env', issues);
-  validateSandbox(parsed.sandbox, 'sandbox', issues, format);
+  validateSandbox(parsed.sandbox, 'sandbox', issues);
   validateRuntimeV2(parsed.runtime, 'runtime', issues);
-  validateTriggers(parsed.triggers, 'triggers', issues, format);
-  validateConnectors(parsed.connectors, 'connectors', issues, 2, format);
+  validateTriggers(parsed.triggers, 'triggers', issues);
+  validateConnectors(parsed.connectors, 'connectors', issues);
   validateAppsV2(parsed.apps, 'apps', issues);
   validateSpacesV3(parsed.spaces, 'spaces', issues);
+  validatePolicySettings(parsed.policy, 'policy', issues);
+  validatePolicyRules(parsed.policies, 'policies', issues);
+  validateApprovals(parsed.approvals, 'approvals', issues);
 
   const registry: RegistryV3 = {
     skills: validateSkillsV3(parsed.skills, 'skills', issues),
@@ -397,7 +406,9 @@ function validateSpacesV3(node: unknown, path: string, issues: ManifestIssue[]):
   };
   const unknownKeys = (value: Record<string, unknown>, allowed: string[], at: string) => {
     for (const key of Object.keys(value)) {
-      if (!allowed.includes(key)) error(`${at}.${key}`, `unknown key "${key}". Allowed: ${allowed.join(', ')}.`);
+      if (!allowed.includes(key)) {
+        issues.push({ path: `${at}.${key}`, message: `unknown key "${key}".${didYouMean(key, allowed)} Allowed: ${allowed.join(', ')}.`, severity: 'error', unknownKey: true });
+      }
     }
   };
   const string = (value: unknown, at: string) => {
@@ -543,8 +554,9 @@ function validateCommandsV3(node: unknown, path: string, issues: ManifestIssue[]
         path: `${where}.${key}`,
         message: key === 'agent'
           ? 'a command runs on the agent that enables it (`agents.<name>.commands`).'
-          : `unknown command key (allowed: ${COMMAND_KEYS_V3.join(', ')}).`,
+          : `unknown command key.${didYouMean(key, COMMAND_KEYS_V3)} Allowed: ${COMMAND_KEYS_V3.join(', ')}.`,
         severity: 'error',
+        ...(key === 'agent' ? {} : { unknownKey: true }),
       });
     }
     if ((entry.prompt === undefined) === (entry.prompt_file === undefined)) {
@@ -576,7 +588,7 @@ function validateExtensionsV3(node: unknown, path: string, issues: ManifestIssue
     }
     for (const key of Object.keys(entry)) {
       if (!(EXTENSION_HARNESSES as readonly string[]).includes(key)) {
-        issues.push({ path: `${where}.${key}`, message: `unknown harness (allowed: ${EXTENSION_HARNESSES.join(', ')}).`, severity: 'error' });
+        issues.push({ path: `${where}.${key}`, message: `unknown harness (allowed: ${EXTENSION_HARNESSES.join(', ')}).`, severity: 'error', unknownKey: true });
       }
     }
     if (entry.opencode === undefined && entry.pi === undefined) {
@@ -609,7 +621,7 @@ function validatePiSourceV3(value: unknown, where: string, issues: ManifestIssue
   for (const [key, filter] of Object.entries(value)) {
     if (key === 'source') continue;
     if (!PI_FILTER_KEYS.includes(key)) {
-      issues.push({ path: `${where}.${key}`, message: `unknown key (allowed: source, ${PI_FILTER_KEYS.join(', ')}).`, severity: 'error' });
+      issues.push({ path: `${where}.${key}`, message: `unknown key (allowed: source, ${PI_FILTER_KEYS.join(', ')}).`, severity: 'error', unknownKey: true });
     } else if (!Array.isArray(filter) || filter.some((pattern) => typeof pattern !== 'string')) {
       issues.push({ path: `${where}.${key}`, message: 'must be a list of glob patterns.', severity: 'error' });
     }
@@ -623,8 +635,9 @@ type AgentScanV3 = Map<string, { mode: string; enabled: boolean }>;
 
 function validateAgentsV3(node: unknown, path: string, registry: RegistryV3, issues: ManifestIssue[]): AgentScanV3 {
   const agents: AgentScanV3 = new Map();
-  if (!isTable(node) || Object.keys(node).length === 0) {
-    issues.push({ path, message: '`agents` must be a map of agent name to agent, with at least one agent.', severity: 'error' });
+  if (node === undefined || node === null) return agents;
+  if (!isTable(node)) {
+    issues.push({ path, message: '`agents` must be a map of agent name to agent.', severity: 'error' });
     return agents;
   }
   for (const [name, entry] of Object.entries(node)) {
@@ -661,8 +674,9 @@ function validateAgentBlockV3(
     const replacement = RETIRED_AGENT_KEYS_V3[key];
     issues.push({
       path: `${where}.${key}`,
-      message: replacement ? `"${key}" is not a kortix_version 3 agent key: ${replacement}` : `unknown agent key "${key}".`,
+      message: replacement ? `"${key}" is not an agent key: ${replacement}` : `unknown agent key "${key}".${didYouMean(key, [...AGENT_KEYS_V3])}`,
       severity: 'error',
+      ...(replacement ? {} : { unknownKey: true }),
     });
   }
 
@@ -711,11 +725,11 @@ function validateAgentBlockV3(
   validateNamedGrantV3(entry.subagents, `${where}.subagents`, 'subagents', subagents, issues);
 
   // Kortix governance: the v2 rules.
-  validateGrantList(entry.connectors, `${where}.connectors`, 'connectors', issues, false, 2);
+  validateGrantList(entry.connectors, `${where}.connectors`, 'connectors', issues, false);
   validateRequiredConnectorFields(entry, where, issues);
-  validateGrantList(entry.secrets, `${where}.secrets`, 'secrets', issues, false, 2);
+  validateGrantList(entry.secrets, `${where}.secrets`, 'secrets', issues, false);
   validateAppGrantList(entry.apps, `${where}.apps`, issues);
-  validateKortixPermissionFields(entry, where, issues, 2);
+  validateKortixPermissionFields(entry, where, issues);
   if (entry.workspace !== undefined) {
     const repository = resolveProjectRepository({ workspace: entry.workspace });
     if (!repository.ok) issues.push({ path: `${where}.${repository.path}`, message: repository.message, severity: 'error' });
@@ -736,7 +750,7 @@ function validateNamedGrantV3(value: unknown, where: string, label: string, know
     names = value.exclude;
   } else {
     const before = issues.length;
-    validateGrantList(value, where, label, issues, false, 2);
+    validateGrantList(value, where, label, issues, false);
     if (issues.length !== before) return;
   }
   if (!Array.isArray(names)) return;
@@ -775,7 +789,8 @@ function validateToolGrantV3(value: unknown, where: string, known: Set<string>, 
   const retired = missing.filter((name) => RETIRED_KORTIX_TOOLS.includes(name));
   const unknown = missing.filter((name) => !RETIRED_KORTIX_TOOLS.includes(name));
   if (retired.length > 0) {
-    issues.push({ path: where, message: `removed: ${retired.join(', ')}. Agents reach connectors with the \`kortix connectors\` CLI. Delete these names.`, severity: 'warning' });
+    const hints = [...new Set(retired.map((name) => RETIRED_KORTIX_TOOL_HINTS[name]).filter(Boolean))];
+    issues.push({ path: where, message: `removed: ${retired.join(', ')}. ${hints.join(' ')} Delete these names.`.replace(/\s+/g, ' '), severity: 'warning' });
   }
   if (unknown.length > 0) {
     issues.push({ path: where, message: `not a harness, Kortix or registered tool: ${unknown.join(', ')}.`, severity: 'error' });
@@ -793,7 +808,7 @@ function validateNetworkEgressV3(value: unknown, where: string, issues: Manifest
 
 /**
  * `builtin_agents`: built-in key → on/off. Absent or `true` = on. A built-in's
- * slug (`meta` for My Kortix) is reserved whatever the switch says: the
+ * slug (`mykortix` for My Kortix, and its old `meta`) is reserved whatever the switch says: the
  * platform keys that slug's grant, prompt and sandbox, so a declared block
  * would never run as written.
  */
@@ -812,18 +827,23 @@ function validateBuiltinAgentsV3(node: unknown, path: string, agents: AgentScanV
     }
   }
   for (const key of BUILTIN_AGENT_KEYS) {
-    const { agent, displayName } = BUILTIN_AGENTS[key];
-    if (agents.has(agent)) {
-      issues.push({ path: `agents.${agent}`, message: `"${agent}" is reserved for ${displayName}, the built-in agent. Rename this agent. To turn ${displayName} off, set \`${path}.${key}: false\`.`, severity: 'error' });
+    const { agent: slug, displayName } = BUILTIN_AGENTS[key];
+    // My Kortix's slug before the rename stays reserved: every read still treats it as My Kortix.
+    for (const agent of key === 'my_kortix' ? [slug, LEGACY_MY_KORTIX_AGENT_NAME] : [slug]) {
+      if (agents.has(agent)) {
+        issues.push({ path: `agents.${agent}`, message: `"${agent}" is reserved for ${displayName}, the built-in agent. Rename this agent. To turn ${displayName} off, set \`${path}.${key}: false\`.`, severity: 'error' });
+      }
     }
   }
 }
 
 function validateDefaultAgentV3(node: unknown, path: string, agents: AgentScanV3, issues: ManifestIssue[]): void {
+  // Omitted: a session or trigger that names no agent runs My Kortix.
+  if (node === undefined || node === null) return;
   const name = typeof node === 'string' ? node.trim() : '';
   const scan = agents.get(name);
   if (!name) {
-    issues.push({ path, message: '`default_agent` is required: the name of a declared primary agent.', severity: 'error' });
+    issues.push({ path, message: '`default_agent` must be the name of a declared primary agent. Omit it to run My Kortix.', severity: 'error' });
   } else if (!scan) {
     issues.push({ path, message: `"${name}" is not a declared agent.`, severity: 'error' });
   } else if (!scan.enabled) {

@@ -86,9 +86,11 @@ from `kortix connectors types`, `run`, `call` and `paginate` type their args
 and output.
 
 `call` returns `ConnectorCallResult<T>`. Every non-2xx answer throws
-`ApiError` with `status` and the parsed body in `details`. Only a call held
-for approval (HTTP 202, `status: "pending_approval"`) returns `ok: false`
-without throwing. A denial throws (403 or 404): `reason: "account_required"`
+`ApiError` with `status` and the parsed body in `details`. Two answers
+return `ok: false` without throwing: a call held for approval (HTTP 202,
+`status: "pending_approval"`) and a tool that reported an error (HTTP 200,
+`status: "tool_error"`, the tool's text in `error`). A denial throws (403 or
+404): `reason: "account_required"`
 means several accounts are reachable, none was named, and none is pinned as
 the default. Pass `account` explicitly rather than retrying the same call.
 
@@ -101,7 +103,8 @@ Fields of the result beside `data` (the raw upstream answer):
 - `binding`: `openapi`, `http`, `mcp`, `graphql`, `composio`, `pipedream`, …
 - `upstream_status`: the upstream HTTP status, or `null`.
 - `upstream_error`: set when the upstream reported a failure inside a 2xx (an
-  MCP `isError` result, GraphQL `errors` with no data). Treat it as a failure.
+  MCP `isError` result, GraphQL `errors` with no data). The same answer has
+  `ok: false` and `status: "tool_error"`. Treat it as a failure.
 
 Failures that throw:
 
@@ -173,7 +176,7 @@ for (const thread of threads.data?.data ?? []) {
 
 The call is the same as above. Only `createKortix` changes, and the
 credential decides which accounts the call reaches. The public docs page is
-`/docs/connect/connectors#call-connectors-from-code`.
+`/docs/developers#call-a-connector`.
 
 **App, browser.** Set the App to `kortix apps access <app> --viewer api`.
 The gate answers `/_kortix/api/v1/*` on the App's own origin, so no CORS rule
@@ -188,7 +191,7 @@ const deals = await kortix.project(projectId).connector('crm').run('list_deals',
 
 The call runs as the viewer: shared accounts they may use and their own
 private accounts. With `--viewer identity` it answers `403
-insufficient_scope`. The viewer token reaches every project the viewer can
+viewer_api_disabled`. The viewer token reaches every project the viewer can
 read: always pass the App's own `projectId`.
 
 **App, server.** One client per request, never a stored token:

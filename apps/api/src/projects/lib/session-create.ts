@@ -1,12 +1,11 @@
 import { copySessionLog, withForkAttachmentCleanup } from '../session-log-fork';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
-import { captureJournallessSessionLog } from './session-transcript-capture';
 import { randomUUID } from 'node:crypto';
 import { SESSION_INITIAL_CONTEXT_MAX_CHARS, SessionCreateInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
-import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG } from '@kortix/shared';
+import { canonicalAgentName, isMyKortixAgentName, isMyKortixSandboxSlug, MY_KORTIX_AGENT_NAME, MY_KORTIX_SANDBOX_SLUG } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
@@ -30,6 +29,8 @@ import {
   type ModelSource,
   toOpencodeModelRef,
 } from '../../llm-gateway/resolution/effective';
+import { checkClaudeAgentRef } from '../../llm-gateway/resolution/claude-agent';
+import { claudeSubscriptionRequiredBody, missingClaudeSubscription } from '../claude-subscription/gate';
 
 import { selectProvider } from '../../platform/services/provider-balancer';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
@@ -52,7 +53,6 @@ import {
   repositoryAccessFromLoadedAgents,
   legacyReadWorkspaceFromLoadedAgents,
 } from '../agents';
-import { createRemoteSessionBranch } from '../git';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
 
 import { listResolvedProjectSecrets, parseSessionSecretsAllowlist, secretKeyCollisionInAllowlist } from '../secrets';
@@ -70,7 +70,7 @@ import {
 
 import { type ProjectRow, type ProjectSessionRow, type RequestAuditContext, normalizeString } from './serializers';
 import { normalizeJsonObject } from '../../shared/json';
-import { resolveBuiltinAgents } from './platform-meta-agent';
+import { resolveBuiltinAgents } from './my-kortix-agent';
 import { isUuid } from '../../shared/validate';
 import {
   canonicalConnectorAlias,
@@ -96,7 +96,7 @@ import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { resolvePlatformMetaSandbox } from './platform-meta-agent';
+import { resolveMyKortixSandbox } from './my-kortix-agent';
 import { spaceAccessFor } from '../../shared/space-access';
 import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, ensureDefaultSpace, findForkSourceSpace, forkSourceVisibility, findLiveChannel, findSessionSpace, inheritedPrivateSpace, spaceSessionVisibility } from './project-spaces';
 import { liveTriggerSpace, triggerRunSpace } from './trigger-space';
@@ -111,6 +111,7 @@ import { sandboxCallbackUnreachableReason, sandboxCallbackDeadTunnelReason } fro
 import type { Actor } from '../../iam/actor';
 import { loadVisibleSession, sessionIsTombstoned } from './session-visibility';
 import { HUMAN_SESSION_SURFACES } from './session-surface';
+import { isWorkflowRunnerContext, sessionIsWorkflowRunner } from './workflow-runner';
 import type { SessionInvocationSource } from '../session-lifecycle/types';
 /** Every status a failed create answers with. Routes that create a session
  *  declare these, so the published spec lists them. */
@@ -528,18 +529,19 @@ async function resolveSessionAgent(params: {
   // The literal "default" is a non-binding legacy sentinel. It must not block
   // the configured project default. This rule applies to every caller,
   // including older triggers and channel adapters that still send the sentinel.
+  // A client from before the My Kortix rename sends `meta`: it starts a `mykortix` session.
   const requestedAgent =
-    normalizeString(body.agent_name ?? body.agentName) ??
+    canonicalAgentName(normalizeString(body.agent_name ?? body.agentName)) ??
     params.channelAgents.find((name) => isLaunchableAgentName(name, loadedAgents)) ??
     null;
   const mirroredDefaultAgent = normalizeString(
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
   const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
-  // My Kortix (slug `meta`) is on unless kortix.yaml sets
+  // My Kortix (slug `mykortix`) is on unless kortix.yaml sets
   // `builtin_agents.my_kortix: false` (no key: the legacy `meta_agent` switch).
   // Off: agent resolution below is the pre-meta behavior, and a session that
-  // would run `meta` is refused with 409 builtin_agent_disabled. Without the
+  // would run My Kortix is refused with 409 builtin_agent_disabled. Without the
   // refusal it ran with My Kortix's grant, prompt and sandbox anyway.
   const metaAgentEnabled = resolveBuiltinAgents(
     loadedAgents.builtinAgents ?? {},
@@ -563,17 +565,17 @@ async function resolveSessionAgent(params: {
         ),
       )
       .limit(1);
-    callerIsMeta = !!caller && isMetaAgentName(caller.agentName);
+    callerIsMeta = !!caller && isMyKortixAgentName(caller.agentName);
   }
   const agentName =
     metaAgentEnabled && !requestedAgent && !callerIsMeta
-      ? META_AGENT_NAME
+      ? MY_KORTIX_AGENT_NAME
       : resolveSessionAgentName({
           requestedAgent,
           manifestDefaultAgent: normalizeString(loadedAgents.defaultAgent),
           mirroredDefaultAgent,
         });
-  if (!metaAgentEnabled && isMetaAgentName(agentName)) {
+  if (!metaAgentEnabled && isMyKortixAgentName(agentName)) {
     return {
       error: {
         status: 409,
@@ -585,8 +587,14 @@ async function resolveSessionAgent(params: {
       },
     };
   }
-  const platformMetaAgent = metaAgentEnabled && isMetaAgentName(agentName);
-  if (platformMetaAgent && callerIsMeta) {
+  const platformMetaAgent = metaAgentEnabled && isMyKortixAgentName(agentName);
+  // My Kortix's own background workflow runs in a My Kortix runner (workflow-runner.ts); a runner never starts another.
+  const myKortixWorkflowRunner =
+    platformMetaAgent &&
+    callerIsMeta &&
+    isWorkflowRunnerContext(body.runtime_context) &&
+    !(await sessionIsWorkflowRunner(input.callerSessionId!));
+  if (platformMetaAgent && callerIsMeta && !myKortixWorkflowRunner) {
     return {
       error: {
         status: 400,
@@ -663,6 +671,17 @@ async function resolveSessionModel(params: {
           body: { error: `"${requestedModel}" doesn't look like a model id`, code: 'INVALID_SESSION_MODEL' },
         },
       };
+    }
+    const claudeAgent = checkClaudeAgentRef(requestedModel);
+    if (claudeAgent.kind === 'invalid') {
+      return { error: { status: 400, body: { error: claudeAgent.message, code: 'INVALID_SESSION_MODEL' } } };
+    }
+    // A Claude subscription model needs a Claude account, so a first prompt
+    // without one could only fail in the box.
+    const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
+    if (claudeAgent.kind === 'valid' && initialPrompt && !input.callerSessionId) {
+      const missing = await missingClaudeSubscription({ accountId, projectId, userId, model: claudeAgent.ref });
+      if (missing) return { error: { status: 409, body: claudeSubscriptionRequiredBody(missing) } };
     }
     let servable = await isModelServableForAccount({
       userId,
@@ -856,13 +875,13 @@ async function resolveSessionSandboxPlacement(params: {
     // The meta coordinator is locked to its own sandbox. An explicit request for
     // any other slug is the only failure here, so scope the catch to this branch.
     try {
-      sandboxSlug = resolvePlatformMetaSandbox(requestedSandboxSlug);
+      sandboxSlug = resolveMyKortixSandbox(requestedSandboxSlug);
     } catch {
       return {
         error: {
           status: 400,
           body: {
-            error: `Agent "meta" always uses sandbox "${META_SANDBOX_SLUG}"`,
+            error: `Agent "${MY_KORTIX_AGENT_NAME}" always uses sandbox "${MY_KORTIX_SANDBOX_SLUG}"`,
             code: 'META_SANDBOX_LOCKED',
           },
         },
@@ -1283,7 +1302,7 @@ async function insertSessionAndBindings(
     .returning();
   if (!row) throw new Error('Session insert returned no row');
   if (typeof body.fork_from_session_id === 'string') {
-    await copySessionLog(tx, { sourceId: body.fork_from_session_id, sessionId, projectId, accountId, captureComplete: input.forkCaptureComplete });
+    await copySessionLog(tx, { sourceId: body.fork_from_session_id, sessionId, projectId, accountId });
   }
   if (input.createCommandId) {
     // Same transaction as the session row: a create command whose worker
@@ -1422,54 +1441,7 @@ async function resolveCreatedSessionProjectSnapshot(
   };
 }
 
-/** Push the session branch to origin in the background and record the outcome. */
-function publishCreatedSessionBranch(params: {
-  body: Record<string, unknown>;
-  repositoryAccess: boolean;
-  projectWithGitAuthPromise: ReturnType<typeof withProjectGitAuth>;
-  sessionId: string;
-  baseRef: string;
-  tl: ProvisionTimeline;
-}): void {
-  const { body, repositoryAccess, projectWithGitAuthPromise, sessionId, baseRef, tl } = params;
-  // Origin branch creation is publishing work, not readiness work. The
-  // sandbox now creates the session branch locally from the base checkout
-  // immediately, so this remote push runs fully in the background. The
-  // metadata writes that record success/failure are pure telemetry —
-  // fire-and-forget so they never block the IIFE itself.
-  const branchAlreadyCreated =
-    body.branch_already_created === true || body.branchAlreadyCreated === true;
-  const branchPromise: Promise<void> = !repositoryAccess || branchAlreadyCreated
-    ? Promise.resolve()
-    : projectWithGitAuthPromise
-        .then((projectWithGitAuth) =>
-        createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef),
-        )
-        .then(() => {
-        tl.mark('branch-pushed');
-        void mergeCreatedSessionMetadata(sessionId, {
-            remote_branch: {
-              status: 'ready',
-              branch: sessionId,
-              updated_at: new Date().toISOString(),
-            },
-        }).catch(() => {});
-      });
-  branchPromise.catch((err) => {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn(`[projects] Remote branch creation failed for session ${sessionId}:`, err);
-    void mergeCreatedSessionMetadata(sessionId, {
-      remote_branch: {
-        status: 'failed',
-        branch: sessionId,
-        error: message.slice(0, 500),
-        updated_at: new Date().toISOString(),
-      },
-    }).catch(() => {});
-  });
-}
-
-/** Build the env, publish the branch, and kick off provisionSessionSandbox() for a new session row. */
+/** Build the env and kick off provisionSessionSandbox() for a new session row. */
 async function provisionCreatedSession(params: {
   input: CreateProjectSessionInput;
   sessionId: string;
@@ -1504,8 +1476,8 @@ async function provisionCreatedSession(params: {
   const tl = new ProvisionTimeline(sessionId, 'session-create');
   try {
     // Resolve git auth and user env concurrently. Git auth is needed for
-    // background freshness checks / remote branch publishing, but a warm
-    // session can boot from an existing ready snapshot without waiting for it.
+    // background freshness checks, but a warm session can boot from an
+    // existing ready snapshot without waiting for it.
     const projectWithGitAuthPromise = withProjectGitAuth(project).then((gitProject) => {
       tl.mark('git-auth');
       return gitProject;
@@ -1570,7 +1542,12 @@ async function provisionCreatedSession(params: {
         return envVars;
       });
 
-    publishCreatedSessionBranch({ body, repositoryAccess, projectWithGitAuthPromise, sessionId, baseRef, tl });
+    // No session branch is pushed to origin here. The box creates it locally
+    // from the base checkout and publishes it with the session's first push
+    // (`git push origin HEAD:refs/heads/<session>`) or change request. The
+    // push at create made one origin branch per session (the company repo
+    // held ~20,900, 2026-10-30) and dropped the project's git mirror proofs
+    // on every create.
 
     // Not awaited here: provisioning reads it only when it builds the provider
     // input, so the env build overlaps the image check and the token mint.
@@ -1629,8 +1606,8 @@ async function provisionCreatedSession(params: {
     console.error(`[projects] Failed to kick off sandbox for session ${sessionId}:`, err);
     try {
       // Merge, never re-write the create-time snapshot: by the time
-      // provisioning fails the row may already carry a generated title,
-      // remote_branch or the start timeline. A session deleted meanwhile
+      // provisioning fails the row may already carry a generated title
+      // or the start timeline. A session deleted meanwhile
       // keeps its tombstone.
       await transitionSession('fail', sessionId, {
         error: message,
@@ -1654,7 +1631,6 @@ export async function createProjectSession(input: {
   userId: string;
   requestingPrincipalType: 'human' | 'service_account';
   body: Record<string, unknown>;
-  forkCaptureComplete?: boolean;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   request?: RequestAuditContext;
@@ -1847,13 +1823,7 @@ export async function createProjectSession(input: {
     if (!config.SESSION_LOG_RESTORE_ENABLED || !config.SESSION_LOG_INGEST_ENABLED) {
       return { error: { status: 503, body: { error: 'Session log restore is off' } } };
     }
-    const capture = await captureJournallessSessionLog(body.fork_from_session_id);
-    // A reachable box must provide the whole snapshot. A stopped box can use
-    // its durable journal, checked again under the journal lock during copy.
-    if (capture && !capture.head_complete) {
-      return { error: { status: 409, body: { error: 'Source history capture is incomplete' } } };
-    }
-    input.forkCaptureComplete = capture?.head_complete === true;
+    // The source's journal is its complete history, checked under the journal lock during the copy.
   }
 
   const { sessionId, initialPrompt, initialContext, initialTurn, pendingPromptConversion } = identity;
@@ -1882,7 +1852,7 @@ export async function createProjectSession(input: {
     sandboxSlug,
     filed: requestedSpace.filed,
     // Only a Platinum session box mounts it. An unrecorded open is deleted.
-    workspaceVolume: providerName === 'platinum' && sandboxSlug !== META_SANDBOX_SLUG ? workspaceVolume : null,
+    workspaceVolume: providerName === 'platinum' && !isMyKortixSandboxSlug(sandboxSlug) ? workspaceVolume : null,
     sandboxLocation: sandboxRegion.location,
   });
 

@@ -73,7 +73,6 @@ const DescriptorSchema = z
     release_id: z.string().regex(HEX64).nullable(),
     mode: z.literal('follow-base'),
     source_commit: z.string().regex(OBJECT_ID).nullable(),
-    config_dir: z.string().refine(isPlainConfigDir, 'config_dir must be a plain relative path').nullable(),
     config_tree_id: z.string().regex(OBJECT_ID).nullable(),
     archive: z
       .object({

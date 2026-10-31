@@ -36,6 +36,8 @@ export function bindSessionLifecycleSecurity(ctx: SessionBindingContext) {
     messageAuthors: () => P.getSessionMessageAuthors(ctx.projectId, ctx.sessionId),
     /** Which model answered each turn, and what Kortix billed for it. */
     modelUsage: () => P.getSessionModelUsage(ctx.projectId, ctx.sessionId),
+    /** What the session and every session it started cost, in USD. */
+    usage: () => P.getSessionUsage(ctx.projectId, ctx.sessionId),
     /** The DURABLE server-side transcript mirror, in sync-store shape
      *  (OpenCode message envelopes verbatim, attachment bytes and tool
      *  inputs/outputs stripped). This is the read that answers while the

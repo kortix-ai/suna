@@ -18,6 +18,19 @@
 import { expect, test } from 'bun:test';
 import type * as C from '../../api-contract/src/index';
 import type * as SL from '../../api-contract/src/session-log';
+import type * as MA from '../../api-contract/src/multi-agent';
+import type * as TC from '../../api-contract/src/kortix-tool-card';
+import type {
+  PeerMessage,
+  PeerMessageSendBody,
+  PeerMessageSendResult,
+  ReachableAgents,
+  SessionTask,
+  SessionTaskCreateBody,
+  SessionTaskUpdateBody,
+  WorkflowControlBody,
+  WorkflowRunMetadata,
+} from './core/rest/projects-client/multi-agent';
 import type { SessionLogPage } from './core/session-log/source';
 import type { KortixAccount } from './core/rest/projects-client/accounts';
 import type { ChangeRequest } from './core/rest/projects-client/change-requests';
@@ -89,6 +102,25 @@ export function contractDrift(): void {
 
   fits<ProjectSession>(wire<C.ProjectSession>());
   noPhantom<NoPhantom<ProjectSession, C.ProjectSession>>();
+
+  fits<ReachableAgents>(wire<MA.ReachableAgents>());
+  noPhantom<NoPhantom<ReachableAgents, MA.ReachableAgents>>();
+  fits<PeerMessage>(wire<MA.PeerMessage>());
+  noPhantom<NoPhantom<PeerMessage, MA.PeerMessage>>();
+  fits<PeerMessageSendResult>(wire<MA.PeerMessageSendResult>());
+  noPhantom<NoPhantom<PeerMessageSendResult, MA.PeerMessageSendResult>>();
+  fits<MA.PeerMessageSendBody>(wire<PeerMessageSendBody>());
+  noPhantom<NoPhantom<PeerMessageSendBody, MA.PeerMessageSendBody>>();
+  fits<SessionTask>(wire<MA.SessionTask>());
+  noPhantom<NoPhantom<SessionTask, MA.SessionTask>>();
+  fits<MA.SessionTaskCreateBody>(wire<SessionTaskCreateBody>());
+  noPhantom<NoPhantom<SessionTaskCreateBody, MA.SessionTaskCreateBody>>();
+  fits<MA.SessionTaskUpdateBody>(wire<SessionTaskUpdateBody>());
+  noPhantom<NoPhantom<SessionTaskUpdateBody, MA.SessionTaskUpdateBody>>();
+  fits<MA.WorkflowControlBody>(wire<WorkflowControlBody>());
+  noPhantom<NoPhantom<WorkflowControlBody, MA.WorkflowControlBody>>();
+  fits<WorkflowRunMetadata>(wire<TC.WorkflowRunMetadata>());
+  noPhantom<NoPhantom<WorkflowRunMetadata, TC.WorkflowRunMetadata>>();
 
   fits<ProjectSpace>(wire<C.Space>());
   noPhantom<NoPhantom<ProjectSpace, C.Space>>();

@@ -54,6 +54,7 @@ function fakeDeps(over: Partial<StrandReconcileDeps> & { open: StoredSandboxTurn
     removeMessage: async (...a) => { calls.remove.push(a); return true; },
     requeueStranded: async (...a) => { calls.requeue.push(a); return 'requeued'; },
     kickDrain: (...a) => { calls.kick.push(a); },
+    keepsMessageIds: async () => false,
     ...over,
   };
   return { deps, calls };
@@ -154,6 +155,24 @@ describe('reconcileForwardedTurnsAtEnd', () => {
     expect(calls.requeue).toEqual([['s', u4]]);
     expect(calls.closeStranded).toEqual([['s', u4]]);
     expect(calls.kick).toHaveLength(1);
+  });
+
+  // pi keeps a prompt's id and orders by position (`runtime.stable_message_id.v1`).
+  // A prompt that waited goes out under its older id, which reads exactly like
+  // the strand signature above; on such a box the repair must not touch it.
+  test('on a runtime that keeps message ids, a newer prompt below an older assistant is not removed or re-queued', async () => {
+    const tip = tipOf([
+      { id: M, role: 'user' },
+      { id: u4, role: 'user' },
+      { id: aM, role: 'assistant', parentID: M, completed: T + 3_500 },
+    ]);
+    const { deps, calls } = fakeDeps({ open: [turn(u1), turn(u4)], tip, keepsMessageIds: async () => true });
+    const out = await reconcileForwardedTurnsAtEnd({ sessionId: 's', opencodeSessionId: 'ses_root', endedMessageId: M }, deps);
+    expect(out).toEqual({ closedOlder: 1, candidates: 1, stranded: 0, orphaned: 0, requeued: 0 });
+    expect(calls.closeOlder.map((c) => c[2])).toEqual([u1]);
+    expect(calls.remove).toEqual([]);
+    expect(calls.requeue).toEqual([]);
+    expect(calls.kick).toEqual([]);
   });
 
   test('a newer prompt that opened its own turn is left alone', async () => {

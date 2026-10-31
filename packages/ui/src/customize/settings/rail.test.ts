@@ -70,7 +70,6 @@ describe('railGroups', () => {
       'General',
       'Sandbox templates',
       'Feature flags',
-      'Upgrades',
       'Connected accounts',
       'Credits',
       'Plan',

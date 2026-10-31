@@ -196,6 +196,9 @@ const envSchema = z.object({
   // New server Apps run 24/7 unless the request says otherwise. Existing Apps
   // keep their own setting. Static Apps have no runtime and ignore it.
   KORTIX_APPS_DEFAULT_ALWAYS_ON: optBoolTrue,
+  // The unmodified Claude Code binary the Claude subscription login runs
+  // (`claude setup-token`). The API image installs the pinned version on PATH.
+  CLAUDE_CODE_PATH: z.string().trim().optional().default('claude'),
   // 'false' stops the Apps deployment worker; 'static' drives only static deployments.
   KORTIX_APPS_WORKER_ENABLED: optStr,
   // Global background-worker switch. API-only and migration-shadow deployments
@@ -304,10 +307,6 @@ const envSchema = z.object({
   // rows 30 days after a delete, 80 days after a subscription end (inert until decision D6b), their files 7 days later.
   // On by default. Off stops the worker's tick; nothing it has not yet purged is touched.
   SESSION_LOG_PURGE_ENABLED: optBoolTrue,
-  // The API task's memory in MiB (prod and dev ECS tasks: 4096). The journal-less capture starts a
-  // conversion thread only while RSS plus its estimate stays under 75 % of this, or of cgroup
-  // memory.max when lower (`projects/lib/thread-memory.ts`).
-  SESSION_LOG_THREAD_MEMORY_MB: optInt(4096),
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
   // On by default — the base API surface is meant to be discoverable. Internal
   // routers (/v1/admin, /v1/ops) are ALWAYS stripped from the spec regardless
@@ -1287,6 +1286,7 @@ export const config = {
   KORTIX_APPS_STATIC_HOSTING: env.KORTIX_APPS_STATIC_HOSTING,
   KORTIX_APPS_RETAINED_DEPLOYMENTS: Math.max(1, env.KORTIX_APPS_RETAINED_DEPLOYMENTS),
   KORTIX_APPS_DEFAULT_ALWAYS_ON: env.KORTIX_APPS_DEFAULT_ALWAYS_ON,
+  CLAUDE_CODE_PATH: env.CLAUDE_CODE_PATH || 'claude',
   KORTIX_APPS_WORKER_ENABLED: env.KORTIX_APPS_WORKER_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
   KORTIX_JOB_WORKER_ENABLED: env.KORTIX_JOB_WORKER_ENABLED,
@@ -1310,7 +1310,6 @@ export const config = {
   SESSION_LOG_RESTORE_MAX_BYTES: env.SESSION_LOG_RESTORE_MAX_BYTES,
   SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
-  SESSION_LOG_THREAD_MEMORY_MB: env.SESSION_LOG_THREAD_MEMORY_MB,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
   MOBILE_STORE_URL_IOS: env.MOBILE_STORE_URL_IOS,

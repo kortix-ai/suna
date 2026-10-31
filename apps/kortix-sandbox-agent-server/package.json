@@ -21,11 +21,13 @@
     "test": "node ../../scripts/test-guard.mjs \"bash scripts/test.sh\""
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.316",
     "@earendil-works/pi-agent-core": "1.4.0",
     "@earendil-works/pi-ai": "1.4.0",
     "@earendil-works/pi-codemode": "1.4.0",
     "@earendil-works/pi-coding-agent": "1.4.0",
     "@earendil-works/pi-tui": "1.4.0",
+    "@modelcontextprotocol/sdk": "1.32.0",
     "@silvia-odwyer/photon-node": "0.3.4",
     "hono": "^4.13.11",
     "node-forge": "^1.4.1",

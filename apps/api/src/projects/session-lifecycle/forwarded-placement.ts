@@ -202,6 +202,37 @@ export function reachedPlacement(
 }
 
 /**
+ * May a prompt go out under `wireMessageId` unchanged on a runtime that keeps
+ * message ids (`RUNTIME_STABLE_MESSAGE_ID_CAPABILITY`, pi)? That runtime orders
+ * by position, so nothing here is about the runtime's own order. Two checks:
+ *
+ *  - The tip does not hold the id. pi answers a known id
+ *    `200 { deduplicated: true }` and runs nothing, so a redelivery of a held
+ *    prompt (a box that restored the log without its answer) must go out under
+ *    a new id, as it does today.
+ *  - Every USER message on the tip sorts below the id. The web still orders
+ *    turns by user message id (`compareMessagesForDisplay`, packages/sdk
+ *    `core/turns/display-order.ts`). A server-minted id is dated 2 min back,
+ *    so it can sort below a prompt the user sent after it; kept, its turn
+ *    renders above that prompt's.
+ *
+ * An id with no readable clock is never kept.
+ */
+export function keepsWireIdOnStableRuntime(
+  tip: ReadonlyArray<PlacementTipMessage>,
+  wireMessageId: string,
+): boolean {
+  const mine = wireIdTime(wireMessageId);
+  if (mine === null) return false;
+  return tip.every((m) => {
+    if (m.id === wireMessageId) return false;
+    if (m.role !== 'user') return true;
+    const at = wireIdTime(m.id);
+    return at === null || wireIdClockDelta(at, mine) < ZERO;
+  });
+}
+
+/**
  * Is there an OPEN user message ABOVE this id — placed (not stranded),
  * unanswered? Then a message that sits BELOW it is not lost: OpenCode's next
  * step parents on the newest user message and hands the model the whole

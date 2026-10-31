@@ -1,14 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { defaultTriggerSessionMode, extractTriggers, triggerSpecToTomlEntry } from '../triggers';
+import { defaultTriggerSessionMode, extractTriggers, triggerSpecToFlatEntry } from '../triggers';
 import type { ParsedManifest } from '../triggers';
 import { draftToSpec, parseTriggerDraft, specToBody } from './trigger-draft';
 
-const manifest = (triggers: unknown[]): ParsedManifest => ({
-  schemaVersion: 2,
-  raw: { triggers },
-  format: 'yaml',
-  path: 'kortix.yaml',
-});
+const manifest = (triggers: unknown[]): ParsedManifest => ({ raw: { triggers }, path: 'kortix.yaml' });
 
 const entry = {
   slug: 'pr-review',
@@ -24,10 +19,10 @@ describe('event trigger entry source', () => {
     const withSource = extractTriggers(manifest([{ ...entry, source: 'composio' }]));
     expect(withSource.errors).toEqual([]);
     expect(withSource.specs[0]!.event).toMatchObject({ source: 'composio' });
-    expect(triggerSpecToTomlEntry(withSource.specs[0]!)).toMatchObject({ source: 'composio' });
+    expect(triggerSpecToFlatEntry(withSource.specs[0]!)).toMatchObject({ source: 'composio' });
     const without = extractTriggers(manifest([entry]));
     expect(without.specs[0]!.event).not.toHaveProperty('source');
-    expect(triggerSpecToTomlEntry(without.specs[0]!)).not.toHaveProperty('source');
+    expect(triggerSpecToFlatEntry(without.specs[0]!)).not.toHaveProperty('source');
   });
 
   test('rejects a blank `source` and `source` on a cron entry', () => {
@@ -53,7 +48,7 @@ describe('event trigger entry', () => {
 
   test('parse -> serialize -> parse round trip is stable', () => {
     const first = extractTriggers(manifest([entry])).specs[0]!;
-    const out = triggerSpecToTomlEntry(first);
+    const out = triggerSpecToFlatEntry(first);
     expect(out).toMatchObject({ type: 'event', connector: 'github', event: 'GITHUB_PULL_REQUEST_EVENT' });
     expect(out.cron).toBeUndefined();
     expect(out.timezone).toBeUndefined();
@@ -64,16 +59,16 @@ describe('event trigger entry', () => {
     const { config: _drop, ...bare } = entry;
     const spec = extractTriggers(manifest([bare])).specs[0]!;
     expect(spec.event?.config).toEqual({});
-    expect(triggerSpecToTomlEntry(spec).config).toBeUndefined();
+    expect(triggerSpecToFlatEntry(spec).config).toBeUndefined();
   });
 
   test('account is optional, trimmed, serialized only when set, and round-trips', () => {
     const bare = extractTriggers(manifest([entry])).specs[0]!;
     expect(bare.event).not.toHaveProperty('account');
-    expect(triggerSpecToTomlEntry(bare).account).toBeUndefined();
+    expect(triggerSpecToFlatEntry(bare).account).toBeUndefined();
     const spec = extractTriggers(manifest([{ ...entry, account: ' acme-bot ' }])).specs[0]!;
     expect(spec.event?.account).toBe('acme-bot');
-    const out = triggerSpecToTomlEntry(spec);
+    const out = triggerSpecToFlatEntry(spec);
     expect(out).toMatchObject({ connector: 'github', account: 'acme-bot' });
     expect(extractTriggers(manifest([out])).specs[0]).toEqual(spec);
   });

@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { artifactComments, artifactCommentThreads, artifactEvents, artifacts, drives, jobQueue, projectSessions, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { artifactComments, artifactCommentScreenshotObjects, artifactCommentThreads, artifactEvents, artifacts, drives, jobQueue, projectSessions, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { seedProject, seedSession, removeSeeded, type SeededProject } from '../__tests__/helpers/integration-fixtures';
 import { db } from '../shared/db';
 import type { Actor } from '../iam/actor';
@@ -27,6 +27,8 @@ mock.module('./comment-lifecycle-wake', () => ({
   },
 }));
 class ArtifactCommentAuthorityError extends Error { readonly status = 403; readonly code = 'artifact_comment_agent_forbidden'; }
+const vision = await import('../channels/vision-model');
+mock.module('../channels/vision-model', () => ({ ...vision, modelReadsImages: (_project: string, model: string | null) => model?.includes('screenshot-vision') === true }));
 const volumes = await import('../drives/volumes');
 mock.module('../drives/volumes', () => ({ ...volumes, statVolumeFile: async () => { stats++; return { version: missingEntry ? null : 'actual-entry-etag' }; } }));
 mock.module('./comment-authority', () => ({
@@ -74,7 +76,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
       root: '/report', entry: 'index.md', folder: true, type: 'doc', title: 'Synthetic report', visibility: 'project',
       createdByUserId: actor.userId, createdBySessionId: sessionId }).returning() as [typeof artifacts.$inferSelect];
   });
-  afterAll(async () => { config.PLATINUM_API_KEY = storageKey; await Promise.all(wakeChecks); await removeSeeded(seeded); });
+  afterAll(async () => { config.PLATINUM_API_KEY = storageKey; await Promise.all(wakeChecks); await removeSeeded(seeded); await db.delete(artifactCommentScreenshotObjects).where(inArray(artifactCommentScreenshotObjects.projectId, seeded.map(row => row.project_id))); });
 
   async function thread(body: string, agent = false) {
     const [row] = await db.insert(artifactCommentThreads).values({ artifactId: artifact.artifactId, projectId: artifact.projectId,
@@ -416,4 +418,93 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment delivery journ
     await pruneFinishedJobs();
     expect(await db.select().from(jobQueue).where(eq(jobQueue.jobId, claimed.jobId))).toHaveLength(0);
   });
+  async function screenshot(source: Awaited<ReturnType<typeof thread>>, id = source.comment.commentId) {
+    const key = `${artifact.projectId}/artifact-comments/${id}.png`;
+    await db.update(artifactComments).set({ screenshotKey: key }).where(eq(artifactComments.commentId, id));
+    await db.insert(artifactCommentScreenshotObjects).values({ objectKey: key, projectId: artifact.projectId, commentId: id, state: 'attached', uploadConfirmed: true, sizeBytes: 100 });
+    return key;
+  }
+
+  test('vision queues byte-free file references and final delivery materializes fresh image parts; text-only sends URLs', async () => {
+    await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/screenshot-vision' } }).where(eq(projectSessions.sessionId, sessionId));
+    const source = await thread('Review the marked screenshot.', true);
+    await screenshot(source);
+    await runArtifactCommentAgentJob(await job(source));
+    const command = (await commands())[0]!;
+    expect(command.payload.parts).toMatchObject([{ type: 'text', text: expect.stringContaining('Review the marked screenshot.') }, { type: 'file', mime: 'image/png' }]);
+    expect(JSON.stringify(command.payload.parts)).not.toContain('base64');
+    expect(JSON.stringify(command.payload.parts)).not.toContain('token=');
+    const { rebuildArtifactCommentScreenshotMessage } = await import('./comment-screenshot-delivery');
+    let reads = 0;
+    const store = { read: async () => { reads++; return { bytes: new Uint8Array([1, 2, 3]), mime: 'image/png' as const }; }, put: async () => {}, remove: async () => {} };
+    const image = await rebuildArtifactCommentScreenshotMessage(command, undefined, store);
+    expect(image.parts).toMatchObject([{ type: 'text', text: image.text }, { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AQID' }]);
+    expect(image.text).toContain('/screenshot');
+    expect(reads).toBe(1);
+    await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/screenshot-text' } }).where(eq(projectSessions.sessionId, sessionId));
+    const text = await rebuildArtifactCommentScreenshotMessage(command, undefined, store);
+    expect(text.parts).toBeUndefined();
+    expect(text.text).toContain('/screenshot');
+    expect(text.text).toContain('does not declare image input');
+    expect(reads).toBe(1);
+  });
+
+  test('a screenshot deleted while its private read is pending never survives the final source recheck', async () => {
+    await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/screenshot-vision' } }).where(eq(projectSessions.sessionId, sessionId));
+    const source = await thread('Live root.', true);
+    const [reply] = await db.insert(artifactComments).values({ threadId: source.row.threadId, authorUserId: actor.userId, body: 'Delete this image before dispatch.' }).returning();
+    await screenshot(source, reply!.commentId);
+    await runArtifactCommentAgentJob(await job(source));
+    const command = (await commands())[0]!;
+    let open!: () => void, began!: () => void;
+    const held = new Promise<void>(resolve => { open = resolve; });
+    const started = new Promise<void>(resolve => { began = resolve; });
+    const store = { read: async () => { began(); await held; return { bytes: new Uint8Array([1, 2, 3]), mime: 'image/png' as const }; }, put: async () => {}, remove: async () => {} };
+    const { rebuildArtifactCommentScreenshotMessage } = await import('./comment-screenshot-delivery');
+    const pending = rebuildArtifactCommentScreenshotMessage(command, undefined, store);
+    try {
+      await started;
+      await db.update(artifactComments).set({ body: '', screenshotKey: null, deletedAt: new Date() }).where(eq(artifactComments.commentId, reply!.commentId));
+    } finally { open(); }
+    const fresh = await pending;
+    expect(fresh.parts).toBeUndefined();
+    expect(fresh.text).not.toContain('Delete this image');
+    expect(fresh.text).not.toContain('/screenshot');
+  });
+
+  test('oversized vision Send fails with numeric limits before any command or sent event, while text-only can retry', async () => {
+    await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/screenshot-vision' } }).where(eq(projectSessions.sessionId, sessionId));
+    const source = await thread('Many image comments.');
+    for (let index = 0; index < 21; index++) {
+      const [comment] = await db.insert(artifactComments).values({ threadId: source.row.threadId, authorUserId: actor.userId, body: `Image ${index}` }).returning();
+      await screenshot(source, comment!.commentId);
+    }
+    await expect(sendArtifactCommentThreads(artifact, actor, null, { thread_ids: [source.row.threadId], batch_id: crypto.randomUUID(), agent: 'writer' })).rejects.toMatchObject({ status: 413, code: 'artifact_comment_screenshot_limit', limits: { max_files: 20, max_parts_bytes: 12582912 } });
+    expect(await commands()).toEqual([]);
+    expect(await events()).toEqual([]);
+    await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/screenshot-text' } }).where(eq(projectSessions.sessionId, sessionId));
+    await sendArtifactCommentThreads(artifact, actor, null, { thread_ids: [source.row.threadId], batch_id: crypto.randomUUID(), agent: 'writer' });
+    expect(await commands()).toHaveLength(1);
+    expect((await commands())[0]!.payload.parts).toBeUndefined();
+    expect((await commands())[0]!.payload.text).toContain('/screenshot');
+  });
+
+  test('a batch near the image limit rejects combined comment text before job creation or sent state', async () => {
+    await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/screenshot-vision' } }).where(eq(projectSessions.sessionId, sessionId));
+    const source = await thread('Four large screenshots and long valid comments.');
+    const keys: string[] = [];
+    for (let index = 0; index < 4; index++) {
+      const [comment] = await db.insert(artifactComments).values({ threadId: source.row.threadId, authorUserId: actor.userId, body: `Screenshot ${index}` }).returning();
+      keys.push(await screenshot(source, comment!.commentId));
+    }
+    await db.update(artifactCommentScreenshotObjects).set({ sizeBytes: 2097152 }).where(inArray(artifactCommentScreenshotObjects.objectKey, keys));
+    await db.insert(artifactComments).values(Array.from({ length: 60 }, () => ({ threadId: source.row.threadId, authorUserId: actor.userId, body: '界'.repeat(10000) })));
+    await expect(sendArtifactCommentThreads(artifact, actor, null, { thread_ids: [source.row.threadId], batch_id: crypto.randomUUID(), agent: 'writer' }))
+      .rejects.toMatchObject({ status: 413, code: 'artifact_comment_screenshot_limit', limits: { max_parts_bytes: 12582912 } });
+    expect(await commands()).toEqual([]);
+    expect(await events()).toEqual([]);
+    expect(await db.select().from(jobQueue).where(eq(jobQueue.artifactId, artifact.artifactId))).toEqual([]);
+    expect((await db.select().from(artifactCommentThreads).where(eq(artifactCommentThreads.threadId, source.row.threadId)))[0]!.agentState).toBe('none');
+  });
+
 });

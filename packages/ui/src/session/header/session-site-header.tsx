@@ -36,7 +36,8 @@ import { SessionPendingApprovalsIndicator } from './session-pending-approvals-in
 import { SessionGoalIndicator } from './session-goal-indicator';
 import { SessionRemindersIndicator } from './session-reminders-indicator';
 import { SessionTitleInput } from './session-title-input';
-import { SubagentHoverCard, subagentTitle } from './subagent-hover-card';
+import { subagentTitle } from '../agents/agent-model';
+import { SubagentHoverCard } from './subagent-hover-card';
 import { Copy } from '../../icons/copy';
 import { Home } from '../../internal/icons/home';
 import { openSessionQuickView } from '../panel/open-session-quick-view';
@@ -65,6 +66,7 @@ import {
 import { createProjectSession, directSubsessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
 import {
   qk,
+  useHasSessionDesktop,
   useProjectSession,
   useRuntimeSupports,
   useSessionParticipants,
@@ -136,9 +138,14 @@ export function SessionSiteHeader({
   const localizedDevTools = useLocalizedUiCatalog(DEV_TOOLS);
   // A host that cannot reach the pty WebSocket turns the terminal off (`config.terminalEnabled`).
   const { terminalEnabled } = useUiHostConfig();
+  // My Kortix's computer, and a template on another base, have no desktop.
+  const hasDesktop = useHasSessionDesktop() === true;
   const devTools = useMemo(
-    () => (terminalEnabled ? localizedDevTools : localizedDevTools.filter((tool) => tool.view !== 'terminal')),
-    [localizedDevTools, terminalEnabled],
+    () =>
+      localizedDevTools.filter(
+        (tool) => (tool.view !== 'terminal' || terminalEnabled) && (tool.view !== 'desktop' || hasDesktop),
+      ),
+    [localizedDevTools, terminalEnabled, hasDesktop],
   );
   const router = useUiRouter();
   const pathname = useUiPathname();

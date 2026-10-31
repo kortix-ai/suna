@@ -163,14 +163,20 @@ export {
   roomMessages,
   roomMembers,
   sessionIdleWatches,
+  // Cross-session messages and agent-team tasks (@kortix/api-contract/multi-agent)
+  sessionPeerMessages,
+  sessionTasks,
   // Artifacts: published HTML pages (flag artifacts)
   artifacts,
   artifactCommentThreads,
   artifactComments,
+  artifactCommentScreenshotObjects,
   artifactCommentWriteLimits,
   artifactEvents,
   driveCommitAuthors,
   sessionSandboxIdentities,
+  claudeSubscriptionLogins,
+  claudeSubscriptionLoginFlows,
   // Product feedback (POST /v1/feedback)
   feedback,
   // Kortix in Chrome (apps/api/src/chrome)

@@ -1,28 +1,26 @@
 /**
- * The composer: the textarea, the command palette, the three selection
- * toggles, and the one path a prompt takes to the server.
+ * The open session's composer: the one input, its three selection pickers,
+ * the server-side prompt queue, and the tray row under it.
  *
  * It takes the whole `useSession` result as a prop (SPEC §5.3) and owns no
  * session state of its own. Every write goes back through the SDK — `send`,
  * the durable prompt inbox, `runCommand`, `cancel`, `picks`, the model store.
+ * The input itself (buffer, slash menu, Esc ×3) is `prompt-input.tsx`, shared
+ * with the empty-session draft.
  *
- * ── Keys (see `keys.ts` for the table and the terminal facts behind it) ──
- *  Enter        send, or queue while the agent is working
- *  Ctrl+J       newline (portable). Shift+Enter under the kitty protocol.
- *  Alt+Enter    newline (raw terminals ESC-prefix it: `meta`, not `option`)
- *  Esc          clear the draft; empty + busy → arm, again within 1.5s → stop
- *  /            at column 0, open the command palette
- *  Alt+M/E/G    model / effort / agent picker
+ * ── Who runs a slash command ──
+ * Four built-ins act on THIS session's hook, so they run here: `/model`,
+ * `/effort`, `/agent` (open a picker) and `/stop` (`session.cancel`). A
+ * project runtime command runs through `session.runCommand`. Everything else
+ * goes up to the app through `onCommand`, which switches on `CommandName`.
  *
  * ── How a prompt reaches the server ──
  * `useSession.send` does NOT queue: it posts straight to the runtime and is
  * refused when the runtime is not ready. The queue is the SERVER-SIDE prompt
- * inbox (`useSessionPrompts`), which is the durable, cross-client one — the
- * browser-store queue in `@kortix/sdk/message-queue` is deprecated and unused.
- * So: an idle session with an empty inbox sends directly (the path wave 0
- * proved end to end), and anything else enqueues, which keeps SEND ORDER — a
- * direct send would otherwise jump the rows already waiting. The footer reads
- * the count straight off the inbox; there is no local queue here.
+ * inbox (`useSessionPrompts`), which is the durable, cross-client one. So: an
+ * idle session with an empty inbox sends directly, and anything else
+ * enqueues, which keeps SEND ORDER — a direct send would otherwise jump the
+ * rows already waiting. The tray reads the count straight off the inbox.
  */
 
 import { type SessionPromptOverrides, type SessionPromptPart, runtimeSupports } from '@kortix/sdk';
@@ -31,30 +29,32 @@ import {
   mintSessionWireMessageId,
   useSessionPrompts,
 } from '@kortix/sdk/react';
-import type { KeyEvent, TextareaRenderable } from '@opentui/core';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { SessionLogMessage } from '@kortix/sdk';
+import type { KeyEvent } from '@opentui/core';
+import { resolve } from 'node:path';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
-import {
-  composerRows,
-  isSlashTrigger,
-  parseMentions,
-  splitCommandInput,
-} from '../../../lib/composer-text.ts';
+import type {
+  CommandContext,
+  CommandName,
+  MenuEntry,
+  RuntimeCommand,
+} from '../../../commands/registry.ts';
+import { copyToClipboard } from '../../../lib/clipboard.ts';
+import { contextModel, contextReading } from '../../../lib/context-usage.ts';
 import { theme } from '../../../theme.ts';
+import { lastReplyText, transcriptMarkdown } from '../transcript-export.ts';
 import { AgentPicker } from '../pickers/agent-picker.tsx';
 import { EffortPicker } from '../pickers/effort-picker.tsx';
-import { InlinePicker } from '../pickers/inline-picker.tsx';
 import { ModelPicker } from '../pickers/model-picker.tsx';
 import { useComposerSelection } from '../pickers/use-composer-selection.ts';
-import { isLinefeedNewline, matchesComposerBinding } from './keys.ts';
-import {
-  type AppCommandId,
-  BUILTIN_COMMANDS,
-  commandItems,
-  resolveCommandItem,
-} from './slash-commands.ts';
+import { matchesComposerBinding } from './keys.ts';
+import { PromptInput, type PromptInputMetrics } from './prompt-input.tsx';
 
 export type SessionState = UseSessionResult;
+
+/** Rows an open picker or host panel takes above the input (an upper bound). */
+export const PICKER_RESERVE_ROWS = 12;
 
 export interface ComposerProps {
   session: SessionState;
@@ -62,24 +62,44 @@ export interface ComposerProps {
   sessionId: string;
   focused: boolean;
   width: number;
-  /** Built-ins the app handles: navigation, overlays, attach, stop. */
-  onCommand(command: 'new' | 'terminal' | 'files' | 'help' | 'quit' | 'attach' | 'stop'): void;
+  context: CommandContext;
+  /** Every built-in this composer does not run itself, with its arguments. */
+  onCommand(command: CommandName, args: string): void;
   onToast?(message: string, kind?: 'info' | 'error'): void;
   onRequestFocus?(): void;
-  /**
-   * How many rows the composer needs right now, so the host can size the
-   * transcript above it (wave 3: `features/session/session-view.tsx`). Called
-   * on mount and whenever the count changes; the host must memoize it.
-   */
-  onMetrics?(metrics: { rows: number; overlayOpen: boolean }): void;
-  /** The runtime's `/kortix/health` capabilities; null until read (hides nothing). */
-  capabilities?: readonly string[] | null;
+  /** Sizing for the transcript above (`session-view.tsx`). Memoize it. */
+  onMetrics?(metrics: PromptInputMetrics): void;
+  /** A host panel above the input (`/sessions`, a confirm). It takes the keyboard. */
+  panel?: ReactNode;
+  /** Left side of the tray: where you are. */
+  trayLeft?: string;
+  /** Replace the draft (e.g. `/rename <title>`). */
+  seed?: { text: string; seq: number } | null;
+  /** The tray module: the row under the input. Default on. */
+  showTray?: boolean;
+  /** The thread on screen, for `/copy` and `/export`. */
+  messages?: readonly SessionLogMessage[];
+  /** The session's title, for the `/export` heading and file name. */
+  title?: string;
+  /** Test seams. Production copies with the system tool and writes with Bun. */
+  copyText?: (text: string) => Promise<{ ok: boolean; error?: string }>;
+  writeFile?: (path: string, text: string) => Promise<unknown>;
 }
 
-type Overlay = 'commands' | 'model' | 'effort' | 'agent' | null;
+/** `kortix-fix-the-login-bug-1a2b3c4d.md`: the title, slugged, and the id. */
+export function exportFileName(title: string, sessionId: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+  return `kortix-${slug ? `${slug}-` : ''}${sessionId.slice(0, 8)}.md`;
+}
 
-/** How long the armed Esc stays armed before it forgets (SPEC §5.3). */
-export const ESC_STOP_WINDOW_MS = 1500;
+type Picker = 'model' | 'effort' | 'agent' | null;
+
+/** The built-ins this composer runs on its own session. */
+const LOCAL_COMMANDS = new Set<string>(['model', 'effort', 'agent', 'stop', 'copy', 'export']);
 
 export function Composer({
   session,
@@ -87,51 +107,46 @@ export function Composer({
   sessionId,
   focused,
   width,
+  context,
   onCommand,
   onToast,
   onRequestFocus,
   onMetrics,
-  capabilities = null,
+  panel = null,
+  trayLeft = '',
+  seed: hostSeed = null,
+  messages = [],
+  title = 'Kortix session',
+  showTray = true,
+  copyText = copyToClipboard,
+  writeFile = (path, text) => Bun.write(path, text),
 }: ComposerProps) {
-  const textareaRef = useRef<TextareaRenderable>(null);
-  const [draft, setDraft] = useState('');
-  const draftRef = useRef('');
-  const [overlay, setOverlay] = useState<Overlay>(null);
-  const [stopArmed, setStopArmed] = useState(false);
+  const [picker, setPicker] = useState<Picker>(null);
   const [queueError, setQueueError] = useState<string | null>(null);
+  const [restore, setRestore] = useState<{ text: string; seq: number } | null>(null);
+  const [inputMetrics, setInputMetrics] = useState<PromptInputMetrics>({
+    rows: 1,
+    aboveRows: 0,
+    menuOpen: false,
+  });
 
   const inbox = useSessionPrompts(projectId, sessionId);
   const selection = useComposerSelection(session, projectId);
 
-  // Columns the text itself gets: the panel border (2) and its padding (2).
-  const textWidth = Math.max(width - 4, 10);
-  const rows = composerRows(draft, textWidth);
-  const mentions = useMemo(() => parseMentions(draft), [draft]);
+  const covered = picker !== null || panel !== null;
 
-  const setText = useCallback((value: string) => {
-    draftRef.current = value;
-    setDraft(value);
-    const renderable = textareaRef.current;
-    if (renderable && renderable.plainText !== value) renderable.setText(value);
-  }, []);
-
-  // The armed Esc forgets itself. Without the timer a stray Esc from minutes
-  // ago would turn the next one into a stop.
+  // The host sizes the transcript from this: the input's own rows, plus a
+  // fixed reserve while a picker or a host panel stands above it.
   useEffect(() => {
-    if (!stopArmed) return;
-    const timer = setTimeout(() => setStopArmed(false), ESC_STOP_WINDOW_MS);
-    return () => clearTimeout(timer);
-  }, [stopArmed]);
+    onMetrics?.({
+      rows: inputMetrics.rows,
+      aboveRows: covered ? PICKER_RESERVE_ROWS : inputMetrics.aboveRows,
+      menuOpen: !covered && inputMetrics.menuOpen,
+    });
+  }, [inputMetrics, covered, onMetrics]);
 
-  // The host sizes the transcript from this. `rows` is the textarea's own row
-  // count; `overlayOpen` tells the host to reserve room for the palette that
-  // grows upward out of the input.
-  useEffect(() => {
-    onMetrics?.({ rows, overlayOpen: overlay !== null });
-  }, [rows, overlay, onMetrics]);
-
-  const closeOverlay = useCallback(() => {
-    setOverlay(null);
+  const closePicker = useCallback(() => {
+    setPicker(null);
     onRequestFocus?.();
   }, [onRequestFocus]);
 
@@ -139,9 +154,7 @@ export function Composer({
 
   // A QUEUED prompt pins what was selected when it was queued: the inbox row is
   // durable and may be sent minutes later, after the pickers have moved on.
-  // A prompt sent NOW carries no overrides — `sendParts` reads `picks` itself
-  // (model, agent and, since `SessionPicks` gained it, variant), so repeating
-  // them here would be a second copy of the same three values.
+  // A prompt sent NOW carries no overrides — `sendParts` reads `picks` itself.
   const overrides = useCallback((): SessionPromptOverrides => {
     const picked = session.picks.model;
     return {
@@ -183,156 +196,83 @@ export function Composer({
         // Put it back rather than losing what the user typed.
         const message = error instanceof Error ? error.message : String(error);
         setQueueError(message);
-        setText(text);
+        setRestore((current) => ({ text, seq: (current?.seq ?? 0) + 1 }));
         onToast?.(`Could not queue: ${message}`, 'error');
       });
     },
-    [session, inbox.prompts.length, enqueue, onToast, setText],
+    [session, inbox.prompts.length, enqueue, onToast],
   );
 
-  const runAppCommand = useCallback(
-    (id: AppCommandId) => {
-      if (id === 'stop') {
-        void session.cancel();
-        onCommand('stop');
+  const stop = useCallback(() => {
+    void session.cancel();
+  }, [session]);
+
+  const runCommand = useCallback(
+    (entry: MenuEntry, args: string) => {
+      if (entry.source === 'runtime') {
+        void session.runCommand(entry.name, args).catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          onToast?.(`/${entry.name} failed: ${message}`, 'error');
+        });
         return;
       }
-      onCommand(id);
-    },
-    [session, onCommand],
-  );
-
-  const runRuntimeCommand = useCallback(
-    (name: string, args: string) => {
-      void session.runCommand(name, args).catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        onToast?.(`/${name} failed: ${message}`, 'error');
-      });
-    },
-    [session, onToast],
-  );
-
-  /**
-   * Submit whatever is in the buffer.
-   *
-   * A draft that STARTS with a slash is routed as a command even though the
-   * palette normally intercepts `/` before it reaches the buffer — a paste, or
-   * a `/` typed after the palette was dismissed, must not be sent to the model
-   * as literal text when it names a real command.
-   */
-  const submit = useCallback(() => {
-    const text = draftRef.current.trim();
-    if (!text) return;
-    const typed = splitCommandInput(text);
-    if (typed) {
-      const builtin = BUILTIN_COMMANDS.find((entry) => entry.name === typed.name);
-      const runtime = runtimeSupports(capabilities, 'session.commands')
-        ? (session.commands ?? []).find((entry) => entry.name === typed.name)
-        : undefined;
-      if (builtin || runtime) {
-        setText('');
-        if (builtin?.target === 'picker') {
-          setOverlay(builtin.name as Exclude<Overlay, 'commands' | null>);
-          return;
-        }
-        if (builtin) return runAppCommand(builtin.name as AppCommandId);
-        return runRuntimeCommand(typed.name, typed.args);
-      }
-    }
-    setText('');
-    sendText(text);
-  }, [session.commands, capabilities, setText, sendText, runAppCommand, runRuntimeCommand]);
-
-  // ── keys ──────────────────────────────────────────────────────────────────
-
-  /**
-   * Every composer key arrives here.
-   *
-   * `onKeyDown` is the renderable-scoped hook: OpenTUI runs it only while the
-   * textarea is focused, and runs it BEFORE the textarea's own editing action,
-   * so `preventDefault()` is what stops Enter from inserting a newline
-   * (`docs/opentui-api-reference.md` §2.4). A global `useKeyboard` handler
-   * would have to re-derive focus and could not suppress the built-in.
-   */
-  const onKeyDown = useCallback(
-    (key: KeyEvent) => {
-      // Ctrl+J reaches us as the linefeed byte, which the textarea's own
-      // default binding already turns into a newline. Stand down.
-      if (isLinefeedNewline(key)) return;
-
-      if (matchesComposerBinding(key, 'composer.cancel')) {
-        key.preventDefault();
-        if (draftRef.current.length > 0) {
-          setText('');
-          setStopArmed(false);
-          return;
-        }
-        if (!session.isBusy) return;
-        if (stopArmed) {
-          setStopArmed(false);
-          void session.cancel();
-          onCommand('stop');
+      if (LOCAL_COMMANDS.has(entry.name)) {
+        if (entry.name === 'stop') {
+          if (!session.isBusy) return void onToast?.('Nothing is running.');
+          stop();
           onToast?.('Stopping…');
           return;
         }
-        setStopArmed(true);
-        onToast?.('Esc again to stop');
-        return;
-      }
-
-      if (matchesComposerBinding(key, 'composer.newline')) {
-        key.preventDefault();
-        const renderable = textareaRef.current;
-        if (!renderable) return;
-        const offset = renderable.cursorOffset;
-        const text = renderable.plainText;
-        renderable.replaceText(`${text.slice(0, offset)}\n${text.slice(offset)}`);
-        renderable.cursorOffset = offset + 1;
-        draftRef.current = renderable.plainText;
-        setDraft(renderable.plainText);
-        return;
-      }
-
-      if (matchesComposerBinding(key, 'composer.send')) {
-        key.preventDefault();
-        submit();
-        return;
-      }
-
-      if (matchesComposerBinding(key, 'composer.commands')) {
-        const renderable = textareaRef.current;
-        const offset = renderable?.cursorOffset ?? draftRef.current.length;
-        if (isSlashTrigger(renderable?.plainText ?? draftRef.current, offset)) {
-          // Swallow the slash: the palette IS the input from here, and a
-          // leftover `/` in the buffer would be sent with the next prompt.
-          key.preventDefault();
-          setOverlay('commands');
+        if (entry.name === 'copy') {
+          const text = lastReplyText(messages);
+          if (!text) return void onToast?.('No reply to copy yet.');
+          void copyText(text).then((result) =>
+            result.ok
+              ? onToast?.(`Copied the last reply (${text.length} characters).`)
+              : onToast?.(`Copy failed: ${result.error ?? 'no clipboard tool'}.`, 'error'),
+          );
+          return;
         }
+        if (entry.name === 'export') {
+          const path = resolve(process.cwd(), args.trim() || exportFileName(title, sessionId));
+          void Promise.resolve(writeFile(path, transcriptMarkdown(messages, title)))
+            .then(() => onToast?.(`Saved ${path}`))
+            .catch((error: unknown) =>
+              onToast?.(
+                `Export failed: ${error instanceof Error ? error.message : String(error)}`,
+                'error',
+              ),
+            );
+          return;
+        }
+        setPicker(entry.name as Exclude<Picker, null>);
         return;
       }
-
-      if (matchesComposerBinding(key, 'composer.model')) {
-        key.preventDefault();
-        setOverlay('model');
-        return;
-      }
-      if (matchesComposerBinding(key, 'composer.effort')) {
-        key.preventDefault();
-        setOverlay('effort');
-        return;
-      }
-      if (matchesComposerBinding(key, 'composer.agent')) {
-        key.preventDefault();
-        setOverlay('agent');
-        return;
-      }
-
-      if (stopArmed) setStopArmed(false);
+      onCommand(entry.name as CommandName, args);
     },
-    [session, submit, setText, stopArmed, onCommand, onToast],
+    [session, stop, onCommand, onToast, messages, title, sessionId, copyText, writeFile],
   );
 
+  // Alt+M / Alt+E / Alt+G open the pickers from anywhere in the input.
+  const onKey = useCallback((key: KeyEvent) => {
+    const opened: Picker = matchesComposerBinding(key, 'composer.model')
+      ? 'model'
+      : matchesComposerBinding(key, 'composer.effort')
+        ? 'effort'
+        : matchesComposerBinding(key, 'composer.agent')
+          ? 'agent'
+          : null;
+    if (opened) setPicker(opened);
+    return opened !== null;
+  }, []);
+
   // ── render ────────────────────────────────────────────────────────────────
+
+  const runtimeCommands = useMemo<readonly RuntimeCommand[]>(
+    () =>
+      runtimeSupports(context.capabilities, 'session.commands') ? (session.commands ?? []) : [],
+    [session.commands, context.capabilities],
+  );
 
   const queuedCount = inbox.prompts.length;
   const sendError = session.sendError;
@@ -343,75 +283,113 @@ export function Composer({
       : null;
 
   const status: string[] = [];
-  if (queuedCount > 0) status.push(`queued ${queuedCount}`);
+  if (queuedCount > 0) status.push(`${queuedCount} queued`);
   if (session.isSending) status.push('sending');
-  if (mentions.length > 0) status.push(`@${mentions.length}`);
-  if (stopArmed) status.push('Esc again to stop');
-  status.push(session.isBusy ? 'Enter queues' : 'Enter sends');
+
+  // Context in use, against the window of the model that answered last (or
+  // the picked one): the one reading the tray adds to model and agent.
+  const answeredBy = contextModel({ messages: messages as SessionLogMessage[] });
+  const windowModel = (session.models ?? []).find((entry) =>
+    session.picks.model
+      ? entry.providerID === session.picks.model.providerID &&
+        entry.modelID === session.picks.model.modelID
+      : answeredBy
+        ? entry.modelID === answeredBy.model &&
+          (entry.providerID === answeredBy.provider || entry.provider === answeredBy.provider)
+        : false,
+  );
+  const contextUse = contextReading(
+    { messages: messages as SessionLogMessage[] },
+    windowModel?.contextWindow && windowModel.contextWindow > 0 ? windowModel.contextWindow : null,
+  );
+  const contextLabel =
+    contextUse.percent !== null
+      ? `${contextUse.percent}% context`
+      : contextUse.tokens > 0
+        ? `${Math.round(contextUse.tokens / 1000)}k tokens`
+        : '';
 
   const pickerWidth = Math.max(Math.min(width, 72), 24);
+  const seed = restore && (!hostSeed || restore.seq > hostSeed.seq) ? restore : hostSeed;
+
+  const tray = (
+    <box
+      flexDirection="row"
+      justifyContent="space-between"
+      height={1}
+      paddingLeft={1}
+      paddingRight={1}
+    >
+      <text fg={theme.faint} wrapMode="none">
+        {trayLeft}
+      </text>
+      <text fg={theme.dim} wrapMode="none">
+        {status.length ? <span fg={theme.busy}>{`${status.join(' · ')}  `}</span> : null}
+        <span fg={selection.modelIsDefault ? theme.dim : theme.fg}>{selection.modelLabel}</span>
+        {selection.variant ? <span fg={theme.dim}>{`:${selection.variantLabel}`}</span> : null}
+        <span fg={theme.faint}>{' · '}</span>
+        <span fg={theme.dim}>{selection.agentLabel}</span>
+        {contextLabel ? <span fg={theme.faint}>{' · '}</span> : null}
+        {contextLabel ? (
+          <span
+            fg={
+              (contextUse.percent ?? 0) >= 85
+                ? theme.danger
+                : (contextUse.percent ?? 0) >= 70
+                  ? theme.busy
+                  : theme.dim
+            }
+          >
+            {contextLabel}
+          </span>
+        ) : null}
+      </text>
+    </box>
+  );
 
   return (
-    <box flexDirection="column" width={width}>
-      {overlay === 'commands' ? (
-        <InlinePicker
-          title="Commands"
-          items={commandItems(session.commands, capabilities)}
-          width={pickerWidth}
-          onClose={closeOverlay}
-          onPick={(item) => {
-            const action = resolveCommandItem(item.id);
-            if (!action) return;
-            if (action.kind === 'picker') {
-              setOverlay(action.id);
-              return;
-            }
-            closeOverlay();
-            if (action.kind === 'app') runAppCommand(action.id);
-            else runRuntimeCommand(action.name, '');
-          }}
-        />
-      ) : null}
+    <box flexDirection="column" width={width} zIndex={1}>
+      {panel}
 
-      {overlay === 'model' ? (
+      {picker === 'model' ? (
         <ModelPicker
           groups={selection.groups}
           models={selection.models}
           selected={session.picks.model}
           width={pickerWidth}
-          onClose={closeOverlay}
+          onClose={closePicker}
           onUnavailable={(model) =>
             onToast?.(`${model.modelName} is turned off for this project.`, 'error')
           }
           onPick={(key) => {
             selection.setModel(key);
-            closeOverlay();
+            closePicker();
           }}
         />
       ) : null}
 
-      {overlay === 'effort' ? (
+      {picker === 'effort' ? (
         <EffortPicker
           variants={selection.variants}
           selected={selection.variant}
           width={pickerWidth}
-          onClose={closeOverlay}
+          onClose={closePicker}
           onPick={(variant) => {
             selection.setVariant(variant);
-            closeOverlay();
+            closePicker();
           }}
         />
       ) : null}
 
-      {overlay === 'agent' ? (
+      {picker === 'agent' ? (
         <AgentPicker
           agents={selection.agents}
           selected={selection.agent}
           width={pickerWidth}
-          onClose={closeOverlay}
+          onClose={closePicker}
           onPick={(name) => {
             selection.setAgent(name);
-            closeOverlay();
+            closePicker();
           }}
         />
       ) : null}
@@ -422,50 +400,26 @@ export function Composer({
         </text>
       ) : null}
 
-      <box
-        border
-        borderStyle="single"
-        borderColor={focused && !overlay ? theme.borderFocus : theme.border}
-        backgroundColor={theme.bg}
-        paddingLeft={1}
-        paddingRight={1}
-        flexDirection="column"
-        overflow="hidden"
-      >
-        <textarea
-          ref={textareaRef}
-          focused={focused && overlay === null}
-          height={rows}
-          wrapMode="word"
-          placeholder="Type / for skills, commands, and files"
-          placeholderColor={theme.faint}
-          textColor={theme.fg}
-          focusedTextColor={theme.fg}
-          backgroundColor={theme.bg}
-          focusedBackgroundColor={theme.bg}
-          cursorColor={theme.accent}
-          onKeyDown={onKeyDown}
-          onContentChange={() => {
-            const value = textareaRef.current?.plainText ?? '';
-            draftRef.current = value;
-            setDraft(value);
-          }}
-        />
-      </box>
-
-      <box flexDirection="row" justifyContent="space-between" height={1}>
-        <text fg={theme.dim} wrapMode="none">
-          <span fg={selection.modelIsDefault ? theme.dim : theme.fg}>{selection.modelLabel}</span>
-          <span fg={theme.faint}>{' ▾  '}</span>
-          <span fg={selection.variant ? theme.fg : theme.dim}>{selection.variantLabel}</span>
-          <span fg={theme.faint}>{' ▾  '}</span>
-          <span fg={theme.fg}>{selection.agentLabel}</span>
-          <span fg={theme.faint}>{' ▾'}</span>
-        </text>
-        <text fg={theme.faint} wrapMode="none">
-          {status.join(' · ')}
-        </text>
-      </box>
+      <PromptInput
+        focused={focused && !covered}
+        width={width}
+        placeholder={
+          session.isBusy
+            ? 'Type to queue the next prompt · / for commands'
+            : 'Type a prompt · / for commands'
+        }
+        context={context}
+        runtimeCommands={runtimeCommands}
+        busy={session.isBusy}
+        onSubmit={sendText}
+        onCommand={runCommand}
+        onStop={stop}
+        onToast={onToast}
+        onKey={onKey}
+        onMetrics={setInputMetrics}
+        seed={seed}
+        footer={showTray ? tray : null}
+      />
     </box>
   );
 }

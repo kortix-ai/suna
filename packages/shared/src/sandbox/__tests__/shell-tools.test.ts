@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
 import { kortixToolchainLayer } from '../dockerfile-layer';
-import { buildMetaSandboxDockerfile } from '../meta-dockerfile';
+import { buildMyKortixSandboxDockerfile } from '../my-kortix-dockerfile';
 import {
   SANDBOX_SHELL_TOOL_APT_LIST,
   SANDBOX_SHELL_TOOL_LINK_COMMAND,
@@ -21,10 +21,12 @@ const IMAGES: Array<{ label: string; dockerfile: string }> = [
   },
   {
     label: 'meta-agent image',
-    dockerfile: buildMetaSandboxDockerfile({
+    dockerfile: buildMyKortixSandboxDockerfile({
       agentBinaryPath: 'a',
       cliBinaryPath: 'a',
       entrypointScriptPath: 'a',
+      machineDocPath: 'MACHINE.md',
+      slackCliPath: 'kortix-slack-cli',
       managedSkillsPath: 'a',
     }),
   },

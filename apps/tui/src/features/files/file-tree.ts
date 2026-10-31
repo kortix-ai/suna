@@ -113,13 +113,19 @@ export function forgetLoads(tree: FileTree): FileTree {
   return { ...tree, loads: new Map() };
 }
 
-/** The directory a path sits in, or null at or above the root. */
+/**
+ * The directory a path sits in, or null at or above the root.
+ *
+ * A directory the tree has loaded counts too, even outside the root: the
+ * `/drives` folder sits beside `/workspace`, not under it, and `h` on a mount
+ * must still reach it.
+ */
 export function parentOf(tree: FileTree, path: string): string | null {
   if (path === tree.root) return null;
   const cut = path.lastIndexOf('/');
   if (cut <= 0) return null;
   const parent = path.slice(0, cut);
-  return parent.length >= tree.root.length ? parent : null;
+  return parent.length >= tree.root.length || tree.loads.has(parent) ? parent : null;
 }
 
 /** Depth-first rows for every expanded directory, root children first. */

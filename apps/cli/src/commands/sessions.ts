@@ -26,8 +26,8 @@ import {
   runSessionsPending,
 } from './sessions-approvals.ts';
 import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
-import { runSessionsConnect } from './sessions-connect.ts';
 import { runSessionsForward } from './sessions-forward.ts';
+import { runSessionsInbound, runSessionsMessage, runSessionsReachable } from './sessions-peer.ts';
 import type { Auth } from '../api/auth.ts';
 import { confirm } from '../prompts.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
@@ -106,8 +106,9 @@ Subcommands:
                                     --all, --json. Aliases: overview, ps.
   new [--prompt "<text>"]           Start a new session, optionally with an
                                     initial prompt. --agent <name> pins the
-                                    session to that agent (default: the
-                                    project's declared default agent).
+                                    session to that agent (default: My
+                                    Kortix; default_agent when My Kortix is
+                                    off, or when My Kortix starts it).
                                     --model <id> overrides the model. A
                                     model on an API key or a ChatGPT
                                     subscription runs on every key you may
@@ -121,11 +122,6 @@ Subcommands:
                                     1 when the turn fails). --json prints
                                     the session object (capture session_id
                                     to orchestrate).
-                                    --connect (deprecated with OpenCode)
-                                    attaches the OpenCode TUI as soon as it's
-                                    ready (implies --wait); a pi session
-                                    cannot attach, so it exits 1. Talk to a
-                                    session with kortix sessions chat <id>.
                                     --with-file <local path> (repeatable)
                                     uploads the file to
                                     /workspace/incoming/<name> before the
@@ -156,11 +152,25 @@ Subcommands:
                                     runtime. --steer stores it the same way and
                                     hands it to the running turn at its next
                                     step.
+  message <to> ["<text>"]           Send another session a message from this
+                                    one ($KORTIX_SESSION_ID, else --from
+                                    <session>). <to>: a handle, a session id
+                                    or 8+ characters, parent. --summary,
+                                    --notify-idle (one notice back when its
+                                    turn ends), --json. Reads stdin when no
+                                    text is given.
+  reachable                         The sessions this one can message:
+                                    parent, children, lead, teammates
+                                    (--scope project: every live session).
+                                    --from, --json.
+  inbound <session-id> [<mode>]     What a session does with messages from
+                                    other sessions: accept (default), hold
+                                    (a person approves each), refuse. ls,
+                                    approve <id>, deny <id> decide held
+                                    messages. --json.
   queue <session-id> [<sub>]        The durable prompt inbox: ls (default), rm
                                     <prompt-id>, now <prompt-id>, hold,
                                     release. --json.
-  connect [<session-id>]            Attach local OpenCode to the running
-                                    session sandbox. Pass args after --.
   shell [<session-id>]              Open a raw interactive terminal (PTY) in
                                     the sandbox — no agent, just a shell.
                                     Reattaches to the existing one; --new
@@ -299,11 +309,6 @@ export async function runSessions(argv: string[]): Promise<number> {
   if (sub === 'chat' || sub === 'talk') {
     return runSessionsChat(argv.slice(1));
   }
-  // `connect` owns its own flag parsing and forwards remaining args to
-  // `opencode attach`, so route it before we consume flags below.
-  if (sub === 'connect' || sub === 'attach') {
-    return runSessionsConnect(argv.slice(1));
-  }
   // `shell` owns its own flag parsing (incl. --new + a positional session id).
   if (sub === 'shell' || sub === 'terminal' || sub === 'ssh') {
     return runSessionsShell(argv.slice(1));
@@ -350,6 +355,16 @@ export async function runSessions(argv: string[]): Promise<number> {
   }
   if (sub === 'update' || sub === 'label' || sub === 'set') {
     return runSessionsUpdate(argv.slice(1));
+  }
+  // Messages between sessions own their flags, a positional `to` and a stdin body.
+  if (sub === 'message') {
+    return runSessionsMessage(argv.slice(1));
+  }
+  if (sub === 'reachable') {
+    return runSessionsReachable(argv.slice(1));
+  }
+  if (sub === 'inbound') {
+    return runSessionsInbound(argv.slice(1));
   }
   // Everything below owns its own flag parsing (repeatable flags, positional
   // subcommands, or a stdin body), so route before the shared parse.
@@ -408,7 +423,6 @@ export async function runSessions(argv: string[]): Promise<number> {
   }
   const json = takeFlagBool(rest, ['--json']);
   const wait = takeFlagBool(rest, ['--wait']);
-  const connectAfter = takeFlagBool(rest, ['--connect']);
   const listPreviews = takeFlagBool(rest, ['--list']);
   let projectFlag: string | undefined;
   let promptFlag: string | undefined;
@@ -454,7 +468,7 @@ export async function runSessions(argv: string[]): Promise<number> {
       return sessionsLs(ctxOpts, listFlags!, json);
     case 'new':
     case 'create':
-      return sessionsNew(promptFlag, ctxOpts, json, wait, agentFlag, overrides, withFiles, connectAfter);
+      return sessionsNew(promptFlag, ctxOpts, json, wait, agentFlag, overrides, withFiles);
     case 'info':
     case 'show':
       return sessionsInfo(rest[0], ctxOpts, json);
@@ -639,19 +653,6 @@ function printDeletedSessions(sessions: ProjectSession[]): number {
   return 0;
 }
 
-/**
- * Post-create connect decision for `sessions new`: only an explicit `--connect`
- * attaches. Nothing asks: every new session runs pi, and `connect` attaches
- * OpenCode's own TUI (deprecated with OpenCode), so it exits 1 on pi.
- */
-export function resolveConnectAfterCreate(input: {
-  connect: boolean;
-  json: boolean;
-  tty: boolean;
-}): 'connect' | 'no' {
-  return input.connect ? 'connect' : 'no';
-}
-
 async function sessionsNew(
   prompt: string | undefined,
   opts: CtxOpts,
@@ -660,7 +661,6 @@ async function sessionsNew(
   agent?: string,
   overrides: SessionOverrides = {},
   withFiles: string[] = [],
-  connectAfter = false,
 ): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -725,9 +725,7 @@ async function sessionsNew(
   }
 
   // Drive the same canonical /start lifecycle endpoint the dashboard polls.
-  // Row status alone can say "running" before OpenCode is actually ready.
-  // Shared by --wait (readiness before returning) and the post-create connect
-  // path (attach needs a live runtime).
+  // Row status alone can say "running" before the runtime is actually ready.
   const awaitReadiness = async (): Promise<boolean> => {
     process.stderr.write(`Session ${created.session_id}: created (${created.status}); waiting for readiness…\n`);
     let previousStage = '';
@@ -790,7 +788,7 @@ async function sessionsNew(
   };
 
   let waited = false;
-  if (wait || connectAfter) {
+  if (wait) {
     if (!(await awaitReadiness())) return 1;
     waited = true;
   }
@@ -853,15 +851,7 @@ async function sessionsNew(
     );
   }
 
-  const tty = process.stdin.isTTY === true && process.stdout.isTTY === true;
-  if (resolveConnectAfterCreate({ connect: connectAfter, json, tty }) === 'connect') {
-    // A runtime without `session.attach` (pi) makes `connect` exit 1 with the
-    // reason and the shell/chat alternatives.
-    if (!waited && !(await awaitReadiness())) return 1;
-    const pins = ['--project', ctx.projectId, ...(opts.hostArg ? ['--host', opts.hostArg] : [])];
-    return runSessionsConnect([created.session_id, ...pins]);
-  }
-  if (tty) {
+  if (process.stdin.isTTY === true && process.stdout.isTTY === true) {
     process.stdout.write(
       `  ${C.dim}Chat: ${C.reset}${C.cyan}kortix sessions chat ${created.session_id}${C.reset}\n`,
     );

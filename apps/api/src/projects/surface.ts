@@ -41,6 +41,9 @@ export {
   retireWarmProjectSessions,
 } from './session-lifecycle';
 export type { CreateSessionCommand } from './session-lifecycle';
+export type { PromptPartWire } from './session-lifecycle/prompt-payload';
+export { promptWireModel } from './lib/effort-default';
+export { continuationOverrides } from './session-lifecycle/queued-continue-delivery';
 export { sessionIsTombstoned } from './lib/session-visibility';
 
 // The shutdown hand-back of lifecycle claims (consumed by bootstrap.ts).
@@ -64,6 +67,8 @@ export { mentionTokens, mentionsMember } from './rooms/envelope';
 export { resolveAndAuthorizeAgentAs } from './lib/agent-access';
 export { loadVisibleSession } from './lib/session-visibility';
 export { sessionHoldsLiveTurn } from './session-lifecycle/inbox-admission';
+// Does a sandbox's runtime keep a prompt's message id (consumed by the sandbox proxy's wire-id placement).
+export { sandboxKeepsMessageIds } from './session-lifecycle/inbox-admission';
 
 // Project access, the route app and the secret envelope.
 export { assertProjectCapability, loadProjectForUser } from './lib/access';
@@ -146,7 +151,7 @@ export { PURGE_BATCH_SIZE, purgeSessionContent } from './session-log-purge';
 
 // Git reads (consumed by config-releases/publish.ts and config-releases/base-tip.ts).
 export { resolveCommitSha, resolveCommitShaAt } from './git/commits';
-export { refreshIntervalMs, refreshMirror } from './git/mirror';
+export { refreshIntervalMs, refreshMirror, useSharedTipProof } from './git/mirror';
 export type { GitBackedProject } from './git/types';
 
 // Who may stop a running turn (consumed by channels/core/turn-stop.ts and
@@ -169,3 +174,7 @@ export { recordChannelsReenabled } from './lib/channels-onboarding';
 // Author names written into memory files (consumed by ../memory/layers.ts).
 export { resolveUserIdentities } from './lib/user-identity';
 export { readPublicResponse } from './lib/public-response';
+// Shutdown: the Claude sign-ins this task runs (bootstrap.ts).
+export { drainClaudeLogins } from './claude-subscription/flows';
+// The turn gate for Claude subscription models (sandbox-proxy/forward/turn-start.ts).
+export { missingClaudeSubscription, sessionModelPin } from './claude-subscription/gate';

@@ -3,12 +3,11 @@
  *
  * A brand-new managed project is only usable once its repo carries a real
  * commit on the default branch — the agents, skills, `kortix.yaml`, and every
- * OpenCode/Claude/Codex/Pi runtime profile live IN the repo, and session start
- * pushes a session branch off `refs/heads/<default_branch>`. A repo with no
- * default branch is therefore structurally dead: the file browser is empty, no
- * agent resolves, manifest detection falls back to v1, and session start dies
- * with `fatal: couldn't find remote ref refs/heads/main`
- * (`createRemoteSessionBranch`, ./git/branches.ts).
+ * OpenCode/Claude/Codex/Pi runtime profile live IN the repo, and every session
+ * branch forks off `refs/heads/<default_branch>`. A repo with no default
+ * branch is therefore structurally dead: the file browser is empty, no agent
+ * resolves, manifest detection falls back to v1, and a git read of the base
+ * fails with `fatal: couldn't find remote ref refs/heads/main`.
  *
  * `POST /projects/provision` used to report `201 { status: 'active' }` for
  * exactly that repo whenever the caller did not pass `seed_starter: true`, and
@@ -283,8 +282,8 @@ export function shouldSelfHealManagedRepoSeed(input: {
 /**
  * Is this git failure "the default branch does not exist on the remote"?
  *
- * The two wordings a structurally empty managed repo produces, in order, from
- * `createRemoteSessionBranch` (./git/branches.ts): the shallow fetch prints
+ * The two wordings a structurally empty managed repo produces, in order: a
+ * shallow fetch of the default branch prints
  * `couldn't find remote ref refs/heads/<branch>`, and a `rev-parse --verify`
  * of the same ref prints `Needed a single revision`.
  *

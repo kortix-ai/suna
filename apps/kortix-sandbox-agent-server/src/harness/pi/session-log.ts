@@ -77,6 +77,13 @@
  * record then carries a higher seq than its streaming puts, and replaces
  * them (higher rev). A user message has no seq until pi appends its entry,
  * when its turn starts.
+ *
+ * The queued seq (`RUNTIME_LOG_CAPABILITY`). Until then an admitted prompt is in
+ * the log at a provisional seq above every real one: the last of n queued
+ * prompts at `Number.MAX_SAFE_INTEGER`, the one before it one lower, in run
+ * order. Only the box's own reads and the v2 stream carry it (`piQueued`,
+ * `piLive`); the journal never sends it, so apps/api stores only real seqs. Its
+ * turn-start record, at its real seq and a higher rev, replaces it.
  */
 import { createHash } from 'node:crypto'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
@@ -85,6 +92,7 @@ import {
   SESSION_LOG_MINOR,
   SESSION_LOG_SCHEMA,
   PI_CAPABILITIES,
+  liveMessageFromV1,
   type ExportCursor,
   type SessionLog,
   type SessionLogBlock,
@@ -102,6 +110,7 @@ import { restorePiSessionLog, type PiRestoreTarget } from './session-log-restore
 import { assistantMessageError } from './turn-events'
 import { PI_HARNESS_VERSION } from './version'
 import { imageTagPaths } from './images'
+import type { PendingRecord } from './interactions'
 
 export interface PiChildSnapshot {
   id: string
@@ -144,6 +153,10 @@ export interface PiSessionSnapshot {
   reply: { id: string; timestamp: number } | null
   agent: string | null
   model: { provider: string; model: string } | null
+  /** The permission requests and questions waiting for an answer. Absent: none. */
+  pending?: { questions: PendingRecord[]; permissions: PendingRecord[] }
+  /** Admitted root prompts pi has not appended yet, in run order (the queued seq). Absent: none. */
+  queued?: string[]
 }
 
 export const PI_VERSION = PI_HARNESS_VERSION.split('@').pop() ?? PI_HARNESS_VERSION
@@ -526,7 +539,7 @@ export function piSessionLog(s: PiSessionSnapshot): { log: SessionLog; hashes: M
     ...V, session_id: s.sessionId, title: s.title, created_at: created, restore_grade: 'native',
     harness: { current: 'pi', history: [{ harness: 'pi', version: PI_VERSION, from_seq: 1, at: created }] },
     selection: { agent: s.agent, model: s.model },
-    todos: [], pending: { questions: [], permissions: [] },
+    todos: [], pending: s.pending ?? { questions: [], permissions: [] },
     threads: [root, ...children],
   }
   return { log, hashes, images }
@@ -561,15 +574,35 @@ function spawnedBy(messages: SessionLogMessage[], childId: string): SessionLogTh
   return null
 }
 
-/** A live message's seq (see the header) and pi timestamp; null for a message pi has not appended that is not the reply it streams. */
-export function piLive(s: PiSessionSnapshot, threadId: string, messageId: string): { seq: number; created_at: string } | null {
+/** A queued prompt's provisional seq and admission time (the queued seq, see the header); null for any other message. */
+function queuedSeq(s: PiSessionSnapshot, messageId: string): { seq: number; created_at: string } | null {
+  const queued = s.queued ?? []
+  const at = queued.indexOf(messageId)
+  if (at < 0) return null
+  const row = s.transcript.find((m) => m.info.id === messageId)
+  return { seq: Number.MAX_SAFE_INTEGER - (queued.length - 1 - at), created_at: iso(row?.info.time.created) }
+}
+
+/** The root's queued prompts as log records, at their queued seqs, in run order (see the header). */
+export function piQueued(s: PiSessionSnapshot): SessionLogMessage[] {
+  return (s.queued ?? []).flatMap((id) => {
+    const row = s.transcript.find((m) => m.info.id === id && m.info.sessionID === s.rootId)
+    const known = queuedSeq(s, id)
+    return row && known ? [liveMessageFromV1({ info: row.info, parts: row.parts }, known, 'pi')] : []
+  })
+}
+
+/** A live message's seq (see the header) and pi timestamp; null for a message pi has not appended that is not the reply it streams or a queued prompt. */
+export function piLive(s: PiSessionSnapshot, threadId: string, messageId: string): { seq: number; created_at: string; queued?: true } | null {
   // As deriveThread times each record.
   const at = (m: J | undefined) => iso(m?.timestamp)
   if (threadId === s.rootId) {
     const seqOf = rootSeqs(s)
     const e = s.entries.find((x) => s.entryMessageIds[x.id] === messageId) as J | undefined
     if (e) return { seq: seqOf(e.id), created_at: e.type === 'compaction' ? isoOf(e.timestamp) : at(e.type === 'message' ? e.message : e) }
-    return messageId === s.reply?.id ? { seq: seqOf(), created_at: at(s.reply) } : null
+    if (messageId === s.reply?.id) return { seq: seqOf(), created_at: at(s.reply) }
+    const queued = queuedSeq(s, messageId)
+    return queued ? { ...queued, queued: true } : null
   }
   const child = s.children.find((c) => c.id === threadId)
   if (!child) return null

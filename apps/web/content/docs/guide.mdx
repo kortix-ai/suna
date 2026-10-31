@@ -182,7 +182,30 @@ Access is deny-by-default. An agent gets no connector, secret, skill, App or pro
 
 You talk to **My Kortix**, the built-in agent. It routes each task to the project agent made for it and runs it with your permissions.
 
+- **It has your rights, no more.** In this project, My Kortix can do what your role lets you do: create and change agents, connectors, schedules and people. When your role does not allow something, it says so and names the people who can grant it.
+- **It asks first** before an action that affects other people (an invitation, a role change), deletes something, or gives an agent more access. It shows what changes, before and after.
+- **It hands off the work.** Writing, research, code and anything with a connected app goes to the agent made for it, in its own session. Open that session from the card in the chat. For a job with several steps, My Kortix runs a workflow and shows each agent's progress in one card.
+- **Each action is a card** in the chat: what it did, what changed, and a link to the page where you see it.
+- **Account settings stay with you.** Billing, the account's members and other projects are outside My Kortix's reach. It tells you where to click.
+
+My Kortix runs the work it hands off in the background. Each task runs in its own session, listed under your conversation in the sidebar, and My Kortix stays free to talk with you. When a background task finishes, a **Worker complete** or **Worker failed** card appears in your conversation and My Kortix tells you the result. Select the card to open that session. See [Several agents at once](#several-agents-at-once).
+
 Every new project starts with one agent called `worker`, the general-purpose agent My Kortix routes work to. It is the default agent: a session that names no other agent runs it. It has access to all connectors, secrets, skills and Kortix permissions in the project. You can edit its instructions to fit your company. A project created before this keeps its `kortix` agent.
+
+### Several agents at once
+
+My Kortix runs your work while you keep talking to it. Ask for three things in a row, and three agents work on them at the same time.
+
+- **You never wait.** My Kortix answers at once: "⏳ I've handed that to the post writer. I'll tell you when it's done." Ask it anything else meanwhile.
+- **Results come to you.** When an agent finishes, My Kortix tells you the outcome in a line or two, with a link to the work.
+- **Ask how it's going.** "How's the post writer doing?" gets the current state, without waiting for the end.
+- **Change course.** "Tell the post writer to keep it under 500 words" sends that agent a message. "Stop the research" stops it.
+- **Follow up with the same agent.** "Ask the post writer to add a summary too" goes to the agent that wrote the post, in its own session, with everything it already knows. My Kortix starts a new agent only for separate work at the same time.
+- **Talk to another session.** "Tell the session working on the pricing page that the copy is approved" sends that session a message. Type `@` to pick the session by name. "Tell me when it's done" gets you one notice when that session finishes.
+- **Messages from other sessions** show as one line, **Message from @reviewer**. A message from another session never approves anything for you. To decide each message yourself, set the session to **Hold messages**: each one waits for your **Approve** or **Deny** for 5 minutes. **Refuse messages** turns them all away.
+- **Workflows.** For a big job, such as checking every page of a site, My Kortix runs a workflow: a plan that runs many agents at once. You approve it first. Its card shows each agent's progress, and has **Pause**, **Restart**, **Stop** and **Save**. Write `ultracode` in your message to ask for a workflow. A workflow with more than 25 agents shows **Large workflow**. One workflow runs at most 50 agents, 8 at a time, for at most 2 hours.
+- **Teams.** A team is a group of agents that share one to-do list and talk to each other. Ask for one: "Start a team of three: one researches, one writes, one checks the facts." The team leader splits the work into items, each teammate takes the next free item, and the leader puts the answers together for you. Each teammate runs one of your agents. Its role, such as "fact checker", applies to that teammate's session only: no agent is created or changed, and the team is not saved. It lives in the conversation that started it. Teams are experimental and off by default: turn on **Agent teams** in **Customize** → **Settings** → **Feature flags**.
+- **See everything at once.** The board view of the session list groups every session by state: working, needs you, idle, done, failed and stopped. A session that needs you shows what it waits for: a question or an approval.
 
 ### Create your own agent
 
@@ -241,6 +264,12 @@ Changes to the project itself go through review too. When an agent changes a ski
 <Callout type="warning">
 The built-in `kortix` agent is allowed to merge its own change requests. Its standing instructions tell it to stop after it opens one, so a person merges. To require a person every time, remove the merge permission from the agent's **Kortix permissions**.
 </Callout>
+
+### When kortix.yaml has a problem
+
+`kortix.yaml` can have a mistake, such as a misspelled key or a skill that is not registered. The project then shows a banner with the problems. Select **Fix with My Kortix**: My Kortix fixes the file and opens a change request for you to review. The agent of every session also gets the list, so you can ask any agent to fix it.
+
+The project keeps running while the file has a mistake. Kortix turns off only the broken part, such as one agent or one trigger, and never gives an agent more access than the file grants. When the mistake is in a part the whole project depends on, only My Kortix runs until the file is fixed. The rules are in the [kortix.yaml reference](/docs/developers#when-kortixyaml-has-a-problem).
 
 ## Skills
 
@@ -372,6 +401,7 @@ Drive is the project's shared folders, for people and agents. Sessions open the 
 - **Shared folders.** Any folder can be shared with people, groups and agents.
 - **What a session sees.** A new session opens the folders that its agent, or the whole project, has access to. In a private session that you started, it also opens your own folder and every folder shared with you or your groups.
 - **Where to manage them.** Open **Drive** in the sidebar: **My files** (only you), **Company** (everyone) and, for admins, **All files**.
+- **Large files.** Drive takes a file of any size, up to the project's storage limit: in the web app, with `kortix drive put <local> <path>`, and through the API. A file over 64 MiB goes up in 1 MiB blocks, and only the blocks Drive does not have yet travel. The file appears when its last block lands.
 
 Drive is on by default. It is experimental. Its folders are stored on Platinum, where sessions run.
 
@@ -387,7 +417,9 @@ Memory is Markdown files in Drive: facts about the company, its people, its conv
 
 Agents read and write Memory files through the folders their session opens. Kortix does not paste memory into every prompt: a built-in skill tells each agent to read memory at the start of a task.
 
-The project repository can hold memory too: a `memory/` folder with `MEMORY.md` as its index. The built-in `memory` tool edits it, and every edit lands through a change request. The reflection agent that ships with every project tidies it when you turn on its daily schedule.
+**My Kortix remembers you.** Tell My Kortix "remember that I like short replies", or correct how it works, and it saves one short page about it. Say "forget that I work on the launch", and it deletes the page. It says what it did in one line: "💡 Noted: you like replies short." My Kortix reads these pages at the start of every chat in this project. They live in your own folder, under `Memory/mykortix`, and only you see them. Ask "what do you remember about me?" to see them. This needs Files.
+
+The project repository can hold memory too: a `memory/` folder with `MEMORY.md` as its index. Agents edit it with their file tools, and every edit lands through a change request. The reflection agent that ships with every project tidies it when you turn on its daily schedule.
 
 <Callout type="warning">
 Never put passwords, API keys or personal data in memory. Store credentials as project secrets instead.
@@ -634,7 +666,7 @@ Any website or tool that the agent starts on its computer is reachable from outs
 
 #### Desktop
 
-Every cloud computer has a desktop. Select the **Desktop** button in the session header to watch it live. The desktop has one browser, and you share it with the agent: you see each page it visits, and the browser on the dock opens that same window with the same tabs and logins. Kortix has control by default. Select **Take over** to click and type yourself, for example to sign in to a site for the agent, or to use the terminal or the file manager on the dock. Select **Return control** to hand it back. The desktop resizes to fit the panel.
+Every session of your project's agents runs on a computer with a desktop. Select the **Desktop** button in the session header to watch it live. My Kortix runs on a minimal computer without one, so its sessions show no **Desktop** button: it hands browsing to your agents' sessions. The desktop has one browser, and you share it with the agent: you see each page it visits, and the browser on the dock opens that same window with the same tabs and logins. Kortix has control by default. Select **Take over** to click and type yourself, for example to sign in to a site for the agent, or to use the terminal or the file manager on the dock. Select **Return control** to hand it back. The desktop resizes to fit the panel.
 
 A session on a custom sandbox template gets the desktop when the template's base image is Ubuntu 24.04.
 
@@ -711,7 +743,7 @@ Open **Project admin → Connectors → Computers → Accounts** and select **Sh
 
 <video src="/media/guide/models.mp4" aria-label="Models in Kortix: providers, a custom endpoint and costs" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
-A model is the AI an agent runs on. Use Kortix-managed models, your own provider keys, or a ChatGPT subscription. Set a project default, a model per agent, or a model for one session. Every model request goes through the Kortix LLM gateway, which applies budgets, access rules and cost reports.
+A model is the AI an agent runs on. Use Kortix-managed models, your own provider keys, a ChatGPT subscription, or a Claude subscription. Set a project default, a model per agent, or a model for one session. Every model request goes through the Kortix LLM gateway, which applies budgets, access rules and cost reports.
 
 ### How it works
 
@@ -730,6 +762,17 @@ Kortix-managed models need no key. They are the models Platinum Inference offers
 When a request runs on your own key or subscription, your provider bills it. Every plan, Free included, can use your own key or a ChatGPT subscription. For any Kortix fee on your own keys, see [Plans & credits](/docs/guide#billing).
 
 A provider key belongs to the whole project.
+
+#### Your Claude subscription
+
+Connect a Claude Pro or Max plan, and Claude models run on it: **Claude Opus 5.5**, **Claude Fable 5.1**, **Claude Sonnet 5.5** and **Claude Haiku 5.5** (`claude-agent/opus`, `claude-agent/fable`, `claude-agent/sonnet`, `claude-agent/haiku`).
+
+- Each turn runs through Claude Code, Anthropic's own program, on the session's computer. Claude Code sends each model request to the Kortix LLM gateway, which adds the Claude account's login and forwards the request to Anthropic unchanged. The login never enters the session's computer. Claude requests use no credits.
+- Everything else stays the same. The agent's tools, permissions, questions, subagents, skills and pi extensions work as with any other model, and the session shows the same messages and tool calls.
+- Switch between a Claude subscription model and any other model in the same session. The new model sees the whole conversation.
+- A Claude account works like a ChatGPT account. It is private to you until you share it with the project or with chosen members. A session uses the accounts selected for it, else your own, else one shared with the project. Triggers and channels use the shared ones. Kortix stores the login encrypted and never shows it again.
+- Your Claude plan sets the limits. When you reach one, the turn ends with "Your Claude subscription limit is reached" and the time it resets.
+- Claude Code features that Kortix has no version of do not apply: plan usage (`/usage`), auto mode and Claude Code's own skills.
 
 **A ChatGPT subscription also generates images.** With a connected ChatGPT account, the `image_gen` tool can use `gpt-image-2` on your plan. ChatGPT sets its own image limit, separate from the plan's chat limit. Reaching the image limit does not pause the account for chat. An OpenAI, Google, xAI or OpenRouter key also generates images. Kortix-managed models do not generate images yet. See [Generate images](/docs/developers#generate-images).
 
@@ -756,6 +799,8 @@ Choose a model in the composer's model picker. A stopped session uses the new mo
 </Step>
 <Step title="Connect your own provider">
 Open **Project admin → Models → Providers** and paste a key. For a ChatGPT subscription, choose **Use your ChatGPT subscription** in the model picker, then **Connect ChatGPT**.
+
+For a Claude subscription, open **Project admin → Models → Providers → Anthropic**. Under **Claude accounts**, choose **Sign in with Claude**, name the account and choose who can use it. Approve Kortix on claude.com, paste the code Claude shows you, and choose **Connect Claude**. The Claude models then appear in the model picker under **Claude subscription**. To share an account later, open its menu and choose **Manage access**. In a terminal, run `kortix providers login claude`. A token you made with `claude setup-token` works too: pipe it to `kortix providers login claude --token-stdin`.
 </Step>
 <Step title="Set a budget">
 Open **Project admin → Models → Costs**. Set a limit per day, week or month. Choose **Block** to refuse new requests at the limit, or **Warn only** to let them run.
@@ -1006,7 +1051,7 @@ curl -fsSL https://kortix.com/install | bash
 
 Then run `kortix login`. Your browser opens, and you approve the sign-in there.
 
-The TUI is a full Kortix client inside your terminal. Start it with `kortix tui`. It shows your accounts, projects and sessions, a shell in the session's machine, and the files, review and settings screens. It is experimental, so its screens and keys can change between releases.
+The TUI is a full Kortix client inside your terminal. Start it with `kortix tui`. One session fills the screen, and you do everything from its input: type `/` to list every command, `/sessions` to open another session, `/new` to start one, `/drive` or `/approvals` to open that screen. With no session open, the first prompt you type starts one. `/sidebar` shows a sidebar with your projects and sessions, and the TUI remembers that choice. It is experimental, so its commands and keys can change between releases.
 
 ### Other AI tools (MCP)
 

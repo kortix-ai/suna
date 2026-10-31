@@ -10,6 +10,9 @@ import {
   type ManifestIssue,
 } from '../index.ts';
 
+/** One trigger `d` whose other fields are the YAML lines in `fields`. */
+const trig = (fields: string) => `triggers:\n  - slug: d\n${fields.trim().split('\n').map((l) => `    ${l}`).join('\n')}\n`;
+
 function errorPaths(input: string | Record<string, unknown>): string[] {
   return validateManifest(input).issues.filter((i) => i.severity === 'error').map((i) => i.path);
 }
@@ -19,264 +22,144 @@ function warningPaths(input: string | Record<string, unknown>): string[] {
 }
 
 describe('validateManifest — object input', () => {
-  test('accepts an already-parsed object without re-parsing TOML', () => {
-    const result = validateManifest({ kortix_version: 1 });
+  test('accepts an already-parsed object without re-parsing', () => {
+    const result = validateManifest({});
     expect(result.valid).toBe(true);
-    expect(result.parsed).toEqual({ kortix_version: 1 });
+    expect(result.parsed).toEqual({});
   });
 
   test('object input echoes the same object back as parsed', () => {
-    const obj = { kortix_version: 1, project: { name: 'x' } };
+    const obj = { project: { name: 'x' } };
     const result = validateManifest(obj);
     expect(result.parsed).toBe(obj);
   });
 
-  test('object input with bad version is rejected', () => {
-    const result = validateManifest({ kortix_version: 0 });
-    expect(result.valid).toBe(false);
-    expect(result.issues.map((i) => i.path)).toContain('kortix_version');
-  });
-
-  test('version above known max produces an unsupported error', () => {
+  test('object input with a retired version is rejected', () => {
     const result = validateManifest({ kortix_version: 99 });
-    expect(result.issues.some((i) => i.message.includes('Unsupported schema version'))).toBe(true);
+    expect(result.valid).toBe(false);
+    expect(result.issues.map((i) => i.path)).toEqual(['kortix_version']);
   });
 });
 
-describe('validateManifest — failed TOML parse with non-toml error path', () => {
-  test('non-string non-object behaviour: a syntax error returns null parsed', () => {
-    const result = validateManifest('key = ');
+describe('validateManifest — failed parse', () => {
+  test('a syntax error returns null parsed', () => {
+    const result = validateManifest('key: [');
     expect(result.parsed).toBeNull();
     expect(result.valid).toBe(false);
   });
 });
 
-describe('validateManifest — [project]', () => {
+describe('validateManifest — project', () => {
   test('non-table project is rejected', () => {
-    expect(errorPaths('kortix_version = 1\nproject = "oops"')).toContain('project');
+    expect(errorPaths('project: oops\n')).toContain('project');
   });
 
   test('non-string project.name is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[project]\nname = 5')).toContain('project.name');
+    expect(errorPaths('project:\n  name: 5\n')).toContain('project.name');
   });
 
   test('non-string project.description is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[project]\ndescription = 5')).toContain('project.description');
+    expect(errorPaths('project:\n  description: 5\n')).toContain('project.description');
   });
 
   test('a fully valid project passes', () => {
-    expect(validateManifest('kortix_version = 1\n[project]\nname = "X"\ndescription = "Y"').valid).toBe(true);
+    expect(validateManifest('project:\n  name: X\n  description: Y\n').valid).toBe(true);
   });
 });
 
-describe('validateManifest — [opencode]', () => {
-  test('non-table opencode is rejected', () => {
-    expect(errorPaths('kortix_version = 1\nopencode = 1')).toContain('opencode');
-  });
-
-  test('absolute config_dir is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[opencode]\nconfig_dir = "/etc/x"')).toContain('opencode.config_dir');
-  });
-
-  test('parent-escaping config_dir is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[opencode]\nconfig_dir = "../x"')).toContain('opencode.config_dir');
-  });
-
-  test('empty config_dir is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[opencode]\nconfig_dir = ""')).toContain('opencode.config_dir');
-  });
-
-  test('non-string config_dir is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[opencode]\nconfig_dir = 5')).toContain('opencode.config_dir');
-  });
-
-  test('a clean relative config_dir passes', () => {
-    expect(validateManifest('kortix_version = 1\n[opencode]\nconfig_dir = ".kortix/opencode"').valid).toBe(true);
-  });
-});
-
-describe('validateManifest — [env] non-string entry', () => {
+describe('validateManifest — env non-string entry', () => {
   test('non-string entries are rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[env]\nrequired = [5]')).toContain('env.required[0]');
+    expect(errorPaths('env:\n  required:\n    - 5\n')).toContain('env.required[0]');
   });
 
   test('non-array optional is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[env]\noptional = "X"')).toContain('env.optional');
+    expect(errorPaths('env:\n  optional: X\n')).toContain('env.optional');
   });
 });
 
-describe('validateManifest — [[agents]]', () => {
-  test('non-array agents is rejected', () => {
-    expect(errorPaths('kortix_version = 1\nagents = "x"')).toContain('agents');
+describe('validateManifest — agents', () => {
+  const agent = (body = '') => `agents:\n  w:\n    prompt: go\n    tools: all\n${body}`;
+
+  test('a non-map agents is rejected', () => {
+    expect(errorPaths('agents: x\n')).toContain('agents');
   });
 
-  test('missing agent name is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[agents]]\n')).toContain('agents[0].name');
-  });
-
-  test('invalid agent name slug is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[agents]]\nname = "Bad Name"')).toContain('agents[0].name');
-  });
-
-  test('duplicate agent names are rejected', () => {
-    const paths = errorPaths('kortix_version = 1\n[[agents]]\nname = "a"\n[[agents]]\nname = "a"');
-    expect(paths).toContain('agents[1].name');
+  test('an invalid agent name is rejected', () => {
+    expect(errorPaths('agents:\n  Bad Name: {}\n')).toContain('agents.Bad Name');
   });
 
   test('a valid single agent passes', () => {
-    expect(validateManifest('kortix_version = 1\n[[agents]]\nname = "worker"').valid).toBe(true);
+    expect(validateManifest(agent()).valid).toBe(true);
   });
 
   test('agent connectors accepts "all"', () => {
-    expect(validateManifest('kortix_version = 1\n[[agents]]\nname = "w"\nconnectors = "all"').valid).toBe(true);
+    expect(validateManifest(agent('    connectors: all\n')).valid).toBe(true);
   });
 
   test('agent connectors accepts "none"', () => {
-    expect(validateManifest('kortix_version = 1\n[[agents]]\nname = "w"\nconnectors = "none"').valid).toBe(true);
+    expect(validateManifest(agent('    connectors: none\n')).valid).toBe(true);
   });
 
   test('agent connectors rejects an arbitrary string', () => {
-    expect(errorPaths('kortix_version = 1\n[[agents]]\nname = "w"\nconnectors = "some"')).toContain(
-      'agents[0].connectors',
-    );
+    expect(errorPaths(agent('    connectors: some\n'))).toContain('agents.w.connectors');
   });
 
   test('agent connectors rejects an empty-string array entry', () => {
-    expect(errorPaths('kortix_version = 1\n[[agents]]\nname = "w"\nconnectors = ["good", ""]')).toContain(
-      'agents[0].connectors[1]',
-    );
+    expect(errorPaths(agent('    connectors:\n      - good\n      - ""\n'))).toContain('agents.w.connectors[1]');
   });
 
   test('kortix_permissions accepts a grantable action', () => {
-    expect(
-      validateManifest('kortix_version = 1\n[[agents]]\nname = "w"\nkortix_permissions = ["project.read"]').valid,
-    ).toBe(true);
+    expect(validateManifest(agent('    kortix_permissions:\n      - project.read\n')).valid).toBe(true);
   });
 
   test('kortix_permissions accepts the wildcard star', () => {
-    expect(validateManifest('kortix_version = 1\n[[agents]]\nname = "w"\nkortix_permissions = ["*"]').valid).toBe(true);
+    expect(validateManifest(agent('    kortix_permissions:\n      - "*"\n')).valid).toBe(true);
   });
 
   test('kortix_permissions rejects a non-grantable account-scoped action', () => {
-    expect(errorPaths('kortix_version = 1\n[[agents]]\nname = "w"\nkortix_permissions = ["billing.read"]')).toContain(
-      'agents[0].kortix_permissions[0]',
-    );
+    expect(errorPaths(agent('    kortix_permissions:\n      - billing.read\n'))).toContain('agents.w.kortix_permissions[0]');
   });
 
-  test('omitted env passes (runtime defaults it to "all")', () => {
-    expect(validateManifest('kortix_version = 1\n[[agents]]\nname = "w"').valid).toBe(true);
+  test('secrets accepts "all", "none", "" and an allowlist', () => {
+    for (const value of ['all', 'none', '""', '[STRIPE_KEY, DB_URL]']) {
+      expect(validateManifest(agent(`    secrets: ${value}\n`)).valid).toBe(true);
+    }
   });
 
-  test('env accepts "all"', () => {
-    expect(validateManifest('kortix_version = 1\n[[agents]]\nname = "w"\nenv = "all"').valid).toBe(true);
-  });
-
-  test('env accepts "none"', () => {
-    expect(validateManifest('kortix_version = 1\n[[agents]]\nname = "w"\nenv = "none"').valid).toBe(true);
-  });
-
-  test('env accepts an empty string as deny (runtime treats "" as "none")', () => {
-    expect(validateManifest('kortix_version = 1\n[[agents]]\nname = "w"\nenv = ""').valid).toBe(true);
-  });
-
-  test('env accepts a valid allowlist', () => {
-    expect(
-      validateManifest('kortix_version = 1\n[[agents]]\nname = "w"\nenv = ["STRIPE_KEY", "DB_URL"]').valid,
-    ).toBe(true);
-  });
-
-  test('env rejects a number', () => {
-    expect(errorPaths('kortix_version = 1\n[[agents]]\nname = "w"\nenv = 5')).toContain('agents[0].env');
-  });
-
-  test('env rejects a table', () => {
-    expect(errorPaths('kortix_version = 1\n[[agents]]\nname = "w"\n[agents.env]\nfoo = "bar"')).toContain(
-      'agents[0].env',
-    );
-  });
-
-  test('env rejects an arbitrary string', () => {
-    expect(errorPaths('kortix_version = 1\n[[agents]]\nname = "w"\nenv = "some"')).toContain('agents[0].env');
-  });
-
-  test('env rejects a list with a non-string entry', () => {
-    expect(errorPaths('kortix_version = 1\n[[agents]]\nname = "w"\nenv = ["GOOD", 5]')).toContain(
-      'agents[0].env[1]',
-    );
-  });
-
-  test('env rejects a list with an empty-string entry', () => {
-    expect(errorPaths('kortix_version = 1\n[[agents]]\nname = "w"\nenv = ["GOOD", ""]')).toContain(
-      'agents[0].env[1]',
-    );
+  test('secrets rejects a number, a table, an arbitrary string and bad list entries', () => {
+    for (const [value, path] of [
+      ['5', 'agents.w.secrets'],
+      ['{ foo: bar }', 'agents.w.secrets'],
+      ['some', 'agents.w.secrets'],
+      ['[GOOD, 5]', 'agents.w.secrets[1]'],
+      ['[GOOD, ""]', 'agents.w.secrets[1]'],
+    ] as const) {
+      expect(errorPaths(agent(`    secrets: ${value}\n`))).toContain(path);
+    }
   });
 });
 
-describe('validateManifest — [[channels]]', () => {
-  test('non-array channels is rejected', () => {
-    expect(errorPaths('kortix_version = 1\nchannels = 1')).toContain('channels');
-  });
-
-  test('missing platform is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[channels]]\n')).toContain('channels[0].platform');
-  });
-
-  test('duplicate platform is rejected', () => {
-    const paths = errorPaths(
-      'kortix_version = 1\n[[channels]]\nplatform = "slack"\n[[channels]]\nplatform = "slack"',
-    );
-    expect(paths).toContain('channels[1].platform');
-  });
-
-  // Coercible values (booleans, 0/1, yes/no/on/off) are accepted to match the
-  // runtime's coerceBool; only genuinely non-coercible values are rejected.
-  test('non-coercible enabled is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[channels]]\nplatform = "slack"\nenabled = "maybe"')).toContain(
-      'channels[0].enabled',
-    );
-  });
-
-  test('non-array events is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[channels]]\nplatform = "slack"\nevents = "x"')).toContain(
-      'channels[0].events',
-    );
-  });
-
-  test('non-string event entry is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[channels]]\nplatform = "slack"\nevents = [1]')).toContain(
-      'channels[0].events[0]',
-    );
-  });
-
-  test('a valid channel passes', () => {
-    expect(
-      validateManifest('kortix_version = 1\n[[channels]]\nplatform = "slack"\nenabled = true\nevents = ["message"]')
-        .valid,
-    ).toBe(true);
-  });
-});
-
-describe('validateManifest — [[connectors]] provider requirements', () => {
+describe('validateManifest — connectors provider requirements', () => {
   test('pipedream requires app', () => {
-    expect(errorPaths('kortix_version = 1\n[[connectors]]\nslug = "p"\nprovider = "pipedream"')).toContain(
+    expect(errorPaths('connectors:\n  - slug: p\n    provider: pipedream\n')).toContain(
       'connectors[0].app',
     );
   });
 
   test('graphql requires endpoint', () => {
-    expect(errorPaths('kortix_version = 1\n[[connectors]]\nslug = "g"\nprovider = "graphql"')).toContain(
+    expect(errorPaths('connectors:\n  - slug: g\n    provider: graphql\n')).toContain(
       'connectors[0].endpoint',
     );
   });
 
   test('http requires base_url', () => {
-    expect(errorPaths('kortix_version = 1\n[[connectors]]\nslug = "h"\nprovider = "http"')).toContain(
+    expect(errorPaths('connectors:\n  - slug: h\n    provider: http\n')).toContain(
       'connectors[0].base_url',
     );
   });
 
   test('non-table auth is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[connectors]]\nslug = "h"\nprovider = "http"\nbase_url = "x"\nauth = "y"')).toContain(
+    expect(errorPaths('connectors:\n  - slug: h\n    provider: http\n    base_url: x\n    auth: y\n')).toContain(
       'connectors[0].auth',
     );
   });
@@ -284,7 +167,7 @@ describe('validateManifest — [[connectors]] provider requirements', () => {
   test('unknown auth type is rejected', () => {
     expect(
       errorPaths(
-        'kortix_version = 1\n[[connectors]]\nslug = "h"\nprovider = "http"\nbase_url = "x"\n[connectors.auth]\ntype = "oauth"',
+        'connectors:\n  - slug: h\n    provider: http\n    base_url: x\n    auth:\n      type: oauth\n',
       ),
     ).toContain('connectors[0].auth.type');
   });
@@ -292,7 +175,7 @@ describe('validateManifest — [[connectors]] provider requirements', () => {
   test('non-array policies is rejected', () => {
     expect(
       errorPaths(
-        'kortix_version = 1\n[[connectors]]\nslug = "h"\nprovider = "http"\nbase_url = "x"\npolicies = "y"',
+        'connectors:\n  - slug: h\n    provider: http\n    base_url: x\n    policies: y\n',
       ),
     ).toContain('connectors[0].policies');
   });
@@ -300,7 +183,7 @@ describe('validateManifest — [[connectors]] provider requirements', () => {
   test('policy missing match is rejected', () => {
     expect(
       errorPaths(
-        'kortix_version = 1\n[[connectors]]\nslug = "h"\nprovider = "http"\nbase_url = "x"\n[[connectors.policies]]\naction = "always_run"',
+        'connectors:\n  - slug: h\n    provider: http\n    base_url: x\n    policies:\n      - action: always_run\n',
       ),
     ).toContain('connectors[0].policies[0].match');
   });
@@ -308,7 +191,7 @@ describe('validateManifest — [[connectors]] provider requirements', () => {
   test('a valid http connector with bearer auth and a policy passes', () => {
     expect(
       validateManifest(
-        'kortix_version = 1\n[[connectors]]\nslug = "h"\nprovider = "http"\nbase_url = "https://x"\n[connectors.auth]\ntype = "bearer"\n[[connectors.policies]]\nmatch = "*"\naction = "require_approval"',
+        'connectors:\n  - slug: h\n    provider: http\n    base_url: https://x\n    auth:\n      type: bearer\n    policies:\n      - match: "*"\n        action: require_approval\n',
       ).valid,
     ).toBe(true);
   });
@@ -318,7 +201,7 @@ describe('validateManifest — trigger edge cases', () => {
   test('run_at one-off cron without a cron expression is valid', () => {
     expect(
       validateManifest(
-        'kortix_version = 1\n[[triggers]]\nslug = "once"\ntype = "cron"\nrun_at = "2026-06-01T09:00:00Z"\nprompt = "go"',
+        'triggers:\n  - slug: once\n    type: cron\n    run_at: 2026-06-01T09:00:00Z\n    prompt: go\n',
       ).valid,
     ).toBe(true);
   });
@@ -326,7 +209,7 @@ describe('validateManifest — trigger edge cases', () => {
   test('invalid run_at datetime is rejected', () => {
     expect(
       errorPaths(
-        'kortix_version = 1\n[[triggers]]\nslug = "once"\ntype = "cron"\nrun_at = "not-a-date"\nprompt = "go"',
+        'triggers:\n  - slug: once\n    type: cron\n    run_at: not-a-date\n    prompt: go\n',
       ),
     ).toContain('triggers[0].run_at');
   });
@@ -334,7 +217,7 @@ describe('validateManifest — trigger edge cases', () => {
   test('non-string timezone is rejected', () => {
     expect(
       errorPaths(
-        'kortix_version = 1\n[[triggers]]\nslug = "d"\ntype = "cron"\ncron = "0 0 * * *"\nprompt = "go"\ntimezone = 5',
+        'triggers:\n  - slug: d\n    type: cron\n    cron: 0 0 * * *\n    prompt: go\n    timezone: 5\n',
       ),
     ).toContain('triggers[0].timezone');
   });
@@ -342,7 +225,7 @@ describe('validateManifest — trigger edge cases', () => {
   test('ambiguous timezone abbreviations are rejected', () => {
     expect(
       errorPaths(
-        'kortix_version = 1\n[[triggers]]\nslug = "d"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\ntimezone = "PST"',
+        'triggers:\n  - slug: d\n    type: cron\n    cron: 0 9 * * *\n    prompt: go\n    timezone: PST\n',
       ),
     ).toContain('triggers[0].timezone');
   });
@@ -350,7 +233,7 @@ describe('validateManifest — trigger edge cases', () => {
   test('invalid cron expressions are rejected', () => {
     expect(
       errorPaths(
-        'kortix_version = 1\n[[triggers]]\nslug = "d"\ntype = "cron"\ncron = "0 25 * * *"\nprompt = "go"\ntimezone = "UTC"',
+        'triggers:\n  - slug: d\n    type: cron\n    cron: 0 25 * * *\n    prompt: go\n    timezone: UTC\n',
       ),
     ).toContain('triggers[0].cron');
   });
@@ -360,7 +243,7 @@ describe('validateManifest — trigger edge cases', () => {
   test('a cron that fires more than once a minute is rejected and names the 60-second minimum', () => {
     for (const cron of ['*/30 * * * * *', '*/5 * * * * *', '0,30 * * * * *', '0,1 0 * * * *']) {
       const issue = validateManifest(
-        `kortix_version = 1\n[[triggers]]\nslug = "d"\ntype = "cron"\ncron = "${cron}"\nprompt = "go"`,
+        trig(`type: cron\ncron: "${cron}"\nprompt: go`),
       ).issues.find((i) => i.path === 'triggers[0].cron' && i.severity === 'error');
       expect(issue?.message).toContain('60 seconds');
     }
@@ -369,7 +252,7 @@ describe('validateManifest — trigger edge cases', () => {
   test('a cron at most once a minute passes the floor', () => {
     for (const cron of ['0 */30 * * * *', '*/30 * * * *', '0 * * * * *', '* * * * *', '0 9 * * 1-5']) {
       expect(
-        errorPaths(`kortix_version = 1\n[[triggers]]\nslug = "d"\ntype = "cron"\ncron = "${cron}"\nprompt = "go"`),
+        errorPaths(trig(`type: cron\ncron: "${cron}"\nprompt: go`)),
       ).not.toContain('triggers[0].cron');
     }
   });
@@ -383,14 +266,14 @@ describe('validateManifest — trigger edge cases', () => {
   // KRTX-1721: a trigger starts at most `max_runs_per_hour` runs in any 60
   // minutes (60 when unset) and at most `max_runs_per_day` in a UTC day.
   const capTriggers = {
-    cron: 'type = "cron"\ncron = "0 * * * *"',
-    webhook: 'type = "webhook"',
+    cron: 'type: cron\ncron: 0 * * * *\n',
+    webhook: 'type: webhook\n',
   };
   test('max_runs_per_hour and max_runs_per_day take a positive integer on any trigger type', () => {
     expect(DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR).toBe(60);
     for (const body of Object.values(capTriggers)) {
       const paths = errorPaths(
-        `kortix_version = 1\n[[triggers]]\nslug = "d"\n${body}\nprompt = "go"\nmax_runs_per_hour = 2\nmax_runs_per_day = 3`,
+        trig(`${body}\nprompt: go\nmax_runs_per_hour: 2\nmax_runs_per_day: 3`),
       );
       expect(paths).not.toContain('triggers[0].max_runs_per_hour');
       expect(paths).not.toContain('triggers[0].max_runs_per_day');
@@ -401,7 +284,7 @@ describe('validateManifest — trigger edge cases', () => {
     for (const field of ['max_runs_per_hour', 'max_runs_per_day']) {
       for (const value of ['0', '-1', '1.5', '"10"']) {
         const issue = validateManifest(
-          `kortix_version = 1\n[[triggers]]\nslug = "d"\n${capTriggers.cron}\nprompt = "go"\n${field} = ${value}`,
+          trig(`${capTriggers.cron}\nprompt: go\n${field}: ${value}`),
         ).issues.find((i) => i.path === `triggers[0].${field}` && i.severity === 'error');
         expect({ field, value, message: issue?.message }).toEqual({ field, value, message: `${field} must be a whole number of at least 1.` });
       }
@@ -411,12 +294,12 @@ describe('validateManifest — trigger edge cases', () => {
   // KRTX-1721: `overlap` is skip or allow, on any trigger type.
   test('overlap takes skip or allow; anything else is rejected, naming the field', () => {
     for (const value of ['"skip"', '"allow"']) {
-      const paths = errorPaths(`kortix_version = 1\n[[triggers]]\nslug = "d"\n${capTriggers.cron}\nprompt = "go"\noverlap = ${value}`);
+      const paths = errorPaths(trig(`${capTriggers.cron}\nprompt: go\noverlap: ${value}`));
       expect(paths).not.toContain('triggers[0].overlap');
     }
     for (const value of ['"queue"', 'true', '1']) {
       const issue = validateManifest(
-        `kortix_version = 1\n[[triggers]]\nslug = "d"\n${capTriggers.cron}\nprompt = "go"\noverlap = ${value}`,
+        trig(`${capTriggers.cron}\nprompt: go\noverlap: ${value}`),
       ).issues.find((i) => i.path === 'triggers[0].overlap' && i.severity === 'error');
       expect({ value, message: issue?.message }).toEqual({ value, message: 'overlap must be "skip" or "allow".' });
     }
@@ -425,16 +308,17 @@ describe('validateManifest — trigger edge cases', () => {
   // KRTX-1721: `filter` takes a value (equals) or one operator per path.
   test('a filter with equality and every operator is accepted', () => {
     const paths = errorPaths(
-      `kortix_version = 1\n[[triggers]]\nslug = "d"\n${capTriggers.webhook}\nprompt = "go"\n` +
-        'filter = { "body.type" = "push", "body.sender.login" = { not = "kortix-bot" }, "body.action" = { in = ["opened", "reopened"] }, ' +
-        '"body.pull_request" = { exists = true }, "body.ref" = { not_prefix = "refs/heads/kortix/" }, "body.base" = { prefix = ["release/"] } }',
+      trig(
+        `${capTriggers.webhook}\nprompt: go\nfilter: { body.type: push, body.sender.login: { not: kortix-bot }, body.action: { in: [opened, reopened] }, ` +
+          'body.pull_request: { exists: true }, body.ref: { not_prefix: "refs/heads/kortix/" }, body.base: { prefix: ["release/"] } }',
+      ),
     );
     expect(paths.filter((p) => p.startsWith('triggers[0].filter'))).toEqual([]);
   });
 
   test('a filter with an unknown operator is rejected with the parser message', () => {
     const issue = validateManifest(
-      `kortix_version = 1\n[[triggers]]\nslug = "d"\n${capTriggers.webhook}\nprompt = "go"\nfilter = { "body.ref" = { nott = "x" } }`,
+      trig(`${capTriggers.webhook}\nprompt: go\nfilter: { body.ref: { nott: x } }`),
     ).issues.find((i) => i.path === 'triggers[0].filter' && i.severity === 'error');
     expect(issue?.message).toBe('filter.body.ref has an unknown operator "nott"; use one of: not, in, exists, prefix, not_prefix.');
   });
@@ -442,13 +326,13 @@ describe('validateManifest — trigger edge cases', () => {
   test('non-boolean enabled is rejected', () => {
     expect(
       errorPaths(
-        'kortix_version = 1\n[[triggers]]\nslug = "d"\ntype = "cron"\ncron = "0 0 * * *"\nprompt = "go"\nenabled = "x"',
+        'triggers:\n  - slug: d\n    type: cron\n    cron: 0 0 * * *\n    prompt: go\n    enabled: x\n',
       ),
     ).toContain('triggers[0].enabled');
   });
 
   test('unknown trigger type is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[triggers]]\nslug = "d"\ntype = "queue"\nprompt = "x"')).toContain(
+    expect(errorPaths('triggers:\n  - slug: d\n    type: queue\n    prompt: x\n')).toContain(
       'triggers[0].type',
     );
   });
@@ -456,20 +340,20 @@ describe('validateManifest — trigger edge cases', () => {
   test('invalid webhook secret_env name is rejected', () => {
     expect(
       errorPaths(
-        'kortix_version = 1\n[[triggers]]\nslug = "h"\ntype = "webhook"\nprompt = "x"\nsecret_env = "bad-name"',
+        'triggers:\n  - slug: h\n    type: webhook\n    prompt: x\n    secret_env: bad-name\n',
       ),
     ).toContain('triggers[0].secret_env');
   });
 
   test('empty prompt is rejected', () => {
     expect(
-      errorPaths('kortix_version = 1\n[[triggers]]\nslug = "d"\ntype = "cron"\ncron = "0 0 * * *"\nprompt = "   "'),
+      errorPaths('triggers:\n  - slug: d\n    type: cron\n    cron: 0 0 * * *\n    prompt: "   "\n'),
     ).toContain('triggers[0].prompt');
   });
 
   test('duplicate trigger slugs are rejected', () => {
     const paths = errorPaths(
-      'kortix_version = 1\n[[triggers]]\nslug = "d"\ntype = "cron"\ncron = "0 0 * * *"\nprompt = "a"\n[[triggers]]\nslug = "d"\ntype = "cron"\ncron = "0 0 * * *"\nprompt = "b"',
+      'triggers:\n  - slug: d\n    type: cron\n    cron: 0 0 * * *\n    prompt: a\n  - slug: d\n    type: cron\n    cron: 0 0 * * *\n    prompt: b\n',
     );
     expect(paths).toContain('triggers[1].slug');
   });
@@ -478,28 +362,28 @@ describe('validateManifest — trigger edge cases', () => {
 describe('validateManifest — sandbox bounds and types', () => {
   test('non-integer cpu is rejected', () => {
     expect(
-      errorPaths('kortix_version = 1\n[[sandbox.templates]]\nslug = "x"\nimage = "u:1"\ncpu = 1.5'),
+      errorPaths('sandbox:\n  templates:\n    - slug: x\n      image: u:1\n      cpu: 1.5\n'),
     ).toContain('sandbox.templates[0].cpu');
   });
 
   test('over-max memory produces a warning not an error', () => {
-    const result = validateManifest('kortix_version = 1\n[[sandbox.templates]]\nslug = "x"\nimage = "u:1"\nmemory = 999');
+    const result = validateManifest('sandbox:\n  templates:\n    - slug: x\n      image: u:1\n      memory: 999\n');
     expect(result.valid).toBe(true);
     expect(result.issues.some((i) => i.path === 'sandbox.templates[0].memory' && i.severity === 'warning')).toBe(true);
   });
 
   test('digest-pinned image without a tag is accepted', () => {
     expect(
-      validateManifest('kortix_version = 1\n[[sandbox.templates]]\nslug = "x"\nimage = "ubuntu@sha256:abc"').valid,
+      validateManifest('sandbox:\n  templates:\n    - slug: x\n      image: ubuntu@sha256:abc\n').valid,
     ).toBe(true);
   });
 
   test('non-array templates is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[sandbox]\ntemplates = "x"')).toContain('sandbox.templates');
+    expect(errorPaths('sandbox:\n  templates: x\n')).toContain('sandbox.templates');
   });
 
   test('empty default slug is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[sandbox]\ndefault = "  "')).toContain('sandbox.default');
+    expect(errorPaths('sandbox:\n  default: "  "\n')).toContain('sandbox.default');
   });
 });
 
@@ -573,19 +457,19 @@ describe('validateManifest — non-blocking warnings (runtime enforces; gate adv
 
   test('over-long sandbox template slug warns (runtime would drop it) but does not block', () => {
     const longSlug = 'a'.repeat(80);
-    assertWarnsButValid(`kortix_version = 1\n[[sandbox.templates]]\nslug = "${longSlug}"\nimage = "python:3.12-slim"`, `sandbox.templates[0].slug`);
+    assertWarnsButValid(`sandbox:\n  templates:\n    - slug: ${longSlug}\n      image: python:3.12-slim\n`, `sandbox.templates[0].slug`);
   });
 
   test('mcp connector with a bad transport warns but does not block', () => {
-    assertWarnsButValid('kortix_version = 1\n[[connectors]]\nslug = "m"\nprovider = "mcp"\nurl = "https://e.com"\ntransport = "grpc"', 'connectors[0].transport');
+    assertWarnsButValid('connectors:\n  - slug: m\n    provider: mcp\n    url: https://e.com\n    transport: grpc\n', 'connectors[0].transport');
   });
 
   test('openapi connector missing spec warns', () => {
-    expect(warningPaths('kortix_version = 1\n[[connectors]]\nslug = "o"\nprovider = "openapi"')).toContain('connectors[0].spec');
+    expect(warningPaths('connectors:\n  - slug: o\n    provider: openapi\n')).toContain('connectors[0].spec');
   });
 
-  test('connector with a bad credential mode warns', () => {
-    expect(warningPaths('kortix_version = 1\n[[connectors]]\nslug = "h"\nprovider = "http"\nbase_url = "https://e.com"\ncredential = "team"')).toContain('connectors[0].credential');
+  test('connector with a bad credential mode is an error', () => {
+    expect(errorPaths('connectors:\n  - slug: h\n    provider: http\n    base_url: https://e.com\n    credential: team\n')).toContain('connectors[0].credential');
   });
 
 });

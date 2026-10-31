@@ -1,12 +1,12 @@
 import type { BuiltinAgentKey } from '@kortix/shared';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { declaredBuiltinAgents, resolveBuiltinAgents } from './platform-meta-agent';
+import { declaredBuiltinAgents, resolveBuiltinAgents } from './my-kortix-agent';
 
 /**
  * Which built-in agents a project runs: kortix.yaml `builtin_agents` first,
  * then the project's legacy `meta_agent` switch, then on. The one resolution
  * every API surface (project detail, session create, the agent-config routes)
- * reads. Lives apart from `platform-meta-agent.ts`, which must not import the
+ * reads. Lives apart from `my-kortix-agent.ts`, which must not import the
  * feature-flag registry (see its header).
  */
 export function projectBuiltinAgents(

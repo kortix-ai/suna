@@ -312,9 +312,9 @@ importers:
       react-dom:
         specifier: 19.2.0
         version: 19.2.0(react@19.2.0)
-      smol-toml:
-        specifier: 1.9.0
-        version: 1.9.0
+      sharp:
+        specifier: 0.35.5
+        version: 0.35.5(@types/node@20.19.43)
       stripe:
         specifier: ^14.0.0
         version: 14.25.0
@@ -452,21 +452,27 @@ importers:
 
   apps/kortix-sandbox-agent-server:
     dependencies:
+      '@anthropic-ai/claude-agent-sdk':
+        specifier: 0.3.316
+        version: 0.3.316(@anthropic-ai/sdk@0.129.0)(@modelcontextprotocol/sdk@1.32.0)(zod@3.25.76)
       '@earendil-works/pi-agent-core':
         specifier: 1.4.0
-        version: 1.4.0(undici@8.12.2)(zod@3.25.76)
+        version: 1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@3.25.76)
       '@earendil-works/pi-ai':
         specifier: 1.4.0
-        version: 1.4.0(undici@8.12.2)(zod@3.25.76)
+        version: 1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@3.25.76)
       '@earendil-works/pi-codemode':
         specifier: 1.4.0
         version: 1.4.0
       '@earendil-works/pi-coding-agent':
         specifier: 1.4.0
-        version: 1.4.0(zod@3.25.76)
+        version: 1.4.0(@modelcontextprotocol/sdk@1.32.0)(zod@3.25.76)
       '@earendil-works/pi-tui':
         specifier: 1.4.0
         version: 1.4.0
+      '@modelcontextprotocol/sdk':
+        specifier: 1.32.0
+        version: 1.32.0(zod@3.25.76)
       '@silvia-odwyer/photon-node':
         specifier: 0.3.4
         version: 0.3.4
@@ -2539,6 +2545,92 @@ packages:
     dependencies:
       package-manager-detector: 1.8.0
       tinyexec: 1.3.1
+
+  /@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.316:
+    resolution: {integrity: sha512-1I1oJ/YGqq4pFQvJqycD2e8pbsUQLLR+DwEzG9jQAGCoSKkxP1TBfHpjSik/0byCixyzpYObrYXPC0PKBIR91g==}
+    cpu: [arm64]
+    os: [darwin]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.316:
+    resolution: {integrity: sha512-gzNncKrID/6yJIKCAuF/pY1kfygQZ4dU0J+MNFl0bU+iQW65ERoIyoghYVfrAQ/gH2fuvnQtWxa8LQNScHgNMA==}
+    cpu: [x64]
+    os: [darwin]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.316:
+    resolution: {integrity: sha512-1qqaEdsAs6eipEQQ4bMAWiwDjIouyA/YN5KQWS0/+kuPb+GKS8rUVW2dty2elV703hsMovb4IhMP4cv5K7R9YA==}
+    cpu: [arm64]
+    os: [linux]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.316:
+    resolution: {integrity: sha512-+lm9XSw/em14yMZ41fbo80kfblbylfBQc9nYS6GgLoZVvgT3wSeEbv88v+mEK/jFw9g3VCH4ZI01sjNM34o7uw==}
+    cpu: [arm64]
+    os: [linux]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.316:
+    resolution: {integrity: sha512-pMG9MRkjxMMbIxpwg/cKz6JorNjZtJOA9l/fifRQ/A01zGTKrRIaSCWoGg+Asmc64QBOa3aA4vzE/od9B1R0Tw==}
+    cpu: [x64]
+    os: [linux]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@anthropic-ai/claude-agent-sdk-linux-x64@0.3.316:
+    resolution: {integrity: sha512-+csYyGkHziNp4It+ZykqTmXRZBuNrieTiBnji+zwAxNmLLCWz8xEWjNmwhaLPIMpUiaYREkDhZXt/AS6xXta5w==}
+    cpu: [x64]
+    os: [linux]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.316:
+    resolution: {integrity: sha512-Xj4iTS8NsB6isGhnZEnaIXIpUcSspv/lyIVnfPZjVGwuttaVHjq4IxfDopsPaVsPuTKd+L7DLAaBram1k85U2g==}
+    cpu: [arm64]
+    os: [win32]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@anthropic-ai/claude-agent-sdk-win32-x64@0.3.316:
+    resolution: {integrity: sha512-FzQA1zHbYJTtLR9nn1McwkGYeiEmroTmYjIg7xZqo5eweJ8U/DESZKR/QdfF04MXe2DF23oLL8WHjEa+WxbGQw==}
+    cpu: [x64]
+    os: [win32]
+    requiresBuild: true
+    dev: false
+    optional: true
+
+  /@anthropic-ai/claude-agent-sdk@0.3.316(@anthropic-ai/sdk@0.129.0)(@modelcontextprotocol/sdk@1.32.0)(zod@3.25.76):
+    resolution: {integrity: sha512-mCMr0que5kIy80JslJub6WFDB2+GYRGWNeVgSZaBpkBwXrr4wnRMnnGHitkA2BEJ5QP5xWyc6YH/6do/edxCWg==}
+    engines: {node: '>=18.14.0'}
+    peerDependencies:
+      '@anthropic-ai/sdk': '>=0.93.0'
+      '@modelcontextprotocol/sdk': 1.32.0
+      zod: 4.6.7
+    dependencies:
+      '@anthropic-ai/sdk': 0.129.0(zod@3.25.76)
+      '@modelcontextprotocol/sdk': 1.32.0(zod@3.25.76)
+      zod: 3.25.76
+    optionalDependencies:
+      '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.316
+      '@anthropic-ai/claude-agent-sdk-darwin-x64': 0.3.316
+      '@anthropic-ai/claude-agent-sdk-linux-arm64': 0.3.316
+      '@anthropic-ai/claude-agent-sdk-linux-arm64-musl': 0.3.316
+      '@anthropic-ai/claude-agent-sdk-linux-x64': 0.3.316
+      '@anthropic-ai/claude-agent-sdk-linux-x64-musl': 0.3.316
+      '@anthropic-ai/claude-agent-sdk-win32-arm64': 0.3.316
+      '@anthropic-ai/claude-agent-sdk-win32-x64': 0.3.316
+    dev: false
 
   /@anthropic-ai/sdk@0.129.0(zod@3.25.76):
     resolution: {integrity: sha512-MH7LB20kNpGLUpPTe2OG5XvL/KhX8HUO9XyBaFjgFk6TLS4Xjt0VPIuMKywe7POKKPslX+QxSlVok9e+8kG5Nw==}
@@ -5268,11 +5360,11 @@ packages:
       playwright: 1.63.0
     dev: true
 
-  /@earendil-works/pi-agent-core@1.4.0(undici@8.12.2)(zod@3.25.76):
+  /@earendil-works/pi-agent-core@1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@3.25.76):
     resolution: {integrity: sha512-PoKY84SKUwnt7S5QBZaGUqfNO1kjP3KHpHUA9QpFTj4cOjaVWMYIcBPJ6FDRCdE8Zen9OSECQUd0uUfVgtSmgA==}
     engines: {node: '>=22.19.0'}
     dependencies:
-      '@earendil-works/pi-ai': 1.4.0(undici@8.12.2)(zod@3.25.76)
+      '@earendil-works/pi-ai': 1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@3.25.76)
       typebox: 1.3.27
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
@@ -5288,7 +5380,7 @@ packages:
       - zod
     dev: false
 
-  /@earendil-works/pi-ai@1.4.0(undici@8.12.2)(zod@3.25.76):
+  /@earendil-works/pi-ai@1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@3.25.76):
     resolution: {integrity: sha512-hQM/C4+1w8rHYACzDDf+0vQMnEnpzIop1tptIERVgR3ZeT/hHSzBNG8PaWPgxWQjqSeKCyBZSyp8uTT6eKK1pQ==}
     engines: {node: '>=22.19.0'}
     hasBin: true
@@ -5296,7 +5388,7 @@ packages:
       '@anthropic-ai/sdk': 0.129.0(zod@3.25.76)
       '@aws-sdk/client-bedrock-runtime': 3.1127.0
       '@earendil-works/pi-telemetry': 1.4.0
-      '@google/genai': 2.21.0
+      '@google/genai': 2.21.0(@modelcontextprotocol/sdk@1.32.0)
       '@smithy/node-http-handler': 4.12.1
       http-proxy-agent: 9.1.0
       https-proxy-agent: 9.1.0
@@ -5324,13 +5416,13 @@ packages:
       quickjs-wasi: 3.6.2
     dev: false
 
-  /@earendil-works/pi-coding-agent@1.4.0(zod@3.25.76):
+  /@earendil-works/pi-coding-agent@1.4.0(@modelcontextprotocol/sdk@1.32.0)(zod@3.25.76):
     resolution: {integrity: sha512-Z41LpZ3yYHSC/UUps6Mr39UMFPwH8elhJBG9DY1P7kuzsE5qSK/6eMj2EHzO5evJRQWLbKSqUMw+4nCNtIyiQg==}
     engines: {node: '>=22.19.0'}
     hasBin: true
     dependencies:
-      '@earendil-works/pi-agent-core': 1.4.0(undici@8.12.2)(zod@3.25.76)
-      '@earendil-works/pi-ai': 1.4.0(undici@8.12.2)(zod@3.25.76)
+      '@earendil-works/pi-agent-core': 1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@3.25.76)
+      '@earendil-works/pi-ai': 1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@3.25.76)
       '@earendil-works/pi-codemode': 1.4.0
       '@earendil-works/pi-mcp': 1.4.0
       '@earendil-works/pi-tui': 1.4.0
@@ -7205,7 +7297,7 @@ packages:
       - supports-color
     dev: false
 
-  /@google/genai@2.21.0:
+  /@google/genai@2.21.0(@modelcontextprotocol/sdk@1.32.0):
     resolution: {integrity: sha512-+PDtco2/Z0ONdzCGekCoCT+O1VJS9xJQNN4XzQpXG/t3El/SWWMkCWlFRO1KmivOHPa4Q0VjUYu1HBKCZ/v33Q==}
     engines: {node: '>=20.0.0'}
     requiresBuild: true
@@ -7215,6 +7307,7 @@ packages:
       '@modelcontextprotocol/sdk':
         optional: true
     dependencies:
+      '@modelcontextprotocol/sdk': 1.32.0(zod@3.25.76)
       google-auth-library: 10.9.1
       p-retry: 4.6.2
       protobufjs: 7.6.5
@@ -8080,6 +8173,37 @@ packages:
     dependencies:
       zod: 4.6.7
     dev: true
+
+  /@modelcontextprotocol/sdk@1.32.0(zod@3.25.76):
+    resolution: {integrity: sha512-8BviX/hK4Gd2eL1KdTwm0gfl4d3wdoErW0Jd00h6nomUAtk6IJk5vwQJc6kfWtJTzN5OEV/lgIiJKI8fiDGAlA==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@cfworker/json-schema': ^4.1.1
+      zod: 4.6.7
+    peerDependenciesMeta:
+      '@cfworker/json-schema':
+        optional: true
+    dependencies:
+      '@hono/node-server': 2.1.3(hono@4.13.11)
+      ajv: 8.18.0
+      ajv-formats: 3.0.1(ajv@8.18.0)
+      content-type: 1.0.5
+      cors: 2.8.6
+      cross-spawn: 7.0.6
+      eventsource: 3.0.7
+      eventsource-parser: 3.1.1
+      express: 5.2.1
+      express-rate-limit: 8.7.0(express@5.2.1)
+      hono: 4.13.11
+      jose: 6.2.12
+      json-schema-typed: 8.0.2
+      pkce-challenge: 5.0.1
+      raw-body: 3.0.2
+      zod: 3.25.76
+      zod-to-json-schema: 3.25.2(zod@3.25.76)
+    transitivePeerDependencies:
+      - supports-color
+    dev: false
 
   /@modelcontextprotocol/sdk@1.32.0(zod@4.6.7):
     resolution: {integrity: sha512-8BviX/hK4Gd2eL1KdTwm0gfl4d3wdoErW0Jd00h6nomUAtk6IJk5vwQJc6kfWtJTzN5OEV/lgIiJKI8fiDGAlA==}

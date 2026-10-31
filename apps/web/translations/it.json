@@ -96,7 +96,7 @@
     "deleteError": "Impossibile eliminare il segreto",
     "accessError": "Impossibile modificare l’accesso",
     "sharedTitle": "Connessioni ai provider",
-    "sharedDescription": "Aggiungi chiavi API e account ChatGPT. Quelli nuovi restano privati finché non li condividi. Scegli quali usa ogni sessione.",
+    "sharedDescription": "Aggiungi chiavi API, account ChatGPT e account Claude. I nuovi restano privati finché non li condividi. Scegli quali usa ogni sessione.",
     "legacyProjectKey": "Chiave del progetto esistente · Usata quando la sessione non ha una selezione di chiavi",
     "keyCount": "{count, plural, one {# chiave} other {# chiavi}}",
     "providerKeysFor": "Chiavi API di {provider}",
@@ -163,7 +163,19 @@
     "opencodeGoConnect": "Connetti OpenCode Go",
     "opencodeGoReconnect": "Riconnetti OpenCode Go",
     "opencodeGoDisconnect": "Disconnetti OpenCode Go",
-    "opencodeGoFailed": "Impossibile connettere OpenCode Go"
+    "opencodeGoFailed": "Impossibile connettere OpenCode Go",
+    "claudeAccounts": "Account Claude",
+    "noClaudeAccounts": "Ancora nessun account Claude",
+    "connectClaude": "Accedi con Claude",
+    "claudeOauthPrivateDescription": "Usa il tuo piano Claude Pro o Max per i modelli Claude in questo progetto. I nuovi account restano privati finché non li condividi.",
+    "claudeOauthCreationDescription": "Accedi con il tuo account Claude Pro o Max. Kortix conserva l’accesso cifrato e non lo mostra mai.",
+    "claudeDefaultAccountLabel": "Claude · {name}",
+    "claudeAccountConnected": "Account Claude collegato",
+    "claudeAccountReconnected": "Account Claude ricollegato",
+    "claudeConnectFailed": "L’accesso a Claude non è stato completato. Riprova.",
+    "claudeReconnectDescription": "Accedi di nuovo con Claude. L’account mantiene nome, accesso e selezioni di sessione.",
+    "claudeAccountLabelPlaceholder": "es. Il mio account Claude",
+    "claudeDeleteAccountConfirmTitle": "Eliminare questo account Claude per tutti?"
   },
   "secrets": {
     "undecryptable": {
@@ -552,10 +564,6 @@
         "feature-flags": {
           "label": "Flag di funzionalità",
           "description": "Funzionalità che puoi attivare prima che siano disponibili a tutti."
-        },
-        "upgrades": {
-          "label": "Aggiornamenti",
-          "description": "Modifiche apportate da un agente a questo progetto. Ogni esecuzione apre una richiesta di modifica da esaminare. Nulla viene unito automaticamente."
         },
         "profile": {
           "label": "Profilo",
@@ -1334,6 +1342,10 @@
         "chrome": {
           "name": "Kortix in Chrome",
           "description": "Consenti a una sessione di usare il browser Chrome collegato. Puoi riprendere il controllo o interromperla in qualsiasi momento."
+        },
+        "agent_teams": {
+          "name": "Team di agenti",
+          "description": "Una sessione principale avvia compagni di squadra con un nome che condividono un elenco di attività. Ogni compagno prende un’attività, la svolge nella propria sessione e avvisa la sessione principale quando ha finito. Vedi ogni compagno e le sue attività sotto il campo di scrittura della sessione principale. I messaggi tra sessioni funzionano anche senza questa opzione."
         }
       },
       "channelsSwitch": {
@@ -1348,23 +1360,6 @@
       },
       "wip": "Work in progress",
       "wipNote": "Not recommended yet: it can change or break."
-    },
-    "upgrades": {
-      "available": "Aggiornamenti disponibili",
-      "readOnly": "Sola lettura — per eseguire un aggiornamento serve l’accesso in scrittura a questo progetto.",
-      "none": "Nessun aggiornamento disponibile",
-      "upToDateDescription": "Questo progetto è già aggiornato.",
-      "upToDate": "Aggiornato",
-      "run": "Esegui",
-      "oneOff": "Aggiornamento una tantum",
-      "oneOffDescription": "Descrivi invece una singola modifica. Una sessione la esegue, la convalida e apre una richiesta di modifica.",
-      "oneOffPlaceholder": "es. Rinomina ovunque l’agente release-bot in deploy-bot",
-      "runUpgrade": "Esegui aggiornamento",
-      "manifestV3": {
-        "title": "Aggiorna il manifest alla v3 (kortix.yaml)",
-        "description": "Porta kortix.toml o un kortix.yaml versione 2 alla versione 3: il progetto registra competenze, strumenti, comandi ed estensioni, e ogni agente li abilita per nome. Aggiorna le competenze gestite dalla piattaforma e apre una richiesta di modifica da esaminare."
-      },
-      "agentEditorHint": "Questo progetto usa un manifest versione 1. Aggiornalo a <code>kortix.yaml</code> versione 3 per modificare qui le istruzioni, il modello, i permessi degli strumenti e gli accessi di questo agente."
     },
     "plan": {
       "managedByAdmin": "Gestito da un amministratore dell'account",
@@ -1697,10 +1692,16 @@
       "localComputer": "Il tuo computer",
       "appsAndExtensions": "App ed estensioni"
     },
-    "manifestUpgrade": {
-      "title": "Aggiorna alla v3",
-      "description": "Questo progetto usa un manifest precedente. Un agente lo porta a <yaml>kortix.yaml</yaml> versione 3, aggiorna le skill gestite e apre una richiesta di modifica. Nulla cambia finché non la approvi.",
-      "start": "Avvia l'aggiornamento"
+    "manifestIssues": {
+      "title": "{file} ha {errors, plural, one {# errore} other {# errori}} e {warnings, plural, one {# avviso} other {# avvisi}}",
+      "titleErrors": "{file} ha {errors, plural, one {# errore} other {# errori}}",
+      "titleWarnings": "{file} ha {warnings, plural, one {# avviso} other {# avvisi}}",
+      "errorsOff": "Gli agenti e i trigger con un errore restano disattivati finché non viene corretto.",
+      "warningsOnly": "Tutto continua a funzionare.",
+      "error": "Errore",
+      "warning": "Avviso",
+      "fix": "Correggi con My Kortix",
+      "fixInSession": "Correggi in una nuova sessione"
     },
     "filter": {
       "grouping": "Raggruppamento",
@@ -3096,6 +3097,116 @@
       "scriptFailed": "Script non riuscito",
       "calls": "{count, plural, one {# chiamata a strumento} other {# chiamate a strumenti}}",
       "noOutput": "Nessun output"
+    },
+    "kortixAction": {
+      "running": {
+        "agents": {
+          "read": "Controllo degli agenti…",
+          "change": "Aggiornamento degli agenti…"
+        },
+        "sessions": {
+          "read": "Controllo delle sessioni…",
+          "change": "Aggiornamento delle sessioni…"
+        },
+        "schedules": {
+          "read": "Controllo delle pianificazioni…",
+          "change": "Aggiornamento delle pianificazioni…"
+        },
+        "connectors": {
+          "read": "Controllo dei connettori…",
+          "change": "Aggiornamento dei connettori…"
+        },
+        "people": {
+          "read": "Controllo dei membri…",
+          "change": "Aggiornamento dei membri…"
+        },
+        "access": {
+          "read": "Controllo degli accessi…",
+          "change": "Aggiornamento degli accessi…"
+        },
+        "usage": {
+          "read": "Controllo dell’utilizzo…",
+          "change": "Controllo dell’utilizzo…"
+        },
+        "changeRequests": {
+          "read": "Controllo delle richieste di modifica…",
+          "change": "Aggiornamento di una richiesta di modifica…"
+        },
+        "memory": {
+          "read": "Controllo della memoria…",
+          "change": "Aggiornamento della memoria…"
+        }
+      },
+      "status": {
+        "done": "Fatto",
+        "needsYou": "Serve il tuo intervento",
+        "denied": "Serve un permesso",
+        "error": "Non completato",
+        "running": "In corso"
+      },
+      "deniedTitle": "Serve un permesso",
+      "grantors": "Chi può concederlo",
+      "grantorsUnknown": "Chiunque gestisca questo progetto può concederlo.",
+      "newSetting": "Nuovo",
+      "removedSetting": "Rimosso",
+      "opensInNewTab": "Si apre in una nuova scheda",
+      "showDetails": "Mostra dettagli"
+    },
+    "workflow": {
+      "fallbackTitle": "Workflow",
+      "starting": "Avvio del workflow…",
+      "progress": "{done} di {total} fatti",
+      "failedCount": "{failed} di {total} non riusciti",
+      "agents": "{count, plural, one {# agente} other {# agenti}}",
+      "background": "In background",
+      "status": {
+        "starting": "Avvio",
+        "running": "In corso",
+        "done": "Fatto",
+        "failed": "Non riuscito",
+        "stopped": "Interrotto",
+        "pending": "Non avviata"
+      },
+      "openAgent": "Apri {label}",
+      "showDetails": "Mostra dettagli",
+      "failedSuffix": "{count} non riusciti",
+      "resumed": "Ripresa",
+      "resumedHint": "Gli agenti completati nell'esecuzione precedente conservano le loro risposte.",
+      "large": "Esecuzione grande",
+      "largeHint": "Questa esecuzione avvia più di 25 agenti. Puoi interrompere ogni agente dalla sua riga.",
+      "openRun": "Apri esecuzione",
+      "openRunLabel": "Apri la sessione dell'esecuzione",
+      "backgroundIdle": "Nella sua sessione",
+      "savedName": "Workflow salvato {name}",
+      "upTo": "Fino a {count, plural, one {# agente} other {# agenti}}",
+      "result": "Risultato",
+      "logLabel": "Log del workflow",
+      "agentsLabel": "Agenti del workflow",
+      "filter": {
+        "label": "Mostra agenti",
+        "all": "Tutti",
+        "running": "In corso",
+        "failed": "Non riusciti",
+        "done": "Fatti"
+      },
+      "filterEmpty": {
+        "running": "Nessun agente è in corso.",
+        "failed": "Nessun agente non è riuscito.",
+        "done": "Nessun agente ha ancora finito."
+      },
+      "showAll": "Mostra tutti e {count}",
+      "retry": "nuovo tentativo {count}",
+      "cached": "dall'ultima esecuzione",
+      "stopAgent": "Interrompi {label}",
+      "stopHint": "Interrompi questo agente",
+      "stopFailed": "Impossibile interrompere {label}",
+      "json": "JSON",
+      "jsonKeys": "{count, plural, one {JSON · # chiave} other {JSON · # chiavi}}",
+      "jsonItems": "{count, plural, one {JSON · # elemento} other {JSON · # elementi}}"
+    },
+    "agent": {
+      "backgroundWorking": "Al lavoro in background",
+      "backgroundSession": "Nella sua sessione"
     }
   },
   "agentRunLimit": {
@@ -7806,8 +7917,7 @@
       "legendTool": "Risultati degli strumenti",
       "legendOther": "Altro",
       "subAgentsLabel": "Sub-agenti",
-      "subAgentsNote": "Questa sessione ha avviato sessioni ausiliarie. I totali qui sotto le includono.",
-      "combinedCost": "Costo combinato",
+      "subAgentsNote": "Assistenti eseguiti all’interno di questa sessione. Il loro costo fa parte del costo di questa sessione.",
       "combinedMessages": "Messaggi combinati",
       "tokensIn": "Token in entrata",
       "tokensOut": "Token in uscita",
@@ -7831,7 +7941,20 @@
       "rawFilterUser": "Tu",
       "rawFilterAssistant": "Assistente",
       "rawNoMatches": "Nessun messaggio corrispondente",
-      "detailsLabel": "Dettagli"
+      "detailsLabel": "Dettagli",
+      "costSplit": "{own} questa sessione · {spawned} in {count, plural, one {# sessione avviata} other {# sessioni avviate}}",
+      "costEstimated": "Stimato dalla trascrizione",
+      "detailModelRequests": "Richieste al modello",
+      "spawnedLabel": "Sessioni avviate",
+      "spawnedNote": "Le sessioni avviate da questa sessione e quelle che queste hanno avviato. Il loro costo è incluso nel costo totale.",
+      "spawnedCount": "{count, plural, one {Questa sessione e # sessione avviata} other {Questa sessione e # sessioni avviate}}",
+      "spawnedRequests": "Richieste",
+      "spawnedCost": "Costo",
+      "spawnedThisSession": "Questa sessione",
+      "spawnedTotal": "Totale",
+      "spawnedHidden": "{count, plural, one {# sessione avviata che non puoi aprire non è inclusa.} other {# sessioni avviate che non puoi aprire non sono incluse.}}",
+      "spawnedTruncated": "Sono incluse solo le prime 500 sessioni avviate, fino a 10 livelli di profondità.",
+      "spawnedUntitled": "Sessione senza titolo"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "Vista unificata",
@@ -10923,7 +11046,6 @@
       "text18093cad2644": "Modale",
       "text180bbb19a1b2": "Il runbook che vive nella testa di una sola persona",
       "text1814e0a6cb50": "Vedi i modelli disponibili",
-      "text1815aa434bc6": "# Versione dello schema 2. Il runtime è OpenCode.",
       "text1815ae76cdc7": "Non distribuita",
       "text1829231e85b1": "Ogni membro di questo account vedrà nuovamente il logo, l'icona, la favicon e il nome di Kortix. Le immagini caricate verranno eliminate.",
       "text1836d8d61ae9": "{value0} rimosso da {value1}",
@@ -12217,7 +12339,6 @@
       "text11ef24ea6e15": "Impossibile rinominare l’account",
       "text0223e507afd3": "Per usare un altro account, aggiungilo agli account di questo connettore nelle impostazioni del progetto e impostalo come predefinito.",
       "text073fce23e704": "      memory/ e apri una richiesta di modifica",
-      "text0922e6bf143c": "harnesses/opencode/opencode.jsonc",
       "text3ed7c1e32705": "Leggere un tracker e riscriverlo sono azioni diverse. Imposta la scrittura su Ask: l’esecuzione si ferma sulla chiamata e mostra esattamente quali issue vuole unire o chiudere, poi riprende da lì quando approvi.",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "Crediti addebitati",
@@ -12550,7 +12671,6 @@
       "text47931699ba90": "Programma aggiornato",
       "text4795dc5fb288": "La connessione attuale continua a funzionare finché non viene salvata una sostituzione.",
       "text479974eaff88": "{value0}: {value1} riusciti, {value2} non riusciti. {value3}: {value4}{value5}",
-      "text479d92cbfaa1": "(kortix_version 2) per modificare le istruzioni, il modello, le autorizzazioni dello strumento di questo agente e accedere qui.",
       "text47a8467a2faa": "Impossibile caricare le modifiche",
       "text47b31f661d3f": "Impossibile aggiornare il ruolo",
       "text47bd29075f8b": "Contenuto",
@@ -13457,7 +13577,6 @@
       "text61dac62928db": "Pianificato:",
       "text61e8d44ad423": "Inizia",
       "text61eedf5451c2": "    timezone: UTC",
-      "text61f28ba7b5a4": "kortix_version: 2",
       "text61ff61757ef1": "Come funziona l’accesso in questo account.",
       "text6201111b83a0": "e",
       "text6201f8d3134e": "Eventi di monitoraggio acquisiti",
@@ -15864,7 +15983,6 @@
       "texta743aa4452d3": "Impossibile aggiornare il proprietario dell'autorizzazione",
       "texta756e5fb5f6b": "All’IT non serve una dashboard. Serve un elenco, con una motivazione difendibile per ogni riga, in un formato in cui approvarlo produca un’azione.",
       "texta757b331fa9a": "statusText",
-      "texta757f937ab97": "(kortix_version 2) per modificare qui la disponibilità, il modello, le autorizzazioni degli strumenti e l'accesso dell'agente.",
       "texta76a1fd4cef5": "Webhook di fatturazione Stripe ricevuto",
       "texta76ce82a9749": "Cache",
       "texta76e13b98392": "Ripristina",
@@ -15955,7 +16073,6 @@
       "texta9f78a15820d": "Confronto regola {value0} condizione {value1}",
       "textaa000c983975": "Risorsa Groups",
       "textaa023456aca4": "Connetti ChatGPT",
-      "textaa132a97a22a": "  config_dir: harnesses/opencode",
       "textaa1c8a0b1716": "Facendo clic su Salva verranno cancellate tutte le notifiche di manutenzione e verrà ripristinato l'accesso normale.",
       "textaa2025f803e6": "L'agente ha una shell e un filesystem. Può installare un pacchetto, scaricare un campione, eseguirlo, esaminare l'output e riprovare: il ciclo di lavoro reale di un analista, non un'unica esecuzione su strumenti fissi.",
       "textaa2e1a551c0a": "Raccoglie. Decidi tu.",
@@ -16857,7 +16974,6 @@
       "textc3bf78fdd3b9": "Impossibile inviare la tua candidatura",
       "textc3c25857485f": "Fa",
       "textc3c709a999c1": "Lettura memoria…",
-      "text7823a1f3af93": "Porta kortix.toml o un kortix.yaml versione 2 alla versione 3: il progetto registra competenze, strumenti, comandi ed estensioni, e ogni agente li abilita per nome. Aggiorna le competenze gestite dalla piattaforma e apre una richiesta di modifica da esaminare.",
       "textc3d2e79ebdd0": "Connettori",
       "textc3e3a6edeaa5": "Termini e condizioni",
       "textc3e58a73609d": "Distruttivo",
@@ -16950,7 +17066,6 @@
       "textc634dcb25574": "Registrazione",
       "textc63adab9bd56": "Tieni traccia degli strumenti e dei file citati utilizzati in questa attività.",
       "textc63eb6720c6e": "Privato",
-      "textc6414eb01d9a": "Modifiche apportate da un agente a quest'area di lavoro. Ogni esecuzione apre una richiesta di modifica da rivedere: nulla si unisce da solo.",
       "textc6479e2f4970": "Aggiorna modifiche",
       "textc65feb0006ea": "Lavoratore · {value0}{value1}",
       "textc661a1039aa0": "massimo",
@@ -17593,7 +17708,6 @@
       "textd83a0d814c59": "API Status mostra \"Enabled\" in verde, il parametro \"SCIM Username\" è associato a Email e il provisioning è abilitato senza il blocco per l'approvazione dell'amministratore.",
       "textd84b8be91e7b": "Kortix — Presentazioni",
       "textd84ee1e1e08b": "prova kortix init oppure / per i comandi",
-      "text08edd5b6dcdc": "Aggiorna il manifest alla v3 (kortix.yaml)",
       "text848f54e89660": "Esecuzioni",
       "textb098a09c78aa": "Prova con payload",
       "text99733344956d": "Payload",
@@ -17775,7 +17889,6 @@
       "textdc70ef3b3338": "Vale la pena connettere un canale solo se la risposta arriva dove è stata posta la domanda. I file viaggiano in entrambe le direzioni e le decisioni di cui l'agente ha bisogno da parte tua diventano pulsanti nel thread, non un link verso un altro posto.",
       "textdc76dd6b1aff": "Accedi alla CLI di Kortix",
       "textdc78f4d17256": "senza MFA — non verranno bloccati, ma valuta di chiedere loro di registrarla:",
-      "textdc7ab144ca89": "Effettua l'upgrade per l'editor completo dell'agente",
       "textdc7ea87fdc45": "File, in entrambe le direzioni",
       "textdc8659db6d41": "Invio",
       "textdc8d7c5c602b": "Registro sorgente",
@@ -17898,7 +18011,6 @@
       "textdfea74d6d58d": "Sposta il fallback su",
       "textdffb64dc7001": "Limiti",
       "texte01d77b4a0bd": "Il problema",
-      "texte02a5941602a": "Aggiornamenti",
       "texte030ac604b81": "Deployment e postura",
       "texte0362b3241c5": "Entro i limiti",
       "texte03abcb2b624": "Connettori e finestra di aggiornamento",
@@ -21869,7 +21981,6 @@
     "connectorsEmptyBody": "Sfoglia il catalogo e installa un’app. I tuoi agenti la usano quando ha un account.",
     "browseApps": "Sfoglia le app",
     "agentsLoadFailed": "Impossibile caricare gli agenti",
-    "agentsNeedsV2": "L’accesso degli agenti si imposta in kortix.yaml (kortix_version 2 o successiva). Questo progetto usa kortix.toml.",
     "agentsEmpty": "Questo progetto non ha ancora agenti.",
     "agentsIntro": "Scegli quali agenti possono usare questo connettore e quali regole ricevono. Ogni modifica viene salvata in kortix.yaml.",
     "agentsReadOnly": "Solo chi può modificare agenti e connettori può cambiarlo.",
@@ -23989,7 +24100,23 @@
       "panelTitle": "Commenti e attività",
       "resizePanel": "Ridimensiona il pannello dei commenti",
       "unshareComments": "{count, plural, one {Verrà eliminato # commento.} other {Verranno eliminati # commenti.}}",
-      "systemActor": "Sistema"
+      "systemActor": "Sistema",
+      "draw": "Disegna un commento",
+      "drawPen": "Penna",
+      "drawArrow": "Freccia",
+      "drawRectangle": "Rettangolo",
+      "drawBlack": "Nero",
+      "drawRed": "Rosso",
+      "drawBlue": "Blu",
+      "drawUndo": "Annulla tratto",
+      "drawPageChanged": "La pagina è cambiata. Annulla e disegna di nuovo.",
+      "drawLimit": "Limite del disegno raggiunto. Annulla un tratto per continuare.",
+      "openScreenshot": "Apri schermata",
+      "drawingScreenshot": "Schermata del commento",
+      "screenshotReadFailed": "Impossibile caricare la schermata.",
+      "screenshotMissing": "Schermata non disponibile. Il disegno è salvato.",
+      "screenshotCaptureFailed": "Impossibile acquisire la schermata. Il commento includerà il disegno senza immagine.",
+      "sendScreenshotLimit": "Questo gruppo supera 20 schermate o 12 MiB per richiesta codificata. Invia meno immagini allegate o usa un modello solo testuale."
     }
   },
   "emailConnect": {
@@ -24701,6 +24828,8 @@
     "title": "Desktop",
     "openTab": "Apri in una nuova scheda",
     "offline": "Il desktop non è in esecuzione su questo computer.",
+    "noDesktop": "Questo computer non ha un desktop.",
+    "noDesktopHint": "My Kortix gira su un computer minimale. Le sessioni dei tuoi agenti hanno un desktop.",
     "start": "Chiedi a Kortix di eseguire",
     "retry": "Riprova",
     "takeOver": "Prendi il controllo",
@@ -24746,5 +24875,247 @@
     "tools": "Tools",
     "extensions": "Extensions",
     "drives": "Drives"
+  },
+  "multiAgent": {
+    "peer": {
+      "message": "Messaggio da {from}",
+      "idleNotice": "{from} ha finito",
+      "shutdownRequest": "Richiesta di chiusura da {from}",
+      "shutdownResponse": "Risposta alla richiesta di chiusura di {from}",
+      "expand": "Mostra tutto il messaggio",
+      "collapse": "Nascondi il messaggio"
+    },
+    "notice": {
+      "completed": "{name} ha finito",
+      "failed": "{name} non ha finito",
+      "stopped": "{name} è stato interrotto",
+      "fallbackName": "Il tuo agente",
+      "openSession": "Apri sessione",
+      "expand": "Mostra tutto il risultato",
+      "collapse": "Nascondi il risultato",
+      "batchTitle": "{count, plural, one {# agente ha finito} other {# agenti hanno finito}}",
+      "ownsTasks": "Ha ancora {tasks}"
+    },
+    "tools": {
+      "running": {
+        "sending": "Invio di un messaggio…",
+        "checkingAgents": "Controllo degli altri agenti…",
+        "checkingTasks": "Controllo delle attività del team…",
+        "updatingTasks": "Aggiornamento delle attività del team…",
+        "stopping": "Interruzione di un agente…"
+      },
+      "to": "A",
+      "peerStatus": {
+        "delivered": "Consegnato",
+        "held": "In attesa di approvazione",
+        "refused": "Non inviato",
+        "denied": "Negato",
+        "expired": "Scaduto",
+        "dropped": "Non inviato di nuovo"
+      },
+      "relation": {
+        "parent": "Principale",
+        "child": "Aiutante",
+        "lead": "Responsabile",
+        "teammate": "Compagno di squadra",
+        "session": "Sessione"
+      },
+      "cannotReceive": "Non può ricevere messaggi",
+      "state": {
+        "working": "Al lavoro",
+        "needsInput": "Serve una risposta",
+        "idle": "Inattivo",
+        "completed": "Fatto",
+        "failed": "Non completato",
+        "stopped": "Interrotto"
+      },
+      "taskStatus": {
+        "pending": "In attesa",
+        "inProgress": "In corso",
+        "completed": "Fatta"
+      },
+      "blockedBy": "bloccata da {tasks}",
+      "stopped": "Interrotto",
+      "alreadyEnded": "Già terminato",
+      "openSession": "Apri sessione"
+    },
+    "strip": {
+      "label": "Agenti",
+      "agents": "{count, plural, one {# agente} other {# agenti}}",
+      "working": "{count} al lavoro",
+      "workflows": "{count, plural, one {# workflow} other {# workflow}}",
+      "workflowsRunning": "{count, plural, one {# workflow in corso} other {# workflow in corso}}",
+      "newest": "{name}: {state}",
+      "tasks": "Attività",
+      "team": "Team",
+      "workflowsGroup": "Workflow",
+      "state": {
+        "working": "al lavoro",
+        "needs_input": "serve il tuo intervento",
+        "idle": "fatto",
+        "completed": "fatto",
+        "failed": "non riuscito",
+        "stopped": "interrotto"
+      },
+      "workingFor": "al lavoro · {elapsed}",
+      "runsAs": "esegue come {agent}",
+      "teamRole": "Ruolo solo per questa sessione",
+      "attention": {
+        "question": "Ha una domanda per te",
+        "approval": "Aspetta la tua approvazione"
+      },
+      "openAgent": "Apri {name}",
+      "stopHint": "Interrompi questo agente",
+      "stopAgent": "Interrompi {name}",
+      "stopAgentFailed": "Impossibile interrompere {name}",
+      "stopFailed": "Impossibile interrompere l’agente",
+      "runProgress": "{done} di {total} fatti",
+      "runBackground": "In background",
+      "runRunning": "In corso",
+      "runStatus": {
+        "done": "Fatto",
+        "failed": "Non completato",
+        "stopped": "Interrotto"
+      },
+      "runFallback": "Workflow",
+      "openRun": "Apri esecuzione",
+      "runNoAgents": "Ancora nessun agente"
+    },
+    "subagent": {
+      "fallbackTitle": "Agente",
+      "openPage": "Apri pagina",
+      "close": "Chiudi",
+      "messagePlaceholder": "Messaggio a {name}…",
+      "messageLabel": "Messaggio a {name}",
+      "send": "Invia",
+      "sent": "Messaggio inviato",
+      "sendFailed": "Impossibile inviare il messaggio",
+      "loadFailed": "Impossibile caricare i messaggi di questo agente",
+      "retry": "Riprova",
+      "emptyTitle": "Ancora niente",
+      "emptyDescription": "I suoi messaggi compaiono qui mentre lavora.",
+      "loadOlder": "Mostra i messaggi precedenti"
+    },
+    "tasks": {
+      "label": "Attività del team",
+      "empty": "Le attività pianificate dal team compariranno qui.",
+      "group": {
+        "pending": "In attesa",
+        "in_progress": "In corso",
+        "completed": "Completate"
+      },
+      "blockedBy": "Bloccata da {tasks}",
+      "unowned": "Non assegnata"
+    },
+    "held": {
+      "label": "Messaggi in attesa di te",
+      "title": "Messaggio da {from}",
+      "titleShutdown": "{from} chiede di interrompere questa sessione",
+      "waiting": "In attesa della tua approvazione. Scade dopo 5 minuti.",
+      "deny": "Nega",
+      "approve": "Approva",
+      "approveFailed": "Impossibile consegnare il messaggio",
+      "denyFailed": "Impossibile negare il messaggio"
+    },
+    "workflow": {
+      "large": "Workflow grande",
+      "largeHint": "Questa esecuzione avvia più di 25 agenti. Da qui puoi interromperla, o interrompere qualsiasi agente.",
+      "paused": "In pausa",
+      "pause": "Metti in pausa l’esecuzione",
+      "resume": "Riprendi l’esecuzione",
+      "pauseHint": "Pausa: nessun nuovo agente parte, gli agenti in corso finiscono (p)",
+      "resumeHint": "Riprendi l’esecuzione (p)",
+      "stop": "Interrompi l’esecuzione",
+      "stopHint": "Interrompi tutti gli agenti e termina l’esecuzione (x)",
+      "save": "Salva",
+      "saveHint": "Salva lo script di questa esecuzione come workflow che puoi rieseguire (s)",
+      "savePrompt": "Salva l’esecuzione del workflow «{title}» (esecuzione {runId}) come workflow salvato: scrivi il suo script in {file} e apri una richiesta di modifica per esso.",
+      "saveSent": "Salvataggio del workflow richiesto",
+      "saveFailed": "Impossibile richiedere il salvataggio del workflow",
+      "restartHint": "Riavvia questo agente con lo stesso prompt (r)",
+      "restartAgent": "Riavvia {label}",
+      "failed": {
+        "pause": "Impossibile mettere in pausa l’esecuzione",
+        "resume": "Impossibile riprendere l’esecuzione",
+        "stop": "Impossibile interrompere l’esecuzione",
+        "restart": "Impossibile riavviare {label}"
+      }
+    },
+    "board": {
+      "layoutLabel": "Vista",
+      "layoutList": "Elenco",
+      "layoutBoard": "Bacheca",
+      "dispatchLabel": "Avvia una sessione o filtra la bacheca",
+      "dispatchPlaceholder": "Avvia una sessione: @agent e un’attività. Filtra: s:working a:agent",
+      "tooShort": "Troppo corto",
+      "dispatched": "Sessione avviata",
+      "dispatchFailed": "Impossibile avviare la sessione",
+      "openSession": "Apri sessione",
+      "stopSession": "Interrompi sessione",
+      "stopped": "Sessione interrotta",
+      "stopFailed": "Impossibile interrompere la sessione",
+      "stateFilter": "Filtra per stato",
+      "agentFilter": "Filtra per agente",
+      "allStates": "Tutti gli stati",
+      "allAgents": "Tutti gli agenti",
+      "loadError": "Impossibile caricare le sessioni. Riprova.",
+      "retry": "Riprova",
+      "emptyTitle": "Le sessioni che avvii compariranno qui",
+      "emptyDescription": "Scrivi un’attività qui sopra e premi Enter. Ogni attività viene eseguita nella sua sessione.",
+      "noMatches": "Nessuna sessione corrisponde a questi filtri",
+      "clearFilters": "Cancella filtri",
+      "listLabel": "Sessioni per stato",
+      "loadMore": "Carica altre sessioni",
+      "loadingMore": "Caricamento di altre sessioni…",
+      "more": "… altre {count}",
+      "keys": {
+        "move": "sposta",
+        "peek": "anteprima",
+        "open": "apri",
+        "stop": "interrompi"
+      },
+      "group": {
+        "pinned": "Fissate",
+        "needs_input": "Serve una risposta",
+        "working": "Al lavoro",
+        "review": "Pronte da rivedere",
+        "completed": "Completate",
+        "ended": "Non riuscite · Interrotte"
+      },
+      "state": {
+        "working": "Al lavoro",
+        "needs_input": "Serve una risposta",
+        "idle": "Inattiva",
+        "completed": "Completata",
+        "failed": "Non riuscita",
+        "stopped": "Interrotta"
+      },
+      "replyPlaceholder": "Rispondi. La risposta arriva all’agente al suo prossimo passo.",
+      "replyLabel": "Rispondi a {title}",
+      "sendReply": "Invia risposta",
+      "replySent": "Risposta inviata",
+      "replyFailed": "Impossibile inviare la risposta"
+    },
+    "ultracode": {
+      "hint": "Viene eseguito come workflow di agenti",
+      "dismiss": "{key} per inviarlo come prompt normale"
+    }
+  },
+  "claudeSubscription": {
+    "title": "Usa il tuo abbonamento Claude",
+    "description": "I modelli Claude funzionano tramite Claude Code con il tuo piano Claude Pro o Max. Solo le tue sessioni usano il tuo piano.",
+    "starting": "Apertura di Claude…",
+    "approveDescription": "Accedi con l'account Claude che ha il tuo piano, autorizza la richiesta e copia il codice che Claude ti mostra.",
+    "codeLabel": "Codice da claude.com",
+    "connect": "Connetti Claude",
+    "connecting": "Connessione…",
+    "connectedTitle": "Il tuo abbonamento Claude è connesso",
+    "connected": "Abbonamento Claude connesso",
+    "disconnect": "Disconnetti Claude",
+    "disconnected": "Abbonamento Claude disconnesso",
+    "startError": "Impossibile avviare l'accesso a Claude. Riprova.",
+    "codeError": "Impossibile connettere Claude con quel codice. Accedi di nuovo e incolla il nuovo codice.",
+    "connectClaude": "Connetti Claude",
+    "reconnectClaude": "Riconnetti Claude"
   }
 }

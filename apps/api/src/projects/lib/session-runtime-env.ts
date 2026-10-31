@@ -48,13 +48,12 @@ export interface SessionRuntimeEnvInput {
    * fetches a fresh descriptor from the Git proxy.
    */
   projectSnapshotDescriptor?: string | null;
-  /** Server-compiled OpenCode agent config (JSON string) for a `kortix_version:
-   *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
-   *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
+  /** Server-compiled agent config (JSON string) — see `compile-agent-config.ts`.
+   *  `null`/omitted for a project with no manifest file: no key is emitted. */
   compiledAgentConfig?: string | null;
-  /** kortix.yaml `harnesses.pi.codemode`; sent as `KORTIX_PI_CODEMODE` to a pi session only. Null: the daemon default (`on`). */
+  /** The session agent's kortix.yaml `codemode`; sent as `KORTIX_PI_CODEMODE` to a pi session only. Null: the daemon default (`on`). */
   piCodemode?: 'off' | 'on' | 'only' | null;
-  /** kortix.yaml `harnesses.pi.packages`; sent as `KORTIX_PI_PACKAGES` to a pi session only. */
+  /** The pi packages of the extensions the session agent enables; sent as `KORTIX_PI_PACKAGES` to a pi session only. */
   piPackages?: unknown[];
   /** The prebuilt bundle of those packages (apps/api/src/pi-packages/bundle.ts); null when not built. */
   piPackagesBundle?: { digest: string; url: string; fallbackUrl: string } | null;

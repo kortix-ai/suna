@@ -1,6 +1,7 @@
 'use client';
 
 import { qk } from '../query-keys';
+import { activeRuntimeAction, runtimeActionError, runtimeActionPaths } from '../../core/session/runtime-actions';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
 import { isRuntimeConfigInvalidError } from '../../core/http/runtime-errors';
@@ -13,18 +14,30 @@ import { runtimeKeys, useRuntimeReady } from './keys';
 import { unwrap, canQueryRuntimeSession } from './shared';
 import { NoCompactionModelError } from './no-compaction-model-error';
 import { SESSION_SYNC_PAGE_SIZE } from '../../core/session-sync/session-sync-controller';
+import { useMemo } from 'react';
+import { useSyncStore } from '../../browser/stores/sync-store';
+import { logSessionRows, settledFromLog, useRuntimeServesLog } from './log-sessions';
 
 // ============================================================================
 // Session Hooks
 // ============================================================================
 
+/** The held session logs' threads on a box that serves its log; null on any other box. */
+function useLogSessionRows(): Session[] | null {
+  const servesLog = useRuntimeServesLog();
+  const logs = useSyncStore((state) => state.sessionLogs);
+  return useMemo(() => (servesLog ? logSessionRows(logs) : null), [servesLog, logs]);
+}
+
+/** The runtime's sessions. A box that serves its log answers them from the session log: no box read. */
 export function useRuntimeSessions(enabled = true) {
   const runtimeReady = useRuntimeReady();
+  const logRows = useLogSessionRows();
   // Subscribe to the active runtime sandbox so the query key recomputes the
   // instant the sandbox switches — returning to a warm session hits its cached
   // list rather than refetching from scratch.
   const serverId = useCurrentRuntime((s) => s.sandboxId) ?? undefined;
-  return useQuery<Session[]>({
+  const query = useQuery<Session[]>({
     queryKey: runtimeKeys.sessions(serverId),
     queryFn: async () => {
       const client = getClient();
@@ -32,7 +45,7 @@ export function useRuntimeSessions(enabled = true) {
       const sessions = unwrap(result);
       return sessions.sort((a: Session, b: Session) => b.time.updated - a.time.updated);
     },
-    enabled: runtimeReady && enabled,
+    enabled: runtimeReady && enabled && logRows === null,
     staleTime: 5 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -48,20 +61,24 @@ export function useRuntimeSessions(enabled = true) {
     retryDelay: (attempt) =>
       attempt < 16 ? 150 : Math.min(150 * Math.pow(2, attempt - 16), 10000),
   });
+  return logRows && enabled ? settledFromLog(query, logRows) : query;
 }
 
+/** One runtime session. A box that serves its log answers it from the session log once it holds the thread. */
 export function useRuntimeSession(sessionId: string) {
   const queryClient = useQueryClient();
   const runtimeReady = useRuntimeReady();
   const canQuerySession = canQueryRuntimeSession(sessionId);
-  return useQuery<Session>({
+  const logRows = useLogSessionRows();
+  const logRow = logRows?.find((row) => row.id === sessionId);
+  const query = useQuery<Session>({
     queryKey: runtimeKeys.runtimeSession(sessionId),
     queryFn: async () => {
       const client = getClient();
       const result = await client.session.get({ sessionID: sessionId });
       return unwrap(result);
     },
-    enabled: runtimeReady && canQuerySession,
+    enabled: runtimeReady && canQuerySession && logRows === null,
     staleTime: Infinity,
     // Retry transient failures (sandbox still warming, brief network blip) so a
     // single failed lookup doesn't settle as "not found" and flash the
@@ -73,6 +90,8 @@ export function useRuntimeSession(sessionId: string) {
       return sessions?.find((s) => s.id === sessionId);
     },
   });
+  // Until the log holds the thread the read stays pending, never "not found".
+  return logRow ? settledFromLog(query, logRow) : query;
 }
 
 export function useCreateRuntimeSession() {
@@ -284,6 +303,12 @@ export function useSummarizeRuntimeSession() {
       providerID?: string;
       modelID?: string;
     }) => {
+      // A box with the session-log actions compacts with the model it runs.
+      const compacted = await activeRuntimeAction('POST', runtimeActionPaths.compact(params.sessionId));
+      if (compacted) {
+        if (!compacted.ok) throw await runtimeActionError(compacted, 'Compacting the session failed');
+        return params.sessionId;
+      }
       const client = getClient();
 
       let { providerID, modelID } = params;

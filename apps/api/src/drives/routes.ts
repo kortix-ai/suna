@@ -57,6 +57,7 @@ import {
   type DriveRow,
   driveStats,
   driveSubjectFor,
+  driveVolume,
   privateChannelRows,
   enforceProjectMounts,
   ensureProjectDrive,
@@ -72,8 +73,13 @@ import {
   userEmails,
   writeDriveVolume,
 } from './service';
+import { type DriveUpload, openDriveUpload, sealDriveUpload } from './upload-token';
+import { parseVolumeWriteCommit } from './volume-commit';
 import {
   DriveStorageError,
+  commitVolumeUpload,
+  planVolumeUpload,
+  putVolumeUploadBlock,
   listVolumeCommits,
   listVolumeFiles,
   readVolumeFile,
@@ -87,6 +93,8 @@ import {
 } from './volumes';
 
 export const MAX_DRIVE_UPLOAD_BYTES = 64 * 1024 * 1024;
+/** A block of the block upload, as storage takes it. */
+const UPLOAD_BLOCK_BYTES = 1024 * 1024;
 /** The empty file that holds an otherwise empty folder in place. */
 const FOLDER_MARKER = '.keep';
 
@@ -558,6 +566,156 @@ drivesApp.openapi(
     const version = ifMatch && written.version ? `"${bareVersion(written.version)}"` : null;
     if (version) c.header('etag', version);
     return c.json({ path: written.path, size: written.size, ...(version ? { version } : {}) });
+  },
+);
+
+// The block upload, for files of any size (the PUT above takes at most 64
+// MiB): plan names the file and the sha256 of each 1 MiB block, storage
+// answers which blocks it lacks, only those are sent, and the commit lands
+// the whole file at once. The upload id is sealed to the caller, the drive
+// and the path (drives/upload-token.ts); write access at the path is checked
+// again at every block and at the commit.
+
+const UploadParams = z.object({ driveId: z.string(), uploadId: z.string() });
+
+/** Storage forgot the upload: it lapsed (16 min without a block), was committed, or was cancelled. */
+async function withUploadStorage<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await withStorage(fn);
+  } catch (err) {
+    if (err instanceof HTTPException && err.status === 404) fail(404, 'The upload expired. Start it again.', 'upload_not_found');
+    throw err;
+  }
+}
+
+/** The upload the caller planned on this drive, with write access at its path checked now. */
+async function callerUpload(c: DriveContext): Promise<{ caller: Caller; upload: DriveUpload }> {
+  const caller = await loadDrive(c);
+  const upload = openDriveUpload(c.req.param('uploadId') ?? '', { driveId: caller.drive.driveId, userId: caller.userId });
+  if (!upload) fail(404, 'Upload not found', 'upload_not_found');
+  need(caller, upload.path, 'write');
+  return { caller, upload };
+}
+
+// POST /v1/drives/:driveId/files/upload
+drivesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{driveId}/files/upload',
+    tags: ['drives'],
+    summary: 'Start a block upload',
+    description:
+      '`blocks` is the lowercase sha256 of each 1 MiB block of the file, in order (the last may be short). Answers the upload id and the blocks storage lacks: send each with `PUT …/files/upload/{uploadId}/blocks/{sha}`, then commit. Replaces an existing file at the path. With `If-Match`, a file changed since is refused with 409 `file_changed`, here and at the commit. An upload without a block for 16 minutes expires.',
+    ...auth,
+    request: {
+      params: DriveParams,
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: z.object({
+              path: z.string(),
+              size: z.number().int().positive(),
+              blocks: z.array(z.string().regex(/^[0-9a-f]{64}$/)),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.object({ uploadId: z.string(), missing: z.array(z.string()), expiresAt: z.string().nullable() }), 'Planned'),
+      ...errors(400, 401, 403, 404, 409, 503),
+    },
+  }),
+  async (c) => {
+    const caller = await loadDrive(c);
+    const { path: rawPath, size, blocks } = c.req.valid('json') as { path: string; size: number; blocks: string[] };
+    const path = drivePath(rawPath, { allowRoot: false });
+    if (parentOf(path) === '/' || parentOf(path) === USERS_DIR) fail(400, 'Put files in a folder');
+    need(caller, path, 'write');
+    if (blocks.length !== Math.ceil(size / UPLOAD_BLOCK_BYTES)) fail(400, `A file of ${size} bytes has ${Math.ceil(size / UPLOAD_BLOCK_BYTES)} blocks`);
+    const ifMatch = c.req.header('if-match');
+    if (ifMatch) {
+      const current = await withStorage(() => currentFileVersion(caller.drive, path));
+      if (!current || !sameVersion(current, ifMatch)) fail(409, FILE_CHANGED_MESSAGE, 'file_changed');
+    }
+    const plan = (await withStorage(() =>
+      writeDriveVolume(caller.drive, (volume) => planVolumeUpload(volume, { files: [{ path, size, blocks }], overwrite: true })),
+    )) as { upload_id?: unknown; missing?: unknown; expires_at?: unknown };
+    if (typeof plan.upload_id !== 'string' || !plan.upload_id) fail(503, 'Drive storage is unavailable, try again shortly', 'drive_storage_unavailable');
+    const uploadId = sealDriveUpload({
+      uploadId: plan.upload_id,
+      driveId: caller.drive.driveId,
+      userId: caller.userId,
+      path,
+      size,
+      ...(ifMatch ? { ifMatch } : {}),
+    });
+    return c.json({
+      uploadId,
+      missing: Array.isArray(plan.missing) ? plan.missing.filter((m): m is string => typeof m === 'string') : [],
+      expiresAt: typeof plan.expires_at === 'string' ? plan.expires_at : null,
+    });
+  },
+);
+
+// PUT /v1/drives/:driveId/files/upload/:uploadId/blocks/:sha
+drivesApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{driveId}/files/upload/{uploadId}/blocks/{sha}',
+    tags: ['drives'],
+    summary: 'Send one block of a block upload',
+    description: 'Raw request body, at most 1 MiB; its sha256 must equal `sha`. Safe to send again.',
+    ...auth,
+    request: { params: UploadParams.extend({ sha: z.string() }) },
+    responses: { 204: { description: 'Stored' }, ...errors(400, 401, 403, 404, 413, 503) },
+  }),
+  async (c) => {
+    const { caller, upload } = await callerUpload(c);
+    const sha = c.req.param('sha') ?? '';
+    if (!/^[0-9a-f]{64}$/.test(sha)) fail(400, 'A block is named by its lowercase sha256');
+    const declared = Number(c.req.header('content-length') ?? NaN);
+    if (Number.isFinite(declared) && declared > UPLOAD_BLOCK_BYTES) fail(413, 'A block is at most 1 MiB');
+    const body = new Uint8Array(await c.req.arrayBuffer());
+    if (body.byteLength > UPLOAD_BLOCK_BYTES) fail(413, 'A block is at most 1 MiB');
+    await withUploadStorage(() => putVolumeUploadBlock(driveVolume(caller.drive), upload.uploadId, sha, body));
+    return c.body(null, 204);
+  },
+);
+
+// POST /v1/drives/:driveId/files/upload/:uploadId/commit
+drivesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{driveId}/files/upload/{uploadId}/commit',
+    tags: ['drives'],
+    summary: 'Commit a block upload',
+    description: 'Lands the whole file at once, once every block storage lacked was sent. Safe to send again: a commit that landed answers the same.',
+    ...auth,
+    request: { params: UploadParams },
+    responses: {
+      200: json(z.object({ path: z.string(), size: z.number() }), 'Uploaded'),
+      ...errors(400, 401, 403, 404, 409, 503),
+    },
+  }),
+  async (c) => {
+    const { caller, upload } = await callerUpload(c);
+    // ponytail: storage's commit takes no If-Match, so the check and the commit
+    // are two steps; a save landing between them is overwritten. Add it when storage does.
+    if (upload.ifMatch) {
+      const current = await withStorage(() => currentFileVersion(caller.drive, upload.path));
+      if (!current || !sameVersion(current, upload.ifMatch)) fail(409, FILE_CHANGED_MESSAGE, 'file_changed');
+    }
+    const committed = await withUploadStorage(() =>
+      writeDriveVolume(caller.drive, (volume) => commitVolumeUpload(volume, upload.uploadId)),
+    );
+    await recordDriveCommitAuthor(caller.drive.driveId, parseVolumeWriteCommit(committed), {
+      userId: caller.userId,
+      sessionId: callerKortixSessionId(c),
+    });
+    noteDriveWrite(caller.drive.driveId);
+    return c.json({ path: upload.path, size: upload.size });
   },
 );
 

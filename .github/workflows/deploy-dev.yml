@@ -181,6 +181,7 @@ jobs:
               - 'apps/web/**'
               - 'packages/**'
               - 'infra/scripts/ecs-deploy.sh'
+              - 'infra/scripts/carry-web-static.sh'
               - 'infra/scripts/render-web-env.mjs'
               - 'infra/scripts/sync-web-env.sh'
               - 'infra/scripts/sync-web-dns.mjs'
@@ -612,9 +613,12 @@ jobs:
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
-      # Release gate: build the Platinum platform default image THIS API version
-      # computes, and make it resident in KORTIX_PLATINUM_US_REGION, before the
-      # roll. Without it the new tasks start on a missing image: sessions boot
+      # Release gate: build the Platinum platform default image and the meta
+      # image (My Kortix sessions) THIS API version computes, and make both
+      # resident in KORTIX_PLATINUM_US_REGION, before the roll. Without the meta
+      # build, the first My Kortix session after a deploy waited 80-111 s for
+      # it (2026-10-30). Without the default build the new tasks start on a
+      # missing image: sessions boot
       # the previous one and repair its runtime in place, and the first US
       # session waits while Platinum copies the image from the EU (150-255 s on
       # 2026-10-02). The new image is built UNPUBLISHED, so the version still
@@ -629,7 +633,7 @@ jobs:
       # one place (secret read, image pull, build, copy, timeout); the script's
       # own exit code still marks the step failed with a ::warning:: naming the
       # cause, and the next sessions then behave exactly as before this gate.
-      - name: Build the next default sandbox image and make it resident in US
+      - name: Build the next default and meta sandbox images and make them resident in US
         continue-on-error: true
         timeout-minutes: 25
         env:
@@ -893,7 +897,12 @@ jobs:
   verify-gateway-dev-parity:
     name: Verify gateway dev commit parity
     needs: [detect-changes, deploy-gateway-ecs]
-    if: needs.detect-changes.outputs.gateway == 'true'
+    # `always()`: deploy-gateway-ecs runs after a skipped terraform-dev-api, and a
+    # plain `if:` inherits that skip, so the parity check and the gateway `:dev`
+    # promotion never ran when no dev Terraform changed.
+    if: ${{ always()
+      && needs.detect-changes.outputs.gateway == 'true'
+      && needs.deploy-gateway-ecs.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 15
     env:
@@ -1034,6 +1043,24 @@ jobs:
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
+      - name: Carry earlier builds' static chunks
+        # A tab opened before this deploy still requests its own build's
+        # hashed chunks; without them its next lazy import fails with
+        # "Failed to load chunk". `:dev` is the build that serves now (it moves
+        # only after verify-web-ecs), `:dev-latest` the last one built (a
+        # cancelled run can leave it unserved). Each carries its own earlier
+        # builds, so the image holds the newest 5 builds (~20 MB each).
+        run: |
+          set -euo pipefail
+          images=()
+          seen=""
+          for ref in kortix/kortix-frontend:dev kortix/kortix-frontend:dev-latest; do
+            digest="$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest.Digest}}' 2>/dev/null || true)"
+            if [ -n "$digest" ] && [[ "$seen" != *"$digest"* ]]; then
+              images+=("$ref"); seen="$seen $digest"
+            fi
+          done
+          bash infra/scripts/carry-web-static.sh apps/web/.next/static 5 "${images[@]}"
       - name: Build and push (amd64)
         # Single-arch amd64 for dev (see the API build for the full rationale).
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0

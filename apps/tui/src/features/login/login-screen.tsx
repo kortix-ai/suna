@@ -233,7 +233,7 @@ export function LoginScreen({
               fg={isCursor ? theme.fg : entry.hasToken ? theme.dim : theme.faint}
               bg={isCursor ? theme.surface : undefined}
             >
-              <span fg={theme.accent}>{isCursor ? GLYPH.selected : ' '}</span>
+              <span fg={theme.brand}>{isCursor ? GLYPH.selected : ' '}</span>
               {hostRow(entry, bodyWidth)}
             </text>
           );

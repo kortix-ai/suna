@@ -30,6 +30,14 @@ mock.module('../../core/runtime/client', () => ({
   getClient: () => getClientImpl(),
 }));
 
+// The session-log action route of the active runtime: null = an older box (the default here).
+let actionImpl: (method: string, path: string) => Promise<Response | null> = async () => null;
+const realRuntimeActions = await import('../../core/session/runtime-actions');
+mock.module('../../core/session/runtime-actions', () => ({
+  ...realRuntimeActions,
+  activeRuntimeAction: (method: string, path: string) => actionImpl(method, path),
+}));
+
 mock.module('../../core/http/logger', () => ({
   logger: { warn: () => {}, error: () => {}, info: () => {}, debug: () => {} },
 }));
@@ -726,6 +734,32 @@ describe('abortInFlightDeliveries', () => {
     await promptRuntimeMessage({ sessionId: 'sess-done', parts: [{ type: 'text', text: 'hi' }] });
 
     expect(abortInFlightDeliveries('sess-done')).toBe(0);
+  });
+});
+
+describe('abortRuntimeSession on a box with the session-log actions', () => {
+  test('posts the Kortix abort and re-reads the pending statuses; a busy thread updates the store', async () => {
+    const calls: string[] = [];
+    actionImpl = async (method, path) => {
+      calls.push(`${method} ${path}`);
+      return path.endsWith('/abort')
+        ? Response.json({ ok: true })
+        : Response.json({ statuses: { 'sess-1': 'busy' }, permissions: [], questions: [] });
+    };
+    abortImpl = async () => {
+      throw new Error('the compatibility abort must not be used');
+    };
+    useSyncStore.setState({ sessionStatus: {} });
+    await abortRuntimeSession('sess-1');
+    expect(calls).toEqual(['POST /kortix/runtime/sessions/sess-1/abort', 'GET /kortix/runtime/pending']);
+    expect(useSyncStore.getState().sessionStatus['sess-1']).toEqual({ type: 'busy' });
+    actionImpl = async () => null;
+  });
+
+  test('a refused abort throws', async () => {
+    actionImpl = async () => Response.json({ error: 'pi runtime is not started' }, { status: 503 });
+    await expect(abortRuntimeSession('sess-1')).rejects.toThrow('pi runtime is not started');
+    actionImpl = async () => null;
   });
 });
 

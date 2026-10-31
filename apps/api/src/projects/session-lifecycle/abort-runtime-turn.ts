@@ -1,6 +1,5 @@
 import { resolveSessionOpencodeEndpoint } from './runtime-client';
-import { runtimeServesTurnVerbs, runtimeVerbPaths, sessionRuntimeFetch, turnVerbMissing } from './runtime-fetch';
-import { legacyRuntimePaths } from './legacy-runtime-rest';
+import { runtimeVerbPaths, sessionRuntimeFetch } from './runtime-fetch';
 
 /**
  * Abort whatever turn the runtime still thinks is running for this session.
@@ -8,15 +7,11 @@ import { legacyRuntimePaths } from './legacy-runtime-rest';
  * Closing a channel card is not the same as ending the run. On dev
  * 2026-09-19 a Teams turn died mid-flight: the ledger settled it
  * `runtime_gone`, the 30-minute GC eventually closed the Adaptive Card — and
- * OpenCode kept an assistant message OPEN, with `time.created` and no
- * `time.completed`, for two days. Every later message in that conversation was
- * accepted by `prompt_async`, stored, and never run. Two of the user's
- * messages vanished that way with nothing shown to them.
+ * the runtime kept an assistant message OPEN for two days. Every later message
+ * in that conversation was accepted, stored, and never run.
  *
- * `POST /session/:id/abort` is what unwedges it — the same call the Stop
- * button makes. Verified by hand on the stuck session: the open message
- * flipped to `MessageAbortedError` and the conversation accepted prompts
- * again.
+ * The runtime's abort (`POST /kortix/runtime/sessions/:id/abort`) unwedges
+ * it — the same call the Stop button makes.
  *
  * Best effort by design. The caller is a housekeeping sweep that has already
  * decided the turn is dead; a sandbox that is parked, gone, or simply slow is
@@ -54,11 +49,7 @@ export async function abortRuntimeTurn(
         });
       }
     }
-    if (await runtimeServesTurnVerbs(resolved.externalId, async () => resolved.endpoint)) {
-      const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', runtimeVerbPaths.abort(resolved.opencodeSessionId));
-      if (!turnVerbMissing(resolved.externalId, res)) return res.ok;
-    }
-    const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', legacyRuntimePaths.abort(resolved.opencodeSessionId));
+    const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', runtimeVerbPaths.abort(resolved.opencodeSessionId));
     return res.ok;
   } catch {
     return false;

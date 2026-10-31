@@ -1,8 +1,8 @@
 /**
- * KRTX-2543: a skill created with the Skills form never surfaced on a
- * kortix_version 3 project. v3 lists a skill only when `kortix.yaml`
- * registers it (`skills.<name>: <folder>`), and the create route committed
- * the SKILL.md alone. In-process app, real DB, real git upstream.
+ * KRTX-2543: a project lists a skill only when `kortix.yaml` registers it
+ * (`skills.<name>: <folder>`), so the create route commits the SKILL.md and
+ * its registration together — on every project, including one with no
+ * kortix.yaml yet. In-process app, real DB, real git upstream.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
@@ -14,7 +14,7 @@ import { createAccountToken } from '../repositories/account-tokens';
 import { insertIntoView } from './helpers/compat-views';
 import { createLocalGitUpstream, type LocalGitUpstream } from './helpers/local-git-upstream';
 
-const V3_MANIFEST = `kortix_version: 3
+const MANIFEST = `kortix_version: 3
 default_agent: support
 agents:
   support:
@@ -39,11 +39,11 @@ interface Seeded {
 }
 const seeded: Seeded[] = [];
 
-async function seed(manifest: string): Promise<Seeded> {
+async function seed(manifest: string | null): Promise<Seeded> {
   const accountId = crypto.randomUUID();
   const projectId = crypto.randomUUID();
   const userId = crypto.randomUUID();
-  const upstream = createLocalGitUpstream('skill-create-registry', { 'kortix.yaml': manifest });
+  const upstream = createLocalGitUpstream('skill-create-registry', manifest === null ? { 'README.md': '# demo\n' } : { 'kortix.yaml': manifest });
   await db.insert(accounts).values({ accountId, name: 'skill-create-registry-test' });
   await db.insert(projects).values({ projectId, accountId, name: 'skill-create-registry-test-project', repoUrl: upstream.repoUrl });
   await insertIntoView(db, accountMembers, [{ userId, accountId, accountRole: 'owner', isSuperAdmin: false }]);
@@ -86,13 +86,16 @@ async function listedSkillPaths(entry: Seeded): Promise<string[]> {
 }
 
 describe('POST /v1/projects/:projectId/skills', () => {
-  test('kortix_version 3: registers the skill in kortix.yaml in the same commit, and the project lists it', async () => {
-    const entry = await seed(V3_MANIFEST);
+  test('registers the skill in kortix.yaml in the same commit, and the project lists it', async () => {
+    const entry = await seed(MANIFEST);
     const res = await create(entry, 'Release notes');
     expect(res.status).toBe(201);
     expect(await res.json()).toMatchObject({ slug: 'release-notes', path: 'skills/release-notes/SKILL.md' });
 
-    expect(show(entry, 'kortix.yaml')).toContain('release-notes: skills/release-notes');
+    const yaml = show(entry, 'kortix.yaml');
+    expect(yaml).toContain('release-notes: skills/release-notes');
+    // A Kortix write drops the obsolete version line.
+    expect(yaml).not.toContain('kortix_version');
     // One commit carries both files.
     const files = execFileSync('git', ['--git-dir', entry.upstream.repoUrl, 'show', '--name-only', '--format=', 'main'], { encoding: 'utf8' });
     expect(files.split('\n').filter(Boolean).sort()).toEqual(['kortix.yaml', 'skills/release-notes/SKILL.md']);
@@ -100,7 +103,7 @@ describe('POST /v1/projects/:projectId/skills', () => {
     expect(await listedSkillPaths(entry)).toContain('skills/release-notes/SKILL.md');
   });
 
-  test('kortix_version 3: a second create of the same name answers 409 and changes nothing', async () => {
+  test('a second create of the same name answers 409 and changes nothing', async () => {
     const entry = seeded[0]!;
     const before = execFileSync('git', ['--git-dir', entry.upstream.repoUrl, 'rev-parse', 'main'], { encoding: 'utf8' });
     const res = await create(entry, 'Release notes');
@@ -108,12 +111,25 @@ describe('POST /v1/projects/:projectId/skills', () => {
     expect(execFileSync('git', ['--git-dir', entry.upstream.repoUrl, 'rev-parse', 'main'], { encoding: 'utf8' })).toBe(before);
   });
 
-  test('kortix_version 2: commits the SKILL.md alone, kortix.yaml unchanged, and the project lists it', async () => {
+  test('a project with no kortix.yaml gets the manifest it runs as, with the skill registered', async () => {
+    const entry = await seed(null);
+    const res = await create(entry, 'Release notes');
+    expect(res.status).toBe(201);
+    const yaml = show(entry, 'kortix.yaml');
+    expect(yaml).toContain('release-notes: skills/release-notes');
+    expect(yaml).toContain('worker:');
+    expect(yaml).not.toContain('kortix_version');
+    expect(await listedSkillPaths(entry)).toContain('skills/release-notes/SKILL.md');
+  });
+
+  test('a kortix_version 2 kortix.yaml still works: the skill lands, and the same commit converts the file', async () => {
     const entry = await seed(V2_MANIFEST);
     const res = await create(entry, 'Release notes');
     expect(res.status).toBe(201);
-    expect(show(entry, 'kortix.yaml')).toBe(V2_MANIFEST);
-    expect(show(entry, 'skills/release-notes/SKILL.md')).toContain('name: Release notes');
+    const yaml = show(entry, 'kortix.yaml');
+    expect(yaml).toContain('release-notes: skills/release-notes');
+    expect(yaml).not.toContain('kortix_version');
+    expect(yaml).not.toContain('file: agents/kortix.md');
     expect(await listedSkillPaths(entry)).toContain('skills/release-notes/SKILL.md');
   });
 });

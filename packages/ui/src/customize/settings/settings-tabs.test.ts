@@ -149,9 +149,9 @@ describe('legacySectionRedirect', () => {
 
   /**
    * Project configuration left the overlay for the Customize bar's Settings
-   * tab. Thirteen tab ids became thirteen `?section=` values on one page, and
+   * tab. Twelve tab ids became twelve `?section=` values on one page, and
    * every id that used to be RENAMED into the overlay (`settings`, `git`,
-   * `upgrade`, the seven `llm-*` ids) now names a section on it — so the
+   * the seven `llm-*` ids) now names a section on it — so the
    * rename map is gone and all of them are `GRADUATED` entries.
    *
    * The URL segment is `config`, not `settings`: `/projects/<id>/settings` is
@@ -170,19 +170,6 @@ describe('legacySectionRedirect', () => {
       expect(legacySectionRedirect('p1', id)).toBe('/projects/p1/admin/git');
       expect(resolveOverlayTab(id)).toBeNull();
     }
-  });
-
-  test('upgrades is a Settings tab section, and the old singular spelling folds into it', () => {
-    expect(parseSettingsTab('upgrades')).toBeNull();
-    expect(legacySectionRedirect('p1', 'upgrades')).toBe(
-      '/projects/p1/admin/upgrades',
-    );
-    expect(legacySectionRedirect('p1', 'upgrade')).toBe(
-      '/projects/p1/admin/upgrades',
-    );
-    expect(resolveSettingsOverlayHref('/projects/p1/settings/upgrades')).toEqual({
-      opensOverlay: false,
-    });
   });
 
   test('experimental is renamed to feature-flags, and both ids open the Settings tab section', () => {
@@ -211,8 +198,6 @@ describe('legacySectionRedirect', () => {
       snapshots: '/projects/p1/admin/sandbox',
       experimental: '/projects/p1/admin/feature-flags',
       'feature-flags': '/projects/p1/admin/feature-flags',
-      upgrades: '/projects/p1/admin/upgrades',
-      upgrade: '/projects/p1/admin/upgrades',
     };
     for (const [legacyId, href] of Object.entries(sections)) {
       expect(legacySectionRedirect('p1', legacyId)).toBe(href);

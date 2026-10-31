@@ -18,6 +18,8 @@ describe('classifyRuntimeRequest', () => {
     ['POST', '/proxy/4096/session/ses_1/prompt_async', { kind: 'turn-start', verb: 'prompt_async', runtimeSessionId: 'ses_1', prefix: '/proxy/4096' }],
     ['POST', '/kortix/runtime/sessions/ses_1/prompt', { kind: 'turn-start', verb: 'prompt', runtimeSessionId: 'ses_1', prefix: '' }],
     ['POST', '/kortix/opencode/sessions/ses_1/prompt', { kind: 'turn-start', verb: 'prompt', runtimeSessionId: 'ses_1', prefix: '' }],
+    ['POST', '/kortix/runtime/sessions/ses_1/command', { kind: 'turn-start', verb: 'command', runtimeSessionId: 'ses_1', prefix: '' }],
+    ['POST', '/kortix/runtime/sessions/ses_1/compact', { kind: 'turn-start', verb: 'summarize', runtimeSessionId: 'ses_1', prefix: '' }],
     ['POST', '/session/ses_1/abort', { kind: 'abort', runtimeSessionId: 'ses_1', prefix: '' }],
     ['POST', '/proxy/4096/session/ses_1/abort/', { kind: 'abort', runtimeSessionId: 'ses_1', prefix: '/proxy/4096' }],
     ['POST', '/kortix/runtime/sessions/ses_%31/abort', { kind: 'abort', runtimeSessionId: 'ses_1', prefix: '' }],
@@ -27,6 +29,8 @@ describe('classifyRuntimeRequest', () => {
     ['POST', '/question/que_1/reject/', { kind: 'question-answer', requestId: 'que_1', prefix: '' }],
     ['POST', '/question/que_%31/reply?directory=%2Fworkspace', { kind: 'question-answer', requestId: 'que_1', prefix: '' }],
     ['POST', '/proxy/4096/question/que_1/reply', { kind: 'question-answer', requestId: 'que_1', prefix: '/proxy/4096' }],
+    ['POST', '/kortix/runtime/questions/que_1/reply', { kind: 'question-answer', requestId: 'que_1', prefix: '' }],
+    ['POST', '/kortix/runtime/questions/que_%31/reject', { kind: 'question-answer', requestId: 'que_1', prefix: '' }],
   ] as const)('%s %s', (method, path, expected) => {
     expect(classifyRuntimeRequest(method, path)).toEqual(expected);
   });
@@ -52,6 +56,9 @@ describe('classifyRuntimeRequest', () => {
     ['POST', '/question/que_1/replyx'],
     ['POST', '/question/que_1/reply/extra'],
     ['POST', '/question/%E0%A4%A/reply'],
+    ['GET', '/kortix/runtime/sessions/ses_1/command'],
+    ['GET', '/kortix/runtime/questions/que_1/reply'],
+    ['POST', '/kortix/runtime/questions/que_1/reply/extra'],
   ])('%s %s is not a runtime turn route', (method, path) => {
     expect(classifyRuntimeRequest(method, path)).toEqual({ kind: 'other' });
   });
@@ -94,6 +101,16 @@ describe('the proxy predicates agree on one classification', () => {
   test('/summarize starts a turn but is not a user turn', () => {
     expect(isTurnStartRequest(8000, 'POST', '/session/ses_1/summarize')).toBe(true);
     expect(isTurnStartEnvSync(8000, 'POST', '/session/ses_1/summarize')).toBe(false);
+  });
+
+  // Every turn gate (the agent checks, the ledger, the dedupe claim) reads this
+  // classification, so a Kortix command is gated like any other user turn.
+  test('the Kortix command and compact routes start turns; only the command is a user turn', () => {
+    const command = '/kortix/runtime/sessions/ses_1/command';
+    expect(isTurnStartRequest(8000, 'POST', command)).toBe(true);
+    expect(isTurnStartEnvSync(8000, 'POST', command)).toBe(true);
+    expect(isTurnStartRequest(8000, 'POST', '/kortix/runtime/sessions/ses_1/compact')).toBe(true);
+    expect(isTurnStartEnvSync(8000, 'POST', '/kortix/runtime/sessions/ses_1/compact')).toBe(false);
   });
 
   test('the ledger reads the identity of a Kortix prompt body', () => {

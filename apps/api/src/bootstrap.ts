@@ -190,6 +190,12 @@ async function startReplicaServices() {
       .then((composio) => composio.warmComposioDiscovery())
       .catch(() => {});
   }
+  // A tip-proof read adopts the base tip another process asked the upstream
+  // for (config-releases/base-tip.ts) when this mirror holds it: the per-prompt
+  // grant read then needs no fetch on a process that has not proven it itself.
+  await Promise.all([import('./config-releases/base-tip'), import('./projects/surface')]).then(
+    ([tips, projects]) => projects.useSharedTipProof(tips.storedBaseTipProof),
+  );
   // Every api process must learn that a base branch moved, not just the one
   // that handled the push — otherwise the turn-start gate answers `current`
   // from a memo resolved before it (shared/pg-broadcast.ts). Awaited because it
@@ -427,11 +433,19 @@ async function runShutdown(signal: string): Promise<void> {
   // workers via onRelease, if this node was the leader. Runs beside the request
   // drain, bounded: a stuck worker stop must not eat the drain or the flush.
   const leaderStop = within(stopLeaderElection(), WORKER_STOP_BUDGET_MS, 'stopLeaderElection');
+  // A Claude sign-in this task runs (`claude setup-token`) dies with it: give the
+  // member the request drain's budget to paste the code, then fail it as restarted.
+  const claudeLogins = within(
+    import('./projects/surface').then((m) => m.drainClaudeLogins(DRAIN_BUDGET_MS)),
+    DRAIN_BUDGET_MS + 5_000,
+    'claude logins',
+  );
   const drained = await drainRequests({ propagationMs: DRAIN_PROPAGATION_MS, budgetMs: DRAIN_BUDGET_MS });
   if (drained.remaining > 0) {
     appLogger.warn('Request drain budget ended with work in flight', { remaining: drained.remaining });
   }
   await leaderStop;
+  await claudeLogins;
   stopModelPricing();
   runtimeModelCatalog.stop();
   stopTunnelService();

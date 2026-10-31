@@ -22,25 +22,40 @@ import { join } from 'node:path'
 import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeToolCallContext, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, ImageContent, ModelThinkingLevel } from '@earendil-works/pi-ai'
 import type { AgentSessionEvent, SessionEntry, SessionHeader, Skill } from '@earendil-works/pi-coding-agent'
-import { KORTIX_RUNTIME_SCHEMA, toolAllowed, type CompiledAgent, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
+import { KORTIX_RUNTIME_SCHEMA, toolAllowed, type CompiledAgent, type CompiledAgentSet, type RuntimePending } from '@kortix/api-contract/runtime-relay'
+import { KORTIX_PLATFORM_TOOL_NAMES } from '@kortix/api-contract/kortix-tool-card'
 import type { KortixAssistantMessageInfo, KortixMessage, KortixMessageError, RuntimePermissionRequest, RuntimeQuestionRequest, RuntimeToolRef, TurnErrorCode } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
-import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
+import { kortixEventBus, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
+import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
 import { withheldManagedSkills } from '@/services/skills/managed-skills'
 import { loadTools } from '@/services/tools/host'
 import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import type { PiConfig, ProjectInstructions } from './config'
-import { readProjectInstructions, resolvePiProjectConfigDir, resolvePiSkillDirectories, resolvePiV3SkillDirectories } from './config'
+import { readProjectInstructions, resolvePiSkillDirectories } from './config'
 import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
-import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
-import { cloudSpawnSession, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
+import { SUBAGENT_SPEC_REQUIRED, TASK_STOP_TOOL, type KortixHost, type SpawnSessionInput, type SpawnSessionResult } from './extensions/subagents'
+import { cloudSpawnSession, cloudStopChild, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
+import type { ControlPlane } from './extensions/control-plane'
+import { messaging, MESSAGING_TOOLS } from './extensions/messaging'
+import { TEAM_TASK_TOOLS, teamTasks } from './extensions/team-tasks'
+import { BUNDLED_WORKFLOWS } from './extensions/bundled-workflows'
+import { WorkflowRuns, type WorkflowControlAnswer } from './extensions/workflow'
+import { listCheckout } from './extensions/workflow-store'
+import { promptOrigin, ULTRACODE_SYSTEM_LINE, ultracodeRequested, type PromptOrigin } from './prompt-origin'
+import { enabledFeatureFlags } from '@/lib/config/feature-flags'
+import type { WorkflowRunMetadata } from '@kortix/api-contract/kortix-tool-card'
+import type { WorkflowControlBody } from '@kortix/api-contract/multi-agent'
+import type { RuntimeCapability } from '@kortix/api-contract/runtime-relay'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule, type SessionPermissionRule } from './interactions'
 import type { CatalogModel, PiModels, SelectedModel } from './model'
-import { compactionSettings, nativeModelId } from './model'
+import { KORTIX_PROVIDER_ID, compactionSettings, nativeModelId, promptModelId, selectId } from './model'
+import { claudeSessions } from './claude/provider'
+import { CLAUDE_AGENT_PROVIDER_ID } from '@kortix/api-contract/claude-agent'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { withAgentSampling } from './sampling'
@@ -51,7 +66,7 @@ import { MESSAGE_ID, MessageIdClock, mintChildId, mintRootId } from './message-i
 import { PI_HARNESS_VERSION } from './version'
 import { promptImages } from './images'
 import type { PiSessionSnapshot } from './session-log'
-import { flushSessionLogJournal } from '../shared/session-log-journal'
+import { flushSessionLogJournal, reliveSessionLogMessage } from '../shared/session-log-journal'
 
 export type { CompiledAgent }
 
@@ -92,6 +107,12 @@ export function expandCommandTemplate(template: string, args: string): string {
   return text.trim()
 }
 
+/** An agent's pinned model as `{ providerID, modelID }`: a Claude subscription model, else a gateway model. */
+function agentModelRef(id: string): { providerID: string; modelID: string } {
+  const prefix = `${CLAUDE_AGENT_PROVIDER_ID}/`
+  return id.startsWith(prefix) ? { providerID: CLAUDE_AGENT_PROVIDER_ID, modelID: id.slice(prefix.length) } : { providerID: 'kortix', modelID: id }
+}
+
 /** A command the agent does not enable (`CompiledCommand.agents`): the route answers 403. */
 export class CommandNotEnabled extends Error {
   constructor(
@@ -120,8 +141,6 @@ export interface PromptInput {
   system?: string
   /** `noReply`: the message joins the conversation, no turn runs. */
   noReply?: boolean
-  /** A slash command (`/name arguments`): the user message on the wire becomes the text pi expands it to. */
-  command?: boolean
   /**
    * Every text part was harness context (`synthetic`, KRTX-2597): the
    * transcript renders the message as a notice, never as a user bubble, and
@@ -199,8 +218,15 @@ export function parsePromptBody(raw: unknown): PromptInput {
 
 export type TurnOutcome = 'completed' | 'error' | 'aborted'
 
-/** Tools whose call renders as its own transcript part (a card), also when a codemode script makes it. */
-const NATIVE_PART_TOOLS: readonly string[] = ['show', 'image_gen']
+/**
+ * Tools whose call renders as its own transcript part (a card), also when a codemode script makes it.
+ * My Kortix's platform tools are here: each card is the outcome of an action taken for the person.
+ */
+const NATIVE_PART_TOOLS: readonly string[] = ['show', 'image_gen', ...KORTIX_PLATFORM_TOOL_NAMES, ...MESSAGING_TOOLS, ...TEAM_TASK_TOOLS, TASK_STOP_TOOL]
+/** The multi-agent tools: their grant follows the `agent` tool's unless the agent's `tools` names them (`rootToolAllowed`). */
+const DELEGATION_TOOLS: readonly string[] = ['workflow', ...MESSAGING_TOOLS, ...TEAM_TASK_TOOLS, TASK_STOP_TOOL]
+/** The feature flag of agent teams (teammates and the shared task list). */
+export const AGENT_TEAMS_FLAG = 'agent_teams'
 /**
  * Built-in tools the model calls directly also with codemode `only`: presentation (NATIVE_PART_TOOLS)
  * and `question`, which a script may not call (`nestedCallGate`). `agent` is the subagents
@@ -239,7 +265,7 @@ export interface PiRuntimeOptions {
   hooks?: PiRuntimeHooks
   env?: NodeJS.ProcessEnv
   /** The config release the runtime reads skills, project tools, the root AGENTS.md and the session notice from (config-release.ts). */
-  releases?: Pick<PiConfigReleases, 'skillDirs' | 'piConfigDir' | 'projectRoot' | 'notice'>
+  releases?: Pick<PiConfigReleases, 'projectRoot' | 'notice'>
 }
 
 /** A child session a system extension spawned (a subagent). Lives beside the root, never in its transcript. */
@@ -361,7 +387,7 @@ export class PiRuntime {
   private cloudSubagents: CloudSubagentApi | null = null
   private readonly now: () => number
   private readonly hooks: PiRuntimeHooks
-  private readonly releases: Pick<PiConfigReleases, 'skillDirs' | 'piConfigDir' | 'projectRoot' | 'notice'> | null
+  private readonly releases: Pick<PiConfigReleases, 'projectRoot' | 'notice'> | null
   private readonly clock = new MessageIdClock()
   private state: HarnessState = 'down'
   private startError: string | null = null
@@ -455,11 +481,16 @@ export class PiRuntime {
   private contextId: string | undefined
   /** The running turn's prompt reached pi: a later user message of the turn is steered or injected. */
   private turnPromptMapped = false
+  /** The workflow runs of this session: the workflow tool adds to it, the control routes read it. */
+  readonly workflows: WorkflowRuns
+  /** The running turn's prompt went to the v2 stream again at its real seq (`reliveSessionLogMessage`). */
+  private turnPromptRelived = false
 
   constructor(opts: PiRuntimeOptions) {
     this.cfg = opts.cfg
     this.env = opts.env ?? process.env
     this.subagentContext = subagentContextFrom(this.env.KORTIX_SESSION_CONTEXT)
+    this.workflows = new WorkflowRuns(() => join(resolveKortixRuntimeStateDirectory(this.env), 'workflows'))
     this.now = () => Date.now()
     this.hooks = opts.hooks ?? {}
     this.releases = opts.releases ?? null
@@ -472,12 +503,27 @@ export class PiRuntime {
     void this.prefetchCatalog()
   }
 
-  /** The brokers publish under the root id. */
+  /**
+   * The brokers publish under the root id. A change of what waits for an answer
+   * sends the session log at once: its `pending` reaches the API and the
+   * `log.state` frame without waiting for the turn to end.
+   */
   private bindRoot(): void {
-    this.permissions = new PermissionBroker(this.rootId, this.workspace, (frame) => this.publish(frame), {}, (request) => this.hooks.onPermissionAsked?.(request))
-    this.questions = new QuestionBroker(this.rootId, (frame) => this.publish(frame), (request) => {
-      this.hooks.onQuestionAsked?.(request, (answers) => void this.questions.reply(request.id, answers))
-    })
+    const pendingChanged = () => void flushSessionLogJournal()
+    this.permissions = new PermissionBroker(
+      this.rootId,
+      this.workspace,
+      (frame) => this.publish(frame),
+      {},
+      (request) => this.hooks.onPermissionAsked?.(request),
+      pendingChanged,
+    )
+    this.questions = new QuestionBroker(
+      this.rootId,
+      (frame) => this.publish(frame),
+      (request) => this.hooks.onQuestionAsked?.(request, (answers) => void this.questions.reply(request.id, answers)),
+      pendingChanged,
+    )
   }
 
   /**
@@ -565,13 +611,14 @@ export class PiRuntime {
       this.bindRoot()
     }
     try {
-      const [{ createPiModels }, { createWorkspaceTools, createQuestionTool }, core, coding, host, { subagents }, { codemodeExtensions }, prebuiltRoot] = await Promise.all([
+      const [{ createPiModels }, { createWorkspaceTools, createQuestionTool }, core, coding, host, { subagents }, { workflow }, { codemodeExtensions }, prebuiltRoot] = await Promise.all([
         import('./model'),
         import('./tools'),
         import('@earendil-works/pi-agent-core'),
         import('@earendil-works/pi-coding-agent'),
         import('./extensions/host'),
         import('./extensions/subagents'),
+        import('./extensions/workflow'),
         import('./codemode'),
         // Started in the constructor: by now it has run beside the repo clone.
         this.prefetchProjectBundle(),
@@ -588,6 +635,7 @@ export class PiRuntime {
         env: this.env,
         defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
         catalog,
+        claude: this.claudeOptions(),
       })
       this.selected = this.models.select(nativeModelId(this.env.KORTIX_MODEL) ?? nativeModelId(this.compiledAgent()?.model ?? this.compiled?.model))
       // `KORTIX_PI_CODEMODE` (the API sends the session agent's), else the session agent's compiled
@@ -625,8 +673,9 @@ export class PiRuntime {
       if (restored && !restored.entries) for (const message of restored.agentMessages ?? []) sessionManager.appendMessage(message as never)
       if (this.compiledAgent()?.options) logger.warn('[pi] the agent sets `options`; pi does not apply provider options', { agent: this.agentName })
       const agent = new core.Agent({
+        // `sessionId` names the thread, so a Claude subscription model keeps one Claude session per thread.
         streamFn: withAgentSampling(
-          (model, context, options) => this.models!.models.streamSimple(model, context, options),
+          (model, context, options) => this.models!.models.streamSimple(model, context, { ...options, sessionId: this.rootId }),
           () => this.sampling(this.compiledAgent(), this.selected!),
         ),
         convertToLlm,
@@ -657,7 +706,6 @@ export class PiRuntime {
         local = loaded.extensions
       }
       this.pi = await host.createPiSession({
-        projectConfigDir: await this.projectConfigDir(),
         agent,
         sessionManager,
         ref: this.runner,
@@ -665,16 +713,15 @@ export class PiRuntime {
         agentDir: this.cfg.piAgentDir,
         projectPackages: project.entries,
         packageRoot: packageRoot ?? undefined,
-        // v3 reads no `.pi/` or `.agents/skills`: the compiled set is the only config input.
-        discoveryRoot: this.v3() ? null : packageRoot,
         projectBundleRoot: project.nodeModulesRoot,
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
         // The nested-call gate is first: pi runs `tool_call` handlers in load order and stops at the first block.
-        extensions: [this.nestedCallGate(), this.presentationExtension(), this.turnExtension(), subagents(this.kortixHost()), ...codemodeExtensions(this.codemodeMode, coding.createCodemodeExtension), ...local, ...project.extensions],
+        extensions: [this.nestedCallGate(), this.presentationExtension(), this.turnExtension(), subagents(this.kortixHost()), workflow(this.kortixHost()), ...this.multiAgentExtensions(), ...codemodeExtensions(this.codemodeMode, coding.createCodemodeExtension), ...local, ...project.extensions],
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
-        provider: this.models.models.getProvider(this.selected.providerID),
+        // Every provider a turn may switch to: the gateway, and Claude subscription models.
+        providers: [this.models.models.getProvider(KORTIX_PROVIDER_ID), this.models.models.getProvider(CLAUDE_AGENT_PROVIDER_ID)],
         compaction: (floor) => compactionSettings(this.models!.catalog, floor),
       })
       const extensionsMs = performance.now() - extensionsStartedAt
@@ -771,8 +818,9 @@ export class PiRuntime {
     this.models = await createPiModels({
       env: this.env,
       defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
+      claude: this.claudeOptions(),
     })
-    this.selected = this.models.select(this.selected?.modelID ?? null)
+    this.selected = this.models.select(this.selected ? selectId(this.selected.providerID, this.selected.modelID) : null)
     this.agent.state.model = this.selected.model
     // A model whose limits the catalog now reports differently compacts at a different threshold.
     await this.pi?.applyCompaction((floor) => compactionSettings(this.models!.catalog, floor))
@@ -816,9 +864,9 @@ export class PiRuntime {
     const agentName = this.resolveTurnAgent(input.agent)
     // The prompt's model, else the model the picked agent pins, else the current one.
     const modelId = input.model
-      ? input.model.providerID === this.selected!.providerID ? input.model.modelID : nativeModelId(`${input.model.providerID}/${input.model.modelID}`)
+      ? promptModelId(input.model)
       : input.agent ? nativeModelId(this.compiled?.agent?.[agentName]?.model) : null
-    if (modelId && modelId !== this.selected!.modelID) this.selected = this.models!.select(modelId)
+    if (modelId && modelId !== selectId(this.selected!.providerID, this.selected!.modelID)) this.selected = this.models!.select(modelId)
     this.publishUserMessage(this.rootId, messageId, input, { agent: agentName, selected: this.selected! })
     this.dismissOpenQuestions()
     if (input.noReply) {
@@ -827,6 +875,8 @@ export class PiRuntime {
       // so a box that sleeps before anyone answers still has it.
       const slot: { retracted?: boolean } = {}
       this.waiting.set(messageId, slot)
+      // Queued now: the v2 stream gets it at its queued seq (session-log.ts).
+      reliveSessionLogMessage(messageId)
       const done = (this.queue = this.queue.then(async () => {
         if (this.waiting.get(messageId) === slot) this.waiting.delete(messageId)
         if (slot.retracted) return
@@ -847,6 +897,8 @@ export class PiRuntime {
     const outcome = new Promise<TurnOutcome>((r) => (resolve = r))
     const turn: Turn = { messageId, input, agent: agentName, resolve, outcome }
     this.waiting.set(messageId, turn)
+    // Queued now: the v2 stream gets it at its queued seq (session-log.ts).
+    reliveSessionLogMessage(messageId)
     this.pendingTurns += 1
     this.queue = this.queue
       .then(() => this.runTurn(turn))
@@ -1002,43 +1054,53 @@ export class PiRuntime {
   }
 
   /**
-   * The command list a client reads (`GET /command`). v3: every compiled
-   * command, with the agents that enable it. Otherwise pi's prompt templates.
-   * Then the agent's granted skills (`source: 'skill'`): the composer's `/`
-   * menu has no other source for them in a session.
-   * A command shadows a skill of the same name.
+   * The command list a client reads (`GET /command`): every compiled command,
+   * with the agents that enable it, then the agent's granted skills
+   * (`source: 'skill'`): the composer's `/` menu has no other source for them
+   * in a session.
+   * A command shadows a skill of the same name. Then the workflows this
+   * session can run by name (`source: 'workflow'`, listed as a template): the
+   * project checkout's saved `.kortix/workflows/<name>.js` and the bundled
+   * ones, as Claude Code lists saved and bundled workflows as `/name`.
    */
-  commandList(): Array<{ name: string; description: string; source: 'command' | 'skill'; template: string; hints: string[]; agents?: string[] }> {
+  commandList(): Array<{ name: string; description: string; source: 'command' | 'skill' | 'workflow'; template: string; hints: string[]; agents?: string[] }> {
     const commands = this.commandEntries()
     const names = new Set(commands.map((command) => command.name))
     const skills = this.skillList()
       .filter((skill) => !names.has(skill.name))
       .map((skill) => ({ name: skill.name, description: skill.description, source: 'skill' as const, template: '', hints: [] }))
-    return [...commands, ...skills]
+    for (const skill of skills) names.add(skill.name)
+    const workflows = this.workflowCommands().filter((command) => !names.has(command.name))
+    return [...commands, ...skills, ...workflows]
+  }
+
+  /** The workflows a `/name` command runs: none where the agent may not run a workflow. */
+  private workflowCommands(): Array<{ name: string; description: string; source: 'workflow'; template: string; hints: string[] }> {
+    if (!this.rootToolAllowed('workflow') || !this.cloudTarget()) return []
+    const checkout = this.env.KORTIX_META_AGENT !== '1' && existsSync(join(this.workspace, '.git')) ? this.workspace : null
+    const saved = checkout ? listCheckout(checkout) : []
+    const entry = (name: string, description: string) => ({ name, description, source: 'workflow' as const, template: '', hints: ['$ARGUMENTS'] })
+    return [
+      ...saved.map((name) => entry(name, `Run the saved workflow ${name}`)),
+      ...Object.entries(BUNDLED_WORKFLOWS)
+        .filter(([name]) => !saved.includes(name))
+        .map(([name, bundled]) => entry(name, bundled.description)),
+    ]
   }
 
   private commandEntries(): Array<{ name: string; description: string; source: 'command'; template: string; hints: string[]; agents?: string[] }> {
     const hints = (template: string) => [...new Set(template.match(/\$(\d+|ARGUMENTS)/g) ?? [])]
-    if (this.v3()) {
-      return Object.entries(this.compiled?.commands ?? {}).map(([name, command]) => ({
-        name,
-        description: command.description ?? '',
-        source: 'command' as const,
-        template: command.template,
-        hints: hints(command.template),
-        agents: command.agents,
-      }))
-    }
-    return (this.pi?.session.promptTemplates ?? []).map((template) => ({
-      name: template.name,
-      description: template.description,
+    return Object.entries(this.compiled?.commands ?? {}).map(([name, command]) => ({
+      name,
+      description: command.description ?? '',
       source: 'command' as const,
-      template: template.content,
-      hints: hints(template.content),
+      template: command.template,
+      hints: hints(command.template),
+      agents: command.agents,
     }))
   }
 
-  /** The prompt a `POST /session/:id/command` body asks for: `/name arguments`, which pi expands. */
+  /** The prompt a `POST /session/:id/command` body asks for: a skill's body, or a compiled command's expanded template. */
   commandPrompt(raw: unknown): PromptInput {
     const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
     const name = typeof body.command === 'string' ? body.command : ''
@@ -1046,6 +1108,27 @@ export class PiRuntime {
     if (!entry) throw new PromptRejected(`unknown command "${name}"`)
     const args = typeof body.arguments === 'string' ? body.arguments.trim() : ''
     const [providerID, ...model] = typeof body.model === 'string' ? body.model.split('/') : []
+    if (entry.source === 'workflow') {
+      // The person typed `/name`: their own message asks for this workflow, so the workflow tool's origin gate passes.
+      const bundled = BUNDLED_WORKFLOWS[name]
+      const argsText = bundled ? JSON.stringify({ question: args }) : args ? `the JSON value the workflow reads, built from: ${JSON.stringify(args)}` : 'none'
+      return parsePromptBody({
+        parts: [
+          {
+            type: 'text',
+            text: [
+              `/${name}${args ? ` ${args}` : ''}`,
+              '',
+              `Run the workflow "${name}" now: call the workflow tool with script "", name "${name}", args ${argsText}${bundled ? ` and max_agents ${bundled.maxAgents}` : ''}. Say in one line what will run first. Do not do the work yourself.`,
+            ].join('\n'),
+          },
+        ],
+        ...(body.messageID !== undefined ? { messageID: body.messageID } : {}),
+        ...(body.agent !== undefined ? { agent: body.agent } : {}),
+        ...(body.variant !== undefined ? { variant: body.variant } : {}),
+        ...(providerID && model.length ? { model: { providerID, modelID: model.join('/') } } : {}),
+      })
+    }
     if (entry.source === 'skill') {
       // pi's `/skill:` expansion reads only pi's own loader, never a Kortix skill: the same block, built here.
       const skill = this.skillList().find((s) => s.name === name)!
@@ -1058,30 +1141,18 @@ export class PiRuntime {
         ...(providerID && model.length ? { model: { providerID, modelID: model.join('/') } } : {}),
       })
     }
-    const compiled = this.v3() ? this.compiled?.commands?.[name] : undefined
-    if (compiled) {
-      // The agent the command runs on: the body's, else the session's.
-      const agent = (typeof body.agent === 'string' && body.agent.trim()) || this.sessionAgentName
-      if (!compiled.agents.includes(agent)) throw new CommandNotEnabled(name, agent)
-      // Expanded here: pi's template expansion never sees a v3 command.
-      return parsePromptBody({
-        parts: [{ type: 'text', text: expandCommandTemplate(compiled.template, args) }],
-        ...(body.messageID !== undefined ? { messageID: body.messageID } : {}),
-        agent,
-        ...(body.variant !== undefined ? { variant: body.variant } : {}),
-        ...(providerID && model.length ? { model: { providerID, modelID: model.join('/') } } : {}),
-      })
-    }
-    return {
-      ...parsePromptBody({
-        parts: [{ type: 'text', text: `/${name}${args ? ` ${args}` : ''}` }],
-        ...(body.messageID !== undefined ? { messageID: body.messageID } : {}),
-        ...(body.agent !== undefined ? { agent: body.agent } : {}),
-        ...(body.variant !== undefined ? { variant: body.variant } : {}),
-        ...(providerID && model.length ? { model: { providerID, modelID: model.join('/') } } : {}),
-      }),
-      command: true,
-    }
+    // The entry is a compiled command (`commandEntries`). Expanded here: pi's template expansion never sees it.
+    const compiled = this.compiled!.commands![name]!
+    // The agent the command runs on: the body's, else the session's.
+    const agent = (typeof body.agent === 'string' && body.agent.trim()) || this.sessionAgentName
+    if (!compiled.agents.includes(agent)) throw new CommandNotEnabled(name, agent)
+    return parsePromptBody({
+      parts: [{ type: 'text', text: expandCommandTemplate(compiled.template, args) }],
+      ...(body.messageID !== undefined ? { messageID: body.messageID } : {}),
+      agent,
+      ...(body.variant !== undefined ? { variant: body.variant } : {}),
+      ...(providerID && model.length ? { model: { providerID, modelID: model.join('/') } } : {}),
+    })
   }
 
   /** Stop the run in flight. Idempotent: aborting an idle agent is a no-op. */
@@ -1150,6 +1221,7 @@ export class PiRuntime {
     this.active = turn
     this.turnParent = turn.messageId
     this.turnPromptMapped = false
+    this.turnPromptRelived = false
     this.steerReads.clear()
     this.status = 'busy'
     this.hooks.onTurnBegin?.({ rootId: this.rootId, messageId: turn.messageId })
@@ -1195,11 +1267,11 @@ export class PiRuntime {
         this.publish({ type: 'session.idle', properties: { sessionID: this.rootId } })
       }
       // Only this turn's messages: an extension command answers without a model call.
-      const last = this.turnAssistant as { stopReason?: string; errorMessage?: string } | null
+      const last = this.turnAssistant as { stopReason?: string; errorMessage?: string; provider?: string } | null
       if (!timedOut && (last?.stopReason === 'aborted' || retry.wasAborted)) outcome = 'aborted'
       else if (!timedOut && last && (last.stopReason === 'error' || last.stopReason === 'length')) {
         outcome = 'error'
-        const wire = assistantMessageError({ stopReason: last.stopReason as never, errorMessage: last.errorMessage })
+        const wire = assistantMessageError({ stopReason: last.stopReason as never, errorMessage: last.errorMessage, provider: last.provider })
         const data = wire?.data as { message?: string; statusCode?: number } | undefined
         error = wire ? { name: wire.name, message: data?.message, statusCode: data?.statusCode, code: wire.code } : undefined
       }
@@ -1227,6 +1299,8 @@ export class PiRuntime {
       this.completedTurns.set(turn.messageId, outcome === 'error' ? 'error' : 'idle')
       this.persist()
       turn.resolve(outcome)
+      // A Claude turn still waiting for tool results gets none from this turn: its idle timer starts.
+      claudeSessions()?.settle(this.rootId)
       this.hooks.onTurnEnd?.({ rootId: this.rootId, messageId: turn.messageId, status: outcome === 'error' ? 'error' : 'idle', ...(error ? { error } : {}) })
     }
     // Started while the live model list was down: fetch it again, so the next turn runs on real limits.
@@ -1359,9 +1433,10 @@ export class PiRuntime {
     }
   }
 
-  /** The session row changed (`time.compacting`). */
+  /** The session row changed (`time.compacting`); `log.status` says the root compacts, then what it does after. */
   private publishSessionUpdated(): void {
     this.publish({ type: 'session.updated', properties: { sessionID: this.rootId, info: this.sessionObject() } })
+    sessionLogEventBus().publish('log.status', { thread_id: this.rootId, status: this.compaction ? 'compacting' : this.status }, this.rootId)
   }
 
   private onAgentEvent(event: AgentEvent): void {
@@ -1374,11 +1449,6 @@ export class PiRuntime {
       this.turnParent = steered.messageId
       this.publishUserMessage(this.rootId, steered.messageId, steered.input)
       this.hooks.onSteerRead?.({ rootId: this.rootId, messageId: steered.messageId })
-    } else if (event.type === 'message_start' && event.message.role === 'user' && this.active?.input.command) {
-      const { content } = event.message
-      const text = typeof content === 'string' ? content : content.map((block) => (block.type === 'text' ? block.text : '')).join('')
-      const messageID = this.active.messageId
-      this.publish({ type: 'message.part.updated', properties: { sessionID: this.rootId, time: this.now(), part: { id: `${messageID}-p0`, messageID, sessionID: this.rootId, type: 'text', text } } })
     }
     if (event.type === 'message_start' && event.message.role === 'user' && !this.nativeIds.has(event.message)) {
       if (steered) this.nativeIds.set(event.message, steered.messageId)
@@ -1386,6 +1456,11 @@ export class PiRuntime {
         this.turnPromptMapped = true
         this.nativeIds.set(event.message, this.active.messageId)
       }
+    }
+    // pi appended the prompt's entry before the reply starts: its queued put gives way to its real seq at once.
+    if (event.type === 'message_start' && event.message.role === 'assistant' && this.active && this.turnPromptMapped && !this.turnPromptRelived) {
+      this.turnPromptRelived = true
+      reliveSessionLogMessage(this.active.messageId)
     }
     if (event.type === 'message_end' && event.message.role === 'assistant' && this.adapter) this.nativeIds.set(event.message, this.adapter.messageId)
     if (event.type === 'message_end' && event.message.role === 'assistant') {
@@ -1441,8 +1516,9 @@ export class PiRuntime {
           if (!parent) return undefined
           // A subagent's script call already passed the child's own gate (stricter than rootRule); re-deciding here would double an `ask`.
           if (this.childNestedCalls.has(event.toolCallId)) return undefined
-          // A subagent thread links to its root `agent`/`task` call; a question needs the model-issued call it answers.
-          if (event.toolName === 'agent' || event.toolName === 'task' || event.toolName === 'question') {
+          // A subagent thread links to its root `agent`/`task` call; a question needs the model-issued call it answers;
+          // a workflow holds the turn for hours and must not run inside a script's worker.
+          if (event.toolName === 'agent' || event.toolName === 'task' || event.toolName === 'question' || event.toolName === 'workflow') {
             return { block: true, reason: `Call ${event.toolName} directly, not from a script.` }
           }
           return this.decide(this.rootRule(event.toolName, event.input), event.toolName, event.input, () => this.adapter?.toolRef(event.toolCallId) ?? this.adapter?.toolRef(parent))
@@ -1519,7 +1595,9 @@ export class PiRuntime {
       name: 'kortix-turn',
       hidden: true,
       factory: (pi) => {
-        pi.on('before_agent_start', (event) => ({ systemPrompt: [event.systemPrompt, todayLine(this.now()), this.turnSystem].filter(Boolean).join('\n\n') }))
+        pi.on('before_agent_start', (event) => ({
+          systemPrompt: [event.systemPrompt, todayLine(this.now()), this.turnSystem, this.ultracodeLine()].filter(Boolean).join('\n\n'),
+        }))
         // A transient model error retries inside pi's loop, so every step after the retry runs
         // pi's own post-run checks: a context threshold, an overflow or a cut answer then still
         // compacts (Kortix's retry no longer steps outside the loop).
@@ -1557,26 +1635,131 @@ export class PiRuntime {
 
   // ── child sessions ───────────────────────────────────────────────────────
 
+  /**
+   * The multi-agent extensions this box serves: `send_message` and
+   * `list_agents` wherever the box has a control plane (`session.messaging`),
+   * and the team task tools while the project's `agent_teams` flag is on and
+   * this session leads a team (depth 0) or is a teammate (`session.team_tasks`).
+   */
+  private multiAgentExtensions(): InlineExtension[] {
+    const plane = () => this.controlPlane()
+    if (!plane()) return []
+    const extensions = [messaging({ controlPlane: plane })]
+    const lead = this.teamListLead()
+    if (lead) extensions.push(teamTasks({ controlPlane: plane, teamLead: () => lead, isTeammate: () => this.subagentContext.teamLead !== undefined }))
+    return extensions
+  }
+
+  /** The API with this session's token and id, or null without a control plane. */
+  private controlPlane(): ControlPlane | null {
+    const cloud = this.cloudTarget()
+    return cloud?.sessionId ? { apiUrl: cloud.apiUrl, projectId: cloud.projectId, token: cloud.token, sessionId: cloud.sessionId } : null
+  }
+
+  private agentTeams(): boolean {
+    return enabledFeatureFlags(this.env).has(AGENT_TEAMS_FLAG)
+  }
+
+  /** The lead whose task list this session uses: itself at depth 0, its lead as a teammate; null without agent teams. */
+  private teamListLead(): string | null {
+    const plane = this.controlPlane()
+    if (!plane || !this.agentTeams()) return null
+    if (this.subagentContext.teamLead) return this.subagentContext.teamLead
+    return this.subagentContext.depth === 0 ? plane.sessionId : null
+  }
+
+  /** The session features pi serves on this box (`GET /kortix/health` `capabilities`), beyond the static list. */
+  multiAgentCapabilities(): RuntimeCapability[] {
+    if (!this.controlPlane()) return []
+    return ['session.messaging', ...(this.teamListLead() ? (['session.team_tasks'] as const) : [])]
+  }
+
+  /** `GET /kortix/runtime/workflows`: this session's runs, newest first. */
+  workflowList(): WorkflowRunMetadata[] {
+    return this.workflows.list()
+  }
+
+  /** `POST /kortix/runtime/workflows/:runId/control`. */
+  controlWorkflow(runId: string, body: WorkflowControlBody): WorkflowControlAnswer {
+    return this.workflows.control(runId, body)
+  }
+
+  /** Where the running turn's prompt came from; a steered message never changes it. */
+  private turnOrigin(): PromptOrigin {
+    return this.active ? promptOrigin(this.active.input.text) : 'human'
+  }
+
+  /** The `ultracode` system line, for a turn whose own human prompt names it. */
+  private ultracodeLine(): string | null {
+    return this.active && ultracodeRequested(this.active.input.text) ? ULTRACODE_SYSTEM_LINE : null
+  }
+
   private kortixHost(): KortixHost {
     return {
+      subagentDepth: () => this.cloudTarget()?.depth ?? this.subagentContext.depth,
+      separateSessions: () => this.cloudTarget() !== null,
+      // A named spawn from a top-level session of an `agent_teams` project starts a teammate. A teammate starts none.
+      teamLeadForSpawn: () => {
+        const plane = this.controlPlane()
+        return plane && this.agentTeams() && this.subagentContext.depth === 0 && !this.subagentContext.teamLead ? plane.sessionId : null
+      },
+      stopChild: (target) => {
+        const cloud = this.cloudTarget()
+        if (!cloud) return Promise.reject(new Error('This session has no Kortix control plane, so it has no separate subagents to stop.'))
+        return cloudStopChild(cloud, target)
+      },
+      turnOrigin: () => this.turnOrigin(),
+      workflowRuns: () => this.workflows,
       compiledAgents: () => this.compiled?.agent ?? {},
       builtInSubagents: () => !this.v3(),
       subagentAllowed: (name) => this.permissions.rule('task', { subagent_type: name }) !== 'deny',
       codemodeOnly: () => this.codemodeMode === 'only',
+      // My Kortix's box (the coordinator): its config declares only itself, and every hand-off names a project agent.
+      anyProjectAgent: () => this.env.KORTIX_META_AGENT === '1',
+      currentAgentName: () => this.agentName,
       spawnSession: (input) => this.resolveSpawn(input),
+      workflowLimits: () => {
+        const cloud = this.cloudTarget()
+        const depth = cloud?.depth ?? this.subagentContext.depth
+        const maxDepth = cloud?.maxDepth ?? this.cfg.piCloudSubagentsMaxDepth
+        const limits = {
+          maxParallel: Math.min(this.cfg.workflowMaxConcurrent, cloud?.maxLive ?? this.cfg.piCloudSubagentsMax),
+          maxAgents: this.cfg.workflowMaxAgents,
+          depth,
+          maxDepth,
+          controlPlane: cloud !== null,
+        }
+        if (cloud && cloud.depth >= cloud.maxDepth) {
+          return {
+            ...limits,
+            maxParallel: 0,
+            refusal: `Separate subagent sessions nest at most ${cloud.maxDepth} levels and this session is level ${cloud.depth}, so it cannot run a workflow. Do the work here, or use the agent tool with session: "same".`,
+          }
+        }
+        return limits
+      },
+      // The workflow tool's run approval: the `question` card, attached to the workflow call.
+      ask: (questions, toolCallId) => this.questions.ask(questions, this.adapter?.toolRef(toolCallId)),
+      sessionContext: () => {
+        try {
+          const parsed: unknown = JSON.parse(this.env.KORTIX_SESSION_CONTEXT ?? '')
+          return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {}
+        } catch {
+          return {}
+        }
+      },
+      workflowStateDir: () => join(resolveKortixRuntimeStateDirectory(this.env), 'workflows'),
+      // My Kortix's box has no project files on purpose, whatever its workspace holds.
+      projectCheckout: () => (this.env.KORTIX_META_AGENT !== '1' && existsSync(join(this.workspace, '.git')) ? this.workspace : null),
+      projectApi: () => {
+        const cloud = this.cloudTarget()
+        return cloud ? { apiUrl: cloud.apiUrl, projectId: cloud.projectId, token: cloud.token } : null
+      },
     }
   }
 
-  /**
-   * Route one `agent` call (cloud-subagent.ts `routeSubagent`): `separate`
-   * (the default) spawns a REAL Kortix child session with its own sandbox;
-   * `same` runs the in-process child. A separate call runs in process, with a
-   * notice in the tool result, when the box has no control plane. A
-   * `task_id` resumes the child where it was created. The result shape is
-   * identical either way, so the tool contract and the UI do not change.
-   */
-  private async resolveSpawn(input: SpawnSessionInput): Promise<SpawnSessionResult> {
-    // One target per box: its live-child counter is the per-parent cap.
+  /** The separate-session target, built once per box: its live-child counter is the per-parent cap. Null without a control plane. */
+  private cloudTarget(): CloudSubagentApi | null {
     this.cloudSubagents ??= cloudSubagentApiFrom({
       apiUrl: this.cfg.apiUrl,
       projectId: this.cfg.projectId,
@@ -1586,18 +1769,36 @@ export class PiRuntime {
       maxLive: this.cfg.piCloudSubagentsMax,
       maxDepth: this.cfg.piCloudSubagentsMaxDepth,
     })
+    return this.cloudSubagents
+  }
+
+  /**
+   * Route one `agent` call (cloud-subagent.ts `routeSubagent`): `separate`
+   * (the default) spawns a REAL Kortix child session with its own sandbox;
+   * `same` runs the in-process child. A separate call runs in process, with a
+   * notice in the tool result, when the box has no control plane. Only a
+   * separate child runs in the background; a background call routed here
+   * waits, and its notice says so. A
+   * `task_id` resumes the child where it was created. The result shape is
+   * identical either way, so the tool contract and the UI do not change.
+   */
+  private async resolveSpawn(input: SpawnSessionInput): Promise<SpawnSessionResult> {
+    const cloud = this.cloudTarget()
     const route = routeSubagent({
       requested: input.session,
       taskId: input.sessionId,
       localChild: !!input.sessionId && this.children.has(input.sessionId),
-      controlPlane: this.cloudSubagents !== null,
+      controlPlane: cloud !== null,
+      background: input.background,
     })
-    if (route.session === 'separate' && this.cloudSubagents) {
+    if (route.session === 'separate' && cloud) {
       // The agent and its tools are read per call: a prompt may switch the agent (applyAgent).
       // The spread keeps the shared `live` counter.
-      const result = await cloudSpawnSession({ ...this.cloudSubagents, ...this.cloudParent() }, input)
+      const result = await cloudSpawnSession({ ...cloud, ...this.cloudParent() }, input)
       return { ...result, session: 'separate' }
     }
+    // An in-process child re-reads its tools and rules from the spec, so a follow-up must name it.
+    if (!input.agent) throw new Error(SUBAGENT_SPEC_REQUIRED)
     if (route.notice) logger.info('[pi] separate subagent session ran in this session', { notice: route.notice })
     const result = await this.spawnSession(input)
     return { ...result, session: 'same', ...(route.notice ? { notice: route.notice } : {}) }
@@ -1635,6 +1836,14 @@ export class PiRuntime {
    * (`kortix.subagent.tools` in KORTIX_SESSION_CONTEXT). Only ever narrows.
    */
   private rootToolAllowed(name: string): boolean {
+    // A workflow runs `agent` calls, and the multi-agent tools talk to the sessions it starts: they follow the
+    // agent tool's grant, unless the agent's `tools` names them.
+    if (DELEGATION_TOOLS.includes(name) && !Object.hasOwn(this.compiledAgent()?.tools ?? {}, name)) {
+      // A teammate keeps messaging and the task list, as Claude Code adds them to every teammate.
+      if (name !== 'workflow' && this.subagentContext.teamLead) return true
+      if (name !== 'workflow' && this.subagentContext.tools?.includes(name)) return true
+      return this.rootToolAllowed('agent') || this.rootToolAllowed('task')
+    }
     const narrowed = this.subagentContext.tools
     return toolAllowed(this.compiledAgent()?.tools, name) && (!narrowed || narrowed.includes(name))
   }
@@ -1761,7 +1970,7 @@ export class PiRuntime {
     })
     const agent = new core.Agent({
       streamFn: withAgentSampling(
-        (m, context, options) => this.models!.models.streamSimple(m, context, options),
+        (m, context, options) => this.models!.models.streamSimple(m, context, { ...options, sessionId: child.id }),
         () => this.sampling(this.compiled?.agent?.[input.agent], selected),
       ),
       toolExecution: 'sequential',
@@ -1818,6 +2027,7 @@ export class PiRuntime {
       logger.error('[pi] child session failed', { sessionId: child.id, err: error })
     } finally {
       input.signal?.removeEventListener('abort', abort)
+      claudeSessions()?.settle(child.id)
       child.agentMessages = agent.state.messages
       child.agent = null
       if (child.status === 'busy') {
@@ -1886,6 +2096,15 @@ export class PiRuntime {
     if (opts.transcriptOnly) return
     kortixEventBus().publish(frame.type, p, session)
     this.hooks.onFrame?.(frame)
+    if (frame.type === 'session.status' && session) this.publishLogStatus(session, p.status)
+  }
+
+  /** `log.status` (`SessionLogStatusEvent`): what a thread does now, beside the wire's `session.status`. */
+  private publishLogStatus(threadId: string, status: unknown): void {
+    const s = status as { type?: string; attempt?: number; message?: string; next?: number } | undefined
+    if (s?.type !== 'busy' && s?.type !== 'idle' && s?.type !== 'retry') return
+    const retry = s.type === 'retry' ? { retry: { attempt: s.attempt ?? 1, message: s.message ?? '', next_at: new Date(s.next ?? this.now()).toISOString() } } : {}
+    sessionLogEventBus().publish('log.status', { thread_id: threadId, status: s.type, ...retry }, threadId)
   }
 
   private publishUserMessage(
@@ -1962,7 +2181,11 @@ export class PiRuntime {
     return this.compiled?.agent?.[this.agentName]
   }
 
-  /** A kortix.yaml v3 compiled set: no harness folder, no built-in subagent, commands from the set. */
+  /**
+   * A compiled set from kortix.yaml carries `schema: 3` (the wire marker): only
+   * its declared agents run, no built-in subagent. Any other set (My Kortix's,
+   * an older API's) is built-in agents only: `general` and `explore` are offered.
+   */
   private v3(): boolean {
     return this.compiled?.schema === 3
   }
@@ -2013,26 +2236,15 @@ export class PiRuntime {
     return selected.variants.includes(variant) ? (variant as ModelThinkingLevel) : 'off'
   }
 
-  /** Where project tools load from: the release root while a release runs, else the working tree. */
+  /** Where registered skills and project tools load from: the release root while a release runs, else the working tree. */
   private projectRoot(): string | null {
     const released = this.releases?.projectRoot()
     return released !== undefined ? released : this.workspace
   }
 
-  /** The pi-native config dir: the release's `pi/` while a release runs, else the working tree's. v3 has none. */
-  private async projectConfigDir(): Promise<string | null> {
-    if (this.v3()) return null
-    const released = this.releases?.piConfigDir()
-    return released !== undefined ? released : resolvePiProjectConfigDir(this.cfg)
-  }
-
   private async loadSkills(): Promise<Skill[]> {
     if (!this.coding) return []
-    const dirs = (
-      this.v3()
-        ? resolvePiV3SkillDirectories(this.compiled?.skills, this.projectRoot())
-        : resolvePiSkillDirectories(this.cfg, await this.projectConfigDir(), this.releases?.skillDirs() ?? null)
-    ).filter((dir) => existsSync(dir))
+    const dirs = resolvePiSkillDirectories(this.compiled?.skills, this.projectRoot()).filter((dir) => existsSync(dir))
     if (dirs.length === 0) return []
     try {
       // Two directories can carry the same skill (a project's own copy and the managed
@@ -2113,6 +2325,11 @@ export class PiRuntime {
 
   // ── projections ──────────────────────────────────────────────────────────
 
+  /** Where Claude subscription models run: the workspace, with their state beside pi's. */
+  private claudeOptions() {
+    return { stateDir: this.cfg.piStateDir, cwd: this.workspace, env: this.env }
+  }
+
   selectedModel(): SelectedModel | null {
     return this.selected
   }
@@ -2137,11 +2354,30 @@ export class PiRuntime {
     return { type: this.status }
   }
 
+  /** What each thread does now and what waits on a person (`GET /kortix/runtime/pending`). */
+  pendingNow(): RuntimePending {
+    return {
+      statuses: Object.fromEntries([
+        [this.rootId, this.compaction ? 'compacting' : this.status],
+        ...[...this.children.values()].map((child) => [child.id, child.status === 'busy' ? 'busy' : 'idle']),
+      ]),
+      permissions: this.permissions.records(),
+      questions: this.questions.records(),
+    }
+  }
+
   /** The runtime wire's `Session` object for this root. */
   /** Replace the session's permission grants (`PATCH /session/:id` `permission`), and keep them across a restart. */
   setSessionPermission(rules: readonly SessionPermissionRule[]): void {
     this.permissions.setSessionRules(rules)
     this.persist()
+  }
+
+  /** Replace the session's permission grants (`PUT /kortix/runtime/sessions/:id/grants`), and keep them across a restart. */
+  setGrants(grants: readonly string[]): string[] {
+    this.permissions.setGrants(grants)
+    this.persist()
+    return this.permissions.grantList()
   }
 
   sessionObject(): Record<string, unknown> {
@@ -2176,7 +2412,7 @@ export class PiRuntime {
         name === this.agentName && selected
           ? { providerID: selected.providerID, modelID: selected.modelID }
           : agent?.model && nativeModelId(agent.model)
-            ? { providerID: 'kortix', modelID: nativeModelId(agent.model)! }
+            ? agentModelRef(nativeModelId(agent.model)!)
             : null,
     }))
     return {
@@ -2299,10 +2535,19 @@ export class PiRuntime {
     })
   }
 
+  /** Admitted root prompts pi has not appended yet, in run order: the turn starting now, then the waiting ones. */
+  private queuedIds(entryMessageIds: Record<string, string>): string[] {
+    const appended = new Set(Object.values(entryMessageIds))
+    const waiting = [...this.waiting].filter(([, slot]) => !slot.retracted).map(([id]) => id)
+    const ids = new Set([...(this.active ? [this.active.messageId] : []), ...waiting])
+    return [...ids].filter((id) => !appended.has(id) && !!this.transcript.messageById(id))
+  }
+
   /** What the session-log adapter (session-log.ts) reads; null while the runtime is down. */
   sessionLogSnapshot(): PiSessionSnapshot | null {
     const manager = this.pi?.session.sessionManager
     if (!manager || this.state !== 'ok') return null
+    const entryMessageIds = this.entryMessageIds()
     return {
       sessionId: this.sessionId,
       rootId: this.rootId,
@@ -2310,7 +2555,7 @@ export class PiRuntime {
       header: manager.getHeader(),
       entries: manager.getEntries(),
       leafId: manager.getLeafId(),
-      entryMessageIds: this.entryMessageIds(),
+      entryMessageIds,
       entrySeqs: this.entrySeqs,
       transcript: this.transcript.all(),
       children: [...this.children.values()].map((child) => {
@@ -2331,6 +2576,8 @@ export class PiRuntime {
       }),
       busy: this.status === 'busy' || this.active !== null,
       reply: replying(this.agent, this.adapter),
+      pending: { questions: this.questions.records(), permissions: this.permissions.records() },
+      queued: this.queuedIds(entryMessageIds),
       agent: this.sessionAgentName,
       model: this.selected ? { provider: this.selected.providerID, model: this.selected.modelID } : null,
     }
