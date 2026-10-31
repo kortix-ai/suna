@@ -15,10 +15,10 @@
  *   shims, the scaffold repo, the managed skills, the runtime-assets record,
  *   the shell profile, and the container's ENV, WORKDIR and ENTRYPOINT.
  *
- * An image's own tooling sits between the two. Project agents get the
- * workstation (`kortixWorkstationTooling` in dockerfile-layer.ts: document
- * tools, the Python package floor, Chromium with agent-browser, the desktop).
- * My Kortix gets none: it hands that work to a project agent's session.
+ * The workstation sits between the two (`kortixWorkstationTooling` in
+ * dockerfile-layer.ts: document tools, the Python package floor, Chromium with
+ * agent-browser, the desktop). My Kortix's image is the platform default image
+ * verbatim (my-kortix-dockerfile.ts), so it carries all of it too.
  */
 
 import {
