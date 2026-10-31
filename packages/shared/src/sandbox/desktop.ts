@@ -19,8 +19,6 @@ import { VOXL_RELEASE_URL, VOXL_SHA256_AMD64, VOXL_SHA256_ARM64 } from '../runti
  */
 export const SANDBOX_DESKTOP_PACKAGES = [
   'adwaita-icon-theme',
-  // The accessibility bus agent-desktop reads (D-Bus starts it on first use).
-  'at-spi2-core',
   'dbus-x11',
   'fonts-inter-variable',
   'greybird-gtk-theme',

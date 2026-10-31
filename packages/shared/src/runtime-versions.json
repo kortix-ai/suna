@@ -32,7 +32,6 @@
   "opencode": "1.18.23",
   "opencodeSdk": "1.18.23",
   "agentBrowser": "0.27.0",
-  "agentDesktop": "1.0.2",
   "playwright": "1.60.0",
   "anydoc": "0.1.6",
   "claudeCode": "2.1.316",
