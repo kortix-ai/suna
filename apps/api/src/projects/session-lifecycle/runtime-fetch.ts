@@ -6,7 +6,7 @@
  * fail-open default and the warning that explains it stay at the call site.
  */
 
-import { RUNTIME_ACTIONS_CAPABILITY } from '@kortix/api-contract/runtime-relay';
+import { RUNTIME_ACTIONS_CAPABILITY, RUNTIME_LOG_CAPABILITY } from '@kortix/api-contract/runtime-relay';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 
 /** The directory every runtime read and write is forwarded under. */
@@ -57,6 +57,10 @@ export const runtimeVerbPaths = {
   steer: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/steer`,
   /** The session-log actions (`runtime.actions.v1`). */
   questionReply: (requestId: string) => `/kortix/runtime/questions/${segment(requestId)}/reply`,
+  /** The box's own session log (`runtime.log.v1`): a page of the root, newest `limit` before `before_seq`. */
+  log: (opts: { limit: number; beforeSeq?: number | null }) =>
+    `/kortix/runtime/log?limit=${opts.limit}${opts.beforeSeq != null ? `&before_seq=${opts.beforeSeq}` : ''}`,
+  logMessage: (messageId: string) => `/kortix/runtime/log/messages/${segment(messageId)}`,
 } as const;
 
 const CAPABILITIES_TTL_MS = 5 * 60_000;
@@ -107,6 +111,17 @@ export async function runtimeServesActions(
   endpoint: () => Promise<{ url: string; headers: Record<string, string> } | null>,
 ): Promise<boolean> {
   return (await runtimeCapabilities(externalId, endpoint))?.includes(RUNTIME_ACTIONS_CAPABILITY) ?? false;
+}
+
+/**
+ * Does the box serve its own session log (`runtime.log.v1`): whole pages, and a prompt in the log
+ * from its admission? Then the log is the transcript the API reads. Same memo as above.
+ */
+export async function runtimeServesLog(
+  externalId: string | undefined,
+  endpoint: () => Promise<{ url: string; headers: Record<string, string> } | null>,
+): Promise<boolean> {
+  return (await runtimeCapabilities(externalId, endpoint))?.includes(RUNTIME_LOG_CAPABILITY) ?? false;
 }
 
 /** Test-only. */
