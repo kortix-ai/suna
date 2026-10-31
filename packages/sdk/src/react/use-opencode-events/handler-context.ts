@@ -25,6 +25,10 @@ export type HandlerContext = {
   projectId?: string | null;
   /** The Kortix session of the stream this handler serves; null on the global stream. */
   sessionId?: string | null;
+  /** The box serves its log (`runtime.log.v1`): no transcript or session read follows a frame. */
+  logNative?: boolean;
+  /** A `log.status` `compacting`: the thread compacts now. */
+  startCompaction?: (sessionID: string) => void;
 } & {
   reconcileTail: (
     sessionID: string,

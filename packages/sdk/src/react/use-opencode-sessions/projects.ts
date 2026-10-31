@@ -5,6 +5,7 @@ import { getClient } from '../../core/runtime/client';
 import type { Project, Path as PathInfo } from '../../core/runtime/runtime-types';
 import { runtimeKeys, useRuntimeReady } from './keys';
 import { unwrap } from './shared';
+import { getRuntimePathInfo, getRuntimeProjectInfo } from '../runtime-actions';
 
 // ============================================================================
 // Project Hooks
@@ -30,11 +31,8 @@ export function useRuntimeCurrentProject() {
   const runtimeReady = useRuntimeReady();
   return useQuery<Project>({
     queryKey: runtimeKeys.currentProject(),
-    queryFn: async () => {
-      const client = getClient();
-      const result = await client.project.current();
-      return unwrap(result);
-    },
+    // The workspace route on a box with the session-log actions, else `/project/current`.
+    queryFn: getRuntimeProjectInfo,
     enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 5 * 60 * 1000,
@@ -49,11 +47,8 @@ export function useRuntimePathInfo() {
   const runtimeReady = useRuntimeReady();
   return useQuery<PathInfo>({
     queryKey: runtimeKeys.pathInfo(),
-    queryFn: async () => {
-      const client = getClient();
-      const result = await client.path.get();
-      return unwrap(result);
-    },
+    // The workspace route on a box with the session-log actions, else `/path`.
+    queryFn: getRuntimePathInfo,
     enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,

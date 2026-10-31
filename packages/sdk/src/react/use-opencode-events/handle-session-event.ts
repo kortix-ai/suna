@@ -118,6 +118,8 @@ function handleSessionCompaction(event: RuntimeEvent, ctx: HandlerContext) {
       const sessionID = event.properties.sessionID;
       if (sessionID) {
         stopCompaction(sessionID);
+        // On a box that serves its log, the compaction block arrives over the log.
+        if (ctx.logNative) break;
         const client = getClient();
         void reconcileTail(sessionID, 'compaction');
         client.session

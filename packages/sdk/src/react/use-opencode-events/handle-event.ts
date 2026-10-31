@@ -52,14 +52,22 @@ export function createEventHandler(deps: {
    * are dropped: the frames name no session.
    */
   sessionId?: string | null;
+  /**
+   * The box serves its log (`runtime.log.v1`): the session log holds the transcript, so a turn
+   * end, an error or a compaction re-reads no transcript tail and no session record.
+   */
+  logNative?: boolean;
+  /** A `log.status` `compacting` starts the thread's compaction; its next status ends it. */
+  startCompaction?: (sessionID: string) => void;
 }) {
   const { queryClient, client } = deps;
-  const reconcileTail =
-    deps.reconcileSessionTail ??
-    (async (sessionID: string) => {
-      const result = await client.session.messages({ sessionID, limit: SESSION_SYNC_PAGE_SIZE });
-      if (result.data) useSyncStore.getState().hydrate(sessionID, result.data);
-    });
+  const reconcileTail = deps.logNative
+    ? async () => {}
+    : (deps.reconcileSessionTail ??
+      (async (sessionID: string) => {
+        const result = await client.session.messages({ sessionID, limit: SESSION_SYNC_PAGE_SIZE });
+        if (result.data) useSyncStore.getState().hydrate(sessionID, result.data);
+      }));
   const ctx: HandlerContext = {
     ...deps,
     projectId: deps.projectId ?? null,
@@ -97,6 +105,9 @@ export function createEventHandler(deps: {
       // The control frames drive the stores the runtime's own events drive.
       const status = sessionStatusOfLogFrame(event);
       if (status) {
+        const compacting = (event.properties as { status?: unknown }).status === 'compacting';
+        if (compacting) deps.startCompaction?.(status.properties.sessionID);
+        else deps.stopCompaction(status.properties.sessionID);
         const before = useSyncStore.getState().sessionStatus[status.properties.sessionID];
         deps.applySyncEvent(status as OpenCodeSdkEvent);
         handleSessionEvent(status, ctx, before);
