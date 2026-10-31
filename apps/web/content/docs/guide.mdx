@@ -199,6 +199,7 @@ My Kortix runs your work while you keep talking to it. Ask for three things in a
 - **You never wait.** My Kortix answers at once: "⏳ I've handed that to the post writer. I'll tell you when it's done." Ask it anything else meanwhile.
 - **Results come to you.** When an agent finishes, My Kortix tells you the outcome in a line or two, with a link to the work.
 - **Ask how it's going.** "How's the post writer doing?" gets the current state, without waiting for the end.
+- **It keeps checking.** When work waits on someone else, such as replies to emails an agent sent, a check-in is set without you asking, and My Kortix tells you what each check found. See [Loops](#reminders).
 - **Change course.** "Tell the post writer to keep it under 500 words" sends that agent a message. "Stop the research" stops it.
 - **Follow up with the same agent.** "Ask the post writer to add a summary too" goes to the agent that wrote the post, in its own session, with everything it already knows. My Kortix starts a new agent only for separate work at the same time.
 - **Talk to another session.** "Tell the session working on the pricing page that the copy is approved" sends that session a message. Type `@` to pick the session by name. "Tell me when it's done" gets you one notice when that session finishes.
@@ -619,6 +620,22 @@ To create one at runtime, use the CLI: `kortix triggers add "<prompt>"` with a s
 ### Loops
 
 A loop is a trigger that wakes the session that created it. It does not start a new session. It sends a message into one session that already exists, later, once or on repeat. For example: "in 24 hours, check whether the vendor replied." The session wakes with its full history and continues. A session can also be woken by a webhook, an event or a merged change request: `kortix triggers add "…" --on cr-merged --cr <id>`. Loops are on by default (flag key `reminders`). **Project admin → Triggers** lists them under **Created at runtime**, and the session shows the triggers that wake it. `kortix loop`, `kortix loops`, `kortix remind` and `kortix reminders` still work with the same flags.
+
+#### Agents follow up on their own
+
+You never have to say "check back later". When an agent does something whose answer comes later, it sets its own check-in before it stops: after it emails a vendor, sends a message, submits a form, opens a change request or starts a deploy.
+
+1. **It picks the signal.** When the answer can announce itself (a change request merges, a connected inbox gets a new email, a system calls a link, an App reports a change), the session wakes the moment it happens. Otherwise, and as a backup when the answer may never come, it sets a loop.
+2. **It paces the loop to the wait.** Replies from people: a first check a few hours later, in their working hours, then a few times a day. A deploy: every 10 to 30 minutes. A slow vendor: once a day. Every loop has an end date, 14 days unless you name another.
+3. **It tells you in one line**, for example: "I'll check for replies every 3 hours until 14 Nov, or until all 12 answer."
+4. **Each check** looks for the answer and acts on it. You hear only what changed. After several checks with nothing new, the agent checks less often.
+5. **It cleans up.** When the work is done or the end date passes, the agent removes its loops.
+
+**See or stop a loop.** A session with an active loop shows a clock at the top. Select it to see each loop and when it runs next, and to pause or remove it. **Project admin → Loops** lists the loops of every session. You can also tell the agent "stop checking".
+
+**Long jobs.** A job with many parts or many days, such as "find printers, get 12 quotes and order from the best one", runs one pattern: the agent plans the parts, hands the parallel ones to other agents, sets a check-in for each wait, and keeps a short status note so every check-in starts where the last one stopped. When the work will repeat, such as a quote round every quarter, it offers to set up a trigger or a dedicated agent, and asks you first. When the job is done, it removes its loops, stops the agents it started and sends you a short final report.
+
+To watch something around the clock, such as a status page or a price, an agent can build a small App that checks it on a schedule and reports an App event only when it changes. The App runs on its own, apart from any session, and wakes the session the moment the change happens. See [Apps](#apps).
 
 ### Keeping triggers under control
 

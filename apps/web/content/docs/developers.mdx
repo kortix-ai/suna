@@ -1369,7 +1369,7 @@ My Kortix, the built-in agent, has nine more tools. Eight run the in-sandbox `ko
 | --- | --- | --- |
 | `kortix_agents` | `list`, `get`, `create`, `update`, `set_access` | `kortix agents ls`, `agents config`, `agents scope` |
 | `kortix_sessions` | `list`, `read`, `message`, `stop` | `kortix sessions ls`, `sessions log`, `sessions chat --queue`, `sessions stop` |
-| `kortix_schedules` | `list`, `create`, `pause`, `resume`, `delete`, `run_now` | `kortix triggers ls`, `triggers add --runtime`, `triggers pause/resume/rm/run` |
+| `kortix_schedules` | `follow_up`, `wake_on`, `events`, `list`, `create`, `pause`, `resume`, `remove` (alias `delete`), `run_now` | `kortix loop`, `triggers add --on …`, `triggers events --connector`, `triggers ls` and `loops ls`, `triggers add --runtime`, `triggers pause/resume/rm/run` |
 | `kortix_connectors` | `list`, `find`, `add`, `connect` | `kortix connectors ls`, `connectors catalog`, `connectors catalog install`, `connectors connect` |
 | `kortix_people` | `list`, `pending`, `invite`, `set_role`, `remove` | `kortix access ls`, `access pending`, `access invite`, `access grant`, `access revoke` |
 | `kortix_access` | `me`, `who_can_grant` | `kortix whoami`, `kortix access ls` |
@@ -1462,6 +1462,39 @@ A session a person started is an orchestrator: nothing it starts blocks its conv
 - **Results arrive as messages.** When a background child, a workflow runner or a teammate finishes, the API delivers one message into the calling session. When the session is idle, that message starts a turn. When several finish together, they arrive together in one turn.
 - **The person keeps talking.** The composer stays enabled while children work. A message the person sends is answered at once, and the notices arrive between turns.
 - **Status without waiting.** `list_agents` and `kortix sessions status` read each child's state. Neither waits for the child to finish.
+
+#### Follow-through: wake on the result
+
+A result that arrives later must wake the session that waits for it. Every agent sets that wake-up itself, before it ends the turn, without being asked: after it sends an email or a message, submits an order or a form, opens a change request, starts a deploy, asks a person, or starts to watch a page. The rule ships in three places: the My Kortix prompt (`apps/api/src/projects/lib/my-kortix-prompt.ts`), the `<scheduling>` section of the managed `kortix-system` skill with its playbook `references/scheduling.md`, and the starter `worker` agent.
+
+| The session waits on | It wakes with | My Kortix (`kortix_schedules`) |
+| --- | --- | --- |
+| A reply to an email or a message | A loop, plus a connector event when the app is connected and the project has `event_triggers` on: `kortix triggers add "<text>" --on event --connector <slug> --event <TYPE>` | `follow_up`; `wake_on` with `on: { connector_event }` (`events` lists the types) |
+| A change request | `kortix triggers add "<text>" --on cr-merged --cr <id>` | `wake_on` with `cr_merged` |
+| A deploy, a CI run, a job | `--on webhook --secret-env <NAME>` (prints the URL to give the system), else a loop every 10 to 30 minutes | `wake_on` with `webhook` (returns the URL) |
+| A person's answer, a slow vendor | A loop | `follow_up` |
+| A page or a status with no events | A loop, or a watcher App and `--on app --app <slug>` | `wake_on` with `app_event` |
+| A hand-off, a teammate, a workflow | Nothing: each reports back by itself | nothing |
+
+- **The fallback loop.** When the event may never come, the agent also sets a loop. The cadence fits the wait: a reply is checked first 2 to 4 hours later in the recipient's working hours, then 2 to 4 times a day; a deploy every 10 to 30 minutes; a slow vendor daily.
+- **The loop text carries the context:** what was sent, to whom, what to check, what to do on each outcome, and an end date (14 days by default). A loop has no expiry or backoff flag: the end date lives in the text, and the agent replaces a loop with a slower one after repeated empty checks.
+- **One line to the person:** "I'll check for replies every 3 hours until 14 Nov, or until all 12 answer."
+- **Each fire** checks, acts and reports what changed. When the condition holds or the end date passes, the agent removes every loop and trigger it set (`kortix loops rm`, `kortix triggers rm`).
+- **The session that can check owns the wake-up.** A background child that sent the emails sets its own loop. Each later turn of that child, a loop fire included, delivers one notice to its parent, so My Kortix hears every check.
+- **Session event triggers** are runtime triggers whose target is the session (`--session`, the default inside one). Sources: `cr-merged`, `webhook`, `event` (a connector), `app`. A fire arrives as `[REMINDER trigger.<id> — … trigger (<source>) …]`; a loop fire as `[REMINDER reminder.<id> — …]`. Neither is a user message.
+- **App events are the 24/7 watcher.** An App runs apart from every session: an `every` trigger calls it (no session, no model), it posts an App event only when the source changed, and a session trigger (`--on app`) or a `kortix.yaml` trigger wakes the agent. An event `id` built from the content makes an unchanged source fire nothing: Kortix accepts each `id` once per trigger for 30 days. See [Triggers and App events](#triggers-and-app-events).
+- **Loops off.** `403 feature_disabled` means the project turned Loops off (flag `reminders`). The agent says so and uses a one-off `at` trigger meanwhile.
+
+**Long jobs: plan, delegate, set wake-ups, keep state, close out.** A job of many parts or many days outlives one turn and one context window, because a session compacts. The same three sources teach one pattern for it:
+
+1. **Plan** the parallel parts and the waiting parts.
+2. **Delegate** with background `agent` calls (named, reused for follow-ups), a `workflow` for many agents, or a team for a shared task list. They report back by themselves.
+3. **Set wake-ups** for every outside wait: an event, plus a fallback loop with an end date.
+4. **Keep state outside the context:** the loop text (pending, next step, stop rule), a status file `out/status.md` in the session (done, pending, next check, open questions), or a Goal (the `kortix-goals` skill) for a multi-day outcome with independent verification. Every woken turn reads the state first, advances it, updates it, and re-arms or removes its wake-ups.
+5. **Set Kortix up when the work repeats:** a project trigger, a watcher App, or a dedicated agent or skill. The agent asks first for anything that runs unattended long-term, spends credits on every run, or widens access. It sets its own session's loops without asking and announces them.
+6. **Close out:** remove every loop and session trigger it set, stop the agents it no longer needs (`task_stop`), and send a short final report.
+
+The worked example is in the `kortix-system` skill, `references/scheduling.md` → Long jobs.
 
 #### Named agents and forks
 
@@ -3191,10 +3224,16 @@ An App can start agents, and triggers can call it.
 | The App called on a schedule or an event | A trigger with `run: { app, path, method, payload }`. Kortix wakes an on-demand App and sends the request. No session, no model. See [Call an App](/docs/guide#triggers). |
 | The App to call itself later | `POST /v1/projects/<project_id>/apps/<app_id>/runs` with the App token: `run_after` or `run_at`. See [Call an App](/docs/guide#triggers). |
 
-To react to the outside world, try a webhook first, then a schedule. Post App
-events only when neither works. An App never starts an agent itself: it posts
-events, and a trigger decides. Deploy a watcher App unlisted: it belongs in the
-Background list.
+To react to the outside world, try a webhook first, then a connector event,
+then a schedule. Build a watcher App when the source sends nothing and must be
+watched around the clock: an `every` trigger calls the App's `/tick`, the App
+posts an App event only when the source changed (an `id` built from the content
+fires once per trigger for 30 days), and a session trigger
+(`kortix triggers add "<text>" --on app --app <slug>`) wakes the session that
+waits, or a `kortix.yaml` trigger starts an agent. An App never starts an agent
+itself: it posts events, and a trigger decides. Deploy a watcher App unlisted
+and on demand: it belongs in the Background list. A complete example is in the
+`kortix-system` skill, `references/scheduling.md` → Watch 24/7.
 
 App events and runs are REST only. They authenticate with the App token, not
 a Kortix token.
