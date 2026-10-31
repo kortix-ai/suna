@@ -55,7 +55,7 @@ describe('the retired `memory` tool', () => {
 
   test('`kortix validate --fix` drops the name, unless the project registers its own `memory` tool', () => {
     const plain = 'agents:\n  kortix:\n    prompt: x\n    tools: [read, memory]\n';
-    expect(fixManifestText(plain)).toEqual({ text: 'agents:\n  kortix:\n    prompt: x\n    tools: [ read ]\n', fixed: [{ id: 'tool-retired', path: 'agents.kortix.tools' }] });
+    expect(fixManifestText(plain)).toEqual({ text: 'agents:\n  kortix:\n    prompt: x\n    tools: [read]\n', fixed: [{ id: 'tool-retired', path: 'agents.kortix.tools' }] });
     const owned = 'tools:\n  memory: tools/memory.ts\nagents:\n  kortix:\n    prompt: x\n    tools: [read, memory]\n';
     expect(fixManifestText(owned)).toEqual({ text: owned, fixed: [] });
   });
