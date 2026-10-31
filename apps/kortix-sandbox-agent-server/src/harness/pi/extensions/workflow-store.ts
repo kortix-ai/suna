@@ -4,10 +4,15 @@
  *  - Run records, for `resume_run_id`: one JSON file per run under
  *    `<state>/runs/<runId>.json` (`<state>` is `$KORTIX_RUNTIME_STATE_DIR/workflows`).
  *    Each agent's entry is written when it settles: the key of its prompt and
- *    options, its status, its result and its session. A relaunch replays the
- *    record ({@link Replay}).
+ *    options, its status, its result and its session. A resume replays the
+ *    record per call ({@link Replay}). A background run's records live on its
+ *    runner's box; the calling box keeps the run's id, runner session and
+ *    last known document.
  *  - The session's "don't ask again" answer: `<state>/consent.json`. One box
  *    is one session, so the file is the session's.
+ *  - A runner session's spent hand-off: `<state>/handoff.json`, written
+ *    before the runner runs its one workflow. A runner that holds it runs no
+ *    other hand-off, also after its box restarts.
  *  - Saved workflows: `.kortix/workflows/<name>.js` in the project repository,
  *    read only. A box with a project checkout reads the working tree. A box
  *    without one (My Kortix) reads the default branch through the Kortix API
@@ -60,10 +65,16 @@ export interface RunRecord {
   doc?: WorkflowRunMetadata
 }
 
-/** The key that decides whether a relaunched agent may reuse a saved result. */
-export function agentKey(input: { prompt: string; agent?: string; model?: string; schema?: unknown }): string {
+/**
+ * The key that decides whether a resumed agent may reuse a saved result: the
+ * prompt and every option that changes the answer. `instructions` and `tools`
+ * join the key only when set, so a record written before they existed keeps
+ * its key.
+ */
+export function agentKey(input: { prompt: string; agent?: string; model?: string; schema?: unknown; instructions?: string; tools?: string[] }): string {
+  const custom = input.instructions !== undefined || input.tools !== undefined ? [input.instructions ?? null, input.tools ? [...input.tools].sort() : null] : []
   return createHash('sha256')
-    .update(JSON.stringify([input.prompt, input.agent ?? null, input.model ?? null, input.schema ?? null]))
+    .update(JSON.stringify([input.prompt, input.agent ?? null, input.model ?? null, input.schema ?? null, ...custom]))
     .digest('hex')
 }
 
@@ -124,39 +135,65 @@ export class RunStore {
     mkdirSync(this.dir, { recursive: true, mode: 0o700 })
     writeFileSync(join(this.dir, 'consent.json'), JSON.stringify({ dontAsk: true, at: new Date().toISOString() }), { mode: 0o600 })
   }
+
+  /**
+   * The hand-off this runner session already took, or null. A file that
+   * exists but does not parse counts as taken: the runner fails closed.
+   */
+  spentHandoff(): SpentHandoff | null {
+    const path = join(this.dir, 'handoff.json')
+    if (!existsSync(path)) return null
+    try {
+      const spent = JSON.parse(readFileSync(path, 'utf8')) as Partial<SpentHandoff> | null
+      return { runId: typeof spent?.runId === 'string' ? spent.runId : '', turnId: typeof spent?.turnId === 'string' ? spent.turnId : '', at: typeof spent?.at === 'string' ? spent.at : '' }
+    } catch {
+      return { runId: '', turnId: '', at: '' }
+    }
+  }
+
+  /**
+   * Record that this runner session took its hand-off, before any of it runs.
+   * `wx`: a second writer fails, so two calls never both take one. Throws when
+   * the file cannot be written; the caller then runs nothing.
+   */
+  spendHandoff(spent: Omit<SpentHandoff, 'at'>): void {
+    mkdirSync(this.dir, { recursive: true, mode: 0o700 })
+    writeFileSync(join(this.dir, 'handoff.json'), JSON.stringify({ ...spent, at: new Date().toISOString() }), { mode: 0o600, flag: 'wx' })
+  }
+}
+
+/** A runner session's one hand-off, once taken: the run, the turn that took it (its message id), and when. */
+export interface SpentHandoff {
+  runId: string
+  turnId: string
+  at: string
 }
 
 /**
- * The replay of an earlier run, as Claude Code relaunches one. Each new
- * `agent()` call takes the earlier run's first unused entry with the same key
- * (the same prompt and options). While the replay has not diverged, a
- * completed entry returns its saved result, and an interrupted one runs
- * again alone. The first call with no such entry, or whose entry started at or
- * after the earlier run's first failed or stopped agent, diverges the replay:
- * it and every later call run again. Matching by key, not by start position,
- * keeps an unedited `pipeline()` whose stages finished in another order cached.
+ * The replay of an earlier run, per call. Each new `agent()` call takes the
+ * earlier run's first unused entry with the same key (the same prompt, agent,
+ * model and schema) that completed, and returns its saved result. Any other
+ * call runs: a new or edited call, and one whose earlier entry failed, was
+ * stopped or was interrupted. Order does not matter: a `parallel()` or
+ * `pipeline()` whose agents finished in another order, an edited call in the
+ * middle of the script, or a reordered script reuses every completed call.
  */
 export class Replay {
   private readonly used = new Set<number>()
-  private readonly firstBreak: number
-  private diverged = false
 
-  constructor(private readonly previous: RecordedAgent[]) {
-    const broken = previous.findIndex((entry) => entry.status === 'failed' || entry.status === 'stopped')
-    this.firstBreak = broken < 0 ? previous.length : broken
+  constructor(private readonly previous: RecordedAgent[]) {}
+
+  /** Completed entries this replay may still return. */
+  get reusable(): number {
+    return this.previous.filter((entry, i) => entry.status === 'done' && !this.used.has(i)).length
   }
 
   /** The saved entry this call reuses, or null: it runs. */
   take(key: string): RecordedAgent | null {
-    if (this.diverged) return null
-    const index = this.previous.findIndex((entry, i) => !this.used.has(i) && entry.key === key)
-    if (index < 0 || index >= this.firstBreak) {
-      this.diverged = true
-      return null
-    }
+    const index = this.previous.findIndex((entry, i) => !this.used.has(i) && entry.key === key && entry.status === 'done')
+    if (index < 0) return null
     this.used.add(index)
-    const entry = this.previous[index]!
-    return entry.status === 'done' ? entry : null
+    return this.previous[index]!
   }
 }
 
