@@ -488,6 +488,7 @@ flow(
       'GET /v1/projects/:projectId/agents/:agentName/config',
       'PUT /v1/projects/:projectId/agents/:agentName/config',
       'GET /v1/projects/:projectId/agents/:agentName/capabilities',
+      'GET /v1/projects/:projectId/capabilities',
       'GET /v1/projects/:projectId/files/content',
     ],
   },
@@ -622,6 +623,10 @@ flow(
     await ctx.step(
       'GET capabilities lists every tool, built-in skill and platform extension; an undeclared agent → 404; no grant → 403',
       async () => {
+        const projectCatalog = (await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/capabilities', {
+          params: { projectId: project.id },
+        })).status(200).json<{ tools: { id: string }[] }>();
+        if (!projectCatalog.tools.some((tool) => tool.id === 'agent')) throw new Error('project capability catalog lacks agent tool');
         const path = '/v1/projects/:projectId/agents/:agentName/capabilities';
         const r = await ctx.client.as(ctx.P.OWNER).get(path, { params: { projectId: project.id, agentName: 'worker' } });
         r.status(200).body().has('$.agent', 'worker');
