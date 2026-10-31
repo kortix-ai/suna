@@ -665,6 +665,34 @@ function ExpandedBody({
         <ChatGptSubscriptionConnect projectId={projectId} onConnected={() => undefined} legacyOnly />
       </div>
     );
+  } else if (pooled.pooledSecretsEnabled && pooled.accountId && entry.id === 'anthropic') {
+    // Claude accounts, exactly as OpenAI lists ChatGPT accounts; Anthropic API keys below them.
+    content = (
+      <>
+        <div className="border-border space-y-3 border-t py-3">
+          <p className="text-foreground text-xs font-medium">{tPooled('claudeAccounts')}</p>
+          <AccountSecretResourcesPanel
+            accountId={pooled.accountId}
+            projectId={projectId}
+            providerId="claude-agent"
+            providerName="Claude Pro/Max"
+            envVar="CLAUDE_CODE_OAUTH_TOKEN"
+            canWrite
+            oauth={{ projectId, onConnected: () => undefined, kind: 'claude' }}
+          />
+        </div>
+        <div className="border-border border-t py-3">
+          <AccountSecretResourcesPanel
+            accountId={pooled.accountId}
+            projectId={projectId}
+            providerId={entry.id}
+            providerName={entry.label}
+            envVar={entry.envVars[0]!}
+            canWrite
+          />
+        </div>
+      </>
+    );
   } else if (pooled.pooledSecretsEnabled && pooled.accountId && supportsPooledProviderKey(entry)) {
     content = (
       <>

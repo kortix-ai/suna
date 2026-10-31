@@ -12,7 +12,7 @@ import type { Api, AssistantMessageEventStream, Model, Provider, SimpleStreamOpt
 import { createAssistantMessageEventStream, createProvider, getCurrentSystemPrompt, getCurrentTools } from '@earendil-works/pi-ai'
 import { CLAUDE_AGENT_MODELS, CLAUDE_AGENT_PROVIDER_ID, CLAUDE_AGENT_PROVIDER_NAME, type ClaudeAgentModel } from '@kortix/api-contract/claude-agent'
 import { logger } from '@/lib/log/logger'
-import { ClaudeLoginMissing, hasClaudeLogin, onClaudeLoginChange } from './sdk'
+import { ClaudeLoginMissing, claudeGateway } from './sdk'
 import { ClaudeSessions, type Effort } from './sessions'
 import { ClaudeReply } from './stream'
 
@@ -74,8 +74,6 @@ function ensureSessions(opts: ClaudeProviderOptions): ClaudeSessions {
     },
   })
   sessions = created
-  // Another user's login (or none) restarts every process at its next step.
-  onClaudeLoginChange(() => void created.stopAll())
   return created
 }
 
@@ -85,7 +83,7 @@ function stream(opts: ClaudeProviderOptions, model: Model<Api>, context: Transcr
   const reply = new ClaudeReply(out, model, tools, () => subscription)
   void (async () => {
     try {
-      if (!hasClaudeLogin()) throw new ClaudeLoginMissing()
+      if (!claudeGateway(opts.env)) throw new ClaudeLoginMissing()
       const registry = ensureSessions(opts)
       const outcome = await registry.run({
         // A step with tools is a step of a thread. One without (pi's compaction summary) is a side call.

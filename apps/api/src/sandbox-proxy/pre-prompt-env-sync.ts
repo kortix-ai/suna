@@ -342,6 +342,7 @@ export interface PrePromptEnvSyncDeps {
    */
   claudeSubscriptionMissing?: (input: {
     accountId: string;
+    projectId: string;
     sessionId: string;
     userId: string;
     promptModel: string | null;
@@ -412,6 +413,7 @@ export async function runPrePromptEnvSync(
   if (deps.claudeSubscriptionMissing && input.bindTurnIdentity && userId) {
     const missing = await deps.claudeSubscriptionMissing({
       accountId: record.accountId,
+      projectId: record.projectId,
       sessionId: record.sessionId,
       userId,
       promptModel: prompt.model,

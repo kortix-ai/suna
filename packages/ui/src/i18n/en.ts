@@ -89,7 +89,7 @@ const catalog = {
     "deleteError": "Secret could not be deleted",
     "accessError": "Access could not be changed",
     "sharedTitle": "Provider connections",
-    "sharedDescription": "Add API keys and ChatGPT accounts. New ones are private to you until you share them. Choose which ones each session uses.",
+    "sharedDescription": "Add API keys, ChatGPT accounts and Claude accounts. New ones are private to you until you share them. Choose which ones each session uses.",
     "legacyProjectKey": "Existing project key · Used when this session has no key selection",
     "keyCount": "{count, plural, one {# key} other {# keys}}",
     "providerKeysFor": "{provider} API keys",
@@ -156,7 +156,19 @@ const catalog = {
     "opencodeGoConnect": "Connect OpenCode Go",
     "opencodeGoReconnect": "Reconnect OpenCode Go",
     "opencodeGoDisconnect": "Disconnect OpenCode Go",
-    "opencodeGoFailed": "Failed to connect OpenCode Go"
+    "opencodeGoFailed": "Failed to connect OpenCode Go",
+    "claudeAccounts": "Claude accounts",
+    "noClaudeAccounts": "No Claude accounts yet",
+    "connectClaude": "Sign in with Claude",
+    "claudeOauthPrivateDescription": "Use your Claude Pro or Max plan for Claude models in this project. New accounts are private to you until you share them.",
+    "claudeOauthCreationDescription": "Sign in with your Claude Pro or Max account. Kortix stores the login encrypted and never shows it.",
+    "claudeDefaultAccountLabel": "Claude · {name}",
+    "claudeAccountConnected": "Claude account connected",
+    "claudeAccountReconnected": "Claude account reconnected",
+    "claudeConnectFailed": "The Claude sign-in did not finish. Try again.",
+    "claudeReconnectDescription": "Sign in with Claude again. The account keeps its name, access, and session selections.",
+    "claudeAccountLabelPlaceholder": "e.g. My Claude account",
+    "claudeDeleteAccountConfirmTitle": "Delete this Claude account for everyone?"
   },
   "secrets": {
     "undecryptable": {

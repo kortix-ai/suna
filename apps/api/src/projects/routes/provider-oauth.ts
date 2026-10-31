@@ -24,7 +24,8 @@ import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-syn
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountSecretGrants, accountSecretResources } from '@kortix/db';
-import { encryptAccountSecret, memberMayReadProject } from '../../secrets/account-resource';
+import { memberMayReadProject } from '../../secrets/account-resource';
+import { reconnectProviderAccount, writeProviderAccount } from '../../secrets/provider-accounts';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { projectSecrets } from '@kortix/db';
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
@@ -232,61 +233,7 @@ function sharingIsOwnerOnly(sharing: ReturnType<typeof parseSharingIntent> | und
     (sharing.memberIds ?? []).every((memberId) => memberId === ownerId);
 }
 
-/** Reconnect writes a fresh login into the caller's own ChatGPT account resource.
- * Its id, label, access, and session selections stay. A deleted account, or one
- * the caller did not create, matches no row, so a stale flow never recreates it. */
-async function reconnectAccountResource(input: {
-  secretId: string; accountId: string; userId: string; projectId: string; value: string; cfg: OAuthProvider;
-}): Promise<{ secretId: string; label: string } | null> {
-  const { secretId, accountId, userId, projectId, value, cfg } = input;
-  const [row] = await db.update(accountSecretResources).set({
-    valueEnc: encryptAccountSecret(accountId, value),
-    active: true,
-    cooldownUntil: null,
-    needsReauthAt: null,
-    updatedAt: new Date(),
-  }).where(and(
-    eq(accountSecretResources.accountId, accountId),
-    eq(accountSecretResources.secretId, secretId),
-    eq(accountSecretResources.projectId, projectId),
-    eq(accountSecretResources.providerId, cfg.resourceProviderId),
-    eq(accountSecretResources.name, cfg.secretName),
-    eq(accountSecretResources.createdBy, userId),
-  )).returning({ secretId: accountSecretResources.secretId, label: accountSecretResources.label });
-  if (!row) return null;
-  await recordAuditEvent({
-    accountId, projectId, actorUserId: userId, actorType: 'human', source: 'api',
-    action: 'secret.oauth.connected', resourceType: 'account_secret_resource', resourceId: row.secretId,
-    metadata: { provider_id: cfg.resourceProviderId, consumer: 'llm_gateway', reconnected: true },
-  });
-  return row;
-}
-
-/** One OAuth completion creates one project-scoped account resource. The flow's UUID
- * makes concurrent or repeated polls idempotent without replacing another login. */
-async function writeAccountResource(input: {
-  secretId: string; accountId: string; userId: string; label: string; value: string; projectId: string; cfg: OAuthProvider;
-  sharing?: ReturnType<typeof parseSharingIntent>;
-}) {
-  const { secretId, accountId, userId, label, value, projectId, cfg, sharing } = input;
-  const restricted = sharing?.mode === 'members' || sharing?.mode === 'private';
-  const userIds = [...new Set([userId, ...(sharing?.mode === 'members' ? sharing.memberIds ?? [] : [])])];
-  const created = await db.transaction(async (tx) => {
-    const [row] = await tx.insert(accountSecretResources).values({
-      secretId, accountId, projectId, accessMode: restricted ? 'members' : 'project', label, providerId: cfg.resourceProviderId, name: cfg.secretName,
-      valueEnc: encryptAccountSecret(accountId, value), consumer: 'llm_gateway',
-      strategy: 'broker', createdBy: userId,
-    }).onConflictDoNothing().returning({ secretId: accountSecretResources.secretId });
-    if (row) await tx.insert(accountSecretGrants).values(userIds.map((grantee) => ({ accountId, secretId, userId: grantee, grantedBy: userId })));
-    return Boolean(row);
-  });
-  if (created) await recordAuditEvent({
-    accountId, projectId, actorUserId: userId, actorType: 'human', source: 'api',
-    action: 'secret.oauth.connected', resourceType: 'account_secret_resource', resourceId: secretId,
-    metadata: { provider_id: cfg.resourceProviderId, consumer: 'llm_gateway' },
-  });
-  return secretId;
-}
+const accountKind = (cfg: OAuthProvider) => ({ providerId: cfg.resourceProviderId, name: cfg.secretName, label: cfg.label });
 
 // Best-effort token expiry (ms remaining) from a stored auth.json, for display.
 function authExpiresInMs(authJson: string): number | null {
@@ -528,9 +475,9 @@ export function registerProviderOauthRoutes(): void {
       if (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets')) {
         return c.json({ status: 'failed', error: 'Pooled OAuth connections are disabled for this project' });
       }
-      const reconnected = await reconnectAccountResource({
+      const reconnected = await reconnectProviderAccount({
         secretId: state.rid, accountId: loaded.row.accountId, userId: loaded.userId,
-        projectId, value: result.authJson, cfg,
+        projectId, value: result.authJson, kind: accountKind(cfg),
       });
       if (!reconnected) {
         return c.json({ status: 'failed', error: `This ${cfg.label} account is no longer available. Add it again.` });
@@ -547,9 +494,9 @@ export function registerProviderOauthRoutes(): void {
       if (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets')) {
         return c.json({ status: 'failed', error: 'Pooled OAuth connections are disabled for this project' });
       }
-      const secretId = await writeAccountResource({
+      const secretId = await writeProviderAccount({
         secretId: state.rid, accountId: loaded.row.accountId, userId: loaded.userId,
-        label: state.l, value: result.authJson, projectId, cfg,
+        label: state.l, value: result.authJson, projectId, kind: accountKind(cfg),
         sharing: state.s ? (parseSharingIntent(state.s, loaded.userId) ?? undefined) : undefined,
       });
       return c.json({ status: 'success', credential: {
