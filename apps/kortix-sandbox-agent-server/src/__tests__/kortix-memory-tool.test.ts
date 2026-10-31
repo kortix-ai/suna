@@ -148,12 +148,19 @@ describe('kortix_memory', () => {
     expect(requests).toEqual([])
   })
 
-  test('save needs a known type, a one-line description and a body', async () => {
+  test('save needs a known type and a body', async () => {
     expect((await run({ action: 'save', name: 'x', ...SHORT, type: 'secret' })).error?.kind).toBe('invalid')
-    expect((await run({ action: 'save', name: 'x', ...SHORT, description: 'two\nlines' })).error?.kind).toBe('invalid')
     expect((await run({ action: 'save', name: 'x', ...SHORT, body: '  ' })).error?.kind).toBe('invalid')
     expect((await run({ action: 'forget', name: 'x' })).error?.kind).toBe('invalid')
     expect(requests).toEqual([])
+  })
+
+  test('a missing description falls back to the title, a multi-line one becomes one line; a name copied from the index keeps working', async () => {
+    await run({ action: 'save', name: 'likes-short-replies', type: 'feedback', title: 'Likes short replies', body: 'Two sentences max.' })
+    expect(requests.at(-1)?.body).toMatchObject({ description: 'Likes short replies' })
+    await run({ action: 'save', name: 'likes-short-replies.md', type: 'feedback', description: 'two\nlines', body: 'Two sentences max.' })
+    expect(requests.at(-1)).toMatchObject({ path: `${PREFIX}/pages/likes-short-replies`, body: { description: 'two lines' } })
+    expect((await run({ action: 'view', name: 'likes-short-replies.md' })).ok).toBe(true)
   })
 
   test('Files off: a plain refusal that says to ask a project admin', async () => {

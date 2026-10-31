@@ -121,13 +121,12 @@ async function save(name: string, args: Record<string, any>, context: PlatformTo
   if (!(TYPES as readonly string[]).includes(type)) {
     return fail(TOOL, 'save', 'What kind of memory is it?', { kind: 'invalid', message: `Pass \`type\`: one of ${TYPES.join(', ')}.` }, context)
   }
-  if (!text('description') || /[\r\n]/.test(text('description'))) {
-    return fail(TOOL, 'save', 'Describe it in one line', { kind: 'invalid', message: 'Pass `description`: one line that says what this memory is about.' }, context)
-  }
   if (!text('body')) return fail(TOOL, 'save', 'What should I remember?', { kind: 'invalid', message: 'Pass `body`: the fact itself.' }, context)
+  // No description: the title, else the body's first line, stands in, so a save never fails on it.
+  const description = (text('description') || text('title') || text('body').split('\n').find((line) => line.trim()) || '').replace(/\s+/g, ' ').trim().slice(0, 200)
   const answer = await call(context, 'PUT', `/pages/${name}`, {
     ...(text('title') ? { title: text('title') } : {}),
-    description: text('description'),
+    description,
     type,
     body: text('body'),
   })
@@ -167,7 +166,7 @@ export default {
       action: { type: 'string', enum: [...ACTIONS], description: 'What to do.' },
       name: { type: 'string', description: 'For view, save and delete: the page slug, e.g. `likes-short-replies` (lower case, digits and dashes).' },
       type: { type: 'string', enum: [...TYPES], description: 'For save: user, feedback, project or reference.' },
-      description: { type: 'string', description: 'For save: one line that says what the page is about. You read it later to decide whether the page matters.' },
+      description: { type: 'string', description: 'For save: one line that says what the page is about. You read it later to decide whether the page matters. Default: the title.' },
       body: { type: 'string', description: 'For save: the fact itself, in Markdown. For feedback and project, end with **Why:** and **How to apply:** lines.' },
       title: { type: 'string', description: 'For save: a short title the person reads on the Memory screen. Default: the name.' },
     },
@@ -179,7 +178,8 @@ export default {
     if (!(ACTIONS as readonly string[]).includes(action)) {
       return fail(TOOL, action, 'Unknown action', { kind: 'invalid', message: `Use one of: ${ACTIONS.join(', ')}.` }, context)
     }
-    const name = typeof args.name === 'string' ? args.name.trim() : ''
+    // The index links pages as `<name>.md`: a name copied from it keeps working.
+    const name = typeof args.name === 'string' ? args.name.trim().replace(/\.md$/i, '') : ''
     const problem = badName(name)
     if (problem) return fail(TOOL, action, 'Which memory?', { kind: 'invalid', message: problem }, context)
     if (action === 'view') return view(name, context)
