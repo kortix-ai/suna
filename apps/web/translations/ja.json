@@ -24290,7 +24290,8 @@
         "title": "すべて",
         "explainCompany": "Kortix メモリ: エージェントがこのプロジェクトについて知っていること。毎回の返信の前に読みます。",
         "explainChannel": "Kortix メモリ: エージェントが {place} について知っていること。毎回の返信の前に読みます。",
-        "explainDm": "Kortix メモリ: エージェントがあなたと {place} について知っていること。毎回の返信の前に読みます。"
+        "explainDm": "Kortix メモリ: エージェントがあなたと {place} について知っていること。毎回の返信の前に読みます。",
+        "explainMyKortix": "My Kortix があなたについて覚えていること。毎回のチャットの始めに読みます。見られるのはあなただけです。"
       },
       "allPages": "すべてのページ",
       "noMatches": "「{query}」に一致するページはありません。",
@@ -24363,7 +24364,9 @@
         "title": "{place} のメモリはまだありません",
         "titleDm": "{place} とのメモリはまだありません",
         "description": "エージェントは学んだことをここに保存し、毎回の返信の前に読みます。",
+        "descriptionMyKortix": "チャットで My Kortix に「〜を覚えておいて」と伝えると、ここに保存されます。毎回のチャットの始めに読みます。見られるのはあなただけです。",
         "titleCompany": "会社のメモリはまだありません",
+        "titleMyKortix": "My Kortix はまだあなたについて何も覚えていません",
         "openCompany": "会社のメモリを開く · {count, plural, other {# ページ}}"
       },
       "source": {
@@ -24387,9 +24390,12 @@
       },
       "company": {
         "subtitle": "このプロジェクトのすべてのエージェントが知っていること。",
+        "subtitleMyKortix": "My Kortix があなたについて覚えていること。見られるのはあなただけです。",
         "gateDescription": "会社のメモリはチャンネルの機能です。このプロジェクトのすべてのエージェントは、チームがここに保存した内容を持ってスレッドを始めます。",
         "title": "メモリ",
-        "place": "会社"
+        "place": "会社",
+        "placeMyKortix": "My Kortix",
+        "layers": "メモリー"
       },
       "rememberThis": {
         "label": "これを覚える",
@@ -24409,6 +24415,10 @@
       "companyLink": "会社のメモリ · {count, plural, other {# ページ}}",
       "companyLinkHint": "ここのエージェントは会社のメモリも使います。",
       "group": {
+        "user": "あなたについて",
+        "feedback": "好みのやり方",
+        "project": "あなたの仕事",
+        "reference": "情報の場所",
         "other": "概要",
         "people": "メンバー",
         "decisions": "決定事項",

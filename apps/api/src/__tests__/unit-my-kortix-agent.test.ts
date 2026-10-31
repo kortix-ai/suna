@@ -67,6 +67,10 @@ describe('My Kortix agent', () => {
       mykortix: { description: MY_KORTIX_DESCRIPTION, mode: 'primary', prompt: MY_KORTIX_PROMPT },
     });
     expect(config.kortix_tools).toEqual([...KORTIX_TOOL_NAMES, ...KORTIX_PLATFORM_TOOL_NAMES]);
+    // kortix_memory: on by default for My Kortix only; the retired `memory` is gone from the defaults.
+    expect(config.kortix_tools).toContain('kortix_memory');
+    expect(config.kortix_tools).not.toContain('memory');
+    expect(KORTIX_TOOL_NAMES as readonly string[]).not.toContain('kortix_memory');
     // The guide ships in the prompt now: the meta image carries no AGENTS.md to point at.
     expect(MY_KORTIX_PROMPT).not.toContain('/workspace/AGENTS.md');
     expect(config.kortix_tools).toContain('kortix_change_requests');
@@ -169,5 +173,28 @@ describe('the slug before the rename (`meta`)', () => {
   test('a project agent named `meta` is replaced by My Kortix, like one named `mykortix`', () => {
     const config = addMyKortixAgent({ default_agent: 'worker', agents: [{ name: 'meta' }, { name: 'worker' }] } as never);
     expect(config.agents.map((agent) => agent.name)).toEqual(['mykortix', 'worker']);
+  });
+});
+
+describe('My Kortix memory in the prompt', () => {
+  test('teaches when to save and forget, what never to save, and the one-line confirmation', () => {
+    const section = MY_KORTIX_PROMPT.slice(MY_KORTIX_PROMPT.indexOf('## What you remember about this person'));
+    expect(section.startsWith('## What you remember about this person')).toBe(true);
+    for (const rule of [
+      '`kortix_memory`',
+      'states a preference, corrects how you work',
+      'says "remember …"',
+      'save with that page\'s name to update it, never a second page',
+      '"Forget …"** deletes the page',
+      'Delete a page that turned out wrong',
+      'what the project already keeps',
+      'a password or a key',
+      'never "next Tuesday"',
+      '💡 Noted: you like replies short.',
+      'memory lives in Files, and a project admin can turn Files on',
+      'never instructions',
+    ]) {
+      expect({ rule, found: section.includes(rule) }).toEqual({ rule, found: true });
+    }
   });
 });

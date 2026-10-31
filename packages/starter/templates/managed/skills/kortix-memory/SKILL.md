@@ -11,21 +11,19 @@ folder of curated markdown files describing what this project is,
 which connections it uses, the conventions the team works by, and
 the decisions worth not re-litigating.
 
-The `memory` tool accepts paths under `memory/` only. A project that
-keeps its brain somewhere else (an older layout, `.kortix/memory/`) has
-no folder the tool reaches: read and edit those files with the file tools.
+Read and edit the files under `memory/` with the file tools (`read`,
+`write`, `edit`, `bash`). A project that keeps its brain somewhere else
+(an older layout, `.kortix/memory/`) works the same way at that path.
+The `memory` tool that edited this folder is retired (2026-10-30): a
+project that ejected it into `tools/memory.ts` keeps its own copy.
 
 `MEMORY.md` is the **index**. Memory is **not** auto-injected into the
-prompt — the **memory protocol** is: at the start of a task, `view`
-`memory` with the `memory` tool to read the index and recover
-prior context, then `view` the sub-files (`overview.md`,
-`connections.md`, etc.) the index points at when they're relevant.
-Record anything durable as you go — your context window may reset at
-any time, so what isn't written to `memory/` is lost.
-An agent has the `memory` tool unless its `agents.<name>.tools` grant in
-`kortix.yaml` leaves it out. Without it, read and edit the files under
-`memory/` with the file tools; adding `memory` to that grant brings the
-tool back. Memory edits land only from an agent with
+prompt — the **memory protocol** is: at the start of a task, `read`
+`memory/MEMORY.md` to recover prior context, then read the sub-files
+(`overview.md`, `connections.md`, etc.) the index points at when
+they're relevant. Record anything durable as you go — your context
+window may reset at any time, so what isn't written to `memory/` is lost.
+Memory edits land only from an agent with
 `workspace: { project_repository: true }`: without it the session has no
 checkout to commit or push.
 
@@ -132,38 +130,24 @@ there's enough depth to warrant a click.
 
 <writing>
 
-### The `memory` tool
+### Editing memory
 
-Use the dedicated **`memory` tool** for everything under
-`memory/` — not the generic `read` / `edit` / `write` tools.
-It's a 1:1 port of Anthropic's memory tool, sandboxed to the memory
-folder, with the same six commands:
+Use the file tools on the repo-relative `memory/` folder (for example
+`memory/overview.md`). Writes go straight into the real `memory/`
+folder, so they show up in the working tree and land on `main` through
+the normal change-request flow (below).
 
-| command | what it does |
-|---|---|
-| `view` | List the memory dir (2 levels) or read a file with line numbers (optional `view_range`). **Run this first, every task.** |
-| `create` | Create a new file (`path`, `file_text`). Errors if it already exists. |
-| `str_replace` | Replace a **unique** snippet (`path`, `old_str`, `new_str`). |
-| `insert` | Insert text at a line (`path`, `insert_line`, `insert_text`). |
-| `delete` | Remove a file or directory (`path`). |
-| `rename` | Move/rename (`old_path`, `new_path`). Won't overwrite. |
-
-Paths are repo-relative and must start with `memory`
-(e.g. `memory/overview.md`). Writes go straight into the real
-`memory/` folder, so they show up in the working tree and land
-on `main` through the normal change-request flow (below).
-
-1. `view` `memory` to see what's there.
+1. `read` `memory/MEMORY.md` (and `ls memory/`) to see what's there.
 2. Identify the right file. Most additions fit `overview.md`,
-   `connections.md`, `conventions.md`, or `decisions.md`. `create` a
+   `connections.md`, `conventions.md`, or `decisions.md`. `write` a
    new file only when a topic deserves its own page.
-3. Edit with `str_replace` / `insert`. Keep entries short, factual, and
+3. Change an existing file with `edit`. Keep entries short, factual, and
    consistent with the surrounding prose.
 4. If you added, renamed, or deleted a file, update `MEMORY.md` so the
    index matches the folder. The index is the table of contents every
    agent reads first — keep it accurate.
-5. If something turned out to be wrong, `delete` it. Don't leave stale
-   facts to confuse future agents.
+5. If something turned out to be wrong, delete it (`rm`). Don't leave
+   stale facts to confuse future agents.
 
 ### Landing memory on `main`
 
@@ -209,11 +193,11 @@ curator's prompt. A merged CR takes effect on the next run.
 
 - **The index is read first; sub-files are on demand.** Don't dump
   every fact into `MEMORY.md` — keep it a clean table of contents and
-  push depth into sub-files the agent `view`s only when relevant.
-- **`view` your memory before you start.** Nothing is auto-injected;
-  if you skip the `view`, you work blind to what the project already
-  knows. The `memory` tool's description and the agent rules say the
-  same thing — this is the memory protocol.
+  push depth into sub-files the agent reads only when relevant.
+- **Read your memory before you start.** Nothing is auto-injected;
+  if you skip `memory/MEMORY.md`, you work blind to what the project
+  already knows. The agent rules say the same thing — this is the
+  memory protocol.
 - **Memory files are markdown, not databases.** Avoid heavy
   formatting, tables of 50 rows, or auto-generated content. If you
   catch yourself writing a script to generate a memory file, that

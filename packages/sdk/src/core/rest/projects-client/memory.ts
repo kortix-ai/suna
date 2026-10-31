@@ -3,7 +3,8 @@
 // the project's Company memory (key `company`, `/Company/Memory`), one
 // channel's (key = the space id, `/Company/Channels/<slug>/Memory`) or one
 // DM's (key = the space id: the owner's `/Users/<person>/Memory`, its agent
-// folder `Memory/<agent>` first). A page is one file. Agents read and write
+// folder `Memory/<agent>` first), or the caller's My Kortix memory (key
+// `mykortix`, their own `/Users/<person>/Memory/mykortix`). A page is one file. Agents read and write
 // the same files through their mounts. Every route answers 403
 // `feature_disabled` while the project's Files (`drives`) are off, and 503
 // `drive_storage_unavailable` without Drive storage. Every call passes
@@ -17,13 +18,19 @@
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
 
-/** `company`, or the space id of a channel or DM. */
+/** `company`, `mykortix` (what My Kortix remembers about the caller), or the space id of a channel or DM. */
 export type ProjectMemoryLayerKey = string;
 export type ProjectMemoryLayerScope = 'company' | 'channel' | 'dm';
 /** The 4 typed folders a page can live in. */
 export type ProjectMemoryFiledPageType = 'people' | 'decisions' | 'workstreams' | 'playbooks';
-/** Every page type: the 4 filed types, `note` (a `Notes.md`) and `other` (any other Markdown file). */
-export type ProjectMemoryPageType = ProjectMemoryFiledPageType | 'note' | 'other';
+/**
+ * The 4 types of a page My Kortix keeps about one person (front-matter `type:`): `user` (who they
+ * are), `feedback` (how they want the work done), `project` (what they work on), `reference` (where
+ * something is).
+ */
+export type ProjectMemoryPersonPageType = 'user' | 'feedback' | 'project' | 'reference';
+/** Every page type: the 4 filed types, the 4 person types, `note` (a `Notes.md`) and `other` (any other Markdown file). */
+export type ProjectMemoryPageType = ProjectMemoryFiledPageType | ProjectMemoryPersonPageType | 'note' | 'other';
 /** What a page version did to the file: created it, or changed it. */
 export type ProjectMemoryChangeOp = 'create' | 'update';
 export type ProjectMemorySourceKind = 'thread' | 'person' | 'outside' | 'import';
@@ -65,6 +72,11 @@ export interface ProjectMemoryLayer {
     decisions: number;
     workstreams: number;
     playbooks: number;
+    /** My Kortix memory pages (APIs from 2026-10-30 on send these 4; older ones leave them out). */
+    user?: number;
+    feedback?: number;
+    project?: number;
+    reference?: number;
     note: number;
     other: number;
   };

@@ -15,11 +15,11 @@ import kortixAccess from './platform/kortix_access'
 import kortixAgents from './platform/kortix_agents'
 import kortixChangeRequests from './platform/kortix_change_requests'
 import kortixConnectors from './platform/kortix_connectors'
+import kortixMemory from './platform/kortix_memory'
 import kortixPeople from './platform/kortix_people'
 import kortixSchedules from './platform/kortix_schedules'
 import kortixSessions from './platform/kortix_sessions'
 import kortixUsage from './platform/kortix_usage'
-import memory from './kortix/memory'
 import scrapeWebpage from './kortix/scrape_webpage'
 import show from './kortix/show'
 import webSearch from './kortix/web_search'
@@ -31,14 +31,15 @@ export type { KortixTool, ToolContext } from './tool'
  * The Kortix tools. Each is one self-contained module in `kortix/` that
  * follows the project tool contract, so `kortix tools eject <name>` gives a
  * project a copy that runs as its own tool. A project tool of the same name
- * replaces one.
+ * replaces one. `memory` was one until 2026-10-30: a project that ejected it
+ * keeps its copy as a project tool (`tools.memory`), and My Kortix now
+ * remembers people with the `kortix_memory` platform tool.
  */
 export const KORTIX_TOOLS: Readonly<Record<string, KortixTool>> = {
   web_search: webSearch,
   image_search: imageSearch,
   image_gen: imageGen,
   scrape_webpage: scrapeWebpage,
-  memory,
   show,
 }
 
@@ -58,6 +59,7 @@ export const PLATFORM_TOOLS: Readonly<Record<string, KortixTool>> = {
   kortix_access: kortixAccess,
   kortix_usage: kortixUsage,
   kortix_change_requests: kortixChangeRequests,
+  kortix_memory: kortixMemory,
 }
 
 export interface HostedTool extends KortixTool {
