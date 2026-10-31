@@ -466,6 +466,16 @@ export function ModelSelector({
   const [claudeOpen, setClaudeOpen] = useState(false);
   /** The Claude model the member picked before connecting: chosen once the login is stored. */
   const [claudePending, setClaudePending] = useState<ModelRef | null>(null);
+  const [claudeJustConnected, setClaudeJustConnected] = useState(false);
+  // The pick applies once this list shows the model runnable: the parent validates against the same list.
+  useEffect(() => {
+    if (!claudeJustConnected || !claudePending) return;
+    const model = models.find((m) => m.providerID === claudePending.providerID && m.modelID === claudePending.modelID);
+    if (!model || !isRunnableModel(model)) return;
+    onSelect(claudePending);
+    setClaudePending(null);
+    setClaudeJustConnected(false);
+  }, [claudeJustConnected, claudePending, models, onSelect]);
   // Every write this picker offers is `project.model.write` on the API: the
   // star sets the ACCOUNT default (the default for every member, not a personal
   // one), and "+" / sliders open the provider modal. A member without the leaf
@@ -648,15 +658,12 @@ export function ModelSelector({
       {projectId && chatGptPossible && ProviderAccountsModal && (
         <ProviderAccountsModal projectId={projectId} providerId="codex" open={chatGptOpen} onOpenChange={setChatGptOpen} />
       )}
-      {projectId && claudeOffered && (
+      {projectId && claudeOffered && claudeOpen && (
         <ClaudeSubscriptionDialog
           projectId={projectId}
           open={claudeOpen}
           onOpenChange={setClaudeOpen}
-          onConnected={() => {
-            if (claudePending) onSelect(claudePending);
-            setClaudePending(null);
-          }}
+          onConnected={() => setClaudeJustConnected(true)}
         />
       )}
       <CommandPopover

@@ -7,7 +7,7 @@ import { config } from '../../config';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import type { ProviderName } from '../../platform/providers';
 import { postEnvToDaemon } from './sandbox-env-transport';
-import { readClaudeTokenForProject } from '../../claude-subscription/store';
+import { readClaudeTokenForProject, sessionPerson } from '../../claude-subscription/store';
 import { waitForDaemonRuntimeReady } from './sandbox-daemon-ready';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
 import { loadSessionSecretContext } from './session-secret-context';
@@ -526,7 +526,9 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
   // Claude Code in the box runs on the Claude subscription of the person this
   // turn acts for. A change of person, a new login or a disconnect changes the
   // signature, so it is pushed before the turn runs.
-  const claudeOauthToken = person ? await readClaudeTokenForProject(args.projectId, person) : null;
+  // `sessionPerson`, not `person`: a My Kortix session's token has no service account, and its owner's login applies.
+  const claudePerson = person ?? (await sessionPerson(args.sessionId));
+  const claudeOauthToken = claudePerson ? await readClaudeTokenForProject(args.projectId, claudePerson) : null;
   lap('claude-login');
   // Only ask the daemon to reload when something that could move ITS
   // `result.changed || opencodeEnvChanged` gate has actually changed since the

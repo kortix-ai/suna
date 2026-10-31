@@ -443,13 +443,11 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
       configBytes: Buffer.byteLength(compiledAgentConfig, 'utf8'),
     });
   }
-  // Claude Code in a private session runs on its owner's Claude subscription.
+  // Claude Code in a private session (My Kortix included) runs on its owner's
+  // Claude subscription: the login is the person's own, not a project secret.
   // A shared or unattended session boots without one; each prompt then pushes
   // the prompting member's (sandbox-env-push.ts).
-  const claudeOauthToken =
-    secretsPrincipalUserId && !input.platformMetaAgent
-      ? await readClaudeToken(input.accountId, secretsPrincipalUserId)
-      : null;
+  const claudeOauthToken = secretsPrincipalUserId ? await readClaudeToken(input.accountId, secretsPrincipalUserId) : null;
   const channelEnv = await buildSessionChannelEnv(input.sessionId);
   const sessionContextEnv = await buildSessionRuntimeContextEnv(input.sessionId);
   const featureFlagEnv = await buildFeatureFlagSandboxEnv(input.projectId);

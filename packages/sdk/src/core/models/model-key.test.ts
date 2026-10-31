@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { flattenModels } from './model-flatten';
 import { modelRefToKey } from './model-key';
 import { projectLlmCatalogToProviderList } from './provider-selection';
+import { modelInDefaultView } from './model-visibility';
 
 describe('modelRefToKey', () => {
   test('gateway on: a stored ref is a gateway wire id under the kortix provider, with or without the kortix/ prefix', () => {
@@ -59,5 +60,12 @@ describe('Claude subscription models', () => {
     expect(on.find((m) => m.providerID === 'claude-agent')?.available).toBe(true);
     // A catalog without the group (an older API) lists only the gateway models.
     expect(flattenModels(projectLlmCatalogToProviderList({ models: { 'glm-5.3-flash': { name: 'GLM' } } } as never)).map((m) => m.id)).toEqual(['glm-5.3-flash']);
+  });
+
+  test('every Claude subscription model shows in the picker without a search: the list is already curated', () => {
+    const hidden = () => false;
+    for (const modelID of ['opus', 'fable', 'sonnet', 'haiku']) {
+      expect(modelInDefaultView({ providerID: 'claude-agent', modelID } as never, { search: '', isStoreVisible: hidden, selected: null })).toBe(true);
+    }
   });
 });

@@ -10,7 +10,7 @@ import {
   startClaudeSubscriptionLogin,
   type ClaudeSubscriptionLoginStart,
 } from '@kortix/sdk';
-import { qk } from '@kortix/sdk/react';
+import { refreshProjectProviderState } from '@kortix/sdk/react';
 import { ArrowSquareOutIcon } from '@phosphor-icons/react';
 import { useTranslations } from '../../i18n';
 import { useSessionIds } from '../../providers/session-ids';
@@ -25,12 +25,14 @@ import { errorToast, successToast } from '../../primitives/toast';
 /** The caller's Claude subscription status in a project's account. */
 export const claudeSubscriptionKey = (projectId: string) => ['claude-subscription', projectId] as const;
 
-export function useClaudeSubscription(projectId: string | null, enabled = true) {
+export function useClaudeSubscription(projectId: string | null, enabled = true, options: { fresh?: boolean } = {}) {
   return useQuery({
     queryKey: claudeSubscriptionKey(projectId ?? ''),
     queryFn: () => getClaudeSubscription(projectId!),
     enabled: enabled && !!projectId,
     staleTime: 30_000,
+    // The dialog decides connect versus disconnect from this read: it reads the server each time it opens.
+    ...(options.fresh ? { staleTime: 0, refetchOnMount: 'always' as const } : {}),
   });
 }
 
@@ -58,7 +60,7 @@ export function ClaudeSubscriptionDialog({
 }) {
   const t = useTranslations('claudeSubscription');
   const queryClient = useQueryClient();
-  const status = useClaudeSubscription(projectId, open);
+  const status = useClaudeSubscription(projectId, open, { fresh: true });
   const [flow, setFlow] = useState<ClaudeSubscriptionLoginStart | null>(null);
   const [code, setCode] = useState('');
   const [token, setToken] = useState('');
@@ -77,8 +79,9 @@ export function ClaudeSubscriptionDialog({
   };
   const stored = async () => {
     await queryClient.invalidateQueries({ queryKey: claudeSubscriptionKey(projectId) });
-    // The picker reads whether Claude is connected from its model list: refetch it.
-    void queryClient.invalidateQueries({ queryKey: qk.project.modelPicker(projectId) });
+    // The picker reads whether Claude is connected from its model list (`/model-picker` and
+    // the provider list projected from it): refresh both, as a provider connection does.
+    refreshProjectProviderState(queryClient, projectId);
     successToast(t('connected'));
     onConnected?.();
     close();
@@ -90,21 +93,24 @@ export function ClaudeSubscriptionDialog({
       setFlow(started);
       if (popup && !popup.closed) popup.location.href = started.authorize_url;
     },
+    // The dialog shows the error itself; this keeps out the app-wide failure toast.
     onError: (_error, popup) => popup?.close(),
   });
   const complete = useMutation({
     mutationFn: () => completeClaudeSubscriptionLogin(projectId, { flowId: flow!.flow_id, code: code.trim() }),
     onSuccess: stored,
+    onError: () => {},
   });
   const save = useMutation({
     mutationFn: () => setClaudeSubscriptionToken(projectId, token.trim()),
     onSuccess: stored,
+    onError: () => {},
   });
   const disconnect = useMutation({
     mutationFn: () => disconnectClaudeSubscription(projectId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: claudeSubscriptionKey(projectId) });
-      void queryClient.invalidateQueries({ queryKey: qk.project.modelPicker(projectId) });
+      refreshProjectProviderState(queryClient, projectId);
       setConfirmDisconnect(false);
       successToast(t('disconnected'));
     },
@@ -119,7 +125,8 @@ export function ClaudeSubscriptionDialog({
     start.mutate(popup);
   };
 
-  const connected = status.data?.connected === true && status.data.usable;
+  // Only a read made since this dialog opened decides which state it shows.
+  const connected = status.isFetchedAfterMount && status.data?.connected === true && status.data.usable;
   const busy = start.isPending || complete.isPending || save.isPending;
   const failure = start.isError ? message(start.error, t('startError')) : complete.isError ? message(complete.error, t('codeError')) : save.isError ? message(save.error, t('tokenError')) : null;
 
@@ -132,7 +139,7 @@ export function ClaudeSubscriptionDialog({
             <ModalDescription>{t('description')}</ModalDescription>
           </ModalHeader>
           <ModalBody className="space-y-3">
-            {status.isPending ? (
+            {status.isPending || (status.isFetching && !status.isFetchedAfterMount) ? (
               <div role="status" aria-label={t('loading')}><Loading /></div>
             ) : connected ? (
               <div className="space-y-1">
@@ -241,7 +248,7 @@ export function ClaudeConnectionSlot({ action, className = 'mt-2 pl-7' }: { acti
       <Button size="sm" className="active:scale-[0.96]" onClick={() => setOpen(true)}>
         {t(action === 'reconnect' ? 'reconnectClaude' : 'connectClaude')}
       </Button>
-      <ClaudeSubscriptionDialog projectId={projectId} open={open} onOpenChange={setOpen} />
+      {open && <ClaudeSubscriptionDialog projectId={projectId} open onOpenChange={setOpen} />}
     </div>
   );
 }

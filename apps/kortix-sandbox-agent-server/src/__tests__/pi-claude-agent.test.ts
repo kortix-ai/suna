@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { createAssistantMessageEventStream, type AssistantMessageEvent, type Message } from '@earendil-works/pi-ai'
 import runtimeVersions from '../../../../packages/shared/src/runtime-versions.json' with { type: 'json' }
 import { claudeModelFor } from '@/harness/pi/claude/provider'
+import { CLAUDE_AGENT_SDK_VERSION, CLAUDE_CODE_INTEGRITY, ensureClaudeExecutable, installedClaudeExecutable } from '@/harness/pi/claude/install'
 import { claudeEnv, setClaudeLogin, takeClaudeLogin, ClaudeLoginMissing } from '@/harness/pi/claude/sdk'
 import { ClaudeReply } from '@/harness/pi/claude/stream'
 import { catchUp, checkpoints, collectResults, decide, type SessionRecord } from '@/harness/pi/claude/sync'
@@ -149,5 +150,27 @@ describe('the Claude login', () => {
     expect(pkg.dependencies['@anthropic-ai/claude-agent-sdk']).toBe(runtimeVersions.claudeAgentSdk)
     const sdk = JSON.parse(readFileSync(join(import.meta.dir, '../../node_modules/@anthropic-ai/claude-agent-sdk/package.json'), 'utf8')) as { claudeCodeVersion: string }
     expect(sdk.claudeCodeVersion).toBe(runtimeVersions.claudeCode)
+  })
+})
+
+describe('Claude Code on a box whose image lacks it', () => {
+  test('installs only the pinned package the lockfile records', () => {
+    const lock = readFileSync(join(import.meta.dir, '../../bun.lock'), 'utf8')
+    for (const target of ['x64', 'arm64'] as const) {
+      expect(lock).toContain(`"@anthropic-ai/claude-agent-sdk-linux-${target}@${CLAUDE_AGENT_SDK_VERSION}", "", { "os": "linux", "cpu": "${target}" }, "${CLAUDE_CODE_INTEGRITY[target]}"`)
+    }
+  })
+
+  test('refuses a download whose checksum is not the pin, and installs nothing', async () => {
+    const registry = Bun.serve({ port: 0, fetch: () => new Response(new Uint8Array([1, 2, 3])) })
+    const state = mkdtempSync(join(tmpdir(), 'kortixd-claude-install-'))
+    // No image binary and no `claude` on PATH: the install path runs.
+    const env = { PATH: mkdtempSync(join(tmpdir(), 'empty-path-')), KORTIX_NPM_REGISTRY: `http://127.0.0.1:${registry.port}` }
+    try {
+      await expect(ensureClaudeExecutable(state, env)).rejects.toThrow('does not match its pinned checksum')
+      expect(installedClaudeExecutable(state)).toBeUndefined()
+    } finally {
+      registry.stop(true)
+    }
   })
 })

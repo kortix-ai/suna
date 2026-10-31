@@ -84,7 +84,8 @@ export async function readClaudeTokenForProject(projectId: string, userId: strin
 
 /**
  * The person a session's live token acts for (`on_behalf_of`): the member who
- * prompts it, in their own or a shared session. Null for an unattended run.
+ * prompts it, in their own or a shared session, and the owner of a My Kortix
+ * session (whose token has no service account). Null for an unattended run.
  */
 export async function sessionPerson(sessionId: string): Promise<string | null> {
   const [row] = await db
@@ -95,7 +96,7 @@ export async function sessionPerson(sessionId: string): Promise<string | null> {
         eq(accountTokens.sessionId, sessionId),
         eq(accountTokens.status, 'active'),
         isNull(accountTokens.revokedAt),
-        isNotNull(accountTokens.serviceAccountId),
+        isNotNull(accountTokens.onBehalfOfUserId),
       ),
     )
     .limit(1);

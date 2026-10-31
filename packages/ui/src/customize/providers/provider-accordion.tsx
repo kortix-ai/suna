@@ -733,7 +733,7 @@ function ClaudeSubscriptionSubRow({ projectId }: { projectId: string }) {
       >
         {`${t('subscription', { plan: 'Claude Pro or Max' })} · ${connected ? t('signedIn') : t('notConnected')}`}
       </AccordionSubRow>
-      <ClaudeSubscriptionDialog projectId={projectId} open={open} onOpenChange={setOpen} />
+      {open && <ClaudeSubscriptionDialog projectId={projectId} open onOpenChange={setOpen} />}
     </>
   );
 }

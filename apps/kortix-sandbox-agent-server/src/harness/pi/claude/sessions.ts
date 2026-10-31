@@ -19,7 +19,8 @@ import { logger } from '@/lib/log/logger'
 import { content as toClaude, toolOutcome, type ContentBlock } from './messages'
 import { original } from './names'
 import { PendingTools, type ToolOutcome } from './pending'
-import { claudeConfigDir, claudeEnv, claudeExecutable, claudeLoginKey } from './sdk'
+import { claudeConfigDir, claudeEnv, claudeLoginKey } from './sdk'
+import { ensureClaudeExecutable } from './install'
 import { startClaudeSession, type ClaudeInit, type ClaudeSession } from './session'
 import { catchUp, checkpoints, collectResults, decide, type SessionRecord } from './sync'
 import { createToolServer } from './server'
@@ -168,8 +169,8 @@ export class ClaudeSessions {
   private async open(entry: Entry, request: ClaudeRequest): Promise<LiveProcess> {
     const starting = !entry.process
     if (!entry.process) {
-      const executable = claudeExecutable(this.opts.env)
-      if (!executable) throw new Error('Claude Code is not installed in this sandbox (no `claude` binary on PATH)')
+      // The image's Claude Code, else the pinned binary installed into the state dir (install.ts).
+      const executable = await ensureClaudeExecutable(this.opts.stateDir, this.opts.env)
       const pending = new PendingTools()
       const options: Options = {
         pathToClaudeCodeExecutable: executable,
