@@ -16,7 +16,7 @@
  */
 
 import { classifySessionLogMessage, sessionLogTurns } from '@kortix/sdk';
-import { type useSession, useSessionLogThread } from '@kortix/sdk/react';
+import { type UseSessionPromptsResult, type useSession, useSessionLogThread } from '@kortix/sdk/react';
 import type { ScrollBoxRenderable } from '@opentui/core';
 import { useKeyboard } from '@opentui/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -51,6 +51,12 @@ export interface TranscriptProps {
    * `<PermissionPrompt/>` from `features/session/prompts` instead.
    */
   renderPrompts?: boolean;
+  /**
+   * The session's inbox (`useSessionPrompts`). Its prompts join the thread from the moment the
+   * API accepts them (queued, sending, or accepted while the box journals them), under the id
+   * the log will hold them by. Omitted: the log's messages only.
+   */
+  inbox?: Pick<UseSessionPromptsResult, 'prompts' | 'sent'>;
 }
 
 /** Rows the header clock re-renders on. One second is the finest unit any
@@ -64,6 +70,7 @@ export function Transcript({
   height,
   onToast,
   renderPrompts = true,
+  inbox,
 }: TranscriptProps) {
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const [sticky, setSticky] = useState(true);
@@ -71,7 +78,7 @@ export function Transcript({
   const [cursorIndex, setCursorIndex] = useState(-1);
   const [now, setNow] = useState(() => Date.now());
 
-  const thread = useSessionLogThread(session);
+  const thread = useSessionLogThread(session, undefined, inbox ? { prompts: inbox } : undefined);
   const ordered = useMemo(() => (thread ? orderedMessages(sessionLogTurns(thread)) : []), [thread]);
 
   // Every collapsible row in the whole transcript, in document order. The

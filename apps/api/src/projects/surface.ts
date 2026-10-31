@@ -67,6 +67,8 @@ export { mentionTokens, mentionsMember } from './rooms/envelope';
 export { resolveAndAuthorizeAgentAs } from './lib/agent-access';
 export { loadVisibleSession } from './lib/session-visibility';
 export { sessionHoldsLiveTurn } from './session-lifecycle/inbox-admission';
+// Does a sandbox's runtime keep a prompt's message id (consumed by the sandbox proxy's wire-id placement).
+export { sandboxKeepsMessageIds } from './session-lifecycle/inbox-admission';
 
 // Project access, the route app and the secret envelope.
 export { assertProjectCapability, loadProjectForUser } from './lib/access';

@@ -24,7 +24,7 @@
  */
 
 import { type SessionHealthResult, type SessionLogMessage, classifySessionLogMessage } from '@kortix/sdk';
-import { useSession, useSessionLogThread } from '@kortix/sdk/react';
+import { useSession, useSessionLogThread, useSessionPrompts } from '@kortix/sdk/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ResolvedHost } from '../../auth/hosts.ts';
@@ -199,6 +199,8 @@ export function SessionView({
   // known, so this is cheap in practice and never double-forwards.
   // biome-ignore lint/correctness/useExhaustiveDependencies(ports.notice): stable (see `usePorts`'s memoized return); only a transcript change should retrigger this scan.
   const thread = useSessionLogThread(session);
+  // One inbox read for the column: the transcript draws its prompts, the composer its count.
+  const inbox = useSessionPrompts(projectId, sessionId);
   useEffect(() => {
     const found = portsInTranscript(thread?.messages ?? []);
     if (found.length) ports.notice(found, 'transcript');
@@ -282,6 +284,7 @@ export function SessionView({
               height={rows}
               onToast={onToast}
               renderPrompts={false}
+              inbox={inbox}
             />
 
             <SessionPrompts

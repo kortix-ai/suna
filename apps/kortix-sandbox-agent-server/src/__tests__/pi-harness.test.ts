@@ -3805,6 +3805,23 @@ describe('pi retract (R7.1)', () => {
     expect(health.capabilities).toContain('runtime.retract.v1')
   })
 
+  test('health lists runtime.stable_message_id.v1, and a prompt keeps its id and dedupes a repeat', async () => {
+    const r = await boot({ script: [{ text: 'kept' }] })
+    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as { capabilities: string[] }
+    expect(health.capabilities).toContain('runtime.stable_message_id.v1')
+    // An id from an old clock, as a prompt that waited behind a turn carries it.
+    const waited = 'msg_0198e2a4b0c3STABLEIDKEPT01'
+    const first = await send(r, waited, 'a prompt that waited')
+    expect(first.status).toBe(202)
+    expect(await first.json()).toEqual({ message_id: waited })
+    const again = await send(r, waited, 'a prompt that waited')
+    expect(again.status).toBe(200)
+    expect(await again.json()).toEqual({ deduplicated: true })
+    await waitFor(() => !r.service.runtime()!.busy(), 3_000)
+    const users = (await page(r)).messages.filter((m) => m.info.role === 'user')
+    expect(users.map((m) => m.info.id)).toEqual([waited])
+  })
+
   test('a prompt queued behind the running turn is retracted: it leaves the wire, never runs, and may be sent again', async () => {
     const { seen, hooks } = turnRelays()
     const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6; echo done' } }, { text: 'first done' }, { text: 'resent answer' }], hooks })
