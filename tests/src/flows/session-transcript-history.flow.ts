@@ -348,11 +348,11 @@ storeFlow(
             throw new Error(`log lost the saved reply: ${run.stdout}`);
           if (!run.stderr.includes(expected.stderr))
             throw new Error(`log did not say where the messages came from: ${run.stderr}`);
-          // The v1 transcript is not served to the CLI: --schema v1 exits 1, and names the way out.
+          // The v1 transcript is gone: reject the unsupported schema before reading.
           const old = await cli.run(["sessions", "log", sessionId, "--project", project.id, "--json", "--schema", "v1"]);
           throwIfCliInfraFailure(old, "kortix sessions log --schema v1");
-          if (old.exitCode !== 1 || !old.stderr.includes("Drop --schema v1"))
-            throw new Error(`--schema v1: expected exit 1 naming the way out, got ${old.exitCode}: ${old.all}`);
+          if (old.exitCode !== 2 || !old.stderr.includes('Invalid --schema "v1"'))
+            throw new Error(`--schema v1: expected exit 2 naming the invalid schema, got ${old.exitCode}: ${old.all}`);
           const status = (await owner.get("/v1/projects/:projectId/sessions/:sessionId", {
             params: { projectId: project.id, sessionId },
           })).status(200).json<{ status: string }>();
