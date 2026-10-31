@@ -58,6 +58,10 @@ async function deliveredInboxPrompts(sessionId: string, since: Date): Promise<Se
     .where(
       and(
         inboxScope(sessionId),
+        // Harness context, not a user prompt (KRTX-2597): an auto-recovery continuation
+        // carries a `clientMessageId`; drawn as a user message it would put system text in a
+        // person's mouth.
+        sql`${sessionLifecycleCommands.payload}->>'resumesTurn' IS NULL`,
         eq(sessionLifecycleCommands.status, 'succeeded'),
         sql`${sessionLifecycleCommands.result}->>'status' = 'delivered'`,
         gt(sessionLifecycleCommands.updatedAt, since),
@@ -67,7 +71,7 @@ async function deliveredInboxPrompts(sessionId: string, since: Date): Promise<Se
     .limit(SENT_LIMIT);
   return rows.flatMap((row) => {
     const prompt = serializePrompt(row);
-    if (!prompt.message_id) return [];
+    if (!prompt.message_id || prompt.synthetic) return [];
     return [
       {
         message_id: prompt.message_id,

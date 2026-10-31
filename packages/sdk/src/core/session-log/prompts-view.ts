@@ -72,8 +72,8 @@ function provisional(sessionThreadId: string, entry: Provisional, seq: number): 
  * `thread` with every prompt in `sent` (oldest first) and then `prompts` (inbox order) that it
  * does not hold, as provisional user messages numbered after its last `seq`. Held: the thread
  * has a message with the prompt's `message_id` or the id it was sent under (`wire_message_id`),
- * or `revs` (the store's revs, tombstones included) names one. A `failed` inbox row stays out:
- * it was never accepted. With no thread yet (a booting session) and something to add, the
+ * or `revs` (the store's revs, tombstones included) names one. A `failed` inbox row stays out
+ * (it was never accepted), and so does a `synthetic` one (harness context, not the user's words). With no thread yet (a booting session) and something to add, the
  * messages form a new root thread. The thread itself when nothing is added.
  */
 export function sessionLogThreadWithPrompts(
@@ -95,7 +95,8 @@ export function sessionLogThreadWithPrompts(
     add({ id: s.message_id, delivery: 'sent', promptId: s.prompt_id, text: s.text, attachments: s.attachments, createdAt: s.created_at }, s.wire_message_id ?? undefined);
   }
   for (const p of prompts) {
-    if (p.state === 'failed') continue;
+    // Never accepted, or not a person's words (an auto-recovery continuation).
+    if (p.state === 'failed' || p.synthetic) continue;
     add(
       {
         id: p.message_id || p.wire_message_id || '',

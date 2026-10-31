@@ -2276,6 +2276,8 @@ export const SessionPromptSchema = z.object({
   attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
   /** Posted without a turn: no agent answers it. */
   no_reply: z.boolean(),
+  /** Harness context (an auto-recovery continuation), not a person's prompt: a transcript never draws it as a user message. */
+  synthetic: z.boolean().optional(),
   /** The member who sent it. The prompt runs as this member, so only they
    *  edit, send now or retry it; they or a session manager remove it. Null
    *  for a prompt with no recorded sender. Absent from older servers. */

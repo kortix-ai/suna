@@ -113,6 +113,25 @@ describe('GET .../prompts sent', () => {
       },
       result: { status: 'delivered', forwarded_message_id: SENT_ID },
     });
+    // An auto-recovery continuation is harness context (KRTX-2597): never a user's prompt.
+    await db.insert(sessionLifecycleCommands).values({
+      commandType: 'continue_session',
+      source: 'system:auto-recovery',
+      status: 'succeeded',
+      projectId: project.project_id,
+      sessionId: session,
+      accountId: project.account_id,
+      actorUserId: OWNER,
+      idempotencyKey: `prompt:${session}:resume_turn-x`,
+      payload: {
+        clientMessageId: 'resume_turn-x',
+        wireMessageId: 'msg_00000000000dResumeTurn0001',
+        resumesTurn: 'turn-x',
+        text: 'The previous turn was interrupted.',
+        parts: [{ type: 'text', text: 'The previous turn was interrupted.', synthetic: true }],
+      },
+      result: { status: 'delivered', forwarded_message_id: 'msg_00000000000dResumeTurn0001' },
+    });
     const before = await sent();
     expect(before.prompts).toEqual([]);
     expect(before.sent.map((p) => [p.message_id, p.text])).toEqual([

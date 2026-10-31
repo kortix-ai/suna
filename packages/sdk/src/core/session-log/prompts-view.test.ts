@@ -91,6 +91,11 @@ describe('sessionLogThreadWithPrompts: the prompts the log does not hold yet, as
     expect(added.map((m) => [m.message_id, sessionLogMessageDelivery(m)?.delivery])).toEqual([['msg_x', 'sent']]);
   });
 
+  test('harness context (an auto-recovery continuation, `synthetic`) is never drawn as the user\'s message', () => {
+    const out = sessionLogThreadWithPrompts('ses', thread, [prompt({ prompt_id: 'p9', message_id: 'msg_resume', synthetic: true })], []);
+    expect(out).toBe(thread);
+  });
+
   test('a message from the log carries no delivery mark', () => {
     expect(sessionLogMessageDelivery(thread.messages[0]!)).toBeNull();
   });
