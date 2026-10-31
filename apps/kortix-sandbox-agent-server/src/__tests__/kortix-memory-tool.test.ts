@@ -141,6 +141,8 @@ describe('kortix_memory', () => {
   test('an option-shaped, path-shaped or malformed name is refused before any request', async () => {
     for (const name of ['-rf', '--help', '../etc/passwd', 'a/b', 'Bad Name', 'UPPER', 'trailing-', 'a--b', '', 'x'.repeat(65)]) {
       for (const action of ['view', 'save', 'delete']) {
+        // A save with no name takes one from its title (covered below).
+        if (name === '' && action === 'save') continue
         const result = await run({ action, name, ...SHORT })
         expect({ name, action, ok: result.ok, kind: result.error?.kind }).toEqual({ name, action, ok: false, kind: 'invalid' })
       }
@@ -148,11 +150,21 @@ describe('kortix_memory', () => {
     expect(requests).toEqual([])
   })
 
-  test('save needs a known type and a body', async () => {
+  test('save refuses a wrong type and a save with nothing to remember', async () => {
     expect((await run({ action: 'save', name: 'x', ...SHORT, type: 'secret' })).error?.kind).toBe('invalid')
-    expect((await run({ action: 'save', name: 'x', ...SHORT, body: '  ' })).error?.kind).toBe('invalid')
+    expect((await run({ action: 'save', name: 'x', type: 'user', body: '  ' })).error?.kind).toBe('invalid')
     expect((await run({ action: 'forget', name: 'x' })).error?.kind).toBe('invalid')
     expect(requests).toEqual([])
+  })
+
+  test('a save missing its name, type or body still saves: name from the title, type user, body from the description', async () => {
+    const saved = await run({ action: 'save', title: 'Prefers bullet points', description: 'Prefers bullet points over paragraphs.' })
+    expect(saved.ok).toBe(true)
+    expect(requests.at(-1)).toMatchObject({
+      method: 'PUT',
+      path: `${PREFIX}/pages/prefers-bullet-points`,
+      body: { title: 'Prefers bullet points', description: 'Prefers bullet points over paragraphs.', type: 'user', body: 'Prefers bullet points over paragraphs.' },
+    })
   })
 
   test('a missing description falls back to the title, a multi-line one becomes one line; a name copied from the index keeps working', async () => {
