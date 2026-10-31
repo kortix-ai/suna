@@ -24286,7 +24286,8 @@
         "title": "Tout",
         "explainCompany": "Mémoire Kortix : ce que les agents savent de ce projet. Ils la lisent avant chaque réponse.",
         "explainChannel": "Mémoire Kortix : ce que les agents savent de {place}. Ils la lisent avant chaque réponse.",
-        "explainDm": "Mémoire Kortix : ce que les agents savent de vous et de {place}. Ils la lisent avant chaque réponse."
+        "explainDm": "Mémoire Kortix : ce que les agents savent de vous et de {place}. Ils la lisent avant chaque réponse.",
+        "explainMyKortix": "Ce que My Kortix retient de vous. Il le lit au début de chaque chat. Vous seul le voyez."
       },
       "allPages": "Toutes les pages",
       "noMatches": "Aucune page ne correspond à « {query} ».",
@@ -24359,7 +24360,9 @@
         "title": "Pas encore de mémoire dans {place}",
         "titleDm": "Pas encore de mémoire avec {place}",
         "description": "Les agents enregistrent ici ce qu’ils apprennent et le lisent avant chaque réponse.",
+        "descriptionMyKortix": "Dites à My Kortix « retiens que… » dans un chat, et il le garde ici. Il le lit au début de chaque chat. Vous seul le voyez.",
         "titleCompany": "Pas encore de mémoire d’entreprise",
+        "titleMyKortix": "My Kortix ne retient encore rien de vous",
         "openCompany": "Ouvrir la mémoire d’entreprise · {count, plural, one {# page} other {# pages}}"
       },
       "source": {
@@ -24383,9 +24386,12 @@
       },
       "company": {
         "subtitle": "Ce que sait chaque agent de ce projet.",
+        "subtitleMyKortix": "Ce que My Kortix retient de vous. Vous seul le voyez.",
         "gateDescription": "La mémoire de l’entreprise fait partie des canaux : chaque agent de ce projet commence chaque fil avec ce que l’équipe a enregistré ici.",
         "title": "Mémoire",
-        "place": "Entreprise"
+        "place": "Entreprise",
+        "placeMyKortix": "My Kortix",
+        "layers": "Mémoire"
       },
       "rememberThis": {
         "label": "Mémoriser",
@@ -24405,6 +24411,10 @@
       "companyLink": "Mémoire de l’entreprise · {count, plural, one {# page} other {# pages}}",
       "companyLinkHint": "L’agent d’ici utilise aussi la mémoire de l’entreprise.",
       "group": {
+        "user": "À propos de vous",
+        "feedback": "Comme vous aimez",
+        "project": "Votre travail",
+        "reference": "Où trouver les choses",
         "other": "À propos",
         "people": "Personnes",
         "decisions": "Décisions",

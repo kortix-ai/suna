@@ -194,8 +194,8 @@ Every session runs pi inside the Kortix daemon. Every model call goes through
 the Kortix LLM gateway. pi has:
 
 - `bash`, `read`, `write`, `edit` on `/workspace`; `glob`, `grep`, `question`.
-- The Kortix tools `web_search`, `image_search`, `image_gen`,
-  `scrape_webpage`, `memory`, `show`; the project's tools; `codemode`.
+- The Kortix tools `web_search`, `image_search`, `image_gen`, `scrape_webpage`,
+  `show` (`memory` is retired: use the file tools); project tools; `codemode`.
 - Subagents through `agent` (the agents your `subagents` grant names; `name` one to message it, `task_stop` stops it); `send_message`, `list_agents`.
 - Compaction near the context limit and on demand (`kortix sessions compact <id>`).
 - Slash commands from `commands:` and granted skills; pi extensions and packages from `extensions:`.

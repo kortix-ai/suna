@@ -23,7 +23,7 @@ export function MemoryEmpty({
   action,
 }: {
   projectId: string;
-  kind: 'company' | 'channel' | 'dm';
+  kind: 'company' | 'channel' | 'dm' | 'mykortix';
   /** "#marketing" or the DM's agent. */
   place: string;
   action?: ReactNode;
@@ -33,10 +33,10 @@ export function MemoryEmpty({
     <EmptyState
       className="min-h-full"
       media={<EmptyArt icon={SunDimIcon} />}
-      title={t(kind === 'dm' ? 'titleDm' : kind === 'company' ? 'titleCompany' : 'title', { place })}
-      description={t('description')}
+      title={t(kind === 'mykortix' ? 'titleMyKortix' : kind === 'dm' ? 'titleDm' : kind === 'company' ? 'titleCompany' : 'title', { place })}
+      description={t(kind === 'mykortix' ? 'descriptionMyKortix' : 'description')}
       action={action}
-      secondaryAction={kind === 'company' ? undefined : <CompanyMemoryButton projectId={projectId} />}
+      secondaryAction={kind === 'company' || kind === 'mykortix' ? undefined : <CompanyMemoryButton projectId={projectId} />}
     />
   );
 }

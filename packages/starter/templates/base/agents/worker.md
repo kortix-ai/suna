@@ -40,18 +40,16 @@ only for a package that is not pre-installed; no venvs or
 ## Memory
 
 This project has a **memory** — a project brain at `memory/`,
-read and written with the `memory` tool. The protocol:
+read and written with the file tools. The protocol:
 
-- **`view` `memory` before starting a task.** Read the index
-  (`MEMORY.md`), then `view` the sub-files it points at that are
-  relevant. Nothing is auto-injected — if you don't look, you work
-  blind to what the project already knows.
-- **Record durable knowledge as you go** with the `memory` tool
-  (`create` / `str_replace` / `insert`) — conventions, connections,
-  decisions, gotchas. Assume interruption: your context can reset, and
-  only what's written to `memory/` survives.
-- Use the `memory` tool (not generic `read`/`edit`/`write`) for
-  anything under `memory/`. Load the `kortix-memory` skill
+- **Read `memory/MEMORY.md` before starting a task**, then the
+  sub-files it points at that are relevant. Nothing is auto-injected —
+  if you don't look, you work blind to what the project already knows.
+- **Record durable knowledge as you go** with `write` and `edit` under
+  `memory/` — conventions, connections, decisions, gotchas. Assume
+  interruption: your context can reset, and only what's written to
+  `memory/` survives.
+- Load the `kortix-memory` skill
   (`kortix skills get kortix-memory` if it is not on disk) for the
   rubric on what's worth remembering and how edits reach `main`.
 - **The user has a memory of their own** at `/drives/me/Memory` when

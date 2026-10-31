@@ -6,7 +6,7 @@ kinds:
 | Kind | Names | Source |
 | --- | --- | --- |
 | Runtime tools | `bash`, `read`, `write`, `edit`, `glob`, `grep`, `question`, `agent` | pi (`../pi.md`). `codemode` is set by `agents.<name>.codemode`. |
-| Kortix tools | `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `memory`, `show` | Kortix. Always registered. |
+| Kortix tools | `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `show` | Kortix. Always registered. `memory` is retired (2026-10-30): a kortix.yaml that names it gets a warning; an ejected `tools/memory.ts` stays a project tool. |
 | Project tools | Any snake_case name | A module in the repository, registered under `tools:`. |
 
 `kortix tools ls` lists the tools the current files give a session:

@@ -416,7 +416,9 @@ Memory is Markdown files in Drive: facts about the company, its people, its conv
 
 Agents read and write Memory files through the folders their session opens. Kortix does not paste memory into every prompt: a built-in skill tells each agent to read memory at the start of a task.
 
-The project repository can hold memory too: a `memory/` folder with `MEMORY.md` as its index. The built-in `memory` tool edits it, and every edit lands through a change request. The reflection agent that ships with every project tidies it when you turn on its daily schedule.
+**My Kortix remembers you.** Tell My Kortix "remember that I like short replies", or correct how it works, and it saves one short page about it. Say "forget that I work on the launch", and it deletes the page. It says what it did in one line: "💡 Noted: you like replies short." My Kortix reads these pages at the start of every chat in this project. They live in your own folder, under `Memory/mykortix`, and only you see them. Open **Memory** in the sidebar, then **My Kortix**, to read, change or delete any of them. This needs Files; the Channels feature is not needed.
+
+The project repository can hold memory too: a `memory/` folder with `MEMORY.md` as its index. Agents edit it with their file tools, and every edit lands through a change request. The reflection agent that ships with every project tidies it when you turn on its daily schedule.
 
 <Callout type="warning">
 Never put passwords, API keys or personal data in memory. Store credentials as project secrets instead.

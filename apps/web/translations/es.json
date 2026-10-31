@@ -24286,7 +24286,8 @@
         "title": "Todo",
         "explainCompany": "Memoria de Kortix: lo que los agentes saben de este proyecto. La leen antes de cada respuesta.",
         "explainChannel": "Memoria de Kortix: lo que los agentes saben de {place}. La leen antes de cada respuesta.",
-        "explainDm": "Memoria de Kortix: lo que los agentes saben de ti y de {place}. La leen antes de cada respuesta."
+        "explainDm": "Memoria de Kortix: lo que los agentes saben de ti y de {place}. La leen antes de cada respuesta.",
+        "explainMyKortix": "Lo que My Kortix recuerda de ti. Lo lee al empezar cada chat. Solo tú lo ves."
       },
       "allPages": "Todas las páginas",
       "noMatches": "Ninguna página coincide con «{query}».",
@@ -24359,7 +24360,9 @@
         "title": "Aún no hay memoria en {place}",
         "titleDm": "Aún no hay memoria con {place}",
         "description": "Los agentes guardan aquí lo que aprenden y lo leen antes de cada respuesta.",
+        "descriptionMyKortix": "Dile a My Kortix «recuerda que…» en un chat y lo guardará aquí. Lo lee al empezar cada chat. Solo tú lo ves.",
         "titleCompany": "Aún no hay memoria de la empresa",
+        "titleMyKortix": "My Kortix aún no recuerda nada de ti",
         "openCompany": "Abrir memoria de la empresa · {count, plural, one {# página} other {# páginas}}"
       },
       "source": {
@@ -24383,9 +24386,12 @@
       },
       "company": {
         "subtitle": "Lo que sabe cada agente de este proyecto.",
+        "subtitleMyKortix": "Lo que My Kortix recuerda de ti. Solo tú lo ves.",
         "gateDescription": "La memoria de la empresa viene con Canales: cada agente de este proyecto empieza cada hilo con lo que el equipo guardó aquí.",
         "title": "Memoria",
-        "place": "Empresa"
+        "place": "Empresa",
+        "placeMyKortix": "My Kortix",
+        "layers": "Memoria"
       },
       "rememberThis": {
         "label": "Recordar esto",
@@ -24405,6 +24411,10 @@
       "companyLink": "Memoria de la empresa · {count, plural, one {# página} other {# páginas}}",
       "companyLinkHint": "El agente de aquí también usa la memoria de la empresa.",
       "group": {
+        "user": "Sobre ti",
+        "feedback": "Cómo te gusta",
+        "project": "Tu trabajo",
+        "reference": "Dónde están las cosas",
         "other": "Acerca de",
         "people": "Personas",
         "decisions": "Decisiones",
