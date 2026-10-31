@@ -138,7 +138,7 @@ export function SessionSiteHeader({
   const localizedDevTools = useLocalizedUiCatalog(DEV_TOOLS);
   // A host that cannot reach the pty WebSocket turns the terminal off (`config.terminalEnabled`).
   const { terminalEnabled } = useUiHostConfig();
-  // My Kortix's computer, and a template on another base, have no desktop.
+  // A template on a base other than Ubuntu 24.04, or an old image, has no desktop.
   const hasDesktop = useHasSessionDesktop() === true;
   const devTools = useMemo(
     () =>
