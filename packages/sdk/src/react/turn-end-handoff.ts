@@ -12,8 +12,7 @@ import {
 import { unwrapError } from '../core/turns/errors';
 import { hasNotifySink, notifySessionError, notifyTaskComplete } from '../platform/ui';
 import { registerIdentityReset } from './identity-reset-registry';
-import { findCachedProjectSession } from './session-cache-write';
-import { realRuntimeTitle } from './use-opencode-events/helpers';
+import { cachedSessionName, realRuntimeTitle } from './use-opencode-events/helpers';
 import { type Session, runtimeKeys } from './use-opencode-sessions';
 
 /**
@@ -102,8 +101,7 @@ function sessionTitle(
   sessionId: string,
   runtimeSessionId: string | null | undefined,
 ): string | undefined {
-  const row = findCachedProjectSession(queryClient, projectId, (session) => session.session_id === sessionId);
-  const named = row?.custom_name || row?.name;
+  const named = cachedSessionName(queryClient, projectId, sessionId);
   if (named) return named;
   if (!runtimeSessionId) return undefined;
   const runtime =

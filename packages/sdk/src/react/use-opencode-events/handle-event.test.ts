@@ -668,6 +668,125 @@ describe('session stream notifications carry the Kortix session id', () => {
 });
 
 // ============================================================================
+// A notification carries the name the session list shows. The runtime title is
+// "New session" for a session the person named, and it can be absent.
+// ============================================================================
+
+describe('session stream notifications carry the session list name', () => {
+  const PROJECT_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const KORTIX_ID = '11111111-2222-4333-8444-555555555555';
+
+  function namedStream(
+    row: { name?: string | null; custom_name?: string | null },
+    runtimeTitle?: string,
+  ) {
+    const built = buildHandler({ projectId: PROJECT_ID, sessionId: KORTIX_ID });
+    built.queryClient.setQueryData(qk.project.session(PROJECT_ID, KORTIX_ID), {
+      session_id: KORTIX_ID,
+      runtime_session_id: 'ses_root',
+      ...row,
+    });
+    if (runtimeTitle !== undefined) {
+      built.queryClient.setQueryData(runtimeKeys.sessions(), [
+        session('ses_root', { title: runtimeTitle }),
+      ]);
+    }
+    return built;
+  }
+
+  function askQuestion(handleEvent: (event: never) => void, sessionID = 'ses_root') {
+    const properties: QuestionRequest = {
+      id: 'q_1',
+      sessionID,
+      questions: [{ question: 'Should I proceed?', header: 'Proceed?', options: [] }],
+    };
+    handleEvent({ id: 'evt_1', type: 'question.asked', properties } as never);
+  }
+
+  test('question.asked uses the row name over the runtime title', () => {
+    const { handleEvent } = namedStream({ name: 'Onboard me' }, 'New session');
+    askQuestion(handleEvent);
+    expect(notifications).toEqual([
+      {
+        kind: 'question',
+        sessionId: KORTIX_ID,
+        questionText: 'Should I proceed?',
+        sessionTitle: 'Onboard me',
+      },
+    ]);
+  });
+
+  test('question.asked uses the row name when no runtime title exists', () => {
+    const { handleEvent } = namedStream({ name: 'Onboard me' });
+    askQuestion(handleEvent);
+    expect(notifications.at(-1)).toMatchObject({ kind: 'question', sessionTitle: 'Onboard me' });
+  });
+
+  test('a rename wins over the row name', () => {
+    const { handleEvent } = namedStream(
+      { name: 'Onboard me', custom_name: 'Renamed' },
+      'New session',
+    );
+    askQuestion(handleEvent);
+    expect(notifications.at(-1)).toMatchObject({ kind: 'question', sessionTitle: 'Renamed' });
+  });
+
+  test('permission.asked carries the row name', () => {
+    const { handleEvent } = namedStream({ name: 'Onboard me' }, 'New session');
+    const properties: PermissionRequest = {
+      id: 'perm_1',
+      sessionID: 'ses_root',
+      permission: 'bash',
+      patterns: ['*'],
+      metadata: {},
+      always: [],
+    };
+    handleEvent({ id: 'evt_1', type: 'permission.asked', properties });
+    expect(notifications.at(-1)).toMatchObject({
+      kind: 'permission',
+      sessionId: KORTIX_ID,
+      sessionTitle: 'Onboard me',
+    });
+  });
+
+  test("a sub-agent's question carries the stream session's name", () => {
+    const { handleEvent } = namedStream({ name: 'Onboard me' });
+    askQuestion(handleEvent, 'ses_child');
+    expect(notifications.at(-1)).toMatchObject({
+      kind: 'question',
+      sessionId: KORTIX_ID,
+      sessionTitle: 'Onboard me',
+    });
+  });
+
+  test('a finished turn carries the row name', () => {
+    const { handleEvent } = namedStream({ name: 'Onboard me' }, 'New session');
+    useSyncStore.getState().setStatus('ses_root', { type: 'busy' });
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.status',
+      properties: { sessionID: 'ses_root', status: { type: 'idle' } },
+    });
+    expect(notifications).toEqual([
+      { kind: 'task-complete', sessionId: KORTIX_ID, sessionTitle: 'Onboard me' },
+    ]);
+  });
+
+  test('with no cached name the raw runtime title still arrives', () => {
+    const { handleEvent } = namedStream({ name: null }, 'New session');
+    askQuestion(handleEvent);
+    expect(notifications.at(-1)).toMatchObject({ kind: 'question', sessionTitle: 'New session' });
+  });
+
+  test('with no project the raw runtime title still arrives', () => {
+    const { handleEvent, queryClient } = buildHandler({ sessionId: KORTIX_ID });
+    queryClient.setQueryData(runtimeKeys.sessions(), [session('ses_root', { title: 'Runtime Title' })]);
+    askQuestion(handleEvent);
+    expect(notifications.at(-1)).toMatchObject({ kind: 'question', sessionTitle: 'Runtime Title' });
+  });
+});
+
+// ============================================================================
 // Kortix session-title mirroring — a runtime title change lands in the cached
 // Kortix session reads immediately, without waiting for the server-side
 // opencode_sessions snapshot (~20s) to make the next refetch carry it.

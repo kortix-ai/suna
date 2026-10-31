@@ -17,6 +17,7 @@ import { handleSessionEvent } from './handle-session-event';
 import { handleWorkspaceEvent } from './handle-workspace-event';
 import { pendingEventsOfLogState, sessionStatusOfLogFrame } from './log-control';
 import type { HandlerContext } from './handler-context';
+import { cachedSessionName } from './helpers';
 import type { NormalizeDiagnosticPaths, RuntimeEvent } from './types';
 export const USER_PARTS_GRACE_MS = 1_500;
 export function createEventHandler(deps: {
@@ -74,6 +75,13 @@ export function createEventHandler(deps: {
     userPartsGraceMs: deps.userPartsGraceMs ?? USER_PARTS_GRACE_MS,
     reconcileTail,
     getSessionTitle(sessionID) {
+      // The stream's session, not `sessionID`: a sub-agent's request names the
+      // session the notification opens.
+      const named =
+        deps.projectId && deps.sessionId
+          ? cachedSessionName(queryClient, deps.projectId, deps.sessionId)
+          : undefined;
+      if (named) return named;
       const sessions = queryClient.getQueryData<Session[]>(runtimeKeys.sessions());
       return (
         sessions?.find((s) => s.id === sessionID)?.title ||
