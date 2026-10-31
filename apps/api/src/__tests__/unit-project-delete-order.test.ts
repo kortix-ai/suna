@@ -47,6 +47,14 @@ mock.module('../projects/prompt-attachments', () => ({
   },
 }));
 
+const realScreenshots = await import('../artifacts/comment-screenshot-objects');
+mock.module('../artifacts/comment-screenshot-objects', () => ({
+  ...realScreenshots,
+  releaseArtifactCommentScreenshotsForProject: async () => {
+    steps.push('release-screenshots');
+  },
+}));
+
 const realDeletion = await import('../projects/lib/project-deletion');
 mock.module('../projects/lib/project-deletion', () => ({
   ...realDeletion,
@@ -107,7 +115,7 @@ describe('DELETE /projects/:projectId step order', () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, deleted: true, archived: true, repo_deleted: true });
-    expect(steps).toEqual(['release', 'delete-repo', 'purge-connectors', 'release-channels', 'archive:archived', 'revoke-tokens']);
+    expect(steps).toEqual(['release', 'release-screenshots', 'delete-repo', 'purge-connectors', 'release-channels', 'archive:archived', 'revoke-tokens']);
   });
 
   test('a failed repository delete answers 502 and leaves the project active', async () => {
@@ -117,7 +125,7 @@ describe('DELETE /projects/:projectId step order', () => {
 
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ error: 'Failed to delete managed project repository' });
-    expect(steps).toEqual(['release', 'delete-repo']);
+    expect(steps).toEqual(['release', 'release-screenshots', 'delete-repo']);
   });
 
   test('a failed connector purge answers 500 and leaves the project active', async () => {
@@ -127,7 +135,7 @@ describe('DELETE /projects/:projectId step order', () => {
 
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: 'Failed to purge project connectors' });
-    expect(steps).toEqual(['release', 'delete-repo', 'purge-connectors']);
+    expect(steps).toEqual(['release', 'release-screenshots', 'delete-repo', 'purge-connectors']);
   });
 
   test('a failed attachment release answers 500 before the repository is touched', async () => {
