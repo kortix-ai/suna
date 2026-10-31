@@ -6260,14 +6260,14 @@ function TurnEndLine(props: {
 
 #### Turn-end notifications
 
-`useSession` calls the `onNotify` option of `createKortix` when a turn ends: `{ kind: 'task-complete', sessionId, sessionTitle }` or `{ kind: 'session-error', sessionId, errorTitle, sessionTitle }`. Open questions and tool approvals raise `{ kind: 'question', sessionId, questionText, sessionTitle }` and `{ kind: 'permission', sessionId, toolName, sessionTitle }`. Show a notification only when the person is not looking at that session.
+`useSession` calls the `onNotify` option of `createKortix` when a turn ends: `{ kind: 'task-complete', sessionId, sessionTitle }` or `{ kind: 'session-error', sessionId, errorTitle, sessionTitle }`. Open questions and tool approvals raise `{ kind: 'question', sessionId, questionText, sessionTitle }` and `{ kind: 'permission', sessionId, toolName, sessionTitle }`. Each event also carries `projectId` when the SDK knows the session's project: use it, not your current route, which may already show another project. Show a notification only when the person is not looking at that session.
 
 While the view is mounted, its event stream raises these events. When the view unmounts with a turn still running, `useSession` hands the turn to a watch:
 
-1. The watch listens for `kortix.control.turn` frames on the session's control stream. A hidden window that throttles its timers still receives the end.
-2. While that stream is down, it reads `GET …/turn` every 5 s, and every 15 s after 5 minutes. It stops after 12 hours.
+1. The watch reads `GET …/turn` every 5 s, and every 15 s after 5 minutes. It stops after 12 hours.
+2. A browser throttles the timers of a hidden window, so the end can arrive late there.
 3. When no turn is open, it raises `task-complete`, or `session-error` with the recorded cause. A stop that a person asked for raises nothing.
-4. These events also carry `projectId`. `task-complete` also carries `watchedSinceMs`, the watch start in the host's `Date.now()`. A host that relays completions between tabs skips one it already showed after that time.
+4. `task-complete` also carries `watchedSinceMs`, the watch start in the host's `Date.now()`. A host that relays completions between tabs skips one it already showed after that time.
 5. A new view of the session ends the watch, so one turn end is announced once.
 
 A host without `onNotify` gets no watch and no extra `/turn` reads.

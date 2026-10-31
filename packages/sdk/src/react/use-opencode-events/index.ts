@@ -209,6 +209,7 @@ export function useRuntimeEventStream(
       fetchLspDiagnosticsDebounced,
       reconcileSessionTail: reconcileSessionTailFromRegistry,
       projectId,
+      notificationProjectId: options.projectId ?? projectId,
       sessionId: options.projectId && options.sessionId ? options.sessionId : null,
       logNative: options.logNative === true,
       startCompaction,
