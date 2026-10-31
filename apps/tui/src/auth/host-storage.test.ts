@@ -2,7 +2,13 @@ import { afterEach, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { getHost, loadConfig, setActiveAccount, setDefaultProject, upsertHost } from '@kortix/cli/src/api/config.ts';
+import {
+  getHost,
+  loadConfig,
+  setActiveAccount,
+  setDefaultProject,
+  upsertHost,
+} from '@kortix/cli/src/api/config.ts';
 import * as sharedStore from '@kortix/shared/host-config';
 import { loginToHost } from '../features/login/login-flow.ts';
 import { resolveHost } from './hosts.ts';
@@ -26,20 +32,37 @@ function scratchPath(): string {
 test('CLI writes and TUI login read back the same scratch store and account invariants', async () => {
   const path = scratchPath();
   writeFileSync(path, JSON.stringify({ active: 'scratch', hosts: {} }), { mode: 0o644 });
-  upsertHost('scratch', {
-    url: 'http://localhost:17408', token: 'synthetic-old-token', user_id: 'synthetic-user',
-    user_email: 'synthetic@example.test', account_id: 'synthetic-account',
-    dashboard_url: 'http://localhost:17400', logged_in_at: '2026-01-01T00:00:00.000Z',
-  }, true);
+  upsertHost(
+    'scratch',
+    {
+      url: 'http://localhost:17408',
+      token: 'synthetic-old-token',
+      user_id: 'synthetic-user',
+      user_email: 'synthetic@example.test',
+      account_id: 'synthetic-account',
+      dashboard_url: 'http://localhost:17400',
+      logged_in_at: '2026-01-01T00:00:00.000Z',
+    },
+    true,
+  );
   setDefaultProject({ project_id: 'synthetic-project', account_id: 'synthetic-account' });
   expect(resolveHost({})?.defaultProjectId).toBe('synthetic-project');
   expect(resolveHost({})?.token).toBe('synthetic-old-token');
-  const result = await loginToHost({ name: 'scratch', url: 'http://localhost:17408/v1', token: 'synthetic-new-token' }, {
-    validate: async () => ({ valid: true, identity: {
-      user_id: 'synthetic-user', email: 'synthetic@example.test',
-      accounts: [{ account_id: 'synthetic-account', slug: 'scratch', name: 'Scratch', role: 'owner' }],
-    } }),
-  });
+  const result = await loginToHost(
+    { name: 'scratch', url: 'http://localhost:17408/v1', token: 'synthetic-new-token' },
+    {
+      validate: async () => ({
+        valid: true,
+        identity: {
+          user_id: 'synthetic-user',
+          email: 'synthetic@example.test',
+          accounts: [
+            { account_id: 'synthetic-account', slug: 'scratch', name: 'Scratch', role: 'owner' },
+          ],
+        },
+      }),
+    },
+  );
   expect(result.ok).toBe(true);
   expect(getHost('scratch')?.token).toBe('synthetic-new-token');
   expect(getHost('scratch')?.dashboard_url).toBe('http://localhost:17400');
@@ -79,8 +102,13 @@ for (const scenario of ['override-migration', 'default-migration', 'override-iso
     `;
     const child = Bun.spawnSync([process.execPath, '--eval', script], {
       cwd: join(import.meta.dir, '../../../..'),
-      env: { ...process.env, HOME: home, KORTIX_CONFIG_FILE: custom,
-        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1', HOST_STORAGE_SCENARIO: scenario },
+      env: {
+        ...process.env,
+        HOME: home,
+        KORTIX_CONFIG_FILE: custom,
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+        HOST_STORAGE_SCENARIO: scenario,
+      },
     });
     expect(child.stderr.toString()).toBe('');
     expect(child.exitCode).toBe(0);

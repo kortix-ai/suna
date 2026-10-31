@@ -26,13 +26,30 @@ import { isReservedWhileTerminalFocused } from './features/terminal/keys.ts';
 import { matchesBinding } from './keymap.ts';
 
 /** The screens the app routes between. Overlays are separate state. */
-export type Route = 'session' | 'files' | 'review' | 'apps' | 'customize' | 'account';
+export type Route =
+  | 'session'
+  | 'files'
+  | 'review'
+  | 'apps'
+  | 'customize'
+  | 'account'
+  | 'drive'
+  | 'repo'
+  | 'artifacts'
+  | 'inbox'
+  | 'approvals'
+  | 'goals'
+  | 'memory'
+  | 'spaces'
+  | 'rooms'
+  | 'loops'
+  | 'audit';
 
 /** The regions Tab cycles through. */
 export type Focus = 'sidebar' | 'transcript' | 'composer' | 'terminal' | 'screen';
 
 /** The one overlay slot's contents. */
-export type Overlay = 'help' | 'switcher' | 'ports' | 'links' | null;
+export type Overlay = 'help' | 'ports' | 'links' | null;
 
 /** Route chords, in the order the handler tests them. */
 export const SCREEN_BINDINGS: readonly (readonly [string, Route])[] = [
@@ -50,8 +67,13 @@ export type AppKeyAction =
   | { kind: 'focus'; step: 1 | -1 }
   | { kind: 'toggle-terminal' }
   | { kind: 'toggle-sidebar' }
+  | { kind: 'toggle-info' }
+  /** Alt+[ / Alt+]: the previous or next session tab. */
+  | { kind: 'tab'; step: 1 | -1 }
   | { kind: 'overlay'; overlay: Exclude<Overlay, null> }
   | { kind: 'new-session' }
+  /** Ctrl+P: the `/sessions` list above the input. */
+  | { kind: 'sessions' }
   | { kind: 'switch-host' }
   | { kind: 'route'; route: Route }
   /** Leave the current screen for the session. */
@@ -65,6 +87,12 @@ export interface AppKeyState {
   overlay: Overlay;
   /** A Ctrl+C is already pending. */
   quitArmed: boolean;
+  /**
+   * The composer's slash menu is open. Its ↑/↓, Ctrl+P/N and Tab drive the
+   * menu, so the app must not take Tab (focus), Ctrl+P (sessions) or Ctrl+N
+   * (new session) from it.
+   */
+  menuOpen?: boolean;
 }
 
 /** True when the app must not steal this key from the region that has focus. */
@@ -99,6 +127,17 @@ export function globalKeyAction(key: KeyEvent, state: AppKeyState): AppKeyAction
     return { kind: 'arm-quit' };
   }
 
+  const menuOwnsKey = state.focus === 'composer' && Boolean(state.menuOpen);
+  if (
+    menuOwnsKey &&
+    (matchesBinding(key, 'focus.next') ||
+      matchesBinding(key, 'focus.prev') ||
+      matchesBinding(key, 'switcher') ||
+      matchesBinding(key, 'session.new'))
+  ) {
+    return null;
+  }
+
   if (matchesBinding(key, 'focus.next')) return { kind: 'focus', step: 1 };
   if (matchesBinding(key, 'focus.prev')) return { kind: 'focus', step: -1 };
   if (matchesBinding(key, 'panel.terminal')) return { kind: 'toggle-terminal' };
@@ -111,11 +150,14 @@ export function globalKeyAction(key: KeyEvent, state: AppKeyState): AppKeyAction
   if (terminalFocused) return null;
 
   if (matchesBinding(key, 'panel.sidebar')) return { kind: 'toggle-sidebar' };
+  if (matchesBinding(key, 'panel.info')) return { kind: 'toggle-info' };
+  if (matchesBinding(key, 'tabs.prev')) return { kind: 'tab', step: -1 };
+  if (matchesBinding(key, 'tabs.next')) return { kind: 'tab', step: 1 };
 
   if (matchesBinding(key, 'help')) {
     return globalKeyBlocked(state.focus) ? null : { kind: 'overlay', overlay: 'help' };
   }
-  if (matchesBinding(key, 'switcher')) return { kind: 'overlay', overlay: 'switcher' };
+  if (matchesBinding(key, 'switcher')) return { kind: 'sessions' };
   if (matchesBinding(key, 'session.new')) return { kind: 'new-session' };
   if (matchesBinding(key, 'hosts')) return { kind: 'switch-host' };
 

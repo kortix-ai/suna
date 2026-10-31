@@ -14,10 +14,10 @@ import {
   parkPromptForUnreachableRuntime,
   type QueuedContinueSessionPayload,
 } from './store';
-import { admitInboxPrompt, boundaryWaitDecision, hasLaterReleasedSibling, sessionHoldsLiveTurn, type BoundaryTurnIdentity, type BoundaryWait } from './inbox-admission';
+import { admitInboxPrompt, boundaryWaitDecision, hasLaterReleasedSibling, sessionHoldsLiveTurn, sessionKeepsMessageIds, type BoundaryTurnIdentity, type BoundaryWait } from './inbox-admission';
 import { abortRuntimeTurn } from './abort-runtime-turn';
 import { markTurnResumed, markTurnStopRequested } from '../session-turn-ledger';
-import { openUserAbove } from './forwarded-placement';
+import { keepsWireIdOnStableRuntime, openUserAbove } from './forwarded-placement';
 import { type InterruptedTurn, findInterruptedTurn, interruptedTurnContinuationParts, interruptedTurnContinuationText } from './redelivery';
 import { armQuickQueueInterrupt, readInboxTranscriptState } from './runtime-client';
 import { DELIVERY_FAILURE_COPY } from './types';
@@ -220,7 +220,13 @@ export async function executeQueuedContinue(
   return outcome;
 }
 
-type WirePlacement = { wireMessageId: string | undefined; underPlaced: boolean; resume?: InterruptedTurn };
+type WirePlacement = {
+  wireMessageId: string | undefined;
+  underPlaced: boolean;
+  resume?: InterruptedTurn;
+  /** The runtime keeps message ids and orders by position: no strand to prove or repair. */
+  stableIds?: boolean;
+};
 type Placement = { outcome: 'succeeded' | 'queued' | 'failed' } | (WirePlacement & { placedIntoLiveTurn: boolean });
 
 async function checkTranscript(row: SessionLifecycleCommandRow,
@@ -272,7 +278,9 @@ async function placeQueuedContinue(row: SessionLifecycleCommandRow, payload: Que
       typeof (row.result as { admission_reason?: unknown } | null)?.admission_reason === 'string';
   const redeliveries = Number(payload.redeliveries ?? 0);
   const deliveryAttempt = Number(payload.deliveryAttempt ?? 0);
-  // Every batch row takes a fresh id above the sibling posted before it.
+  // Each of these reads the transcript before the POST (the answered check).
+  // On a runtime that orders by id, every one takes a fresh id: a batch row
+  // above the sibling posted before it. A runtime that keeps ids keeps it.
   const remintKnown = deliveryAttempt > 0 || redeliveries > 0 || waited || batch;
   let turnLive = false;
   if (payload.wireMessageId && !remintKnown) {
@@ -289,7 +297,11 @@ async function placeQueuedContinue(row: SessionLifecycleCommandRow, payload: Que
   }
   const placement = await inspectWirePlacement(row, payload, tl, remintKnown, turnLive, deliveryAttempt, redeliveries);
   if ('outcome' in placement) return placement;
-  return { ...placement, placedIntoLiveTurn: !!placement.wireMessageId && (turnLive || remintKnown) };
+  // The live-placement proof and its repair (`repairPlacement`) exist for a
+  // runtime that orders by id. On one that keeps ids, a kept id sorts below the
+  // turn it waited behind by design, and the strand check would read that as
+  // stranded and re-mint it.
+  return { ...placement, placedIntoLiveTurn: !placement.stableIds && !!placement.wireMessageId && (turnLive || remintKnown) };
 }
 
 async function inspectWirePlacement(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload,
@@ -306,18 +318,38 @@ async function inspectWirePlacement(row: SessionLifecycleCommandRow, payload: Qu
       payload.redeliveredMessageId,
       ...(payload.redeliveredMessageIds ?? []),
     ].filter((id): id is string => typeof id === 'string' && id.length > 0);
-    const transcript = await readInboxTranscriptState(row, deliveredIds, {
-      full: deliveryAttempt > 0 || redeliveries > 0,
-    });
+    const [transcript, stableIds] = await Promise.all([
+      readInboxTranscriptState(row, deliveredIds, {
+        full: deliveryAttempt > 0 || redeliveries > 0,
+      }),
+      sessionKeepsMessageIds(row.sessionId, row.actorUserId),
+    ]);
     tl.mark('transcript-read');
     const checked = await checkTranscript(row, transcript, deliveryAttempt, redeliveries, deliveredIds);
     if (typeof checked === 'string') return { outcome: checked };
     resume = checked?.resume;
+    // A runtime that keeps message ids (pi) gets the prompt under the id it
+    // already has: the client's, the one the inbox lists and the log will
+    // hold. That covers a prompt that waited, a released Stop batch row and a
+    // redelivery. Re-minted anyway: a continuation (a new message, and the
+    // original id is known to the runtime), an unreadable transcript, and an
+    // id `keepsWireIdOnStableRuntime` refuses.
+    if (
+      stableIds &&
+      !resume &&
+      transcript.read &&
+      transcript.tip &&
+      keepsWireIdOnStableRuntime(transcript.tip, payload.wireMessageId)
+    ) {
+      tl.mark('kept');
+      return { wireMessageId: payload.wireMessageId, underPlaced: false, stableIds };
+    }
     // A released Stop batch row never stays under: the open user message
     // above it is the sibling posted `noReply` just before it (KRTX-683), and
     // OpenCode orders by id — kept, the batch renders out of order with its
     // first prompt under the answer. Re-minting puts each row above the last.
     if (
+      !stableIds &&
       deliveryAttempt === 0 &&
       redeliveries === 0 &&
       !payload.releasedBatchId &&
@@ -333,6 +365,7 @@ async function inspectWirePlacement(row: SessionLifecycleCommandRow, payload: Qu
       wireMessageId = await remintWireMessageId(row, payload, transcript);
       tl.mark('remint');
     }
+    return { wireMessageId, underPlaced, stableIds, ...(resume ? { resume } : {}) };
   }
   return { wireMessageId, underPlaced, ...(resume ? { resume } : {}) };
 }

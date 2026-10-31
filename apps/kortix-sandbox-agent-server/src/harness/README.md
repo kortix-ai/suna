@@ -705,7 +705,11 @@ are in `details`), `runtimeReady` computed once from both, and
 `config.release.v1`, and the session features pi serves
 (`HarnessDiagnosticsService.capabilities()`, read on each health call:
 `session.subagents`, `session.compact`, `session.commands`, `session.steer`
-and `session.log.v2`), plus what this box serves on top
+and `session.log.v2`, and `runtime.stable_message_id.v1`: `admit` keeps a
+prompt's `message_id` as its user message id, the transcript is in admission
+order, and a known id answers `200 { deduplicated: true }`, so apps/api sends
+a prompt that waited, or a redelivery, under the id it already has), plus
+what this box serves on top
 (`PiRuntime.multiAgentCapabilities`): `session.messaging` where the box has a
 control plane, and `session.team_tasks` while the project's `agent_teams`
 flag is on and the session leads a team or is a teammate ("Agents working together"

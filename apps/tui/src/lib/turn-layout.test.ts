@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
-import { type ClassifiedPart, type ClassifiedToolPart, type SessionLogMessage, type SessionLogThread, sessionLogTurns } from '@kortix/sdk';
+import {
+  type ClassifiedPart,
+  type ClassifiedToolPart,
+  type SessionLogMessage,
+  type SessionLogThread,
+  sessionLogTurns,
+} from '@kortix/sdk';
 
 import {
   clip,
@@ -198,7 +204,15 @@ describe('findToolCall / formatArguments', () => {
       role: 'assistant',
       blocks: [
         { type: 'text', id: 't1', text: 'Cleaning up.' },
-        { type: 'tool_call', id: 'p1', call_id: 'c1', name: 'bash', kind: 'shell', status: 'pending', input: { command: 'rm -rf /workspace/tmp' } },
+        {
+          type: 'tool_call',
+          id: 'p1',
+          call_id: 'c1',
+          name: 'bash',
+          kind: 'shell',
+          status: 'pending',
+          input: { command: 'rm -rf /workspace/tmp' },
+        },
       ],
     },
   ] as unknown as SessionLogMessage[];
@@ -229,16 +243,58 @@ describe('findToolCall / formatArguments', () => {
 
 describe('orderedMessages', () => {
   const record = (message_id: string, role: 'user' | 'assistant', reply_to?: string) =>
-    ({ schema: 'kortix.session/2', v: 1, message_id, thread_id: 't', seq: 0, role, kind: 'turn', status: 'complete', in_context: true, model: null, usage: null, finish: null, error: null, created_at: '', completed_at: null, producer: { harness: 'opencode', harness_version: '1', adapter_version: '1' }, blocks: [{ type: 'text', id: `${message_id}-t`, text: message_id }], ...(reply_to && { reply_to }) }) as SessionLogMessage;
-  const thread = (messages: SessionLogMessage[]) => ({ schema: 'kortix.session/2', v: 1, thread_id: 't', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '', messages }) as SessionLogThread;
+    ({
+      schema: 'kortix.session/2',
+      v: 1,
+      message_id,
+      thread_id: 't',
+      seq: 0,
+      role,
+      kind: 'turn',
+      status: 'complete',
+      in_context: true,
+      model: null,
+      usage: null,
+      finish: null,
+      error: null,
+      created_at: '',
+      completed_at: null,
+      producer: { harness: 'opencode', harness_version: '1', adapter_version: '1' },
+      blocks: [{ type: 'text', id: `${message_id}-t`, text: message_id }],
+      ...(reply_to && { reply_to }),
+    }) as SessionLogMessage;
+  const thread = (messages: SessionLogMessage[]) =>
+    ({
+      schema: 'kortix.session/2',
+      v: 1,
+      thread_id: 't',
+      parent_thread_id: null,
+      spawned_by: null,
+      agent: null,
+      title: null,
+      created_at: '',
+      messages,
+    }) as SessionLogThread;
 
   test('flattens block turns back to user-then-assistants order', () => {
-    const turns = sessionLogTurns(thread([record('u1', 'user'), record('a1', 'assistant', 'u1'), record('a2', 'assistant', 'u1')]));
+    const turns = sessionLogTurns(
+      thread([
+        record('u1', 'user'),
+        record('a1', 'assistant', 'u1'),
+        record('a2', 'assistant', 'u1'),
+      ]),
+    );
     expect(orderedMessages(turns).map((m) => m.message_id)).toEqual(['u1', 'a1', 'a2']);
   });
 
   test('a reply whose prompt is not loaded shows without a stand-in prompt', () => {
-    const turns = sessionLogTurns(thread([record('a0', 'assistant', 'gone'), record('u1', 'user'), record('a1', 'assistant', 'u1')]));
+    const turns = sessionLogTurns(
+      thread([
+        record('a0', 'assistant', 'gone'),
+        record('u1', 'user'),
+        record('a1', 'assistant', 'u1'),
+      ]),
+    );
     expect(orderedMessages(turns).map((m) => m.message_id)).toEqual(['a0', 'u1', 'a1']);
   });
 });

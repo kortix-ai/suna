@@ -840,6 +840,16 @@ test('session(...).transcript hits the compact transcript endpoint with limit/ch
   expect(last().method).toBe('GET');
 });
 
+// The TUI's Repository screen reads a non-default branch's history: the facade
+// must forward the options `listProjectCommits` already takes.
+test('project(id).git.commits forwards ref, path and limit', async () => {
+  await kortix.project('PID123').git.commits();
+  expect(last().url).toMatch(/\/projects\/PID123\/commits$/);
+  await kortix.project('PID123').git.commits({ ref: 'feature', path: 'src', limit: 20 });
+  expect(last().url).toContain('/projects/PID123/commits?ref=feature&path=src&limit=20');
+  expect(last().method).toBe('GET');
+});
+
 // KRTX-2316: the list is one page; the facade passes the status and the cursor.
 test('project(id).changeRequests.list pages with status, limit and cursor', async () => {
   await kortix.project('PID123').changeRequests.list();
