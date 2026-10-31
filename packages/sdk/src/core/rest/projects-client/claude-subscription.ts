@@ -29,13 +29,16 @@ export interface ClaudeSubscriptionLoginStart {
 
 const base = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/claude-subscription`;
 
+/** Every caller shows a refused sign-in, code or token beside the control: no app-wide error report. */
+const quiet = { showErrors: false } as const;
+
 export async function getClaudeSubscription(projectId: string): Promise<ClaudeSubscriptionStatus> {
   return unwrap(await backendApi.get<ClaudeSubscriptionStatus>(base(projectId)));
 }
 
 /** Start a sign-in. Open `authorize_url`, approve, then pass the shown code to `completeClaudeSubscriptionLogin`. */
 export async function startClaudeSubscriptionLogin(projectId: string): Promise<ClaudeSubscriptionLoginStart> {
-  return unwrap(await backendApi.post<ClaudeSubscriptionLoginStart>(`${base(projectId)}/login/start`, {}));
+  return unwrap(await backendApi.post<ClaudeSubscriptionLoginStart>(`${base(projectId)}/login/start`, {}, quiet));
 }
 
 /** Finish a sign-in with the code claude.com showed. Rejects with `invalid_code`, `expired` or `login_failed`. */
@@ -47,16 +50,16 @@ export async function completeClaudeSubscriptionLogin(
     await backendApi.post<ClaudeSubscriptionStatus>(`${base(projectId)}/login/complete`, {
       flow_id: input.flowId,
       code: input.code,
-    }),
+    }, quiet),
   );
 }
 
 /** Store a token the caller made with `claude setup-token` on their own computer. */
 export async function setClaudeSubscriptionToken(projectId: string, token: string): Promise<ClaudeSubscriptionStatus> {
-  return unwrap(await backendApi.put<ClaudeSubscriptionStatus>(`${base(projectId)}/token`, { token }));
+  return unwrap(await backendApi.put<ClaudeSubscriptionStatus>(`${base(projectId)}/token`, { token }, quiet));
 }
 
 /** Delete the caller's Claude login and remove it from their running sessions. */
 export async function disconnectClaudeSubscription(projectId: string): Promise<ClaudeSubscriptionStatus> {
-  return unwrap(await backendApi.delete<ClaudeSubscriptionStatus>(base(projectId)));
+  return unwrap(await backendApi.delete<ClaudeSubscriptionStatus>(base(projectId), quiet));
 }

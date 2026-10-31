@@ -715,8 +715,9 @@ flow('MEMORY-17', meta([...Object.values(MINE), FEATURES, TOKEN_MINT, ...STORAGE
 
     const mine = await thread(ctx, world, null, { agent: 'mykortix', onBehalfOf: world.ownerUserId });
     if (!(await hasStorage(world))) {
-      await ctx.step('no drive storage on this target: the owner’s My Kortix session passes the gate and reads → 503 drive_storage_unavailable', async () => {
-        (await mine.client.get(MINE_INDEX, { params: { projectId, agent: 'mykortix' } })).status(503).body().has('$.code', 'drive_storage_unavailable');
+      await ctx.step('no drive storage on this target: the owner’s My Kortix session passes the gate and reads an empty index', async () => {
+        read((await mine.client.get(MINE_INDEX, { params: { projectId, agent: 'mykortix' } })).status(200), (b) =>
+          b.schema(MyKortixMemoryIndexSchema).has('$.entries', []));
       });
       await noStorage(ctx, world);
       return;

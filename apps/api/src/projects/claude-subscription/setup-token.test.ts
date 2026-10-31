@@ -10,6 +10,9 @@ const TOKEN = 'sk-ant-oat01-SyntheticTestTokenValue_0123456789-abcdefghijklmnop'
 // A stand-in for `claude setup-token`: the same output shape the real binary
 // prints under a pseudo-terminal (OSC-8 link, paste prompt, token), and it
 // reads the pasted code from the terminal. It records the browser it was given.
+// Like the real binary, it reads the raw terminal in chunks and masks the input:
+// an Enter that arrives in the same chunk as the code is part of the paste, and
+// only an Enter on its own submits.
 function fakeClaude(dir: string): string {
   const path = join(dir, 'claude');
   writeFileSync(path, `#!/bin/bash
@@ -20,8 +23,17 @@ printf '\\033]8;id=1;%s\\007%s\\033]8;;\\007\\r\\n' '${URL}' '${URL.slice(0, 60)
 printf 'HOME=%s CFG=%s\\r\\n' "$HOME" "$CLAUDE_CONFIG_DIR" > "${dir}/env.txt"
 printf 'OPENER=%s\\n' "$(command -v xdg-open)" >> "${dir}/env.txt"
 printf 'Paste code here if prompted > '
-read -r code
-code="\${code%$'\\r'}"
+stty raw -echo
+code=''
+while :; do
+  IFS= read -r -N 1 c || exit 1
+  chunk="$c"
+  while IFS= read -r -N 1 -t 0.1 c; do chunk+="$c"; done
+  # bash reads the Enter key as \\n on a terminal; the real binary reads \\r.
+  [[ "$chunk" == $'\\r' || "$chunk" == $'\\n' ]] && break
+  code+="\${chunk//[$'\\r\\n']/}"
+  printf '%s' "\${chunk//?/*}"
+done
 if [ "$code" = "good-code" ]; then
   printf '\\r\\n\\033[32m✓ Long-lived authentication token created successfully!\\033[0m\\r\\n'
   printf ' Your OAuth token (valid for 1 year):\\r\\n %s\\r\\n' '${TOKEN}'

@@ -72,6 +72,7 @@ import {
   useProviderMeta,
 } from './provider-connect';
 import {
+  ClaudeCodeStep,
   DeviceCode,
   ProviderKeyForm,
   RemoveKeyDialog,
@@ -89,7 +90,6 @@ import {
 } from '../sections/llm-provider/use-live-catalog';
 import { orderProviderRows } from '../sections/llm-provider/utils';
 import { AccountSecretResourcesPanel } from '../sections/view/account-secret-resources-panel';
-import { ClaudeSubscriptionDialog, useClaudeSubscription } from '../../session/models/claude-subscription-dialog';
 import { useTranslations } from '../../i18n';
 import { LLM_PROVIDERS, LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '../../internal/lib/llm-providers';
 import { cn } from '../../internal/lib/utils';
@@ -511,6 +511,8 @@ function SignInSubRows({
   const sign = useSubscriptionSignIn({ projectId, kind: sub.kind, onConnected: () => undefined });
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const waiting = sign.phase === 'waiting';
+  // A Claude login is the member's own: any member signs in. A shared login needs write access.
+  const canSignIn = canWrite || sign.pastesCode;
 
   const copyCode = () => {
     if (!sign.challenge?.code) return;
@@ -521,7 +523,7 @@ function SignInSubRows({
     <>
       <AccordionSubRow
         action={
-          !canWrite ? null : waiting ? (
+          !canSignIn ? null : waiting ? (
             <Button type="button" size="xs" variant="ghost" onClick={sign.cancel}>
               {t('cancel')}
             </Button>
@@ -549,7 +551,11 @@ function SignInSubRows({
             ? t('signingIn', { name: sub.name })
             : `${t('subscription', { plan: sub.plan })} · ${t('notConnected')}`}
       </AccordionSubRow>
-      {waiting ? (
+      {waiting && sign.pastesCode ? (
+        <div className="border-border border-t py-3">
+          <ClaudeCodeStep url={sign.challenge?.url ?? null} checking={sign.checking} onSubmit={(code) => void sign.submitCode(code)} />
+        </div>
+      ) : waiting ? (
         <div className="border-border border-t py-3">
           <DeviceCode
             name={sub.name}
@@ -661,6 +667,8 @@ function ExpandedBody({
     );
   } else if (pooled.pooledSecretsEnabled && pooled.accountId && supportsPooledProviderKey(entry)) {
     content = (
+      <>
+      {SUBSCRIPTION_BY_PROVIDER[entry.id] ? <SignInSubRows projectId={projectId} entry={entry} canWrite={canWrite} /> : null}
       <div className="border-border border-t py-3">
         <AccountSecretResourcesPanel
           accountId={pooled.accountId}
@@ -671,6 +679,7 @@ function ExpandedBody({
           canWrite
         />
       </div>
+      </>
     );
   } else if (SUBSCRIPTION_BY_PROVIDER[entry.id]) {
     content = (
@@ -704,37 +713,9 @@ function ExpandedBody({
 
   return (
     <div className="flex flex-col gap-0.5 pr-3 pb-3 pl-15.5" data-accordion-body={entry.id}>
-      {entry.id === 'anthropic' ? <ClaudeSubscriptionSubRow projectId={projectId} /> : null}
       {content}
       {enable}
     </div>
-  );
-}
-
-/**
- * The viewer's own Claude subscription, beside the Anthropic key: Claude models
- * (`claude-agent/<id>`) run through Claude Code on it, never through the key or
- * the LLM gateway. Every member manages their own, so it needs no write access.
- */
-function ClaudeSubscriptionSubRow({ projectId }: { projectId: string }) {
-  const t = useTranslations('providerSheet');
-  const tClaude = useTranslations('claudeSubscription');
-  const status = useClaudeSubscription(projectId);
-  const [open, setOpen] = useState(false);
-  const connected = status.data?.connected === true && status.data.usable;
-  return (
-    <>
-      <AccordionSubRow
-        action={
-          <Button type="button" size="xs" variant={connected ? 'ghost' : 'secondary'} className={connected ? 'text-muted-foreground' : undefined} onClick={() => setOpen(true)}>
-            {connected ? t('disconnect') : tClaude('connectClaude')}
-          </Button>
-        }
-      >
-        {`${t('subscription', { plan: 'Claude Pro or Max' })} · ${connected ? t('signedIn') : t('notConnected')}`}
-      </AccordionSubRow>
-      {open && <ClaudeSubscriptionDialog projectId={projectId} open onOpenChange={setOpen} />}
-    </>
   );
 }
 

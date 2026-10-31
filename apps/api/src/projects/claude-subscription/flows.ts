@@ -27,7 +27,8 @@ export const FLOW_TTL_MS = 10 * 60_000;
 const OWNER_POLL_MS = 500;
 /** An owner that has not polled for this long has stopped. */
 const OWNER_STALE_MS = 15_000;
-const COMPLETE_WAIT_MS = 45_000;
+/** Under the 25 s request deadline; the owner's `submit` gives up after 15 s. */
+const COMPLETE_WAIT_MS = 20_000;
 /** Login processes this replica runs at once. */
 const MAX_LIVE_RUNS = 16;
 
@@ -172,8 +173,9 @@ async function ownFlow(flowId: string, accountId: string, userId: string, run: S
 
 const FAILURES: Record<string, ClaudeLoginFlowError> = {
   expired: new ClaudeLoginFlowError('expired', 'This Claude sign-in expired. Start it again.', 410),
+  restarted: new ClaudeLoginFlowError('expired', 'Kortix restarted during your sign-in. Sign in with Claude again.', 410),
   replaced: new ClaudeLoginFlowError('expired', 'A newer Claude sign-in replaced this one.', 410),
-  invalid_code: new ClaudeLoginFlowError('invalid_code', 'Claude did not accept that code. Start the sign-in again and paste the new code.', 400),
+  invalid_code: new ClaudeLoginFlowError('invalid_code', 'Claude did not accept that code. Sign in with Claude again and paste the new code.', 400),
 };
 
 function failure(error: string | null): ClaudeLoginFlowError {
@@ -200,7 +202,7 @@ export async function completeClaudeLogin(input: { accountId: string; userId: st
   if (row.status === 'failed') throw failure(row.error);
   if (row.expiresAt.getTime() < Date.now()) throw FAILURES.expired!;
   if (Date.now() - row.ownerSeenAt.getTime() > OWNER_STALE_MS) {
-    throw new ClaudeLoginFlowError('login_failed', 'The Claude sign-in stopped on the server. Start it again.', 502);
+    throw FAILURES.restarted!;
   }
   if (row.status !== 'awaiting_code') throw new ClaudeLoginFlowError('busy', 'This sign-in is already checking a code', 409);
   const written = await db
@@ -223,11 +225,29 @@ export async function completeClaudeLogin(input: { accountId: string; userId: st
     if (status === 'connected') return;
     if (status === 'failed') throw failure(next.error);
     if (status === 'awaiting_code' && Date.now() - next.ownerSeenAt.getTime() > OWNER_STALE_MS) {
-      await setFlow(input.flowId, { status: 'failed', error: 'login_failed', codeEnc: null });
-      throw new ClaudeLoginFlowError('login_failed', 'The Claude sign-in stopped on the server. Start it again.', 502);
+      await setFlow(input.flowId, { status: 'failed', error: 'restarted', codeEnc: null });
+      throw FAILURES.restarted!;
     }
   }
   throw new ClaudeLoginFlowError('login_failed', 'Claude Code did not answer in time. Start the sign-in again.', 502);
+}
+
+/**
+ * Shutdown (bootstrap.ts): the `claude` processes of this task end with it. Wait
+ * up to `budgetMs` for the sign-ins it owns to finish (a code pasted meanwhile
+ * reaches this task through the flow row from any replica), then fail the rest
+ * as `restarted`, so the member reads why at once and signs in again.
+ */
+export async function drainClaudeLogins(budgetMs: number): Promise<void> {
+  const deadline = Date.now() + budgetMs;
+  while (liveRuns.size > 0 && Date.now() < deadline) await Bun.sleep(OWNER_POLL_MS);
+  const left = [...liveRuns.keys()];
+  if (left.length === 0) return;
+  await db
+    .update(claudeSubscriptionLoginFlows)
+    .set({ status: 'failed', error: 'restarted', codeEnc: null, updatedAt: new Date() })
+    .where(and(inArray(claudeSubscriptionLoginFlows.flowId, left), ne(claudeSubscriptionLoginFlows.status, 'connected')));
+  for (const flowId of left) liveRuns.get(flowId)?.stop();
 }
 
 /** Fail every live flow of the member: their owners stop the processes. */
