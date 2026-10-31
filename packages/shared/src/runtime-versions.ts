@@ -19,6 +19,7 @@ export type RuntimeVersions = {
   /** @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
   opencodeSdk: string;
   agentBrowser: string;
+  agentDesktop: string;
   playwright: string;
   anydoc: string;
   /** The Claude Code program Claude subscription models run (`claude --version`). */
@@ -72,6 +73,7 @@ export const OPENCODE_VERSION = RUNTIME_VERSIONS.opencode;
 export const OPENCODE_SDK_VERSION = RUNTIME_VERSIONS.opencodeSdk;
 export const OPENCODE_USER_AGENT = `opencode/${OPENCODE_VERSION}`;
 export const AGENT_BROWSER_VERSION = RUNTIME_VERSIONS.agentBrowser;
+export const AGENT_DESKTOP_VERSION = RUNTIME_VERSIONS.agentDesktop;
 export const PLAYWRIGHT_VERSION = RUNTIME_VERSIONS.playwright;
 export const ANYDOC_VERSION = RUNTIME_VERSIONS.anydoc;
 export const CLAUDE_CODE_VERSION = RUNTIME_VERSIONS.claudeCode;

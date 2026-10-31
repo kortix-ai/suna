@@ -10,6 +10,16 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-10-31
+
+### D34 Product chrome draws status with a glyph; status emoji stay in the agent's own words
+- **Date:** 2026-10-31
+- **Decision:** A row, card, badge or label that Kortix draws around the conversation shows a state with the tool-row glyphs: a `kortix-green` check for done, a `kortix-red` warning for a failure, a neutral stop circle for a stop. It never shows an emoji. The D31 status emoji (✅ ⏳ 🙋 🔒 💡 ⚠️ 👋) remain allowed only in the text My Kortix writes. The background-agent notice ("Write lighthouse poem finished") is a tool row like the "Agent · general" card that started it: the same height, type, caret and "View" action. A first result line that only says "Done." is left out, because "finished" already says it.
+- **Why:** founder, 2026-10-31, on the notice row "✅ Write lighthouse poem finished · Done.": "why always the icon when it says the emoji [...] it always looks a bit sus [...] i think that component could be a bit smoother". The emoji sat directly above the agent's own "✅ The poem's done" line, so the same mark showed twice in two visual languages.
+- **Where:** `packages/ui/src/session/turn/subagent-notice-row.tsx`, `packages/ui/src/session/tool/shared/full-view-action.tsx`, [voice-and-tone.md](verbal/voice-and-tone.md) section 2 (the D31 rule) and the "no emoji in Kortix-authored copy" rule.
+- **Supersedes:** nothing. It narrows how D31 is applied: D31 never covered product chrome.
+- **Source:** the `agent-notice-row` branch.
+
 ## 2026-10-30
 
 ### D33 The TUI shows the pixel Kortix symbol, monochrome; turquoise only on the selection marker and the cursor
@@ -28,7 +38,6 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 - **Supersedes:** the "ASCII wordmark: OPEN" status for the CLI and the TUI in `visual/brandmark.md` and `visual/color.md`.
 - **Source:** the `tui-session-first` branch.
 
-||||||| 67e1920f3a
 ### D31 My Kortix speaks plainly to a non-technical person, warm and a little playful; emoji are status labels
 - **Date:** 2026-10-30
 - **Decision:** My Kortix, the built-in agent, assumes the person is not technical. It uses the words people see on the screen, never the plumbing (no sandbox, repo, branch, CLI, YAML, token or 403), and mirrors a person who writes technically. It sounds like a quick, warm, slightly cheeky colleague with opinions, not an AI assistant: no filler opener, no "Let me know if you need anything else", one concrete offer at the end. Emoji are allowed in its replies only as status labels, at most one, at the start of a status line, from a fixed set: ✅ done, ⏳ working on it, 🙋 needs you, 🔒 needs a permission, 💡 an idea, ⚠️ a problem, 👋 hello (first message only). Never mid-sentence, never about money or its own mistake. A short humorous aside is allowed, never in an apology, bad news or money.

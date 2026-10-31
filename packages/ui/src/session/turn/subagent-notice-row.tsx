@@ -1,111 +1,76 @@
 'use client';
 
 import { useProjectSession } from '@kortix/sdk/react';
-import { ArrowSquareOutIcon, CaretRightIcon, StopCircleIcon } from '@phosphor-icons/react';
-import { useId, useState } from 'react';
+import { CheckIcon, StopCircleIcon, WarningIcon } from '@phosphor-icons/react';
+import { useState, type ReactNode } from 'react';
 import { useTranslations } from '../../i18n';
-import { cn } from '../../lib/utils';
 import { UnifiedMarkdown } from '../../markdown/unified-markdown';
-import { Button } from '../../primitives/button';
-import { Hint } from '../../primitives/hint';
 import { useSessionIds } from '../../providers/session-ids';
 import { SubagentDialog } from '../agents/subagent-view';
+import { FullViewAction } from '../tool/shared/full-view-action';
+import { BasicTool } from '../tool/shared/infrastructure';
+import { ToolResultCard } from '../tool/shared/result-card';
 import type { SubagentNotice } from './subagent-notice';
 
 /**
  * A background subagent (or a background workflow run) this session started
- * has ended, or a teammate of its agent team went idle, and the API delivered its notice as a prompt. It is not something
- * the person typed, and its report is often long, so it draws as one compact
- * row: "✅ post writer finished · <first line of the result>". The row opens in
- * place to the whole result; "Open session" opens the child's own session.
+ * has ended, or a teammate of its agent team went idle, and the API delivered
+ * its notice as a prompt. It is not something the person typed, and its report
+ * is often long, so it draws as one tool row, the same row as the "Agent ·
+ * general" card that started it: "✓ post writer finished · <first line of the
+ * result>   View". The row opens in place to the whole result; "View" opens the
+ * child's own session.
  *
- * The status emoji is a label (brand D31: ✅ done, ⚠️ a problem). A stop is
- * not a problem, so it takes a neutral glyph instead.
+ * The state is a glyph, as on every tool row, never an emoji: emoji status
+ * labels are the agent's own words (brand D31, D32), and the reply right under
+ * this row often starts with one.
  */
+// `data-tone` keeps the hue: the tool row header paints any other leading glyph muted.
+const MARK: Record<SubagentNotice['status'], ReactNode> = {
+  completed: <CheckIcon data-notice-mark="completed" data-tone="success" aria-hidden weight="bold" className="text-kortix-green size-3.5 shrink-0" />,
+  failed: <WarningIcon data-notice-mark="failed" data-tone="destructive" aria-hidden weight="fill" className="text-kortix-red size-3.5 shrink-0" />,
+  stopped: <StopCircleIcon data-notice-mark="stopped" aria-hidden className="size-3.5 shrink-0" />,
+};
+
+/** A first line that only says the work is done repeats "finished". */
+const FILLER_EXCERPT = /^(done|finished|completed?|all done|ok(ay)?)[.!]*$/i;
+
 export function SubagentNoticeRow({ notice }: { notice: SubagentNotice }) {
   const t = useTranslations('multiAgent.notice');
   const ids = useSessionIds();
-  const [open, setOpen] = useState(false);
   const [viewing, setViewing] = useState(false);
-  const bodyId = useId();
   // The name its parent gave it (`agent({ name })`) reads best: "writer finished".
   const child = useProjectSession(ids.projectId, notice.sessionId, { enabled: !!ids.projectId });
   const name = child.data?.agent_handle || notice.handle || notice.title || notice.agent || t('fallbackName');
-  const headline = t(notice.status, { name });
+  const excerpt = notice.excerpt && !FILLER_EXCERPT.test(notice.excerpt.trim()) ? notice.excerpt : undefined;
   const expandable = notice.result.trim().length > 0 && notice.result.trim() !== notice.excerpt;
-  const mark =
-    notice.status === 'completed' ? (
-      <span aria-hidden className="shrink-0">
-        ✅
-      </span>
-    ) : notice.status === 'failed' ? (
-      <span aria-hidden className="shrink-0">
-        ⚠️
-      </span>
-    ) : (
-      <StopCircleIcon aria-hidden className="size-3.5 shrink-0" />
-    );
-  const line = (
-    <>
-      {mark}
-      <span className="text-foreground shrink-0 font-medium">{headline}</span>
-      {notice.excerpt && (
-        <>
-          <span aria-hidden className="shrink-0">
-            ·
-          </span>
-          <span className="min-w-0 truncate" title={notice.excerpt}>
-            {notice.excerpt}
-          </span>
-        </>
-      )}
-    </>
-  );
+  const openSession = () => setViewing(true);
   return (
     <div
       data-testid="subagent-notice"
       data-notice-status={notice.status}
       data-child-session={notice.sessionId}
-      className="flex min-w-0 flex-col gap-1"
+      className="flex min-w-0 flex-col"
     >
-      <div className="text-muted-foreground flex min-w-0 items-center gap-1 text-xs">
+      <BasicTool
+        icon={MARK[notice.status]}
+        trigger={{ title: t(notice.status, { name }), subtitle: excerpt }}
+        triggerAction={<FullViewAction onOpen={openSession} />}
+        // Nothing to unfold: the row is a plain way into the child's session.
+        onClick={expandable ? undefined : openSession}
+      >
         {expandable ? (
-          <button
-            type="button"
-            aria-expanded={open}
-            aria-controls={bodyId}
-            onClick={() => setOpen((value) => !value)}
-            className="hover:text-foreground duration-fast flex min-w-0 flex-1 items-center gap-1.5 text-left transition-colors"
-          >
-            {line}
-            <CaretRightIcon aria-hidden className={cn('size-3 shrink-0', open && 'rotate-90')} />
-            <span className="sr-only">{open ? t('collapse') : t('expand')}</span>
-          </button>
-        ) : (
-          <div className="flex min-w-0 flex-1 items-center gap-1.5">{line}</div>
-        )}
-        <Hint label={t('openSession')}>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            aria-label={t('openSession')}
-            onClick={() => setViewing(true)}
-            className="text-muted-foreground hover:text-foreground shrink-0"
-          >
-            <ArrowSquareOutIcon className="size-3.5 shrink-0" />
-          </Button>
-        </Hint>
-      </div>
+          // The report is the child's output, framed like every tool result, so
+          // it never reads as a second reply from this session's agent.
+          <ToolResultCard bodyClassName="max-h-96 overflow-y-auto px-3 py-2 text-sm">
+            <UnifiedMarkdown content={notice.result} trust="agent" isStreaming={false} />
+          </ToolResultCard>
+        ) : undefined}
+      </BasicTool>
       {notice.ownedTasks && (
-        <p className="text-muted-foreground ml-5 min-w-0 truncate text-xs" title={notice.ownedTasks}>
+        <p className="text-muted-foreground ml-6 min-w-0 truncate text-xs" title={notice.ownedTasks}>
           {t('ownsTasks', { tasks: notice.ownedTasks })}
         </p>
-      )}
-      {expandable && open && (
-        <div id={bodyId} className="text-muted-foreground border-border ml-1.5 border-l pl-3 text-sm">
-          <UnifiedMarkdown content={notice.result} trust="agent" isStreaming={false} />
-        </div>
       )}
       <SubagentDialog open={viewing} onOpenChange={setViewing} sessionId={notice.sessionId} title={name} />
     </div>

@@ -22,6 +22,7 @@
 
 import {
   AGENT_BROWSER_VERSION as DEFAULT_AGENT_BROWSER_VERSION,
+  AGENT_DESKTOP_VERSION,
   ANYDOC_VERSION,
   CLAUDE_AGENT_SDK_VERSION,
   CLAUDE_CODE_PATH,
@@ -267,6 +268,15 @@ export function kortixWorkstationTooling(opts: KortixToolchainLayerOpts): string
     `RUN pnpm add -g "@firecrawl/anydoc@${ANYDOC_VERSION}" \\`,
     '    && command -v anydoc \\',
     `    && test "$(anydoc --version)" = "${ANYDOC_VERSION}"`,
+    '',
+    // agent-desktop (Vercel Labs) — agent-browser's counterpart for desktop
+    // apps: it reads and operates the session desktop through the accessibility
+    // tree (AT-SPI; at-spi2-core comes with the desktop, desktop.ts). The npm
+    // package carries its native binaries; its postinstall verifies their
+    // checksums, hence --allow-build. Sits below Chromium so a version bump
+    // re-uses Chromium's cached layer.
+    `RUN pnpm add -g --allow-build=agent-desktop "agent-desktop@${AGENT_DESKTOP_VERSION}" \\`,
+    `    && agent-desktop version | grep -q '"version":"${AGENT_DESKTOP_VERSION}"'`,
     '',
     claudeCodeInstallLines(),
     '',
