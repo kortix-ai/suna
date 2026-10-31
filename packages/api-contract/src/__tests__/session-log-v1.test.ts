@@ -352,6 +352,18 @@ describe('fromV1 mapping', () => {
     expect(m02.model).toEqual({ provider: 'prov', model: 'model-a', variant: 'high' });
   });
 
+  test("pi's subagent tool `agent` is a task call, like its deprecated alias `task`", () => {
+    const S = 'ses_agent0000000000000000001';
+    const rows: V1Row[] = [
+      user(S, 'msg_g01', T0, (m) => [text(S, m, `${m}-p0`, 'hand it off')]),
+      assistant(S, 'msg_g02', T0 + 100, 'msg_g01', (m) => [
+        tool(S, m, `${m}-p1`, 'agent', { status: 'completed', input: { description: 'sub', prompt: 'go' }, output: 'task_id: ses_x', title: 'sub', metadata: { sessionId: 'ses_x', background: true }, time: { start: T0 + 110, end: T0 + 120 } }),
+      ]),
+    ];
+    const log = fromV1({ session_id: 'sess-synthetic-agent', root_id: S, rows }, { harness: 'pi' });
+    expect(message(log, 'msg_g02').blocks.find((b) => b.type === 'tool_call')).toMatchObject({ name: 'agent', kind: 'task' });
+  });
+
   test('tool calls: kinds, results, stripped inputs and cleared outputs', () => {
     const m02 = message(log, 'msg_r02');
     const call = (id: string) => block(m02, id) as ToolCallBlock;

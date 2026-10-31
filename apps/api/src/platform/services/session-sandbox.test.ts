@@ -301,15 +301,15 @@ mock.module('../../snapshots/builder', () => ({
       built: false,
     };
   },
-  ensureMetaSandboxImage: async (opts: Record<string, unknown>) => {
+  ensureMyKortixSandboxImage: async (opts: Record<string, unknown>) => {
     imageRequests.push(opts);
     return {
       snapshotName: 'snap-meta-1',
-      slug: 'meta',
+      slug: 'mykortix',
       contentHash: 'meta-hash-1',
       isDefault: false,
       built: false,
-      runtimeProfile: 'meta',
+      runtimeProfile: 'mykortix',
       spec: { cpu: 1, memoryGb: 2, diskGb: 8 },
     };
   },
@@ -319,7 +319,7 @@ mock.module('../../snapshots/builder', () => ({
   // The real resolver throws TemplateNotFoundError for `meta`: it is not a
   // project template.
   resolveTemplate: async (_project: unknown, slug: unknown) => {
-    if (slug === 'meta') throw new Error(`template ${String(slug)} not found`);
+    if (slug === 'mykortix') throw new Error(`template ${String(slug)} not found`);
     return {};
   },
 }));
@@ -459,8 +459,8 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
   test('meta sessions receive a full project grant without a standing service-account ceiling', async () => {
     await provisionSessionSandbox({
       ...baseOpts(),
-      agentName: 'meta',
-      sandboxSlug: 'meta',
+      agentName: 'mykortix',
+      sandboxSlug: 'mykortix',
     });
 
     expect(accountTokenCreateCalls).toHaveLength(1);
@@ -470,7 +470,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
       projectId: PROJECT_ID,
       sessionId: SANDBOX_ID,
       agentGrant: {
-        agent: 'meta',
+        agent: 'mykortix',
         permissions: 'all',
         connectors: [],
         env: [],
@@ -486,8 +486,8 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     });
     await provisionSessionSandbox({
       ...baseOpts(),
-      agentName: 'meta',
-      sandboxSlug: 'meta',
+      agentName: 'mykortix',
+      sandboxSlug: 'mykortix',
     });
     await opened;
 

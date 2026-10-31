@@ -16,6 +16,15 @@ describe('reminder prompt', () => {
     expect(parseReminderPrompt(text)).toEqual({ id: 'reminder.0123456789ab', recurring: true, prompt: 'Line one\nLine two' });
   });
 
+  test('a runtime trigger header round-trips; a pre-rename automation id still parses', () => {
+    const text = reminderPromptText({ id: 'trigger.0123456789ab', recurring: true, prompt: 'Build main', source: 'webhook' });
+    expect(text).toContain('recurring trigger (webhook) on this session');
+    expect(text).toContain('run `kortix triggers rm trigger.0123456789ab`.]');
+    expect(parseReminderPrompt(text)).toEqual({ id: 'trigger.0123456789ab', recurring: true, prompt: 'Build main' });
+    const legacy = '[REMINDER automation.0123456789ab — recurring automation (webhook) on this session, not a new user message.]\n\nx';
+    expect(parseReminderPrompt(legacy)).toEqual({ id: 'automation.0123456789ab', recurring: true, prompt: 'x' });
+  });
+
   test('anything else is not a reminder', () => {
     expect(parseReminderPrompt(undefined)).toBeUndefined();
     expect(parseReminderPrompt('')).toBeUndefined();

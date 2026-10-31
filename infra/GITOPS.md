@@ -71,6 +71,36 @@ When available, a project's `us_region` flag places newly provisioned Platinum
 sandboxes in `KORTIX_PLATINUM_US_REGION`. API, database, and S3 archive regions
 do not override that compute preference. Disabling the flag uses the provider's
 home region; existing sandboxes retain their placement, including on restart.
+`KORTIX_PLATINUM_US_REGION_DEFAULT=true` turns the flag on for every project
+that has made no choice. Only dev sets it (`deploy-dev.yml`).
+
+A project's Files (its drive) are a Platinum volume, and a box mounts only
+volumes of its own region (`409 volume_in_other_region` otherwise). So:
+
+- A drive is created in the region the project's `us_region` flag names then,
+  and records it in `kortix.drives.platinum_volume_region` (null = home). Every
+  Files call goes to that region's control plane.
+- With Files on, every new box of the project runs where its drive lives,
+  whatever the flag says now (`platform/services/sandbox-region.ts`
+  `resolveSessionPlacement`). The session's `/workspace` volume opens in the
+  same region. A session whose `/workspace` volume and drive are in different
+  regions boots without the Files and says why.
+- Changing the flag does not move existing Files. Move them with the operator
+  script, which copies every file into a new volume `<name>-<region>` in the
+  target region, verifies each file's sha256, and swaps the drive row behind a
+  write fence (`apps/api/src/drives/region-move.ts`). A drive that a running box
+  mounts is skipped; run the command again later. The old volume is kept,
+  unchanged. Its commit history does not move.
+
+  ```sh
+  dotenvx run -f apps/api/.env.dev -- bun run apps/api/scripts/move-drives-region.ts move --env dev --to us-east          # plan
+  dotenvx run -f apps/api/.env.dev -- bun run apps/api/scripts/move-drives-region.ts move --env dev --to us-east --apply  # move
+  dotenvx run -f apps/api/.env.dev -- bun run apps/api/scripts/move-drives-region.ts purge --env dev --older-than-days 14 --apply
+  ```
+
+  `purge` deletes an old volume only when it did not change after the move and
+  no box mounts it; otherwise it keeps it and names it. Rollback of a move is a
+  move back (`--to home`) after the purge.
 
 A regional create can be refused with `409 template_not_resident`. Only
 `state=replicating` (a copy runs) is waited out. On `failed` (the copy failed;
@@ -80,8 +110,8 @@ The box row records `metadata.regionFallback` (`requested`, `state`, `at`), and
 the API logs `[platinum] region fallback: …` with the reason. A warm session box
 never falls back; it fails fast.
 
-Warm-session adoption requires provider-reported placement matching the current
-project flag. Server-owned placement intent only deduplicates in-flight warming;
+Warm-session adoption requires provider-reported placement matching the
+project's current placement (its Files' region, else its flag). Server-owned placement intent only deduplicates in-flight warming;
 it is not proof that a sandbox is ready or in the requested region.
 
 ### Dev release gate: the default image exists before the roll

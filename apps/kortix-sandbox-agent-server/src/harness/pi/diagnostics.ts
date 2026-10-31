@@ -24,7 +24,8 @@ export function createPiDiagnosticsService(
   return {
     // `HARNESS_RUNTIME_CAPABILITIES.pi` names what is native; pi/surface.ts answers the rest 501
     // `feature_not_supported`. apps/api reads the same list for the switch preflight.
-    capabilities: async () => [...HARNESS_RUNTIME_CAPABILITIES.pi],
+    // `session.messaging` and `session.team_tasks` depend on the box (a control plane, the `agent_teams` flag).
+    capabilities: async () => [...HARNESS_RUNTIME_CAPABILITIES.pi, ...(runtime()?.multiAgentCapabilities() ?? [])],
     async health(context, query): Promise<HarnessHealthReport> {
       const bootState: PiBootState = context.bootState
       const rt = runtime()
@@ -42,7 +43,12 @@ export function createPiDiagnosticsService(
           state,
           ready: !error && state === 'ok' && config.proven && initialSessionReady,
           error,
-          session: { id: bootState.initialRuntimeSessionId ?? null, required: !!bootState.initialRuntimeSessionRequired },
+          session: {
+            id: bootState.initialRuntimeSessionId ?? null,
+            required: !!bootState.initialRuntimeSessionRequired,
+            // The live root: a restored dump's root once the runtime started, never the minted one before it.
+            root_thread_id: state === 'ok' && rt ? rt.rootId : null,
+          },
           turn: probe ? { in_flight: probe.inFlight, end: probe.end, orphaned_prompt: probe.orphanedPrompt } : null,
           details: {
             model: model ? `${model.providerID}/${model.modelID}` : null,
@@ -84,7 +90,8 @@ export function createPiDiagnosticsService(
           agent: rt?.agentNameValue() ?? null,
           busy: rt?.busy() ?? false,
           messages: rt?.transcript.count ?? 0,
-          skills: rt?.skillList().length ?? 0,
+          skills: rt?.skillList().map((skill) => skill.name) ?? [],
+          tools: rt?.toolNames() ?? [],
           start_error: startError(),
         },
         boot: {

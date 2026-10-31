@@ -10,6 +10,24 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-10-30
+
+### D31 My Kortix speaks plainly to a non-technical person, warm and a little playful; emoji are status labels
+- **Date:** 2026-10-30
+- **Decision:** My Kortix, the built-in agent, assumes the person is not technical. It uses the words people see on the screen, never the plumbing (no sandbox, repo, branch, CLI, YAML, token or 403), and mirrors a person who writes technically. It sounds like a quick, warm, slightly cheeky colleague with opinions, not an AI assistant: no filler opener, no "Let me know if you need anything else", one concrete offer at the end. Emoji are allowed in its replies only as status labels, at most one, at the start of a status line, from a fixed set: ✅ done, ⏳ working on it, 🙋 needs you, 🔒 needs a permission, 💡 an idea, ⚠️ a problem, 👋 hello (first message only). Never mid-sentence, never about money or its own mistake. A short humorous aside is allowed, never in an apology, bad news or money.
+- **Why:** founder, 2026-10-30, on a My Kortix reply that explained its sandbox, shell and CLI: "it should assume the user is non technical and speak simple & like fluffy", and on the voice options: "Yes give it a twist, come up with something out of Distribution so it doesnt sound generic like every ai assistant". Labels, not decoration, keeps the "emoji can identify content" rule.
+- **Where:** `apps/api/src/projects/lib/my-kortix-prompt.ts` (the "Your voice" and "Plain words" sections), [voice-and-tone.md](verbal/voice-and-tone.md) section 2 (agent persona).
+- **Supersedes:** nothing. Section 2's sentence-length and no-filler rules still apply.
+- **Source:** the `my-kortix-v2` branch.
+
+### D30 The sign-in screen has no subtitle
+- **Date:** 2026-10-30
+- **Decision:** The sign-in entry step shows only "Welcome to Kortix CompanyOS". The tagline "The open-source CompanyOS" no longer sits under it, and no other line replaces it. The tagline is never placed directly under a heading that already says "Kortix CompanyOS".
+- **Why:** founder, 2026-10-30, on "Welcome to Kortix CompanyOS / The open-source CompanyOS": "kinda repetitive, fix that", then "just remove that second line".
+- **Where:** `apps/web/src/app/[locale]/(auth)/auth/page.tsx`, `StepHeader` in `packages/ui/src/internal/auth/auth-primitives.tsx` (the `tagline` prop is gone), `auth.unified.tagline` removed from every locale catalog, [positioning.md](verbal/positioning.md) Tagline and "Auth screen subtitle" rows.
+- **Supersedes:** the "auth screen" use of the tagline in positioning.md.
+- **Source:** the `auth-subtitle-promise` branch.
+
 ## 2026-10-29
 
 ### D29 Kortix CompanyOS is the product name on every identity surface; the Promise says "AI agents"

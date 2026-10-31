@@ -6,7 +6,7 @@
  * fail-open default and the warning that explains it stay at the call site.
  */
 
-import { RUNTIME_RETRACT_CAPABILITY, RUNTIME_TURNS_CAPABILITY } from '@kortix/api-contract/runtime-relay';
+import { RUNTIME_ACTIONS_CAPABILITY } from '@kortix/api-contract/runtime-relay';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 
 /** The directory every runtime read and write is forwarded under. */
@@ -16,14 +16,13 @@ export const WORKSPACE = '/workspace';
 export interface ResolvedSessionRuntime {
   endpoint: { url: string; headers: Record<string, string> };
   opencodeSessionId: string;
-  /** The sandbox, for `runtimeServesTurnVerbs`. */
   externalId?: string;
 }
 
 /**
  * Send one signed request to a resolved session runtime. `path` is the part
- * after the endpoint URL and already carries `?directory=…`. A non-2xx stays a
- * `Response` for the caller to map.
+ * after the endpoint URL, query included. A non-2xx stays a `Response` for the
+ * caller to map.
  */
 export function sessionRuntimeFetch(
   endpoint: { url: string; headers: Record<string, string> },
@@ -56,7 +55,8 @@ export const runtimeVerbPaths = {
   prompt: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/prompt`,
   /** Hand a message to the RUNNING turn (`session.steer`). Not a turn start. */
   steer: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/steer`,
-  state: '/kortix/runtime/state',
+  /** The session-log actions (`runtime.actions.v1`). */
+  questionReply: (requestId: string) => `/kortix/runtime/questions/${segment(requestId)}/reply`,
 } as const;
 
 const CAPABILITIES_TTL_MS = 5 * 60_000;
@@ -99,52 +99,17 @@ export async function runtimeCapabilities(
 }
 
 /**
- * Does this sandbox's daemon serve the Kortix turn routes (`runtime.turns.v1`
- * in `/kortix/health` `capabilities`)? A failed read answers false: the legacy
- * spelling works on every daemon, so a miss costs only the old path.
+ * Does this sandbox's daemon serve the session-log actions (`runtime.actions.v1`)?
+ * A failed read answers false: the caller uses the route every daemon serves.
  */
-export async function runtimeServesTurnVerbs(
+export async function runtimeServesActions(
   externalId: string | undefined,
   endpoint: () => Promise<{ url: string; headers: Record<string, string> } | null>,
-  now = Date.now(),
 ): Promise<boolean> {
-  return (await runtimeCapabilities(externalId, endpoint, now))?.includes(RUNTIME_TURNS_CAPABILITY) ?? false;
-}
-
-/**
- * Does this sandbox's daemon serve the retract verb (`runtime.retract.v1`)?
- * A failed read answers false, and the caller uses the delete spelling.
- */
-export async function runtimeServesRetract(
-  externalId: string | undefined,
-  endpoint: () => Promise<{ url: string; headers: Record<string, string> } | null>,
-  now = Date.now(),
-): Promise<boolean> {
-  return (await runtimeCapabilities(externalId, endpoint, now))?.includes(RUNTIME_RETRACT_CAPABILITY) ?? false;
-}
-
-/** The header kortixd sets on every answer of a Kortix turn verb (`routes/kortix/runtime.ts`). */
-export const TURN_VERB_HEADER = 'x-kortix-turn-verb';
-
-/**
- * A Kortix-route answer from a daemon that does not have the route: a 404
- * without {@link TURN_VERB_HEADER}, from a daemon rolled back in place past
- * the memo. Forgets the sandbox's capability, so the caller resends on the
- * legacy route and the next request reads `/kortix/health` again. A 404 the
- * verb itself answered (the message is gone) carries the header and counts.
- */
-export function turnVerbMissing(externalId: string | undefined, res: Response): boolean {
-  if (res.status !== 404 || res.headers.get(TURN_VERB_HEADER)) return false;
-  if (externalId) capabilitiesMemo.delete(externalId);
-  return true;
-}
-
-/** Forget one sandbox's capabilities: its daemon refused a verb it listed. */
-export function forgetRuntimeCapabilities(externalId: string | undefined): void {
-  if (externalId) capabilitiesMemo.delete(externalId);
+  return (await runtimeCapabilities(externalId, endpoint))?.includes(RUNTIME_ACTIONS_CAPABILITY) ?? false;
 }
 
 /** Test-only. */
-export function __resetRuntimeTurnVerbsMemo(): void {
+export function __resetRuntimeCapabilitiesMemo(): void {
   capabilitiesMemo.clear();
 }

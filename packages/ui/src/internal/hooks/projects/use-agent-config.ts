@@ -14,10 +14,12 @@ import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tansta
 import {
   type AgentConfigBlock,
   type AgentConfigResponse,
+  getAgentCapabilities,
   getAgentConfig,
+  getProjectCapabilities,
   updateAgentConfig,
 } from '@kortix/sdk';
-import { contract, invalidateProject } from '@kortix/sdk/react';
+import { contract, invalidateProject, qk } from '@kortix/sdk/react';
 
 export function agentConfigQueryKey(projectId: string, agentName: string) {
   return ['agent-config', projectId, agentName] as const;
@@ -52,15 +54,6 @@ export function prefetchAgentConfig(queryClient: QueryClient, projectId: string,
   });
 }
 
-/**
- * The agent page offers the manifest upgrade only on a v1 project, where the
- * full editor does not exist. A v2 or v3 manifest is editable (the server
- * answers `editable`); a read-only v3 answer never reads as "upgrade to v2".
- */
-export function agentConfigNeedsUpgrade(response: AgentConfigResponse | undefined): boolean {
-  return response !== undefined && response.editable !== true && response.schema_version === 1;
-}
-
 type AgentConfigSaveResponse = Awaited<ReturnType<typeof updateAgentConfig>>;
 
 export function applyAgentConfigSaveResponse(
@@ -74,7 +67,7 @@ export function applyAgentConfigSaveResponse(
     (current) => ({
       agent: response.agent,
       schema_version: response.schema_version,
-      // A save succeeds only on an editable manifest (v2 or v3); the server decides.
+      // A save succeeds only on an editable manifest; the server decides.
       editable: current?.editable ?? true,
       default_agent: current?.default_agent ?? null,
       block: response.block,
@@ -93,5 +86,33 @@ export function useUpdateAgentConfig(projectId: string, agentName: string) {
       // The agents list + its per-agent badges come from project-detail.
       void invalidateProject(qc, projectId);
     },
+  });
+}
+
+export function agentCapabilitiesQueryKey(projectId: string, agentName: string) {
+  return ['agent-capabilities', projectId, agentName] as const;
+}
+
+/**
+ * The project's catalog: every tool, skill and extension any agent can be
+ * given (`getProjectCapabilities`). Under the project's key, so adding or
+ * removing a skill refreshes it. An agent's grants stay in its draft.
+ */
+export function useProjectCapabilities(projectId: string, enabled = true) {
+  return useQuery({
+    queryKey: [...qk.project.scope(projectId), 'capabilities'] as const,
+    queryFn: () => getProjectCapabilities(projectId),
+    enabled: enabled && !!projectId,
+    ...contract('config'),
+  });
+}
+
+/** Every tool, skill and extension the agent can have (`getAgentCapabilities`). The grants stay in the draft. */
+export function useAgentCapabilities(projectId: string, agentName: string, enabled = true) {
+  return useQuery({
+    queryKey: agentCapabilitiesQueryKey(projectId, agentName),
+    queryFn: () => getAgentCapabilities(projectId, agentName),
+    enabled: enabled && !!projectId && !!agentName,
+    ...contract('config'),
   });
 }

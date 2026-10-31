@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
+import { manifestCandidatePaths } from '@kortix/manifest-schema';
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
   STARTER_TEMPLATE_IDS,
@@ -62,7 +63,7 @@ Options:
   --agents <list>      Comma-separated extras to wire up alongside --primary.
                        Example: --agents claude,cursor
   --force              Configure the current cloned Kortix repository in place.
-                       Requires kortix.yaml (or kortix.toml).
+                       Requires kortix.yaml.
   --no-git             Don't run \`git init\` in the new project directory.
   -y, --yes            Skip prompts (requires a project-name).
   -h, --help           Show this help.
@@ -267,7 +268,7 @@ async function initNewProject(flags: InitFlags): Promise<number> {
   // ── Detect existing Kortix files ─────────────────────────────────────
   let overwrite = flags.overwrite;
   if (
-    ['kortix.yaml', 'kortix.toml', '.kortix'].some((path) => existsSync(resolve(cwd, path))) &&
+    ['kortix.yaml', 'kortix.yml', '.kortix'].some((path) => existsSync(resolve(cwd, path))) &&
     !overwrite &&
     !flags.yes
   ) {
@@ -307,12 +308,11 @@ function initExistingProject(flags: InitFlags): number {
   const projectName = normalizeProjectName(basename(process.cwd()));
   const cwd = resolve(process.cwd());
 
-  const hasManifest =
-    existsSync(resolve(cwd, 'kortix.yaml')) || existsSync(resolve(cwd, 'kortix.toml'));
-  if (!hasManifest) {
+  // The manifest is the project.
+  if (!manifestCandidatePaths().some((path) => existsSync(resolve(cwd, path)))) {
     process.stderr.write(
       'kortix init --force: this directory is not a cloned Kortix project.\n' +
-        'Expected kortix.yaml (or kortix.toml).\n',
+        'Expected kortix.yaml.\n',
     );
     return 1;
   }

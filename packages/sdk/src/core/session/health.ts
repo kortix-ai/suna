@@ -95,6 +95,18 @@ export function runtimeSupports(
 }
 
 /**
+ * Does the session's computer have a desktop to show? Pass the health
+ * `capabilities` list. The daemon lists `machine.desktop` when its image
+ * installs the desktop (streamed on port 6901); My Kortix's minimal image and a
+ * custom template on another base do not. Unlike {@link runtimeSupports}, an
+ * absent entry or an unanswered probe means no desktop: a host shows the
+ * control only once the daemon says so.
+ */
+export function hasSessionDesktop(capabilities: readonly string[] | null | undefined): boolean {
+  return capabilities?.includes('machine.desktop') ?? false;
+}
+
+/**
  * Which hop of the sandbox proxy produced a failure, as the proxy itself
  * reports it. Mirrors `apps/api/src/sandbox-proxy/proxy-hop.ts` — the two lists
  * are one wire contract and must not drift.

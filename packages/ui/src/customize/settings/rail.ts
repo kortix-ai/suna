@@ -1,6 +1,5 @@
 import {
   type Icon,
-  ArrowCircleUpIcon as ArrowUpCircle,
   ChatCircleIcon as ChatCircle,
   CoinsIcon as Coins,
   ShippingContainerIcon as Container,
@@ -45,7 +44,7 @@ export function isRailItemActive(item: RailItem, tab: SettingsTab): boolean {
 const STATIC_GROUPS: readonly RailGroupDefinition[] = [
   /**
    * No Workspace group. Project configuration — General, Sandbox templates,
-   * Feature flags, Upgrades — is the Customize bar's Settings tab
+   * Feature flags — is the Customize bar's Settings tab
    * (`/projects/<id>/config`, `capability-tab-routes.ts`), where the rest of
    * the project is configured. It sat here between 2026-09-02 and
    * 2026-09-03; Marko: the overlay is for the PERSON, so it holds only what
@@ -185,13 +184,6 @@ export const RETIRED_RAIL_ITEMS: readonly RailItem[] = [
     label: 'Feature flags',
     description: 'Features you can switch on before they are generally available.',
     icon: Flask,
-  },
-  {
-    tab: 'upgrades',
-    label: 'Upgrades',
-    description:
-      'Changes an agent makes to this workspace. Every run opens a change request for you to review — nothing merges on its own.',
-    icon: ArrowUpCircle,
   },
   // Connected accounts listed the ACCOUNT's GitHub App installations — the
   // same rows the account page's Git tab manages — under a person's own

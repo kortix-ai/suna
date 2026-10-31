@@ -190,6 +190,12 @@ async function startReplicaServices() {
       .then((composio) => composio.warmComposioDiscovery())
       .catch(() => {});
   }
+  // A tip-proof read adopts the base tip another process asked the upstream
+  // for (config-releases/base-tip.ts) when this mirror holds it: the per-prompt
+  // grant read then needs no fetch on a process that has not proven it itself.
+  await Promise.all([import('./config-releases/base-tip'), import('./projects/surface')]).then(
+    ([tips, projects]) => projects.useSharedTipProof(tips.storedBaseTipProof),
+  );
   // Every api process must learn that a base branch moved, not just the one
   // that handled the push — otherwise the turn-start gate answers `current`
   // from a memo resolved before it (shared/pg-broadcast.ts). Awaited because it

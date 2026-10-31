@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import {
-  agentConfigSectionKeys,
   AGENT_MODE_LABEL,
   AGENT_MODES,
   grantSummary,
@@ -48,18 +47,8 @@ describe('behaviorBlock', () => {
   });
 });
 
-describe('kortix_version 3 grants — subagents, commands, extensions', () => {
-  test('a v3 agent gets the three registry grant pages; a v1 or v2 agent does not', () => {
-    const v3 = agentConfigSectionKeys(3);
-    for (const key of ['subagents', 'commands', 'extensions'] as const) {
-      expect(v3).toContain(key);
-      expect(agentConfigSectionKeys(2)).not.toContain(key);
-      expect(agentConfigSectionKeys(1)).not.toContain(key);
-    }
-    expect(agentConfigSectionKeys(2)).toContain('skills');
-  });
-
-  test('a v3 block renders each grant through the shared grant section', () => {
+describe('registry grants — subagents, commands, extensions', () => {
+  test('a block renders each grant through the shared grant section', () => {
     expect(editorSource).toContain('<RegistryGrantSection');
     expect(accessFieldsSource).toContain('export function RegistryGrantSection');
     // Every grant page has its copy in the catalog (`agents.grants.<grant>`).
@@ -70,7 +59,6 @@ describe('kortix_version 3 grants — subagents, commands, extensions', () => {
   });
 
   const manifest = [
-    'kortix_version: 3',
     'default_agent: lead',
     'commands:',
     '  weekly-report:',
@@ -243,13 +231,6 @@ describe('mode pickers use the shared component library', () => {
   test('the primitives module holds layout only — no Segmented, no FieldRow', () => {
     expect(primitivesSource).not.toContain('Segmented');
     expect(primitivesSource).not.toContain('FieldRow');
-  });
-
-  test('the grant-mode field is built from Tabs', () => {
-    expect(grantFieldSource).toContain("from '../../../primitives/tabs'");
-    for (const mode of ['all', 'pick', 'none']) {
-      expect(grantFieldSource).toContain(`value: '${mode}'`);
-    }
   });
 
   test('Tabs stay scoped to grants; repository access uses a Switch and enums use Select', () => {

@@ -1,6 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import type { App } from '@kortix/sdk';
 
@@ -80,40 +78,5 @@ describe('the Apps topic on the agent rail', () => {
     // Apps went GA (2026-10-14): there is no feature flag, so the grant page is
     // a live tab on every project and `?section=apps` always resolves.
     expect(AGENT_CONFIG_SECTIONS.map((s) => s.key)).toContain('apps');
-  });
-});
-
-/**
- * `apps/web`'s `bun test` runs without `--isolate` and has no jsdom /
- * `@testing-library/react` harness, so `AppsGrantPage` cannot be rendered
- * here, and no browser journey covers it. These scans pin the wiring a
- * pure test cannot see: which draft key the checkbox writes, and that the
- * page reads the App list from the SDK rather than fetching it itself.
- */
-const source = readFileSync(join(import.meta.dir, 'agent-grant-pages.tsx'), 'utf8');
-const pageStart = source.indexOf('export function AppsGrantPage(');
-const pageBody = pageStart < 0 ? '' : source.slice(pageStart);
-
-describe('AppsGrantPage: the source the component actually renders', () => {
-  test('the scan found the component', () => {
-    expect(pageBody.length).toBeGreaterThan(0);
-  });
-
-  test('the catalog writes the `apps` key of the agent draft', () => {
-    // Writing any other key saves a grant the App gate never reads.
-    expect(pageBody).toContain("onChange={(v) => editor.set('apps', v)}");
-    expect(pageBody).toContain('value={editor.draft.apps}');
-  });
-
-  test('the App list comes from the SDK hook, not a hand-rolled fetch', () => {
-    expect(pageBody).toContain('useProjectApps(projectId)');
-    expect(pageBody).toContain('appGrantRows(appsQuery.data)');
-    // `refetch(` is the query's own retry button, not a transport call.
-    expect(pageBody).not.toMatch(/\bfetch\(/);
-  });
-
-  test('the grant always gates the App: the page reads no agent_principal flag', () => {
-    expect(pageBody).not.toContain('agent_principal');
-    expect(pageBody).not.toContain('agent-apps-principal-off');
   });
 });

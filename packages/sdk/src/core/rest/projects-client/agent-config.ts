@@ -1,4 +1,5 @@
 import { backendApi } from '../../http/api-client';
+import type { AgentCapabilityGrant } from './agent-capabilities';
 import { canonicalizeRequiredConnectors } from './agent-connectors';
 import { unwrap } from './shared';
 
@@ -12,11 +13,10 @@ import { unwrap } from './shared';
 // body). The backend route is what merges the two files into this one
 // response/request shape — see apps/api/src/projects/routes/agent-config.ts.
 // Distinct from setAgentScope (agent-scope.ts), which writes only the
-// secrets/connectors grant subset into a v1 `[[agents]]` entry. Manager-gated
-// server-side (project.agent.write). A kortix_version 2 or 3 manifest is
-// editable; `editable:false` on the GET means a v1 project — the UI degrades to
-// the limited scope editor. A v3 block also carries the per-agent grants of the
-// project registries (`subagents`, `commands`, `extensions`).
+// secrets/connectors grant subset. Manager-gated server-side
+// (project.agent.write). `editable` on the GET is the server's verdict; the UI
+// shows a read-only page when it is false. A block also carries the per-agent
+// grants of the project registries (`subagents`, `commands`, `extensions`).
 
 /** A Kortix governance grant on the wire: an allowlist, or the sentinels. */
 export type AgentGrantSetV2 = 'all' | 'none' | string[];
@@ -52,7 +52,7 @@ export interface RuntimeAgentConfig {
 /** @deprecated Renamed to `RuntimeAgentConfig`. Removed in the next major. */
 export type OpencodeAgentConfig = RuntimeAgentConfig;
 
-/** The full agent block on the wire — mirrors `AgentBlockV2` in
+/** The full agent block on the wire — mirrors `AgentBlockV3` in
  *  @kortix/manifest-schema PLUS the merged `behavior` half (a wire-only
  *  convenience; kortix.yaml itself never nests it — see the module doc
  *  above). */
@@ -63,6 +63,9 @@ export interface AgentConfigBlock {
   file?: string;
   enabled?: boolean;
   sandbox?: string;
+  /** The space the agent works in (a `spaces:` key, or a bare slug).
+   *  Grouping only. Empty string clears it. */
+  space?: string;
   connectors?: AgentGrantSetV2;
   /** Connectors that must resolve before the session starts. */
   connectors_required?: string[];
@@ -74,13 +77,18 @@ export interface AgentConfigBlock {
    *  the declared value; a change needs `project.connector.write`. */
   policy_sets?: Record<string, string>;
   secrets?: AgentGrantSetV2;
-  skills?: AgentGrantSetV2;
+  /** The skills this agent may load. v3 also takes `{ exclude: [...] }`: every skill but those. */
+  skills?: AgentCapabilityGrant;
+  /** v3: the tools this agent may call. Omitted: all. `{ exclude: [...] }`: every tool but those. */
+  tools?: AgentCapabilityGrant;
+  /** v3: pi's codemode tool. Omitted: `on`. */
+  codemode?: 'on' | 'only' | 'off';
   /** v3: the declared subagents this agent may start (`mode` `subagent` or `all`). */
   subagents?: AgentGrantSetV2;
   /** v3: the registered commands this agent may run. */
   commands?: AgentGrantSetV2;
-  /** v3: the registered extensions a session of this agent loads. */
-  extensions?: AgentGrantSetV2;
+  /** v3: the registered extensions a session of this agent loads. `{ exclude: [...] }`: every one but those. */
+  extensions?: AgentCapabilityGrant;
   /** Kortix Apps (by App slug) this agent may open when the App is
    *  `restricted` or `private`. Deny by default. A `project`-mode App needs
    *  only `project.app.read` in `kortix_permissions`. */
@@ -91,7 +99,7 @@ export interface AgentConfigBlock {
    *  alias and answer with `kortix_permissions`. Removed in the next major. */
   kortix_cli?: AgentGrantSetV2;
   /** Whether new sessions can access the project repository. The API always answers it; an
-   *  omitted value defaults to true on kortix_version 1 and 2, false on 3. */
+   *  omitted value is false. */
   repository_access?: boolean;
   /** @deprecated Use repository_access. Legacy read requires an explicit choice. */
   workspace?: 'runtime' | 'read' | 'branch';
@@ -108,24 +116,32 @@ export interface AgentConfigBlock {
 
 export interface AgentConfigResponse {
   agent: string;
-  /** The manifest's declared schema version (1, 2 or 3). */
+  /** @deprecated The manifest has no version: one schema. Do not branch on it. Removed in the next major. */
   schema_version: number;
-  /** True iff the full block is editable. The server decides: a kortix_version 2 or 3 manifest. */
+  /** True iff the full block is editable. The server decides. */
   editable: boolean;
-  /** The manifest's top-level `default_agent` (v2 and v3; null for v1). */
+  /** The manifest's top-level `default_agent`, or null when it names none. */
   default_agent: string | null;
-  /** The declared block, or null for a v1 manifest / an agent not declared yet. */
+  /** The declared block, or null for an agent not declared yet. */
   block: AgentConfigBlock | null;
   /** The harness a new session of this project runs (`opencode` or `pi`). Absent from an older API. */
   harness?: string;
   /** The `behavior` settings that harness ignores (pi: `options`, `color`). Absent from an older API. */
   ignored_settings?: string[];
+  /** Set for a built-in agent (`my_kortix` for `mykortix`): platform-owned, never
+   *  editable, `block` is null. Absent for a declared agent and from an older API. */
+  builtin?: 'my_kortix';
 }
 
+/**
+ * The caller draws every failure of this read (the agent page's not-found and
+ * error states), so it does not also reach the host's global `onError` toast.
+ */
 export async function getAgentConfig(projectId: string, agentName: string) {
   const response = unwrap(
     await backendApi.get<AgentConfigResponse>(
       `/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`,
+      { showErrors: false },
     ),
   );
   return {

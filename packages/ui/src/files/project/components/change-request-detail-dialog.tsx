@@ -41,10 +41,7 @@ import {
   type DiffLayout,
 } from '../../../changes';
 import { EmptyState } from '../../../primitives/empty-state';
-import {
-  manifestFilename,
-  useProjectManifestVersion,
-} from '../../../internal/lib/manifest-version';
+import { useProjectManifestHealth } from '../../../internal/lib/manifest-health';
 import { useProjectCans } from '../../../internal/lib/use-project-can';
 import { REVIEW_CONTROL_ACTIONS, changeRequestControlsFrom } from '@kortix/sdk';
 import {
@@ -102,8 +99,7 @@ export function ChangeRequestDetailDialog({ crId, onClose, onOpenChangeRequest }
   const projectContext = useProjectContext();
   const projectId = projectContext?.projectId ?? '';
   const defaultBranch = projectContext?.defaultBranch ?? 'main';
-  const { version: manifestVersion } = useProjectManifestVersion(projectId);
-  const manifestFile = manifestFilename(manifestVersion);
+  const manifestFile = useProjectManifestHealth(projectId)?.path ?? 'kortix.yaml';
 
   // Each decision shows only for a viewer who holds the leaves its route
   // asserts (KRTX-1720), the same mapping as the Review Center: Apply changes

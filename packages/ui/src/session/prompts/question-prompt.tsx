@@ -29,7 +29,9 @@ function QuestionMarkdown({ content, className }: { content: string; className?:
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          p: ({ children }) => <p className="my-1 leading-relaxed">{children}</p>,
+          // `pre-line`: a single newline is a line break. A question's lines (a workflow's
+          // title, phases and agent count) would otherwise run together as one paragraph.
+          p: ({ children }) => <p className="my-1 leading-relaxed whitespace-pre-line">{children}</p>,
           strong: ({ children }) => (
             <strong className="text-foreground font-semibold">{children}</strong>
           ),

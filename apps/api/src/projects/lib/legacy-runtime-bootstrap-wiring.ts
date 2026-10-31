@@ -17,7 +17,6 @@ import { mintSessionToken } from '../../platform/services/session-sandbox';
 import { buildSandboxUpstreamHeaders, resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
-import { OPENCODE_PRIMARY_PORT } from '../../shared/opencode-ports';
 import { mergeMetadata } from '../reaping/sandbox-state-sync';
 import {
   bootstrapLegacyRuntime,
@@ -25,7 +24,7 @@ import {
   updatesItself,
   classifyDaemonHealth,
   describeLegacyBootstrapRetry,
-  opencodeIdle,
+  runtimeIdle,
   type ExpectedRunningAssets,
   type LegacyBootstrapDeps,
   type LegacyBootstrapResult,
@@ -67,37 +66,6 @@ async function fetchJson(url: string, headers: Record<string, string>): Promise<
   } catch {
     return null;
   }
-}
-
-/**
- * The daemon proxies OpenCode routes behind the sandbox service key AND the
- * signed per-user context every proxied request carries; the control plane
- * probes as the user who provisioned the box (or the session's creator).
- */
-async function opencodeProbeHeaders(
-  row: LegacyBootstrapRow,
-  providerHeaders: Record<string, string>,
-): Promise<Record<string, string> | null> {
-  const [sb] = await db
-    .select({ config: sessionSandboxes.config, metadata: sessionSandboxes.metadata })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
-    .limit(1);
-  const config = (sb?.config ?? null) as Record<string, unknown> | null;
-  const serviceKey = typeof config?.serviceKey === 'string' ? (config.serviceKey as string) : null;
-  if (!serviceKey) return null;
-  const metadata = (sb?.metadata ?? null) as Record<string, unknown> | null;
-  let userId = typeof metadata?.provisionedBy === 'string' ? (metadata.provisionedBy as string) : null;
-  if (!userId && row.sessionId) {
-    const [session] = await db
-      .select({ createdBy: projectSessions.createdBy })
-      .from(projectSessions)
-      .where(eq(projectSessions.sessionId, row.sessionId))
-      .limit(1);
-    userId = session?.createdBy ?? null;
-  }
-  if (!userId) return null;
-  return buildSandboxUpstreamHeaders({ sandboxId: row.sandboxId, userId, serviceKey, providerHeaders });
 }
 
 /**
@@ -183,9 +151,10 @@ async function probeDaemonWithServiceKey(row: LegacyBootstrapRow, serviceKey: st
     const metadata = (sb?.metadata ?? null) as Record<string, unknown> | null;
     const userId = typeof metadata?.provisionedBy === 'string' ? (metadata.provisionedBy as string) : null;
     if (!userId) return false;
-    const { url, headers } = await resolveSandboxIngress(row.externalId, { port: OPENCODE_PRIMARY_PORT, transport: 'http' });
+    // An authenticated daemon route: it answers only a request signed with the key the box holds.
+    const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
     const probeHeaders = await buildSandboxUpstreamHeaders({ sandboxId: row.sandboxId, userId, serviceKey, providerHeaders: headers });
-    const res = await fetch(`${url.replace(/\/$/, '')}/session/status`, { headers: probeHeaders, signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) });
+    const res = await fetch(`${url.replace(/\/$/, '')}/kortix/runtime/state`, { headers: probeHeaders, signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) });
     return res.ok;
   } catch {
     return false;
@@ -279,19 +248,14 @@ export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstr
         return null;
       }
     },
-    fetchOpencodeStatus: async () => {
-      // OpenCode routes are proxied by the daemon behind the sandbox service
-      // key plus the signed user context every proxied user request carries;
-      // health is the only unauthenticated daemon route.
+    fetchTurnInFlight: async () => {
       try {
         const { url, headers } = await resolveSandboxIngress(row.externalId, {
-          port: OPENCODE_PRIMARY_PORT,
+          port: SANDBOX_SERVICE_PORT,
           transport: 'http',
         });
-        const probeHeaders = await opencodeProbeHeaders(row, headers);
-        if (!probeHeaders) return null;
-        const body = await fetchJson(`${url.replace(/\/$/, '')}/session/status`, probeHeaders);
-        return body && typeof body === 'object' ? (body as Record<string, unknown>) : null;
+        const body = (await fetchJson(`${url.replace(/\/$/, '')}/kortix/health?turn=1`, headers)) as { turn_in_flight?: unknown } | null;
+        return typeof body?.turn_in_flight === 'boolean' ? body.turn_in_flight : null;
       } catch {
         return null;
       }
@@ -450,13 +414,13 @@ export interface OpenRuntimeGuaranteeOutcome {
  * second implementation.
  *
  * Bounded on purpose: at most a health probe and (only for a stale/legacy
- * box) one OpenCode status probe — a few seconds, matching
+ * box) one turn probe — a few seconds, matching
  * `HEALTH_TIMEOUT_MS`. The actual repair (provider exec + relaunch, up to
  * `LEGACY_BOOTSTRAP_CONVERGE_BUDGET_MS` = 8 min to converge) is FIRED via
  * `scheduleRepair` and never awaited here — the caller reports `repairing`
  * and the client's own poll loop observes convergence on a later call,
  * exactly like `runtime_waking`/`cooling_down` already work in
- * `runOpenSession`. Never fires under a live turn (`opencodeIdle` gate,
+ * `runOpenSession`. Never fires under a live turn (`runtimeIdle` gate,
  * shared with `bootstrapLegacyRuntime`) — a relaunch kills PTYs and ends
  * in-flight work.
  */
@@ -496,7 +460,7 @@ export async function guaranteeCurrentRuntimeOnOpen(
   if (classification.klass !== 'legacy' && classification.klass !== 'stale') {
     // 'current' → nothing to do. 'unreachable'/'not-ok' here means the health
     // probe itself failed even though the caller already confirmed the
-    // provider is running and OpenCode answered moments earlier — fail open
+    // provider is running and the runtime answered moments earlier — fail open
     // rather than block a session open on a second, redundant probe flaking.
     return { action: 'proceed', classification };
   }
@@ -518,8 +482,7 @@ export async function guaranteeCurrentRuntimeOnOpen(
     return { action: 'proceed', classification, retry: describeLegacyBootstrapRetry(row.metadata, manifestBuild, deps.now()) };
   }
 
-  const status = await deps.fetchOpencodeStatus();
-  if (!opencodeIdle(status)) {
+  if (!runtimeIdle(await deps.fetchTurnInFlight())) {
     // A live turn owns this box. Relaunching would kill it. The reaper's own
     // background pass applies the identical gate and will repair it once the
     // turn ends.

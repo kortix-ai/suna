@@ -245,7 +245,7 @@ export async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
   process.stdout.write('\n');
   if (usingLocal) {
     process.stdout.write(
-      `  ${C.dim}Manifest: cloud mirror ${resp.manifest_status} — showing local kortix.yaml [env] spec.${C.reset}\n\n`,
+      `  ${C.dim}Manifest: cloud mirror ${resp.manifest_status} — showing the local kortix.yaml \`env\` list.${C.reset}\n\n`,
     );
   } else if (resp.manifest_status !== 'loaded') {
     process.stdout.write(
@@ -256,7 +256,7 @@ export async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
   }
 
   if (resp.items.length === 0 && required.length === 0 && optional.length === 0) {
-    process.stdout.write(`  ${C.dim}No secrets set, no [env] spec in kortix.yaml.${C.reset}\n\n`);
+    process.stdout.write(`  ${C.dim}No secrets set, no \`env\` list in kortix.yaml.${C.reset}\n\n`);
     return 0;
   }
 

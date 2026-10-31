@@ -22,8 +22,6 @@ beforeEach(() => {
   // the constant wherever it points.
   mkdirSync(join(dir, CANONICAL_SKILL, '..'), { recursive: true });
   mkdirSync(join(dir, 'agents'), { recursive: true });
-  // A v2 checkout still carries an OpenCode config dir: no tool links it.
-  mkdirSync(join(dir, 'harnesses', 'opencode', 'commands'), { recursive: true });
   writeFileSync(join(dir, CANONICAL_SKILL), 'canonical skill', 'utf8');
 });
 
@@ -118,16 +116,16 @@ describe('wireCodingAgents', () => {
   });
 });
 
-describe('wireCodingAgents on a kortix_version 3 checkout', () => {
-  test('no harness folder: the same links, and AGENTS.md names no harness folder', () => {
-    rmSync(join(dir, 'harnesses'), { recursive: true, force: true });
+describe('wireCodingAgents links the root folders only', () => {
+  test('a .kortix/opencode folder changes no link, and AGENTS.md names no harness folder', () => {
+    mkdirSync(join(dir, '.kortix', 'opencode', 'skills'), { recursive: true });
 
     const result = wireCodingAgents({ repoRoot: dir, agents: ['claude', 'codex'], overwrite: false });
 
     expect(result.written.sort()).toEqual(
       ['.agents/skills → ../skills', '.claude/agents → ../agents', '.claude/skills → ../skills', 'AGENTS.md'].sort(),
     );
-    expect(readFileSync(join(dir, 'AGENTS.md'), 'utf8')).not.toContain('harnesses/');
+    expect(readFileSync(join(dir, 'AGENTS.md'), 'utf8')).not.toMatch(/harnesses\/|\.kortix\/opencode/);
   });
 });
 

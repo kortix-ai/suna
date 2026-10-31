@@ -20,10 +20,11 @@ import { ComputerConnectModal } from '../../internal/tunnel/computer-connect';
 import { ConnectMcpModal } from '../../internal/layout/connect-mcp-modal';
 import { ProjectMcpNavItem } from './footer/project-mcp-nav';
 import { ProjectComputerNavItem } from './footer/project-computer-nav';
-import { ProjectManifestUpgradeAlert } from './footer/project-manifest-upgrade-alert';
+import { ProjectManifestIssuesAlert } from './footer/project-manifest-issues-alert';
 import { ProjectSandboxAlert } from './footer/project-sandbox-alert';
 import { ProjectRepositoryDisconnectedAlert } from '../repository-disconnected';
 import { CustomizeSidebarModal } from './customize-sidebar-modal';
+import { NewAgentModalProvider } from '../../internal/layout/project-capability-nav';
 import { ProjectMemoryNavItem } from './footer/project-memory-nav';
 import { ProjectNavItems } from './project-nav-items';
 import { ProjectSessionList } from './project-session-list';
@@ -144,7 +145,8 @@ export function ProjectSidebar({
   }, [channels, handleNewSession]);
 
   return (
-    <>
+    // The New agent modal mounts beside <Sidebar>, outside the mobile sheet.
+    <NewAgentModalProvider projectId={projectId}>
     <Sidebar
       collapsible="offcanvas"
       variant="inset"
@@ -329,7 +331,7 @@ export function ProjectSidebar({
                   left the sidebar: it stays in Settings → Connected. */}
               <ProjectRepositoryDisconnectedAlert projectId={projectId} />
               <ProjectSandboxAlert projectId={projectId} />
-              <ProjectManifestUpgradeAlert projectId={projectId} />
+              <ProjectManifestIssuesAlert projectId={projectId} />
               <SidebarBalanceWarning accountId={accountId} />
               {/* Connect MCP over Connect your computer: one block, 1px seam,
                   inner corners rounded-sm. Either row can be absent (dismissed,
@@ -372,6 +374,6 @@ export function ProjectSidebar({
     />
     <ConnectMcpModal open={connectMcpOpen} onOpenChange={setConnectMcpOpen} />
     <CustomizeSidebarModal projectId={projectId} />
-    </>
+    </NewAgentModalProvider>
   );
 }

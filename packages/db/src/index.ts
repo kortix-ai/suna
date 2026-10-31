@@ -163,10 +163,14 @@ export {
   roomMessages,
   roomMembers,
   sessionIdleWatches,
+  // Cross-session messages and agent-team tasks (@kortix/api-contract/multi-agent)
+  sessionPeerMessages,
+  sessionTasks,
   // Artifacts: published HTML pages (flag artifacts)
   artifacts,
   artifactCommentThreads,
   artifactComments,
+  artifactCommentScreenshotObjects,
   artifactCommentWriteLimits,
   artifactEvents,
   driveCommitAuthors,
@@ -321,7 +325,7 @@ export {
 } from './schema/kortix';
 export type { AgentGrant, StoredAgentGrant, ArtifactCommentMention } from './schema/kortix';
 export { readStoredAgentGrant } from './schema/kortix';
-export type { AccountBrandingRecord } from './schema/kortix';
+export type { AccountBrandingRecord, DriveVolumeMoveRecord } from './schema/kortix';
 export type { MemoryThreadLoadLayer } from './schema/kortix';
 export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from './schema/kortix';
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { runtimeSupports } from './health';
+import { hasSessionDesktop, runtimeSupports } from './health';
 
 /**
  * E1: `GET /kortix/health` lists the session features the runtime serves
@@ -26,5 +26,27 @@ describe('runtimeSupports', () => {
   test('before any probe answered, nothing is hidden', () => {
     expect(runtimeSupports(null, 'session.rewind')).toBe(true);
     expect(runtimeSupports(undefined, 'session.commands')).toBe(true);
+  });
+});
+
+/**
+ * The desktop is a property of the session's computer, not of its runtime: the
+ * daemon lists `machine.desktop` when the image installs it. My Kortix's
+ * minimal image, and a custom template on another base, do not.
+ */
+describe('hasSessionDesktop', () => {
+  test('true only when the daemon lists machine.desktop', () => {
+    expect(hasSessionDesktop(['file.import', 'machine.desktop', 'session.subagents'])).toBe(true);
+    expect(hasSessionDesktop(['file.import', 'file.append', 'session.subagents'])).toBe(false);
+  });
+
+  test('an older daemon that lists nothing about the desktop has none to show', () => {
+    expect(hasSessionDesktop([])).toBe(false);
+    expect(hasSessionDesktop(['file.import', 'config.release.v1'])).toBe(false);
+  });
+
+  test('before any probe answered, the desktop stays hidden', () => {
+    expect(hasSessionDesktop(null)).toBe(false);
+    expect(hasSessionDesktop(undefined)).toBe(false);
   });
 });

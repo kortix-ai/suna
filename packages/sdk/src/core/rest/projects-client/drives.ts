@@ -80,6 +80,27 @@ export interface FolderAccessView {
   grants: FolderGrant[];
 }
 
+/** One folder a new session of an agent mounts (`listAgentMounts`). */
+export interface AgentMount {
+  /** The Files folder, e.g. `/Company/Reports`. */
+  path: string;
+  /** Where a session sees it, e.g. `/drives/Company/Reports`. */
+  mountPath: string;
+  readOnly: boolean;
+  /** `agent`: shared with the agent. `project`: shared with everyone in the project. */
+  via: 'agent' | 'project';
+  /** The agent's own grant on the folder, to change or remove. Absent when it comes through the project. */
+  grantId?: string;
+  level: FolderLevel;
+}
+
+export interface AgentMountPlan {
+  mounts: AgentMount[];
+  /** Folders past the sandbox's mount slots, in the order they were left out. */
+  skipped: string[];
+  slots: number;
+}
+
 export interface FolderPrincipals {
   people: Array<{ id: string; label: string }>;
   teams: Array<{ id: string; label: string }>;
@@ -143,6 +164,28 @@ export async function getFolderAccess(driveId: string, path: string): Promise<Fo
     }),
     'Failed to load sharing',
   );
+}
+
+/**
+ * The Files folders a new session of an agent mounts, where, and read-only
+ * or not: the folders shared with the agent and with everyone in the
+ * project, planned the way a session boots. A person's own folders join the
+ * sessions they start and are not listed.
+ */
+export async function listAgentMounts(driveId: string, agentName: string): Promise<AgentMountPlan> {
+  return unwrap(
+    await backendApi.get<AgentMountPlan>(`${drivePath(driveId)}/agents/${encodeURIComponent(agentName)}/mounts`),
+    'Failed to load mounts',
+  );
+}
+
+/**
+ * The Files folders every new session of the project mounts: the ones shared
+ * with everyone in the project. `grantId` is the project grant to change or
+ * remove; the folders Kortix made (Company) carry none.
+ */
+export async function listProjectMounts(driveId: string): Promise<AgentMountPlan> {
+  return unwrap(await backendApi.get<AgentMountPlan>(`${drivePath(driveId)}/mounts`), 'Failed to load mounts');
 }
 
 /**
@@ -265,13 +308,21 @@ interface ProgressRequest {
 }
 
 /**
- * Write a file (at most 64 MiB), replacing any file at `path`. With `ifMatch`
- * (the version it was read at), a file someone changed since is refused with
- * 409 `file_changed` instead of being overwritten.
+ * Write a file, replacing any file at `path`. With `ifMatch` (the version it
+ * was read at), a file someone changed since is refused with 409
+ * `file_changed` instead of being overwritten.
+ *
+ * Up to 64 MiB the body goes up in one request. A larger body goes up in
+ * 1 MiB blocks (the block upload): the server answers which blocks storage
+ * lacks, only those travel, 4 at a time, each retried on a transient failure,
+ * and the commit lands the whole file at once. A `Blob` is read one block at
+ * a time (a browser `File` or a Bun file never sits in memory whole). It
+ * needs `crypto.subtle` to hash the blocks.
  *
  * `onProgress(sentBytes, totalBytes)` reports the body going up. `fetch` has
- * no upload progress, so with it the body goes over `XMLHttpRequest` (same
- * auth and headers); a host without one uses `fetch` and reports completion.
+ * no upload progress, so with it a one-request body goes over
+ * `XMLHttpRequest` (same auth and headers); a host without one uses `fetch`
+ * and reports completion. The block upload reports each block.
  */
 export async function uploadDriveFile(
   driveId: string,
@@ -286,6 +337,9 @@ export async function uploadDriveFile(
   const endpoint = `${drivePath(driveId)}/files/content?${new URLSearchParams({ path })}`;
   const headers: Record<string, string> = options?.ifMatch ? { 'If-Match': options.ifMatch } : {};
   const onProgress = options?.onProgress;
+  if ((body instanceof Blob ? body.size : body.byteLength) > SINGLE_UPLOAD_MAX_BYTES) {
+    return uploadInBlocks(driveId, path, body instanceof Blob ? body : new Blob([body]), headers, options);
+  }
   const Xhr = (globalThis as { XMLHttpRequest?: new () => ProgressRequest }).XMLHttpRequest;
   if (onProgress && Xhr) {
     const blob = body instanceof Blob ? body : new Blob([body]);
@@ -298,6 +352,97 @@ export async function uploadDriveFile(
   const size = body instanceof Blob ? body.size : body.byteLength;
   onProgress?.(size, size);
   return result;
+}
+
+/** The API takes one request body up to this size; a larger file goes up in blocks. */
+const SINGLE_UPLOAD_MAX_BYTES = 64 * 1024 * 1024;
+const UPLOAD_BLOCK_BYTES = 1024 * 1024;
+const UPLOAD_BLOCK_CONCURRENCY = 4;
+/** Waits before each retry of a transient failure: 15.5 s in all. */
+const UPLOAD_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000];
+const TRANSIENT_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+
+type ApiResult<T> = { success: boolean; data?: T; error?: Error };
+
+/** A network failure, a timeout or a 408/429/5xx: worth sending again. Never an abort. */
+function isTransient(error: Error | undefined): boolean {
+  const e = error as ApiError | undefined;
+  if (!e || e.code === 'ABORTED' || e.name === 'AbortError') return false;
+  if (e.code === 'TIMEOUT') return true;
+  return e.status === undefined ? e.code !== 'NO_SESSION' : TRANSIENT_STATUSES.has(e.status);
+}
+
+async function withRetries<T>(send: () => Promise<ApiResult<T>>, fallbackMessage: string): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    const result = await send();
+    if (result.success) return result.data as T;
+    const delay = UPLOAD_RETRY_DELAYS_MS[attempt];
+    if (delay === undefined || !isTransient(result.error)) throw result.error ?? new Error(fallbackMessage);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+}
+
+const toHex = (digest: ArrayBuffer) => Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+
+async function uploadInBlocks(
+  driveId: string,
+  path: string,
+  file: Blob,
+  headers: Record<string, string>,
+  options: { signal?: AbortSignal; onProgress?: (sentBytes: number, totalBytes: number) => void } | undefined,
+): Promise<DriveUploadResult> {
+  const signal = options?.signal;
+  const aborted = () => new ApiError('Request aborted', { name: 'AbortError', code: 'ABORTED' });
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) throw new ApiError('This runtime cannot upload files larger than 64 MiB: it has no crypto.subtle', { code: 'UNSUPPORTED' });
+  const blockAt = (i: number) => file.slice(i * UPLOAD_BLOCK_BYTES, Math.min(file.size, (i + 1) * UPLOAD_BLOCK_BYTES));
+  const blocks: string[] = [];
+  for (let i = 0; i * UPLOAD_BLOCK_BYTES < file.size; i++) {
+    if (signal?.aborted) throw aborted();
+    blocks.push(toHex(await subtle.digest('SHA-256', await blockAt(i).arrayBuffer())));
+  }
+  const base = `${drivePath(driveId)}/files/upload`;
+  const plan = await withRetries(
+    () => backendApi.post<{ uploadId: string; missing: string[] }>(base, { path, size: file.size, blocks }, { signal, headers, showErrors: false, timeout: 5 * 60_000 }),
+    'Failed to upload file',
+  );
+  const firstIndex = new Map<string, number>();
+  blocks.forEach((sha, i) => firstIndex.has(sha) || firstIndex.set(sha, i));
+  const missing = [...new Set(plan.missing)];
+  let sent = file.size - missing.reduce((n, sha) => n + blockAt(firstIndex.get(sha) ?? 0).size, 0);
+  options?.onProgress?.(sent, file.size);
+  let next = 0;
+  let failed = false;
+  const worker = async () => {
+    while (!failed && next < missing.length) {
+      if (signal?.aborted) throw aborted();
+      const sha = missing[next++]!;
+      const index = firstIndex.get(sha);
+      if (index === undefined) throw new ApiError('The server asked for a block this file does not have', { code: 'UPLOAD_PLAN_MISMATCH' });
+      // Bytes, not the Blob slice: Bun cannot send a slice of a file-backed Blob (the socket closes).
+      const block = new Uint8Array(await blockAt(index).arrayBuffer());
+      await withRetries(
+        () => backendApi.putRaw(`${base}/${encodeURIComponent(plan.uploadId)}/blocks/${sha}`, block, { signal, showErrors: false }),
+        'Failed to upload file',
+      );
+      sent += block.byteLength;
+      options?.onProgress?.(sent, file.size);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(UPLOAD_BLOCK_CONCURRENCY, missing.length) }, () =>
+      worker().catch((err: unknown) => {
+        failed = true;
+        throw err;
+      }),
+    ),
+  );
+  if (signal?.aborted) throw aborted();
+  // The commit is safe to send again: a commit that landed answers the same.
+  return withRetries(
+    () => backendApi.post<DriveUploadResult>(`${base}/${encodeURIComponent(plan.uploadId)}/commit`, undefined, { signal, showErrors: false, timeout: 10 * 60_000 }),
+    'Failed to upload file',
+  );
 }
 
 async function uploadWithProgress(

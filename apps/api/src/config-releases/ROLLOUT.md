@@ -4,13 +4,12 @@ Config releases make a session run the base branch's **current, built**
 config, from a read-only release directory — never the session's own
 `/workspace` checkout. A release is a checkout of the base branch: the
 commit's whole tree, with the same files and folders `/workspace` holds
-(`release-tree.ts`). A `kortix_version: 3` session reads only the paths its compiled
-set names (prompt files, registered skill folders, project tool modules,
-extension modules) inside the release. A v1/v2 session reads its harness dirs
-inside it exactly as it reads them in `/workspace` (`harnesses/opencode`,
-`skills/`, `harnesses/pi`). The one change from the commit is per-agent plugin
-selection: an agent variant drops the plugin entry files its manifest does not
-select.
+(`release-tree.ts`). A session reads only the paths its compiled set names
+(prompt files, registered skill folders, project tool modules, extension
+modules) inside the release; no session reads a harness config folder. The
+release leaves out files `.gitattributes` marks `export-ignore` and a leftover
+OpenCode config file (`harnesses/opencode/opencode.json[c]`,
+`.kortix/opencode/opencode.json[c]`).
 pi reloads the release in place (OpenCode is deleted from the daemon). Full contract:
 `apps/api/src/config-releases/`,
 `apps/kortix-sandbox-agent-server/src/services/config-provider/`,
@@ -118,7 +117,7 @@ unbootable.
 **API side — which release a project's sessions get:**
 1. The base branch's current tip (the normal case, always).
 2. If the tip's release **cannot be built** (the archive is over the limit, a
-   plugin an agent selects is missing, a git error), or it fails in ≥
+   git error), or it fails in ≥
    `PROJECT_QUARANTINE_SESSIONS` (2) **distinct** sessions
    (`kortix.config_release_failures`), the project assigns the newest release
    of the same variant any session has **proven**
@@ -133,7 +132,7 @@ unbootable.
 
 **The meta coordinator is the exception.** A session whose agent is `meta`
 (`meta_agent` flag) is never assigned the project's release. It gets the `meta`
-variant: the platform's own governance (`buildPlatformMetaOpenCodeConfig`) on
+variant: the platform's own governance (`buildMyKortixConfig`) on
 the image default config dir, with no archive. Its release ID does not change
 when the base branch moves. Its box holds no project checkout and the meta
 image has no `bun`, so a config dir whose tools import a dependency can never
@@ -185,7 +184,7 @@ request. The store is a cache; the Git mirror is always the source of truth.
 - A path the repository's `.gitattributes` marks `export-ignore` (the file or
   one of its directories) is left out of the release tree, as `git archive`
   would leave it out (`exportIgnoredPaths` in `release-tree.ts`, KRTX-1728).
-  The OpenCode config dir and the manifest always ship whole: the archive's
+  The manifest always ships whole: the archive's
   own `info/attributes` neutralises both attributes, so blob verification on
   the box matches. A pruned tree is composed, so its archive URL carries the
   commit. `kortix validate` and

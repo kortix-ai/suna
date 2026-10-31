@@ -11,46 +11,19 @@ import {
 import { useArtifactMutations, useArtifactText } from '@kortix/sdk/react';
 import type { ArtifactTextAnchor } from '@kortix/shared/artifact-comments';
 import { ARTIFACT_DOC_CSS } from '@kortix/shared/artifact-doc';
-import { Button } from '@kortix/ui/button';
-import { Hint } from '@kortix/ui/hint';
+import { canEmbed, fetchEmbed } from '@kortix/ui/markdown/doc-editor/doc-embed';
+import { docExtensions } from '@kortix/ui/markdown/doc-editor/doc-extensions';
+import { DocMenus } from '@kortix/ui/markdown/doc-editor/doc-menus';
+import { htmlToMarkdown, markdownToHtml } from '@kortix/ui/markdown/doc-editor/markdown';
 import Loading from '@kortix/ui/loading';
 import { MENU_PANEL_STATIC, menuRow } from '@kortix/ui/menu-recipe';
 import { dismissToast, errorToast } from '@kortix/ui/toast';
-import {
-  CardsIcon,
-  ChatCircleIcon,
-  CodeIcon,
-  LinkSimpleIcon,
-  ListBulletsIcon,
-  MinusIcon,
-  PlusIcon,
-  QuotesIcon,
-  TextBIcon,
-  TextHOneIcon,
-  TextHThreeIcon,
-  TextHTwoIcon,
-  TextItalicIcon,
-  TextStrikethroughIcon,
-  TrashIcon,
-  type Icon,
-} from '@phosphor-icons/react';
-import { TaskItem, TaskList } from '@tiptap/extension-list';
-import { TableKit } from '@tiptap/extension-table';
-import { Placeholder } from '@tiptap/extensions';
-import { TextSelection } from '@tiptap/pm/state';
-import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
-import { BubbleMenu } from '@tiptap/react/menus';
-import StarterKit from '@tiptap/starter-kit';
+import { CardsIcon, LinkSimpleIcon } from '@phosphor-icons/react';
+import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import {
-  createDocSaver,
-  pendingSave,
-  type DocSaveStatus,
-  type DocSaver,
-  type Known,
-} from './doc-autosave';
+import { createDocSaver, pendingSave, type DocSaveStatus, type DocSaver, type Known } from './doc-autosave';
 import { captureDocComment } from './doc-comment-capture';
 import {
   DocCommentDecorations,
@@ -59,19 +32,8 @@ import {
   type DocCommentHighlights,
 } from './doc-comment-decorations';
 import { docMarkdownPositions, docSelectionAnchor } from './doc-comment-positions';
-import { LinkEmbed, canEmbed, fetchEmbed } from './doc-embed';
-import {
-  DocCodeBlock,
-  DocImage,
-  Video,
-  fileBase64,
-  isMedia,
-  mediaPath,
-  mediaUrls,
-  tooLarge,
-} from './doc-media';
+import { fileBase64, isMedia, mediaPath, mediaUrls, tooLarge } from './doc-media';
 import { SlashCommand, SlashMenu, type SlashState } from './doc-slash-menu';
-import { htmlToMarkdown, markdownToHtml } from './markdown';
 
 import { useTranslations } from '@/i18n/use-translations';
 
@@ -173,19 +135,18 @@ export function DocEditor({
   const holdsMedia = !artifact.path.endsWith(`/${artifact.entry}`);
 
   // A save from a closed editor of this doc still on its way: wait for it (undefined), then open on it.
-  const [handoff, setHandoff] = useState<Known | null | undefined>(() =>
-    pendingSave(artifact.artifact_id) ? undefined : null,
+  const [pendingHandoff] = useState(() => pendingSave(artifact.artifact_id));
+  const [handoff, setHandoff] = useState<Known | null | undefined>(
+    pendingHandoff ? undefined : null,
   );
   useEffect(() => {
-    const pending = pendingSave(artifact.artifact_id);
-    if (!pending) return;
+    if (!pendingHandoff) return;
     let live = true;
-    void pending.then((result) => live && setHandoff(result));
+    void pendingHandoff.then((result) => live && setHandoff(result));
     return () => {
       live = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [pendingHandoff]);
 
   // Usually already in the cache (prefetched by the project preloader or a hover).
   // Pinned to the version opened: our own saves move `entry_version` and must not refetch.
@@ -293,28 +254,14 @@ export function DocEditor({
       immediatelyRender: false,
       editable,
       extensions: [
-        StarterKit.configure({
-          codeBlock: false,
-          link: { openOnClick: !editable, autolink: true, defaultProtocol: 'https' },
-        }),
-        DocCodeBlock,
-        TableKit.configure({ table: { resizable: false } }),
-        DocImage,
-        Video,
-        TaskList,
-        TaskItem.configure({ nested: true }),
-        commentExtension,
-        LinkEmbed,
-        slashExtension,
-        Placeholder.configure({
+        ...docExtensions({
+          editable,
           // None in a code block: it would sit on the block's language caption.
-          placeholder: ({ node }) =>
-            node.type.name === 'codeBlock'
-              ? ''
-              : node.type.name === 'heading'
-                ? t('placeholderHeading')
-                : t('placeholder'),
+          placeholder: (node) =>
+            node.type.name === 'codeBlock' ? '' : node.type.name === 'heading' ? t('placeholderHeading') : t('placeholder'),
         }),
+        commentExtension,
+        slashExtension,
       ],
       content: loaded?.html ?? '',
       editorProps: {
@@ -560,6 +507,7 @@ export function DocEditor({
           {editable || (canComment && !historical) ? (
             <DocMenus
               editor={editor}
+              blockMenu={false}
               editable={editable}
               canComment={canComment && !historical && !!onComment && !!readCommentSnapshot}
               commenting={commenting}
@@ -756,195 +704,5 @@ function EmbedOffer({
       </button>
     </div>,
     document.body,
-  );
-}
-
-function MenuButton({
-  icon: IconCmp,
-  label,
-  active,
-  onClick,
-  disabled,
-}: {
-  icon: Icon;
-  label: string;
-  active?: boolean;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <Hint label={label}>
-      <Button
-        type="button"
-        size="icon-sm"
-        variant="ghost"
-        aria-label={label}
-        aria-pressed={active}
-        aria-busy={disabled || undefined}
-        disabled={disabled}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={onClick}
-        className="data-[active=true]:bg-active data-[active=true]:text-foreground text-muted-foreground"
-        data-active={active || undefined}
-      >
-        <IconCmp className="size-4" />
-      </Button>
-    </Hint>
-  );
-}
-
-const MENU =
-  'bg-popover text-popover-foreground flex items-center gap-0.5 rounded-lg border p-1 shadow-md';
-
-function DocMenus({
-  editor,
-  editable,
-  canComment,
-  commenting,
-  onComment,
-}: {
-  editor: Editor;
-  editable: boolean;
-  canComment: boolean;
-  commenting: boolean;
-  onComment: () => void;
-}) {
-  const t = useTranslations('artifacts');
-  const state = useEditorState({
-    editor,
-    selector: ({ editor: e }) => ({
-      bold: e.isActive('bold'),
-      italic: e.isActive('italic'),
-      strike: e.isActive('strike'),
-      code: e.isActive('code'),
-      link: e.isActive('link'),
-      h1: e.isActive('heading', { level: 1 }),
-      h2: e.isActive('heading', { level: 2 }),
-      h3: e.isActive('heading', { level: 3 }),
-      quote: e.isActive('blockquote'),
-      table: e.isActive('table'),
-    }),
-  });
-  const chain = () => editor.chain().focus();
-  const setLink = () => {
-    const previous = editor.getAttributes('link').href as string | undefined;
-    const url = window.prompt(t('linkPrompt'), previous ?? 'https://');
-    if (url === null) return;
-    if (url.trim() === '') chain().extendMarkRange('link').unsetLink().run();
-    else chain().extendMarkRange('link').setLink({ href: url.trim() }).run();
-  };
-  return (
-    <>
-      <BubbleMenu
-        editor={editor}
-        options={{ placement: 'top' }}
-        shouldShow={({ editor: e, state, from, to }) =>
-          (editable || canComment) &&
-          state.selection instanceof TextSelection &&
-          from !== to &&
-          !!state.doc.textBetween(from, to).trim() &&
-          !e.isActive('image') &&
-          !e.isActive('video')
-        }
-      >
-        <div className={MENU}>
-          {editable ? (
-            <>
-              <MenuButton
-                icon={TextBIcon}
-                label={t('bold')}
-                active={state.bold}
-                onClick={() => chain().toggleBold().run()}
-              />
-              <MenuButton
-                icon={TextItalicIcon}
-                label={t('italic')}
-                active={state.italic}
-                onClick={() => chain().toggleItalic().run()}
-              />
-              <MenuButton
-                icon={TextStrikethroughIcon}
-                label={t('strike')}
-                active={state.strike}
-                onClick={() => chain().toggleStrike().run()}
-              />
-              <MenuButton
-                icon={CodeIcon}
-                label={t('inlineCode')}
-                active={state.code}
-                onClick={() => chain().toggleCode().run()}
-              />
-              <MenuButton
-                icon={LinkSimpleIcon}
-                label={t('link')}
-                active={state.link}
-                onClick={setLink}
-              />
-              <span className="bg-border mx-0.5 h-5 w-px" />
-              <MenuButton
-                icon={TextHOneIcon}
-                label={t('heading1')}
-                active={state.h1}
-                onClick={() => chain().toggleHeading({ level: 1 }).run()}
-              />
-              <MenuButton
-                icon={TextHTwoIcon}
-                label={t('heading2')}
-                active={state.h2}
-                onClick={() => chain().toggleHeading({ level: 2 }).run()}
-              />
-              <MenuButton
-                icon={TextHThreeIcon}
-                label={t('heading3')}
-                active={state.h3}
-                onClick={() => chain().toggleHeading({ level: 3 }).run()}
-              />
-              <MenuButton
-                icon={QuotesIcon}
-                label={t('quote')}
-                active={state.quote}
-                onClick={() => chain().toggleBlockquote().run()}
-              />
-              {state.table ? (
-                <>
-                  <span className="bg-border mx-0.5 h-5 w-px" />
-                  <MenuButton
-                    icon={PlusIcon}
-                    label={t('addRow')}
-                    onClick={() => chain().addRowAfter().run()}
-                  />
-                  <MenuButton
-                    icon={ListBulletsIcon}
-                    label={t('addColumn')}
-                    onClick={() => chain().addColumnAfter().run()}
-                  />
-                  <MenuButton
-                    icon={MinusIcon}
-                    label={t('deleteRow')}
-                    onClick={() => chain().deleteRow().run()}
-                  />
-                  <MenuButton
-                    icon={TrashIcon}
-                    label={t('deleteTable')}
-                    onClick={() => chain().deleteTable().run()}
-                  />
-                </>
-              ) : null}
-            </>
-          ) : null}
-          {canComment ? (
-            <>
-              {editable ? <span className="bg-border mx-0.5 h-5 w-px" /> : null}
-              <MenuButton
-                icon={ChatCircleIcon}
-                label={t('discussion.commentSelection')}
-                onClick={onComment}
-                disabled={commenting}
-              />
-            </>
-          ) : null}
-        </div>
-      </BubbleMenu>
-    </>
   );
 }

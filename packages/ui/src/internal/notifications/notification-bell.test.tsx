@@ -29,7 +29,7 @@ const read: InboxNotification = {
   title: 'Nightly report',
   session_id: null,
   trigger_slug: 'nightly-report',
-  url: '/projects/p1/customize/triggers?notification=0192f0c4-0000-7000-8000-000000000002',
+  url: '/projects/p1/admin/triggers?notification=0192f0c4-0000-7000-8000-000000000002',
   read: true,
 };
 
@@ -63,7 +63,7 @@ describe('NotificationPanel', () => {
   test('a row links to its subject without the read marker: the click marks it read', () => {
     const out = render();
     expect(out).toContain('href="/projects/p1/sessions/ses-b"');
-    expect(out).toContain('href="/projects/p1/customize/triggers"');
+    expect(out).toContain('href="/projects/p1/admin/triggers"');
     expect(out).not.toContain('notification=');
   });
 

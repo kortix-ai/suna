@@ -15,17 +15,18 @@ const NEW_PROMPTS: Record<ConfigureKind, string> = {
     "I want to configure a new agent for this project. Ask me what it should " +
     "specialize in and how it should behave, then create its config at " +
     "`agents/<name>.md`, declare it in `kortix.yaml` under `agents:` with " +
-    "`file: agents/<name>.md` and the access it needs, and open a change " +
-    "request so I can review and merge it.",
+    "`file: agents/<name>.md` and only the access its job needs: the fewest " +
+    "skills, connectors, secrets, tools and Kortix permissions. Then open a " +
+    "change request so I can review and merge it.",
   skill:
     "I want to add a new skill to this project. Ask me what capability it " +
     "should provide and when it should trigger, then scaffold " +
     "`skills/<name>/SKILL.md` and open a change request so I can review and merge it.",
   command:
     "I want to create a new slash command for this project. Ask me what it " +
-    "should do, then add it where pi reads commands (`commands:` in `kortix.yaml` " +
-    "on `kortix_version: 3`, else a prompt template at `harnesses/pi/prompts/<name>.md`) " +
-    "and open a change request so I can review and merge it.",
+    "should do, then register it under `commands:` in `kortix.yaml`, enable it on the " +
+    "agent that runs it (`agents.<name>.commands`), and open a change request so I can " +
+    "review and merge it.",
   connector:
     "I want to connect an outside service to this project. Ask me which service " +
     "and what the agents should be able to do with it, then add the connector " +

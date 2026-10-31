@@ -18,6 +18,19 @@ export function formatSessionCostExactCredits(value: number, locale = 'en-US'): 
   });
 }
 
+// The session usage view reads model spend in US dollars, the unit the ledger
+// stores. Two decimals from $1 up, up to four below, and `<$0.0001` for a
+// non-zero amount under that, so a cheap model's session never reads $0.00.
+const SMALLEST_USD = 0.0001;
+
+export function formatSessionCostUsd(value: number, locale = 'en-US'): string {
+  const usd = Number.isFinite(value) ? value : 0;
+  const format = (amount: number, maximumFractionDigits: number) =>
+    new Intl.NumberFormat(locale, { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits }).format(amount);
+  if (usd !== 0 && Math.abs(usd) < SMALLEST_USD) return `<${format(SMALLEST_USD, 4)}`;
+  return format(usd, Math.abs(usd) < 1 ? 4 : 2);
+}
+
 export function formatSessionCostDuration(value: number): string {
   let remaining = Math.max(0, Math.floor(Number.isFinite(value) ? value : 0));
   const units = [

@@ -22,7 +22,9 @@ import { ToolError } from './tool-error';
 import { type InlinePermissionReply, replyToInlinePermission } from './inline-permission-reply';
 import { errorToast } from '../../primitives/toast';
 import { cn } from '../../lib/utils';
-import { partError, partStreamingInput } from './shared/infrastructure-parts';
+import { partError, partMetadata, partStreamingInput } from './shared/infrastructure-parts';
+import { kortixCardTool, parseKortixToolResult } from './tools/kortix-tool-card';
+import { isWorkflowTool, parseWorkflowRun } from './tools/workflow-run';
 import {
   PERMISSION_LABELS,
   type PermissionRequest,
@@ -175,7 +177,14 @@ function ToolPartRendererImpl({
   // A failed codemode script keeps its partial output and the calls it made before
   // the failure: its own row draws them, with the error. The image card draws its
   // failure (with the Connect ChatGPT action) and a stop in place of the image.
-  const drawsOwnError = childBearingTaskError || call.name === 'codemode' || call.name === 'image_gen';
+  // A My Kortix platform call that threw its result keeps its card ("Needs a permission",
+  // who can grant it), and a failed workflow keeps its agents' rows and their sessions.
+  const drawsOwnError =
+    childBearingTaskError ||
+    call.name === 'codemode' ||
+    call.name === 'image_gen' ||
+    (errorStr !== undefined && kortixCardTool(call.name) !== undefined && parseKortixToolResult(errorStr, call.name) !== null) ||
+    (errorStr !== undefined && isWorkflowTool(call.name) && parseWorkflowRun(partMetadata(call)) !== null);
 
   if (errorStr !== undefined && !drawsOwnError) {
     const { display, server } = (() => {

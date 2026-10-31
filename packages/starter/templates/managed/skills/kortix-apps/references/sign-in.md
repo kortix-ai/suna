@@ -45,56 +45,11 @@ minted for. That is how you test an App as a member.
 The token proves who the member is, not what they may do. Every person any
 App admits can get a token for every App that App uses, even when they cannot
 open the used App themselves. Keep a backend App `private`: it stays off their
-App list and its own URL refuses them. Such a token carries `via_app_id`, the
-id of the App they signed in to. Check `groups`, `roles` or `via_app_id` in
+App list. A `public` service (both of the Convex template's) still answers
+them, so every function decides. Such a token carries `via_app_id`, the
+id of the App they signed in to. Check `groups`, `role` or `via_app_id` in
 every function whose data is not meant for all of them; `via_app_id` lets one
 backend serve each App's readers only that App's data.
-
-## SDK version
-
-`kortixToken`, `verifyKortixToken`, `kortixBinding`, `requireKortixMember`
-and `readKortixMember` are newer than `@kortix/sdk` 0.13.52 on npm. Check the
-installed package:
-
-```sh
-npm view @kortix/sdk version
-node -e "import('@kortix/sdk').then((m) => console.log(typeof m.kortixToken, typeof m.requireKortixMember))"   # must print: function function
-```
-
-If it prints `undefined`, the release with these helpers is not on npm yet.
-Do not stop: use the fallbacks below. They read the same claims and call the
-same routes. Replace them with the SDK imports when, after
-`npm i @kortix/sdk@latest`, the check prints `function function`.
-
-```ts
-// convex/lib/auth.ts — fallback until @kortix/sdk exports requireKortixMember
-import type { QueryCtx, MutationCtx, ActionCtx } from "../_generated/server";
-
-export async function requireMember(
-  ctx: QueryCtx | MutationCtx | ActionCtx,
-  requirement: { groups?: string[]; roles?: string[] } = {},
-) {
-  const id = await ctx.auth.getUserIdentity();
-  if (!id || id.issuer !== process.env.KORTIX_AUTH_ISSUER) throw new Error("Sign in with Kortix to continue.");
-  const groups = (id.groups as string[] | undefined) ?? [];
-  const groupIds = (id.group_ids as string[] | undefined) ?? [];
-  const role = (id.role as string | undefined) ?? null;
-  if (requirement.groups && !requirement.groups.some((g) => groups.includes(g) || groupIds.includes(g))) throw new Error("Forbidden.");
-  if (requirement.roles && !requirement.roles.some((r) => r === role)) throw new Error("Forbidden.");
-  return { userId: id.subject, email: id.email ?? null, name: id.name ?? id.email ?? "Member", groups, groupIds, role };
-}
-```
-
-```ts
-// src/convex.ts (App) — fallback until @kortix/sdk exports kortixBinding
-import { ConvexReactClient } from "convex/react";
-
-export const convex = new ConvexReactClient(`${location.origin}/_kortix/apps/backend`);
-convex.setAuth(async () => {
-  const res = await fetch("/_kortix/token?audience=backend", { credentials: "same-origin" });
-  return res.ok ? ((await res.json()) as { token: string }).token : null;
-});
-```
 
 ## A Convex backend App: accept the token
 

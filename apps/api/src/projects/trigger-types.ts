@@ -1,6 +1,12 @@
-import type { ManifestFormat, ResolvedManifest, TriggerFilter } from '@kortix/manifest-schema';
+import type { ResolvedManifest, TriggerFilter } from '@kortix/manifest-schema';
 
-export type GitTriggerType = 'cron' | 'webhook' | 'event' | 'app';
+/**
+ * The source of a trigger (a kortix.yaml trigger or a loop). `change_request` fires
+ * when a change request of the project merges through Kortix; a kortix.yaml
+ * trigger (`filter.base` names the branch) and a runtime trigger
+ * (`lib/runtime-triggers.ts`) can both have it.
+ */
+export type GitTriggerType = 'cron' | 'webhook' | 'event' | 'app' | 'change_request';
 
 
 /** For type=event only — which app event on which connector fires the trigger. */
@@ -21,10 +27,8 @@ export interface GitTriggerSpec {
   /** URL-safe slug — unique per project. */
   slug: string;
   /**
-   * Where the entry is sourced from. Always `<manifest-file>#triggers.<slug>`
-   * now that triggers are centralized — `kortix.yaml` for v2 projects,
-   * `kortix.toml` for legacy v1 ones. The hash is just a hint for the UI;
-   * the platform doesn't use it for routing.
+   * Where the entry is sourced from: `<manifest-file>#triggers.<slug>`. The
+   * hash is just a hint for the UI; the platform doesn't use it for routing.
    */
   path: string;
   /** Human label; defaults to the slug when not set. */
@@ -82,6 +86,12 @@ export interface GitTriggerSpec {
   event?: GitTriggerEventFields | null;
   /** For type=app only: the slug of the App whose emitted events fire this trigger. Absent for every other type. */
   app?: string | null;
+  /**
+   * For type=change_request only: which merges fire it. `crId` = one change
+   * request, `base` = any request merged into that branch. Both null: every
+   * merge in the project. Absent for every other type.
+   */
+  changeRequest?: { crId: string | null; base: string | null } | null;
   /**
    * What a fire does when it is not an agent run: call an App. A fire wakes
    * the App and sends the payload to `method path` (apps/app-call.ts). Absent:
@@ -141,9 +151,12 @@ export interface GitTriggerSpec {
    */
   filter: TriggerFilter | null;
   /**
-   * Set only on a session reminder (`lib/session-reminders.ts`): a DB-native `cron`
-   * row that re-prompts `pinnedSessionId`. The manifest never declares one, so
-   * manifest reconcile skips these rows instead of pruning them.
+   * Set only on a trigger whose target is a session (`lib/session-reminders.ts`,
+   * `lib/runtime-triggers.ts`): a DB-native row that wakes `pinnedSessionId`. A loop is
+   * the schedule source of it; a webhook, connector event, App event or merged
+   * change request can be its source too. The manifest never declares one, so
+   * manifest reconcile skips these rows instead of pruning them. The field keeps
+   * its old name: stored rows carry it in `schedule_spec`.
    */
   reminder?: SessionReminderFields | null;
 }
@@ -181,15 +194,11 @@ export interface GitTriggerParseError {
 }
 
 export interface ParsedManifest {
-  schemaVersion: number;
   /** The raw decoded object — callers shouldn't usually need this. */
   raw: Record<string, unknown>;
-  /** Which on-disk format this manifest is in. Drives serialization back to the
-   *  same format on commit. Required so every construction site is explicit. */
-  format: ManifestFormat;
   /** The repo-relative file the manifest was read from (or should be written to
-   *  for a synthesized one) — e.g. `kortix.yaml` or `kortix.toml`. Lets the
-   *  commit path write to the exact same file, honoring `.yml` and custom dirs. */
+   *  for a synthesized one) — `kortix.yaml`, `kortix.yml`, or a custom path.
+   *  Lets the commit path write to the exact same file. */
   path: string;
   /** Git blob SHA observed with this manifest, or null when the file was absent. */
   revision?: string | null;
@@ -206,15 +215,20 @@ export interface ParsedManifest {
    */
   imports?: ResolvedManifest;
   /**
-   * The exact source text this manifest was parsed from, when it was read as
-   * YAML. Comment preservation is per-FORMAT: the `yaml` package's Document
-   * is lossless (comments + blank lines ride on the node tree), while a TOML
-   * parser only decodes data, so a TOML write is a full re-serialize. The
-   * edit path (serializeManifest) splices its changes into this text instead
-   * of reserializing; reads never need it. null/undefined = fall back to a
-   * full re-serialize.
+   * The exact source text this manifest was parsed from. The `yaml` package's
+   * Document is lossless (comments + blank lines ride on the node tree), so
+   * the edit path (serializeManifest) splices its changes into this text
+   * instead of reserializing; reads never need it. null/undefined = fall back
+   * to a full re-serialize.
    */
   source?: string | null;
+  /**
+   * Set when the file is a legacy format (`kortix_version` 1 or 2, or
+   * `kortix.toml`). `raw` is then its conversion to the latest shape, and the
+   * first write saves that shape (`manifestWrites`): the manifest, and the
+   * prompt files from `overlay`.
+   */
+  legacy?: { from: 1 | 2; overlay: Record<string, string>; dropped: string[]; deletes: string[]; error?: string };
 }
 
 /** Result of `loadProjectTriggers` — same shape callers got pre-refactor. */

@@ -352,8 +352,8 @@ export async function adoptOrClearBakedCheckout(cfg: Config): Promise<boolean> {
   }
   {
     await configureSafeDirectory(target)
-    // The warm seed bakes the canonical SCAFFOLD at /workspace so opencode is
-    // already project-initialized in the snapshot. A fork may reuse it ONLY when
+    // A checkout already at /workspace may be a baked canonical SCAFFOLD (an
+    // image or snapshot that carries one). A box may reuse it ONLY when
     // the baked content IS this session's base — i.e. a fresh scaffold-rooted
     // project (baked HEAD == the server-resolved KORTIX_BASE_SHA). When it isn't
     // (an imported repo / diverged project), the baked scaffold is the WRONG

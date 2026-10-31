@@ -241,6 +241,13 @@ export const RUNTIME_CAPABILITIES = [
    * `SESSION_LOG_EVENTS`). Without `schema` the stream is the v1 stream.
    */
   'session.log.v2',
+  /**
+   * Cross-session messages: the `send_message` and `list_agents` tools
+   * (`@kortix/api-contract/multi-agent`).
+   */
+  'session.messaging',
+  /** A team's shared task list: the `task_*` tools (flag `agent_teams`). */
+  'session.team_tasks',
 ] as const;
 export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
 
@@ -258,6 +265,141 @@ export const RUNTIME_TURNS_CAPABILITY = 'runtime.turns.v1' as const;
  * message, `409 { code: MESSAGE_READ_CODE }` when a model call read it.
  */
 export const RUNTIME_RETRACT_CAPABILITY = 'runtime.retract.v1' as const;
+
+/**
+ * Session metadata key, value `true`: a cloud subagent its parent started in
+ * the background (the pi `agent` tool's `run_in_background`, kortixd
+ * `harness/pi/cloud-subagent.ts`). The parent's tool call returned at once,
+ * so the API delivers each finished turn of this session into the parent as
+ * a new message (apps/api `projects/subagent-notice.ts`).
+ */
+export const SUBAGENT_NOTIFY_PARENT_KEY = 'notify_parent' as const;
+
+/**
+ * The daemon serves the session-log action routes, under `/kortix/runtime`:
+ *
+ * | Route | Body | Answer |
+ * | --- | --- | --- |
+ * | `POST /permissions/:id/reply` | `RuntimePermissionReplyBody` | `200 { ok: true }`; `404` no such request |
+ * | `POST /questions/:id/reply` | `RuntimeQuestionReplyBody` | `200 { ok: true }`; `404` |
+ * | `POST /questions/:id/reject` | none | `200 { ok: true }`; `404` |
+ * | `POST /sessions/:id/compact` | none | `202 { ok: true }`; `501` when the runtime cannot compact |
+ * | `POST /sessions/:id/command` | `RuntimeCommandBody` | `202 { message_id }`; `400` unknown command; `403 { error: 'command_not_enabled' }` |
+ * | `PUT /sessions/:id/grants` | `RuntimeGrantsBody` | `200 { grants }` |
+ * | `GET /commands` | none | `200 { commands: RuntimeCommandInfo[] }` |
+ * | `GET /pending` | none | `200 RuntimePending` |
+ * | `GET /log?thread=&after_seq=&before_seq=&limit=` | none | `200 { generation, thread_id, messages: SessionLogMessage[], has_more }`; with `RUNTIME_LOG_CAPABILITY`, a whole `SessionLogPage` |
+ * | `GET /log/messages/:messageId` | none | `200 SessionLogMessage`; `404` |
+ * | `GET /log/blobs/:sha256` | none | the attachment bytes; `404` |
+ * | `GET /workspace` | none | `200 RuntimeWorkspaceInfo` |
+ * | `GET /workspace/diff?mode=branch\|git` | none | `200 { files: RuntimeWorkspaceFileDiff[] }` |
+ *
+ * The log routes read the box's own session log, which is ahead of the API's copy
+ * while a turn runs (the journal sends at most 5 s later).
+ */
+export const RUNTIME_ACTIONS_CAPABILITY = 'runtime.actions.v1' as const;
+
+/**
+ * The box's log reads stand in for the API's copy:
+ *  - `GET /kortix/runtime/log` answers a whole `SessionLogPage` (`session`, `generation`, thread heads),
+ *    at the seqs the API stores;
+ *  - a prompt the box admitted and pi has not appended yet (queued behind a running turn) is in
+ *    the log from its admission, at a provisional seq above every real one, on `GET /log`,
+ *    `GET /log/messages/:id` and the v2 stream; its real seq replaces it when its turn starts;
+ *  - `GET /kortix/health` `harness.session.root_thread_id` names the log's root thread.
+ */
+export const RUNTIME_LOG_CAPABILITY = 'runtime.log.v1' as const;
+
+/** `POST /kortix/runtime/permissions/:id/reply`. `always` grants the capability for the session. */
+export const RuntimePermissionReplyBodySchema = z.object({
+  reply: z.enum(['once', 'always', 'reject']),
+  message: z.string().max(4_000).optional(),
+});
+export type RuntimePermissionReplyBody = z.infer<typeof RuntimePermissionReplyBodySchema>;
+
+/** `POST /kortix/runtime/questions/:id/reply`: one list of chosen labels (or free text) per question. */
+export const RuntimeQuestionReplyBodySchema = z.object({ answers: z.array(z.array(z.string())) });
+export type RuntimeQuestionReplyBody = z.infer<typeof RuntimeQuestionReplyBodySchema>;
+
+/** `POST /kortix/runtime/sessions/:id/command`: run a slash command or a skill by name. */
+export const RuntimeCommandBodySchema = z.object({
+  /** The client-minted id of the user message the command becomes. */
+  message_id: z.string().min(1).optional(),
+  name: z.string().min(1),
+  arguments: z.string().default(''),
+  agent: z.string().min(1).optional(),
+  /** `provider/model`, as the prompt route takes it. */
+  model: z.string().min(1).optional(),
+  variant: z.string().min(1).optional(),
+});
+export type RuntimeCommandBody = z.infer<typeof RuntimeCommandBodySchema>;
+
+/**
+ * `PUT /kortix/runtime/sessions/:id/grants`: the capabilities every call of the
+ * session may use without asking (`*`: all of them), for the rest of the session.
+ * `[]` clears every grant, "always" replies included. A policy `deny` still wins.
+ */
+export const RuntimeGrantsBodySchema = z.object({ grants: z.array(z.string().min(1)) });
+export type RuntimeGrantsBody = z.infer<typeof RuntimeGrantsBodySchema>;
+
+/** One row of `GET /kortix/runtime/commands`: a project command, a prompt template, or a granted skill. */
+export interface RuntimeCommandInfo {
+  name: string;
+  description: string | null;
+  source: 'command' | 'template' | 'skill';
+  /** The agents the command is enabled for; absent when every agent may run it. */
+  agents?: string[];
+}
+
+/** What a thread does now (`log.status`); `retry` is reported as `busy` here. */
+export type RuntimeThreadStatus = 'idle' | 'busy' | 'compacting';
+
+/** One request the runtime waits on (the session log's `pending` record). */
+export interface RuntimePendingRecord {
+  id: string;
+  thread_id: string;
+  call_id?: string;
+  /** A permission: `{ permission, patterns, always, metadata }`. A question: `{ questions }`. */
+  payload: unknown;
+  asked_at: string;
+}
+
+/** `GET /kortix/runtime/pending`: what each thread does and what waits on a person. */
+export interface RuntimePending {
+  /** The root thread and each running or known subagent thread. */
+  statuses: Record<string, RuntimeThreadStatus>;
+  permissions: RuntimePendingRecord[];
+  questions: RuntimePendingRecord[];
+}
+
+/** `GET /kortix/runtime/workspace`. */
+export interface RuntimeWorkspaceInfo {
+  /** The session's checkout, absolute. */
+  directory: string;
+  /** The agent's home directory, absolute. */
+  home: string;
+  /** `git` when the checkout is a Git work tree. */
+  vcs: 'git' | null;
+  default_branch: string;
+}
+
+/** One file of `GET /kortix/runtime/workspace/diff`: a Git-format patch, absent past the size budget. */
+export interface RuntimeWorkspaceFileDiff {
+  path: string;
+  status: 'added' | 'deleted' | 'modified';
+  additions: number;
+  deletions: number;
+  patch?: string;
+}
+
+/**
+ * The session's computer has the desktop (`kortix-desktop`: Xvfb, XFCE and voxl
+ * streaming it on port 6901). The daemon lists it beside the host's own entries
+ * when the image installs the desktop. My Kortix's minimal image, and a custom
+ * template on a base other than Ubuntu 24.04, do not; a client then hides the
+ * Desktop panel.
+ */
+export const MACHINE_DESKTOP_CAPABILITY = 'machine.desktop' as const;
 
 /**
  * `code` on the daemon's `409` to a retract: a model call read the message
@@ -360,9 +502,10 @@ export interface CompiledAgentSet {
    */
   project_tools?: Record<string, string>;
   /**
-   * The Kortix tools the project lists as `<name>: kortix:<name>`. Present
-   * only when kortix.yaml has a `tools` key; then only these Kortix tools load,
-   * plus the ones `project_tools` replaces. Absent: all of them load.
+   * The Kortix tools this compiled set loads, plus the ones `project_tools`
+   * replaces. Only the platform's My Kortix config sets it; a project's
+   * compiled set omits it, and then every Kortix tool loads (an agent's
+   * `tools` grant decides what it may call).
    */
   kortix_tools?: string[];
   /**
@@ -376,6 +519,21 @@ export interface CompiledAgentSet {
   commands?: Record<string, CompiledCommand>;
   /** v3: registered extensions, by name. An agent loads the ones its `extensions` list names. */
   extensions?: Record<string, CompiledExtension>;
+  /**
+   * kortix.yaml's validation issues, errors first, at most 50. The set is what
+   * the project applies without the broken parts; the daemon lists these in
+   * the session's config notice so the agent can fix the file. Absent: none.
+   */
+  manifest_issues?: CompiledManifestIssue[];
+}
+
+/** One kortix.yaml validation issue in a compiled agent set. `line`/`column` are 1-indexed. */
+export interface CompiledManifestIssue {
+  path: string;
+  message: string;
+  severity: 'error' | 'warning';
+  line?: number;
+  column?: number;
 }
 
 /** May an agent with this compiled `tools` map use `tool`? Its own entry, else `*`, else yes. */
@@ -430,6 +588,8 @@ export const HarnessHealthSchema = z.object({
     id: z.string().nullable(),
     /** apps/api asked this box to create the root at boot. */
     required: z.boolean(),
+    /** The root thread of the box's session log (`RUNTIME_LOG_CAPABILITY`); null while the runtime is down. */
+    root_thread_id: z.string().nullable().optional(),
   }),
   /** Present only for `?turn=1`. */
   turn: z

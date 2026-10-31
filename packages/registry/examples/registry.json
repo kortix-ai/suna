@@ -7,7 +7,7 @@
       "name": "hello-skill",
       "type": "registry:skill",
       "title": "Hello Skill",
-      "description": "A minimal example skill, installed into .kortix/opencode/skills/hello/.",
+      "description": "A minimal example skill, installed into skills/hello/.",
       "categories": ["example"],
       "files": [
         {
@@ -30,7 +30,7 @@
           "path": "researcher.md",
           "type": "registry:file",
           "target": "@agents/researcher.md",
-          "content": "---\nname: researcher\nmode: primary\ndescription: Example research agent installed from the Kortix registry.\n---\n\nYou are a research agent. Use the hello skill to greet, then help with research.\n"
+          "content": "You are a research agent. Use the hello skill to greet, then help with research.\n"
         }
       ],
       "meta": { "source": "kortix-examples", "primitive": "agent" }
@@ -39,7 +39,7 @@
       "name": "house-rules",
       "type": "registry:rules",
       "title": "House Rules (AGENTS.md)",
-      "description": "An arbitrary repo-root file — shows you can distribute any file, not just OpenCode primitives.",
+      "description": "An arbitrary repo-root file — shows you can distribute any file, not just skills and agents.",
       "files": [
         {
           "path": "AGENTS.md",

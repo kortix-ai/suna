@@ -161,10 +161,41 @@ async function resolveIdentity(credential: ApiErrorCredential): Promise<TokenIde
  *
  * Writes to stderr so `--json` stdout stays machine-readable.
  */
+/**
+ * `KORTIX_ERROR_FORMAT=json`: a program reads the CLI (a My Kortix tool in
+ * kortixd), so a refusal or a failure is one `{"kortix_error":{…}}` line on
+ * stderr instead of the human footer. stdout keeps the command's own output.
+ */
+export function machineErrors(): boolean {
+  return process.env.KORTIX_ERROR_FORMAT === 'json';
+}
+
+/** Write one machine-readable error line to stderr. */
+export function writeMachineError(error: { kind: 'denied' | 'failed'; message?: string; status?: number; code?: string; action?: string }): void {
+  process.stderr.write(`${JSON.stringify({ kortix_error: error })}\n`);
+}
+
+/** A validation failure's message with the API's issues after it (`path: message; …`), so a program can fix its input. */
+export function withIssues(message: string, body: unknown): string {
+  const issues = (body as { issues?: Array<{ path?: unknown[]; message?: string }> } | null)?.issues;
+  if (!Array.isArray(issues) || issues.length === 0) return message;
+  const lines = issues.slice(0, 5).map((issue) => `${(issue.path ?? []).join('.') || '(body)'}: ${issue.message ?? 'invalid'}`);
+  return `${message} (${lines.join('; ')})`;
+}
+
 export async function printPermissionDenialIdentity(): Promise<void> {
   const pending = denial;
   denial = null;
   if (!pending) return;
+  if (machineErrors()) {
+    writeMachineError({
+      kind: 'denied',
+      status: pending.status,
+      ...(pending.code ? { code: pending.code } : {}),
+      ...(pending.action ? { action: pending.action } : {}),
+    });
+    return;
+  }
   // No refused credential on the record → nothing this footer can name
   // honestly. The active host's identity belongs to a DIFFERENT credential;
   // printing it here is exactly the KRTX-1564 bug.

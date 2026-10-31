@@ -1,19 +1,19 @@
 import { describe, expect, test } from 'bun:test'
 
-import { createProjectEnvStore, mergeProjectEnv } from '@/services/sandbox-env/project-env'
+import { createProjectEnvStore, reconcileProjectEnv, type ProjectEnvStore } from '@/services/sandbox-env/project-env'
+
+const mergeProjectEnv = (baseEnv: NodeJS.ProcessEnv, store: ProjectEnvStore) => reconcileProjectEnv({ ...baseEnv }, store)
 
 /**
- * A revoked secret must not survive into the environment opencode is spawned
- * with (opencode.ts:932 / :1203 both build it via mergeProjectEnv(process.env, …)).
+ * A revoked secret must not survive in the daemon's process env, which every
+ * child it spawns inherits (`reconcileProjectEnv` after each `/kortix/env` push).
  *
  * The shell path already handles this — agent-env.sh emits an explicit
- * `unset NAME`, covered by agent-env-file.test.ts. But opencode's own process
- * env, and therefore every MCP server and direct child spawn it makes, never
- * passes through BASH_ENV. If mergeProjectEnv only deletes the names still
- * granted, a revoked value survives from the daemon's process.env and is
- * re-injected on the next restart.
+ * `unset NAME`, covered by agent-env-file.test.ts. A direct child spawn never
+ * passes through BASH_ENV. If the reconcile only deleted the names still
+ * granted, a revoked value would survive from the daemon's process.env.
  */
-describe('mergeProjectEnv — revocation', () => {
+describe('reconcileProjectEnv — revocation', () => {
   test('a revoked BOOT secret is cleared, not carried over from process.env', () => {
     const bootEnv = {
       KORTIX_PROJECT_SECRETS_REVISION: 'r1',

@@ -1,8 +1,7 @@
 /**
  * The git route: scaffold + delta fetch, the API's fast-boot bundle, or a
  * clone with retries, then the shared checkout finalization (checkout.ts).
- * Also the warm-pool seeds and the post-boot history backfill, which use the
- * same scaffold and clone.
+ * Also the post-boot history backfill, which uses the same scaffold and clone.
  */
 import { createWriteStream, existsSync } from 'node:fs'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
@@ -13,16 +12,15 @@ import { pipeline } from 'node:stream/promises'
 import type { Config } from '@/lib/config/config'
 import { buildGitIdentityEnv, configureRepoGitIdentity, createStagePath, execGit, gitWithAuth, resolveCloneCredential } from '@/lib/git/git'
 import { logger } from '@/lib/log/logger'
-import { adoptOrClearBakedCheckout, checkoutLocalSessionBranch, establishBaseRefs, checkoutSessionBranch, clearDirContents, isShallowRepo, markSessionCheckoutAdopted, requireRepoUrl, swapStageIntoTarget } from './checkout'
+import { adoptOrClearBakedCheckout, checkoutLocalSessionBranch, establishBaseRefs, checkoutSessionBranch, isShallowRepo, markSessionCheckoutAdopted, requireRepoUrl, swapStageIntoTarget } from './checkout'
 
 /**
  * Boot-local fallback for an empty/branchless upstream (a managed repo that was
  * provisioned but never seeded). Instead of failing the whole session on
  * "Remote branch <base> not found in upstream origin", lay down a fresh local
  * repo at `base` with one empty commit, so the session branch has a base to
- * fork from and OpenCode boots normally. The agent then populates the tree, and
- * the background remote-branch publish (createRemoteSessionBranch) / first push
- * seeds the upstream for real. A cold sandbox now boots exactly like a warm/
+ * fork from and the session boots normally. The agent then populates the tree, and
+ * the session's first push seeds the upstream for real. A cold sandbox now boots exactly like a warm/
  * baked one — entirely from local git, never blocked on the remote.
  *
  * `dir` is the tmp clone target; the caller renames it into place afterwards.
@@ -254,72 +252,6 @@ let scaffoldRepoPath = DEFAULT_SCAFFOLD_REPO_PATH
 
 export function __setScaffoldRepoPathForTests(path?: string): void {
   scaffoldRepoPath = path ?? DEFAULT_SCAFFOLD_REPO_PATH
-}
-
-/**
- * Seed-only: materialize the image-baked scaffold at `target` with ZERO network,
- * for the warm-snapshot builder. The seed has no project repo — it clones the
- * canonical scaffold so opencode can pay its per-directory project init (git
- * scan / file index / LSP / sqlite) ONCE, frozen into the snapshot. Every fresh
- * session shares the scaffold root, so a fork resumes with opencode already
- * 'ok' for /workspace (kills the runtime-ready wall). Returns true on success;
- * false (no scaffold baked) → caller leaves /workspace empty (degrades to the
- * old behaviour, never breaks). `base` is checked out as a local branch so the
- * working tree matches what a fresh session expects.
- */
-export async function materializeScaffoldSeed(target: string, base: string): Promise<boolean> {
-  if (!existsSync(scaffoldRepoPath)) return false
-  const tmp = await createStagePath(target, 'seed')
-  const t0 = Date.now()
-  try {
-    await rm(tmp, { recursive: true, force: true })
-    const cloned = await execGit(['clone', '-q', scaffoldRepoPath, tmp])
-    if (cloned.code !== 0) throw new Error(`seed scaffold clone: ${cloned.stderr}`)
-    const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'HEAD'])
-    if (co.code !== 0) throw new Error(`seed checkout base: ${co.stderr}`)
-    await swapStageIntoTarget(tmp, target)
-    logger.info('[git] seed scaffold materialized (zero-network)', { ms: Date.now() - t0, base })
-    return true
-  } catch (err) {
-    logger.warn('[git] seed scaffold materialize failed; warm seed will boot repo-less', {
-      err: err instanceof Error ? err.message.slice(0, 200) : String(err),
-    })
-    await rm(tmp, { recursive: true, force: true }).catch(() => {})
-    return false
-  }
-}
-
-/**
- * Clone the PROJECT repo at base tip for a per-project warm seed (Platinum
- * stateful capture). Unlike materializeScaffoldSeed (the
- * repo-LESS generic scaffold), this clones the real project at base into
- * /workspace so the captured snapshot already has the repo — a fork then hits
- * materializeRepo's "using baked repo checkout (warm)" fast path (no in-box
- * clone). Leaves /workspace on `base` tip with NO session branch (none exists
- * during seed capture). Wipes any image-baked /workspace first so a scaffold is never mistaken
- * for the seed. Returns false (→ caller degrades to the scaffold seed) on any
- * failure, so a flaky clone never bricks the seed. Reuses materializeRepo's
- * battle-tested clone (retries, stall-abort, proxy auth) verbatim.
- */
-export async function materializeProjectSeed(cfg: Config): Promise<boolean> {
-  if (!cfg.repoUrl) return false
-  const t0 = Date.now()
-  try {
-    await clearDirContents(cfg.projectTarget)
-    // No branchName during seed capture (no session yet); baseSha=tip so a baked /workspace
-    // (if any) is treated as mismatched and re-materialized to the real repo.
-    await materializeRepo({ ...cfg, branchName: undefined, sessionFresh: true })
-    logger.info('[git] project seed materialized at base', {
-      ms: Date.now() - t0,
-      base: cfg.defaultBranch,
-    })
-    return true
-  } catch (err) {
-    logger.warn('[git] project seed materialize failed; warm seed will fall back to scaffold', {
-      err: err instanceof Error ? err.message.slice(0, 200) : String(err),
-    })
-    return false
-  }
 }
 
 // Materialize `target` from the image-baked scaffold + a delta fetch from the

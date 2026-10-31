@@ -6,6 +6,7 @@ import {
   type DriveRow,
   type RecordedDriveMount,
   authorizedSyncMounts,
+  driveVolume,
   getDrive,
   openVolumeFor,
   readDriveVolume,
@@ -325,7 +326,7 @@ export function registerSessionDriveSyncRoutes(): void {
     if (!/^[0-9a-f]{64}$/.test(sha)) return refuse(c, 400, 'Invalid block');
     const body = new Uint8Array(await c.req.arrayBuffer());
     if (body.byteLength > BLOCK_BYTES) return refuse(c, 413, 'A block is at most 1 MiB');
-    const r = await storage(c, () => putVolumeUploadBlock(drive.platinumVolumeName, param(c, 'uploadId'), sha, body));
+    const r = await storage(c, () => putVolumeUploadBlock(driveVolume(drive), param(c, 'uploadId'), sha, body));
     if (r instanceof Response) return r;
     return c.body(null, 204);
   });
@@ -342,7 +343,7 @@ export function registerSessionDriveSyncRoutes(): void {
       if (!path || !plan.paths.includes(path)) return refuse(c, 400, 'The upload plan does not write this path');
     }
     const uploadId = param(c, 'uploadId');
-    const commit = () => commitVolumeUpload(drive.platinumVolumeName, uploadId);
+    const commit = () => commitVolumeUpload(driveVolume(drive), uploadId);
     const r = await storage(c, () =>
       path ? conditionalWrite(drive, path, c.req.query('expect'), commit) : commit(),
     );

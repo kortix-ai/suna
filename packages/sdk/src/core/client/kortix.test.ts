@@ -904,8 +904,8 @@ test('project(id).setupLinks mints secret-entry and connect-request links', asyn
   expect(last().method).toBe('POST');
 });
 
-test('project(id).validateManifest posts the raw TOML text', async () => {
-  await kortix.project('PID123').validateManifest('[project]\nname = "x"');
+test('project(id).validateManifest posts the raw manifest text', async () => {
+  await kortix.project('PID123').validateManifest('project:\n  name: x\n');
   expect(last().url).toContain('/projects/PID123/manifest/validate');
   expect(last().method).toBe('POST');
 });

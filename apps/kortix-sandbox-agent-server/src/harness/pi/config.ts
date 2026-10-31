@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto'
 import { closeSync, constants, existsSync, fstatSync, openSync, readFileSync, realpathSync } from 'node:fs'
 import { join, sep } from 'node:path'
-import { readProjectManifest, extractNestedString } from '@/lib/config/config'
 import { z } from 'zod'
 import type { Config as HostConfig } from '@/lib/config/config'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import { logger } from '@/lib/log/logger'
 import { managedSkillsDir } from '@/lib/config/managed-skills-dir'
+import { DEFAULT_MAX_CLOUD_SUBAGENT_DEPTH, DEFAULT_MAX_LIVE_CLOUD_SUBAGENTS } from './cloud-subagent'
 
 /** First backoff of a transient model-error retry (transient-retry.ts): 2, 4, 8, 16, 30 s. */
 const TURN_RETRY_DEFAULT_BASE_MS = 2_000
@@ -14,12 +14,11 @@ const TURN_RETRY_DEFAULT_BASE_MS = 2_000
 /**
  * The pi harness environment contract.
  *
- * pi runs INSIDE the daemon process (no child, no port), so most of the
- * OpenCode contract has no analogue here. What remains is where its durable
- * state lives.
+ * pi runs INSIDE the daemon process (no child, no port), so this contract is
+ * mostly where its durable state lives.
  *
- * Model, agent, prompts and the gateway are read from the SAME variables the
- * OpenCode path receives (`KORTIX_MODEL`, `KORTIX_COMPILED_AGENT_CONFIG`,
+ * Model, agent, prompts and the gateway are read from the harness-neutral
+ * variables the control plane sets (`KORTIX_MODEL`, `KORTIX_COMPILED_AGENT_CONFIG`,
  * `KORTIX_AGENT_NAME`, `KORTIX_LLM_BASE_URL`, `KORTIX_TOKEN`): the control plane
  * does not know which harness reads them, and it must not have to.
  */
@@ -29,7 +28,7 @@ const EnvironmentSchema = z.object({
   // pi's global agent dir: `settings.json` lists the system packages the image
   // installed under `npm/` by the image build (runtime-versions.json `piSystemPackages`).
   KORTIX_PI_AGENT_DIR: z.string().optional(),
-  // JSON array of the project's pi package sources (kortix.yaml `harnesses.pi.packages`).
+  // JSON array of the session agent's pi package sources (kortix.yaml `extensions` the agent enables).
   KORTIX_PI_PACKAGES: z.string().optional(),
   // The API-built bundle of those packages: short-lived download URLs (pre-built,
   // and the installed node_modules fallback) and their shared digest.
@@ -44,6 +43,14 @@ const EnvironmentSchema = z.object({
   // The session agent's codemode (`off`, `on` or `only`, codemode.ts), sent by the API. Absent or invalid: the
   // compiled agent's `codemode`, else `on` (runtime.ts `codemode`).
   KORTIX_PI_CODEMODE: z.enum(['off', 'on', 'only']).optional().catch(undefined),
+  // Cloud subagent guardrails (cloud-subagent.ts): children one parent waits on at
+  // once, and the depth a cloud child may still delegate from. Invalid: the default.
+  KORTIX_PI_CLOUD_SUBAGENTS_MAX: z.coerce.number().int().positive().optional().catch(undefined),
+  KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH: z.coerce.number().int().nonnegative().optional().catch(undefined),
+  // The workflow tool (extensions/workflow.ts): agents one run may start, and how many work at once
+  // (never above KORTIX_PI_CLOUD_SUBAGENTS_MAX). Invalid: the default.
+  KORTIX_WORKFLOW_MAX_AGENTS: z.coerce.number().int().positive().optional().catch(undefined),
+  KORTIX_WORKFLOW_MAX_CONCURRENT: z.coerce.number().int().positive().optional().catch(undefined),
 })
 
 export interface PiEnvironment {
@@ -57,7 +64,19 @@ export interface PiEnvironment {
   piTurnRetryBaseMs: number
   piNoProgressMs: number
   piCodemode?: 'off' | 'on' | 'only'
+  /** Cloud children one parent waits on at once. */
+  piCloudSubagentsMax: number
+  /** A session at this subagent depth starts no cloud child. */
+  piCloudSubagentsMaxDepth: number
+  /** `agent()` calls one workflow run may make. */
+  workflowMaxAgents: number
+  /** Workflow children working at once, before the cloud cap applies. */
+  workflowMaxConcurrent: number
 }
+
+/** Defaults of the workflow limits: Claude Code's size guideline `large` (fewer than 50 agents), 8 at once. */
+export const DEFAULT_WORKFLOW_MAX_AGENTS = 50
+export const DEFAULT_WORKFLOW_MAX_CONCURRENT = 8
 
 export const DEFAULT_PI_AGENT_DIR = '/opt/kortix/pi-agent'
 
@@ -73,6 +92,10 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     KORTIX_PI_TURN_RETRY_BASE_MS: env.KORTIX_PI_TURN_RETRY_BASE_MS?.trim() || undefined,
     KORTIX_PI_NO_PROGRESS_MS: env.KORTIX_PI_NO_PROGRESS_MS?.trim() || undefined,
     KORTIX_PI_CODEMODE: env.KORTIX_PI_CODEMODE?.trim() || undefined,
+    KORTIX_PI_CLOUD_SUBAGENTS_MAX: env.KORTIX_PI_CLOUD_SUBAGENTS_MAX?.trim() || undefined,
+    KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH: env.KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH?.trim() || undefined,
+    KORTIX_WORKFLOW_MAX_AGENTS: env.KORTIX_WORKFLOW_MAX_AGENTS?.trim() || undefined,
+    KORTIX_WORKFLOW_MAX_CONCURRENT: env.KORTIX_WORKFLOW_MAX_CONCURRENT?.trim() || undefined,
   })
   return {
     piStateDir: parsed.KORTIX_PI_STATE_DIR?.trim() || join(resolveKortixRuntimeStateDirectory(env), 'pi'),
@@ -85,6 +108,10 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     piTurnRetryBaseMs: parsed.KORTIX_PI_TURN_RETRY_BASE_MS ?? TURN_RETRY_DEFAULT_BASE_MS,
     piNoProgressMs: parsed.KORTIX_PI_NO_PROGRESS_MS ?? 10 * 60_000,
     piCodemode: parsed.KORTIX_PI_CODEMODE,
+    piCloudSubagentsMax: parsed.KORTIX_PI_CLOUD_SUBAGENTS_MAX ?? DEFAULT_MAX_LIVE_CLOUD_SUBAGENTS,
+    piCloudSubagentsMaxDepth: parsed.KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH ?? DEFAULT_MAX_CLOUD_SUBAGENT_DEPTH,
+    workflowMaxAgents: parsed.KORTIX_WORKFLOW_MAX_AGENTS ?? DEFAULT_WORKFLOW_MAX_AGENTS,
+    workflowMaxConcurrent: parsed.KORTIX_WORKFLOW_MAX_CONCURRENT ?? DEFAULT_WORKFLOW_MAX_CONCURRENT,
   }
 }
 
@@ -102,47 +129,12 @@ export function requirePiConfig(cfg: HostConfig): PiConfig {
  * Skill directories, most specific first; pi keeps the first skill of a name.
  * The baked managed `kortix-*` overlay comes first, so the platform's latest
  * copy wins over one a project tracks, with nothing written into the working
- * tree. Then the project's `skills/`, then the legacy `.kortix/opencode/skills`
- * a project authored for OpenCode, so switching `runtime:` never loses them.
+ * tree. Then exactly the folders kortix.yaml registers (`compiled.skills`)
+ * under the config root: the active release root, else the workspace. No
+ * folder is scanned. Null (the image default) has no project skill.
  */
-export async function resolvePiProjectConfigDir(cfg: HostConfig): Promise<string | null> {
-  const workspace = cfg.projectTarget || cfg.workspace || '/workspace'
-  const manifest = await readProjectManifest(await import('node:fs/promises'), workspace)
-  const raw = manifest && extractNestedString(manifest.body, manifest.format, 'pi', 'config_dir')
-  // Repo-relative only. A manifest must never make the harness load host files.
-  if (raw && !raw.startsWith('/') && !raw.startsWith('-') && raw.split('/').every((segment) => segment && segment !== '.' && segment !== '..' && /^[\w .-]+$/.test(segment))) {
-    const path = join(workspace, raw)
-    return existsSync(path) ? path : null
-  }
-  for (const path of ['harnesses/pi', '.kortix/pi']) {
-    if (existsSync(join(workspace, path))) return join(workspace, path)
-  }
-  return null
-}
-
-/**
- * kortix.yaml v3 (`schema: 3`): the managed `kortix-*` overlay, then exactly the
- * registered skill folders (`compiled.skills`) under the config root. No
- * `skills/` scan, no legacy dir, no pi folder. `root` is the active release
- * root, else the workspace; null (the image default) has no project skill.
- */
-export function resolvePiV3SkillDirectories(skills: Record<string, string> | undefined, root: string | null): string[] {
+export function resolvePiSkillDirectories(skills: Record<string, string> | undefined, root: string | null): string[] {
   return [managedSkillsDir(), ...(root ? Object.values(skills ?? {}).map((folder) => join(root, folder)) : [])]
-}
-
-export function resolvePiSkillDirectories(
-  cfg: HostConfig,
-  piDir?: string | null,
-  releaseSkillDirs: string[] | null = null,
-): string[] {
-  const piSkills = piDir ? [join(piDir, 'skills')] : []
-  // A config release decides the project's skills (config-release.ts); the
-  // working tree is read only while releases are not in play.
-  if (releaseSkillDirs) return [managedSkillsDir(), ...releaseSkillDirs, ...piSkills]
-  const workspace = cfg.projectTarget || cfg.workspace || '/workspace'
-  // The layout is packages/manifest-schema/src/layout.ts `skillDirs`; kortixd
-  // imports no `@kortix/*` package, so pi lists the dirs itself.
-  return [managedSkillsDir(), join(workspace, 'skills'), ...piSkills, join(workspace, '.kortix', 'opencode', 'skills')]
 }
 
 /** The project's root instructions file, as the system prompt renders it and health reports it. */
@@ -159,7 +151,7 @@ export interface ProjectInstructions {
 
 /**
  * The root `AGENTS.md` of `root`, else its `CLAUDE.md`: the first name that
- * exists wins, as on OpenCode 1.18.23 (`session/instruction.ts`). Only the
+ * exists wins. Only the
  * root: no ancestor directory, no nested file, no agent-dir file. Null when
  * there is none or it is empty. Null and one warning when it is not a regular
  * file, resolves out of `root`, or cannot be read.

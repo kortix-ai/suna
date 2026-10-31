@@ -19,6 +19,7 @@ export type SessionInvocationSource =
   | 'trigger:event'
   | 'trigger:app'
   | 'trigger:reminder'
+  | 'trigger:change_request'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
   | 'system:secret-submitted'
@@ -26,6 +27,10 @@ export type SessionInvocationSource =
   | 'system:artifact-comment'
   /** A message another participant posted in a room the session joined (`projects/rooms`). */
   | 'system:room-message'
+  /** A background subagent finished a turn: its report, delivered into the parent (`projects/subagent-notice.ts`). */
+  | 'system:subagent-finished'
+  /** A cross-session message (`send_message`) or its idle notice (`projects/peer-messages`). */
+  | 'system:peer-message'
   /** The continuation of a turn a provider-originated `runtime_gone` cut short
    *  when no `continue_session` row took the turn over — the session's own
    *  initial prompt, or an unattended session's row that could not be requeued
@@ -170,8 +175,6 @@ export interface ContinueSessionCommand {
   materializationKey?: string;
   /** Persist the message without starting an agent loop (OpenCode `noReply`). */
   noReply?: boolean;
-  /** Skip legacy first-message repair only for the pending-first row itself. */
-  isPendingFirstPrompt?: boolean;
   /** `userId` is the person who sent this prompt: the session token acts as
    *  them from this turn on (`bindSessionTurnIdentity`). Set by the prompt
    *  route for a non-agent caller; absent keeps the token's identity. */
@@ -183,14 +186,6 @@ export interface ContinueSessionCommand {
    * the Stop itself (`holdInboxPrompts`) and released by the next send.
    */
   queuedAt?: Date;
-}
-
-/** JSON metadata used to gate the one-time repair of pre-materialization prompts. */
-export interface LegacyInlineAttachmentRepairMetadata extends Record<string, unknown> {
-  pending_prompt?: {
-    attachment_names?: unknown;
-  };
-  legacy_inline_attachments_repaired_at?: unknown;
 }
 
 export interface StartSessionCommand {

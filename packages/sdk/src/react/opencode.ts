@@ -139,6 +139,13 @@ export {
 } from './use-session-messages';
 // The session log (`kortix.session/2`) of a session `useSession` owns; null while it reads v1.
 export { useSessionLog, useSessionLogOlder, useSessionLogRecord, useSessionLogThread } from './use-session-log';
+// A read-only view of any session from the API (its log and its stream): no `/start`, no runtime switch.
+export {
+  useSessionView,
+  type SessionViewStatus,
+  type UseSessionViewOptions,
+  type UseSessionViewResult,
+} from './use-session-view';
 export { useSessionPicks, type SessionPicks } from './use-session-picks';
 export {
   useSessionPrompts,

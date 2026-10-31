@@ -40,7 +40,6 @@ export interface SidebarProps {
    * by name.
    */
   onAccountResolved?(accountId: string): void;
-  onAttach?(sessionId: string): void;
   onToast?(message: string, kind?: 'info' | 'error'): void;
 }
 
@@ -71,7 +70,6 @@ export function Sidebar({
   onProjectChange,
   onAccountChange,
   onAccountResolved,
-  onAttach,
   onToast,
 }: SidebarProps) {
   const [picker, setPicker] = useState<'none' | 'account' | 'project'>('none');
@@ -203,14 +201,6 @@ export function Sidebar({
     [projectId, onToast, sessionsQuery.refetch],
   );
 
-  const attach = useCallback(
-    (sessionId: string) => {
-      if (onAttach) onAttach(sessionId);
-      else onToast?.('Attach is not wired yet (features/terminal).', 'error');
-    },
-    [onAttach, onToast],
-  );
-
   const pickerItems = useMemo(() => {
     if (picker === 'account')
       return accounts.map((account) => ({ id: account.account_id, label: account.name }));
@@ -272,7 +262,6 @@ export function Sidebar({
       onNavigate={(screen: SidebarScreen) => onNavigate(screen)}
       onRename={(sessionId, name) => void renameSession(sessionId, name)}
       onDelete={(sessionId) => void deleteSession(sessionId)}
-      onAttach={attach}
       onFilterChange={setFilter}
       onReachEnd={reachEnd}
     />

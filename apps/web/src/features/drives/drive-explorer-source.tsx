@@ -265,6 +265,8 @@ export const driveExplorerSource: FileExplorerSource = {
     hiddenToggle: false,
     gitStatusChip: false,
     newFile: false,
+    // Any size: above 64 MiB the SDK sends the file in 1 MiB blocks.
+    maxUploadBytes: null,
     // The top level and `/Users` hold only folders; files go inside one.
     filesAllowedAt: (path) => {
       const p = toDrivePath(path);

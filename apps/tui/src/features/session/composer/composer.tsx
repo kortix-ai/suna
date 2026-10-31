@@ -62,8 +62,8 @@ export interface ComposerProps {
   sessionId: string;
   focused: boolean;
   width: number;
-  /** Built-ins the app handles: navigation, overlays, attach, stop. */
-  onCommand(command: 'new' | 'terminal' | 'files' | 'help' | 'quit' | 'attach' | 'stop'): void;
+  /** Built-ins the app handles: navigation, overlays, stop. */
+  onCommand(command: 'new' | 'terminal' | 'files' | 'help' | 'quit' | 'stop'): void;
   onToast?(message: string, kind?: 'info' | 'error'): void;
   onRequestFocus?(): void;
   /**

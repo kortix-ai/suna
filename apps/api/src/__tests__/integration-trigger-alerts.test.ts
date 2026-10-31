@@ -315,7 +315,7 @@ describe('who an alert reaches', () => {
     expect(rows[0]).toMatchObject({ kind: 'automation_failed', title: 'Check the deploy' });
   });
 
-  test('an unnamed reminder is titled "Reminder", not by its id', async () => {
+  test('an unnamed reminder is titled "Loop", not by its id', async () => {
     const slug = 'reminder.9f8e7d6c5b4a';
     const spec = {
       ...cronSpec(slug, slug),
@@ -327,7 +327,7 @@ describe('who an alert reaches', () => {
     await seedDueExecution(slug, spec);
     await drainCron();
 
-    expect(await alertRows(slug)).toMatchObject([{ userId: MEMBER, kind: 'automation_failed', title: 'Reminder' }]);
+    expect(await alertRows(slug)).toMatchObject([{ userId: MEMBER, kind: 'automation_failed', title: 'Loop' }]);
   });
 
   test('a reminder a service account set alerts the managers who can open its session, never the service account', async () => {

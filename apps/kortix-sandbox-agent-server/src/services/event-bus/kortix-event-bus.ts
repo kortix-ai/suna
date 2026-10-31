@@ -212,8 +212,8 @@ export class KortixEventBus {
 //
 // One bus per daemon, reached from anywhere without threading it through six
 // constructors — the same shape `runtime-assets.ts` uses for the convergence
-// report and `proxy.ts` for the resource monitor. `main.ts` feeds it The harness's
-// SSE; the turn observer and boot marks publish into it directly.
+// report and `proxy.ts` for the resource monitor. The pi runtime publishes its
+// frames into it in-process; the turn observer and boot marks publish into it directly.
 
 /**
  * The v1 transcript frames: the v2 stream (`/events?schema=v2`) carries the

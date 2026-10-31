@@ -398,7 +398,7 @@ export async function restorePiSessionLog(input: SessionLog, target: PiRestoreTa
     }
   })
   const dump: PiDump = {
-    version: 1, rootId, title: log.title ?? '', createdAt: ms(log.created_at), agentMessages: [],
+    version: 1, rootId, title: log.title ?? '', createdAt: ms(log.created_at),
     entries: main.entries as never, header: header as never, messageIds: main.ids, seqs: main.seqs,
     transcript: v1.get(rootId) ?? [], turns: [], children, ...contextOf(root),
   }

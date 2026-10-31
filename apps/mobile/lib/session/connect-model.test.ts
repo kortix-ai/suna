@@ -8,19 +8,19 @@ import {
 describe('projectModelsWebUrl', () => {
   test('builds the project customize/models URL', () => {
     expect(projectModelsWebUrl('https://kortix.com', 'proj-1')).toBe(
-      'https://kortix.com/projects/proj-1/customize/models',
+      'https://kortix.com/projects/proj-1/admin/models',
     );
   });
 
   test('trims a trailing slash off the frontend URL', () => {
     expect(projectModelsWebUrl('https://kortix.com/', 'proj-1')).toBe(
-      'https://kortix.com/projects/proj-1/customize/models',
+      'https://kortix.com/projects/proj-1/admin/models',
     );
   });
 
   test('encodes the project id', () => {
     expect(projectModelsWebUrl('https://kortix.com', 'proj 1/étage')).toBe(
-      'https://kortix.com/projects/proj%201%2F%C3%A9tage/customize/models',
+      'https://kortix.com/projects/proj%201%2F%C3%A9tage/admin/models',
     );
   });
 });
@@ -28,7 +28,7 @@ describe('projectModelsWebUrl', () => {
 describe('projectModelsWebUrl with a return URL', () => {
   test('adds return_to, URL-encoded', () => {
     expect(projectModelsWebUrl('https://kortix.com', 'proj-1', PROVIDER_CONNECTED_URI)).toBe(
-      'https://kortix.com/projects/proj-1/customize/models?return_to=kortix%3A%2F%2Fproviders%2Fconnected',
+      'https://kortix.com/projects/proj-1/admin/models?return_to=kortix%3A%2F%2Fproviders%2Fconnected',
     );
   });
 });

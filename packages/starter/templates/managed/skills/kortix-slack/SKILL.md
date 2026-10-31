@@ -76,7 +76,8 @@ Do **NOT**:
 - print or paste the app manifest,
 - ask for a bot token or signing secret,
 - mint a secret-intake link for `SLACK_BOT_TOKEN`/`SLACK_SIGNING_SECRET`,
-- try `kortix connectors add slack` (the slug is reserved; it will be rejected).
+- add a Slack connector with `kortix connectors add` (the Slack channel is
+  `kortix_slack`, built by Kortix; a connector you add does not connect it).
 
 The manual path exists ONLY for self-hosted servers without the shared Slack
 app — and `kortix channels connect` detects that case itself and prints the
@@ -133,9 +134,9 @@ slack step "Cross-referencing the timeline" \
 
 A step never notifies anyone. `<@U0123ABCD>` in a step's title, `--detail` or `--output` shows as the person's name (`@Sam Rivera`), and `<!here>` shows as text. `<#C0123ABCD>` shows as the channel. To notify someone, mention them in `slack send`.
 
-### `--source URL|TITLE` — citation footer (repeatable)
+### `--source URL|TITLE` — citation footer
 
-Attach structured citations to the *closing* task. Slack renders them as a sources strip under that task's card. Pass multiple `--source` lines separated by newlines (use shell heredoc or repeat the flag in a wrapper).
+Attach structured citations to the *closing* task. Slack renders them as a sources strip under that task's card. Put several sources in ONE `--source` value, one `URL|TITLE` per line (`$'…'` or a heredoc). A repeated `--source` flag keeps only the last one.
 
 ```sh
 slack step "Drafting the post-mortem" \
@@ -165,7 +166,7 @@ slack send "It was api@a3f1 — the new auth middleware drops the trace header o
 ### Rules
 
 - **Use `slack step` to mark phase transitions, not every shell call.** ~3–6 per turn is right for most tasks; one per `bash` is noise.
-- **Set `--detail` and `--output` once per step.** Re-sending them for the same step appends rather than replaces — surprising and ugly.
+- **Every `slack step` starts a new step.** `--detail` belongs to the new step; `--output` and `--source` belong to the step it closes. A step cannot be edited: to correct one, start the next.
 - **Keep them short.** `--detail` and `--output` get truncated at 500 chars upstream; aim for one tight sentence.
 - **Don't `slack step` after you've called `slack send`.** The plan is closed. A later step exits non-zero with `reason: turn_finalized`.
 - **A step that did not reach the thread FAILS — it never answers `ok: true`.** `slack step` exits 1 with `{"ok": false, "code": "STEP_NOT_RELAYED", "reason": "<why>", "error": "…<what to do>"}`. Read `reason`, then act:
@@ -179,13 +180,13 @@ slack send "It was api@a3f1 — the new auth middleware drops the trace header o
 <keeping-the-stream-alive>
 ### A live run has no idle timeout — silence only hurts the user
 
-The plan block is a posted message the server **edits in place**. It is not an open stream, so Slack cannot auto-fail it. A long, silent step (a build, a test suite, a `task`/subagent) does not paint an error and does not end your run. The server closes a thread on its own only when your run has **ended** and no `slack send` reached the thread within 30 minutes. That thread then shows "This run ended without a reply."
+The plan block is a posted message the server **edits in place**. It is not an open stream, so Slack cannot auto-fail it. A long, silent step (a build, a test suite, an `agent` subagent) does not paint an error and does not end your run. The server closes a thread on its own only when your run has **ended** and no `slack send` reached the thread within 30 minutes. That thread then shows "This run ended without a reply."
 
 **Do not run heartbeat loops** (`while sleep …; do slack step …; done`). They buy nothing, and a loop left running after `slack send` is a leak.
 
 A wall of nothing for ten minutes is still bad UX:
 
-- **Post a step before anything slow** — `git clone`, `pnpm install`, a test suite, a build, `pnpm preview`, deep research, a big LLM call, a `task`/subagent — so the thread shows what you are waiting on.
+- **Post a step before anything slow** — `git clone`, `pnpm install`, a test suite, a build, `pnpm preview`, deep research, a big LLM call, an `agent` subagent — so the thread shows what you are waiting on.
 - **Narrate long work in phases.** `slack step "Installing deps"` → `slack step "Running typecheck"` → `slack step "Running tests"` reads better than one silent 12-minute block.
 - **Space steps at real phase boundaries.** Ten steps in two seconds add noise, not information.
 </keeping-the-stream-alive>
@@ -256,7 +257,7 @@ When the answer is a *list of things the user might pick between or browse* (dep
 **Important constraints (Slack rules, not ours):**
 - Cards live ONLY inside a `carousel` block.
 - Cards support `body` (mrkdwn) and `actions` (buttons / select menus) — they do **NOT** support `input` / `radio_buttons` / `checkboxes`. To ask the user to choose, use the `question` tool instead.
-- Each card's button click fires a `block_actions` interaction; the platform routes it back as a follow-up Slack message (`Picked: <button label>`) into the same thread, the agent's next turn starts from that.
+- Each card's button click fires a `block_actions` interaction. The platform starts your next turn in the same thread with `[Button click] The user clicked *<label>*.` and the button's `action_id` and `value`.
 - 2–10 cards per carousel.
 
 Example — presenting 3 deploy candidates:
@@ -322,7 +323,7 @@ Each turn finalizes exactly one stream. Don't call `slack send` twice — the se
 
 A `slack send` with no `--channel` is the turn's answer. When it cannot be delivered into a Slack turn it exits 1 with `{"ok": false, "code": "ANSWER_NOT_RELAYED", "reason": "<why>", "error": "…<what to do>"}` — it never prints `ok: true` for an undelivered answer. `no_open_turn` means this run was not started from Slack, or the turn was closed before you answered; if the user is waiting in a thread, deliver the same answer with `slack send --channel <id> --thread <ts>` (the channel and thread are in the prompt header and in `$SLACK_CHANNEL_ID` / `$SLACK_THREAD_TS`). `relay_request_failed` is a Kortix API failure, not a missing turn: retry once, then post with `--channel/--thread`.
 
-**A reminder fire is not a Slack turn either.** When you set a reminder (`kortix remind`) from a Slack thread, write the channel id and thread ts into the reminder text — e.g. `kortix remind "Check whether the deploy finished; post the result with slack send --channel C0123ABCD --thread 1727600000.000100" --in 30m` — and answer the fire with `slack send --channel <id> --thread <ts>`. A plain `slack send` on that turn exits 1 with `no_open_turn`.
+**A loop fire is not a Slack turn either.** When you set a loop (`kortix loop`) from a Slack thread, write the channel id and thread ts into the loop text — e.g. `kortix loop "Check whether the deploy finished; post the result with slack send --channel C0123ABCD --thread 1727600000.000100" --in 30m` — and answer the fire with `slack send --channel <id> --thread <ts>`. A plain `slack send` on that turn exits 1 with `no_open_turn`.
 </final-answer>
 
 <asking-the-user>
@@ -471,8 +472,7 @@ Full help: `slack help`.
 
 <gotchas>
 - **`*bold*` not `**bold**`.** Slack uses single asterisks. Double-asterisk markdown renders as literal asterisks.
-- **`--detail` and `--output` are append-not-replace per step.** Set each only once on the step that owns it. If you need to revise, advance to a new step.
-- **`slack step` after `slack send` drops silently.** Plan block is closed once the answer ships. Always send the answer last.
+- **`slack step` after `slack send` fails** (exit 1, `turn_finalized`). The plan block is closed once the answer ships. Always send the answer last.
 - **`slack send --file` does NOT finalize the stream.** It posts a separate file message. Follow it with a regular `slack send "..."` to close the turn.
 - **`$SLACK_CHANNEL_ID`, `$SLACK_THREAD_TS`, `$SLACK_TRIGGER_TS` are pre-injected on Slack turns.** Use them — don't hard-code IDs.
 - **Stay in the thread.** Unless the task explicitly says "post in #channel-X", everything goes in the originating thread. Cross-posting to other channels needs a real reason (incident broadcast, scheduled digest).

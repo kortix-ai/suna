@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
+import { activeRuntimeAction, runtimeActionError, runtimeActionPaths, type RuntimePending } from '../../core/session/runtime-actions';
 import { useEffect, useRef } from 'react';
 import type { Part } from '../../core/runtime/runtime-types';
 import { getClient } from '../../core/runtime/client';
@@ -697,6 +698,18 @@ export function useSendRuntimeMessage() {
  * itself never swallows it.
  */
 export async function abortRuntimeSession(sessionId: string): Promise<void> {
+  const aborted = await activeRuntimeAction('POST', runtimeActionPaths.abort(sessionId));
+  if (aborted) {
+    if (!aborted.ok) throw await runtimeActionError(aborted, 'Stopping the session failed');
+    try {
+      const pending = await activeRuntimeAction('GET', runtimeActionPaths.pending);
+      const status = pending?.ok ? ((await pending.json()) as RuntimePending).statuses[sessionId] : undefined;
+      if (status && status !== 'idle') useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
+    } catch {
+      // Non-critical — the stream delivers the status.
+    }
+    return;
+  }
   const client = getClient();
   const result = await client.session.abort({ sessionID: sessionId });
   unwrap(result);

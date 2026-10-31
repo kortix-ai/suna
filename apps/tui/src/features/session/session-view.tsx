@@ -137,9 +137,6 @@ export interface SessionViewProps {
   onPortsApi?: (api: UsePortsResult) => void;
   /** Links panel (`Alt+L`) rows, hoisted for the same reason. Newest first. */
   onLinks?: (rows: LinkRow[]) => void;
-  /** What the runtime serves (`/kortix/health` `capabilities`), hoisted so the
-   *  app can refuse `Alt+O` attach. Null until read. */
-  onCapabilities?: (capabilities: readonly string[] | null) => void;
   /** Test seam for the one `/kortix/health` read. */
   readHealth?: (projectId: string, sessionId: string) => Promise<SessionHealthResult>;
   /**
@@ -167,7 +164,6 @@ export function SessionView({
   onToast,
   onPortsApi,
   onLinks,
-  onCapabilities,
   readHealth = readSessionHealth,
   useSessionImpl = useSession,
 }: SessionViewProps) {
@@ -175,9 +171,8 @@ export function SessionView({
   const session = useSessionImpl(projectId, sessionId);
   const [metrics, setMetrics] = useState<ComposerMetrics>({ rows: 1, overlayOpen: false });
 
-  // What this runtime serves (a pi session has no project commands and no
-  // attach): one `/kortix/health` read once the runtime is up. Null — not read
-  // yet, or the read failed — hides nothing.
+  // What this runtime serves: one `/kortix/health` read once the runtime is up.
+  // Null — not read yet, or the read failed — hides nothing.
   const [capabilities, setCapabilities] = useState<readonly string[] | null>(null);
   useEffect(() => {
     setCapabilities(null);
@@ -192,9 +187,6 @@ export function SessionView({
       live = false;
     };
   }, [projectId, sessionId, session.switched, readHealth]);
-  useEffect(() => {
-    onCapabilities?.(capabilities);
-  }, [capabilities, onCapabilities]);
 
   const ports = usePorts({ host, projectId, sessionId, onToast });
   useEffect(() => {

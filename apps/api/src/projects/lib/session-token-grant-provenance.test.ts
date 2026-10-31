@@ -119,7 +119,6 @@ const loadedOf = (grant: Pick<AgentGrant, 'connectors' | 'permissions' | 'env'> 
         {
           name: 'kortix',
           path: 'kortix.yaml',
-          file: null,
           model: null,
           enabled: true,
           connectors: grant.connectors,

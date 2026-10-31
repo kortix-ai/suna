@@ -13,7 +13,7 @@ import {
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
 import { loadLink, resolveProjectRef } from './project-link.ts';
 import { ensureDefaultProjectBinding } from './project-bind.ts';
-import { denialDetailFromBody, recordPermissionDenial } from './token-denial.ts';
+import { denialDetailFromBody, machineErrors, recordPermissionDenial, withIssues, writeMachineError } from './token-denial.ts';
 import { C, status } from './style.ts';
 import type { MeResponse, ProjectSession, ProjectSummary } from './api/types.ts';
 
@@ -278,6 +278,19 @@ export interface AccountContext {
  * `--host`, only that host's stored account is used unless `--account`
  * explicitly overrides it.
  */
+/**
+ * The context of a session box's own token for a project-scoped read: no
+ * account. The token is bound to one project, and the usage routes take that
+ * `project_id` and refuse any `account_id`, so the account context of
+ * `resolveAccountContext` (an active account, or none at all) cannot serve it.
+ * Null outside a session box.
+ */
+export function resolveProjectTokenContext(): AccountContext | null {
+  if (!hasEnvTokenHost()) return null;
+  const auth = loadEnvAuth();
+  return auth?.token ? { client: clientFromAuth(auth, { accountId: '' }), accountId: '', auth } : null;
+}
+
 export function resolveAccountContext(opts: {
   accountArg?: string;
   hostArg?: string;
@@ -365,7 +378,7 @@ interface LocatedSession {
  * scanned too before giving up and moving on. With neither flag, every
  * other logged-in host is scanned as well. `retryCommand` builds the full
  * CLI invocation to suggest for a host without stored credentials (e.g.
- * `(host) => \`kortix sessions connect ${id} --host ${host}\``). Prints its
+ * `(host) => \`kortix sessions chat ${id} --host ${host}\``). Prints its
  * own progress/error messages; returns null on failure.
  */
 export async function locateSessionAnywhere(
@@ -728,6 +741,12 @@ export function surfaceApiError(err: unknown): number {
     // token that was refused (see token-denial.ts) — the message itself only
     // ever names the action.
     recordPermissionDenial(err.status, denialDetailFromBody(err.body), err.credential);
+    // A program reads this run (KORTIX_ERROR_FORMAT=json): a refusal's line comes from the tail; any
+    // other failure is one line here, with the API's validation issues.
+    if (machineErrors() && err.status !== 401 && err.status !== 403) {
+      writeMachineError({ kind: 'failed', status: err.status, message: withIssues(err.message, err.body) });
+      return 1;
+    }
     if (err.status === 401) {
       // The server's reason names the credential ("project token <id> is
       // revoked") when it has one; the bare line otherwise.

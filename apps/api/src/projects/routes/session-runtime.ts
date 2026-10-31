@@ -18,11 +18,12 @@ import { SessionStartResultSchema, SessionTurnStatusSchema, projectsApp } from '
 import {
   sessionUsesCurrentRepository,
 } from '../lib/repository-generation';
-import { captureJournallessSessionLogOnWake } from '../lib/session-transcript-capture';
 import { isUuid } from '../../shared/validate';
 import { restartSession, startSession, stopSession } from '../session-lifecycle';
 import { START_AWAIT_MAX_MS } from '../session-lifecycle/await-stage';
 import { recoverLostSession } from '../session-lifecycle/recover-lost-session';
+import { stoppedSubagentNotice } from '../subagent-notice';
+import { trackDetached } from '../../shared/drain';
 import { isWarmProjectSession } from '../lib/warm-sessions';
 import { dropWarmSessionMarkerOnAdopt, warmSessionPlacement } from './warm-sessions';
 import { readSessionTurnState } from '../lib/session-turn-read';
@@ -115,7 +116,7 @@ export function registerSessionRuntimeRoutes(): void {
         // A held browser entry can predate the project's region preference.
         // Wait for actual placement while creation is pending; never adopt an
         // EU or unknown active box as US, and never move an existing box.
-        const placement = await warmSessionPlacement(sessionId, projectMetadata);
+        const placement = await warmSessionPlacement(sessionId, projectMetadata, loaded.row.projectId);
         if (placement === 'pending') {
           return c.json({
             stage: 'provisioning' as const,
@@ -173,12 +174,6 @@ export function registerSessionRuntimeRoutes(): void {
         signal: c.req.raw.signal,
       });
       stl.mark(`open-session:${result.start.stage}`);
-      // THE RUNTIME IS UP. A box without a journal gets what is already in it
-      // into the session log, once: capture otherwise runs only at turn end.
-      // Fire-and-forget and self-limiting (at most 3 attempts per session per
-      // process, none for a session with a journal). It cannot fail or delay
-      // this response.
-      if (result.start.stage === 'ready') void captureJournallessSessionLogOnWake(sessionId);
       stl.log({
         waitMs,
         repositoryMode: usesCurrentRepository ? 'current' : 'previous',
@@ -342,6 +337,8 @@ export function registerSessionRuntimeRoutes(): void {
         );
       }
 
+      // Read before the stop ends the turn: a background subagent's parent hears it.
+      const parentNotice = await stoppedSubagentNotice(sessionId, callerKortixSessionId(c));
       const result = await stopSession({
         projectId,
         sessionId,
@@ -350,6 +347,7 @@ export function registerSessionRuntimeRoutes(): void {
         // The person the stopped turn names; an agent credential names nobody.
         stoppedBy: isProjectSessionPrincipal(c) ? null : loaded.userId,
       });
+      if (parentNotice && result.status === 200) trackDetached(parentNotice());
       return c.json(result.body, result.status as any);
     },
   );

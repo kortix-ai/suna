@@ -1,5 +1,7 @@
 'use client';
 
+import { Badge } from '@kortix/ui/badge';
+import { Checkbox } from '@kortix/ui/checkbox';
 import { CountBadge } from '@kortix/ui/count-badge';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@kortix/ui/disclosure';
 import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
@@ -9,6 +11,7 @@ import { type App, type ProjectTrigger } from '@kortix/sdk';
 import { CaretRightIcon } from '@phosphor-icons/react';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import type { UiTranslator } from '@/i18n/translator';
+import type { AppSelect } from './apps-view';
 
 /**
  * The Apps that run rather than get opened: a poller, a bot, a backend.
@@ -24,12 +27,15 @@ export function BackgroundApps({
   open,
   onOpenChange,
   onOpen,
+  select,
 }: {
   apps: App[];
   triggers: ProjectTrigger[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onOpen: (appId: string) => void;
+  /** Agent scope: each row's grant checkbox (`AppsView`). */
+  select?: (app: App) => AppSelect | undefined;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const counts = backgroundSummary(apps);
@@ -59,7 +65,7 @@ export function BackgroundApps({
       <DisclosureContent>
         <ul className="space-y-1.5 pb-1">
           {apps.map((app) => (
-            <BackgroundRow key={app.app_id} app={app} triggers={triggers} onOpen={() => onOpen(app.app_id)} />
+            <BackgroundRow key={app.app_id} app={app} triggers={triggers} onOpen={() => onOpen(app.app_id)} select={select?.(app)} />
           ))}
         </ul>
       </DisclosureContent>
@@ -80,7 +86,17 @@ export function backgroundMeta(app: App, triggers: ProjectTrigger[], t: UiTransl
   return [...kind, caller ? t('textd6d136eb7406', { value0: caller.name || caller.slug }) : null].filter(Boolean).join(' · ');
 }
 
-function BackgroundRow({ app, triggers, onOpen }: { app: App; triggers: ProjectTrigger[]; onOpen: () => void }) {
+function BackgroundRow({
+  app,
+  triggers,
+  onOpen,
+  select,
+}: {
+  app: App;
+  triggers: ProjectTrigger[];
+  onOpen: () => void;
+  select?: AppSelect;
+}) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const locale = useLocale();
   const status = appStatus(app, t);
@@ -91,7 +107,16 @@ function BackgroundRow({ app, triggers, onOpen }: { app: App; triggers: ProjectT
       : t.raw('textbeeb1f954807');
 
   return (
-    <li>
+    // Agent scope: the grant checkbox leads the row, a sibling of the button.
+    <li className={cn(select && 'flex items-center gap-3')}>
+      {select ? (
+        <Checkbox
+          checked={select.checked}
+          disabled={select.disabled}
+          onCheckedChange={select.onToggle}
+          aria-label={select.label}
+        />
+      ) : null}
       <button
         type="button"
         onClick={onOpen}
@@ -109,6 +134,11 @@ function BackgroundRow({ app, triggers, onOpen }: { app: App; triggers: ProjectT
           <span className="text-foreground truncate text-sm font-medium">{app.name}</span>
           <span className="text-muted-foreground truncate text-xs">{backgroundMeta(app, triggers, t)}</span>
         </span>
+        {select?.note ? (
+          <Badge variant="muted" size="xs">
+            {select.note}
+          </Badge>
+        ) : null}
         {activity ? <span className="text-muted-foreground hidden shrink-0 text-xs tabular-nums sm:block">{activity}</span> : null}
         <span className="sr-only">{status.label}</span>
         <CaretRightIcon aria-hidden className="text-muted-foreground group-hover:text-foreground duration-fast size-3.5 shrink-0 transition-colors" />

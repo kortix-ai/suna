@@ -15,6 +15,7 @@ import { handleInteractionEvent } from './handle-interaction-event';
 import { handleMessageEvent } from './handle-message-event';
 import { handleSessionEvent } from './handle-session-event';
 import { handleWorkspaceEvent } from './handle-workspace-event';
+import { pendingEventsOfLogState, sessionStatusOfLogFrame } from './log-control';
 import type { HandlerContext } from './handler-context';
 import type { NormalizeDiagnosticPaths, RuntimeEvent } from './types';
 export const USER_PARTS_GRACE_MS = 1_500;
@@ -93,6 +94,17 @@ export function createEventHandler(deps: {
       : undefined;
     if (event.type.startsWith('log.')) {
       if (deps.sessionId) useSyncStore.getState().applySessionLogEvent(deps.sessionId, event);
+      // The control frames drive the stores the runtime's own events drive.
+      const status = sessionStatusOfLogFrame(event);
+      if (status) {
+        const before = useSyncStore.getState().sessionStatus[status.properties.sessionID];
+        deps.applySyncEvent(status as OpenCodeSdkEvent);
+        handleSessionEvent(status, ctx, before);
+      }
+      if ((event.type as string) === 'log.state' && deps.sessionId) {
+        const threads = Object.keys(useSyncStore.getState().sessionLogs[deps.sessionId]?.threads ?? {});
+        for (const interaction of pendingEventsOfLogState(event, threads)) handleInteractionEvent(interaction, ctx);
+      }
       return;
     }
     deps.applySyncEvent(event as OpenCodeSdkEvent);

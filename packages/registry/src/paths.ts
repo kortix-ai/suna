@@ -1,16 +1,7 @@
 /**
- * Resolve a file `target` (which may use a Kortix alias) to a concrete
- * repo-relative POSIX path in the consuming project.
+ * Path helpers shared by build + fetch, and the `@alias` targets that
+ * `kortix registry build` writes (see `TARGET_ALIASES` in `schema.ts`).
  */
-
-import { AGENTS_DIR, MEMORY_DIR, SKILLS_DIR } from '@kortix/manifest-schema/layout';
-
-export interface TargetContext {
-  /** The OpenCode config dir (`@opencode`, `@commands`, `@tools`), e.g. "harnesses/opencode". */
-  configDir: string;
-  /** Memory dir. Defaults to the root `memory`. */
-  memoryDir?: string;
-}
 
 export function trimTrailingSlashes(value: string): string {
   let end = value.length;
@@ -18,63 +9,9 @@ export function trimTrailingSlashes(value: string): string {
   return value.slice(0, end);
 }
 
-export function expandTarget(target: string, ctx: TargetContext): string {
-  const cd = trimTrailingSlashes(ctx.configDir);
-  const mem = trimTrailingSlashes(ctx.memoryDir ?? MEMORY_DIR);
-  let out: string;
-
-  if (target === '~' || target === '~/') {
-    out = '';
-  } else if (target.startsWith('~/')) {
-    out = target.slice(2);
-  } else {
-    const alias = target.match(/^@([a-zA-Z]+)\/(.*)$/);
-    if (alias) {
-      const [, name, rest] = alias;
-      switch (name) {
-        case 'opencode':
-          out = `${cd}/${rest}`;
-          break;
-        // Skills and agents are harness-neutral: they install at the root in
-        // every project, the legacy `.kortix/opencode` layout included.
-        case 'skills':
-          out = `${SKILLS_DIR}/${rest}`;
-          break;
-        case 'agents':
-          out = `${AGENTS_DIR}/${rest}`;
-          break;
-        case 'commands':
-          out = `${cd}/commands/${rest}`;
-          break;
-        case 'tools':
-          out = `${cd}/tools/${rest}`;
-          break;
-        case 'memory':
-          out = `${mem}/${rest}`;
-          break;
-        default:
-          // Unknown alias — leave verbatim (treated as a literal path).
-          out = target;
-      }
-    } else {
-      out = target;
-    }
-  }
-
-  out = out.replace(/^\/+/, '').replace(/\/{2,}/g, '/');
-  if (out.split('/').includes('..')) {
-    throw new Error(`target "${target}" resolves outside the project`);
-  }
-  return out;
-}
-
 // --- target builders (used by `kortix registry build`) ---------------------
 
 export const buildTarget = {
   skill: (name: string, rel: string) => `@skills/${name}/${rel}`,
   agent: (file: string) => `@agents/${file}`,
-  command: (file: string) => `@commands/${file}`,
-  tool: (file: string) => `@tools/${file}`,
-  memory: (file: string) => `@memory/${file}`,
-  opencode: (rel: string) => `@opencode/${rel}`,
 };

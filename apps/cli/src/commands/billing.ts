@@ -15,6 +15,7 @@ import {
   fail,
   query,
   resolveAccountContext,
+  resolveProjectTokenContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
@@ -132,7 +133,9 @@ export async function runBilling(argv: string[]): Promise<number> {
     return fail((err as Error).message);
   }
 
-  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
+  // In a session box, `costs --project` reads with the box's own project-bound token, no account.
+  const projectToken = (sub === 'costs' || sub === 'cost') && f.project && !f.account && !f.host;
+  const ctx = (projectToken ? resolveProjectTokenContext() : null) ?? resolveAccountContext({ accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
 
   try {

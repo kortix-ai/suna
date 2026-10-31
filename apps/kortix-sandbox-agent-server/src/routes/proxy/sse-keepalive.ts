@@ -1,15 +1,15 @@
 /**
  * SSE keepalive injection for proxied event streams (`/global/event`).
  *
- * No layer between opencode and the browser emits a byte on a quiet stream —
- * not opencode, not this proxy, not the api proxy — so the SDK's 60s
+ * No layer between the runtime and the browser emits a byte on a quiet stream —
+ * not the runtime, not this proxy, not the api proxy — so the SDK's 60s
  * heartbeat was the ONLY detector of a dead stream, and the path can die
  * silently in ways nothing logs: a stale cached ingress at the api that
  * answers 200 and never writes, a stalled edge hop, the ALB's 300s idle
  * timeout on a quiet session. Sessions froze mid-turn with the transcript
  * minutes behind (prod, 2026-08-26).
  *
- * This proxy runs INSIDE the sandbox, one localhost hop from opencode, so a
+ * This proxy runs INSIDE the sandbox, in the runtime's own process, so a
  * keepalive it emits proves the entire daemon → edge → api → browser path.
  * While keepalives flow, the client heartbeat firing means the PATH died —
  * a true positive worth an immediate reconnect; while they don't, the
@@ -27,7 +27,7 @@
  *    it mid-event would flush a half-written event to every consumer.
  *
  * Backpressure is preserved: the wrapper reads the upstream one chunk per
- * `pull`, so a slow browser connection still throttles the opencode read the
+ * `pull`, so a slow browser connection still throttles the runtime read the
  * way the native `Response(upstream.body)` pipe did.
  */
 

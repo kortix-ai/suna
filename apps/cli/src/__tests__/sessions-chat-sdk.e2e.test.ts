@@ -3,12 +3,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import { runSessions } from '../commands/sessions.ts';
 
 const PROJECT_ID = '00000000-0000-4000-a000-00000000c111';
 const ACCOUNT_ID = '00000000-0000-4000-a000-00000000c222';
 const SESSION_ID = '00000000-0000-4000-a000-00000000c333';
-const OPENCODE_SESSION_ID = 'ses_cli_sdk';
+const ROOT_THREAD_ID = 'ses_cli_sdk';
 const EXTERNAL_ID = 'external-cli-sdk';
 const TOKEN = 'kortix_pat_cli_sdk';
 
@@ -33,13 +34,16 @@ let promptBody: Record<string, unknown> | null = null;
 let runtimeAuthorization: string | null = null;
 let runtimePromptPosts = 0;
 let createBody: Record<string, unknown> | null = null;
-/** The runtime's transcript: a reply appears once a prompt reaches the inbox. */
+/** The box's session log: a reply appears once a prompt reaches the inbox. */
 let transcript: unknown[] = [];
 /** When true, the assistant reply stops with a structured runtime error. */
 let replyError = false;
 let provisioning = false;
 let startPosts = 0;
 let stopped = false;
+/** The initial prompt's turn: its messages so far, and how many more pending reads see the root busy. */
+let initialTurn: unknown[] | null = null;
+let busyReads = 0;
 
 function sessionRow() {
   return {
@@ -51,7 +55,7 @@ function sessionRow() {
     sandbox_provider: 'daytona',
     sandbox_id: provisioning ? null : SESSION_ID,
     sandbox_url: null,
-    opencode_session_id: provisioning ? null : OPENCODE_SESSION_ID,
+    opencode_session_id: provisioning ? null : ROOT_THREAD_ID,
     name: 'SDK chat',
     custom_name: null,
     agent_name: 'default',
@@ -63,56 +67,29 @@ function sessionRow() {
   };
 }
 
-function userMessage(id: string, text: string) {
+const PRODUCER = { harness: 'pi', harness_version: '1', adapter_version: '1' };
+
+function record(message_id: string, seq: number, over: Record<string, unknown>) {
   return {
-    info: {
-      id,
-      role: 'user',
-      sessionID: OPENCODE_SESSION_ID,
-      agent: 'default',
-      model: { providerID: 'test-provider', modelID: 'test-model' },
-      time: { created: 1 },
-    },
-    parts: [{ id: `${id}-p0`, sessionID: OPENCODE_SESSION_ID, messageID: id, type: 'text', text }],
+    schema: 'kortix.session/2', v: 1, message_id, thread_id: ROOT_THREAD_ID, seq, kind: 'turn', status: 'complete',
+    in_context: true, model: null, usage: null, finish: null, error: null, created_at: '2026-07-30T00:00:01.000Z',
+    completed_at: null, producer: PRODUCER, blocks: [], ...over,
   };
 }
 
-function assistantReply(parentID = 'msg_user') {
-  return {
-    info: {
-      id: `${parentID}-reply`,
-      role: 'assistant',
-      sessionID: OPENCODE_SESSION_ID,
-      parentID,
-      agent: 'default',
-      mode: 'build',
-      modelID: 'test-model',
-      providerID: 'test-provider',
-      path: { cwd: '/workspace', root: '/workspace' },
-      cost: 0,
-      tokens: {
-        input: 1,
-        output: 1,
-        reasoning: 0,
-        cache: { read: 0, write: 0 },
-      },
-      time: { created: 2, completed: 3 },
-      finish: 'stop',
-      // OpenCode's error envelope: the message lives under `data.message`.
-      ...(replyError
-        ? { error: { name: 'APIError', data: { message: 'Synthetic model requires a paid plan.' } } }
-        : {}),
-    },
-    parts: [
-      {
-        id: 'part_assistant',
-        sessionID: OPENCODE_SESSION_ID,
-        messageID: `${parentID}-reply`,
-        type: 'text',
-        text: 'OpenCode REST reply',
-      },
-    ],
-  };
+function userMessage(id: string, text: string) {
+  return record(id, transcript.length + 1, { role: 'user', blocks: [{ type: 'text', id: `${id}-b0`, text }] });
+}
+
+function assistantReply(replyTo = 'msg_user') {
+  return record(`${replyTo}-reply`, transcript.length + 2, {
+    role: 'assistant',
+    reply_to: replyTo,
+    finish: replyError ? 'error' : 'stop',
+    completed_at: '2026-07-30T00:00:03.000Z',
+    blocks: [{ type: 'text', id: `${replyTo}-reply-b0`, text: 'Runtime reply' }],
+    ...(replyError ? { status: 'error', error: { code: 'APIError', message: 'Synthetic model requires a paid plan.' } } : {}),
+  });
 }
 
 describe('sessions chat uses the session-scoped SDK runtime', () => {
@@ -133,6 +110,8 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     provisioning = false;
     startPosts = 0;
     stopped = false;
+    initialTurn = null;
+    busyReads = 0;
 
     server = Bun.serve({
       port: 0,
@@ -159,7 +138,7 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
             agent_name: 'default',
             retriable: false,
             sandbox: { external_id: EXTERNAL_ID },
-            opencode_session_id: OPENCODE_SESSION_ID,
+            opencode_session_id: ROOT_THREAD_ID,
           });
         }
         if (
@@ -174,24 +153,24 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
           transcript.push(userMessage(id, text), assistantReply(id));
           return Response.json({ prompt_id: 'prompt_1', state: 'pending', message_id: id, deduped: false });
         }
-        if (
-          request.method === 'GET' &&
-          url.pathname === `/v1/p/${EXTERNAL_ID}/8000/kortix/runtime/messages/${OPENCODE_SESSION_ID}`
-        ) {
+        if (request.method === 'GET' && url.pathname === `/v1/p/${EXTERNAL_ID}/8000/kortix/health`) {
+          return Response.json({ capabilities: ['session.subagents', 'session.compact', 'runtime.actions.v1'] });
+        }
+        if (request.method === 'GET' && url.pathname === `/v1/p/${EXTERNAL_ID}/8000/kortix/runtime/log`) {
           runtimeAuthorization = request.headers.get('authorization');
           // `chat --new` reads the reply to its initial prompt, which session
           // creation queued.
-          const messages = transcript.length ? transcript : [userMessage('msg_user', 'one initial prompt'), assistantReply()];
-          return Response.json({ messages, has_more: false });
+          const messages = transcript.length ? transcript : (initialTurn ?? [userMessage('msg_user', 'one initial prompt'), assistantReply()]);
+          return Response.json({ thread_id: ROOT_THREAD_ID, messages, has_more: false });
         }
-        if (request.method === 'GET' && url.pathname === `/v1/p/${EXTERNAL_ID}/8000/session/status`) {
-          return Response.json({});
-        }
-        if (request.method === 'GET' && url.pathname === `/v1/p/${EXTERNAL_ID}/8000/permission`) {
-          return Response.json([]);
-        }
-        if (request.method === 'GET' && url.pathname === `/v1/p/${EXTERNAL_ID}/8000/question`) {
-          return Response.json([]);
+        if (request.method === 'GET' && url.pathname === `/v1/p/${EXTERNAL_ID}/8000/kortix/runtime/pending`) {
+          if (busyReads > 0) {
+            busyReads -= 1;
+            // The turn ends with this read: its last step lands.
+            if (busyReads === 0 && initialTurn) initialTurn.push(record('msg_user-final', 4, { role: 'assistant', reply_to: 'msg_user', blocks: [{ type: 'text', id: 'final-b0', text: 'Final answer' }] }));
+            return Response.json({ statuses: { [ROOT_THREAD_ID]: 'busy' }, permissions: [], questions: [] });
+          }
+          return Response.json({ statuses: {}, permissions: [], questions: [] });
         }
         return Response.json(
           { error: `unexpected ${request.method} ${url.pathname}` },
@@ -229,9 +208,21 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     }) as typeof process.stderr.write;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     process.stdout.write = realStdoutWrite;
     process.stderr.write = realStderrWrite;
+    if (server) {
+      // The SDK keeps the session's runtime per session id: drop it with the server it points at.
+      const auth = {
+        api_base: `http://127.0.0.1:${server.port}`,
+        token: TOKEN,
+        user_id: 'user-cli-sdk',
+        user_email: 'cli-sdk@example.test',
+        account_id: ACCOUNT_ID,
+        logged_in_at: '2026-07-30T00:00:00.000Z',
+      };
+      await withKortixScope(auth, () => kortixFromAuth(auth).session(PROJECT_ID, SESSION_ID).stop()).catch(() => {});
+    }
     server?.stop(true);
     server = null;
     for (const key of ENV_KEYS) {
@@ -271,7 +262,7 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
       overrides: { agent: 'default' },
       remint_on_delivery: true,
     });
-    expect(JSON.parse(stdout).text).toBe('OpenCode REST reply');
+    expect(JSON.parse(stdout).text).toBe('Runtime reply');
 
     stdout = '';
     const logCode = await runSessions([
@@ -286,28 +277,24 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
 
     expect(logCode).toBe(0);
     expect(runtimeAuthorization).toBe(`Bearer ${TOKEN}`);
-    // No stored session log (this API answers GET …/log with 404): the live v1
-    // read, converted to kortix.session/2 records.
+    // No stored session log (this API answers GET …/log with 404): the box's own log.
     const log = JSON.parse(stdout) as {
       schema: string;
       source: string;
       threads: Array<{ thread_id: string; messages: Array<{ role: string; blocks: Array<{ type: string; text?: string }> }> }>;
     };
-    expect(log).toMatchObject({ schema: 'kortix.session/2', source: 'v1' });
-    expect(log.threads.map((t) => t.thread_id)).toEqual([OPENCODE_SESSION_ID]);
+    expect(log).toMatchObject({ schema: 'kortix.session/2', source: 'log' });
+    expect(log.threads.map((t) => t.thread_id)).toEqual([ROOT_THREAD_ID]);
     expect(log.threads[0]!.messages.map((m) => [m.role, m.blocks.find((b) => b.type === 'text')?.text])).toEqual([
       ['user', 'hello from the CLI'],
-      ['assistant', 'OpenCode REST reply'],
+      ['assistant', 'Runtime reply'],
     ]);
 
-    // The old v1 JSON, deprecated, for one release.
+    // The OpenCode-shaped v1 rows are gone.
     stdout = '';
-    expect(await runSessions(['log', SESSION_ID, '--project', PROJECT_ID, '--limit', '5', '--json', '--schema', 'v1'])).toBe(0);
-    expect(JSON.parse(stdout)).toEqual([
-      expect.objectContaining({ role: 'user', text: 'hello from the CLI' }),
-      expect.objectContaining({ role: 'assistant', text: 'OpenCode REST reply' }),
-    ]);
-    expect(stderr).toContain('--schema v1 is deprecated');
+    expect(await runSessions(['log', SESSION_ID, '--project', PROJECT_ID, '--limit', '5', '--json', '--schema', 'v1'])).toBe(2);
+    expect(stdout).toBe('');
+    expect(stderr).toContain('Invalid --schema "v1"');
     stderr = '';
 
     stdout = '';
@@ -327,11 +314,11 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     expect(createBody).toMatchObject({ initial_prompt: 'one initial prompt', agent_name: 'default' });
     // `--new` sends its prompt as the session's initial prompt, not a second one.
     expect(runtimePromptPosts).toBe(1);
-    expect(JSON.parse(stdout).text).toBe('OpenCode REST reply');
+    expect(JSON.parse(stdout).text).toBe('Runtime reply');
     expect(stderr).toBe('');
 
     // A turn that stops with a structured runtime error surfaces its name and
-    // message in chat and log output, and keeps the raw envelope in --json.
+    // message in chat and log output, and keeps the error record in --json.
     replyError = true;
     stdout = '';
     const failedCode = await runSessions([
@@ -361,12 +348,17 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
       error: { code: 'APIError', message: 'Synthetic model requires a paid plan.' },
     });
 
-    stdout = '';
-    expect(await runSessions(['log', SESSION_ID, '--project', PROJECT_ID, '--json', '--schema', 'v1'])).toBe(0);
-    const old = JSON.parse(stdout) as Array<{ role: string; error?: unknown }>;
-    expect(old.at(-1)).toMatchObject({
-      role: 'assistant',
-      error: { name: 'APIError', data: { message: 'Synthetic model requires a paid plan.' } },
-    });
+  });
+  test('chat --new prints the reply that ends the first turn, not a step the turn has not finished', async () => {
+    // A finished tool step while the root is still busy, then the final answer.
+    initialTurn = [
+      userMessage('msg_user', 'one initial prompt'),
+      record('msg_user-step', 3, { role: 'assistant', reply_to: 'msg_user', blocks: [{ type: 'tool_call', id: 'step-b0', call_id: 'c1', name: 'question', kind: 'question', input: {}, status: 'complete', result: { content: [{ type: 'text', text: 'Pear' }], is_error: false } }] }),
+    ];
+    busyReads = 2;
+    const code = await runSessions(['chat', '--new', '--project', PROJECT_ID, '--prompt', 'one initial prompt', '--json']);
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout).text).toBe('Final answer');
+    expect(busyReads).toBe(0);
   });
 });

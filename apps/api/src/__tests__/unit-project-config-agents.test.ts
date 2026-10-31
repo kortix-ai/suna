@@ -6,13 +6,13 @@ import type { LoadedAgents } from '../projects/agents';
 const nativeAgents = [
   {
     name: 'kortix',
-    path: '.kortix/opencode/agents/kortix.md',
+    path: 'agents/kortix.md',
     description: 'Default Kortix agent',
     mode: 'primary',
   },
   {
     name: 'release-bot',
-    path: '.kortix/opencode/agents/release-bot.md',
+    path: 'agents/release-bot.md',
     description: 'Ships releases',
     mode: 'subagent',
   },
@@ -40,7 +40,6 @@ describe('project config agent discovery', () => {
           connectors: 'all',
           permissions: 'all',
           env: 'all',
-          file: null,
           model: null,
         },
         {
@@ -50,7 +49,6 @@ describe('project config agent discovery', () => {
           connectors: [],
           permissions: [],
           env: 'all',
-          file: '.kortix/opencode/agents/release-bot.md',
           model: null,
         },
         {
@@ -60,25 +58,28 @@ describe('project config agent discovery', () => {
           connectors: [],
           permissions: [],
           env: 'all',
-          file: null,
           model: null,
         },
       ],
     };
 
-    const result = resolveConfigAgents(nativeAgents, loaded);
+    // `triage`'s prompt file is the `release-bot` native summary's path.
+    const result = resolveConfigAgents(nativeAgents, loaded, (spec) =>
+      spec.name === 'triage' ? 'agents/release-bot.md' : undefined,
+    );
 
     expect(result.agent_discovery).toBe('declarative');
     expect(result.agents).toEqual([
       {
         name: 'kortix',
-        path: '.kortix/opencode/agents/kortix.md',
+        path: 'agents/kortix.md',
         description: 'Default Kortix agent',
         mode: 'primary',
         // The roster carries the agent's model since #7083 — `null` here
         // because neither the spec nor the native summary names one, and the
         // resolver reads `native?.model ?? null`.
         model: null,
+        space: null,
         source: 'kortix.yaml',
         enabled: true,
         sandbox: null,
@@ -86,10 +87,11 @@ describe('project config agent discovery', () => {
       },
       {
         name: 'triage',
-        path: '.kortix/opencode/agents/release-bot.md',
+        path: 'agents/release-bot.md',
         description: 'Ships releases',
         mode: 'subagent',
         model: null,
+        space: null,
         source: 'kortix.yaml',
         enabled: true,
         sandbox: null,
@@ -101,6 +103,7 @@ describe('project config agent discovery', () => {
         description: null,
         mode: null,
         model: null,
+        space: null,
         source: 'kortix.yaml',
         enabled: false,
         sandbox: null,
@@ -120,7 +123,6 @@ describe('project config agent discovery', () => {
           connectors: ['stripe'],
           permissions: ['project.read'],
           env: ['GITHUB_TOKEN', 'OPENAI_API_KEY'],
-          file: null,
           model: null,
         },
       ],
@@ -144,25 +146,24 @@ describe('project config agent discovery', () => {
     expect(result.agents.every((a) => a.scope === undefined)).toBe(true);
   });
 
-  test('root layout: a declared agent resolves to the .md that exists, wherever it is', () => {
+  test('a declared agent resolves to its prompt file, wherever it is', () => {
     const rootAgents = [
       { name: 'kortix', path: 'agents/kortix.md', description: 'Root agent', mode: 'primary' },
       { name: 'support', path: 'team/support.md', description: 'Explicit file', mode: 'subagent' },
     ];
-    const spec = (name: string, file: string | null) => ({
+    const spec = (name: string) => ({
       name,
       path: `kortix.yaml#agents.${name}`,
       enabled: true,
       connectors: [] as string[],
       permissions: [] as string[],
       env: 'all' as const,
-      file,
       model: null,
     });
     const result = resolveConfigAgents(
       rootAgents,
-      { errors: [], specs: [spec('kortix', null), spec('support', 'team/support.md')] },
-      (s) => (s.name === 'kortix' ? 'agents/kortix.md' : undefined),
+      { errors: [], specs: [spec('kortix'), spec('support')] },
+      (s) => (s.name === 'kortix' ? 'agents/kortix.md' : 'team/support.md'),
     );
     expect(result.agents.map((a) => [a.name, a.path, a.description])).toEqual([
       ['kortix', 'agents/kortix.md', 'Root agent'],
@@ -176,7 +177,7 @@ describe('project config agent discovery', () => {
       errors: [{
         name: '(top-level)',
         path: 'kortix.yaml',
-        error: '`agents` must use [[agents]]',
+        error: '`agents` must be a map of agent name → agent block',
       }],
     });
 

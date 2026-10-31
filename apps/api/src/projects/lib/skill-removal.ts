@@ -1,7 +1,7 @@
-import { skillDirs } from "@kortix/manifest-schema";
 import { isRecord } from '@kortix/shared/guards';
 
-/** Only the explicitly selected skill is owned by this operation. No dependency GC. */
+/** Only the explicitly selected skill is owned by this operation. No dependency GC.
+ *  A project skill is a folder kortix.yaml registers under `skills:`. */
 export function planSkillRemoval(
   raw: Record<string, unknown>,
   files: string[],
@@ -20,10 +20,7 @@ export function planSkillRemoval(
   const names = Object.entries(registry)
     .filter(([, path]) => path === folder)
     .map(([key]) => key);
-  const roots = skillDirs(raw);
-  if (!names.length && !roots.some((root) => folder === `${root}/${name}`)) {
-    throw new Error("Not a project skill folder");
-  }
+  if (!names.length) throw new Error("Not a project skill folder");
   if (!files.includes(`${folder}/SKILL.md`))
     throw new Error("Project skill not found");
   if (
@@ -37,15 +34,6 @@ export function planSkillRemoval(
     throw new Error("Skill folder overlaps another registered skill");
   }
   if (
-    roots.some(
-      (root) =>
-        `${root}/${name}` !== folder &&
-        files.includes(`${root}/${name}/SKILL.md`),
-    )
-  ) {
-    throw new Error("Skill name is shared by multiple folders");
-  }
-  if (
     files.some(
       (file) =>
         file.startsWith(`${folder}/`) &&
@@ -55,22 +43,26 @@ export function planSkillRemoval(
   ) {
     throw new Error("Skill folder contains another skill");
   }
-  const removedNames = new Set([...names, name]);
+  const removedNames = new Set(names);
   const next = structuredClone(raw);
-  if (names.length)
-    next.skills = Object.fromEntries(
-      Object.entries(registry).filter(([key]) => !removedNames.has(key)),
-    );
-  if (Array.isArray(next.agents))
-    throw new Error("Legacy array agents are not supported for removal");
-  if (next.agents) {
+  next.skills = Object.fromEntries(
+    Object.entries(registry).filter(([key]) => !removedNames.has(key)),
+  );
+  if (isRecord(next.agents)) {
     next.agents = Object.fromEntries(
-      Object.entries((isRecord(next.agents) ? next.agents : {})).map(([key, value]) => {
+      Object.entries(next.agents).map(([key, value]) => {
         const agent = isRecord(value) ? value : {};
         if (Array.isArray(agent.skills))
           agent.skills = agent.skills.filter(
             (skill) => typeof skill !== "string" || !removedNames.has(skill),
           );
+        // `{ exclude }` names the skill too; a removed skill leaves it.
+        else if (isRecord(agent.skills) && Array.isArray(agent.skills.exclude))
+          agent.skills = {
+            exclude: agent.skills.exclude.filter(
+              (skill) => typeof skill !== "string" || !removedNames.has(skill),
+            ),
+          };
         return [key, agent];
       }),
     );
