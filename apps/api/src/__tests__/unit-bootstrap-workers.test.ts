@@ -8,34 +8,50 @@ let handlers: { onAcquire(): Promise<void>; onRelease(): Promise<void> };
 let eligible = false;
 const originalRejections = process.listeners('unhandledRejection');
 const originalExceptions = process.listeners('uncaughtException');
-mock.module('../config', () => ({ config }));
+const realConfig = await import('../config');
+Object.assign(config, { ...realConfig.config, ...config });
+mock.module('../config', () => ({ ...realConfig, config }));
 mock.module('../lib/logger', () => ({ logger: { info() {}, warn() {}, error() {}, localError() {} }, isLoggingTransportError: () => false }));
 mock.module('../lib/sentry', () => ({ captureException() {}, flushSentry: async () => {} }));
-mock.module('../router/config/model-pricing', () => ({ stopModelPricing() {} }));
+const modelPricing = await import('../router/config/model-pricing');
+mock.module('../router/config/model-pricing', () => ({ ...modelPricing, stopModelPricing() {} }));
 mock.module('../llm-gateway/models/runtime-catalog', () => ({ runtimeModelCatalog: { stop() {} } }));
-mock.module('../connectors/pipedream', () => ({ warmPipedreamCatalog: record('warmPipedreamCatalog') }));
-mock.module('../connectors/composio', () => ({ warmComposioDiscovery: record('warmComposioDiscovery') }));
+const pipedream = await import('../connectors/pipedream');
+mock.module('../connectors/pipedream', () => ({ ...pipedream, warmPipedreamCatalog: record('warmPipedreamCatalog') }));
+const composio = await import('../connectors/composio');
+mock.module('../connectors/composio', () => ({ ...composio, warmComposioDiscovery: record('warmComposioDiscovery') }));
 mock.module('../runtime-assets', () => ({ runtimeAssetsManifest: async () => {}, warmRuntimeChunkIndex: async () => {} }));
-mock.module('../shared/audit', () => ({ shutdownAuditEvents: async () => {} }));
-mock.module('../shared/drain', () => ({ drainRequests: async () => ({ remaining: 0 }) }));
+const audit = await import('../shared/audit');
+mock.module('../shared/audit', () => ({ ...audit, shutdownAuditEvents: async () => {} }));
+const drain = await import('../shared/drain');
+mock.module('../shared/drain', () => ({ ...drain, drainRequests: async () => ({ remaining: 0 }) }));
+const leaderElection = await import('../shared/leader-election');
 mock.module('../shared/leader-election', () => ({
+  ...leaderElection,
   runsSingletonWorkers: () => config.KORTIX_WORKERS_ENABLED,
   startLeaderElection: (callbacks: typeof handlers, options: { eligible: boolean }) => { handlers = callbacks; eligible = options.eligible; },
   stopLeaderElection: async () => {},
 }));
-mock.module('../snapshots/builder', () => ({ kickStartupPreBuild: record('kickStartupPreBuild') }));
-mock.module('../sandbox-proxy/preview-hosts', () => ({ warnIfPreviewOriginsMissing() {} }));
+const snapshots = await import('../snapshots/builder');
+mock.module('../snapshots/builder', () => ({ ...snapshots, kickStartupPreBuild: record('kickStartupPreBuild') }));
+const previewHosts = await import('../sandbox-proxy/preview-hosts');
+mock.module('../sandbox-proxy/preview-hosts', () => ({ ...previewHosts, warnIfPreviewOriginsMissing() {} }));
 mock.module('../platform/services/maintenance-setting', () => ({ maintenanceSetting: { refresh: async () => {} } }));
-mock.module('../platform/services/runtime-settings', () => ({ refreshRuntimeSettings: async () => {} }));
-mock.module('../platform/services/github-app-identity', () => ({ refreshAppIdentity: async () => {} }));
-mock.module('../platform/services/managed-git-backend', () => ({ refreshGitBackend: async () => {} }));
+const runtimeSettings = await import('../platform/services/runtime-settings');
+mock.module('../platform/services/runtime-settings', () => ({ ...runtimeSettings, refreshRuntimeSettings: async () => {} }));
+const appIdentity = await import('../platform/services/github-app-identity');
+mock.module('../platform/services/github-app-identity', () => ({ ...appIdentity, refreshAppIdentity: async () => {} }));
+const gitBackend = await import('../platform/services/managed-git-backend');
+mock.module('../platform/services/managed-git-backend', () => ({ ...gitBackend, refreshGitBackend: async () => {} }));
 const broadcast = await import('../shared/pg-broadcast');
 mock.module('../shared/pg-broadcast', () => ({
   ...broadcast,
   startConfigBaseMoveBroadcast: async () => false,
   onSessionChanged: record('onSessionChanged'),
 }));
+const projects = await import('../projects/surface');
 mock.module('../projects/surface', () => ({
+  ...projects,
   handBackClaims: async () => 0,
   signalSessionRuntimeActive() {},
 }));
