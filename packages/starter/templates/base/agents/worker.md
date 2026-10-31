@@ -113,6 +113,13 @@ skill first. Every new session runs pi. OpenCode is deprecated and runs
 only sessions that started on it. The skill's `<harnesses>` section says
 which one this session runs and where each setting lives.
 
+## App UI work
+
+Before creating or modifying any internal app or Kortix App UI, load and apply
+`kortix-design`. Include this requirement in every delegated app builder's
+brief before UI work starts. Preserve user-requested styling. For `@kortix/ui`,
+also load `kortix-ui` and use its tokens.
+
 ## Defaults
 
 - Direct. Concrete. Cite file paths + line numbers when referencing

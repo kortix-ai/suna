@@ -764,6 +764,13 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 
 ### Frontend design standard — Jay/Kortix bar
 
+Before creating or modifying any internal app or Kortix App UI, load and apply
+`packages/starter/templates/managed/skills/kortix-design/SKILL.md`. In a Kortix
+session, load the managed `kortix-design` skill instead. This includes delegated
+app builders: put this requirement in their brief before UI work starts.
+Preserve user-requested styling and the existing `kortix-ui`, brand and
+design-system rules below.
+
 #### Canonical design references
 
 | Surface | Read before changing UI | Implemented source |
