@@ -30,7 +30,7 @@ import {
   toOpencodeModelRef,
 } from '../../llm-gateway/resolution/effective';
 import { checkClaudeAgentRef } from '../../llm-gateway/resolution/claude-agent';
-import { claudeSubscriptionRequiredBody, missingClaudeSubscription } from '../../claude-subscription/gate';
+import { claudeSubscriptionRequiredBody, missingClaudeSubscription } from '../claude-subscription/gate';
 
 import { selectProvider } from '../../platform/services/provider-balancer';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
@@ -676,11 +676,11 @@ async function resolveSessionModel(params: {
     if (claudeAgent.kind === 'invalid') {
       return { error: { status: 400, body: { error: claudeAgent.message, code: 'INVALID_SESSION_MODEL' } } };
     }
-    // A Claude subscription model runs on the person's own Claude login, so a
-    // first prompt without one could only fail in the box.
+    // A Claude subscription model needs a Claude account, so a first prompt
+    // without one could only fail in the box.
     const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
     if (claudeAgent.kind === 'valid' && initialPrompt && !input.callerSessionId) {
-      const missing = await missingClaudeSubscription({ accountId, userId, model: claudeAgent.ref });
+      const missing = await missingClaudeSubscription({ accountId, projectId, userId, model: claudeAgent.ref });
       if (missing) return { error: { status: 409, body: claudeSubscriptionRequiredBody(missing) } };
     }
     let servable = await isModelServableForAccount({

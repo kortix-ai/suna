@@ -11,11 +11,6 @@ export interface HarnessEnvironmentInput {
   runtimeEnv?: unknown
   llmGatewayEnabled?: unknown
   llmGatewayBaseUrl?: unknown
-  /**
-   * The prompting user's Claude subscription login (`claude setup-token`), or null when that
-   * user has none. Absent: unchanged. Only the `claude` process receives it.
-   */
-  claudeOauthToken?: unknown
 }
 
 /**

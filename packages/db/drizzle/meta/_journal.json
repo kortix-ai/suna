@@ -1443,6 +1443,13 @@
       "when": 1793417513481,
       "tag": "20261031033153_claude_subscription_logins",
       "breakpoints": true
+    },
+    {
+      "idx": 206,
+      "version": "7",
+      "when": 1793465054863,
+      "tag": "20261031164414_claude_login_flow_accounts",
+      "breakpoints": true
     }
   ]
 }

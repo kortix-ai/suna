@@ -44,7 +44,7 @@ import { MEMORY_TURN_SYSTEM_MAX_CHARS } from '@kortix/api-contract';
 import { isMemoryTurnRoute, memoryChannelsOn, memoryFilesOn, withMemoryTurn, withoutClientSystem } from '../../memory/turn-body';
 import { isMyKortixAgentName } from '@kortix/shared';
 import { logger } from '../../lib/logger';
-import { missingClaudeSubscription, sessionModelPin } from '../../claude-subscription/gate';
+import { missingClaudeSubscription, sessionModelPin } from '../../projects/surface';
 import type { ForwardRequest, ForwardState } from './context';
 
 // Turn-start preparation on the forward path: runtime convergence before the
@@ -65,6 +65,8 @@ const REAL_PRE_PROMPT_DEPS: PrePromptEnvSyncDeps = {
   claudeSubscriptionMissing: async (input) =>
     missingClaudeSubscription({
       accountId: input.accountId,
+      projectId: input.projectId,
+      sessionId: input.sessionId,
       userId: input.userId,
       model: input.promptModel ?? (await sessionModelPin(input.sessionId)),
     }),

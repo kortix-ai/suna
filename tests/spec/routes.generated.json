@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1016,
+  "count": 1018,
   "routes": [
     {
       "method": "GET",
@@ -53,6 +53,14 @@
     {
       "method": "POST",
       "path": "/internal/gateway/budget-check"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/claude-credentials"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/claude-refused"
     },
     {
       "method": "POST",

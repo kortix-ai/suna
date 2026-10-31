@@ -62,6 +62,17 @@ describe('Claude subscription models', () => {
     expect(flattenModels(projectLlmCatalogToProviderList({ models: { 'glm-5.3-flash': { name: 'GLM' } } } as never)).map((m) => m.id)).toEqual(['glm-5.3-flash']);
   });
 
+  test('a Claude model carries the project on/off switch: the picker and the Models tab read the same value', () => {
+    const model = (alias: string, enabled?: boolean) => ({ id: `claude-agent/${alias}`, name: alias, description: '', limit: { context: 1, output: 1 }, efforts: [], requires: 'claude_subscription' as const, connected: true, ...(enabled === undefined ? {} : { enabled }) });
+    const flat = flattenModels(projectLlmCatalogToProviderList({
+      models: {},
+      claudeSubscription: { providerId: 'claude-agent', name: 'Claude subscription', connected: true, models: [model('opus', true), model('haiku', false), model('sonnet')] },
+    } as never));
+    const enabled = Object.fromEntries(flat.map((m) => [m.modelID, m.enabled]));
+    // An API older than the switch sends no value: the model is on.
+    expect(enabled).toEqual({ opus: true, haiku: false, sonnet: true });
+  });
+
   test('every Claude subscription model shows in the picker without a search: the list is already curated', () => {
     const hidden = () => false;
     for (const modelID of ['opus', 'fable', 'sonnet', 'haiku']) {
