@@ -16,6 +16,7 @@
 import { useKeyboard } from '@opentui/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { printable } from '../../lib/printable.ts';
 import { relativeAge } from '../../lib/relative-time.ts';
 import { glyph as GLYPH, theme } from '../../theme.ts';
 import { Spinner, layoutRow, windowStart } from '../../ui/index.ts';
@@ -644,7 +645,9 @@ function HistoryPane({ state, cursor, now, width, height }: HistoryPaneProps) {
       {visible.map((row, index) => {
         const isCursor = start + index === at;
         const age = relativeAge(row.atMs, now);
-        const right = age ? `${row.author} · ${age}` : row.author;
+        // Commit metadata is whatever the committer wrote: no control characters reach the terminal.
+        const author = printable(row.author);
+        const right = age ? `${author} · ${age}` : author;
         return (
           <text
             key={row.hash}
@@ -653,7 +656,7 @@ function HistoryPane({ state, cursor, now, width, height }: HistoryPaneProps) {
           >
             <span fg={theme.brand}>{isCursor ? GLYPH.selected : ' '}</span>
             <span fg={theme.faint}>{row.shortHash}</span>
-            {layoutRow(` ${row.subject}`, right, bodyWidth - row.shortHash.length - 1)}
+            {layoutRow(` ${printable(row.subject)}`, right, bodyWidth - row.shortHash.length - 1)}
           </text>
         );
       })}

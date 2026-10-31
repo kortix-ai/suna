@@ -86,6 +86,9 @@ export function AuditView({
   const [mode, setMode] = useState<'browse' | 'details' | 'confirm'>('browse');
   const [filter, setFilter] = useState<AuditFilter>('all');
   const [decision, setDecision] = useState<'approve' | 'deny'>('approve');
+  // The row the prompt opened for. `y` decides exactly this execution: a refresh while the
+  // prompt is open can move or drop the cursor row, and the cursor is not what was confirmed.
+  const [confirmTarget, setConfirmTarget] = useState<AuditRow | null>(null);
   const [cursorId, setCursorId] = useState<string | null>(rows[0]?.id ?? null);
   const [note, setNote] = useState<string | null>(null);
 
@@ -116,6 +119,7 @@ export function AuditView({
         );
       }
       setDecision(next);
+      setConfirmTarget(current);
       setMode('confirm');
     },
     [current],
@@ -127,11 +131,13 @@ export function AuditView({
     if (mode === 'confirm') {
       if (matchesAuditBinding(key, 'back') || matchesAuditBinding(key, 'cancel')) {
         setMode('browse');
+        setConfirmTarget(null);
         return;
       }
       if (matchesAuditBinding(key, 'confirm')) {
-        const target = current;
+        const target = confirmTarget;
         setMode('browse');
+        setConfirmTarget(null);
         if (target) onDecide(target, decision);
       }
       return;
@@ -184,7 +190,7 @@ export function AuditView({
   }
 
   const confirming = mode === 'confirm';
-  const extra = (confirming ? 3 : 0) + (busyMessage ? 1 : 0) + (notice ? 1 : 0) + (note ? 1 : 0);
+  const extra = (confirming && confirmTarget ? 3 + confirmFields(confirmTarget).length : 0) + (busyMessage ? 1 : 0) + (notice ? 1 : 0) + (note ? 1 : 0);
   const rowsAvailable = Math.max(height - extra - 2, 1);
   const start = windowStart(cursorIndex, shown.length, rowsAvailable);
   const visible = shown.slice(start, start + rowsAvailable);
@@ -209,10 +215,16 @@ export function AuditView({
           bodyWidth,
         )}
       </text>
-      {confirming && current ? (
+      {confirming && confirmTarget ? (
         <box flexDirection="column" width={width}>
           <text fg={theme.fg}>{decision === 'approve' ? 'Approve action' : 'Deny action'}</text>
-          <text fg={theme.fg}>{layoutRow(current.action, current.actor, bodyWidth)}</text>
+          <text fg={theme.fg}>{layoutRow(confirmTarget.action, confirmTarget.actor, bodyWidth)}</text>
+          {/* What is being approved: the call's parameters, not only its name. */}
+          {confirmFields(confirmTarget).map(([label, value]) => (
+            <text key={label} fg={theme.dim} wrapMode="none">
+              {layoutRow(label, value, bodyWidth)}
+            </text>
+          ))}
           <text fg={theme.faint}>y confirm · n or Esc cancel</text>
         </box>
       ) : null}
@@ -250,4 +262,11 @@ export function AuditView({
       <text fg={theme.faint}>{layoutRow(hints, '', bodyWidth)}</text>
     </box>
   );
+}
+
+/** The detail fields a decision prompt shows: the call's parameters first, at most 3 lines. */
+const CONFIRM_FIELDS = 3;
+function confirmFields(row: AuditRow): Array<[string, string]> {
+  const ranked = [...row.fields].sort((a, b) => Number(b[0] === 'Arguments') - Number(a[0] === 'Arguments'));
+  return ranked.filter(([label]) => label !== 'Time').slice(0, CONFIRM_FIELDS);
 }

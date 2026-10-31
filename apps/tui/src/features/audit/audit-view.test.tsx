@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { act } from 'react';
+import { act, useState } from 'react';
 
 import { testRender } from '@opentui/react/test-utils';
 
@@ -151,6 +151,36 @@ describe('<AuditView/> through the OpenTUI test renderer', () => {
     await act(async () => mockInput.pressKey('x'));
     await act(async () => mockInput.pressKey('y'));
     expect(decided).toEqual(['approve x1', 'deny x1']);
+    renderer.destroy();
+  });
+
+  test('y decides the row the prompt opened for, with its arguments shown, even after a refresh moves the list', async () => {
+    const second: AuditRow = {
+      ...rows()[0]!,
+      id: 'action:x9',
+      atMs: NOW - 5 * MINUTE,
+      action: 'github.merge_pull_request',
+      fields: [['Arguments', '{"pr":42}']],
+      pending: { executionId: 'x9', canResolve: true, resolvers: null },
+    };
+    const decided: string[] = [];
+    let setShown: (next: AuditRow[]) => void = () => {};
+    function Harness() {
+      const [list, setList] = useState<AuditRow[]>([rows()[0]!, second]);
+      setShown = setList;
+      return <AuditView {...props({ rows: list, onDecide: (row, d) => decided.push(`${d} ${row.pending?.executionId}`) })} />;
+    }
+    const { captureCharFrame, flush, mockInput, renderer } = await testRender(<Harness />, SIZE);
+    await flush();
+    await act(async () => mockInput.pressKey('j'));
+    await act(async () => mockInput.pressKey('a'));
+    await flush();
+    expect(captureCharFrame()).toContain('{"pr":42}');
+    // A refresh lands while the prompt is open: the confirmed row left the list.
+    await act(async () => setShown([rows()[0]!]));
+    await flush();
+    await act(async () => mockInput.pressKey('y'));
+    expect(decided).toEqual(['approve x9']);
     renderer.destroy();
   });
 

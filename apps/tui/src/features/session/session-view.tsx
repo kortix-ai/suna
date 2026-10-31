@@ -33,6 +33,7 @@ import type { BoxRenderable, MouseEvent } from '@opentui/core';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ResolvedHost } from '../../auth/hosts.ts';
+import { printable } from '../../lib/printable.ts';
 import { hintFor } from '../../keymap.ts';
 import { kortix } from '../../kortix.ts';
 import { extractUrls, extractUrlsFromScreen } from '../../lib/links.ts';
@@ -374,7 +375,7 @@ export function SessionView({
                   <span fg={session.phase === 'error' ? theme.danger : theme.accent}>
                     {`${phaseGlyph(session.phase)} `}
                   </span>
-                  {truncate(title ?? 'Session', Math.max(innerWidth - 28, 8))}
+                  {truncate(printable(title ?? 'Session'), Math.max(innerWidth - 28, 8))}
                   <span fg={theme.faint}>{header ? `  ${header}` : ''}</span>
                 </text>
                 <text fg={theme.faint} wrapMode="none">

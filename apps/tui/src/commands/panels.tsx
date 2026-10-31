@@ -19,6 +19,7 @@ import { sessionActivityMs, sessionTitle } from '../lib/session-groups.ts';
 import { matchesBinding } from '../keymap.ts';
 import { glyph, theme } from '../theme.ts';
 import type { ListItem } from '../ui/index.ts';
+import { printable } from '../lib/printable.ts';
 
 /** What the panel slot holds. Null = nothing above the input. */
 export type CommandPanel =
@@ -60,7 +61,7 @@ export function sessionItems(
   const rest = sessions.filter((session) => !session.pinned_at);
   return [...pinned, ...rest].map((session) => ({
     id: session.session_id,
-    label: `${session.pinned_at ? '↑ ' : ''}${sessionTitle(session)}`,
+    label: `${session.pinned_at ? '↑ ' : ''}${printable(sessionTitle(session))}`,
     glyph: sessionGlyph(session.status),
     right:
       session.session_id === openSessionId

@@ -77,6 +77,7 @@ import { DEFAULT_UI, type ModuleId, type UiPrefs, toggleModule } from './layout/
 import { sessionTitle } from './lib/session-groups.ts';
 import { SCREEN_TITLE, Screen, type ScreenRoute, isScreenRoute } from './screens.tsx';
 import { theme } from './theme.ts';
+import { printable } from './lib/printable.ts';
 import { Panel, type SplashLine, StatusBar, Toast, type ToastKind } from './ui/index.ts';
 
 const SIDEBAR_WIDTH = 28;
@@ -386,7 +387,9 @@ export function App({
 
   // The terminal window's title follows the open session (the `title`
   // module). Cleared on the way out so the shell gets its own title back.
-  const windowTitle = ui.title.on ? (title ? `${title} · Kortix` : `${projectName} · Kortix`) : '';
+  // `printable`: a title is written by whoever renamed the session, and the window title is
+  // an escape sequence of its own; a control character in it would end that sequence.
+  const windowTitle = ui.title.on ? printable(title ? `${title} · Kortix` : `${projectName} · Kortix`) : '';
   useEffect(() => {
     if (!ui.title.on) return;
     renderer.setTerminalTitle(windowTitle);
