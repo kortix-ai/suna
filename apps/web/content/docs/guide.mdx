@@ -666,7 +666,7 @@ Any website or tool that the agent starts on its computer is reachable from outs
 
 #### Desktop
 
-Every session of your project's agents runs on a computer with a desktop. Select the **Desktop** button in the session header to watch it live. My Kortix runs on a minimal computer without one, so its sessions show no **Desktop** button: it hands browsing to your agents' sessions. The agent operates its desktop apps too, such as the file manager or LibreOffice, through their accessibility tree. The desktop has one browser, and you share it with the agent: you see each page it visits, and the browser on the dock opens that same window with the same tabs and logins. Kortix has control by default. Select **Take over** to click and type yourself, for example to sign in to a site for the agent, or to use the terminal or the file manager on the dock. Select **Return control** to hand it back. The desktop resizes to fit the panel.
+Every session of your project's agents runs on a computer with a desktop. Select the **Desktop** button in the session header to watch it live. My Kortix runs on a minimal computer without one, so its sessions show no **Desktop** button: it hands browsing to your agents' sessions. The desktop has one browser, and you share it with the agent: you see each page it visits, and the browser on the dock opens that same window with the same tabs and logins. Kortix has control by default. Select **Take over** to click and type yourself, for example to sign in to a site for the agent, or to use the terminal or the file manager on the dock. Select **Return control** to hand it back. The desktop resizes to fit the panel.
 
 A session on a custom sandbox template gets the desktop when the template's base image is Ubuntu 24.04.
 
@@ -800,7 +800,7 @@ Choose a model in the composer's model picker. A stopped session uses the new mo
 <Step title="Connect your own provider">
 Open **Project admin → Models → Providers** and paste a key. For a ChatGPT subscription, choose **Use your ChatGPT subscription** in the model picker, then **Connect ChatGPT**.
 
-For a Claude subscription, choose **Use your Claude subscription** in the model picker (or a Claude model there), then **Sign in to Claude**. Approve Kortix on claude.com, paste the code Claude shows you, and choose **Connect Claude**. In a terminal, run `kortix providers login claude`. A token you made with `claude setup-token` works too: choose **Paste a token instead**, or pipe it to `kortix providers login claude --token-stdin`.
+For a Claude subscription, open **Project admin → Models → Providers → Anthropic** and choose **Sign in with Claude**. Approve Kortix on claude.com, paste the code Claude shows you, and choose **Connect Claude**. The Claude models then appear in the model picker under **Claude subscription**. In a terminal, run `kortix providers login claude`. A token you made with `claude setup-token` works too: pipe it to `kortix providers login claude --token-stdin`.
 </Step>
 <Step title="Set a budget">
 Open **Project admin → Models → Costs**. Set a limit per day, week or month. Choose **Block** to refuse new requests at the limit, or **Warn only** to let them run.

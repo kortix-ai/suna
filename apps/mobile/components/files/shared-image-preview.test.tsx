@@ -85,10 +85,12 @@ mock.module('@/lib/haptics', () => ({ haptics: { tap: none, selection: none, suc
 mock.module('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => ({ 'imageGen.details': 'Image details' })[key] ?? key }) }));
 /** Every path the show card's own sandbox-image load was enabled for. */
 const probes: string[] = [];
+let ownImage: ReturnType<typeof import('../session/turn/use-sandbox-image').useSandboxImage> | undefined;
+const opened: string[] = [];
 mock.module('@/components/session/turn/use-sandbox-image', () => ({
   useSandboxImage: (path: string, enabled: boolean) => {
     if (enabled) probes.push(path);
-    return { phase: 'probing', source: undefined, sizeBytes: null, attempt: 0, loadAnyway: none, handleError: none };
+    return ownImage ?? { phase: 'probing', source: undefined, sizeBytes: null, attempt: 0, loadAnyway: none, handleError: none };
   },
   useSandboxUrl: () => SANDBOX,
 }));
@@ -96,7 +98,7 @@ mock.module('../session/tool/shared/infrastructure', () => ({
   HighlightedCode: none,
   MarkdownFrontmatterCard: none,
   ToolMarkdown: none,
-  useToolNavigation: () => ({ enabled: true, openFile: none, openExternal: none }),
+  useToolNavigation: () => ({ enabled: true, openFile: (path: string) => opened.push(path), openExternal: none }),
 }));
 mock.module('../session/tool/shared/surface', () => ({ ToolScroll: host('scroll') }));
 mock.module('../session/tool/shared/styles', () => ({
@@ -128,6 +130,8 @@ afterEach(async () => {
   tree = undefined;
   reads.length = 0;
   probes.length = 0;
+  ownImage = undefined;
+  opened.length = 0;
   timings.length = 0;
   reduceMotion = false;
   // Order-independent: an empty store per test.
@@ -242,3 +246,36 @@ test('the info button is absent without caption data', async () => {
   expect(tree!.root.findAll((node) => node.props.testID === 'file-caption-toggle')).toHaveLength(0);
 });
 
+test('local show keeps cached precedence, native failure fallback, navigation and retry remount', async () => {
+  let failures = 0;
+  const source = { uri: 'file:///synthetic/fox.png', headers: undefined };
+  const loaded: NonNullable<typeof ownImage> = { phase: 'load', source, sizeBytes: 64, attempt: 0, loadAnyway: none, handleError: () => { failures++; } };
+  ownImage = loaded;
+  rememberSharedImage(SANDBOX, FOX, SHA, CARD_SOURCE);
+  const render = () => <ShowContentRenderer type="image" path={FOX} sha256={SHA} fill />;
+  await act(async () => { tree = create(render()); });
+  const root = () => {
+    if (!tree) throw new Error('show renderer is not mounted');
+    return tree;
+  };
+  const image = () => root().root.find((node) => node.type === 'image');
+  expect(image().props.source).toEqual(CARD_SOURCE);
+  expect(image().props.testID).toBe('show-shared-image');
+  expect(image().props.style).toEqual({ width: '100%', height: '100%' });
+  expect(probes).toEqual([]);
+  await act(async () => { image().props.onError(); });
+  expect(image().props.source).toEqual(source);
+  expect(image().props.testID).toBeUndefined();
+  expect(probes).toContain(FOX);
+  const pressable = root().root.find((node) => String(node.type) === 'pressable' && node.props.accessibilityRole === 'imagebutton');
+  expect(pressable.props.disabled).toBe(false);
+  await act(async () => { pressable.props.onPress(); image().props.onError(); });
+  expect(opened).toEqual([FOX]);
+  expect(failures).toBe(1);
+  const previous = image();
+  ownImage = { ...loaded, attempt: 1 };
+  await act(async () => { root().update(render()); });
+  expect(image()).not.toBe(previous);
+  expect(image().props.resizeMode).toBe('contain');
+  expect(image().props.resizeMethod).toBe('resize');
+});

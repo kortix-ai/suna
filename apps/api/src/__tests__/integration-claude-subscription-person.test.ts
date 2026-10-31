@@ -22,7 +22,7 @@ const token = (sessionId: string, serviceAccountId: string | null, onBehalfOfUse
   accountId: ACCOUNT, userId: OWNER, name: `session ${sessionId}`, projectId: PROJECT, sessionId,
   serviceAccountId, onBehalfOfUserId,
   publicKey: `pk_${sessionId.slice(0, 12)}`, secretKeyHash: `h_${sessionId}`,
-  agentGrant: { agent: 'kortix', permissions: 'all', connectors: 'all', env: 'all' },
+  agentGrant: { agent: 'kortix', permissions: 'all' as const, connectors: 'all' as const, env: 'all' as const },
 });
 
 beforeAll(async () => {

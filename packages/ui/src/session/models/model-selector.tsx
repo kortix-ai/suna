@@ -54,7 +54,6 @@ import {
 } from './model-grouping';
 import { modelInDefaultView } from '@kortix/sdk';
 import { isClaudeSubscriptionModel, isSubscriptionModel, pickerModelName, shouldShowFreeTag } from './model-tags';
-import { ClaudeSubscriptionDialog, useClaudeSubscription } from './claude-subscription-dialog';
 import { useModelConnectionGate } from './use-model-connection-gate';
 
 // Re-export for consumers
@@ -458,24 +457,6 @@ export function ModelSelector({
   const chatGptAvailable =
     chatGptPossible && !(modelAccess.data?.disabledProviders ?? []).includes('codex');
   const [chatGptOpen, setChatGptOpen] = useState(false);
-  // Claude models on the member's own Claude plan (`claude-agent/<id>`): the API lists them
-  // where the member's sessions can run them, unavailable until the member connects Claude.
-  const tClaude = useTranslations('claudeSubscription');
-  const claudeOffered = !!projectId && models.some((m) => m.enabled !== false && isClaudeSubscriptionModel(m));
-  const claudeStatus = useClaudeSubscription(projectId, claudeOffered && open);
-  const [claudeOpen, setClaudeOpen] = useState(false);
-  /** The Claude model the member picked before connecting: chosen once the login is stored. */
-  const [claudePending, setClaudePending] = useState<ModelRef | null>(null);
-  const [claudeJustConnected, setClaudeJustConnected] = useState(false);
-  // The pick applies once this list shows the model runnable: the parent validates against the same list.
-  useEffect(() => {
-    if (!claudeJustConnected || !claudePending) return;
-    const model = models.find((m) => m.providerID === claudePending.providerID && m.modelID === claudePending.modelID);
-    if (!model || !isRunnableModel(model)) return;
-    onSelect(claudePending);
-    setClaudePending(null);
-    setClaudeJustConnected(false);
-  }, [claudeJustConnected, claudePending, models, onSelect]);
   // Every write this picker offers is `project.model.write` on the API: the
   // star sets the ACCOUNT default (the default for every member, not a personal
   // one), and "+" / sliders open the provider modal. A member without the leaf
@@ -517,6 +498,9 @@ export function ModelSelector({
       .filter(
         (m) =>
           m.enabled !== false &&
+          // Claude subscription models appear once the member signed in to Claude
+          // (Customize → Models → Anthropic), like ChatGPT subscription models.
+          !(isClaudeSubscriptionModel(m) && m.available === false) &&
           (!q ||
             (m.modelName || '').toLowerCase().includes(q) ||
             (m.modelID || '').toLowerCase().includes(q) ||
@@ -533,7 +517,10 @@ export function ModelSelector({
   /** Is there anything to pick AT ALL, ignoring the search box? The empty
    *  state below branches on this: "no models match your search" and "you have
    *  no models" are different problems with different ways out. */
-  const hasAnyModel = useMemo(() => models.some((m) => m.enabled !== false), [models]);
+  const hasAnyModel = useMemo(
+    () => models.some((m) => m.enabled !== false && !(isClaudeSubscriptionModel(m) && m.available === false)),
+    [models],
+  );
   /** Does this member already have ChatGPT subscription models? Then the row
    *  manages their accounts instead of offering to connect one. */
   const hasChatGptModels = useMemo(
@@ -625,26 +612,17 @@ export function ModelSelector({
     setChatGptOpen(true);
   }, [setOpen]);
 
-  const handleOpenClaude = useCallback(
-    (model: ModelRef | null) => {
-      setOpen(false);
-      setClaudePending(model);
-      setClaudeOpen(true);
-    },
-    [setOpen],
-  );
-
   const handleSelect = useCallback(
     (model: FlatModel) => {
       // An unavailable model is never chosen: the turn would fail after Send.
       const connect = unavailableModelConnection(model, { chatGptAvailable });
       if (connect === 'chatgpt') return handleOpenChatGpt();
-      if (connect === 'claude') return handleOpenClaude({ providerID: model.providerID, modelID: model.modelID });
-      if (connect === 'provider') return handleOpenProviderModal('providers');
+      // A Claude model signs in under Anthropic, in the provider list.
+      if (connect === 'claude' || connect === 'provider') return handleOpenProviderModal('providers');
       onSelect({ providerID: model.providerID, modelID: model.modelID });
       setOpen(false);
     },
-    [onSelect, setOpen, chatGptAvailable, handleOpenChatGpt, handleOpenClaude, handleOpenProviderModal],
+    [onSelect, setOpen, chatGptAvailable, handleOpenChatGpt, handleOpenProviderModal],
   );
 
   const handleUpgrade = useCallback(() => {
@@ -657,14 +635,6 @@ export function ModelSelector({
       {connectionModal}
       {projectId && chatGptPossible && ProviderAccountsModal && (
         <ProviderAccountsModal projectId={projectId} providerId="codex" open={chatGptOpen} onOpenChange={setChatGptOpen} />
-      )}
-      {projectId && claudeOffered && claudeOpen && (
-        <ClaudeSubscriptionDialog
-          projectId={projectId}
-          open={claudeOpen}
-          onOpenChange={setClaudeOpen}
-          onConnected={() => setClaudeJustConnected(true)}
-        />
       )}
       <CommandPopover
         open={disabled ? false : open}
@@ -914,33 +884,6 @@ export function ModelSelector({
                       </CommandGroup>
                     </>
                   )}
-                  {/* The member's own way in to Claude: connect a Claude subscription,
-                      or check and disconnect the one behind the Claude section above. */}
-                  {claudeOffered && !searching && (
-                    <>
-                      <CommandSeparator />
-                      <CommandGroup forceMount>
-                        <CommandItem
-                          value="claude-subscription"
-                          onSelect={() => handleOpenClaude(null)}
-                          className="cursor-pointer"
-                        >
-                          <ProviderLogo
-                            providerID="claude-agent"
-                            name="Claude"
-                            size="small"
-                            className="size-4 rounded-none bg-transparent"
-                          />
-                          <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
-                            {tClaude('title')}
-                          </span>
-                          {claudeStatus.data?.connected !== true && (
-                            <span className="text-muted-foreground text-xs">{tPooled('connect')}</span>
-                          )}
-                        </CommandItem>
-                      </CommandGroup>
-                    </>
-                  )}
                 </>
               ) : hasAnyModel ? (
                 /* Models ARE connected — the SEARCH matched none of them.
@@ -950,7 +893,7 @@ export function ModelSelector({
                    "No models available" and a Connect-provider CTA. */
                 <ModelSearchEmpty
                   search={search}
-                  modelCount={models.filter((model) => model.enabled !== false).length}
+                  modelCount={models.filter((model) => model.enabled !== false && !(isClaudeSubscriptionModel(model) && model.available === false)).length}
                   onClear={() => setSearch('')}
                   onUpgrade={showUpgradeOption ? handleUpgrade : undefined}
                 />

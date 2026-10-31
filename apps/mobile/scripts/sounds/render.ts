@@ -20,9 +20,9 @@ export const EDGE_SECONDS = 0.005;
  * ends on its envelope floor, ~2.6e-3 after normalization, and a 5 ms fade
  * leaves ~1.5e-3 in the last 5 ms.
  */
-export const FADE_OUT_SECONDS = 0.02;
+const FADE_OUT_SECONDS = 0.02;
 /** Trailing samples below this are trimmed. */
-export const TRIM_FLOOR = 1e-4;
+const TRIM_FLOOR = 1e-4;
 
 /** Web Audio exponential ramps cannot reach 0; cuelume ramps from/to this. */
 const ENVELOPE_FLOOR = 0.0001;

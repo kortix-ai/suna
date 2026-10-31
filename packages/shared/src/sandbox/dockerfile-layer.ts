@@ -22,7 +22,6 @@
 
 import {
   AGENT_BROWSER_VERSION as DEFAULT_AGENT_BROWSER_VERSION,
-  AGENT_DESKTOP_VERSION,
   ANYDOC_VERSION,
   CLAUDE_AGENT_SDK_VERSION,
   CLAUDE_CODE_PATH,
@@ -269,15 +268,6 @@ export function kortixWorkstationTooling(opts: KortixToolchainLayerOpts): string
     '    && command -v anydoc \\',
     `    && test "$(anydoc --version)" = "${ANYDOC_VERSION}"`,
     '',
-    // agent-desktop (Vercel Labs) — agent-browser's counterpart for desktop
-    // apps: it reads and operates the session desktop through the accessibility
-    // tree (AT-SPI; at-spi2-core comes with the desktop, desktop.ts). The npm
-    // package carries its native binaries; its postinstall verifies their
-    // checksums, hence --allow-build. Sits below Chromium so a version bump
-    // re-uses Chromium's cached layer.
-    `RUN pnpm add -g --allow-build=agent-desktop "agent-desktop@${AGENT_DESKTOP_VERSION}" \\`,
-    `    && agent-desktop version | grep -q '"version":"${AGENT_DESKTOP_VERSION}"'`,
-    '',
     claudeCodeInstallLines(),
     '',
   ].join('\n') + '\n';
@@ -291,7 +281,7 @@ export function kortixWorkstationTooling(opts: KortixToolchainLayerOpts): string
 export function claudeCodeInstallLines(): string {
   return [
     'RUN case "$(uname -m)" in x86_64) claude_arch=x64 ;; aarch64|arm64) claude_arch=arm64 ;; *) echo "unsupported Claude Code architecture: $(uname -m)" >&2; exit 1 ;; esac \\',
-    '    && sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/kortix/claude/bin \\',
+    '    && sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/kortix/claude /opt/kortix/claude/bin \\',
     `    && npm install --prefix /opt/kortix/claude --no-save --ignore-scripts --no-audit --no-fund "@anthropic-ai/claude-agent-sdk-linux-\${claude_arch}@${CLAUDE_AGENT_SDK_VERSION}" \\`,
     `    && ln -sf "/opt/kortix/claude/node_modules/@anthropic-ai/claude-agent-sdk-linux-\${claude_arch}/claude" ${CLAUDE_CODE_PATH} \\`,
     `    && ${CLAUDE_CODE_PATH} --version | grep -q "^${CLAUDE_CODE_VERSION} "`,
