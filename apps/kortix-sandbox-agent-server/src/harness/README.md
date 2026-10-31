@@ -115,8 +115,16 @@ mechanism T3 Code and OpenCode use (OpenCode's `claude-agent` provider).
 - **Errors.** Claude Code retries its own calls, so pi does not retry a
   `claude-agent` error (`isTransientModelError`). A plan limit reads "Your
   Claude subscription limit is reached (…). It resets at …".
-- **Capability.** `/kortix/health` lists `models.claude_agent.v1` when the
-  `claude` program is on the box (`RUNTIME_CLAUDE_AGENT_CAPABILITY`).
+- **Binary.** The image's Claude Code, else the same pinned binary the first
+  Claude turn installs into `<piStateDir>/claude-code/<sdk version>/` from the
+  npm tarball, checked against the sha512 `bun.lock` records
+  (`claude/install.ts`, ~4 s). A project image built before Claude Code was in
+  the layer, or a self-hosted image, still runs Claude models.
+- **Capability.** `/kortix/health` lists `models.claude_agent.v1`
+  (`RUNTIME_CLAUDE_AGENT_CAPABILITY`). A daemon from before this provider sends
+  a `claude-agent/` ref to the gateway, which answers "start a new session".
+- **Whose login.** The prompting person's: `on_behalf_of` of the session token,
+  for every token kind (a My Kortix session's token has no service account).
 - **Not supported.** Claude Code's own features that Kortix has no version
   of: plan usage (`/usage`), auto mode, cloud sessions, `/loop`, computer use
   and its bundled skills. Sampling (`temperature`, `top_p`) does not apply.
