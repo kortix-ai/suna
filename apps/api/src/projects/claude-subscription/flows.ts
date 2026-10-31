@@ -27,7 +27,8 @@ export const FLOW_TTL_MS = 10 * 60_000;
 const OWNER_POLL_MS = 500;
 /** An owner that has not polled for this long has stopped. */
 const OWNER_STALE_MS = 15_000;
-const COMPLETE_WAIT_MS = 45_000;
+/** Under the 25 s request deadline; the owner's `submit` gives up after 15 s. */
+const COMPLETE_WAIT_MS = 20_000;
 /** Login processes this replica runs at once. */
 const MAX_LIVE_RUNS = 16;
 

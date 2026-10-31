@@ -84,6 +84,15 @@ export function parseLoginError(raw: string): string | null {
   return line ? line.slice(0, 300) : null;
 }
 
+// The API answers a request within 25 s (middleware/request-deadline.ts), and
+// `start` and `complete` each wait on the binary inside one request. The binary
+// prints the link in ~4 s and Anthropic answers a code in ~2 s.
+const START_TIMEOUT_MS = 20_000;
+const SUBMIT_TIMEOUT_MS = 15_000;
+const ECHO_WAIT_MS = 2_000;
+/** Longer than a terminal read takes, so the binary reads Enter as its own key. */
+const ENTER_GAP_MS = 200;
+
 const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
 
 export interface SetupTokenRun {
@@ -194,7 +203,7 @@ export async function startSetupToken(options: SetupTokenOptions): Promise<Setup
       listener();
     });
 
-  const authorizeUrl = await waitFor(() => parseAuthorizeUrl(output), options.startTimeoutMs ?? 30_000);
+  const authorizeUrl = await waitFor(() => parseAuthorizeUrl(output), options.startTimeoutMs ?? START_TIMEOUT_MS);
   if (!authorizeUrl) {
     stop();
     throw new SetupTokenError('start_timeout', 'Claude Code did not print a sign-in link');
@@ -203,10 +212,18 @@ export async function startSetupToken(options: SetupTokenOptions): Promise<Setup
   return {
     authorizeUrl,
     stop,
-    async submit(code: string, timeoutMs = 60_000) {
+    async submit(code: string, timeoutMs = SUBMIT_TIMEOUT_MS) {
       if (stopped || exited) throw new SetupTokenError('login_failed', 'The Claude sign-in stopped. Start it again.');
       const before = output.length;
-      child.stdin.write(`${code.trim()}\r`);
+      // The binary reads the terminal in chunks, and an Enter in the same chunk
+      // as the code is part of the paste: the prompt shows the masked code and
+      // waits. So the code goes first, and Enter goes alone once the prompt
+      // echoed it.
+      child.stdin.write(code.trim());
+      await child.stdin.flush();
+      await waitFor(() => (output.length > before ? true : null), ECHO_WAIT_MS);
+      await Bun.sleep(ENTER_GAP_MS);
+      child.stdin.write('\r');
       await child.stdin.flush();
       const outcome = await waitFor<{ token: string } | { error: string }>(() => {
         const token = parseToken(output);
