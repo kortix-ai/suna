@@ -42,6 +42,7 @@ export function createEnvRouter(
           llmGatewayEnabled?: unknown
           llmGatewayBaseUrl?: unknown
           llmGatewayDenyEnv?: unknown
+          claudeOauthToken?: unknown
         } | null
 
         if (!body || typeof body.revision !== 'string') {
@@ -59,6 +60,7 @@ export function createEnvRouter(
           runtimeEnv: body.runtimeEnv,
           llmGatewayEnabled: body.llmGatewayEnabled,
           llmGatewayBaseUrl: body.llmGatewayBaseUrl,
+          claudeOauthToken: body.claudeOauthToken,
         })
         return c.json(result)
       } catch (err) {

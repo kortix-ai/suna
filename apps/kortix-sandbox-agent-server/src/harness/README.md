@@ -57,10 +57,11 @@ that the target handles worse (`losses`) and everything the target lacks, used
 or not (`unsupported`). The contract is `switchPreflight` in
 `@kortix/api-contract/session-log` (`capabilities.ts`).
 
-## Models: the LLM gateway only
+## Models: the LLM gateway, and Claude subscription models
 
 pi sends every model request to the Kortix LLM gateway, under one provider
-id, `kortix`. There is no native provider mode, and every model ref is
+id, `kortix`, with one exception: Claude subscription models (`claude-agent`,
+below). There is no other native provider mode. A gateway model ref is
 `kortix/<wire id>`.
 
 - A box without the gateway env (`KORTIX_LLM_BASE_URL` + `KORTIX_TOKEN`, or
@@ -70,6 +71,55 @@ id, `kortix`. There is no native provider mode, and every model ref is
 - `POST /kortix/env` with `llmGatewayEnabled: true` sets `KORTIX_LLM_BASE_URL`
   and re-points a running LLM proxy. `llmGatewayEnabled: false` (an API from
   before the graduation) is logged and ignored: it never clears the gateway env.
+
+### Claude subscription models (`claude-agent`)
+
+A model ref `claude-agent/<id>` (`@kortix/api-contract/claude-agent`: `opus`,
+`fable`, `sonnet`, `haiku`) runs on the session user's own Claude
+subscription. pi stays the harness. Only the model step changes: each pi model
+step is a step of Claude Code, the unmodified `claude` program the image
+installs (`/opt/kortix/claude/bin/claude`, the native binary of
+`@anthropic-ai/claude-agent-sdk-linux-<arch>` at the `claudeAgentSdk` pin in
+`runtime-versions.json`), driven through the public Claude Agent SDK. Claude
+Code makes the model call with the user's login, straight to Anthropic: these
+calls never reach the LLM gateway and use no Kortix credits. This is the
+mechanism T3 Code and OpenCode use (OpenCode's `claude-agent` provider).
+
+- **Tools.** Claude Code's own tools, settings, hooks, skills, CLAUDE.md,
+  memory, auto compaction and tool search are off (`claude/sessions.ts`,
+  `claude/sdk.ts`). pi's tools reach Claude as one in-process MCP server,
+  `kortix` (`claude/server.ts`). When Claude calls one, the step ends at that
+  call, pi runs it like any model's tool call (permission gate, extensions,
+  questions, subagents, the transcript), and the next step hands the result
+  back to the waiting MCP call (`claude/pending.ts`). Tools run one at a time.
+- **History.** pi's context is the source of truth, so a session switches
+  between Claude and gateway models freely. Claude Code keeps its own session
+  per pi thread (root, each child) and resumes it. `claude/sync.ts` maps pi's
+  context to that session: turns Claude did not see reach it as one
+  `<conversation-checkpoint>` message; a changed history (a compaction, a
+  rewind) starts a new Claude session with the whole history. Records live in
+  `<piStateDir>/claude-records/`, Claude Code's state in `<piStateDir>/claude/`
+  (`CLAUDE_CONFIG_DIR`, never the box's `~/.claude`).
+- **Processes.** One `claude` process per thread; it stops after 5 minutes
+  idle, never while it waits for tool results. A changed login, system prompt
+  or tool set restarts it. A step with no tools (pi's compaction summary) runs
+  in a throwaway process that saves no Claude session.
+- **Login.** apps/api delivers the session user's Claude subscription token
+  (`claude setup-token`) as `KORTIX_CLAUDE_OAUTH_TOKEN` at boot and as
+  `claudeOauthToken` on `POST /kortix/env` before a prompt (the prompting
+  user's, or null). `takeClaudeLogin` removes it from `process.env` before
+  any shell exists, so no agent shell inherits it; only the `claude` process
+  receives it, as `CLAUDE_CODE_OAUTH_TOKEN`. `claudeEnv` removes every
+  variable that would pick another login (`ANTHROPIC_API_KEY`, a project
+  secret, would otherwise bill an API key) and every `KORTIX_*` variable.
+- **Errors.** Claude Code retries its own calls, so pi does not retry a
+  `claude-agent` error (`isTransientModelError`). A plan limit reads "Your
+  Claude subscription limit is reached (…). It resets at …".
+- **Capability.** `/kortix/health` lists `models.claude_agent.v1` when the
+  `claude` program is on the box (`RUNTIME_CLAUDE_AGENT_CAPABILITY`).
+- **Not supported.** Claude Code's own features that Kortix has no version
+  of: plan usage (`/usage`), auto mode, cloud sessions, `/loop`, computer use
+  and its bundled skills. Sampling (`temperature`, `top_p`) does not apply.
 
 ## Ownership
 
@@ -84,6 +134,7 @@ id, `kortix`. There is no native provider mode, and every model ref is
 | `pi/boot.ts` | Session boot: the host steps (workspace, config release, relays), then `pi-ready` |
 | `pi/surface.ts` | The raw routes of the runtime wire, answered in-process |
 | `pi/vcs.ts` | The Changes tab on pi: `vcs: 'git'` on `/project/current` and `GET /vcs/diff` (`mode=branch` against the merge base with `KORTIX_DEFAULT_BRANCH`, `mode=git` against HEAD), the wire's `VcsFileDiff` shape |
+| `pi/claude/` | Claude subscription models: the `claude-agent` pi-ai provider, the `claude` processes, history sync, the MCP tool server |
 | `pi/turn-events.ts`, `pi/transcript.ts` | pi events → Kortix session events (`@kortix/api-contract/transcript`); the transcript store |
 | `pi/interactions.ts`, `pi/tools.ts`, `pi/model.ts`, `pi/sampling.ts` | Permissions/questions, workspace tools, gateway model, the agent's `temperature`/`top_p`/`steps` on each model request |
 | `../routes/` | Controllers, authentication, request parsing, HTTP status/headers, gzip and SSE delivery |

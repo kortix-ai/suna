@@ -26,6 +26,8 @@ import { LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import { logger } from '@/lib/log/logger'
 import type { KortixGatewayModel } from '@kortix/api-contract/fallback-models'
 import { variantsFromReasoningOptions } from '../shared/reasoning-variants'
+import { CLAUDE_AGENT_EFFORTS, CLAUDE_AGENT_PROVIDER_ID, claudeAgentModelId } from '@kortix/api-contract/claude-agent'
+import { claudeModelFor, createClaudeProvider, type ClaudeProviderOptions } from './claude/provider'
 
 export const KORTIX_PROVIDER_ID = 'kortix'
 const PI_THINKING_LEVELS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
@@ -88,12 +90,30 @@ export function compactionSettings(catalog: Record<string, CatalogModel>, config
   return { modelOverrides }
 }
 
-/** `kortix/<id>` and bare `<id>` both name the gateway model `<id>`. */
+/**
+ * The id `PiModels.select` takes for a model ref: `kortix/<id>` and bare `<id>` both name the
+ * gateway model `<id>`; `claude-agent/<id>` stays whole, it names a model of the Claude
+ * subscription provider (`claude/provider.ts`).
+ */
 export function nativeModelId(ref: string | undefined | null): string | null {
   const raw = (ref ?? '').trim()
   if (!raw) return null
   const id = raw.startsWith(`${KORTIX_PROVIDER_ID}/`) ? raw.slice(KORTIX_PROVIDER_ID.length + 1) : raw
   return id || null
+}
+
+/**
+ * The `select` id of a prompt's `{ providerID, modelID }`: a gateway model is its wire id
+ * (`kortix/<id>` is `<id>`, another provider's `<p>/<id>` is the wire id `<p>/<id>`), a
+ * Claude subscription model is `claude-agent/<id>`.
+ */
+export function promptModelId(model: { providerID: string; modelID: string }): string | null {
+  return nativeModelId(`${model.providerID}/${model.modelID}`)
+}
+
+/** The `select` id of a provider's model: the inverse of `SelectedModel`'s `providerID` + `modelID`. */
+export function selectId(providerID: string, modelID: string): string {
+  return providerID === CLAUDE_AGENT_PROVIDER_ID ? `${CLAUDE_AGENT_PROVIDER_ID}/${modelID}` : modelID
 }
 
 /** The catalog's `variant` names that pi can honour as a thinking level. */
@@ -164,6 +184,8 @@ export async function createPiModels(input: {
   defaultModelRef?: string | null
   /** The live catalog already fetched (null: it did not answer). Omitted: fetch it now. */
   catalog?: Record<string, CatalogModel> | null
+  /** Where Claude subscription models keep their state and run. Omitted: there are none. */
+  claude?: ClaudeProviderOptions
 }): Promise<PiModels> {
   const env = input.env ?? process.env
   const credentials = new InMemoryCredentialStore()
@@ -182,6 +204,7 @@ export async function createPiModels(input: {
     api: { 'openai-completions': openAICompletionsApi() },
   })
   models.setProvider(provider)
+  if (input.claude) models.setProvider(createClaudeProvider(input.claude))
   await credentials.modify(KORTIX_PROVIDER_ID, async () => ({ type: 'api_key', key: target.apiKey }))
   const fallback = nativeModelId(input.defaultModelRef) ?? Object.keys(catalog)[0] ?? null
   if (!fallback) throw new Error('pi harness has no model: no KORTIX_MODEL and no live model catalog')
@@ -193,6 +216,18 @@ export async function createPiModels(input: {
     live: live !== null,
     select(modelId) {
       const id = modelId ?? fallback
+      const claudeId = claudeAgentModelId(id)
+      if (claudeId && input.claude) {
+        const model = models.getModel(CLAUDE_AGENT_PROVIDER_ID, claudeId) ?? claudeModelFor(claudeId)
+        return {
+          model,
+          providerID: CLAUDE_AGENT_PROVIDER_ID,
+          modelID: claudeId,
+          variants: [...CLAUDE_AGENT_EFFORTS],
+          images: true,
+          contextWindow: model.contextWindow,
+        }
+      }
       const entry = catalog[id]
       // A model the catalog lacks still routes: the gateway resolves ids
       // server-side, the catalog only sizes the window.
