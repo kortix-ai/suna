@@ -779,6 +779,8 @@ mock.module('../shared/db', () => ({
     // matching the auth admin mock above.
     execute: async (query: unknown) =>
       authUsersRows(query, () => ({ email: 'contract@example.test' })) ?? [],
+    // These sessions have no pending questions or connector approvals.
+    selectDistinct: () => ({ from: () => ({ where: async () => [] }) }),
     selectDistinctOn: () => ({ from: () => ({ where: () => ({ orderBy: async () => [] }) }) }),
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => {
