@@ -756,6 +756,50 @@ export async function cloudChildReport(api: CloudSubagentApi, childId: string): 
   }
 }
 
+/** Messages of a child's saved transcript one `cloudChildToolDetails` read takes, newest last. */
+const TOOL_DETAILS_MESSAGES = 40
+
+/**
+ * The `details` (part `state.metadata`) of each settled call of `tool` in a
+ * child's saved transcript, oldest first: `GET …/sessions/:id/transcript?shape=sync`,
+ * the API's durable copy of its session log, which answers while the child's
+ * box is parked. Null when the child is no child of this session or the read
+ * fails. A workflow runner's final run document carries the agents' saved
+ * results, which a resume hands to the next runner (`extensions/workflow.ts`).
+ */
+export async function cloudChildToolDetails(api: CloudSubagentApi, childId: string, tool: string): Promise<Array<Record<string, unknown>> | null> {
+  const http: Http = {
+    fetchImpl: api.fetchImpl ?? fetch,
+    origin: apiOrigin(api.apiUrl),
+    headers: { authorization: `Bearer ${api.token}`, 'content-type': 'application/json' },
+    projectId: api.projectId,
+  }
+  try {
+    const row = await http.fetchImpl(sessionUrl(http, childId), { headers: http.headers })
+    const session = row.status === 200 ? ((await row.json().catch(() => null)) as SessionRow | null) : null
+    if (!session || (api.sessionId && session.parent_session_id !== api.sessionId)) return null
+    const res = await http.fetchImpl(sessionUrl(http, childId, `/transcript?shape=sync&limit=${TOOL_DETAILS_MESSAGES}`), { headers: http.headers })
+    if (res.status !== 200) return null
+    const body = (await res.json().catch(() => null)) as { messages?: Array<{ parts?: unknown }> } | null
+    if (!Array.isArray(body?.messages)) return null
+    const details: Array<Record<string, unknown>> = []
+    for (const message of body.messages) {
+      for (const part of Array.isArray(message?.parts) ? message.parts : []) {
+        const call = part as { type?: unknown; tool?: unknown; state?: { status?: unknown; metadata?: unknown } } | null
+        if (call?.type !== 'tool' || typeof call.tool !== 'string' || call.tool.replace(/^oc-/, '') !== tool) continue
+        const metadata = call.state?.metadata
+        if ((call.state?.status === 'completed' || call.state?.status === 'error') && metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+          details.push(metadata as Record<string, unknown>)
+        }
+      }
+    }
+    return details
+  } catch (err) {
+    logger.warn('[pi] cloud subagent tool details read failed', { childId, err: errorText(err) })
+    return null
+  }
+}
+
 /** The child's last turn end (`GET …/sessions/:id/turn` `last_ended`), or undefined when it cannot be read. */
 async function readLastTurnEnd(http: Http, childId: string): Promise<ChildReport['lastEnd']> {
   try {

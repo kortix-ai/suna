@@ -73,12 +73,26 @@
  * running. A run stops only through its own controls (the card's Stop, the
  * control route on the runner's box, or `task_stop` on the runner session).
  * The runner's `runtime_context` marks it (`kortix.workflow.*`: run id, title,
- * approved cap); each prompt to it carries the hand-off (`<workflow_handoff>`,
- * {@link handoffBlock}): the script, args and, for a resume, the earlier
- * records that live on the caller's box. The prompt takes up to
- * {@link HANDOFF_MAX_CHARS}; the 16 KiB `runtime_context` would not hold a
- * real script. The runner's model calls this tool with `script: ""`, which
- * runs its turn's hand-off. Its turn keeps its own box alive, and when that
+ * approved cap, and the sha256 of its hand-off); its first prompt, the
+ * create's `initial_prompt`, carries the hand-off (`<workflow_handoff>`,
+ * {@link handoffBlock}): the script, args and, for a resume, the finished
+ * agents' saved results. The prompt takes up to {@link HANDOFF_MAX_CHARS}; the
+ * 16 KiB `runtime_context` would not hold a real script. The runner's model
+ * calls this tool with `script: ""`, which runs its turn's hand-off.
+ *
+ * One runner, one hand-off ({@link takeHandoff}). Only the creator sets a
+ * session's `runtime_context` and `initial_prompt`, but any session that may
+ * prompt the runner can send it a message with a `<workflow_handoff>` block,
+ * and can read the hand-off from the runner's session row. So a runner runs a
+ * hand-off only when all of these hold: its `run_id` is the context's run id,
+ * its JSON has the context's sha256 (a block another session writes cannot
+ * pass), the turn's prompt is the first user message of the session (the
+ * transcript, which a restore brings back), and the runner took no hand-off
+ * before (`RunStore.spendHandoff`, written before anything runs, so a box
+ * restart keeps it). A later hand-off, the same one again included, is
+ * refused: the runner says it runs one workflow only, and starts no agent and
+ * writes no record. A prompt that is nothing but the block is a `peer` turn,
+ * which `workflowOriginRefusal` refuses. Its turn keeps its own box alive, and when that
  * turn ends the API delivers its answer into the caller once, as a
  * background-subagent report (apps/api `projects/subagent-notice.ts`): a new
  * turn there. Depth: a session at depth d runs agents at d + 2, so the API's
@@ -94,11 +108,15 @@
  * returns its saved result (`cached: true`, no session), in any order; every
  * other call runs. The script may be edited: `resume_run_id` with a new
  * script resumes with that script, with `script: ""` with the run's own. A
- * resume keeps the run id. A background run resumes in its runner session
- * (a follow-up prompt; its box holds the records), and the call returns at
- * once again. A run recorded on this box (inline, or from before workflows
- * always ran in the background) resumes in a new runner that gets the
- * completed records in its hand-off. Automatic: a call without
+ * resume keeps the run id, and always starts a NEW runner session, whose
+ * hand-off carries the finished agents' saved results within
+ * {@link HANDOFF_MAX_CHARS} (the ones that do not fit run again): for a run
+ * recorded on this box (inline, or from before workflows always ran in the
+ * background) from its record here; for a background run from its last
+ * runner's final run document (`records`, {@link runnerRecords}), read from
+ * that runner's saved transcript. The run's record here then names the new
+ * runner, so the list, the controls and the healing address it. A runner that
+ * still works refuses the resume. Automatic: a call without
  * `resume_run_id` or `fresh: true` resumes this session's latest run when
  * that run did not finish (stopped, failed or interrupted); a different
  * script simply reuses nothing.
@@ -109,8 +127,8 @@
  * `resume`, `restart_agent` (stop that child and start it again with the same
  * prompt, counted as an attempt like a stall restart; the run goes on) and
  * `stop` (every agent stops and the run ends `stopped`). A background run is
- * controlled on its runner session's box, which runs it; the parent box lists
- * it with its runner session and its last known state.
+ * controlled on its current runner session's box, which runs it; the parent
+ * box lists it with that runner session and its last known state.
  *
  * Saved workflows: `.kortix/workflows/<name>.js` in the project; `name` runs
  * one. A bundled workflow (`bundled-workflows.ts`, `deep-research`) runs by
@@ -140,7 +158,7 @@
  * still running. A session at the subagent depth cap cannot run a workflow. A
  * codemode script cannot call this tool (runtime.ts `nestedCallGate`).
  */
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { ExtensionAPI, InlineExtension } from '@earendil-works/pi-coding-agent'
 import type { CodemodeResult, CodemodeTool } from '@earendil-works/pi-codemode'
 import type { ChildReport } from '../cloud-subagent'
@@ -166,6 +184,7 @@ import {
   type RecordedStatus,
   type RunRecord,
   type SavedWorkflows,
+  type SpentHandoff,
 } from './workflow-store'
 
 export const WORKFLOW_TOOL = 'workflow'
@@ -224,6 +243,8 @@ const CONTEXT = {
   maxAgents: 'kortix.workflow.max_agents',
   planned: 'kortix.workflow.planned',
   anyAgent: 'kortix.workflow.any_agent',
+  /** The sha256 (hex) of the hand-off JSON in the runner's first prompt: the only hand-off it runs. */
+  handoffSha256: 'kortix.workflow.handoff_sha256',
   script: 'kortix.workflow.script',
   args: 'kortix.workflow.args',
 } as const
@@ -267,7 +288,15 @@ interface WorkflowParams {
 }
 
 /** A part update or the final result: the live text and the run document. */
-type WorkflowUpdate = { content: Array<{ type: 'text'; text: string }>; details: WorkflowRunMetadata | undefined }
+type WorkflowUpdate = { content: Array<{ type: 'text'; text: string }>; details: RunDetails | undefined }
+
+/**
+ * The run document, and in a runner's final result the finished agents with
+ * their saved results (`records`): a resume reads them from the runner's
+ * saved transcript ({@link WorkflowRuns.runnerRecords}). The card reads the
+ * document only.
+ */
+type RunDetails = WorkflowRunMetadata & { records?: RecordedAgent[] }
 
 /** Where this session's workflows run: in a background runner, inline (no runner possible), or here as the runner. */
 type Mode = 'background' | 'inline' | 'runner'
@@ -359,19 +388,26 @@ async function execute(host: KortixHost, toolCallId: string, params: WorkflowPar
     if (inRunner && status) host.failTurn(status === 'done' ? null : { name: 'WorkflowError', message: result.details?.error ?? `The workflow ${status}.` })
     return result
   } catch (err) {
-    if (inRunner) host.failTurn({ name: 'WorkflowError', message: err instanceof Error ? err.message : String(err) })
+    // A second call in the turn that ran the workflow: that turn keeps the outcome of its run.
+    if (inRunner && !(err instanceof SpentInThisTurn)) host.failTurn({ name: 'WorkflowError', message: err instanceof Error ? err.message : String(err) })
     throw err
   }
 }
 
 /** Plan a run, ask for it, then hand it to a runner, or run it here. */
 async function executeCall(host: KortixHost, toolCallId: string, params: WorkflowParams, signal: AbortSignal | undefined, onUpdate?: (update: WorkflowUpdate) => void): Promise<WorkflowUpdate> {
-  const handoff = handoffOf(host)
-  // A runner's prompt holds a script, whose text must not decide where the turn came from.
-  const origin = handoff?.prompt !== undefined ? promptOrigin(handoff.prompt) : host.turnOrigin()
+  const store = new RunStore(host.workflowStateDir())
+  const context = runnerContextOf(host)
+  // A runner that ran its workflow reads no later message, whatever it holds.
+  if (context) refuseSpent(host, store.spentHandoff())
+  const handoff = context ? handoffOf(host, context) : null
+  // A runner's prompt holds a script, whose text must not decide where the turn came from. A prompt that is
+  // nothing but the hand-off carries no person's words: it is another session's message, whatever envelope its
+  // sender left off.
+  const origin = handoff?.prompt !== undefined ? (handoff.prompt.trim() ? promptOrigin(handoff.prompt) : 'peer') : host.turnOrigin()
   const refusal = workflowOriginRefusal(origin)
   if (refusal) throw new Error(refusal)
-  const store = new RunStore(host.workflowStateDir())
+  if (handoff) takeHandoff(host, store, handoff)
   const registry = host.workflowRuns()
   const plan = await planRun(host, store, registry, params, handoff)
   const deadline = AbortSignal.timeout(WORKFLOW_DEADLINE_MS)
@@ -389,7 +425,7 @@ async function executeCall(host: KortixHost, toolCallId: string, params: Workflo
       else if (choice !== RUN_ONCE) return run.cancelled()
     }
     // The hand-off never sees the turn's signal: from here, nothing of this turn reaches the run.
-    if (plan.placement === 'runner') return await handOff(host, store, plan, run)
+    if (plan.placement === 'runner') return await handOff(host, store, registry, plan, run)
     return await runHere(plan, run, runSignal, deadline)
   } finally {
     run.dispose()
@@ -1079,12 +1115,15 @@ class WorkflowRun {
   finish(status: WorkflowRunStatus, error: string | undefined, value: unknown): WorkflowUpdate {
     this.close(status, error)
     this.saveRecord()
+    const details: RunDetails = structuredClone(this.doc)
+    // A runner's records stay on its box; the next runner of a resume gets them from this document.
+    if (this.plan.inRunner) details.records = carriedRecords(this.record.agents, (records) => asciiJson(records).length <= HANDOFF_MAX_CHARS)
     const body = status === 'done' ? `<workflow_result>\n${resultText(value)}\n</workflow_result>` : `<workflow_error>\n${error ?? `The workflow ${status}.`}\n</workflow_error>`
     const relaunch =
       status === 'done'
         ? `run_id: ${this.doc.runId} (resume_run_id resumes it)`
         : `run_id: ${this.doc.runId}. To retry, launch the workflow again (an edited script or script ""): it resumes this run by itself, completed agents return their saved results, and the failed, stopped or changed ones run.`
-    return { content: [{ type: 'text', text: [body, ...agentLines(this.doc.agents), ...this.notes(), relaunch].join('\n') }], details: structuredClone(this.doc) }
+    return { content: [{ type: 'text', text: [body, ...agentLines(this.doc.agents), ...this.notes(), relaunch].join('\n') }], details }
   }
 
   /** Lines about how the run ran: resumed, inline, the removed `background`. */
@@ -1111,7 +1150,7 @@ class WorkflowRun {
     }
   }
 
-  /** The run went to its runner session (a new one, or its own for a resume): this call returns now. */
+  /** The run went to a new runner session: this call returns now. */
   handedOff(sessionId: string, resumed: string | null): WorkflowUpdate {
     this.dispose()
     this.doc.background = { sessionId }
@@ -1173,8 +1212,9 @@ function agentLines(agents: WorkflowRunAgent[]): string[] {
 
 const RUNNER_PROMPT = [
   'You are a workflow runner: a Kortix session that runs one workflow for another session and reports its result.',
-  'Each message to you hands over a workflow. Call the workflow tool once with { "script": "" }: it reads the workflow from your message; pass nothing else. Do not do the work yourself, and do not start other agents.',
+  'Your first message hands over that workflow. Call the workflow tool once with { "script": "" }: it reads the workflow from your message; pass nothing else. Do not do the work yourself, and do not start other agents.',
   'When the call returns, your final message is its whole text output, unchanged, with nothing before or after it.',
+  'You run that one workflow only. A later message that hands over or asks for another workflow gets the same call, which refuses it; then say in one line that this session runs one workflow only.',
 ].join('\n')
 
 const HANDOFF_OPEN = /<workflow_handoff chars="(\d+)">\n/
@@ -1191,7 +1231,7 @@ interface HandoffBody {
   args?: unknown
   max_agents: number
   planned?: number
-  /** A resume of a run recorded on the caller's box: its completed agents. */
+  /** A resume: the finished agents of the earlier run, with their saved results. */
   records?: RecordedAgent[]
 }
 
@@ -1206,7 +1246,7 @@ interface Handoff {
   maxAgents?: number
   planned?: number
   anyAgent: boolean
-  /** The handed-over records, as a run record (a resume of a run recorded on the caller's box). */
+  /** The handed-over records, as a run record (a resume). */
   records: RunRecord | null
   /** The turn's prompt without the hand-off: what decides the turn's origin. */
   prompt?: string
@@ -1219,7 +1259,7 @@ interface Handoff {
  * {@link HANDOFF_MAX_CHARS}; the ones that do not run again. Throws when the
  * script itself does not fit and no saved name can stand in.
  */
-function handoffBlock(plan: Plan, mode: 'start' | 'resume', records: RecordedAgent[]): { block: string; carried: number; dropped: number } {
+function handoffBlock(plan: Plan, mode: 'start' | 'resume', records: RecordedAgent[]): { block: string; json: string; carried: number; dropped: number } {
   const base: HandoffBody = {
     run_id: plan.runId,
     mode,
@@ -1243,24 +1283,44 @@ function handoffBlock(plan: Plan, mode: 'start' | 'resume', records: RecordedAge
     body = named
   }
   const done = records.filter((record) => record.status === 'done')
-  const carried: RecordedAgent[] = []
-  for (const record of done) {
-    const next = { ...body, records: [...carried, { key: record.key, label: record.label, status: record.status, result: record.result }] }
-    if (asciiJson(next).length > HANDOFF_MAX_CHARS) break
-    carried.push(next.records.at(-1)!)
-  }
+  const fixed = body
+  const carried = carriedRecords(records, (list) => asciiJson({ ...fixed, records: list }).length <= HANDOFF_MAX_CHARS)
   if (carried.length > 0) body = { ...body, records: carried }
   const json = asciiJson(body)
-  return { block: `<workflow_handoff chars="${json.length}">\n${json}${HANDOFF_CLOSE}`, carried: carried.length, dropped: done.length - carried.length }
+  return { block: `<workflow_handoff chars="${json.length}">\n${json}${HANDOFF_CLOSE}`, json, carried: carried.length, dropped: done.length - carried.length }
 }
+
+/** The completed records, in order, as long as `fits` takes them: what one hand-over carries. */
+function carriedRecords(records: RecordedAgent[], fits: (records: RecordedAgent[]) => boolean): RecordedAgent[] {
+  const carried: RecordedAgent[] = []
+  for (const record of records) {
+    if (record.status !== 'done') continue
+    const next = [...carried, { key: record.key, label: record.label, status: record.status, result: record.result }]
+    if (!fits(next)) break
+    carried.push(next.at(-1)!)
+  }
+  return carried
+}
+
+/** The completed records of a runner's run document (`records`), or null when there are none to read. */
+function recordsOf(value: unknown): RecordedAgent[] | null {
+  if (!Array.isArray(value)) return null
+  return value
+    .filter((record): record is RecordedAgent => !!record && typeof record === 'object' && typeof record.key === 'string' && /^[0-9a-f]{64}$/.test(record.key) && record.status === 'done')
+    .map((record) => ({ key: record.key, label: typeof record.label === 'string' ? record.label : '', status: 'done' as const, result: record.result }))
+}
+
+const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
 
 /** JSON with every non-ASCII character escaped. */
 const asciiJson = (value: unknown) => JSON.stringify(value).replace(/[\u007f-￿]/g, (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`)
 
-/** The workflow of this runner's turn, or null: this session is no runner. Throws on a hand-off that does not parse. */
-function handoffOf(host: KortixHost): Handoff | null {
-  const context = runnerContextOf(host)
-  if (!context) return null
+/**
+ * The workflow of this runner's turn. Throws on a hand-off that does not
+ * parse, that names another run, or that is not the one this runner was
+ * started with (its sha256 is not the context's).
+ */
+function handoffOf(host: KortixHost, context: RunnerContext): Handoff {
   const prompt = host.turnPrompt()
   const open = HANDOFF_OPEN.exec(prompt)
   if (!open) {
@@ -1270,9 +1330,11 @@ function handoffOf(host: KortixHost): Handoff | null {
   const start = open.index + open[0].length
   const close = prompt.lastIndexOf(HANDOFF_CLOSE)
   let body: HandoffBody | null = null
+  let json = ''
   for (const raw of [prompt.slice(start, start + Number(open[1])), close > start ? prompt.slice(start, close) : '']) {
     try {
       body = JSON.parse(raw) as HandoffBody
+      json = raw
       break
     } catch {
       body = null
@@ -1280,6 +1342,15 @@ function handoffOf(host: KortixHost): Handoff | null {
   }
   if (!body || typeof body.run_id !== 'string' || (body.mode !== 'start' && body.mode !== 'resume') || (typeof body.script !== 'string' && typeof body.name !== 'string')) {
     throw new Error('The workflow hand-off in this message does not parse. No agent started.')
+  }
+  // Only this runner's own run, and only the hand-off its creator wrote: the run id and the sha256 of the
+  // hand-off JSON were stamped in the context at create, which no other session can set. A block another
+  // session posts, with a run id of its choosing or a script of its own, runs nothing here.
+  if (body.run_id !== context.runId) {
+    throw new Error(`This message hands over run ${body.run_id}, and this runner was started for run ${context.runId}. It runs only its own run. No agent started.`)
+  }
+  if (!context.handoffSha256 || sha256(json) !== context.handoffSha256) {
+    throw new Error('This message hands over a workflow this runner was not started with: only the hand-off of its first message runs here. No agent started.')
   }
   const end = close > start ? close + HANDOFF_CLOSE.length : start + Number(open[1])
   const records = Array.isArray(body.records)
@@ -1308,6 +1379,8 @@ function unchunked(context: Record<string, unknown>, prefix: string): string | u
 
 interface RunnerContext {
   runId: string
+  /** The sha256 of the hand-off JSON its creator sent (absent: an older caller, which sent the script in the context). */
+  handoffSha256?: string
   title?: string
   name?: string
   /** An older caller's script ('' from a current one: the hand-off carries it). */
@@ -1331,8 +1404,10 @@ function runnerContextOf(host: KortixHost): RunnerContext | null {
     throw new Error("The workflow args in this session's context are not valid JSON.")
   }
   const number = (value: unknown) => (typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined)
+  const digest = context[CONTEXT.handoffSha256]
   return {
     runId,
+    ...(typeof digest === 'string' && /^[0-9a-f]{64}$/.test(digest) ? { handoffSha256: digest } : {}),
     ...(typeof context[CONTEXT.title] === 'string' ? { title: context[CONTEXT.title] as string } : {}),
     ...(typeof context[CONTEXT.name] === 'string' ? { name: checkSavedName(context[CONTEXT.name] as string) } : {}),
     script: unchunked(context, CONTEXT.script)?.trim() ?? '',
@@ -1344,21 +1419,58 @@ function runnerContextOf(host: KortixHost): RunnerContext | null {
 }
 
 /**
- * Hand the run to a runner and return at once. A background run resumes in
- * its own runner session (its box holds the records). Anything else starts a
- * new runner: a new run, or a resume of a run recorded on this box, whose
- * completed records ride in the hand-off.
+ * One runner, one hand-off: the gate before a runner runs the workflow of its
+ * turn. The turn's prompt must be the session's first user message (the
+ * create's `initial_prompt`; the transcript holds every earlier one, also
+ * after a box restart or a restore), and the runner records that it took the
+ * hand-off before any of it runs. Throws, and runs nothing, otherwise.
  */
-async function handOff(host: KortixHost, store: RunStore, plan: Plan, run: WorkflowRun): Promise<WorkflowUpdate> {
-  const previous = plan.previous
-  if (previous?.background) {
-    const runner = previous.background.sessionId
-    const resumed = await resumeInRunner(host, store, plan, runner, run)
-    if (resumed) return resumed
-    // The runner session is gone: its records went with it.
-    return startRunner(host, store, plan, run, [], `Its runner session ${runner} could not take the resume, so run ${plan.runId} starts over in a new runner session and reuses nothing.`)
+function takeHandoff(host: KortixHost, store: RunStore, handoff: Handoff): void {
+  if (!host.turnIsFirstPrompt()) {
+    throw new Error('A workflow runner runs only the workflow of the first message of its session, and this message is a later one. This session runs no other workflow. No agent started.')
   }
-  return startRunner(host, store, plan, run, previous?.agents ?? [], null)
+  try {
+    store.spendHandoff({ runId: handoff.runId, turnId: host.turnId() ?? '' })
+  } catch (err) {
+    // Another call took it first (`wx`), or the disk refused: in both cases nothing runs.
+    refuseSpent(host, store.spentHandoff())
+    throw new Error(`The runner could not record that it took its workflow (${err instanceof Error ? err.message : String(err)}), so it runs nothing. No agent started.`)
+  }
+}
+
+/** A call in the turn that already ran the runner's workflow: that call's output is the turn's answer. */
+class SpentInThisTurn extends Error {}
+
+/** Throws when this runner already took its hand-off: it runs one workflow only. */
+function refuseSpent(host: KortixHost, spent: SpentHandoff | null): void {
+  if (!spent) return
+  const turnId = host.turnId()
+  if (turnId && spent.turnId === turnId) {
+    throw new SpentInThisTurn(`This turn already ran the workflow of this runner${spent.runId ? ` (run ${spent.runId})` : ''}. Do not call the workflow tool again: your final message is that call's whole text output.`)
+  }
+  throw new Error(
+    `This session is a workflow runner and runs one workflow only. It already ran ${spent.runId ? `run ${spent.runId}` : 'its workflow'}, so it runs no other: no script, no agent, no record. A workflow starts from the session that wants it, with its own workflow call.`,
+  )
+}
+
+/**
+ * Hand the run to a NEW runner session and return at once. A resume carries
+ * the finished agents' saved results: from this box's record of a run that
+ * ran here, or from the last runner's final run document of a background run.
+ * A runner that still works refuses the resume.
+ */
+async function handOff(host: KortixHost, store: RunStore, registry: WorkflowRuns, plan: Plan, run: WorkflowRun): Promise<WorkflowUpdate> {
+  const previous = plan.previous
+  if (!previous?.background) return startRunner(host, store, plan, run, previous?.agents ?? [], null)
+  const runner = previous.background.sessionId
+  const left = await registry.runnerRecords(runner, plan.runId)
+  if (left.working) {
+    throw new Error(`Run ${plan.runId} still runs in its runner session ${runner}. Stop it first (its card's Stop, or task_stop on ${runner}), or pass fresh: true to start a new run beside it.`)
+  }
+  if (left.records === null) {
+    return startRunner(host, store, plan, run, [], `The finished agents of run ${plan.runId} could not be read from its runner session ${runner}, so the run starts over in a new runner session and reuses nothing.`)
+  }
+  return startRunner(host, store, plan, run, left.records, null)
 }
 
 /** The run's record on this box: its id, script, runner session and last known document. */
@@ -1384,7 +1496,7 @@ function saveHandedOff(store: RunStore, plan: Plan, run: WorkflowRun, sessionId:
 
 async function startRunner(host: KortixHost, store: RunStore, plan: Plan, run: WorkflowRun, records: RecordedAgent[], notice: string | null): Promise<WorkflowUpdate> {
   const mode = plan.previous && records.length > 0 ? 'resume' : 'start'
-  const { block, carried, dropped } = handoffBlock(plan, mode, records)
+  const { block, json, carried, dropped } = handoffBlock(plan, mode, records)
   // My Kortix's run goes on in a My Kortix runner (the API allows exactly that one level): same rights, and its
   // hand-off to any project agent. Another agent's runner is that agent itself, with its own `subagents` grant.
   const ownAgent = host.anyProjectAgent?.() === true ? host.currentAgentName?.() : undefined
@@ -1396,6 +1508,8 @@ async function startRunner(host: KortixHost, store: RunStore, plan: Plan, run: W
     ...(plan.planned !== undefined ? { [CONTEXT.planned]: plan.planned } : {}),
     ...(plan.saved && plan.name ? { [CONTEXT.name]: plan.name } : {}),
     ...(plan.anyAgent ? { [CONTEXT.anyAgent]: true } : {}),
+    // The runner runs this hand-off and no other.
+    [CONTEXT.handoffSha256]: sha256(json),
   }
   const result = await host.spawnSession({
     session: 'separate',
@@ -1425,44 +1539,6 @@ async function startRunner(host: KortixHost, store: RunStore, plan: Plan, run: W
   return run.handedOff(result.sessionId, resumed)
 }
 
-/**
- * A background run's resume: a follow-up prompt to its runner session with
- * the (edited) script. The runner is a background subagent, so the follow-up
- * returns `started` at once, and the API delivers the resume's answer like the
- * first run's. Null when the runner session cannot take it any more.
- */
-async function resumeInRunner(host: KortixHost, store: RunStore, plan: Plan, runner: string, run: WorkflowRun): Promise<WorkflowUpdate | null> {
-  run.doc.background = { sessionId: runner }
-  run.publish()
-  const { block } = handoffBlock(plan, 'resume', [])
-  let result: SpawnSessionResult
-  try {
-    result = await host.spawnSession({
-      sessionId: runner,
-      session: 'separate',
-      agent: INLINE_AGENT,
-      systemPrompt: RUNNER_PROMPT,
-      title: `${plan.title} (workflow)`,
-      prompt: `Resume the workflow "${plan.title}" this message hands over: call the workflow tool with { "script": "" }. Then reply with its whole text output, unchanged.\n\n${block}`,
-    })
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    if (/already running/.test(message)) {
-      throw new Error(`Run ${plan.runId} still runs in its runner session ${runner}. Stop it first (its card's Stop, or task_stop on ${runner}), or pass fresh: true to start a new run beside it.`)
-    }
-    return null
-  }
-  if (result.status !== 'started') return null
-  saveHandedOff(store, plan, run, runner)
-  const known = plan.previous?.reportedDone
-  return run.handedOff(
-    runner,
-    known !== undefined
-      ? `Resumed run ${plan.runId} in its runner session: ${known} finished agent${known === 1 ? '' : 's'} reused when their calls are unchanged; every other call runs.`
-      : `Resumed run ${plan.runId} in its runner session: every agent() call that finished there with the same prompt and options returns its saved result; every other call runs. The result says how many it reused.`,
-  )
-}
-
 /** A runner session is read again at most this often per run. */
 const RUNNER_RECHECK_MS = 5_000
 
@@ -1475,25 +1551,23 @@ const RUNNER_RECHECK_MS = 5_000
  * output: `<workflow_result>` is done, `<workflow_error>` failed (stopped
  * when the person stopped it), any other answer failed.
  */
-export function runnerEnd(report: ChildReport): { status: WorkflowRunStatus; error?: string; done?: number } | null {
+export function runnerEnd(report: ChildReport): { status: WorkflowRunStatus; error?: string } | null {
   if (report.state === 'working' || report.state === 'missing') return null
-  const done = reusedCount(report.text)
-  const counted = done !== undefined ? { done } : {}
-  if (report.state === 'failed') return { status: 'failed', error: 'The runner session failed before the run ended.', ...counted }
+  if (report.state === 'failed') return { status: 'failed', error: 'The runner session failed before the run ended.' }
   const error = /<workflow_error>\n([^\n]*)/.exec(report.text)?.[1]?.trim()
   // The turn's end first: a runner's turn completes only when its workflow ended done, whatever its last words.
   const end = report.lastEnd
-  if (end?.reason === 'completed' && !error) return { status: 'done', ...counted }
+  if (end?.reason === 'completed' && !error) return { status: 'done' }
   if (end?.reason === 'failed') {
     const why = end.error ?? error ?? 'The runner reported failed.'
-    return { status: why === 'The person stopped the run.' ? 'stopped' : 'failed', error: why, ...counted }
+    return { status: why === 'The person stopped the run.' ? 'stopped' : 'failed', error: why }
   }
   // No turn end on record: the runner's last answer, which is the tool output.
-  if (report.text.includes('<workflow_result>')) return { status: 'done', ...counted }
-  if (error) return { status: error === 'The person stopped the run.' ? 'stopped' : 'failed', error, ...counted }
-  if (report.state === 'stopped') return { status: 'stopped', error: 'The runner session was stopped before the run ended.', ...counted }
+  if (report.text.includes('<workflow_result>')) return { status: 'done' }
+  if (error) return { status: error === 'The person stopped the run.' ? 'stopped' : 'failed', error }
+  if (report.state === 'stopped') return { status: 'stopped', error: 'The runner session was stopped before the run ended.' }
   const said = report.text.trim().split('\n')[0]?.slice(0, SUMMARY_CHARS)
-  return { status: 'failed', error: `The runner ended without running the workflow${said ? `: ${said}` : '.'}`, ...counted }
+  return { status: 'failed', error: `The runner ended without running the workflow${said ? `: ${said}` : '.'}` }
 }
 
 /** `KORTIX_SESSION_CONTEXT` marks a workflow runner (`kortix.workflow.run_id`). */
@@ -1504,13 +1578,6 @@ export function isWorkflowRunner(rawContext: string | undefined): boolean {
   } catch {
     return false
   }
-}
-
-/** The `N done` of a runner's last answer (`agents: 7 (3 done, 4 stopped)`), or undefined. */
-function reusedCount(text: string): number | undefined {
-  const counts = /^agents: \d+ \(([^)]*)\)/m.exec(text)?.[1]
-  const done = counts ? /(\d+) done/.exec(counts)?.[1] : undefined
-  return done === undefined ? undefined : Number(done)
 }
 
 // ── saved workflows ───────────────────────────────────────────────────────
@@ -1548,13 +1615,31 @@ export class WorkflowRuns {
   /**
    * `report` reads a runner session (`cloudChildReport`); without it, saved
    * states are listed as written. `isRunner`: this session is a workflow
-   * runner (`isWorkflowRunner`).
+   * runner (`isWorkflowRunner`). `toolDetails` reads the `details` of a
+   * runner's saved `workflow` calls, oldest first (`cloudChildToolDetails`);
+   * null when they cannot be read.
    */
   constructor(
     private readonly stateDir: () => string,
     private readonly report?: (sessionId: string) => Promise<ChildReport>,
     private readonly isRunner: () => boolean = () => false,
+    private readonly toolDetails?: (sessionId: string) => Promise<Array<Record<string, unknown>> | null>,
   ) {}
+
+  /**
+   * What the runner `sessionId` of a background run left for a resume:
+   * `working` while it still works; else the finished agents of its final run
+   * document of run `runId` (`records`, {@link RunDetails}), or null when that
+   * document cannot be read (the runner never finished the run, or its
+   * transcript is gone).
+   */
+  async runnerRecords(sessionId: string, runId: string): Promise<{ working: true } | { working: false; records: RecordedAgent[] | null }> {
+    const report = this.report ? await this.report(sessionId) : null
+    if (report?.state === 'working') return { working: true }
+    const details = this.toolDetails ? await this.toolDetails(sessionId).catch(() => null) : null
+    const final = details?.filter((doc) => doc.runId === runId && Array.isArray(doc.records)).at(-1)
+    return { working: false, records: final ? recordsOf(final.records) : null }
+  }
 
   /**
    * A turn starts with `prompt`. On a runner, a prompt that hands over a
@@ -1622,7 +1707,6 @@ export class WorkflowRuns {
         try {
           store.save({
             ...current,
-            ...(ended.done !== undefined ? { reportedDone: ended.done } : {}),
             doc: { ...current.doc, status: ended.status, endedAt: Date.now(), ...(ended.error ? { error: ended.error } : {}) },
           })
         } catch {

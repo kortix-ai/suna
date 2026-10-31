@@ -39,12 +39,12 @@ import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import { SUBAGENT_SPEC_REQUIRED, TASK_STOP_TOOL, type KortixHost, type SpawnSessionInput, type SpawnSessionResult } from './extensions/subagents'
-import { cloudChildReport, cloudSpawnSession, cloudStopChild, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
+import { cloudChildReport, cloudChildToolDetails, cloudSpawnSession, cloudStopChild, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
 import type { ControlPlane } from './extensions/control-plane'
 import { messaging, MESSAGING_TOOLS } from './extensions/messaging'
 import { TEAM_TASK_TOOLS, teamTasks } from './extensions/team-tasks'
 import { BUNDLED_WORKFLOWS } from './extensions/bundled-workflows'
-import { isWorkflowRunner, WorkflowRuns, type WorkflowControlAnswer } from './extensions/workflow'
+import { isWorkflowRunner, WORKFLOW_TOOL, WorkflowRuns, type WorkflowControlAnswer } from './extensions/workflow'
 import { listCheckout } from './extensions/workflow-store'
 import { promptOrigin, ULTRACODE_SYSTEM_LINE, ultracodeRequested, type PromptOrigin } from './prompt-origin'
 import { enabledFeatureFlags } from '@/lib/config/feature-flags'
@@ -499,6 +499,10 @@ export class PiRuntime {
         return cloud ? cloudChildReport(cloud, sessionId) : Promise.resolve({ state: 'missing' as const, text: '' })
       },
       () => isWorkflowRunner(this.env.KORTIX_SESSION_CONTEXT),
+      (sessionId) => {
+        const cloud = this.cloudTarget()
+        return cloud ? cloudChildToolDetails(cloud, sessionId, WORKFLOW_TOOL) : Promise.resolve(null)
+      },
     )
     this.now = () => Date.now()
     this.hooks = opts.hooks ?? {}
@@ -1713,6 +1717,16 @@ export class PiRuntime {
     return this.active ? promptOrigin(this.active.input.text) : 'human'
   }
 
+  /** The running turn's prompt is the session's first user message (`KortixHost.turnIsFirstPrompt`). */
+  private turnIsFirstPrompt(): boolean {
+    const active = this.active
+    if (!active) return false
+    // A turn or a `noReply` message that ended before this one: this prompt is not the first.
+    for (const messageId of this.completedTurns.keys()) if (messageId !== active.messageId) return false
+    const first = this.transcript.all().find((message) => message.info.role === 'user' && message.info.sessionID === this.rootId)
+    return first?.info.id === active.messageId
+  }
+
   /** The `ultracode` system line, for a turn whose own human prompt names it. */
   private ultracodeLine(): string | null {
     return this.active && ultracodeRequested(this.active.input.text) ? ULTRACODE_SYSTEM_LINE : null
@@ -1734,6 +1748,8 @@ export class PiRuntime {
       },
       turnOrigin: () => this.turnOrigin(),
       turnPrompt: () => this.active?.input.text ?? '',
+      turnId: () => this.active?.messageId ?? null,
+      turnIsFirstPrompt: () => this.turnIsFirstPrompt(),
       failTurn: (failure) => {
         if (!this.active) return
         if (failure) this.active.failure = failure

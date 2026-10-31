@@ -80,6 +80,15 @@ export interface KortixHost {
   turnOrigin(): PromptOrigin
   /** The running turn's prompt text ('' outside a turn): a workflow runner reads its hand-off from it. */
   turnPrompt(): string
+  /** The running turn's id (its prompt's message id), or null outside a turn. */
+  turnId(): string | null
+  /**
+   * The running turn's prompt is this session's first user message: no turn
+   * ran before it and no user message is ordered before it in the transcript
+   * (which a box restart or a restore brings back). False outside a turn. A
+   * workflow runner takes its hand-off only from that message.
+   */
+  turnIsFirstPrompt(): boolean
   /**
    * The running turn failed its task, though its model answered: the turn ends
    * `error` with this, so the API reports it failed (a workflow runner whose

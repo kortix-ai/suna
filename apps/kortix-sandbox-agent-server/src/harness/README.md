@@ -1286,11 +1286,19 @@ workflow from a session that can start a runner (a control plane and two more
 session levels) runs in ONE runner session, a background child (above): the
 call returns within seconds, the calling turn ends, and nothing of that turn
 (Stop, a new message, the box parking or restarting) reaches the runner. The
-script, args and handed-over records ride in the runner's prompt as a
-`<workflow_handoff chars="N">` block of JSON, up to 200,000 characters
-(`HANDOFF_MAX_CHARS`); a follow-up prompt to the same runner carries an edited
-script for a resume. The runner's tool runs its turn's hand-off, whatever
-script or name its model passes. A runner whose workflow does not finish (refused
+script, args and handed-over records ride in the runner's first prompt (the
+create's `initial_prompt`) as a `<workflow_handoff chars="N">` block of JSON,
+up to 200,000 characters (`HANDOFF_MAX_CHARS`). The runner's tool runs that
+hand-off, whatever script or name its model passes. One runner, one hand-off:
+the runner context carries the run id and the sha256 of the hand-off JSON
+(`kortix.workflow.handoff_sha256`), and the runner runs a block only when its
+`run_id` and sha256 match, the turn's prompt is the session's first user
+message (`KortixHost.turnIsFirstPrompt`, from the transcript, which a restart
+or a restore brings back), and it took no hand-off before
+(`$KORTIX_RUNTIME_STATE_DIR/workflows/handoff.json`, written before anything
+runs). Any other prompt that carries a block, the same block included, is
+refused with "runs one workflow only": no script, no agent, no record. A
+prompt that is only a block is a `peer` turn. A runner whose workflow does not finish (refused
 before any agent, failed, stopped) fails its own turn (`KortixHost.failTurn`),
 so the parent's notice says `error` with the reason. Only a runner, and a
 session that cannot start one (no control plane, or a child one level below
@@ -1300,7 +1308,14 @@ top-level turn. Run records live in `$KORTIX_RUNTIME_STATE_DIR/workflows/runs/`:
 a resume (`resume_run_id`, or automatic when the session's latest run stopped,
 failed or was interrupted; `fresh: true` opts out) reuses every completed
 `agent()` whose prompt, agent, model and schema match, in any order, keeps the
-run id, and runs in the run's own runner session. A structured agent whose
+run id, and starts a NEW runner session. Its hand-off carries the finished
+agents' saved results: from this box's record of a run that ran here, or, for a
+background run, from the last runner's final run document (`details.records`
+of its last `workflow` call, read from its saved transcript,
+`GET …/transcript?shape=sync`). A runner whose transcript holds no such
+document (its box died mid-run) leaves nothing to reuse, and the resume says
+so. The parent's record then names the new runner. A runner that still works
+refuses the resume. A structured agent whose
 answer never validates resolves to `{ schema_error, text }` (`strict: true`
 throws). Saved workflows are `.kortix/workflows/<name>.js`: the checkout's
 working tree, or the API's project files on a box without one.

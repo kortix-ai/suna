@@ -10,6 +10,9 @@
  *    last known document.
  *  - The session's "don't ask again" answer: `<state>/consent.json`. One box
  *    is one session, so the file is the session's.
+ *  - A runner session's spent hand-off: `<state>/handoff.json`, written
+ *    before the runner runs its one workflow. A runner that holds it runs no
+ *    other hand-off, also after its box restarts.
  *  - Saved workflows: `.kortix/workflows/<name>.js` in the project repository,
  *    read only. A box with a project checkout reads the working tree. A box
  *    without one (My Kortix) reads the default branch through the Kortix API
@@ -57,8 +60,6 @@ export interface RunRecord {
   resumedFrom?: string
   /** A background run: its runner session holds the agents' records. */
   background?: { sessionId: string }
-  /** A background run: the agents its runner's last answer named done (`WorkflowRuns.refresh`). */
-  reportedDone?: number
   agents: RecordedAgent[]
   /** The run's card document as last written: what `GET /kortix/runtime/workflows` lists. */
   doc?: WorkflowRunMetadata
@@ -134,6 +135,38 @@ export class RunStore {
     mkdirSync(this.dir, { recursive: true, mode: 0o700 })
     writeFileSync(join(this.dir, 'consent.json'), JSON.stringify({ dontAsk: true, at: new Date().toISOString() }), { mode: 0o600 })
   }
+
+  /**
+   * The hand-off this runner session already took, or null. A file that
+   * exists but does not parse counts as taken: the runner fails closed.
+   */
+  spentHandoff(): SpentHandoff | null {
+    const path = join(this.dir, 'handoff.json')
+    if (!existsSync(path)) return null
+    try {
+      const spent = JSON.parse(readFileSync(path, 'utf8')) as Partial<SpentHandoff> | null
+      return { runId: typeof spent?.runId === 'string' ? spent.runId : '', turnId: typeof spent?.turnId === 'string' ? spent.turnId : '', at: typeof spent?.at === 'string' ? spent.at : '' }
+    } catch {
+      return { runId: '', turnId: '', at: '' }
+    }
+  }
+
+  /**
+   * Record that this runner session took its hand-off, before any of it runs.
+   * `wx`: a second writer fails, so two calls never both take one. Throws when
+   * the file cannot be written; the caller then runs nothing.
+   */
+  spendHandoff(spent: Omit<SpentHandoff, 'at'>): void {
+    mkdirSync(this.dir, { recursive: true, mode: 0o700 })
+    writeFileSync(join(this.dir, 'handoff.json'), JSON.stringify({ ...spent, at: new Date().toISOString() }), { mode: 0o600, flag: 'wx' })
+  }
+}
+
+/** A runner session's one hand-off, once taken: the run, the turn that took it (its message id), and when. */
+export interface SpentHandoff {
+  runId: string
+  turnId: string
+  at: string
 }
 
 /**
