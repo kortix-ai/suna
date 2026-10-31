@@ -339,8 +339,7 @@ describe('useSession with its chat engine: the session log owns the history once
       await open(['session.log.v2', 'runtime.actions.v1', 'runtime.log.v1']);
       const reads = boxReads();
       expect(reads).toContain('/kortix/runtime/log');
-      // The session list (`GET /session`) still answers the hosts' sub-agent links; it is the one left.
-      expect([...new Set(reads.filter((r) => !r.startsWith('/kortix/')))]).toEqual(['/session']);
+      expect(reads.filter((r) => !r.startsWith('/kortix/'))).toEqual([]);
     });
 
     test('control: the same open on a box without runtime.log.v1 still reads the v1 routes', async () => {

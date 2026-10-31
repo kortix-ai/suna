@@ -1582,7 +1582,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     sessionId,
     pinFromStart: startData?.runtime_session_id ?? startData?.opencode_session_id ?? null,
     initialPin: logRootRuntimeId ?? initialRuntimeSessionId,
-    listRuntimeSessions: switched,
+    // A box that serves its log: the pin comes from `/start` and the log; the box lists nothing.
+    listRuntimeSessions: switched && !logNative,
   });
   const { rootSessionId } = canonicalSession;
   const ocSessionId = rootSessionId ?? '';

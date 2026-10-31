@@ -2,7 +2,8 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 // A box that serves its log answers a connect with ONE read: `GET /kortix/runtime/pending`.
 const RUNTIME = 'http://api.test/v1/p/sbx_1/8000';
 const paths: string[] = [];
-mock.module('../../core/session/server-store/active', () => ({ getActiveRuntimeUrl: () => RUNTIME }));
+const realActive = await import('../../core/session/server-store/active');
+mock.module('../../core/session/server-store/active', () => ({ ...realActive, getActiveRuntimeUrl: () => RUNTIME }));
 const realAuth = await import('../../core/http/auth');
 mock.module('../../core/http/auth', () => ({
   ...realAuth,
