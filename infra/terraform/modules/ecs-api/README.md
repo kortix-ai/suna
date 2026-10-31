@@ -58,7 +58,7 @@ It creates, in the API's cluster:
 
 | Resource | Name | Notes |
 |---|---|---|
-| Task definition | family `<name>-worker`, container `worker` | Same image, roles, secrets blob, log group (`awslogs-stream-prefix = "worker"`) and `stop_timeout` as the API. Environment = the module environment without `KORTIX_PROCESS_ROLE`. Container health check: `bun -e fetch(…/health/ready)` every 30 s, timeout 5 s, 3 retries, start period 120 s. `container_definitions` is ignored after create. |
+| Task definition | family `<name>-worker`, container `worker` | Same image, roles, secrets blob, log group (`awslogs-stream-prefix = "worker"`) and `stop_timeout` as the API. Environment = the module environment without `KORTIX_PROCESS_ROLE` and without `KORTIX_WORKER_ENV_FROM`. Container health check: `bun -e fetch(…/health/ready)` every 30 s, timeout 5 s, 3 retries, start period 120 s. `container_definitions` is ignored after create. |
 | ECS service | `<name>-worker` | `desired_count = 0` at create. On-demand `FARGATE` (base 1, weight 1) whatever `use_fargate_spot` says. Private subnets, the module's service security group only. No load balancer, no Cloud Map record, no autoscaling. Rolling 100 % / 200 % with the circuit breaker. `task_definition` and `desired_count` are ignored after create. |
 | Log metric filter | `<name>-worker-stale-jobs` | `Kortix/Worker` `StaleJobs` = `$.stale_jobs` of the `{"kortix_metric":"worker_jobs",…}` line, dimension `Environment` = `$.environment`. Created without an alarm topic too. |
 | Alarm | `<name>-worker-not-running` | `ECS/ContainerInsights` `RunningTaskCount` (Maximum) < 1 for 5 of 5 one-minute periods. Only with `alarm_topic_arn`. |
@@ -70,12 +70,15 @@ Both alarms treat missing data as not breaching and send ALARM and OK to
 **Lifecycle.** Terraform applies before the database migrations in every
 deploy workflow, so it never starts a worker. `infra/scripts/ecs-deploy.sh
 <env> <image> --service worker` registers the next revision with the API
-service's live environment, sets desired count 1 and waits until the old task
-stopped. The API roll that follows sets `KORTIX_PROCESS_ROLE=web` only when the
-worker is ACTIVE, its PRIMARY deployment is COMPLETED on the same image, and a
-task of that revision is RUNNING and HEALTHY. Otherwise the API gets `all`
-(it runs the jobs itself), and after its rollout completes the script scales
-the worker to 0.
+service's live environment and `KORTIX_WORKER_ENV_FROM=<that API task
+definition ARN>`, sets desired count 1 and waits until the old task stopped.
+The API roll that follows sets `KORTIX_PROCESS_ROLE=web` only when the worker
+is ACTIVE, its PRIMARY deployment is COMPLETED, that revision carries
+`KORTIX_WORKER_ENV_FROM` and runs the same image, and a task of that revision
+is RUNNING and HEALTHY. Terraform's first revision never carries the variable,
+so a circuit-breaker rollback onto it keeps the API on `all`. Otherwise too the
+API gets `all` (it runs the jobs itself), and after its rollout completes the
+script scales the worker to 0.
 
 **Runbook.** Worker logs: `aws logs tail /ecs/<name> --log-stream-name-prefix
 worker/worker/ --since 30m`. Kill switch: `ecs-deploy.sh <env> <image>

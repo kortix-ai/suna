@@ -31,8 +31,9 @@ variables {
   certificate_arn    = "arn:aws:acm:us-east-2:123456789012:certificate/test"
   secrets_blob_arn   = "arn:aws:secretsmanager:us-east-2:123456789012:secret:kortix-test-env-AbCdEf"
   environment = {
-    KEEP                = "from-terraform"
-    KORTIX_PROCESS_ROLE = "web"
+    KEEP                   = "from-terraform"
+    KORTIX_PROCESS_ROLE    = "web"
+    KORTIX_WORKER_ENV_FROM = "arn:aws:ecs:us-east-2:123456789012:task-definition/kortix-test:1"
   }
   # The worker must stay on-demand and egress-only whatever the API uses.
   use_fargate_spot         = true
@@ -143,6 +144,10 @@ run "worker_with_alarms" {
       && contains([for e in jsondecode(aws_ecs_task_definition.worker[0].container_definitions)[0].environment : "${e.name}=${e.value}"], "KEEP=from-terraform")
     )
     error_message = "The worker environment is the module environment plus PORT, without KORTIX_PROCESS_ROLE."
+  }
+  assert {
+    condition     = !contains([for e in jsondecode(aws_ecs_task_definition.worker[0].container_definitions)[0].environment : e.name], "KORTIX_WORKER_ENV_FROM")
+    error_message = "Terraform's first worker revision never carries KORTIX_WORKER_ENV_FROM: only ecs-deploy.sh --service worker sets it, and the API goes `web` only on such a revision."
   }
   assert {
     condition = jsondecode(aws_ecs_task_definition.worker[0].container_definitions)[0].secrets == [

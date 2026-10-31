@@ -58,8 +58,10 @@
 #              container `worker`, modules/ecs-api var.worker). Its environment
 #              is COPIED from the API service's running task definition
 #              (container `api`), then KORTIX_ECS_ENV_OVERRIDES and
-#              LLM_GATEWAY_PROXY_TARGET apply as for the API, and
-#              KORTIX_PROCESS_ROLE is removed. The API environment holds keys
+#              LLM_GATEWAY_PROXY_TARGET apply as for the API,
+#              KORTIX_PROCESS_ROLE is removed, and KORTIX_WORKER_ENV_FROM is set
+#              to the API task definition ARN it was copied from (the mark of a
+#              revision this script registered). The API environment holds keys
 #              that only ever came from deploy overrides; the worker must run
 #              with the API's real configuration. The roll sets desired count 1
 #              (Terraform creates the service at 0) and always waits `stable`,
@@ -70,8 +72,10 @@
 #              environment, whatever the running revision carries. `auto`
 #              (default) chooses `web` (the API runs no scheduled job) only when
 #              the worker service is ACTIVE, its PRIMARY deployment is
-#              COMPLETED, that revision's `worker` container runs <image>, and a
-#              task of that revision is RUNNING and HEALTHY. Anything else is
+#              COMPLETED, that revision's `worker` container carries
+#              KORTIX_WORKER_ENV_FROM (Terraform's first revision does not) and
+#              runs <image>, and a task of that revision is RUNNING and HEALTHY.
+#              Anything else is
 #              `all` (the API runs the jobs, as before the worker existed) with a
 #              ::warning naming the failed condition. `all` forces `all`: the
 #              kill switch. After an API rollout that ends with `all`, the
@@ -509,6 +513,12 @@ wait_for_stable_rollout() {
 # Prints "<role><TAB><reason>". `web` only when every condition holds; else
 # `all` and the first condition that failed. Pure: it reads only its arguments,
 # and empty or malformed JSON counts as unknown, which is `all`.
+#
+# The PRIMARY revision must carry KORTIX_WORKER_ENV_FROM, which only a
+# `--service worker` roll sets. Terraform's first revision lacks it: it runs
+# with Terraform's environment, without the deploy overrides, and in prod it
+# runs the release image (var.api_image). A failed first roll that the circuit
+# breaker rolls back to it must not turn the API to `web`.
 decide_api_process_role() {
   local services="${1:-}" task_definition="${2:-}" tasks="${3:-}" image="${4:-}"
   jq -rn --arg services "$services" --arg definition "$task_definition" \
@@ -531,9 +541,13 @@ decide_api_process_role() {
             ($primary.taskDefinition // "") as $primary_td
             | (($definition | parsed) | object
                | if has("taskDefinition") then (.taskDefinition | object) else . end) as $revision
-            | ([($revision.containerDefinitions | list)[] | objects | select(.name == "worker") | .image][0] // "") as $worker_image
+            | ([($revision.containerDefinitions | list)[] | objects | select(.name == "worker")][0] // {}) as $worker
+            | ($worker.image // "") as $worker_image
+            | ([($worker.environment | list)[] | objects | select(.name == "KORTIX_WORKER_ENV_FROM") | .value][0] // "") as $env_from
             | if ($revision.taskDefinitionArn // "") != $primary_td then
                 verdict("all"; "the worker PRIMARY task definition \($primary_td) could not be read")
+              elif ($env_from | type) != "string" or $env_from == "" then
+                verdict("all"; "the worker runs a revision ecs-deploy.sh did not register (\($primary_td) has no KORTIX_WORKER_ENV_FROM)")
               elif $worker_image != $image then
                 verdict("all"; "the worker PRIMARY task definition \($primary_td) runs \(if $worker_image == "" then "no worker container" else $worker_image end), not \($image)")
               else
@@ -781,7 +795,12 @@ case "$SVC_KIND" in
       "$(jq -cn --arg role "$PROCESS_ROLE" '{KORTIX_PROCESS_ROLE: $role}')")"
     ;;
   worker)
+    # KORTIX_WORKER_ENV_FROM marks a revision this script registered, with the
+    # API's environment. decide_api_process_role requires it before the API
+    # may go `web`; Terraform's first revision never has it.
     MERGED_ENVIRONMENT_JSON="$(printf '%s' "$MERGED_ENVIRONMENT_JSON" | jq -c 'map(select(.name != "KORTIX_PROCESS_ROLE"))')"
+    MERGED_ENVIRONMENT_JSON="$(merge_environment_overrides "$MERGED_ENVIRONMENT_JSON" \
+      "$(jq -cn --arg from "$API_TD" '{KORTIX_WORKER_ENV_FROM: $from}')")"
     ;;
 esac
 ENVIRONMENT_OVERRIDE_COUNT="$(printf '%s' "$ENVIRONMENT_OVERRIDES_JSON" | jq 'length')"

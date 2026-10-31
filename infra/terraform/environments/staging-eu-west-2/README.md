@@ -42,9 +42,10 @@ tasks serve traffic only.
 | Metric | `Kortix/Worker` `StaleJobs`, dimension `Environment = staging` |
 
 Deploy Staging's `deploy-ecs` job rolls the worker first, then the
-API. The API gets `KORTIX_PROCESS_ROLE=web` only when the worker runs the same image and has a
-HEALTHY task; otherwise `all` (the API runs the jobs), and `ecs-deploy.sh`
-scales the worker to 0 after the API rollout. A failed worker roll never blocks
+API. The API gets `KORTIX_PROCESS_ROLE=web` only when the worker runs a revision
+`ecs-deploy.sh` registered (it carries `KORTIX_WORKER_ENV_FROM`), on the same
+image, with a HEALTHY task; otherwise `all` (the API runs the jobs), and
+`ecs-deploy.sh` scales the worker to 0 after the API rollout. A failed worker roll never blocks
 the API: the run shows a `Worker deploy` error annotation.
 
 Kill switch: `bash infra/scripts/ecs-deploy.sh staging-euw2 <api-image> --process-role all`

@@ -9,13 +9,13 @@ name: Rollback Production
 #
 # WHAT IT ROLLS (each surface independently — a surface with no :vX.Y.Z artifact
 # is SKIPPED, never forced into a broken state):
-#   * BACKEND worker (ECS): rolls `kortix-prod-worker` to the same kortix-api
-#     image FIRST, so the api roll can give its tasks KORTIX_PROCESS_ROLE=web.
-#     Skipped when the target predates apps/api/src/worker.ts: that api runs
-#     the scheduled jobs itself (role `all`), and ecs-deploy.sh scales the
-#     worker to 0 after the api rollout. A failed worker roll never blocks the
-#     api: same `all` path, plus a `Worker deploy` error annotation.
-#   * BACKEND api (ECS): rolls `kortix-prod` to the immutable release image.
+#   * BACKEND api (ECS): rolls `kortix-prod` to the immutable release image
+#     with `--process-role all`: the api tasks run the scheduled jobs. Once that
+#     rollout is stable, ecs-deploy.sh scales `kortix-prod-worker` to 0.
+#   * The WORKER (ECS) is never rolled here. A rollback must start at once and
+#     must stop a bad worker, not wait up to 17 min for a worker roll that may
+#     crash-loop. The next normal release (deploy-prod.yml) rolls the worker and
+#     switches the api back to KORTIX_PROCESS_ROLE=web.
 #   * BACKEND gateway (ECS): rolls `kortix-prod-gateway` — BUT only if a
 #     :X.Y.Z gateway image exists (the gateway entered prod at v0.9.72, so older
 #     targets have no gateway image; it's left untouched rather than pointed at a
@@ -81,8 +81,7 @@ jobs:
     # puts `environment:prod` in the OIDC subject the prod role trusts.
     environment: prod
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
-    # The worker roll (17 min cap) runs before the api and gateway rolls.
-    timeout-minutes: 57
+    timeout-minutes: 40
     steps:
       - name: Checkout prod (full history + tags)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -128,19 +127,9 @@ jobs:
           want() { case "$SURF" in *",$1,"*) return 0;; *) return 1;; esac; }
           img_exists() { [ "$(curl -s -o /dev/null -w '%{http_code}' "https://hub.docker.com/v2/repositories/kortix/$1/tags/$TARGET/")" = "200" ]; }
 
-          ROLL_API=no; ROLL_WORKER=no; ROLL_GW=no; ROLL_FE=no; ROLL_FE_VERCEL=no
+          ROLL_API=no; ROLL_GW=no; ROLL_FE=no; ROLL_FE_VERCEL=no
           if want api; then
             if img_exists kortix-api; then ROLL_API=yes; else echo "::warning::kortix-api:$TARGET missing — skipping api."; fi
-          fi
-          # The worker runs the kortix-api image with apps/api/src/worker.ts. An
-          # older target has no such entrypoint: a worker roll would only crash
-          # until the circuit breaker gives up. Its api runs the jobs instead.
-          if [ "$ROLL_API" = yes ]; then
-            if git cat-file -e "v$TARGET:apps/api/src/worker.ts" 2>/dev/null; then
-              ROLL_WORKER=yes
-            else
-              echo "::notice::v$TARGET predates the scheduled-job worker — the api rolls with KORTIX_PROCESS_ROLE=all and the worker is scaled to 0."
-            fi
           fi
           # Static Apps are served by the api from storage, with no runtime. An
           # older api requires a runtime, so each static App would answer with a
@@ -170,10 +159,10 @@ jobs:
 
           {
             echo "target=$TARGET"; echo "current=$CUR"
-            echo "roll_api=$ROLL_API"; echo "roll_worker=$ROLL_WORKER"; echo "roll_gw=$ROLL_GW"; echo "roll_fe=$ROLL_FE"
+            echo "roll_api=$ROLL_API"; echo "roll_gw=$ROLL_GW"; echo "roll_fe=$ROLL_FE"
             echo "roll_fe_vercel=$ROLL_FE_VERCEL"
           } >> "$GITHUB_OUTPUT"
-          echo "Plan → target=$TARGET current=$CUR | worker=$ROLL_WORKER api=$ROLL_API gateway=$ROLL_GW frontend=$ROLL_FE"
+          echo "Plan → target=$TARGET current=$CUR | api=$ROLL_API gateway=$ROLL_GW frontend=$ROLL_FE"
 
       - name: Configure AWS credentials for ECS rollback
         if: steps.plan.outputs.roll_api == 'yes' || steps.plan.outputs.roll_gw == 'yes' || steps.plan.outputs.roll_fe == 'yes'
@@ -181,30 +170,6 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy-prod
           aws-region: eu-west-2
-
-      # Before the api: the api roll gives its tasks KORTIX_PROCESS_ROLE=web only
-      # when the worker already runs the target image and is HEALTHY.
-      - name: Backend — roll the worker to the vTARGET api image
-        id: worker
-        if: steps.plan.outputs.roll_worker == 'yes'
-        continue-on-error: true
-        timeout-minutes: 17
-        env:
-          TARGET: ${{ steps.plan.outputs.target }}
-        run: |
-          set -euo pipefail
-          bash infra/scripts/ecs-deploy.sh \
-            prod \
-            "kortix/kortix-api:${TARGET}" \
-            --service worker \
-            --version "${TARGET}" \
-            --database-migrated
-
-      - name: Report a failed worker roll
-        if: steps.worker.outcome == 'failure'
-        env:
-          TARGET: ${{ steps.plan.outputs.target }}
-        run: echo "::error title=Worker deploy::the prod worker did not roll onto kortix/kortix-api:${TARGET}. The api rolls with KORTIX_PROCESS_ROLE=all and runs the scheduled jobs."
 
       - name: Backend — roll ECS services to vTARGET images
         if: steps.plan.outputs.roll_api == 'yes' || steps.plan.outputs.roll_gw == 'yes'
@@ -214,12 +179,17 @@ jobs:
           ROLL_GW: ${{ steps.plan.outputs.roll_gw }}
         run: |
           set -euo pipefail
+          # --process-role all: the api runs the scheduled jobs, whatever the
+          # worker runs, and the script scales the worker to 0 once this
+          # rollout is stable (never before: until then the old api or the
+          # worker may be the only process that can take the leader lease).
           if [ "$ROLL_API" = yes ]; then
             bash infra/scripts/ecs-deploy.sh \
               prod \
               "kortix/kortix-api:${TARGET}" \
               --version "${TARGET}" \
-              --database-migrated
+              --database-migrated \
+              --process-role all
           fi
           if [ "$ROLL_GW" = yes ]; then
             bash infra/scripts/ecs-deploy.sh \
@@ -301,8 +271,6 @@ jobs:
           TARGET: ${{ steps.plan.outputs.target }}
           CURRENT: ${{ steps.plan.outputs.current }}
           ROLL_API: ${{ steps.plan.outputs.roll_api }}
-          ROLL_WORKER: ${{ steps.plan.outputs.roll_worker }}
-          WORKER_OUTCOME: ${{ steps.worker.outcome }}
           ROLL_GW: ${{ steps.plan.outputs.roll_gw }}
           ROLL_FE: ${{ steps.plan.outputs.roll_fe }}
           ROLL_FE_VERCEL: ${{ steps.plan.outputs.roll_fe_vercel }}
@@ -312,8 +280,8 @@ jobs:
             echo ""
             echo "| Surface | Rolled | How |"
             echo "|---|---|---|"
-            echo "| worker ECS | ${ROLL_WORKER:-no} (${WORKER_OUTCOME:-not run}) | immutable release image, before the api |"
-            echo "| api ECS | ${ROLL_API:-no} | immutable release image |"
+            echo "| api ECS | ${ROLL_API:-no} | immutable release image, KORTIX_PROCESS_ROLE=all |"
+            echo "| worker ECS | not rolled | scaled to 0 after the api rollout when api=yes; the next release rolls it |"
             echo "| gateway ECS | ${ROLL_GW:-no} | immutable release image |"
             echo "| frontend ECS | ${ROLL_FE:-no} | immutable release image |"
             echo "| frontend Vercel | ${ROLL_FE_VERCEL:-no} | promoted via Vercel API |"
