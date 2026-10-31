@@ -1,18 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 
-import { PNPM_SHA256_AMD64, PNPM_SHA256_ARM64, PNPM_VERSION } from '../../runtime-versions';
+import { AGENT_BROWSER_VERSION, PNPM_SHA256_AMD64, PNPM_SHA256_ARM64, PNPM_VERSION } from '../../runtime-versions';
 import { SANDBOX_DESKTOP_INSTALL_COMMAND } from '../desktop';
-import { kortixWorkstationTooling } from '../dockerfile-layer';
+import { PLATFORM_DEFAULT_USER_DOCKERFILE, buildLayeredDockerfile, kortixWorkstationTooling } from '../dockerfile-layer';
 import { buildMyKortixSandboxDockerfile } from '../my-kortix-dockerfile';
 
-const dockerfile = buildMyKortixSandboxDockerfile({
+const ARTIFACTS = {
   agentBinaryPath: 'artifacts/kortix-agent.gz',
   cliBinaryPath: 'artifacts/kortix.gz',
   entrypointScriptPath: 'artifacts/kortix-entrypoint.sh',
   machineDocPath: 'artifacts/MACHINE.md',
   slackCliPath: 'artifacts/kortix-slack-cli',
   managedSkillsPath: 'artifacts/managed-skills',
-});
+};
+const dockerfile = buildMyKortixSandboxDockerfile(ARTIFACTS);
 
 describe('buildMyKortixSandboxDockerfile', () => {
   test('is the Kortix defaults on the platform default\'s base, with no guide baked in', () => {
@@ -31,18 +32,19 @@ describe('buildMyKortixSandboxDockerfile', () => {
       'COPY --chown=kortix:kortix artifacts/managed-skills /opt/kortix/managed-skills',
     );
     expect(dockerfile).toContain('KORTIX_PROJECT_AUTO_CLONE=0');
+  });
 
-    // No project-agent workstation: My Kortix delegates that work.
-    expect(dockerfile).not.toContain(kortixWorkstationTooling({}));
-    expect(dockerfile).not.toContain(SANDBOX_DESKTOP_INSTALL_COMMAND);
-    expect(dockerfile).not.toContain('playwright');
-    expect(dockerfile).not.toContain('chromium');
-    expect(dockerfile).not.toContain('libreoffice');
-    expect(dockerfile).not.toContain('ffmpeg');
-    expect(dockerfile).not.toContain('claude-agent-acp');
-    expect(dockerfile).not.toContain('codex-acp');
-    expect(dockerfile).not.toContain('pi-acp');
-    expect(dockerfile).not.toContain('pi-coding-agent');
+  test('is the platform default image verbatim, plus only its own lines', () => {
+    const platformDefault = buildLayeredDockerfile({
+      userDockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE,
+      agentBrowserVersion: AGENT_BROWSER_VERSION,
+      ...ARTIFACTS,
+    });
+    expect(dockerfile.startsWith(platformDefault)).toBe(true);
+    expect(dockerfile.slice(platformDefault.length)).toBe('# ─── My Kortix ───\nENV KORTIX_PROJECT_AUTO_CLONE=0\n');
+    // So it has the same desktop, browser and tools as every other session.
+    expect(dockerfile).toContain(kortixWorkstationTooling({ agentBrowserVersion: AGENT_BROWSER_VERSION }));
+    expect(dockerfile).toContain(SANDBOX_DESKTOP_INSTALL_COMMAND);
   });
 
   test('installs pnpm from the checksum-verified release artifact, never the public installer script', () => {
@@ -51,7 +53,7 @@ describe('buildMyKortixSandboxDockerfile', () => {
     // standalone release artifact after verifying the repository-controlled
     // checksum. The public installer script is not part of the trust path.
     expect(dockerfile).not.toContain('get.pnpm.io');
-    expect(dockerfile).not.toMatch(/curl[^|\n]*\|\s*(?:sh|bash)/);
+    expect(dockerfile).not.toMatch(/curl[^|\n]*\|\s*(?:sh|bash)\b/);
     expect(dockerfile).toContain(
       `"https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-linux-\${pnpm_arch}.tar.gz"`,
     );
