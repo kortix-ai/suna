@@ -151,10 +151,12 @@ async function probeDaemonWithServiceKey(row: LegacyBootstrapRow, serviceKey: st
     const metadata = (sb?.metadata ?? null) as Record<string, unknown> | null;
     const userId = typeof metadata?.provisionedBy === 'string' ? (metadata.provisionedBy as string) : null;
     if (!userId) return false;
-    // An authenticated daemon route: it answers only a request signed with the key the box holds.
+    // An authenticated daemon route that answers whatever the harness state: it answers only a
+    // request signed with the key the box holds. The repair installed the current daemon.
     const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
     const probeHeaders = await buildSandboxUpstreamHeaders({ sandboxId: row.sandboxId, userId, serviceKey, providerHeaders: headers });
-    const res = await fetch(`${url.replace(/\/$/, '')}/kortix/runtime/state`, { headers: probeHeaders, signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) });
+    const res = await fetch(`${url.replace(/\/$/, '')}/kortix/diag?tail=1`, { headers: probeHeaders, signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) });
+    await res.body?.cancel().catch(() => {});
     return res.ok;
   } catch {
     return false;
