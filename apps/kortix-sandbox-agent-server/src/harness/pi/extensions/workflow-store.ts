@@ -4,8 +4,10 @@
  *  - Run records, for `resume_run_id`: one JSON file per run under
  *    `<state>/runs/<runId>.json` (`<state>` is `$KORTIX_RUNTIME_STATE_DIR/workflows`).
  *    Each agent's entry is written when it settles: the key of its prompt and
- *    options, its status, its result and its session. A relaunch replays the
- *    record ({@link Replay}).
+ *    options, its status, its result and its session. A resume replays the
+ *    record per call ({@link Replay}). A background run's records live on its
+ *    runner's box; the calling box keeps the run's id, runner session and
+ *    last known document.
  *  - The session's "don't ask again" answer: `<state>/consent.json`. One box
  *    is one session, so the file is the session's.
  *  - Saved workflows: `.kortix/workflows/<name>.js` in the project repository,
@@ -55,6 +57,8 @@ export interface RunRecord {
   resumedFrom?: string
   /** A background run: its runner session holds the agents' records. */
   background?: { sessionId: string }
+  /** A background run: the agents its runner's last answer named done (`WorkflowRuns.refresh`). */
+  reportedDone?: number
   agents: RecordedAgent[]
   /** The run's card document as last written: what `GET /kortix/runtime/workflows` lists. */
   doc?: WorkflowRunMetadata
@@ -127,36 +131,30 @@ export class RunStore {
 }
 
 /**
- * The replay of an earlier run, as Claude Code relaunches one. Each new
- * `agent()` call takes the earlier run's first unused entry with the same key
- * (the same prompt and options). While the replay has not diverged, a
- * completed entry returns its saved result, and an interrupted one runs
- * again alone. The first call with no such entry, or whose entry started at or
- * after the earlier run's first failed or stopped agent, diverges the replay:
- * it and every later call run again. Matching by key, not by start position,
- * keeps an unedited `pipeline()` whose stages finished in another order cached.
+ * The replay of an earlier run, per call. Each new `agent()` call takes the
+ * earlier run's first unused entry with the same key (the same prompt, agent,
+ * model and schema) that completed, and returns its saved result. Any other
+ * call runs: a new or edited call, and one whose earlier entry failed, was
+ * stopped or was interrupted. Order does not matter: a `parallel()` or
+ * `pipeline()` whose agents finished in another order, an edited call in the
+ * middle of the script, or a reordered script reuses every completed call.
  */
 export class Replay {
   private readonly used = new Set<number>()
-  private readonly firstBreak: number
-  private diverged = false
 
-  constructor(private readonly previous: RecordedAgent[]) {
-    const broken = previous.findIndex((entry) => entry.status === 'failed' || entry.status === 'stopped')
-    this.firstBreak = broken < 0 ? previous.length : broken
+  constructor(private readonly previous: RecordedAgent[]) {}
+
+  /** Completed entries this replay may still return. */
+  get reusable(): number {
+    return this.previous.filter((entry, i) => entry.status === 'done' && !this.used.has(i)).length
   }
 
   /** The saved entry this call reuses, or null: it runs. */
   take(key: string): RecordedAgent | null {
-    if (this.diverged) return null
-    const index = this.previous.findIndex((entry, i) => !this.used.has(i) && entry.key === key)
-    if (index < 0 || index >= this.firstBreak) {
-      this.diverged = true
-      return null
-    }
+    const index = this.previous.findIndex((entry, i) => !this.used.has(i) && entry.key === key && entry.status === 'done')
+    if (index < 0) return null
     this.used.add(index)
-    const entry = this.previous[index]!
-    return entry.status === 'done' ? entry : null
+    return this.previous[index]!
   }
 }
 

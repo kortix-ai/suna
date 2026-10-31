@@ -78,6 +78,14 @@ export interface KortixHost {
   teamLeadForSpawn(): string | null
   /** Where the running turn's prompt came from (`../prompt-origin.ts`); `human` outside a turn. */
   turnOrigin(): PromptOrigin
+  /** The running turn's prompt text ('' outside a turn): a workflow runner reads its hand-off from it. */
+  turnPrompt(): string
+  /**
+   * The running turn failed its task, though its model answered: the turn ends
+   * `error` with this, so the API reports it failed (a workflow runner whose
+   * workflow did not finish). No effect outside a turn.
+   */
+  failTurn(failure: { name: string; message: string }): void
   /** The workflow runs of this session (the control routes read the same instance). */
   workflowRuns(): WorkflowRuns
   /** `task_stop`: stop one child of this session, by id or name. */

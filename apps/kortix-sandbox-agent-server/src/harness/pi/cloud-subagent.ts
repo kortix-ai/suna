@@ -719,6 +719,41 @@ export async function cloudStopChild(api: CloudSubagentApi, target: { taskId?: s
   return { sessionId, handle, title: row.name ?? null, stopped: true }
 }
 
+/** Where one child of this session stands, for the workflow tool's automatic resume. */
+export interface ChildReport {
+  /** `working`: a turn runs or a prompt waits; `settled`: its last turn ended; `stopped`/`failed`: its lifecycle says so; `missing`: no such child of this session, or unreadable. */
+  state: 'working' | 'settled' | 'stopped' | 'failed' | 'missing'
+  /** Its last turn's final text (`settled` and `stopped` only); '' when none. */
+  text: string
+}
+
+/**
+ * Read one child of this session: its row, then (unless it still works) its
+ * last turn's final text. Never throws: an unreadable child is `missing`.
+ */
+export async function cloudChildReport(api: CloudSubagentApi, childId: string): Promise<ChildReport> {
+  const http: Http = {
+    fetchImpl: api.fetchImpl ?? fetch,
+    origin: apiOrigin(api.apiUrl),
+    headers: { authorization: `Bearer ${api.token}`, 'content-type': 'application/json' },
+    projectId: api.projectId,
+  }
+  try {
+    const res = await http.fetchImpl(sessionUrl(http, childId), { headers: http.headers })
+    const row = res.status === 200 ? ((await res.json().catch(() => null)) as SessionRow | null) : null
+    if (!row || (api.sessionId && row.parent_session_id !== api.sessionId)) return { state: 'missing', text: '' }
+    if (row.status === 'failed') return { state: 'failed', text: '' }
+    if (row.status === 'provisioning' || (row.status === 'running' && (row.working?.state === 'working' || row.working?.pending_delivery === true))) {
+      return { state: 'working', text: '' }
+    }
+    const report = await readFinalText(http, childId)
+    return { state: row.status === 'stopped' ? 'stopped' : 'settled', text: report.error ? '' : report.text }
+  } catch (err) {
+    logger.warn('[pi] cloud subagent report read failed', { childId, err: errorText(err) })
+    return { state: 'missing', text: '' }
+  }
+}
+
 /** Best effort: `POST …/sessions/:childId/stop`. The parent box token owns the child, so it may stop it. */
 async function stopChild(http: Http, childId: string): Promise<void> {
   try {

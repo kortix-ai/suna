@@ -39,7 +39,7 @@ import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import { SUBAGENT_SPEC_REQUIRED, TASK_STOP_TOOL, type KortixHost, type SpawnSessionInput, type SpawnSessionResult } from './extensions/subagents'
-import { cloudSpawnSession, cloudStopChild, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
+import { cloudChildReport, cloudSpawnSession, cloudStopChild, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
 import type { ControlPlane } from './extensions/control-plane'
 import { messaging, MESSAGING_TOOLS } from './extensions/messaging'
 import { TEAM_TASK_TOOLS, teamTasks } from './extensions/team-tasks'
@@ -322,6 +322,8 @@ interface Turn {
   stopRequested?: boolean
   /** Taken back before it started (`retract`): its queue slot runs nothing. */
   retracted?: boolean
+  /** A tool said the turn failed its task (`KortixHost.failTurn`): a turn that would complete ends `error` with this. */
+  failure?: { name: string; message: string }
 }
 
 /** A steered message no turn has read yet. `message` is the object handed to `agent.steer()`. */
@@ -490,7 +492,13 @@ export class PiRuntime {
     this.cfg = opts.cfg
     this.env = opts.env ?? process.env
     this.subagentContext = subagentContextFrom(this.env.KORTIX_SESSION_CONTEXT)
-    this.workflows = new WorkflowRuns(() => join(resolveKortixRuntimeStateDirectory(this.env), 'workflows'))
+    this.workflows = new WorkflowRuns(
+      () => join(resolveKortixRuntimeStateDirectory(this.env), 'workflows'),
+      (sessionId) => {
+        const cloud = this.cloudTarget()
+        return cloud ? cloudChildReport(cloud, sessionId) : Promise.resolve({ state: 'missing' as const, text: '' })
+      },
+    )
     this.now = () => Date.now()
     this.hooks = opts.hooks ?? {}
     this.releases = opts.releases ?? null
@@ -1225,6 +1233,8 @@ export class PiRuntime {
     this.steerReads.clear()
     this.status = 'busy'
     this.hooks.onTurnBegin?.({ rootId: this.rootId, messageId: turn.messageId })
+    // A runner's notice starts a turn here: the run it reports ends in the saved list too.
+    void this.workflows.refresh().catch(() => {})
     let outcome: TurnOutcome = 'completed'
     let error: TurnEnd['error'] | undefined
     this.turnAssistant = null
@@ -1274,6 +1284,10 @@ export class PiRuntime {
         const wire = assistantMessageError({ stopReason: last.stopReason as never, errorMessage: last.errorMessage, provider: last.provider })
         const data = wire?.data as { message?: string; statusCode?: number } | undefined
         error = wire ? { name: wire.name, message: data?.message, statusCode: data?.statusCode, code: wire.code } : undefined
+      }
+      if (outcome === 'completed' && turn.failure) {
+        outcome = 'error'
+        error = turn.failure
       }
     } catch (err) {
       outcome = 'error'
@@ -1679,6 +1693,13 @@ export class PiRuntime {
     return this.workflows.list()
   }
 
+  /** Read the runners of background runs still saved as running (`WorkflowRuns.refresh`), at most `budgetMs`. */
+  async refreshWorkflows(budgetMs = 3_000): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([this.workflows.refresh().catch(() => {}), new Promise<void>((resolve) => (timer = setTimeout(resolve, budgetMs)))])
+    clearTimeout(timer)
+  }
+
   /** `POST /kortix/runtime/workflows/:runId/control`. */
   controlWorkflow(runId: string, body: WorkflowControlBody): WorkflowControlAnswer {
     return this.workflows.control(runId, body)
@@ -1709,6 +1730,10 @@ export class PiRuntime {
         return cloudStopChild(cloud, target)
       },
       turnOrigin: () => this.turnOrigin(),
+      turnPrompt: () => this.active?.input.text ?? '',
+      failTurn: (failure) => {
+        if (this.active) this.active.failure = failure
+      },
       workflowRuns: () => this.workflows,
       compiledAgents: () => this.compiled?.agent ?? {},
       builtInSubagents: () => !this.v3(),

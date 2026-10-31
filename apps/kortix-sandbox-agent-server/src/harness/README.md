@@ -1267,16 +1267,30 @@ provisioning or working.
 whose transcript tail, `GET …/transcript?limit=3`, shows no change and no
 running tool for that long is stopped; the result carries `stalled: true` and
 the tool starts a new session), `waitMs` (the run's 2 h deadline replaces the
-30 min ceiling), and `runtimeContext` (a background run's runner gets the
-script, args and approved cap as `kortix.workflow.*` keys; the subagent keys
-win, and the whole context stays within the API's 16 KiB). The run approval
-asks through the question broker at depth 0 only. Run records for
-`resume_run_id` live in `$KORTIX_RUNTIME_STATE_DIR/workflows/runs/`. Saved
-workflows are `.kortix/workflows/<name>.js`: the checkout's working tree, or
-the API's project files on a box without one. A background run's runner is a
-background child (above): the parent hears the run's result once, when the
-runner's turn ends, and a `resume_run_id` relaunch returns at once the same
-way.
+30 min ceiling), and `runtimeContext` (the runner's marks:
+`kortix.workflow.run_id`, title, approved cap; the subagent keys win). Every
+workflow from a session that can start a runner (a control plane and two more
+session levels) runs in ONE runner session, a background child (above): the
+call returns within seconds, the calling turn ends, and nothing of that turn
+(Stop, a new message, the box parking or restarting) reaches the runner. The
+script, args and handed-over records ride in the runner's prompt as a
+`<workflow_handoff chars="N">` block of JSON, up to 200,000 characters
+(`HANDOFF_MAX_CHARS`); a follow-up prompt to the same runner carries an edited
+script for a resume. The runner's tool runs its turn's hand-off, whatever
+script or name its model passes. A runner whose workflow does not finish (refused
+before any agent, failed, stopped) fails its own turn (`KortixHost.failTurn`),
+so the parent's notice says `error` with the reason. Only a runner, and a
+session that cannot start one (no control plane, or a child one level below
+the depth cap), runs a script inline; its result says so. The run approval
+asks through the question broker at depth 0 only, and is the only wait of a
+top-level turn. Run records live in `$KORTIX_RUNTIME_STATE_DIR/workflows/runs/`:
+a resume (`resume_run_id`, or automatic when the session's latest run stopped,
+failed or was interrupted; `fresh: true` opts out) reuses every completed
+`agent()` whose prompt, agent, model and schema match, in any order, keeps the
+run id, and runs in the run's own runner session. A structured agent whose
+answer never validates resolves to `{ schema_error, text }` (`strict: true`
+throws). Saved workflows are `.kortix/workflows/<name>.js`: the checkout's
+working tree, or the API's project files on a box without one.
 
 **Tool concurrency.** The root agent runs `toolExecution: 'parallel'`. Every
 built-in tool is `executionMode: 'sequential'` except `PARALLEL_TOOLS`
@@ -1427,7 +1441,7 @@ message during the turn is steered in at the next step as always.
 | `task_create`, `task_list`, `task_get`, `task_update` | flag `agent_teams`, a lead (depth 0) or a teammate (`kortix.team.lead` in `runtime_context`) (`session.team_tasks`) | the lead's list, `…/sessions/:lead/tasks`; `claim: true` is atomic in the API (`409 task_taken`/`task_blocked`). |
 | `task_stop` | a box with a control plane | stop one child of this session by `task_id` or name (`cloudStopChild`). |
 | `agent` | every session | `name` (metadata `agent_handle`), `fork` (`fork_from_session_id` = this session), `run_in_background` default true for a separate session at depth 0. Reuse first: the `name` of a finished child of this session (idle, completed, stopped) is a follow-up to that child, as its `task_id` is, and the result says it continued the same session (`continued: true`); the name of a child that still works is refused. `team: true` (with a name, flag `agent_teams`, depth 0, no fork) starts a teammate: metadata `team_lead`, always background, teammate instructions in `initial_context`; without the flag or deeper it fails with the reason. A name without `team` is never a teammate. |
-| `workflow` | every session | background by default at depth 0; refused in a turn whose prompt is a peer message, a room message or a trigger (`pi/prompt-origin.ts`); `ultracode` in the person's prompt adds a per-turn line asking for a workflow; a plan above 25 agents says "Large workflow" in the approval. |
+| `workflow` | every session | always in a background runner where one can start, inline only in a runner or a session that cannot start one; refused in a turn whose prompt is a peer message, a room message or a trigger (`pi/prompt-origin.ts`); `ultracode` in the person's prompt adds a per-turn line asking for a workflow; a plan above 25 agents says "Large workflow" in the approval. |
 
 Each result is a `KortixToolResult`-shaped document (`{ ok, tool, action, card,
 data?, error? }`) as the tool's JSON output and its part `details`; the tools
@@ -1438,7 +1452,11 @@ teammate always keeps messaging and the task list.
 Workflow runs: `GET /kortix/runtime/workflows` → `{ runs: WorkflowRunMetadata[] }`
 (the live runs, then every saved run, newest first; a background run is listed
 on the parent with `background.sessionId`, its runner session, and its last
-known state). `POST /kortix/runtime/workflows/:runId/control`
+known state; before the list, the parent reads each runner of a run still
+saved as `running` and writes how it ended: `<workflow_result>` is done,
+`<workflow_error>` failed or stopped, a stopped or failed runner session
+stopped or failed, any other last answer failed. The same read runs at every
+turn start, so a runner's notice heals the list). `POST /kortix/runtime/workflows/:runId/control`
 (`WorkflowControlBody`) → `200 { ok, paused }`: `pause` (no new `agent()`
 starts; running agents finish), `resume`, `restart_agent` (stop that child and
 start it again with the same prompt, counted as an attempt), `stop`. `404`
