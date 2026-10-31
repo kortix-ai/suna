@@ -4,7 +4,7 @@ This package supplies the bundled provider catalog (the models.dev snapshot) and
 
 ## Kortix managed models: Platinum Inference
 
-Kortix managed models are a provider like any other, Platinum Inference, paid from Kortix credits. The lineup is whatever Platinum lists at `GET {PLATINUM_INFERENCE_URL}/models`: id, name, limits, image input, reasoning efforts and price per 1M tokens. The API reads it at boot and every 5 min (`loadManagedLineup` in `apps/api/src/llm-gateway/models/managed-models.ts`, `workers/managed-lineup-worker.ts`). A model Platinum adds or reprices reaches users with no Kortix change.
+Kortix managed models are a provider like any other, Platinum Inference, paid from Kortix credits. The lineup is whatever Platinum lists at `GET {PLATINUM_INFERENCE_URL}/models`: id, name, limits, image input, reasoning efforts and price per 1M tokens. The API reads it at boot and every 5 min (`loadManagedLineup` in `apps/api/src/llm-gateway/models/managed-models.ts`, `replica/managed-lineup.ts`). A model Platinum adds or reprices reaches users with no Kortix change.
 
 1. Every managed model has one upstream, Platinum (`managedCandidates` in `apps/api/src/llm-gateway/resolution/descriptors.ts`), reached with `PLATINUM_INFERENCE_API_KEY` (`pt_live_`, scope `inference`). Without the key, or with `KORTIX_MANAGED_PROVIDER_ENABLED` off, no managed model is listed, offered or served.
 2. Platinum owns the upstreams, their order, failover and their zero-data-retention terms.

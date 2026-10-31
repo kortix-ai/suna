@@ -319,7 +319,7 @@ export function startLeaderElection(
   // dead-weight leader and starve the scheduler. Skip election entirely —
   // isLeader() stays false and onAcquire is never called.
   if (opts.eligible === false) {
-    logger.info('[leader] API-only pod (singleton workers disabled) — not joining election', { ownerId });
+    logger.info('[leader] this process runs no scheduled jobs — not joining election', { ownerId });
     return;
   }
   running = true;

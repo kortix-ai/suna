@@ -1258,6 +1258,7 @@ jobs:
 
   # ── Deploy API + gateway to prod ECS Fargate ────────────────────────────────
   # api.kortix.com and gateway.kortix.com are served by ECS Fargate. This job
+  # first rolls kortix-prod-worker (every scheduled job runs there), then
   # rolls both prod ECS services to the release image with task-defs rendered
   # fresh from the kortix-prod-env Secrets Manager blob, and stamps
   # KORTIX_VERSION=<X.Y.Z> so /v1/health reports the clean released
@@ -1269,7 +1270,9 @@ jobs:
   # HARD GATE: this job is `needs`-upstream of verify-live-version and therefore
   # of the GitHub Release, the Slack announce, and the banner-lower. A failed
   # ECS deploy fails the release — never again a release announced while the
-  # active backend serves old code.
+  # active backend serves old code. A failed WORKER roll is the one exception:
+  # the API then deploys with KORTIX_PROCESS_ROLE=all and runs the scheduled
+  # jobs itself, and the run carries a `Worker deploy` error annotation.
   deploy-ecs:
     name: Deploy API + gateway to prod (ECS Fargate)
     needs: [version, retag-images, verify-image-commits, migrate-db, terraform-prod-api]
@@ -1286,7 +1289,9 @@ jobs:
         && (needs.terraform-prod-api.result == 'success' || needs.terraform-prod-api.result == 'skipped') }}
     environment: prod
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
-    timeout-minutes: 45
+    # Worker roll (17 min cap) + API and gateway rolls (15 min wait budget
+    # each in ecs-deploy.sh) + overhead.
+    timeout-minutes: 62
     permissions:
       id-token: write # OIDC → ECS deploy role
       contents: read
@@ -1321,6 +1326,20 @@ jobs:
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+      # The worker (kortix-prod-worker) runs every scheduled job. It rolls
+      # BEFORE the API, with this job's KORTIX_ECS_ENV_OVERRIDES and the API's
+      # running environment, and always waits until the old worker stopped
+      # (the lease hand-over). The API roll sets KORTIX_PROCESS_ROLE=web only
+      # when this worker runs the same image and is HEALTHY; otherwise `all`,
+      # and ecs-deploy.sh scales the worker to 0 after the API rollout.
+      - name: Roll the prod worker service from the prod-env blob
+        id: worker
+        continue-on-error: true
+        timeout-minutes: 17
+        run: bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-api:${VERSION}" --service worker --version "${VERSION}" --database-migrated
+      - name: Report a failed worker roll
+        if: steps.worker.outcome == 'failure'
+        run: echo "::error title=Worker deploy::the prod worker did not roll onto kortix/kortix-api:${VERSION}. The API rolls with KORTIX_PROCESS_ROLE=all and runs the scheduled jobs; read the step 'Roll the prod worker service from the prod-env blob'."
       - name: Roll prod ECS (api + gateway) from the prod-env blob
         run: |
           bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-api:${VERSION}" --version "${VERSION}" --database-migrated

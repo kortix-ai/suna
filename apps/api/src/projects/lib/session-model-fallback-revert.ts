@@ -2,7 +2,7 @@
  * The other half of `llm-gateway/resolution/session-model-fallback.ts`: move a
  * session that a fallback took over back to the model it stood in for once
  * that model can serve again. Two callers: every closed turn end, and
- * `workers/session-model-fallback-worker.ts` for a session that sits idle.
+ * `worker/jobs/session-model-fallback.ts` for a session that sits idle.
  * A pool that is cooling down cannot serve, so the session stays on the
  * fallback. Neither can a route the gateway still holds: it answers the
  * original model with the fallback until the hold ends

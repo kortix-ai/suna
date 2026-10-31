@@ -332,3 +332,40 @@ variable "extra_security_group_ids" {
   type        = list(string)
   default     = []
 }
+
+variable "worker" {
+  description = <<-EOT
+    The scheduled-job worker: a second ECS service, <name>-worker, in this
+    module's cluster. It runs var.image with `command` (src/worker.ts), takes no
+    traffic (no load balancer, no Cloud Map record, no autoscaling) and holds
+    the leader lease, so API tasks deployed with KORTIX_PROCESS_ROLE=web never
+    run a job. null = no worker (the gateway and web callers).
+
+    task_cpu / task_memory  Fargate size of the worker task.
+    command                 Container command. Default ["bun","run","src/worker.ts"].
+    alarm_topic_arn         SNS topic for the two worker alarms. null = no alarms.
+    metric_environment      Environment dimension of Kortix/Worker StaleJobs
+                            (the environment's INTERNAL_KORTIX_ENV). Required
+                            when alarm_topic_arn is set.
+
+    Terraform creates the service at desired_count 0. infra/scripts/ecs-deploy.sh
+    --service worker raises it to 1 after the database migrations, with the API's
+    live environment.
+  EOT
+  type = object({
+    task_cpu           = number
+    task_memory        = number
+    command            = optional(list(string), ["bun", "run", "src/worker.ts"])
+    alarm_topic_arn    = optional(string)
+    metric_environment = optional(string)
+  })
+  default = null
+
+  validation {
+    condition = var.worker == null ? true : (
+      var.worker.alarm_topic_arn == null
+      || contains(["dev", "staging", "prod", "preview"], coalesce(var.worker.metric_environment, "unset"))
+    )
+    error_message = "worker.metric_environment must be dev, staging, prod or preview when worker.alarm_topic_arn is set: the StaleJobs alarm filters on that Environment dimension."
+  }
+}

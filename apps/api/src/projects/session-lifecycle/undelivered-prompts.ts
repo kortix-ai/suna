@@ -1,6 +1,6 @@
 /**
  * Prompt-delivery backstop: session_lifecycle_commands normally drain on the
- * 1 s lifecycle worker every replica runs (workers/session-lifecycle-worker.ts)
+ * 1 s lifecycle worker every replica runs (replica/session-lifecycle.ts)
  * and on targeted kicks. A command still `queued` TEN MINUTES past its
  * available_at means that drain is starved — the worker disabled or wedged —
  * and every prompt behind it (trigger

@@ -324,8 +324,9 @@ jobs:
           fi
           pnpm --filter @kortix/db migrate
 
-  # Roll staging ECS Fargate (api + gateway). deploy-web `needs:` this job,
-  # so a broken ECS staging deploy fails the staging rollout loudly.
+  # Roll staging ECS Fargate (worker, then api + gateway). deploy-web `needs:`
+  # this job, so a broken ECS staging deploy fails the staging rollout loudly.
+  # A failed WORKER roll does not: the API then runs the scheduled jobs itself.
   deploy-ecs:
     name: Deploy API + gateway to staging (ECS Fargate)
     needs: [preflight, sync-secret, migrate-db, terraform-staging]
@@ -338,7 +339,9 @@ jobs:
         && needs.migrate-db.result == 'success'
         && (needs.terraform-staging.result == 'success' || needs.terraform-staging.result == 'skipped') }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
-    timeout-minutes: 45
+    # Worker roll (17 min cap) + API and gateway rolls (15 min wait budget
+    # each in ecs-deploy.sh) + overhead.
+    timeout-minutes: 62
     permissions:
       id-token: write # OIDC → ECS deploy role
       contents: read
@@ -383,6 +386,21 @@ jobs:
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+      # The worker (kortix-staging-euw2-worker) runs every scheduled job. It
+      # rolls BEFORE the API, with this job's KORTIX_ECS_ENV_OVERRIDES and the
+      # API's running environment, and always waits until the old worker
+      # stopped. The API roll sets KORTIX_PROCESS_ROLE=web only when this worker
+      # runs the same image and is HEALTHY; otherwise `all`. A failed worker
+      # roll never blocks the API: the job stays green and the next step
+      # annotates the run.
+      - name: Roll the staging worker service from the staging-env blob
+        id: worker
+        continue-on-error: true
+        timeout-minutes: 17
+        run: bash infra/scripts/ecs-deploy.sh staging-euw2 "kortix/kortix-api:staging-${SHA8}" --service worker --version "${VERSION}"
+      - name: Report a failed worker roll
+        if: steps.worker.outcome == 'failure'
+        run: echo "::error title=Worker deploy::the staging worker did not roll onto kortix/kortix-api:staging-${SHA8}. The API rolls with KORTIX_PROCESS_ROLE=all and runs the scheduled jobs; read the step 'Roll the staging worker service from the staging-env blob'."
       - name: Roll staging ECS (api + gateway) from the staging-env blob
         run: |
           bash infra/scripts/ecs-deploy.sh staging-euw2 "kortix/kortix-api:staging-${SHA8}" --version "${VERSION}"

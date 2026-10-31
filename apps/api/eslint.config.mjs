@@ -34,7 +34,7 @@ const NO_PLATFORM = {
  * The layer of a module path, lowest first: 0 shared (lib/, shared/,
  * config.ts, types.ts), 1 services (everything else), 2 http (route files,
  * and the index.ts at the top of each domain, which mounts its routes), 3 app (the
- * composition root). A module imports its own layer or a lower one.
+ * composition roots: index.ts for the API, worker.ts for the worker). A module imports its own layer or a lower one.
  * null: outside src/.
  * @param {string} abs
  */
@@ -42,7 +42,7 @@ export function layerOf(abs) {
   const rel = relative(SRC, abs).split(sep).join('/').replace(/\.ts$/, '');
   if (rel.startsWith('..')) return null;
   if (/^(lib|shared)\//.test(rel) || rel === 'config' || rel === 'types') return 0;
-  if (['index', 'app', 'bootstrap', 'http-middleware'].includes(rel)) return 3;
+  if (['index', 'worker', 'app', 'bootstrap', 'http-middleware'].includes(rel)) return 3;
   if (/(^|\/)routes(\/|$)|(^|\/)(router|[^/]*-routes)$|^[^/]+\/index$/.test(rel)) return 2;
   return 1;
 }
