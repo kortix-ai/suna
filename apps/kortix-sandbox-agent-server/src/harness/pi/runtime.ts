@@ -1747,6 +1747,7 @@ export class PiRuntime {
       // My Kortix's box (the coordinator): its config declares only itself, and every hand-off names a project agent.
       anyProjectAgent: () => this.env.KORTIX_META_AGENT === '1',
       currentAgentName: () => this.agentName,
+      toolNames: () => this.ownToolNames(),
       spawnSession: (input) => this.resolveSpawn(input),
       workflowLimits: () => {
         const cloud = this.cloudTarget()
@@ -1847,6 +1848,14 @@ export class PiRuntime {
     const coordinator = this.env.KORTIX_META_AGENT === '1'
     const declared = Object.prototype.hasOwnProperty.call(this.compiled?.agent ?? {}, this.agentName)
     const narrowed = this.compiledAgent()?.tools !== undefined || this.subagentContext.tools !== undefined
+    return {
+      parentAgent: !coordinator && declared ? this.agentName : undefined,
+      toolAllowlist: narrowed ? this.ownToolNames() : undefined,
+    }
+  }
+
+  /** Every tool the root agent may use on this box: what a child's `tools` may name. */
+  private ownToolNames(): string[] {
     const session = this.pi?.session
     const names = [
       ...this.baseTools.map((tool) => tool.name),
@@ -1854,10 +1863,7 @@ export class PiRuntime {
       ...(session?.getActiveToolNames() ?? []),
       ...this.hiddenTools,
     ]
-    return {
-      parentAgent: !coordinator && declared ? this.agentName : undefined,
-      toolAllowlist: narrowed ? [...new Set(names)].filter((name) => this.rootToolAllowed(name)) : undefined,
-    }
+    return [...new Set(names)].filter((name) => this.rootToolAllowed(name))
   }
 
   /**

@@ -64,10 +64,16 @@ export interface RunRecord {
   doc?: WorkflowRunMetadata
 }
 
-/** The key that decides whether a relaunched agent may reuse a saved result. */
-export function agentKey(input: { prompt: string; agent?: string; model?: string; schema?: unknown }): string {
+/**
+ * The key that decides whether a resumed agent may reuse a saved result: the
+ * prompt and every option that changes the answer. `instructions` and `tools`
+ * join the key only when set, so a record written before they existed keeps
+ * its key.
+ */
+export function agentKey(input: { prompt: string; agent?: string; model?: string; schema?: unknown; instructions?: string; tools?: string[] }): string {
+  const custom = input.instructions !== undefined || input.tools !== undefined ? [input.instructions ?? null, input.tools ? [...input.tools].sort() : null] : []
   return createHash('sha256')
-    .update(JSON.stringify([input.prompt, input.agent ?? null, input.model ?? null, input.schema ?? null]))
+    .update(JSON.stringify([input.prompt, input.agent ?? null, input.model ?? null, input.schema ?? null, ...custom]))
     .digest('hex')
 }
 

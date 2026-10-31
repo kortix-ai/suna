@@ -151,7 +151,7 @@ import { Type } from 'typebox'
 import { ownScriptSandbox } from '../codemode'
 import { promptOrigin, workflowOriginRefusal } from '../prompt-origin'
 import { BUNDLED_WORKFLOWS } from './bundled-workflows'
-import { INLINE_AGENT, SUBAGENT_PROMPT, subagentTypes, type KortixHost, type SpawnSessionInput, type SpawnSessionResult, type WorkflowLimits } from './subagents'
+import { checkChildTools, checkModelRef, INLINE_AGENT, SUBAGENT_PROMPT, subagentTypes, type KortixHost, type SpawnSessionInput, type SpawnSessionResult, type WorkflowLimits } from './subagents'
 import { parseJsonAnswer, schemaContradiction, schemaCorrection, schemaInstruction, splitMeta, validateJson, type WorkflowMeta } from './workflow-script'
 import {
   agentKey,
@@ -278,8 +278,9 @@ function describe(agentNames: string[], limits: WorkflowLimits, saved: string[],
     '',
     'Script (plain JavaScript with top-level await, not TypeScript):',
     '- Optional first statement: `export const meta = { name, description, phases: [{ title, detail? }] }`, a plain literal. Give each phase the exact title you pass to phase().',
-    '- agent(prompt, { label?, phase?, agent?, model?, schema?, strict?, stallMs? }) starts one subagent and resolves to its final answer. With `schema` (a JSON Schema object) it resolves to the parsed JSON that matches it. The prompt must be complete: the subagent sees nothing of this conversation. ' +
+    '- agent(prompt, { label?, phase?, agent?, model?, instructions?, tools?, schema?, strict?, stallMs? }) starts one subagent and resolves to its final answer. With `schema` (a JSON Schema object) it resolves to the parsed JSON that matches it. The prompt must be complete: the subagent sees nothing of this conversation. ' +
       `\`agent\` is a named agent type${agentNames.length > 0 ? ` (${agentNames.join(', ')})` : ''}; without it the subagent runs as the current agent. A subagent with no new output for \`stallMs\` (default ${DEFAULT_STALL_MS / 60_000} min) starts over, up to ${STALL_ATTEMPTS} attempts.`,
+    '- Custom agents: `model` (provider/model) runs it on another model; `instructions` (without `agent`) is its own system prompt, an inline agent; `tools` (tool names) limits it to those of your tools, and a tool you lack is refused. The three are part of the resume key.',
     '- agent() resolves to null when its session was stopped and throws when it failed: awaited directly, that ends the run; inside parallel() or pipeline() it becomes null.',
     `- With schema, an answer that still does not match after ${STRUCTURED_ATTEMPTS} attempts resolves to { schema_error, text } (its last answer as text), and the run goes on: check \`result.schema_error\` where it matters. Pass strict: true to make agent() throw instead.`,
     `- parallel([() => agent(...), ...]) runs the functions at once. pipeline(items, stage1, stage2, ...) sends each item through the stages; a stage gets (previousResult, item, index). At most ${MAX_ITEMS} items per call.`,
@@ -783,14 +784,20 @@ class WorkflowRun {
     if (typeof prompt !== 'string' || !prompt.trim()) throw new Error('agent() needs a prompt string as its first argument.')
     const opts = rawOpts && typeof rawOpts === 'object' ? (rawOpts as Record<string, unknown>) : {}
     const named = typeof opts.agent === 'string' && opts.agent.trim() ? opts.agent.trim() : undefined
-    const model = typeof opts.model === 'string' && opts.model.trim() ? opts.model.trim() : undefined
+    const model = typeof opts.model === 'string' && opts.model.trim() ? checkModelRef(opts.model, 'agent() refused: model') : undefined
+    const instructions = typeof opts.instructions === 'string' && opts.instructions.trim() ? opts.instructions.trim() : undefined
+    if (instructions && named) {
+      throw new Error(`agent() refused: instructions define an inline agent, and "${named}" brings its own. Omit agent to run these instructions, or put the guidance in the prompt.`)
+    }
+    // A child never gets a tool this session lacks.
+    const tools = opts.tools !== undefined ? checkChildTools(opts.tools, this.host.toolNames(), 'agent() refused') : undefined
     const schema = opts.schema ?? undefined
     if (schema !== undefined) {
       const contradiction = schemaContradiction(schema)
       if (contradiction) throw new Error(`agent() refused: the schema can never be met (${contradiction}). The agent did not start.`)
     }
     const stallMs = typeof opts.stallMs === 'number' && Number.isFinite(opts.stallMs) && opts.stallMs > 0 ? opts.stallMs : DEFAULT_STALL_MS
-    const spec = this.spec(named, model)
+    const spec = this.spec(named, model, instructions, tools)
     if (this.doc.agents.length >= this.plan.maxAgents) {
       const refusal = `agent() refused: this run may start at most ${this.plan.maxAgents} agents${this.plan.planned !== undefined ? ' (the approved count)' : ''}, and it started ${this.doc.agents.length}. Give each agent more of the work, or run another workflow for the rest.`
       this.log(refusal)
@@ -811,7 +818,7 @@ class WorkflowRun {
     this.doc.agents.push(entry)
     if (this.doc.agents.length > LARGE_RUN_AGENTS) this.doc.large = true
     // Recorded in start order; a run that ends before this agent settles leaves it `interrupted`.
-    const recorded: RecordedAgent = { key: agentKey({ prompt, agent: named, model, schema }), label, status: 'interrupted' }
+    const recorded: RecordedAgent = { key: agentKey({ prompt, agent: named, model, schema, instructions, tools }), label, status: 'interrupted' }
     this.record.agents.push(recorded)
     const cached = this.replay?.take(recorded.key)
     if (cached) {
@@ -825,22 +832,28 @@ class WorkflowRun {
     return done
   }
 
-  /** The spawn input of a named agent, else of an inline one. Throws for a name the `agent` tool would refuse. */
-  private spec(named: string | undefined, model: string | undefined): Omit<SpawnSessionInput, 'title' | 'prompt'> {
-    const base = { session: 'separate' as const, waitMs: WORKFLOW_DEADLINE_MS }
-    if (!named) return { ...base, agent: INLINE_AGENT, systemPrompt: SUBAGENT_PROMPT, ...(model ? { model } : {}) }
+  /**
+   * The spawn input of a named agent, else of an inline one (its own
+   * `instructions` as its system prompt). `tools` narrows either: a named
+   * agent keeps only the ones its type also allows. Throws for a name the
+   * `agent` tool would refuse.
+   */
+  private spec(named: string | undefined, model: string | undefined, instructions: string | undefined, tools: string[] | undefined): Omit<SpawnSessionInput, 'title' | 'prompt'> {
+    const base = { session: 'separate' as const, waitMs: WORKFLOW_DEADLINE_MS, ...(model ? { model } : {}), ...(tools ? { tools } : {}) }
+    if (!named) return { ...base, agent: INLINE_AGENT, systemPrompt: instructions ?? SUBAGENT_PROMPT }
     const types = subagentTypes(this.host)
     const type = types.get(named)
     // My Kortix's box (or its runner): any project agent, by name; the API authorizes it when it creates the session.
-    if (!type && this.plan.anyAgent) return { ...base, agent: named, systemPrompt: SUBAGENT_PROMPT, ...(model ? { model } : {}) }
+    if (!type && this.plan.anyAgent) return { ...base, agent: named, systemPrompt: SUBAGENT_PROMPT }
     if (!type) throw new Error(`agent() refused: unknown agent "${named}". Available: ${[...types.keys()].join(', ') || 'none'}. Omit \`agent\` to run as the current agent.`)
+    const narrowed = tools && type.tools ? tools.filter((name) => type.tools!.includes(name)) : (tools ?? type.tools)
     return {
       ...base,
       agent: named,
       systemPrompt: type.prompt,
       ...(model ?? type.model ? { model: model ?? type.model } : {}),
       ...(type.variant ? { variant: type.variant } : {}),
-      ...(type.tools ? { tools: type.tools } : {}),
+      ...(narrowed ? { tools: narrowed } : {}),
       ...(type.permission !== undefined ? { permission: type.permission } : {}),
     }
   }
