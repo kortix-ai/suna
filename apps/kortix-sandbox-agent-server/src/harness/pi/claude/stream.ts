@@ -249,7 +249,14 @@ export class ClaudeReply {
   finishResult(result: Extract<SDKMessage, { type: 'result' }>): AssistantMessage {
     const error = this.resultError(result)
     if (error) return this.fail(error)
-    if (this.usage.size <= 1) this.updateUsage(this.lastResponse ?? 'result', result.usage as RawUsage)
+    // `result.usage` sums every call of the Claude turn, and one turn spans every
+    // pi step since the user's message (tool calls park it). Its input counts are
+    // a context size only for a one-call turn that streamed no usage of its own.
+    if (this.usage.size === 0) {
+      const raw = result.usage as RawUsage | undefined
+      const oneCall = ((result as { num_turns?: number }).num_turns ?? 1) <= 1
+      this.updateUsage('result', oneCall ? raw : raw && { output_tokens: raw.output_tokens, output_tokens_details: raw.output_tokens_details })
+    }
     const reason = result.subtype === 'success' && result.stop_reason === 'max_tokens' ? 'length' : 'stop'
     this.message.stopReason = reason
     this.start()

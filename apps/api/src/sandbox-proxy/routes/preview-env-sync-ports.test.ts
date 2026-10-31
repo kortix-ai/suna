@@ -16,6 +16,7 @@
 // own module graph. Same stub set as ./forward.test.ts, plus counters on the two
 // collaborators `runPrePromptEnvSync` drives.
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realSandboxProxyBackend from '../backend';
 import * as realRequestContext from '../../lib/request-context';
 import * as realKortixUserContext from '../../shared/kortix-user-context';
 import * as realPreviewOwnership from '../../shared/preview-ownership';
@@ -52,7 +53,11 @@ mock.module('../../iam', () => ({
   PROJECT_ACTIONS: { PROJECT_AGENT_READ: 'project.agent.read' },
   authorize: async () => ({ allowed: true, reason: 'role' }),
 }));
+const realSandboxEnvSync = await import('../../projects/lib/sandbox-env-sync');
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
+  // Spread the real module: a hand-listed stub deletes every other export —
+  // the session-open graph imports `pushSessionAgentConfigToSandbox` from it.
+  ...realSandboxEnvSync,
   syncSandboxEnvForPrompt: async (input: { sessionId: string; requestedAgent: string | null }) => {
     envSyncCalls.push({ sessionId: input.sessionId, requestedAgent: input.requestedAgent ?? null });
   },
@@ -79,6 +84,7 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
+const realSessionOpen = await import('../../projects/session-open');
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   beginSandboxTurn: async () => 'granted',
@@ -86,11 +92,17 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   abandonSandboxTurn: async () => true,
 }));
 mock.module('../../projects/session-open', () => ({
+  // Spread the real module: a hand-listed stub deletes every other export —
+  // the lifecycle graph imports `openSession` from it.
+  ...realSessionOpen,
   resumeStoppedSandboxByExternalId: async () => true,
   stoppedSandboxWakePending: async () => false,
 }));
 // Daytona ingress is a pass-through: the effective port IS the addressed port.
 mock.module('../backend', () => ({
+  // Spread the real module: a hand-listed stub deletes every other export —
+  // the projects graph imports `resolveServiceKey`/`invalidateSandbox` from it.
+  ...realSandboxProxyBackend,
   loadSandbox: async () => ({ ...ACTIVE_RECORD }),
   routeSandboxIngress: (_record: unknown, request: { port: number }) => ({
     effectivePort: request.port,

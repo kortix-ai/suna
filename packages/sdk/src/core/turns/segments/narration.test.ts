@@ -19,6 +19,10 @@ function part(tool: string, input: Record<string, unknown> = {}, output?: string
 }
 
 describe('familyForTool', () => {
+  it('narrates the platform memory tool as memory', () => {
+    expect(familyForTool('kortix_memory')).toBe('memory');
+  });
+
   it('maps the explore family', () => {
     for (const t of ['read', 'glob', 'grep', 'list']) {
       expect(familyForTool(t)).toBe('explore');
@@ -201,6 +205,9 @@ describe('narrateStep - pi agent, workflow and the My Kortix platform tools narr
     expect(narrateStep('platform', [platform('kortix_access', 'check', { ok: true })])).toBe('Checked who has access');
     // A call still running has no output yet; the action alone decides the verb.
     expect(narrateStep('platform', [part('kortix_schedules', { action: 'pause' })])).toBe('Updated your schedules');
+    // Listing a connector's event types and viewing one page only read.
+    expect(narrateStep('platform', [platform('kortix_schedules', 'events', { ok: true })])).toBe('Checked your schedules');
+    expect(narrateStep('platform', [platform('kortix_schedules', 'follow_up', { ok: true })])).toBe('Updated your schedules');
   });
 
   it('the messaging and team task tools narrate by tool, not by an action input', () => {

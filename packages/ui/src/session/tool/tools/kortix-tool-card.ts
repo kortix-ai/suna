@@ -247,7 +247,7 @@ export function parseKortixToolResult(raw: string | undefined, callName?: string
 }
 
 /** The actions that only read; every other action changes something (the SDK narration uses the same set). */
-const READ_ACTIONS = new Set(['', 'list', 'get', 'read', 'find', 'show', 'view', 'search', 'check', 'status', 'pending', 'who']);
+const READ_ACTIONS = new Set(['', 'list', 'get', 'read', 'find', 'show', 'view', 'events', 'search', 'check', 'status', 'pending', 'who']);
 
 export function isReadAction(action: unknown): boolean {
   return READ_ACTIONS.has(typeof action === 'string' ? action : '');
