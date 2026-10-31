@@ -23,12 +23,12 @@ export function SessionFailedCard({
 }: {
   /** "Session error". */
   title: string;
-  /** The session's name — only when it is not the one on screen. */
+  /** The session's name. `/debug/toasts` draws the card without it. */
   label?: string;
   /** The sentence the transcript's error row shows. */
   detail?: string;
   openLabel: string;
-  /** Absent for the session on screen: there is nowhere to go. */
+  /** Opens the session. `/debug/toasts` draws the card without it. */
   onOpen?: () => void;
   onDismiss: () => void;
 }) {
