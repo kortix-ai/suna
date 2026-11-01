@@ -766,7 +766,7 @@ jobs:
           # has nothing to fetch.
           # macOS universal (Apple Silicon + Intel) in one signed/notarized .dmg.
           - target_pretty: macos
-            runner: macos-14
+            runner: macos-15
             eb_flag: --mac
             artifact: desktop-macos
             files: |
