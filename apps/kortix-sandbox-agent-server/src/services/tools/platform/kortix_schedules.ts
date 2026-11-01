@@ -36,6 +36,8 @@ const WAKE_ON = ['cr_merged', 'webhook', 'connector_event', 'app_event'] as cons
 const AUTOMATE_ON = { schedule: 'cron', webhook: 'webhook', connector_event: 'event', app_event: 'app' } as const
 /** The trigger filter operators (`@kortix/manifest-schema` `trigger-filter.ts`); a plain value means equals. */
 const FILTER_OPS = ['not', 'in', 'prefix', 'not_prefix', 'exists'] as const
+/** The App path a run calls (`target_path`), e.g. `/tick`. */
+const APP_PATH = /^\/[A-Za-z0-9_\-./]{0,200}$/
 /** A payload path a filter reads, e.g. `body.sender.login` or `event.data.labels`. */
 const FILTER_PATH = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,199}$/
 
@@ -524,12 +526,21 @@ async function automate(args: Record<string, any>, context: PlatformToolContext)
       `\`on\` is one of: ${Object.keys(AUTOMATE_ON).join(', ')}. Send the whole automation in one call, e.g. {"action":"automate","name":"form-leads","on":"webhook","secret_env":"FORM_SECRET","agent":"sales","prompt":"If this is a test or spam, stop and send no message. Otherwise draft a reply to {{ body.name }} <{{ body.email }}>.","session_key":"{{ body.email }}","max_runs_per_day":20}`,
     )
   }
+  // An App target: each run calls the App (a watcher's poll: no session, no model) instead of an agent.
+  const targetApp = typeof args.target_app === 'string' ? args.target_app.trim() : ''
+  const targetPath = typeof args.target_path === 'string' && args.target_path.trim() ? args.target_path.trim() : '/'
+  if (targetApp) {
+    const bad = cliArgProblem('target_app', targetApp)
+    if (bad) return invalid('Which App?', bad)
+    if (!APP_PATH.test(targetPath)) return invalid('Which path?', '`target_path` is the App path each run calls, starting with "/", e.g. "/tick".')
+    if (typeof args.agent === 'string' && args.agent.trim()) return invalid('An App or an agent', 'A run calls `target_app` or starts `agent`, not both.')
+  }
   const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
-  if (!prompt) return invalid('What should each run do?', 'Missing `prompt`: what each run starts with. Read the event with {{ event.data.<field> }} (connector and App events) or {{ body.<field> }} (webhooks).')
-  const badPrompt = cliArgProblem('prompt', prompt, 'text')
+  if (!prompt && !targetApp) return invalid('What should each run do?', 'Missing `prompt`: what each run starts with. Read the event with {{ event.data.<field> }} (connector and App events) or {{ body.<field> }} (webhooks).')
+  const badPrompt = prompt ? cliArgProblem('prompt', prompt, 'text') : null
   if (badPrompt) return invalid('What should each run do?', badPrompt)
 
-  const flags = [`--type=${type}`, `--prompt=${prompt}`]
+  const flags = [`--type=${type}`, ...(prompt ? [`--prompt=${prompt}`] : [])]
   const wordFlag = (field: string, flag: string, hint: string, required: boolean) => {
     const value = word(args, field, hint)
     if (isError(value)) return required ? value : typeof args[field] === 'string' && args[field].trim() ? value : null
@@ -546,6 +557,7 @@ async function automate(args: Record<string, any>, context: PlatformToolContext)
     wordFlag('model', 'model', 'a model id, as kortix_agents models lists it', false),
   ].find(Boolean)
   if (problems) return invalid('Check the automation', problems.error)
+  if (targetApp) flags.push(`--target-app=${targetApp}`, `--target-path=${targetPath}`)
   if (on === 'schedule') {
     const schedule = scheduleFlags({ every: args.every, cron: args.cron, timezone: args.timezone })
     if (typeof schedule === 'string') return invalid('When should it run?', 'Pass every ("1h", "1d") or cron ("0 0 9 * * 1-5", 6 fields, seconds first), plus timezone with cron.')
@@ -592,7 +604,9 @@ async function automate(args: Record<string, any>, context: PlatformToolContext)
     'automate',
     {
       title: `Automation set: ${name}`,
-      subtitle: `${typeof args.agent === 'string' && args.agent.trim() ? args.agent.trim() : 'My Kortix'} runs on ${reacts}${key ? ', one session per key' : ''}`,
+      subtitle: targetApp
+        ? `Calls the App ${targetApp} (${targetPath}) on ${reacts}`
+        : `${typeof args.agent === 'string' && args.agent.trim() ? args.agent.trim() : 'My Kortix'} runs on ${reacts}${key ? ', one session per key' : ''}`,
       rows: [
         ...(filter.length ? [{ title: 'Only when', detail: short(filter.map((f) => f.replace('--filter=', '')).join(' · '), 140) }] : []),
         ...(url ? [{ title: 'Webhook URL', detail: url }] : []),
@@ -689,6 +703,7 @@ export default {
     '`wake_on` (text + on); `events` (connector); `list` (this session\'s follow-ups and wake-ons, and the project schedules, with ids); ' +
     '`create` (prompt + agent + one schedule: each run starts a new session of that agent); `pause`, `resume`, `run_now`, `remove` (each needs `id` as list shows it; `delete` = remove). ' +
     'AUTOMATIONS (work that starts by itself whenever something happens, with no one asking: each new email from a customer, each new issue, each form submission, each failed build, every weekday at 9): `automate` (name + on + agent + prompt; on=connector_event: connector + event (+ config), run `events` first; webhook: secret_env, give the outside system the returned URL; app_event: app (+ event); schedule: every or cron + timezone). ' +
+    'No event fits (none, or too coarse): have a colleague build a watcher App that posts App events, then `automate` its check (on=schedule + every + target_app + target_path "/tick": calls the App, no session, no model) and its work (on=app_event). ' +
     'Do it well: 1) `filter` at the source so noise never starts a run (skip bots and Kortix itself, keep only the actions that matter: { "body.action": ["opened"], "body.sender.login": { "not": "kortix-bot" } }); ' +
     '2) `session_key` per thing ("{{ event.data.thread_id }}", "{{ body.issue.number }}", "{{ body.email }}") so a follow-up about the same thing lands in the same session; ' +
     '3) a prompt that judges first: "If this is not <what matters>, stop: do nothing and send no message. Otherwise …", with the event fields it needs; ' +
@@ -708,6 +723,8 @@ export default {
       max_runs_per_hour: { type: 'number', description: 'For automate: the most runs it may start in an hour (default 60).' },
       model: { type: 'string', description: 'For automate: the model each run uses, as kortix_agents models lists it. Omit for the agent\'s own.' },
       payload: { type: 'object', description: 'For test: a sample event, merged over the default one, e.g. { "body": { "action": "opened" } }.' },
+      target_app: { type: 'string', description: 'For automate: each run calls this App instead of an agent (the check of a watcher App: no session, no model). No prompt needed.' },
+      target_path: { type: 'string', description: 'With target_app: the App path each run calls, e.g. "/tick" (default "/").' },
       cr: { type: 'string', description: 'For wake_on cr_merged: the change request id or number.' },
       secret_env: { type: 'string', description: 'For wake_on webhook: the name of the project secret that signs the calls.' },
       connector: { type: 'string', description: 'For wake_on connector_event and events: the connector slug.' },

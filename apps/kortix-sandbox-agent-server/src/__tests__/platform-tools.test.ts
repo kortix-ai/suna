@@ -610,3 +610,18 @@ describe('kortix_schedules automate tolerance', () => {
     expect(argvs()[1]).toBe('secrets request FORM_SECRET --scope=connector')
   })
 })
+
+describe('kortix_schedules automate: an App as the event source', () => {
+  test('a schedule can call an App instead of an agent (the poll of a watcher App): no prompt needed, target_app + target_path', async () => {
+    fakeKortix(`'triggers add hn-watch-tick '*' --apply') printf 'Added hn-watch-tick (live)\\n' ;;`)
+    const tick = await run('kortix_schedules', { action: 'automate', name: 'hn-watch-tick', on: 'schedule', every: '15m', target_app: 'hn-watch', target_path: '/tick' })
+    expect(tick.ok).toBe(true)
+    expect(argvs()).toEqual(['triggers add hn-watch-tick --type=cron --target-app=hn-watch --target-path=/tick --every=15m --apply'])
+    expect(tick.card.subtitle).toBe('Calls the App hn-watch (/tick) on every 15m')
+    for (const bad of [{ target_app: '--all' }, { target_app: 'hn-watch', target_path: 'tick' }, { target_app: 'hn-watch', agent: 'writer' }]) {
+      const result = await run('kortix_schedules', { action: 'automate', name: 'x', on: 'schedule', every: '15m', ...bad })
+      expect({ bad, kind: result.error?.kind }).toEqual({ bad, kind: 'invalid' })
+    }
+    expect(argvs()).toHaveLength(1)
+  })
+})

@@ -413,6 +413,26 @@ this trigger and status-watch-tick once it reads Operational." --on app --app st
   `kortix triggers disable status-watch-tick` (or delete it), and
   `kortix apps delete status-watch --yes` when nothing else uses it.
 
+### A watcher, specified
+
+A hand-off for a watcher App names: what to watch and how (an API, a page, a
+feed, an inbox), what counts as a change, the event `name`, the `data` fields
+the next step reads, the `id` (built from the content), how often to check,
+and the project secrets it needs, by name. The builder deploys it on demand,
+runs `/tick` once (`curl` the App, or `kortix triggers fire <tick-slug>`) and
+reports the event it posted. Whoever wires it adds the check
+(`kortix triggers add <app>-tick --every 15m --target-app <app> --target-path
+/tick --apply`) and the work (`--type app --app <app> --event <name>`, with
+the filter, key and cap of "Automations" above).
+
+### A relay App: a system that calls but cannot sign
+
+A system that can call a URL but cannot sign it, or sends a shape the agent
+should not read raw, gets a relay App: one route takes the call, checks what
+it can (a shared token in the path or a header, the source IP), keeps only the
+fields that matter, and posts one App event per call. The App's own URL is
+what the system calls; the App event is what the trigger reads.
+
 ## Stop a trigger
 
 Saying "I stopped it" without a config change leaves it firing.
