@@ -410,16 +410,14 @@ this trigger and status-watch-tick once it reads Operational." --on app --app st
 
 ### A watcher, specified; a relay App
 
-A watcher hand-off names what to watch and how, what counts as a change, the
-event `name`, the `data` fields, the content-built `id`, the cadence and the
-secrets by name. The builder deploys it on demand and proves it with one test
+A watcher hand-off names the source, what counts as a change, the event `name`,
+the `data` fields, the content-built `id`, the cadence and the secrets. The builder deploys it on demand and proves it with one test
 event (`id` starting `test-`), not a real `/tick`: each `id` fires once, so a
 real event posted before the work trigger exists is spent. Wire the work first
 (`--type app --app <app> --event <name>`, filtered, keyed and capped as in
 "Automations"), then the check (`--every 15m --target-app <app> --target-path
-/tick`), then fire the check once and read the work trigger's runs. A system that calls a URL but
-cannot sign, or sends a raw shape, gets a relay App: it checks a shared token,
-keeps the fields that matter, and posts one App event per call.
+/tick`), then fire the check once and read the work trigger's runs. A system
+that calls a URL but cannot sign gets a relay App: one App event per call.
 
 ## Stop a trigger
 
