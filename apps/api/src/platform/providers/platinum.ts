@@ -282,29 +282,65 @@ function isDefinitiveTemplateNotFound(error: unknown): boolean {
 function isVolumeRejection(error: unknown): boolean {
   const { status, code, body } = platinumHttp(error);
   if (typeof status !== 'number' || !((status >= 400 && status < 500) || status === 503)) return false;
+  if (code && MOUNT_REFUSAL_CODES.has(code)) return true;
   return /volume|mount|sub_?path|subdir|subimage/i.test(`${code ?? ''} ${body ?? ''}`);
 }
 
-/** The optional mounts a refused create boots without, and why (`metadata.droppedVolumes`). */
+/**
+ * Platinum's codes for a create it refused over one of its mounts. Not every
+ * body names a volume: `409 not_a_directory` says only "<folder> exists and
+ * is not a directory".
+ */
+const MOUNT_REFUSAL_CODES = new Set([
+  'not_a_directory',
+  'sub_path_not_found',
+  'sub_path_too_large',
+  'volume_not_found',
+  'volume_in_other_region',
+  'volume_busy',
+  'volume_in_use',
+  'volume_flushing',
+  'root_volume_in_use',
+  'ref_not_found',
+  'ref_expired',
+]);
+
+/**
+ * The optional mounts a refused create boots without, and why
+ * (`metadata.droppedVolumes`): the ones the refusal names, else every
+ * optional mount. The next create keeps the rest optional, so each refused
+ * create drops at least one mount and the fallback ends.
+ */
 function droppedOptionalVolumes(opts: CreateSandboxOpts, error: unknown): DroppedVolume[] {
   const optional = (opts.optionalVolumes ?? []).filter((path) => opts.volumes?.[path]);
-  if (!optional.length || !isVolumeRejection(error)) return [];
+  if (!optional.length) return [];
   const { status, code, body } = platinumHttp(error);
+  if (typeof status !== 'number' || !((status >= 400 && status < 500) || status === 503)) return [];
   // A full fleet is capacity, not a mount: it is retried with every mount.
   if (/no capacity/i.test(body ?? '')) return [];
   // A box that must run in its region (a warm box) fails fast, so a box
   // placed where the files live is booted instead of one without them.
   if (opts.locationRequired && code === 'volume_in_other_region') return [];
   let reason = body ?? '';
+  let refusedPath: unknown;
   try {
-    const parsed = JSON.parse(reason) as { error?: unknown };
+    const parsed = JSON.parse(reason) as { error?: unknown; path?: unknown };
     if (typeof parsed.error === 'string') reason = parsed.error;
+    refusedPath = parsed.path;
   } catch {
     // not JSON: the raw body is the reason
   }
-  return optional.map((mountPath) => ({
+  const names = (subdir: string | undefined) => {
+    if (!subdir || subdir === '/') return false;
+    if (refusedPath === subdir) return true;
+    const quoted = subdir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[\\s"'(])${quoted}($|[\\s"':),])`).test(reason);
+  };
+  const named = optional.filter((path) => names(opts.volumes![path]!.subdir));
+  const dropped = named.length ? named : isVolumeRejection(error) ? optional : [];
+  return dropped.map((mountPath) => ({
     mountPath,
-    status: typeof status === 'number' ? status : null,
+    status,
     code: code ?? null,
     reason: reason.slice(0, 300),
   }));
@@ -663,10 +699,11 @@ export class PlatinumProvider implements SandboxProvider {
         const bare = await this.provisionFromTemplate(template, {
           ...opts,
           volumes: kept.length ? Object.fromEntries(kept) : undefined,
-          optionalVolumes: undefined,
+          optionalVolumes: (opts.optionalVolumes ?? []).filter((path) => !left.has(path)),
           createAttempt: dedupAttempt + 1,
         });
-        return { ...bare, metadata: { ...bare.metadata, droppedVolumes: dropped } };
+        const earlier = Array.isArray(bare.metadata?.droppedVolumes) ? (bare.metadata.droppedVolumes as DroppedVolume[]) : [];
+        return { ...bare, metadata: { ...bare.metadata, droppedVolumes: [...dropped, ...earlier] } };
       }
       const refusal = platinumHttp(err);
       // Before the volume refusal below, which this body also matches: a

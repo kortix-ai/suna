@@ -126,6 +126,9 @@ const mountRefusals: Record<string, Error> = {
   sub_path_too_large: refusal(422, { error: 'the subdir is larger than a sub_path mount allows', code: 'sub_path_too_large', bytes: 12, max_bytes: 10 }),
   sub_path_not_found: refusal(404, { error: 'sub_path /Company not found', code: 'sub_path_not_found' }),
   volume_busy: refusal(409, { error: 'volume is busy', code: 'volume_busy' }),
+  // Real Platinum answer (local stack, 2026-11-01): the body names only the folder.
+  not_a_directory: refusal(409, { error: '/Company exists and is not a directory', code: 'not_a_directory', path: '/Company' }),
+  'an unknown code naming the folder': refusal(409, { error: '/Company cannot be mounted here', code: 'conflict' }),
 };
 
 describe('optional volumes: a mount Platinum refuses never stops the box', () => {
@@ -173,6 +176,36 @@ describe('optional volumes: a mount Platinum refuses never stops the box', () =>
 
     expect(createCalls()).toHaveLength(2);
     expect((err as Error).message).toContain('[workspace]');
+  });
+
+  test('a refusal that names one folder drops only that folder; a second refusal drops the next', async () => {
+    const notes = { '/drives/notes': { volume: 'kd-0a1b2c3d4e5f60718293', subdir: '/Notes', share: 'node' as const } };
+    const docs = { '/drives/blob-txt': { volume: 'kd-0a1b2c3d4e5f60718293', subdir: '/Docs/blob.txt', share: 'node' as const } };
+    createSequence = [
+      // Real Platinum answer (local stack, 2026-11-01).
+      { error: refusal(409, { error: '/Docs/blob.txt exists and is not a directory', code: 'not_a_directory', path: '/Docs/blob.txt' }) },
+      { error: refusal(404, { error: 'sub_path /Notes not found', code: 'sub_path_not_found' }) },
+      { result: { id: 'sbx_ok', state: 'running' } },
+    ];
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    const p = new PlatinumProvider();
+    const result = await p.create({
+      ...baseOpts,
+      createAttempt: 1,
+      volumes: { ...workspace, ...company, ...notes, ...docs },
+      optionalVolumes: ['/drives/company', '/drives/notes', '/drives/blob-txt'],
+    });
+    warn.mockRestore();
+
+    const [, second, third] = createCalls();
+    expect(createCalls()).toHaveLength(3);
+    expect(Object.keys(second.body?.volumes as object).sort()).toEqual(['/drives/company', '/drives/notes', '/workspace']);
+    expect(Object.keys(third.body?.volumes as object).sort()).toEqual(['/drives/company', '/workspace']);
+    expect(result.metadata?.platinumCreateAttempt).toBe(3);
+    expect((result.metadata?.droppedVolumes as Array<{ mountPath: string; code: string }>).map((d) => [d.mountPath, d.code])).toEqual([
+      ['/drives/blob-txt', 'not_a_directory'],
+      ['/drives/notes', 'sub_path_not_found'],
+    ]);
   });
 
   test('a full fleet is not a mount refusal: nothing is dropped', async () => {

@@ -131,6 +131,7 @@ async function call(volume: DriveVolume | null, path: string, init: RequestInit 
       throw new DriveStorageError(503, 'Drive storage is unavailable, try again shortly', code);
     case 409:
       if (code === 'volume_busy') throw new DriveStorageError(409, 'The drive is attached to a running session', code);
+      if (code === 'not_a_directory') throw new DriveStorageError(409, 'That path is a file, not a folder', code);
       if (code === 'volume_in_other_region') {
         logger.warn(`[drives] ${init.method ?? 'GET'} ${path} -> 409 ${text.slice(0, 300)}`);
         throw new DriveStorageError(409, 'These files live in another region than this session', code);

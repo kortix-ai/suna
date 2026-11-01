@@ -55,6 +55,7 @@ const OWNER = crypto.randomUUID();
 const AGENT = crypto.randomUUID();
 const DERIVING = crypto.randomUUID(); // its folder image did not build at boot
 const TOO_BIG = crypto.randomUUID(); // its folder is larger than a mount allows
+const MIXED = crypto.randomUUID(); // two folders refused at boot, one still refused later
 let driveId = '';
 
 const storageRefused = () =>
@@ -129,8 +130,10 @@ beforeAll(async () => {
   const drive = await ensureProjectDrive(ACCOUNT, PROJECT);
   driveId = drive.driveId;
   await setFolderGrant({ drive, path: '/Video', principal: { type: 'agent', id: AGENT }, level: 'write', grantedBy: OWNER });
+  await setFolderGrant({ drive, path: '/Audio', principal: { type: 'agent', id: AGENT }, level: 'write', grantedBy: OWNER });
   await bootedWithout(DERIVING, '/Video');
   await bootedWithout(TOO_BIG, '/Video');
+  await bootedWithout(MIXED, '/Video');
 });
 
 afterAll(async () => {
@@ -171,6 +174,18 @@ describe('a folder storage refused when the box was created', () => {
     const after = await readSkippedSessionDrives(TOO_BIG);
     expect(after.skipped).toEqual([expect.objectContaining({ name: '/Video', reason: 'too_large' })]);
     expect(after.message).toContain('too large to mount');
+    refuse.clear();
+  });
+
+  test('one folder storage still refuses does not keep the others out', async () => {
+    refuse.set('/drives/video', storageRefused());
+    await queueDriveAttach(MIXED, '2 folder(s) refused at boot');
+    await workerPass(MIXED);
+    expect(await mountedFolders(MIXED)).toContain('/Audio');
+    expect(await mountedFolders(MIXED)).not.toContain('/Video');
+    expect(await revocation(MIXED)).not.toBeNull();
+    const still = await readSkippedSessionDrives(MIXED);
+    expect(still.skipped).toEqual([expect.objectContaining({ name: '/Video', reason: 'unavailable' })]);
     refuse.clear();
   });
 });

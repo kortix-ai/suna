@@ -1183,34 +1183,49 @@ async function applyDriveToRunningSandbox(input: {
     } else {
       const volume = await openVolumeFor(plan.drive, AbortSignal.timeout(OPEN_TIMEOUT_MS));
       const tooLarge: SkippedDrive[] = [];
+      const refused: SkippedDrive[] = [];
+      let firstRefusal: unknown;
+      let elsewhere = false;
       for (const m of placed) {
         try {
           await attachDriveMount(box.externalId, m, volume);
         } catch (err) {
+          const code = err instanceof DriveStorageError ? err.code : undefined;
+          const detail = err instanceof Error ? err.message.slice(0, 300) : undefined;
+          if (code === 'sub_path_too_large') {
+            // Retrying cannot shrink the folder: recorded, and tried again at the next change of the session's folders.
+            logger.info(`[drives] session ${input.sessionId}: folder ${m.subdir} is too large to mount`);
+            tooLarge.push({ driveId: m.driveId, name: m.subdir, reason: 'too_large', detail });
+            continue;
+          }
           // The box's control plane names the volume's region, or, before its
           // volume directory learned of a new volume, does not find it at all:
           // the volume was just opened in its own region, so both mean the box
           // runs elsewhere.
-          const code = err instanceof DriveStorageError ? err.code : undefined;
-          if (code === 'sub_path_too_large') {
-            // Retrying cannot shrink the folder: recorded, and tried again at the next change of the session's folders.
-            logger.info(`[drives] session ${input.sessionId}: folder ${m.subdir} is too large to mount`);
-            tooLarge.push({ driveId: m.driveId, name: m.subdir, reason: 'too_large', detail: err instanceof Error ? err.message.slice(0, 300) : undefined });
-            continue;
+          if (code === 'volume_in_other_region' || code === 'volume_not_found' || code === 'drive_moving') {
+            await unreachable(code === 'drive_moving' ? 'moving' : 'region');
+            elsewhere = true;
+            break;
           }
-          if (code !== 'volume_in_other_region' && code !== 'volume_not_found' && code !== 'drive_moving') throw err;
-          await unreachable(code === 'drive_moving' ? 'moving' : 'region');
-          break;
+          // One folder storage refuses does not keep the others out: the rest
+          // are attached, and the drive worker retries this one.
+          firstRefusal ??= err;
+          refused.push({ driveId: m.driveId, name: m.subdir, reason: 'unavailable', detail });
+          continue;
         }
         kept = [...kept, m];
         await writeRecordedMounts(box.sandboxId, [...others, ...kept]);
       }
-      // Every folder storage refused at boot was tried: it mounted, or it is too large.
-      const before = Array.isArray((box.metadata as Record<string, unknown> | null)?.[DRIVE_SKIPPED_METADATA_KEY])
-        ? ((box.metadata as Record<string, unknown>)[DRIVE_SKIPPED_METADATA_KEY] as SkippedDrive[])
-        : [];
-      const settled = before.filter((d) => d.reason !== 'unavailable' && d.reason !== 'too_large');
-      if (tooLarge.length || settled.length !== before.length) await writeSkippedMounts(box.sandboxId, [...settled, ...tooLarge]);
+      if (!elsewhere) {
+        // Every folder was tried: it mounted, it is too large, or storage still refuses it.
+        const before = Array.isArray((box.metadata as Record<string, unknown> | null)?.[DRIVE_SKIPPED_METADATA_KEY])
+          ? ((box.metadata as Record<string, unknown>)[DRIVE_SKIPPED_METADATA_KEY] as SkippedDrive[])
+          : [];
+        const settled = before.filter((d) => d.reason !== 'unavailable' && d.reason !== 'too_large');
+        const next = [...settled, ...tooLarge, ...refused];
+        if (next.length !== before.length || tooLarge.length || refused.length) await writeSkippedMounts(box.sandboxId, next);
+      }
+      if (firstRefusal) throw firstRefusal;
     }
   }
   // Awaited: the ownership pass inside makes a newly writable mount writable
