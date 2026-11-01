@@ -134,8 +134,19 @@ export interface SessionDrives {
   drives: SessionDrive[];
   /** The session is its owner's own (private, started by them): their folder mounts in it. */
   personal: boolean;
-  /** Folders the session should have that did not fit in its sandbox's mount slots. */
-  skipped?: Array<{ driveId: string; name: string }>;
+  /**
+   * Folders the session should have that its sandbox does not mount. `reason`:
+   * absent = past its mount slots; `region` / `moving` = the files live, or
+   * were moving, elsewhere; `unavailable` = storage refused the mount when the
+   * sandbox started, and it mounts as soon as storage can; `too_large` = the
+   * folder is larger than a folder mount allows. `detail` is storage's reason.
+   */
+  skipped?: Array<{
+    driveId: string;
+    name: string;
+    reason?: 'region' | 'moving' | 'unavailable' | 'too_large';
+    detail?: string;
+  }>;
   /** What to tell people about `skipped`, or null when every folder fit. */
   skippedMessage?: string | null;
 }

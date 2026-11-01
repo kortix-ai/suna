@@ -377,6 +377,35 @@ describe('ecs-deploy.sh --service worker', () => {
     expect(updates[1]).not.toContain('--task-definition');
   });
 
+  it('from 0 tasks with only the new deployment left, raises the count at once', () => {
+    const run = deploy(['--service', 'worker'], {
+      STUB_WORKER_SERVICE_JSON: JSON.stringify(service([deployment(WORKER_TD_NEW, 'COMPLETED')], { running: 0, desired: 0 })),
+    }, { ECS_STABILIZE_POLL_SECONDS: '5' });
+
+    expect(run.status).toBe(0);
+    expect(run.stdout).not.toContain('title=Worker roll');
+    const updates = run.calls.filter((call) => call.startsWith('ecs update-service'));
+    expect(updates.map((call) => call.includes('--desired-count 1'))).toEqual([false, true]);
+  });
+
+  it('from 0 tasks, waits for the earlier deployment to leave, then warns and raises the count when it stays', () => {
+    // Prod, 2026-11-01: with the earlier deployment still listed, raising the
+    // count started a task of the earlier revision.
+    const run = deploy(['--service', 'worker'], {
+      STUB_WORKER_SERVICE_JSON: JSON.stringify(
+        service([deployment(WORKER_TD_NEW, 'COMPLETED'), { ...deployment(WORKER_TD, 'COMPLETED'), status: 'ACTIVE' }], { running: 0, desired: 0 }),
+      ),
+    }, { ECS_STABILIZE_POLL_SECONDS: '5', ECS_WORKER_SWITCH_WAIT_SECONDS: '20' });
+
+    expect(run.stderr).not.toContain('unhandled call');
+    expect(run.stdout).toContain('::warning title=Worker roll::an earlier worker deployment still exists after 20s');
+    const rollCalls = run.calls.filter((call) => call.startsWith('ecs update-service') || call.startsWith('ecs describe-services'));
+    const first = rollCalls.findIndex((call) => call.includes(`--task-definition ${WORKER_TD_NEW}`));
+    const scale = rollCalls.findIndex((call) => call.includes('--desired-count 1'));
+    // At least the 4 polls of the 20 s budget sit between the revision call and the count call.
+    expect(rollCalls.slice(first + 1, scale).filter((call) => call.startsWith('ecs describe-services')).length).toBeGreaterThanOrEqual(4);
+  });
+
   it('removes KORTIX_PROCESS_ROLE and stamps its own KORTIX_WORKER_ENV_FROM whatever the overrides say', () => {
     const run = deploy(['--service', 'worker'], {
       STUB_WORKER_SERVICE_JSON: JSON.stringify(service([deployment(WORKER_TD_NEW, 'COMPLETED')], { running: 1, desired: 1 })),

@@ -257,8 +257,8 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   'See the architecture': 'text95b74a4f4d4b',
   'Everyone works with the same agents, skills, memory and connectors. Start a session in the web app, in Slack or in Microsoft Teams.':
     'textcdd1c348fade',
-  'We treat your whole company like code. Every agent, skill, rule, connector and piece of context is a file in one git repo. Every agent is a custom pi agent on a minimal open-source harness, so you can extend anything with pi extensions.':
-    'text77ece565fe55',
+  'Every agent, skill, rule and connector is a file in one git repo. Each agent is a custom pi agent you extend with pi extensions.':
+    'texte6a48bfb5ab1',
   'Kortix is open source. Run it on Kortix Cloud, in your VPC or on your own on-prem network, with any model and your own keys.':
     'textc61528adb57c',
   'Multiplayer. Company as code. Sovereign.': 'textbf8abe5b1667',

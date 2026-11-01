@@ -29,8 +29,21 @@ const SessionDrivesBody = z.object({
   drives: z.array(SessionDriveSchema),
   /** True when the session is its owner's own (private, started by them): their folder mounts in it. */
   personal: z.boolean(),
-  /** Folders the session should have that did not fit in its sandbox's mount slots. */
-  skipped: z.array(z.object({ driveId: z.string(), name: z.string() })),
+  /**
+   * Folders the session should have that its sandbox does not mount. `reason`:
+   * absent = past its mount slots; `region` / `moving` = the files live, or
+   * were moving, elsewhere; `unavailable` = storage refused the mount when the
+   * sandbox started, and it mounts as soon as storage can; `too_large` = the
+   * folder is larger than a folder mount allows. `detail` is storage's reason.
+   */
+  skipped: z.array(
+    z.object({
+      driveId: z.string(),
+      name: z.string(),
+      reason: z.enum(['region', 'moving', 'unavailable', 'too_large']).optional(),
+      detail: z.string().optional(),
+    }),
+  ),
   /** What to tell people about `skipped`, or null when every folder fit. */
   skippedMessage: z.string().nullable(),
 });
@@ -51,7 +64,12 @@ async function sessionView(sessionId: string, callerId: string | undefined) {
       openConflicts: m.openConflicts,
     })),
     personal: await isCallersPersonalSession(sessionId, callerId ?? null),
-    skipped: skipped.skipped.map((d) => ({ driveId: d.driveId, name: d.name })),
+    skipped: skipped.skipped.map((d) => ({
+      driveId: d.driveId,
+      name: d.name,
+      ...(d.reason ? { reason: d.reason } : {}),
+      ...(d.detail ? { detail: d.detail } : {}),
+    })),
     skippedMessage: skipped.message,
   };
 }
