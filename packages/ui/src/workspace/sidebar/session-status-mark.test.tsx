@@ -67,3 +67,27 @@ describe('SessionStatusMark', () => {
     expect(render('starting')).toBe(render('stopped'));
   });
 });
+
+test('review defaults match explicit review, while answers ignore overdue', () => {
+  const draw = (props: Parameters<typeof SessionStatusMark>[0]) => renderToStaticMarkup(<SessionStatusMark {...props} />);
+  expect(draw({ status: 'needs-you' })).toBe(draw({ status: 'needs-you', waitingOn: 'review' }));
+  expect(draw({ status: 'needs-you', overdue: true })).toBe(draw({ status: 'needs-you', waitingOn: 'review', overdue: true }));
+  expect(draw({ status: 'needs-you', waitingOn: 'answer' })).toBe(draw({ status: 'needs-you', waitingOn: 'answer', overdue: true }));
+});
+
+test('failed is a red filled ring; legacy stays muted, hidden and static', () => {
+  const failed = render('failed');
+  expect(failed).toContain('var(--kortix-red)');
+  expect(failed).toContain('r="4" fill="currentColor"');
+  expect(render('legacy')).toContain('var(--muted-foreground)');
+  for (const status of ['done', 'running', 'needs-you', 'starting', 'stopped', 'failed', 'legacy'] as const) {
+    expect(render(status)).toContain('aria-hidden="true"');
+    expect(render(status)).not.toContain('animate-');
+  }
+});
+
+test('the supported workspace export renders the canonical glyph', async () => {
+  const { SessionStatusMark: WorkspaceMark } = await import('@kortix/ui/workspace');
+  expect(WorkspaceMark).toBe(SessionStatusMark);
+  expect(renderToStaticMarkup(<WorkspaceMark status="done" />)).toBe(render('done'));
+});
