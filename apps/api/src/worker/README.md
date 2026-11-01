@@ -50,10 +50,11 @@ releases it on SIGTERM.
 
 ## When the worker stops
 
-| Stop | What happens | Jobs pause for |
+| Stop | What happens | Jobs pause for (measured on dev, 2026-11-01) |
 | --- | --- | --- |
-| Deploy, SIGTERM | The replacement is already running. The old task stops its jobs (15 s budget) and deletes its lease row; the new task takes the lease on its next try. | up to about 15 s |
-| Crash, OOM, host loss | The 60 s lease expires; ECS starts a replacement, which takes the lease once it boots. | 60 s plus the replacement's start |
+| Deploy, SIGTERM | The replacement is already running. The old task stops its jobs (15 s budget) and deletes its lease row; the new task takes the lease on its next try (every 15 s). | 2.6 s (API leader → worker at the switch) |
+| The only task stops (ECS stop-task, host retirement) | It releases the lease on SIGTERM; ECS starts a replacement, which takes the lease once it boots. | 66 s (Fargate placement, image pull, boot) |
+| Crash, OOM, host loss | The 60 s lease expires; ECS starts a replacement, which takes the lease once it boots. | about 60–70 s: the expiry and the replacement's boot overlap |
 | Hang | The lease renew stops; the leader steps down after 50 s; the container health check fails and ECS replaces the task. | as a crash |
 
 Work a job had in flight is safe to repeat: cron fires are durable execution
