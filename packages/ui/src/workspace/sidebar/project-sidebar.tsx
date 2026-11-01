@@ -23,7 +23,6 @@ import { ProjectComputerNavItem } from './footer/project-computer-nav';
 import { ProjectManifestIssuesAlert } from './footer/project-manifest-issues-alert';
 import { ProjectSandboxAlert } from './footer/project-sandbox-alert';
 import { ProjectRepositoryDisconnectedAlert } from '../repository-disconnected';
-import { CustomizeSidebarModal } from './customize-sidebar-modal';
 import { NewAgentModalProvider } from './new-agent-modal-provider';
 import { ProjectMemoryNavItem } from './footer/project-memory-nav';
 import { ProjectNavItems } from './project-nav-items';
@@ -375,7 +374,6 @@ export function ProjectSidebar({
       onOpenMcp={() => setConnectMcpOpen(true)}
     />
     <ConnectMcpModal open={connectMcpOpen} onOpenChange={setConnectMcpOpen} />
-    <CustomizeSidebarModal projectId={projectId} />
     </NewAgentModalProvider>
   );
 }
