@@ -24750,6 +24750,19 @@
       "archivedToast": "#{name} archivado",
       "unarchivedToast": "#{name} desarchivado",
       "failed": "No se pudo actualizar #{name}. Inténtalo de nuevo."
+    },
+    "agent": {
+      "label": "Espacio",
+      "help": "El espacio en el que trabaja este agente: un identificador como engineering o sales. Vacío: todo el proyecto.",
+      "placeholder": "p. ej., engineering"
+    },
+    "blocks": {
+      "noContent": "Aún no hay contenido.",
+      "noUrl": "Aún no hay URL.",
+      "noApp": "Aún no se ha seleccionado una aplicación.",
+      "loadingApp": "Cargando aplicación…",
+      "missingApp": "La aplicación «{slug}» no está en este proyecto.",
+      "noFile": "Aún no hay archivo."
     }
   },
   "imageGen": {
@@ -25067,7 +25080,9 @@
         "move": "mover",
         "peek": "vista previa",
         "open": "abrir",
-        "stop": "detener"
+        "stop": "detener",
+        "space": "Espacio",
+        "enter": "Intro"
       },
       "group": {
         "pinned": "Fijadas",

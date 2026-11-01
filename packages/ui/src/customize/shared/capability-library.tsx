@@ -454,7 +454,7 @@ function useSkillManagement(projectId: string, on: boolean) {
     open: (name: string) => () => setSelectedName(name),
     createButton: canWrite ? (
       <NewEntityMenu
-        label="New"
+        label={tI18nComplete.raw('text18fdd549b2ed')}
         pending={configure.pending}
         onChat={() => configure.start(newConfigPrompt('skill'))}
         manual={{

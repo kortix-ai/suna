@@ -9156,7 +9156,20 @@ const catalog = {
     },
     "filter": "Filter by space",
     "all": "All",
-    "projectWide": "Project-wide"
+    "projectWide": "Project-wide",
+    "agent": {
+      "label": "Space",
+      "help": "The space this agent works in: a slug like engineering or sales. Empty: Project-wide.",
+      "placeholder": "e.g. engineering"
+    },
+    "blocks": {
+      "noContent": "No content yet.",
+      "noUrl": "No URL yet.",
+      "noApp": "No app selected yet.",
+      "loadingApp": "Loading app…",
+      "missingApp": "App “{slug}” is not in this project.",
+      "noFile": "No file yet."
+    }
   },
   "imageGen": {
     "generating": "Generating image",
@@ -9513,7 +9526,9 @@ const catalog = {
         "move": "move",
         "peek": "preview",
         "open": "open",
-        "stop": "stop"
+        "stop": "stop",
+        "space": "Space",
+        "enter": "Enter"
       },
       "group": {
         "pinned": "Pinned",

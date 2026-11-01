@@ -11,32 +11,6 @@ import { type Document, isSeq, parseDocument } from 'yaml';
 
 import { DEFAULT_SPACE_TABS, type SpaceTab } from '@kortix/sdk';
 
-export interface SpaceTemplate {
-  /** Also the catalog key of its name and hint: `spaces.templates.<id>`. */
-  id: 'standard' | 'room' | 'board';
-  /** The tabs after the room. */
-  tabs: SpaceTab[];
-}
-
-/** The presets the New space dialog offers, in order. The first is the default. */
-export const SPACE_TEMPLATES: SpaceTemplate[] = [
-  {
-    id: 'standard',
-    tabs: [...DEFAULT_SPACE_TABS],
-  },
-  {
-    id: 'room',
-    tabs: [],
-  },
-  {
-    id: 'board',
-    tabs: [
-      { type: 'board', label: 'Board', blocks: [{ type: 'text', label: 'Brief', text: 'What this space is for, and how to help.' }] },
-      { type: 'goals' },
-    ],
-  },
-];
-
 /** Turn a space name into a `spaces:` key. The result is also a valid room
  *  name (the space's room is the room with its slug): at most 63 characters,
  *  starting with a letter or a digit. */

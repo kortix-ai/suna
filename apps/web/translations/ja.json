@@ -24750,6 +24750,19 @@
       "archivedToast": "#{name} をアーカイブしました",
       "unarchivedToast": "#{name} のアーカイブを解除しました",
       "failed": "#{name} を更新できませんでした。もう一度お試しください。"
+    },
+    "agent": {
+      "label": "スペース",
+      "help": "このエージェントが作業するスペース。engineering や sales などの識別子を指定します。空欄の場合はプロジェクト全体。",
+      "placeholder": "例: engineering"
+    },
+    "blocks": {
+      "noContent": "まだコンテンツがありません。",
+      "noUrl": "まだ URL がありません。",
+      "noApp": "アプリが選択されていません。",
+      "loadingApp": "アプリを読み込み中…",
+      "missingApp": "アプリ「{slug}」はこのプロジェクトにありません。",
+      "noFile": "まだファイルがありません。"
     }
   },
   "imageGen": {
@@ -25067,7 +25080,9 @@
         "move": "移動",
         "peek": "プレビュー",
         "open": "開く",
-        "stop": "停止"
+        "stop": "停止",
+        "space": "スペース",
+        "enter": "エンター"
       },
       "group": {
         "pinned": "ピン留め",

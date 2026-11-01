@@ -68,6 +68,7 @@ export function BasicsSection({
   showDescription?: boolean;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tSpace = useI18nTranslations('spaces.agent');
   return (
     <EditorSection
       title={tI18nComplete.raw('text8fdd2ee8475e')}
@@ -135,14 +136,14 @@ export function BasicsSection({
           A slug (`engineering`), or empty for Project-wide. Grouping only:
           no behavior, no grants. */}
       <SettingRow
-        label="Space"
-        help="The space this agent works in: a slug like engineering or sales. Empty: Project-wide."
+        label={tSpace('label')}
+        help={tSpace('help')}
       >
         <Input
-          aria-label="Space"
+          aria-label={tSpace('label')}
           className="h-9 w-full sm:max-w-56"
           value={draft.space ?? ''}
-          placeholder="e.g. engineering"
+          placeholder={tSpace('placeholder')}
           onChange={(e) => set('space', e.target.value.toLowerCase() || undefined)}
         />
       </SettingRow>

@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
-import { addSpaceToManifest, appendSpaceTab, setSpaceTabs, slugifySpace, SPACE_TEMPLATES } from './space-templates';
+import { addSpaceToManifest, appendSpaceTab, setSpaceTabs, slugifySpace } from './space-templates';
 
 test('slugifySpace produces a manifest-safe key and falls back', () => {
   expect(slugifySpace('My New Space')).toBe('my-new-space');
@@ -15,12 +15,6 @@ test('slugifySpace always yields a valid room name: starts alphanumeric, at most
   expect(long.length).toBeLessThanOrEqual(63);
   expect(long).toMatch(/^[a-z0-9][a-z0-9_-]{0,62}$/);
   expect(long.endsWith('-')).toBe(false);
-});
-
-test('every template is a list of starting tabs; the first is the default', () => {
-  expect(SPACE_TEMPLATES[0]!.tabs.map((t) => t.type)).toEqual(['goals', 'apps', 'artifacts']);
-  expect(SPACE_TEMPLATES.find((t) => t.id === 'room')!.tabs).toEqual([]);
-  for (const template of SPACE_TEMPLATES) expect(Array.isArray(template.tabs)).toBe(true);
 });
 
 test('addSpaceToManifest creates the spaces map when absent, keeps the rest, and writes the latest shape', () => {

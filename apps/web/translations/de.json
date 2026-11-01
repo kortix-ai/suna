@@ -24750,6 +24750,19 @@
       "archivedToast": "#{name} archiviert",
       "unarchivedToast": "#{name} wiederhergestellt",
       "failed": "#{name} konnte nicht aktualisiert werden. Versuche es erneut."
+    },
+    "agent": {
+      "label": "Bereich",
+      "help": "Der Bereich, in dem dieser Agent arbeitet: ein Kürzel wie engineering oder sales. Leer: projektweit.",
+      "placeholder": "z. B. engineering"
+    },
+    "blocks": {
+      "noContent": "Noch kein Inhalt.",
+      "noUrl": "Noch keine URL.",
+      "noApp": "Noch keine App ausgewählt.",
+      "loadingApp": "App wird geladen…",
+      "missingApp": "Die App „{slug}“ ist nicht in diesem Projekt.",
+      "noFile": "Noch keine Datei."
     }
   },
   "imageGen": {
@@ -25067,7 +25080,9 @@
         "move": "bewegen",
         "peek": "Vorschau",
         "open": "öffnen",
-        "stop": "stoppen"
+        "stop": "stoppen",
+        "space": "Leertaste",
+        "enter": "Eingabetaste"
       },
       "group": {
         "pinned": "Angeheftet",
