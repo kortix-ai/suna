@@ -39,6 +39,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /internal/gateway/authorize': { action: 'gateway.internal.request.authorize', title: 'Authorized LLM gateway request' },
   'POST /internal/gateway/billing': { action: 'gateway.internal.billing.check', title: 'Checked LLM billing eligibility' },
   'POST /internal/gateway/budget-check': { action: 'gateway.internal.budget.check', title: 'Checked LLM gateway budget' },
+  'POST /internal/gateway/claude-credentials': { action: 'gateway.internal.claude_account.resolve', title: 'Resolved Claude accounts for a model call' },
+  'POST /internal/gateway/claude-refused': { action: 'gateway.internal.claude_account.refuse', title: 'Marked a refused Claude account' },
   'POST /internal/gateway/models': { action: 'gateway.internal.model.list', title: 'Resolved LLM gateway model catalog' },
   'POST /internal/gateway/pool-rate-limit': { action: 'gateway.internal.pool_key.cool_down', title: 'Cooled down pooled provider key' },
   'POST /internal/gateway/refresh-credential': { action: 'gateway.internal.login.refresh', title: 'Refreshed a refused ChatGPT login' },

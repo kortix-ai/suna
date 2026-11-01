@@ -53,7 +53,7 @@ WORKDIR /repo/apps/kortix-sandbox-agent-server
 ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
 
 COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-server/bun.lock ./
-COPY patches/undici@8.12.2.patch /repo/patches/undici@8.12.2.patch
+COPY patches/undici@8.12.2.patch patches/@eslint%2Feslintrc@3.3.7.patch /repo/patches/
 RUN bun install --frozen-lockfile
 
 COPY packages/api-contract /repo/packages/api-contract
@@ -111,12 +111,20 @@ RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","
 # is the native one the Claude Agent SDK ships per platform, at the version
 # kortixd pins (apps/kortix-sandbox-agent-server/package.json
 # `@anthropic-ai/claude-agent-sdk`); tests/unit/claude-code-pin.test.ts keeps
-# the two equal.
+# the two equal. The package matches the image's architecture: staging and
+# prod build arm64, and an x64 binary there fails with "Exec format error".
 FROM node:22-slim AS claude-code
 ARG CLAUDE_AGENT_SDK_VERSION=0.3.316
-RUN mkdir -p /out /tmp/claude && cd /tmp/claude \
-    && npm pack --silent "@anthropic-ai/claude-agent-sdk-linux-x64@${CLAUDE_AGENT_SDK_VERSION}" \
-    && tar -xzf anthropic-ai-claude-agent-sdk-linux-x64-*.tgz \
+ARG TARGETARCH
+WORKDIR /tmp/claude
+RUN case "${TARGETARCH:-amd64}" in \
+      amd64) arch=x64 ;; \
+      arm64) arch=arm64 ;; \
+      *) echo "no Claude Code binary for TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && mkdir -p /out \
+    && npm pack --silent "@anthropic-ai/claude-agent-sdk-linux-${arch}@${CLAUDE_AGENT_SDK_VERSION}" \
+    && tar -xzf "anthropic-ai-claude-agent-sdk-linux-${arch}-${CLAUDE_AGENT_SDK_VERSION}.tgz" \
     && install -m 0755 package/claude /out/claude \
     && /out/claude --version
 
@@ -152,6 +160,7 @@ COPY packages/manifest-schema/package.json ./packages/manifest-schema/
 COPY packages/registry/package.json ./packages/registry/
 COPY packages/llm-gateway/package.json ./packages/llm-gateway/
 COPY packages/sdk/package.json ./packages/sdk/
+COPY packages/minimatch-compat/package.json ./packages/minimatch-compat/
 
 # Install pnpm and deps for this app + workspace packages it depends on.
 # --shamefully-hoist flattens node_modules (no symlinks) so COPY works on all Docker versions.
@@ -197,6 +206,7 @@ COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
 COPY packages/llm-gateway ./packages/llm-gateway
 COPY packages/sdk ./packages/sdk
+COPY packages/minimatch-compat ./packages/minimatch-compat
 
 # ---- Runner Stage ----
 FROM base AS runner
@@ -232,6 +242,7 @@ COPY LICENSE /LICENSE
 # Copy installed node_modules and source from deps stage.
 # Root node_modules contains all hoisted deps (--shamefully-hoist).
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/minimatch-compat ./packages/minimatch-compat
 
 # Copy workspace packages — source only, skip nested node_modules
 # which may contain stale symlinks to the .pnpm store.

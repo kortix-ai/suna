@@ -9,8 +9,9 @@
 # an optional JSON key cannot invalidate an already-registered task definition.
 #
 # Usage:
-#   ecs-deploy.sh <env> <image> [--service api|gateway|web] [--version X.Y.Z]
-#                 [--database-migrated] [--no-wait] [--wait-for serving|stable]
+#   ecs-deploy.sh <env> <image> [--service api|gateway|web|worker]
+#                 [--version X.Y.Z] [--database-migrated] [--no-wait]
+#                 [--wait-for serving|stable] [--process-role auto|all]
 #                 [--dry-run]
 #
 #   env        dev-use2 | staging-euw2 | prod
@@ -52,6 +53,34 @@
 #              assertion that the environment's migration job passed.
 #              It prevents an emergency direct ECS roll from silently bypassing
 #              the database gate.
+#   --service worker
+#              the scheduled-job worker (<prefix>-worker in the API cluster,
+#              container `worker`, modules/ecs-api var.worker). Its environment
+#              is COPIED from the API service's running task definition
+#              (container `api`), then KORTIX_ECS_ENV_OVERRIDES and
+#              LLM_GATEWAY_PROXY_TARGET apply as for the API,
+#              KORTIX_PROCESS_ROLE is removed, and KORTIX_WORKER_ENV_FROM is set
+#              to the API task definition ARN it was copied from (the mark of a
+#              revision this script registered). The API environment holds keys
+#              that only ever came from deploy overrides; the worker must run
+#              with the API's real configuration. The roll sets desired count 1
+#              (Terraform creates the service at 0) and always waits `stable`,
+#              whatever --wait-for says: the old worker hands the leader lease
+#              over only when it stops. Roll it BEFORE the API.
+#   --process-role auto|all
+#              --service api only. Sets KORTIX_PROCESS_ROLE in the API task
+#              environment, whatever the running revision carries. `auto`
+#              (default) chooses `web` (the API runs no scheduled job) only when
+#              the worker service is ACTIVE, its PRIMARY deployment is
+#              COMPLETED, that revision's `worker` container carries
+#              KORTIX_WORKER_ENV_FROM (Terraform's first revision does not) and
+#              runs <image>, and a task of that revision is RUNNING and HEALTHY.
+#              Anything else is
+#              `all` (the API runs the jobs, as before the worker existed) with a
+#              ::warning naming the failed condition. `all` forces `all`: the
+#              kill switch. After an API rollout that ends with `all`, the
+#              script scales the worker service to 0, so an older worker cannot
+#              keep the leader lease; the next --service worker roll sets 1.
 #
 # Requires: awscli v2, jq. Assumes the ECS cluster/service/ALB/target-group and
 # the exec/task IAM roles already exist (Terraform owns those).
@@ -103,8 +132,14 @@ configure_service_coordinates() {
       SECRET_NAME="${SERVICE_PREFIX}-web-env"
       VERSION_ENV_NAME="KORTIX_PUBLIC_VERSION"
       ;;
+    worker)
+      # The ecs-api module puts the worker in the API's cluster.
+      CLUSTER="$SERVICE_PREFIX"
+      SERVICE="${SERVICE_PREFIX}-worker"
+      CONTAINER="worker"
+      ;;
     *)
-      echo "unknown service: $service_kind (expected api|gateway|web)" >&2
+      echo "unknown service: $service_kind (expected api|gateway|web|worker)" >&2
       return 2
       ;;
   esac
@@ -164,6 +199,9 @@ ECS_STABILIZE_TIMEOUT_SECONDS="${ECS_STABILIZE_TIMEOUT_SECONDS:-900}"
 ECS_STABILIZE_POLL_SECONDS="${ECS_STABILIZE_POLL_SECONDS:-15}"
 ECS_DIAGNOSTIC_EVENT_LIMIT="${ECS_DIAGNOSTIC_EVENT_LIMIT:-10}"
 ECS_DIAGNOSTIC_TASK_LIMIT="${ECS_DIAGNOSTIC_TASK_LIMIT:-5}"
+# A worker roll from 0 tasks waits this long for the earlier deployments to leave
+# before it raises the count (see "roll the service").
+ECS_WORKER_SWITCH_WAIT_SECONDS="${ECS_WORKER_SWITCH_WAIT_SECONDS:-120}"
 
 describe_service_json() {
   aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" \
@@ -466,6 +504,136 @@ wait_for_stable_rollout() {
   done
 }
 
+# ── API process role (KORTIX_PROCESS_ROLE) ───────────────────────────────────
+# The scheduled jobs run on the worker service (<prefix>-worker). An API task
+# runs them too unless its environment says KORTIX_PROCESS_ROLE=web. `web` is
+# safe only while a worker on the SAME image is up: a wrong `all` costs CPU on
+# one API task, a wrong `web` stops every scheduled job.
+#
+# decide_api_process_role <worker describe-services JSON>
+#                         <worker PRIMARY describe-task-definition JSON>
+#                         <worker describe-tasks JSON> <image>
+# Prints "<role><TAB><reason>". `web` only when every condition holds; else
+# `all` and the first condition that failed. Pure: it reads only its arguments,
+# and empty or malformed JSON counts as unknown, which is `all`.
+#
+# The PRIMARY revision must carry KORTIX_WORKER_ENV_FROM, which only a
+# `--service worker` roll sets. Terraform's first revision lacks it: it runs
+# with Terraform's environment, without the deploy overrides, and in prod it
+# runs the release image (var.api_image). A failed first roll that the circuit
+# breaker rolls back to it must not turn the API to `web`.
+decide_api_process_role() {
+  local services="${1:-}" task_definition="${2:-}" tasks="${3:-}" image="${4:-}"
+  jq -rn --arg services "$services" --arg definition "$task_definition" \
+    --arg tasks "$tasks" --arg image "$image" '
+    def parsed: try fromjson catch null;
+    def object: if type == "object" then . else {} end;
+    def list: if type == "array" then . else [] end;
+    def verdict($role; $reason): [$role, ($reason | gsub("[\t\n]"; " "))] | @tsv;
+    ((($services | parsed) | object | .services) | list | .[0] | if type == "object" then . else null end) as $svc
+    | if $image == "" then verdict("all"; "no image to compare the worker against")
+      elif $svc == null then verdict("all"; "the worker service does not exist")
+      elif ($svc.status // "") != "ACTIVE" then
+        verdict("all"; "the worker service is \($svc.status // "unknown"), not ACTIVE")
+      else
+        ([($svc.deployments | list)[] | objects | select(.status == "PRIMARY")][0]) as $primary
+        | if $primary == null then verdict("all"; "the worker service has no PRIMARY deployment")
+          elif ($primary.rolloutState // "") != "COMPLETED" then
+            verdict("all"; "the worker PRIMARY deployment is \($primary.rolloutState // "UNKNOWN"), not COMPLETED")
+          else
+            ($primary.taskDefinition // "") as $primary_td
+            | (($definition | parsed) | object
+               | if has("taskDefinition") then (.taskDefinition | object) else . end) as $revision
+            | ([($revision.containerDefinitions | list)[] | objects | select(.name == "worker")][0] // {}) as $worker
+            | ($worker.image // "") as $worker_image
+            | ([($worker.environment | list)[] | objects | select(.name == "KORTIX_WORKER_ENV_FROM") | .value][0] // "") as $env_from
+            | if ($revision.taskDefinitionArn // "") != $primary_td then
+                verdict("all"; "the worker PRIMARY task definition \($primary_td) could not be read")
+              elif ($env_from | type) != "string" or $env_from == "" then
+                verdict("all"; "the worker runs a revision ecs-deploy.sh did not register (\($primary_td) has no KORTIX_WORKER_ENV_FROM)")
+              elif $worker_image != $image then
+                verdict("all"; "the worker PRIMARY task definition \($primary_td) runs \(if $worker_image == "" then "no worker container" else $worker_image end), not \($image)")
+              else
+                [((($tasks | parsed) | object | .tasks) | list)[] | objects
+                 | select(.taskDefinitionArn == $primary_td and (.desiredStatus // "") == "RUNNING")] as $wanted
+                | [$wanted[] | select(.lastStatus == "RUNNING" and .healthStatus == "HEALTHY")] as $healthy
+                | if ($healthy | length) == 0 then
+                    verdict("all"; "no worker task of \($primary_td) is RUNNING and HEALTHY (lastStatus/healthStatus: \([$wanted[] | "\(.lastStatus // "?")/\(.healthStatus // "?")"] | if length == 0 then "no task" else join(", ") end))")
+                  else
+                    verdict("web"; "the worker runs \($image) on \($primary_td) with \($healthy | length) HEALTHY task(s)")
+                  end
+              end
+          end
+      end'
+}
+
+# Reads the worker service, its PRIMARY task definition and its tasks, then
+# sets PROCESS_ROLE and PROCESS_ROLE_REASON through decide_api_process_role.
+# Every read soft-fails to "", which decides `all`.
+resolve_api_process_role() {
+  local image="$1" worker_service="${SERVICE_PREFIX}-worker"
+  local services="" primary_td="" definition="" task_arns="" tasks="" arn decision tab=$'\t'
+  local -a arns=()
+
+  services="$(aws ecs describe-services --region "$REGION" --cluster "$SERVICE_PREFIX" \
+    --services "$worker_service" --output json 2>/dev/null || true)"
+  primary_td="$(printf '%s' "$services" | jq -r '
+    [(.services[0].deployments // [])[] | select(.status == "PRIMARY") | .taskDefinition][0] // empty' \
+    2>/dev/null || true)"
+  if [ -n "$primary_td" ]; then
+    definition="$(aws ecs describe-task-definition --region "$REGION" \
+      --task-definition "$primary_td" --query 'taskDefinition' --output json 2>/dev/null || true)"
+    task_arns="$(aws ecs list-tasks --region "$REGION" --cluster "$SERVICE_PREFIX" \
+      --service-name "$worker_service" --desired-status RUNNING \
+      --query 'taskArns' --output json 2>/dev/null || true)"
+    while IFS= read -r arn; do
+      [ -n "$arn" ] || continue
+      arns+=("$arn")
+    done < <(printf '%s' "$task_arns" \
+      | jq -r '(if type == "object" then (.taskArns // []) else . end)[]? | select(type == "string")' \
+        2>/dev/null || true)
+    if [ "${#arns[@]}" -gt 0 ]; then
+      tasks="$(aws ecs describe-tasks --region "$REGION" --cluster "$SERVICE_PREFIX" \
+        --tasks "${arns[@]}" --output json 2>/dev/null || true)"
+    fi
+  fi
+
+  decision="$(decide_api_process_role "$services" "$definition" "$tasks" "$image" 2>/dev/null || true)"
+  [ -n "$decision" ] || decision="all${tab}the worker role decision could not be computed"
+  PROCESS_ROLE="${decision%%"$tab"*}"
+  PROCESS_ROLE_REASON="${decision#*"$tab"}"
+}
+
+# After an API rollout that ends with KORTIX_PROCESS_ROLE=all, stop the worker:
+# an older worker must not keep the leader lease and run old job code after the
+# API moved on, and the prod database budget does not hold an all-mode API
+# fleet in its rolling overlap plus a worker. Call it only after the API
+# rollout completed: until then the old worker may be the only lease-eligible
+# process. Soft-fails: the API is already rolled, so a failure is an ::error
+# annotation, not a failed deploy.
+scale_worker_to_zero() {
+  local reason="$1" worker_service="${SERVICE_PREFIX}-worker" state status desired
+  state="$(aws ecs describe-services --region "$REGION" --cluster "$SERVICE_PREFIX" \
+    --services "$worker_service" --query 'services[0].[status,desiredCount]' \
+    --output text 2>/dev/null || true)"
+  read -r status desired <<<"${state:-}" || true
+  if [ "${status:-}" != "ACTIVE" ]; then
+    echo "▶ worker $worker_service is not ACTIVE (got '${status:-none}'): nothing to scale down"
+    return 0
+  fi
+  if [ "${desired:-0}" = "0" ]; then
+    echo "▶ worker $worker_service already has desired count 0"
+    return 0
+  fi
+  if aws ecs update-service --region "$REGION" --cluster "$SERVICE_PREFIX" \
+    --service "$worker_service" --desired-count 0 >/dev/null; then
+    echo "✔ worker $worker_service desired count $desired → 0"
+    echo "::warning title=Worker scaled to 0::${reason}; scheduled jobs run on the API tasks until the next successful worker roll" >&2
+  else
+    echo "::error title=Worker scale-down::could not scale $worker_service to 0 after the API rolled with KORTIX_PROCESS_ROLE=all; an older worker can still hold the leader lease. Run: aws ecs update-service --region $REGION --cluster $SERVICE_PREFIX --service $worker_service --desired-count 0" >&2
+  fi
+}
+
 # Allow sourcing for tests: `KORTIX_ECS_DEPLOY_LIB=1 source ecs-deploy.sh`.
 if [ "${KORTIX_ECS_DEPLOY_LIB:-}" = "1" ]; then
   # shellcheck disable=SC2317 # `exit` is the non-sourced fallback for `return`
@@ -482,9 +650,11 @@ DRY_RUN=0
 DATABASE_MIGRATED=0
 VERSION_OVERRIDE=""
 WAIT_FOR="stable"
+PROCESS_ROLE_MODE="auto"
 while [ $# -gt 0 ]; do
   case "$1" in
     --service) SVC_KIND="$2"; shift 2 ;;
+    --process-role) PROCESS_ROLE_MODE="${2:-}"; shift 2 || shift ;;
     --version) VERSION_OVERRIDE="$2"; shift 2 ;;
     --database-migrated) DATABASE_MIGRATED=1; shift ;;
     --no-wait) WAIT=0; shift ;;
@@ -497,6 +667,16 @@ case "$WAIT_FOR" in
   serving|stable) ;;
   *) echo "--wait-for must be serving or stable (got: '${WAIT_FOR}')" >&2; exit 2 ;;
 esac
+# `web` is never accepted from the command line: it is safe only after the
+# checks in decide_api_process_role.
+case "$PROCESS_ROLE_MODE" in
+  auto|all) ;;
+  *) echo "--process-role must be auto or all (got: '${PROCESS_ROLE_MODE}')" >&2; exit 2 ;;
+esac
+if [ "$PROCESS_ROLE_MODE" != "auto" ] && [ "$SVC_KIND" != "api" ]; then
+  echo "--process-role applies to --service api only (got --service $SVC_KIND)" >&2
+  exit 2
+fi
 
 [ -n "$VERSION_OVERRIDE" ] || VERSION_OVERRIDE="$(derive_version_from_image "$IMAGE")"
 
@@ -510,8 +690,16 @@ if [ "$DRY_RUN" != "1" ] \
   exit 2
 fi
 
-# Each service lives in its own cluster (the ecs-api module names cluster==service).
+# Each service lives in its own cluster (the ecs-api module names cluster==service),
+# except the worker, which shares the API's cluster.
 configure_service_coordinates "$SVC_KIND"
+
+# The new worker waits for the leader lease until the old one stops, so the
+# worker roll is done only when the old task is gone: `stable`, always.
+if [ "$SVC_KIND" = "worker" ] && [ "$WAIT_FOR" != "stable" ]; then
+  echo "▶ --wait-for $WAIT_FOR ignored: the worker always waits stable (the old task hands the leader lease over when it stops)"
+  WAIT_FOR="stable"
+fi
 
 echo "▶ env=$ENV region=$REGION cluster=$CLUSTER service=$SERVICE container=$CONTAINER"
 echo "▶ image=$IMAGE  secrets<-$SECRET_NAME"
@@ -529,6 +717,24 @@ STATUS="$(aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" \
 if [ "$STATUS" != "ACTIVE" ]; then
   echo "⏭  ECS service $CLUSTER/$SERVICE not ACTIVE (got '${STATUS:-none}') — skipping ($ENV ECS infra not built yet)."
   exit 0
+fi
+
+# ── API process role: who runs the scheduled jobs ────────────────────────────
+PROCESS_ROLE=""
+PROCESS_ROLE_REASON=""
+if [ "$SVC_KIND" = "api" ]; then
+  if [ "$PROCESS_ROLE_MODE" = "all" ]; then
+    PROCESS_ROLE="all"
+    PROCESS_ROLE_REASON="forced by --process-role all"
+  else
+    resolve_api_process_role "$IMAGE"
+  fi
+  echo "▶ KORTIX_PROCESS_ROLE=$PROCESS_ROLE ($PROCESS_ROLE_REASON)"
+  # A dry run renders only (Deploy Dev's release gate runs one before the
+  # worker rolls), so it annotates nothing.
+  if [ "$PROCESS_ROLE" = "all" ] && [ "$DRY_RUN" != "1" ]; then
+    echo "::warning title=API process role::KORTIX_PROCESS_ROLE=all: ${PROCESS_ROLE_REASON}. The API tasks run the scheduled jobs." >&2
+  fi
 fi
 
 # ── resolve the secrets blob ARN (no hardcoded suffix) ───────────────────────
@@ -555,16 +761,51 @@ CURRENT_TD="$(aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" 
 CURRENT_TD_JSON="$(aws ecs describe-task-definition --region "$REGION" \
   --task-definition "$CURRENT_TD" --query 'taskDefinition' --output json)"
 
+# The environment is the running revision's, except for the worker: it runs
+# the API's jobs, so it takes the API service's running environment. Keys such
+# as the snapshot bucket exist only there (deploy overrides), never in
+# Terraform, which created the worker's first revision.
+ENV_SOURCE_TD_JSON="$CURRENT_TD_JSON"
+ENV_SOURCE_CONTAINER="$CONTAINER"
+if [ "$SVC_KIND" = "worker" ]; then
+  API_TD="$(aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" \
+    --services "$SERVICE_PREFIX" --query 'services[0].taskDefinition' --output text)"
+  [ -n "$API_TD" ] && [ "$API_TD" != "None" ] \
+    || { echo "API service $SERVICE_PREFIX has no task-def; the worker copies its environment from it" >&2; exit 1; }
+  ENV_SOURCE_TD_JSON="$(aws ecs describe-task-definition --region "$REGION" \
+    --task-definition "$API_TD" --query 'taskDefinition' --output json)"
+  ENV_SOURCE_CONTAINER="api"
+  printf '%s' "$ENV_SOURCE_TD_JSON" | jq -e 'any(.containerDefinitions[]?; .name == "api")' >/dev/null \
+    || { echo "$API_TD has no container 'api'; the worker copies its environment from it" >&2; exit 1; }
+  echo "▶ environment copied from $API_TD (container api)"
+fi
+
 ENVIRONMENT_OVERRIDES_JSON="${KORTIX_ECS_ENV_OVERRIDES:-}"
 [ -n "$ENVIRONMENT_OVERRIDES_JSON" ] || ENVIRONMENT_OVERRIDES_JSON='{}'
-if [ "$SVC_KIND" = "api" ]; then
+if [ "$SVC_KIND" = "api" ] || [ "$SVC_KIND" = "worker" ]; then
   GATEWAY_TARGET="$(gateway_target_for_env "$ENV")"
   ENVIRONMENT_OVERRIDES_JSON="$(printf '%s' "$ENVIRONMENT_OVERRIDES_JSON" | jq -c \
     --arg target "$GATEWAY_TARGET" '. + {LLM_GATEWAY_PROXY_TARGET: $target}')"
 fi
-CURRENT_ENVIRONMENT_JSON="$(printf '%s' "$CURRENT_TD_JSON" | jq -c --arg c "$CONTAINER" \
+CURRENT_ENVIRONMENT_JSON="$(printf '%s' "$ENV_SOURCE_TD_JSON" | jq -c --arg c "$ENV_SOURCE_CONTAINER" \
   '[.containerDefinitions[] | select(.name == $c) | (.environment // [])][0] // []')"
 MERGED_ENVIRONMENT_JSON="$(merge_environment_overrides "$CURRENT_ENVIRONMENT_JSON" "$ENVIRONMENT_OVERRIDES_JSON")"
+# The decided role wins over the running revision and over any override. The
+# worker never carries it.
+case "$SVC_KIND" in
+  api)
+    MERGED_ENVIRONMENT_JSON="$(merge_environment_overrides "$MERGED_ENVIRONMENT_JSON" \
+      "$(jq -cn --arg role "$PROCESS_ROLE" '{KORTIX_PROCESS_ROLE: $role}')")"
+    ;;
+  worker)
+    # KORTIX_WORKER_ENV_FROM marks a revision this script registered, with the
+    # API's environment. decide_api_process_role requires it before the API
+    # may go `web`; Terraform's first revision never has it.
+    MERGED_ENVIRONMENT_JSON="$(printf '%s' "$MERGED_ENVIRONMENT_JSON" | jq -c 'map(select(.name != "KORTIX_PROCESS_ROLE"))')"
+    MERGED_ENVIRONMENT_JSON="$(merge_environment_overrides "$MERGED_ENVIRONMENT_JSON" \
+      "$(jq -cn --arg from "$API_TD" '{KORTIX_WORKER_ENV_FROM: $from}')")"
+    ;;
+esac
 ENVIRONMENT_OVERRIDE_COUNT="$(printf '%s' "$ENVIRONMENT_OVERRIDES_JSON" | jq 'length')"
 if [ "$ENVIRONMENT_OVERRIDE_COUNT" -gt 0 ]; then
   echo "▶ applied $ENVIRONMENT_OVERRIDE_COUNT explicit non-secret environment override(s)"
@@ -680,9 +921,45 @@ echo "✔ registered $NEW_TD"
 # change the desired count: whether ECS runs in parallel (dev/staging) or stays a
 # scaled-to-zero standby (prod, until a deliberate flip) is owned by Terraform's
 # desired_count / a manual scale, not by this roll.
-aws ecs update-service --region "$REGION" --cluster "$CLUSTER" --service "$SERVICE" \
-  --task-definition "$NEW_TD" --force-new-deployment >/dev/null
-echo "✔ update-service issued (desired count unchanged)"
+#
+# Except the worker: Terraform creates it at 0 (it applies before the
+# migrations), and an API roll that fell back to KORTIX_PROCESS_ROLE=all scales
+# it to 0. Its own roll is what starts it, so it sets 1, in a SECOND call. One
+# call with the new revision and --desired-count 1 on a service at 0 tasks made
+# ECS start a task of the CURRENT revision first, then roll it (dev,
+# 2026-11-01: a task of Terraform's first revision ran with Terraform's
+# environment for minutes). The first call points the service at the new
+# revision and starts nothing while the count is 0; the second scales the new
+# revision. With the worker already at 1, the first call rolls as usual and the
+# second changes nothing.
+if [ "$SVC_KIND" = "worker" ]; then
+  worker_desired_before="$(describe_service_json | jq -r '.services[0].desiredCount // 1' 2>/dev/null || echo 1)"
+  aws ecs update-service --region "$REGION" --cluster "$CLUSTER" --service "$SERVICE" \
+    --task-definition "$NEW_TD" --force-new-deployment >/dev/null
+  # From 0 tasks, wait until the earlier deployments are gone before raising
+  # the count. Two calls one second apart still let ECS start a task of the
+  # earlier revision while that deployment existed (prod, 2026-11-01: a task of
+  # Terraform's first revision ran for a minute). With nothing running, the
+  # new deployment completes at once and the old ones leave within seconds.
+  if [ "$worker_desired_before" = "0" ]; then
+    waited=0
+    while [ "$(describe_service_json | jq -r '(.services[0].deployments // []) | length' 2>/dev/null || echo 0)" -gt 1 ] \
+      && [ "$waited" -lt "$ECS_WORKER_SWITCH_WAIT_SECONDS" ]; do
+      sleep "$ECS_STABILIZE_POLL_SECONDS"
+      waited=$(( waited + ECS_STABILIZE_POLL_SECONDS ))
+    done
+    if [ "$(describe_service_json | jq -r '(.services[0].deployments // []) | length' 2>/dev/null || echo 0)" -gt 1 ]; then
+      echo "::warning title=Worker roll::an earlier worker deployment still exists after ${ECS_WORKER_SWITCH_WAIT_SECONDS}s; raising the count anyway, so ECS may briefly start a task of the earlier revision"
+    fi
+  fi
+  aws ecs update-service --region "$REGION" --cluster "$CLUSTER" --service "$SERVICE" \
+    --desired-count 1 >/dev/null
+  echo "✔ update-service issued (new revision, then desired count 1)"
+else
+  aws ecs update-service --region "$REGION" --cluster "$CLUSTER" --service "$SERVICE" \
+    --task-definition "$NEW_TD" --force-new-deployment >/dev/null
+  echo "✔ update-service issued (desired count unchanged)"
+fi
 
 if [ "$WAIT" = "1" ]; then
   echo "⏳ waiting for the rollout (--wait-for ${WAIT_FOR}, budget ${ECS_STABILIZE_TIMEOUT_SECONDS}s, poll ${ECS_STABILIZE_POLL_SECONDS}s) …"
@@ -690,5 +967,11 @@ if [ "$WAIT" = "1" ]; then
   aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" --services "$SERVICE" \
     --query 'services[0].{running:runningCount,desired:desiredCount,rollout:deployments[0].rolloutState}' \
     --output table
+  # Only here, after the API rollout completed: a failed wait exits above.
+  if [ "$SVC_KIND" = "api" ] && [ "$PROCESS_ROLE" = "all" ]; then
+    scale_worker_to_zero "the API rolled with KORTIX_PROCESS_ROLE=all (${PROCESS_ROLE_REASON})"
+  fi
+elif [ "$SVC_KIND" = "api" ] && [ "$PROCESS_ROLE" = "all" ]; then
+  echo "::warning title=Worker not scaled to 0::--no-wait: the API rollout was not awaited, so the worker keeps its desired count. Scale it to 0 once the API rollout completes, or redeploy the API without --no-wait." >&2
 fi
 echo "✅ $ENV/$CONTAINER now on $IMAGE ($NEW_TD)"

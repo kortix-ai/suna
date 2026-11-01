@@ -109,7 +109,7 @@ A closed laptop cannot report. A computer that was recording when it went
 silent therefore shows `offline` after 30 min and clears when it wakes. The
 host cannot tell a closed lid from a dead app until it reports again.
 
-Alerts: the leader worker `workers/capture-health-worker.ts` runs
+Alerts: the leader worker `worker/jobs/capture-health.ts` runs
 `capture/health-alerts.ts` every 60 s. A device `not_recording` for the
 threshold (default 30 min) writes one `capture_device_down` inbox row for each
 member with `capture.manage`; when the spell ends it writes one

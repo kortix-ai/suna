@@ -114,7 +114,8 @@ function relay(response: Response): Response {
 }
 
 export function createClaudeCodePassthrough(hooks: ClaudeCodeHooks, deps: ClaudeCodeDeps = {}) {
-  const upstream = (deps.upstream ?? 'https://api.anthropic.com').replace(/\/+$/, '');
+  let upstream = deps.upstream ?? 'https://api.anthropic.com';
+  while (upstream.endsWith('/')) upstream = upstream.slice(0, -1);
   const fetchImpl = deps.fetchImpl ?? upstreamFetch;
   const logger = deps.logger ?? console;
 

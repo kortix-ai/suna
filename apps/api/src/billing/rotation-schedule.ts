@@ -1,4 +1,4 @@
-// The ticks of the hourly billing sweeps. workers/billing-rotation-worker.ts
+// The ticks of the hourly billing sweeps. worker/jobs/billing-rotation.ts
 // schedules them.
 
 /** Trials and contracts: expire, end, and send the warnings that are due. */

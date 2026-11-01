@@ -572,7 +572,7 @@ resource "aws_cloudwatch_metric_alarm" "use2_sqs_oldest_message_age" {
   tags                = local.alarm_tags
 
   # Manifest events normally ingest in seconds (the capture-events-reader
-  # long-polls the queue continuously in apps/api/src/workers/capture-worker.ts),
+  # long-polls the queue continuously in apps/api/src/worker/jobs/capture.ts),
   # so this fires on a sustained stall: the oldest message waits 15 minutes
   # for three consecutive 5-minute periods before alerting, above any deploy
   # blip; Maximum cannot average a spike away. An empty queue publishes no

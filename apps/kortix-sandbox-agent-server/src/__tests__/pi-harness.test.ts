@@ -4438,7 +4438,11 @@ describe('pi session log on the v2 stream (P4.3)', () => {
     const held = () => [...new Map(puts().sort((a, b) => a.rev - b.rev).map((p) => [p.message.message_id, p])).values()].filter((p) => p.message.kind === 'turn').sort((a, b) => a.message.seq - b.message.seq)
     const call = (m: SessionLogMessage) => m.blocks.find((b) => b.type === 'tool_call') as { status: string; input: unknown; result?: unknown } | undefined
     expect((await prompt(r, root, { parts: [{ type: 'text', text: 'run both commands' }] })).status).toBe(204)
-    await waitFor(() => held().some((p) => call(p.message)?.status === 'running'))
+    // Wait for the SECOND step to run: a slow runner can also post the first step's call while it runs.
+    await waitFor(() => held().some((p) => {
+      const c = call(p.message)
+      return c?.status === 'running' && (c.input as { command?: string } | undefined)?.command === 'sleep 1'
+    }))
 
     // A box that dies now leaves the API this: the prompt, the first step with its result, the second step running.
     const midTurn = held()

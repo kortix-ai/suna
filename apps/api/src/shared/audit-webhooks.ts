@@ -222,6 +222,22 @@ async function processDelivery(deliveryId: string): Promise<void> {
     );
 }
 
+let deliveryWaker: (() => void) | null = null;
+
+/**
+ * The running delivery loop (`worker/jobs/audit-webhook.ts`) registers here, so
+ * a replay can wake it without importing the job. A process that runs no jobs
+ * has no waker; the loop's idle tick (2 s) picks the delivery up instead.
+ */
+export function setAuditWebhookWaker(waker: (() => void) | null): void {
+  deliveryWaker = waker;
+}
+
+/** Wake the delivery loop when this process runs it. */
+export function wakeAuditWebhookDelivery(): void {
+  deliveryWaker?.();
+}
+
 /** One delivery pass: claim due deliveries and send them. Returns how many were claimed. */
 export async function runAuditWebhookDeliveryPass(): Promise<number> {
   const ids = await claimDeliveries();

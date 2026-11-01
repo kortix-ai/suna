@@ -36,7 +36,7 @@ Change the code and the spec together.
 | Plans, prices, allowances | `apps/api/src/billing/services/tiers.ts` |
 | Enterprise contracts | `apps/api/src/billing/services/enterprise-contracts.ts` |
 | Trials | `apps/api/src/billing/services/trial-admin.ts` |
-| Warnings and expiry sweeps | `apps/api/src/billing/rotation-schedule.ts`, `workers/billing-rotation-worker.ts` |
+| Warnings and expiry sweeps | `apps/api/src/billing/rotation-schedule.ts`, `worker/jobs/billing-rotation.ts` |
 | Stripe webhooks | `apps/api/src/billing/services/webhooks.ts`, `stripe-checkout-webhooks.ts` |
 | Account state API | `apps/api/src/billing/services/account-state.ts` |
 | Admin console | `apps/web/src/app/[locale]/admin/accounts/` |

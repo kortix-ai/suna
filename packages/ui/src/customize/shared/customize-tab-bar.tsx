@@ -44,7 +44,7 @@ import {
   isProjectAdminResource,
   parseProjectAdminSection,
   projectAdminHref,
-} from '../../workspace/admin/project-admin-sections';
+} from '../project-settings/project-admin-sections';
 import { receivedDenial } from './capability-access-gate';
 
 const InCustomizeFrame = createContext(false);

@@ -17,6 +17,10 @@ const AWS_STUB = String.raw`#!/usr/bin/env bash
 set -euo pipefail
 ARGS="$*"
 case "$ARGS" in
+  # The API process-role decision reads the worker service. Here it does not
+  # exist yet, so the API renders KORTIX_PROCESS_ROLE=all.
+  *"describe-services"*"--services kortix-dev-use2-worker --output json"*)
+    printf '{"services":[],"failures":[{"reason":"MISSING"}]}' ;;
   *"describe-services"*"services[0].status"*) printf 'ACTIVE' ;;
   *"describe-services"*"services[0].taskDefinition"*)
     printf 'arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2:41' ;;
@@ -31,6 +35,7 @@ case "$ARGS" in
 "environment":[
   {"name":"KEEP","value":"from-the-running-revision"},
   {"name":"KORTIX_PLATINUM_US_REGION","value":"us-west"},
+  {"name":"KORTIX_PROCESS_ROLE","value":"web"},
   {"name":"KORTIX_VERSION","value":"0.0.1-dev.old"},
   {"name":"KORTIX_COMMIT","value":"old-commit"}],
 "secrets":[{"name":"KORTIX_ENV_JSON","valueFrom":"arn:old"}]}]}
@@ -74,9 +79,16 @@ describe('ecs-deploy.sh --dry-run rendered environment', () => {
       { name: 'ADDED', value: 'by-override' },
       { name: 'KORTIX_PLATINUM_US_REGION', value: 'us-east' },
       { name: 'LLM_GATEWAY_PROXY_TARGET', value: 'https://gateway-dev-use2.kortix.com' },
+      // The decided role replaces the running revision's `web`: no worker
+      // service exists, so the API runs the scheduled jobs.
+      { name: 'KORTIX_PROCESS_ROLE', value: 'all' },
       // The version stamp replaces the old one; KORTIX_COMMIT is never carried.
       { name: 'KORTIX_VERSION', value: '0.0.2-dev.new' },
     ]);
+    expect(run.stdout).toContain('▶ KORTIX_PROCESS_ROLE=all (the worker service does not exist)');
+    // A dry run (Deploy Dev's release gate runs one before the worker rolls)
+    // annotates nothing and scales nothing.
+    expect(run.stderr).not.toContain('::warning');
     // One open: stat and read the same handle (CodeQL js/file-system-race).
     const fd = openSync(file, 'r');
     try {
