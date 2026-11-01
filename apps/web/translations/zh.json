@@ -22633,6 +22633,8 @@
     "agentFullWriteDescription": "在你启动的会话中，此智能体可以修改你云盘中的任何文件，而不仅是 From agents 文件夹。",
     "agentCardDrive": "{size} 云盘",
     "sessionSkippedDrives": "{count, plural, other {有 # 个云盘无法装入此会话}}：{names}。请移除一个云盘腾出位置，然后重启会话。",
+    "sessionSkippedUnavailable": "{count, plural, other {有 # 个文件夹尚未挂载}}：{names}。会话会先在没有它们的情况下运行，存储可用后会自动挂载。",
+    "sessionSkippedTooLarge": "{count, plural, other {有 # 个文件夹太大，无法挂载到会话中}}：{names}。会话会在没有它们的情况下运行。请移出大文件，或共享一个更小的文件夹。",
     "shareFolder": "共享",
     "shareTitle": "共享 {name}",
     "shareDescription": "你添加的人员、团队和智能体会获得此文件夹及其中的所有内容。当会话的智能体、项目或启动它的人有访问权限时，该会话即可看到此文件夹。",
