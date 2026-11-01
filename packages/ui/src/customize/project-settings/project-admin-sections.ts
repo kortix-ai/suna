@@ -17,7 +17,7 @@ import { adminPath } from '../../lib/routes';
 import {
   parseProjectSettingsSection,
   type ProjectSettingsSectionKey,
-} from '../../customize/project-settings/project-settings-sections';
+} from './project-settings-sections';
 
 /**
  * The sections of Project admin (`/projects/<id>/admin`).
