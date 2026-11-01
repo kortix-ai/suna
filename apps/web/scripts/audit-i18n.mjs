@@ -557,6 +557,14 @@ function walkFiles(dir, out = []) {
 function isHumanText(value, kind) {
   const text = value.replace(/\s+/g, ' ').trim();
   if (!text || allowedLiteralValues.has(text)) return false;
+  if (kind === 'jsx-attr:placeholder' && /^[{[]/.test(text)) {
+    try {
+      JSON.parse(text);
+      return false;
+    } catch {
+      /* Not a JSON example. */
+    }
+  }
   if (text.length < 2) return false;
   if (/^[\W\d_]+$/.test(text)) return false;
   if (
@@ -747,6 +755,34 @@ function scanFile(file) {
     return [node.head.text, ...node.templateSpans.map((span) => span.literal.text)].join(' ');
   }
 
+  // Hooks and simple forwarding helpers can bind names other than t/tUppercase.
+  const translatorWrappers = new Set();
+  function collectTranslatorWrappers(node) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      ts.isCallExpression(node.initializer) &&
+      ts.isIdentifier(node.initializer.expression) &&
+      /^(?:useTranslations|useI18nTranslations)$/.test(node.initializer.expression.text)
+    ) {
+      translatorWrappers.add(node.name.text);
+    }
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      ts.isArrowFunction(node.initializer) &&
+      ts.isCallExpression(node.initializer.body) &&
+      ts.isIdentifier(node.initializer.body.expression) &&
+      /^(?:t|t[A-Z][A-Za-z0-9]*)$/.test(node.initializer.body.expression.text)
+    ) {
+      translatorWrappers.add(node.name.text);
+    }
+    ts.forEachChild(node, collectTranslatorWrappers);
+  }
+  collectTranslatorWrappers(sourceFile);
+
   function isInsideTranslationCall(node) {
     let cursor = node.parent;
     while (cursor && !ts.isJsxExpression(cursor)) {
@@ -756,7 +792,8 @@ function scanFile(file) {
           ['raw', 'rich'].includes(cursor.expression.name.text)) ||
           (ts.isIdentifier(cursor.expression) &&
             (/^(?:t|t[A-Z][A-Za-z0-9]*)$/.test(cursor.expression.text) ||
-              cursor.expression.text === 'localizeUiCatalog')))
+              cursor.expression.text === 'localizeUiCatalog' ||
+              translatorWrappers.has(cursor.expression.text))))
       ) {
         return true;
       }
@@ -1070,6 +1107,12 @@ function scanFile(file) {
           catalogRoot === 'DEFAULT_PROFILE_TAB_COPY') ||
         (file === path.join(uiSrcDir, 'internal/lib/site-metadata.ts') && catalogRoot === 'siteMetadata');
       const coveredTechnicalCatalog =
+        (file === path.join(uiSrcDir, 'customize/agents/agent-tabs.ts') &&
+          catalogRoot === 'YAML_KEY_ROW') ||
+        (file === path.join(uiSrcDir, 'customize/shared/capability-library.tsx') &&
+          catalogRoot === 'VIEW_COPY') ||
+        (file === path.join(uiSrcDir, 'session/turn/peer-message-row.tsx') &&
+          catalogRoot === 'KIND_KEY') ||
         (file === path.join(srcDir, 'components/home/navbar.tsx') &&
           catalogRoot === 'DRAWER_SOCIALS') ||
         (file === path.join(srcDir, 'features/marketing/landing/code-panels.tsx') &&
