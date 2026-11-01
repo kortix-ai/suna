@@ -133,11 +133,21 @@ async function save(name: string, args: Record<string, any>, context: PlatformTo
   if (answer.status !== 200 && answer.status !== 201) return refused('save', 'Could not remember that', answer, context)
   const page = answer.body.page as Entry & { body: string }
   const created = answer.body.created === true
+  const fact = { name: page.name, title: page.title, description: page.description, type: page.type, body: page.body }
+  // The same fact again: nothing was written, and the model is told plainly that its save already holds.
+  if (answer.body.unchanged === true) {
+    return ok(TOOL, 'save', { title: `Already remembered: ${page.title}`, subtitle: page.description }, {
+      ...fact,
+      created: false,
+      unchanged: true,
+      note: 'Nothing changed: this page already says exactly this. It is saved; do not save it again.',
+    })
+  }
   return ok(
     TOOL,
     'save',
     { title: `${created ? 'Remembered' : 'Updated'}: ${page.title}`, subtitle: page.description },
-    { created, name: page.name, title: page.title, description: page.description, type: page.type },
+    { ...fact, created, note: 'Saved. The page now reads as `body` shows; no further save is needed.' },
   )
 }
 
@@ -151,11 +161,11 @@ async function remove(name: string, context: PlatformToolContext) {
 export default {
   description:
     'Your memory of the person you talk to, kept across every session with them in this project. One fact per page. The person has no screen for it: they ask you what you remember, to change it, or to forget it. ' +
-    'Your turn starts with the index of these pages. Actions: `list` (every page); `view` (name); `save` (name, type, description, body, optional title: creates the page, or replaces the page with that name); `delete` (name).\n\n' +
+    'Your turn starts with the index of these pages. Actions: `list` (every page); `view` (name); `save` (name, type and title; description and body optional: creates the page, or replaces the page with that name); `delete` (name). One save per fact: when the answer says it is saved, it is done. Never save the same page again in the same turn.\n\n' +
     'Save when the person states a preference, corrects how you work, tells you something durable about themself, their role or their work, or asks you to remember something. ' +
     '"Forget …" deletes the page. Before you save, check the index: when a page covers it, `save` with that page\'s name to update it, never a second page. Delete a page that turned out wrong.\n\n' +
-    'Types: `user` (who they are: role, team, what they know); `feedback` (how they want the work done; in the body add a **Why:** line and a **How to apply:** line); ' +
-    '`project` (what they work on, goals, deadlines; also **Why:** and **How to apply:**); `reference` (where something is: a link, a folder, a person to ask). ' +
+    'Types: `user` (who they are: role, team, what they know); `feedback` (how they want the work done; when you know them, add a **Why:** line and a **How to apply:** line to the body); ' +
+    '`project` (what they work on, goals, deadlines; the same optional lines); `reference` (where something is: a link, a folder, a person to ask). ' +
     'Link a related page with [[its-name]].\n\n' +
     'Never save: what the project already records (its files, settings, history), what only matters in this conversation, passwords, keys or other secrets, ' +
     'or other people\'s personal details beyond what the person asked you to keep. Write dates as absolute dates (2026-11-03, never "next Tuesday"). ' +
@@ -167,7 +177,7 @@ export default {
       name: { type: 'string', description: 'For view, save and delete: the page slug, e.g. `likes-short-replies` (lower case, digits and dashes).' },
       type: { type: 'string', enum: [...TYPES], description: 'For save: user, feedback, project or reference. Default: user.' },
       description: { type: 'string', description: 'For save: one line that says what the page is about. You read it later to decide whether the page matters. Default: the title.' },
-      body: { type: 'string', description: 'For save: the fact itself, in Markdown. For feedback and project, end with **Why:** and **How to apply:** lines.' },
+      body: { type: 'string', description: 'For save, optional: detail beyond the title, in Markdown, e.g. **Why:** and **How to apply:** lines when you know them. A short fact needs only `title`.' },
       title: { type: 'string', description: 'For save: a short title. Default: the name.' },
     },
     required: ['action'],

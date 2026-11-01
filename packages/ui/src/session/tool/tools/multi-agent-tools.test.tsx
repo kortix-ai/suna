@@ -187,6 +187,27 @@ describe('list_agents', () => {
     expect(text).not.toContain('card row that the body replaces');
   });
 
+  // A dev session's list showed "Build Marko Kraemer website (@general su…" beside
+  // an uppercase badge, over the raw JSON result folded under "Show details".
+  test('shows a spawned agent by its task alone, and no raw result under the rows', () => {
+    const result = {
+      ok: true,
+      tool: 'list_agents',
+      action: 'mine',
+      card: { title: '1 session you can reach', subtitle: 'This session is lead-5902b848. 1 working.', status: 'done' },
+      data: {
+        self: AGENT('lead', 'self', 'working'),
+        agents: [AGENT('site', 'child', 'working', { title: 'Build the site (@general subagent)', agent_name: 'kortix' })],
+      },
+    };
+    const text = textOf(drawn('list_agents', done('list_agents', result), { open: true }));
+    expect(text).toContain('@site');
+    expect(text).toContain('Build the site · Helper');
+    expect(text).not.toContain('subagent)');
+    expect(text).not.toContain('Show details');
+    expect(text).not.toContain('This session is lead-5902b848');
+  });
+
   test('running says it checks the other agents', () => {
     expect(textOf(drawn('list_agents', running('list_agents'), { running: true }))).toContain('Checking the other agents…');
   });

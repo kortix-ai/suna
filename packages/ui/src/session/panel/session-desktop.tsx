@@ -18,8 +18,8 @@
  * forgotten tab would slow the stream for everyone watching. It reconnects,
  * on a fresh keyframe, when the tab is shown again.
  *
- * A computer without a desktop (My Kortix's minimal image, a template on
- * another base) says so; the header does not offer the panel there. The
+ * A computer without a desktop (a template on another base, or a computer
+ * that booted an image built before it had one) says so; the header does not offer the panel there. The
  * control bar appears only once the desktop answers, never over the proxy's
  * "not answering" page.
  */

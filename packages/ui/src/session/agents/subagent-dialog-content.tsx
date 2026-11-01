@@ -75,7 +75,7 @@ function bodyKind(row: ReturnType<typeof useProjectSession>, projectId: string |
 
 export function SubagentDialogContent({ open, onOpenChange, sessionId, title, projectId: projectIdProp }: SubagentDialogProps) {
   const t = useTranslations('multiAgent.subagent');
-  const ts = useTranslations('multiAgent.strip');
+  const tStrip = useTranslations('multiAgent.strip');
   const ids = useSessionIds();
   const projectId = projectIdProp ?? ids.projectId ?? undefined;
   const row = useProjectSession(projectId, sessionId, { enabled: open && !!projectId });
@@ -91,13 +91,13 @@ export function SubagentDialogContent({ open, onOpenChange, sessionId, title, pr
   const stop = useMutation({
     mutationFn: () => stopProjectSession(projectId!, sessionId),
     onSettled: refreshRow,
-    onError: (error) => errorToast(ts('stopAgentFailed', { name }), { description: error instanceof Error ? error.message : undefined }),
+    onError: (error) => errorToast(tStrip('stopAgentFailed', { name }), { description: error instanceof Error ? error.message : undefined }),
   });
 
   const state = agent
     ? agent.state === 'working' && agent.workingSinceMs !== null
-      ? ts('workingFor', { elapsed: shortElapsed(now - agent.workingSinceMs) })
-      : ts(`state.${agent.state}`)
+      ? tStrip('workingFor', { elapsed: shortElapsed(now - agent.workingSinceMs) })
+      : tStrip(`state.${agent.state}`)
     : null;
 
   return (
@@ -124,7 +124,7 @@ export function SubagentDialogContent({ open, onOpenChange, sessionId, title, pr
               {state && <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{state}</span>}
             </div>
             <ModalDescription className="text-muted-foreground truncate text-xs">
-              {agent?.agent && agent.named ? ts('runsAs', { agent: agentDisplayName(agent.agent) }) : null}
+              {agent?.agent && agent.named ? tStrip('runsAs', { agent: agentDisplayName(agent.agent) }) : null}
             </ModalDescription>
           </div>
           {projectId && kind === 'peek' && (
@@ -136,12 +136,12 @@ export function SubagentDialogContent({ open, onOpenChange, sessionId, title, pr
             </Button>
           )}
           {agent && isActive(agent.state) && (
-            <Hint label={ts('stopHint')} side="bottom">
+            <Hint label={tStrip('stopHint')} side="bottom">
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-xs"
-                aria-label={ts('stopAgent', { name })}
+                aria-label={tStrip('stopAgent', { name })}
                 disabled={stop.isPending}
                 onClick={() => stop.mutate()}
                 className="text-muted-foreground hover:text-foreground"

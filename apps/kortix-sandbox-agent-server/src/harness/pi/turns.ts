@@ -292,7 +292,10 @@ export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTur
 
     async workflows() {
       const rt = runtime()
-      return rt ? answer(200, { runs: rt.workflowList() }) : NOT_STARTED
+      if (!rt) return NOT_STARTED
+      // A run saved as running whose runner ended heals before it is listed.
+      await rt.refreshWorkflows()
+      return answer(200, { runs: rt.workflowList() })
     },
 
     async controlWorkflow(runId, body) {

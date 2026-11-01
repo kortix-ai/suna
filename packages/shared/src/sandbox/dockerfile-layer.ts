@@ -9,7 +9,9 @@
  *   3. the Kortix defaults' staged tail (`kortixDefaultsTail`, defaults.ts)
  *
  * The defaults are the same in every Kortix sandbox image, My Kortix's
- * included; defaults.ts owns them. This file owns only what project agents add.
+ * included; defaults.ts owns them. This file owns the workstation on top of
+ * them. My Kortix's image is the platform default image rendered here, plus
+ * one line (my-kortix-dockerfile.ts).
  *
  * The project workspace is NOT baked in — the daemon git-clones it at boot
  * via `KORTIX_PROJECT_AUTO_CLONE`. That keeps the image identity decoupled
@@ -23,6 +25,9 @@
 import {
   AGENT_BROWSER_VERSION as DEFAULT_AGENT_BROWSER_VERSION,
   ANYDOC_VERSION,
+  CLAUDE_AGENT_SDK_VERSION,
+  CLAUDE_CODE_PATH,
+  CLAUDE_CODE_VERSION,
   PLAYWRIGHT_VERSION,
   PYTHON_PACKAGE_FLOOR,
   PYTHON_PACKAGE_FLOOR_IMPORTS,
@@ -265,7 +270,24 @@ export function kortixWorkstationTooling(opts: KortixToolchainLayerOpts): string
     '    && command -v anydoc \\',
     `    && test "$(anydoc --version)" = "${ANYDOC_VERSION}"`,
     '',
+    claudeCodeInstallLines(),
+    '',
   ].join('\n') + '\n';
+}
+
+/**
+ * The unmodified Claude Code program that Claude subscription models run (kortixd
+ * `harness/pi/claude/`): the native binary the Claude Agent SDK ships for this
+ * platform, at its exact pin. Same step as apps/sandbox/Dockerfile; keep both in sync.
+ */
+export function claudeCodeInstallLines(): string {
+  return [
+    'RUN case "$(uname -m)" in x86_64) claude_arch=x64 ;; aarch64|arm64) claude_arch=arm64 ;; *) echo "unsupported Claude Code architecture: $(uname -m)" >&2; exit 1 ;; esac \\',
+    '    && sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/kortix/claude /opt/kortix/claude/bin \\',
+    `    && npm install --prefix /opt/kortix/claude --no-save --ignore-scripts --no-audit --no-fund "@anthropic-ai/claude-agent-sdk-linux-\${claude_arch}@${CLAUDE_AGENT_SDK_VERSION}" \\`,
+    `    && ln -sf "/opt/kortix/claude/node_modules/@anthropic-ai/claude-agent-sdk-linux-\${claude_arch}/claude" ${CLAUDE_CODE_PATH} \\`,
+    `    && ${CLAUDE_CODE_PATH} --version | grep -q "^${CLAUDE_CODE_VERSION} "`,
+  ].join('\n');
 }
 
 /**

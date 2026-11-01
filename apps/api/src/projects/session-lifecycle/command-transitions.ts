@@ -85,7 +85,9 @@ export const MAX_LANDING_RETRIES = 2;
  * Put a prompt whose landing proof FAILED back on the queue — with a fresh
  * attempt number, which is what gives the next POST a fresh
  * `Idempotency-Key` (`${commandId}:r${attempt}`) and, via `remintOnDelivery`,
- * a fresh wire id. Re-POSTing under the SAME key is answered
+ * a fresh wire id on a runtime that orders by id. A runtime that keeps ids
+ * (pi) gets the same id again: it never held that message, so it admits it.
+ * Re-POSTing under the SAME key is answered
  * `200 {"deduplicated": true}` by the proxy's 10-minute claim, which
  * `postPrompt` reads as delivered: the exact silent loss the proof exists to
  * stop, arriving 3.6 s later than before (review finding, 2026-09-05).

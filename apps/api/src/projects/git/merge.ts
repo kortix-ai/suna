@@ -61,17 +61,25 @@ export async function headRefsLandedIn(
   const landed = new Map<string, string>();
   if (headRefs.length === 0) return landed;
   const repoPath = await refreshMirror(project);
+  // Git performs the ancestry walk once, rather than spawning two processes
+  // per open request (up to 200), after the merge has already been pushed.
+  const result = await runGitCapture(
+    ['for-each-ref', `--merged=${tipSha}`, '--format=%(refname) %(objectname)', 'refs/heads/'],
+    repoPath,
+  );
+  if (result.exitCode !== 0) throw new Error('Could not classify carried change-request heads');
+  const merged = new Map(result.stdout.trim().split('\n').map((line) => {
+    const [ref, sha] = line.split(' ');
+    return [ref, sha];
+  }));
   for (const ref of headRefs) {
     try {
       validateRef(ref);
     } catch {
       continue;
     }
-    const head = await runGitCapture(['rev-parse', '--verify', '--quiet', `refs/heads/${ref}^{commit}`], repoPath);
-    const sha = head.stdout.trim();
-    if (head.exitCode !== 0 || !/^[0-9a-f]{40}$/.test(sha)) continue;
-    const ancestor = await runGitCapture(['merge-base', '--is-ancestor', sha, tipSha], repoPath);
-    if (ancestor.exitCode === 0) landed.set(ref, sha);
+    const sha = merged.get(`refs/heads/${ref}`);
+    if (sha && /^[0-9a-f]{40}$/.test(sha)) landed.set(ref, sha);
   }
   return landed;
 }

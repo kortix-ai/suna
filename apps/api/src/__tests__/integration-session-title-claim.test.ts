@@ -145,6 +145,37 @@ describe('persistTitle — compare-and-set', () => {
     expect((await metadataOf(numericCustom.sessionId)).name).toBeUndefined();
   });
 
+  test('a prompt-excerpt fallback title is replaced by a model title, until its attempts run out', async () => {
+    const row = await seed({});
+    await persistTitle(row, 'can u build a website', { attempts: 1, source: 'can u build a website' });
+    let metadata = await metadataOf(row.sessionId);
+    expect(metadata.name).toBe('can u build a website');
+    expect(metadata.title_fallback_attempts).toBe(1);
+    expect(metadata.title_source).toBe('can u build a website');
+
+    await persistTitle(row, 'Build A Website');
+    metadata = await metadataOf(row.sessionId);
+    expect(metadata.name).toBe('Build A Website');
+    expect('title_fallback_attempts' in metadata).toBe(false);
+
+    // The model title is final: a late fallback write does not replace it.
+    await persistTitle(row, 'can u build a website', { attempts: 2, source: 'can u build a website' });
+    expect((await metadataOf(row.sessionId)).name).toBe('Build A Website');
+
+    const spent = await seed({ name: 'can u build a website', title_fallback_attempts: 3 });
+    await persistTitle(spent, 'Build A Website');
+    expect((await metadataOf(spent.sessionId)).name).toBe('can u build a website');
+
+    // A non-number reads as 0 attempts, as `fallbackAttempts` reads it.
+    const text = await seed({ name: 'can u build a website', title_fallback_attempts: '1' });
+    await persistTitle(text, 'Build A Website');
+    expect((await metadataOf(text.sessionId)).name).toBe('can u build a website');
+
+    const renamed = await seed({ name: 'can u build a website', title_fallback_attempts: 1, custom_name: 'Mine' });
+    await persistTitle(renamed, 'Build A Website');
+    expect((await metadataOf(renamed.sessionId)).name).toBe('can u build a website');
+  });
+
   test('no clobber: a concurrent full-metadata write survives with the title', async () => {
     const row = await seed({ runtime_transport: 'rest', provider_session_id: 'provider-1' });
 

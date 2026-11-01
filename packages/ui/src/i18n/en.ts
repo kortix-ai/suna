@@ -54,7 +54,6 @@ const catalog = {
     "oauthExpired": "Authorization timed out. Try again.",
     "oauthPrivateDescription": "Use your ChatGPT Plus or Pro plan in this project. New accounts are private to you until you share them.",
     "chatGptSubscription": "ChatGPT subscription",
-    "useYourChatGpt": "Use your ChatGPT subscription",
     "manageChatGptAccounts": "Manage ChatGPT accounts",
     "connect": "Connect",
     "connectChatGpt": "Connect ChatGPT",
@@ -89,7 +88,7 @@ const catalog = {
     "deleteError": "Secret could not be deleted",
     "accessError": "Access could not be changed",
     "sharedTitle": "Provider connections",
-    "sharedDescription": "Add API keys and ChatGPT accounts. New ones are private to you until you share them. Choose which ones each session uses.",
+    "sharedDescription": "Add API keys, ChatGPT accounts and Claude accounts. New ones are private to you until you share them. Choose which ones each session uses.",
     "legacyProjectKey": "Existing project key · Used when this session has no key selection",
     "keyCount": "{count, plural, one {# key} other {# keys}}",
     "providerKeysFor": "{provider} API keys",
@@ -156,7 +155,19 @@ const catalog = {
     "opencodeGoConnect": "Connect OpenCode Go",
     "opencodeGoReconnect": "Reconnect OpenCode Go",
     "opencodeGoDisconnect": "Disconnect OpenCode Go",
-    "opencodeGoFailed": "Failed to connect OpenCode Go"
+    "opencodeGoFailed": "Failed to connect OpenCode Go",
+    "claudeAccounts": "Claude accounts",
+    "noClaudeAccounts": "No Claude accounts yet",
+    "connectClaude": "Sign in with Claude",
+    "claudeOauthPrivateDescription": "Use your Claude Pro or Max plan for Claude models in this project. New accounts are private to you until you share them.",
+    "claudeOauthCreationDescription": "Sign in with your Claude Pro or Max account. Kortix stores the login encrypted and never shows it.",
+    "claudeDefaultAccountLabel": "Claude · {name}",
+    "claudeAccountConnected": "Claude account connected",
+    "claudeAccountReconnected": "Claude account reconnected",
+    "claudeConnectFailed": "The Claude sign-in did not finish. Try again.",
+    "claudeReconnectDescription": "Sign in with Claude again. The account keeps its name, access, and session selections.",
+    "claudeAccountLabelPlaceholder": "e.g. My Claude account",
+    "claudeDeleteAccountConfirmTitle": "Delete this Claude account for everyone?"
   },
   "secrets": {
     "undecryptable": {
@@ -8053,7 +8064,9 @@ const catalog = {
       "models": "Models",
       "tabCapabilities": "Capabilities",
       "pinToSidebar": "Pin to sidebar",
-      "unpinFromSidebar": "Unpin from sidebar"
+      "unpinFromSidebar": "Unpin from sidebar",
+      "spaceHelp": "The space this agent works in: a slug like engineering or sales. Empty: Project-wide.",
+      "spacePlaceholder": "e.g. engineering"
     },
     "myKortix": {
       "allowed": "Allowed",
@@ -9120,7 +9133,9 @@ const catalog = {
       },
       "board": {
         "label": "Room and a board",
-        "description": "A board for the brief and the links, then Goals."
+        "description": "A board for the brief and the links, then Goals.",
+        "brief": "Brief",
+        "text": "What this space is for, and how to help."
       }
     },
     "leave": "Leave {name}",
@@ -9145,7 +9160,14 @@ const catalog = {
     },
     "filter": "Filter by space",
     "all": "All",
-    "projectWide": "Project-wide"
+    "projectWide": "Project-wide",
+    "blocks": {
+      "noContent": "No content yet.",
+      "noUrl": "No URL yet.",
+      "noApp": "No app selected yet.",
+      "noFile": "No file yet.",
+      "loadingApp": "Loading app…"
+    }
   },
   "imageGen": {
     "generating": "Generating image",
@@ -9502,7 +9524,9 @@ const catalog = {
         "move": "move",
         "peek": "preview",
         "open": "open",
-        "stop": "stop"
+        "stop": "stop",
+        "space": "Space",
+        "enter": "Enter"
       },
       "group": {
         "pinned": "Pinned",
@@ -9530,6 +9554,23 @@ const catalog = {
       "hint": "Runs as a workflow of agents",
       "dismiss": "{key} to send it as a normal prompt"
     }
+  },
+  "claudeSubscription": {
+    "title": "Use your Claude subscription",
+    "description": "Claude models run through Claude Code on your own Claude Pro or Max plan. Only your sessions use your plan.",
+    "starting": "Opening Claude…",
+    "approveDescription": "Sign in with the Claude account that has your plan, approve the request, and copy the code Claude shows you.",
+    "codeLabel": "Code from claude.com",
+    "connect": "Connect Claude",
+    "connecting": "Connecting…",
+    "connectedTitle": "Your Claude subscription is connected",
+    "connected": "Claude subscription connected",
+    "disconnect": "Disconnect Claude",
+    "disconnected": "Claude subscription disconnected",
+    "startError": "Could not start the Claude sign-in. Try again.",
+    "codeError": "Could not connect Claude with that code. Sign in again and paste the new code.",
+    "connectClaude": "Connect Claude",
+    "reconnectClaude": "Reconnect Claude"
   }
 };
 

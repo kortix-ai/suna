@@ -26,11 +26,15 @@ test('scrolling skips headings and preserves a long right column', async () => {
   try {
     await flush();
     expect(captureCharFrame()).toContain('Provider');
-    await act(async () => { mockInput.pressEnter(); });
+    await act(async () => {
+      mockInput.pressEnter();
+    });
     await flush();
     expect(picked).toEqual(['first']);
     for (let index = 0; index < 3; index += 1) {
-      await act(async () => { mockInput.pressKey('\x1b[B'); });
+      await act(async () => {
+        mockInput.pressKey('\x1b[B');
+      });
       await flush();
     }
     const frame = captureCharFrame();
@@ -38,7 +42,9 @@ test('scrolling skips headings and preserves a long right column', async () => {
     expect(frame).not.toContain('First');
     expect(frame).toContain('Third');
     expect(frame).toContain('… RIGHT-COLUMN-IS-');
-    await act(async () => { mockInput.pressEnter(); });
+    await act(async () => {
+      mockInput.pressEnter();
+    });
     await flush();
     expect(picked).toEqual(['first', 'last']);
   } finally {

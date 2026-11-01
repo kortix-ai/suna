@@ -81,11 +81,14 @@ export const ADAPTERS = {
   // quickjs-wasi: codemode's VM, embedded as a file. The pi-coding-agent dist paths: a setter and the codemode tool
   // (for a subagent) pi does not export (pi/codemode.ts).
   // photon-node: pi's image resizer wasm, embedded as a file (pi/images.ts).
+  // claude-agent-sdk + the MCP SDK: Claude subscription models, run through Claude Code (pi/claude/).
   pi: [
     ...pkg('@earendil-works/*'),
     ...pkg('typebox'),
     ...pkg('quickjs-wasi'),
     ...pkg('@silvia-odwyer/photon-node'),
+    ...pkg('@anthropic-ai/claude-agent-sdk'),
+    ...pkg('@modelcontextprotocol/sdk'),
     at('node_modules/@earendil-works/pi-coding-agent/dist/config.*'),
     at('node_modules/@earendil-works/pi-coding-agent/dist/extensions/codemode/tool.*'),
     ...SDK_WIRE_MESSAGE_ID,

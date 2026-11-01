@@ -183,7 +183,7 @@ export async function saveMyMemory(
   name: string,
   author: string,
   input: MyKortixMemorySaveInput,
-): Promise<{ created: boolean; page: MyKortixMemoryPage }> {
+): Promise<{ created: boolean; unchanged?: true; page: MyKortixMemoryPage }> {
   assertWrites(layer);
   assertMemoryName(name);
   const body = input.body.trim();
@@ -211,6 +211,11 @@ export async function saveMyMemory(
       if (!read) throw notFound();
       const page = parsePage(read.text, hit.file.rel, null);
       const title = oneLine((input.title ?? page.title).trim().slice(0, MEMORY_LIMITS.title_chars));
+      // The same fact again writes nothing and says so: the caller learns its save already holds.
+      const data = page.split.data as Record<string, unknown>;
+      if (page.title === title && page.body.trim() === body && data.description === stamp.description && data.type === stamp.type) {
+        return { created: false, unchanged: true, page: await pageAt(layer, hit.file) };
+      }
       const text = joinFrontMatter(setFrontMatter(page.split.entries, stamp), `# ${title}\n\n${body}\n`);
       await volumeOps().write(layer.drive, hit.file.path, text, { overwrite: true, ...(read.etag ? { ifMatch: read.etag } : {}) });
       return { created: false, page: await pageAt(layer, hit.file) };

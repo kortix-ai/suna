@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
-import { addSpaceToManifest, appendSpaceTab, setSpaceTabs, slugifySpace, SPACE_TEMPLATES } from './space-templates';
+import { addSpaceToManifest, appendSpaceTab, setSpaceTabs, slugifySpace, spaceTemplates } from './space-templates';
 
 test('slugifySpace produces a manifest-safe key and falls back', () => {
   expect(slugifySpace('My New Space')).toBe('my-new-space');
@@ -18,6 +18,7 @@ test('slugifySpace always yields a valid room name: starts alphanumeric, at most
 });
 
 test('every template is a list of starting tabs; the first is the default', () => {
+  const SPACE_TEMPLATES = spaceTemplates((key) => `translated:${key}`);
   expect(SPACE_TEMPLATES[0]!.tabs.map((t) => t.type)).toEqual(['goals', 'apps', 'artifacts']);
   expect(SPACE_TEMPLATES.find((t) => t.id === 'room')!.tabs).toEqual([]);
   for (const template of SPACE_TEMPLATES) expect(Array.isArray(template.tabs)).toBe(true);
@@ -61,4 +62,9 @@ test('appendSpaceTab adds after the tabs in the file, or after the defaults when
 test('setSpaceTabs declares a space an agent only names', () => {
   const next = parseYaml(setSpaceTabs('agents:\n  a:\n    space: ops\n', 'ops', [{ type: 'apps' }]));
   expect(next.spaces.ops).toEqual({ tabs: [{ type: 'apps' }] });
+});
+
+test('board template persists localized labels and starter content', () => {
+  const board = spaceTemplates((key) => `de:${key}`).find((template) => template.id === 'board')!;
+  expect(board.tabs[0]).toEqual({ type: 'board', label: 'de:tabs.board', blocks: [{ type: 'text', label: 'de:templates.board.brief', text: 'de:templates.board.text' }] });
 });

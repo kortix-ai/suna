@@ -100,7 +100,7 @@ export function AgentDrivesSection({
           {showRepository ? (
             <li className="flex min-h-12 items-center gap-3 px-4 py-2">
               <span className="min-w-0 flex-1">
-                <span className="text-foreground block truncate font-mono text-sm">/workspace</span>
+                <code className="text-foreground block truncate font-mono text-sm">/workspace</code>
                 <span className="text-muted-foreground block truncate text-xs">{t('repository')}</span>
               </span>
               <span className="text-muted-foreground shrink-0 text-xs">{t('readWrite')}</span>

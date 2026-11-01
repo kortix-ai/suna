@@ -108,6 +108,23 @@ describe('save, view, list, delete', () => {
     expect([...volume.files.keys()].filter((path) => path.startsWith(`${priyaFolder}/Memory/mykortix/`))).toEqual([`${priyaFolder}/Memory/mykortix/likes-short-replies.md`]);
   });
 
+  test('the same fact saved again writes nothing and says unchanged; a real change still writes', async () => {
+    const layer = await myKortixLayer(project, person(PRIYA));
+    const fact = { ...SHORT, title: 'Prefers meetings before noon', description: 'Prefers meetings before noon', body: 'Prefers meetings before noon' };
+    await saveMyMemory(layer, 'prefers-meetings-before-noon', MY_KORTIX_AUTHOR, fact);
+    const path = `${priyaFolder}/Memory/mykortix/prefers-meetings-before-noon.md`;
+    const before = volume.files.get(path)!.text;
+    const again = await saveMyMemory(layer, 'prefers-meetings-before-noon', MY_KORTIX_AUTHOR, fact);
+    expect(again).toMatchObject({ created: false, unchanged: true, page: { body: 'Prefers meetings before noon' } });
+    // Byte for byte the same file: not even `updated_at` moved.
+    expect(volume.files.get(path)!.text).toBe(before);
+    const changed = await saveMyMemory(layer, 'prefers-meetings-before-noon', MY_KORTIX_AUTHOR, { ...fact, body: 'Prefers meetings before noon, never on Fridays.' });
+    expect(changed.unchanged).toBeUndefined();
+    expect(volume.files.get(path)!.text).toContain('never on Fridays');
+    // Later tests count Priya's pages.
+    await deleteMyMemory(layer, 'prefers-meetings-before-noon');
+  });
+
   test('the Memory screen reads the same file: type feedback, author My Kortix, the description as its summary', async () => {
     const layer = await resolveLayer(project, 'mykortix', person(PRIYA));
     const { pages } = await listPages(layer);
