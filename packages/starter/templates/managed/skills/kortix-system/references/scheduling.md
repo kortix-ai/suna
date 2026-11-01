@@ -200,6 +200,42 @@ wakes the session that created it: a runtime trigger, stored in the database.
    the watch needs a connection that stays open. The App runs apart from any
    session and posts the moment it sees the change ("Watch 24/7" below).
 
+## Automations: each event starts the right work, and nothing else
+
+An automation is a trigger that starts a colleague's session on each event
+that matters: each new support email, each new issue, each form submission.
+Set it up so a run never starts for noise, a follow-up reaches the session
+that already knows the thing, and a run with nothing to say says nothing.
+My Kortix does this with `kortix_schedules` `automate`; any agent can do it
+with the CLI:
+
+```bash
+kortix triggers events --connector github --event GITHUB_ISSUE_OPENED   # fields + config
+kortix triggers add issue-triage --type event --connector github --event GITHUB_ISSUE_OPENED \
+  --config repo=acme/site --agent triage --model kortix/deepseek-v4.1-flash \
+  --filter 'event.data.action:in=opened,reopened' --filter 'event.data.sender:not=kortix-bot' \
+  --session-key '{{ event.data.number }}' --max-runs-per-day 20 \
+  --prompt 'If this is not a real bug report, stop: do nothing and send no message. Otherwise label issue {{ event.data.number }} ({{ event.data.title }}) and reply with what is missing.' \
+  --apply
+kortix triggers fire issue-triage --dry-run --payload '{"event":{"data":{"action":"opened","number":7}}}'
+kortix triggers runs issue-triage
+```
+
+1. **Filter at the source** (`--filter`, `filter:`): keep only the actions
+   that matter; skip bots and Kortix itself. A filtered event starts nothing.
+2. **One session per thing** (`--session-key`): the thread, issue or sender.
+   The next event about the same thing queues into that session.
+3. **A prompt that judges first**: what counts, what to do, where the result
+   goes, and "otherwise stop and send no message".
+4. **Least access and a cap**: the narrowest agent, a fast model for triage,
+   `--max-runs-per-day`.
+5. **Ask before it runs unattended**, then **dry-run it** with one event that
+   should run and one that should not (`fire --dry-run --payload`: filter
+   verdict, session key and rendered prompt; nothing fires).
+6. **Review it after a few days** (`kortix triggers runs <slug>`: fired,
+   skipped, failed) and tune the filter or the prompt. Remove it when it is no
+   longer wanted.
+
 ## Cron cheat-sheet
 
 Kortix uses croner, 6 fields: `second minute hour day-of-month month
@@ -404,5 +440,12 @@ Saying "I stopped it" without a config change leaves it firing.
 - [ ] Session mode chosen on purpose; the prompt carries all context.
 - [ ] Idempotent: scoped by `cron.last_scheduled_for`, records what it handled.
 - [ ] Notifies only on something new; silent otherwise.
-- [ ] Tested once with `kortix triggers fire <slug>`.
+- [ ] An event trigger filters at the source (`--filter`), keys one session
+      per thing when follow-ups come (`--session-key`), and is capped
+      (`--max-runs-per-day`).
+- [ ] Its prompt judges first and stops silently when the event does not count.
+- [ ] Dry-run with `kortix triggers fire <slug> --dry-run --payload …` for an
+      event that should run and one that should not; then tested once with
+      `kortix triggers fire <slug>`.
+- [ ] A review of `kortix triggers runs <slug>` is scheduled a few days out.
 - [ ] Removed when the work is done; the user knows how to stop it.
