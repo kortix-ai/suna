@@ -150,13 +150,36 @@
       "@lezer/common": "1.5.3",
       "undici@>=6.0.0 <6.29.1": "6.29.1",
       "undici@>=7.0.0 <7.30.1": "7.30.1",
-      "undici@>=8.0.0 <8.12.2": "8.12.2"
+      "undici@>=8.0.0 <8.12.2": "8.12.2",
+      "glob@>=9.0.0 <=14.0.1": "14.0.2",
+      "@eslint/config-array>minimatch": "workspace:@kortix/minimatch-compat@*",
+      "@eslint/eslintrc>minimatch": "workspace:@kortix/minimatch-compat@*",
+      "eslint>minimatch": "workspace:@kortix/minimatch-compat@*",
+      "eslint-plugin-import>minimatch": "workspace:@kortix/minimatch-compat@*",
+      "eslint-plugin-react>minimatch": "workspace:@kortix/minimatch-compat@*",
+      "eslint-plugin-jsx-a11y>minimatch": "workspace:@kortix/minimatch-compat@*",
+      "@stoplight/spectral-core>minimatch": "workspace:@kortix/minimatch-compat@*",
+      "dir-compare>minimatch": "workspace:@kortix/minimatch-compat@*",
+      "filelist>minimatch": "workspace:@kortix/minimatch-compat@*",
+      "@electron/asar>minimatch": "workspace:@kortix/minimatch-compat@*",
+      "@earendil-works/pi-coding-agent>minimatch": "11.0.1",
+      "@electron/universal>minimatch": "11.0.1",
+      "@expo/fingerprint>minimatch": "11.0.1",
+      "@linaria/react>minimatch": "11.0.1",
+      "@logtail/node>minimatch": "11.0.1",
+      "@typescript-eslint/typescript-estree>minimatch": "11.0.1",
+      "@wyw-in-js/shared>minimatch": "11.0.1",
+      "app-builder-lib>minimatch": "11.0.1",
+      "@electron/asar>glob": "14.0.2",
+      "rimraf@2>glob": "14.0.2"
     },
     "patchedDependencies": {
       "blume@1.5.3": "patches/blume@1.5.3.patch",
       "shaders@2.5.135": "patches/shaders@2.5.135.patch",
       "postgres@3.4.9": "patches/postgres@3.4.9.patch",
-      "undici@8.12.2": "patches/undici@8.12.2.patch"
+      "undici@8.12.2": "patches/undici@8.12.2.patch",
+      "@electron/asar@3.4.1": "patches/@electron__asar@3.4.1.patch",
+      "rimraf@2.6.3": "patches/rimraf@2.6.3.patch"
     }
   },
   "version": "1.0.0",
