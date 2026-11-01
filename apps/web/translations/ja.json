@@ -23744,7 +23744,9 @@
       "tabCapabilities": "機能",
       "summaryExcept": "{all} except {list}",
       "pinToSidebar": "サイドバーに固定",
-      "unpinFromSidebar": "サイドバーから固定解除"
+      "unpinFromSidebar": "サイドバーから固定解除",
+      "spaceHelp": "このエージェントが作業するスペース。engineeringやsalesなどの識別子を指定します。空欄の場合はプロジェクト全体です。",
+      "spacePlaceholder": "例: engineering"
     },
     "myKortix": {
       "allowed": "許可",
@@ -24767,6 +24769,29 @@
       "unarchivedToast": "#{name} のアーカイブを解除しました",
       "failed": "#{name} を更新できませんでした。もう一度お試しください。"
     },
+    "blocks": {
+      "noContent": "まだコンテンツがありません。",
+      "noUrl": "まだURLがありません。",
+      "noApp": "アプリが選択されていません。",
+      "noFile": "まだファイルがありません。",
+      "loadingApp": "アプリを読み込み中…"
+    },
+    "templates": {
+      "board": {
+        "brief": "概要",
+        "text": "このスペースの目的と協力の方法。",
+        "label": "ルームとボード",
+        "description": "概要とリンクのボード、続いて目標。"
+      },
+      "standard": {
+        "label": "ルーム、目標、アプリ、成果物",
+        "description": "ルームと、このスペースに紐づくコンテンツ。"
+      },
+      "room": {
+        "label": "ルームのみ",
+        "description": "会話をひとつ。タブは後から追加できます。"
+      }
+    },
     "tabs": {
       "room": "ルーム",
       "goals": "目標",
@@ -24843,20 +24868,6 @@
       "title": "スペース",
       "new": "新しいスペース",
       "unread": "{count, plural, other {未読メッセージ # 件}}"
-    },
-    "templates": {
-      "standard": {
-        "label": "ルーム、目標、アプリ、成果物",
-        "description": "ルームの後に、スペースに紐づく内容が続きます。"
-      },
-      "room": {
-        "label": "ルームのみ",
-        "description": "1 つの会話です。タブは後から追加できます。"
-      },
-      "board": {
-        "label": "ルームとボード",
-        "description": "依頼内容とリンク用のボードの後に、目標が続きます。"
-      }
     },
     "leave": "{name} から退出",
     "openRooms": "ルームを開く",
@@ -25197,7 +25208,9 @@
         "move": "移動",
         "peek": "プレビュー",
         "open": "開く",
-        "stop": "停止"
+        "stop": "停止",
+        "space": "スペース",
+        "enter": "Enter"
       },
       "group": {
         "pinned": "ピン留め",

@@ -122,9 +122,11 @@ export function sectionLocationHref(pathname: string, section: AgentConfigSectio
  * key. `agent-tabs.test.ts` fails when the manifest schema gains a key this
  * map lacks, so no key is ever invisible on the agent page.
  */
+const OVERVIEW_ROW = 'overview';
+
 export const YAML_KEY_ROW = {
-  description: 'overview',
-  prompt: 'overview',
+  description: OVERVIEW_ROW,
+  prompt: OVERVIEW_ROW,
   prompt_file: 'overview',
   enabled: 'overview',
   hidden: 'overview',

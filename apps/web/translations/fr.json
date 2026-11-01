@@ -23744,7 +23744,9 @@
       "tabCapabilities": "Capacités",
       "summaryExcept": "{all} except {list}",
       "pinToSidebar": "Épingler dans la barre latérale",
-      "unpinFromSidebar": "Retirer de la barre latérale"
+      "unpinFromSidebar": "Retirer de la barre latérale",
+      "spaceHelp": "L’espace de cet agent : un identifiant comme engineering ou sales. Vide : tout le projet.",
+      "spacePlaceholder": "p. ex. engineering"
     },
     "myKortix": {
       "allowed": "Autorisé",
@@ -24767,6 +24769,29 @@
       "unarchivedToast": "#{name} désarchivé",
       "failed": "Impossible de mettre à jour #{name}. Réessayez."
     },
+    "blocks": {
+      "noContent": "Pas encore de contenu.",
+      "noUrl": "Pas encore d’URL.",
+      "noApp": "Aucune app sélectionnée.",
+      "noFile": "Pas encore de fichier.",
+      "loadingApp": "Chargement de l’app…"
+    },
+    "templates": {
+      "board": {
+        "brief": "Présentation",
+        "text": "À quoi sert cet espace et comment contribuer.",
+        "label": "Salon et tableau",
+        "description": "Un tableau pour le résumé et les liens, puis les objectifs."
+      },
+      "standard": {
+        "label": "Salon, objectifs, applications et artefacts",
+        "description": "Le salon, puis le contenu associé à cet espace."
+      },
+      "room": {
+        "label": "Salon uniquement",
+        "description": "Une conversation. Ajoutez des onglets plus tard."
+      }
+    },
     "tabs": {
       "room": "Salle",
       "goals": "Objectifs",
@@ -24843,20 +24868,6 @@
       "title": "Espaces",
       "new": "Nouvel espace",
       "unread": "{count, plural, one {# message non lu} other {# messages non lus}}"
-    },
-    "templates": {
-      "standard": {
-        "label": "Salle, Objectifs, Apps et Artefacts",
-        "description": "La salle, puis les éléments liés à l’espace."
-      },
-      "room": {
-        "label": "Salle uniquement",
-        "description": "Une conversation. Ajoutez des onglets plus tard."
-      },
-      "board": {
-        "label": "Salle et tableau",
-        "description": "Un tableau pour le brief et les liens, puis les Objectifs."
-      }
     },
     "leave": "Quitter {name}",
     "openRooms": "Ouvrir les salles",
@@ -25197,7 +25208,9 @@
         "move": "déplacer",
         "peek": "aperçu",
         "open": "ouvrir",
-        "stop": "arrêter"
+        "stop": "arrêter",
+        "space": "Espace",
+        "enter": "Entrée"
       },
       "group": {
         "pinned": "Épinglées",
