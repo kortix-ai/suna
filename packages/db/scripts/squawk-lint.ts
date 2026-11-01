@@ -100,7 +100,7 @@ async function ensureSquawkBinary(): Promise<string> {
 }
 
 
-export interface SquawkWaiver {
+interface SquawkWaiver {
   file: string;
   reason: string;
   [k: string]: unknown;

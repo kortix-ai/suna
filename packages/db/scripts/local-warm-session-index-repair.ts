@@ -2,7 +2,7 @@ import { withClient, withTransaction } from '../src/with-client';
 
 const INDEX_NAME = 'idx_project_sessions_one_available_warm';
 
-export interface LocalWarmSessionIndexRepairResult {
+interface LocalWarmSessionIndexRepairResult {
   repaired: boolean;
   discardedDuplicates: number;
 }

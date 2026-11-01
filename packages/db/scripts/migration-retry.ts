@@ -1,4 +1,4 @@
-export interface MigrationRetryOptions {
+interface MigrationRetryOptions {
   maxAttempts?: number;
   delayMs?: number;
   maxLockAttempts?: number;
