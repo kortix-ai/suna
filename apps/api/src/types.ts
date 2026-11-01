@@ -118,6 +118,13 @@ export interface TierConfig {
   models: string[];
   /** Apps an account on this tier may own, and App runtimes it may run at once. */
   appLimit: number;
+  /**
+   * Files storage (drives/limits.ts), in bytes: what one project's Files may
+   * hold, and what all the account's projects hold together. Every customer
+   * shares Kortix's one Platinum org, so these partition its storage; the
+   * project figure never exceeds Platinum's volume size.
+   */
+  driveStorage: { projectBytes: number; accountBytes: number };
   /** Enterprise feature gates. Absent ⇒ treated as all-false. */
   entitlements: TierEntitlements;
 }

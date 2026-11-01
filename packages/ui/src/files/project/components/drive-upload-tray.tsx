@@ -155,16 +155,22 @@ export function DriveUploadTray() {
       {!collapsed ? (
         <ul className="border-border/60 max-h-64 overflow-y-auto border-t py-1">
           {uploads.map((u) => (
-            <li key={u.id} className="flex h-9 items-center gap-2.5 px-3">
+            <li key={u.id} className="flex min-h-9 items-center gap-2.5 px-3 py-1.5">
               {getFileIcon(u.file.name, { className: 'text-muted-foreground size-4 shrink-0' })}
-              <span
-                className={cn(
-                  'min-w-0 flex-1 truncate text-sm',
-                  u.status === 'done' ? 'text-foreground' : 'text-muted-foreground',
-                )}
-                title={u.file.name}
-              >
-                {u.file.name}
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span
+                  className={cn(
+                    'truncate text-sm',
+                    u.status === 'done' ? 'text-foreground' : 'text-muted-foreground',
+                  )}
+                  title={u.file.name}
+                >
+                  {u.file.name}
+                </span>
+                {/* Why it failed, in full: a refused limit names its numbers (drive-storage.tsx). */}
+                {u.status === 'error' && u.error ? (
+                  <span className="text-foreground text-xs text-pretty">{u.error}</span>
+                ) : null}
               </span>
               <UploadStatus upload={u} onRetry={() => u.retry?.()} />
             </li>

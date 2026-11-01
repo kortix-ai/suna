@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import { recordDriveCommitAuthor } from '../../artifacts/events-store';
 import { normalizeDrivePath } from '../../drives/access';
+import { assertDriveWriteFits, forgetDriveUsage } from '../../drives/limits';
 import { noteDriveWrite } from '../../drives/conflicts';
 import {
   type DriveRow,
@@ -119,9 +120,29 @@ async function storage<T>(c: Ctx, op: () => Promise<T>): Promise<T | Response> {
   try {
     return await op();
   } catch (err) {
-    if (err instanceof DriveStorageError) return c.json({ error: err.message, code: err.code }, err.status);
+    if (err instanceof DriveStorageError) {
+      if (err.retryAfterSeconds !== undefined) c.header('Retry-After', String(err.retryAfterSeconds));
+      return c.json({ error: err.message, code: err.code, ...(err.detail ?? {}) }, err.status);
+    }
     throw err;
   }
+}
+
+/** The size of the file a synced write replaces, 0 when there is none. */
+async function syncedFileSize(drive: DriveRow, path: string): Promise<number> {
+  return readDriveVolume(
+    drive,
+    async (volume) => {
+      try {
+        const st = await statVolumeFile(volume, path);
+        return st.type === 'file' ? st.size : 0;
+      } catch (err) {
+        if (err instanceof DriveStorageError && err.status === 404) return 0;
+        throw err;
+      }
+    },
+    () => 0,
+  );
 }
 
 const notFound = (): never => {
@@ -277,6 +298,9 @@ export function registerSessionDriveSyncRoutes(): void {
     if (Number.isFinite(declared) && declared > MAX_PUT_BYTES) return refuse(c, 413, 'Use the block upload for files this large');
     const body = new Uint8Array(await c.req.arrayBuffer());
     if (body.byteLength > MAX_PUT_BYTES) return refuse(c, 413, 'Use the block upload for files this large');
+    // The same Files limits as a write from Files (drives/limits.ts).
+    const fits = await storage(c, () => assertDriveWriteFits(got.drive, { bytes: body.byteLength, replaces: () => syncedFileSize(got.drive, got.path) }));
+    if (fits instanceof Response) return fits;
     const written = await storage(c, () =>
       conditionalWrite(got.drive, got.path, c.req.query('expect'), () =>
         writeDriveVolume(got.drive, (volume) => writeVolumeFile(volume, got.path, body, { overwrite: true })),
@@ -287,6 +311,7 @@ export function registerSessionDriveSyncRoutes(): void {
     const { commit, ...file } = written;
     await recordDriveCommitAuthor(got.drive.driveId, commit, { sessionId: param(c, 'sessionId') });
     noteDriveWrite(got.drive.driveId);
+    forgetDriveUsage(got.drive.platinumVolumeName);
     return c.json(file);
   });
 
@@ -305,6 +330,13 @@ export function registerSessionDriveSyncRoutes(): void {
     const drive = target!.drive;
     const scope = await scopeOf(c);
     if (scope instanceof Response) return scope;
+    // The plan's files against the Files limits, before any block is sent.
+    for (const f of plan.files as Array<{ path: string; size?: unknown }>) {
+      const size = Number(f.size ?? 0);
+      if (!Number.isFinite(size) || size <= 0) continue;
+      const fits = await storage(c, () => assertDriveWriteFits(drive, { bytes: size, replaces: () => syncedFileSize(drive, f.path) }));
+      if (fits instanceof Response) return fits;
+    }
     const r = await storage(c, async () => planVolumeUpload(await openVolumeFor(drive), { ...plan, overwrite: true }));
     if (r instanceof Response) return r;
     const uploadId = (r as { upload_id?: unknown }).upload_id;

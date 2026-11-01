@@ -428,3 +428,119 @@ flow(
     }
   },
 );
+
+flow(
+  'DRIVE-4',
+  {
+    domain: 'drives',
+    timeoutMs: 300_000,
+    routes: [
+      'GET /v1/drives/:driveId/usage',
+      'GET /v1/drives/usage',
+      'PUT /v1/drives/:driveId/files/content',
+      'POST /v1/drives/:driveId/files/upload',
+      'PUT /v1/admin/api/accounts/:id/overrides',
+    ],
+  },
+  async (ctx) => {
+    const GiB = 1024 ** 3;
+    const team = await ctx.fixtures.team({ name: ctx.fixtures.name('drive4-limits') });
+    const project = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const setVolumes = (enabled: boolean | null) =>
+      owner.patch('/v1/projects/:projectId/features', { feature: 'volumes', enabled }, { params: { projectId: project.id } });
+    let driveId = '';
+    let folder = '';
+    const admin = ctx.env.capabilities.admin ? ctx.client.withBearer(ctx.env.adminToken!, 'ADMIN_TOKEN') : null;
+    const setOverrides = (patch: Record<string, unknown>) =>
+      admin!.put('/v1/admin/api/accounts/:id/overrides', patch, { params: { id: team.id } });
+
+    try {
+      await ctx.step('setup: Volumes on; OWNER opens the project Files', async () => {
+        (await setVolumes(true)).status(200);
+        const drive = (await owner.get('/v1/drives', { query: { projectId: project.id } })).status(200).json<{ drives: any[] }>().drives[0];
+        driveId = drive.driveId;
+        folder = drive.personalFolder;
+      });
+
+      await ctx.step('the project usage names every limit: the plan figure, one file, the folder-mount cap, mounts per session', async () => {
+        const r = (await owner.get('/v1/drives/:driveId/usage', { params: { driveId } })).status(200);
+        const u = r.json<{ driveId: string; projectId: string; limits: Record<string, number | null>; account: unknown; folders: unknown[] }>();
+        if (u.driveId !== driveId || u.projectId !== project.id) throw new Error(`usage of another drive ${JSON.stringify(u)}`);
+        const l = u.limits;
+        // A fresh team is on Free (or No Plan): 5 GiB per project and per account.
+        if (l.projectBytes !== 5 * GiB || l.accountBytes !== 5 * GiB) throw new Error(`plan limits ${JSON.stringify(l)}`);
+        if (!(Number(l.fileBytes) > 0) || !(Number(l.folderMountBytes) > 0) || !(Number(l.mountsPerSession) > 0)) throw new Error(`limits ${JSON.stringify(l)}`);
+        if (l.requestBytes !== 64 * 1024 * 1024) throw new Error(`request limit ${l.requestBytes}`);
+        if (!Array.isArray(u.folders)) throw new Error('no folders');
+        const list = (await owner.get('/v1/drives', { query: { projectId: project.id } })).status(200).json<{ drives: any[] }>().drives[0];
+        if (list.sizeLimitBytes !== 5 * GiB) throw new Error(`the drive's sizeLimitBytes is not the plan's: ${list.sizeLimitBytes}`);
+      });
+
+      await ctx.step('ANON → 401; NONMEMBER cannot read the usage → 403/404', async () => {
+        (await ctx.client.as(ctx.P.ANON).get('/v1/drives/:driveId/usage', { params: { driveId } })).status(401);
+        (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/drives/:driveId/usage', { params: { driveId } })).status([403, 404]);
+      });
+
+      await ctx.step("the account's storage lists its project with the account limit; NONMEMBER → 403", async () => {
+        const r = (await owner.get('/v1/drives/usage', { query: { account_id: team.id } })).status(200);
+        const a = r.json<{ accountId: string; usedBytes: number; limits: { accountBytes: number }; projects: { projectId: string; name: string; driveId: string }[] }>();
+        if (a.accountId !== team.id || a.limits.accountBytes !== 5 * GiB) throw new Error(`account usage ${JSON.stringify(a)}`);
+        const row = a.projects.find((p) => p.projectId === project.id);
+        if (!row || row.driveId !== driveId || !row.name) throw new Error(`the project is missing: ${JSON.stringify(a.projects)}`);
+        (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/drives/usage', { query: { account_id: team.id } })).status(403);
+        (await ctx.client.as(ctx.P.ANON).get('/v1/drives/usage', { query: { account_id: team.id } })).status(401);
+      });
+
+      if (!admin) return;
+
+      await ctx.step('an operator sets a 1 KiB project limit; the usage reads it back', async () => {
+        (await setOverrides({ driveProjectBytes: { value: 1024 } })).status(200).body().has('$.overrides.driveProjectBytes.value', 1024);
+        (await setOverrides({ driveProjectBytes: { value: 1.5 } })).status(400);
+        (await owner.get('/v1/drives/:driveId/usage', { params: { driveId } })).status(200).body().has('$.limits.projectBytes', 1024);
+      });
+
+      await ctx.step('a 2 KiB upload is refused before any byte reaches storage → 403 storage_limit_exceeded with the numbers', async () => {
+        const body = 'x'.repeat(2048);
+        (await owner.put('/v1/drives/:driveId/files/content', body, { params: { driveId }, query: { path: `${folder}/big.txt` }, raw: true }))
+          .status(403)
+          .body()
+          .has('$.code', 'storage_limit_exceeded')
+          .has('$.limit', 'project_bytes')
+          .has('$.max', 1024)
+          .has('$.requested', 2048);
+        // The block upload is refused at its plan, before a block is sent.
+        (await owner.post('/v1/drives/:driveId/files/upload', { path: `${folder}/big.bin`, size: 2048, blocks: ['a'.repeat(64)] }, { params: { driveId } }))
+          .status(403)
+          .body()
+          .has('$.code', 'storage_limit_exceeded')
+          .has('$.limit', 'project_bytes');
+      });
+
+      await ctx.step('the account limit applies across projects → 403 limit account_bytes', async () => {
+        (await setOverrides({ driveProjectBytes: null, driveAccountBytes: { value: 1024 } })).status(200);
+        (await owner.put('/v1/drives/:driveId/files/content', 'y'.repeat(2048), { params: { driveId }, query: { path: `${folder}/big.txt` }, raw: true }))
+          .status(403)
+          .body()
+          .has('$.code', 'storage_limit_exceeded')
+          .has('$.limit', 'account_bytes')
+          .has('$.max', 1024);
+      });
+
+      await ctx.step('one file over the folder-mount cap → 413 file_too_large, at the plan', async () => {
+        (await setOverrides({ driveAccountBytes: null })).status(200);
+        const limits = (await owner.get('/v1/drives/:driveId/usage', { params: { driveId } })).status(200).json<{ limits: { fileBytes: number } }>().limits;
+        const size = limits.fileBytes + 1;
+        (await owner.post('/v1/drives/:driveId/files/upload', { path: `${folder}/huge.bin`, size, blocks: Array.from({ length: Math.ceil(size / (1024 * 1024)) }, () => 'b'.repeat(64)) }, { params: { driveId } }))
+          .status(413)
+          .body()
+          .has('$.code', 'file_too_large')
+          .has('$.limit', 'file_bytes')
+          .has('$.max', limits.fileBytes);
+      });
+    } finally {
+      if (admin) await setOverrides({ driveProjectBytes: null, driveAccountBytes: null }).catch(() => undefined);
+      await setVolumes(null).catch(() => undefined);
+    }
+  },
+);

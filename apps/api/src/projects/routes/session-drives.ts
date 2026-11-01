@@ -42,6 +42,9 @@ const SessionDrivesBody = z.object({
       name: z.string(),
       reason: z.enum(['region', 'moving', 'unavailable', 'too_large']).optional(),
       detail: z.string().optional(),
+      /** For `too_large`: what the folder holds, and the largest folder a session mounts. */
+      bytes: z.number().optional(),
+      maxBytes: z.number().optional(),
     }),
   ),
   /** What to tell people about `skipped`, or null when every folder fit. */
@@ -69,6 +72,8 @@ async function sessionView(sessionId: string, callerId: string | undefined) {
       name: d.name,
       ...(d.reason ? { reason: d.reason } : {}),
       ...(d.detail ? { detail: d.detail } : {}),
+      ...(typeof d.bytes === 'number' ? { bytes: d.bytes } : {}),
+      ...(typeof d.maxBytes === 'number' ? { maxBytes: d.maxBytes } : {}),
     })),
     skippedMessage: skipped.message,
   };

@@ -42,7 +42,8 @@ import {
   TrashIcon,
 } from '@phosphor-icons/react';
 import { Download } from '../../../internal/icons/download';
-import { useTranslations } from '../../../i18n';
+import { useLocale, useTranslations } from '../../../i18n';
+import { formatStorageBytes } from '../../drives/drive-storage';
 import {
   useCallback,
   useEffect,
@@ -201,6 +202,17 @@ export function DriveExplorer({
     : source.capabilities;
   const canWrite = capabilities.write;
   const uploadLimit = capabilities.maxUploadBytes === undefined ? MAX_UPLOAD_BYTES : capabilities.maxUploadBytes;
+  const locale = useLocale();
+  // A file over the limit is refused before any byte moves, in the reader's language.
+  const describeRejection = useCallback(
+    (file: { name: string; size: number }, limit: number) =>
+      tDrives('uploadRefusedFileTooLarge', {
+        name: file.name,
+        size: formatStorageBytes(file.size, locale),
+        limit: formatStorageBytes(limit, locale),
+      }),
+    [tDrives, locale],
+  );
 
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
@@ -679,7 +691,7 @@ export function DriveExplorer({
    */
   const handleUploadFiles = useCallback(
     async (fileList: FileList | File[], targetDirPath?: string) => {
-      const { accepted, rejected } = partitionUploadBatch(Array.from(fileList), uploadLimit);
+      const { accepted, rejected } = partitionUploadBatch(Array.from(fileList), uploadLimit, describeRejection);
 
       for (const { reason } of rejected) errorToast(reason);
       if (accepted.length === 0) return;
@@ -704,7 +716,7 @@ export function DriveExplorer({
         targetDirPath ?? currentPath,
       );
     },
-    [currentPath, isRootPath, pendingNode, startBatch, uploadLimit],
+    [currentPath, isRootPath, pendingNode, startBatch, uploadLimit, describeRejection],
   );
 
   /**
@@ -714,7 +726,7 @@ export function DriveExplorer({
    */
   const uploadTree = useCallback(
     async (tree: TreeFile[], base: string) => {
-      const { accepted, rejected } = partitionUploadBatch(tree.map((t) => t.file), uploadLimit);
+      const { accepted, rejected } = partitionUploadBatch(tree.map((t) => t.file), uploadLimit, describeRejection);
       for (const { reason } of rejected) errorToast(reason);
       const acceptedSet = new Set(accepted);
       const items = tree.filter((t) => acceptedSet.has(t.file));
@@ -760,7 +772,7 @@ export function DriveExplorer({
         tops.length === 1 ? at(tops[0]!) : root || '/',
       );
     },
-    [currentPath, normalizedCurrentPath, pendingNode, settlePending, mkdirMutation, startBatch, tHardcodedUi, uploadLimit],
+    [currentPath, normalizedCurrentPath, pendingNode, settlePending, mkdirMutation, startBatch, tHardcodedUi, uploadLimit, describeRejection],
   );
 
   /** The folder picker (`webkitRelativePath` is `Picked/sub/file.png`). The browser already asked. */

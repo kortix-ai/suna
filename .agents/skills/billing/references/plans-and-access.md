@@ -135,7 +135,29 @@ A model request on the account's own provider key is billed by the provider
 
 `entitlement_overrides` keys: `managedModels`, `sso`, `scim`, `rbac`,
 `auditAccess`, `branding`, `byokFee`. Each `{ value: boolean, expires_at? }`.
+The two Files storage limits take a positive whole number of bytes instead:
+`driveProjectBytes`, `driveAccountBytes` (`{ value: number, expires_at? }`).
 Set through `PUT /v1/admin/api/accounts/{id}/overrides`.
+
+## Files storage
+
+Every customer's Files live in Kortix's one Platinum org (100 GiB per volume,
+one volume per project; 50 TiB stored for the org, `GET /v1/volumes/limits`
+2026-11-01). The plan partitions it (`TierConfig.driveStorage` in
+`billing/services/tiers.ts`), enforced in `apps/api/src/drives/limits.ts`
+before a byte reaches Platinum:
+
+| Plan | One project | All projects of the account |
+|---|---|---|
+| No Plan, Free | 5 GiB | 5 GiB |
+| Credits | 50 GiB | 250 GiB |
+| Enterprise (licensed) | 100 GiB | 1 TiB |
+
+The project figure is never above Platinum's volume size. With billing off
+(self-hosted) no plan limit applies; Platinum's do. A refused write answers
+403 `storage_limit_exceeded` with `limit` (`project_bytes` or
+`account_bytes`), `max`, `used` and `requested`. Storage charges are separate
+(the billing ledger), not part of these limits.
 
 ## Managed models are sold, never given
 

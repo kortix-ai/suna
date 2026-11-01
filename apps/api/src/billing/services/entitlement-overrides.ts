@@ -3,7 +3,8 @@
  * "the plan decides" (see .agents/skills/billing/references/plans-and-access.md).
  *
  * `credit_accounts.entitlement_overrides` is one JSONB column. Each entry is a
- * per-feature boolean with an optional `expires_at`:
+ * per-feature boolean (or, for a limit, a whole number of bytes) with an
+ * optional `expires_at`:
  *
  *   { "sso": { "value": true, "expires_at": "2026-09-01T00:00:00.000Z" } }
  *
@@ -29,7 +30,7 @@ export interface OverrideEntry<T> {
   expires_at?: string;
 }
 
-/** Every override an account can carry: one boolean per feature. */
+/** Every override an account can carry: one boolean per feature, one number per limit. */
 export interface EntitlementOverrides {
   sso?: OverrideEntry<boolean>;
   scim?: OverrideEntry<boolean>;
@@ -39,6 +40,10 @@ export interface EntitlementOverrides {
   managedModels?: OverrideEntry<boolean>;
   /** The BYOK platform fee (byok-fee.ts): off waives it for the account. */
   byokFee?: OverrideEntry<boolean>;
+  /** Files storage of one project, in bytes (drives/limits.ts), in place of the plan's. */
+  driveProjectBytes?: OverrideEntry<number>;
+  /** Files storage of all the account's projects together, in bytes, in place of the plan's. */
+  driveAccountBytes?: OverrideEntry<number>;
 }
 
 export type OverrideKey = keyof EntitlementOverrides;
@@ -57,10 +62,20 @@ export const ENTITLEMENT_OVERRIDE_KEYS = [
   'byokFee',
 ] as const;
 
+/** The numeric limits, each a positive whole number of bytes, read by the limit that owns it. */
+export const LIMIT_OVERRIDE_KEYS = ['driveProjectBytes', 'driveAccountBytes'] as const;
+
 /** Every key the parser accepts. Anything else is dropped. */
-export const OVERRIDE_KEYS = [...ENTITLEMENT_OVERRIDE_KEYS] as const satisfies readonly OverrideKey[];
+export const OVERRIDE_KEYS = [...ENTITLEMENT_OVERRIDE_KEYS, ...LIMIT_OVERRIDE_KEYS] as const satisfies readonly OverrideKey[];
 
 const KNOWN_KEYS: ReadonlySet<string> = new Set(OVERRIDE_KEYS);
+const LIMIT_KEYS: ReadonlySet<string> = new Set(LIMIT_OVERRIDE_KEYS);
+
+/** A limit takes a positive whole number of bytes; every other key a boolean. */
+function valueFits(key: string, value: unknown): boolean {
+  if (LIMIT_KEYS.has(key)) return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+  return typeof value === 'boolean';
+}
 
 /**
  * Milliseconds for an `expires_at`, or `null` when it is absent or unusable.
@@ -89,7 +104,7 @@ export function readOverride<K extends OverrideKey>(
   if (!isPlainObject(entry)) return undefined;
 
   const { value } = entry;
-  if (typeof value !== 'boolean') return undefined;
+  if (!valueFits(key, value)) return undefined;
 
   if (entry.expires_at !== undefined && entry.expires_at !== null) {
     const expires = expiryMs(entry.expires_at);
@@ -110,7 +125,7 @@ export function readOverride<K extends OverrideKey>(
  */
 export function parseEntitlementOverrides(raw: unknown): EntitlementOverrides {
   if (!isPlainObject(raw)) return {};
-  const parsed: Record<string, OverrideEntry<boolean>> = {};
+  const parsed: Record<string, OverrideEntry<boolean | number>> = {};
   for (const key of OVERRIDE_KEYS) {
     // `Number.POSITIVE_INFINITY` as `nowMs` would expire everything; `0` keeps
     // every entry whose shape is valid, which is exactly "shape, not expiry".
@@ -128,7 +143,7 @@ export function parseEntitlementOverrides(raw: unknown): EntitlementOverrides {
  * is. `EntitlementOverrides` is the same data with named optional keys, which
  * is what code should read; this is what gets written.
  */
-export type StoredEntitlementOverrides = Record<string, OverrideEntry<boolean>>;
+export type StoredEntitlementOverrides = Record<string, OverrideEntry<boolean | number>>;
 
 /** Narrow the named-key view to the column view, dropping absent keys. */
 export function toStoredOverrides(overrides: EntitlementOverrides): StoredEntitlementOverrides {
@@ -175,7 +190,7 @@ export function validateOverridePatch(
 ): { ok: true; patch: EntitlementOverridePatch } | { ok: false; error: string } {
   if (!isPlainObject(raw)) return { ok: false, error: 'body must be a JSON object of overrides' };
 
-  const patch: Record<string, OverrideEntry<boolean> | null> = {};
+  const patch: Record<string, OverrideEntry<boolean | number> | null> = {};
   for (const [key, entry] of Object.entries(raw)) {
     if (!KNOWN_KEYS.has(key)) {
       return { ok: false, error: `unknown override key "${key}" (known: ${OVERRIDE_KEYS.join(', ')})` };
@@ -189,18 +204,23 @@ export function validateOverridePatch(
     }
 
     const { value } = entry;
-    if (typeof value !== 'boolean') {
-      return { ok: false, error: `"${key}.value" must be a boolean` };
+    if (!valueFits(key, value)) {
+      return {
+        ok: false,
+        error: LIMIT_KEYS.has(key)
+          ? `"${key}.value" must be a positive whole number of bytes`
+          : `"${key}.value" must be a boolean`,
+      };
     }
 
     if (entry.expires_at !== undefined && entry.expires_at !== null) {
       if (expiryMs(entry.expires_at) === null) {
         return { ok: false, error: `"${key}.expires_at" must be an ISO-8601 timestamp` };
       }
-      patch[key] = { value, expires_at: entry.expires_at as string };
+      patch[key] = { value: value as boolean | number, expires_at: entry.expires_at as string };
       continue;
     }
-    patch[key] = { value };
+    patch[key] = { value: value as boolean | number };
   }
 
   return { ok: true, patch: patch as EntitlementOverridePatch };

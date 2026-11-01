@@ -1,5 +1,6 @@
 'use client';
 
+import { AccountStorageSection } from './account-storage';
 import type { UiTranslator } from '@/i18n/translator';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 /**
@@ -77,7 +78,12 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
     return <p className="text-muted-foreground text-sm">{tI18nComplete.raw('text68b8f8d47a7a')}</p>;
   }
 
-  return <AccountOverviewView state={state} />;
+  return (
+    <div className="space-y-8">
+      <AccountOverviewView state={state} />
+      <AccountStorageSection accountId={accountId} />
+    </div>
+  );
 }
 
 /**

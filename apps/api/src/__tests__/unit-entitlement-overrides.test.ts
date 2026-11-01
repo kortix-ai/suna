@@ -200,7 +200,43 @@ describe('invariants', () => {
   test('OVERRIDE_KEYS is the complete, de-duplicated key set', () => {
     expect(new Set(OVERRIDE_KEYS).size).toBe(OVERRIDE_KEYS.length);
     expect([...OVERRIDE_KEYS].sort() as string[]).toEqual(
-      ['auditAccess', 'branding', 'byokFee', 'managedModels', 'rbac', 'scim', 'sso'].sort(),
+      ['auditAccess', 'branding', 'byokFee', 'driveAccountBytes', 'driveProjectBytes', 'managedModels', 'rbac', 'scim', 'sso'].sort(),
     );
+  });
+});
+
+// The Files storage limits (drives/limits.ts) are the one numeric exception:
+// a whole number of bytes, never a boolean, never coerced.
+describe('numeric limit overrides', () => {
+  test('a positive whole number of bytes reads back; expiry applies like a boolean key', () => {
+    expect(readOverride({ driveProjectBytes: { value: 1024 } }, 'driveProjectBytes', NOW)).toBe(1024);
+    expect(readOverride({ driveAccountBytes: { value: 5, expires_at: iso(HOUR) } }, 'driveAccountBytes', NOW)).toBe(5);
+    expect(readOverride({ driveAccountBytes: { value: 5, expires_at: iso(-1) } }, 'driveAccountBytes', NOW)).toBeUndefined();
+  });
+
+  test('a boolean, a fraction, zero, a negative or a string is no override', () => {
+    for (const value of [true, 1.5, 0, -1, '1024', Number.POSITIVE_INFINITY, Number.NaN]) {
+      expect(readOverride({ driveProjectBytes: { value } }, 'driveProjectBytes', NOW)).toBeUndefined();
+    }
+    // And a number is never a boolean override.
+    expect(readOverride({ sso: { value: 1 } }, 'sso', NOW)).toBeUndefined();
+  });
+
+  test('parse keeps a limit key next to the booleans, so a boolean patch never drops it', () => {
+    const merged = mergeOverridePatch({ driveProjectBytes: { value: 2048 } }, { sso: { value: true } });
+    expect(merged).toEqual({ sso: { value: true }, driveProjectBytes: { value: 2048 } });
+    expect(toStoredOverrides(merged)).toEqual({ sso: { value: true }, driveProjectBytes: { value: 2048 } });
+  });
+
+  test('validate accepts bytes and refuses anything else, naming the key', () => {
+    const good = validateOverridePatch({ driveProjectBytes: { value: 1024 }, driveAccountBytes: null });
+    expect(good).toEqual({ ok: true, patch: { driveProjectBytes: { value: 1024 }, driveAccountBytes: null } });
+    for (const value of [true, 0, 1.5, -3, '1024']) {
+      const r = validateOverridePatch({ driveProjectBytes: { value } });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toMatch(/driveProjectBytes\.value.*whole number of bytes/);
+    }
+    const bool = validateOverridePatch({ sso: { value: 1024 } });
+    expect(bool.ok).toBe(false);
   });
 });
