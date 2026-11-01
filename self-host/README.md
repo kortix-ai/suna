@@ -262,6 +262,24 @@ kortix self-host uninstall         # stop + permanently delete this instance's d
    `kortix self-host` reconciles against the restored state.
 4. `kortix self-host start` to bring the stack back up.
 
+**Scheduled jobs.** The API runs its scheduled jobs (cron triggers, project
+maintenance, retention, billing rotations and the rest) in the same
+`kortix-api` container that serves requests. You do not configure anything
+for this. If you run the API image on your own orchestration with more than
+one API process, you can move the jobs into their own process, which is what
+Kortix Cloud does:
+
+- web processes: the image's default command (`bun run src/index.ts`) with
+  `KORTIX_PROCESS_ROLE=web`. They serve requests and never run a scheduled job.
+- one worker process: the same image and the same environment, with the
+  command `bun run src/worker.ts` and no `KORTIX_PROCESS_ROLE`. It needs no
+  inbound traffic; its health check is `GET /health/ready` on `PORT`.
+
+Start the worker before you set `web` on the API processes, and keep at least
+one worker or one process without the `web` role running. With no such
+process, no scheduled job runs. The `kortix self-host` install runs one
+container and does not support this split.
+
 ## 5. Run a specific version or your own build
 
 ```sh

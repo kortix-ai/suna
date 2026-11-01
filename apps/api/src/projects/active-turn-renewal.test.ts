@@ -3,9 +3,8 @@ import {
   type ActiveTurnRenewalDependencies,
   activeTurnRenewalIntervalMs,
   runActiveTurnRenewal,
-  startActiveTurnRenewal,
-  stopActiveTurnRenewal,
 } from './active-turn-renewal';
+import { startActiveTurnRenewal, stopActiveTurnRenewal } from '../worker/jobs/active-turn-renewal';
 import type { ReapResult } from './sandbox-reaper';
 
 function reapResult(overrides: Partial<ReapResult> = {}): ReapResult {

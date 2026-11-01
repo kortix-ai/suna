@@ -23,8 +23,8 @@ mock.module('./drain', () => ({
     return {};
   },
 }));
-const { startSessionLifecycleWorker, stopSessionLifecycleWorker } = await import('../../workers/session-lifecycle-worker');
-const { wakeAt, DRAIN_FALLBACK_MS, MIN_DRAIN_GAP_MS } = await import('../../workers/session-lifecycle-worker');
+const { startSessionLifecycleWorker, stopSessionLifecycleWorker } = await import('../../replica/session-lifecycle');
+const { wakeAt, DRAIN_FALLBACK_MS, MIN_DRAIN_GAP_MS } = await import('../../replica/session-lifecycle');
 // A fake clock: the worker's 1 s tick, its wake timers, Date.now() and the
 // mocked drain's sleep all advance only through `elapse`, so every case runs in
 // milliseconds and no loaded runner can delay a timer past an assertion.
@@ -161,7 +161,7 @@ test('a later due time keeps its own wake after an earlier one drains', async ()
 }, 10_000);
 
 test('a drain stuck on a cold boot no longer blocks the next drain, up to a bound', async () => {
-  const { canStartDrain, DRAIN_STALL_MS, MAX_CONCURRENT_DRAINS } = await import('../../workers/session-lifecycle-worker');
+  const { canStartDrain, DRAIN_STALL_MS, MAX_CONCURRENT_DRAINS } = await import('../../replica/session-lifecycle');
   const now = 1_000_000;
   expect(canStartDrain([], now)).toBe(true);
   expect(canStartDrain([now - 1_000], now)).toBe(false);

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { PgClient } from '../__tests__/helpers/pg-client';
 import { replayAuditWebhookDelivery } from './audit-webhooks';
-import { startAuditWebhookWorker, stopAuditWebhookWorker } from '../workers/audit-webhook-worker';
+import { startAuditWebhookWorker, stopAuditWebhookWorker } from '../worker/jobs/audit-webhook';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const ACCOUNT = 'c7100000-0000-4000-a000-000000000001';

@@ -139,6 +139,8 @@ flow(
       ids.push(result.json<any>().secret_id);
     }
     await ctx.step('flag off → session pool routes deny access', async () => {
+      (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: false },
+        { params: { projectId: project.id } })).status(200);
       (await owner.get(poolPath, { params: poolParams })).status(403);
       (await owner.get(poolsPath, { params: poolParams })).status(403);
       (await owner.post('/v1/projects/:projectId/sessions', {
@@ -201,7 +203,7 @@ flow(
       // The CLI, the SDK and chat channels name only a model. This used to
       // answer 400 INVALID_SESSION_MODEL; an explicit empty list above still does.
       const created = await owner.post('/v1/projects/:projectId/sessions', {
-        opencode_model: 'anthropic/claude-sonnet-4.6',
+        opencode_model: 'anthropic/claude-sonnet-4.6', agent_name: 'worker',
       }, { params: { projectId: project.id } });
       if (ctx.env.target === 'local') {
         created.status(503).body().has('$.code', 'KORTIX_URL_UNREACHABLE');

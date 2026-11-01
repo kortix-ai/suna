@@ -49,5 +49,3 @@ export async function runActiveTurnRenewal(
   const reap = dependencies.reap ?? defaultReap;
   return reap((dependencies.now ?? (() => new Date()))(), {}, { activeTurnsOnly: true });
 }
-
-export { startActiveTurnRenewal, stopActiveTurnRenewal } from '../workers/active-turn-renewal-worker';

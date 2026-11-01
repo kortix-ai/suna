@@ -204,6 +204,20 @@ const envSchema = z.object({
   // Global background-worker switch. API-only and migration-shadow deployments
   // keep request handling active while disabling every recurring write loop.
   KORTIX_WORKERS_ENABLED: optBoolTrue,
+  // Which part of the API this `src/index.ts` process runs. `all` (default):
+  // HTTP plus the scheduled jobs, which run on whichever `all` process holds
+  // the leader lease. Self-host, local dev, previews and the test stack run
+  // one `all` process. `web`: HTTP only; the process never joins the leader
+  // election. Production web servers run `web` next to the worker service
+  // (`src/worker.ts`), which runs the scheduled jobs. ecs-deploy.sh sets it
+  // per service, never in the shared secret blob.
+  KORTIX_PROCESS_ROLE: z.enum(['all', 'web']).optional().default('all'),
+  // '0' keeps the bundled model pricing / gateway model catalog and never
+  // fetches the live ones. The local test stack sets both.
+  KORTIX_MODEL_PRICING_LIVE_ENABLED: optStr,
+  KORTIX_MODEL_CATALOG_LIVE_ENABLED: optStr,
+  // /health/live answers 503 above this event-loop lag.
+  HEALTH_MAX_EVENT_LOOP_LAG_MS: optInt(5000),
   // True runs the durable job queue even when KORTIX_WORKERS_ENABLED is false.
   // The deterministic test stack sets it: held connector calls and Capture
   // ingest run only as queued jobs.
@@ -816,7 +830,7 @@ const envSchema = z.object({
   // Platinum drops the field and the box keeps its data-center address. Off, a
   // sandbox template's `residential_proxy` fails its session closed and the
   // billing worker does not run (platform/services/residential-proxy.ts,
-  // workers/residential-proxy-billing-worker.ts). Dev sets it in deploy-dev.yml.
+  // worker/jobs/residential-proxy-billing.ts). Dev sets it in deploy-dev.yml.
   KORTIX_PLATINUM_RESIDENTIAL_PROXY: optBoolFalse,
 
   // ── Tunnel (optional, all have sane defaults) ────────────────────────────
@@ -1289,6 +1303,10 @@ export const config = {
   CLAUDE_CODE_PATH: env.CLAUDE_CODE_PATH || 'claude',
   KORTIX_APPS_WORKER_ENABLED: env.KORTIX_APPS_WORKER_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
+  KORTIX_PROCESS_ROLE: env.KORTIX_PROCESS_ROLE,
+  KORTIX_MODEL_PRICING_LIVE_ENABLED: env.KORTIX_MODEL_PRICING_LIVE_ENABLED,
+  KORTIX_MODEL_CATALOG_LIVE_ENABLED: env.KORTIX_MODEL_CATALOG_LIVE_ENABLED,
+  HEALTH_MAX_EVENT_LOOP_LAG_MS: env.HEALTH_MAX_EVENT_LOOP_LAG_MS,
   KORTIX_JOB_WORKER_ENABLED: env.KORTIX_JOB_WORKER_ENABLED,
   ACCOUNT_DELETION_SWEEP_PAUSED: env.ACCOUNT_DELETION_SWEEP_PAUSED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
