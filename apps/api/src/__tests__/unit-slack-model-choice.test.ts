@@ -52,8 +52,6 @@ const checks: Array<{ scope: Scope; model: string }> = [];
 let servableFor: (model: string, personal: string | null) => boolean = () => true;
 const keysOf = { providerId: 'anthropic', envVar: 'ANTHROPIC_API_KEY', secretIds: ['k1', 'k2'], labels: ['Team', 'Ivan'] };
 let currentKeys: typeof keysOf | null = null;
-let grantVerdict: { ok: false; reason: 'agent_grant'; envVar: string; providerId: string } | null = null;
-const grantAgents: Array<string | null | undefined> = [];
 let catalog: Array<Record<string, unknown>> = [];
 
 mock.module('../channels/model-access', () => ({
@@ -74,13 +72,8 @@ mock.module('../channels/model-access', () => ({
     freeManagedOnly: input.freeManagedOnly,
     pooledEnabled: input.pooledEnabled,
   }),
-  agentGrantEnvFor: (_projectId: string, agentName: string | null | undefined) => {
-    grantAgents.push(agentName);
-    return async () => null;
-  },
   checkChannelModel: async (scope: Scope, model: string) => {
     checks.push({ scope, model });
-    if (grantVerdict) return grantVerdict;
     return servableFor(model, scope.personalUserId)
       ? { ok: true, model: `kortix/${model}`, keys: model.includes('/') ? keysOf : null }
       : { ok: false, reason: 'not_servable' };
@@ -114,8 +107,6 @@ beforeEach(() => {
   checks.length = 0;
   servableFor = () => true;
   currentKeys = null;
-  grantVerdict = null;
-  grantAgents.length = 0;
   catalog = [];
 });
 
@@ -216,15 +207,6 @@ describe('/kortix model — a choice is checked as the person who made it', () =
     expect(checks[0].scope).toMatchObject({ memberUserId: 'ivan', personalUserId: 'ivan' });
     expect(reply).toContain('Model for this channel set to *Claude Opus 4.8*');
     expect(reply).toContain('Rotates across Team, Ivan. New threads use it.');
-  });
-
-  test('the channel`s agent decides which keys may be used, and is named when it may not', async () => {
-    selection = { projectId: 'proj', agentName: 'reviewer', opencodeModel: null };
-    grantVerdict = { ok: false, reason: 'agent_grant', envVar: 'CODEX_AUTH_JSON', providerId: 'codex' };
-    const reply = await applySlackModelChoice(dm, 'codex/gpt-6-astra');
-    expect(grantAgents).toEqual(['reviewer']);
-    expect(reply).toContain('The *reviewer* agent may not use ChatGPT connections. Add `CODEX_AUTH_JSON`');
-    expect(stored).toHaveLength(0);
   });
 
   test('a channel cannot use a model that runs only on the person`s own keys: it says where it works', async () => {

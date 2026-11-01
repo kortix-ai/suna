@@ -12,7 +12,6 @@ import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { db } from '../../shared/db';
 import {
   type ChannelModelScope,
-  agentGrantEnvFor,
   planChannelFollowUp,
   planChannelSessionStart,
   projectChannelModelScope,
@@ -54,7 +53,6 @@ export async function chatSessionStart(
     agentName,
     // The core judges a first image against the body's model (conversation.ts `startModel`).
     hasImage: false,
-    agentGrantEnv: agentGrantEnvFor(project.projectId, agentName),
   });
   return {
     agentName,
@@ -96,7 +94,6 @@ export async function chatTurnModel(settings: SettingsChannel, thread: { session
     session: { sessionId: thread.sessionId, ownerUserId: row.createdBy, pinnedModel: pin },
     chosenModel: choice,
     hasImage: false,
-    agentGrantEnv: agentGrantEnvFor(thread.projectId, row.agentName),
   });
 }
 

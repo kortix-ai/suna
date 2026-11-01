@@ -16,7 +16,6 @@ import { act } from 'react';
 import type { ResolvedHost } from '../../auth/hosts.ts';
 import {
   COMPOSER_CHROME_ROWS,
-  OVERLAY_RESERVE_ROWS,
   PROMPT_RESERVE_ROWS,
   type SessionFocus,
   SessionView,
@@ -27,6 +26,7 @@ import {
   terminalWidth,
   transcriptRows,
 } from './session-view.tsx';
+import { lastReplyText, transcriptMarkdown } from './transcript-export.ts';
 import { fakeSession, message, textPart } from './transcript/test-session.ts';
 
 const HOST: ResolvedHost = {
@@ -40,29 +40,35 @@ const HOST: ResolvedHost = {
 
 describe('row budget', () => {
   test('a one-line composer reserves its chrome plus one row', () => {
-    expect(composerReserve({ rows: 1, overlayOpen: false })).toBe(1 + COMPOSER_CHROME_ROWS);
+    expect(composerReserve({ rows: 1, aboveRows: 0, menuOpen: false })).toBe(
+      1 + COMPOSER_CHROME_ROWS,
+    );
   });
 
-  test('an open palette reserves the room it grows into', () => {
-    expect(composerReserve({ rows: 1, overlayOpen: true })).toBe(
-      1 + COMPOSER_CHROME_ROWS + OVERLAY_RESERVE_ROWS,
+  test('an open slash menu reserves exactly the rows it draws', () => {
+    expect(composerReserve({ rows: 1, aboveRows: 10, menuOpen: true })).toBe(
+      1 + COMPOSER_CHROME_ROWS + 10,
     );
   });
 
   test('the transcript takes what is left after the header and the composer', () => {
     // 30 content rows − 1 header − (1 + 4) composer = 24.
-    expect(transcriptRows(30, { rows: 1, overlayOpen: false }, false)).toBe(24);
+    expect(transcriptRows(30, { rows: 1, aboveRows: 0, menuOpen: false }, false)).toBe(24);
   });
 
   test('a pending question reserves room for its card', () => {
-    expect(transcriptRows(30, { rows: 1, overlayOpen: false }, true)).toBe(
+    expect(transcriptRows(30, { rows: 1, aboveRows: 0, menuOpen: false }, true)).toBe(
       24 - PROMPT_RESERVE_ROWS,
     );
   });
 
   test('the transcript never goes below its floor, however big the composer gets', () => {
-    expect(transcriptRows(10, { rows: 6, overlayOpen: true }, true)).toBe(TRANSCRIPT_MIN_ROWS);
-    expect(transcriptRows(1, { rows: 6, overlayOpen: true }, true)).toBe(TRANSCRIPT_MIN_ROWS);
+    expect(transcriptRows(10, { rows: 6, aboveRows: 12, menuOpen: true }, true)).toBe(
+      TRANSCRIPT_MIN_ROWS,
+    );
+    expect(transcriptRows(1, { rows: 6, aboveRows: 12, menuOpen: true }, true)).toBe(
+      TRANSCRIPT_MIN_ROWS,
+    );
   });
 });
 
@@ -109,7 +115,6 @@ async function mount(focus: SessionFocus | null, overrides: Record<string, unkno
   });
   const useSessionImpl = mock(() => session);
   const readHealth = mock(async () => ({ health: { capabilities: PI_CAPABILITIES } }));
-  const onCapabilities = mock((_capabilities: readonly string[] | null) => {});
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, gcTime: 0 } },
   });
@@ -127,11 +132,11 @@ async function mount(focus: SessionFocus | null, overrides: Record<string, unkno
         wide
         onFocus={() => {}}
         onCloseTerminal={() => {}}
+        context={{ hasProject: true, hasAccount: true }}
         onCommand={() => {}}
         onToast={() => {}}
         useSessionImpl={useSessionImpl as never}
         readHealth={readHealth as never}
-        onCapabilities={onCapabilities}
       />
     </QueryClientProvider>,
     { width: 120, height: 25 },
@@ -144,7 +149,7 @@ async function mount(focus: SessionFocus | null, overrides: Record<string, unkno
     await new Promise((resolve) => setTimeout(resolve, 600));
   });
   await setup.flush();
-  return { ...setup, useSessionImpl, readHealth, onCapabilities };
+  return { ...setup, useSessionImpl, readHealth };
 }
 
 describe('SessionView', () => {
@@ -158,17 +163,15 @@ describe('SessionView', () => {
     renderer.destroy();
   });
 
-  test('reads the runtime capabilities once it is up and hoists them', async () => {
-    const { readHealth, onCapabilities, renderer } = await mount('composer');
+  test('reads the runtime capabilities once it is up', async () => {
+    const { readHealth, renderer } = await mount('composer');
     expect(readHealth.mock.calls as unknown[]).toEqual([['p1', 's1']]);
-    expect(onCapabilities.mock.calls.at(-1)).toEqual([PI_CAPABILITIES]);
     renderer.destroy();
   });
 
   test('a runtime that is not up yet is not asked for its capabilities', async () => {
-    const { readHealth, onCapabilities, renderer } = await mount('composer', { switched: false });
+    const { readHealth, renderer } = await mount('composer', { switched: false });
     expect(readHealth).not.toHaveBeenCalled();
-    expect(onCapabilities.mock.calls.at(-1)).toEqual([null]);
     renderer.destroy();
   });
 
@@ -194,7 +197,7 @@ describe('SessionView', () => {
     const { captureCharFrame, renderer } = await mount('composer');
     const lines = captureCharFrame().split('\n');
     const transcript = lines.findIndex((line) => line.includes('TRANSCRIPT-MARKER'));
-    const composer = lines.findIndex((line) => line.includes('Type / for'));
+    const composer = lines.findIndex((line) => line.includes('Type a prompt'));
     expect(transcript).toBeGreaterThan(0);
     expect(composer).toBeGreaterThan(transcript);
     renderer.destroy();
@@ -202,7 +205,7 @@ describe('SessionView', () => {
 
   test('the composer placeholder is on screen when the composer has focus', async () => {
     const { captureCharFrame, renderer } = await mount('composer');
-    expect(captureCharFrame()).toContain('Type / for skills, commands, and files');
+    expect(captureCharFrame()).toContain('Type a prompt · / for commands');
     renderer.destroy();
   });
 
@@ -219,7 +222,7 @@ describe('SessionView', () => {
     // keeps the transcript and the composer where they were.
     expect(withTranscript.split('\n').length).toBe(withComposer.split('\n').length);
     expect(withTranscript).toContain('TRANSCRIPT-MARKER');
-    expect(withTranscript).toContain('Type / for skills, commands, and files');
+    expect(withTranscript).toContain('Type a prompt · / for commands');
   });
 
   test('focus=null (the sidebar has it) still renders the whole column', async () => {
@@ -228,5 +231,39 @@ describe('SessionView', () => {
     expect(frame).toContain('Casual greeting');
     expect(frame).toContain('TRANSCRIPT-MARKER');
     renderer.destroy();
+  });
+});
+
+describe('/copy and /export text', () => {
+  // Session-log messages: what `useSessionLogThread` hands the session view.
+  const log = (id: string, role: 'user' | 'assistant', text: string) => ({
+    message_id: id,
+    thread_id: 'main',
+    seq: Number(id.slice(1)),
+    role,
+    kind: 'turn',
+    status: 'complete',
+    in_context: true,
+    producer: { harness: 'pi' },
+    created_at: '2026-10-30T00:00:00.000Z',
+    blocks: [{ block_id: `${id}-b`, type: 'text', text }],
+  });
+  const messages = [
+    log('m1', 'user', 'Fix the login bug'),
+    log('m2', 'assistant', 'First answer'),
+    log('m3', 'user', 'And the tests?'),
+    log('m4', 'assistant', 'Tests pass now.'),
+  ];
+
+  test('/copy takes the newest assistant reply', () => {
+    expect(lastReplyText(messages as never)).toBe('Tests pass now.');
+    expect(lastReplyText([] as never)).toBeNull();
+  });
+
+  test('/export writes every turn as Markdown under the title', () => {
+    const markdown = transcriptMarkdown(messages as never, 'Login fix');
+    expect(markdown.startsWith('# Login fix\n')).toBe(true);
+    expect(markdown).toContain('## You\n\nFix the login bug');
+    expect(markdown).toContain('## Kortix\n\nTests pass now.');
   });
 });

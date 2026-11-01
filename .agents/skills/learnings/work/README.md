@@ -18,8 +18,13 @@ planned, in flight, or parked, so another person or agent can pick it up.
 
 | Topic | Status |
 |---|---|
+| [`long-horizon-follow-through/`](long-horizon-follow-through/README.md) | building (`mk2-followup-guide`, `mk2-followup-tools`): every agent sets its own wake-up after each wait: loops, session event triggers, App events |
+| [`my-kortix-multi-agent-parity/`](my-kortix-multi-agent-parity/README.md) | building (`my-kortix-v2`): messages between sessions, agent teams (flag `agent_teams`), agent board, workflow controls; async orchestration |
 | [`goals-and-workflows/`](goals-and-workflows/README.md) | stage 1 merged on dev (flag `goals`); stage 2 planning |
 | [`email-cost-passthrough/`](email-cost-passthrough/README.md) | parked: meter managed Resend inboxes and emails per account |
 | [`connector-policy-sets/`](connector-policy-sets/README.md) | in progress: one connector profile, a named rule set per agent |
+| [`kortix-yaml-versionless/`](kortix-yaml-versionless/README.md) | building (`one-schema`): one versionless kortix.yaml, hard cut of v1/v2/TOML, broken entries off at run time; zod single source next |
 | [`image-generation/`](image-generation/README.md) | in progress (branch `image-gen`): `image_gen` tool, gpt-image-2 on a connected ChatGPT plan |
 | [`platinum-machines-apps/`](platinum-machines-apps/README.md) | planning: the sandbox becomes a Machine, Apps move into Platinum; 7 decisions open; parked idea: bare-metal marketplace |
+| [`prompt-identity/`](prompt-identity/README.md) | building (`prompt-identity`): one id per prompt, visible from accept to answer |
+| [`my-kortix-account-actions/`](my-kortix-account-actions/README.md) | planned: account-level My Kortix actions as server-side held approvals |

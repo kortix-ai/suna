@@ -7,9 +7,9 @@
  */
 import { afterEach, expect, mock, test } from 'bun:test';
 import React, { act } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 
@@ -94,9 +94,6 @@ mock.module('@kortix/ui/workspace/sidebar/project-session-list', () => ({
 mock.module('@/features/workspace/project-sidebar/workspace-switcher', () => ({
   WorkspaceSwitcher: () => React.createElement('div', { 'data-testid': 'switcher' }),
 }));
-mock.module('@kortix/ui/workspace/sidebar/customize-sidebar-modal', () => ({
-  CustomizeSidebarModal: () => null,
-}));
 mock.module('@kortix/ui/internal/tunnel/computer-connect', () => ({
   ComputerConnectModal: () => null,
   // The sidebar's Apps and extensions window reads it.
@@ -111,8 +108,8 @@ mock.module('@kortix/ui/workspace/sidebar/footer/project-mcp-nav', () => ({
 mock.module('@kortix/ui/workspace/sidebar/footer/project-computer-nav', () => ({
   ProjectComputerNavItem: () => null,
 }));
-mock.module('@kortix/ui/workspace/sidebar/footer/project-manifest-upgrade-alert', () => ({
-  ProjectManifestUpgradeAlert: () => null,
+mock.module('@kortix/ui/workspace/sidebar/footer/project-manifest-issues-alert', () => ({
+  ProjectManifestIssuesAlert: () => null,
 }));
 mock.module('@kortix/ui/workspace/sidebar/footer/project-sandbox-alert', () => ({
   ProjectSandboxAlert: () => null,
@@ -158,12 +155,13 @@ async function mountSidebar(width: number) {
   win.document.body.appendChild(raw);
   root = createRoot(raw as unknown as Parameters<typeof createRoot>[0]);
   const mobile = width < 768;
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await act(async () => {
     root!.render(
       // The channels nav's permission probe reads a QueryClient.
       React.createElement(
         QueryClientProvider,
-        { client: new QueryClient() },
+        { client: queryClient },
         React.createElement(
           SidebarProvider,
           null,
@@ -216,7 +214,7 @@ test('with project_channels on, Channels replace New session, the session list a
   expect(html).toContain('spaces.directMessages');
   expect(html).toContain('href="/projects/synthetic-project/dm/kortix"');
   expect(html).toContain('>Kortix<');
-  expect(html).toContain('>Meta<');
+  expect(html).toContain('>My Kortix<');
   await act(async () => {
     win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'j', metaKey: true }));
   });

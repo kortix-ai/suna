@@ -145,12 +145,11 @@ afterEach(() => {
 test('a refused session read reports the CLI as authenticated and names the agent', async () => {
   const first = await runCli(['sessions', 'restart', SESSION_ID]);
 
-  // 1. The standing context line no longer contradicts the request it just made.
+  // Non-interactive session calls omit the standing host line (#11243).
+  // The denial itself still identifies the authenticated caller.
   expect(first.stderr).not.toContain('not logged in');
-  expect(first.stderr).toContain('authenticated (session token)');
-  // The cwd link still supplies account + project.
-  expect(first.stderr).toContain(`account ${ACCOUNT_ID.slice(0, 8)}`);
-  expect(first.stderr).toContain(`project ${PROJECT_ID.slice(0, 8)}`);
+  expect(first.stderr).toContain('acting as session token');
+  expect(requests).toContain(`GET /v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`);
 
   // 2. The denial still names the action…
   expect(first.stderr).toContain('project.session.read');

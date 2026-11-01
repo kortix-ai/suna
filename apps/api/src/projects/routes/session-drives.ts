@@ -51,7 +51,7 @@ async function sessionView(sessionId: string, callerId: string | undefined) {
       openConflicts: m.openConflicts,
     })),
     personal: await isCallersPersonalSession(sessionId, callerId ?? null),
-    skipped: skipped.skipped,
+    skipped: skipped.skipped.map((d) => ({ driveId: d.driveId, name: d.name })),
     skippedMessage: skipped.message,
   };
 }

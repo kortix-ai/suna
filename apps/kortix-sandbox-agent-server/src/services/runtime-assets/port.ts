@@ -1,5 +1,3 @@
-import type { Config } from '@/lib/config/config'
-
 export type HarnessAssetOutcome = 'skipped' | 'current' | 'updated' | 'failed' | 'staged'
 
 export interface HarnessAssetsInput {
@@ -20,23 +18,13 @@ export interface HarnessAssetsResult {
 
 /** Harness-owned asset installation, reconciliation, and skill placement. */
 export interface HarnessAssetsService {
-  /** The harness these assets belong to, as health names it (`opencode`, `pi`). */
+  /** The harness these assets belong to, as health names it (`pi`). */
   readonly harness: string
   readonly componentNames: readonly string[]
   /** IMAGE BUILD ONLY: the harness release the image carries, or undefined when it cannot tell. */
   bakedVersion?(): Promise<string | undefined>
-  resolveConfigDir(cfg: Config): Promise<string>
-  injectSkills(configDir: string, bakedDir: string): Promise<void>
+  /** The managed-skill overlay was rewritten after boot: the runtime reloads its skills. */
+  skillsUpdated?(): Promise<void>
   /** Resolve failures to component outcomes; never discard another component's result. */
   reconcile(input: HarnessAssetsInput): Promise<HarnessAssetsResult>
-  /**
-   * Are the HARNESS's own updates latched off after a rollback?
-   *
-   * The daemon half has `agent.pinned` and reports it as `pinned` on
-   * `/kortix/health`. A harness that can also roll itself back has a second
-   * latch, and the control plane has one question — "will this box heal
-   * itself" — so both feed the same field. An adapter with no rollback of its
-   * own leaves this undefined.
-   */
-  updatesPinned?(): Promise<boolean>
 }

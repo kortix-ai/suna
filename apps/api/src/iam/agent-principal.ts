@@ -14,15 +14,15 @@
  * AND custom), or `AGENT_DEFAULT_CEILING` when nobody bound one. The launcher's
  * role and super-admin bit are not inputs.
  *
- * An ungoverned (null-grant) token — the `meta` coordinator, or a v1 project
- * with no `[[agents]]` — authorizes as its launcher.
+ * An ungoverned (null-grant) token — the `meta` coordinator, or a project
+ * that declares no agents — authorizes as its launcher.
  *
  * This module holds the PURE decision. The engine wiring
  * lives in `authorize.ts` (step 5a); the credential classification in
  * `actor.ts` (`tokenCredential`).
  */
 import { GRANTABLE_KORTIX_PERMISSIONS } from '@kortix/manifest-schema';
-import { isMetaAgentName } from '@kortix/shared';
+import { isMyKortixAgentName } from '@kortix/shared';
 import type { AgentGrant } from '@kortix/db';
 import { agentMayPerform } from './agent-scope';
 import type { ScopeType } from './catalog';
@@ -57,7 +57,7 @@ const GRANT_EXEMPT_ACTIONS: ReadonlySet<string> = new Set(['project.read', 'proj
 
 /** A grant the agent-principal model governs: non-null, and not `meta`. */
 export function isGovernedAgentGrant(grant: AgentGrant | null | undefined): grant is AgentGrant {
-  return grant != null && !isMetaAgentName(grant.agent);
+  return grant != null && !isMyKortixAgentName(grant.agent);
 }
 
 export type AgentPrincipalReason =

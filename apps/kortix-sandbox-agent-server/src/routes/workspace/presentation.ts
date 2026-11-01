@@ -49,7 +49,7 @@ const FORMAT_SCRIPT: Record<PresentationFormat, string> = {
 }
 
 
-// The presentation skill's `scripts/` dir, relative to an opencode config dir.
+// The presentation skill's `scripts/` dir, relative to a skill directory.
 const SCRIPTS_REL = 'GENERAL-KNOWLEDGE-WORKER/presentations/scripts'
 
 const CONVERT_TIMEOUT_MS = 240_000

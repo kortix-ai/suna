@@ -53,10 +53,12 @@ WORKDIR /repo/apps/kortix-sandbox-agent-server
 ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
 
 COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-server/bun.lock ./
-COPY patches/undici@8.12.2.patch /repo/patches/undici@8.12.2.patch
+COPY patches/undici@8.12.2.patch patches/@eslint%2Feslintrc@3.3.7.patch /repo/patches/
 RUN bun install --frozen-lockfile
 
 COPY packages/api-contract /repo/packages/api-contract
+COPY packages/shared/src/peer-message-prompt.ts /repo/packages/shared/src/peer-message-prompt.ts
+COPY packages/shared/src/room-prompt.ts /repo/packages/shared/src/room-prompt.ts
 COPY packages/shared/src/ssrf-guard.ts /repo/packages/shared/src/ssrf-guard.ts
 COPY packages/sdk/src/core/session/wire-message-id.ts /repo/packages/sdk/src/core/session/wire-message-id.ts
 COPY apps/kortix-sandbox-agent-server/ ./
@@ -89,7 +91,7 @@ ARG KORTIX_VERSION=dev
 ARG KORTIX_COMMIT=unknown
 
 # Minimal workspace so bun resolves the `@kortix/*` packages the CLI imports
-# to their source, then compile (inlines them + smol-toml into one binary).
+# to their source, then compile (inlines them into one binary).
 COPY apps/cli ./apps/cli
 COPY packages/llm-catalog ./packages/llm-catalog
 COPY packages/manifest-schema ./packages/manifest-schema
@@ -102,6 +104,29 @@ RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","
     && BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} \
        KORTIX_CLI_VERSION="${KORTIX_VERSION}+$(printf '%s' "${KORTIX_COMMIT}" | cut -c1-8)" \
        bash apps/cli/scripts/build.sh
+
+# ---- Claude Code Stage ----
+# The Claude subscription sign-in runs the UNMODIFIED Claude Code binary's
+# `claude setup-token` (apps/api/src/projects/claude-subscription/). The binary
+# is the native one the Claude Agent SDK ships per platform, at the version
+# kortixd pins (apps/kortix-sandbox-agent-server/package.json
+# `@anthropic-ai/claude-agent-sdk`); tests/unit/claude-code-pin.test.ts keeps
+# the two equal. The package matches the image's architecture: staging and
+# prod build arm64, and an x64 binary there fails with "Exec format error".
+FROM node:22-slim AS claude-code
+ARG CLAUDE_AGENT_SDK_VERSION=0.3.316
+ARG TARGETARCH
+WORKDIR /tmp/claude
+RUN case "${TARGETARCH:-amd64}" in \
+      amd64) arch=x64 ;; \
+      arm64) arch=arm64 ;; \
+      *) echo "no Claude Code binary for TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && mkdir -p /out \
+    && npm pack --silent "@anthropic-ai/claude-agent-sdk-linux-${arch}@${CLAUDE_AGENT_SDK_VERSION}" \
+    && tar -xzf "anthropic-ai-claude-agent-sdk-linux-${arch}-${CLAUDE_AGENT_SDK_VERSION}.tgz" \
+    && install -m 0755 package/claude /out/claude \
+    && /out/claude --version
 
 # ---- Deps Stage ----
 # Install with pnpm (matches lockfile), run with bun
@@ -135,6 +160,7 @@ COPY packages/manifest-schema/package.json ./packages/manifest-schema/
 COPY packages/registry/package.json ./packages/registry/
 COPY packages/llm-gateway/package.json ./packages/llm-gateway/
 COPY packages/sdk/package.json ./packages/sdk/
+COPY packages/minimatch-compat/package.json ./packages/minimatch-compat/
 
 # Install pnpm and deps for this app + workspace packages it depends on.
 # --shamefully-hoist flattens node_modules (no symlinks) so COPY works on all Docker versions.
@@ -180,6 +206,7 @@ COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
 COPY packages/llm-gateway ./packages/llm-gateway
 COPY packages/sdk ./packages/sdk
+COPY packages/minimatch-compat ./packages/minimatch-compat
 
 # ---- Runner Stage ----
 FROM base AS runner
@@ -215,6 +242,7 @@ COPY LICENSE /LICENSE
 # Copy installed node_modules and source from deps stage.
 # Root node_modules contains all hoisted deps (--shamefully-hoist).
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/minimatch-compat ./packages/minimatch-compat
 
 # Copy workspace packages — source only, skip nested node_modules
 # which may contain stale symlinks to the .pnpm store.
@@ -283,6 +311,10 @@ COPY --from=sandbox-cli /cli/apps/cli/dist/kortix.version ./apps/cli/dist/kortix
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix-connectors-runtime.attestation.json ./apps/cli/dist/kortix-connectors-runtime.attestation.json
 COPY --from=app-runtime /out/kortix-appd ./apps/kortix-app-runtime/dist/kortix-appd-linux-amd64
 COPY --from=app-runtime /out/caddy ./apps/kortix-app-runtime/dist/caddy-linux-amd64
+# Claude Code for the Claude subscription sign-in (`claude setup-token` runs
+# under `script`, from util-linux's bsdutils, which the Debian base carries).
+COPY --from=claude-code /out/claude /usr/local/bin/claude
+RUN command -v script >/dev/null && claude --version
 COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
 COPY apps/sandbox/MACHINE.md ./apps/sandbox/MACHINE.md
 COPY apps/sandbox/slack-cli ./apps/sandbox/slack-cli

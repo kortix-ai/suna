@@ -24,8 +24,7 @@ import { SUPERVISED_NOTICE, isSupervised } from './supervised.ts';
  * user 18–37 MB for a command most never run. So the TUI ships as its own
  * release asset, built by the same job that builds `kortix`
  * (apps/tui/bundle/*), and the CLI keeps per-version copies under
- * ~/.kortix/tui/<version>/ — exactly the shape `ensureOpencodeBin`
- * (src/opencode-bin.ts) already uses for OpenCode.
+ * ~/.kortix/tui/<version>/.
  *
  * Version-matched on purpose: `kortix-tui` imports @kortix/cli's config reader
  * and @kortix/sdk, so a TUI from another release can disagree with this CLI
@@ -324,8 +323,7 @@ export async function downloadTuiBin(opts: DownloadTuiBinOpts): Promise<string> 
     const binaryResponse = await doFetch(url);
     if (!binaryResponse.ok) throw new Error(`${url} → HTTP ${binaryResponse.status}`);
     // Buffer before writing: `Bun.write(path, response)` can hang forever on a
-    // streamed 80 MB body, while arrayBuffer() drains it in seconds (the same
-    // trap opencode-bin.ts hit).
+    // streamed 80 MB body, while arrayBuffer() drains it in seconds.
     bytes = new Uint8Array(await binaryResponse.arrayBuffer());
     const actual = createHash('sha256').update(bytes).digest('hex');
     if (actual !== expected) {

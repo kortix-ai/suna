@@ -132,11 +132,11 @@ const INTERRUPTED: Record<Harness, string> = { opencode: '[Tool execution was in
 /** What OpenCode shows the model for a pruned tool output (`time.compacted`). */
 const CLEARED = '[Old tool result content cleared]';
 const SUBTASK_TEXT = 'The following tool was executed by the user';
-/** OpenCode 1.18 and pi 1.0.3 tool names (pi: bash, edit, find, grep, ls, powershell, read, write). */
+/** OpenCode 1.18 and pi 1.0.3 tool names (pi: bash, edit, find, grep, ls, powershell, read, write; `agent`: pi's subagent tool, `task` its alias). */
 const KIND = new Map<string, KnownToolKind>(Object.entries({
   bash: 'shell', powershell: 'shell', read: 'read', write: 'write', edit: 'edit', multiedit: 'edit', patch: 'patch', apply_patch: 'patch',
   list: 'list', ls: 'list', glob: 'glob', find: 'glob', grep: 'grep', webfetch: 'web_fetch', websearch: 'web_search', codesearch: 'web_search',
-  todowrite: 'todo', todoread: 'todo', task: 'task', question: 'question', plan_enter: 'plan', plan_exit: 'plan',
+  todowrite: 'todo', todoread: 'todo', task: 'task', agent: 'task', question: 'question', plan_enter: 'plan', plan_exit: 'plan',
 }) as Array<[string, KnownToolKind]>);
 const kindOf = (name: string): KnownToolKind => KIND.get(name) ?? (name.includes('_') ? 'mcp' : 'other');
 const FINISH_V2 = new Map<unknown, SessionLogMessage['finish']>([['stop', 'stop'], ['tool-calls', 'tool_calls'], ['length', 'length'], ['error', 'error']]);

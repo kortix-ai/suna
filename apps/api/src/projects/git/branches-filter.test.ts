@@ -1,7 +1,7 @@
 /**
  * GET /:projectId/branches returned every remote branch — 977KB on a busy
  * prod project, dominated by thousands of auto-created session branches
- * (createRemoteSessionBranch names each one after the session's own UUID,
+ * (each is named after the session's own UUID,
  * validated by isUuid before the branch is cut — see ../lib/sessions.ts).
  * No human picks one of those by name; every UI branch picker already
  * limits itself to a bounded human-relevant subset after fetching the

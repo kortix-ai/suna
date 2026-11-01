@@ -2,12 +2,13 @@
  * GET /kortix/diag — one call, the whole error report.
  *
  * Everything an incident needs from a box, in one JSON document:
- *   - the daemon's view of OpenCode (state, pid, port, boot phase, timeline)
+ *   - the pi runtime (state, root id, model, agent, busy, message count, and
+ *     `tools` and `skills` as name lists) and the boot (errors, timeline)
  *   - a fresh resource snapshot (memory, cgroup, load, disk, RSS, duplicate
- *     opencode processes) plus the last periodic one
+ *     runtime processes) plus the last periodic one
  *   - the runtime-assets convergence report (which build of what is live)
- *   - the tail of the daemon log and of OpenCode's log (`?tail=N`, default
- *     200, max 2000 — the plain-text `/kortix/logs` route serves more)
+ *   - the tail of the daemon log (`?tail=N`, default 200, max 2000 — the
+ *     plain-text `/kortix/logs` route serves more)
  *   - process/runtime identity: daemon pid, Bun version, uptime, workspace
  *
  * Nothing secret: no env dump, no tokens. Same auth as `/kortix/logs`.

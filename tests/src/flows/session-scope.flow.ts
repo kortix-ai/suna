@@ -16,6 +16,7 @@ import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import type { FlowContext } from '../core/types';
 import { createDatabaseSession } from '../fixtures/database-project';
+import { setFeatureAsOperator } from '../fixtures/feature-flags';
 
 const UNKNOWN_SESSION_ID = '00000000-0000-4000-a000-000000000000';
 
@@ -426,15 +427,16 @@ flow(
       (await db.query<{ n: number }>('SELECT count(*)::int AS n FROM kortix.project_sessions WHERE project_id = $1::uuid', [project.id])).rows[0]?.n ?? 0;
     try {
       await ctx.step('the project opts into meta_agent; a meta coordinator and a worker each hold a session-bound credential', async () => {
-        (await owner.patch('/v1/projects/:projectId/features', { feature: 'meta_agent', enabled: true }, { params })).status(200);
+        // `meta_agent` is operator-only (catalogHidden): kortix.yaml `builtin_agents` is the project switch.
+        await setFeatureAsOperator(ctx, project.id, 'meta_agent', true);
         meta = await seedBoundSession(ctx, db, project, 'SCOPE-8 meta');
-        await db.query(`UPDATE kortix.project_sessions SET agent_name = 'meta' WHERE session_id = $1`, [meta.sessionId]);
+        await db.query(`UPDATE kortix.project_sessions SET agent_name = 'mykortix' WHERE session_id = $1`, [meta.sessionId]);
         worker = await seedBoundSession(ctx, db, project, 'SCOPE-8 worker', 'scope-8-worker');
       });
 
       await ctx.step('the meta coordinator asking for another meta coordinator → 400 META_AGENT_RECURSION, no session row', async () => {
         const before = await sessionCount();
-        (await ctx.client.withBearer(meta!.token, 'SESSION_TOKEN').post('/v1/projects/:projectId/sessions', { agent_name: 'meta' }, { params }))
+        (await ctx.client.withBearer(meta!.token, 'SESSION_TOKEN').post('/v1/projects/:projectId/sessions', { agent_name: 'mykortix' }, { params }))
           .status(400)
           .body()
           .has('$.code', 'META_AGENT_RECURSION');
@@ -442,13 +444,13 @@ flow(
         if (after !== before) throw new Error(`a refused meta spawn wrote ${after - before} session row(s)`);
       });
 
-      await ctx.step('a non-meta session asking for the meta coordinator passes the recursion check', async () => {
+      await ctx.step('a non-meta session asking for My Kortix by its old slug `meta` passes the recursion check and gets `mykortix`', async () => {
         const r = await ctx.client.withBearer(worker!.token, 'SESSION_TOKEN').post('/v1/projects/:projectId/sessions', { agent_name: 'meta' }, { params });
         // Local: every create check passed and the loopback callback check answers.
         if (ctx.env.target === 'local') {
           r.status(503).body().has('$.code', 'KORTIX_URL_UNREACHABLE');
         } else {
-          r.status(201).body().has('$.agent_name', 'meta');
+          r.status(201).body().has('$.agent_name', 'mykortix');
           ctx.track('session', r.json<{ session_id: string }>().session_id, { projectId: project.id });
         }
       });

@@ -1,44 +1,25 @@
 /**
- * Tiny, dependency-free readers shared by build + install:
- *   - resolveOpencodeDir: the `opencode.config_dir` from the manifest
- *     (kortix.yaml, or the `[opencode] config_dir` TOML table in legacy
- *     kortix.toml)
- *   - parseFrontmatter:   YAML-ish frontmatter from a SKILL.md / agent .md
+ * Tiny, dependency-free readers shared by build + fetch:
+ *   - projectNameFromManifest: `project.name` from a kortix.yaml
+ *   - parseFrontmatter:        YAML-ish frontmatter from a SKILL.md / agent .md
  *
- * These intentionally mirror apps/api/src/projects/git/config.ts so the CLI
- * (which scans a working tree) and the API (which scans a git tree) agree on
- * where things live and how their metadata is read.
+ * This package ships into the sandbox/CLI bundle, so it deliberately avoids a
+ * full YAML parser.
  */
 
 /**
- * The OpenCode config dir of a manifest that names none: the pre-2026-09
- * layout. New projects state `opencode.config_dir: harnesses/opencode`, so
- * this text-only reader never has to guess between the two.
- */
-export const DEFAULT_OPENCODE_CONFIG_DIR = '.kortix/opencode';
-
-/**
- * Read a scalar `key` out of a top-level `[section]` (TOML) or `section:` (YAML)
- * block of a manifest. Dependency-free heuristic line reader (this package ships
- * into the sandbox/CLI bundle, so it deliberately avoids a full parser) that
- * handles BOTH formats: a TOML `[section]` header + `key = value`, or a YAML
- * top-level `section:` key + an indented `key: value`. `#` opens a comment in
- * both. Returns null if not found.
+ * Read a scalar `key` out of a top-level `section:` block of a kortix.yaml: a
+ * top-level `section:` key and an indented `key: value` below it. `#` opens a
+ * comment. Returns null if not found.
  */
 function readSectionScalar(manifestRaw: string, section: string, key: string): string | null {
   let inSection = false;
-  const keyRe = new RegExp(`^${key}\\s*[:=]\\s*(.+)$`);
+  const keyRe = new RegExp(`^${key}\\s*:\\s*(.+)$`);
   for (const rawLine of manifestRaw.split(/\r?\n/)) {
     const stripped = stripComment(rawLine);
     const line = stripped.trim();
     if (!line) continue;
-    // TOML table header — `[section]`.
-    const tomlSection = line.match(/^\[([a-zA-Z0-9_.-]+)]$/);
-    if (tomlSection) {
-      inSection = tomlSection[1] === section;
-      continue;
-    }
-    // A YAML top-level key (no leading indentation, `key:`) opens/closes a block.
+    // A top-level key (no leading indentation, `key:`) opens or closes a block.
     if (/^\S/.test(stripped)) {
       const topKey = line.match(/^([a-zA-Z0-9_.-]+)\s*:(?:\s|$)/);
       if (topKey) {
@@ -47,25 +28,10 @@ function readSectionScalar(manifestRaw: string, section: string, key: string): s
       }
     }
     if (!inSection) continue;
-    // `key = value` (TOML) or `key: value` (YAML, indented under the section).
     const kv = line.match(keyRe);
     if (kv) return unquote(kv[1].trim());
   }
   return null;
-}
-
-/** The manifest's own `opencode.config_dir`, or null when it names none (or an unsafe one). */
-export function manifestOpencodeDir(manifestRaw: string | null | undefined): string | null {
-  if (!manifestRaw) return null;
-  const value = readSectionScalar(manifestRaw, 'opencode', 'config_dir');
-  if (value && !value.startsWith('/') && !value.split('/').includes('..')) {
-    return value.replace(/\/+$/, '');
-  }
-  return null;
-}
-
-export function resolveOpencodeDir(manifestRaw: string | null | undefined): string {
-  return manifestOpencodeDir(manifestRaw) ?? DEFAULT_OPENCODE_CONFIG_DIR;
 }
 
 export function projectNameFromManifest(manifestRaw: string | null | undefined): string | null {
@@ -96,7 +62,7 @@ function unquote(value: string): string {
   return value;
 }
 
-// `#` opens a comment in both TOML and YAML (outside quotes) — shared reader.
+// `#` opens a comment outside quotes.
 function stripComment(line: string): string {
   let quote: string | null = null;
   for (let i = 0; i < line.length; i += 1) {

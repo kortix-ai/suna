@@ -54,7 +54,11 @@ mock.module('../../shared/preview-ownership', () => ({
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,
 }));
+const realSandboxEnvSync = await import('../../projects/lib/sandbox-env-sync');
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
+  // Spread the real module: a hand-listed stub deletes every other export —
+  // the session-open graph imports `pushSessionAgentConfigToSandbox` from it.
+  ...realSandboxEnvSync,
   syncSandboxEnvForPrompt: async () => {},
 }));
 // The real grant re-mint fails a prompt CLOSED when it cannot read the session
@@ -81,6 +85,7 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
+const realSessionOpen = await import('../../projects/session-open');
 // The ledger identity the proxy begins the turn under.
 let begunTurns: Array<{ runtimeSessionId: string; messageId: string | null; source?: string }> = [];
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
@@ -96,6 +101,9 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   abandonSandboxTurn: async () => true,
 }));
 mock.module('../../projects/session-open', () => ({
+  // Spread the real module: a hand-listed stub deletes every other export —
+  // the lifecycle graph imports `openSession` from it.
+  ...realSessionOpen,
   resumeStoppedSandboxByExternalId: async () => true,
   stoppedSandboxWakePending: async () => false,
 }));
@@ -134,6 +142,22 @@ mock.module('../../projects/session-turn-ledger', () => ({
   },
 }));
 
+// Whether the box lists `runtime.stable_message_id.v1` (pi), as the proxy's
+// placement asks the inbox's capability reader. False: an OpenCode box.
+let boxKeepsMessageIds = false;
+let keepsIdsAsks: Array<{ externalId: string; userId: string | null }> = [];
+mock.module('../../projects/surface', () => ({
+  sandboxKeepsMessageIds: async (externalId: string, userId: string | null) => {
+    keepsIdsAsks.push({ externalId, userId });
+    return boxKeepsMessageIds;
+  },
+  // The pre-prompt Claude gate rides this module (#11335); no case in this
+  // suite prompts a Claude model, so both stay inert. A missing name is a
+  // module LINK error, not a null.
+  missingClaudeSubscription: async () => null,
+  sessionModelPin: async () => null,
+}));
+
 const { forwardToSandbox } = await import('./preview');
 const { __resetPromptDedupe } = await import('../prompt-dedupe');
 
@@ -167,6 +191,8 @@ function queueFetch(...responses: Response[]) {
 beforeEach(() => {
   __resetPromptDedupe();
   begunTurns = [];
+  boxKeepsMessageIds = false;
+  keepsIdsAsks = [];
 });
 // Restore per TEST: a case that fails before installing its own fetch would
 // otherwise run against the previous case's exhausted queue.
@@ -539,6 +565,33 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
     expect(delivered.messageID).not.toBe(farFuture);
     expect(delivered.messageID).toMatch(WIRE_MESSAGE_ID);
     expect(res.headers.get('X-Kortix-Effective-Message-Id')).toBe(delivered.messageID);
+  });
+
+  // pi keeps a prompt's id and orders by position: a stale id is no harm there.
+  test('on a runtime that keeps message ids, a STALE client id goes through unchanged and no transcript is read', async () => {
+    boxKeepsMessageIds = true;
+    const tip = mintWireMessageId({ nowMs: NOW - 500 });
+    const stale = mintWireMessageId({ nowMs: NOW - 120_000 });
+    installFetch([{ info: { id: tip.id, role: 'assistant' } }]);
+    const body = { messageID: stale.id, parts: [{ type: 'text', text: 'queued while busy' }] };
+    const res = await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', jsonHeaders(), bodyOf(body), 'http://app.local');
+    expect(res.status).toBe(200);
+    expect(keepsIdsAsks).toEqual([{ externalId: 'sb-1', userId: 'u1' }]);
+    expect(fetchLog.map((f) => f.method)).toEqual(['POST']);
+    expect(fetchLog[0].body).toBe(JSON.stringify(body));
+    expect(begunTurns[0]?.messageId).toBe(stale.id);
+    expect(res.headers.get('X-Kortix-Effective-Message-Id')).toBe(stale.id);
+  });
+
+  test('on a runtime that keeps message ids, a far-future id is still re-minted on the id alone', async () => {
+    boxKeepsMessageIds = true;
+    const farFuture = `msg_${((BigInt(NOW) * BigInt(0x1000)) >> BigInt(8)).toString(16).slice(0, 12)}SyntheticCli08`;
+    installFetch([]);
+    await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', jsonHeaders(), bodyOf({ messageID: farFuture, parts: [{ type: 'text', text: 'hi' }] }), 'http://app.local');
+    expect(fetchLog.map((f) => f.method)).toEqual(['POST']);
+    const delivered = JSON.parse(fetchLog[0].body!) as { messageID: string };
+    expect(delivered.messageID).not.toBe(farFuture);
+    expect(delivered.messageID).toMatch(WIRE_MESSAGE_ID);
   });
 
   test('the "already placed" header still skips the read for an id near the clock', async () => {

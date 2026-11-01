@@ -181,6 +181,7 @@ jobs:
               - 'apps/web/**'
               - 'packages/**'
               - 'infra/scripts/ecs-deploy.sh'
+              - 'infra/scripts/carry-web-static.sh'
               - 'infra/scripts/render-web-env.mjs'
               - 'infra/scripts/sync-web-env.sh'
               - 'infra/scripts/sync-web-dns.mjs'
@@ -532,7 +533,9 @@ jobs:
         && needs.migrate-db.result == 'success'
         && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped') }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
-    timeout-minutes: 35
+    # Release gate (25 min cap) + worker roll (17 min cap) + API roll (15 min
+    # wait budget in ecs-deploy.sh) + overhead.
+    timeout-minutes: 60
     permissions:
       id-token: write # OIDC → ECS deploy role
       contents: read
@@ -590,13 +593,21 @@ jobs:
       # the extension socket) on dev. Staging and prod leave it unset, so the
       # API answers 404 there. Rollback: remove the key and redeploy.
       #
+      # KORTIX_PLATINUM_US_REGION_DEFAULT=true turns `us_region` on for every
+      # dev project that has made no choice: its new Files are created in
+      # KORTIX_PLATINUM_US_REGION, next to dev's API, database and S3, and its
+      # sessions run where its Files live (sandbox-region.ts
+      # resolveSessionPlacement). Staging and prod leave it unset. Rollback:
+      # remove the key and redeploy; Files already created in us-east stay
+      # there, and their sessions keep running there.
+      #
       # KORTIX_PLATINUM_RESIDENTIAL_PROXY=true honors a sandbox template's
       # `residential_proxy` on dev and starts the worker that debits Platinum's
       # residential charges from credits. Staging and prod leave it unset, so a
       # template that asks for it fails the session closed there. Rollback:
       # remove the key and redeploy.
       KORTIX_ECS_ENV_OVERRIDES: >-
-        {"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-use2-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-east-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","KORTIX_CAPTURE_S3_BUCKET":"kortix-dev-use2-capture-store","KORTIX_CAPTURE_S3_REGION":"us-east-2","KORTIX_CAPTURE_SQS_QUEUE_URL":"https://sqs.us-east-2.amazonaws.com/935064898258/kortix-dev-use2-capture-store-manifests","KORTIX_CAPTURE_STS_ROLE_ARN":"arn:aws:iam::935064898258:role/kortix-dev-use2-capture-store-device","AUDIT_ARCHIVE_BUCKET":"kortix-dev-use2-audit-archive","AUDIT_ARCHIVE_REGION":"us-east-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-use2-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-east-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0","KORTIX_PLATINUM_US_REGION":"us-east","KORTIX_CHROME_ENABLED":"true","KORTIX_PLATINUM_RESIDENTIAL_PROXY":"true"}
+        {"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-use2-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-east-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","KORTIX_CAPTURE_S3_BUCKET":"kortix-dev-use2-capture-store","KORTIX_CAPTURE_S3_REGION":"us-east-2","KORTIX_CAPTURE_SQS_QUEUE_URL":"https://sqs.us-east-2.amazonaws.com/935064898258/kortix-dev-use2-capture-store-manifests","KORTIX_CAPTURE_STS_ROLE_ARN":"arn:aws:iam::935064898258:role/kortix-dev-use2-capture-store-device","AUDIT_ARCHIVE_BUCKET":"kortix-dev-use2-audit-archive","AUDIT_ARCHIVE_REGION":"us-east-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-use2-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-east-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0","KORTIX_PLATINUM_US_REGION":"us-east","KORTIX_PLATINUM_US_REGION_DEFAULT":"true","KORTIX_CHROME_ENABLED":"true","KORTIX_PLATINUM_RESIDENTIAL_PROXY":"true"}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure AWS credentials (OIDC)
@@ -604,9 +615,12 @@ jobs:
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
-      # Release gate: build the Platinum platform default image THIS API version
-      # computes, and make it resident in KORTIX_PLATINUM_US_REGION, before the
-      # roll. Without it the new tasks start on a missing image: sessions boot
+      # Release gate: build the Platinum platform default image and the meta
+      # image (My Kortix sessions) THIS API version computes, and make both
+      # resident in KORTIX_PLATINUM_US_REGION, before the roll. Without the meta
+      # build, the first My Kortix session after a deploy waited 80-111 s for
+      # it (2026-10-30). Without the default build the new tasks start on a
+      # missing image: sessions boot
       # the previous one and repair its runtime in place, and the first US
       # session waits while Platinum copies the image from the EU (150-255 s on
       # 2026-10-02). The new image is built UNPUBLISHED, so the version still
@@ -621,7 +635,7 @@ jobs:
       # one place (secret read, image pull, build, copy, timeout); the script's
       # own exit code still marks the step failed with a ::warning:: naming the
       # cause, and the next sessions then behave exactly as before this gate.
-      - name: Build the next default sandbox image and make it resident in US
+      - name: Build the next default and meta sandbox images and make them resident in US
         continue-on-error: true
         timeout-minutes: 25
         env:
@@ -673,6 +687,21 @@ jobs:
           docker run --rm --pull always --platform linux/amd64 \
             --name "$container" --env-file "$work/container.env" \
             "$API_IMAGE" bun scripts/prepare-platform-default-image.ts
+      # The worker (kortix-dev-use2-worker) runs every scheduled job. It rolls
+      # BEFORE the API, with this job's KORTIX_ECS_ENV_OVERRIDES and the API's
+      # running environment, and always waits until the old worker stopped.
+      # The API roll below sets KORTIX_PROCESS_ROLE=web only when this worker
+      # runs the same image and is HEALTHY; otherwise `all`, and the API runs
+      # the jobs. A failed worker roll therefore never blocks the API: the job
+      # stays green and the next step annotates the run.
+      - name: Roll the dev worker service onto the freshly-built image
+        id: worker
+        continue-on-error: true
+        timeout-minutes: 17
+        run: bash infra/scripts/ecs-deploy.sh dev-use2 "${{ needs.build-api.outputs.image }}" --service worker --version "${{ needs.detect-changes.outputs.version }}"
+      - name: Report a failed worker roll
+        if: steps.worker.outcome == 'failure'
+        run: echo "::error title=Worker deploy::the dev worker did not roll onto ${{ needs.build-api.outputs.image }}. The API rolls with KORTIX_PROCESS_ROLE=all and runs the scheduled jobs; read the step 'Roll the dev worker service onto the freshly-built image'."
       # --version stamps KORTIX_VERSION into the task-def so /v1/health reports
       # the computed dev version even if the image's baked string ever diverges
       # (retags, rebuilds) — same parity rule as staging/prod.
@@ -885,7 +914,12 @@ jobs:
   verify-gateway-dev-parity:
     name: Verify gateway dev commit parity
     needs: [detect-changes, deploy-gateway-ecs]
-    if: needs.detect-changes.outputs.gateway == 'true'
+    # `always()`: deploy-gateway-ecs runs after a skipped terraform-dev-api, and a
+    # plain `if:` inherits that skip, so the parity check and the gateway `:dev`
+    # promotion never ran when no dev Terraform changed.
+    if: ${{ always()
+      && needs.detect-changes.outputs.gateway == 'true'
+      && needs.deploy-gateway-ecs.result == 'success' }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 15
     env:
@@ -1026,6 +1060,24 @@ jobs:
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
+      - name: Carry earlier builds' static chunks
+        # A tab opened before this deploy still requests its own build's
+        # hashed chunks; without them its next lazy import fails with
+        # "Failed to load chunk". `:dev` is the build that serves now (it moves
+        # only after verify-web-ecs), `:dev-latest` the last one built (a
+        # cancelled run can leave it unserved). Each carries its own earlier
+        # builds, so the image holds the newest 5 builds (~20 MB each).
+        run: |
+          set -euo pipefail
+          images=()
+          seen=""
+          for ref in kortix/kortix-frontend:dev kortix/kortix-frontend:dev-latest; do
+            digest="$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest.Digest}}' 2>/dev/null || true)"
+            if [ -n "$digest" ] && [[ "$seen" != *"$digest"* ]]; then
+              images+=("$ref"); seen="$seen $digest"
+            fi
+          done
+          bash infra/scripts/carry-web-static.sh apps/web/.next/static 5 "${images[@]}"
       - name: Build and push (amd64)
         # Single-arch amd64 for dev (see the API build for the full rationale).
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0

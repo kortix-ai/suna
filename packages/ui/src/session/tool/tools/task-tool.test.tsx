@@ -17,7 +17,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
  *
  * A task call is a DISCLOSURE row whose body is the sub-agent's live activity.
  * It used to be a plain clickable row: clicking anywhere on it opened
- * `SubSessionModal`, so the one thing the reader wants while a sub-agent runs —
+ * `SubagentDialog`, so the one thing the reader wants while a sub-agent runs —
  * what it is doing — was reachable only by leaving the transcript for a modal,
  * and the `SubAgentActivity` the component already built was dead code on that
  * path. Now the row expands in place and the modal is an explicit action inside
@@ -32,7 +32,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
  * here and a `useState` flip cannot be observed. What IS asserted is everything
  * the click depends on: the action is rendered, it sits in the disclosure body,
  * and the modal it opens is mounted and wired to this call's child session and
- * title. `SubSessionModal` is stubbed so those props are visible in the markup —
+ * title. `SubagentDialog` is stubbed so those props are visible in the markup —
  * the real one renders nothing while closed.
  *
  * `mock.module` is process-wide in this workspace, so both mocks spread the real
@@ -56,10 +56,10 @@ await mock.module('@kortix/sdk/react', () => ({
   },
 }));
 
-const realSubSessionModal = await import('../../thread/sub-session-modal');
-await mock.module('../../thread/sub-session-modal', () => ({
-  ...realSubSessionModal,
-  SubSessionModal: ({
+const realSubagentView = await import('../../agents/subagent-view');
+await mock.module('../../agents/subagent-view', () => ({
+  ...realSubagentView,
+  SubagentDialog: ({
     open,
     sessionId,
     title,
@@ -69,7 +69,7 @@ await mock.module('../../thread/sub-session-modal', () => ({
     title?: string;
   }) => (
     <div
-      data-sub-session-modal
+      data-subagent-dialog
       data-open={String(open)}
       data-session-id={sessionId}
       data-title={title}
@@ -305,7 +305,7 @@ describe('TaskTool — the row expands in place', () => {
     expect(markup).toContain('Agent · explorer');
     expect(markup).not.toContain('Open full view');
     expect(markup).not.toContain('>View</span>');
-    expect(markup).not.toContain('data-sub-session-modal');
+    expect(markup).not.toContain('data-subagent-dialog');
     // Nothing to open and nowhere to go, so the row makes no promise: no
     // trigger, no `role="button"`, no `aria-expanded`, no tab stop. It used to
     // carry all four and do nothing with them.
@@ -370,4 +370,58 @@ test('a failed dispatch draws the error and keeps the view affordance', () => {
   const markup = render(failed as ToolPart, { open: true });
   expect(markup).toContain('aria-label="Open full view"');
   expect(markup).toContain('assistant message prefill');
+});
+
+// ── pi's `agent` tool: the same row as its deprecated alias `task` ──────────
+//
+// pi registers its subagent tool as `agent`. It had no row of its own: its kind
+// was `other`, so the SDK read no child session from it and the call drew as
+// the generic card. It reaches TaskTool through `toolKind('agent') === 'task'`.
+const { ToolRegistry } = await import('../shared/registry');
+
+describe('TaskTool — pi agent tool', () => {
+  function agentPart(state: Record<string, unknown>): ToolPart {
+    return {
+      type: 'tool',
+      tool: 'agent',
+      callID: 'call-agent',
+      state: {
+        input: { subagent_type: 'researcher', description: 'Read the market report', prompt: 'Read it' },
+        output: '',
+        time: { start: 1, end: 2 },
+        ...state,
+      },
+    } as unknown as ToolPart;
+  }
+
+  test('`agent` resolves to the task row and opens its child session', () => {
+    expect(ToolRegistry.get('agent')).toBe(TaskTool);
+    childMessages = undefined;
+    const markup = render(agentPart({ status: 'completed', metadata: { sessionId: CHILD_SESSION_ID } }));
+    expect(markup).toContain('>Agent · researcher</span>');
+    expect(markup).toContain('aria-label="Open full view"');
+    expect(markup).toContain(`data-session-id="${CHILD_SESSION_ID}"`);
+    expect(markup).not.toContain('background');
+  });
+
+  test('a background hand-off says its agent works in the background, with no spinner', () => {
+    childMessages = undefined;
+    const markup = render(agentPart({ status: 'completed', metadata: { sessionId: CHILD_SESSION_ID, background: true } }));
+    expect(markup).toContain('Working in the background');
+    expect(markup).toContain('aria-label="Open full view"');
+    // The call is over: nothing on the row shimmers.
+    expect(markup).not.toContain('data-kx-text-shimmer');
+  });
+
+  test('once the child replied, the row says it ran in its own session', () => {
+    childMessages = [
+      {
+        info: { id: 'm1', role: 'assistant', sessionID: CHILD_SESSION_ID, time: { created: 1, completed: 2 } },
+        parts: [{ type: 'text', id: 'p1', text: 'Done.', sessionID: CHILD_SESSION_ID, messageID: 'm1' }],
+      },
+    ] as unknown as MessageWithParts[];
+    const markup = render(agentPart({ status: 'completed', metadata: { sessionId: CHILD_SESSION_ID, background: true } }));
+    expect(markup).toContain('In its own session');
+    expect(markup).not.toContain('Working in the background');
+  });
 });

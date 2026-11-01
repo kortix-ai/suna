@@ -1,6 +1,17 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { getProjectGoalFiles, goalHealth, listProjectGoals, type ProjectGoalDocument } from './goals';
+import { formatGoalFile, parseGoalFile } from './goal-file';
+import {
+  getProjectGoalFiles,
+  goalHealth,
+  listProjectGoals,
+  MAKE_GOAL_PROMPT,
+  makeSessionGoal,
+  replyToProjectGoal,
+  setProjectGoalBinding,
+  stopProjectGoal,
+  type ProjectGoalDocument,
+} from './goals';
 import type { ProjectReminder } from './session-reminders';
 
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
@@ -183,5 +194,182 @@ describe('listProjectGoals', () => {
       notes: '# Notes\n',
       verification: null,
     });
+  });
+});
+
+describe('setProjectGoalBinding', () => {
+  const folder = '/Company/Goals/bank-close';
+  const target = { driveId: 'd1', folder };
+  let writes: Array<{ path: string | null; ifMatch: string | null; body: Record<string, unknown> }> = [];
+  let putStatus = 200;
+
+  beforeEach(() => {
+    writes = [];
+    putStatus = 200;
+    globalThis.fetch = mock(async (input: unknown, init: RequestInit = {}) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if ((init.method ?? 'GET') === 'PUT') {
+        const headers = new Headers(init.headers);
+        const text = await new Response(init.body as BodyInit).text();
+        writes.push({ path: url.searchParams.get('path'), ifMatch: headers.get('if-match'), body: JSON.parse(text) });
+        const body = putStatus === 200 ? { path: url.searchParams.get('path'), size: 1, version: 'v2' } : { message: 'file_changed' };
+        return new Response(JSON.stringify(body), { status: putStatus, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ ...GOAL, space: 'finance' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json', etag: 'v1' },
+      });
+    }) as unknown as typeof fetch;
+  });
+
+  test('merges space and agent into goal.json and writes it back on the version it read', async () => {
+    const doc = await setProjectGoalBinding(target, { agent: 'builder' });
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ path: `${folder}/goal.json`, ifMatch: 'v1' });
+    expect(writes[0]!.body).toMatchObject({ objective: GOAL.objective, space: 'finance', agent: 'builder' });
+    expect(doc).toMatchObject({ space: 'finance', agent: 'builder' });
+  });
+
+  test('null clears a field: the goal goes back to project-wide', async () => {
+    await setProjectGoalBinding(target, { space: null, agent: null });
+    expect(writes[0]!.body).toMatchObject({ space: null, agent: null });
+  });
+
+  test('a concurrent write surfaces as an ApiError 409', async () => {
+    putStatus = 409;
+    await expect(setProjectGoalBinding(target, { space: 'ops' })).rejects.toMatchObject({ status: 409 });
+  });
+});
+
+describe('GOAL.md goals', () => {
+  const OWNER_DOC: ProjectGoalDocument = {
+    ...GOAL,
+    status: 'waiting_on_user',
+    waiting_on: 'Which VAT number do we invoice from?',
+    assigned_user: 'u1',
+    agent: 'billing',
+    sessions: [
+      { id: 's-old', role: 'owner', since: '2026-10-20T10:00:00Z' },
+      { id: 's-owner', role: 'owner', since: '2026-10-21T10:00:00Z' },
+    ],
+    items: [],
+    body: '# EU billing\n',
+  };
+  const heartbeat = { ...HEARTBEAT, session_id: 's-owner' };
+  let requested: Array<{ method: string; key: string; body: string; ifMatch: string | null }> = [];
+  const routes: Record<string, { status: number; body: unknown }> = {};
+
+  beforeEach(() => {
+    requested = [];
+    for (const key of Object.keys(routes)) delete routes[key];
+    globalThis.fetch = mock(async (input: unknown, init: RequestInit = {}) => {
+      const request = input instanceof Request ? input : null;
+      const url = new URL(request ? request.url : String(input));
+      const method = (init.method ?? request?.method ?? 'GET').toUpperCase();
+      const key = `${url.pathname}${url.searchParams.has('path') ? `?path=${url.searchParams.get('path')}` : ''}`;
+      const body =
+        init.body !== undefined && init.body !== null
+          ? await new Response(init.body as BodyInit).text()
+          : request
+            ? await request.clone().text()
+            : '';
+      requested.push({ method, key, body, ifMatch: new Headers(init.headers ?? request?.headers).get('if-match') });
+      const route = routes[`${method} ${key}`] ?? (method === 'GET' ? routes[key] : undefined) ?? { status: 404, body: { message: 'Not found' } };
+      const text = typeof route.body === 'string' ? route.body : JSON.stringify(route.body);
+      return new Response(text, { status: route.status, headers: { 'content-type': 'application/json', etag: 'v1' } });
+    }) as unknown as typeof fetch;
+  });
+
+  const listRoutes = () => {
+    routes['/drives'] = { status: 200, body: { drives: [{ driveId: 'd1', projectId: 'p1', personalFolder: null }] } };
+    routes['/drives/d1/files?path=/Company/Goals'] = {
+      status: 200,
+      body: {
+        entries: [{ path: '/Company/Goals/eu-billing', name: 'eu-billing', type: 'dir', size: 0, mtime: 0, access: 'write' }],
+        access: 'write',
+      },
+    };
+    routes['/drives/d1/files/content?path=/Company/Goals/eu-billing/GOAL.md'] = { status: 200, body: formatGoalFile(OWNER_DOC) };
+    routes['/projects/p1/reminders'] = { status: 200, body: { reminders: [heartbeat] } };
+  };
+
+  test('listProjectGoals reads GOAL.md before goal.json, and the last owner is the current one', async () => {
+    listRoutes();
+    const [goal] = await listProjectGoals('p1', { now: NOW });
+    expect(goal).toMatchObject({ slug: 'eu-billing', coordinatorSessionId: 's-owner', heartbeat: { id: HEARTBEAT.id } });
+    expect(goal!.goal).toMatchObject({
+      format: 'goal.md',
+      waiting_on: 'Which VAT number do we invoice from?',
+      assigned_user: 'u1',
+      agent: 'billing',
+    });
+    expect(requested.some((r) => r.key.endsWith('/goal.json'))).toBe(false);
+  });
+
+  test('a stopped goal is closed', () => {
+    expect(goalHealth({ ...OWNER_DOC, status: 'stopped' }, heartbeat, NOW)).toEqual({ state: 'closed', issues: [] });
+  });
+
+  test('stopProjectGoal writes state stopped on the version it read, logs it and removes the heartbeat', async () => {
+    listRoutes();
+    routes['PUT /drives/d1/files/content?path=/Company/Goals/eu-billing/GOAL.md'] = { status: 200, body: { version: 'v2' } };
+    routes['/drives/d1/files/content?path=/Company/Goals/eu-billing/log.md'] = { status: 200, body: '# Log\n' };
+    routes['PUT /drives/d1/files/content?path=/Company/Goals/eu-billing/log.md'] = { status: 200, body: { version: 'v2' } };
+    routes[`DELETE /projects/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: { ok: true } };
+    const [goal] = await listProjectGoals('p1', { now: NOW });
+    requested = [];
+
+    const doc = await stopProjectGoal('p1', goal!, 'Budget moved to Q1');
+
+    expect(doc).toMatchObject({ status: 'stopped', waiting_on: null, reminder_id: null, next_wake_at: null });
+    const put = requested.find((r) => r.method === 'PUT' && r.key.endsWith('GOAL.md'))!;
+    expect(put.ifMatch).toBe('v1');
+    expect(parseGoalFile(put.body)?.transitions.at(-1)).toMatchObject({
+      from: 'waiting_on_user',
+      to: 'stopped',
+      reason: 'Budget moved to Q1',
+      by: 'person',
+    });
+    expect(requested.find((r) => r.method === 'PUT' && r.key.endsWith('log.md'))!.body).toContain(
+      'waiting_on_user → stopped: Budget moved to Q1',
+    );
+    expect(requested.some((r) => r.method === 'DELETE' && r.key.endsWith(`/reminders/${HEARTBEAT.id}`))).toBe(true);
+  });
+
+  test('stopProjectGoal refuses a closed goal', async () => {
+    listRoutes();
+    routes['/drives/d1/files/content?path=/Company/Goals/eu-billing/GOAL.md'] = {
+      status: 200,
+      body: formatGoalFile({ ...OWNER_DOC, status: 'done' }),
+    };
+    const [goal] = await listProjectGoals('p1', { now: NOW });
+    await expect(stopProjectGoal('p1', goal!, 'x')).rejects.toThrow('already done');
+  });
+
+  test('replyToProjectGoal queues the answer into the owner session, naming the goal folder', async () => {
+    listRoutes();
+    routes['POST /projects/p1/sessions/s-owner/prompts'] = {
+      status: 202,
+      body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false },
+    };
+    const [goal] = await listProjectGoals('p1', { now: NOW });
+    await replyToProjectGoal('p1', goal!, 'DE123456789');
+    const post = requested.find((r) => r.method === 'POST')!;
+    expect(post.key).toBe('/projects/p1/sessions/s-owner/prompts');
+    const text = JSON.parse(post.body).parts[0].text as string;
+    expect(text).toContain('Goal reply: /drives/company/Goals/eu-billing.');
+    expect(text).toContain('DE123456789');
+  });
+
+  test('makeSessionGoal asks that chat session to make a goal through the kortix-goals skill', async () => {
+    routes['POST /projects/p1/sessions/s-chat/prompts'] = {
+      status: 202,
+      body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false },
+    };
+    await makeSessionGoal('p1', 's-chat');
+    const post = requested.find((r) => r.method === 'POST')!;
+    expect(post.key).toBe('/projects/p1/sessions/s-chat/prompts');
+    expect(JSON.parse(post.body).parts[0].text).toBe(MAKE_GOAL_PROMPT);
+    expect(MAKE_GOAL_PROMPT).toContain('kortix goals new');
   });
 });

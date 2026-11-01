@@ -7,26 +7,20 @@ import { doctorReplyVerdict } from '../commands/doctor.ts';
 
 function reply(opts: { text?: string; error?: boolean }) {
   return {
-    info: {
-      id: 'msg_reply',
-      sessionID: 'ses_doctor',
-      role: 'assistant',
-      parentID: 'msg_prompt',
-      mode: 'build',
-      modelID: 'synthetic-model',
-      providerID: 'kortix',
-      path: { cwd: '/workspace', root: '/workspace' },
-      cost: 0,
-      tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
-      time: { created: 2, completed: 3 },
-      // OpenCode's error envelope: the message lives under `data.message`.
-      ...(opts.error
-        ? { error: { name: 'APIError', data: { message: '"synthetic-model" requires a paid plan.' } } }
-        : {}),
-    },
-    parts: opts.text
-      ? [{ id: 'part_1', sessionID: 'ses_doctor', messageID: 'msg_reply', type: 'text', text: opts.text }]
-      : [],
+    schema: 'kortix.session/2',
+    v: 0,
+    producer: { harness: 'pi', harness_version: '1', adapter_version: '1' },
+    message_id: 'msg_reply',
+    thread_id: 'ses_doctor',
+    seq: 2,
+    kind: 'turn',
+    role: 'assistant',
+    reply_to: 'msg_prompt',
+    status: opts.error ? 'error' : 'complete',
+    created_at: new Date(2).toISOString(),
+    completed_at: new Date(3).toISOString(),
+    ...(opts.error ? { error: { code: 'APIError', message: '"synthetic-model" requires a paid plan.' } } : {}),
+    blocks: opts.text ? [{ type: 'text', id: 'part_1', text: opts.text }] : [],
   } as unknown as Parameters<typeof doctorReplyVerdict>[0];
 }
 
@@ -50,27 +44,13 @@ describe('kortix doctor reply check', () => {
 
   test('shows the answer, not the reasoning that precedes it', () => {
     const message = reply({ text: 'pong' });
-    message.parts.unshift({
-      id: 'part_reasoning',
-      sessionID: 'ses_doctor',
-      messageID: 'msg_reply',
-      type: 'reasoning',
-      text: 'The user just said ping. I should respond with pong.',
-      time: { start: 2, end: 3 },
-    });
+    message.blocks.unshift({ type: 'reasoning', id: 'part_reasoning', text: 'The user just said ping. I should respond with pong.' } as never);
     expect(doctorReplyVerdict(message)).toEqual({ ok: true, text: 'pong' });
   });
 
   test('reasoning alone is not a reply', () => {
     const message = reply({});
-    message.parts.push({
-      id: 'part_reasoning',
-      sessionID: 'ses_doctor',
-      messageID: 'msg_reply',
-      type: 'reasoning',
-      text: 'I should respond with pong.',
-      time: { start: 2, end: 3 },
-    });
+    message.blocks.push({ type: 'reasoning', id: 'part_reasoning', text: 'I should respond with pong.' } as never);
     expect(doctorReplyVerdict(message)).toEqual({ ok: false, reason: 'reply had no text content' });
   });
 

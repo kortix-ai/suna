@@ -22,6 +22,15 @@ export function isSubscriptionModel(
 }
 
 /**
+ * A model that runs through Claude Code on the caller's own Claude Pro or Max
+ * plan (`claude-agent/<id>`, `@kortix/api-contract/claude-agent`). It never
+ * reaches the LLM gateway.
+ */
+export function isClaudeSubscriptionModel(model: { provider?: string | null; providerID?: string }): boolean {
+  return model.providerID === 'claude-agent' || model.provider === 'claude-agent';
+}
+
+/**
  * What the picker prints for a model.
  *
  * The gateway appends " (ChatGPT)" to every subscription model's name

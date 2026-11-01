@@ -1380,6 +1380,76 @@
       "when": 1793356273031,
       "tag": "20261030103113_job_queue_order",
       "breakpoints": true
+    },
+    {
+      "idx": 197,
+      "version": "7",
+      "when": 1793365474468,
+      "tag": "20261030130434_artifact_bindings",
+      "breakpoints": true
+    },
+    {
+      "idx": 198,
+      "version": "7",
+      "when": 1793371333084,
+      "tag": "20261030144213_drives_volume_region",
+      "breakpoints": true
+    },
+    {
+      "idx": 199,
+      "version": "7",
+      "when": 1793372724266,
+      "tag": "20261030150524_session_turn_message_time",
+      "breakpoints": true
+    },
+    {
+      "idx": 200,
+      "version": "7",
+      "when": 1793379800509,
+      "tag": "20261030170320_base_tip_proven_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 201,
+      "version": "7",
+      "when": 1793382851000,
+      "tag": "20261030175411_artifact_comment_screenshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 202,
+      "version": "7",
+      "when": 1793382852000,
+      "tag": "20261030175412_artifact_screenshot_upload_confirmation",
+      "breakpoints": true
+    },
+    {
+      "idx": 203,
+      "version": "7",
+      "when": 1793382854000,
+      "tag": "20261030175414_artifact_screenshot_verified_size",
+      "breakpoints": true
+    },
+    {
+      "idx": 204,
+      "version": "7",
+      "when": 1793392877198,
+      "tag": "20261030204117_multi_agent_messages_tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 205,
+      "version": "7",
+      "when": 1793417513481,
+      "tag": "20261031033153_claude_subscription_logins",
+      "breakpoints": true
+    },
+    {
+      "idx": 206,
+      "version": "7",
+      "when": 1793465054863,
+      "tag": "20261031164414_claude_login_flow_accounts",
+      "breakpoints": true
     }
   ]
 }

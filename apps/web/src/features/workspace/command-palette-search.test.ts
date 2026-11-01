@@ -265,9 +265,8 @@ describe('queries return the rows they name', () => {
   test('"customize" returns the two rows that say it, not seventeen', () => {
     // 12 settings tabs + 5 navigation rows carried the legacy `project
     // customize` tail. Two rows keep the word: the Customize INDEX — the card
-    // grid that introduces every capability tab (it used to be the Settings
-    // tab, one of the eight things that index introduces) — and "Customize
-    // Sidebar", whose label says it.
+    // grid that introduces every capability tab — and "Customize Sidebar",
+    // whose label says it.
     expect(hits('customize').sort()).toEqual(['nav:customize-sidebar', 'nav:proj-customize']);
   });
 
@@ -516,7 +515,6 @@ describe('genuine synonyms still answer', () => {
     ['approvals', 'nav:proj-review-inbox'],
     ['experimental', 'nav:proj-config-feature-flags'],
     ['labs', 'nav:proj-config-feature-flags'],
-    ['migration', 'nav:proj-config-upgrades'],
     ['change requests', 'nav:review-changes'],
     ['github', 'nav:account-git'],
     ['grants', 'nav:account-access-projects'],

@@ -1,16 +1,18 @@
-# kortix.yaml, kortix_version 3: key reference
+# kortix.yaml: key reference
 
 The example is in `SKILL.md` → `<manifest>`. This page lists the keys and
-rules. The schema is the authority: `kortix schema --version 3` prints it
-(https://kortix.com/schema/kortix.v3.schema.json). `kortix validate` also
+rules. The schema is the authority: `kortix schema` prints it
+(https://kortix.com/schema/kortix.schema.json). `kortix validate` also
 checks the cross-key rules. Unknown keys are errors.
+
+The format has no version. It changes only by adding optional keys whose
+defaults keep today's behavior, so a valid file stays valid.
 
 ## Top-level keys
 
 | Key | Holds |
 | --- | --- |
-| `kortix_version` | `3`. Required. |
-| `default_agent` | The agent a session or trigger runs when it names none. Required. A declared, enabled agent that is not `mode: subagent`. |
+| `default_agent` | The agent that runs when nothing names one and My Kortix is off, and the agent My Kortix starts when it names none. A declared, enabled agent that is not `mode: subagent`. |
 | `project` | `name`, `description`: shown in the dashboard. |
 | `imports` | Repository paths of more YAML files or folders (below). |
 | `env` | `required` and `optional` secret names. Values live in Kortix, never here. |
@@ -23,28 +25,51 @@ checks the cross-key rules. Unknown keys are errors.
 | `apps` | Map of Apps and their settings (the `kortix-apps` skill). |
 | `triggers` | List of triggers (below). |
 | `policy`, `policies`, `approvals` | Connector call policies and how long a held call stays decidable (`approvals.ttl`: `30m`, `4h`, `7d`; default 24h). Approve runs the held call once, as its caller, and resumes the agent with the result: the agent does not repeat it. A caller without a project-scoped token repeats it within 15 minutes. |
-| `agents` | Map of agent name → agent block. At least one. |
+| `builtin_agents` | `my_kortix: false` removes My Kortix, the built-in agent (slug `mykortix`). Absent = on. |
+| `spaces` | Work in progress: channels per area of work (below). |
+| `agents` | Map of agent name → agent block. Omitted: My Kortix only. |
 
 ## Agent block
 
 | Key | Value |
 | --- | --- |
-| `description` | What the agent does. The caller of `task` reads it. |
+| `description` | What the agent does. The caller of `agent` reads it. |
 | `mode` | `primary`, `subagent` or `all`. A subagent target needs `subagent` or `all`. |
 | `prompt` / `prompt_file` | The system prompt inline, or a repository `.md` path. Not both. |
 | `model`, `variant` | Model id and reasoning tier. Omitted: the project default. |
 | `temperature`, `top_p`, `steps` | Sampling, and the most model steps in one turn. |
-| `color`, `hidden`, `options` | Display color, hide from pickers, provider options. |
+| `hidden` | `true` hides the agent from pickers. (`color` and `options` validate; pi ignores them.) |
 | `permission` | Tool rules (`../pi.md` → Permissions). Omitted: `allow`. No `skill` or `task` key. |
 | `enabled` | `false`: no session can start with this agent. Default `true`. |
 | `codemode` | `on` (default), `only`, `off`. |
-| `tools` | `all` (default), `none`, a list, or `{ exclude: [names] }`. |
-| `skills`, `subagents`, `commands`, `extensions` | `all`, `none` (default) or registered names. Kortix skills count as registered. |
+| `tools` | `all`, `none`, a list, or `{ exclude: [names] }`. Set it on every agent: omitted is every tool, with a warning. |
+| `skills`, `extensions` | `all`, `none` (default), registered names, or `{ exclude: [names] }`: every one but those. Kortix skills count as registered. |
+| `subagents`, `commands` | `all`, `none` (default) or registered names. `subagents` is who this agent may call with the `agent` tool. |
 | `connectors`, `secrets`, `apps` | `all`, `none` (default) or names. |
 | `policy_sets` | Connector slug → policy set name for this agent. |
 | `kortix_permissions` | `all`, `none` (default) or a list of `project.*` values. |
 | `workspace` | `{ project_repository: true }` checks out the repository in `/workspace`. Default `false`. |
 | `sandbox` | A template slug, or `default`. |
+| `space` | Work in progress: the space the agent works in. Grouping only, never a grant. |
+| `network_egress` | Only `{ version: 1, default: deny, rules: [] }`. Declared, not enforced. |
+
+## spaces (work in progress)
+
+A space is a channel for one area of work: a room, then configured tabs
+(`goals`, `apps`, `artifacts`, `files`, `app`, `artifact`, `link`, `board`).
+It grants nothing. Spaces show only while the project flag
+`project_channels` is on; it is off by default, and while it is off the
+keys are kept but have no effect. A space's room needs `agent_rooms` (off
+by default); a Goals tab needs `goals` (off by default). Do not build a space
+unless the user asks and `kortix projects features` lists
+`project_channels` on.
+
+```yaml
+spaces:
+  sales: { label: Sales, order: 1, tabs: [{ type: apps }, { type: files, path: sales }] }
+agents:
+  closer: { space: sales, prompt: You run the sales pipeline., tools: all }
+```
 
 ## Registries
 
@@ -57,7 +82,7 @@ checks the cross-key rules. Unknown keys are errors.
 - An extension sets `pi`: `"npm:<package>@<x.y.z>"`, a repository path, or
   `{ source, extensions, skills, prompts, themes }` to load part of a package.
 - A skill, command or extension reaches only the agents that grant it. A
-  tool reaches every agent whose `tools` allows it (default `all`).
+  tool reaches every agent whose `tools` allows it.
 
 ## kortix_permissions
 
@@ -150,6 +175,11 @@ triggers:
   - slug: handle-reply
     on: { event: reply.received, app: inbox-poller }
     run: { prompt: "Answer {{ event.data.subject }}." }
+  - slug: verify-prod          # flat form: a merged change request has no on: shape
+    type: change_request
+    filter: { base: main }     # optional: merges into main only
+    agent: writer
+    prompt: "CR #{{ change_request.number }} merged. Verify prod."
 ```
 
 | `on:` | Fires |
@@ -158,11 +188,12 @@ triggers:
 | `every` | Each fixed period: `5m`, `2h`; at least `60s`. |
 | `at` | Once, at an ISO-8601 instant. |
 | `webhook: { secret: <NAME> }` | On a signed `POST /v1/webhooks/projects/<project_id>/<slug>`. |
-| `event: <name> \| "*"`, `app: <slug>` | When that App posts the event (`../scheduling.md` → App events). |
+| `event: <name> \| "*"`, `app: <slug>` | When that App posts the event (`../scheduling.md` → Watch 24/7). |
+| `event: <TYPE>`, `connector: <slug>` | When the connected app reports that event (flag `event_triggers`; types: `kortix triggers events --connector <slug>`). |
 
 | `run:` | Does |
 | --- | --- |
-| `prompt` (+ `agent`, `model`, `session`, `session_key`, `session_id`) | Prompts an agent session. `agent` defaults to `default_agent`. |
+| `prompt` (+ `agent`, `model`, `session`, `session_key`, `session_id`) | Prompts an agent session. Without `agent` it runs My Kortix (`default_agent` when My Kortix is off). |
 | `app` (+ `path` default `/`, `method` `POST` or `GET`, `payload`) | Calls the App. No session, no model. |
 
 - Other fields: `slug` (required, `[a-z0-9][a-z0-9_-]{0,127}`, unique across
@@ -172,6 +203,9 @@ triggers:
   long-lived session), `keyed` (with `session_key`), `pinned` (with
   `session_id`).
 - `run:` takes `prompt` or `app`, never both.
+- `type: change_request` fires once per merged change request of the
+  project. `filter.base` is the branch it must merge into (any when absent);
+  other `filter` keys match the payload as on any trigger.
 - Webhook auth: `X-Kortix-Signature: sha256=<hex>` or GitHub's
   `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with the secret), or the
   secret as `X-Kortix-Token` or `Authorization: Bearer`. Add
@@ -190,6 +224,39 @@ Prompt variables, `{{ dotted.path }}` (a missing value renders empty):
 | Schedule | `cron.schedule`, `cron.timezone`, `cron.scheduled_for`, `cron.last_scheduled_for` (empty on the first fire). No `fired_at`. |
 | Webhook | `fired_at`, `body.*`, `headers.content_type`, `headers.user_agent`, `headers.forwarded_for` |
 | App event | `event.name`, `event.data.*`, `event.id`, `event.emitted_at`, `app.slug` |
+| Change request merged | `fired_at`, `change_request.cr_id`, `.number`, `.title`, `.base_ref`, `.head_ref`, `.merge_commit_sha` |
+
+## Problems
+
+`kortix validate` exits `1` on an error, unknown keys included. `kortix
+ship`, the CR merge and every Kortix write refuse such a file. A file
+already on the default branch never stops the project. What runs with an
+error:
+
+| The error is in | At run time |
+| --- | --- |
+| An unknown key, anywhere | Ignored. |
+| An agent or a trigger | That entry is off. A session that names the agent fails with the issue. |
+| A connector, App, skill, tool, command, extension, space or sandbox template | That entry is gone. |
+| `project` or `default_agent` | The key falls back to its default. |
+| Anything else (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, an unknown format version, YAML syntax) | Only My Kortix runs, so it can fix the file. |
+
+Each rule only takes access away. The project page shows the errors and
+the warnings without a fix id, with **Fix with My Kortix**. Every session's
+system prompt lists the errors.
+
+A deprecated key is not an error: it still works, and `kortix validate`
+warns with its replacement and a fix id. Run `kortix validate --fix` to
+rewrite every deprecated key (and the files `imports:` names) to the latest
+shape, comments kept. Never write a deprecated key in new config.
+
+An older format still works: Kortix reads it converted, each agent `.md`
+frontmatter as the agent's keys and its body as the prompt. `kortix
+validate` warns once (`fix: legacy-format`), lists what has no place in
+this format, and validates the converted file. `kortix validate --fix`
+converts the files: it writes kortix.yaml, keeps only the prompt in each
+agent `.md`, and deletes the old files it replaces. Commit all of it in one
+CR. The other CLI commands that edit the file refuse until it is converted.
 
 ## Edits from the dashboard and the CLI
 

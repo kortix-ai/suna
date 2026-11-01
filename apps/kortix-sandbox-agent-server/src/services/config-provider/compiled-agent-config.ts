@@ -28,7 +28,7 @@ export function compiledAgentConfigFromEnv(env: NodeJS.ProcessEnv): string | und
 /**
  * Point `env` at `config`, or clear it with `null`.
  *
- * OpenCode, git, every PTY and every other child inherit the daemon's env.
+ * git, every PTY, every agent shell and every other child inherit the daemon's env.
  * Linux refuses to exec a child whose env holds one string over 128 KiB, so an
  * oversized config is stored gzip-encoded in parts, never raw.
  */

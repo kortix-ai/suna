@@ -1,5 +1,5 @@
 import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
-import type { RuntimeCapability } from '@kortix/api-contract/runtime-relay';
+import { RUNTIME_STABLE_MESSAGE_ID_CAPABILITY, type RuntimeCapability } from '@kortix/api-contract/runtime-relay';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
@@ -271,6 +271,33 @@ export interface SteerAdmissionDeps {
 
 const STEER_CAPABILITY: RuntimeCapability = 'session.steer';
 
+/** `/kortix/health` `capabilities` of a sandbox's runtime (memoized 5 min); null when the read failed. */
+function readRuntimeCapabilities(externalId: string | null | undefined, actorUserId: string | null): Promise<string[] | null> {
+  return runtimeCapabilities(externalId ?? undefined, () =>
+    sandboxOpencodeEndpoint(externalId!, actorUserId ?? undefined));
+}
+
+/**
+ * Does this sandbox's runtime keep a delivered prompt's message id
+ * (`RUNTIME_STABLE_MESSAGE_ID_CAPABILITY`)? Then a prompt goes out under the id
+ * it already has. False when the read fails or the box does not list it: the
+ * caller re-mints, as for OpenCode, which orders by id.
+ */
+export async function sandboxKeepsMessageIds(externalId: string | null | undefined, actorUserId: string | null): Promise<boolean> {
+  return (await readRuntimeCapabilities(externalId, actorUserId))?.includes(RUNTIME_STABLE_MESSAGE_ID_CAPABILITY) ?? false;
+}
+
+/** `sandboxKeepsMessageIds` for the session's box. False when the box cannot be read. */
+export async function sessionKeepsMessageIds(sessionId: string | null | undefined, actorUserId: string | null): Promise<boolean> {
+  if (!sessionId) return false;
+  try {
+    const box = await liveInboxAdmissionDeps.readSandbox(sessionId);
+    return await sandboxKeepsMessageIds(box?.externalId, actorUserId);
+  } catch {
+    return false;
+  }
+}
+
 export const liveInboxAdmissionDeps: InboxAdmissionDeps = {
   reconcileTurn: reconcileInboxTurn,
   // Dynamic: `turn-stop-authority.ts` imports this module.
@@ -327,9 +354,7 @@ export const liveInboxAdmissionDeps: InboxAdmissionDeps = {
     return !!running;
   },
   steer: {
-    capabilities: (externalId, actorUserId) =>
-      runtimeCapabilities(externalId ?? undefined, () =>
-        sandboxOpencodeEndpoint(externalId!, actorUserId ?? undefined)),
+    capabilities: readRuntimeCapabilities,
     async turnPrompter(sessionId, messageId) {
       const [prompt] = await db
         .select({ actorUserId: sessionLifecycleCommands.actorUserId })

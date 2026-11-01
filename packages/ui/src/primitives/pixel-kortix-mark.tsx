@@ -1,26 +1,16 @@
 'use client';
 
+import { PIXEL_KORTIX_ROWS } from '@kortix/shared/pixel-mark';
 import { useId, type ComponentPropsWithoutRef } from 'react';
 
 import { cn } from '../lib/utils';
 
 /**
- * The Kortix symbol (`kortix-logo.tsx`, `variant="icon"`) sampled onto a
- * 12 × 10 grid. `#` is a cell the symbol fully covers; `+` is a cell on a curve
- * that it only partly covers, drawn as a checker so the curves read as dither.
+ * The Kortix symbol on a 12 × 10 grid: `#` a full cell, `+` a curve cell drawn
+ * as a checker. The rows live in `@kortix/shared/pixel-mark` so the TUI splash
+ * draws the same symbol; this module re-exports them under the same name.
  */
-export const PIXEL_KORTIX_ROWS = [
-  '##   ##   ##',
-  '##   ##   ##',
-  '+#+  ##  +#+',
-  ' ##+ ## +## ',
-  '  ########  ',
-  '  ########  ',
-  ' ##+ ## +## ',
-  '+#+  ##  +#+',
-  '##   ##   ##',
-  '##   ##   ##',
-] as const;
+export { PIXEL_KORTIX_ROWS };
 
 /** Cell size and the gap after it, in viewBox units. At the default size one
  *  unit is one CSS pixel, so cells and the 1px checker land on whole pixels. */

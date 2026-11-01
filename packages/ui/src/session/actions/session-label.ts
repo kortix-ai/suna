@@ -1,4 +1,4 @@
-import { stripChatMentionMarkup } from '@kortix/shared';
+import { isMyKortixAgentName, stripChatMentionMarkup } from '@kortix/shared';
 import type { UiTranslator } from '../../i18n';
 
 import {
@@ -48,9 +48,9 @@ export interface SessionSource {
   triggerSlug: string | null;
 }
 
-/** The platform meta coordinator — drives other sessions from its own sandbox. */
+/** My Kortix (slug `mykortix`, `meta` on an older session), the built-in agent — drives other sessions from its own sandbox. */
 export function isMetaCoordinatorSession(session: ProjectSession): boolean {
-  return session.agent_name === 'meta';
+  return isMyKortixAgentName(session.agent_name);
 }
 
 /**

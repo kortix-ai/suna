@@ -461,7 +461,7 @@ flow(
         { feature: "attachments.user", detail: "application/pdf", status: "lost" },
         { feature: "reasoning_replay", detail: "other_model", status: "lost" },
         { feature: "todos", status: "lost" },
-        ...["session.rewind", "session.fork", "session.mcp", "session.todo", "session.shell", "session.attach", "session.config"].map((feature) => ({ feature, status: "lost" })),
+        ...["session.rewind", "session.fork", "session.mcp", "session.todo", "session.shell", "session.attach", "session.config", "session.messaging", "session.team_tasks"].map((feature) => ({ feature, status: "lost" })),
       ];
 
       await ctx.step("disable restore: preflight to pi → 200 available without a restore, and the whole history (4 live messages) is the first loss", async () => {

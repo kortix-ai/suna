@@ -1,29 +1,124 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kortix.com/schema/kortix.v3.schema.json",
-  "title": "Kortix manifest (kortix_version 3)",
-  "description": "kortix.yaml, schema version 3. The project registers skills, tools, commands and extensions; each agent is one block of behavior (prompt, model, permission) and enables registered things by name. No harness config folder is read. Unknown keys are errors.",
+  "$id": "https://kortix.com/schema/kortix.schema.json",
+  "title": "Kortix manifest (kortix.yaml)",
+  "description": "kortix.yaml. The project registers skills, tools, commands and extensions; each agent is one block of behavior (prompt, model, permission) and enables registered things by name. The format has no version: it changes only by adding optional keys. Unknown keys are errors when you write the file; a running project ignores them.",
   "type": "object",
-  "required": [
-    "kortix_version",
-    "default_agent"
-  ],
-  "if": {
-    "not": {
-      "required": [
-        "imports"
-      ]
-    }
-  },
-  "then": {
-    "required": [
-      "agents"
-    ]
-  },
   "properties": {
     "kortix_version": {
       "const": 3,
-      "description": "`3`. A higher version is an error."
+      "deprecated": true,
+      "description": "Deprecated: obsolete, the format has no version. Delete the line."
+    },
+    "sandboxes": {
+      "type": "array",
+      "deprecated": true,
+      "description": "Deprecated: use `sandbox.templates`.",
+      "items": {
+        "type": "object",
+        "required": [
+          "slug"
+        ],
+        "properties": {
+          "slug": {
+            "allOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+              },
+              {
+                "not": {
+                  "const": "default"
+                }
+              }
+            ],
+            "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 64 characters. `default` is reserved."
+          },
+          "name": {
+            "type": "string",
+            "description": "The label in the template picker. Default: the slug."
+          },
+          "entrypoint": {
+            "type": "string",
+            "description": "Overrides the container entrypoint. Default: the image's."
+          },
+          "image": {
+            "description": "An image with a tag or a digest. No tag is an error. `:latest` is a warning. Set `image` or `dockerfile`, not both. Neither: the platform base image."
+          },
+          "dockerfile": {
+            "anyOf": [
+              {
+                "not": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              },
+              {
+                "type": "string",
+                "pattern": "\\S",
+                "not": {
+                  "pattern": "^/|(^|/)\\.\\.($|/)"
+                }
+              }
+            ],
+            "description": "A repository path to a Dockerfile. `kortix validate` lints it: no `COPY` from the repository, no `RUN` heredoc, a Debian-family base image."
+          },
+          "cpu": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "vCPU cores. Above 32 is a warning, and Kortix uses 32. Default: the platform default."
+          },
+          "memory": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "GiB of memory. Above 128 is a warning, and Kortix uses 128. Default: the platform default."
+          },
+          "disk": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "GiB of disk. Above 500 is a warning, and Kortix uses 500. Default: the platform default."
+          },
+          "container_runtime": {
+            "type": "boolean",
+            "default": false,
+            "description": "`true`: Docker runs inside the sandbox."
+          },
+          "residential_proxy": {
+            "description": "`true`, or `{ country: us }`: the sandbox's web traffic leaves through a residential IP address, billed per GB from credits. Kortix hosts and package registries connect directly. Sessions start only where the deployment offers it. Not part of the image.",
+            "oneOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "country": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z]{2}$",
+                    "description": "ISO 3166-1 alpha-2 country code of the IP address."
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "not": {
+          "required": [
+            "image",
+            "dockerfile"
+          ],
+          "properties": {
+            "image": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "dockerfile": {
+              "type": "string",
+              "pattern": "\\S"
+            }
+          }
+        }
+      }
     },
     "imports": {
       "type": "array",
@@ -36,7 +131,7 @@
     "default_agent": {
       "type": "string",
       "pattern": "\\S",
-      "description": "The agent a session or trigger runs when it names none. A declared agent that is enabled and whose `mode` is `primary` or `all`."
+      "description": "The agent that runs when nothing names one and My Kortix is off, and the agent My Kortix starts when it names none. A session or trigger that names no agent runs My Kortix while it is on. A declared agent that is enabled and whose `mode` is `primary` or `all`."
     },
     "runtime": {
       "type": "string",
@@ -237,7 +332,8 @@
                   "cron",
                   "webhook",
                   "event",
-                  "app"
+                  "app",
+                  "change_request"
                 ],
                 "description": "Required in the flat form: the trigger without `on` and `run`. `type` next to `on` is an error."
               },
@@ -2363,6 +2459,22 @@
               "parent": {
                 "type": "string",
                 "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+              },
+              "space": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$",
+                "description": "The space the App is grouped in. Grouping only."
+              },
+              "agent": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+                "description": "The agent that owns the App. Grouping only."
               }
             },
             "additionalProperties": false
@@ -2455,7 +2567,6 @@
               "image_search",
               "image_gen",
               "scrape_webpage",
-              "memory",
               "show"
             ]
           }
@@ -2477,6 +2588,8 @@
             "websearch",
             "skill",
             "lsp",
+            "agent",
+            "codemode",
             "invalid",
             "execute",
             "plan_exit"
@@ -2639,6 +2752,18 @@
       "description": "The decision for a connector call that no rule matches.",
       "properties": {
         "default_mode": {
+          "type": "string",
+          "anyOf": [
+            {
+              "enum": [
+                "risk",
+                "allow_all"
+              ]
+            },
+            {
+              "pattern": "^\\s*(?:[rR][iI][sS][kKK]|[aA][lL][lL][oO][wW]_[aA][lL][lL])\\s*$(?![\\s\\S])"
+            }
+          ],
           "default": "allow_all",
           "description": "`allow_all`: the call runs. `risk`: a read runs, and a write or a delete waits for approval."
         }
@@ -2648,11 +2773,31 @@
       "type": "array",
       "description": "Connector rules for the whole project. They run before every policy set and base rule.",
       "items": {
+        "type": "object",
+        "required": [
+          "match",
+          "action"
+        ],
         "properties": {
           "match": {
-            "description": "Required. A glob over `<connector-slug>.<tool>`, such as `gmail.send_*` or `*.delete*`. Case-insensitive."
+            "type": "string",
+            "pattern": "\\S",
+            "description": "Required. A glob over `<connector-slug>.<tool>`, such as `gmail.send_*` or `*.delete*`, or a `/regex/flags`. Case-insensitive."
           },
           "action": {
+            "type": "string",
+            "anyOf": [
+              {
+                "enum": [
+                  "always_run",
+                  "require_approval",
+                  "block"
+                ]
+              },
+              {
+                "pattern": "^\\s*(?:[aA][lL][wW][aA][yY][sS]_[rR][uU][nN]|[rR][eE][qQ][uU][iI][rR][eE]_[aA][pP][pP][rR][oO][vV][aA][lL]|[bB][lL][oO][cC][kKK])\\s*$(?![\\s\\S])"
+              }
+            ],
             "description": "Required. What a matching call does."
           },
           "conditions": {
@@ -2674,10 +2819,209 @@
       },
       "additionalProperties": false
     },
+    "spaces": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Spaces: channels with a room (always the first tab) and configured tabs. Agents join one with `agents.<name>.space`.",
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "order": {
+            "type": "number"
+          },
+          "header": {
+            "type": "array",
+            "description": "What the space header shows, in order. Absent: every item.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "agents",
+                "members",
+                "needs_you",
+                "new_session",
+                "ask_my_kortix"
+              ]
+            }
+          },
+          "tabs": {
+            "type": "array",
+            "description": "The tabs after the room, in order. Absent: the default set.",
+            "items": {
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "goals",
+                    "apps",
+                    "artifacts",
+                    "files",
+                    "board",
+                    "app",
+                    "artifact",
+                    "link"
+                  ]
+                },
+                "label": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "files: a project folder path."
+                },
+                "app": {
+                  "type": "string",
+                  "description": "app: a Kortix App slug."
+                },
+                "artifact": {
+                  "type": "string",
+                  "description": "artifact: an artifact_id."
+                },
+                "url": {
+                  "type": "string",
+                  "pattern": "^https?://",
+                  "description": "link: an http(s) url."
+                },
+                "embed": {
+                  "type": "boolean",
+                  "description": "link: embed the page in a sandboxed frame."
+                },
+                "blocks": {
+                  "type": "array",
+                  "description": "board: the grid blocks, in order.",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "type"
+                    ],
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "chat",
+                          "artifact",
+                          "app",
+                          "iframe",
+                          "text"
+                        ]
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "room": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "app": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "files"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "path"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "app"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "app"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "artifact"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "artifact"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "link"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "url"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "builtin_agents": {
+      "type": "object",
+      "description": "Built-in agents the platform adds to this project. Absent = on.",
+      "properties": {
+        "my_kortix": {
+          "type": "boolean",
+          "default": true,
+          "description": "My Kortix, the built-in agent you talk to. false removes it from this project."
+        }
+      },
+      "additionalProperties": false
+    },
     "agents": {
       "type": "object",
-      "description": "Agent name → agent block. At least 1 agent, here or in an imported file. A name is lowercase letters, digits, `-` and `_`, at most 128 characters.",
-      "minProperties": 1,
+      "description": "Agent name → agent block, here or in an imported file. A name is lowercase letters, digits, `-` and `_`, at most 128 characters.",
       "propertyNames": {
         "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
       },
@@ -2895,39 +3239,59 @@
             ]
           },
           "skills": {
-            "description": "Registered skills and Kortix skills the agent may load.",
+            "description": "Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. \"all\", \"none\" (default), a list of names, or `{ exclude: [names] }` for every name but those.",
             "oneOf": [
               {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "\\S"
-                }
-              },
-              {
-                "type": "string",
-                "anyOf": [
+                "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
+                "oneOf": [
                   {
-                    "enum": [
-                      "all",
-                      "*",
-                      "none",
-                      ""
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  },
+                  {
+                    "type": "string",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "all",
+                          "*",
+                          "none",
+                          ""
+                        ]
+                      },
+                      {
+                        "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                      },
+                      {
+                        "pattern": "^\\s*$(?![\\s\\S])"
+                      }
                     ]
-                  },
-                  {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
-                  },
-                  {
-                    "pattern": "^\\s*$(?![\\s\\S])"
                   }
                 ]
+              },
+              {
+                "type": "object",
+                "required": [
+                  "exclude"
+                ],
+                "properties": {
+                  "exclude": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  }
+                },
+                "additionalProperties": false
               }
-            ],
-            "default": "none"
+            ]
           },
           "subagents": {
-            "description": "Agents this agent may start with the `task` tool: declared, enabled, `mode` `subagent` or `all`, and not itself. A subagent cannot start another subagent.",
+            "description": "Agents this agent may start with the `agent` tool (alias `task`): declared, enabled, `mode` `subagent` or `all`, and not itself. A subagent cannot start another subagent.",
             "oneOf": [
               {
                 "type": "array",
@@ -2991,36 +3355,56 @@
             "default": "none"
           },
           "extensions": {
-            "description": "Registered extensions that a session of the agent loads.",
+            "description": "Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those. \"all\", \"none\" (default), a list of names, or `{ exclude: [names] }` for every name but those.",
             "oneOf": [
               {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "\\S"
-                }
-              },
-              {
-                "type": "string",
-                "anyOf": [
+                "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
+                "oneOf": [
                   {
-                    "enum": [
-                      "all",
-                      "*",
-                      "none",
-                      ""
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  },
+                  {
+                    "type": "string",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "all",
+                          "*",
+                          "none",
+                          ""
+                        ]
+                      },
+                      {
+                        "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                      },
+                      {
+                        "pattern": "^\\s*$(?![\\s\\S])"
+                      }
                     ]
-                  },
-                  {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
-                  },
-                  {
-                    "pattern": "^\\s*$(?![\\s\\S])"
                   }
                 ]
+              },
+              {
+                "type": "object",
+                "required": [
+                  "exclude"
+                ],
+                "properties": {
+                  "exclude": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  }
+                },
+                "additionalProperties": false
               }
-            ],
-            "default": "none"
+            ]
           },
           "connectors": {
             "description": "Connector slugs the agent may call.",
@@ -3230,7 +3614,21 @@
           },
           "workspace": {
             "description": "What new sessions of this agent get in /workspace. Any other key under `workspace` is an error.",
-            "type": "object",
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "branch",
+                  "runtime",
+                  "read"
+                ],
+                "deprecated": true,
+                "description": "Deprecated: `branch` is `{ project_repository: true }`, `runtime` is `{ project_repository: false }`."
+              },
+              {
+                "type": "object"
+              }
+            ],
             "properties": {
               "project_repository": {
                 "type": "boolean",
@@ -3244,6 +3642,11 @@
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
             "description": "A template slug, or `default` for the platform image. Default: `sandbox.default`."
+          },
+          "space": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$",
+            "description": "The space the agent works in (a key of the top-level `spaces` map, or a bare slug). Grouping only."
           },
           "network_egress": {
             "type": "object",
@@ -3266,6 +3669,151 @@
             },
             "additionalProperties": false,
             "description": "Only `{ version: 1, default: deny, rules: [] }`. It validates with a warning: Kortix does not enforce it."
+          },
+          "disable": {
+            "type": "boolean",
+            "deprecated": true,
+            "description": "Deprecated: use `enabled` (the opposite value)."
+          },
+          "env": {
+            "description": "Deprecated: use `secrets` (same value).",
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              },
+              {
+                "type": "string",
+                "anyOf": [
+                  {
+                    "enum": [
+                      "all",
+                      "*",
+                      "none",
+                      ""
+                    ]
+                  },
+                  {
+                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                  },
+                  {
+                    "pattern": "^\\s*$(?![\\s\\S])"
+                  }
+                ]
+              }
+            ],
+            "deprecated": true
+          },
+          "kortix_cli": {
+            "description": "Deprecated: use `kortix_permissions` (same value).",
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "project.read",
+                    "project.write",
+                    "project.delete",
+                    "project.session.read",
+                    "project.session.start",
+                    "project.session.stop",
+                    "project.session.bindings.write",
+                    "project.members.read",
+                    "project.members.manage",
+                    "project.trigger.read",
+                    "project.trigger.create",
+                    "project.trigger.update",
+                    "project.trigger.delete",
+                    "project.trigger.fire",
+                    "project.gateway.logs.read",
+                    "project.gateway.spend.read",
+                    "project.usage.read",
+                    "project.gateway.budget.set",
+                    "project.gateway.keys.manage",
+                    "project.agent.read",
+                    "project.agent.write",
+                    "project.skill.read",
+                    "project.skill.write",
+                    "project.command.read",
+                    "project.command.write",
+                    "project.file.read",
+                    "project.file.write",
+                    "project.settings.write",
+                    "project.sandbox.write",
+                    "project.model.read",
+                    "project.model.write",
+                    "project.gitops.read",
+                    "project.gitops.push",
+                    "project.gitops.merge",
+                    "project.gitops.ref.any",
+                    "project.gitops.ref.delete",
+                    "project.secret.read",
+                    "project.secret.write",
+                    "project.connector.read",
+                    "project.connector.connections.manage",
+                    "project.connector.write",
+                    "project.app.read",
+                    "project.app.write",
+                    "project.app.deploy",
+                    "project.app.admin",
+                    "project.review.read",
+                    "project.review.submit",
+                    "project.review.act",
+                    "project.room.read",
+                    "project.room.write",
+                    "project.artifact.read",
+                    "project.artifact.comment",
+                    "project.artifact.write",
+                    "project.artifact.manage",
+                    "project.artifact.public",
+                    "project.credentials.issue",
+                    "project.cr.open",
+                    "project.cr.merge",
+                    "project.customize.read",
+                    "project.customize.write",
+                    "*"
+                  ]
+                }
+              },
+              {
+                "type": "string",
+                "anyOf": [
+                  {
+                    "enum": [
+                      "all",
+                      "*",
+                      "none",
+                      ""
+                    ]
+                  },
+                  {
+                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                  },
+                  {
+                    "pattern": "^\\s*$(?![\\s\\S])"
+                  }
+                ]
+              }
+            ],
+            "deprecated": true
+          },
+          "connectors_personal": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "deprecated": true,
+            "description": "Deprecated: use `connectors_required` (same value)."
+          },
+          "repository_access": {
+            "type": "boolean",
+            "deprecated": true,
+            "description": "Deprecated: use `workspace: { project_repository: <bool> }`."
           }
         },
         "additionalProperties": false,

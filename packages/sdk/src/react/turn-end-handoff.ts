@@ -12,8 +12,7 @@ import {
 import { unwrapError } from '../core/turns/errors';
 import { hasNotifySink, notifySessionError, notifyTaskComplete } from '../platform/ui';
 import { registerIdentityReset } from './identity-reset-registry';
-import { findCachedProjectSession } from './session-cache-write';
-import { realRuntimeTitle } from './use-opencode-events/helpers';
+import { cachedSessionName, realRuntimeTitle } from './use-opencode-events/helpers';
 import { type Session, runtimeKeys } from './use-opencode-sessions';
 
 /**
@@ -42,8 +41,10 @@ function announce(...[handoff, outcome, watchedSinceMs]: Parameters<TurnEndWatch
   }
 }
 
-/** The session's control stream as the watch's push source: each
- *  `kortix.control.turn` frame is the `/turn` answer, pushed. */
+/** The session's stream as the watch's push source: each
+ *  `kortix.control.turn` frame is the `/turn` answer, pushed. The watch joins
+ *  with no channel of its own. A connection that is not a full holder cannot
+ *  rely on these frames: `pushLive` answers false, and the poll reads the end. */
 function subscribeTurnFrames(
   projectId: string,
   sessionId: string,
@@ -102,8 +103,7 @@ function sessionTitle(
   sessionId: string,
   runtimeSessionId: string | null | undefined,
 ): string | undefined {
-  const row = findCachedProjectSession(queryClient, projectId, (session) => session.session_id === sessionId);
-  const named = row?.custom_name || row?.name;
+  const named = cachedSessionName(queryClient, projectId, sessionId);
   if (named) return named;
   if (!runtimeSessionId) return undefined;
   const runtime =

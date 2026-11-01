@@ -9,13 +9,12 @@ import type { ProjectSession } from './api/types.ts';
  * The PRINT-FREE core of "get me a session I can talk to".
  *
  * Everything here is shared by the CLI commands (which print their own
- * messages around it) and by `attach-opencode.ts` (which is a library an
- * embedder — e.g. `apps/tui` — calls with its renderer suspended). Nothing in
- * this module may write to stdout/stderr: it reports failure by throwing
- * `SessionRuntimeError`, and progress through callbacks.
+ * messages around it) and by `port-forward.ts` (a library `apps/tui` calls).
+ * Nothing in this module may write to stdout/stderr: it reports failure by
+ * throwing `SessionRuntimeError`, and progress through callbacks.
  */
 
-/** Session states `connect` restarts before it can attach. */
+/** Session states a caller restarts before it can talk to the runtime. */
 export const DORMANT_SESSION_STATUSES: ReadonlySet<ProjectSession['status']> = new Set([
   'stopped',
   'completed',

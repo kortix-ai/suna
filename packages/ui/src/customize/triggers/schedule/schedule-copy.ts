@@ -22,21 +22,26 @@ import type { ProjectTrigger } from '@kortix/sdk';
 
 import { describeEventTitle } from './event-trigger-copy';
 
-export type TriggerKind = 'cron' | 'webhook' | 'event' | 'app';
+export type TriggerKind = 'cron' | 'webhook' | 'event' | 'app' | 'change_request';
 
 /**
  * The trigger kinds this screen lists. `ScheduleView` filters every list
  * through this before it reaches the table, the row actions, or the detail
  * sheet, so `trigger.type` is safe to treat as {@link TriggerKind} anywhere
- * downstream of that filter. `app` (an App's own events) is listed and
- * managed here; it is written in `kortix.yaml`, not in the composer.
+ * downstream of that filter. `app` (an event that one of the project's Apps
+ * sends) and `change_request` (a merged change request) are listed, created
+ * and edited here, like the other kinds.
  */
 export function isTriggerKind(type: ProjectTrigger['type']): type is TriggerKind {
-  return type === 'cron' || type === 'webhook' || type === 'event' || type === 'app';
+  return type === 'cron' || type === 'webhook' || type === 'event' || type === 'app' || type === 'change_request';
 }
 
-/** The kinds the composer can create. */
-export const COMPOSER_KINDS: readonly TriggerKind[] = ['cron', 'webhook', 'event'];
+/**
+ * The kinds the composer offers, in its order. Every kind always shows: one
+ * the project cannot use yet (`event` with the flag `event_triggers` off,
+ * `app` with no App that sends events) says why in its panel.
+ */
+export const COMPOSER_KINDS: readonly TriggerKind[] = ['cron', 'app', 'event', 'webhook', 'change_request'];
 
 /** `every_seconds` as a sentence: "Every 5 minutes", "Every 2 hours". */
 export function describeEvery(seconds: number): string {
@@ -186,6 +191,10 @@ export function describeWhen(
   eventNames?: ReadonlyMap<string, string>,
 ): string {
   if (trigger.type === 'webhook') return 'When a request arrives';
+  if (trigger.type === 'change_request') {
+    const base = trigger.filter?.base;
+    return typeof base === 'string' ? `When a change request merges into ${base}` : 'When a change request merges';
+  }
   if (trigger.type === 'event') return describeEventTitle(trigger.event, eventNames);
   if (trigger.type === 'app') {
     const name = trigger.filter?.['event.name'];
@@ -213,13 +222,14 @@ export function describeNextRun(trigger: ProjectTrigger): string | null {
 
 /* ─── Names ─────────────────────────────────────────────────────────────── */
 
-/** Never blank: falls back to what the automation does, then to its kind. */
+/** Never blank: falls back to what the trigger does, then to its kind. */
 export function triggerName(trigger: ProjectTrigger): string {
   const named = trigger.name?.trim();
   if (named) return named;
   if (trigger.type === 'cron') return describeWhen(trigger);
   if (trigger.type === 'event') return describeWhen(trigger);
   if (trigger.type === 'app') return describeWhen(trigger);
+  if (trigger.type === 'change_request') return describeWhen(trigger);
   return 'Untitled webhook';
 }
 
@@ -430,8 +440,18 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
     createLabel: 'New App event',
     searchPlaceholder: 'Search App events',
     emptyTitle: 'No App events yet',
-    emptyBody: 'An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml.',
+    emptyBody: 'Create one to have an agent run when one of your Apps sends an event.',
     column: 'Status',
+  },
+  change_request: {
+    title: 'Change request merged',
+    description: 'Have an agent run when a change request merges.',
+    noun: 'change request trigger',
+    createLabel: 'New change request trigger',
+    searchPlaceholder: 'Search change request triggers',
+    emptyTitle: 'No change request triggers yet',
+    emptyBody: 'Create one to have an agent run when a change request merges.',
+    column: 'Branch',
   },
 };
 
@@ -443,7 +463,7 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
  */
 export const TRIGGERS_COPY = {
   title: 'Triggers',
-  description: 'Run agents on a schedule, an app event, or a webhook.',
+  description: 'Start agents or wake sessions on a schedule or an event.',
   noun: 'trigger',
   createLabel: 'New trigger',
   searchPlaceholder: 'Search triggers',

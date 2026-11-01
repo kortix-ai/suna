@@ -212,6 +212,31 @@ export function useProjectSessions(projectId: string, options?: UseProjectSessio
 export interface UseSessionChildrenOptions extends Pick<ListProjectSessionsOptions, 'limit' | 'q'> {
   /** Set false until the parent is expanded — children load lazily. */
   enabled?: boolean;
+  /** Poll every this many ms while the page is visible (a live agent list). Omit for no poll. */
+  refetchInterval?: number;
+}
+
+/** The pages with `parentSessionId`'s `child_count` raised to at least `count`;
+ *  the same object when no row changes, so react-query notifies nobody. The
+ *  count only rises: `child_count` also counts children this viewer may not list. */
+function raiseChildCount(
+  data: ProjectSessionPages | undefined,
+  parentSessionId: string,
+  count: number,
+): ProjectSessionPages | undefined {
+  if (!data) return data;
+  let changed = false;
+  const pages = data.pages.map((page) => {
+    const index = page.items.findIndex(
+      (session) => session.session_id === parentSessionId && (session.child_count ?? 0) < count,
+    );
+    if (index < 0) return page;
+    changed = true;
+    const items = page.items.slice();
+    items[index] = { ...items[index]!, child_count: count };
+    return { ...page, items };
+  });
+  return changed ? { ...data, pages } : data;
 }
 
 /**
@@ -225,19 +250,32 @@ export function useSessionChildren(
   options?: UseSessionChildrenOptions,
 ) {
   const q = options?.q;
+  const queryClient = useQueryClient();
   const query = useInfiniteQuery({
     queryKey: qk.project.sessionChildren(projectId, parentSessionId, q),
     initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) =>
-      listProjectSessionsPage(projectId, {
+    queryFn: async ({ pageParam }) => {
+      const page = await listProjectSessionsPage(projectId, {
         parent: parentSessionId,
         limit: options?.limit,
         cursor: pageParam,
         q,
-      }),
+      });
+      // The session list opens a row's children only when the row counts
+      // some, and nothing tells that list a child was created. A first page
+      // read without a search is a lower bound on the count.
+      if (pageParam === null && !q?.trim() && page.items.length > 0) {
+        queryClient.setQueriesData<ProjectSessionPages>(
+          { queryKey: [...qk.project.sessionsScope(projectId), 'list-paged'] },
+          (data) => raiseChildCount(data, parentSessionId, page.items.length),
+        );
+      }
+      return page;
+    },
     getNextPageParam: projectSessionsPageParam,
     enabled: options?.enabled ?? true,
     ...contract('inventory'),
+    ...(options?.refetchInterval ? { refetchInterval: options.refetchInterval, refetchIntervalInBackground: false } : {}),
   });
   return { ...query, sessions: flattenProjectSessionPages(query.data) };
 }

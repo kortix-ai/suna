@@ -43,6 +43,7 @@ import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 
 import { useSlashFocus } from '../../../internal/hooks/index';
 import { buildModelGroups } from './model-rows';
+import { isClaudeSubscriptionModel } from '../../../session/models/model-tags';
 
 /**
  * `search` used to be driven by the provider modal's always-on search bar,
@@ -71,7 +72,13 @@ export function ModelsTab({
   // the two views can never show different models — and each model's `enabled`
   // flag is resolved server-side and enforced by the gateway, so a switch here
   // is the one and only thing deciding whether it appears there.
-  const models = useProjectModels(projectId);
+  const projectModels = useProjectModels(projectId);
+  // Claude subscription models are listed once the member can use a Claude
+  // account, as ChatGPT models are listed once a ChatGPT account is connected.
+  const models = useMemo(
+    () => projectModels.filter((m) => !(isClaudeSubscriptionModel(m) && m.available === false)),
+    [projectModels],
+  );
   const pickerCatalog = useProjectModelPickerCatalog(projectId);
   const enablement = useModelEnablement(projectId);
   // Prices below are the provider's base price; the fee is added when the call bills.

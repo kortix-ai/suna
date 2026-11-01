@@ -6,6 +6,7 @@ import { notifySessionError, notifyTaskComplete } from '../../platform/ui';
 import { type MessageWithParts, type Session, runtimeKeys } from '../use-opencode-sessions';
 import type { HandlerContext } from './handler-context';
 import {
+  notificationExtra,
   notificationSessionId,
   patchKortixSessionTitleMirrors,
   readSessionInfo,
@@ -118,6 +119,8 @@ function handleSessionCompaction(event: RuntimeEvent, ctx: HandlerContext) {
       const sessionID = event.properties.sessionID;
       if (sessionID) {
         stopCompaction(sessionID);
+        // On a box that serves its log, the compaction block arrives over the log.
+        if (ctx.logNative) break;
         const client = getClient();
         void reconcileTail(sessionID, 'compaction');
         client.session
@@ -174,7 +177,9 @@ function handleSessionCompletion(event: RuntimeEvent, ctx: HandlerContext, statu
         if (status.type === 'idle') void reconcileTail(sessionID, 'turn-end');
         const prevStatus = statusBeforeEvent;
         if (status.type === 'idle' && prevStatus && prevStatus.type !== 'idle') {
-          notifyTurnEnd(ctx, sessionID, (id) => notifyTaskComplete(id, getSessionTitle(sessionID)));
+          notifyTurnEnd(ctx, sessionID, (id) =>
+            notifyTaskComplete(id, getSessionTitle(sessionID), notificationExtra(ctx)),
+          );
           invalidateWorkspaceFilesAfterTurn();
         }
       }
@@ -186,7 +191,9 @@ function handleSessionCompletion(event: RuntimeEvent, ctx: HandlerContext, statu
         void reconcileTail(sessionID, 'turn-end');
         const prevStatus = statusBeforeEvent;
         if (prevStatus && prevStatus.type !== 'idle') {
-          notifyTurnEnd(ctx, sessionID, (id) => notifyTaskComplete(id, getSessionTitle(sessionID)));
+          notifyTurnEnd(ctx, sessionID, (id) =>
+            notifyTaskComplete(id, getSessionTitle(sessionID), notificationExtra(ctx)),
+          );
           invalidateWorkspaceFilesAfterTurn();
         }
       }
@@ -212,7 +219,9 @@ function handleSessionFailure(event: RuntimeEvent, ctx: HandlerContext) {
         // already says who stopped the run, and a "Session Error" beside it
         // told every other viewer something broke.
         if (!isAbortError(error)) {
-          notifyTurnEnd(ctx, sessionID, (id) => notifySessionError(id, errorTitle, getSessionTitle(sessionID)));
+          notifyTurnEnd(ctx, sessionID, (id) =>
+            notifySessionError(id, errorTitle, getSessionTitle(sessionID), notificationExtra(ctx)),
+          );
         }
         const key = runtimeKeys.runtimeMessages(sessionID);
         queryClient.cancelQueries({ queryKey: key });

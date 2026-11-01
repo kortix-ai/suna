@@ -15,10 +15,11 @@ import {
   assertAgentScope,
   isProjectSessionPrincipal,
 } from '../iam/agent-scope';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+import { parseManifestString } from '../projects/triggers';
 
-function loadAgents(body: string) {
-  return extractAgents(parseManifestString(`kortix_version = ${KNOWN_SCHEMA_VERSION}\n[project]\nname="t"\n${body}`));
+/** `agentsBody` is the indented body of an `agents:` map; empty declares none. */
+function loadAgents(agentsBody: string) {
+  return extractAgents(parseManifestString(`project:\n  name: t\n${agentsBody.trim() ? `agents:\n${agentsBody}` : ''}`));
 }
 
 describe('isProjectSessionPrincipal', () => {
@@ -41,17 +42,16 @@ describe('isProjectSessionPrincipal', () => {
 });
 
 describe('grantFromLoadedAgents — resolution rule', () => {
-  test('no [[agents]] section → null (no restriction, backward-compatible)', () => {
+  test('no `agents` section → null (no restriction, backward-compatible)', () => {
     const grant = grantFromLoadedAgents('default', loadAgents(''));
     expect(grant).toBeNull();
   });
 
   test('listed agent → its declared grant', () => {
     const loaded = loadAgents(`
-[[agents]]
-name = "release-bot"
-connectors = ["github"]
-kortix_permissions = ["project.trigger.create", "project.cr.open"]
+  release-bot:
+    connectors: [github]
+    kortix_permissions: [project.trigger.create, project.cr.open]
 `);
     expect(grantFromLoadedAgents('release-bot', loaded)).toEqual({
       agent: 'release-bot',
@@ -59,15 +59,14 @@ kortix_permissions = ["project.trigger.create", "project.cr.open"]
       // `project.cr.open` in the manifest, `project.gitops.push` here:
       // `grantFromLoadedAgents` normalizes the retired spelling on the way out.
       permissions: ['project.trigger.create', 'project.gitops.push'],
-      env: 'all', // env key omitted → defaults to 'all' (back-compat for the new dimension)
+      env: [], // `secrets` omitted → none (deny-by-default)
     });
   });
 
   test('governance adopted but agent unlisted → default-deny ([],[])', () => {
     const loaded = loadAgents(`
-[[agents]]
-name = "release-bot"
-kortix_permissions = ["project.trigger.create"]
+  release-bot:
+    kortix_permissions: [project.trigger.create]
 `);
     expect(grantFromLoadedAgents('some-other-agent', loaded)).toEqual({
       agent: 'some-other-agent',
@@ -79,10 +78,9 @@ kortix_permissions = ["project.trigger.create"]
 
   test('disabled agent is treated as unlisted → default-deny', () => {
     const loaded = loadAgents(`
-[[agents]]
-name = "release-bot"
-enabled = false
-kortix_permissions = ["project.trigger.create"]
+  release-bot:
+    enabled: false
+    kortix_permissions: [project.trigger.create]
 `);
     expect(grantFromLoadedAgents('release-bot', loaded)).toEqual({
       agent: 'release-bot',
@@ -94,10 +92,10 @@ kortix_permissions = ["project.trigger.create"]
 
   test('default kortix agent declared with "all" → grants all', () => {
     const loaded = loadAgents(`
-[[agents]]
-name = "kortix"
-connectors = "all"
-kortix_permissions = "all"
+  kortix:
+    connectors: all
+    kortix_permissions: all
+    secrets: all
 `);
     expect(grantFromLoadedAgents('kortix', loaded)).toEqual({
       agent: 'kortix',
@@ -113,16 +111,13 @@ kortix_permissions = "all"
   // default-denying it stripped every connector and made `kortix connectors
   // connectors` return [] (and hid synthetic channel/computer connectors). The
   // sentinel is non-binding → null (no restriction, still capped at the user).
-  test('`default` sentinel under governance → null (non-binding), not default-deny', () => {
+  test('`default` sentinel under governance with no default_agent → null (non-binding), not default-deny', () => {
     const loaded = loadAgents(`
-[[agents]]
-name = "veyris"
-connectors = "all"
-kortix_permissions = "all"
-
-[[agents]]
-name = "memory-reflector"
-connectors = []
+  veyris:
+    connectors: all
+    kortix_permissions: all
+  memory-reflector:
+    connectors: []
 `);
     expect(grantFromLoadedAgents('default', loaded)).toBeNull();
   });
@@ -132,9 +127,8 @@ connectors = []
   // scoping rule) no project env either.
   test('concrete unlisted agent under governance still default-denies (≠ sentinel)', () => {
     const loaded = loadAgents(`
-[[agents]]
-name = "veyris"
-connectors = "all"
+  veyris:
+    connectors: all
 `);
     expect(grantFromLoadedAgents('rogue-agent', loaded)).toEqual({
       agent: 'rogue-agent',
@@ -145,22 +139,19 @@ connectors = "all"
   });
 });
 
-// kortix_version 2 — the manifest's own top-level `default_agent` MUST resolve
-// the `default` sentinel to a concrete declared agent's grant (spec §2.1),
-// the opposite of v1's "sentinel is non-binding → null" rule tested above.
-// `loaded.defaultAgent` is what carries this from `extractAgents` — it's
-// always null for a v1 manifest, so the v1 tests above are unaffected.
-describe('grantFromLoadedAgents — v2 `default_agent` sentinel resolution', () => {
+// The manifest's own top-level `default_agent` MUST resolve the `default`
+// sentinel to a concrete declared agent's grant (spec §2.1). Without one the
+// sentinel is non-binding → null (tested above).
+describe('grantFromLoadedAgents — `default_agent` sentinel resolution', () => {
   function loadAgentsV2(agentsBody: string, opts: { defaultAgent?: string } = {}) {
     const text = [
-      'kortix_version: 2',
       `default_agent: ${opts.defaultAgent ?? 'support'}`,
       'project:',
       '  name: t',
       'agents:',
       agentsBody,
     ].join('\n');
-    return extractAgents(parseManifestString(text, 'yaml', 'kortix.yaml'));
+    return extractAgents(parseManifestString(text, 'kortix.yaml'));
   }
 
   test('sentinel resolves to the declared default_agent\'s grant, not null', () => {
@@ -173,11 +164,11 @@ describe('grantFromLoadedAgents — v2 `default_agent` sentinel resolution', () 
       agent: 'support',
       connectors: ['github'],
       permissions: ['project.gitops.push'], // normalized from the manifest's cr.open
-      env: [], // v2 deny-by-default (secrets omitted)
+      env: [], // deny-by-default (secrets omitted)
     });
   });
 
-  test('a concrete declared v2 agent is found directly (not routed through the sentinel)', () => {
+  test('a concrete declared agent is found directly (not routed through the sentinel)', () => {
     const loaded = loadAgentsV2(`
   support:
     connectors: [github]

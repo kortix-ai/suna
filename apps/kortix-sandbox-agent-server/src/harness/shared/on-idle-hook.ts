@@ -13,8 +13,9 @@ import { logger } from '@/lib/log/logger'
  * turn. A hook that wants another turn queues one itself (`kortix sessions
  * chat "$KORTIX_SESSION_ID" -p … --queue`).
  *
- * Without a hook, a session that coordinates a goal (a goal.json under
- * /drives/<folder>/Goals/<slug>/ listing it as coordinator) runs
+ * Without a hook, a session that owns a goal (the last `role: owner` in the
+ * `sessions:` list of a GOAL.md under /drives/<folder>/Goals/<slug>/, or a
+ * legacy goal.json listing it as coordinator) runs
  * `kortix goals check --enforce --quiet` instead: live runs showed the model
  * skips installing the hook, so the check does not depend on it. Only in a box
  * whose project has the `goals` flag (KORTIX_FEATURE_FLAGS); off, Goals does
@@ -23,7 +24,13 @@ import { logger } from '@/lib/log/logger'
 export const ON_IDLE_HOOK = join(homedir(), '.kortix', 'hooks', 'on-idle')
 export const GOAL_CHECK_COMMAND = 'kortix goals check --enforce --quiet'
 
-/** True when a goal under `drivesRoot` names `sessionId` as its coordinator. */
+/** The current owner in a GOAL.md: the last `- id: <x>` entry with `role: owner` (as `kortix goals` writes it). */
+function goalMdOwner(text: string): string | null {
+  const owners = [...text.matchAll(/^\s*- id: "?([^"\s]+)"?\s*\n\s+role: "?owner"?\s*$/gm)]
+  return owners.at(-1)?.[1] ?? null
+}
+
+/** True when a goal under `drivesRoot` has `sessionId` as its current owner. */
 export function coordinatesGoal(sessionId: string | undefined, drivesRoot = '/drives'): boolean {
   if (!sessionId || !existsSync(drivesRoot)) return false
   try {
@@ -31,6 +38,13 @@ export function coordinatesGoal(sessionId: string | undefined, drivesRoot = '/dr
       const goals = join(drivesRoot, mount, 'Goals')
       if (!existsSync(goals)) continue
       for (const slug of readdirSync(goals)) {
+        const md = join(goals, slug, 'GOAL.md')
+        if (existsSync(md)) {
+          try {
+            if (goalMdOwner(readFileSync(md, 'utf8')) === sessionId) return true
+          } catch {}
+          continue
+        }
         try {
           const g = JSON.parse(readFileSync(join(goals, slug, 'goal.json'), 'utf8')) as { sessions?: Array<{ id?: string; role?: string }> }
           if (g.sessions?.some((s) => s.id === sessionId && s.role === 'coordinator')) return true

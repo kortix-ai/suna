@@ -16,6 +16,12 @@ export interface PanelProps {
   flexShrink?: number;
   minWidth?: number;
   padding?: number;
+  /**
+   * No frame. The session goes full-screen while the sidebar is hidden, the
+   * way a shell fills its window; a frame there is chrome with nothing to
+   * separate.
+   */
+  borderless?: boolean;
   children?: ReactNode;
 }
 
@@ -33,17 +39,26 @@ export function Panel({
   flexShrink,
   minWidth,
   padding = 0,
+  borderless = false,
   children,
 }: PanelProps) {
+  // `border={false}` alone still draws a frame in OpenTUI 0.5.11 while a
+  // `borderStyle` / `borderColor` is set (measured: the full-screen draft kept
+  // its box and lost its last two rows). A borderless panel sets none of them.
+  const frame = borderless
+    ? {}
+    : {
+        border: true,
+        borderStyle: 'single' as const,
+        borderColor: focused ? theme.borderFocus : theme.border,
+        title,
+        titleColor: focused ? theme.fg : theme.dim,
+        bottomTitle: footer,
+        bottomTitleAlignment: 'right' as const,
+      };
   return (
     <box
-      border
-      borderStyle="single"
-      borderColor={focused ? theme.borderFocus : theme.border}
-      title={title}
-      titleColor={focused ? theme.fg : theme.dim}
-      bottomTitle={footer}
-      bottomTitleAlignment="right"
+      {...frame}
       backgroundColor={theme.bg}
       flexDirection="column"
       width={width}

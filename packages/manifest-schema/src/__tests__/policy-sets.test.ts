@@ -2,14 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import Ajv2020 from 'ajv/dist/2020';
 import { parse as parseYaml } from 'yaml';
 import { validateManifest } from '../index';
-import { KORTIX_JSON_SCHEMA, KORTIX_V1_JSON_SCHEMA } from '../json-schema';
+import { KORTIX_JSON_SCHEMA } from '../json-schema';
 
 const ajv = new Ajv2020({ strict: false, allErrors: true });
 const schema = ajv.compile(KORTIX_JSON_SCHEMA as Record<string, unknown>);
 
-function manifest(agentSets: string, connectorExtra = '', version = 2): string {
+function manifest(agentSets: string, connectorExtra = ''): string {
   return `
-kortix_version: ${version}
 default_agent: support
 agents:
   support:
@@ -40,7 +39,7 @@ ${connectorExtra}
 }
 
 function issuesAt(text: string) {
-  const result = validateManifest(text, 'yaml');
+  const result = validateManifest(text);
   return {
     errors: result.issues.filter((i) => i.severity === 'error').map((i) => i.path),
     warnings: result.issues.filter((i) => i.severity === 'warning').map((i) => i.path),
@@ -48,7 +47,7 @@ function issuesAt(text: string) {
 }
 
 describe('policy sets in the manifest', () => {
-  test('a valid set and an agent that names it validate in v2 and the JSON schema', () => {
+  test('a valid set and an agent that names it validate in the validator and the JSON schema', () => {
     const text = manifest('    policy_sets:\n      gmail: read_only');
     expect(issuesAt(text).errors).toEqual([]);
     expect(schema(parseYaml(text))).toBe(true);
@@ -81,9 +80,8 @@ describe('policy sets in the manifest', () => {
     expect(errors).toContain('connectors[0].policy_sets.ok.rules');
   });
 
-  test('v3 accepts policy_sets on an agent', () => {
+  test('an agent accepts policy_sets with a prompt', () => {
     const text = `
-kortix_version: 3
 default_agent: support
 agents:
   support:
@@ -106,7 +104,6 @@ connectors:
 
   test('channel connectors cannot carry sets', () => {
     const text = `
-kortix_version: 2
 agents:
   support:
     connectors: [team]
@@ -119,16 +116,5 @@ connectors:
         policies: []
 `;
     expect(issuesAt(text).errors).toContain('connectors[0].policy_sets');
-  });
-});
-
-describe('v1 JSON Schema', () => {
-  test('refuses connectors[].policy_sets, as the validator does', () => {
-    const v1 = new Ajv2020({ strict: false, allErrors: true }).compile(KORTIX_V1_JSON_SCHEMA as Record<string, unknown>);
-    const base = { kortix_version: 1, connectors: [{ slug: 'gmail', provider: 'composio', app: 'gmail' }] };
-    expect(v1(base)).toBe(true);
-    const withSets = structuredClone(base) as Record<string, any>;
-    withSets.connectors[0].policy_sets = { read_only: { policies: [] } };
-    expect(v1(withSets)).toBe(false);
   });
 });

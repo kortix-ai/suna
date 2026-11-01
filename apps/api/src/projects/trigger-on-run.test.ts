@@ -4,7 +4,7 @@ import { stringify } from 'yaml';
 
 /** Parse one trigger entry the way a kortix.yaml carries it. */
 function parseEntry(entry: Record<string, unknown>): GitTriggerSpec {
-  const manifest = parseManifestString(stringify({ kortix_version: 1, project: { name: 't' }, triggers: [entry] }), 'yaml', 'kortix.yaml');
+  const manifest = parseManifestString(stringify({ project: { name: 't' }, triggers: [entry] }), 'kortix.yaml');
   const { specs, errors } = extractTriggers(manifest);
   if (errors.length > 0) throw new Error(JSON.stringify(errors));
   return specs[0]!;

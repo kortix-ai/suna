@@ -341,7 +341,7 @@ describe('standalone image routes', () => {
     const unused = async (): Promise<Response> => { throw new Error('not an image route'); };
     const app = new Hono();
     registerRoutes(app, {
-      chatCompletions: unused, messages: unused, responses: unused, listModels: unused,
+      chatCompletions: unused, messages: unused, responses: unused, listModels: unused, claudeCode: unused,
       images: async (request) => {
         calls.push({ authorization: request.authorization, rawBody: request.rawBody, operation: request.operation });
         return Response.json({ data: [{ b64_json: 'AAAA' }] });
@@ -375,5 +375,40 @@ describe('standalone image routes', () => {
     expect((await res.json()) as Record<string, unknown>).toHaveProperty('code', 'request_too_large');
     expect(calls).toHaveLength(0);
     expect(inflight.inflightBytes).toBe(0);
+  });
+});
+
+describe('standalone Claude Code passthrough routes', () => {
+  function claudeApp() {
+    const calls: Array<{ method: string; path: string; search: string; body: string | null; auth: string | null }> = [];
+    const unused = async (): Promise<Response> => { throw new Error('not a Claude Code route'); };
+    const app = new Hono();
+    registerRoutes(app, {
+      chatCompletions: unused, messages: unused, responses: unused, listModels: unused, images: unused,
+      claudeCode: async (request) => {
+        calls.push({ method: request.method, path: request.path, search: request.search,
+          body: request.body ? new TextDecoder().decode(request.body) : null, auth: request.headers.get('authorization') });
+        return new Response('data: ok\n\n', { headers: { 'content-type': 'text/event-stream' } });
+      },
+    }, new InflightBudget({ maxBytes: 1024 * 1024, perRequestMaxBytes: 1024 * 1024, amplification: 1 }), () => {});
+    return { app, calls };
+  }
+
+  test('every alias prefix reaches the passthrough with the path after claude-code, the query and the exact body', async () => {
+    const { app, calls } = claudeApp();
+    const body = '{"model":"claude-haiku-5-5","messages":[{"role":"user","content":"é"}]}';
+    for (const prefix of ['', '/v1', '/v1/llm']) {
+      const res = await app.request(`${prefix}/claude-code/v1/messages?beta=true`, {
+        method: 'POST', headers: { authorization: 'Bearer t', 'content-type': 'application/json' }, body,
+      });
+      expect(res.status).toBe(200);
+    }
+    expect(calls).toEqual([0, 1, 2].map(() => ({ method: 'POST', path: '/v1/messages', search: '?beta=true', body, auth: 'Bearer t' })));
+  });
+
+  test('the connectivity check reaches the passthrough without a body', async () => {
+    const { app, calls } = claudeApp();
+    expect((await app.request('/claude-code/api/hello', { method: 'HEAD' })).status).toBe(200);
+    expect(calls).toEqual([{ method: 'HEAD', path: '/api/hello', search: '', body: null, auth: null }]);
   });
 });

@@ -79,8 +79,9 @@ export function LocalhostLinkInterceptor() {
       if (!href) return;
 
       // An artifact's app link (same origin) opens as the artifact in the session panel,
-      // like a Kortix App; off a session page it navigates as usual.
-      if (parseArtifactUrl(href) && getCurrentSessionId()) {
+      // like a Kortix App; off a session page it navigates as usual. A link marked
+      // `data-no-panel` (the panel's own "Open full page") always navigates.
+      if (parseArtifactUrl(href) && getCurrentSessionId() && !anchor.hasAttribute('data-no-panel')) {
         e.preventDefault();
         e.stopPropagation();
         openSessionQuickView('browser', 'chat', { url: href });

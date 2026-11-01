@@ -16,6 +16,11 @@ export const MEMORY_TYPE_ICON: Record<ProjectMemoryPageType, Icon> = {
   playbooks: BookOpenIcon,
   note: NoteIcon,
   other: FileTextIcon,
+  // My Kortix's own page types: no screen lists them, so they read as any other file.
+  user: FileTextIcon,
+  feedback: FileTextIcon,
+  project: FileTextIcon,
+  reference: FileTextIcon,
 };
 
 /**

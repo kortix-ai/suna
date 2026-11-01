@@ -17,7 +17,6 @@ import { toWireModel } from '../../llm-gateway/resolution/effective';
 import {
   type ChannelModelOption,
   type ChannelModelScope,
-  agentGrantEnvFor,
   channelKeySelection,
   channelModelScope,
   checkChannelModel,
@@ -217,20 +216,14 @@ export async function applySlackModelChoice(ctx: SlackModelCtx, choice: string):
   }
 
   const selection = await currentChannelSelection(channelCtx);
-  const agentName = selection?.agentName ?? null;
-  const agentGrantEnv = agentGrantEnvFor(scope.projectId, agentName);
-  const verdict = await checkChannelModel(scope, id, { agentGrantEnv });
+  const verdict = await checkChannelModel(scope, id);
   const label = escapeMrkdwn(labelForModelRef(id));
   if (!verdict.ok) {
-    if (verdict.reason === 'agent_grant') {
-      const what = verdict.providerId === 'codex' ? 'ChatGPT connections' : `${verdict.providerId} keys`;
-      return `The *${escapeMrkdwn(agentName || 'default')}* agent may not use ${what}. Add \`${verdict.envVar}\` to its \`secrets\` in kortix.yaml, or pick another model.`;
-    }
     // Would it work with the person's own keys? Then say where it does. Only
     // for a linked person: an unlinked one runs as the account owner, whose
     // own keys are never theirs to be told about.
     if (!scope.personalUserId && scope.linkedUserId) {
-      const personal = await checkChannelModel({ ...scope, personalUserId: scope.linkedUserId }, id, { agentGrantEnv });
+      const personal = await checkChannelModel({ ...scope, personalUserId: scope.linkedUserId }, id);
       if (personal.ok) {
         return `*${label}* runs on your own API key or ChatGPT subscription, which this shared channel cannot use. Pick it in a DM with me, or pick a model the project shares.`;
       }

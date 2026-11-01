@@ -6,13 +6,14 @@
  * an account token bound by SQL to one project and one session, with a live
  * `session_sandboxes` row. No cloud sandbox runs.
  *
- * Every flow commits the same config dir onto the project's base branch with
+ * Every flow commits the same config files onto the project's base branch with
  * the real Git CLI, so each target asserts the same bytes. On the local target
  * the repository is a bare repository on disk. On a deployed target it is the
  * managed repository, reached through the Kortix git proxy
  * (`/v1/git/<project>.git`) with an OWNER PAT, the way `kortix ship` pushes.
  */
 import { subscribe } from '../fixtures/billing';
+import { setFeatureAsOperator } from '../fixtures/feature-flags';
 import { flow, harnessFlow } from '../core/flow';
 import { sleep, waitFor } from '../core/poll';
 import type { CreatedProject, FlowContext, Harness, TeamFixture } from '../core/types';
@@ -127,9 +128,9 @@ interface Fixture {
   /** `GET .../sessions/:sessionId/config` as the project owner. */
   configState(sessionId: string): Promise<{ status: number; body: any }>;
   /**
-   * The project's own switch for `meta_agent`, through the published write
-   * path. `true` opts in, `false` opts out, `null` clears the override and
-   * returns the project to the platform default, OFF
+   * The legacy `meta_agent` switch, through the operator write path (the flag
+   * is catalogHidden). `true` opts in, `false` opts out, `null` clears the
+   * override and returns the project to the platform default, ON
    * (`apps/api/src/feature-flags/registry.ts`).
    */
   setFeature(enabled: boolean | null, feature: 'meta_agent'): Promise<void>;
@@ -143,72 +144,61 @@ interface Fixture {
 }
 
 const MANIFEST = [
-  'kortix_version: 2',
   'project:',
   '  name: ke2e-config-releases',
   'default_agent: kortix',
+  'skills:',
+  '  demo: skills/demo',
   'agents:',
   '  kortix:',
-  // A declared agent boots without a checkout unless it opts in (#8454). The
-  // box flows run a repository-backed session, whose release carries an archive.
-  '    repository_access: true',
+  '    description: main agent',
+  '    mode: primary',
+  '    prompt_file: agents/kortix.md',
+  // An agent boots without a checkout unless it opts in. The box flows run a
+  // repository-backed session, whose release carries an archive.
+  '    workspace:',
+  '      project_repository: true',
   '    skills: all',
+  '    tools: all',
   '  reviewer:',
+  '    description: reviews',
+  '    prompt_file: agents/reviewer.md',
   '    skills: none',
+  '    tools: all',
   '',
 ].join('\n');
 
-function PACKAGE_JSON(pin: string, extra = ''): string {
-  return `{\n  "dependencies": {\n    "@opencode-ai/plugin": "${pin}"${extra}\n  }\n}\n`;
-}
-
 /**
- * `@kortix/starter`'s `base` template — the scaffold every managed project
- * gets by default on provisioning (`managed-repo-seed.ts`: "seeding is the
- * default, not an opt-in") — ships the kortix_version 3 layout: root
- * `agents/`, `skills/`, `extensions/`, `memory/`. This flow deliberately drives the
- * LEGACY `.kortix/opencode` layout with a fixed, hand-authored config
- * (`CONFIG_FILES` below), so every managed project it creates clears that
- * scaffold in the SAME commit that lays down `CONFIG_FILES`. Without this,
- * `harnesses/opencode` (checked before the legacy dir,
- * `opencodeConfigDirCandidates`) and the starter's root `skills/kortix-cli`
- * (always composing the release, `rootSkillRecords`) win over this flow's own
- * config on a managed (non-`local`) target, and every assertion below that
+ * `@kortix/starter`'s templates — the scaffold every managed project gets by
+ * default on provisioning (`managed-repo-seed.ts`: "seeding is the default,
+ * not an opt-in") — ship root `agents/`, `skills/` and `memory/`. This flow
+ * drives a fixed, hand-authored config (`CONFIG_FILES` below), so every
+ * managed project it creates clears that scaffold in the SAME commit that
+ * lays down `CONFIG_FILES`. Without this, the starter's files ride in every
+ * release on a managed (non-`local`) target, and every assertion below that
  * names a config tree, a release ID, or an archive URL is comparing against
  * the wrong tree. The `local` target never seeds a starter template
  * (`createLocalGitRepository`), so this is a no-op there.
  */
-const STARTER_SCAFFOLD_PATHS = ['harnesses', 'skills', 'agents', 'extensions', 'memory'];
+const STARTER_SCAFFOLD_PATHS = ['skills', 'agents', 'extensions', 'memory'];
 
 const CONFIG_FILES: Record<string, string> = {
   'kortix.yaml': MANIFEST,
-  '.kortix/opencode/opencode.json': '{ "$schema": "https://opencode.ai/config.json" }\n',
-  '.kortix/opencode/agents/kortix.md': '---\ndescription: main agent\nmode: primary\n---\nYou are the main agent.\n',
-  '.kortix/opencode/agents/reviewer.md': '---\ndescription: reviews\n---\nReview.\n',
-  '.kortix/opencode/skills/demo/SKILL.md': '---\nname: demo\ndescription: demo\n---\nDemo skill.\n',
-  // A bare `export default {}` never registers: measured on a real box
-  // (Platinum, 2026-09-26), `GET /experimental/tool/ids` lists every OTHER
-  // fixture tool but never `hello` for that shape, only for this one — no
-  // `description`/`args`/`execute` means OpenCode drops it, silently, same as
-  // a genuinely missing tool. `args: {}` needs no zod import, so the fixture
-  // stays self-contained (this CONFIG_FILES set ships no `tools/lib/`).
-  '.kortix/opencode/tools/hello.ts':
-    'export default {\n'
-    + '  description: "A trivial no-op tool used to prove config-release tool loading.",\n'
-    + '  args: {},\n'
-    + '  async execute() {\n'
-    + '    return "hello";\n'
-    + '  },\n'
-    + '};\n',
-  // `git archive` would drop this file and rewrite the next one. The
-  // archive must hold both unmodified, or blob verification on the box fails.
-  '.kortix/opencode/.gitattributes': 'notes.md export-ignore\nversion.txt export-subst\n',
-  '.kortix/opencode/notes.md': 'kept verbatim\n',
-  '.kortix/opencode/version.txt': 'commit $Format:%H$\n',
-  // Platform-written paths the mode decision ignores (spec, "Config mode").
-  '.kortix/opencode/package.json': PACKAGE_JSON('1.17.11'),
-  '.kortix/opencode/bun.lock': '"@opencode-ai/plugin": "1.17.11"\n',
+  'agents/kortix.md': 'You are the main agent.\n',
+  'agents/reviewer.md': 'Review.\n',
+  'skills/demo/SKILL.md': '---\nname: demo\ndescription: demo\n---\nDemo skill.\n',
+  // `git archive` would rewrite this file. The archive must hold it
+  // unmodified, or blob verification on the box fails. No `export-ignore`
+  // rule: one would leave its paths out and compose the release tree.
+  '.gitattributes': 'version.txt export-subst\n',
+  'version.txt': 'commit $Format:%H$\n',
 };
+
+/** The agents a compiled governance runs: the compile also lists OpenCode's built-ins as `disable: true`. */
+function runnableAgents(governance: string | null): string[] {
+  const agent = (JSON.parse(governance ?? '{}').agent ?? {}) as Record<string, { disable?: boolean }>;
+  return Object.keys(agent).filter((name) => agent[name]?.disable !== true);
+}
 
 async function run(cmd: string, args: string[], cwd: string, input?: Buffer): Promise<Buffer> {
   if (cmd !== 'git') return runOnce(cmd, args, cwd, input);
@@ -432,14 +422,8 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
       return commitTo(repo, files, message);
     },
     async setFeature(enabled, feature) {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch(
-          '/v1/projects/:projectId/features',
-          { feature, enabled },
-          { params: { projectId: project.id } },
-        );
-      r.status(200);
+      // `meta_agent` is operator-only (catalogHidden): kortix.yaml `builtin_agents` is the project switch.
+      await setFeatureAsOperator(ctx, project.id, feature, enabled);
     },
     async storeRetiredConfigReleasesFlag(enabled) {
       await db.query(
@@ -515,9 +499,9 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
     },
   };
 
-  // The same config dir on every target, so every step asserts known bytes:
+  // The same config files on every target, so every step asserts known bytes:
   // clear the starter's scaffold (STARTER_SCAFFOLD_PATHS) in the same commit.
-  await commitTo(repo, CONFIG_FILES, 'config dir', STARTER_SCAFFOLD_PATHS);
+  await commitTo(repo, CONFIG_FILES, 'config files', STARTER_SCAFFOLD_PATHS);
   return fixture;
 }
 
@@ -653,9 +637,8 @@ flow(
         if (descriptor.source_commit !== tip) {
           throw new Error(`source_commit ${descriptor.source_commit} is not the base tip ${tip}`);
         }
-        if (!descriptor.config_dir || !HEX40.test(descriptor.config_tree_id ?? '')) {
-          throw new Error(`no config tree: ${descriptor.reason}`);
-        }
+        if ((descriptor.config_dir ?? null) !== null) throw new Error(`config_dir ${descriptor.config_dir}, expected none`);
+        if (!HEX40.test(descriptor.config_tree_id ?? '')) throw new Error(`no config tree: ${descriptor.reason}`);
         if (!HEX64.test(descriptor.release_id ?? '')) throw new Error('release_id is not 64 hex');
         const { createHash } = await import('node:crypto');
         const expected = createHash('sha256')
@@ -689,11 +672,10 @@ flow(
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${r.bytes.toString().slice(0, 200)}`);
         firstBytes = r.bytes;
         const files = await assertArchiveMatches(descriptor, r.bytes);
-        for (const path of ['opencode.json', 'agents/kortix.md', 'skills/demo/SKILL.md', 'tools/hello.ts'].map((p) => `.kortix/opencode/${p}`)) {
+        for (const path of ['kortix.yaml', 'agents/kortix.md', 'agents/reviewer.md', 'skills/demo/SKILL.md']) {
           if (!files.has(path)) throw new Error(`archive lacks ${path}`);
         }
-        if (files.get('.kortix/opencode/notes.md')?.toString() !== 'kept verbatim\n') throw new Error('export-ignore dropped notes.md');
-        if (files.get('.kortix/opencode/version.txt')?.toString() !== 'commit $Format:%H$\n') {
+        if (files.get('version.txt')?.toString() !== 'commit $Format:%H$\n') {
           throw new Error('export-subst rewrote version.txt');
         }
       });
@@ -751,7 +733,7 @@ flow(
         const governanceOnly = createHash('sha256').update(`:${d.compiled_governance_etag}`).digest('hex');
         if (d.release_id !== governanceOnly) throw new Error(`restricted release_id ${d.release_id} is not sha256(":" + etag)`);
         if (!d.compiled_governance) throw new Error('restricted session lost its compiled governance');
-        const agents = Object.keys(JSON.parse(d.compiled_governance).agent ?? {});
+        const agents = runnableAgents(d.compiled_governance);
         if (agents.length !== 1 || agents[0] !== 'reviewer') {
           throw new Error(`selected-agent governance compiled ${agents.join(',')}`);
         }
@@ -761,7 +743,7 @@ flow(
 
       await ctx.step('a session without repository access receives only the modules of its agent\'s project tools, and downloads no other tree', async () => {
         const manifest = MANIFEST.replace('agents:\n', 'tools:\n  lookup_order: tools/lookup_order.ts\n  hidden_tool: tools/hidden.ts\nagents:\n')
-          .replace('  reviewer:\n', '  reviewer:\n    tools:\n      exclude: [hidden_tool]\n');
+          .replace('    skills: none\n    tools: all\n', '    skills: none\n    tools:\n      exclude: [hidden_tool]\n');
         await fixture.commit(
           {
             'kortix.yaml': manifest,
@@ -777,7 +759,7 @@ flow(
         const d = r.body as Descriptor & { snapshot?: unknown };
         const paths = d.files?.map(([path]) => path).join(',');
         if (paths !== 'tools/lib/client.ts,tools/lookup_order.ts') throw new Error(`restricted files: ${paths}`);
-        if (d.config_dir !== null || d.reason !== null) throw new Error(`config_dir ${d.config_dir}, reason ${d.reason}`);
+        if ((d.config_dir ?? null) !== null || d.reason !== null) throw new Error(`config_dir ${d.config_dir}, reason ${d.reason}`);
         if (d.snapshot) throw new Error('a tools-only release carried the whole-commit snapshot');
         const query = d.archive!.url.slice(d.archive!.url.indexOf('?'));
         if (query !== `?commit=${d.source_commit}&agent=reviewer`) throw new Error(`archive url ${d.archive!.url}`);
@@ -790,11 +772,11 @@ flow(
         if (otherAgent.status !== 403) throw new Error(`another agent's query: expected 403, got ${otherAgent.status}`);
       });
 
-      await ctx.step('the release is the base commit\'s whole tree: a root skills/ folder and a file outside every config dir ship at their repository paths', async () => {
+      await ctx.step('the release is the base commit\'s whole tree: an unregistered skill folder and any other file ship at their repository paths', async () => {
         const tip = await fixture.commit(
           {
             'skills/root-demo/SKILL.md': '---\nname: root-demo\ndescription: root layout\n---\nRoot skill.\n',
-            'shared/notes.md': 'Outside every config dir.\n',
+            'shared/notes.md': 'Read by no agent config.\n',
           },
           'root layout skill',
         );
@@ -802,7 +784,7 @@ flow(
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
         const release = r.body as Descriptor;
         if (release.source_commit !== tip) throw new Error(`source_commit ${release.source_commit} is not the tip ${tip}`);
-        if (release.config_dir !== '.kortix/opencode') throw new Error(`config_dir ${release.config_dir}`);
+        if ((release.config_dir ?? null) !== null) throw new Error(`config_dir ${release.config_dir}, expected none`);
         if (release.archive?.url !== `/v1/projects/${fixture.projectId}/config-archives/${release.config_tree_id}`) {
           throw new Error(`archive url ${release.archive?.url}`);
         }
@@ -812,9 +794,9 @@ flow(
         for (const path of [
           'skills/root-demo/SKILL.md',
           'shared/notes.md',
-          '.kortix/opencode/skills/demo/SKILL.md',
-          '.kortix/opencode/agents/kortix.md',
-          '.kortix/opencode/opencode.json',
+          'skills/demo/SKILL.md',
+          'agents/kortix.md',
+          'kortix.yaml',
         ]) {
           if (!files.has(path)) throw new Error(`archive lacks ${path}`);
         }
@@ -935,7 +917,7 @@ flow(
           'UPDATE kortix.config_releases SET proven_at = now(), proven_session_id = $3 WHERE project_id = $1 AND release_id = $2',
           [fixture.projectId, good.release_id, a.sessionId],
         );
-        const tip = await fixture.commit({ '.kortix/opencode/agents/kortix.md': '---\ndescription: main agent\nmode: primary\n---\nBROKEN.\n' }, 'broken agent');
+        const tip = await fixture.commit({ 'agents/kortix.md': 'BROKEN.\n' }, 'broken agent');
         const r = await fixture.descriptor(a.secret, a.sessionId);
         bad = r.body as Descriptor;
         if (bad.source_commit !== tip || bad.release_id === good.release_id) throw new Error('the new base did not produce a new release');
@@ -945,15 +927,15 @@ flow(
       // has no `bun`, so it failed every `project` release it was assigned, and
       // two coordinators quarantined each one for the whole project.
       await ctx.step('a meta coordinator is assigned the platform governance alone, and its failures quarantine nothing', async () => {
-        const metaA = await fixture.mint({ agentName: 'meta' });
+        const metaA = await fixture.mint({ agentName: 'mykortix' });
         const metaB = await fixture.mint({ agentName: 'meta' });
         const r = await fixture.descriptor(metaA.secret, metaA.sessionId);
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
         const d = r.body as Descriptor;
-        if (d.archive !== null || d.files !== null || d.config_tree_id !== null) throw new Error(`meta got a config dir: ${JSON.stringify(d)}`);
+        if (d.archive !== null || d.files !== null || d.config_tree_id !== null) throw new Error(`meta got a project tree: ${JSON.stringify(d)}`);
         if (!d.release_id || d.release_id === bad.release_id || d.release_id === good.release_id) throw new Error(`meta release ${d.release_id}`);
         const agents = Object.keys(JSON.parse(d.compiled_governance ?? '{}').agent ?? {});
-        if (agents.join() !== 'meta') throw new Error(`meta governance declares ${agents.join()}`);
+        if (agents.join() !== 'mykortix') throw new Error(`My Kortix governance declares ${agents.join()}`);
         await failed(bad.release_id!, metaA.sessionId);
         await failed(bad.release_id!, metaB.sessionId);
         const still = await fixture.descriptor(b.secret, b.sessionId);
@@ -980,7 +962,7 @@ flow(
       });
 
       await ctx.step('a new base commit with a new release ID is assignable again', async () => {
-        const tip = await fixture.commit({ '.kortix/opencode/agents/kortix.md': '---\ndescription: main agent\nmode: primary\n---\nFIXED.\n' }, 'fixed agent');
+        const tip = await fixture.commit({ 'agents/kortix.md': 'FIXED.\n' }, 'fixed agent');
         const r = await fixture.descriptor(c.secret, c.sessionId);
         const d = r.body as Descriptor;
         if (d.source_commit !== tip) throw new Error(`expected the new tip ${tip}, got ${d.source_commit}`);
@@ -1078,7 +1060,7 @@ flow(
         const otherRepo = await fixture.openRepo(other.id);
         newTip = await commitTo(
           otherRepo,
-          { ...CONFIG_FILES, '.kortix/opencode/agents/kortix.md': '---\ndescription: main agent\nmode: primary\n---\nNEW REPOSITORY.\n' },
+          { ...CONFIG_FILES, 'agents/kortix.md': 'NEW REPOSITORY.\n' },
           'new repository',
           STARTER_SCAFFOLD_PATHS,
         );
@@ -1145,7 +1127,7 @@ flow(
         const download = await fixture.download(old.secret, newDescriptor.config_tree_id!);
         if (download.status !== 200) throw new Error(`archive: expected 200, got ${download.status}`);
         const files = await assertArchiveMatches(newDescriptor, download.bytes);
-        if (!files.get('.kortix/opencode/agents/kortix.md')?.toString().includes('NEW REPOSITORY.')) {
+        if (!files.get('agents/kortix.md')?.toString().includes('NEW REPOSITORY.')) {
           throw new Error('the archive is not from the new repository');
         }
       });
@@ -1187,7 +1169,7 @@ flow(
         const download = await fixture.download(fresh.secret, d.config_tree_id!);
         if (download.status !== 200) throw new Error(`new archive: ${download.status}`);
         const files = await assertArchiveMatches(d, download.bytes);
-        if (!files.get('.kortix/opencode/agents/kortix.md')?.toString().includes('NEW REPOSITORY.')) throw new Error('archive is not from the new repository');
+        if (!files.get('agents/kortix.md')?.toString().includes('NEW REPOSITORY.')) throw new Error('archive is not from the new repository');
       });
     } finally {
       const restore = original as { repo_url: string; default_branch: string; metadata: unknown; connection: unknown } | null;
@@ -1299,7 +1281,7 @@ flow(
       });
 
       await ctx.step('a base-branch commit is the new release, whatever the stored value says', async () => {
-        await fixture.commit({ '.kortix/opencode/agents/kortix.md': '---\ndescription: edited\n---\nEdited.\n' }, 'graduated');
+        await fixture.commit({ 'agents/kortix.md': 'Edited.\n' }, 'graduated');
         const tip = await baseTip(fixture);
         const body = await servesARelease(own.secret, own.sessionId, 'new tip');
         if (body.source_commit !== tip) throw new Error(`source_commit ${body.source_commit}, tip ${tip}`);
@@ -1377,7 +1359,7 @@ flow(
         if (d.release_id === null) throw new Error('a dropped agent produced no release');
         if (d.reason?.includes('compiled governance failed')) throw new Error(`reason ${d.reason}`);
         if (!d.compiled_governance) throw new Error('no compiled governance');
-        const agents = Object.keys(JSON.parse(d.compiled_governance).agent ?? {});
+        const agents = runnableAgents(d.compiled_governance);
         if (agents.length !== 1 || agents[0] !== 'kortix') {
           throw new Error(`compiled ${agents.join(',')}, expected the declared default agent kortix`);
         }
@@ -1407,7 +1389,7 @@ flow(
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}`);
         const d = r.body as Descriptor;
         if (d.agent_repoint !== null) throw new Error(`agent_repoint still set: ${JSON.stringify(d.agent_repoint)}`);
-        const agents = Object.keys(JSON.parse(d.compiled_governance!).agent ?? {});
+        const agents = runnableAgents(d.compiled_governance);
         if (agents.join(',') !== 'kortix') throw new Error(`compiled ${agents.join(',')}`);
         if ((await auditRowsAfterFlush(dropped.sessionId)).length !== 1)
           throw new Error('a second audit row was written');
@@ -1513,7 +1495,7 @@ flow(
 
       await ctx.step('a base branch move moves the desired release for both readers together', async () => {
         const tip = await fixture.commit(
-          { '.kortix/opencode/agents/kortix.md': '---\ndescription: main agent\nmode: primary\n---\nTURN START.\n' },
+          { 'agents/kortix.md': 'TURN START.\n' },
           'turn-start convergence',
         );
         const token = (ctx.P.OWNER.auth as { token?: string }).token ?? null;
@@ -1596,8 +1578,8 @@ flow(
         }
       });
 
-      await ctx.step('the descriptor names a config dir and a tree that come from the base branch, never from a session', async () => {
-        if (expected.config_dir !== '.kortix/opencode') throw new Error(`config_dir ${expected.config_dir}`);
+      await ctx.step('the descriptor names no config dir and a tree that comes from the base branch, never from a session', async () => {
+        if ((expected.config_dir ?? null) !== null) throw new Error(`config_dir ${expected.config_dir}, expected none`);
         const tip = await baseTip(fixture);
         if (expected.source_commit !== tip) throw new Error(`source_commit ${expected.source_commit}, tip ${tip}`);
       });
@@ -1608,7 +1590,7 @@ flow(
 );
 
 /**
- * Boot a real session on a real box and open an OpenCode conversation on it.
+ * Boot a real session on a real box and open a runtime conversation on it.
  *
  * Shared by the two flows that need a booted sandbox with a
  * `config.release.v1` daemon. Everything a box-half contract asks about — the
@@ -1704,9 +1686,9 @@ async function proveHarness(ctx: FlowContext, sandboxId: string, harness: Harnes
 // ── CFG-11 — a box that is behind converges in the background, then RUNS ───
 //
 // C9's whole contract, on a real box: a base move reaches an idle running box
-// with no prompt (no prompt waits for a convergence since 2026-10-13), the
+// with no prompt (no prompt waits for a convergence since 2026-10-13), and the
 // two halves of DEF-FLAGON-1 (the prompt answers, and a deliberate re-send is
-// a second turn) and DEF-FLAGON-2 (a healed session stops claiming a failure).
+// a second turn).
 //
 // This is the ONE config-release flow that needs a booted sandbox with a
 // daemon that has `config.release.v1`. The local profile runs no cloud
@@ -1721,7 +1703,7 @@ async function proveHarness(ctx: FlowContext, sandboxId: string, harness: Harnes
 // answered `200 {"status":"duplicate","deduplicated":true}` — no user row, no
 // assistant row, no turn.
 const MARKER_AGENT = (marker: string): string =>
-  `---\ndescription: main agent\nmode: primary\n---\nYou are the main agent.\nRELOAD_VERIFY_MARKER: ${marker}\n`;
+  `You are the main agent.\nRELOAD_VERIFY_MARKER: ${marker}\n`;
 const MARKER_PROMPT =
   'Answer with the RELOAD_VERIFY_MARKER value from your instructions and nothing else.';
 
@@ -1751,7 +1733,7 @@ const MARKER_PROMPT =
  */
 const RACE_MARKER_KEY = (round: number): string => `RELOAD_VERIFY_MARKER_R${round}`;
 const RACE_MARKER_AGENT = (round: number, marker: string): string =>
-  `---\ndescription: main agent\nmode: primary\n---\nYou are the main agent.\n${RACE_MARKER_KEY(round)}: ${marker}\n`;
+  `You are the main agent.\n${RACE_MARKER_KEY(round)}: ${marker}\n`;
 const RACE_MARKER_PROMPT = (round: number): string =>
   `Answer with the ${RACE_MARKER_KEY(round)} value from your instructions and nothing else.`;
 /**
@@ -1785,7 +1767,7 @@ const RACE_PROMPT = (round: number): string => `Reply with the single word ok. R
  * model answering from habit has something wrong to reach for.
  */
 const MARKER2_AGENT = (marker: string, marker2: string): string =>
-  `---\ndescription: main agent\nmode: primary\n---\nYou are the main agent.\nRELOAD_VERIFY_MARKER: ${marker}\nRELOAD_VERIFY_MARKER2: ${marker2}\n`;
+  `You are the main agent.\nRELOAD_VERIFY_MARKER: ${marker}\nRELOAD_VERIFY_MARKER2: ${marker2}\n`;
 const MARKER2_PROMPT =
   'Answer with the RELOAD_VERIFY_MARKER2 value from your instructions and nothing else.';
 
@@ -1845,7 +1827,7 @@ harnessFlow(
         }
         behindRelease = String(before.running_release_id);
         await fixture.commit(
-          { '.kortix/opencode/agents/kortix.md': MARKER_AGENT('marker-one') },
+          { 'agents/kortix.md': MARKER_AGENT('marker-one') },
           'marker-one',
         );
       });
@@ -1907,12 +1889,12 @@ harnessFlow(
       await ctx.step('a skill merged to the base branch reaches the running session', async () => {
         const before = String((await releaseOf())?.running_release_id ?? '');
         const skill = (name: string) => `---\nname: ${name}\ndescription: merged while the session ran\n---\nUse it when asked.\n`;
-        // pi also reads its own config dir (`.kortix/pi` here), at the same path inside the release.
-        const expected = ['cfg-merged-skill', 'cfg-pi-native-skill'];
+        // A skill is registered in kortix.yaml; the agent's `skills: all` grants it.
+        const expected = ['cfg-merged-skill'];
         await fixture.commit(
           {
-            '.kortix/opencode/skills/cfg-merged-skill/SKILL.md': skill('cfg-merged-skill'),
-            '.kortix/pi/skills/cfg-pi-native-skill/SKILL.md': skill('cfg-pi-native-skill'),
+            'kortix.yaml': MANIFEST.replace('  demo: skills/demo\n', '  demo: skills/demo\n  cfg-merged-skill: skills/cfg-merged-skill\n'),
+            'skills/cfg-merged-skill/SKILL.md': skill('cfg-merged-skill'),
           },
           'merge a skill',
         );
@@ -1926,9 +1908,9 @@ harnessFlow(
           intervalMs: 3_000,
           description: 'the box serves the release with the merged skill',
         });
-        const r = await ctx.client.as(ctx.P.OWNER).get(box.box('/skill'));
+        const r = await ctx.client.as(ctx.P.OWNER).get(box.box('/kortix/diag?tail=1'));
         r.status(200);
-        const names = r.json<Array<{ name: string }>>().map((entry) => entry.name);
+        const names = r.json<{ pi?: { skills?: string[] } }>().pi?.skills ?? [];
         const missing = expected.filter((name) => !names.includes(name));
         if (missing.length > 0) {
           throw new Error(`the running session does not list ${missing.join(', ')}: ${names.join(', ')}`);
@@ -1978,50 +1960,6 @@ harnessFlow(
           if ((await lastStart()) !== started) throw new Error('the pi runtime restarted to apply an AGENTS.md change');
         });
       }
-
-      const brokenJson ={ '.kortix/opencode/opencode.json': '{ "$schema": "https://opencode.ai/config.json",, }\n' };
-      // `opencode.json` is OpenCode's file. pi reads the agents and the skills
-      // of a release and nothing else, so the same commit is a working config.
-      await ctx.step('pi does not read OpenCode files: a broken opencode.json is applied with no fallback', async () => {
-        const before = String((await releaseOf())?.running_release_id ?? '');
-        await fixture.commit(brokenJson, 'break the config');
-        await waitFor(releaseOf, {
-          until: (rel) =>
-            Boolean(rel) &&
-            rel.running_release_id === rel.desired_release_id &&
-            rel.running_release_id !== before &&
-            rel.proven === true &&
-            rel.fallback_reason === null,
-          timeoutMs: 300_000,
-          intervalMs: 5_000,
-          description: 'pi applies the release that only breaks OpenCode',
-        });
-      });
-
-      await ctx.step('DEF-FLAGON-2 — the fix clears the fallback with no further push', async () => {
-        // The fix restores the config tree exactly, so the release the box is
-        // ALREADY running becomes the desired one again — a release is
-        // content-addressed. The convergence that carries the fix answers
-        // `unchanged`, and that answer must state that there is no failure any
-        // more. Before the fix it did not, and a session whose config never
-        // changed again kept the warning indefinitely.
-        await fixture.commit(
-          { '.kortix/opencode/opencode.json': CONFIG_FILES['.kortix/opencode/opencode.json']! },
-          'fix the config',
-        );
-        const healed = await waitFor(releaseOf, {
-          until: (rel) =>
-            Boolean(rel) &&
-            rel.running_release_id === rel.desired_release_id &&
-            rel.proven === true &&
-            rel.fallback_reason === null &&
-            rel.failed_release_id === null,
-          timeoutMs: 300_000,
-          intervalMs: 5_000,
-          description: 'the healed session reports no fallback',
-        });
-        if (healed.source !== 'release') throw new Error(`healed source ${healed.source}`);
-      });
     } finally {
       await fixture.cleanup();
     }
@@ -2129,7 +2067,7 @@ harnessFlow(
         const prompt = RACE_PROMPT(round);
         await ctx.step(`round ${round}/${RACE_ROUNDS}: a base move and a prompt 200 ms apart`, async () => {
           const roundStart = String((await box.releaseOf())?.running_release_id ?? '');
-          await fixture.commit({ '.kortix/opencode/agents/kortix.md': RACE_MARKER_AGENT(round, marker) }, marker);
+          await fixture.commit({ 'agents/kortix.md': RACE_MARKER_AGENT(round, marker) }, marker);
           await new Promise((resolve) => setTimeout(resolve, 200));
 
           const r = await box.send(prompt);
@@ -2169,7 +2107,7 @@ harnessFlow(
 
       await ctx.step('a prompt sent while a convergence is PARKED before its swap still answers', async () => {
         const marker = 'marker-parked';
-        await fixture.commit({ '.kortix/opencode/agents/kortix.md': MARKER_AGENT(marker) }, marker);
+        await fixture.commit({ 'agents/kortix.md': MARKER_AGENT(marker) }, marker);
         // Fault injection: hold the convergence between the turn gate and the
         // swap. The prompt below is provably inside the window, not racing it.
         const parked = ctx.client
@@ -2200,7 +2138,7 @@ harnessFlow(
         // prompting, a base move still reaches the box.
         const marker = 'marker-idle';
         const started = Date.now();
-        await fixture.commit({ '.kortix/opencode/agents/kortix.md': MARKER_AGENT(marker) }, marker);
+        await fixture.commit({ 'agents/kortix.md': MARKER_AGENT(marker) }, marker);
         const converged = await waitFor(() => box.releaseOf(), {
           until: (rel) => Boolean(rel) && rel.running_release_id === rel.desired_release_id && rel.proven === true,
           timeoutMs: 300_000,
@@ -2229,7 +2167,7 @@ harnessFlow(
         const marker2 = 'marker2-delta';
         const before = String((await box.releaseOf())?.running_release_id ?? '');
         await fixture.commit(
-          { '.kortix/opencode/agents/kortix.md': MARKER2_AGENT('marker-stale-on-purpose', marker2) },
+          { 'agents/kortix.md': MARKER2_AGENT('marker-stale-on-purpose', marker2) },
           marker2,
         );
         // Ask only once the BOX is serving it. A wrong answer before that would
@@ -2295,8 +2233,8 @@ flow(
   async (ctx) => {
     const fixture = await setup(ctx);
     const DEPENDENT_TOOL = (answer: string) =>
-      'import { tool } from "@opencode-ai/plugin";\n'
-      + `export default tool({ description: "needs a dependency", args: {}, async execute() { return "${answer}"; } });\n`;
+      'import { kebabCase } from "lodash-es";\n'
+      + `export default { description: "needs a dependency", parameters: { type: "object" }, execute: () => kebabCase("${answer}") };\n`;
     try {
       // The coordinator answers its boot prompt on a managed model (see CFG-11).
       await ctx.step('the account is entitled to the managed lineup', async () => {
@@ -2305,17 +2243,23 @@ flow(
 
       await ctx.step('the project opts into `meta_agent`, and its config holds a tool with a dependency', async () => {
         await fixture.setFeature(true, 'meta_agent');
-        await fixture.commit({ '.kortix/opencode/tools/needs_dep.ts': DEPENDENT_TOOL('one') }, 'a tool that imports a dependency');
+        await fixture.commit(
+          {
+            'kortix.yaml': MANIFEST.replace('agents:\n', 'tools:\n  needs_dep: tools/needs_dep.ts\nagents:\n'),
+            'tools/needs_dep.ts': DEPENDENT_TOOL('one'),
+          },
+          'a tool that imports a dependency',
+        );
       });
 
       let box!: Awaited<ReturnType<typeof boxSession>>;
-      await ctx.step('a session created with no agent boots the meta coordinator and answers its boot prompt', async () => {
+      await ctx.step('a session created with no agent boots My Kortix and answers its boot prompt', async () => {
         box = await boxSession(ctx, fixture);
         const { rows } = await fixture.db.query(
           `SELECT agent_name, metadata->>'sandbox_slug' AS sandbox FROM kortix.project_sessions WHERE session_id = $1`,
           [box.sessionId],
         );
-        if (rows[0]?.agent_name !== 'meta' || rows[0]?.sandbox !== 'meta') throw new Error(`session is ${JSON.stringify(rows[0])}`);
+        if (rows[0]?.agent_name !== 'mykortix' || rows[0]?.sandbox !== 'mykortix') throw new Error(`session is ${JSON.stringify(rows[0])}`);
       });
 
       const settled = () =>
@@ -2339,7 +2283,7 @@ flow(
       });
 
       await ctx.step('a config push moves a project session to the new tip and leaves the coordinator on its release', async () => {
-        const tip = await fixture.commit({ '.kortix/opencode/tools/needs_dep.ts': DEPENDENT_TOOL('two') }, 'tool change');
+        const tip = await fixture.commit({ 'tools/needs_dep.ts': DEPENDENT_TOOL('two') }, 'tool change');
         const { body } = await settled();
         if (body.release.desired_release_id !== release || body.stale !== false) throw new Error(`the coordinator moved: ${JSON.stringify(body.release)}`);
         if (body.release.failed_release_id !== null) throw new Error(`a failure is reported: ${JSON.stringify(body.release)}`);
@@ -2393,7 +2337,7 @@ flow(
       let tip = '';
       let v3!: Descriptor;
 
-      await ctx.step('a commit adds 33 MiB that gzip cannot shrink, outside every config dir', async () => {
+      await ctx.step('a commit adds 33 MiB that gzip cannot shrink', async () => {
         tip = await fixture.commit({ 'data/large.bin': large }, 'over the archive cap');
       });
 
@@ -2424,7 +2368,7 @@ flow(
         if (!entry || entry.mode !== '100644' || entry.blob !== (await gitBlobId(large))) {
           throw new Error(`data/large.bin is listed as ${JSON.stringify(entry)}`);
         }
-        if (!listed.has('.kortix/opencode/agents/kortix.md')) throw new Error('the release lists no agent');
+        if (!listed.has('agents/kortix.md')) throw new Error('the release lists no agent prompt');
         if (!('snapshot' in v3)) throw new Error('a v3 descriptor has no snapshot field');
         if (v3.snapshot !== null && !HEX64.test(v3.snapshot?.sha256 ?? '')) throw new Error(`snapshot ${JSON.stringify(v3.snapshot)}`);
       });
@@ -2526,13 +2470,12 @@ flow(
 // ── CFG-16 — a box runs a release over the cap, from its checkout then the snapshot ──
 //
 // The proof that a runtime loaded a release is deterministic, not a model's
-// wording: each release's agent carries its own marker as its `description`,
-// which the compiled agent config copies from the `.md` frontmatter and both
-// harnesses list at `GET /kortix/runtime/agents`. A default-lineup model
+// wording: each release's agent carries its own marker as its `description`
+// (`agents.kortix.description` in kortix.yaml), which the compiled agent config
+// copies and the runtime lists at `GET /kortix/runtime/agents`. A default-lineup model
 // answering a marker question is not reliable (measured 2026-10-08: it
 // answered with the directive's NAME on a box that ran the release).
-const OVER_CAP_AGENT = (marker: string): string =>
-  `---\ndescription: ${marker}\nmode: primary\n---\nYou are the main agent.\n`;
+const OVER_CAP_MANIFEST = (marker: string): string => MANIFEST.replace('    description: main agent\n', `    description: ${marker}\n`);
 
 harnessFlow(
   'CFG-16',
@@ -2563,7 +2506,7 @@ harnessFlow(
       });
       await ctx.step('the base branch holds 33 MiB that gzip cannot shrink, beside the agent config', async () => {
         await fixture.commit(
-          { 'data/large.bin': large, '.kortix/opencode/agents/kortix.md': OVER_CAP_AGENT(markerA) },
+          { 'data/large.bin': large, 'kortix.yaml': OVER_CAP_MANIFEST(markerA) },
           'over the archive cap',
         );
       });
@@ -2618,7 +2561,7 @@ harnessFlow(
       });
 
       await ctx.step('a push moves the base: the box converges to the new release from the project snapshot or a git fetch', async () => {
-        await fixture.commit({ '.kortix/opencode/agents/kortix.md': OVER_CAP_AGENT(markerB) }, 'next release over the cap');
+        await fixture.commit({ 'kortix.yaml': OVER_CAP_MANIFEST(markerB) }, 'next release over the cap');
         // The snapshot is built in the background; the box retries once a minute until it is ready.
         const release = await waitFor(releaseOf, {
           until: (rel) => Boolean(rel) && rel.running_release_id !== first && rel.running_release_id === rel.desired_release_id && rel.proven === true,

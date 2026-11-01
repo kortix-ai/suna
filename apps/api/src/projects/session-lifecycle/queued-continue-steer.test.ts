@@ -9,6 +9,8 @@ const realDeliver = await import('./deliver');
 const realStore = await import('./store');
 const realTransitions = await import('./command-transitions');
 const realPlacement = await import('./inbox-placement');
+const realAdmission = await import('./inbox-admission');
+const { mintWireMessageId } = await import('../wire-message-id');
 
 let awake: { externalId: string; opencodeSessionId: string; stage: string } | null = null;
 let answer: () => Promise<string> = async () => 'accepted';
@@ -18,6 +20,9 @@ const fallbacks: string[] = [];
 const requeues: string[] = [];
 const failures: string[] = [];
 let remints = 0;
+/** The box lists `runtime.stable_message_id.v1` (pi). */
+let keepsIds = false;
+let tip: Array<{ id: string; role: string; parentID?: string }> = [];
 
 mock.module('./deliver', () => ({ ...realDeliver, awakeDeliveryTarget: async () => awake }));
 mock.module('./inbox-delivery-hold', () => ({
@@ -31,7 +36,11 @@ mock.module('./runtime-client', () => ({
     posts.push({ key, opts });
     return answer();
   },
-  readInboxTranscriptState: async () => ({ newest: null, answered: false, read: true, tip: [] }),
+  readInboxTranscriptState: async () => ({ newest: null, answered: false, read: true, tip }),
+}));
+mock.module('./inbox-admission', () => ({
+  ...realAdmission,
+  sandboxKeepsMessageIds: async (externalId: string) => keepsIds && externalId === 'box-1',
 }));
 mock.module('./inbox-placement', () => ({
   ...realPlacement,
@@ -89,6 +98,8 @@ beforeEach(() => {
   answer = async () => 'accepted';
   for (const list of [posts, forwarded, fallbacks, requeues, failures]) list.length = 0;
   remints = 0;
+  keepsIds = false;
+  tip = [];
 });
 
 describe('deliverSteer', () => {
@@ -110,6 +121,33 @@ describe('deliverSteer', () => {
     expect(remints).toBe(1);
     expect(posts[0]!.opts).toMatchObject({ steer: true, wireMessageId: 'msg_reminted' });
     expect(forwarded).toEqual([{ wireMessageId: 'msg_reminted', opts: { steeredIntoMessageId: 'msg_turn1' } }]);
+  });
+
+  describe('on a runtime that keeps message ids', () => {
+    const now = Date.now();
+    const turnPrompt = mintWireMessageId({ nowMs: now - 10 * 60_000, random: () => 0.5 }).id;
+    const turnStep = mintWireMessageId({ nowMs: now - 30_000, random: () => 0.5 }).id;
+    const steerTyped = mintWireMessageId({ nowMs: now - 5 * 60_000, random: () => 0.5 }).id;
+
+    test('a steer that waited goes out under its own id, below the turn\'s newer steps', async () => {
+      keepsIds = true;
+      tip = [{ id: turnPrompt, role: 'user' }, { id: turnStep, role: 'assistant', parentID: turnPrompt }];
+      const waited = { ...payload, wireMessageId: steerTyped, remintOnDelivery: true };
+      expect(await deliverSteer(row, waited, waited.text, turnPrompt, new ProvisionTimeline('t', 'deliver'))).toBe('succeeded');
+      expect(remints).toBe(0);
+      expect(posts[0]!.opts).toMatchObject({ steer: true, wireMessageId: steerTyped });
+      expect(forwarded).toEqual([{ wireMessageId: steerTyped, opts: { steeredIntoMessageId: turnPrompt } }]);
+    });
+
+    test('a steer whose id sorts below the running turn\'s prompt is still re-minted', async () => {
+      keepsIds = true;
+      const minted = mintWireMessageId({ nowMs: now - 12 * 60_000, random: () => 0.5 }).id;
+      tip = [{ id: turnPrompt, role: 'user' }, { id: turnStep, role: 'assistant', parentID: turnPrompt }];
+      const server = { ...payload, wireMessageId: minted, remintOnDelivery: true };
+      expect(await deliverSteer(row, server, server.text, turnPrompt, new ProvisionTimeline('t', 'deliver'))).toBe('succeeded');
+      expect(remints).toBe(1);
+      expect(posts[0]!.opts).toMatchObject({ wireMessageId: 'msg_reminted' });
+    });
   });
 
   test('no awake box: nothing is posted, the row falls back turn_ended and is requeued', async () => {

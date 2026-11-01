@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   AGENT_SWAP_EXIT_CODE,
-  applyStagedAssetsIfIdle,
   reconcileRuntimeAssets,
   registerAgentSwapBlocker,
   requestAgentSwapIfIdle,
@@ -580,10 +579,6 @@ describe('runtime convergence report', () => {
       harness: 'pi',
       harness_version: '1.4.0',
       build: 1787241641,
-      // Never on disk — this call supplied no `catalogSnapshot`, so it reads
-      // as "unconfirmed", the same as an older daemon with no such concept.
-      managed_model_ids: null,
-      managed_catalog_fallback_reason: null,
     })
     // The pass-level fields stay honest about having no pass yet.
     expect(report.build).toBeNull()
@@ -602,8 +597,6 @@ describe('runtime convergence report', () => {
       harness: null,
       harness_version: null,
       build: null,
-      managed_model_ids: null,
-      managed_catalog_fallback_reason: null,
     })
   })
 
@@ -805,33 +798,24 @@ describe('the CLI falls back to the PATH fallback when /usr/local/bin is not wri
 })
 
 // ---------------------------------------------------------------------------
-// THE TRIGGER THAT WAS MISSING. `scheduleRuntimeAssetsReconcile` had exactly
-// two non-test call sites — `runtimeReadyTail` (boot) and `POST /kortix/refresh`
-// — and `requestAgentSwapIfIdle` is reached only from the tail of that same
-// pass. The boot pass fires seconds after the harness is ready, so it always
-// answered `too-young` against `AGENT_SWAP_MIN_UPTIME_MS = 5 min`, and no later
-// pass existed. A long-lived box therefore staged a daemon and NEVER installed
-// it.
-//
-// The uptime floor is a BOOT-FLAP guard: a restart moments after the harness is ready
-// is a readiness flap on the session-start hot path. A `session.idle` frame is
-// the opposite of that — a turn just finished, so the box is provably past boot
-// and provably not serving anyone. The floor is therefore waived at an idle
-// boundary and NOWHERE else.
+// The swap request. The 60 s runtime-truth tick asks it after every asset
+// pass; the uptime floor keeps a box from restarting moments after its runtime
+// is ready, and every other refusal protects live work.
 // ---------------------------------------------------------------------------
-describe('the idle boundary is a real swap trigger, not a timer', () => {
+describe('a staged daemon is installed only when nothing would be lost', () => {
   async function staged(ws: Awaited<ReturnType<typeof workspace>>) {
     await Bun.write(ws.agentNext, AGENT_BYTES)
     await Bun.write(ws.agentNextSha, `${sha(AGENT_BYTES)}\n`)
   }
+  const OLD_ENOUGH = 10 * 60_000
 
-  test('a young box still swaps at an idle boundary — the boot-flap floor is waived', async () => {
+  test('a box past the boot-flap floor swaps', async () => {
     const ws = await workspace()
     await staged(ws)
     const exits: number[] = []
-    const decision = await applyStagedAssetsIfIdle({
+    const decision = await requestAgentSwapIfIdle({
       agentStateDir: ws.stateDir,
-      uptimeMs: 3_000,
+      uptimeMs: OLD_ENOUGH,
       turnInFlight: async () => false,
       exit: (code) => exits.push(code),
     })
@@ -839,7 +823,7 @@ describe('the idle boundary is a real swap trigger, not a timer', () => {
     expect(exits).toEqual([AGENT_SWAP_EXIT_CODE])
   })
 
-  test('the same young box is refused OUTSIDE an idle boundary', async () => {
+  test('a young box is refused', async () => {
     const ws = await workspace()
     await staged(ws)
     const exits: number[] = []
@@ -853,14 +837,14 @@ describe('the idle boundary is a real swap trigger, not a timer', () => {
     expect(exits).toEqual([])
   })
 
-  test('an open PTY still blocks it — the shell dies with the daemon', async () => {
+  test('an open PTY blocks it — the shell dies with the daemon', async () => {
     const ws = await workspace()
     await staged(ws)
     registerAgentSwapBlocker('pty', () => true)
     const exits: number[] = []
-    const decision = await applyStagedAssetsIfIdle({
+    const decision = await requestAgentSwapIfIdle({
       agentStateDir: ws.stateDir,
-      uptimeMs: 3_000,
+      uptimeMs: OLD_ENOUGH,
       turnInFlight: async () => false,
       exit: (code) => exits.push(code),
     })
@@ -868,13 +852,13 @@ describe('the idle boundary is a real swap trigger, not a timer', () => {
     expect(exits).toEqual([])
   })
 
-  test('"cannot tell whether a turn is running" still counts as busy', async () => {
+  test('"cannot tell whether a turn is running" counts as busy', async () => {
     const ws = await workspace()
     await staged(ws)
     const exits: number[] = []
-    const decision = await applyStagedAssetsIfIdle({
+    const decision = await requestAgentSwapIfIdle({
       agentStateDir: ws.stateDir,
-      uptimeMs: 3_000,
+      uptimeMs: OLD_ENOUGH,
       turnInFlight: async () => null,
       exit: (code) => exits.push(code),
     })
@@ -882,13 +866,13 @@ describe('the idle boundary is a real swap trigger, not a timer', () => {
     expect(exits).toEqual([])
   })
 
-  test('the rollback latch still wins, even at an idle boundary', async () => {
+  test('the rollback latch wins', async () => {
     const ws = await workspace()
     await staged(ws)
     await Bun.write(ws.agentPinned, '')
-    const decision = await applyStagedAssetsIfIdle({
+    const decision = await requestAgentSwapIfIdle({
       agentStateDir: ws.stateDir,
-      uptimeMs: 3_000,
+      uptimeMs: OLD_ENOUGH,
       turnInFlight: async () => false,
       exit: () => {},
     })

@@ -154,13 +154,6 @@ describe('flag-only commands accept --flag=value exactly like --flag value', () 
       out: /not logged in/,
     },
     {
-      name: 'schema --version',
-      spaced: ['schema', '--version', '2', '--url'],
-      joined: ['schema', '--version=2', '--url'],
-      code: 0,
-      out: /kortix\.v2\.schema\.json/,
-    },
-    {
       name: 'ship --host',
       spaced: ['ship', '--host', 'synthetic', '--dry-run'],
       joined: ['ship', '--host=synthetic', '--dry-run'],

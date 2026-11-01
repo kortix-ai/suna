@@ -23,7 +23,7 @@ type CatalogEntry = {
 
 /** The API authors the egress rules once, as `notes.network`. Rendering them
  *  here rather than restating them keeps the guest-facing wording in a single
- *  place — the agent reads this file as OpenCode `instructions`. */
+ *  place — pi appends this file to the agent's system prompt. */
 function parseNetworkNotes(raw: string | undefined): string[] {
   if (!raw || Buffer.byteLength(raw, 'utf8') > MAX_CATALOG_BYTES) return []
   try {

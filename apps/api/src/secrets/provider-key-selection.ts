@@ -18,7 +18,10 @@ export const MAX_KEYS_PER_PROVIDER = 10;
 
 /** The key name the gateway reads for a provider's pooled keys. Null for an unknown provider. */
 export function providerEnvVarOf(providerId: string): string | null {
-  return providerId === 'codex' ? CODEX_AUTH_SECRET_NAME : (resolveCatalogUpstream(providerId)?.envVar ?? null);
+  if (providerId === 'codex') return CODEX_AUTH_SECRET_NAME;
+  // Claude accounts (claude-subscription/accounts.ts): Claude Code's logins.
+  if (providerId === 'claude-agent') return 'CLAUDE_CODE_OAUTH_TOKEN';
+  return resolveCatalogUpstream(providerId)?.envVar ?? null;
 }
 
 /** The provider whose keys pay for a model, and the key name the gateway reads. Null for a Kortix model. */

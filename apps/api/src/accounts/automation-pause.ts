@@ -1,5 +1,5 @@
 /**
- * Pause all automations (KRTX-1721): one switch per account stops every
+ * Pause all triggers (KRTX-1721): one switch per account stops every
  * automatic fire in every project of the account — schedules and reminders,
  * webhooks, app events and monitors. A manual fire still runs, as with a
  * project's own pause. A schedule slot missed while paused fires once on

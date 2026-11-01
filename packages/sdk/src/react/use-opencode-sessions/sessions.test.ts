@@ -47,8 +47,7 @@ mock.module('@tanstack/react-query', () => ({
 }));
 
 // `client` is swapped per-test via `clientImpl` so each test controls exactly
-// what `client.global.config.get()` / `client.session.messages()` /
-// `client.provider.list()` / `client.session.summarize()` /
+// what `client.session.messages()` / `client.session.summarize()` /
 // `client.session.command()` resolve to.
 let clientImpl: Record<string, unknown> = {};
 mock.module('../../core/runtime/client', () => ({
@@ -71,6 +70,14 @@ mock.module('../../browser/stores/opencode-compaction-store', () => ({
   ),
 }));
 
+// The session-log action route of the active runtime: null = an older box (the default here).
+let actionImpl: (method: string, path: string, body?: unknown) => Promise<Response | null> = async () => null;
+const realRuntimeActions = await import('../../core/session/runtime-actions');
+mock.module('../../core/session/runtime-actions', () => ({
+  ...realRuntimeActions,
+  activeRuntimeAction: (method: string, path: string, body?: unknown) => actionImpl(method, path, body),
+}));
+
 const { useSummarizeRuntimeSession, useInitSession, useForkSession } = await import('./sessions');
 const { runtimeKeys } = await import('./keys');
 const { NoCompactionModelError } = await import('./no-compaction-model-error');
@@ -78,23 +85,45 @@ const { NoCompactionModelError } = await import('./no-compaction-model-error');
 beforeEach(() => {
   fakeQueryClient = makeFakeQueryClient();
   clientImpl = {};
+  actionImpl = async () => null;
+});
+
+describe('useSummarizeRuntimeSession on a box with the session-log actions', () => {
+  test('posts the compact route of the session: no model, no history read, no compatibility call', async () => {
+    const calls: unknown[] = [];
+    actionImpl = async (method, path, body) => (calls.push([method, path, body]), Response.json({ ok: true }, { status: 202 }));
+    clientImpl = { session: new Proxy({}, { get: () => { throw new Error('the compatibility client must not be used'); } }) };
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
+      mutationFn: (args: { sessionId: string }) => Promise<string>;
+    };
+    expect(await mutationFn({ sessionId: 'ses_1' })).toBe('ses_1');
+    expect(calls).toEqual([['POST', '/kortix/runtime/sessions/ses_1/compact', undefined]]);
+  });
+
+  test('a refused compaction throws the runtime message', async () => {
+    actionImpl = async () => Response.json({ error: 'the runtime cannot compact' }, { status: 501 });
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
+      mutationFn: (args: { sessionId: string }) => Promise<string>;
+    };
+    await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toThrow('the runtime cannot compact');
+  });
 });
 
 // ============================================================================
-// useSummarizeRuntimeSession — the 3-tier model-resolution fallback chain
-// (config default → last assistant message → first connected provider/model)
+// useSummarizeRuntimeSession — the model to summarize with: the one passed,
+// else the model of the session's last assistant message.
 // ============================================================================
 
-describe('useSummarizeRuntimeSession — model resolution fallback chain', () => {
-  test('tier 1: uses the config default model when neither providerID nor modelID is given', async () => {
+describe('useSummarizeRuntimeSession — the model it summarizes with', () => {
+  const history = (providerID: string, modelID: string) => async () => ({
+    data: [{ info: { role: 'user' } }, { info: { role: 'assistant', providerID, modelID } }],
+  });
+
+  test("uses the session's last assistant message model when none is given", async () => {
     let summarizeArgs: unknown;
     clientImpl = {
-      global: {
-        config: {
-          get: async () => ({ data: { model: 'anthropic/claude-opus' } }),
-        },
-      },
       session: {
+        messages: history('kortix', 'glm-5.3-flash'),
         summarize: async (args: unknown) => {
           summarizeArgs = args;
           return { data: {} };
@@ -104,59 +133,30 @@ describe('useSummarizeRuntimeSession — model resolution fallback chain', () =>
     const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
-    const result = await mutationFn({ sessionId: 'ses_1' });
-
-    expect(result).toBe('ses_1');
-    expect(summarizeArgs).toEqual({
-      sessionID: 'ses_1',
-      providerID: 'anthropic',
-      modelID: 'claude-opus',
-    });
+    expect(await mutationFn({ sessionId: 'ses_1' })).toBe('ses_1');
+    expect(summarizeArgs).toEqual({ sessionID: 'ses_1', providerID: 'kortix', modelID: 'glm-5.3-flash' });
   });
 
-  test('tier 1 splits a multi-segment model id: provider is the first segment, model is the rest', async () => {
-    let summarizeArgs: unknown;
+  test('never asks the runtime for a config or a provider list', async () => {
+    const asked: string[] = [];
     clientImpl = {
-      global: {
-        config: {
-          get: async () => ({ data: { model: 'openrouter/z-ai/glm-5.3-flash' } }),
-        },
-      },
-      session: {
-        summarize: async (args: unknown) => {
-          summarizeArgs = args;
-          return { data: {} };
-        },
-      },
+      global: { config: { get: async () => (asked.push('config'), { data: { model: 'anthropic/claude' } }) } },
+      provider: { list: async () => (asked.push('providers'), { data: {} }) },
+      session: { messages: history('kortix', 'glm-5.3-flash'), summarize: async () => ({ data: {} }) },
     };
     const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
     await mutationFn({ sessionId: 'ses_1' });
-    expect(summarizeArgs).toEqual({
-      sessionID: 'ses_1',
-      providerID: 'openrouter',
-      modelID: 'z-ai/glm-5.3-flash',
-    });
+    expect(asked).toEqual([]);
   });
 
-  test("tier 2: falls back to the session's last assistant message model when config has none", async () => {
+  test('an explicitly-passed providerID/modelID skips the history read', async () => {
     let summarizeArgs: unknown;
+    let historyRead = false;
     clientImpl = {
-      global: { config: { get: async () => ({ data: {} }) } },
       session: {
-        messages: async () => ({
-          data: [
-            { info: { role: 'user' } },
-            {
-              info: {
-                role: 'assistant',
-                providerID: 'anthropic',
-                modelID: 'claude-sonnet',
-              },
-            },
-          ],
-        }),
+        messages: async () => ((historyRead = true), { data: [] }),
         summarize: async (args: unknown) => {
           summarizeArgs = args;
           return { data: {} };
@@ -164,148 +164,29 @@ describe('useSummarizeRuntimeSession — model resolution fallback chain', () =>
       },
     };
     const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
-      mutationFn: (args: { sessionId: string }) => Promise<string>;
+      mutationFn: (args: { sessionId: string; providerID?: string; modelID?: string }) => Promise<string>;
     };
-    await mutationFn({ sessionId: 'ses_1' });
-    expect(summarizeArgs).toEqual({
-      sessionID: 'ses_1',
-      providerID: 'anthropic',
-      modelID: 'claude-sonnet',
-    });
+    await mutationFn({ sessionId: 'ses_1', providerID: 'anthropic', modelID: 'claude-haiku' });
+    expect(historyRead).toBe(false);
+    expect(summarizeArgs).toEqual({ sessionID: 'ses_1', providerID: 'anthropic', modelID: 'claude-haiku' });
   });
 
-  test('tier 3: falls back to the first connected provider/model when config and history have none', async () => {
-    let summarizeArgs: unknown;
-    clientImpl = {
-      global: { config: { get: async () => ({ data: {} }) } },
-      session: {
-        messages: async () => ({ data: [] }),
-        summarize: async (args: unknown) => {
-          summarizeArgs = args;
-          return { data: {} };
-        },
-      },
-      provider: {
-        list: async () => ({
-          data: { kortix: { models: { 'claude-opus-4.8': {} } } },
-        }),
-      },
-    };
+  test('throws NoCompactionModelError when the history names no model', async () => {
+    clientImpl = { session: { messages: async () => ({ data: [] }) } };
     const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
-    await mutationFn({ sessionId: 'ses_1' });
-    expect(summarizeArgs).toEqual({
-      sessionID: 'ses_1',
-      providerID: 'kortix',
-      modelID: 'claude-opus-4.8',
-    });
-  });
-
-  test('an explicitly-passed providerID/modelID short-circuits every fallback tier', async () => {
-    let summarizeArgs: unknown;
-    let configFetched = false;
-    clientImpl = {
-      global: {
-        config: {
-          get: async () => {
-            configFetched = true;
-            return { data: {} };
-          },
-        },
-      },
-      session: {
-        summarize: async (args: unknown) => {
-          summarizeArgs = args;
-          return { data: {} };
-        },
-      },
-    };
-    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
-      mutationFn: (args: {
-        sessionId: string;
-        providerID?: string;
-        modelID?: string;
-      }) => Promise<string>;
-    };
-    await mutationFn({
-      sessionId: 'ses_1',
-      providerID: 'anthropic',
-      modelID: 'claude-haiku',
-    });
-
-    expect(configFetched).toBe(false);
-    expect(summarizeArgs).toEqual({
-      sessionID: 'ses_1',
-      providerID: 'anthropic',
-      modelID: 'claude-haiku',
-    });
-  });
-
-  test('throws when every tier fails to resolve a model', async () => {
-    clientImpl = {
-      global: { config: { get: async () => ({ data: {} }) } },
-      session: { messages: async () => ({ data: [] }) },
-      provider: { list: async () => ({ data: {} }) },
-    };
-    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
-      mutationFn: (args: { sessionId: string }) => Promise<string>;
-    };
-    // The expected "no model configured" state throws the sentinel-marked
+    // The expected "no model" state throws the sentinel-marked
     // `NoCompactionModelError` (not a plain `Error`) so the Sentry telemetry
-    // gate can `instanceof`-match it and drop the expected config state
-    // instead of paging Better Stack. The user-facing message is unchanged.
+    // gate can `instanceof`-match it and drop it instead of paging Better Stack.
     await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toThrow(
       'No model available for compaction. Please configure a model in settings.',
     );
     await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toBeInstanceOf(NoCompactionModelError);
   });
 
-  test('a thrown/rejected config.get() is swallowed — falls through to the next tier', async () => {
-    let summarizeArgs: unknown;
-    clientImpl = {
-      global: {
-        config: {
-          get: async () => {
-            throw new Error('network down');
-          },
-        },
-      },
-      session: {
-        messages: async () => ({
-          data: [
-            {
-              info: {
-                role: 'assistant',
-                providerID: 'anthropic',
-                modelID: 'x',
-              },
-            },
-          ],
-        }),
-        summarize: async (args: unknown) => {
-          summarizeArgs = args;
-          return { data: {} };
-        },
-      },
-    };
-    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
-      mutationFn: (args: { sessionId: string }) => Promise<string>;
-    };
-    await mutationFn({ sessionId: 'ses_1' });
-    expect(summarizeArgs).toEqual({
-      sessionID: 'ses_1',
-      providerID: 'anthropic',
-      modelID: 'x',
-    });
-  });
-
   test('onMutate/onError toggle the compaction store around the send', () => {
-    clientImpl = {
-      global: { config: { get: async () => ({ data: {} }) } },
-      session: { messages: async () => ({ data: [] }) },
-      provider: { list: async () => ({ data: {} }) },
-    };
+    clientImpl = { session: { messages: async () => ({ data: [] }) } };
     const hook = useSummarizeRuntimeSession() as unknown as {
       onMutate: (args: { sessionId: string }) => void;
       onError: (err: unknown, args: { sessionId: string }) => void;

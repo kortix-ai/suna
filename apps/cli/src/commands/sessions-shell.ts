@@ -39,9 +39,8 @@ function sanitizePtyChunk(chunk: string): string {
 const SHELL_HELP = help`Usage: kortix sessions shell [<session-id>] [options]
 
 Open a raw interactive terminal (PTY) inside a running session's sandbox —
-the same shell you'd get from the "Terminal" panel in the dashboard. Unlike
-\`sessions connect\` (which attaches to the OpenCode agent), this is a plain
-shell: no agent, no chat, just a prompt.
+the same shell you'd get from the "Terminal" panel in the dashboard. It is a
+plain shell: no agent, no chat, just a prompt.
 
 Reattaches to the session's existing terminal if one is already running
 (same one the dashboard shows) so you never lose your place; pass --new to

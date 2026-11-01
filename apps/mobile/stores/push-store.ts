@@ -30,7 +30,7 @@ export interface PendingOpen {
 }
 
 /** A token row left on `backendUrl` by a failed sign-out unregister. */
-export interface PendingRelease {
+interface PendingRelease {
   backendUrl: string;
   token: string;
 }

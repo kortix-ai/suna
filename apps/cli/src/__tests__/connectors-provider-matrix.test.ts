@@ -21,8 +21,9 @@ async function runProviderCase(input: {
   const directory = await mkdtemp(join(tmpdir(), `kortix-connector-${input.provider}-`));
   tempDirectories.push(directory);
   const manifestPath = join(directory, 'kortix.yaml');
-  const prefix = 'kortix_version: 2\n# preserve this comment\nname: Provider matrix\n';
-  await writeFile(manifestPath, prefix, 'utf8');
+  const prefix = '# preserve this comment\nname: Provider matrix\n';
+  // The write drops the obsolete `kortix_version` line and keeps every other byte.
+  await writeFile(manifestPath, `kortix_version: 3\n${prefix}`, 'utf8');
 
   const child = Bun.spawn({
     cmd: [
@@ -56,9 +57,10 @@ async function runProviderCase(input: {
   const manifest = await readFile(manifestPath, 'utf8');
 
   expect(code).toBe(0);
-  expect(stdout).toContain(`Added [[connectors]] ${input.provider}-tools`);
+  expect(stdout).toContain(`Added connector ${input.provider}-tools`);
   expect(stderr).toBe('host cloud (https://api.kortix.com, not logged in)\n');
   expect(manifest.startsWith(prefix)).toBe(true);
+  expect(manifest).not.toContain('kortix_version');
   expect(manifest).toContain(`slug: ${input.provider}-tools`);
   expect(manifest).toContain(`provider: ${input.provider}`);
   for (const line of input.expectedLines) expect(manifest).toContain(line);
@@ -113,7 +115,7 @@ describe('kortix connectors add provider matrix', () => {
     const directory = await mkdtemp(join(tmpdir(), 'kortix-connector-pipedream-rejected-'));
     tempDirectories.push(directory);
     const manifestPath = join(directory, 'kortix.yaml');
-    await writeFile(manifestPath, 'kortix_version: 2\nname: Provider guard\n', 'utf8');
+    await writeFile(manifestPath, 'name: Provider guard\n', 'utf8');
 
     const child = Bun.spawn({
       cmd: [
