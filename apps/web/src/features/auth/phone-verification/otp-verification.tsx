@@ -16,7 +16,6 @@ interface OtpVerificationProps {
   onRemovePhone?: () => Promise<void>;
   isLoading?: boolean;
   error?: string | null;
-  showExistingOptions?: boolean;
   challengeId?: string;
 }
 
@@ -28,7 +27,6 @@ export function OtpVerification({
   onRemovePhone,
   isLoading = false,
   error = null,
-  showExistingOptions = false,
   challengeId,
 }: OtpVerificationProps) {
   const t = useTranslations('auth.phoneVerification');

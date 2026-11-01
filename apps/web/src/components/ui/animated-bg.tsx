@@ -1,6 +1,5 @@
 'use client';
 
-import { cn } from '@kortix/ui';
 import { m, useMotionValue, useTransform } from 'motion/react';
 import { useEffect, useId, useMemo, useState } from 'react';
 
@@ -235,24 +234,11 @@ const Arc = ({ left, cfg, duration = 4.6 }: { left?: boolean; cfg: ArcCfg; durat
 };
 
 interface AnimatedBgProps {
-  variant?: 'hero' | 'header';
-  blurMultiplier?: number; // 0.5 = half blur, 2 = double blur
-  sizeMultiplier?: number; // 0.8 = 80% size, 1.5 = 150% size
   /** Animation loop duration in seconds (default 4.6) */
   duration?: number;
-  customArcs?: {
-    left?: Partial<ArcCfg>[];
-    right?: Partial<ArcCfg>[];
-  };
 }
 
-export function AnimatedBg({
-  variant = 'hero',
-  blurMultiplier = 1,
-  sizeMultiplier = 1,
-  duration = 4.6,
-  customArcs,
-}: AnimatedBgProps) {
+export function AnimatedBg({ duration = 4.6 }: AnimatedBgProps) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -261,10 +247,7 @@ export function AnimatedBg({
   if (!mounted) {
     return (
       <div
-        className={cn(
-          'pointer-events-none absolute inset-0 overflow-hidden',
-          variant === 'header' ? 'z-0' : '-z-10',
-        )}
+        className="pointer-events-none absolute inset-0 overflow-hidden -z-10"
         aria-hidden="true"
       >
         {/* Static gradient placeholder matching the animated bg */}
@@ -275,25 +258,10 @@ export function AnimatedBg({
               'radial-gradient(ellipse at 20% 30%, rgba(200, 200, 200, 0.15) 0%, transparent 50%), radial-gradient(ellipse at 80% 40%, rgba(180, 180, 180, 0.12) 0%, transparent 45%)',
           }}
         />
-        {variant === 'hero' && (
-          <div className="from-background pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t to-transparent" />
-        )}
+        <div className="from-background pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t to-transparent" />
       </div>
     );
   }
-
-  // Helper function to apply blur multiplier
-  const adjustBlur = (blurValues: string[]): string[] => {
-    return blurValues.map((blur) => {
-      const value = parseFloat(blur);
-      return `${value * blurMultiplier}px`;
-    });
-  };
-
-  // Helper function to apply size multiplier
-  const adjustSize = (size: number): number => {
-    return Math.round(size * sizeMultiplier);
-  };
 
   // Hero variant - original full-page configuration
   const heroLeft: ArcCfg[] = [
@@ -346,106 +314,24 @@ export function AnimatedBg({
     },
   ];
 
-  // Header variant - optimized for smaller page header component
-  const headerLeft: ArcCfg[] = [
-    {
-      pos: { left: -150, top: -50 },
-      size: adjustSize(450),
-      tone: 'light',
-      opacity: 0.2,
-      delay: 0.02,
-      x: [0, 15, -8, 0],
-      y: [0, 10, -5, 0],
-      scale: [0.85, 1.05, 0.95, 0.85],
-      blur: adjustBlur(['12px', '18px', '15px', '12px']),
-    },
-    {
-      pos: { left: -40, top: 100 },
-      size: adjustSize(520),
-      tone: 'medium',
-      opacity: 0.25,
-      delay: 0.8,
-      x: [0, 18, -10, 0],
-      y: [0, 12, -8, 0],
-      scale: [0.88, 1.12, 0.98, 0.88],
-      blur: adjustBlur(['8px', '4px', '6px', '8px']),
-    },
-  ];
-
-  const headerRight: ArcCfg[] = [
-    {
-      pos: { right: -140, top: -50 },
-      size: adjustSize(550),
-      tone: 'dark',
-      opacity: 0.28,
-      delay: 1.2,
-      x: [0, -20, 12, 0],
-      y: [0, 14, -9, 0],
-      scale: [0.9, 1.15, 1.0, 0.9],
-      blur: adjustBlur(['10px', '4px', '7px', '10px']),
-    },
-    {
-      pos: { right: 300, top: 140 },
-      size: adjustSize(280),
-      tone: 'light',
-      opacity: 0.18,
-      delay: 0.4,
-      x: [0, -15, 8, 0],
-      y: [0, 10, -6, 0],
-      scale: [0.92, 1.08, 0.98, 0.92],
-      blur: adjustBlur(['20px', '28px', '24px', '20px']),
-    },
-  ];
-
-  // Helper function to merge custom arcs with defaults
-  const mergeArcs = (defaultArcs: ArcCfg[], customArcs?: Partial<ArcCfg>[]): ArcCfg[] => {
-    if (!customArcs || customArcs.length === 0) return defaultArcs;
-
-    return customArcs.map((customArc, i) => {
-      const defaultArc = defaultArcs[i] || defaultArcs[0];
-      return {
-        pos: customArc.pos || defaultArc.pos,
-        size: customArc.size || defaultArc.size,
-        tone: customArc.tone || defaultArc.tone,
-        opacity: customArc.opacity !== undefined ? customArc.opacity : defaultArc.opacity,
-        delay: customArc.delay !== undefined ? customArc.delay : defaultArc.delay,
-        x: customArc.x || defaultArc.x,
-        y: customArc.y || defaultArc.y,
-        scale: customArc.scale || defaultArc.scale,
-        blur: customArc.blur || defaultArc.blur,
-      } as ArcCfg;
-    });
-  };
-
-  const baseLeft = variant === 'header' ? headerLeft : heroLeft;
-  const baseRight = variant === 'header' ? headerRight : heroRight;
-
-  const left = customArcs?.left ? mergeArcs(baseLeft, customArcs.left) : baseLeft;
-  const right = customArcs?.right ? mergeArcs(baseRight, customArcs.right) : baseRight;
-
   return (
     <div
-      className={cn(
-        'pointer-events-none absolute inset-0 overflow-hidden',
-        variant === 'header' ? 'z-0' : '-z-10',
-      )}
+      className="pointer-events-none absolute inset-0 overflow-hidden -z-10"
       style={{
         transform: 'translateZ(0)',
         WebkitTransform: 'translateZ(0)',
       }}
     >
       <div className="absolute inset-0">
-        {left.map((cfg, i) => (
+        {heroLeft.map((cfg, i) => (
           <Arc key={`L${i}`} left cfg={cfg} duration={duration} />
         ))}
-        {right.map((cfg, i) => (
+        {heroRight.map((cfg, i) => (
           <Arc key={`R${i}`} cfg={cfg} duration={duration} />
         ))}
       </div>
       {/* Bottom gradient fade overlay */}
-      {variant === 'hero' && (
-        <div className="from-background pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t to-transparent" />
-      )}
+      <div className="from-background pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t to-transparent" />
     </div>
   );
 }
