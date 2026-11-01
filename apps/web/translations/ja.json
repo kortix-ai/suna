@@ -23740,7 +23740,9 @@
       "tabCapabilities": "機能",
       "summaryExcept": "{all} except {list}",
       "pinToSidebar": "サイドバーに固定",
-      "unpinFromSidebar": "サイドバーから固定解除"
+      "unpinFromSidebar": "サイドバーから固定解除",
+      "spaceHelp": "このエージェントが作業するスペース。engineeringやsalesなどの識別子を指定します。空欄の場合はプロジェクト全体です。",
+      "spacePlaceholder": "例: engineering"
     },
     "myKortix": {
       "allowed": "許可",
@@ -24750,6 +24752,19 @@
       "archivedToast": "#{name} をアーカイブしました",
       "unarchivedToast": "#{name} のアーカイブを解除しました",
       "failed": "#{name} を更新できませんでした。もう一度お試しください。"
+    },
+    "blocks": {
+      "noContent": "まだコンテンツがありません。",
+      "noUrl": "まだURLがありません。",
+      "noApp": "アプリが選択されていません。",
+      "noFile": "まだファイルがありません。",
+      "loadingApp": "アプリを読み込み中…"
+    },
+    "templates": {
+      "board": {
+        "brief": "概要",
+        "text": "このスペースの目的と協力の方法。"
+      }
     }
   },
   "imageGen": {
@@ -25067,7 +25082,9 @@
         "move": "移動",
         "peek": "プレビュー",
         "open": "開く",
-        "stop": "停止"
+        "stop": "停止",
+        "space": "スペース",
+        "enter": "Enter"
       },
       "group": {
         "pinned": "ピン留め",

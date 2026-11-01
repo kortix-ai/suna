@@ -23740,7 +23740,9 @@
       "tabCapabilities": "Capacità",
       "summaryExcept": "{all} except {list}",
       "pinToSidebar": "Fissa nella barra laterale",
-      "unpinFromSidebar": "Rimuovi dalla barra laterale"
+      "unpinFromSidebar": "Rimuovi dalla barra laterale",
+      "spaceHelp": "Lo spazio in cui lavora questo agente: un identificatore come engineering o sales. Vuoto: intero progetto.",
+      "spacePlaceholder": "ad es. engineering"
     },
     "myKortix": {
       "allowed": "Consentito",
@@ -24750,6 +24752,19 @@
       "archivedToast": "#{name} archiviato",
       "unarchivedToast": "#{name} ripristinato",
       "failed": "Impossibile aggiornare #{name}. Riprova."
+    },
+    "blocks": {
+      "noContent": "Nessun contenuto per ora.",
+      "noUrl": "Nessun URL per ora.",
+      "noApp": "Nessuna app selezionata.",
+      "noFile": "Nessun file per ora.",
+      "loadingApp": "Caricamento app…"
+    },
+    "templates": {
+      "board": {
+        "brief": "Sintesi",
+        "text": "A cosa serve questo spazio e come contribuire."
+      }
     }
   },
   "imageGen": {
@@ -25067,7 +25082,9 @@
         "move": "sposta",
         "peek": "anteprima",
         "open": "apri",
-        "stop": "interrompi"
+        "stop": "interrompi",
+        "space": "Spazio",
+        "enter": "Invio"
       },
       "group": {
         "pinned": "Fissate",

@@ -23740,7 +23740,9 @@
       "tabCapabilities": "Mogućnosti",
       "summaryExcept": "{all} except {list}",
       "pinToSidebar": "Закачи на бочну траку",
-      "unpinFromSidebar": "Откачи са бочне траке"
+      "unpinFromSidebar": "Откачи са бочне траке",
+      "spaceHelp": "Простор у ком овај агент ради: идентификатор као engineering или sales. Празно: цео пројекат.",
+      "spacePlaceholder": "нпр. engineering"
     },
     "myKortix": {
       "allowed": "Дозвољено",
@@ -24750,6 +24752,19 @@
       "archivedToast": "#{name} је архивиран",
       "unarchivedToast": "#{name} је враћен из архиве",
       "failed": "Ажурирање канала #{name} није успело. Покушај поново."
+    },
+    "blocks": {
+      "noContent": "Још нема садржаја.",
+      "noUrl": "Још нема URL-а.",
+      "noApp": "Још није изабрана апликација.",
+      "noFile": "Још нема датотеке.",
+      "loadingApp": "Учитавање апликације…"
+    },
+    "templates": {
+      "board": {
+        "brief": "Преглед",
+        "text": "Чему служи овај простор и како помоћи."
+      }
     }
   },
   "imageGen": {
@@ -25067,7 +25082,9 @@
         "move": "помери",
         "peek": "преглед",
         "open": "отвори",
-        "stop": "заустави"
+        "stop": "заустави",
+        "space": "Размак",
+        "enter": "Ентер"
       },
       "group": {
         "pinned": "Закачено",
