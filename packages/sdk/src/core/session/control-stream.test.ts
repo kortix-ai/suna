@@ -7,6 +7,7 @@ import {
   openSessionStream,
   sessionStreamConnected,
   sessionStreamEventClient,
+  subscribeSessionStreamConnections,
 } from './control-stream';
 
 /** One connection the fake transport holds open until the test ends it. */
@@ -411,7 +412,7 @@ test('every caller of one session gets the SAME event client, so openEventStream
 });
 
 test('the polls stand down only for a server that owns session state (sent kortix.control.session)', async () => {
-  const stream = openSessionStream({ projectId: 'p1', sessionId: 's1', timing: TIMING });
+  const stream = openSessionStream({ projectId: 'p1', sessionId: 's1', runtime: true, timing: TIMING });
   await tick();
   connections[0]!.push(hello);
   connections[0]!.push({ channel: 'control', cepoch: 'capi_a', cseq: 1, type: 'kortix.control.turn', at: 1, payload: { known: true, turns: [] } });
@@ -425,6 +426,85 @@ test('the polls stand down only for a server that owns session state (sent korti
   await tick();
   expect(sessionStreamConnected('p1', 's1')).toBe(false);
   stream.close();
+});
+
+const sessionFrame = (cseq: number) => ({
+  channel: 'control',
+  cepoch: 'capi_a',
+  cseq,
+  type: 'kortix.control.session',
+  at: 1,
+  payload: { known: true, title: null, secrets_rev: '0:' },
+});
+
+test('a reconnect without the runtime channel serves the queue only: the polls come back', async () => {
+  const runtime = openSessionStream({ projectId: 'p1', sessionId: 's1', runtime: true, timing: TIMING });
+  const control = openSessionStream({ projectId: 'p1', sessionId: 's1', timing: TIMING });
+  await tick();
+  connections[0]!.push(sessionFrame(1));
+  await tick();
+  expect(sessionStreamConnected('p1', 's1')).toBe(true);
+
+  // The session page leaves. The open connection still carries every channel.
+  runtime.close();
+  await tick();
+  expect(connections).toHaveLength(1);
+  expect(sessionStreamConnected('p1', 's1')).toBe(true);
+
+  connections[0]!.end();
+  await tick(20);
+  expect(connections).toHaveLength(2);
+  expect(new URL(connections[1]!.url).searchParams.get('channels')).toBe('control');
+  connections[1]!.push(hello);
+  await tick();
+  expect(control.connected()).toBe(true);
+  expect(sessionStreamConnected('p1', 's1')).toBe(false);
+  control.close();
+});
+
+test('the last v2 subscriber leaving reconnects control-only at once: the polls come back and the listeners are told', async () => {
+  const runtime = openSessionStream({ projectId: 'p1', sessionId: 's1', runtime: true, schema: 'v2', timing: TIMING });
+  const control = openSessionStream({ projectId: 'p1', sessionId: 's1', timing: TIMING });
+  await tick();
+  connections[0]!.push(sessionFrame(1));
+  await tick();
+  expect(sessionStreamConnected('p1', 's1')).toBe(true);
+
+  const answers: boolean[] = [];
+  const stop = subscribeSessionStreamConnections(() => answers.push(sessionStreamConnected('p1', 's1')));
+  runtime.close();
+  await tick(5);
+  expect(connections).toHaveLength(2);
+  expect(new URL(connections[1]!.url).searchParams.get('channels')).toBe('control');
+  // This reconnect reports no drop, so `connected` alone never changes.
+  expect(control.connected()).toBe(true);
+  expect(sessionStreamConnected('p1', 's1')).toBe(false);
+  expect(answers).toEqual([false]);
+  stop();
+  control.close();
+});
+
+test('a runtime subscriber that upgrades a control-only stream brings the answer back and tells the listeners', async () => {
+  const runtime = openSessionStream({ projectId: 'p1', sessionId: 's1', runtime: true, schema: 'v2', timing: TIMING });
+  const control = openSessionStream({ projectId: 'p1', sessionId: 's1', timing: TIMING });
+  await tick();
+  connections[0]!.push(sessionFrame(1));
+  await tick();
+  runtime.close();
+  await tick(5);
+  expect(sessionStreamConnected('p1', 's1')).toBe(false);
+
+  const answers: boolean[] = [];
+  const stop = subscribeSessionStreamConnections(() => answers.push(sessionStreamConnected('p1', 's1')));
+  const back = openSessionStream({ projectId: 'p1', sessionId: 's1', runtime: true, timing: TIMING });
+  await tick(5);
+  expect(connections).toHaveLength(3);
+  expect(new URL(connections[2]!.url).searchParams.get('channels')).toBeNull();
+  expect(sessionStreamConnected('p1', 's1')).toBe(true);
+  expect(answers).toEqual([true]);
+  stop();
+  back.close();
+  control.close();
 });
 
 test('schema v2 (the session log): a subscriber that asks for it reconnects the runtime connection with schema=v2, at the same cursors', async () => {

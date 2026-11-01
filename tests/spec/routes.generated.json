@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1011,
+  "count": 1018,
   "routes": [
     {
       "method": "GET",
@@ -53,6 +53,14 @@
     {
       "method": "POST",
       "path": "/internal/gateway/budget-check"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/claude-credentials"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/claude-refused"
     },
     {
       "method": "POST",
@@ -2441,6 +2449,26 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/channels/telegram/users/:user_id/photo"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/claude-subscription"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/claude-subscription"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/claude-subscription/login/complete"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/claude-subscription/login/start"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/claude-subscription/token"
     },
     {
       "method": "GET",

@@ -43,6 +43,7 @@ describe('helpLines', () => {
         current = line.scope;
         continue;
       }
+      if (line.kind !== 'binding') throw new Error('helpLines prints bindings only');
       expect(line.binding.scope).toBe(current as typeof line.binding.scope);
     }
   });
@@ -58,5 +59,19 @@ describe('helpLines', () => {
   test('a scope with no bindings prints no heading', () => {
     const subset = helpLines(allBindings().filter((binding) => binding.scope === 'terminal'));
     expect(subset.filter((line) => line.kind === 'section').length).toBe(1);
+  });
+});
+
+describe('commandLines', () => {
+  test('lists every slash command once, under its group heading', async () => {
+    const { commandLines } = await import('./help-overlay.tsx');
+    const { COMMANDS } = await import('../../commands/registry.ts');
+    const lines = commandLines();
+    const commands = lines.filter((line) => line.kind === 'command');
+    expect(commands).toHaveLength(COMMANDS.length);
+    expect(lines[0]).toMatchObject({ kind: 'section', title: 'Commands · Session' });
+    expect(
+      commands.some((line) => line.kind === 'command' && line.usage === '/rename <title>'),
+    ).toBe(true);
   });
 });

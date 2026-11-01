@@ -6,7 +6,7 @@ let signupsEnabled = true; // fail-open default
 let allowedEmails = new Set<string>();
 let allowedDomains = new Set<string>();
 
-/** One cache load (workers/access-control-cache-worker.ts runs it every 60s). */
+/** One cache load (replica/access-control-cache.ts runs it every 60s). */
 export async function refreshAccessControlCache() {
   try {
     // Load signups_enabled setting

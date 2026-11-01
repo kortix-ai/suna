@@ -1,12 +1,11 @@
 // Tunnel registrations: unpairing, retiring superseded or silent machines, and
-// the periodic cleanup tick (workers/tunnel-worker.ts).
+// the periodic cleanup tick (replica/tunnel.ts).
 
 import { and, eq, inArray, isNotNull, lt, ne, sql, type SQL } from 'drizzle-orm';
 import { connectorConnections, connectors, tunnelConnections, tunnelDeviceAuthRequests } from '@kortix/db';
 import { db } from '../shared/db';
 import { retryOnDeadlock } from '../shared/error-cause';
 import { isTunnelConnectionLive } from './core/cluster-forwarder';
-import { tunnelRateLimiter } from './core/rate-limiter';
 import { tunnelRelay } from './core/relay';
 
 /**
@@ -129,11 +128,14 @@ export async function retireStaleUnidentifiedRegistrations(limit = 100): Promise
   return retired;
 }
 
-/** One tunnel cleanup pass: rate-limiter buckets, silent unidentified registrations, device auth. */
-export async function runTunnelCleanupOnce(): Promise<void> {
+/**
+ * One database-wide tunnel cleanup pass: silent unidentified registrations and
+ * device auth requests. A scheduled job (`worker/jobs/tunnel-cleanup.ts`) runs
+ * it on the lease holder only. The in-memory rate-limit buckets are each
+ * process's own; `replica/tunnel.ts` clears them.
+ */
+export async function runTunnelRegistrationCleanup(): Promise<void> {
   try {
-    tunnelRateLimiter.cleanup();
-
     const retired = await retireStaleUnidentifiedRegistrations();
     if (retired.length > 0) {
       console.log(

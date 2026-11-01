@@ -6,14 +6,14 @@ import { CountBadge } from '../../primitives/count-badge';
 import { Hint } from '../../primitives/hint';
 import Loading from '../../primitives/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '../../primitives/popover';
-import { StatusDot, type StatusTone } from '../../primitives/status';
 import { Tabs, TabsContent, TabsListCompact, TabsTriggerCompact } from '../../primitives/tabs';
 import { errorToast } from '../../primitives/toast';
 import { useTranslations } from '../../i18n';
 import { agentDisplayName } from '../../internal/components/agent-mark';
 import { cn } from '../../lib/utils';
+import { AgentStateMark } from './agent-state-mark';
 import { SubagentDialog } from './subagent-view';
-import { ArrowUpRightIcon, CaretUpIcon, CheckIcon, SquareIcon } from '@phosphor-icons/react';
+import { ArrowUpRightIcon, CaretUpIcon, SquareIcon } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { stopProjectSession, type SessionTask, type WorkflowRunMetadata } from '@kortix/sdk';
@@ -66,36 +66,6 @@ const CHILDREN_POLL_MS = 5_000;
 const RECENT_RUN_MS = 60 * 60_000;
 /** The popover lists at most this many runs. */
 const MAX_RUNS = 5;
-
-const DOT_TONE: Record<Exclude<AgentRowState, 'idle' | 'completed'>, StatusTone> = {
-  working: 'success',
-  needs_input: 'warning',
-  failed: 'destructive',
-  stopped: 'neutral',
-};
-
-/**
- * The state mark of a row or of the line: the live dot while it works, the
- * attention dot while it waits on the person, a check once its turn ended.
- * The words beside it say the state; the mark repeats it.
- */
-function StateMark({ state }: { state: AgentRowState }) {
-  const t = useTranslations('multiAgent.strip');
-  return (
-    <span className="flex size-3 shrink-0 items-center justify-center">
-      {state === 'idle' || state === 'completed' ? (
-        <CheckIcon aria-hidden weight="bold" className="text-kortix-green size-3" />
-      ) : (
-        <StatusDot
-          tone={DOT_TONE[state]}
-          pulse={state === 'working'}
-          className={cn(state === 'working' && 'motion-reduce:animate-none')}
-        />
-      )}
-      <span className="sr-only">{t(`state.${state}`)}</span>
-    </span>
-  );
-}
 
 const LINE_STATE: Record<LineMark, AgentRowState> = {
   needs_input: 'needs_input',
@@ -198,7 +168,7 @@ export function AgentsLineView({
           aria-label={compact ? `${t('label')}: ${text}` : undefined}
           className="text-muted-foreground hit-area-y-3 min-w-0 shrink gap-1.5 rounded-lg px-2 text-xs font-normal tabular-nums"
         >
-          <StateMark state={LINE_STATE[summary.mark]} />
+          <AgentStateMark state={LINE_STATE[summary.mark]} />
           <span className="max-w-64 min-w-0 truncate">{text}</span>
           <CaretUpIcon aria-hidden className={cn('size-3 shrink-0', open && 'rotate-180')} />
         </Button>
@@ -363,7 +333,7 @@ function AgentLineRow({
       className="group/row hover:bg-hover focus-within:bg-hover flex min-w-0 items-center gap-1 rounded-sm"
     >
       <div onClick={onOpen} className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-1.5 pl-2 text-xs">
-        <StateMark state={row.state} />
+        <AgentStateMark state={row.state} />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-baseline gap-2">
             {teammate ? (
@@ -481,7 +451,7 @@ function WorkflowLineRow({
           onClick={() => setOpen((value) => !value)}
           className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-1.5 pl-2 text-left text-xs outline-none"
         >
-          <StateMark state={RUN_STATE[run.status]} />
+          <AgentStateMark state={RUN_STATE[run.status]} />
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-baseline gap-2">
               <span className="text-foreground min-w-0 truncate font-medium" title={title}>

@@ -186,8 +186,8 @@ export interface PiSessionInput {
   systemPrompt: () => string
   /** The agent's skill grant (manifest `skills:`), read on every skill lookup. */
   skillAllowed: (name: string) => boolean
-  /** The provider the agent streams through; pi checks it has auth before a prompt. */
-  provider: Provider | undefined
+  /** The providers the agent streams through (the gateway, Claude subscription models); pi checks one has auth before a prompt. */
+  providers: readonly (Provider | undefined)[]
   /** pi's per-model compaction reserves for a configured reserve floor (model.ts `compactionSettings`). */
   compaction?: CompactionBuilder
 }
@@ -357,10 +357,11 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
   await loader.reload()
 
   const modelRuntime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, refreshOnCreate: false })
-  if (input.provider) {
-    modelRuntime.registerNativeProvider(input.provider)
+  for (const provider of input.providers) {
+    if (!provider) continue
+    modelRuntime.registerNativeProvider(provider)
     // The agent's own stream function carries the real credentials; this only satisfies pi's pre-prompt auth check.
-    await modelRuntime.setRuntimeApiKey(input.provider.id, 'kortix-runtime')
+    await modelRuntime.setRuntimeApiKey(provider.id, 'kortix-runtime')
   }
 
   const session = new AgentSession({

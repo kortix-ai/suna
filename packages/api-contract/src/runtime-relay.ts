@@ -259,12 +259,30 @@ export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
 export const RUNTIME_TURNS_CAPABILITY = 'runtime.turns.v1' as const;
 
 /**
+ * The box runs Claude subscription models (`claude-agent/<id>`, `./claude-agent`): its image
+ * has the `claude` program and its daemon has the provider. A box without it answers a turn on
+ * such a model with an error, so a client offers those models only where this is listed.
+ */
+export const RUNTIME_CLAUDE_AGENT_CAPABILITY = 'models.claude_agent.v1' as const;
+
+/**
  * The daemon serves `POST /kortix/runtime/messages/:id/:messageId/retract`:
  * take back a user message that no model call has read, on every harness.
  * `200 { retracted: true }` when it is gone, `404` when there is no such
  * message, `409 { code: MESSAGE_READ_CODE }` when a model call read it.
  */
 export const RUNTIME_RETRACT_CAPABILITY = 'runtime.retract.v1' as const;
+
+/**
+ * The runtime keeps a delivered prompt's `message_id` as its user message id,
+ * orders the transcript by position (admission order), not by id, and answers
+ * a repeated id `200 { deduplicated: true }` without storing a second message.
+ * A client may send an id minted long before delivery (a prompt that waited
+ * behind a turn), and a redelivery may send the same id again. apps/api keeps
+ * the wire id on a box that lists this; without it apps/api re-mints the id
+ * above the transcript, because OpenCode orders by id. pi lists it.
+ */
+export const RUNTIME_STABLE_MESSAGE_ID_CAPABILITY = 'runtime.stable_message_id.v1' as const;
 
 /**
  * Session metadata key, value `true`: a cloud subagent its parent started in

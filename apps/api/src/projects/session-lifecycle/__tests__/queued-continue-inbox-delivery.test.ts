@@ -62,7 +62,9 @@ let unlandedRequeues: Array<{ commandId: string; reason: string }> = [];
 let unlandedBudgetLeft = 2;
 let sessionRow: Record<string, unknown> | null = null;
 /** The session's one box, as the turn-authority read sees it. Null = no box. */
-let boxRow: { status: string; metadata: Record<string, unknown> | null } | null = null;
+let boxRow: { status: string; metadata: Record<string, unknown> | null; externalId?: string } | null = null;
+/** What the box's `/kortix/health` lists in `capabilities`; null = the read fails (503). */
+let healthCapabilities: string[] | null = [];
 /** The newest id the inbox's OWN rows say this session has already delivered,
  *  as `readDeliveredWireIdFloor` reads it back. Null = nothing delivered yet. */
 let deliveredFloor: bigint | null = null;
@@ -444,6 +446,7 @@ mock.module('../inbox-admission', () => ({
   },
 }));
 
+const { __resetRuntimeCapabilitiesMemo } = await import('../runtime-fetch');
 const { drainSessionLifecycleQueue } = await import('../drain');
 const { executeQueuedContinue } = await import('../queued-continue');
 const { continueSession } = await import('../continue-session');
@@ -520,6 +523,8 @@ beforeEach(() => {
     sandboxUrl: `https://sandbox.test/p/${EXTERNAL_ID}/8000/`,
   };
   boxRow = null;
+  healthCapabilities = [];
+  __resetRuntimeCapabilitiesMemo();
   deliveredFloor = null;
   transcript = [];
   capturedBodies = [];
@@ -584,6 +589,9 @@ beforeEach(() => {
     }
     // The re-mint and the answered check read the message list.
     if (href.includes('/kortix/runtime/messages/')) return Response.json({ messages: transcript, has_more: false });
+    if (href.endsWith('/kortix/health')) {
+      return healthCapabilities ? Response.json({ capabilities: healthCapabilities }) : new Response(null, { status: 503 });
+    }
     return Response.json({ id: OC_SESSION_ID });
   }) as typeof fetch;
 });
@@ -1356,6 +1364,92 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(sent).not.toBe(SUBMITTED_WIRE_ID);
     expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(SUBMITTED_WIRE_ID)!);
   });
+});
+
+// pi keeps a prompt's `message_id`, orders by position and answers a known id
+// as a duplicate (`runtime.stable_message_id.v1` in `/kortix/health`). On such
+// a box the drain sends the id the prompt already has: the one the inbox lists
+// and the session log will hold. Without the capability, the re-mint above.
+describe('executeQueuedContinue — a runtime that keeps message ids', () => {
+  const STABLE = 'runtime.stable_message_id.v1';
+  const stableBox = () => {
+    boxRow = { status: 'active', metadata: { activeTurns: {} }, externalId: EXTERNAL_ID };
+    healthCapabilities = ['runtime.turns.v1', 'session.steer', STABLE];
+  };
+  /** The turn the prompt waited behind: its prompt, sent before this one, then an answer written after the client minted. */
+  const TURN_PROMPT_ID = mintWireMessageId({ nowMs: NOW_MS - 20 * 60_000, random: () => 0.5 }).id;
+  const turnItWaitedBehind = () => [
+    { info: { id: TURN_PROMPT_ID, role: 'user' } },
+    { info: { id: NEWER_TRANSCRIPT_ID, role: 'assistant', parentID: TURN_PROMPT_ID } },
+  ];
+
+  test('a prompt that WAITED goes out under its own id: no re-mint, no placement repair', async () => {
+    stableBox();
+    transcript = turnItWaitedBehind();
+    const outcome = await executeQueuedContinue(baseRow({ result: { admission_reason: 'turn_active' } }));
+    expect(outcome).toBe('succeeded');
+    // One POST: the strand proof would read the older id as stranded and re-send it.
+    expect(capturedBodies.map((body) => body.message_id)).toEqual([SUBMITTED_WIRE_ID]);
+    expect(persistedWireIds()).toEqual([]);
+    expect(forwardedCalls).toEqual([{ commandId: 'cmd-1', sessionId: SESSION_ID, wireMessageId: SUBMITTED_WIRE_ID }]);
+  });
+
+  test('a released Stop batch row keeps its own id', async () => {
+    stableBox();
+    transcript = turnItWaitedBehind();
+    const outcome = await executeQueuedContinue(baseRow({
+      payload: { ...baseRow().payload, releasedBatchId: 'b1', releasedFromHold: true },
+    }));
+    expect(outcome).toBe('succeeded');
+    expect(capturedBodies.map((body) => body.message_id)).toEqual([SUBMITTED_WIRE_ID]);
+  });
+
+  test('a redelivery the runtime never held re-sends the same id', async () => {
+    stableBox();
+    transcript = turnItWaitedBehind();
+    const outcome = await executeQueuedContinue(baseRow({ payload: { ...baseRow().payload, redeliveries: 1 } }));
+    expect(outcome).toBe('succeeded');
+    expect(capturedBodies.map((body) => body.message_id)).toEqual([SUBMITTED_WIRE_ID]);
+    expect(persistedWireIds()).toEqual([]);
+  });
+
+  test('a redelivery the runtime still holds unanswered goes out under a fresh id: a repeat would be deduplicated and never run', async () => {
+    stableBox();
+    transcript = [...turnItWaitedBehind(), { info: { id: SUBMITTED_WIRE_ID, role: 'user' } }];
+    const outcome = await executeQueuedContinue(baseRow({ payload: { ...baseRow().payload, redeliveries: 1 } }));
+    expect(outcome).toBe('succeeded');
+    const sent = capturedBodies[0]!.message_id as string;
+    expect(sent).not.toBe(SUBMITTED_WIRE_ID);
+    expect(persistedWireIds()).toEqual([sent]);
+  });
+
+  test('an id that sorts below an earlier user message is re-minted: the web orders turns by user message id', async () => {
+    stableBox();
+    // A prompt the user sent after this server-minted id, already answered.
+    const later = mintWireMessageId({ nowMs: NOW_MS - 5 * 60_000, random: () => 0.5 }).id;
+    transcript = [
+      { info: { id: later, role: 'user' } },
+      { info: { id: NEWER_TRANSCRIPT_ID, role: 'assistant', parentID: later } },
+    ];
+    const outcome = await executeQueuedContinue(baseRow({ payload: { ...baseRow().payload, remintOnDelivery: true } }));
+    expect(outcome).toBe('succeeded');
+    const sent = capturedBodies[0]!.message_id as string;
+    expect(sent).not.toBe(SUBMITTED_WIRE_ID);
+    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(NEWER_TRANSCRIPT_ID)!);
+  });
+
+  for (const [name, capabilities] of [['does not list it', ['runtime.turns.v1', 'session.steer']], ['cannot be read', null]] as const) {
+    test(`a box whose capability list ${name} re-mints a prompt that waited, as before`, async () => {
+      boxRow = { status: 'active', metadata: { activeTurns: {} }, externalId: EXTERNAL_ID };
+      healthCapabilities = capabilities === null ? null : [...capabilities];
+      transcript = turnItWaitedBehind();
+      const outcome = await executeQueuedContinue(baseRow({ result: { admission_reason: 'turn_active' } }));
+      expect(outcome).toBe('succeeded');
+      const sent = capturedBodies[0]!.message_id as string;
+      expect(sent).not.toBe(SUBMITTED_WIRE_ID);
+      expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(NEWER_TRANSCRIPT_ID)!);
+    });
+  }
 });
 
 describe('drainSessionLifecycleQueue — one lane per session', () => {

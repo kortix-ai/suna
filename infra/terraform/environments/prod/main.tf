@@ -88,6 +88,13 @@ data "aws_secretsmanager_secret" "env" {
   name = "kortix-prod-env"
 }
 
+# The regional alert topic. infra/terraform/compliance-monitoring owns it
+# (monitoring.tf, data.aws_sns_topic.euw2_alerts). The worker alarms of
+# module.api publish to it.
+data "aws_sns_topic" "alerts" {
+  name = "kortix-compliance-alerts"
+}
+
 # ── Project snapshot object store (S3 config provider) ────────────────────────
 # Private bucket the API's leader worker publishes prebuilt project snapshots
 # to, and sandboxes read through short-lived presigned GETs. The name is
@@ -188,6 +195,18 @@ module "api" {
   # the primary fix (that's the DB pool + statement_timeout in app code).
   requests_per_target_target = 600
   tags                       = local.tags
+
+  # Scheduled jobs run on kortix-prod-worker, not on the API tasks
+  # (modules/ecs-api var.worker). 2 vCPU: the jobs used ~0.73 of a core on the
+  # leader API task, so 2048 keeps them under ~40 % of the worker task.
+  # ecs-deploy.sh --service worker rolls it before the API, and the API gets
+  # KORTIX_PROCESS_ROLE=web only while that worker is healthy on its image.
+  worker = {
+    task_cpu           = 2048
+    task_memory        = 4096
+    metric_environment = "prod"
+    alarm_topic_arn    = data.aws_sns_topic.alerts.arn
+  }
 }
 
 # ── Gateway (LLM proxy) — its own ECS Fargate service + CF-validated cert ─────

@@ -48,6 +48,7 @@ kortix apps deploy apps/<slug> --slug <slug> --listed  # deploy an App's folder;
 kortix tools ls                                 # the tools this project's sessions get, and removed Kortix tools
 kortix tools eject <name>                       # copy a Kortix tool to tools/<name>.ts to change it
 kortix cr open --title "…"                       # propose landing your branch on main (the user merges)
+kortix loop "<what to check, what to do, end date>" --in 3h --every 4h  # after you send or start anything: come back and check (kortix-system <scheduling>)
 kortix capture search "<words>"                # the Capture timeline of the person this session acts for (Capture on for the account)
 ```
 

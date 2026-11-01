@@ -104,7 +104,8 @@ function Harness() {
         sessionId={sessionId as string}
         focused
         width={80}
-        onCommand={(command) => console.log(`[onCommand] ${command}`)}
+        context={{ hasProject: true, hasSession: true, hasAccount: true, capabilities: null }}
+        onCommand={(command, args) => console.log(`[onCommand] ${command} ${args}`)}
         onToast={(message, kind) => console.log(`[toast:${kind ?? 'info'}] ${message}`)}
       />
     </box>

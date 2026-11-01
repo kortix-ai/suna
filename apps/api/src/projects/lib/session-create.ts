@@ -29,6 +29,8 @@ import {
   type ModelSource,
   toOpencodeModelRef,
 } from '../../llm-gateway/resolution/effective';
+import { checkClaudeAgentRef } from '../../llm-gateway/resolution/claude-agent';
+import { claudeSubscriptionRequiredBody, missingClaudeSubscription } from '../claude-subscription/gate';
 
 import { selectProvider } from '../../platform/services/provider-balancer';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
@@ -92,7 +94,7 @@ import {
 } from './session-sandbox-metadata';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { transitionSession } from '../session-lifecycle/status-transitions';
-import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-runtime-context';
+import { mergeSessionSandboxEnv, parseSessionRuntimeContext, reservedRuntimeContextRefusal } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { resolveMyKortixSandbox } from './my-kortix-agent';
 import { spaceAccessFor } from '../../shared/space-access';
@@ -669,6 +671,17 @@ async function resolveSessionModel(params: {
           body: { error: `"${requestedModel}" doesn't look like a model id`, code: 'INVALID_SESSION_MODEL' },
         },
       };
+    }
+    const claudeAgent = checkClaudeAgentRef(requestedModel);
+    if (claudeAgent.kind === 'invalid') {
+      return { error: { status: 400, body: { error: claudeAgent.message, code: 'INVALID_SESSION_MODEL' } } };
+    }
+    // A Claude subscription model needs a Claude account, so a first prompt
+    // without one could only fail in the box.
+    const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
+    if (claudeAgent.kind === 'valid' && initialPrompt && !input.callerSessionId) {
+      const missing = await missingClaudeSubscription({ accountId, projectId, userId, model: claudeAgent.ref });
+      if (missing) return { error: { status: 409, body: claudeSubscriptionRequiredBody(missing) } };
     }
     let servable = await isModelServableForAccount({
       userId,
@@ -1689,6 +1702,12 @@ export async function createProjectSession(input: {
   const parsedBody = parseSessionCreateBody(body);
   if (parsedBody.error) return { error: parsedBody.error };
   const { parsedRuntimeContext, parsedConnectorBindings } = parsedBody;
+  // The `kortix.` keys are facts kortixd acts on (depth, workflow runner, hand-off digest): only the box that
+  // creates its own child, with its session token, may set them.
+  const reservedRefusal = reservedRuntimeContextRefusal(parsedRuntimeContext.context, input.callerSessionId);
+  if (reservedRefusal) {
+    return { error: { status: 400, body: { error: reservedRefusal, code: 'INVALID_SESSION_RUNTIME_CONTEXT' } } };
+  }
   if (isDeprecatedProvider(normalizeString(body.provider))) {
     return { error: { status: 400, body: { error: DEPRECATED_PROVIDER_ERROR, code: DEPRECATED_PROVIDER_CODE } } };
   }

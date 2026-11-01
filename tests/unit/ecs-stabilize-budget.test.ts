@@ -455,7 +455,7 @@ describe.concurrent('ECS rollout --wait-for serving', () => {
     expect(run.awsCalls).toHaveLength(0);
   });
 
-  it('is used by every Deploy Dev roll and by no staging or production roll', () => {
+  it('is used by every Deploy Dev roll except the worker, and by no staging or production roll', () => {
     const workflow = (name: string) => readFileSync(resolve(root, '.github/workflows', name), 'utf8');
     const devRolls = workflow('deploy-dev.yml')
       .split('\n')
@@ -464,7 +464,13 @@ describe.concurrent('ECS rollout --wait-for serving', () => {
       // gate reads its environment); only real rolls must wait for serving.
       .filter((line) => !line.includes('--dry-run'));
 
-    expect(devRolls).toHaveLength(3);
+    // api, gateway, web (multi-line invocation) and the worker.
+    expect(devRolls).toHaveLength(4);
+    // The worker always waits stable (the old task hands the leader lease over
+    // when it stops), so its roll names no --wait-for.
+    const workerRolls = devRolls.filter((line) => line.includes('--service worker'));
+    expect(workerRolls).toHaveLength(1);
+    expect(workerRolls[0]).not.toContain('--wait-for');
     expect(workflow('deploy-dev.yml').match(/--wait-for serving/g)).toHaveLength(3);
     for (const name of ['deploy-staging.yml', 'deploy-prod.yml', 'rollback-prod.yml']) {
       expect(workflow(name)).not.toContain('--wait-for');

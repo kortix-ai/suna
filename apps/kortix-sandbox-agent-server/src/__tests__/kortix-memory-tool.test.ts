@@ -62,6 +62,10 @@ beforeAll(() => {
           path: `/Users/lee/Memory/mykortix/${name}.md`,
           updated_at: '2026-10-30T12:00:00.000Z',
         }
+        // The API's rule: the same fact again writes nothing and answers unchanged.
+        if (page && page.title === next.title && page.description === next.description && page.type === next.type && page.body === next.body) {
+          return Response.json({ created: false, unchanged: true, page }, { status: 200 })
+        }
         pages.set(name, next)
         return Response.json({ created: !page, page: next }, { status: page ? 200 : 201 })
       }
@@ -166,6 +170,17 @@ describe('kortix_memory', () => {
       path: `${PREFIX}/pages/prefers-bullet-points`,
       body: { title: 'Prefers bullet points', description: 'Prefers bullet points over paragraphs.', type: 'user', body: 'Prefers bullet points over paragraphs.' },
     })
+  })
+
+  test('the same fact saved again answers "Already remembered" and tells the model not to save it again; every save shows the stored text', async () => {
+    const fact = { action: 'save', name: 'prefers-meetings-before-noon', type: 'feedback', title: 'Prefers meetings before noon' }
+    const first = await run(fact)
+    expect(first.card.title).toBe('Remembered: Prefers meetings before noon')
+    expect(first.data).toMatchObject({ created: true, body: 'Prefers meetings before noon' })
+    expect(String((first.data as { note?: string }).note)).toContain('no further save is needed')
+    const again = await run(fact)
+    expect(again).toMatchObject({ ok: true, card: { title: 'Already remembered: Prefers meetings before noon' }, data: { unchanged: true, created: false } })
+    expect(String((again.data as { note?: string }).note)).toContain('do not save it again')
   })
 
   test('a missing description falls back to the title, a multi-line one becomes one line; a name copied from the index keeps working', async () => {

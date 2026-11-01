@@ -15,7 +15,7 @@ on:
         required: true
         type: string
       service:
-        description: "ECS service name, e.g. kortix-staging-euw2 or kortix-staging-euw2-gateway"
+        description: "ECS service name, e.g. kortix-staging-euw2, kortix-staging-euw2-gateway or kortix-staging-euw2-worker (the worker lives in the API cluster)"
         required: true
         type: string
       desired_count:

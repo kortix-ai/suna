@@ -426,6 +426,9 @@ flow('SEC-POOL-4', {
   const input = { project_id: project.id, label: 'Project key', provider_id: 'anthropic',
     name: 'ANTHROPIC_API_KEY', value: 'project-key-test-value', consumer: 'llm_gateway', strategy: 'broker' };
   await ctx.step('flag off rejects a project-scoped credential', async () => {
+    // The flag is on by default since 2026-10-31 (#11335): turn it off first.
+    (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: false },
+      { params: { projectId: project.id } })).status(200);
     (await owner.post(path, input, { params })).status(403);
   });
   (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: true },
@@ -516,6 +519,9 @@ flow('SEC-POOL-5', {
   const params = { accountId: team.id };
 
   await ctx.step('with the flag off, a named ChatGPT account is refused', async () => {
+    // The flag is on by default since 2026-10-31 (#11335): turn it off first.
+    (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: false },
+      { params: { projectId: project.id } })).status(200);
     (await asMember.post(startPath, { resource_label: 'ChatGPT · Member', sharing: { mode: 'private', ownerId: member.userId } },
       { params: startParams })).status(403);
   });

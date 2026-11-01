@@ -8873,3 +8873,59 @@ export const sessionSandboxIdentities = kortixSchema.table('session_sandbox_iden
   foreignKey({ name: 'session_sandbox_identities_project_fk', columns: [table.projectId], foreignColumns: [projects.projectId] }).onDelete('cascade'),
   index('idx_session_sandbox_identities_project').on(table.projectId),
 ]).enableRLS();
+
+/**
+ * A member's Claude subscription login, one per (account, user). The value is
+ * the long-lived token `claude setup-token` prints, encrypted with the account
+ * key. The API decrypts it only to deliver it to Claude Code in that same
+ * user's sessions (`KORTIX_CLAUDE_OAUTH_TOKEN`). The LLM gateway, the secret
+ * listings and the sandbox env sync never read this table.
+ */
+export const claudeSubscriptionLogins = kortixSchema.table('claude_subscription_logins', {
+  accountId: uuid('account_id').notNull(),
+  userId: uuid('user_id').notNull(),
+  valueEnc: text('value_enc').notNull(),
+  /** `setup_token` (the login ran in Kortix) or `pasted` (the member pasted a token). */
+  source: text('source').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.accountId, table.userId] }),
+  foreignKey({ name: 'claude_subscription_logins_member_fk', columns: [table.userId, table.accountId], foreignColumns: [accountMemberships.userId, accountMemberships.accountId] }).onDelete('cascade'),
+  check('claude_subscription_logins_source_check', sql`${table.source} in ('setup_token', 'pasted')`),
+]).enableRLS();
+
+/**
+ * One `claude setup-token` run. The replica that started it owns the process
+ * and polls this row: a complete call on any replica writes the pasted code
+ * here, and the owner feeds it to the process and records the outcome.
+ */
+export const claudeSubscriptionLoginFlows = kortixSchema.table('claude_subscription_login_flows', {
+  flowId: uuid('flow_id').defaultRandom().primaryKey(),
+  accountId: uuid('account_id').notNull(),
+  userId: uuid('user_id').notNull(),
+  status: text('status').notNull().default('starting'),
+  authorizeUrl: text('authorize_url'),
+  /** The pasted code, encrypted; cleared when the owner reads it. */
+  codeEnc: text('code_enc'),
+  error: text('error'),
+  /** The project the sign-in adds a Claude account to. Null on a flow from before named accounts. */
+  projectId: uuid('project_id'),
+  /** The new account's label; null when the flow reconnects `resource_id`. */
+  resourceLabel: text('resource_label'),
+  /** The new account's id, minted at start so a repeated completion writes one row; or the account a reconnect refreshes. */
+  resourceId: uuid('resource_id'),
+  /** True when the flow refreshes the login of the existing account `resource_id`. */
+  reconnect: boolean('reconnect').notNull().default(false),
+  /** Who may use the new account (`{mode:'private'|'project'|'members', …}`); null = private. */
+  sharing: jsonb('sharing'),
+  /** The owner's last poll: a complete call fails fast when the owner stopped. */
+  ownerSeenAt: timestamp('owner_seen_at', { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ name: 'claude_subscription_login_flows_member_fk', columns: [table.userId, table.accountId], foreignColumns: [accountMemberships.userId, accountMemberships.accountId] }).onDelete('cascade'),
+  index('idx_claude_subscription_login_flows_member').on(table.accountId, table.userId),
+  check('claude_subscription_login_flows_status_check', sql`${table.status} in ('starting', 'awaiting_code', 'exchanging', 'connected', 'failed')`),
+]).enableRLS();

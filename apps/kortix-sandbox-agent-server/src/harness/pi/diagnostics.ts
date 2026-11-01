@@ -5,6 +5,7 @@
  * host facts and `runtimeReady`.
  */
 import { HARNESS_RUNTIME_CAPABILITIES } from '@kortix/api-contract/session-log'
+import { RUNTIME_CLAUDE_AGENT_CAPABILITY, RUNTIME_STABLE_MESSAGE_ID_CAPABILITY } from '@kortix/api-contract/runtime-relay'
 import type { HarnessDiagnosticsService, HarnessHealthReport } from '../contract/diagnostics'
 import { daemonLogFilePath } from '@/lib/log/logger'
 import { tailFile } from '@/lib/log/log-tail'
@@ -25,7 +26,15 @@ export function createPiDiagnosticsService(
     // `HARNESS_RUNTIME_CAPABILITIES.pi` names what is native; pi/surface.ts answers the rest 501
     // `feature_not_supported`. apps/api reads the same list for the switch preflight.
     // `session.messaging` and `session.team_tasks` depend on the box (a control plane, the `agent_teams` flag).
-    capabilities: async () => [...HARNESS_RUNTIME_CAPABILITIES.pi, ...(runtime()?.multiAgentCapabilities() ?? [])],
+    // `runtime.stable_message_id.v1`: `admit` keeps a given message id, orders by position and
+    // answers a known id as a duplicate, so apps/api sends a prompt under its own id.
+    capabilities: async () => [
+      ...HARNESS_RUNTIME_CAPABILITIES.pi,
+      RUNTIME_STABLE_MESSAGE_ID_CAPABILITY,
+      ...(runtime()?.multiAgentCapabilities() ?? []),
+      // Claude subscription models: the image's `claude` program, or the pinned one a first turn installs (claude/install.ts).
+      RUNTIME_CLAUDE_AGENT_CAPABILITY,
+    ],
     async health(context, query): Promise<HarnessHealthReport> {
       const bootState: PiBootState = context.bootState
       const rt = runtime()

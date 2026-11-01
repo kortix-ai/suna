@@ -2,10 +2,10 @@
 
 A full terminal client for Kortix. It is a thin consumer of `@kortix/sdk`,
 rendered with OpenTUI (`@opentui/core` + `@opentui/react`), and runs on Bun.
-It mirrors `apps/web`'s session product: sidebar (accounts, projects,
-sessions), session view (transcript, composer, pickers), and the right-hand
-terminal panel. Secondary surfaces (files, review, apps, customize, members,
-billing) follow in later waves.
+It is session-first: one session on screen, every action a slash command in
+its input, the sidebar optional (§4). It covers the web's session product and
+its project surfaces: Drive, repository, artifacts, inbox, approvals, goals,
+memory, spaces, rooms, loops, audit, files, review, apps, customize, account.
 
 Status: **experimental**. Not in the release CLI bundle. Run from the repo.
 
@@ -63,7 +63,7 @@ new entry here, decided deliberately:
 | `src/api/config.ts` | `Host`, `loadConfig`, `activeHostName`, `listHosts`, `getHost`, `upsertHost`, `removeHost`, `useHost`, `validateHostName`, `secureRemoteBase` | `auth/hosts.ts`, `features/login` |
 | `src/api/sdk.ts` | `sdkBackendUrl` — the one rule for when `http` is legitimate | `auth/hosts.ts`, `features/login` |
 | `src/web-url.ts` | `webDashboardUrl` — the billing/settings link the TUI prints instead of running checkout | `features/account/account-screen.tsx` |
-| `src/api/auth.ts` | `Auth`, the type the port-forward engine takes | `features/ports` |
+| `src/api/auth.ts` | `Auth`, the type the port-forward engine takes; `clearAuth`, the call `kortix logout` makes, for `/logout` | `features/ports`, `app.tsx` |
 | `src/port-forward.ts` | `startPortForward`, `PortForwardError`, `PortForwardDeps` — the same engine `kortix sessions forward` runs | `features/ports` |
 | `src/session-runtime.ts` | `SessionRuntimeError` — to detect a stopped session and print the `sessions restart` remedy | `features/ports` |
 
@@ -128,27 +128,86 @@ Rules:
   PTY WebSocket, which uses the SDK-resolved URL and Bun's `WebSocket` with a
   `User-Agent` header (same as `apps/cli/src/api/pty-socket.ts`).
 
-## 4. Layout (mirrors apps/web screenshot)
+## 4. Layout: session-first
+
+One session fills the screen. Every action is a slash command typed into its
+input; the sidebar is an optional view (hidden by default, `/sidebar` or
+`Alt+B`, saved in `tui.json`). Without a session the draft stands in for it:
+the KORTIX splash and the input, and the first prompt creates the session.
+The look follows prime-agent's CLI: a pinned header, the transcript, a rounded
+input with a `›` caret, and a tray row under it (left: host · project, right:
+model · agent · context %). Brand decisions D32 and D33: `terminal-accent`
+(turquoise, `theme.brand`) marks only the `▌` selection marker and the
+cursor; the empty state is the monochrome pixel symbol; everything else is
+monochrome. With the sidebar hidden, Tab never leaves the input; PgUp/PgDn
+scroll the transcript from it.
 
 ```
-┌ sidebar 28c ──┬ session ───────────────────────────┬ terminal (toggle, 40%) ┐
-│ ▾ Project Atlas     │ Casual greeting            ⌥T ⌥F   │ Terminal            × │
-│ + New session  │ ─────────────────────────────────── │ kortix@sandbox:/ws $  │
-│   Customize    │ ▸ Completed 7 steps                 │                       │
-│   Apps         │ I can do a full …                   │                       │
-│ Sessions       │  1. Deal sourcing …                 │                       │
-│ Today          │                                     │                       │
-│ ● Casual gre 56│ ┌───────────────────────────────┐   │                       │
-│   · Fix claims │ │ Type / for skills, commands… │   │                       │
-│   · Fix lifecy │ │ GPT-5.6 Sol ▾  Auto ▾  Galileo│   │                       │
-│ Review       2 │ └───────────────────────────────┘   │                       │
-│ Files          │ ⠋ working · 12s        ? help      │                       │
-└────────────────┴─────────────────────────────────────┴───────────────────────┘
+ ● Fix the login bug  meta                          / commands · Alt+t terminal
+ ❯ you · 2m
+ the login form drops the token…
+ ◆ meta · 2m
+ Fixed: the cookie was set on the wrong path.
+
+ ╭─ / se ─────────────────────────────────────────────────────────────────────╮
+ │ ▌/sessions [filter]  Pick a session of this project and open it.    Ctrl+p │
+ │  /customize          Agents, skills, secrets, triggers, connectors.  Alt+c │
+ │  /share <team|private>  Let the whole project open this session, or only… │
+ ╰──────────────────────────────── ↑↓ select · Tab complete · Enter run · Esc ╯
+ ╭────────────────────────────────────────────────────────────────────────────╮
+ │ › /se                                                                      │
+ ╰────────────────────────────────────────────────────────────────────────────╯
+  env · Project Atlas                              DeepSeek V4.1 Flash · meta
 ```
 
-Minimum size 80×24. Below 100 columns the terminal panel is a full-screen
-toggle instead of a split. Below 60 columns the sidebar collapses to a picker
-(`Ctrl+P`).
+With the sidebar shown it is a 28-column column on the left, every region is
+framed, and the session panel keeps its border. Minimum size 80×24. Below 100
+columns the terminal panel is a full-screen toggle instead of a split. Below
+60 columns the sidebar never draws.
+
+### 4.0 The layout system (`src/layout/`)
+
+- `ui-prefs.ts` is the layout as data: six modules (`header`, `tabs`,
+  `sidebar`, `info`, `tray`, `title`), each `{ on, side? }`, three presets,
+  `normalizeUi` for a hand-edited file and the old `{ sidebar }` shape. All
+  off by default except the tray and the window title.
+- `app.tsx` composes the frame from it: tabs above or below the main row,
+  the sidebar left or right of the chat. `session-view.tsx` docks the info
+  panel left or right of the session column (it needs the one `useSession`
+  result) and draws the header only when it is on; the composer and the draft
+  draw the tray only when it is on. The info panel steps aside when the chat
+  would drop under 50 columns.
+- `ui-panel.tsx` is `/ui` and the first-run welcome step; changes apply
+  live and save to `tui.json` through `lib/prefs.ts`.
+- `info-panel.tsx` reads context use with the SDK's
+  `sessionLogThreadMetrics(...).context` and the model's `contextWindow`
+  (the web's rule: input + output + cache, reasoning not added twice).
+- `tabs-bar.tsx` draws the sessions opened in this run (opencode's model).
+- The terminal title is `renderer.setTerminalTitle(<session> · Kortix)`,
+  cleared on exit.
+
+### 4.1 The command table (`src/commands/`)
+
+- `registry.ts` is the one list of actions: name, aliases, an argument hint,
+  a one-line description, a group, the keymap binding that accelerates it,
+  and what it needs (a project, a session, an account, a runtime capability,
+  a project flag). The slash menu ranks it, the help overlay and the README
+  print it, the sidebar's screen rows are built from it, and `app.tsx`'s
+  `runCommand` switches on `CommandName` exhaustively.
+- `unavailableReason` turns a missing need into one line ("needs an open
+  session", "turned off for this project"). The menu lists the command dimmed
+  with that line; Enter on it says the line and keeps the draft.
+- `session-actions.ts` does the session commands, one SDK call each.
+  `panels.tsx` draws the in-flow lists (`/sessions`, `/projects`,
+  `/accounts`, the y/N confirm) above the input.
+- The input (`features/session/composer/prompt-input.tsx`) is shared by the
+  composer and the draft. The menu opens while the draft is one `/word`; the
+  slash stays in the buffer. Enter runs the typed command when it names one
+  exactly, else the highlighted row. `/name args` carries its arguments. An
+  unknown `/word` is refused; a path (`/etc/hosts …`) is a prompt. Esc ×3
+  within 4 s stops a turn (`esc-stop.ts`), as the web does.
+- While the menu is open the app stands down for `Tab`, `Ctrl+P` and
+  `Ctrl+N` (`app-keys.ts` `menuOpen`).
 
 ## 5. Screens and behaviors
 
@@ -164,24 +223,19 @@ toggle instead of a split. Below 60 columns the sidebar collapses to a picker
   inline with the HTTP status.
 - `Ctrl+H` anywhere: host switcher (reuses the same list).
 
-### 5.2 Sidebar (`features/sidebar`)
+### 5.2 Sidebar (`features/sidebar`) — optional
 
-- Account row: active account name; `Enter` → account picker
-  (`kortix.accounts.list`). Switching account re-lists projects.
-- Project row: active project; `Enter` → project picker
-  (`kortix.projects.listForAccount`). Default = CLI host `default_project`,
-  else the first project.
-- `New session` → `kortix.projects.createSession` then navigate. Title is
-  server-owned (see memory `session-titles-kortix-owned`): send no title.
-- `Customize`, `Apps`, `Review (n)`, `Files` rows navigate to those screens.
-- Session list: `useProjectSessions(projectId)`. Group by day (`Today`,
-  `Yesterday`, weekday, date). Root sessions at depth 0; sub-sessions
-  (`parent_session_id`) indented under their parent with `·`. Right column:
-  relative age; the active session shows its turn count when the SDK exposes
-  it, else the age. Status glyph: `●` running, `○` stopped, `!` failed.
-- Keyboard: `j/k` or arrows, `Enter` open, `d` delete (confirm modal),
-  `r` rename (input), `/` filter, `g/G` first/last. Keyset paging: load more
-  on reaching the end (`hasNextPage`).
+- Hidden by default. `/sidebar` or `Alt+B` toggles it; `lib/prefs.ts`
+  saves the choice to `tui.json`. `--sidebar` / `--no-sidebar` override it.
+- Account row: active account name; `Enter` → account picker. Project row:
+  `Enter` → project picker. Same as `/accounts` and `/projects`.
+- `New session` opens the draft. Title is server-owned: send no title.
+- The screen rows come from the command table (every `screen` command that
+  can run here), with a count beside Review (open change requests) and
+  Inbox (unread). A screen whose flag is off is not listed.
+- Session list: `useProjectSessions(projectId)`, grouped by day, sub-sessions
+  indented. Keyboard: `j/k`, `Enter` open, `d` delete, `r` rename, `/`
+  filter, `g/G`.
 
 ### 5.3 Session view (`features/session`)
 
@@ -281,20 +335,23 @@ Tabs: Agents · Skills · Secrets · Triggers · Connectors.
 
 ## 6. Keymap (global unless scoped)
 
+The command table is the primary surface; these chords are accelerators.
+The full list is generated: `pnpm --filter @kortix/tui keymap` (README
+"Commands and keys").
+
 | Keys | Action |
 | --- | --- |
+| `/` | the command menu (in the input) |
 | `Ctrl+C` ×2 / `Ctrl+Q` | quit (first press shows "press again") |
-| `?` | help overlay |
+| `?` | help overlay (`/help`), not while a text input has focus |
 | `Tab` / `Shift+Tab` | cycle focus: sidebar → transcript → composer → terminal |
-| `Ctrl+P` | session/project quick switcher |
-| `Ctrl+N` | new session |
-| `Alt+T` | toggle terminal panel |
-| `Alt+F` | files screen |
-| `Alt+R` | review screen |
-| `Alt+A` | apps screen |
-| `Alt+C` | customize screen |
-| `Ctrl+H` | host switcher |
-| `Esc` | close modal / back / clear composer / (busy) stop prompt |
+| `Ctrl+P` | `/sessions` |
+| `Ctrl+N` | `/new` (the draft) |
+| `Alt+B` | `/sidebar` |
+| `Alt+T` | `/terminal` |
+| `Alt+F` `Alt+R` `Alt+A` `Alt+C` `Alt+U` | `/files` `/review` `/apps` `/customize` `/account` |
+| `Alt+H` | `/hosts` |
+| `Esc` | close the menu or picker / back / clear the input; ×3 on an empty busy input stops the turn |
 | `j k ↑ ↓ g G PgUp PgDn` | list and transcript navigation |
 
 ## 7. Data layer map

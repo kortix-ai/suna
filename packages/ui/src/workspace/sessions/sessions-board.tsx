@@ -377,11 +377,11 @@ export function SessionsBoard({ projectId }: { projectId: string }) {
             {t('keys.move')}
           </span>
           <span className="inline-flex items-center gap-1">
-            <Kbd className="w-auto">Space</Kbd>
+            <Kbd className="w-auto">{t('keys.space')}</Kbd>
             {t('keys.peek')}
           </span>
           <span className="inline-flex items-center gap-1">
-            <Kbd className="w-auto">Enter</Kbd>
+            <Kbd className="w-auto">{t('keys.enter')}</Kbd>
             {t('keys.open')}
           </span>
           <span className="inline-flex items-center gap-1">

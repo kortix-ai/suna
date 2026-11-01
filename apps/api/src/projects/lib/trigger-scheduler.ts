@@ -342,9 +342,3 @@ export function runProjectTriggerSchedulerTick(): void {
     });
   }
 }
-
-export {
-  startProjectTriggerScheduler,
-  stopProjectTriggerScheduler,
-  triggerSchedulerTimer,
-} from '../../workers/trigger-scheduler-worker';

@@ -147,7 +147,7 @@ describe('session runtime reads', () => {
     };
     const tip = await readSessionMessageTip(session, { limit: 8 });
     expect(tip?.map((m) => m.id)).toEqual(['msg_a']);
-    expect(fetched).toEqual(['GET /kortix/runtime/messages/ses_1?limit=8']);
+    expect(fetched.filter((call) => !call.endsWith('/kortix/health'))).toEqual(['GET /kortix/runtime/messages/ses_1?limit=8']);
   });
 
   test('a full read pages backwards on before until has_more is false', async () => {
@@ -177,7 +177,74 @@ describe('session runtime reads', () => {
     expect(await readRuntimeMessage(session, 'msg_a')).toBeNull();
     pages[path] = () => new Response('down', { status: 503 });
     await expect(readRuntimeMessage(session, 'msg_a')).rejects.toThrow('runtime message read failed (503)');
-    expect(fetched.every((call) => call === `GET ${path}`)).toBe(true);
+    expect(fetched.filter((call) => !call.endsWith('/kortix/health')).every((call) => call === `GET ${path}`)).toBe(true);
+  });
+});
+
+describe('session runtime reads on a box that serves its log (runtime.log.v1)', () => {
+  // A queued prompt's provisional seq is no clock: its times are its own (the override).
+  const at = (s: number) => new Date(Date.UTC(2026, 9, 31, 0, 0, Math.min(s, 59))).toISOString();
+  const record = (id: string, seq: number, over: Record<string, unknown> = {}) => ({
+    schema: 'kortix.session/2', v: 1, message_id: id, thread_id: 'ses_1', seq, role: 'user', kind: 'turn', status: 'complete',
+    in_context: true, model: null, usage: null, finish: null, error: null, created_at: at(seq), completed_at: at(seq),
+    producer: { harness: 'pi', harness_version: '1', adapter_version: '1' }, blocks: [{ type: 'text', id: `${id}-b0`, text: 'x' }], ...over,
+  });
+  const logBox = () => {
+    pages['/kortix/health'] = { capabilities: ['runtime.turns.v1', 'runtime.actions.v1', 'runtime.log.v1'] };
+  };
+
+  test('the tip read uses the box log page: reply_to is the parent, a streaming reply is open, a waiting prompt is on record', async () => {
+    logBox();
+    pages['/kortix/runtime/log?limit=8'] = {
+      thread_id: 'ses_1',
+      messages: [
+        record('msg_a', 2),
+        record('msg_b', 3, { role: 'assistant', reply_to: 'msg_a', status: 'streaming', completed_at: null }),
+        record('msg_q', Number.MAX_SAFE_INTEGER, { created_at: at(4), completed_at: at(4) }),
+      ],
+      has_more: true,
+    };
+    const tip = await readSessionMessageTip(session, { limit: 8 });
+    expect(tip).toEqual([
+      { id: 'msg_a', role: 'user', parentID: null, created: Date.parse(at(2)), completed: Date.parse(at(2)), partIds: ['msg_a-b0'] },
+      { id: 'msg_b', role: 'assistant', parentID: 'msg_a', created: Date.parse(at(3)), completed: null, partIds: ['msg_b-b0'] },
+      { id: 'msg_q', role: 'user', parentID: null, created: Date.parse(at(4)), completed: Date.parse(at(4)), partIds: ['msg_q-b0'] },
+    ]);
+    expect(fetched).toEqual(['GET /kortix/health', 'GET /kortix/runtime/log?limit=8']);
+  });
+
+  test('a full read pages backwards on before_seq until has_more is false', async () => {
+    logBox();
+    pages['/kortix/runtime/log?limit=200'] = { thread_id: 'ses_1', messages: [record('msg_c', 5)], has_more: true };
+    pages['/kortix/runtime/log?limit=200&before_seq=5'] = {
+      thread_id: 'ses_1',
+      messages: [record('msg_a', 2), record('msg_b', 3, { role: 'assistant', reply_to: 'msg_a' })],
+      has_more: false,
+    };
+    const tip = await readSessionMessageTip(session);
+    expect(tip?.map((m) => m.id)).toEqual(['msg_a', 'msg_b', 'msg_c']);
+  });
+
+  test('an auto compaction reads as one, as the v1 compaction part did', async () => {
+    logBox();
+    pages['/kortix/runtime/log?limit=8'] = {
+      thread_id: 'ses_1',
+      messages: [record('msg_k', 4, { role: 'assistant', kind: 'compaction', blocks: [{ type: 'compaction', id: 'k0', summary: 's', first_kept_message_id: null, trigger: 'auto' }] })],
+      has_more: false,
+    };
+    expect((await readSessionMessageTip(session, { limit: 8 }))?.[0]).toMatchObject({ id: 'msg_k', autoCompaction: true });
+  });
+
+  test('the landing proof reads the box log message: held, not held (null), or unanswered (throws)', async () => {
+    logBox();
+    const path = '/kortix/runtime/log/messages/msg_a';
+    pages[path] = record('msg_a', 2);
+    expect(await readRuntimeMessage(session, 'msg_a')).toMatchObject({ message_id: 'msg_a' });
+    pages[path] = () => Response.json({ error: 'unknown message' }, { status: 404 });
+    expect(await readRuntimeMessage(session, 'msg_a')).toBeNull();
+    pages[path] = () => new Response('down', { status: 503 });
+    await expect(readRuntimeMessage(session, 'msg_a')).rejects.toThrow('runtime message read failed (503)');
+    expect(fetched.filter((call) => !call.endsWith('/kortix/health')).every((call) => call === `GET ${path}`)).toBe(true);
   });
 });
 

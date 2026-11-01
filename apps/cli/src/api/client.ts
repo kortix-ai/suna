@@ -60,7 +60,26 @@ export interface ClientOptions {
  *  `/v1/v1/...` and 404 with a valid token. */
 function toEndpoint(path: string): string {
   const p = path.startsWith('/') ? path : `/${path}`;
+  refuseDotSegments(p);
   return p.startsWith('/v1/') ? p.slice(3) : p;
+}
+
+/** A path segment `.` or `..`, also percent-encoded (`%2e`). */
+const DOT_SEGMENT = /^(?:\.|%2e){1,2}$/i;
+
+/**
+ * Refuse a request path with a `.` or `..` segment (CWE-22). The URL parser
+ * resolves them before the request leaves this process, so an id such as
+ * `..` or `x/../../secrets/K` in `/projects/<p>/sessions/<s>/reminders/<id>`
+ * would reach another endpoint. `encodeURIComponent` keeps `/` inside one
+ * segment, but leaves `.` and `..` as they are: this check covers every
+ * command, including one that forgets to encode.
+ */
+function refuseDotSegments(path: string): void {
+  const pathname = path.split(/[?#]/, 1)[0] ?? '';
+  if (pathname.split('/').some((segment) => DOT_SEGMENT.test(segment))) {
+    throw new ApiError(0, `Refused the request path ${pathname}: a "." or ".." segment would send it to another endpoint. Pass ids exactly as Kortix prints them.`);
+  }
 }
 
 /** Append `account_id=<id>` to an endpoint, merging with any existing query,

@@ -76,13 +76,17 @@ export function isActive(state: AgentRowState): boolean {
   return state === 'working' || state === 'needs_input';
 }
 
-function stripTitleSuffix(name: string): string {
-  // A spawned child is named `<description> (@agent subagent)`: the row shows the agent apart.
+/**
+ * A spawned session's own title. pi named a child `<description> (@agent
+ * subagent)` until 2026-10-31, and those rows keep the name: every surface shows
+ * the agent apart (`agent_name`), never in the title.
+ */
+export function subagentTitle(name: string): string {
   return name.replace(/\s*\(@[^)]*\)\s*$/, '').trim();
 }
 
 export function agentRowOf(session: ProjectSession): AgentRow {
-  const name = session.name ? stripTitleSuffix(session.name) : '';
+  const name = session.name ? subagentTitle(session.name) : '';
   const own = session.agent_handle?.trim() || name;
   const agent = session.agent_name?.trim() || null;
   const handle = own || (agent ? agentDisplayName(agent) : session.session_id.slice(0, 8));

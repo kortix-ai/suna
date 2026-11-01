@@ -23,8 +23,9 @@
  *    waits for it.
  * 2. The Push choice per kind, mirrored into `web-notifications.ts`, so an
  *    in-page OS notification obeys the same choice as the phone.
- * 3. Arrivals: a new unread row toasts, and becomes an OS notification where
- *    nothing else would deliver it (the desktop app, a browser without Web Push).
+ * 3. Arrivals: a new unread row toasts, unless it is about the session on screen
+ *    or another project. It becomes an OS notification instead where nothing
+ *    else would deliver it (the desktop app, a browser without Web Push).
  *    There, a hidden window keeps checking the inbox once a minute.
  * 4. `?notification=<id>` on any page, or the service worker's message for a
  *    clicked notification, marks that row read.
@@ -37,7 +38,8 @@
 import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
 import {
-  isTabHidden,
+  dismissStaleNotificationToasts,
+  isOtherProject,
   isViewingSession,
   sendWebNotification,
   setServerPushPreferences,
@@ -95,6 +97,13 @@ function SignedInNotificationHost({ userId }: { userId: string }) {
   const notificationCenter = useNotificationHostGate(projectIdFromPathname(usePathname()));
   const enabled = useWebNotificationStore((s) => s.preferences.enabled);
   const permission = useWebNotificationStore((s) => s.permission);
+  const search = useSearchParams();
+
+  // `?thread=` opens a session with no pathname change. This part mounts with
+  // every project flag off, so the session on screen loses its toast there too.
+  useEffect(() => {
+    dismissStaleNotificationToasts();
+  }, [search]);
 
   useEffect(() => {
     if (!webPushSupported()) return;
@@ -191,7 +200,8 @@ function NotificationCenterHost({ userId }: { userId: string }) {
     seen.current = arrivals.seen;
     if (arrivals.fresh.length === 0) return;
     const plan = planArrivals(arrivals.fresh, {
-      onScreen: (sessionId) => !isTabHidden() && isViewingSession(sessionId),
+      onScreen: isViewingSession,
+      otherProject: isOtherProject,
       unseen: useTurnAttentionStore.getState().unseen,
       os:
         typeof document !== 'undefined' &&
@@ -228,7 +238,7 @@ function NotificationCenterHost({ userId }: { userId: string }) {
       fromInbox: true,
     });
     for (const row of plan.toast) showInAppNotification(payloadOf(row));
-    // The OS path toasts and plays the sound itself (`sendWebNotification`).
+    // The OS path applies the channel policy itself (`sendWebNotification`).
     for (const row of plan.os) sendWebNotification(payloadOf(row));
   }, [rows, t]);
 

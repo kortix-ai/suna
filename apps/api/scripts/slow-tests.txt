@@ -45,3 +45,7 @@ src/apps/build-log.test.ts
 src/projects/git/branches-list-cache.test.ts
 src/projects/git/merge-diff.test.ts
 src/git-proxy/receive-pack-gate.test.ts
+src/sandbox-proxy/routes/preview-characterization.test.ts
+src/sandbox-proxy/routes/forward.test.ts
+src/sandbox-proxy/routes/preview-env-sync-ports.test.ts
+src/sandbox-proxy/routes/preview-agent-authz.test.ts

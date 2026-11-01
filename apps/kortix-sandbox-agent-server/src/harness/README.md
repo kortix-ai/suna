@@ -57,10 +57,11 @@ that the target handles worse (`losses`) and everything the target lacks, used
 or not (`unsupported`). The contract is `switchPreflight` in
 `@kortix/api-contract/session-log` (`capabilities.ts`).
 
-## Models: the LLM gateway only
+## Models: the LLM gateway, and Claude subscription models
 
 pi sends every model request to the Kortix LLM gateway, under one provider
-id, `kortix`. There is no native provider mode, and every model ref is
+id, `kortix`, with one exception: Claude subscription models (`claude-agent`,
+below). There is no other native provider mode. A gateway model ref is
 `kortix/<wire id>`.
 
 - A box without the gateway env (`KORTIX_LLM_BASE_URL` + `KORTIX_TOKEN`, or
@@ -70,6 +71,68 @@ id, `kortix`. There is no native provider mode, and every model ref is
 - `POST /kortix/env` with `llmGatewayEnabled: true` sets `KORTIX_LLM_BASE_URL`
   and re-points a running LLM proxy. `llmGatewayEnabled: false` (an API from
   before the graduation) is logged and ignored: it never clears the gateway env.
+
+### Claude subscription models (`claude-agent`)
+
+A model ref `claude-agent/<id>` (`@kortix/api-contract/claude-agent`: `opus`,
+`fable`, `sonnet`, `haiku`) runs on the session user's own Claude
+subscription. pi stays the harness. Only the model step changes: each pi model
+step is a step of Claude Code, the unmodified `claude` program the image
+installs (`/opt/kortix/claude/bin/claude`, the native binary of
+`@anthropic-ai/claude-agent-sdk-linux-<arch>` at the `claudeAgentSdk` pin in
+`runtime-versions.json`), driven through the public Claude Agent SDK. Claude
+Code makes the model call with the user's login, straight to Anthropic: these
+calls never reach the LLM gateway and use no Kortix credits. This is the
+mechanism T3 Code and OpenCode use (OpenCode's `claude-agent` provider).
+
+- **Tools.** Claude Code's own tools, settings, hooks, skills, CLAUDE.md,
+  memory, auto compaction and tool search are off (`claude/sessions.ts`,
+  `claude/sdk.ts`). pi's tools reach Claude as one in-process MCP server,
+  `kortix` (`claude/server.ts`). When Claude calls one, the step ends at that
+  call, pi runs it like any model's tool call (permission gate, extensions,
+  questions, subagents, the transcript), and the next step hands the result
+  back to the waiting MCP call (`claude/pending.ts`). Tools run one at a time.
+- **History.** pi's context is the source of truth, so a session switches
+  between Claude and gateway models freely. Claude Code keeps its own session
+  per pi thread (root, each child) and resumes it. `claude/sync.ts` maps pi's
+  context to that session: turns Claude did not see reach it as one
+  `<conversation-checkpoint>` message; a changed history (a compaction, a
+  rewind) starts a new Claude session with the whole history. Records live in
+  `<piStateDir>/claude-records/`, Claude Code's state in `<piStateDir>/claude/`
+  (`CLAUDE_CONFIG_DIR`, never the box's `~/.claude`).
+- **Processes.** One `claude` process per thread; it stops after 5 minutes
+  idle, never while it waits for tool results. A changed gateway credential, system
+  prompt or tool set restarts it. A step with no tools (pi's compaction summary) runs
+  in a throwaway process that saves no Claude session.
+- **Login.** No Claude token is in the sandbox. Claude Code's model calls go
+  to the LLM gateway's Claude Code passthrough: `ANTHROPIC_BASE_URL` is
+  `$KORTIX_LLM_PROXY_URL/claude-code` with a fixed placeholder
+  `CLAUDE_CODE_OAUTH_TOKEN` (the localhost proxy swaps in the session
+  credential), else `$KORTIX_LLM_BASE_URL/claude-code` with `KORTIX_TOKEN`.
+  The gateway picks the project's Claude account for the request (the
+  session's selected accounts, the session owner's own, or one shared with
+  the project), adds its token and forwards the request to Anthropic
+  unchanged (`packages/llm-gateway/src/claude-code/passthrough.ts`).
+  `claudeEnv` removes every variable that would pick another login or
+  endpoint (`ANTHROPIC_API_KEY`, a project secret, would otherwise bill an
+  API key) and every `KORTIX_*` variable. A changed gateway or session
+  credential restarts the `claude` process.
+- **Errors.** Claude Code retries its own calls, so pi does not retry a
+  `claude-agent` error (`isTransientModelError`). A plan limit reads "Your
+  Claude subscription limit is reached (…). It resets at …".
+- **Binary.** The image's Claude Code, else the same pinned binary the first
+  Claude turn installs into `<piStateDir>/claude-code/<sdk version>/` from the
+  npm tarball, checked against the sha512 `bun.lock` records
+  (`claude/install.ts`, ~4 s). A project image built before Claude Code was in
+  the layer, or a self-hosted image, still runs Claude models.
+- **Capability.** `/kortix/health` lists `models.claude_agent.v1`
+  (`RUNTIME_CLAUDE_AGENT_CAPABILITY`). A daemon from before this provider sends
+  a `claude-agent/` ref to the gateway, which answers "start a new session".
+- **Whose login.** The prompting person's: `on_behalf_of` of the session token,
+  for every token kind (a My Kortix session's token has no service account).
+- **Not supported.** Claude Code's own features that Kortix has no version
+  of: plan usage (`/usage`), auto mode, cloud sessions, `/loop`, computer use
+  and its bundled skills. Sampling (`temperature`, `top_p`) does not apply.
 
 ## Ownership
 
@@ -84,6 +147,7 @@ id, `kortix`. There is no native provider mode, and every model ref is
 | `pi/boot.ts` | Session boot: the host steps (workspace, config release, relays), then `pi-ready` |
 | `pi/surface.ts` | The raw routes of the runtime wire, answered in-process |
 | `pi/vcs.ts` | The Changes tab on pi: `vcs: 'git'` on `/project/current` and `GET /vcs/diff` (`mode=branch` against the merge base with `KORTIX_DEFAULT_BRANCH`, `mode=git` against HEAD), the wire's `VcsFileDiff` shape |
+| `pi/claude/` | Claude subscription models: the `claude-agent` pi-ai provider, the `claude` processes, history sync, the MCP tool server |
 | `pi/turn-events.ts`, `pi/transcript.ts` | pi events → Kortix session events (`@kortix/api-contract/transcript`); the transcript store |
 | `pi/interactions.ts`, `pi/tools.ts`, `pi/model.ts`, `pi/sampling.ts` | Permissions/questions, workspace tools, gateway model, the agent's `temperature`/`top_p`/`steps` on each model request |
 | `../routes/` | Controllers, authentication, request parsing, HTTP status/headers, gzip and SSE delivery |
@@ -705,7 +769,11 @@ are in `details`), `runtimeReady` computed once from both, and
 `config.release.v1`, and the session features pi serves
 (`HarnessDiagnosticsService.capabilities()`, read on each health call:
 `session.subagents`, `session.compact`, `session.commands`, `session.steer`
-and `session.log.v2`), plus what this box serves on top
+and `session.log.v2`, and `runtime.stable_message_id.v1`: `admit` keeps a
+prompt's `message_id` as its user message id, the transcript is in admission
+order, and a known id answers `200 { deduplicated: true }`, so apps/api sends
+a prompt that waited, or a redelivery, under the id it already has), plus
+what this box serves on top
 (`PiRuntime.multiAgentCapabilities`): `session.messaging` where the box has a
 control plane, and `session.team_tasks` while the project's `agent_teams`
 flag is on and the session leads a team or is a teammate ("Agents working together"
@@ -1108,7 +1176,7 @@ provider hooks to the same runner. `ctx.ui` has no UI bound (`hasUI` is false):
 tools and events work, TUI-only rendering does nothing.
 
 `kortix-subagents` is the `agent` tool (OpenCode called it `task`): input `{
-description, prompt, subagent_type?, agent?, task_id?, session?,
+description, prompt, model?, subagent_type?, agent?, task_id?, session?,
 run_in_background? }`, the child id
 in the part's `metadata.sessionId` (set while the child runs), output `task_id:
 <id>`, a `session: separate|same` line (with the reason when a separate call
@@ -1144,7 +1212,15 @@ or `all`; a kortix.yaml set (`schema: 3`) has only the declared agents. The call
 the list and refuses a call to it. Or an inline ephemeral agent `agent: {
 instructions, model?, tools?, description? }`, defined on the fly with no
 manifest entry, run under the agent name `inline`; it has no name to deny, so
-the session's own tool rules are its only gate. A `same` child gets no
+the session's own tool rules are its only gate. Its `tools` must all be tools
+this session has (`checkChildTools`): a name it lacks is refused, never cut
+quietly. The top-level `model` (a `provider/model` ref, `checkModelRef`)
+overrides the model of a named `subagent_type`, an inline agent and a fork; a
+follow-up (`task_id`) keeps its model, and a `model` there is refused. A
+workflow's `agent(prompt, { model, instructions, tools })` takes the same three:
+`instructions` makes it an inline agent (refused with a named `agent`), and
+`tools` narrows a named agent to the ones its type also allows; all three join
+the resume key (`agentKey`). A `same` child gets no
 `agent`/`task` (no nesting) and no `question`. On the root, several `agent`
 calls in one message run concurrently; a batch that includes any other tool
 stays sequential (see "Tool concurrency" below). A child runs its own calls one
@@ -1204,16 +1280,52 @@ provisioning or working.
 whose transcript tail, `GET …/transcript?limit=3`, shows no change and no
 running tool for that long is stopped; the result carries `stalled: true` and
 the tool starts a new session), `waitMs` (the run's 2 h deadline replaces the
-30 min ceiling), and `runtimeContext` (a background run's runner gets the
-script, args and approved cap as `kortix.workflow.*` keys; the subagent keys
-win, and the whole context stays within the API's 16 KiB). The run approval
-asks through the question broker at depth 0 only. Run records for
-`resume_run_id` live in `$KORTIX_RUNTIME_STATE_DIR/workflows/runs/`. Saved
-workflows are `.kortix/workflows/<name>.js`: the checkout's working tree, or
-the API's project files on a box without one. A background run's runner is a
-background child (above): the parent hears the run's result once, when the
-runner's turn ends, and a `resume_run_id` relaunch returns at once the same
-way.
+30 min ceiling), and `runtimeContext` (the runner's marks:
+`kortix.workflow.run_id`, title, approved cap; the subagent keys win). Every
+workflow from a session that can start a runner (a control plane and two more
+session levels) runs in ONE runner session, a background child (above): the
+call returns within seconds, the calling turn ends, and nothing of that turn
+(Stop, a new message, the box parking or restarting) reaches the runner. The
+script, args and handed-over records ride in the runner's first prompt (the
+create's `initial_prompt`) as a `<workflow_handoff chars="N">` block of JSON,
+up to 200,000 characters (`HANDOFF_MAX_CHARS`). The runner's tool runs that
+hand-off, whatever script or name its model passes. One runner, one hand-off:
+the runner context carries the run id and the sha256 of the hand-off JSON
+(`kortix.workflow.handoff_sha256`), and the runner runs a block only when its
+`run_id` and sha256 match, the turn's prompt is the session's first user
+message (`KortixHost.turnIsFirstPrompt`, from the transcript, which a restart
+or a restore brings back), and it took no hand-off before
+(`$KORTIX_RUNTIME_STATE_DIR/workflows/handoff.json`, written before anything
+runs). Any other prompt that carries a block, the same block included, is
+refused with "runs one workflow only": no script, no agent, no record. A
+prompt that is only a block is a `peer` turn. A prompt with no block runs
+nothing: the runner reads no script, args, cap or agent set from its context.
+Every later turn of a runner ends with its one run's outcome (completed only
+when the run ended done), so the API's last turn end of a runner always tells
+how its run ended. The API accepts `kortix.*` runtime_context keys only from a
+session token creating its own child (`spawned_by_session`), so a person, an
+API key or another session cannot declare a runner, a depth (which skips the
+run approval) or a tool narrowing. A runner whose workflow does not finish (refused
+before any agent, failed, stopped) fails its own turn (`KortixHost.failTurn`),
+so the parent's notice says `error` with the reason. Only a runner, and a
+session that cannot start one (no control plane, or a child one level below
+the depth cap), runs a script inline; its result says so. The run approval
+asks through the question broker at depth 0 only, and is the only wait of a
+top-level turn. Run records live in `$KORTIX_RUNTIME_STATE_DIR/workflows/runs/`:
+a resume (`resume_run_id`, or automatic when the session's latest run stopped,
+failed or was interrupted; `fresh: true` opts out) reuses every completed
+`agent()` whose prompt, agent, model and schema match, in any order, keeps the
+run id, and starts a NEW runner session. Its hand-off carries the finished
+agents' saved results: from this box's record of a run that ran here, or, for a
+background run, from the last runner's final run document (`details.records`
+of its last `workflow` call, read from its saved transcript,
+`GET …/transcript?shape=sync`). A runner whose transcript holds no such
+document (its box died mid-run) leaves nothing to reuse, and the resume says
+so. The parent's record then names the new runner. A runner that still works
+refuses the resume. A structured agent whose
+answer never validates resolves to `{ schema_error, text }` (`strict: true`
+throws). Saved workflows are `.kortix/workflows/<name>.js`: the checkout's
+working tree, or the API's project files on a box without one.
 
 **Tool concurrency.** The root agent runs `toolExecution: 'parallel'`. Every
 built-in tool is `executionMode: 'sequential'` except `PARALLEL_TOOLS`
@@ -1364,7 +1476,7 @@ message during the turn is steered in at the next step as always.
 | `task_create`, `task_list`, `task_get`, `task_update` | flag `agent_teams`, a lead (depth 0) or a teammate (`kortix.team.lead` in `runtime_context`) (`session.team_tasks`) | the lead's list, `…/sessions/:lead/tasks`; `claim: true` is atomic in the API (`409 task_taken`/`task_blocked`). |
 | `task_stop` | a box with a control plane | stop one child of this session by `task_id` or name (`cloudStopChild`). |
 | `agent` | every session | `name` (metadata `agent_handle`), `fork` (`fork_from_session_id` = this session), `run_in_background` default true for a separate session at depth 0. Reuse first: the `name` of a finished child of this session (idle, completed, stopped) is a follow-up to that child, as its `task_id` is, and the result says it continued the same session (`continued: true`); the name of a child that still works is refused. `team: true` (with a name, flag `agent_teams`, depth 0, no fork) starts a teammate: metadata `team_lead`, always background, teammate instructions in `initial_context`; without the flag or deeper it fails with the reason. A name without `team` is never a teammate. |
-| `workflow` | every session | background by default at depth 0; refused in a turn whose prompt is a peer message, a room message or a trigger (`pi/prompt-origin.ts`); `ultracode` in the person's prompt adds a per-turn line asking for a workflow; a plan above 25 agents says "Large workflow" in the approval. |
+| `workflow` | every session | always in a background runner where one can start, inline only in a runner or a session that cannot start one; refused in a turn whose prompt is a peer message, a room message or a trigger (`pi/prompt-origin.ts`); `ultracode` in the person's prompt adds a per-turn line asking for a workflow; a plan above 25 agents says "Large workflow" in the approval. |
 
 Each result is a `KortixToolResult`-shaped document (`{ ok, tool, action, card,
 data?, error? }`) as the tool's JSON output and its part `details`; the tools
@@ -1375,7 +1487,13 @@ teammate always keeps messaging and the task list.
 Workflow runs: `GET /kortix/runtime/workflows` → `{ runs: WorkflowRunMetadata[] }`
 (the live runs, then every saved run, newest first; a background run is listed
 on the parent with `background.sessionId`, its runner session, and its last
-known state). `POST /kortix/runtime/workflows/:runId/control`
+known state; before the list, the parent reads each runner of a run still
+saved as `running` from the API and writes how it ended: the runner's last
+turn end in the ledger (`GET …/sessions/:id/turn`: `completed` is done,
+`failed` failed or stopped with its error, `runtime_gone`/`abandoned` failed),
+else a stopped or failed runner session. No text decides: a notice's report
+is model text. The same read runs at every turn start; a notice header at the
+start of the prompt only skips the 5 s recheck window for that runner). `POST /kortix/runtime/workflows/:runId/control`
 (`WorkflowControlBody`) → `200 { ok, paused }`: `pause` (no new `agent()`
 starts; running agents finish), `resume`, `restart_agent` (stop that child and
 start it again with the same prompt, counted as an attempt), `stop`. `404`
@@ -1419,7 +1537,7 @@ process.
 | `services/tools/tool.ts` | The contract: a default export `{ description, parameters (JSON Schema), execute(args, context) }`, with `context` = `{ sessionId, agent, directory, env, signal }`. |
 | `services/tools/kortix/<name>.ts` | The Kortix tools, one self-contained module each: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `show` (an entry whose `path` is an image file of at most 32 MiB gains `sha256`, hashed streamed and concurrently within 2 s; a read error or the deadline leaves it out), `image_gen` (any image model the project can use). Each follows the project tool contract and imports only `node:*`, so `kortix tools eject <name>` copies the file into a project unchanged (the CLI embeds the same bytes, `apps/cli/src/kortix-tools.generated.json`). The web tools read `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env` and call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`); a box with no control plane calls the upstream with the project's own key. `image_gen` takes 1–4 `prompts` and posts one request per prompt, all at once (`n: 1` each), to the LLM gateway (`KORTIX_LLM_BASE_URL` + `/images/{generations,edits}`, `KORTIX_TOKEN`); the platform picks the image model (`auto` or the one asked for) and resolves its credential. Each image is written under `<checkout>/output/images/<prompt slug>-<time>.{png,jpg,webp}` (the bytes decide the type; never overwriting). The output is `{ action, model, provider, images: [{ path, size, prompt, sha256 }], failed?: [{ prompt, error }] }` (`sha256`: hex digest of the saved bytes); when every prompt fails the call throws the first failure (`… [<code>]`). Code caps it at 10 images per turn and 50 per session, counted before the first await (a batch that would pass a cap is refused whole). The turn is `context.turnId` (pi: the turn's message id, `ToolContext.turnId` in `services/tools/tool.ts`), so direct, parallel, script, retried and subagent calls of one turn share the 10; a call that names no turn keys the turn cap on its abort signal; a reference image must be a real png/jpeg/webp inside the checkout. |
 | `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all five when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
-| `services/tools/platform/<name>.ts` | The My Kortix platform tools, loaded only when `kortix_tools` names them (the platform's My Kortix config does). `kortix_agents`, `kortix_sessions`, `kortix_schedules`, `kortix_connectors`, `kortix_people`, `kortix_access`, `kortix_usage` run the in-box `kortix` CLI (`platform.ts`). `kortix_memory` (`list`, `view`, `save`, `delete`) calls `/v1/projects/:id/memory/me/agent/mykortix[/pages/:name]` with `KORTIX_TOKEN`: one page per slug name in the session person's `/Users/<person>/Memory/mykortix`, refused in plain words when Files is off. `memory` was a Kortix tool until 2026-10-30; a project's ejected `tools/memory.ts` loads as a project tool. |
+| `services/tools/platform/<name>.ts` | The My Kortix platform tools, loaded only when `kortix_tools` names them (the platform's My Kortix config does). `kortix_agents`, `kortix_sessions`, `kortix_schedules`, `kortix_connectors`, `kortix_people`, `kortix_access`, `kortix_usage` run the in-box `kortix` CLI (`platform.ts`). `kortix_schedules` keeps a long task alive: `follow_up` is a loop on this session (`kortix loop`), `wake_on` wakes this session on a merged change request, a webhook, a connector event or an App event (`kortix triggers add --on …`), `events` lists a connector's event types, `list` shows this session's follow-ups and wake-ons plus the project schedules, and `remove` routes `reminder.<hex>` to `kortix loops rm` and `trigger.<hex>` to `kortix triggers rm`. `kortix_memory` (`list`, `view`, `save`, `delete`) calls `/v1/projects/:id/memory/me/agent/mykortix[/pages/:name]` with `KORTIX_TOKEN`: one page per slug name in the session person's `/Users/<person>/Memory/mykortix`, refused in plain words when Files is off. `memory` was a Kortix tool until 2026-10-30; a project's ejected `tools/memory.ts` loads as a project tool. |
 
 pi loads them at `start()` and registers each as an `AgentTool`
 (`pi/tools.ts` `createWorkspaceTools`); subagents get them too. A release that

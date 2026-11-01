@@ -10,7 +10,33 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-10-31
+
+### D34 Product chrome draws status with a glyph; status emoji stay in the agent's own words
+- **Date:** 2026-10-31
+- **Decision:** A row, card, badge or label that Kortix draws around the conversation shows a state with the tool-row glyphs: a `kortix-green` check for done, a `kortix-red` warning for a failure, a neutral stop circle for a stop. It never shows an emoji. The D31 status emoji (✅ ⏳ 🙋 🔒 💡 ⚠️ 👋) remain allowed only in the text My Kortix writes. The background-agent notice ("Write lighthouse poem finished") is a tool row like the "Agent · general" card that started it: the same height, type, caret and "View" action. A first result line that only says "Done." is left out, because "finished" already says it.
+- **Why:** founder, 2026-10-31, on the notice row "✅ Write lighthouse poem finished · Done.": "why always the icon when it says the emoji [...] it always looks a bit sus [...] i think that component could be a bit smoother". The emoji sat directly above the agent's own "✅ The poem's done" line, so the same mark showed twice in two visual languages.
+- **Where:** `packages/ui/src/session/turn/subagent-notice-row.tsx`, `packages/ui/src/session/tool/shared/full-view-action.tsx`, [voice-and-tone.md](verbal/voice-and-tone.md) section 2 (the D31 rule) and the "no emoji in Kortix-authored copy" rule.
+- **Supersedes:** nothing. It narrows how D31 is applied: D31 never covered product chrome.
+- **Source:** the `agent-notice-row` branch.
+
 ## 2026-10-30
+
+### D33 The TUI shows the pixel Kortix symbol, monochrome; turquoise only on the selection marker and the cursor
+- **Date:** 2026-10-30
+- **Decision:** The TUI's boot screen and empty state draw the Kortix symbol from `PIXEL_KORTIX_ROWS` (now `@kortix/shared/pixel-mark`, the grid the web's pixel mark, the merch chips and My Kortix's agent mark use), solid cells in the foreground color and curve cells at half ink. No block-letter wordmark and no turquoise on the symbol. The empty state is the symbol, one hint and one quiet line, centred. The dither field (the web CTA's Bayer-dithered fbm, in braille) runs only on the boot screen. A click on the symbol, or `/life`, plays Conway's Game of Life seeded from it, as the web's `/game-of-life` page does. `terminal-accent` stays on two TUI marks: the `▌` selection marker and the text cursor. The CLI banner keeps the turquoise wordmark (D32).
+- **Why:** founder, 2026-10-30, on the turquoise wordmark splash: "can u make this not be turqoise make it the be the actual like kortix symbol [...] do the whole conway game of life thing if u Click it", "go through the web codebase and takeover as necessary like we already have this ascii style going", and on the result: "it can be giga-minimal but everything that's centered and clean".
+- **Where:** `apps/tui/src/ui/splash.tsx`, `apps/tui/src/lib/life.ts`, `apps/tui/src/lib/dither.ts`, `packages/shared/src/pixel-mark.ts`, `apps/tui/src/theme.ts`, `visual/brandmark.md`, `visual/color.md`.
+- **Supersedes:** D32 for the TUI: the wordmark on the TUI splash, and turquoise on the TUI wordmark.
+- **Source:** the `tui-session-first` branch.
+
+### D32 The terminal accent is turquoise; the ASCII wordmark is sanctioned in the CLI and the TUI
+- **Date:** 2026-10-30
+- **Decision:** The CLI and the TUI share one accent, `terminal-accent` (turquoise; the CLI prints it as ANSI cyan). It marks three things only: the block-letter KORTIX wordmark, the one-column `▌` selection marker, and the text cursor. Focus borders, prompts and highlights stay monochrome. The ASCII wordmark in `apps/cli/src/banner.ts` is sanctioned on the CLI landing screen and on the TUI boot and empty-session splash. Customer output (D8c) is not affected.
+- **Why:** founder, 2026-10-30, on the session-first TUI: "add hints of that turqoise accent color [...] like a dope as booting KORTIX THING", then chose "Turquoise, CLI cyan" over `kortix-base` so the CLI and the TUI read as one product. After a first build that also drew focus borders, prompts and highlights in it: "way toooo much turqoise", so it is rationed to the three marks.
+- **Where:** `visual/visual-system.json` (`color.terminal.terminal-accent`), `visual/color.md` (CLI rule), `apps/tui/src/theme.ts`, `apps/tui/src/ui/splash.tsx`, `apps/cli/src/banner.ts`.
+- **Supersedes:** the "ASCII wordmark: OPEN" status for the CLI and the TUI in `visual/brandmark.md` and `visual/color.md`.
+- **Source:** the `tui-session-first` branch.
 
 ### D31 My Kortix speaks plainly to a non-technical person, warm and a little playful; emoji are status labels
 - **Date:** 2026-10-30
