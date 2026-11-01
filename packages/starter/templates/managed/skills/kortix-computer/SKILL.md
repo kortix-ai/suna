@@ -1,33 +1,38 @@
 ---
 name: kortix-computer
-description: How to reach a user's CONNECTED COMPUTER (their laptop, desktop, or server) from a Kortix session — read/write files, run shell commands, and drive the desktop (click/type/screenshot) on that machine. A connected computer is an ACCOUNT of the project's `computer` connector, called through the same `kortix connectors` path as every other connector, with `--account` picking the machine. Load this when the task is about acting ON a specific physical computer the user has connected ("on my laptop…", "read ~/Downloads on my machine", "run this on my desktop", "click the button on my screen"), or when the user asks how the agent reaches their computer. ALSO load it when the user mentions their own machine or its files and no computer may be connected yet ("my local files", "my Desktop", a path like `~/…`, `/Users/…`, "the repo on my laptop") — this sandbox cannot see their disk, and the skill says how to tell them to connect it. For files INSIDE this sandbox, use normal shell/fs — not this. "My desktop" can also mean the session's own desktop (see <which-computer>).
+description: How to reach a user's CONNECTED COMPUTER (their laptop, desktop, or server) from a Kortix session — read/write files, run shell commands, and drive the desktop (click/type/screenshot) on that machine. A connected computer is an ACCOUNT of the project's `computer` connector, called through the same `kortix connectors` path as every other connector, with `--account` picking the machine. Load this when the task is about acting ON a specific physical computer the user has connected ("on my laptop…", "read ~/Downloads on my machine", "run this on my desktop", "click the button on my screen"), or when the user asks how the agent reaches their computer. ALSO load it when the user mentions their own machine or its files and no computer may be connected yet ("my local files", "my Desktop", a path like `~/…`, `/Users/…`, "the repo on my laptop") — this sandbox cannot see their disk, and the skill says how to tell them to connect it. For files INSIDE this sandbox, use normal shell/fs — not this. Load it too whenever the user says "my desktop" or "put it on my desktop" — it says which of three desktops they mean (their Drive folder, this session's screen, their own computer).
 ---
 
 <skill name="kortix-computer">
 
-<which-computer>
-Two computers can be "the desktop":
+<which-desktop>
+"My desktop" can mean three places:
 
-- **Your session desktop.** A project agent's own microVM runs a Linux
-  desktop. The user watches it live in the session's **Desktop** panel and
-  can take over. Put something there with the normal shell: install it,
-  then open it on display `:1` so the window shows (`/MACHINE.md` → Desktop).
-- **The user's connected computer.** Their own Mac, PC or server, reached
-  only through this connector.
+- **Their Drive folder,** `~/Desktop` (= `/drives/me`). Kortix mounts it as
+  their desktop in every session. It holds files: the user sees them in
+  **Files**, and they last (the `kortix-drives` skill).
+- **Your session desktop.** A project agent's microVM runs a Linux screen
+  the user watches live in the session's **Desktop** panel. A program runs
+  there: install it, then open it on display `:1` so the window shows
+  (`/MACHINE.md` → Desktop).
+- **Their own computer** (Mac, PC, server), reached only through this
+  connector.
 
-"Your desktop" and "the Kortix computer" mean the session desktop. "My
-laptop", "my Mac", a path like `~/…` or `/Users/…` mean the connected
-computer. For "my desktop" alone, run `kortix connectors accounts computer`:
+Pick by what they ask for:
 
-- No computer connected: use the session desktop, and say in one line that
-  it is in the **Desktop** panel and that they can connect their computer
-  to get it there instead.
-- A computer connected and online: ask once which they mean, naming both.
+- A file (a report, a download to keep): `~/Desktop`.
+- A program to use ("install QGIS and put it on my desktop"): run
+  `kortix connectors accounts computer` first. No computer connected:
+  install it on your session desktop, open it, and say in one line that it
+  is in the **Desktop** panel and that connecting their computer puts it
+  there instead. A computer connected and online: ask once which they mean,
+  naming both.
+- "My laptop", "my Mac", a path like `~/…` or `/Users/…`: their computer.
 
-Software for the user's computer must match its platform (`status` →
-platform). A Linux package installed on the session desktop is not on their
-computer.
-</which-computer>
+Software for their computer must match its platform (`status` → platform).
+A Linux package on your session desktop is not on their computer, and an
+installer file in `~/Desktop` is not installed anywhere.
+</which-desktop>
 
 <overview>
 A member connects their own computer to Kortix (desktop app, or

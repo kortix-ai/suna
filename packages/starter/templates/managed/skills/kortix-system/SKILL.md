@@ -50,9 +50,9 @@ Your session runs on its own microVM: a whole Linux computer, root through
 - Anything else (home, `/tmp`, installed packages) can be gone when the session reopens.
   To keep a package for every session, add it to a sandbox template
   (`references/kortix/kortix-yaml.md` → sandbox) and install it now too.
-- "My desktop" means your desktop (a project agent's; the user watches it in the
-  session's **Desktop** panel) or their connected computer (`kortix-computer`).
-  None connected: use yours and say so. One online: ask which.
+- "My desktop": a file goes to `~/Desktop` (their Drive folder); a program goes on
+  your screen, which the user watches in the **Desktop** panel, or on their own
+  computer. The `kortix-computer` skill decides which (`<which-desktop>`).
 
 Keep big files out of Git: every session downloads the whole repository.
 `kortix validate` warns at 10 MiB per file and at 512 MiB in total; above

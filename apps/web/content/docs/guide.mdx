@@ -688,7 +688,7 @@ Any website or tool that the agent starts on its computer is reachable from outs
 
 Every session of your project's agents runs on a computer with a desktop. Select the **Desktop** button in the session header to watch it live. My Kortix runs on a minimal computer without one, so its sessions show no **Desktop** button: it hands browsing to your agents' sessions. The desktop has one browser, and you share it with the agent: you see each page it visits, and the browser on the dock opens that same window with the same tabs and logins. Kortix has control by default. Select **Take over** to click and type yourself, for example to sign in to a site for the agent, or to use the terminal or the file manager on the dock. Select **Return control** to hand it back. The desktop resizes to fit the panel.
 
-Ask the agent to put an app on its desktop, for example "install QGIS and open it on your desktop", and watch it in the panel. "My desktop" can mean this desktop or your own computer. When your computer is connected to Kortix, the agent asks which one you mean. When it is not, the agent uses the session desktop and tells you so.
+Ask the agent to put an app on its desktop, for example "install QGIS and open it on your desktop", and watch it in the panel. When you say "my desktop", the agent puts a file in your own Drive folder, which every session mounts at `~/Desktop`. It puts a program on this desktop. When your own computer is connected to Kortix, the agent first asks whether you mean this desktop or your computer.
 
 A session on a custom sandbox template gets the desktop when the template's base image is Ubuntu 24.04.
 

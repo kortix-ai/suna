@@ -70,8 +70,10 @@ port 6901.
 - To put an app on the desktop, install it and start it in the background
   (`setsid <app> >/dev/null 2>&1 &`): its window opens where the user sees
   it. The desktop shows no icons. Check the result with a screenshot.
-- When the user says "my desktop", they may mean this desktop or their own
-  connected computer: the `kortix-computer` skill says how to tell.
+- `~/Desktop` is not this screen: it is the user's Drive folder
+  (`/drives/me`), for files. When the user says "my desktop", the
+  `kortix-computer` skill says whether they mean that folder, this screen or
+  their own computer.
 - `kortix-desktop status|stop|start` controls it. `stop` frees ~380 MB of RAM.
   Then set `AGENT_BROWSER_HEADED=false` until you `start` it again.
 
