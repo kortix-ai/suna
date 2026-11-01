@@ -157,6 +157,9 @@ export const PROJECT_TRANSFER_LEAVE_TABLES: Readonly<Record<string, string>> = {
   // Transient device-pairing requests; they expire on their own and the
   // approver's project access is re-checked at approval time.
   tunnel_device_auth_requests: 'transient pending device auth, self-expiring',
+  // A Claude sign-in lives 10 minutes (FLOW_TTL_MS), and its pasted code is
+  // sealed with the source account's key, so a moved row could not be read.
+  claude_subscription_login_flows: 'transient Claude sign-in, self-expiring, sealed with the source account key',
   // Per-user inbox items: what a user saw while the project lived in the
   // source account stays in the source account's view.
   notifications: 'user inbox history, not project-owned data',
