@@ -91,7 +91,7 @@ jobs:
       # bun by scripts/ensure-runtime.js before electron-builder runs.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: latest
+          bun-version: 1.4.3
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron --filter @kortix/agent-tunnel
