@@ -178,6 +178,11 @@ describe('agents', () => {
     expect(errorPaths(swap('codemode: on', 'codemode: maybe'))).toContain('agents.assistant.codemode');
   });
 
+  test('context is record or summary', () => {
+    expect(errorPaths(swap('codemode: on', 'codemode: on\n    context: summary'))).toEqual([]);
+    expect(errorPaths(swap('codemode: on', 'codemode: on\n    context: forget'))).toContain('agents.assistant.context');
+  });
+
   test('connectors_required stays a subset of connectors', () => {
     expect(errorPaths(swap('    connectors: all\n', '    connectors: [a]\n    connectors_required: [b]\n'))).toContain('agents.assistant.connectors_required');
   });

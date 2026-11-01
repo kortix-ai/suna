@@ -180,6 +180,10 @@ function withSwitches(
     if (view === 'extensions') {
       const ext = catalog.extensions.find((x) => x.id === row.id);
       if (!ext || ext.required) return row;
+      // The context record is the agent's `context` field: on is the default (`record`), off is `summary`.
+      if (ext.group === 'platform' && ext.controlled_by === 'context') {
+        return { ...row, checked: editor.draft.context !== 'summary', onCheckedChange: (on) => editor.set('context', on ? 'record' : 'summary') };
+      }
       if (ext.group === 'platform') {
         const tool = catalog.tools.find((x) => x.id === ext.controlled_by);
         return tool ? { ...row, ...toolSwitch(tool.id, tool.aliases) } : row;

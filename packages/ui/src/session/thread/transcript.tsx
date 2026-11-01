@@ -65,7 +65,7 @@ import {
 } from './message-parsing';
 import { ActivityBurst } from '../turn/activity-burst';
 import { TurnWorkAccordion } from '../turn/turn-work-accordion';
-import { CompactionFailedRow, CompactionMarker } from '../turn/compaction-card';
+import { CompactionFailedRow, CompactionMarker, compactionReset } from '../turn/compaction-card';
 import { ExpandableOutput } from '../turn/expandable-output';
 import { isPlanWriteTool } from '../turn/plan-anchor';
 import { TurnFallbackRows } from '../turn/fallback-row';
@@ -1496,6 +1496,7 @@ const openCompactionSummary = useCallback(() => {
           running={compactionRunning}
           summary={response}
           onOpenSummary={onOpenCompactionSummary ? openCompactionSummary : undefined}
+          reset={compactionReset(compactionInfo.block)}
         />
       </div>
     );

@@ -25257,5 +25257,16 @@
     "codeError": "Claude konnte mit diesem Code nicht verbunden werden. Melde dich erneut an und füge den neuen Code ein.",
     "connectClaude": "Claude verbinden",
     "reconnectClaude": "Claude erneut verbinden"
+  },
+  "contextReset": {
+    "pill": "Neuer Kontext · voller Verlauf bleibt",
+    "pillRunning": "Kontext wird frei…",
+    "detail": "Der Kontext erreichte {tokens} Tokens, also arbeitet der Agent in einem neuen weiter. Nichts wurde zusammengefasst: Er durchsucht den vollen Verlauf ({entries} Einträge), wenn er ein Detail braucht.",
+    "detailManual": "Du hast bei {tokens} Tokens einen neuen Kontext gestartet. Nichts wurde zusammengefasst: Der Agent durchsucht den vollen Verlauf ({entries} Einträge), wenn er ein Detail braucht.",
+    "showDetail": "Details anzeigen",
+    "hideDetail": "Details ausblenden",
+    "dialogTitle": "Neuen Kontext starten?",
+    "dialogDescription": "Der Agent arbeitet in einem neuen Kontext weiter und durchsucht den vollen Verlauf, wenn er ein Detail braucht. Nichts wird zusammengefasst, und die Unterhaltung bleibt hier, wie sie ist.",
+    "dialogAction": "Neuen Kontext starten"
   }
 }

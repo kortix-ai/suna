@@ -104,3 +104,20 @@ test('reasoning is a subset of output: the meter never counts it twice', () => {
     total: 130_000,
   });
 });
+
+test('a context reset onto the record ends the reading: the meter drops to 0% at once, not at the next reply', () => {
+  // The reset makes no model call, so its compaction message has no usage. The reply before it
+  // reported 180,000 of 200,000; reading past the reset kept the meter at 90% after the context emptied.
+  const reset = {
+    schema: 'kortix.session/2', v: 1,
+    message_id: 'reset', thread_id: 'ses_root', seq: 99,
+    role: 'user', kind: 'compaction', status: 'complete', in_context: true,
+    usage: null, finish: null, error: null, created_at: '2026-01-01T00:00:01.000Z', completed_at: null,
+    producer: { harness: 'pi', harness_version: '', adapter_version: '' },
+    blocks: [{ type: 'compaction', id: 'b', summary: 'You are continuing this conversation in a fresh context.', first_kept_message_id: null, trigger: 'auto', mode: 'record', tokens_before: 180_000, entries: 12 }],
+  } as unknown as SessionLogMessage;
+  expect(reading([assistantWithTokens(180_000), reset])).toEqual({ percent: 0, tone: 'info' });
+  // A reply after the reset reads its own usage again.
+  // 9,000 of 200,000 is 4.5%; the meter shows whole percents.
+  expect(reading([assistantWithTokens(180_000), reset, assistantWithTokens(9_000)]).percent).toBe(5);
+});

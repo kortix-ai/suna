@@ -21,6 +21,8 @@ const EMPTY_BREAKDOWN: ContextBreakdown = {
 /**
  * The context size: the usage of the last reply (an assistant message, or a
  * compaction, whose usage is its summary reply's) with a positive token total.
+ * A reset onto the record (a compaction block with `mode: 'record'`) reads 0
+ * until the next reply.
  * `sessionLogThreadMetrics(...).context` picks the same message, but prices the
  * whole thread to do it.
  *
@@ -36,6 +38,11 @@ export function getLastAssistantTokenBreakdown(
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
     if (msg.role !== 'assistant' && msg.kind !== 'compaction') continue;
+    // A reset onto the record made no model call: the context is near empty from here on, and
+    // the next reply measures it. Reading past it would show the size before the reset.
+    if (msg.kind === 'compaction' && msg.blocks.some((block) => block.type === 'compaction' && block.mode === 'record')) {
+      return EMPTY_BREAKDOWN;
+    }
     const t = msg.usage;
     if (!t) continue;
     const input = t.input;

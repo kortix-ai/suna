@@ -251,6 +251,7 @@ function partOf(b: SessionLogBlock, c: Ctx): unknown {
     case 'compaction': return {
       ...base, type: 'compaction', auto: b.trigger === 'auto' || b.trigger === 'overflow',
       ...(b.trigger === 'overflow' && { overflow: true }), ...(b.first_kept_message_id !== null && { tail_start_id: b.first_kept_message_id }),
+      ...(b.mode === 'record' && { mode: 'record' as const }), ...(b.tokens_before !== undefined && { tokens_before: b.tokens_before }), ...(b.entries !== undefined && { entries: b.entries }),
     };
     case 'harness':
       if (b.kind === 'nested_part') return isObj(b.data) && isObj(b.data.part) && b.data.part.type === 'tool' ? { ...b.data.part, ...base } : undefined;
@@ -435,7 +436,10 @@ function blockOf(p: unknown, id: string, marker: unknown, summary: string | null
     case 'compaction': {
       if (p !== marker) return harness('compaction');
       const trigger = p.overflow === true ? 'overflow' : p.auto === true ? 'auto' : 'manual';
-      return { type: 'compaction', id, summary, first_kept_message_id: str(p.tail_start_id) ?? null, trigger };
+      return {
+        type: 'compaction', id, summary, first_kept_message_id: str(p.tail_start_id) ?? null, trigger,
+        ...(p.mode === 'record' && { mode: 'record' as const }), ...(typeof p.tokens_before === 'number' && { tokens_before: p.tokens_before }), ...(typeof p.entries === 'number' && { entries: p.entries }),
+      };
     }
     case 'subtask':
       return harness('subtask', true);

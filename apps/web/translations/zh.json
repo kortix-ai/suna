@@ -25257,5 +25257,16 @@
     "codeError": "无法用该代码连接 Claude。请重新登录并粘贴新代码。",
     "connectClaude": "连接 Claude",
     "reconnectClaude": "重新连接 Claude"
+  },
+  "contextReset": {
+    "pill": "新上下文 · 完整历史已保留",
+    "pillRunning": "正在腾出上下文…",
+    "detail": "上下文达到 {tokens} 个 token，因此智能体在新的上下文中继续。没有进行任何总结：需要细节时，它会搜索完整历史（{entries} 条）。",
+    "detailManual": "你在 {tokens} 个 token 时开始了新的上下文。没有进行任何总结：智能体需要细节时，会搜索完整历史（{entries} 条）。",
+    "showDetail": "显示详情",
+    "hideDetail": "隐藏详情",
+    "dialogTitle": "开始新的上下文？",
+    "dialogDescription": "智能体在新的上下文中继续，需要细节时会搜索完整历史。不会进行任何总结，对话会原样保留在这里。",
+    "dialogAction": "开始新的上下文"
   }
 }

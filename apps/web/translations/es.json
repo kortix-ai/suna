@@ -25257,5 +25257,16 @@
     "codeError": "No se pudo conectar Claude con ese código. Vuelve a iniciar sesión y pega el código nuevo.",
     "connectClaude": "Conectar Claude",
     "reconnectClaude": "Volver a conectar Claude"
+  },
+  "contextReset": {
+    "pill": "Contexto nuevo · historial completo guardado",
+    "pillRunning": "Liberando contexto…",
+    "detail": "El contexto llegó a {tokens} tokens, así que el agente continuó en uno nuevo. No se resumió nada: busca en el historial completo ({entries} entradas) cuando necesita un detalle.",
+    "detailManual": "Iniciaste un contexto nuevo con {tokens} tokens. No se resumió nada: el agente busca en el historial completo ({entries} entradas) cuando necesita un detalle.",
+    "showDetail": "Mostrar detalles",
+    "hideDetail": "Ocultar detalles",
+    "dialogTitle": "¿Iniciar un contexto nuevo?",
+    "dialogDescription": "El agente continúa en un contexto nuevo y busca en el historial completo cuando necesita un detalle. No se resume nada y la conversación queda aquí tal como está.",
+    "dialogAction": "Iniciar un contexto nuevo"
   }
 }

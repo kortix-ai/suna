@@ -527,6 +527,8 @@ export const KORTIX_SKILL_NAMES = [
 export const KORTIX_SKILL_PREFIX = 'kortix-';
 /** `agents.<name>.codemode`: pi's codemode tool. `on` (default) keeps every tool declared; `only` declares codemode alone. */
 export const CODEMODE_VALUES = ['on', 'only', 'off'] as const;
+/** `agents.<name>.context`: what a full context does. `record` (default): a fresh context that searches the session's full record. `summary`: pi's own summary compaction. */
+export const CONTEXT_VALUES = ['record', 'summary'] as const;
 /** The harnesses an extension can implement. */
 export const EXTENSION_HARNESSES = ['opencode', 'pi'] as const;
 /**
