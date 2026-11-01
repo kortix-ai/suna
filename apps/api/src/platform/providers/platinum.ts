@@ -166,6 +166,14 @@ interface PlatinumSandbox {
   metadata?: Record<string, unknown>;
   created_at?: string | null;
   createdAt?: string | null;
+  /**
+   * The create answer's mounts (Platinum #2427): an optional mount Platinum
+   * could not attach yet is held `pending` (it retries it) or `failed`, with
+   * its `code`. Absent from an older Platinum.
+   */
+  volume_mounts?: Array<Record<string, unknown>>;
+  /** Optional mounts whose volume did not resolve: no mount row (#2427). */
+  volume_mount_failures?: Array<Record<string, unknown>>;
 }
 
 /** `GET /v1/sandboxes?paginated=true` — Platinum's list envelope. */
@@ -344,6 +352,47 @@ function droppedOptionalVolumes(opts: CreateSandboxOpts, error: unknown): Droppe
     code: code ?? null,
     reason: reason.slice(0, 300),
   }));
+}
+
+/**
+ * The optional mounts a create answered without attaching (Platinum #2427):
+ * held `pending` (Platinum retries it; `code` says why) or `failed` (a folder
+ * over the folder-mount cap, gone, or a file), and those in
+ * `volume_mount_failures` (no volume). A mount still on its way in, with no
+ * failure code, is not held. Nothing on an older Platinum.
+ */
+export function heldOptionalVolumes(
+  opts: Pick<CreateSandboxOpts, 'optionalVolumes' | 'volumes'>,
+  sandbox: Pick<PlatinumSandbox, 'volume_mounts' | 'volume_mount_failures'>,
+): DroppedVolume[] {
+  const optional = new Set((opts.optionalVolumes ?? []).filter((path) => opts.volumes?.[path]));
+  if (!optional.size) return [];
+  const rows: Array<Record<string, unknown>> = [
+    ...(Array.isArray(sandbox.volume_mounts) ? sandbox.volume_mounts : []),
+    ...(Array.isArray(sandbox.volume_mount_failures) ? sandbox.volume_mount_failures : []).map((f) => ({ ...f, state: f.state ?? 'failed' })),
+  ];
+  const held: DroppedVolume[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const mountPath = typeof row.mount_path === 'string' ? row.mount_path : '';
+    if (!optional.has(mountPath) || seen.has(mountPath)) continue;
+    const state = String(row.state ?? '');
+    const code = typeof row.code === 'string' && row.code ? row.code : null;
+    const isHeld = state === 'failed' || (state === 'pending' && (code !== null || typeof row.retry_at === 'string'));
+    if (!isHeld) continue;
+    seen.add(mountPath);
+    const bytes = Number(row.bytes);
+    const maxBytes = Number(row.max_bytes);
+    held.push({
+      mountPath,
+      status: null,
+      code: code ?? (state === 'failed' ? 'failed' : 'pending'),
+      reason: String(row.error ?? `${state} ${code ?? ''}`).slice(0, 300),
+      ...(Number.isFinite(bytes) && row.bytes !== null ? { bytes } : {}),
+      ...(Number.isFinite(maxBytes) && row.max_bytes !== null ? { maxBytes } : {}),
+    });
+  }
+  return held;
 }
 
 /** The `status`, `code` and `body` of the `PlatinumHttpError` `platinumJson` throws. */
@@ -629,7 +678,15 @@ export class PlatinumProvider implements SandboxProvider {
       createBody.disk_gb = opts.resourceSpec.diskGb;
     }
     if (opts.volumes && Object.keys(opts.volumes).length > 0) {
-      createBody.volumes = opts.volumes;
+      // A Files folder is optional (`required: false`, Platinum #2427): a
+      // folder Platinum cannot mount yet never fails the create; it holds it
+      // and the answer says so (heldOptionalVolumes). An older Platinum
+      // ignores the field and refuses the create, which the fallback below
+      // boots without the folder. /workspace and App volumes stay required.
+      const optional = new Set(opts.optionalVolumes ?? []);
+      createBody.volumes = Object.fromEntries(
+        Object.entries(opts.volumes).map(([path, mount]) => [path, optional.has(path) ? { ...mount, required: false } : mount]),
+      );
     }
     if (opts.volumesRequired) {
       // The box's state lives on its volumes, so Platinum's periodic
@@ -864,6 +921,16 @@ export class PlatinumProvider implements SandboxProvider {
       );
     }
 
+    const held = heldOptionalVolumes(opts, sandbox);
+    if (held.length) {
+      // Stable message: alert on it.
+      logger.warn('[platinum] optional volumes held: the box runs without the mounts Platinum could not attach yet', {
+        template,
+        sandboxId: opts.sandboxId ?? opts.name,
+        held,
+      });
+    }
+
     const ingressPort = workloadType === 'app' ? 8080 : AGENT_PORT;
     const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/${ingressPort}`;
 
@@ -934,6 +1001,10 @@ export class PlatinumProvider implements SandboxProvider {
         // Always written, so a rebuilt box never keeps its predecessor's value
         // (the row's metadata is merged). The warm pool matches on it.
         residentialProxy: Boolean(opts.residentialProxy),
+        // Optional folders Platinum holds (pending or failed) instead of
+        // refusing the create: the session records them like the folders a
+        // refused create dropped, and the drive worker attaches them.
+        ...(held.length ? { droppedVolumes: held } : {}),
         // Persisted into session_sandboxes.metadata by the caller
         // (buildSandboxInitSuccessMetadata spreads this in verbatim) so a
         // LATER top-level provisioning call's restorePlatinumCreateAttempt

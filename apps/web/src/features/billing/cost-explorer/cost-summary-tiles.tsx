@@ -62,7 +62,7 @@ export function formatPeriodDelta(current: number, previous: number): PeriodDelt
  * `trailingFillerCount` below are what make that unreachable.
  */
 const GRID_CLASS =
-  'border-border bg-border grid grid-cols-3 gap-px overflow-hidden rounded-md border';
+  'border-border bg-border grid grid-cols-2 gap-px overflow-hidden rounded-md border sm:grid-cols-4';
 
 /** Each cell paints the card surface over the container's border colour —
  *  matching the `Table` and `CostModelList` panels this grid sits between. */
@@ -84,24 +84,24 @@ const GRID_CLASS =
 const TILE_CLASS = 'bg-popover flex h-full flex-col px-3 py-2.5';
 
 /**
- * Three columns at every width, not `grid-cols-2 sm:grid-cols-3`.
+ * Two columns on a phone, four from `sm` (`grid-cols-2 sm:grid-cols-4`).
  *
- * Two columns would leave the fixed three-tile case (Total / LLM / Compute)
- * with one empty track on mobile, which under the gap-px treatment renders as
- * a block of border colour rather than as nothing. The cells are a short label
- * over a small number, so three fit at mobile width.
+ * The four fixed tiles (Total / LLM / Compute / Storage) fill both grids
+ * exactly. Four do not fit at phone width: each cell is a label over a figure
+ * with its unit and a sparkline.
  *
- * One count at every breakpoint is also what lets `trailingFillerCount` be
- * correct at all: filler is a render-time decision, and a responsive column
- * count would need a different number of fillers per breakpoint — which CSS
- * can express but this component cannot know.
+ * Filler is a render-time decision, so each breakpoint's count is rendered:
+ * the narrow grid never needs more fillers than the wide one (a count short of
+ * a multiple of 2 is short of a multiple of 4 by 1 or 3), so the wide count is
+ * rendered and the fillers past the narrow count show only from `sm`.
  */
-const TILE_COLUMNS = 3;
+const TILE_COLUMNS_NARROW = 2;
+const TILE_COLUMNS = 4;
 
 /**
  * How many empty cells the last row is short, so it can be filled.
  *
- * `CostSummaryTiles` renders `3 + extraTiles.length` tiles and `extraTiles` is
+ * `CostSummaryTiles` renders `4 + extraTiles.length` tiles and `extraTiles` is
  * caller-supplied, so the count is not fixed at three even though no caller
  * passes any today. Four tiles at three columns leaves two empty tracks; under
  * the gap-px hairlines those are visible blocks of border colour, not blank
@@ -115,11 +115,16 @@ export function trailingFillerCount(tileCount: number, columns: number): number 
 
 /** The empty cells that keep the last row full. `aria-hidden` — they carry no
  *  content and exist only so no grid track shows the container surface. */
-function TileFillers({ count }: { count: number }) {
+function TileFillers({ tileCount }: { tileCount: number }) {
+  const narrow = trailingFillerCount(tileCount, TILE_COLUMNS_NARROW);
   return (
     <>
-      {Array.from({ length: count }, (_, index) => (
-        <div key={`filler-${index}`} className={TILE_CLASS} aria-hidden="true" />
+      {Array.from({ length: trailingFillerCount(tileCount, TILE_COLUMNS) }, (_, index) => (
+        <div
+          key={`filler-${index}`}
+          className={cn(TILE_CLASS, index >= narrow && 'hidden sm:flex')}
+          aria-hidden="true"
+        />
       ))}
     </>
   );
@@ -130,7 +135,7 @@ export function CostSummaryTiles({ summary, isLoading, extraTiles }: CostSummary
   const tCredits = useTranslations('settings.credits');
   const locale = useLocale();
   if (isLoading || !summary) {
-    const tileCount = 3 + extraTiles.length;
+    const tileCount = 4 + extraTiles.length;
     return (
       <div className={GRID_CLASS} aria-label={tI18nComplete.raw('textb400f4160d8e')}>
         {Array.from({ length: tileCount }).map((_, index) => (
@@ -139,7 +144,7 @@ export function CostSummaryTiles({ summary, isLoading, extraTiles }: CostSummary
             <Skeleton className="mt-2 h-5 w-16" />
           </div>
         ))}
-        <TileFillers count={trailingFillerCount(tileCount, TILE_COLUMNS)} />
+        <TileFillers tileCount={tileCount} />
       </div>
     );
   }
@@ -168,6 +173,12 @@ export function CostSummaryTiles({ summary, isLoading, extraTiles }: CostSummary
       value: formatSessionCostCredits(summary.totals.compute_cost, locale),
       unit: unit(summary.totals.compute_cost),
       series: summary.series.map((point) => point.compute_cost),
+    },
+    {
+      label: tCredits('storage'),
+      value: formatSessionCostCredits(summary.totals.storage_cost ?? 0, locale),
+      unit: unit(summary.totals.storage_cost ?? 0),
+      series: summary.series.map((point) => point.storage_cost ?? 0),
     },
     ...extraTiles,
   ];
@@ -229,7 +240,7 @@ export function CostSummaryTiles({ summary, isLoading, extraTiles }: CostSummary
           ) : null}
         </div>
       ))}
-      <TileFillers count={trailingFillerCount(tiles.length, TILE_COLUMNS)} />
+      <TileFillers tileCount={tiles.length} />
     </div>
   );
 }

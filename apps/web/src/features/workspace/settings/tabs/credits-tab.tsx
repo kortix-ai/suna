@@ -59,6 +59,7 @@ import { Skeleton } from '@kortix/ui/skeleton';
 import { CreditExpiry } from '@/features/billing/credit-expiry';
 import { formatUsd } from '@/features/billing/account-overview';
 import { TopupControls } from '@/features/billing/topup-controls';
+import { AccountStorageSection } from '@/features/billing/account-storage';
 import { useAccountState } from '@kortix/ui/internal/billing/use-account-state';
 import { cn } from '@kortix/ui';
 import { BillingAccountProvider } from '@kortix/ui/internal/stores/billing-account-context';
@@ -233,6 +234,7 @@ export function CreditsTab({ accountId }: { accountId: string | undefined }) {
           // still reads the whole pane: knowing the balance is not the same as
           // being able to change it.
           topup={canOfferTopup(state) ? <TopupControls state={state} /> : null}
+          storage={<AccountStorageSection accountId={accountId} />}
         />
       </div>
     </BillingAccountProvider>
@@ -246,12 +248,15 @@ export function CreditsView({
   state,
   accountId,
   topup,
+  storage,
 }: {
   state: AccountState;
   accountId?: string;
   /** The Add credits / Auto top-up card, or `null` when this account or this
    *  person may not buy. Injected so the view stays hook-free. */
   topup?: ReactNode;
+  /** The account's Files storage per project. Injected for the same reason. */
+  storage?: ReactNode;
 }) {
   const t = useTranslations('settings.credits');
   const locale = useLocale();
@@ -382,13 +387,16 @@ export function CreditsView({
               <span className="text-muted-foreground text-xs tabular-nums">{period}</span>
             ) : null}
           </div>
-          <div className="bg-popover divide-border grid grid-cols-3 divide-x rounded-md border">
+          <div className="bg-popover divide-border grid grid-cols-4 divide-x rounded-md border">
             <SpendStat label={t('compute')} value={usage.compute_usd} locale={locale} />
+            <SpendStat label={t('storage')} value={usage.storage_usd ?? 0} locale={locale} />
             <SpendStat label="LLM" value={usage.llm_usd} locale={locale} />
             <SpendStat label={t('total')} value={usage.total_usd} locale={locale} strong />
           </div>
         </section>
       ) : null}
+
+      {storage}
 
       {accountId ? (
         // The same shape as the Billing portal row on the Plan tab: one line

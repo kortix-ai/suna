@@ -26,7 +26,7 @@ import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed, 
 import { projectsApp } from '../lib/app';
 import { loadProjectRosterIds } from '../lib/project-access-view';
 import { buildSessionParticipants, sessionAudienceIds } from '../lib/session-audience';
-import { DriveStorageError } from '../../drives/volumes';
+import { DriveStorageError, legacyDriveStatus } from '../../drives/volumes';
 import { privateChannelFoldersFor, sessionPrivateChannelFolder } from '../../drives/service';
 import { ARTIFACT_TYPES, ARTIFACT_TYPE_KEYS } from '../../artifacts/formats';
 import { BINDING_AGENT_RE, SPACE_SLUG_RE } from '@kortix/shared/app-config';
@@ -264,7 +264,7 @@ function author(c: Context, userId: string) {
 /** A service error as a response; anything else rethrows. */
 function failure(c: Context, err: unknown) {
   if (err instanceof ArtifactError) return c.json({ error: err.message, code: err.code }, err.status);
-  if (err instanceof DriveStorageError) return c.json({ error: err.message, code: err.code }, err.status);
+  if (err instanceof DriveStorageError) return c.json({ error: err.message, code: err.code }, legacyDriveStatus(err));
   throw err;
 }
 

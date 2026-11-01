@@ -29,7 +29,7 @@ import {
 } from '@kortix/api-contract';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { DriveStorageError } from '../../drives/volumes';
+import { DriveStorageError, legacyDriveStatus } from '../../drives/volumes';
 import {
   addNote,
   assertFilesOn,
@@ -113,7 +113,7 @@ export async function withMemoryCaller<R>(
   } catch (error) {
     if (error instanceof MemoryError) return c.json(error.body, error.status);
     if (error instanceof DriveStorageError) {
-      return c.json({ error: error.message, code: error.code ?? 'drive_storage_error' }, error.status === 404 ? 404 : error.status);
+      return c.json({ error: error.message, code: error.code ?? 'drive_storage_error' }, legacyDriveStatus(error));
     }
     throw error;
   }

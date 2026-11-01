@@ -86,6 +86,7 @@ export interface DriveJson {
   kind: 'project';
   name: string;
   sizeBytes: number | null;
+  /** What the project's Files may hold (drives/limits.ts); null when unknown. */
   sizeLimitBytes: number | null;
   fileCount: number | null;
   lastChangeAt: string | null;
@@ -101,9 +102,17 @@ export interface DriveJson {
 
 export function toDriveJson(
   drive: DriveRow,
-  extra: { access: FolderAccess; personalFolder: string | null; openConflicts?: number; stats?: VolumeInfo | null },
+  extra: {
+    access: FolderAccess;
+    personalFolder: string | null;
+    openConflicts?: number;
+    stats?: VolumeInfo | null;
+    /** The project's Files limit (drives/limits.ts); else the volume's own size. */
+    limitBytes?: number | null;
+  },
 ): DriveJson {
   const stats = extra.stats;
+  const volumeLimit = stats?.size_limit_bytes != null ? Number(stats.size_limit_bytes) : null;
   return {
     driveId: drive.driveId,
     accountId: drive.accountId,
@@ -111,7 +120,7 @@ export function toDriveJson(
     kind: 'project',
     name: drive.name,
     sizeBytes: stats ? Number(stats.logical_bytes ?? 0) : null,
-    sizeLimitBytes: stats?.size_limit_bytes != null ? Number(stats.size_limit_bytes) : null,
+    sizeLimitBytes: extra.limitBytes ?? volumeLimit,
     fileCount: stats ? Number(stats.file_count ?? 0) : null,
     lastChangeAt: stats?.last_commit_at ?? null,
     createdAt: drive.createdAt.toISOString(),
@@ -646,6 +655,9 @@ export interface SkippedDrive {
   reason?: 'region' | 'moving' | 'unavailable' | 'too_large';
   /** Storage's own words for `unavailable` and `too_large`. */
   detail?: string;
+  /** For `too_large`: what the folder holds, and the largest folder a session mounts. */
+  bytes?: number;
+  maxBytes?: number;
 }
 
 export interface SessionDriveMounts {
@@ -1195,7 +1207,15 @@ async function applyDriveToRunningSandbox(input: {
           if (code === 'sub_path_too_large') {
             // Retrying cannot shrink the folder: recorded, and tried again at the next change of the session's folders.
             logger.info(`[drives] session ${input.sessionId}: folder ${m.subdir} is too large to mount`);
-            tooLarge.push({ driveId: m.driveId, name: m.subdir, reason: 'too_large', detail });
+            const numbers = err instanceof DriveStorageError ? err.detail : undefined;
+            tooLarge.push({
+              driveId: m.driveId,
+              name: m.subdir,
+              reason: 'too_large',
+              detail,
+              ...(numbers?.used !== undefined ? { bytes: numbers.used } : {}),
+              ...(numbers?.max !== undefined ? { maxBytes: numbers.max } : {}),
+            });
             continue;
           }
           // The box's control plane names the volume's region, or, before its

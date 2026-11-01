@@ -12,16 +12,155 @@ import { parseVolumeWriteCommit, type VolumeWriteCommit } from './volume-commit'
 
 export { parseVolumeWriteCommit, type VolumeWriteCommit } from './volume-commit';
 
+/** The statuses a storage failure answers with. */
+export type DriveStorageStatus = 400 | 403 | 404 | 409 | 413 | 422 | 429 | 503;
+
+/**
+ * The numbers of a limit refusal, as every refusal of a limit carries them
+ * (Platinum's shape, drives/limits.ts the same): which limit, its value, what
+ * is used and what the request asked for. A number nobody knows is left out.
+ */
+export interface DriveLimitDetail {
+  limit: string;
+  max?: number;
+  used?: number;
+  requested?: number;
+  /** The folder a folder-mount refusal is about. */
+  path?: string;
+}
+
 /** A storage failure the drive routes turn into a response. `message` is user-facing. */
 export class DriveStorageError extends Error {
   constructor(
-    readonly status: 400 | 404 | 409 | 413 | 503,
+    readonly status: DriveStorageStatus,
     message: string,
     readonly code?: string,
+    /** A limit refusal's numbers, sent in the response body beside `code`. */
+    readonly detail?: DriveLimitDetail,
+    /** For a 429: seconds before the same request may be sent again (`Retry-After`). */
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = 'DriveStorageError';
   }
+}
+
+/**
+ * The status a route that predates the limit refusals answers (artifacts,
+ * memory): the statuses it always had. A limit refusal reads as it did before
+ * them: storage full 409, too large 413, busy 503.
+ */
+export function legacyDriveStatus(err: DriveStorageError): 400 | 404 | 409 | 413 | 503 {
+  switch (err.status) {
+    case 403:
+      return 409;
+    case 422:
+      return 413;
+    case 429:
+      return 503;
+    default:
+      return err.status;
+  }
+}
+
+const GIB = 1024 ** 3;
+
+/** `10 GB`, `512 MB`, `3.4 KB`: binary units, one decimal under 10. Server messages only; the apps format their own. */
+export function formatBytes(bytes: number): string {
+  const units = ['bytes', 'KB', 'MB', 'GB', 'TB'];
+  let value = Math.max(0, bytes);
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  if (unit === 0) return `${Math.round(value)} bytes`;
+  const shown = value < 10 ? Math.round(value * 10) / 10 : Math.round(value);
+  return `${shown} ${units[unit]}`;
+}
+
+/** Platinum's refusal body: `{error, code, limit?, max?, used?, requested?, path?, bytes?, max_bytes?}`. */
+interface PlatinumRefusal {
+  error?: string;
+  code?: string;
+  limit?: string;
+  max?: number;
+  used?: number;
+  requested?: number;
+  path?: string;
+  bytes?: number;
+  max_bytes?: number;
+  scope?: string;
+}
+
+const finite = (n: unknown): number | undefined => (typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : undefined);
+
+/** The refusal's numbers, only those Platinum sent. */
+function limitDetail(limit: string, body: PlatinumRefusal, fallback: { max?: number; used?: number } = {}): DriveLimitDetail {
+  const max = finite(body.max) ?? finite(body.max_bytes) ?? fallback.max;
+  const used = finite(body.used) ?? finite(body.bytes) ?? fallback.used;
+  const requested = finite(body.requested);
+  return {
+    limit,
+    ...(max !== undefined ? { max } : {}),
+    ...(used !== undefined ? { used } : {}),
+    ...(requested !== undefined ? { requested } : {}),
+    ...(typeof body.path === 'string' && body.path ? { path: body.path } : {}),
+  };
+}
+
+/** Platinum's 413 file_too_large / payload_too_large. */
+function fileTooLarge(body: PlatinumRefusal): DriveStorageError {
+  const detail = limitDetail('file_bytes', body);
+  const size = detail.requested !== undefined ? `This file is ${formatBytes(detail.requested)}. ` : '';
+  const max = detail.max !== undefined ? `at most ${formatBytes(detail.max)}` : 'smaller';
+  return new DriveStorageError(413, `${size}A file must be ${max}.`.trim(), body.code ?? 'file_too_large', detail);
+}
+
+/**
+ * Platinum's 422 sub_path_too_large. At a mount it names a folder too large
+ * to mount; at a write (Platinum #2422) a write that would take a folder that
+ * sessions mount past the folder-mount cap.
+ */
+export function folderTooLarge(body: PlatinumRefusal, atWrite: boolean): DriveStorageError {
+  const detail = limitDetail('sub_path_bytes', body, { max: 10 * GIB });
+  const folder = detail.path ? `The folder ${detail.path}` : 'This folder';
+  const cap = formatBytes(detail.max ?? 10 * GIB);
+  const holds = detail.used === undefined
+    ? ''
+    : `It holds ${formatBytes(detail.used)}${atWrite && detail.requested !== undefined ? `, and this adds ${formatBytes(detail.requested)}` : ''}.`;
+  const message = atWrite
+    ? [`${folder} is mounted in sessions, and a folder a session mounts can hold at most ${cap}.`, holds, 'Put the file in another folder, or move large files out of this one.']
+    : [`${folder} is too large to mount in a session: a folder a session mounts can hold at most ${cap}.`, holds];
+  return new DriveStorageError(422, message.filter(Boolean).join(' '), 'sub_path_too_large', detail);
+}
+
+/** Platinum's 403 quota_exceeded, by the limit it names. */
+function quotaExceeded(body: PlatinumRefusal, path: string): DriveStorageError {
+  const limit = body.limit ?? 'bytes';
+  if ((limit === 'bytes' || limit === 'stored_bytes') && body.scope !== 'org') {
+    // The project's volume is full (its size, or what it stores with history).
+    const detail = limitDetail('volume_bytes', body);
+    const numbers = detail.max !== undefined && detail.used !== undefined ? `: ${formatBytes(detail.used)} of ${formatBytes(detail.max)} used` : '';
+    return new DriveStorageError(
+      403,
+      `This project's Files are full${numbers}. Delete files you no longer need, then try again.`,
+      'storage_limit_exceeded',
+      detail,
+    );
+  }
+  if (limit === 'volumes') {
+    return new DriveStorageError(403, 'Kortix file storage cannot add more drives right now. Try again later.', 'quota_exceeded', limitDetail('volumes', body));
+  }
+  // The org-wide figure: Kortix's own storage is full, not this customer's.
+  logger.error(`[drives] Platinum refused a write for the org-wide storage limit (${limit}): ${path}`, { body });
+  return new DriveStorageError(403, 'Kortix file storage is at capacity right now. Try again later.', 'quota_exceeded', limitDetail(limit, body));
+}
+
+/** Seconds from a `Retry-After` header, clamped to 1-30; 1 when absent or a date. */
+export function retryAfterSeconds(header: string | null): number {
+  const n = Number(header);
+  return Number.isFinite(n) && n > 0 ? Math.min(30, Math.ceil(n)) : 1;
 }
 
 export function driveStorageAvailable(): boolean {
@@ -29,6 +168,8 @@ export function driveStorageAvailable(): boolean {
 }
 
 const FILE_TIMEOUT_MS = 5 * 60_000;
+/** Re-sends of a write Platinum refused with 429 transfer_limit_exceeded. */
+const TRANSFER_RETRIES = 3;
 
 export const FILE_CHANGED_MESSAGE = 'This file changed since you opened it. Reload it to see the latest version, then save again.';
 
@@ -106,27 +247,39 @@ async function call(volume: DriveVolume | null, path: string, init: RequestInit 
       init.signal?.throwIfAborted();
       res = await platinumFetch(path, init, origin);
     }
+    // A write Platinum refused for its bytes in flight (429, #2422) never ran:
+    // it is sent again after Retry-After, up to 3 times (at most 5 s apart).
+    for (let attempt = 0; attempt < TRANSFER_RETRIES; attempt++) {
+      if (res.status !== 429 || init.signal?.aborted) break;
+      const wait = Math.min(5, retryAfterSeconds(res.headers.get('retry-after'))) * 1_000;
+      const head = await res.clone().json().catch(() => ({}) as { code?: string });
+      if ((head as { code?: string }).code !== 'transfer_limit_exceeded') break;
+      await res.body?.cancel();
+      await Bun.sleep(wait);
+      init.signal?.throwIfAborted();
+      res = await platinumFetch(path, init, origin);
+    }
   } catch (err) {
     logger.warn(`[drives] ${init.method ?? 'GET'} ${path} failed:`, { error: err instanceof Error ? err.message : String(err) });
     throw new DriveStorageError(503, 'Drive storage is unavailable, try again shortly', 'drive_storage_unavailable');
   }
   if (res.ok || (allowRangeRefusal && res.status === 416)) return res;
   const text = await res.text().catch(() => '');
-  let code: string | undefined;
+  let refusal: PlatinumRefusal = {};
   try {
-    code = (JSON.parse(text) as { code?: string }).code;
+    const parsed: unknown = JSON.parse(text);
+    if (parsed && typeof parsed === 'object') refusal = parsed as PlatinumRefusal;
   } catch {
-    code = undefined;
+    refusal = {};
   }
+  const code = typeof refusal.code === 'string' ? refusal.code : undefined;
   switch (res.status) {
     case 400:
       throw new DriveStorageError(400, 'Invalid path', code);
     case 404:
       throw new DriveStorageError(404, code === 'volume_not_found' ? 'Drive not found' : 'File or folder not found', code);
     case 403:
-      if (code === 'quota_exceeded') {
-        throw new DriveStorageError(409, 'This workspace has reached its drive storage limit. Delete a drive you no longer need, or ask Kortix for more.', code);
-      }
+      if (code === 'quota_exceeded') throw quotaExceeded(refusal, path);
       logger.warn(`[drives] ${init.method ?? 'GET'} ${path} -> 403 ${text.slice(0, 300)}`);
       throw new DriveStorageError(503, 'Drive storage is unavailable, try again shortly', code);
     case 409:
@@ -140,11 +293,22 @@ async function call(volume: DriveVolume | null, path: string, init: RequestInit 
     case 412:
       throw new DriveStorageError(409, FILE_CHANGED_MESSAGE, 'file_changed');
     case 413:
-      throw new DriveStorageError(413, 'File is too large', code);
+      throw fileTooLarge(refusal);
     case 422:
-      if (code === 'sub_path_too_large') throw new DriveStorageError(413, 'This folder is too large to mount in a session', code);
+      // A sandbox mount (`/v1/sandboxes/…`) is about mounting; a volume write is a write.
+      if (code === 'sub_path_too_large') throw folderTooLarge(refusal, volume !== null);
       logger.warn(`[drives] ${init.method ?? 'GET'} ${path} -> 422 ${text.slice(0, 300)}`);
       throw new DriveStorageError(503, 'Drive storage is unavailable, try again shortly', code);
+    case 429:
+      // Platinum's bytes-in-flight cap (#2422) or its upload slots: a busy
+      // volume, never "storage unavailable". The caller may send it again.
+      throw new DriveStorageError(
+        429,
+        'File storage is busy with other uploads to these files. Try again in a moment.',
+        code ?? 'rate_limited',
+        code === 'transfer_limit_exceeded' ? limitDetail('transfer_bytes', refusal) : undefined,
+        retryAfterSeconds(res.headers.get('retry-after')),
+      );
     default:
       logger.warn(`[drives] ${init.method ?? 'GET'} ${path} -> ${res.status} ${text.slice(0, 300)}`);
       throw new DriveStorageError(503, 'Drive storage is unavailable, try again shortly', code);
@@ -416,10 +580,7 @@ export async function restoreVolume(volume: DriveVolume, to: string): Promise<vo
   await call(volume, `${v(volume)}/restore`, { method: 'POST', body: JSON.stringify({ to }) });
 }
 
-let mountLimitCache: { value: number; at: number } | null = null;
-const MOUNT_LIMIT_TTL_MS = 10 * 60_000;
-
-/** Platinum's `GET /v1/volumes/limits`, the fields the mount plan reads. */
+/** Platinum's `GET /v1/volumes/limits`, the fields Kortix reads. Every field is optional: an older Platinum sends fewer. */
 export interface PlatinumMountLimits {
   /** Private mounts per sandbox: each is a disk in the VM. */
   max_mounts_per_sandbox?: number;
@@ -427,6 +588,44 @@ export interface PlatinumMountLimits {
   max_total_mounts_per_sandbox?: number;
   /** Node share is on for this org: share "node" mounts take no disk. */
   node_share?: boolean;
+  /** One volume's size: what one project's Files can hold at most. */
+  max_bytes_per_volume?: number;
+  /** The folder-mount cap (`sub_path`); `subdir_max_bytes` is its older name. */
+  sub_path_max_bytes?: number;
+  subdir_max_bytes?: number;
+  /** The largest one file (#2422). */
+  max_file_bytes?: number;
+  /** What the whole org stores, and may store. */
+  max_stored_bytes?: number | null;
+  used_stored_bytes?: number;
+}
+
+// replica-local: Platinum's org limits change only by an operator, so a stale copy for 10 minutes is harmless. `at` = when it expires.
+let platinumLimitsCache: { value: PlatinumMountLimits; at: number } | null = null;
+const PLATINUM_LIMITS_TTL_MS = 10 * 60_000;
+
+/** After a failed read, the next one waits this long, so a storage outage is not asked on every request. */
+const PLATINUM_LIMITS_RETRY_MS = 30_000;
+// replica-local: the one read in flight, shared by concurrent callers.
+let platinumLimitsRead: Promise<PlatinumMountLimits> | null = null;
+
+/** Platinum's limits for Kortix's org, cached 10 minutes. `{}` when they cannot be read (for 30 s). */
+export async function platinumVolumeLimits(): Promise<PlatinumMountLimits> {
+  if (platinumLimitsCache && Date.now() < platinumLimitsCache.at) return platinumLimitsCache.value;
+  platinumLimitsRead ??= callJson<PlatinumMountLimits>(null, '/v1/volumes/limits', { signal: AbortSignal.timeout(5_000) })
+    .then((value) => {
+      platinumLimitsCache = { value, at: Date.now() + PLATINUM_LIMITS_TTL_MS };
+      return value;
+    })
+    .catch((err: unknown) => {
+      logger.warn('[drives] reading the Platinum volume limits failed:', { error: err instanceof Error ? err.message : String(err) });
+      platinumLimitsCache = { value: {}, at: Date.now() + PLATINUM_LIMITS_RETRY_MS };
+      return {} as PlatinumMountLimits;
+    })
+    .finally(() => {
+      platinumLimitsRead = null;
+    });
+  return platinumLimitsRead;
 }
 
 /**
@@ -442,16 +641,7 @@ export function mountSlotsFrom(limits: PlatinumMountLimits): number {
 
 /** {@link mountSlotsFrom} Platinum's live limits. Cached; the default when they cannot be read. */
 export async function sandboxMountLimit(): Promise<number> {
-  if (mountLimitCache && Date.now() - mountLimitCache.at < MOUNT_LIMIT_TTL_MS) return mountLimitCache.value;
-  let value = DEFAULT_SANDBOX_MOUNT_LIMIT;
-  try {
-    value = mountSlotsFrom(await callJson<PlatinumMountLimits>(null, '/v1/volumes/limits', { signal: AbortSignal.timeout(5_000) }));
-  } catch (err) {
-    logger.warn('[drives] reading the sandbox mount limit failed:', { error: err instanceof Error ? err.message : String(err) });
-    return value;
-  }
-  mountLimitCache = { value, at: Date.now() };
-  return value;
+  return mountSlotsFrom(await platinumVolumeLimits());
 }
 
 /** One volume mount Platinum holds for a sandbox. */

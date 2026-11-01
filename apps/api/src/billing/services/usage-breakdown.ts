@@ -23,6 +23,8 @@ import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 
 const COMPUTE_DEBIT_KINDS = ['compute_debit'] as const;
+/** Files and /workspace volume storage (billing/services/storage-charges.ts). */
+const STORAGE_DEBIT_KINDS = ['storage_debit'] as const;
 const LLM_DEBIT_KINDS = ['llm_debit', 'token_deduction', 'token_overage'] as const;
 /**
  * Debits that are neither compute nor LLM.
@@ -41,6 +43,7 @@ const LLM_DEBIT_KINDS = ['llm_debit', 'token_deduction', 'token_overage'] as con
 const OTHER_DEBIT_KINDS = ['usage', 'admin_debit', 'proxy_debit'] as const;
 const DEBIT_KINDS: string[] = [
   ...COMPUTE_DEBIT_KINDS,
+  ...STORAGE_DEBIT_KINDS,
   ...LLM_DEBIT_KINDS,
   ...OTHER_DEBIT_KINDS,
 ];
@@ -51,6 +54,8 @@ const LEDGER_KIND = sql<string>`COALESCE(NULLIF(${creditLedger.metadata} ->> 'le
 
 export interface UsageBreakdown {
   compute_usd: number;
+  /** Volume storage: Files folders and session /workspace volumes. */
+  storage_usd: number;
   llm_usd: number;
   /** Debits that are neither compute nor LLM — tool calls, manual adjustments. */
   other_usd: number;
@@ -59,9 +64,10 @@ export interface UsageBreakdown {
   period_end: string | null;
 }
 
-export function classifyLedgerKind(kind: string | null): 'compute' | 'llm' | 'other' | null {
+export function classifyLedgerKind(kind: string | null): 'compute' | 'storage' | 'llm' | 'other' | null {
   if (!kind) return null;
   if ((COMPUTE_DEBIT_KINDS as readonly string[]).includes(kind)) return 'compute';
+  if ((STORAGE_DEBIT_KINDS as readonly string[]).includes(kind)) return 'storage';
   if ((LLM_DEBIT_KINDS as readonly string[]).includes(kind)) return 'llm';
   if ((OTHER_DEBIT_KINDS as readonly string[]).includes(kind)) return 'other';
   return null;
@@ -152,6 +158,7 @@ export async function getUsageBreakdownThisPeriod(
     .groupBy(LEDGER_KIND);
 
   let compute = 0;
+  let storage = 0;
   let llm = 0;
   let other = 0;
   for (const row of rows) {
@@ -159,6 +166,8 @@ export async function getUsageBreakdownThisPeriod(
     const category = classifyLedgerKind(row.kind);
     if (category === 'compute') {
       compute += amt;
+    } else if (category === 'storage') {
+      storage += amt;
     } else if (category === 'llm') {
       llm += amt;
     } else if (category === 'other') {
@@ -168,9 +177,10 @@ export async function getUsageBreakdownThisPeriod(
 
   return {
     compute_usd: compute,
+    storage_usd: storage,
     llm_usd: llm,
     other_usd: other,
-    total_usd: compute + llm + other,
+    total_usd: compute + storage + llm + other,
     period_start: sinceIso,
     period_end: null, // open period — current billing cycle hasn't closed yet
   };

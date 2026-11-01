@@ -95,10 +95,12 @@ export interface CreateSandboxOpts {
   volumesRequired?: boolean;
   /**
    * Mount paths in `volumes` the box may boot without: the session's Files
-   * folders. A create Platinum refuses over a mount boots once more without
-   * these, and the result's `metadata.droppedVolumes` names them, for the
-   * session to attach to the running box later. Every other volume is
-   * required: a create refused over it fails.
+   * folders. Platinum is asked to hold them (`required: false`) rather than
+   * refuse the create; an older Platinum that refuses a create over one boots
+   * once more without them. Either way the result's
+   * `metadata.droppedVolumes` names them, for the session to attach to the
+   * running box later. Every other volume is required: a create refused over
+   * it fails.
    */
   optionalVolumes?: string[];
   /**
@@ -144,6 +146,9 @@ export interface DroppedVolume {
   code: string | null;
   /** Platinum's own words, at most 300 characters. */
   reason: string;
+  /** For `sub_path_too_large`: what the folder holds, and the folder-mount cap. */
+  bytes?: number;
+  maxBytes?: number;
 }
 
 export type { SandboxStatus } from './status';

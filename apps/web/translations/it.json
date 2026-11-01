@@ -1401,6 +1401,7 @@
       "addCredits": "Aggiungi crediti",
       "spentThisPeriod": "Spesi in questo periodo",
       "compute": "Elaborazione",
+      "storage": "Archiviazione",
       "total": "Totale",
       "history": "Cronologia",
       "historyDescription": "Il costo di ogni sessione e tutti i crediti aggiunti o spesi.",
@@ -2644,7 +2645,7 @@
         },
         "credit": {
           "question": "Cosa si può comprare con un credito?",
-          "answer": "1 credito vale 0,01 $. I crediti pagano il computer dell'agente, fatturato al secondo per risorsa: {vcpuRate} per vCPU all'ora, {memoryRate} per GB di RAM all'ora, {diskRate} per GB di archiviazione al mese. La macchina predefinita da {spec} usa circa {creditsPerHour} crediti all'ora, quindi 1 credito vale circa {minutes} minuti. Un computer fermo non costa nulla. I crediti pagano anche i modelli Kortix, al prezzo base del provider più una commissione di piattaforma del {fee}%. La tua chiave API è gratuita per i primi 1.000 $ di uso dei modelli al mese, poi il 5% del prezzo del provider viene pagato con i crediti. Un abbonamento ChatGPT non consuma crediti."
+          "answer": "1 credito vale 0,01 $. I crediti pagano il computer dell'agente, fatturato al secondo per risorsa: {vcpuRate} per vCPU all'ora, {memoryRate} per GB di RAM all'ora, {diskRate} per GB di archiviazione al mese. La macchina predefinita da {spec} usa circa {creditsPerHour} crediti all'ora, quindi 1 credito vale circa {minutes} minuti. Un computer fermo non consuma elaborazione. I suoi file salvati sono fatturati come archiviazione. I crediti pagano anche i modelli Kortix, al prezzo base del provider più una commissione di piattaforma del {fee}%. La tua chiave API è gratuita per i primi 1.000 $ di uso dei modelli al mese, poi il 5% del prezzo del provider viene pagato con i crediti. Un abbonamento ChatGPT non consuma crediti."
         },
         "amounts": {
           "question": "Quanto pago ogni mese?",
@@ -2690,7 +2691,7 @@
       "hours": {
         "eyebrow": "Ore di agente",
         "title": "1 credito vale circa {minutes} minuti di computer dell'agente",
-        "description": "I crediti pagano il computer dell'agente: la macchina cloud dove il tuo agente esegue codice, naviga e modifica file. Viene fatturato al secondo mentre è in esecuzione e non costa nulla da fermo.",
+        "description": "I crediti pagano il computer dell'agente: la macchina cloud dove il tuo agente esegue codice, naviga e modifica file. Viene fatturato al secondo mentre è in esecuzione e non consuma elaborazione da fermo. I suoi file salvati sono fatturati come archiviazione.",
         "rate": {
           "value": "1 credito = 0,01 $",
           "note": "Ogni livello offre crediti a questa tariffa."
@@ -2705,7 +2706,7 @@
         },
         "rates": {
           "title": "Tariffe di calcolo",
-          "note": "Fatturato al secondo in base alla dimensione riservata. Un computer fermo non costa nulla.",
+          "note": "Fatturato al secondo in base alla dimensione riservata. Un computer fermo non consuma elaborazione. I suoi file salvati sono fatturati come archiviazione.",
           "vcpu": {
             "label": "vCPU",
             "price": "{price} / ora"
@@ -22689,7 +22690,25 @@
     "sessionFilesDescription": "Le cartelle di Drive che questa sessione monta e dove l’agente le vede. Condividi una cartella in Drive per aggiungerla; smetti di condividerla per toglierla.",
     "readWrite": "Read & write",
     "folderHint": "A folder inside {name}",
-    "driveLabel": "Drive"
+    "driveLabel": "Drive",
+    "storageLabel": "Spazio",
+    "storageOfLimit": "{used} di {limit}",
+    "storageUsed": "{used} usati",
+    "storageNearFull": "Quasi pieno. Elimina i file che non ti servono più per continuare a caricare.",
+    "storageFull": "Pieno. I nuovi caricamenti vengono rifiutati finché non elimini dei file.",
+    "storageAccountLine": "Tutti i progetti: {used} di {limit}",
+    "folderNearMountLimit": "{folder} occupa {size}. Una sessione non può montare una cartella più grande di {limit}.",
+    "folderOverMountLimit": "{folder} occupa {size}, più dei {limit} che una sessione può montare. Le sessioni girano senza di essa.",
+    "uploadRefusedProjectFull": "{name} richiede {needed}. I file di questo progetto usano {used} di {limit}.",
+    "uploadRefusedAccountFull": "{name} richiede {needed}. I file del tuo account usano {used} di {limit} in tutti i progetti.",
+    "uploadRefusedFileTooLarge": "{name} occupa {size}. Un file può occupare al massimo {limit}.",
+    "uploadRefusedFolderMount": "{name} porterebbe {folder} oltre {limit}, la cartella più grande che una sessione può montare.",
+    "uploadRefusedBusy": "Lo spazio dei file è occupato. Riprova {name} tra un momento.",
+    "uploadRefusedStorageFull": "Lo spazio dei file è pieno in questo momento. Riprova {name} più tardi.",
+    "accountStorageTitle": "Spazio dei file",
+    "accountStorageDescription": "Quanto occupano i file di ogni progetto. Il tuo piano consente {project} per progetto e {account} in tutti i progetti.",
+    "accountStorageEmpty": "Nessun progetto contiene ancora file.",
+    "accountStorageIncomplete": "Non è stato possibile misurare alcuni progetti in questo momento."
   },
   "genui": {
     "showData": "Mostra dati",

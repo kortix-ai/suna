@@ -5,6 +5,15 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (volume storage billing)
+- `ProjectCostRow.storage_cost` / `storage_gib_hours`, `CostSummaryTotals.storage_cost` /
+  `storage_gib_hours`, `CostSeriesPoint.storage_cost`: volume storage (Files folders and session
+  /workspace volumes) charged in the window, included in `total_cost`. Optional: absent from an
+  older API.
+- `usage_this_period.storage_usd` on the account state. Optional.
+- `ADMIN_OVERRIDE_KEYS` and `ADMIN_ENTITLEMENT_OVERRIDE_KEYS` add `'storageBilling'`: switch storage
+  charges off (or on) for one account. Additive.
+
 ### Changed (session notifications)
 - `onNotify`: `question` and `permission` events carry `projectId` when the SDK knows the session's
   project, and `task-complete` and `session-error` now carry it from the live stream too. Additive.

@@ -10,7 +10,7 @@ import { actorOf } from '../../middleware/actor';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { privateChannelFoldersFor, sessionPrivateChannelFolder } from '../../drives/service';
-import { DriveStorageError } from '../../drives/volumes';
+import { DriveStorageError, legacyDriveStatus } from '../../drives/volumes';
 import { ArtifactError, canView, getArtifact, mayWrite, type Viewer } from '../../artifacts/service';
 import { readArtifactCommentContext } from '../../artifacts/comment-context';
 import { ARTIFACT_COMMENT_SEND_LIMIT } from '../../artifacts/comment-routing-context';
@@ -96,7 +96,8 @@ async function authorizeComments(c: Context, projectId: string, target: string |
 function failure(c: Context, error: unknown) {
   if (error instanceof ArtifactError || error instanceof ArtifactCommentError || error instanceof ArtifactCommentDeliveryError || error instanceof ArtifactActivityQueryError || error instanceof DriveStorageError || error instanceof ArtifactCommentScreenshotError) {
     if (error instanceof ArtifactCommentError && error.status === 429) c.header('Retry-After', String(error.retryAfterSeconds));
-    return c.json({ error: error.message, code: error.code, ...(error instanceof ArtifactCommentScreenshotError && error.limits ? { limits: error.limits } : {}) }, error.status);
+    const status = error instanceof DriveStorageError ? legacyDriveStatus(error) : error.status;
+    return c.json({ error: error.message, code: error.code, ...(error instanceof ArtifactCommentScreenshotError && error.limits ? { limits: error.limits } : {}) }, status);
   }
   if (error instanceof Error && error.name === 'ArtifactCommentAuthorityError') return c.json({ error: 'You cannot send Artifact comments to that agent', code: 'artifact_comment_agent_forbidden' }, 403);
   throw error;

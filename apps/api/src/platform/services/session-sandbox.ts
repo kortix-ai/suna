@@ -953,7 +953,14 @@ function withoutDroppedFolders(plan: SessionDriveMounts, dropped: DroppedVolume[
     skipped: [
       ...left.map((m) => {
         const d = byPath.get(m.mountPath)!;
-        return { driveId: m.driveId, name: m.subdir, reason: d.code === 'sub_path_too_large' ? ('too_large' as const) : ('unavailable' as const), detail: d.reason };
+        return {
+          driveId: m.driveId,
+          name: m.subdir,
+          reason: d.code === 'sub_path_too_large' ? ('too_large' as const) : ('unavailable' as const),
+          detail: d.reason,
+          ...(d.bytes !== undefined ? { bytes: d.bytes } : {}),
+          ...(d.maxBytes !== undefined ? { maxBytes: d.maxBytes } : {}),
+        };
       }),
       ...plan.skipped,
     ],

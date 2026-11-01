@@ -64,6 +64,35 @@ account wallet: ledger kind `proxy_debit`, key `platinum-resi:<event id>`
 (`billing/services/residential-proxy-charges.ts`, every 5 minutes on the
 leader). The usage breakdown counts it under `other`.
 
+Volume storage is metered usage on every plan, like compute. Platinum
+meters each volume Kortix creates (a project's Files drive `kd-…`, a
+session's /workspace volume `kws-<session_id>`, a box's scratch disk) on its
+compressed unique bytes and settles one receipt per (volume, UTC day)
+(`GET /v1/billing/volume-usage`). Kortix charges each ended day at
+`STORAGE_RATES_USD_PER_GIB_HOUR` (`platform/providers/compute-rates.ts`):
+Platinum's per-GiB-hour price for each meter (volume, legacy volume
+snapshot, scratch disk) × `PLATINUM_MARKUP`, the same 1× compute uses; the
+values live in that file only. There is no included allowance: no other meter has one, and
+the Free plan's 500 monthly credits pay for it. Ledger kind `storage_debit`,
+key `platinum-storage:<feed>:<kind>:<volume>:<day>:<seq>`, one row per
+charge in `kortix.storage_charges` (`billing/services/storage-charges.ts`,
+hourly on the leader, `worker/jobs/storage-billing.ts`). A day stays open for
+3 days after it ends: Platinum can add GiB-hours to an ended day, and each
+tick charges only the difference. The first tick starts at its own day:
+storage before the feature shipped is never charged. The `storageBilling`
+entitlement is on for every plan; the override `storageBilling: false`
+waives storage for one account (the row is marked `waived`). The usage
+breakdown counts it under `storage`; the cost explorer shows it per project
+(`storage_cost`).
+
+Kortix's own cost is recorded, never charged: a volume no Kortix account
+owns is a `storage_charges` row with no account and an `unattributed_reason`
+(`not_kortix`, `volume_gone`, `owner_gone`, `unsupported_kind`), and a
+deleted account or project sets its rows to unattributed. A box this
+deployment created that no Kortix row owns has its Platinum charge recorded
+by the orphan reaper before the stop, in `kortix.provider_orphan_box_costs`
+(`billing/services/orphan-box-costs.ts`).
+
 Members are unlimited and share the account credit pool. The Plan and account
 hub billing panes show the existing account member count alongside an unlimited
 allowance; there is no paid-seat denominator.
@@ -134,8 +163,30 @@ A model request on the account's own provider key is billed by the provider
 ## Overrides
 
 `entitlement_overrides` keys: `managedModels`, `sso`, `scim`, `rbac`,
-`auditAccess`, `branding`, `byokFee`. Each `{ value: boolean, expires_at? }`.
+`auditAccess`, `branding`, `byokFee`, `storageBilling`. Each `{ value: boolean, expires_at? }`.
+The two Files storage limits take a positive whole number of bytes instead:
+`driveProjectBytes`, `driveAccountBytes` (`{ value: number, expires_at? }`).
 Set through `PUT /v1/admin/api/accounts/{id}/overrides`.
+
+## Files storage
+
+Every customer's Files live in Kortix's one Platinum org (100 GiB per volume,
+one volume per project; 50 TiB stored for the org, `GET /v1/volumes/limits`
+2026-11-01). The plan partitions it (`TierConfig.driveStorage` in
+`billing/services/tiers.ts`), enforced in `apps/api/src/drives/limits.ts`
+before a byte reaches Platinum:
+
+| Plan | One project | All projects of the account |
+|---|---|---|
+| No Plan, Free | 5 GiB | 5 GiB |
+| Credits | 50 GiB | 250 GiB |
+| Enterprise (licensed) | 100 GiB | 1 TiB |
+
+The project figure is never above Platinum's volume size. With billing off
+(self-hosted) no plan limit applies; Platinum's do. A refused write answers
+403 `storage_limit_exceeded` with `limit` (`project_bytes` or
+`account_bytes`), `max`, `used` and `requested`. Storage charges are separate
+(the billing ledger), not part of these limits.
 
 ## Managed models are sold, never given
 

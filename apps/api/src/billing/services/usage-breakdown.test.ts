@@ -67,6 +67,8 @@ describe('currentPeriodStart', () => {
 describe('classifyLedgerKind covers every kind that is actually written', () => {
   test.each([
     ['compute_debit', 'compute'],
+    ['storage_debit', 'storage'],
+    ['proxy_debit', 'other'],
     ['llm_debit', 'llm'],
     ['token_deduction', 'llm'],
     ['token_overage', 'llm'],
