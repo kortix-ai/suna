@@ -171,11 +171,51 @@ hears its follow-ups first.
 | Claude subscription models (`claude-agent/<id>`) | Auto compaction is off in that harness (`harness/README.md`, Claude section). Out of scope; record what happens at a full context as a follow-up. |
 | Old daemons | A box keeps its daemon until it restarts. Old boxes keep compacting; no API change depends on the new behavior. |
 
+### A builtin you control like any other extension (owner, 2026-11-01: "make sure all these BUILTINS are perfectly controllable like all others")
+
+Today the agent page's extension catalog lists 5 of the 9 extensions kortixd loads for every agent (`PLATFORM_EXTENSIONS`, `apps/api/src/projects/lib/agent-capabilities.ts:83-89`, against `harness/pi/runtime.ts:733`). Missing: `kortix-workflow`, `kortix-messaging`, `kortix-team-tasks`. A platform row gets a switch only through a tool (`controlled_by`, `packages/ui/src/customize/shared/capability-library.tsx:180-186`).
+
+- **The catalog lists every builtin extension**, each with what controls it:
+  - `kortix-workflow` (the `workflow` tool);
+  - `kortix-messaging` (`send_message` and `list_agents`);
+  - `kortix-team-tasks` (`task_create`, flag `agent_teams`);
+  - the new `kortix-context-record`.
+
+  A test pins the catalog to the list the runtime loads, so a new builtin cannot be left out again.
+- **`kortix-context-record` is switched per agent the way `codemode` is:** an agent field, `agents.<name>.context: record | summary`, default `record`. Its catalog row has `controlled_by: 'context'`, and the agent page's switch writes the field, as the codemode row writes `codemode`.
+  - Not the `extensions` grant: an omitted `extensions` grant means none (`OMITTED.extensions = 'none'`, `capability-library.tsx:67`), so a grant-based switch would turn the reset off for every agent without an explicit list.
+  - `summary` means pi's own summary compaction, as before this change.
+- **Delivery to the box:** the API resolves the field where it already resolves the agent's runtime settings (`apps/api/src/projects/lib/session-runtime-env.ts`) and sends `KORTIX_PI_CONTEXT=summary` only when it is off. The box loads the extension unless that is set.
+- **Schema:** `packages/manifest-schema` gains the field, with its JSON-schema description and `kortix validate` errors for any other value.
+- **Every surface shows it:** the agent page's Extensions list, `kortix agents show <name>` (or the capabilities read the CLI uses), and the agent's capabilities route.
+
+### The compaction UI (owner, 2026-11-01: "UX/UI for the compaction has to be made sure to be made perfect")
+
+A reset takes milliseconds, and its text is written for the model, not for a person. The UI is designed for that:
+
+- **The transcript divider** (`packages/ui/src/session/turn/compaction-card.tsx`) for a reset:
+  - one pill, no shimmer state: "Fresh context · full history kept";
+  - opening it shows plain copy in the panel detail, not the model's text: "The conversation reached 182k tokens, so the agent continued in a fresh context. Nothing was summarized: it searches the full history (412 messages and tool results) when it needs a detail. Everything above stays as it was."
+  - a manual reset reads "You started a fresh context".
+  - An older compaction keeps "Context automatically compacted" and its summary.
+- **The client field:** the v1 compaction part (`packages/api-contract/src/transcript.ts:321`) gains `mode?: 'record'` plus `tokens_before` and `entries`. All 3 are optional and additive. Old clients render a reset as a compaction. This is a client-facing runtime contract: verified through a real session locally and on dev (repo rule 6), with the `@kortix/sdk` rules (test first).
+- **The Compact dialog** (`packages/ui/src/session/header/compact-modal.tsx`) becomes "Start a fresh context". Its body: "The agent continues with an empty context and searches the full history when it needs a detail. Nothing is summarized, and the conversation stays as it is." There is no progress state: the divider appears at once.
+- **The context meter** (`packages/ui/src/session/composer/context-usage.ts`): any tooltip text that says "compacts at" says "starts a fresh context at".
+- **TUI** `/compact` and `kortix sessions compact`: the same words, and output that names the reset.
+- **All 9 locale catalogs.**
+- **Brand gates:**
+  - `.agents/skills/kortix-brand/scripts/audit.sh` clean on the touched files;
+  - agent-browser on web: both themes, 720 × 480, the pill, the detail and the dialog, with the network request of the dialog;
+  - desktop parity per the repo's UI gate;
+  - mobile: check what `apps/mobile` renders for a compaction and give it the same label.
+
 ### Files
 
-- New `apps/kortix-sandbox-agent-server/src/harness/pi/extensions/context-record.ts`: the record writer and the `session_before_compact` handler, registered where the runtime registers its other pi extensions.
+- New `apps/kortix-sandbox-agent-server/src/harness/pi/extensions/context-record.ts`: the record writer and the `session_before_compact` handler, registered in `runtime.ts` beside the other builtin extensions. It is skipped when the API says the agent has it off.
 - `harness/pi/boot.ts`: rebuild the record after a restore.
-- `packages/ui/src/session/turn/compaction-card.tsx` and the locale catalogs: a reset with `details.kind === "record"` reads "Fresh context · full record kept"; an older compaction keeps "Context automatically compacted". Verify that the session log carries `details` to the client; if it does not, add it to the log's `ext.pi` first.
+- `apps/api/src/projects/lib/agent-capabilities.ts`, `session-runtime-env.ts`: the full builtin catalog and the off list.
+- `packages/api-contract/src/transcript.ts` and the session-log mapping: `mode`, `tokens_before`, `entries`.
+- `packages/ui/src/session/turn/compaction-card.tsx`, `header/compact-modal.tsx`, `customize/shared/capability-library.tsx`, the locale catalogs.
 - `tests/spec/end-to-end.md` `RUN-13`: the summary text is the reset text.
 
 ### Verification
