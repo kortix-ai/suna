@@ -625,3 +625,14 @@ describe('kortix_schedules automate: an App as the event source', () => {
     expect(argvs()).toHaveLength(1)
   })
 })
+
+describe('kortix_schedules run_now on an automation', () => {
+  test('run_now on a kortix.yaml automation returns once the fire is accepted (--wait=0), and a failure reads "Could not run it now"', async () => {
+    fakeKortix(`'triggers run hn-watch-tick --wait=0') echo 'fired' ;;
+  'triggers run broken --wait=0') echo '{"kortix_error":{"kind":"failed","message":"boom"}}' >&2; exit 1 ;;`)
+    expect((await run('kortix_schedules', { action: 'run_now', id: 'hn-watch-tick' })).ok).toBe(true)
+    const failed = await run('kortix_schedules', { action: 'run_now', id: 'broken' })
+    expect(failed.card.title).toBe('Could not run it now')
+    expect(argvs()).toEqual(['triggers run hn-watch-tick --wait=0', 'triggers run broken --wait=0'])
+  })
+})

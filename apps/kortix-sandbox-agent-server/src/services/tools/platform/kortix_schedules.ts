@@ -675,6 +675,14 @@ const VERB: Record<string, { loops: string; triggers: string; title: string }> =
   run_now: { loops: 'run', triggers: 'run', title: 'Ran it now' },
 }
 
+/** What a failed change says, per verb. */
+const FAILED_TITLE: Record<keyof typeof VERB, string> = {
+  pause: 'Could not pause it',
+  resume: 'Could not resume it',
+  remove: 'Could not remove it',
+  run_now: 'Could not run it now',
+}
+
 /** `action` is what the caller asked (`delete` stays `delete` in the result); `verb` routes it. */
 async function change(action: string, verb: keyof typeof VERB, id: string, context: PlatformToolContext) {
   const cli = VERB[verb]!
@@ -682,9 +690,17 @@ async function change(action: string, verb: keyof typeof VERB, id: string, conte
   // (`trigger.<hex>`) as it is; a kortix.yaml trigger needs `--apply` to change the live project.
   const argv = id.startsWith('reminder.')
     ? ['loops', cli.loops, id]
-    : ['triggers', cli.triggers, id, ...(verb === 'remove' && !RUNTIME_ID.test(id) ? ['--apply'] : [])]
+    : [
+        'triggers',
+        cli.triggers,
+        id,
+        ...(verb === 'remove' && !RUNTIME_ID.test(id) ? ['--apply'] : []),
+        // A kortix.yaml trigger's fire waits up to 90 s for the run's outcome by default, past this tool's
+        // own limit: return once the fire is accepted, and read the outcome with `runs`.
+        ...(verb === 'run_now' && !RUNTIME_ID.test(id) ? ['--wait=0'] : []),
+      ]
   const done = await cliRun(argv, context)
-  if ('error' in done) return fail(TOOL, action, `Could not ${action.replace('_', ' ')} it`, done.error, context)
+  if ('error' in done) return fail(TOOL, action, FAILED_TITLE[verb] ?? 'Could not change it', done.error, context)
   return ok(TOOL, action, { title: cli.title, subtitle: id, links: [{ label: 'Triggers', href: adminHref(context.env, 'triggers') }] }, { id })
 }
 
