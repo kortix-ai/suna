@@ -30,8 +30,14 @@ const TOOL = 'kortix_schedules' as const
 const RUNTIME_ID = /^(?:reminder|trigger|automation)\.[0-9a-f]{12}$/
 /** A kortix.yaml trigger's slug, the manifest grammar (`@kortix/manifest-schema` `SLUG_RE`). */
 const TRIGGER_SLUG = /^[a-z0-9][a-z0-9_-]{0,127}$/
-const ACTIONS = ['follow_up', 'wake_on', 'events', 'list', 'create', 'pause', 'resume', 'remove', 'delete', 'run_now'] as const
+const ACTIONS = ['follow_up', 'wake_on', 'events', 'list', 'create', 'automate', 'test', 'runs', 'pause', 'resume', 'remove', 'delete', 'run_now'] as const
 const WAKE_ON = ['cr_merged', 'webhook', 'connector_event', 'app_event'] as const
+/** An automation's source (`automate` `on`) and the kortix.yaml trigger `--type` it becomes. */
+const AUTOMATE_ON = { schedule: 'cron', webhook: 'webhook', connector_event: 'event', app_event: 'app' } as const
+/** The trigger filter operators (`@kortix/manifest-schema` `trigger-filter.ts`); a plain value means equals. */
+const FILTER_OPS = ['not', 'in', 'prefix', 'not_prefix', 'exists'] as const
+/** A payload path a filter reads, e.g. `body.sender.login` or `event.data.labels`. */
+const FILTER_PATH = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,199}$/
 
 /** A trigger's source, as `GET /triggers/all` and `POST /triggers/runtime` return it. */
 interface TriggerSource {
@@ -408,15 +414,21 @@ async function list(context: PlatformToolContext) {
 }
 
 /** The `--every` / `--cron` / `--at` / `--in` flags of a create, or why there are none. */
-function scheduleFlags(args: Record<string, any>): string[] | string {
-  const flags: string[] = []
-  if (typeof args.every === 'string' && args.every) flags.push('--every', args.every)
-  else if (typeof args.cron === 'string' && args.cron) flags.push('--cron', args.cron)
-  else if (typeof args.at === 'string' && args.at) flags.push('--at', args.at)
-  else if (typeof args.in === 'string' && args.in) flags.push('--in', args.in)
-  else return 'Pass one of: every ("1h", "1d"), cron ("0 9 * * 1"), at (an ISO time) or in ("2h").'
-  if (typeof args.timezone === 'string' && args.timezone && flags[0] === '--cron') flags.push('--timezone', args.timezone)
-  return flags
+/** One schedule as `--flag=value` (a value can never read as an option, CWE-88), then its spoken form. */
+function scheduleFlags(args: Record<string, any>): { flags: string[]; spoken: string } | string {
+  const key = (['every', 'cron', 'at', 'in'] as const).find((k) => typeof args[k] === 'string' && args[k].trim())
+  if (!key) return 'Pass one of: every ("1h", "1d"), cron ("0 9 * * 1"), at (an ISO time) or in ("2h").'
+  const value = String(args[key]).trim()
+  const bad = cliArgProblem(key, value, 'text')
+  if (bad) return bad
+  const flags = [`--${key}=${value}`]
+  const timezone = typeof args.timezone === 'string' ? args.timezone.trim() : ''
+  if (key === 'cron' && timezone) {
+    const badZone = cliArgProblem('timezone', timezone)
+    if (badZone) return badZone
+    flags.push(`--timezone=${timezone}`)
+  }
+  return { flags, spoken: key === 'in' ? `in ${value}` : key === 'at' ? `at ${value}` : `${key} ${value}` }
 }
 
 async function create(args: Record<string, any>, context: PlatformToolContext) {
@@ -433,20 +445,191 @@ async function create(args: Record<string, any>, context: PlatformToolContext) {
   const badAgent = agent ? cliArgProblem('agent', agent) : null
   if (badAgent) return fail(TOOL, 'create', 'Which agent?', { kind: 'invalid', message: badAgent }, context)
   const target = agent ? [`--agent=${agent}`] : []
-  const made = await cliRun(['triggers', 'add', prompt, '--runtime', ...schedule, ...target], context)
+  const made = await cliRun(['triggers', 'add', prompt, '--runtime', ...schedule.flags, ...target], context)
   if ('error' in made) return fail(TOOL, 'create', 'Could not create the schedule', made.error, context)
   // A schedule into this session is a loop (`reminder.<hex>`); one that starts an agent is `trigger.<hex>`.
   const id = made.text.match(/(?:trigger|reminder)\.[0-9a-f]+/)?.[0] ?? made.text.split('\n').pop() ?? ''
-  const spoken = schedule.slice(1).join(' ')
+  const spoken = schedule.spoken
   return ok(
     TOOL,
     'create',
     {
-      title: agent ? `${agent} runs ${schedule[0] === '--in' ? `in ${spoken}` : schedule[0] === '--at' ? `at ${spoken}` : spoken}` : `Reminder set: ${spoken}`,
+      title: agent ? `${agent} runs ${spoken}` : `Reminder set: ${spoken}`,
       subtitle: prompt.length > 140 ? `${prompt.slice(0, 137)}…` : prompt,
       links: [{ label: 'Triggers', href: adminHref(context.env, 'triggers') }],
     },
     { id, agent, prompt, schedule: spoken },
+  )
+}
+
+/**
+ * `filter` as `--filter=` flags: payload path → a value (equals), a list (one of), or an object with
+ * one operator (`not`, `in`, `prefix`, `not_prefix` take one value or a list; `exists` takes true or
+ * false). The CLI splits a list on commas, so a value may not hold one.
+ */
+function filterFlags(raw: unknown): string[] | { error: string } {
+  if (raw === undefined || raw === null) return []
+  const usage = '`filter` is an object: payload path → a value, a list of values, or { not | in | prefix | not_prefix | exists: … }. e.g. { "body.action": ["opened", "reopened"], "body.sender.login": { "not": "kortix-bot" } }.'
+  if (typeof raw !== 'object' || Array.isArray(raw)) return { error: usage }
+  const flags: string[] = []
+  for (const [path, condition] of Object.entries(raw as Record<string, unknown>)) {
+    if (!FILTER_PATH.test(path)) return { error: `filter path "${path}" must be a dotted payload path, such as body.action or event.data.from.` }
+    let op: string | null = null
+    let values: unknown[]
+    if (Array.isArray(condition)) {
+      op = 'in'
+      values = condition
+    } else if (condition && typeof condition === 'object') {
+      const keys = Object.keys(condition)
+      if (keys.length !== 1 || !(FILTER_OPS as readonly string[]).includes(keys[0]!)) return { error: `filter "${path}": ${usage}` }
+      op = keys[0]!
+      const value = (condition as Record<string, unknown>)[op]
+      values = Array.isArray(value) ? value : [value]
+    } else {
+      values = [condition]
+    }
+    const texts = values.map((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v) : ''))
+    if (texts.length === 0 || texts.some((t) => !t || t.includes(','))) return { error: `filter "${path}": each value is a non-empty word or number without a comma.` }
+    flags.push(`--filter=${path}${op ? `:${op}` : ''}=${texts.join(',')}`)
+  }
+  return flags
+}
+
+/** A positive whole number, or the reason it is not one. */
+function count(args: Record<string, any>, field: string): number | null | { error: string } {
+  const raw = args[field]
+  if (raw === undefined || raw === null || raw === '') return null
+  const value = Number(raw)
+  return Number.isSafeInteger(value) && value > 0 ? value : { error: `\`${field}\` is a whole number above 0.` }
+}
+
+/**
+ * A standing automation: a kortix.yaml trigger, created live (`kortix triggers add <name> --apply`,
+ * which commits it to kortix.yaml on main). Each event that passes `filter` starts a session of
+ * `agent` with `prompt`; `session_key` keeps one session per thing (a thread, an issue, a sender),
+ * so later events about it reach the same session; `max_runs_*` cap what it can start.
+ */
+async function automate(args: Record<string, any>, context: PlatformToolContext) {
+  const invalid = (title: string, message: string) => fail(TOOL, 'automate', title, { kind: 'invalid', message }, context)
+  const name = typeof args.name === 'string' ? args.name.trim() : typeof args.id === 'string' ? args.id.trim() : ''
+  if (!TRIGGER_SLUG.test(name)) return invalid('Name the automation', '`name` is a short id: lower-case letters, digits, "-" and "_", e.g. "issue-triage".')
+  const on = typeof args.on === 'string' ? args.on.trim() : ''
+  const type = AUTOMATE_ON[on as keyof typeof AUTOMATE_ON]
+  if (!type) return invalid('What should it react to?', `\`on\` is one of: ${Object.keys(AUTOMATE_ON).join(', ')}.`)
+  const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
+  if (!prompt) return invalid('What should each run do?', 'Missing `prompt`: what each run starts with. Read the event with {{ event.data.<field> }} (connector and App events) or {{ body.<field> }} (webhooks).')
+  const badPrompt = cliArgProblem('prompt', prompt, 'text')
+  if (badPrompt) return invalid('What should each run do?', badPrompt)
+
+  const flags = [`--type=${type}`, `--prompt=${prompt}`]
+  const wordFlag = (field: string, flag: string, hint: string, required: boolean) => {
+    const value = word(args, field, hint)
+    if (isError(value)) return required ? value : typeof args[field] === 'string' && args[field].trim() ? value : null
+    flags.push(`--${flag}=${value}`)
+    return null
+  }
+  const problems = [
+    wordFlag('agent', 'agent', 'the agent each run starts a session of', false),
+    on === 'webhook' ? wordFlag('secret_env', 'secret-env', 'the project secret that signs the calls', true) : null,
+    on === 'connector_event' ? wordFlag('connector', 'connector', 'the connector the event happens on', true) : null,
+    on === 'connector_event' ? wordFlag('event', 'event', 'the event type, as `events` lists it', true) : null,
+    on === 'app_event' ? wordFlag('app', 'app', 'the App whose events fire it', true) : null,
+    on === 'app_event' ? wordFlag('event', 'event', 'the App event name', false) : null,
+    wordFlag('model', 'model', 'a model id, as kortix_agents models lists it', false),
+  ].find(Boolean)
+  if (problems) return invalid('Check the automation', problems.error)
+  if (on === 'schedule') {
+    const schedule = scheduleFlags({ every: args.every, cron: args.cron, timezone: args.timezone })
+    if (typeof schedule === 'string') return invalid('When should it run?', 'Pass every ("1h", "1d") or cron ("0 0 9 * * 1-5", 6 fields, seconds first), plus timezone with cron.')
+    flags.push(...schedule.flags)
+  }
+  if (on === 'connector_event' && args.config !== undefined) {
+    if (!args.config || typeof args.config !== 'object' || Array.isArray(args.config)) return invalid('Check the event config', '`config` is an object of the event\'s config fields, as `events` lists them.')
+    flags.push(`--config-json=${JSON.stringify(args.config)}`)
+  }
+  const filter = filterFlags(args.filter)
+  if ('error' in filter) return invalid('Check the filter', filter.error)
+  flags.push(...filter)
+  const key = typeof args.session_key === 'string' ? args.session_key.trim() : ''
+  if (key) {
+    const bad = cliArgProblem('session_key', key, 'text')
+    if (bad) return invalid('Check the session key', bad)
+    flags.push(`--session-key=${key}`)
+  }
+  for (const [field, flag] of [['max_runs_per_day', 'max-runs-per-day'], ['max_runs_per_hour', 'max-runs-per-hour']] as const) {
+    const n = count(args, field)
+    if (n && typeof n === 'object') return invalid('Check the run limit', n.error)
+    if (n) flags.push(`--${flag}=${n}`)
+  }
+
+  const made = await cliRun(['triggers', 'add', name, ...flags, '--apply'], context)
+  if ('error' in made) return fail(TOOL, 'automate', 'Could not set up the automation', made.error, context)
+  const url = made.text.match(/webhook\s+(https?:\/\/\S+)/)?.[1]
+  const reacts = on === 'connector_event' ? `${args.event} on ${args.connector}` : on === 'app_event' ? `${args.app} events` : on === 'webhook' ? 'each webhook call' : flags.find((f) => f.startsWith('--every=') || f.startsWith('--cron='))?.replace(/^--/, '').replace('=', ' ')
+  return ok(
+    TOOL,
+    'automate',
+    {
+      title: `Automation set: ${name}`,
+      subtitle: `${typeof args.agent === 'string' && args.agent.trim() ? args.agent.trim() : 'My Kortix'} runs on ${reacts}${key ? ', one session per key' : ''}`,
+      rows: [
+        ...(filter.length ? [{ title: 'Only when', detail: short(filter.map((f) => f.replace('--filter=', '')).join(' · '), 140) }] : []),
+        ...(url ? [{ title: 'Webhook URL', detail: url }] : []),
+      ],
+      links: [{ label: 'Triggers', href: adminHref(context.env, 'triggers') }],
+    },
+    { name, on, ...(url ? { webhook_url: url } : {}), next: 'Run `test` with a sample payload before you tell the person it is live.', output: short(made.text, 600) },
+  )
+}
+
+/** `test`: a dry run of an automation with a sample payload: the filter verdict, the session key and the prompt a run would get. Fires nothing. */
+async function testAutomation(args: Record<string, any>, context: PlatformToolContext) {
+  const name = typeof args.name === 'string' ? args.name.trim() : typeof args.id === 'string' ? args.id.trim() : ''
+  if (!TRIGGER_SLUG.test(name)) return fail(TOOL, 'test', 'Which automation?', { kind: 'invalid', message: '`name` is the automation\'s name, as list shows it.' }, context)
+  if (args.payload !== undefined && (!args.payload || typeof args.payload !== 'object' || Array.isArray(args.payload))) {
+    return fail(TOOL, 'test', 'Check the sample', { kind: 'invalid', message: '`payload` is a JSON object merged over the sample event, e.g. { "body": { "action": "opened" } }.' }, context)
+  }
+  const read = await runJson<{ filter_matches?: boolean; session_key?: string | null; rendered_prompt?: string }>(
+    ['triggers', 'fire', name, '--dry-run', ...(args.payload ? [`--payload=${JSON.stringify(args.payload)}`] : []), '--json'],
+    context,
+  )
+  if ('error' in read) return fail(TOOL, 'test', `Could not test ${name}`, read.error, context)
+  const r = read.value
+  return ok(
+    TOOL,
+    'test',
+    {
+      title: r.filter_matches ? `${name} would run` : `${name} would skip this event`,
+      rows: [
+        { title: 'Filter', detail: r.filter_matches ? 'matches' : 'does not match' },
+        { title: 'Session', detail: r.session_key ? `one per key: ${r.session_key}` : 'a new one each run' },
+        { title: 'Prompt', detail: short(r.rendered_prompt ?? '', 140) },
+      ],
+    },
+    { name, filter_matches: !!r.filter_matches, session_key: r.session_key ?? null, prompt: r.rendered_prompt ?? '' },
+  )
+}
+
+/** `runs`: an automation's recent runs, newest first: what it started, skipped or failed. */
+async function automationRuns(args: Record<string, any>, context: PlatformToolContext) {
+  const name = typeof args.name === 'string' ? args.name.trim() : typeof args.id === 'string' ? args.id.trim() : ''
+  if (!TRIGGER_SLUG.test(name)) return fail(TOOL, 'runs', 'Which automation?', { kind: 'invalid', message: '`name` is the automation\'s name, as list shows it.' }, context)
+  const read = await runJson<{ runs?: Array<{ status?: string; run_status?: string | null; error?: string | null; run_error?: string | null; session_id?: string | null; started_at?: string }> }>(
+    ['triggers', 'runs', name, '--limit=20', '--json'],
+    context,
+  )
+  if ('error' in read) return fail(TOOL, 'runs', `Could not read the runs of ${name}`, read.error, context)
+  const runs = read.value.runs ?? []
+  const tally = runs.reduce<Record<string, number>>((acc, run) => ({ ...acc, [run.status ?? 'unknown']: (acc[run.status ?? 'unknown'] ?? 0) + 1 }), {})
+  return ok(
+    TOOL,
+    'runs',
+    {
+      title: runs.length ? `${name}: ${runs.length} recent runs` : `${name} has not run yet`,
+      ...(runs.length ? { subtitle: Object.entries(tally).map(([status, n]) => `${n} ${status}`).join(' · ') } : {}),
+      rows: capRows(runs.map((run) => ({ title: `${instant(run.started_at) || run.started_at || ''} · ${run.status ?? ''}${run.run_status ? ` (${run.run_status})` : ''}`, detail: short(run.error || run.run_error || (run.session_id ? `session ${run.session_id}` : ''), 120) }))),
+    },
+    { name, tally, runs: runs.map((run) => ({ status: run.status, run_status: run.run_status ?? null, error: run.error || run.run_error || null, session_id: run.session_id ?? null, started_at: run.started_at })) },
   )
 }
 
@@ -483,23 +666,37 @@ export default {
     'If it answers that Loops are not enabled, tell the person and ask them or a project admin to turn Loops on in Settings → Feature flags. ' +
     'Actions: `follow_up` (text + ONE of in "3h", at ISO time, every "4h" (min 5m), cron "0 9 * * 1-5" + timezone; with several, the first of at, in, cron, every is used); ' +
     '`wake_on` (text + on); `events` (connector); `list` (this session\'s follow-ups and wake-ons, and the project schedules, with ids); ' +
-    '`create` (prompt + agent + one schedule: each run starts a new session of that agent); `pause`, `resume`, `run_now`, `remove` (each needs `id` as list shows it; `delete` = remove).',
+    '`create` (prompt + agent + one schedule: each run starts a new session of that agent); `pause`, `resume`, `run_now`, `remove` (each needs `id` as list shows it; `delete` = remove). ' +
+    'AUTOMATIONS (work that starts by itself whenever something happens, with no one asking: each new email from a customer, each new issue, each form submission, each failed build, every weekday at 9): `automate` (name + on + agent + prompt; on=connector_event: connector + event (+ config), run `events` first; webhook: secret_env, give the outside system the returned URL; app_event: app (+ event); schedule: every or cron + timezone). ' +
+    'Do it well: 1) `filter` at the source so noise never starts a run (skip bots and Kortix itself, keep only the actions that matter: { "body.action": ["opened"], "body.sender.login": { "not": "kortix-bot" } }); ' +
+    '2) `session_key` per thing ("{{ event.data.thread_id }}", "{{ body.issue.number }}", "{{ body.email }}") so a follow-up about the same thing lands in the same session; ' +
+    '3) a prompt that judges first: "If this is not <what matters>, stop: do nothing and send no message. Otherwise …", with the event fields it needs; ' +
+    '4) cap it (`max_runs_per_day`, e.g. 20) and pick the agent with the least access, and a fast model for triage; ' +
+    '5) ask the person before you create it (it runs unattended and uses credits), then `test` with a sample payload (fires nothing: the filter verdict, the session key and the prompt) and fix it until it is right; ' +
+    '6) tell them in one line what it does, set a `follow_up` in 2-3 days to read its `runs` and tune it, and `remove` it (by name) when it is no longer wanted.',
   parameters: {
     type: 'object',
     properties: {
       action: { type: 'string', enum: [...ACTIONS], description: 'What to do.' },
       text: { type: 'string', description: 'For follow_up and wake_on: what the woken turn reads. What was done, what to check, what to do on each outcome, when to stop (an end date). `prompt`, `message` or `note` also work.' },
-      on: { type: 'string', enum: [...WAKE_ON], description: 'For wake_on: what wakes this session.' },
+      on: { type: 'string', enum: [...new Set([...WAKE_ON, ...Object.keys(AUTOMATE_ON)])], description: 'For wake_on: what wakes this session (cr_merged, webhook, connector_event, app_event). For automate: what starts each run (schedule, webhook, connector_event, app_event).' },
+      name: { type: 'string', description: 'For automate, test and runs: the automation\'s short id, e.g. "issue-triage" (lower-case letters, digits, "-", "_"). remove takes it as `id`.' },
+      filter: { type: 'object', description: 'For automate: run only when the event matches. Payload path → a value (equals), a list (one of), or { not | in | prefix | not_prefix | exists: … }. Paths: body.* for webhooks, event.data.* for connector and App events.' },
+      session_key: { type: 'string', description: 'For automate: one session per thing, a template over the event, e.g. "{{ event.data.thread_id }}". Later events with the same key go to that session. Omit for a new session each run.' },
+      max_runs_per_day: { type: 'number', description: 'For automate: the most runs it may start in a day.' },
+      max_runs_per_hour: { type: 'number', description: 'For automate: the most runs it may start in an hour (default 60).' },
+      model: { type: 'string', description: 'For automate: the model each run uses, as kortix_agents models lists it. Omit for the agent\'s own.' },
+      payload: { type: 'object', description: 'For test: a sample event, merged over the default one, e.g. { "body": { "action": "opened" } }.' },
       cr: { type: 'string', description: 'For wake_on cr_merged: the change request id or number.' },
       secret_env: { type: 'string', description: 'For wake_on webhook: the name of the project secret that signs the calls.' },
       connector: { type: 'string', description: 'For wake_on connector_event and events: the connector slug.' },
       event: { type: 'string', description: 'For wake_on connector_event: the event type, as `events` lists it. For app_event: the App event that matters (optional).' },
       config: { type: 'object', description: 'For wake_on connector_event: the event\'s config fields, as `events` lists them (only when it has required ones).' },
       app: { type: 'string', description: 'For wake_on app_event: the App slug.' },
-      prompt: { type: 'string', description: 'For create: the message each run starts with.' },
-      agent: { type: 'string', description: 'For create: the agent each run starts a session of. Without it, create is a reminder to this session (prefer follow_up).' },
-      every: { type: 'string', description: 'For follow_up and create: repeat interval, e.g. "4h", "1d".' },
-      cron: { type: 'string', description: 'For follow_up and create: a cron expression, e.g. "0 9 * * 1-5".' },
+      prompt: { type: 'string', description: 'For create and automate: the message each run starts with. In automate, read the event with {{ event.data.<field> }} or {{ body.<field> }}.' },
+      agent: { type: 'string', description: 'For create and automate: the agent each run starts a session of. Without it, create is a reminder to this session (prefer follow_up), and automate runs My Kortix.' },
+      every: { type: 'string', description: 'For follow_up, create and automate (schedule): repeat interval, e.g. "4h", "1d".' },
+      cron: { type: 'string', description: 'For follow_up and create: a cron expression, e.g. "0 9 * * 1-5". For automate (schedule): 6 fields, seconds first, e.g. "0 0 9 * * 1-5".' },
       timezone: { type: 'string', description: 'With cron: an IANA time zone, e.g. "Europe/Berlin".' },
       at: { type: 'string', description: 'For follow_up and create: one time, ISO 8601.' },
       in: { type: 'string', description: 'For follow_up and create: once, after this long, e.g. "3h".' },
@@ -514,6 +711,9 @@ export default {
     if (action === 'events') return events(args, context)
     if (action === 'list') return list(context)
     if (action === 'create') return create(args, context)
+    if (action === 'automate') return automate(args, context)
+    if (action === 'test') return testAutomation(args, context)
+    if (action === 'runs') return automationRuns(args, context)
     if (!(ACTIONS as readonly string[]).includes(action)) return fail(TOOL, action, 'Unknown action', { kind: 'invalid', message: `Use one of: ${ACTIONS.join(', ')}.` }, context)
     const verb = (action === 'delete' ? 'remove' : action) as keyof typeof VERB
     const id = typeof args.id === 'string' ? args.id.trim() : ''

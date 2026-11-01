@@ -136,10 +136,11 @@ describe('kortix_connectors', () => {
 
 describe('kortix_schedules', () => {
   test('create without an agent is a reminder to this session; with one, each run starts its session', async () => {
-    fakeKortix(`'triggers add Check the report --runtime --in 2h') echo 'trigger.abc123' ;;
-  'triggers add Send the summary --runtime --cron 0 9 * * 1 --timezone Europe/Berlin --agent=researcher') echo 'Created trigger.def456' ;;`)
+    // Each schedule value is one --flag=value word, so it can never read as an option (CWE-88).
+    fakeKortix(`'triggers add Check the report --runtime --in=2h') echo 'trigger.abc123' ;;
+  'triggers add Send the summary --runtime --cron=0 9 * * 1 --timezone=Europe/Berlin --agent=researcher') echo 'Created trigger.def456' ;;`)
     const reminder = await run('kortix_schedules', { action: 'create', prompt: 'Check the report', in: '2h' })
-    expect(reminder.card.title).toBe('Reminder set: 2h')
+    expect(reminder.card.title).toBe('Reminder set: in 2h')
     expect(reminder.data).toMatchObject({ id: 'trigger.abc123', agent: null })
     const weekly = await run('kortix_schedules', { action: 'create', prompt: 'Send the summary', cron: '0 9 * * 1', timezone: 'Europe/Berlin', agent: 'researcher' })
     expect(weekly.data).toMatchObject({ id: 'trigger.def456', agent: 'researcher' })
@@ -487,5 +488,94 @@ describe('kortix_usage', () => {
       { title: 'Computers', detail: '250 credits' },
     ])
     expect(JSON.stringify(result.card)).not.toContain('$')
+  })
+})
+
+describe('kortix_schedules automations', () => {
+  test('automate: a connector event becomes one live kortix.yaml trigger with its filter, one session per thread, a cap and a model, each as --flag=value', async () => {
+    fakeKortix(`'triggers add issue-triage '*' --apply') printf 'Added issue-triage (live)\\n' ;;`)
+    const result = await run('kortix_schedules', {
+      action: 'automate',
+      name: 'issue-triage',
+      on: 'connector_event',
+      connector: 'github',
+      event: 'GITHUB_ISSUE_OPENED',
+      config: { repo: 'acme/site' },
+      agent: 'triage',
+      prompt: 'If this is not a real bug report, stop: do nothing and send no message. Otherwise label {{ event.data.title }}.',
+      filter: { 'event.data.action': ['opened', 'reopened'], 'event.data.sender': { not: 'kortix-bot' }, 'event.data.draft': { exists: false } },
+      session_key: '{{ event.data.number }}',
+      max_runs_per_day: 20,
+      model: 'kortix/deepseek-v4.1-flash',
+    })
+    expect(result.ok).toBe(true)
+    expect(result.card.title).toBe('Automation set: issue-triage')
+    expect(result.card.subtitle).toBe('triage runs on GITHUB_ISSUE_OPENED on github, one session per key')
+    expect(argvs()).toEqual([
+      'triggers add issue-triage --type=event --prompt=If this is not a real bug report, stop: do nothing and send no message. Otherwise label {{ event.data.title }}. ' +
+        '--agent=triage --connector=github --event=GITHUB_ISSUE_OPENED --model=kortix/deepseek-v4.1-flash --config-json={"repo":"acme/site"} ' +
+        '--filter=event.data.action:in=opened,reopened --filter=event.data.sender:not=kortix-bot --filter=event.data.draft:exists=false ' +
+        '--session-key={{ event.data.number }} --max-runs-per-day=20 --apply',
+    ])
+  })
+
+  test('automate: a webhook returns the URL the outside system calls, and a schedule takes every', async () => {
+    fakeKortix(`'triggers add form-leads '*' --apply') printf 'Added form-leads (live)\\n  webhook https://api.example.test/v1/webhooks/proj_1/form-leads\\n' ;;
+  'triggers add weekly-digest '*' --apply') printf 'Added weekly-digest (live)\\n' ;;`)
+    const hook = await run('kortix_schedules', { action: 'automate', name: 'form-leads', on: 'webhook', secret_env: 'FORM_SECRET', agent: 'sales', prompt: 'Draft a reply to {{ body.email }}.', session_key: '{{ body.email }}' })
+    expect(hook.ok).toBe(true)
+    expect((hook.data as { webhook_url: string }).webhook_url).toBe('https://api.example.test/v1/webhooks/proj_1/form-leads')
+    expect(hook.card.rows).toContainEqual({ title: 'Webhook URL', detail: 'https://api.example.test/v1/webhooks/proj_1/form-leads' })
+    const weekly = await run('kortix_schedules', { action: 'automate', name: 'weekly-digest', on: 'schedule', every: '1d', agent: 'writer', prompt: 'Write the digest.' })
+    expect(weekly.ok).toBe(true)
+    expect(argvs()[1]).toBe('triggers add weekly-digest --type=cron --prompt=Write the digest. --agent=writer --every=1d --apply')
+  })
+
+  test('automate refuses a bad name, source, filter, option-shaped value, missing source field or cap before any command runs (CWE-88)', async () => {
+    fakeKortix('')
+    const base = { action: 'automate', name: 'x', on: 'webhook', secret_env: 'S', prompt: 'Go.' }
+    const refused = [
+      { ...base, name: '../etc' },
+      { ...base, name: 'Has Caps' },
+      { ...base, on: 'cr_merged' },
+      { ...base, prompt: '--apply' },
+      { ...base, secret_env: undefined },
+      { ...base, secret_env: '--project=other' },
+      { ...base, agent: '--all' },
+      { ...base, filter: ['body.action'] },
+      { ...base, filter: { 'body action': 'x' } },
+      { ...base, filter: { 'body.action': { equals: 'x' } } },
+      { ...base, filter: { 'body.action': ['a,b'] } },
+      { ...base, session_key: '-x' },
+      { ...base, max_runs_per_day: 0 },
+      { ...base, on: 'connector_event', connector: 'gmail' },
+      { ...base, on: 'schedule' },
+    ]
+    for (const args of refused) {
+      const result = await run('kortix_schedules', args)
+      expect({ args, ok: result.ok, kind: result.error?.kind }).toMatchObject({ args, ok: false, kind: 'invalid' })
+    }
+    expect(readFileSync(calls, 'utf8')).toBe('')
+  })
+
+  test('test: a dry run reports the filter verdict, the session key and the rendered prompt, and fires nothing', async () => {
+    fakeKortix(`'triggers fire issue-triage --dry-run --payload={"event":{"data":{"number":7}}} --json') echo '{"filter_matches":true,"session_key":"7","rendered_prompt":"Label Login fails","payload":{}}' ;;
+  'triggers fire issue-triage --dry-run --json') echo '{"filter_matches":false,"session_key":null,"rendered_prompt":"Label ","payload":{}}' ;;`)
+    const hit = await run('kortix_schedules', { action: 'test', name: 'issue-triage', payload: { event: { data: { number: 7 } } } })
+    expect(hit.ok).toBe(true)
+    expect(hit.card.title).toBe('issue-triage would run')
+    expect(hit.data).toEqual({ name: 'issue-triage', filter_matches: true, session_key: '7', prompt: 'Label Login fails' })
+    const miss = await run('kortix_schedules', { action: 'test', id: 'issue-triage' })
+    expect(miss.card.title).toBe('issue-triage would skip this event')
+    expect((await run('kortix_schedules', { action: 'test', name: 'x', payload: 'nope' })).ok).toBe(false)
+  })
+
+  test('runs: the recent runs with a tally of what started, skipped and failed, and no cost', async () => {
+    fakeKortix(`'triggers runs issue-triage --limit=20 --json') echo '{"runs":[{"status":"fired","run_status":"succeeded","error":null,"session_id":"s1","started_at":"2026-11-01T09:00:00Z","cost_usd":0.3},{"status":"skipped","run_status":null,"error":"filter did not match","session_id":null,"started_at":"2026-11-01T08:00:00Z","cost_usd":null}],"next_cursor":null}' ;;`)
+    const result = await run('kortix_schedules', { action: 'runs', name: 'issue-triage' })
+    expect(result.ok).toBe(true)
+    expect(result.card.subtitle).toBe('1 fired · 1 skipped')
+    expect(JSON.stringify(result)).not.toContain('cost')
+    expect((result.data as { tally: Record<string, number> }).tally).toEqual({ fired: 1, skipped: 1 })
   })
 })

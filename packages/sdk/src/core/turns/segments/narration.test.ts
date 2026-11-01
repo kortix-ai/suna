@@ -207,6 +207,8 @@ describe('narrateStep - pi agent, workflow and the My Kortix platform tools narr
     expect(narrateStep('platform', [part('kortix_schedules', { action: 'pause' })])).toBe('Updated your schedules');
     // Listing a connector's event types and viewing one page only read.
     expect(narrateStep('platform', [platform('kortix_schedules', 'events', { ok: true })])).toBe('Checked your schedules');
+    expect(narrateStep('platform', [platform('kortix_schedules', 'runs', { ok: true })])).toBe('Checked your schedules');
+    expect(narrateStep('platform', [platform('kortix_schedules', 'test', { ok: true })])).toBe('Checked your schedules');
     expect(narrateStep('platform', [platform('kortix_schedules', 'follow_up', { ok: true })])).toBe('Updated your schedules');
   });
 
