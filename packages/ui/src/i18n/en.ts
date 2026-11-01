@@ -8064,7 +8064,9 @@ const catalog = {
       "models": "Models",
       "tabCapabilities": "Capabilities",
       "pinToSidebar": "Pin to sidebar",
-      "unpinFromSidebar": "Unpin from sidebar"
+      "unpinFromSidebar": "Unpin from sidebar",
+      "spaceHelp": "The space this agent works in: a slug like engineering or sales. Empty: Project-wide.",
+      "spacePlaceholder": "e.g. engineering"
     },
     "myKortix": {
       "allowed": "Allowed",
@@ -9131,7 +9133,9 @@ const catalog = {
       },
       "board": {
         "label": "Room and a board",
-        "description": "A board for the brief and the links, then Goals."
+        "description": "A board for the brief and the links, then Goals.",
+        "brief": "Brief",
+        "text": "What this space is for, and how to help."
       }
     },
     "leave": "Leave {name}",
@@ -9157,18 +9161,12 @@ const catalog = {
     "filter": "Filter by space",
     "all": "All",
     "projectWide": "Project-wide",
-    "agent": {
-      "label": "Space",
-      "help": "The space this agent works in: a slug like engineering or sales. Empty: Project-wide.",
-      "placeholder": "e.g. engineering"
-    },
     "blocks": {
       "noContent": "No content yet.",
       "noUrl": "No URL yet.",
       "noApp": "No app selected yet.",
-      "loadingApp": "Loading app…",
-      "missingApp": "App “{slug}” is not in this project.",
-      "noFile": "No file yet."
+      "noFile": "No file yet.",
+      "loadingApp": "Loading app…"
     }
   },
   "imageGen": {

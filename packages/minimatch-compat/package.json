@@ -4,7 +4,7 @@
   "private": true,
   "main": "index.cjs",
   "scripts": {
-    "test": "bun test index.test.cjs"
+    "test": "node ../../scripts/test-guard.mjs \"bun test index.test.cjs\""
   },
   "dependencies": {
     "minimatch": "11.0.1",

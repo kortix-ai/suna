@@ -1,6 +1,7 @@
+import { useTranslations } from '../../../i18n';
+
 import type { SpaceGroup } from '@kortix/sdk';
 
-import { useTranslations } from '../../../i18n';
 import { CountBadge } from '../../../primitives/count-badge';
 import { Tabs, TabsListCompact, TabsTriggerCompact } from '../../../primitives/tabs';
 

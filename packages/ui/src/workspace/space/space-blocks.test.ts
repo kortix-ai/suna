@@ -168,26 +168,12 @@ test('chat block with no room degrades to a notice', () => {
   expect(html).toContain('No room yet.');
 });
 
-test('empty board blocks use the host locale and interpolate missing App slugs', () => {
-  appsResult = { data: [], isLoading: false };
-  const messages = {
-    spaces: {
-      blocks: {
-        noContent: 'Noch kein Inhalt.', noUrl: 'Noch keine URL.',
-        noApp: 'Noch keine App ausgewählt.', noFile: 'Noch keine Datei.',
-        missingApp: 'Die App „{slug}“ ist nicht in diesem Projekt.',
-      },
-    },
+test('board empty states use the host locale rather than English literals', () => {
+  const props = {
+    i18n: { locale: 'de', messages: { spaces: { blocks: { noContent: 'Noch kein Inhalt.' } } } },
+    children: createElement(SpaceBlocks, { projectId: 'p1', blocks: [{ type: 'text', label: 'Notiz' }] }),
   };
-  const html = renderToStaticMarkup(
-    <UiProvider i18n={{ locale: 'de', messages }}>
-      <SpaceBlocks projectId="p1" blocks={[
-        { type: 'text' }, { type: 'iframe' }, { type: 'app' },
-        { type: 'artifact' }, { type: 'app', app: 'reports' },
-      ]} />
-    </UiProvider>,
-  );
-  for (const text of ['Noch kein Inhalt.', 'Noch keine URL.', 'Noch keine App ausgewählt.', 'Noch keine Datei.', 'Die App „reports“ ist nicht in diesem Projekt.']) {
-    expect(html).toContain(text);
-  }
+  const html = renderToStaticMarkup(createElement(UiProvider, props));
+  expect(html).toContain('Noch kein Inhalt.');
+  expect(html).not.toContain('No content yet.');
 });

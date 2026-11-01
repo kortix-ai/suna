@@ -145,7 +145,7 @@ function BlockTitle({
 }
 
 function BlockBody({ projectId, block }: { projectId: string; block: SpaceBlock }) {
-  const t = useTranslations('spaces.blocks');
+  const t = useTranslations('spaces');
   switch (block.type) {
     case 'text':
       return block.text?.trim() ? (
@@ -153,7 +153,7 @@ function BlockBody({ projectId, block }: { projectId: string; block: SpaceBlock 
           <UnifiedMarkdown content={block.text} trust="agent" />
         </div>
       ) : (
-        <EmptyLine>{t('noContent')}</EmptyLine>
+        <EmptyLine>{t('blocks.noContent')}</EmptyLine>
       );
 
     case 'iframe':
@@ -167,14 +167,14 @@ function BlockBody({ projectId, block }: { projectId: string; block: SpaceBlock 
           className="border-border h-64 w-full border-t"
         />
       ) : (
-        <EmptyLine>{t('noUrl')}</EmptyLine>
+        <EmptyLine>{t('blocks.noUrl')}</EmptyLine>
       );
 
     case 'app':
       return block.app ? (
         <SpaceAppBlock projectId={projectId} slug={block.app} />
       ) : (
-        <EmptyLine>{t('noApp')}</EmptyLine>
+        <EmptyLine>{t('blocks.noApp')}</EmptyLine>
       );
 
     default:
@@ -190,7 +190,7 @@ function BlockBody({ projectId, block }: { projectId: string; block: SpaceBlock 
  * muted line or `AppPreview`'s own notice — it never crashes a Space.
  */
 function SpaceAppBlock({ projectId, slug }: { projectId: string; slug: string }) {
-  const t = useTranslations('spaces.blocks');
+  const t = useTranslations('spaces');
   const apps = useProjectApps(projectId);
   const app = apps.data?.find((a) => a.slug === slug);
   // A card thumbnail only needs the SESSION, and only for an App that is live
@@ -208,12 +208,12 @@ function SpaceAppBlock({ projectId, slug }: { projectId: string; slug: string })
       <EmptyLine>
         <span className="flex items-center gap-2">
           <Loading className="size-4 shrink-0" />
-          {t('loadingApp')}
+          {t('blocks.loadingApp')}
         </span>
       </EmptyLine>
     );
   }
-  if (!app) return <EmptyLine>{t('missingApp', { slug })}</EmptyLine>;
+  if (!app) return <EmptyLine>{t('missing.app', { slug })}</EmptyLine>;
 
   return (
     <div className="border-border border-t">
@@ -242,13 +242,13 @@ function EmptyBlock({
   icon: (typeof TYPE_ICON)[keyof typeof TYPE_ICON];
   label: string;
 }) {
-  const t = useTranslations('spaces.blocks');
+  const t = useTranslations('spaces');
   return (
     <div className={PANEL}>
       <div className="flex items-center gap-2 px-4 py-2.5">
         <BlockTitle icon={Icon} label={label} />
       </div>
-      <EmptyLine>{t('noFile')}</EmptyLine>
+      <EmptyLine>{t('blocks.noFile')}</EmptyLine>
     </div>
   );
 }

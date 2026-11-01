@@ -195,10 +195,10 @@ function withSwitches(
   });
 }
 
-const VIEW_COPY: Record<CapabilityView, { title: string; access: string }> = {
-  skills: { title: 'skillsTitle', access: 'skillsAccess' },
-  tools: { title: 'toolsTitle', access: 'toolsAccess' },
-  extensions: { title: 'extensionsTitle', access: 'extensionsAccess' },
+const VIEW_COPY: Record<CapabilityView, { titleKey: string; access: string }> = {
+  skills: { titleKey: 'skillsTitle', access: 'skillsAccess' },
+  tools: { titleKey: 'toolsTitle', access: 'toolsAccess' },
+  extensions: { titleKey: 'extensionsTitle', access: 'extensionsAccess' },
 };
 
 /** Skills, Tools or Extensions, project-wide or for one agent. */
@@ -378,7 +378,7 @@ export function CapabilityLibrary({
 
   return (
     <CapabilityPageShell
-      title={t(VIEW_COPY[view].title)}
+      title={t(VIEW_COPY[view].titleKey)}
       description={agent ? t(`${view}Description`) : t(`${view}ProjectDescription`)}
       action={skills.createButton}
       search={
@@ -400,7 +400,7 @@ export function CapabilityLibrary({
           grant ? <GrantModeTabs grant={grant} label={t(VIEW_COPY[view].access)} agentName={agent.name} /> : undefined
         ) : view !== 'skills' ? undefined : (
           <Tabs value={scope} onValueChange={(next) => setScope(next as typeof scope)}>
-            <TabsList aria-label={t(VIEW_COPY[view].title)}>
+            <TabsList aria-label={t(VIEW_COPY[view].titleKey)}>
               <TabsTrigger value="all">{t('scopeAll')}</TabsTrigger>
               <TabsTrigger value="project">{t('groups.project')}</TabsTrigger>
               <TabsTrigger value="kortix">{t('groups.kortix')}</TabsTrigger>
@@ -454,7 +454,7 @@ function useSkillManagement(projectId: string, on: boolean) {
     open: (name: string) => () => setSelectedName(name),
     createButton: canWrite ? (
       <NewEntityMenu
-        label={tI18nComplete.raw('text18fdd549b2ed')}
+        label={tI18nComplete('text18fdd549b2ed')}
         pending={configure.pending}
         onChat={() => configure.start(newConfigPrompt('skill'))}
         manual={{

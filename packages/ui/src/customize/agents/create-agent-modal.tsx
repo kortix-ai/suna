@@ -231,7 +231,7 @@ export function CreateAgentModal({
                 <p className={cn('truncate text-lg font-medium', slug ? 'text-foreground' : 'text-muted-foreground')}>
                   {agentDisplayName(slug || t('namePlaceholder'))}
                 </p>
-                <p className="text-muted-foreground truncate font-mono text-xs"><code>agents.{slug || t('namePlaceholder')}</code></p>
+                <p className="text-muted-foreground truncate font-mono text-xs">{`agents.${slug || t('namePlaceholder')}`}</p>
                 {description.trim() ? (
                   <p className="text-foreground line-clamp-3 pt-1 text-sm text-pretty">{description.trim()}</p>
                 ) : null}

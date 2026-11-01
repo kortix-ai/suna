@@ -10,6 +10,37 @@ import { fixManifestText } from '@kortix/manifest-schema';
 import { type Document, isSeq, parseDocument } from 'yaml';
 
 import { DEFAULT_SPACE_TABS, type SpaceTab } from '@kortix/sdk';
+import { createTranslator, defaultUiMessages } from '../../i18n';
+
+export interface SpaceTemplate {
+  /** Also the catalog key of its name and hint: `spaces.templates.<id>`. */
+  id: 'standard' | 'room' | 'board';
+  /** The tabs after the room. */
+  tabs: SpaceTab[];
+}
+
+/** The presets the New space dialog offers, in order. The first is the default. */
+export function spaceTemplates(t: (key: 'tabs.board' | 'templates.board.brief' | 'templates.board.text') => string): SpaceTemplate[] {
+  return [
+    {
+      id: 'standard',
+      tabs: [...DEFAULT_SPACE_TABS],
+    },
+    {
+      id: 'room',
+      tabs: [],
+    },
+    {
+      id: 'board',
+      tabs: [
+        { type: 'board', label: t('tabs.board'), blocks: [{ type: 'text', label: t('templates.board.brief'), text: t('templates.board.text') }] },
+        { type: 'goals' },
+      ],
+    },
+  ];
+}
+
+export const SPACE_TEMPLATES = spaceTemplates(createTranslator({ locale: 'en', messages: defaultUiMessages, namespace: 'spaces' }));
 
 /** Turn a space name into a `spaces:` key. The result is also a valid room
  *  name (the space's room is the room with its slug): at most 63 characters,
