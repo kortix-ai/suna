@@ -489,6 +489,7 @@ flow(
     routes: [
       'GET /v1/projects/:projectId/agents/:agentName/config',
       'PUT /v1/projects/:projectId/agents/:agentName/config',
+      'GET /v1/projects/:projectId/capabilities',
       'GET /v1/projects/:projectId/agents/:agentName/capabilities',
       'GET /v1/projects/:projectId/files/content',
     ],
@@ -641,7 +642,16 @@ flow(
         if (required !== 'kortix-nested-calls,kortix-presentation,kortix-turn') throw new Error(`required extensions: ${required}`);
         (await ctx.client.as(ctx.P.OWNER).get(path, { params: { projectId: project.id, agentName: 'ghost' } }))
           .status(404).body().has('$.code', 'agent_not_found');
+        const projectPath = '/v1/projects/:projectId/capabilities';
+        const projectCatalog = (await ctx.client.as(ctx.P.OWNER).get(projectPath, { params: { projectId: project.id } }))
+          .status(200).json<{ agent?: string; schema_version: number; tools: { id: string }[]; skills: { id: string }[]; extensions: { id: string }[] }>();
+        if ('agent' in projectCatalog || projectCatalog.schema_version !== 2) throw new Error('project catalog must be v2 and agent-independent');
+        if (!projectCatalog.tools.some((tool) => tool.id === 'agent')
+          || !projectCatalog.skills.some((skill) => skill.id === 'kortix-system')
+          || !projectCatalog.extensions.some((extension) => extension.id === 'kortix-turn')) throw new Error('project catalog omits platform capabilities');
+        (await ctx.client.as(ctx.P.ANON).get(projectPath, { params: { projectId: project.id } })).status(401);
         const bare = await team.addMember('member');
+        (await ctx.client.as(bare).get(projectPath, { params: { projectId: project.id } })).status(403);
         (await ctx.client.as(bare).get(path, { params: { projectId: project.id, agentName: 'worker' } })).status(403);
       },
     );
