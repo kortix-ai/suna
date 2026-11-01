@@ -136,9 +136,10 @@ function catalogRows(
   }
   const item = (ext: ProjectCapabilities['extensions'][number]): AccessItem => ({
     id: ext.id,
-    // "Follows the agent tool switch" only where that switch is on screen.
+    // "Follows the agent tool switch" only where that switch is on screen. The context record's
+    // switch is its own row (the agent's `context` setting), so it follows nothing.
     description:
-      ext.controlled_by && agentMode ? `${ext.description ?? ''} ${t('followsTool', { tool: ext.controlled_by })}` : ext.description,
+      ext.controlled_by && ext.controlled_by !== 'context' && agentMode ? `${ext.description ?? ''} ${t('followsTool', { tool: ext.controlled_by })}` : ext.description,
     status: ext.required ? <span className="text-muted-foreground text-xs">{t('alwaysOn')}</span> : undefined,
   });
   // A required platform extension (permission rules on script calls, the show
