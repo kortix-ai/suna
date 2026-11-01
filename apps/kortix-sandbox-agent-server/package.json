@@ -45,9 +45,15 @@
     "typescript-eslint": "8.70.0"
   },
   "overrides": {
-    "undici": "8.12.2"
+    "undici": "8.12.2",
+    "eslint>minimatch": "11.0.1",
+    "@eslint/config-array>minimatch": "11.0.1",
+    "@eslint/eslintrc>minimatch": "11.0.1",
+    "@earendil-works/pi-coding-agent>minimatch": "11.0.1",
+    "@typescript-eslint/typescript-estree>minimatch": "11.0.1"
   },
   "patchedDependencies": {
-    "undici@8.12.2": "../../patches/undici@8.12.2.patch"
+    "undici@8.12.2": "../../patches/undici@8.12.2.patch",
+    "@eslint/eslintrc@3.3.7": "../../patches/@eslint%2Feslintrc@3.3.7.patch"
   }
 }

@@ -17,8 +17,16 @@ overrides:
   brace-expansion@>=5.0.0 <5.0.12: 5.0.12
   ip-address@<10.7.4: 10.7.4
   '@modelcontextprotocol/sdk@<1.32.0': 1.32.0
+  deepsec>minimatch: 11.0.1
+  '@earendil-works/pi-coding-agent>minimatch': 11.0.1
+  '@earendil-works/pi-coding-agent>glob': 14.0.2
+  glob>minimatch: 11.0.1
+  deepsec>@vercel/sandbox: 2.2.0
 
 patchedDependencies:
+  deepsec@2.1.2:
+    hash: vogu52hzsrgk57dtr2fdqqbx3q
+    path: patches/deepsec@2.1.2.patch
   undici@8.12.2:
     hash: mu6tw5d72jgydn6wat3dblh4w4
     path: ../patches/undici@8.12.2.patch
@@ -32,7 +40,13 @@ importers:
         version: 1.32.0(zod@4.6.7)
       deepsec:
         specifier: ^2.1.2
-        version: 2.1.2(@anthropic-ai/sdk@0.109.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.0(zod@4.6.7))(ws@8.21.0)(zod@4.6.7)
+        version: 2.1.2(patch_hash=vogu52hzsrgk57dtr2fdqqbx3q)(@anthropic-ai/sdk@0.109.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.0(zod@4.6.7))(ws@8.21.0)(zod@4.6.7)
+      glob:
+        specifier: 14.0.2
+        version: 14.0.2
+      minimatch:
+        specifier: 11.0.1
+        version: 11.0.1
 
 packages:
 
@@ -239,6 +253,9 @@ packages:
   '@isaacs/fs-minipass@4.0.1':
     resolution: {integrity: sha512-wgm9Ehl2jpeqP3zw/7mo3kRHFp5MEDhqAdwy1fTGkHAwnkGOVsgpvQhL8B5n1qlb01jV3n/bI0ZfZp5lWA1k4w==}
     engines: {node: '>=18.0.0'}
+
+  '@isaacs/nonrecursive-glob-match@1.0.3':
+    resolution: {integrity: sha512-SI7kyKHq4XXDRozw+r9GlRZkia1ZkFrpLW98r2IC2Bpr8YkFGE3fvjzmxCG0x78A++69HmDNrDvSMYBZmHGpKA==}
 
   '@mariozechner/clipboard-darwin-arm64@0.3.9':
     resolution: {integrity: sha512-BfgV7vCEWZwJwZJw03r6bP5+tf0iI/ANuQYCxi9RNn7FrWB3yzGuMKCrNLRl6V761vXRdL8+OqZ0wd4TqlsNOQ==}
@@ -468,8 +485,8 @@ packages:
     resolution: {integrity: sha512-RrSsVWbq3KLK5lJobyTPp3tSthNfUp+zWkXno5Wkko0oEW05rA4ngOrnVypP4+L8/Av89uPo2rWFmzL8iwnsmA==}
     engines: {node: '>= 20'}
 
-  '@vercel/sandbox@1.10.2':
-    resolution: {integrity: sha512-rWhYfIyW0Va0gFxtz434LhVirV+eQs+AK0QQWtsOPw2oTvOSA4iogQqemRqvRPPbqI8nfZOz6kbCsytVa20gdw==}
+  '@vercel/sandbox@2.2.0':
+    resolution: {integrity: sha512-i5af0bMBLfUp3U1bSewSm+duCc3fErxi3GGqv2F3/xFbI09BHw+HaRI0pHjwbi/+0sLNPTZn/0jkg/M1OWB0rg==}
 
   '@workflow/serde@4.1.0-beta.2':
     resolution: {integrity: sha512-8kkeoQKLDaKXefjV5dbhBj2aErfKp1Mc4pb6tj8144cF+Em5SPbyMbyLCHp+BVrFfFVCBluCtMx+jjvaFVZGww==}
@@ -729,8 +746,8 @@ packages:
     resolution: {integrity: sha512-ts6Wi+2j3jQjqi70w5AlN8DFnkSwC+MqmxEzdEALB2qXZYV3X/b1CTfgPLGJNMeAWxdPfU8FO1ms3NUfaHCPYg==}
     engines: {node: '>=10'}
 
-  glob@13.0.6:
-    resolution: {integrity: sha512-Wjlyrolmm8uDpm/ogGyXZXb1Z+Ca2B8NbJwqBVg0axK9GbBeoS7yGV6vjXnYdGm6X53iehEuxxbyiKp8QmN4Vw==}
+  glob@14.0.2:
+    resolution: {integrity: sha512-vfMgTR2djMHPUchsJMLpZlYQvtjVL+mHpEr5wPpoCbQs2vr/FBNK+3Gnl9Ara1DSs4Aeg4eG9HiADb5/rkY/ZA==}
     engines: {node: 18 || 20 || >=22}
 
   google-auth-library@10.9.0:
@@ -822,6 +839,9 @@ packages:
   jose@6.2.12:
     resolution: {integrity: sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==}
 
+  jose@6.2.3:
+    resolution: {integrity: sha512-YYVDInQKFJfR/xa3ojUTl8c2KoTwiL1R5Wg9YCydwH0x0B9grbzlg5HC7mMjCtUJjbQ/YnGEZIhI5tCgfTb4Hw==}
+
   json-bigint@1.0.0:
     resolution: {integrity: sha512-SiPv/8VpZuWbvLSMtTDU8hEfrZWg/mH/nV/b4o0CYbSxu1UIQPLdwKOCIyLQX+VIPO5vrLX3i8qtqFyhdPSUSQ==}
 
@@ -883,8 +903,8 @@ packages:
     resolution: {integrity: sha512-OqbOk5oEQeAZ8WXWydlu9HJjz9WVdEIvamMCcXmuqUYjTknH/sqsWvhQ3vgwKFRR1HpjvNBKQ37nbJgYzGqGcg==}
     engines: {node: '>=6'}
 
-  minimatch@10.2.5:
-    resolution: {integrity: sha512-MULkVLfKGYDFYejP07QOurDLLQpcjk7Fw+7jXS2R2czRQzR56yHRveU5NDJEOviH+hETZKSkIk5c+T23GjFUMg==}
+  minimatch@11.0.1:
+    resolution: {integrity: sha512-t+Vn6DX4wPCxS23y03C0uhF7S1jpi1GfqPrnlEipCJaA2ykiNbMkVlDutZtmvLfRcUN6R8AYVlzTsQrT4RZoLQ==}
     engines: {node: 18 || 20 || >=22}
 
   minipass@7.1.3:
@@ -965,8 +985,8 @@ packages:
     resolution: {integrity: sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q==}
     engines: {node: '>=8'}
 
-  path-scurry@2.0.2:
-    resolution: {integrity: sha512-3O/iVVsJAPsOnpwWIeD+d6z/7PmqApyQePUtCndjatj/9I5LylHvt5qluFaBT3I5h3r1ejfR056c+FCv+NnNXg==}
+  path-scurry@3.0.0:
+    resolution: {integrity: sha512-1pTbQqH1wIwMi/eleQ5leFTTCkzFsPcgXNjwOA8YGGW/W4/kHT3dssE7Z6NH+zuqNLOzOB0uaD61yl7cAcVhgg==}
     engines: {node: 18 || 20 || >=22}
 
   path-to-regexp@8.4.2:
@@ -1180,9 +1200,6 @@ packages:
     resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
     peerDependencies:
       zod: 4.6.7
-
-  zod@3.24.4:
-    resolution: {integrity: sha512-OdqJE9UDRPwWsrHjLN2F8bPxvwJBK22EHLWtanu0LSYr5YqzsaaW3RMgmjwr8Rypg5k+meEJdSPXJZXE/yqOMg==}
 
   zod@4.6.7:
     resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
@@ -1501,12 +1518,12 @@ snapshots:
       chalk: 5.6.2
       cross-spawn: 7.0.6
       diff: 8.0.4
-      glob: 13.0.6
+      glob: 14.0.2
       highlight.js: 10.7.3
       hosted-git-info: 9.0.3
       ignore: 7.0.5
       jiti: 2.7.0
-      minimatch: 10.2.5
+      minimatch: 11.0.1
       proper-lockfile: 4.1.2
       semver: 7.8.0
       typebox: 1.1.38
@@ -1547,6 +1564,8 @@ snapshots:
   '@isaacs/fs-minipass@4.0.1':
     dependencies:
       minipass: 7.1.3
+
+  '@isaacs/nonrecursive-glob-match@1.0.3': {}
 
   '@mariozechner/clipboard-darwin-arm64@0.3.9':
     optional: true
@@ -1761,18 +1780,19 @@ snapshots:
       '@vercel/cli-exec': 1.0.0
       jose: 5.10.0
 
-  '@vercel/sandbox@1.10.2':
+  '@vercel/sandbox@2.2.0':
     dependencies:
       '@vercel/oidc': 3.2.0
       '@workflow/serde': 4.1.0-beta.2
       async-retry: 1.3.3
+      jose: 6.2.3
       jsonlines: 0.1.1
       ms: 2.1.3
       picocolors: 1.1.1
       tar-stream: 3.1.7
       undici: 7.30.1
       xdg-app-paths: 5.1.0
-      zod: 3.24.4
+      zod: 4.6.7
     transitivePeerDependencies:
       - bare-abort-controller
       - react-native-b4a
@@ -1876,16 +1896,16 @@ snapshots:
     dependencies:
       ms: 2.1.3
 
-  deepsec@2.1.2(@anthropic-ai/sdk@0.109.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.0(zod@4.6.7))(ws@8.21.0)(zod@4.6.7):
+  deepsec@2.1.2(patch_hash=vogu52hzsrgk57dtr2fdqqbx3q)(@anthropic-ai/sdk@0.109.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.0(zod@4.6.7))(ws@8.21.0)(zod@4.6.7):
     dependencies:
       '@anthropic-ai/claude-agent-sdk': 0.3.197(@anthropic-ai/sdk@0.109.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.0(zod@4.6.7))(zod@4.6.7)
       '@earendil-works/pi-coding-agent': 0.79.10(@modelcontextprotocol/sdk@1.32.0(zod@4.6.7))(ws@8.21.0)(zod@4.6.7)
       '@openai/codex': 0.125.0
       '@openai/codex-sdk': 0.125.0
       '@vercel/oidc': 3.7.1
-      '@vercel/sandbox': 1.10.2
+      '@vercel/sandbox': 2.2.0
       jiti: 2.7.0
-      minimatch: 10.2.5
+      minimatch: 11.0.1
       tar: 7.5.21
     transitivePeerDependencies:
       - '@anthropic-ai/sdk'
@@ -2067,11 +2087,11 @@ snapshots:
 
   get-stream@6.0.1: {}
 
-  glob@13.0.6:
+  glob@14.0.2:
     dependencies:
-      minimatch: 10.2.5
+      minimatch: 11.0.1
       minipass: 7.1.3
-      path-scurry: 2.0.2
+      path-scurry: 3.0.0
 
   google-auth-library@10.9.0:
     dependencies:
@@ -2152,6 +2172,8 @@ snapshots:
 
   jose@6.2.12: {}
 
+  jose@6.2.3: {}
+
   json-bigint@1.0.0:
     dependencies:
       bignumber.js: 9.3.1
@@ -2200,8 +2222,9 @@ snapshots:
 
   mimic-fn@2.1.0: {}
 
-  minimatch@10.2.5:
+  minimatch@11.0.1:
     dependencies:
+      '@isaacs/nonrecursive-glob-match': 1.0.3
       brace-expansion: 5.0.12
 
   minipass@7.1.3: {}
@@ -2262,7 +2285,7 @@ snapshots:
 
   path-key@3.1.1: {}
 
-  path-scurry@2.0.2:
+  path-scurry@3.0.0:
     dependencies:
       lru-cache: 11.5.1
       minipass: 7.1.3
@@ -2497,7 +2520,5 @@ snapshots:
   zod-to-json-schema@3.25.2(zod@4.6.7):
     dependencies:
       zod: 4.6.7
-
-  zod@3.24.4: {}
 
   zod@4.6.7: {}

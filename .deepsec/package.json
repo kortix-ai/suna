@@ -8,7 +8,9 @@
   "packageManager": "pnpm@9.15.4",
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.0",
-    "deepsec": "^2.1.2"
+    "deepsec": "^2.1.2",
+    "glob": "14.0.2",
+    "minimatch": "11.0.1"
   },
   "pnpm": {
     "auditConfig": {
@@ -28,10 +30,16 @@
       "tar@>=7.0.0 <7.5.21": "7.5.21",
       "brace-expansion@>=5.0.0 <5.0.12": "5.0.12",
       "ip-address@<10.7.4": "10.7.4",
-      "@modelcontextprotocol/sdk@<1.32.0": "1.32.0"
+      "@modelcontextprotocol/sdk@<1.32.0": "1.32.0",
+      "deepsec>minimatch": "11.0.1",
+      "@earendil-works/pi-coding-agent>minimatch": "11.0.1",
+      "@earendil-works/pi-coding-agent>glob": "14.0.2",
+      "glob>minimatch": "11.0.1",
+      "deepsec>@vercel/sandbox": "2.2.0"
     },
     "patchedDependencies": {
-      "undici@8.12.2": "../patches/undici@8.12.2.patch"
+      "undici@8.12.2": "../patches/undici@8.12.2.patch",
+      "deepsec@2.1.2": "patches/deepsec@2.1.2.patch"
     }
   }
 }
