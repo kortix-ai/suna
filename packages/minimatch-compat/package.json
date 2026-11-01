@@ -1,0 +1,16 @@
+{
+  "name": "@kortix/minimatch-compat",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.cjs",
+  "scripts": {
+    "test": "bun test index.test.cjs"
+  },
+  "dependencies": {
+    "minimatch": "11.0.1",
+    "picomatch": "4.0.7"
+  },
+  "devDependencies": {
+    "@types/picomatch": "^4.0.2"
+  }
+}
