@@ -55,7 +55,7 @@ export interface MigrationLedgerRow {
   runOn: Date;
 }
 
-export interface MigrationLedgerRepairPlan {
+interface MigrationLedgerRepairPlan {
   connectorMigrationIsMissing: boolean;
   legacyRunOn: Date | null;
   renames: Array<{ legacyName: string; currentName: string }>;
