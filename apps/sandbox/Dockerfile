@@ -44,7 +44,7 @@ ARG TARGETARCH
 # one package the mapping points at.
 WORKDIR /repo/apps/kortix-sandbox-agent-server
 COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-server/bun.lock ./
-COPY patches/undici@8.12.2.patch /repo/patches/undici@8.12.2.patch
+COPY patches/undici@8.12.2.patch patches/@eslint%2Feslintrc@3.3.7.patch /repo/patches/
 RUN bun install --frozen-lockfile
 COPY packages/api-contract /repo/packages/api-contract
 COPY packages/shared/src/peer-message-prompt.ts /repo/packages/shared/src/peer-message-prompt.ts
