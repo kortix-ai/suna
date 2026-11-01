@@ -1,6 +1,18 @@
 # Kortix Sandbox
 
-This machine is an isolated Linux sandbox.
+This machine is your session's own microVM: an isolated Linux computer with
+its own kernel. No other session shares it. `nproc`, `free -h` and `df -h /`
+show its size; the project's sandbox template sets it.
+
+## What lasts
+
+- `/workspace` keeps this session's files for the life of the session.
+- `/drives` (Drive, when the project has it on) keeps files across sessions.
+- Everything else, packages you install included, can be gone when the
+  session reopens. Install what the task needs now (`sudo apt-get install`).
+  To keep it for every session, add it to the project's sandbox template in
+  `kortix.yaml` and land that through a change request: the `kortix-system`
+  skill, `references/kortix/kortix-yaml.md` → sandbox.
 
 ## General Env
 
@@ -55,6 +67,11 @@ port 6901.
   still for 300 ms. Do not sleep.
 - `curl -o clip.mp4 "localhost:6901/record?seconds=10"` records the next 10 s
   as an MP4.
+- To put an app on the desktop, install it and start it in the background
+  (`setsid <app> >/dev/null 2>&1 &`): its window opens where the user sees
+  it. The desktop shows no icons. Check the result with a screenshot.
+- When the user says "my desktop", they may mean this desktop or their own
+  connected computer: the `kortix-computer` skill says how to tell.
 - `kortix-desktop status|stop|start` controls it. `stop` frees ~380 MB of RAM.
   Then set `AGENT_BROWSER_HEADED=false` until you `start` it again.
 

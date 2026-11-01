@@ -678,6 +678,8 @@ A stopped computer costs nothing while it sleeps. A preview request or a new pro
 
 A sandbox template sets what is installed on the cloud computer and how large it is. Set it once for the whole project in **Customize** → **Settings** → **Sandbox templates**. The details are in the [kortix.yaml reference](/docs/developers#kortixyaml-reference).
 
+The agent can also do it: ask it to install a program for good. It installs the program for the current session, adds it to the project's sandbox template in `kortix.yaml`, and opens a change request. Sessions that start after you merge it and the new image builds have the program.
+
 #### Previews
 
 Any website or tool that the agent starts on its computer is reachable from outside it. The session page's preview panel offers common ports, such as **App preview** and **Frontend preview**, plus any other port. A preview asks you to sign in to Kortix first. To show it to someone outside Kortix, the session owner creates a public link.
@@ -685,6 +687,8 @@ Any website or tool that the agent starts on its computer is reachable from outs
 #### Desktop
 
 Every session of your project's agents runs on a computer with a desktop. Select the **Desktop** button in the session header to watch it live. My Kortix runs on a minimal computer without one, so its sessions show no **Desktop** button: it hands browsing to your agents' sessions. The desktop has one browser, and you share it with the agent: you see each page it visits, and the browser on the dock opens that same window with the same tabs and logins. Kortix has control by default. Select **Take over** to click and type yourself, for example to sign in to a site for the agent, or to use the terminal or the file manager on the dock. Select **Return control** to hand it back. The desktop resizes to fit the panel.
+
+Ask the agent to put an app on its desktop, for example "install QGIS and open it on your desktop", and watch it in the panel. "My desktop" can mean this desktop or your own computer. When your computer is connected to Kortix, the agent asks which one you mean. When it is not, the agent uses the session desktop and tells you so.
 
 A session on a custom sandbox template gets the desktop when the template's base image is Ubuntu 24.04.
 
