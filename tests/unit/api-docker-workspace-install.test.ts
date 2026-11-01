@@ -1,7 +1,8 @@
-import { expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { expect, test } from 'vitest';
 
 // Exercise pnpm against the actual dependency-stage COPY inputs, not the full
 // checkout: a workspace override must resolve even when no app imports it.
@@ -24,9 +25,9 @@ test('API Docker dependency context resolves workspace overrides', () => {
         cpSync(join(root, source), target, { recursive: true });
       }
     }
-    const result = Bun.spawnSync(
+    const result = spawnSync(
+      'pnpm',
       [
-        'pnpm',
         'install',
         '--filter',
         './apps/api...',
@@ -41,14 +42,10 @@ test('API Docker dependency context resolves workspace overrides', () => {
       {
         cwd: context,
         env: { ...process.env, CI: 'true' },
-        stdout: 'pipe',
-        stderr: 'pipe',
+        encoding: 'utf8',
       },
     );
-    expect(
-      result.exitCode,
-      new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr),
-    ).toBe(0);
+    expect(result.status, result.stdout + result.stderr).toBe(0);
   } finally {
     rmSync(context, { recursive: true, force: true });
   }
