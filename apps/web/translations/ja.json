@@ -22633,6 +22633,8 @@
     "agentFullWriteDescription": "あなたが開始したセッションで、このエージェントは From agents フォルダだけでなく、ドライブ内のすべてのファイルを変更できます。",
     "agentCardDrive": "ドライブ {size}",
     "sessionSkippedDrives": "{count, plural, other {# 個のドライブがこのセッションに収まりませんでした}}: {names}。ドライブを 1 つ外して空きを作り、セッションを再起動してください。",
+    "sessionSkippedUnavailable": "{count, plural, other {# 個のフォルダーはまだマウントされていません}}: {names}。セッションはそれらなしで動作し、ストレージが使用可能になり次第マウントします。",
+    "sessionSkippedTooLarge": "{count, plural, other {# 個のフォルダーは大きすぎてセッションにマウントできません}}: {names}。セッションはそれらなしで動作します。大きなファイルを移動するか、より小さいフォルダーを共有してください。",
     "shareFolder": "共有",
     "shareTitle": "{name} を共有",
     "shareDescription": "追加したユーザー、チーム、エージェントは、このフォルダーとその中のすべてを利用できます。セッションは、そのエージェント、プロジェクト、または開始したユーザーにアクセス権があるときにフォルダーを参照できます。",

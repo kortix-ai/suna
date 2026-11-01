@@ -22633,6 +22633,8 @@
     "agentFullWriteDescription": "In den Sessions, die du startest, kann dieser Agent jede Datei in deinem Drive ändern, nicht nur im Ordner „From agents“.",
     "agentCardDrive": "{size} Drive",
     "sessionSkippedDrives": "{count, plural, one {# Drive passte nicht in diese Sitzung} other {# Drives passten nicht in diese Sitzung}}: {names}. Nimm ein Drive heraus, um Platz zu schaffen, und starte die Sitzung dann neu.",
+    "sessionSkippedUnavailable": "{count, plural, one {# Ordner ist noch nicht eingebunden} other {# Ordner sind noch nicht eingebunden}}: {names}. Die Sitzung läuft ohne sie weiter und bindet sie ein, sobald der Speicher es zulässt.",
+    "sessionSkippedTooLarge": "{count, plural, one {# Ordner ist zu groß, um ihn in eine Sitzung einzubinden} other {# Ordner sind zu groß, um sie in eine Sitzung einzubinden}}: {names}. Die Sitzung läuft ohne sie. Verschiebe große Dateien oder teile einen kleineren Ordner.",
     "shareFolder": "Teilen",
     "shareTitle": "{name} teilen",
     "shareDescription": "Personen, Teams und Agenten, die du hinzufügst, erhalten diesen Ordner und alles darin. Eine Sitzung sieht einen Ordner, wenn ihr Agent, ihr Projekt oder die Person, die sie gestartet hat, Zugriff hat.",

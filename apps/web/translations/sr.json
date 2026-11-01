@@ -22633,6 +22633,8 @@
     "agentFullWriteDescription": "U sesijama koje pokreneš, ovaj agent može da menja bilo koju datoteku na tvom drajvu, ne samo u fascikli From agents.",
     "agentCardDrive": "Drajv {size}",
     "sessionSkippedDrives": "{count, plural, one {# диск није стао у ову сесију} few {# диска нису стала у ову сесију} other {# дискова није стало у ову сесију}}: {names}. Извади један диск да ослободиш место, па поново покрени сесију.",
+    "sessionSkippedUnavailable": "{count, plural, one {# фасцикла још није монтирана} few {# фасцикле још нису монтиране} other {# фасцикли још није монтирано}}: {names}. Сесија ради без њих и монтира их чим складиште дозволи.",
+    "sessionSkippedTooLarge": "{count, plural, one {# фасцикла је превелика за монтирање у сесију} few {# фасцикле су превелике за монтирање у сесију} other {# фасцикли је превелико за монтирање у сесију}}: {names}. Сесија ради без њих. Премести велике датотеке или подели мању фасциклу.",
     "shareFolder": "Подели",
     "shareTitle": "Подели {name}",
     "shareDescription": "Особе, тимови и агенти које додаш добијају ову фасциклу и све у њој. Сесија види фасциклу када њен агент, њен пројекат или особа која ју је покренула има приступ.",

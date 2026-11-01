@@ -22633,6 +22633,8 @@
     "agentFullWriteDescription": "Nas sessões que inicia, este agente pode alterar qualquer ficheiro do seu drive, não só a pasta From agents.",
     "agentCardDrive": "Drive de {size}",
     "sessionSkippedDrives": "{count, plural, one {# drive não coube nesta sessão} other {# drives não couberam nesta sessão}}: {names}. Retire um drive para liberar espaço e reinicie a sessão.",
+    "sessionSkippedUnavailable": "{count, plural, one {# pasta ainda não está montada} other {# pastas ainda não estão montadas}}: {names}. A sessão continua sem elas e as monta assim que o armazenamento permitir.",
+    "sessionSkippedTooLarge": "{count, plural, one {# pasta é grande demais para montar numa sessão} other {# pastas são grandes demais para montar numa sessão}}: {names}. A sessão funciona sem elas. Mova os arquivos grandes ou compartilhe uma pasta menor.",
     "shareFolder": "Compartilhar",
     "shareTitle": "Compartilhar {name}",
     "shareDescription": "Pessoas, equipes e agentes que você adicionar recebem esta pasta e tudo o que há nela. Uma sessão vê uma pasta quando seu agente, seu projeto ou a pessoa que a iniciou tem acesso.",

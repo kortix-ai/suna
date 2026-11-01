@@ -22633,6 +22633,8 @@
     "agentFullWriteDescription": "In the sessions you start, this agent can change any file in your drive, not only its From agents folder.",
     "agentCardDrive": "{size} drive",
     "sessionSkippedDrives": "{count, plural, one {# drive did not fit in this session} other {# drives did not fit in this session}}: {names}. Take a drive out to make room, then restart the session.",
+    "sessionSkippedUnavailable": "{count, plural, one {# folder is not mounted yet} other {# folders are not mounted yet}}: {names}. The session runs without them and mounts them as soon as storage can.",
+    "sessionSkippedTooLarge": "{count, plural, one {# folder is too large to mount in a session} other {# folders are too large to mount in a session}}: {names}. The session runs without them. Move large files out, or share a smaller folder.",
     "shareFolder": "Share",
     "shareTitle": "Share {name}",
     "shareDescription": "People, teams and agents you add get this folder and everything in it. A session sees a folder when its agent, its project or the person who started it has access.",
