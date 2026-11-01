@@ -47,7 +47,7 @@ import {
 import { projectSessions, projects, sessionLifecycleCommands, sessionPeerMessages } from '@kortix/db';
 import { peerMessagePromptText, type PeerMessageKind } from '@kortix/shared';
 import { and, desc, eq, gt, gte, inArray, lte, or, sql } from 'drizzle-orm';
-import { randomBytes } from 'node:crypto';
+import { randomAlphanumeric } from '../../shared/crypto';
 import type { Actor } from '../../iam/actor';
 import { logger } from '../../lib/logger';
 import { mayPromptSessions, maySeeSessions, loadSessionAccessRows } from '../../notifications/access';
@@ -272,8 +272,7 @@ async function visibleOnly(found: Resolution, userId: string): Promise<Resolutio
 // ── Sending ─────────────────────────────────────────────────────────────────
 
 function newMessageId(): string {
-  const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-  return `m_${[...randomBytes(10)].map((b) => alphabet[b % 62]).join('')}`;
+  return `m_${randomAlphanumeric(10)}`;
 }
 
 export function serializePeerMessage(row: PeerRow): PeerMessage {
