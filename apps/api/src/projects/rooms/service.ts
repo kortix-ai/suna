@@ -36,17 +36,21 @@ import { promptModelOverride } from '../lib/prompt-model';
 import { resolveUserIdentities } from '../lib/user-identity';
 import { AGENT_CHAIN_LIMIT, agentChainReached, mentionTokens, mentionsMember, roomMessagePrompt } from './envelope';
 import { ROOM_DIGEST_MAX_LINES, digestLineText, roomDigestText, type RoomDigestLine } from '@kortix/shared';
+import { PEER_MESSAGE_DUPLICATE_WINDOW_MS, PEER_MESSAGE_MAX_CHARS, PEER_MESSAGE_PER_MINUTE } from '@kortix/api-contract/multi-agent';
 
 export const AGENT_ROOMS_FLAG = 'agent_rooms' as const;
 /** How long `kortix rooms notify-idle` waits for the session's turn to end. */
 export const IDLE_WATCH_TTL_MS = 24 * 60 * 60_000;
 export const ROOM_NAME = /^[a-z0-9][a-z0-9._/-]{0,63}$/;
-export const ROOM_MESSAGE_MAX_CHARS = 16_000;
+// One set of limits for a room message and a cross-session message
+// (`@kortix/api-contract/multi-agent`): a session that talks to another cannot
+// send more, or longer, than it could post in a room.
+export const ROOM_MESSAGE_MAX_CHARS = PEER_MESSAGE_MAX_CHARS;
 export const ROOM_TOPIC_MAX_CHARS = 500;
 /** Messages one sender may post in one conversation per minute. */
-export const SENDER_MESSAGES_PER_MINUTE = 30;
+export const SENDER_MESSAGES_PER_MINUTE = PEER_MESSAGE_PER_MINUTE;
 /** A sender's message identical to their previous one within this window is refused: a loop, not news. */
-export const DUPLICATE_WINDOW_MS = 60_000;
+export const DUPLICATE_WINDOW_MS = PEER_MESSAGE_DUPLICATE_WINDOW_MS;
 /** A room digest waits this long for more messages before it is delivered. */
 export const DIGEST_HOLD_MS = 15_000;
 

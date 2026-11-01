@@ -209,6 +209,9 @@ export function registerSecretResourceRoutes() {
     if (row.providerId === 'codex' && row.name === 'CODEX_AUTH_JSON') {
       return c.json({ error: 'Reconnect this ChatGPT account to refresh its OAuth login' }, 400);
     }
+    if (row.providerId === 'claude-agent') {
+      return c.json({ error: 'Reconnect this Claude account to refresh its login' }, 400);
+    }
     const parsed = z.object({ value: z.string().min(1).max(65536) }).safeParse(await readJsonObject(c));
     if (!parsed.success) return c.json({ error: 'Invalid value' }, 400);
     const [updated] = await db.update(accountSecretResources).set({ valueEnc: encryptAccountSecret(accountId, parsed.data.value), cooldownUntil: null, needsReauthAt: null, updatedAt: new Date() })
@@ -297,7 +300,8 @@ export function registerSecretResourceRoutes() {
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
     if (!(await mayManage(c, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
-    if (row.providerId === 'codex' && row.createdBy === c.req.param('userId')) {
+    // A subscription login is its owner's own: the owner keeps access.
+    if ((row.providerId === 'codex' || row.providerId === 'claude-agent') && row.createdBy === c.req.param('userId')) {
       return c.json({ error: 'The connection owner keeps access' }, 400);
     }
     await db.delete(accountSecretGrants).where(and(eq(accountSecretGrants.secretId, row.secretId), eq(accountSecretGrants.userId, c.req.param('userId'))));

@@ -196,11 +196,28 @@ const envSchema = z.object({
   // New server Apps run 24/7 unless the request says otherwise. Existing Apps
   // keep their own setting. Static Apps have no runtime and ignore it.
   KORTIX_APPS_DEFAULT_ALWAYS_ON: optBoolTrue,
+  // The unmodified Claude Code binary the Claude subscription login runs
+  // (`claude setup-token`). The API image installs the pinned version on PATH.
+  CLAUDE_CODE_PATH: z.string().trim().optional().default('claude'),
   // 'false' stops the Apps deployment worker; 'static' drives only static deployments.
   KORTIX_APPS_WORKER_ENABLED: optStr,
   // Global background-worker switch. API-only and migration-shadow deployments
   // keep request handling active while disabling every recurring write loop.
   KORTIX_WORKERS_ENABLED: optBoolTrue,
+  // Which part of the API this `src/index.ts` process runs. `all` (default):
+  // HTTP plus the scheduled jobs, which run on whichever `all` process holds
+  // the leader lease. Self-host, local dev, previews and the test stack run
+  // one `all` process. `web`: HTTP only; the process never joins the leader
+  // election. Production web servers run `web` next to the worker service
+  // (`src/worker.ts`), which runs the scheduled jobs. ecs-deploy.sh sets it
+  // per service, never in the shared secret blob.
+  KORTIX_PROCESS_ROLE: z.enum(['all', 'web']).optional().default('all'),
+  // '0' keeps the bundled model pricing / gateway model catalog and never
+  // fetches the live ones. The local test stack sets both.
+  KORTIX_MODEL_PRICING_LIVE_ENABLED: optStr,
+  KORTIX_MODEL_CATALOG_LIVE_ENABLED: optStr,
+  // /health/live answers 503 above this event-loop lag.
+  HEALTH_MAX_EVENT_LOOP_LAG_MS: optInt(5000),
   // True runs the durable job queue even when KORTIX_WORKERS_ENABLED is false.
   // The deterministic test stack sets it: held connector calls and Capture
   // ingest run only as queued jobs.
@@ -304,10 +321,6 @@ const envSchema = z.object({
   // rows 30 days after a delete, 80 days after a subscription end (inert until decision D6b), their files 7 days later.
   // On by default. Off stops the worker's tick; nothing it has not yet purged is touched.
   SESSION_LOG_PURGE_ENABLED: optBoolTrue,
-  // The API task's memory in MiB (prod and dev ECS tasks: 4096). The journal-less capture starts a
-  // conversion thread only while RSS plus its estimate stays under 75 % of this, or of cgroup
-  // memory.max when lower (`projects/lib/thread-memory.ts`).
-  SESSION_LOG_THREAD_MEMORY_MB: optInt(4096),
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
   // On by default — the base API surface is meant to be discoverable. Internal
   // routers (/v1/admin, /v1/ops) are ALWAYS stripped from the spec regardless
@@ -817,7 +830,7 @@ const envSchema = z.object({
   // Platinum drops the field and the box keeps its data-center address. Off, a
   // sandbox template's `residential_proxy` fails its session closed and the
   // billing worker does not run (platform/services/residential-proxy.ts,
-  // workers/residential-proxy-billing-worker.ts). Dev sets it in deploy-dev.yml.
+  // worker/jobs/residential-proxy-billing.ts). Dev sets it in deploy-dev.yml.
   KORTIX_PLATINUM_RESIDENTIAL_PROXY: optBoolFalse,
 
   // ── Tunnel (optional, all have sane defaults) ────────────────────────────
@@ -1287,8 +1300,13 @@ export const config = {
   KORTIX_APPS_STATIC_HOSTING: env.KORTIX_APPS_STATIC_HOSTING,
   KORTIX_APPS_RETAINED_DEPLOYMENTS: Math.max(1, env.KORTIX_APPS_RETAINED_DEPLOYMENTS),
   KORTIX_APPS_DEFAULT_ALWAYS_ON: env.KORTIX_APPS_DEFAULT_ALWAYS_ON,
+  CLAUDE_CODE_PATH: env.CLAUDE_CODE_PATH || 'claude',
   KORTIX_APPS_WORKER_ENABLED: env.KORTIX_APPS_WORKER_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
+  KORTIX_PROCESS_ROLE: env.KORTIX_PROCESS_ROLE,
+  KORTIX_MODEL_PRICING_LIVE_ENABLED: env.KORTIX_MODEL_PRICING_LIVE_ENABLED,
+  KORTIX_MODEL_CATALOG_LIVE_ENABLED: env.KORTIX_MODEL_CATALOG_LIVE_ENABLED,
+  HEALTH_MAX_EVENT_LOOP_LAG_MS: env.HEALTH_MAX_EVENT_LOOP_LAG_MS,
   KORTIX_JOB_WORKER_ENABLED: env.KORTIX_JOB_WORKER_ENABLED,
   ACCOUNT_DELETION_SWEEP_PAUSED: env.ACCOUNT_DELETION_SWEEP_PAUSED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
@@ -1310,7 +1328,6 @@ export const config = {
   SESSION_LOG_RESTORE_MAX_BYTES: env.SESSION_LOG_RESTORE_MAX_BYTES,
   SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
-  SESSION_LOG_THREAD_MEMORY_MB: env.SESSION_LOG_THREAD_MEMORY_MB,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
   MOBILE_STORE_URL_IOS: env.MOBILE_STORE_URL_IOS,

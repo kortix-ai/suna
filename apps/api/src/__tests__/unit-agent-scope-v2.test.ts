@@ -3,14 +3,10 @@ import { parseManifestString, serializeManifest } from '../projects/triggers';
 import { applyAgentScopeV2 } from '../projects/lib/agent-config-v2';
 import { extractAgents } from '../projects/agents';
 
-// Regression for the v2-YAML agent-scope bug: the /scope route used
-// applyAgentScope (v1 `[[agents]]` array only), which treated a v2 `agents:` map
-// as an empty array → every scope edit on a YAML project 404'd. applyAgentScopeV2
-// merges into the map correctly: v1 wire `env` ↦ v2 `secrets`, deny-by-default
-// omit, and every other governance field preserved.
+// applyAgentScopeV2 merges a /scope edit into the `agents:` map: the wire `env`
+// ↦ `secrets`, deny-by-default omit, and every other field of the block preserved.
 
-const YAML = `kortix_version: 2
-default_agent: kortix
+const YAML = `default_agent: kortix
 agents:
   kortix:
     connectors: all
@@ -18,16 +14,16 @@ agents:
     kortix_permissions: all
     skills: all
   scout:
-    kortix_permissions: [project.cr.open]
+    kortix_permissions: [project.gitops.push]
     connectors: [github]
     skills: [research]
 `;
 
 function manifest() {
-  return parseManifestString(YAML, 'yaml', 'kortix.yaml');
+  return parseManifestString(YAML, 'kortix.yaml');
 }
 
-describe('applyAgentScopeV2 — v2 agents map scope edit', () => {
+describe('applyAgentScopeV2 — agents map scope edit', () => {
   test('set connectors to a list — updates the map, preserves other governance', () => {
     const m = manifest();
     const r = applyAgentScopeV2(m, 'scout', { connectors: ['github', 'linear'] });
@@ -36,21 +32,21 @@ describe('applyAgentScopeV2 — v2 agents map scope edit', () => {
     const scout = (r.raw.agents as Record<string, any>).scout;
     expect(scout.connectors).toEqual(['github', 'linear']);
     // kortix_permissions + skills untouched.
-    expect(scout.kortix_permissions).toEqual(['project.cr.open']);
+    expect(scout.kortix_permissions).toEqual(['project.gitops.push']);
     expect(scout.skills).toEqual(['research']);
   });
 
-  test('wire `env` maps to v2 `secrets` (NOT `env`)', () => {
+  test('wire `env` maps to `secrets` (NOT `env`)', () => {
     const m = manifest();
     const r = applyAgentScopeV2(m, 'scout', { env: ['API_KEY'] });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const scout = (r.raw.agents as Record<string, any>).scout;
     expect(scout.secrets).toEqual(['API_KEY']);
-    expect(scout.env).toBeUndefined(); // never writes the v1 key into a v2 block
+    expect(scout.env).toBeUndefined(); // never writes the retired `env` key
   });
 
-  test("'all' is written explicitly (v2 default is none, not all)", () => {
+  test("'all' is written explicitly (the default is none, not all)", () => {
     const m = manifest();
     const r = applyAgentScopeV2(m, 'scout', { env: 'all', connectors: 'all' });
     expect(r.ok).toBe(true);
@@ -69,7 +65,7 @@ describe('applyAgentScopeV2 — v2 agents map scope edit', () => {
     expect(scout).not.toHaveProperty('secrets');
     expect(scout).not.toHaveProperty('connectors');
     // Non-scope fields still preserved.
-    expect(scout.kortix_permissions).toEqual(['project.cr.open']);
+    expect(scout.kortix_permissions).toEqual(['project.gitops.push']);
   });
 
   test('undeclared agent → notFound (route maps to 404)', () => {
@@ -88,11 +84,11 @@ describe('applyAgentScopeV2 — v2 agents map scope edit', () => {
     m.raw = r.raw;
     const out = serializeManifest(m);
     expect(out).toContain('agents:');
-    expect(out).not.toContain('[[agents]]');
-    const m2 = parseManifestString(out, 'yaml', 'kortix.yaml');
+    expect(out).not.toContain('kortix_version');
+    const m2 = parseManifestString(out, 'kortix.yaml');
     const scout = extractAgents(m2).specs.find((s) => s.name === 'scout')!;
     expect(scout.connectors).toEqual(['github', 'linear']);
-    // extractAgentsV2 surfaces v2 `secrets` as the unified spec.env field.
+    // extractAgents surfaces `secrets` as the spec.env field.
     expect(scout.env).toEqual(['API_KEY']);
   });
 });

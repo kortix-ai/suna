@@ -14,7 +14,7 @@
  *                                    settle a job; failure backs off exponentially
  *                                    and marks the job `dead` after max_attempts
  *
- * `startJobWorker()` (workers/job-queue-worker.ts) runs on every replica: SKIP LOCKED spreads the work, and a
+ * `startJobWorker()` (replica/job-queue.ts) runs on every replica: SKIP LOCKED spreads the work, and a
  * restart loses nothing because a claim is only a timestamp. Handlers must be
  * idempotent: a job runs at least once. A job holds one of its replica's slots
  * while it runs, so a slow job never stops another queue; a run that outlives

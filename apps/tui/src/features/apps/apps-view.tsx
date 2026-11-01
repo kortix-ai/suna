@@ -311,7 +311,7 @@ export function AppsView({
             fg={index === visibilityIndex ? theme.fg : theme.dim}
             bg={index === visibilityIndex ? theme.surface : undefined}
           >
-            <span fg={theme.accent}>{index === visibilityIndex ? GLYPH.selected : ' '}</span>
+            <span fg={theme.brand}>{index === visibilityIndex ? GLYPH.selected : ' '}</span>
             {layoutRow(
               `${option} — ${accessPhrase[option] ?? option}`,
               option === current.visibility ? 'current' : '',
@@ -362,7 +362,7 @@ export function AppsView({
             fg={isCursor ? theme.fg : theme.dim}
             bg={isCursor ? theme.surface : undefined}
           >
-            <span fg={theme.accent}>{mark}</span>
+            <span fg={theme.brand}>{mark}</span>
             <span fg={TONE_COLOR[row.status.tone]}>{body.slice(0, 2)}</span>
             {body.slice(2)}
           </text>

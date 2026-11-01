@@ -83,6 +83,9 @@
         "template": {
           "agents": {
             "ar-chaser": {
+              "description": "Accounts-receivable agent. On a schedule it reviews overdue and soon-due Stripe invoices, sends the right escalating reminder by email, reconciles paid invoices, and posts a daily summary \u2014 holding large or disputed balances for a human.",
+              "mode": "primary",
+              "prompt_file": "agents/ar-chaser.md",
               "connectors": [
                 "stripe"
               ],
@@ -198,6 +201,9 @@
         "template": {
           "agents": {
             "dep-upgrader": {
+              "description": "Weekly reusable-session dependency upgrade agent. Scans {{target_repo}} for outdated dependencies, applies upgrades on an isolated branch, runs the full verification suite in the sandbox, and opens a PR only when everything is green. Handles breaking changes with documented migration steps.",
+              "mode": "primary",
+              "prompt_file": "agents/dep-upgrader.md",
               "secrets": [
                 "GH_TOKEN"
               ],
@@ -320,6 +326,9 @@
         "template": {
           "agents": {
             "leaderboard": {
+              "description": "Weekly ENG/PRODUCT shipping-brief agent. Each week it posts a ranked PR leaderboard, shipping streaks, and a \"what shipped\" summary to a Slack channel, then kicks off the async standup thread. Runs on the weekly-leaderboard cron.",
+              "mode": "primary",
+              "prompt_file": "agents/leaderboard.md",
               "secrets": [
                 "GH_TOKEN"
               ],
@@ -403,6 +412,9 @@
         "template": {
           "agents": {
             "support-agent": {
+              "description": "Customer-support agent. On a schedule it checks Plain for new or unanswered support threads, investigates using the codebase and Stripe, and either resolves the thread or drafts a reply \u2014 holding anything that touches a customer's money or account state for human approval.",
+              "mode": "primary",
+              "prompt_file": "agents/support-agent.md",
               "secrets": [
                 "PLAIN_API_KEY",
                 "STRIPE_SECRET_KEY"
@@ -508,6 +520,9 @@
         "template": {
           "agents": {
             "competitor-watch": {
+              "description": "Daily competitor-watch agent. Fetches the tracked pages in {{watch_list}}, diffs each against the last run's snapshot, filters cosmetic edits, and posts a short summary of what changed to {{slack_channel}}. Silent on quiet days.",
+              "mode": "primary",
+              "prompt_file": "agents/competitor-watch.md",
               "skills": [
                 "competitor-diff"
               ]
@@ -617,6 +632,9 @@
         "template": {
           "agents": {
             "compliance-monitoring": {
+              "description": "Daily fresh-session compliance sweep for {{projectName}}. Checks AWS resource state \u2014 bucket policies, resource tags, IAM roles \u2014 across {{aws_regions}} against policy, cross-references the audit logs for what changed and by whom, files every finding, and proposes remediation as a reviewed change posted to {{alert_channel}}. Read-only against AWS; never applies a fix itself.",
+              "mode": "primary",
+              "prompt_file": "agents/compliance-monitoring.md",
               "connectors": [
                 "aws"
               ],
@@ -740,6 +758,9 @@
         "template": {
           "agents": {
             "crm-hygiene": {
+              "description": "Nightly CRM hygiene agent. Scans HubSpot for duplicate contacts, fills missing fields (job title, industry, company size) from enrichment data, flags deals that have gone stale, and posts a data-quality summary to {{alert_channel}}. Bulk field updates affecting more than {{bulk_update_threshold}} records at once are held for human approval.",
+              "mode": "primary",
+              "prompt_file": "agents/crm-hygiene.md",
               "connectors": [
                 "hubspot",
                 "clearbit"
@@ -868,6 +889,9 @@
         "template": {
           "agents": {
             "docs-maintainer": {
+              "description": "Daily reusable-session docs agent. Reads the code that landed in {{target_repo}} since its last run, finds the documentation those changes made inaccurate, rewrites the affected pages to match the code, and opens a reviewable PR \u2014 never merging, never editing code.",
+              "mode": "primary",
+              "prompt_file": "agents/docs-maintainer.md",
               "connectors": [
                 "github"
               ],
@@ -996,6 +1020,9 @@
         "template": {
           "agents": {
             "inbox-triage": {
+              "description": "Inbox-triage agent. On {{cadence}} it checks the shared Gmail inbox for new inbound mail, labels every message, drafts a reply from {{help_doc}} for common questions, or files a ticket in the {{linear_team}} Linear team for bugs and follow-ups. Every customer-facing reply is held as a draft for a human to review and send.",
+              "mode": "primary",
+              "prompt_file": "agents/inbox-triage.md",
               "connectors": [
                 "gmail",
                 "linear",
@@ -1135,6 +1162,9 @@
         "template": {
           "agents": {
             "incident-postmortem": {
+              "description": "Periodic incident-postmortem agent. Watches {{incident_channel}} for incidents marked resolved, correlates the channel timeline against GitHub deploys/merges and Datadog log spikes over the incident window in {{target_repo}}, and drafts a structured postmortem as a PR under {{postmortem_path}} \u2014 root cause and action items proposed, never finalized or published on its own.",
+              "mode": "primary",
+              "prompt_file": "agents/incident-postmortem.md",
               "connectors": [
                 "github",
                 "datadog"
@@ -1263,6 +1293,9 @@
         "template": {
           "agents": {
             "investor-update": {
+              "description": "Monthly read-only investor-update agent. Pulls MRR and revenue from Stripe, active accounts, growth, burn, and runway from Postgres, reads last month's update from {{updates_folder}} for the prior numbers and the format to match, and drafts this month's update as a new document under {{updates_folder}} for a founder to finalize. Never writes to Postgres or Stripe, and never sends anything.",
+              "mode": "primary",
+              "prompt_file": "agents/investor-update.md",
               "connectors": [
                 "postgresql",
                 "stripe",
@@ -1396,6 +1429,9 @@
         "template": {
           "agents": {
             "office-snacks": {
+              "description": "Weekly office-snack batching agent. Collects snack requests submitted through a Slack shortcut in {{office_channel}}, consolidates them into one order against {{preferred_vendor}} within {{weekly_budget}}, and posts the draft cart for the office manager to approve. Places the order only after that explicit approval \u2014 never before.",
+              "mode": "primary",
+              "prompt_file": "agents/office-snacks.md",
               "secrets": [
                 "ORDERING_ACCOUNT_API_KEY"
               ],
@@ -1519,6 +1555,9 @@
         "template": {
           "agents": {
             "outbound-outreach": {
+              "description": "Periodic outbound-outreach agent. Scans {{hubspot_list}} for new leads, researches each account through enrichment, drafts a personalized first-touch and follow-up sequence, logs every draft to HubSpot, and holds each batch in {{approval_channel}} for a person to approve and send \u2014 capped at {{daily_cap}} contacts per run.",
+              "mode": "primary",
+              "prompt_file": "agents/outbound-outreach.md",
               "connectors": [
                 "hubspot",
                 "clearbit"
@@ -1647,6 +1686,9 @@
         "template": {
           "agents": {
             "release-notes": {
+              "description": "Reusable-session release-notes agent. Checks {{target_repo}} for a new tag or published release, reads every PR merged since the previous one, groups them by area, writes plain-language notes, and opens a PR against {{changelog_path}} \u2014 never publishing, tagging, or announcing.",
+              "mode": "primary",
+              "prompt_file": "agents/release-notes.md",
               "connectors": [
                 "github"
               ],
@@ -1782,6 +1824,9 @@
         "template": {
           "agents": {
             "resume-triage": {
+              "description": "Sweeps {{applications_source}} for new inbound applications, scores each one against {{role_rubric}} with supporting quotes as evidence, writes a structured screen back, and for strong matches proposes interview slots on {{hiring_manager_calendar}}. Never advances or rejects a candidate \u2014 a person makes every decision.",
+              "mode": "primary",
+              "prompt_file": "agents/resume-triage.md",
               "connectors": [
                 "greenhouse",
                 "google_calendar"
@@ -1911,6 +1956,9 @@
         "template": {
           "agents": {
             "slack-control-pane": {
+              "description": "Cross-platform operations agent reachable from Slack. An @-mention in any thread spawns a fresh, isolated session that works the task across whatever connected platforms it touches \u2014 the database, Stripe, Linear, and GitHub ({{target_repo}}) \u2014 and replies in that thread as it goes. A low-frequency {{cadence}} heartbeat checks connected-platform health and posts to {{ops_channel}} if a credential needs reconnecting.",
+              "mode": "primary",
+              "prompt_file": "agents/slack-control-pane.md",
               "connectors": [
                 "linear",
                 "stripe"
@@ -2052,6 +2100,9 @@
         "template": {
           "agents": {
             "user-feedback": {
+              "description": "Scheduled read-mostly feedback agent. Gathers recent support threads from Plain, public reviews from {{review_sources}}, and messages from {{feedback_channel}}, clusters them into themes, and creates or updates one Linear issue per theme in {{linear_team}} with representative quotes and a mention count. Never sets priority, assigns an owner, or closes an issue.",
+              "mode": "primary",
+              "prompt_file": "agents/user-feedback.md",
               "connectors": [
                 "plain",
                 "linear"
@@ -2168,6 +2219,9 @@
         "template": {
           "agents": {
             "weekly-report": {
+              "description": "Weekly fresh-session metrics reporting agent. Every {{cadence}} it queries the metrics tables in Postgres read-only, compares them against prior weeks, writes commentary on what moved and why, and posts the report to {{report_channel}}. Never writes to the database.",
+              "mode": "primary",
+              "prompt_file": "agents/weekly-report.md",
               "connectors": [
                 "postgresql"
               ],
@@ -2294,6 +2348,9 @@
         "template": {
           "agents": {
             "access-requests": {
+              "description": "Periodic access-request agent. Checks {{request_channel}} for new access requests, checks each against policy, looks up the requester's Okta role and team, and prepares a least-privilege GitHub or AWS IAM grant. Applies a grant only after a reply from someone on {{authorized_approvers}} \u2014 never the requester \u2014 signs off, and logs every one.",
+              "mode": "primary",
+              "prompt_file": "agents/access-requests.md",
               "connectors": [
                 "okta",
                 "github",
@@ -2420,6 +2477,9 @@
         "template": {
           "agents": {
             "churn-risk": {
+              "description": "Daily read-only churn-risk agent. Scores every account on usage decline (Postgres), support friction (Plain), and billing/renewal risk (Stripe), then posts a ranked at-risk list with reasons and a suggested next step to {{alert_channel}}. Never writes to any customer system.",
+              "mode": "primary",
+              "prompt_file": "agents/churn-risk.md",
               "connectors": [
                 "postgresql",
                 "stripe"
@@ -2552,6 +2612,9 @@
         "template": {
           "agents": {
             "contract-review": {
+              "description": "Contract review agent. On a schedule it checks {{contracts_folder}} in Google Drive for contracts that haven't been reviewed yet, summarizes each against the contract-playbook, flags clauses that deviate, drafts redlines as Docs suggested edits on the contract, and posts the summary to {{legal_channel}} \u2014 holding every redline for a lawyer to sign off before it reaches the counterparty.",
+              "mode": "primary",
+              "prompt_file": "agents/contract-review.md",
               "connectors": [
                 "google_drive",
                 "google_docs"
@@ -2682,6 +2745,9 @@
         "template": {
           "agents": {
             "employee-offboarding": {
+              "description": "Employee offboarding agent. On a schedule it checks the {{hris_group}} group in Okta for newly marked departures, then runs the full offboarding checklist across Okta, Google Workspace, Google Drive, and GitHub for each \u2014 revoking SSO and app access, transferring document and drive ownership, removing org and team access, and reclaiming licenses \u2014 holding the ownership transfer for human approval (never deleting an account) and posting the completed checklist to {{notify_channel}}.",
+              "mode": "primary",
+              "prompt_file": "agents/employee-offboarding.md",
               "connectors": [
                 "okta",
                 "google_workspace",
@@ -2830,6 +2896,9 @@
         "template": {
           "agents": {
             "employee-onboarding": {
+              "description": "Periodic new-hire onboarding agent. Checks the {{new_hire_group}} group in Google Workspace for new-hire records not yet processed, then for each prepares the Google Workspace account and group memberships, adds the hire to the Slack channels their team works in, and files a first-week checklist in the {{onboarding_project}} Linear project \u2014 holding account creation and group membership for human approval and posting the result to {{notify_channel}}.",
+              "mode": "primary",
+              "prompt_file": "agents/employee-onboarding.md",
               "connectors": [
                 "google_workspace",
                 "linear"
@@ -2952,6 +3021,9 @@
         "template": {
           "agents": {
             "expense-reconciliation": {
+              "description": "Monthly fresh-session reconciliation agent. Matches Stripe charges, payouts, and fees against the bank feed and the invoices tracked in {{reconciliation_sheet}}, posts a reconciled summary back to the sheet, and escalates anything it can't match within tolerance to a human instead of force-fitting it.",
+              "mode": "primary",
+              "prompt_file": "agents/expense-reconciliation.md",
               "connectors": [
                 "stripe",
                 "plaid",
@@ -3094,6 +3166,9 @@
         "template": {
           "agents": {
             "lead-follow-up": {
+              "description": "Periodic inbound-lead follow-up agent. Checks HubSpot for new leads on {{hubspot_lifecycle_stage}}, researches the company, drafts a personalized follow-up email to the sales playbook, and proposes a call slot from real Google Calendar availability \u2014 holding every message at a human approval gate before it sends.",
+              "mode": "primary",
+              "prompt_file": "agents/lead-follow-up.md",
               "connectors": [
                 "hubspot",
                 "google_calendar"
@@ -3213,6 +3288,9 @@
         "template": {
           "agents": {
             "meeting-notes": {
+              "description": "Checks Google Calendar for meetings that ended since the last run and, for each one, spins up a fresh session seeded with the event and its transcript. Writes structured notes and files every action item as a ticket in {{linear_team}}, assigned to the person who owns it. Flags anything it can't confidently assign for a human instead of guessing.",
+              "mode": "primary",
+              "prompt_file": "agents/meeting-notes.md",
               "connectors": [
                 "google_calendar",
                 "google_drive",
@@ -3361,6 +3439,9 @@
         "template": {
           "agents": {
             "oncall-triage": {
+              "description": "Read-only on-call triage agent. On every alert sweep it pulls the Sentry stack trace, correlates the Datadog logs around the spike, checks {{target_repo}} on GitHub for the deploy that shipped just before, and posts a first-pass diagnosis to {{incident_channel}}. Pages a human only when severity is at or above {{page_severity_threshold}} or it can't resolve the alert.",
+              "mode": "primary",
+              "prompt_file": "agents/oncall-triage.md",
               "connectors": [
                 "sentry",
                 "datadog",
@@ -3489,6 +3570,9 @@
         "template": {
           "agents": {
             "qa-agent": {
+              "description": "Persistent-session QA agent for {{target_repo}}. On each scheduled sweep, discovers PRs opened or pushed since the last check, then checks out each one in its own isolated clone, runs the full verification suite, deploys the change to the test environment, exercises it through the edge, and posts a pass/fail result as a GitHub check and comment. Test environment only; never merges.",
+              "mode": "primary",
+              "prompt_file": "agents/qa-agent.md",
               "connectors": [],
               "secrets": [
                 "GH_TOKEN",
@@ -3617,6 +3701,9 @@
         "template": {
           "agents": {
             "sales-call-followup": {
+              "description": "Checks the connected Google Drive transcript folder for any new call transcript since the last run and, for each one, spins up a fresh session seeded with the transcript. Drafts the recap email with the answers and next steps, updates the HubSpot deal's stage, notes, and contacts (or flags the call instead of guessing when no deal confidently matches), and files the follow-up tasks in {{linear_team}} \u2014 holding the recap email at {{approval_channel}} for the rep to review and send.",
+              "mode": "primary",
+              "prompt_file": "agents/sales-call-followup.md",
               "connectors": [
                 "google_drive",
                 "hubspot",
@@ -3750,6 +3837,9 @@
         "template": {
           "agents": {
             "security-questionnaire": {
+              "description": "Fresh-session security questionnaire agent for {{projectName}}. On each inbound questionnaire in {{questionnaire_label}} it parses the questions, matches them against our vetted knowledge base of approved answers and policies, drafts responses in the vendor's own format (SIG, CAIQ, or a custom spreadsheet), flags anything it can't answer confidently, and posts the completed draft to {{security_channel}} \u2014 holding it for security to review before it goes back to the prospect.",
+              "mode": "primary",
+              "prompt_file": "agents/security-questionnaire.md",
               "connectors": [
                 "gmail",
                 "google_drive",
@@ -3889,6 +3979,9 @@
         "template": {
           "agents": {
             "ap-invoice-processing": {
+              "description": "Fresh-session accounts-payable agent. Every {{cadence}}, checks {{invoice_label}} in Gmail for new vendor invoices, extracts vendor, amount, and line items, matches each against the POs and prior invoices tracked in {{ap_ledger}}, flags duplicates, overcharges, and missing POs, records every invoice in the ledger, and posts the batch to {{approval_channel}} for approval. Never schedules or marks a payment as paid.",
+              "mode": "primary",
+              "prompt_file": "agents/ap-invoice-processing.md",
               "connectors": [
                 "gmail",
                 "google_sheets"
@@ -4029,6 +4122,9 @@
         "template": {
           "agents": {
             "customer-onboarding": {
+              "description": "Daily fresh-session customer-onboarding agent for {{projectName}}. Reads accounts from HubSpot inside their {{onboarding_window_days}}-day onboarding window (via {{customer_since_property}}), checks activation milestones and product events in Postgres, flags stalled or overdue accounts, drafts a nudge email to {{draft_channel}} for the owning CSM to send, and alerts the CSM in {{alert_channel}} with the specific context. Never changes account settings and never sends anything itself.",
+              "mode": "primary",
+              "prompt_file": "agents/customer-onboarding.md",
               "connectors": [
                 "postgresql",
                 "hubspot"
@@ -4153,6 +4249,9 @@
         "template": {
           "agents": {
             "payment-recovery": {
+              "description": "Hourly reusable-session payment-recovery agent. Reads failed Stripe invoices and subscription state, advances each subscription through a fixed dunning ladder (smart retry, payment reminder, update-your-card notice, final notice) on a per-subscription ledger, and alerts {{alert_channel}} on Slack. Sends dunning email via {{dunning_channel}}. Never cancels a subscription, issues a credit, or refunds without human approval.",
+              "mode": "primary",
+              "prompt_file": "agents/payment-recovery.md",
               "connectors": [
                 "stripe"
               ],
@@ -4281,6 +4380,9 @@
         "template": {
           "agents": {
             "pipeline-hygiene": {
+              "description": "Daily read-mostly pipeline-hygiene agent. Scans every open HubSpot deal for no logged activity in {{stale_days}} days, a missing next step or close date, no stage movement in {{stall_days}} days, and any overdue task, nudges the owning rep in Slack, and escalates the day's worst offenders to {{escalation_channel}}. The only HubSpot write is an internal hygiene flag \u2014 never the deal's stage, owner, or amount.",
+              "mode": "primary",
+              "prompt_file": "agents/pipeline-hygiene.md",
               "connectors": [
                 "hubspot"
               ],
@@ -4407,6 +4509,9 @@
         "template": {
           "agents": {
             "renewal-manager": {
+              "description": "Daily fresh-session renewal manager. Reads HubSpot deals for every account crossing a 90/60/30-day renewal window on {{renewal_date_property}}, builds a renewal packet (usage, value delivered, expansion ideas), checks Google Calendar read-only for an existing renewal conversation, drafts outreach to {{draft_channel}}, and posts the radar plus at-risk flags to {{alert_channel}}. Never sends outreach or applies a discount.",
+              "mode": "primary",
+              "prompt_file": "agents/renewal-manager.md",
               "connectors": [
                 "hubspot",
                 "google_calendar"
@@ -4535,6 +4640,9 @@
         "template": {
           "agents": {
             "rfp-responder": {
+              "description": "Fresh-session RFP-responder agent for {{projectName}}. On each new inbound RFP or proposal questionnaire found in {{rfp_label}} it parses the questions, matches them against our vetted past-answers library and product docs, drafts the full response in a new Google Doc inside {{drafts_folder}}, and flags anything it can't answer confidently \u2014 holding the completed draft for a human to review and submit.",
+              "mode": "primary",
+              "prompt_file": "agents/rfp-responder.md",
               "connectors": [
                 "gmail",
                 "google_drive",
@@ -4663,6 +4771,9 @@
         "template": {
           "agents": {
             "saas-spend-audit": {
+              "description": "Weekly reusable-session SaaS spend audit agent. Reconciles recurring card and bank charges from Plaid against the subscription register in {{subscription_sheet}}, flags duplicate tools, unused seats, price hikes, upcoming renewals, and shadow IT, and posts a digest to {{alert_channel}}. Recommends cancellations and downgrades only \u2014 never cancels, pauses, or modifies a subscription itself.",
+              "mode": "primary",
+              "prompt_file": "agents/saas-spend-audit.md",
               "connectors": [
                 "plaid",
                 "google_sheets"
@@ -4784,6 +4895,9 @@
         "template": {
           "agents": {
             "ad-performance": {
+              "description": "Daily read-only ad-performance agent. Reads campaign spend and performance from Google Ads and Meta Ads, checks budget pacing, CPA/ROAS drift, underperforming ads and keywords, and anomalies, then posts ranked findings and optimization recommendations to {{alert_channel}}. Never changes a budget, pauses a campaign, or edits an ad.",
+              "mode": "primary",
+              "prompt_file": "agents/ad-performance.md",
               "connectors": [
                 "google_ads",
                 "facebook_ads"
@@ -4925,6 +5039,9 @@
         "template": {
           "agents": {
             "candidate-sourcing": {
+              "description": "Daily fresh-session outbound-sourcing agent for {{projectName}}. For {{greenhouse_role}}, searches LinkedIn for candidates matching {{sourcing_criteria}}, checks the role's Greenhouse pipeline so no one already applied, contacted, or passed on gets re-surfaced, and drafts a personalized outreach email per new match to {{recruiter_review_inbox}} \u2014 capped at {{daily_cap}} candidates per run. Never sends outreach and never writes to Greenhouse; the recruiter reviews, sends, and owns the ATS.",
+              "mode": "primary",
+              "prompt_file": "agents/candidate-sourcing.md",
               "connectors": [
                 "greenhouse",
                 "linkedin"
@@ -5061,6 +5178,9 @@
         "template": {
           "agents": {
             "content-refresh": {
+              "description": "Weekly reusable-session content-refresh agent. Reads Google Search Console for {{site_url}} to find marketing and blog pages in {{content_path}} of {{target_repo}} that are losing impressions and clicks, rotates through the decaying set using its own ledger, refreshes copy, stats, and internal links, and opens a PR \u2014 never publishing or merging.",
+              "mode": "primary",
+              "prompt_file": "agents/content-refresh.md",
               "connectors": [
                 "google_search_console"
               ],
@@ -5205,6 +5325,9 @@
         "template": {
           "agents": {
             "data-pipeline-monitor": {
+              "description": "Read-only warehouse health agent. On every hourly sweep it checks every monitored table in {{warehouse_schema}} against its freshness SLA (default {{freshness_sla_hours}}h), compares row counts to the table's own trailing baseline, diffs the schema for drift, and checks for failed or stalled loads. Posts anomalies to {{alert_channel}} and drafts a GitHub issue in {{incident_repo}} with the likely cause.",
+              "mode": "primary",
+              "prompt_file": "agents/data-pipeline-monitor.md",
               "connectors": [
                 "postgresql"
               ],
@@ -5341,6 +5464,9 @@
         "template": {
           "agents": {
             "qbr-prep": {
+              "description": "Weekly read-only QBR-prep agent. Finds every account whose next QBR falls within {{lookahead_days}} days of HubSpot's {{qbr_date_property}} field, pulls usage trends from Postgres and account/CSM data from HubSpot, and assembles a draft deck plus a briefing doc under {{decks_folder}} in Google Slides and Google Docs. Never writes to Postgres or HubSpot, and never shares or presents anything.",
+              "mode": "primary",
+              "prompt_file": "agents/qbr-prep.md",
               "connectors": [
                 "postgresql",
                 "hubspot",
@@ -5469,6 +5595,9 @@
         "template": {
           "agents": {
             "brand-monitor": {
+              "description": "Daily brand-monitor agent. Searches the web for new mentions of {{brand_terms}}, dedupes against mentions already reported, classifies sentiment, and posts a digest of notable or negative mentions \u2014 each with a suggested response draft \u2014 to {{slack_channel}}. Never replies, comments, or posts anywhere; only drafts for human review.",
+              "mode": "primary",
+              "prompt_file": "agents/brand-monitor.md",
               "connectors": [],
               "secrets": [],
               "skills": [
@@ -5580,6 +5709,9 @@
         "template": {
           "agents": {
             "cloud-cost-anomaly": {
+              "description": "Daily reusable-session cloud-cost anomaly agent. Reads AWS Cost Explorer read-only, keeps a running per-service/per-account spend baseline, flags spend that breaks out of that baseline, attributes the likely driver, and alerts {{alert_channel}} with the delta. Read-only and alert-only \u2014 never modifies or deletes a resource or changes a budget.",
+              "mode": "primary",
+              "prompt_file": "agents/cloud-cost-anomaly.md",
               "connectors": [
                 "aws"
               ],
@@ -5729,6 +5861,9 @@
         "template": {
           "agents": {
             "error-triage": {
+              "description": "Read-only error-backlog grooming agent. On every hourly sweep it pulls {{sentry_project}}'s new and spiking errors, groups them by fingerprint, checks {{triage_repo}} on GitHub for an issue already tracking each one, and drafts an issue with the stack trace and impact for the top {{max_issues_per_run}} that aren't already tracked. Posts a sweep summary to {{alert_channel}}. Never resolves, ignores, mutes, or assigns an error.",
+              "mode": "primary",
+              "prompt_file": "agents/error-triage.md",
               "connectors": [
                 "sentry"
               ],
@@ -5872,6 +6007,9 @@
         "template": {
           "agents": {
             "escalation-manager": {
+              "description": "Support-escalation routing agent. Every 15 minutes it scans the Plain queue for tickets that breach {{sla_targets}}, belong to a VIP account in {{vip_accounts}}, or carry high severity, routes each to the right internal team, opens a linked issue in the {{linear_team}} Linear team when engineering is needed, and posts every escalation to {{escalation_channel}}. It never closes a ticket or promises the customer a resolution.",
+              "mode": "primary",
+              "prompt_file": "agents/escalation-manager.md",
               "connectors": [
                 "linear"
               ],
@@ -5995,6 +6133,9 @@
         "template": {
           "agents": {
             "feature-flag-cleanup": {
+              "description": "Weekly reusable-session feature-flag cleanup agent. Scans {{target_repo}} for feature flags that are fully rolled out or have had no live check in over {{min_flag_age_days}} days, removes the flag and the dead code branch it guards on an isolated branch, proves the suite green in the sandbox, and opens a PR only when everything passes. Flags still in partial rollout or an active experiment are never touched \u2014 only reported for a human to review.",
+              "mode": "primary",
+              "prompt_file": "agents/feature-flag-cleanup.md",
               "connectors": [],
               "secrets": [
                 "GH_TOKEN"
@@ -6122,6 +6263,9 @@
         "template": {
           "agents": {
             "flaky-test-triage": {
+              "description": "Daily reusable-session flaky-test triage agent for {{target_repo}}. On the {{cadence}} schedule, reads CI run history from GitHub, updates a per-test flakiness ledger, and once a test's score reaches {{quarantine_threshold}} opens a quarantine PR (skip + reason, never a deletion) plus a running tracking issue, and posts a summary to {{alert_channel}}. Never merges its own PR.",
+              "mode": "primary",
+              "prompt_file": "agents/flaky-test-triage.md",
               "connectors": [
                 "github"
               ],
@@ -6252,6 +6396,9 @@
         "template": {
           "agents": {
             "gdpr-dsar": {
+              "description": "Daily fresh-session GDPR DSAR agent. Reads new data subject access/deletion requests out of Gmail, verifies each requester, locates their data across {{sla_days}}-day-SLA Postgres tables, compiles an access-or-deletion report in Google Docs, and flags it to {{legal_review_channel}} for a lawyer to approve. Never deletes data and never replies to the subject itself.",
+              "mode": "primary",
+              "prompt_file": "agents/gdpr-dsar.md",
               "connectors": [
                 "gmail",
                 "postgresql",
@@ -6375,6 +6522,9 @@
         "template": {
           "agents": {
             "hr-policy-qa": {
+              "description": "15-minute fresh-session HR policy helpdesk agent. Reads new questions from the HR Gmail inbox, answers strictly from the documented policy library in Notion, and drafts a reply in Gmail for a human to send. Escalates anything ambiguous, legal, personal, or compensation-related to {{hr_channel}} in Slack instead of answering it. Never sends email and never makes a policy exception.",
+              "mode": "primary",
+              "prompt_file": "agents/hr-policy-qa.md",
               "connectors": [
                 "gmail",
                 "notion"
@@ -6508,6 +6658,9 @@
         "template": {
           "agents": {
             "interview-scheduler": {
+              "description": "Daily fresh-session interview-scheduling agent for {{projectName}}. Reads {{greenhouse_pipeline}} for candidates ready to schedule and each one's interview plan, checks {{interviewer_calendars}} for panel availability, and drafts a candidate slot proposal plus a calendar invite per interviewer to {{coordinator_review_inbox}}. Never sends a proposal or invite and never makes a hiring decision; a coordinator confirms and sends everything.",
+              "mode": "primary",
+              "prompt_file": "agents/interview-scheduler.md",
               "connectors": [
                 "greenhouse",
                 "google_calendar"
@@ -6640,6 +6793,9 @@
         "template": {
           "agents": {
             "lead-routing": {
+              "description": "Periodic inbound-lead routing agent. Checks HubSpot for new leads on {{hubspot_lifecycle_stage}}, scores each for intent, assigns it to the right rep by territory, segment, or round-robin, and notifies the rep in {{routing_channel}} \u2014 flagging anything ambiguous or unroutable in {{escalation_channel}} for a human instead of guessing. Never deletes or merges a lead.",
+              "mode": "primary",
+              "prompt_file": "agents/lead-routing.md",
               "connectors": [
                 "hubspot"
               ],
@@ -6759,6 +6915,9 @@
         "template": {
           "agents": {
             "month-end-close": {
+              "description": "Monthly fresh-session month-end close assistant. Walks the close checklist in {{close_sheet}}, reconciles Stripe revenue against the recorded ledger, flags unreconciled items, missing documentation, and anomalies against prior months, and posts a close-status summary to {{close_channel}}. Assembles and flags only \u2014 never posts a journal entry and never marks the books closed.",
+              "mode": "primary",
+              "prompt_file": "agents/month-end-close.md",
               "connectors": [
                 "stripe",
                 "google_sheets"
@@ -6886,6 +7045,9 @@
         "template": {
           "agents": {
             "nda-turnaround": {
+              "description": "Fast NDA turnaround agent. Every 15 minutes it checks {{nda_label}} in Gmail for a new inbound NDA, saves the document into {{nda_folder}} in Google Drive, reviews it against the standard NDA playbook, drafts redlines on every non-standard term as Google Docs suggested edits, and drafts a Gmail reply flagging anything outside the playbook for counsel \u2014 holding every redline and flag for counsel's sign-off. Never signs, executes, or sends anything itself.",
+              "mode": "primary",
+              "prompt_file": "agents/nda-turnaround.md",
               "connectors": [
                 "gmail",
                 "google_drive",
@@ -7013,6 +7175,9 @@
         "template": {
           "agents": {
             "nps-analysis": {
+              "description": "Weekly NPS/CSAT theme analysis agent. Reads new survey responses from {{survey_sheet}}, clusters them into themes, isolates detractor drivers, and posts the score trend and representative quotes to {{report_channel}}.",
+              "mode": "primary",
+              "prompt_file": "agents/nps-analysis.md",
               "connectors": [
                 "google_sheets"
               ],
@@ -7132,6 +7297,9 @@
         "template": {
           "agents": {
             "phishing-triage": {
+              "description": "Phishing-triage agent. Every {{cadence}} it checks the phishing-report Gmail inbox ({{report_query}}) for newly reported emails, analyzes headers, links, and attachments for phishing indicators, classifies the risk, and posts a verdict with a recommended action to {{security_channel}}. It never blocks a sender, deletes mail, or takes any remediation action itself.",
+              "mode": "primary",
+              "prompt_file": "agents/phishing-triage.md",
               "connectors": [
                 "gmail"
               ],
@@ -7264,6 +7432,9 @@
         "template": {
           "agents": {
             "pr-review-nudge": {
+              "description": "Daily read-only PR review nudge agent for {{target_repos}}. Flags PRs awaiting review past {{review_sla_hours}}h, stale PRs with no activity in {{stale_days}}d, and PRs sitting on unaddressed requested changes, then nudges the author or reviewer in {{alert_channel}} with what's blocking. Never merges, closes, or approves a PR.",
+              "mode": "primary",
+              "prompt_file": "agents/pr-review-nudge.md",
               "connectors": [],
               "secrets": [
                 "GH_TOKEN"
@@ -7388,6 +7559,9 @@
         "template": {
           "agents": {
             "sales-forecast": {
+              "description": "Weekly read-only sales-forecast agent. Rolls up HubSpot's open pipeline \u2014 weighted by each stage's own HubSpot-configured probability \u2014 into a forecast vs {{quarterly_quota}} by stage, rep, and segment ({{segment_property}}), flags deals slipping the quarter and other forecast risk, and posts the result to {{forecast_channel}}. Never changes a deal's amount, close date, stage, or owner.",
+              "mode": "primary",
+              "prompt_file": "agents/sales-forecast.md",
               "connectors": [
                 "hubspot"
               ],
@@ -7523,6 +7697,9 @@
         "template": {
           "agents": {
             "social-scheduler": {
+              "description": "Daily fresh-session social-post drafting agent. Reads {{calendar_source}} for content, launches, and announcements landing in the next {{lookahead_days}} days, drafts platform-appropriate posts for {{platforms}}, and holds every draft with its scheduled date in {{approval_channel}} for a human to approve and publish. Never posts to any social account.",
+              "mode": "primary",
+              "prompt_file": "agents/social-scheduler.md",
               "connectors": [
                 "notion"
               ],
@@ -7641,6 +7818,9 @@
         "template": {
           "agents": {
             "ticket-to-kb": {
+              "description": "Weekly reusable-session ticket-to-KB agent. Reads recently resolved threads from Plain, clusters them into recurring topics, cross-references {{kb_path}} of {{kb_repo}} and its own ledger to find topics with real ticket volume and no article, drafts the top gaps from the actual resolutions, and opens a PR \u2014 never publishing or merging.",
+              "mode": "primary",
+              "prompt_file": "agents/ticket-to-kb.md",
               "secrets": [
                 "PLAIN_API_KEY",
                 "GH_TOKEN"
@@ -7767,6 +7947,9 @@
         "template": {
           "agents": {
             "vendor-onboarding": {
+              "description": "Fresh-session vendor-onboarding agent. Every {{cadence}}, checks {{request_label}} in Gmail for new vendor requests, validates the W-9, banking form, and signed contract against a fixed checklist, records every vendor's status in {{vendor_register}}, drafts a follow-up for anything missing or invalid, and posts the batch to {{review_channel}}. Never approves a vendor or sets up payment or banking.",
+              "mode": "primary",
+              "prompt_file": "agents/vendor-onboarding.md",
               "connectors": [
                 "gmail",
                 "google_sheets"
@@ -7908,6 +8091,9 @@
         "template": {
           "agents": {
             "win-loss-analysis": {
+              "description": "Weekly win-loss analysis agent. Reads HubSpot deals closed-won and closed-lost in the last {{lookback_days}} days, mines {{close_reason_property}} and {{competitor_property}} for patterns by segment, competitor, price, and the stage deals die in, and posts themes plus recommendations to {{alert_channel}}.",
+              "mode": "primary",
+              "prompt_file": "agents/win-loss-analysis.md",
               "connectors": [
                 "hubspot"
               ],

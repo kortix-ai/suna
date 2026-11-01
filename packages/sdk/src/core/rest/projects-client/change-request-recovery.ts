@@ -17,6 +17,10 @@ export interface ManifestIssue {
   severity: string;
   line?: number;
   column?: number;
+  /** The repo file the issue is in, when it is not the root manifest (an `imports:` file). */
+  file?: string;
+  /** A deprecated shape: the id of the rewrite `kortix validate --fix` applies. */
+  fix?: string;
 }
 
 export type ChangeRequestRecoveryBlocker =

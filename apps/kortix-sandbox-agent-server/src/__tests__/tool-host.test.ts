@@ -38,7 +38,7 @@ afterEach(() => {
 describe('loadTools', () => {
   test('the Kortix tools load with no project tool declared', async () => {
     const { tools, failed } = await loadTools(root, undefined)
-    expect(tools.map((tool) => tool.name)).toEqual(['web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show'])
+    expect(tools.map((tool) => tool.name)).toEqual(['web_search', 'image_search', 'image_gen', 'scrape_webpage', 'show'])
     expect(tools.every((tool) => tool.source === 'kortix')).toBe(true)
     expect(failed).toEqual([])
   })
@@ -54,11 +54,15 @@ describe('loadTools', () => {
 
   test('kortix_tools picks the Kortix tools; absent, all of them load', async () => {
     const names = async (compiled: Parameters<typeof loadTools>[1]) => (await loadTools(root, compiled)).tools.map((tool) => tool.name)
-    const all = ['web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show']
+    const all = ['web_search', 'image_search', 'image_gen', 'scrape_webpage', 'show']
     expect(await names(undefined)).toEqual(all)
     expect(await names(null)).toEqual(all)
     expect(await names({})).toEqual(all)
-    expect(await names({ kortix_tools: ['web_search', 'image_search', 'scrape_webpage', 'memory'] })).toEqual(['web_search', 'image_search', 'scrape_webpage', 'memory'])
+    expect(await names({ kortix_tools: ['web_search', 'image_search', 'scrape_webpage'] })).toEqual(['web_search', 'image_search', 'scrape_webpage'])
+    // `memory` is retired (2026-10-30): a compiled config that still names it loads nothing for it.
+    expect(await names({ kortix_tools: ['web_search', 'memory'] })).toEqual(['web_search'])
+    // A platform tool loads only when named: `kortix_memory` is My Kortix's.
+    expect(await names({ kortix_tools: ['kortix_memory'] })).toEqual(['kortix_memory'])
     expect(hostedTool('show')).toBeUndefined()
     expect(await names({ kortix_tools: [] })).toEqual([])
     expect(hostedTool('web_search')).toBeUndefined()
@@ -66,15 +70,22 @@ describe('loadTools', () => {
 
   test('an override in project_tools loads in place of a Kortix tool kortix_tools does not list', async () => {
     write('tools/web_search.ts', `export default { description: 'Our search.', parameters: { type: 'object', properties: {} }, execute: () => 'ours' }\n`)
-    const { tools } = await loadTools(root, { kortix_tools: ['memory'], project_tools: { web_search: 'tools/web_search.ts' } })
+    const { tools } = await loadTools(root, { kortix_tools: ['show'], project_tools: { web_search: 'tools/web_search.ts' } })
     expect(tools.map((tool) => [tool.name, tool.source])).toEqual([
-      ['memory', 'kortix'],
+      ['show', 'kortix'],
       ['web_search', 'tools/web_search.ts'],
     ])
     expect(await runTool(hostedTool('web_search')!, {}, ctx())).toBe('ours')
   })
 
   test('a project tool replaces the Kortix tool of its name', async () => {
+    write('tools/show.ts', `export default { description: 'Our show.', parameters: { type: 'object', properties: {} }, execute: () => 'team' }\n`)
+    const { tools } = await loadTools(root, { project_tools: { show: 'tools/show.ts' } })
+    expect(tools.filter((tool) => tool.name === 'show').map((tool) => tool.source)).toEqual(['tools/show.ts'])
+    expect(await runTool(hostedTool('show')!, {}, ctx())).toBe('team')
+  })
+
+  test('an ejected copy of the retired `memory` tool keeps loading as a project tool', async () => {
     write('tools/memory.ts', `export default { description: 'Team memory.', parameters: { type: 'object', properties: {} }, execute: () => 'team' }\n`)
     const { tools } = await loadTools(root, { project_tools: { memory: 'tools/memory.ts' } })
     expect(tools.filter((tool) => tool.name === 'memory').map((tool) => tool.source)).toEqual(['tools/memory.ts'])
@@ -187,9 +198,9 @@ describe('sessionEnv', () => {
 describe('the Kortix tools a project lists', () => {
   test('a Kortix tool the project does not list is not loaded; a listed one is', async () => {
     write('tools/lookup.ts', LOOKUP)
-    await loadTools(root, { kortix_tools: ['web_search', 'image_search', 'scrape_webpage', 'memory'], project_tools: { lookup_order: 'tools/lookup.ts' } })
+    await loadTools(root, { kortix_tools: ['web_search', 'image_search', 'scrape_webpage'], project_tools: { lookup_order: 'tools/lookup.ts' } })
     expect(hostedTool('show')).toBeUndefined()
-    expect(hostedTool('memory')?.name).toBe('memory')
+    expect(hostedTool('scrape_webpage')?.name).toBe('scrape_webpage')
     expect(hostedTool('lookup_order')?.name).toBe('lookup_order')
   })
 })

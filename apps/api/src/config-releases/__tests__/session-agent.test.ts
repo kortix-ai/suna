@@ -57,7 +57,8 @@ describe('resolveSessionReleaseAgent', () => {
     ).toEqual({ kind: 'declared', agent: 'anything' });
   });
 
-  test('the platform meta coordinator is never re-pointed', () => {
+  test('My Kortix is never re-pointed', () => {
+    expect(resolveSessionReleaseAgent('mykortix', roster())).toEqual({ kind: 'declared', agent: 'mykortix' });
     expect(resolveSessionReleaseAgent('meta', roster())).toEqual({ kind: 'declared', agent: 'meta' });
   });
 
@@ -79,9 +80,10 @@ describe('releaseVariantFor', () => {
 
   // The coordinator never holds the project's files, whatever the session
   // metadata says about repository access.
-  test('the platform meta coordinator has its own variant', () => {
-    expect(releaseVariantFor('meta', true)).toBe('meta');
-    expect(releaseVariantFor('meta', false)).toBe('meta');
+  test('My Kortix has its own variant, also for a session from before the rename (`meta`)', () => {
+    expect(releaseVariantFor('mykortix', true)).toBe('mykortix');
+    expect(releaseVariantFor('mykortix', false)).toBe('mykortix');
+    expect(releaseVariantFor('meta', true)).toBe('mykortix');
   });
 
   // The whole point: a session with no usable agent still gets a RELEASE.
@@ -92,8 +94,8 @@ describe('releaseVariantFor', () => {
   });
 });
 
-describe('resolveSessionReleaseAgent on kortix_version 3', () => {
-  test('an undeclared built-in the v3 config disables re-points to the default', () => {
+describe('resolveSessionReleaseAgent: only declared agents run', () => {
+  test('an undeclared built-in the compiled config disables re-points to the default', () => {
     expect(resolveSessionReleaseAgent('build', roster({ onlyDeclared: true }))).toEqual({ kind: 'repoint', agent: 'kortix', dropped: 'build' });
   });
 

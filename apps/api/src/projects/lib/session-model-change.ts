@@ -11,6 +11,7 @@
  * This module holds the pure parts so both paths agree on what a legal change is.
  */
 import { toWireModel } from '../../llm-gateway/resolution/effective';
+import { checkClaudeAgentRef } from '../../llm-gateway/resolution/claude-agent';
 
 /** Terminal states — there is no live agent to re-point, and a cold boot would
  *  re-read the row anyway, so a change here is meaningless rather than harmful. */
@@ -39,6 +40,8 @@ export function validateModelChangeShape(requested: string): ModelChangeRejectio
   if (trimmed.length > 128) {
     return { code: 'INVALID_SESSION_MODEL', message: 'model id is too long' };
   }
+  const claudeAgent = checkClaudeAgentRef(trimmed);
+  if (claudeAgent.kind === 'invalid') return { code: 'INVALID_SESSION_MODEL', message: claudeAgent.message };
   return null;
 }
 

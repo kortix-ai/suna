@@ -189,7 +189,7 @@ function startServer(triggers: unknown[]): string {
 function writeManifest(): void {
   writeFileSync(
     join(tmp, 'kortix.yaml'),
-    ['kortix_version: 2', 'name: monitors-test', 'default_agent: default', ''].join('\n'),
+    ['name: monitors-test', 'default_agent: default', ''].join('\n'),
     'utf8',
   );
 }
@@ -574,7 +574,7 @@ describe('kortix triggers — events', () => {
 
   test('help documents the event type and its flags', async () => {
     const result = await runCli(['triggers', '--help']);
-    for (const fragment of ['connector events, and App events', '--connector <slug>', '--account <label>', '--source <adapter>', '--default-account', '--event <TYPE>', '--config <key=value>', '--config-json <json>', 'events --connector <slug>', 'event.data.<field>']) {
+    for (const fragment of ['connector events, App events, and merged change requests', '--connector <slug>', '--account <label>', '--source <adapter>', '--default-account', '--event <TYPE>', '--config <key=value>', '--config-json <json>', 'events --connector <slug>', 'event.data.<field>']) {
       expect(result.stdout).toContain(fragment);
     }
   });

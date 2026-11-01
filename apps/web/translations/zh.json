@@ -69,7 +69,6 @@
     "oauthExpired": "授权已超时，请重试。",
     "oauthPrivateDescription": "在此项目中使用您的 ChatGPT Plus 或 Pro 套餐。新账户在您共享之前仅供您自己使用。",
     "chatGptSubscription": "ChatGPT 订阅",
-    "useYourChatGpt": "使用您的 ChatGPT 订阅",
     "manageChatGptAccounts": "管理 ChatGPT 账户",
     "connect": "连接",
     "connectChatGpt": "连接 ChatGPT",
@@ -96,7 +95,7 @@
     "deleteError": "无法删除密钥",
     "accessError": "无法更改访问权限",
     "sharedTitle": "提供商连接",
-    "sharedDescription": "添加 API 密钥和 ChatGPT 账户。新连接在您共享之前仅供您自己使用。为每个会话选择要使用的连接。",
+    "sharedDescription": "添加 API 密钥、ChatGPT 账号和 Claude 账号。新添加的在你共享之前仅自己可用。选择每个会话使用哪些。",
     "legacyProjectKey": "现有项目密钥 · 本会话未选择密钥时使用",
     "keyCount": "{count, plural, other {# 个密钥}}",
     "providerKeysFor": "{provider} API 密钥",
@@ -163,7 +162,19 @@
     "opencodeGoConnect": "连接 OpenCode Go",
     "opencodeGoReconnect": "重新连接 OpenCode Go",
     "opencodeGoDisconnect": "断开 OpenCode Go",
-    "opencodeGoFailed": "无法连接 OpenCode Go"
+    "opencodeGoFailed": "无法连接 OpenCode Go",
+    "claudeAccounts": "Claude 账号",
+    "noClaudeAccounts": "还没有 Claude 账号",
+    "connectClaude": "使用 Claude 登录",
+    "claudeOauthPrivateDescription": "在此项目的 Claude 模型中使用你的 Claude Pro 或 Max 套餐。新账号在你共享之前仅自己可用。",
+    "claudeOauthCreationDescription": "使用你的 Claude Pro 或 Max 账号登录。Kortix 加密保存登录凭据，且从不显示。",
+    "claudeDefaultAccountLabel": "Claude · {name}",
+    "claudeAccountConnected": "已连接 Claude 账号",
+    "claudeAccountReconnected": "已重新连接 Claude 账号",
+    "claudeConnectFailed": "Claude 登录未完成。请重试。",
+    "claudeReconnectDescription": "重新使用 Claude 登录。账号会保留名称、访问权限和会话选择。",
+    "claudeAccountLabelPlaceholder": "例如：我的 Claude 账号",
+    "claudeDeleteAccountConfirmTitle": "要为所有人删除此 Claude 账号吗？"
   },
   "secrets": {
     "undecryptable": {
@@ -552,10 +563,6 @@
         "feature-flags": {
           "label": "功能开关",
           "description": "可在正式发布前启用的功能。"
-        },
-        "upgrades": {
-          "label": "升级",
-          "description": "代理对此项目进行的更改。每次运行都会创建变更请求供你审核。任何内容都不会自动合并。"
         },
         "profile": {
           "label": "个人资料",
@@ -1334,6 +1341,10 @@
         "chrome": {
           "name": "Chrome 中的 Kortix",
           "description": "允许会话使用已连接的 Chrome 浏览器。你可以随时接管或停止。"
+        },
+        "agent_teams": {
+          "name": "智能体团队",
+          "description": "主导会话启动有名字的队友，共享一个任务列表。每个队友领取一个任务，在自己的会话中完成，完成后通知主导会话。你可以在主导会话的输入框下方看到每个队友及其任务。会话之间的消息无需此开关即可使用。"
         }
       },
       "channelsSwitch": {
@@ -1348,23 +1359,6 @@
       },
       "wip": "Work in progress",
       "wipNote": "Not recommended yet: it can change or break."
-    },
-    "upgrades": {
-      "available": "可用升级",
-      "readOnly": "只读 — 运行升级需要此项目的写入权限。",
-      "none": "没有可用升级",
-      "upToDateDescription": "此项目已经是最新版本。",
-      "upToDate": "已是最新",
-      "run": "运行",
-      "oneOff": "一次性升级",
-      "oneOffDescription": "您也可以描述一项更改。会话会完成并验证更改，然后打开变更请求。",
-      "oneOffPlaceholder": "例如：在所有引用中将 release-bot 智能体重命名为 deploy-bot",
-      "runUpgrade": "运行升级",
-      "manifestV3": {
-        "title": "将清单升级到 v3 (kortix.yaml)",
-        "description": "将 kortix.toml 或版本 2 的 kortix.yaml 升级到版本 3：项目注册技能、工具、命令和扩展，每个代理按名称启用它们。更新平台管理的技能，并打开变更请求供审查。"
-      },
-      "agentEditorHint": "此项目使用版本 1 的清单。将其升级到 <code>kortix.yaml</code> 版本 3，即可在此编辑该代理的指令、模型、工具权限和访问权限。"
     },
     "plan": {
       "managedByAdmin": "由帐户管理员管理",
@@ -1697,10 +1691,16 @@
       "localComputer": "你的电脑",
       "appsAndExtensions": "应用和扩展"
     },
-    "manifestUpgrade": {
-      "title": "升级到 v3",
-      "description": "此项目使用较旧的清单。代理会将其升级到 <yaml>kortix.yaml</yaml> 版本 3，刷新托管技能并创建更改请求。在你批准之前，不会应用任何更改。",
-      "start": "开始升级"
+    "manifestIssues": {
+      "title": "{file} 有 {errors, plural, other {# 个错误}}和 {warnings, plural, other {# 个警告}}",
+      "titleErrors": "{file} 有 {errors, plural, other {# 个错误}}",
+      "titleWarnings": "{file} 有 {warnings, plural, other {# 个警告}}",
+      "errorsOff": "有错误的智能体和触发器会保持关闭，直到错误被修复。",
+      "warningsOnly": "一切仍正常运行。",
+      "error": "错误",
+      "warning": "警告",
+      "fix": "使用 My Kortix 修复",
+      "fixInSession": "在新会话中修复"
     },
     "filter": {
       "grouping": "分组",
@@ -3096,6 +3096,116 @@
       "scriptFailed": "脚本运行失败",
       "calls": "{count, plural, other {# 次工具调用}}",
       "noOutput": "无输出"
+    },
+    "kortixAction": {
+      "running": {
+        "agents": {
+          "read": "正在查看智能体…",
+          "change": "正在更新智能体…"
+        },
+        "sessions": {
+          "read": "正在查看会话…",
+          "change": "正在更新会话…"
+        },
+        "schedules": {
+          "read": "正在查看计划…",
+          "change": "正在更新计划…"
+        },
+        "connectors": {
+          "read": "正在查看连接器…",
+          "change": "正在更新连接器…"
+        },
+        "people": {
+          "read": "正在查看成员…",
+          "change": "正在更新成员…"
+        },
+        "access": {
+          "read": "正在查看访问权限…",
+          "change": "正在更新访问权限…"
+        },
+        "usage": {
+          "read": "正在查看用量…",
+          "change": "正在查看用量…"
+        },
+        "changeRequests": {
+          "read": "正在查看更改请求…",
+          "change": "正在更新更改请求…"
+        },
+        "memory": {
+          "read": "正在查看记忆…",
+          "change": "正在更新记忆…"
+        }
+      },
+      "status": {
+        "done": "已完成",
+        "needsYou": "需要你处理",
+        "denied": "需要权限",
+        "error": "未完成",
+        "running": "运行中"
+      },
+      "deniedTitle": "需要权限",
+      "grantors": "可以授予权限的人",
+      "grantorsUnknown": "任何管理此项目的人都可以授予。",
+      "newSetting": "新增",
+      "removedSetting": "已移除",
+      "opensInNewTab": "在新标签页中打开",
+      "showDetails": "显示详情"
+    },
+    "workflow": {
+      "fallbackTitle": "工作流",
+      "starting": "正在启动工作流…",
+      "progress": "已完成 {done}/{total}",
+      "failedCount": "{failed}/{total} 失败",
+      "agents": "{count, plural, other {# 个智能体}}",
+      "background": "在后台运行",
+      "status": {
+        "starting": "启动中",
+        "running": "运行中",
+        "done": "已完成",
+        "failed": "失败",
+        "stopped": "已停止",
+        "pending": "未开始"
+      },
+      "openAgent": "打开 {label}",
+      "showDetails": "显示详情",
+      "failedSuffix": "{count} 个失败",
+      "resumed": "已恢复",
+      "resumedHint": "上次运行中已完成的智能体保留了各自的回答。",
+      "large": "大型运行",
+      "largeHint": "此次运行会启动超过 25 个智能体。你可以在每一行停止对应的智能体。",
+      "openRun": "打开运行",
+      "openRunLabel": "打开此次运行的会话",
+      "backgroundIdle": "在独立会话中",
+      "savedName": "已保存的工作流 {name}",
+      "upTo": "最多 {count, plural, other {# 个智能体}}",
+      "result": "结果",
+      "logLabel": "工作流日志",
+      "agentsLabel": "工作流智能体",
+      "filter": {
+        "label": "显示智能体",
+        "all": "全部",
+        "running": "运行中",
+        "failed": "失败",
+        "done": "已完成"
+      },
+      "filterEmpty": {
+        "running": "没有正在运行的智能体。",
+        "failed": "没有失败的智能体。",
+        "done": "还没有完成的智能体。"
+      },
+      "showAll": "显示全部 {count} 个",
+      "retry": "重试 {count}",
+      "cached": "来自上次运行",
+      "stopAgent": "停止 {label}",
+      "stopHint": "停止此智能体",
+      "stopFailed": "无法停止 {label}",
+      "json": "JSON",
+      "jsonKeys": "{count, plural, other {JSON · # 个键}}",
+      "jsonItems": "{count, plural, other {JSON · # 项}}"
+    },
+    "agent": {
+      "backgroundWorking": "正在后台工作",
+      "backgroundSession": "在独立会话中"
     }
   },
   "agentRunLimit": {
@@ -7806,8 +7916,7 @@
       "legendTool": "工具结果",
       "legendOther": "其他",
       "subAgentsLabel": "子代理",
-      "subAgentsNote": "此会话启动了辅助会话。以下总计包含它们。",
-      "combinedCost": "合计费用",
+      "subAgentsNote": "在此会话中运行的辅助代理。它们的费用计入此会话的费用。",
       "combinedMessages": "合计消息",
       "tokensIn": "输入令牌",
       "tokensOut": "输出令牌",
@@ -7831,7 +7940,20 @@
       "rawFilterUser": "你",
       "rawFilterAssistant": "助手",
       "rawNoMatches": "没有匹配的消息",
-      "detailsLabel": "详情"
+      "detailsLabel": "详情",
+      "costSplit": "此会话 {own} · {count} 个已启动会话 {spawned}",
+      "costEstimated": "根据对话记录估算",
+      "detailModelRequests": "模型请求",
+      "spawnedLabel": "已启动的会话",
+      "spawnedNote": "此会话启动的会话,以及这些会话启动的会话。它们的费用已计入总费用。",
+      "spawnedCount": "此会话和 {count} 个已启动会话",
+      "spawnedRequests": "请求",
+      "spawnedCost": "费用",
+      "spawnedThisSession": "此会话",
+      "spawnedTotal": "合计",
+      "spawnedHidden": "未包含 {count} 个你无法打开的已启动会话。",
+      "spawnedTruncated": "仅包含前 500 个已启动会话,最多 10 层。",
+      "spawnedUntitled": "未命名会话"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "统一视图",
@@ -10923,7 +11045,6 @@
       "text18093cad2644": "模态框",
       "text180bbb19a1b2": "只存在于一个人脑中的运行手册",
       "text1814e0a6cb50": "查看可用模型",
-      "text1815aa434bc6": "# Schema 版本 2。运行时是 OpenCode。",
       "text1815ae76cdc7": "未部署",
       "text1829231e85b1": "此账户的所有成员将再次看到 Kortix 徽标、图标、favicon 和名称。已上传的图片会被删除。",
       "text1836d8d61ae9": "从 {value1} 中删除 {value0}",
@@ -12217,7 +12338,6 @@
       "text11ef24ea6e15": "无法重命名账户",
       "text0223e507afd3": "要使用其他账户，请在项目设置中将其添加到此连接器的账户下，并设为默认。",
       "text073fce23e704": "      memory/ 并发起一个标题为",
-      "text0922e6bf143c": "harnesses/opencode/opencode.jsonc",
       "text3ed7c1e32705": "读取跟踪器和改写跟踪器是不同的操作。将写入操作设为“询问”，运行会在调用处暂停，准确显示它想合并或关闭的问题；批准后从此处继续。",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "已记入贷方",
@@ -12550,7 +12670,6 @@
       "text47931699ba90": "时间表已更新",
       "text4795dc5fb288": "当前连接会持续工作，直到保存替换连接。",
       "text479974eaff88": "{value0}：{value1} 个成功，{value2} 个失败。{value3}：{value4}{value5}",
-      "text479d92cbfaa1": "(kortix_version 2) 编辑此代理的说明、模型、工具权限和访问权限。",
       "text47a8467a2faa": "无法加载更改",
       "text47b31f661d3f": "更新角色失败",
       "text47bd29075f8b": "内容",
@@ -13457,7 +13576,6 @@
       "text61dac62928db": "已计划：",
       "text61e8d44ad423": "开始使用",
       "text61eedf5451c2": "    timezone: UTC",
-      "text61f28ba7b5a4": "kortix_version: 2",
       "text61ff61757ef1": "此账户中的访问机制。",
       "text6201111b83a0": "和",
       "text6201f8d3134e": "已摄取监控事件",
@@ -15864,7 +15982,6 @@
       "texta743aa4452d3": "更新授权所有者失败",
       "texta756e5fb5f6b": "IT 需要的不是仪表板，而是一份清单：每行都有站得住脚的理由，并且批准后确实会产生操作。",
       "texta757b331fa9a": "状态文本",
-      "texta757f937ab97": "（kortix_version 2）以在此处编辑此代理的可用性、模型、工具权限和访问权限。",
       "texta76a1fd4cef5": "已接收 Stripe 计费 Webhook",
       "texta76ce82a9749": "缓存",
       "texta76e13b98392": "恢复",
@@ -15955,7 +16072,6 @@
       "texta9f78a15820d": "规则{value0}条件{value1}比较",
       "textaa000c983975": "Groups Resource",
       "textaa023456aca4": "连接 ChatGPT",
-      "textaa132a97a22a": "  config_dir: harnesses/opencode",
       "textaa1c8a0b1716": "点击保存将清除所有维护通知，并恢复正常访问。",
       "textaa2025f803e6": "智能体拥有 shell 和文件系统，可以安装软件包、下载样本、运行、查看输出并重试——这是分析师真正工作的循环，而不是对固定工具集的一次性调用。",
       "textaa2e1a551c0a": "它负责收集，你负责决定。",
@@ -16857,7 +16973,6 @@
       "textc3bf78fdd3b9": "无法提交您的申请",
       "textc3c25857485f": "负责",
       "textc3c709a999c1": "正在读取记忆…",
-      "text7823a1f3af93": "将 kortix.toml 或版本 2 的 kortix.yaml 升级到版本 3：项目注册技能、工具、命令和扩展，每个代理按名称启用它们。更新平台管理的技能，并打开变更请求供审查。",
       "textc3d2e79ebdd0": "连接器",
       "textc3e3a6edeaa5": "条款与条件",
       "textc3e58a73609d": "危险操作",
@@ -16950,7 +17065,6 @@
       "textc634dcb25574": "入账",
       "textc63adab9bd56": "跟踪此任务中使用的工具和引用的文件。",
       "textc63eb6720c6e": "私有",
-      "textc6414eb01d9a": "代理对此工作区所做的更改。每次运行都会打开一个更改请求供您查看 - 没有任何内容会自行合并。",
       "textc6479e2f4970": "刷新更改",
       "textc65feb0006ea": "工人·{value0}{value1}",
       "textc661a1039aa0": "最大化",
@@ -17593,7 +17707,6 @@
       "textd83a0d814c59": "API Status 显示绿色的“Enabled”，“SCIM Username”参数映射到 Email，并且 Provisioning 已启用且没有管理员审批阻塞。",
       "textd84b8be91e7b": "Kortix — 演示文稿",
       "textd84ee1e1e08b": "试试 kortix init，或输入 / 查看命令",
-      "text08edd5b6dcdc": "将清单升级到 v3 (kortix.yaml)",
       "text848f54e89660": "运行记录",
       "textb098a09c78aa": "使用负载测试",
       "text99733344956d": "负载",
@@ -17775,7 +17888,6 @@
       "textdc70ef3b3338": "只有当答案能回到提问所在的位置时，连接频道才有价值。文件可以双向传递，而代理需要你做出的决定会以线程中的按钮呈现，而不是让你跳转到其他地方。",
       "textdc76dd6b1aff": "登录 Kortix CLI",
       "textdc78f4d17256": "未启用 MFA — 他们不会被锁定，但建议让其注册：",
-      "textdc7ab144ca89": "升级以使用完整的代理编辑器",
       "textdc7ea87fdc45": "文件，双向传递",
       "textdc8659db6d41": "Enter",
       "textdc8d7c5c602b": "源账本",
@@ -17898,7 +18010,6 @@
       "textdfea74d6d58d": "上移备用项",
       "textdffb64dc7001": "限额",
       "texte01d77b4a0bd": "问题",
-      "texte02a5941602a": "升级",
       "texte030ac604b81": "部署与安全态势",
       "texte0362b3241c5": "在范围内",
       "texte03abcb2b624": "连接器和更新时间窗口",
@@ -20348,10 +20459,6 @@
       "textc86ce3b8097b": "例如 5000",
       "textfaaf56a699c2": "上限（积分）",
       "texte7a241debad5": "URL",
-      "text3dd46a7b552c": "添加应用",
-      "text68cf13547e38": "通过 URL 添加应用",
-      "text46bc646c9bfe": "在此项目中显示托管在任何地方的网站。Kortix 会在原处打开它，与其运行的应用并列。",
-      "text08e6480e9b78": "已添加 {value0}",
       "text6241684827b2": "此网站不允许 Kortix 在此显示。",
       "textdae75dce541f": "暂停此项目中的所有定时任务和 Webhook。",
       "textced57bebd466": "重新开启此项目的定时任务和 Webhook。",
@@ -21869,7 +21976,6 @@
     "connectorsEmptyBody": "浏览目录并安装应用。添加账户后，智能体即可使用。",
     "browseApps": "浏览应用",
     "agentsLoadFailed": "无法加载智能体",
-    "agentsNeedsV2": "智能体访问在 kortix.yaml（kortix_version 2 或更高）中设置。此项目使用 kortix.toml。",
     "agentsEmpty": "此项目还没有智能体。",
     "agentsIntro": "选择哪些智能体可以使用此连接器以及适用的规则。每次更改都会提交到 kortix.yaml。",
     "agentsReadOnly": "只有能编辑智能体和连接器的人才能更改此项。",
@@ -21956,11 +22062,11 @@
     "bulkPause": "暂停所选",
     "bulkResume": "恢复所选",
     "bulkRemove": "删除所选",
-    "bulkPaused": "{count, plural, one {已暂停 # 个循环} other {已暂停 # 个循环}}",
-    "bulkResumed": "{count, plural, one {已恢复 # 个循环} other {已恢复 # 个循环}}",
-    "bulkRemoved": "{count, plural, one {已删除 # 个循环} other {已删除 # 个循环}}",
-    "bulkFailed": "{count, plural, one {# 个循环无法更改} other {# 个循环无法更改}}",
-    "bulkRemoveTitle": "{count, plural, one {删除 # 个循环？} other {删除 # 个循环？}}",
+    "bulkPaused": "{count, plural, other {已暂停 # 个循环}}",
+    "bulkResumed": "{count, plural, other {已恢复 # 个循环}}",
+    "bulkRemoved": "{count, plural, other {已删除 # 个循环}}",
+    "bulkFailed": "{count, plural, other {# 个循环无法更改}}",
+    "bulkRemoveTitle": "{count, plural, other {删除 # 个循环？}}",
     "bulkRemoveDescription": "它们将停止触发并被删除。会话会保留其历史记录。",
     "once": "一次",
     "every": "每 {period}",
@@ -21977,7 +22083,7 @@
     "resumed": "循环已恢复",
     "removed": "循环已删除",
     "updateFailed": "无法更新循环",
-    "chipLabel": "{count, plural, one {# 个活跃循环} other {# 个活跃循环}}",
+    "chipLabel": "{count, plural, other {# 个活跃循环}}",
     "chipTitle": "此会话的循环",
     "manage": "管理循环",
     "openInReminders": "在循环中打开",
@@ -22008,7 +22114,7 @@
     "emptyDone": "还没有已完成的循环",
     "allSessions": "所有会话",
     "clearSessionFilter": "清除会话筛选",
-    "filterFooter": "{count} / {total, plural, one {# 个循环} other {# 个循环}}",
+    "filterFooter": "{count} / {total, plural, other {# 个循环}}",
     "viewLabel": "视图",
     "viewList": "列表",
     "viewCalendar": "日历",
@@ -22026,7 +22132,7 @@
     "calendarPreviousMonth": "上个月",
     "calendarNextMonth": "下个月",
     "calendarMore": "还有 {count} 个",
-    "calendarMoreOn": "{date} 还有 {count, plural, one {# 个循环} other {# 个循环}}",
+    "calendarMoreOn": "{date} 还有 {count, plural, other {# 个循环}}",
     "calendarSession": "会话",
     "calendarEmptyWeek": "本周没有触发",
     "calendarEmptyDay": "这一天没有触发",
@@ -23408,19 +23514,19 @@
       "instructionsEdit": "Edit instructions",
       "instructionsWrite": "Write instructions",
       "instructionsEmpty": "Instructions you write will show up here",
-      "words": "{count, plural, one {# word} other {# words}}",
+      "words": "{count, plural, other {# words}}",
       "access": "Access",
       "runtime": "Runtime",
       "use": "Use",
       "all": "All",
       "none": "None",
       "selected": "{count} selected",
-      "required": "{count, plural, one {# required before a session starts} other {# required before a session starts}}",
+      "required": "{count, plural, other {# required before a session starts}}",
       "projectDefault": "Project default",
       "repoAccess": "Can read and push the repository",
       "noRepoAccess": "No repository access",
-      "granted": "{count, plural, one {# grant} other {# grants}}",
-      "triggers": "{count, plural, one {# trigger} other {# triggers}}",
+      "granted": "{count, plural, other {# grants}}",
+      "triggers": "{count, plural, other {# triggers}}",
       "builtInHint": "The one agent you talk to. It runs the agents below for you."
     },
     "tabs": {
@@ -23482,15 +23588,15 @@
       "summaryLead": "{name} can use",
       "summaryNone": "{name} has no access yet: no skills, connectors, secrets or permissions.",
       "summaryCount": {
-        "skills": "{count, plural, one {# skill} other {# skills}}",
-        "connectors": "{count, plural, one {# connector} other {# connectors}}",
-        "secrets": "{count, plural, one {# secret} other {# secrets}}",
-        "apps": "{count, plural, one {# App} other {# Apps}}",
-        "actions": "{count, plural, one {# Kortix permission} other {# Kortix permissions}}",
-        "subagents": "{count, plural, one {# subagent} other {# subagents}}",
-        "commands": "{count, plural, one {# command} other {# commands}}",
-        "extensions": "{count, plural, one {# extension} other {# extensions}}",
-        "tools": "{count, plural, one {# tool} other {# tools}}"
+        "skills": "{count, plural, other {# skills}}",
+        "connectors": "{count, plural, other {# connectors}}",
+        "secrets": "{count, plural, other {# secrets}}",
+        "apps": "{count, plural, other {# Apps}}",
+        "actions": "{count, plural, other {# Kortix permissions}}",
+        "subagents": "{count, plural, other {# subagents}}",
+        "commands": "{count, plural, other {# commands}}",
+        "extensions": "{count, plural, other {# extensions}}",
+        "tools": "{count, plural, other {# tools}}"
       },
       "summaryAll": {
         "skills": "every skill",
@@ -23569,9 +23675,9 @@
       "colStatus": "Status",
       "noAccess": "No access",
       "accessCount": {
-        "connectors": "{count, plural, one {# connector} other {# connectors}}",
-        "secrets": "{count, plural, one {# secret} other {# secrets}}",
-        "actions": "{count, plural, one {# permission} other {# permissions}}"
+        "connectors": "{count, plural, other {# connectors}}",
+        "secrets": "{count, plural, other {# secrets}}",
+        "actions": "{count, plural, other {# permissions}}"
       },
       "accessAll": {
         "connectors": "all connectors",
@@ -23989,7 +24095,23 @@
       "panelTitle": "评论和动态",
       "resizePanel": "调整评论面板大小",
       "unshareComments": "{count, plural, other {将删除 # 条评论。}}",
-      "systemActor": "系统"
+      "systemActor": "系统",
+      "draw": "绘制反馈",
+      "drawPen": "画笔",
+      "drawArrow": "箭头",
+      "drawRectangle": "矩形",
+      "drawBlack": "黑色",
+      "drawRed": "红色",
+      "drawBlue": "蓝色",
+      "drawUndo": "撤销笔画",
+      "drawPageChanged": "页面已更改。请取消后重新绘制。",
+      "drawLimit": "已达到绘图上限。请撤销一笔后继续。",
+      "openScreenshot": "打开截图",
+      "drawingScreenshot": "反馈截图",
+      "screenshotReadFailed": "无法加载截图。",
+      "screenshotMissing": "截图不可用。绘图已保存。",
+      "screenshotCaptureFailed": "无法截取屏幕。评论将包含绘图，但不含图片。",
+      "sendScreenshotLimit": "此批次超过20张截图或每次编码请求12 MiB。请减少图片附件，或使用纯文本模型。"
     }
   },
   "emailConnect": {
@@ -24701,6 +24823,8 @@
     "title": "桌面",
     "openTab": "在新标签页中打开",
     "offline": "此计算机上的桌面未运行。",
+    "noDesktop": "这台计算机没有桌面。",
+    "noDesktopHint": "My Kortix 运行在精简的计算机上。你的智能体会话有桌面。",
     "start": "请让 Kortix 运行",
     "retry": "重试",
     "takeOver": "接管",
@@ -24746,5 +24870,247 @@
     "tools": "Tools",
     "extensions": "Extensions",
     "drives": "Drives"
+  },
+  "multiAgent": {
+    "peer": {
+      "message": "来自 {from} 的消息",
+      "idleNotice": "{from} 已完成",
+      "shutdownRequest": "来自 {from} 的关闭请求",
+      "shutdownResponse": "{from} 的关闭请求答复",
+      "expand": "显示完整消息",
+      "collapse": "收起消息"
+    },
+    "notice": {
+      "completed": "{name} 已完成",
+      "failed": "{name} 未完成",
+      "stopped": "{name} 已停止",
+      "fallbackName": "你的智能体",
+      "openSession": "打开会话",
+      "expand": "显示完整结果",
+      "collapse": "收起结果",
+      "batchTitle": "{count, plural, other {# 个智能体已完成}}",
+      "ownsTasks": "仍负责 {tasks}"
+    },
+    "tools": {
+      "running": {
+        "sending": "正在发送消息…",
+        "checkingAgents": "正在查看其他智能体…",
+        "checkingTasks": "正在查看团队任务…",
+        "updatingTasks": "正在更新团队任务…",
+        "stopping": "正在停止智能体…"
+      },
+      "to": "收件人",
+      "peerStatus": {
+        "delivered": "已送达",
+        "held": "等待批准",
+        "refused": "未发送",
+        "denied": "已拒绝",
+        "expired": "已过期",
+        "dropped": "未再次发送"
+      },
+      "relation": {
+        "parent": "上级",
+        "child": "助手",
+        "lead": "负责人",
+        "teammate": "队友",
+        "session": "会话"
+      },
+      "cannotReceive": "无法接收消息",
+      "state": {
+        "working": "工作中",
+        "needsInput": "等待你的回复",
+        "idle": "空闲",
+        "completed": "已完成",
+        "failed": "未完成",
+        "stopped": "已停止"
+      },
+      "taskStatus": {
+        "pending": "待处理",
+        "inProgress": "进行中",
+        "completed": "已完成"
+      },
+      "blockedBy": "被 {tasks} 阻塞",
+      "stopped": "已停止",
+      "alreadyEnded": "已结束",
+      "openSession": "打开会话"
+    },
+    "strip": {
+      "label": "智能体",
+      "agents": "{count, plural, other {# 个智能体}}",
+      "working": "{count} 个工作中",
+      "workflows": "{count, plural, other {# 个工作流}}",
+      "workflowsRunning": "{count, plural, other {# 个工作流运行中}}",
+      "newest": "{name} {state}",
+      "tasks": "任务",
+      "team": "团队",
+      "workflowsGroup": "工作流",
+      "state": {
+        "working": "工作中",
+        "needs_input": "需要你处理",
+        "idle": "已完成",
+        "completed": "已完成",
+        "failed": "失败",
+        "stopped": "已停止"
+      },
+      "workingFor": "工作中 · {elapsed}",
+      "runsAs": "以 {agent} 运行",
+      "teamRole": "仅限本会话的角色",
+      "attention": {
+        "question": "有问题要问你",
+        "approval": "等待你的批准"
+      },
+      "openAgent": "打开 {name}",
+      "stopHint": "停止此智能体",
+      "stopAgent": "停止 {name}",
+      "stopAgentFailed": "无法停止 {name}",
+      "stopFailed": "无法停止该智能体",
+      "runProgress": "已完成 {done}/{total}",
+      "runBackground": "在后台运行",
+      "runRunning": "运行中",
+      "runStatus": {
+        "done": "已完成",
+        "failed": "未完成",
+        "stopped": "已停止"
+      },
+      "runFallback": "工作流",
+      "openRun": "打开运行",
+      "runNoAgents": "还没有智能体"
+    },
+    "subagent": {
+      "fallbackTitle": "智能体",
+      "openPage": "打开页面",
+      "close": "关闭",
+      "messagePlaceholder": "给 {name} 发消息…",
+      "messageLabel": "给 {name} 发消息",
+      "send": "发送",
+      "sent": "消息已发送",
+      "sendFailed": "无法发送消息",
+      "loadFailed": "无法加载此智能体的消息",
+      "retry": "重试",
+      "emptyTitle": "暂无内容",
+      "emptyDescription": "它工作时的消息会显示在这里。",
+      "loadOlder": "显示更早的消息"
+    },
+    "tasks": {
+      "label": "团队任务",
+      "empty": "团队计划的任务会显示在这里。",
+      "group": {
+        "pending": "待处理",
+        "in_progress": "进行中",
+        "completed": "已完成"
+      },
+      "blockedBy": "被 {tasks} 阻塞",
+      "unowned": "未分配"
+    },
+    "held": {
+      "label": "等你处理的消息",
+      "title": "来自 {from} 的消息",
+      "titleShutdown": "{from} 请求停止此会话",
+      "waiting": "等待你的批准。5 分钟后过期。",
+      "deny": "拒绝",
+      "approve": "批准",
+      "approveFailed": "无法送达消息",
+      "denyFailed": "无法拒绝消息"
+    },
+    "workflow": {
+      "large": "大型工作流",
+      "largeHint": "此次运行会启动超过 25 个智能体。你可以在这里停止整个运行，或停止任意智能体。",
+      "paused": "已暂停",
+      "pause": "暂停运行",
+      "resume": "恢复运行",
+      "pauseHint": "暂停：不再启动新的智能体，正在运行的智能体会完成 (p)",
+      "resumeHint": "恢复运行 (p)",
+      "stop": "停止运行",
+      "stopHint": "停止所有智能体并结束运行 (x)",
+      "save": "保存",
+      "saveHint": "将此次运行的脚本保存为可再次运行的工作流 (s)",
+      "savePrompt": "请将工作流运行“{title}”（运行 {runId}）保存为已保存的工作流：把它的脚本写入 {file}，并为此发起一个变更请求。",
+      "saveSent": "已请求保存工作流",
+      "saveFailed": "无法请求保存工作流",
+      "restartHint": "用相同的提示词重启此智能体 (r)",
+      "restartAgent": "重启 {label}",
+      "failed": {
+        "pause": "无法暂停运行",
+        "resume": "无法恢复运行",
+        "stop": "无法停止运行",
+        "restart": "无法重启 {label}"
+      }
+    },
+    "board": {
+      "layoutLabel": "布局",
+      "layoutList": "列表",
+      "layoutBoard": "看板",
+      "dispatchLabel": "启动会话或筛选看板",
+      "dispatchPlaceholder": "启动会话：@agent 加一个任务。筛选：s:working a:agent",
+      "tooShort": "太短",
+      "dispatched": "会话已启动",
+      "dispatchFailed": "无法启动会话",
+      "openSession": "打开会话",
+      "stopSession": "停止会话",
+      "stopped": "会话已停止",
+      "stopFailed": "无法停止会话",
+      "stateFilter": "按状态筛选",
+      "agentFilter": "按智能体筛选",
+      "allStates": "所有状态",
+      "allAgents": "所有智能体",
+      "loadError": "无法加载会话。请重试。",
+      "retry": "重试",
+      "emptyTitle": "你启动的会话会显示在这里",
+      "emptyDescription": "在上方输入任务并按 Enter。每个任务都在各自的会话中运行。",
+      "noMatches": "没有会话符合这些筛选条件",
+      "clearFilters": "清除筛选条件",
+      "listLabel": "按状态分组的会话",
+      "loadMore": "加载更多会话",
+      "loadingMore": "正在加载更多会话…",
+      "more": "… 另有 {count} 个",
+      "keys": {
+        "move": "移动",
+        "peek": "预览",
+        "open": "打开",
+        "stop": "停止"
+      },
+      "group": {
+        "pinned": "已置顶",
+        "needs_input": "等待你的回复",
+        "working": "工作中",
+        "review": "待审核",
+        "completed": "已完成",
+        "ended": "失败 · 已停止"
+      },
+      "state": {
+        "working": "工作中",
+        "needs_input": "等待你的回复",
+        "idle": "空闲",
+        "completed": "已完成",
+        "failed": "失败",
+        "stopped": "已停止"
+      },
+      "replyPlaceholder": "回复。智能体会在下一步收到。",
+      "replyLabel": "回复 {title}",
+      "sendReply": "发送回复",
+      "replySent": "回复已发送",
+      "replyFailed": "无法发送回复"
+    },
+    "ultracode": {
+      "hint": "以智能体工作流的方式运行",
+      "dismiss": "{key} 作为普通提示词发送"
+    }
+  },
+  "claudeSubscription": {
+    "title": "使用你的 Claude 订阅",
+    "description": "Claude 模型通过 Claude Code 在你自己的 Claude Pro 或 Max 方案上运行。只有你的会话使用你的方案。",
+    "starting": "正在打开 Claude…",
+    "approveDescription": "使用拥有你方案的 Claude 账户登录，批准请求，并复制 Claude 显示的代码。",
+    "codeLabel": "来自 claude.com 的代码",
+    "connect": "连接 Claude",
+    "connecting": "正在连接…",
+    "connectedTitle": "你的 Claude 订阅已连接",
+    "connected": "Claude 订阅已连接",
+    "disconnect": "断开 Claude",
+    "disconnected": "Claude 订阅已断开",
+    "startError": "无法开始 Claude 登录。请重试。",
+    "codeError": "无法用该代码连接 Claude。请重新登录并粘贴新代码。",
+    "connectClaude": "连接 Claude",
+    "reconnectClaude": "重新连接 Claude"
   }
 }

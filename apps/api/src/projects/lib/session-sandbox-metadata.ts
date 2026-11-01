@@ -1,4 +1,4 @@
-import { isMetaAgentName } from '@kortix/shared';
+import { isMyKortixAgentName } from '@kortix/shared';
 
 /** Read the server-owned resolved template from durable session metadata. */
 export function sandboxSlugFromSessionMetadata(metadata: unknown): string | undefined {
@@ -25,7 +25,7 @@ export function projectImageAllowedForSession(
   agentName: string | null | undefined,
   repositoryAccess: boolean = true,
 ): boolean {
-  return !isMetaAgentName(agentName ?? '') && repositoryAccess;
+  return !isMyKortixAgentName(agentName ?? '') && repositoryAccess;
 }
 
 /** Apply the session sandbox precedence contract. */

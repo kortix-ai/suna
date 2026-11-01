@@ -46,13 +46,28 @@ function linearTitle(url: URL): string | null {
   return id ? fromSlug(id.replace(/-[0-9a-f]{8,}$/i, '')) : 'Linear';
 }
 
+/** Strip complete HTML comments in one forward pass, including nested opening markers. */
+function withoutComments(text: string): string {
+  const chunks: string[] = [];
+  let cursor = 0;
+  for (;;) {
+    const start = text.indexOf('<!--', cursor);
+    if (start === -1) break;
+    const end = text.indexOf('-->', start + 4);
+    if (end === -1) break;
+    chunks.push(text.slice(cursor, start), ' ');
+    cursor = end + 3;
+  }
+  chunks.push(text.slice(cursor));
+  return chunks.join('');
+}
+
 /** One plain line from page text (Markdown or HTML removed), capped. */
 export function plainSummary(text: string | null | undefined): string {
   if (!text) return '';
-  const plain = text
-    .replace(/<!--[\s\S]*?-->/g, ' ')
+  const plain = withoutComments(text)
     .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/<[^>]+>/g, ' ')
+    .replace(/<[^<>]+>/g, ' ')
     .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, '')

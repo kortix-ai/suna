@@ -47,6 +47,8 @@ COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-ser
 COPY patches/undici@8.12.2.patch /repo/patches/undici@8.12.2.patch
 RUN bun install --frozen-lockfile
 COPY packages/api-contract /repo/packages/api-contract
+COPY packages/shared/src/peer-message-prompt.ts /repo/packages/shared/src/peer-message-prompt.ts
+COPY packages/shared/src/room-prompt.ts /repo/packages/shared/src/room-prompt.ts
 COPY packages/shared/src/ssrf-guard.ts /repo/packages/shared/src/ssrf-guard.ts
 COPY packages/sdk/src/core/session/wire-message-id.ts /repo/packages/sdk/src/core/session/wire-message-id.ts
 COPY apps/kortix-sandbox-agent-server/ ./
@@ -243,6 +245,18 @@ RUN ANYDOC_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions
     && pnpm add -g "@firecrawl/anydoc@${ANYDOC_VERSION}" \
     && command -v anydoc \
     && test "$(anydoc --version)" = "$ANYDOC_VERSION"
+
+# Claude Code: the unmodified program Claude subscription models run (kortixd
+# harness/pi/claude/). The native binary the Claude Agent SDK ships for this
+# platform, at its exact pin. Same step as `claudeCodeInstallLines` in
+# packages/shared/src/sandbox/dockerfile-layer.ts; keep both in sync.
+RUN CLAUDE_AGENT_SDK_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').claudeAgentSdk)")" \
+    && CLAUDE_CODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').claudeCode)")" \
+    && case "$(uname -m)" in x86_64) claude_arch=x64 ;; aarch64|arm64) claude_arch=arm64 ;; *) echo "unsupported Claude Code architecture: $(uname -m)" >&2; exit 1 ;; esac \
+    && sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/kortix/claude /opt/kortix/claude/bin \
+    && npm install --prefix /opt/kortix/claude --no-save --ignore-scripts --no-audit --no-fund "@anthropic-ai/claude-agent-sdk-linux-${claude_arch}@${CLAUDE_AGENT_SDK_VERSION}" \
+    && ln -sf "/opt/kortix/claude/node_modules/@anthropic-ai/claude-agent-sdk-linux-${claude_arch}/claude" /opt/kortix/claude/bin/claude \
+    && /opt/kortix/claude/bin/claude --version | grep -q "^${CLAUDE_CODE_VERSION} "
 
 # pi system packages (runtime-versions.json `piSystemPackages`), installed the
 # way `pi install` installs a global one. Same step as `piSystemPackageLines` in

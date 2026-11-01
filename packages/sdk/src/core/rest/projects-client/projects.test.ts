@@ -12,6 +12,7 @@ import {
   type FeatureFlagView,
   type KortixProject,
   type ProjectInput,
+  type ProjectManifestHealth,
   type ProvisionPhase,
   type ProvisionProjectInput,
   type ProvisionStreamEvent,
@@ -269,6 +270,34 @@ test('normalizes the provider-neutral default_agent field from legacy project co
 
   expect(detail.config.default_agent).toBe('kortix');
   expect(detail.config.open_code_default_agent).toBe('kortix');
+});
+
+test('project detail carries the manifest health the API reports', async () => {
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+  const manifestHealth: ProjectManifestHealth = {
+    path: 'kortix.yaml',
+    state: 'issues',
+    errors: 1,
+    warnings: 1,
+    issues: [
+      { path: 'agents.helper.modle', message: 'Unknown key. Did you mean "model"?', severity: 'error', line: 4, column: 5 },
+      { path: 'kortix_version', message: 'obsolete and ignored. Remove it.', severity: 'warning', line: 1, column: 1 },
+    ],
+  };
+  nextResponse = () =>
+    new Response(
+      JSON.stringify({
+        project: { project_id: 'proj-1' },
+        config: { agents: [], commands: [], skills: [], env: { required: [], optional: [] }, manifest_health: manifestHealth },
+        file_count: 0,
+        files: [],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+
+  const detail = await getProjectDetail('proj-1');
+
+  expect(detail.config.manifest_health).toEqual(manifestHealth);
 });
 
 // getProjectDetail goes through backendApi/unwrap — the same parsing path
@@ -1021,6 +1050,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'email_channel',
     'session_groups',
     'chrome',
+    'agent_teams',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());
   expect(new Set(FEATURE_FLAG_KEYS).size).toBe(FEATURE_FLAG_KEYS.length);

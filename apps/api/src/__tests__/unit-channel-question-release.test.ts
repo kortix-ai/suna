@@ -164,6 +164,22 @@ describe('releaseRuntimeQuestion — the runtime contract', () => {
     await releaseRuntimeQuestion('sess-1', 'a/b?c', [['x']]);
     expect(calls[0].url).toContain('/question/a%2Fb%3Fc/reply');
   });
+
+  test('a box with the session-log actions is released on the native question route', async () => {
+    resolved = { endpoint: { url: 'http://sandbox.internal', headers: { 'X-Sandbox-Token': 't' } }, externalId: 'ext-actions' } as never;
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      if (url.endsWith('/kortix/health')) return Response.json({ capabilities: ['runtime.turns.v1', 'runtime.actions.v1'] });
+      calls.push({ url, init });
+      return Response.json({ ok: true }, { status });
+    }) as unknown as typeof fetch;
+    const { releaseRuntimeQuestion } = await load();
+
+    expect(await releaseRuntimeQuestion('sess-1', 'que_abc', [['a sentinel']])).toBe('released');
+    expect(calls.map((c) => c.url)).toEqual(['http://sandbox.internal/kortix/runtime/questions/que_abc/reply']);
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({ answers: [['a sentinel']] });
+    status = 404;
+    expect(await releaseRuntimeQuestion('sess-1', 'que_abc', [['x']])).toBe('already_answered');
+  });
 });
 
 // Asserted on source: the

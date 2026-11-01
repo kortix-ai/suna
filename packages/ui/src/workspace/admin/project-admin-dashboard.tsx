@@ -62,7 +62,6 @@ import { RAIL_HORIZONTAL_ROW_CLASS, RAIL_ROW_CLASS, RailGroup } from '../../inte
 import { capabilityAccess } from '../../internal/layout/project-settings-nav';
 import { SettingsNavProvider } from '../../internal/layout/settings-nav-context';
 import { withStaleChunkRecovery } from '../../internal/lib/chunk-reload';
-import { detectManifestVersion } from '../../internal/lib/manifest-version';
 import {
   CUSTOMIZE_SECTION_GATE_ACTIONS,
   isCustomizeSectionVisible,
@@ -83,7 +82,7 @@ import {
   type ProjectAdminResourceKey,
   type ProjectAdminSectionKey,
   type ProjectAdminSettingsKey,
-} from './project-admin-sections';
+} from '../../customize/project-settings/project-admin-sections';
 
 export { buildProjectAdminNav } from './project-admin-nav';
 export {
@@ -91,7 +90,7 @@ export {
   parseProjectAdminSection,
   projectAdminHref,
   type ProjectAdminSectionKey,
-} from './project-admin-sections';
+} from '../../customize/project-settings/project-admin-sections';
 
 type SectionPage = ComponentType<{ projectId: string }>;
 
@@ -165,15 +164,12 @@ const SETTINGS_PAGES: Record<ProjectAdminSettingsKey, SectionPage> = {
     () => import('../../customize/settings/tabs/experimental-tab'),
     (m) => m.ExperimentalTab,
   ),
-  upgrades: lazyPage(() => import('../../customize/migrate-to-v2/upgrade-view'), (m) => m.UpgradesView),
 };
 
 interface RailRow {
   key: ProjectAdminSectionKey;
   label: string;
   icon: Icon;
-  /** The orange dot: Upgrades on a v1 manifest. */
-  attention?: boolean;
 }
 
 /** A verdict the engine returned: not a probe in flight, not a failed probe. */
@@ -237,10 +233,6 @@ export function ProjectAdminDashboard({
     // Members needs the account id: wait for the detail so it never pops in.
     detail.isFetched;
 
-  const upgradeAttention = detail.data
-    ? detectManifestVersion(detail.data.config.manifest_raw) === 1
-    : false;
-
   // `resources.tabs` is a fresh array each render; its contents are the key.
   const allowedTabs = resources.tabs.join(',');
   const drivesOn = drives.enabled;
@@ -266,13 +258,8 @@ export function ProjectAdminDashboard({
             settingsProbeFailed ||
             isCustomizeSectionVisible(s.gate, (action) => settingsCans[action]?.allowed === true),
         )
-        .map((s) => ({
-          key: s.key,
-          label: s.label,
-          icon: s.icon,
-          attention: s.key === 'upgrades' && upgradeAttention,
-        })),
-    [settingsCans, settingsProbeFailed, tI18nComplete, upgradeAttention],
+        .map((s) => ({ key: s.key, label: s.label, icon: s.icon })),
+    [settingsCans, settingsProbeFailed, tI18nComplete],
   );
 
   const rows = [...resourceRows, ...settingsRows];
@@ -436,12 +423,6 @@ function RailTrigger({
       <Link href={projectAdminHref(projectId, row.key)} prefetch>
         <Glyph className="size-4 shrink-0" />
         <span className={cn(!horizontal && 'truncate')}>{row.label}</span>
-        {row.attention ? (
-          <span
-            aria-hidden
-            className={cn('bg-kortix-orange size-1.5 shrink-0 rounded-full', !horizontal && 'ml-auto')}
-          />
-        ) : null}
       </Link>
     </TabsTrigger>
   );

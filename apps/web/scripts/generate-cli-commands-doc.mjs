@@ -23,9 +23,7 @@ const UNDOCUMENTED = {
 };
 
 /** The usage cell, where the table's arguments name more than the docs describe. */
-const USAGE = {
-  schema: 'schema --version 3',
-};
+const USAGE = {};
 
 /** command → [what it does, where the docs explain it]. */
 const COMMANDS = {
@@ -41,17 +39,16 @@ const COMMANDS = {
   groups: ['Groups of people that share a role.', '[Teams](/docs/guide#teams)'],
   tokens: ['Personal access keys, service accounts and connected apps.', '[Security](/docs/guide#security)'],
   billing: ['The plan, credits, transactions, and costs per project and per session.', '[Billing](/docs/guide#billing)'],
-  init: ['Create a project directory from the starter, with a `kortix_version: 3` `kortix.yaml`.', '[The everyday loop](#the-everyday-loop)'],
+  init: ['Create a project directory from the starter, with its `kortix.yaml`.', '[The everyday loop](#the-everyday-loop)'],
   projects: [
-    'List, create, clone, link, use, rename and delete projects. Also feature flags (`features`), project CLI tokens (`cli-tokens`) and the upgrade to `kortix_version: 3` (`upgrade`).',
+    'List, create, clone, link, use, rename and delete projects. Also feature flags (`features`) and project CLI tokens (`cli-tokens`).',
     '[Which project a command uses](#which-project-a-command-uses)',
   ],
   sessions: ['Start, talk to, follow, stop and delete sessions.', '[Session commands](#session-commands)'],
   chat: ["Talk to a session's agent: a line chat, or one prompt with `-p`. Same as `kortix sessions chat`.", '[Session commands](#session-commands)'],
   tui: ['The whole product as a terminal app. `kortix t` and `kortixt` start it too. Experimental.', '[Everywhere](/docs/guide#everywhere)'],
   ship: ['Validate, commit and push the current branch. A folder with no link and no default project gets a new project. `kortix deploy` is the same command.', '[Commit and push](/docs/developers#commit-and-push)'],
-  validate: ['Check `kortix.yaml` and the sandbox template Dockerfiles.', '[Check and validate](#check-and-validate)'],
-  migrate: ['Convert the project manifest to `kortix_version: 3`. It prints the plan; `--write` applies it.', '[Migrate to v3](/docs/developers#migrate-to-v3)'],
+  validate: ['Check `kortix.yaml` and the sandbox template Dockerfiles. One line per issue: `<file>:<line>:<col>  <severity>  <path>  <message>`.', '[Check and validate](#check-and-validate)'],
   doctor: ['Check the login and the project, then start a throwaway session and wait for an agent reply.', '[Check and validate](#check-and-validate)'],
   schema: ['Print the `kortix.yaml` JSON Schema.', '[Check and validate](#check-and-validate)'],
   agents: ['The default agent, model pins, scope and the full agent config.', '[Agents](/docs/guide#agents)'],

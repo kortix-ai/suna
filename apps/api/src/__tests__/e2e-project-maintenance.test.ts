@@ -91,7 +91,6 @@ mock.module('../projects/git', () => ({
     branchDeletes.push(branchName);
     return true;
   },
-  createRemoteSessionBranch: async () => undefined,
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
   readRepoFile: async () => '',

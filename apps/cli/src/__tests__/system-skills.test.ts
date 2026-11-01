@@ -293,15 +293,9 @@ describe('kortix system-skills — get', () => {
 });
 
 describe('kortix system-skills — path', () => {
-  test('resolves the on-disk skill dir under a legacy project root', async () => {
-    mkdirSync(join(tmp, '.kortix', 'opencode', 'skills'), { recursive: true });
-    const code = await runSystemSkills(['path', 'kortix-system']);
-    expect(code).toBe(0);
-    expect(stdout.trim().endsWith('.kortix/opencode/skills/kortix-system')).toBe(true);
-  });
-
-  test('resolves the root skills/ dir under a root-layout project', async () => {
-    writeFileSync(join(tmp, 'kortix.yaml'), 'kortix_version: 2\n');
+  test('resolves the root skills/ dir; a .kortix/opencode folder is not read', async () => {
+    writeFileSync(join(tmp, 'kortix.yaml'), 'default_agent: main\n');
+    mkdirSync(join(tmp, '.kortix', 'opencode', 'skills', 'kortix-system'), { recursive: true });
     mkdirSync(join(tmp, 'skills'), { recursive: true });
     const code = await runSystemSkills(['path', 'kortix-system']);
     expect(code).toBe(0);

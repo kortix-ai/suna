@@ -190,6 +190,7 @@ export function ComposerCard({
   onVariantChange,
   projectId,
   toolbarSlot,
+  underbarSlot,
   rewind,
   selectedAgent = null,
   onAgentChange,
@@ -385,6 +386,7 @@ export function ComposerCard({
                   models={models}
                   selectedModel={availableSelectedModel}
                   onContextClick={onContextClick}
+                  agentsSlot={underbarSlot}
                 />
               ) : null
             }
@@ -462,14 +464,15 @@ export function ComposerCard({
         agents={primaryAgents}
         selectedAgent={selectedAgent}
         onAgentChange={onAgentChange}
-                  agentMenuOpen={agentMenuOpen}
-                  onAgentMenuOpenChange={setAgentMenuOpen}
+        agentMenuOpen={agentMenuOpen}
+        onAgentMenuOpenChange={setAgentMenuOpen}
         noAccessibleAgents={noAccessibleAgents}
         messages={messages}
         models={models}
         selectedModel={availableSelectedModel}
         onContextClick={onContextClick}
         toolbarSlot={toolbarSlot}
+        agentsSlot={underbarSlot}
       />
     )}
 

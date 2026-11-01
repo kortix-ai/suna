@@ -66,7 +66,7 @@ import { buildFeatureFlagSandboxEnv } from './feature-flag-env';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { recordedWorkspaceVolume } from '../../platform/services/workspace-volume';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
-import { buildPlatformMetaOpenCodeConfig } from './platform-meta-agent';
+import { buildMyKortixConfig } from './my-kortix-agent';
 
 import { resolveSessionPersonalOwner } from './personal-resources';
 
@@ -158,15 +158,13 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
 }> {
   let agentGrantEnv: string[] | 'all' | undefined;
 
-  // v2-only: compile the manifest's `agents:` map into an OpenCode-native
-  // config the sandbox receives sealed (see compile-agent-config.ts). `null`
-  // for a v1 project (no `kortix_version: 2`) or any read/parse failure — no
-  // KORTIX_COMPILED_AGENT_CONFIG key is emitted below in that case, so a v1
-  // project's sandbox env is byte-for-byte unaffected by this. Gated on the
+  // Compile kortix.yaml into the agent config the sandbox receives sealed (see
+  // compile-agent-config.ts). `null` for a project with no manifest file — no
+  // KORTIX_COMPILED_AGENT_CONFIG key is emitted below in that case. Gated on the
   // same `defaultBranch` presence as the `agents:` grant resolution below
   // (both need git context; optional call sites that omit it get neither).
   let compiledAgentConfig: string | null = input.platformMetaAgent
-    ? buildPlatformMetaOpenCodeConfig()
+    ? buildMyKortixConfig()
     : null;
   // The agent's pi packages and codemode, read off the SAME fetch that
   // compiles the agent config, so they cost no extra git round trip.
@@ -184,19 +182,16 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
       manifestPackages = manifestPiPackages(raw, input.agentName);
       manifestCodemode = manifestPiCodemode(raw, input.agentName);
     };
+    // `'tip-proof'`: the base ref was at the remote's tip within the refresh
+    // interval, proven by this process or adopted from another
+    // (projects/git/mirror.ts). The plain TTL read fetched all of a large
+    // repo's branches whenever this process had not fetched for 60 s: p50
+    // 742 ms, p90 4.7 s on prod for this step (2026-10-30).
+    const read = { onManifest, forceRefresh: 'tip-proof' as const };
     compiledAgentConfig =
       !(input.repositoryAccess ?? true)
-        ? await resolveSelectedAgentConfigForSession(
-            gitProject,
-            input.agentName,
-            input.baseRef,
-            { onManifest },
-          )
-          : await resolveCompiledAgentConfigForSession(
-              gitProject,
-              input.baseRef,
-              { onManifest },
-            );
+        ? await resolveSelectedAgentConfigForSession(gitProject, input.agentName, input.baseRef, read)
+        : await resolveCompiledAgentConfigForSession(gitProject, input.baseRef, read);
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
     // allowlist receives ONLY those IDENTIFIERS — so a narrowly-scoped agent
@@ -217,6 +212,7 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
       defaultBranch: input.defaultBranch,
       manifestPath: input.manifestPath,
       sessionAgent: input.agentName,
+      forceRefresh: 'tip-proof',
     });
   }
   return { agentGrantEnv, compiledAgentConfig, manifestPackages, manifestCodemode };

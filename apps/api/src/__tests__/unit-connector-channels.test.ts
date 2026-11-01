@@ -27,7 +27,7 @@ import {
 } from '../connectors/gateway';
 import type { NormalizedAction } from '../connectors/types';
 import { extractConnectors } from '../projects/connectors';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+import { parseManifestString } from '../projects/triggers';
 
 function expectDefined<T>(value: T | null | undefined): T {
   expect(value).toBeDefined();
@@ -183,19 +183,16 @@ describe('channelCatalog(email)', () => {
 /* ─── parse ───────────────────────────────────────────────────────────────── */
 
 function parse(body: string) {
-  const src = [`kortix_version = ${KNOWN_SCHEMA_VERSION}`, '\n[project]\nname = "t"\n', body].join(
-    '\n',
-  );
-  return extractConnectors(parseManifestString(src));
+  return extractConnectors(parseManifestString(`project:\n  name: t\n${body}`));
 }
 
-describe('[[connectors]] provider="channel"', () => {
+describe('connectors provider: channel', () => {
   test('slack platform parses', () => {
     const { specs, errors } = parse(`
-[[connectors]]
-slug = "slack"
-provider = "channel"
-platform = "slack"
+connectors:
+  - slug: slack
+    provider: channel
+    platform: slack
 `);
     expect(errors).toEqual([]);
     expect(specs[0]).toMatchObject({ slug: 'slack', provider: 'channel', platform: 'slack' });
@@ -203,10 +200,10 @@ platform = "slack"
 
   test('email platform parses', () => {
     const { specs, errors } = parse(`
-[[connectors]]
-slug = "kortix_email"
-provider = "channel"
-platform = "email"
+connectors:
+  - slug: kortix_email
+    provider: channel
+    platform: email
 `);
     expect(errors).toEqual([]);
     expect(specs[0]).toMatchObject({
@@ -220,19 +217,19 @@ platform = "email"
     expect(
       expectDefined(
         parse(`
-[[connectors]]
-slug = "x"
-provider = "channel"
+connectors:
+  - slug: x
+    provider: channel
 `).errors[0],
       ).error,
     ).toMatch(/platform/);
     expect(
       expectDefined(
         parse(`
-[[connectors]]
-slug = "x"
-provider = "channel"
-platform = "discord"
+connectors:
+  - slug: x
+    provider: channel
+    platform: discord
 `).errors[0],
       ).error,
     ).toMatch(/platform/);
@@ -240,13 +237,12 @@ platform = "discord"
 
   test('declaring [connectors.auth] is rejected (credential is the install token)', () => {
     const { errors } = parse(`
-[[connectors]]
-slug = "slack"
-provider = "channel"
-platform = "slack"
-
-  [connectors.auth]
-  type = "bearer"
+connectors:
+  - slug: slack
+    provider: channel
+    platform: slack
+    auth:
+      type: bearer
 `);
     expect(expectDefined(errors[0]).error).toMatch(/install token/);
   });

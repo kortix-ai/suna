@@ -617,6 +617,25 @@ test('project(id).secrets covers provider OAuth list, start, poll, and removal',
   expect(last().method).toBe('DELETE');
 });
 
+test('project(id).claudeSubscription covers status, sign-in, token and disconnect', async () => {
+  await kortix.project('PID123').claudeSubscription.get();
+  expect(last().url.endsWith('/projects/PID123/claude-subscription')).toBe(true);
+  expect(last().method).toBe('GET');
+
+  await kortix.project('PID123').claudeSubscription.startLogin();
+  expect(last().url.endsWith('/projects/PID123/claude-subscription/login/start')).toBe(true);
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').claudeSubscription.completeLogin({ flowId: 'F1', code: 'C1' });
+  expect(last().url.endsWith('/projects/PID123/claude-subscription/login/complete')).toBe(true);
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').claudeSubscription.setToken('sk-ant-oat01-x');
+  expect(last().url.endsWith('/projects/PID123/claude-subscription/token')).toBe(true);
+  expect(last().method).toBe('PUT');
+
+});
+
 test('project(id).connectors covers credential-mode/sensitive/policies/pipedream', async () => {
   await kortix.project('PID123').connectors.auth.discover({
     slug: 'hubspot',
@@ -840,6 +859,16 @@ test('session(...).transcript hits the compact transcript endpoint with limit/ch
   expect(last().method).toBe('GET');
 });
 
+// The TUI's Repository screen reads a non-default branch's history: the facade
+// must forward the options `listProjectCommits` already takes.
+test('project(id).git.commits forwards ref, path and limit', async () => {
+  await kortix.project('PID123').git.commits();
+  expect(last().url).toMatch(/\/projects\/PID123\/commits$/);
+  await kortix.project('PID123').git.commits({ ref: 'feature', path: 'src', limit: 20 });
+  expect(last().url).toContain('/projects/PID123/commits?ref=feature&path=src&limit=20');
+  expect(last().method).toBe('GET');
+});
+
 // KRTX-2316: the list is one page; the facade passes the status and the cursor.
 test('project(id).changeRequests.list pages with status, limit and cursor', async () => {
   await kortix.project('PID123').changeRequests.list();
@@ -904,8 +933,8 @@ test('project(id).setupLinks mints secret-entry and connect-request links', asyn
   expect(last().method).toBe('POST');
 });
 
-test('project(id).validateManifest posts the raw TOML text', async () => {
-  await kortix.project('PID123').validateManifest('[project]\nname = "x"');
+test('project(id).validateManifest posts the raw manifest text', async () => {
+  await kortix.project('PID123').validateManifest('project:\n  name: x\n');
   expect(last().url).toContain('/projects/PID123/manifest/validate');
   expect(last().method).toBe('POST');
 });

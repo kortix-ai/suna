@@ -718,6 +718,12 @@ export const baseTipChecks = kortixSchema.table(
     /** Null while the first check runs. */
     tip: varchar('tip', { length: 64 }),
     checkedAt: timestamp('checked_at', { withTimezone: true }).notNull(),
+    /**
+     * When the check that stored `tip` asked the upstream. A later claim moves
+     * `checked_at` while the old `tip` stays readable, so only this column says
+     * how old the stored tip is. Null until a check lands and after a base move.
+     */
+    provenAt: timestamp('proven_at', { withTimezone: true }),
   },
   (table) => [primaryKey({ columns: [table.projectId, table.ref] })],
 );
@@ -8503,6 +8509,87 @@ export const sessionIdleWatches = kortixSchema.table('session_idle_watches', {
 ]);
 
 /**
+ * Cross-session messages (`send_message`, `@kortix/api-contract/multi-agent`):
+ * one row per message one session sent another. A delivered message is also a
+ * durable `continue_session` row in `session_lifecycle_commands`; this row is
+ * the record both sides list, the rate and duplicate checks, the hold a
+ * receiver set to `hold` approves or denies, and the `notify_when_idle`
+ * watch (`idle_notice_until`). No `account_id`: the project
+ * names it. The retention purge deletes a session's rows with its content.
+ */
+export const sessionPeerMessages = kortixSchema.table('session_peer_messages', {
+  /** `m_` + 10 base62 characters: the `#m_…` the delivered text names. */
+  id: text('id').primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  fromSessionId: text('from_session_id').notNull(),
+  fromHandle: text('from_handle').notNull(),
+  toSessionId: text('to_session_id').notNull(),
+  toHandle: text('to_handle').notNull(),
+  type: varchar('type', { length: 24 }).notNull(),
+  message: text('message').notNull(),
+  summary: text('summary'),
+  status: varchar('status', { length: 16 }).notNull(),
+  notifyWhenIdle: boolean('notify_when_idle').default(false).notNull(),
+  /** The person the delivered turn acts as: the one who passed the prompt check at send time. */
+  actorUserId: uuid('actor_user_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  /** A held message expires at this instant. Null for every other status. */
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  /**
+   * `notify_when_idle`: the receiver's next turn end owes the sender one idle
+   * notice until this instant. Cleared when the notice goes out. Null: none owed.
+   */
+  idleNoticeUntil: timestamp('idle_notice_until', { withTimezone: true }),
+}, (table) => [
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'session_peer_messages_project_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.fromSessionId], foreignColumns: [projectSessions.sessionId], name: 'session_peer_messages_from_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.toSessionId], foreignColumns: [projectSessions.sessionId], name: 'session_peer_messages_to_fk' }).onDelete('cascade'),
+  // The sender's rate and duplicate checks, and `direction=out`.
+  index('idx_session_peer_messages_from').on(table.fromSessionId, table.createdAt.desc()),
+  // `direction=in`.
+  index('idx_session_peer_messages_to').on(table.toSessionId, table.createdAt.desc()),
+  // The receiver's held count and the hold expiry.
+  index('idx_session_peer_messages_held').on(table.toSessionId, table.expiresAt).where(sql`${table.status} = 'held'`),
+  // The idle notices a receiver's turn end owes.
+  index('idx_session_peer_messages_idle_due').on(table.toSessionId).where(sql`${table.idleNoticeUntil} is not null`),
+  check('session_peer_messages_type_check', sql`${table.type} in ('message', 'shutdown_request', 'shutdown_response')`),
+  check('session_peer_messages_status_check', sql`${table.status} in ('delivered', 'held', 'refused', 'denied', 'expired', 'dropped')`),
+]).enableRLS();
+
+/**
+ * A team's shared task list (flag `agent_teams`): the tasks of one lead
+ * session, numbered `seq` from 1 per lead. A teammate claims a task with one
+ * compare-and-set UPDATE (pending, unowned, every `blocked_by` completed).
+ * No `account_id`: the project names it.
+ */
+export const sessionTasks = kortixSchema.table('session_tasks', {
+  taskId: uuid('task_id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  leadSessionId: text('lead_session_id').notNull(),
+  seq: integer('seq').notNull(),
+  subject: text('subject').notNull(),
+  description: text('description').default('').notNull(),
+  status: varchar('status', { length: 16 }).default('pending').notNull(),
+  ownerHandle: text('owner_handle'),
+  ownerSessionId: text('owner_session_id'),
+  /** Task numbers (`seq`) of the same lead this task waits for. */
+  blockedBy: integer('blocked_by').array().default(sql`'{}'::integer[]`).notNull(),
+  createdBySessionId: text('created_by_session_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'session_tasks_project_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.leadSessionId], foreignColumns: [projectSessions.sessionId], name: 'session_tasks_lead_fk' }).onDelete('cascade'),
+  // One number per task in a team; serves the list by lead in seq order.
+  unique('session_tasks_lead_seq_key').on(table.leadSessionId, table.seq),
+  // "The tasks this teammate still owns" (the teammate notice).
+  index('idx_session_tasks_owner').on(table.ownerSessionId).where(sql`${table.ownerSessionId} is not null`),
+  check('session_tasks_status_check', sql`${table.status} in ('pending', 'in_progress', 'completed')`),
+  check('session_tasks_seq_check', sql`${table.seq} > 0`),
+]).enableRLS();
+
+/**
  * A browser's Web Push subscription. Bound to the sign-in that registered it:
  * a push goes only while that sign-in lives, like push_device_tokens.
  */
@@ -8710,6 +8797,29 @@ export const artifactComments = kortixSchema.table('artifact_comments', {
   check('artifact_comments_body_check', sql`char_length(${table.body}) <= 10000 and (${table.deletedAt} is not null or char_length(${table.body}) >= 1)`),
 ]).enableRLS();
 
+export const artifactCommentScreenshotObjects = kortixSchema.table('artifact_comment_screenshot_objects', {
+  objectKey: text('object_key').primaryKey(),
+  uploadConfirmed: boolean('upload_confirmed').notNull().default(false),
+  sizeBytes: integer('size_bytes'),
+  projectId: uuid('project_id').notNull(),
+  commentId: uuid('comment_id'),
+  state: text('state').notNull().default('uploading').$type<'uploading' | 'attached' | 'deleting'>(),
+  attempts: integer('attempts').notNull().default(0),
+  nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().default(sql`now() + interval '1 hour'`),
+  lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  leaseId: uuid('lease_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_artifact_screenshot_project').on(table.projectId),
+  index('idx_artifact_screenshot_comment').on(table.commentId),
+  index('idx_artifact_screenshot_due').on(table.nextAttemptAt).where(sql`${table.state} <> 'attached'`),
+  foreignKey({ name: 'artifact_screenshot_comment_fk', columns: [table.commentId], foreignColumns: [artifactComments.commentId] }).onDelete('set null'),
+  check('artifact_screenshot_state_check', sql`${table.state} in ('uploading', 'attached', 'deleting')`),
+  check('artifact_screenshot_attempts_check', sql`${table.attempts} >= 0`),
+  check('artifact_screenshot_attached_check', sql`${table.state} <> 'attached' or ${table.commentId} is not null`),
+  check('artifact_screenshot_key_check', sql`${table.objectKey} ~ ('^' || ${table.projectId}::text || '/artifact-comments/[0-9a-f-]{36}[.](png|webp)$')`),
+]).enableRLS();
+
 export const artifactCommentWriteLimits = kortixSchema.table('artifact_comment_write_limits', {
   artifactId: uuid('artifact_id').notNull(),
   actorKey: text('actor_key').notNull(),
@@ -8762,4 +8872,60 @@ export const sessionSandboxIdentities = kortixSchema.table('session_sandbox_iden
   foreignKey({ name: 'session_sandbox_identities_account_fk', columns: [table.accountId], foreignColumns: [accounts.accountId] }).onDelete('cascade'),
   foreignKey({ name: 'session_sandbox_identities_project_fk', columns: [table.projectId], foreignColumns: [projects.projectId] }).onDelete('cascade'),
   index('idx_session_sandbox_identities_project').on(table.projectId),
+]).enableRLS();
+
+/**
+ * A member's Claude subscription login, one per (account, user). The value is
+ * the long-lived token `claude setup-token` prints, encrypted with the account
+ * key. The API decrypts it only to deliver it to Claude Code in that same
+ * user's sessions (`KORTIX_CLAUDE_OAUTH_TOKEN`). The LLM gateway, the secret
+ * listings and the sandbox env sync never read this table.
+ */
+export const claudeSubscriptionLogins = kortixSchema.table('claude_subscription_logins', {
+  accountId: uuid('account_id').notNull(),
+  userId: uuid('user_id').notNull(),
+  valueEnc: text('value_enc').notNull(),
+  /** `setup_token` (the login ran in Kortix) or `pasted` (the member pasted a token). */
+  source: text('source').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.accountId, table.userId] }),
+  foreignKey({ name: 'claude_subscription_logins_member_fk', columns: [table.userId, table.accountId], foreignColumns: [accountMemberships.userId, accountMemberships.accountId] }).onDelete('cascade'),
+  check('claude_subscription_logins_source_check', sql`${table.source} in ('setup_token', 'pasted')`),
+]).enableRLS();
+
+/**
+ * One `claude setup-token` run. The replica that started it owns the process
+ * and polls this row: a complete call on any replica writes the pasted code
+ * here, and the owner feeds it to the process and records the outcome.
+ */
+export const claudeSubscriptionLoginFlows = kortixSchema.table('claude_subscription_login_flows', {
+  flowId: uuid('flow_id').defaultRandom().primaryKey(),
+  accountId: uuid('account_id').notNull(),
+  userId: uuid('user_id').notNull(),
+  status: text('status').notNull().default('starting'),
+  authorizeUrl: text('authorize_url'),
+  /** The pasted code, encrypted; cleared when the owner reads it. */
+  codeEnc: text('code_enc'),
+  error: text('error'),
+  /** The project the sign-in adds a Claude account to. Null on a flow from before named accounts. */
+  projectId: uuid('project_id'),
+  /** The new account's label; null when the flow reconnects `resource_id`. */
+  resourceLabel: text('resource_label'),
+  /** The new account's id, minted at start so a repeated completion writes one row; or the account a reconnect refreshes. */
+  resourceId: uuid('resource_id'),
+  /** True when the flow refreshes the login of the existing account `resource_id`. */
+  reconnect: boolean('reconnect').notNull().default(false),
+  /** Who may use the new account (`{mode:'private'|'project'|'members', …}`); null = private. */
+  sharing: jsonb('sharing'),
+  /** The owner's last poll: a complete call fails fast when the owner stopped. */
+  ownerSeenAt: timestamp('owner_seen_at', { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ name: 'claude_subscription_login_flows_member_fk', columns: [table.userId, table.accountId], foreignColumns: [accountMemberships.userId, accountMemberships.accountId] }).onDelete('cascade'),
+  index('idx_claude_subscription_login_flows_member').on(table.accountId, table.userId),
+  check('claude_subscription_login_flows_status_check', sql`${table.status} in ('starting', 'awaiting_code', 'exchanging', 'connected', 'failed')`),
 ]).enableRLS();

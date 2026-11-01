@@ -171,3 +171,51 @@ test('missing scope disables context and infinite activity without network reque
   await settle();
   expect(globalThis.fetch).not.toHaveBeenCalled();
 });
+
+test("screenshot hook reads a scoped authenticated Blob and never substitutes another comment image", async () => {
+  let screenshot: ReturnType<typeof hooks.useArtifactCommentScreenshot>;
+  const fetched: string[] = [];
+  globalThis.fetch = mock(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(new Headers(init?.headers).get("authorization")).toBe(
+        "Bearer token",
+      );
+      fetched.push(String(input));
+      return new Response("png-bytes", {
+        status: String(input).includes("comment-b") ? 404 : 200,
+        headers: { "content-type": "image/png" },
+      });
+    },
+  ) as unknown as typeof fetch;
+  function Probe({ commentId }: { commentId: string | null }) {
+    screenshot = hooks.useArtifactCommentScreenshot(
+      "project-a",
+      "artifact-a",
+      commentId,
+    );
+    return React.createElement("span", null, screenshot.status);
+  }
+  const render = async (commentId: string | null) => {
+    await act(async () => {
+      const child = React.createElement(
+        QueryClientProvider,
+        { client },
+        React.createElement(Probe, { commentId }),
+      );
+      if (renderer) renderer.update(child);
+      else renderer = create(child);
+    });
+    await settle();
+  };
+  await render(null);
+  expect(fetched).toEqual([]);
+  await render("comment-a");
+  expect(screenshot!.data).toBeInstanceOf(Blob);
+  expect(screenshot!.data?.type).toBe("image/png");
+  await render("comment-b");
+  for (let attempt = 0; attempt < 20 && !screenshot!.error; attempt++)
+    await settle();
+  expect(screenshot!.data).toBeUndefined();
+  expect(screenshot!.error).toMatchObject({ status: 404 });
+  expect(fetched).toHaveLength(2);
+});

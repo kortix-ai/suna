@@ -21,7 +21,7 @@ import { logger } from '../lib/logger';
 const PREFIX = 'kortix-';
 const MAX_AGE_MS = 30 * 60 * 1000; // older than this ⇒ abandoned
 
-/** One sweep. workers/tmp-reaper-worker.ts runs it every 10 min on every replica. */
+/** One sweep. replica/tmp-reaper.ts runs it every 10 min on every replica. */
 export async function runTmpReaperSweep(): Promise<void> {
   const dir = tmpdir();
   let entries: string[];

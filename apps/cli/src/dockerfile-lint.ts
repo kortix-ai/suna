@@ -14,7 +14,7 @@
  * Emits `ManifestIssue`s so `validate` can merge them straight into the report
  * it already prints — `path` carries the Dockerfile's repo-relative path (not a
  * kortix.yaml dot-path) and `line` is the line WITHIN that Dockerfile, so
- * `formatIssues` renders `error path/to/Dockerfile: … (line 3)`.
+ * `kortix validate` prints `path/to/Dockerfile:3  error  path/to/Dockerfile  …`.
  */
 import type { ManifestIssue } from '@kortix/manifest-schema';
 

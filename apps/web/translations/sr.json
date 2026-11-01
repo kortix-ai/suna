@@ -69,7 +69,6 @@
     "oauthExpired": "Време за овлашћење је истекло. Покушајте поново.",
     "oauthPrivateDescription": "Користите свој ChatGPT Plus или Pro план у овом пројекту. Нови налози су приватни док их не поделите.",
     "chatGptSubscription": "ChatGPT претплата",
-    "useYourChatGpt": "Користите своју ChatGPT претплату",
     "manageChatGptAccounts": "Управљајте ChatGPT налозима",
     "connect": "Повежи",
     "connectChatGpt": "Повежи ChatGPT",
@@ -96,7 +95,7 @@
     "deleteError": "Тајна није обрисана",
     "accessError": "Приступ није промењен",
     "sharedTitle": "Везе са добављачима",
-    "sharedDescription": "Додајте API кључеве и ChatGPT налоге. Нове везе су приватне док их не поделите. Изаберите које користи свака сесија.",
+    "sharedDescription": "Dodaj API ključeve, ChatGPT naloge i Claude naloge. Novi su privatni dok ih ne podeliš. Izaberi koje koristi svaka sesija.",
     "legacyProjectKey": "Постојећи кључ пројекта · Користи се када за ову сесију нису изабрани кључеви",
     "keyCount": "{count, plural, one {# кључ} few {# кључа} other {# кључева}}",
     "providerKeysFor": "API кључеви за {provider}",
@@ -163,7 +162,19 @@
     "opencodeGoConnect": "Poveži OpenCode Go",
     "opencodeGoReconnect": "Ponovo poveži OpenCode Go",
     "opencodeGoDisconnect": "Isključi OpenCode Go",
-    "opencodeGoFailed": "Povezivanje OpenCode Go nije uspelo"
+    "opencodeGoFailed": "Povezivanje OpenCode Go nije uspelo",
+    "claudeAccounts": "Claude nalozi",
+    "noClaudeAccounts": "Još nema Claude naloga",
+    "connectClaude": "Prijavi se preko Claude-a",
+    "claudeOauthPrivateDescription": "Koristi svoj Claude Pro ili Max plan za Claude modele u ovom projektu. Novi nalozi su privatni dok ih ne podeliš.",
+    "claudeOauthCreationDescription": "Prijavi se svojim Claude Pro ili Max nalogom. Kortix čuva prijavu šifrovanu i nikada je ne prikazuje.",
+    "claudeDefaultAccountLabel": "Claude · {name}",
+    "claudeAccountConnected": "Claude nalog je povezan",
+    "claudeAccountReconnected": "Claude nalog je ponovo povezan",
+    "claudeConnectFailed": "Prijava preko Claude-a nije završena. Pokušaj ponovo.",
+    "claudeReconnectDescription": "Ponovo se prijavi preko Claude-a. Nalog zadržava ime, pristup i izbore sesija.",
+    "claudeAccountLabelPlaceholder": "npr. Moj Claude nalog",
+    "claudeDeleteAccountConfirmTitle": "Obrisati ovaj Claude nalog za sve?"
   },
   "secrets": {
     "undecryptable": {
@@ -405,10 +416,6 @@
         "feature-flags": {
           "label": "Ознаке функционалности",
           "description": "Функционалности које можете да укључите пре опште доступности."
-        },
-        "upgrades": {
-          "label": "Надоградње",
-          "description": "Промене које агент прави у овом пројекту. Свако покретање отвара захтев за промену који прегледате. Ништа се не спаја аутоматски."
         },
         "profile": {
           "label": "Профил",
@@ -1334,6 +1341,10 @@
         "chrome": {
           "name": "Kortix у Chrome-у",
           "description": "Дозволите сесији да користи повезани Chrome прегледач. Можете преузети контролу или је зауставити у сваком тренутку."
+        },
+        "agent_teams": {
+          "name": "Тимови агената",
+          "description": "Водећа сесија покреће именоване саиграче који деле једну листу задатака. Сваки саиграч преузима задатак, ради на њему у својој сесији и јавља водећој сесији када заврши. Сваког саиграча и његове задатке видиш испод поља за унос водеће сесије. Поруке између сесија раде и без ове опције."
         }
       },
       "channelsSwitch": {
@@ -1348,23 +1359,6 @@
       },
       "wip": "Work in progress",
       "wipNote": "Not recommended yet: it can change or break."
-    },
-    "upgrades": {
-      "available": "Доступне надоградње",
-      "readOnly": "Само за читање — покретање надоградње захтева приступ за писање у овај пројекат.",
-      "none": "Нема доступних надоградњи",
-      "upToDateDescription": "Овај пројекат је већ ажуриран.",
-      "upToDate": "Ажурирано",
-      "run": "Покрени",
-      "oneOff": "Једнократна надоградња",
-      "oneOffDescription": "Уместо тога опишите једну измену. Сесија је извршава, проверава и отвара захтев за измену.",
-      "oneOffPlaceholder": "нпр. Преименујте агента release-bot у deploy-bot на свим местима",
-      "runUpgrade": "Покрени надоградњу",
-      "manifestV3": {
-        "title": "Надогради манифест на v3 (kortix.yaml)",
-        "description": "Преводи kortix.toml или kortix.yaml верзије 2 у верзију 3: пројекат региструје вештине, алате, команде и проширења, а сваки агент их укључује по имену. Ажурира вештине којима управља платформа и отвара захтев за измену ради прегледа."
-      },
-      "agentEditorHint": "Овај пројекат користи манифест верзије 1. Надоградите га на <code>kortix.yaml</code> верзије 3 да бисте овде уређивали упутства, модел, дозволе алата и приступ овог агента."
     },
     "plan": {
       "managedByAdmin": "Управља администратор налога",
@@ -1697,10 +1691,16 @@
       "localComputer": "Ваш рачунар",
       "appsAndExtensions": "Апликације и проширења"
     },
-    "manifestUpgrade": {
-      "title": "Надогради на v3",
-      "description": "Овај пројекат користи старији манифест. Агент га преводи у <yaml>kortix.yaml</yaml> верзије 3, освежава управљане вештине и отвара захтев за измену. Ништа се не мења док га не одобрите.",
-      "start": "Покрени надоградњу"
+    "manifestIssues": {
+      "title": "{file} има {errors, plural, one {# грешку} few {# грешке} other {# грешака}} и {warnings, plural, one {# упозорење} few {# упозорења} other {# упозорења}}",
+      "titleErrors": "{file} има {errors, plural, one {# грешку} few {# грешке} other {# грешака}}",
+      "titleWarnings": "{file} има {warnings, plural, one {# упозорење} few {# упозорења} other {# упозорења}}",
+      "errorsOff": "Агенти и окидачи са грешком су искључени док се она не исправи.",
+      "warningsOnly": "Све и даље ради.",
+      "error": "Грешка",
+      "warning": "Упозорење",
+      "fix": "Исправи помоћу My Kortix",
+      "fixInSession": "Исправи у новој сесији"
     },
     "filter": {
       "grouping": "Груписање",
@@ -3096,6 +3096,116 @@
       "scriptFailed": "Скрипта није успела",
       "calls": "{count, plural, one {# позив алата} few {# позива алата} other {# позива алата}}",
       "noOutput": "Нема излаза"
+    },
+    "kortixAction": {
+      "running": {
+        "agents": {
+          "read": "Проверавају се агенти…",
+          "change": "Ажурирају се агенти…"
+        },
+        "sessions": {
+          "read": "Проверавају се сесије…",
+          "change": "Ажурирају се сесије…"
+        },
+        "schedules": {
+          "read": "Проверавају се распореди…",
+          "change": "Ажурирају се распореди…"
+        },
+        "connectors": {
+          "read": "Проверавају се конектори…",
+          "change": "Ажурирају се конектори…"
+        },
+        "people": {
+          "read": "Проверавају се чланови…",
+          "change": "Ажурирају се чланови…"
+        },
+        "access": {
+          "read": "Проверава се приступ…",
+          "change": "Ажурира се приступ…"
+        },
+        "usage": {
+          "read": "Проверава се потрошња…",
+          "change": "Проверава се потрошња…"
+        },
+        "changeRequests": {
+          "read": "Проверавају се захтеви за измену…",
+          "change": "Ажурира се захтев за измену…"
+        },
+        "memory": {
+          "read": "Провера меморије…",
+          "change": "Ажурирање меморије…"
+        }
+      },
+      "status": {
+        "done": "Готово",
+        "needsYou": "Потребан си",
+        "denied": "Потребна је дозвола",
+        "error": "Није завршено",
+        "running": "Ради"
+      },
+      "deniedTitle": "Потребна је дозвола",
+      "grantors": "Ко може да је додели",
+      "grantorsUnknown": "Свако ко управља овим пројектом може да је додели.",
+      "newSetting": "Ново",
+      "removedSetting": "Уклоњено",
+      "opensInNewTab": "Отвара се у новој картици",
+      "showDetails": "Прикажи детаље"
+    },
+    "workflow": {
+      "fallbackTitle": "Ток рада",
+      "starting": "Покреће се ток рада…",
+      "progress": "{done} од {total} готово",
+      "failedCount": "{failed} од {total} није успело",
+      "agents": "{count, plural, one {# агент} few {# агента} other {# агената}}",
+      "background": "Ради у позадини",
+      "status": {
+        "starting": "Покреће се",
+        "running": "Ради",
+        "done": "Готово",
+        "failed": "Није успело",
+        "stopped": "Заустављено",
+        "pending": "Није почело"
+      },
+      "openAgent": "Отвори {label}",
+      "showDetails": "Прикажи детаље",
+      "failedSuffix": "{count} није успело",
+      "resumed": "Настављено",
+      "resumedHint": "Агенти који су завршили у претходном покретању задржавају своје одговоре.",
+      "large": "Велико покретање",
+      "largeHint": "Ово покретање покреће више од 25 агената. Сваког агента можеш да зауставиш из његовог реда.",
+      "openRun": "Отвори покретање",
+      "openRunLabel": "Отвори сесију покретања",
+      "backgroundIdle": "У сопственој сесији",
+      "savedName": "Сачувани ток рада {name}",
+      "upTo": "До {count, plural, one {# агент} few {# агента} other {# агената}}",
+      "result": "Резултат",
+      "logLabel": "Дневник тока рада",
+      "agentsLabel": "Агенти тока рада",
+      "filter": {
+        "label": "Прикажи агенте",
+        "all": "Сви",
+        "running": "Раде",
+        "failed": "Нису успели",
+        "done": "Готови"
+      },
+      "filterEmpty": {
+        "running": "Ниједан агент не ради.",
+        "failed": "Ниједан агент није пао.",
+        "done": "Ниједан агент још није готов."
+      },
+      "showAll": "Прикажи свих {count}",
+      "retry": "поновни покушај {count}",
+      "cached": "из претходног покретања",
+      "stopAgent": "Заустави {label}",
+      "stopHint": "Заустави овог агента",
+      "stopFailed": "Није могуће зауставити {label}",
+      "json": "JSON",
+      "jsonKeys": "{count, plural, one {JSON · # кључ} few {JSON · # кључа} other {JSON · # кључева}}",
+      "jsonItems": "{count, plural, one {JSON · # ставка} few {JSON · # ставке} other {JSON · # ставки}}"
+    },
+    "agent": {
+      "backgroundWorking": "Ради у позадини",
+      "backgroundSession": "У сопственој сесији"
     }
   },
   "agentRunLimit": {
@@ -7806,8 +7916,7 @@
       "legendTool": "Резултати алата",
       "legendOther": "Остало",
       "subAgentsLabel": "Подагенти",
-      "subAgentsNote": "Ова сесија је започела помоћне сесије. Укупни износи испод их укључују.",
-      "combinedCost": "Комбиновани трошак",
+      "subAgentsNote": "Помоћници који су радили унутар ове сесије. Њихов трошак је део трошка ове сесије.",
       "combinedMessages": "Комбиноване поруке",
       "tokensIn": "Токени у",
       "tokensOut": "Токени ван",
@@ -7831,7 +7940,20 @@
       "rawFilterUser": "Ви",
       "rawFilterAssistant": "Асистент",
       "rawNoMatches": "Нема одговарајућих порука",
-      "detailsLabel": "Детаљи"
+      "detailsLabel": "Детаљи",
+      "costSplit": "{own} ова сесија · {spawned} у {count, plural, one {# покренутој сесији} few {# покренуте сесије} other {# покренутих сесија}}",
+      "costEstimated": "Процењено из транскрипта",
+      "detailModelRequests": "Захтеви моделу",
+      "spawnedLabel": "Покренуте сесије",
+      "spawnedNote": "Сесије које је ова сесија покренула и сесије које су оне покренуле. Њихов трошак је у укупном трошку.",
+      "spawnedCount": "{count, plural, one {Ова сесија и # покренута сесија} few {Ова сесија и # покренуте сесије} other {Ова сесија и # покренутих сесија}}",
+      "spawnedRequests": "Захтеви",
+      "spawnedCost": "Трошак",
+      "spawnedThisSession": "Ова сесија",
+      "spawnedTotal": "Укупно",
+      "spawnedHidden": "{count, plural, one {# покренута сесија коју не можете да отворите није укључена.} few {# покренуте сесије које не можете да отворите нису укључене.} other {# покренутих сесија које не можете да отворите није укључено.}}",
+      "spawnedTruncated": "Укључено је само првих 500 покренутих сесија, до 10 нивоа дубине.",
+      "spawnedUntitled": "Сесија без наслова"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "Јединствени приказ",
@@ -10923,7 +11045,6 @@
       "text18093cad2644": "Модални прозор",
       "text180bbb19a1b2": "Runbook који живи у глави једне особе",
       "text1814e0a6cb50": "Погледајте доступне моделе",
-      "text1815aa434bc6": "# Верзија шеме 2. Runtime је OpenCode.",
       "text1815ae76cdc7": "Није објављено",
       "text1829231e85b1": "Сваки члан овог налога поново ће видети Kortix лого, икону, favicon и назив. Отпремљене слике ће бити обрисане.",
       "text1836d8d61ae9": "{value0} је уклоњено из {value1}",
@@ -12217,7 +12338,6 @@
       "text11ef24ea6e15": "Налог није могуће преименовати",
       "text0223e507afd3": "Да бисте користили други налог, додајте га међу налоге овог конектора у подешавањима пројекта и поставите га као подразумевани.",
       "text073fce23e704": "      memory/ и отвори један захтев за измену",
-      "text0922e6bf143c": "harnesses/opencode/opencode.jsonc",
       "text3ed7c1e32705": "Читање тракера и његово преписивање су различите радње. Упис подесите на Ask; покретање се зауставља на позиву и приказује тачно које проблеме жели да споји или затвори, а наставља се након одобрења.",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "Дебитирани кредити",
@@ -12550,7 +12670,6 @@
       "text47931699ba90": "Распоред је ажуриран",
       "text4795dc5fb288": "Тренутна веза остаје активна док се не сачува замена.",
       "text479974eaff88": "{value0}: {value1} успешно, {value2} неуспешно. {value3}: {value4}{value5}",
-      "text479d92cbfaa1": "(кортик_версион 2) да бисте овде уредили упутства, модел, дозволе и приступ овог агента.",
       "text47a8467a2faa": "Учитавање промена није успело",
       "text47b31f661d3f": "Неуспешно ажурирање улоге",
       "text47bd29075f8b": "Садржај",
@@ -13457,7 +13576,6 @@
       "text61dac62928db": "Заказано:",
       "text61e8d44ad423": "Започните",
       "text61eedf5451c2": "    timezone: UTC",
-      "text61f28ba7b5a4": "kortix_version: 2",
       "text61ff61757ef1": "Начин функционисања приступа на овом налогу.",
       "text6201111b83a0": "и",
       "text6201f8d3134e": "Догађаји надгледања су увезени",
@@ -15864,7 +15982,6 @@
       "texta743aa4452d3": "Ажурирање власника ауторизације није успело",
       "texta756e5fb5f6b": "IT-ју није потребна контролна табла. Потребан му је списак, са одбрањивим разлогом у сваком реду, у облику у ком одобравање заиста нешто ради.",
       "texta757b331fa9a": "statusText",
-      "texta757f937ab97": "(kortix_version 2) да бисте овде уређивали доступност агента, модел, дозволе алата и приступ.",
       "texta76a1fd4cef5": "Примљен Stripe вебхук за наплату",
       "texta76ce82a9749": "Кеш",
       "texta76e13b98392": "Vrati",
@@ -15955,7 +16072,6 @@
       "texta9f78a15820d": "Поређење услова {value0} правила {value1}",
       "textaa000c983975": "Ресурс Groups",
       "textaa023456aca4": "Повежи ChatGPT",
-      "textaa132a97a22a": "  config_dir: harnesses/opencode",
       "textaa1c8a0b1716": "Кликом на „Сачувај“ уклонићете сва обавештења о одржавању и вратити нормалан приступ.",
       "textaa2025f803e6": "Агент има shell и систем датотека. Може да инсталира пакет, преузме узорак, покрене га, погледа излаз и покуша поново — петља у којој аналитичар заиста ради, уместо једног покушаја са фиксним скупом алатки.",
       "textaa2e1a551c0a": "Он прикупља. Ви одлучујете.",
@@ -16857,7 +16973,6 @@
       "textc3bf78fdd3b9": "Слање пријаве није успело",
       "textc3c25857485f": "Ради",
       "textc3c709a999c1": "Читање меморије…",
-      "text7823a1f3af93": "Преводи kortix.toml или kortix.yaml верзије 2 у верзију 3: пројекат региструје вештине, алате, команде и проширења, а сваки агент их укључује по имену. Ажурира вештине којима управља платформа и отвара захтев за измену ради прегледа.",
       "textc3d2e79ebdd0": "Конектори",
       "textc3e3a6edeaa5": "Услови коришћења",
       "textc3e58a73609d": "Деструктивно",
@@ -16950,7 +17065,6 @@
       "textc634dcb25574": "Књижење",
       "textc63adab9bd56": "Пратите алатке и референциране датотеке коришћене у овом задатку.",
       "textc63eb6720c6e": "Приватно",
-      "textc6414eb01d9a": "Промене које агент врши у овом радном простору. Свако покретање отвара захтев за промену за преглед — ништа се не спаја само од себе.",
       "textc6479e2f4970": "Освежи промене",
       "textc65feb0006ea": "Радник · {value0}{value1}",
       "textc661a1039aa0": "максимално",
@@ -17593,7 +17707,6 @@
       "textd83a0d814c59": "API Status приказује зелено „Enabled“, параметар „SCIM Username“ је мапиран на Email, а provisioning је омогућен без задржавања због одобрења администратора.",
       "textd84b8be91e7b": "Kortix — Презентације",
       "textd84ee1e1e08b": "покушајте kortix init или / за команде",
-      "text08edd5b6dcdc": "Надогради манифест на v3 (kortix.yaml)",
       "text848f54e89660": "Покретања",
       "textb098a09c78aa": "Тестирај са payload-ом",
       "text99733344956d": "Payload",
@@ -17775,7 +17888,6 @@
       "textdc70ef3b3338": "Канал вреди повезати само ако одговор стигне тамо где је питање постављено. Фајлови иду у оба смера, а одлуке које агент тражи од вас постају дугмад у нити, уместо линка ка другом месту.",
       "textdc76dd6b1aff": "Пријавите се на Kortix CLI",
       "textdc78f4d17256": "без MFA — неће бити закључани, али размислите о томе да их замолите да се региструју:",
-      "textdc7ab144ca89": "Надоградите за потпуни уређивач агента",
       "textdc7ea87fdc45": "Фајлови у оба смера",
       "textdc8659db6d41": "Enter",
       "textdc8d7c5c602b": "Изворни регистар",
@@ -17898,7 +18010,6 @@
       "textdfea74d6d58d": "Помери резерву нагоре",
       "textdffb64dc7001": "Ограничења",
       "texte01d77b4a0bd": "Проблем",
-      "texte02a5941602a": "Надоградње",
       "texte030ac604b81": "Постављање и безбедносни положај",
       "texte0362b3241c5": "У оквиру",
       "texte03abcb2b624": "Конектори и период ажурирања",
@@ -20348,10 +20459,6 @@
       "textc86ce3b8097b": "нпр. 5000",
       "textfaaf56a699c2": "Ограничење (кредити)",
       "texte7a241debad5": "URL",
-      "text3dd46a7b552c": "Dodaj aplikaciju",
-      "text68cf13547e38": "Dodaj aplikaciju preko URL-a",
-      "text46bc646c9bfe": "Prikaži u ovom projektu sajt hostovan bilo gde. Kortix ga otvara ovde, pored aplikacija koje pokreće.",
-      "text08e6480e9b78": "{value0} je dodata",
       "text6241684827b2": "Ovaj sajt ne dozvoljava Kortixu da ga prikaže ovde.",
       "textdae75dce541f": "Паузира све распореде и webhook-ове у овом пројекту.",
       "textced57bebd466": "Поново укључује распореде и webhook-ове овог пројекта.",
@@ -21869,7 +21976,6 @@
     "connectorsEmptyBody": "Претражите каталог и инсталирајте апликацију. Агенти је користе када добије налог.",
     "browseApps": "Претражи апликације",
     "agentsLoadFailed": "Није могуће учитати агенте",
-    "agentsNeedsV2": "Приступ агената се подешава у kortix.yaml (kortix_version 2 или новији). Овај пројекат користи kortix.toml.",
     "agentsEmpty": "Овај пројекат још нема агенте.",
     "agentsIntro": "Изаберите који агенти могу да користе овај конектор и која правила добијају. Свака измена се уписује у kortix.yaml.",
     "agentsReadOnly": "Само особе које могу да мењају агенте и конекторе могу ово да промене.",
@@ -23989,7 +24095,23 @@
       "panelTitle": "Коментари и активност",
       "resizePanel": "Промени величину панела коментара",
       "unshareComments": "{count, plural, one {# коментар ће бити обрисан.} few {# коментара ће бити обрисана.} other {# коментара ће бити обрисано.}}",
-      "systemActor": "Систем"
+      "systemActor": "Систем",
+      "draw": "Nacrtaj povratne informacije",
+      "drawPen": "Olovka",
+      "drawArrow": "Strelica",
+      "drawRectangle": "Pravougaonik",
+      "drawBlack": "Crna",
+      "drawRed": "Crvena",
+      "drawBlue": "Plava",
+      "drawUndo": "Poništi potez",
+      "drawPageChanged": "Stranica se promenila. Otkaži i nacrtaj ponovo.",
+      "drawLimit": "Dostignuto je ograničenje crteža. Poništi potez da nastaviš.",
+      "openScreenshot": "Otvori snimak ekrana",
+      "drawingScreenshot": "Snimak povratnih informacija",
+      "screenshotReadFailed": "Učitavanje snimka ekrana nije uspelo.",
+      "screenshotMissing": "Snimak ekrana nije dostupan. Crtež je sačuvan.",
+      "screenshotCaptureFailed": "Snimanje ekrana nije uspelo. Komentar će sadržati crtež bez slike.",
+      "sendScreenshotLimit": "Ova grupa prelazi 20 snimaka ekrana ili 12 MiB po kodiranom zahtevu. Pošalji manje slika ili koristi model samo za tekst."
     }
   },
   "emailConnect": {
@@ -24701,6 +24823,8 @@
     "title": "Радна површина",
     "openTab": "Отвори у новој картици",
     "offline": "Радна површина није покренута на овом рачунару.",
+    "noDesktop": "Овај рачунар нема радну површину.",
+    "noDesktopHint": "My Kortix ради на минималном рачунару. Сесије ваших агената имају радну површину.",
     "start": "Затражите од Kortix-а да покрене",
     "retry": "Покушај поново",
     "takeOver": "Преузми контролу",
@@ -24746,5 +24870,247 @@
     "tools": "Tools",
     "extensions": "Extensions",
     "drives": "Drives"
+  },
+  "multiAgent": {
+    "peer": {
+      "message": "Порука од {from}",
+      "idleNotice": "{from} је завршио",
+      "shutdownRequest": "Захтев за гашење од {from}",
+      "shutdownResponse": "Одговор на захтев за гашење од {from}",
+      "expand": "Прикажи целу поруку",
+      "collapse": "Сакриј поруку"
+    },
+    "notice": {
+      "completed": "{name} је завршио",
+      "failed": "{name} није завршио",
+      "stopped": "{name} је заустављен",
+      "fallbackName": "Твој агент",
+      "openSession": "Отвори сесију",
+      "expand": "Прикажи цео резултат",
+      "collapse": "Сакриј резултат",
+      "batchTitle": "{count, plural, one {# агент је завршио} few {# агента су завршила} other {# агената је завршило}}",
+      "ownsTasks": "Још има {tasks}"
+    },
+    "tools": {
+      "running": {
+        "sending": "Шаље се порука…",
+        "checkingAgents": "Проверавају се остали агенти…",
+        "checkingTasks": "Проверавају се задаци тима…",
+        "updatingTasks": "Ажурирају се задаци тима…",
+        "stopping": "Зауставља се агент…"
+      },
+      "to": "За",
+      "peerStatus": {
+        "delivered": "Испоручено",
+        "held": "Чека одобрење",
+        "refused": "Није послато",
+        "denied": "Одбијено",
+        "expired": "Истекло",
+        "dropped": "Није поново послато"
+      },
+      "relation": {
+        "parent": "Надређени",
+        "child": "Помоћник",
+        "lead": "Вођа",
+        "teammate": "Саиграч",
+        "session": "Сесија"
+      },
+      "cannotReceive": "Не може да прима поруке",
+      "state": {
+        "working": "Ради",
+        "needsInput": "Чека ваш одговор",
+        "idle": "Неактивно",
+        "completed": "Готово",
+        "failed": "Није завршено",
+        "stopped": "Заустављено"
+      },
+      "taskStatus": {
+        "pending": "На чекању",
+        "inProgress": "У току",
+        "completed": "Готово"
+      },
+      "blockedBy": "чека на {tasks}",
+      "stopped": "Заустављено",
+      "alreadyEnded": "Већ је завршено",
+      "openSession": "Отвори сесију"
+    },
+    "strip": {
+      "label": "Агенти",
+      "agents": "{count, plural, one {# агент} few {# агента} other {# агената}}",
+      "working": "{count, plural, one {# ради} few {# раде} other {# ради}}",
+      "workflows": "{count, plural, one {# ток рада} few {# тока рада} other {# токова рада}}",
+      "workflowsRunning": "{count, plural, one {# ток рада у току} few {# тока рада у току} other {# токова рада у току}}",
+      "newest": "{name}: {state}",
+      "tasks": "Задаци",
+      "team": "Тим",
+      "workflowsGroup": "Токови рада",
+      "state": {
+        "working": "ради",
+        "needs_input": "потребан си",
+        "idle": "готово",
+        "completed": "готово",
+        "failed": "није успело",
+        "stopped": "заустављено"
+      },
+      "workingFor": "ради · {elapsed}",
+      "runsAs": "ради као {agent}",
+      "teamRole": "Улога само за ову сесију",
+      "attention": {
+        "question": "Има питање за тебе",
+        "approval": "Чека твоје одобрење"
+      },
+      "openAgent": "Отвори {name}",
+      "stopHint": "Заустави овог агента",
+      "stopAgent": "Заустави {name}",
+      "stopAgentFailed": "Није могуће зауставити {name}",
+      "stopFailed": "Није могуће зауставити агента",
+      "runProgress": "{done} од {total} готово",
+      "runBackground": "Ради у позадини",
+      "runRunning": "Ради",
+      "runStatus": {
+        "done": "Готово",
+        "failed": "Није завршено",
+        "stopped": "Заустављено"
+      },
+      "runFallback": "Ток рада",
+      "openRun": "Отвори покретање",
+      "runNoAgents": "Још нема агената"
+    },
+    "subagent": {
+      "fallbackTitle": "Агент",
+      "openPage": "Отвори страницу",
+      "close": "Затвори",
+      "messagePlaceholder": "Порука за {name}…",
+      "messageLabel": "Порука за {name}",
+      "send": "Пошаљи",
+      "sent": "Порука је послата",
+      "sendFailed": "Порука није послата",
+      "loadFailed": "Поруке овог агента нису учитане",
+      "retry": "Покушај поново",
+      "emptyTitle": "Још ништа",
+      "emptyDescription": "Његове поруке се појављују овде док ради.",
+      "loadOlder": "Прикажи раније поруке"
+    },
+    "tasks": {
+      "label": "Задаци тима",
+      "empty": "Задаци које тим планира појавиће се овде.",
+      "group": {
+        "pending": "На чекању",
+        "in_progress": "У току",
+        "completed": "Завршено"
+      },
+      "blockedBy": "Чека на {tasks}",
+      "unowned": "Недодељено"
+    },
+    "held": {
+      "label": "Поруке које чекају тебе",
+      "title": "Порука од {from}",
+      "titleShutdown": "{from} тражи да се ова сесија заустави",
+      "waiting": "Чека твоје одобрење. Истиче за 5 минута.",
+      "deny": "Одбиј",
+      "approve": "Одобри",
+      "approveFailed": "Није могуће испоручити поруку",
+      "denyFailed": "Није могуће одбити поруку"
+    },
+    "workflow": {
+      "large": "Велики ток рада",
+      "largeHint": "Ово покретање покреће више од 25 агената. Одавде можеш да зауставиш цело покретање или било ког агента.",
+      "paused": "Паузирано",
+      "pause": "Паузирај покретање",
+      "resume": "Настави покретање",
+      "pauseHint": "Паузирај: ниједан нови агент се не покреће, а агенти који раде завршавају (p)",
+      "resumeHint": "Настави покретање (p)",
+      "stop": "Заустави покретање",
+      "stopHint": "Заустави све агенте и заврши покретање (x)",
+      "save": "Сачувај",
+      "saveHint": "Сачувај скрипту овог покретања као ток рада који можеш поново да покренеш (s)",
+      "savePrompt": "Сачувај покретање тока рада „{title}“ (покретање {runId}) као сачувани ток рада: упиши његову скрипту у {file} и отвори захтев за измену за њега.",
+      "saveSent": "Затражено је чување тока рада",
+      "saveFailed": "Није могуће затражити чување тока рада",
+      "restartHint": "Поново покрени овог агента истим упитом (r)",
+      "restartAgent": "Поново покрени {label}",
+      "failed": {
+        "pause": "Није могуће паузирати покретање",
+        "resume": "Није могуће наставити покретање",
+        "stop": "Није могуће зауставити покретање",
+        "restart": "Није могуће поново покренути {label}"
+      }
+    },
+    "board": {
+      "layoutLabel": "Распоред",
+      "layoutList": "Листа",
+      "layoutBoard": "Табла",
+      "dispatchLabel": "Покрени сесију или филтрирај таблу",
+      "dispatchPlaceholder": "Покрени сесију: @agent и задатак. Филтрирај: s:working a:agent",
+      "tooShort": "Прекратко",
+      "dispatched": "Сесија је покренута",
+      "dispatchFailed": "Није могуће покренути сесију",
+      "openSession": "Отвори сесију",
+      "stopSession": "Заустави сесију",
+      "stopped": "Сесија је заустављена",
+      "stopFailed": "Није могуће зауставити сесију",
+      "stateFilter": "Филтрирај по стању",
+      "agentFilter": "Филтрирај по агенту",
+      "allStates": "Сва стања",
+      "allAgents": "Сви агенти",
+      "loadError": "Није могуће учитати сесије. Покушај поново.",
+      "retry": "Покушај поново",
+      "emptyTitle": "Сесије које покренеш појавиће се овде",
+      "emptyDescription": "Укуцај задатак изнад и притисни Enter. Сваки задатак ради у својој сесији.",
+      "noMatches": "Ниједна сесија не одговара овим филтерима",
+      "clearFilters": "Обриши филтере",
+      "listLabel": "Сесије по стању",
+      "loadMore": "Учитај још сесија",
+      "loadingMore": "Учитавају се још сесије…",
+      "more": "… још {count}",
+      "keys": {
+        "move": "помери",
+        "peek": "преглед",
+        "open": "отвори",
+        "stop": "заустави"
+      },
+      "group": {
+        "pinned": "Закачено",
+        "needs_input": "Чека ваш одговор",
+        "working": "Ради",
+        "review": "Спремно за преглед",
+        "completed": "Завршено",
+        "ended": "Неуспело · Заустављено"
+      },
+      "state": {
+        "working": "Ради",
+        "needs_input": "Чека ваш одговор",
+        "idle": "Неактивно",
+        "completed": "Завршено",
+        "failed": "Неуспело",
+        "stopped": "Заустављено"
+      },
+      "replyPlaceholder": "Одговори. Одговор стиже до агента при његовом следећем кораку.",
+      "replyLabel": "Одговори на {title}",
+      "sendReply": "Пошаљи одговор",
+      "replySent": "Одговор је послат",
+      "replyFailed": "Није могуће послати одговор"
+    },
+    "ultracode": {
+      "hint": "Покреће се као ток рада агената",
+      "dismiss": "{key} да га пошаљеш као обичан упит"
+    }
+  },
+  "claudeSubscription": {
+    "title": "Koristi svoju Claude pretplatu",
+    "description": "Claude modeli rade kroz Claude Code na tvom Claude Pro ili Max planu. Samo tvoje sesije koriste tvoj plan.",
+    "starting": "Otvaramo Claude…",
+    "approveDescription": "Prijavi se Claude nalogom koji ima tvoj plan, odobri zahtev i kopiraj kod koji ti Claude prikaže.",
+    "codeLabel": "Kod sa claude.com",
+    "connect": "Poveži Claude",
+    "connecting": "Povezivanje…",
+    "connectedTitle": "Tvoja Claude pretplata je povezana",
+    "connected": "Claude pretplata povezana",
+    "disconnect": "Prekini vezu sa Claude",
+    "disconnected": "Veza sa Claude pretplatom prekinuta",
+    "startError": "Nije moguće pokrenuti Claude prijavu. Pokušaj ponovo.",
+    "codeError": "Nije moguće povezati Claude tim kodom. Prijavi se ponovo i nalepi novi kod.",
+    "connectClaude": "Poveži Claude",
+    "reconnectClaude": "Ponovo poveži Claude"
   }
 }

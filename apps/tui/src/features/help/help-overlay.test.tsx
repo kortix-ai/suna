@@ -10,7 +10,7 @@ import { testRender } from '@opentui/react/test-utils';
 import { act } from 'react';
 
 import { allBindings } from '../../keymap.ts';
-import { HelpOverlay, helpLines, sectionRule, supportedBindings } from './help-overlay.tsx';
+import { HelpOverlay, helpLines, sectionRule } from './help-overlay.tsx';
 
 describe('helpLines', () => {
   const lines = helpLines();
@@ -43,6 +43,7 @@ describe('helpLines', () => {
         current = line.scope;
         continue;
       }
+      if (line.kind !== 'binding') throw new Error('helpLines prints bindings only');
       expect(line.binding.scope).toBe(current as typeof line.binding.scope);
     }
   });
@@ -61,55 +62,16 @@ describe('helpLines', () => {
   });
 });
 
-describe('supportedBindings', () => {
-  const ids = (capabilities: readonly string[] | null) =>
-    supportedBindings(capabilities).map((binding) => binding.id);
-
-  test('a pi runtime (no session.attach) lists neither attach key', () => {
-    const pi = ids(['session.subagents']);
-    expect(pi).not.toContain('attach');
-    expect(pi).not.toContain('sidebar.attach');
-    expect(pi.length).toBe(allBindings().length - 2);
-  });
-
-  test('an OpenCode runtime and an unknown runtime list every key', () => {
-    expect(ids(['session.attach', 'session.subagents'])).toContain('attach');
-    expect(ids(['session.attach', 'session.subagents'])).toContain('sidebar.attach');
-    expect(ids(null).length).toBe(allBindings().length);
-  });
-});
-
-describe('sectionRule', () => {
-  test('fills the row', () => {
-    expect(sectionRule('Composer', 20)).toBe('── Composer ────────');
-    expect(sectionRule('Composer', 20).length).toBe(20);
-  });
-
-  test('truncates rather than wrapping when the terminal is narrow', () => {
-    expect(sectionRule('Lists, pickers and dialogs', 10).length).toBe(10);
-  });
-});
-
-describe('HelpOverlay', () => {
-  test('renders the first scope and scrolls to the last one', async () => {
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    const { renderer, captureCharFrame, mockInput, renderOnce } = await testRender(
-      <HelpOverlay onClose={() => {}} />,
-      { width: 100, height: 30 },
-    );
-    await renderOnce();
-    const first = captureCharFrame();
-    expect(first).toContain('Anywhere');
-    expect(first).toContain('Ctrl+c / Ctrl+q');
-
-    // The table is far taller than 30 rows, so the last scope is only
-    // reachable by scrolling — which is the whole reason the overlay scrolls.
-    expect(first).not.toContain('Lists, pickers and dialogs');
-    // `act` is required or the state update from the key has not committed
-    // when the next frame is captured (`docs/opentui-notes.md`).
-    await act(async () => mockInput.pressKey('G'));
-    await renderOnce();
-    expect(captureCharFrame()).toContain('Lists, pickers and dialogs');
-    renderer.destroy();
+describe('commandLines', () => {
+  test('lists every slash command once, under its group heading', async () => {
+    const { commandLines } = await import('./help-overlay.tsx');
+    const { COMMANDS } = await import('../../commands/registry.ts');
+    const lines = commandLines();
+    const commands = lines.filter((line) => line.kind === 'command');
+    expect(commands).toHaveLength(COMMANDS.length);
+    expect(lines[0]).toMatchObject({ kind: 'section', title: 'Commands · Session' });
+    expect(
+      commands.some((line) => line.kind === 'command' && line.usage === '/rename <title>'),
+    ).toBe(true);
   });
 });

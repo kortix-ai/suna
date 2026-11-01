@@ -1,25 +1,21 @@
 /**
- * `kortix_permissions` is the canonical manifest key for an agent's project
- * permissions; `kortix_cli` is its deprecated alias (spec 2026-09-22
- * agents-as-principals §3). The parser resolves either key to the same
- * `AgentGrant.permissions`. Both keys with different values is a parse error
- * (the agent then fails closed, same as any unparseable entry).
+ * `kortix_permissions` is the manifest key for an agent's project permissions.
+ * A retired action spelling keeps its exact capability; `kortix_cli` (the key's
+ * old name) is the deprecation `agent-kortix-cli`: it reads as
+ * `kortix_permissions`, and the agent keeps its grant.
  */
 import { describe, expect, test } from 'bun:test';
 import { extractAgents, grantFromLoadedAgents } from '../projects/agents';
-import { parseManifestString } from '../projects/triggers';
+import { parseManifestString, runtimeManifest } from '../projects/triggers';
 
-const v2 = (block: string) =>
-  parseManifestString(`kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n${block}`, 'yaml', 'kortix.yaml');
-const v1 = (block: string) =>
-  parseManifestString(`kortix_version = 1\n[[agents]]\nname = "w"\n${block}`, 'toml', 'kortix.toml');
+const manifest = (block: string) => parseManifestString(`default_agent: w\nagents:\n  w:\n${block}`, 'kortix.yaml');
 
-describe('kortix_permissions / kortix_cli parse to the same grant', () => {
+describe('kortix_permissions', () => {
   // project.customize.* was split into one leaf per topic. A manifest that
   // still names the old leaf keeps its exact capability: the enforced grant
   // carries every leaf it covered, and nothing else.
-  test('v2: a retired project.customize.write expands to the topic leaves it covered', () => {
-    const loaded = extractAgents(v2('    kortix_permissions: [project.read, project.customize.write]\n'));
+  test('a retired project.customize.write expands to the topic leaves it covered', () => {
+    const loaded = extractAgents(manifest('    kortix_permissions: [project.read, project.customize.write]\n'));
     expect(loaded.errors).toEqual([]);
     expect([...(grantFromLoadedAgents('w', loaded)?.permissions as string[])].sort()).toEqual([
       'project.agent.write',
@@ -31,45 +27,24 @@ describe('kortix_permissions / kortix_cli parse to the same grant', () => {
     ]);
   });
 
-  test('v2: a retired project.customize.read expands to project.model.read', () => {
-    const loaded = extractAgents(v2('    kortix_permissions: [project.customize.read]\n'));
+  test('a retired project.customize.read expands to project.model.read', () => {
+    const loaded = extractAgents(manifest('    kortix_permissions: [project.customize.read]\n'));
     expect(grantFromLoadedAgents('w', loaded)?.permissions).toEqual(['project.model.read']);
   });
 
-  test('v2: kortix_permissions and kortix_cli resolve identically', () => {
-    const canonical = grantFromLoadedAgents('w', extractAgents(v2('    kortix_permissions: [project.read]\n')));
-    const legacy = grantFromLoadedAgents('w', extractAgents(v2('    kortix_cli: [project.read]\n')));
-    expect(canonical?.permissions).toEqual(['project.read']);
-    expect(legacy).toEqual(canonical);
-  });
-
-  test('v1: kortix_permissions and kortix_cli resolve identically', () => {
-    const canonical = grantFromLoadedAgents('w', extractAgents(v1('kortix_permissions = "all"\n')));
-    const legacy = grantFromLoadedAgents('w', extractAgents(v1('kortix_cli = "all"\n')));
-    expect(canonical?.permissions).toBe('all');
-    expect(legacy).toEqual(canonical);
-  });
-
-  test('v2: both keys identical parse cleanly', () => {
-    const loaded = extractAgents(v2('    kortix_permissions: [project.read]\n    kortix_cli: [project.read]\n'));
+  test('an ungrantable action drops out; the agent keeps the rest of its grant', () => {
+    const loaded = extractAgents(manifest('    kortix_permissions: [billing.read, project.read]\n'));
     expect(loaded.errors).toEqual([]);
     expect(grantFromLoadedAgents('w', loaded)?.permissions).toEqual(['project.read']);
   });
 
-  test('v2: both keys with different values is a parse error', () => {
-    const loaded = extractAgents(v2('    kortix_permissions: [project.read]\n    kortix_cli: [project.write]\n'));
-    expect(loaded.errors.map((e) => e.name)).toContain('w');
-    expect(loaded.specs.map((s) => s.name)).not.toContain('w');
-  });
-
-  test('v1: both keys with different values is a parse error', () => {
-    const loaded = extractAgents(v1('kortix_permissions = ["project.read"]\nkortix_cli = "all"\n'));
-    expect(loaded.errors.map((e) => e.name)).toContain('w');
-  });
-
-  test('an ungrantable action drops out; the agent keeps the rest of its grant', () => {
-    const loaded = extractAgents(v2('    kortix_permissions: [billing.read, project.read]\n'));
-    expect(loaded.errors).toEqual([]);
+  test('the old `kortix_cli` key reads as `kortix_permissions`: the agent stays on with its grant', () => {
+    const applied = runtimeManifest(manifest('    tools: all\n    kortix_cli: [project.read]\n'));
+    // The reader already holds the latest shape; the warning is in the file's health, not here.
+    expect(applied.raw.agents).toEqual({ w: { tools: 'all', kortix_permissions: ['project.read'] } });
+    expect(applied.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+    const loaded = extractAgents(applied);
+    expect(loaded.specs.find((spec) => spec.name === 'w')?.enabled).not.toBe(false);
     expect(grantFromLoadedAgents('w', loaded)?.permissions).toEqual(['project.read']);
   });
 });

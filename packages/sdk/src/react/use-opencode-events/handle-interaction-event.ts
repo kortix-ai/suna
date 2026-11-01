@@ -1,7 +1,7 @@
 import { notifyPermissionRequest, notifyQuestion } from '../../platform/ui';
 import { qk } from '../query-keys';
 import type { HandlerContext } from './handler-context';
-import { asStringOrUndefined, notificationSessionId } from './helpers';
+import { asStringOrUndefined, notificationExtra, notificationSessionId } from './helpers';
 import type { RuntimeEvent } from './types';
 export function handleInteractionEvent(event: RuntimeEvent, ctx: HandlerContext) {
   const { addPermission, removePermission, addQuestion, removeQuestion, getSessionTitle } = ctx;
@@ -22,7 +22,12 @@ export function handleInteractionEvent(event: RuntimeEvent, ctx: HandlerContext)
         const rawProps: { tool?: unknown; type?: unknown } = props;
         const toolName =
           asStringOrUndefined(rawProps.tool) ?? asStringOrUndefined(rawProps.type) ?? 'a tool';
-        notifyPermissionRequest(notifiedId(props.sessionID), toolName, getSessionTitle(props.sessionID));
+        notifyPermissionRequest(
+          notifiedId(props.sessionID),
+          toolName,
+          getSessionTitle(props.sessionID),
+          notificationExtra(ctx),
+        );
       }
       break;
     }
@@ -37,7 +42,12 @@ export function handleInteractionEvent(event: RuntimeEvent, ctx: HandlerContext)
         addQuestion(props);
         const questionText =
           props.questions[0]?.question || props.questions[0]?.header || 'Kortix needs your input';
-        notifyQuestion(notifiedId(props.sessionID), questionText, getSessionTitle(props.sessionID));
+        notifyQuestion(
+          notifiedId(props.sessionID),
+          questionText,
+          getSessionTitle(props.sessionID),
+          notificationExtra(ctx),
+        );
       }
       break;
     }

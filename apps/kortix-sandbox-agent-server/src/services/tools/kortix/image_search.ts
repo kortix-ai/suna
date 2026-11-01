@@ -1,7 +1,7 @@
 /**
  * image_search: the Kortix image search tool (Serper Google Images). Kortix
- * maintains this file. A project lists it in kortix.yaml as
- * `image_search: kortix:image_search`. `kortix tools eject image_search`
+ * maintains this file, and every session loads it; an agent's `tools` grant
+ * decides whether that agent can call it. `kortix tools eject image_search`
  * copies it to `tools/image_search.ts` for the project to own and change; the
  * copy runs unchanged on every harness.
  *

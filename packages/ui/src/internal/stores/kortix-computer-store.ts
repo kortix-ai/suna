@@ -625,27 +625,36 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         // invariant instead of a patch: this is the single point where
         // "does this session have detail content" changes, so there is no
         // second route into the broken state to remember later.
+        //
+        // It closes the side panel itself, not only `detailOpen`: the layout
+        // shows the right side on `isSidePanelOpen` alone, so a lone
+        // `detailOpen` reset left it open and white. Not `setIsSidePanelOpen`:
+        // the person did not close it, so the panel memory stays and the
+        // provider's arrival restore reopens what it showed.
         const losingDetail = has === null || has === false;
         const isActive = get()._activeSessionId === sessionId;
         const closeDetail = losingDetail && isActive && get().detailOpen;
+        const closePatch = closeDetail
+          ? { ...CLOSED_PANEL_PATCH, detailOpen: false, skipNextExpandAnimation: true }
+          : {};
 
         if (has === null) {
           if (!(sessionId in map)) {
-            if (closeDetail) set({ detailOpen: false });
+            if (closeDetail) set(closePatch);
             return;
           }
           const next = { ...map };
           delete next[sessionId];
-          set({ _detailContentBySession: next, ...(closeDetail ? { detailOpen: false } : {}) });
+          set({ _detailContentBySession: next, ...closePatch });
           return;
         }
         if (map[sessionId] === has) {
-          if (closeDetail) set({ detailOpen: false });
+          if (closeDetail) set(closePatch);
           return;
         }
         set({
           _detailContentBySession: { ...map, [sessionId]: has },
-          ...(closeDetail ? { detailOpen: false } : {}),
+          ...closePatch,
         });
       },
 

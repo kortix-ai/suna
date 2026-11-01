@@ -1,6 +1,7 @@
 // Projects — project CRUD, detail, feature flags, warm pool, onboarding.
 
 import type { CatalogModel } from '@kortix/llm-catalog';
+import type { ManifestIssue } from './change-request-recovery';
 import type { ManifestSpace } from './manifest-spaces';
 import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
 import { retiredEndpointError } from '../../http/api/errors';
@@ -109,6 +110,8 @@ export type FeatureFlagKey =
   | 'session_groups'
   /** Kortix in Chrome: a session drives its owner's own Chrome through the extension. Experimental; on where the platform offers it. */
   | 'chrome'
+  /** Agent teams: a lead session with named teammates and a shared task list. Experimental, off by default. */
+  | 'agent_teams'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -163,6 +166,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'email_channel',
   'session_groups',
   'chrome',
+  'agent_teams',
 ] as const;
 
 /**
@@ -271,6 +275,8 @@ export interface ProjectConfigSummary {
   is_kortix_repo: boolean;
   signals: Record<string, boolean>;
   manifest_raw: string | null;
+  /** kortix.yaml problems for this project. Absent from an API released before the one-schema manifest. */
+  manifest_health?: ProjectManifestHealth;
   /** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
   open_code_raw: string | null;
   /** Provider-neutral project default. The SDK derives this from legacy servers. */
@@ -278,7 +284,7 @@ export interface ProjectConfigSummary {
   /** @deprecated Use `default_agent`. */
   open_code_default_agent: string | null;
   /** Which built-in agents the project runs (`builtin_agents` in kortix.yaml;
-   *  absent there = on). `my_kortix` is My Kortix, the agent named `meta`.
+   *  absent there = on). `my_kortix` is My Kortix, the agent named `mykortix`.
    *  Absent from an older API. */
   builtin_agents?: { my_kortix: boolean };
   agent_discovery: 'opencode' | 'declarative';
@@ -292,7 +298,8 @@ export interface ProjectConfigSummary {
     /** The agent's `model:` frontmatter (`provider/model`); absent on older
      *  servers, null when it follows the project default. */
     model?: string | null;
-    source?: 'opencode' | 'kortix.toml';
+    /** The server sends `kortix.yaml`. `kortix.toml` is never sent; it stays in the union until the next major. */
+    source?: 'opencode' | 'kortix.yaml' | 'kortix.toml';
     enabled?: boolean;
     /** True for a platform-owned agent (SUNA — the coordinator) that the API
      *  injects, not one declared in `kortix.yaml`. Its configuration is fixed:
@@ -326,6 +333,21 @@ export interface ProjectConfigSummary {
   /** The spaces from `kortix.yaml` top-level `spaces:`. Absent on older
    *  servers. `listSpaces(config)` adds the ones agents name. */
   spaces?: ManifestSpace[];
+}
+
+/**
+ * What the server found in the project's `kortix.yaml`. `ok`: no issues.
+ * `issues`: one or more; a running project still applies the valid rest, and
+ * an agent or trigger with an error is off. `missing`: no manifest, built-in
+ * agents only. `issues` lists errors first, at most 50.
+ */
+export interface ProjectManifestHealth {
+  /** Repository path of the manifest. null when none was read. */
+  path: string | null;
+  state: 'ok' | 'issues' | 'missing' | 'unreadable' | 'restricted' | 'repository_disconnected';
+  errors: number;
+  warnings: number;
+  issues: ManifestIssue[];
 }
 
 export interface ProjectDetail {
@@ -383,8 +405,33 @@ export interface GatewayCatalogModel {
   enabled?: boolean;
 }
 
+/**
+ * The Claude subscription models `/model-picker` lists apart from the gateway's
+ * (`claude-agent/<id>`): they run through Claude Code on the caller's own Claude
+ * plan. `connected` is whether the caller signed in to Claude.
+ */
+export interface ClaudeSubscriptionPickerGroup {
+  providerId: string;
+  name: string;
+  connected: boolean;
+  models: Array<{
+    /** `claude-agent/<id>`. */
+    id: string;
+    name: string;
+    description: string;
+    limit: { context: number; output: number };
+    efforts: string[];
+    requires: 'claude_subscription';
+    connected: boolean;
+    /** The project's on/off switch for the model (Models tab). Absent from an older API: on. */
+    enabled?: boolean;
+  }>;
+}
+
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
+  /** Absent from an API without Claude subscription models. */
+  claudeSubscription?: ClaudeSubscriptionPickerGroup;
   /** Kortix's platform fee on managed model usage, in percent of each model's `cost`. */
   platformFeePercent?: number;
   /**
@@ -574,7 +621,7 @@ export interface ManifestValidationResult {
 }
 
 /**
- * Validate a `kortix.toml` manifest's raw TOML text server-side — the same
+ * Validate a `kortix.yaml` manifest's raw text server-side — the same
  * schema the CLI (`kortix ship` pre-flight / `kortix validate`) and the CR-merge
  * gate exercise. Always resolves (never throws on an invalid manifest) — the
  * verdict is in the body.

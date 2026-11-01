@@ -233,7 +233,9 @@ describe('<ReviewView/> through the OpenTUI test renderer', () => {
   for (const action of ['merge', 'close'] as const) {
     test(`${action} rejection reports the error and releases busy state`, async () => {
       const { element, calls } = harness({
-        [action]: async () => { throw new Error('write rejected'); },
+        [action]: async () => {
+          throw new Error('write rejected');
+        },
       });
       const { flush, mockInput, renderer } = await testRender(element, SIZE);
       try {

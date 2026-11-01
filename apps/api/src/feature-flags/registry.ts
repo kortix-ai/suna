@@ -273,10 +273,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
   {
     key: 'pooled_provider_secrets',
     name: 'Pooled Provider Secrets',
-    description: 'Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses.',
+    description: 'Members connect their own ChatGPT and Claude subscriptions and provider keys, share them when needed, and choose which ones each session uses.',
     stability: 'experimental',
     available: () => true,
-    platformDefault: () => false,
+    // On by default since 2026-10-31: every project gets private-by-default
+    // provider accounts. A project that turned it off keeps it off.
+    platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote: 'Session selection and provider credential resolution reject or ignore resource secrets while disabled.',
   },
@@ -568,6 +570,24 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'connected are account-level and gated only by KORTIX_CHROME_ENABLED (404 when off). BOX: off, the ' +
       'session has no kortix-chrome skill and its CLI hides and refuses `kortix chrome` (KORTIX_FEATURE_FLAGS). ' +
       'WEB: no sidebar row, no Chrome card in Apps and extensions, no Settings page.',
+  },
+  {
+    key: 'agent_teams',
+    name: 'Agent teams',
+    description:
+      'A lead session starts named teammates that share one task list: each teammate claims a task, works it in its own session and tells the lead when it is done. The lead and the person see every teammate and its tasks. Messages between sessions (`send_message`) work without this flag.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'Off ⇒ a project has no team task list. ROUTES: GET/POST /projects/:id/sessions/:lead/tasks and ' +
+      'PATCH/DELETE /projects/:id/sessions/:lead/tasks/:seq answer 403 `feature_disabled` (projects/routes/team-tasks.ts). ' +
+      'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd registers no task_* tool; ' +
+      'a change reaches the next new box. Cross-session messages (`send_message`, `list_agents`, the peer-message ' +
+      'routes) do not read this flag. The session list `team_lead` filter and the session row fields stay on: ' +
+      'without teammates they return nothing new.',
   },
 ];
 

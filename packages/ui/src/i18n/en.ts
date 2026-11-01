@@ -54,7 +54,6 @@ const catalog = {
     "oauthExpired": "Authorization timed out. Try again.",
     "oauthPrivateDescription": "Use your ChatGPT Plus or Pro plan in this project. New accounts are private to you until you share them.",
     "chatGptSubscription": "ChatGPT subscription",
-    "useYourChatGpt": "Use your ChatGPT subscription",
     "manageChatGptAccounts": "Manage ChatGPT accounts",
     "connect": "Connect",
     "connectChatGpt": "Connect ChatGPT",
@@ -89,7 +88,7 @@ const catalog = {
     "deleteError": "Secret could not be deleted",
     "accessError": "Access could not be changed",
     "sharedTitle": "Provider connections",
-    "sharedDescription": "Add API keys and ChatGPT accounts. New ones are private to you until you share them. Choose which ones each session uses.",
+    "sharedDescription": "Add API keys, ChatGPT accounts and Claude accounts. New ones are private to you until you share them. Choose which ones each session uses.",
     "legacyProjectKey": "Existing project key · Used when this session has no key selection",
     "keyCount": "{count, plural, one {# key} other {# keys}}",
     "providerKeysFor": "{provider} API keys",
@@ -156,7 +155,19 @@ const catalog = {
     "opencodeGoConnect": "Connect OpenCode Go",
     "opencodeGoReconnect": "Reconnect OpenCode Go",
     "opencodeGoDisconnect": "Disconnect OpenCode Go",
-    "opencodeGoFailed": "Failed to connect OpenCode Go"
+    "opencodeGoFailed": "Failed to connect OpenCode Go",
+    "claudeAccounts": "Claude accounts",
+    "noClaudeAccounts": "No Claude accounts yet",
+    "connectClaude": "Sign in with Claude",
+    "claudeOauthPrivateDescription": "Use your Claude Pro or Max plan for Claude models in this project. New accounts are private to you until you share them.",
+    "claudeOauthCreationDescription": "Sign in with your Claude Pro or Max account. Kortix stores the login encrypted and never shows it.",
+    "claudeDefaultAccountLabel": "Claude · {name}",
+    "claudeAccountConnected": "Claude account connected",
+    "claudeAccountReconnected": "Claude account reconnected",
+    "claudeConnectFailed": "The Claude sign-in did not finish. Try again.",
+    "claudeReconnectDescription": "Sign in with Claude again. The account keeps its name, access, and session selections.",
+    "claudeAccountLabelPlaceholder": "e.g. My Claude account",
+    "claudeDeleteAccountConfirmTitle": "Delete this Claude account for everyone?"
   },
   "secrets": {
     "undecryptable": {
@@ -344,10 +355,6 @@ const catalog = {
         "feature-flags": {
           "label": "Feature flags",
           "description": "Features you can switch on before they are generally available."
-        },
-        "upgrades": {
-          "label": "Upgrades",
-          "description": "Changes an agent makes to this project. Every run opens a change request for you to review — nothing merges on its own."
         },
         "profile": {
           "label": "Profile",
@@ -845,6 +852,10 @@ const catalog = {
         "chrome": {
           "name": "Kortix in Chrome",
           "description": "Let a session use your connected Chrome browser. You can take over or stop it at any time."
+        },
+        "agent_teams": {
+          "name": "Agent teams",
+          "description": "A lead session starts named teammates that share one task list. Each teammate takes a task, works on it in its own session and tells the lead when it is done. You see every teammate and its tasks under the lead's composer. Messages between sessions work without this flag."
         }
       },
       "channelsSwitch": {
@@ -859,23 +870,6 @@ const catalog = {
       },
       "wip": "Work in progress",
       "wipNote": "Not recommended yet: it can change or break."
-    },
-    "upgrades": {
-      "available": "Available upgrades",
-      "readOnly": "Read-only — running an upgrade needs write access to this project.",
-      "none": "No upgrades available",
-      "upToDateDescription": "This project is already up to date.",
-      "upToDate": "Up to date",
-      "run": "Run",
-      "oneOff": "One-off upgrade",
-      "oneOffDescription": "Describe a single change instead. It runs the same way — a session makes it, validates it, and opens a change request.",
-      "oneOffPlaceholder": "e.g. Rename the release-bot agent to deploy-bot everywhere it's referenced",
-      "runUpgrade": "Run upgrade",
-      "manifestV3": {
-        "title": "Upgrade manifest to v3 (kortix.yaml)",
-        "description": "Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review."
-      },
-      "agentEditorHint": "This project uses a version 1 manifest. Upgrade it to <code>kortix.yaml</code> version 3 to edit this agent's instructions, model, tool permissions and access here."
     },
     "credits": {
       "loadFailed": "Could not load this account.",
@@ -1176,10 +1170,16 @@ const catalog = {
       "localComputer": "Your computer",
       "appsAndExtensions": "Apps and extensions"
     },
-    "manifestUpgrade": {
-      "title": "Upgrade to v3",
-      "description": "This project runs an older manifest. An agent moves it to <yaml>kortix.yaml</yaml> version 3, refreshes managed skills, and opens a change request. Nothing changes until you approve it.",
-      "start": "Start upgrade"
+    "manifestIssues": {
+      "title": "{file} has {errors, plural, one {# error} other {# errors}} and {warnings, plural, one {# warning} other {# warnings}}",
+      "titleErrors": "{file} has {errors, plural, one {# error} other {# errors}}",
+      "titleWarnings": "{file} has {warnings, plural, one {# warning} other {# warnings}}",
+      "errorsOff": "Agents and triggers with an error are off until it is fixed.",
+      "warningsOnly": "Everything still runs.",
+      "error": "Error",
+      "warning": "Warning",
+      "fix": "Fix with My Kortix",
+      "fixInSession": "Fix in a new session"
     },
     "filter": {
       "grouping": "Grouping",
@@ -1889,6 +1889,116 @@ const catalog = {
       "scriptFailed": "Script failed",
       "calls": "{count, plural, one {# tool call} other {# tool calls}}",
       "noOutput": "No output"
+    },
+    "kortixAction": {
+      "running": {
+        "agents": {
+          "read": "Checking agents…",
+          "change": "Updating agents…"
+        },
+        "sessions": {
+          "read": "Checking sessions…",
+          "change": "Updating sessions…"
+        },
+        "schedules": {
+          "read": "Checking schedules…",
+          "change": "Updating schedules…"
+        },
+        "connectors": {
+          "read": "Checking connectors…",
+          "change": "Updating connectors…"
+        },
+        "people": {
+          "read": "Checking members…",
+          "change": "Updating members…"
+        },
+        "access": {
+          "read": "Checking access…",
+          "change": "Updating access…"
+        },
+        "usage": {
+          "read": "Checking usage…",
+          "change": "Checking usage…"
+        },
+        "changeRequests": {
+          "read": "Checking change requests…",
+          "change": "Updating a change request…"
+        },
+        "memory": {
+          "read": "Checking memory…",
+          "change": "Updating memory…"
+        }
+      },
+      "status": {
+        "done": "Done",
+        "needsYou": "Needs you",
+        "denied": "Needs a permission",
+        "error": "Didn't finish",
+        "running": "Running"
+      },
+      "deniedTitle": "Needs a permission",
+      "grantors": "Who can grant it",
+      "grantorsUnknown": "Anyone who manages this project can grant it.",
+      "newSetting": "New",
+      "removedSetting": "Removed",
+      "opensInNewTab": "Opens in a new tab",
+      "showDetails": "Show details"
+    },
+    "workflow": {
+      "fallbackTitle": "Workflow",
+      "starting": "Starting the workflow…",
+      "progress": "{done} of {total} done",
+      "failedCount": "{failed} of {total} failed",
+      "agents": "{count, plural, one {# agent} other {# agents}}",
+      "background": "Running in the background",
+      "status": {
+        "starting": "Starting",
+        "running": "Running",
+        "done": "Done",
+        "failed": "Failed",
+        "stopped": "Stopped",
+        "pending": "Not started"
+      },
+      "openAgent": "Open {label}",
+      "showDetails": "Show details",
+      "failedSuffix": "{count} failed",
+      "resumed": "Resumed",
+      "resumedHint": "Agents that finished in the earlier run kept their answers.",
+      "large": "Large run",
+      "largeHint": "This run starts more than 25 agents. You can stop any agent from its row.",
+      "openRun": "Open run",
+      "openRunLabel": "Open the run's session",
+      "backgroundIdle": "In its own session",
+      "savedName": "Saved workflow {name}",
+      "upTo": "Up to {count, plural, one {# agent} other {# agents}}",
+      "result": "Result",
+      "logLabel": "Workflow log",
+      "agentsLabel": "Workflow agents",
+      "filter": {
+        "label": "Show agents",
+        "all": "All",
+        "running": "Running",
+        "failed": "Failed",
+        "done": "Done"
+      },
+      "filterEmpty": {
+        "running": "No agent is running.",
+        "failed": "No agent failed.",
+        "done": "No agent is done yet."
+      },
+      "showAll": "Show all {count}",
+      "retry": "retry {count}",
+      "cached": "from last run",
+      "stopAgent": "Stop {label}",
+      "stopHint": "Stop this agent",
+      "stopFailed": "Could not stop {label}",
+      "json": "JSON",
+      "jsonKeys": "{count, plural, one {JSON · # key} other {JSON · # keys}}",
+      "jsonItems": "{count, plural, one {JSON · # item} other {JSON · # items}}"
+    },
+    "agent": {
+      "backgroundWorking": "Working in the background",
+      "backgroundSession": "In its own session"
     }
   },
   "agentScope": {
@@ -2168,8 +2278,7 @@ const catalog = {
       "legendTool": "Tool results",
       "legendOther": "Other",
       "subAgentsLabel": "Sub-agents",
-      "subAgentsNote": "This session started helper sessions. The totals below include them.",
-      "combinedCost": "Combined cost",
+      "subAgentsNote": "Helpers that ran inside this session. Their cost is part of this session's cost.",
       "combinedMessages": "Combined messages",
       "tokensIn": "Tokens in",
       "tokensOut": "Tokens out",
@@ -2193,7 +2302,20 @@ const catalog = {
       "rawFilterUser": "You",
       "rawFilterAssistant": "Assistant",
       "rawNoMatches": "No matching messages",
-      "detailsLabel": "Details"
+      "detailsLabel": "Details",
+      "costSplit": "{own} this session · {spawned} in {count, plural, one {# spawned session} other {# spawned sessions}}",
+      "costEstimated": "Estimated from the transcript",
+      "detailModelRequests": "Model requests",
+      "spawnedLabel": "Spawned sessions",
+      "spawnedNote": "Sessions this session started, and the sessions they started. Their cost is in the total cost.",
+      "spawnedCount": "{count, plural, one {This session and # spawned session} other {This session and # spawned sessions}}",
+      "spawnedRequests": "Requests",
+      "spawnedCost": "Cost",
+      "spawnedThisSession": "This session",
+      "spawnedTotal": "Total",
+      "spawnedHidden": "{count, plural, one {# spawned session you cannot open is not included.} other {# spawned sessions you cannot open are not included.}}",
+      "spawnedTruncated": "Only the first 500 spawned sessions, up to 10 levels deep, are included.",
+      "spawnedUntitled": "Untitled session"
     },
     "componentsSessionSessionErrorBanner": {
       "line58JsxAttrTitleYouRanOutOfCredits": "You ran out of credits",
@@ -3278,7 +3400,6 @@ const catalog = {
       "text472590ae974d": "Provider",
       "text476b90bdc143": "@Kortix",
       "text477d50f7ddbf": "One-click OAuth 2.1 available",
-      "text479d92cbfaa1": "(kortix_version 2) to edit this agent's instructions, model, tool permissions and access here.",
       "text47bd29075f8b": "Content",
       "text47c3d9d2f5c7": "Loading connectors…",
       "text47d2a515ef2f": "Loading...",
@@ -4773,7 +4894,6 @@ const catalog = {
       "textc3b312278ee5": "Make this a default",
       "textc3bb47ef2fd9": "{value0} They keep the access they get via {value1}.",
       "textc3c709a999c1": "Reading memory…",
-      "text7823a1f3af93": "Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review.",
       "textc3d2e79ebdd0": "Connectors",
       "textc3e3a6edeaa5": "Terms and conditions",
       "textc3e58a73609d": "Destructive",
@@ -4809,7 +4929,6 @@ const catalog = {
       "textc61d3d5725a1": "Account · Settings",
       "textc63adab9bd56": "Track tools and referenced files used in this task.",
       "textc63eb6720c6e": "Private",
-      "textc6414eb01d9a": "Changes an agent makes to this workspace. Every run opens a change request for you to review — nothing merges on its own.",
       "textc65feb0006ea": "Worker · {value0}{value1}",
       "textc66feb5eb8f2": "Move up",
       "textc6902b467e2d": "Couldn't display this presentation.",
@@ -5028,7 +5147,6 @@ const catalog = {
       "textd83250185d41": "All connectors",
       "textd8348ec82718": "List Triggers",
       "textd84b8be91e7b": "Kortix — Presentations",
-      "text08edd5b6dcdc": "Upgrade manifest to v3 (kortix.yaml)",
       "text848f54e89660": "Runs",
       "textb098a09c78aa": "Test with payload",
       "text99733344956d": "Payload",
@@ -5124,7 +5242,6 @@ const catalog = {
       "textdc4cbd66fe2d": "audit governed actions approvals trail session",
       "textdc5255461795": "No matches in",
       "textdc6c9309c03e": "Affected services",
-      "textdc7ab144ca89": "Upgrade for the full agent editor",
       "textdc937b598926": "None",
       "textdcc839a4015c": "View",
       "textdcd1d5223f73": "Name",
@@ -5158,7 +5275,6 @@ const catalog = {
       "textdfa16aeaca13": "This workspace’s repository is hosted on {value0}, which does not support collaborator invites from Kortix. Manage access where the repository lives.",
       "textdfe0c2e802b1": "Server error",
       "textdfea74d6d58d": "Move fallback up",
-      "texte02a5941602a": "Upgrades",
       "texte0362b3241c5": "In bounds",
       "texte0603c499aae": "http",
       "texte0687cb3046c": "Anything the agent runs — a site, an app, an API — opens from here.",
@@ -6700,7 +6816,6 @@ const catalog = {
     "connectorsEmptyBody": "Browse the catalogue and install an app. Your agents use it once it has an account.",
     "browseApps": "Browse apps",
     "agentsLoadFailed": "Could not load agents",
-    "agentsNeedsV2": "Agent access is set in kortix.yaml (kortix_version 2 or later). This project uses kortix.toml.",
     "agentsEmpty": "This project has no agents yet.",
     "agentsIntro": "Choose which agents can use this connector, and which rules they get. Each change is committed to kortix.yaml.",
     "agentsReadOnly": "Only people who can edit agents and connectors can change this.",
@@ -8286,7 +8401,23 @@ const catalog = {
       "panelTitle": "Comments and activity",
       "resizePanel": "Resize comments panel",
       "unshareComments": "{count, plural, one {# comment will be deleted.} other {# comments will be deleted.}}",
-      "systemActor": "System"
+      "systemActor": "System",
+      "draw": "Draw feedback",
+      "drawPen": "Pen",
+      "drawArrow": "Arrow",
+      "drawRectangle": "Rectangle",
+      "drawBlack": "Black",
+      "drawRed": "Red",
+      "drawBlue": "Blue",
+      "drawUndo": "Undo stroke",
+      "drawPageChanged": "The page changed. Cancel and draw again.",
+      "drawLimit": "Drawing limit reached. Undo a stroke to continue.",
+      "openScreenshot": "Open screenshot",
+      "drawingScreenshot": "Feedback screenshot",
+      "screenshotReadFailed": "Could not load the screenshot.",
+      "screenshotMissing": "Screenshot unavailable. The drawing is saved.",
+      "screenshotCaptureFailed": "Could not capture a screenshot. Your comment will include the drawing without an image.",
+      "sendScreenshotLimit": "This batch exceeds 20 screenshots or 12 MiB per encoded request. Send fewer image attachments or use a text-only model."
     },
     "insertMedia": "Image or video…",
     "diagram": "Diagram",
@@ -9094,6 +9225,8 @@ const catalog = {
     "title": "Desktop",
     "openTab": "Open in new tab",
     "offline": "The desktop is not running on this computer.",
+    "noDesktop": "This computer has no desktop.",
+    "noDesktopHint": "My Kortix runs on a minimal computer. Your agents' sessions have a desktop.",
     "start": "Ask Kortix to run",
     "retry": "Retry",
     "takeOver": "Take over",
@@ -9183,6 +9316,248 @@ const catalog = {
     "tools": "Tools",
     "extensions": "Extensions",
     "drives": "Drives"
+  },
+  "multiAgent": {
+    "peer": {
+      "message": "Message from {from}",
+      "idleNotice": "{from} finished",
+      "shutdownRequest": "Shutdown request from {from}",
+      "shutdownResponse": "Shutdown answer from {from}",
+      "expand": "Show the whole message",
+      "collapse": "Hide the message"
+    },
+    "notice": {
+      "completed": "{name} finished",
+      "failed": "{name} didn’t finish",
+      "stopped": "{name} was stopped",
+      "fallbackName": "Your agent",
+      "openSession": "Open session",
+      "expand": "Show the whole result",
+      "collapse": "Hide the result",
+      "batchTitle": "{count, plural, one {# agent finished} other {# agents finished}}",
+      "ownsTasks": "Still owns {tasks}"
+    },
+    "tools": {
+      "running": {
+        "sending": "Sending a message…",
+        "checkingAgents": "Checking the other agents…",
+        "checkingTasks": "Checking the team tasks…",
+        "updatingTasks": "Updating the team tasks…",
+        "stopping": "Stopping an agent…"
+      },
+      "to": "To",
+      "peerStatus": {
+        "delivered": "Delivered",
+        "held": "Waiting for approval",
+        "refused": "Not sent",
+        "denied": "Declined",
+        "expired": "Expired",
+        "dropped": "Not sent again"
+      },
+      "relation": {
+        "parent": "Parent",
+        "child": "Helper",
+        "lead": "Lead",
+        "teammate": "Teammate",
+        "session": "Session"
+      },
+      "cannotReceive": "Can’t receive messages",
+      "state": {
+        "working": "Working",
+        "needsInput": "Needs input",
+        "idle": "Idle",
+        "completed": "Done",
+        "failed": "Didn’t finish",
+        "stopped": "Stopped"
+      },
+      "taskStatus": {
+        "pending": "Pending",
+        "inProgress": "In progress",
+        "completed": "Done"
+      },
+      "blockedBy": "blocked by {tasks}",
+      "stopped": "Stopped",
+      "alreadyEnded": "Already ended",
+      "openSession": "Open session"
+    },
+    "strip": {
+      "label": "Agents",
+      "agents": "{count, plural, one {# agent} other {# agents}}",
+      "working": "{count} working",
+      "workflows": "{count, plural, one {# workflow} other {# workflows}}",
+      "workflowsRunning": "{count, plural, one {# workflow running} other {# workflows running}}",
+      "newest": "{name} {state}",
+      "tasks": "Tasks",
+      "team": "Team",
+      "workflowsGroup": "Workflows",
+      "state": {
+        "working": "working",
+        "needs_input": "needs you",
+        "idle": "done",
+        "completed": "done",
+        "failed": "failed",
+        "stopped": "stopped"
+      },
+      "workingFor": "working · {elapsed}",
+      "runsAs": "runs as {agent}",
+      "teamRole": "Role for this session only",
+      "attention": {
+        "question": "Has a question for you",
+        "approval": "Waits for your approval"
+      },
+      "openAgent": "Open {name}",
+      "stopHint": "Stop this agent",
+      "stopAgent": "Stop {name}",
+      "stopAgentFailed": "Could not stop {name}",
+      "stopFailed": "Could not stop the agent",
+      "runProgress": "{done} of {total} done",
+      "runBackground": "Running in the background",
+      "runRunning": "Running",
+      "runStatus": {
+        "done": "Done",
+        "failed": "Didn't finish",
+        "stopped": "Stopped"
+      },
+      "runFallback": "Workflow",
+      "openRun": "Open run",
+      "runNoAgents": "No agents yet"
+    },
+    "subagent": {
+      "fallbackTitle": "Agent",
+      "openPage": "Open page",
+      "close": "Close",
+      "messagePlaceholder": "Message {name}…",
+      "messageLabel": "Message {name}",
+      "send": "Send",
+      "sent": "Message sent",
+      "sendFailed": "Could not send the message",
+      "loadFailed": "Could not load this agent’s messages",
+      "retry": "Try again",
+      "emptyTitle": "Nothing yet",
+      "emptyDescription": "Its messages show here as it works.",
+      "loadOlder": "Show earlier messages"
+    },
+    "tasks": {
+      "label": "Team tasks",
+      "empty": "Tasks the team plans will show up here.",
+      "group": {
+        "pending": "Pending",
+        "in_progress": "In progress",
+        "completed": "Completed"
+      },
+      "blockedBy": "Blocked by {tasks}",
+      "unowned": "Open"
+    },
+    "held": {
+      "label": "Messages waiting for you",
+      "title": "Message from {from}",
+      "titleShutdown": "{from} asks this session to stop",
+      "waiting": "Waiting for your approval. It expires after 5 minutes.",
+      "deny": "Deny",
+      "approve": "Approve",
+      "approveFailed": "Could not deliver the message",
+      "denyFailed": "Could not deny the message"
+    },
+    "workflow": {
+      "large": "Large workflow",
+      "largeHint": "This run starts more than 25 agents. Stop it, or any agent, from here.",
+      "paused": "Paused",
+      "pause": "Pause the run",
+      "resume": "Resume the run",
+      "pauseHint": "Pause: no new agent starts; running agents finish (p)",
+      "resumeHint": "Resume the run (p)",
+      "stop": "Stop the run",
+      "stopHint": "Stop every agent and end the run (x)",
+      "save": "Save",
+      "saveHint": "Save this run's script as a workflow you can run again (s)",
+      "savePrompt": "Save the workflow run \"{title}\" (run {runId}) as a saved workflow: write its script to {file} and open a change request for it.",
+      "saveSent": "Asked to save the workflow",
+      "saveFailed": "Could not ask to save the workflow",
+      "restartHint": "Restart this agent with the same prompt (r)",
+      "restartAgent": "Restart {label}",
+      "failed": {
+        "pause": "Could not pause the run",
+        "resume": "Could not resume the run",
+        "stop": "Could not stop the run",
+        "restart": "Could not restart {label}"
+      }
+    },
+    "board": {
+      "layoutLabel": "Layout",
+      "layoutList": "List",
+      "layoutBoard": "Board",
+      "dispatchLabel": "Start a session or filter the board",
+      "dispatchPlaceholder": "Start a session: @agent and a task. Filter: s:working a:agent",
+      "tooShort": "Too short",
+      "dispatched": "Session started",
+      "dispatchFailed": "Could not start the session",
+      "openSession": "Open session",
+      "stopSession": "Stop session",
+      "stopped": "Session stopped",
+      "stopFailed": "Could not stop the session",
+      "stateFilter": "Filter by state",
+      "agentFilter": "Filter by agent",
+      "allStates": "All states",
+      "allAgents": "All agents",
+      "loadError": "Could not load the sessions. Try again.",
+      "retry": "Try again",
+      "emptyTitle": "Sessions you start will show up here",
+      "emptyDescription": "Type a task above and press Enter. Each task runs in its own session.",
+      "noMatches": "No session matches these filters",
+      "clearFilters": "Clear filters",
+      "listLabel": "Sessions by state",
+      "loadMore": "Load more sessions",
+      "loadingMore": "Loading more sessions…",
+      "more": "… {count} more",
+      "keys": {
+        "move": "move",
+        "peek": "preview",
+        "open": "open",
+        "stop": "stop"
+      },
+      "group": {
+        "pinned": "Pinned",
+        "needs_input": "Needs input",
+        "working": "Working",
+        "review": "Ready for review",
+        "completed": "Completed",
+        "ended": "Failed · Stopped"
+      },
+      "state": {
+        "working": "Working",
+        "needs_input": "Needs input",
+        "idle": "Idle",
+        "completed": "Completed",
+        "failed": "Failed",
+        "stopped": "Stopped"
+      },
+      "replyPlaceholder": "Reply. It reaches the agent at its next step.",
+      "replyLabel": "Reply to {title}",
+      "sendReply": "Send reply",
+      "replySent": "Reply sent",
+      "replyFailed": "Could not send the reply"
+    },
+    "ultracode": {
+      "hint": "Runs as a workflow of agents",
+      "dismiss": "{key} to send it as a normal prompt"
+    }
+  },
+  "claudeSubscription": {
+    "title": "Use your Claude subscription",
+    "description": "Claude models run through Claude Code on your own Claude Pro or Max plan. Only your sessions use your plan.",
+    "starting": "Opening Claude…",
+    "approveDescription": "Sign in with the Claude account that has your plan, approve the request, and copy the code Claude shows you.",
+    "codeLabel": "Code from claude.com",
+    "connect": "Connect Claude",
+    "connecting": "Connecting…",
+    "connectedTitle": "Your Claude subscription is connected",
+    "connected": "Claude subscription connected",
+    "disconnect": "Disconnect Claude",
+    "disconnected": "Claude subscription disconnected",
+    "startError": "Could not start the Claude sign-in. Try again.",
+    "codeError": "Could not connect Claude with that code. Sign in again and paste the new code.",
+    "connectClaude": "Connect Claude",
+    "reconnectClaude": "Reconnect Claude"
   }
 };
 

@@ -57,6 +57,13 @@ describe('buildTemplateInstallPrompt', () => {
     expect(p).toContain('DISABLED');
   });
 
+  test('the template agent is one block with description, mode and prompt_file — no frontmatter to move', () => {
+    const p = buildTemplateInstallPrompt(templateEntry(), 'kortix-starter:customer-support');
+    expect(p).toContain('`description`, `mode`, `prompt_file`');
+    expect(p).not.toContain('frontmatter');
+    expect(p).not.toContain('kortix_version');
+  });
+
   test('walks the required secrets and holds the run behind a confirmation', () => {
     const p = buildTemplateInstallPrompt(templateEntry(), 'kortix-starter:customer-support');
     expect(p).toContain('PLAIN_API_KEY');
@@ -91,7 +98,7 @@ describe('buildRegistryProjectInstallPrompt', () => {
           ],
         },
       } as never,
-      'kortix_version: 2\n',
+      'default_agent: kortix\n',
     );
 
     expect(p).toContain('read it from the supplied file block');
@@ -104,11 +111,11 @@ describe('buildRegistryProjectInstallPrompt', () => {
   });
 });
 
-describe('buildRegistryProjectInstallPrompt on a kortix_version 3 project', () => {
+describe('buildRegistryProjectInstallPrompt — the one kortix.yaml layout', () => {
   const entry = { item: { name: 'kit', files: [{ path: 'agents/helper.md', content: 'You help.' }] } };
 
-  test('teaches the v3 layout: registries, per-agent grants, prompt_file, no harnesses folder', () => {
-    const p = buildRegistryProjectInstallPrompt(entry, 'kortix_version: 3\ndefault_agent: kortix\nagents:\n  kortix: {}\n');
+  test('teaches the layout: registries, per-agent grants, prompt_file, no harnesses folder', () => {
+    const p = buildRegistryProjectInstallPrompt(entry, 'default_agent: kortix\nagents:\n  kortix: {}\n');
 
     expect(p).toContain('`prompt_file`');
     expect(p).toContain('`skills:`');
@@ -118,11 +125,10 @@ describe('buildRegistryProjectInstallPrompt on a kortix_version 3 project', () =
     expect(p).not.toContain('.kortix/opencode/agents/');
   });
 
-  test('a v2 project keeps the v2 steps', () => {
-    const p = buildRegistryProjectInstallPrompt(entry, 'kortix_version: 2\ndefault_agent: kortix\nagents:\n  kortix: {}\n');
-
-    expect(p).toContain('.kortix/opencode/agents/');
-    expect(p).not.toContain('`prompt_file`');
+  test('a retired-format manifest gets the same steps (no version branch)', () => {
+    const current = buildRegistryProjectInstallPrompt(entry, 'agents:\n  kortix: {}\n');
+    const retired = buildRegistryProjectInstallPrompt(entry, 'kortix_version: 2\nagents:\n  kortix: {}\n');
+    expect(retired.replace('kortix_version: 2\n', '')).toBe(current);
   });
 });
 

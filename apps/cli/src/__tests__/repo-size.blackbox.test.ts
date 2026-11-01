@@ -16,7 +16,7 @@ afterEach(() => {
 function project(git = true): string {
   const cwd = mkdtempSync(join(tmpdir(), 'repo-size-'));
   dirs.push(cwd);
-  writeFileSync(join(cwd, 'kortix.yaml'), 'kortix_version: 1\nproject:\n  name: size-test\n');
+  writeFileSync(join(cwd, 'kortix.yaml'), 'project:\n  name: size-test\n');
   if (git) Bun.spawnSync(['git', 'init', '-q'], { cwd });
   return cwd;
 }

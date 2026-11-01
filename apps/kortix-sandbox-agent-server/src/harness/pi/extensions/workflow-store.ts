@@ -1,0 +1,261 @@
+/**
+ * What a workflow keeps between calls (`workflow.ts`):
+ *
+ *  - Run records, for `resume_run_id`: one JSON file per run under
+ *    `<state>/runs/<runId>.json` (`<state>` is `$KORTIX_RUNTIME_STATE_DIR/workflows`).
+ *    Each agent's entry is written when it settles: the key of its prompt and
+ *    options, its status, its result and its session. A resume replays the
+ *    record per call ({@link Replay}). A background run's records live on its
+ *    runner's box; the calling box keeps the run's id, runner session and
+ *    last known document.
+ *  - The session's "don't ask again" answer: `<state>/consent.json`. One box
+ *    is one session, so the file is the session's.
+ *  - A runner session's spent hand-off: `<state>/handoff.json`, written
+ *    before the runner runs its one workflow. A runner that holds it runs no
+ *    other hand-off, also after its box restarts.
+ *  - Saved workflows: `.kortix/workflows/<name>.js` in the project repository,
+ *    read only. A box with a project checkout reads the working tree. A box
+ *    without one (My Kortix) reads the default branch through the Kortix API
+ *    with the session token (`GET /v1/projects/:id/files/content?path=…`).
+ *    Nothing here writes one: an agent with the project files commits it
+ *    through a change request when the person asks.
+ */
+import { createHash } from 'node:crypto'
+import type { WorkflowRunMetadata } from '@kortix/api-contract/kortix-tool-card'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+/** The repository folder of saved workflows. */
+export const SAVED_WORKFLOWS_DIR = '.kortix/workflows'
+/** A saved workflow's name: its file is `<name>.js`. */
+export const SAVED_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/
+const RUN_ID = /^[A-Za-z0-9_-]{8,64}$/
+
+/**
+ * `stopped`: the agent alone was stopped (its session stopped from outside),
+ * which counts as a failure. `interrupted`: it was still running when the run
+ * ended (the turn stopped, the box restarted); it starts over on a relaunch,
+ * and the agents after it may still reuse their results.
+ */
+export type RecordedStatus = 'done' | 'failed' | 'stopped' | 'interrupted'
+
+export interface RecordedAgent {
+  /** sha256 of the prompt and the options that change the answer (agent, model, schema). */
+  key: string
+  label: string
+  status: RecordedStatus
+  /** The answer: a string, or the parsed JSON of a structured agent. */
+  result?: unknown
+  sessionId?: string
+}
+
+export interface RunRecord {
+  runId: string
+  title: string
+  name?: string
+  script: string
+  args?: unknown
+  maxAgents: number
+  startedAt: number
+  resumedFrom?: string
+  /** A background run: its runner session holds the agents' records. */
+  background?: { sessionId: string }
+  agents: RecordedAgent[]
+  /** The run's card document as last written: what `GET /kortix/runtime/workflows` lists. */
+  doc?: WorkflowRunMetadata
+}
+
+/**
+ * The key that decides whether a resumed agent may reuse a saved result: the
+ * prompt and every option that changes the answer. `instructions` and `tools`
+ * join the key only when set, so a record written before they existed keeps
+ * its key.
+ */
+export function agentKey(input: { prompt: string; agent?: string; model?: string; schema?: unknown; instructions?: string; tools?: string[] }): string {
+  const custom = input.instructions !== undefined || input.tools !== undefined ? [input.instructions ?? null, input.tools ? [...input.tools].sort() : null] : []
+  return createHash('sha256')
+    .update(JSON.stringify([input.prompt, input.agent ?? null, input.model ?? null, input.schema ?? null, ...custom]))
+    .digest('hex')
+}
+
+/** One file per run, written whole after every change (write, then rename). */
+export class RunStore {
+  constructor(private readonly dir: string) {}
+
+  private path(runId: string): string {
+    if (!RUN_ID.test(runId)) throw new Error(`"${runId}" is not a workflow run id.`)
+    return join(this.dir, 'runs', `${runId}.json`)
+  }
+
+  load(runId: string): RunRecord | null {
+    const path = this.path(runId)
+    if (!existsSync(path)) return null
+    try {
+      const record = JSON.parse(readFileSync(path, 'utf8')) as RunRecord
+      return record && Array.isArray(record.agents) && typeof record.script === 'string' ? record : null
+    } catch {
+      return null
+    }
+  }
+
+  save(record: RunRecord): void {
+    const path = this.path(record.runId)
+    mkdirSync(join(this.dir, 'runs'), { recursive: true, mode: 0o700 })
+    const temp = `${path}.${process.pid}.tmp`
+    writeFileSync(temp, JSON.stringify(record), { mode: 0o600 })
+    renameSync(temp, path)
+  }
+
+  /** Every saved run, newest first. A file that does not parse is skipped. */
+  list(): RunRecord[] {
+    let files: string[]
+    try {
+      files = readdirSync(join(this.dir, 'runs')).filter((file) => file.endsWith('.json'))
+    } catch {
+      return []
+    }
+    const records: RunRecord[] = []
+    for (const file of files) {
+      const record = RUN_ID.test(file.slice(0, -5)) ? this.load(file.slice(0, -5)) : null
+      if (record) records.push(record)
+    }
+    return records.sort((a, b) => b.startedAt - a.startedAt)
+  }
+
+  /** The person chose "don't ask again" in this session. */
+  consented(): boolean {
+    try {
+      return (JSON.parse(readFileSync(join(this.dir, 'consent.json'), 'utf8')) as { dontAsk?: unknown }).dontAsk === true
+    } catch {
+      return false
+    }
+  }
+
+  consent(): void {
+    mkdirSync(this.dir, { recursive: true, mode: 0o700 })
+    writeFileSync(join(this.dir, 'consent.json'), JSON.stringify({ dontAsk: true, at: new Date().toISOString() }), { mode: 0o600 })
+  }
+
+  /**
+   * The hand-off this runner session already took, or null. A file that
+   * exists but does not parse counts as taken: the runner fails closed.
+   */
+  spentHandoff(): SpentHandoff | null {
+    const path = join(this.dir, 'handoff.json')
+    if (!existsSync(path)) return null
+    try {
+      const spent = JSON.parse(readFileSync(path, 'utf8')) as Partial<SpentHandoff> | null
+      return { runId: typeof spent?.runId === 'string' ? spent.runId : '', turnId: typeof spent?.turnId === 'string' ? spent.turnId : '', at: typeof spent?.at === 'string' ? spent.at : '' }
+    } catch {
+      return { runId: '', turnId: '', at: '' }
+    }
+  }
+
+  /**
+   * Record that this runner session took its hand-off, before any of it runs.
+   * `wx`: a second writer fails, so two calls never both take one. Throws when
+   * the file cannot be written; the caller then runs nothing.
+   */
+  spendHandoff(spent: Omit<SpentHandoff, 'at'>): void {
+    mkdirSync(this.dir, { recursive: true, mode: 0o700 })
+    writeFileSync(join(this.dir, 'handoff.json'), JSON.stringify({ ...spent, at: new Date().toISOString() }), { mode: 0o600, flag: 'wx' })
+  }
+}
+
+/** A runner session's one hand-off, once taken: the run, the turn that took it (its message id), and when. */
+export interface SpentHandoff {
+  runId: string
+  turnId: string
+  at: string
+}
+
+/**
+ * The replay of an earlier run, per call. Each new `agent()` call takes the
+ * earlier run's first unused entry with the same key (the same prompt, agent,
+ * model and schema) that completed, and returns its saved result. Any other
+ * call runs: a new or edited call, and one whose earlier entry failed, was
+ * stopped or was interrupted. Order does not matter: a `parallel()` or
+ * `pipeline()` whose agents finished in another order, an edited call in the
+ * middle of the script, or a reordered script reuses every completed call.
+ */
+export class Replay {
+  private readonly used = new Set<number>()
+
+  constructor(private readonly previous: RecordedAgent[]) {}
+
+  /** Completed entries this replay may still return. */
+  get reusable(): number {
+    return this.previous.filter((entry, i) => entry.status === 'done' && !this.used.has(i)).length
+  }
+
+  /** The saved entry this call reuses, or null: it runs. */
+  take(key: string): RecordedAgent | null {
+    const index = this.previous.findIndex((entry, i) => !this.used.has(i) && entry.key === key && entry.status === 'done')
+    if (index < 0) return null
+    this.used.add(index)
+    return this.previous[index]!
+  }
+}
+
+// ── saved workflows ───────────────────────────────────────────────────────
+
+export interface SavedWorkflows {
+  /** Where the files live, for the tool text. */
+  where: string
+  /** The script, or null when no such workflow exists. */
+  read(name: string): Promise<string | null>
+}
+
+export function checkSavedName(name: string): string {
+  const trimmed = name.trim()
+  if (!SAVED_NAME.test(trimmed)) throw new Error(`"${name}" is not a workflow name: use 1-64 lower-case letters, digits, "-" or "_", starting with a letter or digit.`)
+  return trimmed
+}
+
+/** Saved workflows in a project checkout's working tree. */
+export function checkoutWorkflows(root: string): SavedWorkflows {
+  const dir = join(root, SAVED_WORKFLOWS_DIR)
+  return {
+    where: `${SAVED_WORKFLOWS_DIR}/ in this session's project checkout`,
+    read: async (name) => {
+      const path = join(dir, `${checkSavedName(name)}.js`)
+      return existsSync(path) ? readFileSync(path, 'utf8') : null
+    },
+  }
+}
+
+/** The names in a checkout, for the tool description; never throws. */
+export function listCheckout(root: string): string[] {
+  try {
+    return readdirSync(join(root, SAVED_WORKFLOWS_DIR))
+      .filter((file) => file.endsWith('.js') && SAVED_NAME.test(file.slice(0, -3)))
+      .map((file) => file.slice(0, -3))
+      .sort()
+  } catch {
+    return []
+  }
+}
+
+export interface ProjectApi {
+  apiUrl: string
+  projectId: string
+  token: string
+}
+
+/** Saved workflows on the project's default branch, read through the Kortix API. */
+export function apiWorkflows(api: ProjectApi): SavedWorkflows {
+  const origin = api.apiUrl.trim().replace(/\/+$/, '').replace(/\/v1$/, '')
+  const base = `${origin}/v1/projects/${encodeURIComponent(api.projectId)}/files`
+  const headers = { authorization: `Bearer ${api.token}` }
+  return {
+    where: `${SAVED_WORKFLOWS_DIR}/ on the project's default branch`,
+    read: async (name) => {
+      const path = `${SAVED_WORKFLOWS_DIR}/${checkSavedName(name)}.js`
+      const res = await fetch(`${base}/content?path=${encodeURIComponent(path)}`, { headers })
+      if (res.status === 404) return null
+      if (res.status !== 200) throw new Error(`${path} could not be read: the API answered ${res.status}`)
+      const body = (await res.json().catch(() => null)) as { content?: unknown } | null
+      return typeof body?.content === 'string' ? body.content : null
+    },
+  }
+}

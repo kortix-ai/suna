@@ -4,6 +4,7 @@ import {
   formatSessionCostCredits,
   formatSessionCostDuration,
   formatSessionCostExactCredits,
+  formatSessionCostUsd,
 } from './session-cost-format';
 
 describe('formatSessionCostCredits', () => {
@@ -50,5 +51,24 @@ describe('formatSessionCostDuration', () => {
     expect(formatSessionCostDuration(61)).toBe('1m 1s');
     expect(formatSessionCostDuration(3661)).toBe('1h 1m');
     expect(formatSessionCostDuration(176460)).toBe('2d 1h');
+  });
+});
+
+describe('formatSessionCostUsd', () => {
+  test('two decimals from one dollar up', () => {
+    expect(formatSessionCostUsd(12.5)).toBe('$12.50');
+    expect(formatSessionCostUsd(1234.5678)).toBe('$1,234.57');
+  });
+
+  test('up to four decimals below one dollar, so a cheap session never reads $0.00', () => {
+    expect(formatSessionCostUsd(0.0914)).toBe('$0.0914');
+    expect(formatSessionCostUsd(0.5)).toBe('$0.50');
+    expect(formatSessionCostUsd(0.00421)).toBe('$0.0042');
+  });
+
+  test('a non-zero amount under $0.0001 reads as a threshold, zero as $0.00', () => {
+    expect(formatSessionCostUsd(0.00000042)).toBe('<$0.0001');
+    expect(formatSessionCostUsd(0)).toBe('$0.00');
+    expect(formatSessionCostUsd(Number.NaN)).toBe('$0.00');
   });
 });

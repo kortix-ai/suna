@@ -4,7 +4,7 @@ import { type ManifestIssue, validateManifest } from '../index.ts';
 import { GOLDEN_V3 as GOLDEN } from './fixtures/golden-v3.ts';
 
 function check(yaml: string): { errors: ManifestIssue[]; warnings: ManifestIssue[] } {
-  const result = validateManifest(yaml, 'yaml');
+  const result = validateManifest(yaml);
   return {
     errors: result.issues.filter((issue) => issue.severity === 'error'),
     warnings: result.issues.filter((issue) => issue.severity === 'warning'),
@@ -17,7 +17,7 @@ const swap = (from: string, to: string) => {
   return GOLDEN.replace(from, to);
 };
 
-describe('kortix_version 3: a change_request trigger', () => {
+describe('a change_request trigger', () => {
   const merged = (filter: string) =>
     swap(
       '    prompt: Write the weekly support report for the last 7 days.\n',
@@ -41,26 +41,21 @@ describe('kortix_version 3: a change_request trigger', () => {
   });
 });
 
-describe('kortix_version 3: the golden manifest', () => {
+describe('the golden manifest', () => {
   test('is valid with no warnings', () => {
     const { errors, warnings } = check(GOLDEN);
     expect(errors).toEqual([]);
     expect(warnings).toEqual([]);
   });
-
-  test('is YAML only', () => {
-    expect(validateManifest(GOLDEN, 'toml').valid).toBe(false);
-  });
 });
 
-describe('kortix_version 3: top-level keys', () => {
+describe('top-level keys', () => {
   test.each([
     ['opencode:\n  config_dir: harnesses/opencode', 'opencode'],
     ['pi:\n  config_dir: harnesses/pi', 'pi'],
     ['harnesses:\n  pi:\n    codemode: on', 'harnesses'],
     ['permission: allow', 'permission'],
     ['channels: []', 'channels'],
-    ['sandboxes: []', 'sandboxes'],
     ['agentz: {}', 'agentz'],
   ])('rejects %s', (line, path) => {
     const { errors } = check(`${GOLDEN}\n${line}\n`);
@@ -78,7 +73,7 @@ describe('kortix_version 3: top-level keys', () => {
   });
 });
 
-describe('kortix_version 3: registries', () => {
+describe('registries', () => {
   test('a skill is a folder whose name is the skill name', () => {
     expect(errorPaths(swap('pdf: skills/pdf', 'pdf: skills/pdf-tools'))).toContain('skills.pdf');
     expect(errorPaths(swap('pdf: skills/pdf', 'pdf: ../skills/pdf'))).toContain('skills.pdf');
@@ -123,16 +118,13 @@ describe('kortix_version 3: registries', () => {
   });
 });
 
-describe('kortix_version 3: agents', () => {
+describe('agents', () => {
   test.each([
     ['file: agents/x.md', 'file'],
-    ['disable: true', 'disable'],
     ['opencode: {}', 'opencode'],
     ['harnesses: {}', 'harnesses'],
     ['env: all', 'env'],
     ['kortix_cli: all', 'kortix_cli'],
-    ['connectors_personal: []', 'connectors_personal'],
-    ['repository_access: true', 'repository_access'],
     ['temprature: 0.2', 'temprature'],
   ])('rejects agent key %s', (line, key) => {
     expect(errorPaths(swap('    mode: primary\n', `    mode: primary\n    ${line}\n`))).toContain(`agents.assistant.${key}`);
@@ -178,7 +170,7 @@ describe('kortix_version 3: agents', () => {
     expect(errorPaths(swap('exclude: [lookup_order]', 'exclude: [agent, task, codemode]'))).toEqual([]);
   });
 
-  test('tools rejects the v2 map form', () => {
+  test('tools rejects the map form', () => {
     expect(errorPaths(swap('    tools: all\n', '    tools:\n      bash: false\n'))).toContain('agents.assistant.tools');
   });
 
@@ -195,7 +187,7 @@ describe('kortix_version 3: agents', () => {
   });
 });
 
-describe('kortix_version 3: builtin_agents (My Kortix switch)', () => {
+describe('builtin_agents (My Kortix switch)', () => {
   test('absent is valid: My Kortix stays on', () => {
     expect(check(GOLDEN).errors).toEqual([]);
   });
@@ -217,6 +209,12 @@ describe('kortix_version 3: builtin_agents (My Kortix switch)', () => {
     expect(errorPaths(swap('agents:', 'builtin_agents: [my_kortix]\nagents:'))).toEqual(['builtin_agents']);
   });
 
+  test('a declared `mykortix` agent is an error, like the old slug `meta`', () => {
+    const declared = swap('agents:', 'agents:\n  mykortix:\n    prompt: hi');
+    expect(errorPaths(declared)).toEqual(['agents.mykortix']);
+    expect(check(declared).errors[0]?.message).toContain('reserved for My Kortix');
+  });
+
   test('a declared `meta` agent is an error whether My Kortix is on, off or unset', () => {
     const declared = swap('agents:', 'agents:\n  meta:\n    prompt: hi');
     expect(errorPaths(declared)).toEqual(['agents.meta']);
@@ -227,18 +225,15 @@ describe('kortix_version 3: builtin_agents (My Kortix switch)', () => {
 });
 
 describe('agents.<name>.workspace.project_repository default', () => {
-  test('defaults to true for v1/v2 and false when the caller passes the v3 default', async () => {
-    const { resolveProjectRepository, projectRepositoryDefault } = await import('../index.ts');
-    expect(resolveProjectRepository({})).toEqual({ ok: true, value: true, legacyRead: false });
-    expect(resolveProjectRepository({}, projectRepositoryDefault(2))).toEqual({ ok: true, value: true, legacyRead: false });
-    expect(resolveProjectRepository({}, projectRepositoryDefault(3))).toEqual({ ok: true, value: false, legacyRead: false });
-    expect(resolveProjectRepository({ workspace: {} }, projectRepositoryDefault(3))).toEqual({ ok: true, value: false, legacyRead: false });
-    expect(resolveProjectRepository({ workspace: { project_repository: true } }, projectRepositoryDefault(3))).toEqual({ ok: true, value: true, legacyRead: false });
-    expect(projectRepositoryDefault(1)).toBe(true);
+  test('defaults to false; an explicit value wins', async () => {
+    const { resolveProjectRepository } = await import('../index.ts');
+    expect(resolveProjectRepository({})).toEqual({ ok: true, value: false, legacyRead: false });
+    expect(resolveProjectRepository({ workspace: {} })).toEqual({ ok: true, value: false, legacyRead: false });
+    expect(resolveProjectRepository({ workspace: { project_repository: true } })).toEqual({ ok: true, value: true, legacyRead: false });
   });
 });
 
-describe('kortix_version 3: spaces (a channel: a room plus configurable tabs)', () => {
+describe('spaces (a channel: a room plus configurable tabs)', () => {
   test('golden has no space and stays valid', () => {
     expect(check(GOLDEN).errors).toEqual([]);
   });

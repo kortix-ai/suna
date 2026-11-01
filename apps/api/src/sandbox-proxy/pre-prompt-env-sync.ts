@@ -28,6 +28,7 @@
  * path keeps working.
  */
 import { isTurnStartRequest } from '../projects/turn-start-request';
+import { claudeSubscriptionRequiredBody } from '../llm-gateway/resolution/claude-agent';
 import { classifyRuntimeRequest } from './runtime-request';
 import { previewCorsHeaders } from './preview-hosts';
 import type { ProviderName } from '../platform/providers';
@@ -335,6 +336,17 @@ export interface PrePromptEnvSyncDeps {
   remintGrant: typeof remintGrantForAgentSwitch;
   bindTurnIdentity: typeof bindSessionTurnIdentity;
   generateTitle: typeof generateSessionTitleFromFirstPrompt;
+  /**
+   * The Claude subscription model ref this turn needs a login for that the
+   * person lacks, or null. `promptModel` null: the session's own model.
+   */
+  claudeSubscriptionMissing?: (input: {
+    accountId: string;
+    projectId: string;
+    sessionId: string;
+    userId: string;
+    promptModel: string | null;
+  }) => Promise<string | null>;
 }
 
 /**
@@ -394,6 +406,20 @@ export async function runPrePromptEnvSync(
   // command creates messages exactly like a prompt, so the conversation list is
   // just as stale after it.
   const prompt = extractPromptInfo(input.body, input.incomingHeaders);
+  // A Claude subscription model runs on the prompting person's own Claude
+  // login. Without one the box could only fail the turn, so it is refused
+  // here, before any title or env work, with a code clients turn into a
+  // Connect button.
+  if (deps.claudeSubscriptionMissing && input.bindTurnIdentity && userId) {
+    const missing = await deps.claudeSubscriptionMissing({
+      accountId: record.accountId,
+      projectId: record.projectId,
+      sessionId: record.sessionId,
+      userId,
+      promptModel: prompt.model,
+    });
+    if (missing) return jsonProxyError(claudeSubscriptionRequiredBody(missing), 409, origin);
+  }
   if (userId && prompt.text) {
     void deps.generateTitle({
       sessionId: record.sessionId,

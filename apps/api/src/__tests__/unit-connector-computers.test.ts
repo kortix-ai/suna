@@ -17,7 +17,7 @@ import cuaDriverTools from '../connectors/cua-driver-tools.generated.json';
 import { validateScopeForOperation } from '../tunnel/core/permission-checker';
 import { computerCatalog, uniqueComputerLabel, withComputerCatalog } from '../connectors/computers';
 import { extractConnectors } from '../projects/connectors';
-import { parseManifestString, KNOWN_SCHEMA_VERSION } from '../projects/triggers';
+import { parseManifestString } from '../projects/triggers';
 import {
   handleCall,
   type CallInput,
@@ -129,8 +129,8 @@ describe('uniqueComputerLabel()', () => {
 /* ─── parse ───────────────────────────────────────────────────────────────── */
 
 function parse(body: string) {
-  const src = [`kortix_version: ${KNOWN_SCHEMA_VERSION}`, 'project:\n  name: t', body].join('\n');
-  return extractConnectors(parseManifestString(src, 'yaml', 'kortix.yaml'));
+  const src = ['project:\n  name: t', body].join('\n');
+  return extractConnectors(parseManifestString(src, 'kortix.yaml'));
 }
 
 describe('connectors: provider="computer"', () => {

@@ -1,7 +1,7 @@
 /**
- * web_search: the Kortix web search tool (Tavily). Kortix maintains this file.
- * A project lists it in kortix.yaml as `web_search: kortix:web_search`.
- * `kortix tools eject web_search` copies it to `tools/web_search.ts` for the
+ * web_search: the Kortix web search tool (Tavily). Kortix maintains this file,
+ * and every session loads it; an agent's `tools` grant decides whether that
+ * agent can call it. `kortix tools eject web_search` copies it to `tools/web_search.ts` for the
  * project to own and change; the copy runs unchanged on every harness.
  *
  * A call goes to the Kortix API's billed router proxy with the session token

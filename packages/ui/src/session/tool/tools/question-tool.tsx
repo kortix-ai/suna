@@ -65,7 +65,8 @@ function QuestionAnswerBlock({
 
   return (
     <div className="space-y-1.5">
-      <div className={cn('text-foreground/80 text-xs text-pretty', MD_FLUSH_CLASSES)}>
+      {/* `pre-line` keeps a question's single newlines as line breaks, as the prompt dock does. */}
+      <div className={cn('text-foreground text-xs text-pretty [&_p]:whitespace-pre-line', MD_FLUSH_CLASSES)}>
         <UnifiedMarkdown content={question.question || question.header || fallback} trust="agent" />
       </div>
       <AnswerText answers={answers} options={question.options} />

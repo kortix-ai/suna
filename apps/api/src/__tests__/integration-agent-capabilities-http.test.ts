@@ -12,8 +12,7 @@ import { createAccountToken } from '../repositories/account-tokens';
 import { insertIntoView } from './helpers/compat-views';
 import { createLocalGitUpstream, type LocalGitUpstream } from './helpers/local-git-upstream';
 
-const MANIFEST = `kortix_version: 3
-default_agent: kortix
+const MANIFEST = `default_agent: kortix
 skills:
   pdf: skills/pdf
 tools:

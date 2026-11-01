@@ -7,6 +7,12 @@
  * route registrations that index.ts loads.
  */
 
+// The subagent notices register their delivery at import (a reaped or failed
+// box tells the parent session). Every process that runs projects code loads
+// this surface, the worker included, so the registration lives here instead
+// of only behind the routes that also import the module.
+import './subagent-notice';
+
 // Git-proxy public API (consumed by ../git-proxy).
 export {
   withProjectGitAuth,
@@ -16,7 +22,7 @@ export {
   type GitProxyAuth,
 } from './lib/git';
 
-// Idle sessions off a fallback model (consumed by workers/session-model-fallback-worker).
+// Idle sessions off a fallback model (consumed by worker/jobs/session-model-fallback).
 export { revertIdleSessionFallbacks } from './lib/session-model-fallback-revert';
 
 // A person's pins and archive (consumed by account erasure and offboarding).
@@ -41,18 +47,18 @@ export {
   retireWarmProjectSessions,
 } from './session-lifecycle';
 export type { CreateSessionCommand } from './session-lifecycle';
+export type { PromptPartWire } from './session-lifecycle/prompt-payload';
+export { promptWireModel } from './lib/effort-default';
+export { continuationOverrides } from './session-lifecycle/queued-continue-delivery';
 export { sessionIsTombstoned } from './lib/session-visibility';
 
 // The shutdown hand-back of lifecycle claims (consumed by bootstrap.ts).
 export { handBackClaims } from './session-lifecycle/claim-handover';
 
-// Trigger + manifest helpers (consumed by channels / connector / the boot
-// sequence in src/index.ts).
+// Trigger + manifest helpers (consumed by channels and connectors).
 export {
   drainTriggerExecutionQueue,
   runProjectTriggerSweep,
-  startProjectTriggerScheduler,
-  stopProjectTriggerScheduler,
   schedulerSweepIsStale,
   loadManifestForEdit,
   commitManifest,
@@ -64,6 +70,8 @@ export { mentionTokens, mentionsMember } from './rooms/envelope';
 export { resolveAndAuthorizeAgentAs } from './lib/agent-access';
 export { loadVisibleSession } from './lib/session-visibility';
 export { sessionHoldsLiveTurn } from './session-lifecycle/inbox-admission';
+// Does a sandbox's runtime keep a prompt's message id (consumed by the sandbox proxy's wire-id placement).
+export { sandboxKeepsMessageIds } from './session-lifecycle/inbox-admission';
 
 // Project access, the route app and the secret envelope.
 export { assertProjectCapability, loadProjectForUser } from './lib/access';
@@ -115,7 +123,7 @@ export const reconcileEventSubscriptionsFromCatalog: typeof import('./trigger-ev
   async (...args) => (await eventSubscriptions()).reconcileEventSubscriptionsFromCatalog(...args);
 export const releaseProjectEventSubscriptions: typeof import('./trigger-events/subscriptions').releaseProjectEventSubscriptions =
   async (...args) => (await eventSubscriptions()).releaseProjectEventSubscriptions(...args);
-// Kortix-polled app events (consumed by workers/trigger-event-poll-worker.ts). Loading the
+// Kortix-polled app events (consumed by replica/trigger-event-poll.ts). Loading the
 // module registers the delivery queue's job handler. Lazy for the same cycle as above.
 export const runDueEventPolls = async (onSlotFree?: () => void): Promise<number> =>
   (await import('./trigger-events/mcp-poll')).runDueEventPolls(onSlotFree);
@@ -141,12 +149,12 @@ export { readStoredTranscriptWindow } from './session-log-read';
 // channels/core/commands.ts, on a chat's /stop and /new).
 export { abortRuntimeTurn } from './session-lifecycle/abort-runtime-turn';
 
-// The retention purge of session content (consumed by workers/session-log-purge-worker.ts).
+// The retention purge of session content (consumed by worker/jobs/session-log-purge.ts).
 export { PURGE_BATCH_SIZE, purgeSessionContent } from './session-log-purge';
 
 // Git reads (consumed by config-releases/publish.ts and config-releases/base-tip.ts).
 export { resolveCommitSha, resolveCommitShaAt } from './git/commits';
-export { refreshIntervalMs, refreshMirror } from './git/mirror';
+export { refreshIntervalMs, refreshMirror, useSharedTipProof } from './git/mirror';
 export type { GitBackedProject } from './git/types';
 
 // Who may stop a running turn (consumed by channels/core/turn-stop.ts and
@@ -169,3 +177,7 @@ export { recordChannelsReenabled } from './lib/channels-onboarding';
 // Author names written into memory files (consumed by ../memory/layers.ts).
 export { resolveUserIdentities } from './lib/user-identity';
 export { readPublicResponse } from './lib/public-response';
+// Shutdown: the Claude sign-ins this task runs (bootstrap.ts).
+export { drainClaudeLogins } from './claude-subscription/flows';
+// The turn gate for Claude subscription models (sandbox-proxy/forward/turn-start.ts).
+export { missingClaudeSubscription, sessionModelPin } from './claude-subscription/gate';

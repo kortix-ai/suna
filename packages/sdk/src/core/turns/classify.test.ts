@@ -641,6 +641,9 @@ describe('toolInfo registry', () => {
     expect(toolInfo('grep')).toEqual({ label: 'Search Code', category: 'search' });
     expect(toolInfo('webfetch')).toEqual({ label: 'Fetch Page', category: 'web' });
     expect(toolInfo('task')).toEqual({ label: 'Delegate to Agent', category: 'task' });
+    // pi's subagent tool; `task` is its deprecated alias.
+    expect(toolInfo('agent')).toEqual(toolInfo('task'));
+    expect(toolInfo('workflow')).toEqual({ label: 'Run Workflow', category: 'task' });
     expect(toolInfo('todowrite')).toEqual({ label: 'Plan Tasks', category: 'task' });
     expect(toolInfo('question')).toEqual({ label: 'Ask Question', category: 'task' });
   });

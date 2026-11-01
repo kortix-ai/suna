@@ -7,9 +7,13 @@ import { loadProjectAgents, resolveUserIdentities } from '../projects/surface';
 import { ArtifactCommentAuthorityError, authorizeArtifactCommentAgent } from './comment-authority';
 import { resolveArtifactCommentSendTarget } from './comment-delivery';
 import { artifactAgentMentionToken, artifactPersonMentionToken } from './comment-tokens';
-import { artifactCommentSendBatch, unaddressedArtifactThreadIds } from './comment-routing-context';
+import { unaddressedArtifactThreadIds } from './comment-routing-context';
 import { ArtifactCommentError, listArtifactCommentThreads, type ArtifactCommentAccess } from './comments-service';
 import { entryVersion, listVersions } from './service';
+import { selectScreenshotSendBatch, screenshotTargetCapability, screenshotReferences, screenshotSizes, screenshotReferenceBudget } from './comment-screenshot-parts';
+import { artifactCommentPrompt } from './comment-prompt';
+import { config } from '../config';
+import type { ArtifactCommentAnchor } from '@kortix/shared/artifact-comments';
 
 export async function readArtifactCommentContext(access: ArtifactCommentAccess, actor: Actor, options: { version?: string; agent?: string }) {
   const artifact = access.artifact;
@@ -73,8 +77,23 @@ export async function readArtifactCommentContext(access: ArtifactCommentAccess, 
     .innerJoin(artifactCommentThreads, eq(artifactCommentThreads.threadId, artifactComments.threadId))
     .where(and(eq(artifactCommentThreads.artifactId, artifact.artifactId), eq(artifactCommentThreads.projectId, artifact.projectId), isNull(artifactComments.deletedAt))))[0]!.count
     : threads.reduce((count, thread) => count + thread.comments.filter((comment) => !comment.deleted_at).length, 0);
+  const images = threads.flatMap(thread => thread.comments.filter(comment => !comment.deleted_at && !!comment.screenshot_key));
+  const capability = sendThreadIds.length && images.length ? await screenshotTargetCapability(artifact.projectId, target?.descriptor.kind === 'session' ? target.session?.sessionId : null) : { mayNeedImages: false };
+  const imageCounts = new Map(threads.map(thread => [thread.thread_id, thread.comments.filter(comment => !comment.deleted_at && !!comment.screenshot_key).length]));
+  const sizes = images.length ? await screenshotSizes(artifact.projectId, images.map(comment => comment.screenshot_key!)) : new Map<string, number>();
+  const imageBytes = new Map(threads.map(thread => [thread.thread_id, screenshotReferenceBudget(screenshotReferences(artifact,
+    thread.comments.map(comment => ({ commentId: comment.comment_id, screenshotKey: comment.screenshot_key, deletedAt: comment.deleted_at ? new Date(comment.deleted_at) : null })), ''), sizes)]));
+  const textBytes = new Map(threads.map(thread => {
+    const urls = new Map(screenshotReferences(artifact, thread.comments.map(comment => ({ commentId: comment.comment_id, screenshotKey: comment.screenshot_key,
+      deletedAt: comment.deleted_at ? new Date(comment.deleted_at) : null })), config.KORTIX_URL).map(ref => [ref.filename.split('.')[0]!, ref.url]));
+    const text = artifactCommentPrompt({ artifactId: artifact.artifactId, title: artifact.title, path: `${artifact.root}/${artifact.entry}`,
+      version: selectedEntry ?? commitId ?? 'unknown' }, [{ thread_id: thread.thread_id, anchor: thread.anchor as ArtifactCommentAnchor,
+      comments: thread.comments.map(comment => ({ body: comment.deleted_at ? '' : comment.body, author_user_id: comment.author_user_id,
+        author_session_id: comment.author_session_id, ...(urls.has(comment.comment_id) ? { screenshot_url: urls.get(comment.comment_id)! } : {}) })) }]);
+    return [thread.thread_id, Buffer.byteLength(JSON.stringify({ type: 'text', text })) + 1] as const;
+  }));
   return { can_comment: !historical && !!access.canComment, can_moderate: !historical && !!access.viewer.manageAny,
     comment_count: commentCount,
-    people, agents, send_target: target?.descriptor ?? null, ...artifactCommentSendBatch(sendThreadIds),
+    people, agents, send_target: target?.descriptor ?? null, ...selectScreenshotSendBatch(sendThreadIds, imageCounts, capability.mayNeedImages, imageBytes, textBytes),
     version: { commit_id: commitId, entry_version: selectedEntry } };
 }

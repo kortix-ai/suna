@@ -93,6 +93,8 @@ export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'secret.broker.streamed': 'Streamed secret relay response',
   'secret.broker.failed': 'Failed secret broker call',
   'secret.oauth.connected': 'Connected model provider OAuth login',
+  'secret.claude_subscription.connected': 'Connected Claude subscription',
+  'secret.claude_subscription.disconnected': 'Disconnected Claude subscription',
   'llm.request': 'Made LLM request',
   'connector.*': 'Ran connector call',
   'connector.approval.approved': 'Approved connector action',
