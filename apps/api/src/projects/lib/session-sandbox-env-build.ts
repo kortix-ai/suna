@@ -188,10 +188,10 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
     // repo's branches whenever this process had not fetched for 60 s: p50
     // 742 ms, p90 4.7 s on prod for this step (2026-10-30).
     const read = { onManifest, forceRefresh: 'tip-proof' as const };
-    compiledAgentConfig =
+    const compiled =
       !(input.repositoryAccess ?? true)
-        ? await resolveSelectedAgentConfigForSession(gitProject, input.agentName, input.baseRef, read)
-        : await resolveCompiledAgentConfigForSession(gitProject, input.baseRef, read);
+        ? resolveSelectedAgentConfigForSession(gitProject, input.agentName, input.baseRef, read)
+        : resolveCompiledAgentConfigForSession(gitProject, input.baseRef, read);
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
     // allowlist receives ONLY those IDENTIFIERS — so a narrowly-scoped agent
@@ -206,14 +206,24 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
     // SecretGrantResolutionError and the provision fails instead. Shares one
     // resolver with the per-prompt hot push (lib/secret-grant.ts) so the two
     // paths can no longer disagree about what this agent may read.
-    agentGrantEnv = await resolveSessionSecretGrant({
-      projectId: input.projectId,
-      repoUrl: input.repoUrl,
-      defaultBranch: input.defaultBranch,
-      manifestPath: input.manifestPath,
-      sessionAgent: input.agentName,
-      forceRefresh: 'tip-proof',
-    });
+    //
+    // The compile and the grant read the manifest independently, so they run
+    // together: the grant's refresh waits for the compile's tip proof and
+    // reuses it (refreshMirror's lock), and its git reads no longer wait for
+    // the compile's. Either failure still fails the build. Sequential, the pair was the
+    // `agent-config` step: p50 1.0 s on prod in a project with 28 agents
+    // (2026-11-01).
+    [compiledAgentConfig, agentGrantEnv] = await Promise.all([
+      compiled,
+      resolveSessionSecretGrant({
+        projectId: input.projectId,
+        repoUrl: input.repoUrl,
+        defaultBranch: input.defaultBranch,
+        manifestPath: input.manifestPath,
+        sessionAgent: input.agentName,
+        forceRefresh: 'tip-proof',
+      }),
+    ]);
   }
   return { agentGrantEnv, compiledAgentConfig, manifestPackages, manifestCodemode };
 }
