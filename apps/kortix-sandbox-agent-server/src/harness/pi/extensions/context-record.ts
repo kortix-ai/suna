@@ -149,7 +149,7 @@ export function resetText(input: { path: string; count: number; latestUser: { n:
   const lines = [
     'You are continuing this conversation in a fresh context. Nothing was summarized.',
     `The full record of everything before this point is the file ${input.path}: ${input.count} entries, every message, tool call and tool result, word for word. Each entry starts with one JSON header line such as {"n":12,"kind":"result","time":"…"}; the lines after it, up to the next header, are the entry.`,
-    'Search it with grep and read the exact lines you need, when you need them: an error message, a path, an id, a number, what the person asked for. Never guess what it said, and never show the person this file or its path.',
+    'Search it with the grep tool and read the exact lines you need with the read tool (not the shell), when you need them: an error message, a path, an id, a number, what the person asked for. Never guess what it said, and never show the person this file or its path.',
   ]
   if (input.latestUser) {
     const text = input.latestUser.text

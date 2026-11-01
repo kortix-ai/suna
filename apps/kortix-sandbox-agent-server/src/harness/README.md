@@ -1395,7 +1395,7 @@ builtin extension `kortix-context-record`).** It answers pi's
   every settled run, and inside the hook.
 - The reset: no `firstKeptEntryId`, so pi keeps no earlier entry. Its text
   gives the record's path and format, tells the model to read exact lines with
-  `grep` when it needs them, repeats the person's latest message (up to 8,000
+  the `grep` and `read` tools (not the shell) when it needs them, repeats the person's latest message (up to 8,000
   characters), and adds a mid-turn note when the reset lands inside a tool
   chain or an overflow retry. `details` is `{ kind: 'record', path, entries }`.
 - The wire: the marker part gains `mode: 'record'`, `tokens_before` and
