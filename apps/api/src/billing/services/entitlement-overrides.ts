@@ -44,6 +44,8 @@ export interface EntitlementOverrides {
   driveProjectBytes?: OverrideEntry<number>;
   /** Files storage of all the account's projects together, in bytes, in place of the plan's. */
   driveAccountBytes?: OverrideEntry<number>;
+  /** Volume storage billing (storage-charges.ts): off waives storage charges for the account. */
+  storageBilling?: OverrideEntry<boolean>;
 }
 
 export type OverrideKey = keyof EntitlementOverrides;
@@ -60,6 +62,7 @@ export const ENTITLEMENT_OVERRIDE_KEYS = [
   'branding',
   'managedModels',
   'byokFee',
+  'storageBilling',
 ] as const;
 
 /** The numeric limits, each a positive whole number of bytes, read by the limit that owns it. */

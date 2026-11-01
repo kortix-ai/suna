@@ -1,5 +1,5 @@
 import { numberValue, isoValue } from './cost-values';
-import { gatewayRequestLogs, projectSessions, projects, sandboxComputeSessions } from '@kortix/db';
+import { gatewayRequestLogs, projectSessions, projects, sandboxComputeSessions, storageCharges } from '@kortix/db';
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
 
 import type { CostSort, CostWindow } from './cost-window';
@@ -17,6 +17,9 @@ export interface ProjectCostRow {
   /** Provider-side BYOK spend. Excluded from `llm_cost` and `total_cost`. */
   llm_provider_cost: number;
   compute_cost: number;
+  /** Volume storage charged to the project (storage_charges), included in total_cost. */
+  storage_cost: number;
+  storage_gib_hours: number;
   total_cost: number;
   last_activity_at: string | null;
 }
@@ -45,6 +48,25 @@ interface ComputeProjectAggregateRow {
   lastAt: Date | string | null;
 }
 
+interface StorageProjectAggregateRow {
+  projectId: string | null;
+  storageCost: number | string;
+  gibHours: number | string;
+}
+
+/**
+ * The storage_charges days a window covers: every UTC day that starts before
+ * `to` and ends after `from`. Storage is charged per whole UTC day.
+ */
+export function storageDayRange(window: CostWindow): { fromDay: string; toDayExclusive: string } {
+  const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  const DAY_MS = 86_400_000;
+  return {
+    fromDay: day(window.from.getTime()),
+    toDayExclusive: day(Math.ceil(window.to.getTime() / DAY_MS) * DAY_MS),
+  };
+}
+
 function laterIso(left: string | null, right: string | null): string | null {
   if (!left) return right;
   if (!right) return left;
@@ -59,6 +81,7 @@ export function mergeProjectCostRows(
   llmRows: LlmProjectAggregateRow[],
   computeRows: ComputeProjectAggregateRow[],
   projectNames: Map<string, string>,
+  storageRows: StorageProjectAggregateRow[] = [],
 ): ProjectCostRow[] {
   const byProject = new Map<string, ProjectCostRow>();
 
@@ -73,6 +96,8 @@ export function mergeProjectCostRows(
       llm_kortix_cost: 0,
       llm_provider_cost: 0,
       compute_cost: 0,
+      storage_cost: 0,
+      storage_gib_hours: 0,
       total_cost: 0,
       last_activity_at: null,
     };
@@ -98,8 +123,15 @@ export function mergeProjectCostRows(
     target.last_activity_at = laterIso(target.last_activity_at, isoValue(row.lastAt));
   }
 
+  for (const row of storageRows) {
+    if (!row.projectId) continue;
+    const target = ensure(row.projectId);
+    target.storage_cost = numberValue(row.storageCost);
+    target.storage_gib_hours = numberValue(row.gibHours);
+  }
+
   for (const row of byProject.values()) {
-    row.total_cost = Number((row.llm_cost + row.compute_cost).toFixed(10));
+    row.total_cost = Number((row.llm_cost + row.compute_cost + row.storage_cost).toFixed(10));
   }
 
   return [...byProject.values()];
@@ -153,7 +185,8 @@ export async function listCostByProject(input: {
 }): Promise<ProjectCostPage> {
   const { accountId, window } = input;
 
-  const [llmRows, computeRows, projectRows] = await Promise.all([
+  const storageDays = storageDayRange(window);
+  const [llmRows, computeRows, projectRows, storageRows] = await Promise.all([
     db
       .select({
         projectId: gatewayRequestLogs.projectId,
@@ -203,12 +236,30 @@ export async function listCostByProject(input: {
         eq(projects.accountId, accountId),
         input.projectId ? eq(projects.projectId, input.projectId) : undefined,
       )),
+    // Volume storage (idx_storage_charges_account_day), charged per UTC day.
+    db
+      .select({
+        projectId: storageCharges.projectId,
+        storageCost: sql<number>`coalesce(sum(${storageCharges.chargedUsd}), 0)::float8`,
+        gibHours: sql<number>`coalesce(sum(${storageCharges.chargedGibHours}), 0)::float8`,
+      })
+      .from(storageCharges)
+      .where(
+        and(
+          eq(storageCharges.accountId, accountId),
+          input.projectId ? eq(storageCharges.projectId, input.projectId) : undefined,
+          gte(storageCharges.usageDay, storageDays.fromDay),
+          lt(storageCharges.usageDay, storageDays.toDayExclusive),
+          sql`${storageCharges.projectId} is not null`,
+        ),
+      )
+      .groupBy(storageCharges.projectId),
   ]);
 
   const projectNames = new Map(projectRows.map((row) => [row.projectId, row.name]));
   const visible = input.visibleProjectIds;
   const merged = sortProjectRows(
-    mergeProjectCostRows(llmRows, computeRows, projectNames).filter(
+    mergeProjectCostRows(llmRows, computeRows, projectNames, storageRows).filter(
       (row) => !visible || visible.has(row.project_id),
     ),
     input.sort,
@@ -235,6 +286,8 @@ export interface CostSeriesPoint {
   day: string;
   llm_cost: number;
   compute_cost: number;
+  /** Volume storage charged for the UTC day. */
+  storage_cost: number;
   total_cost: number;
 }
 
@@ -260,9 +313,11 @@ export function buildCostSeries(
   llmDays: DailyCostRow[],
   computeDays: DailyCostRow[],
   window: CostWindow,
+  storageDays: DailyCostRow[] = [],
 ): CostSeriesPoint[] {
   const llmByDay = new Map(llmDays.map((row) => [row.day, numberValue(row.cost)]));
   const computeByDay = new Map(computeDays.map((row) => [row.day, numberValue(row.cost)]));
+  const storageByDay = new Map(storageDays.map((row) => [row.day, numberValue(row.cost)]));
 
   const points: CostSeriesPoint[] = [];
   const cursor = new Date(
@@ -273,11 +328,13 @@ export function buildCostSeries(
     const day = cursor.toISOString().slice(0, 10);
     const llmCost = llmByDay.get(day) ?? 0;
     const computeCost = computeByDay.get(day) ?? 0;
+    const storageCost = storageByDay.get(day) ?? 0;
     points.push({
       day,
       llm_cost: llmCost,
       compute_cost: computeCost,
-      total_cost: Number((llmCost + computeCost).toFixed(10)),
+      storage_cost: storageCost,
+      total_cost: Number((llmCost + computeCost + storageCost).toFixed(10)),
     });
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
@@ -292,9 +349,13 @@ export interface CostSummaryTotals {
   /** Provider-side BYOK spend. Excluded from `llm_cost` and `total_cost`. */
   llm_provider_cost: number;
   compute_cost: number;
+  /** Volume storage charged in the window (storage_charges), included in total_cost. */
+  storage_cost: number;
   total_cost: number;
   request_count: number;
   compute_seconds: number;
+  /** GiB-hours of volume storage behind storage_cost. */
+  storage_gib_hours: number;
   session_count: number;
   project_count: number;
 }
@@ -426,7 +487,21 @@ export async function getCostSummary(input: {
   // the cost — GROUPING SETS computes totals, the daily series, the model
   // breakdown and the distinct-project list from a single pass, keeping
   // every figure identical to the one-query-per-figure version.
-  const [llmGroupRows, llmPriorRows, computeGroupRows, computePriorRows] = await Promise.all([
+  // Volume storage: one row per (volume, UTC day). Project scope reads its
+  // project's volumes; session scope its /workspace volume and scratch disk.
+  const storageScope = (w: CostWindow) => {
+    const days = storageDayRange(w);
+    const conditions = [
+      eq(storageCharges.accountId, accountId),
+      gte(storageCharges.usageDay, days.fromDay),
+      lt(storageCharges.usageDay, days.toDayExclusive),
+    ];
+    if (projectId) conditions.push(eq(storageCharges.projectId, projectId));
+    if (sessionId) conditions.push(eq(storageCharges.sessionId, sessionId));
+    return and(...conditions);
+  };
+
+  const [llmGroupRows, llmPriorRows, computeGroupRows, computePriorRows, storageDayRows, storagePriorRows] = await Promise.all([
     db
       .select({
         setId: LLM_SET_ID,
@@ -474,6 +549,20 @@ export async function getCostSummary(input: {
         )`,
       ),
     loadComputePrior(previous),
+    db
+      .select({
+        day: sql<string>`to_char(${storageCharges.usageDay}, 'YYYY-MM-DD')`,
+        cost: sql<number>`coalesce(sum(${storageCharges.chargedUsd}), 0)::float8`,
+        gibHours: sql<number>`coalesce(sum(${storageCharges.chargedGibHours}), 0)::float8`,
+        projectIds: sql<string[]>`coalesce(array_agg(distinct ${storageCharges.projectId}) filter (where ${storageCharges.projectId} is not null), '{}')`,
+      })
+      .from(storageCharges)
+      .where(storageScope(window))
+      .groupBy(storageCharges.usageDay),
+    db
+      .select({ cost: sql<number>`coalesce(sum(${storageCharges.chargedUsd}), 0)::float8` })
+      .from(storageCharges)
+      .where(storageScope(previous)),
   ]);
 
   // Split the grouped rows by their set label. The grand-total row is the
@@ -510,6 +599,9 @@ export async function getCostSummary(input: {
   for (const row of computeGroupRows) {
     if (row.setId === 'project' && row.projectId) projectIds.add(row.projectId);
   }
+  for (const row of storageDayRows) {
+    for (const id of row.projectIds ?? []) projectIds.add(id);
+  }
 
   // Cost descending, then provider/model descending as a deterministic
   // tie-break — the same rule the ungrouped version ordered by in SQL.
@@ -545,15 +637,18 @@ export async function getCostSummary(input: {
 
   const llmCost = numberValue(llmTotals?.llmCost);
   const computeCost = numberValue(computeTotals?.computeCost);
+  const storageCost = storageDayRows.reduce((sum, row) => sum + numberValue(row.cost), 0);
 
   const totals: CostSummaryTotals = {
     llm_cost: llmCost,
     llm_kortix_cost: numberValue(llmTotals?.llmKortixCost),
     llm_provider_cost: numberValue(llmTotals?.llmProviderCost),
     compute_cost: computeCost,
-    total_cost: Number((llmCost + computeCost).toFixed(10)),
+    storage_cost: Number(storageCost.toFixed(10)),
+    total_cost: Number((llmCost + computeCost + storageCost).toFixed(10)),
     request_count: numberValue(llmTotals?.requestCount),
     compute_seconds: numberValue(computeTotals?.computeSeconds),
+    storage_gib_hours: storageDayRows.reduce((sum, row) => sum + numberValue(row.gibHours), 0),
     // The larger of the two sources' distinct session counts — NOT the true
     // union: a session with LLM-only spend and a different session with
     // compute-only spend both go uncounted by Math.max the same way they
@@ -579,13 +674,18 @@ export async function getCostSummary(input: {
   };
 
   const previousTotalCost = Number(
-    (numberValue(llmPriorRows[0]?.cost) + numberValue(computePriorRows[0]?.cost)).toFixed(10),
+    (numberValue(llmPriorRows[0]?.cost) + numberValue(computePriorRows[0]?.cost) + numberValue(storagePriorRows[0]?.cost)).toFixed(10),
   );
 
   return {
     totals,
     previous: { total_cost: previousTotalCost },
-    series: buildCostSeries(llmDailyRows, computeDailyRows, window),
+    series: buildCostSeries(
+      llmDailyRows,
+      computeDailyRows,
+      window,
+      storageDayRows.map((row) => ({ day: row.day, cost: row.cost })),
+    ),
     models,
   };
 }

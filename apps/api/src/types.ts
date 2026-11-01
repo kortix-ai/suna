@@ -305,6 +305,8 @@ export interface AccountStateResponse {
    */
   usage_this_period?: {
     compute_usd: number;
+    /** Volume storage: Files folders and session /workspace volumes (`storage_debit`). */
+    storage_usd: number;
     llm_usd: number;
     total_usd: number;
     period_start: string | null;

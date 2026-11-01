@@ -668,7 +668,7 @@ About 15 to 20 minutes after the last turn, Kortix stops the computer. It keeps 
 </Step>
 </Steps>
 
-A stopped computer costs nothing while it sleeps. A preview request or a new prompt wakes it again.
+A stopped computer uses no compute while it sleeps. Its `/workspace` files count as [storage](/docs/guide#what-uses-credits) for as long as they are kept. A preview request or a new prompt wakes it again.
 
 #### What is kept
 
@@ -1305,7 +1305,7 @@ An account is on one of two plans: Free or Credits. See [kortix.com/pricing](htt
 | Projects | 1 | 200 |
 
 - Every plan can use models on your own provider key or a ChatGPT subscription. See [Models](/docs/guide#models).
-- On Free, credits pay for compute and your own models only.
+- On Free, credits pay for compute, storage and your own models only.
 - Credits tiers run from 5,000 to 5,000,000 credits a month ($50 to $50,000). Every tier has the same rate. A bigger tier buys more credits, never a cheaper credit.
 
 #### Enterprise
@@ -1321,8 +1321,9 @@ Enterprise is not a plan. It turns on extra features on either plan: single sign
 | Session machines | The size the machine reserves, for the seconds it runs. App machines count too. |
 | Web tools | Each web search, image search or web scraping request that goes through Kortix. |
 | Residential proxy | The data a session sends and receives through a residential IP address, per GB. Only for sandbox templates that ask for it. See [Residential IP address](/docs/guide#residential-ip-address). |
+| Storage | The data kept in your Files folders and in each session's `/workspace`, per GiB-hour, for as long as it is kept. Stored data is measured compressed and with duplicate blocks counted once, once a day. A day is charged after it ends. |
 
-A stopped or sleeping machine costs nothing. The default machine costs about $0.11 an hour, about 11 credits.
+A stopped or sleeping machine uses no compute. Its files still count as storage. The default machine costs about $0.11 an hour, about 11 credits.
 
 ### The wallet
 
@@ -1371,6 +1372,6 @@ To continue, add credits or update the payment method. On Free, you can also sub
 
 | Where | What it shows |
 | --- | --- |
-| **Billing → Plan** | Plan, wallet, spend this period, auto top-up |
+| **Billing → Plan** | Plan, wallet, spend this period (compute, storage, LLM), auto top-up |
 | **Billing → Usage** | Kortix charges and the credit history |
 | **Project admin → Models → Costs** in a project | Model spend and budgets for that project |

@@ -8212,6 +8212,74 @@ export const drives = kortixSchema.table('drives', {
   check('drives_kind', sql`${table.kind} in ('personal', 'agent', 'company', 'project')`),
 ]);
 
+// Volume storage Platinum meters, one row per (control plane, meter, volume,
+// UTC day): what Platinum measured, who owns it, and what Kortix charged
+// (apps/api/src/billing/services/storage-charges.ts). A row with no account is
+// Kortix's own cost: a volume no Kortix account owns (another deployment's, a
+// deleted owner's, one Platinum no longer lists). The account and project are
+// set null when they are deleted, so the cost stays recorded as unattributed.
+export const storageCharges = kortixSchema.table('storage_charges', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  /** The Platinum control plane: 'home', or the region key of a regional one. */
+  feed: text('feed').notNull(),
+  /** Platinum's resource_kind: 'volume', 'volume_snapshot' or 'scratch'. */
+  resourceKind: text('resource_kind').notNull(),
+  /** Platinum's resource_id: a volume id (vol_…), or a box id for a scratch disk. */
+  resourceId: text('resource_id').notNull(),
+  usageDay: date('usage_day', { mode: 'string' }).notNull(),
+  accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'set null' }),
+  projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'set null' }),
+  sessionId: text('session_id'),
+  driveId: uuid('drive_id'),
+  volumeName: text('volume_name'),
+  /** Why no account pays: 'not_kortix', 'volume_gone', 'owner_gone', 'unsupported_kind'. Null when attributed. */
+  unattributedReason: text('unattributed_reason'),
+  /** The storageBilling entitlement was off when this row last charged: nothing was taken. */
+  waived: boolean('waived').default(false).notNull(),
+  /** What Platinum metered for the day so far. */
+  gibHours: numeric('gib_hours', { precision: 24, scale: 10 }).default('0').notNull(),
+  platinumMicros: bigint('platinum_micros', { mode: 'number' }).default(0).notNull(),
+  /** What Kortix charged for the day so far: one ledger row per charge_seq. */
+  chargedGibHours: numeric('charged_gib_hours', { precision: 24, scale: 10 }).default('0').notNull(),
+  chargedUsd: numeric('charged_usd', { precision: 20, scale: 10 }).default('0').notNull(),
+  chargeSeq: integer('charge_seq').default(0).notNull(),
+  /** A charge written before its wallet call: replayed with the same key until it lands. */
+  pendingGibHours: numeric('pending_gib_hours', { precision: 24, scale: 10 }),
+  pendingUsd: numeric('pending_usd', { precision: 20, scale: 10 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('storage_charges_resource_day').on(table.feed, table.resourceKind, table.resourceId, table.usageDay),
+  index('idx_storage_charges_account_day').on(table.accountId, table.usageDay),
+  index('idx_storage_charges_project_day').on(table.projectId, table.usageDay),
+  check('storage_charges_kind', sql`${table.resourceKind} in ('volume', 'volume_snapshot', 'scratch')`),
+  check(
+    'storage_charges_reason',
+    sql`${table.unattributedReason} is null or ${table.unattributedReason} in ('not_kortix', 'volume_gone', 'owner_gone', 'unsupported_kind')`,
+  ),
+]);
+
+// Kortix's own compute cost for Platinum boxes this deployment does not own
+// (no session, App or monitor row names them): what Platinum charged per
+// (control plane, box, UTC day, meter), summed from its billing feed
+// (apps/api/src/billing/services/orphan-box-costs.ts). Nothing here is ever
+// charged to a customer.
+export const providerOrphanBoxCosts = kortixSchema.table('provider_orphan_box_costs', {
+  feed: text('feed').notNull(),
+  sandboxId: text('sandbox_id').notNull(),
+  usageDay: date('usage_day', { mode: 'string' }).notNull(),
+  /** `<event_type>/<size_class>`, e.g. 'sandbox.uptime/cpu'. */
+  meter: text('meter').notNull(),
+  quantity: numeric('quantity', { precision: 24, scale: 6 }).default('0').notNull(),
+  amountMicros: bigint('amount_micros', { mode: 'number' }).default(0).notNull(),
+  events: integer('events').default(0).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.feed, table.sandboxId, table.usageDay, table.meter] }),
+  index('idx_provider_orphan_box_costs_day').on(table.usageDay),
+]);
+
 // Where a drive mounts, beyond its owner's own sessions. One row per subject:
 // `project` (every session of the project), `user` (sessions that person
 // starts, in any project of the account), `agent` (every session of one

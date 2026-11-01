@@ -1401,6 +1401,7 @@
       "addCredits": "Ajouter des crédits",
       "spentThisPeriod": "Dépensés pendant cette période",
       "compute": "Calcul",
+      "storage": "Stockage",
       "total": "Total",
       "history": "Historique",
       "historyDescription": "Le coût de chaque session et tous les crédits ajoutés ou dépensés.",
@@ -2656,7 +2657,7 @@
         },
         "credit": {
           "question": "Que permet d'acheter un crédit ?",
-          "answer": "1 crédit vaut 0,01 $. Les crédits paient l'ordinateur d'agent, facturé à la seconde et par ressource : {vcpuRate} par vCPU et par heure, {memoryRate} par Go de RAM et par heure, {diskRate} par Go de stockage et par mois. La machine par défaut de {spec} consomme environ {creditsPerHour} crédits par heure, soit environ {minutes} minutes par crédit. Un ordinateur à l'arrêt ne coûte rien. Les crédits paient aussi les modèles Kortix, au prix de base du fournisseur plus {fee} % de frais de plateforme. Votre propre clé d'API est gratuite pour les premiers 1 000 $ d'usage de modèles par mois, puis 5 % du prix du fournisseur sont payés en crédits. Un abonnement ChatGPT ne consomme aucun crédit."
+          "answer": "1 crédit vaut 0,01 $. Les crédits paient l'ordinateur d'agent, facturé à la seconde et par ressource : {vcpuRate} par vCPU et par heure, {memoryRate} par Go de RAM et par heure, {diskRate} par Go de stockage et par mois. La machine par défaut de {spec} consomme environ {creditsPerHour} crédits par heure, soit environ {minutes} minutes par crédit. Un ordinateur à l'arrêt ne consomme pas de calcul. Ses fichiers stockés sont facturés comme stockage. Les crédits paient aussi les modèles Kortix, au prix de base du fournisseur plus {fee} % de frais de plateforme. Votre propre clé d'API est gratuite pour les premiers 1 000 $ d'usage de modèles par mois, puis 5 % du prix du fournisseur sont payés en crédits. Un abonnement ChatGPT ne consomme aucun crédit."
         },
         "amounts": {
           "question": "Combien dois-je payer chaque mois ?",
@@ -2702,7 +2703,7 @@
       "hours": {
         "eyebrow": "Heures d'agent",
         "title": "1 crédit correspond à environ {minutes} minutes d'ordinateur d'agent",
-        "description": "Les crédits paient l'ordinateur de l'agent : la machine cloud où votre agent exécute du code, navigue et modifie des fichiers. Il est facturé à la seconde tant qu'il tourne et ne coûte rien à l'arrêt.",
+        "description": "Les crédits paient l'ordinateur de l'agent : la machine cloud où votre agent exécute du code, navigue et modifie des fichiers. Il est facturé à la seconde tant qu'il tourne et ne consomme pas de calcul à l'arrêt. Ses fichiers stockés sont facturés comme stockage.",
         "rate": {
           "value": "1 crédit = 0,01 $",
           "note": "Chaque palier fournit des crédits à ce tarif."
@@ -2717,7 +2718,7 @@
         },
         "rates": {
           "title": "Tarifs de calcul",
-          "note": "Facturé à la seconde selon la taille réservée. Un ordinateur arrêté ne coûte rien.",
+          "note": "Facturé à la seconde selon la taille réservée. Un ordinateur arrêté ne consomme pas de calcul. Ses fichiers stockés sont facturés comme stockage.",
           "vcpu": {
             "label": "vCPU",
             "price": "{price} / heure"

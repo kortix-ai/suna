@@ -141,12 +141,13 @@ export function AccountOverviewView({ state }: { state: AccountState }) {
         </div>
 
         {usage ? (
-          <div className="divide-border grid grid-cols-3 divide-x border-t">
+          <div className="divide-border grid grid-cols-4 divide-x border-t">
             <SpendStat
               label={tI18nComplete.raw('textcedc516df056')}
               value={usage.compute_usd}
               locale={locale}
             />
+            <SpendStat label={tCredits('storage')} value={usage.storage_usd ?? 0} locale={locale} />
             <SpendStat label="LLM" value={usage.llm_usd} locale={locale} />
             <SpendStat
               label={tI18nComplete.raw('text97c8335e2880')}
