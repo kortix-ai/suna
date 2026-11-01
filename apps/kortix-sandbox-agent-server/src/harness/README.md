@@ -777,6 +777,8 @@ what this box serves on top
 (`PiRuntime.multiAgentCapabilities`): `session.messaging` where the box has a
 control plane, and `session.team_tasks` while the project's `agent_teams`
 flag is on and the session leads a team or is a teammate ("Agents working together"
+below), and (`PiRuntime.contextCapabilities`) `session.context_record` unless the
+agent's `context` is `summary` ("The conversation, compaction and slash commands"
 below). The pre-W3 flat fields (`opencode`, `opencode_pid`,
 `opencode_port`, `opencode_session_id`, …) are gone since 2026-10-30.
 
@@ -1378,7 +1380,32 @@ restart restores them, so a compaction or a context edit survives it. The dump
 also keeps `agentMessages` for a daemon built before pi 1.0, which restores
 from that field; this daemon reads it only when `entries` is absent.
 
-pi's own compaction is on. It runs on demand (`POST /session/:id/summarize`),
+**Retrieval instead of a summary (`extensions/context-record.ts`, the
+builtin extension `kortix-context-record`).** It answers pi's
+`session_before_compact` hook for every trigger (threshold, overflow,
+`/summarize`) with its own compaction, and pi makes no model call:
+
+- The record: every entry of the root thread, word for word, in
+  `<KORTIX_PI_STATE_DIR>/records/<pi session id>.log` (dir `0700`, file `0600`,
+  a `.gitignore` of `*`, outside `/workspace`). One JSON header line per entry
+  (`{"n":12,"kind":"result","time":"…","name":"bash","for":"call_3","exit":"ok"}`;
+  kinds `user`, `assistant`, `thinking`, `call`, `result`, `error`, `event`,
+  `model`, `reset`), then its text. An image is one line; pi's system prompt
+  entry is left out. Written at session start (a restored log included), at
+  every settled run, and inside the hook.
+- The reset: no `firstKeptEntryId`, so pi keeps no earlier entry. Its text
+  gives the record's path and format, tells the model to read exact lines with
+  `grep` when it needs them, repeats the person's latest message (up to 8,000
+  characters), and adds a mid-turn note when the reset lands inside a tool
+  chain or an overflow retry. `details` is `{ kind: 'record', path, entries }`.
+- The wire: the marker part gains `mode: 'record'`, `tokens_before` and
+  `entries` when the reset lands (re-published at `compaction_end`), and the
+  session-log block carries `mode` and `entries`. A failed record write
+  returns nothing from the hook, so pi's summary keeps the session going.
+- The agent's `context: summary` (kortix.yaml, sent as `KORTIX_PI_CONTEXT`)
+  leaves the extension out: pi's own summary compaction below then runs.
+
+pi's own compaction (an agent with `context: summary`, or a failed record write) runs on demand (`POST /session/:id/summarize`),
 when the context nears the model's window, and when a model request overflows
 it or a reply is cut by the length limit (pi then retries that request once;
 the failed attempt's error is withheld from the wire and lands on the message

@@ -231,7 +231,9 @@ export function createRuntimeVerbs(input: RuntimeVerbsInput) {
     },
 
     /**
-     * Summarize the conversation so far into a shorter context. Uses `model`,
+     * Start a fresh context. A runtime with `session.context_record` resets onto the
+     * session's searchable record and summarizes nothing; otherwise the
+     * conversation is summarized into a shorter context. Uses `model`,
      * else the model the runtime runs (its `kortix.runtime.v1` state document);
      * throws an `ApiError` with code `MODEL_REQUIRED` when neither names one.
      * Resolves with the model it used.
