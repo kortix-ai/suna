@@ -22633,6 +22633,8 @@
     "agentFullWriteDescription": "Nelle sessioni che avvii, questo agente può modificare qualsiasi file del tuo drive, non solo la cartella From agents.",
     "agentCardDrive": "Drive di {size}",
     "sessionSkippedDrives": "{count, plural, one {# drive non è entrato in questa sessione} other {# drive non sono entrati in questa sessione}}: {names}. Rimuovi un drive per fare spazio, poi riavvia la sessione.",
+    "sessionSkippedUnavailable": "{count, plural, one {# cartella non è ancora montata} other {# cartelle non sono ancora montate}}: {names}. La sessione continua senza e le monta appena lo storage lo consente.",
+    "sessionSkippedTooLarge": "{count, plural, one {# cartella è troppo grande da montare in una sessione} other {# cartelle sono troppo grandi da montare in una sessione}}: {names}. La sessione funziona senza. Sposta i file grandi o condividi una cartella più piccola.",
     "shareFolder": "Condividi",
     "shareTitle": "Condividi {name}",
     "shareDescription": "Le persone, i team e gli agenti che aggiungi ricevono questa cartella e tutto il suo contenuto. Una sessione vede una cartella quando il suo agente, il suo progetto o la persona che l’ha avviata vi ha accesso.",

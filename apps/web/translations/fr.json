@@ -22633,6 +22633,8 @@
     "agentFullWriteDescription": "Dans les sessions que vous lancez, cet agent peut modifier n’importe quel fichier de votre drive, pas seulement son dossier From agents.",
     "agentCardDrive": "Drive de {size}",
     "sessionSkippedDrives": "{count, plural, one {# drive n’a pas trouvé de place dans cette session} other {# drives n’ont pas trouvé de place dans cette session}} : {names}. Retirez un drive pour faire de la place, puis redémarrez la session.",
+    "sessionSkippedUnavailable": "{count, plural, one {# dossier n’est pas encore monté} other {# dossiers ne sont pas encore montés}} : {names}. La session continue sans eux et les monte dès que le stockage le permet.",
+    "sessionSkippedTooLarge": "{count, plural, one {# dossier est trop volumineux pour être monté dans une session} other {# dossiers sont trop volumineux pour être montés dans une session}} : {names}. La session fonctionne sans eux. Déplacez les gros fichiers ou partagez un dossier plus petit.",
     "shareFolder": "Partager",
     "shareTitle": "Partager {name}",
     "shareDescription": "Les personnes, équipes et agents que vous ajoutez reçoivent ce dossier et tout son contenu. Une session voit un dossier quand son agent, son projet ou la personne qui l’a lancée y a accès.",
