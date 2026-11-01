@@ -64,6 +64,7 @@ export type SessionHealthResponse = {
  *   - `session.shell`     a shell command run as a turn
  *   - `session.attach`    attach the harness's own terminal client
  *   - `session.config`    a runtime config document (`/global/config`)
+ *   - `session.context_record` a full context resets onto the session's searchable record, with nothing summarized
  */
 export type RuntimeCapability =
   | 'session.rewind'
@@ -75,7 +76,8 @@ export type RuntimeCapability =
   | 'session.todo'
   | 'session.shell'
   | 'session.attach'
-  | 'session.config';
+  | 'session.config'
+  | 'session.context_record';
 
 /**
  * Does the session's runtime serve `capability`? Pass the health

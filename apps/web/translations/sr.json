@@ -25255,5 +25255,16 @@
     "codeError": "Nije moguće povezati Claude tim kodom. Prijavi se ponovo i nalepi novi kod.",
     "connectClaude": "Poveži Claude",
     "reconnectClaude": "Ponovo poveži Claude"
+  },
+  "contextReset": {
+    "pill": "Нови контекст · цела историја сачувана",
+    "pillRunning": "Ослобађање контекста…",
+    "detail": "Контекст је достигао {tokens} токена, па је агент наставио у новом. Ништа није сажето: претражује целу историју ({entries} уноса) када му треба неки детаљ.",
+    "detailManual": "Покренули сте нови контекст на {tokens} токена. Ништа није сажето: агент претражује целу историју ({entries} уноса) када му треба неки детаљ.",
+    "showDetail": "Прикажи детаље",
+    "hideDetail": "Сакриј детаље",
+    "dialogTitle": "Покренути нови контекст?",
+    "dialogDescription": "Агент наставља у новом контексту и претражује целу историју када му треба неки детаљ. Ништа се не сажима, а разговор остаје овде какав јесте.",
+    "dialogAction": "Покрени нови контекст"
   }
 }

@@ -4161,6 +4161,13 @@ describe('pi context record: retrieval instead of compaction', () => {
     expect(recordOf(restarted).text).toContain('first answer ERR-BETA-0042')
   })
 
+  test('health lists session.context_record, so a client words its reset controls for the record; an agent on summary does not list it', async () => {
+    const health = async (env?: Record<string, string>) =>
+      ((await (await boot({ script: [], ...(env ? { env } : {}) })).bearer('/kortix/health').then((res) => res.json())) as { capabilities: string[] }).capabilities
+    expect(await health()).toContain('session.context_record')
+    expect(await health(SUMMARY_CONTEXT)).not.toContain('session.context_record')
+  })
+
   test('every builtin extension the runtime loads is in the catalog the agent page lists', async () => {
     const r = await boot({ script: [] })
     const loaded = r.service.runtime()!.extensionStatus().loaded

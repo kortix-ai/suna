@@ -1712,6 +1712,11 @@ export class PiRuntime {
     return this.subagentContext.depth === 0 ? plane.sessionId : null
   }
 
+  /** `session.context_record` unless the agent's `context` is `summary` (`extensions/context-record.ts`). */
+  contextCapabilities(): RuntimeCapability[] {
+    return this.cfg.piContext === 'summary' ? [] : ['session.context_record']
+  }
+
   /** The session features pi serves on this box (`GET /kortix/health` `capabilities`), beyond the static list. */
   multiAgentCapabilities(): RuntimeCapability[] {
     if (!this.controlPlane()) return []

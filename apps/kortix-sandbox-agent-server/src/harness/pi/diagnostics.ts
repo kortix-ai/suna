@@ -32,6 +32,7 @@ export function createPiDiagnosticsService(
       ...HARNESS_RUNTIME_CAPABILITIES.pi,
       RUNTIME_STABLE_MESSAGE_ID_CAPABILITY,
       ...(runtime()?.multiAgentCapabilities() ?? []),
+      ...(runtime()?.contextCapabilities() ?? []),
       // Claude subscription models: the image's `claude` program, or the pinned one a first turn installs (claude/install.ts).
       RUNTIME_CLAUDE_AGENT_CAPABILITY,
     ],

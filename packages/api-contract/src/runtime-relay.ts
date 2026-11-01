@@ -248,6 +248,11 @@ export const RUNTIME_CAPABILITIES = [
   'session.messaging',
   /** A team's shared task list: the `task_*` tools (flag `agent_teams`). */
   'session.team_tasks',
+  /**
+   * A full context, and `/session/:id/summarize`, reset onto the session's searchable record:
+   * nothing is summarized (kortixd `extensions/context-record.ts`). Absent: a summary.
+   */
+  'session.context_record',
 ] as const;
 export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
 

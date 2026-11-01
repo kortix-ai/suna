@@ -25255,5 +25255,16 @@
     "codeError": "Could not connect Claude with that code. Sign in again and paste the new code.",
     "connectClaude": "Connect Claude",
     "reconnectClaude": "Reconnect Claude"
+  },
+  "contextReset": {
+    "pill": "Fresh context · full history kept",
+    "pillRunning": "Freeing up context…",
+    "detail": "The context reached {tokens} tokens, so the agent continued in a fresh one. Nothing was summarized: it searches the full history ({entries} entries) when it needs a detail.",
+    "detailManual": "You started a fresh context at {tokens} tokens. Nothing was summarized: the agent searches the full history ({entries} entries) when it needs a detail.",
+    "showDetail": "Show details",
+    "hideDetail": "Hide details",
+    "dialogTitle": "Start a fresh context?",
+    "dialogDescription": "The agent continues in a fresh context and searches the full history when it needs a detail. Nothing is summarized, and the conversation stays here as it is.",
+    "dialogAction": "Start a fresh context"
   }
 }
