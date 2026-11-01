@@ -4,7 +4,7 @@ import { useLocale, useTranslations } from '../../i18n';
 /**
  * Compaction, as ONE minimal marker — the divider pill IS the whole UI:
  *
- *   1. running (optimistic or streaming) → rule ── [⛁ Compacting context…] ── rule
+ *   1. running (optimistic or streaming) → rule ── [⛁ Freeing up context…] ── rule
  *      (shimmer label; the summary text is deliberately NOT streamed into the
  *      transcript — a wall of live markdown read as noise, grew the transcript
  *      under the reader, and made a slow summarize FEEL slower)
