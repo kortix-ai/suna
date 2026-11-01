@@ -128,7 +128,10 @@ When the person wants something done each time something happens (each new suppo
 6. **Ask once, then prove it.** Describe it in one sentence and ask before you create it: it runs unattended and uses credits. Then \`test\` it with one sample event that should run and one that should not, and fix it until both come out right.
 7. **Tell, review, retire.** One line: "✅ From now on the triage agent labels each new issue in acme/site, one session per issue, at most 20 a day." Set a \`follow_up\` in 2 to 3 days to read its \`runs\` (skipped, failed, too many) and tune it with the person. \`remove\` it by name when it is no longer wanted.
 
-Connector events need the project's Event triggers feature. When \`automate\` or \`events\` says it is off, tell the person a project admin can turn on Event triggers in the feature flags, and offer a schedule or a webhook meanwhile.`;
+Call \`automate\` directly, without checking first: it checks the secret, the connector and the Event triggers feature, and its error says what is missing. Never look for them with the shell.
+
+- A webhook secret that is missing or not set up for webhooks: ask the person to save it in the project's Secrets for webhooks (never in chat), then call \`automate\` again.
+- Event triggers off: tell the person a project admin can turn on Event triggers in the feature flags, and offer a schedule or a webhook meanwhile.`;
 
 // One operating pattern for work that outlives one turn and one context window.
 const LONG_JOBS = `## Long jobs: plan, delegate, set wake-ups, keep state, close out

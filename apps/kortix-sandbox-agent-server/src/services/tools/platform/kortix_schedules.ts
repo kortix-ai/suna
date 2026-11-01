@@ -672,7 +672,7 @@ export default {
     '2) `session_key` per thing ("{{ event.data.thread_id }}", "{{ body.issue.number }}", "{{ body.email }}") so a follow-up about the same thing lands in the same session; ' +
     '3) a prompt that judges first: "If this is not <what matters>, stop: do nothing and send no message. Otherwise …", with the event fields it needs; ' +
     '4) cap it (`max_runs_per_day`, e.g. 20) and pick the agent with the least access, and a fast model for triage; ' +
-    '5) ask the person before you create it (it runs unattended and uses credits), then `test` with a sample payload (fires nothing: the filter verdict, the session key and the prompt) and fix it until it is right; ' +
+    '5) ask the person before you create it (it runs unattended and uses credits), then call automate directly: it checks the secret, the connector and the Event triggers feature itself, and its error says what is missing (never check with the shell); then `test` with a sample payload (fires nothing: the filter verdict, the session key and the prompt) and fix it until it is right; ' +
     '6) tell them in one line what it does, set a `follow_up` in 2-3 days to read its `runs` and tune it, and `remove` it (by name) when it is no longer wanted.',
   parameters: {
     type: 'object',
