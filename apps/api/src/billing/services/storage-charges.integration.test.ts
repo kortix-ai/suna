@@ -280,6 +280,28 @@ withDb('storage billing on PostgreSQL', () => {
     expect((await chargeRows())[0]).toMatchObject({ waived: true, chargeSeq: 0, accountId: waived });
   });
 
+  test('an account with no credit account is not charged and does not hold the day open', async () => {
+    // Compute's rule: no credit account, nothing to debit, nothing metered.
+    const bare = await fixtures.seedAccount('storage-no-credit-row');
+    const bareProject = await fixtures.seedProject('storage-no-credit-row', { accountId: bare });
+    const bareVol = `vol_bare_${crypto.randomUUID().slice(0, 8)}`;
+    await db.insert(drives).values({
+      accountId: bare,
+      kind: 'project',
+      name: 'Files',
+      projectId: bareProject.project_id,
+      platinumVolumeId: bareVol,
+      platinumVolumeName: `kd-${crypto.randomUUID().replace(/-/g, '').slice(0, 20)}`,
+    });
+    invalidateAccountBilling(bare);
+    await setCursor(YESTERDAY);
+    feed[YESTERDAY] = [receipt('volume', bareVol, 1000)];
+    const result = await syncStorageCharges(deps);
+    expect(result).toMatchObject({ charged: 0, waived: 1, failed: 0 });
+    expect(await ledger(bare)).toEqual([]);
+    expect((await chargeRows()).find((r) => r.accountId === bare)).toMatchObject({ waived: true, chargeSeq: 0 });
+  });
+
   test("a deleted owner's volume becomes Kortix cost; nothing more is charged", async () => {
     await setCursor('2026-10-30');
     feed['2026-10-30'] = [receipt('volume', driveVol, 1000)];

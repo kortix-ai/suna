@@ -37,6 +37,7 @@ import { STORAGE_RATES_USD_PER_GIB_HOUR, type StorageResourceKind } from '../../
 import { db } from '../../shared/db';
 import { platinumJson, platinumRegionControlPlane } from '../../shared/platinum';
 import { platinumUsRegion } from '../../shared/platinum-region';
+import { getCreditAccount } from '../repositories/credit-accounts';
 import type { SettleInput } from '../wallet';
 import { resolveAccountBilling } from './billing-cache';
 import { settleAndCheckAutoTopup } from './wallet-debits';
@@ -243,6 +244,9 @@ export const storageChargeDeps: StorageChargeDeps = {
       .onConflictDoUpdate({ target: platformSettings.key, set: { value: { day }, updatedAt: new Date() } });
   },
   async storageBilled(accountId) {
+    // Compute's rule (compute-metering.ts startComputeSession): no credit
+    // account, nothing to debit. Recorded as waived, so the day closes.
+    if (!(await getCreditAccount(accountId))) return false;
     return (await resolveAccountBilling(accountId)).entitlements.storageBilling !== false;
   },
   settle: settleAndCheckAutoTopup,
