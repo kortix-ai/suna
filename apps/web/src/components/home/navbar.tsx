@@ -510,9 +510,10 @@ export function Navbar({ solidAtTop = false }: { solidAtTop?: boolean } = {}) {
               </ContextMenuContent>
             </ContextMenu>
 
-            {/* The CompanyOS / Services switcher: centred in the bar on desktop,
-                after the logo on smaller screens. */}
-            <SiteSwitcher className="mr-auto ml-4 lg:absolute lg:left-1/2 lg:m-0 lg:-translate-x-1/2" />
+            {/* The CompanyOS / Services switcher: centred in the bar from xl,
+                after the logo below it. Centred at lg (1024 px), it covers
+                "Pricing". */}
+            <SiteSwitcher className="mr-auto ml-4 lg:mr-0 xl:absolute xl:left-1/2 xl:m-0 xl:-translate-x-1/2" />
 
             {/* The links sit right after the logo; `mr-auto` pushes the actions to the end. */}
             <nav className="hidden items-center gap-1 lg:mr-auto lg:ml-8 lg:flex">

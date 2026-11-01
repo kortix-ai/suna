@@ -23,6 +23,8 @@ export interface SessionSecretContext {
   project: { repoUrl: string | null; defaultBranch: string | null; manifestPath: string | null } | undefined;
   grantEnv: () => Promise<string[] | 'all' | undefined>;
   personalUserId: () => Promise<string | null>;
+  /** When the grant read settled (`performance.now()`), null before. Timing only. */
+  grantSettledAt?: () => number | null;
 }
 
 export async function loadSessionSecretContext(
@@ -54,6 +56,7 @@ export async function loadSessionSecretContext(
   ]);
   let grantEnv: Promise<string[] | 'all' | undefined> | undefined;
   let personalUserId: Promise<string | null> | undefined;
+  let grantSettled: number | null = null;
   return {
     session,
     project,
@@ -66,7 +69,10 @@ export async function loadSessionSecretContext(
         sessionAgent: session?.agentName ?? DEFAULT_AGENT_SENTINEL,
         requestedAgent,
         forceRefresh: 'tip-proof',
+      }).finally(() => {
+        grantSettled = performance.now();
       })),
+    grantSettledAt: () => grantSettled,
     // Spec 2026-09-22 §2.3: personal overrides follow the session's
     // on-behalf-of human under the agent-principal model; the creator otherwise.
     personalUserId: () =>

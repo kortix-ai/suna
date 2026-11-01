@@ -1361,8 +1361,16 @@ async function runProvisionAttempt(
   // generic provider fault. There is nothing to register with a provider —
   // one mechanism serves platinum and daytona alike: the guest gets a HANDLE
   // and the broker route substitutes the real value server-side.
-  await resolveSessionNetworkBoundary(opts.projectId, sandbox.sandboxId);
-  tl.note('network-boundary');
+  //
+  // It runs beside the image, the volumes and the provider create, and is
+  // awaited before the box goes active: a policy it refuses still fails the
+  // session, and the failure path removes the box (`state.bgExternalId`). It
+  // used to gate the create: 1.6 s on prod in a project with 150 secrets
+  // and 28 agents (2026-11-01).
+  const boundaryChecked = resolveSessionNetworkBoundary(opts.projectId, sandbox.sandboxId).then(() =>
+    tl.note('network-boundary'),
+  );
+  boundaryChecked.catch(() => undefined);
 
   const image = await resolveAttemptImage(ctx, state, branch);
   await prepareAttemptVolumes(ctx, state);
@@ -1373,6 +1381,7 @@ async function runProvisionAttempt(
   const { result, attempts } = created;
   state.bgExternalId = result.externalId;
   tl.mark(`provider-create:${attempts}x`);
+  await boundaryChecked;
   const boot = await recordAttemptBoot(ctx, state, result);
   const timeline = tl.summary();
 
