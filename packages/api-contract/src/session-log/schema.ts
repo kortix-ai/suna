@@ -131,6 +131,8 @@ export const CompactionBlockSchema = z.object({
   layout: z.array(CompactionLayoutEntrySchema).optional(),
   tokens_before: z.number().optional(),
   trigger: z.enum(['auto', 'manual', 'overflow', 'unknown']).optional(),
+  mode: z.literal('record').optional(),
+  entries: z.number().optional(),
   ext,
 });
 export const SubtaskBlockSchema = z.object({

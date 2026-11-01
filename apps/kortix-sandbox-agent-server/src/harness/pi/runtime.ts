@@ -1423,6 +1423,22 @@ export class PiRuntime {
         ? { name: 'MessageAbortedError', data: { message: 'The compaction was stopped' }, code: 'aborted' }
         : { name: 'UnknownError', data: { message: event.errorMessage ?? 'The compaction failed' } }
     if (event.result) {
+      // A reset onto the record (extensions/context-record.ts): the marker says so, with its size.
+      const details = event.result.details as { kind?: unknown; entries?: unknown } | undefined
+      if (details?.kind === 'record' && info.parentID) {
+        this.publish({
+          type: 'message.part.updated',
+          properties: {
+            sessionID,
+            time: completed,
+            part: {
+              id: `${info.parentID}-p0`, messageID: info.parentID, sessionID, type: 'compaction', auto: event.reason !== 'manual',
+              ...(event.reason === 'overflow' ? { overflow: true } : {}), mode: 'record', tokens_before: event.result.tokensBefore,
+              ...(typeof details.entries === 'number' ? { entries: details.entries } : {}),
+            },
+          },
+        })
+      }
       this.publish({
         type: 'message.part.updated',
         properties: { sessionID, time: completed, part: { id: `${info.id}-p0`, messageID: info.id, sessionID, type: 'text', text: event.result.summary } },

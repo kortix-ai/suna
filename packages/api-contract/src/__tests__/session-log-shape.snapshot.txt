@@ -43,6 +43,8 @@ CompactionBlockSchema = {
   layout: array(CompactionLayoutEntrySchema) | absent
   tokens_before: number | absent
   trigger: enum(auto | manual | overflow | unknown) | absent
+  mode: literal("record") | absent
+  entries: number | absent
   ext: ExtSchema | absent
 }
 

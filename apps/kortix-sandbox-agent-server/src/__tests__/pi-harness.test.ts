@@ -4060,8 +4060,14 @@ describe('pi context record: retrieval instead of compaction', () => {
     expect(gateway.sent.length).toBe(calls)
     const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     const [turn] = compactionTurns(page)
-    expect(turn!.part).toMatchObject({ type: 'compaction', auto: false })
+    const headerCount = recordOf(r).text.split('\n').filter((line) => line.startsWith('{"n":')).length
+    // The marker says it is a reset onto the record, with its size, for the client's divider.
+    expect(turn!.part).toMatchObject({ type: 'compaction', auto: false, mode: 'record', tokens_before: expect.any(Number), entries: headerCount })
     expect(turn!.summary.info.error).toBeUndefined()
+    // The session log carries the same, so a restored or API-served transcript shows the reset too.
+    const { log } = piSessionLog(r.service.runtime()!.sessionLogSnapshot()!)
+    const block = log.threads[0]!.messages.flatMap((m) => m.blocks).find((b) => b.type === 'compaction')
+    expect(block).toMatchObject({ type: 'compaction', trigger: 'manual', mode: 'record', entries: headerCount })
     const { path, text } = recordOf(r)
     expect(turn!.summary.parts[0]!.text).toContain(RESET_LINE)
     expect(turn!.summary.parts[0]!.text).toContain(path)
