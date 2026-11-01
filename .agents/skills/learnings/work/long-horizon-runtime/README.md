@@ -1,6 +1,6 @@
 ---
 title: Long-horizon runtime (retrieval instead of compaction, an orchestrator that never waits, background commands, workers that own their threads)
-status: planned (branch `my-kortix-v2`); 4 decisions open for the owner
+status: planned (branch `my-kortix-v2`); phase 1 decisions taken 2026-11-01; phases 3-4 parked
 owner: Marko (decisions)
 updated: 2026-11-01
 ---
@@ -94,17 +94,15 @@ hears its follow-ups first.
 |---|---|---|
 | T1 | **No Kortix default context cap.** A reset happens where compaction happens today: pi's `window - reserve` (`compactionSettings`, `harness/pi/model.ts`). | The 2026-10-22 learning ["Serve every model its real limits"](../../entries/2026-10-22T184919Z-serve-every-model-its-real-limits-never-cap-a-window-or-a-co.md) forbids a Kortix compaction budget: cost is controlled per project. Mainplane's 250k cap is a preset choice, not a requirement of the design. |
 | T2 | **Reuse pi's compaction record for the reset.** The `session_before_compact` hook returns our own compaction, so pi makes no model call. | pi already calls the hook for all three triggers (`manual`, `threshold`, `overflow`) and appends `fromExtension: true` (pi-coding-agent 1.4.0, `core/agent-session.js:2230-2297`). The wire (`compaction` part, `summary` message), the turn relay, the session-log record and the restore stay unchanged: no client-facing contract change. |
-| T3 | **Keep pi's verbatim tail.** The reset keeps pi's `firstKeptEntryId` (the newest `keepRecentTokens`, 20,000 by default) word for word. | The kept tail is raw entries, not a summary: nothing is paraphrased. It makes a reset in the middle of a tool chain seamless. pi also refuses to compact a session smaller than the tail ("Nothing to compact (session too small)"), so keeping nothing would need a pi change. |
+| T3 | **Keep nothing (Mainplane's way)** (owner, 2026-11-01). The reset returns no `firstKeptEntryId`, so the fresh context is the system prompt plus the reset text. | The record holds everything, and the reset text gives its path. pi supports it as is: a compaction whose first kept entry is missing keeps nothing (`buildContextEntries`, pi-coding-agent 1.4.0 `core/session-manager.js:216-228`), and `appendCompaction` defaults to it (`firstKeptEntryId ?? id`, line 890). The restore already maps "the compaction itself, keeping none" (`harness/pi/session-log-restore.ts`). Risk: a reset in the middle of a tool chain loses the newest results from the context, so the reset text tells the agent to read the record's last entries first; the live check tests this case. |
 | T4 | **A worker subscribes its own session.** Direct delivery means the worker sets its own wake-ups. My Kortix does not set triggers on other sessions. | The API already allows own-session triggers only (problem 4), and `notify_parent` delivers each finished child turn to the parent (`apps/api/src/projects/lib/session-metadata-keys.ts:115`). No new cross-session permission is needed. |
 
-## Decisions open for the owner
+## Owner decisions (2026-11-01)
 
-| # | Question | Recommendation |
-|---|---|---|
-| O1 | Context cap: keep T1 (no default cap), or add one? | Keep T1. A reset now costs one file write, so revisit the cap only with cost data. |
-| O2 | Tail: keep T3 (20,000 tokens verbatim), or keep nothing like Mainplane? | Keep T3. |
-| O3 | Merge mode for phase 1: it changes every root session and the label of the compaction card (a visual change). | Self-merge the runtime after the local and dev proof; hold only if you want to review the card label. |
-| O4 | Phase 3 limits: concurrent jobs per box, maximum run time. | 8 jobs; 2 h; killed when the box stops. |
+- O1: no default context cap (T1).
+- O2: keep nothing (T3).
+- O3: self-merge each phase to `dev` after the local check, then verify on dev.
+- O4 (phase 3 limits): open; phases 3 and 4 are parked (see "Order and delivery").
 
 ## Phase 1: retrieval instead of compaction
 
@@ -135,7 +133,7 @@ hears its follow-ups first.
   - An image is written as `[image: <mime>, <bytes> bytes, not in the record]`.
 - **The reset.** When pi would compact, the `session_before_compact` handler:
   1. writes the record;
-  2. returns `{ compaction: { summary, firstKeptEntryId: preparation.firstKeptEntryId, tokensBefore, details: { kind: "record", path, entries } } }`;
+  2. returns `{ compaction: { summary, tokensBefore, details: { kind: "record", path, entries } } }` with no `firstKeptEntryId`, so no earlier entry is kept (T3);
   3. makes no model call.
 - **The text the model reads** (pi wraps it in its compaction framing, `COMPACTION_SUMMARY_PREFIX`):
 
@@ -154,7 +152,7 @@ hears its follow-ups first.
   </message>
   ```
 
-  - A reset during a turn (`threshold` or `overflow` inside a prompt) adds: "You were working on it when the context filled. The messages after this one are the newest part of the record: continue from them."
+  - A reset during a turn (`threshold` or `overflow` inside a prompt) adds: "You were working on it when the context filled. Read the last entries of the record first: they show what you did last and where you stopped."
   - The latest message is capped at 8,000 characters. Beyond that the text says "(continues in the record at entry <n>)".
 - **`/compact`**, the Compact dialog (`packages/ui/src/session/header/compact-modal.tsx`) and `kortix sessions compact` run the same reset, at once.
 - **Repeated resets** work the same way: the record already holds the earlier ones as `reset` entries.
@@ -164,7 +162,7 @@ hears its follow-ups first.
 | Case | Behavior |
 |---|---|
 | Session smaller than the tail | pi refuses before the hook ("Nothing to compact (session too small)"), as today. `PI_COMPACTION_REFUSALS` stays. |
-| Overflow with retry (`willRetry`) | pi appends the reset and retries the request once; the retried request is system prompt + reset text + tail. |
+| Overflow with retry (`willRetry`) | pi appends the reset and retries the request once; the retried request is the system prompt plus the reset text. |
 | Box replaced (restore from the session log) | The restore writes the whole log into pi's entries unless the log is over the 24 MiB cap (`harness/README.md`, restore slice rule). Boot rebuilds the record from those entries. |
 | Restore over the cap (`kept: model_view` or `newest`) | The record starts with a `reset` entry that says the earlier entries are not in this file and names the command that reads them. Verify first that `kortix sessions log` can page back to the start; add paging if it cannot. |
 | Turn stopped during a reset | The hook checks `signal` before it returns; a stopped reset appends nothing, as a stopped compaction does today. |
@@ -184,7 +182,7 @@ hears its follow-ups first.
 
 - **kortixd tests** (new `src/__tests__/pi-context-record.test.ts`, one file, seconds):
   - all three reasons append a compaction with no model call;
-  - the tail is kept;
+  - no earlier entry is kept, and the next request holds the system prompt plus the reset text only;
   - the record has every entry in order, including a result over 50 KB, a dropped image and an earlier reset;
   - after a restore, boot rebuilds the same record.
 - **The real surface:**
@@ -267,6 +265,8 @@ hears its follow-ups first.
 
 ## Order and delivery
 
-1. Phase 1, then 2, 3, 4. Each phase is one pull request from `my-kortix-v2`, checked locally and on dev per the repo rules.
+1. Phase 1, then phase 2. Each is one pull request from `my-kortix-v2`, checked locally, self-merged to `dev`, then checked on dev.
+   - Phase 3 (background commands) is parked until phase 1 is live. It closes a real gap: pi's `bash` blocks the turn. But the idea is not new, since Claude Code, DeepSeek Harness and Mainplane all have background jobs. Decide then, with O4.
+   - Phase 4 (workers own their threads) is parked. It saves the orchestrator a relay step, and Kortix has no evidence yet that the relay costs anything.
 2. Announce phase 1 in the changelog: "A long session no longer forgets. When the context fills, the agent continues at once with the full record, searchable word for word, instead of a summary."
 3. Follow-ups after phase 1: read the `[pi] context reset` log lines on dev after 1 week, and record the Claude subscription harness's full-context behavior.

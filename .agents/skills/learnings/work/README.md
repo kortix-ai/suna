@@ -18,7 +18,7 @@ planned, in flight, or parked, so another person or agent can pick it up.
 
 | Topic | Status |
 |---|---|
-| [`long-horizon-runtime/`](long-horizon-runtime/README.md) | planned (`my-kortix-v2`), 4 decisions open: retrieval from the full record instead of compaction, an orchestrator that never waits, background commands, workers that own their threads |
+| [`long-horizon-runtime/`](long-horizon-runtime/README.md) | planned (`my-kortix-v2`), phase 1 decided: retrieval from the full record instead of compaction, an orchestrator that never waits, background commands, workers that own their threads |
 | [`long-horizon-follow-through/`](long-horizon-follow-through/README.md) | on dev (#11332 bd2d6ac89c, #11344, #11347, #11351): every agent sets its own wake-up after each wait: loops, session event triggers, App events |
 | [`my-kortix-multi-agent-parity/`](my-kortix-multi-agent-parity/README.md) | building (`my-kortix-v2`): messages between sessions, agent teams (flag `agent_teams`), agent board, workflow controls; async orchestration |
 | [`goals-and-workflows/`](goals-and-workflows/README.md) | stage 1 merged on dev (flag `goals`); stage 2 planning |
