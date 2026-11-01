@@ -37,7 +37,6 @@ test('API Docker dependency context resolves workspace overrides', () => {
         '--prod=false',
         '--ignore-scripts',
         '--lockfile-only',
-        '--offline',
       ],
       {
         cwd: context,
