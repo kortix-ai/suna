@@ -1452,7 +1452,8 @@ describe('pi harness', () => {
   })
 
   test('a model reply cut off by the length limit ends the turn as failed', async () => {
-    const r = await boot({ script: [{ text: 'partial answ', finish: 'length' }] })
+    // pi's summary path (`context: summary`): a session too short to summarize cannot recover the cut.
+    const r = await boot({ script: [{ text: 'partial answ', finish: 'length' }], env: SUMMARY_CONTEXT })
     const root = r.service.runtime()!.rootId
     const messageID = 'msg_0198e2a4b0c7ABCDEFGHIJKLMN'
     expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'long question' }] })).status).toBe(204)
@@ -3200,7 +3201,8 @@ describe('pi compaction', () => {
   test('pi refuses a /summarize on a short context: the turn ends idle, and the wire and the log line keep the reason', async () => {
     const { seen, hooks } = compactionRelays()
     const warn = spyOn(logger, 'warn')
-    const r = await boot({ script: [{ text: 'first answer' }], hooks })
+    // pi's summary path (`context: summary`); the context record resets a short session instead.
+    const r = await boot({ script: [{ text: 'first answer' }], hooks, env: SUMMARY_CONTEXT })
     const rt = r.service.runtime()!
     await promptAndSettle(r, 'ALPHA question')
     expect((await summarize(r, rt.rootId)).status).toBe(200)
@@ -3387,7 +3389,8 @@ describe('pi compaction', () => {
 
   test('an overflow with nothing to compact fails the turn with ContextOverflowError', async () => {
     const overflow = { status: 400, message: "This model's maximum context length is 64000 tokens. However, your messages resulted in 70000 tokens." }
-    const r = await boot({ script: [overflow] })
+    // pi's summary path (`context: summary`): nothing to summarize, so the overflow cannot recover.
+    const r = await boot({ script: [overflow], env: SUMMARY_CONTEXT })
     const root = r.service.runtime()!.rootId
     const events = await r.bearer('/kortix/runtime/events?since=0')
     const messageID = 'msg_0198e2a4b0e2ABCDEFGHIJKLMN'
@@ -4093,6 +4096,19 @@ describe('pi context record: retrieval instead of compaction', () => {
     expect(next).not.toContain('second answer')
   })
 
+  test("a short session resets on /summarize with pi's default settings: the record keeps nothing, so pi's 20,000-token tail rule does not refuse it", async () => {
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }] })
+    const root = r.service.runtime()!.rootId
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    expect(await summarize(r, root).then((res) => res.json())).toBe(true)
+    await waitFor(() => r.service.runtime()!.idle())
+    const [turn] = compactionTurns((await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage)
+    expect(turn!.summary.info.error).toBeUndefined()
+    expect(turn!.part).toMatchObject({ mode: 'record' })
+    expect(turn!.summary.parts[0]!.text).toContain(RESET_LINE)
+  })
+
   test('a context past the threshold resets after the turn with no model call', async () => {
     const start = gateway.sent.length
     const r = await boot({ script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 60_000 }, { text: 'after the reset' }], prepare: compactEverything })
@@ -4125,6 +4141,20 @@ describe('pi context record: retrieval instead of compaction', () => {
     const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     expect(page.messages.filter((m) => m.info.error)).toEqual([])
     expect(page.messages.at(-1)!.parts.map((p) => p.text).join('')).toContain('answer after the reset')
+  })
+
+  test('a reply cut by the length limit resets onto the record and retries once: the turn completes with the retried answer', async () => {
+    const r = await boot({ script: [{ text: 'partial answ', finish: 'length' }, { text: 'the whole answer' }] })
+    const root = r.service.runtime()!.rootId
+    const messageID = 'msg_0198e2a4b0c8ABCDEFGHIJKLMN'
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'long question' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
+    expect(probe.turn_end).toBe('completed')
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(compactionTurns(page)[0]!.part).toMatchObject({ mode: 'record' })
+    expect(page.messages.at(-1)!.parts.map((p) => p.text).join('')).toContain('the whole answer')
+    expect(sentText(gateway.sent.at(-1)!)).toContain('You were working on it when the context filled.')
   })
 
   test('tool calls and results go into the record whole, an image as one line', async () => {
