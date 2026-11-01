@@ -78,7 +78,8 @@ flow(
     let page = '';
     const one = (artifactId = doc) => ({ params: { projectId: project.id, artifactId } });
 
-    await ctx.step('ANON → 401; flag off (the default) → 403 feature_disabled', async () => {
+    await ctx.step('ANON → 401; explicitly disabled flag → 403 feature_disabled', async () => {
+      (await owner.patch('/v1/projects/:projectId/features', { feature: 'artifacts', enabled: false }, { params: p })).status(200);
       (await ctx.client.as(ctx.P.ANON).get(LIST, { params: p })).status(401);
       (await owner.get(LIST, { params: p })).status(403).body().has('$.code', 'feature_disabled');
     });
