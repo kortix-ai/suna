@@ -2846,7 +2846,7 @@ describe('config releases on pi', () => {
     })
     expect(((await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>).config.source).toBe('release')
     expect(await skillsOf(r)).toEqual([['review', 'review from the release']])
-    const loaded = r.service.runtime()!.extensionStatus().loaded.filter((name) => !['kortix-subagents', 'kortix-workflow', 'kortix-messaging'].includes(name))
+    const loaded = r.service.runtime()!.extensionStatus().loaded.filter((name) => !['kortix-context-record', 'kortix-subagents', 'kortix-workflow', 'kortix-messaging'].includes(name))
     expect(loaded).toHaveLength(1)
     expect(loaded[0]!.startsWith(join(dir, 'store')) && loaded[0]!.endsWith('/extensions/package.ts')).toBe(true)
     const first = await ask(r, 'first question')
@@ -3055,6 +3055,8 @@ describe('config releases on pi', () => {
  * and for that turn's head. A script gives both replies (`SUMMARY`).
  */
 const SUMMARY: Step[] = [{ text: 'SUMMARY-ONE' }, { text: 'SUMMARY-TWO' }]
+/** pi's own summary compaction: these tests cover an agent whose `context` is `summary` (extensions/context-record.ts is off). */
+const SUMMARY_CONTEXT = { KORTIX_PI_CONTEXT: 'summary' }
 const compactEverything = (workspace: string) => {
   // pi's global settings (`KORTIX_PI_AGENT_DIR`): no project settings file is read.
   mkdirSync(join(workspace, '.pi-agent'), { recursive: true })
@@ -3076,7 +3078,7 @@ describe('pi compaction', () => {
   })
 
   test('summarize compacts on demand: the wire shows the request and the summary, and the model gets the summary', async () => {
-    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, ...SUMMARY, { text: 'third answer' }], prepare: compactEverything })
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, ...SUMMARY, { text: 'third answer' }], prepare: compactEverything, env: SUMMARY_CONTEXT })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
     await promptAndSettle(r, 'BETA question')
@@ -3113,7 +3115,7 @@ describe('pi compaction', () => {
   })
 
   test('a compacted conversation survives a daemon restart', async () => {
-    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, ...SUMMARY], prepare: compactEverything })
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, ...SUMMARY], prepare: compactEverything, env: SUMMARY_CONTEXT })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
     await promptAndSettle(r, 'BETA question')
@@ -3150,7 +3152,7 @@ describe('pi compaction', () => {
   })
 
   test('stop ends a compaction in flight: the summary message carries the abort, and the context is unchanged', async () => {
-    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, { stall: true }, { stall: true }, { text: 'third answer' }], prepare: compactEverything })
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, { stall: true }, { stall: true }, { text: 'third answer' }], prepare: compactEverything, env: SUMMARY_CONTEXT })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
     await promptAndSettle(r, 'BETA question')
@@ -3178,7 +3180,7 @@ describe('pi compaction', () => {
 
   test('a /summarize is a turn named by its compaction marker: begin and end relay its id, and the log stores the compaction under it', async () => {
     const { seen, hooks } = compactionRelays()
-    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, ...SUMMARY], prepare: compactEverything, hooks })
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, ...SUMMARY], prepare: compactEverything, env: SUMMARY_CONTEXT, hooks })
     const rt = r.service.runtime()!
     await promptAndSettle(r, 'ALPHA question')
     await promptAndSettle(r, 'BETA question')
@@ -3215,7 +3217,7 @@ describe('pi compaction', () => {
 
   test('a second /summarize right after a compaction is refused as already compacted: the turn ends idle', async () => {
     const { seen, hooks } = compactionRelays()
-    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, ...SUMMARY], prepare: compactEverything, hooks })
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, ...SUMMARY], prepare: compactEverything, env: SUMMARY_CONTEXT, hooks })
     const rt = r.service.runtime()!
     await promptAndSettle(r, 'ALPHA question')
     await promptAndSettle(r, 'BETA question')
@@ -3235,7 +3237,7 @@ describe('pi compaction', () => {
 
   test('a /summarize whose model call fails ends its turn error with the reason', async () => {
     const { seen, hooks } = compactionRelays()
-    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, { status: 400, message: 'SUMMARY-REFUSED-BY-MODEL' }, { status: 400, message: 'SUMMARY-REFUSED-BY-MODEL' }], prepare: compactEverything, hooks })
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, { status: 400, message: 'SUMMARY-REFUSED-BY-MODEL' }, { status: 400, message: 'SUMMARY-REFUSED-BY-MODEL' }], prepare: compactEverything, env: SUMMARY_CONTEXT, hooks })
     const rt = r.service.runtime()!
     await promptAndSettle(r, 'ALPHA question')
     await promptAndSettle(r, 'BETA question')
@@ -3249,7 +3251,7 @@ describe('pi compaction', () => {
 
   test('a compaction kortixd did not start for /summarize (an extension ctx.compact()) relays no turn', async () => {
     const { seen, hooks } = compactionRelays()
-    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, ...SUMMARY], prepare: compactEverything, hooks })
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, ...SUMMARY], prepare: compactEverything, env: SUMMARY_CONTEXT, hooks })
     const rt = r.service.runtime()!
     await promptAndSettle(r, 'ALPHA question')
     await promptAndSettle(r, 'BETA question')
@@ -3263,7 +3265,7 @@ describe('pi compaction', () => {
 
   test('Stop before a queued /summarize starts drops it: no model call, no turn', async () => {
     const { seen, hooks } = compactionRelays()
-    const r = await boot({ script: [{ text: 'first answer' }, { tool: 'bash', args: { command: 'sleep 20' } }, { text: 'never' }], prepare: compactEverything, hooks })
+    const r = await boot({ script: [{ text: 'first answer' }, { tool: 'bash', args: { command: 'sleep 20' } }, { text: 'never' }], prepare: compactEverything, env: SUMMARY_CONTEXT, hooks })
     const rt = r.service.runtime()!
     await promptAndSettle(r, 'ALPHA question')
     expect((await prompt(r, rt.rootId, { parts: [{ type: 'text', text: 'wait' }] })).status).toBe(204)
@@ -3279,7 +3281,7 @@ describe('pi compaction', () => {
 
   test('a stopped /summarize ends its turn idle, like a stopped prompt', async () => {
     const { seen, hooks } = compactionRelays()
-    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, { stall: true }, { stall: true }], prepare: compactEverything, hooks })
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, { stall: true }, { stall: true }], prepare: compactEverything, env: SUMMARY_CONTEXT, hooks })
     const rt = r.service.runtime()!
     await promptAndSettle(r, 'ALPHA question')
     await promptAndSettle(r, 'BETA question')
@@ -3293,7 +3295,7 @@ describe('pi compaction', () => {
 
   test('an auto compaction inside a prompt turn relays no turn of its own', async () => {
     const { seen, hooks } = compactionRelays()
-    const r = await boot({ script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 60_000 }, ...SUMMARY], prepare: compactEverything, hooks })
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 60_000 }, ...SUMMARY], prepare: compactEverything, env: SUMMARY_CONTEXT, hooks })
     await promptAndSettle(r, 'ALPHA question')
     await promptAndSettle(r, 'BETA question')
     await waitFor(() => r.service.runtime()!.idle())
@@ -3305,7 +3307,7 @@ describe('pi compaction', () => {
 
   test('a context past the model threshold compacts by itself after the turn', async () => {
     // The catalog window is 64,000 and pi reserves 16,384: a reply that reports 60,000 is over.
-    const r = await boot({ script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 60_000 }, ...SUMMARY], prepare: compactEverything })
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 60_000 }, ...SUMMARY], prepare: compactEverything, env: SUMMARY_CONTEXT })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
     await promptAndSettle(r, 'BETA question')
@@ -3326,7 +3328,7 @@ describe('pi compaction', () => {
       catalog: testModel({ limit: { context: 128_000, output: 32_768 } }),
       // 100,001 tokens is over 95,232 and under 111,616: the report the session meter shows.
       script: [{ text: 'first answer', promptTokens: 100_000 }, ...SUMMARY, { text: 'answer after compaction' }],
-      prepare: compactEverything,
+      prepare: compactEverything, env: SUMMARY_CONTEXT,
     })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
@@ -3350,6 +3352,7 @@ describe('pi compaction', () => {
       workspace,
       catalog: testModel({ limit: { context: 128_000, output: 32_768 } }),
       script: [{ text: 'first answer', promptTokens: 70_000 }, ...SUMMARY, { text: 'answer after compaction' }],
+      env: SUMMARY_CONTEXT,
     })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
@@ -3363,7 +3366,7 @@ describe('pi compaction', () => {
 
   test('a context overflow compacts and retries: the turn completes with no error on the wire', async () => {
     const overflow = { status: 400, message: "This model's maximum context length is 64000 tokens. However, your messages resulted in 70000 tokens." }
-    const r = await boot({ script: [{ text: 'first answer' }, overflow, ...SUMMARY, { text: 'answer after compaction' }], prepare: compactEverything })
+    const r = await boot({ script: [{ text: 'first answer' }, overflow, ...SUMMARY, { text: 'answer after compaction' }], prepare: compactEverything, env: SUMMARY_CONTEXT })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
     const events = await r.bearer('/kortix/runtime/events?since=0')
@@ -3400,7 +3403,7 @@ describe('pi compaction', () => {
   test('stop during the compaction after a turn ends it without another model call', async () => {
     // The 60,000-token reply is over the 64k window's threshold, so pi compacts after the turn.
     // A stop during that summary ends the turn; no further model call goes out.
-    const r = await boot({ script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 60_000 }, { stall: true }, { text: 'must not be asked' }], prepare: compactEverything })
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 60_000 }, { stall: true }, { text: 'must not be asked' }], prepare: compactEverything, env: SUMMARY_CONTEXT })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
     const calls = gateway.requests.length
@@ -3421,7 +3424,7 @@ describe('pi compaction', () => {
     // The cut is retried at pi's settle boundary (runtime `turnExtension`), so the retried step
     // runs pi's post-run checks like any other and an overflow there is recovered, not final.
     const overflow = { status: 400, message: "This model's maximum context length is 64000 tokens. However, your messages resulted in 70000 tokens." }
-    const r = await boot({ script: [{ text: 'first answer' }, { cut: '' }, overflow, ...SUMMARY, { text: 'answer after the retry compacted' }], prepare: compactEverything })
+    const r = await boot({ script: [{ text: 'first answer' }, { cut: '' }, overflow, ...SUMMARY, { text: 'answer after the retry compacted' }], prepare: compactEverything, env: SUMMARY_CONTEXT })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
     const events = await r.bearer('/kortix/runtime/events?since=0')
@@ -3448,7 +3451,7 @@ describe('pi compaction', () => {
         { text: 'SUMMARY-ONE' },
         { text: 'answer after the session healed' },
       ],
-      prepare: compactEverything,
+      prepare: compactEverything, env: SUMMARY_CONTEXT,
     })
     const root = r.service.runtime()!.rootId
     const messageID = 'msg_0198e2a4b0e5ABCDEFGHIJKLMN'
@@ -4034,6 +4037,137 @@ describe('pi per-prompt agent (R7.2)', () => {
   })
 })
 
+/** The session's record file (`<state>/records/<pi session id>.log`) and its text. */
+const recordOf = (r: Rig) => {
+  const dir = join(r.workspace, '.state', 'records')
+  const file = readdirSync(dir).find((name) => name.endsWith('.log'))!
+  return { path: join(dir, file), text: readFileSync(join(dir, file), 'utf8') }
+}
+const RESET_LINE = 'You are continuing this conversation in a fresh context. Nothing was summarized.'
+
+describe('pi context record: retrieval instead of compaction', () => {
+  test('/summarize resets onto the record with no model call: the next request holds the reset text, not the history', async () => {
+    const r = await boot({ script: [{ text: 'first answer ERR-ALPHA-7731' }, { text: 'second answer' }, { text: 'third answer' }], prepare: compactEverything })
+    const root = r.service.runtime()!.rootId
+    expect(r.service.runtime()!.extensionStatus().loaded).toContain('kortix-context-record')
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    const calls = gateway.sent.length
+
+    expect(await summarize(r, root).then((res) => res.json())).toBe(true)
+    await waitFor(() => r.service.runtime()!.idle())
+    // pi made no model call for the reset.
+    expect(gateway.sent.length).toBe(calls)
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    const [turn] = compactionTurns(page)
+    expect(turn!.part).toMatchObject({ type: 'compaction', auto: false })
+    expect(turn!.summary.info.error).toBeUndefined()
+    const { path, text } = recordOf(r)
+    expect(turn!.summary.parts[0]!.text).toContain(RESET_LINE)
+    expect(turn!.summary.parts[0]!.text).toContain(path)
+    // The latest message comes along word for word; a manual reset is not mid-turn.
+    expect(turn!.summary.parts[0]!.text).toContain('<message>\nBETA question\n</message>')
+    expect(turn!.summary.parts[0]!.text).not.toContain('You were working on it')
+    // The record keeps every entry word for word, with a JSON header line each.
+    expect(text).toContain('ALPHA question')
+    expect(text).toContain('first answer ERR-ALPHA-7731')
+    const headers = text.split('\n').filter((line) => line.startsWith('{"n":')).map((line) => JSON.parse(line) as { n: number; kind: string })
+    expect(headers.map((h) => h.n)).toEqual(headers.map((_, i) => i + 1))
+    expect({ kinds: headers.map((h) => h.kind) }).toEqual({ kinds: ['user', 'assistant', 'user', 'assistant'] })
+    // The record never shows as a change in a checkout that holds the state dir.
+    expect(readFileSync(join(r.workspace, '.state', 'records', '.gitignore'), 'utf8')).toBe('*\n')
+
+    await promptAndSettle(r, 'GAMMA question')
+    const next = sentText(gateway.sent.at(-1)!)
+    expect(next).toContain(RESET_LINE)
+    expect(next).toContain('GAMMA question')
+    // Nothing before the reset is in the context: it is kept in the record only.
+    expect(next).not.toContain('ERR-ALPHA-7731')
+    expect(next).not.toContain('second answer')
+  })
+
+  test('a context past the threshold resets after the turn with no model call', async () => {
+    const start = gateway.sent.length
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 60_000 }, { text: 'after the reset' }], prepare: compactEverything })
+    const root = r.service.runtime()!.rootId
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    await waitFor(() => r.service.runtime()!.idle())
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    const [turn] = compactionTurns(page)
+    expect(turn!.part).toMatchObject({ type: 'compaction', auto: true })
+    expect(turn!.summary.parts[0]!.text).toContain(RESET_LINE)
+    expect(page.messages.filter((m) => m.info.error)).toEqual([])
+    await promptAndSettle(r, 'GAMMA question')
+    // Three answers and no summary call.
+    expect(gateway.sent.length - start).toBe(3)
+    expect(sentText(gateway.sent.at(-1)!)).not.toContain('big answer')
+  })
+
+  test('an overflow resets and retries the same request: the retry carries the mid-turn note, and the turn ends with no error', async () => {
+    const overflow = { status: 400, message: "This model's maximum context length is 64000 tokens. However, your messages resulted in 70000 tokens." }
+    const r = await boot({ script: [{ text: 'first answer' }, overflow, { text: 'answer after the reset' }], prepare: compactEverything })
+    const root = r.service.runtime()!.rootId
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    await waitFor(() => r.service.runtime()!.idle())
+    const retried = sentText(gateway.sent.at(-1)!)
+    expect(retried).toContain(RESET_LINE)
+    expect(retried).toContain('You were working on it when the context filled.')
+    expect(retried).not.toContain('first answer')
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(page.messages.filter((m) => m.info.error)).toEqual([])
+    expect(page.messages.at(-1)!.parts.map((p) => p.text).join('')).toContain('answer after the reset')
+  })
+
+  test('tool calls and results go into the record whole, an image as one line', async () => {
+    const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+    const imageCatalog = testModel({ attachment: true })
+    const big = 'x'.repeat(60_000)
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: `printf '%s' ${big} > big.txt && cat big.txt` } }, { text: 'read it' }],
+      catalog: imageCatalog,
+    })
+    const root = r.service.runtime()!.rootId
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'what is this' }, { type: 'file', mime: 'image/png', url: PNG, filename: 'shot.png' }] })).status).toBe(204)
+    await waitFor(() => r.service.runtime()!.idle())
+    const { text } = recordOf(r)
+    const lines = text.split('\n')
+    const headers = lines.filter((line) => line.startsWith('{"n":')).map((line) => JSON.parse(line) as Record<string, unknown>)
+    expect(headers.map((h) => h.kind)).toEqual(['user', 'call', 'result', 'assistant'])
+    expect(headers[1]).toMatchObject({ name: 'bash', id: expect.any(String) })
+    expect(headers[2]).toMatchObject({ name: 'bash', for: headers[1]!.id, exit: 'ok' })
+    expect(text).toMatch(/\[image: image\/png, \d+ bytes, not in the record\]/)
+    expect(text).toContain('printf')
+    // The 60,000-character command is in the record whole.
+    expect(text).toContain(big)
+  })
+
+  test('a restarted daemon rebuilds the record from the restored conversation', async () => {
+    const r = await boot({ script: [{ text: 'first answer ERR-BETA-0042' }] })
+    await promptAndSettle(r, 'ALPHA question')
+    await r.service.lifecycle.stop()
+    rmSync(join(r.workspace, '.state', 'records'), { recursive: true, force: true })
+    const restarted = await boot({ script: [], workspace: r.workspace })
+    rigs.splice(rigs.indexOf(r), 1)
+    await waitFor(() => existsSync(join(r.workspace, '.state', 'records')))
+    expect(recordOf(restarted).text).toContain('first answer ERR-BETA-0042')
+  })
+
+  test("an agent whose context is summary keeps pi's own compaction", async () => {
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, ...SUMMARY], prepare: compactEverything, env: SUMMARY_CONTEXT })
+    expect(r.service.runtime()!.extensionStatus().loaded).not.toContain('kortix-context-record')
+    const root = r.service.runtime()!.rootId
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    expect(await summarize(r, root).then((res) => res.json())).toBe(true)
+    await waitFor(() => r.service.runtime()!.idle())
+    const [turn] = compactionTurns((await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage)
+    expect(turn!.summary.parts[0]!.text).toContain('SUMMARY-ONE')
+    expect(existsSync(join(r.workspace, '.state', 'records'))).toBe(false)
+  })
+})
+
 describe('pi session-log export (P2.5)', () => {
   // A real 1x1 PNG: pi drops an image it cannot decode ("[Image omitted: …]").
   const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
@@ -4045,7 +4179,7 @@ describe('pi session-log export (P2.5)', () => {
     const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
     const r = await boot({
       workspace,
-      prepare: compactEverything,
+      prepare: compactEverything, env: SUMMARY_CONTEXT,
       catalog: imageCatalog,
       script: [
         { text: 'an image' },
@@ -5226,7 +5360,7 @@ describe('kortix.yaml on pi', () => {
     })
     expect(await skillNames(r)).toEqual(['deploy', 'review'])
     // `subagents` and `workflow` are the runtime's own tools, not project extensions.
-    expect(r.service.runtime()!.extensionStatus()).toEqual({ loaded: ['kortix-subagents', 'kortix-workflow'], failed: [] })
+    expect(r.service.runtime()!.extensionStatus()).toEqual({ loaded: ['kortix-context-record', 'kortix-subagents', 'kortix-workflow'], failed: [] })
     // No prompt template from a harness folder: the registered skills are the only rows.
     const rows = (await r.user('/command').then((res) => res.json())) as Array<{ name: string; source: string }>
     expect(rows.map((c) => [c.source, c.name])).toEqual([['skill', 'deploy'], ['skill', 'review']])
@@ -5257,7 +5391,7 @@ describe('kortix.yaml on pi', () => {
   ])('%s reads no harness folder and scans no skills/ dir: built-in agents only', async (_name, env) => {
     const r = await boot({ script: [{ text: 'ok' }], prepare: harnessFolders, env })
     expect(await skillNames(r)).toEqual([])
-    expect(r.service.runtime()!.extensionStatus()).toEqual({ loaded: ['kortix-subagents', 'kortix-workflow'], failed: [] })
+    expect(r.service.runtime()!.extensionStatus()).toEqual({ loaded: ['kortix-context-record', 'kortix-subagents', 'kortix-workflow'], failed: [] })
     expect(await r.user('/command').then((res) => res.json())).toEqual([])
     const before = gateway.sent.length
     await promptAndSettle(r, 'hello')
@@ -5681,7 +5815,7 @@ describe('session-log actions (runtime.actions.v1)', () => {
   })
 
   test('log.status on the v2 stream: busy then idle for a turn; compacting while a summary runs', async () => {
-    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, { text: 'SUMMARY' }], prepare: compactEverything })
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, { text: 'SUMMARY' }], prepare: compactEverything, env: SUMMARY_CONTEXT })
     const rt = r.service.runtime()!
     const stream = await r.bearer('/kortix/runtime/events?schema=v2&since=0')
     await promptAndSettle(r, 'ALPHA question')
