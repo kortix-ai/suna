@@ -20,7 +20,7 @@ export interface SpaceTemplate {
 }
 
 /** The presets the New space dialog offers, in order. The first is the default. */
-export function spaceTemplates(t: (key: string) => string): SpaceTemplate[] {
+export function spaceTemplates(t: (key: 'tabs.board' | 'templates.board.brief' | 'templates.board.text') => string): SpaceTemplate[] {
   return [
     {
       id: 'standard',
