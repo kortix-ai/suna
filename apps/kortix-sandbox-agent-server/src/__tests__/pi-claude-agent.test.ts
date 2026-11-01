@@ -116,6 +116,30 @@ describe('Claude Code output as a pi response', () => {
     expect(reply.message.usage).toMatchObject({ input: 10, cacheRead: 100, output: 9, cost: { total: 0 } })
   })
 
+  test("the last step of a parked Claude turn reports its own call's context, not the turn's total", async () => {
+    // One Claude turn spans every pi step since the user's message (tool calls
+    // park it), and Claude Code's `result.usage` sums all of that turn's calls.
+    const { reply } = events((r) => {
+      r.push(streamEvent({ type: 'message_start', message: { id: 'm6', model: 'claude-opus-5-5', usage: { input_tokens: 2, cache_read_input_tokens: 172_969, cache_creation_input_tokens: 495 } } }))
+      r.push(streamEvent({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }))
+      r.push(streamEvent({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Done.' } }))
+      r.push(streamEvent({ type: 'content_block_stop', index: 0 }))
+      r.push(streamEvent({ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 4014 } }))
+      r.finishResult({ type: 'result', subtype: 'success', is_error: false, result: 'Done.', num_turns: 6, usage: { input_tokens: 14, cache_read_input_tokens: 997_995, cache_creation_input_tokens: 175_002, output_tokens: 7_395 } } as never)
+    })
+    await Bun.sleep(0)
+    expect(reply.message.usage).toMatchObject({ input: 2, cacheRead: 172_969, cacheWrite: 495, output: 4014 })
+    expect(reply.message.usage.totalTokens).toBeLessThan(200_000)
+  })
+
+  test('a reply whose calls streamed no usage takes the result usage only for a one-call turn', async () => {
+    const one = events((r) => r.finishResult({ type: 'result', subtype: 'success', is_error: false, result: 'ok', num_turns: 1, usage: { input_tokens: 5, cache_read_input_tokens: 1000, output_tokens: 20 } } as never))
+    const many = events((r) => r.finishResult({ type: 'result', subtype: 'success', is_error: false, result: 'ok', num_turns: 6, usage: { input_tokens: 14, cache_read_input_tokens: 997_995, output_tokens: 7_395 } } as never))
+    await Bun.sleep(0)
+    expect(one.reply.message.usage).toMatchObject({ input: 5, cacheRead: 1000, output: 20 })
+    expect(many.reply.message.usage).toMatchObject({ input: 0, cacheRead: 0, cacheWrite: 0 })
+  })
+
   test('a subscription limit ends the turn with the limit and its reset time', async () => {
     const { reply } = events((r) => {
       r.push({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour', resetsAt: 1_900_000_000 } } as never)

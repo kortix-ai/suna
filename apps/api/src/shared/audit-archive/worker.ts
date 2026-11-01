@@ -1,6 +1,6 @@
 // The leader's daily audit archive tick (see archive.ts). Off unless AUDIT_ARCHIVE_ENABLED is set,
 // the bucket is configured, and the bucket has Object Lock. Every step of a pass is idempotent, so a
-// leader change mid-pass is safe. workers/audit-archive-worker.ts schedules it.
+// leader change mid-pass is safe. worker/jobs/audit-archive.ts schedules it.
 import { createDb } from '@kortix/db';
 import { config } from '../../config';
 import type { ObjectLockMode } from '../../object-store/s3';

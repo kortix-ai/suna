@@ -9,7 +9,9 @@
  *   3. the Kortix defaults' staged tail (`kortixDefaultsTail`, defaults.ts)
  *
  * The defaults are the same in every Kortix sandbox image, My Kortix's
- * included; defaults.ts owns them. This file owns only what project agents add.
+ * included; defaults.ts owns them. This file owns the workstation on top of
+ * them. My Kortix's image is the platform default image rendered here, plus
+ * one line (my-kortix-dockerfile.ts).
  *
  * The project workspace is NOT baked in — the daemon git-clones it at boot
  * via `KORTIX_PROJECT_AUTO_CLONE`. That keeps the image identity decoupled

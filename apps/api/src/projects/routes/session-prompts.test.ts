@@ -821,6 +821,8 @@ describe('GET .../prompts', () => {
         // client never has to distinguish "no attachments" from "old server".
         attachments: [],
         no_reply: false,
+        // A member's prompt; a transcript never draws a synthetic one (#11259).
+        synthetic: false,
         // The member it runs as.
         author_user_id: USER_ID,
         created_at: '2026-08-18T00:00:00.000Z',

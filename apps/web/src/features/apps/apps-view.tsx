@@ -29,7 +29,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useDebounce, cn } from '@kortix/ui';
 import { createAppAccessSession, type App } from '@kortix/sdk';
 import { useAppAccess, useProjectApps, useProjectTriggers } from '@kortix/sdk/react';
-import { HardDrivesIcon, InfoIcon, PlusIcon, SquaresFourIcon } from '@phosphor-icons/react';
+import { HardDrivesIcon, InfoIcon, SquaresFourIcon } from '@phosphor-icons/react';
 
 import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
@@ -46,7 +46,6 @@ import {
 } from '@kortix/ui/apps';
 import { APP_GRID_CONTAINER, APP_GRID_COLUMN_OPTIONS, AppGridColumnsControl, useAppGridColumns, type AppGridColumns } from './app-density';
 import { AppDetailModal } from './app-detail';
-import { AddExternalAppDialog } from './app-add-external';
 import { BackgroundApps } from './app-background-list';
 export { DEPLOYMENT_COPY, deployNotice, appHost } from '@kortix/ui/apps';
 export { AppPreview, AppPreviewOverlay, PREVIEW_SPINNER_DELAY_MS, scheduleSlowPreview, PREVIEW_VIEWPORT_WIDTH, PREVIEW_VIEWPORT_HEIGHT, PREVIEW_TILE_ASPECT, previewScale } from '@kortix/ui/apps';
@@ -56,38 +55,23 @@ function AppsControls({
   columns,
   onColumnsChange,
   showColumns,
-  onAdd,
 }: {
   columns: AppGridColumns;
   onColumnsChange: (next: AppGridColumns) => void;
-  /** Absent: the viewer may not add Apps, and the control is not shown. */
-  onAdd?: () => void;
   /**
    * The control only exists to reshape a grid, so it is absent whenever there
    * is no grid — the feature gate, the error state and the empty state each
    * fill the page on their own, and a column picker over any of them is a dead
    * switch. It stays visible over the SKELETON: a control that appears once
-   * loading finishes moves the two beside it on every page load.
+   * loading finishes moves the header controls beside it on every page load.
    */
   showColumns: boolean;
 }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-
-  return (
-    <>
-      {showColumns ? (
-        <div className="flex shrink-0 items-center pr-1">
-          <AppGridColumnsControl value={columns} onChange={onColumnsChange} />
-        </div>
-      ) : null}
-      {onAdd ? (
-        <Button size="sm" variant="secondary" className="shrink-0 gap-1.5" onClick={onAdd} data-testid="apps-add-external">
-          <PlusIcon className="size-3.5 shrink-0" aria-hidden />
-          {tI18nComplete.raw('text3dd46a7b552c')}
-        </Button>
-      ) : null}
-    </>
-  );
+  return showColumns ? (
+    <div className="flex shrink-0 items-center pr-1">
+      <AppGridColumnsControl value={columns} onChange={onColumnsChange} />
+    </div>
+  ) : null;
 }
 
 /**
@@ -144,7 +128,6 @@ export function AppsView({
     if (requestedAppId) setOpenAppId(requestedAppId);
   }, [requestedAppId]);
   const [gridColumns, setGridColumns] = useAppGridColumns();
-  const [adding, setAdding] = useState(false);
   const triggers = useProjectTriggers(projectId);
   const grid = apps.data ? gridApps(apps.data, canAdmin) : [];
   const background = apps.data ? hiddenApps(apps.data, canAdmin) : [];
@@ -221,7 +204,6 @@ export function AppsView({
       columns={gridColumns}
       onColumnsChange={setGridColumns}
       showColumns={apps.isLoading || grid.length > 0}
-      onAdd={canWrite ? () => setAdding(true) : undefined}
     />
   );
   const body = (
@@ -278,7 +260,6 @@ export function AppsView({
   );
   const overlays = (
     <>
-      <AddExternalAppDialog projectId={projectId} open={adding} onOpenChange={setAdding} onAdded={setOpenAppId} />
       {openApp ? (
         <AppDetailModal
           key={openApp.app_id}

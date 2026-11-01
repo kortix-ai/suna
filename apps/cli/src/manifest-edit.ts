@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, existsSync, ftruncateSync, openSync, readFileSync, writeSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { parseDocument, stringify as stringifyYaml } from 'yaml';
 import { fixManifestText, legacyFormatOf, manifestCandidatePaths, parseManifestText } from '@kortix/manifest-schema';
@@ -33,9 +33,20 @@ function resolveManifest(cwd: string = process.cwd()): { path: string; exists: b
 
 /** Write a manifest file (the root or an imported one). A legacy format is converted first, by `kortix validate --fix`. */
 function writeManifest(file: string, text: string): void {
-  const from = existsSync(file) ? legacyFormatOf(parseManifestText(readFileSync(file, 'utf8'))) : null;
-  if (from) throw new Error(legacyWriteRefusal(basename(file), from));
-  writeFileSync(file, fixManifestText(text).text, 'utf8');
+  const fd = openSync(file, constants.O_RDWR | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
+  try {
+    const from = legacyFormatOf(parseManifestText(readFileSync(fd, 'utf8')));
+    if (from) throw new Error(legacyWriteRefusal(basename(file), from));
+    const content = fixManifestText(text).text;
+    ftruncateSync(fd, 0);
+    // readFileSync advanced the descriptor; positional writes start at zero.
+    const bytes = Buffer.from(content);
+    for (let offset = 0; offset < bytes.length;) {
+      offset += writeSync(fd, bytes, offset, bytes.length - offset, offset);
+    }
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export function manifestFile(cwd: string = process.cwd()): string {

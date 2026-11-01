@@ -94,6 +94,13 @@ data "aws_secretsmanager_secret" "env" {
   name = "kortix-dev-env"
 }
 
+# The regional alert topic. infra/terraform/compliance-monitoring owns it
+# (use2-security.tf, aws_sns_topic.use2_alerts). The worker alarms of
+# module.api publish to it.
+data "aws_sns_topic" "alerts" {
+  name = "kortix-compliance-alerts"
+}
+
 # ── Project snapshot object store (S3 config provider) ────────────────────────
 # Snapshots are DERIVED data (rebuilt from Git on a cache miss), so this bucket
 # started empty. The old us-west-2 cache "kortix-dev-project-snapshots" was
@@ -182,6 +189,18 @@ module "api" {
   use_fargate_spot           = true
   requests_per_target_target = 600
   tags                       = local.tags
+
+  # Scheduled jobs run on kortix-dev-use2-worker, not on the API tasks
+  # (modules/ecs-api var.worker). On-demand, unlike the Spot API tasks: a
+  # reclaim would stop the only process that runs jobs.
+  # ecs-deploy.sh --service worker rolls it before the API, and the API gets
+  # KORTIX_PROCESS_ROLE=web only while that worker is healthy on its image.
+  worker = {
+    task_cpu           = 1024
+    task_memory        = 4096
+    metric_environment = "dev"
+    alarm_topic_arn    = data.aws_sns_topic.alerts.arn
+  }
 }
 
 # ── Gateway (LLM proxy) as its own ECS Fargate service ────────────────────────

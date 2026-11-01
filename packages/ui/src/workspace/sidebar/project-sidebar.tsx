@@ -24,7 +24,7 @@ import { ProjectManifestIssuesAlert } from './footer/project-manifest-issues-ale
 import { ProjectSandboxAlert } from './footer/project-sandbox-alert';
 import { ProjectRepositoryDisconnectedAlert } from '../repository-disconnected';
 import { CustomizeSidebarModal } from './customize-sidebar-modal';
-import { NewAgentModalProvider } from '../../internal/layout/project-capability-nav';
+import { NewAgentModalProvider } from './new-agent-modal-provider';
 import { ProjectMemoryNavItem } from './footer/project-memory-nav';
 import { ProjectNavItems } from './project-nav-items';
 import { ProjectSessionList } from './project-session-list';

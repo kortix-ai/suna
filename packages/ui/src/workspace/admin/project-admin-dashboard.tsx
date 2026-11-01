@@ -82,7 +82,7 @@ import {
   type ProjectAdminResourceKey,
   type ProjectAdminSectionKey,
   type ProjectAdminSettingsKey,
-} from './project-admin-sections';
+} from '../../customize/project-settings/project-admin-sections';
 
 export { buildProjectAdminNav } from './project-admin-nav';
 export {
@@ -90,7 +90,7 @@ export {
   parseProjectAdminSection,
   projectAdminHref,
   type ProjectAdminSectionKey,
-} from './project-admin-sections';
+} from '../../customize/project-settings/project-admin-sections';
 
 type SectionPage = ComponentType<{ projectId: string }>;
 

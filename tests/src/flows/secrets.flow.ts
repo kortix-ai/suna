@@ -139,6 +139,8 @@ flow(
       ids.push(result.json<any>().secret_id);
     }
     await ctx.step('flag off → session pool routes deny access', async () => {
+      (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: false },
+        { params: { projectId: project.id } })).status(200);
       (await owner.get(poolPath, { params: poolParams })).status(403);
       (await owner.get(poolsPath, { params: poolParams })).status(403);
       (await owner.post('/v1/projects/:projectId/sessions', {
@@ -201,7 +203,7 @@ flow(
       // The CLI, the SDK and chat channels name only a model. This used to
       // answer 400 INVALID_SESSION_MODEL; an explicit empty list above still does.
       const created = await owner.post('/v1/projects/:projectId/sessions', {
-        opencode_model: 'anthropic/claude-sonnet-4.6',
+        opencode_model: 'anthropic/claude-sonnet-4.6', agent_name: 'worker',
       }, { params: { projectId: project.id } });
       if (ctx.env.target === 'local') {
         created.status(503).body().has('$.code', 'KORTIX_URL_UNREACHABLE');
@@ -424,6 +426,9 @@ flow('SEC-POOL-4', {
   const input = { project_id: project.id, label: 'Project key', provider_id: 'anthropic',
     name: 'ANTHROPIC_API_KEY', value: 'project-key-test-value', consumer: 'llm_gateway', strategy: 'broker' };
   await ctx.step('flag off rejects a project-scoped credential', async () => {
+    // The flag is on by default since 2026-10-31 (#11335): turn it off first.
+    (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: false },
+      { params: { projectId: project.id } })).status(200);
     (await owner.post(path, input, { params })).status(403);
   });
   (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: true },
@@ -514,6 +519,9 @@ flow('SEC-POOL-5', {
   const params = { accountId: team.id };
 
   await ctx.step('with the flag off, a named ChatGPT account is refused', async () => {
+    // The flag is on by default since 2026-10-31 (#11335): turn it off first.
+    (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: false },
+      { params: { projectId: project.id } })).status(200);
     (await asMember.post(startPath, { resource_label: 'ChatGPT · Member', sharing: { mode: 'private', ownerId: member.userId } },
       { params: startParams })).status(403);
   });

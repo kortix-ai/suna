@@ -20504,10 +20504,6 @@
       "textc86ce3b8097b": "e.g. 5000",
       "textfaaf56a699c2": "Limit (credits)",
       "texte7a241debad5": "URL",
-      "text3dd46a7b552c": "Add app",
-      "text68cf13547e38": "Add an App by URL",
-      "text46bc646c9bfe": "Show a site hosted anywhere in this project. Kortix opens it in place, beside the Apps it runs.",
-      "text08e6480e9b78": "{value0} added",
       "text6241684827b2": "This site does not allow Kortix to show it here.",
       "textdae75dce541f": "Pauses every schedule and webhook in this project.",
       "textced57bebd466": "Turns this project’s schedules and webhooks back on.",
@@ -23748,7 +23744,9 @@
       "models": "Models",
       "tabCapabilities": "Capabilities",
       "pinToSidebar": "Pin to sidebar",
-      "unpinFromSidebar": "Unpin from sidebar"
+      "unpinFromSidebar": "Unpin from sidebar",
+      "spaceHelp": "The space this agent works in: a slug like engineering or sales. Empty: Project-wide.",
+      "spacePlaceholder": "e.g. engineering"
     },
     "myKortix": {
       "allowed": "Allowed",
@@ -24815,7 +24813,9 @@
       },
       "board": {
         "label": "Room and a board",
-        "description": "A board for the brief and the links, then Goals."
+        "description": "A board for the brief and the links, then Goals.",
+        "brief": "Brief",
+        "text": "What this space is for, and how to help."
       }
     },
     "leave": "Leave {name}",
@@ -24840,7 +24840,14 @@
     },
     "filter": "Filter by space",
     "all": "All",
-    "projectWide": "Project-wide"
+    "projectWide": "Project-wide",
+    "blocks": {
+      "noContent": "No content yet.",
+      "noUrl": "No URL yet.",
+      "noApp": "No app selected yet.",
+      "noFile": "No file yet.",
+      "loadingApp": "Loading app…"
+    }
   },
   "imageGen": {
     "generating": "Generating image",
@@ -25201,7 +25208,9 @@
         "move": "move",
         "peek": "preview",
         "open": "open",
-        "stop": "stop"
+        "stop": "stop",
+        "space": "Space",
+        "enter": "Enter"
       },
       "group": {
         "pinned": "Pinned",

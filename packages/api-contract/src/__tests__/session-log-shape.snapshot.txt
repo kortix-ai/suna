@@ -321,6 +321,16 @@ SessionLogStateEventSchema = {
   session: SessionLogSessionPatchSchema
 }
 
+SessionLogStatusEventSchema = {
+  thread_id: string(min1)
+  status: enum(idle | busy | retry | compacting)
+  retry: {
+    attempt: number(int)(min0)
+    message: string
+    next_at: string
+  } | absent
+}
+
 SessionLogSwitchGapSchema = {
   feature: string(min1)
   detail: string(min1) | absent

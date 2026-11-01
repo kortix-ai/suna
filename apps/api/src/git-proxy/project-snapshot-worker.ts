@@ -1,8 +1,8 @@
 /**
  * Leader-only worker that turns queued `project_snapshot_archives` rows into
  * published archives. Same shape as the other singleton workers
- * (`workers/audit-webhook-worker.ts`): a recursive `setTimeout` tick
- * (`workers/project-snapshot-worker.ts`) so a slow build can never overlap
+ * (`worker/jobs/audit-webhook.ts`): a recursive `setTimeout` tick
+ * (`worker/jobs/project-snapshot.ts`) so a slow build can never overlap
  * the next tick in this process, `SKIP LOCKED` claims so a
  * leadership flap can never double-build a row, and every outcome settled on
  * the row itself so failure stays visible and retryable.

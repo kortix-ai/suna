@@ -93,9 +93,9 @@ export function splitFrontmatter(text: string): { frontmatter: Table; body: stri
   } catch {
     const frontmatter: Table = {};
     for (const line of match[1]!.split(/\r?\n/)) {
-      const pair = /^([A-Za-z_][\w-]*):[ \t]*(.*?)[ \t]*$/.exec(line);
-      if (!pair || pair[2] === '') continue;
-      const value = pair[2]!.replace(/^(['"])(.*)\1$/, '$2');
+      const pair = /^([A-Za-z_][\w-]*):(.*)$/.exec(line);
+      if (!pair || pair[2]?.trim() === '') continue;
+      const value = pair[2]!.trim().replace(/^(['"])(.*)\1$/, '$2');
       frontmatter[pair[1]!] = /^-?\d+(\.\d+)?$/.test(value) ? Number(value) : value === 'true' ? true : value === 'false' ? false : value;
     }
     return { frontmatter, body, loose: true };
@@ -105,26 +105,43 @@ export function splitFrontmatter(text: string): { frontmatter: Table; body: stri
 /** JSON with `//` and block comments and trailing commas, as OpenCode reads it. */
 export function parseJsonc(text: string): unknown {
   let out = '';
+  const commas: number[] = [];
   for (let i = 0; i < text.length; i += 1) {
     const ch = text[i]!;
     if (ch === '"') {
-      const end = /"(?:[^"\\]|\\.)*"/y;
-      end.lastIndex = i;
-      const string = end.exec(text)?.[0] ?? ch;
-      out += string;
-      i += string.length - 1;
+      let end = i + 1;
+      while (end < text.length) {
+        if (text[end] === '\\') end += 2;
+        else if (text[end++] === '"') break;
+      }
+      out += text.slice(i, end);
+      i = end - 1;
     } else if (text.startsWith('//', i)) {
       i = text.indexOf('\n', i) === -1 ? text.length : text.indexOf('\n', i) - 1;
     } else if (text.startsWith('/*', i)) {
       i = text.indexOf('*/', i) === -1 ? text.length : text.indexOf('*/', i) + 1;
+    } else if (ch === ',') {
+      commas.push(out.length);
+      out += ch;
     } else out += ch;
   }
-  return JSON.parse(out.replace(/,(\s*[}\]])/g, '$1'));
+  const chunks: string[] = [];
+  let cursor = 0;
+  for (const position of commas) {
+    let next = position + 1;
+    while (next < out.length && /\s/.test(out[next]!)) next += 1;
+    if (out[next] === '}' || out[next] === ']') {
+      chunks.push(out.slice(cursor, position));
+      cursor = position + 1;
+    }
+  }
+  chunks.push(out.slice(cursor));
+  return JSON.parse(chunks.join(''));
 }
 
 /** A registry name from a file or package name: `audit.ts` → `audit`, `@a/pi-web` → `pi-web`. */
 function registryName(raw: string, taken: Set<string>): string {
-  const base = raw.split('/').pop()!.replace(/\.[cm]?[jt]s$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'extension';
+  const base = raw.split('/').pop()!.replace(/\.[cm]?[jt]s$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').split('-').filter(Boolean).join('-') || 'extension';
   let name = base;
   for (let n = 2; taken.has(name) || !REGISTRY_NAME_RE.test(name); n += 1) name = `${base}-${n}`;
   taken.add(name);

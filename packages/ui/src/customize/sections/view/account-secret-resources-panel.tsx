@@ -226,7 +226,7 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
   const claudeAuthorization = useClaudeAuthorization(claude ? oauth?.projectId : undefined);
   const authorization = claude ? claudeAuthorization : chatGptAuthorization;
   /** The ChatGPT string, or its Claude twin. */
-  const say = (chatGptKey: string, claudeKey: string, values?: Record<string, string | number>) => t(claude ? claudeKey : chatGptKey, values);
+  const tAccount = (chatGptKey: string, claudeKey: string, values?: Record<string, string | number>) => t(claude ? claudeKey : chatGptKey, values);
   const signInStep = (challenge: { url: string; code: string | null } | null) => claude
     ? <ClaudeCodeStep url={challenge?.url ?? null} checking={claudeAuthorization.checking} onSubmit={(code) => void claudeAuthorization.submitCode(code)} />
     : challenge && <ChatGptDeviceChallenge url={challenge.url} code={challenge.code} />;
@@ -235,10 +235,10 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
   const keys = (resources.data?.secrets ?? []).filter((secret) => secret.provider_id === providerId);
   const manageable = (secret: AccountSecretResource) =>
     secret.created_by === user?.id || actorRole === 'owner' || actorRole === 'admin';
-  const authMessages = { expired: t('oauthExpired'), failed: say('connectFailed', 'claudeConnectFailed') };
+  const authMessages = { expired: t('oauthExpired'), failed: tAccount('connectFailed', 'claudeConnectFailed') };
   const defaultLabel = () => {
     const name = labelOwnerName(user && { email: user.email, user_metadata: user.metadata });
-    return oauth && name ? say('defaultAccountLabel', 'claudeDefaultAccountLabel', { name }) : '';
+    return oauth && name ? tAccount('defaultAccountLabel', 'claudeDefaultAccountLabel', { name }) : '';
   };
   const closeCreate = () => {
     authorization.cancel();
@@ -269,14 +269,14 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
     if (!credential) return;
     await finishConnection().catch(() => {});
     setCreating(false);
-    successToast(say('accountConnected', 'claudeAccountConnected'));
+    successToast(tAccount('accountConnected', 'claudeAccountConnected'));
   };
   const reconnectOAuth = async (secret: AccountSecretResource) => {
     const credential = await authorization.authorize({ resourceId: secret.secret_id }, authMessages);
     if (!credential) return;
     await finishConnection().catch(() => {});
     setReconnecting(null);
-    successToast(say('accountReconnected', 'claudeAccountReconnected'));
+    successToast(tAccount('accountReconnected', 'claudeAccountReconnected'));
   };
   const openReconnect = (secret: AccountSecretResource) => {
     authorization.reset();
@@ -345,14 +345,14 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
   const empty = Boolean(oauth) && resources.isSuccess && keys.length === 0;
 
   return (
-    <section className="min-w-0 space-y-2" aria-label={oauth ? say('chatGptAccounts', 'claudeAccounts') : t('providerKeysFor', { provider: providerName })}>
+    <section className="min-w-0 space-y-2" aria-label={oauth ? tAccount('chatGptAccounts', 'claudeAccounts') : t('providerKeysFor', { provider: providerName })}>
       <div className="flex items-center justify-between gap-3">
         <p className="text-muted-foreground text-xs">
-          {!resources.isSuccess ? null : empty ? say('noChatGptAccounts', 'noClaudeAccounts')
+          {!resources.isSuccess ? null : empty ? tAccount('noChatGptAccounts', 'noClaudeAccounts')
             : oauth ? t('accountCount', { count: keys.length }) : t('keyCount', { count: keys.length })}
         </p>
         {canWrite && <Button size="sm" variant={empty ? 'default' : 'secondary'} onClick={openCreate}>
-          {empty ? say('connectChatGpt', 'connectClaude') : oauth ? t('addAccount') : t('addKey')}
+          {empty ? tAccount('connectChatGpt', 'connectClaude') : oauth ? t('addAccount') : t('addKey')}
         </Button>}
       </div>
       {resources.isLoading ? <div role="status" aria-label={t('loadingKeys')}><Loading /></div> : resources.isError ? (
@@ -406,12 +406,12 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
       <Modal open={creating || rotating !== null} onOpenChange={(open) => { if (!open && !save.isPending && !authorization.finishing) closeCreate(); }}>
         <ModalContent className="lg:max-w-md">
           <ModalHeader><ModalTitle>{rotating ? t('rotateLabel', { label: rotating.label }) : `${oauth ? t('addAccount') : t('addKey')} · ${providerName}`}</ModalTitle>
-            <ModalDescription>{rotating ? t('valueNeverShown') : oauth ? say('oauthCreationDescription', 'claudeOauthCreationDescription') : t('creationDescription')}</ModalDescription></ModalHeader>
+            <ModalDescription>{rotating ? t('valueNeverShown') : oauth ? tAccount('oauthCreationDescription', 'claudeOauthCreationDescription') : t('creationDescription')}</ModalDescription></ModalHeader>
           <ModalBody className="max-h-[60vh] space-y-3 overflow-y-auto">
             {save.isError && <p role="alert" className="text-destructive text-sm">{save.error instanceof Error ? save.error.message : t('saveError')}</p>}
             {oauth && authorization.error && <p role="alert" className="text-destructive text-sm">{authorization.error}</p>}
             {!rotating && <>
-              <Field><FieldLabel htmlFor={`provider-key-label-${providerId}`}>{t('label')}</FieldLabel><Input id={`provider-key-label-${providerId}`} value={label} disabled={busy} onChange={(event) => setLabel(event.target.value)} placeholder={oauth ? say('accountLabelPlaceholder', 'claudeAccountLabelPlaceholder') : t('primaryKey')} maxLength={100} /></Field>
+              <Field><FieldLabel htmlFor={`provider-key-label-${providerId}`}>{t('label')}</FieldLabel><Input id={`provider-key-label-${providerId}`} value={label} disabled={busy} onChange={(event) => setLabel(event.target.value)} placeholder={oauth ? tAccount('accountLabelPlaceholder', 'claudeAccountLabelPlaceholder') : t('primaryKey')} maxLength={100} /></Field>
             </>}
             {oauth ? authorization.finishing ? <ChatGptSignInFinishing label={t('oauthFinishing')} />
               : (authorization.challenge || (claude && authorization.waiting)) && signInStep(authorization.challenge) :
@@ -439,7 +439,7 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
       {oauth && <Modal open={reconnecting !== null} onOpenChange={(open) => { if (!open && !authorization.finishing) closeReconnect(); }}>
         <ModalContent className="lg:max-w-md">
           <ModalHeader><ModalTitle>{t('reconnectTitle', { label: reconnectLabel })}</ModalTitle>
-            <ModalDescription>{say('reconnectDescription', 'claudeReconnectDescription')}</ModalDescription></ModalHeader>
+            <ModalDescription>{tAccount('reconnectDescription', 'claudeReconnectDescription')}</ModalDescription></ModalHeader>
           <ModalBody className="space-y-3">
             {authorization.error && <p role="alert" className="text-destructive text-sm">{authorization.error}</p>}
             {authorization.finishing
@@ -474,7 +474,7 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
         </ModalContent>
       </Modal>
       <ConfirmDialog open={deleting !== null} onOpenChange={(open) => { if (!open) setDeleting(null); }}
-        title={oauth ? say('deleteAccountConfirmTitle', 'claudeDeleteAccountConfirmTitle') : t('deleteConfirmTitle')}
+        title={oauth ? tAccount('deleteAccountConfirmTitle', 'claudeDeleteAccountConfirmTitle') : t('deleteConfirmTitle')}
         description={deleting ? t(oauth ? 'deleteAccountConfirmDescription' : 'deleteConfirmDescription', { label: deleting.label }) : ''}
         confirmLabel={oauth ? t('deleteAccount') : t('deleteKey')} confirmVariant="destructive" isPending={remove.isPending}
         onConfirm={() => { if (deleting) remove.mutate(deleting.secret_id); }} />

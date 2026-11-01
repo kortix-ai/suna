@@ -118,7 +118,7 @@ function ProviderOptions({
       <Textarea
         aria-label={tTabs('providerOptions')}
         value={text}
-        placeholder='{ "reasoning": "high" }'
+        placeholder={JSON.stringify({ reasoning: 'high' })}
         className="min-h-20 font-mono text-xs"
         aria-invalid={invalid || undefined}
         onChange={(e) => commit(e.target.value)}
