@@ -21063,7 +21063,7 @@
       "text6a7c277bdc6e": "正在处理…",
       "text26b1626299d7": "grep -rn retry apps/api/src/billing",
       "text55f1539602e0": "edit webhook-retry.ts",
-      "text77ece565fe55": "我们将整个公司视为代码。每个智能体、技能、规则、连接器和上下文片段都是一个 git 仓库中的文件。每个智能体都是运行在极简开源运行框架上的自定义 pi 智能体，因此你可以用 pi 扩展来扩展任何内容。",
+      "texte6a48bfb5ab1": "每个智能体、技能、规则和连接器都是一个 git 仓库中的文件。每个智能体都是自定义 pi 智能体，你可以用 pi 扩展来扩展它。",
       "textc61528adb57c": "Kortix 是开源的。可在 Kortix Cloud、你的 VPC 或你自己的本地网络中运行，支持任意模型和你自己的密钥。",
       "textbf8abe5b1667": "多人协作。公司即代码。自主可控。",
       "text1445799c033a": "了解更多",
