@@ -116,12 +116,13 @@ RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","
 FROM node:22-slim AS claude-code
 ARG CLAUDE_AGENT_SDK_VERSION=0.3.316
 ARG TARGETARCH
+WORKDIR /tmp/claude
 RUN case "${TARGETARCH:-amd64}" in \
       amd64) arch=x64 ;; \
       arm64) arch=arm64 ;; \
       *) echo "no Claude Code binary for TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
     esac \
-    && mkdir -p /out /tmp/claude && cd /tmp/claude \
+    && mkdir -p /out \
     && npm pack --silent "@anthropic-ai/claude-agent-sdk-linux-${arch}@${CLAUDE_AGENT_SDK_VERSION}" \
     && tar -xzf "anthropic-ai-claude-agent-sdk-linux-${arch}-${CLAUDE_AGENT_SDK_VERSION}.tgz" \
     && install -m 0755 package/claude /out/claude \

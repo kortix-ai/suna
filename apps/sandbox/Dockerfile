@@ -249,7 +249,10 @@ RUN ANYDOC_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions
 # Claude Code: the unmodified program Claude subscription models run (kortixd
 # harness/pi/claude/). The native binary the Claude Agent SDK ships for this
 # platform, at its exact pin. Same step as `claudeCodeInstallLines` in
-# packages/shared/src/sandbox/dockerfile-layer.ts; keep both in sync.
+# packages/shared/src/sandbox/dockerfile-layer.ts; keep both in sync. The
+# sandbox user creates /opt/kortix/claude with its passwordless sudo (sudoers
+# above), as the playwright step does.
+# hadolint ignore=DL3004,DL4006
 RUN CLAUDE_AGENT_SDK_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').claudeAgentSdk)")" \
     && CLAUDE_CODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').claudeCode)")" \
     && case "$(uname -m)" in x86_64) claude_arch=x64 ;; aarch64|arm64) claude_arch=arm64 ;; *) echo "unsupported Claude Code architecture: $(uname -m)" >&2; exit 1 ;; esac \
