@@ -184,6 +184,24 @@ function staleFailureReason<B extends SandboxStatusBuild>(
 }
 
 /**
+ * The slug a new session boots when nothing names a template: the project's
+ * `sandbox.default` (stored as `default_sandbox_slug`) when it names a listed
+ * template, else the platform default. Session create resolves in the same
+ * order, so an only template that nothing names is not reported as the default.
+ */
+export function sessionDefaultSlug(
+  templates: readonly { slug: string }[],
+  projectMetadata: unknown,
+  platformDefaultSlug: string,
+): string {
+  const meta = projectMetadata && typeof projectMetadata === 'object'
+    ? (projectMetadata as Record<string, unknown>)
+    : null;
+  const declared = typeof meta?.default_sandbox_slug === 'string' ? meta.default_sandbox_slug.trim() : '';
+  return declared && templates.some((template) => template.slug === declared) ? declared : platformDefaultSlug;
+}
+
+/**
  * The template a new session boots by default: the project's declared default
  * (`sandbox.default` in kortix.yaml) when it resolves, else the platform
  * default, which `listTemplatesForProject` sorts first. Everything user-facing

@@ -8,6 +8,7 @@ import {
   listSandboxTemplates,
   templateBuildProviders,
 } from '../../snapshots/builder';
+import { sessionDefaultSlug } from '../../snapshots/sandbox-status';
 import {
   createTemplate,
   deleteTemplate,
@@ -61,7 +62,7 @@ export function registerSandboxTemplatesRoutes(): void {
       const templates = await listSandboxTemplates(project, observation.listOptions);
       return c.json({
         items: templates.map((t) => serializeTemplate(t)),
-        default_slug: templates.find((t) => t.isDefault)?.slug ?? templates[0]?.slug ?? null,
+        default_slug: sessionDefaultSlug(templates, loaded.row.metadata, DEFAULT_SANDBOX_SLUG),
         provider_mode: observation.providerMode,
         selected_provider: observation.selectedProvider,
       });

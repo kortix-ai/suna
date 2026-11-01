@@ -2,6 +2,7 @@
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import {
+  DEFAULT_SANDBOX_SLUG,
   deleteSandboxImage,
   kickPreBuild,
   listSandboxTemplates,
@@ -10,7 +11,7 @@ import {
   templateBuildProviders,
 } from '../../snapshots/builder';
 import { sessionTemplateBuilds } from '../../snapshots/build-state';
-import { pickPrimaryTemplate, resolveSandboxRuntimeStatus } from '../../snapshots/sandbox-status';
+import { pickPrimaryTemplate, resolveSandboxRuntimeStatus, sessionDefaultSlug } from '../../snapshots/sandbox-status';
 import { classifySnapshotError, describeSnapshotError } from '../../snapshots/error-classify';
 import { withTimeout } from '../../shared/with-timeout';
 import { ttlMemo } from '../../shared/ttl-memo';
@@ -273,7 +274,7 @@ export function registerSandboxesRoutes(): void {
       const templates = await listSandboxTemplates(project, observation.listOptions);
       return c.json({
         items: templates.map((t) => serializeTemplate(t)),
-        default_slug: templates.find((t) => t.isDefault)?.slug ?? templates[0]?.slug ?? null,
+        default_slug: sessionDefaultSlug(templates, loaded.row.metadata, DEFAULT_SANDBOX_SLUG),
         provider_mode: observation.providerMode,
         selected_provider: observation.selectedProvider,
       });
