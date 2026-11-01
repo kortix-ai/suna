@@ -167,6 +167,9 @@ export function SessionSiteHeader({
   const [compactOpen, setCompactOpen] = useState(false);
   // E1: a runtime without on-demand compaction (pi) offers no Compact item.
   const canCompact = useRuntimeSupports('session.compact');
+  // A runtime with the context record starts a fresh context: nothing is summarized.
+  const contextRecord = useRuntimeSupports('session.context_record');
+  const tReset = useTranslations('contextReset');
   const [shareOpen, setShareOpen] = useState(false);
   const { ShareSessionModal } = useUiComponents();
   // The name edits in place: the name button swaps for a field. The menu's
@@ -504,7 +507,7 @@ export function SessionSiteHeader({
           onClick={() => setCompactOpen(true)}
         >
           <Layers />
-          {tI18nHardcoded.raw('i18nComplete.textca838377bb5a')}
+          {contextRecord ? tReset('dialogAction') : tI18nHardcoded.raw('i18nComplete.textca838377bb5a')}
         </DropdownMenuItem>
       )}
 
