@@ -199,6 +199,9 @@ ECS_STABILIZE_TIMEOUT_SECONDS="${ECS_STABILIZE_TIMEOUT_SECONDS:-900}"
 ECS_STABILIZE_POLL_SECONDS="${ECS_STABILIZE_POLL_SECONDS:-15}"
 ECS_DIAGNOSTIC_EVENT_LIMIT="${ECS_DIAGNOSTIC_EVENT_LIMIT:-10}"
 ECS_DIAGNOSTIC_TASK_LIMIT="${ECS_DIAGNOSTIC_TASK_LIMIT:-5}"
+# A worker roll from 0 tasks waits this long for the earlier deployments to leave
+# before it raises the count (see "roll the service").
+ECS_WORKER_SWITCH_WAIT_SECONDS="${ECS_WORKER_SWITCH_WAIT_SECONDS:-120}"
 
 describe_service_json() {
   aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" \
@@ -930,8 +933,25 @@ echo "✔ registered $NEW_TD"
 # revision. With the worker already at 1, the first call rolls as usual and the
 # second changes nothing.
 if [ "$SVC_KIND" = "worker" ]; then
+  worker_desired_before="$(describe_service_json | jq -r '.services[0].desiredCount // 1' 2>/dev/null || echo 1)"
   aws ecs update-service --region "$REGION" --cluster "$CLUSTER" --service "$SERVICE" \
     --task-definition "$NEW_TD" --force-new-deployment >/dev/null
+  # From 0 tasks, wait until the earlier deployments are gone before raising
+  # the count. Two calls one second apart still let ECS start a task of the
+  # earlier revision while that deployment existed (prod, 2026-11-01: a task of
+  # Terraform's first revision ran for a minute). With nothing running, the
+  # new deployment completes at once and the old ones leave within seconds.
+  if [ "$worker_desired_before" = "0" ]; then
+    waited=0
+    while [ "$(describe_service_json | jq -r '(.services[0].deployments // []) | length' 2>/dev/null || echo 0)" -gt 1 ] \
+      && [ "$waited" -lt "$ECS_WORKER_SWITCH_WAIT_SECONDS" ]; do
+      sleep "$ECS_STABILIZE_POLL_SECONDS"
+      waited=$(( waited + ECS_STABILIZE_POLL_SECONDS ))
+    done
+    if [ "$(describe_service_json | jq -r '(.services[0].deployments // []) | length' 2>/dev/null || echo 0)" -gt 1 ]; then
+      echo "::warning title=Worker roll::an earlier worker deployment still exists after ${ECS_WORKER_SWITCH_WAIT_SECONDS}s; raising the count anyway, so ECS may briefly start a task of the earlier revision"
+    fi
+  fi
   aws ecs update-service --region "$REGION" --cluster "$CLUSTER" --service "$SERVICE" \
     --desired-count 1 >/dev/null
   echo "✔ update-service issued (new revision, then desired count 1)"
