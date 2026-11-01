@@ -1,8 +1,8 @@
 ---
 title: Long-horizon follow-through ("never wait blind")
-status: building (branches `mk2-followup-guide`: prompts, skills, docs; `mk2-followup-tools`: the kortixd `kortix_schedules` actions)
+status: on dev (#11332 bd2d6ac89c, #11344 69e0077231, #11347 adcb2f6c1b, #11351 2fcdab3a4c); prod via the next Promote. Next: [`long-horizon-runtime/`](../long-horizon-runtime/README.md)
 owner: Marko (decisions)
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
 # Long-horizon follow-through
