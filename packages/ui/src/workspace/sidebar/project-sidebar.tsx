@@ -39,6 +39,7 @@ import { useFeatureFlag } from '@kortix/sdk/react';
 import { AppsModal } from '../../internal/apps-and-extensions/apps-modal';
 import { useAppsModalStore } from '../../internal/stores/apps-modal-store';
 import { ProjectChromeNavItem } from './footer/project-chrome-nav';
+import { CHROME_UI_ENABLED } from '../../internal/chrome/use-chrome-offered';
 import {
   MagnifyingGlassIcon,
   NavigationArrowIcon,
@@ -85,7 +86,8 @@ export function ProjectSidebar({
   const accountId = useBillingAccountId();
   // Channels replace New session and the session list (fail-closed: off until the project answers).
   const channels = useFeatureFlag(projectId, 'project_channels').enabled;
-  const chrome = useFeatureFlag(projectId, 'chrome').enabled;
+  // The project flag and the web app's master switch (`CHROME_UI_ENABLED`) must both be on.
+  const chrome = useFeatureFlag(projectId, 'chrome').enabled && CHROME_UI_ENABLED;
 
   // Open the project composer without creating a durable session.
   const newSession = useNewProjectSession(projectId);
