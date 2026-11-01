@@ -416,7 +416,7 @@ event (`id` starting `test-`), not a real `/tick`: each `id` fires once, so a
 real event posted before the work trigger exists is spent. Wire the work first
 (`--type app --app <app> --event <name>`, filtered, keyed and capped as in
 "Automations"), then the check (`--every 15m --target-app <app> --target-path
-/tick`), then fire the check once and read the work trigger's runs. A system
+/tick`: it POSTs, so `/tick` takes POST), then fire it once and read the runs. A system
 that calls a URL but cannot sign gets a relay App: one App event per call.
 
 ## Stop a trigger
