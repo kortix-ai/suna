@@ -37,6 +37,9 @@
  *   dir, after the write, so a crash mid-write reads as behind at the next boot. A 404 (no
  *   stored log) or 503 (the operator switch is off) claims nothing and restores nothing. Any
  *   other failure is retried: 3 attempts, each a new claim; then the boot fails.
+ * - The lease. A 401 to the manifest or the restore is a wake that beat the API to the sandbox row
+ *   (`LEASE_ATTEMPTS`): the request goes again, `retryMs` apart, with the env's current credential,
+ *   15 times in all. A 401 claims nothing. The last one reads as a 403: no reconcile here.
  * - Over the cap. A 413 `session_log_too_large` claimed, and carries the part of the log that fits (`kept`).
  *   The box writes the threads as sent and persists every other stored id (`revs`) as unwritten, so later
  *   boots do not read the store as behind. `model_view`: what the model sees; the cut adds no note and no
@@ -154,7 +157,7 @@ export async function reconcileSessionLog(port: SessionLogPort, { retryMs = 1_00
   const held = await port.held()
   let manifest: Awaited<ReturnType<typeof readManifest>>
   try {
-    manifest = await attempts('manifest', retryMs, () => readManifest(ctx))
+    manifest = await attempts('manifest', retryMs, () => readManifest(ctx, retryMs))
   } catch (err) {
     // No claim happens before the manifest: a box with a store boots on it. A box with no store fails, and so
     // does one whose earlier restore POST may have claimed (`claiming`): its store may be below that claim.
@@ -177,7 +180,7 @@ export async function reconcileSessionLog(port: SessionLogPort, { retryMs = 1_00
   // A 404/503 settles the claim only before any attempt failed: a failed attempt may have claimed.
   let failed = false
   return attempts('restore', retryMs, async () => {
-    const boot = await restore(ctx, port).catch((err) => {
+    const boot = await restore(ctx, port, retryMs).catch((err) => {
       failed = true
       throw err
     })
@@ -201,13 +204,31 @@ async function attempts<T>(what: string, retryMs: number, run: () => Promise<T>)
 
 const url = (ctx: SandboxRelayContext, path: string) => `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/log/${path}`
 
+/**
+ * A 401 at a wake is the box racing its session lease: the API refuses a session credential until the
+ * sandbox row is `provisioning`/`active` again, and a wake can install a new credential right after
+ * (KRTX-2545). Prod, 2026-10-30 to 11-01: 30 manifest reads answered `Session token is not active`, and
+ * the same box's next control-plane call, 1-9 s later, answered 200. A 401 comes from the auth
+ * middleware, before any claim, so the same request goes again `retryMs` apart with the env's current
+ * credential, up to this many times in all. The last 401 reads as before: no reconcile here.
+ */
+const LEASE_ATTEMPTS = 15
+
 /** The response, or null for an answer that says "no reconcile here" (403, 404, 503, another 4xx); throws on what a retry may fix. */
-async function call(ctx: SandboxRelayContext, path: string, method: 'GET' | 'POST'): Promise<Response | null> {
-  const response = await fetch(url(ctx, path), {
-    method,
-    headers: { Authorization: `Bearer ${ctx.token}`, 'Accept-Encoding': 'gzip' },
-    signal: AbortSignal.timeout(path === 'restore' ? 120_000 : 15_000),
-  })
+async function call(ctx: SandboxRelayContext, path: string, method: 'GET' | 'POST', retryMs: number): Promise<Response | null> {
+  const send = () =>
+    fetch(url(ctx, path), {
+      method,
+      headers: { Authorization: `Bearer ${(sandboxRelayContext() ?? ctx).token}`, 'Accept-Encoding': 'gzip' },
+      signal: AbortSignal.timeout(path === 'restore' ? 120_000 : 15_000),
+    })
+  let response = await send()
+  for (let n = 1; response.status === 401 && n < LEASE_ATTEMPTS; n++) {
+    if (n === 1) logger.warn(`[session-log] ${path} answered 401; waiting for the session lease`)
+    await response.body?.cancel()
+    await Bun.sleep(retryMs)
+    response = await send()
+  }
   // A 413 to the restore claimed: the answer is the part of the log that fits (`session_log_too_large`).
   if (response.ok || (path === 'restore' && response.status === 413)) return response
   const body = (await response.text().catch(() => '')).slice(0, 200)
@@ -217,8 +238,8 @@ async function call(ctx: SandboxRelayContext, path: string, method: 'GET' | 'POS
   return null
 }
 
-async function readManifest(ctx: SandboxRelayContext) {
-  const response = await call(ctx, 'manifest', 'GET')
+async function readManifest(ctx: SandboxRelayContext, retryMs: number) {
+  const response = await call(ctx, 'manifest', 'GET', retryMs)
   return response && SessionLogManifestSchema.parse(await response.json())
 }
 
@@ -234,9 +255,11 @@ function behind(manifest: { generation: number; messages: Array<{ message_id: st
 }
 
 /** Claim, read and write. Null when the API claimed nothing (404, 503). */
-async function restore(ctx: SandboxRelayContext, port: SessionLogPort): Promise<SessionLogBoot | null> {
-  const response = await call(ctx, 'restore', 'POST')
+async function restore(ctx: SandboxRelayContext, port: SessionLogPort, retryMs: number): Promise<SessionLogBoot | null> {
+  const response = await call(ctx, 'restore', 'POST', retryMs)
   if (!response) return null
+  // The attachment and text reads carry the credential that got the answer (a wake may have replaced it).
+  const reads = sandboxRelayContext() ?? ctx
   const status = response.status
   const answer = (await response.json().catch((err) => (status === 413 ? null : Promise.reject(err)))) as SessionLogRestore | SessionLogRestoreTooLarge | null
   // A 413 from anything but the API (a proxy) reached no claim.
@@ -258,8 +281,8 @@ async function restore(ctx: SandboxRelayContext, port: SessionLogPort): Promise<
   // The cut is a loss only when the model does not get what it saw: not for `model_view`.
   const cut = tooLarge?.kept === 'model_view' ? null : tooLarge
   // Both budgets run at once: the attachment reads do not wait for the texts.
-  const bytes = attachmentBytes(answer.log as SessionLog, apiBytesReader(ctx))
-  const { log, seq_max, truncated } = await sessionLogFromRestore(answer, apiTextReader(ctx))
+  const bytes = attachmentBytes(answer.log as SessionLog, apiBytesReader(reads))
+  const { log, seq_max, truncated } = await sessionLogFromRestore(answer, apiTextReader(reads))
   const prefetched = await bytes
   const read = async (ref: string) => prefetched.get(ref) ?? null
   if (log.threads.length === 0) {
