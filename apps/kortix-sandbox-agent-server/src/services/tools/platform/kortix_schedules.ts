@@ -518,7 +518,12 @@ async function automate(args: Record<string, any>, context: PlatformToolContext)
   const inferred = has('secret_env') ? 'webhook' : has('connector') && has('event') ? 'connector_event' : has('app') ? 'app_event' : has('cron') || has('every') ? 'schedule' : ''
   const on = typeof args.on === 'string' && args.on.trim() ? args.on.trim() : inferred
   const type = AUTOMATE_ON[on as keyof typeof AUTOMATE_ON]
-  if (!type) return invalid('What should it react to?', `\`on\` is one of: ${Object.keys(AUTOMATE_ON).join(', ')}.`)
+  if (!type) {
+    return invalid(
+      'What should it react to?',
+      `\`on\` is one of: ${Object.keys(AUTOMATE_ON).join(', ')}. Send the whole automation in one call, e.g. {"action":"automate","name":"form-leads","on":"webhook","secret_env":"FORM_SECRET","agent":"sales","prompt":"If this is a test or spam, stop and send no message. Otherwise draft a reply to {{ body.name }} <{{ body.email }}>.","session_key":"{{ body.email }}","max_runs_per_day":20}`,
+    )
+  }
   const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
   if (!prompt) return invalid('What should each run do?', 'Missing `prompt`: what each run starts with. Read the event with {{ event.data.<field> }} (connector and App events) or {{ body.<field> }} (webhooks).')
   const badPrompt = cliArgProblem('prompt', prompt, 'text')
