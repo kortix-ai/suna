@@ -65,7 +65,7 @@ interface RuntimeOverrideOptions {
   rbacCutoverViewsExpectedSha256?: string;
 }
 
-export interface MigrationRuntimeDirectory {
+interface MigrationRuntimeDirectory {
   path: string;
   appliedOverrides: string[];
   cleanup: () => void;

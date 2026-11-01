@@ -17,7 +17,7 @@ import { ledgerExists } from '../src/ledger-exists';
 
 const LEDGER_TABLE = 'kortix_migrations.pgmigrations';
 
-export type RelationKind = 'table' | 'view';
+type RelationKind = 'table' | 'view';
 
 export interface CatalogIndex {
   /** The indexed relation. */
