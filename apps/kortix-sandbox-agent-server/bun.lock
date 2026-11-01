@@ -1,5 +1,5 @@
 {
-  "lockfileVersion": 1,
+  "lockfileVersion": 3,
   "configVersion": 1,
   "workspaces": {
     "": {
@@ -37,11 +37,21 @@
     "undici@8.12.2": "../../patches/undici@8.12.2.patch",
   },
   "overrides": {
-    "@earendil-works/pi-coding-agent>minimatch": "11.0.1",
-    "@eslint/config-array>minimatch": "11.0.1",
-    "@eslint/eslintrc>minimatch": "11.0.1",
-    "@typescript-eslint/typescript-estree>minimatch": "11.0.1",
-    "eslint>minimatch": "11.0.1",
+    "@earendil-works/pi-coding-agent": {
+      "minimatch": "11.0.1",
+    },
+    "@eslint/config-array": {
+      "minimatch": "11.0.1",
+    },
+    "@eslint/eslintrc": {
+      "minimatch": "11.0.1",
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.1",
+    },
+    "eslint": {
+      "minimatch": "11.0.1",
+    },
     "undici": "8.12.2",
   },
   "packages": {
