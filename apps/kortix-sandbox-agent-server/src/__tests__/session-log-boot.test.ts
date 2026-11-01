@@ -118,11 +118,12 @@ function fakeStore(initial: string[] | null, { drops = {} as Record<string, numb
 }
 
 
-/** The fake API. Each route answers from its queue (the last answer repeats); every request is recorded. */
-function fakeApi(routes: { manifest?: Response[]; restore?: Response[]; attachment?: (id: string) => Response }) {
+/** The fake API. Each route answers from its queue (the last answer repeats) or its function of the request count; every request is recorded. */
+function fakeApi(routes: { manifest?: Answers; restore?: Answers; attachment?: (id: string) => Response }) {
   const requests: string[] = []
   const journal: SessionLogJournalRequest[] = []
-  const take = (queue: Response[] | undefined, i: number): Response => queue?.[Math.min(i, queue.length - 1)]?.clone() as Response ?? new Response('no route', { status: 500 })
+  const take = (queue: Answers | undefined, i: number): Response =>
+    typeof queue === 'function' ? queue(i) : queue?.[Math.min(i, queue.length - 1)]?.clone() as Response ?? new Response('no route', { status: 500 })
   const count = { manifest: 0, restore: 0, claimed: 0 }
   /** The persisted `claiming` mark as each restore POST arrives. */
   const marks: unknown[] = []
@@ -132,13 +133,15 @@ function fakeApi(routes: { manifest?: Response[]; restore?: Response[]; attachme
     async fetch(request) {
       const url = new URL(request.url)
       requests.push(`${request.method} ${url.pathname}`)
-      expect(request.headers.get('authorization')).toBe('Bearer session-token')
+      // The credential the control-plane env holds when the request leaves the box.
+      expect(request.headers.get('authorization')).toBe(`Bearer ${process.env.KORTIX_TOKEN}`)
       if (url.pathname.endsWith('/log/manifest')) return take(routes.manifest, count.manifest++)
       if (url.pathname.endsWith('/log/restore')) {
         marks.push(existsSync(sessionLogBootStatePath()) ? state().claiming : undefined)
         // claimSessionLog commits the claim before the answer leaves the API, whatever the answer is.
+        // A 401 comes from the auth middleware, before the route: no claim.
         const answer = take(routes.restore, count.restore++)
-        if (answer.status !== 404 && answer.status !== 503) count.claimed++
+        if (answer.status !== 401 && answer.status !== 404 && answer.status !== 503) count.claimed++
         return answer
       }
       if (url.pathname.includes('/attachments/')) return routes.attachment?.(url.pathname.split('/').at(-1)!) ?? new Response('gone', { status: 404 })
@@ -154,6 +157,11 @@ function fakeApi(routes: { manifest?: Response[]; restore?: Response[]; attachme
   process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}`
   return { requests, journal, count, marks }
 }
+
+type Answers = Response[] | ((i: number) => Response)
+
+/** The API's answer to a session credential whose sandbox row is not `provisioning`/`active` yet. */
+const leaseRefused = (): Response => Response.json({ error: 'Session token is not active' }, { status: 401 })
 
 const manifest = (generation: number, messages: Array<[string, boolean?]>): Response =>
   Response.json({ generation, messages: messages.map(([id, deleted = false]) => ({ message_id: id, content_hash: `sha256:${id}`, rev: 1, deleted })) } satisfies SessionLogManifest)
@@ -422,6 +430,39 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
       expect(api.count.manifest).toBe(3)
       expect(store.restores).toHaveLength(0)
     }
+  })
+
+  test('a wake that beats the sandbox lease: 401 until the API marks the sandbox active, then the box restores (no claim on a 401)', async () => {
+    const api = fakeApi({ manifest: [leaseRefused(), leaseRefused(), manifest(0, LIVE)], restore: [leaseRefused(), restoreAnswer(1, STORED)] })
+    const store = fakeStore(null)
+
+    expect((await reconcileSessionLog(store.port, RETRY))?.generation).toBe(1)
+    expect(api.count).toEqual({ manifest: 3, restore: 2, claimed: 1 })
+    expect(store.restores).toHaveLength(1)
+  })
+
+  test('a new credential that arrives during the wait (KRTX-2545) goes out on the next attempt', async () => {
+    process.env.KORTIX_TOKEN = 'superseded-token'
+    const api = fakeApi({
+      manifest: (i) => {
+        if (i > 0) return manifest(0, LIVE)
+        process.env.KORTIX_TOKEN = 'session-token'
+        return leaseRefused()
+      },
+      restore: [restoreAnswer(1, STORED)],
+    })
+
+    expect((await reconcileSessionLog(fakeStore(null).port, RETRY))?.generation).toBe(1)
+    expect(api.count.manifest).toBe(2)
+  })
+
+  test('a 401 that outlasts the wait (15 attempts): a box with a store boots on it, without a restore', async () => {
+    const api = fakeApi({ manifest: [leaseRefused()] })
+    const store = fakeStore(['m1'])
+
+    expect(await reconcileSessionLog(store.port, RETRY)).toEqual({ generation: 0, cursors: [] })
+    expect(api.count.manifest).toBe(15)
+    expect(store.restores).toHaveLength(0)
   })
 
   test('a brand-new session (no store, the manifest 404s): the box boots empty, as before', async () => {
