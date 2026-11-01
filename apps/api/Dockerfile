@@ -152,6 +152,7 @@ COPY packages/manifest-schema/package.json ./packages/manifest-schema/
 COPY packages/registry/package.json ./packages/registry/
 COPY packages/llm-gateway/package.json ./packages/llm-gateway/
 COPY packages/sdk/package.json ./packages/sdk/
+COPY packages/minimatch-compat/package.json ./packages/minimatch-compat/
 
 # Install pnpm and deps for this app + workspace packages it depends on.
 # --shamefully-hoist flattens node_modules (no symlinks) so COPY works on all Docker versions.
@@ -197,6 +198,7 @@ COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
 COPY packages/llm-gateway ./packages/llm-gateway
 COPY packages/sdk ./packages/sdk
+COPY packages/minimatch-compat ./packages/minimatch-compat
 
 # ---- Runner Stage ----
 FROM base AS runner
@@ -232,6 +234,7 @@ COPY LICENSE /LICENSE
 # Copy installed node_modules and source from deps stage.
 # Root node_modules contains all hoisted deps (--shamefully-hoist).
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/minimatch-compat ./packages/minimatch-compat
 
 # Copy workspace packages — source only, skip nested node_modules
 # which may contain stale symlinks to the .pnpm store.
