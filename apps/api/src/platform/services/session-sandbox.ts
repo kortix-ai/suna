@@ -31,6 +31,7 @@ import {
   getProvider,
   SandboxTemplateNotFoundError,
   type CreateSandboxOpts,
+  type DroppedVolume,
   type ProvisionResult,
   type ProviderName,
 } from '../providers';
@@ -884,25 +885,38 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
     }
   }
   providerCreateInput.volumes = state.driveMounts?.volumes;
+  // The Files folders are optional: a box Platinum refuses one of them for
+  // boots without it and attaches it later. /workspace stays required.
+  const folders = Object.keys(state.driveMounts?.volumes ?? {});
+  providerCreateInput.optionalVolumes = folders.length ? folders : undefined;
   if (state.workspaceVolume) applyWorkspaceVolume(providerCreateInput, state.workspaceVolume);
 }
 
 /** What the box mounted (its drives), for its row. */
 interface AttemptBoxMetadata {
   mountedDrives: NonNullable<SessionDriveMounts>['mounts'];
+  /** Folders storage refused at the create, which the drive worker attaches later. */
+  droppedFolders: number;
   box: Record<string, unknown>;
 }
 
-async function recordAttemptBoot(ctx: SessionProvisionContext, state: SessionProvisionState): Promise<AttemptBoxMetadata> {
+async function recordAttemptBoot(
+  ctx: SessionProvisionContext,
+  state: SessionProvisionState,
+  result: ProvisionResult,
+): Promise<AttemptBoxMetadata> {
   const { providerCreateInput, drivesSyncAllowed } = ctx;
-  const { providerName, driveMounts } = state;
+  const { providerName } = state;
+  // Folders storage refused at the create: the box booted without them.
+  const dropped = droppedFolderMounts(state.driveMounts, result);
+  const driveMounts = dropped.length ? withoutDroppedFolders(state.driveMounts!, dropped) : state.driveMounts;
   // What this sandbox really mounted: the session's drive chip reads it back.
   const mountedDrives =
     driveMounts && (providerCreateInput.volumes || (providerName !== 'platinum' && drivesSyncAllowed))
       ? driveMounts.mounts
       : [];
-  // And the folders it does not mount (past its mount slots, or Files in
-  // another region or moving), which the chip and the agent's notes name.
+  // And the folders it does not mount (past its mount slots, Files in another
+  // region or moving, refused by storage), which the chip and the agent's notes name.
   const unmounted = driveMounts?.skipped.some((d) => d.reason) ? driveMounts.skipped : [];
   const driveAdmission =
     mountedDrives.length && driveMounts
@@ -912,11 +926,37 @@ async function recordAttemptBoot(ctx: SessionProvisionContext, state: SessionPro
   const driveSyncMeta = providerName !== 'platinum' && mountedDrives.length ? { driveSync: true } : {};
   return {
     mountedDrives,
+    droppedFolders: dropped.length,
     box: {
       driveMounts: mountedDrives,
       ...driveAdmission,
       ...driveSyncMeta,
     },
+  };
+}
+
+/** The Files folder mounts a create left out (`metadata.droppedVolumes`). */
+function droppedFolderMounts(plan: SessionDriveMounts | undefined, result: ProvisionResult): DroppedVolume[] {
+  const raw = result.metadata?.droppedVolumes;
+  if (!plan || !Array.isArray(raw)) return [];
+  return (raw as DroppedVolume[]).filter((d) => d && typeof d.mountPath === 'string' && plan.mounts.some((m) => m.mountPath === d.mountPath));
+}
+
+/** The plan as the box booted it: the dropped folders move from `mounts` to `skipped`. */
+function withoutDroppedFolders(plan: SessionDriveMounts, dropped: DroppedVolume[]): SessionDriveMounts {
+  const byPath = new Map(dropped.map((d) => [d.mountPath, d]));
+  const left = plan.mounts.filter((m) => byPath.has(m.mountPath));
+  return {
+    ...plan,
+    volumes: Object.fromEntries(Object.entries(plan.volumes).filter(([path]) => !byPath.has(path))),
+    mounts: plan.mounts.filter((m) => !byPath.has(m.mountPath)),
+    skipped: [
+      ...left.map((m) => {
+        const d = byPath.get(m.mountPath)!;
+        return { driveId: m.driveId, name: m.subdir, reason: d.code === 'sub_path_too_large' ? ('too_large' as const) : ('unavailable' as const), detail: d.reason };
+      }),
+      ...plan.skipped,
+    ],
   };
 }
 
@@ -1266,8 +1306,15 @@ async function activateProvisionedSandbox(
     sessionId: sandbox.sandboxId, accountId,
   });
   // The agent's map of its drives (/drives/README.md). Detached, best effort.
-  if (boot.mountedDrives.length) {
+  if (boot.mountedDrives.length || boot.droppedFolders) {
     void import('../../drives/service').then(({ refreshDriveNotes }) => refreshDriveNotes(sandbox.sandboxId));
+  }
+  // Folders storage refused at the create: the drive worker attaches them to
+  // this running box, with backoff, as soon as storage can mount them.
+  if (boot.droppedFolders) {
+    void import('../../drives/service')
+      .then(({ queueDriveAttach }) => queueDriveAttach(sandbox.sandboxId, `${boot.droppedFolders} folder(s) refused at boot`))
+      .catch((err) => logger.error('[drives] queueing the attach of refused folders failed', { sandboxId: sandbox.sandboxId, error: err instanceof Error ? err.message : String(err) }));
   }
 
   // Billing v2 — open a compute metering row. No-op for legacy accounts.
@@ -1326,7 +1373,7 @@ async function runProvisionAttempt(
   const { result, attempts } = created;
   state.bgExternalId = result.externalId;
   tl.mark(`provider-create:${attempts}x`);
-  const boot = await recordAttemptBoot(ctx, state);
+  const boot = await recordAttemptBoot(ctx, state, result);
   const timeline = tl.summary();
 
   if (await settleSandboxStoppedDuringCreate(ctx, state, result, attempts, timeline, boot)) return 'done';

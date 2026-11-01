@@ -638,9 +638,14 @@ export interface SkippedDrive {
   /**
    * Why: absent = it did not fit in the sandbox's mount slots; `region` = the
    * files live in another region than the sandbox; `moving` = the files were
-   * moving to another region when the sandbox booted.
+   * moving to another region when the sandbox booted; `unavailable` =
+   * storage refused the mount (its folder image was not ready, the volume was
+   * busy) and the drive worker attaches it to the running box once it can;
+   * `too_large` = the folder is larger than a folder mount allows.
    */
-  reason?: 'region' | 'moving';
+  reason?: 'region' | 'moving' | 'unavailable' | 'too_large';
+  /** Storage's own words for `unavailable` and `too_large`. */
+  detail?: string;
 }
 
 export interface SessionDriveMounts {
@@ -991,6 +996,13 @@ export async function readSkippedSessionDrives(
   const mounted = new Set(recordedDriveMounts(md).map((m) => m.subdir));
   const skipped = recorded.filter((d) => !mounted.has(d.name));
   if (!skipped.length) return { skipped, message: null };
+  const named = (reason: SkippedDrive['reason']) => skipped.filter((d) => d.reason === reason).map((d) => d.name).join(', ');
+  if (skipped.some((d) => d.reason === 'too_large')) {
+    return { skipped, message: `These folders are too large to mount in a session: ${named('too_large')}. The session runs without them. Move large files out of them, or share a smaller folder.` };
+  }
+  if (skipped.some((d) => d.reason === 'unavailable')) {
+    return { skipped, message: `These folders are not mounted yet: ${named('unavailable')}. File storage could not mount them when the session started. The session runs without them, and they mount as soon as storage can.` };
+  }
   if (skipped.some((d) => d.reason === 'region')) {
     return { skipped, message: 'This session runs in another region than the project’s files, so its folders are not mounted. A new session mounts them.' };
   }
@@ -1170,6 +1182,7 @@ async function applyDriveToRunningSandbox(input: {
       await unreachable('region');
     } else {
       const volume = await openVolumeFor(plan.drive, AbortSignal.timeout(OPEN_TIMEOUT_MS));
+      const tooLarge: SkippedDrive[] = [];
       for (const m of placed) {
         try {
           await attachDriveMount(box.externalId, m, volume);
@@ -1179,6 +1192,12 @@ async function applyDriveToRunningSandbox(input: {
           // the volume was just opened in its own region, so both mean the box
           // runs elsewhere.
           const code = err instanceof DriveStorageError ? err.code : undefined;
+          if (code === 'sub_path_too_large') {
+            // Retrying cannot shrink the folder: recorded, and tried again at the next change of the session's folders.
+            logger.info(`[drives] session ${input.sessionId}: folder ${m.subdir} is too large to mount`);
+            tooLarge.push({ driveId: m.driveId, name: m.subdir, reason: 'too_large', detail: err instanceof Error ? err.message.slice(0, 300) : undefined });
+            continue;
+          }
           if (code !== 'volume_in_other_region' && code !== 'volume_not_found' && code !== 'drive_moving') throw err;
           await unreachable(code === 'drive_moving' ? 'moving' : 'region');
           break;
@@ -1186,6 +1205,12 @@ async function applyDriveToRunningSandbox(input: {
         kept = [...kept, m];
         await writeRecordedMounts(box.sandboxId, [...others, ...kept]);
       }
+      // Every folder storage refused at boot was tried: it mounted, or it is too large.
+      const before = Array.isArray((box.metadata as Record<string, unknown> | null)?.[DRIVE_SKIPPED_METADATA_KEY])
+        ? ((box.metadata as Record<string, unknown>)[DRIVE_SKIPPED_METADATA_KEY] as SkippedDrive[])
+        : [];
+      const settled = before.filter((d) => d.reason !== 'unavailable' && d.reason !== 'too_large');
+      if (tooLarge.length || settled.length !== before.length) await writeSkippedMounts(box.sandboxId, [...settled, ...tooLarge]);
     }
   }
   // Awaited: the ownership pass inside makes a newly writable mount writable
@@ -1615,6 +1640,15 @@ async function recordMountRevocation(sandboxId: string, error: string): Promise<
         notBefore: sql`now() + least(${REVOCATION_MAX_BACKOFF_MS}::int, ${REVOCATION_RETRY_MS}::int * power(2, least(${driveMountRevocations.attempts}, 10))::int) * interval '1 millisecond'`,
       },
     });
+}
+
+/**
+ * A box booted without folders storage refused at its create (reason
+ * `unavailable`): the drive worker attaches them to the running box, with
+ * backoff, until they land.
+ */
+export async function queueDriveAttach(sandboxId: string, why: string): Promise<void> {
+  await recordMountRevocation(sandboxId, `attach: ${why}`);
 }
 
 async function clearMountRevocation(sandboxId: string): Promise<void> {

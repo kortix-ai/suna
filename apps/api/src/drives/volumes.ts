@@ -140,6 +140,10 @@ async function call(volume: DriveVolume | null, path: string, init: RequestInit 
       throw new DriveStorageError(409, FILE_CHANGED_MESSAGE, 'file_changed');
     case 413:
       throw new DriveStorageError(413, 'File is too large', code);
+    case 422:
+      if (code === 'sub_path_too_large') throw new DriveStorageError(413, 'This folder is too large to mount in a session', code);
+      logger.warn(`[drives] ${init.method ?? 'GET'} ${path} -> 422 ${text.slice(0, 300)}`);
+      throw new DriveStorageError(503, 'Drive storage is unavailable, try again shortly', code);
     default:
       logger.warn(`[drives] ${init.method ?? 'GET'} ${path} -> ${res.status} ${text.slice(0, 300)}`);
       throw new DriveStorageError(503, 'Drive storage is unavailable, try again shortly', code);

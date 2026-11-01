@@ -52,7 +52,7 @@
  * off means the legacy body (no `name`, no header), unchanged from before.
  */
 
-import type { SandboxExecOptions, SandboxExecResult } from './contract';
+import type { DroppedVolume, SandboxExecOptions, SandboxExecResult } from './contract';
 import { isProviderNotFound } from './status';
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
@@ -274,13 +274,40 @@ function isDefinitiveTemplateNotFound(error: unknown): boolean {
 
 /**
  * Platinum refused a create because of its `volumes` (a volume it cannot
- * find, no host that can mount volumes, a mount limit): a definite refusal,
- * so no box exists, and the same body can never succeed.
+ * find, no host that can mount volumes, a mount limit, a folder whose
+ * sub_path image cannot be made): a definite refusal, so no box exists. A
+ * sub_path refusal names neither "volume" nor "mount" (prod 2026-11-01:
+ * `503 unavailable "deriving the sub_path image failed: volgw: subimage …"`).
  */
 function isVolumeRejection(error: unknown): boolean {
   const { status, code, body } = platinumHttp(error);
   if (typeof status !== 'number' || !((status >= 400 && status < 500) || status === 503)) return false;
-  return /volume|mount/i.test(`${code ?? ''} ${body ?? ''}`);
+  return /volume|mount|sub_?path|subdir|subimage/i.test(`${code ?? ''} ${body ?? ''}`);
+}
+
+/** The optional mounts a refused create boots without, and why (`metadata.droppedVolumes`). */
+function droppedOptionalVolumes(opts: CreateSandboxOpts, error: unknown): DroppedVolume[] {
+  const optional = (opts.optionalVolumes ?? []).filter((path) => opts.volumes?.[path]);
+  if (!optional.length || !isVolumeRejection(error)) return [];
+  const { status, code, body } = platinumHttp(error);
+  // A full fleet is capacity, not a mount: it is retried with every mount.
+  if (/no capacity/i.test(body ?? '')) return [];
+  // A box that must run in its region (a warm box) fails fast, so a box
+  // placed where the files live is booted instead of one without them.
+  if (opts.locationRequired && code === 'volume_in_other_region') return [];
+  let reason = body ?? '';
+  try {
+    const parsed = JSON.parse(reason) as { error?: unknown };
+    if (typeof parsed.error === 'string') reason = parsed.error;
+  } catch {
+    // not JSON: the raw body is the reason
+  }
+  return optional.map((mountPath) => ({
+    mountPath,
+    status: typeof status === 'number' ? status : null,
+    code: code ?? null,
+    reason: reason.slice(0, 300),
+  }));
 }
 
 /** The `status`, `code` and `body` of the `PlatinumHttpError` `platinumJson` throws. */
@@ -617,6 +644,42 @@ export class PlatinumProvider implements SandboxProvider {
         const home = await this.provisionFromTemplate(template, { ...opts, location: undefined });
         return { ...home, metadata: { ...home.metadata, regionFallback: fallback } };
       }
+      // A Files folder Platinum cannot mount (its sub_path image does not
+      // build, it is too large, busy or gone) never stops the box: it boots
+      // once more without the optional mounts, as a new attempt (the body
+      // differs, so a new name and Idempotency-Key), and the result names what
+      // it left out for the session to attach later. Prod 2026-11-01: one
+      // folder failed every create of every session that mounted it for ~5 h.
+      const dropped = droppedOptionalVolumes(opts, err);
+      if (dropped.length) {
+        const left = new Set(dropped.map((d) => d.mountPath));
+        const kept = Object.entries(opts.volumes ?? {}).filter(([path]) => !left.has(path));
+        // Stable message: alert on it.
+        logger.warn('[platinum] optional volumes dropped: the box boots without the mounts Platinum refused', {
+          template,
+          sandboxId: opts.sandboxId ?? opts.name,
+          dropped,
+        });
+        const bare = await this.provisionFromTemplate(template, {
+          ...opts,
+          volumes: kept.length ? Object.fromEntries(kept) : undefined,
+          optionalVolumes: undefined,
+          createAttempt: dedupAttempt + 1,
+        });
+        return { ...bare, metadata: { ...bare.metadata, droppedVolumes: dropped } };
+      }
+      const refusal = platinumHttp(err);
+      // Before the volume refusal below, which this body also matches: a
+      // required folder whose image is still being made is waited for.
+      if (refusal.status === 503 && refusal.code === 'unavailable' && refusal.body) {
+        const body: unknown = JSON.parse(refusal.body);
+        if (body && typeof body === 'object' && 'error' in body &&
+          body.error === 'the sub_path image is still being derived; retry shortly') {
+          throw new SnapshotStillBuildingError(
+            `Sandbox image snapshot ${template} is building: Platinum is deriving the sub_path image`,
+          );
+        }
+      }
       // A full fleet stays a capacity error (retried, "try again in a minute").
       if (createBody.volumes && isVolumeRejection(err) && !/no capacity/i.test(platinumHttp(err).body ?? '')) {
         // Mounts a session cannot run without (its drives, its state): fail
@@ -634,18 +697,8 @@ export class PlatinumProvider implements SandboxProvider {
           `[drives] This session’s drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,
         );
       }
-      const refusal = platinumHttp(err);
       if (refusal.status === 400 && refusal.code === 'residential_proxy_unavailable') {
         throw new Error(RESIDENTIAL_PROXY_NOT_OFFERED_MESSAGE);
-      }
-      if (refusal.status === 503 && refusal.code === 'unavailable' && refusal.body) {
-        const body: unknown = JSON.parse(refusal.body);
-        if (body && typeof body === 'object' && 'error' in body &&
-          body.error === 'the sub_path image is still being derived; retry shortly') {
-          throw new SnapshotStillBuildingError(
-            `Sandbox image snapshot ${template} is building: Platinum is deriving the sub_path image`,
-          );
-        }
       }
       const regional = regionalTemplateRefusal(err);
       if (regional?.state === 'replicating') {
