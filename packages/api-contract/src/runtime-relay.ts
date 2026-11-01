@@ -252,6 +252,24 @@ export const RUNTIME_CAPABILITIES = [
 export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
 
 /**
+ * The extensions the pi runtime loads for every agent (kortixd `harness/pi/runtime.ts`): the agent
+ * page's platform rows (apps/api `agent-capabilities.ts`) list exactly these, and the pi-harness
+ * test fails when the runtime loads a builtin that is not here.
+ */
+export const PLATFORM_EXTENSION_IDS = [
+  'kortix-nested-calls',
+  'kortix-presentation',
+  'kortix-turn',
+  'kortix-context-record',
+  'kortix-subagents',
+  'kortix-workflow',
+  'kortix-messaging',
+  'kortix-team-tasks',
+  'codemode',
+] as const;
+export type PlatformExtensionId = (typeof PLATFORM_EXTENSION_IDS)[number];
+
+/**
  * The daemon serves the Kortix turn verbs: `POST /kortix/runtime/sessions/:id/prompt`,
  * `POST /kortix/runtime/sessions/:id/abort`, `GET|DELETE /kortix/runtime/messages/:id/:messageId`
  * and `GET /kortix/runtime/agents`. Listed in `capabilities` beside the runtime's own.

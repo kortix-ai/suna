@@ -53,6 +53,8 @@ export interface SessionRuntimeEnvInput {
   compiledAgentConfig?: string | null;
   /** The session agent's kortix.yaml `codemode`; sent as `KORTIX_PI_CODEMODE` to a pi session only. Null: the daemon default (`on`). */
   piCodemode?: 'off' | 'on' | 'only' | null;
+  /** The session agent's kortix.yaml `context`; sent as `KORTIX_PI_CONTEXT` to a pi session only when it is `summary`. Null: the daemon default (`record`). */
+  piContext?: 'record' | 'summary' | null;
   /** The pi packages of the extensions the session agent enables; sent as `KORTIX_PI_PACKAGES` to a pi session only. */
   piPackages?: unknown[];
   /** The prebuilt bundle of those packages (apps/api/src/pi-packages/bundle.ts); null when not built. */
@@ -158,6 +160,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     KORTIX_HARNESS: 'pi',
     ...(input.piPackages?.length ? { KORTIX_PI_PACKAGES: JSON.stringify(input.piPackages) } : {}),
     ...(input.piCodemode ? { KORTIX_PI_CODEMODE: input.piCodemode } : {}),
+    ...(input.piContext === 'summary' ? { KORTIX_PI_CONTEXT: 'summary' } : {}),
     ...(input.piPackagesBundle
       ? {
           KORTIX_PI_PACKAGES_BUNDLE_URL: input.piPackagesBundle.url,

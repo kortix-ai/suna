@@ -22,6 +22,7 @@ import { validateAgentPolicySetRefs } from './policy-sets';
 import {
   AGENT_MODES_V2,
   CODEMODE_VALUES,
+  CONTEXT_VALUES,
   EXTENSION_HARNESSES,
   HARNESS_TOOL_NAMES,
   KORTIX_SKILL_NAMES,
@@ -77,6 +78,7 @@ import { BUILTIN_AGENT_KEYS, BUILTIN_AGENTS, LEGACY_MY_KORTIX_AGENT_NAME, type B
 // ─── Types ─────────────────────────────────────────────────────────────────
 
 export type CodemodeV3 = (typeof CODEMODE_VALUES)[number];
+export type ContextV3 = (typeof CONTEXT_VALUES)[number];
 
 /** `agents.<name>.tools`: `all` (default), `none`, a list, or `{ exclude: [...] }`. */
 export type AgentToolsV3 = 'all' | 'none' | string[] | { exclude: string[] };
@@ -144,6 +146,8 @@ export interface AgentBlockV3 {
   enabled?: boolean;
   /** pi's codemode tool. The session agent defaults to `on`; a subagent has none unless its own agent sets this. */
   codemode?: CodemodeV3;
+  /** What a full context does. Omitted: `record`, a fresh context that searches the session's full record. `summary`: pi's own compaction. */
+  context?: ContextV3;
   tools?: AgentToolsV3;
   skills?: ExcludableGrantSetV3;
   subagents?: GrantSetV2;
@@ -298,6 +302,7 @@ export const AGENT_BLOCK_KEYS_V3 = [
   'prompt_file',
   'enabled',
   'codemode',
+  'context',
   'tools',
   'skills',
   'subagents',
@@ -707,6 +712,9 @@ function validateAgentBlockV3(
   }
   if (entry.codemode !== undefined && !(CODEMODE_VALUES as readonly unknown[]).includes(entry.codemode)) {
     issues.push({ path: `${where}.codemode`, message: `must be one of: ${CODEMODE_VALUES.join(', ')}.`, severity: 'error' });
+  }
+  if (entry.context !== undefined && !(CONTEXT_VALUES as readonly unknown[]).includes(entry.context)) {
+    issues.push({ path: `${where}.context`, message: `must be one of: ${CONTEXT_VALUES.join(', ')}.`, severity: 'error' });
   }
   if (entry.sandbox !== undefined && !(typeof entry.sandbox === 'string' && SLUG_RE.test(entry.sandbox.trim()))) {
     issues.push({ path: `${where}.sandbox`, message: 'must be a sandbox template slug.', severity: 'error' });

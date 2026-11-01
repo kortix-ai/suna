@@ -37,6 +37,7 @@ import { createEnvRouter } from '@/routes/kortix/env'
 import { expandCommandTemplate, type PiRuntimeHooks } from '@/harness/pi/runtime'
 import { MessageIdClock } from '@/harness/pi/message-id'
 import { createPiSessionLogPort, piSessionLog } from '@/harness/pi/session-log'
+import { PLATFORM_EXTENSION_IDS } from '@kortix/api-contract/runtime-relay'
 import { restorePiSessionLog } from '@/harness/pi/session-log-restore'
 import { SESSION_LOG_EVENTS, toV1, upcast as upcastSessionLog, type SessionLogMessage } from '@kortix/api-contract/session-log'
 import { encodeCompiledAgentConfigEnv } from '@kortix/api-contract/compiled-agent-config-env'
@@ -4158,6 +4159,13 @@ describe('pi context record: retrieval instead of compaction', () => {
     rigs.splice(rigs.indexOf(r), 1)
     await waitFor(() => existsSync(join(r.workspace, '.state', 'records')))
     expect(recordOf(restarted).text).toContain('first answer ERR-BETA-0042')
+  })
+
+  test('every builtin extension the runtime loads is in the catalog the agent page lists', async () => {
+    const r = await boot({ script: [] })
+    const loaded = r.service.runtime()!.extensionStatus().loaded
+    expect(loaded.length).toBeGreaterThan(0)
+    for (const name of loaded) expect(PLATFORM_EXTENSION_IDS as readonly string[]).toContain(name)
   })
 
   test("an agent whose context is summary keeps pi's own compaction", async () => {

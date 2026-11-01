@@ -41,7 +41,7 @@ import { resolveSessionSecretGrant } from './secret-grant';
 import { AmbiguousSecretGrantError, intersectSecretGrants, listProjectSecretsSnapshotForUser } from '../secrets';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import { piPackageBundleForSession } from '../../pi-packages/bundle';
-import { manifestPiCodemode, manifestPiPackages, resolveCompiledAgentConfigForSession, resolveSelectedAgentConfigForSession } from './compile-agent-config';
+import { manifestPiCodemode, manifestPiContext, manifestPiPackages, resolveCompiledAgentConfigForSession, resolveSelectedAgentConfigForSession } from './compile-agent-config';
 
 
 
@@ -155,6 +155,7 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
   compiledAgentConfig: string | null;
   manifestPackages: unknown[];
   manifestCodemode: 'off' | 'on' | 'only' | null;
+  manifestContext: 'record' | 'summary' | null;
 }> {
   let agentGrantEnv: string[] | 'all' | undefined;
 
@@ -170,6 +171,7 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
   // compiles the agent config, so they cost no extra git round trip.
   let manifestPackages: unknown[] = [];
   let manifestCodemode: 'off' | 'on' | 'only' | null = null;
+  let manifestContext: 'record' | 'summary' | null = null;
   if (input.defaultBranch && !input.platformMetaAgent) {
     const gitProject = {
       projectId: input.projectId,
@@ -181,6 +183,7 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
     const onManifest = (raw: Record<string, unknown>) => {
       manifestPackages = manifestPiPackages(raw, input.agentName);
       manifestCodemode = manifestPiCodemode(raw, input.agentName);
+      manifestContext = manifestPiContext(raw, input.agentName);
     };
     // `'tip-proof'`: the base ref was at the remote's tip within the refresh
     // interval, proven by this process or adopted from another
@@ -215,7 +218,7 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
       forceRefresh: 'tip-proof',
     });
   }
-  return { agentGrantEnv, compiledAgentConfig, manifestPackages, manifestCodemode };
+  return { agentGrantEnv, compiledAgentConfig, manifestPackages, manifestCodemode, manifestContext };
 }
 
 /**
@@ -325,7 +328,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   // `secrets` grant, applied below by identifier).
   // One `[provision-timeline] session-env` line per build: create, restart and open all wait on it.
   const tl = new ProvisionTimeline(input.sessionId, 'session-env');
-  const { agentGrantEnv, compiledAgentConfig, manifestPackages, manifestCodemode } =
+  const { agentGrantEnv, compiledAgentConfig, manifestPackages, manifestCodemode, manifestContext } =
     await resolveSessionAgentConfig(input);
   tl.mark('agent-config');
   const sessionLogRestore = await resolveSessionLogRestore(input);
@@ -489,6 +492,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
       compiledAgentConfig,
       piPackages: manifestPackages,
       piCodemode: manifestCodemode,
+      piContext: manifestContext,
       piPackagesBundle,
       repositoryAccess: input.repositoryAccess,
       freshSession: input.freshSession,
