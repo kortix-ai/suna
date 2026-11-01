@@ -30,12 +30,12 @@ const KIND_ICON: Record<PeerMessageKind, Icon> = {
   shutdown_response: ArrowBendDownLeftIcon,
 };
 
-const KIND_KEY: Record<PeerMessageKind, string> = {
-  message: 'message',
-  idle_notice: 'idleNotice',
-  shutdown_request: 'shutdownRequest',
-  shutdown_response: 'shutdownResponse',
-};
+const KIND_KEY = new Map<PeerMessageKind, string>([
+  ['message', 'message'],
+  ['idle_notice', 'idleNotice'],
+  ['shutdown_request', 'shutdownRequest'],
+  ['shutdown_response', 'shutdownResponse'],
+]);
 
 /**
  * The preview after the sender: the summary, else the first line of the text. CSS cuts it with `…`.
@@ -60,7 +60,7 @@ export function PeerMessageRow({ info, actions }: { info: PeerMessagePromptInfo;
   const bodyId = useId();
   const KindIcon = KIND_ICON[info.kind];
   const preview = peerMessagePreview(info);
-  const headline = t(KIND_KEY[info.kind], { from: peerHandleLabel(info.from) });
+  const headline = t(KIND_KEY.get(info.kind) ?? 'message', { from: peerHandleLabel(info.from) });
   // Nothing more to read than the line says: the row is not a disclosure.
   const expandable = info.text.trim().length > 0 && info.text.trim() !== preview;
   const line = (
