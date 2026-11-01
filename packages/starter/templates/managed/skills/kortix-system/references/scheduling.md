@@ -221,20 +221,15 @@ kortix triggers fire issue-triage --dry-run --payload '{"event":{"data":{"action
 kortix triggers runs issue-triage
 ```
 
-1. **Filter at the source** (`--filter`, `filter:`): keep only the actions
-   that matter; skip bots and Kortix itself. A filtered event starts nothing.
-2. **One session per thing** (`--session-key`): the thread, issue or sender.
-   The next event about the same thing queues into that session.
-3. **A prompt that judges first**: what counts, what to do, where the result
-   goes, and "otherwise stop and send no message".
-4. **Least access and a cap**: the narrowest agent, a fast model for triage,
-   `--max-runs-per-day`.
-5. **Ask before it runs unattended**, then **dry-run it** with one event that
-   should run and one that should not (`fire --dry-run --payload`: filter
-   verdict, session key and rendered prompt; nothing fires).
-6. **Review it after a few days** (`kortix triggers runs <slug>`: fired,
-   skipped, failed) and tune the filter or the prompt. Remove it when it is no
-   longer wanted.
+1. **Filter at the source** (`--filter`): only the actions that matter; skip
+   bots and Kortix itself. A filtered event starts nothing.
+2. **One session per thing** (`--session-key`: thread, issue, sender).
+3. **A prompt that judges first**, and otherwise stops with no message.
+4. **Least access and a cap**: narrow agent, fast model, `--max-runs-per-day`.
+5. **Ask, then dry-run** one event that should run and one that should not
+   (`fire --dry-run --payload`: filter verdict, session key, prompt).
+6. **Review `kortix triggers runs <slug>`** after a few days; remove it when
+   it is no longer wanted.
 
 ## Cron cheat-sheet
 
@@ -413,25 +408,16 @@ this trigger and status-watch-tick once it reads Operational." --on app --app st
   `kortix triggers disable status-watch-tick` (or delete it), and
   `kortix apps delete status-watch --yes` when nothing else uses it.
 
-### A watcher, specified
+### A watcher, specified; a relay App
 
-A hand-off for a watcher App names: what to watch and how (an API, a page, a
-feed, an inbox), what counts as a change, the event `name`, the `data` fields
-the next step reads, the `id` (built from the content), how often to check,
-and the project secrets it needs, by name. The builder deploys it on demand,
-runs `/tick` once (`curl` the App, or `kortix triggers fire <tick-slug>`) and
-reports the event it posted. Whoever wires it adds the check
-(`kortix triggers add <app>-tick --every 15m --target-app <app> --target-path
-/tick --apply`) and the work (`--type app --app <app> --event <name>`, with
-the filter, key and cap of "Automations" above).
-
-### A relay App: a system that calls but cannot sign
-
-A system that can call a URL but cannot sign it, or sends a shape the agent
-should not read raw, gets a relay App: one route takes the call, checks what
-it can (a shared token in the path or a header, the source IP), keeps only the
-fields that matter, and posts one App event per call. The App's own URL is
-what the system calls; the App event is what the trigger reads.
+A watcher hand-off names what to watch and how, what counts as a change, the
+event `name`, the `data` fields, the content-built `id`, the cadence and the
+secrets by name. The builder deploys it on demand and runs `/tick` once to show
+the event it posts. Wire the check (`--every 15m --target-app <app>
+--target-path /tick`) and the work (`--type app --app <app> --event <name>`,
+filtered, keyed and capped as in "Automations"). A system that calls a URL but
+cannot sign, or sends a raw shape, gets a relay App: it checks a shared token,
+keeps the fields that matter, and posts one App event per call.
 
 ## Stop a trigger
 
