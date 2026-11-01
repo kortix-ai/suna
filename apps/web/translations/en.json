@@ -1223,6 +1223,7 @@
       "addCredits": "Add credits",
       "spentThisPeriod": "Spent this period",
       "compute": "Compute",
+      "storage": "Storage",
       "total": "Total",
       "history": "History",
       "historyDescription": "What every session cost, and every credit added or spent.",
@@ -2656,7 +2657,7 @@
         },
         "credit": {
           "question": "What does a credit buy?",
-          "answer": "1 credit is $0.01. Credits pay for the agent computer, billed per second per resource: {vcpuRate} per vCPU-hour, {memoryRate} per GB of RAM per hour, {diskRate} per GB of storage per month. The default {spec} machine uses about {creditsPerHour} credits an hour, so 1 credit is about {minutes} minutes. A stopped computer costs nothing. Credits also pay for Kortix models, at the provider's base price plus a {fee}% platform fee. Your own API key is free for the first $1,000 of model usage a month, then 5% of the provider's price is paid from credits. A ChatGPT subscription uses no credits."
+          "answer": "1 credit is $0.01. Credits pay for the agent computer, billed per second per resource: {vcpuRate} per vCPU-hour, {memoryRate} per GB of RAM per hour, {diskRate} per GB of storage per month. The default {spec} machine uses about {creditsPerHour} credits an hour, so 1 credit is about {minutes} minutes. A stopped computer uses no compute. Its stored files are billed as storage. Credits also pay for Kortix models, at the provider's base price plus a {fee}% platform fee. Your own API key is free for the first $1,000 of model usage a month, then 5% of the provider's price is paid from credits. A ChatGPT subscription uses no credits."
         },
         "amounts": {
           "question": "How much do I pay each month?",
@@ -2702,7 +2703,7 @@
       "hours": {
         "eyebrow": "Agent hours",
         "title": "1 credit buys about {minutes} minutes of agent computer",
-        "description": "Credits pay for the agent computer: the cloud machine where your agent runs code, browses and edits files. It bills per second while it runs and costs nothing while it is stopped.",
+        "description": "Credits pay for the agent computer: the cloud machine where your agent runs code, browses and edits files. It bills per second while it runs and uses no compute while it is stopped. Its stored files are billed as storage.",
         "rate": {
           "value": "1 credit = $0.01",
           "note": "Every tier buys credits at this rate."
@@ -2717,7 +2718,7 @@
         },
         "rates": {
           "title": "Compute rates",
-          "note": "Billed per second for the size you reserve. A stopped computer costs nothing.",
+          "note": "Billed per second for the size you reserve. A stopped computer uses no compute. Its stored files are billed as storage.",
           "vcpu": {
             "label": "vCPU",
             "price": "{price} / hour"

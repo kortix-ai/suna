@@ -382,8 +382,9 @@ export function CreditsView({
               <span className="text-muted-foreground text-xs tabular-nums">{period}</span>
             ) : null}
           </div>
-          <div className="bg-popover divide-border grid grid-cols-3 divide-x rounded-md border">
+          <div className="bg-popover divide-border grid grid-cols-4 divide-x rounded-md border">
             <SpendStat label={t('compute')} value={usage.compute_usd} locale={locale} />
+            <SpendStat label={t('storage')} value={usage.storage_usd ?? 0} locale={locale} />
             <SpendStat label="LLM" value={usage.llm_usd} locale={locale} />
             <SpendStat label={t('total')} value={usage.total_usd} locale={locale} strong />
           </div>

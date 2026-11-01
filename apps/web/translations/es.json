@@ -1401,6 +1401,7 @@
       "addCredits": "Añadir créditos",
       "spentThisPeriod": "Gastado en este período",
       "compute": "Computación",
+      "storage": "Almacenamiento",
       "total": "Total",
       "history": "Historial",
       "historyDescription": "El coste de cada sesión y todos los créditos añadidos o gastados.",
@@ -2656,7 +2657,7 @@
         },
         "credit": {
           "question": "¿Qué se puede comprar con un crédito?",
-          "answer": "1 crédito son 0,01 $. Los créditos pagan el ordenador del agente, facturado por segundo y por recurso: {vcpuRate} por vCPU y hora, {memoryRate} por GB de RAM y hora, {diskRate} por GB de almacenamiento y mes. La máquina predeterminada de {spec} usa unos {creditsPerHour} créditos por hora, así que 1 crédito equivale a unos {minutes} minutos. Un ordenador detenido no cuesta nada. Los créditos también pagan los modelos de Kortix, al precio base del proveedor más un {fee} % de comisión de plataforma. Tu propia clave de API es gratis durante los primeros 1.000 $ de uso de modelos al mes, y después el 5 % del precio del proveedor se paga con créditos. Una suscripción a ChatGPT no consume créditos."
+          "answer": "1 crédito son 0,01 $. Los créditos pagan el ordenador del agente, facturado por segundo y por recurso: {vcpuRate} por vCPU y hora, {memoryRate} por GB de RAM y hora, {diskRate} por GB de almacenamiento y mes. La máquina predeterminada de {spec} usa unos {creditsPerHour} créditos por hora, así que 1 crédito equivale a unos {minutes} minutos. Un ordenador detenido no consume computación. Sus archivos guardados se facturan como almacenamiento. Los créditos también pagan los modelos de Kortix, al precio base del proveedor más un {fee} % de comisión de plataforma. Tu propia clave de API es gratis durante los primeros 1.000 $ de uso de modelos al mes, y después el 5 % del precio del proveedor se paga con créditos. Una suscripción a ChatGPT no consume créditos."
         },
         "amounts": {
           "question": "¿Cuánto pago cada mes?",
@@ -2702,7 +2703,7 @@
       "hours": {
         "eyebrow": "Horas de agente",
         "title": "1 crédito equivale a unos {minutes} minutos de ordenador de agente",
-        "description": "Los créditos pagan el ordenador del agente: la máquina en la nube donde tu agente ejecuta código, navega y edita archivos. Se factura por segundo mientras funciona y no cuesta nada mientras está detenido.",
+        "description": "Los créditos pagan el ordenador del agente: la máquina en la nube donde tu agente ejecuta código, navega y edita archivos. Se factura por segundo mientras funciona y no consume computación mientras está detenido. Sus archivos guardados se facturan como almacenamiento.",
         "rate": {
           "value": "1 crédito = 0,01 $",
           "note": "Cada nivel ofrece créditos a esta tarifa."
@@ -2717,7 +2718,7 @@
         },
         "rates": {
           "title": "Tarifas de cómputo",
-          "note": "Se factura por segundo según el tamaño reservado. Un ordenador detenido no cuesta nada.",
+          "note": "Se factura por segundo según el tamaño reservado. Un ordenador detenido no consume computación. Sus archivos guardados se facturan como almacenamiento.",
           "vcpu": {
             "label": "vCPU",
             "price": "{price} / hora"

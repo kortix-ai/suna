@@ -39,6 +39,8 @@ export interface EntitlementOverrides {
   managedModels?: OverrideEntry<boolean>;
   /** The BYOK platform fee (byok-fee.ts): off waives it for the account. */
   byokFee?: OverrideEntry<boolean>;
+  /** Volume storage billing (storage-charges.ts): off waives storage charges for the account. */
+  storageBilling?: OverrideEntry<boolean>;
 }
 
 export type OverrideKey = keyof EntitlementOverrides;
@@ -55,6 +57,7 @@ export const ENTITLEMENT_OVERRIDE_KEYS = [
   'branding',
   'managedModels',
   'byokFee',
+  'storageBilling',
 ] as const;
 
 /** Every key the parser accepts. Anything else is dropped. */

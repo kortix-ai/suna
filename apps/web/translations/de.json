@@ -1401,6 +1401,7 @@
       "addCredits": "Credits hinzufügen",
       "spentThisPeriod": "In diesem Zeitraum ausgegeben",
       "compute": "Rechenleistung",
+      "storage": "Speicher",
       "total": "Gesamt",
       "history": "Verlauf",
       "historyDescription": "Kosten jeder Sitzung sowie alle hinzugefügten oder verbrauchten Credits.",
@@ -2656,7 +2657,7 @@
         },
         "credit": {
           "question": "Was bekomme ich für einen Credit?",
-          "answer": "1 Credit entspricht 0,01 $. Credits bezahlen den Agent-Computer, abgerechnet pro Sekunde und Ressource: {vcpuRate} pro vCPU-Stunde, {memoryRate} pro GB RAM und Stunde, {diskRate} pro GB Speicher und Monat. Die Standardmaschine mit {spec} verbraucht etwa {creditsPerHour} Credits pro Stunde, also entspricht 1 Credit etwa {minutes} Minuten. Ein gestoppter Computer kostet nichts. Credits bezahlen außerdem Kortix-Modelle zum Basispreis des Anbieters plus {fee} % Plattformgebühr. Mit eigenem API-Schlüssel sind die ersten 1.000 $ Modellnutzung pro Monat kostenlos, danach werden 5 % des Anbieterpreises mit Credits bezahlt. Ein ChatGPT-Abonnement verbraucht keine Credits."
+          "answer": "1 Credit entspricht 0,01 $. Credits bezahlen den Agent-Computer, abgerechnet pro Sekunde und Ressource: {vcpuRate} pro vCPU-Stunde, {memoryRate} pro GB RAM und Stunde, {diskRate} pro GB Speicher und Monat. Die Standardmaschine mit {spec} verbraucht etwa {creditsPerHour} Credits pro Stunde, also entspricht 1 Credit etwa {minutes} Minuten. Ein gestoppter Computer verbraucht keine Rechenleistung. Seine gespeicherten Dateien werden als Speicher abgerechnet. Credits bezahlen außerdem Kortix-Modelle zum Basispreis des Anbieters plus {fee} % Plattformgebühr. Mit eigenem API-Schlüssel sind die ersten 1.000 $ Modellnutzung pro Monat kostenlos, danach werden 5 % des Anbieterpreises mit Credits bezahlt. Ein ChatGPT-Abonnement verbraucht keine Credits."
         },
         "amounts": {
           "question": "Wie viel zahle ich pro Monat?",
@@ -2702,7 +2703,7 @@
       "hours": {
         "eyebrow": "Agent-Stunden",
         "title": "1 Credit entspricht etwa {minutes} Minuten Agent-Computer",
-        "description": "Credits bezahlen den Agent-Computer: die Cloud-Maschine, auf der dein Agent Code ausführt, im Web surft und Dateien bearbeitet. Er wird sekundengenau abgerechnet, solange er läuft, und kostet nichts, solange er gestoppt ist.",
+        "description": "Credits bezahlen den Agent-Computer: die Cloud-Maschine, auf der dein Agent Code ausführt, im Web surft und Dateien bearbeitet. Er wird sekundengenau abgerechnet, solange er läuft, und verbraucht keine Rechenleistung, solange er gestoppt ist. Seine gespeicherten Dateien werden als Speicher abgerechnet.",
         "rate": {
           "value": "1 Credit = 0,01 $",
           "note": "Jede Stufe bietet Credits zu diesem Preis."
@@ -2717,7 +2718,7 @@
         },
         "rates": {
           "title": "Compute-Preise",
-          "note": "Pro Sekunde für die reservierte Größe abgerechnet. Ein gestoppter Computer kostet nichts.",
+          "note": "Pro Sekunde für die reservierte Größe abgerechnet. Ein gestoppter Computer verbraucht keine Rechenleistung. Seine gespeicherten Dateien werden als Speicher abgerechnet.",
           "vcpu": {
             "label": "vCPU",
             "price": "{price} / Stunde"

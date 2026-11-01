@@ -304,6 +304,8 @@ export interface AccountState {
   /** Usage in the current billing period. Present for every account. */
   usage_this_period?: {
     compute_usd: number;
+    /** Volume storage: Files folders and session /workspace volumes. Absent from an older API. */
+    storage_usd?: number;
     llm_usd: number;
     total_usd: number;
     period_start: string | null;

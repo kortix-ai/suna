@@ -48,6 +48,11 @@ export interface PlanRecord {
     canPurchaseCredits: boolean;
     /** The BYOK platform fee applies (byok-fee.ts). Off on Enterprise. */
     byokFee: boolean;
+    /**
+     * Volume storage is charged (storage-charges.ts). On for every plan:
+     * storage is usage, like compute. Only an override switches it off.
+     */
+    storageBilling: boolean;
   };
   limits: {
     /**
@@ -83,7 +88,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
     status: 'non_plan',
     shape: 'none',
     rank: 0,
-    entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: false, byokFee: true },
+    entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: false, byokFee: true, storageBilling: true },
     limits: { llmRateMultiplier: 0 },
     displayName: 'No Plan',
   },
@@ -97,7 +102,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
     status: 'current',
     shape: 'none',
     rank: 1,
-    entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: true, byokFee: true },
+    entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: true, byokFee: true, storageBilling: true },
     limits: { llmRateMultiplier: 0 },
     displayName: 'Free',
   },
@@ -108,7 +113,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
     status: 'current',
     shape: 'credits',
     rank: 2,
-    entitlements: { ...NO_ENTERPRISE, managedModels: true, canPurchaseCredits: true, byokFee: true },
+    entitlements: { ...NO_ENTERPRISE, managedModels: true, canPurchaseCredits: true, byokFee: true, storageBilling: true },
     limits: { llmRateMultiplier: 12 },
     displayName: 'Credits',
   },
@@ -129,6 +134,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
       managedModels: true,
       canPurchaseCredits: true,
       byokFee: false,
+      storageBilling: true,
     },
     limits: { llmRateMultiplier: 12 },
     displayName: 'Enterprise',

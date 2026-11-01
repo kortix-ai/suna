@@ -137,6 +137,8 @@ export interface ProjectTableRow {
   session_count: number;
   llm_cost: number;
   compute_cost: number;
+  /** Volume storage (Files folders, session /workspace volumes). Absent from an older API. */
+  storage_cost?: number;
   total_cost: number;
   last_activity_at: string | null;
 }
@@ -210,6 +212,7 @@ export function buildProjectTableRows(
       session_count: 0,
       llm_cost: 0,
       compute_cost: 0,
+      storage_cost: 0,
       total_cost: unassigned,
       last_activity_at: null,
     },
@@ -299,6 +302,7 @@ export function ProjectsLevelContent({
   onNextPage,
 }: ProjectsLevelContentProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tCredits = useTranslations('settings.credits');
   const rows = page ? buildProjectTableRows(page, summary) : [];
 
   const offset = page?.offset ?? 0;
@@ -358,8 +362,8 @@ export function ProjectsLevelContent({
         <TableHeader>
           <TableRow>
             {/* Only Project and Total are sortable — those are the two the
-                route can order by (see `ProjectSortColumn`). Sessions, LLM and
-                Compute stay plain `TableHead`s rather than dead controls. */}
+                route can order by (see `ProjectSortColumn`). Sessions, LLM,
+                Compute and Storage stay plain `TableHead`s rather than dead controls. */}
             <CostSortHeader
               label={tI18nComplete.raw('text985959785319')}
               direction={projectSortDirection(sort, 'name')}
@@ -368,6 +372,7 @@ export function ProjectsLevelContent({
             <TableHead className="text-right">{tI18nComplete.raw('text6fa3cbf451b2')}</TableHead>
             <TableHead className="text-right">LLM</TableHead>
             <TableHead className="text-right">{tI18nComplete.raw('textcedc516df056')}</TableHead>
+            <TableHead className="text-right">{tCredits('storage')}</TableHead>
             <CostSortHeader
               label={tI18nComplete.raw('text607d4d4de45d')}
               align="right"
@@ -406,6 +411,9 @@ export function ProjectsLevelContent({
             </TableCell>
             <TableCell className="text-right font-mono tabular-nums">
               {formatSessionCostCredits(sumBy(rows, (row) => row.compute_cost))}
+            </TableCell>
+            <TableCell className="text-right font-mono tabular-nums">
+              {formatSessionCostCredits(sumBy(rows, (row) => row.storage_cost ?? 0))}
             </TableCell>
             <TableCell className="text-right font-mono font-medium tabular-nums">
               {formatSessionCostCredits(sumBy(rows, (row) => row.total_cost))}
@@ -524,6 +532,9 @@ function ProjectRow({
       </TableCell>
       <TableCell className="text-right font-mono tabular-nums">
         {clickable ? formatSessionCostCredits(row.compute_cost) : '—'}
+      </TableCell>
+      <TableCell className="text-right font-mono tabular-nums">
+        {clickable ? formatSessionCostCredits(row.storage_cost ?? 0) : '—'}
       </TableCell>
       <TableCell className="text-right font-mono font-medium tabular-nums">
         {formatSessionCostCredits(row.total_cost)}
