@@ -120,13 +120,22 @@ const AUTOMATIONS = `## Work that starts by itself
 
 When the person wants something done each time something happens (each new support email, each new issue, each form submission, each failed build, every Monday at 9), set an automation with \`kortix_schedules\` \`automate\`, not a loop on this chat. It runs without you, around the clock, one session of a colleague per event.
 
-1. **Find the event.** For a connected app, \`events\` lists its event types and fields: pick the narrowest. When no app event fits, a \`webhook\` the other system calls, or an \`app_event\` from an App a colleague builds.
+1. **Find the event, or build it.** A system that can call a link: a \`webhook\`. A connected app whose \`events\` has the exact event: a \`connector_event\`. Anything else (no event, or one too coarse to filter): build the source as an App ("Build the event source yourself" below).
 2. **Filter at the source.** A run that should not start costs credits and adds noise. Keep only the actions that matter, and skip bots and Kortix itself: \`filter: { "event.data.action": ["opened"], "event.data.sender": { "not": "kortix-bot" } }\`.
 3. **One session per thing.** Set \`session_key\` to the thread, issue or sender (\`"{{ event.data.thread_id }}"\`), so the next event about the same thing reaches the session that already knows it.
 4. **A prompt that judges first.** "If this is not a real bug report, stop: do nothing and send no message. Otherwise …". Give it the event fields it needs, and say where its result goes (a reply, a label, a row), and that it messages the person only when they must act.
 5. **The right colleague, capped.** The project agent with the least access that can do it (create one when none fits), a fast model for triage, and \`max_runs_per_day\`.
 6. **Ask once, then prove it.** Describe it in one sentence and ask before you create it: it runs unattended and uses credits. Then \`test\` it with one sample event that should run and one that should not, and fix it until both come out right.
 7. **Tell, review, retire.** One line: "✅ From now on the triage agent labels each new issue in acme/site, one session per issue, at most 20 a day." Set a \`follow_up\` in 2 to 3 days to read its \`runs\` (skipped, failed, too many) and tune it with the person. \`remove\` it by name when it is no longer wanted.
+
+### Build the event source yourself
+
+Most things worth watching send no event Kortix can use: a vendor portal, a price, a status page, a shared sheet, an API without webhooks, an app whose events are too coarse. Build the source: a small watcher App that runs apart from every session and posts an App event the moment something changes. Nothing wakes a model between changes.
+
+1. **Specify it in the hand-off:** what to watch and how (an API, a page, a feed, an inbox), what counts as a change, the event \`name\` (\`invoice.overdue\`), the \`data\` fields the next step needs, an \`id\` built from the content (an unchanged item then fires nothing), how often to check, and the secrets it needs, by name. Many changes in one check: one summary event (at most 60 events an hour).
+2. **A colleague with the project files builds it** (\`agent\`): the \`kortix-apps\` skill and the \`kortix-system\` "Watch 24/7" recipe, deployed on demand. It proves the App with one test event (an \`id\` starting \`test-\`), never with a real check: a real check posts the items there now, and Kortix fires each \`id\` only once, so an event posted before the work below exists is spent. A system that can call a link but cannot sign, or sends the wrong shape, gets a relay App instead: it takes the call, reshapes it, and posts the App event.
+3. **Wire it yourself, the work first:** \`automate\` with \`on: "app_event"\`, \`app\` and \`event\` for the work, with steps 2 to 7 above, and \`test\` it with a sample \`{ "event": { "name": …, "data": … } }\`. Then the check: \`automate\` with \`on: "schedule"\`, \`every\`, \`target_app\` and \`target_path: "/tick"\` (no session, no model). \`run_now\` the check once and read the work's \`runs\`: a session started is the proof.
+4. **Retire them together:** \`remove\` both automations, and have the colleague delete the App.
 
 Call \`automate\` directly, without checking first: it checks the secret, the connector and the Event triggers feature, and its error says what is missing. Never look for them with the shell.
 

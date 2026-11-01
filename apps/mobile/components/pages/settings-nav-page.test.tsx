@@ -172,7 +172,7 @@ describe('project Settings controls', () => {
 });
 
 describe('Customize group follows the read leaf and a write leaf', () => {
-  const CUSTOMIZE = ['Schedules', 'Secrets', 'Members', 'Connectors', 'More on kortix.com'];
+  const CUSTOMIZE = ['Trigger', 'Secrets', 'Members', 'Connectors', 'More on kortix.com'];
   test('a plain member sees no Customize row and no hand-off', () => {
     renderAs({
       'project.trigger.read': can(true),
@@ -189,7 +189,7 @@ describe('Customize group follows the read leaf and a write leaf', () => {
   test('secret read + write shows Secrets only, with the web hand-off', () => {
     renderAs({ 'project.secret.read': can(true), 'project.secret.write': can(true) });
     expect(row('Secrets')).toBeTruthy();
-    expect(row('Schedules')).toBeUndefined();
+    expect(row('Trigger')).toBeUndefined();
     expect(row('More on kortix.com')).toBeTruthy();
   });
 });

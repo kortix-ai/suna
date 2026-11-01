@@ -148,7 +148,7 @@ function openAs(next: Record<string, Can>) {
   pickers = [];
   prompt = undefined;
   act(() => {
-    tree = create(<SchedulesPage page={{ id: 'page:schedules', label: 'Schedules' }} projectId="proj-1" />);
+    tree = create(<SchedulesPage page={{ id: 'page:schedules', label: 'Trigger' }} projectId="proj-1" />);
   });
   act(() => rows.find((r) => r.label === TRIGGER.name)!.onPress!());
 }
@@ -230,7 +230,7 @@ describe('Schedules sheet characterization', () => {
   test('create renders recurring presets, timezone, name and prompt fields before a schedule is selected', () => {
     cans = {};
     act(() => {
-      tree = create(<SchedulesPage page={{ id: 'page:schedules', label: 'Schedules' }} projectId="proj-1" />);
+      tree = create(<SchedulesPage page={{ id: 'page:schedules', label: 'Trigger' }} projectId="proj-1" />);
     });
     const rendered = JSON.stringify(tree.toJSON());
     for (const label of ['Recurring', 'Run once', 'Custom cron', 'Timezone', 'Name', 'Prompt', 'Create schedule', 'Every 5 minutes', 'Every 15 minutes', 'Hourly', 'Daily at 9:00', 'Weekdays at 9:00', 'Mondays at 9:00']) {

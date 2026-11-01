@@ -156,14 +156,8 @@ sandbox:
   `RUN` heredoc, a Debian-family base.
 - A session uses the first that is set: an explicit template, the agent's
   `sandbox`, `sandbox.default`, the platform `default`.
-- Kortix adds its own layer on top: the CLI, the daemon, agent-browser and
-  the document tools; on an `ubuntu:24.04` base, the desktop too.
-- To keep a package for every session (a session install can be gone when it
-  reopens): a Dockerfile, `FROM ubuntu:24.04` then `RUN apt-get update && apt-get
-  install -y --no-install-recommends <pkg>`; a template with `dockerfile:`;
-  `sandbox.default: <slug>` (or the agent's `sandbox`). `kortix validate`, then
-  a CR. On merge Kortix builds the image (`kortix sandboxes builds`); sessions
-  that start after the build use it.
+- Kortix adds its own layer on top: the CLI, the daemon, agent-browser, the document tools, and on an `ubuntu:24.04` base the desktop. A package installed in a session can be gone when it reopens.
+- To keep one for every session: a Dockerfile (`FROM ubuntu:24.04`, then `RUN apt-get update && apt-get install -y --no-install-recommends <pkg>`), a template with `dockerfile:`, and `sandbox.default: <slug>` or the agent's `sandbox`. Run `kortix validate`, then open a CR. On merge Kortix builds the image (`kortix sandboxes builds`); sessions that start after the build use it.
 
 ## triggers
 
