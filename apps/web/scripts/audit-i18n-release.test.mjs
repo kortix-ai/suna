@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
-test('release source audit preserves technical values and recognizes translated messages', () => {
+test('release source audit preserves technical values and recognizes translated messages', { timeout: 120_000 }, () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'release-i18n-'));
   const fixture = new URL('../src/krtx-3817-audit-probe.tsx', import.meta.url);
   try {
