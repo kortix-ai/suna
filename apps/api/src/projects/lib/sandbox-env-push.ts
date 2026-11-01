@@ -425,6 +425,13 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
   // the personal-override owner. One context answers both.
   const secretContext = loadSessionSecretContext(args.projectId, args.sessionId, args.requestedAgent);
   secretContext.catch(() => undefined);
+  // When the snapshot's inputs landed (ms from t0): the session rows, then the
+  // agent's secret grant (a manifest read). Logged beside `timing` to split the
+  // per-prompt `snapshot` cost of a large project.
+  const at: Record<string, number> = {};
+  secretContext.then(() => {
+    at.context = Math.round(performance.now() - t0);
+  }, () => {});
   const boundaryRead = resolveSessionNetworkBoundary(
     args.projectId,
     args.sessionId,
@@ -439,6 +446,8 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
     secretContext,
   );
   lap('snapshot');
+  const grantSettled = (await secretContext).grantSettledAt?.();
+  if (grantSettled != null) at.grant = Math.round(grantSettled - t0);
   if (!snapshot) return;
   // Resolving the bindings stays FAIL-CLOSED: it re-reads the agent's grant, and
   // an unresolvable grant must refuse the prompt (the caller maps
@@ -584,7 +593,7 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
     }
     console.log(
       `[env-sync] timing sandbox=${args.externalId} push=skipped ` +
-        `background_refresh=${backgroundRefreshScheduled} ${JSON.stringify(timing)}`,
+        `background_refresh=${backgroundRefreshScheduled} ${JSON.stringify({ ...timing, at })}`,
     );
     return;
   }
@@ -627,7 +636,7 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
         `(ready=${ready}) session=${args.sessionId}`,
     );
   }
-  console.log(`[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=true ${JSON.stringify(timing)}`);
+  console.log(`[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=true ${JSON.stringify({ ...timing, at })}`);
 }
 
 export async function runBounded<T>(
