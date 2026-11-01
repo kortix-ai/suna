@@ -523,7 +523,7 @@ async function automate(args: Record<string, any>, context: PlatformToolContext)
   if (!type) {
     return invalid(
       'What should it react to?',
-      `\`on\` is one of: ${Object.keys(AUTOMATE_ON).join(', ')}. Send the whole automation in one call, e.g. {"action":"automate","name":"form-leads","on":"webhook","secret_env":"FORM_SECRET","agent":"sales","prompt":"If this is a test or spam, stop and send no message. Otherwise draft a reply to {{ body.name }} <{{ body.email }}>.","session_key":"{{ body.email }}","max_runs_per_day":20}`,
+      `\`on\` is one of: ${Object.keys(AUTOMATE_ON).join(', ')}. If you did send it, your long fields did not arrive: send this call from codemode. Send the whole automation in one call, e.g. {"action":"automate","name":"form-leads","on":"webhook","secret_env":"FORM_SECRET","agent":"sales","prompt":"If this is a test or spam, stop and send no message. Otherwise draft a reply to {{ body.name }} <{{ body.email }}>.","session_key":"{{ body.email }}","max_runs_per_day":20}`,
     )
   }
   // An App target: each run calls the App (a watcher's poll: no session, no model) instead of an agent.
@@ -536,7 +536,7 @@ async function automate(args: Record<string, any>, context: PlatformToolContext)
     if (typeof args.agent === 'string' && args.agent.trim()) return invalid('An App or an agent', 'A run calls `target_app` or starts `agent`, not both.')
   }
   const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
-  if (!prompt && !targetApp) return invalid('What should each run do?', 'Missing `prompt`: what each run starts with. Read the event with {{ event.data.<field> }} (connector and App events) or {{ body.<field> }} (webhooks).')
+  if (!prompt && !targetApp) return invalid('What should each run do?', 'Missing `prompt`: what each run starts with. Read the event with {{ event.data.<field> }} (connector and App events) or {{ body.<field> }} (webhooks). If you did send it, it did not arrive: send this call from codemode.')
   const badPrompt = prompt ? cliArgProblem('prompt', prompt, 'text') : null
   if (badPrompt) return invalid('What should each run do?', badPrompt)
 
