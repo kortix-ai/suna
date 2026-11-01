@@ -23737,7 +23737,9 @@
       "tabCapabilities": "Capacità",
       "summaryExcept": "{all} except {list}",
       "pinToSidebar": "Fissa nella barra laterale",
-      "unpinFromSidebar": "Rimuovi dalla barra laterale"
+      "unpinFromSidebar": "Rimuovi dalla barra laterale",
+      "spaceHelp": "Lo spazio in cui lavora questo agente: un identificatore come engineering o sales. Vuoto: intero progetto.",
+      "spacePlaceholder": "ad es. engineering"
     },
     "myKortix": {
       "allowed": "Consentito",
@@ -24760,6 +24762,29 @@
       "unarchivedToast": "#{name} ripristinato",
       "failed": "Impossibile aggiornare #{name}. Riprova."
     },
+    "blocks": {
+      "noContent": "Nessun contenuto per ora.",
+      "noUrl": "Nessun URL per ora.",
+      "noApp": "Nessuna app selezionata.",
+      "noFile": "Nessun file per ora.",
+      "loadingApp": "Caricamento app…"
+    },
+    "templates": {
+      "board": {
+        "brief": "Sintesi",
+        "text": "A cosa serve questo spazio e come contribuire.",
+        "label": "Stanza e bacheca",
+        "description": "Una bacheca per il riepilogo e i collegamenti, poi gli obiettivi."
+      },
+      "standard": {
+        "label": "Stanza, obiettivi, app e artefatti",
+        "description": "La stanza, poi i contenuti associati allo spazio."
+      },
+      "room": {
+        "label": "Solo stanza",
+        "description": "Una conversazione. Aggiungi le schede in seguito."
+      }
+    },
     "tabs": {
       "room": "Stanza",
       "goals": "Obiettivi",
@@ -24836,20 +24861,6 @@
       "title": "Spazi",
       "new": "Nuovo spazio",
       "unread": "{count, plural, one {# messaggio non letto} other {# messaggi non letti}}"
-    },
-    "templates": {
-      "standard": {
-        "label": "Stanza, Obiettivi, App e Artefatti",
-        "description": "La stanza, poi ciò che è associato allo spazio."
-      },
-      "room": {
-        "label": "Solo stanza",
-        "description": "Una conversazione. Aggiungi schede in seguito."
-      },
-      "board": {
-        "label": "Stanza e bacheca",
-        "description": "Una bacheca per la descrizione e i link, poi gli Obiettivi."
-      }
     },
     "leave": "Esci da {name}",
     "openRooms": "Apri stanze",
@@ -25190,7 +25201,9 @@
         "move": "sposta",
         "peek": "anteprima",
         "open": "apri",
-        "stop": "interrompi"
+        "stop": "interrompi",
+        "space": "Spazio",
+        "enter": "Invio"
       },
       "group": {
         "pinned": "Fissate",

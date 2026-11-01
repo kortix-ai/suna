@@ -23737,7 +23737,9 @@
       "tabCapabilities": "Capacidades",
       "summaryExcept": "{all} except {list}",
       "pinToSidebar": "Fixar na barra lateral",
-      "unpinFromSidebar": "Desafixar da barra lateral"
+      "unpinFromSidebar": "Desafixar da barra lateral",
+      "spaceHelp": "O espaço em que este agente trabalha: um identificador como engineering ou sales. Vazio: todo o projeto.",
+      "spacePlaceholder": "por exemplo, engineering"
     },
     "myKortix": {
       "allowed": "Permitido",
@@ -24760,6 +24762,29 @@
       "unarchivedToast": "#{name} desarquivado",
       "failed": "Não foi possível atualizar #{name}. Tente de novo."
     },
+    "blocks": {
+      "noContent": "Ainda não há conteúdo.",
+      "noUrl": "Ainda não há URL.",
+      "noApp": "Nenhuma app selecionada.",
+      "noFile": "Ainda não há arquivo.",
+      "loadingApp": "Carregando app…"
+    },
+    "templates": {
+      "board": {
+        "brief": "Resumo",
+        "text": "Para que serve este espaço e como ajudar.",
+        "label": "Sala e quadro",
+        "description": "Um quadro para o resumo e os links, seguido das metas."
+      },
+      "standard": {
+        "label": "Sala, metas, aplicativos e artefatos",
+        "description": "A sala e, depois, o conteúdo vinculado ao espaço."
+      },
+      "room": {
+        "label": "Somente sala",
+        "description": "Uma conversa. Adicione abas depois."
+      }
+    },
     "tabs": {
       "room": "Sala",
       "goals": "Objetivos",
@@ -24836,20 +24861,6 @@
       "title": "Espaços",
       "new": "Novo espaço",
       "unread": "{count, plural, one {# mensagem não lida} other {# mensagens não lidas}}"
-    },
-    "templates": {
-      "standard": {
-        "label": "Sala, Objetivos, Apps e Artefatos",
-        "description": "A sala, depois o que está associado ao espaço."
-      },
-      "room": {
-        "label": "Apenas sala",
-        "description": "Uma conversa. Adicione abas depois."
-      },
-      "board": {
-        "label": "Sala e quadro",
-        "description": "Um quadro para o briefing e os links, depois os Objetivos."
-      }
     },
     "leave": "Sair de {name}",
     "openRooms": "Abrir salas",
@@ -25190,7 +25201,9 @@
         "move": "mover",
         "peek": "prévia",
         "open": "abrir",
-        "stop": "parar"
+        "stop": "parar",
+        "space": "Espaço",
+        "enter": "Enter"
       },
       "group": {
         "pinned": "Fixadas",

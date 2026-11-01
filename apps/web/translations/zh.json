@@ -23737,7 +23737,9 @@
       "tabCapabilities": "能力",
       "summaryExcept": "{all} except {list}",
       "pinToSidebar": "固定到侧边栏",
-      "unpinFromSidebar": "从侧边栏取消固定"
+      "unpinFromSidebar": "从侧边栏取消固定",
+      "spaceHelp": "此智能体工作的空间：使用 engineering 或 sales 等标识符。留空表示整个项目。",
+      "spacePlaceholder": "例如 engineering"
     },
     "myKortix": {
       "allowed": "已允许",
@@ -24760,6 +24762,29 @@
       "unarchivedToast": "已取消归档 #{name}",
       "failed": "无法更新 #{name}。请重试。"
     },
+    "blocks": {
+      "noContent": "暂无内容。",
+      "noUrl": "暂无 URL。",
+      "noApp": "尚未选择应用。",
+      "noFile": "暂无文件。",
+      "loadingApp": "正在加载应用…"
+    },
+    "templates": {
+      "board": {
+        "brief": "概述",
+        "text": "此空间的用途以及如何提供帮助。",
+        "label": "聊天室和看板",
+        "description": "用于简介和链接的看板，然后是目标。"
+      },
+      "standard": {
+        "label": "聊天室、目标、应用和产物",
+        "description": "先显示聊天室，再显示关联到此空间的内容。"
+      },
+      "room": {
+        "label": "仅聊天室",
+        "description": "一个对话。稍后可添加标签页。"
+      }
+    },
     "tabs": {
       "room": "聊天室",
       "goals": "目标",
@@ -24836,20 +24861,6 @@
       "title": "空间",
       "new": "新建空间",
       "unread": "{count, plural, other {# 条未读消息}}"
-    },
-    "templates": {
-      "standard": {
-        "label": "聊天室、目标、应用和产物",
-        "description": "先是聊天室，然后是关联到此空间的内容。"
-      },
-      "room": {
-        "label": "仅聊天室",
-        "description": "一个会话。之后可以添加标签页。"
-      },
-      "board": {
-        "label": "聊天室和看板",
-        "description": "用于任务说明和链接的看板，然后是目标。"
-      }
     },
     "leave": "离开 {name}",
     "openRooms": "打开聊天室",
@@ -25190,7 +25201,9 @@
         "move": "移动",
         "peek": "预览",
         "open": "打开",
-        "stop": "停止"
+        "stop": "停止",
+        "space": "空格",
+        "enter": "回车"
       },
       "group": {
         "pinned": "已置顶",
