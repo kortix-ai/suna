@@ -9,13 +9,20 @@ const pushPageIds = () =>
   PROJECT_CUSTOMIZE_ITEMS.filter((item) => item.kind === 'item').map((item) => item.pageId);
 
 describe('PROJECT_CUSTOMIZE_ITEMS', () => {
-  test('Schedules, Secrets, Members, then Connectors, in that order', () => {
+  test('Trigger, Secrets, Members, then Connectors, in that order', () => {
     expect(PROJECT_CUSTOMIZE_ITEMS.map((item) => item.label)).toEqual([
-      'Schedules',
+      'Trigger',
       'Secrets',
       'Members',
       'Connectors',
     ]);
+  });
+
+  test('Trigger keeps the existing schedules route and page title', () => {
+    const trigger = PROJECT_CUSTOMIZE_ITEMS.find((item) => item.label === 'Trigger');
+    expect(trigger?.kind).toBe('item');
+    expect(trigger && trigger.kind === 'item' ? trigger.pageId : null).toBe('page:schedules');
+    expect(PAGE_TABS['page:schedules']).toEqual({ id: 'page:schedules', label: 'Trigger' });
   });
 
   test('every sub-page row opens a registered page, and no page is listed twice', () => {
