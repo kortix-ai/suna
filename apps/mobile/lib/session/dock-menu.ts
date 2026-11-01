@@ -66,7 +66,7 @@ export type ProjectCustomizeItem = ProjectCustomizePushItem | ProjectCustomizeHa
  * then Connectors — in that order, right above "More on kortix.com".
  */
 export const PROJECT_CUSTOMIZE_ITEMS: ProjectCustomizeItem[] = [
-  { kind: 'item', label: 'Schedules', icon: 'schedules', pageId: 'page:schedules', access: SCHEDULES_ACCESS },
+  { kind: 'item', label: 'Trigger', icon: 'schedules', pageId: 'page:schedules', access: SCHEDULES_ACCESS },
   { kind: 'item', label: 'Secrets', icon: 'secrets', pageId: 'page:secrets-nav', access: SECRETS_ACCESS },
   { kind: 'item', label: 'Members', icon: 'members', pageId: 'page:members', access: MEMBERS_ACCESS },
   { kind: 'web-handoff', label: 'Connectors', icon: 'connectors', access: CONNECTORS_ACCESS },
