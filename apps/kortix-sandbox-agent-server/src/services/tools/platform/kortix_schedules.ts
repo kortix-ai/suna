@@ -513,7 +513,10 @@ async function automate(args: Record<string, any>, context: PlatformToolContext)
   const invalid = (title: string, message: string) => fail(TOOL, 'automate', title, { kind: 'invalid', message }, context)
   const name = typeof args.name === 'string' ? args.name.trim() : typeof args.id === 'string' ? args.id.trim() : ''
   if (!TRIGGER_SLUG.test(name)) return invalid('Name the automation', '`name` is a short id: lower-case letters, digits, "-" and "_", e.g. "issue-triage".')
-  const on = typeof args.on === 'string' ? args.on.trim() : ''
+  // A call without `on` names its source by the fields it gives (a model that forgets `on` still sets it up).
+  const has = (field: string) => typeof args[field] === 'string' && args[field].trim() !== ''
+  const inferred = has('secret_env') ? 'webhook' : has('connector') && has('event') ? 'connector_event' : has('app') ? 'app_event' : has('cron') || has('every') ? 'schedule' : ''
+  const on = typeof args.on === 'string' && args.on.trim() ? args.on.trim() : inferred
   const type = AUTOMATE_ON[on as keyof typeof AUTOMATE_ON]
   if (!type) return invalid('What should it react to?', `\`on\` is one of: ${Object.keys(AUTOMATE_ON).join(', ')}.`)
   const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
@@ -563,7 +566,20 @@ async function automate(args: Record<string, any>, context: PlatformToolContext)
   }
 
   const made = await cliRun(['triggers', 'add', name, ...flags, '--apply'], context)
-  if ('error' in made) return fail(TOOL, 'automate', 'Could not set up the automation', made.error, context)
+  if ('error' in made) {
+    // A webhook secret that is missing or stored for agents: hand back the link where the person saves it
+    // for webhooks (an intake link: the value never passes through chat or this session).
+    const secret = on === 'webhook' ? String(args.secret_env).trim() : ''
+    if (secret && /webhook secret/i.test(made.error.message)) {
+      const intake = await cliRun(['secrets', 'request', secret, '--scope=connector'], context)
+      const link = 'text' in intake ? intake.text.match(/https?:\/\/\S+/)?.[0] : undefined
+      if (link) {
+        const message = `${made.error.message} Give the person this link to save ${secret} for webhooks (they paste the value there, never in chat), then call automate again: ${link}`
+        return { ...(await fail(TOOL, 'automate', `${secret} needs saving for webhooks`, { kind: 'invalid', message }, context)), data: { secret_intake_url: link } }
+      }
+    }
+    return fail(TOOL, 'automate', 'Could not set up the automation', made.error, context)
+  }
   const url = made.text.match(/webhook\s+(https?:\/\/\S+)/)?.[1]
   const reacts = on === 'connector_event' ? `${args.event} on ${args.connector}` : on === 'app_event' ? `${args.app} events` : on === 'webhook' ? 'each webhook call' : flags.find((f) => f.startsWith('--every=') || f.startsWith('--cron='))?.replace(/^--/, '').replace('=', ' ')
   return ok(

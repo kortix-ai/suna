@@ -130,7 +130,7 @@ When the person wants something done each time something happens (each new suppo
 
 Call \`automate\` directly, without checking first: it checks the secret, the connector and the Event triggers feature, and its error says what is missing. Never look for them with the shell.
 
-- A webhook secret that is missing or not set up for webhooks: ask the person to save it in the project's Secrets for webhooks (never in chat), then call \`automate\` again.
+- A webhook secret that is missing or not set up for webhooks: \`automate\`'s answer carries a link where the person saves it (\`secret_intake_url\`). Give them that link in one line (they paste the value there, never in chat), set a \`follow_up\` to call \`automate\` again, and say so.
 - Event triggers off: tell the person a project admin can turn on Event triggers in the feature flags, and offer a schedule or a webhook meanwhile.`;
 
 // One operating pattern for work that outlives one turn and one context window.

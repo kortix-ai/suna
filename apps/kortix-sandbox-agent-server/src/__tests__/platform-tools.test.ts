@@ -579,3 +579,34 @@ describe('kortix_schedules automations', () => {
     expect((result.data as { tally: Record<string, number> }).tally).toEqual({ fired: 1, skipped: 1 })
   })
 })
+
+describe('kortix_schedules automate tolerance', () => {
+  test('a missing `on` is read from the fields the call gave: secret_env is a webhook, connector + event a connector event, app an App event, cron or every a schedule', async () => {
+    fakeKortix(`'triggers add '*' --apply') printf 'Added (live)\\n' ;;`)
+    const calls_ = [
+      { args: { secret_env: 'S' }, type: 'webhook' },
+      { args: { connector: 'gmail', event: 'GMAIL_NEW_MESSAGE' }, type: 'event' },
+      { args: { app: 'watcher' }, type: 'app' },
+      { args: { every: '1d' }, type: 'cron' },
+    ]
+    for (const [i, c] of calls_.entries()) {
+      const result = await run('kortix_schedules', { action: 'automate', name: `a${i}`, prompt: 'Go.', ...c.args })
+      expect({ i, ok: result.ok }).toEqual({ i, ok: true })
+      expect(argvs()[i]).toContain(`--type=${c.type}`)
+    }
+    // Nothing to read it from: still refused, before any command.
+    expect((await run('kortix_schedules', { action: 'automate', name: 'a9', prompt: 'Go.' })).error?.kind).toBe('invalid')
+    expect(argvs()).toHaveLength(4)
+  })
+
+  test('a webhook secret that is missing or stored for agents: the result carries a link where the person saves it for webhooks', async () => {
+    fakeKortix(`'triggers add form-leads '*' --apply') echo '{"kortix_error":{"kind":"invalid","status":422,"message":"Webhook secret is not configured for webhooks (webhook_secret_delivery_mismatch)"}}' >&2; exit 1 ;;
+  'secrets request FORM_SECRET --scope=connector') printf '\\n  Hand this link to whoever has the value (FORM_SECRET)\\n  https://app.example.test/secret-intake/ksl_abc123\\n' ;;`)
+    const result = await run('kortix_schedules', { action: 'automate', name: 'form-leads', on: 'webhook', secret_env: 'FORM_SECRET', prompt: 'Draft a reply.' })
+    expect(result.ok).toBe(false)
+    expect(result.card.title).toBe('FORM_SECRET needs saving for webhooks')
+    expect(result.error?.message).toContain('https://app.example.test/secret-intake/ksl_abc123')
+    expect((result as { data?: { secret_intake_url?: string } }).data?.secret_intake_url).toBe('https://app.example.test/secret-intake/ksl_abc123')
+    expect(argvs()[1]).toBe('secrets request FORM_SECRET --scope=connector')
+  })
+})
