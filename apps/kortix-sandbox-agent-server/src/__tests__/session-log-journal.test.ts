@@ -495,6 +495,32 @@ describe('session-log journal', () => {
     await journal.stop(0)
   })
 
+  test('live turn: a compaction summary is never a live message of its own; it reaches the log inside its marker', async () => {
+    resetKortixEventBusForTests()
+    fakeApi()
+    const fake = fakeAdapter()
+    const journal = new SessionLogJournal(fake.port, { generation: 1 })
+    expect(await journal.flush()).toBe(true)
+    const frames: Array<{ type: string; payload: any }> = []
+    sessionLogEventBus().subscribe((e) => void frames.push(e), {})
+    const bus = kortixEventBus()
+    const T = 'thr_root'
+    // pi names the streaming summary as its reply, so it has a live seq too.
+    fake.liveSeq('cm', 4)
+    fake.liveSeq('cs', 5)
+    bus.publish('message.updated', { sessionID: T, info: { id: 'cm', sessionID: T, role: 'user', time: { created: 4_000 } } }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: { id: 'cm-p0', messageID: 'cm', sessionID: T, type: 'compaction', auto: true } }, T)
+    bus.publish('message.updated', { sessionID: T, info: { id: 'cs', sessionID: T, role: 'assistant', parentID: 'cm', summary: true, time: { created: 4_001 } } }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: { id: 'cs-p0', messageID: 'cs', sessionID: T, type: 'text', text: '## Goal' } }, T)
+    bus.publish('message.part.delta', { sessionID: T, messageID: 'cs', partID: 'cs-p0', field: 'text', delta: ' synthetic summary' }, T)
+    bus.publish('message.updated', { sessionID: T, info: { id: 'cs', sessionID: T, role: 'assistant', parentID: 'cm', summary: true, time: { created: 4_001, completed: 4_500 } } }, T)
+    const named = frames.map((f) => f.payload.message?.message_id ?? f.payload.message_id)
+    expect(named).toContain('cm')
+    expect(named).not.toContain('cs')
+    expect(JSON.stringify(frames)).not.toContain('synthetic summary')
+    await journal.stop(0)
+  })
+
   test('live turn: a codemode part puts when a call in its metadata.calls starts or ends, never per repeated frame', async () => {
     resetKortixEventBusForTests()
     fakeApi()

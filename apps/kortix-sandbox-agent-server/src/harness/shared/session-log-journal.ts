@@ -145,6 +145,12 @@ import { mapLimit } from '@/lib/map-limit'
 import { computeRetryDelay, MAX_RETRY_MS_DEFAULT } from './audit-relay'
 import { carryHarness, saveSeqOffsets, type HarnessCarry } from './session-log-boot'
 
+/** The assistant message a compaction streams its summary into (`summary: true`, its marker as parent). */
+function isCompactionSummary(info: unknown): boolean {
+  const i = info as { role?: unknown; summary?: unknown } | undefined
+  return i?.role === 'assistant' && i.summary === true
+}
+
 export const JOURNAL_MAX_BATCH_BYTES = 1024 * 1024
 /** The floor a 413 halves the batch limit to. */
 const JOURNAL_MIN_BATCH_BYTES = 64 * 1024
@@ -261,8 +267,10 @@ export class SessionLogJournal {
     if (event.type !== 'message.part.delta' || p?.field !== 'text' || typeof p.delta !== 'string') return
     const { sessionID: thread_id, messageID: message_id, partID: block_id } = p
     if (typeof thread_id !== 'string' || typeof message_id !== 'string' || typeof block_id !== 'string') return
-    const part = this.live.get(message_id)?.parts.get(block_id)
+    const row = this.live.get(message_id)
+    const part = row?.parts.get(block_id)
     if (part && typeof part.text === 'string') part.text += p.delta
+    if (isCompactionSummary(row?.info)) return
     sessionLogEventBus().publish('log.block.delta', { thread_id, message_id, block_id, delta: p.delta } satisfies SessionLogBlockDeltaEvent, thread_id)
   })
 
@@ -415,6 +423,12 @@ export class SessionLogJournal {
   private publishLive(): void {
     for (const [id, row] of this.live) {
       if (!row.due || !row.info) continue
+      // A compaction summary is never a message of its own: the log carries it inside its marker's
+      // `compaction` block. Put alone, it rendered as an answer the stored log never replaces.
+      if (isCompactionSummary(row.info)) {
+        row.due = false
+        continue
+      }
       const thread = row.info.sessionID
       try {
         const known = this.port.live(thread, id)
