@@ -70,8 +70,30 @@ export const CRON_MIN_INTERVAL_SECONDS = 60;
 /** Fires sampled for the shortest gap: enough for an irregular list such as `0,1 0 * * * *`. */
 const CRON_INTERVAL_SAMPLE = 32;
 
-/** Why `cron` fires more than once a minute, or null. `cron` must parse. */
+/** Answers of `cronIntervalError`, by timezone and cron. Bounded: cleared when full. */
+const cronIntervalAnswers = new Map<string, string | null>();
+const CRON_INTERVAL_ANSWERS_MAX = 1_000;
+
+/**
+ * Why `cron` fires more than once a minute, or null. `cron` must parse.
+ *
+ * Memoized by (timezone, cron). Sampling 32 fires costs about 3 ms per cron,
+ * and every manifest read validates every trigger: a project with 32 cron
+ * triggers paid about 90 ms per connector call after #11236 (prod v0.14.13).
+ * The answer depends only on the cron and the timezone: a DST change moves
+ * fires by an hour, never under a minute.
+ */
 export function cronIntervalError(cron: string, timezone = 'UTC'): string | null {
+  const key = `${timezone}\u0000${cron}`;
+  const known = cronIntervalAnswers.get(key);
+  if (known !== undefined) return known;
+  const answer = sampleCronInterval(cron, timezone);
+  if (cronIntervalAnswers.size >= CRON_INTERVAL_ANSWERS_MAX) cronIntervalAnswers.clear();
+  cronIntervalAnswers.set(key, answer);
+  return answer;
+}
+
+function sampleCronInterval(cron: string, timezone: string): string | null {
   const runs = new Cron(cron, { paused: true, timezone }).nextRuns(CRON_INTERVAL_SAMPLE);
   for (let i = 1; i < runs.length; i++) {
     if (runs[i]!.getTime() - runs[i - 1]!.getTime() < CRON_MIN_INTERVAL_SECONDS * 1000) {
