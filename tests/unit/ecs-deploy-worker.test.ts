@@ -332,7 +332,7 @@ describe('ecs-deploy.sh --service worker', () => {
     expect(run.status).toBe(0);
     expect(run.stdout).toContain(`cluster=${PREFIX} service=${PREFIX}-worker container=worker`);
     expect(run.stdout).toContain(`▶ environment copied from ${API_TD} (container api)`);
-    expect(run.stdout).toContain('✔ update-service issued (desired count 1)');
+    expect(run.stdout).toContain('✔ update-service issued (new revision, then desired count 1)');
     expect(run.stdout).toContain('rollout COMPLETED');
 
     // The worker revision keeps its own container shape (command, health
@@ -364,12 +364,17 @@ describe('ecs-deploy.sh --service worker', () => {
       { name: 'KORTIX_VERSION', value: '0.0.2-dev.new' },
     ]);
 
+    // Two calls, revision first: one call with both made ECS start a task of
+    // the old revision on a worker at 0 (dev, 2026-11-01).
     const updates = run.calls.filter((call) => call.startsWith('ecs update-service'));
-    expect(updates).toHaveLength(1);
+    expect(updates).toHaveLength(2);
     expect(updates[0]).toContain(`--service ${PREFIX}-worker`);
     expect(updates[0]).toContain(`--task-definition ${WORKER_TD_NEW}`);
-    expect(updates[0]).toContain('--desired-count 1');
     expect(updates[0]).toContain('--force-new-deployment');
+    expect(updates[0]).not.toContain('--desired-count');
+    expect(updates[1]).toContain(`--service ${PREFIX}-worker`);
+    expect(updates[1]).toContain('--desired-count 1');
+    expect(updates[1]).not.toContain('--task-definition');
   });
 
   it('removes KORTIX_PROCESS_ROLE and stamps its own KORTIX_WORKER_ENV_FROM whatever the overrides say', () => {

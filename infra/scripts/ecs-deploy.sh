@@ -921,11 +921,20 @@ echo "✔ registered $NEW_TD"
 #
 # Except the worker: Terraform creates it at 0 (it applies before the
 # migrations), and an API roll that fell back to KORTIX_PROCESS_ROLE=all scales
-# it to 0. Its own roll is what starts it, so it sets 1.
+# it to 0. Its own roll is what starts it, so it sets 1, in a SECOND call. One
+# call with the new revision and --desired-count 1 on a service at 0 tasks made
+# ECS start a task of the CURRENT revision first, then roll it (dev,
+# 2026-11-01: a task of Terraform's first revision ran with Terraform's
+# environment for minutes). The first call points the service at the new
+# revision and starts nothing while the count is 0; the second scales the new
+# revision. With the worker already at 1, the first call rolls as usual and the
+# second changes nothing.
 if [ "$SVC_KIND" = "worker" ]; then
   aws ecs update-service --region "$REGION" --cluster "$CLUSTER" --service "$SERVICE" \
-    --task-definition "$NEW_TD" --desired-count 1 --force-new-deployment >/dev/null
-  echo "✔ update-service issued (desired count 1)"
+    --task-definition "$NEW_TD" --force-new-deployment >/dev/null
+  aws ecs update-service --region "$REGION" --cluster "$CLUSTER" --service "$SERVICE" \
+    --desired-count 1 >/dev/null
+  echo "✔ update-service issued (new revision, then desired count 1)"
 else
   aws ecs update-service --region "$REGION" --cluster "$CLUSTER" --service "$SERVICE" \
     --task-definition "$NEW_TD" --force-new-deployment >/dev/null
