@@ -64,7 +64,7 @@ export const CLI_ALLOWED = [
   'whoami', 'doctor', 'validate', 'schema', 'accounts', 'members', 'groups', 'tokens', 'billing', 'projects',
   'sessions', 'session', 'chat', 'files', 'cr', 'review', 'triggers', 'automations', 'tasks', 'loops', 'loop', 'reminders', 'remind', 'connectors',
   'secrets', 'providers', 'env', 'gateway', 'apps', 'channels', 'sandboxes', 'marketplace', 'system-skills',
-  'skills', 'registry', 'agents', 'models', 'access', 'roles', 'permissions', 'perms', 'audit', 'grants', 'feedback', 'drive', 'rooms', 'peers', 'artifacts', 'help', 'version',
+  'skills', 'registry', 'agents', 'models', 'access', 'roles', 'permissions', 'perms', 'audit', 'grants', 'feedback', 'drive', 'search', 'rooms', 'peers', 'artifacts', 'help', 'version',
 ];
 
 export function denial(args: string[]): Denial | null {

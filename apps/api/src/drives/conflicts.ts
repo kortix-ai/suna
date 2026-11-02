@@ -11,6 +11,7 @@ import { driveConflicts, drives, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { conflictOriginal } from './access';
+import { noteDriveIndexDue } from './search-index/due';
 import { DRIVE_MOUNTS_METADATA_KEY, type DriveRow, driveVolume, recordedDriveMounts, refreshDriveNotes } from './service';
 import { type DriveVolume, getDriveVolume, isMissingVolume, listVolumeFiles, readVolumeFile } from './volumes';
 
@@ -22,6 +23,7 @@ const recentWrites = new Map<string, number>();
 const RECENT_MS = 15 * 60_000;
 
 export function noteDriveWrite(driveId: string): void {
+  noteDriveIndexDue(driveId);
   recentWrites.set(driveId, Date.now());
   if (recentWrites.size > 5_000) {
     const cutoff = Date.now() - RECENT_MS;
@@ -30,7 +32,7 @@ export function noteDriveWrite(driveId: string): void {
 }
 
 /** Drives worth a scan now: mounted by a running session, or written through the API lately. */
-async function activeDriveIds(): Promise<string[]> {
+export async function activeDriveIds(): Promise<string[]> {
   const ids = new Set<string>();
   const cutoff = Date.now() - RECENT_MS;
   for (const [id, at] of recentWrites) {

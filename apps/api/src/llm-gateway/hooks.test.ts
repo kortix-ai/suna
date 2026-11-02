@@ -134,6 +134,14 @@ mock.module('../billing/services/billing-gate', () => ({
 const { authorizeRequest, assertLlmBillingActive, authenticatePrincipal, recordGatewayUsage, persistGatewayTrace } =
   await import('./hooks');
 const { BillingGateError } = await import('../billing/services/billing-gate');
+// Billing admission must not need routing or candidate resolution.
+mock.module('./routing', () => ({
+  resolveGatewayRoute: async () => { throw new Error('routing is not used by billing admission'); },
+}));
+mock.module('./resolution/resolve-candidates', () => ({
+  resolveCandidates: async () => { throw new Error('resolution is not used by billing admission'); },
+}));
+const { billingVerdict } = await import('./admit');
 
 describe('authorizeRequest — billing 402 carries the real reason, not a hardcoded constant', () => {
   beforeEach(() => {
@@ -332,6 +340,22 @@ describe('assertLlmBillingActive — the wallet floor follows the credits reques
       reason: 'plan_upgrade_required',
     });
     expect(billingCalls).toBe(0);
+  });
+
+  test.each(['none', 'free'])('billing RPC preserves the %s plan refusal without a wallet hold', async (tier) => {
+    accountTier = tier;
+
+    expect(await billingVerdict('acct-1')).toEqual({
+      active: false,
+      reason: 'plan_upgrade_required',
+      message: 'Kortix-managed models require a paid plan.',
+    });
+    expect(billingCalls).toBe(0);
+  });
+
+  test('billing RPC returns the wallet hold for an entitled account', async () => {
+    expect(await billingVerdict('acct-1')).toEqual({ active: true, holdUsd: 0.01 });
+    expect(billingCalls).toBe(1);
   });
 
   test('a Kortix-billed request still gates when the account is entitled', async () => {

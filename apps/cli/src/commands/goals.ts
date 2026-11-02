@@ -366,7 +366,7 @@ export async function runGoals(argv: string[]): Promise<number> {
   if (flags.agent !== undefined && !AGENT_NAME.test(flags.agent)) return fail(`--agent "${flags.agent}" is not an agent name.`);
   if (!sub || !SUBCOMMANDS.includes(sub)) return fail(`Unknown subcommand "${sub ?? ''}". Run \`kortix goals --help\`.`);
   if (sub !== 'new' && !existsSync(drivesRoot())) {
-    return fail('Files is not mounted here (no /drives). Run kortix goals inside a session of a project with Volumes on.');
+    return fail('Files is not mounted here (no /drives). Run kortix goals inside a session on Platinum, where the Drive mounts.');
   }
   if (sub === 'ls' || sub === 'list') return listGoals(flags.json);
   if (sub === 'status') return goalStatus(rest[0], flags.json);

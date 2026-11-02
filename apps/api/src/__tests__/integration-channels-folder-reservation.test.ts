@@ -17,7 +17,6 @@ import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { accountMembers, accounts, projectMembers, projectSessions, projectSpaceMembers, projectSpaces, projects } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import * as realVolumes from '../drives/volumes';
-import * as registry from '../feature-flags/registry';
 import { config } from '../config';
 import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
@@ -38,13 +37,6 @@ mock.module('../drives/volumes', () => ({
   detachSandboxVolume: async () => {},
   execInSandbox: async () => {},
   listVolumeFiles: async (_v: string, path: string) => listing[path] ?? [],
-}));
-// This lane has no Platinum key, so `drives` is never available here; the fakes stand in for it.
-const resolveFeatureFlag = registry.resolveFeatureFlag;
-mock.module('../feature-flags/registry', () => ({
-  ...registry,
-  resolveFeatureFlag: (metadata: unknown, key: string) =>
-    key === 'drives' ? Boolean((metadata as { experimental?: { drives?: boolean } } | null)?.experimental?.drives) : resolveFeatureFlag(metadata, key as never),
 }));
 (config as { PLATINUM_API_KEY?: string }).PLATINUM_API_KEY ||= 'test-key';
 

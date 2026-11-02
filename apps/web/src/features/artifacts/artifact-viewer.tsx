@@ -78,7 +78,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
-import { drivePathToParam } from '@/features/drives/drive-path-param';
+import { drivePathToParam } from '@kortix/ui/files';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 

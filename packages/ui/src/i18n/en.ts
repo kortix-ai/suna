@@ -7453,23 +7453,23 @@ const catalog = {
     "addAccess": "Add a person, team or agent",
     "notGrantable": "This folder holds the tree together and can't be shared. Share a folder inside it.",
     "viewOnlyAccess": "Only people who can share this folder can change who has access.",
-    "noGrants": "Nobody has been given access here yet. Project managers can open every folder except people's own.",
+    "noGrants": "Nobody has been given access here yet. Project admins can open every folder.",
     "myFolder": "My folder",
-    "myFolderHint": "Your own folder: private until you share it, and your desktop in your sessions",
+    "myFolderHint": "Your own folder: only you and the project's admins can open it, and it is your desktop in your sessions",
     "sharedWithMeHint": "Folders other people shared with you",
     "sessionNoFolders": "No folders are mounted in this session.",
     "folderAccessDescription": "Choose who can open this folder and everything in it. A session gets the folder when its agent, its project or the person who started it has access.",
     "whoCanAccess": "Who can access",
     "whoCanAccessFolder": "Who can access {name}",
     "accessPanelDescription": "People, teams and agents with access get this folder and everything in it.",
-    "accessPanelRoot": "Open a folder to choose who can access it. Company is shared with everyone in the project; each person's own folder is private until they share it.",
+    "accessPanelRoot": "Open a folder to choose who can access it. Company is shared with everyone in the project. Each person's own folder opens for them and the project's admins.",
     "audienceEveryoneDescription": "Everyone who works in this project, and every session in it.",
     "audienceAdmins": "Admins only",
     "audienceAdminsShort": "Project managers can open and share it",
     "audienceAdminsDescription": "Project managers can open and share it. No session gets it until you share it.",
     "audienceOnlyYou": "Only you",
     "audienceOnlyOwner": "Only {name}",
-    "audienceOwnerDescription": "A person's own folder stays private until they share it. Admins can't open it either.",
+    "audienceOwnerDescription": "A person's own folder opens for them and the project's admins. Each time an admin opens it, its owner can see that.",
     "audienceSpecific": "Specific people, teams or agents",
     "audienceSpecificDescription": "Only the people, teams and agents you pick, plus project managers. An agent gets the folder in every one of its sessions.",
     "inheritedEveryoneNote": "Everyone in this project already has access through {path}. Change it there to narrow it.",
@@ -7495,7 +7495,6 @@ const catalog = {
     "audienceQuestion": "Who can open it?",
     "badgeEveryone": "Everyone",
     "badgePeople": "{count, plural, one {# person} other {# people}}",
-    "privateNote": "Only you can open My files, not even admins. Share a folder to give someone access.",
     "noTeamFolders": "No team folders yet.",
     "sessionFilesName": "Files",
     "sessionFilesHint": "Folders it can open",
@@ -7520,7 +7519,21 @@ const catalog = {
     "accountStorageTitle": "Files storage",
     "accountStorageDescription": "What each project's Files hold. Your plan allows {project} per project and {account} across all projects.",
     "accountStorageEmpty": "No project holds files yet.",
-    "accountStorageIncomplete": "Some projects could not be measured right now."
+    "accountStorageIncomplete": "Some projects could not be measured right now.",
+    "folderInfo": {
+      "audienceYouAndAdmins": "You and project admins",
+      "audienceOwnerAndAdmins": "Owner and admins",
+      "boxPathHint": "Where sessions see this folder. Click to copy.",
+      "pathCopied": "Copied",
+      "projectAdmins": "Project admins",
+      "adminsOpenRecorded": "Can open it. You see each time they do.",
+      "openedByAdmins": "Opened by admins",
+      "noAdminOpens": "No admin has opened this folder."
+    },
+    "folderTree": "Folders",
+    "treeYou": "{name} (You)",
+    "treeExpand": "Open {name}",
+    "treeCollapse": "Close {name}"
   },
   "genui": {
     "showData": "Show data",
@@ -9086,10 +9099,8 @@ const catalog = {
       "memoryNoteChannel": "What agents in {place} remember. Agents read this at the start of every thread.",
       "memoryNoteDm": "What {agent} remembers from this DM. It reads this at the start of every thread.",
       "off": {
-        "title": "Turn on Drive",
-        "description": "Files and memory for {place} live in Drive. Turn on Volumes in Feature flags to use them.",
-        "descriptionMember": "Files and memory for {place} live in Drive. Ask a project admin to turn it on.",
-        "action": "Open feature flags"
+        "title": "No Drive here",
+        "description": "Files and memory for {place} live in the Drive. This Kortix stores no Drive: it needs Platinum."
       }
     },
     "onboarding": {

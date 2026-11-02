@@ -2,6 +2,7 @@ import { drives } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 
 import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { isPlatinumConfigured } from '../../shared/platinum';
 import { db } from '../../shared/db';
 import { platinumUsRegion } from '../../shared/platinum-region';
 
@@ -40,7 +41,7 @@ export interface SessionPlacement {
  */
 export async function resolveSessionPlacement(projectId: string, projectMetadata: unknown): Promise<SessionPlacement> {
   const preferred = resolveSessionSandboxRegion(projectMetadata);
-  if (!projectId || !resolveFeatureFlag(projectMetadata, 'drives')) return { location: preferred, required: false };
+  if (!projectId || !isPlatinumConfigured()) return { location: preferred, required: false };
   const [drive] = await db
     .select({ region: drives.platinumVolumeRegion })
     .from(drives)

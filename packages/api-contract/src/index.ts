@@ -61,8 +61,6 @@ export const FeatureFlagMapSchema = z.object({
   us_region: z.boolean(),
   event_triggers: z.boolean(),
   notification_center: z.boolean(),
-  volumes: z.boolean(),
-  drives: z.boolean(),
   session_log_restore: z.boolean(),
   project_channels: z.boolean(),
   agent_rooms: z.boolean(),
@@ -204,6 +202,10 @@ export const ProjectSchema = z.object({
     connectors_api_discover: z.literal(true).optional(),
     /** Not a flag since 2026-11-02 (My Kortix follows kortix.yaml `builtin_agents.my_kortix` alone); always `true` for older SDK and hosts. */
     meta_agent: z.literal(true).optional(),
+    /** Not a flag since 2026-11-02 (every project has a Drive); `true` wherever the platform stores a Drive (Platinum), for older SDK, CLI and hosts. */
+    volumes: z.boolean().optional(),
+    /** Not a flag since 2026-11-02 (every project has a Drive); `true` wherever the platform stores a Drive (Platinum), for older SDK, CLI and hosts. */
+    drives: z.boolean().optional(),
   }),
   experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */

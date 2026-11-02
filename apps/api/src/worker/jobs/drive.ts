@@ -8,6 +8,8 @@
 //   answers 409 and is retried with backoff.
 // - the revocation retry: a session sandbox whose folder access narrowed but
 //   whose detach did not land is brought in line again until it does.
+// - the search indexer (see drives/search-index/indexer.ts): keeps the index
+//   of every project drive equal to its volume head.
 
 import { logger } from '../../lib/logger';
 import { platinumVolumeDeletions } from '@kortix/db';
@@ -16,6 +18,7 @@ import { runWorkerTick } from '../../shared/audit-scope';
 import { db } from '../../shared/db';
 import { configuredTimeoutMs } from '../../shared/with-timeout';
 import { runConflictScan } from '../../drives/conflicts';
+import { DRIVE_INDEX_PASS_MS, runDriveIndexPass } from '../../drives/search-index/indexer';
 import { DriveStorageError, deleteDriveVolume, driveStorageAvailable } from '../../drives/volumes';
 
 const SCAN_MS = configuredTimeoutMs('KORTIX_DRIVE_CONFLICT_SCAN_MS', 15_000, 2_000);
@@ -25,6 +28,7 @@ const MAX_BACKOFF_MS = 60 * 60_000;
 let scanTimer: ReturnType<typeof setInterval> | null = null;
 let drainTimer: ReturnType<typeof setInterval> | null = null;
 let revocationTimer: ReturnType<typeof setInterval> | null = null;
+let indexTimer: ReturnType<typeof setInterval> | null = null;
 let draining = false;
 let retryingRevocations = false;
 
@@ -105,13 +109,22 @@ export function startDriveWorkers(): void {
       );
     }, REVOCATION_TICK_MS);
   }
+  if (!indexTimer) {
+    indexTimer = setInterval(() => {
+      runWorkerTick('drive-index', runDriveIndexPass).catch((err) =>
+        logger.warn('[drives] search index pass failed:', { error: err instanceof Error ? err.message : String(err) }),
+      );
+    }, DRIVE_INDEX_PASS_MS);
+  }
 }
 
 export function stopDriveWorkers(): void {
   if (scanTimer) clearInterval(scanTimer);
   if (drainTimer) clearInterval(drainTimer);
   if (revocationTimer) clearInterval(revocationTimer);
+  if (indexTimer) clearInterval(indexTimer);
   scanTimer = null;
   drainTimer = null;
   revocationTimer = null;
+  indexTimer = null;
 }
