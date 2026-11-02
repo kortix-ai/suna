@@ -195,7 +195,8 @@ export async function postQuestion(
       return !call || connectorActionAlwaysRuns({ principal, ...call });
     };
     let m = tappable ? stepMessage(port, pendingId, questions, NO_STEPS) : list;
-    if (!(await runsUnattended(m))) {
+    // Questions shown one at a time reach the chat by edits the gate never sees: it decides on the list, which holds every one.
+    if (!(await runsUnattended(m)) || (m !== list && isStepped(questions) && !(await runsUnattended(list)))) {
       logger.info('[channel] question left to the agent: its own call needs approval', { platform: target.platform, sessionId });
       return false;
     }

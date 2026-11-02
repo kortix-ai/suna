@@ -1168,6 +1168,25 @@ describe('Telegram questions posted by the server — migrated PostgreSQL', () =
     expect(calls).toEqual([]);
   });
 
+  test('questions shown one at a time are checked as one message with every question: a rule on any of them keeps the ask with the agent', async () => {
+    const sessionId = await askedSession('2006');
+    const two = [
+      { header: 'Fruit', question: 'Favourite fruit?', options: [{ label: 'Apple' }, { label: 'Banana' }] },
+      { header: 'Colour', question: 'Favourite colour?', options: [{ label: 'Red' }, { label: 'Blue' }] },
+    ];
+    const posted = async () => (await ask(sessionId, two)).ok;
+    // The second question reaches the chat only by an edit of the first one's message.
+    for (const text of ['/Favourite colour/', '/Favourite fruit/']) {
+      await rule('require_approval', [{ arg: 'text', match: text }]);
+      expect(await posted()).toBe(false);
+      await clearRules();
+    }
+    expect(calls).toEqual([]);
+    await rule('require_approval', [{ arg: 'text', match: '/Favourite size/' }]);
+    expect(await posted()).toBe(true);
+    expect(String(calls[0]!.body.text)).toStartWith('Question 1 of 2 · Fruit\n');
+  });
+
   test('a bot connected before buttons is subscribed to presses on its own webhook, with its own secret', async () => {
     const sessionId = await askedSession('988');
     const unclaimed = () => db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, buttonsClaim));
