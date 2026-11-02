@@ -134,12 +134,23 @@ describe('re-anchoring budget for one read', () => {
     expect(results.at(-1)).toEqual({ start: null, end: null, outdated: true });
   });
 
-  test('an exact match costs no budget and resolves even when the budget is spent', () => {
-    const budget = createArtifactReanchorBudget();
-    budget.remaining = 0;
+  test('an exact match is cheap: each scan charges an eighth of the text, and a spent budget scans nothing', () => {
+    const text = 'Revenue grew. churn fell to 2.1%. Done.';
     const exact = anchor('churn fell to 2.1%');
-    expect(reanchorArtifactText('Revenue grew. churn fell to 2.1%. Done.', exact, budget)).toEqual({ start: 14, end: 32, outdated: false });
-    expect(budget.remaining).toBe(0);
+    const budget = createArtifactReanchorBudget();
+    expect(reanchorArtifactText(text, exact, budget)).toEqual({ start: 14, end: 32, outdated: false });
+    expect(ARTIFACT_REANCHOR_READ_UNITS - budget.remaining).toBe(2 * Math.ceil(text.length / 8));
+    budget.remaining = 0;
+    expect(reanchorArtifactText(text, exact, budget)).toEqual({ start: null, end: null, outdated: true });
+  });
+
+  test('many unmatched quotes on a 2 MB document stay within one read budget (Strix: exact scans were unbounded)', () => {
+    const big = 'Plain filler sentence for a large document body. '.repeat(40_000);
+    const budget = createArtifactReanchorBudget();
+    const started = performance.now();
+    for (let i = 0; i < 200; i++) reanchorArtifactText(big, anchor(`missing quote number ${i} zz`), budget);
+    expect(performance.now() - started).toBeLessThan(1_500);
+    expect(budget.remaining).toBeLessThanOrEqual(0);
   });
 
   test('a spent budget marks a short fuzzy quote outdated instead of scanning the text', () => {

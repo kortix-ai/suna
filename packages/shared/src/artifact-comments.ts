@@ -113,11 +113,11 @@ const MAX_WORD_HITS = 1 << 16;
 const MAX_ALIGN_CELLS = 1 << 20;
 
 /**
- * The fuzzy re-anchoring work one read may spend across all its threads, in
- * scanned code units plus alignment cells (about 100 ms). A list re-anchors
- * every stored thread, and a commenter can store many unmatched quotes, so the
- * cost of one read must not grow with the thread count. Exact matches are free;
- * fuzzy work past the budget is outdated.
+ * The re-anchoring work one read may spend across all its threads (about 100 ms):
+ * fuzzy-scanned code units plus alignment cells, and an eighth of a code unit
+ * per natively exact-scanned one. A list re-anchors every stored thread, and a
+ * commenter can store many unmatched quotes, so the cost of one read must not
+ * grow with the thread count. A thread past the budget is outdated for that read.
  */
 export const ARTIFACT_REANCHOR_READ_UNITS = 1 << 24;
 
@@ -289,9 +289,9 @@ function longTextPlace(text: string, anchor: ArtifactTextAnchor, budget: Artifac
 }
 
 /**
- * Where a text anchor sits in `text` now. An exact match is free. Fuzzy matching
- * spends `budget`; a caller that re-anchors many threads in one read passes one
- * shared budget (createArtifactReanchorBudget), so the read's cost is bounded.
+ * Where a text anchor sits in `text` now. Every scan spends `budget`; a caller
+ * that re-anchors many threads in one read passes one shared budget
+ * (createArtifactReanchorBudget), so the read's cost is bounded.
  */
 export function reanchorArtifactText(
   text: string,
@@ -301,10 +301,16 @@ export function reanchorArtifactText(
   const { quote, prefix, suffix } = anchor;
   const length = quote.length;
   if (!length || length > ARTIFACT_TEXT_QUOTE_MAX) return { ...outdated };
+  // A native exact scan costs about an eighth of a fuzzy scan per code unit.
+  const scan = Math.ceil(text.length / 8);
+  if (budget.remaining <= 0) return { ...outdated };
+  budget.remaining -= scan;
   const exact = text.indexOf(quote);
   if (exact !== -1) {
+    budget.remaining -= scan;
     if (text.indexOf(quote, exact + 1) === -1) return position({ start: exact, end: exact + length });
     const context = prefix + quote + suffix;
+    budget.remaining -= 2 * scan;
     const start = text.indexOf(context);
     if (start === -1 || text.indexOf(context, start + 1) !== -1) return { ...outdated };
     return position({ start: start + prefix.length, end: start + prefix.length + length });
