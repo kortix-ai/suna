@@ -49,6 +49,7 @@ import {
 import {
   pendingSessionPromptForRecovery,
   provisioningFailurePresentation,
+  recoveryPromptToSendOnRetry,
 } from '@kortix/ui/session/status/provisioning-failure';
 import { isFirstPromptRow } from '@kortix/ui/session/composer/queue-projection';
 import {
@@ -262,8 +263,12 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const { data: currentProjectSession } = useProjectSession(projectId, sessionId, {
     enabled: !!user && !!projectId,
   });
-  const pendingPrompt = pendingSessionPromptForRecovery(sessionId, currentProjectSession?.metadata);
   const initialRuntimeSessionId = findInitialSessionPin(currentProjectSession);
+  const pendingPrompt = pendingSessionPromptForRecovery(
+    sessionId,
+    currentProjectSession?.metadata,
+    initialRuntimeSessionId,
+  );
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the
   // server-resolved OpenCode pin), the sandbox switch, the SSE stream, readiness
@@ -361,14 +366,16 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // not re-stashed, so this retry is the last time it can be lost. A session
     // created by the current API needs nothing: its first prompt has been a
     // durable row since the create transaction, and the restart alone re-arms
-    // delivery.
-    if (pendingPrompt) {
+    // delivery. An `initial_prompt` (agent, trigger, channel sessions) is
+    // re-delivered by the restart itself, so it is shown but never sent here.
+    const promptToSend = recoveryPromptToSendOnRetry(pendingPrompt);
+    if (promptToSend) {
       void startSessionWithPrompt(projectId, sessionId, {
-        parts: [{ type: 'text' as const, text: pendingPrompt.text }],
+        parts: [{ type: 'text' as const, text: promptToSend.text }],
         overrides: {
-          ...(pendingPrompt.agent ? { agent: pendingPrompt.agent } : {}),
-          ...(pendingPrompt.model ? { model: pendingPrompt.model } : {}),
-          ...(pendingPrompt.variant ? { variant: pendingPrompt.variant } : {}),
+          ...(promptToSend.agent ? { agent: promptToSend.agent } : {}),
+          ...(promptToSend.model ? { model: promptToSend.model } : {}),
+          ...(promptToSend.variant ? { variant: promptToSend.variant } : {}),
         },
       })
         .then(() => {
