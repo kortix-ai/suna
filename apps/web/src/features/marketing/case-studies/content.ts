@@ -19,9 +19,13 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  *    (engineer and QA agents, Linear). Kortix: the `kortix-ai/company`
  *    project (engineering factory, compliance agency, sales, support and
  *    marketing agents).
- *  - The hedge fund is Kortix's own desk (`kortix-ai/hedgefund`): real
- *    public SEC data, simulated capital and trades, a person at every gate.
- *    Always say it is ours and that the capital is simulated.
+ *  - The asset manager is Kortix's own simulated fund (`kortix-ai/hedgefund`,
+ *    its CASE-STUDY.md): real public market data, simulated investors,
+ *    capital and trades, agents front to back office, a person at every
+ *    gate. Always say it is ours and that the capital is simulated.
+ *  - Bodies stay minimal (founder, 2026-11-02): one or two short sentences
+ *    on what the agents do there. Only the WRITER card says "built from
+ *    Kortix's open-source code".
  *  - Every other case is a CLASS, never a name. Customer names are blocked
  *    commit terms (CLAUDE.md, `scripts/check-blocked-terms.sh`). Keep each
  *    class broad enough that it does not identify the company: no founding
@@ -31,9 +35,9 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  *    or systems: they identify it.
  *  - Only what the engagement really contains. No metric, no quote, no
  *    outcome number until the company signs one off.
- *  - The hedge fund and executive search logos are lockups Kortix drew for
- *    these cards (founder, 2026-11-02; brand decision D35): a symbol plus
- *    the class as type ("STRUCTURED CREDIT", "EXECUTIVE SEARCH"). They are
+ *  - The asset manager and executive search logos are lockups Kortix drew
+ *    for these cards (founder, 2026-11-02; brand decision D35): a symbol
+ *    plus the class as type ("ASSET MANAGEMENT", "EXECUTIVE SEARCH"). They are
  *    not the firm's real logo. Never put a firm name in them, and never copy
  *    a real firm's logo.
  */
@@ -67,12 +71,12 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       category: 'Research',
       org: 'Hong Kong Institute of AI for Science, City University of Hong Kong',
       title: 'SciencePal: a science agent for researchers.',
-      body: 'The institute’s AI research assistant, built from Kortix’s open-source code. It searches large literature databases and cites its sources, and it runs specialist agents for protein design and materials science, from property prediction to experiment design.',
+      body: 'The institute’s AI research assistant. It searches the scientific literature with citations and runs agents for protein design and materials science.',
       facts: [
         'Literature search with citations',
         'A protein design agent',
         'A materials science agent',
-        'Built from Kortix’s open-source code',
+        'Property prediction to experiment design',
       ],
     },
     {
@@ -81,7 +85,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       category: 'Cloud infrastructure',
       org: 'Platinum',
       title: 'An autonomous cloud company.',
-      body: 'Platinum is a sandbox cloud for AI agents, run by agents on Kortix. Engineering agents take Linear issues, build and test the change and open the pull request. QA agents drive the real dashboard, record every flow and report to Slack with the video. People set the direction and approve.',
+      body: 'A sandbox cloud for AI agents, run by agents on Kortix. Agents ship changes from Linear issues and test every flow. People approve.',
       facts: [
         'Engineering agents ship from Linear issues',
         'QA agents test every flow on video',
@@ -95,7 +99,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       category: 'Telecommunications',
       org: 'A leading US telecommunications infrastructure company',
       title: 'Fiber network design, run by agents.',
-      body: 'The company runs its engineering and operations on Kortix, self-hosted in its own cloud. Agents design outside-plant fiber routes from GIS data and satellite imagery for an engineer to review, build bills of materials from the GIS layers, track schedule health across projects and keep live dashboards current on a schedule.',
+      body: 'Agents design fiber routes from GIS data and imagery, build bills of materials and track every project, self-hosted in the company’s own cloud.',
       facts: [
         'Fiber routes designed from GIS and imagery',
         'Bills of materials from GIS layers',
@@ -109,7 +113,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       category: 'Software',
       org: 'Kortix',
       title: 'Kortix, run on Kortix.',
-      body: 'Our own company is one Kortix project. An intake agent triages every new issue and hands it to a worker agent, which fixes it on its own machine and opens the pull request. A compliance agency keeps our SOC 2 policies and evidence current. People review, approve and sign.',
+      body: 'Our company is one Kortix project. Agents triage and fix issues, keep SOC 2 evidence current and run sales and support. People approve.',
       facts: [
         'Issues triaged by an intake agent',
         'Up to 16 worker agents at once',
@@ -118,22 +122,22 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       ],
     },
     {
-      id: 'hedge-fund',
+      id: 'asset-management',
       logo: {
-        src: '/media/case-studies/hedge-fund-desk.svg',
-        alt: 'An AI-run hedge fund desk.',
-        width: 398,
+        src: '/media/case-studies/asset-management.svg',
+        alt: 'An AI-run asset manager.',
+        width: 409,
         height: 100,
       },
-      category: 'Finance',
+      category: 'Asset management',
       org: 'Built and run by Kortix',
-      title: 'An AI-run hedge fund desk.',
-      body: 'Our own structured-credit desk, on real public SEC data. Agents pull every new asset-backed deal from EDGAR, extract each figure with its page citation, argue the deal through six analyst lenses, red-team the verdict and draft the memo. A person decides at investment committee.',
+      title: 'An AI-run asset manager.',
+      body: 'Our own fund, on real market data with simulated capital. Agents research, trade, value the book, strike NAV and run compliance. A person signs every decision.',
       facts: [
-        'New deals pulled from EDGAR',
-        'Every figure cited to its page',
-        'Six analyst lenses and a red team',
-        'Real public data, simulated capital',
+        'Research, IC and trading',
+        'Risk, valuation and NAV',
+        'Compliance and investor reporting',
+        'Real market data, simulated capital',
       ],
     },
     {
@@ -147,7 +151,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       category: 'Professional services',
       org: 'An international executive search firm',
       title: 'An executive search firm, rebuilt around agents.',
-      body: 'A firm with four decades of history and offices on three continents, restructured to run on agents. Agents research candidates, prepare client and pitch materials, and run the firm’s internal operations.',
+      body: 'Agents research candidates, prepare client and pitch materials and run the firm’s internal operations.',
       facts: [
         'Candidate research agents',
         'Client and pitch materials',
@@ -161,7 +165,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       category: 'Enterprise AI',
       org: 'WRITER',
       title: 'The enterprise AI platform, built from Kortix’s open-source code.',
-      body: 'WRITER built its core agent platform from Kortix’s open-source code. Enterprises such as Salesforce, Vanguard, KPMG, Dropbox and H&R Block run their marketing, sales and support agents on WRITER.',
+      body: 'Enterprises such as Salesforce, Vanguard and KPMG run their marketing, sales and support agents on WRITER.',
       facts: [
         'Core platform built from Kortix’s code',
         'Salesforce, Vanguard and KPMG',
@@ -175,7 +179,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       category: 'Cloud cost',
       org: 'Wring',
       title: 'Autonomous AWS cost optimization.',
-      body: 'Wring cuts its customers’ AWS bills with agents on Kortix. The agents find the AWS credit programs each customer qualifies for, prepare the applications and follow each one through to the decision. The customer approves, the agents do the paperwork.',
+      body: 'Agents find the AWS credit programs each customer qualifies for and prepare the applications. The customer approves.',
       facts: [
         'Credit programs found per customer',
         'Applications prepared by agents',

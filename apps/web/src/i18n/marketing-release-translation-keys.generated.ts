@@ -23,29 +23,30 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   'Case studies': 'text6b1df2ba950c',
   'Case studies.': 'text0949ea4157c6',
   'SciencePal: a science agent for researchers.': 'text8ce3e896977d',
-  'The institute’s AI research assistant, built from Kortix’s open-source code. It searches large literature databases and cites its sources, and it runs specialist agents for protein design and materials science, from property prediction to experiment design.':
-    'textd5c8e08391bf',
+  'The institute’s AI research assistant. It searches the scientific literature with citations and runs agents for protein design and materials science.':
+    'textbc76493f60fc',
   'An autonomous cloud company.': 'text6e78e53edc57',
-  'Platinum is a sandbox cloud for AI agents, run by agents on Kortix. Engineering agents take Linear issues, build and test the change and open the pull request. QA agents drive the real dashboard, record every flow and report to Slack with the video. People set the direction and approve.':
-    'textd60b9e2162fb',
+  'A sandbox cloud for AI agents, run by agents on Kortix. Agents ship changes from Linear issues and test every flow. People approve.':
+    'text84a280e51c67',
   'Fiber network design, run by agents.': 'textfef24d788a3e',
-  'The company runs its engineering and operations on Kortix, self-hosted in its own cloud. Agents design outside-plant fiber routes from GIS data and satellite imagery for an engineer to review, build bills of materials from the GIS layers, track schedule health across projects and keep live dashboards current on a schedule.':
-    'texta03de23a9f48',
+  'Agents design fiber routes from GIS data and imagery, build bills of materials and track every project, self-hosted in the company’s own cloud.':
+    'textc22871a19ba5',
   'Kortix, run on Kortix.': 'textf2d996d89263',
-  'Our own company is one Kortix project. An intake agent triages every new issue and hands it to a worker agent, which fixes it on its own machine and opens the pull request. A compliance agency keeps our SOC 2 policies and evidence current. People review, approve and sign.':
-    'text2a5f5b48cbfb',
-  'An AI-run hedge fund desk.': 'text0c3fe4098db1',
-  'Our own structured-credit desk, on real public SEC data. Agents pull every new asset-backed deal from EDGAR, extract each figure with its page citation, argue the deal through six analyst lenses, red-team the verdict and draft the memo. A person decides at investment committee.':
-    'text2ddef32a065d',
+  'Our company is one Kortix project. Agents triage and fix issues, keep SOC 2 evidence current and run sales and support. People approve.':
+    'text34ff4020f800',
+  'An AI-run asset manager.': 'text75230f197e2d',
+  'Asset management': 'textacf058bd8604',
+  'Our own fund, on real market data with simulated capital. Agents research, trade, value the book, strike NAV and run compliance. A person signs every decision.':
+    'text298b410da754',
   'An executive search firm, rebuilt around agents.': 'text0213c53e2373',
-  'A firm with four decades of history and offices on three continents, restructured to run on agents. Agents research candidates, prepare client and pitch materials, and run the firm’s internal operations.':
-    'text34d46d84a6a6',
+  'Agents research candidates, prepare client and pitch materials and run the firm’s internal operations.':
+    'text2c5d3af9483a',
   'The enterprise AI platform, built from Kortix’s open-source code.': 'textc81f1483737e',
-  'WRITER built its core agent platform from Kortix’s open-source code. Enterprises such as Salesforce, Vanguard, KPMG, Dropbox and H&R Block run their marketing, sales and support agents on WRITER.':
-    'textae75b4c89c6d',
+  'Enterprises such as Salesforce, Vanguard and KPMG run their marketing, sales and support agents on WRITER.':
+    'text4a271fd37da2',
   'Autonomous AWS cost optimization.': 'text2b7f6fe76645',
-  'Wring cuts its customers’ AWS bills with agents on Kortix. The agents find the AWS credit programs each customer qualifies for, prepare the applications and follow each one through to the decision. The customer approves, the agents do the paperwork.':
-    'textbe861096c12b',
+  'Agents find the AWS credit programs each customer qualifies for and prepare the applications. The customer approves.':
+    'text1d5d31148fec',
   'Arcadia · Identity': 'texte5ef926b9bd7',
   'Arcadia · Groups': 'text50e40164f19a',
   'From your directory': 'texta67b277c1791',
