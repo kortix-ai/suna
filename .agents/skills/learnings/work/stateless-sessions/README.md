@@ -1,6 +1,6 @@
 ---
 title: Stateless sessions — every session's /workspace and conversation on its own volume
-status: in progress (branch `stateless-sessions`), stage 1
+status: stage 1 on dev (#11503, 18d18d0a05); stage 2 designed, not started
 owner: Marko (decision), Dimitrije (Platinum volume stability), session agent (Kortix side)
 updated: 2026-11-02
 ---
@@ -29,10 +29,31 @@ the off switch. Then delete the stateful path. Then `/Sessions` in the Drive.
 
 1. **Retry `volume_flushing`** instead of failing the session (this branch).
    Daily comparison query below.
-2. **pi's session JSONL on the volume** (`/workspace/.kortix/session.jsonl`,
-   pi's header plus one entry per line), written as the conversation goes. A new
-   box reads it; the Postgres rebuild stays the fallback. Postgres keeps
-   receiving the log as today.
+2. **pi reads its conversation from the volume, always** (decided 2026-11-02).
+   In one line: point pi's state folder at the session volume. Design:
+   - **Volume layout v2, new stateless sessions only** (the version is recorded
+     in the session's `metadata.workspace_volume`; existing volume sessions keep
+     layout 1). The volume mounts at `/session`: the checkout at
+     `/session/workspace` (`KORTIX_WORKSPACE`), kortixd's state at
+     `/session/state` (`KORTIX_RUNTIME_STATE_DIR`, so pi's store is
+     `/session/state/pi` and `session-log-restore.json` sits beside it).
+     `/workspace` is a link to `/session/workspace`, so tools and skills see no
+     change. Not inside the checkout: `git clean -fdx` would delete it.
+     Touches: `platform/services/workspace-volume.ts` (mount path),
+     `apps/sandbox/entrypoint.sh` (mountpoint check, the link), the workspace
+     provider (target folder), a sandbox image rebuild.
+   - **pi's store as append-only JSONL** (pi's header, then one entry per line)
+     instead of one JSON dump rewritten per turn: on a volume that saves every
+     5 s, a 25 MB session would otherwise upload 25 MB each time.
+   - **Boot:** the box reads the manifest (one request, 0.2–0.6 s from
+     eu-west). Volume copy current → start from it, no download. Postgres
+     newer (an old box posted turns, then died before its last save) → today's
+     rebuild. The manifest check stays: it is the generation fence that keeps
+     two boxes of one session from both writing.
+   - Postgres keeps receiving the log; the page, shares, search and purge keep
+     reading it.
+   - Verify on dev: reopen time before and after; a 25 MB session reopens
+     complete; an old box killed after its last post comes back from Postgres.
 3. **72 h soak**: flag on for every dev project and Kortix's own prod projects.
    Go on only if all hold:
    - stateless fail rate ≤ 2 × stateful (stateful was 1.2 % on prod, 2026-10-26 … 11-02);
