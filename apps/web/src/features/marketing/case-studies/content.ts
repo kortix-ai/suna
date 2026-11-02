@@ -48,7 +48,8 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  *    per-industry lifecycles enterprise AI vendors publish: each walks one
  *    lifecycle end to end and names the person who approves. They name no
  *    client and carry no metric or quote. Their marks are drawn by Kortix;
- *    some carry invented letters (N, H, m, ro), never a real client's initials.
+ *    some carry invented letters (N, Ry, H, m, ro), never a real client's
+ *    initials.
  *  - The asset manager and executive search logos are symbols Kortix drew
  *    for these cards (founder, 2026-11-02; brand decision D36): no type at
  *    all. They are not the firm's real logo. Never add a name or text to
@@ -106,8 +107,8 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'banking',
       logo: {
-        src: '/media/case-studies/banking.svg?v=07cb85b7',
-        alt: 'A banking symbol',
+        src: '/media/case-studies/banking.svg?v=6488a2fe',
+        alt: 'A banking mark',
         width: 100,
         height: 100,
       },
@@ -142,8 +143,8 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'insurance',
       logo: {
-        src: '/media/case-studies/insurance.svg?v=8dd04f10',
-        alt: 'An insurance symbol',
+        src: '/media/case-studies/insurance.svg?v=430db859',
+        alt: 'An insurance mark',
         width: 100,
         height: 100,
       },
