@@ -44,8 +44,9 @@ mock.module('./session-runtime-context', () => ({
 }));
 // The default chain a fresh account's model pin flows through. Nothing is
 // stored, so it resolves to "the platform default applies".
+let servable = (_model: string) => true;
 mock.module('../../llm-gateway/resolution/default-model', () => ({
-  isModelServableForAccount: async () => true,
+  isModelServableForAccount: async ({ model }: { model: string }) => servable(model),
   resolveEffectiveModel: async () => ({ model: null, source: 'platform' as const }),
 }));
 mock.module('../../llm-gateway/models/served-managed-models', () => ({
@@ -72,6 +73,7 @@ beforeEach(() => {
   billing = { ok: true };
   inserted = undefined;
   mayUseManagedModels = true;
+  servable = () => true;
   config.KORTIX_URL = 'https://api.example.test';
   // A non-default operator config, so the free-tier test can tell the RESOLVED
   // platform default apart from the PAID path's raw config fallback.
@@ -153,4 +155,40 @@ test('a paid account boots on the resolved platform default (the configured id w
     opencode_model: 'kortix/deepseek-v4.1-flash',
     opencode_model_source: 'platform',
   });
+});
+
+// 2026-11-02 prod: the web names the model only on the first prompt. A free
+// account has no default, so its box booted with no model and pi refused to
+// start ("pi harness has no model"). The first prompt's pick is the boot model.
+test('a free-tier account with no default boots on the model its first prompt picked', async () => {
+  mayUseManagedModels = false;
+  const result = await createProjectSession({
+    project, userId: 'synthetic-user', requestingPrincipalType: 'human',
+    body: { pending_prompt: { text: '', agent: 'default', model: { providerID: 'claude-agent', modelID: 'opus' } } },
+  });
+  expect(result.error).toBeUndefined();
+  expect(inserted?.metadata).toMatchObject({ opencode_model: 'claude-agent/opus', opencode_model_source: 'explicit' });
+});
+
+test('a first-prompt pick the account cannot use, or an unknown Claude id, is not the boot model', async () => {
+  mayUseManagedModels = false;
+  servable = (model) => model !== 'openrouter/x';
+  for (const model of [{ providerID: 'openrouter', modelID: 'x' }, { providerID: 'claude-agent', modelID: 'gpt-9' }]) {
+    inserted = undefined;
+    const result = await createProjectSession({
+      project, userId: 'synthetic-user', requestingPrincipalType: 'human',
+      body: { pending_prompt: { text: '', model } },
+    });
+    expect(result.error).toBeUndefined();
+    expect(((inserted as { metadata?: Record<string, unknown> } | undefined)?.metadata)?.opencode_model).toBeUndefined();
+  }
+});
+
+test('a paid account keeps its default as the boot model; the first prompt still carries its pick', async () => {
+  const result = await createProjectSession({
+    project, userId: 'synthetic-user', requestingPrincipalType: 'human',
+    body: { pending_prompt: { text: '', model: { providerID: 'claude-agent', modelID: 'opus' } } },
+  });
+  expect(result.error).toBeUndefined();
+  expect(inserted?.metadata).toMatchObject({ opencode_model: 'kortix/deepseek-v4.1-flash', opencode_model_source: 'platform' });
 });
