@@ -35,6 +35,7 @@ import {
   ShareNetworkIcon,
   TerminalWindowIcon,
   UserIcon,
+  UsersIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -48,7 +49,7 @@ import {
   parentDrivePath,
   toDrivePath,
 } from './drive-explorer-source';
-import { DriveOverview, boxPathOf } from './drive-overview';
+import { DriveOverview, useBoxPaths } from './drive-overview';
 import { FolderAccessDialog } from './folder-access-dialog';
 import { FolderAccessPanel } from './folder-access-panel';
 import { folderAudience } from './folder-audience';
@@ -172,7 +173,9 @@ function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }
   const path = toDrivePath(currentPath);
   const folder = useDriveFolder(drive.driveId, path);
   const access = folder.data?.access ?? 'none';
-  const canWrite = access === 'write' || access === 'manage';
+  // People (`/Users`) holds the tree together: nothing is made or shared there.
+  const structural = path === PEOPLE_ROOT;
+  const canWrite = !structural && (access === 'write' || access === 'manage');
   const [sharing, setSharing] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
 
@@ -198,6 +201,7 @@ function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }
     [canWrite, maxUploadBytes],
   );
   const open = (p: string) => navigateToPath(p.replace(/^\//, '') || '/');
+  const boxPath = useBoxPaths(drive)(path);
   const here = locateInDrive(path, drive, t);
   const HereGlyph = here.icon;
   // My files or a shared folder reads as its own root: `Users/<name>` and the
@@ -220,9 +224,9 @@ function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }
   // Where sessions see the folder, then Share. A folder the caller only
   // passes through (on the way to a share) has no sharing they may see.
   const trailing =
-    path !== '/' && access !== 'none' ? (
+    path !== '/' && !structural && access !== 'none' ? (
       <>
-        <BoxPathChip path={boxPathOf(path, drive.personalFolder)} />
+        {boxPath ? <BoxPathChip path={boxPath} /> : null}
         <Popover open={accessOpen} onOpenChange={setAccessOpen}>
           <PopoverTrigger asChild>
             <Button type="button" variant="secondary" size="sm" className="gap-1.5 active:scale-[0.96]">
@@ -305,6 +309,8 @@ function locateInDrive(
   if (personal && isUnder(path, personal)) return { icon: Home, label: t('myDrive'), base: personal };
   const shared = (drive.sharedWithMe ?? []).find((f) => isUnder(path, f.path));
   if (shared) return { icon: FolderSimpleIcon, label: shared.path.split('/').filter(Boolean).pop() ?? shared.path, base: shared.path };
+  // Every person's own folder, for admins: People, not the storage name `Users`.
+  if (isUnder(path, PEOPLE_ROOT)) return { icon: UsersIcon, label: t('overview.people'), base: PEOPLE_ROOT };
   return { icon: HardDriveIcon, label: t('driveLabel') };
 }
 
@@ -331,7 +337,8 @@ function FolderTitle({ drive, path, label }: { drive: Drive; path: string; label
   const personal = drive.personalFolder;
   const inPeople = isUnder(path, PEOPLE_ROOT);
   let meta: ReactNode = null;
-  if (personal && isUnder(path, personal)) meta = drive.access === 'manage' ? t('overview.audienceYouAndAdmins') : t('overview.audienceYou');
+  if (path === PEOPLE_ROOT) return <PlaceTitle icon={UsersIcon} title={label} />;
+  if (personal && isUnder(path, personal)) meta = t('overview.audienceYouAndAdmins');
   else if (inPeople) meta = (
     <>
       <LockSimpleIcon className="size-3" />

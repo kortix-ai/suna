@@ -13,6 +13,12 @@ export const DRIVE_ADMIN_ACCESS_ACTION = 'drive.folder.admin_access';
 
 /** How far back the owner's list reaches. */
 const ADMIN_READS_DAYS = 90;
+/**
+ * One open per (folder, admin) per this window: browsing a folder lists it,
+ * polls it and fetches each thumbnail, which is one visit, not dozens. The
+ * audit log gets one event per counted open too.
+ */
+const OPEN_WINDOW = sql`interval '10 minutes'`;
 
 export interface AdminFolderAccess {
   driveId: string;
@@ -27,16 +33,22 @@ export interface AdminFolderAccess {
   level: string;
 }
 
-/** Record one open: the day's row for (folder, admin) and an audit event. Never throws. */
+/**
+ * Record an open: the day's row for (folder, admin), counted once per
+ * 10 minutes, and an audit event for each counted open. Never throws.
+ */
 export async function noteAdminFolderAccess(access: AdminFolderAccess): Promise<void> {
   try {
-    await db
+    const counted = await db
       .insert(driveFolderAdminReads)
       .values({ driveId: access.driveId, folder: access.folder, adminUserId: access.adminUserId, day: sql`(now() at time zone 'utc')::date` })
       .onConflictDoUpdate({
         target: [driveFolderAdminReads.driveId, driveFolderAdminReads.folder, driveFolderAdminReads.adminUserId, driveFolderAdminReads.day],
         set: { lastAt: sql`now()`, opens: sql`${driveFolderAdminReads.opens} + 1` },
-      });
+        setWhere: sql`${driveFolderAdminReads.lastAt} < now() - ${OPEN_WINDOW}`,
+      })
+      .returning({ opens: driveFolderAdminReads.opens });
+    if (counted.length === 0) return;
     await recordAuditEvent({
       accountId: access.accountId,
       projectId: access.projectId,

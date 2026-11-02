@@ -5,8 +5,10 @@ import { Skeleton } from '@kortix/ui/skeleton';
 import { useAuth } from '@/features/providers/auth-provider';
 import { EditorSection } from '@kortix/ui/customize/sections/view/agent-editor-primitives';
 import { useFolderAccess } from '@kortix/ui/files';
-import { useTranslations } from '@/i18n/use-translations';
-import { LockIcon, ShareNetworkIcon } from '@phosphor-icons/react';
+import { useDriveAdminReads } from '@kortix/sdk/react';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
+import { LockIcon, ShareNetworkIcon, ShieldCheckIcon } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
 import { AccessRow, GrantAvatar, folderName } from './folder-access-dialog';
@@ -64,6 +66,13 @@ export function FolderAccessPanel({
               label={audience.owner.principalId === user?.id ? t('you') : audience.owner.label}
               meta={t('ownFolder')}
             />
+          ) : null}
+          {audience.owner ? (
+            <AccessRow
+              avatar={<ShieldCheckIcon className="text-muted-foreground size-6 shrink-0 p-1" />}
+              label={t('overview.projectAdmins')}
+              meta={t('overview.adminsOpenRecorded')}
+            />
           ) : restricted ? (
             <AccessRow
               avatar={<LockIcon className="text-muted-foreground size-6 shrink-0 p-1" />}
@@ -91,6 +100,7 @@ export function FolderAccessPanel({
               />
             ))}
         </ul>
+        {audience.owner ? <AdminOpens driveId={driveId} path={path} /> : null}
         <Button variant="outline" size="sm" className="gap-1.5" onClick={onManage}>
           <ShareNetworkIcon className="size-3.5 shrink-0" />
           {canManage ? t('manageFolderAccess') : t('viewFolderAccess')}
@@ -106,5 +116,32 @@ export function FolderAccessPanel({
     >
       {body}
     </EditorSection>
+  );
+}
+
+/** A person's own folder: the project admins who opened it, newest first. */
+function AdminOpens({ driveId, path }: { driveId: string; path: string }) {
+  const t = useTranslations('drives');
+  const locale = useLocale();
+  const reads = useDriveAdminReads(driveId, path);
+  // Only the folder's owner and admins may read the list; anyone else gets nothing to show.
+  if (!reads.data) return null;
+  const rows = reads.data.reads;
+  return (
+    <div className="space-y-1.5">
+      <p className="text-foreground text-xs font-medium">{t('overview.openedByAdmins')}</p>
+      {rows.length === 0 ? (
+        <p className="text-muted-foreground text-xs">{t('overview.noAdminOpens')}</p>
+      ) : (
+        <ul className="space-y-1">
+          {rows.slice(0, 5).map((r) => (
+            <li key={`${r.adminUserId}:${r.day}`} className="text-muted-foreground flex items-center justify-between gap-3 text-xs">
+              <span className="text-foreground min-w-0 truncate">{r.label}</span>
+              <span className="shrink-0 tabular-nums">{relativeTime(r.lastAt, locale)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

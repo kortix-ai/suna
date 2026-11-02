@@ -7522,7 +7522,6 @@ const catalog = {
     "accountStorageIncomplete": "Some projects could not be measured right now.",
     "overview": {
       "yours": "Yours",
-      "audienceYou": "Only you",
       "audienceYouAndAdmins": "You and project admins",
       "sharedWithYou": "Shared with you",
       "channels": "Channels",
@@ -7534,7 +7533,11 @@ const catalog = {
       "noPeople": "No one else has a folder here yet.",
       "audienceOwnerAndAdmins": "Owner and admins",
       "boxPathHint": "Where sessions see this folder. Click to copy.",
-      "pathCopied": "Copied"
+      "pathCopied": "Copied",
+      "projectAdmins": "Project admins",
+      "adminsOpenRecorded": "Can open it. You see each time they do.",
+      "openedByAdmins": "Opened by admins",
+      "noAdminOpens": "No admin has opened this folder."
     }
   },
   "genui": {

@@ -13,7 +13,6 @@ import { normalizeDrivePath } from '../../drives/access';
 import { decodeCursor, parseLimit, parseSearchQuery, SEARCH_LIMITS } from '../../drives/search-index/query';
 import { personSearchReader, searchDriveIndex, sessionSearchReader } from '../../drives/search-index/search';
 import { findProjectDrive } from '../../drives/service';
-import { requireFeatureFlag } from '../../feature-flags/gate';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { auth, errors, json } from '../../openapi';
 import type { AppEnv } from '../../types';
@@ -85,9 +84,7 @@ export function registerProjectSearchRoutes(): void {
       if (tokenProjectId && tokenProjectId !== projectId) return c.json({ error: 'Not found' }, 404);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      const gate = requireFeatureFlag(c, loaded.row.metadata, 'drives');
-      if (gate) return gate;
-
+      // Every project has a Drive where the platform stores one; without one there is nothing to search.
       const drive = await findProjectDrive(projectId);
       if (!drive) return c.json({ hits: [], next_cursor: null }, 200);
       const sessionId = callerKortixSessionId(c);

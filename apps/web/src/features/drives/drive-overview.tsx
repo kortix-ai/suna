@@ -1,6 +1,7 @@
 'use client';
 
-import type { Drive, DriveEntry } from '@kortix/sdk';
+import type { AgentMountPlan, Drive, DriveEntry } from '@kortix/sdk';
+import { useProjectMounts } from '@kortix/sdk/react';
 import { Label } from '@kortix/ui/label';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { DriveStorageSummary, useDriveFolder, useFolderAccess } from '@kortix/ui/files';
@@ -17,10 +18,26 @@ import { folderAudience } from './folder-audience';
 const USERS_DIR = '/Users';
 const CHANNELS_DIR = '/Channels';
 
-/** Where sessions see a folder of the Drive: the same path, under /drives. */
-export function boxPathOf(path: string, personal: string | null): string {
-  if (personal && (path === personal || path.startsWith(`${personal}/`))) return `~/Desktop${path.slice(personal.length)}`;
-  return `/drives${path}`;
+const within = (path: string, folder: string) => path === folder || path.startsWith(`${folder}/`);
+
+/**
+ * Where sessions see a folder of the Drive: your own folder at ~/Desktop in
+ * your sessions; anything else through the deepest folder every session of
+ * the project mounts (`GET /drives/:id/mounts`), e.g. `/drives/company/Memory`.
+ * Null when no session mounts it by default.
+ */
+export function boxPathOf(path: string, personal: string | null, plan: AgentMountPlan | undefined): string | null {
+  if (personal && within(path, personal)) return `~/Desktop${path.slice(personal.length)}`;
+  const mount = (plan?.mounts ?? [])
+    .filter((m) => within(path, m.path))
+    .sort((a, b) => b.path.length - a.path.length)[0];
+  return mount ? `${mount.mountPath}${path.slice(mount.path.length)}` : null;
+}
+
+/** The project's mount plan, for {@link boxPathOf}. */
+export function useBoxPaths(drive: Drive): (path: string) => string | null {
+  const plan = useProjectMounts(drive.driveId);
+  return (path) => boxPathOf(path, drive.personalFolder, plan.data);
 }
 
 /** Platinum reports seconds or milliseconds; the age reads the same either way. */
@@ -55,6 +72,7 @@ export function DriveOverview({
   const hasChannels = dirs.some((e) => e.path === CHANNELS_DIR);
   const shared = (drive.sharedWithMe ?? []).filter((f) => !team.some((d) => f.path === d.path));
   const personal = drive.personalFolder;
+  const where = useBoxPaths(drive);
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-8 px-4 py-8 lg:py-10">
@@ -65,8 +83,8 @@ export function DriveOverview({
           <PlaceRow
             icon={Home}
             name={t('myDrive')}
-            audience={isAdmin ? t('overview.audienceYouAndAdmins') : t('overview.audienceYou')}
-            where={boxPathOf(personal, personal)}
+            audience={t('overview.audienceYouAndAdmins')}
+            where={where(personal) ?? undefined}
             onClick={() => onOpen(personal)}
           />
         </Section>
@@ -80,7 +98,7 @@ export function DriveOverview({
               icon={FolderSimpleIcon}
               name={nameOf(f.path)}
               audience={t('overview.sharedWithYou')}
-              where={boxPathOf(f.path, personal)}
+              where={where(f.path) ?? undefined}
               onClick={() => onOpen(f.path)}
             />
           ))}
@@ -154,7 +172,7 @@ function PlaceRow({
           {audience || where ? (
             <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
               {audience ? <span className="flex shrink-0 items-center gap-1">{audience}</span> : null}
-              {audience && where ? <span className="text-muted-foreground/40">&bull;</span> : null}
+              {audience && where ? <span aria-hidden>&bull;</span> : null}
               {where ? <span className="truncate font-mono">{where}</span> : null}
             </span>
           ) : null}
@@ -179,6 +197,7 @@ function TeamFolderRow({
 }) {
   const t = useTranslations('drives');
   const access = useFolderAccess(drive.driveId, entry.path);
+  const where = useBoxPaths(drive)(entry.path);
   const audience = access.data ? folderAudience(access.data.grants) : null;
   const label =
     audience?.mode === 'everyone' ? (
@@ -196,7 +215,7 @@ function TeamFolderRow({
       icon={audience?.mode === 'everyone' ? UsersThreeIcon : FolderSimpleIcon}
       name={entry.name}
       audience={label}
-      where={boxPathOf(entry.path, drive.personalFolder)}
+      where={where ?? undefined}
       age={entryAge(entry.mtime, locale)}
       onClick={() => onOpen(entry.path)}
     />
@@ -208,6 +227,7 @@ function ChannelsSection({ drive, locale, onOpen }: { drive: Drive; locale: stri
   const t = useTranslations('drives');
   const list = useDriveFolder(drive.driveId, CHANNELS_DIR);
   const channels = (list.data?.entries ?? []).filter((e) => e.type === 'dir' && e.access !== 'none');
+  const where = useBoxPaths(drive);
   if (!list.isLoading && channels.length === 0) return null;
   return (
     <Section label={t('overview.channels')} note={t('overview.channelsNote')}>
@@ -220,7 +240,7 @@ function ChannelsSection({ drive, locale, onOpen }: { drive: Drive; locale: stri
             icon={HashIcon}
             name={e.name.replace(/^#/, '')}
             audience={t('overview.channelMembers')}
-            where={boxPathOf(e.path, drive.personalFolder)}
+            where={where(e.path) ?? undefined}
             age={entryAge(e.mtime, locale)}
             onClick={() => onOpen(e.path)}
           />
