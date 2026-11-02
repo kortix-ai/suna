@@ -202,6 +202,7 @@ suite('usage breakdown reads metadata->>ledger_type (throwaway Postgres)', () =>
       compute_usd: 0,
       llm_usd: 0,
       other_usd: 0,
+      storage_usd: 0,
       total_usd: 0,
       period_start: PERIOD_START,
       period_end: null,
