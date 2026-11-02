@@ -75,6 +75,33 @@ export const COMMANDS = [
     needs: 'project',
   },
   {
+    name: 'agents',
+    aliases: ['subagents', 'team'],
+    description: 'Agents this session started: watch one, open it, stop it.',
+    group: 'session',
+    needs: 'session',
+  },
+  {
+    name: 'workflows',
+    aliases: ['runs'],
+    description: "This session's workflow runs: progress, pause, stop, restart an agent.",
+    group: 'session',
+    needs: 'session',
+  },
+  {
+    name: 'tasks',
+    description: "The team's shared task list: status, owner, blockers.",
+    group: 'session',
+    needs: 'session',
+    flag: 'agent_teams',
+  },
+  {
+    name: 'parent',
+    description: 'Open the session that started this one.',
+    group: 'session',
+    needs: 'session',
+  },
+  {
     name: 'rename',
     args: '<title>',
     description: 'Rename this session.',
@@ -211,7 +238,6 @@ export const COMMANDS = [
   },
   {
     name: 'agent',
-    aliases: ['agents'],
     description: 'Pick the agent.',
     group: 'selection',
     binding: 'composer.agent',

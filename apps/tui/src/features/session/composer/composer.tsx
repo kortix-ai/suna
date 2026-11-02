@@ -40,6 +40,7 @@ import type {
   MenuEntry,
   RuntimeCommand,
 } from '../../../commands/registry.ts';
+import { AgentsSegment, useAgentsSummary } from '../../agents/agents-segment.tsx';
 import { copyToClipboard } from '../../../lib/clipboard.ts';
 import { contextModel, contextReading } from '../../../lib/context-usage.ts';
 import { theme } from '../../../theme.ts';
@@ -131,6 +132,8 @@ export function Composer({
   });
 
   const inbox = useSessionPrompts(projectId, sessionId);
+  // What this session started (agents, workflow runs) and held messages; `/agents` lists them.
+  const agentsSummary = useAgentsSummary(projectId, sessionId);
   const selection = useComposerSelection(session, projectId);
 
   const covered = picker !== null || panel !== null;
@@ -325,6 +328,8 @@ export function Composer({
       </text>
       <text fg={theme.dim} wrapMode="none">
         {status.length ? <span fg={theme.busy}>{`${status.join(' · ')}  `}</span> : null}
+        {agentsSummary.text ? <AgentsSegment summary={agentsSummary} /> : null}
+        {agentsSummary.text ? <span fg={theme.faint}>{' · '}</span> : null}
         <span fg={selection.modelIsDefault ? theme.dim : theme.fg}>{selection.modelLabel}</span>
         {selection.variant ? <span fg={theme.dim}>{`:${selection.variantLabel}`}</span> : null}
         <span fg={theme.faint}>{' · '}</span>
