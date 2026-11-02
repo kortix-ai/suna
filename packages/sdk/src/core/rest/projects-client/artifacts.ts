@@ -261,6 +261,12 @@ export interface ArtifactCommentContext {
   send_thread_ids: string[];
   people: Array<{ user_id: string; name: string; avatar_url: string | null; token: string }>;
   agents: Array<{ agent_name: string; name: string; session_id: string | null; token: string }>;
+  /**
+   * True when the project's agent manifest could not be read (a git outage, a
+   * missing repository). `agents` is then empty and `send_target` is null, but
+   * people can still comment. Absent from older APIs.
+   */
+  agents_unavailable?: boolean;
   send_target: { kind: 'session' | 'new'; session_id: string | null; agent_name: string } | null;
   version: { commit_id: string | null; entry_version: string | null };
 }
@@ -272,7 +278,7 @@ export interface ArtifactCommentSnapshot {
 }
 
 export interface CreateArtifactCommentInput {
-  /** Text quotes and their prefix/suffix are at most 32 UTF-16 code units each. */
+  /** A text quote is at most 500 UTF-16 code units; its prefix and suffix are at most 32 each. */
   anchor: ArtifactCommentAnchor;
   body: string;
   marks?: ArtifactCommentMark[];

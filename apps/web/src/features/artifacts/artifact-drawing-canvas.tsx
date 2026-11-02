@@ -1,6 +1,8 @@
 'use client';
 
+import { cn } from '@kortix/ui';
 import { Button } from '@kortix/ui/button';
+import { ButtonGroup } from '@kortix/ui/button-group';
 import Hint from '@kortix/ui/hint';
 import Loading from '@kortix/ui/loading';
 import {
@@ -16,6 +18,8 @@ import {
   addDrawingStroke,
   appendDrawingPoint,
   canAddDrawingStroke,
+  DRAWING_COLOR_ORDER,
+  DRAWING_COLORS,
   drawingStrokeWidth,
   drawingViewportRect,
   finishDrawingStroke,
@@ -42,13 +46,15 @@ const tools = [
   { tool: 'arrow', icon: ArrowUpRightIcon },
   { tool: 'rectangle', icon: RectangleIcon },
 ] as const;
-const colors = ['black', 'red', 'blue'] as const;
+// One look for every toggle in the toolbar: ghost, and the persistent selected fill when on.
+const TOGGLE = 'text-muted-foreground aria-pressed:bg-active aria-pressed:text-foreground';
 
 export function DrawingStrokeShape({ stroke }: { stroke: DrawingStroke }) {
   const first = stroke.points[0]!;
   const last = stroke.points.at(-1)!;
+  const color = DRAWING_COLORS[stroke.color];
   const attributes = {
-    stroke: stroke.color,
+    stroke: color,
     strokeWidth: stroke.width,
     fill: 'none',
     strokeLinecap: 'round' as const,
@@ -86,7 +92,7 @@ export function DrawingStrokeShape({ stroke }: { stroke: DrawingStroke }) {
     );
   }
   if (stroke.points.every((point) => point.x === first.x && point.y === first.y))
-    return <circle cx={first.x} cy={first.y} r={stroke.width / 2} fill={stroke.color} />;
+    return <circle cx={first.x} cy={first.y} r={stroke.width / 2} fill={color} />;
   return (
     <polyline
       {...attributes}
@@ -101,6 +107,7 @@ export function ArtifactDrawingCanvas({
   stale = false,
   labels,
   onFinish,
+  onDraftChange,
   onCancel,
 }: {
   viewport: { width: number; height: number };
@@ -108,10 +115,12 @@ export function ArtifactDrawingCanvas({
   stale?: boolean;
   labels: DrawingLabels;
   onFinish: (strokes: DrawingStroke[]) => void;
+  /** True once the draft holds a stroke (or one is in progress); false when it is empty again. */
+  onDraftChange?: (drawn: boolean) => void;
   onCancel: () => void;
 }) {
   const [tool, setTool] = useState<DrawingStroke['tool']>('pen');
-  const [color, setColor] = useState<DrawingStroke['color']>('black');
+  const [color, setColor] = useState<DrawingStroke['color']>(DRAWING_COLOR_ORDER[0]);
   const [strokes, setStrokes] = useState<DrawingStroke[]>([]);
   const [active, setActive] = useState<DrawingStroke | null>(null);
   const gesture = useRef<{ pointer: number; stroke: DrawingStroke } | null>(null);
@@ -126,6 +135,14 @@ export function ArtifactDrawingCanvas({
   useEffect(() => {
     canvas.current?.focus({ preventScroll: true });
   }, []);
+  const drawn = strokes.length > 0 || !!active;
+  const reportDraft = useRef(onDraftChange);
+  useEffect(() => {
+    reportDraft.current = onDraftChange;
+  });
+  useEffect(() => {
+    reportDraft.current?.(drawn);
+  }, [drawn]);
   const point = (event: PointerEvent<SVGSVGElement>): DrawingPoint | null => {
     const bounds = event.currentTarget.getBoundingClientRect();
     if (
@@ -223,54 +240,68 @@ export function ArtifactDrawingCanvas({
         ))}
         {active ? <DrawingStrokeShape stroke={preview(active)} /> : null}
       </svg>
-      <div className="bg-popover border-border pointer-events-auto absolute inset-x-3 bottom-3 flex flex-wrap items-center gap-1 rounded-md border p-1 shadow-sm">
-        {tools.map(({ tool: value, icon: Icon }) => (
-          <Hint key={value} label={labels[value]}>
+      <div className="bg-popover border-border pointer-events-auto absolute inset-x-3 bottom-3 flex flex-wrap items-center gap-2 rounded-md border p-1 shadow-sm">
+        {/* Three groups, one job each: the tool, the color, then undo and cancel. */}
+        <ButtonGroup>
+          {tools.map(({ tool: value, icon: Icon }) => (
+            <Hint key={value} label={labels[value]} side="top">
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={labels[value]}
+                aria-pressed={tool === value}
+                disabled={busy}
+                className={TOGGLE}
+                onClick={() => setTool(value)}
+              >
+                <Icon className="size-4" aria-hidden />
+              </Button>
+            </Hint>
+          ))}
+        </ButtonGroup>
+        <ButtonGroup>
+          {DRAWING_COLOR_ORDER.map((value) => (
+            <Hint key={value} label={labels[value]} side="top">
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={labels[value]}
+                aria-pressed={color === value}
+                disabled={busy}
+                className={TOGGLE}
+                onClick={() => setColor(value)}
+              >
+                {/* The ink swatch is near the dark popover's own tone: its hairline takes the muted ink. */}
+                <span
+                  className={cn(
+                    'size-3 rounded-full border',
+                    value === 'black' ? 'border-muted-foreground' : 'border-border',
+                  )}
+                  style={{ backgroundColor: DRAWING_COLORS[value] }}
+                  aria-hidden
+                />
+              </Button>
+            </Hint>
+          ))}
+        </ButtonGroup>
+        <ButtonGroup>
+          <Hint label={labels.undo} side="top">
             <Button
               size="icon-sm"
-              variant={tool === value ? 'secondary' : 'ghost'}
-              aria-label={labels[value]}
-              aria-pressed={tool === value}
-              disabled={busy}
-              onClick={() => setTool(value)}
+              variant="ghost"
+              aria-label={labels.undo}
+              disabled={busy || !strokes.length}
+              onClick={() => setStrokes((previous) => previous.slice(0, -1))}
             >
-              <Icon className="size-4" aria-hidden />
+              <ArrowCounterClockwiseIcon className="size-4" aria-hidden />
             </Button>
           </Hint>
-        ))}
-        {colors.map((value) => (
-          <Hint key={value} label={labels[value]}>
-            <Button
-              size="icon-sm"
-              variant={color === value ? 'secondary' : 'ghost'}
-              aria-label={labels[value]}
-              aria-pressed={color === value}
-              disabled={busy}
-              onClick={() => setColor(value)}
-            >
-              <span
-                className="border-border size-3 rounded-full border"
-                style={{ backgroundColor: value }}
-              />
+          <Hint label={labels.cancel} side="top">
+            <Button size="icon-sm" variant="ghost" aria-label={labels.cancel} onClick={onCancel}>
+              <XIcon className="size-4" aria-hidden />
             </Button>
           </Hint>
-        ))}
-        <Hint label={labels.undo}>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label={labels.undo}
-            disabled={busy || !strokes.length}
-            onClick={() => setStrokes((previous) => previous.slice(0, -1))}
-          >
-            <ArrowCounterClockwiseIcon className="size-4" aria-hidden />
-          </Button>
-        </Hint>
-        <Hint label={labels.cancel}>
-          <Button size="icon-sm" variant="ghost" aria-label={labels.cancel} onClick={onCancel}>
-            <XIcon className="size-4" aria-hidden />
-          </Button>
-        </Hint>
+        </ButtonGroup>
         <Button
           size="sm"
           className="ml-auto"

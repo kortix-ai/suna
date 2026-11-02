@@ -1,5 +1,5 @@
 import { artifactCommentThreads, artifactComments, artifactCommentWriteLimits, artifacts } from '@kortix/db';
-import { artifactCommentAnchorSchema, artifactCommentMarksSchema, reanchorArtifactText, type ArtifactCommentAnchor } from '@kortix/shared/artifact-comments';
+import { artifactCommentAnchorSchema, artifactCommentMarksSchema, createArtifactReanchorBudgets, reanchorArtifactText, type ArtifactCommentAnchor, type ArtifactReanchorBudget } from '@kortix/shared/artifact-comments';
 import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
 import type { Actor } from '../iam/actor';
 import { db } from '../shared/db';
@@ -77,11 +77,11 @@ function commentView(row: Comment, access: ArtifactCommentAccess, rootDeleted = 
   };
 }
 
-function threadView(row: Thread, comments: Comment[], access: ArtifactCommentAccess, text?: string, historical = false) {
+function threadView(row: Thread, comments: Comment[], access: ArtifactCommentAccess, text?: string, historical = false, budget?: ArtifactReanchorBudget) {
   const rootDeleted = !comments.length || !!comments[0]!.deletedAt;
   const permissions = rights(access, { userId: row.createdByUserId, sessionId: row.createdBySessionId }, row.sentSessionId, rootDeleted, historical);
   const anchor = row.anchor as ArtifactCommentAnchor;
-  const position = text !== undefined && anchor.type === 'text' ? reanchorArtifactText(text, anchor) : null;
+  const position = text !== undefined && anchor.type === 'text' ? reanchorArtifactText(text, anchor, budget) : null;
   return {
     can_reply: permissions.can_reply,
     can_resolve: permissions.can_resolve,
@@ -129,7 +129,11 @@ async function readThreads(access: ArtifactCommentAccess, status: CommentStatus 
   const text = access.artifact.type === 'doc' && threads.some((t) => (t.anchor as ArtifactCommentAnchor).type === 'text')
     ? await (await readArtifactFile(access.artifact, access.artifact.entry, version)).text()
     : undefined;
-  return hydrateThreads(access, threads.map((thread) => threadView(thread, comments.filter((c) => c.threadId === thread.threadId), access, text, version !== undefined)));
+  // One re-anchoring budget for the whole read, split per thread author: the read's cost does not grow
+  // with the thread count, and one author's unmatched quotes cannot leave other people's threads outdated.
+  const author = (thread: Thread) => thread.createdByUserId ? `user:${thread.createdByUserId}` : `session:${thread.createdBySessionId ?? ''}`;
+  const budgetFor = createArtifactReanchorBudgets(threads.map(author));
+  return hydrateThreads(access, threads.map((thread) => threadView(thread, comments.filter((c) => c.threadId === thread.threadId), access, text, version !== undefined, budgetFor(author(thread)))));
 }
 
 export async function listArtifactCommentThreads(access: ArtifactCommentAccess, status: CommentStatus | 'all', version?: string) {

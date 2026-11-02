@@ -1,6 +1,14 @@
 'use client';
 
 import { Button } from '@kortix/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@kortix/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@kortix/ui/popover';
 import { Skeleton } from '@kortix/ui/skeleton';
 import {
@@ -35,6 +43,9 @@ import {
   ShareNetworkIcon,
   TerminalWindowIcon,
   UserIcon,
+  UsersIcon,
+  BuildingsIcon,
+  ListIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -222,7 +233,12 @@ function FilesExplorer({ drive, projectId, projectName }: { drive: Drive; projec
 
   // The action row's start names the place: Drive at the top, else the
   // folder with who can open it.
-  const leading = path === '/' ? <PlaceTitle icon={HardDriveIcon} title={projectName} /> : <FolderTitle drive={drive} path={path} label={nameOfPath(path, here)} />;
+  const leading = (
+    <div className="flex min-w-0 items-center gap-1">
+      <DriveJump drive={drive} projectName={projectName} onOpen={open} />
+      {path === '/' ? <PlaceTitle icon={HardDriveIcon} title={projectName} /> : <FolderTitle drive={drive} path={path} label={nameOfPath(path, here)} />}
+    </div>
+  );
   // Where sessions see the folder, then Share. A folder the caller only
   // passes through (on the way to a share) has no sharing they may see.
   const trailing =
@@ -321,7 +337,7 @@ function locateInDrive(
   const personal = drive.personalFolder;
   const person = personFolderOf(path);
   const nameOf = (folder: string) => personNames.get(folder) ?? folder.split('/').pop() ?? folder;
-  if (person && person === personal) return { icon: Home, label: t('treeYou', { name: nameOf(person) }), base: person };
+  if (person && person === personal) return { icon: Home, label: t('myDrive'), base: person };
   const shared = (drive.sharedWithMe ?? []).find((f) => isUnder(path, f.path));
   if (shared) return { icon: FolderSimpleIcon, label: shared.path.split('/').filter(Boolean).pop() ?? shared.path, base: shared.path };
   if (person) return { icon: UserIcon, label: nameOf(person), base: person };
@@ -331,6 +347,54 @@ function locateInDrive(
 function nameOfPath(path: string, here: { label: string; base?: string }): string {
   if (here.base === path) return here.label;
   return path.split('/').filter(Boolean).pop() ?? path;
+}
+
+/**
+ * Small screens have no folder tree: one menu jumps to My files, Company,
+ * the top of the Drive and what others shared.
+ */
+function DriveJump({ drive, projectName, onOpen }: { drive: Drive; projectName: string; onOpen: (path: string) => void }) {
+  const t = useTranslations('drives');
+  const shared = drive.sharedWithMe ?? [];
+  return (
+    <div className="md:hidden">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" variant="secondary" size="icon-sm" aria-label={t('folderTree')}>
+            <ListIcon className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-64">
+          {drive.personalFolder ? (
+            <DropdownMenuItem onSelect={() => onOpen(drive.personalFolder!)}>
+              <Home className="size-4 shrink-0" />
+              {t('myDrive')}
+            </DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem onSelect={() => onOpen('/Company')}>
+            <BuildingsIcon className="size-4 shrink-0" />
+            Company
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onOpen('/')}>
+            <HardDriveIcon className="size-4 shrink-0" />
+            <span className="truncate">{projectName}</span>
+          </DropdownMenuItem>
+          {shared.length > 0 ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">{t('sharedWithMe')}</DropdownMenuLabel>
+              {shared.map((f) => (
+                <DropdownMenuItem key={f.path} onSelect={() => onOpen(f.path)}>
+                  <ShareNetworkIcon className="size-4 shrink-0" />
+                  <span className="truncate">{f.path.split('/').filter(Boolean).pop() ?? f.path}</span>
+                </DropdownMenuItem>
+              ))}
+            </>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
 }
 
 function PlaceTitle({ icon: Glyph, title, meta }: { icon: DriveGlyph; title: string; meta?: ReactNode }) {
@@ -351,7 +415,7 @@ function FolderTitle({ drive, path, label }: { drive: Drive; path: string; label
   const personal = drive.personalFolder;
   const inPeople = isUnder(path, PEOPLE_ROOT);
   let meta: ReactNode = null;
-  if (path === PEOPLE_ROOT) return <PlaceTitle icon={FolderSimpleIcon} title={label} />;
+  if (path === PEOPLE_ROOT) return <PlaceTitle icon={UsersIcon} title={label} />;
   if (personal && isUnder(path, personal)) meta = t('folderInfo.audienceYouAndAdmins');
   else if (inPeople) meta = (
     <>
@@ -367,7 +431,7 @@ function FolderTitle({ drive, path, label }: { drive: Drive; path: string; label
       {t('audienceAdmins')}
     </>
   );
-  const glyph = personal && path === personal ? Home : inPeople ? UserIcon : FolderSimpleIcon;
+  const glyph = personal && path === personal ? Home : inPeople ? UserIcon : path === '/Company' ? BuildingsIcon : FolderSimpleIcon;
   return <PlaceTitle icon={glyph} title={label} meta={meta} />;
 }
 

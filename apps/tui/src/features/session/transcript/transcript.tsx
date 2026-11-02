@@ -259,6 +259,7 @@ export function Transcript({
         phase={session.phase}
         stage={session.stage}
         reason={session.reason}
+        image={session.bootImage}
         failure={session.failure}
       />
 

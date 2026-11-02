@@ -21,6 +21,12 @@ import {
 } from '../command-helpers.ts';
 import { withKortixScope } from '../api/sdk.ts';
 import type { ProjectSession } from '../api/types.ts';
+import {
+  type SessionStartPayload,
+  describeStartProgress,
+  startPollIntervalMs,
+  startProgressTracker,
+} from '../session-boot.ts';
 import { readRuntimeCapabilities } from '../session-runtime.ts';
 import { C, help, status } from '../style.ts';
 import { loadSessionForChat } from './sessions-chat.ts';
@@ -28,16 +34,8 @@ import { sessionPromptDefaults } from './sessions-files.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
-/** Readiness stages `/start` reports. Poll until `ready`. */
-type StartStage = 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
-
-interface StartResult {
-  stage: StartStage;
-  agent_name?: string;
-  retriable?: boolean;
-  opencode_session_id?: string | null;
-  reason?: string;
-}
+/** The `/start` readiness payload. Poll until `stage` is `ready`. */
+type StartResult = SessionStartPayload;
 
 const STOP_HELP = help`Usage: kortix sessions stop <session-id> [options]
 
@@ -105,7 +103,10 @@ call and exits 0.
 
 Options:
   --wait           Block until the runtime is ready (up to ~5 min). Exit 1 if
-                   the session ends up failed or stopped.
+                   the session ends up failed or stopped. Each step prints
+                   one stderr line, e.g. \`provisioning · building the first
+                   image for this project (0:42)\`. --json prints the last
+                   /start payload, its boot.image step included.
   --project <id>   Operate on this project id (default: linked).
   --host <name>    Operate against a non-default Kortix host.
   --json           Machine-readable output.
@@ -327,17 +328,19 @@ export async function runSessionsStart(argv: string[]): Promise<number> {
   const path = `/projects/${projectId}/sessions/${session.session_id}/start`;
 
   // Same idempotent readiness call the dashboard polls, and the same budget
-  // `sessions new --wait` uses: 75 attempts, 4s apart (~5 min).
+  // `sessions new --wait` uses: 75 attempts, 4s apart (~5 min). One stderr
+  // line per change of stage or image step; --json prints only the payload.
+  const progress = startProgressTracker();
+  const intervalMs = startPollIntervalMs();
   let result: StartResult;
   try {
     result = await client.post<StartResult>(path, {});
     if (wait) {
       for (let i = 1; i < 75 && result.stage !== 'ready'; i += 1) {
         if (result.stage === 'failed' || result.stage === 'stopped') break;
-        if (!json) {
-          process.stderr.write(`${C.dim}  ${result.stage}…${C.reset}\r`);
-        }
-        await new Promise((r) => setTimeout(r, 4000));
+        const line = json ? null : progress(result);
+        if (line) process.stderr.write(`Session ${short(session.session_id)}: ${line}\n`);
+        await new Promise((r) => setTimeout(r, intervalMs));
         result = await client.post<StartResult>(path, {});
       }
     }
@@ -367,12 +370,12 @@ export async function runSessionsStart(argv: string[]): Promise<number> {
   }
   if (wait) {
     process.stderr.write(
-      `${status.err(`Timed out waiting for readiness after ~5 min (stage: ${result.stage}).`)}\n`,
+      `${status.err(`Timed out waiting for readiness after ~5 min (stage: ${describeStartProgress(result)}).`)}\n`,
     );
     return 1;
   }
   process.stdout.write(
-    `${status.info(`${short(session.session_id)} is ${result.stage} — re-run with --wait to block until it is ready.`)}\n`,
+    `${status.info(`${short(session.session_id)} is ${describeStartProgress(result)} — re-run with --wait to block until it is ready.`)}\n`,
   );
   return 0;
 }

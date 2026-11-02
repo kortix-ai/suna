@@ -5,6 +5,8 @@ import {
   SLOW_BOOT_MS,
   STARTING_SUBSTEP_MS,
   bootStatus,
+  formatStepElapsed,
+  imageStepLabel,
   wakeCooldownNote,
 } from './boot-status.ts';
 
@@ -59,6 +61,85 @@ describe('bootStatus', () => {
       }),
     );
     expect(status?.note).toBe('Computer did not start. Retrying in 1m 30s (attempt 3).');
+  });
+});
+
+describe('bootStatus with an image step', () => {
+  const NOW = Date.parse('2030-01-01T00:10:00.000Z');
+  /** A step that began 42 s before NOW. */
+  const step = (state: string) =>
+    ({ state, image: 'kortix-template-v7', since: new Date(NOW - 42_000).toISOString() }) as never;
+  const provisioning = (image: unknown, overrides: Partial<BootInput> = {}) =>
+    bootStatus(input({ stage: 'provisioning', image: image as BootInput['image'], now: NOW, ...overrides }));
+
+  test('every image state reads in the CLI’s words with its m:ss clock', () => {
+    const cases: Array<[string, string]> = [
+      ['resolving', 'Choosing the image (0:42)'],
+      ['serving_last_ready', 'Starting from the last ready image while the new one builds (0:42)'],
+      ['waiting_for_build', 'Waiting for the first image for this project to finish building (0:42)'],
+      ['building', 'Building the first image for this project (0:42)'],
+      ['copying_to_region', "Copying the image to the session's region (0:42)"],
+      ['waiting_for_provider', 'Waiting for the provider to finish the image (retrying, 0:42)'],
+    ];
+    for (const [state, label] of cases) {
+      expect(provisioning(step(state))).toEqual({ label, note: null, timed: true });
+    }
+  });
+
+  test('no image step keeps today’s text and the caller’s clock', () => {
+    const today = { label: 'Reserving your computer', note: null, timed: false };
+    expect(provisioning(null)).toEqual(today);
+    expect(provisioning(undefined)).toEqual(today);
+  });
+
+  test('an image step outside provisioning is ignored', () => {
+    expect(provisioning(step('building'), { stage: 'starting' })).toEqual({
+      label: 'Loading your workspace',
+      note: null,
+      timed: false,
+    });
+  });
+
+  test('a long image build does not say the sandbox may be wedged', () => {
+    expect(provisioning(step('building'), { msTotal: SLOW_BOOT_MS * 10 })?.note).toBeNull();
+    expect(provisioning(null, { msTotal: SLOW_BOOT_MS })?.note).toContain('may be wedged');
+  });
+
+  test('a wake cooldown note still shows under an image step', () => {
+    expect(
+      provisioning(step('building'), {
+        reason: 'runtime_wake_cooldown',
+        failure: { evidence: { attempts: 1, next_retry_at: null } },
+      }),
+    ).toEqual({
+      label: 'Building the first image for this project (0:42)',
+      note: 'Computer did not start. Retrying automatically (attempt 2).',
+      timed: true,
+    });
+  });
+});
+
+describe('imageStepLabel', () => {
+  test('a state a newer API adds reads humanized in sentence case', () => {
+    expect(imageStepLabel({ state: 'warming_cache' as never, image: null, since: '' }, 0)).toBe(
+      'Warming cache',
+    );
+  });
+
+  test('an unparseable since drops the clock; a since ahead of the local clock reads 0:00', () => {
+    expect(imageStepLabel({ state: 'building', image: null, since: 'nope' }, 0)).toBe(
+      'Building the first image for this project',
+    );
+    expect(
+      imageStepLabel({ state: 'resolving', image: null, since: new Date(5_000).toISOString() }, 0),
+    ).toBe('Choosing the image (0:00)');
+  });
+
+  test('formatStepElapsed is m:ss, then h:mm:ss', () => {
+    expect(formatStepElapsed(0)).toBe('0:00');
+    expect(formatStepElapsed(42_999)).toBe('0:42');
+    expect(formatStepElapsed(12 * 60_000 + 5_000)).toBe('12:05');
+    expect(formatStepElapsed(3_723_000)).toBe('1:02:03');
   });
 });
 

@@ -35,7 +35,25 @@ const thread = (version: string): ArtifactCommentThread =>
     thread_id: 'synthetic-thread',
     anchor: { type: 'text', version, quote: 'selected', prefix: '', suffix: '' },
     status: 'open',
+    comments: [{ deleted_at: null }],
   }) as ArtifactCommentThread;
+const quoted = (
+  id: string,
+  quote: string,
+  status: 'open' | 'resolved' = 'open',
+  deleted = false,
+): ArtifactCommentThread =>
+  ({
+    thread_id: id,
+    anchor: { type: 'text', version: 'current', quote, prefix: '', suffix: '' },
+    status,
+    comments: [{ deleted_at: deleted ? '2026-11-01T00:00:00.000Z' : null }],
+  }) as ArtifactCommentThread;
+const highlighted = (current: EditorState) =>
+  docCommentPluginKey
+    .getState(current)!
+    .find()
+    .map((decoration) => current.doc.textBetween(decoration.from, decoration.to));
 
 test('comment decorations leave the document and Markdown unchanged and follow editing transactions', () => {
   const markdown = 'A **selected** passage.\n';
@@ -187,6 +205,79 @@ for (const editable of [true, false]) {
     }
   });
 }
+
+test('resolved and deleted threads leave no highlight; a focused resolved thread keeps its highlight', () => {
+  const markdown = 'Open words, resolved words and deleted words.\n';
+  const comments = [
+    quoted('open-thread', 'Open words'),
+    quoted('resolved-thread', 'resolved words', 'resolved'),
+    quoted('deleted-thread', 'deleted words', 'open', true),
+  ];
+  let current = state(markdown);
+  const apply = (focusedThreadId: string | null) => {
+    current = current.apply(
+      current.tr.setMeta(docCommentPluginKey, { markdown, comments, focusedThreadId, label: 'Comment' }),
+    );
+    return highlighted(current);
+  };
+  expect(apply(null)).toEqual(['Open words']);
+  expect(apply('resolved-thread')).toEqual(['Open words', 'resolved words']);
+  expect(apply('deleted-thread')).toEqual(['Open words']);
+});
+
+test('a highlight is a readable mark linked to its thread, with one tab stop per thread', () => {
+  const markdown = 'A selected passage.\n\nThe second paragraph ends here.\n';
+  const first = quoted('first-thread', 'selected');
+  const second = quoted('second-thread', 'lected pass');
+  const spanning = quoted('spanning-thread', 'passage.\n\nThe second');
+  const focused: string[] = [];
+  const host = window.document.createElement('div');
+  window.document.body.append(host);
+  const view = new EditorView(host as unknown as HTMLElement, {
+    state: EditorState.create({ schema, doc: state(markdown).doc, plugins: [createDocCommentPlugin((id) => focused.push(id))] }),
+  });
+  try {
+    view.dispatch(
+      view.state.tr.setMeta(docCommentPluginKey, { markdown, comments: [first, second, spanning], focusedThreadId: 'second-thread', label: 'Comment' }),
+    );
+    const marks = Array.from(view.dom.querySelectorAll<HTMLElement>('[data-artifact-threads]'));
+    expect(marks.map((node) => [node.tagName, node.textContent, node.getAttribute('data-artifact-threads')])).toEqual([
+      ['MARK', 'se', 'first-thread'],
+      ['MARK', 'lected', 'first-thread second-thread'],
+      ['MARK', ' ', 'second-thread'],
+      ['MARK', 'pass', 'second-thread spanning-thread'],
+      ['MARK', 'age.', 'spanning-thread'],
+      ['MARK', 'The second', 'spanning-thread'],
+    ]);
+    for (const node of marks) {
+      expect(node.hasAttribute('role')).toBe(false);
+      expect(node.hasAttribute('aria-label')).toBe(false);
+      expect(node.getAttribute('aria-description')).toBe(
+        node.getAttribute('data-artifact-threads')!.includes(' ') ? 'Comment (2)' : 'Comment',
+      );
+      expect(node.getAttribute('aria-details')).toBe(
+        node.getAttribute('data-artifact-threads')!.split(' ').map((id) => `artifact-thread-${id}`).join(' '),
+      );
+    }
+    expect(marks.map((node) => node.getAttribute('tabindex'))).toEqual(['0', '0', null, '0', null, null]);
+    expect(marks[1]!.className).not.toBe(marks[0]!.className);
+    const enter = new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    marks[3]!.dispatchEvent(enter as unknown as KeyboardEvent);
+    const space = new window.KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+    marks[3]!.dispatchEvent(space as unknown as KeyboardEvent);
+    expect(focused).toEqual(['spanning-thread', 'second-thread']);
+    expect(enter.defaultPrevented && space.defaultPrevented).toBe(true);
+    // An editable doc owns the keyboard: a mark inside it cannot take focus, so it gets no tab stop.
+    view.dispatch(
+      view.state.tr.setMeta(docCommentPluginKey, { markdown, comments: [first, second, spanning], focusable: false, label: 'Comment' }),
+    );
+    expect(view.dom.querySelectorAll('mark[tabindex]')).toHaveLength(0);
+    expect(view.dom.querySelectorAll('mark[aria-details]')).toHaveLength(6);
+  } finally {
+    view.destroy();
+    host.remove();
+  }
+});
 
 test('partially overlapping DOM highlights expose exactly the threads covering each segment', () => {
   const markdown = 'A selected passage.\n';

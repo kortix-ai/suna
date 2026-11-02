@@ -1,4 +1,9 @@
-import type { ArtifactCommentContext, ArtifactCommentThread, ArtifactDetail } from '@kortix/sdk';
+import {
+  ApiError,
+  type ArtifactCommentContext,
+  type ArtifactCommentThread,
+  type ArtifactDetail,
+} from '@kortix/sdk';
 import { afterEach, beforeAll, expect, mock, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import { act } from 'react';
@@ -43,6 +48,14 @@ Object.defineProperty(globalThis, 'ResizeObserver', {
   configurable: true,
 });
 browser.HTMLElement.prototype.scrollIntoView = () => {};
+const pushed: string[] = [];
+mock.module('next/navigation', () => ({
+  useRouter: () => ({ push: (href: string) => pushed.push(href) }),
+}));
+mock.module('@/features/providers/auth-provider', () => ({
+  useAuth: () => ({ user: { id: 'viewer', email: 'viewer@example.test', user_metadata: {} } }),
+}));
+const toasts: { message: string; actions?: { label: string; onClick: () => void }[] }[] = [];
 mock.module('./artifact-comment-composer', () => ({
   ArtifactCommentComposer: ({
     value,
@@ -53,6 +66,7 @@ mock.module('./artifact-comment-composer', () => ({
     error,
     pending,
     submitDisabled,
+    autoFocus,
   }: {
     value: string;
     onChange: (value: string) => void;
@@ -62,8 +76,10 @@ mock.module('./artifact-comment-composer', () => ({
     error?: string;
     pending?: boolean;
     submitDisabled?: boolean;
+    autoFocus?: boolean;
   }) => (
     <form
+      data-autofocus={String(!!autoFocus)}
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit();
@@ -88,7 +104,13 @@ browser.document.body.append(container);
 let root = createRoot(container as unknown as HTMLElement);
 beforeAll(async () => {
   const toast = await import('@kortix/ui/toast');
-  mock.module('@kortix/ui/toast', () => ({ ...toast, errorToast() {} }));
+  mock.module('@kortix/ui/toast', () => ({
+    ...toast,
+    errorToast() {},
+    successToast(message: string, options?: { actions?: { label: string; onClick: () => void }[] }) {
+      toasts.push({ message, actions: options?.actions });
+    },
+  }));
   const discussionModule = await import('./artifact-discussion-sidebar');
   Sidebar = discussionModule.ArtifactDiscussionSidebar;
   useSharedState = discussionModule.useArtifactDiscussionState;
@@ -96,6 +118,8 @@ beforeAll(async () => {
 afterEach(async () => {
   await act(async () => root.unmount());
   root = createRoot(container as unknown as HTMLElement);
+  toasts.length = 0;
+  pushed.length = 0;
 });
 
 const item: ArtifactCommentThread = {
@@ -145,7 +169,10 @@ const context: ArtifactCommentContext = {
   send_thread_count: 1,
   send_thread_ids: ['thread'],
   people: [],
-  agents: [],
+  agents: [
+    { agent_name: 'writer', name: 'writer', session_id: null, token: '@agent.writer' },
+    { agent_name: 'researcher', name: 'researcher', session_id: null, token: '@agent.researcher' },
+  ],
   send_target: { kind: 'session', session_id: 'session', agent_name: 'writer' },
   version: { commit_id: null, entry_version: 'version' },
 };
@@ -225,16 +252,41 @@ async function click(target: InstanceType<typeof browser.HTMLElement>) {
     await Promise.resolve();
   });
 }
+async function openComposer() {
+  const start = browser.document.querySelector('button[aria-label="New comment"]');
+  if (!start) throw new Error('Missing New comment');
+  await click(start as InstanceType<typeof browser.HTMLElement>);
+}
+async function type(label: string, text: string) {
+  const input = container.querySelector(`textarea[aria-label="${label}"]`) as InstanceType<
+    typeof browser.HTMLTextAreaElement
+  >;
+  await act(async () => {
+    input.value = text;
+    input.dispatchEvent(new browser.Event('input', { bubbles: true }));
+  });
+  return input;
+}
 
-test('the top-level discussion tabs expose the overlay header boundary', async () => {
-  await render(props());
+test('one header holds the view tabs and the counted filter, and both counts agree', async () => {
+  const resolved = { ...item, thread_id: 'done', status: 'resolved' as const };
+  const value = props();
+  value.comments.data = [item, resolved];
+  await render(value);
   const header = browser.document.querySelector('[data-artifact-discussion-header]');
   expect(header).not.toBeNull();
-  expect(
-    [...header!.querySelectorAll('[role="tab"]')].map((tab) =>
-      tab.textContent?.replace(/\d+/g, ''),
-    ),
-  ).toEqual(['Comments', 'Activity']);
+  expect([...header!.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
+    'Comments1',
+    'Activity',
+    'Open1',
+    'Resolved1',
+    'All',
+  ]);
+  await tab('Activity');
+  expect([...header!.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
+    'Comments1',
+    'Activity',
+  ]);
 });
 
 test('a failed comment retains its draft through tabs and filters', async () => {
@@ -243,13 +295,9 @@ test('a failed comment retains its draft through tabs and filters', async () => 
     throw new Error('offline');
   });
   await render(value);
-  const input = browser.document.querySelector('textarea[aria-label="Comment"]')! as InstanceType<
-    typeof browser.HTMLTextAreaElement
-  >;
-  await act(async () => {
-    input.value = 'Draft preserved';
-    input.dispatchEvent(new browser.Event('input', { bubbles: true }));
-  });
+  expect(container.querySelector('textarea[aria-label="Comment"]')).toBeNull();
+  await openComposer();
+  await type('Comment', 'Draft preserved');
   await click(button('Comment'));
   expect(value.comments.create).toHaveBeenCalledWith({
     body: 'Draft preserved',
@@ -268,7 +316,7 @@ test('a failed comment retains its draft through tabs and filters', async () => 
   ).toBe('Draft preserved');
 });
 
-test('Send shows the authoritative target and retries the same request with one batch id', async () => {
+test('Send names the default agent, retries one batch id, and offers the session it reached', async () => {
   const calls: unknown[] = [];
   const value = props();
   value.comments.send = async (input) => {
@@ -277,8 +325,8 @@ test('Send shows the authoritative target and retries the same request with one 
     return { session_id: 'session', created: false };
   };
   await render(value);
-  expect(container.textContent).toContain('This Artifact’s session');
-  await click(button('Send to agent (1)'));
+  await click(button('Send 1 open thread to writer'));
+  expect(container.querySelector('[role="alert"]')?.className).toContain('text-destructive');
   await click(button('Retry send (1)'));
   expect(calls).toHaveLength(2);
   expect(calls[0]).toEqual(calls[1]);
@@ -287,13 +335,55 @@ test('Send shows the authoritative target and retries the same request with one 
     agent: 'writer',
     batch_id: expect.any(String),
   });
+  expect(toasts.map((toast) => toast.message)).toEqual(['Comments sent to writer']);
+  toasts[0]!.actions!.find((action) => action.label === 'Open session')!.onClick();
+  expect(pushed).toEqual(['/projects/project/sessions/session']);
+});
+
+test('the chosen agent goes to the send call', async () => {
+  const calls: unknown[] = [];
+  const value = props();
+  value.comments.send = async (input) => {
+    calls.push(input);
+    return { session_id: 'new-session', created: true };
+  };
+  await render(value);
+  const menu = container.querySelector('button[aria-label="Choose agent"]')!;
+  await act(async () => {
+    menu.dispatchEvent(
+      new browser.PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' }),
+    );
+  });
+  const researcher = [...browser.document.querySelectorAll('[role="menuitemradio"]')].find(
+    (item) => item.textContent === 'researcher',
+  );
+  if (!researcher) throw new Error('Agent menu did not open');
+  await click(researcher as InstanceType<typeof browser.HTMLElement>);
+  await click(button('Send 1 open thread to researcher'));
+  expect(calls).toEqual([
+    { thread_ids: ['thread'], batch_id: expect.any(String), agent: 'researcher' },
+  ]);
+});
+
+test('Send hides on Activity, with no agents, and when the agent list could not be read', async () => {
+  await render(props());
+  expect(container.textContent).toContain('Send 1 open thread to writer');
+  await tab('Activity');
+  expect(container.textContent).not.toContain('open thread to');
+  await render(props({ context: { ...context, agents: [] } }));
+  expect(container.textContent).not.toContain('open thread to');
+  await render(
+    props({ context: { ...context, agents: [], send_target: null, agents_unavailable: true } }),
+  );
+  expect(container.textContent).not.toContain('open thread to');
 });
 
 test('missing context and historical reads expose no write controls or Send fallback', async () => {
   await render(props({ context: undefined, contextError: true }));
   expect(container.querySelector('form')).toBeNull();
+  expect(container.querySelector('button[aria-label="New comment"]')).toBeNull();
   expect(container.textContent).toContain('Could not load comment permissions');
-  expect(container.textContent).not.toContain('Send to agent');
+  expect(container.textContent).not.toContain('open thread to');
   await render(props({ readOnly: true }));
   expect(container.querySelector('form')).toBeNull();
   expect(container.textContent).toContain('Comments on this version are read-only');
@@ -383,14 +473,9 @@ test('responsive remounts preserve the draft and failed Send batch through the s
   await act(async () => {
     root.render(<Responsive narrow={false} />);
   });
-  const input = container.querySelector('textarea[aria-label="Comment"]') as InstanceType<
-    typeof browser.HTMLTextAreaElement
-  >;
-  await act(async () => {
-    input.value = 'Keep after resize';
-    input.dispatchEvent(new browser.Event('input', { bubbles: true }));
-  });
-  await click(button('Send to agent (1)'));
+  await openComposer();
+  await type('Comment', 'Keep after resize');
+  await click(button('Send 1 open thread to writer'));
   value.context = {
     ...context,
     send_thread_ids: [],
@@ -406,12 +491,9 @@ test('responsive remounts preserve the draft and failed Send batch through the s
       >
     ).value,
   ).toBe('Keep after resize');
-  expect(container.textContent).toContain('This Artifact’s session');
-  expect(container.textContent).not.toContain('A new researcher session');
-  expect(container.querySelector('a[href="/projects/project/sessions/session"]')?.textContent).toBe(
-    'writer',
-  );
+  expect(container.querySelector('button[aria-label="Choose agent"]')).toBeNull();
   await click(button('Retry send (1)'));
+  expect((calls[1] as { agent: string }).agent).toBe('writer');
   expect(calls).toHaveLength(2);
   expect(calls[0]).toEqual(calls[1]);
   expect(container.textContent).not.toContain('Retry send');
@@ -426,7 +508,7 @@ test('discarding a failed Send explicitly starts a fresh request from current me
     return { session_id: 'new-session', created: true };
   };
   await render(value);
-  await click(button('Send to agent (1)'));
+  await click(button('Send 1 open thread to writer'));
   value.context = {
     ...context,
     send_thread_ids: ['later-thread'],
@@ -434,8 +516,7 @@ test('discarding a failed Send explicitly starts a fresh request from current me
   };
   await render(value);
   await click(button('Discard and use latest comments'));
-  expect(container.textContent).toContain('A new researcher session');
-  await click(button('Send to agent (1)'));
+  await click(button('Send 1 open thread to researcher'));
   expect(calls).toHaveLength(2);
   expect(calls[1]).toMatchObject({ thread_ids: ['later-thread'], agent: 'researcher' });
   expect((calls[1] as { batch_id: string }).batch_id).not.toBe(
@@ -451,7 +532,7 @@ test('failed Send stays disabled after comment permission is revoked', async () 
     throw new Error('offline');
   };
   await render(value);
-  await click(button('Send to agent (1)'));
+  await click(button('Send 1 open thread to writer'));
   value.context = { ...context, can_comment: false, send_target: null, send_thread_ids: [] };
   await render(value);
   expect(button('Retry send (1)').disabled).toBe(true);
@@ -469,13 +550,8 @@ test('a whole-Artifact comment uses the context commit and a selected anchor sta
     return item;
   };
   await render(value);
-  let input = container.querySelector('textarea[aria-label="Comment"]') as InstanceType<
-    typeof browser.HTMLTextAreaElement
-  >;
-  await act(async () => {
-    input.value = 'Whole file';
-    input.dispatchEvent(new browser.Event('input', { bubbles: true }));
-  });
+  await openComposer();
+  let input = await type('Comment', 'Whole file');
   await click(button('Comment'));
   expect(created[0]).toEqual({
     body: 'Whole file',
@@ -508,13 +584,8 @@ test('two immediate submit clicks create only one comment while its request is p
   const value = props();
   value.comments.create = mock(() => request);
   await render(value);
-  const input = container.querySelector('textarea[aria-label="Comment"]') as InstanceType<
-    typeof browser.HTMLTextAreaElement
-  >;
-  await act(async () => {
-    input.value = 'One request';
-    input.dispatchEvent(new browser.Event('input', { bubbles: true }));
-  });
+  await openComposer();
+  await type('Comment', 'One request');
   const submit = button('Comment');
   await act(async () => {
     submit.click();
@@ -525,6 +596,9 @@ test('two immediate submit clicks create only one comment while its request is p
     finish(item);
     await request;
   });
+  // A posted comment closes the composer; the next one starts empty.
+  expect(container.querySelector('textarea[aria-label="Comment"]')).toBeNull();
+  await openComposer();
   expect(
     (
       container.querySelector('textarea[aria-label="Comment"]') as InstanceType<
@@ -545,7 +619,7 @@ test('a bounded Send describes 100 of 101 threads and preserves the original tot
   };
   await render(value);
   expect(container.textContent).toContain('This batch contains 100 of 101 threads.');
-  await click(button('Send to agent (100)'));
+  await click(button('Send 100 open threads to writer'));
   value.context = { ...context, send_thread_ids: ['remaining'], send_thread_count: 1 };
   await render(value);
   expect(container.textContent).toContain('This batch contains 100 of 101 threads.');
@@ -554,7 +628,7 @@ test('a bounded Send describes 100 of 101 threads and preserves the original tot
   expect(calls[0]).toEqual(calls[1]);
   expect(calls[0]).toMatchObject({ thread_ids: ids });
   expect(container.textContent).not.toContain('This batch contains');
-  expect(button('Send to agent (1)')).toBeDefined();
+  expect(button('Send 1 open thread to writer')).toBeDefined();
 });
 
 test('selection capture blocks only new comments and preserves the draft until trusted or explicitly discarded', async () => {
@@ -590,14 +664,12 @@ test('selection capture blocks only new comments and preserves the draft until t
       .dispatchEvent(new browser.Event('submit', { bubbles: true, cancelable: true }));
   });
   expect(created).toEqual([]);
-  expect(button('Send to agent (1)').disabled).toBe(false);
-  const reply = container.querySelector('textarea[aria-label="Reply"]') as InstanceType<
-    typeof browser.HTMLTextAreaElement
-  >;
-  await act(async () => {
-    reply.value = 'Existing reply';
-    reply.dispatchEvent(new browser.Event('input', { bubbles: true }));
-  });
+  expect(button('Send 1 open thread to writer').disabled).toBe(false);
+  expect(container.querySelector('textarea[aria-label="Reply"]')).toBeNull();
+  await click(
+    container.querySelector('button[aria-label="Reply"]') as InstanceType<typeof browser.HTMLElement>,
+  );
+  await type('Reply', 'Existing reply');
   await click(button('Reply'));
   expect(replied).toBe(1);
   await render({ ...value, selectionCapture: 'failed' });
@@ -629,13 +701,8 @@ test('an earlier whole-Artifact submission cannot clear a later pending capture'
   });
   value.comments.create = () => response;
   await render(value);
-  const input = container.querySelector('textarea[aria-label="Comment"]') as InstanceType<
-    typeof browser.HTMLTextAreaElement
-  >;
-  await act(async () => {
-    input.value = 'Whole Artifact';
-    input.dispatchEvent(new browser.Event('input', { bubbles: true }));
-  });
+  await openComposer();
+  await type('Comment', 'Whole Artifact');
   await click(button('Comment'));
   await render({ ...value, selectionCapture: 'pending' });
   await act(async () => {
@@ -777,9 +844,155 @@ test('screenshot batch rejection keeps the exact batch and shows actionable imag
     throw { code: 'artifact_comment_screenshot_limit' };
   };
   await render(value);
-  await click(button('Send to agent (1)'));
-  expect(container.textContent).toContain('20 screenshots or 12 MiB');
+  await click(button('Send 1 open thread to writer'));
+  expect(container.textContent).toContain('Send fewer threads with drawings.');
   await click(button('Retry send (1)'));
   expect(requests).toHaveLength(2);
   expect(requests[1]).toEqual(requests[0]);
+});
+
+test('Resolve shows a toast whose Undo reopens the thread', async () => {
+  const calls: string[] = [];
+  const value = props();
+  value.comments.setStatus = async (_thread, status) => {
+    calls.push(status);
+    return item;
+  };
+  await render(value);
+  await click(
+    container.querySelector('button[aria-label="Resolve"]') as InstanceType<
+      typeof browser.HTMLElement
+    >,
+  );
+  expect(calls).toEqual(['resolved']);
+  expect(toasts.map((toast) => toast.message)).toEqual(['Thread resolved']);
+  await act(async () => {
+    toasts[0]!.actions!.find((action) => action.label === 'Undo')!.onClick();
+    await Promise.resolve();
+  });
+  expect(calls).toEqual(['resolved', 'open']);
+});
+
+test('a failed delivery retries only its thread and repeats the batch id after a network failure', async () => {
+  const calls: { thread_ids: string[]; batch_id?: string; agent?: string }[] = [];
+  const value = props({ context: { ...context, send_thread_ids: [] } });
+  value.comments.data = [{ ...item, agent_state: 'paused', agent_error: 'Model refused' }];
+  value.comments.send = async (input) => {
+    calls.push(input);
+    if (calls.length === 1) throw new Error('offline');
+    return { session_id: 'session', created: false };
+  };
+  await render(value);
+  expect(container.textContent).toContain('Not delivered');
+  expect(container.textContent).toContain('Model refused');
+  // A thread that names no agent goes to the Send target.
+  await click(button('Send again to writer'));
+  await click(button('Send again to writer'));
+  expect(calls.map((call) => call.thread_ids)).toEqual([['thread'], ['thread']]);
+  expect(calls.map((call) => call.agent)).toEqual(['writer', 'writer']);
+  expect(calls[1]!.batch_id).toBe(calls[0]!.batch_id!);
+});
+
+test('a failed delivery sends again to the agent the thread mentioned, and the button names it', async () => {
+  const calls: { thread_ids: string[]; batch_id?: string; agent?: string }[] = [];
+  const value = props({ context: { ...context, send_thread_ids: [] } });
+  const mention = { kind: 'agent' as const, agent_name: 'researcher', token: '@agent.researcher' };
+  value.comments.data = [
+    {
+      ...item,
+      agent_state: 'paused',
+      agent_error: 'Model refused',
+      comments: [{ ...item.comments[0]!, mentions: [mention] }],
+    },
+  ];
+  value.comments.send = async (input) => {
+    calls.push(input);
+    return { session_id: 'session', created: false };
+  };
+  await render(value);
+  // The Send footer still targets writer; the failed delivery went to researcher.
+  await click(button('Send again to researcher'));
+  expect(calls).toEqual([
+    { thread_ids: ['thread'], batch_id: expect.any(String), agent: 'researcher' },
+  ]);
+  expect(toasts.map((toast) => toast.message)).toEqual(['Comments sent to researcher']);
+});
+
+/** The server's answer to a batch id whose job failed: an HTTP 409. */
+const refused = () => new ApiError('The comment batch could not be sent', { status: 409 });
+
+test('a delivery retry the server refused starts a new batch id', async () => {
+  const calls: { batch_id?: string }[] = [];
+  const value = props({ context: { ...context, send_thread_ids: [] } });
+  value.comments.data = [{ ...item, agent_state: 'paused', agent_error: 'Model refused' }];
+  value.comments.send = async (input) => {
+    calls.push(input);
+    if (calls.length === 1) throw refused();
+    return { session_id: 'session', created: false };
+  };
+  await render(value);
+  await click(button('Send again to writer'));
+  await click(button('Send again to writer'));
+  expect(calls).toHaveLength(2);
+  expect(calls[1]!.batch_id).not.toBe(calls[0]!.batch_id!);
+});
+
+test('a Send the server refused leaves no retained batch: the next Send is a new request', async () => {
+  const calls: { thread_ids: string[]; batch_id?: string; agent?: string }[] = [];
+  const value = props();
+  value.comments.send = async (input) => {
+    calls.push(input);
+    if (calls.length === 1) throw refused();
+    return { session_id: 'session', created: false };
+  };
+  await render(value);
+  await click(button('Send 1 open thread to writer'));
+  expect(container.textContent).not.toContain('Retry send');
+  await click(button('Send 1 open thread to writer'));
+  expect(calls).toHaveLength(2);
+  expect(calls[1]).toMatchObject({ thread_ids: ['thread'], agent: 'writer' });
+  expect(calls[1]!.batch_id).not.toBe(calls[0]!.batch_id!);
+});
+
+test('a composer the page opened shows its passage without taking keyboard focus', async () => {
+  const anchor = {
+    type: 'text' as const,
+    version: 'version',
+    quote: 'Page passage',
+    prefix: '',
+    suffix: '',
+  };
+  const form = () => container.querySelector('form') as InstanceType<typeof browser.HTMLElement>;
+  await render(props({ pendingAnchor: anchor, pageOpenedAnchor: anchor }));
+  expect(container.textContent).toContain('Page passage');
+  expect(form().dataset.autofocus).toBe('false');
+  // New comment is the person's own request: it focuses the composer.
+  await openComposer();
+  expect(form().dataset.autofocus).toBe('true');
+  // A passage the person chose in the parent focuses the composer.
+  await act(async () => root.unmount());
+  root = createRoot(container as unknown as HTMLElement);
+  await render(props({ pendingAnchor: { ...anchor }, pageOpenedAnchor: anchor }));
+  expect(form().dataset.autofocus).toBe('true');
+});
+
+test('the live region announces a polled comment by someone else, never the first read', async () => {
+  const value = props();
+  await render(value);
+  const live = container.querySelector('[aria-live="polite"]')!;
+  expect(live.textContent).toBe('');
+  const reply = {
+    ...item.comments[0]!,
+    comment_id: 'from-rae',
+    author_user_id: 'rae',
+    author: { kind: 'user' as const, user_id: 'rae', name: 'Rae' },
+    can_edit: false,
+  };
+  const mine = { ...reply, comment_id: 'mine', author_user_id: 'viewer', author: { kind: 'user' as const, user_id: 'viewer', name: 'Me' } };
+  value.comments.data = [{ ...item, comments: [...item.comments, mine] }];
+  await render({ ...value });
+  expect(live.textContent).toBe('');
+  value.comments.data = [{ ...item, comments: [...item.comments, mine, reply] }];
+  await render({ ...value });
+  expect(live.textContent).toBe('New comment from Rae');
 });
