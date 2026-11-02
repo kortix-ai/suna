@@ -18,7 +18,10 @@ mock.module('@/features/providers/auth-provider', () => ({
 mock.module('@tanstack/react-query', () => ({
   ...reactQuery,
   useQuery: (options: { queryKey: string[] }) =>
-    options.queryKey[0] === 'account'
+    // The account's Files storage (AccountStorageSection) answers nothing here.
+    options.queryKey.includes('account-usage')
+      ? { data: undefined, isLoading: false }
+      : options.queryKey[0] === 'account'
       ? {
           data: memberCount === undefined ? undefined : { member_count: memberCount },
           isLoading: memberCountLoading,
