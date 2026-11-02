@@ -1,3 +1,4 @@
+import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { PromptOverridesWire } from '../session-lifecycle/store';
@@ -267,6 +268,9 @@ export function triggerModelOverride(model: string | null | undefined): PromptOv
   return { model: { providerID: ref.slice(0, slash), modelID: ref.slice(slash + 1) } };
 }
 
+/** A trigger prompt the billing gate refused; the fire's result as it is. */
+type BillingRefusal = { status: 'failed'; error: string; errorCode: string; retryable: false };
+
 async function enqueueTriggerPrompt(input: {
   project: ProjectRow;
   sessionId: string;
@@ -279,7 +283,7 @@ async function enqueueTriggerPrompt(input: {
   model?: string | null;
   /** `actor` is a person whose deferred prompt this is: the turn acts as them. */
   bindTurnIdentity?: boolean;
-}): Promise<'queued' | 'deduped' | 'no-session' | 'failed' | 'not-in-channel' | 'private-channel'> {
+}): Promise<'queued' | 'deduped' | 'no-session' | 'failed' | 'not-in-channel' | 'private-channel' | BillingRefusal> {
   // Scoped to the trigger's own project and account. A pinned `session_id` is
   // manifest text, so a session of any other project is "no session" here and
   // the fire falls through to the trigger's own reuse/create path.
@@ -308,6 +312,13 @@ async function enqueueTriggerPrompt(input: {
     if (!member) return 'not-in-channel';
     actor = member;
   }
+
+  // A prompt spends compute: the gate a person's prompt passes
+  // (routes/session-prompts.ts). A create gates inside createSession; a prompt
+  // into an existing session did not, so a drained account kept waking its
+  // box (prod 2026-11-02: a free account at -$28, one wake every 30 min).
+  const billing = await checkBillingAdmission(input.project.accountId);
+  if (!billing.ok) return { status: 'failed', error: billing.message, errorCode: billing.reason, retryable: false };
 
   const { deduped } = await enqueueContinueSessionCommand({
     source: `trigger:${input.source}`,
@@ -414,6 +425,7 @@ export async function fireGitTrigger(input: {
 
   const sessionKey = renderSessionKey(spec, payload);
   const queued = await queueExistingTriggerSession(input, actor, sessionKey);
+  if (queued && 'status' in queued) return queued;
   if (queued) {
     return { status: 'queued', sessionId: queued.sessionId, deduped: queued.deduped, reason: 'prompt queued for delivery' };
   }
@@ -431,6 +443,7 @@ export async function fireGitTrigger(input: {
     for (let attempt = 0; attempt < CREATE_WAIT_ATTEMPTS; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, CREATE_WAIT_POLL_MS));
       const joined = await queueExistingTriggerSession(input, actor, sessionKey);
+      if (joined && 'status' in joined) return joined;
       if (joined) {
         return { status: 'queued', sessionId: joined.sessionId, deduped: joined.deduped, reason: 'prompt queued for delivery' };
       }
@@ -526,6 +539,7 @@ async function fireSessionReminder(
         bindTurnIdentity: !!author,
       })
     : 'no-session';
+  if (typeof outcome === 'object') return outcome;
   if (outcome === 'queued' || outcome === 'deduped') {
     return { status: 'queued', sessionId: sessionId!, deduped: outcome === 'deduped', reason: 'prompt queued for delivery' };
   }
@@ -595,15 +609,18 @@ async function queueExistingTriggerSession(
   input: Parameters<typeof fireGitTrigger>[0],
   actor: string,
   sessionKey: string | null,
-): Promise<{ sessionId: string; deduped: boolean } | null> {
+): Promise<{ sessionId: string; deduped: boolean } | BillingRefusal | null> {
   const { spec, project, renderedPrompt, source } = input;
-  // The session the prompt went to, or null when that session is unusable.
+  // The session the prompt went to, the billing refusal (it ends the fire: a
+  // fresh session would be refused the same way), or null when that session
+  // is unusable.
   const queue = async (sessionId: string) => {
     const outcome = await enqueueTriggerPrompt({
       project, sessionId, actor, text: renderedPrompt, source,
       triggerSlug: spec.slug, model: spec.model,
       idempotencyKey: input.idempotencyKey ?? null,
     });
+    if (typeof outcome === 'object') return outcome;
     return outcome === 'queued' || outcome === 'deduped' ? { sessionId, deduped: outcome === 'deduped' } : null;
   };
 

@@ -23280,8 +23280,8 @@
     "listPlaceholder": "valore 1, valore 2"
   },
   "triggerAutoPause": {
-    "title": "Si è messo in pausa al limite di esecuzioni",
-    "description": "Ha girato al suo limite orario di esecuzioni per 2 ore di fila, quindi ha smesso di avviarne. Trova cosa continua ad attivarlo, poi riprendilo."
+    "title": "Messo in pausa automaticamente",
+    "description": "Ha smesso di avviare esecuzioni per il motivo qui sotto. Correggi la causa, poi riprendilo."
   },
   "featureGate": {
     "enable": "Abilita {name}",
