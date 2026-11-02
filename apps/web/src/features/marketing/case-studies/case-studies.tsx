@@ -7,20 +7,14 @@ import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { Band, Heading } from '@/features/marketing/kit/page-frame';
 import { cn } from '@kortix/ui';
 import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
-import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  BriefcaseIcon,
-  CellTowerIcon,
-  ChartLineUpIcon,
-} from '@phosphor-icons/react/dist/ssr';
+import { ArrowLeftIcon, ArrowRightIcon, CellTowerIcon } from '@phosphor-icons/react/dist/ssr';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
 import { localizeMarketingContent as localizeContent, type CaseStudy } from './content';
 
-const ICONS = { telecom: CellTowerIcon, search: BriefcaseIcon, finance: ChartLineUpIcon } as const;
+const ICONS = { telecom: CellTowerIcon } as const;
 
 const PLATINUM_TRACKING = 'tracking-[0.22em]'; // audit:allow Platinum's own wordmark tracking (pt-logo.tsx), a third-party mark
 
@@ -64,7 +58,7 @@ function Mark({ item }: { item: CaseStudy }) {
       </div>
     );
   }
-  const Icon = ICONS[item.icon ?? 'search'];
+  const Icon = ICONS[item.icon ?? 'telecom'];
   return (
     <div className="bg-muted flex h-40 items-center justify-center rounded-md">
       {item.mark === 'kortix' ? (

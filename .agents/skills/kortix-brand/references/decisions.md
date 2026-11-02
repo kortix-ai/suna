@@ -10,6 +10,16 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-11-02
+
+### D35 Kortix draws a nameless mark for an anonymous case study
+- **Date:** 2026-11-02
+- **Decision:** A case study that names only a class (a firm, not its name) may carry a logo mark that Kortix drew for that card. The mark is a symbol only: no name, no initials, no wordmark, and no likeness of the firm's real logo. It sits on the white logo tile like a third-party logo, in its own two colors, so the row reads as a row of logos. The two marks: the AI-run hedge fund desk is a disc cut into three diagonal tranches, the lowest one (first loss) in the accent; the executive search firm is a grid of nine dots with one ringed and in full color (the one person found). The alt text is the card's own class line. The cards that name a real organization keep its real logo.
+- **Why:** founder, 2026-11-02: "create 2 logos frm scratch for the ai run hedge fund & the executive search firm, so there is a proper logo, dont make a name clear but give a clear logo". The two cards showed a Phosphor glyph on a grey tile beside the CityU, WRITER and Wring logos, so they read as placeholders.
+- **Where:** `apps/web/public/media/case-studies/hedge-fund-desk.svg`, `apps/web/public/media/case-studies/executive-search.svg`, `apps/web/src/features/marketing/case-studies/content.ts`, [art-direction.md](visual/art-direction.md) (the "invented logos" rule).
+- **Supersedes:** nothing. It is an exception to the "invented logos" item in [art-direction.md](visual/art-direction.md), for anonymous case-study cards only.
+- **Source:** the `case-studies` branch.
+
 ## 2026-10-31
 
 ### D34 Product chrome draws status with a glyph; status emoji stay in the agent's own words

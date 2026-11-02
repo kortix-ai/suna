@@ -31,14 +31,18 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  *    or systems: they identify it.
  *  - Only what the engagement really contains. No metric, no quote, no
  *    outcome number until the company signs one off.
+ *  - The hedge fund and executive search logos are marks Kortix drew for
+ *    these cards (founder, 2026-11-02; brand decision D35). They are not the
+ *    firm's real logo and carry no name. Never put a name or a wordmark in
+ *    them, and never copy a real firm's logo.
  */
 
 export type CaseStudy = {
   id: string;
-  /** A third-party logo on a white tile, a drawn brand mark, or a Phosphor glyph. */
+  /** A logo on a white tile (third-party, or drawn for a named class), a drawn brand mark, or a Phosphor glyph. */
   logo?: { src: string; alt: string; width: number; height: number };
   mark?: 'kortix' | 'platinum';
-  icon?: 'telecom' | 'search' | 'finance';
+  icon?: 'telecom';
   category: string;
   /** Who it is, as a name (logo cases) or a class. */
   org: string;
@@ -114,7 +118,12 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     },
     {
       id: 'hedge-fund',
-      icon: 'finance',
+      logo: {
+        src: '/media/case-studies/hedge-fund-desk.svg',
+        alt: 'An AI-run hedge fund desk.',
+        width: 100,
+        height: 100,
+      },
       category: 'Finance',
       org: 'Built and run by Kortix',
       title: 'An AI-run hedge fund desk.',
@@ -128,7 +137,12 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     },
     {
       id: 'executive-search',
-      icon: 'search',
+      logo: {
+        src: '/media/case-studies/executive-search.svg',
+        alt: 'An international executive search firm',
+        width: 100,
+        height: 100,
+      },
       category: 'Professional services',
       org: 'An international executive search firm',
       title: 'An executive search firm, rebuilt around agents.',
