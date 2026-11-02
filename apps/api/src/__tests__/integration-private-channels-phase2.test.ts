@@ -31,7 +31,6 @@ import {
 } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import * as realVolumes from '../drives/volumes';
-import * as registry from '../feature-flags/registry';
 import { config } from '../config';
 import { db } from '../shared/db';
 import { FakeVolume } from './helpers/memory-fake-volume';
@@ -85,13 +84,6 @@ mock.module('../drives/volumes', () => ({
     if (moveFails) throw new realVolumes.DriveStorageError(503, 'storage is down');
     moves.push(`${from} -> ${to}`);
   },
-}));
-// This lane has no Platinum key, so `drives` is never available here; the fakes stand in for it.
-const resolveFeatureFlag = registry.resolveFeatureFlag;
-mock.module('../feature-flags/registry', () => ({
-  ...registry,
-  resolveFeatureFlag: (metadata: unknown, key: string) =>
-    key === 'drives' ? Boolean((metadata as { experimental?: { drives?: boolean } } | null)?.experimental?.drives) : resolveFeatureFlag(metadata, key as never),
 }));
 (config as { PLATINUM_API_KEY?: string }).PLATINUM_API_KEY ||= 'test-key';
 

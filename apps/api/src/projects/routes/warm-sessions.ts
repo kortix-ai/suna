@@ -552,8 +552,8 @@ export function registerWarmSessionsRoutes(): void {
       // it names the channel's folders. Best effort, off the response path.
       if (filing.defaultSpaceId && claimed.spaceId) {
         void import('../../drives/service')
-          .then(async ({ refreshDriveNotes, sessionDrivesEnabled }) => {
-            if (await sessionDrivesEnabled(projectId)) await refreshDriveNotes(sessionId);
+          .then(async ({ refreshDriveNotes, sessionDriveMountEnabled }) => {
+            if (sessionDriveMountEnabled()) await refreshDriveNotes(sessionId);
           })
           .catch(() => undefined);
       }

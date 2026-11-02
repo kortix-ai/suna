@@ -368,6 +368,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/drives/:driveId/files/mkdir': { action: 'drive.folder.create', title: 'Created a drive folder' },
   'POST /v1/drives/:driveId/files/move': { action: 'drive.file.move', title: 'Moved a drive file or folder' },
   'GET /v1/drives/:driveId/access': { action: 'drive.access.list', title: 'Viewed who has access to a folder' },
+  'GET /v1/drives/:driveId/admin-reads': { action: 'drive.admin_reads.list', title: 'Viewed which admins opened a folder' },
   'PUT /v1/drives/:driveId/access': { action: 'drive.access.share', title: 'Shared a folder' },
   'DELETE /v1/drives/:driveId/access/:grantId': { action: 'drive.access.revoke', title: 'Stopped sharing a folder' },
   'GET /v1/drives/:driveId/principals': { action: 'drive.access.principals', title: 'Listed folder sharing candidates' },
