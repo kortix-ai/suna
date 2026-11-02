@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { KortixToolResult } from '@kortix/api-contract/kortix-tool-card'
 import { PLATFORM_TOOLS, loadTools, runTool } from '@/services/tools/host'
+import { runKortix } from '@/services/tools/platform/platform'
 
 /**
  * The My Kortix platform tools (services/tools/platform/kortix_*.ts) at their
@@ -634,5 +635,16 @@ describe('kortix_schedules run_now on an automation', () => {
     const failed = await run('kortix_schedules', { action: 'run_now', id: 'broken' })
     expect(failed.card.title).toBe('Could not run it now')
     expect(argvs()).toEqual(['triggers run hn-watch-tick --wait=0', 'triggers run broken --wait=0'])
+  })
+})
+
+describe('runKortix', () => {
+  // The CLI can exit before it reads its stdin. On Bun 1.4 the write then
+  // fails with EPIPE, and an unhandled pipe error exited the whole daemon.
+  test('a CLI that exits before it reads stdin returns its exit code, and the daemon keeps running', async () => {
+    writeFileSync(join(bin, 'kortix'), '#!/bin/sh\nexit 3\n')
+    chmodSync(join(bin, 'kortix'), 0o755)
+    const result = await runKortix(['schedules', 'create', '--json'], { env: env() }, 'x'.repeat(1024 * 1024))
+    expect(result.code).toBe(3)
   })
 })
