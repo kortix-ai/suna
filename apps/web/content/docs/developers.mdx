@@ -1,7 +1,9 @@
 ---
 title: Developers
-description: "Build on Kortix: the CLI, git and change requests, the kortix.yaml reference, the REST API, Apps, self-hosting and the @kortix/sdk."
+description: "Build on Kortix, the cloud-native agent harness for companies: the CLI, git and change requests, the kortix.yaml reference, the REST API, Apps, self-hosting and the @kortix/sdk."
 ---
+
+Kortix is the cloud-native agent harness for companies. You write custom agents on pi, an open-source agent harness, declare them in `kortix.yaml`, and `kortix ship` deploys them to the cloud. [Triggers](#triggers-keys) start them from events, they hand work to each other in the background ([Agents working together](#agents-working-together)), and each session runs on its own cloud computer.
 
 Everything a developer needs to build on Kortix, on one page: the CLI and git workflow, the `kortix.yaml` reference, the REST API, Apps, self-hosting, and the TypeScript SDK with its React hooks and UI components. For what Kortix is and how people use it, read the [Guide](/docs/guide).
 
@@ -3785,6 +3787,36 @@ kortix self-host start
 | Update policy | Auto-update on or off, channel, daily time and timezone. |
 
 SAML sign-in is on in every instance, and `init` generates `SAML_PRIVATE_KEY` once. Do not change that key after you register an identity provider: it is the instance's SAML identity. To set up SSO, see [Single sign-on and directory sync](/docs/guide#single-sign-on-and-directory-sync).
+
+#### Change or add a domain
+
+An instance has one primary domain and can answer on more. `kortix self-host domain show` lists them.
+
+To move to a new domain, point its records at the server first: `<domain>`, `api.<domain>`, and `*.apps.<domain>` and `*.p.<domain>` when Apps hosting and preview origins are on. Then run:
+
+```bash
+kortix self-host domain move <domain>
+```
+
+The command checks that every new name resolves to the same address as the current domain, writes the new configuration, runs `caddy validate`, and restarts Caddy, the frontend, the API, the gateway and auth. A failed validation restores the previous configuration. Hosts under the old domain move with it, and the old domain becomes an alias in `KORTIX_DOMAIN_ALIASES`:
+
+| Old host | After the move |
+|---|---|
+| `<old>` | Redirects (`308`) to the same path on the new domain. |
+| `api.<old>` | Keeps serving. Sandboxes, Capture devices and webhooks set up before the move keep working. |
+| `*.apps.<old>`, `*.p.<old>` | Keep serving the same App or sandbox port. New links use the new domain. |
+
+People sign in once more on the new domain. Re-register URLs that outside services store: the GitHub App callback and OAuth redirect URIs.
+
+If people sign in with SAML SSO, update the identity provider **before** the move. The service provider's entity ID and ACS URL follow the domain, and every SSO sign-in fails until the identity provider knows them. Microsoft Entra ID and Okta accept several values, so add the new ones next to the current ones:
+
+| Field | Value |
+|---|---|
+| Identifier (entity ID) | `https://<domain>/auth/v1/sso/saml/metadata` |
+| Reply URL (ACS) | `https://<domain>/auth/v1/sso/saml/acs` |
+| Logout URL | `https://<domain>/auth/v1/sso/saml/slo` |
+
+To add an alias without moving, run `kortix self-host env set KORTIX_DOMAIN_ALIASES=<domain>[,<domain>]`. To retire an alias, remove it from the list.
 
 ### First sign-in and setup
 

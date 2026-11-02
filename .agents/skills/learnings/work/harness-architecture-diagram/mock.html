@@ -1,0 +1,61 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Kortix harness: architecture mock</title>
+<link rel="stylesheet" href="../../../kortix-brand/references/visual/fonts.css">
+<link rel="stylesheet" href="../../../kortix-brand/references/visual/tokens.css">
+<style>
+  html, body { margin: 0; background: var(--background); color: var(--foreground); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+  .page { max-width: 1240px; margin: 48px auto; padding: 0 24px; }
+  h1 { font-size: 40px; font-weight: 500; letter-spacing: var(--tracking-tight); line-height: var(--leading-tight); margin: 0; }
+  h1 span { color: var(--muted-foreground); display: block; }
+  .lede { color: var(--muted-foreground); font-size: 18px; line-height: var(--leading-snug); max-width: 720px; margin: 16px 0 40px; }
+  .stage { position: relative; width: 1180px; height: 650px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; }
+  .box { position: absolute; background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; box-sizing: border-box; }
+  .box h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .box p { margin: 4px 0 0; font-size: 13px; color: var(--muted-foreground); line-height: 1.4; }
+  .core { border: 1.5px solid var(--foreground); }
+  .dashed { border-style: dashed; background: transparent; }
+  .tag { font-family: var(--font-mono); font-size: 11px; color: var(--muted-foreground); margin-bottom: 6px; }
+  svg { position: absolute; inset: 0; pointer-events: none; }
+  .note { position: absolute; font-size: 12px; color: var(--muted-foreground); }
+</style>
+<div class="page">
+  <h1>The harness.<span>Everything around the model that turns it into a worker.</span></h1>
+  <p class="lede">Events wake agents. My Kortix routes the work. Each agent runs on its own cloud computer, reaches your tools through connectors Kortix holds the logins for, and leaves its work in state that persists. Change any part of it in code.</p>
+
+  <div class="stage">
+    <svg viewBox="0 0 1180 650" width="1180" height="650">
+      <defs>
+        <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+      </defs>
+      <g stroke="var(--muted-foreground)" color="var(--muted-foreground)" stroke-width="1.5" fill="none">
+        <line x1="250" y1="100" x2="288" y2="100" marker-end="url(#a)"/>
+        <line x1="530" y1="100" x2="568" y2="100" marker-end="url(#a)"/>
+        <line x1="848" y1="100" x2="886" y2="100" marker-end="url(#a)"/>
+        <path d="M680 165 V205 H520 V253" marker-end="url(#a)"/>
+        <path d="M760 165 V253" marker-end="url(#a)"/>
+        <path d="M400 165 V253" stroke-dasharray="5 5" marker-end="url(#a)"/>
+        <line x1="900" y1="315" x2="938" y2="315" marker-end="url(#a)"/>
+        <line x1="460" y1="377" x2="460" y2="453" marker-end="url(#a)"/>
+        <line x1="760" y1="377" x2="760" y2="453" marker-end="url(#a)"/>
+        <path d="M335 330 H180 V453" marker-end="url(#a)"/>
+      </g>
+    </svg>
+    <div class="note" style="left:250px;top:196px;width:140px;text-align:right">wakes the session<br>that subscribed</div>
+
+    <div class="box" style="left:30px;top:35px;width:220px;height:130px"><div class="tag">events</div><h3>Event triggers</h3><p>Schedules · webhooks · app and connector events · merged changes · loops</p></div>
+    <div class="box" style="left:290px;top:35px;width:240px;height:130px"><div class="tag">filter</div><h3>Triggers</h3><p>A filter in code drops noise, then starts a session or wakes one</p></div>
+    <div class="box core" style="left:570px;top:35px;width:278px;height:130px"><div class="tag">router</div><h3>My Kortix</h3><p>Shared context, routing and replies. Never blocks: work runs in the background</p></div>
+    <div class="box" style="left:888px;top:35px;width:262px;height:130px"><div class="tag">channels</div><h3>Where people are</h3><p>Web · desktop · mobile · CLI · Slack · Microsoft Teams · email</p></div>
+
+    <div class="box" style="left:335px;top:255px;width:250px;height:122px"><div class="tag">session 1</div><h3>Custom pi agent</h3><p>Its own cloud computer, its own permissions, an isolated context</p></div>
+    <div class="box" style="left:645px;top:255px;width:255px;height:122px"><div class="tag">session N</div><h3>Custom pi agent</h3><p>Thousands in parallel; each reports back by itself</p></div>
+    <div class="box" style="left:940px;top:255px;width:210px;height:122px"><div class="tag">connectors</div><h3>Your tools, safely</h3><p>3,000+ apps · logins held by Kortix, never on the computer · Allow / Ask / Block</p></div>
+
+    <div class="box" style="left:30px;top:455px;width:300px;height:100px"><div class="tag">models</div><h3>LLM gateway</h3><p>Any model, your keys or ours · budgets and access rules on every call</p></div>
+    <div class="box" style="left:370px;top:455px;width:530px;height:100px"><div class="tag">state</div><h3>State that persists</h3><p>Git repo · Drive and company memory · each session's record · volumes. A computer sleeps when idle and wakes with its full history.</p></div>
+    <div class="box" style="left:940px;top:455px;width:210px;height:100px"><div class="tag">review</div><h3>People approve</h3><p>Change requests a person ships · approval rules you set</p></div>
+
+    <div class="box dashed" style="left:30px;top:580px;width:1120px;height:50px;padding:14px 16px"><h3 style="display:inline">Framework</h3> <span style="font-size:13px;color:var(--muted-foreground)">&nbsp;kortix.yaml and pi extensions: every box above is a file in your repo you can change.</span></div>
+  </div>
+</div>
