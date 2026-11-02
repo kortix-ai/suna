@@ -3538,6 +3538,8 @@ describe('Telegram allowed users and access requests — migrated PostgreSQL', (
       expect(calls.filter((c) => !c.bot).map((c) => c.method)).toEqual(['getWebhookInfo', 'deleteWebhook', 'getMyCommands', 'setMyCommands']);
       expect(botMenu).toEqual([weather]);
       expect(otherMenu).toEqual(commandMenu());
+      // The route releases the old bot in the background; the claim delete runs after setMyCommands answers.
+      for (let i = 0; i < 200 && (await menuClaimRows()).length; i++) await Bun.sleep(10);
       expect(await menuClaimRows()).toEqual([]);
     } finally {
       await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
