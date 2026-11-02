@@ -149,6 +149,8 @@ export const PROJECT_TRANSFER_LEAVE_TABLES: Readonly<Record<string, string>> = {
     'billing ledger — spend stays with the account that consumed it',
   gateway_request_logs:
     'request log ledger — history stays with the account that paid for it',
+  storage_charges:
+    'storage billing ledger — a day already charged stays with the account that paid; later days attribute to the new owner',
   // Immutable audit evidence: the audit_events table's own comment says
   // account deletion must not rewrite forensic history; a transfer follows
   // the same rule for both audit tables.
