@@ -13,7 +13,7 @@ ARG BUN_VERSION=1.4.3
 # returns a pid while the shell exits 0 before its WebSocket can attach, surfacing
 # as `pty not found`. Keep this exact pin synchronized with the agent package's
 # `engines.bun`; that package metadata is also part of the snapshot fingerprint.
-ARG SANDBOX_AGENT_BUN_VERSION=1.3.11
+ARG SANDBOX_AGENT_BUN_VERSION=1.4.3
 FROM oven/bun:${BUN_VERSION}-slim AS base
 
 # ---- Kortix Apps Runtime Stage ----

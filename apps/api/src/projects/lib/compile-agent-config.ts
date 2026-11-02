@@ -436,6 +436,12 @@ function piSettingsSource(source: string): string {
   return source.startsWith('npm:') ? source : `./${source}`;
 }
 
+/** The agent's `context`; null when it sets none (the daemon's default, `record`). */
+export function manifestPiContext(raw: unknown, agentName?: string | null): 'record' | 'summary' | null {
+  if (!raw || typeof raw !== 'object') return null;
+  return manifestAgentBlock(raw as Record<string, unknown>, agentName)?.context ?? null;
+}
+
 /** The agent's `codemode`; null when it sets none (the daemon's default, `on`). */
 export function manifestPiCodemode(raw: unknown, agentName?: string | null): 'off' | 'on' | 'only' | null {
   if (!raw || typeof raw !== 'object') return null;

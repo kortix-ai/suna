@@ -141,6 +141,7 @@ export const YAML_KEY_ROW = {
   options: 'model',
   tools: 'tools',
   codemode: 'tools',
+  context: 'tools',
   permission: 'tools',
   skills: 'skills',
   subagents: 'subagents',

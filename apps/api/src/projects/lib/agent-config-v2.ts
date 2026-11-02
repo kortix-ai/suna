@@ -579,6 +579,7 @@ const BLOCK_ORDER_V3: readonly string[] = [
   'commands',
   'extensions',
   'codemode',
+  'context',
   'connectors',
   'connectors_required',
   'policy_sets',
@@ -625,7 +626,7 @@ export type ApplyAgentConfigV3Result =
 /**
  * Write the editor's draft onto a v3 agent block. `governance` replaces the
  * governance keys; a v3-only grant (`subagents`, `commands`, `extensions`,
- * `codemode`) it omits is kept, so an editor that predates them never drops
+ * `codemode`, `context`) it omits is kept, so an editor that predates them never drops
  * them, and `none` clears one. `behavior`, when sent, replaces the behavior
  * keys and the prompt: the prompt goes to the existing `prompt_file`
  * (`promptWrite`), else stays inline, else a new prompt becomes
@@ -681,6 +682,8 @@ export function applyAgentConfigV3(
   for (const key of GRANT_KEYS_V3) {
     if (next[key] === 'none') delete next[key];
   }
+  // `record` is the default context: written by omitting the key, so an omitted one is never read as a choice.
+  if (next.context === 'record') delete next.context;
 
   const applied = applyAgentMapBlock(manifest, agentName, orderBlockV3(next));
   if (!applied.ok) return applied;

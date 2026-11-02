@@ -94,6 +94,8 @@ let standardImageDeleteCalls: Array<{ slug?: string; provider?: string }> = [];
 let accountTokenCreateCalls: Array<Record<string, unknown>> = [];
 let serviceAccountCreateCalls: Array<Record<string, unknown>> = [];
 let networkBoundaryBindings: Array<Record<string, unknown>> = [];
+/** Resolves the boundary check; a test swaps it to hold or fail the check. */
+let networkBoundaryCheck: () => Promise<void> = async () => {};
 let providerSyncCalls: Array<{ externalId: string; bindings: Array<Record<string, unknown>> }> = [];
 let activeRouting: {
   activeProvider: string | null;
@@ -370,7 +372,10 @@ mock.module('../../projects/triggers', () => ({
 }));
 
 mock.module('../../projects/lib/network-secret-boundary', () => ({
-  resolveSessionNetworkBoundary: async () => networkBoundaryBindings,
+  resolveSessionNetworkBoundary: async () => {
+    await networkBoundaryCheck();
+    return networkBoundaryBindings;
+  },
 }));
 
 mock.module('../../projects/agents', () => ({
@@ -428,6 +433,7 @@ beforeEach(() => {
   accountTokenCreateCalls = [];
   serviceAccountCreateCalls = [];
   networkBoundaryBindings = [];
+  networkBoundaryCheck = async () => {};
   providerSyncCalls = [];
   activeRouting = null;
   agentGrantError = null;
@@ -446,6 +452,39 @@ function baseOpts() {
     metadata: {},
   };
 }
+
+describe('provisionSessionSandbox — the secret boundary check', () => {
+  test('the provider create does not wait for the check; the box goes active only after it', async () => {
+    let releaseCheck!: () => void;
+    networkBoundaryCheck = () => new Promise<void>((resolve) => { releaseCheck = resolve; });
+    const provisioned = provisionSessionSandbox(baseOpts());
+    // The create runs while the check is still open.
+    for (let i = 0; i < 100 && providerCreateOpts.length === 0; i++) await Bun.sleep(5);
+    expect(providerCreateOpts).toHaveLength(1);
+    expect(updateCalls.some((c) => c.table === projectSessions && c.updates.status === 'running')).toBe(false);
+    releaseCheck();
+    await provisioned;
+  });
+
+  test('a policy the check refuses still fails the provision, and the box created beside it is removed', async () => {
+    networkBoundaryCheck = async () => {
+      throw new Error('secret boundary policy cannot be served');
+    };
+    const removed = waitFor((resolve) => {
+      onRemoved = resolve;
+    });
+    await provisionSessionSandbox(baseOpts());
+    await removed;
+
+    expect(providerCreateOpts).toHaveLength(1);
+    expect(removedIds).toEqual([EXTERNAL_ID]);
+    // The failure write lands right after the removal.
+    const failed = () => updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'error');
+    for (let i = 0; i < 100 && !failed(); i++) await Bun.sleep(5);
+    expect(failed()).toBe(true);
+    expect(updateCalls.some((c) => c.table === projectSessions && c.updates.status === 'running')).toBe(false);
+  });
+});
 
 describe('provisionSessionSandbox — mid-provision delete race', () => {
   test('refuses to mint a session token when the agent grant cannot be resolved', async () => {

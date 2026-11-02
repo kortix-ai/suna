@@ -83,6 +83,9 @@ export interface AgentConfigBlock {
   tools?: AgentCapabilityGrant;
   /** v3: pi's codemode tool. Omitted: `on`. */
   codemode?: 'on' | 'only' | 'off';
+  /** v3: what a full context does. `record` (omitted): the agent continues in a fresh context and
+   *  searches the session's full record. `summary`: pi's own compaction writes a summary. */
+  context?: 'record' | 'summary';
   /** v3: the declared subagents this agent may start (`mode` `subagent` or `all`). */
   subagents?: AgentGrantSetV2;
   /** v3: the registered commands this agent may run. */

@@ -65,7 +65,7 @@ export function migrationNamesInRunOrder(migrationsDir: string): string[] {
     .map((name) => basename(join(migrationsDir, name), extname(name)));
 }
 
-export interface MigrationStatusPlan {
+interface MigrationStatusPlan {
   /** Files the ledger does not name, in apply order. */
   pending: string[];
 }

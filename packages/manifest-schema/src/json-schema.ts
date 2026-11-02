@@ -75,6 +75,7 @@ import {
   TOOL_NAME_RE,
   TRIGGER_TYPES,
   CODEMODE_VALUES,
+  CONTEXT_VALUES,
   HARNESS_TOOL_NAMES,
   KORTIX_SKILL_PREFIX,
   REGISTRY_NAME_MAX,
@@ -1241,6 +1242,13 @@ function agentBlockV3Schema(): JsonSchemaFragment {
         default: 'on',
         description:
           "`on`: the model gets every tool plus `codemode`, which runs one JavaScript script that calls the other tools. `only`: `codemode` alone. `off`: no `codemode`. A script's calls follow the agent's `permission`.",
+      },
+      context: {
+        type: 'string',
+        enum: [...CONTEXT_VALUES],
+        default: 'record',
+        description:
+          "What happens when the session's context fills. `record`: the agent continues at once in a fresh context and searches the session's full record, word for word, when it needs a detail; nothing is summarized. `summary`: a model call writes a summary of the conversation and the agent continues from it.",
       },
       tools: {
         default: 'all',

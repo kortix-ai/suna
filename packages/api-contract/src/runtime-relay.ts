@@ -248,8 +248,31 @@ export const RUNTIME_CAPABILITIES = [
   'session.messaging',
   /** A team's shared task list: the `task_*` tools (flag `agent_teams`). */
   'session.team_tasks',
+  /**
+   * A full context, and `/session/:id/summarize`, reset onto the session's searchable record:
+   * nothing is summarized (kortixd `extensions/context-record.ts`). Absent: a summary.
+   */
+  'session.context_record',
 ] as const;
 export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
+
+/**
+ * The extensions the pi runtime loads for every agent (kortixd `harness/pi/runtime.ts`): the agent
+ * page's platform rows (apps/api `agent-capabilities.ts`) list exactly these, and the pi-harness
+ * test fails when the runtime loads a builtin that is not here.
+ */
+export const PLATFORM_EXTENSION_IDS = [
+  'kortix-nested-calls',
+  'kortix-presentation',
+  'kortix-turn',
+  'kortix-context-record',
+  'kortix-subagents',
+  'kortix-workflow',
+  'kortix-messaging',
+  'kortix-team-tasks',
+  'codemode',
+] as const;
+export type PlatformExtensionId = (typeof PLATFORM_EXTENSION_IDS)[number];
 
 /**
  * The daemon serves the Kortix turn verbs: `POST /kortix/runtime/sessions/:id/prompt`,

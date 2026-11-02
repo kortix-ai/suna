@@ -194,6 +194,22 @@ describe('applyAgentConfigV3', () => {
     expect(next.extensions).toBeUndefined();
   });
 
+  test('context: summary is written, record (the default) removes the key, and an omitted one is kept', () => {
+    const off = applyAgentConfigV3(manifest(), 'support', { governance: { context: 'summary' } });
+    expect(off.ok).toBe(true);
+    if (!off.ok) return;
+    expect(block(off.raw, 'support').context).toBe('summary');
+
+    const reparsed = parseManifestString(serializeManifest({ ...manifest(), raw: off.raw }), 'kortix.yaml');
+    const kept = applyAgentConfigV3(reparsed, 'support', { governance: {} });
+    if (!kept.ok) throw new Error(kept.error);
+    expect(block(kept.raw, 'support').context).toBe('summary');
+
+    const on = applyAgentConfigV3(reparsed, 'support', { governance: { context: 'record' } });
+    if (!on.ok) throw new Error(on.error);
+    expect(block(on.raw, 'support')).not.toHaveProperty('context');
+  });
+
   test('an omitted repository choice is written explicitly as the v3 default, false', () => {
     const applied = applyAgentConfigV3(manifest(), 'researcher', { governance: { skills: 'all' } });
 

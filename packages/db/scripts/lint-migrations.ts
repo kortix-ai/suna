@@ -289,7 +289,7 @@ function lintConcurrentMigration(
   return { errors, warnings };
 }
 
-export interface LintOptions {
+interface LintOptions {
   /**
    * Pre-existing migrations (see grandfathered-migrations.json) are exempt
    * from checks introduced AFTER they landed — they're immutable, and we

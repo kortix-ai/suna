@@ -11,7 +11,7 @@ import {
   ModalTitle,
 } from '../../primitives/modal';
 import { errorToast } from '../../primitives/toast';
-import { useSummarizeRuntimeSession } from '@kortix/sdk/react';
+import { useRuntimeSupports, useSummarizeRuntimeSession } from '@kortix/sdk/react';
 import { useTranslations } from '../../i18n';
 import { useCallback } from 'react';
 
@@ -31,6 +31,9 @@ export function CompactModal({
   onCompactStart,
 }: CompactDialogProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tReset = useTranslations('contextReset');
+  // A runtime that resets onto the record summarizes nothing: the dialog says what happens there.
+  const record = useRuntimeSupports('session.context_record');
   const summarize = useSummarizeRuntimeSession();
 
   const handleCompact = useCallback(() => {
@@ -51,21 +54,29 @@ export function CompactModal({
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent className="lg:max-w-md">
-        <ModalHeader>
-          <ModalTitle>
-            {tHardcodedUi.raw('componentsSessionCompactDialog.line47JsxTextCompactSession')}
-          </ModalTitle>
-          <ModalDescription>
-            {tHardcodedUi.raw(
-              'componentsSessionCompactDialog.line50JsxTextThisWillSummarizeOlderMessagesUsingAiTo',
-            )}
-          </ModalDescription>
-        </ModalHeader>
-        <ModalBody>
-          <div className="text-muted-foreground space-y-1.5 text-sm">
-            <p>
+        {record ? (
+          <ModalHeader>
+            <ModalTitle>{tReset('dialogTitle')}</ModalTitle>
+            <ModalDescription>{tReset('dialogDescription')}</ModalDescription>
+          </ModalHeader>
+        ) : (
+          <ModalHeader>
+            <ModalTitle>
+              {tHardcodedUi.raw('componentsSessionCompactDialog.line47JsxTextCompactSession')}
+            </ModalTitle>
+            <ModalDescription>
               {tHardcodedUi.raw(
-                'componentsSessionCompactDialog.line56JsxTextWhatHappensDuringCompaction',
+                'componentsSessionCompactDialog.line50JsxTextThisWillSummarizeOlderMessagesUsingAiTo',
+              )}
+            </ModalDescription>
+          </ModalHeader>
+        )}
+        {!record && (
+          <ModalBody>
+            <div className="text-muted-foreground space-y-1.5 text-sm">
+              <p>
+                {tHardcodedUi.raw(
+                  'componentsSessionCompactDialog.line56JsxTextWhatHappensDuringCompaction',
               )}
             </p>
             <ul className="list-inside list-disc space-y-0.5 pl-1">
@@ -87,6 +98,7 @@ export function CompactModal({
             </ul>
           </div>
         </ModalBody>
+        )}
         <ModalFooter>
           <Button
             variant="outline-ghost"
@@ -97,7 +109,7 @@ export function CompactModal({
             {tHardcodedUi.raw('i18nComplete.text19766ed6ccb2')}
           </Button>
           <Button size="sm" className="w-full sm:w-auto" onClick={handleCompact}>
-            {tHardcodedUi.raw('i18nComplete.text99452646e34b')}
+            {record ? tReset('dialogAction') : tHardcodedUi.raw('i18nComplete.text99452646e34b')}
           </Button>
         </ModalFooter>
       </ModalContent>
