@@ -31,10 +31,11 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  *    or systems: they identify it.
  *  - Only what the engagement really contains. No metric, no quote, no
  *    outcome number until the company signs one off.
- *  - The hedge fund and executive search logos are marks Kortix drew for
- *    these cards (founder, 2026-11-02; brand decision D35). They are not the
- *    firm's real logo and carry no name. Never put a name or a wordmark in
- *    them, and never copy a real firm's logo.
+ *  - The hedge fund and executive search logos are lockups Kortix drew for
+ *    these cards (founder, 2026-11-02; brand decision D35): a symbol plus
+ *    the class as type ("STRUCTURED CREDIT", "EXECUTIVE SEARCH"). They are
+ *    not the firm's real logo. Never put a firm name in them, and never copy
+ *    a real firm's logo.
  */
 
 export type CaseStudy = {
@@ -121,7 +122,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       logo: {
         src: '/media/case-studies/hedge-fund-desk.svg',
         alt: 'An AI-run hedge fund desk.',
-        width: 100,
+        width: 397,
         height: 100,
       },
       category: 'Finance',
@@ -140,7 +141,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       logo: {
         src: '/media/case-studies/executive-search.svg',
         alt: 'An international executive search firm',
-        width: 100,
+        width: 395,
         height: 100,
       },
       category: 'Professional services',
