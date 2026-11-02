@@ -1,8 +1,8 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="apps/web/public/brandkit/Logo/Brandmark/SVG/Brandmark%20White.svg">
-  <img src="apps/web/public/brandkit/Logo/Brandmark/SVG/Brandmark%20Black.svg" alt="Kortix CompanyOS" width="80" />
+  <source media="(prefers-color-scheme: dark)" srcset="apps/web/public/brandkit/Logo/Logomark/SVG/Logomark%20White.svg">
+  <img src="apps/web/public/brandkit/Logo/Logomark/SVG/Logomark%20Black.svg" alt="Kortix" width="240" />
 </picture>
 
 # Kortix CompanyOS
