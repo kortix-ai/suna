@@ -3788,6 +3788,28 @@ kortix self-host start
 
 SAML sign-in is on in every instance, and `init` generates `SAML_PRIVATE_KEY` once. Do not change that key after you register an identity provider: it is the instance's SAML identity. To set up SSO, see [Single sign-on and directory sync](/docs/guide#single-sign-on-and-directory-sync).
 
+#### Change or add a domain
+
+An instance has one primary domain and can answer on more. `kortix self-host domain show` lists them.
+
+To move to a new domain, point its records at the server first: `<domain>`, `api.<domain>`, and `*.apps.<domain>` and `*.p.<domain>` when Apps hosting and preview origins are on. Then run:
+
+```bash
+kortix self-host domain move <domain>
+```
+
+The command checks that every new name resolves to the same address as the current domain, writes the new configuration, runs `caddy validate`, and restarts Caddy, the frontend, the API, the gateway and auth. A failed validation restores the previous configuration. Hosts under the old domain move with it, and the old domain becomes an alias in `KORTIX_DOMAIN_ALIASES`:
+
+| Old host | After the move |
+|---|---|
+| `<old>` | Redirects (`308`) to the same path on the new domain. |
+| `api.<old>` | Keeps serving. Sandboxes, Capture devices and webhooks set up before the move keep working. |
+| `*.apps.<old>`, `*.p.<old>` | Keep serving the same App or sandbox port. New links use the new domain. |
+
+People sign in once more on the new domain. Re-register URLs that outside services store: the GitHub App callback, OAuth redirect URIs and the SAML service provider in your identity provider.
+
+To add an alias without moving, run `kortix self-host env set KORTIX_DOMAIN_ALIASES=<domain>[,<domain>]`. To retire an alias, remove it from the list.
+
 ### First sign-in and setup
 
 1. **Sign up as the admin.** Open `https://<domain>` and sign up with an address in `KORTIX_PLATFORM_ADMIN_EMAILS`. A password, email-code or social sign-in matches that list. A SAML sign-in never does. To change the admins later, set the full comma-separated list: `kortix self-host env set KORTIX_PLATFORM_ADMIN_EMAILS=you@example.com,ops@example.com`. The value replaces the list.
