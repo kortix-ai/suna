@@ -18,6 +18,7 @@ import {
   type DriveEntry,
   type FolderAccess,
   type AgentMountPlan,
+  type DriveAdminReads,
   type FolderAccessView,
   type FolderLevel,
   type FolderPrincipalType,
@@ -25,6 +26,7 @@ import {
   type SessionDrives,
   dismissDriveConflict,
   getAccountStorageUsage,
+  getDriveAdminReads,
   getDriveUsage,
   getFolderAccess,
   listAgentMounts,
@@ -71,6 +73,15 @@ export function folderAccessQueryOptions(driveId: string | null, path: string, e
   return {
     queryKey: [...qk.drives.grants(driveId ?? ''), path] as const,
     queryFn: (): Promise<FolderAccessView> => getFolderAccess(driveId!, path),
+    enabled: !!driveId && enabled,
+  };
+}
+
+/** The admins who opened a person's own folder. Under the drive's key. */
+export function driveAdminReadsQueryOptions(driveId: string | null, path: string, enabled = true) {
+  return {
+    queryKey: [...qk.drives.drive(driveId ?? ''), 'admin-reads', path] as const,
+    queryFn: (): Promise<DriveAdminReads> => getDriveAdminReads(driveId!, path),
     enabled: !!driveId && enabled,
   };
 }
@@ -148,6 +159,11 @@ export function useDriveFolder(driveId: string | null, path: string) {
 
 export function useFolderAccess(driveId: string | null, path: string, enabled = true) {
   return useQuery(folderAccessQueryOptions(driveId, path, enabled));
+}
+
+/** The project admins who opened the person's own folder that holds `path`. */
+export function useDriveAdminReads(driveId: string | null, path: string, enabled = true) {
+  return useQuery(driveAdminReadsQueryOptions(driveId, path, enabled));
 }
 
 export function useAgentMounts(driveId: string | null, agentName: string, enabled = true) {

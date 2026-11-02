@@ -88,9 +88,11 @@ export type FeatureFlagKey =
   | 'us_region'
   | 'event_triggers'
   | 'notification_center'
+  /** @deprecated Graduated 2026-11-02 — every project has a Drive. The API sends `true` wherever the platform stores a Drive (Platinum). Removed in the next major. */
   | 'volumes'
   /** @deprecated Withdrawn — stateless sessions left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'stateless_sessions'
+  /** @deprecated Graduated 2026-11-02 with `volumes` — every project has a Drive. The API sends `true` wherever the platform stores a Drive (Platinum), so `useFeatureFlag(id, 'drives')` reads Drive availability. Removed in the next major. */
   | 'drives'
   /** @deprecated Withdrawn with `stateless_sessions`. The API no longer lists or resolves it. Removed in the next major. */
   | 'ephemeral_sandboxes'
@@ -116,7 +118,7 @@ export type FeatureFlagKey =
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
-/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `pi_harness`, `genui`, `meta_agent`) sends a constant `true`. */
+/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `pi_harness`, `genui`, `meta_agent`) sends a constant `true`, or (`volumes`, `drives`) sends whether the platform stores a Drive. */
 type GraduatedFeatureFlagKey =
   | 'agent_tunnel'
   | 'teams'
@@ -137,7 +139,9 @@ type GraduatedFeatureFlagKey =
   | 'monitors'
   | 'connectors_v2'
   | 'connectors_api_discover'
-  | 'meta_agent';
+  | 'meta_agent'
+  | 'volumes'
+  | 'drives';
 /** The keys `KortixProject.experimental` carries on every response. */
 type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
@@ -155,8 +159,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'us_region',
   'event_triggers',
   'notification_center',
-  'volumes',
-  'drives',
   'session_log_restore',
   'project_channels',
   'agent_rooms',

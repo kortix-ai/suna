@@ -20,6 +20,7 @@
 // biome-ignore format: one action per line, so a diff names exactly the action that changed
 export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'api.rate_limit.exceeded': 'Hit API rate limit',
+  'drive.folder.admin_access': "Admin opened a person's own folder",
   'audit.anonymous.suppressed': 'Suppressed anonymous audit rows',
   'audit.reconciliation.completed': 'Completed audit reconciliation',
   'webhook.test': 'Sent audit webhook test',

@@ -17,7 +17,7 @@
 import { COMPANY_MEMORY_DIR, MEMORY_DIR_NAME } from '../drives/folders';
 import { folderAccess, folderAccessAtLeast } from '../drives/folders';
 import { type DriveCaller, type DriveRow, driveSubjectFor, ensureProjectDrive, personalFolderFor } from '../drives/service';
-import { resolveFeatureFlag } from '../feature-flags/registry';
+import { driveStorageAvailable } from '../drives/volumes';
 import { projectSessions, projectSpaces } from '@kortix/db';
 import { resolveUserIdentities } from '../projects/surface';
 import { MY_KORTIX_AGENT_NAME, spaceDriveFolders } from '@kortix/shared';
@@ -82,10 +82,10 @@ export interface Layer {
   isDefault: boolean;
 }
 
-/** 403 `feature_disabled` while Files is off: every memory route answers it first. */
-export function assertFilesOn(project: Project): void {
-  if (!resolveFeatureFlag(project.metadata, 'drives')) {
-    throw new MemoryError(403, 'feature_disabled', 'Memory lives in Files. Turn on Files for this project first.', { feature: 'drives' });
+/** 403 `feature_disabled` where the platform stores no Drive (no Platinum): every memory route answers it first. */
+export function assertFilesOn(_project: Project): void {
+  if (!driveStorageAvailable()) {
+    throw new MemoryError(403, 'feature_disabled', 'Memory lives in the Drive, and this Kortix stores no Drive.', { feature: 'drives' });
   }
 }
 

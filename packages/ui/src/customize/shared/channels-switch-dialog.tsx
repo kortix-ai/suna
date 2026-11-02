@@ -1,25 +1,20 @@
 'use client';
 
-import { useId, useState } from 'react';
-
 import { useTranslations } from '../../i18n';
 import { Button } from '../../primitives/button';
-import { Checkbox } from '../../primitives/checkbox';
 import Loading from '../../primitives/loading';
-import { Modal, ModalBody, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '../../primitives/modal';
+import { Modal, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '../../primitives/modal';
 
 /**
  * The confirm step of the project's Channels switch (`project_channels`):
- * what turning it on or off changes for everyone in the project. Turning it
- * on while Drive is off offers to turn Drive on too (channels get Files).
- * Every surface that flips the flag asks through this dialog.
+ * what turning it on or off changes for everyone in the project. Every
+ * project has a Drive, so channels always get their folders. Every surface that flips the flag asks through this dialog.
  */
 export function ChannelsSwitchDialog({
   open,
   onOpenChange,
   turningOn,
   projectName,
-  driveOff,
   pending = false,
   onConfirm,
 }: {
@@ -28,22 +23,15 @@ export function ChannelsSwitchDialog({
   /** The switch's target: on, or off. */
   turningOn: boolean;
   projectName: string;
-  /** Drive is off and the viewer could turn it on: offer it beside Channels. */
-  driveOff: boolean;
   pending?: boolean;
-  /** `alsoDrive`: turn Drive on too. */
-  onConfirm: (alsoDrive: boolean) => void;
+  onConfirm: () => void;
 }) {
   const t = useTranslations('settings.featureFlags.channelsSwitch');
-  const id = useId();
-  const [alsoDrive, setAlsoDrive] = useState(false);
-  const offerDrive = turningOn && driveOff;
   return (
     <Modal
       open={open}
       onOpenChange={(next) => {
         if (pending) return;
-        if (!next) setAlsoDrive(false);
         onOpenChange(next);
       }}
     >
@@ -52,16 +40,6 @@ export function ChannelsSwitchDialog({
           <ModalTitle>{turningOn ? t('onTitle', { project: projectName }) : t('offTitle')}</ModalTitle>
           <ModalDescription>{turningOn ? t('onBody') : t('offBody')}</ModalDescription>
         </ModalHeader>
-        {offerDrive ? (
-          <ModalBody>
-            <div className="flex items-center gap-2.5">
-              <Checkbox id={`${id}-drive`} checked={alsoDrive} onCheckedChange={(value) => setAlsoDrive(value === true)} />
-              <label htmlFor={`${id}-drive`} className="text-sm">
-                {t('drive')}
-              </label>
-            </div>
-          </ModalBody>
-        ) : null}
         <ModalFooter className="sm:justify-between">
           <Button type="button" variant="outline-ghost" disabled={pending} onClick={() => onOpenChange(false)}>
             {t('cancel')}
@@ -70,10 +48,7 @@ export function ChannelsSwitchDialog({
             type="button"
             disabled={pending}
             aria-busy={pending || undefined}
-            onClick={() => {
-              onConfirm(offerDrive && alsoDrive);
-              setAlsoDrive(false);
-            }}
+            onClick={onConfirm}
           >
             {pending ? <Loading className="size-4 shrink-0" /> : null}
             {turningOn ? t('turnOn') : t('turnOff')}

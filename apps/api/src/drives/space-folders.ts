@@ -18,16 +18,15 @@ import {
   findProjectDrive,
   moveDriveFolder,
   refreshDriveNotes,
-  sessionDrivesEnabled,
+  sessionDriveMountEnabled,
   syncPrivateChannelGrants,
   writeDriveVolume,
 } from './service';
-import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { DriveStorageError, driveStorageAvailable, writeVolumeFile } from './volumes';
 
 /** The project's drive when Drive is on, made on first use; else null. */
 async function driveWhenOn(accountId: string, projectId: string): Promise<DriveRow | null> {
-  if (!driveStorageAvailable() || !(await projectFeatureFlagEnabled(projectId, 'drives'))) return null;
+  if (!driveStorageAvailable()) return null;
   return ensureProjectDrive(accountId, projectId);
 }
 
@@ -204,7 +203,7 @@ export async function runningThreadIds(projectId: string, spaceId?: string): Pro
  */
 export async function refreshRunningThreadNotes(projectId: string, spaceId?: string): Promise<void> {
   try {
-    if (!(await sessionDrivesEnabled(projectId))) return;
+    if (!sessionDriveMountEnabled()) return;
     // Each refresh is a sandbox exec with an ownership pass over every writable mount.
     await mapWithConcurrency(await runningThreadIds(projectId, spaceId), NOTES_REFRESH_CONCURRENCY, refreshDriveNotes);
   } catch (err) {

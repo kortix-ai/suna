@@ -105,7 +105,6 @@ async function openWorld(ctx: FlowContext, opts: { channels?: boolean } = {}) {
   const team = await ctx.fixtures.team();
   const project = await team.project({ managedGit: true });
   const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
-  await world.setFeature('volumes', true);
   if (opts.channels) await world.setFeature('project_channels', true);
   return { team, project, world };
 }
@@ -233,18 +232,12 @@ flow('MEMORY-1', meta([...Object.values(R), FEATURES, TOKEN_MINT]), async (ctx) 
       client.get(SEARCH, { params: { projectId }, query: { q: 'Pricing' } }),
     ]);
   try {
-    await ctx.step('with Files (volumes) off, every memory route → 403 {code: feature_disabled, feature: drives}', async () => {
-      await world.setFeature('volumes', false);
-      for (const r of await everyRoute(world.owner)) r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'drives');
-    });
-
     await ctx.step('an anonymous caller → 401; a non-member → 403/404', async () => {
       (await ctx.client.as(ctx.P.ANON).get(LAYER, { params: { projectId, layerKey: 'company' } })).status(401);
       (await ctx.client.as(ctx.P.NONMEMBER).get(LAYER, { params: { projectId, layerKey: 'company' } })).status([403, 404]);
     });
 
-    await ctx.step('Files on and project_channels off: the memory routes are not gated on Channels (never 403 feature_disabled)', async () => {
-      await world.setFeature('volumes', true);
+    await ctx.step('project_channels off: the memory routes are not gated on Channels (never 403 feature_disabled)', async () => {
       const r = await world.owner.get(LAYER, { params: { projectId, layerKey: 'company' } });
       if (r.statusCode === 403) fail('memory is gated on project_channels', r.text());
       r.status([200, 503]);
@@ -691,12 +684,6 @@ flow('MEMORY-17', meta([...Object.values(MINE), FEATURES, TOKEN_MINT, ...STORAGE
         client.put(MINE_PAGE, FACT, page('likes-short-replies')),
         client.del(MINE_PAGE, page('likes-short-replies')),
       ]);
-
-    await ctx.step('with Files (volumes) off, every My Kortix memory route → 403 feature_disabled, with project_channels off too', async () => {
-      await world.setFeature('volumes', false);
-      for (const r of await every(world.owner)) r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'drives');
-      await world.setFeature('volumes', true);
-    });
 
     await ctx.step('another agent → 404 memory_not_found; a path- or option-shaped name and a bad body → 400 invalid_input', async () => {
       (await world.owner.get(MINE_INDEX, { params: { projectId, agent: 'worker' } })).status(404).body().has('$.code', 'memory_not_found');

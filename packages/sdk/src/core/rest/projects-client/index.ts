@@ -61,6 +61,7 @@ export * from './templates';
 export * from './apps';
 export * from './apps-fleet';
 export * from './drives';
+export * from './project-search';
 export * from './goals';
 export * from './goal-file';
 export * from './notifications';

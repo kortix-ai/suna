@@ -22637,23 +22637,23 @@
     "addAccess": "Aggiungi una persona, un team o un agente",
     "notGrantable": "Questa cartella tiene insieme la struttura e non può essere condivisa. Condividi una cartella al suo interno.",
     "viewOnlyAccess": "Solo chi può condividere questa cartella può modificare chi vi ha accesso.",
-    "noGrants": "Nessuno ha ancora ricevuto l’accesso qui. Gli amministratori del progetto possono aprire ogni cartella tranne quelle personali.",
+    "noGrants": "Nessuno ha ancora ricevuto l'accesso qui. Gli admin del progetto possono aprire ogni cartella.",
     "myFolder": "La mia cartella",
-    "myFolderHint": "La tua cartella personale: privata finché non la condividi, e la tua scrivania nelle tue sessioni",
+    "myFolderHint": "La tua cartella: solo tu e gli admin del progetto potete aprirla, ed è la tua scrivania nelle tue sessioni",
     "sharedWithMeHint": "Cartelle che altre persone hanno condiviso con te",
     "sessionNoFolders": "Nessuna cartella è montata in questa sessione.",
     "folderAccessDescription": "Scegli chi può aprire questa cartella e tutto il suo contenuto. Una sessione riceve la cartella quando il suo agente, il suo progetto o la persona che l’ha avviata vi ha accesso.",
     "whoCanAccess": "Chi ha accesso",
     "whoCanAccessFolder": "Chi può accedere a {name}",
     "accessPanelDescription": "Le persone, i team e gli agenti con accesso ricevono questa cartella e tutto il suo contenuto.",
-    "accessPanelRoot": "Apri una cartella per scegliere chi può accedervi. Company è condivisa con tutti nel progetto; la cartella personale di ciascuno resta privata finché non la condivide.",
+    "accessPanelRoot": "Apri una cartella per scegliere chi può accedervi. Company è condivisa con tutto il progetto. La cartella personale di ogni persona si apre per lei e per gli admin del progetto.",
     "audienceEveryoneDescription": "Tutte le persone che lavorano in questo progetto e ogni sessione al suo interno.",
     "audienceAdmins": "Solo amministratori",
     "audienceAdminsShort": "Gli amministratori del progetto possono aprirla e condividerla",
     "audienceAdminsDescription": "Gli amministratori del progetto possono aprirla e condividerla. Nessuna sessione la riceve finché non la condividi.",
     "audienceOnlyYou": "Solo tu",
     "audienceOnlyOwner": "Solo {name}",
-    "audienceOwnerDescription": "La cartella personale di una persona resta privata finché non la condivide. Nemmeno gli amministratori possono aprirla.",
+    "audienceOwnerDescription": "La cartella personale di una persona si apre per lei e per gli admin del progetto. Ogni volta che un admin la apre, la persona lo vede.",
     "audienceSpecific": "Persone, team o agenti specifici",
     "audienceSpecificDescription": "Solo le persone, i team e gli agenti che scegli, più gli amministratori del progetto. Un agente riceve la cartella in ognuna delle sue sessioni.",
     "inheritedEveryoneNote": "Tutti in questo progetto hanno già accesso tramite {path}. Modificalo lì per restringerlo.",
@@ -22679,7 +22679,6 @@
     "audienceQuestion": "Chi può aprirla?",
     "badgeEveryone": "Everyone",
     "badgePeople": "{count, plural, one {# person} other {# people}}",
-    "privateNote": "Solo tu puoi aprire I miei file, nemmeno gli amministratori. Condividi una cartella per dare accesso a qualcuno.",
     "noTeamFolders": "Ancora nessuna cartella del team.",
     "sessionFilesName": "Files",
     "sessionFilesHint": "Cartelle che può aprire",
@@ -22704,7 +22703,22 @@
     "accountStorageTitle": "Spazio dei file",
     "accountStorageDescription": "Quanto occupano i file di ogni progetto. Il tuo piano consente {project} per progetto e {account} in tutti i progetti.",
     "accountStorageEmpty": "Nessun progetto contiene ancora file.",
-    "accountStorageIncomplete": "Non è stato possibile misurare alcuni progetti in questo momento."
+    "accountStorageIncomplete": "Non è stato possibile misurare alcuni progetti in questo momento.",
+    "folderInfo": {
+      "audienceYouAndAdmins": "Tu e gli admin del progetto",
+      "audienceOwnerAndAdmins": "Proprietario e admin",
+      "boxPathHint": "Qui le sessioni vedono questa cartella. Fai clic per copiare.",
+      "pathCopied": "Copiato",
+      "projectAdmins": "Admin del progetto",
+      "adminsOpenRecorded": "Possono aprirla. Vedi ogni volta che lo fanno.",
+      "openedByAdmins": "Aperta dagli admin",
+      "noAdminOpens": "Nessun admin ha aperto questa cartella."
+    },
+    "folderTree": "Cartelle",
+    "treeEmpty": "Nessuna cartella",
+    "treeYou": "{name} (tu)",
+    "treeExpand": "Espandi {name}",
+    "treeCollapse": "Comprimi {name}"
   },
   "genui": {
     "showData": "Mostra dati",
@@ -24713,10 +24727,8 @@
       "memoryNoteChannel": "Ciò che ricordano gli agenti in {place}. Gli agenti lo leggono all’inizio di ogni thread.",
       "memoryNoteDm": "Ciò che {agent} ricorda di questo DM. Lo legge all’inizio di ogni thread.",
       "off": {
-        "title": "Attiva Drive",
-        "description": "File e memoria di {place} sono in Drive. Attiva Volumes in Feature flags per usarli.",
-        "descriptionMember": "File e memoria di {place} sono in Drive. Chiedi a un amministratore del progetto di attivarlo.",
-        "action": "Apri Feature flags"
+        "title": "Nessun Drive qui",
+        "description": "File e memoria di {place} sono nel Drive. Questa istanza Kortix non archivia un Drive: serve Platinum."
       }
     },
     "onboarding": {

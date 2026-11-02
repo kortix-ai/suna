@@ -308,6 +308,39 @@ export async function getFolderAccess(driveId: string, path: string): Promise<Fo
   );
 }
 
+/** One project admin's opens of a person's own folder on one UTC day. */
+export interface DriveAdminRead {
+  adminUserId: string;
+  /** The admin's name or email, as the folder's sharing shows people. */
+  label: string;
+  /** `YYYY-MM-DD`, UTC. */
+  day: string;
+  firstAt: string;
+  lastAt: string;
+  opens: number;
+}
+
+/** Who opened a person's own folder as a project admin: `folder` is null for a path in no one's own folder. */
+export interface DriveAdminReads {
+  folder: string | null;
+  reads: DriveAdminRead[];
+}
+
+/**
+ * The project admins who opened the person's own folder that holds `path`
+ * (`/Users/<name>`), per day, over the last 90 days, newest first. Project
+ * admins may open every person's own folder; each open is recorded. Only the
+ * folder's owner and the project's admins may read it.
+ */
+export async function getDriveAdminReads(driveId: string, path: string): Promise<DriveAdminReads> {
+  return unwrap(
+    await backendApi.get<DriveAdminReads>(`${drivePath(driveId)}/admin-reads?${new URLSearchParams({ path })}`, {
+      showErrors: false,
+    }),
+    'Failed to load admin opens',
+  );
+}
+
 /**
  * The Files folders a new session of an agent mounts, where, and read-only
  * or not: the folders shared with the agent and with everyone in the

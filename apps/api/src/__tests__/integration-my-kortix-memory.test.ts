@@ -5,7 +5,7 @@
  * the secret check; and the index every My Kortix turn starts with, with
  * `project_channels` off.
  */
-import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, projectSessions, projects } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { ensurePersonalFolder, ensureProjectDrive } from '../drives/service';
@@ -23,17 +23,12 @@ import {
 } from '../memory/my-memory';
 import { withMemoryTurn } from '../memory/turn-body';
 import { setVolumeOpsForTests } from '../memory/volume-ops';
+import { config } from '../config';
 import { db } from '../shared/db';
 import { FakeVolume } from './helpers/memory-fake-volume';
-import * as registry from '../feature-flags/registry';
 
-// This lane has no Platinum key, so `drives` is never available here; the fake volume stands in for it.
-const resolveFeatureFlag = registry.resolveFeatureFlag;
-mock.module('../feature-flags/registry', () => ({
-  ...registry,
-  resolveFeatureFlag: (metadata: unknown, key: string) =>
-    key === 'drives' ? Boolean((metadata as { experimental?: { drives?: boolean } } | null)?.experimental?.drives) : resolveFeatureFlag(metadata, key as never),
-}));
+// This lane has no Platinum key; the fake volume stands in for the Drive, which needs one.
+(config as { PLATINUM_API_KEY?: string }).PLATINUM_API_KEY ||= 'test-key';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -76,14 +71,19 @@ afterAll(async () => {
 });
 
 describe('the mykortix layer', () => {
-  test('is the viewer’s own folder: Priya’s and Sam’s are two folders; Files off is 403 feature_disabled', async () => {
+  test('is the viewer’s own folder: Priya’s and Sam’s are two folders; no Drive storage is 403 feature_disabled', async () => {
     const priya = await myKortixLayer(project, person(PRIYA));
     expect(priya).toMatchObject({ key: 'mykortix', scope: 'dm', spaceId: null, name: 'My Kortix', root: `${priyaFolder}/Memory/mykortix`, agentFolder: null, canWrite: true });
     const sam = await myKortixLayer(project, person(SAM));
     expect(sam.root).not.toBe(priya.root);
     expect(sam.root.endsWith('/Memory/mykortix')).toBe(true);
-    const off = { ...project, metadata: { experimental: { drives: false } } };
-    await expect(myKortixLayer(off, person(PRIYA))).rejects.toMatchObject({ status: 403, code: 'feature_disabled' });
+    const key = config.PLATINUM_API_KEY;
+    (config as { PLATINUM_API_KEY?: string }).PLATINUM_API_KEY = '';
+    try {
+      await expect(myKortixLayer(project, person(PRIYA))).rejects.toMatchObject({ status: 403, code: 'feature_disabled' });
+    } finally {
+      (config as { PLATINUM_API_KEY?: string }).PLATINUM_API_KEY = key;
+    }
   });
 
   test('only a My Kortix session may use it with its session token', async () => {
