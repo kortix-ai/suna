@@ -34,6 +34,38 @@ export interface ProjectSessionSandbox {
 export type SessionStartStage =
   "provisioning" | "starting" | "ready" | "stopped" | "failed";
 
+/**
+ * Where a provisioning session is in getting its sandbox image
+ * (`SESSION_START_IMAGE_STATES` in `@kortix/api-contract`, mirrored here so the
+ * SDK stays free of zod; `contract-drift.test.ts` holds the two equal).
+ *
+ * - `resolving`: the server is choosing the image (seconds).
+ * - `serving_last_ready`: the wanted image is not ready; the session boots the
+ *   last ready image of its template (`image`) and the new one builds behind it.
+ * - `waiting_for_build`: no image of this template was ever ready; the session
+ *   waits for a build another request started.
+ * - `building`: no image of this template was ever ready; this request builds it.
+ * - `copying_to_region`: the image is ready and being copied to the session's region.
+ * - `waiting_for_provider`: the provider refused the create while it finishes
+ *   the image (building or replicating); the server retries.
+ */
+export type SessionStartImageState =
+  | "resolving"
+  | "serving_last_ready"
+  | "waiting_for_build"
+  | "building"
+  | "copying_to_region"
+  | "waiting_for_provider";
+
+/** The sandbox image step of a provisioning `/start` answer (`boot.image`). */
+export interface SessionStartImageStep {
+  state: SessionStartImageState;
+  /** The image this step is about, when known (a provider snapshot name). */
+  image: string | null;
+  /** When this step began (ISO timestamp, the server's clock). */
+  since: string;
+}
+
 export interface SessionStartFailure {
   category:
     | 'provider-capacity'
@@ -121,6 +153,12 @@ export interface SessionStartResult {
      * that a box is being started.
      */
     actively_starting: boolean;
+    /**
+     * The sandbox image step while `phase` is `provisioning`; null in every
+     * other phase and before provisioning reaches the image. Absent from an
+     * API older than this field.
+     */
+    image?: SessionStartImageStep | null;
   };
   /**
    * What the server checked on this call. `known: false` means NOT CHECKED —

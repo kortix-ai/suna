@@ -1,10 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import {
   MAX_START_REQUEST_FAILURES,
+  MAX_START_WAIT_MS,
   connectStepFromRequestError,
   connectStepFromStart,
+  formatImageElapsed,
+  sessionImageStep,
   shouldAwaitHealthProbe,
   startPollDelayMs,
+  startWaitDeadline,
 } from './connect-step';
 
 function apiError(status: number, message: string) {
@@ -143,5 +147,51 @@ describe('shouldAwaitHealthProbe', () => {
     expect(shouldAwaitHealthProbe({ stage: 'ready', opencode_session_id: null })).toBe(true);
     expect(shouldAwaitHealthProbe({ stage: 'ready' })).toBe(true);
     expect(shouldAwaitHealthProbe({ stage: 'booting', opencode_session_id: 'ses_oc' })).toBe(true);
+  });
+});
+
+describe('sessionImageStep', () => {
+  const image = { state: 'building' as const, image: 'tpl-img-v3', since: '2026-11-02T10:00:00.000Z' };
+  const boot = (phase: 'provisioning' | 'booting', withImage: boolean) => ({
+    phase,
+    since: null,
+    actively_starting: true,
+    ...(withImage ? { image } : {}),
+  });
+
+  test('reads boot.image while the box provisions', () => {
+    expect(sessionImageStep({ stage: 'provisioning', boot: boot('provisioning', true) })).toEqual(image);
+  });
+
+  test('is null once ready, in another phase, and from an API without the field', () => {
+    expect(sessionImageStep({ stage: 'ready', boot: boot('provisioning', true) })).toBeNull();
+    expect(sessionImageStep({ stage: 'starting', boot: boot('booting', true) })).toBeNull();
+    expect(sessionImageStep({ stage: 'provisioning', boot: boot('provisioning', false) })).toBeNull();
+    expect(sessionImageStep({ stage: 'provisioning' })).toBeNull();
+  });
+});
+
+describe('startWaitDeadline', () => {
+  const image = { state: 'building' as const, image: null, since: '2026-11-02T10:00:00.000Z' };
+  test('an image step moves the deadline to MAX_START_WAIT_MS after the answer', () => {
+    expect(startWaitDeadline(1_000, 500_000, image)).toBe(500_000 + MAX_START_WAIT_MS);
+  });
+  test('no image step keeps the deadline, and a later deadline never moves back', () => {
+    expect(startWaitDeadline(1_000, 500_000, null)).toBe(1_000);
+    expect(startWaitDeadline(10_000_000, 500_000, image)).toBe(10_000_000);
+  });
+});
+
+describe('formatImageElapsed', () => {
+  const since = '2026-11-02T10:00:00.000Z';
+  const at = (s: number) => Date.parse(since) + s * 1_000;
+  test('m:ss, minutes unbounded', () => {
+    expect(formatImageElapsed(since, at(0))).toBe('0:00');
+    expect(formatImageElapsed(since, at(72))).toBe('1:12');
+    expect(formatImageElapsed(since, at(3_725))).toBe('62:05');
+  });
+  test('a since ahead of this clock, or unreadable, reads 0:00', () => {
+    expect(formatImageElapsed(since, at(-30))).toBe('0:00');
+    expect(formatImageElapsed('x', at(30))).toBe('0:00');
   });
 });

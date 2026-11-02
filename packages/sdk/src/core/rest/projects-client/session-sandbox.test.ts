@@ -7,6 +7,7 @@ import { isSessionStartError,
   projectSessionStartSeed,
   sessionStartKey, startProjectSession, startProjectSessionOrThrow,
 } from "./session-sandbox";
+import type { SessionStartImageState, SessionStartImageStep } from "./session-sandbox";
 import type { ProjectSession } from "./sessions";
 
 const PROJECT = "P1";
@@ -270,6 +271,29 @@ test("startProjectSession returns the parsed result even when stage is not ready
   const result = await startProjectSession(PROJECT, SESSION);
   expect(result?.stage).toBe("starting");
   expect(getSessionRuntime(PROJECT, SESSION)).toBeUndefined();
+});
+
+test("startProjectSession returns the provisioning boot's image step as the server sent it", async () => {
+  const image: SessionStartImageStep = {
+    state: "building",
+    image: "kortix-session-v42",
+    since: "2026-11-02T10:00:00.000Z",
+  };
+  nextResponse = {
+    status: 200,
+    body: {
+      stage: "provisioning",
+      agent_name: "default",
+      retriable: true,
+      sandbox: null,
+      opencode_session_id: null,
+      boot: { phase: "provisioning", since: "2026-11-02T09:59:58.000Z", actively_starting: true, image },
+    },
+  };
+  const result = await startProjectSession(PROJECT, SESSION);
+  const state: SessionStartImageState | undefined = result?.boot?.image?.state;
+  expect(state).toBe("building");
+  expect(result?.boot?.image).toEqual(image);
 });
 
 test("startProjectSession populates the shared session-runtime registry once stage is ready with a sandbox external_id + opencode_session_id", async () => {
