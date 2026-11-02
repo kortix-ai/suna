@@ -143,6 +143,7 @@ export async function getPendingQuestion(
   questions: RuntimeQuestion[];
   answeredAt: string | null;
   answers: unknown;
+  chatSteps: unknown;
 } | null> {
   const [row] = await db
     .select({
@@ -151,11 +152,41 @@ export async function getPendingQuestion(
       questions: sessionPendingQuestions.questions,
       answeredAt: sessionPendingQuestions.answeredAt,
       answers: sessionPendingQuestions.answers,
+      chatSteps: sessionPendingQuestions.chatSteps,
     })
     .from(sessionPendingQuestions)
     .where(and(eq(sessionPendingQuestions.id, id), eq(sessionPendingQuestions.projectId, projectId)))
     .limit(1);
   return row ? { ...row, questions: row.questions as RuntimeQuestion[] } : null;
+}
+
+/**
+ * Move a chat's answers so far (`chat_steps`) from `from`, the value read, to
+ * `to`. False: another press moved them first, and nothing is written.
+ */
+export async function advancePendingQuestionSteps(projectId: string, id: string, from: unknown, to: unknown): Promise<boolean> {
+  const rows = await db
+    .update(sessionPendingQuestions)
+    .set({ chatSteps: to as never, updatedAt: new Date().toISOString() })
+    .where(
+      and(
+        eq(sessionPendingQuestions.id, id),
+        eq(sessionPendingQuestions.projectId, projectId),
+        sql`${sessionPendingQuestions.chatSteps} IS NOT DISTINCT FROM ${from == null ? null : JSON.stringify(from)}::jsonb`,
+      ),
+    )
+    .returning({ id: sessionPendingQuestions.id });
+  return rows.length > 0;
+}
+
+/** The session's stored question whose chat steps `by` wrote: a retried message finds its own answer. */
+export async function pendingQuestionStepsBy(sessionId: string, by: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: sessionPendingQuestions.id })
+    .from(sessionPendingQuestions)
+    .where(and(eq(sessionPendingQuestions.sessionId, sessionId), sql`${sessionPendingQuestions.chatSteps}->>'by' = ${by}`))
+    .limit(1);
+  return row?.id ?? null;
 }
 
 /**
