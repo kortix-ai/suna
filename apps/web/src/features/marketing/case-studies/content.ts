@@ -47,7 +47,8 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  *    industry lifecycle cards (founder, 2026-11-02), modelled on the
  *    per-industry lifecycles enterprise AI vendors publish: each walks one
  *    lifecycle end to end and names the person who approves. They name no
- *    client and carry no metric or quote. Their symbols are drawn by Kortix.
+ *    client and carry no metric or quote. Their marks are drawn by Kortix;
+ *    some carry invented letters (N, H, m, ro), never a real client's initials.
  *  - The asset manager and executive search logos are symbols Kortix drew
  *    for these cards (founder, 2026-11-02; brand decision D35): no type at
  *    all. They are not the firm's real logo. Never add a name or text to
@@ -105,7 +106,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'banking',
       logo: {
-        src: '/media/case-studies/banking.svg?v=97eff69a',
+        src: '/media/case-studies/banking.svg?v=07cb85b7',
         alt: 'A banking symbol',
         width: 100,
         height: 100,
@@ -177,7 +178,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'airlines',
       logo: {
-        src: '/media/case-studies/airlines.svg?v=0692c1e0',
+        src: '/media/case-studies/airlines.svg?v=92d4c4af',
         alt: 'An airline symbol',
         width: 100,
         height: 100,
@@ -213,7 +214,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'utilities',
       logo: {
-        src: '/media/case-studies/utilities.svg?v=3bad2f40',
+        src: '/media/case-studies/utilities.svg?v=df0f8f3b',
         alt: 'A utilities symbol',
         width: 100,
         height: 100,
@@ -231,7 +232,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'healthcare',
       logo: {
-        src: '/media/case-studies/healthcare.svg?v=0b62bfc3',
+        src: '/media/case-studies/healthcare.svg?v=35ab0f7e',
         alt: 'A healthcare symbol',
         width: 100,
         height: 100,
@@ -249,7 +250,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'retail',
       logo: {
-        src: '/media/case-studies/retail.svg?v=f5123668',
+        src: '/media/case-studies/retail.svg?v=32ec4d76',
         alt: 'A retail symbol',
         width: 100,
         height: 100,
