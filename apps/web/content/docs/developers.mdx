@@ -3806,7 +3806,15 @@ The command checks that every new name resolves to the same address as the curre
 | `api.<old>` | Keeps serving. Sandboxes, Capture devices and webhooks set up before the move keep working. |
 | `*.apps.<old>`, `*.p.<old>` | Keep serving the same App or sandbox port. New links use the new domain. |
 
-People sign in once more on the new domain. Re-register URLs that outside services store: the GitHub App callback, OAuth redirect URIs and the SAML service provider in your identity provider.
+People sign in once more on the new domain. Re-register URLs that outside services store: the GitHub App callback and OAuth redirect URIs.
+
+If people sign in with SAML SSO, update the identity provider **before** the move. The service provider's entity ID and ACS URL follow the domain, and every SSO sign-in fails until the identity provider knows them. Microsoft Entra ID and Okta accept several values, so add the new ones next to the current ones:
+
+| Field | Value |
+|---|---|
+| Identifier (entity ID) | `https://<domain>/auth/v1/sso/saml/metadata` |
+| Reply URL (ACS) | `https://<domain>/auth/v1/sso/saml/acs` |
+| Logout URL | `https://<domain>/auth/v1/sso/saml/slo` |
 
 To add an alias without moving, run `kortix self-host env set KORTIX_DOMAIN_ALIASES=<domain>[,<domain>]`. To retire an alias, remove it from the list.
 

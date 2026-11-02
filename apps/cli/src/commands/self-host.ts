@@ -1716,6 +1716,18 @@ async function selfHostDomain(args: string[], flags: GlobalFlags): Promise<numbe
     `  ${C.dim}${plan.from} keeps working: its web app redirects to ${plan.to}; its API, Apps and preview hosts keep serving.${C.reset}\n` +
       `  ${C.dim}Signed-in users sign in once more on ${plan.to}.${C.reset}\n\n`,
   );
+  // GoTrue derives the SAML service provider from API_EXTERNAL_URL, so a move
+  // changes the entity ID and ACS URL an identity provider has registered. Every
+  // SSO sign-in fails until the IdP knows the new values; most IdPs (Entra ID,
+  // Okta) accept the new ones next to the old ones, so add them BEFORE moving.
+  const newAuth = `https://${plan.to}/auth/v1/sso/saml`;
+  process.stdout.write(
+    `  ${C.yellow}SAML SSO:${C.reset} before you move, add these to your identity provider next to the current values:\n` +
+      `    Identifier (entity ID)  ${newAuth}/metadata\n` +
+      `    Reply URL (ACS)         ${newAuth}/acs\n` +
+      `    Logout URL              ${newAuth}/slo\n` +
+      `  ${C.dim}Skip this if no one signs in with SSO.${C.reset}\n\n`,
+  );
   if (!flags.yes) {
     if (!shouldPrompt(flags)) {
       process.stderr.write(`${status.err('Refusing to move the domain non-interactively without --yes.')} Nothing was written.\n`);
