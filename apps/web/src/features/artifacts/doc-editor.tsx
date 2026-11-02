@@ -426,7 +426,11 @@ export function DocEditor({
           if ('error' in result) errorToast(selectionError(result.error));
           else return result.anchor;
         },
-        (anchor) => latest.current.onComment?.(anchor),
+        (anchor) => {
+          latest.current.onComment?.(anchor);
+          // The passage now lives in the composer: collapse the selection so the formatting bubble hides.
+          if (editorRef.current === current && !current.isDestroyed) current.commands.setTextSelection(to);
+        },
       );
       commentCapture.current = operation;
       await operation.done;

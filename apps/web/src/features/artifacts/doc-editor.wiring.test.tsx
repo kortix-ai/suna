@@ -175,6 +175,8 @@ for (const [label, words, outcome] of [
     if (outcome === 'anchor') {
       expect(anchors).toEqual([paragraph]);
       expect(toasts).toEqual([]);
+      // The passage now lives in the composer: the selection collapses, so the formatting bubble hides.
+      expect(element.editor.state.selection.empty).toBe(true);
     } else {
       expect(anchors).toEqual([]);
       expect(toasts).toEqual(['This passage is too long to comment on. Select 500 characters or fewer.']);
