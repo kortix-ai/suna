@@ -50,7 +50,7 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  *    client and carry no metric or quote. Their marks are drawn by Kortix;
  *    some carry invented letters (N, H, m, ro), never a real client's initials.
  *  - The asset manager and executive search logos are symbols Kortix drew
- *    for these cards (founder, 2026-11-02; brand decision D35): no type at
+ *    for these cards (founder, 2026-11-02; brand decision D36): no type at
  *    all. They are not the firm's real logo. Never add a name or text to
  *    them, and never copy a real firm's logo.
  */

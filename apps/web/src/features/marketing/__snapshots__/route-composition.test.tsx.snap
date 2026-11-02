@@ -7,7 +7,7 @@ exports[`shipped marketing route composition home retains its rendered sections,
     "--brand:var(--foreground);mask-image:url(/media/landing/logos/notion.svg);mask-size:contain;mask-repeat:no-repeat;mask-position:center",
   ],
   "headings": [
-    "The sovereign, multiplayer, extensible and open CompanyOSThe sovereign CompanyOS",
+    "The CompanyOS",
     "Models and apps Kortix works with",
     "Multiplayer. Company as code. Sovereign. The CompanyOS you own.",
     "Multiplayer AIOne AI for the whole team.",
