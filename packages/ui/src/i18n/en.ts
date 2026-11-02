@@ -907,6 +907,7 @@ const catalog = {
       "addCredits": "Add credits",
       "spentThisPeriod": "Spent this period",
       "compute": "Compute",
+      "storage": "Storage",
       "total": "Total",
       "history": "History",
       "historyDescription": "What every session cost, and every credit added or spent.",
