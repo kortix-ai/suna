@@ -1527,6 +1527,42 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
       expect(status).toBe(400);
     });
 
+    // Strix on #11455: an object-shaped but ill-typed tools item passed every
+    // guard, then the SDK threw a raw TypeError before any fetch, which counted
+    // as a network failure and tripped the shared breaker.
+    it.each([false, true])('an ill-typed tools item fails as a 400 before any fetch (client stream: %p)', async (stream) => {
+      let fetched = 0;
+      const failure = await callUpstreamViaAiSdk({
+        stream,
+        messages: [{ role: 'user', content: 'hi' }],
+        tools: [{ type: 'function', function: { name: 'f', description: 5, parameters: { type: 'object', properties: {} } } }],
+      }, codex, {
+        fetch: async () => {
+          fetched++;
+          return new Response('{}', { status: 200 });
+        },
+      }).then(
+        async (response) => (response.ok ? null : response.status),
+        (error: unknown) => error,
+      );
+      const status = failure instanceof UpstreamHttpError ? failure.status : String(failure).slice(0, 80);
+      expect({ status, fetched }).toEqual({ status: 400, fetched: 0 });
+    });
+
+    // The guard rail of that rule: a failure after the request left is still a
+    // network failure, so the fallback chain and the breaker still see it.
+    it('a fetch that throws stays a NetworkError', async () => {
+      const failure = await callUpstreamViaAiSdk({ messages: [{ role: 'user', content: 'hi' }] }, codex, {
+        fetch: async () => {
+          throw new TypeError('fetch failed');
+        },
+      }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(NetworkError);
+    });
+
     it('collapses a streamed tool call into the same JSON shape generateText would produce', async () => {
       const call = { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'get_weather' };
       const { json, sentBodies } = await collapse(

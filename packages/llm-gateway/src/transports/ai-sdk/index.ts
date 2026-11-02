@@ -253,8 +253,21 @@ export async function callUpstreamViaAiSdk(
 ): Promise<Response> {
   const family = aiSdkFamilyFor(descriptor);
   const isCodex = isCodexDescriptor(descriptor);
+  // Every provider call goes through this fetch. A NetworkError raised before it
+  // ran is this gateway failing to build the request (an ill-typed `tools` item
+  // makes the SDK throw a raw TypeError), never an upstream failure: a 400,
+  // which never trips the breaker (KRTX-3421).
+  let fetchStarted = false;
+  const baseFetch = opts.fetch ?? upstreamFetch;
+  const unsent = (error: unknown): unknown =>
+    error instanceof NetworkError && !fetchStarted && !opts.signal?.aborted
+      ? new UpstreamHttpError(400, 'The request could not be built.', descriptor.provider)
+      : error;
   const model = resolveAiModel(descriptor, {
-    fetch: opts.fetch ?? upstreamFetch,
+    fetch: (input, init) => {
+      fetchStarted = true;
+      return baseFetch(input, init);
+    },
     // Kortix-internal correlation id, mirrored onto the upstream request as a
     // best-effort header — every provider here tolerates unknown headers.
     // This is the ai-sdk-engine equivalent of what the retired native
@@ -366,7 +379,9 @@ export async function callUpstreamViaAiSdk(
         result.fullStream,
         descriptor.provider,
         opts.commitAfterMs ?? STREAM_COMMIT_MS,
-      );
+      ).catch((error: unknown) => {
+        throw unsent(error);
+      });
       return sseResponse(openAiSseFromFullStream(opened, ctx));
     }
 
@@ -394,7 +409,7 @@ export async function callUpstreamViaAiSdk(
         ),
       );
     } catch (err) {
-      throw toTransportError(streamError ?? err, descriptor.provider);
+      throw unsent(toTransportError(streamError ?? err, descriptor.provider));
     }
   }
 
@@ -413,6 +428,6 @@ export async function callUpstreamViaAiSdk(
       ),
     );
   } catch (err) {
-    throw toTransportError(err, descriptor.provider);
+    throw unsent(toTransportError(err, descriptor.provider));
   }
 }
