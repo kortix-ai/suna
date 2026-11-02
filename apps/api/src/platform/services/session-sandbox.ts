@@ -572,7 +572,7 @@ export async function provisionSessionSandbox(opts: {
   const drivesRequirePlatinum =
     !isMyKortixSandboxSlug(slug) &&
     (await import('../../drives/service')
-      .then((m) => m.sessionDrivesEnabled(projectId))
+      .then((m) => m.sessionDriveMountEnabled())
       .catch(() => false));
   const drivesSyncAllowed =
     drivesRequirePlatinum && (await import('../../drives/sync').then((m) => m.driveSyncEnabled()).catch(() => false));

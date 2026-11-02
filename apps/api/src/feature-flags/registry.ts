@@ -95,12 +95,6 @@
  *     (which would force the flag OFF for every project — the opposite of
  *     what a hidden default means).
  *
- * ## Derived flags (`derivedFrom: 'volumes'`)
- *
- * `drives` is not a choice of its own: it follows
- * the project's `volumes` flag and is never offered as a toggle. Every flag is
- * per project; none is set for a whole organization (2026-10-13).
- *
  * A hidden flag is a DATED state, not a parking spot: hide it in the release
  * that makes it the default, delete it in the next one. The comment on the
  * entry names the release and the spec section that ends it.
@@ -155,12 +149,6 @@ export interface FeatureFlagDef {
    * this file's header.
    */
   catalogHidden?: true;
-  /**
-   * The flag is not a project choice: it follows the project's `volumes`
-   * flag. A project override is ignored, and the flag is never offered as a
-   * toggle.
-   */
-  derivedFrom?: 'volumes';
   /**
    * IAM actions that exist only with this flag. The account permission catalog
    * (`GET /accounts/:id/iam/permissions`) leaves them out until a project of the
@@ -337,49 +325,17 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'rows of a project with the flag off (notifications/inbox-read.ts). The ' +
       'per-person /v1/notifications/* routes carry no project and stay ungated.',
   },
-  {
-    key: 'volumes',
-    name: 'Volumes',
-    description:
-      'Shared Files for this project.',
-    stability: 'experimental',
-    // Every volume is a Platinum volume.
-    available: () => Boolean(config.PLATINUM_API_KEY),
-    // On by default (founder, 2026-10-24): every project gets Files — a private
-    // folder per person (`/drives/me`, where the agent keeps user memory) and
-    // the shared `/Company` folder (`Company/Memory`). Onboarding writes both.
-    platformDefault: () => true,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'BEHAVIORAL only, through the flag derived from it: drives (Files routes and ' +
-      'session drive mounts).',
-  },
-  {
-    key: 'drives',
-    name: 'Files',
-    description:
-      'The project\'s shared folders, in sync with sessions: everyone has their own private folder (their session desktop), and any folder can be shared with people, teams and agents. New sessions see the folders they may use under /drives.',
-    stability: 'experimental',
-    // Every drive is a Platinum volume; without Platinum there is nothing to
-    // store files in.
-    available: () => Boolean(config.PLATINUM_API_KEY),
-    // Follows the project's `volumes` flag; not a toggle of its own.
-    platformDefault: () => false,
-    derivedFrom: 'volumes',
-    catalogHidden: true,
-    enforcement: 'routes',
-    enforcementNote:
-      'Mixed, and both halves are enforced. ROUTES: GET /v1/drives?projectId= answers ' +
-      '403 `feature_disabled` when off, and so does every write addressed by drive id ' +
-      '(drives/routes.ts). Reads by drive id stay open, so a file a session already ' +
-      'wrote under /drives still opens. BEHAVIORAL: session provisioning mounts no ' +
-      'folder when off (drives/service.ts sessionVolumeMounts).',
-  },
+  // `volumes` and `drives` graduated (2026-11-02, Marko: "rm the feature flag
+  // for volumes, make them default & always enabled"): every project has a
+  // Drive wherever the platform stores one (Platinum configured,
+  // drives/volumes.ts driveStorageAvailable). A stored `experimental.volumes`
+  // or `experimental.drives` override is inert. The project detail still sends
+  // both keys, equal to that availability, for older SDKs, hosts and CLIs.
   {
     key: 'goals',
     name: 'Goals',
     description:
-      'Give an agent an objective and it owns the outcome until an independent check confirms it, for days or weeks: it plans, works, waits, chases people for what only they can give, and keeps its state in a Goals folder in Files. Needs Volumes and Loops on (flag key `reminders`).',
+      'Give an agent an objective and it owns the outcome until an independent check confirms it, for days or weeks: it plans, works, waits, chases people for what only they can give, and keeps its state in a Goals folder in the Drive. Needs Loops on (flag key `reminders`).',
     stability: 'beta',
     // Work in progress (Marko, 2026-11-01): Settings marks the row "Not
     // recommended yet" until Goals v1 is finished.
@@ -619,14 +575,8 @@ function explicitOverride(metadata: unknown, key: FeatureFlagKey): boolean | und
 export function resolveFeatureFlag(metadata: unknown, key: FeatureFlagKey): boolean {
   const def = FLAG_BY_KEY[key];
   if (!def || !def.available()) return false;
-  if (def.derivedFrom) return resolveFeatureFlag(metadata, def.derivedFrom);
   if (key === 'artifact_comments' && !resolveFeatureFlag(metadata, 'artifacts')) return false;
   return explicitOverride(metadata, key) ?? def.platformDefault();
-}
-
-/** Is this flag derived from another flag (and so not a project choice)? */
-export function isDerivedFeatureFlag(key: FeatureFlagKey): boolean {
-  return Boolean(FLAG_BY_KEY[key]?.derivedFrom);
 }
 
 /**
@@ -679,8 +629,6 @@ export interface FeatureFlagView {
  */
 export function buildFeatureFlagCatalog(metadata: unknown): FeatureFlagView[] {
   return FLAGS.flatMap((f) => {
-    // A flag that follows another flag has no row of its own.
-    if (f.derivedFrom) return [];
     const enabled = resolveFeatureFlag(metadata, f.key);
     if (f.catalogHidden && !enabled) return [];
     return [{

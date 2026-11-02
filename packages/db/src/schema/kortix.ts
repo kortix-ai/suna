@@ -8218,6 +8218,29 @@ export const drives = kortixSchema.table('drives', {
   check('drives_kind', sql`${table.kind} in ('personal', 'agent', 'company', 'project')`),
 ]);
 
+/**
+ * A project admin opened a folder in another person's own folder
+ * (`/Users/<name>`): one row per (drive, own folder, admin, UTC day). The
+ * owner reads it ("Opened by admins"); each open also leaves an audit event
+ * (`drive.folder.admin_access`). Only the API reads it (RLS on, no policy).
+ */
+export const driveFolderAdminReads = kortixSchema.table(
+  'drive_folder_admin_reads',
+  {
+    driveId: uuid('drive_id')
+      .notNull()
+      .references(() => drives.driveId, { onDelete: 'cascade' }),
+    /** The person's own folder, `/Users/<name>`. */
+    folder: text('folder').notNull(),
+    adminUserId: uuid('admin_user_id').notNull(),
+    day: date('day', { mode: 'string' }).notNull(),
+    firstAt: timestamp('first_at', { withTimezone: true }).defaultNow().notNull(),
+    lastAt: timestamp('last_at', { withTimezone: true }).defaultNow().notNull(),
+    opens: integer('opens').default(1).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.driveId, table.folder, table.adminUserId, table.day] })],
+);
+
 // Storage Platinum bills Kortix for, one row per (control plane, meter,
 // resource, UTC day): what was metered, who owns it, and what Kortix charged.
 // Volumes, scratch disks and Worker storage come from Platinum's meter

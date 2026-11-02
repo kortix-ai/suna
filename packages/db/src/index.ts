@@ -148,6 +148,7 @@ export {
   pushDeviceTokens,
   // Drives (shared folders backed by Platinum volumes)
   drives,
+  driveFolderAdminReads,
   driveGrants,
   storageCharges,
   providerOrphanBoxCosts,

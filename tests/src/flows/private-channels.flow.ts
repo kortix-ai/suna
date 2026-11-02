@@ -81,12 +81,11 @@ const meta = (routes: string[], extra: Partial<FlowMeta> = {}): FlowMeta => ({
  * alice creates), BOB (a project member outside P) and a project MANAGER
  * outside P. Skips when the target refuses private channels.
  */
-async function openWorld(ctx: FlowContext, opts: { manifest?: boolean; volumes?: boolean } = {}) {
+async function openWorld(ctx: FlowContext, opts: { manifest?: boolean } = {}) {
   const team = await ctx.fixtures.team();
   const project = await team.project({ managedGit: true });
   const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
   if (opts.manifest) await world.writeManifest(MANIFEST, 'ke2e: private channels agent');
-  if (opts.volumes) await world.setFeature('volumes', true);
   await world.setFeature('project_channels', true);
   const people: Record<'alice' | 'carol' | 'bob' | 'manager', Principal> = {
     alice: await team.addMember('member'),
@@ -247,7 +246,7 @@ flow(
   'SPACE-26',
   meta([R.create, R.layer, R.createPage, R.pages, R.search, R.note, R.features, R.drives, R.mkdir, R.removeFile]),
   async (ctx) => {
-    const { world, people, as, params, p } = await openWorld(ctx, { volumes: true });
+    const { world, people, as, params, p } = await openWorld(ctx);
     try {
       if (!(await hasStorage(ctx, world))) return;
       const word = `quokka${randomUUID().slice(0, 6)}`;
@@ -284,7 +283,7 @@ flow(
 );
 
 flow('SPACE-27', meta([R.create, R.drives, R.files, R.features, R.mkdir, R.removeFile]), async (ctx) => {
-  const { world, people, as, params, p } = await openWorld(ctx, { volumes: true });
+  const { world, people, as, params, p } = await openWorld(ctx);
   try {
     // Without storage every path reads as an empty folder: only the access checks hold.
     const storage = await hasStorage(ctx, world);
