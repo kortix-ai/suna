@@ -197,6 +197,14 @@ const envSchema = z.object({
   // whose DNS does not fit that shape. A deployment with neither keeps previews
   // on the path proxy. See sandbox-proxy/preview-hosts.ts.
   KORTIX_PREVIEW_BASE_DOMAIN: optStr,
+  // Self-host alias domains (KORTIX_DOMAIN_ALIASES, derived by the CLI): extra
+  // Apps / preview base domains this deployment also serves, comma-separated.
+  // Hosts under them resolve exactly like hosts under the primary base, so
+  // links handed out before a domain move keep working. URLs this API hands
+  // out always use the primary base. See apps/hostnames.ts and
+  // sandbox-proxy/preview-hosts.ts.
+  KORTIX_APPS_BASE_DOMAIN_ALIASES: optStr,
+  KORTIX_PREVIEW_BASE_DOMAIN_ALIASES: optStr,
   // Master switch: turns on real billing (Stripe + credit ledger), makes
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
   // Set to true on managed/cloud deployments; leave false for self-host + dev.
@@ -1322,6 +1330,8 @@ export const config = {
   // blank value must not turn into an instance called "".
   KORTIX_INSTANCE_ID: env.KORTIX_INSTANCE_ID || undefined,
   KORTIX_PREVIEW_BASE_DOMAIN: env.KORTIX_PREVIEW_BASE_DOMAIN,
+  KORTIX_APPS_BASE_DOMAIN_ALIASES: env.KORTIX_APPS_BASE_DOMAIN_ALIASES,
+  KORTIX_PREVIEW_BASE_DOMAIN_ALIASES: env.KORTIX_PREVIEW_BASE_DOMAIN_ALIASES,
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_BOX_DISK_CHARGE_ENABLED: env.KORTIX_BOX_DISK_CHARGE_ENABLED,

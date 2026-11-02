@@ -14,6 +14,7 @@ const originalUrl = config.KORTIX_URL;
 
 afterEach(() => {
   (config as { KORTIX_URL: string }).KORTIX_URL = originalUrl;
+  (config as { KORTIX_APPS_BASE_DOMAIN_ALIASES?: string }).KORTIX_APPS_BASE_DOMAIN_ALIASES = undefined;
   delete process.env.KORTIX_APPS_BASE_DOMAIN;
   delete process.env.KORTIX_APPS_LOCAL;
 });
@@ -46,6 +47,25 @@ describe('App hostnames', () => {
       routeKey: 'aaaaaaaaaaaaaaaa', local: false, service: 'http',
     });
     expect(resolveAppHost('dev-store-aaaaaaaaaaaaaaaa.apps.kortix.com')).toBeNull();
+  });
+
+  test('a self-host that moved domains still serves App links on its alias base, and publishes only on the primary', () => {
+    setApiOrigin('https://api.acme.com');
+    process.env.KORTIX_APPS_BASE_DOMAIN = 'apps.acme.com';
+    (config as { KORTIX_APPS_BASE_DOMAIN_ALIASES?: string }).KORTIX_APPS_BASE_DOMAIN_ALIASES =
+      'apps.old-acme.cloud, apps.acme.com';
+    expect(appPublicUrl(ROW)).toBe('https://dev-store-aaaaaaaaaaaaaaaa.apps.acme.com');
+    for (const host of [
+      'dev-store-aaaaaaaaaaaaaaaa.apps.acme.com',
+      'dev-store-aaaaaaaaaaaaaaaa.apps.old-acme.cloud',
+    ]) {
+      expect(resolveAppHost(host)).toEqual({ routeKey: 'aaaaaaaaaaaaaaaa', local: false, service: 'http' });
+    }
+    expect(resolveAppHost('dev-store-aaaaaaaaaaaaaaaa--api.apps.old-acme.cloud')?.service).toBe('api');
+    // An alias only widens WHICH base is accepted, never the label rules.
+    expect(resolveAppHost('prod-store-aaaaaaaaaaaaaaaa.apps.old-acme.cloud')).toBeNull();
+    expect(resolveAppHost('x.dev-store-aaaaaaaaaaaaaaaa.apps.old-acme.cloud')).toBeNull();
+    expect(resolveAppHost('dev-store-aaaaaaaaaaaaaaaa.apps.other.cloud')).toBeNull();
   });
 
   test('an explicit base domain always wins, scheme and dots tolerated', () => {
