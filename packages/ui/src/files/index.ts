@@ -16,6 +16,17 @@ export {
   useShareFolder,
   useUnshareFolder,
 } from './drives/use-drives';
+export {
+  DriveStorageSummary,
+  formatStorageBytes,
+  StorageMeter,
+  StorageNotice,
+  storageTone,
+  type StorageTone,
+  useDriveLimitMessage,
+  useDriveUsage,
+  useFolderMountNotice,
+} from './drives/drive-storage';
 export { FilePreviewHost } from './file-preview-host';
 export { FilesStoreProvider, getFileIcon } from './project';
 export { ChangeRequestDetailDialog } from './project/components/change-request-detail-dialog';

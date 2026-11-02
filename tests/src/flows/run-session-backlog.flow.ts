@@ -848,11 +848,15 @@ flow(
     const goldenMarker = `golden-e2e-${crypto.randomUUID()}`;
     const goldenDone = `GOLD1_DONE_${Date.now()}`;
     await ctx.step('agent writes the requested file and produces output', async () => {
+      // "Do not commit": the next step proves the host commit-push pushes the
+      // change. An agent that commits and pushes on its own leaves that call
+      // nothing to do (`pushed: false`, `nothing_to_do: true`; v0.14.15
+      // release suite, 2026-11-02). RUN-7 uses the same instruction.
       await sendPrompt(
         ctx,
         project.id,
         session.id,
-        `Create the file ${goldenPath} containing exactly this single line: ${goldenMarker}. Use the file-writing tool; do not merely describe the change. Then reply with exactly: ${goldenDone}`,
+        `Create the file ${goldenPath} containing exactly this single line: ${goldenMarker}. Use the file-writing tool; do not merely describe the change. Do not commit. Then reply with exactly: ${goldenDone}`,
       );
       await waitForAssistantText(ctx, project.id, session.id, goldenDone);
       const file = await ctx.client
@@ -1550,13 +1554,14 @@ harnessFlow(
       r.status(200);
     });
 
-    await ctx.step('the conversation carries the compaction request and a finished summary with text', async () => {
+    await ctx.step('the conversation carries the compaction request, marked as a reset onto the record, and a finished reset message with text', async () => {
       await waitFor(() => runtimeMessages(ctx, sandboxId, root), {
         until: (messages) => {
           const summary = messages.find((m) => m.info.role === 'assistant' && m.info.summary === true);
           if (summary?.info.error) throw new Error(`the compaction failed on ${harness}: ${JSON.stringify(summary.info.error)}`);
           return (
-            messages.some((m) => m.info.role === 'user' && m.parts.some((part) => part.type === 'compaction')) &&
+            // The default context is the record: the marker says the context reset onto it, with nothing summarized.
+            messages.some((m) => m.info.role === 'user' && m.parts.some((part) => part.type === 'compaction' && (part as { mode?: string }).mode === 'record')) &&
             Boolean(summary?.info.time?.completed) &&
             messageText(summary!).trim().length > 0
           );

@@ -187,6 +187,12 @@ const envSchema = z.object({
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
   // Set to true on managed/cloud deployments; leave false for self-host + dev.
   KORTIX_BILLING_INTERNAL_ENABLED: optBoolFalse,
+  // Stopped and archived computers' disk (billing/services/box-disk-charges.ts):
+  // metered and recorded always; charged in credits only when true. Off until
+  // the owner decides (2026-11-02: 35,420 stopped boxes in prod, p99 63 per
+  // account, Platinum never deletes archived boxes). Turning it on charges the
+  // days still open (up to 3 days back), never earlier ones.
+  KORTIX_BOX_DISK_CHARGE_ENABLED: optBoolFalse,
   // Kortix Apps: a `static` App is served by the API from content-addressed
   // storage, with no runtime. `false` builds it into a sandbox, as before.
   KORTIX_APPS_STATIC_HOSTING: optBoolTrue,
@@ -1297,6 +1303,7 @@ export const config = {
   KORTIX_PREVIEW_BASE_DOMAIN: env.KORTIX_PREVIEW_BASE_DOMAIN,
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
+  KORTIX_BOX_DISK_CHARGE_ENABLED: env.KORTIX_BOX_DISK_CHARGE_ENABLED,
   KORTIX_APPS_STATIC_HOSTING: env.KORTIX_APPS_STATIC_HOSTING,
   KORTIX_APPS_RETAINED_DEPLOYMENTS: Math.max(1, env.KORTIX_APPS_RETAINED_DEPLOYMENTS),
   KORTIX_APPS_DEFAULT_ALWAYS_ON: env.KORTIX_APPS_DEFAULT_ALWAYS_ON,

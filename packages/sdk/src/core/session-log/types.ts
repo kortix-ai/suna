@@ -232,6 +232,10 @@ export type CompactionBlock = BlockBase & {
   layout?: CompactionLayoutEntry[]
   tokens_before?: number
   trigger?: 'auto' | 'manual' | 'overflow' | 'unknown'
+  /** `record`: the context reset onto the session's searchable record, with nothing summarized. Absent: a summary. */
+  mode?: 'record'
+  /** For `record`: the entries the record held at the reset. */
+  entries?: number
   ext?: Ext
 }
 

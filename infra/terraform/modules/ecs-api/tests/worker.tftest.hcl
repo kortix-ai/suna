@@ -54,6 +54,7 @@ run "no_worker_by_default" {
       length(aws_cloudwatch_log_metric_filter.worker_stale_jobs) == 0
       && length(aws_cloudwatch_metric_alarm.worker_not_running) == 0
       && length(aws_cloudwatch_metric_alarm.worker_stale_jobs) == 0
+      && length(aws_cloudwatch_metric_alarm.worker_cpu) == 0
     )
     error_message = "var.worker = null must create no worker metric filter and no worker alarm."
   }
@@ -227,6 +228,23 @@ run "worker_with_alarms" {
     error_message = "Both alarms notify the topic on ALARM and on OK."
   }
 
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.worker_cpu[0].namespace == "AWS/ECS"
+      && aws_cloudwatch_metric_alarm.worker_cpu[0].metric_name == "CPUUtilization"
+      && aws_cloudwatch_metric_alarm.worker_cpu[0].dimensions == tomap({ ClusterName = "kortix-test", ServiceName = "kortix-test-worker" })
+      && aws_cloudwatch_metric_alarm.worker_cpu[0].statistic == "Average"
+      && aws_cloudwatch_metric_alarm.worker_cpu[0].threshold == 80
+      && aws_cloudwatch_metric_alarm.worker_cpu[0].comparison_operator == "GreaterThanThreshold"
+      && aws_cloudwatch_metric_alarm.worker_cpu[0].period == 300
+      && aws_cloudwatch_metric_alarm.worker_cpu[0].evaluation_periods == 2
+      && aws_cloudwatch_metric_alarm.worker_cpu[0].treat_missing_data == "notBreaching"
+      && aws_cloudwatch_metric_alarm.worker_cpu[0].alarm_actions == toset([var.worker.alarm_topic_arn])
+      && aws_cloudwatch_metric_alarm.worker_cpu[0].ok_actions == toset([var.worker.alarm_topic_arn])
+    )
+    error_message = "Worker CPU above 80% for two five-minute periods must notify the subscribed topic; a stopped worker must not page."
+  }
+
   # ── the API service does not move ──
   assert {
     condition = (
@@ -255,7 +273,7 @@ run "worker_without_alarms_keeps_the_metric" {
     error_message = "The StaleJobs metric filter exists without an alarm topic (dashboards read it)."
   }
   assert {
-    condition     = length(aws_cloudwatch_metric_alarm.worker_not_running) == 0 && length(aws_cloudwatch_metric_alarm.worker_stale_jobs) == 0
+    condition     = length(aws_cloudwatch_metric_alarm.worker_not_running) == 0 && length(aws_cloudwatch_metric_alarm.worker_stale_jobs) == 0 && length(aws_cloudwatch_metric_alarm.worker_cpu) == 0
     error_message = "No alarm without alarm_topic_arn."
   }
   assert {

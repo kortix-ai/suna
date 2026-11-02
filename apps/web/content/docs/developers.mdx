@@ -1036,6 +1036,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `prompt_file` | string | — | A repository path to a `.md` file. The whole file is the system prompt. |
 | `enabled` | boolean | `true` | `false`: no session starts with the agent, and no agent starts it as a subagent. |
 | `codemode` | `on`, `only`, `off` | `on` | `on`: the model gets every tool plus `codemode`, which runs one JavaScript script that calls the other tools. `only`: `codemode` alone. `off`: no `codemode`. A script's calls follow the agent's `permission`. |
+| `context` | `record`, `summary` | `record` | What happens when the session's context fills. `record`: the agent continues at once in a fresh context and searches the session's full record, word for word, when it needs a detail; nothing is summarized. `summary`: a model call writes a summary of the conversation and the agent continues from it. |
 | `tools` | `all`, `none`, list or map | `all` | The tools the agent may call: built-in tools, Kortix tools and registered tools. A list allows only those. `{ exclude: [bash] }` allows every tool but those. |
 | `skills` | grant or map | — | Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. "all", "none" (default), a list of names, or `{ exclude: [names] }` for every name but those. |
 | `subagents` | grant | `none` | Agents this agent may start with the `agent` tool (alias `task`): declared, enabled, `mode` `subagent` or `all`, and not itself. A subagent cannot start another subagent. |
@@ -1486,7 +1487,7 @@ A result that arrives later must wake the session that waits for it. Every agent
 - **App events are the 24/7 watcher.** An App runs apart from every session: an `every` trigger calls it (no session, no model), it posts an App event only when the source changed, and a session trigger (`--on app`) or a `kortix.yaml` trigger wakes the agent. An event `id` built from the content makes an unchanged source fire nothing: Kortix accepts each `id` once per trigger for 30 days. See [Triggers and App events](#triggers-and-app-events).
 - **Loops off.** `403 feature_disabled` means the project turned Loops off (flag `reminders`). The agent says so and uses a one-off `at` trigger meanwhile.
 
-**Long jobs: plan, delegate, set wake-ups, keep state, close out.** A job of many parts or many days outlives one turn and one context window, because a session compacts. The same three sources teach one pattern for it:
+**Long jobs: plan, delegate, set wake-ups, keep state, close out.** A job of many parts or many days outlives one turn and one context window: when the context fills, the agent continues in a fresh one and reads back from the session's full record what it needs. The same three sources teach one pattern for it:
 
 1. **Plan** the parallel parts and the waiting parts.
 2. **Delegate** with background `agent` calls (named, reused for follow-ups), a `workflow` for many agents, or a team for a shared task list. They report back by themselves.
@@ -2187,7 +2188,7 @@ The commands below are `kortix sessions <subcommand>`. `kortix sessions --help` 
 | `recover <session_id>` | Continue a lost session in a new sandbox, from the session's branch and its saved conversation. `start` prints this command when the sandbox is lost. |
 | `reload <session_id>` | Pull the repository and load the base branch's agent config into the running sandbox. It refuses during a turn unless you pass `--force`. `--status` only reports whether the session is behind. |
 | `model <session_id> <model-id>` | Change the model. A running sandbox restarts its agent runtime, which ends the current turn. |
-| `compact <session_id>` | Summarize the conversation and continue from the summary. A stopped session wakes first. |
+| `compact <session_id>` | Start a fresh context now: the agent searches the session's full record when it needs a detail (an agent with `context: summary` summarizes instead). `--json` names the `mode`. A stopped session wakes first. |
 | `rename <session_id> <name>` | Set the name. `""` restores the automatic title. |
 | `update [<session_id>]` | Add or remove labels and metadata. |
 | `rm <session_id>…` | Stop and delete sessions. Each one is restorable for 30 days; after that its messages, files and branch are deleted. Prints the `restore` command for each session. `--json` adds `restore_until` and `project_id`. |
@@ -5290,7 +5291,8 @@ const canCompact = runtimeSupports(health?.capabilities, 'session.compact');
 | Capability | Feature |
 | --- | --- |
 | `session.subagents` | Subagent child sessions |
-| `session.compact` | Summarize the conversation on demand |
+| `session.compact` | Start a fresh context (or summarize) on demand |
+| `session.context_record` | A full context and `compact()` reset onto the session's searchable record; nothing is summarized |
 | `session.commands` | Project slash commands |
 | `session.steer` | A prompt read by the running turn at its next step |
 | `session.log.v2` | The event stream serves the session log as `log.*` frames |
@@ -5315,7 +5317,7 @@ The session's computer can have a desktop, streamed on port `6901`. The daemon l
 | `s.abort()` | Ends the running turn. The session stays. |
 | `s.setModel(model)` / `s.setAgent(agent)` | The model and agent for later `send()` calls on this handle only. |
 | `s.changeModel(modelId)` | Saves a new model for the session. See below. |
-| `s.compact(model?)` | Summarizes the conversation into a shorter context. Needs `session.compact`. |
+| `s.compact(model?)` | Starts a fresh context: with `session.context_record`, the agent continues and searches the session's full record; otherwise the conversation is summarized with `model`. Needs `session.compact`. |
 | `s.restart()` | Stops and starts the sandbox in place. Clears a failed-start verdict. |
 | `s.stop()` | Stops the sandbox. The disk, the branch and the conversation stay. |
 | `s.recover()` | Continues a lost session (the provider removed its sandbox) on a new sandbox. The next start boots from the branch and loads the saved conversation. |
@@ -6355,7 +6357,7 @@ export function Transcript({ session }: { session: UseSessionResult }) {
 | `snapshot` | `id`, `snapshot` |
 | `agent` | `id`, `name` |
 | `retry` | `id`, `attempt`, `message`, `createdAt` |
-| `compaction` | `id`, `auto`, `overflow`, `tailStartId?` |
+| `compaction` | `id`, `auto`, `overflow`, `tailStartId?`, `mode?` (`record`: a reset onto the record, nothing summarized), `tokensBefore?`, `entries?` |
 | `step` | `id`, `phase: 'start' \| 'finish'`, `snapshot?`, `reason?`, `cost?`, `tokens?` |
 | `unknown` | `raw`: a part type this SDK version does not know. Classification never throws. |
 

@@ -356,6 +356,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/connectors/webhook/pipedream': { action: 'webhook.pipedream.connection.receive', title: 'Received Pipedream connection webhook' },
   'GET /v1/docs': { action: 'system.api_docs.read', title: 'Viewed API reference docs' },
   'GET /v1/drives': { action: 'drive.list', title: 'Listed drives' },
+  'GET /v1/drives/usage': { action: 'drive.usage.account', title: "Viewed the account's Files storage" },
+  'GET /v1/drives/:driveId/usage': { action: 'drive.usage.read', title: "Viewed a project's Files storage" },
   'DELETE /v1/drives/:driveId/files': { action: 'drive.file.delete', title: 'Deleted a drive file or folder' },
   'GET /v1/drives/:driveId/files': { action: 'drive.file.list', title: 'Browsed a drive folder' },
   'GET /v1/drives/:driveId/files/content': { action: 'drive.file.read', title: 'Downloaded a drive file' },

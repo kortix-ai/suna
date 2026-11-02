@@ -216,7 +216,6 @@ async function drainSessionLifecycleQueueTick(
         projectId: row.projectId,
         sessionId: result.sessionId,
         actions: payload.postCreate,
-        commandId: row.commandId,
       });
       if (!postCreate.ok) {
         await markCommandFailed(row, postCreate.error, {

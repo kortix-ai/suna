@@ -258,6 +258,10 @@ export const qk = {
     versions: (driveId: string) => [...qk.drives.drive(driveId), 'versions'] as const,
     grants: (driveId: string) => [...qk.drives.drive(driveId), 'grants'] as const,
     conflicts: (driveId: string) => [...qk.drives.drive(driveId), 'conflicts'] as const,
+    /** What the drive holds against its limits. Under the drive, so a write's invalidation refreshes it. */
+    usage: (driveId: string) => [...qk.drives.drive(driveId), 'usage'] as const,
+    /** An account's Files per project. */
+    accountUsage: (accountId: string | null | undefined) => [...qk.drives.scope(), 'account-usage', accountId ?? 'primary'] as const,
     session: (projectId: string, sessionId: string) =>
       [...qk.drives.scope(), 'session', projectId, sessionId] as const,
   },

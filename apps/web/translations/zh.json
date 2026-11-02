@@ -1401,6 +1401,7 @@
       "addCredits": "添加积分",
       "spentThisPeriod": "本周期支出",
       "compute": "计算",
+      "storage": "存储",
       "total": "总计",
       "history": "历史记录",
       "historyDescription": "每个会话的费用，以及添加或使用的每一笔积分。",
@@ -1859,20 +1860,8 @@
     },
     "drive": "云盘",
     "repo": "Repo",
-    "customizeSidebar": "自定义侧边栏",
     "searchApps": "搜索应用",
     "appsNoMatches": "无匹配项",
-    "customizeSidebarDescription": "在两个分组之间拖动项目。",
-    "resetSidebar": "恢复默认",
-    "reorderItem": "重新排序 {name}",
-    "reorderHint": "拖动以重新排序。也可按上下方向键；越过“更多”分隔线会将项目从侧边栏隐藏。",
-    "reorderAnnouncement": "{name}：{group}，第 {position} 位，共 {total} 位",
-    "more": "更多",
-    "inSidebar": "侧边栏",
-    "underMore": "更多",
-    "sidebarEmpty": "将项目拖到这里以在侧边栏中显示。",
-    "moreEmpty": "将项目拖到这里以移入“更多”。",
-    "moreCaption": "“更多”中的项目可从导航下方的“更多”菜单打开。",
     "spaces": {
       "channels": "频道",
       "directMessages": "私信",
@@ -2656,7 +2645,7 @@
         },
         "credit": {
           "question": "一个积分能买到什么？",
-          "answer": "1 个积分等于 0.01 美元。积分用于支付智能体计算机，按秒、按资源计费：每 vCPU 每小时 {vcpuRate}，每 GB 内存每小时 {memoryRate}，每 GB 存储每月 {diskRate}，每 GiB 存储 0.000000036 美元。默认的 {spec} 机器每小时约消耗 {creditsPerHour} 个积分，因此 1 个积分约等于 {minutes} 分钟。停止的计算机不收费。积分也用于支付 Kortix 模型，价格为提供商基础价格加 {fee}% 平台费。使用你自己的 API 密钥时，每月前 1,000 美元的模型用量免费，超出部分按提供商价格的 5% 用积分支付。ChatGPT 订阅不消耗积分。"
+          "answer": "1 个积分等于 0.01 美元。积分用于支付智能体计算机，按秒、按资源计费：每 vCPU 每小时 {vcpuRate}，每 GB 内存每小时 {memoryRate}，每 GB 存储每月 {diskRate}，每 GiB 存储 0.000000036 美元。默认的 {spec} 机器每小时约消耗 {creditsPerHour} 个积分，因此 1 个积分约等于 {minutes} 分钟。停止的计算机不消耗计算资源，其存储的文件按存储计费。积分也用于支付 Kortix 模型，价格为提供商基础价格加 {fee}% 平台费。使用你自己的 API 密钥时，每月前 1,000 美元的模型用量免费，超出部分按提供商价格的 5% 用积分支付。ChatGPT 订阅不消耗积分。"
         },
         "amounts": {
           "question": "我每月需要支付多少？",
@@ -2702,7 +2691,7 @@
       "hours": {
         "eyebrow": "智能体时长",
         "title": "1 个积分约等于 {minutes} 分钟的智能体计算机",
-        "description": "积分用于支付智能体计算机：智能体在云端这台机器上运行代码、浏览网页并编辑文件。运行时按秒计费，停止后不收费。",
+        "description": "积分用于支付智能体计算机：智能体在云端这台机器上运行代码、浏览网页并编辑文件。运行时按秒计费，停止后不消耗计算资源，其存储的文件按存储计费。",
         "rate": {
           "value": "1 个积分 = 0.01 美元",
           "note": "每个档位都按此价格提供积分。"
@@ -2717,7 +2706,7 @@
         },
         "rates": {
           "title": "计算价格",
-          "note": "按预留规格逐秒计费。已停止的计算机不收费。",
+          "note": "按预留规格逐秒计费。已停止的计算机不消耗计算资源，其存储的文件按存储计费。",
           "vcpu": {
             "label": "vCPU",
             "price": "{price} / 小时"
@@ -21063,7 +21052,7 @@
       "text6a7c277bdc6e": "正在处理…",
       "text26b1626299d7": "grep -rn retry apps/api/src/billing",
       "text55f1539602e0": "edit webhook-retry.ts",
-      "text77ece565fe55": "我们将整个公司视为代码。每个智能体、技能、规则、连接器和上下文片段都是一个 git 仓库中的文件。每个智能体都是运行在极简开源运行框架上的自定义 pi 智能体，因此你可以用 pi 扩展来扩展任何内容。",
+      "texte6a48bfb5ab1": "每个智能体、技能、规则和连接器都是一个 git 仓库中的文件。每个智能体都是自定义 pi 智能体，你可以用 pi 扩展来扩展它。",
       "textc61528adb57c": "Kortix 是开源的。可在 Kortix Cloud、你的 VPC 或你自己的本地网络中运行，支持任意模型和你自己的密钥。",
       "textbf8abe5b1667": "多人协作。公司即代码。自主可控。",
       "text1445799c033a": "了解更多",
@@ -22633,6 +22622,8 @@
     "agentFullWriteDescription": "在你启动的会话中，此智能体可以修改你云盘中的任何文件，而不仅是 From agents 文件夹。",
     "agentCardDrive": "{size} 云盘",
     "sessionSkippedDrives": "{count, plural, other {有 # 个云盘无法装入此会话}}：{names}。请移除一个云盘腾出位置，然后重启会话。",
+    "sessionSkippedUnavailable": "{count, plural, other {有 # 个文件夹尚未挂载}}：{names}。会话会先在没有它们的情况下运行，存储可用后会自动挂载。",
+    "sessionSkippedTooLarge": "{count, plural, other {有 # 个文件夹太大，无法挂载到会话中}}：{names}。会话会在没有它们的情况下运行。请移出大文件，或共享一个更小的文件夹。",
     "shareFolder": "共享",
     "shareTitle": "共享 {name}",
     "shareDescription": "你添加的人员、团队和智能体会获得此文件夹及其中的所有内容。当会话的智能体、项目或启动它的人有访问权限时，该会话即可看到此文件夹。",
@@ -22699,7 +22690,25 @@
     "sessionFilesDescription": "此会话挂载的云盘文件夹，以及智能体看到它们的位置。在云盘中共享文件夹即可添加；停止共享即可移除。",
     "readWrite": "Read & write",
     "folderHint": "A folder inside {name}",
-    "driveLabel": "Drive"
+    "driveLabel": "Drive",
+    "storageLabel": "存储空间",
+    "storageOfLimit": "{used} / {limit}",
+    "storageUsed": "已使用 {used}",
+    "storageNearFull": "即将用满。删除不再需要的文件后才能继续上传。",
+    "storageFull": "已满。删除文件之前，新的上传会被拒绝。",
+    "storageAccountLine": "所有项目：{used} / {limit}",
+    "folderNearMountLimit": "{folder} 占用 {size}。会话无法挂载超过 {limit} 的文件夹。",
+    "folderOverMountLimit": "{folder} 占用 {size}，超过会话可挂载的 {limit}。会话会在没有它的情况下运行。",
+    "uploadRefusedProjectFull": "{name} 需要 {needed}。此项目的文件已使用 {limit} 中的 {used}。",
+    "uploadRefusedAccountFull": "{name} 需要 {needed}。你的账户的文件在所有项目中已使用 {limit} 中的 {used}。",
+    "uploadRefusedFileTooLarge": "{name} 为 {size}。单个文件最大为 {limit}。",
+    "uploadRefusedFolderMount": "{name} 会使 {folder} 超过 {limit}，这是会话可挂载的最大文件夹。",
+    "uploadRefusedBusy": "文件存储繁忙。请稍后重试 {name}。",
+    "uploadRefusedStorageFull": "文件存储当前已满。请稍后重试 {name}。",
+    "accountStorageTitle": "文件存储",
+    "accountStorageDescription": "每个项目的文件占用的空间。你的套餐允许每个项目 {project}，所有项目合计 {account}。",
+    "accountStorageEmpty": "还没有项目包含文件。",
+    "accountStorageIncomplete": "部分项目暂时无法测量。"
   },
   "genui": {
     "showData": "显示数据",
@@ -25255,5 +25264,16 @@
     "codeError": "无法用该代码连接 Claude。请重新登录并粘贴新代码。",
     "connectClaude": "连接 Claude",
     "reconnectClaude": "重新连接 Claude"
+  },
+  "contextReset": {
+    "pill": "新上下文 · 完整历史已保留",
+    "pillRunning": "正在腾出上下文…",
+    "detail": "上下文达到 {tokens} 个 token，因此智能体在新的上下文中继续。没有进行任何总结：需要细节时，它会搜索完整历史（{entries} 条）。",
+    "detailManual": "你在 {tokens} 个 token 时开始了新的上下文。没有进行任何总结：智能体需要细节时，会搜索完整历史（{entries} 条）。",
+    "showDetail": "显示详情",
+    "hideDetail": "隐藏详情",
+    "dialogTitle": "开始新的上下文？",
+    "dialogDescription": "智能体在新的上下文中继续，需要细节时会搜索完整历史。不会进行任何总结，对话会原样保留在这里。",
+    "dialogAction": "开始新的上下文"
   }
 }

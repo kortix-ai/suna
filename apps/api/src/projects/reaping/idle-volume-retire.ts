@@ -36,7 +36,7 @@ import { transitionSandbox } from '../session-lifecycle/status-transitions';
 import { PROVIDER_REMOVED_KEY } from './archived-box-removal';
 
 /** Sandbox metadata: when this lane retired the row. */
-export const IDLE_RETIRED_AT_KEY = 'idleRetiredAt';
+const IDLE_RETIRED_AT_KEY = 'idleRetiredAt';
 /** Sandbox metadata: when this lane last kept the box because its volume was not `ok`, and why. */
 const IDLE_DELETE_HELD_AT_KEY = 'idleDeleteHeldAt';
 const IDLE_DELETE_HELD_REASON_KEY = 'idleDeleteHeldReason';

@@ -460,7 +460,8 @@ describe('SessionChat moved turn sections', () => {
     ];
     try {
       const markup = renderChat();
-      expect(markup).toContain('Compacting context…');
+      // The running marker's label ("Freeing up context…" covers a reset and a summary alike).
+      expect(markup).toContain('Freeing up context…');
       expect(markup).not.toContain('data-turn-pending');
     } finally {
       fixtureMessages = baseFixtureMessages;

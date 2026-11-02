@@ -1401,6 +1401,7 @@
       "addCredits": "Додај кредите",
       "spentThisPeriod": "Потрошено у овом периоду",
       "compute": "Рачунарски ресурси",
+      "storage": "Складиште",
       "total": "Укупно",
       "history": "Историја",
       "historyDescription": "Цена сваке сесије и сви додати или потрошени кредити.",
@@ -1859,20 +1860,8 @@
     },
     "drive": "Диск",
     "repo": "Repo",
-    "customizeSidebar": "Prilagodi bočnu traku",
     "searchApps": "Pretraži aplikacije",
     "appsNoMatches": "Nema rezultata",
-    "customizeSidebarDescription": "Prevuci stavke između dve grupe.",
-    "resetSidebar": "Vrati podrazumevano",
-    "reorderItem": "Promeni redosled: {name}",
-    "reorderHint": "Prevuci za promenu redosleda. Ili pritisni strelice gore i dole; prelazak preko „Više“ sakriva stavku iz bočne trake.",
-    "reorderAnnouncement": "{name}: {group}, pozicija {position} od {total}",
-    "more": "Više",
-    "inSidebar": "Bočna traka",
-    "underMore": "Više",
-    "sidebarEmpty": "Prevuci stavku ovde da bi se prikazala u bočnoj traci.",
-    "moreEmpty": "Prevuci stavku ovde da bi je premestio u Više.",
-    "moreCaption": "Stavke u Više otvaraju se iz menija Više, ispod navigacije.",
     "spaces": {
       "channels": "Канали",
       "directMessages": "Директне поруке",
@@ -2656,7 +2645,7 @@
         },
         "credit": {
           "question": "Шта може да се купи једним кредитом?",
-          "answer": "1 кредит је 0,01 $. Кредити плаћају рачунар агента, који се наплаћује по секунди и по ресурсу: {vcpuRate} по vCPU по сату, {memoryRate} по GB RAM-а по сату, {diskRate} по GB складишта месечно. Подразумевана машина од {spec} троши око {creditsPerHour} кредита на сат, па 1 кредит вреди око {minutes} минута. Заустављен рачунар не кошта ништа. Кредити плаћају и Kortix моделе, по основној цени провајдера плус {fee}% накнаде платформе. Ваш API кључ је бесплатан за првих 1.000 $ коришћења модела месечно, а затим се 5% цене провајдера плаћа кредитима. ChatGPT претплата не троши кредите."
+          "answer": "1 кредит је 0,01 $. Кредити плаћају рачунар агента, који се наплаћује по секунди и по ресурсу: {vcpuRate} по vCPU по сату, {memoryRate} по GB RAM-а по сату, {diskRate} по GB складишта месечно. Подразумевана машина од {spec} троши око {creditsPerHour} кредита на сат, па 1 кредит вреди око {minutes} минута. Заустављен рачунар не троши рачунарске ресурсе. Његови сачувани фајлови се наплаћују као складиште. Кредити плаћају и Kortix моделе, по основној цени провајдера плус {fee}% накнаде платформе. Ваш API кључ је бесплатан за првих 1.000 $ коришћења модела месечно, а затим се 5% цене провајдера плаћа кредитима. ChatGPT претплата не троши кредите."
         },
         "amounts": {
           "question": "Колико плаћам месечно?",
@@ -2702,7 +2691,7 @@
       "hours": {
         "eyebrow": "Сати агента",
         "title": "1 кредит вреди око {minutes} минута рачунара агента",
-        "description": "Кредити плаћају рачунар агента: облак машину на којој ваш агент извршава код, прегледа веб и уређује фајлове. Наплаћује се по секунди док ради и не кошта ништа док је заустављен.",
+        "description": "Кредити плаћају рачунар агента: облак машину на којој ваш агент извршава код, прегледа веб и уређује фајлове. Наплаћује се по секунди док ради и не троши рачунарске ресурсе док је заустављен. Његови сачувани фајлови се наплаћују као складиште.",
         "rate": {
           "value": "1 кредит = 0,01 $",
           "note": "Сваки ниво нуди кредите по овој цени."
@@ -2717,7 +2706,7 @@
         },
         "rates": {
           "title": "Цене рачунања",
-          "note": "Наплаћује се по секунди за резервисану величину. Заустављен рачунар не кошта ништа.",
+          "note": "Наплаћује се по секунди за резервисану величину. Заустављен рачунар не троши рачунарске ресурсе. Његови сачувани фајлови се наплаћују као складиште.",
           "vcpu": {
             "label": "vCPU",
             "price": "{price} / сат"
@@ -20990,7 +20979,7 @@
       "texte1424f1d573a": "Ваши сопствени налози достижу само ваше приватне сесије.",
       "text4820b8981081": "Ваша приватна сесија",
       "textee240fba85cc": "Дељена сесија или заказано извршавање",
-      "text77ece565fe55": "Вашу целу компанију третирамо као код. Сваки агент, вештина, правило, конектор и део контекста је датотека у једном git репозиторијуму. Сваки агент је прилагођени pi агент на минималном харнесу отвореног кода, тако да можете проширити било шта pi екстензијама.",
+      "texte6a48bfb5ab1": "Сваки агент, вештина, правило и конектор је датотека у једном git репозиторијуму. Сваки агент је прилагођени pi агент који проширујете pi екстензијама.",
       "textc61528adb57c": "Kortix је отвореног кода. Покрените га на Kortix Cloud, у свом VPC-у или на сопственој on-prem мрежи, са било којим моделом и сопственим кључевима.",
       "textbf8abe5b1667": "Мултиплејер. Компанија као код. Сувереност.",
       "text1445799c033a": "Сазнајте више",
@@ -22633,6 +22622,8 @@
     "agentFullWriteDescription": "U sesijama koje pokreneš, ovaj agent može da menja bilo koju datoteku na tvom drajvu, ne samo u fascikli From agents.",
     "agentCardDrive": "Drajv {size}",
     "sessionSkippedDrives": "{count, plural, one {# диск није стао у ову сесију} few {# диска нису стала у ову сесију} other {# дискова није стало у ову сесију}}: {names}. Извади један диск да ослободиш место, па поново покрени сесију.",
+    "sessionSkippedUnavailable": "{count, plural, one {# фасцикла још није монтирана} few {# фасцикле још нису монтиране} other {# фасцикли још није монтирано}}: {names}. Сесија ради без њих и монтира их чим складиште дозволи.",
+    "sessionSkippedTooLarge": "{count, plural, one {# фасцикла је превелика за монтирање у сесију} few {# фасцикле су превелике за монтирање у сесију} other {# фасцикли је превелико за монтирање у сесију}}: {names}. Сесија ради без њих. Премести велике датотеке или подели мању фасциклу.",
     "shareFolder": "Подели",
     "shareTitle": "Подели {name}",
     "shareDescription": "Особе, тимови и агенти које додаш добијају ову фасциклу и све у њој. Сесија види фасциклу када њен агент, њен пројекат или особа која ју је покренула има приступ.",
@@ -22699,7 +22690,25 @@
     "sessionFilesDescription": "Фасцикле са Диска које ова сесија монтира и где их агент види. Подели фасциклу на Диску да је додаш; престани да је делиш да је уклониш.",
     "readWrite": "Read & write",
     "folderHint": "A folder inside {name}",
-    "driveLabel": "Drive"
+    "driveLabel": "Drive",
+    "storageLabel": "Prostor",
+    "storageOfLimit": "{used} od {limit}",
+    "storageUsed": "{used} zauzeto",
+    "storageNearFull": "Skoro puno. Obrišite fajlove koji vam više ne trebaju da biste nastavili otpremanje.",
+    "storageFull": "Puno. Nova otpremanja se odbijaju dok se fajlovi ne obrišu.",
+    "storageAccountLine": "Svi projekti: {used} od {limit}",
+    "folderNearMountLimit": "{folder} zauzima {size}. Sesija ne može da montira folder veći od {limit}.",
+    "folderOverMountLimit": "{folder} zauzima {size}, više od {limit} koje sesija može da montira. Sesije rade bez njega.",
+    "uploadRefusedProjectFull": "{name} traži {needed}. Fajlovi ovog projekta zauzimaju {used} od {limit}.",
+    "uploadRefusedAccountFull": "{name} traži {needed}. Fajlovi vašeg naloga zauzimaju {used} od {limit} u svim projektima.",
+    "uploadRefusedFileTooLarge": "{name} ima {size}. Jedan fajl može imati najviše {limit}.",
+    "uploadRefusedFolderMount": "{name} bi doveo {folder} preko {limit}, najvećeg foldera koji sesija može da montira.",
+    "uploadRefusedBusy": "Prostor za fajlove je zauzet. Pokušajte {name} ponovo za trenutak.",
+    "uploadRefusedStorageFull": "Prostor za fajlove je trenutno pun. Pokušajte {name} ponovo kasnije.",
+    "accountStorageTitle": "Prostor za fajlove",
+    "accountStorageDescription": "Koliko zauzimaju fajlovi svakog projekta. Vaš plan dozvoljava {project} po projektu i {account} u svim projektima.",
+    "accountStorageEmpty": "Nijedan projekat još nema fajlove.",
+    "accountStorageIncomplete": "Neki projekti trenutno nisu mogli da se izmere."
   },
   "genui": {
     "showData": "Прикажи податке",
@@ -25255,5 +25264,16 @@
     "codeError": "Nije moguće povezati Claude tim kodom. Prijavi se ponovo i nalepi novi kod.",
     "connectClaude": "Poveži Claude",
     "reconnectClaude": "Ponovo poveži Claude"
+  },
+  "contextReset": {
+    "pill": "Нови контекст · цела историја сачувана",
+    "pillRunning": "Ослобађање контекста…",
+    "detail": "Контекст је достигао {tokens} токена, па је агент наставио у новом. Ништа није сажето: претражује целу историју ({entries} уноса) када му треба неки детаљ.",
+    "detailManual": "Покренули сте нови контекст на {tokens} токена. Ништа није сажето: агент претражује целу историју ({entries} уноса) када му треба неки детаљ.",
+    "showDetail": "Прикажи детаље",
+    "hideDetail": "Сакриј детаље",
+    "dialogTitle": "Покренути нови контекст?",
+    "dialogDescription": "Агент наставља у новом контексту и претражује целу историју када му треба неки детаљ. Ништа се не сажима, а разговор остаје овде какав јесте.",
+    "dialogAction": "Покрени нови контекст"
   }
 }

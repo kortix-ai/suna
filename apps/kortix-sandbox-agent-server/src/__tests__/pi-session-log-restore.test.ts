@@ -85,6 +85,8 @@ function freshBox(sessionId: string) {
   writeFileSync(join(workspace, '.pi-agent/settings.json'), JSON.stringify({ compaction: { keepRecentTokens: 1 } }))
   const env: NodeJS.ProcessEnv = {
     KORTIX_HARNESS: 'pi',
+    // These restore fixtures exercise LLM summaries; record-mode resets are covered separately.
+    KORTIX_PI_CONTEXT: 'summary',
     KORTIX_LLM_BASE_URL: model.url,
     KORTIX_PI_STATE_DIR: join(workspace, '.state'),
     KORTIX_PI_AGENT_DIR: join(workspace, '.pi-agent'),

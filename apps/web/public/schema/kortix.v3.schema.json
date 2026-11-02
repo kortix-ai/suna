@@ -3202,6 +3202,15 @@
             "default": "on",
             "description": "`on`: the model gets every tool plus `codemode`, which runs one JavaScript script that calls the other tools. `only`: `codemode` alone. `off`: no `codemode`. A script's calls follow the agent's `permission`."
           },
+          "context": {
+            "type": "string",
+            "enum": [
+              "record",
+              "summary"
+            ],
+            "default": "record",
+            "description": "What happens when the session's context fills. `record`: the agent continues at once in a fresh context and searches the session's full record, word for word, when it needs a detail; nothing is summarized. `summary`: a model call writes a summary of the conversation and the agent continues from it."
+          },
           "tools": {
             "default": "all",
             "description": "The tools the agent may call: built-in tools, Kortix tools and registered tools. A list allows only those. `{ exclude: [bash] }` allows every tool but those.",

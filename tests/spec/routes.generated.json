@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1018,
+  "count": 1020,
   "routes": [
     {
       "method": "GET",
@@ -1552,7 +1552,15 @@
     },
     {
       "method": "GET",
+      "path": "/v1/drives/:driveId/usage"
+    },
+    {
+      "method": "GET",
       "path": "/v1/drives/:driveId/versions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/usage"
     },
     {
       "method": "GET",

@@ -7,7 +7,7 @@
 // Real: the account and project roles, the IAM project list rule, the session
 // grants, the project flag.
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { accountMembers, accounts, notifications, projectMembers, projectSessions, projects } from '@kortix/db';
+import { accountMembers, accounts, notifications, projectMembers, projectSessions, projects, roomMembers, rooms } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { setSessionSharing } from '../connectors/share';
 import { clearAuthorizeCaches } from '../iam/authorize';
@@ -181,6 +181,49 @@ withDb('notification inbox read', () => {
       await insertIntoView(db, projectMembers, [
         { accountId: project.account_id, projectId: project.project_id, userId: MEMBER, projectRole: 'member' },
       ]);
+      clearAuthorizeCaches();
+    }
+  });
+
+  test('a message row needs a person member of its room with room read, across projects and accounts', async () => {
+    const ROOMS_ON = { experimental: { notification_center: true, agent_rooms: true } };
+    await db.update(projects).set({ metadata: ROOMS_ON }).where(eq(projects.projectId, project.project_id));
+    const sibling = await seedProject(`inbox-rooms-${crypto.randomUUID().slice(0, 8)}`, { accountId: project.account_id, metadata: ROOMS_ON });
+    const other = await seedProject(`inbox-rooms-other-${crypto.randomUUID().slice(0, 8)}`, { metadata: ROOMS_ON });
+    await insertIntoView(db, accountMembers, [{ userId: MEMBER, accountId: other.account_id, accountRole: 'member' }]);
+    await insertIntoView(db, projectMembers, [
+      { accountId: project.account_id, projectId: sibling.project_id, userId: MEMBER, projectRole: 'member' },
+      { accountId: other.account_id, projectId: other.project_id, userId: MEMBER, projectRole: 'member' },
+    ]);
+    const room = async (where: SeededProject, member: boolean): Promise<string> => {
+      const [row] = await db.insert(rooms)
+        .values({ projectId: where.project_id, accountId: where.account_id, name: `r-${crypto.randomUUID().slice(0, 8)}`, createdByUserId: OWNER })
+        .returning({ id: rooms.roomId });
+      if (member) await db.insert(roomMembers).values({ roomId: row!.id, memberKind: 'person', userId: MEMBER, projectId: where.project_id, addedByUserId: OWNER });
+      return row!.id;
+    };
+    const message = (where: SeededProject, roomId: string) =>
+      seedRow(MEMBER, { accountId: where.account_id, projectId: where.project_id, roomId, kind: 'message' });
+    const listed = async () => (await listInbox(MEMBER, { limit: 20 })).notifications.map((n) => n.id).sort();
+    try {
+      const shown = [
+        await message(project, await room(project, true)),
+        await message(sibling, await room(sibling, true)),
+        await message(other, await room(other, true)),
+      ];
+      // Not a member of this room: never listed.
+      await message(project, await room(project, false));
+      expect(await listed()).toEqual([...shown].sort());
+
+      await deleteFromView(db, projectMembers, and(eq(projectMembers.projectId, sibling.project_id), eq(projectMembers.userId, MEMBER)));
+      clearAuthorizeCaches();
+      expect(await listed()).toEqual([shown[0]!, shown[2]!].sort());
+    } finally {
+      await db.delete(notifications).where(inArray(notifications.accountId, [project.account_id, other.account_id]));
+      await db.delete(rooms).where(inArray(rooms.projectId, [project.project_id, sibling.project_id, other.project_id]));
+      await db.delete(projects).where(eq(projects.projectId, sibling.project_id));
+      await removeSeeded([other]);
+      await db.update(projects).set({ metadata: FLAG_ON }).where(eq(projects.projectId, project.project_id));
       clearAuthorizeCaches();
     }
   });

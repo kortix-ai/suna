@@ -417,6 +417,31 @@ describe('daemon file write routes', () => {
     await expect(fs.stat(`${WORKSPACE}/gone.txt`)).rejects.toThrow()
   })
 
+  // A pi box's /workspace is not a git repository, so `git check-ignore --stdin`
+  // exits 128 before it reads the paths the list writes to it. On Bun 1.4 that
+  // write fails with EPIPE; with no listener on the pipe the daemon died, and
+  // the next call on the box got `502 upstream unreachable: Failed to connect`
+  // (release gate FILE-9: upload 200, read 200, list 200, delete 503).
+  it('lists a workspace that is not a git repository and keeps serving the next call', async () => {
+    const names = Array.from({ length: 1500 }, (_, i) => `listed-${String(i).padStart(4, '0')}.txt`)
+    await fs.mkdir(`${WORKSPACE}/plain-dir`)
+    await Promise.all(names.map((name) => fs.writeFile(`${WORKSPACE}/plain-dir/${name}`, 'x')))
+
+    const list = await fetch(`${base}/file?path=plain-dir`, { headers: authHeaders() })
+    expect(list.status).toBe(200)
+    const nodes = (await list.json()) as Array<{ name: string; ignored: boolean }>
+    expect(nodes).toHaveLength(names.length)
+    expect(nodes.every((node) => node.ignored === false)).toBe(true)
+
+    const del = await fetch(`${base}/file`, {
+      method: 'DELETE',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ path: 'plain-dir' }),
+    })
+    expect(del.status).toBe(200)
+    await expect(fs.stat(`${WORKSPACE}/plain-dir`)).rejects.toThrow()
+  })
+
   it('delete returns 404 for a missing path', async () => {
     const res = await fetch(`${base}/file`, {
       method: 'DELETE',

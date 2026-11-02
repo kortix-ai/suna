@@ -27,6 +27,7 @@ import { config } from '../../config';
 import { db } from '../../shared/db';
 import { getProvider, type ProviderName } from '../../platform/providers';
 import { REAP_CONCURRENCY } from '../reaper-constants';
+import { recordOrphanBoxCost } from '../../billing/services/orphan-box-costs';
 import { hasProviderBoxReference } from './orphan-box-references';
 import {
   EMPTY_ROW_VM_DIVERGENCE,
@@ -143,6 +144,8 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
         if (await hasProviderBoxReference(box.provider, box.externalId)) continue;
         if (attempted >= ORPHAN_REAP_MAX_PER_PASS) break;
         attempted += 1;
+        // No customer paid for this box: record Kortix's cost before it stops.
+        await recordOrphanBoxCost(box);
         console.log('[reaper] stopping owned unreferenced box', { provider: box.provider, externalId: box.externalId });
         await getProvider(box.provider).stop(box.externalId);
         stopped += 1;

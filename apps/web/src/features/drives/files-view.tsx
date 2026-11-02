@@ -20,13 +20,17 @@ import { Home } from '@kortix/ui/internal/icons/home';
 import { ErrorState } from '@kortix/ui/error-state';
 import {
   DriveExplorer,
+  DriveStorageSummary,
   FileExplorerSourceProvider,
   FilesStoreProvider,
   useDriveAvailability,
   useDriveFolder,
+  useDriveUsage,
   useFolderAccess,
+  useFolderMountNotice,
   useProjectDrive,
 } from '@kortix/ui/files';
+import Hint from '@kortix/ui/hint';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@kortix/ui';
@@ -35,6 +39,7 @@ import { contract, qk } from '@kortix/sdk/react';
 import {
   CaretDownIcon,
   FolderSimpleIcon,
+  WarningIcon,
   HardDriveIcon,
   LockSimpleIcon,
   ShareNetworkIcon,
@@ -188,13 +193,16 @@ function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }
   }, [missing, path, navigateToPath]);
 
   // Upload, new folder, rename and delete only where the caller may write;
-  // the API refuses the rest anyway.
+  // the API refuses the rest anyway. A file over the largest one file
+  // (the folder-mount cap) is refused before any byte moves.
+  const usage = useDriveUsage(drive.driveId);
+  const maxUploadBytes = usage.data?.limits.fileBytes ?? null;
   const source = useMemo(
     () => ({
       ...driveExplorerSource,
-      capabilities: { ...driveExplorerSource.capabilities, write: canWrite },
+      capabilities: { ...driveExplorerSource.capabilities, write: canWrite, maxUploadBytes },
     }),
-    [canWrite],
+    [canWrite, maxUploadBytes],
   );
   const open = (p: string) => navigateToPath(p.replace(/^\//, '') || '/');
   const { locate } = useDriveLocation(drive);
@@ -453,7 +461,7 @@ function DriveRail({
           <RailRow
             icon={Home}
             label={t('myDrive')}
-            meta={t('audienceOnlyYou')}
+            meta={<FolderMountMeta driveId={drive.driveId} path={personal}>{t('audienceOnlyYou')}</FolderMountMeta>}
             active={isUnder(path, personal)}
             onClick={() => onOpen(personal)}
           />
@@ -504,7 +512,10 @@ function DriveRail({
           />
         </RailSection>
       ) : null}
-      <p className="text-muted-foreground mt-auto px-2 pb-1 text-xs">{t('privateNote')}</p>
+      <div className="mt-auto flex flex-col gap-3 px-2 pb-1">
+        <DriveStorageSummary driveId={drive.driveId} />
+        <p className="text-muted-foreground text-xs">{t('privateNote')}</p>
+      </div>
     </nav>
   );
 }
@@ -584,6 +595,35 @@ function TeamFolderRow({
       t('badgePeople', { count: audience.named.length })
     ) : undefined;
   return (
-    <RailRow icon={FolderSimpleIcon} label={name} meta={meta} active={active} onClick={onClick} />
+    <RailRow
+      icon={FolderSimpleIcon}
+      label={name}
+      meta={<FolderMountMeta driveId={driveId} path={path}>{meta}</FolderMountMeta>}
+      active={active}
+      onClick={onClick}
+    />
+  );
+}
+
+/**
+ * A folder close to, or past, the largest folder a session mounts shows a
+ * warning before a session fails to mount it; the hint says its size and the
+ * cap. Every other folder shows its meta unchanged.
+ */
+function FolderMountMeta({ driveId, path, children }: { driveId: string; path: string; children?: ReactNode }) {
+  const usage = useDriveUsage(driveId);
+  const notice = useFolderMountNotice();
+  const folder = usage.data?.folders.find((f) => f.path === path);
+  const text = usage.data ? notice(folder, usage.data.limits.folderMountBytes) : null;
+  if (!text) return <>{children}</>;
+  return (
+    <>
+      {children}
+      <Hint label={text} side="right">
+        <span role="img" aria-label={text} className="inline-flex">
+          <WarningIcon className="text-kortix-orange size-3.5" weight="fill" />
+        </span>
+      </Hint>
+    </>
   );
 }

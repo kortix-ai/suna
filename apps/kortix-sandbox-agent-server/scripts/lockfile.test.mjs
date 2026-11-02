@@ -33,6 +33,14 @@ test('the image Bun installs the standalone daemon with its frozen lockfile', { 
     });
     assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
     assert.equal(readFileSync(join(cwd, 'bun.lock'), 'utf8'), before);
+    // Scoped overrides must survive the lockfile format upgrade and real install.
+    for (const parent of ['eslint', '@eslint/config-array', '@eslint/eslintrc', '@typescript-eslint/typescript-estree', '@earendil-works/pi-coding-agent']) {
+      const resolved = spawnSync(bun, [...args, '-e', `const { createRequire } = require('node:module'); const parent = require.resolve('${parent}/package.json'); console.log(createRequire(parent)('minimatch/package.json').version)`], {
+        cwd, encoding: 'utf8', timeout: 30_000,
+      });
+      assert.equal(resolved.status, 0, resolved.stderr);
+      assert.equal(resolved.stdout.trim(), '11.0.1', `${parent} must use the scoped minimatch override`);
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -1401,6 +1401,7 @@
       "addCredits": "Adicionar créditos",
       "spentThisPeriod": "Gasto neste período",
       "compute": "Computação",
+      "storage": "Armazenamento",
       "total": "Total",
       "history": "Histórico",
       "historyDescription": "O custo de cada sessão e todos os créditos adicionados ou gastos.",
@@ -1859,20 +1860,8 @@
     },
     "drive": "Drive",
     "repo": "Repo",
-    "customizeSidebar": "Personalizar barra lateral",
     "searchApps": "Pesquisar apps",
     "appsNoMatches": "Nenhum resultado",
-    "customizeSidebarDescription": "Arraste os itens entre os dois grupos.",
-    "resetSidebar": "Restaurar padrão",
-    "reorderItem": "Reordenar {name}",
-    "reorderHint": "Arraste para reordenar. Ou use as setas para cima e para baixo; passar de «Mais» oculta o item da barra lateral.",
-    "reorderAnnouncement": "{name}: {group}, posição {position} de {total}",
-    "more": "Mais",
-    "inSidebar": "Barra lateral",
-    "underMore": "Mais",
-    "sidebarEmpty": "Arraste um item para cá para mostrá-lo na barra lateral.",
-    "moreEmpty": "Arraste um item para cá para movê-lo para Mais.",
-    "moreCaption": "Os itens em Mais abrem pelo menu Mais, abaixo da navegação.",
     "spaces": {
       "channels": "Canais",
       "directMessages": "Mensagens diretas",
@@ -2656,7 +2645,7 @@
         },
         "credit": {
           "question": "O que um crédito compra?",
-          "answer": "1 crédito equivale a US$ 0,01. Os créditos pagam o computador do agente, cobrado por segundo e por recurso: {vcpuRate} por vCPU por hora, {memoryRate} por GB de RAM por hora, {diskRate} por GB de armazenamento por mês. A máquina padrão de {spec} usa cerca de {creditsPerHour} créditos por hora, então 1 crédito equivale a cerca de {minutes} minutos. Um computador parado não custa nada. Os créditos também pagam os modelos da Kortix, pelo preço base do provedor mais {fee}% de taxa de plataforma. Sua própria chave de API é gratuita nos primeiros US$ 1.000 de uso de modelos por mês, e depois 5% do preço do provedor são pagos com créditos. Uma assinatura do ChatGPT não consome créditos."
+          "answer": "1 crédito equivale a US$ 0,01. Os créditos pagam o computador do agente, cobrado por segundo e por recurso: {vcpuRate} por vCPU por hora, {memoryRate} por GB de RAM por hora, {diskRate} por GB de armazenamento por mês. A máquina padrão de {spec} usa cerca de {creditsPerHour} créditos por hora, então 1 crédito equivale a cerca de {minutes} minutos. Um computador parado não consome computação. Seus arquivos armazenados são cobrados como armazenamento. Os créditos também pagam os modelos da Kortix, pelo preço base do provedor mais {fee}% de taxa de plataforma. Sua própria chave de API é gratuita nos primeiros US$ 1.000 de uso de modelos por mês, e depois 5% do preço do provedor são pagos com créditos. Uma assinatura do ChatGPT não consome créditos."
         },
         "amounts": {
           "question": "Quanto pago por mês?",
@@ -2702,7 +2691,7 @@
       "hours": {
         "eyebrow": "Horas de agente",
         "title": "1 crédito equivale a cerca de {minutes} minutos de computador do agente",
-        "description": "Os créditos pagam o computador do agente: a máquina na nuvem onde seu agente executa código, navega e edita arquivos. Ele é cobrado por segundo enquanto roda e não custa nada parado.",
+        "description": "Os créditos pagam o computador do agente: a máquina na nuvem onde seu agente executa código, navega e edita arquivos. Ele é cobrado por segundo enquanto roda e não consome computação parado. Seus arquivos armazenados são cobrados como armazenamento.",
         "rate": {
           "value": "1 crédito = US$ 0,01",
           "note": "Cada nível oferece créditos a esta taxa."
@@ -2717,7 +2706,7 @@
         },
         "rates": {
           "title": "Preços de computação",
-          "note": "Cobrado por segundo pelo tamanho reservado. Um computador parado não custa nada.",
+          "note": "Cobrado por segundo pelo tamanho reservado. Um computador parado não consome computação. Seus arquivos armazenados são cobrados como armazenamento.",
           "vcpu": {
             "label": "vCPU",
             "price": "{price} / hora"
@@ -20926,7 +20915,7 @@
       "text6ed247d4d18f": "Todos trabalham com os mesmos agentes, competências, memória e conectores. Partilhe uma sessão, escreva nela em conjunto e aprove o que o agente faz.",
       "textf38d736ed09f": "Uma sessão, várias pessoas.",
       "text906c2d65c492": "Escrever em conjunto",
-      "text77ece565fe55": "Tratamos a sua empresa inteira como código. Cada agente, habilidade, regra, conector e peça de contexto é um arquivo em um único repositório git. Cada agente é um agente pi personalizado sobre um harness mínimo e open source, para que você possa estender qualquer coisa com extensões do pi.",
+      "texte6a48bfb5ab1": "Cada agente, habilidade, regra e conector é um arquivo em um único repositório git. Cada agente é um agente pi personalizado que você estende com extensões do pi.",
       "textc61528adb57c": "O Kortix é open source. Execute-o no Kortix Cloud, na sua VPC ou na sua própria rede on-prem, com qualquer modelo e as suas próprias chaves.",
       "textbf8abe5b1667": "Multiplayer. Empresa como código. Soberano.",
       "text1445799c033a": "Saiba mais",
@@ -22633,6 +22622,8 @@
     "agentFullWriteDescription": "Nas sessões que inicia, este agente pode alterar qualquer ficheiro do seu drive, não só a pasta From agents.",
     "agentCardDrive": "Drive de {size}",
     "sessionSkippedDrives": "{count, plural, one {# drive não coube nesta sessão} other {# drives não couberam nesta sessão}}: {names}. Retire um drive para liberar espaço e reinicie a sessão.",
+    "sessionSkippedUnavailable": "{count, plural, one {# pasta ainda não está montada} other {# pastas ainda não estão montadas}}: {names}. A sessão continua sem elas e as monta assim que o armazenamento permitir.",
+    "sessionSkippedTooLarge": "{count, plural, one {# pasta é grande demais para montar numa sessão} other {# pastas são grandes demais para montar numa sessão}}: {names}. A sessão funciona sem elas. Mova os arquivos grandes ou compartilhe uma pasta menor.",
     "shareFolder": "Compartilhar",
     "shareTitle": "Compartilhar {name}",
     "shareDescription": "Pessoas, equipes e agentes que você adicionar recebem esta pasta e tudo o que há nela. Uma sessão vê uma pasta quando seu agente, seu projeto ou a pessoa que a iniciou tem acesso.",
@@ -22699,7 +22690,25 @@
     "sessionFilesDescription": "As pastas do Drive que esta sessão monta e onde o agente as vê. Compartilhe uma pasta no Drive para adicioná-la; pare de compartilhar para removê-la.",
     "readWrite": "Read & write",
     "folderHint": "A folder inside {name}",
-    "driveLabel": "Drive"
+    "driveLabel": "Drive",
+    "storageLabel": "Armazenamento",
+    "storageOfLimit": "{used} de {limit}",
+    "storageUsed": "{used} usados",
+    "storageNearFull": "Quase cheio. Exclua os arquivos de que não precisa mais para continuar enviando.",
+    "storageFull": "Cheio. Novos envios são recusados até que arquivos sejam excluídos.",
+    "storageAccountLine": "Todos os projetos: {used} de {limit}",
+    "folderNearMountLimit": "{folder} ocupa {size}. Uma sessão não pode montar uma pasta maior que {limit}.",
+    "folderOverMountLimit": "{folder} ocupa {size}, mais do que os {limit} que uma sessão pode montar. As sessões rodam sem ela.",
+    "uploadRefusedProjectFull": "{name} precisa de {needed}. Os arquivos deste projeto usam {used} de {limit}.",
+    "uploadRefusedAccountFull": "{name} precisa de {needed}. Os arquivos da sua conta usam {used} de {limit} em todos os projetos.",
+    "uploadRefusedFileTooLarge": "{name} tem {size}. Um arquivo pode ter no máximo {limit}.",
+    "uploadRefusedFolderMount": "{name} faria {folder} passar de {limit}, a maior pasta que uma sessão pode montar.",
+    "uploadRefusedBusy": "O armazenamento de arquivos está ocupado. Tente {name} de novo em instantes.",
+    "uploadRefusedStorageFull": "O armazenamento de arquivos está cheio agora. Tente {name} de novo mais tarde.",
+    "accountStorageTitle": "Armazenamento de arquivos",
+    "accountStorageDescription": "Quanto ocupam os arquivos de cada projeto. Seu plano permite {project} por projeto e {account} em todos os projetos.",
+    "accountStorageEmpty": "Nenhum projeto tem arquivos ainda.",
+    "accountStorageIncomplete": "Alguns projetos não puderam ser medidos agora."
   },
   "genui": {
     "showData": "Mostrar dados",
@@ -25255,5 +25264,16 @@
     "codeError": "Não foi possível conectar o Claude com esse código. Entre de novo e cole o novo código.",
     "connectClaude": "Conectar Claude",
     "reconnectClaude": "Reconectar Claude"
+  },
+  "contextReset": {
+    "pill": "Contexto novo · histórico completo mantido",
+    "pillRunning": "Liberando contexto…",
+    "detail": "O contexto chegou a {tokens} tokens, então o agente continuou em um novo. Nada foi resumido: ele busca no histórico completo ({entries} entradas) quando precisa de um detalhe.",
+    "detailManual": "Você iniciou um contexto novo com {tokens} tokens. Nada foi resumido: o agente busca no histórico completo ({entries} entradas) quando precisa de um detalhe.",
+    "showDetail": "Mostrar detalhes",
+    "hideDetail": "Ocultar detalhes",
+    "dialogTitle": "Iniciar um contexto novo?",
+    "dialogDescription": "O agente continua em um contexto novo e busca no histórico completo quando precisa de um detalhe. Nada é resumido, e a conversa fica aqui como está.",
+    "dialogAction": "Iniciar um contexto novo"
   }
 }

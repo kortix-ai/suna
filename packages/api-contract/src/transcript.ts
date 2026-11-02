@@ -326,6 +326,12 @@ export type KortixCompactionPart = {
   auto: boolean;
   overflow?: boolean;
   tail_start_id?: string;
+  /** `record`: the context reset onto the session's searchable record, with nothing summarized. Absent: a summary. */
+  mode?: 'record';
+  /** The context size, in tokens, when it reset or compacted. */
+  tokens_before?: number;
+  /** For `record`: the entries the record held at the reset. */
+  entries?: number;
 };
 
 /**

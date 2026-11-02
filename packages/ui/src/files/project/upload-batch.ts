@@ -59,11 +59,14 @@ export function uploadRejectionReason(
 export function partitionUploadBatch<T extends UploadCandidate>(
   files: readonly T[],
   limit: number | null = MAX_UPLOAD_BYTES,
+  /** The sentence for a refused file, in the reader's language; the English default otherwise. */
+  describe?: (file: T, limit: number) => string,
 ): UploadBatchPartition<T> {
   const accepted: T[] = [];
   const rejected: RejectedUpload<T>[] = [];
   for (const file of files) {
-    const reason = uploadRejectionReason(file, limit);
+    const english = uploadRejectionReason(file, limit);
+    const reason = english && describe && limit !== null ? describe(file, limit) : english;
     if (reason) rejected.push({ file, reason });
     else accepted.push(file);
   }

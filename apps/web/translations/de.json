@@ -1401,6 +1401,7 @@
       "addCredits": "Credits hinzufügen",
       "spentThisPeriod": "In diesem Zeitraum ausgegeben",
       "compute": "Rechenleistung",
+      "storage": "Speicher",
       "total": "Gesamt",
       "history": "Verlauf",
       "historyDescription": "Kosten jeder Sitzung sowie alle hinzugefügten oder verbrauchten Credits.",
@@ -1859,20 +1860,8 @@
     },
     "drive": "Drive",
     "repo": "Repo",
-    "customizeSidebar": "Seitenleiste anpassen",
     "searchApps": "Apps durchsuchen",
     "appsNoMatches": "Keine Treffer",
-    "customizeSidebarDescription": "Ziehe Elemente zwischen den beiden Gruppen.",
-    "resetSidebar": "Auf Standard zurücksetzen",
-    "reorderItem": "{name} verschieben",
-    "reorderHint": "Zum Neuordnen ziehen. Oder die Pfeiltasten nach oben und unten drücken; über „Mehr“ hinaus blendet das Element in der Seitenleiste aus.",
-    "reorderAnnouncement": "{name}: {group}, Position {position} von {total}",
-    "more": "Mehr",
-    "inSidebar": "Seitenleiste",
-    "underMore": "Mehr",
-    "sidebarEmpty": "Ziehe ein Element hierher, um es in der Seitenleiste anzuzeigen.",
-    "moreEmpty": "Ziehe ein Element hierher, um es unter Mehr zu verschieben.",
-    "moreCaption": "Elemente unter Mehr öffnen sich über das Menü Mehr unter der Navigation.",
     "spaces": {
       "channels": "Kanäle",
       "directMessages": "Direktnachrichten",
@@ -2656,7 +2645,7 @@
         },
         "credit": {
           "question": "Was bekomme ich für einen Credit?",
-          "answer": "1 Credit entspricht 0,01 $. Credits bezahlen den Agent-Computer, abgerechnet pro Sekunde und Ressource: {vcpuRate} pro vCPU-Stunde, {memoryRate} pro GB RAM und Stunde, {diskRate} pro GB Speicher und Monat. Die Standardmaschine mit {spec} verbraucht etwa {creditsPerHour} Credits pro Stunde, also entspricht 1 Credit etwa {minutes} Minuten. Ein gestoppter Computer kostet nichts. Credits bezahlen außerdem Kortix-Modelle zum Basispreis des Anbieters plus {fee} % Plattformgebühr. Mit eigenem API-Schlüssel sind die ersten 1.000 $ Modellnutzung pro Monat kostenlos, danach werden 5 % des Anbieterpreises mit Credits bezahlt. Ein ChatGPT-Abonnement verbraucht keine Credits."
+          "answer": "1 Credit entspricht 0,01 $. Credits bezahlen den Agent-Computer, abgerechnet pro Sekunde und Ressource: {vcpuRate} pro vCPU-Stunde, {memoryRate} pro GB RAM und Stunde, {diskRate} pro GB Speicher und Monat. Die Standardmaschine mit {spec} verbraucht etwa {creditsPerHour} Credits pro Stunde, also entspricht 1 Credit etwa {minutes} Minuten. Ein gestoppter Computer verbraucht keine Rechenleistung. Seine gespeicherten Dateien werden als Speicher abgerechnet. Credits bezahlen außerdem Kortix-Modelle zum Basispreis des Anbieters plus {fee} % Plattformgebühr. Mit eigenem API-Schlüssel sind die ersten 1.000 $ Modellnutzung pro Monat kostenlos, danach werden 5 % des Anbieterpreises mit Credits bezahlt. Ein ChatGPT-Abonnement verbraucht keine Credits."
         },
         "amounts": {
           "question": "Wie viel zahle ich pro Monat?",
@@ -2702,7 +2691,7 @@
       "hours": {
         "eyebrow": "Agent-Stunden",
         "title": "1 Credit entspricht etwa {minutes} Minuten Agent-Computer",
-        "description": "Credits bezahlen den Agent-Computer: die Cloud-Maschine, auf der dein Agent Code ausführt, im Web surft und Dateien bearbeitet. Er wird sekundengenau abgerechnet, solange er läuft, und kostet nichts, solange er gestoppt ist.",
+        "description": "Credits bezahlen den Agent-Computer: die Cloud-Maschine, auf der dein Agent Code ausführt, im Web surft und Dateien bearbeitet. Er wird sekundengenau abgerechnet, solange er läuft, und verbraucht keine Rechenleistung, solange er gestoppt ist. Seine gespeicherten Dateien werden als Speicher abgerechnet.",
         "rate": {
           "value": "1 Credit = 0,01 $",
           "note": "Jede Stufe bietet Credits zu diesem Preis."
@@ -2717,7 +2706,7 @@
         },
         "rates": {
           "title": "Compute-Preise",
-          "note": "Pro Sekunde für die reservierte Größe abgerechnet. Ein gestoppter Computer kostet nichts.",
+          "note": "Pro Sekunde für die reservierte Größe abgerechnet. Ein gestoppter Computer verbraucht keine Rechenleistung. Seine gespeicherten Dateien werden als Speicher abgerechnet.",
           "vcpu": {
             "label": "vCPU",
             "price": "{price} / Stunde"
@@ -20861,7 +20850,7 @@
       "text04df836cf828": "Jede Funktion.",
       "text6fa799b6dcc6": "Besser als einzustellen.",
       "textefc30d1611b5": "Mitgliedschaftsvorteile.",
-      "text77ece565fe55": "Wir behandeln Ihr gesamtes Unternehmen wie Code. Jeder Agent, jede Skill, jede Regel, jeder Connector und jedes Stück Kontext ist eine Datei in einem einzigen Git-Repository. Jeder Agent ist ein eigener pi-Agent auf einem minimalen Open-Source-Harness, sodass Sie alles mit pi-Erweiterungen erweitern können.",
+      "texte6a48bfb5ab1": "Jeder Agent, jede Skill, jede Regel und jeder Connector ist eine Datei in einem Git-Repository. Jeder Agent ist ein eigener pi-Agent, den Sie mit pi-Erweiterungen erweitern.",
       "textc61528adb57c": "Kortix ist Open Source. Betreiben Sie es auf Kortix Cloud, in Ihrer VPC oder in Ihrem eigenen On-Premise-Netzwerk, mit jedem Modell und Ihren eigenen Schlüsseln.",
       "textbf8abe5b1667": "Multiplayer. Unternehmen als Code. Souverän.",
       "text1445799c033a": "Mehr erfahren",
@@ -22633,6 +22622,8 @@
     "agentFullWriteDescription": "In den Sessions, die du startest, kann dieser Agent jede Datei in deinem Drive ändern, nicht nur im Ordner „From agents“.",
     "agentCardDrive": "{size} Drive",
     "sessionSkippedDrives": "{count, plural, one {# Drive passte nicht in diese Sitzung} other {# Drives passten nicht in diese Sitzung}}: {names}. Nimm ein Drive heraus, um Platz zu schaffen, und starte die Sitzung dann neu.",
+    "sessionSkippedUnavailable": "{count, plural, one {# Ordner ist noch nicht eingebunden} other {# Ordner sind noch nicht eingebunden}}: {names}. Die Sitzung läuft ohne {count, plural, one {ihn} other {sie}} weiter und bindet {count, plural, one {ihn} other {sie}} ein, sobald der Speicher es zulässt.",
+    "sessionSkippedTooLarge": "{count, plural, one {# Ordner ist zu groß, um ihn in eine Sitzung einzubinden} other {# Ordner sind zu groß, um sie in eine Sitzung einzubinden}}: {names}. Die Sitzung läuft ohne {count, plural, one {ihn} other {sie}}. Verschiebe große Dateien oder teile einen kleineren Ordner.",
     "shareFolder": "Teilen",
     "shareTitle": "{name} teilen",
     "shareDescription": "Personen, Teams und Agenten, die du hinzufügst, erhalten diesen Ordner und alles darin. Eine Sitzung sieht einen Ordner, wenn ihr Agent, ihr Projekt oder die Person, die sie gestartet hat, Zugriff hat.",
@@ -22699,7 +22690,25 @@
     "sessionFilesDescription": "Die Drive-Ordner, die diese Sitzung einbindet, und wo der Agent sie sieht. Teile einen Ordner in Drive, um ihn hinzuzufügen; beende die Freigabe, um ihn wieder zu entfernen.",
     "readWrite": "Read & write",
     "folderHint": "A folder inside {name}",
-    "driveLabel": "Drive"
+    "driveLabel": "Drive",
+    "storageLabel": "Speicher",
+    "storageOfLimit": "{used} von {limit}",
+    "storageUsed": "{used} belegt",
+    "storageNearFull": "Fast voll. Löschen Sie Dateien, die Sie nicht mehr brauchen, um weiter hochzuladen.",
+    "storageFull": "Voll. Neue Uploads werden abgelehnt, bis Dateien gelöscht sind.",
+    "storageAccountLine": "Alle Projekte: {used} von {limit}",
+    "folderNearMountLimit": "{folder} enthält {size}. Eine Sitzung kann keinen Ordner über {limit} einbinden.",
+    "folderOverMountLimit": "{folder} enthält {size}, mehr als die {limit}, die eine Sitzung einbinden kann. Sitzungen laufen ohne diesen Ordner.",
+    "uploadRefusedProjectFull": "{name} braucht {needed}. Die Dateien dieses Projekts belegen {used} von {limit}.",
+    "uploadRefusedAccountFull": "{name} braucht {needed}. Die Dateien Ihres Kontos belegen {used} von {limit} über alle Projekte.",
+    "uploadRefusedFileTooLarge": "{name} ist {size} groß. Eine Datei darf höchstens {limit} groß sein.",
+    "uploadRefusedFolderMount": "{name} würde {folder} über {limit} bringen, den größten Ordner, den eine Sitzung einbinden kann.",
+    "uploadRefusedBusy": "Der Dateispeicher ist ausgelastet. Versuchen Sie {name} gleich noch einmal.",
+    "uploadRefusedStorageFull": "Der Dateispeicher ist gerade voll. Versuchen Sie {name} später noch einmal.",
+    "accountStorageTitle": "Dateispeicher",
+    "accountStorageDescription": "Was die Dateien jedes Projekts belegen. Ihr Tarif erlaubt {project} pro Projekt und {account} über alle Projekte.",
+    "accountStorageEmpty": "Noch kein Projekt enthält Dateien.",
+    "accountStorageIncomplete": "Einige Projekte konnten gerade nicht gemessen werden."
   },
   "genui": {
     "showData": "Daten anzeigen",
@@ -25255,5 +25264,16 @@
     "codeError": "Claude konnte mit diesem Code nicht verbunden werden. Melde dich erneut an und füge den neuen Code ein.",
     "connectClaude": "Claude verbinden",
     "reconnectClaude": "Claude erneut verbinden"
+  },
+  "contextReset": {
+    "pill": "Neuer Kontext · voller Verlauf bleibt",
+    "pillRunning": "Kontext wird frei…",
+    "detail": "Der Kontext erreichte {tokens} Tokens, also arbeitet der Agent in einem neuen weiter. Nichts wurde zusammengefasst: Er durchsucht den vollen Verlauf ({entries} Einträge), wenn er ein Detail braucht.",
+    "detailManual": "Du hast bei {tokens} Tokens einen neuen Kontext gestartet. Nichts wurde zusammengefasst: Der Agent durchsucht den vollen Verlauf ({entries} Einträge), wenn er ein Detail braucht.",
+    "showDetail": "Details anzeigen",
+    "hideDetail": "Details ausblenden",
+    "dialogTitle": "Neuen Kontext starten?",
+    "dialogDescription": "Der Agent arbeitet in einem neuen Kontext weiter und durchsucht den vollen Verlauf, wenn er ein Detail braucht. Nichts wird zusammengefasst, und die Unterhaltung bleibt hier, wie sie ist.",
+    "dialogAction": "Neuen Kontext starten"
   }
 }

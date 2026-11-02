@@ -136,9 +136,10 @@ function catalogRows(
   }
   const item = (ext: ProjectCapabilities['extensions'][number]): AccessItem => ({
     id: ext.id,
-    // "Follows the agent tool switch" only where that switch is on screen.
+    // "Follows the agent tool switch" only where that switch is on screen. The context record's
+    // switch is its own row (the agent's `context` setting), so it follows nothing.
     description:
-      ext.controlled_by && agentMode ? `${ext.description ?? ''} ${t('followsTool', { tool: ext.controlled_by })}` : ext.description,
+      ext.controlled_by && ext.controlled_by !== 'context' && agentMode ? `${ext.description ?? ''} ${t('followsTool', { tool: ext.controlled_by })}` : ext.description,
     status: ext.required ? <span className="text-muted-foreground text-xs">{t('alwaysOn')}</span> : undefined,
   });
   // A required platform extension (permission rules on script calls, the show
@@ -180,6 +181,10 @@ function withSwitches(
     if (view === 'extensions') {
       const ext = catalog.extensions.find((x) => x.id === row.id);
       if (!ext || ext.required) return row;
+      // The context record is the agent's `context` field: on is the default (`record`), off is `summary`.
+      if (ext.group === 'platform' && ext.controlled_by === 'context') {
+        return { ...row, checked: editor.draft.context !== 'summary', onCheckedChange: (on) => editor.set('context', on ? 'record' : 'summary') };
+      }
       if (ext.group === 'platform') {
         const tool = catalog.tools.find((x) => x.id === ext.controlled_by);
         return tool ? { ...row, ...toolSwitch(tool.id, tool.aliases) } : row;
