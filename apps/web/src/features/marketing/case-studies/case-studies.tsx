@@ -16,13 +16,13 @@ import { localizeMarketingContent as localizeContent, type CaseStudy } from './c
 
 const PLATINUM_TRACKING = 'tracking-[0.22em]'; // audit:allow Platinum's own wordmark tracking (pt-logo.tsx), a third-party mark
 
-/** Platinum's mark as platinum.dev draws it (`pt-logo.tsx`): a square and PLATINUM in mono, both currentColor. */
+/** Platinum's mark as platinum.dev draws it (`pt-logo.tsx`): a square and PLATINUM in mono, both in the tile's ink. */
 function PlatinumMark() {
   const tMarketing = useTranslations('hardcodedUi.i18nComplete');
 
   return (
     <span
-      className="text-foreground inline-flex items-center gap-4"
+      className="inline-flex items-center gap-4"
       role="img"
       aria-label={tMarketing('text5a98505ed913')}
     >
@@ -36,14 +36,16 @@ function PlatinumMark() {
 
 /** A third-party logo is drawn for a white ground: white in both themes (color.md, logo tile rule). */
 const LOGO_TILE_BACKGROUND = 'bg-white';
+/** A mark drawn in code (Platinum, Kortix) takes black on the white tile, in both themes. */
+const LOGO_TILE_INK = 'text-black';
 
-/** The card's top: the logo on its white tile, or the drawn mark on the muted ground. */
+/** The card's top: every card's mark on the same white tile, a logo file or a mark drawn in code. */
 function Mark({ item }: { item: CaseStudy }) {
-  if (item.logo) {
-    return (
-      <div
-        className={`${LOGO_TILE_BACKGROUND} flex h-40 items-center justify-center rounded-md border`}
-      >
+  return (
+    <div
+      className={`${LOGO_TILE_BACKGROUND} ${LOGO_TILE_INK} flex h-40 items-center justify-center rounded-md border`}
+    >
+      {item.logo ? (
         <Image
           src={item.logo.src}
           alt={item.logo.alt}
@@ -53,12 +55,11 @@ function Mark({ item }: { item: CaseStudy }) {
           // A wordmark (wider than 2.5:1) sits lower so it matches a stacked mark's weight.
           className={item.logo.width / item.logo.height > 2.5 ? 'h-12 w-auto' : 'h-24 w-auto'}
         />
-      </div>
-    );
-  }
-  return (
-    <div className="bg-muted flex h-40 items-center justify-center rounded-md">
-      {item.mark === 'kortix' ? <KortixLogo size={28} variant="logomark" /> : <PlatinumMark />}
+      ) : item.mark === 'kortix' ? (
+        <KortixLogo size={28} variant="logomark" />
+      ) : (
+        <PlatinumMark />
+      )}
     </div>
   );
 }
