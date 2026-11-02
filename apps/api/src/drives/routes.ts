@@ -1186,11 +1186,9 @@ drivesApp.openapi(
       if (folderAccess(folder, caller.grants, caller.subject) !== 'manage') fail(403, 'Only the folder\'s owner and project admins see who opened it');
     }
     const reads = await listAdminFolderReads(caller.drive.driveId, folder);
-    const labels = await grantLabels(
-      caller.drive,
-      reads.map((r) => ({ path: folder, level: 'read' as const, principalType: 'user' as const, principalId: r.adminUserId })),
-    );
-    return c.json({ folder, reads: reads.map((r) => ({ ...r, label: labels.get(`user:${r.adminUserId}`) ?? r.adminUserId })) });
+    const admins = await resolveUserIdentities(reads.map((r) => r.adminUserId));
+    const label = (id: string) => admins.get(id)?.displayName?.trim() || admins.get(id)?.email || id;
+    return c.json({ folder, reads: reads.map((r) => ({ ...r, label: label(r.adminUserId) })) });
   },
 );
 

@@ -22,10 +22,13 @@ import { folderAudience } from './folder-audience';
 export function FolderAccessPanel({
   driveId,
   path,
+  name,
   onManage,
 }: {
   driveId: string;
   path: string;
+  /** The folder's name as the page shows it (a person's folder: their name). */
+  name?: string;
   onManage: () => void;
 }) {
   const t = useTranslations('drives');
@@ -111,7 +114,7 @@ export function FolderAccessPanel({
 
   return (
     <EditorSection
-      title={atRoot ? t('whoCanAccess') : t('whoCanAccessFolder', { name: folderName(path, t('files')) })}
+      title={atRoot ? t('whoCanAccess') : t('whoCanAccessFolder', { name: name ?? folderName(path, t('files')) })}
       description={atRoot ? undefined : t('accessPanelDescription')}
     >
       {body}

@@ -240,6 +240,7 @@ function FilesExplorer({ drive, projectId, projectName }: { drive: Drive; projec
             <FolderAccessPanel
               driveId={drive.driveId}
               path={path}
+              name={nameOfPath(path, here)}
               onManage={() => {
                 setAccessOpen(false);
                 setSharing(true);
