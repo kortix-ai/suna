@@ -879,6 +879,9 @@ const envSchema = z.object({
   // Per-credential bound on the LLM gateway mount (/v1/llm and its
   // /v1/llm-gateway alias). Defence-in-depth at the boundary, not a quota:
   // 600/min is ~10/s per credential, far above any real inference pattern.
+  // The standalone gateway reads the same setting and applies the same limit
+  // (apps/llm-gateway/src/token-rate-limit.ts), so sandboxes that call it
+  // directly (LLM_GATEWAY_BASE_URL) are bound too.
   KORTIX_LLM_GATEWAY_REQS_PER_MIN: optInt(600),
   KORTIX_PROXY_REQS_PER_MIN: optInt(600),
   // Proxies in front of the API that APPEND to X-Forwarded-For. The client is

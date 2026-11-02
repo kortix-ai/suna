@@ -346,7 +346,7 @@ describe('standalone image routes', () => {
         calls.push({ authorization: request.authorization, rawBody: request.rawBody, operation: request.operation });
         return Response.json({ data: [{ b64_json: 'AAAA' }] });
       },
-    }, inflight, () => {});
+    }, inflight, () => {}, () => null);
     return { app, calls, inflight };
   }
 
@@ -390,7 +390,7 @@ describe('standalone Claude Code passthrough routes', () => {
           body: request.body ? new TextDecoder().decode(request.body) : null, auth: request.headers.get('authorization') });
         return new Response('data: ok\n\n', { headers: { 'content-type': 'text/event-stream' } });
       },
-    }, new InflightBudget({ maxBytes: 1024 * 1024, perRequestMaxBytes: 1024 * 1024, amplification: 1 }), () => {});
+    }, new InflightBudget({ maxBytes: 1024 * 1024, perRequestMaxBytes: 1024 * 1024, amplification: 1 }), () => {}, () => null);
     return { app, calls };
   }
 
