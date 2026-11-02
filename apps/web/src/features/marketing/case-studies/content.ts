@@ -43,7 +43,7 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  *    the files are cached for a day, so a redrawn file needs a new URL.
  *  - Only what the engagement really contains. No metric, no quote, no
  *    outcome number until the company signs one off.
- *  - Banking, insurance, utilities, airlines, healthcare and retail are
+ *  - Banking, insurance, airlines, healthcare and retail are
  *    industry lifecycle cards (founder, 2026-11-02), modelled on the
  *    per-industry lifecycles enterprise AI vendors publish: each walks one
  *    lifecycle end to end and names the person who approves. They name no
@@ -209,24 +209,6 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
         'Client and pitch materials',
         'Internal operations automated',
         'The whole firm on one CompanyOS',
-      ],
-    },
-    {
-      id: 'utilities',
-      logo: {
-        src: '/media/case-studies/utilities.svg?v=df0f8f3b',
-        alt: 'A utilities symbol',
-        width: 100,
-        height: 100,
-      },
-      category: 'Utilities',
-      title: 'Outages, from the first alert to the last bill.',
-      body: 'Agents watch weather and grid alerts, notify customers before they call, plan crews and reconcile billing afterwards. People dispatch the crews.',
-      facts: [
-        'Weather and grid alerts watched',
-        'Customers notified first',
-        'Crew plans with ready tickets',
-        'Billing credits reconciled',
       ],
     },
     {
