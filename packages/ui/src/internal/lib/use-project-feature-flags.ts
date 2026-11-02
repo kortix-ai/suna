@@ -28,7 +28,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   isLoading: boolean;
 } {
   const marketplace = useFeatureFlag(projectId, 'marketplace');
-  const metaAgent = useFeatureFlag(projectId, 'meta_agent');
   const reminders = useFeatureFlag(projectId, 'reminders');
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
   const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
@@ -54,7 +53,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   return {
     flags: {
       marketplace: marketplace.enabled,
-      meta_agent: metaAgent.enabled,
       reminders: reminders.enabled,
       warm_sessions: warmSessions.enabled,
       secrets_egress: secretsEgress.enabled,

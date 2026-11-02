@@ -90,9 +90,9 @@ describe('useFeatureFlag', () => {
   });
 
   test('one flag never reads another flag`s slot', () => {
-    withDetail({ meta_agent: true, reminders: false });
+    withDetail({ marketplace: true, reminders: false });
 
-    expect(useFeatureFlag('p', 'meta_agent').enabled).toBe(true);
+    expect(useFeatureFlag('p', 'marketplace').enabled).toBe(true);
     expect(useFeatureFlag('p', 'reminders').enabled).toBe(false);
   });
 

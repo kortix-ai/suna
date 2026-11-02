@@ -12,11 +12,12 @@ import {
   MY_KORTIX_DESCRIPTION,
   MY_KORTIX_PROMPT,
   myKortixAgentGrant,
+  projectBuiltinAgents,
   resolveBuiltinAgents,
   resolveMyKortixSandbox,
 } from '../projects/lib/my-kortix-agent';
 import { grantFromLoadedAgents } from '../projects/agents';
-import { resolveFeatureFlag } from '../feature-flags/registry';
+import { isFeatureFlagKey } from '../feature-flags/registry';
 import { manifestHealthWithout } from '../projects/lib/manifest-health';
 
 describe('My Kortix agent', () => {
@@ -137,17 +138,16 @@ describe('My Kortix agent', () => {
     });
   });
 
-  test('builtin_agents: the manifest boolean wins, else the legacy switch, else on', () => {
+  test('builtin_agents: the manifest boolean wins, else on', () => {
     expect(declaredBuiltinAgents({})).toEqual({});
     expect(declaredBuiltinAgents({ builtin_agents: { my_kortix: false } })).toEqual({ my_kortix: false });
     expect(declaredBuiltinAgents({ builtin_agents: { my_kortix: 'no' } })).toEqual({});
     expect(declaredBuiltinAgents({ builtin_agents: ['my_kortix'] })).toEqual({});
-    // absent → legacy switch (default on)
-    expect(resolveBuiltinAgents({}, true)).toEqual({ my_kortix: true });
-    expect(resolveBuiltinAgents({}, false)).toEqual({ my_kortix: false });
-    // present → the manifest decides, whatever the legacy switch says
-    expect(resolveBuiltinAgents({ my_kortix: false }, true)).toEqual({ my_kortix: false });
-    expect(resolveBuiltinAgents({ my_kortix: true }, false)).toEqual({ my_kortix: true });
+    expect(resolveBuiltinAgents({})).toEqual({ my_kortix: true });
+    expect(resolveBuiltinAgents({ my_kortix: false })).toEqual({ my_kortix: false });
+    expect(resolveBuiltinAgents({ my_kortix: true })).toEqual({ my_kortix: true });
+    expect(projectBuiltinAgents(null)).toEqual({ my_kortix: true });
+    expect(projectBuiltinAgents({ builtin_agents: { my_kortix: false } })).toEqual({ my_kortix: false });
   });
 
   test('`meta` is a built-in only while My Kortix is on', () => {
@@ -178,16 +178,10 @@ describe('My Kortix agent', () => {
     });
   });
 
-  // Read through the canonical registry helper at every call site — the module
-  // above must stay free of runtime imports, see its header comment.
-  test('is gated on the meta_agent feature flag, default on', () => {
-    // Default-on (Marko, 2026-10-24): the meta agent is the default cloud
-    // orchestrator for every project. Only an explicit project opt-out hides it.
-    expect(resolveFeatureFlag(null, 'meta_agent')).toBe(true);
-    expect(resolveFeatureFlag({}, 'meta_agent')).toBe(true);
-    expect(resolveFeatureFlag({ experimental: {} }, 'meta_agent')).toBe(true);
-    expect(resolveFeatureFlag({ experimental: { meta_agent: false } }, 'meta_agent')).toBe(false);
-    expect(resolveFeatureFlag({ experimental: { meta_agent: true } }, 'meta_agent')).toBe(true);
+  // The `meta_agent` flag was removed on 2026-11-02: projects that saved
+  // Settings while it defaulted off stored `false` and lost My Kortix.
+  test('is no feature flag: kortix.yaml builtin_agents is the only switch', () => {
+    expect(isFeatureFlagKey('meta_agent')).toBe(false);
   });
 });
 

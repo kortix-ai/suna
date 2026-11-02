@@ -127,9 +127,27 @@ export type ListResult =
       responder?: string;
       /** First 120 chars of the error body, whitespace-collapsed. */
       detail?: string;
+      /** The daemon's `boot_error` when its runtime is down: this boot is over. See `finishedBootError`. */
+      bootError?: string;
     };
 
 export { BOOT_PHASE_HEADER };
+
+/**
+ * The daemon's `boot_error` when the runtime start it reports has FINISHED and
+ * failed: the harness is `down` and names an error. pi clears the error when a
+ * start begins and keeps the box up after a failed one ("the box stays
+ * observable"), so nothing in the box tries again; only a restart can. A start
+ * still running reports `starting`, and an error beside a running harness (a
+ * repo clone, the audit spool) is not a failed start. Null otherwise.
+ */
+export function finishedBootError(health: unknown): string | null {
+  if (!health || typeof health !== 'object') return null;
+  const body = health as { boot_error?: unknown; harness?: { state?: unknown } | null };
+  if (body.harness?.state !== 'down' || typeof body.boot_error !== 'string') return null;
+  const error = body.boot_error.replace(/\s+/g, ' ').trim().slice(0, 500);
+  return error || null;
+}
 
 /** List the sandbox's OpenCode sessions (server-side, via the signed proxy). */
 export async function listSandboxOpencodeSessions(
@@ -248,16 +266,23 @@ export async function readRuntimeRoot(
       };
     }
     await signed.body?.cancel().catch(() => {});
+    // The daemon answers `/kortix/health` 200 even while its runtime is down, and
+    // that body is the only place a failed start is named.
+    const body = health.ok
+      ? ((await health.json().catch(() => null)) as {
+          harness?: { state?: unknown; session?: { root_thread_id?: unknown } };
+        } | null)
+      : null;
+    if (!health.ok) await health.body?.cancel().catch(() => {});
+    const bootError = finishedBootError(body);
     if (notReady) {
       const bootPhase = notReady.headers.get(BOOT_PHASE_HEADER)?.trim() || undefined;
-      await health.body?.cancel().catch(() => {});
-      return { ok: false, reason: 'not_ready', ...(bootPhase ? { bootPhase } : {}) };
+      return { ok: false, reason: 'not_ready', ...(bootPhase ? { bootPhase } : {}), ...(bootError ? { bootError } : {}) };
     }
-    const body = (await health.json().catch(() => null)) as {
-      harness?: { state?: unknown; session?: { root_thread_id?: unknown } };
-    } | null;
     const root = body?.harness?.session?.root_thread_id;
-    if (body?.harness?.state !== 'ok' || typeof root !== 'string' || !root) return { ok: false, reason: 'not_ready' };
+    if (body?.harness?.state !== 'ok' || typeof root !== 'string' || !root) {
+      return { ok: false, reason: 'not_ready', ...(bootError ? { bootError } : {}) };
+    }
     return { ok: true, root };
   } catch (err) {
     return { ok: false, reason: 'unreachable', cause: unreachableCauseForThrow(err) };
@@ -283,6 +308,8 @@ export interface EnsureResult {
   responder?: string;
   /** First 120 chars of the error body. */
   detail?: string;
+  /** Behind a `not_ready`: the daemon's runtime start failed and is over (`finishedBootError`). */
+  bootError?: string;
 }
 
 /**
@@ -321,6 +348,7 @@ export async function ensureOpencodeSessionPin(input: {
         ...(named.cause ? { cause: named.cause } : {}),
         ...(named.responder ? { responder: named.responder } : {}),
         ...(named.detail ? { detail: named.detail } : {}),
+        ...(named.reason === 'not_ready' && named.bootError ? { bootError: named.bootError } : {}),
       };
     }
     return healPin({ projectId, sessionId, accountId }, currentPin, named.root);

@@ -43,7 +43,6 @@
 import { type AgentGrant, accountTokens, readStoredAgentGrant, projectSessions, projects } from '@kortix/db';
 import { isMyKortixAgentName } from '@kortix/shared';
 import { and, eq, isNull } from 'drizzle-orm';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 import { DEFAULT_AGENT_SENTINEL, grantFromLoadedAgents, isLaunchableAgentName, loadProjectAgents, type LoadedAgents } from '../agents';
 import { type MirrorRefresh, existingProjectMirrorPath, runGitCapture } from '../git/mirror';
@@ -251,7 +250,7 @@ async function loadStoredSessionGrant(sessionId: string): Promise<AgentGrant | n
 
 /**
  * Does this project run My Kortix? kortix.yaml `builtin_agents.my_kortix`
- * first, then the legacy `meta_agent` switch, as session create resolves it.
+ * (no key: on), as session create resolves it.
  * A failed read answers `true`: the grant re-mint fails closed on its own.
  */
 async function myKortixEnabled(projectId: string): Promise<boolean> {
@@ -261,7 +260,6 @@ async function myKortixEnabled(projectId: string): Promise<boolean> {
         repoUrl: projects.repoUrl,
         defaultBranch: projects.defaultBranch,
         manifestPath: projects.manifestPath,
-        metadata: projects.metadata,
       })
       .from(projects)
       .where(eq(projects.projectId, projectId))
@@ -278,7 +276,7 @@ async function myKortixEnabled(projectId: string): Promise<boolean> {
           { forceRefresh: 'tip-proof' },
         )
       : null;
-    return resolveBuiltinAgents(loaded?.builtinAgents ?? {}, resolveFeatureFlag(project.metadata, 'meta_agent')).my_kortix;
+    return resolveBuiltinAgents(loaded?.builtinAgents ?? {}).my_kortix;
   } catch {
     return true;
   }

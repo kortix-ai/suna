@@ -13,10 +13,9 @@ import { readRepoFile } from '../git';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { buildAgentCapabilities } from '../lib/agent-capabilities';
 import { projectsApp } from '../lib/app';
-import { projectBuiltinAgents } from '../lib/builtin-agents';
 import { featureFlagsEnvValue } from '../lib/feature-flag-env';
 import { withProjectGitAuth } from '../lib/git';
-import { enabledBuiltinAgentKey } from '../lib/my-kortix-agent';
+import { enabledBuiltinAgentKey, projectBuiltinAgents } from '../lib/my-kortix-agent';
 import { readManifest } from '../triggers';
 
 const ToolSchema = z.object({
@@ -62,7 +61,7 @@ async function projectCatalog(c: Parameters<typeof loadProjectForUser>[0], proje
     return { error: { body: { error: 'The project has no readable kortix.yaml.', code: 'manifest_read' }, status: 400 as const } };
   }
   if (agentName !== null) {
-    const builtin = enabledBuiltinAgentKey(agentName, projectBuiltinAgents(manifest.raw, loaded.row.metadata));
+    const builtin = enabledBuiltinAgentKey(agentName, projectBuiltinAgents(manifest.raw));
     const notDeclared = builtin ? null : agentNotDeclaredError(manifest, agentName);
     if (notDeclared) return { error: { body: notDeclared, status: 404 as const } };
   }
