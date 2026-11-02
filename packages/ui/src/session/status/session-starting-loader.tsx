@@ -56,7 +56,10 @@ export function sessionWakeStatusNote(input: {
   if (input.reason !== 'runtime_wake_cooldown' || !input.failure) return input.note ?? null;
   const evidence = input.failure.evidence;
   // The computer ran and the agent in it did not start: say why, not "still starting".
-  const bootError = evidence?.check === RUNTIME_BOOT_ERROR_CHECK && evidence.error ? evidence.error.replace(/[.\s]+$/, '') : null;
+  const error = evidence?.check === RUNTIME_BOOT_ERROR_CHECK ? evidence.error : null;
+  let end = error?.length ?? 0;
+  while (error && end > 0 && /[.\s]/.test(error[end - 1])) end--;
+  const bootError = error?.slice(0, end);
   const lead = bootError ? `Could not start the agent: ${bootError}.` : 'Still starting your computer.';
   const attempts = Math.max(1, evidence?.attempts ?? 1);
   const nextAttempt = attempts + 1;
