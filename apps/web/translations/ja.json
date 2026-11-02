@@ -22715,7 +22715,6 @@
       "noAdminOpens": "このフォルダーを開いた管理者はいません。"
     },
     "folderTree": "フォルダー",
-    "treeEmpty": "フォルダーはありません",
     "treeYou": "{name}（あなた）",
     "treeExpand": "{name} を開く",
     "treeCollapse": "{name} を閉じる"

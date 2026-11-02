@@ -7531,7 +7531,6 @@ const catalog = {
       "noAdminOpens": "No admin has opened this folder."
     },
     "folderTree": "Folders",
-    "treeEmpty": "No folders",
     "treeYou": "{name} (You)",
     "treeExpand": "Open {name}",
     "treeCollapse": "Close {name}"

@@ -22715,7 +22715,6 @@
       "noAdminOpens": "Nenhum admin abriu esta pasta."
     },
     "folderTree": "Pastas",
-    "treeEmpty": "Sem pastas",
     "treeYou": "{name} (você)",
     "treeExpand": "Expandir {name}",
     "treeCollapse": "Recolher {name}"

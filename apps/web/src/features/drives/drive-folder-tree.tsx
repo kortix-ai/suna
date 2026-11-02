@@ -5,10 +5,26 @@ import { useDriveFolder } from '@kortix/ui/files';
 import { Home } from '@kortix/ui/internal/icons/home';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { cn } from '@kortix/ui';
-import { CaretRightIcon, FolderSimpleIcon, HardDriveIcon, HashIcon } from '@phosphor-icons/react';
-import { type ComponentType, type ReactNode, useEffect, useState } from 'react';
+import {
+  BuildingsIcon,
+  CaretRightIcon,
+  FolderSimpleIcon,
+  HardDriveIcon,
+  HashIcon,
+  ShareNetworkIcon,
+  UsersIcon,
+} from '@phosphor-icons/react';
+import { type ComponentType, type ReactNode, useCallback, useEffect, useState } from 'react';
 
 import { useTranslations } from '@/i18n/use-translations';
+
+const COMPANY = '/Company';
+const USERS = '/Users';
+
+type Glyph = ComponentType<{ className?: string }>;
+
+const within = (path: string, folder: string) => path === folder || path.startsWith(`${folder}/`);
+const nameOf = (path: string) => path.split('/').filter(Boolean).pop() ?? path;
 
 /** `/a/b/c` → `['/a', '/a/b', '/a/b/c']`. */
 function ancestors(path: string): string[] {
@@ -17,10 +33,11 @@ function ancestors(path: string): string[] {
 }
 
 /**
- * The Drive as one tree, beside the folder in view: the project at the top,
- * then every folder the caller may open, as it is stored (Company, Users,
- * Channels, team folders). A folder lists its children when it is expanded;
- * the folders on the way to the one in view are expanded by themselves.
+ * Beside the folder in view: the places people go first (My files, Company,
+ * what others shared with you), then the whole Drive as one tree under the
+ * project, every folder the caller may open as it is stored. A folder lists
+ * its subfolders when it is expanded; the folders on the way to the one in
+ * view are expanded by themselves, and a folder with no subfolders has no caret.
  */
 export function DriveFolderTree({
   drive,
@@ -35,88 +52,134 @@ export function DriveFolderTree({
 }) {
   const t = useTranslations('drives');
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(['/', ...ancestors(path)]));
+  const [leaves, setLeaves] = useState<ReadonlySet<string>>(() => new Set());
   // Moving to a folder (from the grid, a link, the breadcrumb) opens its way here too.
   useEffect(() => {
     setExpanded((prev) => {
-      const way = ancestors(path).slice(0, -1);
+      const way = ['/', ...ancestors(path).slice(0, -1)];
       if (way.every((p) => prev.has(p))) return prev;
       return new Set([...prev, ...way]);
     });
   }, [path]);
-  const toggle = (p: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(p)) next.delete(p);
-      else next.add(p);
-      return next;
-    });
+  const toggle = useCallback(
+    (p: string) =>
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(p)) next.delete(p);
+        else next.add(p);
+        return next;
+      }),
+    [],
+  );
+  const markLeaf = useCallback(
+    (p: string, leaf: boolean) =>
+      setLeaves((prev) => {
+        if (prev.has(p) === leaf) return prev;
+        const next = new Set(prev);
+        if (leaf) next.add(p);
+        else next.delete(p);
+        return next;
+      }),
+    [],
+  );
+  const personal = drive.personalFolder;
+  const shared = drive.sharedWithMe ?? [];
+  const tree = { drive, current: path, expanded, leaves, onToggle: toggle, onLeaf: markLeaf, onOpen };
 
   return (
-    <nav aria-label={t('folderTree')} className="border-border hidden w-64 shrink-0 overflow-y-auto border-r p-2 md:block">
-      <ul role="tree" className="space-y-0.5">
-        <TreeRow
-          path="/"
-          name={rootLabel}
-          icon={HardDriveIcon}
-          current={path}
-          expanded={expanded}
-          onToggle={toggle}
-          onOpen={onOpen}
-        >
-          <TreeChildren drive={drive} parent="/" current={path} expanded={expanded} onToggle={toggle} onOpen={onOpen} />
-        </TreeRow>
+    <nav aria-label={t('folderTree')} className="border-border hidden w-64 shrink-0 space-y-4 overflow-y-auto border-r p-2 md:block">
+      <ul className="space-y-0.5">
+        {personal ? (
+          <PlaceRow icon={Home} label={t('myDrive')} active={within(path, personal)} onClick={() => onOpen(personal)} />
+        ) : null}
+        <PlaceRow icon={BuildingsIcon} label={nameOf(COMPANY)} active={within(path, COMPANY)} onClick={() => onOpen(COMPANY)} />
       </ul>
+      {shared.length > 0 ? (
+        <section className="space-y-1">
+          <p className="text-muted-foreground px-2 text-xs">{t('sharedWithMe')}</p>
+          <ul className="space-y-0.5">
+            {shared.map((f) => (
+              <PlaceRow
+                key={f.path}
+                icon={ShareNetworkIcon}
+                label={nameOf(f.path)}
+                active={within(path, f.path)}
+                onClick={() => onOpen(f.path)}
+              />
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      <section className="space-y-1">
+        <p className="text-muted-foreground px-2 text-xs">{t('allFiles')}</p>
+        <ul role="tree" aria-label={t('allFiles')} className="space-y-0.5">
+          <TreeRow {...tree} path="/" name={rootLabel} icon={HardDriveIcon}>
+            <TreeChildren {...tree} parent="/" />
+          </TreeRow>
+        </ul>
+      </section>
     </nav>
   );
 }
 
-function TreeChildren({
-  drive,
-  parent,
-  current,
-  expanded,
-  onToggle,
-  onOpen,
-}: {
+/** A place people go first: one click, no caret. */
+function PlaceRow({ icon: Icon, label, active, onClick }: { icon: Glyph; label: string; active: boolean; onClick: () => void }) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-current={active ? 'page' : undefined}
+        className={cn(
+          'duration-fast flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm transition-colors',
+          active ? 'bg-accent text-foreground font-medium' : 'text-foreground hover:bg-accent/60',
+        )}
+      >
+        <Icon className="text-muted-foreground size-4 shrink-0" />
+        <span className="truncate">{label}</span>
+      </button>
+    </li>
+  );
+}
+
+interface TreeProps {
   drive: Drive;
-  parent: string;
   current: string;
   expanded: ReadonlySet<string>;
+  leaves: ReadonlySet<string>;
   onToggle: (path: string) => void;
+  onLeaf: (path: string, leaf: boolean) => void;
   onOpen: (path: string) => void;
-}) {
+}
+
+function TreeChildren({ parent, ...tree }: TreeProps & { parent: string }) {
   const t = useTranslations('drives');
+  const { drive, onLeaf } = tree;
   const list = useDriveFolder(drive.driveId, parent);
-  if (list.isLoading) {
-    return (
-      <li className="space-y-1 py-1 pl-6">
-        <Skeleton className="h-5 w-3/4 rounded-sm" />
-      </li>
-    );
-  }
   const folders = (list.data?.entries ?? [])
     .filter((e) => e.type === 'dir' && !e.name.startsWith('.'))
     .sort((a, b) => a.name.localeCompare(b.name));
-  if (folders.length === 0) {
-    return <li className="text-muted-foreground py-1 pl-6 text-xs">{t('treeEmpty')}</li>;
+  const loaded = !!list.data;
+  // A folder with no subfolders drops its caret instead of opening onto nothing.
+  useEffect(() => {
+    if (loaded) onLeaf(parent, folders.length === 0);
+  }, [loaded, folders.length, parent, onLeaf]);
+  if (list.isLoading) {
+    return (
+      <li className="py-1 pl-6">
+        <Skeleton className="h-5 w-3/4 rounded-sm" />
+      </li>
+    );
   }
   return (
     <>
       {folders.map((e) => {
         const mine = e.path === drive.personalFolder;
         const channel = e.name.startsWith('#');
+        const icon: Glyph = mine ? Home : e.path === COMPANY ? BuildingsIcon : e.path === USERS ? UsersIcon : channel ? HashIcon : FolderSimpleIcon;
         return (
-          <TreeRow
-            key={e.path}
-            path={e.path}
-            name={mine ? t('treeYou', { name: e.name }) : channel ? e.name.slice(1) : e.name}
-            icon={mine ? Home : channel ? HashIcon : FolderSimpleIcon}
-            current={current}
-            expanded={expanded}
-            onToggle={onToggle}
-            onOpen={onOpen}
-          >
-            <TreeChildren drive={drive} parent={e.path} current={current} expanded={expanded} onToggle={onToggle} onOpen={onOpen} />
+          <TreeRow key={e.path} {...tree} path={e.path} name={mine ? t('treeYou', { name: e.name }) : channel ? e.name.slice(1) : e.name} icon={icon}>
+            <TreeChildren {...tree} parent={e.path} />
           </TreeRow>
         );
       })}
@@ -127,56 +190,54 @@ function TreeChildren({
 function TreeRow({
   path,
   name,
-  icon: Glyph,
+  icon: Icon,
   current,
   expanded,
+  leaves,
   onToggle,
   onOpen,
   children,
-}: {
-  path: string;
-  name: string;
-  icon: ComponentType<{ className?: string }>;
-  current: string;
-  expanded: ReadonlySet<string>;
-  onToggle: (path: string) => void;
-  onOpen: (path: string) => void;
-  children: ReactNode;
-}) {
+}: TreeProps & { path: string; name: string; icon: Glyph; children: ReactNode }) {
   const t = useTranslations('drives');
-  const open = expanded.has(path);
+  const leaf = leaves.has(path);
+  const open = expanded.has(path) && !leaf;
   const active = current === path;
   return (
-    <li role="treeitem" aria-expanded={open} aria-selected={active}>
+    <li role="treeitem" aria-expanded={leaf ? undefined : open} aria-selected={active}>
       <div
         className={cn(
           'duration-fast flex h-7 min-w-0 items-center rounded-md transition-colors',
           active ? 'bg-accent text-foreground font-medium' : 'text-foreground hover:bg-accent/60',
         )}
       >
-        <button
-          type="button"
-          aria-label={open ? t('treeCollapse', { name }) : t('treeExpand', { name })}
-          onClick={() => onToggle(path)}
-          className="text-muted-foreground flex size-6 shrink-0 items-center justify-center"
-        >
-          <CaretRightIcon className={cn('duration-fast size-3 transition-transform', open && 'rotate-90')} />
-        </button>
+        {leaf ? (
+          <span aria-hidden className="size-6 shrink-0" />
+        ) : (
+          <button
+            type="button"
+            aria-label={open ? t('treeCollapse', { name }) : t('treeExpand', { name })}
+            onClick={() => onToggle(path)}
+            className="text-muted-foreground flex size-6 shrink-0 items-center justify-center"
+          >
+            <CaretRightIcon className={cn('duration-fast size-3 transition-transform', open && 'rotate-90')} />
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
             onOpen(path);
-            if (!open) onToggle(path);
+            if (!expanded.has(path)) onToggle(path);
           }}
           className="flex h-full min-w-0 flex-1 items-center gap-1.5 pr-2 text-left text-sm"
           title={name}
         >
-          <Glyph className="text-muted-foreground size-4 shrink-0" />
+          <Icon className="text-muted-foreground size-4 shrink-0" />
           <span className="truncate">{name}</span>
         </button>
       </div>
-      {open ? (
-        <ul role="group" className="space-y-0.5 pl-3">
+      {/* Mounted while expanded, also for a folder still loading: its listing decides the caret. */}
+      {expanded.has(path) ? (
+        <ul role="group" className={cn('space-y-0.5 pl-3', leaf && 'hidden')}>
           {children}
         </ul>
       ) : null}
