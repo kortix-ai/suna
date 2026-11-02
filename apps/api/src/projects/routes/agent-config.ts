@@ -29,8 +29,7 @@ import { auth, boundedIssues, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
 import { extractAgents, agentNotDeclaredError, grantsByAgent } from '../agents';
-import { projectBuiltinAgents } from '../lib/builtin-agents';
-import { builtinAgentConfigView, builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/my-kortix-agent';
+import { builtinAgentConfigView, builtinAgentWriteRefusal, enabledBuiltinAgentKey, projectBuiltinAgents } from '../lib/my-kortix-agent';
 import { assertNoGrantEscalation, changedPolicySet } from '../../iam/agent-grant-ceiling';
 import { isRepoFileNotFoundError, readRepoFile } from '../git';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
@@ -222,7 +221,7 @@ export function registerAgentConfigRoutes(): void {
       // A built-in agent the project runs (My Kortix, slug `mykortix`) is listed by
       // /detail but declared nowhere in kortix.yaml. Its config is
       // platform-owned: answer the read-only view, never the roster 404.
-      const builtinKey = enabledBuiltinAgentKey(agentName, projectBuiltinAgents(manifest.raw, loaded.row.metadata));
+      const builtinKey = enabledBuiltinAgentKey(agentName, projectBuiltinAgents(manifest.raw));
       if (builtinKey) return c.json(builtinAgentConfigView(builtinKey, read.defaultAgent));
 
       // A name the manifest does not declare is a 404, not an empty success:
@@ -446,7 +445,7 @@ export function registerAgentConfigRoutes(): void {
 
       // A built-in agent's configuration is platform-owned: a write here would
       // only add an `agents.meta` block that the platform ignores.
-      const builtinKey = enabledBuiltinAgentKey(agentName, projectBuiltinAgents(manifest.raw, loaded.row.metadata));
+      const builtinKey = enabledBuiltinAgentKey(agentName, projectBuiltinAgents(manifest.raw));
       if (builtinKey) return c.json(builtinAgentWriteRefusal(builtinKey), 409);
 
       if (typeof governanceBlock.sandbox === 'string') {

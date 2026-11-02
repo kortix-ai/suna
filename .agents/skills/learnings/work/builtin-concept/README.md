@@ -28,7 +28,7 @@ A builtin is a definition shipped by the platform that goes through the same pat
 
 ## Legacy alias, in one place
 
-`canonicalAgentName`, `isMyKortixAgentName`, the reserved-slug check, the reaper prefix, the `meta_agent` flag fallback, the pixel-mark `meta` entry.
+`canonicalAgentName`, `isMyKortixAgentName`, the reserved-slug check, the reaper prefix, the pixel-mark `meta` entry.
 
 ## Overlap
 

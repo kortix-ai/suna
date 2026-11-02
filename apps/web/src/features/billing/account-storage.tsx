@@ -28,7 +28,9 @@ export function AccountStorageSection({ accountId }: { accountId: string | undef
   }
   const data = usage.data;
   if (!data) return null;
-  const { projectBytes, accountBytes } = data.limits;
+  // An answer without limits (an older API) shows usage with no limit, never a crashed billing tab.
+  const projectBytes = data.limits?.projectBytes ?? null;
+  const accountBytes = data.limits?.accountBytes ?? null;
   const tone = storageTone(data.usedBytes, accountBytes);
 
   return (

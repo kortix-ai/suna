@@ -8,14 +8,21 @@ import type { SessionStartResult } from '@kortix/api-contract';
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { type SandboxStatus } from '../../platform/providers';
+import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { ensureOpencodeSessionPin, sandboxOpencodeEndpoint, type EnsureResult } from '../opencode-mapping';
 import { runtimeCapabilities } from '../session-lifecycle/runtime-fetch';
 import { metadataDelta, stripMetadataKeys } from '../session-lifecycle/sandbox-metadata-sql';
 import type { StartCallLog } from '../session-lifecycle/start-envelope';
+import { runtimeStartFailureCount, runtimeStartRetryAtMs } from '../session-lifecycle/runtime-wake-fence';
 import {
+  RUNTIME_BOOT_ERROR_AT_KEY,
+  RUNTIME_BOOT_ERROR_KEY,
+  RUNTIME_BOOT_ERROR_PARK_REASON,
   RUNTIME_PROVEN_AT_KEY,
   RUNTIME_READINESS_CLOCK_KEYS,
+  RUNTIME_UNREACHABLE_CAUSE_KEYS,
+  runtimeBootErrorMessage,
   STALE_RUNTIME_BOOT_HARD_MS,
   hasRuntimeReadinessClock,
   readinessValue,
@@ -87,7 +94,11 @@ export async function markRuntimeReadyWaitStarted(
   // budget below is "no progress for N seconds", not "not ready N seconds
   // after the first poll" (see runtimeReadyWaitPatch).
   const patch = runtimeReadyWaitPatch(metadata, reason, bootPhase);
-  if (!patch) return;
+  // A daemon that answers `not_ready` is reachable: an `unreachable` diagnosis
+  // still on the row is from before it listened.
+  const staleCause = reason === 'not_ready' && RUNTIME_UNREACHABLE_CAUSE_KEYS.some((key) => key in metadata);
+  if (!patch && !staleCause) return;
+  const delta = JSON.stringify(patch ? metadataDelta(metadata, patch) : {});
   try {
     // Merge only the clocks this poll changed. `patch` spreads the row read
     // before the daemon round-trip; writing it whole erased a restart claim
@@ -96,9 +107,9 @@ export async function markRuntimeReadyWaitStarted(
     await db
       .update(sessionSandboxes)
       .set({
-        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify(
-          metadataDelta(metadata, patch),
-        )}::jsonb`,
+        metadata: staleCause
+          ? sql`${stripMetadataKeys(RUNTIME_UNREACHABLE_CAUSE_KEYS)} || ${delta}::jsonb`
+          : sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${delta}::jsonb`,
         updatedAt: new Date(),
       })
       .where(
@@ -343,6 +354,25 @@ export async function judgeBootBudget(
   booting: boolean,
 ): Promise<SessionStartResult | null> {
   const { loaded, visible, projectId, sessionId } = args;
+  if (booting && ensured.reason === 'not_ready' && ensured.bootError && !serving) {
+    // The daemon's runtime start failed and nothing in the box retries it
+    // (`finishedBootError`). Waiting out the not-ready budget and the wake
+    // ladder only hid it: 2026-11-02, a free account's box reported "pi harness
+    // has no model" 0.8 s after boot and the open spun ~7.5 min with no message.
+    // Park it now; the stamped-failure cooldown restarts it (2, 5, 10 min) and
+    // its answer names the error.
+    log.did('reconciled');
+    const answer = await preserveEstablishedRuntimeOnOpen(
+      loaded,
+      visible,
+      projectId,
+      sessionId,
+      row,
+      RUNTIME_BOOT_ERROR_PARK_REASON,
+      'runtime_boot_failed',
+    );
+    return withRuntimeBootError(answer, row.sandboxId, ensured.bootError);
+  }
   if (booting) {
     // A daemon that reports a NEW boot phase since the last poll has made
     // progress: its reason clock is restarted below before the next poll
@@ -438,6 +468,52 @@ export async function judgeBootBudget(
     await markRuntimeAnswered(row);
   }
   return null;
+}
+
+/**
+ * Stamp the failed start on the parked row, after the park: the park claims
+ * the row by its `updatedAt`, so a write before it would lose the claim. The
+ * answer carries the error as its failure, so this poll names it too.
+ */
+async function withRuntimeBootError(
+  answer: SessionStartResult,
+  sandboxId: string,
+  bootError: string,
+): Promise<SessionStartResult> {
+  const at = new Date().toISOString();
+  await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
+        [RUNTIME_BOOT_ERROR_KEY]: bootError,
+        [RUNTIME_BOOT_ERROR_AT_KEY]: at,
+      })}::jsonb`,
+    })
+    .where(eq(sessionSandboxes.sandboxId, sandboxId))
+    .catch((err) =>
+      logger.warn('[start] could not stamp the runtime boot error', { sandbox_id: sandboxId, err: err instanceof Error ? err.message : String(err) }),
+    );
+  logger.warn('[start] the runtime start failed in the box; parked it at once', {
+    sandbox_id: sandboxId,
+    boot_error: bootError.slice(0, 200),
+  });
+  const metadata = (answer.sandbox?.metadata ?? {}) as Record<string, unknown>;
+  const retryAtMs = runtimeStartRetryAtMs(metadata);
+  return {
+    ...answer,
+    failure: {
+      category: 'sandbox-provider',
+      message: runtimeBootErrorMessage(bootError),
+      retryable: true,
+      evidence: {
+        check: RUNTIME_BOOT_ERROR_PARK_REASON,
+        observed_at: at,
+        error: bootError,
+        attempts: Math.max(1, runtimeStartFailureCount(metadata)),
+        next_retry_at: retryAtMs !== null ? new Date(retryAtMs).toISOString() : null,
+      },
+    },
+  };
 }
 
 /** The daemon refuses a context as JSON `{error:'unauthorized', reason}`; an edge 401 body is not that. */

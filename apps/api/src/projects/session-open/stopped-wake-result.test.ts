@@ -113,6 +113,40 @@ describe('stoppedWakeResult — a stamped failure is a cooldown, not a dead end'
     expect(result?.failure?.message).toContain('attempt 2');
   });
 
+  test('a box parked on its agent\'s failed start names that error while it cools down and once it is spent', () => {
+    const bootFailed = {
+      stopReason: 'runtime_boot_failed',
+      runtimeParkReason: 'runtime_boot_error',
+      runtimeBootError: 'pi harness has no model: no KORTIX_MODEL and no live model catalog',
+      runtimeBootErrorAt: at(1_000).toISOString(),
+      runtimeStartFailedAt: FAILED_AT.toISOString(),
+      runtimeStartFailureCount: 1,
+      runtimeStartRetryAfterAt: at(120_000).toISOString(),
+    };
+    const cooling = stoppedWakeResult(stoppedRow(bootFailed), 'default', null, at(30_000));
+    expect(cooling?.reason).toBe('runtime_wake_cooldown');
+    expect(cooling?.failure?.message).toBe(
+      'Could not start the agent: pi harness has no model: no KORTIX_MODEL and no live model catalog. Trying again automatically.',
+    );
+    expect(cooling?.failure?.evidence).toMatchObject({
+      check: 'runtime_boot_error',
+      observed_at: at(1_000).toISOString(),
+      error: bootFailed.runtimeBootError,
+      attempts: 1,
+    });
+    const spent = stoppedWakeResult(
+      stoppedRow({ ...bootFailed, runtimeStartFailureCount: 5, runtimeStartRetryAfterAt: FAILED_AT.toISOString() }),
+      'default',
+      null,
+      at(60_000),
+    );
+    expect(spent?.stage).toBe('failed');
+    expect(spent?.reason).toBe('runtime_boot_error');
+    expect(spent?.failure?.message).toBe(
+      'Could not start the agent after 5 attempts: pi harness has no model: no KORTIX_MODEL and no live model catalog. Restart the session to try again.',
+    );
+  });
+
   test('the attempt budget earns a terminal card — which itself expires', () => {
     const spent = {
       stopReason: 'runtime_wake_failed',
