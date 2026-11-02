@@ -26,7 +26,7 @@ Unused plan credits roll over for one month, and top-ups never expire. A quiet m
 
 ## What the meter counts
 
-The meter follows three things: the computer, the model, and the tools that go through Kortix. Compute is the reserved size of the sandbox multiplied by the seconds it is active. The default 2 vCPU / 4 GB / 20 GB machine costs about $0.11 an hour, or about 11 credits ([plans and credits](https://kortix.com/docs/credits)). A stopped or sleeping sandbox accrues nothing.
+The meter follows three things: the computer, the model, and the tools that go through Kortix. Compute is the reserved size of the sandbox multiplied by the seconds it is active. The default 2 vCPU / 4 GB / 20 GB machine costs about $0.11 an hour, or about 11 credits ([plans and credits](https://kortix.com/docs/credits)). A stopped or sleeping sandbox accrues no compute; its disk and files are billed as storage.
 
 | What runs | How it is metered | What pays |
 | --- | --- | --- |

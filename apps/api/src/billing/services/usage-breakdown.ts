@@ -23,7 +23,7 @@ import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 
 const COMPUTE_DEBIT_KINDS = ['compute_debit'] as const;
-/** Files and /workspace volume storage (billing/services/storage-charges.ts). */
+/** Files and /workspace volume storage, and the disk of stopped and archived boxes (storage-charges.ts, box-disk-charges.ts). */
 const STORAGE_DEBIT_KINDS = ['storage_debit'] as const;
 const LLM_DEBIT_KINDS = ['llm_debit', 'token_deduction', 'token_overage'] as const;
 /**
@@ -54,7 +54,7 @@ const LEDGER_KIND = sql<string>`COALESCE(NULLIF(${creditLedger.metadata} ->> 'le
 
 export interface UsageBreakdown {
   compute_usd: number;
-  /** Volume storage: Files folders and session /workspace volumes. */
+  /** Storage: Files folders, session /workspace volumes, and the disk of stopped and archived computers. */
   storage_usd: number;
   llm_usd: number;
   /** Debits that are neither compute nor LLM — tool calls, manual adjustments. */

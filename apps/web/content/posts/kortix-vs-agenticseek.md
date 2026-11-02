@@ -58,7 +58,7 @@ The comment above it explains the default: the file is deny-by-default, and an o
 
 ## What a team pays for
 
-Pricing follows the same shape: you pay for the computer the agent uses, and members are not seats. Free is $0 with 500 credits per month and 1 project, on your own provider keys or a connected ChatGPT subscription. The paid plan starts at $50 a month. Credits run at 1 credit = $0.01, and 11 credits = 1 hour of agent computer. A stopped agent computer costs nothing. Members are unlimited and free, and the account shares one credit pool. Unused monthly credits roll over one month ([Kortix pricing](https://kortix.com/pricing), checked October 2026). Managed models run on credits and need the paid plan. Run Kortix on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free when the repo has to stay inside your network.
+Pricing follows the same shape: you pay for the computer the agent uses, and members are not seats. Free is $0 with 500 credits per month and 1 project, on your own provider keys or a connected ChatGPT subscription. The paid plan starts at $50 a month. Credits run at 1 credit = $0.01, and 11 credits = 1 hour of agent computer. A stopped agent computer uses no compute; its disk and files are billed as storage. Members are unlimited and free, and the account shares one credit pool. Unused monthly credits roll over one month ([Kortix pricing](https://kortix.com/pricing), checked October 2026). Managed models run on credits and need the paid plan. Run Kortix on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free when the repo has to stay inside your network.
 
 ## Where AgenticSeek wins
 

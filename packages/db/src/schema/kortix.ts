@@ -8212,9 +8212,12 @@ export const drives = kortixSchema.table('drives', {
   check('drives_kind', sql`${table.kind} in ('personal', 'agent', 'company', 'project')`),
 ]);
 
-// Volume storage Platinum meters, one row per (control plane, meter, volume,
-// UTC day): what Platinum measured, who owns it, and what Kortix charged
-// (apps/api/src/billing/services/storage-charges.ts). A row with no account is
+// Storage Platinum bills Kortix for, one row per (control plane, meter,
+// resource, UTC day): what was metered, who owns it, and what Kortix charged.
+// Volumes, scratch disks and Worker storage come from Platinum's meter
+// (apps/api/src/billing/services/storage-charges.ts); the disk of a stopped or
+// archived box is metered by Kortix with Platinum's rule
+// (apps/api/src/billing/services/box-disk-charges.ts). A row with no account is
 // Kortix's own cost: a volume no Kortix account owns (another deployment's, a
 // deleted owner's, one Platinum no longer lists). The account and project are
 // set null when they are deleted, so the cost stays recorded as unattributed.
@@ -8222,9 +8225,13 @@ export const storageCharges = kortixSchema.table('storage_charges', {
   id: uuid('id').defaultRandom().primaryKey(),
   /** The Platinum control plane: 'home', or the region key of a regional one. */
   feed: text('feed').notNull(),
-  /** Platinum's resource_kind: 'volume', 'volume_snapshot' or 'scratch'. */
+  /**
+   * Platinum's resource_kind ('volume', 'volume_snapshot', 'scratch',
+   * 'worker_storage'), or a box disk: 'box_disk' (a stopped box) or
+   * 'box_disk_archived' (an archived box).
+   */
   resourceKind: text('resource_kind').notNull(),
-  /** Platinum's resource_id: a volume id (vol_…), or a box id for a scratch disk. */
+  /** Platinum's resource_id: a volume id (vol_…), or a box id (sbx_…) for a scratch disk or a box disk. */
   resourceId: text('resource_id').notNull(),
   usageDay: date('usage_day', { mode: 'string' }).notNull(),
   accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'set null' }),
@@ -8236,9 +8243,15 @@ export const storageCharges = kortixSchema.table('storage_charges', {
   unattributedReason: text('unattributed_reason'),
   /** The storageBilling entitlement was off when this row last charged: nothing was taken. */
   waived: boolean('waived').default(false).notNull(),
-  /** What Platinum metered for the day so far. */
+  /** What was metered for the day so far: the larger of Platinum's receipt and the sum of its events. */
   gibHours: numeric('gib_hours', { precision: 24, scale: 10 }).default('0').notNull(),
   platinumMicros: bigint('platinum_micros', { mode: 'number' }).default(0).notNull(),
+  /** The sum of the `volume.storage` events applied to this row (GET /v1/billing/events). */
+  eventGibHours: numeric('event_gib_hours', { precision: 24, scale: 10 }).default('0').notNull(),
+  /** The ids of those events: each one is applied once. */
+  eventIds: text('event_ids').array().default(sql`'{}'::text[]`).notNull(),
+  /** A box disk row: the instant its GiB-hours are metered through. Null on every other row. */
+  meteredThrough: timestamp('metered_through', { withTimezone: true, mode: 'string' }),
   /** What Kortix charged for the day so far: one ledger row per charge_seq. */
   chargedGibHours: numeric('charged_gib_hours', { precision: 24, scale: 10 }).default('0').notNull(),
   chargedUsd: numeric('charged_usd', { precision: 20, scale: 10 }).default('0').notNull(),
@@ -8252,7 +8265,10 @@ export const storageCharges = kortixSchema.table('storage_charges', {
   uniqueIndex('storage_charges_resource_day').on(table.feed, table.resourceKind, table.resourceId, table.usageDay),
   index('idx_storage_charges_account_day').on(table.accountId, table.usageDay),
   index('idx_storage_charges_project_day').on(table.projectId, table.usageDay),
-  check('storage_charges_kind', sql`${table.resourceKind} in ('volume', 'volume_snapshot', 'scratch')`),
+  check(
+    'storage_charges_kind',
+    sql`${table.resourceKind} in ('volume', 'volume_snapshot', 'scratch', 'worker_storage', 'box_disk', 'box_disk_archived')`,
+  ),
   check(
     'storage_charges_reason',
     sql`${table.unattributedReason} is null or ${table.unattributedReason} in ('not_kortix', 'volume_gone', 'owner_gone', 'unsupported_kind')`,

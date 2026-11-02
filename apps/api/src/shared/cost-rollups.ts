@@ -17,7 +17,7 @@ export interface ProjectCostRow {
   /** Provider-side BYOK spend. Excluded from `llm_cost` and `total_cost`. */
   llm_provider_cost: number;
   compute_cost: number;
-  /** Volume storage charged to the project (storage_charges), included in total_cost. */
+  /** Storage charged to the project (storage_charges: volumes and stopped or archived box disks), included in total_cost. */
   storage_cost: number;
   storage_gib_hours: number;
   total_cost: number;

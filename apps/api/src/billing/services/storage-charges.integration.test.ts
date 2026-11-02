@@ -1,7 +1,7 @@
 // Storage billing against a real PostgreSQL: the storage_charges rows, the
-// cursor, and the `storage_debit` rows the real wallet writes to
-// credit_ledger. Only Platinum (the network boundary: the volume-usage feed
-// and the volume lookup) is faked.
+// cursors, and the `storage_debit` rows the real wallet writes to
+// credit_ledger. Only Platinum (the network boundary: the volume-usage
+// receipts, the volume.storage events feed and the volume lookup) is faked.
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { accounts, creditAccounts, creditLedger, drives, sessionSandboxes, storageCharges } from '@kortix/db';
 import { and, asc, eq, sql } from 'drizzle-orm';
@@ -27,8 +27,9 @@ const { db } = await import('../../shared/db');
 const fixtures = await import('../../__tests__/helpers/integration-fixtures');
 const { invalidateAccountBilling } = await import('./billing-cache');
 const storage = await import('./storage-charges');
-const { syncStorageCharges, storageChargeDeps, STORAGE_CURSOR_KEY } = storage;
+const { syncStorageCharges, storageChargeDeps, STORAGE_CURSOR_KEY, STORAGE_EVENTS_KEY } = storage;
 type Page = import('./storage-charges').PlatinumVolumeUsagePage;
+type StorageEvent = import('./storage-charges').PlatinumStorageEvent;
 
 const USER = '00000000-0000-4000-a000-000000005c01';
 const NOW = Date.parse('2026-11-01T06:00:00.000Z');
@@ -39,6 +40,10 @@ let feed: Record<string, Page['resources']>;
 let names: Record<string, string>;
 let lookups: string[];
 let failSettleOnce: string | null;
+/** Platinum's volume.storage events, oldest first; null = a Platinum without the events feed (404). */
+let events: StorageEvent[] | null;
+/** The receipt days the tick read. */
+let usageReads: string[];
 
 function page(day: string): Page {
   const resources = feed[day] ?? [];
@@ -52,7 +57,17 @@ function page(day: string): Page {
 const deps: import('./storage-charges').StorageChargeDeps = {
   ...storageChargeDeps,
   feeds: () => [{ name: 'home' }],
-  usage: async (_feed, day) => page(day),
+  usage: async (_feed, day) => {
+    usageReads.push(day);
+    return page(day);
+  },
+  // Platinum's paging: the cursor is the last event's own cursor; next_cursor only when the page is full.
+  storageEvents: async (_feed, cursor) => {
+    if (!events) return null;
+    const after = cursor ? events.findIndex((e) => e.cursor === cursor) + 1 : 0;
+    const slice = events.slice(after, after + 2);
+    return { events: slice, next_cursor: after + 2 < events.length ? (slice[slice.length - 1]?.cursor ?? null) : null };
+  },
   volumeName: async (_feed, id) => {
     lookups.push(id);
     return names[id] ?? null;
@@ -75,6 +90,23 @@ const receipt = (kind: string, id: string, gibHours: number) => ({
   gib_hours: gibHours,
   metered_micros: Math.floor(gibHours * 82),
 });
+
+/** One `volume.storage` event, in Platinum's shape (billingEvents.ts), for `gibHours` of `day`. */
+function event(id: string, kind: string, resourceId: string, name: string | null, day: string, gibHours: number, startHour = 0): StorageEvent {
+  const started = `${day}T${String(startHour).padStart(2, '0')}:00:00.000Z`;
+  return {
+    id,
+    cursor: `c_${id}`,
+    sandbox_id: kind === 'scratch' ? resourceId : null,
+    event_type: 'volume.storage',
+    size_class: kind,
+    quantity: gibHours,
+    unit_price_micros: 82,
+    amount_micros: Math.round(gibHours * 82),
+    ts: `${day}T23:59:00.000Z`,
+    resource: { kind, id: resourceId, name, region: 'eu-west', bytes: 1, started_at: started, ended_at: `${day}T23:59:59.000Z`, debited_micros: 0 },
+  };
+}
 
 async function account(label: string, overrides?: Record<string, unknown>): Promise<string> {
   const accountId = await fixtures.seedAccount(label);
@@ -116,6 +148,8 @@ async function chargeRows() {
 
 async function setCursor(day: string) {
   await deps.writeCursor(`${STORAGE_CURSOR_KEY}.home`, day);
+  // The events feed started with the receipts.
+  await deps.writeEventsState(`${STORAGE_EVENTS_KEY}.home`, { cursor: null, since: day, fullFrom: null });
 }
 
 let paying: string;
@@ -138,6 +172,9 @@ beforeEach(async () => {
   wsVol = `vol_workspace_${run}`;
   waivedVol = `vol_waived_${run}`;
   await db.execute(sql`DELETE FROM kortix.platform_settings WHERE key LIKE ${`${STORAGE_CURSOR_KEY}%`}`);
+  await db.execute(sql`DELETE FROM kortix.platform_settings WHERE key LIKE ${`${STORAGE_EVENTS_KEY}%`}`);
+  events = null;
+  usageReads = [];
   feed = {};
   names = {};
   lookups = [];
@@ -318,5 +355,94 @@ withDb('storage billing on PostgreSQL', () => {
     feed[YESTERDAY] = [receipt('volume', driveVol, 2000)];
     const result = await syncStorageCharges(deps);
     expect(result).toMatchObject({ charged: 0, unattributed: 2 });
+  });
+
+  test('the events feed charges each event once, by the name it carries; receipts are not read for its days', async () => {
+    await setCursor('2026-10-30');
+    const driveName = (await db.select({ name: drives.platinumVolumeName }).from(drives).where(eq(drives.platinumVolumeId, driveVol)))[0]?.name ?? null;
+    // Platinum's receipts disagree on purpose: a tick that read them would charge 9,999 GiB-hours.
+    feed[YESTERDAY] = [receipt('volume', driveVol, 9999)];
+    events = [
+      event('vbe_0', 'volume', driveVol, driveName, '2026-10-29', 50), // before the feed's first tick: never charged
+      event('vbe_1', 'volume', driveVol, driveName, YESTERDAY, 1000),
+      event('vbe_2', 'volume', wsVol, `kws-${sessionId}`, YESTERDAY, 500),
+      event('vbe_3', 'worker_storage', 'org_1/kortix-pi-cell', 'kortix-pi-cell', YESTERDAY, 10),
+      event('vbe_4', 'volume', 'vol_other', 'home', YESTERDAY, 100),
+    ];
+    const result = await syncStorageCharges(deps);
+    expect(result).toMatchObject({ events: 4, charged: 2, unattributed: 2, failed: 0 });
+    expect(lookups).toEqual([]);
+    // The first event is dated 2026-10-29, so the feed covers 2026-10-30 on in full: no receipt is read.
+    expect(usageReads).toEqual([]);
+    expect((await ledger(paying)).map((d) => [d.key, Number(d.amount)])).toEqual([
+      [`platinum-storage:home:volume:${driveVol}:${YESTERDAY}:1`, -0.082],
+      [`platinum-storage:home:volume:${wsVol}:${YESTERDAY}:1`, -0.041],
+    ]);
+    const rows = await chargeRows();
+    expect(rows.find((r) => r.resourceId === 'org_1/kortix-pi-cell')).toMatchObject({ accountId: null, reason: 'unsupported_kind' });
+    expect(rows.find((r) => r.resourceId === 'vol_other')).toMatchObject({ accountId: null, reason: 'not_kortix' });
+    expect(await deps.readEventsState(`${STORAGE_EVENTS_KEY}.home`)).toEqual({ cursor: 'c_vbe_4', since: '2026-10-30', fullFrom: '2026-10-30' });
+
+    // A second tick, and a replay of the whole feed (a lost cursor): no event is applied twice.
+    await syncStorageCharges(deps);
+    await deps.writeEventsState(`${STORAGE_EVENTS_KEY}.home`, { cursor: null, since: '2026-10-30', fullFrom: '2026-10-30' });
+    const replay = await syncStorageCharges(deps);
+    expect(replay).toMatchObject({ charged: 0 });
+    expect(await ledger(paying)).toHaveLength(2);
+
+    // Growth Platinum bills back to an ended day arrives as a new event: only it is charged.
+    events.push(event('vbe_5', 'volume', driveVol, driveName, YESTERDAY, 250, 12));
+    await syncStorageCharges(deps);
+    expect((await ledger(paying)).map((d) => [d.key, Number(d.amount)])).toContainEqual([
+      `platinum-storage:home:volume:${driveVol}:${YESTERDAY}:2`,
+      -0.0205,
+    ]);
+    expect(await ledger(paying)).toHaveLength(3);
+  });
+
+  test('a Platinum whose events feed is empty keeps the receipts', async () => {
+    await setCursor(YESTERDAY);
+    events = [];
+    feed[YESTERDAY] = [receipt('volume', driveVol, 1000)];
+    const result = await syncStorageCharges(deps);
+    expect(result).toMatchObject({ days: 1, events: 0, charged: 1 });
+    expect(usageReads).toEqual([YESTERDAY]);
+  });
+
+  test('switch-over: a day charged from receipts is not charged again from its events, and nothing falls between', async () => {
+    await setCursor('2026-10-30');
+    feed['2026-10-30'] = [receipt('volume', driveVol, 1000)];
+    feed[YESTERDAY] = [receipt('volume', driveVol, 1000)];
+    await syncStorageCharges(deps);
+    expect(await ledger(paying)).toHaveLength(2);
+
+    // Platinum starts its events mid-day on 2026-10-30: that day is partial, the next is whole.
+    events = [
+      event('vbe_a', 'volume', driveVol, null, '2026-10-30', 250, 18),
+      event('vbe_b', 'volume', driveVol, null, YESTERDAY, 1000),
+    ];
+    usageReads = [];
+    const switched = await syncStorageCharges(deps);
+    expect(switched).toMatchObject({ events: 2, charged: 0 });
+    expect(await ledger(paying)).toHaveLength(2);
+    expect((await deps.readEventsState(`${STORAGE_EVENTS_KEY}.home`))?.fullFrom).toBe(YESTERDAY);
+    // The partial day still reads its receipt (late growth lands there); the whole day reads events only.
+    expect(usageReads).toEqual(['2026-10-30']);
+
+    // Late growth on each side of the switch is charged once, by the source that covers the day.
+    feed['2026-10-30'] = [receipt('volume', driveVol, 1100)];
+    feed[YESTERDAY] = [receipt('volume', driveVol, 5000)]; // not read any more
+    events.push(event('vbe_c', 'volume', driveVol, null, YESTERDAY, 200, 6));
+    await syncStorageCharges(deps);
+    const debits = (await ledger(paying)).map((d) => [d.key, Number(d.amount)]);
+    expect(debits).toHaveLength(4);
+    expect(debits).toEqual(
+      expect.arrayContaining([
+        [`platinum-storage:home:volume:${driveVol}:2026-10-30:1`, -0.082],
+        [`platinum-storage:home:volume:${driveVol}:${YESTERDAY}:1`, -0.082],
+        [`platinum-storage:home:volume:${driveVol}:2026-10-30:2`, -0.0082],
+        [`platinum-storage:home:volume:${driveVol}:${YESTERDAY}:2`, -0.0164],
+      ]),
+    );
   });
 });
