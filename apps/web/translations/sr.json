@@ -1401,6 +1401,7 @@
       "addCredits": "Додај кредите",
       "spentThisPeriod": "Потрошено у овом периоду",
       "compute": "Рачунарски ресурси",
+      "storage": "Складиште",
       "total": "Укупно",
       "history": "Историја",
       "historyDescription": "Цена сваке сесије и сви додати или потрошени кредити.",
@@ -2644,7 +2645,7 @@
         },
         "credit": {
           "question": "Шта може да се купи једним кредитом?",
-          "answer": "1 кредит је 0,01 $. Кредити плаћају рачунар агента, који се наплаћује по секунди и по ресурсу: {vcpuRate} по vCPU по сату, {memoryRate} по GB RAM-а по сату, {diskRate} по GB складишта месечно. Подразумевана машина од {spec} троши око {creditsPerHour} кредита на сат, па 1 кредит вреди око {minutes} минута. Заустављен рачунар не кошта ништа. Кредити плаћају и Kortix моделе, по основној цени провајдера плус {fee}% накнаде платформе. Ваш API кључ је бесплатан за првих 1.000 $ коришћења модела месечно, а затим се 5% цене провајдера плаћа кредитима. ChatGPT претплата не троши кредите."
+          "answer": "1 кредит је 0,01 $. Кредити плаћају рачунар агента, који се наплаћује по секунди и по ресурсу: {vcpuRate} по vCPU по сату, {memoryRate} по GB RAM-а по сату, {diskRate} по GB складишта месечно. Подразумевана машина од {spec} троши око {creditsPerHour} кредита на сат, па 1 кредит вреди око {minutes} минута. Заустављен рачунар не троши рачунарске ресурсе. Његови сачувани фајлови се наплаћују као складиште. Кредити плаћају и Kortix моделе, по основној цени провајдера плус {fee}% накнаде платформе. Ваш API кључ је бесплатан за првих 1.000 $ коришћења модела месечно, а затим се 5% цене провајдера плаћа кредитима. ChatGPT претплата не троши кредите."
         },
         "amounts": {
           "question": "Колико плаћам месечно?",
@@ -2690,7 +2691,7 @@
       "hours": {
         "eyebrow": "Сати агента",
         "title": "1 кредит вреди око {minutes} минута рачунара агента",
-        "description": "Кредити плаћају рачунар агента: облак машину на којој ваш агент извршава код, прегледа веб и уређује фајлове. Наплаћује се по секунди док ради и не кошта ништа док је заустављен.",
+        "description": "Кредити плаћају рачунар агента: облак машину на којој ваш агент извршава код, прегледа веб и уређује фајлове. Наплаћује се по секунди док ради и не троши рачунарске ресурсе док је заустављен. Његови сачувани фајлови се наплаћују као складиште.",
         "rate": {
           "value": "1 кредит = 0,01 $",
           "note": "Сваки ниво нуди кредите по овој цени."
@@ -2705,7 +2706,7 @@
         },
         "rates": {
           "title": "Цене рачунања",
-          "note": "Наплаћује се по секунди за резервисану величину. Заустављен рачунар не кошта ништа.",
+          "note": "Наплаћује се по секунди за резервисану величину. Заустављен рачунар не троши рачунарске ресурсе. Његови сачувани фајлови се наплаћују као складиште.",
           "vcpu": {
             "label": "vCPU",
             "price": "{price} / сат"
@@ -22689,7 +22690,25 @@
     "sessionFilesDescription": "Фасцикле са Диска које ова сесија монтира и где их агент види. Подели фасциклу на Диску да је додаш; престани да је делиш да је уклониш.",
     "readWrite": "Read & write",
     "folderHint": "A folder inside {name}",
-    "driveLabel": "Drive"
+    "driveLabel": "Drive",
+    "storageLabel": "Prostor",
+    "storageOfLimit": "{used} od {limit}",
+    "storageUsed": "{used} zauzeto",
+    "storageNearFull": "Skoro puno. Obrišite fajlove koji vam više ne trebaju da biste nastavili otpremanje.",
+    "storageFull": "Puno. Nova otpremanja se odbijaju dok se fajlovi ne obrišu.",
+    "storageAccountLine": "Svi projekti: {used} od {limit}",
+    "folderNearMountLimit": "{folder} zauzima {size}. Sesija ne može da montira folder veći od {limit}.",
+    "folderOverMountLimit": "{folder} zauzima {size}, više od {limit} koje sesija može da montira. Sesije rade bez njega.",
+    "uploadRefusedProjectFull": "{name} traži {needed}. Fajlovi ovog projekta zauzimaju {used} od {limit}.",
+    "uploadRefusedAccountFull": "{name} traži {needed}. Fajlovi vašeg naloga zauzimaju {used} od {limit} u svim projektima.",
+    "uploadRefusedFileTooLarge": "{name} ima {size}. Jedan fajl može imati najviše {limit}.",
+    "uploadRefusedFolderMount": "{name} bi doveo {folder} preko {limit}, najvećeg foldera koji sesija može da montira.",
+    "uploadRefusedBusy": "Prostor za fajlove je zauzet. Pokušajte {name} ponovo za trenutak.",
+    "uploadRefusedStorageFull": "Prostor za fajlove je trenutno pun. Pokušajte {name} ponovo kasnije.",
+    "accountStorageTitle": "Prostor za fajlove",
+    "accountStorageDescription": "Koliko zauzimaju fajlovi svakog projekta. Vaš plan dozvoljava {project} po projektu i {account} u svim projektima.",
+    "accountStorageEmpty": "Nijedan projekat još nema fajlove.",
+    "accountStorageIncomplete": "Neki projekti trenutno nisu mogli da se izmere."
   },
   "genui": {
     "showData": "Прикажи податке",

@@ -114,8 +114,8 @@ test('the admin contract hooks hit the contract routes with the snake_case body'
   expect(requests[4]).toMatchObject({ method: 'POST', path: '/admin/api/accounts/acc-1/enterprise-contract/checkout-link' });
 });
 
-test('ADMIN_ENTITLEMENT_OVERRIDE_KEYS lists exactly the seven keys the server accepts', () => {
-  expect([...ADMIN_ENTITLEMENT_OVERRIDE_KEYS].sort()).toEqual(['auditAccess', 'branding', 'byokFee', 'managedModels', 'rbac', 'scim', 'sso']);
+test('ADMIN_ENTITLEMENT_OVERRIDE_KEYS lists exactly the eight keys the server accepts', () => {
+  expect([...ADMIN_ENTITLEMENT_OVERRIDE_KEYS].sort()).toEqual(['auditAccess', 'branding', 'byokFee', 'managedModels', 'rbac', 'scim', 'sso', 'storageBilling']);
 });
 
 test('useBillingPlanPreview posts the amount to /billing/plan/preview, keyed by account and amount', async () => {

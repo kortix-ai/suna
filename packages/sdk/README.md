@@ -1225,6 +1225,40 @@ only the HTTP error message, `getRetryMessage(status)` still returns the full
 gateway composite. That message includes the request ID and each candidate's
 provider, resolved model, HTTP status, code, and bounded message.
 
+### Files storage limits
+
+A project's Files and an account's Files have limits: what one project
+holds, what all the account's projects hold together, the largest one file,
+and the largest folder a session mounts. The plan sets them; the storage
+behind Kortix has its own below them. Read them before an upload, and read a
+refusal as one typed value:
+
+```ts
+import { getDriveUsage, getAccountStorageUsage, uploadDriveFile, driveLimitRefusal } from "@kortix/sdk";
+
+const usage = await getDriveUsage(driveId);
+// usage.usedBytes, usage.limits.{projectBytes, accountBytes, fileBytes, folderMountBytes, mountsPerSession}
+// usage.folders: each folder sessions mount, state "ok" | "near_limit" | "over_limit"
+const account = await getAccountStorageUsage(accountId); // per project; needs billing.read
+
+try {
+  await uploadDriveFile(driveId, "/Company/report.pdf", file);
+} catch (err) {
+  const refusal = driveLimitRefusal(err); // null when it is not a limit
+  if (refusal?.code === "storage_limit_exceeded") {
+    // refusal.limit: "project_bytes" | "account_bytes"; refusal.max, .used, .requested in bytes
+  }
+}
+```
+
+`DRIVE_LIMIT_CODES` lists every code: `storage_limit_exceeded` (403),
+`file_too_large` and `payload_too_large` (413), `sub_path_too_large` (422, a
+write that takes a folder sessions mount past the folder-mount cap),
+`transfer_limit_exceeded` (429, storage is busy: `uploadDriveFile` sends a
+refused block again by itself) and `quota_exceeded` (403, the storage behind
+Kortix is at capacity). React: `useDriveUsage(driveId)` and
+`useAccountStorageUsage(accountId)` from `@kortix/sdk/react`.
+
 ## Entry points
 
 **There are nine stable entries, plus one internal.** Everything framework-free

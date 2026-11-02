@@ -64,6 +64,73 @@ account wallet: ledger kind `proxy_debit`, key `platinum-resi:<event id>`
 (`billing/services/residential-proxy-charges.ts`, every 5 minutes on the
 leader). The usage breakdown counts it under `other`.
 
+Volume storage is metered usage on every plan, like compute. Platinum
+meters each volume Kortix creates (a project's Files drive `kd-…`, a
+session's /workspace volume `kws-<session_id>`, a box's scratch disk,
+Kortix's own Workers' storage) on its stored bytes. Kortix charges what
+Platinum metered at `STORAGE_RATES_USD_PER_GIB_HOUR`
+(`platform/providers/compute-rates.ts`): Platinum's per-GiB-hour price for
+each meter × `PLATINUM_MARKUP`, the same 1× compute uses; the values live in
+that file only. There is no included allowance: no other meter has one, and
+the Free plan's 500 monthly credits pay for it. Ledger kind `storage_debit`,
+key `platinum-storage:<feed>:<kind>:<resource>:<day>:<seq>`, one row per
+(control plane, meter, resource, UTC day) in `kortix.storage_charges`
+(`billing/services/storage-charges.ts`, hourly on the leader,
+`worker/jobs/storage-billing.ts`). Two sources fill a row:
+
+- **Events** (`GET /v1/billing/events?event_type=volume.storage`, Platinum
+  #2434): one immutable event per resource per UTC day, split at a resize, a
+  price change or a delete, listed ~2 minutes after its span closes. Growth
+  Platinum bills back to an ended day arrives as a new event dated that day.
+  Each event is applied once (`event_ids` on the row). No volume cap. The
+  cursor is `platinum.volume_storage.events.<feed>`.
+- **Receipts** (`GET /v1/billing/volume-usage`, at most 1,000 volumes a day):
+  the fallback for a Platinum without the events feed, and for the days
+  before the feed's first whole day (`fullFrom`). A day stays open for 3
+  days after it ends.
+
+A row's metered GiB-hours are the larger of its receipt and the sum of its
+events, and each charge is the difference from what was already charged, so
+a day read from both sources is charged once. The first tick of a feed
+starts both sources at its own day: storage before the feature shipped is
+never charged.
+
+The disk of a session or App box that is not running is storage too, metered
+exactly as Platinum bills it to Kortix. It is charged only while
+`KORTIX_BOX_DISK_CHARGE_ENABLED` is true (default false: every row is recorded
+`waived`, nothing is debited, and customer copy says only stored files are
+billed). Turning it on charges the days still open, up to 3 days back. The meter is
+`billing/services/box-disk-charges.ts`, on the same hourly tick. Platinum bills a box's `disk_gb` while it runs (Kortix
+charges that inside compute), while it is stopped (72 µ$/GB-hour, kind
+`box_disk`) and while it is archived (36 µ$/GB-hour, `box_disk_archived`);
+a box that boots from a root volume bills no disk. Platinum's billing feed no
+longer lists box disk, so Kortix meters it from the box list: `stoppedAt`,
+`billableSince` (when the box became archived), `diskGb`, `root_disk`. Each
+box's time runs from its watermark (`metered_through`) and never starts
+before the end of its last Kortix compute window; a box with an open compute
+window is skipped. So no hour is billed twice. The archived boxes are listed
+every 6 hours and on the first tick of each UTC day. A day is charged once
+the box is metered past its end. An archived box that is unarchived or
+deleted between two listings is not metered for that part (at most 6 hours,
+Kortix's cost).
+
+The `storageBilling` entitlement is on for every plan; the override
+`storageBilling: false` waives storage for one account (the row is marked
+`waived`), and an account with no credit account is waived (compute's rule).
+The usage breakdown counts it under `storage`; the cost explorer shows it per
+project (`storage_cost`).
+
+Kortix's own cost is recorded, never charged: a resource no Kortix account
+owns is a `storage_charges` row with no account and an `unattributed_reason`
+(`not_kortix`, `volume_gone`, `owner_gone`, `unsupported_kind` for legacy
+snapshots and Worker storage), and a deleted account or project sets its rows
+to unattributed. A stopped or archived box with this deployment's
+create-time marker and no session, App or monitor row is a `box_disk` row
+with `owner_gone`. Another deployment's boxes in the shared org are left to
+that deployment. A running box this deployment created that no Kortix row
+owns has its Platinum charge recorded by the orphan reaper before the stop,
+in `kortix.provider_orphan_box_costs` (`billing/services/orphan-box-costs.ts`).
+
 Members are unlimited and share the account credit pool. The Plan and account
 hub billing panes show the existing account member count alongside an unlimited
 allowance; there is no paid-seat denominator.
@@ -134,8 +201,30 @@ A model request on the account's own provider key is billed by the provider
 ## Overrides
 
 `entitlement_overrides` keys: `managedModels`, `sso`, `scim`, `rbac`,
-`auditAccess`, `branding`, `byokFee`. Each `{ value: boolean, expires_at? }`.
+`auditAccess`, `branding`, `byokFee`, `storageBilling`. Each `{ value: boolean, expires_at? }`.
+The two Files storage limits take a positive whole number of bytes instead:
+`driveProjectBytes`, `driveAccountBytes` (`{ value: number, expires_at? }`).
 Set through `PUT /v1/admin/api/accounts/{id}/overrides`.
+
+## Files storage
+
+Every customer's Files live in Kortix's one Platinum org (100 GiB per volume,
+one volume per project; 50 TiB stored for the org, `GET /v1/volumes/limits`
+2026-11-01). The plan partitions it (`TierConfig.driveStorage` in
+`billing/services/tiers.ts`), enforced in `apps/api/src/drives/limits.ts`
+before a byte reaches Platinum:
+
+| Plan | One project | All projects of the account |
+|---|---|---|
+| No Plan, Free | 5 GiB | 5 GiB |
+| Credits | 50 GiB | 250 GiB |
+| Enterprise (licensed) | 100 GiB | 1 TiB |
+
+The project figure is never above Platinum's volume size. With billing off
+(self-hosted) no plan limit applies; Platinum's do. A refused write answers
+403 `storage_limit_exceeded` with `limit` (`project_bytes` or
+`account_bytes`), `max`, `used` and `requested`. Storage charges are separate
+(the billing ledger), not part of these limits.
 
 ## Managed models are sold, never given
 

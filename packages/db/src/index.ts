@@ -149,6 +149,8 @@ export {
   // Drives (shared folders backed by Platinum volumes)
   drives,
   driveGrants,
+  storageCharges,
+  providerOrphanBoxCosts,
   platinumVolumeDeletions,
   driveMountRevocations,
   driveConflicts,

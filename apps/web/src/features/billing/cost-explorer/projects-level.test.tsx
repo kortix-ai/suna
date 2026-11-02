@@ -324,7 +324,7 @@ describe('buildProjectTableRows', () => {
     expect(rows[2].total_cost).toBe(0.7);
   });
 
-  test('the unassigned row carries zeroed session/llm/compute fields — only total_cost is real', () => {
+  test('the unassigned row carries zeroed session/llm/compute/storage fields — only total_cost is real', () => {
     const rows = buildProjectTableRows(
       {
         projects: [
@@ -353,6 +353,7 @@ describe('buildProjectTableRows', () => {
       session_count: 0,
       llm_cost: 0,
       compute_cost: 0,
+      storage_cost: 0,
       total_cost: 668.35,
       last_activity_at: null,
     });
@@ -829,7 +830,7 @@ describe('ProjectsLevelContent', () => {
   // a header that looks clickable and reorders nothing is worse than one that
   // never invited the click.
 
-  test('Project and Total are buttons; Sessions, LLM and Compute are not', () => {
+  test('Project and Total are buttons; Sessions, LLM, Compute and Storage are not', () => {
     const html = renderContent({ page: twoProjectPage });
     const header = html.match(/<thead[\s\S]*?<\/thead>/)![0];
 
@@ -839,9 +840,10 @@ describe('ProjectsLevelContent', () => {
     // Scoped per cell: a whole-header check would pass with the buttons on
     // the wrong two columns.
     const cells = header.match(/<th[\s\S]*?<\/th>/g) ?? [];
-    expect(cells).toHaveLength(5);
+    expect(cells).toHaveLength(6);
+    expect(cells[4]).toContain('Storage');
     const hasButton = cells.map((cell) => cell.includes('<button'));
-    expect(hasButton).toEqual([true, false, false, false, true]);
+    expect(hasButton).toEqual([true, false, false, false, false, true]);
   });
 
   test('the sortable headers are real buttons with a visible focus ring', () => {

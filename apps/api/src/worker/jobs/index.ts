@@ -39,6 +39,7 @@ import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './project
 import { startProviderTransitionWorker, stopProviderTransitionWorker } from './provider-transition';
 import { startResidentialProxyBillingWorker, stopResidentialProxyBillingWorker } from './residential-proxy-billing';
 import { startSessionLogPurgeWorker, stopSessionLogPurgeWorker } from './session-log-purge';
+import { startStorageBillingWorker, stopStorageBillingWorker } from './storage-billing';
 import { startSessionModelFallbackWorker, stopSessionModelFallbackWorker } from './session-model-fallback';
 import { startSlackTurnGc, stopSlackTurnGc } from './slack-turn-gc';
 import { startTeamsTurnGc, stopTeamsTurnGc } from './teams-turn-gc';
@@ -120,6 +121,8 @@ export const JOBS: readonly Job[] = [
     start: startResidentialProxyBillingWorker,
     stop: stopResidentialProxyBillingWorker,
   },
+  // Volume storage Platinum metered, charged once per (volume, UTC day, charge).
+  { ticks: { 'storage-billing': 3 * HOUR }, start: startStorageBillingWorker, stop: stopStorageBillingWorker },
   // Database-wide tunnel sweeps; every API process ran them before the worker split.
   { ticks: { 'tunnel-cleanup': 20 * MIN }, start: startTunnelCleanup, stop: stopTunnelCleanup },
   { ticks: { 'tunnel-forward-expiry': 10 * MIN }, start: startTunnelForwardExpiry, stop: stopTunnelForwardExpiry },
