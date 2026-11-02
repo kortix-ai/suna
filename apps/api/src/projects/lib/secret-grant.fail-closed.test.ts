@@ -20,7 +20,6 @@ const PROJECT = {
 };
 
 const MANIFEST = [
-  'kortix_version: 2',
   'default_agent: kortix',
   'agents:',
   '  kortix:',
@@ -54,7 +53,7 @@ describe('resolveSessionSecretGrant fails closed through the real manifest loade
   test('an unparseable manifest refuses rather than resolving default to unrestricted', async () => {
     readManifestFromRepoImpl = async () => ({
       path: 'kortix.yaml',
-      content: 'kortix_version: 2\nagents:\n  - [unbalanced\n',
+      content: 'agents:\n  - [unbalanced\n',
     });
     await expect(
       resolveSessionSecretGrant({ ...PROJECT, sessionAgent: 'default' }),
@@ -63,7 +62,7 @@ describe('resolveSessionSecretGrant fails closed through the real manifest loade
 
   test('a genuinely absent manifest is still the unrestricted back-compat path', async () => {
     readManifestFromRepoImpl = async () => null;
-    await expect(resolveSessionSecretGrant({ ...PROJECT, sessionAgent: 'kortix' })).resolves.toBe(
+    await expect(resolveSessionSecretGrant({ ...PROJECT, sessionAgent: 'worker' })).resolves.toBe(
       'all',
     );
   });

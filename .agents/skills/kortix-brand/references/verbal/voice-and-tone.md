@@ -36,6 +36,8 @@ The in-product agent speaks as "I'm Kortix" in the first chat (`apps/web/transla
 
 **Rule.** Write agent speech as short, plain, specific sentences with no filler opener. Do not open with "Sure!", "Great question" or "Certainly". — *Why:* Filler costs a line and says nothing. The first-chat strings are one idea per sentence. — *Where:* app | Slack | Teams. — *When silent:* start with the answer or the next step.
 
+**Rule.** My Kortix, the built-in agent, assumes a non-technical reader, uses on-screen words instead of the plumbing, and may use one status emoji from the D31 set at the start of a status line. — *Why:* D31 (2026-10-30, founder). — *Where:* app | Slack | Teams. — *When silent:* plain words, no emoji. The emoji are the agent's words only: a row or label the product draws around them shows status with a glyph (D34).
+
 **Rule.** The agent never claims a capability the session lacks. — *Why:* An agent that promises a connector it does not have creates a failed turn and a support ticket. — *Where:* app | Slack | Teams. — *When silent:* say what is missing and how to add it ("Connect Gmail to this project, then ask again.").
 
 ## 3. Vocabulary
@@ -76,7 +78,7 @@ capitalized only at the start of a sentence or as a UI label.
 | Who can use it | The audience choice on a secret or connector account. | "Who can use it" (UI label, sentence case after the first word) | permissions (for this choice) |
 | channel | A chat surface where a bot starts sessions: Slack, Microsoft Teams, email. | "Add Kortix to Slack." | integration, "Telegram channel" |
 | trigger | A cron schedule or a signed webhook that starts sessions. | "A trigger starts a session." | automation (as the noun for one trigger) |
-| reminder | A prompt that re-prompts one existing session later, once or on repeat. Stored in the database, not in `kortix.yaml`. | "Set a reminder." | trigger (they differ) |
+| loop | A prompt that re-prompts one existing session later, once or on repeat. Stored in the database, not in `kortix.yaml`. Called "reminder" until 2026-10; the wire names (routes, ids `reminder.<hex>`, the flag key `reminders`, the SDK) keep the old word. CLI: `kortix loop`. | "Set a loop." | reminder (in copy), trigger (they differ) |
 | backend | What an App of kind `convex` is: a database, server functions, realtime queries, file storage and schedules, powered by Convex. The web app labels the kind "Backend". CLI: `kortix apps create <slug> --kind convex` (D13). | "Create a backend." | database, DB, Convex project, app backend |
 | computer | A person's own machine connected to Kortix. Name no machine class (laptop, desktop, server) and no operating system (Q20). Not a sandbox. | "Connect your computer." | sandbox or "cloud computer" as a synonym |
 | memory | The living company brain. Plain files today. | "company memory" | vector database (external copy) |
@@ -372,7 +374,7 @@ Tone: instructional, exact, second person. The reader wants to finish a task.
 
 **Rule.** Flag a deprecated or legacy surface in the page. Do not describe it as current. — *Why:* CLAUDE.md: "flag legacy/deprecated surfaces in-doc rather than documenting them as current". — *Where:* docs. — *When silent:* "Deprecated. Use {replacement}."
 
-- Approved: "A reminder sends a prompt into one existing session at a time you set. It fires once, or it repeats until someone removes it." (`connect/triggers.mdx`)
+- Approved: "A loop sends a prompt into one existing session at a time you set: \"in 24 hours, check whether the vendor replied\". It fires once, or it repeats until someone removes it." (`connect/triggers.mdx`)
 - Rejected: "Kortix is the Autonomous Company Operating System — a cloud computer where a workforce of AI agents runs your company." (retired line; `content/docs/index.mdx:6`)
 
 ### 5.8 Deck notes

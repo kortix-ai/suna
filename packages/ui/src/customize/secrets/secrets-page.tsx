@@ -3,6 +3,7 @@
 import { useStandaloneCapabilityNav } from '../shared/standalone-settings-nav';
 import { SecretsView } from '../sections/view/secrets-view';
 import { SettingsNavProvider } from '../../internal/layout/settings-nav-context';
+import type { AgentGrant, ResourceScope } from '../shared/agent-resource-scope';
 
 /**
  * The page body for /projects/[id]/secrets — Secrets graduated out of the
@@ -30,11 +31,20 @@ import { SettingsNavProvider } from '../../internal/layout/settings-nav-context'
  * four beside it — the same wrapper `triggers-page.tsx` shed for the same
  * reason.
  */
-export function SecretsPage({ projectId }: { projectId: string }) {
+export function SecretsPage({
+  projectId,
+  surface,
+  grant,
+}: {
+  projectId: string;
+  /** `agent` renders the same screen for one agent's page (`agent-page.tsx`). */
+  surface?: ResourceScope;
+  grant?: AgentGrant;
+}) {
   const settingsNav = useStandaloneCapabilityNav(projectId, 'secrets');
   return (
     <SettingsNavProvider value={settingsNav}>
-      <SecretsView projectId={projectId} />
+      <SecretsView projectId={projectId} surface={surface} grant={grant} />
     </SettingsNavProvider>
   );
 }

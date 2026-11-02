@@ -51,10 +51,10 @@ function sseResponse(stream: ReadableStream<Uint8Array>): Response {
 // error ever surfaced) instead of failing fast on attempt one.
 export function toTransportError(err: unknown, provider: string): Error {
   // The AI SDK validates the built prompt CLIENT-SIDE, before any request
-  // ever goes out (e.g. `messages` resolving to an empty array — a body with
-  // no `messages` field at all, or a `messages: []`) — no native transport
-  // ever had this check; it always forwarded whatever body it was given
-  // straight to the upstream, which would itself 400 the malformed request.
+  // ever goes out (e.g. `messages` resolving to an empty array). The chat
+  // handler now refuses a body without a user or assistant message before
+  // dispatch (KRTX-3421), so this is the backstop for a prompt the SDK still
+  // rejects; a native transport forwards whatever body it is given.
   // Classified the same way a real upstream 400 would be here so it fails
   // fast (a 400 is a request error, never a transient one) instead of falling
   // through to the generic NetworkError case below, which a transient fallback
@@ -96,6 +96,12 @@ export function toTransportError(err: unknown, provider: string): Error {
     // OpenCode >= 1.18.17 sleeps for whatever it is told, up to 24.8 days.
     const headers = e.responseHeaders ?? e.cause?.responseHeaders;
     return new UpstreamHttpError(statusCode, body, provider, headers);
+  }
+  // A RangeError is this process refusing the request (a stack overflow on
+  // nesting hidden inside a tool-call `arguments` string), never an upstream
+  // failure: a 400, which never trips the breaker (KRTX-3421).
+  if (err instanceof RangeError || (e?.cause as unknown) instanceof RangeError) {
+    return new UpstreamHttpError(400, 'The request could not be built: a value is nested too deeply.', provider);
   }
   const message = e?.message ?? (err instanceof Error ? err.message : String(err));
   if (looksLikeTerminalAuthFailure(message)) {
@@ -247,8 +253,21 @@ export async function callUpstreamViaAiSdk(
 ): Promise<Response> {
   const family = aiSdkFamilyFor(descriptor);
   const isCodex = isCodexDescriptor(descriptor);
+  // Every provider call goes through this fetch. A NetworkError raised before it
+  // ran is this gateway failing to build the request (an ill-typed `tools` item
+  // makes the SDK throw a raw TypeError), never an upstream failure: a 400,
+  // which never trips the breaker (KRTX-3421).
+  let fetchStarted = false;
+  const baseFetch = opts.fetch ?? upstreamFetch;
+  const unsent = (error: unknown): unknown =>
+    error instanceof NetworkError && !fetchStarted && !opts.signal?.aborted
+      ? new UpstreamHttpError(400, 'The request could not be built.', descriptor.provider)
+      : error;
   const model = resolveAiModel(descriptor, {
-    fetch: opts.fetch ?? upstreamFetch,
+    fetch: (input, init) => {
+      fetchStarted = true;
+      return baseFetch(input, init);
+    },
     // Kortix-internal correlation id, mirrored onto the upstream request as a
     // best-effort header — every provider here tolerates unknown headers.
     // This is the ai-sdk-engine equivalent of what the retired native
@@ -256,31 +275,40 @@ export async function callUpstreamViaAiSdk(
     // request (see http/call-upstream.ts).
     extraHeaders: opts.requestId ? { 'x-kortix-request-id': opts.requestId } : undefined,
   });
-  const args = buildAiSdkArgs(body, family, {
-    // The ChatGPT Codex backend always expects a reasoning effort; the native
-    // transport defaults to 'low' when the caller sends none (see
-    // openai-responses/request.ts's `chatToResponses`) — mirrored here via
-    // buildAiSdkArgs's opt-in default rather than in buildAiSdkArgs itself, so
-    // every non-Codex caller's "no default effort" behavior is untouched.
-    defaultReasoningEffort: isCodex ? 'low' : undefined,
-    // Codex needs `store: false` and no output-token cap (see request.ts).
-    providerName: descriptor.provider,
-    // The resolved catalog model for the WIRE model id (managed slug, BYOK
-    // `provider/id`, or `codex/id` — `catalogModelForWireModel` stitches all
-    // three), so buildAiSdkArgs can gate reasoning_effort/temperature/top_p/
-    // max_tokens against its real models.dev capabilities (see request.ts's
-    // normalizeRequest). `undefined` for an unknown/unresolvable id → no gating
-    // (permissive parity). Keyed off the client wire id, not descriptor
-    // .resolvedModel (which is the UPSTREAM id — a Bedrock/OpenRouter slug that
-    // wouldn't resolve here). The bundled static CATALOG is authoritative for
-    // capability shape; the transport has no live snapshot.
-    model: catalogModelForWireModel(String(body.model ?? ''), CATALOG),
-    // The UPSTREAM model id — gates the bedrock adapter's Claude-Converse-only
-    // primitives (cachePoint, adaptive reasoningConfig). Same signal
-    // clampMaxOutputTokensForBedrock (below) keys the Nova clamp off of, so a
-    // non-Claude Bedrock model (global.openai.*, Nova) never gets Claude fields.
-    resolvedModel: descriptor.resolvedModel,
-  });
+  let args: ReturnType<typeof buildAiSdkArgs>;
+  try {
+    args = buildAiSdkArgs(body, family, {
+      // The ChatGPT Codex backend always expects a reasoning effort; the native
+      // transport defaults to 'low' when the caller sends none (see
+      // openai-responses/request.ts's `chatToResponses`) — mirrored here via
+      // buildAiSdkArgs's opt-in default rather than in buildAiSdkArgs itself, so
+      // every non-Codex caller's "no default effort" behavior is untouched.
+      defaultReasoningEffort: isCodex ? 'low' : undefined,
+      // Codex needs `store: false` and no output-token cap (see request.ts).
+      providerName: descriptor.provider,
+      // The resolved catalog model for the WIRE model id (managed slug, BYOK
+      // `provider/id`, or `codex/id` — `catalogModelForWireModel` stitches all
+      // three), so buildAiSdkArgs can gate reasoning_effort/temperature/top_p/
+      // max_tokens against its real models.dev capabilities (see request.ts's
+      // normalizeRequest). `undefined` for an unknown/unresolvable id → no gating
+      // (permissive parity). Keyed off the client wire id, not descriptor
+      // .resolvedModel (which is the UPSTREAM id — a Bedrock/OpenRouter slug that
+      // wouldn't resolve here). The bundled static CATALOG is authoritative for
+      // capability shape; the transport has no live snapshot.
+      model: catalogModelForWireModel(String(body.model ?? ''), CATALOG),
+      // The UPSTREAM model id — gates the bedrock adapter's Claude-Converse-only
+      // primitives (cachePoint, adaptive reasoningConfig). Same signal
+      // clampMaxOutputTokensForBedrock (below) keys the Nova clamp off of, so a
+      // non-Claude Bedrock model (global.openai.*, Nova) never gets Claude fields.
+      resolvedModel: descriptor.resolvedModel,
+    });
+  } catch {
+    // A malformed body (a `tools` or `tool_calls` item that is not an object)
+    // threw here, outside the error mapping. A raw TypeError counts as a network
+    // failure, so five of them opened a shared upstream's breaker (KRTX-3421).
+    // It is the caller's request error: a 400, which never trips the breaker.
+    throw new UpstreamHttpError(400, 'The request has a malformed field.', descriptor.provider);
+  }
   const clientWantsStream = body.stream === true;
   const ctx = {
     model: descriptor.resolvedModel || String(body.model ?? ''),
@@ -351,7 +379,9 @@ export async function callUpstreamViaAiSdk(
         result.fullStream,
         descriptor.provider,
         opts.commitAfterMs ?? STREAM_COMMIT_MS,
-      );
+      ).catch((error: unknown) => {
+        throw unsent(error);
+      });
       return sseResponse(openAiSseFromFullStream(opened, ctx));
     }
 
@@ -379,7 +409,7 @@ export async function callUpstreamViaAiSdk(
         ),
       );
     } catch (err) {
-      throw toTransportError(streamError ?? err, descriptor.provider);
+      throw unsent(toTransportError(streamError ?? err, descriptor.provider));
     }
   }
 
@@ -398,6 +428,6 @@ export async function callUpstreamViaAiSdk(
       ),
     );
   } catch (err) {
-    throw toTransportError(err, descriptor.provider);
+    throw unsent(toTransportError(err, descriptor.provider));
   }
 }

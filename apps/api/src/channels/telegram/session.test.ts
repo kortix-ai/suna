@@ -48,6 +48,15 @@ describe('telegram inbox envelope', () => {
     expect(prompt).toContain('Kortix answers /new, /stop, /status, /model, /agent and /help in the chat itself; those commands never reach you.');
   });
 
+  test('the prompt tells the agent to ask every choice and question with its question tool, never as a text list', () => {
+    const prompt = channelPromptText(telegramEnvelope(message));
+    expect(prompt).toContain(
+      'Whenever you need the user to choose or to answer, call your question tool, with every question in one call: Kortix shows them in this chat as buttons, one question at a time.',
+    );
+    expect(prompt).toContain('Never list choices or questions as plain text. Ask in plain words only when the tool result says the question could not be posted.');
+    expect(prompt).not.toContain('buttons for a single choice');
+  });
+
   test("the session view reads the prompt back as the person's message (the shared channel parser)", () => {
     expect(parseChannelMessage(channelPromptText(telegramEnvelope(message)))).toEqual({
       platform: 'Telegram',

@@ -40,8 +40,8 @@ function mergeSeedFiles(
 
 /**
  * Seed a brand-new project's deterministic scaffold: just the starter's own
- * files (a kortix_version 3 kortix.yaml, agent prompts, skills, the pty
- * extension) for `template`.
+ * files (kortix.yaml, agent prompts, skills, the pty extension) for
+ * `template`.
  * No lock, no dependency engine — marketplace items are never deterministically
  * installed at provision time; adding one to a project is an agent import.
  */
@@ -125,7 +125,7 @@ export async function buildProjectSeedFilesFromItem(input: ProjectSeedFilesFromI
  * projects/lib/sessions.ts and llm-gateway/resolution/default-model.ts) at
  * project-creation time, the same value `PUT /:projectId/default-agent`
  * writes later. Without this, a brand-new project's manifest declares a
- * default agent (the starter template ships `default_agent: kortix`) that the
+ * default agent (the starter template ships `default_agent: worker`) that the
  * DB mirror never learns about — every session then stores the non-binding
  * `'default'` sentinel instead, and any agent-scope model pin set on the real
  * agent name is silently never applied (the bug this closes).
@@ -142,7 +142,7 @@ export function defaultAgentFromSeedFiles(
   const manifestFile = files.find((f) => f.path === manifestPath) ?? files.find((f) => f.path === 'kortix.yaml');
   if (!manifestFile) return null;
   try {
-    const raw = parseManifestText(manifestFile.content, 'yaml');
+    const raw = parseManifestText(manifestFile.content);
     const defaultAgent = raw.default_agent;
     return typeof defaultAgent === 'string' && defaultAgent.trim() ? defaultAgent.trim() : null;
   } catch {

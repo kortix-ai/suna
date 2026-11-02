@@ -38,8 +38,8 @@ export function pushBodyFor(kind: NotificationKindName, detail: string): string 
   const fixed = FIXED_BODIES[kind];
   if (fixed) return fixed;
   if (kind === 'question') return detail ? `Kortix has a question: ${detail}` : 'Kortix has a question.';
-  if (kind === 'automation_failed') return detail ? `Failing: ${detail}` : 'This automation is failing.';
-  if (kind === 'automation_recovered') return 'This automation works again.';
+  if (kind === 'automation_failed') return detail ? `Failing: ${detail}` : 'This trigger is failing.';
+  if (kind === 'automation_recovered') return 'This trigger works again.';
   if (kind === 'capture_device_down' || kind === 'capture_device_recovered') return detail || 'Open Kortix Capture to see it.';
   return detail || 'Open Kortix to see it.';
 }
@@ -81,17 +81,11 @@ export function notificationUrl(input: {
     return `/projects/${encodeURIComponent(input.projectId)}/sessions/${encodeURIComponent(input.sessionId)}${query}`;
   }
   if (input.projectId && input.triggerSlug) {
-    // The Triggers page lists kortix.yaml triggers only; reminders are runtime rows.
-    const page = input.triggerSlug.startsWith(REMINDER_ID_PREFIX) ? 'reminders' : 'customize/triggers';
-    return `/projects/${encodeURIComponent(input.projectId)}/${page}${query}`;
+    // One Triggers page lists kortix.yaml and runtime triggers (loops included).
+    return `/projects/${encodeURIComponent(input.projectId)}/admin/triggers${query}`;
   }
   if (input.projectId) return `/projects/${encodeURIComponent(input.projectId)}${query}`;
   return `/projects${query}`;
-}
-
-/** True when a `notificationUrl` result opens a project's Reminders page. */
-export function opensRemindersPage(url: string): boolean {
-  return /^\/projects\/[^/?]+\/reminders\?/.test(url);
 }
 
 export function buildPushContent(input: {

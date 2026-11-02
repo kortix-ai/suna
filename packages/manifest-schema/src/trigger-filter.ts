@@ -101,3 +101,21 @@ export function triggerFilterValueMatches(condition: TriggerFilterValue, actual:
   if ('prefix' in condition) return condition.prefix.some((prefix) => text.startsWith(prefix));
   return !condition.not_prefix.some((prefix) => text.startsWith(prefix));
 }
+
+/**
+ * A `type: change_request` trigger's `filter`: `base` is the branch the merge
+ * lands on (any branch when absent); every other key is a payload filter, as
+ * on any trigger. `filter: { base: main }` fires on merges into main only.
+ */
+export function parseChangeRequestFilter(
+  raw: unknown,
+): { base: string | null; filter: TriggerFilter | null } | { error: string } {
+  if (!isPlainRecord(raw) || !('base' in raw)) {
+    const parsed = parseTriggerFilter(raw);
+    return 'error' in parsed ? parsed : { base: null, filter: parsed.filter };
+  }
+  const { base, ...rest } = raw;
+  if (typeof base !== 'string' || !base.trim()) return { error: 'filter.base must be a branch name' };
+  const parsed = parseTriggerFilter(rest);
+  return 'error' in parsed ? parsed : { base: base.trim(), filter: parsed.filter };
+}

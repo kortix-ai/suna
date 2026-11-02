@@ -41,6 +41,7 @@
  */
 
 import { type AgentGrant, accountTokens, readStoredAgentGrant, projectSessions, projects } from '@kortix/db';
+import { isMyKortixAgentName } from '@kortix/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { DEFAULT_AGENT_SENTINEL, grantFromLoadedAgents, isLaunchableAgentName, loadProjectAgents, type LoadedAgents } from '../agents';
@@ -51,6 +52,7 @@ import {
   resolveSessionAgentGrant,
   withGrantProvenance,
 } from './secret-grant';
+import { resolveBuiltinAgents } from './my-kortix-agent';
 
 /** The re-mint could not be written. The caller must FAIL the prompt: letting it
  *  through would run the new agent against the previous agent's grant, which is
@@ -59,6 +61,8 @@ export class SessionGrantRemintError extends Error {
   constructor(
     readonly sessionId: string,
     cause: unknown,
+    /** `builtin_agent_disabled`: the prompt runs My Kortix in a project that turned it off. */
+    readonly code?: 'builtin_agent_disabled',
   ) {
     super(
       `could not re-mint the agent grant for session '${sessionId}': ${
@@ -241,6 +245,40 @@ async function loadStoredSessionGrant(sessionId: string): Promise<AgentGrant | n
     return readStoredAgentGrant(token?.agentGrant);
   } catch (err) {
     throw new SessionGrantRemintError(sessionId, err);
+  }
+}
+
+/**
+ * Does this project run My Kortix? kortix.yaml `builtin_agents.my_kortix`
+ * (no key: on), as session create resolves it.
+ * A failed read answers `true`: the grant re-mint fails closed on its own.
+ */
+async function myKortixEnabled(projectId: string): Promise<boolean> {
+  try {
+    const [project] = await db
+      .select({
+        repoUrl: projects.repoUrl,
+        defaultBranch: projects.defaultBranch,
+        manifestPath: projects.manifestPath,
+      })
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .limit(1);
+    if (!project) return true;
+    const loaded = project.defaultBranch
+      ? await loadProjectAgents(
+          {
+            projectId,
+            repoUrl: project.repoUrl ?? '',
+            defaultBranch: project.defaultBranch,
+            manifestPath: project.manifestPath,
+          },
+          { forceRefresh: 'tip-proof' },
+        )
+      : null;
+    return resolveBuiltinAgents(loaded?.builtinAgents ?? {}).my_kortix;
+  } catch {
+    return true;
   }
 }
 
@@ -443,9 +481,20 @@ export async function remintGrantForAgentSwitch(
     resolveCurrentGrant({ ...input, runningAgent, forceRefresh });
   const runningRead = resolve('tip-proof');
   runningRead.catch(() => undefined);
+  // A `meta` prompt in a project that turned My Kortix off is refused, not only
+  // narrowed: the grant below still drops to read-only, then the prompt fails.
+  const myKortixRead = isMyKortixAgentName(runningAgent) ? myKortixEnabled(input.projectId) : null;
   const stored = await storedRead;
   const running = await runningRead;
-  return applyResolvedGrant(input, stored, running, () => resolve(true));
+  const decision = await applyResolvedGrant(input, stored, running, () => resolve(true));
+  if (myKortixRead && !(await myKortixRead)) {
+    throw new SessionGrantRemintError(
+      input.sessionId,
+      new Error('My Kortix is off in this project. Start a session with a project agent.'),
+      'builtin_agent_disabled',
+    );
+  }
+  return decision;
 }
 
 /**

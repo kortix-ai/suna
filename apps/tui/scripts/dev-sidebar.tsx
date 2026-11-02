@@ -88,7 +88,6 @@ function Harness() {
       onNavigate={(screen) => console.log(`[onNavigate] ${screen}`)}
       onProjectChange={(pid, aid) => console.log(`[onProjectChange] ${pid} ${aid}`)}
       onAccountChange={(aid) => console.log(`[onAccountChange] ${aid}`)}
-      onAttach={(id) => console.log(`[onAttach] ${id}`)}
       onToast={(message, kind) => {
         toasts.push(`${kind ?? 'info'}: ${message}`);
         console.log(`[toast/${kind ?? 'info'}] ${message}`);

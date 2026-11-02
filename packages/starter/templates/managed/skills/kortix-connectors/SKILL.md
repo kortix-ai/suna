@@ -81,9 +81,9 @@ Report which account ran when it could matter: read the result's `account`.
 
 ```sh
 $ kortix connectors accounts gmail
-  LABEL                 OWNER    DEFAULT  CONNECTION ID
-  personal@example.com  private  no       11111111-…
-  work@example.com      private  no       22222222-…
+  LABEL                 CONNECTED AS          OWNER    DEFAULT  CONNECTION ID
+  personal@example.com  personal@example.com  private  no       11111111-…
+  work@example.com      work@example.com      private  no       22222222-…
 ```
 
 Asked "check my gmail" here, ask which mailbox. Told "the work one", call
@@ -189,7 +189,9 @@ catalog and the web have nothing, stop, explain the gap, and ask the human.
 A rule set is a named rule list on one profile (`connectors[].policy_sets`).
 Give an agent one with `agents.<name>.policy_sets: { <slug>: <set> }`. A
 caller with no set (a person's token, a script, a trigger poll) gets the base
-rules. A pi subagent runs under the root session agent's set.
+rules. A subagent in your session (`agent` tool, `session: "same"`) runs
+under your set; a named subagent in its own session runs under its own
+agent's set.
 
 ```yaml
 connectors:
@@ -204,6 +206,7 @@ connectors:
             action: block
 agents:
   support:
+    tools: all
     connectors: [gmail]
     policy_sets:
       gmail: read_only

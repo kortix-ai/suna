@@ -35,12 +35,14 @@ import type { FolderLevel, FolderPrincipalType } from './folders';
 import {
   type DriveRow,
   agentServiceAccountId,
+  driveVolume,
   ensurePersonalFolder,
   ensureProjectDrive,
   openVolumeFor,
   setFolderGrant,
 } from './service';
 import {
+  type DriveVolume,
   DriveStorageError,
   commitVolumeUpload,
   listVolumeFilesPage,
@@ -58,14 +60,14 @@ const BLOCK_BYTES = 1024 * 1024;
 
 /** The storage the job copies through. Tests pass an in-memory one. */
 export interface FoldStorage {
-  listFiles(volume: string): Promise<Array<{ path: string; size: number }>>;
-  exists(volume: string, path: string): Promise<boolean>;
-  read(volume: string, path: string, range?: { start: number; end: number }): Promise<Uint8Array<ArrayBuffer>>;
-  write(volume: string, path: string, body: Uint8Array<ArrayBuffer>): Promise<void>;
+  listFiles(volume: DriveVolume): Promise<Array<{ path: string; size: number }>>;
+  exists(volume: DriveVolume, path: string): Promise<boolean>;
+  read(volume: DriveVolume, path: string, range?: { start: number; end: number }): Promise<Uint8Array<ArrayBuffer>>;
+  write(volume: DriveVolume, path: string, body: Uint8Array<ArrayBuffer>): Promise<void>;
   /** A file too large for one write: block by block, never all in memory. */
-  writeLarge(volume: string, path: string, size: number, readBlock: (start: number, end: number) => Promise<Uint8Array<ArrayBuffer>>): Promise<void>;
-  /** The target drive's volume name, opened (created) if needed. */
-  open(drive: DriveRow): Promise<string>;
+  writeLarge(volume: DriveVolume, path: string, size: number, readBlock: (start: number, end: number) => Promise<Uint8Array<ArrayBuffer>>): Promise<void>;
+  /** The target drive's volume, opened (created) if needed. */
+  open(drive: DriveRow): Promise<DriveVolume>;
 }
 
 export const volumeFoldStorage: FoldStorage = {
@@ -256,7 +258,7 @@ export async function foldDrive(source: DriveRow, storage: FoldStorage = volumeF
       report.grants++;
     }
     if (source.platinumVolumeId) {
-      const from = source.platinumVolumeName;
+      const from = driveVolume(source);
       for (const file of await storage.listFiles(from)) {
         const to = `${path}${file.path}`;
         if (await storage.exists(dest, to)) {
@@ -325,7 +327,7 @@ export async function retireFolded(opts: { accountId?: string; storage?: FoldSto
     let done = true;
     for (const t of targets) {
       const drive = await ensureProjectDrive(source.accountId, t.projectId);
-      if (!drive.platinumVolumeId || !(await storage.exists(drive.platinumVolumeName, `${FOLD_MARKER_DIR}/${source.driveId}`))) {
+      if (!drive.platinumVolumeId || !(await storage.exists(driveVolume(drive), `${FOLD_MARKER_DIR}/${source.driveId}`))) {
         done = false;
         break;
       }

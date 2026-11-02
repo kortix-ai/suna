@@ -69,7 +69,9 @@ describe('resolveSandboxOnBoot', () => {
     ['kortix.yaml', 'sandbox:\n  on_boot: "pnpm dev"\n', 'pnpm dev'],
     ['kortix.yaml', 'sandbox:\n  on_boot: pnpm dev\n', 'pnpm dev'],
     ['kortix.yaml', 'sandbox:\n  on_boot: |\n    mkdir -p /mnt/data\n    printf ready > /mnt/data/status\n', 'mkdir -p /mnt/data\nprintf ready > /mnt/data/status'],
-    ['kortix.toml', '[sandbox]\non_boot = "pnpm dev"\n', 'pnpm dev'],
+    ['kortix.yml', 'sandbox:\n  on_boot: pnpm dev\n', 'pnpm dev'],
+    // TOML is not a manifest format: a kortix.toml is not read.
+    ['kortix.toml', '[sandbox]\non_boot = "pnpm dev"\n', null],
     ['kortix.yaml', 'sandbox:\n  cpu: 4\n', null],
   ])('%s %j → %j', async (file, body, expected) => {
     writeFileSync(join(workspace, file), body)

@@ -36,7 +36,8 @@
 
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { LEGACY_OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_DIR, SKILLS_DIR } from '@kortix/manifest-schema/layout';
+import { manifestCandidatePaths } from '@kortix/manifest-schema';
+import { SKILLS_DIR } from '@kortix/manifest-schema/layout';
 import { type Auth, loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { type ApiClient, ApiError, clientFromAuth } from '../api/client.ts';
 import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
@@ -115,9 +116,6 @@ Examples:
 Optional (non-system) skills live in the marketplace:
   kortix marketplace list --type skill
 `;
-
-/** Where a skill's files live inside a Kortix project: `skills/`, or the legacy dir. */
-const SKILL_ROOTS = [SKILLS_DIR, `${LEGACY_OPENCODE_CONFIG_DIR}/skills`];
 
 function parseFlags(argv: string[]): SkillsFlags {
   return {
@@ -346,20 +344,13 @@ async function skillsFile(argv: string[], flags: SkillsFlags, cmd: string): Prom
   return 0;
 }
 
-/** Walk up from cwd to a Kortix project root, else use cwd. Keys on a project
- *  marker (a `kortix.yaml`/`kortix.toml` manifest or an OpenCode config dir),
- *  not a bare `.kortix/` — otherwise the CLI's own `~/.kortix` home dir matches. */
+/** Walk up from cwd to a Kortix project root, else use cwd. Keys on the
+ *  manifest (`kortix.yaml` / `kortix.yml`), not a bare `.kortix/` — otherwise
+ *  the CLI's own `~/.kortix` home dir matches. */
 function projectRoot(): string {
   let dir = process.cwd();
   for (let i = 0; i < 8; i += 1) {
-    if (
-      existsSync(join(dir, 'kortix.yaml')) ||
-      existsSync(join(dir, 'kortix.toml')) ||
-      existsSync(join(dir, OPENCODE_CONFIG_DIR)) ||
-      existsSync(join(dir, LEGACY_OPENCODE_CONFIG_DIR))
-    ) {
-      return dir;
-    }
+    if (manifestCandidatePaths().some((file) => existsSync(join(dir, file)))) return dir;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
@@ -369,12 +360,7 @@ function projectRoot(): string {
 
 function skillsPath(argv: string[], flags: SkillsFlags): number {
   const name = argv.find((a) => !a.startsWith('-'));
-  const root = projectRoot();
-  // The root that holds the named skill; else the first skills dir that
-  // exists (a legacy project has only `.kortix/opencode/skills`); else `skills/`.
-  const dirs = SKILL_ROOTS.map((dir) => join(root, dir));
-  const holding = name ? dirs.find((dir) => existsSync(join(dir, name))) : undefined;
-  const base = holding ?? dirs.find((dir) => existsSync(dir)) ?? dirs[0]!;
+  const base = join(projectRoot(), SKILLS_DIR);
   const target = name ? join(base, name) : base;
   if (flags.json) {
     emitJson({ path: target, exists: existsSync(target) });

@@ -23,7 +23,7 @@ import {
  */
 import { and, eq, inArray, isNotNull, notExists, or, sql } from 'drizzle-orm';
 import { getImpersonationContext } from '../shared/impersonation';
-import { parse as parseToml } from 'smol-toml';
+import { parse as parseYaml } from 'yaml';
 import { hasEmailInboxes, loadSlackInstall, purgeLegacyEmailState } from '../channels/install-store';
 import { assertAllowedEndpointUrl, assertAllowedSourceAddress } from '../marketplace/catalog';
 import { safeEgressFetch, UnsafeEgressError } from '../shared/ssrf-guard';
@@ -44,7 +44,7 @@ import {
   getProjectSecretValueForConsumer,
 } from '../projects/secrets';
 import { SecretUndecryptableError } from '../secrets/undecryptable';
-import { type GitTriggerSpec, extractTriggers, readManifest } from '../projects/triggers';
+import { type GitTriggerSpec, extractTriggers, readManifest, runtimeManifest } from '../projects/triggers';
 import { syncDeclaredApps } from '../apps/app-manifest';
 import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
 import { reconcileEventSubscriptions } from '../projects/surface';
@@ -542,7 +542,9 @@ async function syncProjectConnectorsFenced(
   let declaredSpecs: ConnectorSpec[] = [];
   let triggerSpecs: GitTriggerSpec[] | null = null;
   if (manifest) {
-    const triggers = extractTriggers(manifest);
+    // The triggers a running project applies: one with a validation error is
+    // kept, off (`runtimeManifest`), so its runtime row and grants survive.
+    const triggers = extractTriggers(runtimeManifest(manifest));
     triggerSpecs = triggers.specs;
     await reconcileProjectTriggerRuntime(projectId, triggers.specs);
     errors.push(...triggers.errors.map((e) => ({ slug: e.slug, error: e.error })));
@@ -1644,7 +1646,7 @@ async function loadHttpRoutes(
       throw err;
     }
   }
-  const parsed = /\.toml$/i.test(spec) ? (parseToml(raw) as any) : JSON.parse(raw);
+  const parsed = /\.ya?ml$/i.test(spec) ? parseYaml(raw) : JSON.parse(raw);
   const routes = Array.isArray(parsed?.routes) ? parsed.routes : [];
   return routes as HttpRouteSpec[];
 }

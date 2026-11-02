@@ -44,7 +44,7 @@ function releaseAt(commit: string): ConfigRelease {
   return {
     release_id: configReleaseId(tree, etag),
     source_commit: commit,
-    config_dir: '.kortix/opencode',
+    config_dir: null,
     config_tree_id: tree,
     archive: { url: `/v1/projects/${PROJECT}/config-archives/${tree}`, bytes: 10 },
     files: [],
@@ -151,8 +151,8 @@ describe('project quarantine', () => {
     expect((await desired()).fallbackReason).toBeNull();
   });
 
-  // 2026-10-05: a tip the builder cannot build (archive over the limit, a
-  // missing plugin, a git error) used to reach the box as `release_id: null`
+  // 2026-10-05: a tip the builder cannot build (archive over the limit, a git
+  // error) used to reach the box as `release_id: null`
   // plus governance. The daemon derived a governance-only ID from it and ran
   // the image default: no project tools, skills or plugins, `fallback_reason:
   // null`, and `stale: true` that no reload could clear.
@@ -160,13 +160,13 @@ describe('project quarantine', () => {
     await desired();
     await report(S1, { running: idAt(C1) });
     tip = C2;
-    unbuildable.set(C2, 'OpenCode plugin not found in harnesses/opencode/plugins: x.ts');
+    unbuildable.set(C2, 'git archive failed: object not found');
     const result = await desired();
     expect(result.descriptor.release_id).toBe(idAt(C1));
     expect(result.descriptor.source_commit).toBe(C1);
     expect(result.baseSha).toBe(C2);
     expect(result.fallbackReason).toContain(C2.slice(0, 12));
-    expect(result.fallbackReason).toContain('OpenCode plugin not found');
+    expect(result.fallbackReason).toContain('git archive failed');
     expect(result.fallbackReason).toContain(C1.slice(0, 12));
   });
 
@@ -193,10 +193,10 @@ describe('project quarantine', () => {
   });
 
   test('an unbuildable tip with no proven release stays unassigned and says why', async () => {
-    unbuildable.set(C1, 'OpenCode plugin not found in harnesses/opencode/plugins: x.ts');
+    unbuildable.set(C1, 'git archive failed: object not found');
     const result = await desired();
     expect(result.descriptor.release_id).toBeNull();
-    expect(result.fallbackReason).toContain('OpenCode plugin not found');
+    expect(result.fallbackReason).toContain('git archive failed');
   });
 
   test('the fallback is the newest proven release, never an unproven or quarantined one', async () => {

@@ -5,9 +5,10 @@ import { validateManifest } from '@kortix/manifest-schema';
 
 // The managed skills are the docs every session agent reads, and the API MCP
 // serves them to outside clients too. This test fails when their text drifts
-// from the code: a manifest example that is not v3, a CLI command or feature
-// flag that does not exist, a retired runtime or provider, or a kortix-system
-// that outgrows its budget. Static: it reads files and runs nothing.
+// from the code: a manifest example that does not validate, a CLI command or
+// feature flag that does not exist, a retired runtime, manifest format or
+// provider, or a kortix-system that outgrows its budget. Static: it reads
+// files and runs nothing.
 
 const TEMPLATES = join(import.meta.dir, '..', '..', 'templates');
 const REPO = join(import.meta.dir, '..', '..', '..', '..');
@@ -25,6 +26,8 @@ const SKILL_FILES = SKILL_ROOTS.flatMap(walk)
   .filter((abs) => abs.endsWith('.md'))
   .sort()
   .map((abs) => ({ path: relative(TEMPLATES, abs).split(sep).join('/'), text: readFileSync(abs, 'utf8') }));
+
+const SCHEMA_LINE = '# yaml-language-server: $schema=https://kortix.com/schema/kortix.schema.json';
 
 const lineOf = (text: string, index: number) => text.slice(0, index).split('\n').length;
 const readRepo = (path: string) => readFileSync(join(REPO, path), 'utf8');
@@ -71,14 +74,17 @@ function codeBlocks(text: string): CodeBlock[] {
   return out;
 }
 
-// A retired runtime, manifest version or sandbox provider. Every session runs
-// pi, new projects are kortix_version 3, and Platinum is the only provider.
+// A retired runtime, manifest format or sandbox provider. Every session runs
+// pi, kortix.yaml has one format with no version, and Platinum is the only
+// provider.
 const RETIRED_TERMS: ReadonlyArray<{ term: string; pattern: RegExp }> = [
   { term: 'opencode', pattern: /opencode/gi },
   { term: 'harnesses/opencode', pattern: /harnesses\/opencode/gi },
   { term: 'kortix.toml', pattern: /kortix\.toml/gi },
-  { term: 'kortix_version: 1', pattern: /kortix_version:\s*1\b/gi },
-  { term: 'kortix_version: 2', pattern: /kortix_version:\s*2\b/gi },
+  { term: 'kortix_version', pattern: /kortix_version/gi },
+  { term: 'a versioned schema URL', pattern: /kortix\.v\d+\.schema\.json/gi },
+  { term: 'kortix schema --version', pattern: /schema --version/gi },
+  { term: 'kortix projects upgrade', pattern: /projects upgrade/gi },
   { term: 'daytona', pattern: /daytona/gi },
   { term: 'e2b', pattern: /\be2b\b/gi },
 ];
@@ -99,17 +105,22 @@ describe('managed skills drift', () => {
     expect(skills).toContain('managed/skills/kortix-system/SKILL.md');
   });
 
-  test('every manifest example with kortix_version validates as v3', () => {
+  // A full manifest example starts with the schema line; a fragment does not.
+  test('every full manifest example names the one schema and validates', () => {
     const invalid: string[] = [];
+    let examples = 0;
     for (const file of SKILL_FILES) {
       for (const block of codeBlocks(file.text)) {
-        if (!/^kortix_version\s*:/m.test(block.body)) continue;
-        const result = validateManifest(block.body, 'yaml');
-        const errors = result.issues.filter((i) => i.severity === 'error').map((i) => `${i.path}: ${i.message}`);
-        if (result.parsed?.kortix_version !== 3) errors.unshift('not kortix_version 3');
+        if (!/^# yaml-language-server: \$schema=/m.test(block.body)) continue;
+        examples += 1;
+        const errors = validateManifest(block.body)
+          .issues.filter((i) => i.severity === 'error')
+          .map((i) => `${i.path}: ${i.message}`);
+        if (!block.body.includes(SCHEMA_LINE)) errors.unshift(`not ${SCHEMA_LINE}`);
         if (errors.length > 0) invalid.push(`${file.path}:${block.line} ${errors.join('; ')}`);
       }
     }
+    expect(examples).toBeGreaterThanOrEqual(1);
     expect(invalid).toEqual([]);
   });
 

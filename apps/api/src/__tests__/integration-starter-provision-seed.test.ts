@@ -1,8 +1,8 @@
 /**
  * P0 regression: POST /projects/provision (projects.ts) stamps
  * `metadata.require_declared_agents = true` on EVERY new project, but the
- * starter it seeded used to ship a kortix_version 1 manifest with no declared
- * agents / no `default_agent` — so a fresh project's first session (agent
+ * starter it seeded used to ship a manifest with no declared agents / no
+ * `default_agent` — so a fresh project's first session (agent
  * `default`, the no-explicit-agent path every UI/CLI session takes) was
  * rejected with AGENT_NOT_DECLARED before a sandbox was ever provisioned.
  *
@@ -20,7 +20,7 @@ import { extractAgents, resolveGovernedAgentGrant } from '../projects/agents';
 import { parseManifestString } from '../projects/triggers';
 
 describe('buildProjectSeedFiles — the seeded manifest satisfies its own require_declared_agents stamp', () => {
-  test('seeds a v3 kortix.yaml, not a v1 kortix.toml', async () => {
+  test('seeds a kortix.yaml with no kortix_version, and no kortix.toml', async () => {
     const seed = await buildProjectSeedFiles({
       projectName: 'Acme Co',
       repoFullName: 'kortix/acme-co',
@@ -31,7 +31,7 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
 
     const manifest = seed.files.find((f) => f.path === 'kortix.yaml');
     expect(manifest).toBeDefined();
-    expect(manifest?.content).toContain('kortix_version: 3');
+    expect(manifest?.content).not.toContain('kortix_version');
     expect(seed.files.some((f) => f.path === 'kortix.toml')).toBe(false);
   });
 
@@ -44,7 +44,7 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
       now: new Date('2026-07-05T00:00:00Z').toISOString(),
     });
     const manifestFile = seed.files.find((f) => f.path === 'kortix.yaml')!;
-    const result = validateManifest(manifestFile.content, 'yaml');
+    const result = validateManifest(manifestFile.content);
     expect(result.valid).toBe(true);
     expect(result.issues.filter((i) => i.severity === 'error')).toEqual([]);
   });
@@ -58,7 +58,7 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
       now: new Date('2026-07-05T00:00:00Z').toISOString(),
     });
     const manifestFile = seed.files.find((f) => f.path === 'kortix.yaml')!;
-    const manifest = parseManifestString(manifestFile.content, 'yaml', 'kortix.yaml');
+    const manifest = parseManifestString(manifestFile.content, 'kortix.yaml');
     const loaded = extractAgents(manifest);
 
     // projects.ts stamps require_declared_agents:true and never sets
@@ -74,7 +74,7 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
       throw new Error(`expected ok:true, got AGENT_NOT_DECLARED: ${governed.error}`);
     }
     expect(governed.grant).toEqual({
-      agent: 'kortix',
+      agent: 'worker',
       connectors: 'all',
       permissions: 'all',
       env: 'all',

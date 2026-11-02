@@ -1574,7 +1574,7 @@ flow(
 
       await ctx.step('push a manifest with one good and one broken trigger → GET lists the good one and names the broken one in errors', async () => {
         push(
-          'kortix_version: 2\nproject:\n  name: trg19\ndefault_agent: kortix\nagents:\n  kortix: {}\ntriggers:\n' +
+          'project:\n  name: trg19\ndefault_agent: kortix\nagents:\n  kortix: {}\ntriggers:\n' +
             '  - slug: keep-me\n    name: Keep me\n    type: cron\n    cron: "0 0 3 * * *"\n    timezone: UTC\n    prompt: keep\n' +
             '  - slug: broken\n    type: cron\n    prompt: no cron field here\n',
           'ke2e: one broken trigger',
@@ -1590,7 +1590,7 @@ flow(
       });
 
       await ctx.step('push an unparseable manifest → GET 200 {triggers:[], errors:[(manifest)]}; the runtime row survives', async () => {
-        push('kortix_version: [invalid\n', 'ke2e: unparseable manifest');
+        push('agents: [invalid\n', 'ke2e: unparseable manifest');
         const listed = await waitFor(list, {
           until: (v) => v.errors.some((e) => e.slug === '(manifest)'),
           timeoutMs: 90_000,
@@ -2726,7 +2726,7 @@ flow(
 );
 
 /**
- * TRG-36 — Pause all automations (KRTX-1721). One account switch stops every
+ * TRG-36 — Pause all triggers (KRTX-1721). One account switch stops every
  * automatic fire in every project of the account; a manual fire still runs.
  * On its own team account: the switch would otherwise pause every concurrent
  * flow on the shared one. Local only: a fire that runs answers 402 (no usable
@@ -2809,10 +2809,10 @@ flow(
         if (login.exitCode !== 0) throw new Error(`login failed: ${login.all}`);
         const pause = await sb.run(['triggers', 'pause', '--account-wide']);
         throwIfCliInfraFailure(pause, 'triggers pause --account-wide');
-        if (pause.exitCode !== 0 || !pause.stdout.includes('All automations PAUSED')) throw new Error(`pause --account-wide: exit ${pause.exitCode}: ${pause.all}`);
+        if (pause.exitCode !== 0 || !pause.stdout.includes('All triggers PAUSED')) throw new Error(`pause --account-wide: exit ${pause.exitCode}: ${pause.all}`);
         (await owner.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', true);
         const resume = await sb.run(['triggers', 'resume', '--account-wide']);
-        if (resume.exitCode !== 0 || !resume.stdout.includes('All automations RESUMED')) throw new Error(`resume --account-wide: exit ${resume.exitCode}: ${resume.all}`);
+        if (resume.exitCode !== 0 || !resume.stdout.includes('All triggers RESUMED')) throw new Error(`resume --account-wide: exit ${resume.exitCode}: ${resume.all}`);
         (await owner.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', false);
       } finally {
         sb.dispose();

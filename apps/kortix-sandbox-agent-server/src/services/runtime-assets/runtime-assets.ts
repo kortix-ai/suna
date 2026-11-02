@@ -13,10 +13,9 @@ import {
 } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
-import type { Config } from '@/lib/config/config'
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
-import { harnessAssets, swapAssets, stagedAgentSha, agentUpdatesPinned, recentlyFullyConverged, noteRuntimeConvergence, requestAgentSwapIfIdle, applyStagedAssetsIfIdle } from './runtime-assets-swap-report'
-export { AGENT_SWAP_EXIT_CODE, runtimeConvergenceReport, runningRuntimeAssets, __resetVerifiedDigestsForTests, resetRuntimeConvergenceReportForTests, noteRuntimeConvergence, requestAgentSwapIfIdle, applyStagedAssetsIfIdle, recentlyFullyConverged, __resetReconcileCooldownForTests, __setConvergenceTimestampForTests, registerAgentSwapBlocker, resetAgentSwapBlockersForTests, agentSwapRequiresUnattendedBox, registerHarnessAssets, resetHarnessAssetsForTests, configureRuntimeConvergence, resetRuntimeConvergenceForTests } from './runtime-assets-swap-report'
+import { harnessAssets, swapAssets, stagedAgentSha, agentUpdatesPinned, recentlyFullyConverged, noteRuntimeConvergence, requestAgentSwapIfIdle } from './runtime-assets-swap-report'
+export { AGENT_SWAP_EXIT_CODE, runtimeConvergenceReport, runningRuntimeAssets, __resetVerifiedDigestsForTests, resetRuntimeConvergenceReportForTests, noteRuntimeConvergence, requestAgentSwapIfIdle, recentlyFullyConverged, __resetReconcileCooldownForTests, __setConvergenceTimestampForTests, registerAgentSwapBlocker, resetAgentSwapBlockersForTests, agentSwapRequiresUnattendedBox, registerHarnessAssets, resetHarnessAssetsForTests, configureRuntimeConvergence, resetRuntimeConvergenceForTests } from './runtime-assets-swap-report'
 export type { AgentSwapDecision, AgentSwapOptions, RuntimeConvergenceReport, RunningRuntimeAssets } from './runtime-assets-swap-report'
 import type {
   HarnessAssetOutcome,
@@ -38,10 +37,8 @@ import { withReleaseStoreLock } from '@/lib/release-store-lock'
 
 /**
  * What the convergence pass is doing RIGHT NOW, for the proxy's not-ready
- * answers (X-Kortix-Boot-Phase). A pass that installs a new OpenCode pin can
- * hold a box in "not ready" for a minute or more (a production box:
- * 1.18.19 → 1.18.23 on resume, 53 s first init on top); the API's boot budget
- * must be able to tell "still working" from "stuck", and this is the signal.
+ * answers (X-Kortix-Boot-Phase). The API's boot budget must be able to tell
+ * "still working" from "stuck", and this is the signal.
  */
 let runtimeAssetsActivityLabel: string | null = null
 export function runtimeAssetsActivity(): string | null {
@@ -200,9 +197,8 @@ export interface RuntimeAssetsResult {
  * decorated header (`header('Kortix CLI', VERSION)` in apps/cli/src/index.ts),
  * so comparing its stdout to the manifest's `cli_version` would assert a
  * formatting detail rather than a fact — and a false negative would freeze CLI
- * updates fleet-wide while looking like a safety feature. `opencode --version`
- * prints a bare version, which is why `installOpencodeVersion` can and does
- * compare it. What is asserted here is the thing that actually differs between a
+ * updates fleet-wide while looking like a safety feature. What is asserted
+ * here is the thing that actually differs between a
  * good artifact and a bad one: it executes.
  *
  * It cannot prove the box BOOTS on the new daemon — that needs a second daemon,
@@ -241,8 +237,6 @@ export interface RuntimeAssetsOptions {
   cliPath?: string
   managedSkillsDir?: string
   statePath?: string
-  /** Active harness config dir; the overlay is re-applied into it after an update. */
-  configDir?: string
   fetchImpl?: typeof fetch
   /** Where `agent.next` is staged. Defaults to `$KORTIX_AGENT_STATE_DIR`. */
   agentStateDir?: string
@@ -651,20 +645,13 @@ export async function reconcileRuntimeAssets(
           )
           skills = 'failed'
         } else {
-          // Rewrite the overlay and re-apply it to the live config dir in ONE
-          // section of the release-store lock: a release verification that
-          // saw the new overlay names without the injected files, or the
-          // injected files without the names, reported an added file and
-          // rebuilt the running release (DEF-5). The boot-time injection
-          // already ran, so nothing else would pick the new bodies up.
-          await withReleaseStoreLock(async () => {
-            await writeOverlay(skillsDir, payload.files)
-            if (options.configDir) {
-              await assets.injectSkills(options.configDir, skillsDir).catch((err) =>
-                logger.warn('[runtime-assets] overlay re-injection failed', { err: String(err) }),
-              )
-            }
-          })
+          // Under the release-store lock: a release verification must never
+          // see half of a rewritten overlay (DEF-5). Then the runtime reloads
+          // its skills; nothing else would pick the new bodies up.
+          await withReleaseStoreLock(() => writeOverlay(skillsDir, payload.files))
+          await assets.skillsUpdated?.().catch((err) =>
+            logger.warn('[runtime-assets] skill reload after the overlay update failed', { err: String(err) }),
+          )
           nextState.managed_skills_hash = skillsHash
           skills = 'updated'
           logger.info('[runtime-assets] managed-skill overlay updated from the API', {
@@ -832,13 +819,10 @@ let inFlight: Promise<RuntimeAssetsResult> | null = null
  * Fire-and-forget entry point for the boot/refresh/adopt call sites. Returns
  * immediately; the pass runs detached and swallows everything.
  */
-export function ensureLatestKortixAssets(
-  configDir?: string,
-  opts: { atIdleBoundary?: boolean } = {},
-): void {
+export function ensureLatestKortixAssets(): void {
   if (inFlight) return
   if (recentlyFullyConverged()) return
-  inFlight = reconcileRuntimeAssets({ configDir, assets: swapAssets() })
+  inFlight = reconcileRuntimeAssets({ assets: swapAssets() })
   void inFlight
     .finally(() => {
       inFlight = null
@@ -857,7 +841,7 @@ export function ensureLatestKortixAssets(
       // actually waiting. A busy box simply keeps the staging: the supervisor
       // installs it at the next start.
       if (result.agentSwapPending) {
-        const decision = await requestAgentSwapIfIdle({ atIdleBoundary: opts.atIdleBoundary })
+        const decision = await requestAgentSwapIfIdle()
         if (decision !== 'exited') {
           logger.info('[runtime-assets] agent update staged; swap deferred', { decision })
         }
@@ -866,53 +850,7 @@ export function ensureLatestKortixAssets(
     .catch((err) => logger.warn('[runtime-assets] reconcile threw', { err: String(err) }))
 }
 
-/**
- * The call-site form: resolve the session's live harness config dir, then run a
- * detached pass. Returns synchronously — nothing here is ever on a readiness or
- * request-latency path.
- */
-export function scheduleRuntimeAssetsReconcile(
-  cfg: Config,
-  opts: { atIdleBoundary?: boolean } = {},
-): void {
-  void harnessAssets(cfg).resolveConfigDir(cfg)
-    .then((configDir) => ensureLatestKortixAssets(configDir, opts))
-    // A config dir we cannot resolve costs the overlay re-injection, not the
-    // CLI update — still worth running.
-    .catch(() => ensureLatestKortixAssets(undefined, opts))
-}
-
-/**
- * THE TRIGGER THAT WAS MISSING — a turn just ended, so converge and apply.
- *
- * Before this, `scheduleRuntimeAssetsReconcile` had exactly two non-test call
- * sites: `runtimeReadyTail` (boot) and `POST /kortix/refresh`. The swap request
- * lives in the tail of that same pass, and the boot pass fires seconds after
- * `opencode-ready`, so it always answered `too-young` against the five-minute
- * boot-flap floor. No later pass existed. The result: a long-lived box staged a
- * daemon update and never installed it, for as long as the box lived.
- *
- * TWO INDEPENDENT STEPS, and the independence is the point:
- *
- *  1. a fresh reconcile pass — single-flighted, a no-op when one is running;
- *  2. apply whatever is ALREADY staged, regardless of (1). The binary that needs
- *     installing was staged by an EARLIER pass, so a box whose pass happens to be
- *     in flight must still swap.
- *
- * NOT A TIMER. It is called from the box's own `session.idle` frame, which is
- * the only moment the box knows for certain that no turn is running. A timer
- * near a readiness decision is exactly what the config-releases AST tripwires
- * forbid, and this must stay on the right side of that line.
- *
- * Returns synchronously and swallows everything: a turn end is never delayed or
- * failed by this.
- */
-export function convergeRuntimeAssetsAtTurnEnd(cfg: Config): void {
-  scheduleRuntimeAssetsReconcile(cfg, { atIdleBoundary: true })
-  void applyStagedAssetsIfIdle()
-    .then((decision) => {
-      if (decision === 'exited' || decision === 'nothing-staged') return
-      logger.info('[runtime-assets] staged update not applied at this turn boundary', { decision })
-    })
-    .catch((err) => logger.warn('[runtime-assets] turn-end apply threw', { err: String(err) }))
+/** The call-site form: a detached pass. Never on a readiness or request-latency path. */
+export function scheduleRuntimeAssetsReconcile(): void {
+  ensureLatestKortixAssets()
 }

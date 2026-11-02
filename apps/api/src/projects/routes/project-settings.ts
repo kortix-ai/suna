@@ -34,7 +34,6 @@ import {
 } from '../lib/effort-default';
 import {
   featureFlagDef,
-  isDerivedFeatureFlag,
   isFeatureFlagKey,
   isOperatorOnlyFeatureFlag,
   resolveFeatureFlag,
@@ -132,9 +131,6 @@ const patchFeatureFlagHandler = async (c: any) => {
   assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
   if (!isFeatureFlagKey(feature)) {
     return c.json({ error: `Unknown feature flag '${feature}'` }, 400);
-  }
-  if (isDerivedFeatureFlag(feature)) {
-    return c.json({ error: `'${feature}' follows the project's Volumes flag and cannot be set on its own` }, 400);
   }
   if (enabled !== null && typeof enabled !== 'boolean') {
     return c.json({ error: 'enabled must be a boolean or null' }, 400);
@@ -277,6 +273,8 @@ export function registerProjectSettingsRoutes(): void {
     // the archive, the project answers 404, so a release could never be retried.
     const { releasePromptAttachmentsForProject } = await import('../prompt-attachments');
     await releasePromptAttachmentsForProject(projectId);
+    const { releaseArtifactCommentScreenshotsForProject } = await import('../../artifacts/comment-screenshot-objects');
+    await releaseArtifactCommentScreenshotsForProject(projectId);
 
     // Deleting the project deletes the Kortix-managed upstream with it; the
     // helper no-ops for user-connected/BYO repositories and never touches

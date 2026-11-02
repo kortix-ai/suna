@@ -16,6 +16,8 @@ type ToastOptions = {
   description?: string;
   duration?: number;
   id?: string | number;
+  /** Runs when the toast leaves: a dismissal or its timeout. */
+  onClose?: () => void;
   position?:
     'bottom-right' | 'bottom-left' | 'top-right' | 'top-left' | 'top-center' | 'bottom-center';
   /** Text links under the body, joined by a dot. */
@@ -71,6 +73,10 @@ const toastData = (
   duration,
   position: isMobile ? 'top-center' : options?.position || DEFAULT_POSITION,
 });
+
+/** sonner's two ways off the screen, as one callback. */
+const closeCallbacks = (onClose: (() => void) | undefined) =>
+  onClose ? { onDismiss: onClose, onAutoClose: onClose } : {};
 
 export type ToastVariant = 'success' | 'progress' | 'error' | 'info' | 'warning';
 
@@ -378,7 +384,7 @@ const renderToast = (
         onDismiss={() => toast.dismiss(t)}
       />
     ),
-    toastData(options, duration, isMobile),
+    { ...toastData(options, duration, isMobile), ...closeCallbacks(options?.onClose) },
   );
 };
 
@@ -487,7 +493,7 @@ export const customToast = (
   const isMobile = window.innerWidth <= 768;
   return toast.custom((t) => render(() => toast.dismiss(t)), {
     ...toastData(options, options.duration ?? DEFAULT_DURATION, isMobile),
-    ...(options.onClose ? { onDismiss: options.onClose, onAutoClose: options.onClose } : {}),
+    ...closeCallbacks(options.onClose),
   });
 };
 

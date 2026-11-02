@@ -1,9 +1,15 @@
-import { describe, expect, test } from 'bun:test';
-import { QueryClient } from '@tanstack/react-query';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createElement } from 'react';
+import { act, create } from 'react-test-renderer';
+import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
+import { configureKortix } from '../core/http/config';
+import type { RuntimeEventMessage } from '../core/runtime/runtime-rest-client';
+import { __resetSessionControlStreamsForTests, openSessionStream } from '../core/session/control-stream';
 import { onSessionStopped } from '../core/http/session-stopped';
 import { sessionStartKey } from '../core/rest/projects-client';
 import { qk } from './query-keys';
-import { applySessionControlFrame, patchCachedSessionTitle } from './use-session-stream';
+import { applySessionControlFrame, patchCachedSessionTitle, useSessionStream } from './use-session-stream';
 
 const P = 'p1';
 const S = 's1';
@@ -117,5 +123,61 @@ describe('patchCachedSessionTitle', () => {
     ]);
     expect(client.getQueryData<{ pages: Array<{ items: Array<{ name: string }> }> }>(qk.project.sessionsPaged(P))?.pages[0]?.items[0]?.name).toBe('Sea');
     expect(client.getQueryData<{ name: string }>(qk.project.session(P, S))?.name).toBe('Mine');
+  });
+});
+
+describe('useSessionStream', () => {
+  afterEach(() => __resetSessionControlStreamsForTests());
+
+  test('a page that returns to a control-only stream is stream driven when the upgrade starts, with no new frame', async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    let push: (frame: Record<string, unknown>) => void = () => {};
+    configureKortix({
+      backendUrl: 'http://kortix.invalid/v1',
+      getToken: async () => 'token',
+      eventStreamTransport: async function* (request: { url: string; signal: AbortSignal }) {
+        const pending: RuntimeEventMessage[] = [];
+        let wake: () => void = () => {};
+        push = (frame) => {
+          pending.push({ data: JSON.stringify(frame) });
+          wake();
+        };
+        let ended = false;
+        request.signal.addEventListener('abort', () => {
+          ended = true;
+          wake();
+        });
+        while (!ended) {
+          if (pending.length === 0) await new Promise<void>((resolve) => (wake = resolve));
+          while (pending.length > 0) yield pending.shift()!;
+        }
+      },
+    });
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
+
+    // The page left: only the watch holds the stream, and it reconnected control-only.
+    const firstPage = openSessionStream({ projectId: 'P1', sessionId: 'S1', runtime: true, schema: 'v2' });
+    const watch = openSessionStream({ projectId: 'P1', sessionId: 'S1' });
+    await settle();
+    push({ channel: 'control', cepoch: 'capi_t', cseq: 1, type: 'kortix.control.session', at: 1, payload: { known: true } });
+    await settle();
+    firstPage.close();
+    await settle();
+
+    const client = new QueryClient();
+    function Page() {
+      useSessionStream('P1', 'S1');
+      return null;
+    }
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(createElement(QueryClientProvider, { client }, createElement(Page)));
+      await settle();
+    });
+    expect(useSandboxConnectionStore.getState().streamDriven).toBe(true);
+
+    await act(async () => renderer.unmount());
+    expect(useSandboxConnectionStore.getState().streamDriven).toBe(false);
+    watch.close();
   });
 });

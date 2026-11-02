@@ -15,7 +15,7 @@ mock.module('../../shared/crypto', () => ({ fingerprintTunnelCredentialHash: () 
 mock.module('../../shared/instance', () => ({ API_INSTANCE: {}, API_INSTANCE_ID: 'current-api-instance', API_STARTED_AT: '2026-10-29T12:00:00Z' }));
 mock.module('../../shared/pg-broadcast', () => ({ TUNNEL_FORWARD_CHANNEL: 'test-channel', isPgBroadcastListening: () => true, onTunnelForwardNotify() {} }));
 mock.module('./relay', () => ({ tunnelRelay: {} }));
-const { startTunnelRpcForwarder, stopTunnelRpcForwarder } = await import('./cluster-forwarder');
+const { startTunnelRpcForwarder, stopTunnelRpcForwarder, sweepExpiredTunnelForwards } = await import('./cluster-forwarder');
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
 afterEach(() => {
@@ -26,8 +26,9 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-test('API-only RPC transport claims only this live replica and never sweeps inherited expired rows', async () => {
+test('the RPC transport claims only rows addressed to this process and never sweeps expired rows', async () => {
   jest.useFakeTimers();
+  config.KORTIX_WORKERS_ENABLED = true;
   startTunnelRpcForwarder();
   jest.advanceTimersByTime(1);
   await flush();
@@ -37,12 +38,7 @@ test('API-only RPC transport claims only this live replica and never sweeps inhe
   expect(deletions).toBe(0);
 });
 
-test('worker-enabled RPC transport also removes expired rows', async () => {
-  jest.useFakeTimers();
-  config.KORTIX_WORKERS_ENABLED = true;
-  startTunnelRpcForwarder();
-  jest.advanceTimersByTime(1);
-  await flush();
-  expect(queries).toHaveLength(1);
+test('the expiry sweep (a scheduled job, worker/jobs/tunnel-forward-expiry.ts) deletes expired rows', async () => {
+  await sweepExpiredTunnelForwards();
   expect(deletions).toBe(1);
 });

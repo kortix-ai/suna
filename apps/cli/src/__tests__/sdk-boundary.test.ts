@@ -155,7 +155,7 @@ describe('scanSource import rules', () => {
 
   test('allows the neutral @kortix/sdk names and OpenCode names from other modules', () => {
     expect(rules("import { useRuntimePtyList, runtimeKeys } from '@kortix/sdk/react';")).toEqual([]);
-    expect(rules("import { ensureOpencodeBin } from './opencode-bin.ts';")).toEqual([]);
+    expect(rules("import { opencodeLegacyPath } from './legacy.ts';")).toEqual([]);
   });
 
   test('flags a deep @kortix/sdk source import', () => {

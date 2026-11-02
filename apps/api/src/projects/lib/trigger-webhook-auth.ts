@@ -7,8 +7,9 @@ import { normalizeString } from './serializers';
  * off `project_monitor_events`. It rides the identical downstream path as
  * `cron` — the session it mints is stamped `trigger:monitor`. `reminder` is a
  * session reminder's fire (`lib/session-reminders.ts`); it only re-prompts a session.
+ * `change_request` is a merged change request (`lib/runtime-triggers.ts`).
  */
-export type TriggerFireSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder' | 'event' | 'app';
+export type TriggerFireSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder' | 'event' | 'app' | 'change_request';
 
 export function normalizeSignatureHeader(value: string | null): string | null {
   const header = normalizeString(value);

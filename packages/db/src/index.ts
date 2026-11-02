@@ -148,10 +148,14 @@ export {
   pushDeviceTokens,
   // Drives (shared folders backed by Platinum volumes)
   drives,
+  driveFolderAdminReads,
   driveGrants,
+  storageCharges,
+  providerOrphanBoxCosts,
   platinumVolumeDeletions,
   driveMountRevocations,
   driveConflicts,
+  driveIndexEntries,
   // Notification inbox, preferences, watchers, Web Push (KRTX-1742)
   notifications,
   notificationPreferences,
@@ -163,14 +167,20 @@ export {
   roomMessages,
   roomMembers,
   sessionIdleWatches,
+  // Cross-session messages and agent-team tasks (@kortix/api-contract/multi-agent)
+  sessionPeerMessages,
+  sessionTasks,
   // Artifacts: published HTML pages (flag artifacts)
   artifacts,
   artifactCommentThreads,
   artifactComments,
+  artifactCommentScreenshotObjects,
   artifactCommentWriteLimits,
   artifactEvents,
   driveCommitAuthors,
   sessionSandboxIdentities,
+  claudeSubscriptionLogins,
+  claudeSubscriptionLoginFlows,
   // Product feedback (POST /v1/feedback)
   feedback,
   // Kortix in Chrome (apps/api/src/chrome)
@@ -321,7 +331,7 @@ export {
 } from './schema/kortix';
 export type { AgentGrant, StoredAgentGrant, ArtifactCommentMention } from './schema/kortix';
 export { readStoredAgentGrant } from './schema/kortix';
-export type { AccountBrandingRecord } from './schema/kortix';
+export type { AccountBrandingRecord, DriveVolumeMoveRecord } from './schema/kortix';
 export type { MemoryThreadLoadLayer } from './schema/kortix';
 export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from './schema/kortix';
 

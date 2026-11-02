@@ -6,7 +6,6 @@ import { join } from 'node:path'
 import { PermissionBroker, compilePermissionPolicy } from '@/harness/pi/interactions'
 import imageGen, { IMAGE_GEN_SESSION_LIMIT, IMAGE_GEN_TURN_LIMIT } from '@/services/tools/kortix/image_gen'
 import imageSearch from '@/services/tools/kortix/image_search'
-import memoryTool from '@/services/tools/kortix/memory'
 import scrapeWebpage from '@/services/tools/kortix/scrape_webpage'
 import showTool from '@/services/tools/kortix/show'
 import webSearch from '@/services/tools/kortix/web_search'
@@ -666,6 +665,7 @@ describe('the Kortix tools follow the capability of what they do', () => {
     expect<string>(rule(policy, tool)).toBe(expected)
   })
 
+  // `memory` is a retired Kortix tool (2026-10-30); a project's ejected copy keeps these rules.
   test.each([
     // A memory write is a file write: `edit` governs it, as it governs `write`.
     ['create', { edit: 'deny' }, 'deny'],
@@ -693,54 +693,6 @@ describe('the Kortix tools follow the capability of what they do', () => {
     await asked
     expect<string>(broker.rule('write', { path: 'a.txt' })).toBe('allow')
     expect<string>(broker.rule('memory', { command: 'view', path: 'memory/a.md' })).toBe('ask')
-  })
-})
-
-describe('memory', () => {
-  const memory = (args: Record<string, unknown>) => Promise.resolve(memoryTool.execute(args, ctx())).then(out)
-
-  test('create, view, str_replace, insert, rename and delete act on <project>/memory', async () => {
-    expect(await memory({ command: 'create', path: 'memory/notes.md', file_text: 'alpha\nbeta' })).toBe('File created successfully at: memory/notes.md')
-    expect(statSync(join(dir, 'memory/notes.md')).mode & 0o777).toBe(0o600)
-    expect(await memory({ command: 'create', path: 'memory/notes.md', file_text: 'x' })).toBe('Error: File memory/notes.md already exists')
-    expect(await memory({ command: 'view', path: 'memory/notes.md' })).toBe("Here's the content of memory/notes.md with line numbers:\n     1\talpha\n     2\tbeta")
-    expect(await memory({ command: 'str_replace', path: 'memory/notes.md', old_str: 'beta', new_str: 'gamma' })).toContain('The memory file has been edited.')
-    expect(await memory({ command: 'insert', path: 'memory/notes.md', insert_line: 0, insert_text: 'top' })).toBe('The file memory/notes.md has been edited.')
-    expect(readFileSync(join(dir, 'memory/notes.md'), 'utf8')).toBe('top\nalpha\ngamma')
-    expect(await memory({ command: 'rename', old_path: 'memory/notes.md', new_path: 'memory/topics/notes.md' })).toBe('Successfully renamed memory/notes.md to memory/topics/notes.md')
-    expect(await memory({ command: 'view', path: 'memory' })).toContain('memory/topics/notes.md')
-    expect(await memory({ command: 'delete', path: 'memory/topics' })).toBe('Successfully deleted memory/topics')
-    expect(await memory({ command: 'delete', path: 'memory' })).toBe('Cannot delete the memory directory itself')
-  })
-
-  test('a path outside memory/ is refused and writes nothing', async () => {
-    mkdirSync(join(dir, 'memory-evil'))
-    writeFileSync(join(dir, 'secret.txt'), 'secret')
-    mkdirSync(join(dir, 'memory'))
-    symlinkSync(dir, join(dir, 'memory', 'out'))
-    expect(await memory({ command: 'create', path: 'memory-evil/x.md', file_text: 'x' })).toBe('Error: Path must start with memory, got: memory-evil/x.md')
-    expect(await memory({ command: 'create', path: 'memory/../escape.md', file_text: 'x' })).toBe('Error: Path memory/../escape.md would escape memory directory')
-    expect(await memory({ command: 'view', path: 'memory/out/secret.txt' })).toBe('Error: Path would escape memory directory via symlink')
-    expect(await memory({ command: 'create', path: '/etc/passwd', file_text: 'x' })).toBe('Error: Path must start with memory, got: /etc/passwd')
-    expect(() => statSync(join(dir, 'escape.md'))).toThrow()
-    expect(() => statSync(join(dir, 'memory-evil/x.md'))).toThrow()
-  })
-
-  test('a command without its required argument names the argument', async () => {
-    expect(await memory({ command: 'view' })).toBe('Error: `path` is required for view.')
-    expect(await memory({ command: 'create', path: 'memory/a.md' })).toBe('Error: `file_text` is required for create.')
-    expect(await memory({ command: 'str_replace', path: 'memory/a.md', old_str: 'a' })).toBe('Error: `new_str` is required for str_replace.')
-    expect(await memory({ command: 'rename', old_path: 'memory/a.md' })).toBe('Error: `new_path` is required for rename.')
-  })
-
-  test('view_range is exactly two integers; any other shape is refused before the file is read', async () => {
-    // A model once streamed a 36,678-number view_range for 714 s: the schema caps the length.
-    expect(memoryTool.parameters.properties.view_range).toMatchObject({ type: 'array', items: { type: 'integer' }, minItems: 2, maxItems: 2 })
-    await memory({ command: 'create', path: 'memory/a.md', file_text: 'one\ntwo\nthree' })
-    expect(await memory({ command: 'view', path: 'memory/a.md', view_range: [2, -1] })).toBe("Here's the content of memory/a.md with line numbers:\n     2\ttwo\n     3\tthree")
-    const refused = 'Error: `view_range` must be two integers [start, end].'
-    for (const view_range of [[], [1], [1, 2, 3], Array.from({ length: 36_678 }, (_, i) => i), [1.5, 2], ['1', '2'], 'all'])
-      expect(await memory({ command: 'view', path: 'memory/a.md', view_range })).toBe(refused)
   })
 })
 
@@ -841,7 +793,7 @@ describe('show', () => {
 
 describe('each Kortix tool is one self-contained module (what `kortix tools eject` copies)', () => {
   const kortixDir = join(import.meta.dir, '../services/tools/kortix')
-  const modules = { web_search: webSearch, image_search: imageSearch, image_gen: imageGen, scrape_webpage: scrapeWebpage, memory: memoryTool, show: showTool }
+  const modules = { web_search: webSearch, image_search: imageSearch, image_gen: imageGen, scrape_webpage: scrapeWebpage, show: showTool }
 
   test('one file per Kortix tool, named after the tool', () => {
     expect(readdirSync(kortixDir).sort()).toEqual(Object.keys(KORTIX_TOOLS).map((name) => `${name}.ts`).sort())

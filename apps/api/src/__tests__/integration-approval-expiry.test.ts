@@ -34,7 +34,7 @@ mock.module('../shared/jwt-verify', () => ({
 }));
 
 const { app } = await import('../index');
-const { runApprovalExpiryTick } = await import('../workers/approval-expiry-worker');
+const { runApprovalExpiryTick } = await import('../worker/jobs/approval-expiry');
 const { makeDbGatewayDeps } = await import('../connectors/db-deps-gateway');
 
 let seeded: SeededProject;

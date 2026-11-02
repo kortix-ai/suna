@@ -11,6 +11,7 @@ import { drainMonitorEvents } from './monitor-observer';
 import { renderPromptTemplate } from './trigger-payload';
 import { fireGitTrigger, markGitTriggerAttemptFailed, markGitTriggerFired } from './trigger-fire';
 import { raiseTriggerAlert } from './trigger-alerts';
+import { pauseTriggerIfAlwaysFailing } from './trigger-failure-pause';
 import { runProjectConnectorSweep } from './trigger-connector-sweep';
 import { schedulerHealth, triggerFireTimeoutMs, triggerScheduleClaimLimit, triggerExecutionConcurrency, connectorSweepIntervalMs, mapWithConcurrency, schedulerSweepIsStale, automaticFirePauseReason, withTimeout } from './trigger-scheduler-state';
 
@@ -127,7 +128,7 @@ async function executeTriggerExecution(
     .from(projects)
     .where(eq(projects.projectId, row.projectId))
     .limit(1);
-  // The project's own pause, then the account's Pause all automations (KRTX-1721).
+  // The project's own pause, then the account's Pause all triggers (KRTX-1721).
   const paused = project && project.status === 'active' ? await automaticFirePauseReason(project) : null;
   if (!project || project.status !== 'active' || paused) {
     const reason = !project
@@ -168,7 +169,8 @@ async function executeTriggerExecution(
         project,
         payload,
         renderedPrompt,
-        source: 'cron',
+        // The slot's own origin (`cron`, or `reminder` for a loop's slot).
+        source: row.source === 'reminder' ? 'reminder' : 'cron',
         idempotencyKey,
       }),
       triggerFireTimeoutMs(),
@@ -181,7 +183,10 @@ async function executeTriggerExecution(
     const message = error instanceof Error ? error.message : String(error);
     const state = await markTriggerExecutionFailed({ row, failedAt, error: message });
     await markGitTriggerAttemptFailed(row.projectId, row.slug, failedAt, message).catch(() => {});
-    if (state === 'dead_lettered') await raiseTriggerAlert({ projectId: row.projectId, slug: row.slug, source: 'fire', error: message });
+    if (state === 'dead_lettered') {
+      await raiseTriggerAlert({ projectId: row.projectId, slug: row.slug, source: 'fire', error: message });
+      await pauseTriggerIfAlwaysFailing({ projectId: row.projectId, slug: row.slug, error: message, now: failedAt });
+    }
     return state === 'queued' ? 'queued' : 'failed';
   }
 }
@@ -239,6 +244,10 @@ async function recordTriggerExecutionResult(
       // gains a usable model; retrying only delays the terminal state the
       // same way a billing rejection does.
       || result.errorCode === 'no_usable_model'
+      // A model this account may not use (createSession's model gate): every
+      // retry is refused the same way. Five tries a slot was 3,665 refused
+      // creates a day for one project on prod (2026-11-02).
+      || result.errorCode === 'INVALID_SESSION_MODEL'
       // The fire already paused the reminder; a retry cannot bring the session back.
       || result.errorCode === 'reminder_session_gone'
       // No retry reaches a repository until a person reconnects GitHub.
@@ -246,7 +255,11 @@ async function recordTriggerExecutionResult(
     const state = await markTriggerExecutionFailed({ row, failedAt: completedAt, error, terminal });
     await markGitTriggerAttemptFailed(row.projectId, row.slug, completedAt, error);
     // Only the dead letter alerts the watchers: a retried attempt may still work.
-    if (state === 'dead_lettered') await raiseTriggerAlert({ projectId: row.projectId, slug: row.slug, source: 'fire', error });
+    if (state === 'dead_lettered') {
+      await raiseTriggerAlert({ projectId: row.projectId, slug: row.slug, source: 'fire', error });
+      // A trigger the owner must fix stops firing after 24 hours of this.
+      await pauseTriggerIfAlwaysFailing({ projectId: row.projectId, slug: row.slug, error, now: completedAt });
+    }
     return state === 'queued' ? 'queued' : 'failed';
 }
 
@@ -341,9 +354,3 @@ export function runProjectTriggerSchedulerTick(): void {
     });
   }
 }
-
-export {
-  startProjectTriggerScheduler,
-  stopProjectTriggerScheduler,
-  triggerSchedulerTimer,
-} from '../../workers/trigger-scheduler-worker';

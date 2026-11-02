@@ -23,13 +23,15 @@ import {
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
 } from '../projects/lib/compile-agent-config';
-import { buildPlatformMetaOpenCodeConfig } from '../projects/lib/platform-meta-agent';
+import { buildMyKortixConfig } from '../projects/lib/my-kortix-agent';
 import type { GitBackedProject } from '../projects/git/types';
+import { __clearOverLimitMemoForTests, isObjectFetchTooLarge, noteOverLimit, recentOverLimit } from '../shared/over-limit-memo';
 import { bumpBounded } from '../shared/ttl-memo';
 import { configArchiveKey, getConfigArchiveStore, type ConfigArchiveStore } from './store';
 import type { ConfigReleaseFile, ConfigReleaseVariant } from './release-tree';
 import {
   buildConfigArchive,
+  commitRootTree,
   ConfigArchiveTooLargeError,
   HEX40,
   isComposedSource,
@@ -50,7 +52,6 @@ export {
   MAX_CONFIG_ARCHIVE_BYTES,
   readComposedRelease,
   resolveReleaseTreeSource,
-  selectedOpenCodePlugins,
 } from './release-tree';
 export type { ConfigReleaseVariant } from './release-tree';
 
@@ -249,7 +250,7 @@ async function compileGovernance(
 ): Promise<string | null> {
   if (variant === 'project') return resolveCompiledAgentConfigForSession(project, commit);
   if (variant === 'none') return EMPTY_GOVERNANCE;
-  if (variant === 'meta') return buildPlatformMetaOpenCodeConfig();
+  if (variant === 'mykortix') return buildMyKortixConfig();
   return resolveSelectedAgentConfigForSession(project, variant.slice('agent:'.length), commit);
 }
 
@@ -299,40 +300,49 @@ async function build(
   // The meta coordinator gets a governance-only release: its box holds no
   // project checkout.
   const governanceOnly = configReleaseId(null, etag);
-  if (variant === 'meta') return { ...withGovernance, release_id: governanceOnly };
+  if (variant === 'mykortix') return { ...withGovernance, release_id: governanceOnly };
   if (variant !== 'project') return toolsRelease(project, mirror, commit, variant, withGovernance, store, archiveLimit);
   let resolved: Awaited<ReturnType<typeof resolveReleaseTreeSource>>;
   try {
-    resolved = await resolveReleaseTreeSource(mirror, project, commit, variant);
+    resolved = await resolveReleaseTreeSource(mirror, project, commit);
   } catch (error) {
     return { ...withGovernance, reason: (error as Error).message };
   }
   if (!('source' in resolved)) {
-    return { ...withGovernance, release_id: governanceOnly, config_dir: resolved.configDir, reason: resolved.reason };
+    return { ...withGovernance, release_id: governanceOnly, reason: resolved.reason };
   }
   const { source } = resolved;
-  const configDir = source.configDir;
   const composed = isComposedSource(source);
 
   let treeId = source.rootTree;
   let files: ConfigReleaseFile[] | null = null;
   let freshArchive: Buffer | null = null;
+  // A project over the cap in the last 6 h is taken to be over it still: an
+  // archive build would download every file of the tree first, only to
+  // throw it away (`over-limit-memo.ts`).
+  let remembered = false;
+  const archiveNeeded = (id: string) => {
+    if (archiveBytes.has(configArchiveKey(project.projectId, id))) return false;
+    const recent = recentOverLimit(project.projectId, 'config-archive');
+    remembered = recent !== null;
+    if (recent) throw new ConfigArchiveTooLargeError(archiveLimit ?? MAX_CONFIG_ARCHIVE_BYTES, recent.bytes);
+    return true;
+  };
   try {
     if (composed) {
       // The tree is only known once composed; the archive builds in the same
       // scratch repository, on an archive-size cache miss only.
-      const read = await readComposedRelease(mirror, source, {
-        limit: archiveLimit,
-        archive: (composedTreeId) => !archiveBytes.has(configArchiveKey(project.projectId, composedTreeId)),
-      });
+      const read = await readComposedRelease(mirror, source, { limit: archiveLimit, archive: archiveNeeded });
       treeId = read.treeId;
       files = read.files;
       freshArchive = read.archive;
-    } else if (!archiveBytes.has(configArchiveKey(project.projectId, treeId))) {
+    } else if (archiveNeeded(treeId)) {
       freshArchive = await buildConfigArchive(mirror, treeId, archiveLimit);
     }
   } catch (error) {
     if (error instanceof ConfigArchiveTooLargeError) {
+      // Only a measured result starts the 6 h: a remembered one must expire.
+      if (!remembered) noteOverLimit(project.projectId, 'config-archive', error.actualBytes ?? error.limit);
       // The release exists; only the API-built archive does not. A v3 box
       // builds it from its checkout or the project snapshot. The answer is a
       // fact of the commit, so it is cached like any release: each miss tars
@@ -342,7 +352,6 @@ async function build(
       return {
         ...withGovernance,
         release_id: configReleaseId(treeId, etag),
-        config_dir: configDir,
         config_tree_id: treeId,
         files: read?.files ?? (await listConfigFiles(mirror, treeId)),
         archive_reason:
@@ -353,7 +362,7 @@ async function build(
     }
     throw error;
   }
-  const located: ConfigRelease = { ...withGovernance, config_dir: configDir, config_tree_id: treeId };
+  const located: ConfigRelease = { ...withGovernance, config_tree_id: treeId };
 
   const key = configArchiveKey(project.projectId, treeId);
   if (freshArchive) {
@@ -391,8 +400,16 @@ async function toolsRelease(
   const modules = agent
     ? Object.entries(compiled.project_tools ?? {}).filter(([name]) => toolAllowed(agent.tools, name)).map(([, path]) => path)
     : [];
-  const rootTree = (await runGitCapture(['rev-parse', `${commit}^{tree}`], mirror)).stdout.trim();
-  const files = modules.length > 0 ? await toolModuleFiles(mirror, rootTree, modules) : [];
+  const rootTree = modules.length > 0 ? await commitRootTree(mirror, commit) : null;
+  const tooLarge = { ...withGovernance, reason: `the project tool modules exceed the ${archiveLimit ?? MAX_CONFIG_ARCHIVE_BYTES}-byte config archive limit` };
+  let files: ConfigReleaseFile[] = [];
+  try {
+    files = rootTree ? await toolModuleFiles(mirror, rootTree, modules) : [];
+  } catch (error) {
+    // The modules it parses did not fit the default download bound.
+    if (isObjectFetchTooLarge(error)) return tooLarge;
+    throw error;
+  }
   if (files.length === 0) {
     return { ...withGovernance, release_id: configReleaseId(null, etag), reason: REPOSITORY_ACCESS_WITHHELD };
   }
@@ -403,7 +420,7 @@ async function toolsRelease(
       archive: (treeId) => !archiveBytes.has(configArchiveKey(project.projectId, treeId)),
     });
   } catch (error) {
-    if (error instanceof ConfigArchiveTooLargeError) return { ...withGovernance, reason: `the project tool modules exceed the ${archiveLimit ?? MAX_CONFIG_ARCHIVE_BYTES}-byte config archive limit` };
+    if (error instanceof ConfigArchiveTooLargeError) return tooLarge;
     throw error;
   }
   const key = configArchiveKey(project.projectId, read.treeId);
@@ -513,4 +530,5 @@ export function __clearConfigReleaseCachesForTests(): void {
   releases.clear();
   inflight.clear();
   archiveBytes.clear();
+  __clearOverLimitMemoForTests();
 }

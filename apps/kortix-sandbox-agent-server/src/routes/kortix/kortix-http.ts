@@ -11,7 +11,7 @@
  * stream is a broken event stream.
  *
  * SERVER-TIMING. Every response carries `read` (time actually spent reading
- * OpenCode or SQLite) and `total`. It is the only way to tell "the box was
+ * the runtime's state) and `total`. It is the only way to tell "the box was
  * slow" from "the network was slow" from a browser waterfall, and the question
  * came up on every latency investigation this repo has run.
  */

@@ -12,6 +12,8 @@
  *     an SSE body handed back UNREAD so the caller can pump it.
  *   • {@link fetchRuntimeMessages} — `GET /kortix/runtime/messages/:sessionId`,
  *     one transcript page. Every harness serves it.
+ *   • {@link fetchRuntimePending} — `GET /kortix/runtime/pending`, the thread
+ *     statuses and open asks of a box that serves its session log.
  *
  * ─── THE STREAM IS NEVER BUFFERED ──────────────────────────────────────────
  * WS-Z1's requirement, and the reason it is stated so plainly: a buffered
@@ -50,7 +52,8 @@ export interface DaemonCallTarget {
   userId?: string;
 }
 
-async function daemonEndpoint(
+/** The daemon's base URL and signed headers for `target`; null without a service key. */
+export async function runtimeDaemonEndpoint(
   target: DaemonCallTarget,
 ): Promise<{ url: string; headers: Record<string, string> } | null> {
   const serviceKey = await resolveServiceKey(target.externalId);
@@ -129,7 +132,7 @@ export async function fetchRuntimeState(
 ): Promise<RuntimeStateFetch> {
   let endpoint: { url: string; headers: Record<string, string> } | null;
   try {
-    endpoint = await daemonEndpoint(target);
+    endpoint = await runtimeDaemonEndpoint(target);
   } catch (error) {
     return { ok: false, reason: reasonOf(error), status: null };
   }
@@ -178,7 +181,7 @@ export async function fetchRuntimeMessages(
 ): Promise<RuntimeMessagesFetch> {
   let endpoint: { url: string; headers: Record<string, string> } | null;
   try {
-    endpoint = await daemonEndpoint(target);
+    endpoint = await runtimeDaemonEndpoint(target);
   } catch (error) {
     return { ok: false, reason: reasonOf(error), status: null };
   }
@@ -206,6 +209,36 @@ export async function fetchRuntimeMessages(
   }
 }
 
+export type RuntimePendingFetch =
+  | { ok: true; body: unknown }
+  | { ok: false; reason: string; status: number | null };
+
+/**
+ * Read `GET /kortix/runtime/pending` once: what each thread of the session does
+ * and what waits on a person. Only a box that serves its session log
+ * (`runtime.log.v1`) is asked, so there is no pre-W3 path to fall back to.
+ */
+export async function fetchRuntimePending(
+  target: DaemonCallTarget,
+  signal?: AbortSignal,
+): Promise<RuntimePendingFetch> {
+  try {
+    const endpoint = await runtimeDaemonEndpoint(target);
+    if (!endpoint) return { ok: false, reason: 'no_service_key', status: null };
+    const response = await fetch(`${endpoint.url}${RUNTIME_API}/pending`, {
+      headers: { ...endpoint.headers, Accept: 'application/json' },
+      signal: signal ?? AbortSignal.timeout(RUNTIME_STATE_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+      return { ok: false, reason: `daemon_${response.status}`, status: response.status };
+    }
+    return { ok: true, body: await response.json() };
+  } catch (error) {
+    return { ok: false, reason: reasonOf(error), status: null };
+  }
+}
+
 export type RuntimeHealthFetch =
   | { ok: true; health: Record<string, unknown> }
   | { ok: false; reason: string };
@@ -223,7 +256,7 @@ export async function fetchRuntimeHealth(
   signal?: AbortSignal,
 ): Promise<RuntimeHealthFetch> {
   try {
-    const endpoint = await daemonEndpoint(target);
+    const endpoint = await runtimeDaemonEndpoint(target);
     if (!endpoint) return { ok: false, reason: 'no_service_key' };
     const timeout = AbortSignal.timeout(RUNTIME_HEALTH_TIMEOUT_MS);
     const response = await fetch(`${endpoint.url}/kortix/health`, {
@@ -256,7 +289,7 @@ export async function openRuntimeEventStream(
 ): Promise<RuntimeStreamOpen> {
   let endpoint: { url: string; headers: Record<string, string> } | null;
   try {
-    endpoint = await daemonEndpoint(target);
+    endpoint = await runtimeDaemonEndpoint(target);
   } catch (error) {
     return { ok: false, reason: reasonOf(error), status: null };
   }

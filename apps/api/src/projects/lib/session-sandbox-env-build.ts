@@ -41,7 +41,7 @@ import { resolveSessionSecretGrant } from './secret-grant';
 import { AmbiguousSecretGrantError, intersectSecretGrants, listProjectSecretsSnapshotForUser } from '../secrets';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import { piPackageBundleForSession } from '../../pi-packages/bundle';
-import { manifestPiCodemode, manifestPiPackages, resolveCompiledAgentConfigForSession, resolveSelectedAgentConfigForSession } from './compile-agent-config';
+import { manifestPiCodemode, manifestPiContext, manifestPiPackages, resolveCompiledAgentConfigForSession, resolveSelectedAgentConfigForSession } from './compile-agent-config';
 
 
 
@@ -66,7 +66,7 @@ import { buildFeatureFlagSandboxEnv } from './feature-flag-env';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { recordedWorkspaceVolume } from '../../platform/services/workspace-volume';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
-import { buildPlatformMetaOpenCodeConfig } from './platform-meta-agent';
+import { buildMyKortixConfig } from './my-kortix-agent';
 
 import { resolveSessionPersonalOwner } from './personal-resources';
 
@@ -155,23 +155,23 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
   compiledAgentConfig: string | null;
   manifestPackages: unknown[];
   manifestCodemode: 'off' | 'on' | 'only' | null;
+  manifestContext: 'record' | 'summary' | null;
 }> {
   let agentGrantEnv: string[] | 'all' | undefined;
 
-  // v2-only: compile the manifest's `agents:` map into an OpenCode-native
-  // config the sandbox receives sealed (see compile-agent-config.ts). `null`
-  // for a v1 project (no `kortix_version: 2`) or any read/parse failure — no
-  // KORTIX_COMPILED_AGENT_CONFIG key is emitted below in that case, so a v1
-  // project's sandbox env is byte-for-byte unaffected by this. Gated on the
+  // Compile kortix.yaml into the agent config the sandbox receives sealed (see
+  // compile-agent-config.ts). `null` for a project with no manifest file — no
+  // KORTIX_COMPILED_AGENT_CONFIG key is emitted below in that case. Gated on the
   // same `defaultBranch` presence as the `agents:` grant resolution below
   // (both need git context; optional call sites that omit it get neither).
   let compiledAgentConfig: string | null = input.platformMetaAgent
-    ? buildPlatformMetaOpenCodeConfig()
+    ? buildMyKortixConfig()
     : null;
   // The agent's pi packages and codemode, read off the SAME fetch that
   // compiles the agent config, so they cost no extra git round trip.
   let manifestPackages: unknown[] = [];
   let manifestCodemode: 'off' | 'on' | 'only' | null = null;
+  let manifestContext: 'record' | 'summary' | null = null;
   if (input.defaultBranch && !input.platformMetaAgent) {
     const gitProject = {
       projectId: input.projectId,
@@ -183,20 +183,18 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
     const onManifest = (raw: Record<string, unknown>) => {
       manifestPackages = manifestPiPackages(raw, input.agentName);
       manifestCodemode = manifestPiCodemode(raw, input.agentName);
+      manifestContext = manifestPiContext(raw, input.agentName);
     };
-    compiledAgentConfig =
+    // `'tip-proof'`: the base ref was at the remote's tip within the refresh
+    // interval, proven by this process or adopted from another
+    // (projects/git/mirror.ts). The plain TTL read fetched all of a large
+    // repo's branches whenever this process had not fetched for 60 s: p50
+    // 742 ms, p90 4.7 s on prod for this step (2026-10-30).
+    const read = { onManifest, forceRefresh: 'tip-proof' as const };
+    const compiled =
       !(input.repositoryAccess ?? true)
-        ? await resolveSelectedAgentConfigForSession(
-            gitProject,
-            input.agentName,
-            input.baseRef,
-            { onManifest },
-          )
-          : await resolveCompiledAgentConfigForSession(
-              gitProject,
-              input.baseRef,
-              { onManifest },
-            );
+        ? resolveSelectedAgentConfigForSession(gitProject, input.agentName, input.baseRef, read)
+        : resolveCompiledAgentConfigForSession(gitProject, input.baseRef, read);
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
     // allowlist receives ONLY those IDENTIFIERS — so a narrowly-scoped agent
@@ -211,15 +209,26 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
     // SecretGrantResolutionError and the provision fails instead. Shares one
     // resolver with the per-prompt hot push (lib/secret-grant.ts) so the two
     // paths can no longer disagree about what this agent may read.
-    agentGrantEnv = await resolveSessionSecretGrant({
-      projectId: input.projectId,
-      repoUrl: input.repoUrl,
-      defaultBranch: input.defaultBranch,
-      manifestPath: input.manifestPath,
-      sessionAgent: input.agentName,
-    });
+    //
+    // The compile and the grant read the manifest independently, so they run
+    // together: the grant's refresh waits for the compile's tip proof and
+    // reuses it (refreshMirror's lock), and its git reads no longer wait for
+    // the compile's. Either failure still fails the build. Sequential, the pair was the
+    // `agent-config` step: p50 1.0 s on prod in a project with 28 agents
+    // (2026-11-01).
+    [compiledAgentConfig, agentGrantEnv] = await Promise.all([
+      compiled,
+      resolveSessionSecretGrant({
+        projectId: input.projectId,
+        repoUrl: input.repoUrl,
+        defaultBranch: input.defaultBranch,
+        manifestPath: input.manifestPath,
+        sessionAgent: input.agentName,
+        forceRefresh: 'tip-proof',
+      }),
+    ]);
   }
-  return { agentGrantEnv, compiledAgentConfig, manifestPackages, manifestCodemode };
+  return { agentGrantEnv, compiledAgentConfig, manifestPackages, manifestCodemode, manifestContext };
 }
 
 /**
@@ -329,7 +338,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   // `secrets` grant, applied below by identifier).
   // One `[provision-timeline] session-env` line per build: create, restart and open all wait on it.
   const tl = new ProvisionTimeline(input.sessionId, 'session-env');
-  const { agentGrantEnv, compiledAgentConfig, manifestPackages, manifestCodemode } =
+  const { agentGrantEnv, compiledAgentConfig, manifestPackages, manifestCodemode, manifestContext } =
     await resolveSessionAgentConfig(input);
   tl.mark('agent-config');
   const sessionLogRestore = await resolveSessionLogRestore(input);
@@ -493,6 +502,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
       compiledAgentConfig,
       piPackages: manifestPackages,
       piCodemode: manifestCodemode,
+      piContext: manifestContext,
       piPackagesBundle,
       repositoryAccess: input.repositoryAccess,
       freshSession: input.freshSession,

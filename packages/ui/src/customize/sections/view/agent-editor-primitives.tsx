@@ -33,7 +33,7 @@ import { cn } from '../../../internal/lib/utils';
  * does not own their props — the shell sets the style once for everything
  * under it.
  */
-export type EditorSectionStyle = 'flat' | 'panel';
+export type EditorSectionStyle = 'flat' | 'panel' | 'tab';
 const EditorSectionStyleContext = createContext<EditorSectionStyle>('flat');
 export function EditorSectionStyleProvider({
   value,
@@ -78,9 +78,9 @@ export function EditorSection({
   children: ReactNode;
 }) {
   const style = useContext(EditorSectionStyleContext);
-  if (style === 'panel') {
+  if (style === 'panel' || style === 'tab') {
     return (
-      <section className={lead ? 'space-y-6' : 'space-y-3'}>
+      <section className={lead ? (style === 'tab' ? 'space-y-5' : 'space-y-6') : 'space-y-3'}>
         {lead ? (
           // Headings stand alone (Jay, 2026-10-20): a sentence under every
           // title made the page read as prose.
@@ -149,7 +149,7 @@ export function SettingRow({
     <div
       className={cn(
         'flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-6',
-        style === 'panel' ? 'px-4 py-3' : 'py-3.5',
+        style === 'flat' ? 'py-3.5' : 'px-4 py-3',
       )}
     >
       <SettingLabel label={label} help={help} />
@@ -173,7 +173,7 @@ export function SettingBlock({
 }) {
   const style = useContext(EditorSectionStyleContext);
   return (
-    <div className={cn('space-y-2.5', style === 'panel' ? 'px-4 py-3' : 'py-3.5')}>
+    <div className={cn('space-y-2.5', style === 'flat' ? 'py-3.5' : 'px-4 py-3')}>
       <SettingLabel label={label} help={help} />
       {children}
     </div>

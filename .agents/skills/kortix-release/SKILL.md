@@ -121,9 +121,13 @@ until it's green"). Per fix:
 
 1. Merge the fix into `dev` through a PR, as usual, so `dev` keeps it.
 2. Cherry-pick that commit onto `staging` through a PR:
-   `git switch -c stage-fix/<slug> origin/staging && git cherry-pick <dev sha>`,
-   push, `gh pr create --base staging`, `gh pr merge <n> --merge`. The push to
-   `staging` starts Build Staging and Deploy Staging.
+   `git switch -c stage-fix/<slug> origin/staging && git cherry-pick <dev sha>`.
+   Then regenerate the generated files on that branch and commit any change:
+   `bash .agents/skills/learnings/scripts/index.sh` and
+   `node packages/ui/scripts/gen-i18n-catalog.mjs`. `dev`'s copy can list an
+   entry or a key from a commit that `staging` lacks (the learnings ledger,
+   2026-11-02). Push, `gh pr create --base staging`, `gh pr merge <n> --merge`.
+   The push to `staging` starts Build Staging and Deploy Staging.
 3. When `/health` on the three staging surfaces serves the new staging SHA,
    dispatch `promote.yml -f ref=staging` (no `dev` leg). It updates the
    release branch, and the suite runs once on the new tree.
@@ -285,6 +289,13 @@ written, evidence-backed justification, never silently.
 
 - **deploy-prod concurrency = `cancel-in-progress: false`.** A slow desktop build or a
   zombie queued run blocks the next deploy — cancel it first.
+- **A release rebuilds the desktop app only when the desktop changed.** `desktop-plan`
+  compares the desktop fingerprint with the latest release's `DESKTOP-FINGERPRINT`; when
+  it is equal, `attach-desktop` copies that release's installers and `latest*.yml`, and
+  installed apps get no update prompt. Force a build after rotating a signing certificate:
+  `gh workflow run deploy-prod.yml --ref prod -f rebuild_desktop=true`
+  (`apps/desktop-electron/README.md`, "A release ships a desktop update only when the
+  desktop changed").
 - **deploy-prod retags; it does not rebuild.** The staging build for the exact
   promoted commit must already be green:
   `gh run list --repo kortix-ai/suna --workflow build-staging.yml --branch staging --limit 3 --json status,conclusion,headSha`.

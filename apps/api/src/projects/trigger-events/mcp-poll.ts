@@ -158,7 +158,7 @@ async function load(stream: PollStream, now: number): Promise<Loaded | null> {
     !project ||
     project.status !== 'active' ||
     !eventTriggersEnabled(project.metadata) ||
-    // The project's pause, or the account's Pause all automations (KRTX-1721).
+    // The project's pause, or the account's Pause all triggers (KRTX-1721).
     (await automaticFirePauseReason(project)) !== null ||
     consumers.length === 0
   ) {

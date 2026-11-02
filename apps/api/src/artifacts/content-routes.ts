@@ -19,6 +19,7 @@ import { PUBLIC_SHARE_SANDBOX_CSP } from '../sandbox-proxy/routes/public-share';
 import { isUuid } from '../shared/validate';
 import { DriveStorageError } from '../drives/volumes';
 import { renderDoc } from './formats';
+import { injectArtifactAnnotations } from './annotation-injection';
 import { ARTIFACTS_FLAG, artifactPrivateFolder, artifactPublicContentUrl, contentTypeFor, getArtifactById, normalizeArtifactPath, readArtifactFile, type ArtifactRow } from './service';
 
 export const artifactContentApp = new Hono();
@@ -62,13 +63,15 @@ function sandboxCsp(c: Context): string {
   return own ? `${PUBLIC_SHARE_SANDBOX_CSP} allow-same-origin` : PUBLIC_SHARE_SANDBOX_CSP;
 }
 
-async function serve(c: Context, row: ArtifactRow | null, at: string | null, rest: string, cache: string): Promise<Response> {
+async function serve(c: Context, row: ArtifactRow | null, at: string | null, rest: string, cache: string, annotate = false): Promise<Response> {
   if (!row || !(await projectFeatureFlagEnabled(row.projectId, ARTIFACTS_FLAG))) return notFound(c);
+  const annotationEnabled = annotate && row.type === 'html' && await projectFeatureFlagEnabled(row.projectId, 'artifact_comments');
   const wanted = rest === '' ? row.entry : normalizeArtifactPath(rest.endsWith('/') ? `${rest}index.html` : rest);
   if (!wanted) return notFound(c);
   const isEntry = wanted === row.entry;
   // A Range read (a video seeking) passes through; the entry page is always read whole.
-  const range = isEntry ? undefined : c.req.header('range');
+  const possibleHtml = contentTypeFor(wanted).startsWith('text/html') || !/\.[a-z0-9]+$/i.test(wanted);
+  const range = isEntry || (annotationEnabled && possibleHtml) ? undefined : c.req.header('range');
   const found = await readFirst(row, /\.[a-z0-9]+$/i.test(wanted) ? [wanted] : [wanted, `${wanted}/index.html`, `${wanted}.html`], at, range);
   if (!found) return notFound(c);
   const headers: Record<string, string> = {
@@ -89,7 +92,19 @@ async function serve(c: Context, row: ArtifactRow | null, at: string | null, res
     if (value) headers[name] = value;
   }
   headers['Accept-Ranges'] = 'bytes';
-  return new Response(found.response.body, { status: found.response.status === 206 ? 206 : 200, headers });
+  const response = new Response(found.response.body, { status: found.response.status === 206 ? 206 : 200, headers });
+  if (annotationEnabled && headers['Content-Type']!.startsWith('text/html')) {
+    try {
+      return await injectArtifactAnnotations(response);
+    } catch {
+      await response.body?.cancel().catch(() => undefined);
+      return c.text('Artifact annotations are unavailable', 503, {
+        'Content-Security-Policy': headers['Content-Security-Policy']!, 'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin',
+      });
+    }
+  }
+  return response;
 }
 
 /** A public route's bucket: the artifact id when it is one, else the client's. */
@@ -106,7 +121,7 @@ export function registerArtifactContentRoutes(): void {
   artifactContentApp.use('/p/:artifactId/*', createArtifactContentRateLimitMiddleware(publicKey));
 
   // Without the trailing slash, relative URLs in the page would resolve one level up.
-  artifactContentApp.get('/s/:token', (c) => c.redirect(`${c.req.path}/`, 301));
+  artifactContentApp.get('/s/:token', (c) => c.redirect(`${c.req.path}/${new URL(c.req.url).search}`, 301));
   artifactContentApp.get('/p/:artifactId', (c) => c.redirect(`${c.req.path}/`, 301));
 
   artifactContentApp.get('/s/:token/*', async (c) => {
@@ -116,7 +131,7 @@ export function registerArtifactContentRoutes(): void {
     if (!claim || typeof claim.a !== 'string' || rest === null) return notFound(c);
     const at = typeof claim.c === 'string' ? claim.c : null;
     // A commit never changes, so the browser may keep it; the latest state must revalidate.
-    return serve(c, await getArtifactById(claim.a), at, rest, at ? 'private, max-age=3600' : 'private, no-cache');
+    return serve(c, await getArtifactById(claim.a), at, rest, at ? 'private, max-age=3600' : 'private, no-cache', c.req.query('annotate') === '1');
   });
 
   // The public page's chrome (title, type): a public artifact of a flag-on project, else 404.

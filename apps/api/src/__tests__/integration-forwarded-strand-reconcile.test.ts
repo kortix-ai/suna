@@ -42,7 +42,7 @@ const ASSISTANT = wireId(T + 1_000, 'ASSTMASSTMASST');
 /** The id the client minted. The delivery went out under STRANDED instead. */
 const CLIENT_WIRE_ID = wireId(T - 5_000, 'CLIENTCLIENTCL');
 
-let deletedMessages: string[] = [];
+let retractedMessages: string[] = [];
 let drainKicks: Array<Record<string, unknown>> = [];
 /** Resolves on the next drain kick. `kickDrain` is fire-and-forget: it promotes
  *  the row, THEN kicks, after `reconcileForwardedTurnsAtEnd` has returned. Under
@@ -80,8 +80,8 @@ const { enqueueContinueSessionCommand, markCommandForwarded } = await import(
   '../projects/session-lifecycle/store'
 );
 
-/** OpenCode's `GET /session/:id/message` body: ANSWERED, then STRANDED below
- *  the assistant that answered ANSWERED. Nothing is parented on STRANDED. */
+/** The transcript page: ANSWERED, then STRANDED below the assistant that
+ *  answered ANSWERED. Nothing is parented on STRANDED. */
 const TIP = [
   { info: { id: ANSWERED, role: 'user', time: { created: T } }, parts: [{ id: 'prt_a' }] },
   { info: { id: STRANDED, role: 'user', time: { created: T + 500 } }, parts: [{ id: 'prt_s' }] },
@@ -188,16 +188,17 @@ beforeAll(async () => {
       origin = null;
     }
     if (origin !== BOX_ORIGIN) return ORIGINAL_FETCH(input, init);
-    if ((init?.method ?? 'GET') === 'DELETE') {
-      deletedMessages.push(decodeURIComponent(new URL(url).pathname.split('/').pop() ?? ''));
-      return new Response(null, { status: 200 });
+    // The runtime retract: `POST /kortix/runtime/messages/:sid/:mid/retract`.
+    if ((init?.method ?? 'GET') === 'POST' && url.endsWith('/retract')) {
+      retractedMessages.push(decodeURIComponent(new URL(url).pathname.split('/').at(-2) ?? ''));
+      return Response.json({ retracted: true });
     }
-    return Response.json(TIP);
+    return Response.json({ messages: TIP, has_more: false });
   };
 });
 
 beforeEach(async () => {
-  deletedMessages = [];
+  retractedMessages = [];
   drainKicks = [];
   onKick = () => {};
   await db.execute(sql`DELETE FROM kortix.session_turns WHERE session_id = ${SESSION_ID}`);
@@ -218,7 +219,7 @@ test('a stranded prompt known only by its forwarded id is taken out of the trans
   const out = await reconcile();
 
   expect(out).toMatchObject({ candidates: 1, stranded: 1, requeued: 1 });
-  expect(deletedMessages).toEqual([STRANDED]);
+  expect(retractedMessages).toEqual([STRANDED]);
   const row = await readCommand(commandId);
   expect(row.status).toBe('queued');
   expect(row.payload).toMatchObject({ redeliveries: 1, remintOnDelivery: true });

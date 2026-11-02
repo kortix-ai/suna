@@ -59,7 +59,7 @@ discretion. Every new rule is a code check.
    in the company repo.
 7. **TypeScript-first Kortix.** `kortix.config.ts` compiling to the manifest
    (the CDK / Pulumi pattern). A separate initiative, tied to the
-   `kortix.yaml` v3 redesign.
+   `kortix.yaml` format work.
 8. **Not now:** a per-goal "Kortix Machines" primitive was started without a
    design and stopped. New primitives get a written design and an explicit
    decision first.

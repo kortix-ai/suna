@@ -595,7 +595,7 @@ export function AccountHubContent() {
                 <AccountSessionsPanel accountId={account.account_id} canManage={canWriteAccount} />
               </SettingsGroup>
 
-              {/* Pause all automations (KRTX-1721): one switch for every
+              {/* Pause all triggers (KRTX-1721): one switch for every
                   project's schedules, reminders, webhooks, app events and
                   monitors. See `automations-pause-card.tsx`. */}
               <SettingsGroup title={tAutomations('groupTitle')} description={tAutomations('groupDescription')}>

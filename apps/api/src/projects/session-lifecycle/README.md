@@ -8,7 +8,7 @@ commit.
 
 | Hop | Rule | Limit | Then | Where |
 |---|---|---|---|---|
-| Wake | A queued row wakes the drain at its due time (NOTIFY); the poll is a backstop | ≥ 1 s between drain starts per process; poll after 5 s with LISTEN, every 1 s without | — | `workers/session-lifecycle-worker.ts`, migration `20261006135526223` |
+| Wake | A queued row wakes the drain at its due time (NOTIFY); the poll is a backstop | ≥ 1 s between drain starts per process; poll after 5 s with LISTEN, every 1 s without | — | `replica/session-lifecycle.ts`, migration `20261006135526223` |
 | Claim | A claim holds the row `running` under a lease, renewed while in hand | lock 5 min, heartbeat every 100 s | another worker reclaims after lock + 5 min grace | `command-lease.ts`, `command-claims.ts` |
 | Shutdown | SIGTERM stops claiming and waits for in-flight rows | 5 s | rows still held go back to `queued`, attempt returned | `claim-handover.ts` |
 | Admission | A row waits behind a live turn or an older prompt; not an attempt | 300 ms, doubling after 4 refusals, max 2 s | re-admitted on the turn-end relay | `inbox-admission.ts` |

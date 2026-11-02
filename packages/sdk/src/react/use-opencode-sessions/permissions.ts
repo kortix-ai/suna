@@ -1,6 +1,12 @@
 import { getClient } from '../../core/runtime/client';
 import type { PermissionRuleset } from '../../core/runtime/runtime-types';
+import { activeRuntimeAction, runtimeActionError, runtimeActionPaths } from '../../core/session/runtime-actions';
 import { unwrap } from './shared';
+
+/** Throw the action route's refusal; a 2xx passes. */
+async function ensureActionOk(response: Response, what: string): Promise<void> {
+  if (!response.ok) throw await runtimeActionError(response, what);
+}
 
 // ============================================================================
 // Permission & Question Reply (direct SDK calls, not hooks)
@@ -45,6 +51,21 @@ async function sendPermissionReply(
   reply: 'once' | 'always' | 'reject',
   message?: string,
 ): Promise<void> {
+  const answered = await activeRuntimeAction('POST', runtimeActionPaths.permissionReply(requestId), {
+    reply,
+    ...(message !== undefined ? { message } : {}),
+  });
+  if (answered) {
+    // Only the reply route's own 404 ("no such permission request") means another
+    // reply resolved it. Any other refusal — the proxy's lost sandbox included —
+    // reaches the caller, so the card stays for a decision that never landed.
+    if (answered.status === 404) {
+      const body = (await answered.clone().json().catch(() => null)) as { error?: unknown } | null;
+      if (typeof body?.error === 'string' && /no such permission request/i.test(body.error)) return;
+    }
+    await ensureActionOk(answered, 'Answering the permission request failed');
+    return;
+  }
   const client = getClient();
   const result = await client.permission.reply({ requestID: requestId, reply, message });
   if (permissionAlreadyAnswered(result)) return;
@@ -89,6 +110,8 @@ const KNOWN_PERMISSION_TYPES = [
  * this only stops FUTURE asks.
  */
 export async function allowAllPermissionsForSession(sessionID: string): Promise<void> {
+  const granted = await activeRuntimeAction('PUT', runtimeActionPaths.grants(sessionID), { grants: ['*'] });
+  if (granted) return ensureActionOk(granted, 'Allowing every permission failed');
   const client = getClient();
   const ruleset: PermissionRuleset = [
     { permission: '*', pattern: '*', action: 'allow' },
@@ -105,18 +128,24 @@ export async function allowAllPermissionsForSession(sessionID: string): Promise<
 /** Undo `allowAllPermissionsForSession`: clear the session ruleset so the
  * project/config permission rules apply again. */
 export async function resetSessionPermissions(sessionID: string): Promise<void> {
+  const cleared = await activeRuntimeAction('PUT', runtimeActionPaths.grants(sessionID), { grants: [] });
+  if (cleared) return ensureActionOk(cleared, 'Clearing the session grants failed');
   const client = getClient();
   const result = await client.session.update({ sessionID, permission: [] });
   unwrap(result);
 }
 
 export async function replyToQuestion(requestId: string, answers: string[][]): Promise<void> {
+  const answered = await activeRuntimeAction('POST', runtimeActionPaths.questionReply(requestId), { answers });
+  if (answered) return ensureActionOk(answered, 'Answering the question failed');
   const client = getClient();
   const result = await client.question.reply({ requestID: requestId, answers });
   unwrap(result);
 }
 
 export async function rejectQuestion(requestId: string): Promise<void> {
+  const dismissed = await activeRuntimeAction('POST', runtimeActionPaths.questionReject(requestId));
+  if (dismissed) return ensureActionOk(dismissed, 'Dismissing the question failed');
   const client = getClient();
   const result = await client.question.reject({ requestID: requestId });
   unwrap(result);

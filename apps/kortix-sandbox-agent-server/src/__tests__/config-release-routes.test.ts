@@ -1,6 +1,5 @@
 /**
- * `/kortix/config/converge`, `/kortix/config/workspace`, and the
- * `/kortix/refresh?config_dir=1` alias.
+ * `/kortix/config/converge` and `/kortix/config/workspace`.
  *
  * The converge route is a trigger. It never reads the request body: the daemon
  * fetches the descriptor from the API, so a caller cannot choose the config.
@@ -11,7 +10,6 @@ import type { HarnessConfigConvergeResult, HarnessControlOperations } from '@/ha
 import { ConvergeBusyError } from '@/services/config-provider/release'
 import { MAX_SWAP_DELAY_MS } from '@/harness/contract/control'
 import { createConfigRouter } from '@/routes/kortix/config'
-import { createRefreshRouter } from '@/routes/kortix/refresh'
 
 const TOKEN = 'sandbox-token'
 const cfgWithToken = { sandboxToken: TOKEN } as Config
@@ -84,8 +82,7 @@ describe('config routes with a fake control', () => {
   })
 
   /**
-   * `?delay_before_swap_ms` — fault injection, the same shape as `verify_fail`
-   * on `POST /kortix/refresh`. It holds a convergence between the turn gate and
+   * `?delay_before_swap_ms` — fault injection. It holds a convergence between the turn gate and
    * the swap, so a test can land a prompt inside the window DEF-DEV-1 lived in
    * instead of racing it.
    */
@@ -109,14 +106,11 @@ describe('config routes with a fake control', () => {
     }
   })
 
-  test('the refresh alias carries the delay too', async () => {
-    const { control, calls } = fakeControl()
-    const res = await createRefreshRouter(cfgWithToken, control).request(
-      '/?config_dir=1&delay_before_swap_ms=300',
-      { method: 'POST', headers: bearer },
-    )
-    expect(res.status).toBe(200)
-    expect(calls.converge).toEqual([[{ delayBeforeSwapMs: 300 }]])
+  test('a runtime without config releases answers 404 to converge', async () => {
+    const { control } = fakeControl({ convergeConfig: undefined })
+    expect(
+      (await createConfigRouter(cfgWithToken, control).request('/converge', { method: 'POST', headers: bearer })).status,
+    ).toBe(404)
   })
 
   test('a convergence already running answers 409', async () => {
@@ -135,28 +129,4 @@ describe('config routes with a fake control', () => {
     expect(res.status).toBe(404)
   })
 
-  test('refresh?config_dir=1 is an alias of converge; the plain refresh does not run', async () => {
-    const { control, calls } = fakeControl()
-    const res = await createRefreshRouter(cfgWithToken, control).request(
-      '/?config_dir=1&reload_if_synced=1&restart=0&repo=0',
-      { method: 'POST', headers: bearer },
-    )
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual(converged)
-    expect(calls.converge).toHaveLength(1)
-    expect(calls.refresh).toBe(0)
-  })
-
-  test('a runtime without config releases: converge is 404, config_dir=1 keeps the plain refresh', async () => {
-    const { control, calls } = fakeControl({ convergeConfig: undefined })
-    expect(
-      (await createConfigRouter(cfgWithToken, control).request('/converge', { method: 'POST', headers: bearer })).status,
-    ).toBe(404)
-    const res = await createRefreshRouter(cfgWithToken, control).request('/?config_dir=1', {
-      method: 'POST',
-      headers: bearer,
-    })
-    expect(res.status).toBe(200)
-    expect(calls.refresh).toBe(1)
-  })
 })

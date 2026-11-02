@@ -5,23 +5,19 @@ import { cn } from '@kortix/ui';
 import { localizeUiCatalog } from '@kortix/ui/i18n';
 import {
   ArrowSquareOutIcon,
-  CameraIcon,
-  CaretDownIcon,
   CheckIcon,
   DotsThreeIcon,
   FilePdfIcon,
   ImageIcon,
-  MicrophoneIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import type { ReactNode } from 'react';
 
 import { Message, Thread, ThreadCard, type ChatCard } from './chat';
 import type { SurfaceId } from './content';
-import { TerminalFrame } from './frames';
+import { PhoneShot, TerminalFrame } from './frames';
 import {
   CheckRow,
   Chip,
-  PermissionCard,
   PROMPT,
   QuickEntryBar,
   FIX_STEPS as sourceFIX_STEPS,
@@ -178,121 +174,6 @@ function BadgePanel() {
             <span className="text-muted-foreground flex items-center gap-2 text-xs">
               {tMarketing('text7804f7a79a9e')}
               <span aria-hidden className="bg-foreground size-1.5 rounded-full" />
-            </span>
-          </span>
-        ))}
-      </Card>
-    </div>
-  );
-}
-
-/* ── Mobile ──────────────────────────────────────────────────────────── */
-
-/** The mobile composer: an attachment, the text, then agent, camera, photos, dictation. */
-function StartPanel() {
-  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
-
-  return (
-    <Card className="gap-3 p-4">
-      <span className="bg-muted text-foreground flex w-fit items-center gap-2 rounded-md px-2.5 py-1.5 text-sm">
-        <ImageIcon aria-hidden className="size-4" />
-        {tMarketing('text588d83f5e381')}
-      </span>
-      <span className="text-foreground text-base text-pretty">
-        {tMarketing('texta17344bd48c4')}
-      </span>
-      <div className="text-muted-foreground flex items-center gap-3 border-t pt-3">
-        <span className="text-foreground flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs">
-          {tMarketing('text388f7968512c')}
-          <CaretDownIcon aria-hidden className="size-3" />
-        </span>
-        <CameraIcon aria-hidden className="ml-auto size-4" />
-        <ImageIcon aria-hidden className="size-4" />
-        <MicrophoneIcon aria-hidden className="size-4" />
-      </div>
-    </Card>
-  );
-}
-
-function PermissionPanel() {
-  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
-
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="text-foreground text-sm text-pretty">{tMarketing('text4c3f84b98c4e')}</p>
-      <PermissionCard tool="bash" input="bun test src/billing" />
-    </div>
-  );
-}
-
-/** ReviewDetailSheet.tsx: the diff, then Request changes · Merge. */
-function ReviewPanel() {
-  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
-
-  const lines: readonly { sign: ' ' | '-' | '+'; text: string }[] = [
-    { sign: ' ', text: 'const s = res.status;' },
-    { sign: ' ', text: 'if (s >= 400) {' },
-    { sign: '-', text: '  return retry(e);' },
-    { sign: '+', text: '  if (s < 500) return fail(e);' },
-    { sign: '+', text: '  return retry(e);' },
-    { sign: ' ', text: '}' },
-  ];
-  return (
-    <Card>
-      <div className="flex flex-col gap-0.5 border-b px-4 py-3">
-        <span className="text-foreground text-base font-medium">
-          {tMarketing('text9baf10b26300')}
-        </span>
-        <span className="text-muted-foreground text-xs">{tMarketing('text51b5c4ae0cad')}</span>
-      </div>
-      <span className="text-muted-foreground border-b px-4 py-2 font-mono text-xs">
-        {tMarketing('text8fb80e5e42b5')}
-      </span>
-      <pre className="overflow-x-auto py-2 font-mono text-xs leading-6">
-        {lines.map((l, i) => (
-          <span
-            key={i}
-            className={cn(
-              'block px-4 whitespace-pre',
-              l.sign === '+' && 'bg-kortix-green/15 text-foreground',
-              l.sign === '-' && 'bg-kortix-red/15 text-foreground',
-              l.sign === ' ' && 'text-muted-foreground',
-            )}
-          >
-            {l.sign} {l.text}
-          </span>
-        ))}
-      </pre>
-      <div className="grid grid-cols-2 gap-2 border-t p-3">
-        <Chip className="justify-center">{tMarketing('textcb5d9f987803')}</Chip>
-        <Chip primary className="justify-center">
-          {tMarketing('text8851aaa7d08c')}
-        </Chip>
-      </div>
-    </Card>
-  );
-}
-
-/** apps/mobile/app/(settings)/notifications.tsx: the four notification types. */
-function NotifyPanel() {
-  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
-
-  const types = ['Task completions', 'Errors', 'Questions', 'Permission requests'];
-  return (
-    <div className="flex flex-col gap-2">
-      <span className={caption}>{tMarketing('text6e3032b6895f')}</span>
-      <Card className="divide-y">
-        {types.map((t) => (
-          <span
-            key={t}
-            className="text-foreground flex items-center justify-between px-4 py-3 text-base"
-          >
-            {t}
-            <span
-              aria-hidden
-              className="bg-foreground flex h-5 w-9 items-center justify-end rounded-full p-0.5"
-            >
-              <span className="bg-background size-4 rounded-full" />
             </span>
           </span>
         ))}
@@ -641,10 +522,10 @@ export const SURFACE_PANELS: Record<SurfaceId, Record<string, () => ReactNode>> 
     badge: () => <BadgePanel />,
   },
   mobile: {
-    start: () => <StartPanel />,
-    permission: () => <PermissionPanel />,
-    review: () => <ReviewPanel />,
-    notify: () => <NotifyPanel />,
+    start: () => <PhoneShot name="start" />,
+    permission: () => <PhoneShot name="permission" />,
+    review: () => <PhoneShot name="review" />,
+    notify: () => <PhoneShot name="notify" />,
   },
   cli: CLI_PANELS,
   slack: SLACK_PANELS,

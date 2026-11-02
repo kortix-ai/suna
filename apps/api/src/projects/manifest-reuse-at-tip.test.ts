@@ -23,7 +23,7 @@ async function git(args: string[], cwd?: string): Promise<void> {
 async function pushManifest(connector: string): Promise<void> {
   await writeFile(
     join(repositoryPath, 'kortix.yaml'),
-    ['kortix_version: 2', 'default_agent: support', 'agents:', '  support:', `    connectors: [${connector}]`, ''].join('\n'),
+    ['default_agent: support', 'agents:', '  support:', `    connectors: [${connector}]`, ''].join('\n'),
   );
   await git(['add', 'kortix.yaml'], repositoryPath);
   await git(['commit', '-m', connector], repositoryPath);

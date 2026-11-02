@@ -38,12 +38,11 @@ export function FeatureGateScreen({
   const permission = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
   const [error, setError] = useState('');
   const enable = useMutation({
-    mutationFn: async (alsoDrive: boolean = false) => {
+    mutationFn: async () => {
       if (!projectId || internalOnly || permission.isLoading || permission.allowed !== true) {
         throw new Error('Feature activation is not permitted');
       }
-      const updated = await updateFeatureFlag(projectId, featureKey, true);
-      return alsoDrive ? updateFeatureFlag(projectId, 'drives', true) : updated;
+      return updateFeatureFlag(projectId, featureKey, true);
     },
     onSuccess: (updated) => {
       if (!projectId) return;
@@ -64,7 +63,6 @@ export function FeatureGateScreen({
     enabled: channels && !!projectId,
     ...contract('config'),
   });
-  const drive = project.data?.experimental_features?.find((f) => f.key === 'drives' && f.available);
 
   return (
     <div className="bg-popover rounded-md border px-4 py-5">
@@ -74,10 +72,9 @@ export function FeatureGateScreen({
           onOpenChange={setConfirming}
           turningOn
           projectName={project.data?.name ?? ''}
-          driveOff={!!drive && !drive.enabled && drive.operator_only !== true}
-          onConfirm={(alsoDrive) => {
+          onConfirm={() => {
             setConfirming(false);
-            enable.mutate(alsoDrive);
+            enable.mutate();
           }}
         />
       ) : null}
@@ -112,7 +109,7 @@ export function FeatureGateScreen({
                 setError('');
                 // Channels changes the sidebar for everyone: it asks first.
                 if (channels) setConfirming(true);
-                else enable.mutate(false);
+                else enable.mutate();
               }}
             >
               {enable.isPending ? t('enabling') : t('enable', { name: featureName })}

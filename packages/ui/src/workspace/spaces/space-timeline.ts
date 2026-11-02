@@ -1,5 +1,5 @@
 import type { ProjectSession } from '@kortix/sdk';
-import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
+import { capitalizeWords, isMyKortixAgentName, MY_KORTIX_DISPLAY_NAME } from '@kortix/shared';
 
 import { relativeTime } from '../../internal/lib/relative-time';
 import { sessionDisplayLabel, sessionDisplayStatus } from '../../session/actions/session-label';
@@ -132,7 +132,7 @@ export const DEFAULT_AGENT_SLUG = 'kortix';
 
 /** An agent's display name: the sidebar's DM row and the space view say it the same way. */
 export function agentLabel(name: string): string {
-  return isMetaAgentName(name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(name);
+  return isMyKortixAgentName(name) ? MY_KORTIX_DISPLAY_NAME : capitalizeWords(name);
 }
 
 /** A person who started a thread in the space, as the thread list names them. */

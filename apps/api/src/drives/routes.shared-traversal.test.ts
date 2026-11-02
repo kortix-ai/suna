@@ -51,6 +51,9 @@ const DRIVE = {
   updatedAt: new Date(0),
 };
 
+/** The drive's volume as storage calls get it; no drive row backs it here, so no write fence. */
+const VOLUME = { name: 'vol-1', region: null, unfenced: true as const };
+
 const realAuth = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
   ...realAuth,
@@ -84,8 +87,8 @@ mock.module('./service', () => ({
   groupIdsOf: async () => new Set<string>(),
   driveStats: async () => null,
   openConflictRows: async () => [],
-  readDriveVolume: async (_drive: unknown, op: (volume: string) => Promise<unknown>) => op('vol-1'),
-  writeDriveVolume: async (_drive: unknown, op: (volume: string) => Promise<unknown>) => op('vol-1'),
+  readDriveVolume: async (_drive: unknown, op: (volume: unknown) => Promise<unknown>) => op(VOLUME),
+  writeDriveVolume: async (_drive: unknown, op: (volume: unknown) => Promise<unknown>) => op(VOLUME),
 }));
 // A project with no private channel: no folder under `/Channels` is reserved.
 const realSpaceAccess = await import('../shared/space-access');

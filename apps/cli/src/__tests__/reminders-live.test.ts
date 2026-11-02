@@ -44,7 +44,7 @@ function startServer(): string {
       if (url.pathname === BASE && req.method === 'POST') {
         if ((body as { prompt?: string }).prompt === 'FLAG_OFF') {
           return Response.json(
-            { error: 'Reminders is not enabled for this project. Enable it in Settings → Feature flags.', code: 'feature_disabled', feature: 'reminders' },
+            { error: 'Loops is not enabled for this project. Enable it in Settings → Feature flags.', code: 'feature_disabled', feature: 'reminders' },
             { status: 403 },
           );
         }
@@ -55,7 +55,7 @@ function startServer(): string {
       }
       if (url.pathname === BASE && req.method === 'GET') return Response.json({ reminders: [REMINDER, DONE, NAMED] });
       if (url.pathname === `${BASE}/reminder.bad` && (req.method === 'PATCH' || req.method === 'DELETE')) {
-        return Response.json({ error: 'Reminder not found' }, { status: 404 });
+        return Response.json({ error: 'Loop not found' }, { status: 404 });
       }
       if (url.pathname === `${BASE}/${DONE.id}` && req.method === 'PATCH') return Response.json(DONE);
       if (url.pathname === `${BASE}/${REMINDER.id}` && req.method === 'PATCH') {
@@ -126,9 +126,9 @@ describe('kortix reminders — inside a session', () => {
         auth: 'Bearer kortix_pat_session_token',
       },
     ]);
-    expect(r.stdout).toContain('Reminder set reminder.0123456789ab');
+    expect(r.stdout).toContain('Loop set reminder.0123456789ab');
     expect(r.stdout).toContain('every 1h');
-    expect(r.stdout).toContain('kortix reminders rm reminder.0123456789ab');
+    expect(r.stdout).toContain('kortix loops rm reminder.0123456789ab');
   }, 60_000);
 
   test('reminders add --cron --timezone --name --json maps every flag', async () => {
@@ -190,7 +190,7 @@ describe('kortix reminders — inside a session', () => {
   test('flag off: the server message plus the command that turns reminders on, exit 1', async () => {
     const r = await runCli(['remind', 'FLAG_OFF', '--in', '1h']);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain('Reminders is not enabled for this project');
+    expect(r.stderr).toContain('Loops is not enabled for this project');
     expect(r.stderr).toContain('kortix projects features enable reminders');
   }, 60_000);
 
@@ -215,8 +215,25 @@ describe('kortix reminders — inside a session', () => {
   test('a 404 from a bad reminder id keeps the server text, not the session hint', async () => {
     const r = await runCli(['reminders', 'pause', 'reminder.bad']);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain('Reminder not found');
+    expect(r.stderr).toContain('Loop not found');
     expect(r.stderr).not.toContain('$KORTIX_SESSION_ID');
+  }, 60_000);
+
+  test('a loop id is one encoded path segment: "/" and ".." in it never reach another endpoint (CWE-22)', async () => {
+    const id = 'reminder./../../../../secrets/STRIPE_KEY';
+    const encoded = `${BASE}/reminder.%2F..%2F..%2F..%2F..%2Fsecrets%2FSTRIPE_KEY`;
+    for (const sub of ['rm', 'pause', 'resume', 'run']) await runCli(['loops', sub, id]);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([`DELETE ${encoded}`, `PATCH ${encoded}`, `PATCH ${encoded}`, `POST ${encoded}/run`]);
+    expect(calls.some((c) => c.path.includes('/secrets'))).toBe(false);
+
+    // A bare "." or "..": encoding leaves it as is, so the client refuses the path before any request.
+    calls = [];
+    for (const dots of ['..', '.']) {
+      const r = await runCli(['loops', 'rm', dots]);
+      expect(r.code).toBe(1);
+      expect(r.stderr).toContain('a "." or ".." segment would send it to another endpoint');
+    }
+    expect(calls).toHaveLength(0);
   }, 60_000);
 
   test('no session anywhere and no prompt are usage errors (exit 2), with no request', async () => {

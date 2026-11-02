@@ -34,7 +34,6 @@ async function git(args: string[], cwd?: string): Promise<void> {
 }
 
 const MANIFEST = [
-  'kortix_version: 2',
   'default_agent: builder',
   'agents:',
   '  builder:',

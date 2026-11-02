@@ -674,13 +674,12 @@ flow(
         );
         requireExit(await sandbox.run(['triggers', 'enable', 'daily']), 0, 'kortix triggers enable');
         requireExit(await sandbox.run(['triggers', 'disable', 'daily']), 0, 'kortix triggers disable');
-        // The CLI writes YAML, not TOML: `kortix init` scaffolds kortix.yaml and
-        // apps/cli/src/manifest-edit.ts mutates it through the `yaml` Document
-        // API. The real block `kortix triggers add`/`disable` produces is:
+        // `kortix init` scaffolds kortix.yaml and apps/cli/src/manifest-edit.ts
+        // mutates it through the `yaml` Document API. The block
+        // `kortix triggers add`/`disable` produces is:
         //     - slug: daily
         //       type: cron
         //       enabled: false
-        // The old assertions were TOML (`slug = "daily"`), which YAML never matches.
         const manifest = sandbox.readFile('kortix.yaml');
         const manifestLines = manifest.split(/\r?\n/);
         const blockStart = manifestLines.findIndex((line) =>

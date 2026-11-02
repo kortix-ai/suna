@@ -112,7 +112,7 @@ export function ChangeList({
             fg={isCursor ? theme.fg : theme.dim}
             bg={isCursor ? theme.surface : undefined}
           >
-            <span fg={theme.accent}>{isCursor && focused ? GLYPH.selected : ' '}</span>
+            <span fg={theme.brand}>{isCursor && focused ? GLYPH.selected : ' '}</span>
             <span fg={statusColor(row.status)}>{body.slice(0, 1)}</span>
             {body.slice(1)}
           </text>

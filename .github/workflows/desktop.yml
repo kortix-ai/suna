@@ -54,7 +54,7 @@ jobs:
           # blockmaps, plus the mac update zip). Without the yml/zip the updater
           # has nothing to fetch.
           - target_pretty: macos
-            runner: macos-14
+            runner: macos-15
             eb_flag: --mac
             artifact: desktop-macos
             files: |

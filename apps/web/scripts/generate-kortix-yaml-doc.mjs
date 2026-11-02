@@ -1,8 +1,8 @@
 // Rewrites the kortix.yaml key tables of the docs (the generated:kortix-yaml
-// region) from the published v3 JSON Schema, so the reference cannot drift
-// from what `kortix validate` and editors check. Every key, type, enum, bound,
+// region) from the published JSON Schema, so the reference cannot drift from
+// what `kortix validate` and editors check. Every key, type, enum, bound,
 // default and description comes from packages/manifest-schema/src/json-schema.ts
-// (published as apps/web/public/schema/kortix.v3.schema.json). A key without a
+// (published as apps/web/public/schema/kortix.schema.json). A key without a
 // description fails the run: write the description there, not here.
 //
 //   bun apps/web/scripts/generate-kortix-yaml-doc.mjs [file]           # default apps/web/content/docs/developers.mdx
@@ -13,7 +13,7 @@ import { pathToFileURL } from 'node:url';
 import { cell, code, onByDefault, repositoryRoot, runRegionGenerator } from './docs-generated-region.mjs';
 
 const SCRIPT = 'apps/web/scripts/generate-kortix-yaml-doc.mjs';
-const schema = JSON.parse(readFileSync(resolve(repositoryRoot, 'apps/web/public/schema/kortix.v3.schema.json'), 'utf8'));
+const schema = JSON.parse(readFileSync(resolve(repositoryRoot, 'apps/web/public/schema/kortix.schema.json'), 'utf8'));
 const root = schema.properties;
 
 const orList = (items) => (items.length < 2 ? items[0] : `${items.slice(0, -1).join(', ')} or ${items.at(-1)}`);
@@ -110,7 +110,7 @@ const TABLES = [
       extensions: 'See [extensions entries](#extensions-entries).',
       connectors: 'See [connectors keys](#connectors-keys) and [Connectors](/docs/guide#connectors).',
       apps: 'See [apps keys](#apps-keys).',
-      triggers: 'See [triggers keys](#triggers-keys) and [Automations](/docs/guide#automations).',
+      triggers: 'See [triggers keys](#triggers-keys) and [Triggers](/docs/guide#triggers).',
       policy: 'See [policy keys](#policy-keys).',
       policies: 'See [policy keys](#policy-keys).',
       approvals: 'See [policy keys](#policy-keys).',

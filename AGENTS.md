@@ -448,7 +448,11 @@ these as standing rules whenever you touch the data/runtime layer:
   `runtime:` in `kortix.yaml` selects nothing. OpenCode code that remains in
   apps/api, the SDK and the clients serves old transcripts and old daemons and
   carries `@deprecated`: never call it from new code and never add a feature to
-  it. pi calls models only through the LLM gateway. pi serves
+  it. pi calls models only through the LLM gateway. Claude subscription
+  models (`claude-agent/<id>`) run each model step through the unmodified
+  Claude Code program (`apps/kortix-sandbox-agent-server/src/harness/pi/claude/`),
+  whose calls go to the gateway's Claude Code passthrough: the gateway adds the
+  project's Claude account and no Claude token enters the sandbox. pi serves
   the daemon routes (`/kortix/runtime/*`), the transcript
   (`kortix.transcript.v1`, `packages/api-contract/src/transcript.ts`) and the
   events. New code reads those, never an OpenCode route, type, file or
@@ -712,7 +716,8 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   `console.*`, a `replica-local:` comment on every empty module-level
   `Map`/`Set`, and no import into `projects/` from outside it except
   `projects/index.ts` or `projects/surface.ts`. Background timers are guarded by
-  `apps/api/src/__tests__/unit-worker-scope-wiring.test.ts` instead.
+  `apps/api/src/__tests__/unit-worker-scope-wiring.test.ts` instead, and the
+  worker's import graph by `unit-worker-entry-imports.test.ts`.
 
 ### API code conventions (`apps/api/src`)
 
@@ -726,9 +731,21 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   request through `middleware/` and `http-*.ts` helpers, builds the actor
   (`middleware/actor.ts`, memoized per request), and calls the service with
   plain values. Parse `Authorization: Bearer` with `shared/bearer-token.ts`.
-- **Every background loop lives in `workers/<name>-worker.ts`.** The worker
-  owns its timer, start/stop and `runWorkerTick` call. The tick stays an
-  exported service function. `bootstrap.ts` imports every loop from `workers/`.
+- **Scheduled jobs never run on the autoscaled web servers.** A scheduled job
+  is one file in `worker/jobs/<name>.ts`, listed in the registry
+  `worker/jobs/index.ts`. It runs only on the process holding the leader
+  lease: in production the worker service (`src/worker.ts`, one ECS task, no
+  load balancer). Web servers run `src/index.ts` with
+  `KORTIX_PROCESS_ROLE=web` and never join the election. Self-host, local dev
+  and previews run one process with the default role `all`. The job file owns
+  its timer, start/stop and `runWorkerTick` call; the tick stays an exported
+  service function in its domain. A job imports no route and no middleware
+  (`unit-worker-entry-imports.test.ts`).
+- **A loop every web process must run lives in `replica/<name>.ts`** (message
+  delivery, the job queue, event polls, the tunnel, caches). Add it to
+  `PER_PROCESS` or `NOT_WORKERS` in `unit-worker-scope-wiring.test.ts` with
+  the reason one process cannot run it. `bootstrap.ts` imports every
+  per-process loop from `replica/` and no job.
 - **`iam/` reads the membership, group and role tables.** Use the read models
   in `iam/membership-read.ts`, `iam/group-read.ts` and `iam/role-read.ts`.
 - **No function longer than 300 lines.** Split long functions into named steps.
@@ -759,6 +776,13 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   rules pending a dedicated audit — expected until that audit lands.
 
 ### Frontend design standard — Jay/Kortix bar
+
+Before creating or modifying any internal app or Kortix App UI, load and apply
+`packages/starter/templates/managed/skills/kortix-design/SKILL.md`. In a Kortix
+session, load the managed `kortix-design` skill instead. This includes delegated
+app builders: put this requirement in their brief before UI work starts.
+Preserve user-requested styling and the existing `kortix-ui`, brand and
+design-system rules below.
 
 #### Canonical design references
 

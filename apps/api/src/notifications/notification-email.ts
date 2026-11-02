@@ -1,4 +1,4 @@
-// What a notification email says (KRTX-1742): the immediate automation alert
+// What a notification email says (KRTX-1742): the immediate trigger alert
 // and the digest of unread rows. One Kortix shell (lib/email/template.tsx);
 // voice rules: .agents/skills/kortix-brand/references/verbal/voice-and-tone.md 5.5.
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
@@ -6,7 +6,6 @@ import { config } from '../config';
 import { actionButton, renderEmail, renderText, S } from '../lib/email/template';
 import type { EmailMessage } from '../lib/email/types';
 import { escapeHtml } from '../shared/html';
-import { opensRemindersPage } from './push-payload';
 
 export type RenderedEmail = Pick<EmailMessage, 'subject' | 'html' | 'text'>;
 
@@ -24,8 +23,8 @@ export const KIND_LABELS: Record<NotificationKindName, string> = {
   question: 'Question waiting',
   permission: 'Approval needed',
   shared: 'Shared with you',
-  automation_failed: 'Automation failing',
-  automation_recovered: 'Automation recovered',
+  automation_failed: 'Trigger failing',
+  automation_recovered: 'Trigger recovered',
   capture_device_down: 'Computer not recording',
   capture_device_recovered: 'Computer recording again',
   message: 'New message',
@@ -89,19 +88,20 @@ function message(parts: {
 }
 
 /**
- * One automation alert, sent as it happens. Null for any other kind: those
+ * One trigger alert, sent as it happens. Null for any other kind: those
  * are emailed only in the digest.
  */
 export function renderImmediateNotificationEmail(item: NotificationEmailItem): RenderedEmail | null {
   if (item.kind === 'capture_device_down' || item.kind === 'capture_device_recovered') return renderCaptureEmail(item);
-  const cta = { url: absoluteAppUrl(item.url), label: opensRemindersPage(item.url) ? 'Open reminders' : 'Open automations' };
+  // Loops are triggers (2026-10-28): every trigger alert opens the Triggers page.
+  const cta = { url: absoluteAppUrl(item.url), label: 'Open triggers' };
   // True for the creator, the last editor, a reminder's owner and a project
   // manager who gets the alert because nobody else can read the trigger.
-  const note = 'You get this email because you created or edited this automation, or you manage its project.';
+  const note = 'You get this email because you created or edited this trigger, or you manage its project.';
   if (item.kind === 'automation_failed') {
     return message({
-      subject: `Automation failing: ${item.title}`,
-      title: 'An automation is failing',
+      subject: `Trigger failing: ${item.title}`,
+      title: 'A trigger is failing',
       lead: { strong: item.title, text: 'is failing.' },
       detail: item.body ? `Error: ${item.body}` : undefined,
       next: 'It stays failing until a run succeeds. Open it to see the last error and fix the cause.',
@@ -111,8 +111,8 @@ export function renderImmediateNotificationEmail(item: NotificationEmailItem): R
   }
   if (item.kind === 'automation_recovered') {
     return message({
-      subject: `Automation working again: ${item.title}`,
-      title: 'An automation works again',
+      subject: `Trigger working again: ${item.title}`,
+      title: 'A trigger works again',
       lead: { strong: item.title, text: 'ran successfully after a failure.' },
       next: 'It works again. If it fails again, you get a new alert.',
       cta,

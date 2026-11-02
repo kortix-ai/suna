@@ -36,7 +36,7 @@ import {
 } from './dispatch';
 import { clampRetryAfterSeconds, gatewayErrorResponse, providerClientErrorBody } from './error-response';
 import { DEFAULT_IMAGE_WINDOW, type ImageWindowOptions, applyImageWindow } from './image-window';
-import { requestFieldError } from './request-fields';
+import { conversationError, requestFieldError } from './request-fields';
 import {
   publicPayload,
   publicResponseHeaders,
@@ -78,6 +78,8 @@ export interface GatewayDeps {
   logger?: GatewayLogger;
   /** Inline-image cap per request. See pipeline/image-window.ts. */
   imageWindow?: ImageWindowOptions;
+  /** Anthropic's origin for the Claude Code passthrough (claude-code/passthrough.ts). */
+  claudeCodeUpstream?: string;
 }
 
 export interface HandlerRuntime {
@@ -412,7 +414,7 @@ export async function handleChatCompletions(
     });
   }
 
-  const fieldError = requestFieldError(body);
+  const fieldError = requestFieldError(body) ?? conversationError(body);
   if (fieldError) {
     refundHold(hooks, principal, logger);
     emit({

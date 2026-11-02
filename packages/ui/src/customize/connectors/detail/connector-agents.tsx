@@ -73,9 +73,6 @@ export function ConnectorAgents({ projectId, connector }: { projectId: string; c
       />
     );
   }
-  if (!access.supported) {
-    return <p className="text-muted-foreground text-sm text-pretty">{t('agentsNeedsV2')}</p>;
-  }
   if (access.agents.length === 0) {
     return <EmptyState icon={RobotIcon} size="sm" title={t('agentsEmpty')} />;
   }

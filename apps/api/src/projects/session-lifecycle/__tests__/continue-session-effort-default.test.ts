@@ -118,8 +118,6 @@ const notExpected = (name: string) => async () => {
 
 mock.module('../store', () => ({
   promoteNextInboxRow: async () => null,
-  loadLegacyPendingFirstPrompt: async () => null,
-  markLegacyInlineAttachmentsRepaired: async () => {},
   requeueUnlandedPrompt: notExpected('requeueUnlandedPrompt'),
   MAX_LANDING_RETRIES: 2,
   requeueForAdmission: notExpected('requeueForAdmission'),

@@ -2,10 +2,10 @@
  * image_gen: the Kortix image generation tool, for any image model the
  * project can use (gpt-image-2 on a ChatGPT plan, OpenAI, Google, xAI or
  * OpenRouter image models with a key, Kortix-managed image models). Kortix
- * maintains this file. A project lists it in kortix.yaml as
- * `image_gen: kortix:image_gen`; a `tools:` list that does not name it still
- * loads it (DEFAULT_ON_KORTIX_TOOLS). `kortix tools eject image_gen` copies it
- * to `tools/image_gen.ts` for the project to own.
+ * maintains this file, and every session loads it. An agent's `tools` grant
+ * decides whether that agent can call it: `all`, a list that names
+ * `image_gen`, or an `exclude` that does not. `kortix tools eject image_gen`
+ * copies it to `tools/image_gen.ts` for the project to own.
  *
  * A call takes one to four prompts and sends one request per prompt to the
  * Kortix LLM gateway (`KORTIX_LLM_BASE_URL`), all at once, with the session

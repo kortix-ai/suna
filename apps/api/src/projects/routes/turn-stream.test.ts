@@ -206,12 +206,6 @@ mock.module('../session-lifecycle/forwarded-strand-reconcile', () => ({
   },
 }));
 
-mock.module('../lib/session-transcript-capture', () => ({
-  captureJournallessSessionLog: () => {
-    order.push('mirror');
-  },
-}));
-
 mock.module('../sandbox-deadline', () => ({ childIdleGraceMs: () => 1_000 }));
 
 // R7.4: the turn end refreshes the projection the session list follows.
@@ -832,7 +826,7 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
     const response = await post({ session_id: SESSION_ID, kind: 'end' });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ queue_promoted: false });
-    expect(order).toEqual(['complete', 'mirror', 'notify', 'relayEnd']);
+    expect(order).toEqual(['complete', 'notify', 'relayEnd']);
   });
 
   // KRTX-1742: the person who prompted the ended turn is told, not only the
@@ -942,7 +936,6 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
     expect(order).toEqual([
       'complete',
       'reconcile',
-      'mirror',
       'drain',
       'notify',
       'title',

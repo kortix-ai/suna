@@ -80,7 +80,7 @@ function Field({
     <box flexDirection="row" width="100%">
       <box width={FIELD_LABEL_WIDTH} flexShrink={0}>
         <text fg={active ? theme.fg : theme.faint}>
-          <span fg={theme.accent}>{active ? '▌' : ' '}</span>
+          <span fg={theme.brand}>{active ? '▌' : ' '}</span>
           {label}
         </text>
       </box>

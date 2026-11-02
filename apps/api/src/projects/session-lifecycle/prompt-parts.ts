@@ -12,7 +12,7 @@
  * not a blob store.
  */
 
-import { isModelNativeAttachmentMime, parseSessionAttachmentRef, MAX_PROMPT_ATTACHMENT_FILES } from '@kortix/shared';
+import { isModelNativeAttachmentMime, parseSessionAttachmentRef, MAX_PROMPT_ATTACHMENT_FILES, PROMPT_PARTS_MAX_BYTES as SERIALIZED_PROMPT_PARTS_MAX_BYTES } from '@kortix/shared';
 import { parseStagedPromptDataUrl } from './prompt-attachment-materializer';
 import type { PromptPartWire } from './store';
 import { isUuid } from '../../shared/validate';
@@ -26,7 +26,7 @@ export const PROMPT_TEXT_PREVIEW_CHARS = 2000;
  * under the API body limit, and small enough that the drain's re-POST to the
  * daemon stays an ordinary request.
  */
-export const PROMPT_PARTS_MAX_BYTES = 12 * 1024 * 1024;
+export const PROMPT_PARTS_MAX_BYTES = SERIALIZED_PROMPT_PARTS_MAX_BYTES;
 
 export type SanitizedPromptParts = { parts: PromptPartWire[] } | { error: string };
 

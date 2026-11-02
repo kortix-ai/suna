@@ -2,7 +2,7 @@
  * Verify-only mirror of apps/api/src/shared/kortix-user-context.ts.
  *
  * The API signs `X-Kortix-User-Context` with the sandbox's KORTIX_TOKEN; the
- * daemon validates it before forwarding to opencode. Pure module — no I/O.
+ * daemon validates it before it serves a user request. Pure module — no I/O.
  */
 
 import { createHmac, timingSafeEqual } from 'node:crypto'
@@ -24,7 +24,7 @@ export const KORTIX_USER_CONTEXT_HEADER = 'X-Kortix-User-Context'
  * proof of a direct platform call, and the check fails CLOSED — a request that
  * loses the header is refused, not trusted.
  *
- * Used to gate the destructive `base=1` branch reset. Keep in sync with
+ * Gates `POST /kortix/refresh?on_boot=1` and the runtime steer route. Keep in sync with
  * apps/api/src/shared/kortix-user-context.ts.
  */
 export const KORTIX_SERVICE_CALL_HEADER = 'X-Kortix-Service-Call'

@@ -11,13 +11,19 @@
 // subdirectory mount of the one volume, so the box sees nothing outside the
 // folders it was given (a mount cannot hide part of itself from a box whose
 // agent can become root).
+//
+// The volume lives in one Platinum region (`platinum_volume_region`, chosen
+// from the project's `us_region` when the row is inserted), and every box of
+// the project runs there (platform/services/sandbox-region.ts
+// resolveSessionPlacement): a box mounts only a volume of its own region.
 
 import { logger } from '../lib/logger';
-import { accountMembers, driveConflicts, driveMountRevocations, drives, iamRoles, projectSessions, projectSpaceLinks, projectSpaceMembers, projectSpaces, roleAssignments, serviceAccounts, sessionSandboxes } from '@kortix/db';
+import { accountMembers, driveConflicts, driveMountRevocations, drives, iamRoles, projectSessions, projectSpaceLinks, projectSpaceMembers, projectSpaces, projects, roleAssignments, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { spaceDriveFolders } from '@kortix/shared';
 import { privateChannelAccess } from '../shared/space-access';
 import { and, asc, count, desc, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
+import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
 import { SYSTEM_ACTOR, assignRole, revokeAssignment } from '../iam/assignments';
 import { resolvePrincipal } from '../iam/authorize';
 import { config } from '../config';
@@ -48,6 +54,8 @@ import {
   spaceNotesLines,
 } from './folders';
 import {
+  DRIVE_MOVING_MESSAGE,
+  type DriveVolume,
   DriveStorageError,
   attachSandboxVolume,
   detachSandboxVolume,
@@ -78,6 +86,7 @@ export interface DriveJson {
   kind: 'project';
   name: string;
   sizeBytes: number | null;
+  /** What the project's Files may hold (drives/limits.ts); null when unknown. */
   sizeLimitBytes: number | null;
   fileCount: number | null;
   lastChangeAt: string | null;
@@ -93,9 +102,17 @@ export interface DriveJson {
 
 export function toDriveJson(
   drive: DriveRow,
-  extra: { access: FolderAccess; personalFolder: string | null; openConflicts?: number; stats?: VolumeInfo | null },
+  extra: {
+    access: FolderAccess;
+    personalFolder: string | null;
+    openConflicts?: number;
+    stats?: VolumeInfo | null;
+    /** The project's Files limit (drives/limits.ts); else the volume's own size. */
+    limitBytes?: number | null;
+  },
 ): DriveJson {
   const stats = extra.stats;
+  const volumeLimit = stats?.size_limit_bytes != null ? Number(stats.size_limit_bytes) : null;
   return {
     driveId: drive.driveId,
     accountId: drive.accountId,
@@ -103,7 +120,7 @@ export function toDriveJson(
     kind: 'project',
     name: drive.name,
     sizeBytes: stats ? Number(stats.logical_bytes ?? 0) : null,
-    sizeLimitBytes: stats?.size_limit_bytes != null ? Number(stats.size_limit_bytes) : null,
+    sizeLimitBytes: extra.limitBytes ?? volumeLimit,
     fileCount: stats ? Number(stats.file_count ?? 0) : null,
     lastChangeAt: stats?.last_commit_at ?? null,
     createdAt: drive.createdAt.toISOString(),
@@ -150,10 +167,20 @@ export async function openConflictCounts(driveIds: string[]): Promise<Map<string
   return out;
 }
 
+/** The drive's volume as every storage call addresses it: by name, in its region, fenced while it moves. */
+export function driveVolume(drive: Pick<DriveRow, 'platinumVolumeName' | 'platinumVolumeRegion' | 'platinumVolumeMove'>): DriveVolume {
+  const move = drive.platinumVolumeMove;
+  return {
+    name: drive.platinumVolumeName,
+    region: drive.platinumVolumeRegion ?? null,
+    ...(move && !move.finished_at ? { moving: true } : {}),
+  };
+}
+
 /** Volume stats, best effort: a slow or failed lookup reads as null. */
 export async function driveStats(drive: DriveRow): Promise<VolumeInfo | null> {
   if (!driveStorageAvailable() || !drive.platinumVolumeId) return null;
-  return getDriveVolume(drive.platinumVolumeName, AbortSignal.timeout(3_000)).catch(() => null);
+  return getDriveVolume(driveVolume(drive), AbortSignal.timeout(3_000)).catch(() => null);
 }
 
 export async function getDrive(driveId: string): Promise<DriveRow | null> {
@@ -172,12 +199,15 @@ export async function findProjectDrive(projectId: string): Promise<DriveRow | nu
 
 /**
  * The project's drive, created on first use with its one default grant:
- * everyone who works in the project may write `/Company`.
+ * everyone who works in the project may write `/Company`. Its volume lives
+ * where the project's sessions run now (the `us_region` flag), for good: a
+ * later flag change moves the sessions to the drive, never the drive.
  */
 export async function ensureProjectDrive(accountId: string, projectId: string): Promise<DriveRow> {
   const existing = await findProjectDrive(projectId);
   if (existing) return existing;
   const driveId = crypto.randomUUID();
+  const [project] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
   const [created] = await db
     .insert(drives)
     .values({
@@ -187,6 +217,7 @@ export async function ensureProjectDrive(accountId: string, projectId: string): 
       kind: 'project',
       name: PROJECT_DRIVE_NAME,
       platinumVolumeName: driveVolumeName(driveId),
+      platinumVolumeRegion: resolveSessionSandboxRegion(project?.metadata ?? null) ?? null,
     })
     .onConflictDoNothing()
     .returning();
@@ -210,32 +241,36 @@ export async function ensureProjectDrive(accountId: string, projectId: string): 
 }
 
 /**
- * Open (create when missing) the drive's volume and return the name every
- * storage call uses. The first open lays out the folders everyone expects.
+ * Open (create when missing) the drive's volume in its region and return the
+ * volume every storage call uses. The first open lays out the folders
+ * everyone expects.
  */
-export async function openVolumeFor(drive: DriveRow, signal?: AbortSignal): Promise<string> {
-  const vol = await openDriveVolume(drive.platinumVolumeName, signal);
+export async function openVolumeFor(drive: DriveRow, signal?: AbortSignal): Promise<DriveVolume> {
+  const volume = driveVolume(drive);
+  const vol = await openDriveVolume(volume, signal);
   if (drive.platinumVolumeId !== vol.id) {
     const first = !drive.platinumVolumeId;
+    // Only while the row still names this volume: a row read before a region
+    // move swapped it must not put an old volume's id on the moved row.
     await db
       .update(drives)
       .set({ platinumVolumeId: vol.id, updatedAt: new Date() })
-      .where(eq(drives.driveId, drive.driveId));
+      .where(and(eq(drives.driveId, drive.driveId), eq(drives.platinumVolumeName, volume.name)));
     drive.platinumVolumeId = vol.id;
     if (first && drive.kind === 'project') {
-      await writeVolumeFile(drive.platinumVolumeName, `${COMPANY_MEMORY_DIR}/.keep`, new Uint8Array(), {
+      await writeVolumeFile(volume, `${COMPANY_MEMORY_DIR}/.keep`, new Uint8Array(), {
         overwrite: false,
       }).catch(() => undefined);
     }
   }
-  return drive.platinumVolumeName;
+  return volume;
 }
 
 /** A read: a drive with no volume yet (or none on this storage account) answers `empty`. */
-export async function readDriveVolume<T>(drive: DriveRow, op: (volume: string) => Promise<T>, empty: () => T): Promise<T> {
+export async function readDriveVolume<T>(drive: DriveRow, op: (volume: DriveVolume) => Promise<T>, empty: () => T): Promise<T> {
   if (!drive.platinumVolumeId) return empty();
   try {
-    return await op(drive.platinumVolumeName);
+    return await op(driveVolume(drive));
   } catch (err) {
     if (isMissingVolume(err)) return empty();
     throw err;
@@ -243,10 +278,10 @@ export async function readDriveVolume<T>(drive: DriveRow, op: (volume: string) =
 }
 
 /** A write: creates the volume on first use, and again if storage lost it. */
-export async function writeDriveVolume<T>(drive: DriveRow, op: (volume: string) => Promise<T>): Promise<T> {
+export async function writeDriveVolume<T>(drive: DriveRow, op: (volume: DriveVolume) => Promise<T>): Promise<T> {
   if (!drive.platinumVolumeId) return op(await openVolumeFor(drive));
   try {
-    return await op(drive.platinumVolumeName);
+    return await op(driveVolume(drive));
   } catch (err) {
     if (!isMissingVolume(err)) throw err;
     return op(await openVolumeFor(drive));
@@ -419,6 +454,12 @@ export async function driveSubjectFor(
   may: (action: 'session' | 'write') => Promise<boolean>,
   /** The session-bound credential's session (`callerKortixSessionId`), null for a person. */
   bound: string | null = null,
+  /**
+   * A person's own credential (browser login or PAT, no session binding,
+   * `isHumanCaller`): an admin then reaches people's own folders too. Never a
+   * session's or an agent's.
+   */
+  human = false,
 ): Promise<DriveCaller> {
   const [projectMember, admin, groupIds] = await Promise.all([may('session'), may('write'), groupIdsOf(userId, drive.accountId)]);
   let grants = await listFolderGrants(drive);
@@ -444,7 +485,12 @@ export async function driveSubjectFor(
       subject: { userId, groupIds, projectMember, admin: false, privateChannelFolders },
     };
   }
-  return { userId, grants, personalFolder, subject: { userId, groupIds, projectMember, admin, privateChannelFolders } };
+  return {
+    userId,
+    grants,
+    personalFolder,
+    subject: { userId, groupIds, projectMember, admin, adminPeople: admin && human && bound === null, privateChannelFolders },
+  };
 }
 
 /** Every grant outside `channelFolder` at most `read`: what a private channel's thread may do with its person's access. */
@@ -607,8 +653,22 @@ export interface RecordedDriveMount {
 
 export interface SkippedDrive {
   driveId: string;
-  /** The folder that did not fit. */
+  /** The folder that is not mounted. */
   name: string;
+  /**
+   * Why: absent = it did not fit in the sandbox's mount slots; `region` = the
+   * files live in another region than the sandbox; `moving` = the files were
+   * moving to another region when the sandbox booted; `unavailable` =
+   * storage refused the mount (its folder image was not ready, the volume was
+   * busy) and the drive worker attaches it to the running box once it can;
+   * `too_large` = the folder is larger than a folder mount allows.
+   */
+  reason?: 'region' | 'moving' | 'unavailable' | 'too_large';
+  /** Storage's own words for `unavailable` and `too_large`. */
+  detail?: string;
+  /** For `too_large`: what the folder holds, and the largest folder a session mounts. */
+  bytes?: number;
+  maxBytes?: number;
 }
 
 export interface SessionDriveMounts {
@@ -617,6 +677,31 @@ export interface SessionDriveMounts {
   mounts: RecordedDriveMount[];
   slots: number;
   skipped: SkippedDrive[];
+  /** The region of the drive's volume (null = home): a sandbox mounts it only there. */
+  region: string | null;
+}
+
+/**
+ * Whether a plan made earlier still mounts the drive's current volume. A
+ * region move may have fenced the drive, or pointed it at a new volume, since:
+ * a box created from the old plan would then write where nobody reads.
+ */
+export async function driveMountPlanCurrent(plan: SessionDriveMounts): Promise<boolean> {
+  const driveId = plan.mounts[0]?.driveId;
+  const planned = Object.values(plan.volumes)[0]?.volume;
+  if (!driveId || !planned) return true;
+  const drive = await getDrive(driveId);
+  return !!drive && drive.platinumVolumeName === planned && !driveVolume(drive).moving;
+}
+
+/** The same plan with no folder mounted: each planned folder is skipped for `reason`. */
+export function withoutDriveMounts(plan: SessionDriveMounts, reason: 'region' | 'moving'): SessionDriveMounts {
+  return {
+    ...plan,
+    volumes: {},
+    mounts: [],
+    skipped: [...plan.mounts.map((m) => ({ driveId: m.driveId, name: m.subdir, reason })), ...plan.skipped],
+  };
 }
 
 export const DRIVE_MOUNTS_METADATA_KEY = 'driveMounts';
@@ -794,15 +879,23 @@ export async function sessionVolumeMounts(input: {
   /** Mount slots the box's other volumes take (its /workspace volume). */
   reservedSlots?: number;
 }): Promise<SessionDriveMounts | undefined> {
-  if (!(await sessionDrivesEnabled(input.projectId))) return undefined;
+  if (!sessionDriveMountEnabled()) return undefined;
   const slots = Math.max(0, (await sandboxMountLimit()) - (input.reservedSlots ?? 0));
   const plan = await planSessionDrives({ ...input, slots });
+  const region = plan.drive.platinumVolumeRegion ?? null;
   const skipped = plan.skipped.map((path) => ({ driveId: plan.drive.driveId, name: path }));
   if (skipped.length) {
     logger.warn(`[drives] session ${input.sessionId}: ${skipped.length} folder(s) past the ${slots} mount slots left out`);
   }
-  if (!plan.mounts.length) return skipped.length ? { volumes: {}, mounts: [], skipped, slots } : undefined;
-  let volume: string | null = null;
+  if (!plan.mounts.length) return skipped.length ? { volumes: {}, mounts: [], skipped, slots, region } : undefined;
+  const planned: SessionDriveMounts = { volumes: {}, mounts: plan.mounts.map((p) => toRecorded(plan.drive, p)), skipped, slots, region };
+  // A region move is copying the files: a box that mounted the old volume now
+  // would write where nobody reads after the move. It boots without them.
+  if (driveVolume(plan.drive).moving) {
+    logger.info(`[drives] session ${input.sessionId}: the project's files are moving regions; the box boots without them`);
+    return withoutDriveMounts(planned, 'moving');
+  }
+  let volume: DriveVolume | null = null;
   let lastErr: unknown;
   // Three tries over ~10 s ride out a storage blip; then the boot fails, loudly.
   for (let attempt = 1; attempt <= 3 && !volume; attempt++) {
@@ -824,18 +917,10 @@ export async function sessionVolumeMounts(input: {
       [PROJECT_DRIVE_NAME],
     );
   }
-  const out: SessionDriveMounts = { volumes: {}, mounts: [], skipped, slots };
   for (const p of plan.mounts) {
-    out.volumes[p.mountPath] = { volume, ...(p.readOnly ? { read_only: true } : {}), subdir: p.path, share: 'node' };
-    out.mounts.push(toRecorded(plan.drive, p));
+    planned.volumes[p.mountPath] = { volume: volume.name, ...(p.readOnly ? { read_only: true } : {}), subdir: p.path, share: 'node' };
   }
-  return out;
-}
-
-/** Files mount in this project's sessions: storage configured, the operator override not set, the project's Volumes flag on. */
-export async function sessionDrivesEnabled(projectId: string): Promise<boolean> {
-  if (!sessionDriveMountEnabled()) return false;
-  return projectFeatureFlagEnabled(projectId, 'drives');
+  return planned;
 }
 
 /**
@@ -882,6 +967,16 @@ async function writeRecordedMounts(sandboxId: string, mounts: RecordedDriveMount
     .where(eq(sessionSandboxes.sandboxId, sandboxId));
 }
 
+async function writeSkippedMounts(sandboxId: string, skipped: SkippedDrive[]): Promise<void> {
+  await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({ [DRIVE_SKIPPED_METADATA_KEY]: skipped })}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(eq(sessionSandboxes.sandboxId, sandboxId));
+}
+
 export interface SessionDriveView extends RecordedDriveMount {
   /** The folder's name, for people. */
   name: string;
@@ -905,7 +1000,7 @@ export async function readSessionDriveMounts(sessionId: string): Promise<Session
   }));
 }
 
-/** Folders the session's current sandbox should have but did not fit at its boot, and the message for them. */
+/** Folders the session's current sandbox should have but does not mount, and the message for them. */
 export async function readSkippedSessionDrives(
   sessionId: string,
 ): Promise<{ skipped: SkippedDrive[]; message: string | null }> {
@@ -918,6 +1013,19 @@ export async function readSkippedSessionDrives(
   const mounted = new Set(recordedDriveMounts(md).map((m) => m.subdir));
   const skipped = recorded.filter((d) => !mounted.has(d.name));
   if (!skipped.length) return { skipped, message: null };
+  const named = (reason: SkippedDrive['reason']) => skipped.filter((d) => d.reason === reason).map((d) => d.name).join(', ');
+  if (skipped.some((d) => d.reason === 'too_large')) {
+    return { skipped, message: `These folders are too large to mount in a session: ${named('too_large')}. The session runs without them. Move large files out of them, or share a smaller folder.` };
+  }
+  if (skipped.some((d) => d.reason === 'unavailable')) {
+    return { skipped, message: `These folders are not mounted yet: ${named('unavailable')}. File storage could not mount them when the session started. The session runs without them, and they mount as soon as storage can.` };
+  }
+  if (skipped.some((d) => d.reason === 'region')) {
+    return { skipped, message: 'This session runs in another region than the project’s files, so its folders are not mounted. A new session mounts them.' };
+  }
+  if (skipped.some((d) => d.reason === 'moving')) {
+    return { skipped, message: 'The project’s files were moving to another region when this session started, so its folders are not mounted. A new session mounts them.' };
+  }
   const slots = Number(md?.[DRIVE_SLOTS_METADATA_KEY]);
   return {
     skipped,
@@ -1019,7 +1127,7 @@ const subdirOf = (subdir: string | undefined) => (subdir ?? '/').replace(/\/+$/,
  * resumed from memory keeps the mounts its kernel had after Platinum ended
  * them at the stop) is unmounted in the guest. Then the attach runs again.
  */
-async function attachDriveMount(externalId: string, m: RecordedDriveMount, volume: string): Promise<void> {
+async function attachDriveMount(externalId: string, m: RecordedDriveMount, volume: DriveVolume): Promise<void> {
   const input = { volume, readOnly: m.readOnly, subdir: m.subdir };
   try {
     await attachSandboxVolume(externalId, m.mountPath, input);
@@ -1030,7 +1138,7 @@ async function attachDriveMount(externalId: string, m: RecordedDriveMount, volum
   const mounts = await sandboxVolumeMounts(externalId);
   if (!mounts) throw new DriveStorageError(503, 'Drive storage is unavailable, try again shortly', 'drive_storage_unavailable');
   const held = mounts.find((x) => x.mountPath === m.mountPath);
-  if (held && held.volume === volume && held.readOnly === m.readOnly && subdirOf(held.subdir) === subdirOf(m.subdir)) return;
+  if (held && held.volume === volume.name && held.readOnly === m.readOnly && subdirOf(held.subdir) === subdirOf(m.subdir)) return;
   if (held) {
     logger.warn(`[drives] ${externalId}: replacing the mount at ${m.mountPath} (${held.volume}:${held.subdir})`);
     await detachSandboxVolume(externalId, m.mountPath);
@@ -1074,11 +1182,75 @@ async function applyDriveToRunningSandbox(input: {
     await writeRecordedMounts(box.sandboxId, [...others, ...kept]);
   }
   if (fresh.length) {
-    const volume = await openVolumeFor(plan.drive, AbortSignal.timeout(OPEN_TIMEOUT_MS));
-    for (const m of placeNew(plan.drive, fresh, [...others, ...kept])) {
-      await attachDriveMount(box.externalId, m, volume);
-      kept = [...kept, m];
-      await writeRecordedMounts(box.sandboxId, [...others, ...kept]);
+    const placed = placeNew(plan.drive, fresh, [...others, ...kept]);
+    // A box mounts only a volume of its own region, and none while a region
+    // move copies it. A box that booted before the drive moved keeps running
+    // without the new folders; its next box mounts them. Recorded, not
+    // retried: retrying cannot change where the box runs.
+    const unreachable = async (reason: 'region' | 'moving') => {
+      logger.info(`[drives] session ${input.sessionId}: ${placed.length} folder(s) not attached (${reason})`);
+      await writeSkippedMounts(box.sandboxId, placed.map((m) => ({ driveId: m.driveId, name: m.subdir, reason })));
+    };
+    const boxRegion = (box.metadata as Record<string, unknown> | null)?.platinumRegion;
+    const filesRegion = plan.drive.platinumVolumeRegion;
+    if (driveVolume(plan.drive).moving) {
+      await unreachable('moving');
+    } else if (filesRegion && typeof boxRegion === 'string' && boxRegion !== filesRegion) {
+      await unreachable('region');
+    } else {
+      const volume = await openVolumeFor(plan.drive, AbortSignal.timeout(OPEN_TIMEOUT_MS));
+      const tooLarge: SkippedDrive[] = [];
+      const refused: SkippedDrive[] = [];
+      let firstRefusal: unknown;
+      let elsewhere = false;
+      for (const m of placed) {
+        try {
+          await attachDriveMount(box.externalId, m, volume);
+        } catch (err) {
+          const code = err instanceof DriveStorageError ? err.code : undefined;
+          const detail = err instanceof Error ? err.message.slice(0, 300) : undefined;
+          if (code === 'sub_path_too_large') {
+            // Retrying cannot shrink the folder: recorded, and tried again at the next change of the session's folders.
+            logger.info(`[drives] session ${input.sessionId}: folder ${m.subdir} is too large to mount`);
+            const numbers = err instanceof DriveStorageError ? err.detail : undefined;
+            tooLarge.push({
+              driveId: m.driveId,
+              name: m.subdir,
+              reason: 'too_large',
+              detail,
+              ...(numbers?.used !== undefined ? { bytes: numbers.used } : {}),
+              ...(numbers?.max !== undefined ? { maxBytes: numbers.max } : {}),
+            });
+            continue;
+          }
+          // The box's control plane names the volume's region, or, before its
+          // volume directory learned of a new volume, does not find it at all:
+          // the volume was just opened in its own region, so both mean the box
+          // runs elsewhere.
+          if (code === 'volume_in_other_region' || code === 'volume_not_found' || code === 'drive_moving') {
+            await unreachable(code === 'drive_moving' ? 'moving' : 'region');
+            elsewhere = true;
+            break;
+          }
+          // One folder storage refuses does not keep the others out: the rest
+          // are attached, and the drive worker retries this one.
+          firstRefusal ??= err;
+          refused.push({ driveId: m.driveId, name: m.subdir, reason: 'unavailable', detail });
+          continue;
+        }
+        kept = [...kept, m];
+        await writeRecordedMounts(box.sandboxId, [...others, ...kept]);
+      }
+      if (!elsewhere) {
+        // Every folder was tried: it mounted, it is too large, or storage still refuses it.
+        const before = Array.isArray((box.metadata as Record<string, unknown> | null)?.[DRIVE_SKIPPED_METADATA_KEY])
+          ? ((box.metadata as Record<string, unknown>)[DRIVE_SKIPPED_METADATA_KEY] as SkippedDrive[])
+          : [];
+        const settled = before.filter((d) => d.reason !== 'unavailable' && d.reason !== 'too_large');
+        const next = [...settled, ...tooLarge, ...refused];
+        if (next.length !== before.length || tooLarge.length || refused.length) await writeSkippedMounts(box.sandboxId, next);
+      }
+      if (firstRefusal) throw firstRefusal;
     }
   }
   // Awaited: the ownership pass inside makes a newly writable mount writable
@@ -1103,7 +1275,7 @@ export async function reconcileSessionDrives(sessionId: string): Promise<void> {
       .from(projectSessions)
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
-    if (!row || !(await sessionDrivesEnabled(row.projectId))) return;
+    if (!row || !sessionDriveMountEnabled()) return;
     const drive = await ensureProjectDrive(row.accountId, row.projectId);
     await applyDriveToRunningSandbox({
       accountId: row.accountId,
@@ -1436,7 +1608,7 @@ export async function enforceDriveMounts(
     );
   };
   const bringInLine = async (row: (typeof rows)[number]): Promise<void> => {
-    if (!(await sessionDrivesEnabled(row.projectId))) return;
+    if (!sessionDriveMountEnabled()) return;
     const base = {
       accountId: row.accountId,
       projectId: row.projectId,
@@ -1508,6 +1680,15 @@ async function recordMountRevocation(sandboxId: string, error: string): Promise<
         notBefore: sql`now() + least(${REVOCATION_MAX_BACKOFF_MS}::int, ${REVOCATION_RETRY_MS}::int * power(2, least(${driveMountRevocations.attempts}, 10))::int) * interval '1 millisecond'`,
       },
     });
+}
+
+/**
+ * A box booted without folders storage refused at its create (reason
+ * `unavailable`): the drive worker attaches them to the running box, with
+ * backoff, until they land.
+ */
+export async function queueDriveAttach(sandboxId: string, why: string): Promise<void> {
+  await recordMountRevocation(sandboxId, `attach: ${why}`);
 }
 
 async function clearMountRevocation(sandboxId: string): Promise<void> {

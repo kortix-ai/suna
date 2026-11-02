@@ -1,7 +1,7 @@
 /**
  * scrape_webpage: the Kortix page scraper (Firecrawl). Kortix maintains this
- * file. A project lists it in kortix.yaml as
- * `scrape_webpage: kortix:scrape_webpage`. `kortix tools eject scrape_webpage`
+ * file, and every session loads it; an agent's `tools` grant decides whether
+ * that agent can call it. `kortix tools eject scrape_webpage`
  * copies it to `tools/scrape_webpage.ts` for the project to own and change;
  * the copy runs unchanged on every harness.
  *

@@ -72,6 +72,8 @@ export interface ComposerUnderbarProps {
   /** See `SessionChatInputProps.agentPickerCompact`. */
   agentPickerCompact?: boolean;
   toolbarSlot?: React.ReactNode;
+  /** Right of the agent picker: the session's agents line. Same row, no added height. */
+  agentsSlot?: React.ReactNode;
 }
 
 export function ComposerUnderbar({
@@ -89,6 +91,7 @@ export function ComposerUnderbar({
   variant = 'row',
   agentPickerCompact = false,
   toolbarSlot,
+  agentsSlot,
 }: ComposerUnderbarProps) {
   const t = useTranslations('threads');
   const { contextMeterEnabled } = useUiHostConfig();
@@ -161,6 +164,8 @@ export function ComposerUnderbar({
           triggerLabelClassName="max-w-[7rem]"
           unavailableHint={noAccessibleAgents ? NO_AGENT_ACCESS_MESSAGE : undefined}
         />
+
+        {agentsSlot}
       </div>
 
       <div className="flex items-center gap-1">

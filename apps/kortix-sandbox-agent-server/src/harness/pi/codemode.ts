@@ -1,8 +1,8 @@
 /**
  * pi's `codemode` tool (pi-coding-agent `createCodemodeExtension`): the model writes a
  * JavaScript script that calls the other tools as `tools.<name>(args)`, in a QuickJS
- * sandbox, and only the script's output reaches the model. kortix.yaml
- * `harnesses.pi.codemode` (`KORTIX_PI_CODEMODE`) picks `off`, `on` (the other tools stay
+ * sandbox, and only the script's output reaches the model. The agent's kortix.yaml
+ * `codemode` (`KORTIX_PI_CODEMODE`) picks `off`, `on` (the other tools stay
  * declared; the default) or `only` (the model gets codemode plus direct output presentation).
  *
  * A script's tool calls are nested calls (`ctx.executeTool`): pi runs them through the
@@ -18,7 +18,8 @@ import type { ExtensionToolContext, InlineExtension } from '@earendil-works/pi-c
 import quickjsWasmPath from 'quickjs-wasi/quickjs.wasm'
 // ponytail: pi does not export this setter (its own Bun entry calls it), so the relative path reaches the same
 // module its package entry loads. Import it from the package once pi exports it.
-import { setEmbeddedQuickJSWasmPath } from '../../../node_modules/@earendil-works/pi-coding-agent/dist/config.js'
+import { getCodemodeWorkerSpecifier, getQuickJSWasmPath, setEmbeddedQuickJSWasmPath } from '../../../node_modules/@earendil-works/pi-coding-agent/dist/config.js'
+import type { CodemodeSandbox, CodemodeTool } from '@earendil-works/pi-codemode'
 
 export type CodemodeMode = 'off' | 'on' | 'only'
 
@@ -61,4 +62,27 @@ export async function childCodemodeTool(
     },
   }
   return bound
+}
+
+/** pi's own heap limit for a codemode VM (pi-coding-agent `CODEMODE_MEMORY_LIMIT_BYTES`). */
+const SCRIPT_MEMORY_LIMIT_BYTES = 256 * 1024 * 1024
+
+/**
+ * A QuickJS sandbox of its own, for a script that waits on long host calls (the `workflow`
+ * tool, `extensions/workflow.ts`). pi's codemode executor shares 2 workers across every
+ * session (`PI_CODEMODE_MAX_WORKERS`) and fails a script that waits 60 s for one, so a
+ * script that runs for hours must not take one of them: this sandbox has no `acquireWorker`.
+ * Same VM, wasm and worker entry as pi's (in a compiled binary: `src/extensions/codemode/worker.ts`).
+ */
+export async function ownScriptSandbox(options: { globals: CodemodeTool[]; timeoutMs: number }): Promise<CodemodeSandbox> {
+  // Loaded here, not at import: runtime.ts imports this module on every boot.
+  const { CodemodeSandbox, loadQuickJSWasm } = await import('@earendil-works/pi-codemode')
+  setEmbeddedQuickJSWasmPath(quickjsWasmPath)
+  return new CodemodeSandbox({
+    globals: options.globals,
+    timeoutMs: options.timeoutMs,
+    memoryLimitBytes: SCRIPT_MEMORY_LIMIT_BYTES,
+    wasm: loadQuickJSWasm(getQuickJSWasmPath()),
+    workerUrl: getCodemodeWorkerSpecifier(),
+  })
 }

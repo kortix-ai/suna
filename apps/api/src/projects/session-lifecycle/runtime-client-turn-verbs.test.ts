@@ -1,6 +1,5 @@
-// W5 E4: a daemon that lists `runtime.turns.v1` gets the Kortix turn routes,
-// an older one keeps OpenCode's REST spelling. Bun mocks are process-global;
-// run this file in isolation (`bun test --isolate`).
+// Every runtime call of the session lifecycle goes to a Kortix route. Bun
+// mocks are process-global; run this file in isolation (`bun test --isolate`).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realOpencodeMapping from '../opencode-mapping';
 
@@ -38,32 +37,26 @@ mock.module('../opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => ({ url: 'https://daemon.test', headers: {} }),
 }));
 
-const { SteerNotTaken, postPrompt, readSessionMessageTip, retractRuntimeMessage, updateLegacyRuntimePart } = await import('./runtime-client');
-const { __resetRuntimeTurnVerbsMemo } = await import('./runtime-fetch');
+const { SteerNotTaken, postPrompt, readRuntimeMessage, readSessionMessageTip, retractRuntimeMessage } = await import('./runtime-client');
+const { __resetRuntimeCapabilitiesMemo } = await import('./runtime-fetch');
 
-let capabilities: string[] = [];
 const fetched: string[] = [];
 let pages: Record<string, unknown> = {};
-let healthReads = 0;
 /** Direct steer POSTs: the box answers what `steerAnswer` returns. */
 const steered: Array<{ headers: Record<string, string>; body: unknown }> = [];
 let steerAnswer: () => Response = () => Response.json({ message_id: 'msg_s', steered: true }, { status: 202 });
-/** A daemon rolled back in place: its catch-all answers a Kortix route it no longer has. */
-const routeMissing = () => Response.json({ error: 'not found' }, { status: 404 });
-/** A Kortix verb that exists and answers 404 for the resource. */
+/** A Kortix verb that answers 404 for the resource. */
 const resourceMissing = () =>
   Response.json({ error: 'message not found' }, { status: 404, headers: { 'X-Kortix-Turn-Verb': '1' } });
 
 beforeEach(() => {
-  __resetRuntimeTurnVerbsMemo();
-  capabilities = [];
+  __resetRuntimeCapabilitiesMemo();
   forwarded.length = 0;
   fetched.length = 0;
   forwardStatus = 202;
   forwardBody = { message_id: 'msg_1' };
   forwardAnswers = {};
   pages = {};
-  healthReads = 0;
   steered.length = 0;
   steerAnswer = () => Response.json({ message_id: 'msg_s', steered: true }, { status: 202 });
   globalThis.fetch = (async (url: unknown, init?: { method?: string; headers?: Record<string, string>; body?: string }) => {
@@ -71,10 +64,6 @@ beforeEach(() => {
     if (target.endsWith('/steer')) {
       steered.push({ headers: init?.headers ?? {}, body: JSON.parse(init?.body ?? 'null') });
       return steerAnswer();
-    }
-    if (target.endsWith('/kortix/health')) {
-      healthReads++;
-      return Response.json({ capabilities });
     }
     const path = target.replace('https://daemon.test', '');
     fetched.push(`${init?.method ?? 'GET'} ${path}`);
@@ -94,8 +83,7 @@ const deliver = () =>
   });
 
 describe('postPrompt', () => {
-  test('a daemon with runtime.turns.v1 gets the Kortix prompt route and body', async () => {
-    capabilities = ['runtime.turns.v1'];
+  test('the Kortix prompt route gets the Kortix body and the caller\'s key', async () => {
     expect(await deliver()).toBe('accepted');
     expect(forwarded).toHaveLength(1);
     expect(forwarded[0]).toMatchObject({
@@ -111,29 +99,17 @@ describe('postPrompt', () => {
         no_reply: true,
       },
     });
-    expect(forwarded[0]!.headers.get('Idempotency-Key')).toBe('idem-1:kortix');
+    expect(forwarded[0]!.headers.get('Idempotency-Key')).toBe('idem-1');
   });
 
-  test('an older daemon gets prompt_async with ?directory= and {providerID, modelID}', async () => {
-    forwardStatus = 204;
-    forwardBody = null;
-    expect(await deliver()).toBe('accepted');
-    expect(forwarded[0]).toMatchObject({
-      path: '/session/ses_1/prompt_async',
-      query: '?directory=%2Fworkspace',
-      body: {
-        messageID: 'msg_1',
-        model: { providerID: 'kortix', modelID: 'anthropic/claude' },
-        noReply: true,
-      },
-    });
-  });
-
-  test('a duplicate on the Kortix route reads as deduplicated', async () => {
-    capabilities = ['runtime.turns.v1'];
+  test('a duplicate reads as deduplicated; a 404 for the session is a failure, sent once', async () => {
     forwardStatus = 200;
     forwardBody = { deduplicated: true };
     expect(await deliver()).toBe('deduplicated');
+    forwarded.length = 0;
+    forwardAnswers['/kortix/runtime/sessions/ses_1/prompt'] = resourceMissing;
+    expect(await deliver()).toBe('failed');
+    expect(forwarded.map((f) => f.path)).toEqual(['/kortix/runtime/sessions/ses_1/prompt']);
   });
 
   // The proxy's access gates throw their 403. Read as "unreachable", a refused
@@ -142,19 +118,20 @@ describe('postPrompt', () => {
   test("a 403 the proxy throws is a refusal, not a down box; a throw that is not the proxy's answer stays unreachable", async () => {
     const { HTTPException } = await import('hono/http-exception');
     const { PromptDeliveryRefused } = await import('./prompt-delivery-refusal');
-    forwardAnswers['/session/ses_1/prompt_async'] = () => {
+    const route = '/kortix/runtime/sessions/ses_1/prompt';
+    forwardAnswers[route] = () => {
       throw new HTTPException(403, { message: 'Not authorized to access this session' });
     };
     const refused = await deliver().catch((err: unknown) => err);
     expect(refused).toBeInstanceOf(PromptDeliveryRefused);
     expect(refused).toMatchObject({ status: 403, message: 'Not authorized to access this session' });
 
-    forwardAnswers['/session/ses_1/prompt_async'] = () => {
+    forwardAnswers[route] = () => {
       throw new HTTPException(503, { message: 'upstream down' });
     };
     expect(await deliver()).toBe('unreachable');
 
-    forwardAnswers['/session/ses_1/prompt_async'] = () => {
+    forwardAnswers[route] = () => {
       throw new TypeError('fetch failed');
     };
     expect(await deliver()).toBe('unreachable');
@@ -162,8 +139,7 @@ describe('postPrompt', () => {
 });
 
 describe('session runtime reads', () => {
-  test('the tip read and the message removal use the Kortix routes on a capable daemon', async () => {
-    capabilities = ['runtime.turns.v1'];
+  test('the tip read uses the Kortix transcript route', async () => {
     pages['/kortix/runtime/messages/ses_1?limit=8'] = {
       messages: [{ info: { id: 'msg_a', role: 'user', time: { created: 1 } }, parts: [] }],
       has_more: true,
@@ -171,12 +147,10 @@ describe('session runtime reads', () => {
     };
     const tip = await readSessionMessageTip(session, { limit: 8 });
     expect(tip?.map((m) => m.id)).toEqual(['msg_a']);
-    expect(await retractRuntimeMessage(session, 'msg_a')).toEqual({ outcome: 'retracted' });
-    expect(fetched).toEqual(['GET /kortix/runtime/messages/ses_1?limit=8', 'DELETE /kortix/runtime/messages/ses_1/msg_a']);
+    expect(fetched.filter((call) => !call.endsWith('/kortix/health'))).toEqual(['GET /kortix/runtime/messages/ses_1?limit=8']);
   });
 
   test('a full read pages backwards on before until has_more is false', async () => {
-    capabilities = ['runtime.turns.v1'];
     pages['/kortix/runtime/messages/ses_1?limit=200'] = {
       messages: [{ info: { id: 'msg_c', role: 'user' }, parts: [] }],
       has_more: true,
@@ -194,20 +168,92 @@ describe('session runtime reads', () => {
     expect(tip?.map((m) => m.id)).toEqual(['msg_a', 'msg_b', 'msg_c']);
   });
 
-  test('an older daemon is read over the legacy list', async () => {
-    pages['/session/ses_1/message?directory=%2Fworkspace&limit=8'] = [{ info: { id: 'msg_a', role: 'user' }, parts: [] }];
-    expect((await readSessionMessageTip(session, { limit: 8 }))?.map((m) => m.id)).toEqual(['msg_a']);
-    expect(fetched).toEqual(['GET /session/ses_1/message?directory=%2Fworkspace&limit=8']);
+  // The landing proof: a held message is any body, an unheld one null, an unanswered read a throw.
+  test('one message read answers the message, null when the runtime holds none, and throws when it cannot say', async () => {
+    const path = '/kortix/runtime/messages/ses_1/msg_a';
+    pages[path] = { info: { id: 'msg_a', role: 'user' }, parts: [] };
+    expect(await readRuntimeMessage(session, 'msg_a')).toEqual({ info: { id: 'msg_a', role: 'user' }, parts: [] });
+    pages[path] = resourceMissing;
+    expect(await readRuntimeMessage(session, 'msg_a')).toBeNull();
+    pages[path] = () => new Response('down', { status: 503 });
+    await expect(readRuntimeMessage(session, 'msg_a')).rejects.toThrow('runtime message read failed (503)');
+    expect(fetched.filter((call) => !call.endsWith('/kortix/health')).every((call) => call === `GET ${path}`)).toBe(true);
+  });
+});
+
+describe('session runtime reads on a box that serves its log (runtime.log.v1)', () => {
+  // A queued prompt's provisional seq is no clock: its times are its own (the override).
+  const at = (s: number) => new Date(Date.UTC(2026, 9, 31, 0, 0, Math.min(s, 59))).toISOString();
+  const record = (id: string, seq: number, over: Record<string, unknown> = {}) => ({
+    schema: 'kortix.session/2', v: 1, message_id: id, thread_id: 'ses_1', seq, role: 'user', kind: 'turn', status: 'complete',
+    in_context: true, model: null, usage: null, finish: null, error: null, created_at: at(seq), completed_at: at(seq),
+    producer: { harness: 'pi', harness_version: '1', adapter_version: '1' }, blocks: [{ type: 'text', id: `${id}-b0`, text: 'x' }], ...over,
+  });
+  const logBox = () => {
+    pages['/kortix/health'] = { capabilities: ['runtime.turns.v1', 'runtime.actions.v1', 'runtime.log.v1'] };
+  };
+
+  test('the tip read uses the box log page: reply_to is the parent, a streaming reply is open, a waiting prompt is on record', async () => {
+    logBox();
+    pages['/kortix/runtime/log?limit=8'] = {
+      thread_id: 'ses_1',
+      messages: [
+        record('msg_a', 2),
+        record('msg_b', 3, { role: 'assistant', reply_to: 'msg_a', status: 'streaming', completed_at: null }),
+        record('msg_q', Number.MAX_SAFE_INTEGER, { created_at: at(4), completed_at: at(4) }),
+      ],
+      has_more: true,
+    };
+    const tip = await readSessionMessageTip(session, { limit: 8 });
+    expect(tip).toEqual([
+      { id: 'msg_a', role: 'user', parentID: null, created: Date.parse(at(2)), completed: Date.parse(at(2)), partIds: ['msg_a-b0'] },
+      { id: 'msg_b', role: 'assistant', parentID: 'msg_a', created: Date.parse(at(3)), completed: null, partIds: ['msg_b-b0'] },
+      { id: 'msg_q', role: 'user', parentID: null, created: Date.parse(at(4)), completed: Date.parse(at(4)), partIds: ['msg_q-b0'] },
+    ]);
+    expect(fetched).toEqual(['GET /kortix/health', 'GET /kortix/runtime/log?limit=8']);
+  });
+
+  test('a full read pages backwards on before_seq until has_more is false', async () => {
+    logBox();
+    pages['/kortix/runtime/log?limit=200'] = { thread_id: 'ses_1', messages: [record('msg_c', 5)], has_more: true };
+    pages['/kortix/runtime/log?limit=200&before_seq=5'] = {
+      thread_id: 'ses_1',
+      messages: [record('msg_a', 2), record('msg_b', 3, { role: 'assistant', reply_to: 'msg_a' })],
+      has_more: false,
+    };
+    const tip = await readSessionMessageTip(session);
+    expect(tip?.map((m) => m.id)).toEqual(['msg_a', 'msg_b', 'msg_c']);
+  });
+
+  test('an auto compaction reads as one, as the v1 compaction part did', async () => {
+    logBox();
+    pages['/kortix/runtime/log?limit=8'] = {
+      thread_id: 'ses_1',
+      messages: [record('msg_k', 4, { role: 'assistant', kind: 'compaction', blocks: [{ type: 'compaction', id: 'k0', summary: 's', first_kept_message_id: null, trigger: 'auto' }] })],
+      has_more: false,
+    };
+    expect((await readSessionMessageTip(session, { limit: 8 }))?.[0]).toMatchObject({ id: 'msg_k', autoCompaction: true });
+  });
+
+  test('the landing proof reads the box log message: held, not held (null), or unanswered (throws)', async () => {
+    logBox();
+    const path = '/kortix/runtime/log/messages/msg_a';
+    pages[path] = record('msg_a', 2);
+    expect(await readRuntimeMessage(session, 'msg_a')).toMatchObject({ message_id: 'msg_a' });
+    pages[path] = () => Response.json({ error: 'unknown message' }, { status: 404 });
+    expect(await readRuntimeMessage(session, 'msg_a')).toBeNull();
+    pages[path] = () => new Response('down', { status: 503 });
+    await expect(readRuntimeMessage(session, 'msg_a')).rejects.toThrow('runtime message read failed (503)');
+    expect(fetched.filter((call) => !call.endsWith('/kortix/health')).every((call) => call === `GET ${path}`)).toBe(true);
   });
 });
 
 describe('retractRuntimeMessage (R7.1)', () => {
   const retractPath = '/kortix/runtime/messages/ses_1/msg_a/retract';
 
-  test('a daemon with runtime.retract.v1 decides: retracted, gone, read, refused', async () => {
-    capabilities = ['runtime.turns.v1', 'runtime.retract.v1'];
+  test('the runtime decides: retracted, gone, read, refused', async () => {
     pages[retractPath] = () => Response.json({ retracted: true }, { headers: { 'X-Kortix-Turn-Verb': '1' } });
-    expect(await retractRuntimeMessage(session, 'msg_a', ['prt_1'])).toEqual({ outcome: 'retracted' });
+    expect(await retractRuntimeMessage(session, 'msg_a')).toEqual({ outcome: 'retracted' });
     expect(fetched).toEqual([`POST ${retractPath}`]);
 
     pages[retractPath] = resourceMissing;
@@ -220,82 +266,7 @@ describe('retractRuntimeMessage (R7.1)', () => {
     // A 409 that is not "read" is a refusal, not a read.
     pages[retractPath] = () => Response.json({ error: 'other' }, { status: 409, headers: { 'X-Kortix-Turn-Verb': '1' } });
     expect((await retractRuntimeMessage(session, 'msg_a')).outcome).toBe('refused');
-    // Never the delete spelling on a daemon that serves the retract.
     expect(fetched.every((call) => call === `POST ${retractPath}`)).toBe(true);
-  });
-
-  test('an older daemon gets the delete spelling: whole message, then its parts while the loop runs', async () => {
-    capabilities = ['runtime.turns.v1'];
-    pages['/kortix/runtime/messages/ses_1/msg_a'] = () =>
-      Response.json({ error: 'busy' }, { status: 409, headers: { 'X-Kortix-Turn-Verb': '1' } });
-    expect(await retractRuntimeMessage(session, 'msg_a', ['prt_1', 'prt_2'])).toEqual({ outcome: 'retracted' });
-    expect(fetched).toEqual([
-      'DELETE /kortix/runtime/messages/ses_1/msg_a',
-      'DELETE /session/ses_1/message/msg_a/part/prt_1?directory=%2Fworkspace',
-      'DELETE /session/ses_1/message/msg_a/part/prt_2?directory=%2Fworkspace',
-    ]);
-    // With no parts to empty, its 409 (the loop runs) reads as read, as it always has.
-    expect(await retractRuntimeMessage(session, 'msg_a')).toEqual({ outcome: 'read' });
-    // A refused part delete is a refusal with its status.
-    pages['/session/ses_1/message/msg_a/part/prt_1?directory=%2Fworkspace'] = () => new Response('no', { status: 500 });
-    expect(await retractRuntimeMessage(session, 'msg_a', ['prt_1'])).toEqual({ outcome: 'refused', status: 500, detail: 'no' });
-  });
-
-  test('a daemon that lists the retract but lost the route in place falls back to the delete spelling', async () => {
-    capabilities = ['runtime.turns.v1', 'runtime.retract.v1'];
-    pages[retractPath] = routeMissing;
-    expect(await retractRuntimeMessage(session, 'msg_a')).toEqual({ outcome: 'retracted' });
-    expect(fetched[0]).toBe(`POST ${retractPath}`);
-    expect(fetched.slice(1).some((call) => call.startsWith('DELETE '))).toBe(true);
-  });
-});
-
-describe('updateLegacyRuntimePart (R7.3)', () => {
-  const part = { externalId: 'ext-1', opencodeSessionId: 'ses_1', sessionId: 'sess-1', userId: 'user-1', messageId: 'msg_1', partId: 'prt_1', text: '<file/>' };
-  const partPath = '/session/ses_1/message/msg_1/part/prt_1';
-
-  test('a runtime that edits parts answers updated; one that edits none (501) answers unsupported; any other refusal throws', async () => {
-    forwardAnswers[partPath] = () => Response.json({ id: 'prt_1' });
-    expect(await updateLegacyRuntimePart(part)).toBe('updated');
-    expect(forwarded.at(-1)).toMatchObject({ method: 'PATCH', path: partPath, body: { id: 'prt_1', type: 'text', text: '<file/>' } });
-    forwardAnswers[partPath] = () => Response.json({ code: 'feature_not_supported' }, { status: 501 });
-    expect(await updateLegacyRuntimePart(part)).toBe('unsupported');
-    forwardAnswers[partPath] = () => new Response('boom', { status: 500 });
-    await expect(updateLegacyRuntimePart(part)).rejects.toThrow('legacy attachment part update failed (500)');
-  });
-});
-
-describe('a daemon that stops serving the Kortix routes (an in-place rollback)', () => {
-  test('a prompt the daemon has no route for is delivered once over prompt_async, under the legacy route\'s key', async () => {
-    capabilities = ['runtime.turns.v1'];
-    forwardAnswers['/kortix/runtime/sessions/ses_1/prompt'] = routeMissing;
-    forwardAnswers['/session/ses_1/prompt_async'] = () => new Response(null, { status: 204 });
-    expect(await deliver()).toBe('accepted');
-    expect(forwarded.map((f) => f.path)).toEqual(['/kortix/runtime/sessions/ses_1/prompt', '/session/ses_1/prompt_async']);
-    expect(forwarded[1]!.body).toMatchObject({ messageID: 'msg_1', model: { providerID: 'kortix', modelID: 'anthropic/claude' } });
-    expect(forwarded.map((f) => f.headers.get('Idempotency-Key'))).toEqual(['idem-1:kortix', 'idem-1']);
-    // The capability is read again for the next request.
-    capabilities = [];
-    await deliver();
-    expect(healthReads).toBe(2);
-    expect(forwarded.at(-1)!.path).toBe('/session/ses_1/prompt_async');
-  });
-
-  test('a message removal the daemon has no route for is sent on the legacy route', async () => {
-    capabilities = ['runtime.turns.v1'];
-    pages['/kortix/runtime/messages/ses_1/msg_a'] = routeMissing;
-    expect(await retractRuntimeMessage(session, 'msg_a')).toEqual({ outcome: 'retracted' });
-    expect(fetched).toEqual(['DELETE /kortix/runtime/messages/ses_1/msg_a', 'DELETE /session/ses_1/message/msg_a?directory=%2Fworkspace']);
-  });
-
-  test('a Kortix verb answering 404 for the resource is taken at its word', async () => {
-    capabilities = ['runtime.turns.v1'];
-    pages['/kortix/runtime/messages/ses_1/msg_gone'] = resourceMissing;
-    expect(await retractRuntimeMessage(session, 'msg_gone')).toEqual({ outcome: 'gone' });
-    expect(fetched).toEqual(['DELETE /kortix/runtime/messages/ses_1/msg_gone']);
-    forwardAnswers['/kortix/runtime/sessions/ses_1/prompt'] = resourceMissing;
-    expect(await deliver()).toBe('failed');
-    expect(forwarded.map((f) => f.path)).toEqual(['/kortix/runtime/sessions/ses_1/prompt']);
   });
 });
 
@@ -316,7 +287,6 @@ describe('postPrompt steer (R10)', () => {
   };
 
   test('posts the prompt body straight to the box with the service-call mark, never through the proxy', async () => {
-    capabilities = ['runtime.turns.v1', 'session.steer'];
     expect(await steer()).toBe('accepted');
     expect(forwarded).toHaveLength(0);
     expect(steered).toHaveLength(1);
@@ -326,30 +296,12 @@ describe('postPrompt steer (R10)', () => {
     expect(await steer()).toBe('deduplicated');
   });
 
-  test('409 no_active_turn is turn_ended; any other 409 is a plain failure', async () => {
-    capabilities = ['runtime.turns.v1', 'session.steer'];
+  test('409 no_active_turn is turn_ended; any other 409 is a plain failure; 501 is unsupported', async () => {
     steerAnswer = () => Response.json({ code: 'no_active_turn' }, { status: 409 });
     expect(await notTaken()).toBe('turn_ended');
     steerAnswer = () => Response.json({ error: 'busy' }, { status: 409 });
     expect(await notTaken()).toBe('taken');
-  });
-
-  test('501 is unsupported and forgets the capability memo', async () => {
-    capabilities = ['runtime.turns.v1', 'session.steer'];
     steerAnswer = () => Response.json({ code: 'feature_not_supported' }, { status: 501 });
     expect(await notTaken()).toBe('unsupported');
-    await notTaken();
-    expect(healthReads).toBe(2);
-  });
-
-  test('a daemon without the Kortix turn routes cannot steer: nothing is posted', async () => {
-    expect(await notTaken()).toBe('unsupported');
-    expect(steered).toHaveLength(0);
-    capabilities = ['runtime.turns.v1'];
-    __resetRuntimeTurnVerbsMemo();
-    steerAnswer = routeMissing;
-    expect(await notTaken()).toBe('unsupported');
-    expect(steered).toHaveLength(1);
-    expect(forwarded).toHaveLength(0);
   });
 });

@@ -1174,7 +1174,7 @@ function AuthCardForm({
   return (
     <>
       <m.div {...rise(0)}>
-        <StepHeader title={t('welcome')} tagline={t('tagline')} />
+        <StepHeader title={t('welcome')} />
       </m.div>
 
       <m.div {...rise(0.06)}>

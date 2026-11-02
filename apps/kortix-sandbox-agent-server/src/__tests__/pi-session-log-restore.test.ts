@@ -80,11 +80,13 @@ afterEach(async () => {
 function freshBox(sessionId: string) {
   const workspace = mkdtempSync(join(tmpdir(), 'pi-restore-box-'))
   dirs.push(workspace)
-  // Compaction keeps one token so a summary cuts.
-  mkdirSync(join(workspace, 'harnesses/pi'), { recursive: true })
-  writeFileSync(join(workspace, 'harnesses/pi/settings.json'), JSON.stringify({ compaction: { keepRecentTokens: 1 } }))
+  // Compaction keeps one token so a summary cuts (pi's global settings: no project file is read).
+  mkdirSync(join(workspace, '.pi-agent'), { recursive: true })
+  writeFileSync(join(workspace, '.pi-agent/settings.json'), JSON.stringify({ compaction: { keepRecentTokens: 1 } }))
   const env: NodeJS.ProcessEnv = {
     KORTIX_HARNESS: 'pi',
+    // These restore fixtures exercise LLM summaries; record-mode resets are covered separately.
+    KORTIX_PI_CONTEXT: 'summary',
     KORTIX_LLM_BASE_URL: model.url,
     KORTIX_PI_STATE_DIR: join(workspace, '.state'),
     KORTIX_PI_AGENT_DIR: join(workspace, '.pi-agent'),

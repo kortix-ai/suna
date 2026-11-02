@@ -8,7 +8,7 @@ import { logger } from '@/lib/log/logger'
 import { runGit } from '@/lib/git/git'
 
 /**
- * Search routes — the daemon owns find too (was forwarded to OpenCode).
+ * Search routes — the daemon owns find.
  *
  *   GET /find/file?query=&type=&limit=  → string[] of workspace-relative paths
  *   GET /find?pattern=                  → FindMatch[] (ripgrep, Node fallback)

@@ -44,7 +44,7 @@ export {
 } from './template-runtime-fingerprint';
 import { getSandboxProvider } from './providers';
 import { BoundedMap } from '../shared/bounded-map';
-import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
+import { resolveSessionPlacement } from '../platform/services/sandbox-region';
 
 /** Pretty resolved view used by both the boot path and the UI. */
 export interface ResolvedTemplate {
@@ -395,7 +395,8 @@ export async function refreshTemplateState(
  */
 /**
  * The region a project's own image is built in: the region its sessions boot
- * in (`us_region`, see platform/services/sandbox-region.ts), or undefined for
+ * in (where its Files live, else `us_region`; see
+ * platform/services/sandbox-region.ts resolveSessionPlacement), or undefined for
  * the provider's home region. The shared default is never regional. One image
  * serves every project, so it is built at home and copied where it is needed.
  *
@@ -415,7 +416,7 @@ export async function projectImageRegion(projectId: string): Promise<string | un
     .from(projects)
     .where(eq(projects.projectId, projectId))
     .limit(1);
-  return resolveSessionSandboxRegion(row?.metadata ?? null);
+  return (await resolveSessionPlacement(projectId, row?.metadata ?? null)).location;
 }
 
 export async function computeTemplateIdentity(

@@ -17,6 +17,7 @@ import {
   WarmProjectSessionResultSchema,
 } from '@kortix/api-contract';
 import { flow } from '../core/flow';
+import { waitFor } from '../core/poll';
 import { createDatabaseSession, fundDatabaseAccount } from '../fixtures/database-project';
 import { seedSessionTranscript } from '../fixtures/session-transcript';
 import { openFlowDb, seedTurnSession } from '../fixtures/turn-end';

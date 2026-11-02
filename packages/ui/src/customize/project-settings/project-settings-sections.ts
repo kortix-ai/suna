@@ -1,5 +1,4 @@
 import {
-  ArrowCircleUpIcon as ArrowUpCircle,
   ShippingContainerIcon as Container,
   FlaskIcon as Flask,
   GitBranchIcon as GitBranch,
@@ -8,6 +7,7 @@ import {
 } from '@phosphor-icons/react';
 
 import { capabilityTabHref } from '../../internal/lib/capability-tab-routes';
+import { adminPath } from '../../lib/routes';
 import { localizeUiCatalog } from '../../i18n/ui-catalog/localize-ui-catalog';
 import { REMAINING_UI_TRANSLATION_KEYS } from '../../i18n/ui-catalog/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '../../i18n';
@@ -19,7 +19,7 @@ import type { CustomizeSection } from '../../internal/lib/project-actions';
  *
  * These six sections used to be part of the `Workspace` and `Agent` groups of
  * the Settings overlay's rail (`packages/ui/src/customize/settings/rail.ts`), plus
- * its pinned Upgrades row and its `experimental` row. All of them configure a
+ * its `experimental` row. All of them configure a
  * PROJECT, and every one of them is reachable by exactly the people who can
  * already see Customize — so they belong on the Customize bar, not behind a
  * separate gear icon with a separate rail. The overlay keeps only what is
@@ -45,12 +45,12 @@ import type { CustomizeSection } from '../../internal/lib/project-actions';
  * which is what the pane is called everywhere else in the codebase (it is
  * already the `CustomizeSection` id, see `packages/ui/src/internal/lib/project-actions.ts`).
  *
- * A `key` IS its `?section=` query value, so renaming one breaks live links.
+ * A `key` IS its Project admin segment (`/admin/<key>`), so renaming one breaks live links.
  * `settings-tabs.ts`'s `GRADUATED` map points every retired `SettingsTab` id
  * at the key below that replaced it.
  */
 export type ProjectSettingsSectionKey =
-  'general' | 'git' | 'sandbox' | 'review' | 'feature-flags' | 'upgrades';
+  'general' | 'git' | 'sandbox' | 'review' | 'feature-flags';
 
 /**
  * **One flat list, no headings.** The sub-nav used to carry the rail's three
@@ -119,28 +119,13 @@ const FEATURE_FLAGS_SECTION: ProjectSettingsSection = {
   gate: 'feature-flags',
 };
 
-/**
- * Upgrades — the agent-driven codebase upgrade runner. Not billing: it opens a
- * change request against this workspace's own repo. It sat pinned at the
- * bottom of the old rail and keeps that position here, last in the list.
- */
-const UPGRADES_SECTION: ProjectSettingsSection = {
-  key: 'upgrades',
-  label: 'Upgrades',
-  description:
-    'Changes an agent makes to this workspace. Every run opens a change request for you to review — nothing merges on its own.',
-  icon: ArrowUpCircle,
-  gate: 'upgrade',
-};
-
 const PROJECT_SETTINGS_SOURCE = {
   staticSections: STATIC_SECTIONS,
   featureFlagsSection: FEATURE_FLAGS_SECTION,
-  upgradesSection: UPGRADES_SECTION,
 };
 
 /**
- * The sub-nav: the static sections, then Feature flags and Upgrades. No row is
+ * The sub-nav: the static sections, then Feature flags. No row is
  * flag-gated any more. Marketplace and Voice were removed from the product;
  * Review is a capability tab of its own and graduated out of the flag system.
  */
@@ -154,7 +139,7 @@ export function projectSettingsSections(
   // Review is NOT a section here any more: it is a capability tab of its own
   // (`capability-tab-routes.ts`, 2026-09-02). Listing it twice — as a tab and
   // as a Settings section — was the leftover of restoring this page.
-  sections.push(source.featureFlagsSection, source.upgradesSection);
+  sections.push(source.featureFlagsSection);
   return sections;
 }
 
@@ -177,14 +162,12 @@ export function parseProjectSettingsSection(
   return hit ? hit.key : null;
 }
 
-/** The canonical link to one section. The default section carries no query. */
+/** The canonical link to one section: its Project admin page, `/admin/<key>`. Review is its own page. */
 export function projectSettingsSectionHref(
   projectId: string,
   key: ProjectSettingsSectionKey,
 ): string {
-  return key === DEFAULT_PROJECT_SETTINGS_SECTION
-    ? capabilityTabHref(projectId, 'config')
-    : `${capabilityTabHref(projectId, 'config')}?section=${key}`;
+  return key === 'review' ? capabilityTabHref(projectId, 'review') : adminPath(projectId, key);
 }
 
 /** The copy for one section, independent of any flag — used by pane headings. */

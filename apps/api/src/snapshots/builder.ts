@@ -31,7 +31,7 @@ import {
 } from './last-ready-image';
 import { canServeLastKnownGoodRuntime } from './runtime-freshness';
 import { openBuildLog, closeBuildLogReady, closeBuildLogFailed, recentlyBuiltSnapshotNames, PREDECESSOR_PRUNE_PROTECT_MS } from './builder-log';
-import { waitForProviderBuild, findFirstActiveSnapshot, maybeSwapAgent, ensureMetaSandboxImage, SnapshotBuildError } from './runtime-images';
+import { waitForProviderBuild, findFirstActiveSnapshot, maybeSwapAgent, ensureMyKortixSandboxImage, SnapshotBuildError } from './runtime-images';
 import { claimSnapshotBuild, holdSnapshotBuild, releaseSnapshotBuild, waitForSnapshotBuildRelease } from './build-claim';
 import { enabledTemplateBuildProviders } from './provider-coverage';
 import { config, type SandboxProviderName } from '../config';
@@ -39,7 +39,7 @@ import { logger } from '../lib/logger';
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { db } from '../shared/db';
-import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
+import { resolveSessionPlacement } from '../platform/services/sandbox-region';
 import { preparePlatinumTemplateRegion } from './providers/platinum-templates';
 
 type TemplateIdentity = Awaited<ReturnType<typeof computeTemplateIdentity>>;
@@ -52,7 +52,7 @@ export type { SandboxTemplateView } from './template-prebuilds';
 export { resolveTemplateBySlug as resolveTemplate };
 export { listSnapshotBuilds, reconcileStaleBuilds, buildLogProviderCandidates, shouldReconcileProviderState, recentlyBuiltStrict } from './builder-log';
 export type { ProjectSnapshotBuildSummary } from './builder-log';
-export { META_RUNTIME_SPEC, ensureMetaSandboxImage, metaSnapshotName, reapSupersededMetaSnapshots } from './runtime-images';
+export { MY_KORTIX_RUNTIME_SPEC, ensureMyKortixSandboxImage, myKortixSnapshotName, reapSupersededMyKortixSnapshots, settleMyKortixImageBuilds } from './runtime-images';
 export { kickPreBuild, kickRoutedPreBuild, templateBuildProviders, kickProjectTemplatePrebuilds } from './template-prebuilds';
 
 export type SnapshotBuildSource =
@@ -76,7 +76,7 @@ export interface EnsureSandboxImageResult {
   contentHash: string;
   built: boolean;
   isDefault: boolean;
-  runtimeProfile?: 'standard' | 'meta';
+  runtimeProfile?: 'standard' | 'mykortix';
   /**
    * The size this image was built with, which is the size the box boots with.
    * Compute metering bills from it. Absent only for a result constructed
@@ -399,7 +399,7 @@ export async function templateRegionResident(
   if (provider !== 'platinum') return true;
   try {
     const readMetadata = deps.readMetadata ?? readProjectMetadata;
-    const region = resolveSessionSandboxRegion(await readMetadata(projectId));
+    const region = (await resolveSessionPlacement(projectId, await readMetadata(projectId))).location;
     if (!region) return true;
     await (deps.prepare ?? preparePlatinumTemplateRegion)(snapshotName, region, { timeoutMs });
     return true;
@@ -673,7 +673,7 @@ function startupPreBuild(): void {
           err instanceof Error ? err.message : err,
         );
       });
-    void ensureMetaSandboxImage({ source: 'startup', provider: providerId })
+    void ensureMyKortixSandboxImage({ source: 'startup', provider: providerId })
       .then((r) =>
         console.log(
           `[snapshots] startup pre-build (${providerId}): meta image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,

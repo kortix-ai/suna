@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { accounts, baseTipChecks, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { dbBaseTipStore, expireBaseTips, sharedBaseTip } from './base-tip';
+import { dbBaseTipStore, expireBaseTips, sharedBaseTip, storedBaseTipProof } from './base-tip';
 
 const TIP_A = 'a'.repeat(40);
 const TIP_B = 'b'.repeat(40);
@@ -106,6 +106,27 @@ describe('sharedBaseTip', () => {
     upstream = TIP_B;
     expect(await tip()).toBe(TIP_B);
     expect(asks).toBe(2);
+  });
+
+  test('the stored proof carries when its check asked; a re-check in flight keeps the old time; a base move clears it', async () => {
+    expect(await storedBaseTipProof(projectId, 'main')).toBeNull();
+    const firstAsked = clock;
+    await tip();
+    expect(await storedBaseTipProof(projectId, 'main')).toEqual({ tip: TIP_A, provenAt: firstAsked.getTime() });
+
+    // The re-check claims the row: `checked_at` moves, the stored tip and its
+    // proof time stay those of the first check until the answer lands.
+    clock = new Date(clock.getTime() + INTERVAL_MS + 1);
+    upstream = TIP_B;
+    const checking = new Promise<void>((resolve) => (asked = resolve));
+    const recheck = tip();
+    await checking;
+    expect(await storedBaseTipProof(projectId, 'main')).toEqual({ tip: TIP_A, provenAt: firstAsked.getTime() });
+    await recheck;
+    expect(await storedBaseTipProof(projectId, 'main')).toEqual({ tip: TIP_B, provenAt: clock.getTime() });
+
+    await expireBaseTips(projectId);
+    expect(await storedBaseTipProof(projectId, 'main')).toBeNull();
   });
 
   test('a failed check does not stand for the interval', async () => {

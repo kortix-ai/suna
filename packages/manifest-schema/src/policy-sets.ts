@@ -4,9 +4,6 @@
  *
  * Dependency-free (like `connector-headers.ts`) so the validator, the JSON
  * Schema and apps/api's parser share one ruleset without an import cycle.
- *
- * Manifest versions: kortix_version 2 and 3 only. A v1 manifest that declares
- * either key gets an error.
  */
 import type { ManifestIssue } from './index';
 
@@ -65,15 +62,10 @@ export function validateConnectorPolicySets(
   entry: Record<string, unknown>,
   where: string,
   issues: ManifestIssue[],
-  version: number,
 ): void {
   const sets = entry.policy_sets;
   if (sets === undefined) return;
   const path = `${where}.policy_sets`;
-  if (version < 2) {
-    issues.push({ path, message: 'policy sets need kortix_version 2 or 3.', severity: 'error' });
-    return;
-  }
   const provider = typeof entry.provider === 'string' ? entry.provider.trim().toLowerCase() : '';
   if ((POLICY_SETS_UNSUPPORTED_PROVIDERS as readonly string[]).includes(provider)) {
     issues.push({ path, message: `${provider} connectors cannot carry policy sets.`, severity: 'error' });

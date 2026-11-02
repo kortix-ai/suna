@@ -15,8 +15,7 @@ import {
  * library. This is the whole of what `kortix sessions forward` does once a
  * session id and its ports are known, and it is what the TUI Ports panel
  * (`apps/tui/src/features/ports`) reuses for auto-forwarding — one engine,
- * two front ends, exactly like `attach-opencode.ts` is to `sessions connect`
- * and `apps/tui`'s attach flow.
+ * two front ends.
  *
  * It PRINTS NOTHING. Progress is an `onStatus` callback; failure is a thrown
  * `PortForwardError`.

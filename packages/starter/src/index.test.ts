@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { validateManifest } from '@kortix/manifest-schema';
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
   KORTIX_MANAGED_SKILL_NAMES,
@@ -167,24 +168,11 @@ describe('getStarterFiles', () => {
 
   test('every starter agent declares its project repository explicitly', () => {
     const manifest = byPath(getStarterFiles({ projectName: 'X' })).get('kortix.yaml') ?? '';
-    const agents = manifest.slice(manifest.indexOf('\nagents:\n'), manifest.indexOf('\ntriggers:\n'));
+    const agents = manifest.slice(manifest.indexOf('\nagents:\n'));
     const names = [...agents.matchAll(/^  ([a-z][a-z0-9-]*):$/gm)].map((m) => m[1]);
-    expect(names).toEqual(['kortix', 'harness-reflector', 'session-reviewer']);
-    // One explicit, uncommented line per agent: v3 defaults it to false.
+    expect(names).toEqual(['worker']);
+    // One explicit, uncommented line per agent: the format defaults it to false.
     expect(agents.match(/^    workspace: \{ project_repository: true \}/gm)?.length).toBe(names.length);
-  });
-
-  test('ships scheduled starter automation disabled by default', () => {
-    const manifest = byPath(getStarterFiles({ projectName: 'X', template: 'minimal' })).get(
-      'kortix.yaml',
-    );
-    expect(manifest).toBeDefined();
-    if (!manifest) throw new Error('minimal starter is missing kortix.yaml');
-    const lines = manifest.split('\n');
-    const start = lines.findIndex((line) => line.trim() === '- slug: harness-reflector');
-    expect(start).toBeGreaterThanOrEqual(0);
-    const enabled = lines.slice(start + 1).find((line) => line.trim().startsWith('enabled:'));
-    expect(enabled?.trim()).toBe('enabled: false');
   });
 
   test('default starter ships the general knowledge worker skills; internal minimal does not', () => {
@@ -194,6 +182,10 @@ describe('getStarterFiles', () => {
       true,
     );
     expect(dflt.some((f) => f.path === 'skills/pdf/SKILL.md')).toBe(true);
+    // Shipped folders are registered too: an unregistered skill is invisible to every agent.
+    const manifest = dflt.find((f) => f.path === 'kortix.yaml')?.content ?? '';
+    expect(manifest).toContain('  pdf: skills/pdf');
+    expect(manifest).toContain('  presentations: skills/presentations');
 
     // `minimal` stays base-only (used internally by the project-clone seed path).
     const minimal = getStarterFiles({ projectName: 'X', template: 'minimal' });
@@ -355,6 +347,14 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
 
     const missing = KORTIX_MANAGED_SKILL_NAMES.filter((n) => !injected.has(n));
     expect(missing).toEqual([]);
+  });
+
+  // KRTX-3640: the manifest schema kept its own copy of this list and missed
+  // `kortix-chrome`, so an agent that granted it by name failed validation.
+  test('an agent may grant every managed skill by name', () => {
+    const manifest = `agents:\n  a:\n    prompt: x\n    tools: all\n    skills: [${KORTIX_MANAGED_SKILL_NAMES.join(', ')}]\n`;
+    const errors = validateManifest(manifest).issues.filter((i) => i.severity === 'error');
+    expect(errors).toEqual([]);
   });
 
   /**

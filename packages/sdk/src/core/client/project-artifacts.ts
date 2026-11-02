@@ -6,6 +6,7 @@ export function bindProjectArtifacts(projectId: string) {
     artifacts: {
       activity: (...args: DropFirst<Parameters<typeof P.listArtifactActivity>>) => P.listArtifactActivity(projectId, ...args),
       comments: {
+        readScreenshot: (...args: DropFirst<Parameters<typeof P.readArtifactCommentScreenshot>>) => P.readArtifactCommentScreenshot(projectId, ...args),
         list: (...args: DropFirst<Parameters<typeof P.listArtifactComments>>) => P.listArtifactComments(projectId, ...args),
         get: (...args: DropFirst<Parameters<typeof P.getArtifactCommentThread>>) => P.getArtifactCommentThread(projectId, ...args),
         context: (...args: DropFirst<Parameters<typeof P.getArtifactCommentContext>>) => P.getArtifactCommentContext(projectId, ...args),

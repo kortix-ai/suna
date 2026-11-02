@@ -1,0 +1,17 @@
+diff --git a/lib/crawlfs.js b/lib/crawlfs.js
+index bc614aba8e5bd1a59df20d2e4b82287f4d0dd506..5cc8a8fa91c0774f7343761086509622478901dc 100644
+--- a/lib/crawlfs.js
++++ b/lib/crawlfs.js
+@@ -28,11 +28,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.determineFileType = determineFileType;
+ exports.crawl = crawl;
+-const util_1 = require("util");
+ const glob_1 = require("glob");
+ const wrapped_fs_1 = __importDefault(require("./wrapped-fs"));
+ const path = __importStar(require("path"));
+-const glob = (0, util_1.promisify)(glob_1.glob);
++const glob = glob_1.glob;
+ async function determineFileType(filename) {
+     const stat = await wrapped_fs_1.default.lstat(filename);
+     if (stat.isFile()) {

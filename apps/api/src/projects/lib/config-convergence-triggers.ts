@@ -32,7 +32,7 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { convergeSessionConfig, type SessionConfigConvergenceOutcome } from './session-config-convergence';
 import { convergeConfigIfBehind, invalidateDesiredRelease } from './turn-start-convergence';
-import { invalidateProjectMirror } from '../git/mirror';
+import { invalidateProjectMirror, noteSessionBranchPushed } from '../git/mirror';
 import { expireBaseTips } from '../../config-releases/base-tip';
 import { schedulePublish } from '../../config-releases/publish';
 import { isUuid } from '../../shared/validate';
@@ -269,9 +269,10 @@ export function pushedBaseCandidates(updates: ReadonlyArray<{ ref: string; newSh
 export function notifyPushedRefs(projectId: string, updates: ReadonlyArray<{ ref: string; newSha: string }>): void {
   for (const branch of pushedBaseCandidates(updates)) notifyBaseBranchMoved(projectId, branch, 'git-push');
   // A pushed session branch is not a base move, but a read at that branch must
-  // see it now, not after the 60 s mirror interval. Drop the local marker only:
-  // no broadcast (hot path: every agent push), other replicas use the read fallback.
+  // see it now, not after the 60 s mirror interval. The next unforced read
+  // fetches; base proofs stand. No broadcast (hot path: every agent push),
+  // other replicas use the read fallback.
   if (updates.some((u) => u.ref.startsWith('refs/heads/') && isUuid(u.ref.slice('refs/heads/'.length)))) {
-    invalidateProjectMirror(projectId);
+    noteSessionBranchPushed(projectId);
   }
 }

@@ -85,6 +85,7 @@ export const ADMIN_OVERRIDE_KEYS = [
   'branding',
   'managedModels',
   'byokFee',
+  'storageBilling',
 ] as const;
 
 export type AdminOverrideKey = (typeof ADMIN_OVERRIDE_KEYS)[number];
@@ -106,6 +107,9 @@ export const ADMIN_ENTITLEMENT_OVERRIDE_KEYS = [
   // The BYOK platform fee (5% past the free monthly allowance). On by default
   // for Free and Credits; set off to waive it for one account.
   'byokFee',
+  // Volume storage billing (Files folders, session /workspace volumes). On by
+  // default on every plan; set off to waive storage charges for one account.
+  'storageBilling',
 ] as const satisfies readonly AdminOverrideKey[];
 
 /**

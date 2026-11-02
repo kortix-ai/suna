@@ -33,8 +33,6 @@ let transcript: Array<Record<string, unknown>> = [];
 let posts: Array<{ text: string; wireMessageId?: string }> = [];
 /** Answers for the next POSTs; empty = delivered. */
 let postPlan: Array<'delivered' | 'pending'> = [];
-/** The box holds a staged rewind (`GET /session/:id` answers `revert`). */
-let stagedRevert = false;
 
 mock.module('../projects/opencode-mapping', () => ({
   ...realOpencodeMapping,
@@ -231,10 +229,8 @@ beforeAll(async () => {
       origin = null;
     }
     if (origin !== BOX_ORIGIN) return ORIGINAL_FETCH(input, init);
-    if (stagedRevert && new URL(url).pathname === `/session/${ROOT}`) {
-      return Response.json({ id: ROOT, revert: { messageID: 'msg_rewound' } });
-    }
-    return Response.json(transcript);
+    // The Kortix transcript route: one page holds the whole root.
+    return Response.json({ messages: transcript, has_more: false });
   };
 });
 
@@ -242,7 +238,6 @@ beforeEach(() => {
   transcript = [];
   posts = [];
   postPlan = [];
-  stagedRevert = false;
 });
 
 // No row cleanup: the db-suites lane drops this file's database after the run,
@@ -557,18 +552,6 @@ describe('the reaper leaves no interrupted turn without its one continuation', (
     expect(rows[0].actor_user_id).toBeNull();
     expect(rows[0].payload.clientMessageId).toBeUndefined();
     expect(rows[0].result?.held).toBeUndefined();
-  });
-
-  test('a continuation a staged rewind drops is not marked resumed', async () => {
-    await seedSession({ origin: 'trigger', messageId: wire(9 * 60_000) });
-    await providerStop();
-    const [row] = await commands();
-
-    stagedRevert = true;
-    expect(await drainOnce(row.command_id)).toBe('succeeded');
-    expect(posts).toEqual([]);
-    expect((await command(row.command_id)).result).toEqual({ status: 'skipped', reason: 'staged_revert' });
-    expect((await turnEndError())?.name).toBe('SandboxStoppedMidTurn');
   });
 
   test('an unattended continuation is a tracked turn: a second stop continues it again', async () => {

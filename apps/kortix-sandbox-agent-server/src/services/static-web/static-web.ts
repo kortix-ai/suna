@@ -17,7 +17,6 @@ import { logger } from '@/lib/log/logger'
  * port:
  *   - packages/sdk/.../platform-client/types.ts  (STATIC_FILE_SERVER: '3211')
  *   - apps/mobile/components/files/file-preview-webview.tsx (constructHtmlPreviewUrl)
- *   - packages/starter/.../opencode/tools/show.ts (agent-facing docs)
  *
  * Purpose: serve any HTML file the agent produces with full relative-asset
  * support (CSS/JS/images/fonts) by injecting a <base> tag — no edits to the
@@ -30,10 +29,11 @@ const DEFAULT_STATIC_PORT = 3211
  * Where agent OUTPUT lives. This server exists to serve HTML the agent
  * produced (see the header comment), and that lands in the repo or in scratch.
  *
- * `/home` and `/opt` used to be here, and `/home` is where the daemon writes
- * the session's credentials — `~/.config/kortix-opencode.json` holds the
- * session's LLM gateway key and connector PAT, `~/.local/share/opencode/auth.json`
- * holds the account's Codex/OpenCode subscription credential. This listener has
+ * `/home` and `/opt` used to be here, and `/home` is where the daemon wrote
+ * the session's credentials before the OpenCode sunset. A box OpenCode booted
+ * still holds them: `~/.config/kortix-opencode.json` has the session's LLM
+ * gateway key and connector PAT, `~/.local/share/opencode/auth.json` has the
+ * account's Codex/OpenCode subscription credential. This listener has
  * no authentication of its own, so any caller who reached port 3211 could read
  * both. Mode 0600 was no defence: the reader IS the process that wrote them.
  *

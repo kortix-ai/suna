@@ -82,7 +82,7 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
 
   // The tool audit trail (shared/audit-relay.ts): every frame the runtime
   // publishes, sanitized and spooled until apps/api accepts it. A spool that
-  // cannot load marks the runtime unhealthy, exactly as it does on OpenCode.
+  // cannot load marks the runtime unhealthy.
   let auditRelay: AuditRelay | null = null
   try {
     auditRelay = createRuntimeAuditRelay(
@@ -237,7 +237,7 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
   // The reconcile floor: every 60 s the box re-checks its release and its
   // runtime assets, so no failure is permanent. pi has no model catalog to converge.
   configureRuntimeTruth({
-    reconcileAssets: () => scheduleRuntimeAssetsReconcile(cfg),
+    reconcileAssets: scheduleRuntimeAssetsReconcile,
     readConfigRelease: () => harness.releases.report(),
     reconcileConfigRelease: async () => {
       await harness.releases.converge(harness.runtime()).catch((err) => {
@@ -274,14 +274,12 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     try {
       // ponytail: pi's admission takes plain text only, so the harness context
       // still rides inside the prompt here; the transcript shows the caller's
-      // words plus the contract tail until pi grows a synthetic-part carrier
-      // (OpenCode already delivers it as a model-only part).
+      // words plus the contract tail until pi grows a synthetic-part carrier.
       const text = claim.context ? `${claim.prompt}\n\n${claim.context}` : claim.prompt
       const admitted = runtime.admit({ messageID: claim.messageId, text, files: [] })
       bootMark('initial-prompt-delivered')
-      // Published AFTER admission, like OpenCode's publish-after-prompt: the
-      // control plane must never promote a `delivering` record for a turn the
-      // runtime has not accepted.
+      // Published AFTER admission: the control plane must never promote a
+      // `delivering` record for a turn the runtime has not accepted.
       bootState.initialRuntimeSessionId = runtime.rootId
       void relayTurnAccepted(runtime.rootId, admitted.messageId, claim.turnToken)
         .then(() => bootMark('initial-turn-accepted'))
@@ -303,7 +301,7 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     run()
   }
   scheduleRuntimeProjectionPush('boot')
-  scheduleRuntimeAssetsReconcile(cfg)
+  scheduleRuntimeAssetsReconcile()
 }
 
 /**

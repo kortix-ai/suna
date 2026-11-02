@@ -39,11 +39,23 @@ import {
   triggersToggle,
 } from './triggers-manifest.ts';
 import { parsePayloadFlag, triggersDryRun, triggersReplay, triggersRuns } from './triggers-runs.ts';
+import {
+  RUNTIME_HELP,
+  RUNTIME_ID,
+  isRuntimeAdd,
+  listRuntimeTriggers,
+  printRuntimeTriggers,
+  runRuntimeTriggers,
+} from './triggers-runtime.ts';
 
 const HELP = help`Usage: kortix triggers <subcommand> [options]
 
-Manage the [[triggers]] declared in your project's kortix.yaml — cron
-schedules, webhooks, connector events, and App events. add/rm/enable/disable edit the LOCAL
+A trigger is a source (a schedule, a webhook, a connector event, an App event,
+or a merged change request) plus a target (an agent, or one session to wake).
+A loop is a trigger that wakes the session that created it.
+
+Manage the triggers declared in your project's kortix.yaml — cron
+schedules, webhooks, connector events, App events, and merged change requests. add/rm/enable/disable edit the LOCAL
 manifest (the source of truth); \`kortix ship\` applies them. When kortix.yaml
 lists \`imports:\`, rm/enable/disable edit the file that declares the trigger;
 add writes to kortix.yaml. ls/fire/info
@@ -51,8 +63,9 @@ read live state from the cloud. pause/resume are a SERVER-SIDE activation
 switch (cloud state, not the manifest).
 
 Subcommands:
-  ls [--type <cron|webhook|event|app>] [--connector <slug>] [--json]
-                           List triggers + runtime state. --type keeps one
+  ls [--type <cron|webhook|event|app|change_request>] [--connector <slug>] [--json]
+                           List triggers + runtime state. Without a filter it
+                           also lists the runtime triggers (--json: \`runtime\`). --type keeps one
                            kind; --type event groups the rows by app.
                            --connector keeps the connector events on one connector
                            (profile). The two combine. --json respects both.
@@ -97,7 +110,8 @@ Subcommands:
                            of two deployments of the same repo to stop double-
                            firing. Manual \`fire\` still works.
   resume                   Re-activate this project's triggers server-side.
-  pause --account-wide     Pause all automations: every project of the account
+  pause|resume|run <slug>  The same as disable|enable|fire <slug>.
+  pause --account-wide     Pause all triggers: every project of the account
                            stops auto-running its schedules, reminders,
                            webhooks, connector events and App events. Needs
                            account.write. Manual \`fire\` still works.
@@ -123,7 +137,7 @@ Add options:
   --type <cron|webhook|event|app>
                            Trigger type (default cron).
   --prompt <text>          Initial prompt for the spawned session (required).
-  --agent <name>           Logical agent to run (default: project default_agent).
+  --agent <name>           Agent to run (default: My Kortix; default_agent when My Kortix is off).
   --cron <expr>            6-field cron (cron type), seconds first, at most
                            once a minute. e.g. "0 0 9 * * 1-5".
   --run-at <iso>           Run ONCE at this instant instead of on a cron.
@@ -219,6 +233,8 @@ $KORTIX_APP_EVENTS_URL with $KORTIX_APP_TOKEN (every App machine has both).
 App triggers take none of --cron, --run-at, --timezone, --secret-env,
 --connector, --account or --config.
 
+${RUNTIME_HELP}
+
 Global options:
   --project <id>     Operate on this project id (default: linked).
   -h, --help         Show this help.
@@ -227,6 +243,13 @@ Global options:
 export async function runTriggers(argv: string[]): Promise<number> {
   const helpCode = splitHelp(argv, HELP);
   if (helpCode !== null) return helpCode;
+
+  // A runtime id, or a runtime `add`: the database half (`triggers-runtime.ts`).
+  if (argv[0] && RUNTIME_VERBS.has(argv[0]) && RUNTIME_ID.test(argv[1] ?? '')) return runRuntimeTriggers(argv);
+  if ((argv[0] === 'add' || argv[0] === 'create') && isRuntimeAdd(argv)) return runRuntimeTriggers(argv);
+  // pause/resume/run on one kortix.yaml slug; a bare pause/resume stays the project-wide switch.
+  const slugVerb = argv[1] && !argv[1].startsWith('-') ? SLUG_VERBS[argv[0] ?? ''] : argv[0] === 'run' ? 'fire' : undefined;
+  if (slugVerb) argv = [slugVerb, ...argv.slice(1)];
 
   const sub = argv[0];
   const rest = argv.slice(1);
@@ -353,9 +376,9 @@ export async function runTriggers(argv: string[]): Promise<number> {
         ? triggersToggleLive(positional[0], false, ctxOpts, json)
         : triggersToggle(positional[0], false);
     case 'pause':
-      return accountWide ? accountAutomations(true, hostFlag) : triggersActivation(ctxOpts, true);
+      return accountWide ? accountTriggersPause(true, hostFlag) : triggersActivation(ctxOpts, true);
     case 'resume':
-      return accountWide ? accountAutomations(false, hostFlag) : triggersActivation(ctxOpts, false);
+      return accountWide ? accountTriggersPause(false, hostFlag) : triggersActivation(ctxOpts, false);
     case 'events':
       return triggersEvents({ apps, app: eventsApp, source: tf.source, connector: tf.connector, event: tf.event }, ctxOpts, json);
     case 'info':
@@ -367,7 +390,11 @@ export async function runTriggers(argv: string[]): Promise<number> {
   }
 }
 
-const LS_TYPES = ['cron', 'webhook', 'event', 'app'] as const;
+const RUNTIME_VERBS = new Set(['pause', 'resume', 'enable', 'disable', 'run', 'fire', 'rm', 'remove', 'delete', 'stop']);
+/** pause/resume/run on a kortix.yaml slug, as this command names them. */
+const SLUG_VERBS: Record<string, string> = { pause: 'disable', resume: 'enable', run: 'fire' };
+
+const LS_TYPES = ['cron', 'webhook', 'event', 'app', 'change_request'] as const;
 
 export interface TriggerLsFilter {
   type?: string;
@@ -416,15 +443,17 @@ async function triggersLs(
 
   const filtered = filter.type || filter.connector;
   if (filtered) resp = { ...resp, triggers: filterTriggersForLs(resp.triggers, filter) };
+  // Runtime triggers (loops included) live in the database; a filter is kortix.yaml only.
+  const runtime = filtered ? null : await listRuntimeTriggers(ctx.client, ctx.projectId);
 
   if (json) {
-    emitJson(resp);
+    emitJson(runtime ? { ...resp, runtime } : resp);
     return 0;
   }
 
   if (resp.account_automations_paused) {
     process.stdout.write(
-      `\n  ${status.warn('All automations are PAUSED for this account')} ${C.dim}— no project's triggers auto-run (manual \`fire\` still works). \`kortix triggers resume --account-wide\` to resume.${C.reset}\n`,
+      `\n  ${status.warn('All triggers are PAUSED for this account')} ${C.dim}— no project's triggers auto-run (manual \`fire\` still works). \`kortix triggers resume --account-wide\` to resume.${C.reset}\n`,
     );
   }
   if (resp.triggers_paused) {
@@ -435,7 +464,7 @@ async function triggersLs(
 
   if (resp.triggers.length === 0) {
     process.stdout.write(
-      `  ${C.dim}${filtered ? 'No trigger matches that filter. Run `kortix triggers ls` to see them all.' : 'No triggers declared. Add [[triggers]] to kortix.yaml.'}${C.reset}\n`,
+      `  ${C.dim}${filtered ? 'No trigger matches that filter. Run `kortix triggers ls` to see them all.' : 'No triggers in kortix.yaml. Add one under `triggers:`.'}${C.reset}\n`,
     );
   } else {
     const slugW = Math.max(...resp.triggers.map((t) => t.slug.length), 4);
@@ -486,6 +515,7 @@ async function triggersLs(
       process.stdout.write(`    ${C.red}${e.path}${C.reset}: ${e.error}\n`);
     }
   }
+  if (runtime) printRuntimeTriggers(runtime);
   process.stdout.write('\n');
   return 0;
 }
@@ -682,9 +712,9 @@ async function triggersActivation(opts: CtxOpts, paused: boolean): Promise<numbe
   return 0;
 }
 
-// Pause all automations (KRTX-1721): the ACCOUNT's switch, cloud state on the
+// Pause all triggers (KRTX-1721): the ACCOUNT's switch, cloud state on the
 // account. Every project of the account stops auto-running its triggers.
-async function accountAutomations(paused: boolean, hostArg: string | undefined): Promise<number> {
+async function accountTriggersPause(paused: boolean, hostArg: string | undefined): Promise<number> {
   const ctx = resolveAccountContext({ hostArg });
   if (!ctx) return 1;
   try {
@@ -694,8 +724,8 @@ async function accountAutomations(paused: boolean, hostArg: string | undefined):
   }
   process.stdout.write(
     paused
-      ? `${status.ok('All automations PAUSED for this account')} ${C.dim}— no project's schedules, webhooks, connector events or App events auto-run. Manual \`fire\` still works.${C.reset}\n`
-      : `${status.ok('All automations RESUMED for this account')} ${C.dim}— a schedule slot missed while paused fires once.${C.reset}\n`,
+      ? `${status.ok('All triggers PAUSED for this account')} ${C.dim}— no project's schedules, webhooks, connector events or App events auto-run. Manual \`fire\` still works.${C.reset}\n`
+      : `${status.ok('All triggers RESUMED for this account')} ${C.dim}— a schedule slot missed while paused fires once.${C.reset}\n`,
   );
   return 0;
 }

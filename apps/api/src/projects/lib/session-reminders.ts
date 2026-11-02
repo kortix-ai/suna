@@ -16,7 +16,7 @@ import { projectTriggerRuntime, projects } from '@kortix/db';
 import { reminderPromptText as sharedReminderPromptText } from '@kortix/shared';
 import { formatDurationSeconds, parseDurationSeconds } from '@kortix/manifest-schema';
 import { Cron } from 'croner';
-import { and, asc, count, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm';
 import { REMINDER_ID_PREFIX } from '../../notifications/push-payload';
 import { db } from '../../shared/db';
 import {
@@ -75,10 +75,10 @@ export function parseReminderDraft(body: Record<string, unknown>, now: Date): Re
   if (has('every') && has('cron')) return { error: 'Pass every or cron, not both' };
   if (has('at') && has('in')) return { error: 'Pass at or in, not both' };
   if (has('cron') && (has('at') || has('in'))) {
-    return { error: 'A cron reminder sets its own fire times; drop at/in' };
+    return { error: 'A cron loop sets its own fire times; drop at/in' };
   }
   if (!has('every') && !has('cron') && !has('at') && !has('in')) {
-    return { error: 'Say when the reminder fires: every, cron, at, or in' };
+    return { error: 'Say when the loop fires: every, cron, at, or in' };
   }
 
   let start: Date | null = null;
@@ -169,9 +169,31 @@ export function reminderSpec(input: {
   };
 }
 
-/** The text a fire delivers — `@kortix/shared` owns the format so web/mobile parse the same header. */
-export function reminderPromptText(spec: GitTriggerSpec): string {
-  return sharedReminderPromptText({ id: spec.slug, recurring: !spec.runAt, prompt: spec.promptTemplate });
+/** Header words for a session-target trigger whose source is not a schedule. */
+const SOURCE_WORDS: Partial<Record<GitTriggerSpec['type'], string>> = {
+  webhook: 'webhook',
+  event: 'connector event',
+  app: 'App event',
+  change_request: 'change request merged',
+};
+
+/**
+ * The text a fire delivers — `@kortix/shared` owns the format so web/mobile parse
+ * the same header. A schedule fire sends the prompt as stored (a loop, unchanged);
+ * any other source sends `rendered`, the prompt rendered against its payload.
+ */
+export function reminderPromptText(spec: GitTriggerSpec, rendered?: string): string {
+  if (spec.type === 'cron') {
+    return sharedReminderPromptText({ id: spec.slug, recurring: !spec.runAt, prompt: spec.promptTemplate });
+  }
+  // A merge of one named change request happens once; every other source repeats.
+  const recurring = !(spec.type === 'change_request' && spec.changeRequest?.crId);
+  return sharedReminderPromptText({
+    id: spec.slug,
+    recurring,
+    prompt: rendered ?? spec.promptTemplate,
+    source: SOURCE_WORDS[spec.type] ?? spec.type,
+  });
 }
 
 type RuntimeRow = typeof projectTriggerRuntime.$inferSelect;
@@ -184,10 +206,15 @@ export function serializeSessionReminder(row: RuntimeRow) {
   // A one-shot that fired is done for good: pausing it afterwards (an agent
   // cleaning up) or a failed fire switching it off does not make it resumable.
   const fired = Boolean(spec.runAt && row.lastScheduledFor);
-  const state: ReminderState = fired || (row.enabled && !row.nextFireAt) ? 'done' : row.enabled ? 'active' : 'paused';
+  // Only a schedule has a next fire: a webhook, event or merge trigger waits with none.
+  const scheduled = spec.type === 'cron';
+  const state: ReminderState =
+    fired || (scheduled && row.enabled && !row.nextFireAt) ? 'done' : row.enabled ? 'active' : 'paused';
   return {
     id: row.slug,
     session_id: row.sessionId,
+    // What fires it (`lib/runtime-triggers.ts`): a loop is `schedule`.
+    source_type: spec.type === 'cron' ? 'schedule' : spec.type,
     name: spec.name === row.slug ? null : spec.name,
     prompt: spec.promptTemplate,
     every: everySeconds ? formatDurationSeconds(everySeconds) : null,
@@ -274,9 +301,10 @@ export async function getSessionReminder(
 
 type Db = Pick<typeof db, 'select' | 'insert'>;
 
+/** Enabled and able to fire: a schedule with a next slot, or any other source (it has none). */
 const activeReminder = [
   eq(projectTriggerRuntime.enabled, true),
-  isNotNull(projectTriggerRuntime.nextFireAt),
+  or(isNotNull(projectTriggerRuntime.nextFireAt), ne(projectTriggerRuntime.triggerType, 'cron')),
   isReminderRow,
 ] as const;
 
@@ -311,10 +339,10 @@ export async function insertSessionReminderWithinCaps(
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`reminders:${projectId}`}, 0))`);
     if ((await countActiveSessionReminders(projectId, sessionId, tx)) >= REMINDER_MAX_ACTIVE_PER_SESSION) {
-      return { error: `This session already has ${REMINDER_MAX_ACTIVE_PER_SESSION} active reminders. Stop one first.` };
+      return { error: `This session already has ${REMINDER_MAX_ACTIVE_PER_SESSION} active loops. Stop one first.` };
     }
     if ((await countActiveProjectReminders(projectId, tx)) >= REMINDER_MAX_ACTIVE_PER_PROJECT) {
-      return { error: `This project already has ${REMINDER_MAX_ACTIVE_PER_PROJECT} active reminders. Stop one first.` };
+      return { error: `This project already has ${REMINDER_MAX_ACTIVE_PER_PROJECT} active loops. Stop one first.` };
     }
     return { row: await insertSessionReminder(input, tx) };
   });
@@ -324,7 +352,8 @@ export async function insertSessionReminder(input: {
   projectId: string;
   spec: GitTriggerSpec;
   createdBy: string;
-  firstFireAt: Date;
+  /** Null for a source that is not a schedule: nothing to claim. */
+  firstFireAt: Date | null;
   now: Date;
 }, q: Db = db): Promise<RuntimeRow> {
   const { spec } = input;
@@ -335,7 +364,8 @@ export async function insertSessionReminder(input: {
       slug: spec.slug,
       sessionId: spec.pinnedSessionId,
       ownerUserId: input.createdBy,
-      triggerType: 'cron',
+      // A loop is `cron`; a session-target trigger keeps its own source type.
+      triggerType: spec.type,
       enabled: true,
       scheduleCron: spec.cron,
       scheduleRunAt: spec.runAt ? new Date(spec.runAt) : null,

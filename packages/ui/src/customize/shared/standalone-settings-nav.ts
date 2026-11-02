@@ -22,6 +22,7 @@
  */
 import { uiRoutes } from '../../lib/routes';
 import { useUiRouter } from '../../providers/ui-provider';
+import { useGuardedLeave } from './leave-guard';
 import { useCallback, useMemo } from 'react';
 
 import {
@@ -151,7 +152,12 @@ export function useStandaloneCapabilityNav(
 ): SettingsNav {
   const router = useUiRouter();
   const membersTab = useSettingsPanelStore((s) => s.membersTab);
-  const navigateTo = useCallback((href: string) => router.push(href), [router]);
+  // Under a page with unsaved edits (the agent editor), leaving asks first.
+  const guardedLeave = useGuardedLeave();
+  const navigateTo = useCallback(
+    (href: string) => guardedLeave(() => router.push(href)),
+    [router, guardedLeave],
+  );
 
   return useMemo(
     () => buildStandaloneCapabilityNav({ projectId, activeTab, membersTab, accountId, navigateTo }),

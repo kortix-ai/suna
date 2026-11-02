@@ -23,8 +23,14 @@ export type HandlerContext = {
   reconcileSessionTail?: (sessionID: string, reason: SessionSyncReason) => Promise<void>;
   userPartsGraceMs?: number;
   projectId?: string | null;
+  /** The project of the session this stream serves, else the route's: what a notification names. */
+  notificationProjectId?: string | null;
   /** The Kortix session of the stream this handler serves; null on the global stream. */
   sessionId?: string | null;
+  /** The box serves its log (`runtime.log.v1`): no transcript or session read follows a frame. */
+  logNative?: boolean;
+  /** A `log.status` `compacting`: the thread compacts now. */
+  startCompaction?: (sessionID: string) => void;
 } & {
   reconcileTail: (
     sessionID: string,

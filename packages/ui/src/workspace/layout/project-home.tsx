@@ -32,7 +32,7 @@ import {
 } from '@kortix/sdk';
 import type { AttachmentSubmission } from '../../session/composer/attachment-submission';
 import { contract, invalidateProject, qk, type Command } from '@kortix/sdk/react';
-import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
+import { MY_KORTIX_SANDBOX_SLUG, isMyKortixAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from '../home/access-requests-bell';
 import { notificationCenterOn } from '../../internal/hooks/use-notification-center';
 import { FirstChat } from '../home/first-chat';
@@ -157,7 +157,7 @@ function ProjectHomeView({
   const sandboxItems: SandboxTemplate[] = sandboxesQuery.data?.items ?? [];
   const defaultSlug = sandboxesQuery.data?.default_slug ?? 'default';
   const activeSlug = selectedSlug ?? defaultSlug;
-  const metaSelected = isMetaAgentName(selectedAgent);
+  const metaSelected = isMyKortixAgentName(selectedAgent);
 
   useEffect(() => {
     if (metaSelected) setSelectedSlug(null);
@@ -248,7 +248,7 @@ function ProjectHomeView({
           {
             ...options,
             ...(metaSelected
-              ? { sandbox_slug: META_SANDBOX_SLUG }
+              ? { sandbox_slug: MY_KORTIX_SANDBOX_SLUG }
               : selectedSlug
                 ? { sandbox_slug: selectedSlug }
                 : {}),

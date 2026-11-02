@@ -6,8 +6,7 @@ import {
   withPolicySet,
 } from './agent-policy-sets';
 
-const MANIFEST = `kortix_version: 3
-connectors:
+const MANIFEST = `connectors:
   - slug: gmail
     provider: composio
     app: gmail

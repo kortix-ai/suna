@@ -9,7 +9,7 @@
  * sanctioned way to move commits onto another branch and the merge writes that
  * branch SERVER-side, never passing through the proxy at all.
  */
-import { parseManifestText, type ManifestFormat } from '@kortix/manifest-schema';
+import { parseManifestText } from '@kortix/manifest-schema';
 
 /** Which branch does a change request opened from a session target? */
 export type CrBaseDecision =
@@ -115,22 +115,17 @@ export const MANIFEST_WRITE_ACTIONS = [
  * not count. `null` = no manifest on that side. A side that does not parse
  * needs every one of them: the check fails closed.
  */
-export function requiredManifestActions(
-  baseText: string | null,
-  headText: string | null,
-  format: ManifestFormat,
-  headFormat: ManifestFormat = format,
-): string[] {
-  const read = (text: string | null, fmt: ManifestFormat): Record<string, unknown> | null => {
+export function requiredManifestActions(baseText: string | null, headText: string | null): string[] {
+  const read = (text: string | null): Record<string, unknown> | null => {
     if (text === null || !text.trim()) return {};
     try {
-      return parseManifestText(text, fmt);
+      return parseManifestText(text);
     } catch {
       return null;
     }
   };
-  const before = read(baseText, format);
-  const after = read(headText, headFormat);
+  const before = read(baseText);
+  const after = read(headText);
   if (before === null || after === null) return [...MANIFEST_WRITE_ACTIONS];
   const required = new Set<string>();
   if (

@@ -36,10 +36,10 @@ export const SHADCN_ITEM_TYPES = [
 
 /** Kortix-native item types layered on top of the shadcn vocabulary. */
 export const KORTIX_ITEM_TYPES = [
-  'registry:skill', // an OpenCode SKILL.md (+ its reference files)
-  'registry:agent', // an agent persona .md
-  'registry:command', // an OpenCode slash command .md
-  'registry:tool', // a custom OpenCode tool (.ts) or plugin
+  'registry:skill', // a SKILL.md (+ its reference files)
+  'registry:agent', // an agent prompt .md
+  'registry:command', // a slash command prompt .md (kortix.yaml `commands:`)
+  'registry:tool', // a tool module .ts (kortix.yaml `tools:`)
   'registry:trigger', // a kortix.yaml triggers: block (declarative)
   'registry:connector', // a connector definition (Pipedream/MCP/HTTP)
   'registry:rules', // AGENTS.md / rules files
@@ -56,23 +56,20 @@ export type KortixItemType = (typeof KORTIX_ITEM_TYPES)[number];
 export type RegistryItemType = (typeof ALL_ITEM_TYPES)[number];
 
 /**
- * Target placeholders. A file's `target` may start with one of these aliases;
- * the installer expands it against the consuming project's resolved layout
- * (the OpenCode config dir comes from `opencode.config_dir` in kortix.yaml,
- * defaulting to `.kortix/opencode`).
+ * Target placeholders. A file's `target` may start with one of these aliases,
+ * each a folder at the consuming project's repository root. The agent that
+ * imports the item writes the file there and registers it in `kortix.yaml`.
  *
- *   ~/<path>            → repo root, relative                (shadcn-compatible)
- *   @opencode/<path>    → <configDir>/<path>
- *   @skills/<path>      → <configDir>/skills/<path>
- *   @agents/<path>      → <configDir>/agents/<path>
- *   @commands/<path>    → <configDir>/commands/<path>
- *   @tools/<path>       → <configDir>/tools/<path>
- *   @memory/<path>      → .kortix/memory/<path>
- *   <relative path>     → repo root, relative                (no alias)
+ *   ~/<path>            → <path>                             (shadcn-compatible)
+ *   @skills/<path>      → skills/<path>
+ *   @agents/<path>      → agents/<path>
+ *   @commands/<path>    → commands/<path>
+ *   @tools/<path>       → tools/<path>
+ *   @memory/<path>      → memory/<path>
+ *   <relative path>     → <relative path>                    (no alias)
  */
 export const TARGET_ALIASES = [
   '~',
-  '@opencode',
   '@skills',
   '@agents',
   '@commands',

@@ -411,6 +411,29 @@ describe('classifyPart — exhaustive part model', () => {
     });
   });
 
+  test('a context reset (retrieval instead of a summary) carries its mode, its size and its record entries', () => {
+    const part = {
+      id: 'p11',
+      sessionID: 's1',
+      messageID: 'm1',
+      type: 'compaction',
+      auto: true,
+      mode: 'record',
+      tokens_before: 182_340,
+      entries: 412,
+    } as Part;
+    expect(classifyPart(part)).toEqual({
+      kind: 'compaction',
+      id: 'p11',
+      auto: true,
+      overflow: false,
+      tailStartId: undefined,
+      mode: 'record',
+      tokensBefore: 182_340,
+      entries: 412,
+    });
+  });
+
   test('step-start', () => {
     const part = {
       id: 'p11',
@@ -641,6 +664,9 @@ describe('toolInfo registry', () => {
     expect(toolInfo('grep')).toEqual({ label: 'Search Code', category: 'search' });
     expect(toolInfo('webfetch')).toEqual({ label: 'Fetch Page', category: 'web' });
     expect(toolInfo('task')).toEqual({ label: 'Delegate to Agent', category: 'task' });
+    // pi's subagent tool; `task` is its deprecated alias.
+    expect(toolInfo('agent')).toEqual(toolInfo('task'));
+    expect(toolInfo('workflow')).toEqual({ label: 'Run Workflow', category: 'task' });
     expect(toolInfo('todowrite')).toEqual({ label: 'Plan Tasks', category: 'task' });
     expect(toolInfo('question')).toEqual({ label: 'Ask Question', category: 'task' });
   });
@@ -797,5 +823,18 @@ describe('toToolView — harness-neutral tool fields', () => {
     expect(view.diff).toBeUndefined();
     expect(view.answers).toBeUndefined();
     expect(view.childSessionId).toBeUndefined();
+  });
+});
+
+describe('toToolView: the tool state metadata a host draws from', () => {
+  test('a running workflow call carries its run document; a call without metadata carries none', () => {
+    const run = { runId: 'run_1', title: 'Review the repo', status: 'running', phases: [], agents: [] };
+    const view = toToolView({
+      tool: 'workflow',
+      state: { status: 'running', input: { script: 'x' }, metadata: { workflow: run }, time: { start: 1 } },
+    } as never);
+    expect(view.metadata).toEqual({ workflow: run });
+    const plain = toToolView({ tool: 'read', state: { status: 'running', input: {}, time: { start: 1 } } } as never);
+    expect(plain.metadata).toBeUndefined();
   });
 });

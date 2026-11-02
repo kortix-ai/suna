@@ -1,12 +1,12 @@
 import { cn } from '@kortix/ui';
-import { MicrophoneIcon } from '@phosphor-icons/react/dist/ssr';
+import Image from 'next/image';
 import type { ReactNode } from 'react';
 
 /*
- * The devices the surface pages draw: a desktop window, a phone and a
- * terminal. Hairlines, never shadows. Every frame is drawn in tokens, so it
- * follows the visitor's theme, and every one reflows to 390 px instead of
- * scaling down: text stays at its real size.
+ * The frames the surface pages draw: a terminal at real text size, and the
+ * frames that hold real screenshots of the desktop and phone apps. Hairlines,
+ * never shadows. Every frame is drawn in tokens, so it follows the visitor's
+ * theme.
  */
 
 /** Neutral window dots. Not the macOS colours: the page spends no decorative colour. */
@@ -17,57 +17,6 @@ export function WindowDots() {
       <span className="bg-border size-2.5 rounded-full" />
       <span className="bg-border size-2.5 rounded-full" />
     </span>
-  );
-}
-
-/** A native desktop window: the title bar, then the app. */
-export function DesktopFrame({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="bg-background w-full overflow-hidden rounded-lg border">
-      <div className="flex items-center gap-4 border-b px-4 py-2.5">
-        <WindowDots />
-        <span className="text-muted-foreground flex-1 truncate text-center text-xs">{title}</span>
-        <span aria-hidden className="w-12" />
-      </div>
-      {children}
-    </div>
-  );
-}
-
-/** A whole phone: status bar, the session's title bar, the screen, the composer. */
-export function PhoneFrame({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div /* audit:allow device art: a phone body, no UI radius token draws one */ className="bg-background border-border relative h-[36rem] w-80 max-w-full shrink-0 overflow-hidden rounded-[2.75rem] border p-2">
-      <div /* audit:allow device art: the screen, concentric with the body (2.75rem minus the 0.5rem bezel) */ className="border-border flex h-full flex-col overflow-hidden rounded-[2.25rem] border">
-        <div className="flex items-center justify-between px-6 pt-3.5 pb-2">
-          <span className="text-foreground text-xs font-medium tabular-nums">9:41</span>
-          <span aria-hidden className="bg-foreground h-6 w-20 rounded-full" />
-          <span aria-hidden className="flex items-center gap-1">
-            <span className="bg-foreground h-2 w-3 rounded-xs" />
-            <span className="bg-foreground h-2.5 w-5 rounded-xs" />
-          </span>
-        </div>
-        <div className="flex items-center justify-between border-b px-4 py-3">
-          <span aria-hidden className="flex flex-col gap-1">
-            <span className="bg-foreground h-px w-4" />
-            <span className="bg-foreground h-px w-3" />
-            <span className="bg-foreground h-px w-4" />
-          </span>
-          <span className="text-foreground truncate px-3 text-sm font-medium">{title}</span>
-          <span aria-hidden className="text-muted-foreground text-sm leading-none">
-            ···
-          </span>
-        </div>
-        <div className="flex min-h-0 flex-1 flex-col justify-end gap-4 overflow-hidden px-4 pt-4 pb-3">{children}</div>
-        <div className="px-3 pb-3">
-          <div className="text-muted-foreground flex items-center justify-between rounded-lg border px-3 py-2.5 text-sm">
-            Ask anything…
-            <MicrophoneIcon aria-hidden className="size-4" />
-          </div>
-        </div>
-        <span aria-hidden className="bg-foreground mx-auto mb-2 h-1 w-28 rounded-full" />
-      </div>
-    </div>
   );
 }
 
@@ -129,6 +78,60 @@ export function TerminalFrame({
           ),
         )}
       </pre>
+    </div>
+  );
+}
+
+/**
+ * A real screenshot in the visitor's theme: `<src>-light.webp` under the light
+ * theme, `<src>-dark.webp` under `.dark`. Both were shot from the same synthetic
+ * Arcadia project on dev, toggling the app's own theme between passes.
+ */
+function ThemedShot({ src, alt, width, height, sizes }: { src: string; alt: string; width: number; height: number; sizes: string }) {
+  return (
+    <>
+      <Image src={`${src}-light.webp`} alt={alt} width={width} height={height} sizes={sizes} className="block h-auto w-full dark:hidden" />
+      <Image src={`${src}-dark.webp`} alt={alt} width={width} height={height} sizes={sizes} className="hidden h-auto w-full dark:block" />
+    </>
+  );
+}
+
+const PHONE_SHOTS = {
+  start: 'The Kortix iPhone app: a new session with a photo attached and a prompt typed in the composer.',
+  permission: 'The Kortix iPhone app: a session paused on a permission request to run git push, with Deny, Allow once and Always allow.',
+  review: 'The Kortix iPhone app: change request #2, its details, what changed, and the Request changes and Merge buttons.',
+  notify: 'The Kortix iPhone app: notification settings with switches for task completions, errors, questions and permission requests.',
+} as const;
+
+/** One iOS Simulator screenshot of the shipped app (1206x2622, stored at 603x1311) in a phone body. */
+export function PhoneShot({ name }: { name: keyof typeof PHONE_SHOTS }) {
+  return (
+    <div /* audit:allow device art: a phone body, no UI radius token draws one */ className="bg-background border-border mx-auto w-72 max-w-full overflow-hidden rounded-[2.75rem] border p-2">
+      <div /* audit:allow device art: the screen, concentric with the body */ className="border-border overflow-hidden rounded-[2.25rem] border">
+        <ThemedShot src={`/images/mobile-app/${name}`} alt={PHONE_SHOTS[name]} width={603} height={1311} sizes="288px" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The desktop app: the shipped web app as the Electron shell renders it
+ * (`KortixDesktop` user agent, macOS, 1440x900 at 2x). The shell leaves the
+ * top-left corner to the native traffic lights; the dots stand in for them.
+ */
+export function DesktopShot() {
+  return (
+    <div className="bg-background relative w-full overflow-hidden rounded-lg border">
+      <ThemedShot
+        src="/images/desktop-app/session-full"
+        alt="The Kortix desktop app on macOS: the Arcadia project's sessions, and a session that fixed a billing bug, proved it with tests and opened a change request."
+        width={2304}
+        height={1440}
+        sizes="(min-width: 1280px) 1152px, 100vw"
+      />
+      <span /* audit:allow device art: the traffic lights sit at a fixed spot in the shell's title bar */ className="absolute top-[2.2%] left-[1.4%]">
+        <WindowDots />
+      </span>
     </div>
   );
 }

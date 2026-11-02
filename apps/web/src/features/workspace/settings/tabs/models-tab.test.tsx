@@ -109,7 +109,6 @@ describe('Models page chrome', () => {
     expect(MODELS_PAGE_TITLE).toBe('Models');
     expect(MODELS_PAGE_DESCRIPTION).toBe('Choose the providers and models this project can use.');
     expect(gatewaySource).toContain('title={MODELS_PAGE_TITLE}');
-    expect(gatewaySource).toContain('description={MODELS_PAGE_DESCRIPTION}');
     // Every piece of the old bespoke layout, gone for good.
     expect(gatewaySource).not.toContain('SettingsSectionHeader');
     expect(gatewaySource).not.toContain('SettingsTabHeader');

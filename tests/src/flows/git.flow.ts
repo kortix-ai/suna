@@ -513,7 +513,7 @@ flow(
       await db.query(`UPDATE kortix.account_tokens
         SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5, user_id = $6 WHERE token_id = $1`,
       [tokenId, project.id, sessionId,
-        JSON.stringify({ agent: 'kortix', kortixCli: 'all', connectors: 'all', env: [] }), team.id, userId]);
+        JSON.stringify({ agent: 'worker', kortixCli: 'all', connectors: 'all', env: [] }), team.id, userId]);
       return { secret, sessionId };
     };
     const git = async (secret: string, args: string[], expected = 0) => {

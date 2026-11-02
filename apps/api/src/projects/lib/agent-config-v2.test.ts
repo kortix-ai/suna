@@ -39,10 +39,8 @@ describe('resolveBehaviorDraft: `behavior` and its pre-W4 name `opencode`', () =
 });
 
 const manifest = (agents: Record<string, unknown>) => ({
-  schemaVersion: 2,
-  format: 'yaml' as const,
   path: 'kortix.yaml',
-  raw: { kortix_version: 2, default_agent: 'support', agents },
+  raw: { default_agent: 'support', agents },
 });
 
 const blockOf = (result: { ok: boolean; raw?: Record<string, unknown> }, name = 'support') =>
@@ -165,12 +163,9 @@ describe('kortix_permissions / kortix_cli alias', () => {
 // `revision` is what tells the helper the manifest exists on disk; a committed
 // manifest always carries a blob SHA (readManifest → readManifestFromRepo).
 const committed = (agents?: Record<string, unknown>) => ({
-  schemaVersion: 2,
-  format: 'yaml' as const,
   path: 'kortix.yaml',
   revision: 'a'.repeat(40),
   raw: {
-    kortix_version: 2,
     default_agent: 'support',
     ...(agents === undefined ? {} : { agents }),
   },
@@ -227,21 +222,12 @@ describe('grantSecretToAgentV2', () => {
     const res = grantSecretToAgentV2(committed(), 'support', 'ALPHA');
     expect(res).toMatchObject({ ok: true, alreadyGranted: false, adoptedGovernance: true });
     if (!res.ok) return;
-    expect(res.raw.agents).toEqual({ support: { secrets: ['ALPHA'], workspace: { project_repository: true } } });
-  });
-
-  test('a v1 manifest is refused with the upgrade flag, not a throw', () => {
-    const res = grantSecretToAgentV2(
-      { schemaVersion: 1, format: 'toml', path: 'kortix.toml', revision: 'b', raw: {} },
-      'support',
-      'ALPHA',
-    );
-    expect(res).toMatchObject({ ok: false, unsupportedV1: true });
+    expect(res.raw.agents).toEqual({ support: { secrets: ['ALPHA'], workspace: { project_repository: false } } });
   });
 
   test('a malformed `agents:` value is refused instead of overwritten', () => {
     const res = grantSecretToAgentV2(
-      { ...committed(), raw: { kortix_version: 2, agents: [{ name: 'support' }] } },
+      { ...committed(), raw: { agents: [{ name: 'support' }] } },
       'support',
       'ALPHA',
     );
@@ -267,6 +253,6 @@ describe('a YAML null agent entry parses past the validator — each path pins b
   test('the secret-grant path upserts it (an absent entry is widened, not rewritten)', () => {
     const res = grantSecretToAgentV2(committed(nullEntry), 'support', 'ALPHA_KEY');
     expect(res).toMatchObject({ ok: true, alreadyGranted: false, adoptedGovernance: false });
-    expect(blockOf(res).support).toEqual({ secrets: ['ALPHA_KEY'], workspace: { project_repository: true } });
+    expect(blockOf(res).support).toEqual({ secrets: ['ALPHA_KEY'], workspace: { project_repository: false } });
   });
 });

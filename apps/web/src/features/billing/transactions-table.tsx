@@ -63,6 +63,7 @@ const TRANSACTION_BADGES: Record<string, { label: string; variant: BadgeVariant 
   compute_debit: { label: 'Sandbox', variant: 'outline' },
   compute_refund: { label: 'Sandbox Refund', variant: 'secondary' },
   proxy_debit: { label: 'Proxy', variant: 'outline' },
+  storage_debit: { label: 'Storage', variant: 'outline' },
   refund: { label: 'Refund', variant: 'secondary' },
   adjustment: { label: 'Adjustment', variant: 'outline' },
   expired: { label: 'Expired', variant: 'destructive' },

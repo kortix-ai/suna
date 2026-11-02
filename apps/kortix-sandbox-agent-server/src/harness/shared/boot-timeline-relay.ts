@@ -10,13 +10,13 @@ import { noteControlPlaneResponse } from '@/lib/kortix-api/session-token-health'
  * WHY: `GET /kortix/health` already exposes `bootState.timeline` (see
  * routes/health.ts's `boot_timeline` field), but nothing on the server ever
  * stores it — so the in-guest boot latency (config-release-fetched,
- * pi-ready, opencode-session-created, ...) is unattributable after the fact, unlike the
+ * pi-ready, initial-prompt-delivered, ...) is unattributable after the fact, unlike the
  * HOST side which IS persisted (kortix.provider_events.marks, written by
  * apps/api/src/platform/services/provider-events.ts's recordProviderEvent).
  * This module closes that gap by POSTing the same timeline server-side.
  *
  * INTEGRATION: the connector should call `relayBootTimelineToApi(bootState.timeline)`
- * from main.ts exactly once per boot, right after `runtimeReady` first becomes
+ * from harness/pi/boot.ts exactly once per boot, right after `runtimeReady` first becomes
  * true — i.e. from the same place that today computes readiness for
  * routes/health.ts (mirrors relayRuntimeSession, which fires at the
  * analogous "session is usable" point for the bootstrap pin). Do not call it

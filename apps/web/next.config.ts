@@ -537,14 +537,55 @@ const nextConfig = (): NextConfig => ({
         destination: '/projects/:id/customize/agents',
         permanent: false,
       },
+      // The project-wide libraries and settings have one home, Project admin
+      // (`/projects/:id/admin/<section>`, 2026-10-27). Customize keeps Agents
+      // and Review. Every older address lands there in one hop: the
+      // top-level tabs, their `/customize/` successors, and the Project admin
+      // `?section=` form.
       {
         source: '/projects/:id/config',
-        destination: '/projects/:id/customize/settings',
+        destination: '/projects/:id/admin/general',
         permanent: false,
       },
       {
         source: '/projects/:id/:tab(skills|connectors|triggers|models|secrets)',
-        destination: '/projects/:id/customize/:tab',
+        destination: '/projects/:id/admin/:tab',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/customize/:tab(skills|tools|extensions|drives|triggers|models|secrets)',
+        destination: '/projects/:id/admin/:tab',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/customize/connectors/:path*',
+        destination: '/projects/:id/admin/connectors/:path*',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/customize/reminders',
+        destination: '/projects/:id/admin/triggers',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/customize/repo',
+        destination: '/projects/:id/admin/repo',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/customize/settings',
+        has: [{ type: 'query', key: 'section', value: '(?<section>[a-z-]+)' }],
+        destination: '/projects/:id/admin/:section',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/customize/settings',
+        destination: '/projects/:id/admin/general',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/:prefix(customize|admin)/apps',
+        destination: '/projects/:id/apps',
         permanent: false,
       },
       // Backends became Apps (2026-10-09), and a migrated
@@ -1242,6 +1283,13 @@ const nextConfig = (): NextConfig => ({
         source: '/.well-known/apple-app-site-association',
         headers: [{ key: 'Content-Type', value: 'application/json' }],
       },
+      // Kortix in Chrome is not launched: its docs page is reachable by link from the app on
+      // dev, and no search engine indexes it (content/docs/connect/chrome.mdx `noindex`).
+      // Remove with the page's `noindex` at launch.
+      ...['/docs/connect/chrome', '/docs/connect/chrome.md', '/docs/connect/chrome.mdx'].map((source) => ({
+        source,
+        headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
+      })),
       {
         source: '/fonts/:path*',
         headers: [

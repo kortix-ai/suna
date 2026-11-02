@@ -1072,7 +1072,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
         // A deliberate stop with a readable transcript is not a dead end. The
         // conversation stays, the composer stays live (a sent message wakes the
         // box and is delivered — `deliver` carries the wake intent), and the
-        // composer's own notice says the computer is asleep. A human who left
+        // composer says nothing about sleep. A human who left
         // and came back re-opens the box themselves (`useSession` releases the
         // stop hold on the next presence return), so no explicit Restart
         // button is needed here — a `notice` would only freeze the composer

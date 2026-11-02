@@ -4,8 +4,6 @@
  * transient failures a freshly woken runtime throws.
  */
 
-import * as lifecycleStore from './store';
-import { sessionAttachmentStore } from '../lib/session-attachments';
 import { projectSessions } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
@@ -18,29 +16,18 @@ import {
   clearSessionOnBehalfOfForPrompt,
 } from '../lib/on-behalf-of';
 import { logger } from '../../lib/logger';
-import { materializePromptAttachments } from './prompt-attachment-materializer';
 import { confirmPromptLanded, promptNeedsLandingProof } from './prompt-landing-proof';
-import { writeRuntimePromptFile } from './runtime-prompt-file';
 import { db } from '../../shared/db';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { resolveProjectAutomationActor } from './actor';
 import { awakeDeliveryTarget, deliverAfterWake, undoDeliveryWake, type SendOutcome } from './deliver';
+import { sandboxOpencodeEndpoint } from '../opencode-mapping';
 import { sessionTransitionLeaves, transitionSession } from './status-transitions';
-import { repairLegacyInlineAttachments } from './legacy-inline-attachment-repair';
 import { promptAgent } from './agent-availability';
 import { effortVariantForPrompt } from '../lib/effort-default';
-import type {
-  ContinueSessionCommand,
-  LegacyInlineAttachmentRepairMetadata,
-  SessionDeliveryOutcome,
-} from './types';
-import {
-  PromptNeverLandedError,
-  postPrompt,
-  readLegacyRuntimeMessage,
-  updateLegacyRuntimePart,
-} from './runtime-client';
+import type { ContinueSessionCommand, SessionDeliveryOutcome } from './types';
+import { PromptNeverLandedError, postPrompt, readRuntimeMessage } from './runtime-client';
 
 export async function continueSession(
   command: ContinueSessionCommand,
@@ -106,7 +93,7 @@ export async function continueSession(
   // the same status a normal hibernate uses. Without this check a queued
   // follow-up (Slack reply, scheduled trigger, etc.) would revive a session
   // the user explicitly deleted.
-  const sessionMeta = (session.metadata ?? {}) as LegacyInlineAttachmentRepairMetadata;
+  const sessionMeta = (session.metadata ?? {}) as Record<string, unknown>;
   if (typeof sessionMeta.deletedAt === 'string') return 'no-session';
   if (command.projectId && command.projectId !== session.projectId) {
     console.warn('[session-lifecycle] command project does not own the session; refusing delivery', {
@@ -149,7 +136,6 @@ export async function continueSession(
   // Observed here so a delivery that never reaches `sendPrompt` leaves no
   // unhandled rejection; `sendPrompt` awaits the original and throws.
   turnIdentity.catch(() => undefined);
-  const pendingAttachmentNames = sessionMeta.pending_prompt?.attachment_names;
   // The project's default reasoning effort, clamped to the model this prompt
   // runs on. Injected only when the prompt carries no variant of its own (the
   // composer's "Auto", a Slack message, a trigger fire): an explicit session
@@ -160,74 +146,11 @@ export async function continueSession(
     modelOverride: command.overrides?.model ?? undefined,
     sessionModelRef: sessionMeta.opencode_model,
   });
-  const shouldRepairLegacyInlineAttachments =
-    command.isPendingFirstPrompt !== true &&
-    Array.isArray(pendingAttachmentNames) &&
-    pendingAttachmentNames.length > 0 &&
-    typeof sessionMeta.legacy_inline_attachments_repaired_at !== 'string';
-  const legacyRepairByExternalId = new Map<string, Promise<void>>();
-  const repairLegacyBeforeDelivery = (
-    externalId: string,
-    opencodeSessionId: string,
-  ): Promise<void> => {
-    if (!shouldRepairLegacyInlineAttachments) return Promise.resolve();
-    const existing = legacyRepairByExternalId.get(externalId);
-    if (existing) return existing;
-    const repair = repairLegacyInlineAttachments({
-      sessionId,
-      externalId,
-      opencodeSessionId,
-      userId,
-      loadPendingFirst: () => lifecycleStore.loadLegacyPendingFirstPrompt(sessionId),
-      readMessage: (messageId) =>
-        readLegacyRuntimeMessage({
-          externalId,
-          opencodeSessionId,
-          sessionId,
-          userId,
-          messageId,
-        }),
-      materialize: (parts, key) =>
-        materializePromptAttachments({
-          parts,
-          externalId,
-          sessionId,
-          userId,
-          materializationKey: key,
-          writeFile: writeRuntimePromptFile,
-          readAttachment: (scope) => sessionAttachmentStore().read(scope),
-          // The runtime already holds this message's native images inline;
-          // only the legacy non-native parts need a file behind them.
-          keepNativeInline: true,
-        }),
-      updatePart: ({ messageId, partId, text: replacementText }) =>
-        updateLegacyRuntimePart({
-          externalId,
-          opencodeSessionId,
-          sessionId,
-          userId,
-          messageId,
-          partId,
-          text: replacementText,
-        }),
-      markRepaired: () => lifecycleStore.markLegacyInlineAttachmentsRepaired(sessionId),
-    }).then((result) => {
-      if (result.unsupported) {
-        logger.info('[session-lifecycle] legacy attachment repair skipped: the runtime edits no parts', {
-          session_id: sessionId,
-          external_id: externalId,
-        });
-      }
-    });
-    legacyRepairByExternalId.set(externalId, repair);
-    return repair;
-  };
   const sendPrompt = async (
     externalId: string,
     opencodeSessionId: string,
     sandboxRecord?: SandboxRecord,
   ): Promise<SendOutcome> => {
-    await repairLegacyBeforeDelivery(externalId, opencodeSessionId);
     await revalidateBeforeSend?.();
     await turnIdentity;
     let bodyBytes = 0;
@@ -276,14 +199,11 @@ export async function continueSession(
     if ((delivery === 'accepted' || delivery === 'deduplicated') && promptNeedsLandingProof(bodyBytes)) {
       const landing = await confirmPromptLanded({
         messageId: command.wireMessageId,
-        readMessage: (messageId) =>
-          readLegacyRuntimeMessage({
-            externalId,
-            opencodeSessionId,
-            sessionId,
-            userId,
-            messageId,
-          }),
+        readMessage: async (messageId) => {
+          const endpoint = await sandboxOpencodeEndpoint(externalId, userId);
+          if (!endpoint) throw new Error('no runtime endpoint');
+          return readRuntimeMessage({ endpoint, opencodeSessionId, externalId }, messageId);
+        },
       });
       if (landing === 'unknown') {
         logger.warn('[session-lifecycle] large prompt accepted; the landing read could not answer', {
@@ -302,12 +222,6 @@ export async function continueSession(
         });
         throw new PromptNeverLandedError(command.wireMessageId);
       }
-    }
-    if (delivery === 'accepted' && command.isPendingFirstPrompt === true) {
-      // This first message used the canonical command-id path. The marker keeps
-      // later prompts from entering repair. If this write fails, repair compares
-      // the transcript against this exact command-id XML and records the marker.
-      await lifecycleStore.markLegacyInlineAttachmentsRepaired(sessionId);
     }
     // Carry the reachability verdict through to `deliverWithRetry` rather than
     // flattening it to false — a down path must not spend the dead-letter

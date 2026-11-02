@@ -1,5 +1,7 @@
 # Spec: Generative UI (OpenUI) for Kortix web, mobile, and SDK hosts
 
+> **Superseded (2026-10-24):** generative UI is always on. The `genui` project flag, the `GENUI_ENABLED` kill switch and the `KORTIX_GENUI` sandbox env described below were deleted. Every session lists the `kortix-genui` system skill. See `../SKILL.md`.
+
 | | |
 |---|---|
 | Status | **Draft for review.** No code is written. No plan is written. No Linear issues. |

@@ -21,10 +21,12 @@ export function isRunnableModel(model: { enabled?: boolean; available?: boolean 
  * else the provider connection. `null` = the model is runnable.
  */
 export function unavailableModelConnection(
-  model: { enabled?: boolean; available?: boolean; availability?: 'login' | 'provider' },
+  model: { enabled?: boolean; available?: boolean; availability?: 'login' | 'provider'; providerID?: string; provider?: string | null },
   options: { chatGptAvailable: boolean },
-): 'chatgpt' | 'provider' | null {
+): 'chatgpt' | 'claude' | 'provider' | null {
   if (model.available !== false) return null;
+  // A Claude subscription model needs the caller's own Claude login, never a project provider.
+  if (model.providerID === 'claude-agent' || model.provider === 'claude-agent') return 'claude';
   return model.availability === 'login' && options.chatGptAvailable ? 'chatgpt' : 'provider';
 }
 

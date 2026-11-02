@@ -134,7 +134,10 @@ export const SESSION_NOTICE = {
   stalled: "Waking this session's computer is taking longer than usual. Messages you send are queued.",
   /** A first prompt is waiting for a new computer. */
   starting: "Starting this session's computer. Your message sends automatically.",
-  /** The computer sleeps while the session is idle; a send wakes it. */
+  /**
+   * @deprecated The Kortix composer no longer shows it: sleep and wake are
+   * silent, and the next send wakes the computer. Kept for hosts that read it.
+   */
   idle: "This session's computer is asleep. Your next message wakes it up and is delivered.",
   /** The computer is waking. */
   waking: "Waking this session's computer. Messages you send are queued and go out automatically.",

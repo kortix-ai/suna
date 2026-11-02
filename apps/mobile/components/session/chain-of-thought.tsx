@@ -35,7 +35,7 @@ const EXPAND_TIMING: DisclosureTiming = {
   easing: Easing.bezier(...MOTION.easing.default),
 };
 
-export interface DisclosureTiming {
+interface DisclosureTiming {
   duration: number;
   easing: ReturnType<typeof Easing.bezier>;
 }

@@ -3,12 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { parse as parseToml } from 'smol-toml';
-import { envSpecFromManifest, lintManifest, loadLocalManifest } from '../manifest';
-
-function lintToml(toml: string) {
-  return lintManifest(parseToml(toml) as Record<string, unknown>);
-}
+import { envSpecFromManifest, formatIssueLine, loadLocalManifest, validateManifestFile } from '../manifest';
 
 describe('envSpecFromManifest', () => {
   test('normalizes, uppercases, dedupes, and drops bad names', () => {
@@ -27,89 +22,48 @@ describe('envSpecFromManifest', () => {
   });
 });
 
-describe('lintManifest', () => {
-  test('a clean starter-shaped manifest has no errors', () => {
-    const issues = lintToml(`
-      kortix_version = 1
-      [project]
-      name = "x"
-      [env]
-      required = []
-      optional = ["ANTHROPIC_API_KEY"]
-    `);
-    expect(issues.errors).toEqual([]);
+describe('validateManifestFile', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'kortix-validate-file-'));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
   });
 
-  test('errors when kortix_version is missing', () => {
-    const issues = lintToml(`[project]\nname = "x"\n`);
-    expect(issues.errors.some((e) => e.includes('kortix_version'))).toBe(true);
+  test('an unknown key is an error at its file, line and column, with a did-you-mean', () => {
+    const file = join(dir, 'kortix.yaml');
+    writeFileSync(file, 'default_agent: main\nagents:\n  main:\n    mode: primary\n    toolz: all\n');
+    const { issues } = validateManifestFile(file);
+    const issue = issues.find((i) => i.path === 'agents.main.toolz');
+    expect(issue).toMatchObject({ file, severity: 'error', line: 5, column: 5 });
+    expect(issue!.message).toContain('Did you mean "tools"?');
+    expect(formatIssueLine(issue!, dir)).toStartWith('kortix.yaml:5:5  error  agents.main.toolz  ');
   });
 
-  test('errors on non-numeric kortix_version', () => {
-    const issues = lintToml(`kortix_version = "one"\n`);
-    expect(issues.errors.some((e) => e.includes('kortix_version'))).toBe(true);
+  test('kortix_version: 3 is one deprecation; 2 is one legacy-format warning; any other value is one error', () => {
+    const file = join(dir, 'kortix.yaml');
+    writeFileSync(file, 'kortix_version: 3\nproject:\n  name: x\n');
+    expect(validateManifestFile(file).issues).toEqual([
+      expect.objectContaining({ path: 'kortix_version', severity: 'warning', fix: 'drop-kortix-version', file, line: 1, column: 1 }),
+    ]);
+    writeFileSync(file, 'kortix_version: 2\nproject:\n  name: x\n');
+    expect(validateManifestFile(file).issues).toEqual([
+      expect.objectContaining({ path: 'kortix_version', severity: 'warning', fix: 'legacy-format', file, line: 1, column: 1 }),
+    ]);
+    writeFileSync(file, 'kortix_version: 9\nproject:\n  name: x\n');
+    expect(validateManifestFile(file).issues).toEqual([
+      expect.objectContaining({ path: 'kortix_version', severity: 'error', file, line: 1 }),
+    ]);
   });
 
-  test('errors when [env] required is not an array', () => {
-    const issues = lintToml(`kortix_version = 1\n[env]\nrequired = "NOPE"\n`);
-    expect(issues.errors.some((e) => /env\.required.*array/i.test(e))).toBe(true);
-  });
-
-  test('errors on an invalid env var name', () => {
-    const issues = lintToml(`kortix_version = 1\n[env]\nrequired = ["1bad"]\n`);
-    expect(issues.errors.some((e) => /not a valid env-var name/i.test(e))).toBe(true);
-  });
-
-  test('accepts a valid cron trigger', () => {
-    const issues = lintToml(`
-      kortix_version = 1
-      [[triggers]]
-      slug = "nightly"
-      type = "cron"
-      cron = "0 0 3 * * *"
-      prompt = "do the thing"
-    `);
-    expect(issues.errors).toEqual([]);
-  });
-
-  test('flags a missing slug, bad type, empty prompt, and missing cron', () => {
-    const issues = lintToml(`
-      kortix_version = 1
-      [[triggers]]
-      type = "weekly"
-      prompt = ""
-    `);
-    expect(issues.errors.some((e) => /slug is required/i.test(e))).toBe(true);
-    expect(issues.errors.some((e) => /type must be one of/i.test(e))).toBe(true);
-    expect(issues.errors.some((e) => /prompt is required/i.test(e))).toBe(true);
-  });
-
-  test('flags duplicate trigger slugs', () => {
-    const issues = lintToml(`
-      kortix_version = 1
-      [[triggers]]
-      slug = "dup"
-      type = "cron"
-      cron = "* * * * * *"
-      prompt = "a"
-      [[triggers]]
-      slug = "dup"
-      type = "cron"
-      cron = "* * * * * *"
-      prompt = "b"
-    `);
-    expect(issues.errors.some((e) => e.includes('duplicate slug'))).toBe(true);
-  });
-
-  test('webhook trigger requires a secret_env', () => {
-    const issues = lintToml(`
-      kortix_version = 1
-      [[triggers]]
-      slug = "hook"
-      type = "webhook"
-      prompt = "x"
-    `);
-    expect(issues.errors.some((e) => e.includes('secret_env'))).toBe(true);
+  test('a YAML syntax error has no parsed document and keeps its position', () => {
+    const file = join(dir, 'kortix.yaml');
+    writeFileSync(file, 'project:\n  name: [x\n');
+    const result = validateManifestFile(file);
+    expect(result.parsed).toBeNull();
+    expect(result.issues[0]).toMatchObject({ path: '<yaml>', severity: 'error', file });
+    expect(result.issues[0]!.line).toBeGreaterThan(0);
   });
 });
 
@@ -122,178 +76,29 @@ describe('loadLocalManifest', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test('returns null when there is no kortix.toml', () => {
+  test('returns null when there is no kortix.yaml', () => {
     expect(loadLocalManifest(dir)).toBeNull();
   });
 
-  test('parses a manifest and extracts the env spec', () => {
-    writeFileSync(
-      join(dir, 'kortix.toml'),
-      `kortix_version = 1\n[env]\nrequired = ["FOO"]\noptional = ["bar"]\n`,
-    );
+  test('parses a kortix.yaml and extracts the env spec', () => {
+    writeFileSync(join(dir, 'kortix.yaml'), `env:\n  required: [FOO]\n  optional: [bar]\n`);
     const m = loadLocalManifest(dir);
     expect(m).not.toBeNull();
-    expect(m!.env.required).toEqual(['FOO']);
-    expect(m!.env.optional).toEqual(['BAR']);
-  });
-
-  test('throws on a TOML syntax error', () => {
-    writeFileSync(join(dir, 'kortix.toml'), `kortix_version = = 1\n`);
-    expect(() => loadLocalManifest(dir)).toThrow();
-  });
-
-  test('reads a kortix.yaml and reports its format', () => {
-    writeFileSync(
-      join(dir, 'kortix.yaml'),
-      `kortix_version: 1\nenv:\n  required: [FOO]\n  optional: [bar]\n`,
-    );
-    const m = loadLocalManifest(dir);
-    expect(m).not.toBeNull();
-    expect(m!.format).toBe('yaml');
     expect(m!.path.endsWith('kortix.yaml')).toBe(true);
     expect(m!.env.required).toEqual(['FOO']);
     expect(m!.env.optional).toEqual(['BAR']);
   });
 
-  test('validates a loaded v2 YAML manifest using its on-disk format', () => {
-    writeFileSync(
-      join(dir, 'kortix.yaml'),
-      [
-        'kortix_version: 2',
-        'default_agent: kortix',
-        'agents:',
-        '  kortix:',
-        '    enabled: true',
-        '',
-      ].join('\n'),
-    );
-    const m = loadLocalManifest(dir);
-    expect(m).not.toBeNull();
-    expect(lintManifest(m!.data, m!.format).errors).toEqual([]);
-  });
-
-  test('prefers kortix.yaml when both files exist', () => {
+  test('reads a legacy kortix.toml as the latest shape, and kortix.yml over it', () => {
     writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n[project]\nname = "from-toml"\n`);
-    writeFileSync(join(dir, 'kortix.yaml'), `kortix_version: 1\nproject:\n  name: from-yaml\n`);
-    const m = loadLocalManifest(dir);
-    expect(m!.format).toBe('yaml');
-    expect((m!.data.project as { name: string }).name).toBe('from-yaml');
-  });
-});
-
-describe('manifest-edit — TOML (existing text-surgery behavior, unchanged)', () => {
-  let dir: string;
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'kortix-edit-toml-'));
-  });
-  afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
+    expect((loadLocalManifest(dir)!.data.project as { name: string }).name).toBe('from-toml');
+    writeFileSync(join(dir, 'kortix.yml'), `project:\n  name: from-yml\n`);
+    expect((loadLocalManifest(dir)!.data.project as { name: string }).name).toBe('from-yml');
   });
 
-  test('TOML mutations select the first identity and stop at nested or adjacent headers', async () => {
-    const { readFileSync } = await import('node:fs');
-    const { setScalarInArrayBlock, removeArrayBlock, setTableScalar } = await import('../manifest-edit');
-    const file = join(dir, 'kortix.toml');
-    const original = `# root
-[[triggers]]
-slug = 'other'
-enabled = true
-# target
-[[triggers]]
-slug = 'nightly'
-  enabled = true # old
-[triggers.config]
-enabled = true
-[[triggers]]
-slug = "nightly"
-enabled = true`;
-    writeFileSync(file, original);
-    expect(setScalarInArrayBlock('triggers', 'slug', 'nightly', 'enabled', false, dir)).toBe(true);
-    expect(readFileSync(file, 'utf8')).toBe(original.replace('  enabled = true # old', '  enabled = false'));
-    writeFileSync(file, original);
-    expect(removeArrayBlock('triggers', 'slug', 'nightly', dir)).toBe(true);
-    expect(readFileSync(file, 'utf8')).toBe(`# root
-[[triggers]]
-slug = 'other'
-enabled = true
-[triggers.config]
-enabled = true
-[[triggers]]
-slug = "nightly"
-enabled = true`);
-    const tables = `# root
-[policy]
-  enabled = true # old
-[policy.nested]
-enabled = true
-[policy]
-enabled = true`;
-    writeFileSync(file, tables);
-    setTableScalar('policy', 'enabled', false, dir);
-    expect(readFileSync(file, 'utf8')).toBe(tables.replace('  enabled = true # old', '  enabled = false'));
-  });
-
-  test('TOML scalar insertion preserves EOF, comments and missing-identity files', async () => {
-    const { readFileSync } = await import('node:fs');
-    const { setScalarInArrayBlock, removeArrayBlock, setTableScalar } = await import('../manifest-edit');
-    const file = join(dir, 'kortix.toml');
-    for (const ending of ['', '\n']) {
-      const original = `# root\n[[triggers]]\n# identity\nslug = "nightly"${ending}`;
-      writeFileSync(file, original);
-      expect(setScalarInArrayBlock('triggers', 'slug', 'absent', 'enabled', false, dir)).toBe(false);
-      expect(removeArrayBlock('triggers', 'slug', 'absent', dir)).toBe(false);
-      expect(readFileSync(file, 'utf8')).toBe(original);
-      expect(setScalarInArrayBlock('triggers', 'slug', 'nightly', 'enabled', false, dir)).toBe(true);
-      expect(readFileSync(file, 'utf8')).toBe(original.replace('[[triggers]]', '[[triggers]]\nenabled = false'));
-      const table = `# root\n[policy]\n# keep\nmode = 'ask'${ending}`;
-      writeFileSync(file, table);
-      setTableScalar('policy', 'enabled', false, dir);
-      expect(readFileSync(file, 'utf8')).toBe(table.replace('[policy]', '[policy]\nenabled = false'));
-    }
-  });
-
-  test('appendArrayBlock adds a [[section]] block', async () => {
-    const { appendArrayBlock, arrayEntryExists } = await import('../manifest-edit');
-    writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n`);
-    appendArrayBlock('triggers', { slug: 'nightly', type: 'cron' }, dir);
-    expect(arrayEntryExists('triggers', 'slug', 'nightly', dir)).toBe(true);
-  });
-
-  test('removeArrayBlock excises a matching block and leaves others intact', async () => {
-    const { appendArrayBlock, removeArrayBlock, arrayEntryExists } = await import('../manifest-edit');
-    writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n`);
-    appendArrayBlock('triggers', { slug: 'nightly', type: 'cron' }, dir);
-    appendArrayBlock('triggers', { slug: 'weekly', type: 'cron' }, dir);
-    expect(removeArrayBlock('triggers', 'slug', 'nightly', dir)).toBe(true);
-    expect(arrayEntryExists('triggers', 'slug', 'nightly', dir)).toBe(false);
-    expect(arrayEntryExists('triggers', 'slug', 'weekly', dir)).toBe(true);
-  });
-
-  test('removeArrayBlock returns false when no block matches', async () => {
-    const { appendArrayBlock, removeArrayBlock } = await import('../manifest-edit');
-    writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n`);
-    appendArrayBlock('triggers', { slug: 'nightly', type: 'cron' }, dir);
-    expect(removeArrayBlock('triggers', 'slug', 'nope', dir)).toBe(false);
-  });
-
-  test('setScalarInArrayBlock updates a scalar inside the matched block', async () => {
-    const { appendArrayBlock, setScalarInArrayBlock, readArrayEntry } = await import('../manifest-edit');
-    writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n`);
-    appendArrayBlock('triggers', { slug: 'nightly', type: 'cron', enabled: true }, dir);
-    expect(setScalarInArrayBlock('triggers', 'slug', 'nightly', 'enabled', false, dir)).toBe(true);
-    expect(readArrayEntry('triggers', 'slug', 'nightly', dir)?.enabled).toBe(false);
-  });
-
-  test('setTableScalar creates the table when absent, then updates it in place', async () => {
-    const { setTableScalar, manifestFile } = await import('../manifest-edit');
-    const { readFileSync } = await import('node:fs');
-    writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n`);
-    setTableScalar('policy', 'default_mode', 'ask', dir);
-    expect(readFileSync(manifestFile(dir), 'utf8')).toContain('[policy]');
-    setTableScalar('policy', 'default_mode', 'allow', dir);
-    const text = readFileSync(manifestFile(dir), 'utf8');
-    expect(text).toContain('default_mode = "allow"');
-    expect(text).not.toContain('default_mode = "ask"');
+  test('throws on a YAML syntax error', () => {
+    writeFileSync(join(dir, 'kortix.yaml'), `project:\n  name: [x\n`);
+    expect(() => loadLocalManifest(dir)).toThrow();
   });
 });
 
@@ -307,7 +112,6 @@ describe('manifest-edit — YAML (Document-AST editing, comment-preserving)', ()
   });
 
   const FIXTURE = [
-    'kortix_version: 1',
     'project:',
     '  name: demo',
     '',
@@ -393,8 +197,8 @@ describe('manifest-edit — YAML (Document-AST editing, comment-preserving)', ()
   // `kortix connectors add` on a starter manifest re-indented every section
   // comment and re-flowed lists, because a missing section went through a
   // whole-document re-serialization.
+  // Already in the latest shape: a write changes nothing but its own edit (a deprecated shape would be rewritten too).
   const STARTER = [
-    'kortix_version: 2',
     'project:',
     '  description: "A long description that a re-serializer would fold onto a second line, which it must not"',
     'tools:',
@@ -404,10 +208,12 @@ describe('manifest-edit — YAML (Document-AST editing, comment-preserving)', ()
     '# Governance only.',
     'agents:',
     '  kortix:',
+    '    tools: all',
     '    skills: [a, b]',
     '',
     '  # The AP agent.',
     '  ap-agent:',
+    '    tools: all',
     '    connectors: []',
     '',
     'triggers:',
@@ -445,25 +251,34 @@ describe('manifest-edit — YAML (Document-AST editing, comment-preserving)', ()
   test('appendArrayBlock under an existing parent map never duplicates the parent key', async () => {
     const { appendArrayBlock, arrayEntryExists, manifestFile } = await import('../manifest-edit');
     const { readFileSync } = await import('node:fs');
-    writeFileSync(join(dir, 'kortix.yaml'), 'kortix_version: 2\nsandbox:\n  default: python\n');
+    writeFileSync(join(dir, 'kortix.yaml'), 'sandbox:\n  default: python\n');
     appendArrayBlock('sandbox.templates', { slug: 'gpu', image: 'kortix/gpu:latest' }, dir);
     expect(readFileSync(manifestFile(dir), 'utf8').match(/^sandbox:/gm)?.length).toBe(1);
     expect(arrayEntryExists('sandbox.templates', 'slug', 'gpu', dir)).toBe(true);
   });
 
-  test('prefers kortix.yaml over kortix.toml when both exist (no guard-throw)', async () => {
-    const { appendArrayBlock, arrayEntryExists } = await import('../manifest-edit');
-    writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n`);
-    writeFileSync(join(dir, 'kortix.yaml'), FIXTURE);
-    appendArrayBlock('triggers', { slug: 'weekly', type: 'cron' }, dir);
-    expect(arrayEntryExists('triggers', 'slug', 'weekly', dir)).toBe(true);
+  test('every write drops the obsolete kortix_version line and keeps every other byte', async () => {
+    const { appendArrayBlock, setScalarInArrayBlock, removeArrayBlock, setTableScalar, manifestFile } = await import('../manifest-edit');
+    const { readFileSync } = await import('node:fs');
+    const edits: Array<() => unknown> = [
+      () => appendArrayBlock('triggers', { slug: 'weekly', type: 'cron' }, dir),
+      () => setScalarInArrayBlock('triggers', 'slug', 'nightly', 'enabled', false, dir),
+      () => removeArrayBlock('triggers', 'slug', 'nightly', dir),
+      () => setTableScalar('policy', 'default_mode', 'ask', dir),
+    ];
+    for (const edit of edits) {
+      writeFileSync(join(dir, 'kortix.yaml'), `kortix_version: 3\n${FIXTURE}`);
+      edit();
+      const text = readFileSync(manifestFile(dir), 'utf8');
+      expect(text).not.toContain('kortix_version');
+      expect(text.startsWith('project:\n  name: demo\n')).toBe(true);
+    }
   });
 
   test('preserves every unrelated YAML byte during a targeted scalar edit', async () => {
     const { setScalarInArrayBlock, manifestFile } = await import('../manifest-edit');
     const { readFileSync } = await import('node:fs');
     const before = [
-      'kortix_version: 1',
       'metadata: { owner: "ops", labels: [alpha,beta] } # exact flow style',
       '',
       'triggers:',
@@ -486,7 +301,6 @@ describe('manifest-edit — YAML (Document-AST editing, comment-preserving)', ()
     const { appendArrayBlock, manifestFile } = await import('../manifest-edit');
     const { readFileSync } = await import('node:fs');
     const before = [
-      'kortix_version: 1',
       'metadata: { owner: "ops", labels: [alpha,beta] } # exact flow style',
       '',
       'connectors:',
@@ -513,7 +327,6 @@ describe('manifest-edit — YAML (Document-AST editing, comment-preserving)', ()
     const { removeArrayBlock, manifestFile } = await import('../manifest-edit');
     const { readFileSync } = await import('node:fs');
     const before = [
-      'kortix_version: 1',
       'connectors:',
       '  - slug: first # keep inline',
       '    provider: http',
@@ -537,7 +350,6 @@ describe('manifest-edit — YAML (Document-AST editing, comment-preserving)', ()
     const { setTableScalar, manifestFile } = await import('../manifest-edit');
     const { readFileSync } = await import('node:fs');
     const before = [
-      'kortix_version: 1',
       'policy:',
       '  default_mode: ask # keep this comment',
       'tail:  [x,y] # exact tail',

@@ -1,5 +1,6 @@
 import { accountMembers, artifactComments, artifactCommentThreads, artifactEvents, jobQueue, projectSessions, projects, type ArtifactCommentMention } from '@kortix/db';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
 import type { ArtifactRow } from './service';
@@ -37,7 +38,19 @@ export async function resolveArtifactCommentMentions(artifact: ArtifactRow, body
   if (!unresolved.size) return mentions;
   const [project] = await db.select().from(projects).where(and(eq(projects.projectId, artifact.projectId), eq(projects.accountId, artifact.accountId)));
   if (!project) return mentions;
-  const agents = await loadProjectAgents(project, { rethrowReadErrors: true });
+  let agents: Awaited<ReturnType<typeof loadProjectAgents>>;
+  try {
+    agents = await loadProjectAgents(project, { rethrowReadErrors: true });
+  } catch (error) {
+    // An explicit `@agent.` token fails closed: the comment names an agent it cannot reach.
+    // An unmatched plain `@word` stays text, so people still comment while the repository is unreadable.
+    if ([...unresolved].some((token) => token.startsWith('agent.'))) throw error;
+    logger.warn('[artifact-comments] agent manifest unreadable; unmatched mentions stay text', {
+      projectId: artifact.projectId,
+      errorName: error instanceof Error ? error.name : typeof error,
+    });
+    return mentions;
+  }
   for (const token of unresolved) {
     for (const agent of agents.specs) {
       if (agent.enabled && (token.startsWith('agent.') ? token === artifactAgentMentionToken(agent.name).slice(1) : mentionsMember(new Set([token]), { ids: [], names: [agent.name] }))

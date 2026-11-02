@@ -859,6 +859,38 @@ describe('detailOpen never survives its content', () => {
     expect(state().detailOpen).toBe(false);
   });
 
+  // The layout shows the right side on `isSidePanelOpen` alone. Closing only
+  // `detailOpen` left the side open over an empty provider: leave a session
+  // with an artifact open, come back, and the right side was white.
+  test('the provider unmounting closes the side panel and keeps what it showed for the way back', () => {
+    state().setActiveSession('s1');
+    state().setIsSidePanelOpen(true);
+    state().setDetailContent('s1', true);
+    state().setDetailOpen(true);
+    useSessionPanelMemoryStore.setState({ bySession: { s1: { kind: 'view', view: 'terminal' } } });
+
+    state().setDetailContent('s1', null);
+
+    expect(state().isSidePanelOpen).toBe(false);
+    expect(state().detailOpen).toBe(false);
+    // The arrival restore reopens it: the person did not close it.
+    expect(useSessionPanelMemoryStore.getState().bySession.s1).toEqual({ kind: 'view', view: 'terminal' });
+    // Back on the same session id: `setActiveSession` changes nothing, and the side stays closed.
+    state().setActiveSession('s1');
+    expect(state().isSidePanelOpen).toBe(false);
+  });
+
+  test('a BACKGROUND session losing its detail leaves the active side panel open', () => {
+    state().setActiveSession('s1');
+    state().setIsSidePanelOpen(true);
+    state().setDetailContent('s1', true);
+    state().setDetailOpen(true);
+
+    state().setDetailContent('s2', null);
+
+    expect(state().isSidePanelOpen).toBe(true);
+  });
+
   test('a provider reporting it has no detail closes it too', () => {
     state().setActiveSession('s1');
     state().setDetailContent('s1', true);

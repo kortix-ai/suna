@@ -137,6 +137,11 @@ async function readDeliveredWireIdFloor(
  * two minutes, which is the exact silent drop this function exists to prevent.
  * The un-backdated clock is the floor instead. An unreadable box is also the
  * commonest trigger for a redelivery, so this path is not the exotic one.
+ *
+ * A box that lists `RUNTIME_STABLE_MESSAGE_ID_CAPABILITY` (pi) orders by
+ * position, and its callers keep the id they have instead
+ * (`keepsWireIdOnStableRuntime`); they still call this for a continuation, an
+ * unreadable transcript, and an id that tip refuses.
  */
 export async function remintWireMessageId(
   row: SessionLifecycleCommandRow,

@@ -2,14 +2,25 @@
 
 import { validateRef, validateSha } from '../git-ref';
 import {
+  ensureCommitTrees,
+  ensureStoreObjects,
   hostFromRepoUrl,
   refreshMirror,
   runGit,
   runGitBuffer,
   runGitCapture,
 } from './mirror';
+import { isObjectFetchTooLargeError } from './object-store';
 import { authGitPush } from './commit-writer';
-import { parseGitFileChanges, resolveBranchTip } from './commits';
+import {
+  blobIdsOfChanges,
+  DIFF_BLOB_FETCH_MAX_BYTES,
+  ensureDiffBlobs,
+  parseGitFileChanges,
+  parseRawDiff,
+  type RawChange,
+  resolveBranchTip,
+} from './commits';
 import type {
   BranchDiffSummary,
   GitBackedProject,
@@ -61,17 +72,25 @@ export async function headRefsLandedIn(
   const landed = new Map<string, string>();
   if (headRefs.length === 0) return landed;
   const repoPath = await refreshMirror(project);
+  // Git performs the ancestry walk once, rather than spawning two processes
+  // per open request (up to 200), after the merge has already been pushed.
+  const result = await runGitCapture(
+    ['for-each-ref', `--merged=${tipSha}`, '--format=%(refname) %(objectname)', 'refs/heads/'],
+    repoPath,
+  );
+  if (result.exitCode !== 0) throw new Error('Could not classify carried change-request heads');
+  const merged = new Map(result.stdout.trim().split('\n').map((line) => {
+    const [ref, sha] = line.split(' ');
+    return [ref, sha];
+  }));
   for (const ref of headRefs) {
     try {
       validateRef(ref);
     } catch {
       continue;
     }
-    const head = await runGitCapture(['rev-parse', '--verify', '--quiet', `refs/heads/${ref}^{commit}`], repoPath);
-    const sha = head.stdout.trim();
-    if (head.exitCode !== 0 || !/^[0-9a-f]{40}$/.test(sha)) continue;
-    const ancestor = await runGitCapture(['merge-base', '--is-ancestor', sha, tipSha], repoPath);
-    if (ancestor.exitCode === 0) landed.set(ref, sha);
+    const sha = merged.get(`refs/heads/${ref}`);
+    if (sha && /^[0-9a-f]{40}$/.test(sha)) landed.set(ref, sha);
   }
   return landed;
 }
@@ -146,6 +165,15 @@ async function computeDiffByRange(
 
   const range = `${baseRevish}...${headRevish}`;
 
+  // On a partial store (object-store.ts) the file list reads the trees of the
+  // merge base and the head. Line counts, rename detection and the patch also
+  // read both versions of every changed file: fetch them in one request,
+  // bounded by DIFF_BLOB_FETCH_MAX_BYTES. Over the bound the review lists the
+  // files without renames, counts or patch (`patch_truncated`).
+  await ensureCommitTrees(repoPath, [headSha, ...(mergeBase ? [mergeBase] : [])]);
+  const withContent = await ensureDiffBlobs(repoPath, ['diff'], [range]);
+  const renames = withContent ? '-M' : '--no-renames';
+
   // The file-list commands stay small (one short record per file) and are
   // allowed to fail into empty output; the PATCH command is the one that can
   // exceed runGit's 10 MiB exec cap on a big change (ERR_CHILD_PROCESS_STDIO_MAXBUFFER,
@@ -154,9 +182,8 @@ async function computeDiffByRange(
   // over the 32 MiB bound fails, and that failure is flagged (`patch_truncated`)
   // instead of silently empty — the review page then shows an explicit per-file
   // state (KRTX-2010).
-  const [nameStatus, numstat, patchResult] = await Promise.all([
-    runGit(['diff', '--name-status', '-z', '-M', range], repoPath, false).catch(() => ({ stdout: '', stderr: '' })),
-    runGit(['diff', '--numstat', '-M', range], repoPath, false).catch(() => ({ stdout: '', stderr: '' })),
+  const noOutput = { stdout: '', stderr: '' };
+  const readPatch = () =>
     runGitBuffer(
       ['diff', '--no-color', '-M', range],
       repoPath,
@@ -169,7 +196,11 @@ async function computeDiffByRange(
       DIFF_PATCH_MAX_BUFFER_BYTES,
     )
       .then((r) => ({ stdout: r.stdout.toString(), truncated: false }))
-      .catch(() => ({ stdout: '', truncated: true })),
+      .catch(() => ({ stdout: '', truncated: true }));
+  const [nameStatus, numstat, patchResult] = await Promise.all([
+    runGit(['diff', '--name-status', '-z', renames, range], repoPath, false).catch(() => noOutput),
+    withContent ? runGit(['diff', '--numstat', '-M', range], repoPath, false).catch(() => noOutput) : noOutput,
+    withContent ? readPatch() : { stdout: '', truncated: true },
   ]);
 
   const { files, additions, deletions } = parseGitFileChanges(nameStatus.stdout, numstat.stdout);
@@ -247,6 +278,72 @@ export class MergeConflictError extends Error {
   }
 }
 
+/** One side of a merge: what changed from the merge base, by path. Reads trees only. */
+async function changesFromBase(repoPath: string, mergeBase: string, tip: string): Promise<Map<string, RawChange>> {
+  const listed = await runGit(
+    ['diff-tree', '-r', '-z', '--no-renames', '--no-abbrev', mergeBase, tip],
+    repoPath,
+    false,
+  );
+  return new Map(parseRawDiff(listed.stdout).map((change) => [change.path, change]));
+}
+
+/**
+ * Make the files `git merge-tree` reads present on a partial store
+ * (object-store.ts): the trees of the three commits, and the blobs of every
+ * path both sides changed (the base version and each side's version). A path
+ * one side deleted and the other changed also needs the files the deleting
+ * side added: merge-tree compares them to find a rename. Any other object it
+ * reads arrives through the store's per-object fetch. Over
+ * DIFF_BLOB_FETCH_MAX_BYTES nothing is prefetched.
+ */
+async function ensureMergeObjects(repoPath: string, mergeBase: string | null, baseSha: string, headSha: string): Promise<void> {
+  if (!mergeBase) return;
+  await ensureCommitTrees(repoPath, [mergeBase, baseSha, headSha]);
+  const [ours, theirs] = await Promise.all([
+    changesFromBase(repoPath, mergeBase, baseSha),
+    changesFromBase(repoPath, mergeBase, headSha),
+  ]);
+  const wanted: RawChange[] = [];
+  let oursDeletedShared = false;
+  let theirsDeletedShared = false;
+  for (const [path, mine] of ours) {
+    const other = theirs.get(path);
+    if (!other) continue;
+    wanted.push(mine, other);
+    oursDeletedShared ||= mine.status === 'D';
+    theirsDeletedShared ||= other.status === 'D';
+  }
+  // A rename target is a file the deleting side added.
+  if (oursDeletedShared) wanted.push(...[...ours.values()].filter((change) => change.status === 'A'));
+  if (theirsDeletedShared) wanted.push(...[...theirs.values()].filter((change) => change.status === 'A'));
+  try {
+    await ensureStoreObjects(repoPath, blobIdsOfChanges(wanted), { maxBytes: DIFF_BLOB_FETCH_MAX_BYTES });
+  } catch (error) {
+    if (!isObjectFetchTooLargeError(error)) throw error;
+  }
+}
+
+/**
+ * Run `git merge-tree --write-tree`. Exit 0 is a clean merge and exit 1 is a
+ * conflict. Any other exit is a failure (an object the store could not
+ * fetch, a bad ref) and must not read as "conflicts" with an empty list.
+ */
+async function runMergeTree(project: GitBackedProject, repoPath: string, baseRef: string, headRef: string) {
+  const result = await runGitCapture(
+    ['merge-tree', '--write-tree', '--name-only', `refs/heads/${baseRef}`, `refs/heads/${headRef}`],
+    repoPath,
+    project.gitAuthToken,
+    undefined,
+    hostFromRepoUrl(project.repoUrl),
+    project.gitAuthHeaders,
+  );
+  if (result.exitCode !== 0 && result.exitCode !== 1) {
+    throw new Error(`git merge-tree failed (exit ${result.exitCode}): ${result.stderr.trim().slice(0, 500)}`);
+  }
+  return result;
+}
+
 /**
  * Predict whether `headRef` can merge cleanly into `baseRef` without touching
  * either branch. Uses `git merge-tree --write-tree` (git 2.38+) which performs
@@ -271,14 +368,8 @@ export async function previewMerge(
   const isUpToDate = baseSha === headSha;
   const canFastForward = mergeBase === baseSha && !isUpToDate;
 
-  const result = await runGitCapture(
-    ['merge-tree', '--write-tree', '--name-only', `refs/heads/${baseRef}`, `refs/heads/${headRef}`],
-    repoPath,
-    project.gitAuthToken,
-    undefined,
-    hostFromRepoUrl(project.repoUrl),
-    project.gitAuthHeaders,
-  );
+  await ensureMergeObjects(repoPath, mergeBase, baseSha, headSha);
+  const result = await runMergeTree(project, repoPath, baseRef, headRef);
 
   let canMerge = true;
   if (result.exitCode !== 0) {
@@ -345,14 +436,8 @@ export async function mergeBranches(
   }
 
   // 3-way merge.
-  const mergeTreeResult = await runGitCapture(
-    ['merge-tree', '--write-tree', '--name-only', `refs/heads/${baseRef}`, `refs/heads/${headRef}`],
-    repoPath,
-    project.gitAuthToken,
-    undefined,
-    hostFromRepoUrl(project.repoUrl),
-    project.gitAuthHeaders,
-  );
+  await ensureMergeObjects(repoPath, mergeBase, baseShaBefore, headSha);
+  const mergeTreeResult = await runMergeTree(project, repoPath, baseRef, headRef);
   if (mergeTreeResult.exitCode !== 0) {
     throw new MergeConflictError(parseMergeTreeConflictPaths(mergeTreeResult.stdout));
   }
@@ -387,8 +472,11 @@ export async function mergeBranches(
     repoPath,
     false,
   );
+  // `--no-thin`: see commit-writer.ts. A thin pack reads the previous version
+  // of each merged file to delta against it.
   await authGitPush(project, repoPath, [
     'push',
+    '--no-thin',
     'origin',
     `${mergeCommitSha}:refs/heads/${baseRef}`,
   ]);

@@ -1,10 +1,9 @@
 const PLATE = '/media/landing/plate-config.svg';
 
-// A real kortix_version 3 manifest: every key is in the docs "kortix.yaml
+// A real kortix.yaml: every key is in the docs "kortix.yaml
 // reference" section, and `kortix validate` passes it. Triggers are keyed by
 // `slug` (the board said `name`, which the schema rejects).
-const KORTIX_YAML = `kortix_version: 3
-default_agent: kortix
+const KORTIX_YAML = `default_agent: kortix
 
 agents:
   kortix:

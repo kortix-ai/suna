@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { areValidConditions } from '@kortix/manifest-schema';
 import {
   type Policy,
-  areValidConditions,
   normalizeConditions,
   parseStoredConditions,
   resolveEffectiveAction,

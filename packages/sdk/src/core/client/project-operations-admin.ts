@@ -37,6 +37,13 @@ export function bindProjectOperationsAdmin(projectId: string) {
     },
     triggers: {
       list: () => P.listProjectTriggers(projectId),
+      /** kortix.yaml and runtime triggers (loops included) in one list — see `listUnifiedTriggers`. */
+      all: () => P.listUnifiedTriggers(projectId),
+      /** A runtime trigger: no kortix.yaml commit — see `createRuntimeTrigger`. */
+      createRuntime: (...a: DropFirst<Parameters<typeof P.createRuntimeTrigger>>) => P.createRuntimeTrigger(projectId, ...a),
+      updateRuntime: (...a: DropFirst<Parameters<typeof P.updateRuntimeTrigger>>) => P.updateRuntimeTrigger(projectId, ...a),
+      runRuntime: (...a: DropFirst<Parameters<typeof P.runRuntimeTrigger>>) => P.runRuntimeTrigger(projectId, ...a),
+      removeRuntime: (...a: DropFirst<Parameters<typeof P.deleteRuntimeTrigger>>) => P.deleteRuntimeTrigger(projectId, ...a),
       eventApps: () => P.listProjectTriggerEventApps(projectId),
       eventTypes: (...a: DropFirst<Parameters<typeof P.listProjectTriggerEventTypes>>) =>
         P.listProjectTriggerEventTypes(projectId, ...a),

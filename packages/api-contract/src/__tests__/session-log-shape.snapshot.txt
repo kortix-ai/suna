@@ -43,6 +43,8 @@ CompactionBlockSchema = {
   layout: array(CompactionLayoutEntrySchema) | absent
   tokens_before: number | absent
   trigger: enum(auto | manual | overflow | unknown) | absent
+  mode: literal("record") | absent
+  entries: number | absent
   ext: ExtSchema | absent
 }
 
@@ -319,6 +321,16 @@ SessionLogSessionPatchSchema = {
 SessionLogStateEventSchema = {
   generation: number(int)(min0)
   session: SessionLogSessionPatchSchema
+}
+
+SessionLogStatusEventSchema = {
+  thread_id: string(min1)
+  status: enum(idle | busy | retry | compacting)
+  retry: {
+    attempt: number(int)(min0)
+    message: string
+    next_at: string
+  } | absent
 }
 
 SessionLogSwitchGapSchema = {

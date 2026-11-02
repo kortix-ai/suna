@@ -21,8 +21,24 @@ import { glyph as GLYPH, theme } from '../../theme.ts';
 import { Spinner, layoutRow, windowStart } from '../../ui/index.ts';
 import { matchesSidebarBinding } from './keys.ts';
 
-/** The screens the sidebar's nav rows route to. */
-export type SidebarScreen = 'customize' | 'apps' | 'review' | 'files';
+/** A screen the sidebar's nav rows route to: the slash command's name. */
+export type SidebarScreen = string;
+
+/** One nav row. The app builds the list from the command table. */
+export interface SidebarNavItem {
+  screen: SidebarScreen;
+  label: string;
+  /** A count beside the label: open change requests, unread notifications. */
+  count?: number | null;
+}
+
+/** The nav rows when the host passes none: the four screens the sidebar always had. */
+export const DEFAULT_NAV: readonly SidebarNavItem[] = [
+  { screen: 'customize', label: 'Customize' },
+  { screen: 'apps', label: 'Apps' },
+  { screen: 'review', label: 'Review' },
+  { screen: 'files', label: 'Files' },
+];
 
 /** A row id. `session:<id>` for a session, a bare word for a nav row. */
 type EntryId = string;
@@ -49,6 +65,8 @@ export interface SidebarViewProps {
   projectName: string;
   /** Open change requests. `null` prints no count. */
   reviewCount: number | null;
+  /** The screen rows, in order. Default: `DEFAULT_NAV`. */
+  nav?: readonly SidebarNavItem[];
   groups: SessionDayGroup<SessionLike>[];
   selectedSessionId: string | null;
   /** The sidebar answers keys only when it is the focused region. */
@@ -69,7 +87,6 @@ export interface SidebarViewProps {
   onNavigate(screen: SidebarScreen): void;
   onRename(sessionId: string, name: string): void;
   onDelete(sessionId: string): void;
-  onAttach(sessionId: string): void;
   onFilterChange?(query: string): void;
   /** The cursor reached the last session row — the caller may page. */
   onReachEnd?(): void;
@@ -98,6 +115,7 @@ export function SidebarView({
   accountName,
   projectName,
   reviewCount,
+  nav = DEFAULT_NAV,
   groups,
   selectedSessionId,
   focused,
@@ -114,7 +132,6 @@ export function SidebarView({
   onNavigate,
   onRename,
   onDelete,
-  onAttach,
   onFilterChange,
   onReachEnd,
 }: SidebarViewProps) {
@@ -150,15 +167,15 @@ export function SidebarView({
         glyphColor: theme.dim,
       },
       { key: 'new', id: 'new', label: '+ New session' },
-      { key: 'customize', id: 'customize', label: '  Customize' },
-      { key: 'apps', id: 'apps', label: '  Apps' },
-      {
-        key: 'review',
-        id: 'review',
-        label: '  Review',
-        right: reviewCount ? String(reviewCount) : '',
-      },
-      { key: 'files', id: 'files', label: '  Files' },
+      ...nav.map((item) => {
+        const count = item.screen === 'review' ? reviewCount : item.count;
+        return {
+          key: `nav:${item.screen}`,
+          id: `nav:${item.screen}`,
+          label: `  ${item.label}`,
+          right: count ? String(count) : '',
+        };
+      }),
       { key: 'gap', label: '', blank: true },
     ];
     for (const group of groups) {
@@ -178,7 +195,7 @@ export function SidebarView({
       }
     }
     return rows;
-  }, [accountName, projectName, reviewCount, groups, now]);
+  }, [accountName, projectName, reviewCount, nav, groups, now]);
 
   const selectableIds = useMemo(
     () => entries.filter((entry) => entry.id).map((entry) => entry.id as EntryId),
@@ -211,16 +228,23 @@ export function SidebarView({
     [selectableIds, onReachEnd],
   );
 
+  /** What Enter on a row does; a click on the row does the same. */
+  const openEntry = useCallback(
+    (id: EntryId | undefined, sessionId: string | null | undefined) => {
+      if (!id) return;
+      if (id === 'account') return onOpenAccountPicker();
+      if (id === 'project') return onOpenProjectPicker();
+      if (id === 'new') return onNewSession();
+      if (id.startsWith('nav:')) return onNavigate(id.slice(4));
+      if (sessionId) onOpenSession(sessionId);
+    },
+    [onOpenAccountPicker, onOpenProjectPicker, onNewSession, onNavigate, onOpenSession],
+  );
+
   const openCurrent = useCallback(() => {
-    if (!currentId) return;
-    if (currentId === 'account') return onOpenAccountPicker();
-    if (currentId === 'project') return onOpenProjectPicker();
-    if (currentId === 'new') return onNewSession();
-    if (currentId === 'customize' || currentId === 'apps' || currentId === 'files')
-      return onNavigate(currentId);
-    if (currentId === 'review') return onNavigate('review');
-    if (currentSessionId) onOpenSession(currentSessionId);
+    openEntry(currentId, currentSessionId);
   }, [
+    openEntry,
     currentId,
     currentSessionId,
     onOpenAccountPicker,
@@ -280,10 +304,6 @@ export function SidebarView({
     }
     if (matchesSidebarBinding(key, 'sidebar.delete')) {
       if (currentSessionId) setMode('confirm-delete');
-      return;
-    }
-    if (matchesSidebarBinding(key, 'sidebar.attach')) {
-      if (currentSessionId) onAttach(currentSessionId);
     }
   });
 
@@ -360,7 +380,7 @@ export function SidebarView({
         if (mode === 'rename' && isCursor) {
           return (
             <box key={entry.key} flexDirection="row" width={width}>
-              <text fg={theme.accent}>{GLYPH.selected}</text>
+              <text fg={theme.brand}>{GLYPH.selected}</text>
               <input
                 focused
                 flexGrow={1}
@@ -383,8 +403,12 @@ export function SidebarView({
             key={entry.key}
             fg={isCursor || isOpenSession ? theme.fg : theme.dim}
             bg={isCursor ? theme.surface : undefined}
+            onMouseDown={() => {
+              if (entry.id) setCursorId(entry.id);
+              openEntry(entry.id, entry.sessionId);
+            }}
           >
-            <span fg={theme.accent}>{mark}</span>
+            <span fg={theme.brand}>{mark}</span>
             <span fg={entry.glyphColor ?? theme.dim}>{body.slice(0, prefix)}</span>
             {body.slice(prefix)}
           </text>

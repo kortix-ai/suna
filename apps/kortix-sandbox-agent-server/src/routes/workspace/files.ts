@@ -13,15 +13,12 @@ import { isLikelyBinary, mimeTypeFor } from './file-mime'
  * The daemon owns the entire file API — direct sandbox filesystem access.
  *
  * Reads (GET /file list, /file/content, /file/raw, /file/status) and writes
- * (upload, delete, mkdir, rename) are all served here. We deliberately do NOT
- * forward file reads to OpenCode: its /file/content is editor-oriented and
- * base64-inlines IMAGES only — every other binary (Office docs, PDFs, archives,
- * sqlite, …) comes back as { type:"binary", content:"" } with no bytes, so
- * previews and downloads were 0-byte/corrupt. Serving reads off disk here fixes
- * that and gives one coherent contract. (Text-search/find lives in find.ts.)
+ * (upload, delete, mkdir, rename) are all served here, off disk, so every
+ * binary (Office docs, PDFs, archives, sqlite, …) comes back with its real
+ * bytes and previews and downloads are never 0-byte. One coherent contract.
+ * (Text-search/find lives in find.ts.)
  *
- * Mounted at `/file`. Only `/project/current` + `/global/health` still fall
- * through to OpenCode (server metadata, not file ops).
+ * Mounted at `/file`.
  *
  * Security: every path is resolved to an absolute path and validated against
  * ALLOWED_ROOTS before any filesystem operation (no traversal escapes).
@@ -265,7 +262,7 @@ type GitFileStatus = {
 }
 
 /**
- * Uncommitted changes as GitFileStatus[] — matches OpenCode's `file.status`
+ * Uncommitted changes as GitFileStatus[] — the runtime wire's `file.status`
  * shape. status enum from `git status --porcelain`; added/removed line counts
  * from `git diff --numstat HEAD` (tracked) + line-count for untracked files.
  * Returns [] when not a git repo.
@@ -411,13 +408,10 @@ export function createFilesRouter(cfg: Config): Hono {
 
   // GET /file/raw?path=<path> — stream a file's RAW bytes off disk.
   //
-  // OpenCode's read-only /file/content endpoint base64-encodes IMAGES only;
-  // every other binary type (xlsx, pptx, docx, pdf, zip, …) comes back as
-  // { type: "binary", content: "" } with NO bytes, so downloads and previews
-  // of Office docs were 0-byte / corrupt. The daemon has direct filesystem
-  // access (it already serves uploads), so it serves the real bytes here.
-  // The web/mobile clients and the pptx Office Online viewer already target
-  // this route — it just never existed until now.
+  // Every binary type (xlsx, pptx, docx, pdf, zip, …) downloads and previews
+  // with its real bytes: the daemon has direct filesystem access (it already
+  // serves uploads), so it serves them here. The web/mobile clients and the
+  // pptx Office Online viewer target this route.
   app.get('/raw', async (c) => {
     const raw = c.req.query('path')
     if (!raw) return c.json({ error: 'path query parameter is required' }, 400)
@@ -457,10 +451,9 @@ export function createFilesRouter(cfg: Config): Hono {
   // GET /file/content?path=<path> — read a file as JSON FileContent.
   //
   // Correct for ALL types: text → utf8 string; binary (Office docs, PDFs,
-  // images, archives, sqlite, …) → base64 with encoding:'base64'. This replaces
-  // OpenCode's editor-oriented /file/content, which returned empty content for
-  // every non-image binary. Binary classification = known binary extension OR a
-  // NUL byte in the first 8KB (git's heuristic).
+  // images, archives, sqlite, …) → base64 with encoding:'base64'. Binary
+  // classification = known binary extension OR a NUL byte in the first 8KB
+  // (git's heuristic).
   app.get('/content', async (c) => {
     const raw = c.req.query('path')
     if (!raw) return c.json({ error: 'path query parameter is required' }, 400)
@@ -502,7 +495,7 @@ export function createFilesRouter(cfg: Config): Hono {
   })
 
   // GET /file?path=<dir> — list a directory as FileNode[] (worktree-relative
-  // `path`, absolute `absolute`, `ignored` from git). Mirrors OpenCode's list.
+  // `path`, absolute `absolute`, `ignored` from git).
   app.get('/', async (c) => {
     const raw = c.req.query('path') ?? '.'
 
@@ -701,7 +694,7 @@ export function createFilesRouter(cfg: Config): Hono {
 
   // POST /file/upload — upload one or more files via multipart form data.
   //
-  // Two client conventions are supported (see apps/web opencode-files.ts):
+  // Two client conventions are supported (see packages/sdk/src/core/files/client.ts):
   //   1. a `path` form field naming the target directory + a `file` field, or
   //   2. the field NAME itself is the destination path (field-name-as-path).
   // Returns [{ path, size }] with the actual on-disk path (post collision

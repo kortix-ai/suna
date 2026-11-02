@@ -26,8 +26,8 @@ describe('agentsGrantingApp — kortix.yaml agents.<name>.apps', () => {
     ).toEqual([{ agent_name: 'ops', grant: 'all', path: 'agents/ops.yaml#agents.ops' }]);
   });
 
-  test('a v1 array, a scalar, or no agents map grants nothing', () => {
-    expect(agentsGrantingApp([{ name: 'a', apps: 'all' }], 'x', 'kortix.toml')).toEqual([]);
+  test('a list, a scalar, or no agents map grants nothing', () => {
+    expect(agentsGrantingApp([{ name: 'a', apps: 'all' }], 'x', 'kortix.yaml')).toEqual([]);
     expect(agentsGrantingApp('all', 'x', 'kortix.yaml')).toEqual([]);
     expect(agentsGrantingApp(undefined, 'x', 'kortix.yaml')).toEqual([]);
   });

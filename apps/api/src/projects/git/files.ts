@@ -2,10 +2,11 @@
 // file reads, subtree archive streaming, and per-file/at-ref history.
 
 import {
+  parseLegacyToml,
+  convertLegacyManifestAsync,
   type ManifestImportReader,
   type ResolvedManifest,
   hasManifestImports,
-  manifestFormatForPath,
   parseManifestText,
   resolveManifestImports,
   serializeManifestObject,
@@ -13,7 +14,23 @@ import {
 import { HTTPException } from 'hono/http-exception';
 import { validateRef } from '../git-ref';
 import { listCommits } from './commits';
-import { type MirrorRefresh, isGitOperationError, isGitPathNotFoundError, isGitRefNotFoundError, normalizeTreePath, refreshMirror, runGit, runGitBuffer, runGitCapture, spawn } from './mirror';
+import {
+  type MirrorRefresh,
+  ensurePathObjects,
+  ensureRefTrees,
+  ensureStoreObjects,
+  ensureTreeContents,
+  isGitOperationError,
+  isGitPathNotFoundError,
+  isGitRefNotFoundError,
+  normalizeTreePath,
+  refreshMirror,
+  runGit,
+  runGitBuffer,
+  runGitCapture,
+  spawn,
+} from './mirror';
+import { isObjectFetchTooLargeError } from './object-store';
 import { cachedGitRead, resolveRefSha } from './read-cache';
 import type {
   GetFileHistoryOptions,
@@ -22,6 +39,32 @@ import type {
   ProjectFileEntry,
   RepoGrepMatch,
 } from './types';
+
+/**
+ * Byte limits for reads that fetch file contents into the project store
+ * (`object-store.ts`). A store holds no file until a read names it, so each
+ * limit bounds what one request can make the API download.
+ */
+/** One file opened in the file browser or read by a config loader. */
+export const FILE_READ_MAX_BYTES = 64 * 1024 * 1024;
+/** A file read as text (`readRepoFile`): the default git read buffer. */
+const TEXT_READ_MAX_BYTES = 10 * 1024 * 1024;
+/** Every file a content search reads at one commit. Over it, the search covers the files fetched so far. */
+export const CONTENT_SEARCH_MAX_BYTES = 64 * 1024 * 1024;
+/** Every file in one zip download. */
+export const ARCHIVE_MAX_BYTES = 512 * 1024 * 1024;
+
+/** The repository is too large for the operation: a request for less (a folder, one file) can still succeed. */
+export class RepoContentTooLargeError extends Error {
+  constructor(readonly maxBytes: number) {
+    super(`The repository content exceeds the ${maxBytes}-byte limit for this operation. Download a folder or a single file instead.`);
+    this.name = 'RepoContentTooLargeError';
+  }
+}
+
+export function isRepoContentTooLargeError(err: unknown): err is RepoContentTooLargeError {
+  return err instanceof RepoContentTooLargeError;
+}
 
 export async function listRepoFiles(
   project: GitBackedProject,
@@ -53,7 +96,7 @@ export async function listRepoFiles(
       })
       .filter((entry): entry is ProjectFileEntry => Boolean(entry));
   };
-  const first = await list(await refreshMirror(project)).catch((err) => {
+  const first = await list(await refreshMirror(project, false, { freshRef: treeRef })).catch((err) => {
     if (isMissingAtRef(err) && isExplicitBranch(project, ref, opts)) return null;
     throw err;
   });
@@ -172,9 +215,13 @@ export async function listRepoDirectory(
   const limit = opts?.limit ?? DIRECTORY_LISTING_LIMIT;
   const list = async (repoPath: string, pinned?: string) => {
     const sha = pinned ?? (await resolveRefSha(repoPath, treeRef));
+    // A page can name a commit this store has not read yet (another replica served the first page).
+    if (pinned) await ensureRefTrees(repoPath, pinned);
     const listLevel = (at: string) => {
       // The trailing slash lists the folder's children, not the folder itself.
-      // -l adds each blob's size.
+      // -l adds each blob's size, read from the blob itself: a file the store
+      // has not fetched prints `BAD`, and the listing omits its size rather
+      // than download it.
       const args = ['ls-tree', '-z', '-l', at, '--'];
       if (treePath) args.push(`${treePath}/`);
       return runGit(args, repoPath, false).then((result) => result.stdout);
@@ -187,9 +234,11 @@ export async function listRepoDirectory(
     const entries = stdout
       .split('\0')
       .map<ProjectDirectoryEntry | null>((line) => {
-        const match = line.match(/^\d+\s+(\w+)\s+[0-9a-f]+\s+(\d+|-)\t([\s\S]+)$/);
+        const match = line.match(/^\d+\s+(\w+)\s+[0-9a-f]+\s+(\d+|-|BAD)\t([\s\S]+)$/);
         if (!match) return null;
-        if (match[1] === 'blob') return { path: match[3]!, type: 'file', size: Number(match[2]) };
+        if (match[1] === 'blob') {
+          return /^\d+$/.test(match[2]!) ? { path: match[3]!, type: 'file', size: Number(match[2]) } : { path: match[3]!, type: 'file' };
+        }
         if (match[1] === 'tree') return { path: match[3]!, type: 'directory' };
         return null;
       })
@@ -197,7 +246,7 @@ export async function listRepoDirectory(
     return { sha, entries };
   };
   const listAtRef = async () => {
-    let read = await list(await refreshMirror(project)).catch((err) => {
+    let read = await list(await refreshMirror(project, false, { freshRef: treeRef })).catch((err) => {
       if (isMissingAtRef(err) && isExplicitBranch(project, ref, opts)) return null;
       throw err;
     });
@@ -275,7 +324,10 @@ export async function grepRepoFiles(
   const q = pattern.trim();
   if (!q) return [];
   const treeRef = validateRef(ref || project.defaultBranch);
-  const repoPath = await refreshMirror(project);
+  const repoPath = await refreshMirror(project, false, { freshRef: treeRef });
+  await fetchSearchableFiles(repoPath, treeRef);
+  // A file the store does not hold prints "unable to read" on stderr; git grep
+  // still searches the rest and exits 0 or 1.
   const result = await runGitCapture(
     ['grep', '-n', '-I', '-i', '-F', '-m', '10', '-e', q, treeRef],
     repoPath,
@@ -300,6 +352,31 @@ export async function grepRepoFiles(
   return matches;
 }
 
+/**
+ * Fetch the files a content search at `treeRef` reads, in batches, until
+ * `CONTENT_SEARCH_MAX_BYTES`. A batch over the limit is dropped and the search
+ * covers what arrived before it: a 6 GB repository answers from its first
+ * files instead of downloading all of them.
+ */
+async function fetchSearchableFiles(repoPath: string, treeRef: string): Promise<void> {
+  const listed = await runGitCapture(['ls-tree', '-r', '-z', treeRef], repoPath);
+  if (listed.exitCode !== 0) return;
+  const blobs = listed.stdout
+    .split('\0')
+    .map((record) => /^\d+ blob ([0-9a-f]{40})\t/.exec(record)?.[1])
+    .filter((id): id is string => Boolean(id));
+  let budget = CONTENT_SEARCH_MAX_BYTES;
+  for (let start = 0; start < blobs.length && budget > 0; start += SEARCH_FETCH_BATCH) {
+    try {
+      budget -= await ensureStoreObjects(repoPath, blobs.slice(start, start + SEARCH_FETCH_BATCH), { maxBytes: budget });
+    } catch (err) {
+      if (isObjectFetchTooLargeError(err)) return;
+      throw err;
+    }
+  }
+}
+const SEARCH_FETCH_BATCH = 500;
+
 export async function readRepoFile(
   project: GitBackedProject,
   filePath: string,
@@ -309,7 +386,7 @@ export async function readRepoFile(
   const normalized = normalizeTreePath(filePath);
   if (!normalized) throw new Error('File path is required');
   const treeRef = validateRef(ref || project.defaultBranch);
-  const repoPath = await refreshMirror(project);
+  const repoPath = await refreshMirror(project, false, { freshRef: treeRef });
   try {
     return await readFileAt(repoPath, treeRef, normalized);
   } catch (err) {
@@ -356,12 +433,24 @@ export async function readRepoFileBytes(
   const normalized = normalizeTreePath(filePath);
   if (!normalized) throw new Error('File path is required');
   const treeRef = validateRef(ref || project.defaultBranch);
-  const repoPath = await refreshMirror(project);
+  const repoPath = await refreshMirror(project, false, { freshRef: treeRef });
   const cat = async (at: string) => {
     const object = `${at}:${normalized}`;
+    await fetchFileForRead(repoPath, at, normalized);
     try {
-      return await runGitBuffer(['cat-file', 'blob', object], repoPath, false);
+      return await runGitBuffer(
+        ['cat-file', 'blob', object],
+        repoPath,
+        false,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        FILE_READ_MAX_BYTES,
+      );
     } catch (err) {
+      if (isGitOperationError(err) && err.outputTooLarge) throw new RepoContentTooLargeError(FILE_READ_MAX_BYTES);
       // cat-file reports a tree as "bad file", not "path does not exist".
       // Check the object type rather than hiding corruption with the same wording.
       if (isGitOperationError(err) && err.kind === 'failed') {
@@ -393,6 +482,7 @@ export async function readRepoFileBytes(
 
 async function readFileAt(repoPath: string, treeRef: string, normalized: string): Promise<string> {
   const sha = await resolveRefSha(repoPath, treeRef);
+  await fetchFileForRead(repoPath, sha ?? treeRef, normalized);
   if (!sha) return (await runGit(['show', `${treeRef}:${normalized}`], repoPath, false)).stdout;
   // "Not in this commit" is an answer too, so it is cached as one; any other
   // failure rejects and is retried by the next read.
@@ -401,11 +491,27 @@ async function readFileAt(repoPath: string, treeRef: string, normalized: string)
       return { found: true as const, content: (await runGit(['show', `${sha}:${normalized}`], repoPath, false)).stdout };
     } catch (err) {
       if (isGitPathNotFoundError(err)) return { found: false as const, error: err };
+      if (isGitOperationError(err) && err.outputTooLarge) throw new RepoContentTooLargeError(TEXT_READ_MAX_BYTES);
       throw err;
     }
   });
   if (!shown.found) throw shown.error;
   return shown.content;
+}
+
+/**
+ * Fetch the one file a read names, before `git show` / `cat-file` reads it. On
+ * a partial store a missing file reads as "bad object <ref>:<path>", which no
+ * caller can tell from a real failure. A path that is not in the tree fetches
+ * nothing, and the read that follows answers "not found" from the tree.
+ */
+async function fetchFileForRead(repoPath: string, at: string, path: string): Promise<void> {
+  try {
+    await ensurePathObjects(repoPath, at, [path], { maxBytes: FILE_READ_MAX_BYTES });
+  } catch (err) {
+    if (isObjectFetchTooLargeError(err)) throw new RepoContentTooLargeError(FILE_READ_MAX_BYTES);
+    throw err;
+  }
 }
 
 /**
@@ -432,13 +538,13 @@ export function isRepoFileNotFoundError(err: unknown): err is RepoFileNotFoundEr
 
 /**
  * Resolve + read the project's manifest, preferring the first candidate path
- * that exists (the dual-format rule: kortix.yaml over kortix.toml). ONE ls-tree
+ * that exists (kortix.yaml over kortix.yml). ONE ls-tree
  * finds which candidates exist at the ref, then a single `show` reads the
  * highest-priority present one — refreshing the mirror once, unlike probing each
  * path via readRepoFile (which would refresh + spawn a process per candidate).
  * Returns the matched path + content, or null when no candidate exists.
  *
- * IMPORTS: a YAML manifest that declares `imports:` is resolved HERE, at the one
+ * IMPORTS: a manifest that declares `imports:` is resolved HERE, at the one
  * read every consumer goes through, so none of them can forget to. `content`
  * is then the MERGED document (root + every imported file) re-serialized as
  * YAML — byte-identical consumers (agent grants, the CR-merge gate, the config
@@ -480,11 +586,16 @@ export async function readManifestFromRepo(
   rootContent: string;
   /** Set only when the manifest declares `imports:`. */
   imports?: ResolvedManifest;
+  /** Set when the file is a legacy format (`kortix_version` 1 or 2, or `kortix.toml`): `content` is its conversion. */
+  legacy?: ManifestLegacy;
 } | null> {
   const normalized = candidatePaths
     .map((p) => normalizeTreePath(p))
     .filter((p): p is string => !!p);
   if (normalized.length === 0) return null;
+  // A legacy `kortix.toml` is read only when no YAML manifest exists.
+  const tomlPath = /\.ya?ml$/i.test(normalized[0]!) ? normalized[0]!.replace(/\.ya?ml$/i, '.toml') : null;
+  const lookup = tomlPath ? [...normalized, tomlPath] : normalized;
   const treeRef = validateRef(ref || project.defaultBranch);
   // A forced refresh here exists to make THIS ref's manifest current (the
   // per-prompt grant read is the hot caller), so the mirror only has to prove
@@ -496,11 +607,11 @@ export async function readManifestFromRepo(
   const treeSha = await resolveRefSha(repoPath, treeRef);
   const listed = treeSha
     ? await cachedGitRead(repoPath, treeSha, 'ls-tree-candidates', normalized.join('\u0000'), async () => {
-        const captured = await runGitCapture(['ls-tree', treeSha, '--', ...normalized], repoPath);
+        const captured = await runGitCapture(['ls-tree', treeSha, '--', ...lookup], repoPath);
         if (captured.exitCode !== 0) throw new Error(captured.stderr || 'ls-tree failed');
         return captured;
-      }).catch(() => runGitCapture(['ls-tree', treeRef, '--', ...normalized], repoPath))
-    : await runGitCapture(['ls-tree', treeRef, '--', ...normalized], repoPath);
+      }).catch(() => runGitCapture(['ls-tree', treeRef, '--', ...lookup], repoPath))
+    : await runGitCapture(['ls-tree', treeRef, '--', ...lookup], repoPath);
   if (listed.exitCode !== 0 && opts?.strictRef) {
     // A ref that does not resolve is NOT "the manifest is absent". Returning
     // null here made an unreadable mirror indistinguishable from a blank
@@ -521,14 +632,15 @@ export async function readManifestFromRepo(
     const match = line.match(/^\d+\s+blob\s+([0-9a-f]{40})\t(.+)$/);
     if (match?.[1] && match[2]) revisions.set(match[2], match[1]);
   }
-  const winner = normalized.find((p) => revisions.has(p));
+  const winner = normalized.find((p) => revisions.has(p)) ?? (tomlPath && revisions.has(tomlPath) ? tomlPath : undefined);
   if (!winner) return null;
   const revision = revisions.get(winner);
   if (!revision) return null;
   // A blob is addressed by its own id: the same bytes at every commit.
-  const shown = await cachedGitRead(repoPath, revision, 'blob', winner, () =>
-    runGit(['show', `${treeSha ?? treeRef}:${winner}`], repoPath, false),
-  );
+  const shown = await cachedGitRead(repoPath, revision, 'blob', winner, async () => {
+    await ensureStoreObjects(repoPath, [revision], { maxBytes: FILE_READ_MAX_BYTES });
+    return runGit(['show', `${treeSha ?? treeRef}:${winner}`], repoPath, false);
+  });
   const resolveCommit = () =>
     runGitCapture(['rev-parse', '--verify', '--quiet', `${treeSha ?? treeRef}^{commit}`], repoPath);
   const resolved = treeSha
@@ -543,30 +655,95 @@ export async function readManifestFromRepo(
     commit,
     rootContent: shown.stdout,
   };
+  const legacyFrom = winner === tomlPath ? 1 : legacyVersionLine(shown.stdout);
   // `imports` is a top-level key, so a manifest without that line cannot use
   // the feature — skip the extra YAML parse on the (hot) common path.
   if (
     opts?.resolveImports === false ||
-    manifestFormatForPath(winner) !== 'yaml' ||
+    winner === tomlPath ||
     !/^imports\s*:/m.test(shown.stdout)
   ) {
-    return found;
+    return legacyFrom ? convertLegacyRead(found, legacyFrom, repoPath, commit ?? treeRef) : found;
   }
   let rootRaw: Record<string, unknown>;
   try {
-    rootRaw = parseManifestText(shown.stdout, 'yaml');
+    rootRaw = parseManifestText(shown.stdout);
   } catch {
     // A root syntax error is the caller's to report, from the same text.
     return found;
   }
-  if (!hasManifestImports(rootRaw)) return found;
+  if (!hasManifestImports(rootRaw)) return legacyFrom ? convertLegacyRead(found, legacyFrom, repoPath, commit ?? treeRef) : found;
   // Read imports at the commit the root was read at, not the branch name: a
   // push landing between the two reads would otherwise mix two revisions.
   const imports = await resolveManifestImports(
     { path: winner, raw: rootRaw, revision },
     gitManifestImportReader(repoPath, commit ?? treeRef),
   );
-  return { ...found, content: serializeManifestObject(imports.raw, 'yaml'), imports };
+  const merged = { ...found, content: serializeManifestObject(imports.raw), imports };
+  return legacyFrom ? convertLegacyRead(merged, legacyFrom, repoPath, commit ?? treeRef, imports.raw) : merged;
+}
+
+/** A legacy manifest as the latest shape, and what the conversion read (`legacy`). */
+export interface ManifestLegacy {
+  /** The format the file is in: 1 (`kortix.toml`) or 2. */
+  from: 1 | 2;
+  /** Repo path → the text a reader uses for it (prompts without their frontmatter). */
+  overlay: Record<string, string>;
+  /** What the latest shape has no place for. */
+  dropped: string[];
+  /** The files the conversion replaces (`kortix.toml`, the OpenCode config and agent files): the first write deletes them. */
+  deletes: string[];
+  /** Set when the legacy file could not be read at all (a TOML syntax error). */
+  error?: string;
+}
+
+/** `kortix_version: 1` or `2` on its own line, or null. */
+function legacyVersionLine(text: string): 1 | 2 | null {
+  const match = /^kortix_version[ \t]*:[ \t]*['"]?([12])['"]?[ \t]*(?:#.*)?$/m.exec(text);
+  return match ? (Number(match[1]) as 1 | 2) : null;
+}
+
+/**
+ * Convert a legacy manifest read: `content` becomes the latest shape, built from
+ * the root (or the merged `imports` document) and the files it points at, all
+ * read at `ref`. A TOML syntax error leaves an empty manifest and says why.
+ */
+async function convertLegacyRead<T extends { path: string; content: string; rootContent: string }>(
+  found: T,
+  from: 1 | 2,
+  repoPath: string,
+  ref: string,
+  merged?: Record<string, unknown>,
+): Promise<T & { legacy: ManifestLegacy }> {
+  let raw: Record<string, unknown>;
+  try {
+    raw = merged ?? (found.path.endsWith('.toml') ? parseLegacyToml(found.rootContent) : parseManifestText(found.rootContent));
+  } catch (err) {
+    const error = `${found.path}: ${err instanceof Error ? err.message : String(err)}`;
+    return { ...found, content: '', legacy: { from, overlay: {}, dropped: [], deletes: [], error } };
+  }
+  const cache = <V>(op: string, arg: string, load: () => Promise<V>) =>
+    /^[0-9a-f]{40}$/.test(ref) ? cachedGitRead(repoPath, ref, op, arg, load) : load();
+  const listed = await cache('legacy-ls-tree', '', () => runGitCapture(['ls-tree', '-r', '--name-only', '-z', ref], repoPath));
+  const paths = listed.exitCode === 0 ? listed.stdout.split('\0').filter(Boolean) : [];
+  const conversion = await convertLegacyManifestAsync(raw, from, found.path, paths, async (path) => {
+    if (!paths.includes(path)) return null;
+    const shown = await cache('legacy-show', path, async () => {
+      await ensurePathObjects(repoPath, ref, [path], { maxBytes: FILE_READ_MAX_BYTES });
+      return runGitCapture(['show', `${ref}:${path}`], repoPath);
+    });
+    return shown.exitCode === 0 ? shown.stdout : null;
+  });
+  return {
+    ...found,
+    content: serializeManifestObject(conversion.raw),
+    legacy: {
+      from,
+      overlay: conversion.overlay,
+      dropped: conversion.dropped,
+      deletes: conversion.changes.filter((change) => change.action === 'delete').map((change) => change.path),
+    },
+  };
 }
 
 /** `ManifestImportReader` over a bare mirror at one fixed ref. */
@@ -588,10 +765,15 @@ function gitManifestImportReader(repoPath: string, ref: string): ManifestImportR
         const match = line.match(/^\d+\s+blob\s+([0-9a-f]{40})\t(.+)$/);
         if (match?.[1] && match[2]) entries.push({ path: match[2], revision: match[1] });
       }
+      // The resolver reads every file it lists: fetch them in one request.
+      await ensureStoreObjects(repoPath, entries.map((entry) => entry.revision), { maxBytes: FILE_READ_MAX_BYTES });
       return entries;
     },
     async read(path) {
-      return cache('import-show', path, async () => (await runGit(['show', `${ref}:${path}`], repoPath, false)).stdout);
+      return cache('import-show', path, async () => {
+        await ensurePathObjects(repoPath, ref, [path], { maxBytes: FILE_READ_MAX_BYTES });
+        return (await runGit(['show', `${ref}:${path}`], repoPath, false)).stdout;
+      });
     },
   };
 }
@@ -610,9 +792,16 @@ export async function archiveRepoSubtree(
   path?: string | null,
 ): Promise<ReadableStream<Uint8Array>> {
   const treeRef = validateRef(ref || project.defaultBranch);
-  const repoPath = await refreshMirror(project);
+  const repoPath = await refreshMirror(project, false, { freshRef: treeRef });
   const normalized = path ? normalizeTreePath(path) : null;
   const treeish = normalized ? `${treeRef}:${normalized}` : treeRef;
+  // `git archive` reads every file under `treeish`: fetch them first, bounded.
+  try {
+    await ensureTreeContents(repoPath, treeish, { maxBytes: ARCHIVE_MAX_BYTES, timeoutMs: 600_000 });
+  } catch (err) {
+    if (isObjectFetchTooLargeError(err)) throw new RepoContentTooLargeError(ARCHIVE_MAX_BYTES);
+    throw err;
+  }
 
   const proc = spawn('git', ['archive', '--format=zip', treeish], {
     cwd: repoPath,

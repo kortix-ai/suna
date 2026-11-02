@@ -53,14 +53,11 @@ for (const [name, args] of commands) {
   }
 }
 
-test('sessions log --schema v1 on a stopped session: exits 1, says v1 reads only a running sandbox, and names the way out', async () => {
+test('sessions log --schema v1 exits 2 before any read: the output is kortix.session/2 only', async () => {
   const { code, stderr, paths } = await run(['sessions', 'log', sessionId, '--project', projectId, '--schema', 'v1'], logAnswers['a 404 coded session_log_missing']);
-  expect(code).toBe(1);
-  expect(stderr).toContain('Drop --schema v1');
-  expect(stderr).toContain('running');
-  // The API still serves the v1 route; the CLI no longer reads it.
-  expect(stderr).not.toContain('no longer serves');
-  expect(paths.filter((path) => path.includes('/transcript'))).toEqual([]);
+  expect(code).toBe(2);
+  expect(stderr).toContain('Invalid --schema "v1"');
+  expect(paths.filter((path) => path.includes('/transcript') || path.endsWith('/log'))).toEqual([]);
 });
 
 async function run(args: string[], log: () => Response) {

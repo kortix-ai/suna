@@ -55,7 +55,7 @@ same policy, for a request that cannot be intercepted in the sandbox.
 
 Subcommands:
   ls                                List secrets (by identifier, → key when it
-                                    differs) + manifest [env] spec. --json.
+                                    differs) + manifest env list. --json.
                                     JSON mirrors API fields: name, configured,
                                     available, effective_source, strategy,
                                     consumer, delivery_status, and granted.

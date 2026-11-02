@@ -195,7 +195,7 @@ When asked to review, open one thread per issue, anchored to an exact quote:
 
     kortix artifacts comment <id> "Confirm the source for this figure, @name." --quote "Revenue rose."
 
-Quotes contain at most 32 characters. A missing quote exits nonzero and creates
+Quotes contain at most 500 characters. A missing quote exits nonzero and creates
 no thread. The CLI reads a pinned Files history version before it posts.
 Omit the anchor flag for a comment on the whole artifact. For an HTML element,
 use `--selector "#chart"`; the CLI records its center (0.5, 0.5), viewport width
@@ -221,7 +221,7 @@ lists events and saves. Add `--json` to any comment command for structured outpu
 |---|---|
 | `kortix artifacts types [<type>]` | types; one type's format and starter |
 | `kortix artifacts publish <file\|dir> [--title --description --visibility]` | upload and share |
-| `kortix artifacts add <folder> [--title --visibility]` | share a folder already in Drive; an artifact is always a folder, so a lone file is refused (publish it instead) |
+| `kortix artifacts add <folder> [--title --visibility]` | share a folder already in Drive; its `index.md` or `index.html` stands for the folder, any other lone file is refused (publish it instead) |
 | `kortix artifacts publish <file\|dir> --id <id> [--base-version v]` | save new content |
 | `kortix artifacts ls [--mine\|--shared\|--pinned] [--type t] [--search q]` | list |
 | `kortix artifacts info <id>` / `open <id>` | details, path, links |

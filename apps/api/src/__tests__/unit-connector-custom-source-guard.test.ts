@@ -18,7 +18,7 @@ function app(created: unknown[]) {
     listConnectors: async () => [],
     syncConnectors: async () => ({ synced: 0, errors: [] }),
     isAgentCaller: (c) => c.req.header('x-test-session') === '1',
-    customConnectorSetupUrl: (projectId, draft) => `https://app.test/projects/${projectId}/customize/connectors?custom_url=${encodeURIComponent(String(draft.url ?? draft.spec ?? draft.endpoint ?? draft.baseUrl))}`,
+    customConnectorSetupUrl: (projectId, draft) => `https://app.test/projects/${projectId}/admin/connectors?custom_url=${encodeURIComponent(String(draft.url ?? draft.spec ?? draft.endpoint ?? draft.baseUrl))}`,
     listConnectorIdentities: async () => [{ slug: 'wiki', identity: 'mcp:https://mcp.deepwiki.com/mcp' }],
     createConnector: async (_p, _a, draft) => {
       created.push(draft.slug);
@@ -49,7 +49,7 @@ describe('POST /connectors from an agent session', () => {
       expect(res.status).toBe(403);
       const json = (await res.json()) as { code: string; setup_url: string };
       expect(json.code).toBe('custom_connector_needs_human');
-      expect(json.setup_url).toStartWith('https://app.test/projects/p1/customize/connectors?custom_url=');
+      expect(json.setup_url).toStartWith('https://app.test/projects/p1/admin/connectors?custom_url=');
     }
     expect(created).toEqual([]);
   });

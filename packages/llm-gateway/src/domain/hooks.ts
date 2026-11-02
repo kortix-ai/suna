@@ -1,3 +1,4 @@
+import type { ClaudeCodeHooks } from '../claude-code/passthrough';
 import type { ModelCatalog } from './catalog';
 import type { UpstreamDescriptor } from './descriptor';
 import type { AuthedPrincipal } from './principal';
@@ -62,6 +63,14 @@ export interface GatewayHooks {
    * reconnection). Called once per request.
    */
   refreshCredential?: (principal: AuthedPrincipal, descriptor: UpstreamDescriptor) => Promise<UpstreamDescriptor | null>;
+  /**
+   * The Claude accounts a principal may use for Claude Code's model calls
+   * (claude-code/passthrough.ts), best first, or why none. Absent: the
+   * passthrough answers 404.
+   */
+  claudeCredentials?: ClaudeCodeHooks['claudeCredentials'];
+  /** Anthropic refused a Claude account's token (401): mark it for reconnection. */
+  claudeRefused?: ClaudeCodeHooks['claudeRefused'];
   // Resolves (or throws) once the account's billing state is checked. May
   // return a `holdUsd` when it took an atomic admission hold against the
   // wallet — the handler attaches it to the principal so settle() can

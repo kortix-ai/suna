@@ -19,7 +19,7 @@ export function bindProjectAccessSecurity(projectId: string) {
         P.requestProjectConnector(projectId, input),
     },
 
-    /** Validate a `kortix.yaml` (or legacy `kortix.toml`) manifest's raw text server-side — format is auto-resolved from the project's manifest path (same schema `kortix ship`/CR-merge use). */
+    /** Validate a `kortix.yaml` manifest's raw text server-side (same schema `kortix ship`/CR-merge use). */
     validateManifest: (raw: string) => P.validateProjectManifest(projectId, raw),
 
     /** Mint a fresh scoped git push token for a managed project (409 for BYO repos). */
@@ -51,6 +51,17 @@ export function bindProjectAccessSecurity(projectId: string) {
       pollProviderOAuth: (...a: DropFirst<Parameters<typeof P.pollProjectProviderOAuth>>) =>
         P.pollProjectProviderOAuth(projectId, ...a),
       removeProviderOAuth: (provider: string) => P.deleteProjectProviderOAuth(projectId, provider),
+    },
+
+    /** The caller's Claude accounts (Claude Pro or Max), stored like ChatGPT accounts. The token is never returned. */
+    claudeSubscription: {
+      get: () => P.getClaudeSubscription(projectId),
+      /** Run `claude setup-token` on the server; open `authorize_url`, approve, then `completeLogin`. */
+      startLogin: (target?: Parameters<typeof P.startClaudeSubscriptionLogin>[1]) => P.startClaudeSubscriptionLogin(projectId, target),
+      completeLogin: (input: Parameters<typeof P.completeClaudeSubscriptionLogin>[1]) =>
+        P.completeClaudeSubscriptionLogin(projectId, input),
+      /** Store a token made with `claude setup-token` on the caller's own computer. */
+      setToken: (token: string, target?: Parameters<typeof P.setClaudeSubscriptionToken>[2]) => P.setClaudeSubscriptionToken(projectId, token, target),
     },
 
     access: bindProjectMembership(projectId),

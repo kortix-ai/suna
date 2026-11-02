@@ -3,12 +3,11 @@
  * and shell. pi's built-in bash/read/write/edit run on `/workspace` in this
  * process, so every tool call is a local syscall — no RPC, no second box.
  *
- * glob/grep are Kortix additions on top of ripgrep, named exactly as
- * OpenCode's so `toolViewModel()` in the web client needs no remapping
+ * glob/grep are Kortix additions on top of ripgrep, with the names and
+ * arguments `toolViewModel()` in the web client renders without remapping
  * (pi's own `find`/`grep` take other arguments). `question` is the interactive
  * ask the product renders. The hosted tools (the Kortix tools the project
- * loads and the project's own, services/tools) run here exactly as every
- * other harness runs them.
+ * loads and the project's own, services/tools) run here in-process.
  */
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import {

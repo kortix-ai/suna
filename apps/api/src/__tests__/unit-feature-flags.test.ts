@@ -23,9 +23,7 @@ function findCatalogFlag(key: string) {
 
 /** Registered but deliberately not offered as a toggle — see "Hidden flags" in
  *  the registry header. */
-// Flags derived from the project's Volumes flag are hidden too, but are not
-// choices of their own: they are covered by integration-volumes-feature-flag.test.ts.
-const HIDDEN_KEYS = REGISTERED_FEATURE_FLAGS.filter((f) => f.catalogHidden && !f.derivedFrom).map((f) => f.key);
+const HIDDEN_KEYS = REGISTERED_FEATURE_FLAGS.filter((f) => f.catalogHidden).map((f) => f.key);
 
 describe('registry ↔ contract', () => {
   // Compared as sets: the registry's order is the Settings display order and is
@@ -41,7 +39,7 @@ describe('registry ↔ contract', () => {
         .filter((key) => {
           const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === key);
           // A hidden flag is listed (read-only) only while it resolves on.
-          return !def?.derivedFrom && (!def?.catalogHidden || resolveFeatureFlag({}, key));
+          return !def?.catalogHidden || resolveFeatureFlag({}, key);
         })
         .sort(),
     );
@@ -81,8 +79,8 @@ describe('isFeatureFlagKey', () => {
 
 describe('resolveFeatureFlag — explicit override wins', () => {
   test('per-project map overrides the platform default', () => {
-    expect(resolveFeatureFlag({ experimental: { meta_agent: true } }, 'meta_agent')).toBe(true);
-    expect(resolveFeatureFlag({ experimental: { meta_agent: false } }, 'meta_agent')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { reminders: true } }, 'reminders')).toBe(true);
+    expect(resolveFeatureFlag({ experimental: { reminders: false } }, 'reminders')).toBe(false);
   });
 
   test('agent_principal graduated: no flag, and a stored override is inert', () => {
@@ -255,7 +253,7 @@ describe('resolveFeatureFlag — explicit override wins', () => {
 
   test('a malformed experimental subtree never throws', () => {
     for (const metadata of [null, undefined, {}, { experimental: null }, { experimental: 'x' }, []]) {
-      expect(typeof resolveFeatureFlag(metadata, 'meta_agent')).toBe('boolean');
+      expect(typeof resolveFeatureFlag(metadata, 'reminders')).toBe('boolean');
       expect(typeof resolveFeatureFlag(metadata, 'marketplace')).toBe('boolean');
     }
   });
@@ -263,37 +261,40 @@ describe('resolveFeatureFlag — explicit override wins', () => {
 
 describe('resolveFeatureFlags', () => {
   test('returns a boolean for every registered key', () => {
-    const map = resolveFeatureFlags({ experimental: { meta_agent: true } });
+    const map = resolveFeatureFlags({ experimental: { reminders: false } });
     expect(Object.keys(map).sort()).toEqual([...FEATURE_FLAG_KEYS].sort());
     for (const key of FEATURE_FLAG_KEYS) {
       expect(typeof map[key]).toBe('boolean');
     }
-    expect(map.meta_agent).toBe(true);
+    expect(map.reminders).toBe(false);
   });
 
   test('a stored override for a graduated key is inert', () => {
     // Review Center graduated out of the flag system. Projects that toggled it
     // before graduation still carry `experimental.review_center` in metadata.
     // That value must not resurface as a key, a catalog row, or a gate.
-    const metadata = { experimental: { review_center: false, meta_agent: true } };
-    expect(isFeatureFlagKey('review_center')).toBe(false);
+    // `meta_agent` was removed the same way on 2026-11-02.
+    const metadata = { experimental: { review_center: false, meta_agent: false, reminders: false } };
+    for (const key of ['review_center', 'meta_agent']) {
+      expect(isFeatureFlagKey(key)).toBe(false);
+      expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key as string)).not.toContain(key);
+    }
     expect(Object.keys(resolveFeatureFlags(metadata)).sort()).toEqual([...FEATURE_FLAG_KEYS].sort());
-    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('review_center');
-    expect(resolveFeatureFlags(metadata).meta_agent).toBe(true);
+    expect(resolveFeatureFlags(metadata).reminders).toBe(false);
   });
 });
 
 describe('buildFeatureFlagCatalog', () => {
   test('describes each flag with effective + overridden state', () => {
-    const catalog = buildFeatureFlagCatalog({ experimental: { meta_agent: true } });
+    const catalog = buildFeatureFlagCatalog({ experimental: { reminders: false } });
 
-    const metaAgent = catalog.find((f) => f.key === 'meta_agent');
-    if (!metaAgent) throw new Error('Missing Meta Agent flag');
-    expect(metaAgent.name).toBeTruthy();
-    expect(metaAgent.description).toBeTruthy();
-    expect(metaAgent.enabled).toBe(true);
-    expect(metaAgent.overridden).toBe(true);
-    expect(typeof metaAgent.available).toBe('boolean');
+    const reminders = catalog.find((f) => f.key === 'reminders');
+    if (!reminders) throw new Error('Missing Reminders flag');
+    expect(reminders.name).toBeTruthy();
+    expect(reminders.description).toBeTruthy();
+    expect(reminders.enabled).toBe(false);
+    expect(reminders.overridden).toBe(true);
+    expect(typeof reminders.available).toBe('boolean');
   });
 
   test('an unavailable flag is never enabled', () => {
@@ -315,7 +316,7 @@ describe('buildFeatureFlagCatalog', () => {
  */
 describe('catalogHidden', () => {
   test('only internal-only surfaces are hidden: session_log_restore (the boot restore from the session log) and workspace_volume (stateless sandboxes)', () => {
-    // `apps` graduated (2026-10-14) and `session_log` (2026-10-22): neither is a flag.
+    // `apps` graduated (2026-10-14), `session_log` (2026-10-22) and `meta_agent` was removed (2026-11-02): none is a flag.
     expect(HIDDEN_KEYS).toEqual(['session_log_restore', 'workspace_volume']);
   });
 
@@ -390,10 +391,8 @@ describe('featureDisabledBody', () => {
       expect(body.code).toBe('feature_disabled');
       expect(body.feature).toBe(key);
       expect(typeof body.error).toBe('string');
-      // A flag derived from Volumes points at the Volumes toggle, and a hidden
-      // flag has no toggle in Settings to point at. No message names an organization.
-      const derived = REGISTERED_FEATURE_FLAGS.find((f) => f.key === key)?.derivedFrom;
-      expect(body.error).toContain(derived ? 'Turn on Volumes' : HIDDEN_KEYS.includes(key) ? 'Contact Kortix' : 'Settings');
+      // A hidden flag has no toggle in Settings to point at. No message names an organization.
+      expect(body.error).toContain(HIDDEN_KEYS.includes(key) ? 'Contact Kortix' : 'Settings');
       expect(body.error).not.toContain('organization');
     }
   });

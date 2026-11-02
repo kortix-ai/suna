@@ -7,7 +7,7 @@ import { isActiveProjectTab } from './use-close-project-tab';
 describe('isActiveProjectTab', () => {
   test('matches the Customize sentinel on every project Customize subroute', () => {
     expect(
-      isActiveProjectTab('/projects/project-1/customize/connectors', 'project-1', CUSTOMIZE_TAB_ID),
+      isActiveProjectTab('/projects/project-1/customize/agents/kortix', 'project-1', CUSTOMIZE_TAB_ID),
     ).toBe(true);
   });
 

@@ -23,6 +23,7 @@ import { servableProjectCatalog } from './models/servable-catalog';
 import { codexConversationHeaders, resolveCandidates } from './resolution/resolve-candidates';
 import { MAX_ACCOUNT_SECRET_REST_SECONDS, coolDownAccountSecret } from '../secrets/account-resource';
 import { refreshRefusedCodexAccountLogin } from './credentials/codex';
+import { claudeCredentialsForGateway, markClaudeAccountRefused } from '../claude-subscription/accounts';
 import { refreshRefusedOpencodeLogin } from './credentials/opencode-console';
 import { codexDescriptor } from './resolution/descriptors';
 import { resolveGatewayRoute } from './routing';
@@ -120,6 +121,32 @@ export function createInternalGatewayRoutes() {
     if (!parsed.success) return c.json({ error: 'Invalid pool rate limit' }, 400);
     await coolDownAccountSecret(parsed.data.secretId, parsed.data.principal.accountId, parsed.data.seconds);
     return c.json({ ok: true });
+  });
+
+  // Claude Code's model calls (the gateway's claude-code passthrough): the
+  // Claude accounts this principal may use, best first, or why none.
+  app.post('/claude-credentials', async (c) => {
+    const parsed = z.object({
+      principal: z.object({
+        accountId: z.string().uuid(), projectId: z.string().uuid().optional(), userId: z.string().uuid(),
+        sessionId: z.string().nullish(), keyId: z.string().optional(), personalUserId: z.string().uuid().nullish(),
+      }),
+      model: z.string().max(200).nullish(),
+    }).safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'Invalid Claude credential request' }, 400);
+    return c.json(await claudeCredentialsForGateway(parsed.data.principal, parsed.data.model ?? null));
+  });
+
+  // Anthropic refused a Claude account's token (401). Only the digest crosses.
+  app.post('/claude-refused', async (c) => {
+    const parsed = z.object({
+      principal: z.object({ accountId: z.string().uuid() }),
+      secretId: z.string().uuid(),
+      failedKeySha256: z.string().regex(/^[0-9a-f]{64}$/),
+    }).safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'Invalid Claude refusal' }, 400);
+    const marked = await markClaudeAccountRefused(parsed.data.principal.accountId, parsed.data.secretId, parsed.data.failedKeySha256);
+    return c.json({ ok: true, marked });
   });
 
   // The provider refused a ChatGPT or OpenCode login (401): a fresh token to retry with,

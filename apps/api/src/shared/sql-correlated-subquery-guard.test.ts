@@ -74,6 +74,8 @@ describe('raw SQL subqueries qualify every outer column', () => {
       'sql`(select count(*) from ${projectSessions} ps where ps.project_id = ${qualifiedColumn(projects.projectId)})`';
     const notASubquery = 'sql`lower(${sessionSandboxes.externalId}) = lower(${externalId})`';
 
+    const peerReceipt = 'sql`exists (select 1 from ${sessionLifecycleCommands} where ${sessionLifecycleCommands.idempotencyKey} = \'peer:\' || ${sessionPeerMessages.id})`';
+    expect(correlatedSubqueryViolations(peerReceipt)).toEqual(['${sessionPeerMessages.id}']);
     expect(correlatedSubqueryViolations(incident)).toEqual(['${sessionSandboxes.sessionId}']);
     expect(correlatedSubqueryViolations(fixed)).toEqual([]);
     expect(correlatedSubqueryViolations(notASubquery)).toEqual([]);

@@ -33,7 +33,7 @@ test('a layer key is company or a space uuid', () => {
 });
 
 test('a layer names its folder', () => {
-  const counts = { people: 0, decisions: 1, workstreams: 0, playbooks: 0, note: 0, other: 2 };
+  const counts = { people: 0, decisions: 1, workstreams: 0, playbooks: 0, user: 0, feedback: 0, project: 0, reference: 0, note: 0, other: 2 };
   const layer = {
     layer_id: 'company', scope: 'company', space_id: null, name: 'Company', counts, read_only: false, can_write: true,
     folder: '/Company/Memory', agent_folder: null, drive_id: 'd1', other_files: 3,

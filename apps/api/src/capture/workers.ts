@@ -4,7 +4,7 @@
  * Every replica: the `capture.ingest` job handler runs in the shared job
  * worker (shared/job-queue.ts).
  *
- * Leader only (workers/capture-worker.ts runs these ticks):
+ * Leader only (worker/jobs/capture.ts runs these ticks):
  *   - events reader: long-polls the SQS queue of the bucket's `*.manifest.json`
  *     ObjectCreated events (AWS), enqueueing one ingest per key;
  *   - index reader: for each active device, reads `status.json` (live status),

@@ -6,7 +6,7 @@ export function artifactAgentChainPaused(recentKinds: readonly string[]): boolea
 
 export function artifactCommentPrompt(
   artifact: { artifactId: string; title: string; path: string; version: string },
-  threads: Array<{ thread_id: string; anchor: ArtifactCommentAnchor; comments: Array<{ body: string; author_user_id: string | null; author_session_id: string | null }> }>,
+  threads: Array<{ thread_id: string; anchor: ArtifactCommentAnchor; comments: Array<{ body: string; author_user_id: string | null; author_session_id: string | null; screenshot_url?: string }> }>,
 ): string {
   const anchorText = (anchor: ArtifactCommentAnchor) => {
     if (anchor.type === 'text') return `Selected text: ${JSON.stringify(anchor.quote)}`;
@@ -22,7 +22,10 @@ export function artifactCommentPrompt(
     '',
     ...threads.flatMap((thread) => [
       `Thread ${thread.thread_id}`, anchorText(thread.anchor),
-      ...thread.comments.filter((comment) => comment.body).map((comment) => `${comment.author_session_id ? `Agent session ${comment.author_session_id}` : `Person ${comment.author_user_id}`}: ${comment.body}`), '',
+      ...thread.comments.filter((comment) => comment.body).flatMap((comment) => [
+        `${comment.author_session_id ? `Agent session ${comment.author_session_id}` : `Person ${comment.author_user_id}`}: ${comment.body}`,
+        ...(comment.screenshot_url ? [`Screenshot (Artifact API authentication required): ${comment.screenshot_url}`] : []),
+      ]), '',
     ]),
     `Pull the current Artifact: kortix artifacts pull ${artifact.artifactId} ./work`,
     `Edit the file, then publish with --id ${artifact.artifactId} --base-version ${artifact.version}.`,

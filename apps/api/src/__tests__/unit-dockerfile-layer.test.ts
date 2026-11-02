@@ -89,9 +89,8 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('useradd --create-home --shell /bin/bash --user-group kortix');
     expect(merged).toContain("echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix");
     expect(merged).not.toContain("NOPASSWD:ALL\\n");
-    expect(merged).toContain(
-      'chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /home/kortix',
-    );
+    expect(merged).toContain('chown -R kortix:kortix /workspace /opt/kortix /home/kortix');
+    expect(merged).toContain('mkdir -p /opt/pw-browsers && chown kortix:kortix /opt/pw-browsers');
     expect(merged).not.toContain('ENV HOME=');
     expect(merged).not.toContain('XDG_DATA_HOME=');
     expect(merged).not.toContain('XDG_CONFIG_HOME=');
@@ -129,7 +128,7 @@ describe('buildLayeredDockerfile', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
     // Chromium comes from Playwright (cross-arch; Chrome for Testing has no
     // linux-arm64 build) and pulls its OS libs via --with-deps.
-    expect(merged).toContain(`playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium`);
+    expect(merged).toContain(`playwright@${PLAYWRIGHT_VERSION} install --with-deps --no-shell chromium`);
     // Wired BOTH ways: the documented env var → a stable symlink, AND
     // agent-browser's own auto-detected cache (env-independent, #422-proof).
     expect(merged).toContain('AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium');

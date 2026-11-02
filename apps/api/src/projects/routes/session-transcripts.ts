@@ -6,7 +6,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
-import { loadVisibleSession, assertProjectCapability, sessionIsTombstoned } from '../lib/access';
+import { loadVisibleSession, loadVisibleSessionsForList, assertProjectCapability, sessionIsTombstoned } from '../lib/access';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { AnyObject, projectsApp, SessionTranscriptReadSchema } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
@@ -18,6 +18,40 @@ import {
 import { UnknownTranscriptCursorError } from '../lib/session-transcript-mirror';
 import { sessionMessageAuthors } from '../lib/session-message-authors';
 import { sessionModelUsage } from '../lib/session-model-usage';
+import { sessionUsageTree } from '../lib/session-usage';
+
+const SessionUsageTotalsSchema = z.object({
+  cost: z.number(),
+  kortix_cost: z.number(),
+  provider_cost: z.number(),
+  request_count: z.number().int(),
+  error_count: z.number().int(),
+  input_tokens: z.number().int(),
+  output_tokens: z.number().int(),
+  cached_tokens: z.number().int(),
+  cache_write_tokens: z.number().int(),
+});
+
+const SessionUsageTreeSchema = z
+  .object({
+    session_id: z.string(),
+    currency: z.literal('USD'),
+    total: SessionUsageTotalsSchema,
+    sessions: z.array(
+      SessionUsageTotalsSchema.extend({
+        session_id: z.string(),
+        parent_session_id: z.string().nullable(),
+        depth: z.number().int(),
+        title: z.string().nullable(),
+        agent_name: z.string().nullable(),
+        status: z.string(),
+        created_at: z.string(),
+      }),
+    ),
+    hidden_sessions: z.number().int(),
+    truncated: z.boolean(),
+  })
+  .openapi('SessionUsageTree');
 
 export function registerSessionTranscriptsRoutes(): void {
   // GET /v1/projects/:projectId/sessions/:sessionId/transcript
@@ -134,9 +168,6 @@ export function registerSessionTranscriptsRoutes(): void {
 
       const transcript = await buildSessionTranscriptDigest({
         session: visible.row,
-        projectId,
-        accountId: loaded.row.accountId,
-        userId: loaded.userId,
         limit: limit.value,
         maxChars: maxChars.value,
         full: c.req.query('detail') === 'full',
@@ -200,6 +231,42 @@ export function registerSessionTranscriptsRoutes(): void {
       const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
       if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
       return c.json(await sessionModelUsage(visible.row));
+    },
+  );
+
+  // GET /v1/projects/:projectId/sessions/:sessionId/usage
+  // What the session and every session it started cost, in USD, from the
+  // gateway's request ledger. A sub-agent in the session's sandbox bills under
+  // the session's id; a session it started has its own row and its own id.
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/sessions/{sessionId}/usage',
+      tags: ['sessions'],
+      summary: 'Read what a session and the sessions it started cost',
+      description:
+        'Returns the model usage of the session and of every descendant session (`parent_session_id`, up to 10 levels and 500 sessions) the caller may open, from the gateway request ledger. Each entry of `sessions` carries `cost` in USD (`kortix_cost`, debited from the Kortix wallet, plus `provider_cost`, paid to the account\'s own provider key), request and token counts. `sessions` lists the session first, then its descendants depth-first, oldest child first. `total` is the sum over `sessions`. `hidden_sessions` counts descendants the caller may not open; a hidden session hides its subtree, and none of it is in `total`. `truncated` is true when the walk stopped at a limit. A sub-agent inside the session\'s sandbox bills under the session\'s own id, so its cost is in the session\'s entry.',
+      ...auth,
+      request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+      responses: { 200: json(SessionUsageTreeSchema, 'Session usage'), ...errors(400, 403, 404) },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const sessionId = c.req.param('sessionId');
+      if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+      const binding = await resolveSessionBinding(c, projectId, sessionId, 'read');
+      if (binding.kind === 'error') return binding.response as never;
+      const { loaded } = binding;
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+      const callerSessionId = c.get('sessionId') ?? null;
+      const boundSessionId = callerKortixSessionId(c);
+      const visible = await loadVisibleSession(loaded, sessionId, callerSessionId, boundSessionId);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
+      const usage = await sessionUsageTree(visible.row, async (ids) => {
+        const access = await loadVisibleSessionsForList(loaded, ids, callerSessionId, boundSessionId);
+        return new Map([...access].filter(([, a]) => !sessionIsTombstoned(a.row)).map(([id, a]) => [id, a.row]));
+      });
+      return c.json(usage, 200);
     },
   );
 }

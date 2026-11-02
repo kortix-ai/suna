@@ -46,6 +46,9 @@ function webRegisteredNames(file: string): Set<string> {
   for (const m of code.matchAll(/\[([^[\]]*)\]\s*\.forEach\(\s*\(?\s*(\w+)\s*\)?\s*=>\s*\{?\s*ToolRegistry\.register\(\s*\2\s*,/g)) {
     for (const lit of m[1].matchAll(/(['"])([^'"]+)\1/g)) names.add(lit[2]);
   }
+  for (const m of code.matchAll(/for\s*\(\s*const\s+(\w+)\s+of\s+\[([^\]]*)\]\s*\)\s*\{?\s*ToolRegistry\.register\(\s*\1\s*,/g)) {
+    for (const lit of m[2].matchAll(/(['"])([^'"]+)\1/g)) names.add(lit[2]);
+  }
   return names;
 }
 

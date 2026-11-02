@@ -69,6 +69,19 @@ export function promptDelivery(payload: Record<string, unknown>): SessionPromptD
   return payload.placement === 'transcript' ? 'interrupt' : 'queue';
 }
 
+/**
+ * Harness context, not a person's prompt (KRTX-2597): an auto-recovery continuation
+ * (`resumesTurn`), or a row whose every text part is `synthetic`. A transcript never draws it
+ * as a user message.
+ */
+export function isSyntheticPrompt(payload: Record<string, unknown>): boolean {
+  if (typeof payload.resumesTurn === 'string') return true;
+  const texts = (Array.isArray(payload.parts) ? payload.parts : []).filter(
+    (part): part is { type: string; synthetic?: unknown } => !!part && typeof part === 'object' && (part as { type?: unknown }).type === 'text',
+  );
+  return texts.length > 0 && texts.every((part) => part.synthetic === true);
+}
+
 export function serializePrompt(row: PromptRow): SessionPrompt {
   const payload = (row.payload ?? {}) as Record<string, unknown>;
   const result = (row.result ?? {}) as Record<string, unknown>;
@@ -118,6 +131,8 @@ export function serializePrompt(row: PromptRow): SessionPrompt {
     /** Posted without a turn (the first message of a conversation with people):
      *  no agent will answer it, so a host shows no "thinking" for it. */
     no_reply: payload.noReply === true,
+    /** Harness context (an auto-recovery continuation): never drawn as the user's message. */
+    synthetic: isSyntheticPrompt(payload),
     /** The member it runs as: only they edit, send now or retry it. */
     author_user_id: row.actorUserId ?? null,
     created_at: row.createdAt.toISOString(),

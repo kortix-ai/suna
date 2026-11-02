@@ -17,7 +17,6 @@ import { join } from 'node:path'
 import { materializeRelease, verifyRelease, verifyReleaseDetail, type ReleaseManifest } from '@/services/config-provider/boot-config'
 import { overlayHash, reconcileRuntimeAssets, resetRuntimeConvergenceForTests } from '@/services/runtime-assets/runtime-assets'
 import { buildRelease, commitAll, initRepo, write, type BuiltRelease } from './helpers/config-release-fixtures'
-import type { HarnessAssetsService } from '@/services/runtime-assets/port'
 
 const REL = '.kortix/opencode'
 let root: string
@@ -36,7 +35,7 @@ function manifestOf(release: BuiltRelease): ReleaseManifest {
   return {
     release_id: d.release_id!,
     source_commit: d.source_commit!,
-    config_dir: d.config_dir,
+    config_dir: REL,
     config_tree_id: d.config_tree_id!,
     archive_url: d.archive!.url,
     archive_bytes: d.archive!.bytes,
@@ -53,7 +52,7 @@ async function oldStarterRelease() {
   write(repo, `${REL}/agents/kortix.md`, 'PROMPT\n')
   write(repo, `${REL}/skills/pdf/SKILL.md`, 'PDF\n')
   write(repo, `${REL}/skills/kortix-cli/SKILL.md`, 'STALE TRACKED COPY\n')
-  const built = buildRelease(repo, commitAll(repo, 'old starter'), REL, {})
+  const built = buildRelease(repo, commitAll(repo, 'old starter'), {})
   const { dir } = await materializeRelease({
     root: store,
     manifest: manifestOf(built),
@@ -86,19 +85,6 @@ afterEach(() => {
   spawnSync('chmod', ['-R', 'u+w', root])
   rmSync(root, { recursive: true, force: true })
 })
-
-/** The harness assets service with only its overlay injection live. */
-function overlayAssets(
-  dir: string,
-  injectSkills: (configDir: string, bakedDir: string) => Promise<void>,
-): HarnessAssetsService {
-  return {
-    harness: 'test', componentNames: [],
-    resolveConfigDir: async () => dir,
-    injectSkills,
-    reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
-  }
-}
 
 describe('DEF-5: the overlay pass and release verification', () => {
   test('a verification failure names the file and the overlay names it used', async () => {

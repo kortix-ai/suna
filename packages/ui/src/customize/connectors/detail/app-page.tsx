@@ -122,7 +122,7 @@ interface ResolvedApp {
 }
 
 /**
- * `/projects/<id>/customize/connectors/<app>` — one catalogue app: what it is,
+ * `/projects/<id>/admin/connectors/<app>` — one catalogue app: what it is,
  * the one Install button, the connectors this project already has for it, and
  * the other ways to connect it.
  *

@@ -37,6 +37,8 @@ import {
   seedConnectionFromReadyStart,
 } from '../browser/stores/sandbox-connection-store';
 import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
+import { authenticatedFetch } from '../core/http/auth';
+import { RUNTIME_LOG_CAPABILITY, readRuntimeLogPage } from '../core/session/runtime-actions';
 import { getBackendUrl } from '../core/session/server-store/url-helpers';
 import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import { BillingError, parseBillingError } from '../core/http/api/errors';
@@ -261,8 +263,14 @@ export function sessionPromptFromParts(
   options: SendOptions,
   clientMessageId?: string,
   nowMs: number = Date.now(),
+  /**
+   * The id the host drew its optimistic message under. It becomes the wire id, so the
+   * runtime's user message, the session log and the inbox row all carry it, and the log's
+   * put replaces the optimistic message by id. Omitted: a wire id is minted.
+   */
+  optimisticMessageId?: string,
 ): CreateSessionPromptInput {
-  const messageId = mintSessionWireMessageId(runtimeSessionId, clientMessageId);
+  const messageId = optimisticMessageId ?? mintSessionWireMessageId(runtimeSessionId, clientMessageId);
   const wireParts: SessionPromptPart[] = parts.map((part) => {
     if (part.type === 'file') {
       return {
@@ -740,8 +748,14 @@ export function markDispatchedForPartIds(sessionId: string, parts: PromptPart[])
 export function beginOptimisticPlainTextSend(
   sessionId: string,
   text: string,
+  /**
+   * The prompt's wire id (`mintSessionWireMessageId`): the message is drawn under the id the
+   * runtime and the session log will hold it by. Omitted: a local id, which the server never
+   * keeps (`ascendingId` is not the wire codec's clock).
+   */
+  wireMessageId?: string,
 ): { messageId: string; parts: PromptPart[] } {
-  const messageId = ascendingId('msg');
+  const messageId = wireMessageId ?? ascendingId('msg');
   const partId = ascendingId('prt');
   const optimisticParts: Part[] = text.trim()
     ? [
@@ -1385,7 +1399,24 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // render: the open asks the snapshot for no transcript window, no saved copy is read
   // (`useSessionSync` `sessionLog`), and older pages come from `GET …/log`. No project flag is
   // read, and no v1 transcript (`GET …/transcript`, P8.3) is read, whatever the log answers.
-  const logDialect = useSessionLogSync(projectId, sessionId, { enabled: startEnabled });
+  // The box's own page, while `/start` says the box is ready and serves it (`runtime.log.v1`):
+  // ahead of the API's copy (the reply it streams, a prompt waiting on it), and a new session's
+  // log before the API holds one.
+  const liveLogBoxId =
+    startData?.stage === 'ready' && startData.capabilities?.includes(RUNTIME_LOG_CAPABILITY) ? (startData.sandbox?.external_id ?? null) : null;
+  const livePage = useMemo(
+    () =>
+      liveLogBoxId
+        ? (query: { limit: number }) =>
+            readRuntimeLogPage(getSandboxUrlForExternalId(liveLogBoxId), authenticatedFetch as typeof globalThis.fetch, query)
+        : null,
+    [liveLogBoxId],
+  );
+  // The box serves its log: the session log is the only transcript read. No v1 transcript, session
+  // record, status, permission, question or diagnostics read goes to the box (see each gate below).
+  const logNative = liveLogBoxId !== null;
+  const logReloadRef = useRef<(() => void) | null>(null);
+  const logDialect = useSessionLogSync(projectId, sessionId, { enabled: startEnabled, livePage, reloadRef: logReloadRef });
   // `'missing'`: no page yet (a new session, an unconverted mirror, a failed read). Nothing saved
   // is on its way; the runtime's rows are the history.
   const logOwned = chatEngine && logDialect !== 'v1';
@@ -1553,7 +1584,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // StreamProvider); calling the underlying hook here means the host mounts
   // nothing. It self-gates on the connection store's healthy flag (seeded above).
   // R5.3: its events come from the session stream mounted in 1c.
-  useRuntimeEventStream({ enabled: switched, projectId, sessionId });
+  useRuntimeEventStream({ enabled: switched, projectId, sessionId, logNative });
 
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
@@ -1563,7 +1594,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     sessionId,
     pinFromStart: startData?.runtime_session_id ?? startData?.opencode_session_id ?? null,
     initialPin: logRootRuntimeId ?? initialRuntimeSessionId,
-    listRuntimeSessions: switched,
+    // A box that serves its log: the pin comes from `/start` and the log; the box lists nothing.
+    listRuntimeSessions: switched && !logNative,
   });
   const { rootSessionId } = canonicalSession;
   const ocSessionId = rootSessionId ?? '';
@@ -1627,7 +1659,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // which would make the sync layer read the log page a second time.
     mirror: null,
     sessionLog: logOwned,
-    networkEnabled: switched,
+    // A box that serves its log: the rows come from the log, so no v1 read or liveness poll runs.
+    networkEnabled: switched && !logNative,
     working: working.state === 'working',
     // The control plane holding a turn open keeps the transcript verification
     // poll on even when the projection's answer is idle — the repair for a
@@ -1646,7 +1679,20 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       ? selectTranscriptShapeKey(state, ocSessionId)
       : '',
   );
-  const sync = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
+  const syncRows = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
+  // On a box that serves its log, loading, freshness and the retry are the log's.
+  const sync = useMemo(
+    () =>
+      logNative && chatEngine
+        ? {
+            ...syncRows,
+            isLoading: logHistory === 'loading',
+            freshness: (logHistory === 'loading' ? 'loading' : 'fresh') as typeof syncRows.freshness,
+            retryTranscript: () => logReloadRef.current?.(),
+          }
+        : syncRows,
+    [logNative, chatEngine, syncRows, logHistory],
+  );
   const runtimePhase = useRuntimePhase();
   // T22 — the revert record lives in the sync store, not component state.
   // Component state made the boundary math wrong in two ways at once: it
@@ -1740,10 +1786,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // ring replays it on a reconnect and a resync re-reads the pending lists —
   // so these polls run only while the stream is down.
   useQuestionSelfHeal(ocSessionId, sync.messages, {
-    enabled: switched && chatEngine && !!ocSessionId && !streamConnected,
+    enabled: switched && chatEngine && !!ocSessionId && !streamConnected && !logNative,
   });
   usePermissionSelfHeal(ocSessionId, sync.messages, {
-    enabled: switched && chatEngine && !!ocSessionId && !streamConnected,
+    enabled: switched && chatEngine && !!ocSessionId && !streamConnected && !logNative,
   });
 
   // 6. Interactive prompts live in the pending store (the SSE writes them there,
@@ -1762,7 +1808,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // same cache entry `session.compacted` and `session.updated` already write
   // (`runtimeKeys.runtimeSession`), so reading it here costs no extra request
   // in a host that mounts the session row anyway.
-  const runtimeSessionRow = useRuntimeSession(switched ? ocSessionId : '');
+  // A box that serves its log reports compaction as `log.status` (the compaction store above).
+  const runtimeSessionRow = useRuntimeSession(switched && !logNative ? ocSessionId : '');
   const compactionInputs = {
     optimisticAtMs: optimisticCompactionAtMs,
     serverCompactingAtMs: runtimeSessionRow.data?.time?.compacting ?? null,
@@ -1900,6 +1947,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
        * a new submission. See `SendRuntimeMessageArgs.clientMessageId`.
        */
       clientMessageId?: string;
+      /** The id the host drew its optimistic message under; the prompt goes out under it. */
+      messageId?: string;
     },
   ): Promise<void> => {
     if (!runtimeActionReady) throw new RuntimeNotReadyError();
@@ -1922,7 +1971,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       // Every turn start goes through the session's durable prompt inbox, the
       // path the web composer and the CLI use: the server decides when it runs.
       const result = await sendMutation.mutateAsync(
-        sessionPromptFromParts(ocSessionId, parts, opts, override?.clientMessageId),
+        sessionPromptFromParts(ocSessionId, parts, opts, override?.clientMessageId, Date.now(), override?.messageId),
       );
       if (result.state === 'failed') {
         throw new Error('This prompt was refused: its earlier delivery already failed.');
@@ -1956,8 +2005,11 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // T15 — one user bubble: the optimistic message and the outgoing
     // part share one minted id, so the server's echo can be correlated back
     // to it instead of leaving both on screen until the idle sweep.
-    const { messageId, parts } = beginOptimisticPlainTextSend(ocSessionId, text);
-    void sendParts(parts, override).catch((error) => {
+    // One id from the optimistic message to the session log: minted by the wire codec, drawn
+    // here, sent as the prompt's wire id, kept by a runtime that keeps ids, and replaced by
+    // the log's put of the same id.
+    const { messageId, parts } = beginOptimisticPlainTextSend(ocSessionId, text, mintSessionWireMessageId(ocSessionId));
+    void sendParts(parts, { ...override, messageId }).catch((error) => {
       // The send never reached (or was refused by) the server — nothing to
       // rehydrate, so drop the optimistic message outright rather than leave
       // it stranded forever (mirrors `abandonOptimisticSend`).

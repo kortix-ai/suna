@@ -25,7 +25,7 @@ export type PermissionReply = RuntimePermissionReply
 
 /** `allow` | `ask` | `deny` per tool name, `*` as the default. */
 export type PermissionRule = 'allow' | 'ask' | 'deny'
-/** OpenCode's `PermissionRuleConfig`: a bare action, or a glob-pattern -> action map. */
+/** One tool's rule in the compiled `permission` block: a bare action, or a glob-pattern -> action map. */
 export type PermissionRuleConfig = PermissionRule | Record<string, PermissionRule>
 export type PermissionPolicy = Record<string, PermissionRuleConfig>
 
@@ -33,13 +33,13 @@ const RULES = new Set(['allow', 'ask', 'deny'])
 const isRule = (value: unknown): value is PermissionRule => typeof value === 'string' && RULES.has(value)
 
 /**
- * Compile the manifest's compiled `permission` block (OpenCode's
- * PermissionConfig: `{ [tool]: 'allow'|'ask'|'deny' | { [pattern]: rule } }`).
+ * Compile the manifest's compiled `permission` block
+ * (`{ [tool]: 'allow'|'ask'|'deny' | { [pattern]: rule } }`).
  * Pattern maps are KEPT whole and matched per call by {@link resolveRule} —
  * collapsing them to their `*` entry would turn an explicit
  * `bash: { 'rm -rf *': 'deny', '*': 'allow' }` into an unconditional allow.
- * A tool with no rule is `allow`, OpenCode's default. A bare action
- * (`permission: deny`) is OpenCode's whole-agent form: it covers every tool.
+ * A tool with no rule is `allow`. A bare action (`permission: deny`) is the
+ * whole-agent form: it covers every tool.
  */
 export function compilePermissionPolicy(raw: unknown): PermissionPolicy {
   const policy: PermissionPolicy = {}
@@ -59,7 +59,7 @@ export function compilePermissionPolicy(raw: unknown): PermissionPolicy {
 }
 
 /**
- * OpenCode's `Wildcard.match` (`packages/opencode/src/util/wildcard.ts`):
+ * The permission pattern match:
  * backslashes normalise to `/`, `*` becomes `.*`, `?` becomes `.`, every other
  * regex metacharacter is escaped, and the whole pattern is anchored and
  * dot-all. A pattern ending in ` *` also matches the bare command, so `ls *`
@@ -93,11 +93,11 @@ const RESERVED_PREFIX = /^(?:(?:if|then|elif|else|do|while|until|time|!|\{)\s+)+
 const RESERVED_ALONE = new Set(['fi', 'done', 'esac', '}'])
 
 /**
- * The commands of a bash line, as OpenCode's tree-sitter walk asks about them:
+ * The commands of a bash line, as the permission check asks about them:
  * the line splits on unquoted `;`, `&`, `|` and newlines (so `&&`, `||` and
  * `|&` too), and every `$(…)`, `` `…` ``, `<(…)`, `>(…)` and `( … )` body is
- * read as commands of its own. A command keeps its substitutions' text, as
- * OpenCode's does. `null` when the quotes or brackets do not balance.
+ * read as commands of its own. A command keeps its substitutions' text.
+ * `null` when the quotes or brackets do not balance.
  * ponytail: not a bash grammar — `case` arms and heredoc bodies read as
  * unbalanced or as extra commands, so they fail closed. Use tree-sitter-bash
  * when a manifest needs them exact.
@@ -187,16 +187,15 @@ export function toolPath(raw: string, workspace: string): string | undefined {
 }
 
 /**
- * The string a pattern is tested against, per tool — the subject OpenCode sends
- * as the permission request's pattern: the command line for `bash`, the skill
- * name for `skill`, the subagent name for `task`, and for the workspace tools
- * the file the path names, relative to the workspace (`tool/read.ts`,
- * `edit.ts`, `write.ts`). So `./secrets/a`, `x/../secrets/a` and
+ * The string a pattern is tested against, per tool — the permission
+ * request's pattern: the command line for `bash`, the skill name for `skill`,
+ * the subagent name for `agent`/`task`, and for the workspace tools the file the path
+ * names, relative to the workspace. So `./secrets/a`, `x/../secrets/a` and
  * `/workspace/secrets/a` are all `secrets/a`.
  */
 export function permissionSubject(tool: string, args: unknown, workspace: string): string | undefined {
   if (!args || typeof args !== 'object') return undefined
-  const key = tool === 'bash' ? 'command' : tool === 'skill' ? 'name' : tool === 'task' ? 'subagent_type' : 'path'
+  const key = tool === 'bash' ? 'command' : tool === 'skill' ? 'name' : tool === 'task' || tool === 'agent' ? 'subagent_type' : 'path'
   const value = (args as Record<string, unknown>)[key]
   if (typeof value !== 'string') return undefined
   if (key !== 'path') return value
@@ -217,10 +216,11 @@ function resolveRule(config: PermissionRuleConfig | undefined, subject: string |
 /**
  * pi's tools whose name is not their capability: `write` and the Kortix tools
  * that write files (`KORTIX_EDIT_TOOLS`) are `edit`; the search and scrape
- * tools reach the web.
+ * tools reach the web; `workflow` starts subagents, as `task` does.
  */
 const TOOL_CAPABILITY: Record<string, RuntimePermissionCapability> = {
   write: 'edit',
+  workflow: 'task',
   web_search: 'websearch',
   image_search: 'websearch',
   scrape_webpage: 'webfetch',
@@ -229,7 +229,7 @@ const TOOL_CAPABILITY: Record<string, RuntimePermissionCapability> = {
 
 /**
  * The capability a permission rule names for this call (`RUNTIME_PERMISSION_CAPABILITIES`); any other tool is its own.
- * `memory`'s `view` command only reads, so it is `read`; its other commands are `edit`.
+ * `memory` (a project's ejected copy of the retired Kortix tool): `view` only reads, so it is `read`; its other commands are `edit`.
  */
 export function toolCapability(tool: string, args?: unknown): string {
   if (tool === 'memory') return (args as { command?: unknown } | null | undefined)?.command === 'view' ? 'read' : 'edit'
@@ -239,11 +239,11 @@ export function toolCapability(tool: string, args?: unknown): string {
 /**
  * One call's rule under `policy`. Every key that names the tool or its
  * capability (`*` and `pty_*` are patterns too) is tried most specific first;
- * the first that has a rule for this call decides, as OpenCode's last match
- * does over an ordered block. `undefined` means the policy says nothing.
+ * the first that has a rule for this call decides. `undefined` means the
+ * policy says nothing.
  *
- * A bash line is decided command by command (`bashCommands`), as OpenCode
- * does, and the strictest answer wins: `allowed x; env` is the rule for `env`,
+ * A bash line is decided command by command (`bashCommands`), and the
+ * strictest answer wins: `allowed x; env` is the rule for `env`,
  * never the allowed prefix's. A line that does not parse is decided as a call
  * with no subject, so a restriction asks.
  *
@@ -276,14 +276,14 @@ function resolveKeys(policy: PermissionPolicy, names: string[], subject: string 
   return undefined
 }
 
-/** pi's tools that OpenCode's `external_directory` check covers; glob and grep take a directory. */
+/** pi's tools that the `external_directory` check covers; glob and grep take a directory. */
 const FILE_TOOLS = new Set(['read', 'write', 'edit', 'glob', 'grep'])
 
 /**
  * The `external_directory` rule for a file tool whose path leaves the
- * workspace. The subject is the directory glob `<dir>/*`, as OpenCode asks it
- * (`tool/external-directory.ts`). `undefined` inside the workspace, and when
- * the policy has no rule for it: unlike OpenCode, pi does not ask by default.
+ * workspace. The subject is the directory glob `<dir>/*`. `undefined` inside
+ * the workspace, and when the policy has no rule for it: pi does not ask by
+ * default.
  */
 function externalRule(policy: PermissionPolicy, tool: string, args: unknown, workspace: string): PermissionRule | undefined {
   const raw = (args as { path?: unknown } | null | undefined)?.path
@@ -296,7 +296,7 @@ function externalRule(policy: PermissionPolicy, tool: string, args: unknown, wor
 
 /**
  * Whether an agent may see a skill. The manifest `skills:` grant compiles to
- * OpenCode's `permission.skill` rule; only a `deny` hides a skill. pi has no
+ * the `permission.skill` rule; only a `deny` hides a skill. pi has no
  * skill tool to gate on load, so an `ask` skill stays listed.
  */
 export function skillGranted(policy: PermissionPolicy, name: string): boolean {
@@ -304,9 +304,26 @@ export function skillGranted(policy: PermissionPolicy, name: string): boolean {
   return resolvePolicyRule(policy, 'skill', { name }, '/') !== 'deny'
 }
 
+/** One rule of the session ruleset (`PATCH /session/:id` `permission`). */
+export interface SessionPermissionRule {
+  permission?: unknown
+  pattern?: unknown
+  action?: unknown
+}
+
+/** A request waiting for its answer, as the session log's `pending` lists it (`PendingSchema`). */
+export interface PendingRecord {
+  id: string
+  thread_id: string
+  call_id?: string
+  payload: Record<string, unknown>
+  asked_at: string
+}
+
 export class PermissionBroker {
-  private readonly pending = new Map<string, { request: RuntimePermissionRequest; resolve: (reply: PermissionReply) => void }>()
-  private readonly alwaysAllowed = new Set<string>()
+  private readonly pending = new Map<string, { request: RuntimePermissionRequest; resolve: (reply: PermissionReply) => void; askedAt: string }>()
+  /** Capabilities allowed for the rest of the session: an "always" reply, or the session ruleset (`*`: every one). */
+  private readonly granted = new Set<string>()
 
   constructor(
     private readonly sessionID: string,
@@ -315,6 +332,8 @@ export class PermissionBroker {
     private readonly publish: (frame: RuntimeFrame) => void,
     private policy: PermissionPolicy = {},
     private readonly onAsked?: (request: RuntimePermissionRequest) => void,
+    /** A request was asked or answered, or the grants changed: the pending list moved. */
+    private readonly onChange?: () => void,
   ) {}
 
   setPolicy(policy: PermissionPolicy): void {
@@ -326,8 +345,41 @@ export class PermissionBroker {
     // A deny outranks an earlier "always": approving `ls` must not unlock the
     // `rm -rf *` the same pattern map denies.
     if (resolved === 'deny') return 'deny'
-    if (this.alwaysAllowed.has(toolCapability(tool, args))) return 'allow'
+    if (this.grants(tool, args)) return 'allow'
     return resolved ?? 'allow'
+  }
+
+  /** The session's grants cover this call's capability. A policy `deny` still outranks them (`rule`). */
+  grants(tool: string, args?: unknown): boolean {
+    return this.granted.has('*') || this.granted.has(toolCapability(tool, args))
+  }
+
+  /**
+   * Replace the session's grants with the session ruleset: each `allow` rule over every pattern
+   * grants its capability (`*`: all of them). An empty list clears every grant, "always" replies
+   * included. A rule for one pattern, or any other action, grants nothing.
+   */
+  setSessionRules(rules: readonly SessionPermissionRule[]): void {
+    this.setGrants(
+      rules.flatMap((rule) =>
+        rule?.action === 'allow' && typeof rule.permission === 'string' && (rule.pattern === undefined || rule.pattern === '*') ? [rule.permission] : [],
+      ),
+    )
+  }
+
+  /** Replace the session's grants: each capability (`*`: all) is allowed without asking. `[]` clears them. */
+  setGrants(grants: readonly string[]): void {
+    this.granted.clear()
+    for (const grant of grants) this.granted.add(grant)
+  }
+
+  /** The grants, as the runtime's dump keeps them. */
+  grantList(): string[] {
+    return [...this.granted]
+  }
+
+  restoreGrants(grants: readonly string[]): void {
+    for (const grant of grants) if (typeof grant === 'string') this.granted.add(grant)
   }
 
   /** Resolves with the user's reply; never rejects. */
@@ -343,9 +395,10 @@ export class PermissionBroker {
       ...(input.ref ? { tool: input.ref } : {}),
     }
     return new Promise<PermissionReply>((resolve) => {
-      this.pending.set(request.id, { request, resolve })
+      this.pending.set(request.id, { request, resolve, askedAt: new Date().toISOString() })
       this.publish({ type: 'permission.asked', properties: { ...request } })
       this.onAsked?.(request)
+      this.onChange?.()
     })
   }
 
@@ -353,14 +406,26 @@ export class PermissionBroker {
     const entry = this.pending.get(id)
     if (!entry) return false
     this.pending.delete(id)
-    if (reply === 'always') this.alwaysAllowed.add(entry.request.permission)
+    if (reply === 'always') this.granted.add(entry.request.permission)
     this.publish({ type: 'permission.replied', properties: { sessionID: this.sessionID, requestID: id, reply } })
     entry.resolve(reply)
+    this.onChange?.()
     return true
   }
 
   list(): RuntimePermissionRequest[] {
     return [...this.pending.values()].map((entry) => entry.request)
+  }
+
+  /** The open requests, as the session log's `pending.permissions`. */
+  records(): PendingRecord[] {
+    return [...this.pending.values()].map(({ request, askedAt }) => ({
+      id: request.id,
+      thread_id: request.sessionID,
+      ...(request.tool?.callID ? { call_id: request.tool.callID } : {}),
+      payload: { permission: request.permission, patterns: request.patterns, always: request.always, metadata: request.metadata },
+      asked_at: askedAt,
+    }))
   }
 
   /** A turn that ends (abort, error) releases every request it left open. */
@@ -370,12 +435,14 @@ export class PermissionBroker {
 }
 
 export class QuestionBroker {
-  private readonly pending = new Map<string, { request: RuntimeQuestionRequest; resolve: (answers: string[][] | null) => void }>()
+  private readonly pending = new Map<string, { request: RuntimeQuestionRequest; resolve: (answers: string[][] | null) => void; askedAt: string }>()
 
   constructor(
     private readonly sessionID: string,
     private readonly publish: (frame: RuntimeFrame) => void,
     private readonly onAsked?: (request: RuntimeQuestionRequest) => void,
+    /** A question was asked, answered or dismissed: the pending list moved. */
+    private readonly onChange?: () => void,
   ) {}
 
   /** Resolves with the answers, or null when rejected; never rejects. */
@@ -387,9 +454,10 @@ export class QuestionBroker {
       ...(ref ? { tool: ref } : {}),
     }
     return new Promise((resolve) => {
-      this.pending.set(request.id, { request, resolve })
+      this.pending.set(request.id, { request, resolve, askedAt: new Date().toISOString() })
       this.publish({ type: 'question.asked', properties: { ...request } })
       this.onAsked?.(request)
+      this.onChange?.()
     })
   }
 
@@ -399,6 +467,7 @@ export class QuestionBroker {
     this.pending.delete(id)
     this.publish({ type: 'question.replied', properties: { sessionID: this.sessionID, requestID: id, answers } })
     entry.resolve(answers)
+    this.onChange?.()
     return true
   }
 
@@ -408,11 +477,23 @@ export class QuestionBroker {
     this.pending.delete(id)
     this.publish({ type: 'question.rejected', properties: { sessionID: this.sessionID, requestID: id } })
     entry.resolve(null)
+    this.onChange?.()
     return true
   }
 
   list(): RuntimeQuestionRequest[] {
     return [...this.pending.values()].map((entry) => entry.request)
+  }
+
+  /** The open questions, as the session log's `pending.questions`. */
+  records(): PendingRecord[] {
+    return [...this.pending.values()].map(({ request, askedAt }) => ({
+      id: request.id,
+      thread_id: request.sessionID,
+      ...(request.tool?.callID ? { call_id: request.tool.callID } : {}),
+      payload: { questions: request.questions },
+      asked_at: askedAt,
+    }))
   }
 
   rejectAll(): void {

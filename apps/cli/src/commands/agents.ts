@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { MY_KORTIX_DISPLAY_NAME } from '@kortix/shared';
 import type {
   AgentConfigBlock,
   AgentConfigResponse,
@@ -66,7 +67,7 @@ Scope options (each replaces the field; --policy-set merges):
   --apps all|none|a,b             Which Kortix Apps it may open by slug, when
                                   the App is restricted or private. The agent
                                   also needs project.app.read in its Kortix
-                                  permissions. Needs kortix.yaml (kortix_version 2 or 3).
+                                  permissions.
   --policy-set <slug>=<name>      Repeatable. The connector's rule set this
                                   agent is checked against, merged per
                                   connector. <slug>=base puts it back on the
@@ -93,7 +94,7 @@ Global:
 
 \`scope\`, \`default\` and \`config\` need \`project.agent.write\`; model pins
 need \`project.model.write\`. Model pins live in the gateway, not in the repo —
-the declarative one is kortix.yaml's \`[[agents]].model\`.
+the declarative one is kortix.yaml's \`agents.<name>.model\`.
 `;
 
 export async function runAgents(argv: string[]): Promise<number> {
@@ -196,7 +197,9 @@ function renderAgent(
   if (mode && mode !== 'primary') markers.push(mode);
   if (agent.enabled === false) markers.push('disabled');
   const tail = markers.length > 0 ? ` ${C.dim}· ${markers.join(' · ')}${C.reset}` : '';
-  return `  ${pad(agent.name, width)}   ${C.dim}${agent.path}${C.reset}   ${modelText}${tail}\n`;
+  // A built-in agent has no file: say what it is instead of a path.
+  const where = agent.platform ? `${MY_KORTIX_DISPLAY_NAME}, built in` : agent.path;
+  return `  ${pad(agent.name, width)}   ${C.dim}${where}${C.reset}   ${modelText}${tail}\n`;
 }
 
 async function agentsLs(ctx: ProjectCtx, json: boolean): Promise<number> {
@@ -228,6 +231,9 @@ async function agentsLs(ctx: ProjectCtx, json: boolean): Promise<number> {
               name: agent.name,
               path: agent.path,
               model: agentModel(agent, pins[agent.name]),
+              ...(agent.description ? { description: agent.description } : {}),
+              ...(agent.platform ? { builtin: true } : {}),
+              ...(agent.enabled === false ? { enabled: false } : {}),
             })),
           },
     );
@@ -377,8 +383,9 @@ function parseGrantSet(raw: string): 'all' | string[] {
     .filter(Boolean);
 }
 
-function renderGrantSet(value: AgentGrantSetV2 | undefined, fallback: string): string {
+function renderGrantSet(value: AgentGrantSetV2 | { exclude: string[] } | undefined, fallback: string): string {
   if (value === undefined) return fallback;
+  if (!Array.isArray(value) && typeof value === 'object') return value.exclude.length > 0 ? `all except ${value.exclude.join(', ')}` : 'all';
   if (value === 'all') return 'all';
   if (value === 'none') return 'none';
   return value.length === 0 ? 'none' : value.join(', ');
@@ -411,6 +418,7 @@ async function agentsScope(
     const cfg = await ctx.client.get<AgentConfigResponse>(
       `/projects/${ctx.projectId}/agents/${encodeURIComponent(agent)}/config`,
     );
+    if (cfg.builtin) return printBuiltinAgent(cfg, opts.json);
     const block = cfg.block ?? {};
     const assigned = (block as { policy_sets?: Record<string, string> }).policy_sets ?? {};
     const permissions = block.kortix_permissions ?? block.kortix_cli;
@@ -502,6 +510,38 @@ async function agentsScope(
   return 0;
 }
 
+/**
+ * A built-in agent (My Kortix, slug `mykortix`) has no kortix.yaml block: the
+ * config GET answers `block: null`. Print what it actually holds, never the
+ * block defaults (`secrets all`), and never a "Change it" hint: every write
+ * answers 409 builtin_agent_managed.
+ */
+function printBuiltinAgent(cfg: AgentConfigResponse, json: boolean): number {
+  const key = cfg.builtin ?? 'my_kortix';
+  if (json) {
+    emitJson({
+      agent: cfg.agent,
+      builtin: key,
+      editable: false,
+      secrets: 'none',
+      connectors: [],
+      connectors_required: [],
+      apps: 'none',
+      kortix_permissions: 'as_user',
+    });
+    return 0;
+  }
+  process.stdout.write(
+    `\n  ${C.bold}My Kortix${C.reset} ${C.dim}(${cfg.agent}, built in)${C.reset}\n` +
+      `  ${C.dim}${pad('kortix permissions', 20)}${C.reset} yours, in this project\n` +
+      `  ${C.dim}${pad('secrets', 20)}${C.reset} none\n` +
+      `  ${C.dim}${pad('connectors', 20)}${C.reset} none\n` +
+      `  ${C.dim}${pad('apps', 20)}${C.reset} none\n\n` +
+      `  ${C.dim}Kortix maintains its prompt, tools and model. To remove it, set ${C.reset}builtin_agents: { ${key}: false }${C.dim} in kortix.yaml.${C.reset}\n\n`,
+  );
+  return 0;
+}
+
 /** `--policy-set gmail=read_only` (repeatable) → `{ gmail: 'read_only' }`;
  *  `<slug>=base` → `null`, which the route reads as "back to base rules". */
 export function parsePolicySetFlags(
@@ -527,11 +567,10 @@ function renderPolicySets(map: Record<string, string>, fallback: string): string
 
 // ── config ──────────────────────────────────────────────────────────────────
 
-/** The other file a saved config commits: v2 the agent's `.md`, v3 its `prompt_file` (an inline prompt stays in kortix.yaml). */
-function savedPromptFile(resp: { schema_version?: number; block: AgentConfigBlock }, sent: AgentConfigBlock): string {
+/** The other file a saved config commits: the agent's `prompt_file` (an inline prompt stays in kortix.yaml). */
+function savedPromptFile(resp: { block: AgentConfigBlock }, sent: AgentConfigBlock): string {
   if (!(sent.behavior ?? sent.opencode)) return '';
-  if ((resp.schema_version ?? 2) >= 3) return resp.block?.file ? ` + ${resp.block.file}` : '';
-  return ' + the agent .md';
+  return resp.block?.file ? ` + ${resp.block.file}` : '';
 }
 
 /** The keys `PUT /projects/:id/agents/:name/config` accepts (AgentBlockSchema
@@ -583,9 +622,10 @@ async function agentsConfig(
       emitJson(cfg);
       return 0;
     }
+    if (cfg.builtin) return printBuiltinAgent(cfg, false);
     if (!cfg.editable) {
       process.stdout.write(
-        `  ${C.yellow}!${C.reset}  ${C.dim}kortix_version ${cfg.schema_version} manifest — this block is read-only. Run \`kortix projects upgrade\` to move it to kortix.yaml.${C.reset}\n`,
+        `  ${C.yellow}!${C.reset}  ${C.dim}This block is read-only: the project's manifest is not a current kortix.yaml. Run \`kortix validate\` for the fix.${C.reset}\n`,
       );
     }
     process.stdout.write(`${JSON.stringify(cfg.block ?? {}, null, 2)}\n`);
@@ -622,7 +662,7 @@ async function agentsConfig(
     }
   }
 
-  const resp = await ctx.client.put<{ ok: boolean; agent: string; schema_version?: number; block: AgentConfigBlock }>(
+  const resp = await ctx.client.put<{ ok: boolean; agent: string; block: AgentConfigBlock }>(
     path,
     block,
   );

@@ -4,10 +4,10 @@ import { metricsEnabled, renderMetrics } from '../lib/metrics';
 import { json, mountOpenApiDocs } from '../openapi';
 import { mcpProtectedResourceMetadata, oauthAuthorizationServerMetadata } from '../oauth/discovery';
 import { draining, schemaReady } from '../bootstrap';
-import { eventLoopLagMs } from '../workers/event-loop-lag-worker';
+import { eventLoopLagMs } from '../replica/event-loop-lag';
 import { hasInternalServiceKey } from '../shared/internal-service-key';
 
-const MAX_EVENT_LOOP_LAG_MS = Number(process.env.HEALTH_MAX_EVENT_LOOP_LAG_MS || 5000);
+const MAX_EVENT_LOOP_LAG_MS = config.HEALTH_MAX_EVENT_LOOP_LAG_MS;
 
 export function registerSystemRoutes(app: OpenAPIHono) {
 // === Top-Level Health Check (no auth) ===

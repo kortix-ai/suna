@@ -1,7 +1,8 @@
 /**
  * show: the Kortix tool that presents an existing output (a file, an image, a
- * URL, inline text) to the user. Kortix maintains this file. A project lists
- * it in kortix.yaml as `show: kortix:show`. `kortix tools eject show` copies
+ * URL, inline text) to the user. Kortix maintains this file, and every session
+ * loads it; an agent's `tools` grant decides whether that agent can call it.
+ * `kortix tools eject show` copies
  * it to `tools/show.ts` for the project to own and change; the copy runs
  * unchanged on every harness.
  *

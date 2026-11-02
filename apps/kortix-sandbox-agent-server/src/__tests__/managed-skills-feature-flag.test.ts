@@ -33,9 +33,9 @@ afterEach(async () => {
 })
 
 describe('feature flag parsing', () => {
-  test('KORTIX_FEATURE_FLAGS is a comma list; KORTIX_GENUI=1 still turns genui on', () => {
+  test('KORTIX_FEATURE_FLAGS is a comma list; nothing else adds a flag', () => {
     expect([...enabledFeatureFlags({ KORTIX_FEATURE_FLAGS: 'agent_rooms, reminders' })].sort()).toEqual(['agent_rooms', 'reminders'])
-    expect(enabledFeatureFlags({ KORTIX_GENUI: '1' }).has('genui')).toBe(true)
+    expect(enabledFeatureFlags({ KORTIX_GENUI: '1' }).size).toBe(0)
     expect(enabledFeatureFlags({}).size).toBe(0)
   })
 

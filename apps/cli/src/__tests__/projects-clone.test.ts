@@ -71,7 +71,7 @@ describe("project clone target", () => {
 test("a cloned repo is bound to its project without dirtying git status", () => {
   const repo = mkdtempSync(resolve(tmpdir(), "kortix-project-clone-link-"));
   mkdirSync(resolve(repo, ".kortix"), { recursive: true });
-  writeFileSync(resolve(repo, "kortix.yaml"), "kortix_version: 2\n");
+  writeFileSync(resolve(repo, "kortix.yaml"), "default_agent: main\n");
   spawnSync("git", ["init", "-b", "main"], { cwd: repo });
   spawnSync("git", ["add", "."], { cwd: repo });
   spawnSync(

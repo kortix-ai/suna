@@ -29,7 +29,7 @@ import { clearConfigOverrides } from '../use-opencode-config';
 import { resetPrefetchState } from '../use-session-prefetch';
 import { createEventHandler } from './handle-event';
 import { resolveClientEvictionUrl } from './helpers';
-import { hydrateCore } from './hydrate-core';
+import { hydrateCore, hydrateFromPending } from './hydrate-core';
 import { emitRuntimeStreamSignal, shouldReconnectOnHostSignal } from './runtime-stream-signals';
 import { createStreamRevival } from './stream-revival';
 import { useEventStreamRefs } from './use-event-stream-refs';
@@ -60,6 +60,11 @@ export function useRuntimeEventStream(
      */
     projectId?: string;
     sessionId?: string;
+    /**
+     * The session's box serves its log (`runtime.log.v1`): a connect or a resync reads only
+     * `GET /kortix/runtime/pending`, and no frame re-reads a transcript tail or a session record.
+     */
+    logNative?: boolean;
   } = {},
 ) {
   const queryClient = useQueryClient();
@@ -74,6 +79,7 @@ export function useRuntimeEventStream(
   const removeQuestion = useRuntimePendingStore((s) => s.removeQuestion);
   const clearPending = useRuntimePendingStore((s) => s.clear);
   const stopCompaction = useOpenCodeCompactionStore((s) => s.stopCompaction);
+  const startCompaction = useOpenCodeCompactionStore((s) => s.startCompaction);
   const applySyncEvent = useSyncStore((s) => s.applyEvent);
   // Re-render (and re-read getActiveServerUrl, which resolves current-runtime) when
   // the session's runtime changes — so the SSE re-subscribes to the new daemon.
@@ -203,11 +209,22 @@ export function useRuntimeEventStream(
       fetchLspDiagnosticsDebounced,
       reconcileSessionTail: reconcileSessionTailFromRegistry,
       projectId,
+      notificationProjectId: options.projectId ?? projectId,
       sessionId: options.projectId && options.sessionId ? options.sessionId : null,
+      logNative: options.logNative === true,
+      startCompaction,
     });
 
-    const hydrate = (options?: { refetchSessions?: boolean; rehydrateMessages?: boolean }) =>
-      hydrateCore({
+    const logSessionId = options.sessionId;
+    const hydrate = (hydrateOptions?: { refetchSessions?: boolean; rehydrateMessages?: boolean }) =>
+      options.logNative
+        ? hydrateFromPending({
+            applySyncEvent,
+            reconcileMissingBusySessions,
+            threads: () => Object.keys((logSessionId && useSyncStore.getState().sessionLogs[logSessionId]?.threads) || {}),
+            dispatch: (event) => handleEvent(event),
+          })
+        : hydrateCore({
         client,
         queryClient,
         addPermission,
@@ -216,7 +233,7 @@ export function useRuntimeEventStream(
         reconcileMissingBusySessions,
         fetchLspDiagnosticsDebounced,
         reconcileSessionTail: reconcileSessionTailFromRegistry,
-        options,
+        options: hydrateOptions,
       });
 
     // A revived handle has no record of the previous handle's outage. Re-read
@@ -297,6 +314,7 @@ export function useRuntimeEventStream(
     sandboxStatus,
     runtimeHealthy,
     options.enabled,
+    options.logNative,
     options.projectId,
     options.sessionId,
     applySyncEvent,

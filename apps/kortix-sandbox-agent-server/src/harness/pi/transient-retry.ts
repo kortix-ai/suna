@@ -2,7 +2,7 @@
  * Kortix-owned retry of a model step that failed on a transient provider error.
  *
  * pi's AgentSession retry is off (extensions/host.ts): Kortix owns it, so the
- * wire can show OpenCode's `retry` status instead of a terminal error. Without
+ * wire can show the `retry` session status instead of a terminal error. Without
  * this, one cut stream ("Stream ended without finish_reason", "terminated",
  * a 5xx, a rate limit) ended the whole turn, and a trigger or factory loop
  * stopped on it.
@@ -24,6 +24,7 @@
  *   - resumes: 3 more at 60, 120, 240 s (~7 min) for an outage.
  * Only an error that outlasts both ends the turn.
  */
+import { CLAUDE_AGENT_PROVIDER_ID } from '@kortix/api-contract/claude-agent'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import { type AssistantMessage, isContextOverflow, isRetryableAssistantError } from '@earendil-works/pi-ai'
 
@@ -53,12 +54,14 @@ const PERMANENT = /insufficient_quota|quota exceeded|out of budget|billing|usage
 
 export function isTransientModelError(message: AssistantMessage): boolean {
   if (message.stopReason !== 'error') return false
+  // Claude Code retries its own model calls; its error is final (a plan limit shows once).
+  if (message.provider === CLAUDE_AGENT_PROVIDER_ID) return false
   const text = message.errorMessage ?? ''
   if (PERMANENT.test(text)) return false
   return isRetryableAssistantError(message) || TRANSIENT_EXTRA.test(text)
 }
 
-/** OpenCode's `SessionStatus` for a step that waits to retry. The SDK counts it as busy. */
+/** The `retry` `SessionStatus` for a step that waits to retry. The SDK counts it as busy. */
 export interface RetryPlan {
   attempt: number
   message: string

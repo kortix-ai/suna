@@ -3,17 +3,23 @@
  * decides: an opaque origin on the API host, the page's own origin on the
  * dedicated content host (ARTIFACT_CONTENT_URL), where embedded players work.
  */
-export const ARTIFACT_IFRAME_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads';
+export const ARTIFACT_IFRAME_SANDBOX =
+  'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads';
 
 /** Features an embedded player in the page may use. */
-export const ARTIFACT_FRAME_ALLOW = 'fullscreen; clipboard-write; autoplay; encrypted-media; picture-in-picture';
+export const ARTIFACT_FRAME_ALLOW =
+  'fullscreen; clipboard-write; autoplay; encrypted-media; picture-in-picture';
 
 /** Artifact frames share the Apps frame pool (`@kortix/ui/apps`); their keys start with this. */
 export const ARTIFACT_FRAME_PREFIX = 'artifact:';
 
 /** One pooled frame per artifact state: a save (`updated_at`) or an old version gets its own. */
-export function artifactFrameKey(artifact: { artifact_id: string; updated_at: string }, version?: string | null): string {
-  return `${ARTIFACT_FRAME_PREFIX}${artifact.artifact_id}:${version ?? artifact.updated_at}`;
+export function artifactFrameKey(
+  artifact: { artifact_id: string; updated_at: string },
+  version?: string | null,
+  annotate = false,
+): string {
+  return `${ARTIFACT_FRAME_PREFIX}${artifact.artifact_id}:${version ?? artifact.updated_at}${annotate ? ':annotate' : ''}`;
 }
 
 /**
@@ -26,13 +32,18 @@ export function printArtifact(viewUrl: string): void {
   frame.setAttribute('sandbox', ARTIFACT_IFRAME_SANDBOX);
   frame.setAttribute('aria-hidden', 'true');
   frame.tabIndex = -1;
-  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none';
+  frame.style.cssText =
+    'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none';
   const cleanup = () => {
     window.removeEventListener('message', onMessage);
     frame.remove();
   };
   const onMessage = (event: MessageEvent) => {
-    if (event.source === frame.contentWindow && (event.data as { kortix?: string } | null)?.kortix === 'artifact-printed') cleanup();
+    if (
+      event.source === frame.contentWindow &&
+      (event.data as { kortix?: string } | null)?.kortix === 'artifact-printed'
+    )
+      cleanup();
   };
   window.addEventListener('message', onMessage);
   // A dialog left open past this still prints; the frame is only cleanup.
@@ -50,7 +61,9 @@ const PUBLIC = new RegExp(`/share/artifact/(${UUID})/?$`, 'i');
  * (the app viewer, on any Kortix host) or `/share/artifact/<artifact>` (a
  * public link, no project). Null for any other URL.
  */
-export function parseArtifactUrl(url: string): { projectId: string | null; artifactId: string } | null {
+export function parseArtifactUrl(
+  url: string,
+): { projectId: string | null; artifactId: string } | null {
   let path: string;
   try {
     path = new URL(url, 'http://localhost').pathname;
@@ -58,7 +71,11 @@ export function parseArtifactUrl(url: string): { projectId: string | null; artif
     return null;
   }
   const inProject = IN_PROJECT.exec(path);
-  if (inProject) return { projectId: inProject[1]!.toLowerCase(), artifactId: inProject[2]!.toLowerCase() };
+  if (inProject)
+    return {
+      projectId: inProject[1]!.toLowerCase(),
+      artifactId: inProject[2]!.toLowerCase(),
+    };
   const shared = PUBLIC.exec(path);
   return shared ? { projectId: null, artifactId: shared[1]!.toLowerCase() } : null;
 }

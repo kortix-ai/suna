@@ -894,11 +894,12 @@ flow(
         else outsiderPat = created.json<{ secret_key: string }>().secret_key;
       }
     });
-    await ctx.step("commit one project skill with a reference file to the project repository (the API mirror picks it up within 60 s: later steps wait for it)", async () => {
+    await ctx.step("commit one project skill with a reference file, registered under `skills:` in kortix.yaml (the API mirror picks it up within 60 s: later steps wait for it)", async () => {
       const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: p.id });
       try {
         await world.commitToMain(
           {
+            "kortix.yaml": "project:\n  name: ke2e-mcp\ndefault_agent: worker\nagents:\n  worker:\n    tools: all\nskills:\n  mcp-demo: skills/mcp-demo\n",
             "skills/mcp-demo/SKILL.md": "---\nname: mcp-demo\ndescription: Demo skill for the MCP flow\n---\n# MCP demo\nUse the demo.\n",
             "skills/mcp-demo/references/notes.md": "reference notes\n",
           },

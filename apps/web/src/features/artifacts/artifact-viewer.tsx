@@ -1,6 +1,10 @@
 'use client';
 
-import { readArtifactCommentSnapshot, type ArtifactVersion } from '@kortix/sdk';
+import {
+  readArtifactCommentSnapshot,
+  type ArtifactCommentAnchor,
+  type ArtifactVersion,
+} from '@kortix/sdk';
 import {
   useArtifact,
   useArtifactCommentContext,
@@ -10,6 +14,8 @@ import {
   useFeatureFlag,
   useInfiniteArtifactActivity,
 } from '@kortix/sdk/react';
+import { ARTIFACT_TEXT_QUOTE_MAX } from '@kortix/shared/artifact-comments';
+import { cn } from '@kortix/ui';
 import { reloadFrame } from '@kortix/ui/apps';
 import {
   Breadcrumb,
@@ -24,6 +30,7 @@ import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
 import { CountBadge } from '@kortix/ui/count-badge';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
@@ -33,6 +40,7 @@ import {
 } from '@kortix/ui/dropdown-menu';
 import { ErrorState } from '@kortix/ui/error-state';
 import Hint from '@kortix/ui/hint';
+import { InfoBanner } from '@kortix/ui/info-banner';
 import Loading from '@kortix/ui/loading';
 import {
   SessionParticipantStack,
@@ -55,19 +63,22 @@ import {
   DotsThreeIcon,
   FilePdfIcon,
   FolderOpenIcon,
+  MapPinIcon,
   PencilSimpleIcon,
   PushPinIcon,
   PushPinSlashIcon,
+  ScribbleIcon,
   ShareNetworkIcon,
   SparkleIcon,
+  WarningIcon,
   XCircleIcon,
   XIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
-import { drivePathToParam } from '@/features/drives/drive-path-param';
+import { drivePathToParam } from '@kortix/ui/files';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
@@ -78,12 +89,52 @@ import {
   ArtifactDiscussionSidebar,
   useArtifactDiscussionState,
 } from './artifact-discussion-sidebar';
+import type { DrawingStroke } from './artifact-drawing';
+import { ArtifactDrawingCanvas } from './artifact-drawing-canvas';
+import { prepareDrawingDraft, type ArtifactDrawingDraft } from './artifact-drawing-draft';
+import { ArtifactDrawingLayer } from './artifact-drawing-layer';
 import { VISIBILITY_ICON, relativeTime } from './artifact-meta';
+import {
+  ArtifactSelectionChip,
+  isCommentShortcut,
+  nextSelectionOffer,
+  selectionOfferKey,
+} from './artifact-selection-chip';
 import { AskAgentSheet } from './ask-agent-sheet';
 import { DocEditor, type DocSaveStatus } from './doc-editor';
 import { ShareArtifactDialog } from './share-artifact-dialog';
+import {
+  useArtifactAnnotations,
+  type ArtifactAnnotationSelection,
+  type ArtifactAnnotationViewport,
+} from './use-artifact-annotations';
 import { useArtifactSelectionCapture } from './use-artifact-selection-capture';
 import { useArtifactUnshare } from './use-artifact-unshare';
+import { rootRem, useElementWidth } from './use-element-width';
+
+/** A pressed mode toggle (pin, draw) in the header's secondary group: inverted ink, so the mode reads at a glance. */
+const MODE_TOGGLE =
+  'aria-pressed:bg-foreground aria-pressed:text-background aria-pressed:hover:bg-foreground/90';
+
+/** An anchor's identity: it equals the key of an offer of the same selection. */
+const anchorKey = (anchor: ArtifactCommentAnchor | null | undefined) =>
+  anchor ? JSON.stringify(anchor) : '';
+
+/** A keyboard target that owns Escape itself: a field, or an open dialog, menu or list. */
+function ownsEscape(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return (
+    target.matches('input, textarea, select, [contenteditable=""], [contenteditable="true"]') ||
+    !!target.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')
+  );
+}
+
+/** The page's key reached the parent only with a real keypress: `userActivation` proves one. */
+function userActivated(): boolean {
+  const activation = (navigator as Navigator & { userActivation?: { isActive: boolean } })
+    .userActivation;
+  return activation ? activation.isActive : true;
+}
 
 /** Saves closer than this show as one row of the history: an editing burst. */
 const BURST_MS = 5 * 60_000;
@@ -155,6 +206,40 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   const artifact = query.data;
   const mutations = useArtifactMutations(projectId);
   const frame = useRef<HTMLDivElement>(null);
+  const [claimedFrame, setClaimedFrame] = useState<HTMLIFrameElement | null>(null);
+  const [annotationMode, setAnnotationMode] = useState<'text' | 'comment'>('text');
+  const [drawingOpen, setDrawingOpen] = useState(false);
+  const [drawingBusy, setDrawingBusy] = useState(false);
+  const [drawingError, setDrawingError] = useState(false);
+  const [drawingViewport, setDrawingViewport] = useState<ArtifactAnnotationViewport | null>(null);
+  const [pendingDrawing, setPendingDrawing] = useState<ArtifactDrawingDraft | null>(null);
+  // The canvas has a stroke: from then on the drawing keeps its viewport and a layout change is stale.
+  const [drawingDirty, setDrawingDirty] = useState(false);
+  // A text selection the page offers: the Comment chip. Selecting text never opens the panel.
+  const [offer, setOffer] = useState<ArtifactAnnotationSelection | null>(null);
+  // The offer the person dismissed (Escape, a click elsewhere): the page sends it again after a
+  // layout, and it stays hidden until the page reports a new gesture (`nextSelectionOffer`).
+  const dismissedOffer = useRef('');
+  // The passage the page itself sent to the composer (its ⌘⌥M). Its composer shows without
+  // keyboard focus: the page can forge the key, and the person may be typing in a page form.
+  const [pageOpenedAnchor, setPageOpenedAnchor] = useState<ArtifactCommentAnchor | null>(null);
+  const chip = useRef<HTMLDivElement>(null);
+  const header = useRef<HTMLElement>(null);
+  const pinButton = useRef<HTMLButtonElement>(null);
+  const drawButton = useRef<HTMLButtonElement>(null);
+  const actionsButton = useRef<HTMLButtonElement>(null);
+  const commentsButton = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
+  const headerWidth = useElementWidth(header);
+  const rem = headerWidth === null ? 16 : rootRem();
+  // Below `sm` (40rem) the header has room for its essentials only: Pin and Draw move into ⋯.
+  const compact = headerWidth !== null && headerWidth < 40 * rem;
+  // Below 48rem the discussion covers the page (ArtifactDiscussionLayout `cover`) instead of narrowing it.
+  const coverLayout = headerWidth !== null && headerWidth < 48 * rem;
+  const drawingRequest = useRef(0);
+  const invalidateDrawingRequest = useCallback(() => {
+    drawingRequest.current++;
+  }, []);
   const [docStatus, setDocStatus] = useState<DocSaveStatus>('saved');
   // Bumped by a conflict's Reload: the editor opens again on the version now in Files.
   const [reloads, setReloads] = useState(0);
@@ -176,9 +261,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   const [renaming, setRenaming] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const versions = useArtifactVersions(projectId, artifactId, historyOpen);
-  const viewUrl = artifact?.version.view_url;
   const viewingOld = !!artifact?.version.id;
-  const frameKey = artifact ? artifactFrameKey(artifact, artifact.version.id) : null;
   const canEdit = !!artifact?.can_edit && !viewingOld;
   const isDoc = artifact?.type === 'doc';
   const sidebar = useOptionalSidebar();
@@ -194,6 +277,31 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     version,
     enabled: discussionEnabled,
   });
+  const annotationVersion =
+    discussionEnabled && artifact && !isDoc ? context.data?.version.commit_id : null;
+  const annotated = useArtifact(
+    annotationVersion ? projectId : null,
+    annotationVersion ? artifactId : null,
+    annotationVersion ?? undefined,
+  );
+  const annotationEnabled = !!annotationVersion;
+  const annotatedUrl = annotationEnabled ? annotated.data?.version.view_url : null;
+  const viewUrl = annotatedUrl
+    ? (() => {
+        const url = new URL(annotatedUrl);
+        url.searchParams.set('annotate', '1');
+        return url.toString();
+      })()
+    : annotationEnabled
+      ? null
+      : artifact?.version.view_url;
+  const frameKey = artifact
+    ? artifactFrameKey(
+        artifact,
+        annotationEnabled ? annotationVersion : artifact.version.id,
+        annotationEnabled,
+      )
+    : null;
   const removal = useArtifactUnshare(
     discussionEnabled
       ? async () => {
@@ -215,6 +323,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   const pendingAnchor = selection.anchor;
   const openVersion = (next: string | undefined) => {
     selection.clear();
+    setAnnotationMode('text');
     setVersion(next);
   };
   const openComments = (comments.data ?? []).filter(
@@ -238,6 +347,212 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     },
     [scope, version, comments.data, clearSelection],
   );
+  /**
+   * Open the composer on an anchor the person chose: a pin, a region, or the Comment chip.
+   * `fromPage`: the page's shortcut chose it, so the composer does not take keyboard focus.
+   */
+  const commentOn = (anchor: ArtifactCommentAnchor, fromPage = false) => {
+    setOffer(null);
+    setPendingDrawing(null);
+    selection.begin();
+    if (!selection.publish(anchor)) return;
+    setPageOpenedAnchor(fromPage ? anchor : null);
+    defaultPanel.current = scope;
+    setDiscussionOpen(true);
+  };
+  const dismissOffer = () => {
+    if (!offer) return false;
+    dismissedOffer.current = selectionOfferKey(offer);
+    setOffer(null);
+    return true;
+  };
+  const focusSoon = (target: HTMLElement | null) =>
+    requestAnimationFrame(() => target?.focus({ preventScroll: true }));
+  const htmlAnnotations = useArtifactAnnotations({
+    enabled: annotationEnabled,
+    frame: claimedFrame,
+    slot: frame,
+    version: annotationVersion,
+    canComment: context.data?.can_comment === true && !version,
+    mode: annotationMode,
+    drawing: drawingOpen,
+    threads: comments.data,
+    focusedThreadId,
+    focusRevision,
+    // Comment mode: a pin or a region is an explicit request to comment there.
+    onCandidate: (anchor) => {
+      if (!drawingOpen) commentOn(anchor);
+    },
+    // Text mode: a selection only offers the Comment chip. The panel opens on the chip or ⌘⌥M.
+    onSelection: (next, moved) => {
+      const result = nextSelectionOffer(
+        next,
+        moved === true,
+        dismissedOffer.current,
+        (key) => drawingOpen || key === anchorKey(selection.anchor),
+      );
+      dismissedOffer.current = result.dismissed;
+      setOffer(result.offer);
+    },
+    // Anything in the page can post these keys. Escape only leaves the chip or pin mode, and a
+    // composer the shortcut opens shows without keyboard focus.
+    onKey: (key) => {
+      if (key === 'escape') escapeAnnotation(true);
+      else if (offer?.state === 'candidate' && userActivated()) commentOn(offer.anchor, true);
+    },
+    onFocus: focusThread,
+    // The page hears "Comment 3": one UI word and the number, never the comment.
+    pinLabel: (n) => t('discussion.pagePinLabel', { number: String(n) }),
+  });
+  const clearCommentSelection = (expected?: ArtifactCommentAnchor) => {
+    selection.clear(expected);
+    setPendingDrawing((current) => (!expected || current?.anchor === expected ? null : current));
+  };
+  const cancelDrawing = () => {
+    drawingRequest.current++;
+    htmlAnnotations.cancelCapture();
+    setDrawingOpen(false);
+    setDrawingBusy(false);
+    setDrawingError(false);
+    setDrawingViewport(null);
+    setDrawingDirty(false);
+    selection.clear();
+  };
+  /** Draw mode docks the panel first: a panel opened after the drawing would narrow the page and hide it. */
+  const startDrawing = () => {
+    clearCommentSelection();
+    setOffer(null);
+    setAnnotationMode('text');
+    setDrawingError(false);
+    setDrawingDirty(false);
+    setDrawingViewport(null);
+    setDrawingOpen(true);
+    defaultPanel.current = scope;
+    // Beside the page the panel opens now; over the page (`cover`) it closes, so the page is in reach.
+    if (coverLayout) setDiscussionOpen(false);
+    else if (!discussionOpen) setDiscussionOpen(true);
+  };
+  const togglePinMode = () => {
+    setOffer(null);
+    if (annotationMode === 'text' && coverLayout) {
+      defaultPanel.current = scope;
+      setDiscussionOpen(false);
+    }
+    setAnnotationMode((mode) => (mode === 'comment' ? 'text' : 'comment'));
+  };
+  /**
+   * Escape, from the parent or the page: the chip, then draw mode, then pin mode. Focus returns to
+   * the mode's button. `fromPage`: the drawing layer covers the page and handles its own Escape,
+   * so an Escape from the page is forged there and the strokes stay.
+   */
+  const escapeAnnotation = (fromPage = false): boolean => {
+    if (dismissOffer()) return true;
+    if (drawingOpen) {
+      if (fromPage) return false;
+      cancelDrawing();
+      focusSoon(compact ? actionsButton.current : drawButton.current);
+      return true;
+    }
+    if (annotationMode === 'comment') {
+      setAnnotationMode('text');
+      focusSoon(compact ? actionsButton.current : pinButton.current);
+      return true;
+    }
+    return false;
+  };
+  // Until the first stroke the drawing follows the page: it takes the layout the page reports at
+  // the frame's current size, so docking the panel never leaves a stale canvas.
+  const annotationViewport = htmlAnnotations.viewport;
+  useEffect(() => {
+    if (!drawingOpen || drawingDirty || !annotationViewport || !claimedFrame) return;
+    if (annotationViewport === drawingViewport) return;
+    if (
+      Math.abs(claimedFrame.clientWidth - annotationViewport.width) > 1 ||
+      Math.abs(claimedFrame.clientHeight - annotationViewport.height) > 1
+    )
+      return;
+    setDrawingViewport(annotationViewport);
+  }, [drawingOpen, drawingDirty, annotationViewport, drawingViewport, claimedFrame]);
+  // The parent's own keys: ⌘⌥M comments on the offered selection; Escape leaves the chip, draw
+  // mode and pin mode. A field, dialog or menu keeps its own Escape.
+  const onKeys = (event: KeyboardEvent) => {
+    if (event.defaultPrevented) return;
+    if (isCommentShortcut(event) && offer?.state === 'candidate') {
+      event.preventDefault();
+      commentOn(offer.anchor);
+    } else if (event.key === 'Escape' && !ownsEscape(event.target) && escapeAnnotation()) {
+      event.preventDefault();
+    }
+  };
+  const keys = useRef(onKeys);
+  const dismiss = useRef(dismissOffer);
+  useLayoutEffect(() => {
+    keys.current = onKeys;
+    dismiss.current = dismissOffer;
+  });
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => keys.current(event);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+  // A press anywhere in the app outside the chip dismisses it. A press in the page reaches the
+  // bridge instead, which reports the selection gone or changed.
+  const hasOffer = !!offer;
+  useEffect(() => {
+    if (!hasOffer) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!chip.current?.contains(event.target as Node)) dismiss.current();
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [hasOffer]);
+  const cancelCapture = htmlAnnotations.cancelCapture;
+  useLayoutEffect(() => {
+    invalidateDrawingRequest();
+    cancelCapture();
+    setDrawingOpen(false);
+    setDrawingBusy(false);
+    setDrawingError(false);
+    setDrawingViewport(null);
+    setDrawingDirty(false);
+    setPendingDrawing(null);
+    setOffer(null);
+    dismissedOffer.current = '';
+    clearSelection();
+    return invalidateDrawingRequest;
+  }, [
+    annotationVersion,
+    claimedFrame,
+    version,
+    context.data?.can_comment,
+    cancelCapture,
+    clearSelection,
+    invalidateDrawingRequest,
+  ]);
+  const finishDrawing = async (strokes: DrawingStroke[]) => {
+    if (drawingBusy || !drawingViewport) return;
+    if (!htmlAnnotations.isCurrentViewport(drawingViewport)) {
+      setDrawingError(true);
+      return;
+    }
+    const request = ++drawingRequest.current;
+    setDrawingBusy(true);
+    setDrawingError(false);
+    selection.begin();
+    const drawing = await prepareDrawingDraft(strokes, drawingViewport, htmlAnnotations);
+    if (drawingRequest.current !== request) return;
+    setDrawingBusy(false);
+    if (!drawing || !htmlAnnotations.isCurrentViewport(drawingViewport)) {
+      selection.clear();
+      setDrawingError(true);
+      return;
+    }
+    if (!selection.publish(drawing.anchor)) return;
+    setPendingDrawing(drawing);
+    setDrawingOpen(false);
+    defaultPanel.current = scope;
+    setDiscussionOpen(true);
+  };
   const requestedThread = search.get('thread');
   const requestedFocus = useRef('');
   useEffect(() => {
@@ -253,38 +568,51 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   const changeDiscussionOpen = (open: boolean) => {
     defaultPanel.current = scope;
     if (!open && selection.status === 'pending') selection.clear();
+    // The panel closes from inside (its close button, Escape): the keyboard returns to the toggle.
+    if (!open && discussionOpen) {
+      const focused = document.activeElement;
+      const inside = !!focused && !!document.getElementById(panelId)?.contains(focused);
+      if (inside || !focused || focused === document.body) focusSoon(commentsButton.current);
+    }
     setDiscussionOpen(open);
   };
   const discussion =
     artifact && discussionEnabled ? (
-      <ArtifactDiscussionSidebar
-        projectId={projectId}
-        artifact={artifact}
-        comments={comments}
-        context={context.data}
-        contextLoading={context.isLoading}
-        contextError={context.isError}
-        onRetryContext={() => void context.refetch()}
-        activity={{
-          items: activity.items,
-          isLoading: activity.isLoading,
-          isError: activity.isError,
-          hasNextPage: activity.hasNextPage,
-          isFetchingNextPage: activity.isFetchingNextPage,
-          olderVersions: activity.olderVersions,
-          onLoadMore: () => void activity.fetchNextPage(),
-          onRetry: () => void activity.refetch(),
-        }}
-        focusedThreadId={focusedThreadId}
-        focusRevision={focusRevision}
-        onFocusThread={focusThread}
-        pendingAnchor={pendingAnchor}
-        onClearAnchor={selection.clear}
-        selectionCapture={selection.status}
-        readOnly={!!version}
-        onOpenVersion={openVersion}
-        state={discussionState}
-      />
+      // The panel's id: the header toggle's `aria-controls`.
+      <div id={panelId} className="flex h-full min-h-0 flex-1 flex-col">
+        <ArtifactDiscussionSidebar
+          projectId={projectId}
+          artifact={artifact}
+          comments={comments}
+          displayThreads={annotationEnabled ? htmlAnnotations.threads : undefined}
+          pinNumbers={annotationEnabled ? htmlAnnotations.pinNumbers : undefined}
+          context={context.data}
+          contextLoading={context.isLoading}
+          contextError={context.isError}
+          onRetryContext={() => void context.refetch()}
+          activity={{
+            items: activity.items,
+            isLoading: activity.isLoading,
+            isError: activity.isError,
+            hasNextPage: activity.hasNextPage,
+            isFetchingNextPage: activity.isFetchingNextPage,
+            olderVersions: activity.olderVersions,
+            onLoadMore: () => void activity.fetchNextPage(),
+            onRetry: () => void activity.refetch(),
+          }}
+          focusedThreadId={focusedThreadId}
+          focusRevision={focusRevision}
+          onFocusThread={focusThread}
+          pendingAnchor={pendingAnchor}
+          pageOpenedAnchor={pageOpenedAnchor}
+          pendingDrawing={pendingDrawing}
+          onClearAnchor={clearCommentSelection}
+          selectionCapture={selection.status}
+          readOnly={!!version}
+          onOpenVersion={openVersion}
+          state={discussionState}
+        />
+      </div>
     ) : null;
 
   if (query.isError) {
@@ -312,6 +640,30 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     : '';
   const rows = historyRows(versions.data ?? []);
   const people = artifact?.participants;
+  // Pin and Draw: an HTML page the person may comment on, at its current version.
+  const annotationControls = annotationEnabled && context.data?.can_comment === true && !version;
+  const annotationReady = htmlAnnotations.status === 'ready';
+  const pinMode = annotationMode === 'comment' && annotationReady;
+  const notReadyHint =
+    htmlAnnotations.status === 'loading'
+      ? t('discussion.annotationLoading')
+      : t('discussion.annotationUnavailable', { refresh: t('refresh'), actions: t('actions') });
+  const pinHint = annotationReady ? t('discussion.annotationModeHint') : notReadyHint;
+  const drawHint = annotationReady || drawingOpen ? t('discussion.draw') : notReadyHint;
+  const commentsLabel =
+    openComments > 0
+      ? t(discussionOpen ? 'discussion.hidePanelCount' : 'discussion.showPanelCount', {
+          count: openComments,
+        })
+      : t(discussionOpen ? 'discussion.hidePanel' : 'discussion.showPanel');
+  const selectionChip =
+    offer &&
+    annotationReady &&
+    annotationMode === 'text' &&
+    !drawingOpen &&
+    htmlAnnotations.viewport
+      ? offer
+      : null;
 
   return (
     <div
@@ -324,6 +676,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
       {/* The project page header (ProjectPageHeader's title-bar classes): a breadcrumb, then quiet actions.
           Embedded in the session panel: the panel's own plain header row. */}
       <header
+        ref={header}
         className={
           embedded
             ? 'flex h-10 shrink-0 items-center gap-1 border-b px-1'
@@ -333,7 +686,10 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
       >
         {embedded ? null : <SidebarToggle />}
         <Breadcrumb
-          className={`${embedded ? '' : 'kx-titlebar-tabs'}flex h-10 min-w-0 flex-1 items-center px-3`}
+          className={cn(
+            !embedded && 'kx-titlebar-tabs',
+            'flex h-10 min-w-0 flex-1 items-center px-3',
+          )}
         >
           <BreadcrumbList className="min-w-0 flex-nowrap gap-1.5 sm:gap-1.5">
             {embedded ? null : (
@@ -492,33 +848,122 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                 </Button>
               ) : null}
             </ButtonGroup>
+            {/* The discussion group: pin, draw (wide header only), and the comments panel. Pin and
+                Draw stay focusable while the page loads (aria-disabled), so their hint explains why. */}
             {discussionEnabled ? (
-              <Hint label={t(discussionOpen ? 'discussion.hidePanel' : 'discussion.showPanel')}>
-                <Button
-                  size="xs"
-                  variant="secondary"
-                  aria-label={t(discussionOpen ? 'discussion.hidePanel' : 'discussion.showPanel')}
-                  aria-expanded={discussionOpen}
-                  onClick={() => changeDiscussionOpen(!discussionOpen)}
-                >
-                  <ChatCircleIcon className="size-3.5" aria-hidden />
-                  {openComments > 0 ? <CountBadge count={openComments} /> : null}
-                </Button>
-              </Hint>
+              <ButtonGroup>
+                {annotationControls && !compact ? (
+                  <Hint label={pinHint}>
+                    <Button
+                      ref={pinButton}
+                      size="icon-sm"
+                      variant="secondary"
+                      aria-label={t('discussion.annotationMode')}
+                      aria-pressed={pinMode}
+                      aria-busy={htmlAnnotations.status === 'loading'}
+                      aria-disabled={!annotationReady || undefined}
+                      className={cn(MODE_TOGGLE, 'aria-disabled:opacity-50')}
+                      onClick={() => {
+                        if (annotationReady) togglePinMode();
+                      }}
+                    >
+                      {htmlAnnotations.status === 'loading' ? (
+                        <Loading className="size-3.5" />
+                      ) : (
+                        <MapPinIcon className="size-3.5" aria-hidden />
+                      )}
+                    </Button>
+                  </Hint>
+                ) : null}
+                {annotationControls && !compact ? (
+                  <Hint label={drawHint}>
+                    <Button
+                      ref={drawButton}
+                      size="icon-sm"
+                      variant="secondary"
+                      aria-label={t('discussion.draw')}
+                      aria-pressed={drawingOpen}
+                      aria-disabled={(!annotationReady && !drawingOpen) || undefined}
+                      className={cn(MODE_TOGGLE, 'aria-disabled:opacity-50')}
+                      onClick={() => {
+                        if (drawingOpen) cancelDrawing();
+                        else if (annotationReady) startDrawing();
+                      }}
+                    >
+                      <ScribbleIcon className="size-3.5" aria-hidden />
+                    </Button>
+                  </Hint>
+                ) : null}
+                <Hint label={commentsLabel}>
+                  <Button
+                    ref={commentsButton}
+                    size={openComments > 0 ? 'xs' : 'icon-sm'}
+                    variant="secondary"
+                    aria-label={commentsLabel}
+                    aria-expanded={discussionOpen}
+                    aria-controls={discussionOpen ? panelId : undefined}
+                    onClick={() => changeDiscussionOpen(!discussionOpen)}
+                  >
+                    <ChatCircleIcon className="size-3.5" aria-hidden />
+                    {openComments > 0 ? (
+                      <CountBadge count={openComments} tone="waiting" aria-hidden />
+                    ) : null}
+                  </Button>
+                </Hint>
+              </ButtonGroup>
             ) : null}
             <ButtonGroup>
               {artifact.can_manage ? (
-                <Button size="xs" variant="secondary" onClick={() => setSharing(true)}>
-                  <ShareNetworkIcon className="size-3.5" aria-hidden /> {t('share')}
-                </Button>
+                compact ? (
+                  <Hint label={t('share')}>
+                    <Button
+                      size="icon-sm"
+                      variant="secondary"
+                      aria-label={t('share')}
+                      onClick={() => setSharing(true)}
+                    >
+                      <ShareNetworkIcon className="size-3.5" aria-hidden />
+                    </Button>
+                  </Hint>
+                ) : (
+                  <Button size="xs" variant="secondary" onClick={() => setSharing(true)}>
+                    <ShareNetworkIcon className="size-3.5" aria-hidden /> {t('share')}
+                  </Button>
+                )
               ) : null}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="icon-sm" variant="secondary" aria-label={t('actions')}>
+                  <Button
+                    ref={actionsButton}
+                    size="icon-sm"
+                    variant="secondary"
+                    aria-label={t('actions')}
+                  >
                     <DotsThreeIcon className="size-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  {annotationControls && compact ? (
+                    <>
+                      <DropdownMenuCheckboxItem
+                        reverse
+                        checked={pinMode}
+                        disabled={!annotationReady}
+                        onCheckedChange={togglePinMode}
+                      >
+                        <MapPinIcon /> {t('discussion.annotationMode')}
+                      </DropdownMenuCheckboxItem>
+                      <DropdownMenuCheckboxItem
+                        reverse
+                        checked={drawingOpen}
+                        disabled={!annotationReady && !drawingOpen}
+                        onCheckedChange={() => (drawingOpen ? cancelDrawing() : startDrawing())}
+                      >
+                        <ScribbleIcon /> {t('discussion.draw')}
+                      </DropdownMenuCheckboxItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  ) : null}
                   {isDoc ? (
                     <DropdownMenuItem onSelect={() => setExporting(true)}>
                       <FilePdfIcon /> {t('exportPdf')}
@@ -529,7 +974,12 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                     </DropdownMenuItem>
                   )}
                   {!isDoc && viewUrl && frameKey ? (
-                    <DropdownMenuItem onSelect={() => reloadFrame(frameKey, viewUrl)}>
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        htmlAnnotations.reset();
+                        reloadFrame(frameKey, viewUrl);
+                      }}
+                    >
                       <ArrowClockwiseIcon /> {t('refresh')}
                     </DropdownMenuItem>
                   ) : null}
@@ -577,9 +1027,10 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
         ) : null}
         {embedded ? (
           <div className="flex shrink-0 items-center">
+            {/* `data-no-panel`: the session's link interceptor would reopen it in this panel. */}
             <Hint label={t('openFullPage')}>
               <Button size="icon-sm" variant="ghost" aria-label={t('openFullPage')} asChild>
-                <Link href={`/projects/${projectId}/artifacts/${artifactId}`}>
+                <Link href={`/projects/${projectId}/artifacts/${artifactId}`} data-no-panel>
                   <ArrowsOutSimpleIcon className="size-3.5" />
                 </Link>
               </Button>
@@ -681,13 +1132,96 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
               </div>
             ) : (
               <div className="bg-muted relative min-w-0 flex-1">
-                {viewUrl ? (
+                {annotationEnabled && annotated.isError ? (
+                  <div className="grid h-full place-items-center p-4">
+                    <ErrorState
+                      title={t('discussion.contextLoadError')}
+                      action={
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void annotated.refetch()}
+                        >
+                          {t('discussion.retry')}
+                        </Button>
+                      }
+                    />
+                  </div>
+                ) : viewUrl ? (
                   <ArtifactFrame
                     ref={frame}
+                    onFrame={setClaimedFrame}
                     frameKey={frameKey!}
                     src={viewUrl}
                     title={artifact.title}
                     className="absolute inset-0 size-full border-0"
+                  />
+                ) : (
+                  <div className="grid h-full place-items-center">
+                    <Loading className="size-4" />
+                  </div>
+                )}
+                {annotationEnabled ? (
+                  <ArtifactDrawingLayer
+                    viewport={htmlAnnotations.viewport}
+                    regions={htmlAnnotations.regions}
+                    threads={htmlAnnotations.threads}
+                    focusedThreadId={focusedThreadId}
+                  />
+                ) : null}
+                {drawingOpen && drawingViewport ? (
+                  <ArtifactDrawingCanvas
+                    viewport={htmlAnnotations.viewport ?? drawingViewport}
+                    busy={drawingBusy}
+                    stale={htmlAnnotations.viewport !== drawingViewport}
+                    labels={{
+                      canvas: t('discussion.draw'),
+                      pen: t('discussion.drawPen'),
+                      arrow: t('discussion.drawArrow'),
+                      rectangle: t('discussion.drawRectangle'),
+                      black: t('discussion.drawBlack'),
+                      red: t('discussion.drawRed'),
+                      blue: t('discussion.drawBlue'),
+                      undo: t('discussion.drawUndo'),
+                      finish: t('discussion.postComment'),
+                      cancel: t('discussion.cancel'),
+                      pageChanged: t('discussion.drawPageChanged'),
+                      limit: t('discussion.drawLimit'),
+                    }}
+                    onFinish={(strokes) => void finishDrawing(strokes)}
+                    onDraftChange={setDrawingDirty}
+                    onCancel={() => {
+                      cancelDrawing();
+                      focusSoon(compact ? actionsButton.current : drawButton.current);
+                    }}
+                  />
+                ) : null}
+                {drawingOpen && drawingError ? (
+                  // A floating surface over the page: the banner's tint needs an opaque ground.
+                  <div className="bg-popover absolute inset-x-3 top-3 rounded-md shadow-md">
+                    <InfoBanner
+                      tone="warning"
+                      icon={WarningIcon}
+                      title={t('discussion.drawPageChanged')}
+                    />
+                  </div>
+                ) : null}
+                {selectionChip ? (
+                  <ArtifactSelectionChip
+                    ref={chip}
+                    rect={selectionChip.rect}
+                    frame={htmlAnnotations.viewport!}
+                    label={
+                      selectionChip.state === 'candidate'
+                        ? t('discussion.commentSelection')
+                        : t('discussion.selectionTooLong', { max: ARTIFACT_TEXT_QUOTE_MAX })
+                    }
+                    hint={t('discussion.commentSelectionHint')}
+                    onComment={
+                      selectionChip.state === 'candidate'
+                        ? () => commentOn(selectionChip.anchor)
+                        : undefined
+                    }
                   />
                 ) : null}
               </div>

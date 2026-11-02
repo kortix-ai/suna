@@ -152,7 +152,6 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
     'sandbox templates template snapshot snapshots builds recipe container machine runtime image',
   'feature-flags':
     'feature flags flag experimental beta preview labs toggles switches early access',
-  upgrades: 'upgrades upgrade migrate migration manifest runner kortix yaml version bump',
   // The two connect tabs (KRTX-1997). PR #9992 added both tabs to
   // `SettingsTab` but left this record without their keys, so the total
   // `Record<SettingsTab, string>` below no longer described every tab. The
@@ -231,12 +230,6 @@ function toPaletteItem(item: RailItem, groupLabel: string): SettingsPaletteItem 
  * Every settings tab this user can reach, grouped exactly as the rail groups
  * it. Groups that lose all their rows disappear whole, so the palette never
  * renders an empty heading.
- *
- * `UPGRADE_ITEM` used to be appended to the last group here. It left the rail
- * with the rest of project configuration, became a section of
- * `/projects/<id>/config`, and came back on 2026-09-02 when that page was
- * retired — so it is a derived row from `railGroups()` like every other tab
- * in this file, with no hand-written registry entry anywhere.
  */
 export function settingsPaletteGroups(
   params: SettingsPaletteParams,

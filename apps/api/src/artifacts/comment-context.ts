@@ -7,21 +7,50 @@ import { loadProjectAgents, resolveUserIdentities } from '../projects/surface';
 import { ArtifactCommentAuthorityError, authorizeArtifactCommentAgent } from './comment-authority';
 import { resolveArtifactCommentSendTarget } from './comment-delivery';
 import { artifactAgentMentionToken, artifactPersonMentionToken } from './comment-tokens';
-import { artifactCommentSendBatch, unaddressedArtifactThreadIds } from './comment-routing-context';
+import { unaddressedArtifactThreadIds } from './comment-routing-context';
 import { ArtifactCommentError, listArtifactCommentThreads, type ArtifactCommentAccess } from './comments-service';
 import { entryVersion, listVersions } from './service';
+import { selectScreenshotSendBatch, screenshotTargetCapability, screenshotReferences, screenshotSizes, screenshotReferenceBudget } from './comment-screenshot-parts';
+import { artifactCommentPrompt } from './comment-prompt';
+import { config } from '../config';
+import { logger } from '../lib/logger';
+import type { ArtifactCommentAnchor } from '@kortix/shared/artifact-comments';
+
+/**
+ * The agent half of the context fails closed on its own. An unreadable agent
+ * manifest (a git outage, a missing repository, a ref that does not resolve, a
+ * malformed file) lists no agent and no Send target. People still read the
+ * context and comment. `rethrowReadErrors` stays on: a failed read is never
+ * replaced by the permissive synthesized manifest.
+ */
+async function readAgentRoster(project: typeof projects.$inferSelect, artifact: ArtifactCommentAccess['artifact']) {
+  try {
+    return await loadProjectAgents(project, { rethrowReadErrors: true });
+  } catch (error) {
+    logger.warn('[artifact-comments] agent manifest unreadable; the comment context lists no agents', {
+      projectId: artifact.projectId,
+      artifactId: artifact.artifactId,
+      errorName: error instanceof Error ? error.name : typeof error,
+      error: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),
+    });
+    return null;
+  }
+}
 
 export async function readArtifactCommentContext(access: ArtifactCommentAccess, actor: Actor, options: { version?: string; agent?: string }) {
   const artifact = access.artifact;
   const historical = options.version !== undefined;
   const [project] = await db.select().from(projects).where(and(eq(projects.projectId, artifact.projectId), eq(projects.accountId, artifact.accountId)));
   if (!project) throw new ArtifactCommentError(404, 'Project not found', 'not_found');
+  // Only a current context a caller can comment in lists agents, so only it reads the manifest.
+  const agentsWanted = !historical && !!access.canComment;
   const [threads, members, manifest, versions] = await Promise.all([
     listArtifactCommentThreads(access, 'all', options.version),
     db.select({ userId: accountMembers.userId }).from(accountMembers).where(eq(accountMembers.accountId, artifact.accountId)),
-    loadProjectAgents(project, { rethrowReadErrors: true }),
+    agentsWanted ? readAgentRoster(project, artifact) : Promise.resolve(null),
     historical ? Promise.resolve([]) : listVersions(artifact),
   ]);
+  const agentsUnavailable = agentsWanted && manifest === null;
   const commitId = options.version ?? versions[0]?.id ?? null;
   const selectedEntry = await entryVersion(artifact, commitId ?? undefined);
   if (historical && !selectedEntry) throw new ArtifactCommentError(404, 'Artifact version not found', 'version_not_found');
@@ -39,12 +68,13 @@ export async function readArtifactCommentContext(access: ArtifactCommentAccess, 
       avatar_url: identity?.avatarUrl ?? null, token: artifactPersonMentionToken(userId, identity?.email, duplicates) }];
   });
   let target: Awaited<ReturnType<typeof resolveArtifactCommentSendTarget>> | null = null;
-  if (!historical && access.canComment) {
+  // The resolver reads the same manifest when the Artifact names no agent: skip it when the read already failed.
+  if (manifest) {
     try { target = await resolveArtifactCommentSendTarget(artifact, actor, access.sessionId, options.agent); }
     catch (error) { if (!(error instanceof ArtifactCommentAuthorityError)) throw error; }
   }
   const agents: Array<{ agent_name: string; name: string; session_id: string | null; token: string }> = [];
-  if (access.canComment && !historical) {
+  if (manifest) {
     for (let index = 0; index < manifest.specs.length; index += 8) {
       const allowed = await Promise.all(manifest.specs.slice(index, index + 8).filter((agent) => agent.enabled).map(async (agent) => {
         try {
@@ -73,8 +103,23 @@ export async function readArtifactCommentContext(access: ArtifactCommentAccess, 
     .innerJoin(artifactCommentThreads, eq(artifactCommentThreads.threadId, artifactComments.threadId))
     .where(and(eq(artifactCommentThreads.artifactId, artifact.artifactId), eq(artifactCommentThreads.projectId, artifact.projectId), isNull(artifactComments.deletedAt))))[0]!.count
     : threads.reduce((count, thread) => count + thread.comments.filter((comment) => !comment.deleted_at).length, 0);
+  const images = threads.flatMap(thread => thread.comments.filter(comment => !comment.deleted_at && !!comment.screenshot_key));
+  const capability = sendThreadIds.length && images.length ? await screenshotTargetCapability(artifact.projectId, target?.descriptor.kind === 'session' ? target.session?.sessionId : null) : { mayNeedImages: false };
+  const imageCounts = new Map(threads.map(thread => [thread.thread_id, thread.comments.filter(comment => !comment.deleted_at && !!comment.screenshot_key).length]));
+  const sizes = images.length ? await screenshotSizes(artifact.projectId, images.map(comment => comment.screenshot_key!)) : new Map<string, number>();
+  const imageBytes = new Map(threads.map(thread => [thread.thread_id, screenshotReferenceBudget(screenshotReferences(artifact,
+    thread.comments.map(comment => ({ commentId: comment.comment_id, screenshotKey: comment.screenshot_key, deletedAt: comment.deleted_at ? new Date(comment.deleted_at) : null })), ''), sizes)]));
+  const textBytes = new Map(threads.map(thread => {
+    const urls = new Map(screenshotReferences(artifact, thread.comments.map(comment => ({ commentId: comment.comment_id, screenshotKey: comment.screenshot_key,
+      deletedAt: comment.deleted_at ? new Date(comment.deleted_at) : null })), config.KORTIX_URL).map(ref => [ref.filename.split('.')[0]!, ref.url]));
+    const text = artifactCommentPrompt({ artifactId: artifact.artifactId, title: artifact.title, path: `${artifact.root}/${artifact.entry}`,
+      version: selectedEntry ?? commitId ?? 'unknown' }, [{ thread_id: thread.thread_id, anchor: thread.anchor as ArtifactCommentAnchor,
+      comments: thread.comments.map(comment => ({ body: comment.deleted_at ? '' : comment.body, author_user_id: comment.author_user_id,
+        author_session_id: comment.author_session_id, ...(urls.has(comment.comment_id) ? { screenshot_url: urls.get(comment.comment_id)! } : {}) })) }]);
+    return [thread.thread_id, Buffer.byteLength(JSON.stringify({ type: 'text', text })) + 1] as const;
+  }));
   return { can_comment: !historical && !!access.canComment, can_moderate: !historical && !!access.viewer.manageAny,
     comment_count: commentCount,
-    people, agents, send_target: target?.descriptor ?? null, ...artifactCommentSendBatch(sendThreadIds),
+    people, agents, agents_unavailable: agentsUnavailable, send_target: target?.descriptor ?? null, ...selectScreenshotSendBatch(sendThreadIds, imageCounts, capability.mayNeedImages, imageBytes, textBytes),
     version: { commit_id: commitId, entry_version: selectedEntry } };
 }

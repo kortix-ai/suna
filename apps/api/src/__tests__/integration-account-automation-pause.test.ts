@@ -1,5 +1,5 @@
 /**
- * Integration test (real PostgreSQL): Pause all automations (KRTX-1721).
+ * Integration test (real PostgreSQL): Pause all triggers (KRTX-1721).
  *
  * One switch per account stops every automatic fire in every project of the
  * account. Proves: the switch records when and who, and resuming clears it; a

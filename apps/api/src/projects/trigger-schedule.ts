@@ -6,7 +6,7 @@ export interface TriggerScheduleSpec {
   slug: string;
   /** `monitor` never schedules — `nextTriggerScheduleSlot` returns null for it,
    *  so the cron sweep's `trigger_type = 'cron'` claim can never see one. */
-  type: 'cron' | 'webhook' | 'event' | 'app';
+  type: 'cron' | 'webhook' | 'event' | 'app' | 'change_request';
   enabled: boolean;
   cron: string | null;
   runAt: string | null;

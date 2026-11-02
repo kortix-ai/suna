@@ -5,7 +5,7 @@ import { create, type ReactTestRenderer } from 'react-test-renderer';
 import { TestUiHost } from '../../test-utils/ui-host';
 import { IntlTestProvider } from '../../test-utils/intl';
 
-let pathname = '/projects/example/customize/reminders';
+let pathname = '/projects/example/admin/loops';
 let settled = true;
 let reminders = false;
 let tabs = ['agent', 'triggers'];
@@ -25,7 +25,7 @@ afterEach(() => {
   act(() => mounted?.unmount());
   mounted = undefined;
   replace.mockClear();
-  pathname = '/projects/example/customize/reminders';
+  pathname = '/projects/example/admin/loops';
   settled = true;
   reminders = false;
   tabs = ['agent', 'triggers'];
@@ -43,31 +43,17 @@ function render() {
   });
   return JSON.stringify(mounted?.toJSON());
 }
-describe('bookmarked Reminders tab', () => {
-  test('flag-off projects show an honest gate instead of silently replacing the URL with Agents', () => {
-    const output = render();
-    expect(output).toContain('is off for this project');
-    expect(output).not.toContain('Reminder inventory');
-    expect(replace).not.toHaveBeenCalled();
-  });
-  test('waits for access to settle before showing a gate', () => {
-    settled = false;
+// The Loops page and its `reminders` flag gate were removed on 2026-10-28: a
+// bookmarked `/admin/loops` is the Triggers page, which Project admin gates
+// on the Triggers rule (`project-admin-sections.ts`), not on this gate.
+describe('bookmarked Loops address', () => {
+  test('is not gated on the reminders flag any more', () => {
+    expect(render()).toContain('Reminder inventory');
     expect(render()).not.toContain('is off for this project');
     expect(replace).not.toHaveBeenCalled();
   });
-  test('enabled and authorized projects still render the reminders inventory', () => {
-    reminders = true;
-    tabs.push('reminders');
-    expect(render()).toContain('Reminder inventory');
-    expect(replace).not.toHaveBeenCalled();
-  });
-  test('permission denial with the flag enabled keeps the shared access fallback', () => {
-    reminders = true;
-    expect(render()).not.toContain('Reminder inventory');
-    expect(replace).toHaveBeenCalledWith('/projects/example/customize/agents');
-  });
   test('other denied tabs keep the shared access fallback', () => {
-    pathname = '/projects/example/customize/secrets';
+    pathname = '/projects/example/admin/secrets';
     render();
     expect(replace).toHaveBeenCalledWith('/projects/example/customize/agents');
   });

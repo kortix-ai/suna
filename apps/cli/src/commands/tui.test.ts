@@ -89,7 +89,9 @@ describe('kortix tui — flags', () => {
       newSession: false,
       terminal: false,
       noSidebar: false,
+      sidebar: false,
       mouse: false,
+      noMouse: false,
       host: 'cloud',
       project: 'p1',
       session: 's1',
@@ -104,7 +106,9 @@ describe('kortix tui — flags', () => {
       newSession: false,
       terminal: false,
       noSidebar: false,
+      sidebar: false,
       mouse: false,
+      noMouse: false,
       project: 'p2',
       session: 's2',
     });
@@ -130,11 +134,18 @@ describe('kortix tui — flags', () => {
     expect(tuiChildEnv(parseTuiFlags([]), {})).toEqual({});
   });
 
-  test('--no-sidebar and --mouse travel as env too', () => {
-    const flags = parseTuiFlags(['--no-sidebar', '--mouse']);
-    expect(flags).toMatchObject({ noSidebar: true, mouse: true });
-    expect(tuiChildEnv(flags, {})).toEqual({ KORTIX_TUI_SIDEBAR: '0', KORTIX_TUI_MOUSE: '1' });
-    expect(parseTuiFlags([])).toMatchObject({ noSidebar: false, mouse: false });
+  test('--sidebar travels as KORTIX_TUI_SIDEBAR=1', () => {
+    const flags = parseTuiFlags(['--sidebar']);
+    expect(flags).toMatchObject({ sidebar: true, noSidebar: false });
+    expect(tuiChildEnv(flags, {}).KORTIX_TUI_SIDEBAR).toBe('1');
+  });
+
+  test('--no-sidebar and --no-mouse travel as env too; --mouse (the default now) is accepted and sends nothing', () => {
+    const flags = parseTuiFlags(['--no-sidebar', '--no-mouse']);
+    expect(flags).toMatchObject({ noSidebar: true, noMouse: true });
+    expect(tuiChildEnv(flags, {})).toEqual({ KORTIX_TUI_SIDEBAR: '0', KORTIX_TUI_MOUSE: '0' });
+    expect(tuiChildEnv(parseTuiFlags(['--mouse']), {})).toEqual({});
+    expect(parseTuiFlags([])).toMatchObject({ noSidebar: false, mouse: false, noMouse: false });
   });
 
   test('-h and --help both ask for help; --uninstall is its own verb', () => {

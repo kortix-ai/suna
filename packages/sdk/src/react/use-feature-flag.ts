@@ -22,6 +22,7 @@ const GRADUATED_FEATURE_FLAG_KEYS: ReadonlySet<FeatureFlagKey> = new Set([
   'apps',
   'llm_gateway',
   'pi_harness',
+  'genui',
   'agentmail_email',
   'connectors_v2',
   'connectors_api_discover',
@@ -50,7 +51,7 @@ export interface FeatureFlagState {
  *
  * The one exception is a graduated key (`review_center`, `agent_tunnel`,
  * `session_transcript_history`, `teams`, `config_releases`, `apps`,
- * `llm_gateway`, `pi_harness`, `agentmail_email`, `connectors_v2`, `connectors_api_discover`): it reports `enabled: true` for every project, because the
+ * `llm_gateway`, `pi_harness`, `genui`, `agentmail_email`, `connectors_v2`, `connectors_api_discover`): it reports `enabled: true` for every project, because the
  * feature no longer has an off state.
  */
 export function useFeatureFlag(

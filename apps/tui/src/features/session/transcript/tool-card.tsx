@@ -7,15 +7,19 @@
  * here instead of silently rendering nothing.
  *
  * Every card is: one status line (glyph + title), then at most a handful of
- * detail lines. A terminal row is expensive, so every body is bounded.
+ * detail lines. A terminal row is expensive, so every body is bounded. A
+ * `workflow` call that carries its run draws as `WorkflowCard` instead.
  */
 
-import { type ToolView, type ToolViewModel, toolViewModel } from '@kortix/sdk';
+import { type ToolView, type ToolViewModel, parseWorkflowRun, toolViewModel, parseKortixToolResult } from '@kortix/sdk';
 
 import { clip, headLines, tailLines, toUnifiedDiff } from '../../../lib/turn-layout.ts';
 import { theme } from '../../../theme.ts';
 import { Spinner } from '../../../ui/index.ts';
 import { transcriptSyntaxStyle } from './parts/text-part.tsx';
+import { AgentRow } from './agent-row.tsx';
+import { ResultCard } from './result-card.tsx';
+import { WorkflowCard, isWorkflowCall } from './workflow-card.tsx';
 
 /** Shell stdout lines shown on a card. The command's tail is the part that
  *  says what happened; the head is usually a banner. */
@@ -69,7 +73,7 @@ function ShellBody({
   return (
     <box flexDirection="column">
       <text fg={theme.dim}>
-        <span fg={theme.accent}>{'  $ '}</span>
+        <span fg={theme.dim}>{'  $ '}</span>
         {clip(model.command, body - 4)}
       </text>
       <More hidden={hidden} />
@@ -258,7 +262,15 @@ export interface ToolCardProps {
 }
 
 export function ToolCard({ tool, width }: ToolCardProps) {
+  // A workflow call whose metadata is a run draws as the run; any other stays the generic card.
+  const run = isWorkflowCall(tool) ? parseWorkflowRun(tool.metadata) : null;
+  if (run) return <WorkflowCard tool={tool} run={run} width={width} />;
   const model = toolViewModel(tool);
+  // An `agent` call is a live row (its child's last step, its report), not a card.
+  if (model.kind === 'task') return <AgentRow tool={tool} model={model} width={width} />;
+  // A Kortix platform tool answers with a card written for people: draw that, not its JSON.
+  const result = tool.status === 'done' ? parseKortixToolResult(tool.outputText ?? tool.output, tool.name) : null;
+  if (result) return <ResultCard result={result} width={width} />;
   return (
     <box flexDirection="column">
       <CardHeader tool={tool} width={width} />

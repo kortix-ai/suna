@@ -17,12 +17,7 @@ import {
 } from './agents';
 import { parseManifestString } from './triggers';
 
-const v2 = (block: string) =>
-  parseManifestString(
-    `kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n${block}`,
-    'yaml',
-    'kortix.yaml',
-  );
+const v2 = (block: string) => parseManifestString(`default_agent: w\nagents:\n  w:\n${block}`, 'kortix.yaml');
 
 describe('characterization — governed grant resolution pins', () => {
   test('a concrete agent resolves to its declared grant', () => {
@@ -97,17 +92,16 @@ describe('governed grants canonicalize identically (the intended behavior change
   });
 });
 
-describe('v3 declared agent grants and model', () => {
-  test('parses YAML agent behavior without treating its map as a v1 list', () => {
-    const manifest = parseManifestString(`kortix_version: 3
-default_agent: writer
+describe('declared agent grants and model', () => {
+  test('parses an agent block\'s behavior and grants', () => {
+    const manifest = parseManifestString(`default_agent: writer
 agents:
   writer:
     model: test/model
     prompt: Be concise.
     connectors: [github]
     secrets: [KEY]
-`, 'yaml', 'kortix.yaml');
+`, 'kortix.yaml');
     const loaded = extractAgents(manifest);
     expect(loaded.errors).toEqual([]);
     expect(loaded.defaultAgent).toBe('writer');

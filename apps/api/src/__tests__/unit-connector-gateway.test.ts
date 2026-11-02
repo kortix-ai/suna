@@ -857,7 +857,7 @@ describe('handleCall — approval enrichment and content binding', () => {
 });
 
 describe('handleCall — layered policies (project → connector → default)', () => {
-  test('project [[policies]] block wins even when connector allows', async () => {
+  test('a project policies block wins even when connector allows', async () => {
     // Connector says "always_run *" — but project says "*.delete*" → block.
     // Project wins (admin trust property).
     const { deps, fetchCalls } = makeDeps({
@@ -875,7 +875,7 @@ describe('handleCall — layered policies (project → connector → default)', 
     expect(fetchCalls).toHaveLength(0);
   });
 
-  test('project [[policies]] sees the fully-qualified path (slug.path)', async () => {
+  test('project policies see the fully-qualified path (slug.path)', async () => {
     // Project pattern is "stripe.*" — must include connector slug.
     const { deps } = makeDeps({
       projectPolicies: [{ match: 'stripe.*', action: 'require_approval' }],

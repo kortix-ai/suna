@@ -5,7 +5,6 @@ import { useTranslations } from '../../i18n';
 
 import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
 import {
-  isMetaCoordinatorSession,
   matchesSourceFilters,
   matchesStatusFilters,
   sessionCanBeStopped,
@@ -50,6 +49,7 @@ import {
 import { SessionsEmptyState } from '../sessions/sessions-empty-state';
 import { RenameSessionModal } from './modal/rename-session-modal';
 import { SessionDeleteModal } from '../../session/actions/session-delete-modal';
+import { subagentTitle } from '../../session/agents/agent-model';
 import { SessionLabelsModal } from './modal/session-labels-modal';
 import { ShareSessionModal } from './modal/share-session-modal';
 import {
@@ -146,7 +146,6 @@ import {
   PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
-  SparkleIcon,
   TargetIcon,
   SquareIcon as Square,
   TagIcon,
@@ -156,7 +155,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useUiPathname, useUiRouter, useUiSearchParams, useUiViewerId } from '../../providers/ui-provider';
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSessionListActions } from '../../session/actions/use-session-list-actions';
 import { Separator } from '../../primitives/separator';
 
@@ -198,6 +197,8 @@ const SESSION_MENU_TRIGGER_TOUCH_CLASS = cn(
 
 /** The Pinned section's id in the collapsed-sections store: open unless closed. */
 const PINNED_SECTION_ID = 'section:pinned';
+/** The whole Sessions list, collapsed from its header (same store as the sections). */
+const SESSIONS_SECTION_ID = 'section:sessions';
 
 /** The newest change requests the session briefs read: one server page. */
 const SIDEBAR_CHANGE_REQUEST_LIMIT = 50;
@@ -357,6 +358,31 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     if (activeSection) setExpanded(projectId, `section:${activeSection}`, true);
   }, [projectId, activeParentId, activeSection, setExpanded]);
 
+  // The session you are in opens when it spawns a session, so the new row is
+  // in view. Only a rise while you watch opens it: a row you closed stays
+  // closed on every later read.
+  const activeChildCount =
+    [sessions, pinnedQuery.sessions, sharedQuery.sessions, automatedQuery.sessions]
+      .flat()
+      .find((session) => session.session_id === activeSessionId)?.child_count ?? null;
+  const seenChildCount = useRef<{ sessionId: string | null; count: number | null }>({
+    sessionId: null,
+    count: null,
+  });
+  useEffect(() => {
+    const seen = seenChildCount.current;
+    if (
+      activeSessionId &&
+      seen.sessionId === activeSessionId &&
+      seen.count !== null &&
+      activeChildCount !== null &&
+      activeChildCount > seen.count
+    ) {
+      setExpanded(projectId, activeSessionId, true);
+    }
+    seenChildCount.current = { sessionId: activeSessionId ?? null, count: activeChildCount };
+  }, [projectId, activeSessionId, activeChildCount, setExpanded]);
+
   // The brief is a session record, not a Review Center inbox. It therefore
   // loads every CR state, not only the ones awaiting review: the newest
   // SIDEBAR_CHANGE_REQUEST_LIMIT of them, which belong to the recent sessions
@@ -500,7 +526,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               beginSessionSwitch(session.session_id);
             }
           }}
-          displayTitle={getSessionDisplayTitle(session)}
+          displayTitle={nested ? subagentTitle(getSessionDisplayTitle(session)) : getSessionDisplayTitle(session)}
           inSharedGroup={inSharedGroup}
           spawned={nested}
           subagentCount={children.length}
@@ -765,15 +791,25 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col space-y-px">
-      <SessionListHeader
-        projectId={projectId}
-        sessions={sessions}
-        reviewCountBySession={needsYouBySession}
-        onMenuOpenChange={holdPeek}
-        onNewGroup={groupsEnabled ? () => setGroupCreate({ fileSessionId: null }) : undefined}
-      />
-
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{renderBody()}</div>
+      {/* The header collapses the whole list: Pinned, the time or status
+          sections, Shared, Automated. Open by default; the choice persists. */}
+      <Disclosure
+        open={!collapsedSectionIds.has(SESSIONS_SECTION_ID)}
+        onOpenChange={() => toggleSectionCollapsed(projectId, SESSIONS_SECTION_ID)}
+        className="group/sessions flex min-h-0 flex-1 flex-col space-y-px"
+        transition={{ duration: 0.15, ease: 'easeOut' }}
+      >
+        <SessionListHeader
+          projectId={projectId}
+          sessions={sessions}
+          reviewCountBySession={needsYouBySession}
+          onMenuOpenChange={holdPeek}
+          onNewGroup={groupsEnabled ? () => setGroupCreate({ fileSessionId: null }) : undefined}
+        />
+        <DisclosureContent className="flex min-h-0 flex-1 flex-col" contentClassName="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {renderBody()}
+        </DisclosureContent>
+      </Disclosure>
 
       <ShareSessionModal
         projectId={projectId}
@@ -832,9 +868,10 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
  *  — because everything it needs (the session list, the review summary, the
  *  filter facets) is already read by `ProjectSessionList`; hoisting it up meant
  *  a second `qk.project.sessions(projectId)` query and two files owning the
- *  same horizontal padding. The label opens the full sessions page; the `⋯`
- *  opens the nested Grouping/Ordering/Show/Filters menu (`SessionFilterMenu`)
- *  and appears whenever there is at least one session. */
+ *  same horizontal padding. The label is the trigger of the list's disclosure
+ *  (a caret on hover, the sidebar row's rounded hover fill); the full sessions
+ *  page is the first item of the `⋯` menu (`SessionFilterMenu`), which appears
+ *  whenever there is at least one session. */
 function SessionListHeader({
   projectId,
   sessions,
@@ -851,26 +888,22 @@ function SessionListHeader({
 }) {
   const t = useTranslations('sidebar');
   const tGroups = useTranslations('sidebar.sessionGroups');
-  const sessionsHref = uiRoutes().sessions(projectId);
   return (
     <div
       className={cn(
-        'flex w-full shrink-0 flex-row items-center gap-1 px-2',
+        'group/sessions-header hover:bg-sidebar-row flex w-full shrink-0 flex-row items-center gap-1 rounded-md px-2 transition-colors',
         SESSION_ROW_HEIGHT_CLASS,
       )}
     >
-      {sessionsHref ? (
-        <HoverPrefetchLink
-          href={sessionsHref}
-          className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium"
-        >
+      <DisclosureTrigger>
+        <div className="text-muted-foreground group-hover/sessions-header:text-sidebar-foreground flex min-w-0 flex-1 cursor-pointer flex-row items-center gap-1 self-stretch text-sm font-medium focus-visible:outline-none">
           <span className="truncate">{t('sessions')}</span>
-        </HoverPrefetchLink>
-      ) : (
-        <span className="text-muted-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium">
-          <span className="truncate">{t('sessions')}</span>
-        </span>
-      )}
+          <CaretRightIcon
+            aria-hidden
+            className="duration-normal size-3 shrink-0 opacity-0 transition-transform ease-out group-hover/sessions-header:opacity-100 group-data-[state=open]/sessions:rotate-90"
+          />
+        </div>
+      </DisclosureTrigger>
       {onNewGroup && (
         <Hint side="top" label={tGroups('newGroup')}>
           <Button
@@ -1380,7 +1413,6 @@ function ProjectSessionRow({
   };
 
   const source = sessionSource(session, tI18nComplete);
-  const isMeta = isMetaCoordinatorSession(session);
   // The conversation the runtime can fork: the pinned root conversation id,
   // not the project-session id — `POST /session/{id}/fork` addresses the
   // runtime's own id space (`ses_…`). canFork already guarantees one.
@@ -1431,14 +1463,6 @@ function ProjectSessionRow({
       </div>
 
       <SessionGoalMark projectId={session.project_id} sessionId={session.session_id} />
-
-      {isMeta && (
-        <Hint side="top" label={t('metaCoordinator')}>
-          <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center">
-            <SparkleIcon className="size-3.5" weight="fill" />
-          </span>
-        </Hint>
-      )}
 
       <span className="min-w-0 flex-1">
         <SessionTitle title={displayTitle} className={cn('min-w-0', isActive && 'font-medium')} />

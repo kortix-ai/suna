@@ -18,7 +18,7 @@ setTestEnv('PLATINUM_API_KEY', 'pt_test_key');
 const { templateRegionResident } = await import('./builder');
 type Prepare = NonNullable<NonNullable<Parameters<typeof templateRegionResident>[4]>['prepare']>;
 
-const ON = { experimental: { us_region: true } };
+const ON = { experimental: { us_region: true, volumes: false } };
 const saved = process.env.KORTIX_PLATINUM_US_REGION;
 afterEach(() => {
   if (saved === undefined) delete process.env.KORTIX_PLATINUM_US_REGION;
@@ -51,7 +51,7 @@ test('a copy still running answers false, so a boot serves the last ready image'
 test('home-region projects and other providers never ask Platinum', async () => {
   process.env.KORTIX_PLATINUM_US_REGION = 'us-east';
   const { calls, prepare } = prepareSpy('ready');
-  expect(await templateRegionResident('p1', 'platinum', 'kortix-tpl-new', 3_000, { readMetadata: async () => ({}), prepare })).toBe(true);
+  expect(await templateRegionResident('p1', 'platinum', 'kortix-tpl-new', 3_000, { readMetadata: async () => ({ experimental: { volumes: false } }), prepare })).toBe(true);
   expect(await templateRegionResident('p1', 'daytona', 'kortix-tpl-new', 3_000, { readMetadata: async () => ON, prepare })).toBe(true);
   expect(calls).toEqual([]);
 });

@@ -46,16 +46,17 @@ kortix marketplace show <id> --json           # inspect one item: type, files, s
    - a `kortix.yaml` at the repo root → a **project** (agents + skills + tools +
      config),
    - a `SKILL.md` → a **skill**,
-   - an agent definition (an `agents/*.md`) → an **agent**,
+   - an agent prompt (an `agents/*.md`) → an **agent**,
    - a tool file (a `tools/*.ts`) → a **tool**.
 3. **Merge what fits into this project**, in the right place. Every file
    reaches an agent only through `kortix.yaml`:
    - skills → `skills/<name>/`, registered as `skills: { <name>: skills/<name> }`
      and added to the `skills` grant of each agent that should load it,
    - agents → the prompt in `agents/<name>.md`, plus an `agents.<name>` block
-     with `prompt_file: agents/<name>.md` and its model, permission and grants,
+     with `prompt_file: agents/<name>.md` and its model, permission and grants
+     (`tools` included),
    - tools → `tools/<name>.ts`, registered as `tools: { <name>: tools/<name>.ts }`.
-     Every agent gets it unless its `agents.<name>.tools` narrows the list,
+     An agent gets it when its `agents.<name>.tools` grant includes it,
    - for a **whole project**: pull in its skills/agents/tools and reconcile its
      `kortix.yaml` into this project's (merge registries, connectors, triggers
      and agents — never blindly overwrite the user's manifest). Use judgment;

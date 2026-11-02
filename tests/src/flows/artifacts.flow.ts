@@ -9,6 +9,7 @@ import type { FlowContext } from '../core/types';
 import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
 import { CliSandbox, type CliResult } from '../fixtures/cli';
 import { bindDatabaseSessionCredential, createDatabaseSession } from '../fixtures/database-project';
+import { localApiUsesTestProfile } from '../core/local-stack';
 
 const LIST = '/v1/projects/:projectId/artifacts';
 const SHARE = '/v1/projects/:projectId/artifacts/share';
@@ -39,8 +40,8 @@ async function enableArtifacts(ctx: FlowContext, projectId: string): Promise<boo
   return r.json<{ experimental: Record<string, boolean> }>().experimental.artifacts === true;
 }
 
-async function get(url: string) {
-  const res = await fetch(url, { redirect: 'manual' });
+async function get(url: string, headers?: HeadersInit) {
+  const res = await fetch(url, { redirect: 'manual', headers });
   return { status: res.status, headers: res.headers, text: await res.text() };
 }
 
@@ -57,6 +58,7 @@ flow(
     timeoutMs: 300_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
+      'GET /v1/drives',
       'GET /v1/projects/:projectId/link-preview',
       `GET ${TYPES}`, `GET ${LIST}`, `POST ${LIST}`, `POST ${SHARE}`, `GET ${ONE}`, `PUT ${ONE}`, `PATCH ${ONE}`, `DELETE ${ONE}`,
       `PUT ${PIN}`, `DELETE ${PIN}`, `GET ${VERSIONS}`, `POST ${RESTORE}`, `GET ${CONTENT}`,
@@ -76,7 +78,8 @@ flow(
     let page = '';
     const one = (artifactId = doc) => ({ params: { projectId: project.id, artifactId } });
 
-    await ctx.step('ANON → 401; flag off (the default) → 403 feature_disabled', async () => {
+    await ctx.step('ANON → 401; explicitly disabled flag → 403 feature_disabled', async () => {
+      (await owner.patch('/v1/projects/:projectId/features', { feature: 'artifacts', enabled: false }, { params: p })).status(200);
       (await ctx.client.as(ctx.P.ANON).get(LIST, { params: p })).status(401);
       (await owner.get(LIST, { params: p })).status(403).body().has('$.code', 'feature_disabled');
     });
@@ -87,6 +90,20 @@ flow(
       });
       return;
     }
+    const providerBase = process.env.PLATINUM_API_URL?.replace(/\/+$/, '');
+    const providerKey = process.env.PLATINUM_API_KEY;
+    const storageDisabled = ctx.env.target === 'local' && !ctx.env.capabilities.sandbox && await localApiUsesTestProfile(ctx.env.apiUrl);
+    if (!storageDisabled && (!providerBase || !providerKey || providerKey.startsWith('encrypted:'))) throw new Error('ART-1 needs decrypted Files credentials for owned-volume cleanup');
+    const provider = (method: string, path: string) => fetch(`${providerBase}${path}`, {
+      method, headers: { Authorization: `Bearer ${providerKey}` }, redirect: 'error', signal: AbortSignal.timeout(30_000),
+    });
+    let volumeName = '';
+    try {
+    await ctx.step('capture the owned project Files volume identity before any publish', async () => {
+      const drives = (await owner.get('/v1/drives', { query: p })).status(200).json<{ drives: { driveId: string }[] }>().drives;
+      if (drives.length !== 1) throw new Error(`Expected one owned project drive, got ${drives.length}`);
+      volumeName = `kd-${drives[0]!.driveId.replace(/-/g, '').slice(0, 20)}`;
+    });
 
     await ctx.step('GET types → doc and html, each with a format and a starter', async () => {
       const types = (await owner.get(TYPES, { params: p })).status(200).json<{ types: { type: string; starter: string; format: string }[] }>().types;
@@ -102,6 +119,11 @@ flow(
     let storage = true;
     await ctx.step('OWNER publishes index.md (+ notes.md) → 201: a doc, private, stored as a folder in their folder in Files, titled by its heading (503 without volume storage)', async () => {
       const r = await owner.post(LIST, { files: { 'index.md': { content: DOC_V1 }, 'notes.md': { content: '# Notes\n' } } }, { params: p });
+      if (storageDisabled) {
+        r.status(503).body().has('$.code', 'drive_storage_unavailable');
+        storage = false;
+        return;
+      }
       if (r.statusCode === 503) {
         r.body().has('$.code', 'drive_storage_unavailable');
         storage = false;
@@ -143,6 +165,44 @@ flow(
       if ((await get(`${a.view_url}nope.js`)).status !== 404) throw new Error('unknown path served');
     });
 
+    await ctx.step('signed HTML annotate=1 injects one bridge only with comments enabled; CSP is unchanged, source validators are removed, public/doc/CSS views stay unchanged', async () => {
+      const a = (await owner.get(ONE, one(page))).status(200).json<Detail>();
+      const annotatedUrl = `${a.view_url}?annotate=1`;
+      const off = await get(annotatedUrl);
+      if (off.status !== 200 || off.text.includes('id="kortix-annotate.js"')) throw new Error('flag-off signed page was annotated');
+      (await owner.patch('/v1/projects/:projectId/features', { feature: 'artifact_comments', enabled: true }, { params: p })).status(200).body().has('$.experimental.artifact_comments', true);
+      const normal = await get(a.view_url);
+      const annotated = await get(annotatedUrl, { Range: 'bytes=0-3' });
+      if (normal.status !== 200 || annotated.status !== 200 || !annotated.text.includes('<h1>Deck</h1>')) throw new Error('annotated HTML is not the full saved page');
+      if (annotated.text.split('id="kortix-annotate.js"').length !== 2 || normal.text.includes('id="kortix-annotate.js"')) throw new Error('signed annotation script count');
+      const bareAnnotated = await get(`${a.view_url.replace(/\/$/, '')}?annotate=1`);
+      if (bareAnnotated.status !== 301 || !bareAnnotated.headers.get('location')?.endsWith('/?annotate=1')) throw new Error('signed redirect dropped annotation opt-in');
+      if (annotated.headers.get('content-security-policy') !== normal.headers.get('content-security-policy')) throw new Error('annotation changed CSP');
+      if (!normal.headers.get('etag') || annotated.headers.get('cache-control') !== 'private, no-store') throw new Error('source ETag or annotation cache contract');
+      for (const name of ['etag', 'content-length', 'content-range', 'accept-ranges', 'last-modified']) {
+        if (annotated.headers.has(name)) throw new Error(`annotation retained source ${name}`);
+      }
+      if ((await get(`${a.view_url}?annotate=0`)).text.includes('id="kortix-annotate.js"')) throw new Error('nonliteral opt-in annotated');
+      const css = await get(`${a.view_url}style.css`, { Range: 'bytes=0-3' });
+      const annotatedCss = await get(`${a.view_url}style.css?annotate=1`, { Range: 'bytes=0-3' });
+      if (css.status !== annotatedCss.status || css.text !== annotatedCss.text || annotatedCss.text.includes('kortix-annotate.js')) throw new Error('annotation changed ranged CSS');
+      for (const name of ['etag', 'content-range', 'content-type']) {
+        if (css.headers.get(name) !== annotatedCss.headers.get(name)) throw new Error(`annotation changed CSS ${name}`);
+      }
+      const docView = (await owner.get(ONE, one())).status(200).json<Detail>();
+      const annotatedDoc = await get(`${docView.view_url}?annotate=1`);
+      if (annotatedDoc.status !== 200 || !annotatedDoc.text.includes('class="kx-doc"') || annotatedDoc.text.includes('id="kortix-annotate.js"')) throw new Error('a doc view received the HTML bridge');
+      if ((await get(`${a.view_url.replace(/\/s\/[^.]+/, '/s/forged')}?annotate=1`)).status !== 404) throw new Error('a forged annotation token served');
+      const publicPage = (await owner.patch(ONE, { visibility: 'public' }, one(page))).status(200).json<Detail>();
+      if (!publicPage.public_content_url) throw new Error('public HTML lacks its URL');
+      const publicView = await get(`${publicPage.public_content_url}?annotate=1`);
+      const publicMeta = await get(`${ctx.env.apiUrl}/artifacts/meta/${page}?annotate=1`);
+      if (publicView.status !== 200 || publicView.text.includes('id="kortix-annotate.js"') || publicMeta.status !== 200 || JSON.parse(publicMeta.text).artifact_id !== page) throw new Error('public annotation opt-in changed the public page or metadata');
+      (await owner.patch(ONE, { visibility: 'private' }, one(page))).status(200);
+      (await owner.patch('/v1/projects/:projectId/features', { feature: 'artifact_comments', enabled: false }, { params: p })).status(200);
+      if ((await get(annotatedUrl)).text.includes('id="kortix-annotate.js"')) throw new Error('disabling comments kept annotation active');
+    });
+
     await ctx.step('a private artifact is invisible to a project member: list leaves it out, GET → 404; NONMEMBER → 403/404', async () => {
       // Each API process caches membership up to 15 s: wait until the new member is let in.
       const deadline = Date.now() + 45_000;
@@ -180,6 +240,23 @@ flow(
       const list = (await asMember.get(LIST, { params: p })).status(200).json<{ artifacts: Detail[] }>().artifacts;
       if (!list.some((x) => x.artifact_id === doc)) throw new Error('member does not list a project artifact');
       (await asMember.post(SHARE, { path: docPath }, { params: p })).status(404);
+    });
+
+    await ctx.step('binding: published by a person → no space, no agent; PATCH space binds it; list ?space with the space\'s agents finds it, ?unbound leaves it out; a bad slug → 400; the member (no manage) → 403', async () => {
+      const before = (await owner.get(ONE, one())).status(200).json<Detail & { space: string | null; agent: string | null }>();
+      if (before.space !== null || before.agent !== null) throw new Error(`a person's publish got a binding: ${before.space} ${before.agent}`);
+      const bound = (await owner.patch(ONE, { space: 'ops', agent: 'closer' }, one())).status(200).json<{ space: string | null; agent: string | null }>();
+      if (bound.space !== 'ops' || bound.agent !== 'closer') throw new Error(JSON.stringify(bound));
+      const inSpace = (await owner.get(LIST, { params: p, query: { space: 'ops', agent: 'closer' } })).status(200).json<{ artifacts: Detail[] }>().artifacts;
+      if (!inSpace.some((x) => x.artifact_id === doc)) throw new Error('the space filter misses a bound artifact');
+      const other = (await owner.get(LIST, { params: p, query: { space: 'sales' } })).status(200).json<{ artifacts: Detail[] }>().artifacts;
+      if (other.some((x) => x.artifact_id === doc)) throw new Error('another space lists it');
+      const unbound = (await owner.get(LIST, { params: p, query: { unbound: 1 } })).status(200).json<{ artifacts: Detail[] }>().artifacts;
+      if (unbound.some((x) => x.artifact_id === doc)) throw new Error('?unbound lists a bound artifact');
+      (await owner.patch(ONE, { space: 'Not A Slug' }, one())).status(400);
+      (await asMember.patch(ONE, { space: 'sales' }, one())).status(403).body().has('$.code', 'artifact_read_only');
+      // Back to project-wide: the steps below read the artifact as before.
+      (await owner.patch(ONE, { space: null, agent: null }, one())).status(200);
     });
 
     await ctx.step('saving with base_version writes the file in Files; a save from the old version → 409 version_conflict', async () => {
@@ -247,6 +324,12 @@ flow(
       (await owner.del(ONE, one(again.artifact_id))).status(200);
       (await owner.del(ONE, one(page))).status(200);
     });
+    } finally {
+      if (volumeName && !storageDisabled) await ctx.step('delete only the owned Files volume → 204 and provider read-back → 404', async () => {
+        if ((await provider('DELETE', `/v1/volumes/${volumeName}?missing_ok=true`)).status !== 204) throw new Error('Owned Files volume deletion failed');
+        if ((await provider('GET', `/v1/volumes/${volumeName}`)).status !== 404) throw new Error('Owned Files volume remains after deletion');
+      });
+    }
   },
 );
 
@@ -294,6 +377,8 @@ flow(
         for (const n of [1, 2, 3]) sandbox.writeFile(`deck/cards/${n}.png`, PNG);
         const out = JSON.parse(ok(await run(['artifacts', 'publish', 'deck', '--json']), 'publish').stdout);
         if (out.title !== 'Board update' || out.type !== 'html' || !out.path.endsWith('/Artifacts/board-update') || out.created_by_session_id !== sessionId) throw new Error(JSON.stringify(out));
+        // Grouping without tagging: a session's publish is owned by the session's agent.
+        if (out.agent !== 'default' || out.space !== null) throw new Error(`binding ${out.agent} ${out.space}`);
         page = out.artifact_id;
         for (const n of [1, 2, 3]) {
           const img = await fetch(`${out.view_url}cards/${n}.png`);
@@ -337,7 +422,6 @@ flow(
 );
 
 const GOVERNED_ARTIFACT_MANIFEST = [
-  'kortix_version: 2',
   'project:',
   '  name: ke2e-artifacts',
   'default_agent: writer',

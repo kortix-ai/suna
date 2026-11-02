@@ -49,7 +49,7 @@ const { APPROVAL_RERUN_RULE, heldCallRepeatInstructions, heldRunRule } = await i
 const { decideConnectorApproval, expireDueApprovals, loadApprovalRow } = await import(
   '../projects/lib/connector-approval-decision'
 );
-const { runApprovalExpiryTick } = await import('../workers/approval-expiry-worker');
+const { runApprovalExpiryTick } = await import('../worker/jobs/approval-expiry');
 const { consumeApprovedExecution } = await import('../connectors/db-deps-gateway');
 const { createAccountToken } = await import('../repositories/account-tokens');
 const { ensureDefaultConnection, upsertConnectionCredential } = await import('../connectors/credentials');

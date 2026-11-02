@@ -64,6 +64,7 @@ export type SessionHealthResponse = {
  *   - `session.shell`     a shell command run as a turn
  *   - `session.attach`    attach the harness's own terminal client
  *   - `session.config`    a runtime config document (`/global/config`)
+ *   - `session.context_record` a full context resets onto the session's searchable record, with nothing summarized
  */
 export type RuntimeCapability =
   | 'session.rewind'
@@ -75,7 +76,8 @@ export type RuntimeCapability =
   | 'session.todo'
   | 'session.shell'
   | 'session.attach'
-  | 'session.config';
+  | 'session.config'
+  | 'session.context_record';
 
 /**
  * Does the session's runtime serve `capability`? Pass the health
@@ -92,6 +94,18 @@ export function runtimeSupports(
 ): boolean {
   if (!capabilities?.some((entry) => entry.startsWith('session.'))) return true;
   return capabilities.includes(capability);
+}
+
+/**
+ * Does the session's computer have a desktop to show? Pass the health
+ * `capabilities` list. The daemon lists `machine.desktop` when its image
+ * installs the desktop (streamed on port 6901); My Kortix's minimal image and a
+ * custom template on another base do not. Unlike {@link runtimeSupports}, an
+ * absent entry or an unanswered probe means no desktop: a host shows the
+ * control only once the daemon says so.
+ */
+export function hasSessionDesktop(capabilities: readonly string[] | null | undefined): boolean {
+  return capabilities?.includes('machine.desktop') ?? false;
 }
 
 /**

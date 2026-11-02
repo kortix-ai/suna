@@ -26,17 +26,7 @@ import type { UiTranslator } from '../../i18n';
  *
  * Two gates from the old set are deliberately NOT here:
  *
- *   - `revertStaged`. It blocked the auto-drain from firing into a trajectory
- *     the user had asked to discard. There is no auto-drain, and a staged
- *     revert is precisely the state in which the user types their REPLACEMENT
- *     prompt — refusing it would make edit-and-resend impossible. The
- *     replacement prompt IS what commits the revert: OpenCode truncates on the
- *     next delivery, from any producer. The server's own guard
- *     (`queuedContinueHasStagedRevert`,
- *     `apps/api/src/projects/session-lifecycle/engine.ts`) lets a prompt that
- *     never waited commit the revert for that reason, and refuses the rows that
- *     queued BEFORE it — for every client, which a gate in this tab could never
- *     do.
+ *   - `revertStaged`. No runtime stages a revert: pi answers rewind `501`.
  *   - `isServerBusy`, for a PROMPT. That is the inbox's decision now.
  *   - `runtimeReady`, for a PROMPT. A prompt typed at a sleeping box becomes an
  *     inbox row and is delivered when the box answers. A COMMAND cannot: see

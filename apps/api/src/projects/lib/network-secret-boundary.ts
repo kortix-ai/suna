@@ -1,4 +1,4 @@
-import { isMetaAgentName } from '@kortix/shared';
+import { isMyKortixAgentName } from '@kortix/shared';
 
 import { resolveNetworkBoundaryBindings } from '../../secrets/network-boundary';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
@@ -26,7 +26,7 @@ async function loadSessionSecretRows(
   const { session, project, grantEnv, personalUserId: personalOwner } = await context;
   if (!session || !project) return null;
   const sessionAgent = session.agentName ?? DEFAULT_AGENT_SENTINEL;
-  if (isMetaAgentName(sessionAgent)) return null;
+  if (isMyKortixAgentName(sessionAgent)) return null;
 
   // The owner read needs nothing from the grant: it starts beside it.
   const ownerRead = personalOwner();

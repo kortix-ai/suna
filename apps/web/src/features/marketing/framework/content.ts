@@ -1,7 +1,7 @@
 /*
  * The Kortix framework, as the home slider and /framework show it.
  *
- * ACCURACY GATE: a valid kortix_version 3 project built only from keys in the
+ * ACCURACY GATE: a valid project built only from keys in the
  * "kortix.yaml reference" (content/docs/developers.mdx): composio connectors
  * with an approval rule, the skills and tools registries, agents grouped by
  * department (agents/<department>/*.md) that enable tools, connectors,
@@ -16,8 +16,7 @@
  */
 
 export const MANIFEST = [
-  "# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json",
-  "kortix_version: 3",
+  "# yaml-language-server: $schema=https://kortix.com/schema/kortix.schema.json",
   "default_agent: kortix",
   "",
   "project:",

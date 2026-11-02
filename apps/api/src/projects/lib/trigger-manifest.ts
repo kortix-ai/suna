@@ -3,7 +3,7 @@ import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { commitMultipleFilesToBranch } from '../git/branches';
 import { isRemotePushPolicyRejection, isTransientGitMirrorError } from '../git/mirror';
 import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
-import { MANIFEST_FILENAME, type GitTriggerSpec, type ParsedManifest, manifestWrites, readManifest, synthesizeBlankManifest, triggerSpecToOnRunEntry, triggerSpecToTomlEntry } from '../triggers';
+import { MANIFEST_FILENAME, type GitTriggerSpec, type ParsedManifest, manifestWrites, readManifest, synthesizeBlankManifest, triggerSpecToOnRunEntry, triggerSpecToFlatEntry } from '../triggers';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
 import type { ProjectRow } from './serializers';
 
@@ -12,18 +12,10 @@ import type { ProjectRow } from './serializers';
  * repo), synthesize a minimal valid one so the first POST /triggers can
  * scaffold it on save.
  *
- * MUST be kortix_version 3 (the canonical version the starter ships), not
- * KNOWN_SCHEMA_VERSION (which deliberately stays pinned at 1 — see its own
- * doc comment in ../triggers.ts). Every project created through POST
- * /projects/provision (seeded or not) is stamped
- * `metadata.require_declared_agents: true` and reads/writes through the
- * agent-config API (`applyAgentBlockV2`/`applyDefaultAgentV2` in
- * ./agent-config-v2.ts hard-refuse a v1 manifest). A blank project (no
- * `seed_starter`, so no kortix.yaml ever got pushed) synthesizing v1 here
- * meant every agent-config write 400'd with "upgrade" before it could ever commit a real
- * manifest — a self-inflicted catch-22 that left the project permanently
- * un-declarable (AGENT_NOT_DECLARED on every session-create) short of a
- * force-pushed kortix.yaml or a full re-provision with `seed_starter:true`.
+ * Every project created through POST /projects/provision (seeded or not) is
+ * stamped `metadata.require_declared_agents: true`, so a blank project (no
+ * `seed_starter`, so no kortix.yaml ever got pushed) must still declare the
+ * agent its sessions run.
  *
  * Delegates the actual synthesis to `synthesizeBlankManifest` (../triggers.ts)
  * — the SAME shape `loadProjectAgents` (../agents.ts) synthesizes on the
@@ -93,7 +85,9 @@ export function upsertTriggerInManifest(
   );
   // A new trigger is written as `on:` / `run:`; an edit keeps the shape the entry has.
   const existing = idx >= 0 ? current[idx] : null;
-  const entry = !existing || existing.on !== undefined ? triggerSpecToOnRunEntry(spec) : triggerSpecToTomlEntry(spec);
+  // A change_request trigger has no `on:` form: it is written flat, `type: change_request` + `filter.base`.
+  const flat = spec.type === 'change_request' || (existing != null && existing.on === undefined);
+  const entry = flat ? triggerSpecToFlatEntry(spec) : triggerSpecToOnRunEntry(spec);
   const next = current.slice();
   if (idx >= 0) next[idx] = entry;
   else next.push(entry);
@@ -112,8 +106,8 @@ export function removeTriggerFromManifest(manifest: ParsedManifest, slug: string
 
 /**
  * Commit a single file to the project's default branch — the generic engine
- * behind `commitManifest` (kortix.yaml/toml) and the agent-config route's
- * `.md` behavior-file writes. One file, one commit per call.
+ * behind `commitManifest` (kortix.yaml) and the agent-config route's
+ * prompt-file writes. One file, one commit per call.
  */
 export async function commitRepoFile(
   project: ManifestProject,
@@ -122,8 +116,9 @@ export async function commitRepoFile(
   message: string,
   expectedFileRevision?: string | null,
   expectedCandidatePaths?: readonly string[],
-  /** Same-commit companions of `path`: more files to write, and more blobs
-   *  that must be unchanged. Only a manifest with `imports:` passes these. */
+  /** Same-commit companions of `path`: more files to write, files to remove,
+   *  and more blobs that must be unchanged (a manifest with `imports:`, or a
+   *  healed legacy manifest). */
   extra?: {
     files?: Array<{ path: string; content: string }>;
     alsoExpect?: Array<{ path: string; sha: string }>;
@@ -131,6 +126,8 @@ export async function commitRepoFile(
      *  to an imported entry writes only that file, yet the root manifest's
      *  revision is still the one the read was anchored on. */
     expectedPath?: string;
+    /** Files the same commit removes. */
+    deletes?: string[];
   },
 ): Promise<{ ok: true } | { error: string; status: number }> {
   const repo = parseGitHubRepoUrl(project.repoUrl);
@@ -207,8 +204,7 @@ async function commitGitCliRepoFile(
   // Any other host (GitLab, generic HTTPS remote): commit via the git CLI.
   // The old code bailed here with "Project repo URL is
   // not a GitHub URL", which broke every connector and trigger manifest edit
-  // on managed/self-hosted projects. Mirrors createRemoteSessionBranch's
-  // GitHub-fast-path / git-CLI-fallback split.
+  // on managed/self-hosted projects.
   const gitProject = await gitAuthOr502(
     hasResolvedGitAuth(project) ? { ...project, gitAuthToken: project.gitAuthToken ?? null } : null,
     () => withProjectGitAuth(project),
@@ -228,6 +224,7 @@ async function commitGitCliRepoFile(
       await commitMultipleFilesToBranch(gitProject.value, {
         ...commit,
         files: [{ path, content }, ...(extra.files ?? [])],
+        deletes: extra.deletes,
         alsoExpect: extra.alsoExpect,
         expectedFileRevision:
           expectedFileRevision === undefined
@@ -273,8 +270,8 @@ async function commitGitCliRepoFile(
 }
 
 /**
- * Commit a new revision of the project manifest (kortix.yaml, or kortix.toml
- * for a legacy v1 project) to the project's default branch. All trigger CRUD
+ * Commit a new revision of the project manifest (kortix.yaml) to the
+ * project's default branch. All trigger CRUD
  * funnels through this — one file, one commit per edit.
  */
 
@@ -283,9 +280,9 @@ export async function commitManifest(
   manifest: ParsedManifest,
   message: string,
 ): Promise<{ ok: true } | { error: string; status: number }> {
-  // Write back to the SAME file we read (kortix.yaml or kortix.toml, or a custom
-  // path) in its own format — never a hardcoded name, or a yaml project's edits
-  // would silently land in a second kortix.toml the runtime doesn't read.
+  // Write back to the SAME file we read (kortix.yaml, kortix.yml, or a custom
+  // path) — never a hardcoded name, or the edit would land in a second file
+  // the runtime doesn't read.
   // A manifest with `imports:` writes the file that declares the edited entry
   // (see `manifestWrites`), all in this one commit.
   const manifestFile = manifest.path || project.manifestPath || MANIFEST_FILENAME;
@@ -299,8 +296,9 @@ export async function commitManifest(
     message,
     manifest.revision,
     manifest.candidatePaths,
-    manifest.imports
-      ? { files: rest, alsoExpect: writes.alsoExpect, expectedPath: manifestFile }
+    // A manifest with `imports:` or a healed legacy one writes more than one file in this commit.
+    manifest.imports || rest.length > 0 || writes.deletes.length > 0
+      ? { files: rest, alsoExpect: writes.alsoExpect, deletes: writes.deletes, expectedPath: manifestFile }
       : undefined,
   );
 }

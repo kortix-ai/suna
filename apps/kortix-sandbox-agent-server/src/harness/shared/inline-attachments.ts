@@ -1,22 +1,8 @@
 /**
- * The 1×1 PNG an offloaded attachment keeps inline (attachment-offload.ts moves
- * the real bytes to a sidecar). Host-level: every transcript reader treats it
- * as "hand out a ref", whichever harness produced the row.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export const OFFLOAD_PLACEHOLDER_URL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
-
-/** @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
-export function isOffloadPlaceholder(url: unknown): boolean {
-  return url === OFFLOAD_PLACEHOLDER_URL;
-}
-
-/**
  * Take the file BYTES out of a session's message list.
  *
- * OpenCode's wire shape for an attachment is a file part whose `url` is a
- * `data:<mime>;base64,…` URI — our own shape too, see
+ * A transcript's attachment is a file part whose `url` can be a
+ * `data:<mime>;base64,…` URI, see
  * `packages/ui/src/session/composer/uploaded-file-refs.ts`. That is fine for ONE
  * message on the way in. It is ruinous on the way out, because every read of
  * the transcript re-ships every byte of every attachment that session ever
@@ -89,16 +75,8 @@ export function stripInlineAttachmentBytes(
           ? obj.messageID
           : messageId;
 
-    // An attachment the offload moved to a sidecar (attachment-offload.ts)
-    // carries only a 1×1 placeholder inline; it is ALWAYS handed out as a
-    // ref, size notwithstanding, so the UI fetches the real bytes on demand.
-    // Either signal: the marker (present when the daemon reads the row itself)
-    // or the placeholder URL (all that survives a read through OpenCode's API).
-    const offloaded =
-      obj.type === 'file' &&
-      (Boolean((obj.kortix as { offloaded?: unknown } | undefined)?.offloaded) || isOffloadPlaceholder(obj.url))
     const inlineTooBig = isDataUrl(obj.url) && obj.url.length > maxBytes
-    if (obj.type === 'file' && typeof obj.id === 'string' && nextMessageId && (offloaded || inlineTooBig)) {
+    if (obj.type === 'file' && typeof obj.id === 'string' && nextMessageId && inlineTooBig) {
       stripped += 1;
       savedBytes += typeof obj.url === 'string' ? obj.url.length : 0;
       return { ...obj, url: makeRef(nextMessageId, obj.id) };

@@ -459,7 +459,7 @@ flow(
     const sandbox = new CliSandbox('cap3');
     try {
       await world.writeManifest(
-        'kortix_version: 2\nproject:\n  name: ke2e-capture\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n',
+        'project:\n  name: ke2e-capture\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n',
         'ke2e: capture agent',
       );
       const own = await world.mintAgentSession({ agent: 'kortix', launcher: member });

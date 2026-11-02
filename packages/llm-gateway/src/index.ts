@@ -1,4 +1,6 @@
 export { createGateway } from './create-gateway';
+export { createClaudeCodePassthrough } from './claude-code/passthrough';
+export type { ClaudeCodeCredential, ClaudeCodeCredentials, ClaudeCodeHooks, ClaudeCodeRequest } from './claude-code/passthrough';
 export { DEFAULT_MAX_REQUEST_BYTES } from './domain/config';
 export {
   gatewayOverloadedResponse,

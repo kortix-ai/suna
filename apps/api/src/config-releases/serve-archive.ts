@@ -2,7 +2,9 @@
  * Serve one config archive.
  *
  * 1. The tree ID must name a tree object in the project's mirror; a warm miss
- *    gets one forced fetch.
+ *    gets one forced fetch, then a fetch of that tree by its ID. The mirror is
+ *    a partial store: it holds only the trees a read asked for. A build
+ *    downloads the tree's files first (`release-tree.ts`).
  * 2. Still not in the mirror (e.g. a repository replacement moved the origin
  *    to unrelated history, CFG-7): the store is tried directly by its
  *    project-scoped key. A hit is served exactly like step 3 below. On a miss,
@@ -21,7 +23,7 @@
  */
 
 import { config } from '../config';
-import { runGitCapture } from '../projects/git/mirror';
+import { ensureStoreObjects, runGitCapture } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
 import { rewriteStorageOrigin } from '../shared/storage-url';
 import { classifyIpHost, sanitizeUrlForLog } from '../snapshots/providers/upload-url-guard';
@@ -188,6 +190,10 @@ export async function serveConfigArchive(
   let inMirror = await isTreeObject(repo, treeId);
   if (!inMirror) {
     repo = await forcedMirror();
+    // A partial store holds the trees of the commits a read asked for. An older
+    // release's tree is fetched by its ID; an ID the upstream does not know
+    // stays a miss.
+    await ensureStoreObjects(repo, [treeId]).catch(() => 0);
     inMirror = await isTreeObject(repo, treeId);
   }
 
@@ -249,7 +255,7 @@ async function composedArchiveBuilder(
     const files = release?.tools_only && release.config_tree_id === treeId ? release.files : null;
     if (files) return async () => (await readFileTree(repo, files, { archive: true })).archive!;
   }
-  const resolved = await resolveReleaseTreeSource(repo, project, commit, agent ? `agent:${agent}` : 'project').catch(() => null);
+  const resolved = await resolveReleaseTreeSource(repo, project, commit).catch(() => null);
   if (!resolved) return null;
   if (!('source' in resolved) || !isComposedSource(resolved.source)) return null;
   const { source } = resolved;

@@ -1212,8 +1212,9 @@ adminApp.openapi(
 
 // ── Set per-account entitlement overrides (the JSONB map) ────────────────────
 // The one exception mechanism (.agents/skills/billing/references/plans-and-access.md):
-// a per-feature boolean (sso, scim, rbac, auditAccess, branding, managedModels),
-// each with an OPTIONAL EXPIRY.
+// a per-feature boolean (sso, scim, rbac, auditAccess, branding, managedModels,
+// byokFee) or a Files storage limit in bytes (driveProjectBytes,
+// driveAccountBytes), each with an OPTIONAL EXPIRY.
 //
 // MERGE-PATCH semantics (RFC 7386, scoped to the known keys): a key present
 // with an entry sets it, a key present with `null` deletes it, and a key that
@@ -1239,7 +1240,9 @@ adminApp.openapi(
               z.string(),
               z
                 .object({
-                  value: z.boolean(),
+                  // A boolean per feature; a whole number of bytes for a
+                  // Files storage limit (driveProjectBytes, driveAccountBytes).
+                  value: z.union([z.boolean(), z.number()]),
                   expires_at: z.string().optional(),
                 })
                 .nullable(),

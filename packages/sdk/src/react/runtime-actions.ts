@@ -16,6 +16,7 @@ import {
   getActiveRuntimeUrl,
 } from '../browser/stores/server-store';
 import type { SubdomainUrlOptions } from '../core/session/url';
+import { activeRuntimeAction, runtimeActionError, runtimeActionPaths, type RuntimeWorkspaceInfo } from '../core/session/runtime-actions';
 import {
   buildStaticFileHealthPreviewUrl,
   buildStaticFilePreviewUrl,
@@ -40,12 +41,32 @@ function unwrapRuntimeResult<T>(result: RuntimeResult<T>): T {
   return result.data as T;
 }
 
-export function getRuntimeProjectInfo(): Promise<RuntimeProjectInfo> {
-  return getClient().project.current().then(unwrapRuntimeResult);
+/** The checkout facts from `GET /kortix/runtime/workspace`; null on a box without the session-log actions. */
+async function readRuntimeWorkspace(): Promise<RuntimeWorkspaceInfo | null> {
+  const read = await activeRuntimeAction('GET', runtimeActionPaths.workspace);
+  if (!read) return null;
+  if (!read.ok) throw await runtimeActionError(read, 'Reading the workspace failed');
+  return (await read.json()) as RuntimeWorkspaceInfo;
 }
 
-export function getRuntimePathInfo(): Promise<RuntimePathInfo> {
-  return getClient().path.get().then(unwrapRuntimeResult);
+/** The checkout as the compatibility `Project` shape: the workspace route, else `/project/current` on an older box. */
+export async function getRuntimeProjectInfo(): Promise<RuntimeProjectInfo> {
+  const workspace = await readRuntimeWorkspace();
+  if (!workspace) return getClient().project.current().then(unwrapRuntimeResult);
+  return {
+    id: workspace.directory,
+    worktree: workspace.directory,
+    ...(workspace.vcs === 'git' ? { vcs: 'git' as const } : {}),
+    time: { created: 0, updated: 0 },
+    sandboxes: [],
+  };
+}
+
+/** The checkout paths as the compatibility `Path` shape: the workspace route, else `/path` on an older box. */
+export async function getRuntimePathInfo(): Promise<RuntimePathInfo> {
+  const workspace = await readRuntimeWorkspace();
+  if (!workspace) return getClient().path.get().then(unwrapRuntimeResult);
+  return { home: workspace.home, state: '', config: '', worktree: workspace.directory, directory: workspace.directory };
 }
 
 export function readRuntimeTextFile(path: string): Promise<string | FileContent> {

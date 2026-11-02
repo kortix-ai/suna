@@ -19,7 +19,7 @@ for (const [status, code, expectedReports] of [
       fetch: async () =>
         Response.json(
           {
-            error: 'Reminders is not enabled for this project.',
+            error: 'Loops is not enabled for this project.',
             code,
             feature: 'reminders',
           },
@@ -35,7 +35,7 @@ for (const [status, code, expectedReports] of [
     expect(result.success).toBe(false);
     expect(result.error).toBeInstanceOf(ApiError);
     expect(result.error?.status).toBe(status);
-    expect(result.error?.message).toBe('Reminders is not enabled for this project.');
+    expect(result.error?.message).toBe('Loops is not enabled for this project.');
     expect(isFeatureDisabledError(result.error)).toBe(
       status === 403 && code === 'feature_disabled',
     );

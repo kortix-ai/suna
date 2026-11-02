@@ -5,7 +5,7 @@
  * `samplingParams`, which the OpenAI-compatible gateway request carries as a
  * body field). `steps` bounds the model requests of one run: the request that
  * reaches it gets `toolChoice: 'none'`, so the model answers instead of
- * calling another tool — OpenCode's `steps` behavior.
+ * calling another tool. That is the agent's `steps` contract.
  */
 import type { StreamFn } from '@earendil-works/pi-agent-core'
 import { getCurrentTools } from '@earendil-works/pi-ai'

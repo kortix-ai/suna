@@ -85,9 +85,9 @@ function makeSourceRepo(root: string, marker = 'v1'): { checkout: string; sha: s
   for (let i = 0; i < 12; i += 1) {
     writeFileSync(join(checkout, 'src', `file-${i}.txt`), `${marker} file ${i}\n${'x'.repeat(4096 + i * 97)}\n`)
   }
-  mkdirSync(join(checkout, '.kortix', 'opencode'), { recursive: true })
-  writeFileSync(join(checkout, '.kortix', 'opencode', 'opencode.jsonc'), '{"$schema":"x"}\n')
-  writeFileSync(join(checkout, 'kortix.yaml'), 'kortix_version: 2\n')
+  mkdirSync(join(checkout, '.github', 'workflows'), { recursive: true })
+  writeFileSync(join(checkout, '.github', 'workflows', 'ci.yml'), 'on: push\n')
+  writeFileSync(join(checkout, 'kortix.yaml'), 'agents:\n  build:\n    prompt: Build the project.\n')
   // An in-tree symlink is ordinary Git content and must survive extraction.
   symlinkSync('README.md', join(checkout, 'README-link'))
   git(checkout, 'add', '-A')

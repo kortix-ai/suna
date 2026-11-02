@@ -6,6 +6,7 @@ import { formatUsdAsCredits, parseBalanceUsd } from '@kortix/shared';
 import { type ComponentProps, type ReactNode } from 'react';
 import { chatGptConnectionAction } from '../models/chatgpt-connection-action';
 import { ChatGptConnectionSlot } from '../models/chatgpt-connection-button';
+import { ClaudeConnectionSlot, claudeConnectionAction } from '../models/claude-connection-slot';
 import { AskOwnerForCreditsButton } from '../models/ask-owner-for-credits-button';
 
 import { Button } from '../../primitives/button';
@@ -629,6 +630,8 @@ export function TurnErrorDisplay({
   // A member's own ChatGPT login expired or is missing: the fix is theirs to
   // make, so the row carries it instead of leaving a dead end mid-session.
   const chatGpt = chatGptConnectionAction(gateway);
+  // The same for the member's own Claude subscription (Claude models run on it).
+  const claude = chatGpt ? null : claudeConnectionAction(text);
 
   // Real errors → a checkpoint row in the activity lane, not a boxed alert.
   return (
@@ -637,7 +640,7 @@ export function TurnErrorDisplay({
       gateway={gateway}
       raw={errorRaw}
       defaultOpen={defaultDetailsOpen}
-      action={chatGpt ? <ChatGptConnectionSlot action={chatGpt} /> : undefined}
+      action={chatGpt ? <ChatGptConnectionSlot action={chatGpt} /> : claude ? <ClaudeConnectionSlot action={claude} /> : undefined}
       modelOptions={modelOptions}
       className={className}
     />

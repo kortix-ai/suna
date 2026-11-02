@@ -7,11 +7,9 @@
  * feature is on.
  *
  * `workspace` is reachable only when config releases are OFF for the project,
- * which is the pre-release behaviour: OpenCode reads `<workspace>/<config dir>`,
- * pi reads the working tree's skills and the provisioned governance.
- * The API emits no
- * release block for such a session, so `workspace` never reaches a client.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ * which is the pre-release behaviour: pi reads the working tree's skills and
+ * the provisioned governance. The API emits no release block for such a
+ * session, so `workspace` never reaches a client.
  */
 export type ConfigSource = 'release' | 'workspace' | 'image-default'
 /** The health `config` block. The converge response carries the same object. */

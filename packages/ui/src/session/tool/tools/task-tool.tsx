@@ -1,10 +1,11 @@
 'use client';
 
-import { SubSessionModal } from '../../thread/sub-session-modal';
+import { SubagentDialog } from '../../agents/subagent-view';
 import {
   BasicTool,
   firstMeaningfulLine,
   partInput,
+  partMetadata,
   partStatus,
   partError,
 } from '../shared/infrastructure';
@@ -16,72 +17,32 @@ import {
 } from '../shared/sub-agent';
 import type { ToolProps } from '../shared/types';
 import { ToolError } from '../tool-error';
+import { FullViewAction } from '../shared/full-view-action';
 import { useTranslations } from '../../../i18n';
-import { cn } from '../../../lib/utils';
 import { getChildSessionId, getToolInfo } from '../../../internal/session-types';
 import { KanbanIcon as SquareKanban } from '@phosphor-icons/react';
 import { useCallback, useMemo, useState } from 'react';
-import { subAgentCalls } from '@kortix/sdk';
+import { subAgentCalls, type SessionLogThread } from '@kortix/sdk';
+import { useSessionStateStore } from '@kortix/sdk/react';
 
 /**
- * The way into the sub-agent's own session, pinned to the right edge of the row.
- *
- * It used to be a ghost `Button` at the BOTTOM of the disclosure body, and that
- * was wrong twice over. It sat at the body's left margin — the chain's icon
- * gutter — so it read as one more step in the sub-agent's list rather than as
- * an action on the agent. And it was reachable only by expanding the row, which
- * is backwards for a sub-agent that has not produced a step yet: that is the
- * one moment the full view is the ONLY thing there is to look at.
- *
- * A `span role="button"`, not a `<button>`. This node renders inside the
- * disclosure's trigger, and `DisclosureTrigger` clones that trigger into its own
- * `role="button"` element — a button nested in a button is invalid HTML. The
- * subtitle link in `InlineTriggerTitle` is the same shape for the same reason.
- * Both activation paths `stopPropagation` so reaching the full view does not
- * also toggle the row underneath it.
- *
- * Visible label "Full view", accessible name "Open full view". The row already
- * carries a title plus a live subtitle that has to truncate, so the right edge
- * gets the two words that matter; the longer name rides on `aria-label` and
- * `title`, and it CONTAINS the visible text, so WCAG 2.5.3 (Label in Name)
- * holds.
- *
- * Always visible, never hover-revealed: a hover-only affordance does not exist
- * on touch, and this is the only route to a running sub-agent's full transcript.
+ * Whether a background hand-off's child still works. The child's status is
+ * known while this tab streams it; without it, a child whose last reply has
+ * completed is not working, and any other child is taken as still at work.
  */
-function FullViewAction({ onOpen }: { onOpen: () => void }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  return (
-    <span
-      role="button"
-      tabIndex={0}
-      aria-label={tI18nComplete.raw('text229fbeec6b2f')}
-      title={tI18nComplete.raw('text229fbeec6b2f')}
-      onClick={(e) => {
-        e.stopPropagation();
-        onOpen();
-      }}
-      onKeyDown={(e) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return;
-        e.preventDefault();
-        e.stopPropagation();
-        onOpen();
-      }}
-      className={cn(
-        'text-muted-foreground/60 hover:text-foreground',
-        'flex cursor-pointer items-center gap-1 whitespace-nowrap',
-        'underline-offset-2 transition-colors hover:underline',
-      )}
-    >
-      {tI18nComplete.raw('textdcc839a4015c')}
-    </span>
-  );
+function useBackgroundWorking(childSessionId: string | undefined, childThread: SessionLogThread | null): boolean {
+  const childStatus = useSessionStateStore((s) => (childSessionId ? s.sessionStatus[childSessionId] : undefined));
+  if (childStatus?.type === 'busy' || childStatus?.type === 'retry') return true;
+  if (childStatus?.type === 'idle') return false;
+  const last = childThread?.messages.findLast((m) => m.role === 'assistant');
+  return !last || last.completed_at === null;
 }
+
 
 /**
  * A task call is a disclosure row: what the sub-agent is doing, in place.
  *
- * This row used to be a plain button that opened `SubSessionModal` on any
+ * This row used to be a plain button that opened `SubagentDialog` on any
  * click. That put the only view of a running sub-agent behind a modal — the
  * reader had to leave the transcript to learn what the agent they just
  * dispatched was up to, and had to close it again to get back — while the
@@ -102,6 +63,7 @@ function FullViewAction({ onOpen }: { onOpen: () => void }) {
  */
 export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tAgent = useTranslations('tools.agent');
   const input = partInput(call);
   const status = partStatus(call);
 
@@ -124,6 +86,11 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const childThread = useSubAgentThread(childSessionId);
   const childCalls = useMemo(() => subAgentCalls(childThread), [childThread]);
 
+  // `agent(…, { background: true })` returns as soon as the child exists. The call is
+  // over; the work goes on in the child's own session, and the row says so.
+  const background = partMetadata(call).background === true;
+  const backgroundWorking = useBackgroundWorking(background ? childSessionId : undefined, childThread);
+
   const [modalOpen, setModalOpen] = useState(false);
   const openModal = useCallback(() => setModalOpen(true), []);
 
@@ -144,6 +111,12 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   }, [childCalls]);
 
   const subtitle = isRunning ? (lastActivity ?? description) : description || undefined;
+  const backgroundLabel =
+    background && childSessionId && !errorText
+      ? backgroundWorking
+        ? tAgent('backgroundWorking')
+        : tAgent('backgroundSession')
+      : undefined;
 
   /**
    * Whether this row can show the sub-agent's work WITHOUT leaving the
@@ -166,6 +139,7 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
         trigger={{
           title: tI18nComplete('text9471197a871a', { value0: subagentType }),
           subtitle,
+          args: backgroundLabel ? [backgroundLabel] : undefined,
         }}
         defaultOpen={defaultOpen}
         forceOpen={forceOpen}
@@ -197,7 +171,7 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
       </BasicTool>
       <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />
       {childSessionId && (
-        <SubSessionModal
+        <SubagentDialog
           open={modalOpen}
           onOpenChange={setModalOpen}
           sessionId={childSessionId}
@@ -210,4 +184,5 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
     </>
   );
 }
+// pi's `agent` (`task` is its deprecated alias) reaches this row through its kind (`toolKind`).
 ToolRegistry.register('task', TaskTool);

@@ -44,4 +44,16 @@ export {
   setError,
   sortNodes,
 } from './file-tree.ts';
+export {
+  DRIVES_ROOT,
+  type DirectoryLoaders,
+  type DriveMount,
+  type DriveReads,
+  type MountedDrivePath,
+  blobToReadResult,
+  drivesMountPath,
+  mountChildren,
+  resolveMountedPath,
+  withDriveMounts,
+} from './drive-mounts.ts';
 export { FILES_KEYS, type FilesBinding, type FilesKeyScope, matchesFilesBinding } from './keys.ts';

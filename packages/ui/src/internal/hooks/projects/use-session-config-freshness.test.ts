@@ -50,9 +50,9 @@ describe('sessionConfigNotice', () => {
     ).toEqual({ kind: 'hidden' });
   });
 
-  test('a v1 project is hidden — the concept does not apply, so inventing a problem is wrong', () => {
-    // kortix.toml compiles to nothing. `stale` is null forever for these, and a
-    // warning here would be unfixable by design.
+  test('a project with no compiled config is hidden — inventing a problem is wrong', () => {
+    // No compiled config: `stale` is null forever, and a warning here would be
+    // unfixable by design.
     expect(
       sessionConfigNotice(
         state({ stale: null, latest_etag: null, running_etag: null, sandbox_reachable: true }),

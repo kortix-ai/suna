@@ -77,7 +77,7 @@ mock.module('../drives/volumes', () => ({
 const { app } = await import('../index');
 const { createAccountToken } = await import('../repositories/account-tokens');
 const { ensureProjectDrive, setFolderGrant, listFolderGrants, reconcileSessionDrives } = await import('../drives/service');
-const { retryPendingRevocations } = await import('../workers/drive-worker');
+const { retryPendingRevocations } = await import('../worker/jobs/drive');
 const { clearAuthorizeCaches } = await import('../iam/authorize');
 
 const ACCOUNT = crypto.randomUUID();

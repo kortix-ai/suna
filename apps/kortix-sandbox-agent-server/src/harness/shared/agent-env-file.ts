@@ -37,13 +37,12 @@ const DANGEROUS_NAMES = new Set([
 ])
 
 // Per-session credentials the AGENT's shells need (CLI auth, `git push`, CR-merge,
-// project context). Normally these reach the agent via opencode's PROCESS env —
-// but the no-restart warm-fork hot-swap REUSES the seed opencode without respawn,
-// so its env stays the tokenless PARK env and the agent's shells inherit EMPTY
-// values. We can't mutate a live process's env, so deliver them through the same
-// BASH_ENV-sourced file every shell already reads. This is an explicit allowlist
+// project context). A shell the daemon spawns inherits them from process.env; a
+// shell started outside the daemon's process tree does not, and gets them only
+// from this file (through /etc/profile.d + /etc/bash.bashrc). So the file
+// carries them too. This is an explicit allowlist
 // (NOT all KORTIX_*): only the session's own identity/context creds, never the
-// daemon-internal vars (proxy URLs, OPENCODE_CONFIG_CONTENT, warm-seed flags).
+// daemon-internal vars (proxy URLs, harness-internal vars).
 // The values are the agent's own session identity and the file is 0600 tmpfs +
 // shredded on shutdown — same posture as the project secrets already written here.
 const SHELL_SESSION_CREDS = [
@@ -166,10 +165,8 @@ export function writeAgentEnvFile(
   // later revoke it. Keep every managed name in the unset set so a shell that
   // inherited the old value cannot retain it after revocation.
   const managedNames = [...new Set([...bootSecretNames(bootEnv), ...snapshot.knownNames])].sort()
-  // Pull the per-session identity creds from the live process env (reloadSessionEnv
-// populates process.env from /etc/pt-env on warm-snapshot restore). On a no-restart hot-swap the
-  // daemon has these but the reused seed opencode does not — so writing them here
-  // is what gets them to the agent's shells via BASH_ENV.
+  // Pull the per-session identity creds from the live process env, so a shell
+  // that does not inherit the daemon's env reads the same values from this file.
   const sessionCreds: Record<string, string> = {}
   for (const name of SHELL_SESSION_CREDS) {
     const v = bootEnv[name]

@@ -17,6 +17,7 @@
  */
 import { z } from 'zod';
 import { SessionLogPageSchema } from './session-log/wire';
+import { SessionAttentionSchema, SessionBoardStateSchema, SessionInboundSchema } from './multi-agent';
 
 export * from './memory';
 
@@ -53,17 +54,13 @@ export type OkResponse = z.infer<typeof OkResponseSchema>;
  */
 export const FeatureFlagMapSchema = z.object({
   marketplace: z.boolean(),
-  meta_agent: z.boolean(),
   reminders: z.boolean(),
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
   pooled_provider_secrets: z.boolean(),
-  genui: z.boolean(),
   us_region: z.boolean(),
   event_triggers: z.boolean(),
   notification_center: z.boolean(),
-  volumes: z.boolean(),
-  drives: z.boolean(),
   session_log_restore: z.boolean(),
   project_channels: z.boolean(),
   agent_rooms: z.boolean(),
@@ -74,6 +71,7 @@ export const FeatureFlagMapSchema = z.object({
   email_channel: z.boolean(),
   session_groups: z.boolean(),
   chrome: z.boolean(),
+  agent_teams: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -97,6 +95,8 @@ export const FeatureFlagViewSchema = z.object({
   overridden: z.boolean(),
   /** Internal-only flag, listed only while on. Only a platform operator can change it. */
   operator_only: z.boolean().optional(),
+  /** Work in progress: not recommended yet. Absent on servers older than this field. */
+  wip: z.boolean().optional(),
   /** `organization`: one value for every project of the organization; changing it needs `account.write`. */
   scope: z.enum(['project', 'organization']).optional(),
 });
@@ -194,10 +194,18 @@ export const ProjectSchema = z.object({
     session_log: z.literal(true).optional(),
     /** Not a flag (every new session runs pi; OpenCode is sunset); always `true` for older SDK, CLI and mobile clients. */
     pi_harness: z.literal(true).optional(),
+    /** Not a flag (generative UI is always on); always `true` for older SDK, web and mobile clients, which render blocks only while it is on. */
+    genui: z.literal(true).optional(),
     /** Not a flag (the Kortix connectors catalog is the only connectors path); always `true` for older SDK and hosts. */
     connectors_v2: z.literal(true).optional(),
     /** Not a flag (integrations.sh is part of the one catalog); always `true` for older SDK and hosts. */
     connectors_api_discover: z.literal(true).optional(),
+    /** Not a flag since 2026-11-02 (My Kortix follows kortix.yaml `builtin_agents.my_kortix` alone); always `true` for older SDK and hosts. */
+    meta_agent: z.literal(true).optional(),
+    /** Not a flag since 2026-11-02 (every project has a Drive); `true` wherever the platform stores a Drive (Platinum), for older SDK, CLI and hosts. */
+    volumes: z.boolean().optional(),
+    /** Not a flag since 2026-11-02 (every project has a Drive); `true` wherever the platform stores a Drive (Platinum), for older SDK, CLI and hosts. */
+    drives: z.boolean().optional(),
   }),
   experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */
@@ -1146,6 +1154,24 @@ export const ProjectSessionSchema = z.object({
   model: z.string().nullable().optional(),
   /** Work activity, independent of the computer lifecycle status. Older servers may omit it. */
   working: SessionWorkingSchema.optional(),
+  /**
+   * Board state, as Claude Code's agent view groups sessions
+   * (`@kortix/api-contract/multi-agent`). The fields below are descriptive;
+   * older servers omit them.
+   */
+  board_state: SessionBoardStateSchema.optional(),
+  /** What the session waits for from its person: `question`, `approval`, or null. */
+  attention: SessionAttentionSchema.optional(),
+  /** The newest turn start, turn end or accepted prompt (ISO), or null. */
+  last_activity_at: z.string().nullable().optional(),
+  /** At most 280 characters of the last assistant text of the newest completed turn. */
+  result_excerpt: z.string().nullable().optional(),
+  /** The name a lead gave this child (`metadata.agent_handle`); `send_message` resolves `to` by it. */
+  agent_handle: z.string().nullable().optional(),
+  /** The lead of a teammate (`metadata.team_lead`, agent teams). */
+  team_lead_session_id: z.string().nullable().optional(),
+  /** Who may send this session a message: `accept`, `hold` or `refuse`. */
+  inbound: SessionInboundSchema.optional(),
   session_id: z.string(),
   account_id: z.string(),
   project_id: z.string(),
@@ -1859,7 +1885,7 @@ export const TriggerSchema = z.object({
   slug: z.string(),
   path: z.string(),
   name: z.string(),
-  type: z.enum(['cron', 'webhook', 'monitor', 'event', 'app']),
+  type: z.enum(['cron', 'webhook', 'monitor', 'event', 'app', 'change_request']),
   agent: z.string(),
   /** Wire-form model (`provider/model`) or null for "Default". */
   model: z.string().nullable(),
@@ -1972,7 +1998,7 @@ export type Trigger = z.infer<typeof TriggerSchema>;
 export const TriggerListSchema = z.object({
   triggers: z.array(TriggerSchema),
   triggers_paused: z.boolean(),
-  /** The account's Pause all automations: true stops every project's triggers. Older servers omit it. */
+  /** The account's Pause all triggers: true stops every project's triggers. Older servers omit it. */
   account_automations_paused: z.boolean().optional(),
   errors: z.array(z.object({ slug: z.string(), path: z.string(), error: z.string() })),
 });
@@ -1987,7 +2013,7 @@ export type TriggerList = z.infer<typeof TriggerListSchema>;
 export const TriggerRunSchema = z.object({
   run_id: z.string(),
   slug: z.string(),
-  source: z.enum(['cron', 'webhook', 'manual', 'monitor', 'reminder', 'event', 'app']),
+  source: z.enum(['cron', 'webhook', 'manual', 'monitor', 'reminder', 'event', 'app', 'change_request']),
   /** The fire's outcome. `fired` = a session was started or prompted. */
   status: z.enum(['queued', 'running', 'fired', 'failed', 'skipped', 'rejected']),
   /** The agent turn's outcome; null when the run started no turn. */
@@ -2253,6 +2279,8 @@ export const SessionPromptSchema = z.object({
   attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
   /** Posted without a turn: no agent answers it. */
   no_reply: z.boolean(),
+  /** Harness context (an auto-recovery continuation), not a person's prompt: a transcript never draws it as a user message. */
+  synthetic: z.boolean().optional(),
   /** The member who sent it. The prompt runs as this member, so only they
    *  edit, send now or retry it; they or a session manager remove it. Null
    *  for a prompt with no recorded sender. Absent from older servers. */
@@ -2263,8 +2291,29 @@ export const SessionPromptSchema = z.object({
 export type SessionPrompt = z.infer<typeof SessionPromptSchema>;
 
 /** `GET .../prompts`. `observed_at` is the server clock BEFORE the read. */
+/**
+ * A prompt the runtime accepted that the session log does not hold yet, or the session's
+ * `initial_prompt`. It left the inbox (`prompts`) at delivery; the log holds it once the box
+ * journals it (pi: every 5 s while a turn runs). Until then this is the only durable record
+ * a client can draw it from. `message_id` is the id the log will hold it under.
+ */
+export const SessionSentPromptSchema = z.object({
+  message_id: z.string(),
+  /** The id the prompt was sent under (a client's optimistic message) when the server re-minted it; else null. */
+  wire_message_id: z.string().nullable(),
+  /** The inbox row; null for the `initial_prompt` of a session create. */
+  prompt_id: z.string().nullable(),
+  text: z.string(),
+  attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
+  author_user_id: z.string().nullable(),
+  created_at: z.string(),
+});
+export type SessionSentPrompt = z.infer<typeof SessionSentPromptSchema>;
+
 export const SessionPromptListSchema = z.object({
   prompts: z.array(SessionPromptSchema),
+  /** Accepted prompts the session log does not hold yet, oldest first. An older API omits it. */
+  sent: z.array(SessionSentPromptSchema).optional(),
   observed_at: z.string(),
 });
 export type SessionPromptList = z.infer<typeof SessionPromptListSchema>;

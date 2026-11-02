@@ -31,9 +31,6 @@ import { beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { sql } from 'drizzle-orm';
 
-mock.module('../projects/lib/session-transcript-capture', () => ({
-  captureJournallessSessionLog: async () => undefined,
-}));
 mock.module('../projects/session-lifecycle/forwarded-strand-reconcile', () => ({
   reconcileForwardedTurnsAtEnd: async () => undefined,
 }));

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { gatewayRequestLogs, projectSessions, projects, sandboxComputeSessions } from '@kortix/db';
+import { gatewayRequestLogs, projectSessions, projects, sandboxComputeSessions, storageCharges } from '@kortix/db';
 import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { ProjectCostRow } from './cost-rollups';
@@ -91,6 +91,7 @@ const {
   mergeProjectCostRows,
   previousWindow,
   sortProjectRows,
+  storageDayRange,
 } = await import('./cost-rollups');
 
 const accountId = '00000000-0000-4000-a000-000000000001';
@@ -183,6 +184,8 @@ describe('sortProjectRows', () => {
     llm_kortix_cost: 0,
     llm_provider_cost: 0,
     compute_cost: 0,
+    storage_cost: 0,
+    storage_gib_hours: 0,
     total_cost: 0,
     last_activity_at: null,
   };
@@ -465,7 +468,7 @@ describe('buildCostSeries', () => {
       from: new Date('2026-07-01T00:00:00.000Z'),
       to: new Date('2026-07-02T00:00:00.000Z'),
     });
-    expect(series).toEqual([{ day: '2026-07-01', llm_cost: 0, compute_cost: 0, total_cost: 0 }]);
+    expect(series).toEqual([{ day: '2026-07-01', llm_cost: 0, compute_cost: 0, storage_cost: 0, total_cost: 0 }]);
   });
 
   test('crosses a month boundary, keeping each day in its own UTC bucket', () => {
@@ -916,9 +919,11 @@ describe('getCostSummary', () => {
       llm_kortix_cost: 10,
       llm_provider_cost: 0,
       compute_cost: 5,
+      storage_cost: 0,
       total_cost: 15,
       request_count: 4,
       compute_seconds: 900,
+      storage_gib_hours: 0,
       // The larger of the two sources' distinct session counts.
       session_count: 3,
       // The union of {p1} (LLM) and {p1, p2} (compute) is {p1, p2}: 2, not
@@ -929,9 +934,9 @@ describe('getCostSummary', () => {
     // 4 (llm prior) + 6 (compute prior).
     expect(summary.previous).toEqual({ total_cost: 10 });
     expect(summary.series).toEqual([
-      { day: '2026-07-01', llm_cost: 0, compute_cost: 0, total_cost: 0 },
-      { day: '2026-07-02', llm_cost: 10, compute_cost: 0, total_cost: 10 },
-      { day: '2026-07-03', llm_cost: 0, compute_cost: 5, total_cost: 5 },
+      { day: '2026-07-01', llm_cost: 0, compute_cost: 0, storage_cost: 0, total_cost: 0 },
+      { day: '2026-07-02', llm_cost: 10, compute_cost: 0, storage_cost: 0, total_cost: 10 },
+      { day: '2026-07-03', llm_cost: 0, compute_cost: 5, storage_cost: 0, total_cost: 5 },
     ]);
     expect(summary.models).toEqual([
       { provider: 'bedrock', model: 'anthropic/claude-sonnet-5', cost: 10, request_count: 4 },
@@ -1024,9 +1029,63 @@ describe('getCostSummary', () => {
     expect(summary.totals.total_cost).toBe(0);
     expect(summary.previous).toEqual({ total_cost: 0 });
     expect(summary.series).toEqual([
-      { day: '2026-07-01', llm_cost: 0, compute_cost: 0, total_cost: 0 },
-      { day: '2026-07-02', llm_cost: 0, compute_cost: 0, total_cost: 0 },
+      { day: '2026-07-01', llm_cost: 0, compute_cost: 0, storage_cost: 0, total_cost: 0 },
+      { day: '2026-07-02', llm_cost: 0, compute_cost: 0, storage_cost: 0, total_cost: 0 },
     ]);
     expect(summary.models).toEqual([]);
   });
 });
+
+describe('volume storage in the cost rollups', () => {
+  test('a project row adds its storage charge to total_cost; storage alone makes a row', () => {
+    const rows = mergeProjectCostRows(
+      [{ projectId: 'p1', llmCost: '1', sessionCount: 1, lastAt: null }],
+      [],
+      names,
+      [
+        { projectId: 'p1', storageCost: '0.082', gibHours: '1000' },
+        { projectId: 'p2', storageCost: '0.041', gibHours: '500' },
+      ],
+    );
+    expect(rows.map((r) => [r.project_id, r.storage_cost, r.storage_gib_hours, r.total_cost])).toEqual([
+      ['p1', 0.082, 1000, 1.082],
+      ['p2', 0.041, 500, 0.041],
+    ]);
+  });
+
+  test('a window covers every UTC day it touches', () => {
+    expect(storageDayRange({ from: new Date('2026-10-02T17:00:00.000Z'), to: new Date('2026-11-01T17:00:00.000Z') })).toEqual({
+      fromDay: '2026-10-02',
+      toDayExclusive: '2026-11-02',
+    });
+    expect(storageDayRange({ from: new Date('2026-10-01T00:00:00.000Z'), to: new Date('2026-11-01T00:00:00.000Z') })).toEqual({
+      fromDay: '2026-10-01',
+      toDayExclusive: '2026-11-01',
+    });
+  });
+
+  test('the summary adds storage to the totals, the daily series, the project count and the prior window', async () => {
+    resultForQuery = (fields, table) => {
+      if (table !== storageCharges) return [];
+      if ('day' in fields) return [{ day: '2026-07-02', cost: '0.082', gibHours: '1000', projectIds: ['p2'] }];
+      return [{ cost: '0.5' }];
+    };
+    const summary = await getCostSummary({
+      accountId,
+      projectId: 'p2',
+      window: { from: new Date('2026-07-01T00:00:00.000Z'), to: new Date('2026-07-03T00:00:00.000Z') },
+    });
+    expect(summary.totals).toMatchObject({ storage_cost: 0.082, storage_gib_hours: 1000, total_cost: 0.082, project_count: 1 });
+    expect(summary.previous).toEqual({ total_cost: 0.5 });
+    expect(summary.series).toEqual([
+      { day: '2026-07-01', llm_cost: 0, compute_cost: 0, storage_cost: 0, total_cost: 0 },
+      { day: '2026-07-02', llm_cost: 0, compute_cost: 0, storage_cost: 0.082, total_cost: 0.082 },
+    ]);
+    const storageQuery = queryRecords.find((r) => r.table === storageCharges && 'day' in r.fields);
+    const where = renderWhere(storageQuery);
+    expect(where.sql).toContain('"storage_charges"."account_id" = $1');
+    expect(where.sql).toContain('"storage_charges"."project_id" = $');
+    expect(where.params).toEqual(expect.arrayContaining([accountId, '2026-07-01', '2026-07-03', 'p2']));
+  });
+});
+

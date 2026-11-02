@@ -3,7 +3,7 @@
  *
  * Web has its project provider modal. Mobile has no gateway model screen
  * (mobile ships core features only), so a gateway project opens web's routed
- * twin of that modal, `/projects/:id/customize/models`, in an in-app auth
+ * twin of that modal, `/projects/:id/admin/models`, in an in-app auth
  * session (COR-125/COR-158 Task 9). With `return_to`, the web page redirects
  * to that `kortix://` URL once the project has a usable model, and the auth
  * session closes itself on the redirect. Pure URL builder only — `bun test`
@@ -21,7 +21,7 @@ export function projectModelsWebUrl(
   projectId: string,
   returnTo?: string,
 ): string {
-  const url = `${frontendUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(projectId)}/customize/models`;
+  const url = `${frontendUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(projectId)}/admin/models`;
   return returnTo ? `${url}?return_to=${encodeURIComponent(returnTo)}` : url;
 }
 

@@ -1,9 +1,8 @@
 /**
  * 10 — list the project's slash commands.
  *
- * Commands are markdown prompt templates the runtime accepts at
- * `<opencode>/commands/<slug>.md` (`harnesses/opencode/commands/` here). The
- * platform surfaces repo-registered ones via `projects.detail().config`.
+ * Commands are prompt templates registered under `commands:` in kortix.yaml and
+ * enabled per agent. The platform surfaces them via `projects.detail().config`.
  *
  * Run (from packages/sdk):  bun run playground/commands/10-list-commands.ts [projectId]
  */

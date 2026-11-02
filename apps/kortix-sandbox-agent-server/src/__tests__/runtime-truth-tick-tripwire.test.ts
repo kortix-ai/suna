@@ -33,7 +33,7 @@ export function callsMissingFrom(source: string, names: readonly string[]): stri
 }
 
 /** The tick's own hooks — one per component `runtime-truth.ts` owns. */
-const TICK_HOOKS = ['reconcileAssets', 'reconcileConfigRelease', 'reconcileCatalog', 'readConfigRelease', 'readCatalog'] as const
+const TICK_HOOKS = ['reconcileAssets', 'reconcileConfigRelease', 'readConfigRelease'] as const
 
 describe('runtime-truth tick tripwire (Rule 3: no new boot-only convergence)', () => {
   test('the checker catches a name that is missing (negative probe)', () => {
@@ -43,8 +43,8 @@ describe('runtime-truth tick tripwire (Rule 3: no new boot-only convergence)', (
 
   test('the checker accepts a fixture that calls everything', () => {
     expect(callsMissingFrom('foo(); bar()\n', ['foo', 'bar'])).toEqual([])
-    // An optional hook is still called: pi has no model catalog, so `readCatalog` is optional.
-    expect(callsMissingFrom('deps.readCatalog?.()\n', ['readCatalog'])).toEqual([])
+    // An optional hook is still called.
+    expect(callsMissingFrom('deps.reconcileAssets?.()\n', ['reconcileAssets'])).toEqual([])
   })
 
   test('runReconcileTick calls every hook RuntimeTruthDeps defines — no dead wiring', () => {

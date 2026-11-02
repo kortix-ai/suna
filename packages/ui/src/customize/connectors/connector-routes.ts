@@ -1,4 +1,4 @@
-import { customizePath } from '../../lib/routes';
+import { adminPath } from '../../lib/routes';
 import type { CatalogEntry } from './catalog/catalog-entry';
 import type { ConnectorScope } from './connector-filter';
 
@@ -18,7 +18,7 @@ export const COMPUTER_APP_ID = 'native:computer';
 export type AppRef = { source: 'discover'; slug: string; id: string };
 
 function base(projectId: string): string {
-  return customizePath(encodeURIComponent(projectId), 'connectors');
+  return adminPath(encodeURIComponent(projectId), 'connectors');
 }
 
 function withQuery(path: string, params: URLSearchParams): string {

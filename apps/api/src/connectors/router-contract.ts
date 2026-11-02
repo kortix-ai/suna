@@ -15,7 +15,7 @@ import type { ConnectorAttachmentStore } from './attachments';
 import type { ConnectorAuthDiscovery } from './auth-discovery';
 import type { ConnectorAuth } from './call';
 import type { GatewayDeps } from './gateway';
-import type { PolicyArgCondition } from './policy';
+import type { PolicyArgCondition } from '@kortix/manifest-schema';
 export interface ConnectorPrincipal {
   userId: string;
   accountId: string;

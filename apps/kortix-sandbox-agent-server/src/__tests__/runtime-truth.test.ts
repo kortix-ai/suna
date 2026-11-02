@@ -27,7 +27,6 @@ import {
   detectedResume,
   deriveAssetsSignal,
   deriveConfigReleaseSignal,
-  fingerprintModelIds,
   isBlockedCause,
   nextComponentEntry,
   resetRuntimeTruthForTests,
@@ -67,8 +66,6 @@ function wireConfigReleaseOnly(): void {
     reconcileAssets: () => {},
     readConfigRelease: () => configReleaseReport(),
     reconcileConfigRelease: async () => {},
-    readCatalog: () => ({ configuredIds: null, liveKnown: false, missingIds: [] }),
-    reconcileCatalog: async () => {},
   })
 }
 
@@ -86,7 +83,7 @@ describe('runtime-truth: the shape (Rule 1)', () => {
     resetConfigReleaseStateForTests()
   })
 
-  test('every one of the five required components is present before any tick ever ran', async () => {
+  test('every required component is present before any tick ever ran', async () => {
     const report = await runtimeTruthReport()
     expect(Object.keys(report.components).sort()).toEqual([...RUNTIME_TRUTH_COMPONENT_NAMES].sort())
     for (const name of RUNTIME_TRUTH_COMPONENT_NAMES) {
@@ -94,10 +91,10 @@ describe('runtime-truth: the shape (Rule 1)', () => {
     }
   })
 
-  test('the exact five top-level fields the API is built against, nothing more, nothing less', async () => {
+  test('the exact top-level fields the API is built against, nothing more, nothing less', async () => {
     const report = await runtimeTruthReport()
     expect(Object.keys(report).sort()).toEqual(
-      ['catalog_fingerprint', 'cli_sha256', 'components', 'daemon_build', 'managed_skills_hash', 'release_id'].sort(),
+      ['cli_sha256', 'components', 'daemon_build', 'managed_skills_hash', 'release_id'].sort(),
     )
   })
 
@@ -260,21 +257,6 @@ describe('runtime-truth: resume detection (Rule 3.2)', () => {
   })
 })
 
-describe('runtime-truth: catalog_fingerprint (Rule 1.2)', () => {
-  test('is a stable hash of the SORTED live provider ids — order in the map must not change the fingerprint', () => {
-    const a = fingerprintModelIds(['glm-5.3-flash', 'kimi-k3'])
-    const b = fingerprintModelIds(['kimi-k3', 'glm-5.3-flash'])
-    expect(a).toBe(b)
-    expect(a).toMatch(/^[0-9a-f]{64}$/)
-  })
-
-  test('a different lineup hashes differently', () => {
-    const a = fingerprintModelIds(['glm-5.3-flash'])
-    const b = fingerprintModelIds(['glm-5.3-flash', 'kimi-k3'])
-    expect(a).not.toBe(b)
-  })
-})
-
 describe('runtime-truth: end-to-end tick, driving the real owner modules (integration)', () => {
   beforeEach(() => {
     resetRuntimeTruthForTests()
@@ -285,15 +267,6 @@ describe('runtime-truth: end-to-end tick, driving the real owner modules (integr
     resetRuntimeTruthForTests()
     resetRuntimeConvergenceReportForTests()
     resetConfigReleaseStateForTests()
-  })
-
-  test('failure #1 healed: a pass that could not reach the managed lineup, THEN one that could, converges catalog from attempted to current across two ticks — no new session', async () => {
-    // Tick 1: the harness has built a config (bundled ids), but the live fetch
-    // never succeeded — exactly the 2026-09-26 incident.
-    const first = await runReconcileTick('boot')
-    // No deps configured in this unit test (no real harness/cfg) -> the
-    // catalog signal for THIS component is `unknown`.
-    expect(first.components.catalog.state).toBe('unknown')
   })
 
   test('cli reconcile result flows straight through into the report (no private second opinion)', async () => {
@@ -366,7 +339,7 @@ describe('runtime-truth: the asset pass starts after the tick settles its conver
   beforeEach(() => resetRuntimeTruthForTests())
   afterEach(() => resetRuntimeTruthForTests())
 
-  test('reconcileAssets runs only after config release and catalog finished', async () => {
+  test('reconcileAssets runs only after the config release finished', async () => {
     const order: string[] = []
     configureRuntimeTruth({
       reconcileAssets: () => { order.push('assets') },
@@ -376,14 +349,8 @@ describe('runtime-truth: the asset pass starts after the tick settles its conver
         await new Promise((r) => setTimeout(r, 5))
         order.push('config:end')
       },
-      readCatalog: () => ({ configuredIds: null, liveKnown: false, missingIds: [] }),
-      reconcileCatalog: async () => {
-        await new Promise((r) => setTimeout(r, 5))
-        order.push('catalog:end')
-      },
     })
     await runReconcileTick('periodic')
     expect(order.indexOf('assets')).toBeGreaterThan(order.indexOf('config:end'))
-    expect(order.indexOf('assets')).toBeGreaterThan(order.indexOf('catalog:end'))
   })
 })

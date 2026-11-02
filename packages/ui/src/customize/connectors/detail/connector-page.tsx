@@ -52,7 +52,7 @@ import { useConnectorDetail } from './use-connector-detail';
 /** The column `CapabilityPageShell` gives the list page beside this one. */
 
 /**
- * `/projects/<id>/customize/connectors/<app>/<connector>` — one connector, as
+ * `/projects/<id>/admin/connectors/<app>/<connector>` — one connector, as
  * a page: its accounts, its tools, its settings.
  *
  * `appSegment` is navigation context only. It decides where Back goes: the
@@ -114,15 +114,17 @@ export function ConnectorPage({
 
   if (state === 'loading') {
     return (
+      // Grouped, in the loaded page's order: back link, name, the status card,
+      // the tab row, the tab body. One block per group, no line per field.
       <DetailPageShell busy>
         <Skeleton className="h-4 w-24 rounded-sm py-0" />
         <div className="flex items-center gap-3">
-          <Skeleton className="size-10 py-0" />
-          <Skeleton className="h-6 w-48 rounded-sm py-0" />
+          <Skeleton className="size-10 shrink-0 rounded-md py-0" />
+          <Skeleton className="h-6 w-40 rounded-sm py-0" />
         </div>
-        <Skeleton className="h-8 w-64 py-0" />
-        <Skeleton className="h-20 w-full py-0" />
-        <Skeleton className="h-20 w-full py-0" />
+        <Skeleton className="h-36 w-full rounded-md py-0" />
+        <Skeleton className="h-10 w-96 max-w-full rounded-lg py-0" />
+        <Skeleton className="h-48 w-full rounded-md py-0" />
       </DetailPageShell>
     );
   }

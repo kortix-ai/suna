@@ -114,7 +114,7 @@ One entry per module. Its curated names are the public API (semver). Every name,
 | `@kortix/ui/files` | Project files (git repo), sandbox files, `FilePreviewHost` | `ProjectFilesView` (workspace); `<FilePreviewHost />` once on a page without a side panel |
 | `@kortix/ui/file-viewer` | Any file kind: pdf, docx, xlsx, csv, pptx, zip, images, code | `<FileViewer content fileName />`; `FileContentRenderer` in `FileSourceProvider` |
 | `@kortix/ui/terminal`, `@kortix/ui/browser` | The session shell; the sandbox browser | the runtime ids of a mounted `useSession` |
-| `@kortix/ui/markdown`, `@kortix/ui/genui` | Markdown with code, math, links; GenUI blocks | `<UnifiedMarkdown content trust="agent" />` |
+| `@kortix/ui/markdown`, `@kortix/ui/genui` | Markdown with code, math, links; GenUI blocks | `<UnifiedMarkdown content trust="agent" />`; `genui` renders GenUI fences |
 | `@kortix/ui/diff`, `@kortix/ui/changes` | One diff; a change list | `<DiffView before after />` |
 | `@kortix/ui/apps`, `@kortix/ui/artifacts` | App frames, the frame pool, the App view model; artifact frames and session cards | none |
 | `@kortix/ui/access`, `@kortix/ui/customize` | Sharing and roles; project configuration pages | `<ConnectorsPage projectId />` |

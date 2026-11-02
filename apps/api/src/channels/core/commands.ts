@@ -19,7 +19,7 @@ import { logger } from '../../lib/logger';
 import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { toWireModel } from '../../llm-gateway/resolution/effective';
 import { abortRuntimeTurn, readRunningTurn } from '../../projects/surface';
-import { agentGrantEnvFor, applyChannelSessionKeys, checkChannelModel, listChannelModels } from '../model-access';
+import { applyChannelSessionKeys, checkChannelModel, listChannelModels } from '../model-access';
 import { chatAgents } from '../scoped-agents';
 import { CHANNEL_COMMANDS, type ChannelCommandName, type ParsedCommand } from './command-list';
 import { type CommandPress, choiceRef, parsePressData } from './command-press';
@@ -457,14 +457,9 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
           : 'Model for this chat reset to the project default.',
       );
     }
-    const agent = session?.agentName ?? selection?.agentName ?? null;
-    const verdict = await checkChannelModel(await sharedChatScope(ctx.project), arg, { agentGrantEnv: agentGrantEnvFor(projectId, agent) });
+    const verdict = await checkChannelModel(await sharedChatScope(ctx.project), arg);
     if (!verdict.ok) {
-      return notice(
-        verdict.reason === 'agent_grant'
-          ? `The ${agent || 'default'} agent may not use ${verdict.providerId === 'codex' ? 'ChatGPT connections' : `${verdict.providerId} keys`}. Add ${verdict.envVar} to its secrets in kortix.yaml, or pick another model.`
-          : `${modelName(arg)} is not available in this chat. Only models and keys the whole project shares work here. Send /model to see them.`,
-      );
+      return notice(`${modelName(arg)} is not available in this chat. Only models and keys the whole project shares work here. Send /model to see them.`);
     }
     if (!(await ensureChatBinding(ctx.settings, projectId, ctx.label))) return notice(NOT_CONNECTED);
     // No row to write: a disconnect dropped it after the check.

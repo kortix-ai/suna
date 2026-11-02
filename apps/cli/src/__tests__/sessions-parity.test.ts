@@ -23,7 +23,7 @@ const SESSION = '00000000-0000-4000-a000-000000000501';
 const SESSION_B = '00000000-0000-4000-a000-000000000502';
 /** Same session, but with no persisted model — exercises the compact fallback. */
 const SESSION_C = '00000000-0000-4000-a000-000000000503';
-/** A pi-harness session: its runtime lists no `session.compact` / `session.attach`. */
+/** A session whose runtime lists no `session.compact`. */
 const SESSION_PI = '00000000-0000-4000-a000-000000000504';
 /** A new session whose first turn failed before `--wait` returned (KRTX-2913). */
 const SESSION_FAILED_TURN = '00000000-0000-4000-a000-000000000506';
@@ -38,19 +38,10 @@ const PROMPT_ROW = '00000000-0000-4000-a000-000000000701';
 const SHARE = '00000000-0000-4000-a000-000000000801';
 const EXTERNAL = 'sandbox-parity';
 const EXTERNAL_PI = 'sandbox-pi';
-/** `GET /kortix/health` capabilities, as the W3 daemon lists them per harness. */
-const OPENCODE_CAPABILITIES = [
-  'session.rewind',
-  'session.compact',
-  'session.commands',
-  'session.fork',
-  'session.subagents',
-  'session.mcp',
-  'session.todo',
-  'session.shell',
-  'session.attach',
-];
-const PI_CAPABILITIES = ['session.subagents'];
+const COMPACT = `/v1/p/${EXTERNAL}/8000/kortix/runtime/sessions/ses_oc/compact`;
+/** `GET /kortix/health` capabilities: a current box, and one without compaction. */
+const BOX_CAPABILITIES = ['session.subagents', 'session.compact', 'session.commands', 'session.steer', 'runtime.actions.v1'];
+const NO_COMPACT_CAPABILITIES = ['session.subagents'];
 
 interface Seen {
   method: string;
@@ -62,6 +53,8 @@ let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let seen: Seen[] = [];
 let compactStatus = 'running';
+/** Extra `GET /kortix/health` capabilities of the main box (a pi box with the context record lists `session.context_record`). */
+let extraCapabilities: string[] = [];
 let compactStartFailure = false;
 let compactBusy = false;
 let sessionReadStatus = 200;
@@ -246,7 +239,7 @@ function startServer(): string {
         });
       }
       if (method === 'GET' && path === `/v1/p/${EXTERNAL_PI}/8000/kortix/health`) {
-        return Response.json({ status: 'ok', runtimeReady: true, capabilities: PI_CAPABILITIES });
+        return Response.json({ status: 'ok', runtimeReady: true, capabilities: NO_COMPACT_CAPABILITIES });
       }
       if (method === 'POST' && path === `${project}/sessions/${SESSION_C}/start`) {
         return Response.json({
@@ -429,7 +422,7 @@ function startServer(): string {
         return Response.json({
           status: 'ok',
           runtimeReady: true,
-          capabilities: ['file.import', ...OPENCODE_CAPABILITIES],
+          capabilities: ['file.import', ...BOX_CAPABILITIES, ...extraCapabilities],
         });
       }
       if (method === 'GET' && path === `${daemon}/file`) {
@@ -461,11 +454,11 @@ function startServer(): string {
           { path: `${parent}/${name}`.replace('//', '/'), size: multipartFileBytes.get(form) ?? 0 },
         ]);
       }
-      if (method === 'GET' && path === `${daemon}/session/status`) {
-        return Response.json({ ses_oc: { type: compactBusy ? 'busy' : 'idle' } });
+      if (method === 'GET' && path === `${daemon}/kortix/runtime/pending`) {
+        return Response.json({ statuses: { ses_oc: compactBusy ? 'busy' : 'idle' }, permissions: [], questions: [] });
       }
-      if (method === 'POST' && path === `${daemon}/session/ses_oc/summarize`) {
-        return compactResponse ? compactResponse() : Response.json({});
+      if (method === 'POST' && path === `${daemon}/kortix/runtime/sessions/ses_oc/compact`) {
+        return compactResponse ? compactResponse() : Response.json({ ok: true }, { status: 202 });
       }
       if (method === 'GET' && path === `${daemon}/kortix/pty`) {
         return Response.json([
@@ -564,6 +557,7 @@ beforeEach(() => {
   process.env = { ...ORIGINAL_ENV };
   seen = [];
   compactStatus = 'running';
+  extraCapabilities = [];
   compactStartFailure = false;
   compactBusy = false;
   sessionReadStatus = 200;
@@ -1012,12 +1006,29 @@ describe('kortix sessions compact', () => {
       expect(await new Response(proc.stdout).text()).toBe('');
       expect(stderr).toContain('Compaction has not finished. Check the session status before trying again.');
       expect(stderr).not.toMatch(/ALB|prompt_async|SSE/);
-      expect(calls('POST', `/v1/p/${EXTERNAL}/8000/session/ses_oc/summarize`)).toHaveLength(1);
+      expect(calls('POST', COMPACT)).toHaveLength(1);
     } finally {
       resolve(Response.json({}));
       proc.kill();
       reader.releaseLock();
     }
+  });
+
+  test('a runtime with the context record starts a fresh context: the output says nothing was summarized, and --json names the mode', async () => {
+    extraCapabilities = ['session.context_record'];
+    const r = await runCli(['sessions', 'compact', SESSION, ...P], config);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toContain('Checking session and starting a fresh context');
+    expect(r.stdout).toContain('Started a fresh context for');
+    expect(r.stdout).toContain('nothing was summarized');
+    expect(calls('POST', COMPACT)).toHaveLength(1);
+    const json = await runCli(['sessions', 'compact', SESSION, '--json', ...P], config);
+    expect(JSON.parse(json.stdout)).toMatchObject({ compacted: true, mode: 'record' });
+  });
+
+  test('a runtime without the context record names the summary mode in --json', async () => {
+    const r = await runCli(['sessions', 'compact', SESSION, '--json', ...P], config);
+    expect(JSON.parse(r.stdout)).toMatchObject({ compacted: true, mode: 'summary' });
   });
 
   test('wakes a stopped session before compacting with its persisted model', async () => {
@@ -1028,11 +1039,11 @@ describe('kortix sessions compact', () => {
     expect(JSON.parse(r.stdout).compacted).toBe(true);
     const restart = seen.findIndex((call) => call.path.endsWith('/restart'));
     const start = seen.findIndex((call) => call.path.endsWith('/start'));
-    const summarize = seen.findIndex((call) => call.path.endsWith('/summarize'));
+    const compact = seen.findIndex((call) => call.path === COMPACT);
     expect(restart).toBeGreaterThanOrEqual(0);
     expect(start).toBeGreaterThan(restart);
-    expect(summarize).toBeGreaterThan(start);
-    expect(seen[summarize]?.body).toEqual({ providerID: 'kortix', modelID: 'glm-5.3-flash' });
+    expect(compact).toBeGreaterThan(start);
+    expect(JSON.parse(r.stdout).model).toBe('kortix/glm-5.3-flash');
   });
 
   test('reports a failed wake without attempting compaction', async () => {
@@ -1041,7 +1052,7 @@ describe('kortix sessions compact', () => {
     const r = await runCli(['sessions', 'compact', SESSION, ...P], config);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('Synthetic boot failure');
-    expect(seen.filter((call) => call.path.endsWith('/summarize'))).toEqual([]);
+    expect(calls('POST', COMPACT)).toEqual([]);
   });
 
   test('a busy turn exits 1 with an actionable message and never submits compaction', async () => {
@@ -1051,14 +1062,13 @@ describe('kortix sessions compact', () => {
     expect(r.stderr).toContain('This session is busy. Wait for the current turn to finish, then run compact again.');
     expect(r.stderr).not.toContain('prompt_async');
     expect(r.stderr).not.toContain('SSE');
-    expect(calls('POST', `/v1/p/${EXTERNAL}/8000/session/ses_oc/summarize`)).toEqual([]);
+    expect(calls('POST', COMPACT)).toEqual([]);
   });
 
-  test('summarizes through the runtime with the session own persisted model', async () => {
+  test('compacts through the runtime and reports the session own persisted model', async () => {
     const r = await runCli(['sessions', 'compact', SESSION, '--json', ...P], config);
     expect(r.code).toBe(0);
-    const call = calls('POST', `/v1/p/${EXTERNAL}/8000/session/ses_oc/summarize`)[0];
-    expect(call?.body).toEqual({ providerID: 'kortix', modelID: 'glm-5.3-flash' });
+    expect(calls('POST', COMPACT)).toHaveLength(1);
     expect(JSON.parse(r.stdout).model).toBe('kortix/glm-5.3-flash');
   });
 
@@ -1066,7 +1076,7 @@ describe('kortix sessions compact', () => {
     const r = await runCli(['sessions', 'compact', SESSION_C, ...P], config);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('No model configured for this session');
-    expect(calls('POST', `/v1/p/${EXTERNAL}/8000/session/ses_oc/summarize`)).toEqual([]);
+    expect(calls('POST', COMPACT)).toEqual([]);
   });
 
   test('without a session id exits 2', async () => {
@@ -1075,23 +1085,12 @@ describe('kortix sessions compact', () => {
     expect(r.stderr).toContain('Pass a session id');
   });
 
-  test('a runtime without session.compact exits 1 before any summarize call', async () => {
+  test('a runtime without session.compact exits 1 before any compact call', async () => {
     const r = await runCli(['sessions', 'compact', SESSION_PI, ...P], config);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain("This session's runtime does not support compacting the conversation.");
     expect(calls('GET', `/v1/p/${EXTERNAL_PI}/8000/kortix/health`)).toHaveLength(1);
     expect(calls('POST', `/v1/p/${EXTERNAL_PI}/8000/session`)).toEqual([]);
-  });
-});
-
-describe('kortix connect', () => {
-  test('a runtime without session.attach exits 1 with the reason, before any download', async () => {
-    const r = await runCli(['connect', SESSION_PI, ...P], config);
-    expect(r.code).toBe(1);
-    expect(r.stderr).toContain("This session's runtime does not support attaching a terminal client.");
-    expect(r.stderr).toContain(`kortix sessions shell ${SESSION_PI}`);
-    // The version probe precedes the opencode download; it never ran.
-    expect(calls('GET', `/v1/p/${EXTERNAL_PI}/8000/global/health`)).toEqual([]);
   });
 });
 

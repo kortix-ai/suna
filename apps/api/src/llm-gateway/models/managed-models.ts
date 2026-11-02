@@ -60,7 +60,7 @@ export function managedModelsFromPlatinum(body: unknown): ManagedModel[] {
 
 let lineup: readonly ManagedModel[] = [];
 // replica-local: every replica loads the same Platinum list and refreshes it
-// every 5 min (workers/managed-lineup-worker.ts); a copy is at most that old.
+// every 5 min (replica/managed-lineup.ts); a copy is at most that old.
 let byId = new Map<string, ManagedModel>();
 let revision = 0;
 

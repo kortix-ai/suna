@@ -1,9 +1,9 @@
 /**
- * GET /kortix/logs — the daemon's own log and OpenCode's, from the box.
+ * GET /kortix/logs — the daemon's own log, from the box.
  *
- * `?source=daemon` (default) tails the daemon log file (see logger.ts),
- * `?source=opencode` tails OpenCode's `~/.local/share/opencode/log/opencode.log`,
- * `?source=all` returns both, each under a `==> <path> <==` header.
+ * `?source=` names a source the harness lists (`logSources()`). pi lists only
+ * `daemon` (the default): the daemon log file (see logger.ts). `?source=all`
+ * returns every listed source, each under a `==> <path> <==` header.
  * `?tail=N` (default 500, max 5000) is the number of lines from the end.
  *
  * Plain text, so `curl … | grep` works. Reachable through the API's sandbox

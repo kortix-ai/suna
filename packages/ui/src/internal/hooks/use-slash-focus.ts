@@ -22,12 +22,24 @@ export function isSlashFocusKey(
  * A page whose search field is its main control: the field is focused on
  * arrival, and "/" jumps back to it from anywhere on the page except another
  * text field. `enabled` turns both off while the field is not on screen.
+ * `focusOnArrival: false` keeps only the "/" key, for a page whose search is
+ * not its main control (the Agents index). A field inside an embedded resource
+ * screen (`[data-capability-embed]`, the agent page) is never focused on
+ * arrival either: there the screen is one view among the agent's tabs.
  */
-export function useSlashFocus(ref: RefObject<HTMLInputElement | null>, enabled = true) {
+export function useSlashFocus(
+  ref: RefObject<HTMLInputElement | null>,
+  enabled = true,
+  { focusOnArrival = true }: { focusOnArrival?: boolean } = {},
+) {
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return;
     // No autofocus on touch: it would open the on-screen keyboard on arrival.
-    if (window.matchMedia?.('(pointer: fine)').matches) {
+    if (
+      focusOnArrival &&
+      !ref.current?.closest('[data-capability-embed]') &&
+      window.matchMedia?.('(pointer: fine)').matches
+    ) {
       ref.current?.focus({ preventScroll: true });
     }
     const onKeyDown = (event: KeyboardEvent) => {
@@ -44,5 +56,5 @@ export function useSlashFocus(ref: RefObject<HTMLInputElement | null>, enabled =
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [ref, enabled]);
+  }, [ref, enabled, focusOnArrival]);
 }

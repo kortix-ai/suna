@@ -31,17 +31,17 @@ function git(...args: string[]): string {
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), 'kortix-serve-archive-'));
   repo = join(root, 'repo');
-  mkdirSync(join(repo, '.kortix/opencode/agents'), { recursive: true });
+  mkdirSync(join(repo, 'config/agents'), { recursive: true });
   git('init', '-q', '--initial-branch=main');
   git('config', 'user.email', 't@kortix.invalid');
   git('config', 'user.name', 'T');
-  writeFileSync(join(repo, '.kortix/opencode/opencode.json'), '{}\n');
-  writeFileSync(join(repo, '.kortix/opencode/agents/kortix.md'), 'agent\n');
+  writeFileSync(join(repo, 'config/settings.json'), '{}\n');
+  writeFileSync(join(repo, 'config/agents/kortix.md'), 'agent\n');
   git('add', '-A');
   git('commit', '-qm', 'seed');
   commit = git('rev-parse', 'HEAD');
-  tree = git('rev-parse', 'HEAD:.kortix/opencode');
-  blob = git('rev-parse', 'HEAD:.kortix/opencode/opencode.json');
+  tree = git('rev-parse', 'HEAD:config');
+  blob = git('rev-parse', 'HEAD:config/settings.json');
   mkdirSync(join(repo, 'huge'), { recursive: true });
   // Random bytes do not compress: 64 KiB stays over the 32 KiB test cap.
   writeFileSync(join(repo, 'huge/blob.bin'), randomBytes(64 * 1024));
@@ -231,11 +231,9 @@ describe('serveConfigArchive', () => {
 
 describe('serveConfigArchive — a release is the commit tree', () => {
   test('a root-layout release is served from the mirror by its tree ID, with no commit', async () => {
-    mkdirSync(join(repo, 'harnesses/opencode'), { recursive: true });
     mkdirSync(join(repo, 'skills/demo'), { recursive: true });
-    writeFileSync(join(repo, 'harnesses/opencode/opencode.jsonc'), '{}\n');
     writeFileSync(join(repo, 'skills/demo/SKILL.md'), 'demo\n');
-    git('rm', '-rq', '.kortix', 'huge');
+    git('rm', '-rq', 'config', 'huge');
     git('add', '-A');
     git('commit', '-qm', 'root layout');
     const rootCommit = git('rev-parse', 'HEAD');

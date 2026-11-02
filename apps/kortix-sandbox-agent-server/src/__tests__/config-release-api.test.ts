@@ -40,10 +40,10 @@ beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), 'kortix-release-api-'))
   const repo = join(root, 'repo')
   initRepo(repo)
-  write(repo, '.kortix/opencode/opencode.jsonc', '{}\n')
-  write(repo, '.kortix/opencode/agents/kortix.md', 'PROMPT\n')
+  write(repo, 'kortix.yaml', 'agents:\n  kortix:\n    prompt_file: agents/kortix.md\n')
+  write(repo, 'agents/kortix.md', 'PROMPT\n')
   const commit = commitAll(repo, 'base')
-  release = buildRelease(repo, commit, '.kortix/opencode', { governance: '{"agent":{}}' })
+  release = buildRelease(repo, commit, { governance: '{"agent":{}}' })
   api = startFakeApi('tok')
   client = { apiUrl: api.url, projectId: 'proj-1', sessionId: 'ses-1', token: 'tok' }
 })
@@ -141,13 +141,10 @@ describe('parseConfigReleaseDescriptor', () => {
     }
   })
 
-  test('refuses an archive larger than the cap and a non-literal config dir', () => {
+  test('refuses an archive larger than the cap', () => {
     const big = valid()
     big.archive!.bytes = MAX_CONFIG_ARCHIVE_BYTES + 1
     expect(() => parseConfigReleaseDescriptor(big)).toThrow()
-    const magic = valid()
-    magic.config_dir = ':(top)*'
-    expect(() => parseConfigReleaseDescriptor(magic)).toThrow(/config_dir/)
   })
 
   test('follow-base is the only mode; repository-less sessions get governance only', () => {
@@ -263,7 +260,7 @@ describe('downloadConfigArchive', () => {
 
   test('the archive is byte-deterministic for one tree', () => {
     const repo = join(root, 'repo')
-    const again = buildRelease(repo, release.descriptor.source_commit!, '.kortix/opencode', { governance: '{"agent":{}}' })
+    const again = buildRelease(repo, release.descriptor.source_commit!, { governance: '{"agent":{}}' })
     expect(again.archive.equals(release.archive)).toBe(true)
     expect(spawnSync('git', ['--version']).status).toBe(0)
   })

@@ -65,12 +65,6 @@ export const SIDEBAR_KEYS: readonly Binding[] = [
     description: 'Delete the selected session (asks first).',
   },
   {
-    id: 'sidebar.attach',
-    scope: 'sidebar',
-    chords: [{ key: 'a' }],
-    description: 'Attach the selected OpenCode session in the stock opencode TUI.',
-  },
-  {
     id: 'sidebar.new',
     scope: 'sidebar',
     chords: [{ key: 'n' }],

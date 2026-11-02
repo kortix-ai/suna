@@ -311,8 +311,37 @@ export function bindIntegrationPrincipal(
  * Wrap the tick function itself, not the timer, so an ad-hoc kick from a
  * handler runs as the worker too. `unit-worker-scope-wiring.test.ts` fails
  * when a background loop in `apps/api/src` is neither wrapped nor classified.
+ *
+ * The tick observer (`observeWorkerTicks`) sees every tick start and settle:
+ * the job heartbeat (`worker/runtime/heartbeat.ts`) reads it.
  */
 export function runWorkerTick<T>(worker: string, tick: () => T | Promise<T>): Promise<T> {
+  const settled = tickObserver?.(worker);
+  const run = runWorkerTickInScope(worker, tick);
+  if (!settled) return run;
+  return run.then(
+    (value) => {
+      settled();
+      return value;
+    },
+    (error: unknown) => {
+      settled(error);
+      throw error;
+    },
+  );
+}
+
+/** Called when a tick starts; the function it returns is called when the tick settles. */
+export type WorkerTickObserver = (worker: string) => ((error?: unknown) => void) | undefined;
+
+let tickObserver: WorkerTickObserver | null = null;
+
+/** Install (or with null, remove) the one tick observer. */
+export function observeWorkerTicks(observer: WorkerTickObserver | null): void {
+  tickObserver = observer;
+}
+
+function runWorkerTickInScope<T>(worker: string, tick: () => T | Promise<T>): Promise<T> {
   return requestContext.runWithContext('WORKER', worker, async () => {
     attachInboundAuditScope({
       owner: 'worker',

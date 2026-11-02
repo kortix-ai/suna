@@ -1,3 +1,5 @@
+import { wireIdClock, wireIdClockAt, wireIdClockDelta } from '../core/session/wire-message-id';
+import { mintSessionWireMessageId } from './use-opencode-sessions/messages';
 import { beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 
 // Mock the lowest network boundary the reply/send paths go through — the
@@ -1445,6 +1447,31 @@ describe('sessionPromptFromParts (W5 E4: sendParts goes through the prompt inbox
     expect(retry.messageId).toBe(first.messageId);
     expect('overrides' in first).toBe(false);
     expect(sessionPromptFromParts('ses_root', [{ type: 'text', text: 'x' }], {}).messageId).not.toBe(first.messageId);
+  });
+});
+
+describe('beginOptimisticPlainTextSend: the optimistic message is drawn under the wire id', () => {
+  test('a given id names the message and its part; the wire codec reads it at the server clock', () => {
+    const wire = mintSessionWireMessageId('ses_codec');
+    const { messageId, parts } = beginOptimisticPlainTextSend('ses_codec', 'hello', wire);
+    expect(messageId).toBe(wire);
+    expect(useSyncStore.getState().messages.ses_codec?.at(-1)?.id).toBe(wire);
+    expect(parts).toHaveLength(1);
+    // `ascendingId` is another clock: read by the wire codec it lands ~3.5 days ahead of the
+    // server's ids, so it must never be a wire id.
+    const delta = Number(wireIdClockDelta(wireIdClock(messageId)!, wireIdClockAt(Date.now())));
+    expect(Math.abs(delta) / 4096).toBeLessThan(10 * 60 * 1000);
+  });
+});
+
+describe('sessionPromptFromParts: one id from the optimistic message to the session log', () => {
+  test('the id the host drew its optimistic message under is the wire id, so the log replaces it by id', () => {
+    const { messageId, parts } = beginOptimisticPlainTextSend('ses_root', 'hello');
+    const prompt = sessionPromptFromParts('ses_root', parts, {}, undefined, 1_700_000_000_000, messageId);
+    expect(prompt.messageId).toBe(messageId);
+    expect(prompt.clientMessageId).toBe(messageId);
+    // A host queue key stays the idempotency key; the wire id is still the drawn one.
+    expect(sessionPromptFromParts('ses_root', parts, {}, 'queue-9', 1, messageId)).toMatchObject({ clientMessageId: 'queue-9', messageId });
   });
 });
 

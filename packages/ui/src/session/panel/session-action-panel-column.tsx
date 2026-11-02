@@ -150,7 +150,7 @@ export function SessionActionPanelColumn({
   }, [shouldHandleHotkey, toggleRight]);
 
   // No provider means no panel to render: `SessionChat` also renders read-only
-  // inside `sub-session-modal.tsx`, outside `SessionLayout`. Mobile has no
+  // inside `legacy-subagent-chat.tsx`, outside `SessionLayout`. Mobile has no
   // column either — at 375px a side column is the whole screen, so the cards
   // stay in the bottom drawer they have always used.
   if (!panel || isMobile) return null;

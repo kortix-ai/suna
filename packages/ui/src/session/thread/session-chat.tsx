@@ -11,7 +11,6 @@ import { useTranslations } from '../../i18n';
 import { errorMessageOf, isDeliveredButDisconnected } from '../../internal/lib/delivered-but-disconnected';
 import { useQueuedDraftStore, useQueuedDrafts } from '../composer/stores/queued-draft-store';
 import {
-  type SandboxLifecycle,
   type SessionPrompt,
   type SessionPromptDelivery,
   type SessionPromptPart,
@@ -22,7 +21,6 @@ import {
   SESSION_LOG_MINOR,
   SESSION_LOG_SCHEMA,
   listSessionPrompts,
-  projectSessionConnection,
   sessionLogOfV1Rows,
   sessionLogPromptMessage,
   sessionLogRetrying,
@@ -110,6 +108,9 @@ import {
   Composer as SessionChatInput,
 } from '../composer/composer';
 import { ComposerDropZone } from '../composer/composer-drop-zone';
+import { AgentsLine } from '../agents/agent-strip';
+import { HeldMessages } from '../agents/held-messages';
+import { SessionPromptContext } from '../agents/session-prompt';
 import { channelRunnableAgents, resolveComposerAgent, withChannelAgents } from '../composer/composer-agent-access';
 import {
   acknowledgeQuoteRequests,
@@ -666,7 +667,7 @@ export function SessionChat({
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
-  // A chat with no `useSession` (a sub-agent's: `sub-session-modal`, the `?rs=` route) runs
+  // A chat with no `useSession` (a sub-agent's: `legacy-subagent-chat`, the `?rs=` route) runs
   // inside the route's session. While that session reads its log (v2: the store holds it),
   // the sub-agent's thread and its older pages are the log's, and no saved copy is read.
   const [scopeProjectId = '', scopeSessionId = ''] = savedHistoryScope?.split('/') ?? [];
@@ -701,7 +702,7 @@ export function SessionChat({
     freshness: transcriptFreshness,
     retryTranscript,
   } = sessionState ?? localSync;
-  // A chat with no `useSession` (a sub-agent's, `sub-session-modal`) reads its
+  // A chat with no `useSession` (a sub-agent's, `legacy-subagent-chat`) reads its
   // runtime session's rows through `useSessionSync`: the same `fromV1` view.
   // On v2 that is the fallback while the log does not hold the sub-agent's thread yet.
   const detachedThread = useMemo(
@@ -1170,7 +1171,7 @@ export function SessionChat({
    * turn authority first (`GET .../turn`), the stream second, and this tab's
    * own send receipt only until either of them answers.
    */
-  // A child-session mount (`sub-session-modal.tsx` passes no project ids) has
+  // A child-session mount (`legacy-subagent-chat.tsx` passes no project ids) has
   // no Kortix session row for `/turn` to answer about, so the projection below
   // is disabled and every working read falls back to the raw stream slot —
   // the same split `session-layout.tsx` makes for its busy indicator.
@@ -3897,6 +3898,14 @@ export function SessionChat({
     [projectId, projectSessionId, sessionScopeAgentName],
   );
 
+  // The agents this session started, as one line in the composer's under-row
+  // (Claude Code's agent panel). It reads its own lists and never holds the composer.
+  const agentsLineCompact = !!transcriptRows && !isPhone;
+  const chatUnderbarSlot = useMemo(
+    () => <AgentsLine projectId={projectId} sessionId={projectSessionId} compact={agentsLineCompact} />,
+    [projectId, projectSessionId, agentsLineCompact],
+  );
+
   // The queued messages and the one Resume while a Stop holds the queue: their
   // own full-width card above the composer stack, not inside the strip.
   const chatAboveSlot = useMemo(
@@ -4049,22 +4058,8 @@ export function SessionChat({
   // its cause attached instead of a shrug. An actionable cause reports to
   // Sentry; a routine browser tab discard only leaves a breadcrumb.
   useReloadForensics(projectSessionId);
-  // ONE answer for every surface that draws this session's runtime, and the
-  // reason the composer no longer guesses: `unknown` and `connecting` are
-  // waits, and a wait is not a fault. A routine wake says nothing either; only
-  // a parked box with no wake under way earns the asleep notice.
-  const sessionConnection = projectSessionConnection({
-    sandbox: (projectSessionRow?.status as SandboxLifecycle | undefined) ?? null,
-    runtimeReady,
-    unreachable: runtimePhase === 'unreachable' || runtimeUnreachable,
-    stalled: runtimeStalled,
-    activityFresh: working.state === 'working' && working.source === 'stream',
-  });
   const composerReadiness = sessionComposerReadiness({
     runtimeReady,
-    pendingPrompt: allowSendBeforeReady && working.state === 'working',
-    pendingDelivery: working.pendingDelivery,
-    connection: sessionConnection,
     // Only an OPEN TURN the control plane is holding counts here. This tab's
     // optimistic receipt and a stream frame both survive a box that died
     // mid-turn, and a durable inbox row (which the projection also sources to
@@ -4073,13 +4068,6 @@ export function SessionChat({
     serverTurnLive: serverHoldsOpenTurn(working),
     unreachable: runtimePhase === 'unreachable' || runtimeUnreachable,
     stalled: runtimeStalled,
-    // The route's `/start` is bringing the computer up (or has not answered):
-    // the same fact the boot pill above the thread shows.
-    starting:
-      !!sessionState &&
-      (sessionState.stage == null ||
-        sessionState.stage === 'provisioning' ||
-        sessionState.stage === 'starting'),
   });
   // #6509's `promptLikelyDropped` notice is deliberately NOT carried over: it
   // instrumented the deleted prompt-observation stall machinery to warn about
@@ -4156,7 +4144,7 @@ export function SessionChat({
   // about which ref backs a change request.
   const outcomesBaseRef = useSessionBaseRef(projectId, projectSessionId);
   const searchParams = useUiSearchParams();
-  // `readOnly` is the nested sub-session modal (`sub-session-modal.tsx`) — it
+  // `readOnly` is the nested sub-session modal (`legacy-subagent-chat.tsx`) — it
   // shares this component but must not rewrite the parent route's URL.
   const [openCrId, setOpenCrIdState] = useState<string | null>(() =>
     readOnly ? null : (searchParams?.get('cr') ?? null),
@@ -4204,6 +4192,13 @@ export function SessionChat({
   // the loader exists to avoid). The connection keeps running in the parent
   // ProjectSessionRuntimeConnection, so as soon as the runtime is ready
   // isDataLoading flips and the full shell renders in one shot.
+  // A control outside the composer ("Save as workflow" on a workflow card) sends through the
+  // same path as a typed prompt: a running turn is steered, an idle session starts a turn.
+  const sendSessionPrompt = useCallback(
+    (text: string) => handleSend(text, undefined, undefined, undefined, composerSendDelivery('transcript', isBusyRef.current)),
+    [handleSend],
+  );
+
   if (isDataLoading) {
     // A transcript read that genuinely FAILED (not a waking box — the SDK keeps
     // those on `loading` and retries them itself) gets an explicit retry, not
@@ -4242,6 +4237,7 @@ export function SessionChat({
   return (
     // A read-only view (the sub-session modal) offers no fix inside a tool card.
     <ReadOnlySessionContext.Provider value={!!readOnly}>
+    <SessionPromptContext.Provider value={readOnly ? null : sendSessionPrompt}>
     {/* Outcomes' cache coherence and the shareable `?cr=` link both hinge on
         ONE `ProjectFilesProvider`: `useChangeRequests` inside
         `SessionOutcomesProvider` and `ChangeRequestDetailDialog` below both read
@@ -4987,11 +4983,11 @@ export function SessionChat({
                 aboveSlot={chatAboveSlot}
                 inputSlot={chatInputSlot}
                 toolbarSlot={chatToolbarSlot}
+                underbarSlot={chatUnderbarSlot}
                 // The shell can now render on a cached transcript alone, i.e. before
                 // the sandbox answers — so sending has to be gated separately from
                 // reading. See sessionComposerReadiness.
                 notice={hostNotice(composerReadiness.notice, rowsContext?.notices)}
-                noticeAsleep={composerReadiness.notice === SESSION_NOTICE.idle}
                 // Inside the thread panel's bordered box, as the channel composer.
                 // A phone keeps the row under the card; a 720px desktop window does not.
                 underbarPlacement={transcriptRows && !isPhone ? 'inline' : undefined}
@@ -5007,11 +5003,17 @@ export function SessionChat({
                     : undefined
                 }
               />
+              {/* Messages from other sessions that wait for the person: one card each,
+                  under the composer. `empty:hidden` drops the gutter while none waits. */}
+              <div className={cn(COMPOSER_SHELL_CLASS, 'pb-3 empty:hidden', transcriptRows && 'max-w-none px-5')}>
+                <HeldMessages projectId={projectId} sessionId={projectSessionId} />
+              </div>
             </>
           )}
         </SessionBodyRow>
       </ComposerDropZone>
     </ProjectFilesProvider>
+    </SessionPromptContext.Provider>
     </ReadOnlySessionContext.Provider>
   );
 }

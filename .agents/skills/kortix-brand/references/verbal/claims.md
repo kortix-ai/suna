@@ -127,7 +127,7 @@ Each rule below is a correction the code forced. The *Why* cites the source.
 
 **Rule.** Do not write bare "one click" for a Slack install. — *Why:* One-click install needs the Slack app credentials on the server. Without them the UI falls back to a paste-your-manifest flow. In both cases the bot must be invited to a channel and @-mentioned. — *Where:* marketing | docs. — *When silent:* write what happens: "Add to Slack, invite the bot, mention it with a task."
 
-**Rule.** Do not write a `channels:` block in any `kortix.yaml` example, and do not say `kortix.yaml` declares channels. — *Why:* Schema versions 2 and 3 reject `channels:`. A connected channel is a connector with `provider: channel`. Routing is live project state (`company-as-code/content.ts` gate). — *Where:* marketing | docs | deck. — *When silent:* leave channels out of the YAML.
+**Rule.** Do not write a `channels:` block in any `kortix.yaml` example, and do not say `kortix.yaml` declares channels. — *Why:* The schema rejects `channels:`. A connected channel is a connector with `provider: channel`. Routing is live project state (`company-as-code/content.ts` gate). — *Where:* marketing | docs | deck. — *When silent:* leave channels out of the YAML.
 
 ### Product facts by page
 
@@ -135,8 +135,8 @@ Each rule below is a correction the code forced. The *Why* cites the source.
 
 | Topic | Fact to hold | Gate source |
 | --- | --- | --- |
-| Agent | An agent is one `agents.<name>` block in `kortix.yaml` (`kortix_version: 3`): its behavior (`prompt` or `prompt_file`, `model`, `permission`) and the registered skills, tools, commands and extensions it enables. `agents/<name>.md` holds the prompt alone. `permission` sets allow, ask or deny per tool. | agents-and-skills, step-harness, step-source-of-truth |
-| Frontmatter | A v3 prompt file has no frontmatter. Do not show one. | step-harness |
+| Agent | An agent is one `agents.<name>` block in `kortix.yaml`: its behavior (`prompt` or `prompt_file`, `model`, `permission`) and the registered skills, tools, commands and extensions it enables. `agents/<name>.md` holds the prompt alone. `permission` sets allow, ask or deny per tool. | agents-and-skills, step-harness, step-source-of-truth |
+| Frontmatter | An agent prompt file has no frontmatter. Do not show one. | step-harness |
 | Triggers | Exactly two types: `cron` and `webhook`. `session_mode` has four values: `fresh`, `reuse`, `pinned`, `keyed`. The default is `fresh`. A trigger has no "post the result to a channel" field. | automations |
 | Connector policy | Actions are `always_run`, `require_approval`, `block`, shown as Allow, Ask, Block. Approval holds the call; the agent's turn pauses and resumes. | connectors |
 | Audit view | The per-session audit view is an Enterprise entitlement. Never write "full org-wide audit trail". Recording is never gated. | connectors, faq |

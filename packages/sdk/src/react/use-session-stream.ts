@@ -47,7 +47,7 @@ import { invalidateProjectProviderQueries } from './provider-refresh';
 import { qk } from './query-keys';
 import type { SessionTurnObservation } from './use-session-working';
 
-/** Is this session's stream connected? Re-renders when it connects or drops. */
+/** `sessionStreamConnected` as a hook. Re-renders when that answer moves. */
 export function useSessionStreamConnected(projectId: string, sessionId: string): boolean {
   return useSyncExternalStore(
     subscribeSessionStreamConnections,
@@ -268,6 +268,9 @@ export function useSessionStream(
   useEffect(() => {
     if (!enabled) return;
     const memory: { secretsRev?: string; runtimeKey?: string; runtimeReady?: boolean; modelRev?: string } = {};
+    const syncStreamDriven = () => setConnectionStreamDriven(sessionStreamConnected(projectId, sessionId));
+    // A change of channels keeps the connection: `onConnectionChange` stays quiet.
+    const unsubscribe = subscribeSessionStreamConnections(syncStreamDriven);
     const stream = openSessionStream({
       projectId,
       sessionId,
@@ -275,7 +278,7 @@ export function useSessionStream(
       ...(options.tabId ? { tabId: options.tabId } : {}),
       onControl: (frame) => {
         applySessionControlFrame(queryClient, projectId, sessionId, frame, memory);
-        setConnectionStreamDriven(sessionStreamConnected(projectId, sessionId));
+        syncStreamDriven();
       },
       onRuntimeStatus: (status) => {
         if (status.state === 'down') memory.runtimeReady = false;
@@ -290,9 +293,10 @@ export function useSessionStream(
         }
         memory.runtimeReady = ready;
       },
-      onConnectionChange: () => setConnectionStreamDriven(sessionStreamConnected(projectId, sessionId)),
+      onConnectionChange: syncStreamDriven,
     });
     return () => {
+      unsubscribe();
       stream.close();
       setConnectionStreamDriven(false);
     };

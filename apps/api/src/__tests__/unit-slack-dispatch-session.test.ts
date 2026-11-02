@@ -82,7 +82,6 @@ let unavailableModel: string | undefined;
 let accessibleAgents = true;
 let startResult: { status: 'created' | 'queued'; sessionId?: string; reason?: string; error?: { status: 409 | 503; body: { code: string } } } | null = null;
 mock.module('../channels/model-access', () => ({
-  agentGrantEnvFor: () => async () => null,
   projectChannelModelScope: async () => null,
   planChannelSessionStart: async () => ({ model: null, unavailableModel }),
   planChannelFollowUp: async (input: Record<string, unknown>) => {

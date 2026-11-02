@@ -8,7 +8,7 @@ describe('CatalogCard with an interactive trailing control', () => {
     const markup = renderToStaticMarkup(
       <CatalogCard
         title="Resend"
-        href="/projects/p1/customize/connectors/resend?src=apps"
+        href="/projects/p1/admin/connectors/resend?src=apps"
         trailing={<button type="button">Install</button>}
         trailingInteractive
       />,
@@ -17,7 +17,7 @@ describe('CatalogCard with an interactive trailing control', () => {
     expect(anchorEnd).toBeGreaterThan(-1);
     // A button inside an anchor is invalid HTML and a hydration error.
     expect(markup.indexOf('<button')).toBeGreaterThan(anchorEnd);
-    expect(markup).toContain('href="/projects/p1/customize/connectors/resend?src=apps"');
+    expect(markup).toContain('href="/projects/p1/admin/connectors/resend?src=apps"');
   });
 
   test('without the flag a linked card keeps its trailing slot inside the link', () => {

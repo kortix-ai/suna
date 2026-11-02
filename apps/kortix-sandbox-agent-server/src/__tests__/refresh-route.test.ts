@@ -3,12 +3,9 @@
  * production pi control, with real `git` repositories. The pi runtime is a
  * stub: refresh reads only its state and its skill reload.
  *
- * - Auth: a signed user context, or the sandbox bearer. `base=1` (a branch
- *   reset that discards the session's commits) additionally needs the
- *   direct-call header, because the preview proxy authenticates the user
- *   traffic it relays with the same bearer.
- * - Repo work: pull, base checkout, the no-op when HEAD is already base.
- * - The route: `verify_fail=1` is the only fault injection, one refresh at a time.
+ * - Auth: a signed user context, or the sandbox bearer.
+ * - Repo work: pull, and the no-op when the session branch is not on the remote.
+ * - The route: one refresh at a time.
  * - Runtime-assets convergence never runs while the runtime is still booting.
  */
 import { execFileSync } from 'node:child_process'
@@ -122,7 +119,6 @@ function emptyTarget(): string {
   return dir
 }
 
-const SERVICE = { Authorization: `Bearer ${TEST_SANDBOX_TOKEN}`, [KORTIX_SERVICE_CALL_HEADER]: '1' }
 const USER = () => ({
   [KORTIX_USER_CONTEXT_HEADER]: signTestUserContext(
     { userId: 'u', sandboxId: 's', sandboxRole: 'owner' },
@@ -140,24 +136,6 @@ describe('auth', () => {
   // What the preview proxy sends for an ordinary user: the sandbox's own
   // bearer and NO direct-call header (it strips that name from every forward).
   // The first version of this gate accepted it and protected nothing.
-  it('refuses base=1 from a request shaped like a proxied user request', async () => {
-    const res = await app({}).request('/kortix/refresh?base=1', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${TEST_SANDBOX_TOKEN}` },
-    })
-    expect(res.status).toBe(403)
-    expect(await res.json()).toMatchObject({ code: 'BASE_RESET_FORBIDDEN' })
-  })
-
-  it('does not accept the direct-call header alone for base=1', async () => {
-    // The header proves the hop, never the caller.
-    const res = await app({}).request('/kortix/refresh?base=1', {
-      method: 'POST',
-      headers: { [KORTIX_SERVICE_CALL_HEADER]: '1' },
-    })
-    expect(res.status).toBe(401)
-  })
-
   it('refreshes a materialized repo whose config names no repoUrl', async () => {
     // The credential boundary refuses a CONFIGURED non-proxy origin; a repo
     // with no repoUrl in env must not 500 on that refusal — the checkout's
@@ -172,15 +150,6 @@ describe('auth', () => {
     expect(await res.json()).toMatchObject({ ok: true })
   })
 
-  it('lets a direct API call with both proofs reach the repo work for base=1', async () => {
-    // No repo here, so the repo work answers 409; the gate did not refuse it.
-    const res = await app({ projectTarget: emptyTarget() }).request('/kortix/refresh?base=1&restart=0', { method: 'POST', headers: SERVICE })
-    expect(res.status).toBe(409)
-    const body = (await res.json()) as { error: string; message: string }
-    expect(body.error).toBe('refresh failed')
-    expect(body.message).toContain('not materialized')
-  })
-
   it('keeps an ordinary refresh open to a proxied caller', async () => {
     // Only the destructive flag needs the direct call: a user pulling their own
     // workspace keeps working without it. No repo here, so the repo work
@@ -192,11 +161,6 @@ describe('auth', () => {
     expect(res.status).toBe(409)
   })
 
-  it('rejects an invalid base_sha before any Git execution', async () => {
-    const res = await app({}).request('/kortix/refresh?base=1&base_sha=main', { method: 'POST', headers: SERVICE })
-    expect(res.status).toBe(400)
-    expect(await res.json()).toEqual({ error: 'invalid base_sha' })
-  })
 })
 
 describe('repo work and the route', () => {
@@ -217,21 +181,6 @@ describe('repo work and the route', () => {
     }
     expect(body.ok).toBe(true)
     expect(body.repo.before.commit).not.toBe(body.repo.after.commit)
-  })
-
-  it('injects a verification failure only on an explicit verify_fail=1', async () => {
-    const repo = clonedRepo()
-    const refreshes: HarnessRefreshInput[] = []
-    const daemon = app(
-      { projectTarget: repo.worktree, repoUrl: repo.remote, branchName: 'main' },
-      { onRefresh: (input) => void refreshes.push(input) },
-    )
-    const refresh = (query: string) => daemon.request(`/kortix/refresh${query}`, { method: 'POST', headers: USER() })
-
-    expect((await refresh('?verify_fail=true')).status).toBe(200)
-    expect((await refresh('?verify_fail=1')).status).toBe(200)
-
-    expect(refreshes.map((input) => input.forceFail === true)).toEqual([false, true])
   })
 
   it('answers 409 to a second refresh while one is running', async () => {
@@ -274,42 +223,6 @@ describe('repo work and the route', () => {
     expect(((await res.json()) as { message: string }).message).toContain('git pull refresh failed')
   })
 
-  it('skips the base fetch when the workspace already matches base_sha', async () => {
-    // A missing remote proves no network was attempted.
-    const root = mkdtempSync(join(tmpdir(), 'kortix-refresh-unchanged-'))
-    roots.push(root)
-    const worktree = join(root, 'worktree')
-    mkdirSync(worktree)
-    git(['init', '-q', '-b', 'session-branch'], worktree)
-    const baseSha = commit(worktree, 'current\n')
-
-    const res = await app({
-      projectTarget: worktree,
-      repoUrl: join(root, 'missing-remote.git'),
-      branchName: 'session-branch',
-    }).request(`/kortix/refresh?base=1&base_sha=${baseSha}&restart=0`, { method: 'POST', headers: SERVICE })
-
-    expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({
-      ok: true,
-      repo: { before: { commit: baseSha }, after: { commit: baseSha } },
-    })
-  })
-
-  it('checks out the exact base_sha', async () => {
-    const repo = clonedRepo()
-    const baseSha = commit(repo.seed, 'v2\n')
-    commit(repo.seed, 'v3\n')
-    git(['push', '-q', 'origin', 'main'], repo.seed)
-
-    const res = await app(
-      { projectTarget: repo.worktree, repoUrl: repo.remote, branchName: 'session-branch' },
-    ).request(`/kortix/refresh?base=1&base_sha=${baseSha}&restart=0`, { method: 'POST', headers: SERVICE })
-
-    expect(res.status).toBe(200)
-    expect(readFileSync(join(repo.worktree, 'README.md'), 'utf8')).toBe('v2\n')
-    expect(git(['rev-parse', 'HEAD'], repo.worktree)).toBe(baseSha)
-  })
 })
 
 describe('runtime-assets convergence after a refresh', () => {
@@ -353,7 +266,7 @@ describe('runtime-assets convergence after a refresh', () => {
       const res = await app(
         { projectTarget: repo.worktree, repoUrl: repo.remote, branchName: 'main' },
         { state },
-      ).request('/kortix/refresh?restart=0', { method: 'POST', headers: USER() })
+      ).request('/kortix/refresh', { method: 'POST', headers: USER() })
       expect(res.status).toBe(200)
 
       const deadline = Date.now() + 2_000

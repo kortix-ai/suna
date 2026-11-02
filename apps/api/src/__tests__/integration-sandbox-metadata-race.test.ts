@@ -239,6 +239,42 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
       expect(metadata.initStatus).toBe('ready');
     });
 
+    // 2026-11-02 prod: the first poll of a fresh box met a daemon not yet
+    // listening (502), and that stamp stayed on the row for the whole boot.
+    test('a daemon that answers not_ready drops the unreachable stamps of the poll before, under both names', async () => {
+      const { markRuntimeReadyWaitStarted } = await import('../projects/session-open');
+      await seed({
+        initStatus: 'ready',
+        runtimeUnreachableCause: 'http_502',
+        runtimeUnreachableCauseAt: '2026-11-02T11:48:09.648Z',
+        runtimeUnreachableDetail: 'upstream unreachable: Failed to connect',
+        opencodeUnreachableCause: 'http_502',
+        runtimeUnreachableWaitStartedAt: '2026-11-02T11:48:09.652Z',
+      });
+      const row = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
+
+      await markRuntimeReadyWaitStarted(row, 'not_ready', undefined);
+
+      const metadata = await readMetadata();
+      expect(metadata.runtimeUnreachableCause).toBeUndefined();
+      expect(metadata.runtimeUnreachableCauseAt).toBeUndefined();
+      expect(metadata.runtimeUnreachableDetail).toBeUndefined();
+      expect(metadata.opencodeUnreachableCause).toBeUndefined();
+      expect(metadata.runtimeReadyWaitReason).toBe('not_ready');
+      expect(typeof metadata.runtimeNotReadyWaitStartedAt).toBe('string');
+      // The wait clocks are not diagnosis: they stay.
+      expect(metadata.runtimeUnreachableWaitStartedAt).toBe('2026-11-02T11:48:09.652Z');
+      expect(metadata.initStatus).toBe('ready');
+
+      // A second not_ready poll with the clock already running still drops a re-stamped cause.
+      await admin.query(
+        `UPDATE kortix.session_sandboxes SET metadata = metadata || '{"runtimeUnreachableCause":"http_502"}'::jsonb WHERE sandbox_id = $1`,
+        [SANDBOX_ID],
+      );
+      await markRuntimeReadyWaitStarted({ sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never, 'not_ready', undefined);
+      expect((await readMetadata()).runtimeUnreachableCause).toBeUndefined();
+    });
+
     test('a /start wake mark from a row read before the claim does not erase it', async () => {
       const { markRuntimeWakeStarted } = await import('../projects/session-open');
       const { claimInPlaceRestart } = await import('../projects/session-lifecycle/runtime-restart-claim');

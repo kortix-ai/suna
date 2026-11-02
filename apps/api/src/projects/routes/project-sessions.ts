@@ -72,6 +72,8 @@ import { readRuntimeControlState } from '../lib/session-control-readers';
 import { sessionCreateSurface } from '../lib/session-surface';
 
 import { readSessionsWorking } from '../lib/session-working-read';
+import { HIDDEN_SESSION_BOARD, readSessionBoards } from '../lib/session-board';
+import { teamCreateMetadataError } from '../team-tasks/service';
 import { readSessionReplyCounts } from '../lib/session-reply-counts';
 import { turnPublishVerdict } from '../lib/http-session-access';
 
@@ -121,6 +123,7 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
     readRuntimeControlState(sessionId),
   ]);
   const owner = visible.row.createdBy ? owners?.get(visible.row.createdBy) : undefined;
+  const board = (await readSessionBoards([visible.row], working)).get(sessionId) ?? HIDDEN_SESSION_BOARD;
   return c.json({ ...serializeSession(visible.row, {
     runtimeStatus: runtime.sandbox_status,
     grants: visible.grants,
@@ -134,7 +137,7 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
     ownerAvatarUrl: owner?.avatarUrl ?? null,
     ownerType: owner?.type ?? (visible.row.createdBy ? 'unknown' : null),
     userState: personId ? (userStates?.get(sessionId) ?? NO_USER_STATE) : undefined,
-  }), working: working.get(sessionId) }, 200);
+  }), working: working.get(sessionId), ...board }, 200);
 }
 
 /**
@@ -215,6 +218,15 @@ export function registerProjectSessionsRoutes(): void {
     }
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // A child's multi-agent metadata (`agent_handle`, `team_lead`): a session
+    // names only its own teammates, and a handle is unique among its children.
+    const teamError = await teamCreateMetadataError({
+      metadata: body.metadata,
+      runtimeContext: body.runtime_context,
+      callerSessionId: callerKortixSessionId(c),
+      parentSessionId: typeof body.parent_session_id === 'string' ? body.parent_session_id : null,
+    });
+    if (teamError) return c.json({ error: teamError.error, code: teamError.code }, teamError.status);
     if (body.fork_from_session_id !== undefined) {
       const forkInput = SessionCreateInputSchema.shape.fork_from_session_id.safeParse(body.fork_from_session_id);
       if (!forkInput.success || !forkInput.data) return c.json({ error: 'Invalid fork source' }, 400);
@@ -487,6 +499,8 @@ export function registerProjectSessionsRoutes(): void {
             created_by: z.string().uuid().optional(),
             agent: z.string().min(1).max(128).optional(),
             updated_after: z.string().datetime({ offset: true }).optional(),
+            // Only the teammates of this lead session (`metadata.team_lead`).
+            team_lead: z.string().min(1).max(128).optional(),
           }),
         },
       responses: {
@@ -592,6 +606,7 @@ export function registerProjectSessionsRoutes(): void {
         createdBy: query.created_by ?? null,
         agent: query.agent ?? null,
         updatedAfter: query.updated_after ? new Date(query.updated_after) : null,
+        teamLead: query.team_lead ?? null,
       },
       boundCredentialSessionId: callerKortixSessionId(c),
       agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
@@ -617,6 +632,7 @@ export function registerProjectSessionsRoutes(): void {
       readSessionsWorking(accessibleIds),
       spaceId ? readSessionReplyCounts(accessibleIds) : Promise.resolve(null),
     ]);
+    const boards = await readSessionBoards(inventory.items.filter((item) => item.canAccess).map((item) => item.row), working);
     const body = inventory.items.map((item) => {
       const row = item.row;
       const owner = row.createdBy ? inventory.ownerIdentities.get(row.createdBy) : null;
@@ -642,7 +658,7 @@ export function registerProjectSessionsRoutes(): void {
         trimListMetadata: true,
         conversationModel: conversationModels.get(row.sessionId),
         replyCount: replyCounts?.get(row.sessionId) ?? null,
-      }), working: working.get(row.sessionId) };
+      }), working: working.get(row.sessionId), ...(boards.get(row.sessionId) ?? HIDDEN_SESSION_BOARD) };
       if (query.parent !== 'root') return serialized;
       return {
         ...serialized,

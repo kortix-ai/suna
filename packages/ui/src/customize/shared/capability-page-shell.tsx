@@ -1,8 +1,11 @@
 'use client';
 
+import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
+import { useInCustomizeFrame } from './customize-tab-bar';
 import { cn } from '../../internal/lib/utils';
-import type { ReactNode } from 'react';
+import { createContext, type ReactNode, useContext } from 'react';
 
+import { SettingsSectionHeader } from '../../primitives/settings-section-header';
 import { CapabilityScrollRootProvider, useCapabilityScrollRootRef } from './capability-scroll-root';
 
 interface CapabilityPageShellProps {
@@ -28,6 +31,27 @@ interface CapabilityPageShellProps {
    */
   stacked?: boolean;
   children: ReactNode;
+}
+
+/**
+ * Set by the agent page around a resource screen it shows in agent scope
+ * (Access > Connectors, Runtime > Model, Triggers). The shell then drops its
+ * own title (the agent page's tabs name the view), runs full width on the
+ * agent page's gutter, and draws `lead` (the Access view switcher) as the
+ * first row inside its scroller, so the switcher scrolls with the content.
+ */
+export interface CapabilityShellEmbed {
+  agentName: string;
+  lead?: ReactNode;
+  /** The column class, so every Access and Runtime view shares one width. */
+  className?: string;
+  /** Show the screen's title over its description: the view sits beside a rail that does not name it. */
+  titled?: boolean;
+}
+const CapabilityShellEmbedContext = createContext<CapabilityShellEmbed | null>(null);
+export const CapabilityShellEmbedProvider = CapabilityShellEmbedContext.Provider;
+export function useCapabilityShellEmbed(): CapabilityShellEmbed | null {
+  return useContext(CapabilityShellEmbedContext);
 }
 
 /**
@@ -58,6 +82,52 @@ export function CapabilityPageShell({
   children,
 }: CapabilityPageShellProps) {
   const scrollRef = useCapabilityScrollRootRef();
+  const embed = useCapabilityShellEmbed();
+  const framed = useInCustomizeFrame();
+  if (embed?.titled) {
+    // Beside the agent page's rail: the view's title left (no sentence under
+    // it, the Settings dialect), its grant control (`filters`) right; search
+    // and the view's own action in one row under them.
+    return (
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto" data-capability-embed="">
+        <div className={cn('w-full space-y-5 px-4 pt-5 pb-24 md:px-8', embed.className)}>
+          {embed.lead}
+          <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <SettingsSectionHeader title={title} className="min-w-0" />
+            {filters ? <div className="shrink-0">{filters}</div> : null}
+          </header>
+          {search || action ? (
+            <div className="flex items-center gap-2">
+              {search ? <div className="min-w-0 flex-1">{search}</div> : null}
+              {action}
+            </div>
+          ) : null}
+          <CapabilityScrollRootProvider scrollRef={scrollRef}>{children}</CapabilityScrollRootProvider>
+        </div>
+      </div>
+    );
+  }
+  if (embed) {
+    return (
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto" data-capability-embed="">
+        <div className={cn('w-full space-y-5 px-4 pt-5 pb-24 md:px-8', embed.className)}>
+          {embed.lead}
+          <header className={cn('flex flex-col gap-3', !stacked && 'md:flex-row md:items-center md:justify-between')}>
+            <h2 className="sr-only">{title}</h2>
+            <p className="text-muted-foreground min-w-0 text-sm text-pretty md:max-w-xl">{description}</p>
+            {search || action ? (
+              <div className={cn('flex w-full shrink-0 items-center gap-2', !stacked && 'md:w-auto')}>
+                {search ? <div className={cn('min-w-0 flex-1', !stacked && 'md:w-64 md:flex-none')}>{search}</div> : null}
+                {action}
+              </div>
+            ) : null}
+          </header>
+          {filters ? <div className="flex flex-wrap items-center justify-between gap-2">{filters}</div> : null}
+          <CapabilityScrollRootProvider scrollRef={scrollRef}>{children}</CapabilityScrollRootProvider>
+        </div>
+      </div>
+    );
+  }
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
       <div
@@ -80,6 +150,9 @@ export function CapabilityPageShell({
               reader (Agents 52 → 72px, Secrets 92 → 112px). */}
           <div className="space-y-1 sm:max-w-md">
             <div className="flex items-center gap-1">
+              {/* The page's own sidebar opener, only without the Customize bar
+                  above (which holds one). It hides while the sidebar is docked open. */}
+              {framed ? null : <SidebarToggle className="-ml-2" />}
               <h1 className="text-foreground text-xl font-medium text-balance">{title}</h1>
               {titleAddon}
             </div>

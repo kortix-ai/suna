@@ -27,7 +27,6 @@ mock.module('../shared/supabase', () => ({ ...realSupabase, getSupabase: () => (
 
 const { app } = await import('../index');
 const { createAccountToken } = await import('../repositories/account-tokens');
-const { mirrorRowsFromOpencodePayload } = await import('../projects/lib/session-transcript-mirror');
 const { ingestSessionLogJournal } = await import('../projects/session-log-ingest');
 
 const OWNER = crypto.randomUUID();
@@ -59,8 +58,8 @@ async function storeInLog(sessionId: string, turns: number, options: { nativeThr
   const { root, child } = history(turns);
   await db.update(projectSessions).set({ runtimeSessionId: ROOT }).where(eq(projectSessions.sessionId, sessionId));
   const rows = [
-    ...mirrorRowsFromOpencodePayload(root).map((r) => ({ runtime_session_id: ROOT, ...r })),
-    ...mirrorRowsFromOpencodePayload(child).map((r) => ({ runtime_session_id: CHILD, ...r })),
+    ...root.map((m) => ({ runtime_session_id: ROOT, info: m.info, parts: m.parts })),
+    ...child.map((m) => ({ runtime_session_id: CHILD, info: m.info, parts: m.parts })),
   ];
   const log = fromV1({ session_id: sessionId, root_id: ROOT, rows: rows as unknown as V1Row[] }, { harness: 'opencode' });
   const producer = { harness: 'opencode', harness_version: '1.18.23', adapter_version: '1.0.0' };

@@ -75,11 +75,10 @@ describe('harness ownership boundary', () => {
         report: unexpected, logSources: () => [], readLog: unexpected,
       },
       queries: { bind: () => queries },
-      turns: { prompt: unexpected, steer: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, retractMessage: unexpected, agents: unexpected },
+      turns: { prompt: unexpected, steer: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, retractMessage: unexpected, agents: unexpected, replyPermission: unexpected, replyQuestion: unexpected, rejectQuestion: unexpected, compact: unexpected, command: unexpected, setGrants: unexpected, commands: unexpected, pending: unexpected, readLog: unexpected, readLogMessage: unexpected, readBlob: unexpected, workflows: unexpected, controlWorkflow: unexpected },
       background: { start: unexpected },
       assets: {
-        harness: 'test', componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
-        reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
+        harness: 'test', componentNames: [],          reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
       },
     }
     const app = buildDaemonApp(cfg, service, 0)
@@ -90,7 +89,7 @@ describe('harness ownership boundary', () => {
     const body = await response.json()
     expect(body).toMatchObject({
       daemon: 'ok',
-      capabilities: ['file.import', 'file.append', 'agent-config.env-gz.v1', 'runtime.turns.v1', 'runtime.retract.v1', 'session.subagents'],
+      capabilities: ['file.import', 'file.append', 'agent-config.env-gz.v1', 'runtime.turns.v1', 'runtime.retract.v1', 'runtime.actions.v1', 'runtime.log.v1', 'session.subagents'],
       status: 'ok',
       runtimeReady: true,
       boot_error: null,

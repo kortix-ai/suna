@@ -117,17 +117,17 @@ test('Apps sits with Customize in the sidebar, not in the bottom alert group', (
     uiSourcePath('workspace/sidebar/project-sidebar.tsx'),
     'utf8',
   );
-  const navStore = readFileSync(uiSourcePath('internal/stores/sidebar-nav-store.ts'), 'utf8');
+  const navItems = readFileSync(uiSourcePath('workspace/sidebar/project-nav-items.tsx'), 'utf8');
 
   // It is a project surface you configure and operate, so it belongs with the
   // Customize row in the top nav group — not among the bottom-anchored alerts,
-  // which shift as late-arriving billing and sandbox state lands. The rows are
-  // customizable now; this pins the default order and the group they render in:
-  // Customize, then Files/Drive (#10258), then Apps.
-  const defaults = navStore.slice(navStore.indexOf('SIDEBAR_NAV_DEFAULTS'));
-  const customizeAt = defaults.indexOf("id: 'customize'");
-  const appsAt = defaults.indexOf("id: 'apps'");
-  const filesAt = defaults.indexOf("id: 'files'");
+  // which shift as late-arriving billing and sandbox state lands. This pins the
+  // order and the group they render in: Customize, then Files/Drive (#10258),
+  // then Apps.
+  const rows = navItems.slice(navItems.indexOf('NAV_ROWS'));
+  const customizeAt = rows.indexOf("'customize'");
+  const appsAt = rows.indexOf("'apps'");
+  const filesAt = rows.indexOf("'files'");
   expect(customizeAt).toBeGreaterThan(-1);
   expect(filesAt).toBeGreaterThan(customizeAt);
   expect(appsAt).toBeGreaterThan(filesAt);
@@ -148,10 +148,6 @@ test('Apps UI is operational only and has no creation action or modal', () => {
 
 test('the Apps header is the capability tab bar, not a settings masthead', () => {
   const view = appsSource();
-  const tabs = readFileSync(
-    uiSourcePath('customize/shared/capability-tabs.tsx'),
-    'utf8',
-  );
 
   // The exact bar contract, read off the file that owns it — if the tab row is
   // ever restyled this fails rather than letting Apps drift into a second
@@ -163,7 +159,6 @@ test('the Apps header is the capability tab bar, not a settings masthead', () =>
     'utf8',
   );
   const BAR = 'relative flex shrink-0 items-center gap-1 border-b px-2';
-  expect(tabs).toContain(`kx-titlebar-row kx-capability-titlebar ${BAR}`);
   expect(header).toContain(`kx-titlebar-row kx-capability-titlebar ${BAR}`);
   expect(view).toContain('<ProjectPageHeader');
 
@@ -372,15 +367,6 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   // sane default, so what has to hold is the DEFAULT, not the absence.
   expect(view).toContain('export const APP_GRID_DEFAULT_COLUMNS: AppGridColumns = 3;');
   expect(view).not.toContain('AppGridDensity');
-  // A picker over the feature gate, the error state or the empty state is a
-  // dead switch, so the header takes an explicit flag rather than always
-  // rendering it.
-  const header = view.slice(
-    view.indexOf('function AppsHeader('),
-    view.indexOf('export function AppsView('),
-  );
-  expect(header).toContain('showColumns');
-  expect(header).toContain('{showColumns ? (');
 
   // The gallery column is also the grid's measuring box. A `@lg/apps:` variant
   // with no `@container/apps` ancestor compiles and then never matches, so the
@@ -402,8 +388,10 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   expect(card).not.toContain('border-b');
   expect(card).toContain('className="mt-3 flex items-center gap-2"');
 
-  // Still exactly one control per card — a hover overflow button inside the
-  // card button would be invalid HTML and a nested hit area.
-  expect(card.match(/<button/g)).toHaveLength(1);
+  // One card button, plus the agent-scope caption button that sits beside the
+  // grant checkbox as a sibling, never inside the card button: a hover
+  // overflow button inside the card button would be invalid HTML and a nested
+  // hit area.
+  expect(card.match(/<button/g)).toHaveLength(2);
   expect(card).not.toContain('DropdownMenu');
 });

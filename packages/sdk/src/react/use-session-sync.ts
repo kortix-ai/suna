@@ -31,6 +31,7 @@ import { hasOnlyCacheSourcedMessages, useSyncStore } from '../browser/stores/syn
 import { useCurrentRuntime } from './use-current-runtime';
 import { selectSessionRows } from './session-transcript-subscription';
 import { canQueryRuntimeSession } from './use-opencode-sessions';
+import { useRuntimeServesLog } from './use-opencode-sessions/log-sessions';
 
 export { loadSessionExportMessages, loadSessionRuntimeStatus, loadSessionTranscriptMessages };
 
@@ -179,13 +180,17 @@ export function livenessBusy(input: {
 export function useSessionSync(sessionId: string, options: UseSessionSyncOptions = {}) {
   const {
     kortixSessionScope,
-    networkEnabled = true,
+    networkEnabled: networkAsked = true,
     working,
     serverHoldsTurn,
     mirror,
     subscribeMessages = true,
     savedChild = false,
   } = options;
+  // A box that serves its log: the session log holds the transcript, so no mount of this hook
+  // (an export dialog, a sub-agent view) reads the box's transcript routes or polls them.
+  const servesLog = useRuntimeServesLog();
+  const networkEnabled = networkAsked && !servesLog;
   const scopeSessionId = parseKortixSessionScope(kortixSessionScope)?.sessionId;
   const logHeld = useSyncStore((state) => !!scopeSessionId && state.sessionLogs[scopeSessionId] !== undefined);
   const sessionLog = options.sessionLog === true || logHeld;

@@ -8,7 +8,7 @@ import {
 import { useTranslations as useI18nTranslations } from '../../i18n';
 import { getProjectDetail, listConnectors, type AdminConnector } from '@kortix/sdk';
 import { contract, FRESHNESS, qk, useProjectAccountId } from '@kortix/sdk/react';
-import { CaretDownIcon, MagnifyingGlassIcon, PlugIcon, PlugsConnectedIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, MagnifyingGlassIcon, PlugsConnectedIcon, ShieldIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazyClient } from '../../lib/lazy-client';
 import {
@@ -18,7 +18,7 @@ import {
   useUiShallowNavigate,
 } from '../../providers/ui-provider';
 import { useDebounce } from '../../hooks/use-debounce';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { PoliciesPanel } from '../../workspace/projects/policies-panel';
 import { Button } from '../../primitives/button';
@@ -64,7 +64,9 @@ import {
 
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useProjectCan } from '../../internal/lib/use-project-can';
-import { ConnectorConnectedMark, ConnectorStatusBadge } from './connector-identity';
+import { ConnectorConnectedMark, ConnectorStatusBadge, ConnectorStatusLogo } from './connector-identity';
+import { CatalogCard } from '../shared/catalog/catalog-card';
+import { DENSE_GRID_CLASSNAME, DENSE_GRID_CONTAINER_CLASSNAME } from '../shared/catalog/catalog-grid-tokens';
 import { ConnectorLogo } from '../../internal/connector-logo/connector-logo';
 import { installedConnectorLogoSource } from '../../internal/connector-logo/connector-logo-source';
 import { providerLabel } from './provider-label';
@@ -75,11 +77,14 @@ import {
 } from './catalog/catalog-entry';
 import { ConnectorBrowse } from './catalog/connector-browse';
 import { useCatalog } from './catalog/use-catalog';
-import { CapabilityPageShell } from '../shared/capability-page-shell';
-import { CatalogCard } from '../shared/catalog/catalog-card';
+import { type AgentGrant, GrantModeTabs, withCatalog, type ResourceScope } from '../shared/agent-resource-scope';
+import { CapabilityPageShell, useCapabilityShellEmbed } from '../shared/capability-page-shell';
+import { type AccessItem, plainGrantSwitch } from '../shared/access-list';
+import { EditorList } from '../sections/view/agent-editor-primitives';
+import { ErrorState } from '../../primitives/error-state';
+import { EmptyArt } from '../../primitives/empty-art';
 import { catalogEmptyKind } from '../shared/catalog/catalog-empty';
 import { CatalogNoMatch } from '../shared/catalog/catalog-empty-state';
-import { CatalogGrid } from '../shared/catalog/catalog-grid';
 import { useTunnelConnections } from '@kortix/sdk/react';
 import { useSlashFocus } from '../../internal/hooks';
 import {
@@ -271,8 +276,33 @@ type Panel = 'custom' | 'mcp';
  * `legacyDetailRedirect` forwards it, so an OAuth grant that started before
  * the change still lands on the right connector.
  */
-export function ConnectorsPage({ projectId }: { projectId: string }) {
+export function ConnectorsPage({
+  projectId,
+  surface = { kind: 'global' },
+  grant,
+  agentPanel,
+  rowControl,
+}: {
+  projectId: string;
+  /** `global` (default) is the project catalogue; `agent` scopes the same page
+   *  to one agent and turns each connector card into a grant control. */
+  surface?: ResourceScope;
+  /** Required in `agent` scope: the agent's `connectors` grant, driven by the
+   *  page's draft. Ignored in `global` scope. */
+  grant?: AgentGrant;
+  /** Agent scope only: agent settings that belong with its connectors (the
+   *  per-connector policy sets), shown above the catalogue. */
+  agentPanel?: ReactNode;
+  /** Agent scope only: a granted connector's own rule control (its policy-set picker), in its row. */
+  rowControl?: (slug: string) => ReactNode | undefined;
+}) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tAgentScope = useI18nTranslations('agentScope');
+  const tTabs = useI18nTranslations('agentEditor.tabs');
+  const agentScoped = surface.kind === 'agent' && grant !== undefined;
+  // The agent page's rail layout: Add sits in the footer card, not the header.
+  const embed = useCapabilityShellEmbed();
+  const railLayout = agentScoped && embed?.titled === true;
   // `accountId` comes off the detail this page already loads. Without it
   // `useProjectCan` fetches the project a second time under its own key AND
   // holds the IAM probe disabled until that lands — so Add and every write
@@ -386,7 +416,12 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // form. Channels has its own primary action already — the Slack hero owns
   // it — so it needs neither, and leaving them on screen would offer to search
   // a list that is not there.
-  const channelsActive = scope === 'channels';
+  // Channels is the inbound side (who can reach the agent), not a connector
+  // the agent is granted — so it is not part of the agent-scoped view.
+  const channelsActive = scope === 'channels' && !agentScoped;
+
+  // Channels is a project-wide inbound surface, so an agent's page leaves it out.
+  const visibleScopes = SCOPES.filter((s) => !agentScoped || s !== 'channels');
 
   // The machine list answers 503 on a deployment with computers disabled, so
   // the Computer card shows only where a computer can be connected.
@@ -415,24 +450,68 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
 
   const emptyKind = catalogEmptyKind(connectors.length, filtered.length);
 
-  // One card shape for the project's own connectors: the Connected tab's grid
-  // and the All tab's "Your connectors" section (KRTX-2531) render it alike.
-  const ownConnectorCard = (connector: (typeof connectors)[number]) => (
-    <CatalogCard
-      key={connector.slug}
-      variant="plain"
-      leading={<ConnectorLogo source={installedConnectorLogoSource(connector)} size="lg" />}
-      title={connectorDisplayName(connector)}
-      subtitle={
-        <span className="text-muted-foreground text-xs">{describeConnector(connector)}</span>
-      }
-      badges={<ConnectorStatusBadge connector={connector} />}
-      trailing={
-        connectorSetupStatus(connector) === 'connected' ? <ConnectorConnectedMark /> : undefined
-      }
-      href={connectorHref(projectId, connector.slug)}
-    />
-  );
+  // One row shape for the project's connectors in both modes (the shared
+  // Access row): logo, name, what it is, the exception mark, and in agent
+  // mode the switch that grants it. The name opens the connector's page.
+  const connectorRows = (list: typeof connectors): AccessItem[] => {
+    const slugs = connectors.map((connector) => connector.slug);
+    const toggle = agentScoped && grant?.set ? plainGrantSwitch(grant.value, slugs, grant.set) : null;
+    return list.map((connector) => {
+      const switched: Pick<AccessItem, 'checked' | 'onCheckedChange'> = toggle ? toggle(connector.slug) : {};
+      return {
+        id: connector.slug,
+        title: connectorDisplayName(connector),
+        leading: <ConnectorLogo source={installedConnectorLogoSource(connector)} size="sm" />,
+        description: describeConnector(connector),
+        status: <ConnectorStatusBadge connector={connector} />,
+        onOpen: () => router.push(connectorHref(projectId, connector.slug)),
+        ...switched,
+        ...(rowControl ? { control: (switched.checked && rowControl(connector.slug)) || '—' } : {}),
+      };
+    });
+  };
+
+  // The project's own connectors, the way All apps shows the catalogue: logo
+  // tiles in a grid, the state as a dot on the logo (`ConnectorStatusLogo`)
+  // instead of a pill. In an agent's view each tile also carries the grant
+  // switch and, while granted, its policy set, beside the link.
+  const ownConnectors = (list: typeof connectors) => {
+    const rows = new Map(connectorRows(list).map((row) => [row.id, row]));
+    return (
+      <div className={DENSE_GRID_CONTAINER_CLASSNAME}>
+        <div className={DENSE_GRID_CLASSNAME}>
+          {list.map((connector) => {
+            const row = rows.get(connector.slug);
+            const toggle =
+              agentScoped && row?.onCheckedChange ? (
+                <span className="flex items-center gap-2">
+                  {row.checked && row.control && row.control !== '—' ? row.control : null}
+                  <Switch
+                    aria-label={connectorDisplayName(connector)}
+                    checked={row.checked === true}
+                    onCheckedChange={row.onCheckedChange}
+                    disabled={row.disabled}
+                  />
+                </span>
+              ) : undefined;
+            return (
+              <CatalogCard
+                key={connector.slug}
+                variant="plain"
+                href={connectorHref(projectId, connector.slug)}
+                leading={<ConnectorStatusLogo connector={connector} source={installedConnectorLogoSource(connector)} />}
+                title={connectorDisplayName(connector)}
+                subtitle={<span className="text-muted-foreground truncate text-xs">{describeConnector(connector)}</span>}
+                trailing={toggle}
+                trailingInteractive={toggle !== undefined}
+                className={cn(agentScoped && row?.checked === false && 'opacity-60 hover:opacity-100')}
+              />
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   // Quiet on purpose: a filter, not a second tab strip.
   const catalogFilters = (
@@ -497,6 +576,115 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const searchRef = useRef<HTMLInputElement>(null);
   useSlashFocus(searchRef, !channelsActive && !rulesOpen);
 
+  // The catalogue scope strip. Rendered immediately, not behind `settled`:
+  // static labels over a scope read out of the URL have nothing to wait for.
+  // Project scope shows it in the filter row; agent scope shows it on the
+  // heading of the list it narrows, below the grant sentence.
+  const scopeTabs =
+    visibleScopes.length > 1 ? (
+      <Tabs value={scope} onValueChange={(value) => setScope(value as ConnectorScope)}>
+        <TabsList>
+          {visibleScopes.map((value) => (
+            <TabsTrigger key={value} value={value}>
+              {SCOPE_LABEL[value]}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+    ) : null;
+
+  // The project's connectors as rows, with the page-level states: loading,
+  // a failed load, nothing yet, nothing matching.
+  const listBody = (list: typeof connectors) => {
+    if (!settled) {
+      return (
+        <EditorList>
+          {[0, 1, 2].map((i) => (
+            <li key={i} className="flex min-h-12 items-center gap-3 px-4 py-2">
+              <Skeleton className="size-6 rounded-sm" />
+              <Skeleton className="h-4 w-40 rounded-sm" />
+            </li>
+          ))}
+        </EditorList>
+      );
+    }
+    if (isError) {
+      return (
+        <ErrorState
+          size="sm"
+          title={tI18nComplete.raw('text51ae0a7e3783')}
+          action={
+            <Button variant="outline" size="sm" onClick={retry}>
+              {tPages('retry')}
+            </Button>
+          }
+        />
+      );
+    }
+    if (list.length > 0) return ownConnectors(list);
+    if (query.trim()) return <CatalogNoMatch query={query} />;
+    return (
+      <EmptyState
+        media={<EmptyArt icon={PlugsConnectedIcon} />}
+        title={tI18nComplete.raw('text51ae0a7e3783')}
+        description={tI18nComplete.raw('texta3487dfc2132')}
+      />
+    );
+  };
+
+  // The project's connectors over the whole catalogue: the All tab in
+  // project mode, and the agent view in agent mode (rows carry its switch).
+  const catalogSection = (
+    <>
+      {ownMatches.length > 0 ? (
+        <div className="space-y-3">
+          <h2 className="text-sm font-medium">{tPages('yourConnectors')}</h2>
+          {ownConnectors(ownMatches)}
+        </div>
+      ) : null}
+      {/* The catalogue's own header: its filters sit with what they
+          filter, under the project's own connectors. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <h2 className="text-sm font-medium">{tPages('allApps')}</h2>
+        <div className="flex flex-wrap items-center gap-4">{catalogFilters}</div>
+      </div>
+      <ConnectorBrowse
+        state={catalog}
+        connectedKeys={connectedKeys}
+        hrefFor={catalogHref}
+        install={catalogInstall}
+        emptyTitle={tI18nComplete.raw('text3a63271cafc1')}
+        emptyDescription={tI18nComplete.raw('textf652a621153e')}
+        // A slug search that only the project's own connector answers
+        // must not ALSO read "No matches" under its card (KRTX-2531).
+        suppressNoMatch={ownMatches.length > 0}
+      />
+    </>
+  );
+
+  const addMenu =
+    canWrite && !channelsActive ? (
+      <NewEntityMenu
+        label={railLayout ? tTabs('addConnector') : tI18nComplete.raw('text18fdd549b2ed')}
+        pending={configure.pending}
+        onChat={() => configure.start(newConfigPrompt('connector'))}
+        quick={{
+          icon: PlugsConnectedIcon,
+          label: tPages('addMcpMenu'),
+          description: tPages('addMcpMenuHint'),
+          onSelect: () => {
+            setMcpApp(null);
+            setPanel('mcp');
+          },
+        }}
+        manual={{
+          label: tI18nComplete.raw('text90ccaee30bdc'),
+          description: tI18nComplete.raw('textb0fbe9dc1fcc'),
+          onSelect: () => setPanel('custom'),
+        }}
+      />
+    ) : undefined;
+
   return (
     // Global rules open in a SplitSheet: the page narrows to make room instead
     // of being covered. `PoliciesPanel` is a long CRUD list whose save bar
@@ -505,7 +693,9 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
       <SplitSheetMain>
         <CapabilityPageShell
           title={tI18nComplete.raw('textc3d2e79ebdd0')}
-          description={SCOPE_DESCRIPTION[scope]}
+          description={
+            agentScoped ? tAgentScope('connectorsDescription') : SCOPE_DESCRIPTION[scope]
+          }
           search={
             channelsActive ? undefined : (
               <InputGroupSearch>
@@ -514,7 +704,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                 </InputGroupSearchIcon>
                 <InputGroupSearchInput
                   ref={searchRef}
-                  placeholder={tI18nComplete.raw('textc386cb852691')}
+                  placeholder={agentScoped ? tAgentScope('connectorsSearch') : tI18nComplete.raw('textc386cb852691')}
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   variant="popover"
@@ -531,66 +721,16 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
            lines up with the search field beside it. `aria-label` keeps the
            full sentence for screen readers; it opens with the visible "Add",
            so the accessible name still contains the visible label. */
-            canWrite && !channelsActive ? (
-              <NewEntityMenu
-                label={tI18nComplete.raw('text18fdd549b2ed')}
-                pending={configure.pending}
-                onChat={() => configure.start(newConfigPrompt('connector'))}
-                quick={{
-                  icon: PlugsConnectedIcon,
-                  label: tPages('addMcpMenu'),
-                  description: tPages('addMcpMenuHint'),
-                  onSelect: () => {
-                    setMcpApp(null);
-                    setPanel('mcp');
-                  },
-                }}
-                manual={{
-                  label: tI18nComplete.raw('text90ccaee30bdc'),
-                  description: tI18nComplete.raw('textb0fbe9dc1fcc'),
-                  onSelect: () => setPanel('custom'),
-                }}
-              />
-            ) : undefined
+            railLayout ? undefined : addMenu
           }
           filters={
-            (
+            agentScoped && grant ? (
+              <GrantModeTabs grant={withCatalog(grant, connectors.map((c) => c.slug))} label={tAgentScope('connectorsAccess')} />
+            ) : visibleScopes.length > 1 ? (
               <>
-                {/* Rendered immediately, not behind `settled`. The strip used to
-                wait for both queries because the landing tab was derived from
-                one of them and Connected carried a count off the other; neither
-                is true now, so waiting only meant an empty 28px slot on every
-                load followed by the tabs popping in. Static labels over a
-                scope read out of the URL have nothing to wait for. */}
-                <Tabs value={scope} onValueChange={(value) => setScope(value as ConnectorScope)}>
-                  <TabsList>
-                    {SCOPES.map((value) => (
-                      <TabsTrigger key={value} value={value}>
-                        {SCOPE_LABEL[value]}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </Tabs>
-                {/* Global rules — connector approval policy, so it belongs on this
-                page and not on the shared capability bar, which also rides over
-                Agents, Skills and Triggers.
-
-                Text, not a chip. This row already carries the tab strip's
-                filled control; a second bordered pill opposite it would read as
-                a second selector rather than a way out to a settings surface.
-                `variant="text"` is the codebase's muted-text affordance
-                (`text-muted-foreground` → `text-primary` on hover); `px-0` drops
-                the pill padding so the label sits flush with the container's
-                right edge, mirroring the tab strip flush left. It keeps the
-                full `h-8` of `size="sm"` as its hit area.
-
-                `ml-auto` rather than leaning on the shell's `justify-between`:
-                when the row wraps on a narrow viewport this lands alone on the
-                second line, and `justify-between` would drop it to the LEFT
-                there. `ml-auto` holds it right in both layouts.
-
-                Not gated on `canWrite` — anyone who can open the page can read
-                the project's approval policy. */}
+                {scopeTabs}
+                {/* Project approval policy: text, flush right, a way out to a
+                    settings surface rather than a second selector. */}
                 <Button
                   type="button"
                   variant="text"
@@ -601,84 +741,37 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                   {tI18nComplete.raw('text1d59a5e09714')}
                 </Button>
               </>
-            )
+            ) : undefined
           }
         >
-          {channelsActive ? (
+          {agentScoped ? (
+            /* Agent mode: the same catalogue as project mode (the project's
+               connectors, one switch each, then every app), then the agent's
+               rule sets. One library, two modes (Marko, 2026-10-28). */
+            <div className="space-y-6">
+              {settled && !isError ? catalogSection : listBody(ownMatches)}
+              {agentPanel}
+              {railLayout ? (
+                <div className="bg-popover flex items-center gap-3 rounded-lg px-4 py-3">
+                  <ShieldIcon className="text-muted-foreground size-4 shrink-0" />
+                  <p className="text-muted-foreground min-w-0 flex-1 text-xs text-pretty">
+                    {tTabs.rich('policySetsNote', { file: () => <code className="text-foreground font-mono">kortix.yaml</code> })}
+                  </p>
+                  {addMenu}
+                </div>
+              ) : null}
+            </div>
+          ) : channelsActive ? (
             /* The whole of what used to be `/projects/<id>/channels`, minus the
            shell it used to bring — this page's `CapabilityPageShell` is the
            one column, the one heading and the one scroll container now. */
             <ChannelsSection projectId={projectId} />
           ) : catalogActive ? (
-            <>
-              {ownMatches.length > 0 ? (
-                <div className="space-y-3">
-                  <h2 className="text-sm font-medium">{tPages('yourConnectors')}</h2>
-                  {/* Rendered only once the page has settled (ownMatches is
-                  non-empty), so the grid needs no loading/error/empty state:
-                  the page-level ones cover it. */}
-                  <CatalogGrid
-                    dense
-                    isLoading={false}
-                    isError={false}
-                    onRetry={retry}
-                    isEmpty={false}
-                    empty={null}
-                  >
-                    {ownMatches.map(ownConnectorCard)}
-                  </CatalogGrid>
-                </div>
-              ) : null}
-              {/* The catalogue's own header: its filters sit with what they
-                  filter, under the project's own connectors. */}
-              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                <h2 className="text-sm font-medium">{tPages('allApps')}</h2>
-                {catalogFilters}
-              </div>
-              <ConnectorBrowse
-                state={catalog}
-                connectedKeys={connectedKeys}
-                hrefFor={catalogHref}
-                install={catalogInstall}
-                emptyTitle={tI18nComplete.raw('text3a63271cafc1')}
-                emptyDescription={tI18nComplete.raw('textf652a621153e')}
-                // A slug search that only the project's own connector answers
-                // must not ALSO read "No matches" under its card (KRTX-2531).
-                suppressNoMatch={ownMatches.length > 0}
-              />
-            </>
+            catalogSection
           ) : (
             <>
               <ConnectorMovesBanner projectId={projectId} />
-              <CatalogGrid
-                dense
-                // `!settled`, not `connectorsQuery.isLoading`: the empty state's
-                // wording depends on `projectQuery` too. Same gate as the filter row.
-                isLoading={!settled}
-                isError={isError}
-                error={connectorsQuery.error ?? projectQuery.error}
-                onRetry={retry}
-                isEmpty={emptyKind !== null}
-                empty={
-                  emptyKind === 'no-match' ? (
-                    <CatalogNoMatch query={query} />
-                  ) : (
-                    <EmptyState
-                      icon={PlugIcon}
-                      size="sm"
-                      title={tI18nComplete.raw('text51ae0a7e3783')}
-                      description={tI18nComplete.raw('texta3487dfc2132')}
-                      action={
-                        <Button size="sm" variant="secondary" onClick={() => setScope('all')}>
-                          {tI18nComplete.raw('text45bfe4f17af7')}
-                        </Button>
-                      }
-                    />
-                  )
-                }
-              >
-                {filtered.map(ownConnectorCard)}
-              </CatalogGrid>
+              {listBody(filtered)}
             </>
           )}
 

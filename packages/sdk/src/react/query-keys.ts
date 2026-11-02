@@ -53,6 +53,7 @@
  */
 import type { ReviewItemsQuery } from '../core/rest/projects-client/review';
 import type { ProjectMemoryPageListOptions, ProjectMemorySearchInput } from '../core/rest/projects-client/memory';
+import type { ProjectSearchInput } from '../core/rest/projects-client/project-search';
 import type { ListProjectSessionsOptions } from '../core/rest/projects-client/sessions';
 
 type SessionListFilters = Pick<
@@ -258,6 +259,10 @@ export const qk = {
     versions: (driveId: string) => [...qk.drives.drive(driveId), 'versions'] as const,
     grants: (driveId: string) => [...qk.drives.drive(driveId), 'grants'] as const,
     conflicts: (driveId: string) => [...qk.drives.drive(driveId), 'conflicts'] as const,
+    /** What the drive holds against its limits. Under the drive, so a write's invalidation refreshes it. */
+    usage: (driveId: string) => [...qk.drives.drive(driveId), 'usage'] as const,
+    /** An account's Files per project. */
+    accountUsage: (accountId: string | null | undefined) => [...qk.drives.scope(), 'account-usage', accountId ?? 'primary'] as const,
     session: (projectId: string, sessionId: string) =>
       [...qk.drives.scope(), 'session', projectId, sessionId] as const,
   },
@@ -424,6 +429,25 @@ export const qk = {
       [...qk.project.sessionsScope(id), 'list-children', parentSessionId, q?.trim() ?? ''] as const,
 
     /**
+     * A session's multi-agent reads: who it can reach, its messages, its
+     * team's tasks and teammates, its workflow runs. Each nests under
+     * `session(id, sessionId)`, so a session invalidation refreshes them, and
+     * under `sessionAgents(id, sessionId)`, so one call refreshes all of them.
+     */
+    sessionAgents: (id: string, sessionId: string) =>
+      [...qk.project.session(id, sessionId), 'agents'] as const,
+    sessionReachable: (id: string, sessionId: string, scope: string) =>
+      [...qk.project.sessionAgents(id, sessionId), 'reachable', scope] as const,
+    peerMessages: (id: string, sessionId: string, direction: string) =>
+      [...qk.project.sessionAgents(id, sessionId), 'peer-messages', direction] as const,
+    teamTasks: (id: string, leadSessionId: string) =>
+      [...qk.project.sessionAgents(id, leadSessionId), 'tasks'] as const,
+    teammates: (id: string, leadSessionId: string) =>
+      [...qk.project.sessionAgents(id, leadSessionId), 'teammates'] as const,
+    sessionWorkflows: (id: string, sessionId: string) =>
+      [...qk.project.sessionAgents(id, sessionId), 'workflows'] as const,
+
+    /**
      * One session, by id. Nests directly under the scope-LESS
      * `sessionsScope` prefix, not under a specific `sessions(id, scope)`
      * slot: a session is not "owned" by whichever list scope happened to
@@ -550,6 +574,8 @@ export const qk = {
     roomList: (id: string) => [...qk.project.rooms(id), 'list'] as const,
     /** `listRooms({ mine: true })` — the caller's conversations with unread counts. */
     roomConversations: (id: string) => [...qk.project.rooms(id), 'mine'] as const,
+    /** `findRoomByName` — the room of a space (named like its slug), or null. */
+    spaceRoom: (id: string, name: string) => [...qk.project.rooms(id), 'name', name] as const,
     /** `getRoom` — one conversation and its members. */
     room: (id: string, roomId: string) => [...qk.project.rooms(id), 'room', roomId] as const,
     /** `listRoomMessages` — the newest messages of one conversation. */
@@ -561,6 +587,8 @@ export const qk = {
      *  of every `sessionReminders` key, so invalidating it refreshes the
      *  project page and every session's reminder chip together. */
     reminders: (id: string) => [...qk.project.scope(id), 'reminders'] as const,
+    /** `listUnifiedTriggers` — `GET /projects/:id/triggers/all`: kortix.yaml and runtime triggers in one list. */
+    unifiedTriggers: (id: string) => [...qk.project.scope(id), 'unified-triggers'] as const,
     /** `listProjectSpaces` — the project's channels and the caller's DMs. */
     spaces: (id: string) => [...qk.project.scope(id), 'spaces'] as const,
     /** `listProjectSessionGroups` — the project's session groups, in order. */
@@ -594,6 +622,8 @@ export const qk = {
     memoryHistory: (id: string, pageId: string) => [...qk.project.memoryPage(id, pageId), 'history'] as const,
     /** `searchProjectMemory` — one query (`q` trimmed). Under `memory`, so a write refreshes the hits. */
     memorySearch: (id: string, input: ProjectMemorySearchInput) => [...qk.project.memory(id), 'search', input] as const,
+    /** `searchProject` — one query over the project's Files (`q` trimmed). */
+    search: (id: string, input: ProjectSearchInput) => [...qk.project.scope(id), 'search', input] as const,
     /**
      * `getSessionMemoryUsage` — one thread's "Used memory". Outside `memory` on
      * purpose: the record is fixed at the thread's first turn, so no write refreshes it.
@@ -630,6 +660,9 @@ export const qk = {
     /** `getSessionModelUsage` — `GET /projects/:id/sessions/:sid/model-usage`. */
     sessionModelUsage: (id: string, sessionId: string) =>
       [...qk.project.scope(id), 'session-model-usage', sessionId] as const,
+    /** `getSessionUsage` — `GET /projects/:id/sessions/:sid/usage`. */
+    sessionUsage: (id: string, sessionId: string) =>
+      [...qk.project.scope(id), 'session-usage', sessionId] as const,
 
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the

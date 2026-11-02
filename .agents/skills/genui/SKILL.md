@@ -1,11 +1,13 @@
 ---
 name: genui
-description: "Generative UI for Kortix: the agent writes typed UI blocks (cards, comparisons, charts, maps, tabs) in OpenUI Lang inside its replies, and web, mobile, and SDK hosts render them through `@kortix/sdk/genui`. Load WHENEVER you design, build, review, or debug generative UI, the `openui` code fence, the `genui` project flag, the genui prompt instructions, a genui component, or the `@kortix/sdk/genui` or `/genui/react` subpaths."
+description: "Generative UI for Kortix: the agent writes typed UI blocks (cards, comparisons, charts, maps, tabs) in OpenUI Lang inside its replies, and web, mobile, and SDK hosts render them through `@kortix/sdk/genui`. Load WHENEVER you design, build, review, or debug generative UI, the `openui` code fence, the genui prompt instructions, a genui component, the `kortix-genui` system skill, or the `@kortix/sdk/genui` or `/genui/react` subpaths."
 ---
 
 # Generative UI (`genui`)
 
-**Status (2026-10-10): built on branch `genui`, not merged to `dev`.** SDK (`@kortix/sdk/genui`, `/genui/react`), runtime (`genui` flag, prompt on OpenCode and pi, channel guards), web, and mobile are implemented. Plans 1–5 are built. Open: plan-4 task 8 (browser checks), and plan-5 task 7's device check and OTA publish, which wait on Jay (`references/mobile-device-check.md`).
+**Status (2026-10-24): on `dev`, always on.** Generative UI has no feature flag and no kill switch. Every session on both harnesses lists the `kortix-genui` system skill, and every client renders `openui` blocks. SDK (`@kortix/sdk/genui`, `/genui/react`), runtime (the skill, channel guards), web, and mobile are implemented. Open: plan-5 task 7's device check and OTA publish, which wait on Jay (`references/mobile-device-check.md`).
+
+The `references/` plans and spec are the build record. Their `genui` project flag, `GENUI_ENABLED` kill switch and `KORTIX_GENUI` sandbox env were deleted on 2026-10-24. A stored `experimental.genui` project override is ignored, and the API sends `experimental.genui: true` for older clients.
 
 Phase 0 (provisional, local stand-in models): GO (2026-10-09, prompt 00a9030e). Valid: deepseek-v4.1-flash 100.0%, glm-5.3-flash 100.0%, gate 97.0%; kimi-k3 unavailable (503); Jay's 4 models untested. See `references/eval-results.md`.
 
@@ -15,7 +17,7 @@ Phase 0 (provisional, local stand-in models): GO (2026-10-09, prompt 00a9030e). 
 | `references/plan.md` | Master implementation plan: architecture, global constraints, review focus, spec deltas D1–D12, file map, interface contracts, order of work, delivery |
 | `references/plan-1-sdk.md` | `@kortix/sdk/genui` + `/genui/react` + default components (9 tasks; code verified before writing) |
 | `references/plan-2-eval.md` | Phase 0 evaluation of 4 models on 46 synthetic cases, go/no-go gate (2 tasks) |
-| `references/plan-3-runtime.md` | `genui` flag, `GENUI_ENABLED` kill switch, prompt on OpenCode and pi, channel guards (5 tasks) |
+| `references/plan-3-runtime.md` | Channel guards, and the deleted flag, kill switch and prompt injection (5 tasks, historical) |
 | `references/plan-4-web.md` | Web and desktop renderer, components, charts, map, settings, copy/export, telemetry, verification (8 tasks) |
 | `references/plan-5-mobile.md` | Mobile renderer, components, charts, map, settings, copy, device check, OTA (7 tasks) |
 | `references/eval-results.md` | Phase 0 results: one summary table per eval run, appended by `scripts/eval.ts` |
@@ -34,8 +36,8 @@ Phase 0 (provisional, local stand-in models): GO (2026-10-09, prompt 00a9030e). 
 4. The catalog is the `kortix-genui` managed system skill
    (`packages/starter/templates/managed/skills/kortix-genui/SKILL.md`), generated from
    `buildGenuiPrompt()` by `bun packages/sdk/scripts/genui-skill.ts`; `packages/sdk/src/genui/skill.test.ts`
-   fails while it is stale. It is never in the system prompt. Project flag off = kortixd hides the skill
-   (`apps/kortix-sandbox-agent-server/src/lib/config/genui.ts`).
+   fails while it is stale. It is never in the system prompt. Every session lists it, on OpenCode and pi;
+   there is no flag (`apps/kortix-sandbox-agent-server/src/__tests__/managed-skills-genui.test.ts`).
 5. No raw model output reaches Slack, push, email, or the CLI. Run `toMarkdown`.
 6. Query, Mutation, Form, Input, and Button are Phase 4 only, with the guards in
    `references/spec.md` §9.

@@ -2,6 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  createRoom,
+  findRoomByName,
   getRoom,
   listRoomMessages,
   listRooms,
@@ -25,6 +27,30 @@ export function useRooms(projectId: string | null | undefined) {
     enabled: !!projectId,
     ...contract('inventory'),
   });
+}
+
+/**
+ * The room of a space: the project room named like the space's slug, or null
+ * before anyone created it. `ensure` creates it (or returns the existing one)
+ * on demand, so nothing provisions a room on render.
+ */
+export function useSpaceRoom(
+  projectId: string | null | undefined,
+  slug: string | null | undefined,
+  options: { topic?: string | null } = {},
+) {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: qk.project.spaceRoom(projectId ?? '', slug ?? ''),
+    queryFn: () => findRoomByName(projectId as string, slug as string),
+    enabled: !!projectId && !!slug,
+    ...contract('inventory'),
+  });
+  const ensure = useMutation({
+    mutationFn: () => createRoom(projectId as string, { name: slug as string, topic: options.topic ?? null }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.project.rooms(projectId ?? '') }),
+  });
+  return { ...query, ensure };
 }
 
 /** The rooms the caller is a member of, with unread counts. */

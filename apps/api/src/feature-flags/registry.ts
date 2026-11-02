@@ -68,7 +68,7 @@
  * a time. `unit-feature-flag-drift.test.ts` compares contract <-> SDK <->
  * registry and catches 1/3/5 only. List every holder before you start:
  *
- *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "genui"
+ *   rg -l "reminders" --glob '!node_modules' . | xargs rg -l "agent_rooms"
  *
  * The UI renders straight from {@link buildFeatureFlagCatalog}, so a new entry
  * lights up in Settings automatically. `unit-feature-flags.test.ts` pins the
@@ -94,12 +94,6 @@
  *     lever, and it is the whole reason this is not `available: () => false`
  *     (which would force the flag OFF for every project — the opposite of
  *     what a hidden default means).
- *
- * ## Derived flags (`derivedFrom: 'volumes'`)
- *
- * `drives` is not a choice of its own: it follows
- * the project's `volumes` flag and is never offered as a toggle. Every flag is
- * per project; none is set for a whole organization (2026-10-13).
  *
  * A hidden flag is a DATED state, not a parking spot: hide it in the release
  * that makes it the default, delete it in the next one. The comment on the
@@ -139,6 +133,8 @@ export interface FeatureFlagDef {
   /** One sentence: what it does and what to expect. */
   description: string;
   stability: FeatureFlagStability;
+  /** Work in progress: not recommended yet. The clients mark the row (Marko, 2026-10-27). */
+  wip?: boolean;
   /** Platform support gate (operator env). Hidden in UI when false. */
   available: () => boolean;
   /** Per-project default when the project hasn't made an explicit choice. */
@@ -153,12 +149,6 @@ export interface FeatureFlagDef {
    * this file's header.
    */
   catalogHidden?: true;
-  /**
-   * The flag is not a project choice: it follows the project's `volumes`
-   * flag. A project override is ignored, and the flag is never offered as a
-   * toggle.
-   */
-  derivedFrom?: 'volumes';
   /**
    * IAM actions that exist only with this flag. The account permission catalog
    * (`GET /accounts/:id/iam/permissions`) leaves them out until a project of the
@@ -194,19 +184,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
   // `llm_gateway` graduated (2026-10-20): the LLM gateway is the only model
   // path for every project. No flag, no native OpenCode provider mode, no
   // operator lever. A stored `experimental.llm_gateway` override is inert.
-  {
-    key: 'meta_agent',
-    name: 'Meta Agent',
-    description:
-      'A reserved coordinator agent that spawns and manages specialized sessions, transfers files between them, and orchestrates multi-step work across the project. Adds a platform-owned meta agent to the project and changes the default agent for new sessions without an explicit --agent flag.',
-    stability: 'experimental',
-    available: () => true,
-    platformDefault: () => false,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'Off ⇒ the platform meta agent is not added to the agent list and is not ' +
-      'the default for new sessions (projects/lib/platform-meta-agent.ts).',
-  },
+  // `meta_agent` removed (2026-11-02): My Kortix follows kortix.yaml
+  // `builtin_agents.my_kortix` alone and is on when the key is not set
+  // (projects/lib/my-kortix-agent.ts). The flag defaulted off until 2026-10-24,
+  // so projects that saved Settings before then stored `false` and lost My
+  // Kortix after it became the default. A stored `experimental.meta_agent`
+  // override is inert; the API still sends `true` to older clients.
   // `apps` graduated (2026-10-14, spec §28): Apps is generally available —
   // every project can create and deploy Apps and there is no flag, no row and
   // no operator lever. A stored `experimental.apps` override is inert.
@@ -215,9 +198,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
   // `experimental.monitors` override is inert.
   {
     key: 'reminders',
-    name: 'Reminders',
+    name: 'Loops',
     description:
-      'Let agents and people schedule check-ins on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind` in the CLI.',
+      'Let agents and people schedule a Loop on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds loops to the Triggers list, the session loop chip, and `kortix loop` in the CLI.',
     stability: 'beta',
     available: () => true,
     // On by default (2026-10-19): goals wake on a heartbeat reminder (kortix-goals).
@@ -265,10 +248,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
   {
     key: 'pooled_provider_secrets',
     name: 'Pooled Provider Secrets',
-    description: 'Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses.',
+    description: 'Members connect their own ChatGPT and Claude subscriptions and provider keys, share them when needed, and choose which ones each session uses.',
     stability: 'experimental',
     available: () => true,
-    platformDefault: () => false,
+    // On by default since 2026-10-31: every project gets private-by-default
+    // provider accounts. A project that turned it off keeps it off.
+    platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote: 'Session selection and provider credential resolution reject or ignore resource secrets while disabled.',
   },
@@ -276,34 +261,25 @@ const FLAGS: readonly FeatureFlagDef[] = [
   // sunset and serves only sessions that already run on it. No flag, no
   // operator lever, no manifest `runtime:` choice. A stored
   // `experimental.pi_harness` override is inert.
-  {
-    key: 'genui',
-    name: 'Generative UI',
-    description:
-      'The agent may answer with cards, comparisons, charts, maps, and tabs instead of long text. On ⇒ every new session of this project (and any session rebuilt from scratch) lists the kortix-genui system skill, which teaches the agent the Kortix generative UI catalog when an answer needs it (KORTIX_GENUI=1 in kortixd). Off ⇒ the agent writes markdown only; blocks already in a transcript still render.',
-    stability: 'experimental',
-    available: () => true,
-    // On by default: rich answers are the product. Turn it off per project, or
-    // for every project with the GENUI_ENABLED=false kill switch.
-    platformDefault: () => true,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'Read at session provisioning (projects/lib/feature-flag-env.ts → KORTIX_GENUI). An in-place restart keeps the sandbox env, so a running or restarted session keeps its skill list until a new session starts. kortixd hides the kortix-genui skill while the flag is off (OpenCode: kortixd does not write the skill files, and removes a copy a reused config release still holds, because the `"*": "allow"` of a project config outranks any skill deny; pi: the skill is dropped from its list); the catalog is never in the system prompt. A flag change deletes every unclaimed warm session of the project (pre-created by the web client before the user types, projects/lib/warm-sessions.ts; feature-flags/toggle-effects.ts → retireWarmProjectSessions), so the next prompt starts a session with the new value. The deletion runs in the background after the change is saved: a warm session claimed before it runs keeps the old value. The API kill switch GENUI_ENABLED=false forces it off for every project; it is read at API boot, and a warm session provisioned before an API restart keeps its old value until it is used or idles out.',
-  },
+  // `genui` graduated (2026-10-24): generative UI is always on. Every session
+  // lists the kortix-genui system skill; no flag, no kill switch. A stored
+  // `experimental.genui` override is inert.
   {
     key: 'us_region',
     name: 'US Region',
     description:
-      "Place this project's newly provisioned Platinum sandboxes in the configured US region instead of the provider's home region. Existing sandboxes keep their region, including on restart. This changes compute placement, not API, database, or archive residency. A new sandbox image is copied to the region before sessions use it; until then they boot from the previous image. If that copy fails, the session starts in the provider's home region instead.",
+      "Place this project's Files and newly provisioned Platinum sandboxes in the configured US region instead of the provider's home region. Files stay in the region where they were created, and every new sandbox runs where the project's Files live, so changing this setting after the Files exist does not move them or their sessions. Existing sandboxes keep their region, including on restart. This changes compute and Files placement, not API, database, or archive residency. A new sandbox image is copied to the region before sessions use it.",
     stability: 'experimental',
     // Two operator gates: Platinum must be the configured provider, and the
     // environment must name the region (KORTIX_PLATINUM_US_REGION), which is
     // also what says the Platinum org holds a grant for it. Unset ⇒ hidden.
     available: () => Boolean(config.PLATINUM_API_KEY) && platinumUsRegion() !== null,
-    platformDefault: () => false,
-    // Read at provisioning (platform/services/session-sandbox.ts
-    // resolveSessionSandboxRegion) and sent as `region` on the Platinum
-    // create. Off ⇒ no region is sent and Platinum places in its home region.
+    // Off unless the operator sets KORTIX_PLATINUM_US_REGION_DEFAULT (dev does).
+    platformDefault: () => config.KORTIX_PLATINUM_US_REGION_DEFAULT === true,
+    // Read when a project's drive is created (drives/service.ts
+    // ensureProjectDrive) and at provisioning (platform/services/sandbox-region.ts
+    // resolveSessionPlacement), sent as `region` on the Platinum create. Off ⇒
+    // the home region, unless the project's Files already live in another.
     enforcement: 'behavioral',
   },
   {
@@ -331,7 +307,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'notification_center',
     name: 'Notification Center',
     description:
-      "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and reminders. Off, as before: only the session creator's phone gets a session push, and an account owner's phone gets one when a trigger starts failing.",
+      "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and loops. Off, as before: only the session creator's phone gets a session push, and an account owner's phone gets one when a trigger starts failing.",
     stability: 'beta',
     available: () => true,
     // KRTX-1742 ships dark: a project opts in from Settings → Feature flags.
@@ -349,52 +325,24 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'rows of a project with the flag off (notifications/inbox-read.ts). The ' +
       'per-person /v1/notifications/* routes carry no project and stay ungated.',
   },
-  {
-    key: 'volumes',
-    name: 'Volumes',
-    description:
-      'Shared Files for this project.',
-    stability: 'experimental',
-    // Every volume is a Platinum volume.
-    available: () => Boolean(config.PLATINUM_API_KEY),
-    // On by default (founder, 2026-10-24): every project gets Files — a private
-    // folder per person (`/drives/me`, where the agent keeps user memory) and
-    // the shared `/Company` folder (`Company/Memory`). Onboarding writes both.
-    platformDefault: () => true,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'BEHAVIORAL only, through the flag derived from it: drives (Files routes and ' +
-      'session drive mounts).',
-  },
-  {
-    key: 'drives',
-    name: 'Files',
-    description:
-      'The project\'s shared folders, in sync with sessions: everyone has their own private folder (their session desktop), and any folder can be shared with people, teams and agents. New sessions see the folders they may use under /drives.',
-    stability: 'experimental',
-    // Every drive is a Platinum volume; without Platinum there is nothing to
-    // store files in.
-    available: () => Boolean(config.PLATINUM_API_KEY),
-    // Follows the project's `volumes` flag; not a toggle of its own.
-    platformDefault: () => false,
-    derivedFrom: 'volumes',
-    catalogHidden: true,
-    enforcement: 'routes',
-    enforcementNote:
-      'Mixed, and both halves are enforced. ROUTES: GET /v1/drives?projectId= answers ' +
-      '403 `feature_disabled` when off, and so does every write addressed by drive id ' +
-      '(drives/routes.ts). Reads by drive id stay open, so a file a session already ' +
-      'wrote under /drives still opens. BEHAVIORAL: session provisioning mounts no ' +
-      'folder when off (drives/service.ts sessionVolumeMounts).',
-  },
+  // `volumes` and `drives` graduated (2026-11-02, Marko: "rm the feature flag
+  // for volumes, make them default & always enabled"): every project has a
+  // Drive wherever the platform stores one (Platinum configured,
+  // drives/volumes.ts driveStorageAvailable). A stored `experimental.volumes`
+  // or `experimental.drives` override is inert. The project detail still sends
+  // both keys, equal to that availability, for older SDKs, hosts and CLIs.
   {
     key: 'goals',
     name: 'Goals',
     description:
-      'Give an agent an objective and it owns the outcome until an independent check confirms it, for days or weeks: it plans, works, waits, chases people for what only they can give, and keeps its state in a Goals folder in Files. Needs Volumes and Reminders on.',
-    stability: 'experimental',
+      'Give an agent an objective and it owns the outcome until an independent check confirms it, for days or weeks: it plans, works, waits, chases people for what only they can give, and keeps its state in a Goals folder in the Drive. Needs Loops on (flag key `reminders`).',
+    stability: 'beta',
+    // Work in progress (Marko, 2026-11-01): Settings marks the row "Not
+    // recommended yet" until Goals v1 is finished.
+    wip: true,
     // A goal keeps its state in Files, and every drive is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
+    // Off by default; a project turns it on (Marko, 2026-10-28).
     platformDefault: () => false,
     enforcement: 'ui-only',
     enforcementNote:
@@ -402,7 +350,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(KORTIX_FEATURE_FLAGS → kortixd, apps/cli/src/command-table.ts) and kortixd runs no after-turn goal ' +
       'check (harness/shared/on-idle-hook.ts), so a goal that already exists stops ' +
       'being worked when the flag is turned off; its folder in Files stays. `kortix goals new` also checks the ' +
-      'flag through the API outside a box (apps/cli/src/commands/goals.ts). The server parts goals use ' +
+      'flag through the API outside a box (apps/cli/src/commands/goals.ts). SERVER: off, a merged change request ' +
+      'wakes no goal (projects/lib/goal-wake.ts wakeGoal). The other server parts goals use ' +
       '(reminders, unattended question release, reminder successors) are generic and stay on for every project.',
   },
   {
@@ -411,9 +360,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     description:
       'Share docs (Markdown) and HTML pages from Files: a gallery per project, a doc editor, versions from the Files history, PDF export for docs, and share links that are private, for the project, for chosen people, or public.',
     stability: 'beta',
-    // Artifacts are paths in Files, a Platinum volume.
+    // Artifacts are paths in Files, a Platinum volume. Default-on wherever
+    // Platinum is configured (Marko, 2026-10-24) — matches the `available` gate.
     available: () => Boolean(config.PLATINUM_API_KEY),
-    platformDefault: () => false,
+    platformDefault: () => Boolean(config.PLATINUM_API_KEY),
     enforcement: 'routes',
     iamActions: ['project.artifact.read', 'project.artifact.write', 'project.artifact.manage', 'project.artifact.public'],
     enforcementNote:
@@ -482,6 +432,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     description:
       'Organize work in channels. Each new message in a channel or a direct message with an agent starts a thread. Replaces the session list in the sidebar.',
     stability: 'experimental',
+    wip: true,
     available: () => true,
     platformDefault: () => false,
     enforcement: 'routes',
@@ -501,7 +452,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
     description:
       'Named chat rooms per goal or topic where agent sessions and people post (`kortix rooms`, `kortix peers`). Every message is stored in its room. A member session gets a message addressed to it (an @-mention, a reply in its thread) between its steps; other room traffic arrives as one batched notice when its turn ends; a thread reply reaches only the thread participants. A stopped session wakes. A member person gets every message as unread and, with the notification center on, a notification for one addressed to them.',
     stability: 'experimental',
+    wip: true,
     available: () => true,
+    // Off by default again (Marko, 2026-10-27): a project turns it on.
     platformDefault: () => false,
     enforcement: 'routes',
     enforcementNote:
@@ -536,6 +489,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     description:
       "Group the sidebar's sessions into named folders that everyone in the project shares, for example one per store or client. Move a session into a group from its menu or by dragging it; reorder and collapse the groups.",
     stability: 'experimental',
+    wip: true,
     available: () => true,
     platformDefault: () => false,
     enforcement: 'routes',
@@ -561,6 +515,24 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'connected are account-level and gated only by KORTIX_CHROME_ENABLED (404 when off). BOX: off, the ' +
       'session has no kortix-chrome skill and its CLI hides and refuses `kortix chrome` (KORTIX_FEATURE_FLAGS). ' +
       'WEB: no sidebar row, no Chrome card in Apps and extensions, no Settings page.',
+  },
+  {
+    key: 'agent_teams',
+    name: 'Agent teams',
+    description:
+      'A lead session starts named teammates that share one task list: each teammate claims a task, works it in its own session and tells the lead when it is done. The lead and the person see every teammate and its tasks. Messages between sessions (`send_message`) work without this flag.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'Off ⇒ a project has no team task list. ROUTES: GET/POST /projects/:id/sessions/:lead/tasks and ' +
+      'PATCH/DELETE /projects/:id/sessions/:lead/tasks/:seq answer 403 `feature_disabled` (projects/routes/team-tasks.ts). ' +
+      'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd registers no task_* tool; ' +
+      'a change reaches the next new box. Cross-session messages (`send_message`, `list_agents`, the peer-message ' +
+      'routes) do not read this flag. The session list `team_lead` filter and the session row fields stay on: ' +
+      'without teammates they return nothing new.',
   },
 ];
 
@@ -603,14 +575,8 @@ function explicitOverride(metadata: unknown, key: FeatureFlagKey): boolean | und
 export function resolveFeatureFlag(metadata: unknown, key: FeatureFlagKey): boolean {
   const def = FLAG_BY_KEY[key];
   if (!def || !def.available()) return false;
-  if (def.derivedFrom) return resolveFeatureFlag(metadata, def.derivedFrom);
   if (key === 'artifact_comments' && !resolveFeatureFlag(metadata, 'artifacts')) return false;
   return explicitOverride(metadata, key) ?? def.platformDefault();
-}
-
-/** Is this flag derived from another flag (and so not a project choice)? */
-export function isDerivedFeatureFlag(key: FeatureFlagKey): boolean {
-  return Boolean(FLAG_BY_KEY[key]?.derivedFrom);
 }
 
 /**
@@ -647,6 +613,8 @@ export interface FeatureFlagView {
   overridden: boolean;
   /** A `catalogHidden` flag: listed only while on, writable only by a platform operator. */
   operator_only: boolean;
+  /** Work in progress: not recommended yet. */
+  wip: boolean;
   /** Always `project`: no flag is set for a whole organization. Kept for the wire contract. */
   scope: 'project' | 'organization';
 }
@@ -661,8 +629,6 @@ export interface FeatureFlagView {
  */
 export function buildFeatureFlagCatalog(metadata: unknown): FeatureFlagView[] {
   return FLAGS.flatMap((f) => {
-    // A flag that follows another flag has no row of its own.
-    if (f.derivedFrom) return [];
     const enabled = resolveFeatureFlag(metadata, f.key);
     if (f.catalogHidden && !enabled) return [];
     return [{
@@ -674,6 +640,7 @@ export function buildFeatureFlagCatalog(metadata: unknown): FeatureFlagView[] {
       enabled,
       overridden: explicitOverride(metadata, f.key) !== undefined,
       operator_only: isOperatorOnlyFeatureFlag(f.key),
+      wip: f.wip === true,
       scope: 'project' as const,
     }];
   });
