@@ -273,8 +273,9 @@ flow(
       ['/v1/chat/completions', { model: 'gpt-5.5', messages: [null] }, shape],
       ['/v1/messages', { model: 'gpt-5.5', max_tokens: 16, system: 'be brief', messages: [] }, none],
       ['/v1/responses', { model: 'gpt-5.5', input: [] }, none],
+      ['/v1/responses', { model: 'gpt-5.5', input: [null] }, '`input` must be a string or an array of input items'],
     ] as const;
-    await ctx.step('a body with no user or assistant message → 400 before routing, on chat, messages and responses', async () => {
+    await ctx.step('a body with no user or assistant message, or a malformed item → 400 before dispatch, on chat, messages and responses', async () => {
       const wrong: string[] = [];
       for (const [path, body, message] of conversation) {
         const r = await as.post(path, body);
