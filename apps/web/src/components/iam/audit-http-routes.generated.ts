@@ -373,6 +373,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|drives",
   "GET|v1|drives|:driveId|access",
   "PUT|v1|drives|:driveId|access",
+  "GET|v1|drives|:driveId|admin-reads",
   "DELETE|v1|drives|:driveId|access|:grantId",
   "GET|v1|drives|:driveId|agents|:agentName|mounts",
   "GET|v1|drives|:driveId|conflicts",

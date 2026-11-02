@@ -1158,8 +1158,9 @@ drivesApp.openapi(
     const path = drivePath(c.req.query('path'), { allowRoot: true });
     const folder = personalFolderOf(path);
     if (!folder) return c.json({ folder: null, reads: [] });
-    if (folder !== caller.personalFolder && folderAccess(folder, caller.grants, caller.subject) !== 'manage') {
-      fail(403, 'Only the folder\'s owner and project admins see who opened it');
+    if (folder !== caller.personalFolder) {
+      if (!folderVisible(folder, caller.grants, caller.subject)) fail(404, 'File or folder not found');
+      if (folderAccess(folder, caller.grants, caller.subject) !== 'manage') fail(403, 'Only the folder\'s owner and project admins see who opened it');
     }
     const reads = await listAdminFolderReads(caller.drive.driveId, folder);
     const labels = await grantLabels(

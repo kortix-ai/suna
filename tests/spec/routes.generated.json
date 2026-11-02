@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1020,
+  "count": 1021,
   "routes": [
     {
       "method": "GET",
@@ -1485,6 +1485,10 @@
     {
       "method": "PUT",
       "path": "/v1/drives/:driveId/access"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/admin-reads"
     },
     {
       "method": "DELETE",

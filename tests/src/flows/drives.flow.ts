@@ -48,6 +48,7 @@ flow(
       'POST /v1/drives/:driveId/files/move',
       'DELETE /v1/drives/:driveId/files',
       'GET /v1/drives/:driveId/access',
+      'GET /v1/drives/:driveId/admin-reads',
       'PUT /v1/drives/:driveId/access',
       'GET /v1/drives/:driveId/principals',
       'GET /v1/drives/:driveId/agents/:agentName/mounts',
@@ -210,7 +211,7 @@ flow(
       (await owner.post('/v1/drives/:driveId/conflicts/:conflictId/dismiss', {}, { params: { driveId, conflictId: crypto.randomUUID() } })).status(404);
     });
 
-    await ctx.step('files: the member writes their folder; it reads back, moves and deletes', async () => {
+    await ctx.step('files: the member writes their folder; it reads back, OWNER (admin) opens it and the member sees that, then it moves and deletes', async () => {
       const dir = `${memberFolder}/notes`;
       const mkdir = await asMember.post('/v1/drives/:driveId/files/mkdir', { path: dir }, { params: { driveId } });
       if (mkdir.statusCode === 503) {
@@ -225,7 +226,16 @@ flow(
         .has('$.size', 11);
       const read = (await asMember.get('/v1/drives/:driveId/files/content', { params: { driveId }, query: { path: `${dir}/a.txt`, download: 1 } })).status(200);
       if (read.text() !== 'hello files') throw new Error(`read back ${read.text()}`);
-      (await owner.get('/v1/drives/:driveId/files/content', files(`${dir}/a.txt`))).status(404);
+      // A project admin opens every person's own folder; its owner sees each open.
+      const seen = (await owner.get('/v1/drives/:driveId/files/content', files(`${dir}/a.txt`))).status(200);
+      if (seen.text() !== 'hello files') throw new Error(`OWNER read ${seen.text()}`);
+      const reads = (await asMember.get('/v1/drives/:driveId/admin-reads', files(memberFolder)))
+        .status(200)
+        .json<{ folder: string; reads: Array<{ adminUserId: string; opens: number }> }>();
+      if (reads.folder !== memberFolder || !reads.reads.some((r) => r.adminUserId === ctx.P.OWNER.userId && r.opens >= 1)) {
+        throw new Error(`the member does not see OWNER's open: ${JSON.stringify(reads)}`);
+      }
+      (await asMember.get('/v1/drives/:driveId/admin-reads', files(ownerFolder))).status(404);
       (await asMember.post('/v1/drives/:driveId/files/move', { from: `${dir}/a.txt`, to: `${dir}/b.txt` }, { params: { driveId } })).status(200);
       (await asMember.del('/v1/drives/:driveId/files', { params: { driveId }, query: { path: dir, recursive: 'true' } })).status(204);
     });
