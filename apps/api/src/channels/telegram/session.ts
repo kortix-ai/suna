@@ -45,6 +45,7 @@ import {
   type QuestionMessage,
   type QuestionPort,
   type QuestionTapReply,
+  questionPicksSoFar,
 } from '../core/questions';
 import { registerSessionPort } from '../core/session-notice';
 import type { SettingsChannel } from '../core/settings';
@@ -501,7 +502,10 @@ export async function handleTelegramEvent(
   if (!file && (await answerQuestionInChat(telegramPort, target, { id: `message:${event.id}`, text }, answerFollowUp(event, install.botId, message, message.from), run))) {
     return;
   }
-  await clearQuestionButtons(telegramQuestions, target, 'answered_in_chat');
+  // The message carries the answers given so far on a question it ends. Read
+  // before it routes and cleared after, so a retry carries them again.
+  const picks = await questionPicksSoFar(target);
+  const envelope = telegramEnvelope(message);
 
   await telegramCall(token, 'sendChatAction', {
     chat_id: message.chat.id,
@@ -518,7 +522,7 @@ export async function handleTelegramEvent(
         create: `telegram:create:${install.botId}:${event.id}`,
         createClaim,
       },
-      followUp: telegramEnvelope(message),
+      followUp: picks ? { ...envelope, text: `${picks}\n\n${envelope.text}` } : envelope,
       files: file
         ? [{
             kind: file.kind,
@@ -555,12 +559,14 @@ export async function handleTelegramEvent(
               message_id: message.message_id,
             },
           },
-          prompt: telegramEnvelope(message),
+          // A new session never asked the questions: the message alone.
+          prompt: envelope,
         };
       },
     },
     run,
   );
+  await clearQuestionButtons(telegramQuestions, target, 'answered_in_chat');
 }
 
 /**

@@ -11,8 +11,9 @@
  *                question has no option to tap. Posted only where the agent's
  *                own call would run without approval
  *   a message  → on a question shown one at a time that takes typed text: its
- *                answer (`answerQuestionInChat`); else the buttons go, and the
- *                footer says why (`clearQuestionButtons`)
+ *                answer (`answerQuestionInChat`); else it carries the answers
+ *                so far (`questionPicksSoFar`), the buttons go, and the footer
+ *                says why (`clearQuestionButtons`)
  *   a tap      → a pick, a tick, Done or a page turn; the last answer goes in
  *                the turn the question still blocks, else as a follow-up into
  *                the question's own session that quotes it
@@ -21,7 +22,7 @@
  */
 import type { RuntimeQuestion } from '@kortix/api-contract/transcript';
 import { chatEventDedup, projectSessions } from '@kortix/db';
-import { desc, eq, like } from 'drizzle-orm';
+import { desc, eq, inArray, like } from 'drizzle-orm';
 import { connectorActionAlwaysRuns } from '../../connectors/db-deps-rows';
 import { logger } from '../../lib/logger';
 import {
@@ -292,27 +293,65 @@ const settleTap = (port: QuestionPort, tap: QuestionTap, reply?: QuestionTapRepl
     .then(() => port.answerTap(tap, reply))
     .catch((error) => logger.warn('[channel] question tap not settled', { platform: tap.target.platform, error: String(error) }));
 
+/** Message ids grow in a conversation (Telegram's do): the question message `ref` came before the message `target` names. */
+const sentBefore = (ref: string, target: ChannelTarget) => Number(ref) < Number(target.messageId);
+
 /**
- * Take the buttons off every question still showing them in this conversation,
- * and say why in the message's last line: the person answered in the chat, or
- * started a new conversation. Best-effort.
+ * The kept question messages of this conversation that the message `target`
+ * names ends: those sent before it, so an older message's retry, or a question
+ * posted while the message routes, keeps its buttons. `all`: every one.
+ */
+async function keptQuestions(target: ChannelTarget, all = false): Promise<Array<{ key: string; ref: string; pendingId: string }>> {
+  const prefix = questionButtonsPrefix(target);
+  const rows = await db.select({ key: chatEventDedup.eventId }).from(chatEventDedup).where(like(chatEventDedup.eventId, startsWith(prefix)));
+  return rows.flatMap(({ key }) => {
+    const [ref = '', pendingId = ''] = key.slice(prefix.length).split('|');
+    return all || sentBefore(ref, target) ? [{ key, ref, pendingId }] : [];
+  });
+}
+
+/**
+ * Take the buttons off the questions still showing them in this conversation,
+ * and say why in the message's last line: the person answered in the chat (the
+ * questions sent before that message), or started a new conversation (every
+ * one). Best-effort.
  */
 export async function clearQuestionButtons(
   port: QuestionPort,
   target: ChannelTarget,
   why: 'answered_in_chat' | 'new_conversation',
 ): Promise<void> {
-  const prefix = questionButtonsPrefix(target);
+  const kept = await keptQuestions(target, why === 'new_conversation').catch(() => []);
+  if (!kept.length) return;
   const rows = await db
     .delete(chatEventDedup)
-    .where(like(chatEventDedup.eventId, startsWith(prefix)))
+    .where(inArray(chatEventDedup.eventId, kept.map((k) => k.key)))
     .returning({ key: chatEventDedup.eventId })
     .catch(() => []);
   for (const { key } of rows) {
-    const [ref, pendingId] = key.slice(prefix.length).split('|');
+    const { ref, pendingId } = kept.find((k) => k.key === key)!;
     const asked = pendingId ? await getPendingQuestion(target.projectId, pendingId).catch(() => null) : null;
-    await editQuestion(port, target, ref!, { questions: asked?.questions ?? [], footer: { kind: why } });
+    await editQuestion(port, target, ref, { questions: asked?.questions ?? [], footer: { kind: why } });
   }
+}
+
+/**
+ * The answers given so far on the questions shown one at a time that a message
+ * ends (`clearQuestionButtons`), as a follow-up quotes them: every question, an
+ * unanswered one saying so. Null: none. Read before the message routes, and the
+ * buttons cleared after it, so a retry of the message carries them again.
+ */
+export async function questionPicksSoFar(target: ChannelTarget): Promise<string | null> {
+  const said: string[] = [];
+  for (const { ref, pendingId } of await keptQuestions(target)) {
+    const asked = await getPendingQuestion(target.projectId, pendingId);
+    const picks = (asked?.chatSteps as QuestionSteps | null | undefined)?.picks ?? [];
+    // Answered another way (the web, or a whole answer in the turn): nothing waits on these picks.
+    if (!asked || asked.answers != null || !picks.length) continue;
+    const decision = await decideQuestionPress({ target, ref, pendingId, picks }, async () => target.threadId);
+    if (decision.kind === 'answer') said.push(renderAnswerPrompt(decision.answer.questions, decision.answer.answers));
+  }
+  return said.length ? said.join('\n\n') : null;
 }
 
 /** The follow-up of an answer: the adapter's persisted keys and envelope, delivered into `threadId`. */

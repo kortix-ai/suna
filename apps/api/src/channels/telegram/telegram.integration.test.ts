@@ -111,9 +111,8 @@ mock.module('../../projects/session-lifecycle/abort-runtime-turn', () => ({
 /** `bot: 'other'`: a call with OTHER_TOKEN. */
 type Call = { method: string; body: Record<string, unknown>; bot?: 'other' };
 const calls: Call[] = [];
-/** The id the fake gave each sent message: the next number, as Telegram numbers a chat's messages. */
+/** The id the fake gave each sent message: the next number of the count `update` takes its message ids from, as Telegram numbers a chat's messages. */
 const sentIds = new WeakMap<Call, number>();
-let lastSentId = 0;
 const waiters: Array<(call: Call) => void> = [];
 /** The next Bot API call, for a send nothing awaits (the provisioning notifier fires and forgets). */
 const nextCall = () => new Promise<Call>((resolve) => waiters.push(resolve));
@@ -183,7 +182,7 @@ const fake = Bun.serve({
       return Response.json({ ok: true, result: { file_id: id, file_path: `photos/${id}.jpg` } });
     }
     if (call.method === 'sendMessage') {
-      sentIds.set(call, ++lastSentId);
+      sentIds.set(call, updateId++);
       return Response.json({ ok: true, result: { message_id: sentIds.get(call) } });
     }
     return Response.json({ ok: true, result: call.method === 'getWebhookInfo' ? webhookInfo : { message_id: 1 } });
@@ -1768,14 +1767,31 @@ describe('Telegram questions one at a time — migrated PostgreSQL', () => {
     expect(delivered[1]!.text).toContain('> Which do you want?\nCoffee, and water');
     expect(lastEdit().text).toEndWith('Answered: Apple, Coffee, and water');
 
-    const strict = await posted(3007, [THREE[0], { ...THREE[1], custom: false }]);
+    const strict = await posted(3007, [THREE[0], { ...THREE[1], custom: false }, THREE[2]]);
     await tapOn(strict, `kq:${strict.id}:0`);
     expect(lastEdit().text).toEndWith('\n\nTap an option.');
     calls.length = 0;
-    await handleTelegramEvent(update('Purple', ALLOWED, 3007));
+    const purple = update('Purple', ALLOWED, 3007);
+    // The session cannot take it yet: the inbox retries, and the buttons stay until the message is delivered.
+    deliverResult = 'failed';
+    await expect(handleTelegramEvent(purple)).rejects.toThrow('follow-up failed');
+    expect(calls.filter((c) => c.method === 'editMessageText')).toEqual([]);
+    deliverResult = 'queued';
+    await handleTelegramEvent(purple);
     expect(lastEdit()).toEqual({ text: expect.stringMatching(/\n\nAnswered in the chat\.$/), buttons: [] });
-    expect(delivered.at(-1)).toMatchObject({ sessionId: strict.sessionId });
-    expect(delivered.at(-1)!.text).not.toContain('You asked:');
+    // Both attempts carry the answers so far, an unanswered question saying so, then the message.
+    expect(delivered.slice(-2).map((d) => d.sessionId)).toEqual([strict.sessionId, strict.sessionId]);
+    for (const { text } of delivered.slice(-2)) {
+      expect(text).toContain('You asked:\n> Favourite fruit?\nApple\n\n> Favourite colour?\n(no answer given)\n\n> What next?\n(no answer given)\n\nPurple\n');
+    }
+
+    // A message with no text (a sticker) is never an answer, and carries the answers so far too.
+    const sticker = await posted(3011, THREE);
+    await tapOn(sticker, `kq:${sticker.id}:1`);
+    await handleTelegramEvent(mediaUpdate({ sticker: { emoji: '👍' } }, { chat: 3011 }));
+    expect(lastEdit().text).toEndWith('\n\nAnswered in the chat.');
+    expect(delivered.at(-1)!.text).toContain('> Favourite fruit?\nBanana\n\n> Favourite colour?\n(no answer given)\n\n> What next?\n(no answer given)\n\n(sticker 👍)\n');
+    expect(await steps(sticker.id)).toMatchObject({ step: 1 });
   });
 
   test('a press from someone not on the allow-list gets an alert and moves nothing', async () => {
