@@ -74,6 +74,11 @@ export function runGit(
     child.on('error', (e) => { if (timer) clearTimeout(timer); reject(e) })
     child.on('close', (code) => { if (timer) clearTimeout(timer); resolve({ code: code ?? 0, stdout, stderr }) })
     if (opts.input !== undefined) {
+      // git may exit before it reads stdin: `check-ignore` outside a git
+      // repository exits 128 at once. The write then fails with EPIPE, and on
+      // Bun 1.4 an unhandled pipe error exits the daemon. The exit code above
+      // already carries the result, so the pipe error is dropped.
+      child.stdin?.on('error', () => {})
       child.stdin?.end(opts.input)
     }
   })
