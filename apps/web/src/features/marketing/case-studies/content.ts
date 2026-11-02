@@ -142,6 +142,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     },
     {
       id: 'insurance',
+      hidden: true,
       logo: {
         src: '/media/case-studies/insurance.svg?v=430db859',
         alt: 'An insurance mark',
