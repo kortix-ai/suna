@@ -271,6 +271,8 @@ test('check --enforce re-arms a missing heartbeat, counts wakes and, at the cap,
     expect(fake.reminders).toHaveLength(1);
     expect(read()).toMatchObject({ reminder_id: fake.reminders[0]!.id, wake_count: 1 });
 
+    // Force an early heartbeat regardless of the wall clock (4h can cross midnight).
+    fake.reminders[0]!.next_fire_at = '2000-01-01T00:00:00.000Z';
     await cli(fake, root, 'owner', ['check', '--enforce', '--quiet']);
     expect(read().wake_count).toBe(2);
     expect(fake.reminders).toHaveLength(1);
@@ -281,9 +283,17 @@ test('check --enforce re-arms a missing heartbeat, counts wakes and, at the cap,
     // No [GOAL CHECK] prompt for a repair the CLI did itself.
     expect(fake.requests.some((r) => r.path.endsWith('/prompts'))).toBe(false);
 
+    // A heartbeat already beyond tomorrow stays intact at the cap.
+    const later = '2100-01-01T04:00:00.000Z';
+    deferred.next_fire_at = later;
+    await cli(fake, root, 'owner', ['check', '--enforce', '--quiet']);
+    expect(fake.reminders).toHaveLength(1);
+    expect(fake.reminders[0]!.id).toBe(deferred.id);
+    expect(read().next_wake_at).toBe(later);
+
     // A session that is not the owner changes nothing.
     await cli(fake, root, 'worker', ['check', '--enforce', '--quiet']);
-    expect(read().wake_count).toBe(2);
+    expect(read().wake_count).toBe(3);
   } finally {
     fake.stop();
   }
