@@ -52,6 +52,28 @@ describe('readRuntimeRoot', () => {
     expect(await readRuntimeRoot(ENDPOINT)).toEqual({ ok: false, reason: 'not_ready' });
   });
 
+  // 2026-11-02 prod: a box answered 200 health `harness.state:"down"` with
+  // `boot_error` 0.8 s after boot, and the open waited ~7.5 min without it.
+  test('a runtime whose start failed is not ready and names the boot error; a start still running does not', async () => {
+    const failed = (extra: Record<string, unknown>) => () =>
+      Response.json({ capabilities: ['runtime.log.v1'], status: 'error', ...extra });
+    const down = { harness: { state: 'down', session: { id: null, required: true, root_thread_id: null } } };
+    answer = failed({ ...down, boot_error: 'pi harness has no model: no KORTIX_MODEL and no live model catalog' });
+    signed = () => new Response('{}', { status: 503 });
+    expect(await readRuntimeRoot(ENDPOINT)).toEqual({
+      ok: false,
+      reason: 'not_ready',
+      bootError: 'pi harness has no model: no KORTIX_MODEL and no live model catalog',
+    });
+    signed = () => Response.json({ statuses: {}, permissions: [], questions: [] });
+    expect(await readRuntimeRoot(ENDPOINT)).toMatchObject({ reason: 'not_ready', bootError: expect.stringContaining('no model') });
+    // An error beside a harness that runs or still starts is not a finished, failed start.
+    answer = failed({ harness: { state: 'starting', session: {} }, boot_error: 'audit spool' });
+    expect(await readRuntimeRoot(ENDPOINT)).toEqual({ ok: false, reason: 'not_ready' });
+    answer = failed({ ...down, boot_error: null });
+    expect(await readRuntimeRoot(ENDPOINT)).toEqual({ ok: false, reason: 'not_ready' });
+  });
+
   test('a refused or failed read is unreachable, with its cause', async () => {
     answer = () => new Response('nope', { status: 401, headers: { server: 'edge' } });
     expect(await readRuntimeRoot(ENDPOINT)).toMatchObject({ ok: false, reason: 'unreachable', cause: 'unsigned_context', responder: 'edge' });
