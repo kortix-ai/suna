@@ -24,9 +24,26 @@ type Config = {
   threads: readonly ArtifactCommentThread[];
   focusedThreadId: string | null;
   focusRevision: number;
+  /** The accessible name of pin `n` ("Comment 3"). It must name the number; anything else is dropped. */
+  pinLabel?: (n: number) => string;
 };
 const envelope = { kortix: 'annotate', v: 1 } as const;
 export type ArtifactAnnotationStatus = 'loading' | 'ready' | 'unavailable';
+/** A text selection the page offers: its box in frame viewport coordinates, when the page measured one. */
+export type ArtifactAnnotationSelection =
+  | { state: 'candidate'; anchor: ArtifactCommentAnchor; rect: ArtifactAnnotationRect | null }
+  | { state: 'too_long'; rect: ArtifactAnnotationRect | null };
+export type ArtifactAnnotationKey = 'escape' | 'comment';
+
+function pinLabel(config: Config, n: number): string | undefined {
+  const label = config.pinLabel?.(n);
+  return label &&
+    label.length <= limits.pinLabel &&
+    label.includes(String(n)) &&
+    !/[\u0000\uD800-\uDFFF]/u.test(label)
+    ? label
+    : undefined;
+}
 export type ArtifactAnnotationScheduler = (callback: () => void, delay: number) => () => void;
 const scheduleDeadline: ArtifactAnnotationScheduler = (callback, delay) => {
   const timer = setTimeout(callback, delay);
@@ -36,12 +53,19 @@ const scheduleDeadline: ArtifactAnnotationScheduler = (callback, delay) => {
 export function createArtifactAnnotationController(
   callbacks: {
     post: (message: ArtifactAnnotationHostMessage) => boolean;
+    /** A pin or region placed in comment mode: the person asked to comment there. */
     onCandidate: (anchor: ArtifactCommentAnchor) => void;
+    /** The page's text selection changed: an offer to comment on it, or null when it is gone. */
+    onSelection?: (selection: ArtifactAnnotationSelection | null) => void;
+    /** Escape or the comment shortcut, pressed inside the page. */
+    onKey?: (key: ArtifactAnnotationKey) => void;
     onFocus: (threadId: string) => void;
     onThreads: (threads: ArtifactCommentThread[]) => void;
     onStatus?: (status: ArtifactAnnotationStatus) => void;
     onViewport?: (viewport: ArtifactAnnotationViewport | null) => void;
     onRegions?: (regions: Readonly<Record<string, ArtifactAnnotationRect>>) => void;
+    /** thread_id → the number of its pin on the page, for every pin the page draws. */
+    onPins?: (pins: ReadonlyMap<string, number>) => void;
   },
   schedule: ArtifactAnnotationScheduler = scheduleDeadline,
 ) {
@@ -102,6 +126,18 @@ export function createArtifactAnnotationController(
     const pins: Extract<ArtifactAnnotationHostMessage, { type: 'draw' }>['pins'] = [];
     const ids = new Map<number, string>();
     const regions: Record<string, ArtifactAnnotationRect> = {};
+    // A thread keeps its number while it is listed. A thread that leaves the list (an optimistic
+    // thread replaced by the saved one, a deleted thread) frees its number: the next new thread
+    // takes the smallest free one, so the page and the sidebar count from 1 without gaps.
+    const listed = new Set(current.threads.map((thread) => thread.thread_id));
+    for (const id of [...ordinals.keys()]) if (!listed.has(id)) ordinals.delete(id);
+    const used = new Set(ordinals.values());
+    let cursor = 1;
+    const freeOrdinal = () => {
+      while (used.has(cursor)) cursor++;
+      used.add(cursor);
+      return cursor;
+    };
     const rows = current.threads.map((thread) => {
       if (thread.anchor.type === 'none') return thread;
       const resolved = inventory
@@ -122,11 +158,17 @@ export function createArtifactAnnotationController(
       ) {
         let n = ordinals.get(thread.thread_id);
         if (n === undefined && ordinals.size < limits.elements) {
-          n = ordinals.size + 1;
+          n = freeOrdinal();
           ordinals.set(thread.thread_id, n);
         }
         if (n === undefined) return { ...thread, outdated: false, position: resolved.position };
-        pins.push({ n, rects: resolved.rects, ranges: resolved.ranges });
+        const label = pinLabel(current, n);
+        pins.push({
+          n,
+          rects: resolved.rects,
+          ranges: resolved.ranges,
+          ...(label ? { label } : {}),
+        });
         ids.set(n, thread.thread_id);
       }
       return {
@@ -137,7 +179,10 @@ export function createArtifactAnnotationController(
     });
     callbacks.onThreads(rows);
     callbacks.onRegions?.(regions);
-    if (!inventory) return;
+    if (!inventory) {
+      callbacks.onPins?.(new Map());
+      return;
+    }
     const active = [...ids].find(([, id]) => id === current.focusedThreadId)?.[0] ?? null;
     if (active !== null) pins.sort((a, b) => Number(b.n === active) - Number(a.n === active));
     const signature = `${current.focusedThreadId}:${current.focusRevision}`;
@@ -158,8 +203,16 @@ export function createArtifactAnnotationController(
     if (callbacks.post(message)) {
       sent = ids;
       if (message.focus) focused = signature;
+      callbacks.onPins?.(new Map([...ids].map(([n, id]) => [id, n])));
     }
   };
+  const selectionGeometry = (
+    rect: ArtifactAnnotationRect | undefined,
+    viewport: ArtifactAnnotationViewport,
+  ): ArtifactAnnotationRect | null =>
+    rect ? { ...rect, x: rect.x - viewport.scroll.x, y: rect.y - viewport.scroll.y } : null;
+  const offersSelection = () =>
+    !!config?.canComment && config.mode === 'text' && status === 'ready' && !!inventory?.complete;
   return {
     isCurrentViewport(viewport: ArtifactAnnotationViewport) {
       return (
@@ -244,10 +297,12 @@ export function createArtifactAnnotationController(
       config = next;
       if (changedVersion) loading(true);
       if (modeChanged) postMode();
+      if (changedVersion || modeChanged) callbacks.onSelection?.(null);
       redraw();
     },
     reset() {
       if (disposed) return;
+      callbacks.onSelection?.(null);
       inventory = null;
       chunks = [];
       units = 0;
@@ -318,7 +373,31 @@ export function createArtifactAnnotationController(
           ...message.anchor,
           version: config.version,
         });
-        if (result.success) callbacks.onCandidate(result.data);
+        if (!result.success) return;
+        // A text selection is only an offer: the parent shows a Comment chip and waits for the person.
+        if (result.data.type === 'text' && callbacks.onSelection) {
+          if (offersSelection())
+            callbacks.onSelection({
+              state: 'candidate',
+              anchor: result.data,
+              rect: selectionGeometry(message.rect, inventory.viewport),
+            });
+          return;
+        }
+        callbacks.onCandidate(result.data);
+        return;
+      }
+      if (message.type === 'selection') {
+        if (message.state === 'none' || !offersSelection()) callbacks.onSelection?.(null);
+        else
+          callbacks.onSelection?.({
+            state: 'too_long',
+            rect: selectionGeometry(message.rect, inventory!.viewport),
+          });
+        return;
+      }
+      if (message.type === 'key') {
+        if (config.canComment) callbacks.onKey?.(message.key);
         return;
       }
       if (message.type !== 'focus') return;
