@@ -45,6 +45,7 @@
 import { appDeployments, appRuntimes, apps, projectMonitorBoxes, sessionSandboxes, storageCharges } from '@kortix/db';
 import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { config } from '../../config';
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { logger } from '../../lib/logger';
 import { PLATINUM_LIST_PRICE_MICROS } from '../../platform/providers/compute-rates';
 import { providerBoxBelongsToThisInstance } from '../../platform/providers/platinum';
@@ -463,12 +464,12 @@ async function chargeEndedDays(feed: string, today: string, deps: StorageSettleD
         sql`(${storageCharges.gibHours} > ${storageCharges.chargedGibHours} OR ${storageCharges.pendingUsd} IS NOT NULL)`,
         // Complete: the box is metered past the day's end (on this row, or on the row of the rate it moved
         // to, e.g. archived at 23:36), or the day is two days old (the box left the lists: started, deleted).
-        sql`(${storageCharges.usageDay} < ${addDays(today, -1)}::date
+        sql`(${qualifiedColumn(storageCharges.usageDay)} < ${addDays(today, -1)}::date
              OR (SELECT max(o.metered_through) FROM kortix.storage_charges o
-                  WHERE o.feed = ${storageCharges.feed}
-                    AND o.resource_id = ${storageCharges.resourceId}
+                  WHERE o.feed = ${qualifiedColumn(storageCharges.feed)}
+                    AND o.resource_id = ${qualifiedColumn(storageCharges.resourceId)}
                     AND o.resource_kind IN ('box_disk', 'box_disk_archived'))
-                >= ((${storageCharges.usageDay} + 1)::timestamp AT TIME ZONE 'UTC'))`,
+                >= ((${qualifiedColumn(storageCharges.usageDay)} + 1)::timestamp AT TIME ZONE 'UTC'))`,
       ),
     );
   for (const raw of rows) {

@@ -504,6 +504,7 @@ const SESSION_TABLES: Record<string, 'purged' | 'scrubbed' | `kept: ${string}`> 
   'session_content_purges.session_id': 'kept: the done marker',
   'usage_events.session_id': 'kept: billing',
   'sandbox_compute_sessions.session_id': 'kept: billing',
+  'storage_charges.session_id': 'kept: billing',
   'session_turns.session_id': 'kept: metering, no content',
   'audit_events.session_id': 'kept: audit trail',
   'audit_events_legacy.session_id': 'kept: audit trail',
