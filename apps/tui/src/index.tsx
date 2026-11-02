@@ -33,7 +33,7 @@ const code = await runTui({
         ? false
         : undefined,
   version: process.env.KORTIX_TUI_VERSION,
-  mouse: process.env.KORTIX_TUI_MOUSE === '1',
+  mouse: process.env.KORTIX_TUI_MOUSE !== '0',
 });
 
 process.exit(code);

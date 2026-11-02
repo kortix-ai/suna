@@ -4,7 +4,6 @@ import { act } from 'react';
 import type { TestRendererSetup } from '@opentui/core/testing';
 import { testRender } from '@opentui/react/test-utils';
 
-import { resetMouseDemandForTest } from '../../lib/mouse-demand.ts';
 import { DraftView } from './draft-view.tsx';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -13,7 +12,6 @@ let active: TestRendererSetup | null = null;
 afterEach(() => {
   active?.renderer.destroy();
   active = null;
-  resetMouseDemandForTest();
 });
 
 const BRAILLE = /[⠁-⣿]/;
