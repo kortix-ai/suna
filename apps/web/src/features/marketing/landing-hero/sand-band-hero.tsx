@@ -35,26 +35,24 @@ export function SandBandHero() {
   return (
     <section id="hero" className="relative">
       <div className="relative flex flex-col gap-7.5 px-8 pt-32 pb-18 lg:px-28 lg:pt-40">
-        {/* Title and one plain sentence on the left; the four traits on the
-            right from lg up, and as a row under the sentence below lg. */}
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between lg:gap-16">
-          <div className="flex flex-col gap-4 lg:gap-5">
-            <h1 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl lg:text-[44px] lg:leading-13">
-              The CompanyOS
-            </h1>
-            <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
-              Hand it an outcome and AI agents run it 24/7. They work in your tools, next to your
-              whole team, and everything they do is yours to keep, on your infrastructure or ours.
-            </p>
-          </div>
-          <ul className="grid w-fit grid-cols-2 gap-x-8 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-6 lg:shrink-0 lg:flex-col lg:gap-y-4">
+        {/* The four traits as a quiet line above the title, then the title and
+            one sentence on what it is. */}
+        <div className="flex flex-col gap-4 lg:gap-5">
+          <ul className="text-muted-foreground grid w-fit grid-cols-2 gap-x-6 gap-y-2 sm:flex sm:flex-wrap sm:items-center sm:gap-x-5">
             {HERO_TRAITS.map(({ label, icon: Icon }) => (
-              <li key={label} className="text-foreground flex items-center gap-2.5 text-base lg:text-lg">
-                <Icon className="size-5 shrink-0" aria-hidden />
+              <li key={label} className="flex items-center gap-1.5 text-sm">
+                <Icon className="size-4 shrink-0" aria-hidden />
                 {label}
               </li>
             ))}
           </ul>
+          <h1 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl lg:text-[44px] lg:leading-13">
+            The CompanyOS
+          </h1>
+          <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
+            The cloud-native agent harness for companies. Always-on agents that start on events,
+            run in parallel and share one memory of your company.
+          </p>
         </div>
 
         <div className="flex flex-wrap gap-2.5 pt-2">

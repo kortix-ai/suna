@@ -7,11 +7,11 @@
 
 # Kortix CompanyOS
 
-**The open-source CompanyOS: a harness platform for always-on agents to run your company.**
+**The open-source CompanyOS: the cloud-native agent harness for companies.**
 
 Open Source &nbsp;·&nbsp; Extensible &nbsp;·&nbsp; Multiplayer &nbsp;·&nbsp; Sovereign
 
-Hand it an outcome and AI agents run it 24/7.
+Always-on agents that start on events, run in parallel and share one memory of your company.
 
 Build custom agents on pi and ship them from one git repo. Schedules, webhooks, your tools' events
 and your team's messages start them. My Kortix routes the work, and swarms of agents run it in
@@ -42,7 +42,7 @@ An agent today is one chat session on one machine. It waits for a person to type
 long job runs. Every task it takes on shares one context. It stops when the laptop sleeps. A person
 can follow only a few such sessions at once, so human attention runs out long before the model does.
 
-Kortix CompanyOS takes the session out of the person's hands. It is a **harness platform**: you
+Kortix CompanyOS takes the session out of the person's hands. It is a **cloud-native agent harness**: you
 write custom agents on pi, an open-source agent harness, and Kortix deploys them to the cloud and
 supplies everything around the agent loop that one session cannot.
 
