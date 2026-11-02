@@ -92,7 +92,7 @@ export const JOBS: readonly Job[] = [
   { ticks: { 'approval-expiry': 10 * MIN }, start: startApprovalExpirySweeper, stop: stopApprovalExpirySweeper },
   { ticks: { 'oauth-sweep': 3 * HOUR }, start: startOAuthSweeper, stop: stopOAuthSweeper },
   {
-    ticks: { 'drive-conflict-scan': 10 * MIN, 'volume-deletions': 3 * HOUR, 'drive-mount-revocations': 10 * MIN },
+    ticks: { 'drive-conflict-scan': 10 * MIN, 'volume-deletions': 3 * HOUR, 'drive-mount-revocations': 10 * MIN, 'drive-index': 20 * MIN },
     start: startDriveWorkers,
     stop: stopDriveWorkers,
   },
