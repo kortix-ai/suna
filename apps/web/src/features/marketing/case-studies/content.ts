@@ -1,8 +1,10 @@
 import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
 import { localizeUiCatalog } from '@kortix/ui/i18n';
 /**
- * Case studies for the CompanyOS home page and /services: eight cards in one horizontal row. No
- * card links anywhere, by founder decision.
+ * Case studies for the CompanyOS home page, /services and /case-studies: one
+ * horizontal row (a grid on /case-studies). No card links anywhere, by founder
+ * decision. A card shows its category, never the client's name (founder,
+ * 2026-11-02). `hidden: true` keeps a card's copy here without showing it.
  *
  * ACCURACY AND NAMING (read before editing):
  *  - Named cases, each a founder decision: HKAI-Sci / SciencePal (2026-10-22,
@@ -32,25 +34,25 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  *    year, no office count, no city.
  *  - The telecom card describes the company's own Kortix project (its
  *    agents and skills, read 2026-10-27). Never name its places, clients
- *    or systems: they identify it.
+ *    or systems: they identify it. Its logo is the company's own mark, the
+ *    symbol only with the wordmark cut out (founder, 2026-11-02). The file
+ *    is `telecom.svg`: its name is a blocked term, so it appears nowhere here.
  *  - Only what the engagement really contains. No metric, no quote, no
  *    outcome number until the company signs one off.
- *  - The asset manager and executive search logos are lockups Kortix drew
- *    for these cards (founder, 2026-11-02; brand decision D35): a symbol
- *    plus the class as type ("ASSET MANAGEMENT", "EXECUTIVE SEARCH"). They are
- *    not the firm's real logo. Never put a firm name in them, and never copy
- *    a real firm's logo.
+ *  - The asset manager and executive search logos are symbols Kortix drew
+ *    for these cards (founder, 2026-11-02; brand decision D35): no type at
+ *    all. They are not the firm's real logo. Never add a name or text to
+ *    them, and never copy a real firm's logo.
  */
 
 export type CaseStudy = {
   id: string;
-  /** A logo on a white tile (third-party, or drawn for a named class), a drawn brand mark, or a Phosphor glyph. */
+  /** A logo on a white tile (the client's own, or a symbol Kortix drew), or a drawn brand mark. */
   logo?: { src: string; alt: string; width: number; height: number };
   mark?: 'kortix' | 'platinum';
-  icon?: 'telecom';
+  /** Kept in this file, not shown anywhere. */
+  hidden?: boolean;
   category: string;
-  /** Who it is, as a name (logo cases) or a class. */
-  org: string;
   title: string;
   body: string;
   facts: readonly string[];
@@ -69,7 +71,6 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
         height: 147,
       },
       category: 'Research',
-      org: 'Hong Kong Institute of AI for Science, City University of Hong Kong',
       title: 'SciencePal: a science agent for researchers.',
       body: 'The institute’s AI research assistant. It searches the scientific literature with citations and runs agents for protein design and materials science.',
       facts: [
@@ -80,10 +81,22 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       ],
     },
     {
+      id: 'wring',
+      logo: { src: '/media/case-studies/wring.svg', alt: 'Wring', width: 74, height: 28 },
+      category: 'Cloud cost',
+      title: 'Autonomous AWS cost optimization.',
+      body: 'Agents find the AWS credit programs each customer qualifies for and prepare the applications. The customer approves.',
+      facts: [
+        'Credit programs found per customer',
+        'Applications prepared by agents',
+        'A person approves every submission',
+        'Runs as one Kortix project',
+      ],
+    },
+    {
       id: 'platinum',
       mark: 'platinum',
       category: 'Cloud infrastructure',
-      org: 'Platinum',
       title: 'An autonomous cloud company.',
       body: 'A sandbox cloud for AI agents, run by agents on Kortix. Agents ship changes from Linear issues and test every flow. People approve.',
       facts: [
@@ -95,9 +108,13 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     },
     {
       id: 'telecom',
-      icon: 'telecom',
+      logo: {
+        src: '/media/case-studies/telecom.svg',
+        alt: 'A leading US telecommunications infrastructure company',
+        width: 246,
+        height: 278,
+      },
       category: 'Telecommunications',
-      org: 'A leading US telecommunications infrastructure company',
       title: 'Fiber network design, run by agents.',
       body: 'Agents design fiber routes from GIS data and imagery, build bills of materials and track every project, self-hosted in the company’s own cloud.',
       facts: [
@@ -108,29 +125,14 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       ],
     },
     {
-      id: 'kortix',
-      mark: 'kortix',
-      category: 'Software',
-      org: 'Kortix',
-      title: 'Kortix, run on Kortix.',
-      body: 'Our company is one Kortix project. Agents triage and fix issues, keep SOC 2 evidence current and run sales and support. People approve.',
-      facts: [
-        'Issues triaged by an intake agent',
-        'Up to 16 worker agents at once',
-        'SOC 2 policies kept current by agents',
-        'Sales, support and marketing agents',
-      ],
-    },
-    {
       id: 'asset-management',
       logo: {
         src: '/media/case-studies/asset-management.svg',
         alt: 'An AI-run asset manager.',
-        width: 409,
+        width: 100,
         height: 100,
       },
       category: 'Asset management',
-      org: 'Built and run by Kortix',
       title: 'An AI-run asset manager.',
       body: 'Our own fund, on real market data with simulated capital. Agents research, trade, value the book, strike NAV and run compliance. A person signs every decision.',
       facts: [
@@ -145,11 +147,10 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       logo: {
         src: '/media/case-studies/executive-search.svg',
         alt: 'An international executive search firm',
-        width: 349,
+        width: 100,
         height: 100,
       },
       category: 'Professional services',
-      org: 'An international executive search firm',
       title: 'An executive search firm, rebuilt around agents.',
       body: 'Agents research candidates, prepare client and pitch materials and run the firm’s internal operations.',
       facts: [
@@ -160,10 +161,24 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       ],
     },
     {
+      id: 'kortix',
+      hidden: true,
+      mark: 'kortix',
+      category: 'Software',
+      title: 'Kortix, run on Kortix.',
+      body: 'Our company is one Kortix project. Agents triage and fix issues, keep SOC 2 evidence current and run sales and support. People approve.',
+      facts: [
+        'Issues triaged by an intake agent',
+        'Up to 16 worker agents at once',
+        'SOC 2 policies kept current by agents',
+        'Sales, support and marketing agents',
+      ],
+    },
+    {
       id: 'writer',
+      hidden: true,
       logo: { src: '/media/case-studies/writer.svg', alt: 'WRITER', width: 110, height: 35 },
       category: 'Enterprise AI',
-      org: 'WRITER',
       title: 'The enterprise AI platform, built from Kortix’s open-source code.',
       body: 'Enterprises such as Salesforce, Vanguard and KPMG run their marketing, sales and support agents on WRITER.',
       facts: [
@@ -171,20 +186,6 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
         'Salesforce, Vanguard and KPMG',
         'Dropbox, H&R Block and Boots',
         'Agents for marketing, sales and support',
-      ],
-    },
-    {
-      id: 'wring',
-      logo: { src: '/media/case-studies/wring.svg', alt: 'Wring', width: 74, height: 28 },
-      category: 'Cloud cost',
-      org: 'Wring',
-      title: 'Autonomous AWS cost optimization.',
-      body: 'Agents find the AWS credit programs each customer qualifies for and prepare the applications. The customer approves.',
-      facts: [
-        'Credit programs found per customer',
-        'Applications prepared by agents',
-        'A person approves every submission',
-        'Runs as one Kortix project',
       ],
     },
   ],

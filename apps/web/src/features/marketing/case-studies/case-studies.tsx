@@ -7,14 +7,12 @@ import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { Band, Heading } from '@/features/marketing/kit/page-frame';
 import { cn } from '@kortix/ui';
 import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
-import { ArrowLeftIcon, ArrowRightIcon, CellTowerIcon } from '@phosphor-icons/react/dist/ssr';
+import { ArrowLeftIcon, ArrowRightIcon } from '@phosphor-icons/react/dist/ssr';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
 import { localizeMarketingContent as localizeContent, type CaseStudy } from './content';
-
-const ICONS = { telecom: CellTowerIcon } as const;
 
 const PLATINUM_TRACKING = 'tracking-[0.22em]'; // audit:allow Platinum's own wordmark tracking (pt-logo.tsx), a third-party mark
 
@@ -39,7 +37,7 @@ function PlatinumMark() {
 /** A third-party logo is drawn for a white ground: white in both themes (color.md, logo tile rule). */
 const LOGO_TILE_BACKGROUND = 'bg-white';
 
-/** The card's top: the logo on its white tile, or the glyph on the muted ground. */
+/** The card's top: the logo on its white tile, or the drawn mark on the muted ground. */
 function Mark({ item }: { item: CaseStudy }) {
   if (item.logo) {
     return (
@@ -58,21 +56,14 @@ function Mark({ item }: { item: CaseStudy }) {
       </div>
     );
   }
-  const Icon = ICONS[item.icon ?? 'telecom'];
   return (
     <div className="bg-muted flex h-40 items-center justify-center rounded-md">
-      {item.mark === 'kortix' ? (
-        <KortixLogo size={28} variant="logomark" />
-      ) : item.mark === 'platinum' ? (
-        <PlatinumMark />
-      ) : (
-        <Icon className="text-foreground size-12" aria-hidden />
-      )}
+      {item.mark === 'kortix' ? <KortixLogo size={28} variant="logomark" /> : <PlatinumMark />}
     </div>
   );
 }
 
-/** One case study: its mark, who, the title, the story and four facts. */
+/** One case study: its mark, its category, the title, the story and four facts. */
 function CaseStudyCard({ item, className }: { item: CaseStudy; className?: string }) {
   return (
     <li
@@ -80,10 +71,7 @@ function CaseStudyCard({ item, className }: { item: CaseStudy; className?: strin
       className={cn('bg-background flex scroll-mt-20 flex-col gap-5 p-6 lg:p-11', className)}
     >
       <Mark item={item} />
-      <div className="flex flex-col gap-1">
-        <p className="text-muted-foreground text-sm">{item.category}</p>
-        <p className="text-foreground text-sm font-medium">{item.org}</p>
-      </div>
+      <p className="text-muted-foreground text-sm">{item.category}</p>
       <h3 className="text-foreground text-xl font-medium tracking-tight text-balance">
         {item.title}
       </h3>
@@ -108,9 +96,11 @@ export function CaseStudyGrid() {
   return (
     <Band>
       <ul className="bg-border grid grid-cols-1 gap-px lg:grid-cols-2">
-        {caseStudies.items.map((item) => (
-          <CaseStudyCard key={item.id} item={item} />
-        ))}
+        {caseStudies.items
+          .filter((item) => !item.hidden)
+          .map((item) => (
+            <CaseStudyCard key={item.id} item={item} />
+          ))}
       </ul>
     </Band>
   );
@@ -196,13 +186,15 @@ export function CaseStudies({
           aria-label={tMarketing('text6b1df2ba950c')}
           className="bg-border scrollbar-hide outline-ring flex snap-x snap-mandatory gap-px overflow-x-auto focus-visible:outline-2 focus-visible:-outline-offset-2"
         >
-          {caseStudies.items.map((item) => (
-            <CaseStudyCard
-              key={item.id}
-              item={item}
-              className="w-4/5 shrink-0 snap-start sm:w-3/5 lg:w-2/5"
-            />
-          ))}
+          {caseStudies.items
+            .filter((item) => !item.hidden)
+            .map((item) => (
+              <CaseStudyCard
+                key={item.id}
+                item={item}
+                className="w-4/5 shrink-0 snap-start sm:w-3/5 lg:w-2/5"
+              />
+            ))}
         </ul>
       </Band>
     </section>
