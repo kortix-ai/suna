@@ -51,10 +51,10 @@ function sseResponse(stream: ReadableStream<Uint8Array>): Response {
 // error ever surfaced) instead of failing fast on attempt one.
 export function toTransportError(err: unknown, provider: string): Error {
   // The AI SDK validates the built prompt CLIENT-SIDE, before any request
-  // ever goes out (e.g. `messages` resolving to an empty array — a body with
-  // no `messages` field at all, or a `messages: []`) — no native transport
-  // ever had this check; it always forwarded whatever body it was given
-  // straight to the upstream, which would itself 400 the malformed request.
+  // ever goes out (e.g. `messages` resolving to an empty array). The chat
+  // handler now refuses a body without a user or assistant message before
+  // dispatch (KRTX-3421), so this is the backstop for a prompt the SDK still
+  // rejects; a native transport forwards whatever body it is given.
   // Classified the same way a real upstream 400 would be here so it fails
   // fast (a 400 is a request error, never a transient one) instead of falling
   // through to the generic NetworkError case below, which a transient fallback

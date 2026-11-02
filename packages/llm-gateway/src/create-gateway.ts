@@ -21,7 +21,7 @@ import {
 } from './pipeline';
 import { parseUpstreamErrorBody } from './http/parse-upstream-error';
 import { gatewayErrorResponse } from './pipeline/error-response';
-import { chatMessagesError, requestFieldError } from './pipeline/request-fields';
+import { requestFieldError } from './pipeline/request-fields';
 import { createRouteMemory } from './pipeline/route-memory';
 import { createClaudeCodePassthrough, type ClaudeCodeRequest } from './claude-code/passthrough';
 
@@ -174,8 +174,7 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
       return anthropicErrorResponse(400, 'Invalid JSON body');
     }
     if (!isJsonObject(anthropicBody)) return anthropicErrorResponse(400, 'Invalid JSON body');
-    // Anthropic requires a message too; a `system`-only body would translate to one.
-    const anthropicFieldError = requestFieldError(anthropicBody) ?? chatMessagesError(anthropicBody);
+    const anthropicFieldError = requestFieldError(anthropicBody);
     if (anthropicFieldError) return anthropicErrorResponse(400, anthropicFieldError);
 
     const streaming = anthropicBody.stream === true;
