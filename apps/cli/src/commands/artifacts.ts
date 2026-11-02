@@ -95,7 +95,7 @@ Subcommands:
                              --resolved shows only resolved threads.
   comment <artifact> "<text>" [--quote "<text>" | --selector "<css>"]
                              Open a thread on the whole artifact, an exact
-                             quote (up to 32 characters), or an HTML selector.
+                             quote (up to 500 characters), or an HTML selector.
                              A missing quote exits nonzero without posting.
                              Selector defaults: centered point (0.5, 0.5),
                              viewport width 1280, scroll (0, 0), empty snippet.

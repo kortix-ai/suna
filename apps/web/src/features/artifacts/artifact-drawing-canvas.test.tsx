@@ -124,20 +124,62 @@ test('real controls draw, undo, choose tools/colors, and finish with bounded loc
   await stroke(svg);
   expect(button('Comment').disabled).toBe(false);
   await click('Comment');
-  expect(finish.mock.calls[0]![0]).toMatchObject([{ tool: 'pen', color: 'black' }]);
+  // Red is the default: it reads on light and dark pages.
+  expect(finish.mock.calls[0]![0]).toMatchObject([{ tool: 'pen', color: 'red' }]);
   await click('Undo');
   expect(button('Comment').disabled).toBe(true);
   await click('Arrow');
-  await click('Red');
+  await click('Black');
   await stroke(svg);
   await click('Comment');
-  expect(finish.mock.calls.at(-1)![0]).toMatchObject([{ tool: 'arrow', color: 'red' }]);
+  expect(finish.mock.calls.at(-1)![0]).toMatchObject([{ tool: 'arrow', color: 'black' }]);
   await click('Undo');
   await click('Rectangle');
   await click('Blue');
   await stroke(svg);
   await click('Comment');
   expect(finish.mock.calls.at(-1)![0]).toMatchObject([{ tool: 'rectangle', color: 'blue' }]);
+});
+
+test('the toolbar is three groups: tool, color (red, blue, ink swatches), then undo and cancel', async () => {
+  await mount();
+  const groups = Array.from(host.querySelectorAll('[role="group"]'));
+  expect(groups.map((group) => group.querySelectorAll('button').length)).toEqual([3, 3, 2]);
+  const swatches = Array.from(groups[1]!.querySelectorAll('button')).map((item) => [
+    item.getAttribute('aria-label'),
+    item.getAttribute('aria-pressed'),
+    item.querySelector('span')!.style.backgroundColor,
+  ]);
+  expect(swatches).toEqual([
+    ['Red', 'true', 'var(--kortix-red)'],
+    ['Blue', 'false', 'var(--kortix-blue)'],
+    ['Black', 'false', '#1f1f1f'],
+  ]);
+  const pen = groups[0]!.querySelector('button')!;
+  expect(pen.className).toContain('aria-pressed:bg-active');
+  expect(pen.getAttribute('aria-pressed')).toBe('true');
+});
+
+test('the draft reports its first stroke and its return to empty', async () => {
+  const drafts: boolean[] = [];
+  await act(async () =>
+    root.render(
+      createElement(Canvas, {
+        viewport: { width: 200, height: 120 },
+        busy: false,
+        labels,
+        onFinish: finish,
+        onCancel: cancel,
+        onDraftChange: (drawn: boolean) => drafts.push(drawn),
+      }),
+    ),
+  );
+  const svg = host.querySelector('svg[role="img"]')!;
+  Object.defineProperty(svg, 'clientWidth', { configurable: true, value: 200 });
+  svg.getBoundingClientRect = () => new page.DOMRect(0, 0, 200, 120);
+  await stroke(svg);
+  await click('Undo');
+  expect(drafts).toEqual([false, true, false]);
 });
 
 test('capture keeps cancel usable and Escape consumed while submission is disabled', async () => {

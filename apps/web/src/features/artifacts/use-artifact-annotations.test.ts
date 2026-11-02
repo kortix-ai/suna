@@ -194,3 +194,75 @@ test('a completed drawing epoch cannot survive a newer single-chunk layout with 
   act(() => { f.frame.dispatchEvent(new Event('load')); });
   expect(observed.isCurrentViewport(first)).toBe(false);
 });
+
+test('the hook offers text selections, forwards page keys, labels pins and reports their numbers', () => {
+  const f = fixture();
+  const selections: unknown[] = [];
+  const keys: unknown[] = [];
+  const thread = {
+    thread_id: 'thread-a',
+    anchor: { type: 'text', version: 'vc_one', quote: 'Pricing', prefix: '', suffix: '' },
+    status: 'open',
+    comments: [{ deleted_at: null }],
+  } as never;
+  const options: Options = {
+    ...f.options,
+    enabled: true,
+    threads: [thread],
+    onSelection: (value) => selections.push(value),
+    onKey: (value) => keys.push(value),
+    pinLabel: (n) => `Comment ${n}`,
+  };
+  f.render(options);
+  f.message({ ...layout, texts: [{ n: 0, offset: 0, text: 'Pricing page' }] });
+  expect([...observed.pinNumbers]).toEqual([['thread-a', 1]]);
+  const draw = f.posts.findLast((post: any) => post.type === 'draw') as any;
+  expect(draw.pins).toEqual([
+    { n: 1, rects: [], ranges: [{ n: 0, start: 0, end: 7 }], label: 'Comment 1' },
+  ]);
+  const anchor = { type: 'text', quote: 'page', prefix: 'Pricing ', suffix: '' };
+  // The mount withdraws any earlier offer (a new controller, then its reset).
+  expect(selections).toEqual([null, null]);
+  selections.length = 0;
+  f.message({ kortix: 'annotate', v: 1, type: 'candidate', revision: 1, anchor });
+  f.message({ kortix: 'annotate', v: 1, type: 'key', key: 'comment' });
+  f.message({ kortix: 'annotate', v: 1, type: 'selection', state: 'none' });
+  expect(selections).toEqual([
+    { state: 'candidate', anchor: { ...anchor, version: 'vc_one' }, rect: null },
+    null,
+  ]);
+  expect(keys).toEqual(['comment']);
+  f.render({ ...options, enabled: false });
+  expect(observed.pinNumbers.size).toBe(0);
+});
+
+test('a forged page Escape never reaches a drawing, and a layout withdrawal reports moved', () => {
+  const f = fixture();
+  const selections: unknown[] = [];
+  const keys: unknown[] = [];
+  const options: Options = {
+    ...f.options,
+    enabled: true,
+    drawing: true,
+    onSelection: (value, moved) => selections.push([value, moved]),
+    onKey: (value) => keys.push(value),
+  };
+  f.render(options);
+  f.message({ ...layout, texts: [{ n: 0, offset: 0, text: 'Pricing page' }] });
+  const anchor = { type: 'text', quote: 'page', prefix: 'Pricing ', suffix: '' };
+  f.message({ kortix: 'annotate', v: 1, type: 'candidate', revision: 1, anchor });
+  // The page posts Escape in a loop while the person draws: the strokes stay.
+  for (let index = 0; index < 3; index++)
+    f.message({ kortix: 'annotate', v: 1, type: 'key', key: 'escape' });
+  expect(keys).toEqual([]);
+  f.render({ ...options, drawing: false });
+  f.message({ kortix: 'annotate', v: 1, type: 'key', key: 'escape' });
+  expect(keys).toEqual(['escape']);
+  selections.length = 0;
+  f.message({ kortix: 'annotate', v: 1, type: 'selection', state: 'none', moved: true });
+  f.message({ kortix: 'annotate', v: 1, type: 'selection', state: 'none' });
+  expect(selections).toEqual([
+    [null, true],
+    [null, false],
+  ]);
+});
