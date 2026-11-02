@@ -10,13 +10,9 @@ import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
 import { ArrowLeftIcon, ArrowRightIcon } from '@phosphor-icons/react/dist/ssr';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import {
-  caseStudies as caseStudySource,
-  localizeMarketingContent as localizeContent,
-  type CaseStudy,
-} from './content';
+import { localizeMarketingContent as localizeContent, type CaseStudy } from './content';
 
 const PLATINUM_TRACKING = 'tracking-[0.22em]'; // audit:allow Platinum's own wordmark tracking (pt-logo.tsx), a third-party mark
 
@@ -93,41 +89,11 @@ function CaseStudyCard({ item, className }: { item: CaseStudy; className?: strin
   );
 }
 
-/**
- * One random order of the visible cards per page load, shared by the row and
- * the grid. Made on first read in the browser and kept until the next full
- * load.
- */
-let pageLoadOrder: string[] | null = null;
-function shuffledIds(): string[] {
-  if (pageLoadOrder) return pageLoadOrder;
-  const ids = caseStudySource.items.filter((i) => !i.hidden).map((i) => i.id);
-  for (let i = ids.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [ids[i], ids[j]] = [ids[j], ids[i]];
-  }
-  pageLoadOrder = ids;
-  return ids;
-}
-const noSubscribe = () => () => {};
-
-/**
- * The visible cards in this page load's random order. The server snapshot is
- * the authored order, so the server render and hydration match; the browser
- * then renders the shuffled order.
- */
-function useShuffledCaseStudies(items: readonly CaseStudy[]): CaseStudy[] {
-  const order = useSyncExternalStore(noSubscribe, shuffledIds, () => null);
-  const shown = items.filter((item) => !item.hidden);
-  if (!order) return shown;
-  return [...shown].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
-}
-
 /** Every case study as a two-column grid: the /case-studies page. */
 export function CaseStudyGrid() {
   const tMarketing = useTranslations('hardcodedUi.i18nComplete');
   const { caseStudies } = localizeContent(tMarketing);
-  const items = useShuffledCaseStudies(caseStudies.items);
+  const items = caseStudies.items.filter((item) => !item.hidden);
 
   return (
     <Band>
@@ -154,7 +120,7 @@ export function CaseStudies({
 }) {
   const tMarketing = useTranslations('hardcodedUi.i18nComplete');
   const { caseStudies } = localizeContent(tMarketing);
-  const items = useShuffledCaseStudies(caseStudies.items);
+  const items = caseStudies.items.filter((item) => !item.hidden);
 
   const row = useRef<HTMLUListElement>(null);
   const [edge, setEdge] = useState({ start: true, end: false });

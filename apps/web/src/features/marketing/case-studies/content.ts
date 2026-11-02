@@ -5,8 +5,8 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  * horizontal row (a grid on /case-studies). No card links anywhere, by founder
  * decision. A card shows its category, never the client's name (founder,
  * 2026-11-02). `hidden: true` keeps a card's copy here without showing it.
- * The visible cards show in a random order on each page load (founder,
- * 2026-11-02).
+ * The cards show in the order of `items`, the same on every load; the
+ * science agent is always first (founder, 2026-11-02).
  *
  * ACCURACY AND NAMING (read before editing):
  *  - Named cases, each a founder decision: HKAI-Sci / SciencePal (2026-10-22,
@@ -94,24 +94,6 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       ],
     },
     {
-      id: 'banking',
-      logo: {
-        src: '/media/case-studies/banking.svg?v=02ed3983',
-        alt: 'A banking mark',
-        width: 100,
-        height: 100,
-      },
-      category: 'Banking',
-      title: 'SME lending, from application to funded loan.',
-      body: 'Agents collect the application, spread the financials, write the credit memo and track covenants after funding. A credit officer decides.',
-      facts: [
-        'Applications and documents collected',
-        'Financial statements spread',
-        'A credit memo with every source',
-        'Covenants tracked after funding',
-      ],
-    },
-    {
       id: 'telecom',
       logo: {
         src: '/media/case-studies/telecom.svg?v=3241cd3d',
@@ -148,6 +130,37 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       ],
     },
     {
+      id: 'platinum',
+      mark: 'platinum',
+      category: 'Cloud infrastructure',
+      title: 'An autonomous cloud company.',
+      body: 'Engineering, marketing and sales: everything runs in a loop of agents. People set the direction and approve.',
+      facts: [
+        'Engineering agents ship from Linear issues',
+        'QA agents test every flow on video',
+        'MicroVM sandboxes that boot in 400 ms',
+        'Every Kortix session runs on Platinum',
+      ],
+    },
+    {
+      id: 'banking',
+      logo: {
+        src: '/media/case-studies/banking.svg?v=02ed3983',
+        alt: 'A banking mark',
+        width: 100,
+        height: 100,
+      },
+      category: 'Banking',
+      title: 'SME lending, from application to funded loan.',
+      body: 'Agents collect the application, spread the financials, write the credit memo and track covenants after funding. A credit officer decides.',
+      facts: [
+        'Applications and documents collected',
+        'Financial statements spread',
+        'A credit memo with every source',
+        'Covenants tracked after funding',
+      ],
+    },
+    {
       id: 'executive-search',
       logo: {
         src: '/media/case-studies/executive-search.svg?v=ea5988cb',
@@ -163,24 +176,6 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
         'Client and pitch materials',
         'Internal operations automated',
         'The whole firm on one CompanyOS',
-      ],
-    },
-    {
-      id: 'retail',
-      logo: {
-        src: '/media/case-studies/retail.svg?v=32ec4d76',
-        alt: 'A retail symbol',
-        width: 100,
-        height: 100,
-      },
-      category: 'Retail',
-      title: 'Returns and supplier invoices, closed out by agents.',
-      body: 'Agents resolve returns and refunds, match supplier invoices to orders and receipts, and chase every discrepancy. People approve amounts above a limit.',
-      facts: [
-        'Returns and refunds resolved',
-        'Invoices matched to orders and receipts',
-        'Discrepancies chased with suppliers',
-        'Approval above a set limit',
       ],
     },
     {
@@ -202,16 +197,21 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       ],
     },
     {
-      id: 'platinum',
-      mark: 'platinum',
-      category: 'Cloud infrastructure',
-      title: 'An autonomous cloud company.',
-      body: 'Engineering, marketing and sales: everything runs in a loop of agents. People set the direction and approve.',
+      id: 'retail',
+      logo: {
+        src: '/media/case-studies/retail.svg?v=32ec4d76',
+        alt: 'A retail symbol',
+        width: 100,
+        height: 100,
+      },
+      category: 'Retail',
+      title: 'Returns and supplier invoices, closed out by agents.',
+      body: 'Agents resolve returns and refunds, match supplier invoices to orders and receipts, and chase every discrepancy. People approve amounts above a limit.',
       facts: [
-        'Engineering agents ship from Linear issues',
-        'QA agents test every flow on video',
-        'MicroVM sandboxes that boot in 400 ms',
-        'Every Kortix session runs on Platinum',
+        'Returns and refunds resolved',
+        'Invoices matched to orders and receipts',
+        'Discrepancies chased with suppliers',
+        'Approval above a set limit',
       ],
     },
     {
