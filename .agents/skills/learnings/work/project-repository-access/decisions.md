@@ -17,4 +17,10 @@
 - **A session start never waits silently on its image.**
   - Every wait is a named step, end to end.
   - Past an 8 s budget, the session boots the image its project booted last.
+- **Target: one Platinum volume per project is canonical; git is secondary.** (Marko)
+  - Git lives inside the volume, behind a git API.
+  - An external repository (GitHub or another host) is an optional sync target.
+  - Large data is network-available on S3-backed storage instead of synced.
+  - The partial object store and sparse fetching are a temporary bridge.
+  - Design questions are open; see the README section "Target architecture".
 - **The dev test project for the large repository is read-only** (a `generic` connection with no credential), so dev sessions cannot push into a customer's repository.
