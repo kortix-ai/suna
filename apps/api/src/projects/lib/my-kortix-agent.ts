@@ -2,10 +2,7 @@
 // coordinator's grant from here, and `projects/git/config.ts` imports that —
 // which `e2e-project-session-branch-git` loads in a `bun --eval` subprocess and
 // parses stdout from. Pulling `feature-flags/registry` (and through it the
-// config module, which banners on stdout) into that chain breaks it. The
-// legacy per-project switch is read at each call site with the canonical
-// `resolveFeatureFlag(metadata, 'meta_agent')` and passed to
-// `resolveBuiltinAgents` below as the fallback.
+// config module, which banners on stdout) into that chain breaks it.
 //
 // My Kortix is the platform's built-in agent, slug `mykortix` (`meta` until
 // 2026-10-30: every read still accepts it, `isMyKortixAgentName`). Session
@@ -51,14 +48,21 @@ export function declaredBuiltinAgents(
 
 /**
  * Which built-in agents this project runs. Per key: the manifest's boolean
- * (the repository is the source of truth), else the legacy per-project
- * `meta_agent` switch the caller resolved, else on.
+ * (the repository is the source of truth), else on. The per-project
+ * `meta_agent` flag that once sat between the two was removed on 2026-11-02:
+ * a stored `experimental.meta_agent` value is inert.
  */
 export function resolveBuiltinAgents(
   declared: Partial<Record<BuiltinAgentKey, boolean>>,
-  legacyMetaAgent: boolean,
 ): Record<BuiltinAgentKey, boolean> {
-  return { my_kortix: declared.my_kortix ?? legacyMetaAgent };
+  return { my_kortix: declared.my_kortix ?? true };
+}
+
+/** {@link resolveBuiltinAgents} for a raw kortix.yaml manifest: what every API surface reads. */
+export function projectBuiltinAgents(
+  manifest: Record<string, unknown> | null | undefined,
+): Record<BuiltinAgentKey, boolean> {
+  return resolveBuiltinAgents(declaredBuiltinAgents(manifest));
 }
 
 /**

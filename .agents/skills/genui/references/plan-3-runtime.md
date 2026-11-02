@@ -47,7 +47,7 @@ See `plan.md`. Specific to this plan:
 
 - [ ] **Step 1: List every holder before editing (registry header instruction)**
 
-Run: `rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "pi_harness"`
+Run: `rg -l "reminders" --glob '!node_modules' . | xargs rg -l "pi_harness"`
 Expected: the 7 files above plus tests that do not hardcode keys (`unit-feature-flag-drift.test.ts`, `unit-feature-flags.test.ts`, `menu-registry.flags.test.ts`). If the list differs, add each extra file to this task.
 
 - [ ] **Step 2: Write the failing tests (the two hand-written key lists)**

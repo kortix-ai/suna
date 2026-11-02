@@ -1262,10 +1262,6 @@
           "name": "Marktplatz",
           "description": "Suchen und installieren Sie Skills aus Community- und Anbieterregistern. Quellen, Updates und Teambreiche ändern sich noch."
         },
-        "meta_agent": {
-          "name": "My Kortix",
-          "description": "My Kortix, der eine Agent, mit dem du sprichst. Er leitet jede Aufgabe an den passenden Agenten weiter und führt sie mit deinen Berechtigungen aus. Die Projekteinstellung ist `builtin_agents.my_kortix` in kortix.yaml; dieser Schalter gilt nur, wenn der Schlüssel nicht gesetzt ist."
-        },
         "warm_sessions": {
           "name": "Vorgewärmte Sitzungen",
           "description": "Halten Sie eine Sandbox für sofortige Sitzungsstarts bereit. Die inaktive Sandbox verbraucht Rechenleistung."

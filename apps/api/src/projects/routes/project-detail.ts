@@ -22,8 +22,7 @@ import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { MANIFEST_PROJECT_NAME_KEY, commitProjectName } from '../lib/manifest-project-name';
-import { addMyKortixAgent } from '../lib/my-kortix-agent';
-import { projectBuiltinAgents } from '../lib/builtin-agents';
+import { addMyKortixAgent, projectBuiltinAgents } from '../lib/my-kortix-agent';
 import { normalizeProjectGlyph } from '../lib/project-glyph';
 import { normalizeProjectIcon } from '../lib/project-icon';
 import { denierFromConfig, filterConfigResourcesForUser } from '../lib/project-resources';
@@ -165,10 +164,9 @@ export function registerProjectDetailRoutes(): void {
       };
       const filteredConfig = await filterConfigResourcesForUser(rawConfig, denierCtx);
       // My Kortix (slug `mykortix`) is listed first and is the default agent unless
-      // kortix.yaml sets `builtin_agents.my_kortix: false` (or, with no key, the
-      // project's legacy `meta_agent` switch is off). Off: the config is
+      // kortix.yaml sets `builtin_agents.my_kortix: false`. Off: the config is
       // exactly the repo-declared surface.
-      const builtinAgents = projectBuiltinAgents(rawConfig.manifest, loaded.row.metadata);
+      const builtinAgents = projectBuiltinAgents(rawConfig.manifest);
       const withAgents = {
         ...(builtinAgents.my_kortix ? addMyKortixAgent(filteredConfig) : filteredConfig),
         builtin_agents: builtinAgents,

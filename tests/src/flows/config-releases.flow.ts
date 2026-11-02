@@ -13,7 +13,6 @@
  * (`/v1/git/<project>.git`) with an OWNER PAT, the way `kortix ship` pushes.
  */
 import { subscribe } from '../fixtures/billing';
-import { setFeatureAsOperator } from '../fixtures/feature-flags';
 import { flow, harnessFlow } from '../core/flow';
 import { sleep, waitFor } from '../core/poll';
 import type { CreatedProject, FlowContext, Harness, TeamFixture } from '../core/types';
@@ -127,13 +126,6 @@ interface Fixture {
   openRepo(projectId: string): Promise<ProjectRepo>;
   /** `GET .../sessions/:sessionId/config` as the project owner. */
   configState(sessionId: string): Promise<{ status: number; body: any }>;
-  /**
-   * The legacy `meta_agent` switch, through the operator write path (the flag
-   * is catalogHidden). `true` opts in, `false` opts out, `null` clears the
-   * override and returns the project to the platform default, ON
-   * (`apps/api/src/feature-flags/registry.ts`).
-   */
-  setFeature(enabled: boolean | null, feature: 'meta_agent'): Promise<void>;
   /**
    * Write a `config_releases` value straight into the project's stored flag
    * overrides, as a project that chose one before config releases graduated
@@ -420,10 +412,6 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
     },
     commit(files, message) {
       return commitTo(repo, files, message);
-    },
-    async setFeature(enabled, feature) {
-      // `meta_agent` is operator-only (catalogHidden): kortix.yaml `builtin_agents` is the project switch.
-      await setFeatureAsOperator(ctx, project.id, feature, enabled);
     },
     async storeRetiredConfigReleasesFlag(enabled) {
       await db.query(
@@ -2241,8 +2229,7 @@ flow(
         await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), fixture.team.id);
       });
 
-      await ctx.step('the project opts into `meta_agent`, and its config holds a tool with a dependency', async () => {
-        await fixture.setFeature(true, 'meta_agent');
+      await ctx.step('the project runs My Kortix (no builtin_agents key), and its config holds a tool with a dependency', async () => {
         await fixture.commit(
           {
             'kortix.yaml': MANIFEST.replace('agents:\n', 'tools:\n  needs_dep: tools/needs_dep.ts\nagents:\n'),

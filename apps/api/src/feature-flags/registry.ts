@@ -68,7 +68,7 @@
  * a time. `unit-feature-flag-drift.test.ts` compares contract <-> SDK <->
  * registry and catches 1/3/5 only. List every holder before you start:
  *
- *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "agent_rooms"
+ *   rg -l "reminders" --glob '!node_modules' . | xargs rg -l "agent_rooms"
  *
  * The UI renders straight from {@link buildFeatureFlagCatalog}, so a new entry
  * lights up in Settings automatically. `unit-feature-flags.test.ts` pins the
@@ -196,25 +196,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
   // `llm_gateway` graduated (2026-10-20): the LLM gateway is the only model
   // path for every project. No flag, no native OpenCode provider mode, no
   // operator lever. A stored `experimental.llm_gateway` override is inert.
-  {
-    key: 'meta_agent',
-    name: 'My Kortix',
-    description:
-      'My Kortix, the one agent you talk to. It routes each task to the agent made for it and runs it, with your permissions. The project setting is `builtin_agents.my_kortix` in kortix.yaml; this switch applies only when that key is not set.',
-    stability: 'experimental',
-    available: () => true,
-    // On by default (Marko, 2026-10-24): My Kortix is the default cloud
-    // orchestrator for every project. The project switch is kortix.yaml
-    // `builtin_agents.my_kortix`; this flag is its operator-only legacy fallback,
-    // so Settings never shows a second toggle that the manifest overrides.
-    platformDefault: () => true,
-    catalogHidden: true,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'The legacy fallback of kortix.yaml `builtin_agents.my_kortix`: read only when ' +
-      'the manifest does not set the key (projects/lib/builtin-agents.ts). Off ⇒ the ' +
-      'built-in `meta` agent is not listed and is not the default for new sessions.',
-  },
+  // `meta_agent` removed (2026-11-02): My Kortix follows kortix.yaml
+  // `builtin_agents.my_kortix` alone and is on when the key is not set
+  // (projects/lib/my-kortix-agent.ts). The flag defaulted off until 2026-10-24,
+  // so projects that saved Settings before then stored `false` and lost My
+  // Kortix after it became the default. A stored `experimental.meta_agent`
+  // override is inert; the API still sends `true` to older clients.
   // `apps` graduated (2026-10-14, spec §28): Apps is generally available —
   // every project can create and deploy Apps and there is no flag, no row and
   // no operator lever. A stored `experimental.apps` override is inert.
