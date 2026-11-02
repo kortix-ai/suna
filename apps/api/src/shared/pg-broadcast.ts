@@ -204,6 +204,16 @@ export function onChromeCommand(handler: ((payload: string) => void) | null): vo
   chromeCommandHandler = handler;
 }
 
+/**
+ * Send `kortix_session_changed` for a change no trigger sees: the box's daemon
+ * reporting its runtime ready (`POST /platform/boot-timeline`). Every replica's
+ * waiting deliveries and `/events` streams re-check the session at once instead
+ * of on their next poll. Without the LISTEN it is a no-op: the polls still run.
+ */
+export function publishSessionChanged(sessionId: string): void {
+  if (listener && isUuid(sessionId)) void listener.notify(SESSION_CHANGED_CHANNEL, sessionId).catch(() => {});
+}
+
 /** Subscribe to `kortix_session_changed`. Returns the unsubscribe. Kept across stop/start. */
 export function onSessionChanged(handler: (sessionId: string) => void): () => void {
   sessionChangedHandlers.add(handler);
