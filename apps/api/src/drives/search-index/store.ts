@@ -1,6 +1,6 @@
 // The SQL of the search index (`kortix.drive_index_entries`).
 
-import { driveIndexEntries, drives } from '@kortix/db';
+import { driveIndexEntries, drives, projects } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { escapeLike, type ParsedQuery } from './query';
@@ -85,24 +85,27 @@ export async function markIndexDue(driveId: string): Promise<void> {
 /**
  * The drives the next pass looks at, at most `limit`: the ones not checked
  * for `minIntervalMs`, never-checked and `priority` first, then the longest
- * unchecked. Only project drives with a volume: a drive with no volume yet
- * holds no file.
+ * unchecked. Only project drives with a volume (a drive with no volume yet
+ * holds no file) of a project that is not archived.
  */
 export async function dueDrives(limit: number, minIntervalMs: number, priority: string[]) {
   const cutoff = new Date(Date.now() - minIntervalMs).toISOString();
   const first = priority.length ? sql`(${drives.driveId} = ANY(${sql.param(priority)}::uuid[])) DESC,` : sql``;
-  return db
-    .select()
+  const rows = await db
+    .select({ drive: drives })
     .from(drives)
+    .innerJoin(projects, eq(projects.projectId, drives.projectId))
     .where(
       and(
         eq(drives.kind, 'project'),
+        sql`${projects.status} <> 'archived'`,
         sql`${drives.platinumVolumeId} IS NOT NULL`,
         sql`(${drives.indexCheckedAt} IS NULL OR ${drives.indexCheckedAt} < ${cutoff}::timestamptz)`,
       ),
     )
     .orderBy(sql`${first} ${drives.indexCheckedAt} ASC NULLS FIRST`)
     .limit(limit);
+  return rows.map((r) => r.drive);
 }
 
 // ─── Search ────────────────────────────────────────────────────────────────
