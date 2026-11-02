@@ -24,7 +24,7 @@
  * with `{"n":`.
  */
 
-import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CompactionResult, InlineExtension, SessionEntry } from '@earendil-works/pi-coding-agent'
 
@@ -124,8 +124,12 @@ export function renderRecord(entries: readonly SessionEntry[]): { text: string; 
  */
 function writeAtomic(path: string, dir: string, text: string): void {
   mkdirSync(dir, { recursive: true, mode: 0o700 })
-  const ignore = join(dir, '.gitignore')
-  if (!existsSync(ignore)) writeFileSync(ignore, '*\n', { mode: 0o600 })
+  // Create-if-absent in one call (no check-then-write race); an existing file stays.
+  try {
+    writeFileSync(join(dir, '.gitignore'), '*\n', { mode: 0o600, flag: 'wx' })
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+  }
   const tmp = `${path}.${process.pid}.tmp`
   writeFileSync(tmp, text, { mode: 0o600 })
   renameSync(tmp, path)
