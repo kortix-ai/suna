@@ -47,7 +47,7 @@ export function SandBandHero() {
               whole team, and everything they do is yours to keep, on your infrastructure or ours.
             </p>
           </div>
-          <ul className="grid w-fit grid-cols-2 gap-x-8 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-6 lg:shrink-0 lg:flex-col lg:gap-y-4 lg:border-l lg:py-1 lg:pl-8">
+          <ul className="grid w-fit grid-cols-2 gap-x-8 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-6 lg:shrink-0 lg:flex-col lg:gap-y-4">
             {HERO_TRAITS.map(({ label, icon: Icon }) => (
               <li key={label} className="text-foreground flex items-center gap-2.5 text-base lg:text-lg">
                 <Icon className="size-5 shrink-0" aria-hidden />
