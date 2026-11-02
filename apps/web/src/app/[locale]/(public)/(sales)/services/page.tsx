@@ -4,7 +4,8 @@ import { useTranslations } from '@/i18n/use-translations';
 import { localizeUiCatalog } from '@kortix/ui/i18n';
 
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
-import { CaseStudies } from '@/features/marketing/case-studies/case-studies';
+import { CaseStudies, PlatinumMark } from '@/features/marketing/case-studies/case-studies';
+import { caseStudies } from '@/features/marketing/case-studies/content';
 import { DitherField } from '@/features/marketing/kit/dither-field';
 import { FeatureSplit } from '@/features/marketing/kit/feature-split';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
@@ -27,9 +28,7 @@ import {
 } from '@/features/marketing/services/content';
 import { cn } from '@kortix/ui';
 import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
-import {
-  ArrowRightIcon,
-} from '@phosphor-icons/react';
+import { ArrowRightIcon } from '@phosphor-icons/react';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
@@ -52,6 +51,8 @@ const CHECKOUT_URL = process.env.NEXT_PUBLIC_SERVICES_CHECKOUT_URL;
 
 /** A third-party logo is drawn for a white ground: white in both themes (color.md, logo tile rule). */
 const LOGO_TILE_BACKGROUND = 'bg-white';
+/** A mark drawn in code (Platinum) takes black on the white tile, in both themes. */
+const LOGO_TILE_INK = 'text-black';
 
 /** "Join now": the Stripe checkout when it is configured, else the intro call. */
 function JoinButton({
@@ -216,24 +217,37 @@ export default function ServicesPage() {
         {/* The proof sits right under the ask: products built on Kortix. */}
         <div className="relative mt-10 flex flex-wrap items-center justify-center gap-3">
           <span className="text-muted-foreground text-sm">{hero.logosLabel}</span>
-          {hero.logos.map((logo) => (
-            <span
-              key={logo.alt}
-              className={cn(LOGO_TILE_BACKGROUND, 'flex h-12 items-center rounded-md border px-4')}
-            >
-              <Image
-                src={logo.src}
-                alt={logo.alt}
-                width={logo.width}
-                height={logo.height}
-                unoptimized
-                // A stacked mark (CityU) reads small at a wordmark's height.
-                className={logo.width / logo.height > 2.5 ? 'h-6 w-auto' : 'h-9 w-auto'}
-              />
-            </span>
-          ))}
+          {hero.logoCaseStudies.map((id) => {
+            const item = caseStudies.items.find((study) => study.id === id);
+            if (!item) return null;
+            return (
+              <span
+                key={id}
+                className={cn(
+                  LOGO_TILE_BACKGROUND,
+                  LOGO_TILE_INK,
+                  'flex h-12 items-center rounded-md border px-4',
+                )}
+              >
+                {item.logo ? (
+                  <Image
+                    src={item.logo.src}
+                    alt={item.logo.alt}
+                    width={item.logo.width}
+                    height={item.logo.height}
+                    unoptimized
+                    // A stacked mark (CityU, the telecom symbol) reads small at a wordmark's height.
+                    className={
+                      item.logo.width / item.logo.height > 2.5 ? 'h-6 w-auto' : 'h-9 w-auto'
+                    }
+                  />
+                ) : (
+                  <PlatinumMark small />
+                )}
+              </span>
+            );
+          })}
         </div>
-
       </section>
 
       {/* ── proof first: the work, then the ask again ────────────────────── */}
