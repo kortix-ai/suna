@@ -3,11 +3,13 @@
  * and what its output says. Primary-arg extraction, file verbs, search-query
  * humanizing, patch verbs, success/partial/failed outcomes, and parsers for
  * web search, scrape, skill, memory, read, question, presentation and worker
- * output, and the `image_gen` card's state. Pure data → data, no framework.
+ * output, the `image_gen` card's state, the platform tools' `KortixToolResult`
+ * card, and the `workflow` run document. Pure data → data, no framework.
  */
 export * from './agent-helpers';
 export * from './file-verb';
 export * from './image-gen-view';
+export * from './kortix-tool-card';
 export * from './memory-helpers';
 export * from './patch-summary';
 export * from './presentation-helpers';
@@ -20,3 +22,4 @@ export * from './tool-meta';
 export * from './tool-outcome';
 export * from './tool-output-format';
 export * from './web-helpers';
+export * from './workflow-run';

@@ -32,6 +32,7 @@ import { PermissionPrompt } from '../prompts/permission-prompt.tsx';
 import { QuestionPrompt } from '../prompts/question-prompt.tsx';
 import { ErrorBanner, describeSendError, describeStartError } from './error-banner.tsx';
 import { matchesTranscriptBinding } from './keys.ts';
+import { TranscriptSessionProvider } from './session-context.tsx';
 import { Turn } from './turn.tsx';
 import { WorkingLine } from './working-line.tsx';
 
@@ -212,6 +213,7 @@ export function Transcript({
     // `overflow: hidden` is load-bearing, not tidiness: without it the
     // scrollbox's last row painted over the working line below it ("idle"
     // overwrote "◆ kortix · now" in a live frame).
+    <TranscriptSessionProvider projectId={session.projectId ?? null} sessionId={session.sessionId ?? null}>
     <box flexDirection="column" width={width} height={height} overflow="hidden">
       <scrollbox
         ref={scrollRef}
@@ -257,6 +259,7 @@ export function Transcript({
         phase={session.phase}
         stage={session.stage}
         reason={session.reason}
+        image={session.bootImage}
         failure={session.failure}
       />
 
@@ -264,6 +267,7 @@ export function Transcript({
         <SessionPrompts session={session} focused={focused} width={width} onToast={onToast} />
       ) : null}
     </box>
+    </TranscriptSessionProvider>
   );
 }
 

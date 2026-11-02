@@ -26,23 +26,27 @@ import {
   uploadDriveFile,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { ScopedCache } from '@kortix/ui/internal/lib/storage/managed-storage';
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-const DriveFilesContext = createContext<{ driveId: string; userId?: string } | null>(null);
+const DriveFilesContext = createContext<{ driveId: string; userId?: string; personalFolder: string | null } | null>(null);
 
 /** `userId` turns on the saved listings below; they are kept per person. */
 export function DriveFilesProvider({
   driveId,
   userId,
+  personalFolder,
   children,
 }: {
   driveId: string;
   userId?: string;
+  /** The caller's own folder, listed with "(You)". */
+  personalFolder?: string | null;
   children: ReactNode;
 }) {
-  const value = useMemo(() => ({ driveId, userId }), [driveId, userId]);
+  const value = useMemo(() => ({ driveId, userId, personalFolder: personalFolder ?? null }), [driveId, userId, personalFolder]);
   return <DriveFilesContext.Provider value={value}>{children}</DriveFilesContext.Provider>;
 }
 
@@ -84,7 +88,8 @@ const idle = <T,>(): ExplorerQueryResult<T> => ({
 });
 
 function useDriveFileList(dirPath: string): ExplorerQueryResult<FileNode[]> {
-  const { driveId, userId } = useDriveFilesContext();
+  const { driveId, userId, personalFolder } = useDriveFilesContext();
+  const t = useTranslations('drives');
   const path = toDrivePath(dirPath);
   const scope = userId ? `${userId}:${driveId}:${path}` : null;
   const query = useQuery({
@@ -105,17 +110,14 @@ function useDriveFileList(dirPath: string): ExplorerQueryResult<FileNode[]> {
     () =>
       query.data?.entries
         .filter((e) => e.type !== 'symlink')
-        // `/Users` only holds people's own folders, each reached as My files
-        // or Shared with me: at the top it is a folder nobody can use.
-        .filter((e) => e.path !== '/Users')
         .map((e) => ({
-          name: e.name,
+          name: e.path === personalFolder ? t('treeYou', { name: e.name }) : e.name,
           path: fromDrivePath(e.path),
           absolute: e.path,
           type: e.type === 'dir' ? 'directory' : 'file',
           ignored: false,
         })),
-    [query.data],
+    [query.data, personalFolder, t],
   );
   return { data, isLoading: query.isLoading, isFetching: query.isFetching, error: query.error, refetch: query.refetch };
 }

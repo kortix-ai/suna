@@ -2004,6 +2004,17 @@
       "label": "重启会话",
       "pending": "正在重启…",
       "ownerOnly": "只有会话所有者或项目管理员可以重启此会话。"
+    },
+    "image": {
+      "title": "正在准备沙盒镜像",
+      "states": {
+        "resolving": "正在为此会话选择镜像。",
+        "serving_last_ready": "从最近一个就绪的镜像启动。新镜像在后台构建。",
+        "waiting_for_build": "正在构建此项目的第一个镜像。镜像就绪后会话即会开始。",
+        "building": "正在构建此项目的第一个镜像。此过程只需一次，耗时几分钟。",
+        "copying_to_region": "正在将镜像复制到此会话所在的区域。",
+        "waiting_for_provider": "镜像即将完成。镜像就绪后会话即会开始。"
+      }
     }
   },
   "sessionDelete": {
@@ -22637,23 +22648,23 @@
     "addAccess": "添加人员、团队或智能体",
     "notGrantable": "此文件夹是整个目录树的根基，无法共享。请共享其中的文件夹。",
     "viewOnlyAccess": "只有可以共享此文件夹的人才能更改访问权限。",
-    "noGrants": "这里还没有任何人获得访问权限。项目管理员可以打开除个人文件夹以外的所有文件夹。",
+    "noGrants": "这里还没有人获得访问权限。项目管理员可以打开所有文件夹。",
     "myFolder": "我的文件夹",
-    "myFolderHint": "你的个人文件夹：在你共享之前保持私密，并作为你会话中的桌面",
+    "myFolderHint": "你的个人文件夹：只有你和项目管理员可以打开，它也是你会话中的桌面",
     "sharedWithMeHint": "其他人与你共享的文件夹",
     "sessionNoFolders": "此会话中没有挂载任何文件夹。",
     "folderAccessDescription": "选择谁可以打开此文件夹及其中的所有内容。当会话的智能体、项目或启动它的人有访问权限时，该会话会获得此文件夹。",
     "whoCanAccess": "谁可以访问",
     "whoCanAccessFolder": "谁可以访问 {name}",
     "accessPanelDescription": "拥有访问权限的人员、团队和智能体会获得此文件夹及其中的所有内容。",
-    "accessPanelRoot": "打开一个文件夹即可选择谁可以访问它。Company 与项目中的所有人共享；每个人的个人文件夹在其共享之前都是私密的。",
+    "accessPanelRoot": "打开一个文件夹来选择谁可以访问。Company 与项目中的所有人共享。每个人的个人文件夹对本人和项目管理员开放。",
     "audienceEveryoneDescription": "在此项目中工作的所有人，以及其中的每个会话。",
     "audienceAdmins": "仅管理员",
     "audienceAdminsShort": "项目管理员可以打开并共享它",
     "audienceAdminsDescription": "项目管理员可以打开并共享它。在你共享之前，任何会话都不会获得它。",
     "audienceOnlyYou": "仅你自己",
     "audienceOnlyOwner": "仅 {name}",
-    "audienceOwnerDescription": "个人文件夹在其本人共享之前保持私密，管理员也无法打开。",
+    "audienceOwnerDescription": "个人文件夹对本人和项目管理员开放。管理员每次打开，本人都能看到。",
     "audienceSpecific": "特定人员、团队或智能体",
     "audienceSpecificDescription": "仅限你选择的人员、团队和智能体，以及项目管理员。智能体会在其每个会话中获得此文件夹。",
     "inheritedEveryoneNote": "此项目中的所有人已通过 {path} 获得访问权限。如需缩小范围，请在那里更改。",
@@ -22679,7 +22690,6 @@
     "audienceQuestion": "谁可以打开它？",
     "badgeEveryone": "Everyone",
     "badgePeople": "{count, plural, other {# people}}",
-    "privateNote": "只有你可以打开“我的文件”，管理员也不行。共享文件夹即可让他人访问。",
     "noTeamFolders": "还没有团队文件夹。",
     "sessionFilesName": "Files",
     "sessionFilesHint": "可打开的文件夹",
@@ -22704,7 +22714,21 @@
     "accountStorageTitle": "文件存储",
     "accountStorageDescription": "每个项目的文件占用的空间。你的套餐允许每个项目 {project}，所有项目合计 {account}。",
     "accountStorageEmpty": "还没有项目包含文件。",
-    "accountStorageIncomplete": "部分项目暂时无法测量。"
+    "accountStorageIncomplete": "部分项目暂时无法测量。",
+    "folderInfo": {
+      "audienceYouAndAdmins": "你和项目管理员",
+      "audienceOwnerAndAdmins": "所有者和管理员",
+      "boxPathHint": "会话在这里看到此文件夹。点击复制。",
+      "pathCopied": "已复制",
+      "projectAdmins": "项目管理员",
+      "adminsOpenRecorded": "可以打开它。每次打开你都能看到。",
+      "openedByAdmins": "管理员打开记录",
+      "noAdminOpens": "还没有管理员打开过此文件夹。"
+    },
+    "folderTree": "文件夹",
+    "treeYou": "{name}（你）",
+    "treeExpand": "展开 {name}",
+    "treeCollapse": "收起 {name}"
   },
   "genui": {
     "showData": "显示数据",
@@ -23280,8 +23304,8 @@
     "listPlaceholder": "值 1, 值 2"
   },
   "triggerAutoPause": {
-    "title": "已在运行上限处自动暂停",
-    "description": "它连续 2 小时达到每小时运行上限，因此已停止启动运行。找出持续触发它的原因，然后恢复它。"
+    "title": "已自动暂停",
+    "description": "由于以下原因，它已停止启动运行。解决原因后再恢复它。"
   },
   "featureGate": {
     "enable": "启用{name}",
@@ -24037,7 +24061,7 @@
       "edit": "编辑",
       "delete": "删除",
       "deleteTitle": "删除评论？",
-      "deleteDescription": "此评论将被永久删除。",
+      "deleteDescription": "其文本将对所有人移除，原位置显示“评论已删除”。此操作无法撤销。",
       "commentDeleted": "评论已删除",
       "threadDeleted": "此讨论串已删除。",
       "resolve": "解决",
@@ -24048,9 +24072,6 @@
       "quoteLabel": "所选段落",
       "waitingForPerson": "等待人员处理",
       "deliveryFailed": "无法向智能体发送反馈。",
-      "sendToAgent": "发送给智能体（{count}）",
-      "sendExisting": "此工件的会话",
-      "sendNew": "新的 {agent} 会话",
       "sendFailed": "无法发送这些评论，请重试。",
       "retrySend": "重试发送（{count}）",
       "discardSend": "放弃并使用最新评论",
@@ -24063,8 +24084,9 @@
       "contextLoadError": "无法加载评论权限。",
       "activityLoadError": "无法加载动态。",
       "retry": "重试",
+      "sendAgainTo": "重新发送给 {agent}",
       "noComments": "没有未解决的评论",
-      "noCommentsHint": "选择一段内容或在下方留下反馈。",
+      "noCommentsHint": "选择一段内容进行评论，或新建一条评论。",
       "noResolved": "没有已解决的评论",
       "noResolvedHint": "已解决的讨论串会显示在这里。",
       "noAllComments": "暂无评论",
@@ -24081,7 +24103,7 @@
       "preparingSelection": "正在准备所选段落…",
       "selectionCaptureFailed": "无法准备所选段落。请放弃此选择，再对整个作品发表评论。",
       "commentSelection": "评论",
-      "selectionTooLong": "请选择更短的段落进行评论。",
+      "selectionTooLong": "这段内容太长，无法评论。请选择不超过 {max} 个字符。",
       "selectionUnavailable": "无法将评论关联到此段内容，请选择其他段落。",
       "snapshotChanged": "文档已更改，请重新加载后再评论。",
       "commentSaveFailed": "无法保存文档，请重试后再评论。",
@@ -24100,7 +24122,7 @@
         "sent_to_agent": "向智能体发送了反馈"
       },
       "person": "用户",
-      "deleteRootDescription": "此评论将被永久删除，讨论串将变为只读。",
+      "deleteRootDescription": "其文本将对所有人移除，讨论串将变为只读。此操作无法撤销。",
       "showPanel": "显示评论",
       "hidePanel": "隐藏评论",
       "panelTitle": "评论和动态",
@@ -24122,7 +24144,29 @@
       "screenshotReadFailed": "无法加载截图。",
       "screenshotMissing": "截图不可用。绘图已保存。",
       "screenshotCaptureFailed": "无法截取屏幕。评论将包含绘图，但不含图片。",
-      "sendScreenshotLimit": "此批次超过20张截图或每次编码请求12 MiB。请减少图片附件，或使用纯文本模型。"
+      "sendScreenshotLimit": "无法发送这些评论。其截图超出单次请求的上限。请减少带有绘图的讨论串。",
+      "agentsUnavailable": "无法加载智能体。",
+      "showMore": "显示更多",
+      "showLess": "收起",
+      "moreReplies": "{count, plural, other {另外 # 条回复}}",
+      "resolvedBy": "由 {name} 解决",
+      "agent": "智能体",
+      "threadResolved": "讨论串已解决",
+      "undo": "撤销",
+      "agentPending": "正在发送给智能体…",
+      "agentSent": "已发送给智能体",
+      "openSession": "打开会话",
+      "notDelivered": "未送达",
+      "sendThreads": "{count, plural, other {将 # 个未解决的讨论串发送给 {agent}}}",
+      "chooseAgent": "选择智能体",
+      "sentToAgent": "评论已发送给 {agent}",
+      "newCommentFrom": "来自 {name} 的新评论",
+      "newComments": "{count, plural, other {# 条新评论}}",
+      "filterLabel": "讨论串状态",
+      "pagePinLabel": "评论 {number}",
+      "showPanelCount": "显示评论，{count} 条未解决",
+      "hidePanelCount": "隐藏评论，{count} 条未解决",
+      "commentSelectionHint": "评论所选内容"
     },
     "moveTo": "移至空间",
     "projectWide": "项目范围",
@@ -24713,10 +24757,8 @@
       "memoryNoteChannel": "{place} 中的智能体记住的内容。智能体会在每个线程开始时阅读这些内容。",
       "memoryNoteDm": "{agent} 在此私信中记住的内容。它会在每个线程开始时阅读这些内容。",
       "off": {
-        "title": "开启 Drive",
-        "description": "{place} 的文件和记忆保存在 Drive 中。在 Feature flags 中开启 Volumes 即可使用。",
-        "descriptionMember": "{place} 的文件和记忆保存在 Drive 中。请项目管理员开启它。",
-        "action": "打开 Feature flags"
+        "title": "这里没有 Drive",
+        "description": "{place} 的文件和记忆存放在 Drive 中。此 Kortix 不存储 Drive：它需要 Platinum。"
       }
     },
     "onboarding": {

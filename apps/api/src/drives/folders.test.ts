@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   type FolderGrant,
+  adminOnlyPersonalFolder,
   folderAccess,
   folderKnownToTree,
   folderVisible,
@@ -182,5 +183,45 @@ describe('only the channel’s own threads mount a private channel folder', () =
       16,
     ).mounts;
     expect(plan.filter((m) => !m.readOnly).map((m) => m.path)).toEqual(['/Channels/deals']);
+  });
+});
+
+// A person's own folder opens for its owner and the project's admins (as
+// people, never through a session); each admin open is recorded for the owner.
+describe("a person's own folder opens for its owner and for admins as people", () => {
+  const ANA = '/Users/ana';
+  const grants: FolderGrant[] = [
+    { path: ANA, level: 'manage', principalType: 'user', principalId: 'ana', source: 'system' },
+    { path: '/Company', level: 'write', principalType: 'project', principalId: 'proj', source: 'system' },
+  ];
+  const ana = { userId: 'ana', projectMember: true };
+  const bob = { userId: 'bob', projectMember: true };
+  const adminPerson = { userId: 'root', projectMember: true, admin: true, adminPeople: true };
+  const adminSession = { userId: 'root', projectMember: true, admin: true };
+
+  test('an admin signed in as a person manages it and sees it listed; a session of that admin does not', () => {
+    expect(folderAccess(`${ANA}/notes.md`, grants, adminPerson)).toBe('manage');
+    expect(folderVisible(ANA, grants, adminPerson)).toBe(true);
+    expect(folderAccess(`${ANA}/notes.md`, grants, adminSession)).toBe('none');
+    expect(folderVisible(ANA, grants, adminSession)).toBe(false);
+  });
+
+  test('adminPeople without admin reaches nothing; a plain member still gets nothing', () => {
+    expect(folderAccess(ANA, grants, { ...bob, adminPeople: true })).toBe('none');
+    expect(folderAccess(ANA, grants, bob)).toBe('none');
+  });
+
+  test('adminOnlyPersonalFolder names the folder an admin reaches only as admin, never their own or a shared one', () => {
+    expect(adminOnlyPersonalFolder(`${ANA}/notes.md`, grants, adminPerson)).toBe(ANA);
+    expect(adminOnlyPersonalFolder(`${ANA}/notes.md`, grants, ana)).toBeNull();
+    expect(adminOnlyPersonalFolder('/Company/x.md', grants, adminPerson)).toBeNull();
+    const shared: FolderGrant[] = [...grants, { path: `${ANA}/Shared`, level: 'read', principalType: 'user', principalId: 'root' }];
+    expect(adminOnlyPersonalFolder(`${ANA}/Shared/a.md`, shared, adminPerson)).toBeNull();
+    expect(adminOnlyPersonalFolder(`${ANA}/notes.md`, shared, adminPerson)).toBe(ANA);
+  });
+
+  test("a session never mounts another person's folder through its admin", () => {
+    const candidates = sessionMountCandidates(grants, { agentId: null, owner: 'root', groupIds: new Set(), own: null, channelFolder: null, privateChannelFolders: NO_PRIVATE_CHANNEL_FOLDERS });
+    expect(candidates.some((c) => c.path === ANA)).toBe(false);
   });
 });

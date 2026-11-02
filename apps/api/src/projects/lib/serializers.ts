@@ -44,6 +44,7 @@ import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
 import { probeProjectSecret } from '../secrets/envelope';
 import { isDeprecatedProvider } from '../../platform/providers/deprecated';
+import { isPlatinumConfigured } from '../../shared/platinum';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -350,6 +351,9 @@ export function serializeProject(
     // hosts read false as "show the legacy catalog".
     // `meta_agent` was removed on 2026-11-02: My Kortix follows kortix.yaml
     // `builtin_agents.my_kortix` alone, and older SDKs and hosts still read the key.
+    // `volumes` and `drives` graduated on 2026-11-02: every project has a Drive
+    // where the platform stores one. Both keys stay, equal to that availability,
+    // because older web, SDK, TUI and CLI builds show the Drive only while they read true.
     experimental: {
       ...resolveFeatureFlags(row.metadata),
       apps: true,
@@ -360,6 +364,8 @@ export function serializeProject(
       connectors_v2: true,
       connectors_api_discover: true,
       meta_agent: true,
+      volumes: isPlatinumConfigured(),
+      drives: isPlatinumConfigured(),
     },
     experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`

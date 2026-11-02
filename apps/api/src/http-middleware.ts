@@ -35,6 +35,14 @@ import { isUuid } from './shared/validate';
 // Every line inside installHttpMiddleware is moved verbatim from the former
 // index.ts; the chain order is the behavior, so nothing is reordered.
 export function installHttpMiddleware(app: OpenAPIHono) {
+// Defense in depth when requests reach the origin without Cloudflare's method filtering.
+app.use('*', async (c, next) => {
+  if (c.req.method === 'TRACE' || c.req.method === 'CONNECT') {
+    c.header('Allow', 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS');
+    return c.text('Method Not Allowed', 405);
+  }
+  await next();
+});
 app.use('*', async (c, next) => {
   await next();
   c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');

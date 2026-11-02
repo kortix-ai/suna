@@ -4,7 +4,7 @@ import {
   type ArtifactAnnotationLayout,
   type ArtifactAnnotationPin,
 } from '@kortix/shared/artifact-annotations';
-import { artifactCommentAnchorSchema, reanchorArtifactText, type ArtifactCommentAnchor } from '@kortix/shared/artifact-comments';
+import { artifactCommentAnchorSchema, reanchorArtifactText, type ArtifactCommentAnchor, type ArtifactReanchorBudget } from '@kortix/shared/artifact-comments';
 
 export type ArtifactAnnotationInventory = {
   revision: number;
@@ -85,7 +85,7 @@ function rangesFor(position: Position, inventory: ArtifactAnnotationInventory): 
 }
 
 export function resolveArtifactAnnotationAnchor(
-  anchor: ArtifactCommentAnchor, inventory: ArtifactAnnotationInventory, version: string,
+  anchor: ArtifactCommentAnchor, inventory: ArtifactAnnotationInventory, version: string, budget?: ArtifactReanchorBudget,
 ): ArtifactAnnotationResolution {
   const checked = artifactCommentAnchorSchema.safeParse(anchor);
   if (!checked.success) return missing(false);
@@ -93,7 +93,7 @@ export function resolveArtifactAnnotationAnchor(
   if (anchor.type === 'none') return { status: 'resolved', outdated: false, position: null, rects: [], ranges: [] };
   if (anchor.type === 'text') {
     if (!inventory.complete) return missing(false);
-    const position = reanchorArtifactText(inventory.text, anchor);
+    const position = reanchorArtifactText(inventory.text, anchor, budget);
     if (position.outdated || position.start === null || position.end === null
       || !boundary(inventory.text, position.start) || !boundary(inventory.text, position.end)) return missing(true);
     const ranges = rangesFor({ start: position.start, end: position.end }, inventory);

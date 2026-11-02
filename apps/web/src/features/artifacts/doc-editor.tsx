@@ -9,7 +9,7 @@ import {
   type ArtifactDetail,
 } from '@kortix/sdk';
 import { useArtifactMutations, useArtifactText } from '@kortix/sdk/react';
-import type { ArtifactTextAnchor } from '@kortix/shared/artifact-comments';
+import { ARTIFACT_TEXT_QUOTE_MAX, type ArtifactTextAnchor } from '@kortix/shared/artifact-comments';
 import { ARTIFACT_DOC_CSS } from '@kortix/shared/artifact-doc';
 import { canEmbed, fetchEmbed } from '@kortix/ui/markdown/doc-editor/doc-embed';
 import { docExtensions } from '@kortix/ui/markdown/doc-editor/doc-extensions';
@@ -332,6 +332,7 @@ export function DocEditor({
       version: historical ? artifact.version.id : undefined,
       entryVersion: historical ? commentEntryVersion : undefined,
       label: t('discussion.commentSelection'),
+      focusable: !editable,
     };
     editor.view.dispatch(editor.state.tr.setMeta(docCommentPluginKey, highlights));
   }, [
@@ -340,6 +341,7 @@ export function DocEditor({
     comments,
     focusedThreadId,
     historical,
+    editable,
     artifact.version.id,
     commentEntryVersion,
     revision,
@@ -355,6 +357,11 @@ export function DocEditor({
     );
   }, [editor, focusedThreadId, focusRevision, comments, commentEntryVersion, revision]);
 
+  // A passage longer than a quote can hold is refused with the limit, never cut.
+  const selectionError = (error: 'unmapped' | 'ambiguous' | 'too_long') =>
+    error === 'too_long'
+      ? t('discussion.selectionTooLong', { max: ARTIFACT_TEXT_QUOTE_MAX })
+      : t('discussion.selectionUnavailable');
   const commentSelection = async () => {
     const current = editorRef.current;
     const context = latest.current;
@@ -385,7 +392,7 @@ export function DocEditor({
             'pending',
           );
           if ('error' in candidate) {
-            errorToast(t('discussion.selectionUnavailable'));
+            errorToast(selectionError(candidate.error));
             return;
           }
           let saved: Known;
@@ -416,10 +423,14 @@ export function DocEditor({
             to,
             snapshot.version,
           );
-          if ('error' in result) errorToast(t('discussion.selectionUnavailable'));
+          if ('error' in result) errorToast(selectionError(result.error));
           else return result.anchor;
         },
-        (anchor) => latest.current.onComment?.(anchor),
+        (anchor) => {
+          latest.current.onComment?.(anchor);
+          // The passage now lives in the composer: collapse the selection so the formatting bubble hides.
+          if (editorRef.current === current && !current.isDestroyed) current.commands.setTextSelection(to);
+        },
       );
       commentCapture.current = operation;
       await operation.done;

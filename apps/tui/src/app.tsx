@@ -32,6 +32,7 @@
 
 import { clearAuth } from '@kortix/cli/src/api/auth.ts';
 import { webDashboardUrl } from '@kortix/cli/src/web-url.ts';
+import { sessionParentId } from '@kortix/sdk';
 import { useAccounts, useFeatureFlag, useProjectSessions, useProjects } from '@kortix/sdk/react';
 import { useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -75,6 +76,8 @@ import { type Tab, TabsBar } from './layout/tabs-bar.tsx';
 import { UI_PANEL_ROWS, UiPanel } from './layout/ui-panel.tsx';
 import { DEFAULT_UI, type ModuleId, type UiPrefs, toggleModule } from './layout/ui-prefs.ts';
 import { sessionTitle } from './lib/session-groups.ts';
+import { type AgentNav, AgentNavProvider, type PeekTarget } from './features/agents/agent-nav.tsx';
+import { PeekView } from './features/agents/peek-view.tsx';
 import { SCREEN_TITLE, Screen, type ScreenRoute, isScreenRoute } from './screens.tsx';
 import { theme } from './theme.ts';
 import { printable } from './lib/printable.ts';
@@ -100,6 +103,7 @@ const COMMAND_FLAGS = [
   'agent_rooms',
   'reminders',
   'goals',
+  'agent_teams',
 ] as const;
 
 /**
@@ -177,6 +181,7 @@ function useCommandFlags(projectId: string | null): Record<string, boolean> {
   const rooms = useFeatureFlag(projectId, 'agent_rooms');
   const reminders = useFeatureFlag(projectId, 'reminders');
   const goals = useFeatureFlag(projectId, 'goals');
+  const teams = useFeatureFlag(projectId, 'agent_teams');
   return useMemo(() => {
     const states = {
       drives,
@@ -185,11 +190,12 @@ function useCommandFlags(projectId: string | null): Record<string, boolean> {
       agent_rooms: rooms,
       reminders,
       goals,
+      agent_teams: teams,
     } satisfies Record<(typeof COMMAND_FLAGS)[number], typeof artifacts>;
     const known: Record<string, boolean> = {};
     for (const key of COMMAND_FLAGS) if (!states[key].isLoading) known[key] = states[key].enabled;
     return known;
-  }, [drives, artifacts, channels, rooms, reminders, goals]);
+  }, [drives, artifacts, channels, rooms, reminders, goals, teams]);
 }
 
 export interface AppProps {
@@ -416,6 +422,29 @@ export function App({
     setFocus('composer');
   }, []);
 
+
+  // ── agents: peek, then switch (`features/agents/agent-nav.tsx`) ───────────
+  const [peeking, setPeeking] = useState<PeekTarget | null>(null);
+  // A peek belongs to the session it was opened over.
+  // biome-ignore lint/correctness/useExhaustiveDependencies(sessionId): trigger-only dependency.
+  useEffect(() => setPeeking(null), [sessionId]);
+  const agentNav = useMemo<AgentNav>(
+    () => ({
+      currentSessionId: sessionId,
+      peeking,
+      peek: (target) => {
+        setPanel(null);
+        setPeeking(target);
+      },
+      closePeek: () => setPeeking(null),
+      switchTo: (id) => {
+        setPeeking(null);
+        openSession(id);
+      },
+    }),
+    [sessionId, peeking, openSession],
+  );
+
   /** The draft: no session yet, the next prompt creates one. */
   const openDraft = useCallback(() => {
     setSessionId(null);
@@ -555,6 +584,11 @@ export function App({
           return openDraft();
         case 'sessions':
           return setPanel({ kind: 'sessions', query: args });
+        case 'parent': {
+          const parent = sessionRow ? sessionParentId(sessionRow) : null;
+          if (!parent) return pushToast('This session was not started by another agent.');
+          return openSession(parent);
+        }
         case 'rename':
           if (!pid || !sid) return;
           if (!args.trim()) {
@@ -717,6 +751,17 @@ export function App({
           return setOverlay('help');
         case 'quit':
           return onQuit();
+        case 'agents':
+          return setPanel({ kind: 'agents' });
+        case 'workflows':
+          return setPanel({ kind: 'workflows' });
+        case 'tasks':
+          return setPanel({ kind: 'tasks' });
+        default: {
+          // Every command has a case: a new one fails the typecheck until it gets one.
+          const unreachable: never = command;
+          return unreachable;
+        }
       }
     },
     [
@@ -897,6 +942,7 @@ export function App({
   );
 
   return (
+    <AgentNavProvider value={agentNav}>
     <box
       flexDirection="column"
       width={dimensions.width}
@@ -933,6 +979,19 @@ export function App({
             panel={panelNode}
             seed={seed}
             borderless={borderless}
+            overlay={
+              peeking && projectId ? (
+                <PeekView
+                  projectId={projectId}
+                  target={peeking}
+                  width={Math.max(mainWidth - (borderless ? 2 : 4), 20)}
+                  height={Math.max(contentHeight - (borderless ? 0 : 2), 6)}
+                  onClose={() => setPeeking(null)}
+                  onOpen={agentNav.switchTo}
+                  onToast={pushToast}
+                />
+              ) : null
+            }
             trayLeft={trayLeft}
             splashLines={splashLines}
             info={ui.info.on ? (ui.info.side === 'left' ? 'left' : 'right') : null}
@@ -1032,5 +1091,6 @@ export function App({
         />
       ) : null}
     </box>
+    </AgentNavProvider>
   );
 }

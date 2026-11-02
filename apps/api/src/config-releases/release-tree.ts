@@ -6,13 +6,21 @@
  * files it leaves out) in a scratch repository, and build its `tar.gz`. No caches, no store, no governance: the release orchestration
  * lives in `builder.ts`, which re-exports this module's public names. It never
  * calls into a sandbox.
+ *
+ * The mirror is a partial object store: it holds commits, and trees and files
+ * only once a read asks for them. The scratch repository reads the mirror
+ * through alternates and cannot fetch, so every read here first makes its
+ * objects present: the trees of the commit, the `.gitattributes` files, the
+ * tool modules it parses, and the files an archive packs.
  */
 
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, posix, resolve } from 'node:path';
-import { execFileAsync, runGitCapture, spawn } from '../projects/git/mirror';
+import { childProcessEnv } from '../config';
+import { ensureCommitTrees, ensureStoreObjects, ensureTreeContents, execFileAsync, runGitCapture, spawn } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
+import { isObjectFetchTooLarge } from '../shared/over-limit-memo';
 
 /**
  * The release archive cap. A release is the repository's whole tree at the
@@ -41,21 +49,48 @@ export type ConfigReleaseVariant = 'project' | 'none' | 'mykortix' | `agent:${st
 export type ConfigReleaseFile = [path: string, mode: string, blob: string];
 
 export class ConfigArchiveTooLargeError extends Error {
-  constructor(readonly limit: number) {
+  constructor(
+    readonly limit: number,
+    /** The size that tripped a cap, when one was measured. */
+    readonly actualBytes?: number,
+  ) {
     super(`config archive exceeds ${limit} bytes`);
     this.name = 'ConfigArchiveTooLargeError';
   }
 }
 
-/** Resolve `git rev-parse <commit>:<config dir>` to a tree ID, or null. */
-async function resolveConfigTreeId(
-  mirror: string,
-  commit: string,
-  configDir: string,
-): Promise<string | null> {
-  // `<commit>:<path>^{tree}` would read `^{tree}` as part of the path, so the
-  // object type is checked separately.
-  const result = await runGitCapture(['rev-parse', '--verify', '--quiet', `${commit}:${configDir}`], mirror);
+/**
+ * The bound on the files an archive downloads into the mirror: the tar bound,
+ * scaled with the archive cap (128 MiB for 32 MiB) so a test's smaller cap
+ * needs no 128 MiB fixture. A pack is compressed and a tar is not, so a
+ * download over this bound means a tar over `MAX_CONFIG_TAR_BYTES`.
+ */
+function archiveFetchLimit(limit: number): number {
+  return Math.min(MAX_CONFIG_TAR_BYTES, limit * 4);
+}
+
+/**
+ * Run `fetch` (an `ensure*` call bounded by `maxBytes`) before an archive.
+ * A download over the bound keeps nothing and means the archive is too large.
+ */
+async function ensureArchiveObjects(limit: number, fetch: (maxBytes: number) => Promise<unknown>): Promise<void> {
+  try {
+    await fetch(archiveFetchLimit(limit));
+  } catch (error) {
+    if (isObjectFetchTooLarge(error)) throw new ConfigArchiveTooLargeError(limit, error.receivedBytes);
+    throw error;
+  }
+}
+
+/**
+ * The root tree ID of `commit`, or null. Every tree of the commit is present
+ * in the mirror afterwards, and no file: what `ls-tree -r` and `read-tree`
+ * read. The ID comes from the commit object, because `rev-parse
+ * <commit>^{tree}` fails while the tree has not arrived.
+ */
+export async function commitRootTree(mirror: string, commit: string): Promise<string | null> {
+  await ensureCommitTrees(mirror, [commit]);
+  const result = await runGitCapture(['log', '--no-walk', '--format=%T', commit, '--'], mirror);
   const tree = result.stdout.trim();
   if (result.exitCode !== 0 || !HEX40.test(tree)) return null;
   return (await isTreeObject(mirror, tree)) ? tree : null;
@@ -143,6 +178,7 @@ export async function buildConfigArchive(
   limit = MAX_CONFIG_ARCHIVE_BYTES,
 ): Promise<Buffer> {
   if (!HEX40.test(treeId)) throw new Error(`invalid config tree id: ${treeId}`);
+  await ensureArchiveObjects(limit, (maxBytes) => ensureTreeContents(mirror, treeId, { maxBytes }));
   return withScratchRepo(mirror, (repo, env) => archiveTree(repo, env, treeId, limit));
 }
 
@@ -201,7 +237,8 @@ async function gitWithInput(
 ): Promise<string> {
   const child = spawn('git', args, {
     cwd: repo,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...env },
+    // It may read the mirror (alternates), which must never fetch on its own.
+    env: childProcessEnv({ GIT_TERMINAL_PROMPT: '0', ...env, GIT_NO_LAZY_FETCH: '1' }),
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   const stdout: Buffer[] = [];
@@ -226,7 +263,8 @@ async function pruneTree(repo: string, env: Record<string, string>, tree: string
   if (read.exitCode !== 0) throw new Error(`git read-tree ${tree} failed: ${read.stderr.trim()}`);
   // Mode 0 removes the entry. `--index-info` needs no work tree; `--force-remove` does.
   await gitWithInput(repo, indexEnv, ['update-index', '-z', '--index-info'], paths.map((path) => `0 ${'0'.repeat(40)}\t${path}`));
-  const written = await runGitCapture(['write-tree'], repo, null, indexEnv);
+  // The tree ID needs the entries, not the files: the mirror may not hold them yet.
+  const written = await runGitCapture(['write-tree', '--missing-ok'], repo, null, indexEnv);
   const pruned = written.stdout.trim();
   if (written.exitCode !== 0 || !HEX40.test(pruned)) throw new Error(`git write-tree failed: ${written.stderr.trim()}`);
   return pruned;
@@ -262,6 +300,8 @@ async function exportIgnoredPaths(
 ): Promise<string[]> {
   const files = await listConfigFiles(mirror, rootTree);
   const attributeFiles = files.filter(([path]) => path === '.gitattributes' || path.endsWith('/.gitattributes'));
+  // The attribute files are read here and by `check-attr` below.
+  await ensureStoreObjects(mirror, attributeFiles.map(([, , blob]) => blob));
   // The common case is no rule at all: no index, no scratch repository.
   let named = false;
   for (const [, , blob] of attributeFiles) {
@@ -310,10 +350,11 @@ export async function readComposedRelease(
     const treeId = await composeReleaseTree(repo, env, source);
     const files = await listConfigFiles(repo, treeId, env);
     const wanted = typeof options.archive === 'function' ? options.archive(treeId) : options.archive;
-    const archive = wanted
-      ? await archiveTree(repo, env, treeId, options.limit ?? MAX_CONFIG_ARCHIVE_BYTES)
-      : null;
-    return { treeId, files, archive };
+    if (!wanted) return { treeId, files, archive: null };
+    const limit = options.limit ?? MAX_CONFIG_ARCHIVE_BYTES;
+    // Exactly the files that ship: an `export-ignore` path is never downloaded.
+    await ensureArchiveObjects(limit, (maxBytes) => ensureStoreObjects(mirror, files.map(([, , blob]) => blob), { maxBytes }));
+    return { treeId, files, archive: await archiveTree(repo, env, treeId, limit) };
   });
 }
 
@@ -326,11 +367,15 @@ export async function readFileTree(
   return withScratchRepo(mirror, async (repo, env) => {
     const indexEnv = { ...env, GIT_INDEX_FILE: join(repo, 'release.index') };
     await gitWithInput(repo, indexEnv, ['update-index', '-z', '--add', '--index-info'], files.map(([path, mode, blob]) => `${mode} ${blob}\t${path}`));
-    const written = await runGitCapture(['write-tree'], repo, null, indexEnv);
+    // The tree ID needs the entries, not the files: the mirror may not hold them yet.
+    const written = await runGitCapture(['write-tree', '--missing-ok'], repo, null, indexEnv);
     const treeId = written.stdout.trim();
     if (written.exitCode !== 0 || !HEX40.test(treeId)) throw new Error(`git write-tree failed: ${written.stderr.trim()}`);
     const wanted = typeof options.archive === 'function' ? options.archive(treeId) : options.archive;
-    return { treeId, archive: wanted ? await archiveTree(repo, env, treeId, options.limit ?? MAX_CONFIG_ARCHIVE_BYTES) : null };
+    if (!wanted) return { treeId, archive: null };
+    const limit = options.limit ?? MAX_CONFIG_ARCHIVE_BYTES;
+    await ensureArchiveObjects(limit, (maxBytes) => ensureStoreObjects(mirror, files.map(([, , blob]) => blob), { maxBytes }));
+    return { treeId, archive: await archiveTree(repo, env, treeId, limit) };
   });
 }
 
@@ -346,28 +391,35 @@ const IMPORT_SUFFIXES = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs
 export async function toolModuleFiles(mirror: string, rootTree: string, modules: readonly string[]): Promise<ConfigReleaseFile[]> {
   const tree = new Map((await listConfigFiles(mirror, rootTree)).map((file) => [file[0], file]));
   const found = new Map<string, ConfigReleaseFile>();
-  const queue = [...modules];
+  let queue = [...modules];
+  // One round per import depth: one download for the modules the round parses.
   while (queue.length > 0) {
-    const path = queue.pop()!;
-    const file = tree.get(path);
-    if (!file || found.has(path)) continue;
-    found.set(path, file);
-    if (file[1] === '120000' || path.endsWith('.json')) continue;
-    const source = await runGitCapture(['cat-file', 'blob', file[2]], mirror);
-    const loader = path.endsWith('.tsx') ? 'tsx' : path.endsWith('.jsx') ? 'jsx' : /\.[cm]?ts$/.test(path) ? 'ts' : 'js';
-    let imports: Array<{ path: string }> = [];
-    try {
-      imports = new Bun.Transpiler({ loader }).scanImports(source.stdout);
-    } catch {
-      // A syntax error: the box reports it when it imports the module.
+    const round: ConfigReleaseFile[] = [];
+    for (const path of queue) {
+      const file = tree.get(path);
+      if (!file || found.has(path)) continue;
+      found.set(path, file);
+      if (file[1] !== '120000' && !path.endsWith('.json')) round.push(file);
     }
-    for (const { path: specifier } of imports) {
-      if (!specifier.startsWith('./') && !specifier.startsWith('../')) continue;
-      const base = posix.normalize(posix.join(posix.dirname(path), specifier));
-      // `./x.js` names `x.ts` in TypeScript, and Bun resolves it so.
-      const candidates = [...IMPORT_SUFFIXES.map((suffix) => base + suffix), base.replace(/js$/, 'ts'), ...IMPORT_SUFFIXES.slice(1).map((suffix) => `${base}/index${suffix}`)];
-      const target = candidates.find((candidate) => tree.has(candidate));
-      if (target) queue.push(target);
+    queue = [];
+    await ensureStoreObjects(mirror, round.map(([, , blob]) => blob));
+    for (const [path, , blob] of round) {
+      const source = await runGitCapture(['cat-file', 'blob', blob], mirror);
+      const loader = path.endsWith('.tsx') ? 'tsx' : path.endsWith('.jsx') ? 'jsx' : /\.[cm]?ts$/.test(path) ? 'ts' : 'js';
+      let imports: Array<{ path: string }> = [];
+      try {
+        imports = new Bun.Transpiler({ loader }).scanImports(source.stdout);
+      } catch {
+        // A syntax error: the box reports it when it imports the module.
+      }
+      for (const { path: specifier } of imports) {
+        if (!specifier.startsWith('./') && !specifier.startsWith('../')) continue;
+        const base = posix.normalize(posix.join(posix.dirname(path), specifier));
+        // `./x.js` names `x.ts` in TypeScript, and Bun resolves it so.
+        const candidates = [...IMPORT_SUFFIXES.map((suffix) => base + suffix), base.replace(/js$/, 'ts'), ...IMPORT_SUFFIXES.slice(1).map((suffix) => `${base}/index${suffix}`)];
+        const target = candidates.find((candidate) => tree.has(candidate));
+        if (target) queue.push(target);
+      }
     }
   }
   return [...found.values()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
@@ -382,12 +434,14 @@ export async function resolveReleaseTreeSource(
   project: Pick<GitBackedProject, 'manifestPath'>,
   commit: string,
 ): Promise<{ source: ReleaseTreeSource } | { reason: string }> {
-  const rootTree = await resolveConfigTreeId(mirror, commit, '');
+  const rootTree = await commitRootTree(mirror, commit);
   if (!rootTree) return { reason: `commit ${commit} has no tree` };
   // The manifest's own `.gitattributes` entry must not drop it.
   const exportIgnored = await exportIgnoredPaths(mirror, rootTree, (path) => path === project.manifestPath);
   for (const path of LEFTOVER_OPENCODE_CONFIGS) {
-    const exists = await runGitCapture(['cat-file', '-e', `${commit}:${path}`], mirror);
+    // Resolved from the tree alone: `cat-file -e` also needs the file, which
+    // a partial mirror may not hold, and would answer "absent".
+    const exists = await runGitCapture(['rev-parse', '--verify', '--quiet', `${commit}:${path}`], mirror);
     if (exists.exitCode === 0 && !exportIgnored.includes(path)) exportIgnored.push(path);
   }
   return { source: { rootTree, exportIgnored } };
@@ -408,7 +462,8 @@ async function archiveThroughGzip(
   const tarPath = join(repo, 'config.tar');
   const archived = await runGitCapture(['archive', '--format=tar', '-o', tarPath, commit], repo, null, env);
   if (archived.exitCode !== 0) throw new Error(`git archive ${commit} failed: ${archived.stderr.trim()}`);
-  if ((await stat(tarPath)).size > MAX_CONFIG_TAR_BYTES) throw new ConfigArchiveTooLargeError(limit);
+  const tarBytes = (await stat(tarPath)).size;
+  if (tarBytes > MAX_CONFIG_TAR_BYTES) throw new ConfigArchiveTooLargeError(limit, tarBytes);
   try {
     await execFileAsync('gzip', ['-n', '-f', tarPath], { timeout: 60_000 });
   } catch (error) {
@@ -417,6 +472,6 @@ async function archiveThroughGzip(
   // Read once and measure the bytes read: a stat followed by a read can see
   // two different files (CodeQL js/file-system-race).
   const gz = await readFile(`${tarPath}.gz`);
-  if (gz.length > limit) throw new ConfigArchiveTooLargeError(limit);
+  if (gz.length > limit) throw new ConfigArchiveTooLargeError(limit, gz.length);
   return gz;
 }

@@ -143,3 +143,34 @@ describe('project commands', () => {
     expect(menuEntries('', FULL, { bogus: true } as never).length).toBe(COMMANDS.length);
   });
 });
+
+describe('multi-agent commands', () => {
+  test('/agents and its aliases open the agents panel; /agent still picks the agent', () => {
+    expect(findCommand('agents')?.name).toBe('agents');
+    expect(findCommand('subagents')?.name).toBe('agents');
+    expect(findCommand('team')?.name).toBe('agents');
+    expect(findCommand('agent')?.name).toBe('agent');
+    expect(menuEntries('agent', FULL)[0]?.name).toBe('agent');
+  });
+
+  test('/workflows, /runs, /tasks and /parent parse and resolve', () => {
+    expect(findCommand(parseSlash('/workflows')?.name ?? '')?.name).toBe('workflows');
+    expect(findCommand('runs')?.name).toBe('workflows');
+    expect(findCommand('tasks')?.name).toBe('tasks');
+    expect(findCommand('parent')?.name).toBe('parent');
+  });
+
+  test('every one needs an open session; /tasks is off where agent teams are off', () => {
+    for (const name of ['agents', 'workflows', 'tasks', 'parent']) {
+      const spec = findCommand(name);
+      if (!spec) throw new Error(`${name} missing`);
+      expect(unavailableReason(spec, EMPTY)).toBe('needs an open session');
+    }
+    const tasks = findCommand('tasks');
+    if (!tasks) throw new Error('tasks missing');
+    expect(unavailableReason(tasks, { ...FULL, flags: { agent_teams: false } })).toBe(
+      'turned off for this project',
+    );
+    expect(unavailableReason(tasks, { ...FULL, flags: { agent_teams: true } })).toBeNull();
+  });
+});

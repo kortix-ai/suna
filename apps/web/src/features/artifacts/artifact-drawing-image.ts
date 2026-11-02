@@ -1,5 +1,5 @@
 import type { ArtifactCommentMark } from '@kortix/sdk';
-import { projectDrawingMark } from './artifact-drawing';
+import { DRAWING_IMAGE_COLORS, projectDrawingMark } from './artifact-drawing';
 
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 export async function compositeDrawingImage(
@@ -32,7 +32,8 @@ export async function compositeDrawingImage(
     context.lineJoin = 'round';
     for (const mark of marks) {
       const shape = projectDrawingMark(mark, { x: 0, y: 0, width, height });
-      context.strokeStyle = mark.color;
+      const color = DRAWING_IMAGE_COLORS[mark.color];
+      context.strokeStyle = color;
       context.lineWidth = shape.width;
       if (mark.tool === 'rectangle') {
         context.strokeRect(
@@ -47,7 +48,7 @@ export async function compositeDrawingImage(
           mark.tool === 'pen' &&
           shape.points.every((point) => point.x === first.x && point.y === first.y)
         ) {
-          context.fillStyle = mark.color;
+          context.fillStyle = color;
           context.beginPath();
           context.arc(first.x, first.y, shape.width / 2, 0, Math.PI * 2);
           context.fill();

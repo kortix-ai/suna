@@ -43,6 +43,7 @@ import { REVIEW_KEYS } from './features/review/keys.ts';
 import { ROOMS_KEYS } from './features/rooms/keys.ts';
 import { COMPOSER_KEYMAP } from './features/session/composer/keys.ts';
 import { TRANSCRIPT_KEYS } from './features/session/transcript/keys.ts';
+import { AGENTS_KEYS } from './features/agents/keys.ts';
 import { SIDEBAR_KEYS } from './features/sidebar/keys.ts';
 import { SPACES_KEYS } from './features/spaces/keys.ts';
 import { TERMINAL_KEYMAP } from './features/terminal/keys.ts';
@@ -57,6 +58,7 @@ import { TERMINAL_KEYMAP } from './features/terminal/keys.ts';
  */
 export type KeyScope =
   | 'global'
+  | 'agents'
   | 'sidebar'
   | 'transcript'
   | 'composer'
@@ -85,6 +87,7 @@ export type KeyScope =
 /** Help-overlay section titles, in the order the overlay prints them. */
 export const SCOPE_ORDER: readonly KeyScope[] = [
   'global',
+  'agents',
   'sidebar',
   'transcript',
   'composer',
@@ -113,6 +116,7 @@ export const SCOPE_ORDER: readonly KeyScope[] = [
 
 export const SCOPE_TITLE: Record<KeyScope, string> = {
   global: 'Anywhere',
+  agents: 'Agents panel',
   sidebar: 'Sidebar',
   transcript: 'Transcript',
   composer: 'Composer',
@@ -337,6 +341,7 @@ let byId: Map<string, Binding> | null = null;
  */
 function featureTables(): readonly (readonly Binding[])[] {
   return [
+    AGENTS_KEYS,
     SIDEBAR_KEYS,
     TRANSCRIPT_KEYS,
     COMPOSER_KEYMAP,
@@ -480,7 +485,11 @@ export function matchesChord(event: KeyEvent, target: Chord): boolean {
   const wanted = normalizeKey(target.key, Boolean(target.shift));
   if (pressed.key !== wanted.key) return false;
   if (Boolean(target.ctrl) !== Boolean(event.ctrl)) return false;
-  if (Boolean(target.alt) !== altPressed(event)) return false;
+  // An Esc can arrive with meta set: a doubled ESC (`ESC ESC`, a quick double tap, or a
+  // terminal with Option-as-Meta) parses as meta+escape. No binding means Alt+Esc, so it is Esc;
+  // refusing it left every panel open with nothing on screen saying why.
+  const metaEscape = wanted.key === 'escape' && !target.alt;
+  if (!metaEscape && Boolean(target.alt) !== altPressed(event)) return false;
   if (shiftIsSignificant(wanted.key) && pressed.shift !== wanted.shift) return false;
   return true;
 }

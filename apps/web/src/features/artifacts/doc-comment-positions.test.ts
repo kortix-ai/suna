@@ -105,11 +105,11 @@ describe('doc comment source positions', () => {
     expect(docMarkdownPositions(markdown, parse(markdown))).not.toBeNull();
   });
 
-  test('a long selection anchors its first bounded excerpt and does not split an emoji or entity', () => {
+  test('a long selection anchors the whole selection, emoji and entities included', () => {
     const long = 'a'.repeat(33);
     expect(
       docSelectionAnchor(docMarkdownPositions(long, parse(long)), 1, 34, 'commit-one'),
-    ).toMatchObject({ anchor: { quote: 'a'.repeat(32), suffix: 'a' } });
+    ).toMatchObject({ anchor: { quote: 'a'.repeat(33), prefix: '', suffix: '' } });
     const emoji = `${'a'.repeat(31)}😀 next passage.`;
     const doc = parse(emoji);
     const anchor = docSelectionAnchor(
@@ -118,7 +118,7 @@ describe('doc comment source positions', () => {
       doc.content.size - 1,
       'commit-one',
     );
-    expect(anchor).toMatchObject({ anchor: { quote: 'a'.repeat(31) } });
+    expect(anchor).toMatchObject({ anchor: { quote: emoji } });
     if ('anchor' in anchor)
       expect(artifactCommentAnchorSchema.safeParse(anchor.anchor).success).toBe(true);
     const entity = `${'a'.repeat(30)}&amp; next passage.`;
@@ -129,7 +129,40 @@ describe('doc comment source positions', () => {
         parse(entity).content.size - 1,
         'commit-one',
       ),
-    ).toMatchObject({ anchor: { quote: 'a'.repeat(30) } });
+    ).toMatchObject({ anchor: { quote: entity } });
+  });
+
+  test('a selection across paragraphs and marks keeps its Markdown and 32-unit context', () => {
+    const first = 'The launch review covers **pricing**, onboarding and support staffing.';
+    const second = 'Each owner confirms the date and the rollback plan before Thursday.';
+    const markdown = `${'p'.repeat(40)}\n\n${first}\n\n${second}\n\n${'s'.repeat(40)}\n`;
+    const doc = parse(markdown);
+    const from = at(doc, 'The launch');
+    const to = at(doc, 'Thursday.') + 'Thursday.'.length;
+    const result = docSelectionAnchor(docMarkdownPositions(markdown, doc), from, to, 'commit-one');
+    expect(result).toEqual({
+      anchor: {
+        type: 'text',
+        version: 'commit-one',
+        quote: `${first}\n\n${second}`,
+        prefix: `${'p'.repeat(30)}\n\n`,
+        suffix: `\n\n${'s'.repeat(30)}`,
+      },
+    });
+  });
+
+  test('a selection of 500 code units anchors and a longer one is refused, never cut', () => {
+    const exact = `${'word '.repeat(99)}last.`;
+    expect(exact).toHaveLength(500);
+    const doc = parse(exact);
+    expect(
+      docSelectionAnchor(docMarkdownPositions(exact, doc), 1, doc.content.size - 1, 'commit-one'),
+    ).toMatchObject({ anchor: { quote: exact } });
+    const over = `${exact} more`;
+    const longer = parse(over);
+    expect(
+      docSelectionAnchor(docMarkdownPositions(over, longer), 1, longer.content.size - 1, 'commit-one'),
+    ).toEqual({ error: 'too_long' });
   });
 
   test('a link card atom does not prevent comments on surrounding Markdown text', () => {

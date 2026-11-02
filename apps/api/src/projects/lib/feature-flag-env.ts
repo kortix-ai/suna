@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 
 import { resolveFeatureFlags } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
+import { isPlatinumConfigured } from '../../shared/platinum';
 
 /**
  * Read by kortixd (lib/config/feature-flags.ts) and the CLI (feature-flags.ts): the project's
@@ -18,12 +19,18 @@ export const FEATURE_FLAGS_ENV_NAME = 'KORTIX_FEATURE_FLAGS';
  */
 const LEGACY_IMAGE_FLAGS = ['genui'];
 
+/**
+ * Graduated 2026-11-02 and still listed wherever the platform stores a Drive:
+ * boxes, CLIs and managed skills built before then gate Drive features on them.
+ */
+const DRIVE_FLAGS = ['drives', 'volumes'];
+
 /** The enabled flags, sorted. */
 export function featureFlagsEnvValue(metadata: unknown): string {
   const flags = Object.entries(resolveFeatureFlags(metadata))
     .filter(([, on]) => on)
     .map(([key]) => key);
-  return [...flags, ...LEGACY_IMAGE_FLAGS].sort().join(',');
+  return [...flags, ...LEGACY_IMAGE_FLAGS, ...(isPlatinumConfigured() ? DRIVE_FLAGS : [])].sort().join(',');
 }
 
 export async function buildFeatureFlagSandboxEnv(projectId: string): Promise<Record<string, string>> {

@@ -12,13 +12,18 @@ const page = {
   scroll,
 };
 
+/** The longest text quote, in UTF-16 code units: a paragraph. A longer selection is refused, never cut. */
+export const ARTIFACT_TEXT_QUOTE_MAX = 500;
+/** The longest prefix and suffix, in UTF-16 code units. */
+export const ARTIFACT_TEXT_CONTEXT_MAX = 32;
+
 export const artifactCommentAnchorSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('text'),
     version,
-    quote: anchorText.min(1).max(32),
-    prefix: anchorText.max(32),
-    suffix: anchorText.max(32),
+    quote: anchorText.min(1).max(ARTIFACT_TEXT_QUOTE_MAX),
+    prefix: anchorText.max(ARTIFACT_TEXT_CONTEXT_MAX),
+    suffix: anchorText.max(ARTIFACT_TEXT_CONTEXT_MAX),
   }).strict(),
   z.object({ type: z.literal('point'), ...page, offset: z.object({ x: fraction, y: fraction }).strict() }).strict(),
   z.object({
@@ -98,21 +103,241 @@ function fuzzySpans(text: string, quote: string, end: number, limit: number, dis
   return matches;
 }
 
-export function reanchorArtifactText(text: string, anchor: ArtifactTextAnchor): ArtifactTextPosition {
+/** The bit-vector fuzzy search below holds one quote character per bit of a 32-bit word. */
+const FUZZY_WORD = 32;
+/** The edit budget of one search word: ten percent of 32 code units. */
+const WORD_LIMIT = Math.floor(FUZZY_WORD / 10);
+/** More hits than this for one search word: the text repeats too much for that word to point anywhere. */
+const MAX_WORD_HITS = 1 << 16;
+/** The alignment work one long quote may spend, in edit-distance cells (a few ms). More marks it outdated. */
+const MAX_ALIGN_CELLS = 1 << 20;
+
+/**
+ * The re-anchoring work one read may spend across all its threads (about 100 ms):
+ * fuzzy-scanned code units plus alignment cells, and an eighth of a code unit
+ * per natively exact-scanned one. A list re-anchors every stored thread, and a
+ * commenter can store many unmatched quotes, so the cost of one read must not
+ * grow with the thread count. A thread past the budget is outdated for that read.
+ */
+export const ARTIFACT_REANCHOR_READ_UNITS = 1 << 24;
+
+export interface ArtifactReanchorBudget {
+  remaining: number;
+}
+
+/** One budget per read: pass the same object to every reanchorArtifactText call of that read. */
+export function createArtifactReanchorBudget(): ArtifactReanchorBudget {
+  return { remaining: ARTIFACT_REANCHOR_READ_UNITS };
+}
+
+/**
+ * The read budget split into equal shares, one per thread author (a person or an
+ * agent session). A commenter whose quotes match nothing spends only their own
+ * share, so other people's threads still re-anchor; the read's total stays at
+ * ARTIFACT_REANCHOR_READ_UNITS. Name every author of the read up front.
+ */
+export function createArtifactReanchorBudgets(authors: Iterable<string>): (author: string) => ArtifactReanchorBudget {
+  const share = Math.floor(ARTIFACT_REANCHOR_READ_UNITS / Math.max(1, new Set(authors).size));
+  const budgets = new Map<string, ArtifactReanchorBudget>();
+  return (author) => {
+    let budget = budgets.get(author);
+    if (!budget) budgets.set(author, (budget = { remaining: share }));
+    return budget;
+  };
+}
+
+/**
+ * Every place where `word` (at most 32 code units) matches with at most
+ * `limit` edits, grouped by edit count. Forward, a place is the end of a match;
+ * backward, it is the start. null when there are more than MAX_WORD_HITS.
+ */
+function wordHits(text: string, word: string, limit: number, forward: boolean): number[][] | null {
+  const length = word.length;
+  const masks = new Int32Array(65536);
+  for (let i = 0; i < length; i++) masks[word.charCodeAt(forward ? i : length - 1 - i)] |= 1 << i;
+  const high = 1 << (length - 1);
+  const hits: number[][] = Array.from({ length: limit + 1 }, () => []);
+  let positive = -1;
+  let negative = 0;
+  let distance = length;
+  let count = 0;
+  // The same Myers recurrence as the short-quote search. Read backward over the
+  // reversed word, the free leading text is free trailing text: starts, not ends.
+  for (let step = 0; step < text.length; step++) {
+    const at = forward ? step : text.length - 1 - step;
+    const equal = masks[text.charCodeAt(at)];
+    const vertical = equal | negative;
+    const horizontal = (((equal & positive) + positive) ^ positive) | equal;
+    let positiveHorizontal = negative | ~(horizontal | positive);
+    let negativeHorizontal = positive & horizontal;
+    if (positiveHorizontal & high) distance++;
+    if (negativeHorizontal & high) distance--;
+    positiveHorizontal <<= 1;
+    negativeHorizontal <<= 1;
+    positive = negativeHorizontal | ~(vertical | positiveHorizontal);
+    negative = positiveHorizontal & vertical;
+    if (distance > limit) continue;
+    if (++count > MAX_WORD_HITS) return null;
+    hits[distance]!.push(forward ? at + 1 : at);
+  }
+  return hits;
+}
+
+type AlignWork = { cells: number; previous: Uint16Array; current: Uint16Array };
+
+/**
+ * Align the whole `quote` with `text` read from `at` forward (or backward).
+ * Returns the text length with the fewest edits, at most `limit` (ties: the
+ * length closest to the quote's), or null. A path of at most `limit` edits never
+ * leaves the diagonal band of half-width `limit`, so only that band is computed,
+ * and a row whose every cell exceeds `limit` ends the alignment.
+ */
+function align(text: string, quote: string, at: number, forward: boolean, limit: number, work: AlignWork): { length: number; distance: number } | null {
+  const length = quote.length;
+  const width = Math.min(length + limit, forward ? text.length - at : at);
+  if (width < length - limit) return null;
+  const over = limit + 1;
+  let { previous, current } = work;
+  for (let j = 0; j <= Math.min(limit, width); j++) previous[j] = j;
+  for (let i = 1; i <= length; i++) {
+    const low = Math.max(0, i - limit);
+    const high = Math.min(width, i + limit);
+    // The cells just outside the band hold another row's values: read them as "over the limit".
+    if (high === i + limit) previous[high] = over;
+    if (low) current[low - 1] = over;
+    else current[0] = i;
+    const character = quote.charCodeAt(forward ? i - 1 : length - i);
+    let least = low ? over : i;
+    for (let j = Math.max(1, low); j <= high; j++) {
+      const cell = Math.min(previous[j]! + 1, current[j - 1]! + 1,
+        previous[j - 1]! + Number(character !== text.charCodeAt(forward ? at + j - 1 : at - j)));
+      current[j] = cell;
+      if (cell < least) least = cell;
+    }
+    work.cells += high - low + 1;
+    if (least > limit) return null;
+    [previous, current] = [current, previous];
+  }
+  let best = -1;
+  for (let j = Math.max(1, length - limit); j <= width; j++) {
+    if (previous[j]! > limit) continue;
+    if (best < 0 || previous[j]! < previous[best]! ||
+      (previous[j] === previous[best] && Math.abs(j - length) < Math.abs(best - length))) best = j;
+  }
+  return best < 0 ? null : { length: best, distance: previous[best]! };
+}
+
+/**
+ * A quote longer than one search word. Every start where its first 32 code
+ * units match with at most 3 edits, and every end where its last 32 do, is a
+ * candidate. The whole quote is aligned at each one, and the fewest whole-quote
+ * edits win, within ten percent of the quote. A decoy that shares the opening
+ * words loses to the passage that matches throughout.
+ *
+ * Spans whose edges differ by at most that edit count are one passage read with
+ * different edges; the context and then the length closest to the quote's pick
+ * the edges. Two passages at the fewest edits are outdated unless exactly one
+ * matches the prefix and suffix: the anchor never guesses.
+ *
+ * A word's edit count bounds the whole quote's from below, so candidates run in
+ * that order and stop once they cannot win. Every span of at most 3 edits starts
+ * at an opening hit and ends at a closing hit. So when the opening hits already
+ * give at most 3 edits, the closing search cannot change the answer and is
+ * skipped. When one side has too many hits, the other side alone decides, and
+ * only a result of at most 3 edits is certain.
+ */
+function reanchorLongText(text: string, anchor: ArtifactTextAnchor, budget: ArtifactReanchorBudget): ArtifactTextPosition {
+  const { quote } = anchor;
+  let best = Math.floor(quote.length / 10);
+  const work: AlignWork = { cells: 0, previous: new Uint16Array(quote.length + best + 2), current: new Uint16Array(quote.length + best + 2) };
+  try {
+    return longTextPlace(text, anchor, budget, work, best);
+  } finally {
+    budget.remaining -= work.cells;
+  }
+}
+
+function longTextPlace(text: string, anchor: ArtifactTextAnchor, budget: ArtifactReanchorBudget, work: AlignWork, limit: number): ArtifactTextPosition {
+  const { quote } = anchor;
+  let best = limit;
+  let spans: Match[] = [];
+  let skipped = false;
+  for (const fromStart of [true, false]) {
+    if (!fromStart && spans.length && best <= WORD_LIMIT) break;
+    // Each word search reads the whole text once.
+    if (budget.remaining - work.cells <= 0) return { ...outdated };
+    budget.remaining -= text.length;
+    // The opening words give starts (a backward search); the closing words give ends.
+    const hits = wordHits(text, fromStart ? quote.slice(0, FUZZY_WORD) : quote.slice(-FUZZY_WORD), WORD_LIMIT, !fromStart);
+    if (!hits) {
+      skipped = true;
+      continue;
+    }
+    for (let bound = 0; bound <= WORD_LIMIT && bound <= best; bound++) {
+      for (const at of hits[bound]!) {
+        if (bound > best) break;
+        const found = align(text, quote, at, fromStart, best, work);
+        if (work.cells > MAX_ALIGN_CELLS || budget.remaining - work.cells <= 0) return { ...outdated };
+        if (!found) continue;
+        if (found.distance < best) {
+          best = found.distance;
+          spans = [];
+        }
+        spans.push(fromStart ? { start: at, end: at + found.length } : { start: at - found.length, end: at });
+      }
+    }
+  }
+  if (!spans.length || (skipped && best > WORD_LIMIT)) return { ...outdated };
+  spans.sort((a, b) => a.start - b.start || a.end - b.end);
+  const places: Match[] = [];
+  let first: Match | null = null;
+  for (const span of spans) {
+    if (first && span.start - first.start <= best && Math.abs(span.end - first.end) <= best) {
+      if (preferMatch(text, anchor, span, places[places.length - 1]!)) places[places.length - 1] = span;
+      continue;
+    }
+    first = span;
+    places.push(span);
+  }
+  if (places.length === 1) return position(places[0]!);
+  const contextual = places.filter((span) => matchesContext(text, anchor, span));
+  return contextual.length === 1 ? position(contextual[0]!) : { ...outdated };
+}
+
+/**
+ * Where a text anchor sits in `text` now. Every scan spends `budget`; a caller
+ * that re-anchors many threads in one read passes one shared budget
+ * (createArtifactReanchorBudget), so the read's cost is bounded.
+ */
+export function reanchorArtifactText(
+  text: string,
+  anchor: ArtifactTextAnchor,
+  budget: ArtifactReanchorBudget = createArtifactReanchorBudget(),
+): ArtifactTextPosition {
   const { quote, prefix, suffix } = anchor;
   const length = quote.length;
-  if (!length || length > 32) return { ...outdated };
+  if (!length || length > ARTIFACT_TEXT_QUOTE_MAX) return { ...outdated };
+  // A native exact scan costs about an eighth of a fuzzy scan per code unit.
+  const scan = Math.ceil(text.length / 8);
+  if (budget.remaining <= 0) return { ...outdated };
+  budget.remaining -= scan;
   const exact = text.indexOf(quote);
   if (exact !== -1) {
+    budget.remaining -= scan;
     if (text.indexOf(quote, exact + 1) === -1) return position({ start: exact, end: exact + length });
     const context = prefix + quote + suffix;
+    budget.remaining -= 2 * scan;
     const start = text.indexOf(context);
     if (start === -1 || text.indexOf(context, start + 1) !== -1) return { ...outdated };
     return position({ start: start + prefix.length, end: start + prefix.length + length });
   }
+  if (budget.remaining <= 0) return { ...outdated };
+  if (length > FUZZY_WORD) return reanchorLongText(text, anchor, budget);
 
   const limit = Math.floor(length / 10);
   if (!limit) return { ...outdated };
+  // The short-quote search reads the whole text once.
+  budget.remaining -= text.length;
   const masks = new Int32Array(65536);
   for (let i = 0; i < length; i++) masks[quote.charCodeAt(i)] |= 1 << i;
   const high = 1 << (length - 1);

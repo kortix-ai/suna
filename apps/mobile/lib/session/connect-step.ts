@@ -122,3 +122,39 @@ export function shouldAwaitHealthProbe(start: {
 }): boolean {
   return !(start.stage === 'ready' && Boolean(start.runtime_session_id ?? start.opencode_session_id));
 }
+
+/** The sandbox image step of a provisioning `/start` answer (`boot.image`). */
+export type SessionImageStep = NonNullable<NonNullable<SessionStartResult['boot']>['image']>;
+
+/**
+ * What the connecting screen says the session waits on: `/start`'s
+ * `boot.image` while the box provisions, else null. The rule `@kortix/sdk`'s
+ * `useSession().bootImage` follows on web: a ready answer, any other boot
+ * phase, and an API without the field read null.
+ */
+export function sessionImageStep(
+  start: Pick<SessionStartResult, 'stage' | 'boot'>,
+): SessionImageStep | null {
+  if (start.stage === 'ready' || start.boot?.phase !== 'provisioning') return null;
+  return start.boot.image ?? null;
+}
+
+/**
+ * How long `ensureAndOpen` waits for the session before it fails it. A first
+ * image build takes minutes, so every answer that reports an image step moves
+ * the deadline to `MAX_START_WAIT_MS` after that answer: the loop gives up only
+ * when the server has said nothing about an image for that long. A failed
+ * build still ends the loop at once (`stage: failed`).
+ */
+export const MAX_START_WAIT_MS = 4 * 60_000;
+
+export function startWaitDeadline(deadline: number, now: number, image: SessionImageStep | null): number {
+  return image ? Math.max(deadline, now + MAX_START_WAIT_MS) : deadline;
+}
+
+/** `m:ss` from `since` to `now`. A `since` ahead of this clock reads `0:00`. */
+export function formatImageElapsed(since: string, now: number): string {
+  const start = Date.parse(since);
+  const seconds = Number.isFinite(start) ? Math.max(0, Math.floor((now - start) / 1_000)) : 0;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}

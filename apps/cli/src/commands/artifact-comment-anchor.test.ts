@@ -23,8 +23,17 @@ test('selector anchors document a centered point and fixed viewport without infe
   expect(artifactCommentAnchor('vc_saved', {})).toEqual({ type: 'none', version: 'vc_saved' });
 });
 
+test('a quote of up to 500 characters anchors whole, with 32 characters of context', () => {
+  const quote = `${'word '.repeat(99)}last.`;
+  expect(quote).toHaveLength(500);
+  expect(artifactCommentAnchor('vc_saved', { quote }, `${'a'.repeat(40)}${quote}${'b'.repeat(40)}`)).toEqual({
+    type: 'text', version: 'vc_saved', quote, prefix: 'a'.repeat(32), suffix: 'b'.repeat(32),
+  });
+});
+
 test('conflicting flags, empty anchors, overlong quotes, and invalid Unicode are refused', () => {
-  for (const options of [{ quote: 'x', selector: '#x' }, { quote: '' }, { quote: 'x'.repeat(33) }, { quote: '\0' }, { quote: '\ud800' }, { selector: '' }, { selector: '#\0' }]) {
-    expect(() => artifactCommentAnchor('vc_saved', options, 'x')).toThrow();
+  for (const options of [{ quote: 'x', selector: '#x' }, { quote: '' }, { quote: 'x'.repeat(501) }, { quote: '\0' }, { quote: '\ud800' }, { selector: '' }, { selector: '#\0' }]) {
+    expect(() => artifactCommentAnchor('vc_saved', options, 'x'.repeat(600))).toThrow();
   }
+  expect(() => artifactCommentAnchor('vc_saved', { quote: 'x'.repeat(501) }, 'x'.repeat(600))).toThrow('--quote must contain 1–500 valid characters.');
 });

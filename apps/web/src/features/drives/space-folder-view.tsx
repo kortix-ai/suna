@@ -15,12 +15,10 @@ import {
   useDriveFolder,
   useProjectDrive,
 } from '@kortix/ui/files';
-import { capabilityTabHref } from '@kortix/ui/internal/lib/capability-tab-routes';
 import { createFilesStore, useFilesStore } from '@kortix/ui/internal/stores/files-store';
-import { PROJECT_ACTIONS, type SpaceFolder, useProjectCan } from '@kortix/ui/workspace';
+import { type SpaceFolder } from '@kortix/ui/workspace';
 import { BrainIcon, FolderSimpleIcon } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type ReactNode, useEffect, useMemo } from 'react';
 
@@ -28,7 +26,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
 
 import { DriveFilesProvider, driveExplorerSource, toDrivePath } from './drive-explorer-source';
-import { drivePathToParam, driveUrlWithPath } from './drive-path-param';
+import { drivePathToParam, driveUrlWithPath } from '@kortix/ui/files';
 
 /**
  * A channel's or DM's Files or Memory tab: its Drive folder in the Drive
@@ -48,7 +46,7 @@ export function SpaceFolderView({
   const drive = useProjectDrive(projectId, availability.enabled);
 
   if (availability.isLoading) return null;
-  if (!availability.enabled) return <DriveOff projectId={projectId} place={place} />;
+  if (!availability.enabled) return <DriveOff place={place} />;
   if (drive.isError) {
     return (
       <ErrorState
@@ -256,29 +254,12 @@ function SpaceFolderEmpty({ tab, place }: { tab: SpaceFolder['tab']; place: stri
   );
 }
 
-/** Drive is off for the project: say so, and send whoever may turn it on to the switch. */
-function DriveOff({ projectId, place }: { projectId: string; place: string }) {
+/** This Kortix stores no Drive (no Platinum): say so; there is no switch to turn. */
+function DriveOff({ place }: { place: string }) {
   const t = useTranslations('spaces');
-  const settings = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
-  const canTurnOn = !settings.isLoading && settings.allowed === true;
   return (
     <div className="px-5 py-16">
-      <EmptyState
-        size="sm"
-        title={t('folder.off.title')}
-        description={t(canTurnOn ? 'folder.off.description' : 'folder.off.descriptionMember', {
-          place,
-        })}
-        action={
-          canTurnOn ? (
-            <Button asChild variant="outline" size="sm">
-              <Link href={`${capabilityTabHref(projectId, 'config')}?section=feature-flags`}>
-                {t('folder.off.action')}
-              </Link>
-            </Button>
-          ) : null
-        }
-      />
+      <EmptyState size="sm" title={t('folder.off.title')} description={t('folder.off.description', { place })} />
     </div>
   );
 }

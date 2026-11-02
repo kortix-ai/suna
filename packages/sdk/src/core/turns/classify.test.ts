@@ -825,3 +825,16 @@ describe('toToolView — harness-neutral tool fields', () => {
     expect(view.childSessionId).toBeUndefined();
   });
 });
+
+describe('toToolView: the tool state metadata a host draws from', () => {
+  test('a running workflow call carries its run document; a call without metadata carries none', () => {
+    const run = { runId: 'run_1', title: 'Review the repo', status: 'running', phases: [], agents: [] };
+    const view = toToolView({
+      tool: 'workflow',
+      state: { status: 'running', input: { script: 'x' }, metadata: { workflow: run }, time: { start: 1 } },
+    } as never);
+    expect(view.metadata).toEqual({ workflow: run });
+    const plain = toToolView({ tool: 'read', state: { status: 'running', input: {}, time: { start: 1 } } } as never);
+    expect(plain.metadata).toBeUndefined();
+  });
+});

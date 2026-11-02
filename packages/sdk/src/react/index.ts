@@ -299,6 +299,7 @@ export * from './session-cache-write';
 export * from './invalidate-project';
 export * from './use-feature-flag';
 export * from './use-project-memory';
+export * from './use-project-search';
 export * from './use-project-files';
 
 // "Sign in with Kortix" — the browser half of `createKortixAuth`

@@ -65,6 +65,11 @@ export interface CreateSandboxOpts {
   /** Monotonic across restarts; stable on retries of the same create attempt. */
   createAttempt?: number;
   /**
+   * Internal to the Platinum provider: until when a create keeps waiting out
+   * a volume that still saves the last box's writes (`409 volume_flushing`).
+   */
+  volumeFlushDeadline?: number;
+  /**
    * Runtime contract hosted by the provider object. Missing means `session`
    * for backward compatibility with every existing caller.
    *

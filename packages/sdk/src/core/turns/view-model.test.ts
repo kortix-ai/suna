@@ -322,6 +322,38 @@ describe('toolViewModel — task / todo / question', () => {
     });
   });
 
+  test('an agent call carries what a row shows: name, child session, background or teammate, model, the result first line', () => {
+    const done = toolView({
+      name: 'agent',
+      title: 'Agent',
+      input: { description: 'Review the diff', name: 'reviewer', subagent_type: 'code-review' },
+      metadata: { sessionId: 'kses_child', model: 'kimi-k3', background: false },
+      output: 'task_id: kses_child (for resuming)\n\n<task_result>\n\nAll 3 tests pass.\nDetails follow.\n</task_result>',
+    });
+    expect(toolViewModel(done)).toEqual({
+      kind: 'task',
+      description: 'Review the diff',
+      agent: 'code-review',
+      name: 'reviewer',
+      sessionId: 'kses_child',
+      model: 'kimi-k3',
+      resultExcerpt: 'All 3 tests pass.',
+    });
+    const started = toolView({
+      name: 'agent',
+      title: 'Agent',
+      input: { description: 'Write the fix', team: true },
+      metadata: { sessionId: 'kses_mate', background: true, teammate: true },
+      output: 'task_id: kses_mate\n<task_started>running in the background</task_started>',
+    });
+    expect(toolViewModel(started)).toMatchObject({ kind: 'task', sessionId: 'kses_mate', background: true, teammate: true, started: true });
+    // pi reports the model as an object; `default` is no name a reader knows.
+    const objectModel = toolView({ name: 'agent', title: 'Agent', input: { description: 'x' }, metadata: { model: { providerID: 'kortix', modelID: 'kimi-k3' } } });
+    expect(toolViewModel(objectModel)).toMatchObject({ model: 'kimi-k3' });
+    const defaultModel = toolView({ name: 'agent', title: 'Agent', input: { description: 'x' }, metadata: { model: { providerID: 'kortix', modelID: 'default' } } });
+    expect((toolViewModel(defaultModel) as { model?: string }).model).toBeUndefined();
+  });
+
   test('todowrite normalizes todos from input', () => {
     const tool = toolView({
       name: 'todowrite',

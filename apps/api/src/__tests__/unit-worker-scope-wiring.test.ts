@@ -74,6 +74,7 @@ const WORKERS: Record<string, string> = {
   'drive-conflict-scan': 'worker/jobs/drive.ts',
   'volume-deletions': 'worker/jobs/drive.ts',
   'drive-mount-revocations': 'worker/jobs/drive.ts',
+  'drive-index': 'worker/jobs/drive.ts',
   'notification-digest': 'worker/jobs/notification.ts',
   'session-log-purge': 'worker/jobs/session-log-purge.ts',
   'gateway-spend-backfill': 'worker/jobs/gateway-spend-backfill.ts',

@@ -65,6 +65,7 @@ const COMMANDS = {
   marketplace: ['Search, show, install and uninstall marketplace skills.', '[Skills](/docs/guide#skills)'],
   files: ['Read the committed repository: files, history, branches, commits, diffs and a zip download.', '[Git](/docs/developers#git)'],
   drive: ["The project's Drive: list, read, upload, move and delete files, and share folders.", '[Drive](/docs/guide#drive)'],
+  search: ["Search the project's Drive by file name and text, with your folder access. Inside a session it covers every folder the session may mount, also the ones past its mounts.", '[Drive](/docs/guide#drive)'],
   cr: ['Change requests: list, show, diff, open, merge, request changes, close and reopen.', '[Git](/docs/developers#git)'],
   review: ['The review inbox: change requests, held connector calls and submitted outputs.', '[Git](/docs/developers#git)'],
   triggers: ['Every trigger, `kortix.yaml` and runtime: `ls` lists both, `add` writes `kortix.yaml` (with `--on`, `--session` or `--runtime` it creates a runtime trigger), `fire`, `enable`, `disable`, `run`, `pause`, `resume` and `rm` take a slug or a runtime id.', '[Triggers](/docs/guide#triggers)'],

@@ -2004,6 +2004,17 @@
       "label": "セッションを再起動",
       "pending": "再起動中…",
       "ownerOnly": "このセッションを再起動できるのは、セッションの所有者またはプロジェクト管理者のみです。"
+    },
+    "image": {
+      "title": "サンドボックスイメージを準備しています",
+      "states": {
+        "resolving": "このセッションのイメージを選択しています。",
+        "serving_last_ready": "最後に準備できたイメージで起動します。新しいイメージはバックグラウンドでビルドされます。",
+        "waiting_for_build": "このプロジェクトの最初のイメージをビルド中です。準備ができるとセッションが開始します。",
+        "building": "このプロジェクトの最初のイメージをビルドしています。これは一度だけで、数分かかります。",
+        "copying_to_region": "このセッションのリージョンにイメージをコピーしています。",
+        "waiting_for_provider": "イメージを仕上げています。準備ができるとセッションが開始します。"
+      }
     }
   },
   "sessionDelete": {
@@ -22637,23 +22648,23 @@
     "addAccess": "ユーザー、チーム、エージェントを追加",
     "notGrantable": "このフォルダーはツリー全体をまとめているため共有できません。中のフォルダーを共有してください。",
     "viewOnlyAccess": "アクセスできる相手を変更できるのは、このフォルダーを共有できるユーザーだけです。",
-    "noGrants": "まだ誰にもアクセス権が付与されていません。プロジェクト管理者は、個人のフォルダーを除くすべてのフォルダーを開けます。",
+    "noGrants": "まだ誰にもアクセス権がありません。プロジェクト管理者はすべてのフォルダーを開けます。",
     "myFolder": "マイフォルダー",
-    "myFolderHint": "あなた専用のフォルダー: 共有するまで非公開で、セッションではデスクトップになります",
+    "myFolderHint": "あなたの個人フォルダー：開けるのはあなたとプロジェクト管理者だけで、セッションではあなたのデスクトップになります",
     "sharedWithMeHint": "他のユーザーがあなたと共有したフォルダー",
     "sessionNoFolders": "このセッションにはフォルダーがマウントされていません。",
     "folderAccessDescription": "このフォルダーとその中のすべてを開けるユーザーを選択します。セッションは、そのエージェント、プロジェクト、または開始したユーザーにアクセス権があるときにフォルダーを受け取ります。",
     "whoCanAccess": "アクセスできるユーザー",
     "whoCanAccessFolder": "{name} にアクセスできるユーザー",
     "accessPanelDescription": "アクセス権を持つユーザー、チーム、エージェントは、このフォルダーとその中のすべてを利用できます。",
-    "accessPanelRoot": "フォルダーを開くと、アクセスできるユーザーを選択できます。Company はプロジェクトの全員と共有されます。各ユーザーのフォルダーは、本人が共有するまで非公開です。",
+    "accessPanelRoot": "フォルダーを開いて、アクセスできる人を選びます。Company はプロジェクト全員と共有されています。各メンバーの個人フォルダーは本人とプロジェクト管理者が開けます。",
     "audienceEveryoneDescription": "このプロジェクトで作業する全員と、その中のすべてのセッション。",
     "audienceAdmins": "管理者のみ",
     "audienceAdminsShort": "プロジェクト管理者が開いて共有できます",
     "audienceAdminsDescription": "プロジェクト管理者が開いて共有できます。共有するまで、どのセッションにも提供されません。",
     "audienceOnlyYou": "自分のみ",
     "audienceOnlyOwner": "{name} のみ",
-    "audienceOwnerDescription": "各ユーザーのフォルダーは、本人が共有するまで非公開です。管理者も開けません。",
+    "audienceOwnerDescription": "個人フォルダーは本人とプロジェクト管理者が開けます。管理者が開くたびに本人に表示されます。",
     "audienceSpecific": "特定のユーザー、チーム、エージェント",
     "audienceSpecificDescription": "選択したユーザー、チーム、エージェントとプロジェクト管理者のみ。エージェントは、そのすべてのセッションでフォルダーを受け取ります。",
     "inheritedEveryoneNote": "このプロジェクトの全員が {path} を通じてすでにアクセスできます。範囲を絞るにはそちらで変更してください。",
@@ -22679,7 +22690,6 @@
     "audienceQuestion": "誰が開けますか？",
     "badgeEveryone": "Everyone",
     "badgePeople": "{count, plural, other {# people}}",
-    "privateNote": "マイファイルを開けるのはあなただけです。管理者も開けません。フォルダーを共有すると、他のユーザーにアクセス権を付与できます。",
     "noTeamFolders": "チームフォルダーはまだありません。",
     "sessionFilesName": "Files",
     "sessionFilesHint": "開けるフォルダー",
@@ -22704,7 +22714,21 @@
     "accountStorageTitle": "ファイルストレージ",
     "accountStorageDescription": "各プロジェクトのファイルの使用量です。プランではプロジェクトごとに {project}、すべてのプロジェクトで {account} まで使えます。",
     "accountStorageEmpty": "まだファイルのあるプロジェクトはありません。",
-    "accountStorageIncomplete": "一部のプロジェクトは現在測定できませんでした。"
+    "accountStorageIncomplete": "一部のプロジェクトは現在測定できませんでした。",
+    "folderInfo": {
+      "audienceYouAndAdmins": "あなたとプロジェクト管理者",
+      "audienceOwnerAndAdmins": "本人と管理者",
+      "boxPathHint": "セッションがこのフォルダーを見る場所です。クリックでコピー。",
+      "pathCopied": "コピーしました",
+      "projectAdmins": "プロジェクト管理者",
+      "adminsOpenRecorded": "開くことができます。開くたびにあなたに表示されます。",
+      "openedByAdmins": "管理者が開いた記録",
+      "noAdminOpens": "このフォルダーを開いた管理者はいません。"
+    },
+    "folderTree": "フォルダー",
+    "treeYou": "{name}（あなた）",
+    "treeExpand": "{name} を開く",
+    "treeCollapse": "{name} を閉じる"
   },
   "genui": {
     "showData": "データを表示",
@@ -23280,8 +23304,8 @@
     "listPlaceholder": "値 1, 値 2"
   },
   "triggerAutoPause": {
-    "title": "実行上限に達したため自動で一時停止しました",
-    "description": "1 時間あたりの実行上限で 2 時間連続して実行されたため、実行の開始を停止しました。何が起動し続けているかを確認してから再開してください。"
+    "title": "自動で一時停止しました",
+    "description": "以下の理由で実行の開始を停止しました。原因を解消してから再開してください。"
   },
   "featureGate": {
     "enable": "{name}を有効にする",
@@ -24037,7 +24061,7 @@
       "edit": "編集",
       "delete": "削除",
       "deleteTitle": "コメントを削除しますか？",
-      "deleteDescription": "このコメントは完全に削除されます。",
+      "deleteDescription": "テキストは全員に対して削除され、その場所に「削除されたコメント」と表示されます。元に戻すことはできません。",
       "commentDeleted": "削除されたコメント",
       "threadDeleted": "このスレッドは削除されました。",
       "resolve": "解決",
@@ -24048,9 +24072,6 @@
       "quoteLabel": "選択した箇所",
       "waitingForPerson": "人の対応を待っています",
       "deliveryFailed": "エージェントにフィードバックを送信できませんでした。",
-      "sendToAgent": "エージェントに送信（{count}）",
-      "sendExisting": "このアーティファクトのセッション",
-      "sendNew": "{agent} の新しいセッション",
       "sendFailed": "コメントを送信できませんでした。再試行してください。",
       "retrySend": "送信を再試行（{count}）",
       "discardSend": "破棄して最新のコメントを使用",
@@ -24063,8 +24084,9 @@
       "contextLoadError": "コメントの権限を読み込めませんでした。",
       "activityLoadError": "アクティビティを読み込めませんでした。",
       "retry": "再試行",
+      "sendAgainTo": "{agent} に再送信",
       "noComments": "未解決のコメントはありません",
-      "noCommentsHint": "箇所を選択するか、下にフィードバックを入力してください。",
+      "noCommentsHint": "箇所を選択してコメントするか、新しいコメントを作成してください。",
       "noResolved": "解決済みのコメントはありません",
       "noResolvedHint": "解決済みのスレッドがここに表示されます。",
       "noAllComments": "コメントはまだありません",
@@ -24081,7 +24103,7 @@
       "preparingSelection": "選択した箇所を準備中…",
       "selectionCaptureFailed": "選択した箇所を準備できませんでした。破棄すると、アーティファクト全体にコメントできます。",
       "commentSelection": "コメント",
-      "selectionTooLong": "コメントする箇所を短くしてください。",
+      "selectionTooLong": "この箇所は長すぎるためコメントできません。{max} 文字以内で選択してください。",
       "selectionUnavailable": "この箇所にコメントを紐付けられません。別の箇所を選択してください。",
       "snapshotChanged": "ドキュメントが変更されました。コメントする前に再読み込みしてください。",
       "commentSaveFailed": "ドキュメントを保存できませんでした。コメントする前に再試行してください。",
@@ -24100,7 +24122,7 @@
         "sent_to_agent": "エージェントにフィードバックを送信しました"
       },
       "person": "ユーザー",
-      "deleteRootDescription": "このコメントは完全に削除され、スレッドは読み取り専用になります。",
+      "deleteRootDescription": "テキストは全員に対して削除され、スレッドは読み取り専用になります。元に戻すことはできません。",
       "showPanel": "コメントを表示",
       "hidePanel": "コメントを非表示",
       "panelTitle": "コメントとアクティビティ",
@@ -24122,7 +24144,29 @@
       "screenshotReadFailed": "スクリーンショットを読み込めませんでした。",
       "screenshotMissing": "スクリーンショットは利用できません。描画は保存されています。",
       "screenshotCaptureFailed": "スクリーンショットを取得できませんでした。コメントには画像なしで描画を含めます。",
-      "sendScreenshotLimit": "この一括送信は20枚またはエンコード済みリクエストあたり12 MiBを超えています。添付画像を減らすか、テキスト専用モデルを使用してください。"
+      "sendScreenshotLimit": "これらのコメントを送信できませんでした。スクリーンショットが1回のリクエストの上限を超えています。描画付きのスレッドを減らして送信してください。",
+      "agentsUnavailable": "エージェントを読み込めませんでした。",
+      "showMore": "もっと見る",
+      "showLess": "表示を減らす",
+      "moreReplies": "{count, plural, other {他 # 件の返信}}",
+      "resolvedBy": "{name} が解決",
+      "agent": "エージェント",
+      "threadResolved": "スレッドを解決しました",
+      "undo": "元に戻す",
+      "agentPending": "エージェントに送信中…",
+      "agentSent": "エージェントに送信済み",
+      "openSession": "セッションを開く",
+      "notDelivered": "未配信",
+      "sendThreads": "{count, plural, other {未解決のスレッド # 件を {agent} に送信}}",
+      "chooseAgent": "エージェントを選択",
+      "sentToAgent": "コメントを {agent} に送信しました",
+      "newCommentFrom": "{name} からの新しいコメント",
+      "newComments": "{count, plural, other {# 件の新しいコメント}}",
+      "filterLabel": "スレッドの状態",
+      "pagePinLabel": "コメント {number}",
+      "showPanelCount": "コメントを表示（未解決 {count} 件）",
+      "hidePanelCount": "コメントを非表示（未解決 {count} 件）",
+      "commentSelectionHint": "選択範囲にコメント"
     },
     "moveTo": "スペースに移動",
     "projectWide": "プロジェクト全体",
@@ -24713,10 +24757,8 @@
       "memoryNoteChannel": "{place} のエージェントが覚えていること。エージェントはスレッドの開始時に毎回これを読みます。",
       "memoryNoteDm": "{agent} がこの DM から覚えていること。スレッドの開始時に毎回これを読みます。",
       "off": {
-        "title": "Drive をオンにする",
-        "description": "{place} のファイルとメモリは Drive にあります。使うには Feature flags で Volumes をオンにしてください。",
-        "descriptionMember": "{place} のファイルとメモリは Drive にあります。プロジェクト管理者にオンにするよう依頼してください。",
-        "action": "Feature flags を開く"
+        "title": "ここに Drive はありません",
+        "description": "{place} のファイルとメモリーは Drive にあります。この Kortix は Drive を保存しません。Platinum が必要です。"
       }
     },
     "onboarding": {

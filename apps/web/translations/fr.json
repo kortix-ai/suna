@@ -2004,6 +2004,17 @@
       "label": "Redémarrer la session",
       "pending": "Redémarrage…",
       "ownerOnly": "Seul le propriétaire de la session ou un responsable du projet peut redémarrer cette session."
+    },
+    "image": {
+      "title": "Préparation de l’image du sandbox",
+      "states": {
+        "resolving": "Choix de l’image pour cette session.",
+        "serving_last_ready": "Démarrage à partir de la dernière image prête. La nouvelle se construit en arrière-plan.",
+        "waiting_for_build": "La première image de ce projet est en cours de construction. La session démarre dès qu’elle est prête.",
+        "building": "Construction de la première image de ce projet. Cela n’arrive qu’une fois et prend quelques minutes.",
+        "copying_to_region": "Copie de l’image vers la région de cette session.",
+        "waiting_for_provider": "L’image est en cours de finalisation. La session démarre dès qu’elle est prête."
+      }
     }
   },
   "sessionDelete": {
@@ -22637,23 +22648,23 @@
     "addAccess": "Ajouter une personne, une équipe ou un agent",
     "notGrantable": "Ce dossier structure l’arborescence et ne peut pas être partagé. Partagez un dossier qu’il contient.",
     "viewOnlyAccess": "Seules les personnes qui peuvent partager ce dossier peuvent modifier qui y a accès.",
-    "noGrants": "Personne n’a encore reçu d’accès ici. Les administrateurs du projet peuvent ouvrir tous les dossiers, sauf les dossiers personnels.",
+    "noGrants": "Personne n'a encore reçu d'accès ici. Les admins du projet peuvent ouvrir chaque dossier.",
     "myFolder": "Mon dossier",
-    "myFolderHint": "Votre propre dossier : privé jusqu’à ce que vous le partagiez, et votre bureau dans vos sessions",
+    "myFolderHint": "Votre dossier personnel : seuls vous et les admins du projet pouvez l'ouvrir, et c'est votre bureau dans vos sessions",
     "sharedWithMeHint": "Dossiers que d’autres personnes ont partagés avec vous",
     "sessionNoFolders": "Aucun dossier n’est monté dans cette session.",
     "folderAccessDescription": "Choisissez qui peut ouvrir ce dossier et tout son contenu. Une session reçoit le dossier quand son agent, son projet ou la personne qui l’a lancée y a accès.",
     "whoCanAccess": "Qui a accès",
     "whoCanAccessFolder": "Qui peut accéder à {name}",
     "accessPanelDescription": "Les personnes, équipes et agents ayant accès reçoivent ce dossier et tout son contenu.",
-    "accessPanelRoot": "Ouvrez un dossier pour choisir qui peut y accéder. Company est partagé avec tout le monde dans le projet ; le dossier personnel de chacun reste privé jusqu’à ce qu’il le partage.",
+    "accessPanelRoot": "Ouvrez un dossier pour choisir qui peut y accéder. Company est partagé avec tout le projet. Le dossier personnel de chaque personne s'ouvre pour elle et pour les admins du projet.",
     "audienceEveryoneDescription": "Toutes les personnes qui travaillent dans ce projet, et chaque session qu’il contient.",
     "audienceAdmins": "Administrateurs uniquement",
     "audienceAdminsShort": "Les administrateurs du projet peuvent l’ouvrir et le partager",
     "audienceAdminsDescription": "Les administrateurs du projet peuvent l’ouvrir et le partager. Aucune session ne le reçoit tant que vous ne le partagez pas.",
     "audienceOnlyYou": "Vous uniquement",
     "audienceOnlyOwner": "{name} uniquement",
-    "audienceOwnerDescription": "Le dossier personnel d’une personne reste privé jusqu’à ce qu’elle le partage. Les administrateurs ne peuvent pas l’ouvrir non plus.",
+    "audienceOwnerDescription": "Le dossier personnel d'une personne s'ouvre pour elle et pour les admins du projet. Chaque fois qu'un admin l'ouvre, la personne le voit.",
     "audienceSpecific": "Des personnes, équipes ou agents précis",
     "audienceSpecificDescription": "Uniquement les personnes, équipes et agents que vous choisissez, ainsi que les administrateurs du projet. Un agent reçoit le dossier dans chacune de ses sessions.",
     "inheritedEveryoneNote": "Tout le monde dans ce projet a déjà accès via {path}. Modifiez-le là-bas pour le restreindre.",
@@ -22679,7 +22690,6 @@
     "audienceQuestion": "Qui peut l’ouvrir ?",
     "badgeEveryone": "Everyone",
     "badgePeople": "{count, plural, one {# person} other {# people}}",
-    "privateNote": "Vous seul pouvez ouvrir Mes fichiers, pas même les administrateurs. Partagez un dossier pour donner accès à quelqu’un.",
     "noTeamFolders": "Aucun dossier d’équipe pour l’instant.",
     "sessionFilesName": "Files",
     "sessionFilesHint": "Dossiers qu’elle peut ouvrir",
@@ -22704,7 +22714,21 @@
     "accountStorageTitle": "Stockage des fichiers",
     "accountStorageDescription": "Ce que contiennent les fichiers de chaque projet. Votre forfait autorise {project} par projet et {account} pour tous les projets.",
     "accountStorageEmpty": "Aucun projet ne contient encore de fichiers.",
-    "accountStorageIncomplete": "Certains projets n’ont pas pu être mesurés pour le moment."
+    "accountStorageIncomplete": "Certains projets n’ont pas pu être mesurés pour le moment.",
+    "folderInfo": {
+      "audienceYouAndAdmins": "Vous et les admins du projet",
+      "audienceOwnerAndAdmins": "Propriétaire et admins",
+      "boxPathHint": "C'est ici que les sessions voient ce dossier. Cliquez pour copier.",
+      "pathCopied": "Copié",
+      "projectAdmins": "Admins du projet",
+      "adminsOpenRecorded": "Peuvent l'ouvrir. Vous voyez chaque fois qu'ils le font.",
+      "openedByAdmins": "Ouvert par des admins",
+      "noAdminOpens": "Aucun admin n'a ouvert ce dossier."
+    },
+    "folderTree": "Dossiers",
+    "treeYou": "{name} (vous)",
+    "treeExpand": "Déplier {name}",
+    "treeCollapse": "Replier {name}"
   },
   "genui": {
     "showData": "Afficher les données",
@@ -23280,8 +23304,8 @@
     "listPlaceholder": "valeur 1, valeur 2"
   },
   "triggerAutoPause": {
-    "title": "S’est mis en pause à sa limite d’exécutions",
-    "description": "Il a tourné à sa limite d’exécutions horaire pendant 2 heures d’affilée, il ne lance donc plus d’exécutions. Trouvez ce qui le déclenche sans cesse, puis reprenez-le."
+    "title": "Mis en pause automatiquement",
+    "description": "Il ne lance plus d’exécutions pour la raison ci-dessous. Corrigez la cause, puis reprenez-le."
   },
   "featureGate": {
     "enable": "Activer {name}",
@@ -24037,7 +24061,7 @@
       "edit": "Modifier",
       "delete": "Supprimer",
       "deleteTitle": "Supprimer le commentaire ?",
-      "deleteDescription": "Ce commentaire sera définitivement supprimé.",
+      "deleteDescription": "Son texte est supprimé pour tout le monde et « Commentaire supprimé » reste à sa place. Cette action est irréversible.",
       "commentDeleted": "Commentaire supprimé",
       "threadDeleted": "Ce fil a été supprimé.",
       "resolve": "Résoudre",
@@ -24048,9 +24072,6 @@
       "quoteLabel": "Passage sélectionné",
       "waitingForPerson": "En attente d’une personne",
       "deliveryFailed": "Impossible d’envoyer les commentaires à l’agent.",
-      "sendToAgent": "Envoyer à l’agent ({count})",
-      "sendExisting": "La session de cet artefact",
-      "sendNew": "Une nouvelle session avec {agent}",
       "sendFailed": "Impossible d’envoyer ces commentaires. Réessayez.",
       "retrySend": "Réessayer l’envoi ({count})",
       "discardSend": "Abandonner et utiliser les commentaires actuels",
@@ -24063,8 +24084,9 @@
       "contextLoadError": "Impossible de charger les autorisations des commentaires.",
       "activityLoadError": "Impossible de charger l’activité.",
       "retry": "Réessayer",
+      "sendAgainTo": "Renvoyer à {agent}",
       "noComments": "Aucun commentaire ouvert",
-      "noCommentsHint": "Sélectionnez un passage ou laissez un commentaire ci-dessous.",
+      "noCommentsHint": "Sélectionnez un passage pour le commenter, ou commencez un nouveau commentaire.",
       "noResolved": "Aucun commentaire résolu",
       "noResolvedHint": "Les fils résolus apparaissent ici.",
       "noAllComments": "Aucun commentaire pour le moment",
@@ -24081,7 +24103,7 @@
       "preparingSelection": "Préparation du passage sélectionné…",
       "selectionCaptureFailed": "Impossible de préparer le passage sélectionné. Abandonnez-le pour commenter l’artefact entier.",
       "commentSelection": "Commenter",
-      "selectionTooLong": "Sélectionnez un passage plus court pour commenter.",
+      "selectionTooLong": "Ce passage est trop long pour être commenté. Sélectionnez {max} caractères au maximum.",
       "selectionUnavailable": "Impossible d’ancrer ce passage. Sélectionnez-en un autre.",
       "snapshotChanged": "Le document a changé. Rechargez-le avant de commenter.",
       "commentSaveFailed": "Impossible d’enregistrer le document. Réessayez avant de commenter.",
@@ -24100,7 +24122,7 @@
         "sent_to_agent": "a envoyé des commentaires à un agent"
       },
       "person": "Personne",
-      "deleteRootDescription": "Ce commentaire sera définitivement supprimé. Le fil passera en lecture seule.",
+      "deleteRootDescription": "Son texte est supprimé pour tout le monde et le fil passe en lecture seule. Cette action est irréversible.",
       "showPanel": "Afficher les commentaires",
       "hidePanel": "Masquer les commentaires",
       "panelTitle": "Commentaires et activité",
@@ -24122,7 +24144,29 @@
       "screenshotReadFailed": "Impossible de charger la capture.",
       "screenshotMissing": "Capture indisponible. Le dessin est enregistré.",
       "screenshotCaptureFailed": "Impossible de capturer l’écran. Votre commentaire contiendra le dessin sans image.",
-      "sendScreenshotLimit": "Ce lot dépasse 20 captures ou 12 Mio par requête encodée. Envoyez moins de pièces jointes ou utilisez un modèle textuel."
+      "sendScreenshotLimit": "Impossible d’envoyer ces commentaires. Leurs captures dépassent la limite d’une requête. Envoyez moins de fils avec des dessins.",
+      "agentsUnavailable": "Impossible de charger les agents.",
+      "showMore": "Afficher plus",
+      "showLess": "Afficher moins",
+      "moreReplies": "{count, plural, one {# autre réponse} other {# autres réponses}}",
+      "resolvedBy": "Résolu par {name}",
+      "agent": "Agent",
+      "threadResolved": "Fil résolu",
+      "undo": "Annuler",
+      "agentPending": "Envoi à l’agent…",
+      "agentSent": "Envoyé à l’agent",
+      "openSession": "Ouvrir la session",
+      "notDelivered": "Non distribué",
+      "sendThreads": "{count, plural, one {Envoyer # fil ouvert à {agent}} other {Envoyer # fils ouverts à {agent}}}",
+      "chooseAgent": "Choisir un agent",
+      "sentToAgent": "Commentaires envoyés à {agent}",
+      "newCommentFrom": "Nouveau commentaire de {name}",
+      "newComments": "{count, plural, one {# nouveau commentaire} other {# nouveaux commentaires}}",
+      "filterLabel": "Statut du fil",
+      "pagePinLabel": "Commentaire {number}",
+      "showPanelCount": "Afficher les commentaires, {count} ouverts",
+      "hidePanelCount": "Masquer les commentaires, {count} ouverts",
+      "commentSelectionHint": "Commenter la sélection"
     },
     "moveTo": "Déplacer vers un espace",
     "projectWide": "À l’échelle du projet",
@@ -24713,10 +24757,8 @@
       "memoryNoteChannel": "Ce dont les agents de {place} se souviennent. Ils le lisent au début de chaque fil.",
       "memoryNoteDm": "Ce dont {agent} se souvient de ce DM. Il le lit au début de chaque fil.",
       "off": {
-        "title": "Activer Drive",
-        "description": "Les fichiers et la mémoire de {place} sont dans Drive. Activez Volumes dans Feature flags pour les utiliser.",
-        "descriptionMember": "Les fichiers et la mémoire de {place} sont dans Drive. Demandez à un administrateur du projet de l'activer.",
-        "action": "Ouvrir Feature flags"
+        "title": "Pas de Drive ici",
+        "description": "Les fichiers et la mémoire de {place} sont dans le Drive. Cette instance Kortix ne stocke pas de Drive : il lui faut Platinum."
       }
     },
     "onboarding": {

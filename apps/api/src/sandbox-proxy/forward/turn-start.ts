@@ -41,9 +41,10 @@ import {
 } from '../prompt-dedupe';
 import { recordSessionActivity } from '../../projects/session-activity';
 import { MEMORY_TURN_SYSTEM_MAX_CHARS } from '@kortix/api-contract';
-import { isMemoryTurnRoute, memoryChannelsOn, memoryFilesOn, withMemoryTurn, withoutClientSystem } from '../../memory/turn-body';
+import { isMemoryTurnRoute, memoryChannelsOn, withMemoryTurn, withoutClientSystem } from '../../memory/turn-body';
 import { isMyKortixAgentName } from '@kortix/shared';
 import { logger } from '../../lib/logger';
+import { isPlatinumConfigured } from '../../shared/platinum';
 import { missingClaudeSubscription, sessionModelPin } from '../../projects/surface';
 import type { ForwardRequest, ForwardState } from './context';
 
@@ -375,7 +376,7 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
   try {
     // My Kortix: the prompter's own memory index (kortix_memory), every turn, with Files on.
     if (isMyKortixAgentName(req.record.agentName)) {
-      if (!(await memoryFilesOn(req.record.projectId))) return;
+      if (!isPlatinumConfigured()) return;
       const { myKortixMemoryTurn } = await import('../../memory/my-memory');
       const turn = await myKortixMemoryTurn(req.record.projectId, sessionId, req.userId);
       if (turn) state.requestBody = withMemoryTurn(state.requestBody, turn);

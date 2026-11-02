@@ -167,6 +167,29 @@ is left out of the sidebar.
 | `/ports` | Sandbox ports noticed in the transcript/terminal, and every local forward. See [Ports](#ports). | a session |
 | `/links` | Every URL in the transcript or on the terminal screen, wrapped ones rejoined. See [Links](#links). | a session |
 
+## Agents and workflows
+
+An agent call, a workflow run or a teammate starts its own session. The open
+session's tray names them: `● 2 agents · 1 working`, `1 workflow running`,
+`? 1 agent · needs you`. The segment shows only the last hour and is absent
+while the session started nothing.
+
+| Command | Panel |
+| --- | --- |
+| `/agents` (`/subagents`, `/team`) | The agents this session started, in three groups: Needs you, Working, Done, newest first. Then its workflow runs and the messages held for you. |
+| `/workflows` (`/runs`) | The same panel with the workflow runs only: `3 of 8 done · 1 running`, paused or not. |
+| `/tasks` | The team's shared task list: status, owner, blockers. Read-only. Flag `agent_teams`. |
+| `/parent` | Open the session that started this one. |
+
+Peek, then switch. `Enter` on an agent draws its session live over the
+transcript: watch it, steer it, stop it, and `Esc` goes back. `o` opens it as
+the main session, and `/parent` comes back up. In the panel, `x` stops a working
+agent or a whole run, `p` pauses or resumes a run, `r` restarts a workflow agent
+that did not finish while its run runs, and `a` / `d` deliver or deny a held
+message. `Enter` on a run shows or hides its agents. The panel's bottom line
+names the keys the selected row answers. A background run's progress is read
+from its runner session, the box that runs it.
+
 ## Ports
 
 VS Code-style local port forwarding: a sandbox port a session's agent
@@ -305,6 +328,10 @@ is `/feedback`.
 | --- | --- | --- |
 | `/new [prompt]` | `/clear` `Ctrl+n` | Session: Start a new session. A prompt after the name is its first message. |
 | `/sessions [filter]` | `/resume` `/continue` `/switch` `Ctrl+p` | Session: Pick a session of this project and open it. |
+| `/agents` | `/subagents` `/team` | Session: Agents this session started: watch one, open it, stop it. |
+| `/workflows` | `/runs` | Session: This session's workflow runs: progress, pause, stop, restart an agent. |
+| `/tasks` |  | Session: The team's shared task list: status, owner, blockers. |
+| `/parent` |  | Session: Open the session that started this one. |
 | `/rename <title>` |  | Session: Rename this session. |
 | `/stop` |  | Session: Stop the running turn. |
 | `/compact` |  | Session: Summarize the conversation to free context. |
@@ -325,7 +352,7 @@ is `/feedback`.
 | `/logout` |  | Switch: Remove this host's token, then show the login screen. |
 | `/model` | `/models` `Alt+m` | Model and agent: Pick the model. |
 | `/effort` | `/thinking` `Alt+e` | Model and agent: Pick the thinking effort. |
-| `/agent` | `/agents` `Alt+g` | Model and agent: Pick the agent. |
+| `/agent` | `Alt+g` | Model and agent: Pick the agent. |
 | `/ui` | `/layout` `/tui` | Panels: Pick the layout: presets, and every panel on or off, left or right. |
 | `/sidebar` | `Alt+b` | Panels: Show or hide the sidebar. The choice is remembered. |
 | `/info` | `/panel` `Alt+i` | Panels: Show or hide the info panel: title, context, model, ports. |
@@ -358,7 +385,7 @@ is `/feedback`.
 | `/help` | `/keys` `/?` `?` | App: Show every command and key. |
 | `/quit` | `/exit` `/q` `Ctrl+c / Ctrl+q` | App: Leave the TUI. |
 
-_54 commands._
+_58 commands._
 
 ### Anywhere
 
@@ -384,6 +411,22 @@ _54 commands._
 | `Alt+u` | Open the account screen: members, invites, billing. |
 | `Alt+h / Ctrl+h` | Switch host. Ctrl+H needs the kitty keyboard protocol: the byte it sends is Backspace. |
 | `Esc` | Close the overlay, leave the screen, or move focus back to the composer. |
+
+### Agents panel
+
+| Keys | Action |
+| --- | --- |
+| `j / ↓ / Ctrl+n` | Move down. |
+| `k / ↑ / Ctrl+p` | Move up. |
+| `Enter` | Peek at the agent's session over the transcript: watch, steer, stop. On a workflow run: show or hide its agents. |
+| `o` | Open the agent's session as the main one. /parent goes back. |
+| `x` | Stop the working agent, or the whole workflow run. |
+| `p` | Pause the workflow run, or resume it. Running agents finish. |
+| `r` | Restart a workflow agent that did not finish, while the run runs. |
+| `Space / → / ←` | Show or hide a workflow run's agents. |
+| `a` | Deliver the held message. |
+| `d` | Deny the held message. |
+| `Esc` | Close the panel. |
 
 ### Sidebar
 

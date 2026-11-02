@@ -4,6 +4,11 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import type { Stage } from '@/components/dashboard/connecting-screen';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
+import {
+  SessionImageBanner,
+  SessionImageStatus,
+  type SessionImageStep,
+} from '@/features/session/session-image-status';
 import { useEffect, useMemo, useState } from 'react';
 
 /**
@@ -18,6 +23,10 @@ import { useEffect, useMemo, useState } from 'react';
  * animations, check spacing, verify the support footer is visible.
  *
  * Not linked from anywhere in the app — just hit /debug/connecting.
+ *
+ * The "Session image" group renders the session page's sandbox image step
+ * (`useSession().bootImage`) in each state: the boot surface's card, and the
+ * banner the new-session shell and a readable conversation get.
  */
 
 type Variant =
@@ -38,7 +47,22 @@ type Variant =
   | 'error-with-location'
   | 'stopped'
   | 'unreachable'
-  | 'unreachable-local';
+  | 'unreachable-local'
+  | `image-${SessionImageStep['state']}`
+  | 'image-banner'
+  | 'image-banner-no-name';
+
+const IMAGE_STATES: SessionImageStep['state'][] = [
+  'resolving',
+  'serving_last_ready',
+  'waiting_for_build',
+  'building',
+  'copying_to_region',
+  'waiting_for_provider',
+];
+
+/** A synthetic provider snapshot name: the shape the API sends, no real id. */
+const MOCK_IMAGE = 'kortix-tpl-3f9a2c1e-v14';
 
 const VARIANTS: { id: Variant; label: string; group: string }[] = [
   { group: 'Connecting', id: 'connecting', label: 'Default (instance name)' },
@@ -63,12 +87,22 @@ const VARIANTS: { id: Variant; label: string; group: string }[] = [
   { group: 'Stopped', id: 'stopped', label: 'Stopped instance' },
 
   { group: 'Unreachable', id: 'unreachable', label: 'Cloud' },
+
+  ...IMAGE_STATES.map((state) => ({
+    group: 'Session image',
+    id: `image-${state}` as Variant,
+    label: `Card: ${state}`,
+  })),
+  { group: 'Session image', id: 'image-banner', label: 'Banner: building' },
+  { group: 'Session image', id: 'image-banner-no-name', label: 'Banner: no image name' },
 ];
 
 export default function DebugConnectingPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [variant, setVariant] = useState<Variant>('connecting');
   const [animatedPct, setAnimatedPct] = useState(0);
+  // Each pick starts the image step 72 s ago, so the timer reads 1:12 and ticks.
+  const [imageSince, setImageSince] = useState(() => new Date().toISOString());
 
   // Auto-animate the provisioning progress so you can see the transition.
   useEffect(() => {
@@ -81,8 +115,8 @@ export default function DebugConnectingPage() {
   }, [variant]);
 
   const screen = useMemo(
-    () => renderVariant(variant, animatedPct, tHardcodedUi),
-    [variant, animatedPct, tHardcodedUi],
+    () => renderVariant(variant, animatedPct, tHardcodedUi, imageSince),
+    [variant, animatedPct, tHardcodedUi, imageSince],
   );
 
   const groups = Array.from(new Set(VARIANTS.map((v) => v.group)));
@@ -112,7 +146,10 @@ export default function DebugConnectingPage() {
                 <button
                   key={v.id}
                   type="button"
-                  onClick={() => setVariant(v.id)}
+                  onClick={() => {
+                    setVariant(v.id);
+                    setImageSince(new Date(Date.now() - 72_000).toISOString());
+                  }}
                   className={
                     'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors ' +
                     (variant === v.id
@@ -151,7 +188,9 @@ function renderVariant(
   variant: Variant,
   animatedPct: number,
   tHardcodedUi: ReturnType<typeof useTranslations>,
+  imageSince: string,
 ): React.ReactNode {
+  if (variant.startsWith('image-')) return renderImageVariant(variant, imageSince);
   const MOCK_STAGES = [
     {
       id: 'server_creating',
@@ -317,4 +356,32 @@ function renderVariant(
         />
       );
   }
+}
+
+/** The session page's image step, on the frames the page draws it in. */
+function renderImageVariant(variant: Variant, since: string): React.ReactNode {
+  if (variant === 'image-banner' || variant === 'image-banner-no-name') {
+    return (
+      <div className="bg-background relative h-screen w-full">
+        <SessionImageBanner
+          step={{
+            state: 'building',
+            image: variant === 'image-banner' ? MOCK_IMAGE : null,
+            since,
+          }}
+        />
+      </div>
+    );
+  }
+  const state = variant.slice('image-'.length) as SessionImageStep['state'];
+  // `SavedSessionSkeleton`'s status frame, as the boot surface draws it.
+  return (
+    <div className="bg-background flex h-screen w-full items-center justify-center px-4">
+      <div className="bg-background border-border rounded-xl border py-4">
+        <SessionImageStatus
+          step={{ state, image: state === 'resolving' ? null : MOCK_IMAGE, since }}
+        />
+      </div>
+    </div>
+  );
 }

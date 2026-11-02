@@ -7,6 +7,7 @@ import { MentionNode } from '@kortix/ui/composer';
 import { EntityAvatar } from '@kortix/ui/entity-avatar';
 import { Field, FieldLabel } from '@kortix/ui/field';
 import { inputFocusClasses, inputSurfaceClasses } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
 import { Popover, PopoverAnchor, PopoverContent } from '@kortix/ui/popover';
 import { UserAvatar } from '@kortix/ui/user-avatar';
 import { RobotIcon } from '@phosphor-icons/react';
@@ -40,6 +41,12 @@ interface Props {
   autoFocus?: boolean;
   focusKey?: string;
   onCancel?: () => void;
+  /** Escape with no open mention menu. The composer consumes the key, so an overlay panel stays open. */
+  onEscape?: () => void;
+  /** The project's agent list could not be read: the Agents group says so instead of staying empty. */
+  agentsUnavailable?: boolean;
+  /** A shorter editor for replies and edits. */
+  compact?: boolean;
 }
 
 const CommentMention = MentionNode.extend({
@@ -201,7 +208,7 @@ export function ArtifactCommentComposer(props: Props) {
           'aria-labelledby': `${id}-label`,
           'aria-autocomplete': 'list',
           class:
-            'min-h-20 max-h-52 overflow-y-auto px-3 py-2 text-sm outline-none whitespace-pre-wrap break-words [&_p.is-editor-empty:first-child::before]:text-muted-foreground [&_p.is-editor-empty:first-child::before]:pointer-events-none [&_p.is-editor-empty:first-child::before]:float-left [&_p.is-editor-empty:first-child::before]:h-0 [&_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)]',
+            `${props.compact ? 'min-h-14' : 'min-h-20'} max-h-52 overflow-y-auto px-3 py-2 text-sm outline-none whitespace-pre-wrap break-words [&_p.is-editor-empty:first-child::before]:text-muted-foreground [&_p.is-editor-empty:first-child::before]:pointer-events-none [&_p.is-editor-empty:first-child::before]:float-left [&_p.is-editor-empty:first-child::before]:h-0 [&_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)]`,
         },
         handleKeyDown: (_view, event) => {
           if (event.isComposing || event.keyCode === 229) return false;
@@ -218,6 +225,10 @@ export function ArtifactCommentComposer(props: Props) {
               setMenu(null);
               return true;
             }
+          }
+          if (event.key === 'Escape' && latest.current.onEscape) {
+            latest.current.onEscape();
+            return true;
           }
           const action = commentEnterAction(event, !!menuRef.current && options.length > 0);
           if (action === 'mention') {
@@ -285,7 +296,7 @@ export function ArtifactCommentComposer(props: Props) {
           {props.label}
         </FieldLabel>
         <Popover
-          open={!!menu && visible.length > 0}
+          open={!!menu && (visible.length > 0 || !!props.agentsUnavailable)}
           onOpenChange={(open) => {
             if (!open) setMenu(null);
           }}
@@ -318,6 +329,14 @@ export function ArtifactCommentComposer(props: Props) {
                   const options = visible.filter((option) =>
                     group === 'user' ? option.kind === 'user' : option.kind !== 'user',
                   );
+                  if (group === 'agent' && props.agentsUnavailable)
+                    return (
+                      <CommandGroup key={group} heading={t('mentionAgents')}>
+                        <p className="text-muted-foreground px-2 py-1.5 text-xs">
+                          {t('agentsUnavailable')}
+                        </p>
+                      </CommandGroup>
+                    );
                   return options.length ? (
                     <CommandGroup
                       key={group}
@@ -363,7 +382,7 @@ export function ArtifactCommentComposer(props: Props) {
         </Popover>
       </Field>
       {props.error ? (
-        <p role="alert" className="text-muted-foreground text-xs">
+        <p role="alert" className="text-destructive text-xs">
           {props.error}
         </p>
       ) : null}
@@ -393,6 +412,7 @@ export function ArtifactCommentComposer(props: Props) {
             }
             aria-busy={props.pending}
           >
+            {props.pending ? <Loading className="size-3.5 shrink-0" /> : null}
             {props.submitLabel}
           </Button>
         </span>
