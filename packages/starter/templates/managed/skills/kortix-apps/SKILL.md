@@ -56,9 +56,12 @@ Default to static for every UI. Server logic for a UI (queries, writes,
 webhooks, integrations, schedules) lives in the backend App, not in a second
 server.
 
-Every UI an App renders follows the `kortix-design` skill. Load it before
-you write the first className or user-facing string. It owns the token plan,
-the states, the motion and the screenshot check before deploy.
+Before creating or modifying any internal app or Kortix App UI, load and
+apply `kortix-design`, including delegated app builders. Put this requirement
+in every delegated builder's brief before UI work starts. Load it before the
+first className or user-facing string. It owns the token plan, the states,
+the motion and the screenshot check before deploy. Preserve user-requested
+styling; when using `@kortix/ui`, also load `kortix-ui` and use its tokens.
 
 ## Where the code lives
 
@@ -83,8 +86,8 @@ The command waits for `ready` for up to 1200 s. Use `--app <slug>` (or the
 `kortix.yaml` block) for every later release of the same App. Never create a
 new slug for a normal update.
 
-Declare Apps in `kortix.yaml` `apps.<slug>` (`kortix schema --version 3`
-prints every key). The file owns `resources`,
+Declare Apps in `kortix.yaml` `apps.<slug>` (`kortix schema` prints every
+key). The file owns `resources`,
 `idle_timeout_seconds`, `always_on`, `labels`, `display` and `uses`: a write
 from the web, CLI, SDK or API commits to `apps.<slug>` first, and a push
 applies them on sync without a deploy. Deleting an App removes its block. The
@@ -128,11 +131,13 @@ An App never starts an agent itself. It posts an **App event**; a trigger in
 `KORTIX_APP_ID`, `KORTIX_APP_TOKEN` and `KORTIX_APP_EVENTS_URL`
 (`…/v1/projects/<project_id>/apps/<app_id>/events`).
 
-**Build an App for this last.** Before you write a watcher App, check in this
-order: (1) a webhook (the service can call a URL), (2) a schedule (a fixed
-cadence is enough). Build the App only when neither fits: no webhook, code
-must decide what deserves an agent, or the watch needs a connection that
-stays open.
+**Pick the watcher last.** Check in this order: (1) a webhook (the service
+can call a URL), (2) a connector event, (3) a schedule (an hourly or daily
+check is enough). Build a watcher App when none fits: the source sends
+nothing and must be watched around the clock, code must decide what deserves
+an agent, or the watch needs a connection that stays open. A complete
+watcher (App, poll, App event, session wake-up): `kortix-system` →
+`references/scheduling.md` → Watch 24/7.
 
 1. Post one event `{name, data?, id?}` or `{events: [...]}` (at most 50):
    ```bash
@@ -338,7 +343,7 @@ Every session downloads the whole repository, so keep it small. Create
    Never `public` for internal data: a public App has no signed-in member.
 9. **Integrations** only through Kortix connectors (references/connectors.md).
 10. **Ship** once Verify passed: commit, push the session branch, open a
-    change request (kortix-system, `<change-requests>`). Never merge your own CR.
+    change request (kortix-system, `<change-requests>`). Merge it only when the user asks.
 
 ### Redeploy after a change, and undo
 

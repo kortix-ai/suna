@@ -25,6 +25,7 @@ import { accountTokens } from '@kortix/db';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const steps: string[] = [];
 let releaseError: Error | null = null;
+let screenshotError: Error | null = null;
 let repoError: Error | null = null;
 let connectorError: Error | null = null;
 
@@ -44,6 +45,15 @@ mock.module('../projects/prompt-attachments', () => ({
   releasePromptAttachmentsForProject: async () => {
     steps.push('release');
     if (releaseError) throw releaseError;
+  },
+}));
+
+const realScreenshots = await import('../artifacts/comment-screenshot-objects');
+mock.module('../artifacts/comment-screenshot-objects', () => ({
+  ...realScreenshots,
+  releaseArtifactCommentScreenshotsForProject: async () => {
+    steps.push('release-screenshots');
+    if (screenshotError) throw screenshotError;
   },
 }));
 
@@ -97,6 +107,7 @@ const deleteProject = () => projectsApp.request(`/${PROJECT_ID}`, { method: 'DEL
 beforeEach(() => {
   steps.length = 0;
   releaseError = null;
+  screenshotError = null;
   repoError = null;
   connectorError = null;
 });
@@ -107,7 +118,7 @@ describe('DELETE /projects/:projectId step order', () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, deleted: true, archived: true, repo_deleted: true });
-    expect(steps).toEqual(['release', 'delete-repo', 'purge-connectors', 'release-channels', 'archive:archived', 'revoke-tokens']);
+    expect(steps).toEqual(['release', 'release-screenshots', 'delete-repo', 'purge-connectors', 'release-channels', 'archive:archived', 'revoke-tokens']);
   });
 
   test('a failed repository delete answers 502 and leaves the project active', async () => {
@@ -117,7 +128,7 @@ describe('DELETE /projects/:projectId step order', () => {
 
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ error: 'Failed to delete managed project repository' });
-    expect(steps).toEqual(['release', 'delete-repo']);
+    expect(steps).toEqual(['release', 'release-screenshots', 'delete-repo']);
   });
 
   test('a failed connector purge answers 500 and leaves the project active', async () => {
@@ -127,7 +138,14 @@ describe('DELETE /projects/:projectId step order', () => {
 
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: 'Failed to purge project connectors' });
-    expect(steps).toEqual(['release', 'delete-repo', 'purge-connectors']);
+    expect(steps).toEqual(['release', 'release-screenshots', 'delete-repo', 'purge-connectors']);
+  });
+
+  test('a failed screenshot release answers 500 before the repository is touched', async () => {
+    screenshotError = new Error('object storage unavailable');
+    const res = await deleteProject();
+    expect(res.status).toBe(500);
+    expect(steps).toEqual(['release', 'release-screenshots']);
   });
 
   test('a failed attachment release answers 500 before the repository is touched', async () => {

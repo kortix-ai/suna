@@ -49,7 +49,7 @@ function policySetHint(
     case 'policy_sets_unsupported':
       return ['Channel and Computer connectors have no kortix.yaml entry, so they cannot hold policy sets.'];
     case 'unsupported_in_v1':
-      return ['Policy sets need kortix.yaml (kortix_version 2 or 3). Migrate: kortix migrate'];
+      return ['Policy sets need a current kortix.yaml. Run kortix validate for the fix.'];
     case 'use_policies_route':
       return [`Write a set's rules with: kortix connectors policy ${slug} --policy-set <name> set <match> <action>`];
     case 'connector_not_granted':

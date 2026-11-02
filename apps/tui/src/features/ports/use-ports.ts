@@ -2,8 +2,7 @@
  * The Ports panel's state, as a hook. This is the thin React wrapper around
  * `ports-state.ts`'s pure transitions and the CLI's port-forward engine
  * (`@kortix/cli/src/port-forward.ts` — the same library `kortix sessions
- * forward` runs, deep-imported exactly like `features/attach/attach.ts`
- * already imports `attach-opencode.ts`).
+ * forward` runs, deep-imported).
  *
  * Forwards are per session: switching `sessionId` (or unmounting) closes every
  * open forward for the OLD session first — never leaked, never carried into a
@@ -12,13 +11,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import type { Auth } from '@kortix/cli/src/api/auth.ts';
 import type { PortForwardDeps } from '@kortix/cli/src/port-forward.ts';
 import { PortForwardError, startPortForward } from '@kortix/cli/src/port-forward.ts';
 import { SessionRuntimeError } from '@kortix/cli/src/session-runtime.ts';
 
-import type { ResolvedHost } from '../../auth/hosts.ts';
+import { type ResolvedHost, hostOrigin } from '../../auth/hosts.ts';
 import type { ToastKind } from '../../ui/index.ts';
-import { authFromHost } from '../attach/attach.ts';
 import { isForwardablePort } from './port-detect.ts';
 import {
   EMPTY_PORTS,
@@ -35,6 +34,22 @@ import {
 } from './ports-state.ts';
 
 /** `KORTIX_TUI_AUTO_FORWARD=0` disables auto-forwarding a newly-detected port. */
+
+/**
+ * The CLI's `Auth` record for this host. `api_base` is the ORIGIN, the value
+ * `kortix login` writes to `host.url`; the TUI's `backendUrl` carries `/v1`,
+ * so it is stripped here rather than double-mounted.
+ */
+function authFromHost(host: ResolvedHost): Auth {
+  return {
+    api_base: hostOrigin(host.backendUrl),
+    token: host.token,
+    user_id: '',
+    user_email: host.userEmail,
+    account_id: host.accountId,
+    logged_in_at: new Date(0).toISOString(),
+  };
+}
 export function autoForwardEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.KORTIX_TUI_AUTO_FORWARD !== '0';
 }

@@ -40,8 +40,8 @@ function mergeSeedFiles(
 
 /**
  * Seed a brand-new project's deterministic scaffold: just the starter's own
- * files (a kortix_version 3 kortix.yaml, agent prompts, skills, the pty
- * extension) for `template`.
+ * files (kortix.yaml, agent prompts, skills, the pty extension) for
+ * `template`.
  * No lock, no dependency engine — marketplace items are never deterministically
  * installed at provision time; adding one to a project is an agent import.
  */
@@ -142,7 +142,7 @@ export function defaultAgentFromSeedFiles(
   const manifestFile = files.find((f) => f.path === manifestPath) ?? files.find((f) => f.path === 'kortix.yaml');
   if (!manifestFile) return null;
   try {
-    const raw = parseManifestText(manifestFile.content, 'yaml');
+    const raw = parseManifestText(manifestFile.content);
     const defaultAgent = raw.default_agent;
     return typeof defaultAgent === 'string' && defaultAgent.trim() ? defaultAgent.trim() : null;
   } catch {

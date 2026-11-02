@@ -7,6 +7,7 @@
  * | a channel id | `/Company/Channels/<slug>/Memory`    | every project member |
  * | a private channel id | `/Channels/<space_id>/Memory` | the channel's members only |
  * | a DM id      | `/Users/<owner>/Memory`, agent folder `Memory/<agent>` first | the DM owner only |
+ * | `mykortix`   | the viewer's own `/Users/<viewer>/Memory/mykortix` | the viewer only     |
  *
  * Read and write rights are the Drive folder rights (`driveSubjectFor`), so a
  * narrower grant made in Files holds here too. A private channel is first
@@ -19,12 +20,12 @@ import { type DriveCaller, type DriveRow, driveSubjectFor, ensureProjectDrive, p
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { projectSessions, projectSpaces } from '@kortix/db';
 import { resolveUserIdentities } from '../projects/surface';
-import { spaceDriveFolders } from '@kortix/shared';
+import { MY_KORTIX_AGENT_NAME, spaceDriveFolders } from '@kortix/shared';
 import { and, eq, or, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
 import { hiddenSpaceIds } from '../shared/space-access';
-import type { MemoryLayerScope } from '@kortix/api-contract';
+import { MY_KORTIX_MEMORY_LAYER_KEY, type MemoryLayerScope } from '@kortix/api-contract';
 import { volumeOps } from './volume-ops';
 
 /** A refusal with its HTTP status and machine code; the route answers `{error, code, ...extra}`. */
@@ -44,6 +45,9 @@ export class MemoryError extends Error {
 }
 
 export const notFound = () => new MemoryError(404, 'memory_not_found', 'Memory not found.');
+
+/** The `mykortix` layer's name, as the Memory screen shows it. */
+export const MY_KORTIX_DISPLAY_NAME = 'My Kortix';
 
 /** Who asks: a person, and their project rights (`session`: a member; `write`: an admin). */
 export interface Viewer {
@@ -124,12 +128,18 @@ export async function dmAgentsOf(projectId: string, userId: string) {
 
 /** The layer of a route key; 404 for anything the viewer may not read. */
 export async function resolveLayer(project: Project, key: string, viewer: Viewer): Promise<Layer> {
-  if (key !== 'company' && !isUuid(key)) throw notFound();
+  if (key !== 'company' && key !== MY_KORTIX_MEMORY_LAYER_KEY && !isUuid(key)) throw notFound();
   const { drive, caller } = await driveCallerOf(project, viewer);
   const base = { key, projectId: project.projectId, drive, agentFolder: null as string | null, skip: [] as string[], isDefault: false };
   let layer: Omit<Layer, 'canWrite'>;
   if (key === 'company') {
     layer = { ...base, scope: 'company', spaceId: null, name: 'Company', root: COMPANY_MEMORY_DIR, readOnly: false };
+  } else if (key === MY_KORTIX_MEMORY_LAYER_KEY) {
+    // The viewer's own My Kortix folder: no space row, no other person's.
+    const personal = personalFolderFor(caller.grants, viewer.userId) ?? caller.personalFolder;
+    const root = spaceDriveFolders('dm', MY_KORTIX_AGENT_NAME, personal)?.memory;
+    if (!root) throw notFound();
+    layer = { ...base, scope: 'dm', spaceId: null, name: MY_KORTIX_DISPLAY_NAME, root, readOnly: false };
   } else {
     const [space] = await db
       .select(SPACE_COLUMNS)

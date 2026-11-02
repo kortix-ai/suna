@@ -25,7 +25,6 @@ function stopSyncBudgetMs(): number {
   return Number(process.env.STOP_SYNC_BUDGET_MS) || 17_000;
 }
 /** The transcript tail is best-effort; it never holds a stop for more than this. */
-const TRANSCRIPT_TAIL_MAX_MS = 3_000;
 
 /** Resolve `timedOut` when `work` outlasts `ms`. `work` keeps running either way. */
 async function within<T>(
@@ -163,23 +162,6 @@ export async function stopSession(input: {
     await within(
       flushDriveSyncBeforeStop({ ...sandbox, externalId: sandbox.externalId }),
       Math.max(0, budgetEndsAt - Date.now()),
-    );
-    // The turn-end relay can still be in flight. Persist the transcript before
-    // powering off the only live reader; capture failures never prevent stop.
-    //
-    // A TAIL, never the whole history. This read is AWAITED — the user is
-    // holding a Stop button — and a full-history read is a 60s pagination
-    // with three retries in front of them. The whole copy is already
-    // maintained at every turn end, which runs fire-and-forget with the box
-    // definitionally up; the only gap a stop can close is the turn that just
-    // ended, and one bounded page covers it.
-    const { captureJournallessSessionLog } = await import('../lib/session-transcript-capture');
-    await within(
-      captureJournallessSessionLog(sessionId, undefined, {
-        scope: 'tail',
-        actorUserId: userId,
-      }),
-      Math.min(TRANSCRIPT_TAIL_MAX_MS, budgetEndsAt - Date.now()),
     );
   }
 

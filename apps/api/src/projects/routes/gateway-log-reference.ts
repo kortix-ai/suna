@@ -1,6 +1,6 @@
 import { isUuid } from '../../shared/validate';
 
-export type GatewayLogReferenceKind = 'both' | 'request' | 'invalid';
+type GatewayLogReferenceKind = 'both' | 'request' | 'invalid';
 
 /**
  * Gateway log ids and current request ids are both UUIDs. A UUID reference must

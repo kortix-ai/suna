@@ -111,7 +111,7 @@ run            "sandboxes rm (local)"         -- "${RUN[@]}" sandboxes rm e2eimg
 
 section "files (repo browsing)"
 run_grep_retry "files ls"  "kortix.yaml" 10  -- "${RUN[@]}" files ls
-run_grep_retry "files cat" "kortix_version" 10 -- "${RUN[@]}" files cat kortix.yaml
+run_grep_retry "files cat" "default_agent" 10 -- "${RUN[@]}" files cat kortix.yaml
 run            "files search"                 -- "${RUN[@]}" files search kortix
 run_grep_retry "files branches" "main" 5     -- "${RUN[@]}" files branches
 run_grep_retry "files commits" "e2e: ship" 10 -- "${RUN[@]}" files commits

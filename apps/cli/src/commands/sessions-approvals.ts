@@ -1,4 +1,4 @@
-import type { PermissionRequest, QuestionRequest } from '@kortix/sdk';
+import type { RuntimePendingRecord } from '@kortix/sdk';
 import { withKortixScope } from '../api/sdk.ts';
 import {
   emitJson,
@@ -22,7 +22,8 @@ questions the agent is blocked on. Answer them with
 Options:
   --project <id>   Operate on this project id (default: linked/default).
   --host <name>    Operate against a non-default Kortix host.
-  --json           Machine-readable output ({ permissions, questions }).
+  --json           Machine-readable output ({ permissions, questions }; each
+                   record has id, thread_id, call_id, payload, asked_at).
   -h, --help       Show this help.
 `;
 
@@ -89,12 +90,33 @@ function parseTarget(argv: string[], help: string): ParsedTarget | null {
   };
 }
 
+interface QuestionInfo {
+  question: string;
+  header?: string;
+  options?: Array<{ label: string; description?: string }>;
+}
+
+/** A pending permission record's payload: what the agent wants to do. */
+function permissionOf(record: RuntimePendingRecord): { permission: string; patterns: string[] } {
+  const payload = (record.payload ?? {}) as { permission?: unknown; patterns?: unknown };
+  return {
+    permission: typeof payload.permission === 'string' ? payload.permission : '',
+    patterns: Array.isArray(payload.patterns) ? payload.patterns.filter((p): p is string => typeof p === 'string') : [],
+  };
+}
+
+/** A pending question record's payload: the questions the agent asked. */
+function questionsOf(record: RuntimePendingRecord): QuestionInfo[] {
+  const payload = (record.payload ?? {}) as { questions?: unknown };
+  return Array.isArray(payload.questions) ? (payload.questions as QuestionInfo[]) : [];
+}
+
 async function pendingFor(resolved: ResolvedSession): Promise<{
-  permissions: PermissionRequest[];
-  questions: QuestionRequest[];
+  permissions: RuntimePendingRecord[];
+  questions: RuntimePendingRecord[];
 } | null> {
   try {
-    const { permissions, questions } = await withKortixScope(resolved.auth, () => resolved.handle.pending());
+    const { permissions, questions } = await withKortixScope(resolved.auth, () => resolved.handle.pendingRequests());
     return { permissions, questions };
   } catch (err) {
     surfaceApiError(err);
@@ -130,9 +152,10 @@ export async function runSessionsPending(argv: string[]): Promise<number> {
   if (permissions.length > 0) {
     process.stdout.write(`\n  ${C.white}${C.bold}Permissions${C.reset}\n`);
     for (const p of permissions) {
+      const { permission, patterns } = permissionOf(p);
       process.stdout.write(
-        `  ${C.cyan}${p.id}${C.reset}  ${C.bold}${p.permission}${C.reset}` +
-          `${p.patterns.length ? ` ${C.dim}${p.patterns.join(', ')}${C.reset}` : ''}\n` +
+        `  ${C.cyan}${p.id}${C.reset}  ${C.bold}${permission}${C.reset}` +
+          `${patterns.length ? ` ${C.dim}${patterns.join(', ')}${C.reset}` : ''}\n` +
           `    ${C.dim}approve: kortix sessions approve ${resolved.session.session_id} ${p.id}${C.reset}\n`,
       );
     }
@@ -140,9 +163,9 @@ export async function runSessionsPending(argv: string[]): Promise<number> {
   if (questions.length > 0) {
     process.stdout.write(`\n  ${C.white}${C.bold}Questions${C.reset}\n`);
     for (const q of questions) {
-      for (const info of q.questions) {
+      for (const info of questionsOf(q)) {
         process.stdout.write(`  ${C.cyan}${q.id}${C.reset}  ${info.question}\n`);
-        for (const o of info.options) {
+        for (const o of info.options ?? []) {
           process.stdout.write(
             `    ${C.dim}- ${o.label}${o.description ? ` (${o.description})` : ''}${C.reset}\n`,
           );
@@ -188,7 +211,7 @@ export async function runSessionsApprove(argv: string[]): Promise<number> {
       return 1;
     }
     if (pending.permissions.length > 1) {
-      const listing = pending.permissions.map((p) => `  ${p.id}  ${p.permission}`).join('\n');
+      const listing = pending.permissions.map((p) => `  ${p.id}  ${permissionOf(p).permission}`).join('\n');
       process.stderr.write(
         `${status.err('Several permissions are pending — pass a request id:')}\n${listing}\n`,
       );
@@ -244,7 +267,7 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
   const resolved = await loadSessionForChat(target.sessionId, target.opts, 'sessions answer');
   if (!resolved) return 1;
 
-  let request: QuestionRequest | undefined;
+  let request: RuntimePendingRecord | undefined;
   if (target.requestId) {
     const pending = await pendingFor(resolved);
     if (!pending) return 1;
@@ -262,7 +285,7 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
     }
     if (pending.questions.length > 1) {
       const listing = pending.questions
-        .map((q) => `  ${q.id}  ${q.questions[0]?.header ?? ''}`)
+        .map((q) => `  ${q.id}  ${questionsOf(q)[0]?.header ?? ''}`)
         .join('\n');
       process.stderr.write(
         `${status.err('Several questions are pending — pass a request id:')}\n${listing}\n`,
@@ -287,13 +310,14 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
     if (answersJson) {
       answers = JSON.parse(answersJson);
     } else {
-      if (request && request.questions.length > 1) {
+      const infos = request ? questionsOf(request) : [];
+      if (infos.length > 1) {
         return fail('This request carries several questions — pass --answers with a string[][] payload.');
       }
-      // OpenCode accepts the displayed option labels as the canonical answers.
-      const info = request?.questions[0];
+      // The runtime takes the displayed option labels as the answers.
+      const info = infos[0];
       const mapped = options.map((o) => {
-        const match = info?.options.find((opt) => opt.label === o);
+        const match = info?.options?.find((opt) => opt.label === o);
         return match?.label ?? o;
       });
       answers = [[...mapped, ...(text !== undefined ? [text] : [])]];
@@ -310,7 +334,7 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
 //
 // Two different gates share the word "approve" and must not be confused:
 //
-//   `sessions approve`   answers an OpenCode PERMISSION ask — the agent wants
+//   `sessions approve`   answers a runtime PERMISSION ask — the agent wants
 //                        to run a tool and the runtime is blocked on a reply.
 //                        Lives in the sandbox; disappears if the box restarts.
 //   `sessions approvals` resolves a governed CONNECTOR call — a policy said

@@ -139,7 +139,6 @@ function startServer(
       if (p === '/agents/reviewer/config' && req.method === 'GET') {
         return Response.json({
           agent: 'reviewer',
-          schema_version: 2,
           editable: true,
           default_agent: defaultAgent,
           block: REVIEWER_BLOCK,
@@ -150,7 +149,6 @@ function startServer(
         return Response.json({
           agent: 'meta',
           builtin: 'my_kortix',
-          schema_version: 3,
           editable: false,
           default_agent: defaultAgent,
           block: null,
@@ -161,7 +159,6 @@ function startServer(
       if (p === '/agents/egress/config' && req.method === 'GET') {
         return Response.json({
           agent: 'egress',
-          schema_version: 3,
           editable: true,
           default_agent: defaultAgent,
           block: EGRESS_BLOCK,
@@ -175,13 +172,12 @@ function startServer(
             { status: 400 },
           );
         }
-        return Response.json({ ok: true, agent: 'egress', schema_version: 3, block: body });
+        return Response.json({ ok: true, agent: 'egress', block: body });
       }
       if (p === '/agents/reviewer/config' && req.method === 'PUT') {
         return Response.json({
           ok: true,
           agent: 'reviewer',
-          schema_version: 2,
           block: body,
         });
       }
@@ -348,7 +344,7 @@ describe('kortix agents — default, scope, config', () => {
     const cfg = await runCli(['agents', 'config', 'meta', '--project', PROJECT], config);
     expect(cfg.code).toBe(0);
     expect(cfg.stdout).toContain('My Kortix');
-    expect(cfg.stdout).not.toContain('kortix projects upgrade');
+    expect(cfg.stdout).not.toContain('read-only');
   });
 
   test('scope --show prints the block; a write PUTs only the named fields', async () => {
@@ -477,7 +473,7 @@ describe('kortix agents — default, scope, config', () => {
     expect(r.stderr).toContain('Agent "ghost" is not declared in this project');
   });
 
-  test('config prints the block; --json wraps it with the schema version', async () => {
+  test('config prints the block; --json prints the whole response', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['agents', 'config', 'reviewer', '--project', PROJECT], config);
     expect(r.code).toBe(0);
@@ -487,7 +483,7 @@ describe('kortix agents — default, scope, config', () => {
       ['agents', 'config', 'reviewer', '--project', PROJECT, '--json'],
       config,
     );
-    expect(JSON.parse(j.stdout).schema_version).toBe(2);
+    expect(JSON.parse(j.stdout)).toMatchObject({ agent: 'reviewer', editable: true, block: REVIEWER_BLOCK });
   });
 
   test('config --set reads the current block first and PUTs the WHOLE merged block', async () => {
@@ -617,15 +613,15 @@ describe('kortix agents — default, scope, config', () => {
     const parsed = JSON.parse(r.stdout) as {
       platformDefault: string;
       agentDefaults: Record<string, string>;
-      agents: Array<{ name: string; path: string; model: string | null }>;
+      agents: Array<{ name: string; path: string; model: string | null; description?: string; enabled?: boolean }>;
     };
     // Additive: the pre-existing model-defaults fields survive.
     expect(parsed.platformDefault).toBe('glm-5.3-flash');
     expect(parsed.agentDefaults).toEqual({ reviewer: 'glm-5.3-flash' });
     expect(parsed.agents).toEqual([
       { name: 'default', path: '.kortix/opencode/agents/default.md', model: null },
-      { name: 'reviewer', path: '.kortix/opencode/agents/reviewer.md', model: 'glm-5.3-flash' },
-      { name: 'watcher', path: '.kortix/opencode/agents/watcher.md', model: 'claude-sonnet-4' },
+      { name: 'reviewer', path: '.kortix/opencode/agents/reviewer.md', model: 'glm-5.3-flash', description: 'Reviews diffs' },
+      { name: 'watcher', path: '.kortix/opencode/agents/watcher.md', model: 'claude-sonnet-4', enabled: false },
     ]);
 
     // Plain renders the pin over the frontmatter model, with the pin marker.

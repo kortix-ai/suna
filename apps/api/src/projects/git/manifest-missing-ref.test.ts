@@ -46,13 +46,13 @@ test('an unseeded repository refuses a strict manifest read with an actionable c
 
 test('pushing another branch does not synthesize a permissive manifest for the missing default', async () => {
   git('init', '--initial-branch=other', 'work');
-  await writeFile(join(root, 'work', 'kortix.yaml'), 'kortix_version: 2\n');
+  await writeFile(join(root, 'work', 'kortix.yaml'), 'project:\n  name: test\n');
   git('-C', 'work', 'add', 'kortix.yaml');
   git('-C', 'work', '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-m', 'seed');
   git('-C', 'work', 'push', project.repoUrl, 'other');
   expect((await app().request('/sessions', { method: 'POST' })).status).toBe(409);
   const found = await readManifestFromRepo(project, ['kortix.yaml'], 'other', { strictRef: true });
-  expect(found?.content).toBe('kortix_version: 2\n');
+  expect(found?.content).toBe('project:\n  name: test\n');
 });
 
 test('an existing commit without a manifest still returns absent', async () => {

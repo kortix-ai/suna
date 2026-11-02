@@ -216,10 +216,11 @@ function resolveRule(config: PermissionRuleConfig | undefined, subject: string |
 /**
  * pi's tools whose name is not their capability: `write` and the Kortix tools
  * that write files (`KORTIX_EDIT_TOOLS`) are `edit`; the search and scrape
- * tools reach the web.
+ * tools reach the web; `workflow` starts subagents, as `task` does.
  */
 const TOOL_CAPABILITY: Record<string, RuntimePermissionCapability> = {
   write: 'edit',
+  workflow: 'task',
   web_search: 'websearch',
   image_search: 'websearch',
   scrape_webpage: 'webfetch',
@@ -228,7 +229,7 @@ const TOOL_CAPABILITY: Record<string, RuntimePermissionCapability> = {
 
 /**
  * The capability a permission rule names for this call (`RUNTIME_PERMISSION_CAPABILITIES`); any other tool is its own.
- * `memory`'s `view` command only reads, so it is `read`; its other commands are `edit`.
+ * `memory` (a project's ejected copy of the retired Kortix tool): `view` only reads, so it is `read`; its other commands are `edit`.
  */
 export function toolCapability(tool: string, args?: unknown): string {
   if (tool === 'memory') return (args as { command?: unknown } | null | undefined)?.command === 'view' ? 'read' : 'edit'
@@ -310,8 +311,17 @@ export interface SessionPermissionRule {
   action?: unknown
 }
 
+/** A request waiting for its answer, as the session log's `pending` lists it (`PendingSchema`). */
+export interface PendingRecord {
+  id: string
+  thread_id: string
+  call_id?: string
+  payload: Record<string, unknown>
+  asked_at: string
+}
+
 export class PermissionBroker {
-  private readonly pending = new Map<string, { request: RuntimePermissionRequest; resolve: (reply: PermissionReply) => void }>()
+  private readonly pending = new Map<string, { request: RuntimePermissionRequest; resolve: (reply: PermissionReply) => void; askedAt: string }>()
   /** Capabilities allowed for the rest of the session: an "always" reply, or the session ruleset (`*`: every one). */
   private readonly granted = new Set<string>()
 
@@ -322,6 +332,8 @@ export class PermissionBroker {
     private readonly publish: (frame: RuntimeFrame) => void,
     private policy: PermissionPolicy = {},
     private readonly onAsked?: (request: RuntimePermissionRequest) => void,
+    /** A request was asked or answered, or the grants changed: the pending list moved. */
+    private readonly onChange?: () => void,
   ) {}
 
   setPolicy(policy: PermissionPolicy): void {
@@ -348,12 +360,17 @@ export class PermissionBroker {
    * included. A rule for one pattern, or any other action, grants nothing.
    */
   setSessionRules(rules: readonly SessionPermissionRule[]): void {
+    this.setGrants(
+      rules.flatMap((rule) =>
+        rule?.action === 'allow' && typeof rule.permission === 'string' && (rule.pattern === undefined || rule.pattern === '*') ? [rule.permission] : [],
+      ),
+    )
+  }
+
+  /** Replace the session's grants: each capability (`*`: all) is allowed without asking. `[]` clears them. */
+  setGrants(grants: readonly string[]): void {
     this.granted.clear()
-    for (const rule of rules) {
-      if (rule?.action === 'allow' && typeof rule.permission === 'string' && (rule.pattern === undefined || rule.pattern === '*')) {
-        this.granted.add(rule.permission)
-      }
-    }
+    for (const grant of grants) this.granted.add(grant)
   }
 
   /** The grants, as the runtime's dump keeps them. */
@@ -378,9 +395,10 @@ export class PermissionBroker {
       ...(input.ref ? { tool: input.ref } : {}),
     }
     return new Promise<PermissionReply>((resolve) => {
-      this.pending.set(request.id, { request, resolve })
+      this.pending.set(request.id, { request, resolve, askedAt: new Date().toISOString() })
       this.publish({ type: 'permission.asked', properties: { ...request } })
       this.onAsked?.(request)
+      this.onChange?.()
     })
   }
 
@@ -391,11 +409,23 @@ export class PermissionBroker {
     if (reply === 'always') this.granted.add(entry.request.permission)
     this.publish({ type: 'permission.replied', properties: { sessionID: this.sessionID, requestID: id, reply } })
     entry.resolve(reply)
+    this.onChange?.()
     return true
   }
 
   list(): RuntimePermissionRequest[] {
     return [...this.pending.values()].map((entry) => entry.request)
+  }
+
+  /** The open requests, as the session log's `pending.permissions`. */
+  records(): PendingRecord[] {
+    return [...this.pending.values()].map(({ request, askedAt }) => ({
+      id: request.id,
+      thread_id: request.sessionID,
+      ...(request.tool?.callID ? { call_id: request.tool.callID } : {}),
+      payload: { permission: request.permission, patterns: request.patterns, always: request.always, metadata: request.metadata },
+      asked_at: askedAt,
+    }))
   }
 
   /** A turn that ends (abort, error) releases every request it left open. */
@@ -405,12 +435,14 @@ export class PermissionBroker {
 }
 
 export class QuestionBroker {
-  private readonly pending = new Map<string, { request: RuntimeQuestionRequest; resolve: (answers: string[][] | null) => void }>()
+  private readonly pending = new Map<string, { request: RuntimeQuestionRequest; resolve: (answers: string[][] | null) => void; askedAt: string }>()
 
   constructor(
     private readonly sessionID: string,
     private readonly publish: (frame: RuntimeFrame) => void,
     private readonly onAsked?: (request: RuntimeQuestionRequest) => void,
+    /** A question was asked, answered or dismissed: the pending list moved. */
+    private readonly onChange?: () => void,
   ) {}
 
   /** Resolves with the answers, or null when rejected; never rejects. */
@@ -422,9 +454,10 @@ export class QuestionBroker {
       ...(ref ? { tool: ref } : {}),
     }
     return new Promise((resolve) => {
-      this.pending.set(request.id, { request, resolve })
+      this.pending.set(request.id, { request, resolve, askedAt: new Date().toISOString() })
       this.publish({ type: 'question.asked', properties: { ...request } })
       this.onAsked?.(request)
+      this.onChange?.()
     })
   }
 
@@ -434,6 +467,7 @@ export class QuestionBroker {
     this.pending.delete(id)
     this.publish({ type: 'question.replied', properties: { sessionID: this.sessionID, requestID: id, answers } })
     entry.resolve(answers)
+    this.onChange?.()
     return true
   }
 
@@ -443,11 +477,23 @@ export class QuestionBroker {
     this.pending.delete(id)
     this.publish({ type: 'question.rejected', properties: { sessionID: this.sessionID, requestID: id } })
     entry.resolve(null)
+    this.onChange?.()
     return true
   }
 
   list(): RuntimeQuestionRequest[] {
     return [...this.pending.values()].map((entry) => entry.request)
+  }
+
+  /** The open questions, as the session log's `pending.questions`. */
+  records(): PendingRecord[] {
+    return [...this.pending.values()].map(({ request, askedAt }) => ({
+      id: request.id,
+      thread_id: request.sessionID,
+      ...(request.tool?.callID ? { call_id: request.tool.callID } : {}),
+      payload: { questions: request.questions },
+      asked_at: askedAt,
+    }))
   }
 
   rejectAll(): void {

@@ -11,7 +11,12 @@
  * new opencode part type fails the build here.
  */
 
-import { type ClassifiedPart, type SessionLogMessage, classifySessionLogMessage } from '@kortix/sdk';
+import {
+  type ClassifiedPart,
+  type SessionLogMessage,
+  classifySessionLogMessage,
+  sessionLogMessageDelivery,
+} from '@kortix/sdk';
 import { useMemo } from 'react';
 
 import { type TurnRow, collapseToolRuns, formatRelativeTime } from '../../../lib/turn-layout.ts';
@@ -96,7 +101,8 @@ function PartRow({
 }
 
 /** The prompt the reader typed; anything else (a reply, a compaction) is the agent's. */
-const isPrompt = (message: SessionLogMessage) => message.role === 'user' && message.kind !== 'compaction';
+const isPrompt = (message: SessionLogMessage) =>
+  message.role === 'user' && message.kind !== 'compaction';
 
 function Header({
   message,
@@ -104,9 +110,23 @@ function Header({
   width,
 }: { message: SessionLogMessage; now: number; width: number }) {
   const role = isPrompt(message) ? 'user' : 'assistant';
-  const name = role === 'user' ? 'you' : message.kind === 'compaction' ? 'compaction' : message.agent || 'agent';
+  const name =
+    role === 'user'
+      ? 'you'
+      : message.kind === 'compaction'
+        ? 'compaction'
+        : message.agent || 'agent';
   const created = Date.parse(message.created_at);
-  const age = Number.isFinite(created) ? formatRelativeTime(created, now) : '';
+  // A prompt the log does not hold yet says where it is instead of its age.
+  const delivery = sessionLogMessageDelivery(message)?.delivery;
+  const age =
+    delivery === 'queued'
+      ? 'queued'
+      : delivery === 'delivering'
+        ? 'sending'
+        : Number.isFinite(created)
+          ? formatRelativeTime(created, now)
+          : '';
   return (
     <text fg={theme.dim} width={Math.max(width, 4)}>
       <span fg={theme.accent}>{ROLE_GLYPH[role]}</span>

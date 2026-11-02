@@ -149,20 +149,18 @@ export function registerChangeRequestActionsRoutes(): void {
 
       // Manifest gate: a CR cannot merge if the would-be-merged manifest doesn't
       // validate against the canonical schema. We read the manifest from the HEAD
-      // branch (what's about to be merged), preferring kortix.yaml over kortix.toml.
-      // If the head doesn't have a manifest, that's fine — projects with a
-      // `.kortix/`-only layout still merge. The same validator runs in the CLI's
+      // branch (what's about to be merged), preferring kortix.yaml over kortix.yml.
+      // If the head doesn't have a manifest, that's fine: it still merges. The same validator runs in the CLI's
       // `kortix ship` pre-flight, so CLI users see the same diagnostic before push.
       try {
-        const { validateManifest, manifestFormatForPath, manifestCandidatePaths, ManifestImportError } =
-          await import('@kortix/manifest-schema');
+        const { validateManifest, manifestCandidatePaths, ManifestImportError } = await import('@kortix/manifest-schema');
         // `found.content` is the MERGED document when the head declares
         // `imports:`, so the gate validates what the platform will actually run.
         // A broken import (missing file, duplicate name, cycle) blocks the merge
         // with the same 422 a schema violation gets.
         const found = await readManifestFromRepo(
           projectForGit,
-          manifestCandidatePaths(projectForGit.manifestPath).map((cand) => cand.path),
+          manifestCandidatePaths(projectForGit.manifestPath),
           cr.headRef,
         ).catch((err: unknown) => {
           if (err instanceof ManifestImportError) return { importError: err.message } as const;
@@ -179,7 +177,8 @@ export function registerChangeRequestActionsRoutes(): void {
           );
         }
         if (found && found.content.trim()) {
-          const verdict = validateManifest(found.content, manifestFormatForPath(found.path));
+          // The root text carries line numbers; a merged `imports:` document has none to give.
+          const verdict = validateManifest(found.imports ? found.imports.raw : found.content);
           if (!verdict.valid) {
             return c.json(
               {

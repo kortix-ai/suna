@@ -1,7 +1,6 @@
 import {
   classifySessionLogMessage,
   sessionLogCallStatus,
-  sessionLogOfV1Rows,
   type SessionLogMessage,
 } from '@kortix/sdk';
 import { formatRelative } from '@kortix/shared';
@@ -21,7 +20,7 @@ import {
 } from '../command-helpers.ts';
 import { resolveSessionRuntime } from '../session-runtime.ts';
 import { C, help, pad } from '../style.ts';
-import { withLiveTurn } from './sessions-chat.ts';
+import { liveThreadOf, withLiveTurn } from './sessions-chat.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -193,8 +192,7 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
 
 /**
  * The root thread's newest `limit` messages from the stored session log (`GET …/log`), and a
- * running session's open turn from its sandbox (as `sessions log`). No v1 transcript route is
- * read (P8.3).
+ * running session's open turn from its box's own log (as `sessions log`).
  */
 async function buildLogDigest(
   s: ProjectSession,
@@ -212,9 +210,8 @@ async function buildLogDigest(
     if (s.status === 'running') {
       try {
         const runtime = await resolveSessionRuntime({ auth, client, projectId, session: s });
-        const live = await withKortixScope(auth, () => runtime.handle.messages({ conversationId: runtime.runtimeSessionId, limit }));
-        const liveThread = sessionLogOfV1Rows(s.session_id, runtime.runtimeSessionId, live.messages).threads[0];
-        if (liveThread) threads = withLiveTurn(threads, liveThread, limit);
+        const live = await withKortixScope(auth, () => runtime.handle.liveLog({ limit }));
+        if (live) threads = withLiveTurn(threads, liveThreadOf(live), limit);
       } catch {
         // A box that does not answer: the stored log is the conversation up to its last turn.
       }

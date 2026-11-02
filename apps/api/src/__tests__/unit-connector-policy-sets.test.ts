@@ -139,11 +139,10 @@ describe('grant: policySets', () => {
 });
 
 function manifestOf(raw: Record<string, unknown>): ParsedManifest {
-  return { raw, schemaVersion: 2, path: 'kortix.yaml', format: 'yaml' } as unknown as ParsedManifest;
+  return { raw, path: 'kortix.yaml' };
 }
 
 const MANIFEST = {
-  kortix_version: 2,
   agents: {
     support: { connectors: ['gmail'], policy_sets: { gmail: 'read_only' } },
     broken: { connectors: ['gmail', 'slack'], policy_sets: { gmail: 'nope', stripe: 7 } },
@@ -253,7 +252,6 @@ describe('grant ceiling: policy_sets', () => {
 
   test('un-grant then re-grant through the scope route keeps the set and needs no connector.write', async () => {
     const manifest = manifestOf({
-      kortix_version: 2,
       default_agent: 'support',
       agents: { support: { connectors: ['gmail', 'stripe'], policy_sets: { gmail: 'read_only' } } },
       connectors: [

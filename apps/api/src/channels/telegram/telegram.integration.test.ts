@@ -35,6 +35,7 @@ import { DrizzleQueryError } from 'drizzle-orm/errors';
 import { Hono } from 'hono';
 import { deleteFromView, insertIntoView } from '../../__tests__/helpers/compat-views';
 import { projectsApp } from '../../projects/surface';
+import * as projectSurface from '../../projects/surface';
 import { registerTurnQuestionsRoutes } from '../../projects/routes/turn-questions';
 import { questionReleaseSentinel } from '../question-release';
 import { relayTurnQuestion } from '../turn-relay';
@@ -111,9 +112,8 @@ mock.module('../../projects/session-lifecycle/abort-runtime-turn', () => ({
 /** `bot: 'other'`: a call with OTHER_TOKEN. */
 type Call = { method: string; body: Record<string, unknown>; bot?: 'other' };
 const calls: Call[] = [];
-/** The id the fake gave each sent message: the next number, as Telegram numbers a chat's messages. */
+/** The id the fake gave each sent message: the next number of the count `update` takes its message ids from, as Telegram numbers a chat's messages. */
 const sentIds = new WeakMap<Call, number>();
-let lastSentId = 0;
 const waiters: Array<(call: Call) => void> = [];
 /** The next Bot API call, for a send nothing awaits (the provisioning notifier fires and forgets). */
 const nextCall = () => new Promise<Call>((resolve) => waiters.push(resolve));
@@ -183,7 +183,7 @@ const fake = Bun.serve({
       return Response.json({ ok: true, result: { file_id: id, file_path: `photos/${id}.jpg` } });
     }
     if (call.method === 'sendMessage') {
-      sentIds.set(call, ++lastSentId);
+      sentIds.set(call, updateId++);
       return Response.json({ ok: true, result: { message_id: sentIds.get(call) } });
     }
     return Response.json({ ok: true, result: call.method === 'getWebhookInfo' ? webhookInfo : { message_id: 1 } });
@@ -1050,8 +1050,9 @@ describe('Telegram questions posted by the server — migrated PostgreSQL', () =
     const sessionId = await askedSession('981');
     const id = await pending(sessionId);
     expect(await relayTurnQuestion(sessionId, QUESTION as never, { pendingId: id, principal: await principalOf(sessionId) })).toEqual({ ok: true, answers: POSTED });
-    expect(methods()).toEqual(['getWebhookInfo', 'sendMessage']);
-    const sent = calls[1]!.body as { chat_id: unknown; text: string; reply_markup: { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> } };
+    // The bot already takes presses (its claim is held): no look at the webhook.
+    expect(methods()).toEqual(['sendMessage']);
+    const sent = calls[0]!.body as { chat_id: unknown; text: string; reply_markup: { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> } };
     expect(sent.chat_id).toBe('981');
     expect(sent.text).toBe('Pick: Which database?\n1. Postgres\n2. SQLite\n\nTap an option, or reply to this message with your own answer.');
     expect(sent.reply_markup.inline_keyboard).toEqual([
@@ -1072,26 +1073,21 @@ describe('Telegram questions posted by the server — migrated PostgreSQL', () =
     expect(calls.at(-1)!.body).toMatchObject({ chat_id: '-100982', message_thread_id: 7 });
   });
 
-  test('two questions, a multi-select or more than six options are a numbered list to reply to', async () => {
+  test('a question with no option to tap makes the whole ask a numbered list to reply to', async () => {
     const sessionId = await askedSession('983');
-    const options = (n: number) => Array.from({ length: n }, (_, i) => ({ label: `Option ${i + 1}`, description: '' }));
     for (const questions of [
-      [QUESTION[0], { header: '', question: 'Which region?', options: options(2) }],
-      [{ header: '', question: 'Which features?', options: options(3), multiple: true }],
-      [{ header: '', question: 'Which size?', options: options(7) }],
+      [QUESTION[0], { header: '', question: 'Which region?', options: [] }],
+      [{ header: '', question: 'Which size?', options: [] }],
     ]) {
       expect(await ask(sessionId, questions)).toEqual({ ok: true, answers: questions.map(() => POSTED[0]!) });
     }
-    // No buttons, so no look at the webhook either.
-    expect(methods()).toEqual(['sendMessage', 'sendMessage', 'sendMessage']);
+    expect(methods()).toEqual(['sendMessage', 'sendMessage']);
     expect(calls.some((c) => 'reply_markup' in c.body)).toBe(false);
-    const [two, multiple, seven] = calls.map((c) => String(c.body.text));
+    const [two, open] = calls.map((c) => String(c.body.text));
     expect(two).toBe(
-      '1) Pick: Which database?\n1. Postgres\n2. SQLite\n\n2) Which region?\n1. Option 1\n2. Option 2\n\nReply to this message with your answer, each question by its number.',
+      '1) Pick: Which database?\n1. Postgres\n2. SQLite\n\n2) Which region?\n\nReply to this message with your answer, each question by its number.',
     );
-    expect(multiple).toStartWith('Which features? (pick one or more)\n1. Option 1\n');
-    expect(seven).toContain('\n7. Option 7\n');
-    expect(seven).toEndWith('\n\nReply to this message with your answer.');
+    expect(open).toBe('Which size?\n\nReply to this message with your answer.');
   });
 
   test('nothing is posted without a stored question, after /new, or into a chat of a replaced bot', async () => {
@@ -1120,7 +1116,7 @@ describe('Telegram questions posted by the server — migrated PostgreSQL', () =
     await db.update(connectors).set({ enabled: false }).where(eq(connectors.connectorId, CONNECTOR));
     expect(await posted()).toBe(false);
     // A refused post makes no Bot API call at all.
-    expect(methods()).toEqual(['getWebhookInfo', 'sendMessage', 'getWebhookInfo', 'sendMessage']);
+    expect(methods()).toEqual(['sendMessage', 'sendMessage']);
   });
 
   test("the agent's policy set decides, and a set the connector does not define refuses", async () => {
@@ -1133,7 +1129,7 @@ describe('Telegram questions posted by the server — migrated PostgreSQL', () =
       .set({ policies: [{ match: 'send_message', action: 'always_run' }] })
       .where(eq(connectorPolicySets.connectorId, CONNECTOR));
     expect((await ask(sessionId)).ok).toBe(true);
-    expect(methods()).toEqual(['getWebhookInfo', 'sendMessage']);
+    expect(methods()).toEqual(['sendMessage']);
   });
 
   test("the agent's connector account decides too: a revoked account, a connector that needs sign-in, another session's principal", async () => {
@@ -1172,38 +1168,94 @@ describe('Telegram questions posted by the server — migrated PostgreSQL', () =
     expect(calls).toEqual([]);
   });
 
-  test('a bot connected before buttons is subscribed to presses on its own webhook, with its own secret', async () => {
-    const sessionId = await askedSession('988');
-    webhookInfo = { ...ownWebhook(), allowed_updates: ['message'] };
-    expect(await ask(sessionId)).toEqual({ ok: true, answers: POSTED });
-    expect(methods()).toEqual(['getWebhookInfo', 'setWebhook', 'sendMessage']);
-    // No drop_pending_updates: the messages Telegram still holds are delivered.
-    expect(calls[1]!.body).toEqual({ url: ownWebhook().url, secret_token: 's', allowed_updates: ['message', 'callback_query'] });
-    expect(calls[2]!.body).toHaveProperty('reply_markup');
-    // Telegram's default set (no allowed_updates) carries presses already.
-    calls.length = 0;
-    webhookInfo = { url: ownWebhook().url };
-    await ask(sessionId);
-    expect(methods()).toEqual(['getWebhookInfo', 'sendMessage']);
-    expect(calls[1]!.body).toHaveProperty('reply_markup');
+  test('questions shown one at a time are checked as one message with every question: a rule on any of them keeps the ask with the agent', async () => {
+    const sessionId = await askedSession('2006');
+    const two = [
+      { header: 'Fruit', question: 'Favourite fruit?', options: [{ label: 'Apple' }, { label: 'Banana' }] },
+      { header: 'Colour', question: 'Favourite colour?', options: [{ label: 'Red' }, { label: 'Blue' }] },
+    ];
+    const posted = async () => (await ask(sessionId, two)).ok;
+    // The second question reaches the chat only by an edit of the first one's message.
+    for (const text of ['/Favourite colour/', '/Favourite fruit/']) {
+      await rule('require_approval', [{ arg: 'text', match: text }]);
+      expect(await posted()).toBe(false);
+      await clearRules();
+    }
+    expect(calls).toEqual([]);
+    await rule('require_approval', [{ arg: 'text', match: '/Favourite size/' }]);
+    expect(await posted()).toBe(true);
+    expect(String(calls[0]!.body.text)).toStartWith('Question 1 of 2 · Fruit\n');
   });
 
-  test('a webhook this project does not own, or a failed subscription, gets the question as text', async () => {
-    const sessionId = await askedSession('989');
-    for (const info of [{ url: '' }, { url: `https://example.test/v1/webhooks/telegram/${crypto.randomUUID()}`, allowed_updates: ['message'] }]) {
-      calls.length = 0;
-      webhookInfo = info;
+  test('a bot connected before buttons is subscribed to presses on its own webhook, with its own secret', async () => {
+    const sessionId = await askedSession('988');
+    const unclaimed = () => db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, buttonsClaim));
+    try {
+      await unclaimed();
+      webhookInfo = { ...ownWebhook(), allowed_updates: ['message'] };
       expect(await ask(sessionId)).toEqual({ ok: true, answers: POSTED });
+      expect(methods()).toEqual(['getWebhookInfo', 'setWebhook', 'sendMessage']);
+      // No drop_pending_updates: the messages Telegram still holds are delivered.
+      expect(calls[1]!.body).toEqual({ url: ownWebhook().url, secret_token: 's', allowed_updates: ['message', 'callback_query'] });
+      expect(calls[2]!.body).toHaveProperty('reply_markup');
+      // Telegram's default set (no allowed_updates) carries presses already.
+      calls.length = 0;
+      await unclaimed();
+      webhookInfo = { url: ownWebhook().url };
+      await ask(sessionId);
       expect(methods()).toEqual(['getWebhookInfo', 'sendMessage']);
-      expect(calls[1]!.body).not.toHaveProperty('reply_markup');
-      expect(String(calls[1]!.body.text)).toEndWith('Reply to this message with your answer.');
+      expect(calls[1]!.body).toHaveProperty('reply_markup');
+    } finally {
+      await holdButtonsClaim();
     }
-    calls.length = 0;
-    webhookInfo = { ...ownWebhook(), allowed_updates: ['message'] };
-    failing = 'setWebhook';
-    expect(await ask(sessionId)).toEqual({ ok: true, answers: POSTED });
-    expect(methods()).toEqual(['getWebhookInfo', 'setWebhook', 'sendMessage']);
-    expect(calls[2]!.body).not.toHaveProperty('reply_markup');
+  });
+
+  test('a webhook this project does not own gets the question as text, and the next question checks again', async () => {
+    const sessionId = await askedSession('989');
+    const claim = () => db.select().from(chatEventDedup).where(eq(chatEventDedup.eventId, buttonsClaim));
+    await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, buttonsClaim));
+    try {
+      for (const info of [{ url: '' }, { url: `https://example.test/v1/webhooks/telegram/${crypto.randomUUID()}`, allowed_updates: ['message'] }]) {
+        calls.length = 0;
+        webhookInfo = info;
+        expect(await ask(sessionId)).toEqual({ ok: true, answers: POSTED });
+        expect(methods()).toEqual(['getWebhookInfo', 'sendMessage']);
+        expect(calls[1]!.body).not.toHaveProperty('reply_markup');
+        expect(String(calls[1]!.body.text)).toEndWith('Reply to this message with your answer.');
+        expect(await claim()).toHaveLength(0);
+      }
+    } finally {
+      await holdButtonsClaim();
+    }
+  });
+
+  test('a question post subscribes a bot connected before buttons once per bot, as its first menu does; a failed subscription posts the list and frees the claim', async () => {
+    const claim = () => db.select().from(chatEventDedup).where(eq(chatEventDedup.eventId, buttonsClaim));
+    await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, buttonsClaim));
+    try {
+      const sessionId = await askedSession('2005');
+      webhookInfo = { ...ownWebhook(), allowed_updates: ['message'] };
+      failing = 'setWebhook';
+      expect(await ask(sessionId)).toEqual({ ok: true, answers: POSTED });
+      expect(methods()).toEqual(['getWebhookInfo', 'setWebhook', 'sendMessage']);
+      expect(calls[2]!.body).not.toHaveProperty('reply_markup');
+      expect(await claim()).toHaveLength(0);
+
+      calls.length = 0;
+      failing = null;
+      expect(await ask(sessionId)).toEqual({ ok: true, answers: POSTED });
+      expect(methods()).toEqual(['getWebhookInfo', 'setWebhook', 'sendMessage']);
+      expect(calls[2]!.body).toHaveProperty('reply_markup');
+      expect(await claim()).toHaveLength(1);
+
+      // Subscribed: the next question asks Telegram nothing about the webhook.
+      calls.length = 0;
+      expect(await ask(sessionId)).toEqual({ ok: true, answers: POSTED });
+      expect(methods()).toEqual(['sendMessage']);
+      expect(calls[0]!.body).toHaveProperty('reply_markup');
+    } finally {
+      await holdButtonsClaim();
+    }
   });
 
   test('a send Telegram refuses is not posted, so the agent asks in its own words', async () => {
@@ -1302,8 +1354,8 @@ describe('POST /turn-question for a Telegram session — migrated PostgreSQL', (
       .where(eq(sessionPendingQuestions.sessionId, sessionId));
     expect(stored.map((r) => r.requestId).sort()).toEqual(['que_member', 'que_sandbox', `q-${sessionId}`].sort());
     const id = stored.find((r) => r.requestId === 'que_sandbox')!.id;
-    expect(methods()).toEqual(['getWebhookInfo', 'sendMessage']);
-    expect(calls[1]!.body.reply_markup).toEqual({
+    expect(methods()).toEqual(['sendMessage']);
+    expect(calls[0]!.body.reply_markup).toEqual({
       inline_keyboard: [[{ text: 'Postgres', callback_data: `kq:${id}:0` }], [{ text: 'SQLite', callback_data: `kq:${id}:1` }]],
     });
   });
@@ -1540,6 +1592,322 @@ describe('Telegram question buttons — migrated PostgreSQL', () => {
     expect(settled.map((j) => j.status)).toEqual(['done', 'done']);
     expect(delivered.map((d) => d.sessionId)).toEqual([sessionId, sessionId]);
     expect(methods()).toContain('answerCallbackQuery');
+  });
+});
+
+describe('Telegram questions one at a time — migrated PostgreSQL', () => {
+  type Sent = { text: string; reply_markup?: { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> } };
+  const opts = (...labels: string[]) => labels.map((label) => ({ label, description: '' }));
+  const THREE = [
+    { header: 'Fruit', question: 'Favourite fruit?', options: opts('Apple', 'Banana', 'Cherry') },
+    { header: 'Colour', question: 'Favourite colour?', options: opts('Red', 'Green', 'Blue', 'Yellow') },
+    { header: 'Next step', question: 'What next?', options: opts('Ship', 'Wait', 'Ask') },
+  ];
+  const DRINKS = { header: 'Drinks', question: 'Which do you want?', options: opts('Tea', 'Coffee', 'Juice'), multiple: true };
+
+  /** `questions` asked in `chat` through the relay, as the session's sandbox asks: the stored row and the sent message. */
+  async function posted(chat: number, questions: unknown[]) {
+    const sessionId = await askedSession(String(chat));
+    const [row] = await db
+      .insert(sessionPendingQuestions)
+      .values({ accountId: ACCOUNT, projectId: PROJECT, sessionId, requestId: `que_${crypto.randomUUID()}`, questions, answeredAt: new Date().toISOString() })
+      .returning({ id: sessionPendingQuestions.id });
+    expect(await relayTurnQuestion(sessionId, questions as never, { pendingId: row!.id, principal: await principalOf(sessionId) })).toMatchObject({ ok: true });
+    const sent = calls.find((c) => c.method === 'sendMessage')!;
+    calls.length = 0;
+    return { sessionId, id: row!.id, chat, message: sentIds.get(sent)!, sent: sent.body as unknown as Sent };
+  }
+  type Posted = Awaited<ReturnType<typeof posted>>;
+  const labels = (body: Sent | Record<string, unknown>) =>
+    ((body as Sent).reply_markup?.inline_keyboard ?? []).map((row) => row.map((b) => b.text));
+  const tapOn = (q: Posted, data: string, from = ALLOWED) => handleTelegramPress(press(data, { chat: q.chat, messageId: q.message, from }));
+  /** The pressed message as the last edit drew it: its text and its button labels. */
+  const lastEdit = () => {
+    const edit = calls.filter((c) => c.method === 'editMessageText').at(-1)!;
+    return { text: String(edit.body.text), buttons: labels(edit.body) };
+  };
+  const toasts = () => calls.filter((c) => c.method === 'answerCallbackQuery').map((c) => (c.body.text as string | undefined) ?? null);
+  const steps = async (id: string) =>
+    (await db.select({ steps: sessionPendingQuestions.chatSteps }).from(sessionPendingQuestions).where(eq(sessionPendingQuestions.id, id)))[0]!.steps;
+
+  test('three questions: one message shows each in turn with its buttons, and the last tap sends every answer once', async () => {
+    const q = await posted(3001, THREE);
+    expect(q.sent.text).toBe('Question 1 of 3 · Fruit\nFavourite fruit?\n1. Apple\n2. Banana\n3. Cherry\n\nTap an option, or type your own answer.');
+    expect(q.sent.reply_markup!.inline_keyboard).toEqual([
+      [{ text: 'Apple', callback_data: `kq:${q.id}:0` }],
+      [{ text: 'Banana', callback_data: `kq:${q.id}:1` }],
+      [{ text: 'Cherry', callback_data: `kq:${q.id}:2` }],
+    ]);
+
+    await tapOn(q, `kq:${q.id}:1`);
+    expect(methods()).toEqual(['answerCallbackQuery', 'editMessageText']);
+    expect(toasts()).toEqual([null]);
+    expect(calls[1]!.body).toMatchObject({ chat_id: 3001, message_id: q.message });
+    expect(lastEdit()).toEqual({
+      text: 'Question 2 of 3 · Colour\nFavourite colour?\n1. Red\n2. Green\n3. Blue\n4. Yellow\n\nTap an option, or type your own answer.',
+      buttons: [['Red'], ['Green'], ['Blue'], ['Yellow']],
+    });
+    expect(String((calls[1]!.body as unknown as Sent).reply_markup!.inline_keyboard[2]![0]!.callback_data)).toBe(`kq:${q.id}:1.2`);
+    expect(delivered).toHaveLength(0);
+
+    await tapOn(q, `kq:${q.id}:1.2`);
+    expect(lastEdit().text).toStartWith('Question 3 of 3 · Next step\nWhat next?\n1. Ship\n');
+    expect(delivered).toHaveLength(0);
+
+    calls.length = 0;
+    await tapOn(q, `kq:${q.id}:2.0`);
+    expect(methods()).toEqual(['answerCallbackQuery', 'editMessageText']);
+    expect(toasts()).toEqual(['Answered: Banana, Blue, Ship']);
+    expect(lastEdit().buttons).toEqual([]);
+    expect(lastEdit().text).toEndWith('\n\nAnswered: Banana, Blue, Ship');
+    expect(lastEdit().text).toStartWith('1) Fruit: Favourite fruit?\n');
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toMatchObject({ sessionId: q.sessionId });
+    expect(delivered[0]!.text).toContain('You asked:\n> Favourite fruit?\nBanana\n\n> Favourite colour?\nBlue\n\n> What next?\nShip');
+  });
+
+  test('a multi-select ticks and unticks on each tap; Done takes the ticked options, and Done with none ticked changes nothing', async () => {
+    const q = await posted(3002, [DRINKS]);
+    expect(q.sent.text).toBe('Drinks: Which do you want? (pick one or more)\n1. Tea\n2. Coffee\n3. Juice\n\nTap each option you want, then Done, or type your own answer.');
+    expect(labels(q.sent)).toEqual([['Tea'], ['Coffee'], ['Juice'], ['Done ›']]);
+    expect(q.sent.reply_markup!.inline_keyboard[3]![0]!.callback_data).toBe(`kq:${q.id}:d`);
+
+    await tapOn(q, `kq:${q.id}:d`);
+    expect(methods()).toEqual(['answerCallbackQuery']);
+    expect(toasts()).toEqual(['Tap at least one option first.']);
+    expect(await steps(q.id)).toBeNull();
+
+    await tapOn(q, `kq:${q.id}:0`);
+    expect(lastEdit().buttons).toEqual([['✓ Tea'], ['Coffee'], ['Juice'], ['Done ›']]);
+    await tapOn(q, `kq:${q.id}:2`);
+    expect(lastEdit().buttons).toEqual([['✓ Tea'], ['Coffee'], ['✓ Juice'], ['Done ›']]);
+    await tapOn(q, `kq:${q.id}:0`);
+    await tapOn(q, `kq:${q.id}:1`);
+    expect(lastEdit().buttons).toEqual([['Tea'], ['✓ Coffee'], ['✓ Juice'], ['Done ›']]);
+    expect(delivered).toHaveLength(0);
+
+    await tapOn(q, `kq:${q.id}:d`);
+    expect(toasts().at(-1)).toBe('Answered: Coffee, Juice');
+    expect(lastEdit()).toEqual({ text: expect.stringMatching(/\n\nAnswered: Coffee, Juice$/), buttons: [] });
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]!.text).toContain('You asked:\n> Which do you want?\n\nCoffee, Juice');
+  });
+
+  test('a second tap on an answered step, a retried press and an old button answer "already answered" and change nothing', async () => {
+    const q = await posted(3003, THREE);
+    const first = press(`kq:${q.id}:0`, { chat: 3003, messageId: q.message });
+    await handleTelegramPress(first);
+    const after = await steps(q.id);
+    expect(after).toMatchObject({ step: 1, picks: [{ question: 0, options: [0] }] });
+
+    calls.length = 0;
+    // A double tap, and a tap on another option of the step already answered.
+    await tapOn(q, `kq:${q.id}:0`);
+    await tapOn(q, `kq:${q.id}:2`);
+    expect(toasts()).toEqual(['This question was already answered.', 'This question was already answered.']);
+    expect(await steps(q.id)).toEqual(after);
+    // Each redraws the question on screen: an edit Telegram lost heals on the next tap.
+    expect(lastEdit().text).toStartWith('Question 2 of 3 · Colour');
+
+    calls.length = 0;
+    // The inbox runs the first press again: it was already applied.
+    await handleTelegramPress(first);
+    expect(toasts()).toEqual([null]);
+    expect(await steps(q.id)).toEqual(after);
+
+    await tapOn(q, `kq:${q.id}:1.0`);
+    await tapOn(q, `kq:${q.id}:2.1`);
+    expect(delivered).toHaveLength(1);
+    calls.length = 0;
+    // A button of the answered message: no second answer, and the buttons go.
+    await tapOn(q, `kq:${q.id}:2.2`);
+    expect(toasts()).toEqual(['This question was already answered.']);
+    expect(methods()).toEqual(['answerCallbackQuery', 'editMessageReplyMarkup']);
+    expect(delivered).toHaveLength(1);
+  });
+
+  test('two people tapping the same step at once: one pick counts, the other is told it was answered', async () => {
+    await setTelegramAllowedUserIds(PROJECT, [ALLOWED, '222']);
+    try {
+      const q = await posted(3004, THREE);
+      const a = press(`kq:${q.id}:0`, { chat: 3004, messageId: q.message });
+      const b = press(`kq:${q.id}:2`, { chat: 3004, messageId: q.message, from: '222' });
+      const settled = await Promise.allSettled([handleTelegramPress(a), handleTelegramPress(b)]);
+      // A press that lost the write asks the inbox for a retry; the retry reads the step the other moved to.
+      for (const [i, s] of settled.entries()) if (s.status === 'rejected') await handleTelegramPress([a, b][i]!);
+      const state = (await steps(q.id)) as { step: number; picks: Array<{ question: number }> };
+      expect(state.step).toBe(1);
+      expect(state.picks.map((p) => p.question)).toEqual([0]);
+      expect(toasts().filter((t) => t === 'This question was already answered.')).toHaveLength(1);
+      expect(delivered).toHaveLength(0);
+    } finally {
+      await allowSender();
+    }
+  });
+
+  test('a typed message answers the question on screen; on a question that takes no typed answer it reaches the agent as before', async () => {
+    const q = await posted(3005, THREE);
+    await tapOn(q, `kq:${q.id}:2`);
+    calls.length = 0;
+    await handleTelegramEvent(update('Purple', ALLOWED, 3005));
+    expect(delivered).toHaveLength(0);
+    expect(calls.filter((c) => c.method === 'editMessageText')).toHaveLength(1);
+    expect(lastEdit().text).toStartWith('Question 3 of 3 · Next step');
+    await tapOn(q, `kq:${q.id}:2.2`);
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]!.text).toContain('> Favourite colour?\nPurple\n\n> What next?\nAsk');
+
+    // The last question answered by typing submits every answer, under the message's own key.
+    const typedLast = await posted(3006, [THREE[0], DRINKS]);
+    await tapOn(typedLast, `kq:${typedLast.id}:0`);
+    await tapOn(typedLast, `kq:${typedLast.id}:1.1`);
+    const message = update('and water', ALLOWED, 3006);
+    await handleTelegramEvent(message);
+    expect(delivered).toHaveLength(2);
+    expect(delivered[1]).toMatchObject({ sessionId: typedLast.sessionId, idempotencyKey: `telegram:${BOT_ID}:${message.id}` });
+    expect(delivered[1]!.text).toContain('> Which do you want?\nCoffee, and water');
+    expect(lastEdit().text).toEndWith('Answered: Apple, Coffee, and water');
+
+    const strict = await posted(3007, [THREE[0], { ...THREE[1], custom: false }, THREE[2]]);
+    await tapOn(strict, `kq:${strict.id}:0`);
+    expect(lastEdit().text).toEndWith('\n\nTap an option.');
+    calls.length = 0;
+    const purple = update('Purple', ALLOWED, 3007);
+    // The session cannot take it yet: the inbox retries, and the buttons stay until the message is delivered.
+    deliverResult = 'failed';
+    await expect(handleTelegramEvent(purple)).rejects.toThrow('follow-up failed');
+    expect(calls.filter((c) => c.method === 'editMessageText')).toEqual([]);
+    deliverResult = 'queued';
+    await handleTelegramEvent(purple);
+    expect(lastEdit()).toEqual({ text: expect.stringMatching(/\n\nAnswered in the chat\.$/), buttons: [] });
+    // Both attempts carry the answers so far, an unanswered question saying so, then the message.
+    expect(delivered.slice(-2).map((d) => d.sessionId)).toEqual([strict.sessionId, strict.sessionId]);
+    for (const { text } of delivered.slice(-2)) {
+      expect(text).toContain('You asked:\n> Favourite fruit?\nApple\n\n> Favourite colour?\n(no answer given)\n\n> What next?\n(no answer given)\n\nPurple\n');
+    }
+
+    // A message with no text (a sticker) is never an answer, and carries the answers so far too.
+    const sticker = await posted(3011, THREE);
+    await tapOn(sticker, `kq:${sticker.id}:1`);
+    await handleTelegramEvent(mediaUpdate({ sticker: { emoji: '👍' } }, { chat: 3011 }));
+    expect(lastEdit().text).toEndWith('\n\nAnswered in the chat.');
+    expect(delivered.at(-1)!.text).toContain('> Favourite fruit?\nBanana\n\n> Favourite colour?\n(no answer given)\n\n> What next?\n(no answer given)\n\n(sticker 👍)\n');
+    expect(await steps(sticker.id)).toMatchObject({ step: 1 });
+  });
+
+  test("steps another tap moved between the read and the write are read again on the inbox's last attempt, at most 3 more times", async () => {
+    const q = await posted(3015, THREE);
+    const cas = spyOn(projectSurface, 'advancePendingQuestionSteps');
+    /** The write loses: another replica's tap wrote `moved` first. */
+    const loseTo = (moved: unknown) =>
+      cas.mockImplementationOnce(async () => {
+        await db.update(sessionPendingQuestions).set({ chatSteps: moved as never }).where(eq(sessionPendingQuestions.id, q.id));
+        return false;
+      });
+    const tap = (data: string) => press(data, { chat: 3015, messageId: q.message });
+    const other = { step: 1, picks: [{ question: 0, options: [2] }], ticked: [], by: 'cbq-other', ref: String(q.message) };
+    try {
+      loseTo(other);
+      await handleTelegramPress(tap(`kq:${q.id}:0`), { finalAttempt: true });
+      expect(toasts()).toEqual(['This question was already answered.']);
+      expect(await steps(q.id)).toEqual(other);
+
+      // An attempt the inbox still retries throws, and the retry reads the steps again.
+      cas.mockImplementationOnce(async () => false);
+      await expect(handleTelegramPress(tap(`kq:${q.id}:1.0`))).rejects.toThrow('question steps moved');
+      expect(await steps(q.id)).toEqual(other);
+
+      // A typed message on the last attempt answers the step the other tap moved to.
+      loseTo({ ...other, step: 2, picks: [...other.picks, { question: 1, options: [1] }], by: 'cbq-other-2' });
+      await handleTelegramEvent(update('Plum', ALLOWED, 3015), { finalAttempt: true });
+      expect(delivered).toHaveLength(1);
+      expect(delivered[0]!.text).toContain('> Favourite fruit?\nCherry\n\n> Favourite colour?\nGreen\n\n> What next?\nPlum');
+
+      // Lost 4 times in a row on the last attempt: the tap goes to the inbox's dead letters.
+      const again = await posted(3016, THREE);
+      cas.mockImplementation(async () => false);
+      const before = cas.mock.calls.length;
+      await expect(handleTelegramPress(press(`kq:${again.id}:0`, { chat: 3016, messageId: again.message }), { finalAttempt: true })).rejects.toThrow(
+        'question steps moved',
+      );
+      expect(cas.mock.calls.length - before).toBe(4);
+    } finally {
+      cas.mockRestore();
+    }
+  });
+
+  test('a message sent before the question message (a late retry) is not its answer, and leaves its buttons', async () => {
+    const early = update('Purple', ALLOWED, 3014);
+    const q = await posted(3014, THREE);
+    await handleTelegramEvent(early);
+    expect(await steps(q.id)).toBeNull();
+    expect(calls.filter((c) => c.method === 'editMessageText')).toEqual([]);
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]!.text).toContain('\nPurple\n');
+    expect(delivered[0]!.text).not.toContain('You asked:');
+    // A message sent after it still answers the question on screen.
+    await handleTelegramEvent(update('Plum', ALLOWED, 3014));
+    expect(await steps(q.id)).toMatchObject({ step: 1, picks: [{ question: 0, options: [], text: 'Plum' }] });
+  });
+
+  test('a session deleted in the web takes no typed answer: the message starts a new session', async () => {
+    const q = await posted(3012, THREE);
+    await tapOn(q, `kq:${q.id}:0`);
+    await db.update(projectSessions).set({ metadata: { deletedAt: new Date().toISOString() } }).where(eq(projectSessions.sessionId, q.sessionId));
+    // What the delivery answers for a deleted session (follow-up-delivery.ts).
+    deliverResult = 'no-session';
+    await handleTelegramEvent(update('Purple', ALLOWED, 3012));
+    expect(created).toHaveLength(1);
+    expect(await steps(q.id)).toMatchObject({ step: 1, picks: [{ question: 0, options: [0] }] });
+  });
+
+  test('a question answered another way (the web) takes no typed answer: the message reaches the agent as itself', async () => {
+    const q = await posted(3013, THREE);
+    await tapOn(q, `kq:${q.id}:0`);
+    await db.update(sessionPendingQuestions).set({ answers: [['Cherry'], ['Red'], ['Ship']] }).where(eq(sessionPendingQuestions.id, q.id));
+    calls.length = 0;
+    await handleTelegramEvent(update('Purple', ALLOWED, 3013));
+    expect(await steps(q.id)).toMatchObject({ step: 1 });
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toMatchObject({ sessionId: q.sessionId });
+    expect(delivered[0]!.text).not.toContain('You asked:');
+    expect(lastEdit()).toEqual({ text: expect.stringMatching(/\n\nAnswered in the chat\.$/), buttons: [] });
+  });
+
+  test('a press from someone not on the allow-list gets an alert and moves nothing', async () => {
+    const q = await posted(3008, THREE);
+    await tapOn(q, `kq:${q.id}:0`, '999');
+    expect(methods()).toEqual(['answerCallbackQuery']);
+    expect(calls[0]!.body).toMatchObject({ show_alert: true });
+    expect(await steps(q.id)).toBeNull();
+  });
+
+  test('more options than six turn pages with More and Back; a tick keeps its page', async () => {
+    const eight = opts('O1', 'O2', 'O3', 'O4', 'O5', 'O6', 'O7', 'O8');
+    const one = await posted(3009, [{ header: '', question: 'Which size?', options: eight }]);
+    expect(one.sent.text).toContain('\n8. O8\n');
+    expect(labels(one.sent)).toEqual([['O1'], ['O2'], ['O3'], ['O4'], ['O5'], ['O6'], ['More ›']]);
+    expect(one.sent.reply_markup!.inline_keyboard[6]![0]!.callback_data).toBe(`kq:${one.id}:p1`);
+    await tapOn(one, `kq:${one.id}:p1`);
+    expect(lastEdit().buttons).toEqual([['O7'], ['O8'], ['‹ Back']]);
+    expect(toasts()).toEqual([null]);
+    await tapOn(one, `kq:${one.id}:p0`);
+    expect(lastEdit().buttons[0]).toEqual(['O1']);
+    await tapOn(one, `kq:${one.id}:7`);
+    expect(toasts().at(-1)).toBe('Answered: O8');
+    expect(delivered).toHaveLength(1);
+
+    const many = await posted(3010, [THREE[0], { header: 'Sizes', question: 'Which sizes?', options: eight, multiple: true }]);
+    await tapOn(many, `kq:${many.id}:0`);
+    expect(lastEdit().buttons).toEqual([['O1'], ['O2'], ['O3'], ['O4'], ['O5'], ['O6'], ['More ›'], ['Done ›']]);
+    await tapOn(many, `kq:${many.id}:1.p1`);
+    await tapOn(many, `kq:${many.id}:1.6`);
+    expect(lastEdit().buttons).toEqual([['✓ O7'], ['O8'], ['‹ Back'], ['Done ›']]);
+    await tapOn(many, `kq:${many.id}:1.d`);
+    expect(delivered.at(-1)!.text).toContain('> Which sizes?\nO7');
+    for (const row of [...one.sent.reply_markup!.inline_keyboard, ...many.sent.reply_markup!.inline_keyboard]) {
+      for (const button of row) expect(Buffer.byteLength(button.callback_data)).toBeLessThanOrEqual(64);
+    }
   });
 });
 
@@ -2200,6 +2568,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     ];
     const spies: Array<{ mockRestore(): void }> = [
       spyOn(selection, 'listProjectAgents').mockResolvedValue(agents),
+      spyOn(selection, 'loadProjectAgentGovernance').mockResolvedValue({ agents, declared: true }),
       spyOn(iam, 'unscopedResourceIds').mockResolvedValue(['reviewer']),
     ];
     try {
@@ -2230,6 +2599,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     await holdClaim(7049);
     const spies: Array<{ mockRestore(): void }> = [
       spyOn(selection, 'listProjectAgents').mockResolvedValue([{ name: 'reviewer', description: 'Reviews changes', mode: null }]),
+      spyOn(selection, 'loadProjectAgentGovernance').mockResolvedValue({ agents: [{ name: 'reviewer', description: 'Reviews changes', mode: null }], declared: true }),
       spyOn(iam, 'unscopedResourceIds').mockResolvedValue(['reviewer']),
     ];
     try {
@@ -2279,6 +2649,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
       .where(eq(projectSessions.sessionId, deleted));
     const spies: Array<{ mockRestore(): void }> = [
       spyOn(selection, 'listProjectAgents').mockResolvedValue([{ name: 'reviewer', description: 'Reviews changes', mode: null }]),
+      spyOn(selection, 'loadProjectAgentGovernance').mockResolvedValue({ agents: [{ name: 'reviewer', description: 'Reviews changes', mode: null }], declared: true }),
       spyOn(iam, 'unscopedResourceIds').mockResolvedValue(['reviewer']),
     ];
     try {
@@ -2314,6 +2685,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     beforeEach(() => {
       spies = [
         spyOn(selection, 'listProjectAgents').mockResolvedValue([{ name: 'reviewer', description: 'Reviews changes', mode: null }]),
+        spyOn(selection, 'loadProjectAgentGovernance').mockResolvedValue({ agents: [{ name: 'reviewer', description: 'Reviews changes', mode: null }], declared: true }),
         spyOn(iam, 'unscopedResourceIds').mockResolvedValue(['reviewer']),
         spyOn(defaultModel, 'isModelServableForAccount').mockResolvedValue(true),
       ];
@@ -2595,7 +2967,11 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     });
 
     test('an agent pick runs /agent <name>; a forged pick of an agent a grant restricts is out of date', async () => {
-      const spies = [spyOn(selection, 'listProjectAgents').mockResolvedValue(AGENTS), spyOn(iam, 'unscopedResourceIds').mockResolvedValue(['reviewer'])];
+      const spies = [
+        spyOn(selection, 'listProjectAgents').mockResolvedValue(AGENTS),
+        spyOn(selection, 'loadProjectAgentGovernance').mockResolvedValue({ agents: AGENTS, declared: true }),
+        spyOn(iam, 'unscopedResourceIds').mockResolvedValue(['reviewer']),
+      ];
       try {
         await handleTelegramEvent(update('/agents', ALLOWED, 7111));
         const menu = lastSent();

@@ -1,12 +1,11 @@
 import { copySessionLog, withForkAttachmentCleanup } from '../session-log-fork';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
-import { captureJournallessSessionLog } from './session-transcript-capture';
 import { randomUUID } from 'node:crypto';
 import { SESSION_INITIAL_CONTEXT_MAX_CHARS, SessionCreateInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
-import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG } from '@kortix/shared';
+import { canonicalAgentName, isMyKortixAgentName, isMyKortixSandboxSlug, MY_KORTIX_AGENT_NAME, MY_KORTIX_SANDBOX_SLUG } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
@@ -30,6 +29,8 @@ import {
   type ModelSource,
   toOpencodeModelRef,
 } from '../../llm-gateway/resolution/effective';
+import { checkClaudeAgentRef } from '../../llm-gateway/resolution/claude-agent';
+import { claudeSubscriptionRequiredBody, missingClaudeSubscription } from '../claude-subscription/gate';
 
 import { selectProvider } from '../../platform/services/provider-balancer';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
@@ -69,7 +70,7 @@ import {
 
 import { type ProjectRow, type ProjectSessionRow, type RequestAuditContext, normalizeString } from './serializers';
 import { normalizeJsonObject } from '../../shared/json';
-import { resolveBuiltinAgents } from './platform-meta-agent';
+import { resolveBuiltinAgents } from './my-kortix-agent';
 import { isUuid } from '../../shared/validate';
 import {
   canonicalConnectorAlias,
@@ -93,9 +94,9 @@ import {
 } from './session-sandbox-metadata';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { transitionSession } from '../session-lifecycle/status-transitions';
-import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-runtime-context';
+import { mergeSessionSandboxEnv, parseSessionRuntimeContext, reservedRuntimeContextRefusal } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { resolvePlatformMetaSandbox } from './platform-meta-agent';
+import { resolveMyKortixSandbox } from './my-kortix-agent';
 import { spaceAccessFor } from '../../shared/space-access';
 import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, ensureDefaultSpace, findForkSourceSpace, forkSourceVisibility, findLiveChannel, findSessionSpace, inheritedPrivateSpace, spaceSessionVisibility } from './project-spaces';
 import { liveTriggerSpace, triggerRunSpace } from './trigger-space';
@@ -110,6 +111,7 @@ import { sandboxCallbackUnreachableReason, sandboxCallbackDeadTunnelReason } fro
 import type { Actor } from '../../iam/actor';
 import { loadVisibleSession, sessionIsTombstoned } from './session-visibility';
 import { HUMAN_SESSION_SURFACES } from './session-surface';
+import { isWorkflowRunnerContext, sessionIsWorkflowRunner } from './workflow-runner';
 import type { SessionInvocationSource } from '../session-lifecycle/types';
 /** Every status a failed create answers with. Routes that create a session
  *  declare these, so the published spec lists them. */
@@ -527,23 +529,21 @@ async function resolveSessionAgent(params: {
   // The literal "default" is a non-binding legacy sentinel. It must not block
   // the configured project default. This rule applies to every caller,
   // including older triggers and channel adapters that still send the sentinel.
+  // A client from before the My Kortix rename sends `meta`: it starts a `mykortix` session.
   const requestedAgent =
-    normalizeString(body.agent_name ?? body.agentName) ??
+    canonicalAgentName(normalizeString(body.agent_name ?? body.agentName)) ??
     params.channelAgents.find((name) => isLaunchableAgentName(name, loadedAgents)) ??
     null;
   const mirroredDefaultAgent = normalizeString(
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
   const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
-  // My Kortix (slug `meta`) is on unless kortix.yaml sets
-  // `builtin_agents.my_kortix: false` (no key: the legacy `meta_agent` switch).
+  // My Kortix (slug `mykortix`) is on unless kortix.yaml sets
+  // `builtin_agents.my_kortix: false`.
   // Off: agent resolution below is the pre-meta behavior, and a session that
-  // would run `meta` is refused with 409 builtin_agent_disabled. Without the
+  // would run My Kortix is refused with 409 builtin_agent_disabled. Without the
   // refusal it ran with My Kortix's grant, prompt and sandbox anyway.
-  const metaAgentEnabled = resolveBuiltinAgents(
-    loadedAgents.builtinAgents ?? {},
-    resolveFeatureFlag(project.metadata, 'meta_agent'),
-  ).my_kortix;
+  const metaAgentEnabled = resolveBuiltinAgents(loadedAgents.builtinAgents ?? {}).my_kortix;
   // Meta→meta recursion stop. Anyone — dashboard users included — may spawn
   // the meta coordinator, and an omitted agent still defaults to it. The one
   // exception is a caller that IS a meta session: its omitted agent resolves
@@ -562,17 +562,17 @@ async function resolveSessionAgent(params: {
         ),
       )
       .limit(1);
-    callerIsMeta = !!caller && isMetaAgentName(caller.agentName);
+    callerIsMeta = !!caller && isMyKortixAgentName(caller.agentName);
   }
   const agentName =
     metaAgentEnabled && !requestedAgent && !callerIsMeta
-      ? META_AGENT_NAME
+      ? MY_KORTIX_AGENT_NAME
       : resolveSessionAgentName({
           requestedAgent,
           manifestDefaultAgent: normalizeString(loadedAgents.defaultAgent),
           mirroredDefaultAgent,
         });
-  if (!metaAgentEnabled && isMetaAgentName(agentName)) {
+  if (!metaAgentEnabled && isMyKortixAgentName(agentName)) {
     return {
       error: {
         status: 409,
@@ -584,8 +584,14 @@ async function resolveSessionAgent(params: {
       },
     };
   }
-  const platformMetaAgent = metaAgentEnabled && isMetaAgentName(agentName);
-  if (platformMetaAgent && callerIsMeta) {
+  const platformMetaAgent = metaAgentEnabled && isMyKortixAgentName(agentName);
+  // My Kortix's own background workflow runs in a My Kortix runner (workflow-runner.ts); a runner never starts another.
+  const myKortixWorkflowRunner =
+    platformMetaAgent &&
+    callerIsMeta &&
+    isWorkflowRunnerContext(body.runtime_context) &&
+    !(await sessionIsWorkflowRunner(input.callerSessionId!));
+  if (platformMetaAgent && callerIsMeta && !myKortixWorkflowRunner) {
     return {
       error: {
         status: 400,
@@ -610,6 +616,23 @@ async function resolveSessionAgent(params: {
     };
   }
   return { loadedAgents, projectDefaultAgent, agentName, platformMetaAgent, repositoryAccess };
+}
+
+/**
+ * The model ref of the first prompt's pick (`pending_prompt.model`), or null.
+ * `{ providerID: 'claude-agent', modelID: 'opus' }` is `claude-agent/opus`;
+ * an unknown Claude id is null.
+ */
+export function firstPromptModelRef(pendingPrompt: unknown): string | null {
+  if (!pendingPrompt || typeof pendingPrompt !== 'object' || Array.isArray(pendingPrompt)) return null;
+  const model = (pendingPrompt as { model?: unknown }).model as { providerID?: unknown; modelID?: unknown } | null | undefined;
+  const providerID = typeof model?.providerID === 'string' ? model.providerID.trim() : '';
+  const modelID = typeof model?.modelID === 'string' ? model.modelID.trim() : '';
+  if (!providerID || !modelID || /\s/.test(providerID + modelID)) return null;
+  const ref = `${providerID}/${modelID}`;
+  const claude = checkClaudeAgentRef(ref);
+  if (claude.kind === 'invalid') return null;
+  return claude.kind === 'valid' ? claude.ref : ref;
 }
 
 /**
@@ -662,6 +685,17 @@ async function resolveSessionModel(params: {
           body: { error: `"${requestedModel}" doesn't look like a model id`, code: 'INVALID_SESSION_MODEL' },
         },
       };
+    }
+    const claudeAgent = checkClaudeAgentRef(requestedModel);
+    if (claudeAgent.kind === 'invalid') {
+      return { error: { status: 400, body: { error: claudeAgent.message, code: 'INVALID_SESSION_MODEL' } } };
+    }
+    // A Claude subscription model needs a Claude account, so a first prompt
+    // without one could only fail in the box.
+    const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
+    if (claudeAgent.kind === 'valid' && initialPrompt && !input.callerSessionId) {
+      const missing = await missingClaudeSubscription({ accountId, projectId, userId, model: claudeAgent.ref });
+      if (missing) return { error: { status: 409, body: claudeSubscriptionRequiredBody(missing) } };
     }
     let servable = await isModelServableForAccount({
       userId,
@@ -741,6 +775,14 @@ async function resolveSessionModel(params: {
       if (concreteModel) {
         opencodeModel = toOpencodeModelRef(concreteModel);
         opencodeModelSource = resolved.model ? resolved.source : 'platform';
+      } else {
+        // No default: the box would boot with no model, and pi does not start
+        // without one. The web names the person's pick only on the first prompt.
+        const picked = firstPromptModelRef(body.pending_prompt);
+        if (picked && (await isModelServableForAccount({ userId, accountId, projectId, freeModelsOnly, model: picked, providerSecretPools }))) {
+          opencodeModel = toOpencodeModelRef(picked);
+          opencodeModelSource = 'explicit';
+        }
       }
     } catch (error) {
       console.error('[projects] Failed to resolve the session default model:', error);
@@ -855,13 +897,13 @@ async function resolveSessionSandboxPlacement(params: {
     // The meta coordinator is locked to its own sandbox. An explicit request for
     // any other slug is the only failure here, so scope the catch to this branch.
     try {
-      sandboxSlug = resolvePlatformMetaSandbox(requestedSandboxSlug);
+      sandboxSlug = resolveMyKortixSandbox(requestedSandboxSlug);
     } catch {
       return {
         error: {
           status: 400,
           body: {
-            error: `Agent "meta" always uses sandbox "${META_SANDBOX_SLUG}"`,
+            error: `Agent "${MY_KORTIX_AGENT_NAME}" always uses sandbox "${MY_KORTIX_SANDBOX_SLUG}"`,
             code: 'META_SANDBOX_LOCKED',
           },
         },
@@ -1282,7 +1324,7 @@ async function insertSessionAndBindings(
     .returning();
   if (!row) throw new Error('Session insert returned no row');
   if (typeof body.fork_from_session_id === 'string') {
-    await copySessionLog(tx, { sourceId: body.fork_from_session_id, sessionId, projectId, accountId, captureComplete: input.forkCaptureComplete });
+    await copySessionLog(tx, { sourceId: body.fork_from_session_id, sessionId, projectId, accountId });
   }
   if (input.createCommandId) {
     // Same transaction as the session row: a create command whose worker
@@ -1611,7 +1653,6 @@ export async function createProjectSession(input: {
   userId: string;
   requestingPrincipalType: 'human' | 'service_account';
   body: Record<string, unknown>;
-  forkCaptureComplete?: boolean;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   request?: RequestAuditContext;
@@ -1683,6 +1724,12 @@ export async function createProjectSession(input: {
   const parsedBody = parseSessionCreateBody(body);
   if (parsedBody.error) return { error: parsedBody.error };
   const { parsedRuntimeContext, parsedConnectorBindings } = parsedBody;
+  // The `kortix.` keys are facts kortixd acts on (depth, workflow runner, hand-off digest): only the box that
+  // creates its own child, with its session token, may set them.
+  const reservedRefusal = reservedRuntimeContextRefusal(parsedRuntimeContext.context, input.callerSessionId);
+  if (reservedRefusal) {
+    return { error: { status: 400, body: { error: reservedRefusal, code: 'INVALID_SESSION_RUNTIME_CONTEXT' } } };
+  }
   if (isDeprecatedProvider(normalizeString(body.provider))) {
     return { error: { status: 400, body: { error: DEPRECATED_PROVIDER_ERROR, code: DEPRECATED_PROVIDER_CODE } } };
   }
@@ -1804,13 +1851,7 @@ export async function createProjectSession(input: {
     if (!config.SESSION_LOG_RESTORE_ENABLED || !config.SESSION_LOG_INGEST_ENABLED) {
       return { error: { status: 503, body: { error: 'Session log restore is off' } } };
     }
-    const capture = await captureJournallessSessionLog(body.fork_from_session_id);
-    // A reachable box must provide the whole snapshot. A stopped box can use
-    // its durable journal, checked again under the journal lock during copy.
-    if (capture && !capture.head_complete) {
-      return { error: { status: 409, body: { error: 'Source history capture is incomplete' } } };
-    }
-    input.forkCaptureComplete = capture?.head_complete === true;
+    // The source's journal is its complete history, checked under the journal lock during the copy.
   }
 
   const { sessionId, initialPrompt, initialContext, initialTurn, pendingPromptConversion } = identity;
@@ -1839,7 +1880,7 @@ export async function createProjectSession(input: {
     sandboxSlug,
     filed: requestedSpace.filed,
     // Only a Platinum session box mounts it. An unrecorded open is deleted.
-    workspaceVolume: providerName === 'platinum' && sandboxSlug !== META_SANDBOX_SLUG ? workspaceVolume : null,
+    workspaceVolume: providerName === 'platinum' && !isMyKortixSandboxSlug(sandboxSlug) ? workspaceVolume : null,
     sandboxLocation: sandboxRegion.location,
   });
 

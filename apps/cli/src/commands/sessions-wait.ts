@@ -1,3 +1,4 @@
+import type { RuntimeThreadStatus } from '@kortix/sdk';
 import { sleep } from '@kortix/shared/guards';
 import { kortixFromAuth } from '../api/sdk.ts';
 import {
@@ -86,18 +87,18 @@ export function settledTurnOutcome(turn: SettledTurnStatus, startedAt: number): 
 }
 
 /**
- * Classify one poll. `statuses` is OpenCode's session-status map — an ABSENT
- * entry means idle (the server omits idle sessions). Pending interactive asks
- * win over everything: a blocked agent never becomes idle on its own.
+ * Classify one poll. `statuses` is the runtime's thread-status map: an absent
+ * entry means idle. Pending interactive asks win over everything: a blocked
+ * agent never becomes idle on its own.
  */
 export function classifyWaitPoll(
-  statuses: Record<string, { type?: string; [key: string]: unknown } | undefined>,
+  statuses: Record<string, RuntimeThreadStatus | undefined>,
   runtimeSessionId: string,
   pending: { permissions: number; questions: number },
 ): WaitPollState {
   if (pending.permissions > 0 || pending.questions > 0) return 'blocked';
   const current = statuses[runtimeSessionId];
-  if (!current || current.type === 'idle') return 'idle';
+  if (!current || current === 'idle') return 'idle';
   return 'working';
 }
 
@@ -173,10 +174,10 @@ export async function runSessionsWaitFor(argv: string[]): Promise<number> {
     while (Date.now() < deadline) {
       let state: WaitPollState | null = null;
       try {
-        const { statuses, permissions, questions } = await handle.pending();
+        const { statuses, permissions, questions } = await handle.pendingRequests();
         state = classifyWaitPoll(statuses, ready.runtimeSessionId, {
-          permissions: permissions.filter((p) => p.sessionID === ready.runtimeSessionId).length,
-          questions: questions.filter((q) => q.sessionID === ready.runtimeSessionId).length,
+          permissions: permissions.filter((p) => p.thread_id === ready.runtimeSessionId).length,
+          questions: questions.filter((q) => q.thread_id === ready.runtimeSessionId).length,
         });
       } catch {
         // Transient proxy/runtime error — count as unknown, keep waiting.

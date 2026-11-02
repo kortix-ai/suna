@@ -10,7 +10,7 @@ describe('starter passive continuation policy', () => {
 
     expect(files.some((file) => file.path.includes('continuation'))).toBe(false);
     expect(manifest).toBeDefined();
-    const { extensions } = parseManifestText(manifest!.content, 'yaml') as { extensions?: Record<string, unknown> };
+    const { extensions } = parseManifestText(manifest!.content) as { extensions?: Record<string, unknown> };
     expect(extensions).toBeUndefined();
   });
 });

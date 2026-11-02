@@ -11,6 +11,7 @@ import type {
   SessionListState,
   SessionManagedCatalogState,
   SessionModelUsage,
+  SessionUsage,
   SessionParticipants,
   SessionPrompt,
   SessionPublicShare,
@@ -47,6 +48,7 @@ import {
   getSessionTranscriptSync,
   getSessionTurn,
   getSessionModelUsage,
+  getSessionUsage,
   getSessionWatch,
   holdSessionPrompts,
   listProjectSessions,
@@ -2012,6 +2014,27 @@ test('getSessionModelUsage reads the model that answered, the billed cost and ea
   nextResponse = { status: 200, body };
   expect(await getSessionModelUsage('P1', 'S1')).toEqual(body);
   expect(new URL(last().url).pathname).toBe('/projects/P1/sessions/S1/model-usage');
+  expect(last().method).toBe('GET');
+});
+
+test('getSessionUsage reads the USD cost of a session and of every session it started', async () => {
+  const totals = {
+    cost: 0.5, kortix_cost: 0.2, provider_cost: 0.3, request_count: 3, error_count: 1,
+    input_tokens: 100, output_tokens: 10, cached_tokens: 50, cache_write_tokens: 0,
+  };
+  const body: SessionUsage = {
+    session_id: 'S1',
+    currency: 'USD',
+    total: totals,
+    sessions: [
+      { ...totals, session_id: 'S1', parent_session_id: null, depth: 0, title: 'Coordinator', agent_name: null, status: 'running', created_at: '2026-10-30T20:00:00.000Z' },
+    ],
+    hidden_sessions: 0,
+    truncated: false,
+  };
+  nextResponse = { status: 200, body };
+  expect(await getSessionUsage('P1', 'S1')).toEqual(body);
+  expect(new URL(last().url).pathname).toBe('/projects/P1/sessions/S1/usage');
   expect(last().method).toBe('GET');
 });
 

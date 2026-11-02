@@ -1,0 +1,13 @@
+diff --git a/rimraf.js b/rimraf.js
+index e80dd10693f8f6f9608eb9125d9cf41bdbb4bbd6..0a8dbd716766cc17e496cd3b7621722b6f4098a7 100644
+--- a/rimraf.js
++++ b/rimraf.js
+@@ -66,7 +66,7 @@ function rimraf (p, options, cb) {
+     if (!er)
+       return afterGlob(null, [p])
+ 
+-    glob(p, options.glob, afterGlob)
++    glob.glob(p, options.glob).then(function (files) { afterGlob(null, files) }, afterGlob)
+   })
+ 
+   function next (er) {

@@ -15,6 +15,7 @@ import { EmptyState } from '@kortix/ui/empty-state';
 import { Hint } from '@kortix/ui/hint';
 import { SessionThread, getSessionDisplayTitle, sessionLastActivityAt } from '@kortix/ui/session';
 import { buildFileRefsBlock } from '@kortix/ui/internal/lib/project-preamble';
+import { markSessionOnScreen } from '@kortix/ui/internal/lib/web-notifications';
 import { ComposerChatInput } from '@kortix/ui/session/composer/composer-chat-input';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { SplitSheetBody, SplitSheetContent, SplitSheetHeader, SplitSheetTitle } from '@kortix/ui/split-sheet';
@@ -156,6 +157,8 @@ function AskAgentThread({
 }) {
   const t = useTranslations('artifacts');
   const session = useSession(projectId, sessionId);
+  // The route names the artifact, not this session.
+  useEffect(() => markSessionOnScreen(sessionId), [sessionId]);
   // The artifact is read every few seconds while the agent works, and once when its turn ends.
   const work = useRef(onAgentWork);
   useEffect(() => {

@@ -1,6 +1,6 @@
 /**
  * The one definition of "a skill folder" — shared by `build.ts` (scanning a
- * Kortix repo's `<configDir>/skills`) and `fetch.ts` (scanning a foreign GitHub
+ * Kortix repo's `skills/`) and `fetch.ts` (scanning a foreign GitHub
  * repo for the SKILL.md standard). Both need the identical grouping rule:
  * a `SKILL.md` marks a skill; its name is the parent dir's leaf; its files are
  * that dir's whole subtree, targeted under `@skills/<name>/<rel>`.
@@ -28,8 +28,8 @@ export interface SkillGroup {
 }
 
 /**
- * Group a flat file list into skills under `rootPrefix` (e.g.
- * `.kortix/opencode/skills` or a sparse subdir). Returns one group per
+ * Group a flat file list into skills under `rootPrefix` (e.g. `skills` or a
+ * sparse subdir). Returns one group per
  * `**​/SKILL.md`, each with its sibling files.
  */
 export function groupSkillFiles(paths: string[], rootPrefix: string): SkillGroup[] {

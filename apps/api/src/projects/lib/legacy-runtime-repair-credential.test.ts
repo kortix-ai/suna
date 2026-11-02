@@ -68,7 +68,7 @@ function deps(over: Partial<LegacyBootstrapDeps>, calls: Calls): LegacyBootstrap
     },
     manifestBuild: async () => 1788044234,
     fetchHealth: async () => healths[Math.min(i++, healths.length - 1)],
-    fetchOpencodeStatus: async () => ({}),
+    fetchTurnInFlight: async () => false,
     expectedRunningAssets: async () => MANIFEST,
     mintRepairToken: async () => ({
       secret: REPAIR_SECRET,

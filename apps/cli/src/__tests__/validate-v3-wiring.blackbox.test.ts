@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 /**
- * `kortix validate` on a kortix_version 3 project, as a real process: every
+ * `kortix validate` on a project, as a real process: every
  * file the manifest names must exist, every registered skill folder must hold
  * a SKILL.md named after it, and every connector and secret an agent enables
  * must be declared.
@@ -13,8 +13,7 @@ import { dirname, join } from 'node:path';
 const cli = join(import.meta.dir, '../index.ts');
 let cwd: string;
 
-const MANIFEST = `kortix_version: 3
-default_agent: lead
+const MANIFEST = `default_agent: lead
 env:
   required: [HELPDESK_TOKEN]
 connectors:
@@ -84,7 +83,7 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(cwd, { recursive: true, force: true }));
 
-describe('kortix validate on kortix_version 3', () => {
+describe('kortix validate: project wiring', () => {
   test('a project whose every reference resolves is valid', () => {
     expect(validate()).toEqual({ exitCode: 0, issues: [] });
   });

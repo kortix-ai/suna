@@ -55,7 +55,7 @@ export interface AgentCapabilityExtension {
 
 export interface AgentCapabilities {
   agent: string;
-  /** The manifest's schema version. The catalog is complete from 3 on. */
+  /** @deprecated The manifest has no version: one schema. Do not branch on it. Removed in the next major. */
   schema_version: number;
   tools: AgentCapabilityTool[];
   skills: AgentCapabilitySkill[];

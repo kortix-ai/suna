@@ -37,6 +37,7 @@ const USAGE_FAMILY_LEDGER_TYPES: readonly string[] = [
   'token_deduction',
   'token_overage',
   'proxy_debit',
+  'storage_debit',
 ];
 
 export class LedgerTypeMismatchError extends BillingError {

@@ -295,8 +295,14 @@ describe('projectChannelModelScope', () => {
       { linkedUserId: 'ivan', oneToOne: true },
     );
     expect(on).toMatchObject({ projectId: 'p', memberUserId: 'ivan', personalUserId: 'ivan', pooledEnabled: true });
-    const off = await access.projectChannelModelScope({ projectId: 'p', accountId: 'a', metadata: {} }, { linkedUserId: null, oneToOne: true });
+    const off = await access.projectChannelModelScope(
+      { projectId: 'p', accountId: 'a', metadata: { experimental: { pooled_provider_secrets: false } } },
+      { linkedUserId: null, oneToOne: true },
+    );
     expect(off).toMatchObject({ memberUserId: 'owner', personalUserId: null, pooledEnabled: false });
+    // On by default: a project that never set the flag has pooled keys.
+    const unset = await access.projectChannelModelScope({ projectId: 'p', accountId: 'a', metadata: {} }, { linkedUserId: null, oneToOne: true });
+    expect(unset).toMatchObject({ pooledEnabled: true });
   });
 });
 

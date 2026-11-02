@@ -97,7 +97,7 @@ async function ensureKeys(): Promise<void> {
 
 // ── JWT parsing ───────────────────────────────────────────────────────────────
 
-function base64urlToBytes(b64: string): Uint8Array {
+function base64urlToBytes(b64: string): Uint8Array<ArrayBuffer> {
   const padded = b64.replace(/-/g, '+').replace(/_/g, '/');
   const padding = (4 - (padded.length % 4)) % 4;
   const binary = atob(padded + '='.repeat(padding));
@@ -217,9 +217,9 @@ export async function verifySupabaseJwt(token: string): Promise<VerifyResult | V
 
   // Verify signature
   const signingInput = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
-  const signature = base64urlToBytes(sigB64) as unknown as BufferSource;
 
   try {
+    const signature = base64urlToBytes(sigB64);
     const valid = await crypto.subtle.verify(algorithm, key, signature, signingInput);
     if (!valid) {
       return { ok: false, reason: 'bad-signature' };

@@ -83,9 +83,11 @@ export interface SessionLogPort {
    * its v1 frames do not carry: the seq it has, or gets when the harness
    * stores it, and `created_at` when the harness times the message itself.
    * Null while the harness cannot know the seq yet. The journal's streaming
-   * puts carry these, so they equal the turn end's record.
+   * puts carry these, so they equal the turn end's record. `queued`: a
+   * provisional seq for a prompt the harness has not stored yet (pi's queued
+   * seq); the journal publishes it unshifted, and its stored record replaces it.
    */
-  live(threadId: string, messageId: string): { seq: number; created_at?: string } | null
+  live(threadId: string, messageId: string): { seq: number; created_at?: string; queued?: true } | null
   /**
    * The bytes behind an attachment the last `changes` exported as `ref: blob:<sha256>`, or null
    * when the store no longer has them. The journal uploads them and writes the stored object's

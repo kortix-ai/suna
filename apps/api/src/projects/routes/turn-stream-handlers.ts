@@ -6,7 +6,8 @@
  * bodies are moved verbatim, so the traffic contract — statuses, response
  * fields, and side-effect order — is unchanged.
  */
-import type { TurnStreamRelayBody } from '@kortix/api-contract/runtime-relay';
+import { SUBAGENT_NOTIFY_PARENT_KEY, type TurnStreamRelayBody } from '@kortix/api-contract/runtime-relay';
+import { TEAM_LEAD_KEY } from '@kortix/api-contract/multi-agent';
 import { isTurnErrorCode } from '@kortix/api-contract/transcript';
 import { projectSessions } from '@kortix/db';
 import { genuiToMarkdown } from '@kortix/sdk/genui';
@@ -26,7 +27,6 @@ import { turnEndNotificationContext, turnPromptSource } from '../lib/notificatio
 import { clearOpenQuestions } from '../lib/pending-questions';
 import { refreshRuntimeProjection } from '../lib/session-runtime-projection-refresh';
 import { notifyTurnEnded } from '../lib/config-convergence-triggers';
-import { captureJournallessSessionLog } from '../lib/session-transcript-capture';
 import { recordTriggerRunEnd } from '../lib/trigger-run-outcome';
 import { childIdleGraceMs } from '../sandbox-deadline';
 import {
@@ -46,6 +46,8 @@ import {
   turnCompletionAllowsQueuePromotion,
 } from '../session-turn-ledger';
 import { fireIdleWatches } from '../rooms/service';
+import { onPeerTurnEnded } from '../peer-messages/service';
+import { notifyParentOfSubagentTurn } from '../subagent-notice';
 
 /** The relay request body, shape only — the route parses JSON into this. */
 export type TurnStreamBody = Partial<TurnStreamRelayBody>;
@@ -342,16 +344,6 @@ async function promoteAfterTurnEnd(
       ),
     );
   }
-  // THE TURN ENDED, SO THE TRANSCRIPT IS FINAL. A box without a journal
-  // gets its messages into the session log now (a box with a journal keeps
-  // its own log, and the capture returns at once). The box is definitionally
-  // reachable — it just relayed. Fire-and-forget beside the reconcile above:
-  // `captureJournallessSessionLog` never throws and must never fail a
-  // turn-end report.
-  //
-  // EVERY session, a coordinator-spawned one included: nobody may ever open
-  // it, so this turn end is the only moment its history is saved.
-  void captureJournallessSessionLog(sessionId);
   // The session is idle: a session a fallback took over moves back to its own
   // model when that model can serve again (never throws). Child sessions too:
   // the switch writes them, and their prompts then send the fallback pin.
@@ -565,6 +557,30 @@ export async function settleTurnEnd(
   const promotedPromptId = await promoteAfterTurnEnd(ctx, body, settled);
   const response = await publishTurnEnd(c, ctx, body, settled, promotedPromptId);
   await sessionList;
+  // THE TURN ENDED, SO A BACKGROUND SUBAGENT'S PARENT HEARS IT (subagent-notice.ts).
+  // After the promotion: a prompt queued for this child starts its next turn
+  // first, so the child is not finished yet. Tracked, never awaited.
+  // A teammate (agent teams: `team_lead`) always tells its lead.
+  if (
+    settled.turnCompletion.outcome === 'closed' &&
+    ctx.childSession &&
+    (ctx.turnStreamMetadata[SUBAGENT_NOTIFY_PARENT_KEY] === true || typeof ctx.turnStreamMetadata[TEAM_LEAD_KEY] === 'string')
+  ) {
+    trackDetached(
+      notifyParentOfSubagentTurn({
+        sessionId: ctx.sessionId,
+        status: settled.status,
+        errorInfo: settled.errorInfo ?? null,
+        turnMessageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : null,
+      }),
+    );
+  }
+  // THE TURN ENDED, SO ITS RESULT EXCERPT AND ITS "TELL ME WHEN IT IS IDLE"
+  // MESSAGES ARE DUE (projects/peer-messages). Every session, child or not.
+  // Tracked, never awaited, never throws.
+  if (settled.turnCompletion.outcome === 'closed') {
+    trackDetached(onPeerTurnEnded(ctx.sessionId, settled.status, settled.errorInfo?.name ?? null));
+  }
   return response;
 }
 

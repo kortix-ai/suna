@@ -56,7 +56,7 @@ import {
   encodeKortixUserContext,
 } from '../../shared/kortix-user-context';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
-import { runtimeVerbPaths } from '../session-lifecycle/runtime-fetch';
+import { runtimeServesLog, runtimeVerbPaths } from '../session-lifecycle/runtime-fetch';
 
 export type HuskFinalizeOutcome = 'finalized' | 'not_husk' | 'unreadable' | 'unconfirmed';
 
@@ -223,7 +223,9 @@ async function inspectRoot(
   endpoint: { url: string; headers: Record<string, string> },
   opencodeSessionId: string,
   messageId: string,
+  servesLog = false,
 ): Promise<HuskInspection> {
+  if (servesLog) return inspectRootLog(endpoint, messageId);
   try {
     const path = runtimeVerbPaths.messages(opencodeSessionId, { limit: READ_MESSAGE_LIMIT });
     const res = await fetch(`${endpoint.url}${path}`, {
@@ -283,6 +285,48 @@ async function inspectRoot(
 }
 
 /**
+ * `inspectRoot` on a box that serves its own session log (`runtime.log.v1`): the same predicate on
+ * log records. The target is the newest assistant message whose `reply_to` is `messageId`; it is
+ * open while its status is `streaming`. The reaper asks only after the box reported no turn in
+ * flight. pi marks a record `streaming` only while it is busy (an open tool call), and appends a
+ * text message only when it ends, so on pi a husk is exactly a `streaming` record on an idle box.
+ */
+async function inspectRootLog(
+  endpoint: { url: string; headers: Record<string, string> },
+  messageId: string,
+): Promise<HuskInspection> {
+  try {
+    const res = await fetch(`${endpoint.url}${runtimeVerbPaths.log({ limit: READ_MESSAGE_LIMIT })}`, {
+      headers: sandboxRuntimeRequestHeaders(endpoint.headers),
+      signal: AbortSignal.timeout(READ_TIMEOUT_MS),
+    });
+    if (!res.ok) return UNKNOWN_INSPECTION;
+    const body = (await res.json()) as { messages?: unknown } | null;
+    const messages = body?.messages as Array<{ message_id?: string; role?: string; reply_to?: string | null; status?: string }>;
+    if (!Array.isArray(messages)) return UNKNOWN_INSPECTION;
+    if (messages.length === 0) return { ...UNKNOWN_INSPECTION, known: true };
+    const lastMessageId = messages[messages.length - 1]?.message_id ?? null;
+    let targetIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i]?.role === 'assistant' && messages[i]?.reply_to === messageId) {
+        targetIndex = i;
+        break;
+      }
+    }
+    if (targetIndex < 0) return { ...UNKNOWN_INSPECTION, known: true, lastMessageId };
+    return {
+      known: true,
+      targetFound: true,
+      targetOpen: messages[targetIndex]?.status === 'streaming',
+      targetIsLast: targetIndex === messages.length - 1,
+      lastMessageId,
+    };
+  } catch {
+    return UNKNOWN_INSPECTION;
+  }
+}
+
+/**
  * Close one husk. The caller may act on the outcome:
  *   'finalized'   — the turn is provably closed now.
  *   'not_husk'    — nothing THIS turn owns is open (completed, errored, never
@@ -302,14 +346,15 @@ export async function finalizeHuskTurn(
   if (!messageId) return 'not_husk';
   const endpoint = await resolveDaemonEndpoint(externalId, sandboxId);
   if (!endpoint) return 'unreadable';
+  const servesLog = await runtimeServesLog(externalId, async () => endpoint);
 
-  const first = await inspectRoot(endpoint, opencodeSessionId, messageId);
+  const first = await inspectRoot(endpoint, opencodeSessionId, messageId, servesLog);
   if (!first.known) return 'unreadable';
   if (!isAbortableHusk(first)) return 'not_husk';
 
   await new Promise((resolve) => setTimeout(resolve, options?.settleMs ?? HUSK_SETTLE_MS));
 
-  const second = await inspectRoot(endpoint, opencodeSessionId, messageId);
+  const second = await inspectRoot(endpoint, opencodeSessionId, messageId, servesLog);
   // Never abort on the strength of the first read alone (main.ts:1667-1673).
   if (!second.known) return 'unreadable';
   if (!isAbortableHusk(second)) return 'not_husk'; // it finished, or a newer turn owns the root
@@ -345,7 +390,7 @@ export async function finalizeHuskTurn(
   // (box-reaper.ts:227) deletes the record either way, so a wrong 'finalized'
   // is never retried and the husk stays open forever — the bug this module
   // exists to fix.
-  const after = await inspectRoot(endpoint, opencodeSessionId, messageId);
+  const after = await inspectRoot(endpoint, opencodeSessionId, messageId, servesLog);
   if (!after.known || !after.targetFound || after.targetOpen) return 'unconfirmed';
   console.info('[husk-finalizer] finalized orphaned turn', {
     sandboxId,

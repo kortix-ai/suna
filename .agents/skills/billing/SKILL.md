@@ -24,7 +24,10 @@ Change the code and the spec together.
   `platform/providers/compute-rates.ts`, mirrored by
   `packages/ui/src/internal/billing/compute-pricing.ts`. Model fee:
   `LLM_PLATFORM_FEE_PERCENT`. Residential proxy: Platinum's charge, passed
-  through (`billing/services/residential-proxy-charges.ts`).
+  through (`billing/services/residential-proxy-charges.ts`). Storage:
+  `STORAGE_RATES_USD_PER_GIB_HOUR` in `compute-rates.ts`, Platinum's volume
+  and box disk prices × `PLATINUM_MARKUP` (`billing/services/storage-charges.ts`,
+  `box-disk-charges.ts`).
 - **Customers always see their state.** A new plan state needs an
   account-state field and a visible label.
 
@@ -36,8 +39,9 @@ Change the code and the spec together.
 | Plans, prices, allowances | `apps/api/src/billing/services/tiers.ts` |
 | Enterprise contracts | `apps/api/src/billing/services/enterprise-contracts.ts` |
 | Trials | `apps/api/src/billing/services/trial-admin.ts` |
-| Warnings and expiry sweeps | `apps/api/src/billing/rotation-schedule.ts`, `workers/billing-rotation-worker.ts` |
+| Warnings and expiry sweeps | `apps/api/src/billing/rotation-schedule.ts`, `worker/jobs/billing-rotation.ts` |
 | Stripe webhooks | `apps/api/src/billing/services/webhooks.ts`, `stripe-checkout-webhooks.ts` |
 | Account state API | `apps/api/src/billing/services/account-state.ts` |
+| Storage billing (volumes, stopped and archived box disks), Kortix's own unbilled cost | `apps/api/src/billing/services/storage-charges.ts`, `box-disk-charges.ts`, `orphan-box-costs.ts`, `worker/jobs/storage-billing.ts` |
 | Admin console | `apps/web/src/app/[locale]/admin/accounts/` |
 | Customer UI | `apps/web/src/features/billing/` |

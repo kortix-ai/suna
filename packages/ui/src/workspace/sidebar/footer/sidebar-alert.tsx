@@ -3,7 +3,7 @@
 /**
  * One dialect for every alert row in the project sidebar's footer.
  *
- * Four rows can fire at once — a failing sandbox build, a v1 manifest, an empty
+ * Four rows can fire at once — a failing sandbox build, kortix.yaml issues, an empty
  * wallet, a free plan — and each used to describe itself differently: one
  * transparent with tinted text, one tinted fill, one tinted fill *and* a
  * coloured border, one solid inverted button. Three heights (`h-8`/`h-9`), three

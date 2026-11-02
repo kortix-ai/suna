@@ -87,6 +87,15 @@ describe('route lookup', () => {
     }
   });
 
+  test('session drive-sync block uploads have a distinct audit title', () => {
+    expect(auditLabelForAction('session.drive_sync.upload_block')?.title).toBe(
+      'Uploaded a session drive-sync file block',
+    );
+    expect(auditLabelForAction('drive.file.upload_block')?.title).toBe(
+      'Uploaded a drive file block',
+    );
+  });
+
   test('an unknown route has no label', () => {
     expect(auditLabelForRoute('GET', '/v1/no-such-route')).toBeNull();
   });

@@ -10,7 +10,7 @@ import {
 } from '@kortix/manifest-schema';
 import { isPlainObject } from '../shared/json';
 import type { GitBackedProject } from './git';
-import { MANIFEST_FILENAME, readManifest } from './manifest-io';
+import { MANIFEST_FILENAME, readManifest, runtimeManifest } from './manifest-io';
 import { validateTriggerCron, validateTriggerTimezone } from './trigger-schedule';
 import {
   GIT_TRIGGER_SESSION_MODES,
@@ -224,10 +224,7 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
         {
           slug: '(top-level)',
           path: filename,
-          error:
-            manifest.format === 'yaml'
-              ? '`triggers` must be a list — write it as a YAML `triggers:` list, not a map or scalar.'
-              : '`triggers` must be an array of tables — use [[triggers]], not [triggers]',
+          error: '`triggers` must be a list — write it as a YAML `triggers:` list, not a map or scalar.',
         },
       ],
     };
@@ -266,10 +263,10 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
 }
 
 /**
- * Walk a project: read its manifest, extract triggers. Convenience for
- * callers that don't otherwise need the parsed manifest. Returns empty
- * arrays + a single top-level error when the manifest fails to parse —
- * never throws.
+ * Walk a project: read its manifest, extract the triggers a running project
+ * applies (`runtimeManifest`: a trigger with a validation error is off).
+ * Returns empty arrays + a single top-level error when the manifest fails to
+ * parse — never throws.
  */
 export async function loadProjectTriggers(
   project: GitBackedProject,
@@ -280,9 +277,8 @@ export async function loadProjectTriggers(
     manifest = await readManifest(project, { forceRefresh: opts?.forceRefresh });
   } catch (err) {
     // The manifest failed to parse before we learned which candidate file it
-    // actually was (.yaml/.yml/.toml) — fall back to the project's configured
-    // manifestPath (best-effort; may be stale for a project that switched
-    // format by hand without updating it) rather than always naming kortix.toml.
+    // actually was (.yaml/.yml) — fall back to the project's configured
+    // manifestPath.
     return {
       specs: [],
       errors: [
@@ -295,7 +291,7 @@ export async function loadProjectTriggers(
     };
   }
   if (!manifest) return { specs: [], errors: [] };
-  return extractTriggers(manifest);
+  return extractTriggers(runtimeManifest(manifest));
 }
 
 function forcedTriggerRefreshCooldownMs(): number {
@@ -330,13 +326,11 @@ export async function findProjectTriggerBySlug(
 /* ─── Trigger ↔ manifest-entry conversion ───────────────────────────────── */
 
 /**
- * Convert a TriggerSpec back to the raw object that goes into the `triggers`
- * array — the shape is format-agnostic (same object serializes to either a
- * kortix.yaml list entry or a legacy kortix.toml `[[triggers]]` table).
- * Inverse of `parseTriggerEntry`. Used by the CRUD path to write back to the
+ * Convert a TriggerSpec back to the flat raw object that goes into the
+ * `triggers` list. Inverse of `parseTriggerEntry`. Used by the CRUD path to write back to the
  * project manifest after a UI edit.
  */
-export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unknown> {
+export function triggerSpecToFlatEntry(spec: GitTriggerSpec): Record<string, unknown> {
   const entry: Record<string, unknown> = {
     slug: spec.slug,
     name: spec.name,

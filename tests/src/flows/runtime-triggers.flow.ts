@@ -24,7 +24,7 @@ const ALL = '/v1/projects/:projectId/triggers/all';
 const RUNTIME = '/v1/projects/:projectId/triggers/runtime';
 const ONE = '/v1/projects/:projectId/triggers/runtime/:id';
 const MANIFEST =
-  'kortix_version: 2\nproject:\n  name: ke2e-runtime-triggers\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n';
+  'project:\n  name: ke2e-runtime-triggers\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n';
 
 type TriggerRow = {
   id: string;

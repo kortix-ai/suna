@@ -184,7 +184,8 @@ export function parsePage(text: string, rel: string, agentSegment: string | null
   return {
     type: typeOf(data.type, rel, agentSegment),
     title: (h1?.[1] ?? str('title')).trim() || titleFromName(rel),
-    summary: str('summary').trim().slice(0, MEMORY_LIMITS.summary_chars) || firstLine(body),
+    // `description`: a My Kortix memory page's one line (`./my-memory`).
+    summary: (str('summary').trim() || str('description').trim()).slice(0, MEMORY_LIMITS.summary_chars) || firstLine(body),
     excerpt: excerptOf(body),
     body,
     sources: sourcesOf(data.sources),
@@ -327,7 +328,7 @@ export async function listPages(layer: Layer, filter: { type?: MemoryPageType } 
 
 export async function layerView(layer: Layer): Promise<MemoryLayer> {
   const { pages: files, otherFiles } = await layerFiles(layer);
-  const counts = { people: 0, decisions: 0, workstreams: 0, playbooks: 0, note: 0, other: 0 };
+  const counts = { people: 0, decisions: 0, workstreams: 0, playbooks: 0, user: 0, feedback: 0, project: 0, reference: 0, note: 0, other: 0 };
   const listed = files.slice(0, MEMORY_LIMITS.pages_per_layer);
   for (const page of await mapWithConcurrency(listed, HEAD_CONCURRENCY, (file) => headOf(layer, file))) counts[page.type]++;
   return {

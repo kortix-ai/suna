@@ -1062,11 +1062,6 @@ function scanFile(file) {
         (file ===
           path.join(uiSrcDir, 'customize/sections/view/grant-mode-field.tsx') &&
           catalogRoot === 'GRANT_MODES') ||
-        (file === path.join(uiSrcDir, 'customize/migrate-to-v2/upgrade-defs.ts') &&
-          catalogRoot === 'PROJECT_UPGRADES') ||
-        (file ===
-          path.join(uiSrcDir, 'customize/migrate-to-v2/upgrade-view.tsx') &&
-          catalogRoot === 'DEFAULT_UPGRADES_COPY') ||
         (file === path.join(srcDir, 'features/workspace/settings/tabs/account-memberships.tsx') &&
           catalogRoot === 'DEFAULT_ACCOUNT_MEMBERSHIPS_COPY') ||
         (file === path.join(srcDir, 'features/workspace/settings/tabs/credits-tab.tsx') &&

@@ -5,6 +5,8 @@ import {
   type NoUpstreamReasonCode,
   type AuthedPrincipal,
   type AuthorizeResult,
+  type ClaudeCodeCredentials,
+  type ClaudeCodeHooks,
   type GatewayTrace,
   type ListModelsOptions,
   type ModelCatalog,
@@ -60,6 +62,8 @@ export interface ApiClient {
   resolveUpstream: (principal: AuthedPrincipal, model: string) => Promise<UpstreamDescriptor[]>;
   notePoolRateLimit: (principal: AuthedPrincipal, secretId: string, seconds: number) => Promise<void>;
   refreshCredential: (principal: AuthedPrincipal, descriptor: UpstreamDescriptor) => Promise<UpstreamDescriptor | null>;
+  claudeCredentials: NonNullable<ClaudeCodeHooks['claudeCredentials']>;
+  claudeRefused: NonNullable<ClaudeCodeHooks['claudeRefused']>;
   assertBillingActive: (accountId: string) => Promise<{ holdUsd?: number } | void>;
   assertBudget: (principal: AuthedPrincipal) => Promise<void>;
   recordUsage: (event: UsageEvent) => Promise<void>;
@@ -300,6 +304,14 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
         principal, secretId: descriptor.credentialRef, failedKeySha256,
       });
       return result.descriptor ? { ...descriptor, ...result.descriptor } : null;
+    },
+    // Claude Code passthrough. The account tokens cross this hop to the gateway
+    // only; a refused one comes back as a digest, never the token.
+    claudeCredentials: async (principal, input) => {
+      return post<ClaudeCodeCredentials>('/internal/gateway/claude-credentials', { principal, model: input.model });
+    },
+    claudeRefused: async (principal, secretId, failedKeySha256) => {
+      await post<{ ok: boolean }>('/internal/gateway/claude-refused', { principal, secretId, failedKeySha256 });
     },
     assertBillingActive: async (accountId) => {
       const result = billingResult(await post<BillingBody>('/internal/gateway/billing', { accountId }, RETRY_SLOW));

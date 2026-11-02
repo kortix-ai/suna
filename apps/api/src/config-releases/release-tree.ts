@@ -3,8 +3,7 @@
  *
  * Pure git plumbing over the API's bare mirror: resolve a commit's tree, list
  * its files, compose the release tree (the commit's whole tree, minus the
- * plugin entry files an agent variant did not select) in a scratch
- * repository, and build its `tar.gz`. No caches, no store, no governance: the release orchestration
+ * files it leaves out) in a scratch repository, and build its `tar.gz`. No caches, no store, no governance: the release orchestration
  * lives in `builder.ts`, which re-exports this module's public names. It never
  * calls into a sandbox.
  */
@@ -13,8 +12,6 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join, posix, resolve } from 'node:path';
 import { execFileAsync, runGitCapture, spawn } from '../projects/git/mirror';
-import { LEGACY_OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_DIR } from '@kortix/manifest-schema';
-import { readManifestAtSha, resolveOpencodeConfigDirAtSha } from '../projects/git/opencode-config-dir';
 import type { GitBackedProject } from '../projects/git/types';
 
 /**
@@ -38,7 +35,7 @@ export const HEX40 = /^[0-9a-f]{40}$/;
  * config dir. Its box holds no project checkout and its image has no `bun`,
  * so a project config dir with tool dependencies can never load there.
  */
-export type ConfigReleaseVariant = 'project' | 'none' | 'meta' | `agent:${string}`;
+export type ConfigReleaseVariant = 'project' | 'none' | 'mykortix' | `agent:${string}`;
 
 /** One tracked file: `[path relative to the repository root, git mode, blob ID]`. */
 export type ConfigReleaseFile = [path: string, mode: string, blob: string];
@@ -165,31 +162,26 @@ async function archiveTree(
 
 /**
  * What a release ships: the commit's whole tree, the same files and folders a
- * checkout of the base branch holds in `/workspace`. Nothing is moved: each
- * harness reads its own dirs inside the release exactly as it reads them in
- * the working tree (`harnesses/opencode`, `skills/`, `harnesses/pi`, …), and a
- * file a config refers to by a relative path is where the repository put it.
+ * checkout of the base branch holds in `/workspace`. Nothing is moved: a file a
+ * config refers to by a relative path (`skills/`, a tool or extension module)
+ * is where the repository put it. The daemon reads the agents from the
+ * compiled set, never from a harness config folder.
  *
- * The changes: per-agent plugin selection (v2 `harnesses.opencode.plugins`
- * in kortix.yaml) drops the unselected plugin entry files from
- * `<config dir>/plugins`; files `.gitattributes` marks `export-ignore` are left
- * out; and a kortix_version 3 tree has no OpenCode config dir — its leftover
- * v2 `opencode.json[c]` files are left out, and `configDir` is null. A v3
- * session's plugins come from `extensions`, compiled per session agent.
+ * Left out: files `.gitattributes` marks `export-ignore`, and a leftover
+ * OpenCode config file (`LEFTOVER_OPENCODE_CONFIGS`), which would make the
+ * release look like one a harness reads.
  */
 interface ReleaseTreeSource {
-  /** The OpenCode config dir inside the tree, or null when the commit has none. */
-  configDir: string | null;
   /** The commit's root tree ID in the mirror. */
   rootTree: string;
-  /**
-   * Selected plugins; null keeps the legacy, globally auto-discovered set.
-   * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
-   */
-  plugins: string[] | null;
-  /** Files left out of the release: `export-ignore`d ones, and a v3 tree's leftover `opencode.json[c]`. */
+  /** Files left out of the release. */
   exportIgnored: string[];
 }
+
+/** OpenCode config files of a retired project layout. A release never ships one. */
+const LEFTOVER_OPENCODE_CONFIGS = ['harnesses/opencode', '.kortix/opencode'].flatMap((dir) =>
+  ['opencode.jsonc', 'opencode.json'].map((name) => `${dir}/${name}`),
+);
 
 /**
  * Is the release tree composed, rather than the commit's own tree? A composed
@@ -197,22 +189,7 @@ interface ReleaseTreeSource {
  * archive route rebuilds it from there.
  */
 export function isComposedSource(source: ReleaseTreeSource): boolean {
-  return source.plugins !== null || source.exportIgnored.length > 0;
-}
-
-/** `git ls-tree -z <tree>`: the tree's records, keyed by entry name. */
-async function treeRecords(
-  repo: string,
-  treeId: string,
-  env?: Record<string, string>,
-): Promise<Map<string, string>> {
-  const result = await runGitCapture(['ls-tree', '-z', treeId], repo, null, env);
-  if (result.exitCode !== 0) throw new Error(`git ls-tree ${treeId} failed: ${result.stderr.trim()}`);
-  const records = new Map<string, string>();
-  for (const record of result.stdout.split('\0')) {
-    if (record) records.set(record.slice(record.indexOf('\t') + 1), record);
-  }
-  return records;
+  return source.exportIgnored.length > 0;
 }
 
 /** `git <args>` in `repo` with NUL-terminated `records` on stdin. Throws on a non-zero exit. */
@@ -242,13 +219,6 @@ async function gitWithInput(
   return Buffer.concat(stdout).toString('utf8');
 }
 
-/** `git mktree -z` in `repo` (never the mirror). mktree sorts the entries itself. */
-async function mktree(repo: string, env: Record<string, string>, records: string[]): Promise<string> {
-  const tree = (await gitWithInput(repo, env, ['mktree', '-z'], records)).trim();
-  if (!HEX40.test(tree)) throw new Error(`git mktree returned no tree: ${tree}`);
-  return tree;
-}
-
 /** `tree` without `paths`, through a throwaway index in `repo`. */
 async function pruneTree(repo: string, env: Record<string, string>, tree: string, paths: string[]): Promise<string> {
   const indexEnv = { ...env, GIT_INDEX_FILE: join(repo, 'release.index') };
@@ -262,55 +232,18 @@ async function pruneTree(repo: string, env: Record<string, string>, tree: string
   return pruned;
 }
 
-/** The tree record's object ID. */
-function recordObject(record: string): string {
-  return record.slice(0, record.indexOf('\t')).split(' ')[2]!;
-}
-
-/**
- * `tree` with the subtree at `path` replaced by `edit(its records)`; an entry
- * left with no records is dropped. Every tree on the way down is rewritten.
- */
-async function editTreeAt(
-  repo: string,
-  env: Record<string, string>,
-  tree: string,
-  path: string[],
-  edit: (records: Map<string, string>) => Map<string, string>,
-): Promise<string> {
-  const records = await treeRecords(repo, tree, env);
-  const [name, ...rest] = path;
-  if (name === undefined) return mktree(repo, env, [...edit(records).values()]);
-  const record = records.get(name);
-  if (!record || record.split(' ')[1] !== 'tree') return tree;
-  const edited = await editTreeAt(repo, env, recordObject(record), rest, edit);
-  if ((await treeRecords(repo, edited, env)).size === 0) records.delete(name);
-  else records.set(name, `040000 tree ${edited}\t${name}`);
-  return mktree(repo, env, [...records.values()]);
-}
-
 /**
  * The release tree ID of `source`, written into `repo` (a scratch repository
- * that reads the mirror through alternates). Without a plugin selection it is
- * the commit's own root tree.
+ * that reads the mirror through alternates). With nothing left out it is the
+ * commit's own root tree.
  */
 async function composeReleaseTree(
   repo: string,
   env: Record<string, string>,
   source: ReleaseTreeSource,
 ): Promise<string> {
-  let tree = source.rootTree;
-  if (source.plugins !== null && source.configDir !== null) {
-    const selected = new Set(source.plugins);
-    tree = await editTreeAt(repo, env, tree, [...source.configDir.split('/'), 'plugins'], (entries) => {
-      for (const [name, record] of entries) {
-        if (/\.[cm]?[jt]s$/.test(name) && record.split(' ')[1] === 'blob' && !selected.has(name)) entries.delete(name);
-      }
-      return entries;
-    });
-  }
-  if (source.exportIgnored.length > 0) tree = await pruneTree(repo, env, tree, source.exportIgnored);
-  return tree;
+  if (source.exportIgnored.length === 0) return source.rootTree;
+  return pruneTree(repo, env, source.rootTree, source.exportIgnored);
 }
 
 /**
@@ -441,21 +374,6 @@ export async function toolModuleFiles(mirror: string, rootTree: string, modules:
 }
 
 /**
- * v2 only: filename references, the implementation stays in the repository. v3 has no plugin variants.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
- */
-export function selectedOpenCodePlugins(manifest: Record<string, unknown> | null, agent: string): string[] | null {
-  if (manifest?.kortix_version !== 2) return null;
-  const global = (manifest.harnesses as { opencode?: { plugins?: string[] } } | undefined)?.opencode?.plugins;
-  const agents = manifest.agents as Record<string, { harnesses?: { opencode?: { plugins?: string[]; exclude?: string[] } } }> | undefined;
-  const local = agents?.[agent]?.harnesses?.opencode;
-  if (!agents?.[agent]) return null;
-  if (!global && !local) return null;
-  const excluded = new Set(local?.exclude ?? []);
-  return [...new Set([...(global ?? []).filter((name) => !excluded.has(name)), ...(local?.plugins ?? [])])];
-}
-
-/**
  * The release tree source of `commit`. Shared by the builder and the archive
  * route, which rebuilds a composed tree from the commit in its path.
  */
@@ -463,42 +381,16 @@ export async function resolveReleaseTreeSource(
   mirror: string,
   project: Pick<GitBackedProject, 'manifestPath'>,
   commit: string,
-  variant: ConfigReleaseVariant = 'project',
-): Promise<{ source: ReleaseTreeSource } | { configDir: string | null; reason: string }> {
+): Promise<{ source: ReleaseTreeSource } | { reason: string }> {
   const rootTree = await resolveConfigTreeId(mirror, commit, '');
-  if (!rootTree) return { configDir: null, reason: `commit ${commit} has no tree` };
-  const manifest = await readManifestAtSha(mirror, project, commit);
-  const configDir = await resolveOpencodeConfigDirAtSha(mirror, project, commit, manifest);
-  const plugins = configDir && variant.startsWith('agent:') ? selectedOpenCodePlugins(manifest, variant.slice(6)) : null;
-  // The config dir keeps everything, as before (CFG-2): its own `.gitattributes`
-  // must not drop or rewrite what the harness loads. So does the manifest.
-  const exportIgnored = await exportIgnoredPaths(
-    mirror,
-    rootTree,
-    (path) => path === project.manifestPath || (configDir !== null && path.startsWith(`${configDir}/`)),
-  );
-  // v3 reads no harness config dir (the daemon reads only the compiled set):
-  // a leftover v2 `opencode.json[c]` would make the release look like one.
-  if (Number(manifest?.kortix_version) === 3) {
-    for (const dir of [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR]) {
-      for (const name of ['opencode.jsonc', 'opencode.json']) {
-        const path = `${dir}/${name}`;
-        const exists = await runGitCapture(['cat-file', '-e', `${commit}:${path}`], mirror);
-        if (exists.exitCode === 0 && !exportIgnored.includes(path)) exportIgnored.push(path);
-      }
-    }
+  if (!rootTree) return { reason: `commit ${commit} has no tree` };
+  // The manifest's own `.gitattributes` entry must not drop it.
+  const exportIgnored = await exportIgnoredPaths(mirror, rootTree, (path) => path === project.manifestPath);
+  for (const path of LEFTOVER_OPENCODE_CONFIGS) {
+    const exists = await runGitCapture(['cat-file', '-e', `${commit}:${path}`], mirror);
+    if (exists.exitCode === 0 && !exportIgnored.includes(path)) exportIgnored.push(path);
   }
-  if (configDir && plugins !== null) {
-    const configTree = await resolveConfigTreeId(mirror, commit, configDir);
-    const available = configTree
-      ? (await listConfigFiles(mirror, configTree))
-          .filter(([path]) => /^plugins\/[^/]+\.[cm]?[jt]s$/.test(path))
-          .map(([path]) => path.slice(8))
-      : [];
-    const missing = plugins.filter((name) => !available.includes(name));
-    if (missing.length) throw new Error(`OpenCode plugin not found in ${configDir}/plugins: ${missing.join(', ')}`);
-  }
-  return { source: { configDir, rootTree, plugins, exportIgnored } };
+  return { source: { rootTree, exportIgnored } };
 }
 
 /**

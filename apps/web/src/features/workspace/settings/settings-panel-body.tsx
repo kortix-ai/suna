@@ -16,7 +16,6 @@ import { SettingsSectionHeader } from '@kortix/ui/settings-section-header';
 import { Tabs, TabsContent } from '@kortix/ui/tabs';
 import { SETTINGS_SIDEBAR_WIDTH_PX } from '@kortix/ui/internal/account-hub/account-settings-shell';
 import { Close } from '@kortix/ui/icons';
-import { UpgradesView } from '@kortix/ui/customize/migrate-to-v2/upgrade-view';
 import {
   SettingsNavProvider,
   type SettingsNav,
@@ -83,7 +82,7 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   // The MCP URL is one per person and reaches every project they can open.
   // `computer` is NOT here: pairing names the project it starts from.
   'mcp',
-  // `workspace`, `sandbox`, `feature-flags` and `upgrades` are deliberately ABSENT. They
+  // `workspace`, `sandbox` and `feature-flags` are deliberately ABSENT. They
   // are the project-scoped tabs in this overlay (`settings-tabs.ts` explains
   // why each came back), so leaving them out of this list is exactly what
   // makes `isSettingsTabAllowed` hide them — and with them the whole
@@ -510,7 +509,6 @@ function SettingsTabPane({
         </div>
       ) : null,
     'feature-flags': () => (projectId ? <ExperimentalTab projectId={projectId} /> : null),
-    upgrades: () => (projectId ? <UpgradesView projectId={projectId} /> : null),
     profile: () => <ProfileTab />,
     security: () => <SecurityTab />,
     appearance: () => <AppearanceTab />,
@@ -527,7 +525,7 @@ function SettingsTabPane({
   const pane = panes[item.tab];
   if (
     pane &&
-    (!['workspace', 'sandbox', 'feature-flags', 'upgrades', 'computer'].includes(item.tab) ||
+    (!['workspace', 'sandbox', 'feature-flags', 'computer'].includes(item.tab) ||
       projectId)
   )
     return pane();

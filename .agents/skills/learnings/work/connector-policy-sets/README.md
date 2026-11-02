@@ -247,9 +247,8 @@ These replace the matching parts above where they differ.
 - One rule writer: set rules are written only by
   `PUT .../connectors/{slug}/policies?policy_set=<name>`. The
   `.../policy-sets` routes own create, description, rename, delete and list.
-- Manifest versions: `kortix_version` 2 and 3. v1 is refused
-  (`unsupported_in_v1`). Channel and computer connectors cannot carry sets
-  (`policy_sets_unsupported`).
+- One manifest format (no version). Channel and computer connectors cannot
+  carry sets (`policy_sets_unsupported`).
 - Un-grant keeps the entry: removing a connector from an agent keeps its
   `policy_sets` entry (inert until re-granted, then it applies again). Pruning
   it let a writer without `project.connector.write` move the agent onto the

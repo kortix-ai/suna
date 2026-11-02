@@ -81,8 +81,8 @@ describe('isFeatureFlagKey', () => {
 
 describe('resolveFeatureFlag — explicit override wins', () => {
   test('per-project map overrides the platform default', () => {
-    expect(resolveFeatureFlag({ experimental: { meta_agent: true } }, 'meta_agent')).toBe(true);
-    expect(resolveFeatureFlag({ experimental: { meta_agent: false } }, 'meta_agent')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { reminders: true } }, 'reminders')).toBe(true);
+    expect(resolveFeatureFlag({ experimental: { reminders: false } }, 'reminders')).toBe(false);
   });
 
   test('agent_principal graduated: no flag, and a stored override is inert', () => {
@@ -255,7 +255,7 @@ describe('resolveFeatureFlag — explicit override wins', () => {
 
   test('a malformed experimental subtree never throws', () => {
     for (const metadata of [null, undefined, {}, { experimental: null }, { experimental: 'x' }, []]) {
-      expect(typeof resolveFeatureFlag(metadata, 'meta_agent')).toBe('boolean');
+      expect(typeof resolveFeatureFlag(metadata, 'reminders')).toBe('boolean');
       expect(typeof resolveFeatureFlag(metadata, 'marketplace')).toBe('boolean');
     }
   });
@@ -263,37 +263,40 @@ describe('resolveFeatureFlag — explicit override wins', () => {
 
 describe('resolveFeatureFlags', () => {
   test('returns a boolean for every registered key', () => {
-    const map = resolveFeatureFlags({ experimental: { meta_agent: true } });
+    const map = resolveFeatureFlags({ experimental: { reminders: false } });
     expect(Object.keys(map).sort()).toEqual([...FEATURE_FLAG_KEYS].sort());
     for (const key of FEATURE_FLAG_KEYS) {
       expect(typeof map[key]).toBe('boolean');
     }
-    expect(map.meta_agent).toBe(true);
+    expect(map.reminders).toBe(false);
   });
 
   test('a stored override for a graduated key is inert', () => {
     // Review Center graduated out of the flag system. Projects that toggled it
     // before graduation still carry `experimental.review_center` in metadata.
     // That value must not resurface as a key, a catalog row, or a gate.
-    const metadata = { experimental: { review_center: false, meta_agent: true } };
-    expect(isFeatureFlagKey('review_center')).toBe(false);
+    // `meta_agent` was removed the same way on 2026-11-02.
+    const metadata = { experimental: { review_center: false, meta_agent: false, reminders: false } };
+    for (const key of ['review_center', 'meta_agent']) {
+      expect(isFeatureFlagKey(key)).toBe(false);
+      expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key as string)).not.toContain(key);
+    }
     expect(Object.keys(resolveFeatureFlags(metadata)).sort()).toEqual([...FEATURE_FLAG_KEYS].sort());
-    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('review_center');
-    expect(resolveFeatureFlags(metadata).meta_agent).toBe(true);
+    expect(resolveFeatureFlags(metadata).reminders).toBe(false);
   });
 });
 
 describe('buildFeatureFlagCatalog', () => {
   test('describes each flag with effective + overridden state', () => {
-    const catalog = buildFeatureFlagCatalog({ experimental: { meta_agent: true } });
+    const catalog = buildFeatureFlagCatalog({ experimental: { reminders: false } });
 
-    const metaAgent = catalog.find((f) => f.key === 'meta_agent');
-    if (!metaAgent) throw new Error('Missing Meta Agent flag');
-    expect(metaAgent.name).toBeTruthy();
-    expect(metaAgent.description).toBeTruthy();
-    expect(metaAgent.enabled).toBe(true);
-    expect(metaAgent.overridden).toBe(true);
-    expect(typeof metaAgent.available).toBe('boolean');
+    const reminders = catalog.find((f) => f.key === 'reminders');
+    if (!reminders) throw new Error('Missing Reminders flag');
+    expect(reminders.name).toBeTruthy();
+    expect(reminders.description).toBeTruthy();
+    expect(reminders.enabled).toBe(false);
+    expect(reminders.overridden).toBe(true);
+    expect(typeof reminders.available).toBe('boolean');
   });
 
   test('an unavailable flag is never enabled', () => {
@@ -314,9 +317,9 @@ describe('buildFeatureFlagCatalog', () => {
  * break (d) and take the operator lever with it.
  */
 describe('catalogHidden', () => {
-  test('only internal-only surfaces are hidden: meta_agent (the legacy fallback of kortix.yaml builtin_agents), session_log_restore (the boot restore from the session log) and workspace_volume (stateless sandboxes)', () => {
-    // `apps` graduated (2026-10-14) and `session_log` (2026-10-22): neither is a flag.
-    expect(HIDDEN_KEYS).toEqual(['meta_agent', 'session_log_restore', 'workspace_volume']);
+  test('only internal-only surfaces are hidden: session_log_restore (the boot restore from the session log) and workspace_volume (stateless sandboxes)', () => {
+    // `apps` graduated (2026-10-14), `session_log` (2026-10-22) and `meta_agent` was removed (2026-11-02): none is a flag.
+    expect(HIDDEN_KEYS).toEqual(['session_log_restore', 'workspace_volume']);
   });
 
   test('workspace_volume is a behavioral flag that defaults off and needs Platinum', () => {

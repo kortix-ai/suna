@@ -156,6 +156,7 @@ export { useProjectReminders, useSessionReminders } from './use-reminders';
 export { useUnifiedTriggers } from './use-unified-triggers';
 export { useProjectGoalFiles, useProjectGoals, useSessionGoal } from './use-goals';
 export { useRoom, useRoomConversations, useRoomMessages, useRoomThread, useRooms, useSpaceRoom } from './use-rooms';
+export { usePeerMessages, useReachableAgents, useSessionWorkflows, useTeamTasks, useTeammates } from './use-multi-agent';
 export { prefetchArtifact, useArtifact, useArtifactActivity, useArtifactCommentContext, useArtifactComments, useArtifactCommentScreenshot, useInfiniteArtifactActivity, useArtifactMutations, useArtifactText, useArtifactTypes, useArtifactVersions, useArtifacts } from './use-artifacts';
 export {
   useApproveCaptureDevice,
@@ -184,6 +185,7 @@ export {
 } from './use-capture';
 export { useSessionMessageAuthors } from './use-session-message-authors';
 export { useSessionModelUsage } from './use-session-model-usage';
+export { useSessionUsage } from './use-session-usage';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
 export {

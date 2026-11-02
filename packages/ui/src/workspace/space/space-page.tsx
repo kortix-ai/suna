@@ -1,5 +1,6 @@
 'use client';
 
+import { MY_KORTIX_AGENT_NAME } from '@kortix/shared';
 import type { ReactNode } from 'react';
 
 import {
@@ -308,13 +309,13 @@ function AskMyKortix({ projectId, space }: { projectId: string; space: ManifestS
       onClick={() =>
         configure.start({
           text: t('askPrompt', { name: space.label || space.name, slug: space.name }),
-          agent: 'meta',
+          agent: MY_KORTIX_AGENT_NAME,
           model: null,
           variant: null,
         })
       }
     >
-      <AgentMark slug="meta" />
+      <AgentMark slug={MY_KORTIX_AGENT_NAME} />
       <span className="hidden @3xl/space-header:inline">{t('askMyKortix')}</span>
     </Button>
   );

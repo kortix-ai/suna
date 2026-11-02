@@ -10,7 +10,8 @@ import { PromptDeliveryRefused } from './prompt-delivery-refusal';
 import { assertInboxDeliveryActive, InboxDeliveryPaused, returnClaimToQueue } from './inbox-delivery-hold';
 import { SteerNotTaken, postPrompt, readInboxTranscriptState, retractStrandedMessage } from './runtime-client';
 import { awakeDeliveryTarget } from './deliver';
-import { sessionHoldsLiveTurn } from './inbox-admission';
+import { sandboxKeepsMessageIds, sessionHoldsLiveTurn } from './inbox-admission';
+import { keepsWireIdOnStableRuntime } from './forwarded-placement';
 import { recordSteerFallback } from './command-transitions';
 import { MAX_LIVE_PLACEMENT_REPAIRS, hasLaterForwardedSibling, recordRepairedForward, remintForRepair, remintWireMessageId, verifyLivePlacement } from './inbox-placement';
 import { MAX_RUNTIME_UNREACHABLE_RETRIES, markCommandFailed, parkPromptForUnreachableRuntime, markCommandForwarded, requeueForAdmission, requeueUnlandedPrompt, markCommandSucceeded, type SessionLifecycleCommandRow, type QueuedContinueSessionPayload } from './store';
@@ -208,6 +209,17 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
   }
 }
 
+/** The id a `remintOnDelivery` steer goes out under: its own when the runtime keeps ids and the tip allows it, else a re-mint. */
+async function steerWireMessageId(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload, externalId: string): Promise<string> {
+  const [transcript, stableIds] = await Promise.all([
+    readInboxTranscriptState(row, []),
+    sandboxKeepsMessageIds(externalId, row.actorUserId),
+  ]);
+  if (stableIds && payload.wireMessageId && transcript.read && transcript.tip &&
+    keepsWireIdOnStableRuntime(transcript.tip, payload.wireMessageId)) return payload.wireMessageId;
+  return remintWireMessageId(row, payload, transcript);
+}
+
 /**
  * Hand one admitted `steer` row to the running turn (R10): `POST .../steer`
  * on the awake box, under the client's wire id. 202 or a deduplicated 200
@@ -228,7 +240,11 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
  * where no transcript was read (a server-minted id is dated 2 min back) or
  * passed by the turn's own steps while the row waited. Posted as is, the
  * message sorts above the turn that reads it, and the web groups the rest of
- * the turn under it (2026-10-10, the connector-connected notice).
+ * the turn under it (2026-10-10, the connector-connected notice). On a
+ * runtime that keeps message ids the row keeps its id when every user
+ * message on the tip, the running turn's prompt included, sorts below it
+ * (`keepsWireIdOnStableRuntime`): the web's order by user message id is the
+ * only reason left to re-mint.
  *
  * `turn_ended` (409 `no_active_turn`) and `unsupported` (501) fall back to
  * `queue` and requeue the row due now, with the claim's attempt given back.
@@ -248,7 +264,7 @@ export async function deliverSteer(row: SessionLifecycleCommandRow, payload: Que
       payload.parts = fresh.parts;
     }
     const wireMessageId = payload.remintOnDelivery
-      ? await remintWireMessageId(row, payload, await readInboxTranscriptState(row, []))
+      ? await steerWireMessageId(row, payload, target.externalId)
       : payload.wireMessageId!;
     const delivery = await postPrompt(target.externalId, target.opencodeSessionId, promptText, row.actorUserId!, sessionId,
       `${attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId}:steer`, {

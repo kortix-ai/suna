@@ -206,7 +206,7 @@ export function SecretsTabView({
         <text fg={theme.fg}>New secret — name</text>
         <text fg={theme.faint}>The env var key, e.g. STRIPE_API_KEY.</text>
         <box flexDirection="row" width={width}>
-          <text fg={theme.accent}>{'▌'}</text>
+          <text fg={theme.brand}>{'▌'}</text>
           <input
             focused
             flexGrow={1}
@@ -230,7 +230,7 @@ export function SecretsTabView({
         <text fg={theme.fg}>{layoutRow('New secret — value', draftName.trim(), bodyWidth)}</text>
         <text fg={theme.faint}>The value is masked and is never printed.</text>
         <text fg={theme.fg}>
-          <span fg={theme.accent}>{'▌'}</span>
+          <span fg={theme.brand}>{'▌'}</span>
           {draftValue ? '•'.repeat(draftValue.length) : ''}
         </text>
         <text fg={theme.faint}>Enter save · Esc cancel</text>

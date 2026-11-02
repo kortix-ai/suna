@@ -219,6 +219,23 @@ describe('kortix reminders — inside a session', () => {
     expect(r.stderr).not.toContain('$KORTIX_SESSION_ID');
   }, 60_000);
 
+  test('a loop id is one encoded path segment: "/" and ".." in it never reach another endpoint (CWE-22)', async () => {
+    const id = 'reminder./../../../../secrets/STRIPE_KEY';
+    const encoded = `${BASE}/reminder.%2F..%2F..%2F..%2F..%2Fsecrets%2FSTRIPE_KEY`;
+    for (const sub of ['rm', 'pause', 'resume', 'run']) await runCli(['loops', sub, id]);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([`DELETE ${encoded}`, `PATCH ${encoded}`, `PATCH ${encoded}`, `POST ${encoded}/run`]);
+    expect(calls.some((c) => c.path.includes('/secrets'))).toBe(false);
+
+    // A bare "." or "..": encoding leaves it as is, so the client refuses the path before any request.
+    calls = [];
+    for (const dots of ['..', '.']) {
+      const r = await runCli(['loops', 'rm', dots]);
+      expect(r.code).toBe(1);
+      expect(r.stderr).toContain('a "." or ".." segment would send it to another endpoint');
+    }
+    expect(calls).toHaveLength(0);
+  }, 60_000);
+
   test('no session anywhere and no prompt are usage errors (exit 2), with no request', async () => {
     const noSession = await runCli(['remind', 'x', '--in', '1h'], { KORTIX_SESSION_ID: undefined });
     expect(noSession.code).toBe(2);

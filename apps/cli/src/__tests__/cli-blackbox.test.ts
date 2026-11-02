@@ -374,69 +374,6 @@ function startCliE2eServer() {
         archived = true;
         return Response.json({ ok: true, archived: true, repo_deleted: true });
       }
-      if (url.pathname === '/v1/projects/proj_e2e/sessions/sess_connect' && req.method === 'GET') {
-        return Response.json({
-          session_id: 'sess_connect',
-          account_id: 'account_1',
-          project_id: 'proj_e2e',
-          branch_name: 'session-sess_connect',
-          base_ref: 'main',
-          sandbox_provider: 'daytona',
-          sandbox_id: 'row-sandbox-id',
-          sandbox_url: `${url.origin}/v1/p/ext-sess-connect/8000`,
-          opencode_session_id: 'ses_oc',
-          name: 'Connect target',
-          custom_name: null,
-          agent_name: 'default',
-          status: 'running',
-          error: null,
-          metadata: {},
-          created_at: '2026-01-01T00:00:00.000Z',
-          updated_at: '2026-01-02T00:00:00.000Z',
-        });
-      }
-      if (url.pathname === '/v1/projects/proj_e2e/sessions/sess_stale' && req.method === 'GET') {
-        return Response.json({
-          session_id: 'sess_stale',
-          account_id: 'account_1',
-          project_id: 'proj_e2e',
-          branch_name: 'session-sess_stale',
-          base_ref: 'main',
-          sandbox_provider: 'daytona',
-          sandbox_id: 'row-sandbox-id',
-          sandbox_url: `${url.origin}/v1/p/ext-sess-stale/8000`,
-          opencode_session_id: 'ses_stale',
-          name: 'Stale pin target',
-          custom_name: null,
-          agent_name: 'default',
-          status: 'running',
-          error: null,
-          metadata: {},
-          created_at: '2026-01-01T00:00:00.000Z',
-          updated_at: '2026-01-02T00:00:00.000Z',
-        });
-      }
-      if (url.pathname === '/v1/projects/proj_e2e/sessions/sess_stale' && req.method === 'PATCH') {
-        return Response.json({
-          session_id: 'sess_stale',
-          opencode_session_id: entry.body && typeof entry.body === 'object'
-            ? (entry.body as { opencode_session_id?: string }).opencode_session_id
-            : null,
-        });
-      }
-      if (url.pathname === '/v1/p/ext-sess-connect/8000/session/ses_oc' && req.method === 'GET') {
-        return Response.json({ id: 'ses_oc', title: 'Connected through proxy' });
-      }
-      if (url.pathname === '/v1/p/ext-sess-stale/8000/session/ses_stale' && req.method === 'GET') {
-        return Response.json({ error: 'Session not found: ses_stale' }, { status: 404 });
-      }
-      if (url.pathname === '/v1/p/ext-sess-stale/8000/session' && req.method === 'GET') {
-        return Response.json([{ id: 'ses_live', title: 'Live root' }]);
-      }
-      if (url.pathname === '/v1/p/ext-sess-stale/8000/session/ses_live' && req.method === 'GET') {
-        return Response.json({ id: 'ses_live', title: 'Live root' });
-      }
-
       if (url.pathname === '/v1/marketplace/items' && req.method === 'GET') {
         const query = url.searchParams.get('query') ?? '';
         const items = ['agent-browser']
@@ -867,16 +804,17 @@ describe('kortix CLI black-box behavior', () => {
     expect(help.stdout).toContain('init');
   });
 
-  test('schema --version 2 prints the v2 JSON Schema, not the CLI version banner', async () => {
+  test('a subcommand --version reaches the subcommand, not the CLI version banner', async () => {
     // Regression guard: `main()` used to scan the ENTIRE argv for a bare
     // `--version`/`-v` and print the CLI's own version banner before any
-    // subcommand ever saw its args — which made `kortix schema --version 2`
-    // (and `kortix self-host update --version <tag>`) unreachable.
+    // subcommand ever saw its args — which made `kortix self-host update
+    // --version <tag>` unreachable. `kortix schema` has no `--version`, so its
+    // own parser rejects it.
     const result = await runCli(['schema', '--version', '2']);
 
-    expect(result.code).toBe(0);
-    const schema = JSON.parse(result.stdout);
-    expect(schema.$id).toBe('https://kortix.com/schema/kortix.v2.schema.json');
+    expect(result.code).toBe(1);
+    expect(result.stdout).not.toContain('Kortix CLI');
+    expect(result.stderr).toContain('unknown option "--version"');
   });
 
   test('the bare --version flag still prints the CLI version banner', async () => {
@@ -923,8 +861,8 @@ describe('kortix CLI black-box behavior', () => {
     expect(existsSync(join(root, 'skills', 'kortix-computer', 'SKILL.md'))).toBe(false);
     // `agent-browser` IS scaffolded now — driving a browser is a floor capability.
     expect(existsSync(join(root, 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
-    // kortix_version 3: no harness folder, and the runtime hosts the Kortix tools.
-    expect(readFileSync(join(root, 'kortix.yaml'), 'utf8')).toContain('kortix_version: 3');
+    // No version key, no harness folder, and the runtime hosts the Kortix tools.
+    expect(readFileSync(join(root, 'kortix.yaml'), 'utf8')).not.toContain('kortix_version');
     expect(existsSync(join(root, 'harnesses'))).toBe(false);
     expect(existsSync(join(root, 'tools'))).toBe(false);
     // The full kit is the default now, so domain skills like pdf ARE present.

@@ -77,12 +77,9 @@ mock.module('../projects/lib/git', () => ({
 mock.module('../projects/surface', () => ({
   loadManifestForEdit: async () => {
     const manifest = {
-      schemaVersion: 2,
-      format: 'yaml',
       path: 'kortix.yaml',
       revision: String(manifestRevision),
       raw: {
-        kortix_version: 2,
         connectors: structuredClone(storedConnectors),
       },
     };

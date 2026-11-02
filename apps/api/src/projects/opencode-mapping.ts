@@ -40,6 +40,7 @@ import {
   type OpencodeSessionLite,
 } from './opencode-session-resolver';
 import { sandboxRuntimeRequestHeaders } from './sandbox-fetch';
+import { runtimeServesLog, runtimeVerbPaths } from './session-lifecycle/runtime-fetch';
 
 export { pickCanonicalRoot, resolveRootSessionId, type OpencodeSessionLite };
 
@@ -126,9 +127,27 @@ export type ListResult =
       responder?: string;
       /** First 120 chars of the error body, whitespace-collapsed. */
       detail?: string;
+      /** The daemon's `boot_error` when its runtime is down: this boot is over. See `finishedBootError`. */
+      bootError?: string;
     };
 
 export { BOOT_PHASE_HEADER };
+
+/**
+ * The daemon's `boot_error` when the runtime start it reports has FINISHED and
+ * failed: the harness is `down` and names an error. pi clears the error when a
+ * start begins and keeps the box up after a failed one ("the box stays
+ * observable"), so nothing in the box tries again; only a restart can. A start
+ * still running reports `starting`, and an error beside a running harness (a
+ * repo clone, the audit spool) is not a failed start. Null otherwise.
+ */
+export function finishedBootError(health: unknown): string | null {
+  if (!health || typeof health !== 'object') return null;
+  const body = health as { boot_error?: unknown; harness?: { state?: unknown } | null };
+  if (body.harness?.state !== 'down' || typeof body.boot_error !== 'string') return null;
+  const error = body.boot_error.replace(/\s+/g, ' ').trim().slice(0, 500);
+  return error || null;
+}
 
 /** List the sandbox's OpenCode sessions (server-side, via the signed proxy). */
 export async function listSandboxOpencodeSessions(
@@ -213,6 +232,63 @@ export async function listSandboxOpencodeSessions(
   }
 }
 
+/**
+ * The session's root, from a box that serves its own session log (`runtime.log.v1`): its health
+ * names the root thread once the runtime started (`harness.session.root_thread_id`). Ready means
+ * what the OpenCode session list meant: the runtime answers a signed read. Not `harness.ready`,
+ * which also waits for the config release proof and would hold `/start` longer than before.
+ */
+export async function readRuntimeRoot(
+  ep: { url: string; headers: Record<string, string> },
+): Promise<{ ok: true; root: string } | Extract<ListResult, { ok: false }>> {
+  try {
+    const read = (path: string) =>
+      fetch(`${ep.url}${path}`, {
+        method: 'GET',
+        headers: sandboxRuntimeRequestHeaders(ep.headers),
+        signal: AbortSignal.timeout(3_000),
+      });
+    // `/kortix/health` names the root and checks no signature. `/pending` checks it, so a box whose
+    // service key drifted is refused here with the daemon's reason (the `bad_signature` repair).
+    const [health, signed] = await Promise.all([read('/kortix/health'), read(runtimeVerbPaths.pending)]);
+    const refused = [signed, health].find((res) => !res.ok && res.status !== 503);
+    const notReady = [signed, health].find((res) => res.status === 503);
+    if (refused) {
+      const responder = refused.headers.get('server')?.trim().slice(0, 40) || null;
+      const snippet = (await refused.text().catch(() => '')).replace(/\s+/g, ' ').trim().slice(0, 120);
+      await Promise.all([signed, health].filter((res) => res !== refused).map((res) => res.body?.cancel().catch(() => {})));
+      return {
+        ok: false,
+        reason: 'unreachable',
+        cause: refused.status === 401 ? 'unsigned_context' : `http_${refused.status}`,
+        ...(responder ? { responder } : {}),
+        ...(snippet ? { detail: snippet } : {}),
+      };
+    }
+    await signed.body?.cancel().catch(() => {});
+    // The daemon answers `/kortix/health` 200 even while its runtime is down, and
+    // that body is the only place a failed start is named.
+    const body = health.ok
+      ? ((await health.json().catch(() => null)) as {
+          harness?: { state?: unknown; session?: { root_thread_id?: unknown } };
+        } | null)
+      : null;
+    if (!health.ok) await health.body?.cancel().catch(() => {});
+    const bootError = finishedBootError(body);
+    if (notReady) {
+      const bootPhase = notReady.headers.get(BOOT_PHASE_HEADER)?.trim() || undefined;
+      return { ok: false, reason: 'not_ready', ...(bootPhase ? { bootPhase } : {}), ...(bootError ? { bootError } : {}) };
+    }
+    const root = body?.harness?.session?.root_thread_id;
+    if (body?.harness?.state !== 'ok' || typeof root !== 'string' || !root) {
+      return { ok: false, reason: 'not_ready', ...(bootError ? { bootError } : {}) };
+    }
+    return { ok: true, root };
+  } catch (err) {
+    return { ok: false, reason: 'unreachable', cause: unreachableCauseForThrow(err) };
+  }
+}
+
 export type EnsureReason =
   | 'unchanged'
   | 'healed'
@@ -232,6 +308,8 @@ export interface EnsureResult {
   responder?: string;
   /** First 120 chars of the error body. */
   detail?: string;
+  /** Behind a `not_ready`: the daemon's runtime start failed and is over (`finishedBootError`). */
+  bootError?: string;
 }
 
 /**
@@ -254,11 +332,31 @@ export async function ensureOpencodeSessionPin(input: {
 }): Promise<EnsureResult> {
   const { projectId, sessionId, accountId, externalId, userId, currentPin } = input;
 
-  const listed = await listSandboxOpencodeSessions(
-    externalId,
-    userId,
-    input.endpoint ? { endpoint: input.endpoint } : undefined,
-  );
+  // A box that serves its own session log names its root on its health: no session list is read.
+  let resolving: Promise<{ url: string; headers: Record<string, string> } | null> | undefined;
+  const endpoint = () =>
+    (resolving ??= input.endpoint ? Promise.resolve(input.endpoint) : sandboxOpencodeEndpoint(externalId, userId).catch(() => null));
+  if (await runtimeServesLog(externalId, endpoint)) {
+    const ep = await endpoint();
+    const noKey: Extract<ListResult, { ok: false }> = { ok: false, reason: 'unreachable', cause: 'no_key' };
+    const named = ep ? await readRuntimeRoot(ep) : noKey;
+    if (!named.ok) {
+      return {
+        pin: currentPin,
+        changed: false,
+        reason: named.reason === 'not_ready' ? 'not_ready' : 'unreachable',
+        ...(named.cause ? { cause: named.cause } : {}),
+        ...(named.responder ? { responder: named.responder } : {}),
+        ...(named.detail ? { detail: named.detail } : {}),
+        ...(named.reason === 'not_ready' && named.bootError ? { bootError: named.bootError } : {}),
+      };
+    }
+    return healPin({ projectId, sessionId, accountId }, currentPin, named.root);
+  }
+
+  // The capability read above resolved the endpoint unless its memo answered.
+  const known = input.endpoint ?? (resolving ? await resolving : null);
+  const listed = await listSandboxOpencodeSessions(externalId, userId, known ? { endpoint: known } : undefined);
   if (!listed.ok) {
     return {
       pin: currentPin,
@@ -279,8 +377,18 @@ export async function ensureOpencodeSessionPin(input: {
     return { pin: currentPin, changed: false, reason: 'not_ready', sessions };
   }
 
+  return healPin({ projectId, sessionId, accountId }, currentPin, resolved, sessions);
+}
+
+/** Store `resolved` as the session's pin when it differs from `currentPin`. */
+async function healPin(
+  row: { projectId: string; sessionId: string; accountId: string },
+  currentPin: string | null,
+  resolved: string,
+  sessions?: OpencodeSessionLite[],
+): Promise<EnsureResult> {
   if (resolved === currentPin) {
-    return { pin: resolved, changed: false, reason: 'unchanged', sessions };
+    return { pin: resolved, changed: false, reason: 'unchanged', ...(sessions ? { sessions } : {}) };
   }
 
   await db
@@ -288,11 +396,11 @@ export async function ensureOpencodeSessionPin(input: {
     .set({ runtimeSessionId: resolved, updatedAt: new Date() })
     .where(
       and(
-        eq(projectSessions.sessionId, sessionId),
-        eq(projectSessions.projectId, projectId),
-        eq(projectSessions.accountId, accountId),
+        eq(projectSessions.sessionId, row.sessionId),
+        eq(projectSessions.projectId, row.projectId),
+        eq(projectSessions.accountId, row.accountId),
       ),
     );
 
-  return { pin: resolved, changed: true, reason: 'healed', sessions };
+  return { pin: resolved, changed: true, reason: 'healed', ...(sessions ? { sessions } : {}) };
 }

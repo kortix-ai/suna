@@ -17,7 +17,7 @@ type Context = { can_comment: boolean; can_moderate: boolean; comment_count: num
   send_target: { kind: 'session' | 'new'; session_id: string | null; agent_name: string } | null;
   version: { commit_id: string | null; entry_version: string | null } };
 const AGENTS = [
-  'kortix_version: 3', 'project:', '  name: artifact-context', 'default_agent: writer', 'agents:',
+  'project:', '  name: artifact-context', 'default_agent: writer', 'agents:',
   '  writer:', '    kortix_permissions: [project.session.read, project.session.start, project.artifact.read, project.artifact.write, project.artifact.comment]',
   '  researcher:', '    kortix_permissions: [project.session.read, project.artifact.comment]',
   '  reader:', '    kortix_permissions: [project.session.read, project.artifact.read]', '',

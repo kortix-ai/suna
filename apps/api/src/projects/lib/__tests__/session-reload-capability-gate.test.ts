@@ -477,7 +477,7 @@ describe('reloadSessionConfig on a daemon without config releases', () => {
   test('the session\'s own agent edits are kept and reported', async () => {
     const daemon = fakeDaemon({
       capable: false,
-      refreshBody: { config_dir: { synced: false, skipped: 'local changes', kept: ['.kortix/opencode/agents/kortix.md'] } },
+      refreshBody: { config_dir: { synced: false, skipped: 'local changes', kept: ['agents/kortix.md'] } },
       push: { applied: false, reason: 'the daemon receives compiled governance in its config release' },
     });
     const result = await reloadSessionConfig(INPUT, daemon.deps);

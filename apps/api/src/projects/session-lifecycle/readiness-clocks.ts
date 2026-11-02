@@ -32,6 +32,38 @@ export function readinessValue(metadata: RuntimeReadinessMetadata, key: RuntimeR
   return metadata[key] ?? metadata[PRE_W4_READINESS_KEYS[key]];
 }
 
+/**
+ * The daemon's failed-start text (`finishedBootError`) and when the open saw
+ * it. The open parks the box on it at once; the cooldown answer names it. A
+ * ready answer, the next wake and a restart clear it with the clocks below.
+ */
+export const RUNTIME_BOOT_ERROR_KEY = 'runtimeBootError';
+export const RUNTIME_BOOT_ERROR_AT_KEY = 'runtimeBootErrorAt';
+/** `runtimeParkReason` and `failure.evidence.check` of a box parked on its daemon's failed start. */
+export const RUNTIME_BOOT_ERROR_PARK_REASON = 'runtime_boot_error';
+
+/**
+ * `failure.message` for a box parked on its daemon's failed start. The box
+ * runs; the agent in it did not start. With `terminalAttempts` the retries are
+ * spent and only a restart tries again.
+ */
+export function runtimeBootErrorMessage(bootError: string, terminalAttempts?: number): string {
+  const error = bootError.replace(/[.\s]+$/, '');
+  return terminalAttempts
+    ? `Could not start the agent after ${terminalAttempts} attempts: ${error}. Restart the session to try again.`
+    : `Could not start the agent: ${error}. Trying again automatically.`;
+}
+
+/**
+ * The `unreachable` diagnosis stamps, under both names. A daemon that answers
+ * `not_ready` is reachable, so the open drops them then: the first poll of a
+ * fresh box always meets a daemon that is not listening yet, and its 502 was
+ * left on the row for the whole boot.
+ */
+export const RUNTIME_UNREACHABLE_CAUSE_KEYS = (
+  ['runtimeUnreachableCause', 'runtimeUnreachableCauseAt', 'runtimeUnreachableResponder', 'runtimeUnreachableDetail'] as const
+).flatMap((key) => [key, PRE_W4_READINESS_KEYS[key]]);
+
 export const RUNTIME_READINESS_CLOCK_KEYS = [
   'runtimeWakeStartedAt',
   'runtimeWakeProviderStatus',
@@ -41,6 +73,8 @@ export const RUNTIME_READINESS_CLOCK_KEYS = [
   // (shouldWarnRuntimeUnreachable). Cleared with the rest so the next spell
   // gets its own warn.
   'runtimeUnreachableWarnedAt',
+  RUNTIME_BOOT_ERROR_KEY,
+  RUNTIME_BOOT_ERROR_AT_KEY,
   ...(Object.keys(PRE_W4_READINESS_KEYS) as RuntimeReadinessKey[]),
   ...Object.values(PRE_W4_READINESS_KEYS),
 ] as const;

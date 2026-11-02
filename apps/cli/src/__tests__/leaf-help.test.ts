@@ -47,6 +47,7 @@ const GROUPS = [
   'sandboxes',
   'secrets',
   'sessions',
+  'tasks',
   'tokens',
   'tools',
   'triggers',

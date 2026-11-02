@@ -225,7 +225,8 @@ flow(
       if (!skill) {
         throw new Error(`the created skill is missing from the catalog: ${JSON.stringify(skills.map((s) => s.path))}`);
       }
-      if (skill.name !== 'Release Notes') throw new Error(`frontmatter name read back as "${skill.name}"`);
+      // A registered skill is listed by its registry name, the slug.
+      if (skill.name !== slug) throw new Error(`registered skill listed as "${skill.name}", expected "${slug}"`);
       if (skill.description !== 'Draft the weekly "release notes": go') {
         throw new Error(`frontmatter description read back as "${skill.description}"`);
       }

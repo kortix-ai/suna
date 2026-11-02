@@ -167,3 +167,13 @@ test('chat block with no room degrades to a notice', () => {
   const html = render([{ type: 'chat', label: 'Chat' }]);
   expect(html).toContain('No room yet.');
 });
+
+test('board empty states use the host locale rather than English literals', () => {
+  const props = {
+    i18n: { locale: 'de', messages: { spaces: { blocks: { noContent: 'Noch kein Inhalt.' } } } },
+    children: createElement(SpaceBlocks, { projectId: 'p1', blocks: [{ type: 'text', label: 'Notiz' }] }),
+  };
+  const html = renderToStaticMarkup(createElement(UiProvider, props));
+  expect(html).toContain('Noch kein Inhalt.');
+  expect(html).not.toContain('No content yet.');
+});

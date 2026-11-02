@@ -1,3 +1,4 @@
+import { isClaudeAgentModelRef } from './claude-agent';
 import { getProjectGatewayResolution, type getProjectModelAccess } from '../../repositories/project-model-access';
 import {
   resolveDefaultCodexAccountSecret,
@@ -533,6 +534,15 @@ export async function resolveCandidates(
     );
   }
 
+  // Only a daemon from before Claude subscription models sends one here: a current
+  // one runs them through Claude Code in the box. A new session boots the current image.
+  if (isClaudeAgentModelRef(effectiveModel)) {
+    throw new GatewayResolutionError(
+      'model_not_found',
+      `"${effectiveModel}" runs through Claude Code, and this session's computer runs an older Kortix runtime.`,
+      'Start a new session to use Claude models, or pick another model here.',
+    );
+  }
   throw new GatewayResolutionError(
     'model_not_found',
     `"${effectiveModel}" is not a recognized model.`,

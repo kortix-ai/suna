@@ -3,7 +3,6 @@
 export {
   COMPOSER_CHROME_ROWS,
   type ComposerMetrics,
-  OVERLAY_RESERVE_ROWS,
   PROMPT_RESERVE_ROWS,
   SessionView,
   type SessionFocus,
@@ -17,7 +16,12 @@ export {
 } from './session-view.tsx';
 export { Composer, type ComposerProps } from './composer/composer.tsx';
 export { COMPOSER_KEYMAP } from './composer/keys.ts';
-export type { AppCommandId } from './composer/slash-commands.ts';
+export { DraftView, type DraftViewProps } from './draft-view.tsx';
+export {
+  PromptInput,
+  type PromptInputMetrics,
+  type PromptInputProps,
+} from './composer/prompt-input.tsx';
 export {
   SessionPrompts,
   type SessionState,

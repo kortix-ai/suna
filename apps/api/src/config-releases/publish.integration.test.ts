@@ -30,7 +30,7 @@ const schedule = (projectId: string, ref: string, commit: string | null) => void
 const release = (commit: string, overrides: Partial<ConfigRelease> = {}): ConfigRelease => ({
   release_id: `${commit.slice(0, 8)}${'0'.repeat(56)}`,
   source_commit: commit,
-  config_dir: 'harnesses/opencode',
+  config_dir: null,
   config_tree_id: TREE,
   archive: { url: `/v1/projects/${projectId}/config-archives/${TREE}`, bytes: 10 },
   files: [['kortix.yaml', '100644', 'd'.repeat(40)]],

@@ -69,7 +69,7 @@ function ShellBody({
   return (
     <box flexDirection="column">
       <text fg={theme.dim}>
-        <span fg={theme.accent}>{'  $ '}</span>
+        <span fg={theme.dim}>{'  $ '}</span>
         {clip(model.command, body - 4)}
       </text>
       <More hidden={hidden} />

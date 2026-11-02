@@ -4,7 +4,7 @@
  * Every image the platform builds for an agent session renders these steps
  * verbatim and in this order: the platform default image and every custom
  * template (`buildLayeredDockerfile`), and My Kortix
- * (`buildMetaSandboxDockerfile`). `__tests__/defaults.test.ts` fails when an
+ * (`buildMyKortixSandboxDockerfile`). `__tests__/defaults.test.ts` fails when an
  * image lacks them. Change a default here, and every image gets it.
  *
  * - `kortixDefaultsSetup()` installs from the network: the base apt packages
@@ -15,10 +15,10 @@
  *   shims, the scaffold repo, the managed skills, the runtime-assets record,
  *   the shell profile, and the container's ENV, WORKDIR and ENTRYPOINT.
  *
- * An image's own tooling sits between the two. Project agents get the
- * workstation (`kortixWorkstationTooling` in dockerfile-layer.ts: document
- * tools, the Python package floor, Chromium with agent-browser, the desktop).
- * My Kortix gets none: it hands that work to a project agent's session.
+ * The workstation sits between the two (`kortixWorkstationTooling` in
+ * dockerfile-layer.ts: document tools, the Python package floor, Chromium with
+ * agent-browser, the desktop). My Kortix's image is the platform default image
+ * verbatim (my-kortix-dockerfile.ts), so it carries all of it too.
  */
 
 import {
@@ -356,7 +356,9 @@ export function kortixDefaultsTail(opts: KortixArtifactLayerOpts): string {
     '    && gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix \\',
     '    && rm /tmp/kortix-agent.gz /tmp/kortix.gz \\',
     '    && bash -n /usr/local/bin/kortix-entrypoint \\',
-    '    && chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\',
+    // 0755, not +x: a build context staged under umask 007 (a PTXP box) copies the
+    // entrypoint as 0770, and +x left the `kortix` user unable to read it.
+    '    && chmod 0755 /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\',
     '        /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\',
     '    && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\',
     // Fail the build loudly if the CLI didn't land — every sandbox must ship it.

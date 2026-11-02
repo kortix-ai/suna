@@ -11,14 +11,14 @@ export function infoToast(message: string, options?: unknown): void {
 }
 
 /**
- * `extra` is set for a completion the turn-end hand-off found
- * (`react/turn-end-handoff.ts`) for a session whose page was not mounted:
- * - `watchedSinceMs`: when the watch started, on this host's clock. A host that
+ * - `extra.projectId`: the session's project. The live stream and the turn-end
+ *   hand-off (`react/turn-end-handoff.ts`) both set it when they know it. The
+ *   page on screen may belong to another project, so the host must not take it
+ *   from its current route.
+ * - `extra.watchedSinceMs`: set only by the hand-off, for a session whose page
+ *   was not mounted: when the watch started, on this host's clock. A host that
  *   also hears completions from elsewhere (another tab's stream) skips this one
  *   when it already announced the session after that instant.
- * - `projectId`: the session's project. The page on screen may belong to
- *   another project, so the host must not take it from its current route.
- * Absent: the live stream of the session page on screen.
  */
 export function notifyTaskComplete(
   sessionId: string,
@@ -39,7 +39,7 @@ export function hasNotifySink(): boolean {
   return typeof platformConfig().onNotify === 'function';
 }
 
-/** `extra.projectId`: as for `notifyTaskComplete`, set by the turn-end hand-off. */
+/** `extra.projectId`: as for `notifyTaskComplete`. */
 export function notifySessionError(
   sessionId: string,
   errorTitle: string,
@@ -55,18 +55,34 @@ export function notifySessionError(
   });
 }
 
+/** `extra.projectId`: as for `notifyTaskComplete`. */
 export function notifyQuestion(
   sessionId: string,
   questionText: string,
   sessionTitle?: string,
+  extra?: { projectId?: string },
 ): void {
-  platformConfig().onNotify?.({ kind: 'question', sessionId, questionText, sessionTitle });
+  platformConfig().onNotify?.({
+    kind: 'question',
+    sessionId,
+    questionText,
+    sessionTitle,
+    ...(extra?.projectId ? { projectId: extra.projectId } : {}),
+  });
 }
 
+/** `extra.projectId`: as for `notifyTaskComplete`. */
 export function notifyPermissionRequest(
   sessionId: string,
   toolName: string,
   sessionTitle?: string,
+  extra?: { projectId?: string },
 ): void {
-  platformConfig().onNotify?.({ kind: 'permission', sessionId, toolName, sessionTitle });
+  platformConfig().onNotify?.({
+    kind: 'permission',
+    sessionId,
+    toolName,
+    sessionTitle,
+    ...(extra?.projectId ? { projectId: extra.projectId } : {}),
+  });
 }

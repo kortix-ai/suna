@@ -9,7 +9,13 @@ name: Rollback Production
 #
 # WHAT IT ROLLS (each surface independently — a surface with no :vX.Y.Z artifact
 # is SKIPPED, never forced into a broken state):
-#   * BACKEND api (ECS): rolls `kortix-prod` to the immutable release image.
+#   * BACKEND api (ECS): rolls `kortix-prod` to the immutable release image
+#     with `--process-role all`: the api tasks run the scheduled jobs. Once that
+#     rollout is stable, ecs-deploy.sh scales `kortix-prod-worker` to 0.
+#   * The WORKER (ECS) is never rolled here. A rollback must start at once and
+#     must stop a bad worker, not wait up to 17 min for a worker roll that may
+#     crash-loop. The next normal release (deploy-prod.yml) rolls the worker and
+#     switches the api back to KORTIX_PROCESS_ROLE=web.
 #   * BACKEND gateway (ECS): rolls `kortix-prod-gateway` — BUT only if a
 #     :X.Y.Z gateway image exists (the gateway entered prod at v0.9.72, so older
 #     targets have no gateway image; it's left untouched rather than pointed at a
@@ -173,12 +179,17 @@ jobs:
           ROLL_GW: ${{ steps.plan.outputs.roll_gw }}
         run: |
           set -euo pipefail
+          # --process-role all: the api runs the scheduled jobs, whatever the
+          # worker runs, and the script scales the worker to 0 once this
+          # rollout is stable (never before: until then the old api or the
+          # worker may be the only process that can take the leader lease).
           if [ "$ROLL_API" = yes ]; then
             bash infra/scripts/ecs-deploy.sh \
               prod \
               "kortix/kortix-api:${TARGET}" \
               --version "${TARGET}" \
-              --database-migrated
+              --database-migrated \
+              --process-role all
           fi
           if [ "$ROLL_GW" = yes ]; then
             bash infra/scripts/ecs-deploy.sh \
@@ -269,7 +280,8 @@ jobs:
             echo ""
             echo "| Surface | Rolled | How |"
             echo "|---|---|---|"
-            echo "| api ECS | ${ROLL_API:-no} | immutable release image |"
+            echo "| api ECS | ${ROLL_API:-no} | immutable release image, KORTIX_PROCESS_ROLE=all |"
+            echo "| worker ECS | not rolled | scaled to 0 after the api rollout when api=yes; the next release rolls it |"
             echo "| gateway ECS | ${ROLL_GW:-no} | immutable release image |"
             echo "| frontend ECS | ${ROLL_FE:-no} | immutable release image |"
             echo "| frontend Vercel | ${ROLL_FE_VERCEL:-no} | promoted via Vercel API |"

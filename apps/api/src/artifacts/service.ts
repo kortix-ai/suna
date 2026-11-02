@@ -18,6 +18,7 @@
 // threads' tokens, reach its files. Any other root under `/Channels` is an
 // ordinary folder. An artifact rooted there is viewed only
 // by them, whatever its sharing, and is never `project` or `public`.
+import { assertDriveFilesFit, assertDriveWriteFits, forgetDriveUsage } from '../drives/limits';
 import { artifactComments, artifactCommentThreads, artifacts, projectSessions } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { config } from '../config';
@@ -279,6 +280,8 @@ export async function publishNew(
   const entryText = new TextDecoder().decode(files.find((f) => f.rel === entry)!.bytes);
   const title = input.title?.trim() || titleOf(type, entryText) || 'Untitled';
   const drive = await ensureProjectDrive(scope.accountId, scope.projectId);
+  // The project's Files limits hold for an Artifact as for any upload (drives/limits.ts).
+  await assertDriveWriteFits(drive, { sizes: files.map((f) => f.bytes.byteLength) });
   const home = channelFolder ?? (await ensurePersonalFolder(drive, author.userId));
   const written = await writeDriveVolume(drive, async (volume) => {
     const base = join(join(home, 'Artifacts'), slugify(title));
@@ -288,6 +291,7 @@ export async function publishNew(
     const commit = await writeVolumeFiles(volume, files.map((f) => ({ path: join(candidate, f.rel), bytes: f.bytes })), { overwrite: false });
     return { root: candidate, commit };
   });
+  forgetDriveUsage(drive.platinumVolumeName);
   const binding = await bindingAtCreate(author, input);
   return db.transaction(async (tx) => {
     const [row] = await tx.insert(artifacts).values({
@@ -392,6 +396,8 @@ export async function publishChanges(
   const drive = await driveOf(row);
   const files = encodeFiles(input.files).map((f) => ({ ...f, rel: row.folder ? f.rel : f.rel === 'index.md' || f.rel === 'index.html' ? row.entry : f.rel }));
   if (!row.folder && files.some((f) => f.rel !== row.entry)) throw new ArtifactError(400, `This artifact is one file: publish only ${row.entry}`, 'single_file');
+  // A save overwrites: it gets credit for the files it replaces.
+  await assertDriveFilesFit(drive, files.map((f) => ({ path: join(row.root, f.rel), bytes: f.bytes.byteLength })), { overwrite: true });
   const commits: VolumeWriteCommit[] = [];
   try {
     await writeDriveVolume(drive, async (volume) => {
@@ -411,6 +417,7 @@ export async function publishChanges(
     }
     throw err;
   }
+  forgetDriveUsage(drive.platinumVolumeName);
   // The title is the artifact's name: a save keeps it unless it sets one. Only
   // an artifact still named like a starter follows its first heading.
   // ponytail: a fixed list of starter names; a `named` flag if more creation paths appear.

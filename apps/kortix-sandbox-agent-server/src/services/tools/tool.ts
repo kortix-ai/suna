@@ -25,8 +25,9 @@
  */
 
 /**
- * The Kortix tools that write files in the checkout (`image_gen` under
- * `output/images/`, `memory` under `memory/`). The `edit` permission governs
+ * The tools that write files in the checkout (`image_gen` under
+ * `output/images/`; `memory` under `memory/`, a retired Kortix tool that a
+ * project may still run as its ejected copy). The `edit` permission governs
  * them: pi's `toolCapability` reads this list.
  */
 export const KORTIX_EDIT_TOOLS: readonly string[] = ['image_gen', 'memory']

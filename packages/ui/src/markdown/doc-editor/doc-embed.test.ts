@@ -58,3 +58,9 @@ describe('a card from the page', () => {
     expect(reads).toBe(0);
   });
 });
+
+test('a long unterminated HTML comment cannot stall summary rendering', () => {
+  const start = performance.now();
+  expect(plainSummary('<!--'.repeat(10_000))).toHaveLength(220);
+  expect(performance.now() - start).toBeLessThan(200);
+});

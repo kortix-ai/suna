@@ -35,7 +35,7 @@ function manifestOf(release: BuiltRelease): ReleaseManifest {
   return {
     release_id: d.release_id!,
     source_commit: d.source_commit!,
-    config_dir: d.config_dir,
+    config_dir: REL,
     config_tree_id: d.config_tree_id!,
     archive_url: d.archive!.url,
     archive_bytes: d.archive!.bytes,
@@ -52,7 +52,7 @@ async function oldStarterRelease() {
   write(repo, `${REL}/agents/kortix.md`, 'PROMPT\n')
   write(repo, `${REL}/skills/pdf/SKILL.md`, 'PDF\n')
   write(repo, `${REL}/skills/kortix-cli/SKILL.md`, 'STALE TRACKED COPY\n')
-  const built = buildRelease(repo, commitAll(repo, 'old starter'), REL, {})
+  const built = buildRelease(repo, commitAll(repo, 'old starter'), {})
   const { dir } = await materializeRelease({
     root: store,
     manifest: manifestOf(built),

@@ -474,14 +474,12 @@ flow(
   },
 );
 
-// PROJ-19 — Full v2 agent-config editor (the "agent builder" surface). GET reports the
-// agent's full block + the manifest schema version (the UI's v1-vs-v2 branch);
-// PUT replaces the whole block, validating it through the manifest-schema
-// validator before the kortix.yaml commit. A bare provisioned project now
-// synthesizes a v2 manifest (synthesizeBlankManifest, kortix_version 2 — see
-// PR #4980), so GET reports schema_version 2 and editable:true. PUT still
-// validates the block shape strictly: a body with unrecognized top-level keys
-// (or a bad enum) is refused with a 400; the editor-tier gate holds.
+// PROJ-19 — the agent-config editor (the "agent builder" surface). GET reports
+// the agent's full block; PUT replaces the whole block, validating it through
+// the manifest-schema validator before the kortix.yaml commit. A seeded
+// project declares `worker`, so GET reports editable:true. PUT validates the
+// block shape strictly: a body with unrecognized top-level keys (or a bad
+// enum) is refused with a 400; the editor-tier gate holds.
 flow(
   'PROJ-19',
   {
@@ -490,6 +488,7 @@ flow(
       'GET /v1/projects/:projectId/agents/:agentName/config',
       'PUT /v1/projects/:projectId/agents/:agentName/config',
       'GET /v1/projects/:projectId/agents/:agentName/capabilities',
+      'GET /v1/projects/:projectId/capabilities',
       'GET /v1/projects/:projectId/files/content',
     ],
   },
@@ -506,14 +505,14 @@ flow(
     };
 
     await ctx.step(
-      'GET reports schema_version 2 / editable true for a seeded manifest',
+      'GET reports editable true for a seeded manifest',
       async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .get('/v1/projects/:projectId/agents/:agentName/config', {
             params: { projectId: project.id, agentName: 'worker' },
           });
-        r.status(200).body().has('$.schema_version', 2).has('$.editable', true);
+        r.status(200).body().has('$.editable', true);
       },
     );
 
@@ -624,6 +623,10 @@ flow(
     await ctx.step(
       'GET capabilities lists every tool, built-in skill and platform extension; an undeclared agent → 404; no grant → 403',
       async () => {
+        const projectCatalog = (await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/capabilities', {
+          params: { projectId: project.id },
+        })).status(200).json<{ tools: { id: string }[] }>();
+        if (!projectCatalog.tools.some((tool) => tool.id === 'agent')) throw new Error('project capability catalog lacks agent tool');
         const path = '/v1/projects/:projectId/agents/:agentName/capabilities';
         const r = await ctx.client.as(ctx.P.OWNER).get(path, { params: { projectId: project.id, agentName: 'worker' } });
         r.status(200).body().has('$.agent', 'worker');
@@ -959,7 +962,7 @@ flow(
   },
 );
 
-// PROJ-9 — manifest validation (dry-run, no commit). Body: { raw, format? }.
+// PROJ-9 — manifest validation (dry-run, no commit). Body: { raw }.
 // Always resolves — the verdict lives in the body, never a raw parser 4xx —
 // except the caller-input guards (missing `raw`) which are the real 400s.
 flow(
@@ -967,58 +970,49 @@ flow(
   { domain: 'projects', routes: ['POST /v1/projects/:projectId/manifest/validate'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
+    const validate = (body: Record<string, unknown>, as = ctx.P.OWNER) =>
+      ctx.client.as(as).post('/v1/projects/:projectId/manifest/validate', body, { params: { projectId: p.id } });
+    type Issue = { path: string; message: string; severity: 'error' | 'warning' };
     await ctx.step('missing raw → 400', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          '/v1/projects/:projectId/manifest/validate',
-          { format: 'yaml' },
-          { params: { projectId: p.id } },
-        );
-      r.status(400);
+      (await validate({})).status(400);
     });
-    await ctx.step('a valid minimal v2 manifest → 200 valid:true', async () => {
-      const raw = 'kortix_version: 2\ndefault_agent: kortix\nagents:\n  kortix: {}\n';
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          '/v1/projects/:projectId/manifest/validate',
-          { raw, format: 'yaml' },
-          { params: { projectId: p.id } },
-        );
+    await ctx.step('a valid minimal manifest with no kortix_version → 200 valid:true, no issues', async () => {
+      const r = await validate({ raw: 'default_agent: kortix\nagents:\n  kortix:\n    tools: all\n' });
       r.status(200).body().has('$.valid', true);
+      const issues = r.json<{ issues: Issue[] }>().issues;
+      if (issues.length) throw new Error(`issues on a valid manifest: ${JSON.stringify(issues)}`);
     });
     await ctx.step(
-      'a broken manifest (default_agent not declared) → 200 valid:false with issues',
+      'a broken manifest (default_agent not declared) → 200 valid:false with an error at default_agent',
       async () => {
-        const raw = 'kortix_version: 2\ndefault_agent: does-not-exist\nagents:\n  kortix: {}\n';
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .post(
-            '/v1/projects/:projectId/manifest/validate',
-            { raw, format: 'yaml' },
-            { params: { projectId: p.id } },
-          );
-        r.status(200).body().has('$.valid', false).exists('$.issues');
+        const r = await validate({ raw: 'default_agent: does-not-exist\nagents:\n  kortix:\n    tools: all\n' });
+        r.status(200).body().has('$.valid', false);
+        const issue = r.json<{ issues: Issue[] }>().issues.find((i) => i.path === 'default_agent');
+        if (issue?.severity !== 'error') throw new Error(`default_agent issue: ${r.text()}`);
       },
     );
+    await ctx.step('kortix_version: 2 → 200 valid:true with one legacy-format warning; the converted body is validated', async () => {
+      type LegacyIssue = Issue & { fix?: string; line?: number };
+      const r = await validate({ raw: 'kortix_version: 2\ndefault_agent: kortix\nagents:\n  kortix: {}\n' });
+      r.status(200).body().has('$.valid', true);
+      const issues = r.json<{ issues: LegacyIssue[] }>().issues;
+      if (issues.length !== 1 || issues[0]!.path !== 'kortix_version' || issues[0]!.severity !== 'warning' || issues[0]!.fix !== 'legacy-format' || issues[0]!.line !== 1) {
+        throw new Error(`expected one legacy-format warning at line 1: ${JSON.stringify(issues)}`);
+      }
+      const broken = await validate({ raw: 'kortix_version: 2\ndefault_agent: nope\nagents:\n  kortix: {}\n' });
+      broken.status(200).body().has('$.valid', false);
+      const error = broken.json<{ issues: LegacyIssue[] }>().issues.find((i) => i.severity === 'error');
+      if (error?.path !== 'default_agent' || error.line !== 2) throw new Error(`expected an error at default_agent, line 2: ${broken.text()}`);
+    });
     await ctx.step('NONMEMBER → 403/404', async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .post(
-          '/v1/projects/:projectId/manifest/validate',
-          { raw: 'kortix_version: 2\n', format: 'yaml' },
-          { params: { projectId: p.id } },
-        );
-      r.status([403, 404]);
+      (await validate({ raw: 'agents: {}\n' }, ctx.P.NONMEMBER)).status([403, 404]);
     });
   },
 );
 
 // PROJ-30 — set the project default agent. `kortix.yaml.default_agent` is
 // durable truth; project.metadata.default_agent mirrors it for reads. A fresh
-// provisioned project now synthesizes a blank v2 manifest with a `worker`
-// agent already declared (see PROJ-19), so setting it back to `worker` is a
+// seeded project declares a `worker` agent (see PROJ-19), so setting it back to `worker` is a
 // safe, real no-op write (still commits to git) that proves the success path.
 flow(
   'PROJ-30',

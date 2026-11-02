@@ -769,7 +769,7 @@ flow(
 
       await ctx.step('the creator gets exactly one automation_failed row titled with the trigger; OWNER gets none', async () => {
         const [row] = await waitForInbox(ctx, creator, alert);
-        if (row.title !== name || row.session_id !== null || row.url !== `/projects/${project.id}/customize/triggers?notification=${row.id}`) {
+        if (row.title !== name || row.session_id !== null || row.url !== `/projects/${project.id}/admin/triggers?notification=${row.id}`) {
           throw new Error(JSON.stringify(row));
         }
         await settle();

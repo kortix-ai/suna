@@ -16,7 +16,7 @@
 
 import { slugifySlug } from '@kortix/manifest-schema';
 import type { ProjectConfigSummary } from '@kortix/sdk';
-import { isMetaAgentName } from '@kortix/shared';
+import { isMyKortixAgentName } from '@kortix/shared';
 import type * as React from 'react';
 import { useState } from 'react';
 
@@ -106,7 +106,7 @@ export function CreateAgentModal({
   const slug = name.trim() ? slugifySlug(name, '') : '';
   // Every declared agent and the built-in ones: a new agent can never take a
   // platform agent's key. `agents` (the Duplicate sources) leaves them out.
-  const taken = (config?.agents ?? []).some((a) => a.name === slug) || isMetaAgentName(slug);
+  const taken = (config?.agents ?? []).some((a) => a.name === slug) || isMyKortixAgentName(slug);
   const source = agents.find((a) => a.name === from);
   const ready = slug.length > 0 && !taken && (start !== 'duplicate' || source !== undefined);
 
@@ -231,7 +231,7 @@ export function CreateAgentModal({
                 <p className={cn('truncate text-lg font-medium', slug ? 'text-foreground' : 'text-muted-foreground')}>
                   {agentDisplayName(slug || t('namePlaceholder'))}
                 </p>
-                <p className="text-muted-foreground truncate font-mono text-xs">agents.{slug || t('namePlaceholder')}</p>
+                <p className="text-muted-foreground truncate font-mono text-xs">{`agents.${slug || t('namePlaceholder')}`}</p>
                 {description.trim() ? (
                   <p className="text-foreground line-clamp-3 pt-1 text-sm text-pretty">{description.trim()}</p>
                 ) : null}

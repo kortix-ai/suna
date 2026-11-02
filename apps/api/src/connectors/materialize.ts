@@ -10,7 +10,7 @@
 import type { ConnectorSpec } from '../projects/connectors';
 import type { ProjectPolicySpec } from '../projects/policies';
 import { channelApiBase, channelAuth } from './channels';
-import type { PolicyArgCondition } from './policy';
+import type { PolicyArgCondition } from '@kortix/manifest-schema';
 
 export interface DesiredPolicy {
   match: string;

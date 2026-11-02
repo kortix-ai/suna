@@ -192,7 +192,6 @@ export async function sweepStaleSlackTurns(): Promise<void> {
   }
 }
 
-export { startSlackTurnGc, stopSlackTurnGc } from '../../workers/slack-turn-gc-worker';
 
 /**
  * Does the runtime's turn authority still hold a live turn for this session?

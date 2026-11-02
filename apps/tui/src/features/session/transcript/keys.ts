@@ -46,13 +46,13 @@ export const TRANSCRIPT_KEYS: readonly Binding[] = [
     id: 'transcript.pageDown',
     scope: 'transcript',
     chords: [{ key: 'pagedown' }],
-    description: 'Scroll down one screen.',
+    description: 'Scroll down one screen. Works from the input too.',
   },
   {
     id: 'transcript.older',
     scope: 'transcript',
     chords: [{ key: 'pageup' }],
-    description: 'Scroll up one screen. At the top, load older turns.',
+    description: 'Scroll up one screen. At the top, load older turns. Works from the input too.',
   },
   {
     id: 'transcript.top',

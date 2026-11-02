@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { createArtifactScreenshotStore, screenshotObjectKey } from './comment-screenshot-storage';
+import { createArtifactScreenshotStore, screenshotObjectKey, screenshotKeyMatches } from './comment-screenshot-storage';
 
 const project = '11111111-1111-4111-8111-111111111111';
 const comment = '22222222-2222-4222-8222-222222222222';
@@ -52,4 +52,14 @@ test('signed downloads cannot redirect or exceed the decoded screenshot cap', as
   await expect(large.read(key)).rejects.toMatchObject({ status: 503 });
   bucket.createSignedUrl = async () => ({ data: { signedUrl: 'https://other.example/private' }, error: null });
   await expect(createArtifactScreenshotStore(storage, 'https://storage.example').read(key)).rejects.toMatchObject({ status: 503 });
+});
+
+
+test('object keys reject malformed IDs, suffixes and cross-project matches', () => {
+  expect(screenshotKeyMatches(key, project, comment)).toBe(true);
+  expect(screenshotKeyMatches(key, comment)).toBe(false);
+  for (const bad of [key + '\n', key + '/extra', key.replace(comment, 'invalid'), key.replace(project, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'.toUpperCase())]) {
+    expect(screenshotKeyMatches(bad, project)).toBe(false);
+  }
+  expect(() => screenshotObjectKey(project, 'invalid', 'png')).toThrow();
 });

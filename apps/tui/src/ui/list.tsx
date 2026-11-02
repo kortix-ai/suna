@@ -140,7 +140,7 @@ export function List({
         const fg = item.dim && !isSelected ? theme.faint : isSelected ? theme.fg : theme.dim;
         return (
           <text key={item.id} fg={fg} bg={isSelected ? theme.surface : undefined}>
-            <span fg={theme.accent}>{mark}</span>
+            <span fg={theme.brand}>{mark}</span>
             {body}
           </text>
         );

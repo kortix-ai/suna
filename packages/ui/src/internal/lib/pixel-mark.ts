@@ -57,7 +57,7 @@ export const PIXEL_MARK_TONES: readonly PixelMarkTone[] = [
   tone('slate', '#E4E7EC', '#3B4656'),
 ];
 
-/** The starter's `kortix` agent and My Kortix (slug `meta`) keep the brand tile. */
+/** The starter's `kortix` agent and My Kortix (slug `mykortix`) keep the brand tile. */
 const BRAND: PixelMarkTone = {
   name: 'brand',
   tile: '#1F1F1F',
@@ -65,12 +65,12 @@ const BRAND: PixelMarkTone = {
   tileDark: '#2C2C2C',
   inkDark: '#FFFFFF',
 };
-const RESERVED: Record<string, PixelMarkTone> = { kortix: BRAND, meta: BRAND };
+const RESERVED: Record<string, PixelMarkTone> = { kortix: BRAND, mykortix: BRAND, meta: BRAND };
 
-/** My Kortix (slug `meta`) wears the Kortix symbol itself, the same 12 × 10
+/** My Kortix (slug `mykortix`) wears the Kortix symbol itself, the same 12 × 10
  *  grid as `PixelKortixMark` and the merch chips. `+` cells are the dithered
  *  curve cells; at agent-mark sizes they paint at half ink. */
-const RESERVED_ROWS: Record<string, readonly string[]> = { meta: PIXEL_KORTIX_ROWS };
+const RESERVED_ROWS: Record<string, readonly string[]> = { mykortix: PIXEL_KORTIX_ROWS, meta: PIXEL_KORTIX_ROWS };
 
 type Grid = boolean[][];
 

@@ -3,7 +3,8 @@ import { type OpenAPIHono, createRoute } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { policySetNameError } from '@kortix/manifest-schema';
 import { auth, errors, json } from '../../openapi';
-import { areValidConditions, isValidMatcher, normalizeConditions } from '../policy';
+import { areValidConditions, isValidMatcher } from '@kortix/manifest-schema';
+import { normalizeConditions } from '../policy';
 import type { ConnectorRouterDeps, ProjectPolicyView } from '../router';
 import { POLICY_SET_TEMPLATES, isPolicySetTemplate, templatePolicies } from '../policy-templates';
 import {

@@ -68,7 +68,7 @@
  * a time. `unit-feature-flag-drift.test.ts` compares contract <-> SDK <->
  * registry and catches 1/3/5 only. List every holder before you start:
  *
- *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "agent_rooms"
+ *   rg -l "reminders" --glob '!node_modules' . | xargs rg -l "agent_rooms"
  *
  * The UI renders straight from {@link buildFeatureFlagCatalog}, so a new entry
  * lights up in Settings automatically. `unit-feature-flags.test.ts` pins the
@@ -196,25 +196,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
   // `llm_gateway` graduated (2026-10-20): the LLM gateway is the only model
   // path for every project. No flag, no native OpenCode provider mode, no
   // operator lever. A stored `experimental.llm_gateway` override is inert.
-  {
-    key: 'meta_agent',
-    name: 'My Kortix',
-    description:
-      'My Kortix, the one agent you talk to. It routes each task to the agent made for it and runs it, with your permissions. The project setting is `builtin_agents.my_kortix` in kortix.yaml; this switch applies only when that key is not set.',
-    stability: 'experimental',
-    available: () => true,
-    // On by default (Marko, 2026-10-24): My Kortix is the default cloud
-    // orchestrator for every project. The project switch is kortix.yaml
-    // `builtin_agents.my_kortix`; this flag is its operator-only legacy fallback,
-    // so Settings never shows a second toggle that the manifest overrides.
-    platformDefault: () => true,
-    catalogHidden: true,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'The legacy fallback of kortix.yaml `builtin_agents.my_kortix`: read only when ' +
-      'the manifest does not set the key (projects/lib/builtin-agents.ts). Off ⇒ the ' +
-      'built-in `meta` agent is not listed and is not the default for new sessions.',
-  },
+  // `meta_agent` removed (2026-11-02): My Kortix follows kortix.yaml
+  // `builtin_agents.my_kortix` alone and is on when the key is not set
+  // (projects/lib/my-kortix-agent.ts). The flag defaulted off until 2026-10-24,
+  // so projects that saved Settings before then stored `false` and lost My
+  // Kortix after it became the default. A stored `experimental.meta_agent`
+  // override is inert; the API still sends `true` to older clients.
   // `apps` graduated (2026-10-14, spec §28): Apps is generally available —
   // every project can create and deploy Apps and there is no flag, no row and
   // no operator lever. A stored `experimental.apps` override is inert.
@@ -273,10 +260,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
   {
     key: 'pooled_provider_secrets',
     name: 'Pooled Provider Secrets',
-    description: 'Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses.',
+    description: 'Members connect their own ChatGPT and Claude subscriptions and provider keys, share them when needed, and choose which ones each session uses.',
     stability: 'experimental',
     available: () => true,
-    platformDefault: () => false,
+    // On by default since 2026-10-31: every project gets private-by-default
+    // provider accounts. A project that turned it off keeps it off.
+    platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote: 'Session selection and provider credential resolution reject or ignore resource secrets while disabled.',
   },
@@ -392,10 +381,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
     description:
       'Give an agent an objective and it owns the outcome until an independent check confirms it, for days or weeks: it plans, works, waits, chases people for what only they can give, and keeps its state in a Goals folder in Files. Needs Volumes and Loops on (flag key `reminders`).',
     stability: 'beta',
+    // Work in progress (Marko, 2026-11-01): Settings marks the row "Not
+    // recommended yet" until Goals v1 is finished.
+    wip: true,
     // A goal keeps its state in Files, and every drive is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
-    // Off by default; a project turns it on (Marko, 2026-10-28). Not marked
-    // work in progress: Goals is being finished as a usable v1.
+    // Off by default; a project turns it on (Marko, 2026-10-28).
     platformDefault: () => false,
     enforcement: 'ui-only',
     enforcementNote:
@@ -568,6 +559,24 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'connected are account-level and gated only by KORTIX_CHROME_ENABLED (404 when off). BOX: off, the ' +
       'session has no kortix-chrome skill and its CLI hides and refuses `kortix chrome` (KORTIX_FEATURE_FLAGS). ' +
       'WEB: no sidebar row, no Chrome card in Apps and extensions, no Settings page.',
+  },
+  {
+    key: 'agent_teams',
+    name: 'Agent teams',
+    description:
+      'A lead session starts named teammates that share one task list: each teammate claims a task, works it in its own session and tells the lead when it is done. The lead and the person see every teammate and its tasks. Messages between sessions (`send_message`) work without this flag.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'Off ⇒ a project has no team task list. ROUTES: GET/POST /projects/:id/sessions/:lead/tasks and ' +
+      'PATCH/DELETE /projects/:id/sessions/:lead/tasks/:seq answer 403 `feature_disabled` (projects/routes/team-tasks.ts). ' +
+      'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd registers no task_* tool; ' +
+      'a change reaches the next new box. Cross-session messages (`send_message`, `list_agents`, the peer-message ' +
+      'routes) do not read this flag. The session list `team_lead` filter and the session row fields stay on: ' +
+      'without teammates they return nothing new.',
   },
 ];
 

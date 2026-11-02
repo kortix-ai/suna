@@ -108,11 +108,21 @@ Example:
 const LOGIN_HELP = help`Usage: kortix providers login <provider> [options]
 
 Start the OAuth device-code flow for openai, opencode, or opencode-go.
+\`claude\` adds your own Claude Pro or Max subscription as a Claude account of the
+project, private to you: Claude models (claude-agent/opus, fable, sonnet, haiku)
+run through Claude Code on it. You approve on claude.com and paste the code it
+shows. Share it with the project in the web under Models → Providers → Anthropic.
 
 Options:
   --project <id>      Operate on this project id (default: linked).
   --host <name>       Operate against a non-default Kortix host.
+  --token-stdin       (claude) Read a token made with \`claude setup-token\` from stdin.
   -h, --help          Show this help without starting OAuth.
+
+Example:
+  kortix providers login claude
+  claude setup-token   # on your computer, then:
+  printf %s "$TOKEN" | kortix providers login claude --token-stdin
 `;
 
 // ── provider → required project-secret(s) for the API-key flow ────────────
@@ -179,12 +189,14 @@ export async function runProviders(argv: string[]): Promise<number> {
   let catalog = false;
   let search: string | undefined;
   let custom: CustomFlags = { models: [], keyStdin: false };
+  let tokenStdin = false;
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     regionFlag = takeFlagValue(rest, ['--region']);
     accountFlag = takeFlagValue(rest, ['--account']);
     json = takeFlagBool(rest, ['--json']);
+    if (sub === 'login' || sub === 'oauth') tokenStdin = takeFlagBool(rest, ['--token-stdin']);
     if (sub === 'ls' || sub === 'list') {
       catalog = takeFlagBool(rest, ['--catalog']);
       search = takeFlagValue(rest, ['--search']);
@@ -219,6 +231,8 @@ export async function runProviders(argv: string[]): Promise<number> {
       return catalog ? providersCatalog(search, json) : providersLs(ctxOpts, json);
     case 'login':
     case 'oauth':
+      if (rest[0] === CLAUDE_CLI_PROVIDER) return claudeLogin(ctxOpts, tokenStdin);
+      if (tokenStdin) return fail('--token-stdin works with `kortix providers login claude` only');
       return providersLogin(rest[0], ctxOpts);
     case 'set':
       return providersSet(rest[0], rest[1], regionFlag, ctxOpts);
@@ -370,9 +384,60 @@ async function providersLs(opts: CtxOpts, json = false): Promise<number> {
   return 0;
 }
 
+/** `kortix providers login claude`: the caller's own Claude subscription, for Claude models. */
+const CLAUDE_CLI_PROVIDER = 'claude';
+
+interface ClaudeLoginStartResponse { flow_id: string; authorize_url: string; expires_at: string }
+interface ClaudeConnectedResponse { connected: boolean; secret_id?: string }
+
+async function claudeLogin(opts: CtxOpts, tokenStdin: boolean): Promise<number> {
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+  const done = (result: ClaudeConnectedResponse) => {
+    if (!result.connected || !result.secret_id) {
+      process.stderr.write(`${status.err('Kortix did not store the Claude login. Run the command again.')}\n`);
+      return 1;
+    }
+    process.stdout.write(
+      `\n${status.ok('Connected your Claude subscription')}\n` +
+        `  ${C.dim}Added a Claude account, private to you. Claude models (claude-agent/opus, fable, sonnet, haiku) now run on your plan in your sessions.${C.reset}\n\n`,
+    );
+    return 0;
+  };
+  if (tokenStdin) {
+    const token = (await Bun.stdin.text()).trim();
+    if (!token) return fail('stdin is empty: pipe the token `claude setup-token` printed');
+    try {
+      return done(await ctx.client.put<ClaudeConnectedResponse>(`/projects/${ctx.projectId}/claude-subscription/token`, { token, sharing: { mode: 'private' } }));
+    } catch (err) {
+      return surfaceApiError(err);
+    }
+  }
+  let flow: ClaudeLoginStartResponse;
+  try {
+    flow = await ctx.client.post<ClaudeLoginStartResponse>(`/projects/${ctx.projectId}/claude-subscription/login/start`, { sharing: { mode: 'private' } });
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  process.stdout.write(
+    `\n  ${C.bold}Connect your Claude subscription${C.reset}\n` +
+      `  ${C.dim}Open this URL, sign in with the Claude account that has your plan, and approve:${C.reset}\n` +
+      `    ${C.cyan}${flow.authorize_url}${C.reset}\n` +
+      `  ${C.dim}Then paste the code Claude shows you.${C.reset}\n\n`,
+  );
+  openInBrowser(flow.authorize_url);
+  const code = (await readVisible('  Code from claude.com: ')).trim();
+  if (!code) return fail('No code entered. Run the command again.');
+  try {
+    return done(await ctx.client.post<ClaudeConnectedResponse>(`/projects/${ctx.projectId}/claude-subscription/login/complete`, { flow_id: flow.flow_id, code }));
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+}
+
 async function providersLogin(provider: string | undefined, opts: CtxOpts): Promise<number> {
   if (!provider)
-    return fail('Pass a provider: kortix providers login <openai|opencode|opencode-go>');
+    return fail('Pass a provider: kortix providers login <openai|opencode|opencode-go|claude>');
   if (!OAUTH_PROVIDERS.has(provider)) {
     const keyHint = PROVIDER_ENV_VARS[provider]?.length
       ? `  ${C.dim}Try \`kortix providers set ${provider} <key>\` instead.${C.reset}\n`
@@ -534,6 +599,15 @@ async function providersRm(provider: string | undefined, opts: CtxOpts): Promise
   if (!provider) return missing('a provider');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
+  if (provider === CLAUDE_CLI_PROVIDER) {
+    try {
+      await ctx.client.delete(`/projects/${ctx.projectId}/claude-subscription`);
+    } catch (err) {
+      return surfaceApiError(err);
+    }
+    process.stdout.write(`${status.ok('Deleted your Claude accounts in this project')}\n  ${C.dim}Claude accounts others shared with you stay.${C.reset}\n`);
+    return 0;
+  }
 
   let removedOauth = false;
   const removedKeys: string[] = [];

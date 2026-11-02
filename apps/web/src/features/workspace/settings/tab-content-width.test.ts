@@ -63,8 +63,6 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { uiSourcePath } from '@/test-utils/read-source';
 
-import { railItemForTab } from '@kortix/ui/customize/settings/rail';
-import type { SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
 
 
 // Account tabs live beside this file; project tabs render from @kortix/ui.
@@ -320,8 +318,9 @@ const PANEL_SECTIONS_VIA_WRAPPER: string[] = [];
  * sub-view, and the width rule still applies to it. (Playground sat beside it
  * until the gateway bar was cut from ten tabs to six; that file is deleted.)
  */
-const PANEL_SECTIONS_OWN_CONTAINER = [
-  'customize/migrate-to-v2/upgrade-view.tsx',
+const PANEL_SECTIONS_OWN_CONTAINER: string[] = [
+  // The Upgrades pane was here until the one-schema manifest deleted it.
+  //
   // `packages/ui/src/customize/triggers/schedule-view.tsx` was here until Schedules and
   // Webhooks graduated out of the settings overlay into their own capability
   // pages. It is no longer panel content, so the panel's two-width rule does
@@ -365,7 +364,7 @@ const PANEL_SECTIONS_OWN_CONTAINER = [
  * Repositories folded INTO General as a "Git repo" section, so it dropped the
  * lookup and the container both — it is `general-tab.test.tsx`'s pane now.
  */
-const PANES_WITH_REGISTRY_LOOKUP = ['customize/migrate-to-v2/upgrade-view.tsx'];
+const PANES_WITH_REGISTRY_LOOKUP: string[] = [];
 
 /**
  * The mirror image: a pane no registry answers for, where `SettingsTabHeader`
@@ -402,39 +401,6 @@ describe('customize sections mounted in the settings panel', () => {
       const props = source.slice(source.indexOf('<CustomizeSectionWrapper'));
       const firstElement = props.slice(0, props.indexOf('>'));
       expect(firstElement).not.toMatch(/max-w-/);
-    });
-  }
-
-  /**
-   * The tabs the sections above render a heading for.
-   *
-   * `SettingsTabHeader` returns `null` when NEITHER registry it reads knows the
-   * id, and renders no subtitle when the entry it finds has no `description`.
-   * Both failures are silent — the pane just loses its heading and nothing
-   * throws — which is exactly how the copy went missing on these panes in the
-   * first place. This is the guard.
-   *
-   * These two ids resolve through the project-settings registry, not the
-   * rail: both panes moved to `/projects/[id]/admin/general` and their copy moved
-   * with them. Secrets and Channels used to be in this list too — they
-   * graduated a SECOND time, off this registry entirely and onto their own
-   * top-level Customize tab, so they no longer have an entry here to pin.
-   * Repositories left the same way Secrets and Channels did, but for a
-   * different reason: not a graduation, a merge into General — it never had
-   * its own heading to check once its content became a section of General's.
-   */
-  // Upgrades resolves through the RAIL since 2026-09-02, when it moved off
-  // `/config` and into the overlay's Workspace group. Same guard, other
-  // registry: the row must carry both the label and the description the pane
-  // renders through `SettingsTabHeader`.
-  const PANES_WITH_RAIL_HEADING: SettingsTab[] = ['upgrades'];
-
-  for (const key of PANES_WITH_RAIL_HEADING) {
-    test(`the '${key}' rail row carries the heading its pane renders`, () => {
-      const item = railItemForTab(key);
-      expect(item).toBeDefined();
-      expect(item?.label ?? '').not.toBe('');
-      expect(item?.description ?? '').not.toBe('');
     });
   }
 

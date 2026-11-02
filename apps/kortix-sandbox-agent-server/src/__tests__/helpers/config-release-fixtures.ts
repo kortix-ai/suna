@@ -44,14 +44,10 @@ export interface BuiltRelease {
   archive: Buffer
 }
 
-/**
- * The API's release builder, run against a real repository: the commit's whole
- * tree, with `configDir` naming OpenCode's config dir inside it.
- */
+/** The API's release builder, run against a real repository: the commit's whole tree. */
 export function buildRelease(
   repo: string,
   commit: string,
-  configDir: string | null,
   opts: {
     projectId?: string
     governance?: string | null
@@ -81,7 +77,6 @@ export function buildRelease(
     release_id: createHash('sha256').update(`${tree}:${etag ?? ''}`).digest('hex'),
     mode: 'follow-base',
     source_commit: commit,
-    config_dir: configDir,
     config_tree_id: tree,
     archive: { url: `/v1/projects/${projectId}/config-archives/${tree}`, bytes: archive.length },
     files,

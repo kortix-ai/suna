@@ -25,11 +25,10 @@ import {
   type EffectiveResolveResult,
   type Policy,
   type PolicyAction,
-  type PolicyArgCondition,
-  isValidMatcher,
   resolveEffectiveRule,
   selectPoliciesForRead,
 } from './policy';
+import { type PolicyArgCondition, isValidMatcher } from '@kortix/manifest-schema';
 import { COMPUTER_SLUG, withComputerCatalog } from './computers';
 import { likelyToolRisk } from './policy-templates';
 import {

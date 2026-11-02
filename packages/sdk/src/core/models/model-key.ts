@@ -24,7 +24,17 @@ export function modelKeyToWire(model: ModelKey): string {
   return `${model.providerID}/${model.modelID}`;
 }
 
+/**
+ * The provider of Claude subscription models: `claude-agent/<id>` runs through
+ * Claude Code on the session user's own Claude plan, never through the gateway.
+ */
+export const CLAUDE_AGENT_PROVIDER_ID = 'claude-agent';
+
 export function wireToModelKey(wire: string): ModelKey {
+  // A Claude subscription model keeps its own provider.
+  if (wire.startsWith(`${CLAUDE_AGENT_PROVIDER_ID}/`)) {
+    return { providerID: CLAUDE_AGENT_PROVIDER_ID, modelID: wire.slice(CLAUDE_AGENT_PROVIDER_ID.length + 1) };
+  }
   // Managed (bare) and BYOK ('provider/model') both live under the kortix
   // provider in the picker namespace, so the modelID carries the full wire id.
   return { providerID: 'kortix', modelID: wire };

@@ -100,6 +100,8 @@ export interface SessionListFilter {
   agent?: string | null;
   /** Only sessions with activity (`updated_at`) at or after this time. */
   updatedAfter?: Date | null;
+  /** Only the teammates of this lead session (`metadata.team_lead`, agent teams). */
+  teamLead?: string | null;
   /** The person whose pins and archive apply (`personUserId`). Null: an
    *  agent, API key or service account, which reads the raw list. */
   personId?: string | null;
@@ -195,6 +197,7 @@ function sessionListFilterSql(filter: SessionListFilter, viewerId: string): SQL 
   if (filter.createdBy) conditions.push(startedByPersonSql(filter.createdBy));
   if (filter.agent) conditions.push(eq(t.agentName, filter.agent));
   if (filter.updatedAfter) conditions.push(gte(t.updatedAt, filter.updatedAfter));
+  if (filter.teamLead) conditions.push(sql`${t.metadata}->>'team_lead' = ${filter.teamLead}`);
   if (filter.labels?.length) {
     const has = (table: SessionTable) => sql`${table.labels} @> ${JSON.stringify(filter.labels)}::jsonb`;
     conditions.push(
@@ -394,7 +397,7 @@ function sessionCursorScope(input: SessionInventoryInput, filter: SessionListFil
     // A cursor is a scan position inside ONE filtered list.
     filter:
       filter.parent || filter.startedBy || filter.q || filter.labels?.length || filter.view || filter.deleted || filter.spaceId ||
-      filter.group || filter.createdBy || filter.agent || filter.updatedAfter
+      filter.group || filter.createdBy || filter.agent || filter.updatedAfter || filter.teamLead
         ? JSON.stringify([
             filter.parent ?? null,
             filter.startedBy ?? null,
@@ -407,6 +410,7 @@ function sessionCursorScope(input: SessionInventoryInput, filter: SessionListFil
             ...(filter.createdBy ? [{ createdBy: filter.createdBy }] : []),
             ...(filter.agent ? [{ agent: filter.agent }] : []),
             ...(filter.updatedAfter ? [{ updatedAfter: filter.updatedAfter.toISOString() }] : []),
+            ...(filter.teamLead ? [{ teamLead: filter.teamLead }] : []),
           ])
         : undefined,
   };
@@ -509,7 +513,7 @@ async function appendMissingAncestors(input: {
   // A pinned, archived, deleted, space or group view promises only those rows.
   const appendAncestors =
     !filter.parent && !filter.labels?.length && !filter.view && !filter.deleted && !filter.spaceId &&
-    !filter.group && !filter.createdBy && !filter.agent && !filter.updatedAfter;
+    !filter.group && !filter.createdBy && !filter.agent && !filter.updatedAfter && !filter.teamLead;
   for (let depth = 0; appendAncestors && depth < MAX_ANCESTOR_DEPTH; depth += 1) {
     const missing = [
       ...new Set(

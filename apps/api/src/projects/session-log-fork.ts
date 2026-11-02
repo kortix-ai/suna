@@ -14,7 +14,6 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * get their own prefix: deleting either session cannot damage the other history. */
 export async function copySessionLog(tx: Tx, input: {
   sourceId: string; sessionId: string; projectId: string; accountId: string;
-  captureComplete?: boolean;
 }): Promise<void> {
   if (!config.SESSION_LOG_RESTORE_ENABLED || !config.SESSION_LOG_INGEST_ENABLED) throw new HTTPException(503, { message: 'Session log restore is off' });
   const { sourceId, sessionId, projectId, accountId } = input;
@@ -29,7 +28,8 @@ export async function copySessionLog(tx: Tx, input: {
   if (!log || !(await sessionLogRestoreFits(tx, sourceId))) {
     throw new HTTPException(409, { message: 'Source history is not available for a complete restore' });
   }
-  if (!log.journalSeenAt && !input.captureComplete) {
+  // Only a box's journal proves a complete history.
+  if (!log.journalSeenAt) {
     throw new HTTPException(409, { message: 'Source history capture is incomplete' });
   }
   const threads = await tx.select().from(sessionLogThreads).where(eq(sessionLogThreads.sessionId, sourceId));

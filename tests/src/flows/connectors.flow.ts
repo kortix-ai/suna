@@ -6457,7 +6457,7 @@ flow(
         );
         refused.status(403).body().has('$.code', 'custom_connector_needs_human');
         const link = refused.json<{ setup_url: string }>().setup_url;
-        if (!link.includes(`/projects/${p.id}/customize/connectors?`) || !link.includes(encodeURIComponent('https://mcp.example.com/mcp'))) {
+        if (!link.includes(`/projects/${p.id}/admin/connectors?`) || !link.includes(encodeURIComponent('https://mcp.example.com/mcp'))) {
           throw new Error(`setup_url: ${link}`);
         }
         // A server the project already has stays editable by the agent.

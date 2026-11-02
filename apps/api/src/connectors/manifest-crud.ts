@@ -25,14 +25,15 @@ import {
   type DefaultMode,
   type ProjectPolicySpec,
   extractProjectPolicies,
-  projectPoliciesToTomlEntries,
-  projectPolicySettingsToToml,
+  projectPoliciesToManifestEntries,
+  projectPolicySettingsToManifest,
 } from '../projects/policies';
 import { db } from '../shared/db';
 import { featureDisabledBody } from '../feature-flags/gate';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { defaultConnectionIdForConnector, upsertCredential, upsertOAuth2Credential } from './credentials';
-import { areValidConditions, isValidMatcher, normalizeConditions } from './policy';
+import { areValidConditions, isValidMatcher } from '@kortix/manifest-schema';
+import { normalizeConditions } from './policy';
 import { canonicalConnectorAlias } from '../shared/connector-alias';
 import {
   MAX_POLICY_SETS_PER_CONNECTOR,
@@ -842,16 +843,13 @@ export function agentsUsingPolicySet(
     .sort();
 }
 
-/** Shared guard: a v2/v3 manifest and a connector that may carry sets. */
+/** Shared guard: a connector that may carry sets. */
 function policySetTarget(
-  manifest: { raw: Record<string, unknown>; schemaVersion?: number },
+  manifest: { raw: Record<string, unknown> },
   slug: string,
 ):
   | { ok: true; current: Record<string, unknown>[]; entry: Record<string, unknown> }
   | ReturnType<typeof policySetError> {
-  if ((manifest.schemaVersion ?? 1) < 2) {
-    return policySetError(400, 'unsupported_in_v1', 'policy sets need kortix_version 2 or 3');
-  }
   const current = connectorEntries(manifest);
   const entry = current.find((candidate) => candidate?.slug === slug);
   if (!entry) return policySetError(404, 'connector_not_found', 'connector not found');
@@ -1097,11 +1095,11 @@ export async function setProjectPoliciesInManifest(
     accountId,
     'the project connector policies were being updated',
     (manifest) => {
-      const entries = projectPoliciesToTomlEntries(policies);
+      const entries = projectPoliciesToManifestEntries(policies);
       if (entries.length > 0) manifest.raw.policies = entries;
       else delete manifest.raw.policies;
 
-      const settingsBlock = projectPolicySettingsToToml({ defaultMode });
+      const settingsBlock = projectPolicySettingsToManifest({ defaultMode });
       if (settingsBlock) manifest.raw.policy = settingsBlock;
       else delete manifest.raw.policy;
 

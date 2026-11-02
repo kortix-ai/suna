@@ -262,7 +262,6 @@ describe('kortix apps deploy (characterization)', () => {
     writeFileSync(
       join(tmp, 'kortix.yaml'),
       [
-        'kortix_version: 2',
         'apps:',
         '  storefront:',
         '    path: web',
@@ -310,7 +309,6 @@ describe('kortix apps deploy (characterization)', () => {
     mkdirSync(join(tmp, 'db'), { recursive: true });
     writeFileSync(join(tmp, 'db', 'Dockerfile'), 'FROM busybox\n');
     writeFileSync(join(tmp, 'kortix.yaml'), [
-      'kortix_version: 2',
       'apps:',
       '  web:',
       '    path: apps/web/dist',
@@ -362,12 +360,16 @@ describe('kortix apps deploy (characterization)', () => {
   });
 
   test('launch --template convex: the dashboard is a tab of the backend, signed in by a secret the launch creates once', async () => {
-    writeFileSync(join(tmp, 'kortix.yaml'), 'kortix_version: 2\n');
+    writeFileSync(join(tmp, 'kortix.yaml'), 'kortix_version: 3\ndefault_agent: main\n');
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'launch', '--template', 'convex', '--name', 'crm-data', '--project', PROJECT], config);
     expect(r.stderr).not.toContain('✗');
     expect(r.code).toBe(0);
-    const yaml = Bun.YAML.parse(await Bun.file(join(tmp, 'kortix.yaml')).text()) as { apps: Record<string, Record<string, unknown>> };
+    // The write drops the obsolete key and keeps the rest of the file.
+    const text = await Bun.file(join(tmp, 'kortix.yaml')).text();
+    expect(text).not.toContain('kortix_version');
+    expect(text.startsWith('default_agent: main\n')).toBe(true);
+    const yaml = Bun.YAML.parse(text) as { apps: Record<string, Record<string, unknown>> };
     expect(yaml.apps['crm-data']!.display).toEqual({ preview: 'none' });
     expect(yaml.apps['crm-data-dashboard']!.display).toEqual({ parent: 'crm-data' });
     expect(yaml.apps['crm-data-dashboard']!.secrets).toEqual({ NEXT_PUBLIC_ADMIN_KEY: 'CRM_DATA_ADMIN_KEY' });
@@ -382,18 +384,20 @@ describe('kortix apps deploy (characterization)', () => {
   });
 
   test('launch without --name names the Convex App for what it is: backend, backend-dashboard, BACKEND_ADMIN_KEY', async () => {
-    writeFileSync(join(tmp, 'kortix.yaml'), 'kortix_version: 2\n');
+    // No kortix.yaml yet: launch starts one, with no kortix_version.
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'launch', '--template', 'convex', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    const yaml = Bun.YAML.parse(await Bun.file(join(tmp, 'kortix.yaml')).text()) as { apps: Record<string, Record<string, unknown>> };
+    const text = await Bun.file(join(tmp, 'kortix.yaml')).text();
+    expect(text.startsWith('apps:\n')).toBe(true);
+    const yaml = Bun.YAML.parse(text) as { apps: Record<string, Record<string, unknown>> };
     expect(Object.keys(yaml.apps)).toEqual(['backend', 'backend-dashboard']);
     expect(yaml.apps['backend-dashboard']!.secrets).toEqual({ NEXT_PUBLIC_ADMIN_KEY: 'BACKEND_ADMIN_KEY' });
     expect(yaml.apps['backend-dashboard']!.path).toBe('apps/backend/dashboard');
   });
 
   test('launch rewrites a secret an earlier App of the same name left, and keeps a file the user already has', async () => {
-    writeFileSync(join(tmp, 'kortix.yaml'), 'kortix_version: 2\n');
+    writeFileSync(join(tmp, 'kortix.yaml'), 'default_agent: main\n');
     mkdirSync(join(tmp, 'apps', 'crm-data', 'dashboard'), { recursive: true });
     writeFileSync(join(tmp, 'apps', 'crm-data', 'dashboard', 'start.js'), '// mine\n');
     configuredSecrets = ['CRM_DATA_ADMIN_KEY'];
@@ -499,19 +503,18 @@ describe('kortix apps deploy (characterization)', () => {
     expect(r.stderr).toContain('Dockerfile deployments require --command and --port');
   });
 
-  test('--manifest-app with a kortix.yaml that declares no kortix_version 2 or 3 is refused, never deployed as a static folder', async () => {
-    writeFileSync(join(tmp, 'kortix.yaml'), 'apps:\n  db:\n    type: oci_image\n    image: busybox:1.36\n');
+  test('--manifest-app with no kortix.yaml is refused, never deployed as a static folder', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'deploy', '--manifest-app', 'db', '--project', PROJECT], config);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain('kortix_version 2 or 3');
+    expect(r.stderr).toContain('--manifest-app db needs a kortix.yaml with an apps.db block');
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
   });
 
   test('a refused release config prints every issue with its path', async () => {
     writeFileSync(
       join(tmp, 'kortix.yaml'),
-      'kortix_version: 2\napps:\n  db:\n    type: oci_image\n    image: busybox:1.36\n    command: [sh]\n    http_service:\n      internal_port: 8080\n',
+      'apps:\n  db:\n    type: oci_image\n    image: busybox:1.36\n    command: [sh]\n    http_service:\n      internal_port: 8080\n',
     );
     configIssues = [{ path: 'http_service.internal_port', message: '8080 is reserved by the App supervisor.' }];
     const config = writeConfig(startServer());
@@ -524,7 +527,7 @@ describe('kortix apps deploy (characterization)', () => {
   test('--manifest-app names a missing block loudly', async () => {
     writeFileSync(
       join(tmp, 'kortix.yaml'),
-      'kortix_version: 2\napps:\n  storefront:\n    path: web\n    type: static\n',
+      'apps:\n  storefront:\n    path: web\n    type: static\n',
     );
     const config = writeConfig(startServer());
     const r = await runCli(
@@ -590,12 +593,12 @@ describe('kortix apps deploy (characterization)', () => {
   });
 });
 
-describe('loadManifestApps reads kortix_version 3', () => {
-  test('a v3 manifest\'s apps blocks seed a deploy', async () => {
+describe('loadManifestApps', () => {
+  test('a manifest with no kortix_version seeds a deploy from its apps blocks', async () => {
     const { loadManifestApps } = await import('../commands/apps-deploy.ts');
-    const dir = mkdtempSync(join(tmpdir(), 'apps-v3-'));
+    const dir = mkdtempSync(join(tmpdir(), 'apps-manifest-'));
     try {
-      writeFileSync(join(dir, 'kortix.yaml'), 'kortix_version: 3\ndefault_agent: a\napps:\n  web:\n    path: web\nagents:\n  a: {}\n');
+      writeFileSync(join(dir, 'kortix.yaml'), 'default_agent: a\napps:\n  web:\n    path: web\nagents:\n  a: {}\n');
       expect(loadManifestApps(dir)?.blocks).toEqual({ web: { path: 'web' } });
     } finally {
       rmSync(dir, { recursive: true, force: true });

@@ -14,7 +14,7 @@ describe("newConfigPrompt", () => {
   test("the command prompt puts the command where pi reads it, never in OpenCode's folder", () => {
     const prompt = newConfigPrompt("command");
     expect(prompt).toContain("`commands:` in `kortix.yaml`");
-    expect(prompt).toContain("`harnesses/pi/prompts/<name>.md`");
+    expect(prompt).toContain('`agents.<name>.commands`');
     expect(prompt).not.toContain("opencode");
   });
 

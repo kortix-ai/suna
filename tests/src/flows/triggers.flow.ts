@@ -1574,7 +1574,7 @@ flow(
 
       await ctx.step('push a manifest with one good and one broken trigger → GET lists the good one and names the broken one in errors', async () => {
         push(
-          'kortix_version: 2\nproject:\n  name: trg19\ndefault_agent: kortix\nagents:\n  kortix: {}\ntriggers:\n' +
+          'project:\n  name: trg19\ndefault_agent: kortix\nagents:\n  kortix: {}\ntriggers:\n' +
             '  - slug: keep-me\n    name: Keep me\n    type: cron\n    cron: "0 0 3 * * *"\n    timezone: UTC\n    prompt: keep\n' +
             '  - slug: broken\n    type: cron\n    prompt: no cron field here\n',
           'ke2e: one broken trigger',
@@ -1590,7 +1590,7 @@ flow(
       });
 
       await ctx.step('push an unparseable manifest → GET 200 {triggers:[], errors:[(manifest)]}; the runtime row survives', async () => {
-        push('kortix_version: [invalid\n', 'ke2e: unparseable manifest');
+        push('agents: [invalid\n', 'ke2e: unparseable manifest');
         const listed = await waitFor(list, {
           until: (v) => v.errors.some((e) => e.slug === '(manifest)'),
           timeoutMs: 90_000,

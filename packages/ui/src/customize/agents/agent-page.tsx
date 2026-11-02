@@ -1,5 +1,6 @@
 'use client';
 
+import { MY_KORTIX_AGENT_NAME } from '@kortix/shared';
 import { adminPath } from '../../lib/routes';
 
 /**
@@ -57,7 +58,6 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react
 import { useLocale, useTranslations as useI18nTranslations } from '../../i18n';
 import { AgentMark, agentDisplayName } from '../../internal/components/agent-mark';
 import {
-  agentConfigNeedsUpgrade,
   useAgentConfig,
   useUpdateAgentConfig,
   useProjectCapabilities,
@@ -84,8 +84,8 @@ import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '.
 import { configEntitySourcePath } from '../sections/component/config-entity-source-path';
 import {
   type AgentConfigSectionKey,
+  AGENT_CONFIG_SECTIONS,
   AgentConfigSections,
-  agentConfigSectionKeys,
   agentEditorOptionQueries,
   registryGrantOptions,
   useAgentDraft,
@@ -278,7 +278,6 @@ export function AgentPage({
       agent={agent}
       config={config}
       initial={configQuery.data?.block ?? {}}
-      schemaVersion={configQuery.data?.schema_version ?? 2}
       renderApps={renderApps}
     />
   ) : (
@@ -288,7 +287,6 @@ export function AgentPage({
       config={config}
       block={configQuery.data?.block ?? blockFromScope(agent)}
       canWrite={canWrite}
-      showUpgradeHint={agentConfigNeedsUpgrade(configQuery.data)}
     />
   );
 }
@@ -618,7 +616,7 @@ function AgentActions({
               {isDefault ? tI18nComplete.raw('texte8cb80e5c5cb') : tI18nComplete.raw('texte8f43f910a4e')}
             </DropdownMenuItem>
             <DropdownMenuItem disabled={configure.pending} onSelect={() => setConfirm('edit')}>
-              <AgentMark slug="meta" />
+              <AgentMark slug={MY_KORTIX_AGENT_NAME} />
               {t('askToEditAgent')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
@@ -716,15 +714,12 @@ function EditableAgentPage({
   agent,
   config,
   initial,
-  schemaVersion,
   renderApps,
 }: {
   projectId: string;
   agent: Agent;
   config: ProjectConfigSummary;
   initial: AgentConfigBlock;
-  /** The manifest version: v3 adds the subagent, command and extension grants. */
-  schemaVersion: number;
   renderApps?: RenderAgentApps;
 }) {
   const tCapabilities = useI18nTranslations('agentCapabilities');
@@ -738,16 +733,9 @@ function EditableAgentPage({
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const pathname = useUiPathname();
   const drivesOn = useFeatureFlag(projectId, 'drives').enabled;
-  // A v2 agent has no extension grant, but the platform extensions its
-  // sessions load are listed (and two follow tool switches): the Extensions
-  // view opens on v2 too. The Overview counts grants, so it keeps v2's keys.
-  const overviewViews = useMemo(
-    () => agentConfigSectionKeys(schemaVersion).filter((k) => drivesOn || k !== 'drives'),
-    [schemaVersion, drivesOn],
-  );
   const views = useMemo<AgentConfigSectionKey[]>(
-    () => (schemaVersion === 2 ? [...overviewViews, 'extensions'] : overviewViews),
-    [schemaVersion, overviewViews],
+    () => AGENT_CONFIG_SECTIONS.map((s) => s.key).filter((k) => drivesOn || k !== 'drives'),
+    [drivesOn],
   );
   const location = useAgentLocation(AGENT_TABS, views);
   const share = useShareDialog(location.open === 'share');
@@ -806,9 +794,8 @@ function EditableAgentPage({
   const grantLabel = useGrantLabel();
   // A tool's aliases go off with it (`agent` takes `task`): the tab counts tools, not names.
   const toolAliases = new Set((capabilities.data?.tools ?? []).flatMap((tool) => tool.aliases));
-  // v2 has no extension grant: that view lists switches, no count.
   const countOf = (view: AgentConfigSectionKey) => {
-    if (view === 'drives' || (view === 'extensions' && schemaVersion < 3)) return null;
+    if (view === 'drives') return null;
     const value = grantOf(draft, view);
     const excluded = grantExcluded(value);
     return view === 'tools' && excluded.length > 0
@@ -1025,19 +1012,16 @@ function ReadOnlyAgentPage({
   config,
   block,
   canWrite,
-  showUpgradeHint,
 }: {
   projectId: string;
   agent: Agent;
   config: ProjectConfigSummary;
   block: AgentConfigBlock;
-  /** A v1-project writer keeps Make default and Ask My Kortix to edit. */
+  /** A writer on a read-only answer keeps Make default and Ask My Kortix to edit. */
   canWrite: boolean;
-  showUpgradeHint: boolean;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const tUpgrades = useI18nTranslations('settings.upgrades');
   const pathname = useUiPathname();
   const sourcePath = configEntitySourcePath(agent.path);
   // The served block carries the prompt when the read returned it; otherwise
@@ -1067,16 +1051,9 @@ function ReadOnlyAgentPage({
   // A reader has a page for Kortix permissions and Model only. Every other
   // Access row shows its grant by name on the Overview and links nowhere.
   const banner = (
-    <div className="space-y-3">
-      <InfoBanner tone="neutral" icon={LockSimpleIcon} title={t('readOnlyTitle')}>
-        {t.rich('readOnlyBody', { code: (chunks) => <span className="font-mono">{chunks}</span> })}
-      </InfoBanner>
-      {showUpgradeHint ? (
-        <InfoBanner tone="info" title={tI18nComplete.raw('textdc7ab144ca89')}>
-          {tUpgrades.rich('agentEditorHint', { code: (chunks) => <span className="font-mono">{chunks}</span> })}
-        </InfoBanner>
-      ) : null}
-    </div>
+    <InfoBanner tone="neutral" icon={LockSimpleIcon} title={t('readOnlyTitle')}>
+      {t.rich('readOnlyBody', { code: (chunks) => <span className="font-mono">{chunks}</span> })}
+    </InfoBanner>
   );
 
   const body = (() => {
@@ -1108,8 +1085,7 @@ function ReadOnlyAgentPage({
                 </div>
               ) : (
                 <div className="space-y-8">
-                  {/* The manifest allowlist: a v1 project's editors change its
-                      secrets and connectors here; everyone else reads it. */}
+                  {/* The manifest allowlist, read-only for a reader. */}
                   <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
                   <AgentAuthorityCard
                     projectId={projectId}

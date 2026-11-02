@@ -2,9 +2,11 @@
  * Projects — authenticated CRUD + access. Maps to spec §13 (PROJ-1..8).
  */
 import { ProjectSchema } from "@kortix/api-contract";
+import { isMyKortixAgentName } from "../../../packages/shared/src/my-kortix-agent";
 import { Client } from "../core/client";
 import { flow } from "../core/flow";
 import { waitFor } from "../core/poll";
+import { AgentPrincipalsWorld } from "../fixtures/agent-principals";
 import { createDatabaseSession, fundDatabaseAccount } from "../fixtures/database-project";
 
 flow("PROJ-1", { domain: "projects", tags: ["deployed", "smoke"], routes: ["GET /v1/projects"] }, async (ctx) => {
@@ -399,7 +401,7 @@ flow(
       const base = String(rows[0]?.default_branch || "main");
       await ctx.step("push a root manifest whose agents live in an imported (nested) file, one enabled and one disabled", async () => {
         execFileSync("git", ["clone", "-q", "--branch", base, repoUrl, "."], { cwd: work, stdio: "pipe" });
-        writeFileSync(join(work, "kortix.yaml"), "kortix_version: 2\nimports:\n  - domains/kortix.yaml\n");
+        writeFileSync(join(work, "kortix.yaml"), "imports:\n  - domains/kortix.yaml\n");
         mkdirSync(dirname(join(work, "domains/kortix.yaml")), { recursive: true });
         writeFileSync(
           join(work, "domains/kortix.yaml"),
@@ -415,7 +417,8 @@ flow(
         const config =
           r.json<{ config: { agent_discovery: string; agents?: Array<{ name: string; enabled?: boolean; path: string }> } }>().config;
         if (config.agent_discovery !== "declarative") throw new Error(`agent_discovery ${config.agent_discovery}`);
-        const agents = config.agents ?? [];
+        // My Kortix is listed too; the check is about the declared agents.
+        const agents = (config.agents ?? []).filter((a) => !isMyKortixAgentName(a.name));
         if (agents.length !== 2) throw new Error(`expected 2 registered agents, got ${JSON.stringify(agents.map((a) => a.name))}`);
         const byName = new Map(agents.map((a) => [a.name, a]));
         const builder = byName.get("builder");
@@ -428,6 +431,85 @@ flow(
     } finally {
       rmSync(work, { recursive: true, force: true });
       await db.end();
+    }
+  },
+);
+
+// PROJ-47 — kortix.yaml has one format and no version. The project detail
+// reports the manifest's health: what is wrong, where, and how bad. A running
+// project never stops on it; the issues are for the person (or agent) who fixes the file.
+type ManifestHealth = {
+  path: string | null;
+  state: string;
+  errors: number;
+  warnings: number;
+  issues: Array<{ path: string; message: string; severity: "error" | "warning"; line?: number; column?: number }>;
+};
+const HEALTHY_MANIFEST =
+  "project:\n  name: ke2e-manifest-health\ndefault_agent: worker\nagents:\n  worker:\n    prompt: You keep the project tidy.\n    tools: all\n";
+
+flow(
+  "PROJ-47",
+  { domain: "projects", requires: ["database"], timeoutMs: 180_000, routes: ["GET /v1/projects/:projectId/detail"] },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project({ managedGit: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
+    // The detail serves the warm git mirror and refreshes it behind the response.
+    const healthOf = async (text: string, message: string) => {
+      await world.writeManifest(text, message);
+      const config = await waitFor(
+        async () =>
+          (await world.owner.get("/v1/projects/:projectId/detail", { params: { projectId: project.id } }))
+            .status(200)
+            .json<{ config: { manifest_raw: string | null; manifest_health: ManifestHealth } }>().config,
+        { until: (c) => c.manifest_raw === text, timeoutMs: 60_000, intervalMs: 1_000, description: `detail to serve "${message}"` },
+      );
+      return config.manifest_health;
+    };
+    const fail = (what: string, health: ManifestHealth) => {
+      throw new Error(`${what}: ${JSON.stringify(health)}`);
+    };
+    try {
+      await ctx.step("a kortix.yaml with no kortix_version → manifest_health ok, 0 errors, 0 warnings, no issues", async () => {
+        const health = await healthOf(HEALTHY_MANIFEST, "ke2e: healthy manifest");
+        if (health.state !== "ok" || health.path !== "kortix.yaml" || health.errors !== 0 || health.warnings !== 0 || health.issues.length !== 0) {
+          fail("expected ok with no issues", health);
+        }
+      });
+
+      await ctx.step("an unknown agent key and a non-string model → state issues with both errors, each at its line", async () => {
+        const text = `${HEALTHY_MANIFEST}    descripton: Tidies.\n  reviewer:\n    prompt: You review changes.\n    tools: all\n    model: 42\n`;
+        const health = await healthOf(text, "ke2e: two agent errors");
+        if (health.state !== "issues" || health.errors !== 2 || health.warnings !== 0) fail("expected 2 errors", health);
+        const unknown = health.issues.find((i) => i.path === "agents.worker.descripton");
+        const model = health.issues.find((i) => i.path === "agents.reviewer.model");
+        if (unknown?.severity !== "error" || unknown.line !== 8 || !/description/.test(unknown.message)) {
+          fail("the unknown key is not an error at line 8 that suggests `description`", health);
+        }
+        if (model?.severity !== "error" || model.line !== 12) fail("the bad model is not an error at line 12", health);
+      });
+
+      await ctx.step("kortix_version: 3 → one warning (obsolete, ignored); the body still validates", async () => {
+        const health = await healthOf(`kortix_version: 3\n${HEALTHY_MANIFEST}`, "ke2e: obsolete version key");
+        const [issue] = health.issues;
+        if (health.state !== "issues" || health.errors !== 0 || health.warnings !== 1 || issue?.path !== "kortix_version" || issue.line !== 1) {
+          fail("expected one kortix_version warning at line 1", health);
+        }
+      });
+
+      await ctx.step("kortix_version: 2 → one legacy-format warning that names `kortix validate --fix`; the converted body is validated", async () => {
+        const health = await healthOf(`kortix_version: 2\n${HEALTHY_MANIFEST}    descripton: Tidies.\n`, "ke2e: legacy format");
+        const legacy = health.issues.find((i) => i.path === "kortix_version");
+        const unknown = health.issues.find((i) => i.path === "agents.worker.descripton");
+        if (health.state !== "issues" || health.errors !== 1 || health.warnings !== 1) fail("expected 1 error and 1 warning", health);
+        if (legacy?.severity !== "warning" || legacy.line !== 1 || !legacy.message.includes("kortix validate --fix")) {
+          fail("the legacy warning is not at line 1 or does not name `kortix validate --fix`", health);
+        }
+        if (unknown?.severity !== "error" || unknown.line !== 9) fail("the unknown key in the converted body is not an error at line 9", health);
+      });
+    } finally {
+      await world.close();
     }
   },
 );

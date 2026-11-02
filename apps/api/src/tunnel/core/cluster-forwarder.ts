@@ -26,9 +26,6 @@ const FORWARD_RESULT_FALLBACK_MS = 1_000;
 const FORWARD_BATCH_SIZE = 16;
 const FORWARDER_ERROR_MS = 1_000;
 const FORWARD_TTL_PAD_MS = 5_000;
-// Expired rows are rows whose requester died. One sweep per interval removes
-// them; it does not need to run on every tick.
-const FORWARD_EXPIRY_SWEEP_MS = 30_000;
 
 const rpcTimeoutMs = (requested?: number) => Math.max(1_000, requested ?? config.TUNNEL_RPC_TIMEOUT_MS);
 
@@ -38,7 +35,6 @@ let forwarderTimer: ReturnType<typeof setTimeout> | null = null;
 let forwarderRunning = false;
 let forwarderStopped = true;
 let forwarderWoken = false;
-let lastExpirySweepAt = 0;
 /** One entry per forward this replica waits on, keyed by request id. */
 // replica-local: the pg broadcast routes each "done" payload to the exact
 // replica that issued the request (the payload IS that replica's id), so a
@@ -335,10 +331,6 @@ async function runForwarderTick(): Promise<void> {
   try {
     const rows = await claimPendingForwards();
     await Promise.all(rows.map(processForward));
-    if (config.KORTIX_WORKERS_ENABLED && Date.now() - lastExpirySweepAt >= FORWARD_EXPIRY_SWEEP_MS) {
-      lastExpirySweepAt = Date.now();
-      await expireOldForwards();
-    }
     scheduleForwarder(
       rows.length > 0 || forwarderWoken ? 0 : forwardPollMs(FORWARDER_FALLBACK_MS),
     );
@@ -457,11 +449,15 @@ async function finishForward(
     .returning({ woke: sql`pg_notify(${TUNNEL_FORWARD_CHANNEL}, ${requestId})` });
 }
 
-async function expireOldForwards(): Promise<void> {
-  // Forward rows contain raw RPC parameters and results. They are transport,
-  // not an audit ledger. Remove abandoned rows within FORWARD_EXPIRY_SWEEP_MS
-  // of their short relay window closing instead of retaining file contents or
-  // shell output.
+/**
+ * Delete forward rows past their relay window: rows whose requester died.
+ * Forward rows contain raw RPC parameters and results. They are transport,
+ * not an audit ledger, so they go within one sweep interval of their window
+ * closing instead of retaining file contents or shell output. A database-wide
+ * sweep: the scheduled job `worker/jobs/tunnel-forward-expiry.ts` runs it on
+ * the lease holder only.
+ */
+export async function sweepExpiredTunnelForwards(): Promise<void> {
   await db.delete(tunnelRpcForwards).where(lt(tunnelRpcForwards.expiresAt, new Date()));
 }
 

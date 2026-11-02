@@ -6,6 +6,7 @@
  * fail-open default and the warning that explains it stay at the call site.
  */
 
+import { RUNTIME_ACTIONS_CAPABILITY, RUNTIME_LOG_CAPABILITY } from '@kortix/api-contract/runtime-relay';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 
 /** The directory every runtime read and write is forwarded under. */
@@ -54,6 +55,14 @@ export const runtimeVerbPaths = {
   prompt: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/prompt`,
   /** Hand a message to the RUNNING turn (`session.steer`). Not a turn start. */
   steer: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/steer`,
+  /** The session-log actions (`runtime.actions.v1`). */
+  questionReply: (requestId: string) => `/kortix/runtime/questions/${segment(requestId)}/reply`,
+  /** The box's own session log (`runtime.log.v1`): a page of the root, newest `limit` before `before_seq`. */
+  log: (opts: { limit: number; beforeSeq?: number | null }) =>
+    `/kortix/runtime/log?limit=${opts.limit}${opts.beforeSeq != null ? `&before_seq=${opts.beforeSeq}` : ''}`,
+  logMessage: (messageId: string) => `/kortix/runtime/log/messages/${segment(messageId)}`,
+  /** What each thread does and what waits on a person (`runtime.actions.v1`). */
+  pending: '/kortix/runtime/pending',
 } as const;
 
 const CAPABILITIES_TTL_MS = 5 * 60_000;
@@ -93,6 +102,28 @@ export async function runtimeCapabilities(
   } catch {
     return null;
   }
+}
+
+/**
+ * Does this sandbox's daemon serve the session-log actions (`runtime.actions.v1`)?
+ * A failed read answers false: the caller uses the route every daemon serves.
+ */
+export async function runtimeServesActions(
+  externalId: string | undefined,
+  endpoint: () => Promise<{ url: string; headers: Record<string, string> } | null>,
+): Promise<boolean> {
+  return (await runtimeCapabilities(externalId, endpoint))?.includes(RUNTIME_ACTIONS_CAPABILITY) ?? false;
+}
+
+/**
+ * Does the box serve its own session log (`runtime.log.v1`): whole pages, and a prompt in the log
+ * from its admission? Then the log is the transcript the API reads. Same memo as above.
+ */
+export async function runtimeServesLog(
+  externalId: string | undefined,
+  endpoint: () => Promise<{ url: string; headers: Record<string, string> } | null>,
+): Promise<boolean> {
+  return (await runtimeCapabilities(externalId, endpoint))?.includes(RUNTIME_LOG_CAPABILITY) ?? false;
 }
 
 /** Test-only. */

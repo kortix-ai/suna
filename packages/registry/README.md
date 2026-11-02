@@ -49,8 +49,8 @@ Kortix-native ones:
 | --- | --- |
 | `registry:skill` | an Agent Skills `SKILL.md` (+ its reference files/folders) |
 | `registry:agent` | an agent persona `.md` |
-| `registry:command` | an OpenCode slash command `.md` |
-| `registry:tool` | a custom OpenCode tool (`.ts`) / plugin |
+| `registry:command` | a slash command prompt `.md` (`kortix.yaml` `commands:`) |
+| `registry:tool` | a tool module `.ts` (`kortix.yaml` `tools:`) |
 | `registry:trigger` | a `kortix.yaml` `triggers:` block |
 | `registry:connector` | a connector definition (Pipedream/MCP/HTTP) |
 | `registry:rules` | `AGENTS.md` / rules files |
@@ -64,25 +64,23 @@ drives categorization, icons, and validation.
 ### Target aliases
 
 A file's `target` says where it lands in the consuming project
-(`src/paths.ts`, `expandTarget`):
+(`TARGET_ALIASES` in `src/schema.ts`):
 
-| alias | expands to |
+| alias | lands in |
 | --- | --- |
 | `~/x` | `x` (repo root — shadcn-compatible) |
 | `@skills/x` | `skills/x` |
 | `@agents/x` | `agents/x` |
+| `@commands/x` | `commands/x` |
+| `@tools/x` | `tools/x` |
 | `@memory/x` | `memory/x` |
-| `@opencode/x` | `<configDir>/x` |
-| `@commands/x` | `<configDir>/commands/x` |
-| `@tools/x` | `<configDir>/tools/x` |
 
-`<configDir>` is the legacy OpenCode config directory (`harnesses/opencode` or
-`.kortix/opencode`). A `kortix_version: 3` session reads no config directory,
-and it sees a file only after `kortix.yaml` names it: a skill under `skills:`,
-a command under `commands:`, a tool under `tools:`, an agent under `agents:`,
-each enabled on an agent. A marketplace install runs as an agent session that
-writes the files, wires them into `kortix.yaml`, and opens a change request
-(`apps/api/src/projects/routes/marketplace-install-session.ts`). Manifest reference: <https://kortix.com/docs/project/manifest>.
+A session sees a file only after `kortix.yaml` names it: a skill under
+`skills:`, a command under `commands:`, a tool under `tools:`, an agent under
+`agents:`, each enabled on an agent. A marketplace install runs as an agent
+session that writes the files, wires them into `kortix.yaml`, and opens a
+change request (`apps/api/src/projects/routes/marketplace-install-session.ts`).
+Manifest reference: <https://kortix.com/docs/developers#kortixyaml-reference>.
 
 ## The CLI
 
@@ -122,24 +120,20 @@ The same registry format at three visibility levels:
 
 ```ts
 import {
-  buildRegistry,        // repo → registry.json
+  buildRegistry,          // repo → registry.json
   loadItem, loadRegistry, // resolve from GitHub / URL / disk (+ include)
-  planInstall,          // resolve targets + transitive registryDependencies (pure)
-  applyInstall,         // write files + update the lock
-  validateRegistry,     // structural validation
-  readLock,             // registry-lock.json (migrates legacy skills-lock.json)
+  parseItemAddress,       // `owner/repo/item`, `github:…@ref/item`, URLs
+  validateRegistry,       // structural validation
 } from '@kortix/registry';
 ```
 
-`planInstall` is pure (no disk writes), so callers can preview (`--dry-run`) and
-the **API/web can reuse it to produce files to *commit*** into a project repo
-instead of writing to a working tree.
+There is no install engine: an agent session imports an item (see above).
 
 ## Status
 
 - ✅ Format + types, validation, address parsing, GitHub/URL/local fetch with
-  `include`, build, install planner + lock, `kortix marketplace`, unit tests,
-  and black-box CLI/API coverage.
+  `include`, build, `kortix marketplace`, unit tests, and black-box CLI/API
+  coverage.
 - ✅ `kortix marketplace install --project <id>` commits into a linked cloud
   project's repo through the API marketplace install path.
 - ✅ API marketplace list/detail/install endpoints.

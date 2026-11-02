@@ -21,7 +21,8 @@
  *    the `extensions:` registry.
  */
 
-import { KORTIX_SKILL_NAMES, KORTIX_TOOL_NAMES, kortixToolRef, selectedKortixTools } from '@kortix/manifest-schema';
+import type { PlatformExtensionId } from '@kortix/api-contract/runtime-relay';
+import { KORTIX_SKILL_NAMES, KORTIX_TOOL_NAMES, kortixToolRef } from '@kortix/manifest-schema';
 
 export type AgentCapabilityToolGroup = 'workspace' | 'interaction' | 'kortix' | 'project';
 
@@ -68,6 +69,10 @@ const BUILTIN_TOOLS: ReadonlyArray<{ id: string; group: AgentCapabilityToolGroup
   { id: 'codemode', group: 'workspace', description: 'Kortix codemode: write one script that calls the other tools.' },
   { id: 'question', group: 'interaction', description: 'Ask you a question in the Kortix chat and wait for the answer.' },
   { id: 'agent', group: 'interaction', description: 'Start a Kortix subagent session and get its result.', aliases: ['task'] },
+  { id: 'workflow', group: 'interaction', description: 'Run a script that starts many Kortix subagents in the background.' },
+  { id: 'send_message', group: 'interaction', description: 'Send a message to another session of this project.' },
+  { id: 'list_agents', group: 'interaction', description: 'List the sessions this session can reach.' },
+  { id: 'task_create', group: 'interaction', description: "Add a task to an agent team's shared list (flag agent_teams).", aliases: ['task_list', 'task_get', 'task_update'] },
 ];
 
 /** One line per Kortix tool (`apps/kortix-sandbox-agent-server/src/services/tools/kortix/`). */
@@ -76,18 +81,27 @@ const KORTIX_TOOL_DESCRIPTIONS: Record<(typeof KORTIX_TOOL_NAMES)[number], strin
   image_search: 'Kortix image search: images from the web.',
   image_gen: 'Kortix image generation, with an image model the project can use.',
   scrape_webpage: 'Kortix page reader: web pages as clean text.',
-  memory: 'Kortix project memory: read and write the files in memory/.',
   show: 'Show you a file, image or result in the Kortix conversation.',
 };
 
-/** The extensions the pi runtime loads for every agent (`harness/pi/runtime.ts`). */
+/** The extensions the pi runtime loads for every agent (`harness/pi/runtime.ts`), in `PLATFORM_EXTENSION_IDS`. */
 const PLATFORM_EXTENSIONS: readonly AgentCapabilityExtension[] = [
   { id: 'kortix-nested-calls', group: 'platform', required: true, controlled_by: null, description: "Applies this agent's permission rules to the tool calls a script makes." },
   { id: 'kortix-presentation', group: 'platform', required: true, controlled_by: null, description: 'Shows what the show tool presents as its own part of the conversation.' },
   { id: 'kortix-turn', group: 'platform', required: true, controlled_by: null, description: "Tells the agent today's date and the turn's system text on every turn." },
+  {
+    id: 'kortix-context-record',
+    group: 'platform',
+    required: false,
+    controlled_by: 'context',
+    description: 'When the context fills, the agent continues in a fresh context and searches the full record of the session. Nothing is summarized.',
+  },
   { id: 'kortix-subagents', group: 'platform', required: false, controlled_by: 'agent', description: 'Adds the agent tool, which starts subagents.' },
+  { id: 'kortix-workflow', group: 'platform', required: false, controlled_by: 'workflow', description: 'Adds the workflow tool, which runs many subagents in the background.' },
+  { id: 'kortix-messaging', group: 'platform', required: false, controlled_by: 'send_message', description: 'Adds send_message and list_agents, which reach other sessions of this project.' },
+  { id: 'kortix-team-tasks', group: 'platform', required: false, controlled_by: 'task_create', description: "Adds an agent team's shared task list (flag agent_teams)." },
   { id: 'codemode', group: 'platform', required: false, controlled_by: 'codemode', description: 'Adds the codemode tool.' },
-];
+] satisfies ReadonlyArray<AgentCapabilityExtension & { id: PlatformExtensionId }>;
 
 function mapOf(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -104,20 +118,19 @@ function extensionSource(entry: unknown): string | null {
 export function buildAgentCapabilities(input: {
   agentName: string;
   manifest: Record<string, unknown>;
-  schemaVersion: number;
   managedSkills: ReadonlyArray<{ name: string; description: string; featureFlag: string | null }>;
   /** Project skill name → its SKILL.md `description`, when the file was read. */
   projectSkillDescriptions: Record<string, string | null>;
   enabledFlags: ReadonlySet<string>;
 }): AgentCapabilities {
-  // `kortix:<name>` keeps a Kortix tool (v2); any other value is a repository module.
+  // A `kortix:<name>` value names a Kortix tool; any other value is a repository module.
   const registeredTools = Object.entries(mapOf(input.manifest.tools)).filter(
     (entry): entry is [string, string] => typeof entry[1] === 'string' && kortixToolRef(entry[1]) === null,
   );
   const replaced = new Map(registeredTools);
   const kortixNames = new Set<string>(KORTIX_TOOL_NAMES);
-  // v3 sessions load every Kortix tool; a v2 `tools` key keeps only the ones it lists.
-  const kortixTools = input.schemaVersion >= 3 ? [...KORTIX_TOOL_NAMES] : selectedKortixTools(input.manifest.tools);
+  // A session loads every Kortix tool.
+  const kortixTools = [...KORTIX_TOOL_NAMES];
   const tools: AgentCapabilityTool[] = [
     ...BUILTIN_TOOLS.map((tool) => ({ id: tool.id, group: tool.group, description: tool.description, aliases: tool.aliases ?? [], source: null })),
     ...kortixTools.map((id) => ({
@@ -161,5 +174,6 @@ export function buildAgentCapabilities(input: {
     })),
   ];
 
-  return { agent: input.agentName, schema_version: input.schemaVersion, tools, skills, extensions };
+  // `schema_version` is a wire constant: clients released before the one manifest format read it.
+  return { agent: input.agentName, schema_version: 3, tools, skills, extensions };
 }

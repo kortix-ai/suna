@@ -2,7 +2,7 @@
 // that follow a move, the names a grant shows, who a folder can be shared
 // with, and conflict notices. Routes call these; they hold no queries.
 
-import { accountGroups, accountMembers, driveConflicts, projectSessions, roleAssignments, serviceAccounts } from '@kortix/db';
+import { accountGroups, accountMembers, driveConflicts, projects, projectSessions, roleAssignments, serviceAccounts } from '@kortix/db';
 import { and, eq, inArray, isNotNull, like, or, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import type { DriveRow } from './service';
@@ -99,4 +99,13 @@ export async function driveConflict(driveId: string, conflictId: string): Promis
 
 export async function dismissConflict(conflictId: string, userId: string): Promise<void> {
   await db.update(driveConflicts).set({ dismissedAt: new Date(), dismissedBy: userId }).where(eq(driveConflicts.conflictId, conflictId));
+}
+
+/** Project names by id, for the account's Files storage list. */
+export async function projectNames(ids: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!ids.length) return out;
+  const rows = await db.select({ id: projects.projectId, name: projects.name }).from(projects).where(inArray(projects.projectId, ids));
+  for (const r of rows) out.set(r.id, r.name);
+  return out;
 }

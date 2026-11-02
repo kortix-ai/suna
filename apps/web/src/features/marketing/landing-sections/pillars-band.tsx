@@ -16,7 +16,9 @@ import Link from 'next/link';
 // open ("own your data and run on your own infra"). Every fact is a claims.md
 // row: Channels, Permissions, Path to `main`, Connectors, Source, Hosting,
 // Models, Secrets. Company as code names pi and pi extensions (D27,
-// which narrows D20); the other pillars do not name pi.
+// which narrows D20); the other pillars do not name pi. Keep each body near
+// 130 characters: at lg the three bodies then wrap to 3 lines each, and the
+// fact lists start on one row. The facts carry the detail.
 const sourcePILLARS = [
   {
     id: 'multiplayer',
@@ -38,7 +40,7 @@ const sourcePILLARS = [
     icon: CodeIcon,
     name: 'Company as code',
     line: 'Extensible to the core.',
-    body: 'We treat your whole company like code. Every agent, skill, rule, connector and piece of context is a file in one git repo. Every agent is a custom pi agent on a minimal open-source harness, so you can extend anything with pi extensions.',
+    body: 'Every agent, skill, rule and connector is a file in one git repo. Each agent is a custom pi agent you extend with pi extensions.',
     facts: [
       'Every agent and skill a file in git',
       'Custom pi agents and pi extensions',

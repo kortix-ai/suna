@@ -18,7 +18,7 @@
  *   an owner session (harness/shared/on-idle-hook.ts) and it repairs what it
  *   can by itself: the heartbeat, the cap, a closed goal's heartbeat.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, constants, fstatSync, openSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { formatGoalFile, parseGoalFile, type ProjectGoalDocument, type ProjectGoalStatus } from '@kortix/sdk';
@@ -253,8 +253,12 @@ const readReport = (folder: string) => {
 
 function appendLog(folder: string, line: string): void {
   const path = join(folder, 'log.md');
-  const current = existsSync(path) ? readFileSync(path, 'utf8') : '# Log\n';
-  writeFileSync(path, `${current.trimEnd()}\n${line}\n`);
+  const fd = openSync(path, constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
+  try {
+    appendFileSync(fd, `${fstatSync(fd).size === 0 ? '# Log\n' : ''}${line}\n`);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export function slugify(text: string): string {

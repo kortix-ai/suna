@@ -248,7 +248,7 @@ mock.module('../projects/git', () => ({
 
 mock.module("../snapshots/builder", () => ({
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
-  ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
+  ensureMyKortixSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
@@ -900,11 +900,11 @@ function createApp() {
 // ─── Manifest seeding helpers ──────────────────────────────────────────────
 // All trigger config lives in `kortix.yaml` now. Tests seed manifest content
 // directly into the in-memory repo — same shape the CRUD handlers read/write.
-// Fixtures are hand-written v2 YAML; every string value goes through
+// Fixtures are hand-written YAML; every string value goes through
 // `JSON.stringify` so cron expressions (leading `*`), mustache prompts
 // (`{{ ... }}`) etc. round-trip as valid YAML scalars without special-casing.
 
-const MANIFEST_PREAMBLE = `kortix_version: 1\nproject:\n  name: Trigger Project\n`;
+const MANIFEST_PREAMBLE = `project:\n  name: Trigger Project\n`;
 
 function seedManifest(...triggerBlocks: string[]) {
   const body = triggerBlocks.length === 0

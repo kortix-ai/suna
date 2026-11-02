@@ -28,7 +28,6 @@ async function git(args: string[], cwd?: string): Promise<void> {
 
 function manifest(bystanderApps: string | null): string {
   return [
-    'kortix_version: 2',
     'default_agent: reporter',
     'agents:',
     '  reporter:',

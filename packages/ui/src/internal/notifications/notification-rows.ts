@@ -46,28 +46,39 @@ export function newArrivals(
 }
 
 /**
- * How new rows reach a person who is looking at this window: a toast for each
- * (at most `MAX_ARRIVAL_ALERTS`), or, when `os` (the window is in the
- * background, browser notifications are on and granted, and this renderer has
- * no Web Push), an OS notification instead. A row about the session on screen
- * is skipped. So is a finished turn the live stream already announced
- * (`unseen`); a later question, permission request or error in that session
- * is not.
+ * How new rows reach a person, at most `MAX_ARRIVAL_ALERTS` per poll. A finished
+ * turn the live stream already announced (`unseen`) is dropped on both paths; a
+ * later question, permission request or error in that session is not.
+ *
+ * When `os` (the window is in the background, browser notifications are on and
+ * granted, and this renderer has no Web Push), every other row goes to the OS
+ * path: `sendWebNotification` applies the channel policy to it.
+ *
+ * Otherwise each row toasts, except a row of any kind about the session on
+ * screen, and a row about a project other than the one on screen.
+ * `showInAppNotification` applies no policy, so both filters live here. They
+ * run before the cap, so a row that never toasts takes no slot from a row that
+ * does.
  */
 export function planArrivals(
   fresh: readonly InboxNotification[],
-  context: { onScreen: (sessionId: string) => boolean; unseen: readonly string[]; os: boolean },
+  context: {
+    onScreen: (sessionId: string) => boolean;
+    otherProject: (projectId: string | null) => boolean;
+    unseen: readonly string[];
+    os: boolean;
+  },
 ): { toast: InboxNotification[]; os: InboxNotification[] } {
   const unseen = new Set(context.unseen);
-  const announce = fresh
-    .filter(
-      (row) =>
-        !row.session_id ||
-        (!context.onScreen(row.session_id) &&
-          !(row.kind === 'turn_done' && unseen.has(row.session_id))),
-    )
-    .slice(0, MAX_ARRIVAL_ALERTS);
-  return context.os ? { toast: [], os: announce } : { toast: announce, os: [] };
+  const announce = fresh.filter(
+    (row) => !(row.session_id && row.kind === 'turn_done' && unseen.has(row.session_id)),
+  );
+  if (context.os) return { toast: [], os: announce.slice(0, MAX_ARRIVAL_ALERTS) };
+  const toast = announce.filter(
+    (row) =>
+      !(row.session_id && context.onScreen(row.session_id)) && !context.otherProject(row.project_id),
+  );
+  return { toast: toast.slice(0, MAX_ARRIVAL_ALERTS), os: [] };
 }
 
 /** The in-page notification type: the push `type` of the kind. */

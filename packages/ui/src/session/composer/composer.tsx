@@ -352,6 +352,11 @@ export interface SessionChatInputProps {
 
   toolbarSlot?: React.ReactNode;
   /**
+   * Rides the under-row right of the agent picker, in both placements: the
+   * session's agents line (`AgentsLine`). It must not add height to the row.
+   */
+  underbarSlot?: React.ReactNode;
+  /**
    * Where the under-row's controls live — attach, the agent picker and the
    * context ring.
    *

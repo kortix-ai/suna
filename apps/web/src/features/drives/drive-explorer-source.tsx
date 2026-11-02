@@ -13,7 +13,7 @@
 import type { FileNode } from '@kortix/ui/internal/files/types';
 import type { FileContentResult, FileSource } from '@kortix/ui/file-viewer';
 import type { ExplorerQueryResult, FileExplorerSource } from '@kortix/ui/files';
-import { saveDriveFile } from '@kortix/ui/files';
+import { saveDriveFile, useDriveLimitMessage } from '@kortix/ui/files';
 import { blobToFileContent, typedDriveBlob } from '@kortix/ui/internal/files/session-drive-files';
 import {
   deleteDriveFile,
@@ -246,6 +246,8 @@ function useDriveMutation<TArgs>(
           queryClient.invalidateQueries({ queryKey: qk.drives.files(driveId, folder), exact: true }),
         ),
         queryClient.invalidateQueries({ queryKey: qk.drives.versions(driveId), refetchType: 'none' }),
+        // What the Files hold changed: the storage meter and the folder warnings read it again.
+        queryClient.invalidateQueries({ queryKey: qk.drives.usage(driveId), exact: true }),
       ]),
     // A create, move or delete is not idempotent: retrying one the server
     // already applied answers "already exists" / "not found" for a success.
@@ -265,6 +267,8 @@ export const driveExplorerSource: FileExplorerSource = {
     hiddenToggle: false,
     gitStatusChip: false,
     newFile: false,
+    // Any size: above 64 MiB the SDK sends the file in 1 MiB blocks.
+    maxUploadBytes: null,
     // The top level and `/Users` hold only folders; files go inside one.
     filesAllowedAt: (path) => {
       const p = toDrivePath(path);
@@ -285,6 +289,7 @@ export const driveExplorerSource: FileExplorerSource = {
   useFileCommitDiff: () => idle(),
   useFileUpload: () => {
     const queryClient = useQueryClient();
+    const limitMessage = useDriveLimitMessage();
     return useDriveMutation<{
       file: File | Blob;
       targetPath?: string;
@@ -302,7 +307,9 @@ export const driveExplorerSource: FileExplorerSource = {
         return result;
       } catch (err) {
         queryClient.removeQueries({ queryKey: key, exact: true });
-        throw err;
+        // A refused limit reads in the reader's language, with its numbers.
+        const message = limitMessage(err, name, file.size);
+        throw message ? new Error(message) : err;
       }
       },
       ({ targetPath }) => [toDrivePath(targetPath)],

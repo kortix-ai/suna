@@ -32,7 +32,6 @@ import type { RuntimeCapability } from '@kortix/sdk';
 import {
   ActivityIcon as Activity,
   AlarmIcon as AlarmClock,
-  ArrowCircleUpIcon as ArrowUpCircle,
   SquaresFourIcon as Blocks,
   RobotIcon as Bot,
   CalendarIcon as Calendar,
@@ -556,17 +555,6 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/admin/feature-flags',
     requiresProject: true,
     keywords: 'feature flags flag experimental labs beta toggle enable disable',
-  },
-  {
-    id: 'proj-config-upgrades',
-    label: 'Settings · Upgrades',
-    icon: ArrowUpCircle,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/admin/upgrades',
-    requiresProject: true,
-    keywords: 'upgrades upgrade migrate migration manifest runner kortix yaml version bump',
   },
   {
     id: 'proj-models',
@@ -1350,20 +1338,6 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'action',
     actionId: 'toggleSidebar',
     shortcut: 'Ctrl+B',
-  },
-  {
-    // Opens the Customize sidebar modal (`customize-sidebar-modal.tsx`),
-    // mounted by the project sidebar, so it needs a project.
-    id: 'customize-sidebar',
-    label: 'Customize Sidebar',
-    icon: PanelLeftClose,
-    group: 'view',
-    showIn: ['commandPalette'],
-    kind: 'action',
-    actionId: 'customizeSidebar',
-    requiresProject: true,
-    // No 'navigation': a group word, not one on screen (command-palette-search.test.ts).
-    keywords: 'sidebar customize reorder hide show rows',
   },
   {
     id: 'toggle-panel-mode',

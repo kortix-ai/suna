@@ -1,19 +1,12 @@
-import { C, pad } from './style';
+import { KORTIX_WORDMARK } from '@kortix/shared/wordmark';
 
-const ART = [
-  '   ██╗  ██╗ ██████╗ ██████╗ ████████╗██╗██╗  ██╗',
-  '   ██║ ██╔╝██╔═══██╗██╔══██╗╚══██╔══╝██║╚██╗██╔╝',
-  '   █████╔╝ ██║   ██║██████╔╝   ██║   ██║ ╚███╔╝ ',
-  '   ██╔═██╗ ██║   ██║██╔══██╗   ██║   ██║ ██╔██╗ ',
-  '   ██║  ██╗╚██████╔╝██║  ██║   ██║   ██║██╔╝ ██╗',
-  '   ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝╚═╝  ╚═╝',
-];
+import { C, pad } from './style';
 
 const TAGLINE = 'The open-source CompanyOS';
 
 export function printBanner(): void {
   const lines: string[] = ['', ''];
-  for (const row of ART) lines.push(`${C.cyan}${row}${C.reset}`);
+  for (const row of KORTIX_WORDMARK) lines.push(`   ${C.cyan}${row}${C.reset}`);
   lines.push('');
   lines.push(`   ${C.white}${TAGLINE}${C.reset}   ${C.faded}·  configure your Kortix project${C.reset}`);
   lines.push('');

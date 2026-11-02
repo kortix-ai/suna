@@ -17,7 +17,7 @@ import { MESSAGE_READ_CODE } from '@kortix/api-contract/runtime-relay'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 import type { HarnessForwardInput, HarnessForwardResult } from '../contract/proxy'
-import { isGitRepo, vcsDiff } from './vcs'
+import { isGitRepo, vcsDiff } from '@/lib/git/vcs-diff'
 import { CommandNotEnabled, PromptRejected, parsePromptBody, type PiRuntime } from './runtime'
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}): HarnessForwardResult => ({
@@ -160,10 +160,9 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
             const limitRaw = Number(search.get('limit') ?? 0)
             const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? limitRaw : Math.max(transcript.count, 1)
             // ONE PROTOCOL, TWO SPELLINGS. The SDK's page loader sends
-            // `before`; the API's transcript capture sends `cursor`
-            // (session-transcript-capture.ts). Reading only `before` made
-            // every capture re-read the newest page — see the header note on
-            // `x-next-cursor` for why that was worse than it sounds.
+            // `before`; an API build from before 2026-10-30 sends `cursor`.
+            // Reading only `before` made every such read re-read the newest
+            // page — see the header note on `x-next-cursor`.
             const before = (search.get('before') ?? search.get('cursor'))?.trim() || null
             const page = transcript.page({ limit, before })
             const stripped = stripInlineAttachmentBytes(page.messages, partRef(sessionId))

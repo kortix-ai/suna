@@ -4,7 +4,7 @@ import { logger } from '../../lib/logger';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { isMetaAgentName } from '@kortix/shared';
+import { isMyKortixAgentName } from '@kortix/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
 import { revokeAllPublicSharesForSession } from '../../shared/session-public-shares';
@@ -378,11 +378,10 @@ async function provisionReplacementRuntime(
         opencodeModel,
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
-        // A restarted meta coordinator must keep its meta runtime: without
-        // this the rebuilt env loses KORTIX_PROJECT_AUTO_CLONE=0 and the
-        // meta agent config, so the daemon clones the project over the meta
-        // workspace and wipes /workspace/AGENTS.md.
-        platformMetaAgent: isMetaAgentName(session.agentName ?? ''),
+        // A restarted My Kortix session must keep its runtime: without this
+        // the rebuilt env loses KORTIX_PROJECT_AUTO_CLONE=0 and My Kortix's
+        // config, so the daemon clones the project into its empty workspace.
+        platformMetaAgent: isMyKortixAgentName(session.agentName ?? ''),
         repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata),
         restoreSessionBranch: true,
       }),

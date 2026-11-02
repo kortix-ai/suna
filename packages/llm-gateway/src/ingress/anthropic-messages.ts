@@ -140,8 +140,10 @@ function pushAnthropicUserMessage(message: AnthropicMessage, out: Record<string,
     return;
   }
 
-  const toolResults = content.filter((block) => block.type === 'tool_result');
-  const otherBlocks = content.filter((block) => block.type !== 'tool_result');
+  // A null block threw here before authentication: a 503 for the caller's own body (KRTX-3421).
+  const blocks = content.filter((block) => typeof block === 'object' && block !== null);
+  const toolResults = blocks.filter((block) => block.type === 'tool_result');
+  const otherBlocks = blocks.filter((block) => block.type !== 'tool_result');
 
   const imageParts: Record<string, unknown>[] = [];
   for (const result of toolResults) {

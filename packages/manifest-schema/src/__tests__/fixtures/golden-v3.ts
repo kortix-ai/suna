@@ -1,7 +1,6 @@
-// The golden v3 manifest: the project registers skills, tools, commands and
+// The golden manifest: the project registers skills, tools, commands and
 // extensions; each agent enables them by name. Every later case edits one line.
 export const GOLDEN_V3 = `
-kortix_version: 3
 default_agent: assistant
 
 project:

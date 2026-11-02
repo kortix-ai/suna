@@ -4,8 +4,8 @@
  * visibility (blocked tools hidden). Mirrors connector's model.
  */
 import { describe, expect, test } from 'bun:test';
+import { isValidMatcher } from '@kortix/manifest-schema';
 import {
-  isValidMatcher,
   resolveEffectiveAction,
   selectPoliciesForRead,
   type Policy,

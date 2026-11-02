@@ -209,11 +209,15 @@ async function readableRoomsOf(userId: string, rows: readonly InboxRowForFilter[
     .innerJoin(rooms, eq(rooms.roomId, roomMembers.roomId))
     .innerJoin(projects, eq(projects.projectId, rooms.projectId))
     .where(and(eq(roomMembers.userId, userId), inArray(roomMembers.roomId, roomIds)));
-  const out = new Set<string>();
-  await Promise.all(memberships.filter((row) => resolveFeatureFlag(row.metadata, 'agent_rooms')).map(async (row) => {
-    if ((await mayReadProjectRooms(userId, row.accountId, [row.projectId])).has(row.projectId)) out.add(row.roomId);
+  const flagged = memberships.filter((row) => resolveFeatureFlag(row.metadata, 'agent_rooms'));
+  // One permission check per account, not one per room.
+  const byAccount = new Map<string, Set<string>>();
+  for (const row of flagged) byAccount.set(row.accountId, (byAccount.get(row.accountId) ?? new Set()).add(row.projectId));
+  const readable = new Set<string>();
+  await Promise.all([...byAccount].map(async ([accountId, projectIds]) => {
+    for (const projectId of await mayReadProjectRooms(userId, accountId, [...projectIds])) readable.add(projectId);
   }));
-  return out;
+  return new Set(flagged.filter((row) => readable.has(row.projectId)).map((row) => row.roomId));
 }
 
 /**

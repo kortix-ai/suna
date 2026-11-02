@@ -1,4 +1,4 @@
-import { appReleaseInputFromBlock } from '@kortix/manifest-schema';
+import { appReleaseInputFromBlock, fixManifestText } from '@kortix/manifest-schema';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { APP_TEMPLATES, appTemplate, type AppTemplateSecret } from '@kortix/shared/app-templates';
 import { parseDocument } from 'yaml';
@@ -498,7 +498,7 @@ function readManifestOrNew(path: string): string {
   try {
     return readFileSync(path, 'utf8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'kortix_version: 3\n';
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
     throw error;
   }
 }
@@ -524,7 +524,7 @@ async function launchCommand(rest: string[], options: ContextOptions, json: bool
   const blocks = template.blocks(slug);
   const taken = Object.keys(blocks).filter((name) => doc.hasIn(['apps', name]));
   if (taken.length > 0) return fail(`kortix.yaml already has apps.${taken.join(', apps.')}; pick another --name`);
-  writeFileSync(path, addAppBlocks(text, blocks));
+  writeFileSync(path, fixManifestText(addAppBlocks(text, blocks)).text);
   if (!json) process.stdout.write(`\n  ${status.ok(`added ${Object.keys(blocks).map((name) => `apps.${name}`).join(', ')} to kortix.yaml`)}\n`);
   // The files the Apps build from (a Dockerfile, a start script). One that exists is the user's: kept.
   for (const [file, content] of Object.entries(template.files?.(slug) ?? {})) {

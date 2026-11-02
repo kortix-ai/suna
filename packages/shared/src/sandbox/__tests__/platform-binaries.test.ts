@@ -22,7 +22,7 @@ import { describe, expect, test } from 'bun:test';
 import { MANAGED_SKILLS_DIR, RUNTIME_ASSETS_STATE_PATH } from '../../../../api-contract/src/sandbox-layout';
 
 import { kortixArtifactLayer, kortixToolchainLayer } from '../dockerfile-layer';
-import { buildMetaSandboxDockerfile } from '../meta-dockerfile';
+import { buildMyKortixSandboxDockerfile } from '../my-kortix-dockerfile';
 import {
   SANDBOX_CLI_OWNERSHIP_COMMAND,
   SANDBOX_MANAGED_SKILLS_DIR,
@@ -50,7 +50,7 @@ const IMAGES: Array<{ label: string; dockerfile: string }> = [
   },
   {
     label: 'meta-agent image',
-    dockerfile: buildMetaSandboxDockerfile({
+    dockerfile: buildMyKortixSandboxDockerfile({
       agentBinaryPath: 'a',
       cliBinaryPath: 'a',
       entrypointScriptPath: 'a',

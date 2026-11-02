@@ -1,13 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { validateManifest } from '@kortix/manifest-schema';
+import { parseManifestText, validateManifest } from '@kortix/manifest-schema';
 
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
   STARTER_TEMPLATE_IDS,
   getStarterCatalogSourceMap,
   getStarterFiles,
+  listGeneralKnowledgeWorkerSkills,
 } from '../index';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..', '..');
@@ -30,6 +31,11 @@ function manifestFor(template?: string): string {
   return filesFor(template).find((file) => file.path === 'kortix.yaml')?.content ?? '';
 }
 
+/** The manifest with its `skills:` registry block removed: the one part that differs per template. */
+function withoutSkillRegistry(manifest: string): string {
+  return manifest.replace(/^skills:(?: \{\})?\n(?: {2}.+\n)*/m, '');
+}
+
 describe('one starter', () => {
   test('general-knowledge-worker is the default', () => {
     expect(DEFAULT_STARTER_TEMPLATE_ID).toBe('general-knowledge-worker');
@@ -40,40 +46,57 @@ describe('one starter', () => {
     expect(filesFor('bogus')).toEqual(filesFor('general-knowledge-worker'));
   });
 
-  test('every accepted id scaffolds the same OpenCode-native manifest', () => {
+  test('every accepted id scaffolds the same manifest apart from its skill registry', () => {
     for (const id of STARTER_TEMPLATE_IDS) {
-      expect(manifestFor(id)).toBe(manifestFor('general-knowledge-worker'));
+      expect(withoutSkillRegistry(manifestFor(id))).toBe(withoutSkillRegistry(manifestFor('general-knowledge-worker')));
     }
   });
 });
 
-describe('the starter is a kortix_version 3 manifest', () => {
-  test('scaffolds a kortix_version 3 manifest', () => {
-    expect(manifestFor()).toContain('kortix_version: 3');
-    expect(manifestFor()).not.toContain('kortix_version: 2');
+describe('the starter manifest is the one kortix.yaml format', () => {
+  test('starts with the schema line and sets no kortix_version', () => {
+    for (const id of STARTER_TEMPLATE_IDS) {
+      const manifest = manifestFor(id);
+
+      expect(manifest.split('\n')[0]).toBe('# yaml-language-server: $schema=https://kortix.com/schema/kortix.schema.json');
+      expect(manifest).not.toContain('kortix_version');
+    }
   });
 
-  test('declares no runtimes block and no non-opencode harness', () => {
+  test('every accepted id scaffolds a schema-valid manifest with zero issues', () => {
+    for (const id of STARTER_TEMPLATE_IDS) {
+      const result = validateManifest(manifestFor(id));
+
+      expect(result.issues).toEqual([]);
+      expect(result.valid).toBe(true);
+    }
+  });
+
+  test('declares no runtime selector and no harness config block', () => {
     const manifest = manifestFor();
 
     expect(manifest).not.toContain('runtimes:');
+    expect(manifest).not.toContain('runtime:');
+    expect(manifest).not.toContain('opencode:');
+    expect(manifest).not.toContain('config_dir:');
     for (const harness of ['claude', 'codex', 'pi']) {
       expect(manifest).not.toContain(`harness: ${harness}`);
     }
   });
 
-  test('retires the opencode config block and the runtime selector', () => {
-    const manifest = manifestFor();
-
-    // v3 reads no harness config folder: no top-level `opencode:` block and
-    // no deprecated `runtime:` selector.
-    expect(manifest).not.toContain('opencode:');
-    expect(manifest).not.toContain('config_dir:');
-    expect(manifest).not.toContain('runtime:');
-  });
-
   test('its default agent is the one worker agent', () => {
     expect(manifestFor()).toContain('default_agent: worker');
+  });
+
+  test('registers exactly the skill folders each template ships', () => {
+    const skillsOf = (id?: string) => (parseManifestText(manifestFor(id)) as { skills: Record<string, string> }).skills;
+
+    expect(skillsOf('minimal')).toEqual({});
+    expect(skillsOf()).toEqual(
+      Object.fromEntries(listGeneralKnowledgeWorkerSkills().map((name) => [name, `skills/${name}`])),
+    );
+    const paths = new Set(filesFor().map((file) => file.path));
+    for (const folder of Object.values(skillsOf())) expect(paths.has(`${folder}/SKILL.md`)).toBe(true);
   });
 
   test('the manifest advertises no other starter to switch to', () => {
@@ -83,9 +106,10 @@ describe('the starter is a kortix_version 3 manifest', () => {
     expect(manifest).not.toContain('EXPERIMENTAL');
   });
 
-  test('no accepted id ships native config for another harness', () => {
+  test('no accepted id ships a harness folder or native config for another harness', () => {
     for (const id of [...STARTER_TEMPLATE_IDS, 'bogus', undefined]) {
       const paths = filesFor(id).map((file) => file.path);
+      expect(paths.filter((path) => path.startsWith('harnesses/') || path.startsWith('.kortix/'))).toEqual([]);
       for (const path of NATIVE_HARNESS_CONFIG_PATHS) expect(paths).not.toContain(path);
     }
   });
@@ -99,13 +123,6 @@ describe('the starter is a kortix_version 3 manifest', () => {
     expect(readme).not.toContain('multi-harness');
   });
 
-  test('the manifest is schema-valid with zero errors', () => {
-    const result = validateManifest(manifestFor(), 'yaml');
-
-    expect(result.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
-    expect(result.valid).toBe(true);
-  });
-
   test('keeps the general-knowledge skill kit', () => {
     const paths = filesFor().map((file) => file.path);
 
@@ -113,9 +130,8 @@ describe('the starter is a kortix_version 3 manifest', () => {
     expect(paths).toContain('agents/worker.md');
   });
 
-  test('ships no harness folder and no maintenance agents: one worker agent, My Kortix runs it', () => {
+  test('ships no maintenance agents: one worker agent, My Kortix runs it', () => {
     const paths = filesFor().map((file) => file.path);
-    expect(paths.filter((path) => path.startsWith('harnesses/'))).toEqual([]);
     expect(paths.filter((path) => path.startsWith('agents/'))).toEqual(['agents/worker.md']);
     const manifest = manifestFor();
     expect(manifest).not.toContain('harness-reflector');
@@ -148,13 +164,6 @@ describe('starter catalog source map', () => {
 });
 
 describe('internal minimal build', () => {
-  test('lays down the same kortix_version 3 floor', () => {
-    const manifest = manifestFor('minimal');
-
-    expect(manifest).toContain('kortix_version: 3');
-    expect(manifest).not.toContain('harness: claude');
-  });
-
   test('carries no general-knowledge domain skill', () => {
     const paths = filesFor('minimal').map((file) => file.path);
 

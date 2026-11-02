@@ -285,6 +285,19 @@ describe('fromV1 mapping', () => {
     expect(log.selection).toEqual({ agent: 'build', model: { provider: 'prov', model: 'model-a' } });
   });
 
+  test('a context reset (mode record) keeps its mode, size and entries through fromV1 and back through toV1', () => {
+    const rows = [
+      user(ROOT, 'msg_1', T0, (m) => [text(ROOT, m, 'prt_1', 'hi')]),
+      user(ROOT, 'msg_2', T0 + 1_000, (m) => [{ ...base(ROOT, m, `${m}-p0`), type: 'compaction', auto: true, mode: 'record', tokens_before: 182_340, entries: 412 }]),
+      assistant(ROOT, 'msg_3', T0 + 1_001, 'msg_2', (m) => [text(ROOT, m, `${m}-p0`, 'You are continuing this conversation in a fresh context.')], { summary: true, mode: 'compaction', agent: 'compaction' }),
+    ];
+    const log = fromV1({ session_id: 's', root_id: ROOT, rows });
+    const block = log.threads[0]!.messages.flatMap((m) => m.blocks).find((b) => b.type === 'compaction');
+    expect(block).toMatchObject({ type: 'compaction', trigger: 'auto', mode: 'record', tokens_before: 182_340, entries: 412 });
+    const part = toV1(log).rows.flatMap((row) => row.parts as Array<Record<string, unknown>>).find((p) => p.type === 'compaction');
+    expect(part).toMatchObject({ type: 'compaction', auto: true, mode: 'record', tokens_before: 182_340, entries: 412 });
+  });
+
   test('a clean session is converted, with zero counts', () => {
     const clean = fromV1({ session_id: 's', root_id: ROOT, rows: [user(ROOT, 'msg_1', T0, (m) => [text(ROOT, m, 'prt_1', 'hi')])] });
     expect(clean.restore_grade).toBe('converted');
@@ -350,6 +363,18 @@ describe('fromV1 mapping', () => {
     expect(m02).toMatchObject({ status: 'complete', in_context: true, finish: 'tool_calls', reply_to: 'msg_r01', agent: 'build', error: null });
     expect(m02.usage).toEqual({ input: 10, output: 5, cache_read: 2, cache_write: 3, reasoning: 1, cost: 0.25 });
     expect(m02.model).toEqual({ provider: 'prov', model: 'model-a', variant: 'high' });
+  });
+
+  test("pi's subagent tool `agent` is a task call, like its deprecated alias `task`", () => {
+    const S = 'ses_agent0000000000000000001';
+    const rows: V1Row[] = [
+      user(S, 'msg_g01', T0, (m) => [text(S, m, `${m}-p0`, 'hand it off')]),
+      assistant(S, 'msg_g02', T0 + 100, 'msg_g01', (m) => [
+        tool(S, m, `${m}-p1`, 'agent', { status: 'completed', input: { description: 'sub', prompt: 'go' }, output: 'task_id: ses_x', title: 'sub', metadata: { sessionId: 'ses_x', background: true }, time: { start: T0 + 110, end: T0 + 120 } }),
+      ]),
+    ];
+    const log = fromV1({ session_id: 'sess-synthetic-agent', root_id: S, rows }, { harness: 'pi' });
+    expect(message(log, 'msg_g02').blocks.find((b) => b.type === 'tool_call')).toMatchObject({ name: 'agent', kind: 'task' });
   });
 
   test('tool calls: kinds, results, stripped inputs and cleared outputs', () => {

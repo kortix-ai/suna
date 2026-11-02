@@ -28,7 +28,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   isLoading: boolean;
 } {
   const marketplace = useFeatureFlag(projectId, 'marketplace');
-  const metaAgent = useFeatureFlag(projectId, 'meta_agent');
   const reminders = useFeatureFlag(projectId, 'reminders');
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
   const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
@@ -49,11 +48,11 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const workspaceVolume = useFeatureFlag(projectId, 'workspace_volume');
   const sessionGroups = useFeatureFlag(projectId, 'session_groups');
   const chrome = useFeatureFlag(projectId, 'chrome');
+  const agentTeams = useFeatureFlag(projectId, 'agent_teams');
 
   return {
     flags: {
       marketplace: marketplace.enabled,
-      meta_agent: metaAgent.enabled,
       reminders: reminders.enabled,
       warm_sessions: warmSessions.enabled,
       secrets_egress: secretsEgress.enabled,
@@ -74,8 +73,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       workspace_volume: workspaceVolume.enabled,
       session_groups: sessionGroups.enabled,
       chrome: chrome.enabled,
+      agent_teams: agentTeams.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: chrome.isLoading,
+    isLoading: agentTeams.isLoading,
   };
 }

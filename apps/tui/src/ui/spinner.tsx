@@ -9,7 +9,8 @@ export interface SpinnerProps {
   active?: boolean;
 }
 
-/** One-character braille spinner. The only animation in the app. */
+/** One-character braille spinner. The app's other motion is the splash's
+ *  boot field and Game of Life (`ui/splash.tsx`). */
 export function Spinner({ label, active = true }: SpinnerProps) {
   const [frame, setFrame] = useState(0);
   useEffect(() => {

@@ -312,19 +312,18 @@ describe('every palette row points at a live route', () => {
 });
 
 describe('the project settings sections are reached through Project admin rows', () => {
-  test('exactly the four section rows point at Project admin settings', () => {
+  test('exactly the three section rows point at Project admin settings', () => {
     // The Customize bar's Settings tab and its sections came back on
     // 2026-09-03 (Marko) when the overlay's Workspace group was removed;
     // Review stays a capability tab and has no `/config` row.
     const rows = paletteRows
-      .filter((item) => /\/admin\/(general|sandbox|feature-flags|upgrades)\b/.test(item.href ?? ''))
+      .filter((item) => /\/admin\/(general|sandbox|feature-flags)\b/.test(item.href ?? ''))
       .map((item) => item.id)
       .sort();
     expect(rows).toEqual([
       'proj-config-feature-flags',
       'proj-config-general',
       'proj-config-sandbox',
-      'proj-config-upgrades',
     ]);
   });
 

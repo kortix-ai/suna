@@ -200,6 +200,7 @@ describe('paste markup in title sources', () => {
 describe('generateSessionTitleFromFirstPrompt', () => {
   function harness(over: Partial<GenerateSessionTitleOptions> & { row?: ProjectSessionRow } = {}) {
     const persisted: string[] = [];
+    const fallbacks: Array<{ attempts: number; source: string } | undefined> = [];
     const minted: string[] = [];
     const revoked: string[] = [];
     const models: string[] = [];
@@ -227,8 +228,9 @@ describe('generateSessionTitleFromFirstPrompt', () => {
         }),
       persist:
         over.persist ??
-        (async (_r, title) => {
+        (async (_r, title, fallback) => {
           persisted.push(title);
+          fallbacks.push(fallback);
         }),
       // Never let a unit test reach the real resolver (billing tier + gateway
       // candidate resolution, both DB-backed).
@@ -237,7 +239,7 @@ describe('generateSessionTitleFromFirstPrompt', () => {
       // resolved from the DB in production. Native-mode (flag off) behavior is
       // covered by its own cases below.
     };
-    return { options, persisted, minted, revoked, models, generateCalls: () => generateCalls };
+    return { options, persisted, fallbacks, minted, revoked, models, generateCalls: () => generateCalls };
   }
 
   const input = {
@@ -298,6 +300,79 @@ describe('generateSessionTitleFromFirstPrompt', () => {
 
     expect(h.persisted).toEqual(['Please set up the MS Graph OAuth2 connector']);
     expect(h.revoked).toEqual(['key-1']);
+  });
+
+  // A dev session titled "can u build a website about marko kraemer": the one
+  // title model closed the connection after 14.8 s, the account had no other
+  // servable model, and the next call to the same model succeeded 3 s later.
+  it('retries the same model once when no other model can serve', async () => {
+    const attempts: string[] = [];
+    const h = harness({
+      row: row({ opencode_model: 'kortix/deepseek-v4.1-flash' }),
+      fallbackModel: async () => null,
+      generate: async (model) => {
+        attempts.push(model);
+        return attempts.length === 1 ? null : 'Build Marko Kraemer Website';
+      },
+    });
+
+    await generateSessionTitleFromFirstPrompt(input, h.options);
+
+    expect(attempts).toEqual(['deepseek-v4.1-flash', 'deepseek-v4.1-flash']);
+    expect(h.persisted).toEqual(['Build Marko Kraemer Website']);
+    expect(h.fallbacks).toEqual([undefined]);
+  });
+
+  it('marks a prompt-excerpt title as a fallback that a later prompt or turn end replaces', async () => {
+    const h = harness({ generate: async () => null });
+
+    await generateSessionTitleFromFirstPrompt(input, h.options);
+
+    expect(h.persisted).toEqual(['Please set up the MS Graph OAuth2 connector']);
+    expect(h.fallbacks).toEqual([
+      { attempts: 1, source: 'Please set up the MS Graph OAuth2 connector' },
+    ]);
+  });
+
+  it('replaces a fallback title with a model title, and counts each failed retry', async () => {
+    const fallbackRow = row({
+      name: 'Please set up the MS Graph OAuth2 connector',
+      title_fallback_attempts: 1,
+      opencode_model: 'kortix/glm-5.3-flash',
+    });
+    const upgraded = harness({ row: fallbackRow });
+    await generateSessionTitleFromFirstPrompt(input, upgraded.options);
+    expect(upgraded.persisted).toEqual(['Set Up MS Graph']);
+    expect(upgraded.fallbacks).toEqual([undefined]);
+
+    const failedAgain = harness({ row: fallbackRow, generate: async () => null });
+    await generateSessionTitleFromFirstPrompt(input, failedAgain.options);
+    expect(failedAgain.fallbacks).toEqual([
+      { attempts: 2, source: 'Please set up the MS Graph OAuth2 connector' },
+    ]);
+  });
+
+  it('stops retrying a fallback title after 3 failed attempts', async () => {
+    const h = harness({
+      row: row({
+        name: 'Please set up the MS Graph OAuth2 connector',
+        title_fallback_attempts: 3,
+        opencode_model: 'kortix/glm-5.3-flash',
+      }),
+    });
+    await generateSessionTitleFromFirstPrompt(input, h.options);
+    expect(h.generateCalls()).toBe(0);
+    expect(h.persisted).toEqual([]);
+  });
+
+  it('never marks a title as a fallback when no model could ever title it', async () => {
+    const short = harness();
+    await generateSessionTitleFromFirstPrompt({ ...input, firstPromptText: 'Say a' }, short.options);
+    expect(short.fallbacks).toEqual([undefined]);
+
+    const noModel = harness({ row: row({}), fallbackModel: async () => null });
+    await generateSessionTitleFromFirstPrompt(input, noModel.options);
+    expect(noModel.fallbacks).toEqual([undefined]);
   });
 
   it('never turns a placeholder-shaped first prompt back into the placeholder', async () => {

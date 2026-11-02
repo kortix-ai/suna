@@ -31,9 +31,11 @@ const baseSummary = {
     llm_kortix_cost: 0,
     llm_provider_cost: 12.4,
     compute_cost: 34.02,
+    storage_cost: 0.82,
     total_cost: 46.42,
     request_count: 100,
     compute_seconds: 3600,
+    storage_gib_hours: 10000,
     session_count: 41,
     project_count: 3,
   },
@@ -42,10 +44,10 @@ const baseSummary = {
   // was never a shape the route produces, and it silently skipped the
   // sparklines these tiles now render.
   series: [
-    { day: '2026-07-01', llm_cost: 1, compute_cost: 6, total_cost: 7 },
-    { day: '2026-07-02', llm_cost: 2, compute_cost: 7, total_cost: 9 },
-    { day: '2026-07-03', llm_cost: 4, compute_cost: 9, total_cost: 13 },
-    { day: '2026-07-04', llm_cost: 5, compute_cost: 12, total_cost: 17 },
+    { day: '2026-07-01', llm_cost: 1, compute_cost: 6, storage_cost: 0.2, total_cost: 7 },
+    { day: '2026-07-02', llm_cost: 2, compute_cost: 7, storage_cost: 0.2, total_cost: 9 },
+    { day: '2026-07-03', llm_cost: 4, compute_cost: 9, storage_cost: 0.21, total_cost: 13 },
+    { day: '2026-07-04', llm_cost: 5, compute_cost: 12, storage_cost: 0.21, total_cost: 17 },
   ],
   models: [],
 };
@@ -63,16 +65,18 @@ describe('CostSummaryTiles', () => {
     const html = renderToStaticMarkup(
       <CostSummaryTiles isLoading={false} extraTiles={[]} summary={baseSummary} />,
     );
-    expect(html.match(/>credits<\/span>/g)?.length ?? 0).toBe(3);
+    expect(html.match(/>credits<\/span>/g)?.length ?? 0).toBe(4);
     expect(html).not.toContain('$');
   });
 
-  test('renders LLM and compute tiles without a delta of their own', () => {
+  test('renders LLM, compute and storage tiles without a delta of their own', () => {
     const html = renderToStaticMarkup(
       <CostSummaryTiles isLoading={false} extraTiles={[]} summary={baseSummary} />,
     );
     expect(html).toContain('1,240');
     expect(html).toContain('3,402');
+    expect(html).toContain('>Storage<');
+    expect(html).toContain('>82<');
     // Only the total tile shows a period delta. Counting "%" characters would
     // now double-count — the accessible name repeats the figure — so count the
     // delta paragraphs, which is what the assertion always meant.
@@ -125,14 +129,14 @@ describe('CostSummaryTiles', () => {
     const tileClasses = [...html.matchAll(/<div [^>]*class="([^"]*bg-popover[^"]*)"/g)].map(
       (match) => match[1],
     );
-    expect(tileClasses).toHaveLength(3);
+    expect(tileClasses).toHaveLength(4);
     // Each tile is the positioning context for its own line.
     for (const tileClass of tileClasses) {
       expect(tileClass).toContain('relative');
     }
     // One line per tile, each pinned into that tile's bottom-right corner.
     const pinned = [...html.matchAll(/<span class="([^"]*absolute[^"]*)"/g)].map((m) => m[1]);
-    expect(pinned).toHaveLength(3);
+    expect(pinned).toHaveLength(4);
     for (const wrapperClass of pinned) {
       expect(wrapperClass).toMatch(/\bbottom-/);
       expect(wrapperClass).toMatch(/\bright-/);
@@ -252,14 +256,15 @@ describe('CostSummaryTiles grid geometry', () => {
     expect(container).not.toContain('divide-y');
   });
 
-  test('uses three columns at every width — a two-column mobile grid would leave the fixed three tiles with an empty track', () => {
+  test('uses two columns on a phone and four from sm: the four fixed tiles fill both with no filler', () => {
     const html = renderToStaticMarkup(
       <CostSummaryTiles isLoading={false} extraTiles={[]} summary={baseSummary} />,
     );
     const container = containerClass(html);
-    expect(container).toContain('grid-cols-3');
-    expect(container).not.toContain('grid-cols-2');
-    expect(container).not.toContain('sm:grid-cols');
+    expect(container).toContain('grid-cols-2');
+    expect(container).toContain('sm:grid-cols-4');
+    expect(container).not.toContain('grid-cols-3');
+    expect(html).not.toContain('aria-hidden="true"');
   });
 
   // Each cell has to paint an opaque surface over the container, or the
@@ -270,7 +275,7 @@ describe('CostSummaryTiles grid geometry', () => {
       <CostSummaryTiles isLoading={false} extraTiles={[]} summary={baseSummary} />,
     );
     const cells = html.match(/<div class="[^"]*px-3 py-2\.5[^"]*"/g) ?? [];
-    expect(cells).toHaveLength(3);
+    expect(cells).toHaveLength(4);
     for (const cell of cells) expect(cell).toContain('bg-popover');
   });
 
@@ -279,7 +284,7 @@ describe('CostSummaryTiles grid geometry', () => {
   // component that only lays out correctly at one count is a trap, not a
   // layout. Four tiles at three columns must fill row two rather than leave
   // two blocks of border colour.
-  test('fills the last row when extraTiles make the count not divide by three', () => {
+  test('fills the last row at each breakpoint when extraTiles make the count not divide by four', () => {
     const html = renderToStaticMarkup(
       <CostSummaryTiles
         isLoading={false}
@@ -287,14 +292,15 @@ describe('CostSummaryTiles grid geometry', () => {
         summary={baseSummary}
       />,
     );
-    // 4 tiles + 2 fillers = 6 cells, two full rows.
+    // 5 tiles: 3 fillers fill the 4-column row; only the first shows at 2 columns.
     const cellCount = (html.match(/<div [^>]*class="[^"]*bg-popover[^"]*"/g) ?? []).length;
-    expect(cellCount).toBe(6);
+    expect(cellCount).toBe(8);
     // Fillers carry no content and are hidden from assistive technology.
-    expect((html.match(/aria-hidden="true"/g) ?? []).length).toBe(2);
+    expect((html.match(/aria-hidden="true"/g) ?? []).length).toBe(3);
+    expect((html.match(/class="[^"]*hidden sm:flex[^"]*" aria-hidden="true"/g) ?? []).length).toBe(2);
   });
 
-  test('adds no filler when extraTiles bring the count back to a multiple of three', () => {
+  test('adds no filler when extraTiles bring the count back to a multiple of four', () => {
     const html = renderToStaticMarkup(
       <CostSummaryTiles
         isLoading={false}
@@ -302,12 +308,13 @@ describe('CostSummaryTiles grid geometry', () => {
           { label: 'Sessions', value: '41' },
           { label: 'Projects', value: '3' },
           { label: 'Requests', value: '100' },
+          { label: 'Models', value: '2' },
         ]}
         summary={baseSummary}
       />,
     );
     const cellCount = (html.match(/<div [^>]*class="[^"]*bg-popover[^"]*"/g) ?? []).length;
-    expect(cellCount).toBe(6);
+    expect(cellCount).toBe(8);
     expect(html).not.toContain('aria-hidden="true"');
   });
 
@@ -323,7 +330,7 @@ describe('CostSummaryTiles grid geometry', () => {
     );
     expect(containerClass(loading)).toContain('gap-px');
     const cellCount = (loading.match(/<div [^>]*class="[^"]*bg-popover[^"]*"/g) ?? []).length;
-    expect(cellCount).toBe(6);
-    expect((loading.match(/aria-hidden="true"/g) ?? []).length).toBe(2);
+    expect(cellCount).toBe(8);
+    expect((loading.match(/aria-hidden="true"/g) ?? []).length).toBe(3);
   });
 });

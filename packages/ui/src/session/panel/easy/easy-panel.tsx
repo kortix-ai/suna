@@ -49,7 +49,7 @@ export function EasyPanel() {
   // with `session-chat.tsx` so the two cannot disagree.
   const planInChat = usePlanInChat();
   // Null outside a `SessionPanelProvider` — `SessionChat` also renders
-  // read-only inside `sub-session-modal.tsx`, which has no panel at all.
+  // read-only inside `legacy-subagent-chat.tsx`, which has no panel at all.
   if (!panel) return null;
 
   const { files, context, apps, outputsDefaultOpen, sessionId, handleOpenOutput, openDetail } =

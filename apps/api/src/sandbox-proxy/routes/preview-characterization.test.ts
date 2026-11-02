@@ -85,7 +85,11 @@ mock.module('../../iam', () => ({
     return { allowed: true, reason: 'role' };
   },
 }));
+const realSandboxEnvSync = await import('../../projects/lib/sandbox-env-sync');
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
+  // Spread the real module: a hand-listed stub deletes every other export —
+  // the session-open graph imports `pushSessionAgentConfigToSandbox` from it.
+  ...realSandboxEnvSync,
   syncSandboxEnvForPrompt: async () => {},
 }));
 mock.module('../../projects/lib/session-token-grant', () => ({
@@ -102,6 +106,7 @@ mock.module('../../projects/session-activity', () => ({
   recordSessionActivity: async () => {},
 }));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
+const realSessionOpen = await import('../../projects/session-open');
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   beginSandboxTurn: async () => 'granted',
@@ -116,11 +121,19 @@ mock.module('../../projects/surface', () => ({
   },
   // Imported at load by modules this graph pulls in (memory/layers.ts); never called here.
   resolveUserIdentities: async () => new Map(),
+  // The pre-prompt Claude gate rides this module (#11335); no case in this
+  // suite prompts a Claude model, so both stay inert. A missing name is a
+  // module LINK error, not a null.
+  missingClaudeSubscription: async () => null,
+  sessionModelPin: async () => null,
 }));
 // A wake claimed by `/start` or another request leaves the row `stopped` until
 // the provider confirms the box; tests flip this to model that window.
 let wakePending = false;
 mock.module('../../projects/session-open', () => ({
+  // Spread the real module: a hand-listed stub deletes every other export —
+  // the lifecycle graph imports `openSession` from it.
+  ...realSessionOpen,
   resumeStoppedSandboxByExternalId: async (externalId: string) => {
     counts.resumeStopped += 1;
     return Boolean(externalId);

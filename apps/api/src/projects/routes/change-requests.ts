@@ -58,7 +58,7 @@ import { rethrowDatabaseError } from '../../shared/database-errors';
  * read endpoints so the UI never shows stale "X commits behind" state. No-op
  * when the SHAs already match or the CR is no longer open.
  */
-export async function refreshCrTips(input: {
+async function refreshCrTips(input: {
   cr: typeof changeRequests.$inferSelect;
   project: {
     projectId: string;

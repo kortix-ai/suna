@@ -1,9 +1,9 @@
-import type { MessageWithParts, ProjectSession } from '@kortix/sdk';
+import { type ProjectSession, type SessionLogMessage, classifySessionLogMessage } from '@kortix/sdk';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { ApiError } from '../api/client.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
-import { extractMessageError, sendAndWaitForReply } from './sessions-chat.ts';
+import { sendAndWaitForReply } from './sessions-chat.ts';
 import type { MeResponse, ProjectSummary } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
 import { resolveProjectContext, shortId, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
@@ -202,12 +202,12 @@ export async function runDoctor(argv: string[]): Promise<number> {
  *  error fails it even after partial text, and names the cause the way
  *  `sessions chat` does (KRTX-2918). */
 export function doctorReplyVerdict(
-  reply: MessageWithParts,
+  reply: SessionLogMessage,
 ): { ok: true; text: string } | { ok: false; reason: string } {
-  const error = extractMessageError(reply);
-  if (error) return { ok: false, reason: `reply failed — ${error}` };
-  const text = reply.parts
-    .map((p) => (p.type === 'text' ? p.text : ''))
+  const error = classifySessionLogMessage(reply).error;
+  if (error) return { ok: false, reason: `reply failed — ${error.name}: ${error.message}` };
+  const text = reply.blocks
+    .map((block) => (block.type === 'text' ? block.text : ''))
     .join(' ')
     .trim();
   return text ? { ok: true, text } : { ok: false, reason: 'reply had no text content' };

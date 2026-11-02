@@ -19,7 +19,7 @@ export function useManifestWrite(projectId: string) {
       queryKey: qk.project.detail(projectId),
       queryFn: () => getProjectDetail(projectId),
     });
-    const path = detail.project.manifest_path || 'kortix.yaml';
+    const path = detail.config?.manifest_health?.path || detail.project.manifest_path || 'kortix.yaml';
     const ref = detail.project.default_branch || 'main';
     const file = await readProjectFile(projectId, path, ref);
     if (!file.revision) throw new Error(`Could not read ${path}.`);

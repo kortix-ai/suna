@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { refreshMirror } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
-import { buildPlatformMetaOpenCodeConfig } from '../projects/lib/platform-meta-agent';
+import { buildMyKortixConfig } from '../projects/lib/my-kortix-agent';
 import {
   __clearConfigReleaseCachesForTests,
   buildConfigArchive,
@@ -58,20 +58,24 @@ function commit(files: Record<string, string | Buffer>, message: string): string
 
 const MANIFEST = (description: string) =>
   [
-    'kortix_version: 2',
     'project:',
     '  name: builder-test',
     'default_agent: kortix',
     'agents:',
     '  kortix:',
+    '    mode: primary',
+    '    prompt_file: agents/kortix.md',
+    '    tools: all',
     // `skills` is manifest governance: it changes the compiled config.
     `    skills: ${description === 'second' ? 'none' : 'all'}`,
     '  reviewer:',
     '    description: reviews',
+    '    prompt_file: agents/reviewer.md',
+    '    tools: all',
     '',
   ].join('\n');
 
-const AGENT = '---\ndescription: main agent\nmode: primary\n---\nYou are the main agent.\n';
+const AGENT = 'You are the main agent.\n';
 
 /** Extract a tar.gz with the system tar and return the directory. */
 function extract(archive: Buffer): string {
@@ -133,11 +137,10 @@ function seed(): string {
   const sha = commit(
     {
       'kortix.yaml': MANIFEST('first'),
-      '.kortix/opencode/opencode.jsonc': '{ "$schema": "https://opencode.ai/config.json" }\n',
-      '.kortix/opencode/agents/kortix.md': AGENT,
-      '.kortix/opencode/agents/reviewer.md': '---\ndescription: reviews\n---\nReview.\n',
-      '.kortix/opencode/skills/demo/SKILL.md': '---\nname: demo\n---\nDemo skill.\n',
-      '.kortix/opencode/tools/hello.ts': 'export default {}\n',
+      'agents/kortix.md': AGENT,
+      'agents/reviewer.md': 'Review.\n',
+      'skills/demo/SKILL.md': '---\nname: demo\n---\nDemo skill.\n',
+      'tools/hello.ts': 'export default {}\n',
       'src/app.ts': 'console.log(1)\n',
     },
     'seed',
@@ -146,18 +149,18 @@ function seed(): string {
 }
 
 const ROOT_MANIFEST = [
-  'kortix_version: 2',
   'project:',
   '  name: builder-test',
   'default_agent: kortix',
   'agents:',
   '  kortix:',
-  '    file: agents/kortix.md',
+  '    prompt_file: agents/kortix.md',
+  '    tools: all',
   '    skills: all',
   '',
 ].join('\n');
 
-/** The harness-neutral layout: agents/ and skills/ at the root, OpenCode files in harnesses/opencode. */
+/** The project layout: agents/, skills/ and tools/ at the root. */
 function seedRootLayout(extra: Record<string, string> = {}): string {
   return commit(
     {
@@ -167,8 +170,7 @@ function seedRootLayout(extra: Record<string, string> = {}): string {
       'skills/demo/reference.md': 'More.\n',
       // No SKILL.md anywhere under it: not a skill, never part of a release.
       'skills/notes/readme.txt': 'not a skill\n',
-      'harnesses/opencode/opencode.jsonc': '{ "$schema": "https://opencode.ai/config.json" }\n',
-      'harnesses/opencode/tools/hello.ts': 'export default {}\n',
+      'tools/hello.ts': 'export default {}\n',
       ...extra,
     },
     'seed root layout',
@@ -182,19 +184,18 @@ describe('buildConfigRelease on the root project layout', () => {
     const mirror = await refreshMirror(project);
 
     expect(release.reason).toBeNull();
-    expect(release.config_dir).toBe('harnesses/opencode');
+    expect(release.config_dir).toBeNull();
     // The commit's own root tree: the same files a checkout holds in /workspace.
     expect(release.config_tree_id).toBe(run('git', ['rev-parse', `${sha}^{tree}`], mirror));
     expect(release.archive?.url).toBe(`/v1/projects/${project.projectId}/config-archives/${release.config_tree_id}`);
     expect(release.files?.map(([path]) => path)).toEqual(run('git', ['ls-tree', '-r', '--name-only', sha], mirror).split('\n').sort());
     expect(release.files?.map(([path]) => path)).toEqual([
       'agents/kortix.md',
-      'harnesses/opencode/opencode.jsonc',
-      'harnesses/opencode/tools/hello.ts',
       'kortix.yaml',
       'skills/demo/SKILL.md',
       'skills/demo/reference.md',
       'skills/notes/readme.txt',
+      'tools/hello.ts',
     ]);
 
     const archive = store.objects.get(configArchiveKey(project.projectId, release.config_tree_id!));
@@ -251,7 +252,7 @@ describe('buildConfigRelease on the root project layout', () => {
     }
   });
 
-  test('every file keeps its repository path: the pi config dir, an explicit pi.config_dir, and files outside every config dir', async () => {
+  test('every file keeps its repository path, folders of a retired layout included', async () => {
     const sha = seedRootLayout({
       'harnesses/pi/extensions/guard.ts': 'export default () => {}\n',
       'harnesses/pi/skills/native/SKILL.md': '---\nname: native\n---\nA pi skill.\n',
@@ -265,6 +266,28 @@ describe('buildConfigRelease on the root project layout', () => {
       expect(paths).toContain(path);
     }
     expect(paths.some((path) => path.startsWith('pi/'))).toBe(false);
+  });
+
+  // No session reads a harness config folder: a leftover OpenCode config file
+  // would make the release look like one a harness reads.
+  test('a leftover OpenCode config file is left out of the release; every other file ships', async () => {
+    const sha = seedRootLayout({
+      '.kortix/opencode/opencode.jsonc': '{}\n',
+      'harnesses/opencode/opencode.json': '{}\n',
+      'harnesses/opencode/plugins/audit.ts': 'export default {}\n',
+    });
+    const release = await buildConfigRelease(project, sha, 'project', { store });
+    const mirror = await refreshMirror(project);
+    const paths = release.files!.map(([path]) => path);
+    expect(release.config_dir).toBeNull();
+    expect(paths).toContain('harnesses/opencode/plugins/audit.ts');
+    expect(paths.filter((path) => /opencode\.jsonc?$/.test(path))).toEqual([]);
+    // A composed tree: the commit's own tree holds the files left out.
+    expect(release.config_tree_id).not.toBe(run('git', ['rev-parse', `${sha}^{tree}`], mirror));
+    const dir = extract(store.objects.get(configArchiveKey(project.projectId, release.config_tree_id!))!);
+    expect(existsSync(join(dir, 'harnesses/opencode/opencode.json'))).toBe(false);
+    expect(existsSync(join(dir, '.kortix/opencode/opencode.jsonc'))).toBe(false);
+    for (const [path, , blob] of release.files!) expect(blobOf(join(dir, path))).toBe(blob);
   });
 
   test('any change to a tracked file moves the release', async () => {
@@ -285,7 +308,7 @@ describe('buildConfigRelease', () => {
     const tree = run('git', ['rev-parse', `${sha}^{tree}`], mirror);
 
     expect(release.source_commit).toBe(sha);
-    expect(release.config_dir).toBe('.kortix/opencode');
+    expect(release.config_dir).toBeNull();
     expect(release.config_tree_id).toBe(tree);
     expect(release.reason).toBeNull();
     expect(release.compiled_governance).not.toBeNull();
@@ -296,13 +319,12 @@ describe('buildConfigRelease', () => {
     );
     expect(release.archive?.url).toBe(`/v1/projects/${project.projectId}/config-archives/${tree}`);
     expect(release.files?.map(([path]) => path)).toEqual([
-      '.kortix/opencode/agents/kortix.md',
-      '.kortix/opencode/agents/reviewer.md',
-      '.kortix/opencode/opencode.jsonc',
-      '.kortix/opencode/skills/demo/SKILL.md',
-      '.kortix/opencode/tools/hello.ts',
+      'agents/kortix.md',
+      'agents/reviewer.md',
       'kortix.yaml',
+      'skills/demo/SKILL.md',
       'src/app.ts',
+      'tools/hello.ts',
     ]);
 
     const key = configArchiveKey(project.projectId, tree);
@@ -326,28 +348,28 @@ describe('buildConfigRelease', () => {
 
   test('keeps symlinks and skips submodule entries', async () => {
     seed();
-    symlinkSync('agents/kortix.md', join(work, '.kortix/opencode/linked.md'));
+    symlinkSync('kortix.md', join(work, 'agents/linked.md'));
     git('add', '-A');
     // A `commit` tree entry: a submodule pointer with no module content.
-    git('update-index', '--add', '--cacheinfo', `160000,${git('rev-parse', 'HEAD')},.kortix/opencode/vendor`);
+    git('update-index', '--add', '--cacheinfo', `160000,${git('rev-parse', 'HEAD')},vendor`);
     git('commit', '-qm', 'symlink and submodule');
     git('push', '-q', 'origin', 'main');
     const sha = git('rev-parse', 'HEAD');
 
     const release = await buildConfigRelease(project, sha, 'project', { store });
-    const linked = release.files!.find(([path]) => path === '.kortix/opencode/linked.md');
+    const linked = release.files!.find(([path]) => path === 'agents/linked.md');
     expect(linked?.[1]).toBe('120000');
-    expect(release.files!.some(([path]) => path === '.kortix/opencode/vendor')).toBe(false);
+    expect(release.files!.some(([path]) => path === 'vendor')).toBe(false);
 
     const dir = extract(store.objects.get(configArchiveKey(project.projectId, release.config_tree_id!))!);
-    expect(lstatSync(join(dir, '.kortix/opencode/linked.md')).isSymbolicLink()).toBe(true);
-    expect(blobOf(join(dir, '.kortix/opencode/linked.md'))).toBe(linked![2]);
+    expect(lstatSync(join(dir, 'agents/linked.md')).isSymbolicLink()).toBe(true);
+    expect(blobOf(join(dir, 'agents/linked.md'))).toBe(linked![2]);
   });
 
   test('one config tree gives identical archive bytes on every build', async () => {
     const sha = seed();
     const mirror = await refreshMirror(project);
-    const tree = run('git', ['rev-parse', `${sha}:.kortix/opencode`], mirror);
+    const tree = run('git', ['rev-parse', `${sha}:agents`], mirror);
     const first = await buildConfigArchive(mirror, tree);
     await new Promise((resolve) => setTimeout(resolve, 1100));
     const second = await buildConfigArchive(mirror, tree);
@@ -358,13 +380,12 @@ describe('buildConfigRelease', () => {
     expect(gunzipSync(first).length).toBeGreaterThan(0);
   });
 
-  test('export-ignore and export-subst in .gitattributes are neutralised, and the mirror gets no writes', async () => {
+  test('export-subst in .gitattributes is neutralised, and the mirror gets no writes', async () => {
     seed();
     const sha = commit(
       {
-        '.kortix/opencode/.gitattributes': 'secret-notes.md export-ignore\nversion.txt export-subst\n',
-        '.kortix/opencode/secret-notes.md': 'kept verbatim\n',
-        '.kortix/opencode/version.txt': 'commit $Format:%H$\n',
+        'notes/.gitattributes': 'version.txt export-subst\n',
+        'notes/version.txt': 'commit $Format:%H$\n',
       },
       'attributes',
     );
@@ -375,10 +396,9 @@ describe('buildConfigRelease', () => {
 
     const archive = store.objects.get(configArchiveKey(project.projectId, release.config_tree_id!))!;
     const dir = extract(archive);
-    expect(readFileSync(join(dir, '.kortix/opencode/secret-notes.md'), 'utf8')).toBe('kept verbatim\n');
-    expect(readFileSync(join(dir, '.kortix/opencode/version.txt'), 'utf8')).toBe('commit $Format:%H$\n');
+    expect(readFileSync(join(dir, 'notes/version.txt'), 'utf8')).toBe('commit $Format:%H$\n');
     for (const [path, , blob] of release.files!) expect(blobOf(join(dir, path))).toBe(blob);
-    expect(release.files!.map(([path]) => path)).toContain('.kortix/opencode/secret-notes.md');
+    expect(release.files!.map(([path]) => path)).toContain('notes/version.txt');
 
     const again = await buildConfigArchive(mirror, release.config_tree_id!);
     expect(again.equals(archive)).toBe(true);
@@ -387,18 +407,15 @@ describe('buildConfigRelease', () => {
   // KRTX-1728: the too-large reason, the docs and `kortix validate` tell an
   // owner to mark big paths export-ignore. The release used to ship them
   // anyway, so the remedy changed nothing and the repository stayed over the cap.
-  test('a path the repository marks export-ignore is left out of the release, outside the config dir', async () => {
+  test('a path the repository marks export-ignore is left out of the release; the manifest always ships', async () => {
     seed();
     const sha = commit(
       {
-        '.gitattributes': 'assets/** export-ignore\nfixtures export-ignore\n',
+        '.gitattributes': 'assets/** export-ignore\nfixtures export-ignore\nkortix.yaml export-ignore\n',
         // Random bytes do not compress: each stays over the 32 KiB test cap.
         'assets/hero.bin': randomBytes(48 * 1024),
         'assets/deep/clip.bin': randomBytes(48 * 1024),
         'fixtures/big.json': randomBytes(48 * 1024),
-        // The config dir is exempt: what it marks export-ignore still ships verbatim.
-        '.kortix/opencode/.gitattributes': 'secret-notes.md export-ignore\n',
-        '.kortix/opencode/secret-notes.md': 'kept verbatim\n',
       },
       'export-ignored assets',
     );
@@ -408,12 +425,12 @@ describe('buildConfigRelease', () => {
 
     const paths = release.files!.map(([path]) => path);
     expect(paths.filter((path) => path.startsWith('assets/') || path.startsWith('fixtures/'))).toEqual([]);
-    expect(paths).toEqual(expect.arrayContaining(['.gitattributes', 'src/app.ts', '.kortix/opencode/secret-notes.md']));
+    expect(paths).toEqual(expect.arrayContaining(['.gitattributes', 'src/app.ts', 'kortix.yaml']));
 
     const dir = extract(store.objects.get(configArchiveKey(project.projectId, release.config_tree_id!))!);
     expect(existsSync(join(dir, 'assets'))).toBe(false);
     expect(existsSync(join(dir, 'fixtures'))).toBe(false);
-    expect(readFileSync(join(dir, '.kortix/opencode/secret-notes.md'), 'utf8')).toBe('kept verbatim\n');
+    expect(existsSync(join(dir, 'kortix.yaml'))).toBe(true);
     // On-box blob verification: every listed file is in the archive, byte for byte.
     for (const [path, , blob] of release.files!) expect(blobOf(join(dir, path))).toBe(blob);
   });
@@ -455,26 +472,26 @@ describe('buildConfigRelease', () => {
     const sha = commit(
       {
         'kortix.yaml': [
-          'kortix_version: 2',
           'project:',
           '  name: builder-test',
           'default_agent: kortix',
           'tools:',
-          '  web_search: kortix:web_search',
           '  lookup_order: tools/lookup_order.ts',
           '  refund_order: tools/refund_order.ts',
           '  hidden_tool: tools/hidden.ts',
           'agents:',
-          '  kortix: {}',
+          '  kortix:',
+          '    prompt: You are the main agent.',
+          '    tools: all',
           '  support:',
+          '    description: support',
+          '    prompt: Help.',
           '    workspace:',
           '      project_repository: false',
           '    tools:',
           '      exclude: [hidden_tool]',
           '',
         ].join('\n'),
-        'agents/kortix.md': AGENT,
-        'agents/support.md': '---\ndescription: support\n---\nHelp.\n',
         // A relative import without an extension, a `./x.js` that names `x.ts`,
         // a `../` import, a JSON import, a type-only import, and a package import.
         'tools/lookup_order.ts': [
@@ -539,8 +556,8 @@ describe('buildConfigRelease', () => {
   });
 
   // 2026-10-05: a pi project with no OpenCode config dir got a governance-only
-  // release, and pi lost its root skills and its own config dir.
-  test('a commit with no OpenCode config dir still releases its whole tree, with no config dir named', async () => {
+  // release, and pi lost its root skills.
+  test('a commit releases its whole tree, with no config dir named', async () => {
     const sha = commit(
       {
         'kortix.yaml': MANIFEST('first'),
@@ -561,9 +578,9 @@ describe('buildConfigRelease', () => {
   // image has no `bun`. It was assigned the `project` release, could not install
   // the tool dependencies, and its failures quarantined that release for every
   // session of the project.
-  test('the meta variant is the platform governance alone, whatever the config dir holds', async () => {
-    const first = await buildConfigRelease(project, seed(), 'meta', { store });
-    expect(first.compiled_governance).toBe(buildPlatformMetaOpenCodeConfig());
+  test('the meta variant is the platform governance alone, whatever the tree holds', async () => {
+    const first = await buildConfigRelease(project, seed(), 'mykortix', { store });
+    expect(first.compiled_governance).toBe(buildMyKortixConfig());
     expect(first.release_id).toBe(configReleaseId(null, first.compiled_governance_etag));
     expect(first.config_dir).toBeNull();
     expect(first.config_tree_id).toBeNull();
@@ -572,17 +589,16 @@ describe('buildConfigRelease', () => {
     expect(first.reason).toBeNull();
     expect(toDescriptor(first, { repositoryAccess: true }).archive).toBeNull();
 
-    const moved = commit({ '.kortix/opencode/tools/hello.ts': 'export default { changed: true }\n' }, 'tool change');
-    expect((await buildConfigRelease(project, moved, 'meta', { store })).release_id).toBe(first.release_id);
+    const moved = commit({ 'tools/hello.ts': 'export default { changed: true }\n' }, 'tool change');
+    expect((await buildConfigRelease(project, moved, 'mykortix', { store })).release_id).toBe(first.release_id);
   });
 
   test('a repository over the archive limit keeps its release; only the archive is withheld', async () => {
     const sha = commit(
       {
         'kortix.yaml': MANIFEST('first'),
-        '.kortix/opencode/opencode.json': '{}\n',
         // Random bytes do not compress: 64 KiB stays over the 32 KiB test cap.
-        '.kortix/opencode/blob.bin': randomBytes(64 * 1024),
+        'data/blob.bin': randomBytes(64 * 1024),
       },
       'huge',
     );
@@ -593,7 +609,7 @@ describe('buildConfigRelease', () => {
     expect(release.release_id).toBe(configReleaseId(tree, release.compiled_governance_etag));
     expect(release.archive).toBeNull();
     expect(release.reason).toBeNull();
-    expect(release.files!.map(([path]) => path)).toContain('.kortix/opencode/blob.bin');
+    expect(release.files!.map(([path]) => path)).toContain('data/blob.bin');
     expect(release.archive_reason).toContain(`exceeds the ${32 * 1024}-byte config archive limit`);
     expect(release.archive_reason).toContain('`kortix validate` lists the largest files');
     expect(store.objects.size).toBe(0);
@@ -620,8 +636,7 @@ describe('buildConfigRelease', () => {
     const sha = commit(
       {
         'kortix.yaml': MANIFEST('first'),
-        '.kortix/opencode/opencode.json': '{}\n',
-        '.kortix/opencode/blob.bin': randomBytes(64 * 1024),
+        'data/blob.bin': randomBytes(64 * 1024),
         '.gitattributes': 'assets/** export-ignore\n',
         'assets/skip.bin': randomBytes(1024),
       },
@@ -630,7 +645,7 @@ describe('buildConfigRelease', () => {
     const release = await buildConfigRelease(project, sha, 'project', { store, archiveLimit: 32 * 1024 });
     const paths = release.files!.map(([path]) => path);
     expect(release.archive).toBeNull();
-    expect(paths).toContain('.kortix/opencode/blob.bin');
+    expect(paths).toContain('data/blob.bin');
     expect(paths.some((path) => path.startsWith('assets/'))).toBe(false);
     expect(release.release_id).toBe(configReleaseId(release.config_tree_id!, release.compiled_governance_etag));
   });
@@ -641,7 +656,7 @@ describe('buildConfigRelease', () => {
     const release = await buildConfigRelease(project, sha, 'project', { store });
     expect(release.release_id).toMatch(/^[0-9a-f]{64}$/);
     expect(release.archive?.bytes).toBeGreaterThan(0);
-    expect(release.files?.length).toBe(7);
+    expect(release.files?.length).toBe(6);
   });
 
   test('caches by (project, commit, variant)', async () => {
@@ -655,7 +670,7 @@ describe('buildConfigRelease', () => {
   });
 
   test('every descriptor follows the base branch and carries its archive', async () => {
-    // There is no second mode. A session that edited its own config dir under
+    // There is no second mode. A session that edited its own config under
     // /workspace still receives the base branch's release; its edits reach the
     // box only once they are pushed to the base branch.
     const sha = seed();
@@ -703,14 +718,14 @@ describe('mirror helpers', () => {
   test('isTreeObject accepts a tree and rejects a blob, a commit, and junk', async () => {
     const sha = seed();
     const mirror = await refreshMirror(project);
-    const tree = run('git', ['rev-parse', `${sha}:.kortix/opencode`], mirror);
+    const tree = run('git', ['rev-parse', `${sha}:agents`], mirror);
     const blob = run('git', ['rev-parse', `${sha}:kortix.yaml`], mirror);
     expect(await isTreeObject(mirror, tree)).toBe(true);
     expect(await isTreeObject(mirror, blob)).toBe(false);
     expect(await isTreeObject(mirror, sha)).toBe(false);
     expect(await isTreeObject(mirror, 'f'.repeat(40))).toBe(false);
     expect(await isTreeObject(mirror, 'HEAD')).toBe(false);
-    expect((await listConfigFiles(mirror, tree)).length).toBe(5);
+    expect((await listConfigFiles(mirror, tree)).length).toBe(2);
   });
 });
 

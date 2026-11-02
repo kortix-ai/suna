@@ -34,3 +34,15 @@ test('desktop control translations exist in every supported locale', () => {
     }
   }
 });
+
+// Catalog releases must remain valid independently of unrelated source-copy findings.
+test('every release locale has complete, valid translations', { timeout: 60_000 }, () => {
+  const result = spawnSync(process.execPath, ['scripts/audit-i18n.mjs'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  for (const locale of ['de', 'it', 'zh', 'ja', 'pt', 'fr', 'es', 'sr']) {
+    assert.match(result.stdout, new RegExp(`${locale}: \\d+ leaf keys, 0 missing, 0 extra, 0 invalid`));
+  }
+});

@@ -15,6 +15,8 @@ import { callerKortixSessionId } from '../middleware/caller-session';
 import { rejectSandboxTokens } from '../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { actorOf } from '../iam/actor';
+import { PROJECT_ACTIONS } from '../iam/actions';
+import { listAccessible } from '../iam/authorize';
 import { visibleDirectory } from '../iam/directory-visibility';
 import { loadProjectForUser } from '../projects/surface';
 import { ensureAgentServiceAccount } from '../repositories/service-accounts';
@@ -26,6 +28,7 @@ import {
   isAccountMember,
   principalNames,
   projectAgentServiceAccount,
+  projectNames,
   shareablePrincipals,
 } from './queries';
 import { normalizeDrivePath } from './access';
@@ -57,6 +60,7 @@ import {
   type DriveRow,
   driveStats,
   driveSubjectFor,
+  driveVolume,
   privateChannelRows,
   enforceProjectMounts,
   ensureProjectDrive,
@@ -72,8 +76,25 @@ import {
   userEmails,
   writeDriveVolume,
 } from './service';
+import { type DriveUpload, openDriveUpload, sealDriveUpload } from './upload-token';
+import { parseVolumeWriteCommit } from './volume-commit';
 import {
+  assertDriveWriteFits,
+  driveFolderSizes,
+  driveLimitsFor,
+  driveVolumeUsage,
+  accountDriveUsage,
+  FOLDER_MOUNT_WARN_RATIO,
+  forgetDriveUsage,
+  MAX_DRIVE_REQUEST_BYTES,
+} from './limits';
+import {
+  type DriveLimitDetail,
   DriveStorageError,
+  type DriveStorageStatus,
+  commitVolumeUpload,
+  planVolumeUpload,
+  putVolumeUploadBlock,
   listVolumeCommits,
   listVolumeFiles,
   readVolumeFile,
@@ -86,7 +107,9 @@ import {
   type VolumeCommit,
 } from './volumes';
 
-export const MAX_DRIVE_UPLOAD_BYTES = 64 * 1024 * 1024;
+export const MAX_DRIVE_UPLOAD_BYTES = MAX_DRIVE_REQUEST_BYTES;
+/** A block of the block upload, as storage takes it. */
+const UPLOAD_BLOCK_BYTES = 1024 * 1024;
 /** The empty file that holds an otherwise empty folder in place. */
 const FOLDER_MARKER = '.keep';
 
@@ -169,12 +192,21 @@ const DriveParams = z.object({ driveId: z.string() });
 const PendingSchema = z.object({ pendingSessions: z.number() });
 const PathQuery = z.object({ path: z.string().optional() });
 
-function fail(status: 400 | 403 | 404 | 409 | 413 | 503, message: string, code?: string): never {
+function fail(
+  status: DriveStorageStatus,
+  message: string,
+  code?: string,
+  detail?: DriveLimitDetail,
+  retryAfterSeconds?: number,
+): never {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (retryAfterSeconds !== undefined) headers['retry-after'] = String(retryAfterSeconds);
   throw new HTTPException(status, {
     message,
-    res: new Response(JSON.stringify({ error: true, message, status, ...(code ? { code } : {}) }), {
+    // A limit refusal names its limit and numbers beside `code` (drives/limits.ts).
+    res: new Response(JSON.stringify({ error: true, message, status, ...(code ? { code } : {}), ...(detail ?? {}) }), {
       status,
-      headers: { 'content-type': 'application/json' },
+      headers,
     }),
   });
 }
@@ -285,12 +317,37 @@ async function withStorage<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (err) {
-    if (err instanceof DriveStorageError) fail(err.status, err.message, err.code);
+    if (err instanceof DriveStorageError) fail(err.status, err.message, err.code, err.detail, err.retryAfterSeconds);
     throw err;
   }
 }
 
 const notFound = (): never => fail(404, 'File or folder not found');
+
+/** One raw request body over 64 MiB: the SDK sends such a file in 1 MiB blocks instead. */
+const bodyTooLarge = (requested: number): never =>
+  fail(413, `One upload request carries at most ${MAX_DRIVE_UPLOAD_BYTES / 1024 / 1024} MB. Send a larger file with the block upload (POST …/files/upload).`, 'payload_too_large', {
+    limit: 'request_bytes',
+    max: MAX_DRIVE_UPLOAD_BYTES,
+    requested,
+  });
+
+/** The size of the file a write replaces, 0 when there is none: an overwrite frees what it replaces. */
+async function existingFileSize(drive: DriveRow, path: string): Promise<number> {
+  return readDriveVolume(
+    drive,
+    async (volume) => {
+      try {
+        const stat = await statVolumeFile(volume, path);
+        return stat.type === 'file' ? stat.size : 0;
+      } catch (err) {
+        if (err instanceof DriveStorageError && err.status === 404) return 0;
+        throw err;
+      }
+    },
+    () => 0,
+  );
+}
 
 /** The file's current version, as the download's ETag names it; null when there is no file. */
 async function currentFileVersion(drive: DriveRow, path: string): Promise<string | null> {
@@ -379,7 +436,11 @@ drivesApp.openapi(
     if (gate) return gate;
     const drive = await ensureProjectDrive(loaded.row.accountId, projectId);
     const caller = await callerOn(c, drive);
-    const [stats, conflicts] = await Promise.all([driveStats(drive), openConflictRows(drive.driveId)]);
+    const [stats, conflicts, limits] = await Promise.all([
+      driveStats(drive),
+      openConflictRows(drive.driveId),
+      driveLimitsFor(drive.accountId).catch(() => null),
+    ]);
     const visible = conflicts.filter((r) => folderAccess(r.path, caller.grants, caller.subject) !== 'none');
     return c.json({
       drives: [
@@ -389,10 +450,171 @@ drivesApp.openapi(
             personalFolder: caller.personalFolder,
             openConflicts: visible.length,
             stats,
+            limitBytes: limits?.projectBytes ?? null,
           }),
           sharedWithMe: sharedWithCaller(caller),
         },
       ],
+    });
+  },
+);
+
+// ─── Usage and limits ─────────────────────────────────────────────────────
+
+const DriveLimitsSchema = z
+  .object({
+    /** What this project's Files may hold; null = no Kortix limit (Platinum's still applies). */
+    projectBytes: z.number().nullable(),
+    /** What all the account's projects' Files may hold together; null = no limit. */
+    accountBytes: z.number().nullable(),
+    /** The largest one file. */
+    fileBytes: z.number(),
+    /** One raw upload request (`PUT …/files/content`); the block upload takes larger files. */
+    requestBytes: z.number(),
+    /** The largest folder a session mounts. */
+    folderMountBytes: z.number(),
+    /** Folders one session mounts at most. */
+    mountsPerSession: z.number(),
+  })
+  .openapi('DriveLimits');
+
+const DriveFolderUsageSchema = z
+  .object({
+    path: z.string(),
+    bytes: z.number(),
+    /** False when storage stopped before the end of the folder: `bytes` is then a floor. */
+    complete: z.boolean(),
+    /** `near_limit` from 80 % of `folderMountBytes`; `over_limit` past it: sessions cannot mount the folder. */
+    state: z.enum(['ok', 'near_limit', 'over_limit']),
+  })
+  .openapi('DriveFolderUsage');
+
+const DriveUsageSchema = z
+  .object({
+    driveId: z.string(),
+    projectId: z.string(),
+    /** What the project's Files hold now; null when storage could not say. */
+    usedBytes: z.number().nullable(),
+    fileCount: z.number().nullable(),
+    limits: DriveLimitsSchema,
+    /** The account's Files across its projects, when the account has a limit. */
+    account: z.object({ usedBytes: z.number(), limitBytes: z.number(), complete: z.boolean() }).nullable(),
+    /** The folders the caller can see that sessions mount, each against the folder-mount cap. */
+    folders: z.array(DriveFolderUsageSchema),
+  })
+  .openapi('DriveUsage');
+
+const LimitsShape = (l: Awaited<ReturnType<typeof driveLimitsFor>>) => ({
+  projectBytes: l.projectBytes,
+  accountBytes: l.accountBytes,
+  fileBytes: l.fileBytes,
+  requestBytes: l.requestBytes,
+  folderMountBytes: l.folderMountBytes,
+  mountsPerSession: l.mountsPerSession,
+});
+
+// GET /v1/drives/usage?account_id=
+drivesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/usage',
+    tags: ['drives'],
+    summary: 'Files storage of an account, per project',
+    description:
+      'The account’s total Files storage against the plan’s limits, and what each project the caller may read holds. Needs `billing.read` on the account (`account_id`, else the caller’s own); a project the caller cannot read is counted in the total but not listed.',
+    ...auth,
+    request: { query: z.object({ account_id: z.string().optional() }) },
+    responses: {
+      200: json(
+        z.object({
+          accountId: z.string(),
+          usedBytes: z.number(),
+          /** False when storage could not say what some project holds. */
+          complete: z.boolean(),
+          limits: DriveLimitsSchema,
+          projects: z.array(
+            z.object({ projectId: z.string(), name: z.string(), driveId: z.string(), usedBytes: z.number().nullable(), fileCount: z.number().nullable() }),
+          ),
+        }),
+        'Files storage',
+      ),
+      ...errors(401, 403),
+    },
+  }),
+  async (c) => {
+    const { resolveBillingReadAccountId } = await import('../billing/http-require-billing-write');
+    const accountId = await resolveBillingReadAccountId(c);
+    // billing.read shows the account's total, not every project's name: the
+    // rows are the projects the caller may read (owners and admins: all), as
+    // the account cost rollup does (router/routes/usage.ts).
+    const [limits, usage, accessible] = await Promise.all([
+      driveLimitsFor(accountId),
+      accountDriveUsage(accountId),
+      actorOf(c, accountId).then((actor) => listAccessible(actor, PROJECT_ACTIONS.PROJECT_READ, 'project')),
+    ]);
+    const visible = usage.projects.filter((p) =>
+      accessible.mode === 'all' ? true : accessible.mode === 'allow_only' ? accessible.allowed.has(p.projectId) : false,
+    );
+    const names = await projectNames(visible.map((p) => p.projectId));
+    return c.json({
+      accountId,
+      usedBytes: usage.usedBytes,
+      complete: usage.complete,
+      limits: LimitsShape(limits),
+      projects: visible
+        .map((p) => ({ ...p, name: names.get(p.projectId) ?? '' }))
+        .sort((a, b) => (b.usedBytes ?? 0) - (a.usedBytes ?? 0)),
+    });
+  },
+);
+
+// GET /v1/drives/:driveId/usage
+drivesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{driveId}/usage',
+    tags: ['drives'],
+    summary: 'What the project’s Files hold, and their limits',
+    description:
+      'The project’s Files against its plan’s limits (one file, one folder a session mounts, the project, the account), and each folder the caller can see that sessions mount, so a folder near the folder-mount cap shows before a session fails to mount it.',
+    ...auth,
+    request: { params: DriveParams },
+    responses: { 200: json(DriveUsageSchema, 'Usage'), ...errors(401, 403, 404) },
+  }),
+  async (c) => {
+    const caller = await loadDrive(c);
+    const drive = caller.drive;
+    const limits = await driveLimitsFor(drive.accountId);
+    const candidates = [...new Set([caller.personalFolder, ...caller.grants.map((g) => g.path)])].filter(
+      (p): p is string => !!p && p !== '/' && p !== USERS_DIR && folderAccess(p, caller.grants, caller.subject) !== 'none',
+    );
+    const [usage, account, sizes] = await Promise.all([
+      driveVolumeUsage(drive),
+      limits.accountBytes === null ? Promise.resolve(null) : accountDriveUsage(drive.accountId),
+      driveFolderSizes(drive, candidates),
+    ]);
+    const folders = [...sizes.values()]
+      .map((f) => ({
+        ...f,
+        state:
+          f.bytes > limits.folderMountBytes
+            ? ('over_limit' as const)
+            : f.bytes >= limits.folderMountBytes * FOLDER_MOUNT_WARN_RATIO
+              ? ('near_limit' as const)
+              : ('ok' as const),
+      }))
+      .sort((a, b) => b.bytes - a.bytes);
+    return c.json({
+      driveId: drive.driveId,
+      projectId: drive.projectId ?? '',
+      usedBytes: usage?.usedBytes ?? null,
+      fileCount: usage?.fileCount ?? null,
+      limits: LimitsShape(limits),
+      account:
+        account && limits.accountBytes !== null
+          ? { usedBytes: account.usedBytes, limitBytes: limits.accountBytes, complete: account.complete }
+          : null,
+      folders,
     });
   },
 );
@@ -516,12 +738,12 @@ drivesApp.openapi(
     path: '/{driveId}/files/content',
     tags: ['drives'],
     summary: 'Upload a file',
-    description: `Raw request body, at most ${MAX_DRIVE_UPLOAD_BYTES} bytes. Replaces an existing file at the path. With \`If-Match\` (the ETag the file was downloaded with), a file changed since then is refused with 409 \`file_changed\`.`,
+    description: `Raw request body, at most ${MAX_DRIVE_UPLOAD_BYTES} bytes (413 \`payload_too_large\`). Replaces an existing file at the path. With \`If-Match\` (the ETag the file was downloaded with), a file changed since then is refused with 409 \`file_changed\`. A file that does not fit the Files limits (\`GET …/usage\`) is refused before its bytes are read: 403 \`storage_limit_exceeded\` (\`limit\`: \`project_bytes\` or \`account_bytes\`, with \`max\`, \`used\`, \`requested\`), 413 \`file_too_large\` (\`limit: file_bytes\`); a write into a folder sessions mount that would take it past the folder-mount cap answers 422 \`sub_path_too_large\`; busy storage answers 429 with \`Retry-After\`.`,
     ...auth,
     request: { params: DriveParams, query: z.object({ path: z.string() }) },
     responses: {
       200: json(z.object({ path: z.string(), size: z.number(), version: z.string().optional() }), 'Uploaded'),
-      ...errors(400, 401, 403, 404, 409, 413, 503),
+      ...errors(400, 401, 403, 404, 409, 413, 422, 429, 503),
     },
   }),
   async (c) => {
@@ -530,9 +752,13 @@ drivesApp.openapi(
     if (parentOf(path) === '/' || parentOf(path) === USERS_DIR) fail(400, 'Put files in a folder');
     need(caller, path, 'write');
     const declared = Number(c.req.header('content-length') ?? NaN);
-    if (Number.isFinite(declared) && declared > MAX_DRIVE_UPLOAD_BYTES) fail(413, 'File is too large');
+    if (Number.isFinite(declared) && declared > MAX_DRIVE_UPLOAD_BYTES) bodyTooLarge(declared);
+    // The limits are checked on the declared size before the body is read, so
+    // an upload that cannot fit is refused before its bytes travel.
+    if (Number.isFinite(declared)) await withStorage(() => assertDriveWriteFits(caller.drive, { bytes: declared, replaces: () => existingFileSize(caller.drive, path) }));
     const body = new Uint8Array(await c.req.arrayBuffer());
-    if (body.byteLength > MAX_DRIVE_UPLOAD_BYTES) fail(413, 'File is too large');
+    if (body.byteLength > MAX_DRIVE_UPLOAD_BYTES) bodyTooLarge(body.byteLength);
+    if (!Number.isFinite(declared)) await withStorage(() => assertDriveWriteFits(caller.drive, { bytes: body.byteLength, replaces: () => existingFileSize(caller.drive, path) }));
     // A save from an editor names the version it was opened at (the download's
     // ETag). Someone else's write since then refuses the save instead of
     // silently replacing their change. Storage enforces it atomically with the
@@ -553,11 +779,167 @@ drivesApp.openapi(
       sessionId: callerKortixSessionId(c),
     });
     noteDriveWrite(caller.drive.driveId);
+    forgetDriveUsage(caller.drive.platinumVolumeName);
     // The version this write made, as storage answered it: a read afterwards
     // could name a later save's version and let the next save clobber it.
     const version = ifMatch && written.version ? `"${bareVersion(written.version)}"` : null;
     if (version) c.header('etag', version);
     return c.json({ path: written.path, size: written.size, ...(version ? { version } : {}) });
+  },
+);
+
+// The block upload, for files of any size (the PUT above takes at most 64
+// MiB): plan names the file and the sha256 of each 1 MiB block, storage
+// answers which blocks it lacks, only those are sent, and the commit lands
+// the whole file at once. The upload id is sealed to the caller, the drive
+// and the path (drives/upload-token.ts); write access at the path is checked
+// again at every block and at the commit.
+
+const UploadParams = z.object({ driveId: z.string(), uploadId: z.string() });
+
+/** Storage forgot the upload: it lapsed (16 min without a block), was committed, or was cancelled. */
+async function withUploadStorage<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await withStorage(fn);
+  } catch (err) {
+    if (err instanceof HTTPException && err.status === 404) fail(404, 'The upload expired. Start it again.', 'upload_not_found');
+    throw err;
+  }
+}
+
+/** The upload the caller planned on this drive, with write access at its path checked now. */
+async function callerUpload(c: DriveContext): Promise<{ caller: Caller; upload: DriveUpload }> {
+  const caller = await loadDrive(c);
+  const upload = openDriveUpload(c.req.param('uploadId') ?? '', { driveId: caller.drive.driveId, userId: caller.userId });
+  if (!upload) fail(404, 'Upload not found', 'upload_not_found');
+  need(caller, upload.path, 'write');
+  return { caller, upload };
+}
+
+// POST /v1/drives/:driveId/files/upload
+drivesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{driveId}/files/upload',
+    tags: ['drives'],
+    summary: 'Start a block upload',
+    description:
+      '`blocks` is the lowercase sha256 of each 1 MiB block of the file, in order (the last may be short). Answers the upload id and the blocks storage lacks: send each with `PUT …/files/upload/{uploadId}/blocks/{sha}`, then commit. Replaces an existing file at the path. With `If-Match`, a file changed since is refused with 409 `file_changed`, here and at the commit. An upload without a block for 16 minutes expires.',
+    ...auth,
+    request: {
+      params: DriveParams,
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: z.object({
+              path: z.string(),
+              size: z.number().int().positive(),
+              blocks: z.array(z.string().regex(/^[0-9a-f]{64}$/)),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.object({ uploadId: z.string(), missing: z.array(z.string()), expiresAt: z.string().nullable() }), 'Planned'),
+      ...errors(400, 401, 403, 404, 409, 413, 422, 429, 503),
+    },
+  }),
+  async (c) => {
+    const caller = await loadDrive(c);
+    const { path: rawPath, size, blocks } = c.req.valid('json') as { path: string; size: number; blocks: string[] };
+    const path = drivePath(rawPath, { allowRoot: false });
+    if (parentOf(path) === '/' || parentOf(path) === USERS_DIR) fail(400, 'Put files in a folder');
+    need(caller, path, 'write');
+    if (blocks.length !== Math.ceil(size / UPLOAD_BLOCK_BYTES)) fail(400, `A file of ${size} bytes has ${Math.ceil(size / UPLOAD_BLOCK_BYTES)} blocks`);
+    // Before any block is sent: a file that does not fit is refused here.
+    await withStorage(() => assertDriveWriteFits(caller.drive, { bytes: size, replaces: () => existingFileSize(caller.drive, path) }));
+    const ifMatch = c.req.header('if-match');
+    if (ifMatch) {
+      const current = await withStorage(() => currentFileVersion(caller.drive, path));
+      if (!current || !sameVersion(current, ifMatch)) fail(409, FILE_CHANGED_MESSAGE, 'file_changed');
+    }
+    const plan = (await withStorage(() =>
+      writeDriveVolume(caller.drive, (volume) => planVolumeUpload(volume, { files: [{ path, size, blocks }], overwrite: true })),
+    )) as { upload_id?: unknown; missing?: unknown; expires_at?: unknown };
+    if (typeof plan.upload_id !== 'string' || !plan.upload_id) fail(503, 'Drive storage is unavailable, try again shortly', 'drive_storage_unavailable');
+    const uploadId = sealDriveUpload({
+      uploadId: plan.upload_id,
+      driveId: caller.drive.driveId,
+      userId: caller.userId,
+      path,
+      size,
+      ...(ifMatch ? { ifMatch } : {}),
+    });
+    return c.json({
+      uploadId,
+      missing: Array.isArray(plan.missing) ? plan.missing.filter((m): m is string => typeof m === 'string') : [],
+      expiresAt: typeof plan.expires_at === 'string' ? plan.expires_at : null,
+    });
+  },
+);
+
+// PUT /v1/drives/:driveId/files/upload/:uploadId/blocks/:sha
+drivesApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{driveId}/files/upload/{uploadId}/blocks/{sha}',
+    tags: ['drives'],
+    summary: 'Send one block of a block upload',
+    description: 'Raw request body, at most 1 MiB; its sha256 must equal `sha`. Safe to send again.',
+    ...auth,
+    request: { params: UploadParams.extend({ sha: z.string() }) },
+    responses: { 204: { description: 'Stored' }, ...errors(400, 401, 403, 404, 413, 429, 503) },
+  }),
+  async (c) => {
+    const { caller, upload } = await callerUpload(c);
+    const sha = c.req.param('sha') ?? '';
+    if (!/^[0-9a-f]{64}$/.test(sha)) fail(400, 'A block is named by its lowercase sha256');
+    const declared = Number(c.req.header('content-length') ?? NaN);
+    const blockTooLarge = (requested: number): never =>
+      fail(413, 'A block is at most 1 MiB', 'payload_too_large', { limit: 'block_bytes', max: UPLOAD_BLOCK_BYTES, requested });
+    if (Number.isFinite(declared) && declared > UPLOAD_BLOCK_BYTES) blockTooLarge(declared);
+    const body = new Uint8Array(await c.req.arrayBuffer());
+    if (body.byteLength > UPLOAD_BLOCK_BYTES) blockTooLarge(body.byteLength);
+    await withUploadStorage(() => putVolumeUploadBlock(driveVolume(caller.drive), upload.uploadId, sha, body));
+    return c.body(null, 204);
+  },
+);
+
+// POST /v1/drives/:driveId/files/upload/:uploadId/commit
+drivesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{driveId}/files/upload/{uploadId}/commit',
+    tags: ['drives'],
+    summary: 'Commit a block upload',
+    description: 'Lands the whole file at once, once every block storage lacked was sent. Safe to send again: a commit that landed answers the same.',
+    ...auth,
+    request: { params: UploadParams },
+    responses: {
+      200: json(z.object({ path: z.string(), size: z.number() }), 'Uploaded'),
+      ...errors(400, 401, 403, 404, 409, 503),
+    },
+  }),
+  async (c) => {
+    const { caller, upload } = await callerUpload(c);
+    // ponytail: storage's commit takes no If-Match, so the check and the commit
+    // are two steps; a save landing between them is overwritten. Add it when storage does.
+    if (upload.ifMatch) {
+      const current = await withStorage(() => currentFileVersion(caller.drive, upload.path));
+      if (!current || !sameVersion(current, upload.ifMatch)) fail(409, FILE_CHANGED_MESSAGE, 'file_changed');
+    }
+    const committed = await withUploadStorage(() =>
+      writeDriveVolume(caller.drive, (volume) => commitVolumeUpload(volume, upload.uploadId)),
+    );
+    await recordDriveCommitAuthor(caller.drive.driveId, parseVolumeWriteCommit(committed), {
+      userId: caller.userId,
+      sessionId: callerKortixSessionId(c),
+    });
+    noteDriveWrite(caller.drive.driveId);
+    forgetDriveUsage(caller.drive.platinumVolumeName);
+    return c.json({ path: upload.path, size: upload.size });
   },
 );
 
@@ -671,6 +1053,7 @@ drivesApp.openapi(
     for (const g of shared) await removeFolderGrant(caller.drive, g.grantId!);
     const pendingSessions = shared.length ? await enforceProjectMounts(caller.drive) : 0;
     noteDriveWrite(caller.drive.driveId);
+    forgetDriveUsage(caller.drive.platinumVolumeName);
     if (pendingSessions) return c.json({ pendingSessions }, 202);
     return c.body(null, 204);
   },
@@ -1118,6 +1501,7 @@ drivesApp.openapi(
       throw err;
     }
     noteDriveWrite(caller.drive.driveId);
+    forgetDriveUsage(caller.drive.platinumVolumeName);
     return c.body(null, 204);
   },
 );

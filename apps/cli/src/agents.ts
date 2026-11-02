@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { AGENTS_DIR, LEGACY_OPENCODE_CONFIG_DIR, SKILLS_DIR } from '@kortix/manifest-schema/layout';
+import { AGENTS_DIR, SKILLS_DIR } from '@kortix/manifest-schema/layout';
 
 export type CodingAgent = 'claude' | 'codex' | 'pi' | 'cursor';
 
@@ -50,35 +50,14 @@ interface AgentLink {
   target: string;
 }
 
-/** Where this checkout keeps its skills and agents. */
-interface LocalLayout {
-  skills: string;
-  agents: string;
-}
-
-/**
- * The root layout, unless the checkout is a legacy project: one with
- * `.kortix/opencode` and none of the root folders, whose links must point at
- * the legacy paths or they dangle.
- */
-function localLayout(repoRoot: string): LocalLayout {
-  const has = (path: string) => existsSync(resolve(repoRoot, path));
-  const legacy = has(LEGACY_OPENCODE_CONFIG_DIR) && ![SKILLS_DIR, AGENTS_DIR].some(has);
-  return legacy
-    ? { skills: `${LEGACY_OPENCODE_CONFIG_DIR}/skills`, agents: `${LEGACY_OPENCODE_CONFIG_DIR}/agents` }
-    : { skills: SKILLS_DIR, agents: AGENTS_DIR };
-}
-
-function agentLinks(layout: LocalLayout): Partial<Record<CodingAgent, readonly AgentLink[]>> {
-  return {
-    claude: [
-      { path: '.claude/skills', target: `../${layout.skills}` },
-      { path: '.claude/agents', target: `../${layout.agents}` },
-    ],
-    codex: [{ path: '.agents/skills', target: `../${layout.skills}` }],
-    pi: [{ path: '.pi/skills', target: `../${layout.skills}` }],
-  };
-}
+const AGENT_LINKS: Partial<Record<CodingAgent, readonly AgentLink[]>> = {
+  claude: [
+    { path: '.claude/skills', target: `../${SKILLS_DIR}` },
+    { path: '.claude/agents', target: `../${AGENTS_DIR}` },
+  ],
+  codex: [{ path: '.agents/skills', target: `../${SKILLS_DIR}` }],
+  pi: [{ path: '.pi/skills', target: `../${SKILLS_DIR}` }],
+};
 
 export interface WireAgentsInput {
   repoRoot: string;
@@ -100,11 +79,9 @@ export function wireCodingAgents(input: WireAgentsInput): WireAgentsResult {
   const written: string[] = [];
   const skipped: string[] = [];
   let wantAgentsMd = false;
-  const layout = localLayout(input.repoRoot);
-  const links = agentLinks(layout);
 
   for (const agent of input.agents) {
-    for (const link of links[agent] ?? []) {
+    for (const link of AGENT_LINKS[agent] ?? []) {
       const abs = resolve(input.repoRoot, link.path);
       try {
         mkdirSync(dirname(abs), { recursive: true });
@@ -132,7 +109,7 @@ export function wireCodingAgents(input: WireAgentsInput): WireAgentsResult {
   if (wantAgentsMd) {
     const abs = resolve(input.repoRoot, 'AGENTS.md');
     if (handleExisting(abs, input.overwrite)) {
-      writeFileSync(abs, agentsPointer(layout), 'utf8');
+      writeFileSync(abs, AGENTS_POINTER, 'utf8');
       written.push('AGENTS.md');
     } else {
       skipped.push('AGENTS.md');
@@ -160,13 +137,12 @@ function handleExisting(abs: string, overwrite: boolean): boolean {
   return false;
 }
 
-function agentsPointer(layout: LocalLayout): string {
-  return `# Kortix project
+const AGENTS_POINTER = `# Kortix project
 
 This repository is a [Kortix](https://kortix.ai) project. The manifest is
 \`kortix.yaml\`: it registers the skills, tools, commands and extensions, and
-declares each agent. Agent prompts live in \`${layout.agents}/\`, skills in
-\`${layout.skills}/\`.
+declares each agent. Agent prompts live in \`${AGENTS_DIR}/\`, skills in
+\`${SKILLS_DIR}/\`.
 The skills are available through each wired tool's native discovery location.
 
 Whenever the user asks about Kortix — \`kortix.yaml\`, triggers, secrets, the
@@ -176,4 +152,3 @@ canonical reference.
 
 For any other task, proceed normally.
 `;
-}

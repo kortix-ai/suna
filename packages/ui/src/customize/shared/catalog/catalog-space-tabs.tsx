@@ -1,3 +1,5 @@
+import { useTranslations } from '../../../i18n';
+
 import type { SpaceGroup } from '@kortix/sdk';
 
 import { CountBadge } from '../../../primitives/count-badge';
@@ -21,14 +23,15 @@ export function CatalogSpaceTabs<T>({
   value: string;
   onValueChange: (value: string) => void;
 }) {
+  const t = useTranslations('spaces');
   // Only worth a filter when the project actually splits into spaces.
   const hasRealSplit = groups.some((g) => !g.isDefault);
   if (!hasRealSplit) return null;
 
   return (
     <Tabs value={value} onValueChange={onValueChange}>
-      <TabsListCompact aria-label="Filter by space">
-        <TabsTriggerCompact value={ALL_SPACES}>All</TabsTriggerCompact>
+      <TabsListCompact aria-label={t('filter')}>
+        <TabsTriggerCompact value={ALL_SPACES}>{t('all')}</TabsTriggerCompact>
         {groups.map((group) => (
           <TabsTriggerCompact key={group.name} value={group.name}>
             {group.label}

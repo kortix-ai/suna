@@ -3,16 +3,27 @@ import { describe, expect, test } from 'bun:test';
 import type { KeyEvent } from '@opentui/core';
 
 import { ACCOUNT_KEYS } from './features/account/keys.ts';
+import { APPROVALS_KEYS } from './features/approvals/keys.ts';
 import { APPS_KEYS } from './features/apps/keys.ts';
+import { ARTIFACTS_KEYS } from './features/artifacts/keys.ts';
+import { AUDIT_KEYS } from './features/audit/keys.ts';
 import { CUSTOMIZE_KEYS } from './features/customize/keys.ts';
+import { DRIVE_KEYS } from './features/drive/keys.ts';
 import { FILES_KEYS } from './features/files/keys.ts';
+import { GOALS_KEYS } from './features/goals/keys.ts';
+import { INBOX_KEYS } from './features/inbox/keys.ts';
 import { LINKS_KEYS } from './features/links/keys.ts';
 import { LOGIN_KEYS } from './features/login/keys.ts';
+import { LOOPS_KEYS } from './features/loops/keys.ts';
+import { MEMORY_KEYS } from './features/memory/keys.ts';
 import { PORTS_KEYS } from './features/ports/keys.ts';
+import { REPO_KEYS } from './features/repo/keys.ts';
 import { REVIEW_KEYS } from './features/review/keys.ts';
+import { ROOMS_KEYS } from './features/rooms/keys.ts';
 import { COMPOSER_KEYMAP } from './features/session/composer/keys.ts';
 import { TRANSCRIPT_KEYS } from './features/session/transcript/keys.ts';
 import { SIDEBAR_KEYS } from './features/sidebar/keys.ts';
+import { SPACES_KEYS } from './features/spaces/keys.ts';
 import { TERMINAL_KEYMAP } from './features/terminal/keys.ts';
 import {
   KEYMAP,
@@ -111,6 +122,17 @@ describe('allBindings', () => {
     ['login', LOGIN_KEYS],
     ['ports', PORTS_KEYS],
     ['links', LINKS_KEYS],
+    ['drive', DRIVE_KEYS],
+    ['repo', REPO_KEYS],
+    ['artifacts', ARTIFACTS_KEYS],
+    ['inbox', INBOX_KEYS],
+    ['approvals', APPROVALS_KEYS],
+    ['goals', GOALS_KEYS],
+    ['memory', MEMORY_KEYS],
+    ['spaces', SPACES_KEYS],
+    ['rooms', ROOMS_KEYS],
+    ['loops', LOOPS_KEYS],
+    ['audit', AUDIT_KEYS],
   ];
 
   test('every feature table is included, whole', () => {
@@ -182,7 +204,6 @@ describe('matchesChord', () => {
       true,
     );
     expect(matchesBinding(key('t', { meta: true }), 'panel.terminal')).toBe(true);
-    expect(matchesBinding(key('o', { meta: true }), 'attach')).toBe(true);
     expect(matchesBinding(key('x', { meta: true }), 'terminal.close')).toBe(true);
   });
 

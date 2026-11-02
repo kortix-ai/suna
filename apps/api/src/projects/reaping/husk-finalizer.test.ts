@@ -34,6 +34,9 @@ mock.module('../../sandbox-proxy/backend', () => ({
 }));
 
 const { finalizeHuskTurn } = await import('./husk-finalizer');
+const { __resetRuntimeCapabilitiesMemo } = await import('../session-lifecycle/runtime-fetch');
+/** What the box's `/kortix/health` lists: answered out of band, never queued or recorded. */
+let capabilities: string[] = [];
 
 const TARGET = {
   sandboxId: 'sb-1',
@@ -70,7 +73,10 @@ beforeEach(() => {
   serviceKey = 'daemon-service-key';
   fetchCalls = [];
   responses = [];
+  capabilities = [];
+  __resetRuntimeCapabilitiesMemo();
   globalThis.fetch = (async (url: unknown, init: unknown) => {
+    if (String(url).endsWith('/kortix/health')) return Response.json({ capabilities });
     const request = (init ?? {}) as { method?: string; headers?: Record<string, string> };
     fetchCalls.push({
       url: String(url),
@@ -345,5 +351,26 @@ describe('finalizeHuskTurn', () => {
         expect(verified.context.sandboxId).toBe('sb-1');
       }
     }
+  });
+
+  describe('on a box that serves its own session log (runtime.log.v1)', () => {
+    const LOG_URL = 'https://daemon.example.test/kortix/runtime/log?limit=4';
+    const log = (...messages: Array<Record<string, unknown>>) => async () => Response.json({ thread_id: 'ses_root', messages, has_more: false });
+    const prompt = { message_id: 'msg_turn_1', role: 'user', status: 'complete' };
+    const reply = (status: string) => ({ message_id: 'msg_1', role: 'assistant', reply_to: 'msg_turn_1', status });
+
+    test('reads the log page, not the transcript route, and finalizes a reply still streaming', async () => {
+      capabilities = ['runtime.actions.v1', 'runtime.log.v1'];
+      responses = [log(prompt, reply('streaming')), log(prompt, reply('streaming')), status(200), log(prompt, reply('aborted'))];
+      expect(await finalizeHuskTurn(TARGET, { settleMs: 0 })).toBe('finalized');
+      expect(fetchCalls.map((call) => call.url)).toEqual([LOG_URL, LOG_URL, ABORT_URL, LOG_URL]);
+    });
+
+    test('a reply that ended is no husk: nothing is aborted', async () => {
+      capabilities = ['runtime.actions.v1', 'runtime.log.v1'];
+      responses = [log(prompt, reply('complete'))];
+      expect(await finalizeHuskTurn(TARGET, { settleMs: 0 })).toBe('not_husk');
+      expect(fetchCalls.map((call) => call.url)).toEqual([LOG_URL]);
+    });
   });
 });

@@ -69,7 +69,6 @@
     "oauthExpired": "Autorisierung abgelaufen. Versuchen Sie es erneut.",
     "oauthPrivateDescription": "Nutzen Sie Ihr ChatGPT-Plus- oder Pro-Abo in diesem Projekt. Neue Konten sind privat, bis Sie sie teilen.",
     "chatGptSubscription": "ChatGPT-Abo",
-    "useYourChatGpt": "Eigenes ChatGPT-Abo nutzen",
     "manageChatGptAccounts": "ChatGPT-Konten verwalten",
     "connect": "Verbinden",
     "connectChatGpt": "ChatGPT verbinden",
@@ -96,7 +95,7 @@
     "deleteError": "Geheimnis konnte nicht gelöscht werden",
     "accessError": "Zugriff konnte nicht geändert werden",
     "sharedTitle": "Anbieter-Verbindungen",
-    "sharedDescription": "Fügen Sie API-Schlüssel und ChatGPT-Konten hinzu. Neue Verbindungen sind privat, bis Sie sie teilen. Wählen Sie pro Sitzung, welche genutzt werden.",
+    "sharedDescription": "Füge API-Schlüssel, ChatGPT-Konten und Claude-Konten hinzu. Neue sind privat, bis du sie teilst. Wähle, welche jede Sitzung verwendet.",
     "legacyProjectKey": "Bestehender Projektschlüssel · Wird verwendet, wenn für diese Sitzung keine Schlüssel ausgewählt sind",
     "keyCount": "{count, plural, one {# Schlüssel} other {# Schlüssel}}",
     "providerKeysFor": "API-Schlüssel für {provider}",
@@ -163,7 +162,19 @@
     "opencodeGoConnect": "OpenCode Go verbinden",
     "opencodeGoReconnect": "OpenCode Go erneut verbinden",
     "opencodeGoDisconnect": "OpenCode Go trennen",
-    "opencodeGoFailed": "OpenCode Go konnte nicht verbunden werden"
+    "opencodeGoFailed": "OpenCode Go konnte nicht verbunden werden",
+    "claudeAccounts": "Claude-Konten",
+    "noClaudeAccounts": "Noch keine Claude-Konten",
+    "connectClaude": "Mit Claude anmelden",
+    "claudeOauthPrivateDescription": "Nutze deinen Claude-Pro- oder Max-Plan für Claude-Modelle in diesem Projekt. Neue Konten sind privat, bis du sie teilst.",
+    "claudeOauthCreationDescription": "Melde dich mit deinem Claude-Pro- oder Max-Konto an. Kortix speichert die Anmeldung verschlüsselt und zeigt sie nie an.",
+    "claudeDefaultAccountLabel": "Claude · {name}",
+    "claudeAccountConnected": "Claude-Konto verbunden",
+    "claudeAccountReconnected": "Claude-Konto neu verbunden",
+    "claudeConnectFailed": "Die Claude-Anmeldung wurde nicht abgeschlossen. Versuche es erneut.",
+    "claudeReconnectDescription": "Melde dich erneut mit Claude an. Das Konto behält Namen, Zugriff und Sitzungsauswahl.",
+    "claudeAccountLabelPlaceholder": "z. B. Mein Claude-Konto",
+    "claudeDeleteAccountConfirmTitle": "Dieses Claude-Konto für alle löschen?"
   },
   "secrets": {
     "undecryptable": {
@@ -552,10 +563,6 @@
         "feature-flags": {
           "label": "Feature-Flags",
           "description": "Funktionen, die Sie aktivieren können, bevor sie allgemein verfügbar sind."
-        },
-        "upgrades": {
-          "label": "Upgrades",
-          "description": "Änderungen, die ein Agent an diesem Projekt vornimmt. Jeder Lauf öffnet eine Änderungsanfrage zur Prüfung. Nichts wird automatisch zusammengeführt."
         },
         "profile": {
           "label": "Profil",
@@ -1255,10 +1262,6 @@
           "name": "Marktplatz",
           "description": "Suchen und installieren Sie Skills aus Community- und Anbieterregistern. Quellen, Updates und Teambreiche ändern sich noch."
         },
-        "meta_agent": {
-          "name": "My Kortix",
-          "description": "My Kortix, der eine Agent, mit dem du sprichst. Er leitet jede Aufgabe an den passenden Agenten weiter und führt sie mit deinen Berechtigungen aus. Die Projekteinstellung ist `builtin_agents.my_kortix` in kortix.yaml; dieser Schalter gilt nur, wenn der Schlüssel nicht gesetzt ist."
-        },
         "warm_sessions": {
           "name": "Vorgewärmte Sitzungen",
           "description": "Halten Sie eine Sandbox für sofortige Sitzungsstarts bereit. Die inaktive Sandbox verbraucht Rechenleistung."
@@ -1334,6 +1337,10 @@
         "chrome": {
           "name": "Kortix in Chrome",
           "description": "Lass eine Session deinen verbundenen Chrome-Browser nutzen. Du kannst jederzeit übernehmen oder sie stoppen."
+        },
+        "agent_teams": {
+          "name": "Agenten-Teams",
+          "description": "Eine leitende Session startet benannte Teammitglieder mit einer gemeinsamen Aufgabenliste. Jedes Teammitglied übernimmt eine Aufgabe, bearbeitet sie in seiner eigenen Session und meldet der Leitung, wenn sie erledigt ist. Du siehst jedes Teammitglied und seine Aufgaben unter dem Eingabefeld der Leitung. Nachrichten zwischen Sessions funktionieren auch ohne dieses Flag."
         }
       },
       "channelsSwitch": {
@@ -1347,24 +1354,7 @@
         "turnOff": "Ausschalten"
       },
       "wip": "Work in progress",
-      "wipNote": "Not recommended yet: it can change or break."
-    },
-    "upgrades": {
-      "available": "Verfügbare Upgrades",
-      "readOnly": "Schreibgeschützt — zum Ausführen eines Upgrades benötigen Sie Schreibzugriff auf diesen Projekt.",
-      "none": "Keine Upgrades verfügbar",
-      "upToDateDescription": "Dieser Projekt ist bereits aktuell.",
-      "upToDate": "Aktuell",
-      "run": "Ausführen",
-      "oneOff": "Einmaliges Upgrade",
-      "oneOffDescription": "Beschreiben Sie stattdessen eine einzelne Änderung. Eine Sitzung führt sie aus, prüft sie und öffnet eine Änderungsanfrage.",
-      "oneOffPlaceholder": "z. B. Den Agenten release-bot überall in deploy-bot umbenennen",
-      "runUpgrade": "Upgrade ausführen",
-      "manifestV3": {
-        "title": "Manifest auf v3 aktualisieren (kortix.yaml)",
-        "description": "Überführt kortix.toml oder eine kortix.yaml der Version 2 in Version 3: Das Projekt registriert Skills, Tools, Befehle und Erweiterungen, und jeder Agent aktiviert sie namentlich. Aktualisiert plattformverwaltete Skills und öffnet eine Änderungsanfrage zur Prüfung."
-      },
-      "agentEditorHint": "Dieses Projekt verwendet ein Manifest der Version 1. Aktualisiere es auf <code>kortix.yaml</code> Version 3, um Anweisungen, Modell, Tool-Berechtigungen und Zugriff dieses Agenten hier zu bearbeiten."
+      "wipNote": "Noch nicht empfohlen: Kann sich ändern oder ausfallen."
     },
     "plan": {
       "managedByAdmin": "Von einem Kontoadministrator verwaltet",
@@ -1407,6 +1397,7 @@
       "addCredits": "Credits hinzufügen",
       "spentThisPeriod": "In diesem Zeitraum ausgegeben",
       "compute": "Rechenleistung",
+      "storage": "Speicher",
       "total": "Gesamt",
       "history": "Verlauf",
       "historyDescription": "Kosten jeder Sitzung sowie alle hinzugefügten oder verbrauchten Credits.",
@@ -1697,10 +1688,16 @@
       "localComputer": "Dein Computer",
       "appsAndExtensions": "Apps und Erweiterungen"
     },
-    "manifestUpgrade": {
-      "title": "Auf v3 aktualisieren",
-      "description": "Dieses Projekt verwendet ein älteres Manifest. Ein Agent überführt es in <yaml>kortix.yaml</yaml> Version 3, aktualisiert verwaltete Skills und öffnet eine Änderungsanfrage. Nichts ändert sich, bis du sie genehmigst.",
-      "start": "Upgrade starten"
+    "manifestIssues": {
+      "title": "{file} hat {errors, plural, one {# Fehler} other {# Fehler}} und {warnings, plural, one {# Warnung} other {# Warnungen}}",
+      "titleErrors": "{file} hat {errors, plural, one {# Fehler} other {# Fehler}}",
+      "titleWarnings": "{file} hat {warnings, plural, one {# Warnung} other {# Warnungen}}",
+      "errorsOff": "Agenten und Trigger mit einem Fehler sind deaktiviert, bis er behoben ist.",
+      "warningsOnly": "Alles läuft weiter.",
+      "error": "Fehler",
+      "warning": "Warnung",
+      "fix": "Mit My Kortix beheben",
+      "fixInSession": "In einer neuen Sitzung beheben"
     },
     "filter": {
       "grouping": "Gruppierung",
@@ -1859,20 +1856,8 @@
     },
     "drive": "Drive",
     "repo": "Repo",
-    "customizeSidebar": "Seitenleiste anpassen",
     "searchApps": "Apps durchsuchen",
     "appsNoMatches": "Keine Treffer",
-    "customizeSidebarDescription": "Ziehe Elemente zwischen den beiden Gruppen.",
-    "resetSidebar": "Auf Standard zurücksetzen",
-    "reorderItem": "{name} verschieben",
-    "reorderHint": "Zum Neuordnen ziehen. Oder die Pfeiltasten nach oben und unten drücken; über „Mehr“ hinaus blendet das Element in der Seitenleiste aus.",
-    "reorderAnnouncement": "{name}: {group}, Position {position} von {total}",
-    "more": "Mehr",
-    "inSidebar": "Seitenleiste",
-    "underMore": "Mehr",
-    "sidebarEmpty": "Ziehe ein Element hierher, um es in der Seitenleiste anzuzeigen.",
-    "moreEmpty": "Ziehe ein Element hierher, um es unter Mehr zu verschieben.",
-    "moreCaption": "Elemente unter Mehr öffnen sich über das Menü Mehr unter der Navigation.",
     "spaces": {
       "channels": "Kanäle",
       "directMessages": "Direktnachrichten",
@@ -2656,7 +2641,7 @@
         },
         "credit": {
           "question": "Was bekomme ich für einen Credit?",
-          "answer": "1 Credit entspricht 0,01 $. Credits bezahlen den Agent-Computer, abgerechnet pro Sekunde und Ressource: {vcpuRate} pro vCPU-Stunde, {memoryRate} pro GB RAM und Stunde, {diskRate} pro GB Speicher und Monat. Die Standardmaschine mit {spec} verbraucht etwa {creditsPerHour} Credits pro Stunde, also entspricht 1 Credit etwa {minutes} Minuten. Ein gestoppter Computer kostet nichts. Credits bezahlen außerdem Kortix-Modelle zum Basispreis des Anbieters plus {fee} % Plattformgebühr. Mit eigenem API-Schlüssel sind die ersten 1.000 $ Modellnutzung pro Monat kostenlos, danach werden 5 % des Anbieterpreises mit Credits bezahlt. Ein ChatGPT-Abonnement verbraucht keine Credits."
+          "answer": "1 Credit entspricht 0,01 $. Credits bezahlen den Agent-Computer, abgerechnet pro Sekunde und Ressource: {vcpuRate} pro vCPU-Stunde, {memoryRate} pro GB RAM und Stunde, {diskRate} pro GB Speicher und Monat. Die Standardmaschine mit {spec} verbraucht etwa {creditsPerHour} Credits pro Stunde, also entspricht 1 Credit etwa {minutes} Minuten. Ein gestoppter Computer verbraucht keine Rechenleistung. Seine gespeicherten Dateien werden als Speicher abgerechnet. Credits bezahlen außerdem Kortix-Modelle zum Basispreis des Anbieters plus {fee} % Plattformgebühr. Mit eigenem API-Schlüssel sind die ersten 1.000 $ Modellnutzung pro Monat kostenlos, danach werden 5 % des Anbieterpreises mit Credits bezahlt. Ein ChatGPT-Abonnement verbraucht keine Credits."
         },
         "amounts": {
           "question": "Wie viel zahle ich pro Monat?",
@@ -2702,7 +2687,7 @@
       "hours": {
         "eyebrow": "Agent-Stunden",
         "title": "1 Credit entspricht etwa {minutes} Minuten Agent-Computer",
-        "description": "Credits bezahlen den Agent-Computer: die Cloud-Maschine, auf der dein Agent Code ausführt, im Web surft und Dateien bearbeitet. Er wird sekundengenau abgerechnet, solange er läuft, und kostet nichts, solange er gestoppt ist.",
+        "description": "Credits bezahlen den Agent-Computer: die Cloud-Maschine, auf der dein Agent Code ausführt, im Web surft und Dateien bearbeitet. Er wird sekundengenau abgerechnet, solange er läuft, und verbraucht keine Rechenleistung, solange er gestoppt ist. Seine gespeicherten Dateien werden als Speicher abgerechnet.",
         "rate": {
           "value": "1 Credit = 0,01 $",
           "note": "Jede Stufe bietet Credits zu diesem Preis."
@@ -2717,7 +2702,7 @@
         },
         "rates": {
           "title": "Compute-Preise",
-          "note": "Pro Sekunde für die reservierte Größe abgerechnet. Ein gestoppter Computer kostet nichts.",
+          "note": "Pro Sekunde für die reservierte Größe abgerechnet. Ein gestoppter Computer verbraucht keine Rechenleistung. Seine gespeicherten Dateien werden als Speicher abgerechnet.",
           "vcpu": {
             "label": "vCPU",
             "price": "{price} / Stunde"
@@ -3096,6 +3081,116 @@
       "scriptFailed": "Skript fehlgeschlagen",
       "calls": "{count, plural, one {# Tool-Aufruf} other {# Tool-Aufrufe}}",
       "noOutput": "Keine Ausgabe"
+    },
+    "kortixAction": {
+      "running": {
+        "agents": {
+          "read": "Agenten werden geprüft…",
+          "change": "Agenten werden aktualisiert…"
+        },
+        "sessions": {
+          "read": "Sitzungen werden geprüft…",
+          "change": "Sitzungen werden aktualisiert…"
+        },
+        "schedules": {
+          "read": "Zeitpläne werden geprüft…",
+          "change": "Zeitpläne werden aktualisiert…"
+        },
+        "connectors": {
+          "read": "Konnektoren werden geprüft…",
+          "change": "Konnektoren werden aktualisiert…"
+        },
+        "people": {
+          "read": "Mitglieder werden geprüft…",
+          "change": "Mitglieder werden aktualisiert…"
+        },
+        "access": {
+          "read": "Zugriff wird geprüft…",
+          "change": "Zugriff wird aktualisiert…"
+        },
+        "usage": {
+          "read": "Nutzung wird geprüft…",
+          "change": "Nutzung wird geprüft…"
+        },
+        "changeRequests": {
+          "read": "Änderungsanfragen werden geprüft…",
+          "change": "Änderungsanfrage wird aktualisiert…"
+        },
+        "memory": {
+          "read": "Erinnerungen werden geprüft…",
+          "change": "Erinnerungen werden aktualisiert…"
+        }
+      },
+      "status": {
+        "done": "Erledigt",
+        "needsYou": "Braucht dich",
+        "denied": "Braucht eine Berechtigung",
+        "error": "Nicht abgeschlossen",
+        "running": "Läuft"
+      },
+      "deniedTitle": "Braucht eine Berechtigung",
+      "grantors": "Wer sie erteilen kann",
+      "grantorsUnknown": "Alle, die dieses Projekt verwalten, können sie erteilen.",
+      "newSetting": "Neu",
+      "removedSetting": "Entfernt",
+      "opensInNewTab": "Öffnet in einem neuen Tab",
+      "showDetails": "Details anzeigen"
+    },
+    "workflow": {
+      "fallbackTitle": "Workflow",
+      "starting": "Workflow wird gestartet…",
+      "progress": "{done} von {total} erledigt",
+      "failedCount": "{failed} von {total} fehlgeschlagen",
+      "agents": "{count, plural, one {# Agent} other {# Agenten}}",
+      "background": "Läuft im Hintergrund",
+      "status": {
+        "starting": "Startet",
+        "running": "Läuft",
+        "done": "Erledigt",
+        "failed": "Fehlgeschlagen",
+        "stopped": "Gestoppt",
+        "pending": "Nicht gestartet"
+      },
+      "openAgent": "{label} öffnen",
+      "showDetails": "Details anzeigen",
+      "failedSuffix": "{count} fehlgeschlagen",
+      "resumed": "Fortgesetzt",
+      "resumedHint": "Agenten, die im früheren Lauf fertig wurden, behalten ihre Antworten.",
+      "large": "Großer Lauf",
+      "largeHint": "Dieser Lauf startet mehr als 25 Agenten. Du kannst jeden Agenten in seiner Zeile stoppen.",
+      "openRun": "Lauf öffnen",
+      "openRunLabel": "Sitzung des Laufs öffnen",
+      "backgroundIdle": "In einer eigenen Sitzung",
+      "savedName": "Gespeicherter Workflow {name}",
+      "upTo": "Bis zu {count, plural, one {# Agent} other {# Agenten}}",
+      "result": "Ergebnis",
+      "logLabel": "Workflow-Protokoll",
+      "agentsLabel": "Agenten des Workflows",
+      "filter": {
+        "label": "Agenten anzeigen",
+        "all": "Alle",
+        "running": "Laufend",
+        "failed": "Fehlgeschlagen",
+        "done": "Erledigt"
+      },
+      "filterEmpty": {
+        "running": "Kein Agent läuft.",
+        "failed": "Kein Agent ist fehlgeschlagen.",
+        "done": "Noch kein Agent ist fertig."
+      },
+      "showAll": "Alle {count} anzeigen",
+      "retry": "Wiederholung {count}",
+      "cached": "aus dem letzten Lauf",
+      "stopAgent": "{label} stoppen",
+      "stopHint": "Diesen Agenten stoppen",
+      "stopFailed": "{label} konnte nicht gestoppt werden",
+      "json": "JSON",
+      "jsonKeys": "{count, plural, one {JSON · # Schlüssel} other {JSON · # Schlüssel}}",
+      "jsonItems": "{count, plural, one {JSON · # Eintrag} other {JSON · # Einträge}}"
+    },
+    "agent": {
+      "backgroundWorking": "Arbeitet im Hintergrund",
+      "backgroundSession": "In einer eigenen Sitzung"
     }
   },
   "agentRunLimit": {
@@ -7806,8 +7901,7 @@
       "legendTool": "Tool-Ergebnisse",
       "legendOther": "Sonstiges",
       "subAgentsLabel": "Sub-Agenten",
-      "subAgentsNote": "Diese Sitzung hat Helfer-Sitzungen gestartet. Die Summen unten schließen sie ein.",
-      "combinedCost": "Gesamtkosten",
+      "subAgentsNote": "Helfer, die in dieser Sitzung liefen. Ihre Kosten sind Teil der Kosten dieser Sitzung.",
       "combinedMessages": "Nachrichten gesamt",
       "tokensIn": "Tokens eingehend",
       "tokensOut": "Tokens ausgehend",
@@ -7831,7 +7925,20 @@
       "rawFilterUser": "Du",
       "rawFilterAssistant": "Assistent",
       "rawNoMatches": "Keine passenden Nachrichten",
-      "detailsLabel": "Details"
+      "detailsLabel": "Details",
+      "costSplit": "{own} diese Sitzung · {spawned} in {count, plural, one {# gestarteten Sitzung} other {# gestarteten Sitzungen}}",
+      "costEstimated": "Aus dem Verlauf geschätzt",
+      "detailModelRequests": "Modellanfragen",
+      "spawnedLabel": "Gestartete Sitzungen",
+      "spawnedNote": "Sitzungen, die diese Sitzung gestartet hat, und die Sitzungen, die diese gestartet haben. Ihre Kosten sind in den Gesamtkosten enthalten.",
+      "spawnedCount": "{count, plural, one {Diese Sitzung und # gestartete Sitzung} other {Diese Sitzung und # gestartete Sitzungen}}",
+      "spawnedRequests": "Anfragen",
+      "spawnedCost": "Kosten",
+      "spawnedThisSession": "Diese Sitzung",
+      "spawnedTotal": "Gesamt",
+      "spawnedHidden": "{count, plural, one {# gestartete Sitzung, die du nicht öffnen kannst, ist nicht enthalten.} other {# gestartete Sitzungen, die du nicht öffnen kannst, sind nicht enthalten.}}",
+      "spawnedTruncated": "Nur die ersten 500 gestarteten Sitzungen, bis zu 10 Ebenen tief, sind enthalten.",
+      "spawnedUntitled": "Unbenannte Sitzung"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "Einheitliche Ansicht",
@@ -10923,7 +11030,6 @@
       "text18093cad2644": "Modal",
       "text180bbb19a1b2": "Das Runbook, das im Kopf einer Person lebt",
       "text1814e0a6cb50": "Verfügbare Modelle anzeigen",
-      "text1815aa434bc6": "# Schema-Version 2. Die Laufzeit ist OpenCode.",
       "text1815ae76cdc7": "Nicht bereitgestellt",
       "text1829231e85b1": "Alle Mitglieder dieses Kontos sehen wieder das Kortix-Logo, das Symbol, das Favicon und den Namen. Hochgeladene Bilder werden gelöscht.",
       "text1836d8d61ae9": "{value0} wurde aus {value1} entfernt",
@@ -12217,7 +12323,6 @@
       "text11ef24ea6e15": "Das Konto konnte nicht umbenannt werden",
       "text0223e507afd3": "Um ein anderes Konto zu verwenden, füge es in den Projekteinstellungen unter den Konten dieses Connectors hinzu und lege es als Standard fest.",
       "text073fce23e704": "      memory/ und öffne eine Änderungsanfrage mit dem",
-      "text0922e6bf143c": "harnesses/opencode/opencode.jsonc",
       "text3ed7c1e32705": "Einen Tracker zu lesen und ihn umzuschreiben sind verschiedene Aktionen. Setze den Schreibvorgang auf Ask; der Lauf hält beim Aufruf an und zeigt genau, welche Issues zusammengeführt oder geschlossen werden sollen. Nach deiner Freigabe wird er dort fortgesetzt.",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "Credits abgebucht",
@@ -12550,7 +12655,6 @@
       "text47931699ba90": "Zeitplan aktualisiert",
       "text4795dc5fb288": "Ihre aktuelle Verbindung bleibt aktiv, bis ein Ersatz gespeichert wurde.",
       "text479974eaff88": "{value0}: {value1} erfolgreich, {value2} fehlgeschlagen. {value3}: {value4}{value5}",
-      "text479d92cbfaa1": "(kortix_version 2), um die Anweisungen, das Modell, die Werkzeugberechtigungen und den Zugriff dieses Agenten hier zu bearbeiten.",
       "text47a8467a2faa": "Änderungen konnten nicht geladen werden",
       "text47b31f661d3f": "Rolle konnte nicht aktualisiert werden",
       "text47bd29075f8b": "Inhalt",
@@ -13457,7 +13561,6 @@
       "text61dac62928db": "Geplant:",
       "text61e8d44ad423": "Loslegen",
       "text61eedf5451c2": "    timezone: UTC",
-      "text61f28ba7b5a4": "kortix_version: 2",
       "text61ff61757ef1": "So funktioniert der Zugriff in diesem Konto.",
       "text6201111b83a0": "und",
       "text6201f8d3134e": "Monitorereignisse aufgenommen",
@@ -15864,7 +15967,6 @@
       "texta743aa4452d3": "Berechtigungsinhaber konnte nicht aktualisiert werden",
       "texta756e5fb5f6b": "IT braucht kein Dashboard. IT braucht eine Liste mit einer belastbaren Begründung pro Zeile, in einer Form, in der eine Genehmigung auch etwas bewirkt.",
       "texta757b331fa9a": "statusText",
-      "texta757f937ab97": "(kortix_version 2), um die Verfügbarkeit, das Modell, die Tool-Berechtigungen und den Zugriff dieses Agents hier zu bearbeiten.",
       "texta76a1fd4cef5": "Stripe-Abrechnungs-Webhook empfangen",
       "texta76ce82a9749": "Cache",
       "texta76e13b98392": "Wiederherstellen",
@@ -15955,7 +16057,6 @@
       "texta9f78a15820d": "Regel {value0} Bedingung {value1} Vergleich",
       "textaa000c983975": "Groups Resource",
       "textaa023456aca4": "ChatGPT verbinden",
-      "textaa132a97a22a": "  config_dir: harnesses/opencode",
       "textaa1c8a0b1716": "Beim Speichern werden alle Wartungsbenachrichtigungen gelöscht und der normale Zugriff wiederhergestellt.",
       "textaa2025f803e6": "Der Agent verfügt über Shell und Dateisystem. Er kann ein Paket installieren, ein Beispiel herunterladen, es ausführen, die Ausgabe prüfen und es erneut versuchen – der tatsächliche Arbeitszyklus eines Analysten statt eines einzigen Laufs mit festen Tools.",
       "textaa2e1a551c0a": "Er sammelt. Du entscheidest.",
@@ -16857,7 +16958,6 @@
       "textc3bf78fdd3b9": "Deine Bewerbung konnte nicht gesendet werden",
       "textc3c25857485f": "Kann",
       "textc3c709a999c1": "Speicher wird gelesen …",
-      "text7823a1f3af93": "Überführt kortix.toml oder eine kortix.yaml der Version 2 in Version 3: Das Projekt registriert Skills, Tools, Befehle und Erweiterungen, und jeder Agent aktiviert sie namentlich. Aktualisiert plattformverwaltete Skills und öffnet eine Änderungsanfrage zur Prüfung.",
       "textc3d2e79ebdd0": "Konnektoren",
       "textc3e3a6edeaa5": "Allgemeine Geschäftsbedingungen",
       "textc3e58a73609d": "Destruktiv",
@@ -16950,7 +17050,6 @@
       "textc634dcb25574": "Buchungen",
       "textc63adab9bd56": "Verfolge die in dieser Aufgabe verwendeten Tools und referenzierten Dateien.",
       "textc63eb6720c6e": "Privat",
-      "textc6414eb01d9a": "Änderungen, die ein Agent an diesem Arbeitsbereich vornimmt. Bei jedem Durchlauf wird eine Änderungsanforderung zur Prüfung durch Sie geöffnet – nichts wird von alleine zusammengeführt.",
       "textc6479e2f4970": "Änderungen aktualisieren",
       "textc65feb0006ea": "Arbeiter · {value0}{value1}",
       "textc661a1039aa0": "maximal",
@@ -17593,7 +17692,6 @@
       "textd83a0d814c59": "API Status zeigt ein grünes „Enabled“, der Parameter „SCIM Username“ ist Email zugeordnet und die Bereitstellung ist ohne Zurückhaltung zur Admin-Genehmigung aktiviert.",
       "textd84b8be91e7b": "Kortix — Präsentationen",
       "textd84ee1e1e08b": "Versuche kortix init oder / für Befehle",
-      "text08edd5b6dcdc": "Manifest auf v3 aktualisieren (kortix.yaml)",
       "text848f54e89660": "Läufe",
       "textb098a09c78aa": "Mit Payload testen",
       "text99733344956d": "Payload",
@@ -17775,7 +17873,6 @@
       "textdc70ef3b3338": "Ein Kanal lohnt sich nur, wenn die Antwort dort ankommt, wo die Frage gestellt wurde. Dateien gehen in beide Richtungen, und Entscheidungen, die ein Agent von dir braucht, erscheinen als Schaltflächen im Thread statt als Link an einen anderen Ort.",
       "textdc76dd6b1aff": "Bei der Kortix CLI anmelden",
       "textdc78f4d17256": "ohne MFA — sie werden nicht ausgesperrt, aber bitte sie, sich zu registrieren:",
-      "textdc7ab144ca89": "Upgrade für den vollständigen Agent-Editor",
       "textdc7ea87fdc45": "Dateien in beide Richtungen",
       "textdc8659db6d41": "Eingabe",
       "textdc8d7c5c602b": "Quellledger",
@@ -17898,7 +17995,6 @@
       "textdfea74d6d58d": "Fallback nach oben verschieben",
       "textdffb64dc7001": "Limits",
       "texte01d77b4a0bd": "Das Problem",
-      "texte02a5941602a": "Upgrades",
       "texte030ac604b81": "Bereitstellung & Sicherheitsstatus",
       "texte0362b3241c5": "Im Rahmen",
       "texte03abcb2b624": "Konnektoren und Update-Zeitfenster",
@@ -20348,10 +20444,6 @@
       "textc86ce3b8097b": "z. B. 5000",
       "textfaaf56a699c2": "Limit (Credits)",
       "texte7a241debad5": "URL",
-      "text3dd46a7b552c": "App hinzufügen",
-      "text68cf13547e38": "App per URL hinzufügen",
-      "text46bc646c9bfe": "Zeige eine beliebig gehostete Website in diesem Projekt. Kortix öffnet sie direkt hier, neben den Apps, die es betreibt.",
-      "text08e6480e9b78": "{value0} hinzugefügt",
       "text6241684827b2": "Diese Website erlaubt Kortix nicht, sie hier anzuzeigen.",
       "textdae75dce541f": "Pausiert alle Zeitpläne und Webhooks in diesem Projekt.",
       "textced57bebd466": "Schaltet die Zeitpläne und Webhooks dieses Projekts wieder ein.",
@@ -20754,7 +20846,7 @@
       "text04df836cf828": "Jede Funktion.",
       "text6fa799b6dcc6": "Besser als einzustellen.",
       "textefc30d1611b5": "Mitgliedschaftsvorteile.",
-      "text77ece565fe55": "Wir behandeln Ihr gesamtes Unternehmen wie Code. Jeder Agent, jede Skill, jede Regel, jeder Connector und jedes Stück Kontext ist eine Datei in einem einzigen Git-Repository. Jeder Agent ist ein eigener pi-Agent auf einem minimalen Open-Source-Harness, sodass Sie alles mit pi-Erweiterungen erweitern können.",
+      "texte6a48bfb5ab1": "Jeder Agent, jede Skill, jede Regel und jeder Connector ist eine Datei in einem Git-Repository. Jeder Agent ist ein eigener pi-Agent, den Sie mit pi-Erweiterungen erweitern.",
       "textc61528adb57c": "Kortix ist Open Source. Betreiben Sie es auf Kortix Cloud, in Ihrer VPC oder in Ihrem eigenen On-Premise-Netzwerk, mit jedem Modell und Ihren eigenen Schlüsseln.",
       "textbf8abe5b1667": "Multiplayer. Unternehmen als Code. Souverän.",
       "text1445799c033a": "Mehr erfahren",
@@ -21573,13 +21665,13 @@
     "connectorError": "Error",
     "missing": "Missing",
     "connectorsEmptyTitle": "No connectors yet",
-    "connectorsEmptyDescription": "Connect an app in the project, then choose it here.",
-    "secretsDescription": "Project secrets this agent's sessions get as environment variables.",
+    "connectorsEmptyDescription": "Verbinde eine App im Projekt und wähle sie dann hier aus.",
+    "secretsDescription": "Projektgeheimnisse, die Sitzungen dieses Agenten als Umgebungsvariablen erhalten.",
     "secretNotSet": "Not set",
     "projectGroup": "Project",
-    "secretsEmptyProject": "No project secrets yet.",
+    "secretsEmptyProject": "Noch keine Projektgeheimnisse.",
     "secretsEmptyTitle": "No secrets yet",
-    "secretsEmptyDescription": "Secrets added to the project show up here for this agent.",
+    "secretsEmptyDescription": "Dem Projekt hinzugefügte Geheimnisse erscheinen hier für diesen Agenten.",
     "connectorsSearch": "Search connectors",
     "sandboxSecretsEmptyTitle": "Keine Sandbox-Secrets",
     "sandboxSecretsEmptyDescription": "Ein Agent erhält Umgebungsvariablen und im Netzwerk erzwungene Secrets. Modell-Logins und Connector-Zugangsdaten bleiben bei Kortix: Modelle und Connectors legen fest, wer sie nutzt."
@@ -21869,7 +21961,6 @@
     "connectorsEmptyBody": "Durchsuche den Katalog und installiere eine App. Deine Agenten nutzen sie, sobald sie ein Konto hat.",
     "browseApps": "Apps durchsuchen",
     "agentsLoadFailed": "Agenten konnten nicht geladen werden",
-    "agentsNeedsV2": "Agentenzugriff wird in kortix.yaml festgelegt (kortix_version 2 oder neuer). Dieses Projekt nutzt kortix.toml.",
     "agentsEmpty": "Dieses Projekt hat noch keine Agenten.",
     "agentsIntro": "Wähle, welche Agenten diesen Connector nutzen und welche Regeln sie bekommen. Jede Änderung wird in kortix.yaml committet.",
     "agentsReadOnly": "Nur Personen, die Agenten und Connectors bearbeiten dürfen, können das ändern.",
@@ -22527,6 +22618,8 @@
     "agentFullWriteDescription": "In den Sessions, die du startest, kann dieser Agent jede Datei in deinem Drive ändern, nicht nur im Ordner „From agents“.",
     "agentCardDrive": "{size} Drive",
     "sessionSkippedDrives": "{count, plural, one {# Drive passte nicht in diese Sitzung} other {# Drives passten nicht in diese Sitzung}}: {names}. Nimm ein Drive heraus, um Platz zu schaffen, und starte die Sitzung dann neu.",
+    "sessionSkippedUnavailable": "{count, plural, one {# Ordner ist noch nicht eingebunden} other {# Ordner sind noch nicht eingebunden}}: {names}. Die Sitzung läuft ohne {count, plural, one {ihn} other {sie}} weiter und bindet {count, plural, one {ihn} other {sie}} ein, sobald der Speicher es zulässt.",
+    "sessionSkippedTooLarge": "{count, plural, one {# Ordner ist zu groß, um ihn in eine Sitzung einzubinden} other {# Ordner sind zu groß, um sie in eine Sitzung einzubinden}}: {names}. Die Sitzung läuft ohne {count, plural, one {ihn} other {sie}}. Verschiebe große Dateien oder teile einen kleineren Ordner.",
     "shareFolder": "Teilen",
     "shareTitle": "{name} teilen",
     "shareDescription": "Personen, Teams und Agenten, die du hinzufügst, erhalten diesen Ordner und alles darin. Eine Sitzung sieht einen Ordner, wenn ihr Agent, ihr Projekt oder die Person, die sie gestartet hat, Zugriff hat.",
@@ -22593,7 +22686,25 @@
     "sessionFilesDescription": "Die Drive-Ordner, die diese Sitzung einbindet, und wo der Agent sie sieht. Teile einen Ordner in Drive, um ihn hinzuzufügen; beende die Freigabe, um ihn wieder zu entfernen.",
     "readWrite": "Read & write",
     "folderHint": "A folder inside {name}",
-    "driveLabel": "Drive"
+    "driveLabel": "Drive",
+    "storageLabel": "Speicher",
+    "storageOfLimit": "{used} von {limit}",
+    "storageUsed": "{used} belegt",
+    "storageNearFull": "Fast voll. Löschen Sie Dateien, die Sie nicht mehr brauchen, um weiter hochzuladen.",
+    "storageFull": "Voll. Neue Uploads werden abgelehnt, bis Dateien gelöscht sind.",
+    "storageAccountLine": "Alle Projekte: {used} von {limit}",
+    "folderNearMountLimit": "{folder} enthält {size}. Eine Sitzung kann keinen Ordner über {limit} einbinden.",
+    "folderOverMountLimit": "{folder} enthält {size}, mehr als die {limit}, die eine Sitzung einbinden kann. Sitzungen laufen ohne diesen Ordner.",
+    "uploadRefusedProjectFull": "{name} braucht {needed}. Die Dateien dieses Projekts belegen {used} von {limit}.",
+    "uploadRefusedAccountFull": "{name} braucht {needed}. Die Dateien Ihres Kontos belegen {used} von {limit} über alle Projekte.",
+    "uploadRefusedFileTooLarge": "{name} ist {size} groß. Eine Datei darf höchstens {limit} groß sein.",
+    "uploadRefusedFolderMount": "{name} würde {folder} über {limit} bringen, den größten Ordner, den eine Sitzung einbinden kann.",
+    "uploadRefusedBusy": "Der Dateispeicher ist ausgelastet. Versuchen Sie {name} gleich noch einmal.",
+    "uploadRefusedStorageFull": "Der Dateispeicher ist gerade voll. Versuchen Sie {name} später noch einmal.",
+    "accountStorageTitle": "Dateispeicher",
+    "accountStorageDescription": "Was die Dateien jedes Projekts belegen. Ihr Tarif erlaubt {project} pro Projekt und {account} über alle Projekte.",
+    "accountStorageEmpty": "Noch kein Projekt enthält Dateien.",
+    "accountStorageIncomplete": "Einige Projekte konnten gerade nicht gemessen werden."
   },
   "genui": {
     "showData": "Daten anzeigen",
@@ -23270,7 +23381,8 @@
     "threadLoadError": "Dieser Thread konnte nicht geladen werden. Versuche es erneut.",
     "join": "Beitreten",
     "openRoom": "Öffnen",
-    "gateDescription": "Aktiviere Räume, damit Agentensitzungen und Personen dieses Projekts in benannten Chaträumen schreiben können."
+    "gateDescription": "Aktiviere Räume, damit Agentensitzungen und Personen dieses Projekts in benannten Chaträumen schreiben können.",
+    "archivedNotice": "Dieser Raum ist archiviert. Seine Nachrichten bleiben erhalten, neue sind nicht möglich."
   },
   "goals": {
     "title": "Ziele",
@@ -23388,16 +23500,19 @@
     "forPerson": "für {person}",
     "answerInChat": "Im Chat antworten",
     "forYou": "für dich",
-    "forMember": "für ein Teammitglied"
+    "forMember": "für ein Teammitglied",
+    "spaceEmpty": "Noch keine Ziele in {space}",
+    "showAll": "Alle anzeigen",
+    "spaceScope": "{space} · {scope}"
   },
   "agentEditor": {
     "manage": "Verwalten",
     "overviewTitle": "Übersicht",
     "page": {
       "description": "Description",
-      "descriptionPlaceholder": "What this agent does, in one line",
-      "descriptionHelp": "One line on what this agent does. Other agents read it when they pick a subagent.",
-      "descriptionHelpSubagent": "Required. Other agents read it to decide when to call this one.",
+      "descriptionPlaceholder": "Was dieser Agent tut, in einer Zeile",
+      "descriptionHelp": "Eine Zeile darüber, was dieser Agent tut. Andere Agenten lesen sie bei der Wahl eines Unteragenten.",
+      "descriptionHelpSubagent": "Erforderlich. Andere Agenten entscheiden anhand dieser Beschreibung, wann sie ihn aufrufen.",
       "builtIn": "Built-in",
       "default": "Default",
       "disabled": "Disabled",
@@ -23407,7 +23522,7 @@
       "instructions": "Instructions",
       "instructionsEdit": "Edit instructions",
       "instructionsWrite": "Write instructions",
-      "instructionsEmpty": "Instructions you write will show up here",
+      "instructionsEmpty": "Deine Anweisungen erscheinen hier",
       "words": "{count, plural, one {# word} other {# words}}",
       "access": "Access",
       "runtime": "Runtime",
@@ -23417,11 +23532,11 @@
       "selected": "{count} selected",
       "required": "{count, plural, one {# required before a session starts} other {# required before a session starts}}",
       "projectDefault": "Project default",
-      "repoAccess": "Can read and push the repository",
+      "repoAccess": "Kann das Repository lesen und Änderungen pushen",
       "noRepoAccess": "No repository access",
       "granted": "{count, plural, one {# grant} other {# grants}}",
       "triggers": "{count, plural, one {# trigger} other {# triggers}}",
-      "builtInHint": "The one agent you talk to. It runs the agents below for you."
+      "builtInHint": "Der eine Agent, mit dem du sprichst. Er führt die Agenten unten für dich aus."
     },
     "tabs": {
       "tabsLabel": "Agent sections",
@@ -23433,9 +23548,9 @@
       "tabPeople": "People",
       "unsavedTab": "Unsaved changes",
       "canUse": "{name} can use",
-      "grantAllHint": "Every one in this project, including ones added later.",
+      "grantAllHint": "Alle in diesem Projekt, auch später hinzugefügte.",
       "grantSpecificHint": "Only the ones checked below.",
-      "grantNoneHint": "Nothing. Choose Specific to pick some, or All.",
+      "grantNoneHint": "Nichts. Wähle „Bestimmte“ für eine Auswahl oder „Alle“.",
       "enabled": "Enabled",
       "off": "Off",
       "on": "On",
@@ -23443,25 +23558,25 @@
       "spaceValue": "Space: {space}",
       "startPrimary": "People start it",
       "startSubagent": "Agents call it",
-      "startBoth": "People and agents can start it",
-      "startDisabled": "This agent is off.",
-      "startSubagentBlocked": "Subagents are called by other agents, not started directly.",
+      "startBoth": "Personen und Agenten können ihn starten",
+      "startDisabled": "Dieser Agent ist deaktiviert.",
+      "startSubagentBlocked": "Unteragenten werden von anderen Agenten aufgerufen, nicht direkt gestartet.",
       "defaultAgent": "Default agent",
-      "actsAsYou": "Acts as the person who starts the session",
-      "askToEditAgent": "Ask My Kortix to edit",
+      "actsAsYou": "Handelt als die Person, die die Sitzung startet",
+      "askToEditAgent": "My Kortix um Bearbeitung bitten",
       "deleteAgent": "Delete {name}",
       "deleteTitle": "Delete {name}?",
-      "deleteBody": "My Kortix opens a change request that removes this agent from kortix.yaml. Nothing changes until you merge it.",
+      "deleteBody": "My Kortix öffnet einen Änderungsantrag, der diesen Agenten aus kortix.yaml entfernt. Bis du ihn zusammenführst, ändert sich nichts.",
       "deletePrompt": "Delete the \"{name}\" agent (its config lives at `{path}`): remove it from kortix.yaml and remove its triggers. Then open a change request so I can review and merge it.",
-      "leaveTitle": "Leave with unsaved changes?",
+      "leaveTitle": "Mit ungespeicherten Änderungen verlassen?",
       "leaveBody": "Your changes to {tabs} are not saved.",
       "stay": "Stay",
       "leave": "Leave",
       "saveAndLeave": "Save and leave",
-      "loadError": "Could not load this project's agents.",
+      "loadError": "Die Agenten dieses Projekts konnten nicht geladen werden.",
       "configLoadError": "Could not load the settings of {name}.",
       "details": "Details",
-      "notFoundTitle": "This agent does not exist",
+      "notFoundTitle": "Dieser Agent existiert nicht",
       "notFoundHeader": "Agent not found",
       "notFoundBody": "No agent named <name></name> is declared in this project.",
       "didYouMean": "Did you mean <link></link>?",
@@ -23474,8 +23589,8 @@
       "newSpacePlaceholder": "space-name",
       "managersOnly": "Managers only",
       "projectModelsLink": "Project models, providers and routing are in <link>Project admin</link>.",
-      "reviewLead": "What your agents need from you: decisions, approvals and finished work.",
-      "readOnlyTitle": "You can view this agent",
+      "reviewLead": "Was deine Agenten von dir brauchen: Entscheidungen, Genehmigungen und fertige Arbeit.",
+      "readOnlyTitle": "Du kannst diesen Agenten ansehen",
       "readOnlyBody": "Editing needs <code>project.agent.write</code>. A project manager can grant it in Project admin > Members.",
       "about": "About",
       "noDescription": "No description yet.",
@@ -23504,8 +23619,8 @@
         "tools": "every tool"
       },
       "accessHint": "What {name} can reach in a session",
-      "drivesDetail": "Shared drives its sessions mount",
-      "detailAll": "Everything in this project",
+      "drivesDetail": "Geteilte Laufwerke, die seine Sitzungen einbinden",
+      "detailAll": "Alles in diesem Projekt",
       "detailNone": "Nothing granted",
       "countOf": "{count} of {total}",
       "needsSignIn": "{count} needs sign-in",
@@ -23513,8 +23628,8 @@
       "availability": "Availability",
       "enabledHelp": "Off stops new sessions of {name}.",
       "showInPickers": "Show in pickers",
-      "showInPickersHelp": "People pick it when they start a session.",
-      "whoStarts": "Who can start it",
+      "showInPickersHelp": "Personen wählen ihn beim Start einer Sitzung.",
+      "whoStarts": "Wer ihn starten kann",
       "modeDefault": "Project default",
       "space": "Space",
       "model": "Model",
@@ -23526,44 +23641,44 @@
       "manage": "Manage",
       "savedIn": "Saved in <file></file> under <key></key>. Instructions live in <source></source>.",
       "instructionsHint": "The system prompt for every session of {name}.",
-      "instructionsPlaceholder": "Describe the agent's role, how it works and what it never does.",
+      "instructionsPlaceholder": "Beschreibe die Rolle des Agenten, seine Arbeitsweise und was er niemals tut.",
       "editorView": "Editor view",
       "write": "Write",
       "preview": "Preview",
       "split": "Split",
-      "askToEdit": "Ask My Kortix to edit",
+      "askToEdit": "My Kortix um Bearbeitung bitten",
       "fullScreen": "Full screen",
       "exitFullScreen": "Exit full screen",
       "myKortixPromise": "Der eine Agent, mit dem du sprichst. Er leitet jede Aufgabe an den passenden Agenten weiter und führt sie mit deinen Berechtigungen aus.",
-      "myKortixNoInstructions": "My Kortix is built in, so it has no instructions to edit here. To change how work gets done, change the agents it runs.",
+      "myKortixNoInstructions": "My Kortix ist integriert und hat hier keine bearbeitbaren Anweisungen. Ändere die Agenten, die er ausführt, um seine Arbeitsweise zu ändern.",
       "composerLabel": "Ask My Kortix",
-      "composerPlaceholder": "Ask My Kortix to create an agent, or to change what one may do",
-      "composerNote": "Every change opens as a change request you approve.",
-      "chipCreate": "Create an agent that ",
-      "chipNarrow": "Narrow an agent to the access its work needs",
-      "chipReview": "Which agents can reach secrets?",
+      "composerPlaceholder": "Bitte My Kortix, einen Agenten zu erstellen oder seine Befugnisse zu ändern",
+      "composerNote": "Jede Änderung wird als Änderungsantrag geöffnet, den du genehmigst.",
+      "chipCreate": "Erstelle einen Agenten, der ",
+      "chipNarrow": "Beschränke einen Agenten auf den für seine Arbeit nötigen Zugriff",
+      "chipReview": "Welche Agenten können auf Geheimnisse zugreifen?",
       "send": "Send",
       "newAgent": "New agent",
-      "newAgentHelp": "My Kortix writes the agent into kortix.yaml and opens a change request.",
+      "newAgentHelp": "My Kortix schreibt den Agenten in kortix.yaml und öffnet einen Änderungsantrag.",
       "name": "Name",
       "namePlaceholder": "market-scan",
       "nameHelp": "Lowercase letters, digits and dashes. Saved as <slug></slug>.",
-      "nameTaken": "An agent with this name already exists.",
+      "nameTaken": "Ein Agent mit diesem Namen existiert bereits.",
       "howToStart": "How to start",
-      "startDescribe": "Describe it to My Kortix",
-      "startDescribeHelp": "My Kortix drafts the instructions and grants only the access the work needs.",
+      "startDescribe": "Beschreibe ihn My Kortix",
+      "startDescribeHelp": "My Kortix entwirft die Anweisungen und gewährt nur den für die Arbeit nötigen Zugriff.",
       "startBlank": "Start blank",
-      "startBlankHelp": "No instructions and no access. You fill in every tab.",
+      "startBlankHelp": "Keine Anweisungen und kein Zugriff. Du füllst jeden Tab aus.",
       "startDuplicate": "Duplicate an agent",
-      "startDuplicateHelp": "Copies another agent's instructions and access.",
+      "startDuplicateHelp": "Kopiert Anweisungen und Zugriff eines anderen Agenten.",
       "copyOf": "Copy of",
       "pickAgent": "Choose an agent",
       "whatItDoes": "What it does",
-      "whatItDoesPlaceholder": "Scans competitor pricing pages every Monday and posts a short summary.",
-      "descriptionPlaceholderShort": "One line on what this agent does",
+      "whatItDoesPlaceholder": "Prüft jeden Montag die Preisseiten von Mitbewerbern und veröffentlicht eine kurze Zusammenfassung.",
+      "descriptionPlaceholderShort": "Was dieser Agent tut, in einer Zeile",
       "createAgent": "Create agent",
-      "agentsLead": "You talk to My Kortix. It runs these agents, each with only the access its work needs.",
-      "agentsLoadError": "Could not load this project's agents.",
+      "agentsLead": "Du sprichst mit My Kortix. Er führt diese Agenten aus, jeden nur mit dem für seine Arbeit nötigen Zugriff.",
+      "agentsLoadError": "Die Agenten dieses Projekts konnten nicht geladen werden.",
       "workAgents": "Work agents",
       "colAgent": "Agent",
       "colStatus": "Status",
@@ -23634,7 +23749,9 @@
       "tabCapabilities": "Fähigkeiten",
       "summaryExcept": "{all} except {list}",
       "pinToSidebar": "An Seitenleiste anheften",
-      "unpinFromSidebar": "Von Seitenleiste lösen"
+      "unpinFromSidebar": "Von Seitenleiste lösen",
+      "spaceHelp": "Der Bereich dieses Agenten: ein Bezeichner wie engineering oder sales. Leer: projektweit.",
+      "spacePlaceholder": "z. B. engineering"
     },
     "myKortix": {
       "allowed": "Erlaubt",
@@ -24006,7 +24123,13 @@
       "screenshotMissing": "Screenshot nicht verfügbar. Die Zeichnung ist gespeichert.",
       "screenshotCaptureFailed": "Screenshot nicht möglich. Dein Kommentar enthält die Zeichnung ohne Bild.",
       "sendScreenshotLimit": "Diese Auswahl überschreitet 20 Screenshots oder 12 MiB pro kodierter Anfrage. Sende weniger Bildanhänge oder verwende ein reines Textmodell."
-    }
+    },
+    "moveTo": "In Bereich verschieben",
+    "projectWide": "Projektweit",
+    "moved": "Artefakt verschoben",
+    "moveFailed": "Artefakt konnte nicht verschoben werden",
+    "spaceEmpty": "Noch keine Artefakte in {space}",
+    "showAll": "Alle anzeigen"
   },
   "emailConnect": {
     "homeTitle": "Wo das Postfach liegt",
@@ -24174,11 +24297,11 @@
     "allExcept": "Alle außer {list}",
     "rulesTitle": "Freigaberegeln",
     "builtinOn": "{on} of {total} on",
-    "toolsAccess": "Tool access for this agent",
-    "emptyProjectTools": "No project tools. Register one under tools in kortix.yaml.",
-    "loadErrorList": "Could not load this list.",
-    "skillsAccess": "Skill access for this agent",
-    "noMatch": "Nothing matches your search.",
+    "toolsAccess": "Werkzeugzugriff für diesen Agenten",
+    "emptyProjectTools": "Keine Projektwerkzeuge. Registriere eines unter tools in kortix.yaml.",
+    "loadErrorList": "Diese Liste konnte nicht geladen werden.",
+    "skillsAccess": "Skill-Zugriff für diesen Agent",
+    "noMatch": "Keine Treffer für deine Suche.",
     "skillsSearch": "Search skills",
     "toolsSearch": "Search tools",
     "extensionsSearch": "Search extensions",
@@ -24345,7 +24468,13 @@
       "privateLabel": "Privat",
       "privateHint": "Nur eingeladene Mitglieder können ihn sehen.",
       "privateUnavailable": "Private Kanäle sind in diesem Workspace noch nicht verfügbar.",
-      "privateLimits": "Privat verbirgt den Kanal vor anderen. Codeänderungen (Git-Branches) und die eigenen Tools der Agents sind nicht privat."
+      "privateLimits": "Privat verbirgt den Kanal vor anderen. Codeänderungen (Git-Branches) und die eigenen Tools der Agents sind nicht privat.",
+      "name": "Name",
+      "taken": "Ein Bereich #{slug} existiert bereits.",
+      "about": "Beschreibung",
+      "aboutPlaceholder": "Wofür dieser Bereich gedacht ist",
+      "template": "Anfangstabs",
+      "error": "Bereich konnte nicht erstellt werden"
     },
     "view": {
       "welcomeTitle": "Willkommen in #{name}",
@@ -24644,7 +24773,130 @@
       "archivedToast": "#{name} archiviert",
       "unarchivedToast": "#{name} wiederhergestellt",
       "failed": "#{name} konnte nicht aktualisiert werden. Versuche es erneut."
-    }
+    },
+    "blocks": {
+      "noContent": "Noch kein Inhalt.",
+      "noUrl": "Noch keine URL.",
+      "noApp": "Noch keine App ausgewählt.",
+      "noFile": "Noch keine Datei.",
+      "loadingApp": "App wird geladen…"
+    },
+    "templates": {
+      "board": {
+        "brief": "Überblick",
+        "text": "Wofür dieser Bereich da ist und wie man helfen kann.",
+        "label": "Raum und Board",
+        "description": "Ein Board für die Übersicht und die Links, dann Ziele."
+      },
+      "standard": {
+        "label": "Raum, Ziele, Apps und Artefakte",
+        "description": "Der Raum, dann die dem Bereich zugeordneten Inhalte."
+      },
+      "room": {
+        "label": "Nur Raum",
+        "description": "Ein Gespräch. Tabs später hinzufügen."
+      }
+    },
+    "tabs": {
+      "room": "Raum",
+      "goals": "Ziele",
+      "apps": "Apps",
+      "artifacts": "Artefakte",
+      "files": "Dateien",
+      "board": "Board",
+      "app": "App",
+      "artifact": "Artefakt",
+      "link": "Link"
+    },
+    "addTab": "Tab hinzufügen",
+    "gone": {
+      "title": "Dieser Bereich existiert nicht mehr",
+      "hint": "Er wurde aus kortix.yaml entfernt oder der Link ist falsch.",
+      "back": "Zurück zum Projekt"
+    },
+    "viewAll": "Alle anzeigen",
+    "loadError": "Dieser Tab konnte nicht geladen werden",
+    "retry": "Nochmal versuchen",
+    "empty": {
+      "goals": "Ziele dieses Bereichs erscheinen hier",
+      "apps": "Apps dieses Bereichs erscheinen hier",
+      "artifacts": "Artefakte dieses Bereichs erscheinen hier",
+      "folder": "Dieser Ordner ist leer",
+      "board": "Blöcke dieses Boards erscheinen hier",
+      "boardHint": "Bitte My Kortix, einen Block hinzuzufügen: eine Notiz, eine App, eine Datei, eine eingebettete Seite oder einen weiteren Raum."
+    },
+    "doc": "Dokument",
+    "page": "Seite",
+    "missing": {
+      "app": "Die App „{slug}“ ist nicht in diesem Projekt",
+      "artifact": "Dieses Artefakt existiert nicht mehr oder ist nicht mit dir geteilt"
+    },
+    "openArtifact": "Artefakt öffnen",
+    "openLink": "{host} öffnen",
+    "tabAdded": "Tab hinzugefügt",
+    "tabsSaved": "Tabs gespeichert",
+    "saveError": "Tabs konnten nicht gespeichert werden",
+    "menu": {
+      "view": "Ansicht",
+      "folder": "Ordner…",
+      "app": "App",
+      "noApps": "Keine Apps in diesem Projekt",
+      "artifact": "Artefakt",
+      "noArtifacts": "Noch keine Artefakte",
+      "link": "Link…",
+      "board": "Board",
+      "editTabs": "Tabs bearbeiten…"
+    },
+    "add": {
+      "linkTitle": "Link hinzufügen",
+      "linkHint": "Eine Seite, die Personen in diesem Bereich oft öffnen.",
+      "folderTitle": "Ordner hinzufügen",
+      "folderHint": "Ein Ordner der Projektdateien, angegeben durch seinen Pfad.",
+      "url": "URL",
+      "path": "Ordnerpfad",
+      "label": "Tabname",
+      "embed": "Seite im Tab anzeigen",
+      "submit": "Tab hinzufügen"
+    },
+    "cancel": "Abbrechen",
+    "edit": {
+      "title": "Tabs bearbeiten",
+      "description": "Der Raum bleibt zuerst. Beim Speichern werden die Tabs in kortix.yaml auf dem Standardbranch festgeschrieben.",
+      "empty": "Nur der Raum. Füge mit + einen Tab hinzu.",
+      "save": "Tabs speichern",
+      "rename": "{name} umbenennen",
+      "moveUp": "{name} nach oben verschieben",
+      "moveDown": "{name} nach unten verschieben",
+      "remove": "{name} entfernen"
+    },
+    "nav": {
+      "title": "Bereiche",
+      "new": "Neuer Bereich",
+      "unread": "{count, plural, one {# ungelesene Nachricht} other {# ungelesene Nachrichten}}"
+    },
+    "leave": "{name} verlassen",
+    "openRooms": "Räume öffnen",
+    "roomHint": "Agenten und Personen veröffentlichen hier Neuigkeiten.",
+    "noRoom": "Noch kein Raum.",
+    "agents": "Agenten in diesem Bereich",
+    "openAgent": "{name} öffnen",
+    "members": "{count, plural, one {# Person} other {# Personen}}",
+    "needsYou": "brauchen dich",
+    "newSession": "Neue Sitzung",
+    "askMyKortix": "My Kortix fragen",
+    "askPrompt": "Ich möchte den Bereich {name} (`spaces.{slug}` in kortix.yaml) ändern: seine Tabs, seine Kopfzeile oder seine Agenten. Frage mich, was ich ändern möchte.",
+    "roomsOff": "Räume sind für dieses Projekt deaktiviert",
+    "roomsOffHint": "Aktiviere Räume in den Projekteinstellungen, um hier mit Personen und Agenten zu sprechen.",
+    "room": {
+      "introTitle": "Hier beginnt #{name}",
+      "introBody": "Der Raum für alle, die in diesem Bereich arbeiten.",
+      "introAgents": "{count, plural, one {{names} veröffentlicht hier Neuigkeiten.} other {{names} veröffentlichen hier Neuigkeiten.}}",
+      "introNoAgents": "Agenten, die du diesem Bereich hinzufügst, veröffentlichen hier ihre Neuigkeiten.",
+      "introMention": "Tippe @, um eine Person oder einen Agenten zu erwähnen."
+    },
+    "filter": "Nach Bereich filtern",
+    "all": "Alle",
+    "projectWide": "Projektweit"
   },
   "imageGen": {
     "generating": "Bild wird erstellt",
@@ -24728,11 +24980,11 @@
     "escape": "Esc"
   },
   "agentMounts": {
-    "lead": "Folders from Files this agent's sessions mount. A change applies at once and reaches every new session.",
+    "lead": "Ordner aus Dateien, die Sitzungen dieses Agenten einbinden. Änderungen gelten sofort für jede neue Sitzung.",
     "mount": "Mount folder",
     "repository": "Project repository",
-    "viaAgent": "shared with this agent",
-    "viaProject": "shared with everyone in this project",
+    "viaAgent": "mit diesem Agenten geteilt",
+    "viaProject": "mit allen in diesem Projekt geteilt",
     "from": "{path} · {who}",
     "readOnly": "Read only",
     "readWrite": "Read and write",
@@ -24743,7 +24995,7 @@
     "unmountDescription": "New sessions of {agent} stop mounting this folder, and running ones lose it now. The files stay in Files.",
     "skipped": "Not mounted, past the {slots} mount slots: {list}",
     "emptyTitle": "No folders mounted",
-    "emptyDescription": "Mount a folder from Files to give this agent's sessions its files.",
+    "emptyDescription": "Binde einen Ordner aus Dateien ein, um seinen Inhalt den Sitzungen dieses Agenten bereitzustellen.",
     "pickerTitle": "Mount a folder",
     "pickerDescription": "Pick a folder in Files. Sessions of {agent} see it under /drives.",
     "pickerPath": "Folder path",
@@ -24752,17 +25004,272 @@
     "pickerChoose": "Choose a folder",
     "pickerMount": "Mount {path}",
     "alreadyMounted": "Mounted",
-    "changeFailed": "Could not change this mount.",
-    "loadError": "Could not load this agent's mounts.",
+    "changeFailed": "Diese Einbindung konnte nicht geändert werden.",
+    "loadError": "Die Einbindungen dieses Agenten konnten nicht geladen werden.",
     "retry": "Try again",
     "title": "Drives",
     "projectLead": "Files-Ordner, die jede neue Sitzung einbindet.",
-    "unmountProjectDescription": "New sessions stop mounting this folder, and running ones lose it now. The files stay in Files.",
+    "unmountProjectDescription": "Neue Sitzungen binden diesen Ordner nicht mehr ein; laufende verlieren ihn sofort. Die Dateien bleiben unter Dateien.",
     "pickerProjectDescription": "Pick a folder in Files. Every session of this project sees it under /drives."
   },
   "projectAdmin": {
     "tools": "Tools",
     "extensions": "Extensions",
     "drives": "Drives"
+  },
+  "multiAgent": {
+    "peer": {
+      "message": "Nachricht von {from}",
+      "idleNotice": "{from} ist fertig",
+      "shutdownRequest": "Beenden-Anfrage von {from}",
+      "shutdownResponse": "Antwort auf die Beenden-Anfrage von {from}",
+      "expand": "Ganze Nachricht anzeigen",
+      "collapse": "Nachricht ausblenden"
+    },
+    "notice": {
+      "completed": "{name} ist fertig",
+      "failed": "{name} wurde nicht abgeschlossen",
+      "stopped": "{name} wurde gestoppt",
+      "fallbackName": "Dein Agent",
+      "openSession": "Sitzung öffnen",
+      "expand": "Ganzes Ergebnis anzeigen",
+      "collapse": "Ergebnis ausblenden",
+      "batchTitle": "{count, plural, one {# Agent ist fertig} other {# Agenten sind fertig}}",
+      "ownsTasks": "Hat noch {tasks}"
+    },
+    "tools": {
+      "running": {
+        "sending": "Nachricht wird gesendet…",
+        "checkingAgents": "Andere Agenten werden geprüft…",
+        "checkingTasks": "Aufgaben des Teams werden geprüft…",
+        "updatingTasks": "Aufgaben des Teams werden aktualisiert…",
+        "stopping": "Agent wird gestoppt…"
+      },
+      "to": "An",
+      "peerStatus": {
+        "delivered": "Zugestellt",
+        "held": "Wartet auf Freigabe",
+        "refused": "Nicht gesendet",
+        "denied": "Abgelehnt",
+        "expired": "Abgelaufen",
+        "dropped": "Nicht erneut gesendet"
+      },
+      "relation": {
+        "parent": "Übergeordnet",
+        "child": "Helfer",
+        "lead": "Leitung",
+        "teammate": "Teammitglied",
+        "session": "Sitzung"
+      },
+      "cannotReceive": "Kann keine Nachrichten empfangen",
+      "state": {
+        "working": "Arbeitet",
+        "needsInput": "Eingabe nötig",
+        "idle": "Inaktiv",
+        "completed": "Erledigt",
+        "failed": "Nicht abgeschlossen",
+        "stopped": "Gestoppt"
+      },
+      "taskStatus": {
+        "pending": "Ausstehend",
+        "inProgress": "In Bearbeitung",
+        "completed": "Erledigt"
+      },
+      "blockedBy": "blockiert durch {tasks}",
+      "stopped": "Gestoppt",
+      "alreadyEnded": "Bereits beendet",
+      "openSession": "Sitzung öffnen"
+    },
+    "strip": {
+      "label": "Agenten",
+      "agents": "{count, plural, one {# Agent} other {# Agenten}}",
+      "working": "{count} arbeiten",
+      "workflows": "{count, plural, one {# Workflow} other {# Workflows}}",
+      "workflowsRunning": "{count, plural, one {# Workflow aktiv} other {# Workflows aktiv}}",
+      "newest": "{name} {state}",
+      "tasks": "Aufgaben",
+      "team": "Team",
+      "workflowsGroup": "Workflows",
+      "state": {
+        "working": "arbeitet",
+        "needs_input": "braucht dich",
+        "idle": "erledigt",
+        "completed": "erledigt",
+        "failed": "fehlgeschlagen",
+        "stopped": "gestoppt"
+      },
+      "workingFor": "arbeitet · {elapsed}",
+      "runsAs": "läuft als {agent}",
+      "teamRole": "Rolle nur für diese Sitzung",
+      "attention": {
+        "question": "Hat eine Frage an dich",
+        "approval": "Wartet auf deine Freigabe"
+      },
+      "openAgent": "{name} öffnen",
+      "stopHint": "Diesen Agenten stoppen",
+      "stopAgent": "{name} stoppen",
+      "stopAgentFailed": "{name} konnte nicht gestoppt werden",
+      "stopFailed": "Der Agent konnte nicht gestoppt werden",
+      "runProgress": "{done} von {total} erledigt",
+      "runBackground": "Läuft im Hintergrund",
+      "runRunning": "Läuft",
+      "runStatus": {
+        "done": "Erledigt",
+        "failed": "Nicht abgeschlossen",
+        "stopped": "Gestoppt"
+      },
+      "runFallback": "Workflow",
+      "openRun": "Lauf öffnen",
+      "runNoAgents": "Noch keine Agenten"
+    },
+    "subagent": {
+      "fallbackTitle": "Agent",
+      "openPage": "Seite öffnen",
+      "close": "Schließen",
+      "messagePlaceholder": "Nachricht an {name}…",
+      "messageLabel": "Nachricht an {name}",
+      "send": "Senden",
+      "sent": "Nachricht gesendet",
+      "sendFailed": "Die Nachricht konnte nicht gesendet werden",
+      "loadFailed": "Die Nachrichten dieses Agenten konnten nicht geladen werden",
+      "retry": "Erneut versuchen",
+      "emptyTitle": "Noch nichts",
+      "emptyDescription": "Seine Nachrichten erscheinen hier, während er arbeitet.",
+      "loadOlder": "Frühere Nachrichten anzeigen"
+    },
+    "tasks": {
+      "label": "Aufgaben des Teams",
+      "empty": "Aufgaben, die das Team plant, erscheinen hier.",
+      "group": {
+        "pending": "Ausstehend",
+        "in_progress": "In Bearbeitung",
+        "completed": "Abgeschlossen"
+      },
+      "blockedBy": "Blockiert durch {tasks}",
+      "unowned": "Offen"
+    },
+    "held": {
+      "label": "Nachrichten, die auf dich warten",
+      "title": "Nachricht von {from}",
+      "titleShutdown": "{from} bittet darum, diese Sitzung zu stoppen",
+      "waiting": "Wartet auf deine Freigabe. Sie läuft nach 5 Minuten ab.",
+      "deny": "Ablehnen",
+      "approve": "Genehmigen",
+      "approveFailed": "Die Nachricht konnte nicht zugestellt werden",
+      "denyFailed": "Die Nachricht konnte nicht abgelehnt werden"
+    },
+    "workflow": {
+      "large": "Großer Workflow",
+      "largeHint": "Dieser Lauf startet mehr als 25 Agenten. Du kannst ihn oder jeden Agenten hier stoppen.",
+      "paused": "Pausiert",
+      "pause": "Lauf pausieren",
+      "resume": "Lauf fortsetzen",
+      "pauseHint": "Pausieren: Kein neuer Agent startet, laufende Agenten werden fertig (p)",
+      "resumeHint": "Lauf fortsetzen (p)",
+      "stop": "Lauf stoppen",
+      "stopHint": "Alle Agenten stoppen und den Lauf beenden (x)",
+      "save": "Speichern",
+      "saveHint": "Das Skript dieses Laufs als Workflow speichern, den du erneut ausführen kannst (s)",
+      "savePrompt": "Speichere den Workflow-Lauf „{title}“ (Lauf {runId}) als gespeicherten Workflow: Schreibe sein Skript nach {file} und eröffne dafür eine Änderungsanfrage.",
+      "saveSent": "Speichern des Workflows angefragt",
+      "saveFailed": "Das Speichern des Workflows konnte nicht angefragt werden",
+      "restartHint": "Diesen Agenten mit demselben Prompt neu starten (r)",
+      "restartAgent": "{label} neu starten",
+      "failed": {
+        "pause": "Der Lauf konnte nicht pausiert werden",
+        "resume": "Der Lauf konnte nicht fortgesetzt werden",
+        "stop": "Der Lauf konnte nicht gestoppt werden",
+        "restart": "{label} konnte nicht neu gestartet werden"
+      }
+    },
+    "board": {
+      "layoutLabel": "Ansicht",
+      "layoutList": "Liste",
+      "layoutBoard": "Board",
+      "dispatchLabel": "Eine Sitzung starten oder das Board filtern",
+      "dispatchPlaceholder": "Sitzung starten: @agent und eine Aufgabe. Filtern: s:working a:agent",
+      "tooShort": "Zu kurz",
+      "dispatched": "Sitzung gestartet",
+      "dispatchFailed": "Die Sitzung konnte nicht gestartet werden",
+      "openSession": "Sitzung öffnen",
+      "stopSession": "Sitzung stoppen",
+      "stopped": "Sitzung gestoppt",
+      "stopFailed": "Die Sitzung konnte nicht gestoppt werden",
+      "stateFilter": "Nach Status filtern",
+      "agentFilter": "Nach Agent filtern",
+      "allStates": "Alle Status",
+      "allAgents": "Alle Agenten",
+      "loadError": "Die Sitzungen konnten nicht geladen werden. Versuche es erneut.",
+      "retry": "Erneut versuchen",
+      "emptyTitle": "Sitzungen, die du startest, erscheinen hier",
+      "emptyDescription": "Gib oben eine Aufgabe ein und drücke Enter. Jede Aufgabe läuft in einer eigenen Sitzung.",
+      "noMatches": "Keine Sitzung passt zu diesen Filtern",
+      "clearFilters": "Filter löschen",
+      "listLabel": "Sitzungen nach Status",
+      "loadMore": "Mehr Sitzungen laden",
+      "loadingMore": "Weitere Sitzungen werden geladen…",
+      "more": "… {count} weitere",
+      "keys": {
+        "move": "bewegen",
+        "peek": "Vorschau",
+        "open": "öffnen",
+        "stop": "stoppen",
+        "space": "Leertaste",
+        "enter": "Eingabetaste"
+      },
+      "group": {
+        "pinned": "Angeheftet",
+        "needs_input": "Eingabe nötig",
+        "working": "Arbeitet",
+        "review": "Bereit zur Prüfung",
+        "completed": "Abgeschlossen",
+        "ended": "Fehlgeschlagen · Gestoppt"
+      },
+      "state": {
+        "working": "Arbeitet",
+        "needs_input": "Eingabe nötig",
+        "idle": "Inaktiv",
+        "completed": "Abgeschlossen",
+        "failed": "Fehlgeschlagen",
+        "stopped": "Gestoppt"
+      },
+      "replyPlaceholder": "Antworte. Die Antwort erreicht den Agenten bei seinem nächsten Schritt.",
+      "replyLabel": "Auf {title} antworten",
+      "sendReply": "Antwort senden",
+      "replySent": "Antwort gesendet",
+      "replyFailed": "Die Antwort konnte nicht gesendet werden"
+    },
+    "ultracode": {
+      "hint": "Läuft als Workflow aus Agenten",
+      "dismiss": "{key}, um es als normalen Prompt zu senden"
+    }
+  },
+  "claudeSubscription": {
+    "title": "Claude-Abo verwenden",
+    "description": "Claude-Modelle laufen über Claude Code mit deinem eigenen Claude-Pro- oder -Max-Plan. Nur deine Sitzungen nutzen deinen Plan.",
+    "starting": "Claude wird geöffnet…",
+    "approveDescription": "Melde dich mit dem Claude-Konto an, das deinen Plan hat, bestätige die Anfrage und kopiere den Code, den Claude dir zeigt.",
+    "codeLabel": "Code von claude.com",
+    "connect": "Claude verbinden",
+    "connecting": "Wird verbunden…",
+    "connectedTitle": "Dein Claude-Abo ist verbunden",
+    "connected": "Claude-Abo verbunden",
+    "disconnect": "Claude trennen",
+    "disconnected": "Claude-Abo getrennt",
+    "startError": "Die Claude-Anmeldung konnte nicht gestartet werden. Versuche es erneut.",
+    "codeError": "Claude konnte mit diesem Code nicht verbunden werden. Melde dich erneut an und füge den neuen Code ein.",
+    "connectClaude": "Claude verbinden",
+    "reconnectClaude": "Claude erneut verbinden"
+  },
+  "contextReset": {
+    "pill": "Neuer Kontext · voller Verlauf bleibt",
+    "pillRunning": "Kontext wird frei…",
+    "detail": "Der Kontext erreichte {tokens} Tokens, also arbeitet der Agent in einem neuen weiter. Nichts wurde zusammengefasst: Er durchsucht den vollen Verlauf ({entries} Einträge), wenn er ein Detail braucht.",
+    "detailManual": "Du hast bei {tokens} Tokens einen neuen Kontext gestartet. Nichts wurde zusammengefasst: Der Agent durchsucht den vollen Verlauf ({entries} Einträge), wenn er ein Detail braucht.",
+    "showDetail": "Details anzeigen",
+    "hideDetail": "Details ausblenden",
+    "dialogTitle": "Neuen Kontext starten?",
+    "dialogDescription": "Der Agent arbeitet in einem neuen Kontext weiter und durchsucht den vollen Verlauf, wenn er ein Detail braucht. Nichts wird zusammengefasst, und die Unterhaltung bleibt hier, wie sie ist.",
+    "dialogAction": "Neuen Kontext starten"
   }
 }

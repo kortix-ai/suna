@@ -755,7 +755,7 @@ export function ConnectorsPage({
                 <div className="bg-popover flex items-center gap-3 rounded-lg px-4 py-3">
                   <ShieldIcon className="text-muted-foreground size-4 shrink-0" />
                   <p className="text-muted-foreground min-w-0 flex-1 text-xs text-pretty">
-                    {tTabs.rich('policySetsNote', { file: () => <span className="text-foreground font-mono">kortix.yaml</span> })}
+                    {tTabs.rich('policySetsNote', { file: () => <code className="text-foreground font-mono">kortix.yaml</code> })}
                   </p>
                   {addMenu}
                 </div>

@@ -85,10 +85,12 @@ import {
   sessionLogs,
   sessionLogThreads,
   sessionPendingQuestions,
+  sessionPeerMessages,
+  sessionTasks,
   sessionRuntimeProjections,
   voiceCallTurns,
 } from '@kortix/db';
-import { and, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import { logger } from '../lib/logger';
 import { deleteSessionWorkspaceVolume, WORKSPACE_VOLUME_SESSION_KEY } from '../platform/services/workspace-volume';
@@ -246,6 +248,9 @@ async function purgeRows(row: DueSession, now: Date): Promise<void> {
     await tx.delete(sessionLogs).where(eq(sessionLogs.sessionId, id));
     await tx.delete(voiceCallTurns).where(eq(voiceCallTurns.sessionId, id));
     await tx.delete(sessionPendingQuestions).where(eq(sessionPendingQuestions.sessionId, id));
+    // Cross-session messages it sent or received, and its team's task list: words, gone with the rest.
+    await tx.delete(sessionPeerMessages).where(or(eq(sessionPeerMessages.fromSessionId, id), eq(sessionPeerMessages.toSessionId, id)));
+    await tx.delete(sessionTasks).where(eq(sessionTasks.leadSessionId, id));
     await tx.delete(sessionRuntimeProjections).where(eq(sessionRuntimeProjections.sessionId, id));
     await tx.delete(projectSessionRuntimeContexts).where(eq(projectSessionRuntimeContexts.sessionId, id));
     await tx.delete(chatTurnStreams).where(eq(chatTurnStreams.sessionId, id));

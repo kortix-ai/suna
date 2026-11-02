@@ -141,7 +141,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     dashboard_url: 'https://kortix.com/projects/11111111-2222-4333-8444-555555555555',
     experimental: {
       marketplace: false,
-      meta_agent: false,
       monitors: false,
       reminders: false,
       warm_sessions: false,
@@ -162,6 +161,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       email_channel: false,
       session_groups: false,
       chrome: false,
+      agent_teams: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -341,7 +341,7 @@ describe('ProjectSchema', () => {
   });
 
   test('rejects an experimental map missing a registered key', () => {
-    const { meta_agent: _dropped, ...partial } = projectFixture().experimental as Record<
+    const { reminders: _dropped, ...partial } = projectFixture().experimental as Record<
       string,
       boolean
     >;
@@ -367,6 +367,14 @@ describe('ProjectSchema', () => {
     const experimental = projectFixture().experimental as Record<string, boolean>;
     expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, pi_harness: true } })).experimental.pi_harness).toBe(true);
     expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, pi_harness: false } }))).toThrow();
+  });
+
+  test('experimental carries the removed meta_agent key only as a constant true', () => {
+    // Wire compat: the API still sends `meta_agent: true`; My Kortix follows kortix.yaml `builtin_agents` alone.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(FEATURE_FLAG_KEYS as readonly string[]).not.toContain('meta_agent');
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, meta_agent: true } })).experimental.meta_agent).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, meta_agent: false } }))).toThrow();
   });
 
   test('experimental carries the graduated genui key only as a constant true', () => {
@@ -890,7 +898,6 @@ describe('envelopes', () => {
     // (TypeScript 7) sorts differently from tsc 5; the runtime order is the contract.
     expect(FEATURE_FLAG_KEYS as readonly string[]).toEqual([
       'marketplace',
-      'meta_agent',
       'reminders',
       'warm_sessions',
       'secrets_egress',
@@ -910,6 +917,7 @@ describe('envelopes', () => {
       'email_channel',
       'session_groups',
       'chrome',
+      'agent_teams',
     ]);
   });
 

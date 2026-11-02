@@ -449,29 +449,9 @@ export function ShowContentRenderer({
           </PressableSurface>,
         );
       }
-      if (sharedSource) {
-        return framed(
-          <PressableSurface
-            accessibilityRole="imagebutton"
-            accessibilityLabel={title || fileName}
-            disabled={!navigationEnabled}
-            onPress={() => openFile(path)}
-            style={({ pressed }) => ({ opacity: pressed ? PRESSED_OPACITY : 1 })}
-          >
-            <Image
-              testID="show-shared-image"
-              source={sharedSource}
-              onError={() => setSharedFailed(true)}
-              resizeMode="contain"
-              resizeMethod="resize"
-              style={{ width: '100%', height: mediaHeight ?? '100%' }}
-            />
-          </PressableSurface>,
-        );
-      }
-      if (image.phase === 'probing') return <RendererFallback height={mediaHeight} />;
-      if (image.phase === 'error') return <LoadError message="Failed to load image" />;
-      if (image.phase === 'tap-to-load') {
+      if (!sharedSource && image.phase === 'probing') return <RendererFallback height={mediaHeight} />;
+      if (!sharedSource && image.phase === 'error') return <LoadError message="Failed to load image" />;
+      if (!sharedSource && image.phase === 'tap-to-load') {
         return framed(
           <View style={{ height: mediaHeight, alignItems: 'center', justifyContent: 'center' }}>
             <Button variant="secondary" size="sm" onPress={image.loadAnyway}>
@@ -480,8 +460,8 @@ export function ShowContentRenderer({
           </View>,
         );
       }
-      if (image.source) {
-        const source = image.source;
+      if (sharedSource || image.source) {
+        const source = sharedSource || image.source;
         return framed(
           <PressableSurface
             accessibilityRole="imagebutton"
@@ -491,9 +471,10 @@ export function ShowContentRenderer({
             style={({ pressed }) => ({ opacity: pressed ? PRESSED_OPACITY : 1 })}
           >
             <Image
-              key={image.attempt}
+              key={sharedSource ? undefined : image.attempt}
+              testID={sharedSource ? 'show-shared-image' : undefined}
               source={source}
-              onError={image.handleError}
+              onError={sharedSource ? () => setSharedFailed(true) : image.handleError}
               resizeMode="contain"
               resizeMethod="resize"
               style={{ width: '100%', height: mediaHeight ?? '100%' }}

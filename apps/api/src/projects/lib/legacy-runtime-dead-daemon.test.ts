@@ -76,7 +76,7 @@ function deadDaemonDeps(
     manifestBuild: async () => 1788044234,
     fetchHealth: async () => healths[Math.min(i++, healths.length - 1)],
     // A dead daemon proxies nothing, so OpenCode cannot answer either.
-    fetchOpencodeStatus: async () => null,
+    fetchTurnInFlight: async () => null,
     providerRunning: async () => true,
     expectedRunningAssets: async () => MANIFEST,
     exec: async (cmd) => {
@@ -174,7 +174,7 @@ describe('a running box whose daemon is gone', () => {
     const calls: Calls = { execs: [], patches: [] };
     const result = await bootstrapLegacyRuntime(
       input(),
-      deadDaemonDeps({ fetchOpencodeStatus: async () => null }, calls),
+      deadDaemonDeps({ fetchTurnInFlight: async () => null }, calls),
     );
     expect(result.outcome).not.toBe('skipped-busy');
     expect(calls.execs).toHaveLength(1);

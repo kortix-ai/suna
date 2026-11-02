@@ -1,9 +1,8 @@
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.schema.json
 #
 # {{projectName}}: the Kortix project manifest. Agents, what each may use,
 # triggers and sandboxes live here, committed beside your files.
-# Reference: https://kortix.com/docs/project/manifest
-kortix_version: 3
+# Reference: https://kortix.com/docs/developers#kortixyaml-reference
 
 project:
   name: "{{projectName}}"

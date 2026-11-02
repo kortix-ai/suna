@@ -26,9 +26,16 @@
  * runs `orderBy(desc(time_created), desc(id))`, so the id is the
  * sub-millisecond tiebreak and a wrong one reorders messages on screen.
  *
- * Only the REDELIVERY path mints here. A first delivery carries the id the
- * client minted, verbatim (see `session-lifecycle/store.ts`'s
- * `wireMessageId`), because the client is the one holding the transcript.
+ * A prompt carries the id its client minted (`wireMessageId`). The API mints
+ * a new one only for a runtime that orders by id (OpenCode): a prompt that
+ * waited behind a turn, a redelivery, a released Stop batch row and a
+ * stranded prompt (`session-lifecycle/inbox-placement.ts`
+ * `remintWireMessageId`), and a stale direct send through the proxy
+ * (`sandbox-proxy/prompt-wire-id-repair.ts`). A runtime that lists
+ * `RUNTIME_STABLE_MESSAGE_ID_CAPABILITY` (pi) orders by position and keeps
+ * the id; the API re-mints there only a continuation, a held redelivery and
+ * an id the web would sort above an earlier prompt
+ * (`keepsWireIdOnStableRuntime`).
  */
 export {
   WIRE_ID_CLOCK_TOLERANCE as MAX_WIRE_ID_CLOCK_CORRECTION,

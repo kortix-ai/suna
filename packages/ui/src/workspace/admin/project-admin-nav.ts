@@ -2,7 +2,7 @@ import { buildStandaloneCapabilityNav } from '../../customize/shared/standalone-
 import type { SettingsNav } from '../../internal/layout/settings-nav-context';
 import { useSettingsPanelStore, type MembersTab } from '../../internal/stores/settings-panel-store';
 
-import { projectAdminHref, projectAdminNavTarget, type ProjectAdminSectionKey } from './project-admin-sections';
+import { projectAdminHref, projectAdminNavTarget, type ProjectAdminSectionKey } from '../../customize/project-settings/project-admin-sections';
 
 /**
  * The `SettingsNav` for panes mounted in Project admin. Panes still speak the

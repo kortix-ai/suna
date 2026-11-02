@@ -7,7 +7,7 @@ import { MONITOR_REMOVED, extractTriggers, parseManifestString } from '../projec
 // unchanged after it. Behavior, not structure. A monitor entry answers the
 // removal error since the monitor box was removed.
 
-const CHARACTERIZATION_MANIFEST = `kortix_version: 1
+const CHARACTERIZATION_MANIFEST = `
 project:
   name: characterization
 
@@ -36,7 +36,7 @@ triggers:
 `;
 
 describe('trigger spec characterization (KRTX-320)', () => {
-  const manifest = parseManifestString(CHARACTERIZATION_MANIFEST, 'yaml', 'kortix.yaml');
+  const manifest = parseManifestString(CHARACTERIZATION_MANIFEST, 'kortix.yaml');
   const { specs, errors } = extractTriggers(manifest);
 
   test('the monitor entry answers the removal error; every other entry parses', () => {

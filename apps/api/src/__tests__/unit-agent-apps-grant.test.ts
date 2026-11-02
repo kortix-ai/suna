@@ -2,7 +2,7 @@
  * `agents.<a>.apps` — the per-agent App grant, from manifest text to
  * the stored `AgentGrant` and the gate predicate `agentMayOpenApp`.
  *
- * Default is NONE in both manifest versions. An agent that declares no Apps
+ * Default is NONE. An agent that declares no Apps
  * resolves to a grant WITHOUT the `apps` key, so grants minted before the field
  * existed and grants of agents that never mention Apps read the same way.
  */
@@ -12,23 +12,17 @@ import {
   grantFromLoadedAgents,
   resolveGovernedAgentGrant,
 } from '../projects/agents';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+import { parseManifestString } from '../projects/triggers';
 import { agentGrantDiffers } from '../projects/lib/secret-grant';
 import { agentMayOpenApp } from '../iam/agent-scope';
 
 function parseV2(agentsBody: string) {
-  const text = ['kortix_version: 2', 'default_agent: reporter', 'project:', '  name: test', 'agents:', agentsBody].join('\n');
-  return extractAgents(parseManifestString(text, 'yaml', 'kortix.yaml'));
-}
-
-function parseV1(body: string) {
-  return extractAgents(
-    parseManifestString([`kortix_version = ${KNOWN_SCHEMA_VERSION}`, '[project]', 'name = "test"', body].join('\n')),
-  );
+  const text = ['default_agent: reporter', 'project:', '  name: test', 'agents:', agentsBody].join('\n');
+  return extractAgents(parseManifestString(text, 'kortix.yaml'));
 }
 
 describe('manifest → AgentSpec.apps', () => {
-  test('v2: an explicit slug list, "all", "none", and omitted', () => {
+  test('an explicit slug list, "all", "none", and omitted', () => {
     const { specs, errors } = parseV2(`
   reporter:
     apps: [reports-dashboard]
@@ -42,30 +36,6 @@ describe('manifest → AgentSpec.apps', () => {
     const byName = Object.fromEntries(specs.map((s) => [s.name, s.apps]));
     expect(byName).toEqual({ reporter: ['reports-dashboard'], admin: 'all', closed: [], quiet: [] });
   });
-
-  test('v1: [[agents]] apps parses with the same grant-set forms; omitted = none', () => {
-    const { specs, errors } = parseV1(`
-[[agents]]
-name = "reporter"
-apps = ["reports-dashboard"]
-
-[[agents]]
-name = "quiet"
-`);
-    expect(errors).toEqual([]);
-    expect(specs.find((s) => s.name === 'reporter')?.apps).toEqual(['reports-dashboard']);
-    expect(specs.find((s) => s.name === 'quiet')?.apps).toEqual([]);
-  });
-
-  test('v1: a malformed apps value is a parse error for that agent', () => {
-    const { errors } = parseV1(`
-[[agents]]
-name = "reporter"
-apps = "everything"
-`);
-    expect(errors.map((e) => e.name)).toEqual(['reporter']);
-  });
-
 });
 
 describe('AgentSpec → AgentGrant', () => {

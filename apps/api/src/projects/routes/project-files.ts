@@ -50,8 +50,8 @@ function isMissingGitPathError(error: unknown): boolean {
 
 /**
  * The repo file a single-file read names, or null when it can name none: an
- * absolute, traversal or NUL-containing path (the platform meta agent's
- * /workspace/AGENTS.md lives in the sandbox image, not the repo), or the root
+ * absolute, traversal or NUL-containing path (a sandbox path such as
+ * /workspace/AGENTS.md is not a repo file), or the root
  * (`.`, `./`). The visibility check and the git read both take this value, so
  * a respelled path (`.//x`, `x/`) is checked as the file git reads.
  */
@@ -284,7 +284,7 @@ export function registerProjectFilesRoutes(): void {
 
     // Visibility isolation: a zip can't be stripped mid-stream, so refuse any
     // archive whose subtree would include an agent/skill this member is scoped out
-    // of (e.g. the whole repo, or `.opencode/`). They can still archive a narrower
+    // of (e.g. the whole repo, or `agents/`). They can still archive a narrower
     // path that contains none. No-op when nothing is scoped.
     const denier = await resourceDenierForRequest({
       userId: loaded.userId,

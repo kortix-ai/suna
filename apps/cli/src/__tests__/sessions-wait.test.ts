@@ -17,16 +17,16 @@ describe('classifyWaitPoll', () => {
 
   test('an explicit idle status is idle', () => {
     expect(
-      classifyWaitPoll({ oc_1: { type: 'idle' } }, 'oc_1', { permissions: 0, questions: 0 }),
+      classifyWaitPoll({ oc_1: 'idle' }, 'oc_1', { permissions: 0, questions: 0 }),
     ).toBe('idle');
   });
 
   test('any non-idle status means the agent is working', () => {
     expect(
-      classifyWaitPoll({ oc_1: { type: 'busy' } }, 'oc_1', { permissions: 0, questions: 0 }),
+      classifyWaitPoll({ oc_1: 'busy' }, 'oc_1', { permissions: 0, questions: 0 }),
     ).toBe('working');
     expect(
-      classifyWaitPoll({ oc_1: { type: 'retry', attempt: 2 } }, 'oc_1', {
+      classifyWaitPoll({ oc_1: 'compacting' }, 'oc_1', {
         permissions: 0,
         questions: 0,
       }),
@@ -35,14 +35,14 @@ describe('classifyWaitPoll', () => {
 
   test('pending permission or question asks report blocked, even mid-turn', () => {
     expect(
-      classifyWaitPoll({ oc_1: { type: 'busy' } }, 'oc_1', { permissions: 1, questions: 0 }),
+      classifyWaitPoll({ oc_1: 'busy' }, 'oc_1', { permissions: 1, questions: 0 }),
     ).toBe('blocked');
     expect(classifyWaitPoll({}, 'oc_1', { permissions: 0, questions: 2 })).toBe('blocked');
   });
 
   test('another session being busy does not affect this one', () => {
     expect(
-      classifyWaitPoll({ oc_2: { type: 'busy' } }, 'oc_1', { permissions: 0, questions: 0 }),
+      classifyWaitPoll({ oc_2: 'busy' }, 'oc_1', { permissions: 0, questions: 0 }),
     ).toBe('idle');
   });
 });
@@ -266,17 +266,14 @@ describe('wait-for carries a failed turn out through the exit code', () => {
         ) {
           return Response.json(turnStatus);
         }
+        if (request.method === 'GET' && url.pathname === `/v1/p/${externalId}/8000/kortix/health`) {
+          return Response.json({ capabilities: ['runtime.actions.v1'] });
+        }
         if (
           request.method === 'GET' &&
-          url.pathname === `/v1/p/${externalId}/8000/session/status`
+          url.pathname === `/v1/p/${externalId}/8000/kortix/runtime/pending`
         ) {
-          return Response.json({});
-        }
-        if (request.method === 'GET' && url.pathname === `/v1/p/${externalId}/8000/permission`) {
-          return Response.json([]);
-        }
-        if (request.method === 'GET' && url.pathname === `/v1/p/${externalId}/8000/question`) {
-          return Response.json([]);
+          return Response.json({ statuses: {}, permissions: [], questions: [] });
         }
         return Response.json(
           { error: `unexpected ${request.method} ${url.pathname}` },

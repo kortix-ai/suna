@@ -3,8 +3,8 @@
 import { useLocalizedUiCatalog } from '../../../i18n/ui-catalog/use-localized-ui-catalog';
 import { useTranslations as useI18nTranslations } from '../../../i18n';
 /**
- * The agent editor — every field of one `agents.<name>` block in a
- * kortix_version 2 or 3 manifest (agent-first spec §2.2), as three reusable parts
+ * The agent editor — every field of one `agents.<name>` block in
+ * `kortix.yaml` (agent-first spec §2.2), as three reusable parts
  * and no shell of its own.
  *
  * The shell is `/projects/[id]/agent/[name]`
@@ -348,16 +348,9 @@ export function useLocalizedAgentConfigCatalog() {
 
 export type AgentConfigSectionKey = (typeof AGENT_CONFIG_SECTIONS)[number]['key'];
 
-/** The grants only a kortix_version 3 manifest has: each names registered entries. */
+/** The grants that name registered entries of the manifest. */
 export const REGISTRY_GRANT_SECTIONS = ['subagents', 'commands', 'extensions'] as const;
 export type RegistryGrant = (typeof REGISTRY_GRANT_SECTIONS)[number];
-
-/** The editor's topics for a manifest version. The registry grants exist from v3 on. */
-export function agentConfigSectionKeys(schemaVersion: number): AgentConfigSectionKey[] {
-  return AGENT_CONFIG_SECTIONS.map((s) => s.key).filter(
-    (key) => schemaVersion >= 3 || !(REGISTRY_GRANT_SECTIONS as readonly string[]).includes(key),
-  );
-}
 
 /** The names of one manifest registry (`commands:` or `extensions:`), with descriptions. */
 function registryEntries(manifest: Record<string, unknown>, key: 'commands' | 'extensions'): GrantOption[] {
@@ -372,7 +365,7 @@ function registryEntries(manifest: Record<string, unknown>, key: 'commands' | 'e
 }
 
 /**
- * The pick lists behind the v3 grant pages. Subagents are the declared,
+ * The pick lists behind the registry grant pages. Subagents are the declared,
  * enabled agents with `mode` `subagent` or `all`, never the agent itself.
  * Commands and extensions are the root manifest's registries.
  * ponytail: names registered in an `imports:` file are not listed; a picked
@@ -387,7 +380,7 @@ export function registryGrantOptions(
 ): Record<RegistryGrant, GrantOption[]> {
   let manifest: Record<string, unknown> = {};
   try {
-    manifest = config.manifest_raw ? parseManifestText(config.manifest_raw, 'yaml') : {};
+    manifest = config.manifest_raw ? parseManifestText(config.manifest_raw) : {};
   } catch {
     // A manifest that does not parse lists nothing; the save path reports the error.
   }
@@ -442,7 +435,7 @@ export function AgentConfigSections({
   editor: AgentDraft;
   options: AgentEditorOptions;
   skillsOptions: GrantOption[];
-  /** The v3 grant pick lists (`registryGrantOptions`). */
+  /** The registry grant pick lists (`registryGrantOptions`). */
   registryOptions?: Record<RegistryGrant, GrantOption[]>;
   /** The agent at a glance — a page-owned section, the Overview tab. */
   overview?: React.ReactNode;

@@ -282,7 +282,7 @@ export async function triggersAddLocal(
   try {
     if (arrayEntryExists('triggers', 'slug', slug)) {
       process.stderr.write(
-        `${status.err(`A [[triggers]] "${slug}" already exists in kortix.yaml.`)}\n`,
+        `${status.err(`A trigger "${slug}" already exists in kortix.yaml.`)}\n`,
       );
       return 1;
     }
@@ -315,7 +315,7 @@ export async function triggersAddLocal(
     };
     appendArrayBlock('triggers', fields);
     process.stdout.write(
-      `${status.ok(`Added [[triggers]] ${C.bold}${slug}${C.reset} (${type}) to kortix.yaml`)} ${C.dim}— \`kortix ship\` to apply.${C.reset}\n`,
+      `${status.ok(`Added trigger ${C.bold}${slug}${C.reset} (${type}) to kortix.yaml`)} ${C.dim}— \`kortix ship\` to apply.${C.reset}\n`,
     );
     return 0;
   } catch (err) {
@@ -328,11 +328,11 @@ export function triggersRmLocal(slug: string | undefined): number {
   if (!slug) return missing('a trigger slug');
   try {
     if (!removeArrayBlock('triggers', 'slug', slug)) {
-      process.stderr.write(`${status.err(`No [[triggers]] "${slug}" in kortix.yaml.`)}\n`);
+      process.stderr.write(`${status.err(`No trigger "${slug}" in kortix.yaml.`)}\n`);
       return 1;
     }
     process.stdout.write(
-      `${status.ok(`Removed [[triggers]] ${C.bold}${slug}${C.reset}`)} ${C.dim}— \`kortix ship\` to apply.${C.reset}\n`,
+      `${status.ok(`Removed trigger ${C.bold}${slug}${C.reset}`)} ${C.dim}— \`kortix ship\` to apply.${C.reset}\n`,
     );
     return 0;
   } catch (err) {
@@ -347,7 +347,7 @@ export function triggersToggle(slug: string | undefined, enabled: boolean): numb
   if (!slug) return missing('a trigger slug');
   try {
     if (!arrayEntryExists('triggers', 'slug', slug)) {
-      process.stderr.write(`${status.err(`No [[triggers]] "${slug}" in kortix.yaml.`)}\n`);
+      process.stderr.write(`${status.err(`No trigger "${slug}" in kortix.yaml.`)}\n`);
       return 1;
     }
     setScalarInArrayBlock('triggers', 'slug', slug, 'enabled', enabled);

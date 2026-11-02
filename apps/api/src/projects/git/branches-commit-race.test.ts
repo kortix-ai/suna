@@ -43,7 +43,7 @@ async function makeFixture(): Promise<{ root: string; remote: string; project: G
   await git(['init', '--initial-branch=main', seed]);
   await git(['-C', seed, 'config', 'user.name', 'Kortix Test']);
   await git(['-C', seed, 'config', 'user.email', 'test@kortix.invalid']);
-  await writeFile(join(seed, 'kortix.yaml'), 'kortix_version: 2\nconnectors: []\n');
+  await writeFile(join(seed, 'kortix.yaml'), 'connectors: []\n');
   await git(['-C', seed, 'add', 'kortix.yaml']);
   await git(['-C', seed, 'commit', '-m', 'seed manifest']);
   await git(['init', '--bare', remote]);
@@ -91,7 +91,7 @@ describe('commitMultipleFilesToBranch push-race recovery', () => {
 
       const revision = await git(['--git-dir', remote, 'rev-parse', 'refs/heads/main:kortix.yaml']);
       const result = await commitMultipleFilesToBranch(project, {
-        files: [{ path: 'kortix.yaml', content: 'kortix_version: 2\nconnectors: []\n' }],
+        files: [{ path: 'kortix.yaml', content: 'connectors: []\n' }],
         message: 'race to the same commit',
         expectedFileRevision: {
           path: 'kortix.yaml',
@@ -128,7 +128,7 @@ describe('commitMultipleFilesToBranch push-race recovery', () => {
       const revision = await git(['--git-dir', remote, 'rev-parse', 'refs/heads/main:kortix.yaml']);
       await expect(
         commitMultipleFilesToBranch(project, {
-          files: [{ path: 'kortix.yaml', content: 'kortix_version: 2\nconnectors: []\n' }],
+          files: [{ path: 'kortix.yaml', content: 'connectors: []\n' }],
           message: 'concurrent remote edit',
           expectedFileRevision: {
             path: 'kortix.yaml',

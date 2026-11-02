@@ -87,6 +87,8 @@ describe('trigger edit funnel: real read (loadManifestForEdit) → comment-prese
     expect(committed).toContain('# Kortix manifest — the comments carry the reasons');
     expect(committed).toContain('# Runs the deploy audit at night.');
     expect(committed).toContain('enabled: false');
+    // A Kortix write drops the obsolete `kortix_version` line.
+    expect(committed).not.toContain('kortix_version');
     expect(committed.split('\n').filter((l) => l.trimStart().startsWith('#')).length).toBe(
       COMMENTED_MANIFEST.split('\n').filter((l) => l.trimStart().startsWith('#')).length,
     );
@@ -102,6 +104,7 @@ describe('trigger edit funnel: real read (loadManifestForEdit) → comment-prese
 
     expect(committed).toContain('triggers: []');
     expect(committed).not.toContain('nightly-audit');
+    expect(committed).not.toContain('kortix_version');
     expect(committed).toContain('# Kortix manifest — the comments carry the reasons');
     // The committed text must still parse (bun's yaml parse throws on garbage).
     const { parse: parseYaml } = await import('yaml');

@@ -189,9 +189,9 @@ describe('api-router worker', () => {
     );
 
     expect(ecsDeploy).toContain('refusing live $ENV rollout without --database-migrated');
-    // Three live prod rolls now carry the gate: api, gateway, and the web
-    // service added at deploy-prod.yml:1238.
-    expect(prodWorkflow.match(/--database-migrated/g)?.length).toBe(3);
+    // Four live prod rolls carry the gate: the worker, api, gateway, and the
+    // web service.
+    expect(prodWorkflow.match(/--database-migrated/g)?.length).toBe(4);
   });
 
   test('keeps production API tasks at the incident-tested 4 GiB and three-task floor', () => {

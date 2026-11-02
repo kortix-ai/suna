@@ -28,6 +28,11 @@ output "task_definition_arn" {
   value = aws_ecs_task_definition.this.arn
 }
 
+output "worker_service_name" {
+  description = "The scheduled-job worker service (<name>-worker) in cluster_name. null when var.worker is null."
+  value       = one(aws_ecs_service.worker[*].name)
+}
+
 output "task_role_arn" {
   description = "The API task role: the only principal a capture device role trusts (modules/capture-store)."
   value       = aws_iam_role.task.arn

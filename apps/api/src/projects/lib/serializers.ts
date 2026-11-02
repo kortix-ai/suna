@@ -99,6 +99,8 @@ export const LIST_OMITTED_SESSION_METADATA_KEYS = [
   // A channel thread's top message: the list already serves it as the
   // top-level `first_prompt` field, so the metadata copy is a duplicate.
   'first_prompt',
+  // Served as the top-level `result_excerpt` (lib/session-board.ts).
+  'result_excerpt',
 ] as const;
 
 function trimSessionMetadataForList(
@@ -346,6 +348,8 @@ export function serializeProject(
     // 2026-10-24: older web, SDK and mobile clients render blocks only while it is true.
     // `connectors_v2` and `connectors_api_discover` graduated on 2026-10-24: older SDKs and
     // hosts read false as "show the legacy catalog".
+    // `meta_agent` was removed on 2026-11-02: My Kortix follows kortix.yaml
+    // `builtin_agents.my_kortix` alone, and older SDKs and hosts still read the key.
     experimental: {
       ...resolveFeatureFlags(row.metadata),
       apps: true,
@@ -355,6 +359,7 @@ export function serializeProject(
       genui: true,
       connectors_v2: true,
       connectors_api_discover: true,
+      meta_agent: true,
     },
     experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`

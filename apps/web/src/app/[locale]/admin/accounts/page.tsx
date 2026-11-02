@@ -1635,6 +1635,12 @@ const OVERRIDE_ENTITLEMENT_ROWS: {
     description:
       '5% of own-key model usage past $1,000 a month. On by default (off on Enterprise); Force off waives it for this account.',
   },
+  {
+    key: 'storageBilling',
+    title: 'Storage billing',
+    description:
+      'Files folders and session /workspace volumes, charged in credits per GiB-hour. On for every plan; Force off waives storage charges for this account.',
+  },
 ];
 
 const OVERRIDE_TRI_STATE_OPTIONS: { value: OverrideTriState; label: string }[] = [

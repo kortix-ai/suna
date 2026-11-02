@@ -45,7 +45,6 @@ import { Button } from '../../primitives/button';
 import Loading from '../../primitives/loading';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../primitives/select';
 import { errorToast, successToast } from '../../primitives/toast';
-import { detectManifestVersion } from '../../internal/lib/manifest-version';
 import { cn } from '../../internal/lib/utils';
 import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
@@ -169,7 +168,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   const subagents = shown.filter((agent) => !agentInMode(agent, 'primary'));
   const card = (agent: Agent, cover?: string) => (
     <AgentCoverCard
-      key={agent.path}
+      key={agent.name}
       slug={agent.name}
       href={agentHref(projectId, agent.name)}
       onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
@@ -356,9 +355,6 @@ function AgentCardBadges({ agent }: { agent: Agent }) {
  * Which agent a new chat in this project starts with. Rides the filter row
  * rather than a banner of its own — it is one setting, and giving it a titled
  * block above the grid would outweigh the list it belongs to.
- *
- * v2-only: the default agent is a `kortix.yaml` concept, so a v1 project gets
- * no control instead of one that cannot persist.
  */
 function DefaultAgentSelector({
   projectId,
@@ -371,8 +367,6 @@ function DefaultAgentSelector({
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
-  // v2 and v3 declare `default_agent` in kortix.yaml; v1 has no such key.
-  const declaresDefaultAgent = detectManifestVersion(config.manifest_raw) >= 2;
   // A subagent cannot start a chat, so it is not offered as the default.
   const availableAgents = toArray(config.agents).filter(
     (agent) => agent.enabled !== false && agentInMode(agent, 'primary'),
@@ -393,7 +387,7 @@ function DefaultAgentSelector({
     onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text7f724c2ad694')),
   });
 
-  if (!declaresDefaultAgent || availableAgents.length === 0 || !current) return null;
+  if (availableAgents.length === 0 || !current) return null;
 
   return (
     <div className="flex shrink-0 items-center gap-2">

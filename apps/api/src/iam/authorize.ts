@@ -47,6 +47,7 @@ import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { retryTransientDatabaseRead } from '../shared/database-errors';
 import { isImpersonatingAccount, isImpersonationBlockedAccount } from '../shared/impersonation';
 import { isUuid } from '../shared/validate';
+import { isMyKortixAgentName } from '@kortix/shared';
 import { ttlMemo } from '../shared/ttl-memo';
 import { agentMayPerform } from './agent-scope';
 import { AGENT_DEFAULT_CEILING, agentPrincipalDecision } from './agent-principal';
@@ -308,6 +309,7 @@ async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promis
       principal.id,
       rec.groupIds,
       managerTier,
+      obj.resource.id,
     );
     if (!usable) return deny('resource_scope_insufficient');
   }
@@ -494,7 +496,7 @@ export async function filterAccessibleObjects(
   const groups = new Set(rec.groupIds);
   return objectIds.filter((id) => {
     const principals = grants.get(id);
-    if (!principals || principals.length === 0) return unscopedOpen || managerTier;
+    if (!principals || principals.length === 0) return unscopedOpen || managerTier || openToEveryMember(objectType, id);
     return principals.some((p) => objectGrantReaches(p, principal.id, groups));
   });
 }
@@ -558,6 +560,17 @@ export function isImplicitManager(accountRoleKey: string | null): boolean {
 }
 
 /**
+ * The one object an unscoped `closed` type still opens to every project member:
+ * My Kortix, the built-in agent. It holds no connector or secret of its own and
+ * acts with exactly the person's role, so an agent grant would add nothing; a
+ * hand-off it makes is a new session, authorized against that agent's grants.
+ * Grant rows on it still decide, as on any object.
+ */
+export function openToEveryMember(objectType: string, objectId: string): boolean {
+  return objectType === 'agent' && isMyKortixAgentName(objectId);
+}
+
+/**
  * Is this object usable? THE object rule, and the only place that decides what
  * "nobody scoped this" means.
  *
@@ -573,9 +586,12 @@ export async function objectUsable(
   principalId: string,
   groupIds: readonly string[],
   managerTier: boolean,
+  /** The object's id, for the objects open to every member ({@link openToEveryMember}). */
+  objectId?: string,
 ): Promise<boolean> {
   if (!grantsForObject || grantsForObject.length === 0) {
     if (managerTier) return true;
+    if (objectId !== undefined && openToEveryMember(objectType, objectId)) return true;
     return (await unscopedDefaultFor(objectType)) === 'open';
   }
   const groups = new Set(groupIds);

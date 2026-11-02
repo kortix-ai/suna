@@ -1,20 +1,24 @@
+import { isUuid } from '../shared/validate';
 import { createClient } from '@supabase/supabase-js';
 import { ArtifactCommentScreenshotError, ARTIFACT_SCREENSHOT_LIMITS } from './comment-screenshot-validation';
 
 const BUCKET = 'session-attachments';
-const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
-const OBJECT = new RegExp(`^(${UUID})/artifact-comments/(${UUID})[.](png|webp)$`);
+const OBJECT = /^([^/]+)\/artifact-comments\/([^/.]+)[.](png|webp)$/;
+function objectParts(key: string) {
+  const match = OBJECT.exec(key);
+  return match && isUuid(match[1]) && isUuid(match[2]) && key === key.toLowerCase() ? match : null;
+}
 const unavailable = () => new ArtifactCommentScreenshotError(503, 'screenshot_storage_unavailable', 'Screenshot storage is unavailable. Retry this request.');
 export const screenshotNotFound = () => new ArtifactCommentScreenshotError(404, 'screenshot_not_found', 'Screenshot not found');
 const missing = (error: unknown) => ['404', 'not_found', 'NoSuchKey', 'NoSuchBucket'].includes(String((error as { statusCode?: string; status?: number; code?: string } | null)?.statusCode ?? (error as { status?: number } | null)?.status ?? (error as { code?: string } | null)?.code));
 
 export function screenshotObjectKey(projectId: string, commentId: string, extension: 'png' | 'webp'): string {
   const key = `${projectId}/artifact-comments/${commentId}.${extension}`;
-  if (!OBJECT.test(key)) throw screenshotNotFound();
+  if (!objectParts(key)) throw screenshotNotFound();
   return key;
 }
 export function screenshotKeyMatches(key: string, projectId: string, commentId?: string): boolean {
-  const match = OBJECT.exec(key);
+  const match = objectParts(key);
   return !!match && match[1] === projectId && (!commentId || match[2] === commentId);
 }
 interface Bucket {
@@ -48,14 +52,14 @@ export function createArtifactScreenshotStore(storage: Storage, origin: string, 
   const bucket = () => storage.from(BUCKET);
   return {
     async put(key: string, image: { bytes: Uint8Array; mime: 'image/png' | 'image/webp' }): Promise<void> {
-      if (!OBJECT.test(key)) throw screenshotNotFound();
+      if (!objectParts(key)) throw screenshotNotFound();
       try {
         const { error } = await bucket().upload(key, image.bytes, { contentType: image.mime, upsert: false, cacheControl: '0' });
         if (error) throw unavailable();
       } catch { throw unavailable(); }
     },
     async read(key: string): Promise<{ bytes: Uint8Array; mime: 'image/png' | 'image/webp' }> {
-      if (!OBJECT.test(key)) throw screenshotNotFound();
+      if (!objectParts(key)) throw screenshotNotFound();
       try {
         const signed = await bucket().createSignedUrl(key, 60);
         if (signed.error || !signed.data?.signedUrl) throw missing(signed.error) ? screenshotNotFound() : unavailable();
@@ -72,7 +76,7 @@ export function createArtifactScreenshotStore(storage: Storage, origin: string, 
       } catch (error) { if (error instanceof ArtifactCommentScreenshotError) throw error; throw unavailable(); }
     },
     async remove(key: string): Promise<void> {
-      if (!OBJECT.test(key)) throw screenshotNotFound();
+      if (!objectParts(key)) throw screenshotNotFound();
       try {
         const { error } = await bucket().remove([key]);
         if (error && !missing(error)) throw unavailable();

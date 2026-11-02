@@ -145,7 +145,8 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
     }
     if (hit) sessionRef = hit.session_id;
   }
-  const base = `/projects/${projectId}/sessions/${sessionRef}/reminders`;
+  // Every segment taken from input is encoded: an id with `/` or `?` stays one segment of this route.
+  const base = `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionRef)}/reminders`;
 
   try {
     if (sub === 'add' || sub === 'create') {
@@ -187,19 +188,20 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
 
     const id = args[0];
     if (!id) return missing(`a loop id: kortix loops ${sub} <id>`);
+    const path = `${base}/${encodeURIComponent(id)}`;
     if (sub === 'pause' || sub === 'resume') {
-      const updated = await client.patch<SessionReminder>(`${base}/${id}`, { enabled: sub === 'resume' });
+      const updated = await client.patch<SessionReminder>(path, { enabled: sub === 'resume' });
       if (json) emitJson(updated);
       else writeReminder(updated, sub === 'pause' ? 'Paused' : 'Resumed');
       return 0;
     }
     if (sub === 'run') {
-      const ran = await client.post<SessionReminder>(`${base}/${id}/run`, {});
+      const ran = await client.post<SessionReminder>(`${path}/run`, {});
       if (json) emitJson(ran);
       else writeReminder(ran, 'Sent to the session:');
       return 0;
     }
-    await client.delete<{ ok: boolean }>(`${base}/${id}`);
+    await client.delete<{ ok: boolean }>(path);
     if (json) emitJson({ ok: true, id });
     else process.stdout.write(`${status.ok(`Removed ${id}`)}\n`);
     return 0;

@@ -194,6 +194,16 @@ export interface ProjectSession {
   updated_at: string;
   /** The session that spawned this one; null for a top-level session. */
   parent_session_id?: string | null;
+  /** Board state (`@kortix/api-contract/multi-agent` `SessionBoardState`); absent on older APIs. */
+  board_state?: 'working' | 'needs_input' | 'idle' | 'completed' | 'failed' | 'stopped';
+  /** What the session waits for from its person, or null; absent on older APIs. */
+  attention?: 'question' | 'approval' | null;
+  /** The name its parent gave it with `agent({ name })`, or null. */
+  agent_handle?: string | null;
+  /** The lead session of a teammate (agent teams), or null. */
+  team_lead_session_id?: string | null;
+  /** Who may message the session: accept, hold or refuse. */
+  inbound?: 'accept' | 'hold' | 'refuse';
   /** Who started the run. null on rows the server could not classify. */
   initiator?: ProjectSessionInitiator | null;
   /** Visible children. Present only with `parent=root`. */

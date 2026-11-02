@@ -6,7 +6,9 @@
  *
  * - `FilesScreen` is the data half. It builds the two loaders from
  *   `kortix().session(projectId, sessionId).files` (SPEC §7) and gates on the
- *   session's own runtime phase.
+ *   session's own runtime phase. Paths under `/drives` (the session's Drive
+ *   mounts) go through the Drive API instead (`drive-mounts.ts`): the box
+ *   daemon does not serve them.
  * - `FilesView` is pixels and keys. Every read arrives through the injected
  *   `FileLoaders`, so `files-screen.test.tsx` drives the real component with
  *   fake loaders and no mocked module.
@@ -20,7 +22,8 @@
  * opening this screen on a started session.
  */
 
-import type { useSession } from '@kortix/sdk/react';
+import { listDriveFolder, readDriveFile } from '@kortix/sdk';
+import { type useSession, useSessionDrives } from '@kortix/sdk/react';
 import { useKeyboard } from '@opentui/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -28,6 +31,7 @@ import { kortix } from '../../kortix.ts';
 import { copyToClipboard } from '../../lib/clipboard.ts';
 import { glyph as GLYPH, theme } from '../../theme.ts';
 import { Spinner, layoutRow, windowStart } from '../../ui/index.ts';
+import { type DriveMount, type DriveReads, withDriveMounts } from './drive-mounts.ts';
 import {
   type FileTree,
   type TreeNode,
@@ -84,6 +88,15 @@ function errorText(error: unknown): string {
   return 'Unknown error';
 }
 
+/** No mounts. One constant, so the loaders memo is stable without a session's drives. */
+const NO_MOUNTS: readonly DriveMount[] = [];
+
+/** The Drive reads behind `/drives/*`. Module-level: they hold no state. */
+const DRIVE_READS: DriveReads = {
+  listFolder: (driveId, path) => listDriveFolder(driveId, path),
+  readFile: async (driveId, path) => (await readDriveFile(driveId, path)).blob,
+};
+
 export function FilesScreen({
   projectId,
   sessionId,
@@ -94,12 +107,25 @@ export function FilesScreen({
   session,
   onToast,
 }: FilesScreenProps) {
+  // The folders the session mounts under `/drives`. The hook is off while the
+  // project's `drives` flag is off, so the tree is then exactly the sandbox.
+  // React Query keeps the same array while a poll returns the same mounts, so
+  // the loaders below change only when the mounts do.
+  const sessionDrives = useSessionDrives(projectId, sessionId);
+  const mounts = sessionDrives.data?.drives ?? NO_MOUNTS;
+
   const loaders = useMemo<FileLoaders>(
-    () => ({
-      listDirectory: (path: string) => kortix().session(projectId, sessionId).files.list(path),
-      readFile: (path: string) => kortix().session(projectId, sessionId).files.read(path),
-    }),
-    [projectId, sessionId],
+    () =>
+      withDriveMounts(
+        {
+          listDirectory: (path: string) => kortix().session(projectId, sessionId).files.list(path),
+          readFile: (path: string) => kortix().session(projectId, sessionId).files.read(path),
+        },
+        mounts,
+        DRIVE_READS,
+        WORKSPACE_ROOT,
+      ),
+    [projectId, sessionId, mounts],
   );
 
   useKeyboard((key) => {
@@ -366,7 +392,7 @@ export function FilesView({
                 : theme.dim;
           return (
             <text key={row.id} fg={fg} bg={isCursor ? theme.surface : undefined}>
-              <span fg={theme.accent}>{isCursor && focused ? GLYPH.selected : ' '}</span>
+              <span fg={theme.brand}>{isCursor && focused ? GLYPH.selected : ' '}</span>
               {body}
             </text>
           );

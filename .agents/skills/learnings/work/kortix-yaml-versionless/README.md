@@ -1,8 +1,8 @@
 ---
 title: kortix.yaml without versions
-status: planned (not started); Marko's picks 2026-10-27
+status: building on branch `one-schema` (PR #11236): one format, older formats read converted; the plan below is superseded where the 2026-10-30 sections say so
 owner: Marko
-updated: 2026-10-27
+updated: 2026-10-30
 ---
 
 # kortix.yaml without versions
@@ -10,6 +10,51 @@ updated: 2026-10-27
 `kortix.yaml` loses its version line. One schema describes the latest shape,
 every reader accepts every old shape, and every write saves the latest shape.
 Validation says, per line, what is supported and what to change.
+
+## 2026-10-30, later: older formats still work (supersedes the hard cut's "Old files" row)
+
+A census of dev (1,527 projects, read-only, counts only) before the merge:
+675 on `kortix_version: 2`, 91 with only a `kortix.toml`, 715 with no
+manifest, 46 on the v3 shape. 188 of the 766 legacy projects belong to real
+accounts and 24 were active in the last 30 days. Prod received the v3 starter
+only in v0.14.11 (2026-10-30), so nearly every prod project is v2 or TOML. The
+hard cut would have turned off their agents, so it is reversed:
+
+- Read: `readManifestFromRepo` converts a legacy file (`legacy.ts`, the old
+  `kortix migrate` planner) with the files it points at. Sessions run the
+  converted agents; `manifest_health` has one `legacy-format` warning, one
+  warning per setting with no place in the format, and the converted issues.
+- Write: the first Kortix write saves the converted files in that commit
+  (kortix.yaml, prompt bodies, deletes of `kortix.toml` and the OpenCode
+  files). `kortix validate --fix` writes the same conversion. The other CLI
+  writers refuse a legacy file.
+- Checked: all 54 historical starter and marketplace templates convert with 0
+  errors; real sessions on a v2 and a TOML project ran the converted agent.
+- Retire the converter only when a census finds 0 legacy files on every
+  environment.
+
+## 2026-10-30: hard cut (supersedes "Old files", "Cut" and WP2)
+
+Marko, 2026-10-30: "remove v1/v2/v3, toml support & just have 1 like infinitely
+maintained schema", "we dont have that much customers, we can just rm these
+projects", "be bold with old stuff", and "do we want silent failures? like it
+will always default to some good default but send clear warnings wherever
+necessary for self fixing".
+
+| Topic | 2026-10-27 plan | 2026-10-30 decision (built on `one-schema`) |
+| --- | --- | --- |
+| Old files (TOML, v1, v2) | converter in the reader, heal job, census | no converter, no `kortix migrate`, no upgrade UI. A retired file gets one error and the project runs built-in agents only (My Kortix). |
+| `kortix_version` | deprecated with a fix | obsolete: `3` is a warning ("remove it"), any other value is the retired-format error |
+| `agents`, `default_agent` | required | optional: no agents means built-ins only, no `default_agent` means My Kortix |
+| Run time | the reader drops only the broken entry | `usableManifest(parsed, issues)`: unknown keys ignored; an agent or trigger with an error is off; a broken connector, app, skill, tool, command, extension, space or sandbox template is dropped; `project`, `default_agent`, `runtime` fall back to their defaults; any other error means built-ins only. Every case only removes access. |
+| Write time | — | errors block (`kortix validate`, `kortix ship`, the change-request merge gate, API writes, the editor). Writers never write `kortix_version`. |
+| Surfaces | issue lines with file:line:col | every issue has line and column, unknown keys get "Did you mean"; `GET /v1/projects/:id/detail` returns `manifest_health`; the project banner offers "Fix with My Kortix"; the compiled agent set carries `manifest_issues` and the sandbox writes them into the agent's system prompt |
+| JSON Schema | generated from zod | one hand-kept document (`/schema/kortix.schema.json`, alias `kortix.v3.schema.json`); the zod single source (WP1) is the next PR |
+
+Still open after `one-schema`: WP1 (one zod source for validator, types, JSON
+Schema, docs), comment-keeping API writes, and removing the `V2`/`V3`
+suffixes from names. Built on `one-schema` since: `kortix validate --fix`,
+the deprecation table, validators for `policy`, `policies` and `approvals`.
 
 ## Problem (verified on `project-admin`, 2026-10-27)
 

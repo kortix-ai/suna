@@ -69,7 +69,6 @@
     "oauthExpired": "認証がタイムアウトしました。もう一度お試しください。",
     "oauthPrivateDescription": "このプロジェクトで ChatGPT Plus または Pro プランを使用します。新しいアカウントは共有するまで自分専用です。",
     "chatGptSubscription": "ChatGPT サブスクリプション",
-    "useYourChatGpt": "自分の ChatGPT サブスクリプションを使う",
     "manageChatGptAccounts": "ChatGPT アカウントを管理",
     "connect": "接続",
     "connectChatGpt": "ChatGPT を接続",
@@ -96,7 +95,7 @@
     "deleteError": "シークレットを削除できませんでした",
     "accessError": "アクセス権を変更できませんでした",
     "sharedTitle": "プロバイダー接続",
-    "sharedDescription": "API キーと ChatGPT アカウントを追加できます。新しい接続は共有するまで自分専用です。セッションごとに使用する接続を選択できます。",
+    "sharedDescription": "API キー、ChatGPT アカウント、Claude アカウントを追加します。新しいものは共有するまで自分専用です。各セッションで使うものを選びます。",
     "legacyProjectKey": "既存のプロジェクトキー · このセッションでキーを選択していない場合に使用",
     "keyCount": "{count, plural, other {# 個のキー}}",
     "providerKeysFor": "{provider} の API キー",
@@ -163,7 +162,19 @@
     "opencodeGoConnect": "OpenCode Go を接続",
     "opencodeGoReconnect": "OpenCode Go を再接続",
     "opencodeGoDisconnect": "OpenCode Go の接続を解除",
-    "opencodeGoFailed": "OpenCode Go に接続できませんでした"
+    "opencodeGoFailed": "OpenCode Go に接続できませんでした",
+    "claudeAccounts": "Claude アカウント",
+    "noClaudeAccounts": "Claude アカウントはまだありません",
+    "connectClaude": "Claude でサインイン",
+    "claudeOauthPrivateDescription": "このプロジェクトの Claude モデルで Claude Pro または Max プランを使います。新しいアカウントは共有するまで自分専用です。",
+    "claudeOauthCreationDescription": "Claude Pro または Max のアカウントでサインインします。Kortix はログインを暗号化して保存し、表示しません。",
+    "claudeDefaultAccountLabel": "Claude · {name}",
+    "claudeAccountConnected": "Claude アカウントを接続しました",
+    "claudeAccountReconnected": "Claude アカウントを再接続しました",
+    "claudeConnectFailed": "Claude のサインインが完了しませんでした。もう一度お試しください。",
+    "claudeReconnectDescription": "もう一度 Claude でサインインします。アカウントの名前、アクセス、セッションの選択はそのまま残ります。",
+    "claudeAccountLabelPlaceholder": "例: 自分の Claude アカウント",
+    "claudeDeleteAccountConfirmTitle": "この Claude アカウントを全員分削除しますか?"
   },
   "secrets": {
     "undecryptable": {
@@ -552,10 +563,6 @@
         "feature-flags": {
           "label": "機能フラグ",
           "description": "一般公開前に有効にできる機能。"
-        },
-        "upgrades": {
-          "label": "アップグレード",
-          "description": "エージェントがこのプロジェクトに加えた変更。実行ごとに確認用の変更リクエストが作成されます。自動ではマージされません。"
         },
         "profile": {
           "label": "プロフィール",
@@ -1255,10 +1262,6 @@
           "name": "マーケットプレイス",
           "description": "コミュニティやベンダーのレジストリからスキルを参照してインストールします。ソース、更新、チーム範囲は調整中です。"
         },
-        "meta_agent": {
-          "name": "My Kortix",
-          "description": "My Kortix はあなたが話す唯一のエージェントです。各タスクを適したエージェントに振り分け、あなたの権限で実行します。プロジェクトの設定は kortix.yaml の `builtin_agents.my_kortix` です。このスイッチは、そのキーが未設定のときだけ適用されます。"
-        },
         "warm_sessions": {
           "name": "ウォームセッション",
           "description": "サンドボックスを1つ待機させ、すぐにセッションを開始します。待機中も計算資源を使います。"
@@ -1334,6 +1337,10 @@
         "chrome": {
           "name": "Chrome で Kortix",
           "description": "セッションが接続済みの Chrome ブラウザを操作できるようにします。いつでも操作を引き継ぐか停止できます。"
+        },
+        "agent_teams": {
+          "name": "エージェントチーム",
+          "description": "リードセッションが名前付きのチームメイトを起動し、1つのタスクリストを共有します。各チームメイトはタスクを引き受け、自分のセッションで作業し、終わったらリードに知らせます。リードの入力欄の下で、すべてのチームメイトとそのタスクを確認できます。セッション間のメッセージはこのフラグがなくても使えます。"
         }
       },
       "channelsSwitch": {
@@ -1347,24 +1354,7 @@
         "turnOff": "オフにする"
       },
       "wip": "Work in progress",
-      "wipNote": "Not recommended yet: it can change or break."
-    },
-    "upgrades": {
-      "available": "利用可能なアップグレード",
-      "readOnly": "読み取り専用 — アップグレードの実行には、このプロジェクトへの書き込み権限が必要です。",
-      "none": "利用可能なアップグレードはありません",
-      "upToDateDescription": "このプロジェクトは最新です。",
-      "upToDate": "最新",
-      "run": "実行",
-      "oneOff": "一回限りのアップグレード",
-      "oneOffDescription": "代わりに1つの変更を記述できます。セッションが変更と検証を行い、変更リクエストを開きます。",
-      "oneOffPlaceholder": "例: release-bot エージェントをすべての参照で deploy-bot に変更する",
-      "runUpgrade": "アップグレードを実行",
-      "manifestV3": {
-        "title": "マニフェストを v3 (kortix.yaml) にアップグレード",
-        "description": "kortix.toml またはバージョン 2 の kortix.yaml をバージョン 3 に移行します。プロジェクトがスキル、ツール、コマンド、拡張機能を登録し、各エージェントが名前で有効にします。プラットフォーム管理スキルを更新し、レビュー用の変更リクエストを開きます。"
-      },
-      "agentEditorHint": "このプロジェクトはバージョン 1 のマニフェストを使用しています。<code>kortix.yaml</code> バージョン 3 にアップグレードすると、このエージェントの指示、モデル、ツール権限、アクセスをここで編集できます。"
+      "wipNote": "まだ推奨しません。変更されたり動作しなくなったりする可能性があります。"
     },
     "plan": {
       "managedByAdmin": "アカウント管理者が管理",
@@ -1407,6 +1397,7 @@
       "addCredits": "クレジットを追加",
       "spentThisPeriod": "この期間の支出",
       "compute": "コンピューティング",
+      "storage": "ストレージ",
       "total": "合計",
       "history": "履歴",
       "historyDescription": "各セッションの費用と、追加または使用されたすべてのクレジット。",
@@ -1697,10 +1688,16 @@
       "localComputer": "あなたのコンピューター",
       "appsAndExtensions": "アプリと拡張機能"
     },
-    "manifestUpgrade": {
-      "title": "v3 にアップグレード",
-      "description": "このプロジェクトは古いマニフェストを使用しています。エージェントが <yaml>kortix.yaml</yaml> バージョン 3 に移行し、管理対象スキルを更新して変更リクエストを作成します。承認するまで変更は適用されません。",
-      "start": "アップグレードを開始"
+    "manifestIssues": {
+      "title": "{file} に {errors, plural, other {# 件のエラー}}と{warnings, plural, other {# 件の警告}}があります",
+      "titleErrors": "{file} に {errors, plural, other {# 件のエラー}}があります",
+      "titleWarnings": "{file} に {warnings, plural, other {# 件の警告}}があります",
+      "errorsOff": "エラーのあるエージェントとトリガーは、修正されるまでオフになります。",
+      "warningsOnly": "すべて引き続き動作します。",
+      "error": "エラー",
+      "warning": "警告",
+      "fix": "My Kortix で修正",
+      "fixInSession": "新しいセッションで修正"
     },
     "filter": {
       "grouping": "グループ化",
@@ -1859,20 +1856,8 @@
     },
     "drive": "ドライブ",
     "repo": "Repo",
-    "customizeSidebar": "サイドバーをカスタマイズ",
     "searchApps": "アプリを検索",
     "appsNoMatches": "一致するものはありません",
-    "customizeSidebarDescription": "2つのグループ間で項目をドラッグします。",
-    "resetSidebar": "デフォルトに戻す",
-    "reorderItem": "{name} を並べ替え",
-    "reorderHint": "ドラッグして並べ替えます。上下の矢印キーでも移動でき、「その他」の区切りを越えるとサイドバーから非表示になります。",
-    "reorderAnnouncement": "{name}：{group}、{total} 件中 {position} 番目",
-    "more": "その他",
-    "inSidebar": "サイドバー",
-    "underMore": "その他",
-    "sidebarEmpty": "ここに項目をドラッグするとサイドバーに表示されます。",
-    "moreEmpty": "ここに項目をドラッグすると「その他」に移動します。",
-    "moreCaption": "「その他」の項目は、ナビゲーション下の「その他」メニューから開けます。",
     "spaces": {
       "channels": "チャンネル",
       "directMessages": "ダイレクトメッセージ",
@@ -2656,7 +2641,7 @@
         },
         "credit": {
           "question": "1 クレジットで何が使えますか？",
-          "answer": "1 クレジットは 0.01 ドルです。クレジットはエージェント用コンピューターの料金に使われ、秒単位・リソース単位で課金されます（vCPU 1 時間あたり {vcpuRate}、RAM 1 GB 1 時間あたり {memoryRate}、ストレージ 1 GB 1 か月あたり {diskRate}）。既定の {spec} のマシンは 1 時間あたり約 {creditsPerHour} クレジットなので、1 クレジットは約 {minutes} 分です。停止中は無料です。クレジットは Kortix のモデルの料金にも使われ、プロバイダーの基本価格に {fee}% のプラットフォーム手数料が加わります。自分の API キーは、モデルの利用料が月 1,000 ドルまでは無料で、それを超えるとプロバイダー価格の 5% がクレジットから支払われます。ChatGPT サブスクリプションではクレジットは消費されません。"
+          "answer": "1 クレジットは 0.01 ドルです。クレジットはエージェント用コンピューターの料金に使われ、秒単位・リソース単位で課金されます（vCPU 1 時間あたり {vcpuRate}、RAM 1 GB 1 時間あたり {memoryRate}、ストレージ 1 GB 1 か月あたり {diskRate}）。既定の {spec} のマシンは 1 時間あたり約 {creditsPerHour} クレジットなので、1 クレジットは約 {minutes} 分です。停止中はコンピューティングを消費しません。保存されたファイルはストレージとして課金されます。クレジットは Kortix のモデルの料金にも使われ、プロバイダーの基本価格に {fee}% のプラットフォーム手数料が加わります。自分の API キーは、モデルの利用料が月 1,000 ドルまでは無料で、それを超えるとプロバイダー価格の 5% がクレジットから支払われます。ChatGPT サブスクリプションではクレジットは消費されません。"
         },
         "amounts": {
           "question": "毎月いくら支払いますか？",
@@ -2702,7 +2687,7 @@
       "hours": {
         "eyebrow": "エージェント時間",
         "title": "1 クレジットでエージェント用コンピューターを約 {minutes} 分使えます",
-        "description": "クレジットはエージェント用コンピューターの料金に使われます。これは、エージェントがコードを実行し、ブラウズし、ファイルを編集するクラウド上のマシンです。稼働中は秒単位で課金され、停止中は無料です。",
+        "description": "クレジットはエージェント用コンピューターの料金に使われます。これは、エージェントがコードを実行し、ブラウズし、ファイルを編集するクラウド上のマシンです。稼働中は秒単位で課金され、停止中はコンピューティングを消費しません。保存されたファイルはストレージとして課金されます。",
         "rate": {
           "value": "1 クレジット = 0.01 ドル",
           "note": "どのプランでも、この料金でクレジットを購入できます。"
@@ -2717,7 +2702,7 @@
         },
         "rates": {
           "title": "コンピューティング料金",
-          "note": "予約したサイズに対して秒単位で課金されます。停止中のコンピューターは無料です。",
+          "note": "予約したサイズに対して秒単位で課金されます。停止中のコンピューターはコンピューティングを消費しません。保存されたファイルはストレージとして課金されます。",
           "vcpu": {
             "label": "vCPU",
             "price": "{price} / 時間"
@@ -3096,6 +3081,116 @@
       "scriptFailed": "スクリプトが失敗しました",
       "calls": "{count, plural, other {# 件のツール呼び出し}}",
       "noOutput": "出力なし"
+    },
+    "kortixAction": {
+      "running": {
+        "agents": {
+          "read": "エージェントを確認中…",
+          "change": "エージェントを更新中…"
+        },
+        "sessions": {
+          "read": "セッションを確認中…",
+          "change": "セッションを更新中…"
+        },
+        "schedules": {
+          "read": "スケジュールを確認中…",
+          "change": "スケジュールを更新中…"
+        },
+        "connectors": {
+          "read": "コネクタを確認中…",
+          "change": "コネクタを更新中…"
+        },
+        "people": {
+          "read": "メンバーを確認中…",
+          "change": "メンバーを更新中…"
+        },
+        "access": {
+          "read": "アクセス権を確認中…",
+          "change": "アクセス権を更新中…"
+        },
+        "usage": {
+          "read": "使用量を確認中…",
+          "change": "使用量を確認中…"
+        },
+        "changeRequests": {
+          "read": "変更リクエストを確認中…",
+          "change": "変更リクエストを更新中…"
+        },
+        "memory": {
+          "read": "メモリを確認しています…",
+          "change": "メモリを更新しています…"
+        }
+      },
+      "status": {
+        "done": "完了",
+        "needsYou": "対応が必要",
+        "denied": "権限が必要",
+        "error": "完了しませんでした",
+        "running": "実行中"
+      },
+      "deniedTitle": "権限が必要です",
+      "grantors": "付与できる人",
+      "grantorsUnknown": "このプロジェクトを管理している人なら誰でも付与できます。",
+      "newSetting": "新規",
+      "removedSetting": "削除済み",
+      "opensInNewTab": "新しいタブで開きます",
+      "showDetails": "詳細を表示"
+    },
+    "workflow": {
+      "fallbackTitle": "ワークフロー",
+      "starting": "ワークフローを開始中…",
+      "progress": "{total} 件中 {done} 件完了",
+      "failedCount": "{total} 件中 {failed} 件失敗",
+      "agents": "{count, plural, other {# 個のエージェント}}",
+      "background": "バックグラウンドで実行中",
+      "status": {
+        "starting": "開始中",
+        "running": "実行中",
+        "done": "完了",
+        "failed": "失敗",
+        "stopped": "停止",
+        "pending": "未開始"
+      },
+      "openAgent": "{label} を開く",
+      "showDetails": "詳細を表示",
+      "failedSuffix": "{count} 件失敗",
+      "resumed": "再開",
+      "resumedHint": "前回の実行で完了したエージェントは、その回答をそのまま使います。",
+      "large": "大規模な実行",
+      "largeHint": "この実行は 25 個を超えるエージェントを起動します。各エージェントは行から停止できます。",
+      "openRun": "実行を開く",
+      "openRunLabel": "実行のセッションを開く",
+      "backgroundIdle": "専用のセッションで実行",
+      "savedName": "保存済みワークフロー {name}",
+      "upTo": "最大 {count, plural, other {# 個のエージェント}}",
+      "result": "結果",
+      "logLabel": "ワークフローのログ",
+      "agentsLabel": "ワークフローのエージェント",
+      "filter": {
+        "label": "エージェントを表示",
+        "all": "すべて",
+        "running": "実行中",
+        "failed": "失敗",
+        "done": "完了"
+      },
+      "filterEmpty": {
+        "running": "実行中のエージェントはありません。",
+        "failed": "失敗したエージェントはありません。",
+        "done": "完了したエージェントはまだありません。"
+      },
+      "showAll": "{count} 件すべて表示",
+      "retry": "再試行 {count}",
+      "cached": "前回の実行から",
+      "stopAgent": "{label} を停止",
+      "stopHint": "このエージェントを停止",
+      "stopFailed": "{label} を停止できませんでした",
+      "json": "JSON",
+      "jsonKeys": "{count, plural, other {JSON · # 個のキー}}",
+      "jsonItems": "{count, plural, other {JSON · # 個の項目}}"
+    },
+    "agent": {
+      "backgroundWorking": "バックグラウンドで作業中",
+      "backgroundSession": "専用のセッションで実行"
     }
   },
   "agentRunLimit": {
@@ -7806,8 +7901,7 @@
       "legendTool": "ツール結果",
       "legendOther": "その他",
       "subAgentsLabel": "サブエージェント",
-      "subAgentsNote": "このセッションは補助セッションを開始しました。以下の合計に含まれます。",
-      "combinedCost": "合計コスト",
+      "subAgentsNote": "このセッション内で実行された補助エージェントです。その費用はこのセッションの費用に含まれます。",
       "combinedMessages": "合計メッセージ",
       "tokensIn": "入力トークン",
       "tokensOut": "出力トークン",
@@ -7831,7 +7925,20 @@
       "rawFilterUser": "あなた",
       "rawFilterAssistant": "アシスタント",
       "rawNoMatches": "一致するメッセージがありません",
-      "detailsLabel": "詳細"
+      "detailsLabel": "詳細",
+      "costSplit": "このセッション {own} · {count, plural, other {起動したセッション # 件で {spawned}}}",
+      "costEstimated": "トランスクリプトからの推定値",
+      "detailModelRequests": "モデルリクエスト",
+      "spawnedLabel": "起動したセッション",
+      "spawnedNote": "このセッションが起動したセッションと、それらが起動したセッションです。その費用は合計コストに含まれます。",
+      "spawnedCount": "{count, plural, other {このセッションと起動したセッション # 件}}",
+      "spawnedRequests": "リクエスト",
+      "spawnedCost": "費用",
+      "spawnedThisSession": "このセッション",
+      "spawnedTotal": "合計",
+      "spawnedHidden": "{count, plural, other {開けない起動セッション # 件は含まれていません。}}",
+      "spawnedTruncated": "最初の 500 件の起動セッション(最大 10 階層)のみ含まれます。",
+      "spawnedUntitled": "無題のセッション"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "コネクタービュー",
@@ -10923,7 +11030,6 @@
       "text18093cad2644": "モーダル",
       "text180bbb19a1b2": "1人の頭の中にあるランブック",
       "text1814e0a6cb50": "利用可能なモデルを見る",
-      "text1815aa434bc6": "# スキーマバージョン 2。ランタイムは OpenCode。",
       "text1815ae76cdc7": "デプロイされていません",
       "text1829231e85b1": "このアカウントのすべてのメンバーに、Kortixのロゴ、アイコン、favicon、名前が再び表示されます。アップロードした画像は削除されます。",
       "text1836d8d61ae9": "{value0} が {value1} から削除されました",
@@ -12217,7 +12323,6 @@
       "text11ef24ea6e15": "アカウント名を変更できませんでした",
       "text0223e507afd3": "別のアカウントを使うには、プロジェクト設定でこのコネクタのアカウントに追加し、デフォルトに設定してください。",
       "text073fce23e704": "      memory/ を更新して、`memory: ...` という",
-      "text0922e6bf143c": "harnesses/opencode/opencode.jsonc",
       "text3ed7c1e32705": "トラッカーを読むことと書き換えることは別のアクションです。書き込みをAskにすると、統合・クローズ対象の課題を正確に表示して停止し、承認後そこから再開します。",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "クレジットが引き落とされました",
@@ -12550,7 +12655,6 @@
       "text47931699ba90": "スケジュールを更新しました",
       "text4795dc5fb288": "現在の接続は、置き換えが保存されるまで機能します。",
       "text479974eaff88": "{value0}：{value1}件成功、{value2}件失敗。{value3}：{value4}{value5}",
-      "text479d92cbfaa1": "(kortix_version 2) このエージェントの命令、モデル、ツールの権限を編集し、ここにアクセスします。",
       "text47a8467a2faa": "変更を読み込めませんでした",
       "text47b31f661d3f": "ロールの更新に失敗しました",
       "text47bd29075f8b": "コンテンツ",
@@ -13457,7 +13561,6 @@
       "text61dac62928db": "スケジュール済み：",
       "text61e8d44ad423": "始める",
       "text61eedf5451c2": "    timezone: UTC",
-      "text61f28ba7b5a4": "kortix_version: 2",
       "text61ff61757ef1": "このアカウントでアクセスがどのように機能するか。",
       "text6201111b83a0": "および",
       "text6201f8d3134e": "モニターイベントを取り込みました",
@@ -15864,7 +15967,6 @@
       "texta743aa4452d3": "認証所有者の更新に失敗しました",
       "texta756e5fb5f6b": "IT に必要なのはダッシュボードではありません。各行に説明可能な理由があり、承認すれば実際に処理が進む形式の一覧です。",
       "texta757b331fa9a": "statusText",
-      "texta757f937ab97": "（kortix_version 2）このエージェントの利用可否、モデル、ツール権限、アクセス権をここで編集できます。",
       "texta76a1fd4cef5": "Stripe 請求 Webhook を受信しました",
       "texta76ce82a9749": "キャッシュ",
       "texta76e13b98392": "復元",
@@ -15955,7 +16057,6 @@
       "texta9f78a15820d": "ルール {value0} 条件 {value1} の比較",
       "textaa000c983975": "グループリソース",
       "textaa023456aca4": "ChatGPTを接続",
-      "textaa132a97a22a": "  config_dir: harnesses/opencode",
       "textaa1c8a0b1716": "保存をクリックすると、すべてのメンテナンス通知が解除され、通常のアクセスが復元されます。",
       "textaa2025f803e6": "エージェントにはシェルとファイルシステムがあります。パッケージをインストールし、サンプルを取得し、実行し、出力を確認して再試行できます。固定されたツールを一度だけ使うのではなく、実際のアナリストが行うループです。",
       "textaa2e1a551c0a": "集めるのはエージェント。決めるのはあなた。",
@@ -16857,7 +16958,6 @@
       "textc3bf78fdd3b9": "申請を送信できませんでした",
       "textc3c25857485f": "すること",
       "textc3c709a999c1": "メモリを読み取り中…",
-      "text7823a1f3af93": "kortix.toml またはバージョン 2 の kortix.yaml をバージョン 3 に移行します。プロジェクトがスキル、ツール、コマンド、拡張機能を登録し、各エージェントが名前で有効にします。プラットフォーム管理スキルを更新し、レビュー用の変更リクエストを開きます。",
       "textc3d2e79ebdd0": "コネクター",
       "textc3e3a6edeaa5": "利用規約",
       "textc3e58a73609d": "破壊的",
@@ -16950,7 +17050,6 @@
       "textc634dcb25574": "記帳",
       "textc63adab9bd56": "このタスクで使用したツールと参照ファイルを追跡します。",
       "textc63eb6720c6e": "非公開",
-      "textc6414eb01d9a": "エージェントがこのワークスペースに加えた変更。実行するたびに変更リクエストが表示され、確認することができます。単独でマージされるものはありません。",
       "textc6479e2f4970": "変更を更新",
       "textc65feb0006ea": "労働者 · {value0}{value1}",
       "textc661a1039aa0": "上限まで使用",
@@ -17593,7 +17692,6 @@
       "textd83a0d814c59": "API Statusに緑色の「Enabled」が表示され、「SCIM Username」パラメーターがEmailにマッピングされ、管理者承認による保留なしでプロビジョニングが有効になっていることを確認します。",
       "textd84b8be91e7b": "Kortix — プレゼンテーション",
       "textd84ee1e1e08b": "kortix init を試すか、コマンドには / を入力",
-      "text08edd5b6dcdc": "マニフェストを v3 (kortix.yaml) にアップグレード",
       "text848f54e89660": "実行履歴",
       "textb098a09c78aa": "ペイロードでテスト",
       "text99733344956d": "ペイロード",
@@ -17775,7 +17873,6 @@
       "textdc70ef3b3338": "質問した場所に答えが届いてこそ、チャンネルを接続する価値があります。ファイルは双方向にやり取りでき、エージェントがあなたに求める判断は、別の場所へのリンクではなくスレッド内のボタンになります。",
       "textdc76dd6b1aff": "Kortix CLIにサインイン",
       "textdc78f4d17256": "MFA未登録 — ロックアウトされませんが、登録を依頼することをおすすめします:",
-      "textdc7ab144ca89": "完全なエージェントエディターを利用するにはアップグレードしてください",
       "textdc7ea87fdc45": "ファイルは双方向",
       "textdc8659db6d41": "Enter",
       "textdc8d7c5c602b": "ソース台帳",
@@ -17898,7 +17995,6 @@
       "textdfea74d6d58d": "フォールバックを上へ移動",
       "textdffb64dc7001": "上限",
       "texte01d77b4a0bd": "課題",
-      "texte02a5941602a": "アップグレード",
       "texte030ac604b81": "デプロイとセキュリティ態勢",
       "texte0362b3241c5": "範囲内",
       "texte03abcb2b624": "コネクターと更新時間帯",
@@ -20348,10 +20444,6 @@
       "textc86ce3b8097b": "例：5000",
       "textfaaf56a699c2": "上限（クレジット）",
       "texte7a241debad5": "URL",
-      "text3dd46a7b552c": "アプリを追加",
-      "text68cf13547e38": "URL でアプリを追加",
-      "text46bc646c9bfe": "任意の場所でホストされているサイトをこのプロジェクトに表示します。Kortix は実行中のアプリと並べてその場で開きます。",
-      "text08e6480e9b78": "{value0} を追加しました",
       "text6241684827b2": "このサイトは Kortix での表示を許可していません。",
       "textdae75dce541f": "このプロジェクトのすべてのスケジュールと Webhook を一時停止します。",
       "textced57bebd466": "このプロジェクトのスケジュールと Webhook を再開します。",
@@ -20700,7 +20792,7 @@
       "textfad839251867": "1つのメンバーシップ。",
       "text426f4b82195d": "質問。",
       "text10db059690a0": "マップする。構築する。実行する。",
-      "text77ece565fe55": "会社全体をコードとして扱います。すべてのエージェント、スキル、ルール、コネクター、コンテキストは1つのgitリポジトリ内のファイルです。すべてのエージェントはミニマルなオープンソースのハーネス上で動く独自のpiエージェントなので、pi拡張機能であらゆるものを拡張できます。",
+      "texte6a48bfb5ab1": "すべてのエージェント、スキル、ルール、コネクターは1つのgitリポジトリ内のファイルです。各エージェントは、pi拡張機能で拡張できる独自のpiエージェントです。",
       "textc61528adb57c": "Kortixはオープンソースです。Kortix Cloud、自社VPC、またはオンプレミスネットワーク上で、任意のモデルと自社キーを使って実行できます。",
       "textbf8abe5b1667": "マルチプレイヤー。会社をコードとして。ソブリン。",
       "text1445799c033a": "詳細を見る",
@@ -21573,13 +21665,13 @@
     "connectorError": "Error",
     "missing": "Missing",
     "connectorsEmptyTitle": "No connectors yet",
-    "connectorsEmptyDescription": "Connect an app in the project, then choose it here.",
-    "secretsDescription": "Project secrets this agent's sessions get as environment variables.",
+    "connectorsEmptyDescription": "プロジェクトでアプリを接続してから、ここで選択してください。",
+    "secretsDescription": "このエージェントのセッションに環境変数として渡されるプロジェクトのシークレットです。",
     "secretNotSet": "Not set",
     "projectGroup": "Project",
-    "secretsEmptyProject": "No project secrets yet.",
+    "secretsEmptyProject": "プロジェクトのシークレットはまだありません。",
     "secretsEmptyTitle": "No secrets yet",
-    "secretsEmptyDescription": "Secrets added to the project show up here for this agent.",
+    "secretsEmptyDescription": "プロジェクトに追加したシークレットが、このエージェント用にここに表示されます。",
     "connectorsSearch": "Search connectors",
     "sandboxSecretsEmptyTitle": "サンドボックスのシークレットはありません",
     "sandboxSecretsEmptyDescription": "エージェントが受け取るのは環境変数とネットワークで適用されるシークレットです。モデルのログインとコネクタの認証情報は Kortix が保持し、誰が使うかはモデルとコネクタの設定で決まります。"
@@ -21869,7 +21961,6 @@
     "connectorsEmptyBody": "カタログからアプリをインストールします。アカウントを追加するとエージェントが使えます。",
     "browseApps": "アプリを探す",
     "agentsLoadFailed": "エージェントを読み込めませんでした",
-    "agentsNeedsV2": "エージェントのアクセスは kortix.yaml（kortix_version 2 以降）で設定します。このプロジェクトは kortix.toml を使っています。",
     "agentsEmpty": "このプロジェクトにはまだエージェントがありません。",
     "agentsIntro": "このコネクタを使えるエージェントと、そのルールを選びます。変更は kortix.yaml にコミットされます。",
     "agentsReadOnly": "エージェントとコネクタを編集できる人だけが変更できます。",
@@ -21956,11 +22047,11 @@
     "bulkPause": "選択項目を一時停止",
     "bulkResume": "選択項目を再開",
     "bulkRemove": "選択項目を削除",
-    "bulkPaused": "{count, plural, one {#件のループを一時停止しました} other {#件のループを一時停止しました}}",
-    "bulkResumed": "{count, plural, one {#件のループを再開しました} other {#件のループを再開しました}}",
-    "bulkRemoved": "{count, plural, one {#件のループを削除しました} other {#件のループを削除しました}}",
-    "bulkFailed": "{count, plural, one {#件のループを変更できませんでした} other {#件のループを変更できませんでした}}",
-    "bulkRemoveTitle": "{count, plural, one {#件のループを削除しますか？} other {#件のループを削除しますか？}}",
+    "bulkPaused": "{count, plural, other {#件のループを一時停止しました}}",
+    "bulkResumed": "{count, plural, other {#件のループを再開しました}}",
+    "bulkRemoved": "{count, plural, other {#件のループを削除しました}}",
+    "bulkFailed": "{count, plural, other {#件のループを変更できませんでした}}",
+    "bulkRemoveTitle": "{count, plural, other {#件のループを削除しますか？}}",
     "bulkRemoveDescription": "実行されなくなり、削除されます。セッションの履歴は残ります。",
     "once": "1回",
     "every": "{period}ごと",
@@ -21977,7 +22068,7 @@
     "resumed": "ループを再開しました",
     "removed": "ループを削除しました",
     "updateFailed": "ループを更新できませんでした",
-    "chipLabel": "{count, plural, one {有効なループ #件} other {有効なループ #件}}",
+    "chipLabel": "{count, plural, other {有効なループ #件}}",
     "chipTitle": "このセッションのループ",
     "manage": "ループを管理",
     "openInReminders": "ループで開く",
@@ -22008,7 +22099,7 @@
     "emptyDone": "完了したループはまだありません",
     "allSessions": "すべてのセッション",
     "clearSessionFilter": "セッションの絞り込みを解除",
-    "filterFooter": "{count} / {total, plural, one {# 件のループ} other {# 件のループ}}",
+    "filterFooter": "{count} / {total, plural, other {# 件のループ}}",
     "viewLabel": "表示",
     "viewList": "リスト",
     "viewCalendar": "カレンダー",
@@ -22026,7 +22117,7 @@
     "calendarPreviousMonth": "前の月",
     "calendarNextMonth": "次の月",
     "calendarMore": "他 {count} 件",
-    "calendarMoreOn": "{date} の他 {count, plural, one {# 件のループ} other {# 件のループ}}",
+    "calendarMoreOn": "{date} の他 {count, plural, other {# 件のループ}}",
     "calendarSession": "セッション",
     "calendarEmptyWeek": "今週の実行予定はありません",
     "calendarEmptyDay": "この日の実行予定はありません",
@@ -22527,6 +22618,8 @@
     "agentFullWriteDescription": "あなたが開始したセッションで、このエージェントは From agents フォルダだけでなく、ドライブ内のすべてのファイルを変更できます。",
     "agentCardDrive": "ドライブ {size}",
     "sessionSkippedDrives": "{count, plural, other {# 個のドライブがこのセッションに収まりませんでした}}: {names}。ドライブを 1 つ外して空きを作り、セッションを再起動してください。",
+    "sessionSkippedUnavailable": "{count, plural, other {# 個のフォルダーはまだマウントされていません}}: {names}。セッションはそれらなしで動作し、ストレージが使用可能になり次第マウントします。",
+    "sessionSkippedTooLarge": "{count, plural, other {# 個のフォルダーは大きすぎてセッションにマウントできません}}: {names}。セッションはそれらなしで動作します。大きなファイルを移動するか、より小さいフォルダーを共有してください。",
     "shareFolder": "共有",
     "shareTitle": "{name} を共有",
     "shareDescription": "追加したユーザー、チーム、エージェントは、このフォルダーとその中のすべてを利用できます。セッションは、そのエージェント、プロジェクト、または開始したユーザーにアクセス権があるときにフォルダーを参照できます。",
@@ -22593,7 +22686,25 @@
     "sessionFilesDescription": "このセッションがマウントするドライブのフォルダーと、エージェントから見える場所です。追加するにはドライブでフォルダーを共有し、外すには共有を停止します。",
     "readWrite": "Read & write",
     "folderHint": "A folder inside {name}",
-    "driveLabel": "Drive"
+    "driveLabel": "Drive",
+    "storageLabel": "ストレージ",
+    "storageOfLimit": "{used} / {limit}",
+    "storageUsed": "{used} 使用中",
+    "storageNearFull": "ほぼいっぱいです。アップロードを続けるには、不要なファイルを削除してください。",
+    "storageFull": "いっぱいです。ファイルを削除するまで新しいアップロードは拒否されます。",
+    "storageAccountLine": "すべてのプロジェクト: {used} / {limit}",
+    "folderNearMountLimit": "{folder} は {size} です。セッションは {limit} を超えるフォルダーをマウントできません。",
+    "folderOverMountLimit": "{folder} は {size} で、セッションがマウントできる {limit} を超えています。セッションはこのフォルダーなしで実行されます。",
+    "uploadRefusedProjectFull": "{name} には {needed} が必要です。このプロジェクトのファイルは {limit} のうち {used} を使用しています。",
+    "uploadRefusedAccountFull": "{name} には {needed} が必要です。アカウントのファイルはすべてのプロジェクトで {limit} のうち {used} を使用しています。",
+    "uploadRefusedFileTooLarge": "{name} は {size} です。1 つのファイルは最大 {limit} です。",
+    "uploadRefusedFolderMount": "{name} を追加すると {folder} が {limit} を超えます。これはセッションがマウントできる最大のフォルダーサイズです。",
+    "uploadRefusedBusy": "ファイルストレージが混み合っています。少し待ってから {name} を再試行してください。",
+    "uploadRefusedStorageFull": "ファイルストレージは現在いっぱいです。後で {name} を再試行してください。",
+    "accountStorageTitle": "ファイルストレージ",
+    "accountStorageDescription": "各プロジェクトのファイルの使用量です。プランではプロジェクトごとに {project}、すべてのプロジェクトで {account} まで使えます。",
+    "accountStorageEmpty": "まだファイルのあるプロジェクトはありません。",
+    "accountStorageIncomplete": "一部のプロジェクトは現在測定できませんでした。"
   },
   "genui": {
     "showData": "データを表示",
@@ -23270,7 +23381,8 @@
     "threadLoadError": "このスレッドを読み込めませんでした。再試行してください。",
     "join": "参加",
     "openRoom": "開く",
-    "gateDescription": "ルームをオンにすると、このプロジェクトのエージェントセッションとメンバーが名前付きのチャットルームで会話できます。"
+    "gateDescription": "ルームをオンにすると、このプロジェクトのエージェントセッションとメンバーが名前付きのチャットルームで会話できます。",
+    "archivedNotice": "このルームはアーカイブ済みです。メッセージは保持されますが、新規投稿はできません。"
   },
   "goals": {
     "title": "ゴール",
@@ -23388,16 +23500,19 @@
     "forPerson": "{person} 向け",
     "answerInChat": "チャットで回答",
     "forYou": "あなた向け",
-    "forMember": "チームメンバー向け"
+    "forMember": "チームメンバー向け",
+    "spaceEmpty": "{space} に目標はまだありません",
+    "showAll": "すべて表示",
+    "spaceScope": "{space} · {scope}"
   },
   "agentEditor": {
     "manage": "管理",
     "overviewTitle": "概要",
     "page": {
       "description": "Description",
-      "descriptionPlaceholder": "What this agent does, in one line",
-      "descriptionHelp": "One line on what this agent does. Other agents read it when they pick a subagent.",
-      "descriptionHelpSubagent": "Required. Other agents read it to decide when to call this one.",
+      "descriptionPlaceholder": "このエージェントの役割を 1 行で記述",
+      "descriptionHelp": "役割を 1 行で記述します。他のエージェントがサブエージェントを選ぶ際に読みます。",
+      "descriptionHelpSubagent": "必須です。他のエージェントが呼び出すタイミングを判断するために読みます。",
       "builtIn": "Built-in",
       "default": "Default",
       "disabled": "Disabled",
@@ -23407,21 +23522,21 @@
       "instructions": "Instructions",
       "instructionsEdit": "Edit instructions",
       "instructionsWrite": "Write instructions",
-      "instructionsEmpty": "Instructions you write will show up here",
-      "words": "{count, plural, one {# word} other {# words}}",
+      "instructionsEmpty": "記述した指示がここに表示されます",
+      "words": "{count, plural, other {# 語}}",
       "access": "Access",
       "runtime": "Runtime",
       "use": "Use",
       "all": "All",
       "none": "None",
       "selected": "{count} selected",
-      "required": "{count, plural, one {# required before a session starts} other {# required before a session starts}}",
+      "required": "{count, plural, other {セッション開始前に # 件が必須}}",
       "projectDefault": "Project default",
-      "repoAccess": "Can read and push the repository",
+      "repoAccess": "リポジトリの読み取りとプッシュが可能",
       "noRepoAccess": "No repository access",
-      "granted": "{count, plural, one {# grant} other {# grants}}",
-      "triggers": "{count, plural, one {# trigger} other {# triggers}}",
-      "builtInHint": "The one agent you talk to. It runs the agents below for you."
+      "granted": "{count, plural, other {# 件の付与}}",
+      "triggers": "{count, plural, other {# 件のトリガー}}",
+      "builtInHint": "あなたが話しかけるエージェントです。下のエージェントをあなたの代わりに実行します。"
     },
     "tabs": {
       "tabsLabel": "Agent sections",
@@ -23433,9 +23548,9 @@
       "tabPeople": "People",
       "unsavedTab": "Unsaved changes",
       "canUse": "{name} can use",
-      "grantAllHint": "Every one in this project, including ones added later.",
+      "grantAllHint": "後から追加されるものを含む、このプロジェクト内のすべて。",
       "grantSpecificHint": "Only the ones checked below.",
-      "grantNoneHint": "Nothing. Choose Specific to pick some, or All.",
+      "grantNoneHint": "なし。一部を選ぶには「指定」、すべて許可するには「すべて」を選択します。",
       "enabled": "Enabled",
       "off": "Off",
       "on": "On",
@@ -23443,25 +23558,25 @@
       "spaceValue": "Space: {space}",
       "startPrimary": "People start it",
       "startSubagent": "Agents call it",
-      "startBoth": "People and agents can start it",
-      "startDisabled": "This agent is off.",
-      "startSubagentBlocked": "Subagents are called by other agents, not started directly.",
+      "startBoth": "メンバーとエージェントが開始可能",
+      "startDisabled": "このエージェントは無効です。",
+      "startSubagentBlocked": "サブエージェントは他のエージェントから呼び出され、直接開始できません。",
       "defaultAgent": "Default agent",
-      "actsAsYou": "Acts as the person who starts the session",
-      "askToEditAgent": "Ask My Kortix to edit",
+      "actsAsYou": "セッションを開始したメンバーとして動作",
+      "askToEditAgent": "My Kortix に編集を依頼",
       "deleteAgent": "Delete {name}",
       "deleteTitle": "Delete {name}?",
-      "deleteBody": "My Kortix opens a change request that removes this agent from kortix.yaml. Nothing changes until you merge it.",
+      "deleteBody": "My Kortix が、このエージェントを kortix.yaml から削除する変更リクエストを作成します。マージするまで変更されません。",
       "deletePrompt": "Delete the \"{name}\" agent (its config lives at `{path}`): remove it from kortix.yaml and remove its triggers. Then open a change request so I can review and merge it.",
-      "leaveTitle": "Leave with unsaved changes?",
+      "leaveTitle": "変更を保存せずに移動しますか？",
       "leaveBody": "Your changes to {tabs} are not saved.",
       "stay": "Stay",
       "leave": "Leave",
       "saveAndLeave": "Save and leave",
-      "loadError": "Could not load this project's agents.",
+      "loadError": "このプロジェクトのエージェントを読み込めませんでした。",
       "configLoadError": "Could not load the settings of {name}.",
       "details": "Details",
-      "notFoundTitle": "This agent does not exist",
+      "notFoundTitle": "このエージェントは存在しません",
       "notFoundHeader": "Agent not found",
       "notFoundBody": "No agent named <name></name> is declared in this project.",
       "didYouMean": "Did you mean <link></link>?",
@@ -23474,23 +23589,23 @@
       "newSpacePlaceholder": "space-name",
       "managersOnly": "Managers only",
       "projectModelsLink": "Project models, providers and routing are in <link>Project admin</link>.",
-      "reviewLead": "What your agents need from you: decisions, approvals and finished work.",
-      "readOnlyTitle": "You can view this agent",
+      "reviewLead": "エージェントからあなたへの依頼：判断、承認、完了した作業の確認。",
+      "readOnlyTitle": "このエージェントを閲覧できます",
       "readOnlyBody": "Editing needs <code>project.agent.write</code>. A project manager can grant it in Project admin > Members.",
       "about": "About",
       "noDescription": "No description yet.",
       "summaryLead": "{name} can use",
       "summaryNone": "{name} has no access yet: no skills, connectors, secrets or permissions.",
       "summaryCount": {
-        "skills": "{count, plural, one {# skill} other {# skills}}",
-        "connectors": "{count, plural, one {# connector} other {# connectors}}",
-        "secrets": "{count, plural, one {# secret} other {# secrets}}",
-        "apps": "{count, plural, one {# App} other {# Apps}}",
-        "actions": "{count, plural, one {# Kortix permission} other {# Kortix permissions}}",
-        "subagents": "{count, plural, one {# subagent} other {# subagents}}",
-        "commands": "{count, plural, one {# command} other {# commands}}",
-        "extensions": "{count, plural, one {# extension} other {# extensions}}",
-        "tools": "{count, plural, one {# tool} other {# tools}}"
+        "skills": "{count, plural, other {# 個のスキル}}",
+        "connectors": "{count, plural, other {# 個のコネクタ}}",
+        "secrets": "{count, plural, other {# 個のシークレット}}",
+        "apps": "{count, plural, other {# 個の App}}",
+        "actions": "{count, plural, other {# 件の Kortix 権限}}",
+        "subagents": "{count, plural, other {# 個のサブエージェント}}",
+        "commands": "{count, plural, other {# 個のコマンド}}",
+        "extensions": "{count, plural, other {# 個の拡張機能}}",
+        "tools": "{count, plural, other {# 個のツール}}"
       },
       "summaryAll": {
         "skills": "every skill",
@@ -23504,8 +23619,8 @@
         "tools": "every tool"
       },
       "accessHint": "What {name} can reach in a session",
-      "drivesDetail": "Shared drives its sessions mount",
-      "detailAll": "Everything in this project",
+      "drivesDetail": "セッションにマウントされる共有ドライブ",
+      "detailAll": "このプロジェクト内のすべて",
       "detailNone": "Nothing granted",
       "countOf": "{count} of {total}",
       "needsSignIn": "{count} needs sign-in",
@@ -23513,8 +23628,8 @@
       "availability": "Availability",
       "enabledHelp": "Off stops new sessions of {name}.",
       "showInPickers": "Show in pickers",
-      "showInPickersHelp": "People pick it when they start a session.",
-      "whoStarts": "Who can start it",
+      "showInPickersHelp": "メンバーがセッション開始時に選択します。",
+      "whoStarts": "開始できる人",
       "modeDefault": "Project default",
       "space": "Space",
       "model": "Model",
@@ -23526,52 +23641,52 @@
       "manage": "Manage",
       "savedIn": "Saved in <file></file> under <key></key>. Instructions live in <source></source>.",
       "instructionsHint": "The system prompt for every session of {name}.",
-      "instructionsPlaceholder": "Describe the agent's role, how it works and what it never does.",
+      "instructionsPlaceholder": "エージェントの役割、動作方法、決して行わないことを記述してください。",
       "editorView": "Editor view",
       "write": "Write",
       "preview": "Preview",
       "split": "Split",
-      "askToEdit": "Ask My Kortix to edit",
+      "askToEdit": "My Kortix に編集を依頼",
       "fullScreen": "Full screen",
       "exitFullScreen": "Exit full screen",
       "myKortixPromise": "あなたが話す唯一のエージェント。各タスクを適したエージェントに振り分け、あなたの権限で実行します。",
-      "myKortixNoInstructions": "My Kortix is built in, so it has no instructions to edit here. To change how work gets done, change the agents it runs.",
+      "myKortixNoInstructions": "My Kortix は組み込みのため、ここで編集する指示はありません。作業方法を変えるには、実行するエージェントを変更してください。",
       "composerLabel": "Ask My Kortix",
-      "composerPlaceholder": "Ask My Kortix to create an agent, or to change what one may do",
-      "composerNote": "Every change opens as a change request you approve.",
-      "chipCreate": "Create an agent that ",
-      "chipNarrow": "Narrow an agent to the access its work needs",
-      "chipReview": "Which agents can reach secrets?",
+      "composerPlaceholder": "My Kortix に、エージェントの作成や許可する操作の変更を依頼",
+      "composerNote": "すべての変更は、あなたが承認する変更リクエストとして作成されます。",
+      "chipCreate": "次のことをするエージェントを作成：",
+      "chipNarrow": "エージェントのアクセスを作業に必要な範囲に制限",
+      "chipReview": "シークレットにアクセスできるエージェントは？",
       "send": "Send",
       "newAgent": "New agent",
-      "newAgentHelp": "My Kortix writes the agent into kortix.yaml and opens a change request.",
+      "newAgentHelp": "My Kortix がエージェントを kortix.yaml に記述し、変更リクエストを作成します。",
       "name": "Name",
       "namePlaceholder": "market-scan",
       "nameHelp": "Lowercase letters, digits and dashes. Saved as <slug></slug>.",
-      "nameTaken": "An agent with this name already exists.",
+      "nameTaken": "この名前のエージェントはすでに存在します。",
       "howToStart": "How to start",
-      "startDescribe": "Describe it to My Kortix",
-      "startDescribeHelp": "My Kortix drafts the instructions and grants only the access the work needs.",
+      "startDescribe": "My Kortix に説明",
+      "startDescribeHelp": "My Kortix が指示を作成し、作業に必要なアクセスのみを付与します。",
       "startBlank": "Start blank",
-      "startBlankHelp": "No instructions and no access. You fill in every tab.",
+      "startBlankHelp": "指示もアクセス権もありません。すべてのタブを自分で設定します。",
       "startDuplicate": "Duplicate an agent",
-      "startDuplicateHelp": "Copies another agent's instructions and access.",
+      "startDuplicateHelp": "別のエージェントの指示とアクセス権をコピーします。",
       "copyOf": "Copy of",
       "pickAgent": "Choose an agent",
       "whatItDoes": "What it does",
-      "whatItDoesPlaceholder": "Scans competitor pricing pages every Monday and posts a short summary.",
-      "descriptionPlaceholderShort": "One line on what this agent does",
+      "whatItDoesPlaceholder": "毎週月曜に競合の料金ページを調べ、短い要約を投稿します。",
+      "descriptionPlaceholderShort": "このエージェントの役割を 1 行で記述",
       "createAgent": "Create agent",
-      "agentsLead": "You talk to My Kortix. It runs these agents, each with only the access its work needs.",
-      "agentsLoadError": "Could not load this project's agents.",
+      "agentsLead": "My Kortix に話しかけてください。各エージェントに作業に必要なアクセスのみを与えて実行します。",
+      "agentsLoadError": "このプロジェクトのエージェントを読み込めませんでした。",
       "workAgents": "Work agents",
       "colAgent": "Agent",
       "colStatus": "Status",
       "noAccess": "No access",
       "accessCount": {
-        "connectors": "{count, plural, one {# connector} other {# connectors}}",
-        "secrets": "{count, plural, one {# secret} other {# secrets}}",
-        "actions": "{count, plural, one {# permission} other {# permissions}}"
+        "connectors": "{count, plural, other {# 個のコネクタ}}",
+        "secrets": "{count, plural, other {# 個のシークレット}}",
+        "actions": "{count, plural, other {# 件の権限}}"
       },
       "accessAll": {
         "connectors": "all connectors",
@@ -23634,7 +23749,9 @@
       "tabCapabilities": "機能",
       "summaryExcept": "{all} except {list}",
       "pinToSidebar": "サイドバーに固定",
-      "unpinFromSidebar": "サイドバーから固定解除"
+      "unpinFromSidebar": "サイドバーから固定解除",
+      "spaceHelp": "このエージェントが作業するスペース。engineeringやsalesなどの識別子を指定します。空欄の場合はプロジェクト全体です。",
+      "spacePlaceholder": "例: engineering"
     },
     "myKortix": {
       "allowed": "許可",
@@ -24006,7 +24123,13 @@
       "screenshotMissing": "スクリーンショットは利用できません。描画は保存されています。",
       "screenshotCaptureFailed": "スクリーンショットを取得できませんでした。コメントには画像なしで描画を含めます。",
       "sendScreenshotLimit": "この一括送信は20枚またはエンコード済みリクエストあたり12 MiBを超えています。添付画像を減らすか、テキスト専用モデルを使用してください。"
-    }
+    },
+    "moveTo": "スペースに移動",
+    "projectWide": "プロジェクト全体",
+    "moved": "成果物を移動しました",
+    "moveFailed": "成果物を移動できませんでした",
+    "spaceEmpty": "{space} に成果物はまだありません",
+    "showAll": "すべて表示"
   },
   "emailConnect": {
     "homeTitle": "受信箱の場所",
@@ -24174,11 +24297,11 @@
     "allExcept": "{list} を除くすべて",
     "rulesTitle": "承認ルール",
     "builtinOn": "{on} of {total} on",
-    "toolsAccess": "Tool access for this agent",
-    "emptyProjectTools": "No project tools. Register one under tools in kortix.yaml.",
-    "loadErrorList": "Could not load this list.",
-    "skillsAccess": "Skill access for this agent",
-    "noMatch": "Nothing matches your search.",
+    "toolsAccess": "このエージェントのツールアクセス",
+    "emptyProjectTools": "プロジェクトのツールはありません。kortix.yaml の tools に登録してください。",
+    "loadErrorList": "この一覧を読み込めませんでした。",
+    "skillsAccess": "このエージェントのスキルへのアクセス",
+    "noMatch": "検索に一致するものがありません。",
     "skillsSearch": "Search skills",
     "toolsSearch": "Search tools",
     "extensionsSearch": "Search extensions",
@@ -24345,7 +24468,13 @@
       "privateLabel": "プライベート",
       "privateHint": "招待されたメンバーだけが表示できます。",
       "privateUnavailable": "このワークスペースではプライベートチャンネルはまだ利用できません。",
-      "privateLimits": "プライベートにすると、他の人からチャンネルが見えなくなります。コードの変更（git ブランチ）とエージェント自身のツールはプライベートになりません。"
+      "privateLimits": "プライベートにすると、他の人からチャンネルが見えなくなります。コードの変更（git ブランチ）とエージェント自身のツールはプライベートになりません。",
+      "name": "名前",
+      "taken": "スペース #{slug} はすでに存在します。",
+      "about": "説明",
+      "aboutPlaceholder": "このスペースの用途",
+      "template": "初期タブ",
+      "error": "スペースを作成できませんでした"
     },
     "view": {
       "welcomeTitle": "#{name} へようこそ",
@@ -24644,7 +24773,130 @@
       "archivedToast": "#{name} をアーカイブしました",
       "unarchivedToast": "#{name} のアーカイブを解除しました",
       "failed": "#{name} を更新できませんでした。もう一度お試しください。"
-    }
+    },
+    "blocks": {
+      "noContent": "まだコンテンツがありません。",
+      "noUrl": "まだURLがありません。",
+      "noApp": "アプリが選択されていません。",
+      "noFile": "まだファイルがありません。",
+      "loadingApp": "アプリを読み込み中…"
+    },
+    "templates": {
+      "board": {
+        "brief": "概要",
+        "text": "このスペースの目的と協力の方法。",
+        "label": "ルームとボード",
+        "description": "概要とリンクのボード、続いて目標。"
+      },
+      "standard": {
+        "label": "ルーム、目標、アプリ、成果物",
+        "description": "ルームと、このスペースに紐づくコンテンツ。"
+      },
+      "room": {
+        "label": "ルームのみ",
+        "description": "会話をひとつ。タブは後から追加できます。"
+      }
+    },
+    "tabs": {
+      "room": "ルーム",
+      "goals": "目標",
+      "apps": "アプリ",
+      "artifacts": "アーティファクト",
+      "files": "ファイル",
+      "board": "ボード",
+      "app": "アプリ",
+      "artifact": "成果物",
+      "link": "リンク"
+    },
+    "addTab": "タブを追加",
+    "gone": {
+      "title": "このスペースは存在しません",
+      "hint": "kortix.yaml から削除されたか、リンクが間違っています。",
+      "back": "プロジェクトに戻る"
+    },
+    "viewAll": "すべて表示",
+    "loadError": "このタブを読み込めませんでした",
+    "retry": "もう一度",
+    "empty": {
+      "goals": "このスペースに紐づく目標がここに表示されます",
+      "apps": "このスペースに紐づくアプリがここに表示されます",
+      "artifacts": "このスペースに紐づく成果物がここに表示されます",
+      "folder": "このフォルダーは空です",
+      "board": "このボードのブロックがここに表示されます",
+      "boardHint": "My Kortix に、メモ、アプリ、ファイル、埋め込みページ、別のルームなどのブロックの追加を依頼してください。"
+    },
+    "doc": "ドキュメント",
+    "page": "ページ",
+    "missing": {
+      "app": "アプリ「{slug}」はこのプロジェクトにありません",
+      "artifact": "この成果物は削除されたか、あなたに共有されていません"
+    },
+    "openArtifact": "成果物を開く",
+    "openLink": "{host} を開く",
+    "tabAdded": "タブを追加しました",
+    "tabsSaved": "タブを保存しました",
+    "saveError": "タブを保存できませんでした",
+    "menu": {
+      "view": "表示",
+      "folder": "フォルダー…",
+      "app": "アプリ",
+      "noApps": "このプロジェクトにアプリはありません",
+      "artifact": "成果物",
+      "noArtifacts": "アーティファクトはまだありません",
+      "link": "リンク…",
+      "board": "ボード",
+      "editTabs": "タブを編集…"
+    },
+    "add": {
+      "linkTitle": "リンクを追加",
+      "linkHint": "このスペースのメンバーがよく開くページです。",
+      "folderTitle": "フォルダーを追加",
+      "folderHint": "パスで指定するプロジェクトのフォルダーです。",
+      "url": "URL",
+      "path": "フォルダのパス",
+      "label": "タブ名",
+      "embed": "タブ内にページを表示",
+      "submit": "タブを追加"
+    },
+    "cancel": "キャンセル",
+    "edit": {
+      "title": "タブを編集",
+      "description": "ルームは先頭に固定されます。保存すると、デフォルトブランチの kortix.yaml にタブがコミットされます。",
+      "empty": "ルームのみです。+ でタブを追加できます。",
+      "save": "タブを保存",
+      "rename": "{name} の名前を変更",
+      "moveUp": "{name} を上に移動",
+      "moveDown": "{name} を下に移動",
+      "remove": "{name} を削除"
+    },
+    "nav": {
+      "title": "スペース",
+      "new": "新しいスペース",
+      "unread": "{count, plural, other {未読メッセージ # 件}}"
+    },
+    "leave": "{name} から退出",
+    "openRooms": "ルームを開く",
+    "roomHint": "エージェントとメンバーがここに更新を投稿します。",
+    "noRoom": "ルームはまだありません。",
+    "agents": "このスペースのエージェント",
+    "openAgent": "{name} を開く",
+    "members": "{count, plural, other {# 人}}",
+    "needsYou": "あなたの対応待ち",
+    "newSession": "新しいセッション",
+    "askMyKortix": "My Kortix に依頼",
+    "askPrompt": "{name} スペース（kortix.yaml の `spaces.{slug}`）のタブ、ヘッダー、またはエージェントを変更したいです。何を変更するか聞いてください。",
+    "roomsOff": "このプロジェクトではルームが無効です",
+    "roomsOffHint": "プロジェクト設定でルームを有効にすると、ここでメンバーやエージェントと会話できます。",
+    "room": {
+      "introTitle": "#{name} はここから始まります",
+      "introBody": "このスペースで作業する全員のためのルームです。",
+      "introAgents": "{count, plural, other {{names} がここに更新を投稿します。}}",
+      "introNoAgents": "このスペースに追加したエージェントがここに更新を投稿します。",
+      "introMention": "@ を入力して、メンバーやエージェントにメンションできます。"
+    },
+    "filter": "スペースで絞り込み",
+    "all": "すべて",
+    "projectWide": "プロジェクト全体"
   },
   "imageGen": {
     "generating": "画像を生成中",
@@ -24728,11 +24980,11 @@
     "escape": "Esc"
   },
   "agentMounts": {
-    "lead": "Folders from Files this agent's sessions mount. A change applies at once and reaches every new session.",
+    "lead": "このエージェントのセッションが「ファイル」からマウントするフォルダーです。変更は直ちに適用され、すべての新しいセッションに反映されます。",
     "mount": "Mount folder",
     "repository": "Project repository",
-    "viaAgent": "shared with this agent",
-    "viaProject": "shared with everyone in this project",
+    "viaAgent": "このエージェントと共有",
+    "viaProject": "このプロジェクト全員と共有",
     "from": "{path} · {who}",
     "readOnly": "Read only",
     "readWrite": "Read and write",
@@ -24743,7 +24995,7 @@
     "unmountDescription": "New sessions of {agent} stop mounting this folder, and running ones lose it now. The files stay in Files.",
     "skipped": "Not mounted, past the {slots} mount slots: {list}",
     "emptyTitle": "No folders mounted",
-    "emptyDescription": "Mount a folder from Files to give this agent's sessions its files.",
+    "emptyDescription": "「ファイル」からフォルダーをマウントして、このエージェントのセッションにファイルを渡します。",
     "pickerTitle": "Mount a folder",
     "pickerDescription": "Pick a folder in Files. Sessions of {agent} see it under /drives.",
     "pickerPath": "Folder path",
@@ -24752,17 +25004,272 @@
     "pickerChoose": "Choose a folder",
     "pickerMount": "Mount {path}",
     "alreadyMounted": "Mounted",
-    "changeFailed": "Could not change this mount.",
-    "loadError": "Could not load this agent's mounts.",
+    "changeFailed": "このマウントを変更できませんでした。",
+    "loadError": "このエージェントのマウントを読み込めませんでした。",
     "retry": "Try again",
     "title": "Drives",
     "projectLead": "新しいセッションがマウントする Files のフォルダー。",
-    "unmountProjectDescription": "New sessions stop mounting this folder, and running ones lose it now. The files stay in Files.",
+    "unmountProjectDescription": "新しいセッションではこのフォルダーをマウントせず、実行中のセッションからは直ちに解除されます。ファイルは「ファイル」に残ります。",
     "pickerProjectDescription": "Pick a folder in Files. Every session of this project sees it under /drives."
   },
   "projectAdmin": {
     "tools": "Tools",
     "extensions": "Extensions",
     "drives": "Drives"
+  },
+  "multiAgent": {
+    "peer": {
+      "message": "{from} からのメッセージ",
+      "idleNotice": "{from} が完了しました",
+      "shutdownRequest": "{from} からの終了リクエスト",
+      "shutdownResponse": "{from} からの終了リクエストへの返答",
+      "expand": "メッセージ全体を表示",
+      "collapse": "メッセージを隠す"
+    },
+    "notice": {
+      "completed": "{name} が完了しました",
+      "failed": "{name} は完了しませんでした",
+      "stopped": "{name} は停止されました",
+      "fallbackName": "あなたのエージェント",
+      "openSession": "セッションを開く",
+      "expand": "結果全体を表示",
+      "collapse": "結果を隠す",
+      "batchTitle": "{count, plural, other {# 個のエージェントが完了しました}}",
+      "ownsTasks": "未完了のタスク: {tasks}"
+    },
+    "tools": {
+      "running": {
+        "sending": "メッセージを送信中…",
+        "checkingAgents": "ほかのエージェントを確認中…",
+        "checkingTasks": "チームのタスクを確認中…",
+        "updatingTasks": "チームのタスクを更新中…",
+        "stopping": "エージェントを停止中…"
+      },
+      "to": "宛先",
+      "peerStatus": {
+        "delivered": "配信済み",
+        "held": "承認待ち",
+        "refused": "未送信",
+        "denied": "拒否済み",
+        "expired": "期限切れ",
+        "dropped": "再送なし"
+      },
+      "relation": {
+        "parent": "親",
+        "child": "ヘルパー",
+        "lead": "リード",
+        "teammate": "チームメイト",
+        "session": "セッション"
+      },
+      "cannotReceive": "メッセージを受信できません",
+      "state": {
+        "working": "作業中",
+        "needsInput": "回答待ち",
+        "idle": "待機中",
+        "completed": "完了",
+        "failed": "完了しませんでした",
+        "stopped": "停止"
+      },
+      "taskStatus": {
+        "pending": "保留中",
+        "inProgress": "進行中",
+        "completed": "完了"
+      },
+      "blockedBy": "{tasks} によりブロック中",
+      "stopped": "停止",
+      "alreadyEnded": "すでに終了しています",
+      "openSession": "セッションを開く"
+    },
+    "strip": {
+      "label": "エージェント",
+      "agents": "{count, plural, other {# 個のエージェント}}",
+      "working": "{count} 件作業中",
+      "workflows": "{count, plural, other {# 件のワークフロー}}",
+      "workflowsRunning": "{count, plural, other {# 件のワークフローが実行中}}",
+      "newest": "{name} {state}",
+      "tasks": "タスク",
+      "team": "チーム",
+      "workflowsGroup": "ワークフロー",
+      "state": {
+        "working": "作業中",
+        "needs_input": "対応が必要",
+        "idle": "完了",
+        "completed": "完了",
+        "failed": "失敗",
+        "stopped": "停止"
+      },
+      "workingFor": "作業中 · {elapsed}",
+      "runsAs": "{agent} として実行",
+      "teamRole": "このセッション限りの役割",
+      "attention": {
+        "question": "質問があります",
+        "approval": "承認を待っています"
+      },
+      "openAgent": "{name} を開く",
+      "stopHint": "このエージェントを停止",
+      "stopAgent": "{name} を停止",
+      "stopAgentFailed": "{name} を停止できませんでした",
+      "stopFailed": "エージェントを停止できませんでした",
+      "runProgress": "{total} 件中 {done} 件完了",
+      "runBackground": "バックグラウンドで実行中",
+      "runRunning": "実行中",
+      "runStatus": {
+        "done": "完了",
+        "failed": "完了しませんでした",
+        "stopped": "停止"
+      },
+      "runFallback": "ワークフロー",
+      "openRun": "実行を開く",
+      "runNoAgents": "エージェントはまだありません"
+    },
+    "subagent": {
+      "fallbackTitle": "エージェント",
+      "openPage": "ページを開く",
+      "close": "閉じる",
+      "messagePlaceholder": "{name} にメッセージ…",
+      "messageLabel": "{name} にメッセージ",
+      "send": "送信",
+      "sent": "メッセージを送信しました",
+      "sendFailed": "メッセージを送信できませんでした",
+      "loadFailed": "このエージェントのメッセージを読み込めませんでした",
+      "retry": "再試行",
+      "emptyTitle": "まだ何もありません",
+      "emptyDescription": "作業中のメッセージがここに表示されます。",
+      "loadOlder": "以前のメッセージを表示"
+    },
+    "tasks": {
+      "label": "チームのタスク",
+      "empty": "チームが計画したタスクがここに表示されます。",
+      "group": {
+        "pending": "保留中",
+        "in_progress": "進行中",
+        "completed": "完了"
+      },
+      "blockedBy": "{tasks} によりブロック中",
+      "unowned": "未割り当て"
+    },
+    "held": {
+      "label": "あなたを待っているメッセージ",
+      "title": "{from} からのメッセージ",
+      "titleShutdown": "{from} がこのセッションの停止を求めています",
+      "waiting": "承認を待っています。5 分後に期限切れになります。",
+      "deny": "拒否",
+      "approve": "承認",
+      "approveFailed": "メッセージを配信できませんでした",
+      "denyFailed": "メッセージを拒否できませんでした"
+    },
+    "workflow": {
+      "large": "大規模なワークフロー",
+      "largeHint": "この実行は 25 個を超えるエージェントを起動します。ここから実行全体、または各エージェントを停止できます。",
+      "paused": "一時停止中",
+      "pause": "実行を一時停止",
+      "resume": "実行を再開",
+      "pauseHint": "一時停止: 新しいエージェントは起動せず、実行中のエージェントは完了します (p)",
+      "resumeHint": "実行を再開 (p)",
+      "stop": "実行を停止",
+      "stopHint": "すべてのエージェントを停止して実行を終了 (x)",
+      "save": "保存",
+      "saveHint": "この実行のスクリプトを、再実行できるワークフローとして保存 (s)",
+      "savePrompt": "ワークフローの実行「{title}」(実行 {runId}) を保存済みワークフローとして保存してください。スクリプトを {file} に書き込み、そのための変更リクエストを作成してください。",
+      "saveSent": "ワークフローの保存を依頼しました",
+      "saveFailed": "ワークフローの保存を依頼できませんでした",
+      "restartHint": "同じプロンプトでこのエージェントを再起動 (r)",
+      "restartAgent": "{label} を再起動",
+      "failed": {
+        "pause": "実行を一時停止できませんでした",
+        "resume": "実行を再開できませんでした",
+        "stop": "実行を停止できませんでした",
+        "restart": "{label} を再起動できませんでした"
+      }
+    },
+    "board": {
+      "layoutLabel": "レイアウト",
+      "layoutList": "リスト",
+      "layoutBoard": "ボード",
+      "dispatchLabel": "セッションを開始、またはボードを絞り込み",
+      "dispatchPlaceholder": "セッションを開始: @agent とタスク。絞り込み: s:working a:agent",
+      "tooShort": "短すぎます",
+      "dispatched": "セッションを開始しました",
+      "dispatchFailed": "セッションを開始できませんでした",
+      "openSession": "セッションを開く",
+      "stopSession": "セッションを停止",
+      "stopped": "セッションを停止しました",
+      "stopFailed": "セッションを停止できませんでした",
+      "stateFilter": "状態で絞り込み",
+      "agentFilter": "エージェントで絞り込み",
+      "allStates": "すべての状態",
+      "allAgents": "すべてのエージェント",
+      "loadError": "セッションを読み込めませんでした。再試行してください。",
+      "retry": "再試行",
+      "emptyTitle": "開始したセッションがここに表示されます",
+      "emptyDescription": "上にタスクを入力して Enter を押してください。タスクごとに専用のセッションで実行されます。",
+      "noMatches": "この条件に一致するセッションはありません",
+      "clearFilters": "フィルターをクリア",
+      "listLabel": "状態別のセッション",
+      "loadMore": "さらにセッションを読み込む",
+      "loadingMore": "セッションをさらに読み込み中…",
+      "more": "… ほか {count} 件",
+      "keys": {
+        "move": "移動",
+        "peek": "プレビュー",
+        "open": "開く",
+        "stop": "停止",
+        "space": "スペース",
+        "enter": "Enter"
+      },
+      "group": {
+        "pinned": "ピン留め",
+        "needs_input": "回答待ち",
+        "working": "作業中",
+        "review": "レビュー待ち",
+        "completed": "完了",
+        "ended": "失敗 · 停止"
+      },
+      "state": {
+        "working": "作業中",
+        "needs_input": "回答待ち",
+        "idle": "待機中",
+        "completed": "完了",
+        "failed": "失敗",
+        "stopped": "停止"
+      },
+      "replyPlaceholder": "返信します。エージェントの次のステップで届きます。",
+      "replyLabel": "{title} に返信",
+      "sendReply": "返信を送信",
+      "replySent": "返信を送信しました",
+      "replyFailed": "返信を送信できませんでした"
+    },
+    "ultracode": {
+      "hint": "エージェントのワークフローとして実行されます",
+      "dismiss": "{key} で通常のプロンプトとして送信"
+    }
+  },
+  "claudeSubscription": {
+    "title": "Claude サブスクリプションを使う",
+    "description": "Claude モデルは Claude Code を通じて、あなたの Claude Pro または Max プランで動きます。プランを使うのはあなたのセッションだけです。",
+    "starting": "Claude を開いています…",
+    "approveDescription": "プランのある Claude アカウントでサインインし、リクエストを承認して、Claude に表示されたコードをコピーしてください。",
+    "codeLabel": "claude.com のコード",
+    "connect": "Claude を接続",
+    "connecting": "接続しています…",
+    "connectedTitle": "Claude サブスクリプションは接続済みです",
+    "connected": "Claude サブスクリプションを接続しました",
+    "disconnect": "Claude を切断",
+    "disconnected": "Claude サブスクリプションを切断しました",
+    "startError": "Claude のサインインを開始できませんでした。もう一度お試しください。",
+    "codeError": "そのコードで Claude を接続できませんでした。もう一度サインインし、新しいコードを貼り付けてください。",
+    "connectClaude": "Claude を接続",
+    "reconnectClaude": "Claude を再接続"
+  },
+  "contextReset": {
+    "pill": "新しいコンテキスト · 履歴はすべて保持",
+    "pillRunning": "コンテキストを空けています…",
+    "detail": "コンテキストが {tokens} トークンに達したため、エージェントは新しいコンテキストで続行しました。要約はしていません。必要な詳細があると、完全な履歴（{entries} 件）を検索します。",
+    "detailManual": "{tokens} トークンの時点で新しいコンテキストを開始しました。要約はしていません。エージェントは必要な詳細があると、完全な履歴（{entries} 件）を検索します。",
+    "showDetail": "詳細を表示",
+    "hideDetail": "詳細を隠す",
+    "dialogTitle": "新しいコンテキストを開始しますか？",
+    "dialogDescription": "エージェントは新しいコンテキストで続行し、必要な詳細があると完全な履歴を検索します。要約はせず、会話はここにそのまま残ります。",
+    "dialogAction": "新しいコンテキストを開始"
   }
 }

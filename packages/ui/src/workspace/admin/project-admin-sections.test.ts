@@ -12,7 +12,7 @@ import {
   projectAdminHref,
   projectAdminNavTarget,
   type ProjectAdminSectionKey,
-} from './project-admin-sections';
+} from '../../customize/project-settings/project-admin-sections';
 
 const PID = 'project-test-1';
 

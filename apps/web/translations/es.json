@@ -69,7 +69,6 @@
     "oauthExpired": "La autorización caducó. Inténtalo de nuevo.",
     "oauthPrivateDescription": "Usa tu plan ChatGPT Plus o Pro en este proyecto. Las cuentas nuevas son privadas hasta que las compartas.",
     "chatGptSubscription": "Suscripción de ChatGPT",
-    "useYourChatGpt": "Usa tu suscripción de ChatGPT",
     "manageChatGptAccounts": "Administrar cuentas de ChatGPT",
     "connect": "Conectar",
     "connectChatGpt": "Conectar ChatGPT",
@@ -96,7 +95,7 @@
     "deleteError": "No se pudo eliminar el secreto",
     "accessError": "No se pudo cambiar el acceso",
     "sharedTitle": "Conexiones de proveedores",
-    "sharedDescription": "Añade claves API y cuentas de ChatGPT. Las nuevas son privadas hasta que las compartas. Elige cuáles usa cada sesión.",
+    "sharedDescription": "Añade claves de API, cuentas de ChatGPT y cuentas de Claude. Las nuevas son privadas hasta que las compartas. Elige cuáles usa cada sesión.",
     "legacyProjectKey": "Clave de proyecto existente · Se usa cuando esta sesión no tiene claves seleccionadas",
     "keyCount": "{count, plural, one {# clave} other {# claves}}",
     "providerKeysFor": "Claves de API de {provider}",
@@ -163,7 +162,19 @@
     "opencodeGoConnect": "Conectar OpenCode Go",
     "opencodeGoReconnect": "Reconectar OpenCode Go",
     "opencodeGoDisconnect": "Desconectar OpenCode Go",
-    "opencodeGoFailed": "No se pudo conectar OpenCode Go"
+    "opencodeGoFailed": "No se pudo conectar OpenCode Go",
+    "claudeAccounts": "Cuentas de Claude",
+    "noClaudeAccounts": "Aún no hay cuentas de Claude",
+    "connectClaude": "Iniciar sesión con Claude",
+    "claudeOauthPrivateDescription": "Usa tu plan Claude Pro o Max para los modelos Claude de este proyecto. Las cuentas nuevas son privadas hasta que las compartas.",
+    "claudeOauthCreationDescription": "Inicia sesión con tu cuenta Claude Pro o Max. Kortix guarda el inicio de sesión cifrado y nunca lo muestra.",
+    "claudeDefaultAccountLabel": "Claude · {name}",
+    "claudeAccountConnected": "Cuenta de Claude conectada",
+    "claudeAccountReconnected": "Cuenta de Claude reconectada",
+    "claudeConnectFailed": "El inicio de sesión con Claude no terminó. Inténtalo de nuevo.",
+    "claudeReconnectDescription": "Vuelve a iniciar sesión con Claude. La cuenta conserva su nombre, su acceso y las selecciones de sesión.",
+    "claudeAccountLabelPlaceholder": "p. ej., Mi cuenta de Claude",
+    "claudeDeleteAccountConfirmTitle": "¿Eliminar esta cuenta de Claude para todos?"
   },
   "secrets": {
     "undecryptable": {
@@ -552,10 +563,6 @@
         "feature-flags": {
           "label": "Indicadores de funciones",
           "description": "Funciones que puedes activar antes de que estén disponibles para todos."
-        },
-        "upgrades": {
-          "label": "Actualizaciones",
-          "description": "Cambios que realiza un agente en este proyecto. Cada ejecución abre una solicitud de cambio para que la revises. Nada se fusiona automáticamente."
         },
         "profile": {
           "label": "Perfil",
@@ -1255,10 +1262,6 @@
           "name": "Marketplace",
           "description": "Explora e instala habilidades de registros de la comunidad y proveedores. Las fuentes, actualizaciones y ámbitos de equipo aún cambian."
         },
-        "meta_agent": {
-          "name": "My Kortix",
-          "description": "My Kortix, el único agente con el que hablas. Envía cada tarea al agente hecho para ella y la ejecuta con tus permisos. La configuración del proyecto es `builtin_agents.my_kortix` en kortix.yaml; este interruptor solo se aplica cuando esa clave no está definida."
-        },
         "warm_sessions": {
           "name": "Sesiones preparadas",
           "description": "Mantén un sandbox listo para iniciar sesiones al instante. El sandbox inactivo usa cómputo."
@@ -1334,6 +1337,10 @@
         "chrome": {
           "name": "Kortix en Chrome",
           "description": "Permite que una sesión use tu navegador Chrome conectado. Puedes tomar el control o detenerla en cualquier momento."
+        },
+        "agent_teams": {
+          "name": "Equipos de agentes",
+          "description": "Una sesión líder inicia compañeros de equipo con nombre que comparten una lista de tareas. Cada compañero toma una tarea, la trabaja en su propia sesión y avisa al líder cuando termina. Ves a cada compañero y sus tareas bajo el cuadro de mensaje del líder. Los mensajes entre sesiones funcionan sin esta opción."
         }
       },
       "channelsSwitch": {
@@ -1347,24 +1354,7 @@
         "turnOff": "Desactivar"
       },
       "wip": "Work in progress",
-      "wipNote": "Not recommended yet: it can change or break."
-    },
-    "upgrades": {
-      "available": "Actualizaciones disponibles",
-      "readOnly": "Solo lectura — para ejecutar una actualización necesitas acceso de escritura a este proyecto.",
-      "none": "No hay actualizaciones disponibles",
-      "upToDateDescription": "Este proyecto ya está actualizado.",
-      "upToDate": "Actualizado",
-      "run": "Ejecutar",
-      "oneOff": "Actualización puntual",
-      "oneOffDescription": "Describe un solo cambio. Una sesión lo realiza, lo valida y abre una solicitud de cambio.",
-      "oneOffPlaceholder": "p. ej. Cambia el agente release-bot a deploy-bot en todas las referencias",
-      "runUpgrade": "Ejecutar actualización",
-      "manifestV3": {
-        "title": "Actualizar el manifiesto a v3 (kortix.yaml)",
-        "description": "Lleva kortix.toml o un kortix.yaml de la versión 2 a la versión 3: el proyecto registra habilidades, herramientas, comandos y extensiones, y cada agente los habilita por nombre. Actualiza las habilidades gestionadas por la plataforma y abre una solicitud de cambio para revisarla."
-      },
-      "agentEditorHint": "Este proyecto usa un manifiesto de la versión 1. Actualízalo a <code>kortix.yaml</code> versión 3 para editar aquí las instrucciones, el modelo, los permisos de herramientas y el acceso de este agente."
+      "wipNote": "Aún no se recomienda: puede cambiar o fallar."
     },
     "plan": {
       "managedByAdmin": "Gestionado por un administrador de la cuenta",
@@ -1407,6 +1397,7 @@
       "addCredits": "Añadir créditos",
       "spentThisPeriod": "Gastado en este período",
       "compute": "Computación",
+      "storage": "Almacenamiento",
       "total": "Total",
       "history": "Historial",
       "historyDescription": "El coste de cada sesión y todos los créditos añadidos o gastados.",
@@ -1697,10 +1688,16 @@
       "localComputer": "Tu ordenador",
       "appsAndExtensions": "Apps y extensiones"
     },
-    "manifestUpgrade": {
-      "title": "Actualizar a v3",
-      "description": "Este proyecto usa un manifiesto anterior. Un agente lo lleva a <yaml>kortix.yaml</yaml> versión 3, actualiza las habilidades administradas y abre una solicitud de cambio. Nada cambia hasta que la apruebes.",
-      "start": "Iniciar actualización"
+    "manifestIssues": {
+      "title": "{file} tiene {errors, plural, one {# error} other {# errores}} y {warnings, plural, one {# advertencia} other {# advertencias}}",
+      "titleErrors": "{file} tiene {errors, plural, one {# error} other {# errores}}",
+      "titleWarnings": "{file} tiene {warnings, plural, one {# advertencia} other {# advertencias}}",
+      "errorsOff": "Los agentes y triggers con un error están desactivados hasta que se corrija.",
+      "warningsOnly": "Todo sigue funcionando.",
+      "error": "Error",
+      "warning": "Advertencia",
+      "fix": "Corregir con My Kortix",
+      "fixInSession": "Corregir en una nueva sesión"
     },
     "filter": {
       "grouping": "Agrupación",
@@ -1859,20 +1856,8 @@
     },
     "drive": "Drive",
     "repo": "Repo",
-    "customizeSidebar": "Personalizar barra lateral",
     "searchApps": "Buscar apps",
     "appsNoMatches": "Sin resultados",
-    "customizeSidebarDescription": "Arrastra los elementos entre los dos grupos.",
-    "resetSidebar": "Restablecer",
-    "reorderItem": "Reordenar {name}",
-    "reorderHint": "Arrastra para reordenar. O pulsa las flechas arriba y abajo; pasar de «Más» oculta el elemento de la barra lateral.",
-    "reorderAnnouncement": "{name}: {group}, posición {position} de {total}",
-    "more": "Más",
-    "inSidebar": "Barra lateral",
-    "underMore": "Más",
-    "sidebarEmpty": "Arrastra un elemento aquí para mostrarlo en la barra lateral.",
-    "moreEmpty": "Arrastra un elemento aquí para moverlo a Más.",
-    "moreCaption": "Los elementos en Más se abren desde el menú Más, bajo la navegación.",
     "spaces": {
       "channels": "Canales",
       "directMessages": "Mensajes directos",
@@ -2656,7 +2641,7 @@
         },
         "credit": {
           "question": "¿Qué se puede comprar con un crédito?",
-          "answer": "1 crédito son 0,01 $. Los créditos pagan el ordenador del agente, facturado por segundo y por recurso: {vcpuRate} por vCPU y hora, {memoryRate} por GB de RAM y hora, {diskRate} por GB de almacenamiento y mes. La máquina predeterminada de {spec} usa unos {creditsPerHour} créditos por hora, así que 1 crédito equivale a unos {minutes} minutos. Un ordenador detenido no cuesta nada. Los créditos también pagan los modelos de Kortix, al precio base del proveedor más un {fee} % de comisión de plataforma. Tu propia clave de API es gratis durante los primeros 1.000 $ de uso de modelos al mes, y después el 5 % del precio del proveedor se paga con créditos. Una suscripción a ChatGPT no consume créditos."
+          "answer": "1 crédito son 0,01 $. Los créditos pagan el ordenador del agente, facturado por segundo y por recurso: {vcpuRate} por vCPU y hora, {memoryRate} por GB de RAM y hora, {diskRate} por GB de almacenamiento y mes. La máquina predeterminada de {spec} usa unos {creditsPerHour} créditos por hora, así que 1 crédito equivale a unos {minutes} minutos. Un ordenador detenido no consume computación. Sus archivos guardados se facturan como almacenamiento. Los créditos también pagan los modelos de Kortix, al precio base del proveedor más un {fee} % de comisión de plataforma. Tu propia clave de API es gratis durante los primeros 1.000 $ de uso de modelos al mes, y después el 5 % del precio del proveedor se paga con créditos. Una suscripción a ChatGPT no consume créditos."
         },
         "amounts": {
           "question": "¿Cuánto pago cada mes?",
@@ -2702,7 +2687,7 @@
       "hours": {
         "eyebrow": "Horas de agente",
         "title": "1 crédito equivale a unos {minutes} minutos de ordenador de agente",
-        "description": "Los créditos pagan el ordenador del agente: la máquina en la nube donde tu agente ejecuta código, navega y edita archivos. Se factura por segundo mientras funciona y no cuesta nada mientras está detenido.",
+        "description": "Los créditos pagan el ordenador del agente: la máquina en la nube donde tu agente ejecuta código, navega y edita archivos. Se factura por segundo mientras funciona y no consume computación mientras está detenido. Sus archivos guardados se facturan como almacenamiento.",
         "rate": {
           "value": "1 crédito = 0,01 $",
           "note": "Cada nivel ofrece créditos a esta tarifa."
@@ -2717,7 +2702,7 @@
         },
         "rates": {
           "title": "Tarifas de cómputo",
-          "note": "Se factura por segundo según el tamaño reservado. Un ordenador detenido no cuesta nada.",
+          "note": "Se factura por segundo según el tamaño reservado. Un ordenador detenido no consume computación. Sus archivos guardados se facturan como almacenamiento.",
           "vcpu": {
             "label": "vCPU",
             "price": "{price} / hora"
@@ -3096,6 +3081,116 @@
       "scriptFailed": "Error en el script",
       "calls": "{count, plural, one {# llamada a herramienta} other {# llamadas a herramientas}}",
       "noOutput": "Sin salida"
+    },
+    "kortixAction": {
+      "running": {
+        "agents": {
+          "read": "Revisando agentes…",
+          "change": "Actualizando agentes…"
+        },
+        "sessions": {
+          "read": "Revisando sesiones…",
+          "change": "Actualizando sesiones…"
+        },
+        "schedules": {
+          "read": "Revisando programaciones…",
+          "change": "Actualizando programaciones…"
+        },
+        "connectors": {
+          "read": "Revisando conectores…",
+          "change": "Actualizando conectores…"
+        },
+        "people": {
+          "read": "Revisando miembros…",
+          "change": "Actualizando miembros…"
+        },
+        "access": {
+          "read": "Revisando el acceso…",
+          "change": "Actualizando el acceso…"
+        },
+        "usage": {
+          "read": "Revisando el uso…",
+          "change": "Revisando el uso…"
+        },
+        "changeRequests": {
+          "read": "Revisando las solicitudes de cambio…",
+          "change": "Actualizando una solicitud de cambio…"
+        },
+        "memory": {
+          "read": "Revisando la memoria…",
+          "change": "Actualizando la memoria…"
+        }
+      },
+      "status": {
+        "done": "Hecho",
+        "needsYou": "Te necesita",
+        "denied": "Necesita un permiso",
+        "error": "No terminó",
+        "running": "En curso"
+      },
+      "deniedTitle": "Necesita un permiso",
+      "grantors": "Quién puede concederlo",
+      "grantorsUnknown": "Cualquier persona que gestione este proyecto puede concederlo.",
+      "newSetting": "Nuevo",
+      "removedSetting": "Eliminado",
+      "opensInNewTab": "Se abre en una pestaña nueva",
+      "showDetails": "Mostrar detalles"
+    },
+    "workflow": {
+      "fallbackTitle": "Flujo de trabajo",
+      "starting": "Iniciando el flujo de trabajo…",
+      "progress": "{done} de {total} hechos",
+      "failedCount": "{failed} de {total} fallaron",
+      "agents": "{count, plural, one {# agente} other {# agentes}}",
+      "background": "En segundo plano",
+      "status": {
+        "starting": "Iniciando",
+        "running": "En curso",
+        "done": "Hecho",
+        "failed": "Falló",
+        "stopped": "Detenido",
+        "pending": "Sin empezar"
+      },
+      "openAgent": "Abrir {label}",
+      "showDetails": "Mostrar detalles",
+      "failedSuffix": "{count} fallaron",
+      "resumed": "Reanudado",
+      "resumedHint": "Los agentes que terminaron en la ejecución anterior conservan sus respuestas.",
+      "large": "Ejecución grande",
+      "largeHint": "Esta ejecución inicia más de 25 agentes. Puedes detener cualquier agente desde su fila.",
+      "openRun": "Abrir ejecución",
+      "openRunLabel": "Abrir la sesión de la ejecución",
+      "backgroundIdle": "En su propia sesión",
+      "savedName": "Flujo de trabajo guardado {name}",
+      "upTo": "Hasta {count, plural, one {# agente} other {# agentes}}",
+      "result": "Resultado",
+      "logLabel": "Registro del flujo de trabajo",
+      "agentsLabel": "Agentes del flujo de trabajo",
+      "filter": {
+        "label": "Mostrar agentes",
+        "all": "Todos",
+        "running": "En curso",
+        "failed": "Con error",
+        "done": "Hechos"
+      },
+      "filterEmpty": {
+        "running": "Ningún agente está en curso.",
+        "failed": "Ningún agente falló.",
+        "done": "Ningún agente ha terminado todavía."
+      },
+      "showAll": "Mostrar los {count}",
+      "retry": "reintento {count}",
+      "cached": "de la ejecución anterior",
+      "stopAgent": "Detener {label}",
+      "stopHint": "Detener este agente",
+      "stopFailed": "No se pudo detener {label}",
+      "json": "JSON",
+      "jsonKeys": "{count, plural, one {JSON · # clave} other {JSON · # claves}}",
+      "jsonItems": "{count, plural, one {JSON · # elemento} other {JSON · # elementos}}"
+    },
+    "agent": {
+      "backgroundWorking": "Trabajando en segundo plano",
+      "backgroundSession": "En su propia sesión"
     }
   },
   "agentRunLimit": {
@@ -7806,8 +7901,7 @@
       "legendTool": "Resultados de herramientas",
       "legendOther": "Otro",
       "subAgentsLabel": "Subagentes",
-      "subAgentsNote": "Esta sesión inició sesiones auxiliares. Los totales de abajo las incluyen.",
-      "combinedCost": "Costo combinado",
+      "subAgentsNote": "Ayudantes que se ejecutaron dentro de esta sesión. Su coste forma parte del coste de esta sesión.",
       "combinedMessages": "Mensajes combinados",
       "tokensIn": "Tokens de entrada",
       "tokensOut": "Tokens de salida",
@@ -7831,7 +7925,20 @@
       "rawFilterUser": "Tú",
       "rawFilterAssistant": "Asistente",
       "rawNoMatches": "Sin mensajes coincidentes",
-      "detailsLabel": "Detalles"
+      "detailsLabel": "Detalles",
+      "costSplit": "{own} esta sesión · {spawned} en {count, plural, one {# sesión iniciada} other {# sesiones iniciadas}}",
+      "costEstimated": "Estimado a partir de la transcripción",
+      "detailModelRequests": "Solicitudes al modelo",
+      "spawnedLabel": "Sesiones iniciadas",
+      "spawnedNote": "Sesiones que inició esta sesión y las sesiones que estas iniciaron. Su coste está incluido en el coste total.",
+      "spawnedCount": "{count, plural, one {Esta sesión y # sesión iniciada} other {Esta sesión y # sesiones iniciadas}}",
+      "spawnedRequests": "Solicitudes",
+      "spawnedCost": "Coste",
+      "spawnedThisSession": "Esta sesión",
+      "spawnedTotal": "Total",
+      "spawnedHidden": "{count, plural, one {No se incluye # sesión iniciada que no puedes abrir.} other {No se incluyen # sesiones iniciadas que no puedes abrir.}}",
+      "spawnedTruncated": "Solo se incluyen las primeras 500 sesiones iniciadas, hasta 10 niveles de profundidad.",
+      "spawnedUntitled": "Sesión sin título"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "Vista unificada",
@@ -10923,7 +11030,6 @@
       "text18093cad2644": "Modal",
       "text180bbb19a1b2": "El runbook que vive en la cabeza de una persona",
       "text1814e0a6cb50": "Ver modelos disponibles",
-      "text1815aa434bc6": "# Versión 2 del esquema. El entorno de ejecución es OpenCode.",
       "text1815ae76cdc7": "No implementada",
       "text1829231e85b1": "Todos los miembros de esta cuenta volverán a ver el logotipo, el icono, el favicon y el nombre de Kortix. Las imágenes subidas se eliminarán.",
       "text1836d8d61ae9": "{value0} eliminado de {value1}",
@@ -12217,7 +12323,6 @@
       "text11ef24ea6e15": "No se pudo cambiar el nombre de la cuenta",
       "text0223e507afd3": "Para usar otra cuenta, agrégala en las cuentas de este conector en la configuración del proyecto y márcala como predeterminada.",
       "text073fce23e704": "      memory/ y abre una solicitud de cambio",
-      "text0922e6bf143c": "harnesses/opencode/opencode.jsonc",
       "text3ed7c1e32705": "Leer un tracker y modificarlo son acciones distintas. Configura la escritura en Ask y la ejecución se detiene en la llamada, mostrándote exactamente qué problemas quiere combinar o cerrar; continúa desde ahí cuando lo apruebas.",
       "text3ee7a9bba1b1": "analyst.md",
       "text3efd6742a383": "Créditos debitados",
@@ -12550,7 +12655,6 @@
       "text47931699ba90": "Horario actualizado",
       "text4795dc5fb288": "La conexión actual seguirá funcionando hasta que se guarde un reemplazo.",
       "text479974eaff88": "{value0}: {value1} correctos, {value2} fallidos. {value3}: {value4}{value5}",
-      "text479d92cbfaa1": "(kortix_version 2) para editar las instrucciones, el modelo, los permisos de herramientas y el acceso de este agente aquí.",
       "text47a8467a2faa": "No se pudieron cargar los cambios",
       "text47b31f661d3f": "No se pudo actualizar el rol",
       "text47bd29075f8b": "Contenido",
@@ -13457,7 +13561,6 @@
       "text61dac62928db": "Programado:",
       "text61e8d44ad423": "Comenzar",
       "text61eedf5451c2": "    timezone: UTC",
-      "text61f28ba7b5a4": "kortix_version: 2",
       "text61ff61757ef1": "Cómo funciona el acceso en esta cuenta.",
       "text6201111b83a0": "y",
       "text6201f8d3134e": "Eventos del monitor ingeridos",
@@ -15864,7 +15967,6 @@
       "texta743aa4452d3": "No se pudo actualizar el propietario de la autorización",
       "texta756e5fb5f6b": "TI no necesita un panel. Necesita una lista, con un motivo defendible en cada línea y en un formato en el que aprobarla produzca una acción.",
       "texta757b331fa9a": "statusText",
-      "texta757f937ab97": "(kortix_version 2) para editar aquí la disponibilidad, el modelo, los permisos de herramientas y el acceso de este agente.",
       "texta76a1fd4cef5": "Webhook de facturación de Stripe recibido",
       "texta76ce82a9749": "Caché",
       "texta76e13b98392": "Restaurar",
@@ -15955,7 +16057,6 @@
       "texta9f78a15820d": "Regla {value0} condición {value1} comparación",
       "textaa000c983975": "Recurso de grupos",
       "textaa023456aca4": "Conectar ChatGPT",
-      "textaa132a97a22a": "  config_dir: harnesses/opencode",
       "textaa1c8a0b1716": "Al hacer clic en guardar, se eliminarán todas las notificaciones de mantenimiento y se restablecerá el acceso normal.",
       "textaa2025f803e6": "El agente tiene shell y sistema de archivos. Puede instalar un paquete, descargar una muestra, ejecutarla, revisar el resultado y volver a intentarlo: el ciclo en el que trabaja realmente un analista, no un único intento con un conjunto fijo de herramientas.",
       "textaa2e1a551c0a": "Recopila. Tú decides.",
@@ -16857,7 +16958,6 @@
       "textc3bf78fdd3b9": "No se pudo enviar tu solicitud",
       "textc3c25857485f": "Sí hace",
       "textc3c709a999c1": "Leyendo memoria…",
-      "text7823a1f3af93": "Lleva kortix.toml o un kortix.yaml de la versión 2 a la versión 3: el proyecto registra habilidades, herramientas, comandos y extensiones, y cada agente los habilita por nombre. Actualiza las habilidades gestionadas por la plataforma y abre una solicitud de cambio para revisarla.",
       "textc3d2e79ebdd0": "Conectores",
       "textc3e3a6edeaa5": "Términos y condiciones",
       "textc3e58a73609d": "Destructivo",
@@ -16950,7 +17050,6 @@
       "textc634dcb25574": "Contabilización",
       "textc63adab9bd56": "Rastrea las herramientas y los archivos referenciados usados en esta tarea.",
       "textc63eb6720c6e": "Privado",
-      "textc6414eb01d9a": "Cambios que realiza un agente en este espacio de trabajo. Cada ejecución abre una solicitud de cambio para que usted la revise; nada se fusiona por sí solo.",
       "textc6479e2f4970": "Actualizar cambios",
       "textc65feb0006ea": "Trabajador · {value0}>{value1}",
       "textc661a1039aa0": "al máximo",
@@ -17593,7 +17692,6 @@
       "textd83a0d814c59": "API Status muestra un «Enabled» en verde, el parámetro «SCIM Username» está asignado a Email y el aprovisionamiento está habilitado sin la retención de aprobación del administrador.",
       "textd84b8be91e7b": "Kortix — Presentaciones",
       "textd84ee1e1e08b": "prueba kortix init o / para ver los comandos",
-      "text08edd5b6dcdc": "Actualizar el manifiesto a v3 (kortix.yaml)",
       "text848f54e89660": "Ejecuciones",
       "textb098a09c78aa": "Probar con payload",
       "text99733344956d": "Payload",
@@ -17775,7 +17873,6 @@
       "textdc70ef3b3338": "Solo vale la pena conectar un canal si la respuesta llega donde se hizo la pregunta. Los archivos circulan en ambas direcciones y las decisiones que el agente necesita de ti son botones en el hilo, no un enlace a otro sitio.",
       "textdc76dd6b1aff": "Inicia sesión en la CLI de Kortix",
       "textdc78f4d17256": "sin MFA — no perderá el acceso, pero considera pedirle que se inscriba:",
-      "textdc7ab144ca89": "Actualiza para obtener el editor completo del agente",
       "textdc7ea87fdc45": "Archivos, en ambas direcciones",
       "textdc8659db6d41": "Enter",
       "textdc8d7c5c602b": "Libro mayor de origen",
@@ -17898,7 +17995,6 @@
       "textdfea74d6d58d": "Subir alternativa",
       "textdffb64dc7001": "Límites",
       "texte01d77b4a0bd": "El problema",
-      "texte02a5941602a": "Actualizaciones",
       "texte030ac604b81": "Despliegue y postura",
       "texte0362b3241c5": "Dentro de los límites",
       "texte03abcb2b624": "Conectores y ventana de actualización",
@@ -20348,10 +20444,6 @@
       "textc86ce3b8097b": "p. ej., 5000",
       "textfaaf56a699c2": "Límite (créditos)",
       "texte7a241debad5": "URL",
-      "text3dd46a7b552c": "Añadir app",
-      "text68cf13547e38": "Añadir una app por URL",
-      "text46bc646c9bfe": "Muestra en este proyecto un sitio alojado en cualquier lugar. Kortix lo abre aquí mismo, junto a las apps que ejecuta.",
-      "text08e6480e9b78": "{value0} añadida",
       "text6241684827b2": "Este sitio no permite que Kortix lo muestre aquí.",
       "textdae75dce541f": "Pausa todas las programaciones y webhooks de este proyecto.",
       "textced57bebd466": "Vuelve a activar las programaciones y webhooks de este proyecto.",
@@ -20663,7 +20755,7 @@
       "text66a1ba850934": "Una cuenta para cada equipo.",
       "text999bac148c6c": "Un equipo",
       "texte193bfadbe39": "Cada equipo",
-      "text77ece565fe55": "Tratamos toda tu empresa como código. Cada agente, skill, regla, conector y pieza de contexto es un archivo en un único repositorio git. Cada agente es un agente pi propio sobre un harness mínimo de código abierto, así que puedes extender cualquier cosa con extensiones de pi.",
+      "texte6a48bfb5ab1": "Cada agente, skill, regla y conector es un archivo en un único repositorio git. Cada agente es un agente pi propio que amplías con extensiones de pi.",
       "textc61528adb57c": "Kortix es de código abierto. Ejecútalo en Kortix Cloud, en tu VPC o en tu propia red on-prem, con cualquier modelo y tus propias claves.",
       "textbf8abe5b1667": "Multijugador. Empresa como código. Soberano.",
       "text1445799c033a": "Más información",
@@ -21573,13 +21665,13 @@
     "connectorError": "Error",
     "missing": "Missing",
     "connectorsEmptyTitle": "No connectors yet",
-    "connectorsEmptyDescription": "Connect an app in the project, then choose it here.",
-    "secretsDescription": "Project secrets this agent's sessions get as environment variables.",
+    "connectorsEmptyDescription": "Conecta una app en el proyecto y luego elígela aquí.",
+    "secretsDescription": "Secretos del proyecto que las sesiones de este agente reciben como variables de entorno.",
     "secretNotSet": "Not set",
     "projectGroup": "Project",
-    "secretsEmptyProject": "No project secrets yet.",
+    "secretsEmptyProject": "Aún no hay secretos del proyecto.",
     "secretsEmptyTitle": "No secrets yet",
-    "secretsEmptyDescription": "Secrets added to the project show up here for this agent.",
+    "secretsEmptyDescription": "Los secretos añadidos al proyecto aparecen aquí para este agente.",
     "connectorsSearch": "Search connectors",
     "sandboxSecretsEmptyTitle": "No hay secretos de sandbox",
     "sandboxSecretsEmptyDescription": "Un agente recibe variables de entorno y secretos aplicados en la red. Los inicios de sesión de modelos y las credenciales de conectores se quedan en Kortix: Modelos y Conectores deciden quién los usa."
@@ -21869,7 +21961,6 @@
     "connectorsEmptyBody": "Explora el catálogo e instala una app. Tus agentes la usan cuando tenga una cuenta.",
     "browseApps": "Explorar apps",
     "agentsLoadFailed": "No se pudieron cargar los agentes",
-    "agentsNeedsV2": "El acceso de los agentes se define en kortix.yaml (kortix_version 2 o posterior). Este proyecto usa kortix.toml.",
     "agentsEmpty": "Este proyecto aún no tiene agentes.",
     "agentsIntro": "Elige qué agentes pueden usar este conector y qué reglas reciben. Cada cambio se guarda en kortix.yaml.",
     "agentsReadOnly": "Solo quien puede editar agentes y conectores puede cambiar esto.",
@@ -22527,6 +22618,8 @@
     "agentFullWriteDescription": "En las sesiones que inicias, este agente puede cambiar cualquier archivo de tu drive, no solo su carpeta From agents.",
     "agentCardDrive": "Drive de {size}",
     "sessionSkippedDrives": "{count, plural, one {# drive no cupo en esta sesión} other {# drives no cupieron en esta sesión}}: {names}. Quita un drive para hacer sitio y reinicia la sesión.",
+    "sessionSkippedUnavailable": "{count, plural, one {# carpeta aún no está montada} other {# carpetas aún no están montadas}}: {names}. La sesión sigue sin ellas y las monta en cuanto el almacenamiento lo permita.",
+    "sessionSkippedTooLarge": "{count, plural, one {# carpeta es demasiado grande para montarla en una sesión} other {# carpetas son demasiado grandes para montarlas en una sesión}}: {names}. La sesión funciona sin ellas. Saca los archivos grandes o comparte una carpeta más pequeña.",
     "shareFolder": "Compartir",
     "shareTitle": "Compartir {name}",
     "shareDescription": "Las personas, equipos y agentes que añadas reciben esta carpeta y todo su contenido. Una sesión ve una carpeta cuando su agente, su proyecto o la persona que la inició tiene acceso.",
@@ -22593,7 +22686,25 @@
     "sessionFilesDescription": "Las carpetas de Drive que monta esta sesión y dónde las ve el agente. Comparte una carpeta en Drive para añadirla; deja de compartirla para quitarla.",
     "readWrite": "Read & write",
     "folderHint": "A folder inside {name}",
-    "driveLabel": "Drive"
+    "driveLabel": "Drive",
+    "storageLabel": "Almacenamiento",
+    "storageOfLimit": "{used} de {limit}",
+    "storageUsed": "{used} usados",
+    "storageNearFull": "Casi lleno. Elimina los archivos que ya no necesites para seguir subiendo.",
+    "storageFull": "Lleno. Las nuevas subidas se rechazan hasta que se eliminen archivos.",
+    "storageAccountLine": "Todos los proyectos: {used} de {limit}",
+    "folderNearMountLimit": "{folder} ocupa {size}. Una sesión no puede montar una carpeta de más de {limit}.",
+    "folderOverMountLimit": "{folder} ocupa {size}, más de los {limit} que una sesión puede montar. Las sesiones se ejecutan sin ella.",
+    "uploadRefusedProjectFull": "{name} necesita {needed}. Los archivos de este proyecto usan {used} de {limit}.",
+    "uploadRefusedAccountFull": "{name} necesita {needed}. Los archivos de tu cuenta usan {used} de {limit} en todos los proyectos.",
+    "uploadRefusedFileTooLarge": "{name} ocupa {size}. Un archivo puede ocupar como máximo {limit}.",
+    "uploadRefusedFolderMount": "{name} haría que {folder} superara {limit}, la carpeta más grande que una sesión puede montar.",
+    "uploadRefusedBusy": "El almacenamiento de archivos está ocupado. Vuelve a intentar {name} en un momento.",
+    "uploadRefusedStorageFull": "El almacenamiento de archivos está lleno ahora mismo. Vuelve a intentar {name} más tarde.",
+    "accountStorageTitle": "Almacenamiento de archivos",
+    "accountStorageDescription": "Lo que ocupan los archivos de cada proyecto. Tu plan permite {project} por proyecto y {account} en todos los proyectos.",
+    "accountStorageEmpty": "Ningún proyecto tiene archivos todavía.",
+    "accountStorageIncomplete": "Algunos proyectos no se pudieron medir ahora."
   },
   "genui": {
     "showData": "Mostrar datos",
@@ -23270,7 +23381,8 @@
     "threadLoadError": "No se pudo cargar este hilo. Inténtalo de nuevo.",
     "join": "Unirse",
     "openRoom": "Abrir",
-    "gateDescription": "Activa Salas para que las sesiones de agentes y las personas de este proyecto hablen en salas de chat con nombre."
+    "gateDescription": "Activa Salas para que las sesiones de agentes y las personas de este proyecto hablen en salas de chat con nombre.",
+    "archivedNotice": "Esta sala está archivada. Conserva sus mensajes y no admite nuevos."
   },
   "goals": {
     "title": "Objetivos",
@@ -23388,16 +23500,19 @@
     "forPerson": "para {person}",
     "answerInChat": "Responder en el chat",
     "forYou": "para ti",
-    "forMember": "para un compañero"
+    "forMember": "para un compañero",
+    "spaceEmpty": "Aún no hay objetivos en {space}",
+    "showAll": "Mostrar todos",
+    "spaceScope": "{space} · {scope}"
   },
   "agentEditor": {
     "manage": "Gestionar",
     "overviewTitle": "Resumen",
     "page": {
       "description": "Description",
-      "descriptionPlaceholder": "What this agent does, in one line",
-      "descriptionHelp": "One line on what this agent does. Other agents read it when they pick a subagent.",
-      "descriptionHelpSubagent": "Required. Other agents read it to decide when to call this one.",
+      "descriptionPlaceholder": "Qué hace este agente, en una línea",
+      "descriptionHelp": "Una línea sobre lo que hace este agente. Otros agentes la leen al elegir un subagente.",
+      "descriptionHelpSubagent": "Obligatorio. Otros agentes lo leen para decidir cuándo llamar a este agente.",
       "builtIn": "Built-in",
       "default": "Default",
       "disabled": "Disabled",
@@ -23407,7 +23522,7 @@
       "instructions": "Instructions",
       "instructionsEdit": "Edit instructions",
       "instructionsWrite": "Write instructions",
-      "instructionsEmpty": "Instructions you write will show up here",
+      "instructionsEmpty": "Las instrucciones que escribas aparecerán aquí",
       "words": "{count, plural, one {# word} other {# words}}",
       "access": "Access",
       "runtime": "Runtime",
@@ -23417,11 +23532,11 @@
       "selected": "{count} selected",
       "required": "{count, plural, one {# required before a session starts} other {# required before a session starts}}",
       "projectDefault": "Project default",
-      "repoAccess": "Can read and push the repository",
+      "repoAccess": "Puede leer el repositorio y enviar cambios",
       "noRepoAccess": "No repository access",
       "granted": "{count, plural, one {# grant} other {# grants}}",
       "triggers": "{count, plural, one {# trigger} other {# triggers}}",
-      "builtInHint": "The one agent you talk to. It runs the agents below for you."
+      "builtInHint": "El agente con el que hablas. Ejecuta los agentes de abajo por ti."
     },
     "tabs": {
       "tabsLabel": "Agent sections",
@@ -23433,9 +23548,9 @@
       "tabPeople": "People",
       "unsavedTab": "Unsaved changes",
       "canUse": "{name} can use",
-      "grantAllHint": "Every one in this project, including ones added later.",
+      "grantAllHint": "Todos los de este proyecto, incluidos los que se añadan después.",
       "grantSpecificHint": "Only the ones checked below.",
-      "grantNoneHint": "Nothing. Choose Specific to pick some, or All.",
+      "grantNoneHint": "Nada. Elige Específicos para seleccionar algunos, o Todos.",
       "enabled": "Enabled",
       "off": "Off",
       "on": "On",
@@ -23443,25 +23558,25 @@
       "spaceValue": "Space: {space}",
       "startPrimary": "People start it",
       "startSubagent": "Agents call it",
-      "startBoth": "People and agents can start it",
-      "startDisabled": "This agent is off.",
-      "startSubagentBlocked": "Subagents are called by other agents, not started directly.",
+      "startBoth": "Las personas y los agentes pueden iniciarlo",
+      "startDisabled": "Este agente está desactivado.",
+      "startSubagentBlocked": "Los subagentes son llamados por otros agentes, no se inician directamente.",
       "defaultAgent": "Default agent",
-      "actsAsYou": "Acts as the person who starts the session",
-      "askToEditAgent": "Ask My Kortix to edit",
+      "actsAsYou": "Actúa como la persona que inicia la sesión",
+      "askToEditAgent": "Pedir a My Kortix que edite",
       "deleteAgent": "Delete {name}",
       "deleteTitle": "Delete {name}?",
-      "deleteBody": "My Kortix opens a change request that removes this agent from kortix.yaml. Nothing changes until you merge it.",
+      "deleteBody": "My Kortix abre una solicitud de cambio que elimina este agente de kortix.yaml. Nada cambia hasta que la fusiones.",
       "deletePrompt": "Delete the \"{name}\" agent (its config lives at `{path}`): remove it from kortix.yaml and remove its triggers. Then open a change request so I can review and merge it.",
-      "leaveTitle": "Leave with unsaved changes?",
+      "leaveTitle": "¿Salir con cambios sin guardar?",
       "leaveBody": "Your changes to {tabs} are not saved.",
       "stay": "Stay",
       "leave": "Leave",
       "saveAndLeave": "Save and leave",
-      "loadError": "Could not load this project's agents.",
+      "loadError": "No se pudieron cargar los agentes de este proyecto.",
       "configLoadError": "Could not load the settings of {name}.",
       "details": "Details",
-      "notFoundTitle": "This agent does not exist",
+      "notFoundTitle": "Este agente no existe",
       "notFoundHeader": "Agent not found",
       "notFoundBody": "No agent named <name></name> is declared in this project.",
       "didYouMean": "Did you mean <link></link>?",
@@ -23474,8 +23589,8 @@
       "newSpacePlaceholder": "space-name",
       "managersOnly": "Managers only",
       "projectModelsLink": "Project models, providers and routing are in <link>Project admin</link>.",
-      "reviewLead": "What your agents need from you: decisions, approvals and finished work.",
-      "readOnlyTitle": "You can view this agent",
+      "reviewLead": "Lo que tus agentes necesitan de ti: decisiones, aprobaciones y trabajo terminado.",
+      "readOnlyTitle": "Puedes ver este agente",
       "readOnlyBody": "Editing needs <code>project.agent.write</code>. A project manager can grant it in Project admin > Members.",
       "about": "About",
       "noDescription": "No description yet.",
@@ -23504,8 +23619,8 @@
         "tools": "every tool"
       },
       "accessHint": "What {name} can reach in a session",
-      "drivesDetail": "Shared drives its sessions mount",
-      "detailAll": "Everything in this project",
+      "drivesDetail": "Unidades compartidas que montan sus sesiones",
+      "detailAll": "Todo en este proyecto",
       "detailNone": "Nothing granted",
       "countOf": "{count} of {total}",
       "needsSignIn": "{count} needs sign-in",
@@ -23513,8 +23628,8 @@
       "availability": "Availability",
       "enabledHelp": "Off stops new sessions of {name}.",
       "showInPickers": "Show in pickers",
-      "showInPickersHelp": "People pick it when they start a session.",
-      "whoStarts": "Who can start it",
+      "showInPickersHelp": "Las personas lo eligen al iniciar una sesión.",
+      "whoStarts": "Quién puede iniciarlo",
       "modeDefault": "Project default",
       "space": "Space",
       "model": "Model",
@@ -23526,44 +23641,44 @@
       "manage": "Manage",
       "savedIn": "Saved in <file></file> under <key></key>. Instructions live in <source></source>.",
       "instructionsHint": "The system prompt for every session of {name}.",
-      "instructionsPlaceholder": "Describe the agent's role, how it works and what it never does.",
+      "instructionsPlaceholder": "Describe el papel del agente, cómo trabaja y qué no hace nunca.",
       "editorView": "Editor view",
       "write": "Write",
       "preview": "Preview",
       "split": "Split",
-      "askToEdit": "Ask My Kortix to edit",
+      "askToEdit": "Pedir a My Kortix que edite",
       "fullScreen": "Full screen",
       "exitFullScreen": "Exit full screen",
       "myKortixPromise": "El único agente con el que hablas. Envía cada tarea al agente hecho para ella y la ejecuta con tus permisos.",
-      "myKortixNoInstructions": "My Kortix is built in, so it has no instructions to edit here. To change how work gets done, change the agents it runs.",
+      "myKortixNoInstructions": "My Kortix está integrado y no tiene instrucciones que editar aquí. Para cambiar el trabajo, modifica los agentes que ejecuta.",
       "composerLabel": "Ask My Kortix",
-      "composerPlaceholder": "Ask My Kortix to create an agent, or to change what one may do",
-      "composerNote": "Every change opens as a change request you approve.",
-      "chipCreate": "Create an agent that ",
-      "chipNarrow": "Narrow an agent to the access its work needs",
-      "chipReview": "Which agents can reach secrets?",
+      "composerPlaceholder": "Pide a My Kortix que cree un agente o cambie lo que puede hacer",
+      "composerNote": "Cada cambio abre una solicitud de cambio que tú apruebas.",
+      "chipCreate": "Crea un agente que ",
+      "chipNarrow": "Limita un agente al acceso que necesita para su trabajo",
+      "chipReview": "¿Qué agentes pueden acceder a secretos?",
       "send": "Send",
       "newAgent": "New agent",
-      "newAgentHelp": "My Kortix writes the agent into kortix.yaml and opens a change request.",
+      "newAgentHelp": "My Kortix escribe el agente en kortix.yaml y abre una solicitud de cambio.",
       "name": "Name",
       "namePlaceholder": "market-scan",
       "nameHelp": "Lowercase letters, digits and dashes. Saved as <slug></slug>.",
-      "nameTaken": "An agent with this name already exists.",
+      "nameTaken": "Ya existe un agente con este nombre.",
       "howToStart": "How to start",
-      "startDescribe": "Describe it to My Kortix",
-      "startDescribeHelp": "My Kortix drafts the instructions and grants only the access the work needs.",
+      "startDescribe": "Descríbelo a My Kortix",
+      "startDescribeHelp": "My Kortix redacta las instrucciones y concede solo el acceso necesario.",
       "startBlank": "Start blank",
-      "startBlankHelp": "No instructions and no access. You fill in every tab.",
+      "startBlankHelp": "Sin instrucciones ni acceso. Tú completas cada pestaña.",
       "startDuplicate": "Duplicate an agent",
-      "startDuplicateHelp": "Copies another agent's instructions and access.",
+      "startDuplicateHelp": "Copia las instrucciones y el acceso de otro agente.",
       "copyOf": "Copy of",
       "pickAgent": "Choose an agent",
       "whatItDoes": "What it does",
-      "whatItDoesPlaceholder": "Scans competitor pricing pages every Monday and posts a short summary.",
-      "descriptionPlaceholderShort": "One line on what this agent does",
+      "whatItDoesPlaceholder": "Revisa las páginas de precios de la competencia cada lunes y publica un breve resumen.",
+      "descriptionPlaceholderShort": "Qué hace este agente, en una línea",
       "createAgent": "Create agent",
-      "agentsLead": "You talk to My Kortix. It runs these agents, each with only the access its work needs.",
-      "agentsLoadError": "Could not load this project's agents.",
+      "agentsLead": "Hablas con My Kortix. Ejecuta estos agentes, cada uno con solo el acceso necesario.",
+      "agentsLoadError": "No se pudieron cargar los agentes de este proyecto.",
       "workAgents": "Work agents",
       "colAgent": "Agent",
       "colStatus": "Status",
@@ -23634,7 +23749,9 @@
       "tabCapabilities": "Capacidades",
       "summaryExcept": "{all} except {list}",
       "pinToSidebar": "Fijar en la barra lateral",
-      "unpinFromSidebar": "Quitar de la barra lateral"
+      "unpinFromSidebar": "Quitar de la barra lateral",
+      "spaceHelp": "El espacio donde trabaja este agente: un identificador como engineering o sales. Vacío: todo el proyecto.",
+      "spacePlaceholder": "p. ej., engineering"
     },
     "myKortix": {
       "allowed": "Permitido",
@@ -24006,7 +24123,13 @@
       "screenshotMissing": "Captura no disponible. El dibujo está guardado.",
       "screenshotCaptureFailed": "No se pudo capturar la pantalla. Tu comentario incluirá el dibujo sin imagen.",
       "sendScreenshotLimit": "Este lote supera 20 capturas o 12 MiB por solicitud codificada. Envía menos imágenes adjuntas o usa un modelo de solo texto."
-    }
+    },
+    "moveTo": "Mover a un espacio",
+    "projectWide": "En todo el proyecto",
+    "moved": "Artefacto movido",
+    "moveFailed": "No se pudo mover el artefacto",
+    "spaceEmpty": "Aún no hay artefactos en {space}",
+    "showAll": "Mostrar todos"
   },
   "emailConnect": {
     "homeTitle": "Dónde vive el buzón",
@@ -24174,11 +24297,11 @@
     "allExcept": "Todos excepto {list}",
     "rulesTitle": "Reglas de aprobación",
     "builtinOn": "{on} of {total} on",
-    "toolsAccess": "Tool access for this agent",
-    "emptyProjectTools": "No project tools. Register one under tools in kortix.yaml.",
-    "loadErrorList": "Could not load this list.",
-    "skillsAccess": "Skill access for this agent",
-    "noMatch": "Nothing matches your search.",
+    "toolsAccess": "Acceso a herramientas de este agente",
+    "emptyProjectTools": "No hay herramientas del proyecto. Registra una en tools en kortix.yaml.",
+    "loadErrorList": "No se pudo cargar esta lista.",
+    "skillsAccess": "Acceso a skills para este agente",
+    "noMatch": "Nada coincide con tu búsqueda.",
     "skillsSearch": "Search skills",
     "toolsSearch": "Search tools",
     "extensionsSearch": "Search extensions",
@@ -24345,7 +24468,13 @@
       "privateLabel": "Privado",
       "privateHint": "Solo los miembros invitados pueden verlo.",
       "privateUnavailable": "Los canales privados aún no están disponibles en este espacio de trabajo.",
-      "privateLimits": "Privado oculta el canal a otras personas. Los cambios de código (ramas de git) y las herramientas propias de los agentes no son privados."
+      "privateLimits": "Privado oculta el canal a otras personas. Los cambios de código (ramas de git) y las herramientas propias de los agentes no son privados.",
+      "name": "Nombre",
+      "taken": "Ya existe un espacio #{slug}.",
+      "about": "Descripción",
+      "aboutPlaceholder": "Para qué sirve este espacio",
+      "template": "Pestañas iniciales",
+      "error": "No se pudo crear el espacio"
     },
     "view": {
       "welcomeTitle": "Te damos la bienvenida a #{name}",
@@ -24644,7 +24773,130 @@
       "archivedToast": "#{name} archivado",
       "unarchivedToast": "#{name} desarchivado",
       "failed": "No se pudo actualizar #{name}. Inténtalo de nuevo."
-    }
+    },
+    "blocks": {
+      "noContent": "Aún no hay contenido.",
+      "noUrl": "Aún no hay URL.",
+      "noApp": "Aún no se ha seleccionado ninguna app.",
+      "noFile": "Aún no hay archivo.",
+      "loadingApp": "Cargando app…"
+    },
+    "templates": {
+      "board": {
+        "brief": "Resumen",
+        "text": "Para qué sirve este espacio y cómo ayudar.",
+        "label": "Sala y tablero",
+        "description": "Un tablero para el resumen y los enlaces, seguido de los objetivos."
+      },
+      "standard": {
+        "label": "Sala, objetivos, aplicaciones y artefactos",
+        "description": "La sala y, después, el contenido vinculado al espacio."
+      },
+      "room": {
+        "label": "Solo sala",
+        "description": "Una conversación. Añade pestañas más adelante."
+      }
+    },
+    "tabs": {
+      "room": "Sala",
+      "goals": "Objetivos",
+      "apps": "Aplicaciones",
+      "artifacts": "Artefactos",
+      "files": "Archivos",
+      "board": "Tablero",
+      "app": "Aplicación",
+      "artifact": "Artefacto",
+      "link": "Enlace"
+    },
+    "addTab": "Añadir pestaña",
+    "gone": {
+      "title": "Este espacio ya no existe",
+      "hint": "Alguien lo eliminó de kortix.yaml o el enlace es incorrecto.",
+      "back": "Volver al proyecto"
+    },
+    "viewAll": "Ver todo",
+    "loadError": "No se pudo cargar esta pestaña",
+    "retry": "Reintentar",
+    "empty": {
+      "goals": "Los objetivos vinculados a este espacio aparecerán aquí",
+      "apps": "Las Apps vinculadas a este espacio aparecerán aquí",
+      "artifacts": "Los artefactos vinculados a este espacio aparecerán aquí",
+      "folder": "Esta carpeta está vacía",
+      "board": "Los bloques de este tablero aparecerán aquí",
+      "boardHint": "Pide a My Kortix que añada un bloque: una nota, una App, un archivo, una página incrustada u otra sala."
+    },
+    "doc": "Documento",
+    "page": "Página",
+    "missing": {
+      "app": "La App «{slug}» no está en este proyecto",
+      "artifact": "Este artefacto ya no existe o no está compartido contigo"
+    },
+    "openArtifact": "Abrir artefacto",
+    "openLink": "Abrir {host}",
+    "tabAdded": "Pestaña añadida",
+    "tabsSaved": "Pestañas guardadas",
+    "saveError": "No se pudieron guardar las pestañas",
+    "menu": {
+      "view": "Vista",
+      "folder": "Carpeta…",
+      "app": "Aplicación",
+      "noApps": "No hay Apps en este proyecto",
+      "artifact": "Artefacto",
+      "noArtifacts": "Aún no hay artefactos",
+      "link": "Enlace…",
+      "board": "Tablero",
+      "editTabs": "Editar pestañas…"
+    },
+    "add": {
+      "linkTitle": "Añadir enlace",
+      "linkHint": "Una página que las personas de este espacio abren a menudo.",
+      "folderTitle": "Añadir carpeta",
+      "folderHint": "Una carpeta de los archivos del proyecto, indicada por su ruta.",
+      "url": "URL",
+      "path": "Ruta de la carpeta",
+      "label": "Nombre de pestaña",
+      "embed": "Mostrar la página dentro de la pestaña",
+      "submit": "Añadir pestaña"
+    },
+    "cancel": "Cancelar",
+    "edit": {
+      "title": "Editar pestañas",
+      "description": "La sala sigue primero. Al guardar se confirman las pestañas en kortix.yaml en la rama predeterminada.",
+      "empty": "Solo la sala. Añade una pestaña con +.",
+      "save": "Guardar pestañas",
+      "rename": "Cambiar el nombre de {name}",
+      "moveUp": "Subir {name}",
+      "moveDown": "Bajar {name}",
+      "remove": "Quitar a {name}"
+    },
+    "nav": {
+      "title": "Espacios",
+      "new": "Nuevo espacio",
+      "unread": "{count, plural, one {# mensaje sin leer} other {# mensajes sin leer}}"
+    },
+    "leave": "Salir de {name}",
+    "openRooms": "Abrir salas",
+    "roomHint": "Los agentes y las personas publican novedades aquí.",
+    "noRoom": "Aún no hay sala.",
+    "agents": "Agentes en este espacio",
+    "openAgent": "Abrir {name}",
+    "members": "{count, plural, one {# persona} other {# personas}}",
+    "needsYou": "te necesitan",
+    "newSession": "Nueva sesión",
+    "askMyKortix": "Preguntar a My Kortix",
+    "askPrompt": "Quiero cambiar el espacio {name} (`spaces.{slug}` en kortix.yaml): sus pestañas, su encabezado o sus agentes. Pregúntame qué cambiar.",
+    "roomsOff": "Las salas están desactivadas en este proyecto",
+    "roomsOffHint": "Activa las salas en los ajustes del proyecto para hablar aquí con personas y agentes.",
+    "room": {
+      "introTitle": "Este es el inicio de #{name}",
+      "introBody": "La sala para quienes trabajan en este espacio.",
+      "introAgents": "{count, plural, one {{names} publica novedades aquí.} other {{names} publican novedades aquí.}}",
+      "introNoAgents": "Los agentes que añadas a este espacio publicarán sus novedades aquí.",
+      "introMention": "Escribe @ para mencionar a una persona o un agente."
+    },
+    "filter": "Filtrar por espacio",
+    "all": "Todos",
+    "projectWide": "En todo el proyecto"
   },
   "imageGen": {
     "generating": "Generando imagen",
@@ -24728,11 +24980,11 @@
     "escape": "Esc"
   },
   "agentMounts": {
-    "lead": "Folders from Files this agent's sessions mount. A change applies at once and reaches every new session.",
+    "lead": "Carpetas de Archivos que montan las sesiones de este agente. Los cambios se aplican de inmediato a cada nueva sesión.",
     "mount": "Mount folder",
     "repository": "Project repository",
-    "viaAgent": "shared with this agent",
-    "viaProject": "shared with everyone in this project",
+    "viaAgent": "compartido con este agente",
+    "viaProject": "compartido con todos en este proyecto",
     "from": "{path} · {who}",
     "readOnly": "Read only",
     "readWrite": "Read and write",
@@ -24743,7 +24995,7 @@
     "unmountDescription": "New sessions of {agent} stop mounting this folder, and running ones lose it now. The files stay in Files.",
     "skipped": "Not mounted, past the {slots} mount slots: {list}",
     "emptyTitle": "No folders mounted",
-    "emptyDescription": "Mount a folder from Files to give this agent's sessions its files.",
+    "emptyDescription": "Monta una carpeta de Archivos para dar sus archivos a las sesiones de este agente.",
     "pickerTitle": "Mount a folder",
     "pickerDescription": "Pick a folder in Files. Sessions of {agent} see it under /drives.",
     "pickerPath": "Folder path",
@@ -24752,17 +25004,272 @@
     "pickerChoose": "Choose a folder",
     "pickerMount": "Mount {path}",
     "alreadyMounted": "Mounted",
-    "changeFailed": "Could not change this mount.",
-    "loadError": "Could not load this agent's mounts.",
+    "changeFailed": "No se pudo cambiar este montaje.",
+    "loadError": "No se pudieron cargar los montajes de este agente.",
     "retry": "Try again",
     "title": "Drives",
     "projectLead": "Carpetas de Files que monta cada sesión nueva.",
-    "unmountProjectDescription": "New sessions stop mounting this folder, and running ones lose it now. The files stay in Files.",
+    "unmountProjectDescription": "Las sesiones nuevas dejan de montar esta carpeta y las activas la pierden ahora. Los archivos permanecen en Archivos.",
     "pickerProjectDescription": "Pick a folder in Files. Every session of this project sees it under /drives."
   },
   "projectAdmin": {
     "tools": "Tools",
     "extensions": "Extensions",
     "drives": "Drives"
+  },
+  "multiAgent": {
+    "peer": {
+      "message": "Mensaje de {from}",
+      "idleNotice": "{from} ha terminado",
+      "shutdownRequest": "Solicitud de cierre de {from}",
+      "shutdownResponse": "Respuesta a la solicitud de cierre de {from}",
+      "expand": "Mostrar el mensaje completo",
+      "collapse": "Ocultar el mensaje"
+    },
+    "notice": {
+      "completed": "{name} ha terminado",
+      "failed": "{name} no terminó",
+      "stopped": "{name} se detuvo",
+      "fallbackName": "Tu agente",
+      "openSession": "Abrir sesión",
+      "expand": "Mostrar el resultado completo",
+      "collapse": "Ocultar el resultado",
+      "batchTitle": "{count, plural, one {# agente ha terminado} other {# agentes han terminado}}",
+      "ownsTasks": "Aún tiene {tasks}"
+    },
+    "tools": {
+      "running": {
+        "sending": "Enviando un mensaje…",
+        "checkingAgents": "Revisando los otros agentes…",
+        "checkingTasks": "Revisando las tareas del equipo…",
+        "updatingTasks": "Actualizando las tareas del equipo…",
+        "stopping": "Deteniendo un agente…"
+      },
+      "to": "Para",
+      "peerStatus": {
+        "delivered": "Entregado",
+        "held": "Esperando aprobación",
+        "refused": "No enviado",
+        "denied": "Denegado",
+        "expired": "Caducado",
+        "dropped": "No se envió de nuevo"
+      },
+      "relation": {
+        "parent": "Principal",
+        "child": "Ayudante",
+        "lead": "Líder",
+        "teammate": "Compañero de equipo",
+        "session": "Sesión"
+      },
+      "cannotReceive": "No puede recibir mensajes",
+      "state": {
+        "working": "Trabajando",
+        "needsInput": "Requiere tu respuesta",
+        "idle": "Inactivo",
+        "completed": "Hecho",
+        "failed": "No terminó",
+        "stopped": "Detenido"
+      },
+      "taskStatus": {
+        "pending": "Pendiente",
+        "inProgress": "En curso",
+        "completed": "Hecha"
+      },
+      "blockedBy": "bloqueada por {tasks}",
+      "stopped": "Detenido",
+      "alreadyEnded": "Ya terminó",
+      "openSession": "Abrir sesión"
+    },
+    "strip": {
+      "label": "Agentes",
+      "agents": "{count, plural, one {# agente} other {# agentes}}",
+      "working": "{count} trabajando",
+      "workflows": "{count, plural, one {# flujo de trabajo} other {# flujos de trabajo}}",
+      "workflowsRunning": "{count, plural, one {# flujo de trabajo en curso} other {# flujos de trabajo en curso}}",
+      "newest": "{name}: {state}",
+      "tasks": "Tareas",
+      "team": "Equipo",
+      "workflowsGroup": "Flujos de trabajo",
+      "state": {
+        "working": "trabajando",
+        "needs_input": "te necesita",
+        "idle": "hecho",
+        "completed": "hecho",
+        "failed": "falló",
+        "stopped": "detenido"
+      },
+      "workingFor": "trabajando · {elapsed}",
+      "runsAs": "se ejecuta como {agent}",
+      "teamRole": "Rol solo para esta sesión",
+      "attention": {
+        "question": "Tiene una pregunta para ti",
+        "approval": "Espera tu aprobación"
+      },
+      "openAgent": "Abrir {name}",
+      "stopHint": "Detener este agente",
+      "stopAgent": "Detener {name}",
+      "stopAgentFailed": "No se pudo detener {name}",
+      "stopFailed": "No se pudo detener el agente",
+      "runProgress": "{done} de {total} hechos",
+      "runBackground": "En segundo plano",
+      "runRunning": "En curso",
+      "runStatus": {
+        "done": "Hecho",
+        "failed": "No terminó",
+        "stopped": "Detenido"
+      },
+      "runFallback": "Flujo de trabajo",
+      "openRun": "Abrir ejecución",
+      "runNoAgents": "Aún no hay agentes"
+    },
+    "subagent": {
+      "fallbackTitle": "Agente",
+      "openPage": "Abrir página",
+      "close": "Cerrar",
+      "messagePlaceholder": "Mensaje para {name}…",
+      "messageLabel": "Mensaje para {name}",
+      "send": "Enviar",
+      "sent": "Mensaje enviado",
+      "sendFailed": "No se pudo enviar el mensaje",
+      "loadFailed": "No se pudieron cargar los mensajes de este agente",
+      "retry": "Reintentar",
+      "emptyTitle": "Nada todavía",
+      "emptyDescription": "Sus mensajes aparecen aquí mientras trabaja.",
+      "loadOlder": "Mostrar mensajes anteriores"
+    },
+    "tasks": {
+      "label": "Tareas del equipo",
+      "empty": "Las tareas que planifique el equipo aparecerán aquí.",
+      "group": {
+        "pending": "Pendientes",
+        "in_progress": "En curso",
+        "completed": "Completadas"
+      },
+      "blockedBy": "Bloqueada por {tasks}",
+      "unowned": "Sin asignar"
+    },
+    "held": {
+      "label": "Mensajes que te esperan",
+      "title": "Mensaje de {from}",
+      "titleShutdown": "{from} pide detener esta sesión",
+      "waiting": "Espera tu aprobación. Caduca a los 5 minutos.",
+      "deny": "Denegar",
+      "approve": "Aprobar",
+      "approveFailed": "No se pudo entregar el mensaje",
+      "denyFailed": "No se pudo denegar el mensaje"
+    },
+    "workflow": {
+      "large": "Flujo de trabajo grande",
+      "largeHint": "Esta ejecución inicia más de 25 agentes. Puedes detenerla, o detener cualquier agente, desde aquí.",
+      "paused": "En pausa",
+      "pause": "Pausar la ejecución",
+      "resume": "Reanudar la ejecución",
+      "pauseHint": "Pausar: no se inicia ningún agente nuevo; los agentes en curso terminan (p)",
+      "resumeHint": "Reanudar la ejecución (p)",
+      "stop": "Detener la ejecución",
+      "stopHint": "Detener todos los agentes y terminar la ejecución (x)",
+      "save": "Guardar",
+      "saveHint": "Guardar el script de esta ejecución como un flujo de trabajo que puedes volver a ejecutar (s)",
+      "savePrompt": "Guarda la ejecución del flujo de trabajo «{title}» (ejecución {runId}) como flujo de trabajo guardado: escribe su script en {file} y abre una solicitud de cambio para él.",
+      "saveSent": "Se pidió guardar el flujo de trabajo",
+      "saveFailed": "No se pudo pedir que se guardara el flujo de trabajo",
+      "restartHint": "Reiniciar este agente con el mismo prompt (r)",
+      "restartAgent": "Reiniciar {label}",
+      "failed": {
+        "pause": "No se pudo pausar la ejecución",
+        "resume": "No se pudo reanudar la ejecución",
+        "stop": "No se pudo detener la ejecución",
+        "restart": "No se pudo reiniciar {label}"
+      }
+    },
+    "board": {
+      "layoutLabel": "Vista",
+      "layoutList": "Lista",
+      "layoutBoard": "Tablero",
+      "dispatchLabel": "Iniciar una sesión o filtrar el tablero",
+      "dispatchPlaceholder": "Inicia una sesión: @agent y una tarea. Filtra: s:working a:agent",
+      "tooShort": "Demasiado corto",
+      "dispatched": "Sesión iniciada",
+      "dispatchFailed": "No se pudo iniciar la sesión",
+      "openSession": "Abrir sesión",
+      "stopSession": "Detener sesión",
+      "stopped": "Sesión detenida",
+      "stopFailed": "No se pudo detener la sesión",
+      "stateFilter": "Filtrar por estado",
+      "agentFilter": "Filtrar por agente",
+      "allStates": "Todos los estados",
+      "allAgents": "Todos los agentes",
+      "loadError": "No se pudieron cargar las sesiones. Inténtalo de nuevo.",
+      "retry": "Reintentar",
+      "emptyTitle": "Las sesiones que inicies aparecerán aquí",
+      "emptyDescription": "Escribe una tarea arriba y pulsa Enter. Cada tarea se ejecuta en su propia sesión.",
+      "noMatches": "Ninguna sesión coincide con estos filtros",
+      "clearFilters": "Borrar filtros",
+      "listLabel": "Sesiones por estado",
+      "loadMore": "Cargar más sesiones",
+      "loadingMore": "Cargando más sesiones…",
+      "more": "… {count} más",
+      "keys": {
+        "move": "mover",
+        "peek": "vista previa",
+        "open": "abrir",
+        "stop": "detener",
+        "space": "Espacio",
+        "enter": "Intro"
+      },
+      "group": {
+        "pinned": "Fijadas",
+        "needs_input": "Requiere tu respuesta",
+        "working": "Trabajando",
+        "review": "Listas para revisar",
+        "completed": "Completadas",
+        "ended": "Fallidas · Detenidas"
+      },
+      "state": {
+        "working": "Trabajando",
+        "needs_input": "Requiere tu respuesta",
+        "idle": "Inactiva",
+        "completed": "Completada",
+        "failed": "Fallida",
+        "stopped": "Detenida"
+      },
+      "replyPlaceholder": "Responde. Le llega al agente en su siguiente paso.",
+      "replyLabel": "Responder a {title}",
+      "sendReply": "Enviar respuesta",
+      "replySent": "Respuesta enviada",
+      "replyFailed": "No se pudo enviar la respuesta"
+    },
+    "ultracode": {
+      "hint": "Se ejecuta como un flujo de trabajo de agentes",
+      "dismiss": "{key} para enviarlo como un prompt normal"
+    }
+  },
+  "claudeSubscription": {
+    "title": "Usa tu suscripción de Claude",
+    "description": "Los modelos de Claude se ejecutan con Claude Code en tu propio plan Claude Pro o Max. Solo tus sesiones usan tu plan.",
+    "starting": "Abriendo Claude…",
+    "approveDescription": "Inicia sesión con la cuenta de Claude que tiene tu plan, aprueba la solicitud y copia el código que Claude te muestre.",
+    "codeLabel": "Código de claude.com",
+    "connect": "Conectar Claude",
+    "connecting": "Conectando…",
+    "connectedTitle": "Tu suscripción de Claude está conectada",
+    "connected": "Suscripción de Claude conectada",
+    "disconnect": "Desconectar Claude",
+    "disconnected": "Suscripción de Claude desconectada",
+    "startError": "No se pudo iniciar el inicio de sesión de Claude. Inténtalo de nuevo.",
+    "codeError": "No se pudo conectar Claude con ese código. Vuelve a iniciar sesión y pega el código nuevo.",
+    "connectClaude": "Conectar Claude",
+    "reconnectClaude": "Volver a conectar Claude"
+  },
+  "contextReset": {
+    "pill": "Contexto nuevo · historial completo guardado",
+    "pillRunning": "Liberando contexto…",
+    "detail": "El contexto llegó a {tokens} tokens, así que el agente continuó en uno nuevo. No se resumió nada: busca en el historial completo ({entries} entradas) cuando necesita un detalle.",
+    "detailManual": "Iniciaste un contexto nuevo con {tokens} tokens. No se resumió nada: el agente busca en el historial completo ({entries} entradas) cuando necesita un detalle.",
+    "showDetail": "Mostrar detalles",
+    "hideDetail": "Ocultar detalles",
+    "dialogTitle": "¿Iniciar un contexto nuevo?",
+    "dialogDescription": "El agente continúa en un contexto nuevo y busca en el historial completo cuando necesita un detalle. No se resume nada y la conversación queda aquí tal como está.",
+    "dialogAction": "Iniciar un contexto nuevo"
   }
 }

@@ -2,8 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { agentConnectorAccess, connectorRuleSetUsage, manifestAgentGrants, withConnectorGrant } from './agent-access';
 
-const MANIFEST = `kortix_version: 2
-connectors:
+const MANIFEST = `connectors:
   - slug: gmail
     policy_sets:
       read_only: { policies: [] }
@@ -24,9 +23,9 @@ describe('manifestAgentGrants', () => {
     expect(agentConnectorAccess(grants.ops, 'gmail')).toEqual({ granted: true, policySet: null });
     expect(agentConnectorAccess(grants.writer, 'gmail')).toEqual({ granted: false, policySet: null });
   });
-  test('a v1 or unparsable manifest is null', () => {
-    expect(manifestAgentGrants('kortix_version = 1\n')).toBeNull();
-    expect(manifestAgentGrants(null)).toBeNull();
+  test('no manifest, or one that does not parse, grants nothing', () => {
+    expect(manifestAgentGrants('agents: [\n')).toEqual({});
+    expect(manifestAgentGrants(null)).toEqual({});
   });
 });
 

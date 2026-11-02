@@ -62,7 +62,7 @@ const DRIVES = '/v1/drives';
 const FILES = '/v1/drives/:driveId/files';
 const TRIGGERS = '/v1/projects/:projectId/triggers';
 const MANIFEST =
-  'kortix_version: 2\nproject:\n  name: ke2e-private-channels\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n';
+  'project:\n  name: ke2e-private-channels\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n';
 
 type Space = { space_id: string; slug: string | null; is_default: boolean; visibility?: 'public' | 'private'; is_member?: boolean };
 type MemberList = { members: { user_id: string }[]; can_add: boolean };

@@ -3,7 +3,7 @@
  * real DB, real git:
  * - PUT /agents/:name/config with `policy_sets: {}` removes the key (the agent
  *   editor sends `{}` when the last set goes back to the base rules; an omitted
- *   key keeps the declared value), on kortix_version 2 and 3.
+ *   key keeps the declared value).
  * - PUT /agents/:name/scope that un-grants a connector keeps its set entry, so
  *   re-granting it brings the set back. Pruning the entry let a writer without
  *   project.connector.write move the agent onto the base rules in two writes.
@@ -19,8 +19,7 @@ import { createAccountToken } from '../repositories/account-tokens';
 import { insertIntoView } from './helpers/compat-views';
 import { createLocalGitUpstream, type LocalGitUpstream } from './helpers/local-git-upstream';
 
-const manifest = (version: 2 | 3) => `kortix_version: ${version}
-default_agent: support
+const MANIFEST = `default_agent: support
 project:
   name: agent-policy-sets
 agents:
@@ -44,83 +43,80 @@ connectors:
 
 const ACCOUNT = crypto.randomUUID();
 const OWNER = crypto.randomUUID();
-const PROJECTS = { 2: crypto.randomUUID(), 3: crypto.randomUUID() } as const;
-const upstreams: Partial<Record<2 | 3, LocalGitUpstream>> = {};
-const secrets: Partial<Record<2 | 3, string>> = {};
+const PROJECT = crypto.randomUUID();
+let upstream: LocalGitUpstream;
+let secret = '';
 
 beforeAll(async () => {
   // The scope route commits with the git CLI to the local bare upstream, no token.
   process.env.KORTIX_LOCAL_DEV = '1';
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'agent-policy-sets-test' });
   await insertIntoView(db, accountMembers, [{ userId: OWNER, accountId: ACCOUNT, accountRole: 'owner', isSuperAdmin: false }]);
-  for (const version of [2, 3] as const) {
-    const upstream = createLocalGitUpstream(`agent-policy-sets-v${version}`, { 'kortix.yaml': manifest(version) });
-    upstreams[version] = upstream;
-    await db.insert(projects).values({
-      projectId: PROJECTS[version],
+  upstream = createLocalGitUpstream('agent-policy-sets', { 'kortix.yaml': MANIFEST });
+  await db.insert(projects).values({
+    projectId: PROJECT,
+    accountId: ACCOUNT,
+    name: 'agent-policy-sets',
+    repoUrl: upstream.repoUrl,
+  });
+  await insertIntoView(db, projectMembers, [
+    { accountId: ACCOUNT, projectId: PROJECT, userId: OWNER, projectRole: 'manager' },
+  ]);
+  secret = (
+    await createAccountToken({
       accountId: ACCOUNT,
-      name: `agent-policy-sets-v${version}`,
-      repoUrl: upstream.repoUrl,
-    });
-    await insertIntoView(db, projectMembers, [
-      { accountId: ACCOUNT, projectId: PROJECTS[version], userId: OWNER, projectRole: 'manager' },
-    ]);
-    secrets[version] = (
-      await createAccountToken({
-        accountId: ACCOUNT,
-        userId: OWNER,
-        projectId: PROJECTS[version],
-        name: `agent-policy-sets-v${version}`,
-        agentGrant: null as any,
-      })
-    ).secretKey;
-  }
+      userId: OWNER,
+      projectId: PROJECT,
+      name: 'agent-policy-sets',
+      agentGrant: null as any,
+    })
+  ).secretKey;
 });
 
 afterAll(async () => {
   await db.execute(sql`delete from kortix.account_tokens where account_id = ${ACCOUNT}`);
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
-  for (const upstream of Object.values(upstreams)) upstream?.remove();
+  upstream.remove();
 });
 
-const committed = (version: 2 | 3): Record<string, any> =>
-  parseYaml(execFileSync('git', ['--git-dir', upstreams[version]!.repoUrl, 'show', 'main:kortix.yaml'], { encoding: 'utf8' }));
+const committed = (): Record<string, any> =>
+  parseYaml(execFileSync('git', ['--git-dir', upstream.repoUrl, 'show', 'main:kortix.yaml'], { encoding: 'utf8' }));
 
-const call = (version: 2 | 3, path: string, method = 'GET', body?: unknown) =>
-  app.request(`/v1/projects/${PROJECTS[version]}/agents/support/${path}`, {
+const call = (path: string, method = 'GET', body?: unknown) =>
+  app.request(`/v1/projects/${PROJECT}/agents/support/${path}`, {
     method,
-    headers: { Authorization: `Bearer ${secrets[version]}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 
 describe('agent policy_sets through the agent write routes', () => {
   test('scope: un-granting a connector keeps its set; re-granting brings it back', async () => {
-    const ungrant = await call(2, 'scope', 'PUT', { connectors: ['qa-pay'] });
+    const ungrant = await call('scope', 'PUT', { connectors: ['qa-pay'] });
     expect(ungrant.status).toBe(200);
-    expect(committed(2).agents.support).toMatchObject({ connectors: ['qa-pay'], policy_sets: { 'qa-mail': 'read_only' } });
+    expect(committed().agents.support).toMatchObject({ connectors: ['qa-pay'], policy_sets: { 'qa-mail': 'read_only' } });
 
-    const regrant = await call(2, 'scope', 'PUT', { connectors: ['qa-pay', 'qa-mail'] });
+    const regrant = await call('scope', 'PUT', { connectors: ['qa-pay', 'qa-mail'] });
     expect(regrant.status).toBe(200);
     expect(((await regrant.json()) as { policy_sets: Record<string, string> }).policy_sets).toEqual({ 'qa-mail': 'read_only' });
-    expect(committed(2).agents.support.policy_sets).toEqual({ 'qa-mail': 'read_only' });
+    expect(committed().agents.support.policy_sets).toEqual({ 'qa-mail': 'read_only' });
   });
 
-  for (const version of [2, 3] as const) {
-    test(`config v${version}: policy_sets {} removes the key; an omitted key keeps it`, async () => {
-      const read = await call(version, 'config');
+  {
+    test('config: policy_sets {} removes the key; an omitted key keeps it', async () => {
+      const read = await call('config');
       expect(read.status).toBe(200);
       const { block } = (await read.json()) as { block: Record<string, unknown> };
       expect(block.policy_sets).toEqual({ 'qa-mail': 'read_only' });
 
       const { policy_sets: _sets, ...withoutSets } = block;
-      const kept = await call(version, 'config', 'PUT', withoutSets);
+      const kept = await call('config', 'PUT', withoutSets);
       expect(kept.status).toBe(200);
-      expect(committed(version).agents.support.policy_sets).toEqual({ 'qa-mail': 'read_only' });
+      expect(committed().agents.support.policy_sets).toEqual({ 'qa-mail': 'read_only' });
 
-      const cleared = await call(version, 'config', 'PUT', { ...withoutSets, policy_sets: {} });
+      const cleared = await call('config', 'PUT', { ...withoutSets, policy_sets: {} });
       expect(cleared.status).toBe(200);
-      expect('policy_sets' in committed(version).agents.support).toBe(false);
+      expect('policy_sets' in committed().agents.support).toBe(false);
     });
   }
 });

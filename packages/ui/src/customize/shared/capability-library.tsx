@@ -136,9 +136,10 @@ function catalogRows(
   }
   const item = (ext: ProjectCapabilities['extensions'][number]): AccessItem => ({
     id: ext.id,
-    // "Follows the agent tool switch" only where that switch is on screen.
+    // "Follows the agent tool switch" only where that switch is on screen. The context record's
+    // switch is its own row (the agent's `context` setting), so it follows nothing.
     description:
-      ext.controlled_by && agentMode ? `${ext.description ?? ''} ${t('followsTool', { tool: ext.controlled_by })}` : ext.description,
+      ext.controlled_by && ext.controlled_by !== 'context' && agentMode ? `${ext.description ?? ''} ${t('followsTool', { tool: ext.controlled_by })}` : ext.description,
     status: ext.required ? <span className="text-muted-foreground text-xs">{t('alwaysOn')}</span> : undefined,
   });
   // A required platform extension (permission rules on script calls, the show
@@ -180,6 +181,10 @@ function withSwitches(
     if (view === 'extensions') {
       const ext = catalog.extensions.find((x) => x.id === row.id);
       if (!ext || ext.required) return row;
+      // The context record is the agent's `context` field: on is the default (`record`), off is `summary`.
+      if (ext.group === 'platform' && ext.controlled_by === 'context') {
+        return { ...row, checked: editor.draft.context !== 'summary', onCheckedChange: (on) => editor.set('context', on ? 'record' : 'summary') };
+      }
       if (ext.group === 'platform') {
         const tool = catalog.tools.find((x) => x.id === ext.controlled_by);
         return tool ? { ...row, ...toolSwitch(tool.id, tool.aliases) } : row;
@@ -195,10 +200,10 @@ function withSwitches(
   });
 }
 
-const VIEW_COPY: Record<CapabilityView, { title: string; access: string }> = {
-  skills: { title: 'skillsTitle', access: 'skillsAccess' },
-  tools: { title: 'toolsTitle', access: 'toolsAccess' },
-  extensions: { title: 'extensionsTitle', access: 'extensionsAccess' },
+const VIEW_COPY: Record<CapabilityView, { titleKey: string; access: string }> = {
+  skills: { titleKey: 'skillsTitle', access: 'skillsAccess' },
+  tools: { titleKey: 'toolsTitle', access: 'toolsAccess' },
+  extensions: { titleKey: 'extensionsTitle', access: 'extensionsAccess' },
 };
 
 /** Skills, Tools or Extensions, project-wide or for one agent. */
@@ -254,15 +259,13 @@ export function CapabilityLibrary({
     );
     project = project.map((row) => ({ ...row, onOpen: skills.open(row.id) }));
   }
-  // Agents get an extension grant from kortix_version 3; before it the view is the platform list in both modes.
-  const extensionGrant = view !== 'extensions' || (catalog?.schema_version ?? 3) >= 3;
   if (agent && catalog) {
-    if (extensionGrant) project = withSwitches(view, project, catalog, agent.editor);
+    project = withSwitches(view, project, catalog, agent.editor);
     builtin = withSwitches(view, builtin, catalog, agent.editor);
   }
 
   const grant =
-    agent && rows && extensionGrant && (view !== 'extensions' || rows.project.length > 0)
+    agent && rows && (view !== 'extensions' || rows.project.length > 0)
       ? capabilityModeGrant(
           agent.editor.draft[view],
           rows.ids,
@@ -287,9 +290,7 @@ export function CapabilityLibrary({
   // The agent's own view: the project's items, then Kortix's, folded.
   const agentSections = (
     <>
-      {view !== 'extensions' || extensionGrant ? (
-        <AccessGroup title={t('groups.project')} items={project} empty={search ? t('noMatch') : empty} />
-      ) : null}
+      <AccessGroup title={t('groups.project')} items={project} empty={search ? t('noMatch') : empty} />
       <BuiltinGroup items={builtin} defaultOpen={project.length === 0 || !!search.trim()} />
     </>
   );
@@ -382,7 +383,7 @@ export function CapabilityLibrary({
 
   return (
     <CapabilityPageShell
-      title={t(VIEW_COPY[view].title)}
+      title={t(VIEW_COPY[view].titleKey)}
       description={agent ? t(`${view}Description`) : t(`${view}ProjectDescription`)}
       action={skills.createButton}
       search={
@@ -404,7 +405,7 @@ export function CapabilityLibrary({
           grant ? <GrantModeTabs grant={grant} label={t(VIEW_COPY[view].access)} agentName={agent.name} /> : undefined
         ) : view !== 'skills' ? undefined : (
           <Tabs value={scope} onValueChange={(next) => setScope(next as typeof scope)}>
-            <TabsList aria-label={t(VIEW_COPY[view].title)}>
+            <TabsList aria-label={t(VIEW_COPY[view].titleKey)}>
               <TabsTrigger value="all">{t('scopeAll')}</TabsTrigger>
               <TabsTrigger value="project">{t('groups.project')}</TabsTrigger>
               <TabsTrigger value="kortix">{t('groups.kortix')}</TabsTrigger>
@@ -458,7 +459,7 @@ function useSkillManagement(projectId: string, on: boolean) {
     open: (name: string) => () => setSelectedName(name),
     createButton: canWrite ? (
       <NewEntityMenu
-        label="New"
+        label={tI18nComplete('text18fdd549b2ed')}
         pending={configure.pending}
         onChat={() => configure.start(newConfigPrompt('skill'))}
         manual={{

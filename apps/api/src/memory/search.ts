@@ -1,10 +1,11 @@
 /**
  * Memory search (`GET /memory/search`) over files: the layers a person reads
- * (Company, every live channel, their own Memory folder), or the one layer
+ * (Company, every live channel, their own Memory folder, or their My Kortix
+ * memory when they have no DM), or the one layer
  * `layer` names. The newest 300 page files are read (cached by path and
  * mtime) and matched case-insensitively on title and body; title hits rank first.
  */
-import type { MemoryPageType, MemorySearchHit, MemorySearchResult } from '@kortix/api-contract';
+import { MY_KORTIX_MEMORY_LAYER_KEY, type MemoryPageType, type MemorySearchHit, type MemorySearchResult } from '@kortix/api-contract';
 import { projectSpaces } from '@kortix/db';
 import { spaceDriveFolders } from '@kortix/shared';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -52,7 +53,8 @@ async function peopleLayers(project: Project, viewer: Viewer): Promise<Layer[]> 
     .from(projectSpaces)
     .where(and(eq(projectSpaces.projectId, project.projectId), eq(projectSpaces.kind, 'channel'), isNull(projectSpaces.archivedAt)));
   const dmKey = await newestDmKey(project.projectId, viewer.userId);
-  const keys = ['company', ...channels.map((c) => c.spaceId), ...(dmKey ? [dmKey] : [])];
+  // Without a DM, the viewer's My Kortix memory stands for their own folder (a DM layer covers it otherwise).
+  const keys = ['company', ...channels.map((c) => c.spaceId), dmKey ?? MY_KORTIX_MEMORY_LAYER_KEY];
   const layers = await Promise.all(keys.map((key) => resolveLayer(project, key, viewer).catch(() => null)));
   return layers.filter((layer): layer is Layer => layer !== null);
 }

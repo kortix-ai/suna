@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '../../../primitives/button';
-import { SubSessionModal } from '../../thread/sub-session-modal';
+import { SubagentDialog } from '../../agents/subagent-view';
 import { partInput, partStatus } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import {
@@ -124,7 +124,7 @@ export function SessionSpawnTool({ call, forceOpen }: ToolProps) {
       )}
       <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />
       {childSessionId && (
-        <SubSessionModal
+        <SubagentDialog
           open={modalOpen}
           onOpenChange={setModalOpen}
           sessionId={childSessionId}

@@ -39,16 +39,11 @@ import {
 } from './marketplace-install-prompts';
 import { rethrowDatabaseError } from '../../shared/database-errors';
 
-/** The project's manifest raw text, preferring kortix.yaml over kortix.toml
- *  (dual-format). */
+/** The project's manifest raw text (kortix.yaml, else kortix.yml). */
 async function manifestRawOrNull(
   project: Parameters<typeof readManifestFromRepo>[0],
 ): Promise<string | null> {
-  const found = await readManifestFromRepo(
-    project,
-    manifestCandidatePaths(project.manifestPath).map((cand) => cand.path),
-    project.defaultBranch,
-  ).catch(() => null);
+  const found = await readManifestFromRepo(project, manifestCandidatePaths(project.manifestPath), project.defaultBranch).catch(() => null);
   return found?.content ?? null;
 }
 

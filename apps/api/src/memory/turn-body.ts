@@ -25,6 +25,19 @@ export const memoryChannelsOn = ttlMemo({
   },
 });
 
+/**
+ * `drives` of a project, read at most once per 30 s per replica: My Kortix's
+ * memory index needs Files only, never `project_channels`.
+ */
+export const memoryFilesOn = ttlMemo({
+  ttlMs: 30_000,
+  keyFn: (projectId: string) => projectId,
+  loader: async (projectId: string) => {
+    const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+    return resolveFeatureFlag(row?.metadata, 'drives');
+  },
+});
+
 /** Only the Kortix prompt route carries the memory `system`: not `/steer`, not OpenCode's `prompt_async`. */
 export function isMemoryTurnRoute(method: string, path: string): boolean {
   const request = classifyRuntimeRequest(method, path);

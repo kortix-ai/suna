@@ -27,10 +27,10 @@ describe('buildNewSessionCreateInput', () => {
     });
   });
 
-  it('forces the fixed meta sandbox when the meta agent is selected', () => {
+  it('routes the legacy meta agent to the My Kortix sandbox', () => {
     expect(buildNewSessionCreateInput({ agent: 'meta', sandbox_slug: 'node22' })).toEqual({
       agent_name: 'meta',
-      sandbox_slug: 'meta',
+      sandbox_slug: 'mykortix',
     });
   });
 

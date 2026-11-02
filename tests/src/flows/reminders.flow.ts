@@ -28,7 +28,7 @@ const ROUTES = {
 const REMINDERS = '/v1/projects/:projectId/sessions/:sessionId/reminders';
 const REMINDER = '/v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId';
 const MANIFEST =
-  'kortix_version: 2\nproject:\n  name: ke2e-reminders\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n';
+  'project:\n  name: ke2e-reminders\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n';
 
 type Reminder = { id: string; state: string; every: string | null; next_fire_at: string | null; prompt: string };
 

@@ -40,8 +40,7 @@ export const hero = {
     {
       name: 'kortix.yaml',
       language: 'yaml',
-      code: `kortix_version: 3
-default_agent: support-triage
+      code: `default_agent: support-triage
 
 project:
   name: acme-ops

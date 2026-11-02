@@ -132,11 +132,11 @@ const INTERRUPTED: Record<Harness, string> = { opencode: '[Tool execution was in
 /** What OpenCode shows the model for a pruned tool output (`time.compacted`). */
 const CLEARED = '[Old tool result content cleared]';
 const SUBTASK_TEXT = 'The following tool was executed by the user';
-/** OpenCode 1.18 and pi 1.0.3 tool names (pi: bash, edit, find, grep, ls, powershell, read, write). */
+/** OpenCode 1.18 and pi 1.0.3 tool names (pi: bash, edit, find, grep, ls, powershell, read, write; `agent`: pi's subagent tool, `task` its alias). */
 const KIND = new Map<string, KnownToolKind>(Object.entries({
   bash: 'shell', powershell: 'shell', read: 'read', write: 'write', edit: 'edit', multiedit: 'edit', patch: 'patch', apply_patch: 'patch',
   list: 'list', ls: 'list', glob: 'glob', find: 'glob', grep: 'grep', webfetch: 'web_fetch', websearch: 'web_search', codesearch: 'web_search',
-  todowrite: 'todo', todoread: 'todo', task: 'task', question: 'question', plan_enter: 'plan', plan_exit: 'plan',
+  todowrite: 'todo', todoread: 'todo', task: 'task', agent: 'task', question: 'question', plan_enter: 'plan', plan_exit: 'plan',
 }) as Array<[string, KnownToolKind]>);
 const kindOf = (name: string): KnownToolKind => KIND.get(name) ?? (name.includes('_') ? 'mcp' : 'other');
 const FINISH_V2 = new Map<unknown, SessionLogMessage['finish']>([['stop', 'stop'], ['tool-calls', 'tool_calls'], ['length', 'length'], ['error', 'error']]);
@@ -251,6 +251,7 @@ function partOf(b: SessionLogBlock, c: Ctx): unknown {
     case 'compaction': return {
       ...base, type: 'compaction', auto: b.trigger === 'auto' || b.trigger === 'overflow',
       ...(b.trigger === 'overflow' && { overflow: true }), ...(b.first_kept_message_id !== null && { tail_start_id: b.first_kept_message_id }),
+      ...(b.mode === 'record' && { mode: 'record' as const }), ...(b.tokens_before !== undefined && { tokens_before: b.tokens_before }), ...(b.entries !== undefined && { entries: b.entries }),
     };
     case 'harness':
       if (b.kind === 'nested_part') return isObj(b.data) && isObj(b.data.part) && b.data.part.type === 'tool' ? { ...b.data.part, ...base } : undefined;
@@ -435,7 +436,10 @@ function blockOf(p: unknown, id: string, marker: unknown, summary: string | null
     case 'compaction': {
       if (p !== marker) return harness('compaction');
       const trigger = p.overflow === true ? 'overflow' : p.auto === true ? 'auto' : 'manual';
-      return { type: 'compaction', id, summary, first_kept_message_id: str(p.tail_start_id) ?? null, trigger };
+      return {
+        type: 'compaction', id, summary, first_kept_message_id: str(p.tail_start_id) ?? null, trigger,
+        ...(p.mode === 'record' && { mode: 'record' as const }), ...(typeof p.tokens_before === 'number' && { tokens_before: p.tokens_before }), ...(typeof p.entries === 'number' && { entries: p.entries }),
+      };
     }
     case 'subtask':
       return harness('subtask', true);

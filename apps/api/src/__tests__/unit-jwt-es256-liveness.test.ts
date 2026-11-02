@@ -61,6 +61,18 @@ function loader(answer: () => Promise<{ id: string; email: string } | null>) {
 }
 
 describe('ES256 tokens', () => {
+  test('malformed signature encoding is rejected without throwing or checking liveness', async () => {
+    const calls = loader(async () => ({ id: USER, email: '' }));
+    const good = await sign({ sub: USER, exp: inAnHour() });
+    const prefix = good.slice(0, good.lastIndexOf('.') + 1);
+    for (const signature of ['%', 'a', '💥', 'a===']) {
+      const result = await verifySupabaseJwt(`${prefix}${signature}`);
+      expect(result).toEqual({ ok: false, reason: 'verify-error' });
+      expect(isInconclusive(result.ok ? '' : result.reason)).toBe(false);
+    }
+    expect(calls).toEqual([]);
+  });
+
   test('forged unknown kids refetch the JWKS at most once a minute', async () => {
     const before = jwksFetches;
     for (const kid of ['forged-kid-1', 'forged-kid-2', 'forged-kid-3']) {

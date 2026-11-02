@@ -55,6 +55,7 @@
   --terminal-surface: #0f0f0f;
   --terminal-fg: #e5e5e5;
   --terminal-border: rgb(255 255 255 / 0.1);
+  --terminal-accent: #0f7f80;
   --font-sans: Roobert, ui-sans-serif, -apple-system, 'Segoe UI', 'Helvetica Neue', 'Noto Sans', sans-serif;
   --font-mono: 'Roobert Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
   --font-sans-system: ui-sans-serif, -apple-system, 'Segoe UI', 'Helvetica Neue', 'Noto Sans', sans-serif;
@@ -184,6 +185,7 @@
   --terminal-surface: #0f0f0f;
   --terminal-fg: #e5e5e5;
   --terminal-border: rgb(255 255 255 / 0.1);
+  --terminal-accent: #2ec4c4;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -239,5 +241,6 @@
     --terminal-surface: #0f0f0f;
     --terminal-fg: #e5e5e5;
     --terminal-border: rgb(255 255 255 / 0.1);
+    --terminal-accent: #2ec4c4;
   }
 }

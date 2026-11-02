@@ -49,8 +49,7 @@ export type CustomizeSection =
   | 'channels'
   | 'sandbox'
   | 'settings'
-  | 'feature-flags'
-  | 'upgrade';
+  | 'feature-flags';
 
 /**
  * Per-section gating leaves.
@@ -139,10 +138,6 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
     read: PROJECT_ACTIONS.PROJECT_READ,
     write: PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE,
   },
-  // `upgrade` (migrate the manifest to v2) starts an agent session that edits the
-  // repo and opens a CR — the session itself asserts the real leaves; visibility
-  // follows settings.
-  upgrade: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
 };
 
 /** The distinct read leaves used to gate section visibility — handy for a single

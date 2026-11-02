@@ -3,6 +3,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
 import type { Command } from '../../core/runtime/runtime-types';
+import { activeRuntimeAction, runtimeActionError, runtimeActionPaths } from '../../core/session/runtime-actions';
 import { useRuntimeSupports } from '../use-runtime-supports';
 import { runtimeKeys, useRuntimeReady } from './keys';
 import { unwrap, asRuntimeList } from './shared';
@@ -36,6 +37,12 @@ export function useRuntimeCommands(options: UseRuntimeCommandsOptions = {}) {
   return useQuery<Command[]>({
     queryKey: runtimeKeys.commands(),
     queryFn: async () => {
+      const listed = await activeRuntimeAction('GET', runtimeActionPaths.commands);
+      if (listed) {
+        if (!listed.ok) throw await runtimeActionError(listed, 'Listing the commands failed');
+        const body = (await listed.json()) as { commands?: unknown };
+        return asRuntimeList<NativeCommand>(body.commands).map(commandOf);
+      }
       const client = getClient();
       const result = await client.command.list();
       return asRuntimeList<Command>(unwrap(result));
@@ -47,6 +54,26 @@ export function useRuntimeCommands(options: UseRuntimeCommandsOptions = {}) {
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });
+}
+
+/** One entry of `GET /kortix/runtime/commands` (`RuntimeCommandInfo`). */
+interface NativeCommand {
+  name: string;
+  description: string | null;
+  source: 'command' | 'template' | 'skill';
+  agents?: string[];
+}
+
+/** A listed command in the hook's `Command` shape. The list carries no templates. */
+function commandOf(command: NativeCommand): Command {
+  return {
+    name: command.name,
+    ...(command.description ? { description: command.description } : {}),
+    source: command.source === 'skill' ? 'skill' : 'command',
+    ...(command.agents ? { agents: command.agents } : {}),
+    template: '',
+    hints: [],
+  };
 }
 
 export interface UseRuntimeCommandsOptions {
@@ -87,6 +114,21 @@ export async function executeRuntimeCommand({
   model,
   variant,
 }: ExecuteRuntimeCommandInput): Promise<void> {
+  const ran = await activeRuntimeAction('POST', runtimeActionPaths.command(sessionId), {
+    name: command,
+    arguments: args || '',
+    ...(agent ? { agent } : {}),
+    ...(model ? { model } : {}),
+    ...(variant ? { variant } : {}),
+  });
+  if (ran) {
+    if (ran.ok) return;
+    const refusal = (await ran.clone().json().catch(() => null)) as { error?: unknown; command?: unknown; agent?: unknown } | null;
+    if (ran.status === 403 && refusal?.error === 'command_not_enabled') {
+      throw new CommandNotEnabledError(String(refusal.command ?? command), String(refusal.agent ?? agent ?? ''));
+    }
+    throw await runtimeActionError(ran, 'Running the command failed');
+  }
   const client = getClient();
   const result = await client.session.command({
     sessionID: sessionId,

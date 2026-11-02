@@ -26,8 +26,7 @@ import {
 } from '../index.ts';
 
 /**
- * A complete, otherwise-valid v2 manifest with one App — `apps:` is a v2
- * section, and the App's fields are copied from `sampleco-kortix/kortix.yaml`,
+ * A complete, otherwise-valid manifest with one App. The App's fields are copied from `sampleco-kortix/kortix.yaml`,
  * the manifest whose `KORTIX_*` names validated clean and then failed to
  * deploy.
  */
@@ -37,9 +36,7 @@ function appManifest(env: Record<string, string>, key: 'env' | 'secrets' = 'env'
     .join('\n');
 
   return `
-kortix_version: 2
 default_agent: support
-runtime: opencode
 
 project:
   name: acme
@@ -61,9 +58,7 @@ ${block}
 }
 
 function errors(input: string): string[] {
-  // 'yaml' explicitly: `validateManifest` defaults to TOML, and v2 manifests
-  // are YAML-only.
-  return validateManifest(input, 'yaml')
+  return validateManifest(input)
     .issues.filter((issue) => issue.severity === 'error')
     .map((issue) => `${issue.path}: ${issue.message}`);
 }

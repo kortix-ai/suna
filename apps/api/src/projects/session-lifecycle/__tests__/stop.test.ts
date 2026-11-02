@@ -12,7 +12,6 @@ let stopCalls: string[] = [];
 let stopError: Error | null = null;
 // When set, provider.stop waits on it (a provider confirm slower than the budget).
 let stopGate: Promise<void> | null = null;
-let captureGate: Promise<void> | null = null;
 // Per-call errors consumed before the persistent `stopError`. Lets a test
 // script a fail-then-succeed stop without mocking the provider module again.
 let stopErrors: Array<Error | undefined> = [];
@@ -30,8 +29,6 @@ let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [
 // resolveSandboxIngress are stubbed below, so intercepting `fetch` is enough
 // to observe and control it without a real network call.
 let callOrder: string[] = [];
-/** What scope each awaited stop-time capture asked for. */
-let captureOptions: Array<{ scope?: string; actorUserId?: string } | undefined> = [];
 let abortServiceKey: string | null = 'daemon-service-key';
 let abortFetchCalls: Array<{ url: string; init: Record<string, unknown> }> = [];
 let abortFetchImpl: (url: string, init: Record<string, unknown>) => Promise<Response> = async () =>
@@ -128,19 +125,6 @@ mock.module('../../../billing/services/compute-metering', () => ({
   endComputeSession: async () => {},
 }));
 
-mock.module('../../lib/session-transcript-capture', () => ({
-  captureJournallessSessionLog: async (
-    sessionId: string,
-    _deps?: unknown,
-    options?: { scope?: string; actorUserId?: string },
-  ) => {
-    callOrder.push(`capture:${sessionId}`);
-    captureOptions.push(options);
-    if (captureGate) await captureGate;
-    return null;
-  },
-}));
-
 mock.module('../../reaping/box-queries', () => ({
   ...realBoxQueries,
   claimManualSandboxStop: async (sandboxId: string, token: string) => {
@@ -193,7 +177,6 @@ beforeEach(() => {
   stopCalls = [];
   stopError = null;
   stopGate = null;
-  captureGate = null;
   process.env.STOP_SYNC_BUDGET_MS = '5000';
   stopErrors = [];
   pausedCompute = [];
@@ -204,7 +187,6 @@ beforeEach(() => {
   updateCalls = [];
 
   callOrder = [];
-  captureOptions = [];
   stamps = [];
   abortServiceKey = 'daemon-service-key';
   abortFetchCalls = [];
@@ -474,24 +456,6 @@ describe('stopSession', () => {
     ).toBe(true);
   });
 
-  test('a hung transcript tail does not hold the stop past its cap', async () => {
-    sandboxRow = {
-      sandboxId: 'sess-1',
-      externalId: 'ext-1',
-      provider: 'platinum',
-      status: 'active',
-      metadata: {},
-    };
-    captureGate = new Promise<void>(() => {});
-
-    const startedAt = Date.now();
-    const result = await stopSession(baseInput);
-
-    expect(Date.now() - startedAt).toBeLessThan(5_000);
-    expect(result.body).toMatchObject({ status: 'stopped' });
-    expect(stopCalls).toEqual(['ext-1']);
-  });
-
   // T11: close the turn before the box loses power.
   describe('pre-stop abort', () => {
     test('stamps the open turns as a stop this person asked for, BEFORE the abort', async () => {
@@ -525,13 +489,7 @@ describe('stopSession', () => {
       expect(abortFetchCalls[0]?.url).toBe('https://daemon.example.test/kortix/abort');
       expect(abortFetchCalls[0]?.init.method).toBe('POST');
       // Ordering: the abort call happens strictly before provider.stop().
-      expect(callOrder).toEqual(['claim', 'abort', 'capture:sess-1', 'provider.stop']);
-      // And it asks for a TAIL. This capture is AWAITED with the user holding
-      // the Stop button; the default scope is a 60s pagination with three
-      // retries. The whole copy is maintained at every turn end, so the only
-      // gap a stop can close is the turn that just ended. The authenticated stopper may be different from
-      // the session creator (who may no longer belong to this account).
-      expect(captureOptions).toEqual([{ scope: 'tail', actorUserId: 'user-1' }]);
+      expect(callOrder).toEqual(['claim', 'abort', 'provider.stop']);
     });
   });
 });

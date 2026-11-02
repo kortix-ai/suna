@@ -249,7 +249,7 @@ async function composedArchiveBuilder(
     const files = release?.tools_only && release.config_tree_id === treeId ? release.files : null;
     if (files) return async () => (await readFileTree(repo, files, { archive: true })).archive!;
   }
-  const resolved = await resolveReleaseTreeSource(repo, project, commit, agent ? `agent:${agent}` : 'project').catch(() => null);
+  const resolved = await resolveReleaseTreeSource(repo, project, commit).catch(() => null);
   if (!resolved) return null;
   if (!('source' in resolved) || !isComposedSource(resolved.source)) return null;
   const { source } = resolved;

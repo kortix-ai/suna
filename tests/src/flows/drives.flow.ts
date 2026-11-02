@@ -50,6 +50,7 @@ flow(
       'PUT /v1/drives/:driveId/access',
       'GET /v1/drives/:driveId/principals',
       'GET /v1/drives/:driveId/agents/:agentName/mounts',
+      'GET /v1/drives/:driveId/mounts',
       'POST /v1/drives/:driveId/restore',
       'DELETE /v1/drives/:driveId/access/:grantId',
       'GET /v1/drives/:driveId/conflicts',
@@ -182,6 +183,16 @@ flow(
         if (!JSON.stringify(r.json()).includes(outsider.userId!)) throw new Error(`owner cannot name an account member: ${r.text()}`);
       });
 
+      await ctx.step('project mounts are available to OWNER and reject ANON', async () => {
+        const route = '/v1/drives/:driveId/mounts';
+        const plan = (await owner.get(route, { params: { driveId } })).status(200)
+          .json<{ mounts: { mountPath: string }[]; slots: number }>();
+        if (!(plan.slots > 0) || !plan.mounts.every((mount) => mount.mountPath.startsWith('/drives/'))) {
+          throw new Error(`invalid project mount plan: ${JSON.stringify(plan)}`);
+        }
+        (await ctx.client.as(ctx.P.ANON).get(route, { params: { driveId } })).status(401);
+      });
+
       await ctx.step("an agent's mounts are the session plan: the project's folders at /drives paths; ANON 401", async () => {
         const plan = (await owner.get('/v1/drives/:driveId/agents/:agentName/mounts', { params: { driveId, agentName: 'kortix' } }))
           .status(200)
@@ -287,5 +298,278 @@ flow(
       (await ctx.client.as(ctx.P.OWNER).patch(`${route}/:driveId`, { access: 'write' }, one)).status([404, 405]);
       (await ctx.client.as(ctx.P.OWNER).del(`${route}/:driveId`, one)).status([404, 405]);
     });
+  },
+);
+
+flow(
+  'DRIVE-3',
+  {
+    domain: 'drives',
+    // One wait for every API process to see the new member (≤45 s).
+    timeoutMs: 300_000,
+    routes: [
+      'POST /v1/drives/:driveId/files/upload',
+      'PUT /v1/drives/:driveId/files/upload/:uploadId/blocks/:sha',
+      'POST /v1/drives/:driveId/files/upload/:uploadId/commit',
+    ],
+  },
+  async (ctx) => {
+    const { createHash } = await import('node:crypto');
+    const sha = (data: string | Uint8Array) => createHash('sha256').update(data).digest('hex');
+    const MiB = 1024 * 1024;
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'user');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const asMember = ctx.client.as(member);
+    const listFiles = { query: { projectId: project.id } };
+    const setVolumes = (enabled: boolean | null) =>
+      owner.patch('/v1/projects/:projectId/features', { feature: 'volumes', enabled }, { params: { projectId: project.id } });
+    // Two blocks: one full 1 MiB block and a 10-byte tail.
+    const content = 'a'.repeat(MiB) + 'tail-bytes';
+    const blocks = [sha(content.slice(0, MiB)), sha(content.slice(MiB))];
+    let driveId = '';
+    let ownerFolder = '';
+    let path = '';
+    let uploadId = '';
+    let storage = true;
+    const block = (id: string, s: string) => ({ params: { driveId, uploadId: id, sha: s } });
+
+    try {
+      await ctx.step('the project admin turns Volumes on; OWNER and the member open Files', async () => {
+        (await setVolumes(true)).status(200);
+        const drive = (await owner.get('/v1/drives', listFiles)).status(200).json<{ drives: any[] }>().drives[0];
+        driveId = drive.driveId;
+        ownerFolder = drive.personalFolder;
+        await waitForFilesStatus(ctx, listFiles, 200, member);
+        const mine = (await asMember.get('/v1/drives', listFiles)).status(200).json<{ drives: any[] }>().drives[0];
+        path = `${mine.personalFolder}/uploads/big.bin`;
+      });
+
+      await ctx.step('the member makes a folder for the upload → 200 (503 drive_storage_unavailable without drive storage)', async () => {
+        const mkdir = () => asMember.post('/v1/drives/:driveId/files/mkdir', { path: path.slice(0, path.lastIndexOf('/')) }, { params: { driveId } });
+        let r = await mkdir();
+        // The drive's first write creates its storage volume (~24 s locally): a
+        // 25 s request deadline can answer 503 first. The volume is made either way.
+        if (r.statusCode === 503 && r.json<{ code?: string }>().code === 'request_deadline') r = await mkdir();
+        if (r.statusCode === 503) {
+          r.body().has('$.code', 'drive_storage_unavailable');
+          storage = false;
+          return;
+        }
+        r.status([200, 409]);
+      });
+
+      await ctx.step('ANON cannot plan an upload → 401', async () => {
+        (await ctx.client.as(ctx.P.ANON).post('/v1/drives/:driveId/files/upload', { path, size: content.length, blocks }, { params: { driveId } })).status(401);
+      });
+
+      await ctx.step("the member plans into OWNER's private folder → 404; a wrong block count → 400", async () => {
+        (await asMember.post('/v1/drives/:driveId/files/upload', { path: `${ownerFolder}/x.bin`, size: content.length, blocks }, { params: { driveId } })).status(404);
+        (await asMember.post('/v1/drives/:driveId/files/upload', { path, size: content.length, blocks: blocks.slice(0, 1) }, { params: { driveId } })).status(400);
+        (await asMember.post('/v1/drives/:driveId/files/upload', { path, size: content.length, blocks: ['NOT-A-SHA', blocks[1]] }, { params: { driveId } })).status(400);
+      });
+
+      if (!storage) return;
+
+      await ctx.step('the member plans a 2-block file in their folder → 200: an upload id and the blocks storage lacks', async () => {
+        const r = await asMember.post('/v1/drives/:driveId/files/upload', { path, size: content.length, blocks }, { params: { driveId } });
+        const planned = r.status(200).json<{ uploadId: string; missing: string[] }>();
+        uploadId = planned.uploadId;
+        if (!uploadId || !planned.missing.every((m) => blocks.includes(m))) throw new Error(`plan ${r.text()}`);
+      });
+
+      await ctx.step("OWNER cannot use the member's upload id, and a changed id is refused → 404 upload_not_found", async () => {
+        (await owner.put('/v1/drives/:driveId/files/upload/:uploadId/blocks/:sha', content.slice(0, MiB), { ...block(uploadId, blocks[0]!), raw: true }))
+          .status(404)
+          .body()
+          .has('$.code', 'upload_not_found');
+        (await owner.post('/v1/drives/:driveId/files/upload/:uploadId/commit', {}, { params: { driveId, uploadId } })).status(404);
+        (await asMember.post('/v1/drives/:driveId/files/upload/:uploadId/commit', {}, { params: { driveId, uploadId: `${uploadId}x` } })).status(404);
+      });
+
+      await ctx.step('a block over 1 MiB → 413; a block name that is not a sha256 → 400', async () => {
+        (await asMember.put('/v1/drives/:driveId/files/upload/:uploadId/blocks/:sha', `${content.slice(0, MiB)}x`, { ...block(uploadId, blocks[0]!), raw: true })).status(413);
+        (await asMember.put('/v1/drives/:driveId/files/upload/:uploadId/blocks/:sha', 'x', { ...block(uploadId, 'nope'), raw: true })).status(400);
+      });
+
+      await ctx.step('the member sends both blocks (each twice: safe to resend) → 204, and commits → 200 {path,size}', async () => {
+        for (const [i, part] of [content.slice(0, MiB), content.slice(MiB)].entries()) {
+          for (let n = 0; n < 2; n++) {
+            (await asMember.put('/v1/drives/:driveId/files/upload/:uploadId/blocks/:sha', part, { ...block(uploadId, blocks[i]!), raw: true })).status(204);
+          }
+        }
+        (await asMember.post('/v1/drives/:driveId/files/upload/:uploadId/commit', {}, { params: { driveId, uploadId } }))
+          .status(200)
+          .body()
+          .has('$.path', path)
+          .has('$.size', content.length);
+      });
+
+      await ctx.step('the file reads back byte for byte (sha256 equal); OWNER still cannot read it → 404', async () => {
+        const read = (await asMember.get('/v1/drives/:driveId/files/content', { params: { driveId }, query: { path } })).status(200);
+        if (read.text().length !== content.length || sha(read.text()) !== sha(content)) throw new Error(`read back ${read.text().length} bytes`);
+        (await owner.get('/v1/drives/:driveId/files/content', { params: { driveId }, query: { path } })).status(404);
+      });
+
+      await ctx.step('a plan with a stale If-Match → 409 file_changed', async () => {
+        (await asMember.post('/v1/drives/:driveId/files/upload', { path, size: content.length, blocks }, { params: { driveId }, headers: { 'if-match': '"stale-version"' } }))
+          .status(409)
+          .body()
+          .has('$.code', 'file_changed');
+      });
+
+      await ctx.step('cleanup: the member deletes the upload folder → 204', async () => {
+        (await asMember.del('/v1/drives/:driveId/files', { params: { driveId }, query: { path: path.slice(0, path.lastIndexOf('/')), recursive: 'true' } })).status(204);
+      });
+    } finally {
+      await setVolumes(null).catch(() => undefined);
+    }
+  },
+);
+
+flow(
+  'DRIVE-4',
+  {
+    domain: 'drives',
+    timeoutMs: 300_000,
+    routes: [
+      'GET /v1/drives/:driveId/usage',
+      'GET /v1/drives/usage',
+      'PUT /v1/drives/:driveId/files/content',
+      'POST /v1/drives/:driveId/files/upload',
+      'PUT /v1/admin/api/accounts/:id/overrides',
+      'POST /v1/projects/:projectId/artifacts',
+    ],
+  },
+  async (ctx) => {
+    const GiB = 1024 ** 3;
+    const team = await ctx.fixtures.team({ name: ctx.fixtures.name('drive4-limits') });
+    const project = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const setVolumes = (enabled: boolean | null) =>
+      owner.patch('/v1/projects/:projectId/features', { feature: 'volumes', enabled }, { params: { projectId: project.id } });
+    let driveId = '';
+    let folder = '';
+    const admin = ctx.env.capabilities.admin ? ctx.client.withBearer(ctx.env.adminToken!, 'ADMIN_TOKEN') : null;
+    const setOverrides = (patch: Record<string, unknown>) =>
+      admin!.put('/v1/admin/api/accounts/:id/overrides', patch, { params: { id: team.id } });
+
+    try {
+      await ctx.step('setup: Volumes on; OWNER opens the project Files', async () => {
+        (await setVolumes(true)).status(200);
+        const drive = (await owner.get('/v1/drives', { query: { projectId: project.id } })).status(200).json<{ drives: any[] }>().drives[0];
+        driveId = drive.driveId;
+        folder = drive.personalFolder;
+      });
+
+      await ctx.step('the project usage names every limit: the plan figure, one file, the folder-mount cap, mounts per session', async () => {
+        const r = (await owner.get('/v1/drives/:driveId/usage', { params: { driveId } })).status(200);
+        const u = r.json<{ driveId: string; projectId: string; limits: Record<string, number | null>; account: unknown; folders: unknown[] }>();
+        if (u.driveId !== driveId || u.projectId !== project.id) throw new Error(`usage of another drive ${JSON.stringify(u)}`);
+        const l = u.limits;
+        // A fresh team is on Free (or No Plan): 5 GiB per project and per account.
+        if (l.projectBytes !== 5 * GiB || l.accountBytes !== 5 * GiB) throw new Error(`plan limits ${JSON.stringify(l)}`);
+        if (!(Number(l.fileBytes) > 0) || !(Number(l.folderMountBytes) > 0) || !(Number(l.mountsPerSession) > 0)) throw new Error(`limits ${JSON.stringify(l)}`);
+        if (l.requestBytes !== 64 * 1024 * 1024) throw new Error(`request limit ${l.requestBytes}`);
+        if (!Array.isArray(u.folders)) throw new Error('no folders');
+        const list = (await owner.get('/v1/drives', { query: { projectId: project.id } })).status(200).json<{ drives: any[] }>().drives[0];
+        if (list.sizeLimitBytes !== 5 * GiB) throw new Error(`the drive's sizeLimitBytes is not the plan's: ${list.sizeLimitBytes}`);
+      });
+
+      await ctx.step('ANON → 401; NONMEMBER cannot read the usage → 403/404', async () => {
+        (await ctx.client.as(ctx.P.ANON).get('/v1/drives/:driveId/usage', { params: { driveId } })).status(401);
+        (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/drives/:driveId/usage', { params: { driveId } })).status([403, 404]);
+      });
+
+      await ctx.step("the account's storage lists its project with the account limit; NONMEMBER → 403", async () => {
+        const r = (await owner.get('/v1/drives/usage', { query: { account_id: team.id } })).status(200);
+        const a = r.json<{ accountId: string; usedBytes: number; limits: { accountBytes: number }; projects: { projectId: string; name: string; driveId: string }[] }>();
+        if (a.accountId !== team.id || a.limits.accountBytes !== 5 * GiB) throw new Error(`account usage ${JSON.stringify(a)}`);
+        const row = a.projects.find((p) => p.projectId === project.id);
+        if (!row || row.driveId !== driveId || !row.name) throw new Error(`the project is missing: ${JSON.stringify(a.projects)}`);
+        (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/drives/usage', { query: { account_id: team.id } })).status(403);
+        (await ctx.client.as(ctx.P.ANON).get('/v1/drives/usage', { query: { account_id: team.id } })).status(401);
+      });
+
+      await ctx.step("an account member with no access to the project never sees its name or storage in the account's list", async () => {
+        const member = await team.addMember('member');
+        // Membership reaches every API process within 15 s; until then the route may answer 403.
+        const deadline = Date.now() + 45_000;
+        let r = await ctx.client.as(member).get('/v1/drives/usage', { query: { account_id: team.id } });
+        while (r.statusCode !== 200 && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+          r = await ctx.client.as(member).get('/v1/drives/usage', { query: { account_id: team.id } });
+        }
+        if (r.statusCode === 403) return; // no billing.read: nothing is disclosed either
+        r.status(200);
+        const listed = r.json<{ projects: { projectId: string; name: string }[] }>().projects;
+        if (listed.some((p) => p.projectId === project.id)) {
+          throw new Error(`a member without project access sees the project in the storage list: ${JSON.stringify(listed)}`);
+        }
+      });
+
+      if (!admin) return;
+
+      await ctx.step('an operator sets a 1 KiB project limit; the usage reads it back', async () => {
+        (await setOverrides({ driveProjectBytes: { value: 1024 } })).status(200).body().has('$.overrides.driveProjectBytes.value', 1024);
+        (await setOverrides({ driveProjectBytes: { value: 1.5 } })).status(400);
+        (await owner.get('/v1/drives/:driveId/usage', { params: { driveId } })).status(200).body().has('$.limits.projectBytes', 1024);
+      });
+
+      await ctx.step('a 2 KiB upload is refused before any byte reaches storage → 403 storage_limit_exceeded with the numbers', async () => {
+        const body = 'x'.repeat(2048);
+        (await owner.put('/v1/drives/:driveId/files/content', body, { params: { driveId }, query: { path: `${folder}/big.txt` }, raw: true }))
+          .status(403)
+          .body()
+          .has('$.code', 'storage_limit_exceeded')
+          .has('$.limit', 'project_bytes')
+          .has('$.max', 1024)
+          .has('$.requested', 2048);
+        // The block upload is refused at its plan, before a block is sent.
+        (await owner.post('/v1/drives/:driveId/files/upload', { path: `${folder}/big.bin`, size: 2048, blocks: ['a'.repeat(64)] }, { params: { driveId } }))
+          .status(403)
+          .body()
+          .has('$.code', 'storage_limit_exceeded')
+          .has('$.limit', 'project_bytes');
+      });
+
+      await ctx.step('an Artifact publish is held to the same limit → refused with storage_limit_exceeded', async () => {
+        (await owner.patch('/v1/projects/:projectId/features', { feature: 'artifacts', enabled: true }, { params: { projectId: project.id } })).status(200);
+        const r = await owner.post(
+          '/v1/projects/:projectId/artifacts',
+          { files: { 'index.md': { content: `# Big\n\n${'z'.repeat(4096)}` } } },
+          { params: { projectId: project.id } },
+        );
+        // The artifact routes answer a storage refusal with their older status (409).
+        r.status(409).body().has('$.code', 'storage_limit_exceeded').has('$.limit', 'project_bytes').has('$.max', 1024);
+      });
+
+      await ctx.step('the account limit applies across projects → 403 limit account_bytes', async () => {
+        (await setOverrides({ driveProjectBytes: null, driveAccountBytes: { value: 1024 } })).status(200);
+        (await owner.put('/v1/drives/:driveId/files/content', 'y'.repeat(2048), { params: { driveId }, query: { path: `${folder}/big.txt` }, raw: true }))
+          .status(403)
+          .body()
+          .has('$.code', 'storage_limit_exceeded')
+          .has('$.limit', 'account_bytes')
+          .has('$.max', 1024);
+      });
+
+      await ctx.step('one file over the folder-mount cap → 413 file_too_large, at the plan', async () => {
+        (await setOverrides({ driveAccountBytes: null })).status(200);
+        const limits = (await owner.get('/v1/drives/:driveId/usage', { params: { driveId } })).status(200).json<{ limits: { fileBytes: number } }>().limits;
+        const size = limits.fileBytes + 1;
+        (await owner.post('/v1/drives/:driveId/files/upload', { path: `${folder}/huge.bin`, size, blocks: Array.from({ length: Math.ceil(size / (1024 * 1024)) }, () => 'b'.repeat(64)) }, { params: { driveId } }))
+          .status(413)
+          .body()
+          .has('$.code', 'file_too_large')
+          .has('$.limit', 'file_bytes')
+          .has('$.max', limits.fileBytes);
+      });
+    } finally {
+      if (admin) await setOverrides({ driveProjectBytes: null, driveAccountBytes: null }).catch(() => undefined);
+      await setVolumes(null).catch(() => undefined);
+    }
   },
 );

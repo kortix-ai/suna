@@ -158,3 +158,16 @@ describe('uploadedFraction — the tray fills by bytes', () => {
     expect(uploadedFraction([u(0, 'done'), u(0, 'queued')])).toBe(0.5);
   });
 });
+
+describe('size guard — a source with its own limit', () => {
+  test('null takes any size (Files sends a large file in blocks)', () => {
+    const huge = candidate('film.mov', 2.7 * 1000 ** 3);
+    expect(uploadRejectionReason(huge, null)).toBeNull();
+    expect(partitionUploadBatch([huge], null).accepted).toEqual([huge]);
+  });
+
+  test('a number refuses above it and names that limit', () => {
+    expect(uploadRejectionReason(candidate('a.bin', 10 * 1024 * 1024), 5 * 1024 * 1024)).toBe('a.bin is 10.0 MB — the upload limit is 5.0 MB');
+    expect(partitionUploadBatch([candidate('b.bin', 5 * 1024 * 1024)], 5 * 1024 * 1024).rejected).toEqual([]);
+  });
+});
