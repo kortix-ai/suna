@@ -34,6 +34,17 @@ describe('requestFieldError', () => {
     }
   });
 
+  // Strix on #11455: a body nested ~50,000 levels deep overflowed JSON.stringify
+  // in the translators before authentication (a 503 counted toward /health).
+  test('a body nested more than 128 levels deep is refused without overflowing', () => {
+    const nest = (depth: number) => JSON.parse('{"a":'.repeat(depth) + '1' + '}'.repeat(depth)) as Record<string, unknown>;
+    expect(requestFieldError({ messages: [{ role: 'user', content: 'hi' }], tools: [nest(100)] })).toBeNull();
+    for (const depth of [130, 50_000]) {
+      expect({ depth, error: requestFieldError({ messages: [{ role: 'user', content: 'hi' }], tools: [nest(depth)] }) })
+        .toEqual({ depth, error: 'The request body is nested more than 128 levels deep' });
+    }
+  });
+
   test('a non-boolean stream is refused', () => {
     for (const stream of ['true', 'false', 1, 0, {}]) {
       expect(requestFieldError({ stream })).toBe('`stream` must be true or false');
@@ -249,6 +260,20 @@ describe('the Anthropic and Responses ingresses refuse a mistyped field in their
     // The null block is skipped; the text reaches routing, where this test's hooks have no provider.
     expect(res.status).toBe(400);
     expect(JSON.stringify(await res.json())).not.toContain('TypeError');
+  });
+
+  test('a body nested 50,000 levels deep is a 400 on both ingresses, never a stack overflow', async () => {
+    const gateway = createGateway(hooks);
+    const deep = '{"a":'.repeat(50_000) + '1' + '}'.repeat(50_000);
+    const bodies = [
+      [gateway.messages, `{"model":"m","max_tokens":16,"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"f","input":${deep}}]},{"role":"user","content":"go"}]}`],
+      [gateway.responses, `{"model":"m","input":[{"type":"message","role":"user","content":"hi"},{"type":"function_call_output","call_id":"c","output":${deep}}]}`],
+    ] as const;
+    for (const [send, rawBody] of bodies) {
+      const res = await send({ authorization: undefined, rawBody });
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(await res.json())).toContain('nested more than 128 levels deep');
+    }
   });
 
   test('responses: an empty input, with or without instructions → 400', async () => {

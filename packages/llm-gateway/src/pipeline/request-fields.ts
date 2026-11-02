@@ -25,7 +25,23 @@ export function requestFieldError(body: Record<string, unknown>): string | null 
   if (body.input != null && typeof body.input !== 'string' && !(Array.isArray(body.input) && body.input.every(isMessage))) {
     return '`input` must be a string or an array of input items';
   }
+  // A body nested ~50,000 levels deep overflowed JSON.stringify in the translators.
+  if (!fitsDepth(body)) return `The request body is nested more than ${MAX_BODY_DEPTH} levels deep`;
   return null;
+}
+
+const MAX_BODY_DEPTH = 128;
+
+/** Iterative, so the walk cannot overflow the stack itself. */
+function fitsDepth(value: unknown): boolean {
+  const stack: [unknown, number][] = [[value, 0]];
+  while (stack.length) {
+    const [node, depth] = stack.pop()!;
+    if (depth > MAX_BODY_DEPTH) return false;
+    if (typeof node !== 'object' || node === null) continue;
+    for (const child of Object.values(node)) stack.push([child, depth + 1]);
+  }
+  return true;
 }
 
 /**
