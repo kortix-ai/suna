@@ -1550,13 +1550,14 @@ harnessFlow(
       r.status(200);
     });
 
-    await ctx.step('the conversation carries the compaction request and a finished summary with text', async () => {
+    await ctx.step('the conversation carries the compaction request, marked as a reset onto the record, and a finished reset message with text', async () => {
       await waitFor(() => runtimeMessages(ctx, sandboxId, root), {
         until: (messages) => {
           const summary = messages.find((m) => m.info.role === 'assistant' && m.info.summary === true);
           if (summary?.info.error) throw new Error(`the compaction failed on ${harness}: ${JSON.stringify(summary.info.error)}`);
           return (
-            messages.some((m) => m.info.role === 'user' && m.parts.some((part) => part.type === 'compaction')) &&
+            // The default context is the record: the marker says the context reset onto it, with nothing summarized.
+            messages.some((m) => m.info.role === 'user' && m.parts.some((part) => part.type === 'compaction' && (part as { mode?: string }).mode === 'record')) &&
             Boolean(summary?.info.time?.completed) &&
             messageText(summary!).trim().length > 0
           );

@@ -259,7 +259,7 @@ async function sandboxesLs(client: Client, base: string, json: boolean): Promise
     );
   }
   process.stdout.write(
-    `\n  ${C.dim}${resp.items.length} template${resp.items.length === 1 ? '' : 's'} · default: ${resp.default_slug ?? '—'}${C.reset}\n\n`,
+    `\n  ${C.dim}${resp.items.length} template${resp.items.length === 1 ? '' : 's'} · default: ${resp.default_slug === 'default' ? 'default (platform image)' : (resp.default_slug ?? '—')}${C.reset}\n\n`,
   );
   return 0;
 }

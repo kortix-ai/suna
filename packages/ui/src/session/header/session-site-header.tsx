@@ -167,6 +167,9 @@ export function SessionSiteHeader({
   const [compactOpen, setCompactOpen] = useState(false);
   // E1: a runtime without on-demand compaction (pi) offers no Compact item.
   const canCompact = useRuntimeSupports('session.compact');
+  // A runtime with the context record starts a fresh context: nothing is summarized.
+  const contextRecord = useRuntimeSupports('session.context_record');
+  const tReset = useTranslations('contextReset');
   const [shareOpen, setShareOpen] = useState(false);
   const { ShareSessionModal } = useUiComponents();
   // The name edits in place: the name button swaps for a field. The menu's
@@ -504,7 +507,7 @@ export function SessionSiteHeader({
           onClick={() => setCompactOpen(true)}
         >
           <Layers />
-          {tI18nHardcoded.raw('i18nComplete.textca838377bb5a')}
+          {contextRecord ? tReset('dialogAction') : tI18nHardcoded.raw('i18nComplete.textca838377bb5a')}
         </DropdownMenuItem>
       )}
 
@@ -698,7 +701,7 @@ export function SessionSiteHeader({
                     size="icon"
                     aria-label={label}
                     onClick={() => openSessionQuickView(view, 'header')}
-                    className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96]"
+                    className="text-muted-foreground hover:text-foreground cursor-pointer transition-colors active:scale-[0.96]"
                   >
                     <Icon className="h-4 w-4" />
                   </Button>
@@ -718,7 +721,7 @@ export function SessionSiteHeader({
                     variant="ghost"
                     size="icon"
                     aria-label={tI18nHardcoded.raw('i18nComplete.text96f0c06bbcb7')}
-                    className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96] lg:hidden"
+                    className="text-muted-foreground hover:text-foreground cursor-pointer transition-colors active:scale-[0.96] lg:hidden"
                   >
                     <Code2 className="h-4 w-4" />
                   </Button>
@@ -799,7 +802,7 @@ export function SessionSiteHeader({
                   aria-label={tI18nHardcoded.raw('i18nComplete.text2534086de9fe')}
                   aria-expanded={isActionPanelOpen}
                   onClick={toggleActionPanel}
-                  className="text-foreground/80 hover:text-foreground cursor-pointer transition-colors active:scale-[0.96]"
+                  className="text-muted-foreground hover:text-foreground cursor-pointer transition-colors active:scale-[0.96]"
                 >
                   <span className="relative inline-flex">
                     <CaretDoubleLeftIcon className="size-4" />

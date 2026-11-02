@@ -411,6 +411,29 @@ describe('classifyPart — exhaustive part model', () => {
     });
   });
 
+  test('a context reset (retrieval instead of a summary) carries its mode, its size and its record entries', () => {
+    const part = {
+      id: 'p11',
+      sessionID: 's1',
+      messageID: 'm1',
+      type: 'compaction',
+      auto: true,
+      mode: 'record',
+      tokens_before: 182_340,
+      entries: 412,
+    } as Part;
+    expect(classifyPart(part)).toEqual({
+      kind: 'compaction',
+      id: 'p11',
+      auto: true,
+      overflow: false,
+      tailStartId: undefined,
+      mode: 'record',
+      tokensBefore: 182_340,
+      entries: 412,
+    });
+  });
+
   test('step-start', () => {
     const part = {
       id: 'p11',

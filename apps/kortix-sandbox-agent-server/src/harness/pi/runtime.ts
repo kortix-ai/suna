@@ -45,6 +45,7 @@ import { messaging, MESSAGING_TOOLS } from './extensions/messaging'
 import { TEAM_TASK_TOOLS, teamTasks } from './extensions/team-tasks'
 import { BUNDLED_WORKFLOWS } from './extensions/bundled-workflows'
 import { isWorkflowRunner, WORKFLOW_TOOL, WorkflowRuns, type WorkflowControlAnswer } from './extensions/workflow'
+import { contextRecord } from './extensions/context-record'
 import { listCheckout } from './extensions/workflow-store'
 import { promptOrigin, ULTRACODE_SYSTEM_LINE, ultracodeRequested, type PromptOrigin } from './prompt-origin'
 import { enabledFeatureFlags } from '@/lib/config/feature-flags'
@@ -730,12 +731,12 @@ export class PiRuntime {
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
         // The nested-call gate is first: pi runs `tool_call` handlers in load order and stops at the first block.
-        extensions: [this.nestedCallGate(), this.presentationExtension(), this.turnExtension(), subagents(this.kortixHost()), workflow(this.kortixHost()), ...this.multiAgentExtensions(), ...codemodeExtensions(this.codemodeMode, coding.createCodemodeExtension), ...local, ...project.extensions],
+        extensions: [this.nestedCallGate(), this.presentationExtension(), this.turnExtension(), ...this.contextExtensions(), subagents(this.kortixHost()), workflow(this.kortixHost()), ...this.multiAgentExtensions(), ...codemodeExtensions(this.codemodeMode, coding.createCodemodeExtension), ...local, ...project.extensions],
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         // Every provider a turn may switch to: the gateway, and Claude subscription models.
         providers: [this.models.models.getProvider(KORTIX_PROVIDER_ID), this.models.models.getProvider(CLAUDE_AGENT_PROVIDER_ID)],
-        compaction: (floor) => compactionSettings(this.models!.catalog, floor),
+        compaction: (floor) => this.compactionFor(floor),
       })
       const extensionsMs = performance.now() - extensionsStartedAt
       this.rebuildSystemPrompt()
@@ -836,7 +837,7 @@ export class PiRuntime {
     this.selected = this.models.select(this.selected ? selectId(this.selected.providerID, this.selected.modelID) : null)
     this.agent.state.model = this.selected.model
     // A model whose limits the catalog now reports differently compacts at a different threshold.
-    await this.pi?.applyCompaction((floor) => compactionSettings(this.models!.catalog, floor))
+    await this.pi?.applyCompaction((floor) => this.compactionFor(floor))
   }
 
   /** Reload skills and the root AGENTS.md from disk (after a repo refresh). */
@@ -1422,6 +1423,22 @@ export class PiRuntime {
         ? { name: 'MessageAbortedError', data: { message: 'The compaction was stopped' }, code: 'aborted' }
         : { name: 'UnknownError', data: { message: event.errorMessage ?? 'The compaction failed' } }
     if (event.result) {
+      // A reset onto the record (extensions/context-record.ts): the marker says so, with its size.
+      const details = event.result.details as { kind?: unknown; entries?: unknown } | undefined
+      if (details?.kind === 'record' && info.parentID) {
+        this.publish({
+          type: 'message.part.updated',
+          properties: {
+            sessionID,
+            time: completed,
+            part: {
+              id: `${info.parentID}-p0`, messageID: info.parentID, sessionID, type: 'compaction', auto: event.reason !== 'manual',
+              ...(event.reason === 'overflow' ? { overflow: true } : {}), mode: 'record', tokens_before: event.result.tokensBefore,
+              ...(typeof details.entries === 'number' ? { entries: details.entries } : {}),
+            },
+          },
+        })
+      }
       this.publish({
         type: 'message.part.updated',
         properties: { sessionID, time: completed, part: { id: `${info.id}-p0`, messageID: info.id, sessionID, type: 'text', text: event.result.summary } },
@@ -1612,6 +1629,21 @@ export class PiRuntime {
   }
 
   /** Adds today's date and the running turn's `system` text on top of whatever the prompt is by then: per turn, so a session that crosses midnight is told the new day. */
+  /**
+   * pi's compaction settings: the reserve from the catalog (`compactionSettings`). With the context
+   * record, `keepRecentTokens` is 1: the reset keeps nothing, and pi's preparation would otherwise
+   * refuse any session under its 20,000-token tail ("Nothing to compact"), before the hook runs.
+   */
+  private compactionFor(floor: number) {
+    const settings = compactionSettings(this.models!.catalog, floor)
+    return this.cfg.piContext === 'summary' ? settings : { ...settings, keepRecentTokens: 1 }
+  }
+
+  /** Retrieval instead of compaction (`extensions/context-record.ts`), unless the agent's `context` is `summary`. */
+  private contextExtensions(): InlineExtension[] {
+    return this.cfg.piContext === 'summary' ? [] : [contextRecord({ dir: join(this.cfg.piStateDir, 'records') })]
+  }
+
   private turnExtension(): InlineExtension {
     return {
       name: 'kortix-turn',
@@ -1688,6 +1720,11 @@ export class PiRuntime {
     if (!plane || !this.agentTeams()) return null
     if (this.subagentContext.teamLead) return this.subagentContext.teamLead
     return this.subagentContext.depth === 0 ? plane.sessionId : null
+  }
+
+  /** `session.context_record` unless the agent's `context` is `summary` (`extensions/context-record.ts`). */
+  contextCapabilities(): RuntimeCapability[] {
+    return this.cfg.piContext === 'summary' ? [] : ['session.context_record']
   }
 
   /** The session features pi serves on this box (`GET /kortix/health` `capabilities`), beyond the static list. */

@@ -394,10 +394,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
     description:
       'Give an agent an objective and it owns the outcome until an independent check confirms it, for days or weeks: it plans, works, waits, chases people for what only they can give, and keeps its state in a Goals folder in Files. Needs Volumes and Loops on (flag key `reminders`).',
     stability: 'beta',
+    // Work in progress (Marko, 2026-11-01): Settings marks the row "Not
+    // recommended yet" until Goals v1 is finished.
+    wip: true,
     // A goal keeps its state in Files, and every drive is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
-    // Off by default; a project turns it on (Marko, 2026-10-28). Not marked
-    // work in progress: Goals is being finished as a usable v1.
+    // Off by default; a project turns it on (Marko, 2026-10-28).
     platformDefault: () => false,
     enforcement: 'ui-only',
     enforcementNote:

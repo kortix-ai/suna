@@ -156,11 +156,13 @@ for the account. Run \`kortix gateway models\` to see what is.
 
 const COMPACT_HELP = help`Usage: kortix sessions compact <session-id> [options]
 
-Summarize the conversation so far and continue from the summary — what the
-dashboard's "Compact" does. Use it when a long session starts losing the
-thread or hits its context ceiling. The model is the session's own; the
-runtime's configured default is the fallback. A session whose runtime cannot
-compact on demand exits 1 and nothing changes. A stopped session is started first.
+Start a fresh context now — what the dashboard's "Start a fresh context" does.
+The agent continues with an empty context and searches the session's full
+record when it needs a detail; nothing is summarized. An agent whose kortix.yaml
+sets \`context: summary\` instead summarizes the conversation and continues from
+the summary, with the session's own model (the runtime's default as fallback).
+A full context does the same by itself. A session whose runtime cannot do this
+on demand exits 1 and nothing changes. A stopped session is started first.
 
 Options:
   --project <id>   Operate on this project id (default: linked).
@@ -503,7 +505,10 @@ export async function runSessionsCompact(argv: string[]): Promise<number> {
     },
   });
   if (!resolved) return 1;
-  if (!runtimeSupports(await readRuntimeCapabilities(resolved), 'session.compact')) {
+  const capabilities = await readRuntimeCapabilities(resolved);
+  // A runtime with the context record resets onto it: no summary is written.
+  const record = (capabilities ?? []).includes('session.context_record');
+  if (!runtimeSupports(capabilities, 'session.compact')) {
     process.stderr.write(
       `${status.err("This session's runtime does not support compacting the conversation.")}\n`,
     );
@@ -514,7 +519,7 @@ export async function runSessionsCompact(argv: string[]): Promise<number> {
   // same split the prompt path uses. Without one, the runtime's configured
   // default applies; with neither, `compact` refuses instead of guessing.
   let model: { providerID: string; modelID: string };
-  process.stderr.write('Checking session and compacting conversation…\n');
+  process.stderr.write(record ? 'Checking session and starting a fresh context…\n' : 'Checking session and compacting conversation…\n');
   try {
     model = await withKortixScope(resolved.auth, () =>
       resolved.handle.compact(sessionPromptDefaults(resolved.session).model),
@@ -536,7 +541,14 @@ export async function runSessionsCompact(argv: string[]): Promise<number> {
       opencode_session_id: resolved.runtimeSessionId,
       model: `${model.providerID}/${model.modelID}`,
       compacted: true,
+      mode: record ? 'record' : 'summary',
     });
+    return 0;
+  }
+  if (record) {
+    process.stdout.write(
+      `${status.ok(`Started a fresh context for ${C.bold}${short(resolved.session.session_id)}${C.reset}${C.dim} — nothing was summarized; the agent searches the full record when it needs a detail${C.reset}`)}\n`,
+    );
     return 0;
   }
   process.stdout.write(

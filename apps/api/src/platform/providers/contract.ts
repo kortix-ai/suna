@@ -94,6 +94,14 @@ export interface CreateSandboxOpts {
    */
   volumesRequired?: boolean;
   /**
+   * Mount paths in `volumes` the box may boot without: the session's Files
+   * folders. A create Platinum refuses over a mount boots once more without
+   * these, and the result's `metadata.droppedVolumes` names them, for the
+   * session to attach to the running box later. Every other volume is
+   * required: a create refused over it fails.
+   */
+  optionalVolumes?: string[];
+  /**
    * The sandbox template's `residential_proxy` (platform/services/residential-proxy.ts):
    * the box's web traffic leaves through a residential IP in `country` (any when
    * absent), except to the `bypass` hosts. Platinum only; a session with it does
@@ -127,6 +135,15 @@ export interface ProvisionResult {
   externalId: string;
   baseUrl: string;
   metadata: Record<string, unknown>;
+}
+
+/** An optional volume a box booted without, and Platinum's refusal of it (`metadata.droppedVolumes`). */
+export interface DroppedVolume {
+  mountPath: string;
+  status: number | null;
+  code: string | null;
+  /** Platinum's own words, at most 300 characters. */
+  reason: string;
 }
 
 export type { SandboxStatus } from './status';

@@ -110,6 +110,8 @@ const AgentBlockSchema = z
     commands: GrantSetSchema.optional(),
     extensions: ExcludableGrantSetSchema.optional(),
     codemode: z.enum(['on', 'only', 'off']).optional(),
+    // What a full context does: `record` (default) resets onto the searchable record; `summary` compacts.
+    context: z.enum(['record', 'summary']).optional(),
     // Deprecated request alias of kortix_permissions. The handler normalizes it
     // (normalizeKortixPermissionAliases) before serialization.
     kortix_cli: GrantSetSchema.optional(),

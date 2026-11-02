@@ -287,6 +287,14 @@ describe('foldCompactions', () => {
     expect(sessionLogTurns(source).map((t) => t.id)).toEqual(['u', 'c1', 'c1:continued', 'c2', 'c2:continued', 'next']);
   });
 
+  test('a compaction the person started (trigger manual) stays its own turn: the divider shows between turns, not inside the last turn\'s work', () => {
+    const manual = msg('c', 'user', [{ type: 'compaction', id: 'cp', summary: 'You are continuing this conversation in a fresh context.', first_kept_message_id: null, trigger: 'manual', mode: 'record' }], { kind: 'compaction' });
+    const turns = sessionLogTurns(thread([user('u'), reply('a', 'u', [call('t', 'bash')]), manual, user('next'), reply('b', 'next')]), { foldCompactions: true });
+    expect(turns.map((t) => t.id)).toEqual(['u', 'c', 'next']);
+    expect(turns[0]!.blocks.map((b) => b.id)).toEqual(['t']);
+    expect(turns[1]!.compaction?.block?.mode).toBe('record');
+  });
+
   test('leading compaction stays standalone and never absorbs a later user prompt', () => {
     const marker = msg('c', 'user', [{ type: 'compaction', id: 'cp', summary: 'summary', first_kept_message_id: null }], { kind: 'compaction' });
     const turns = sessionLogTurns(thread([marker, reply('a', 'c'), user('u'), reply('b', 'u')]), { foldCompactions: true });

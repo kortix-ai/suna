@@ -1,6 +1,6 @@
 ---
 name: kortix-drives
-description: "The project's Drive under `/drives`: the user's own folder (their desktop, also at `~/Desktop`) and the folders shared with you, synced with the Kortix web app and every other session. Load before you read or save a file the user should keep, look for the user's notes, preferences or context, keep memory across sessions (with `kortix-user-memory`), or when you see a file named `... (conflict <date> <time>)...`."
+description: "The project's Drive under `/drives`: the user's own folder (their desktop, also at `~/Desktop`) and the folders shared with you, synced with the Kortix web app and every other session. A program the user wants \"on my desktop\" is not a file: the `kortix-computer` skill says where it goes. Load before you read or save a file the user should keep, look for the user's notes, preferences or context, keep memory across sessions (with `kortix-user-memory`), or when you see a file named `... (conflict <date> <time>)...`."
 ---
 
 <skill name="kortix-drives">

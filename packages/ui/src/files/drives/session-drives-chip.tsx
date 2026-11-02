@@ -5,11 +5,23 @@ import { Button } from '../../primitives/button';
 import { warningToast } from '../../primitives/toast';
 import { Home } from '../../internal/icons/home';
 import { useSessionDrives } from './use-drives';
-import type { SessionDrive } from '@kortix/sdk';
+import type { SessionDrive, SessionDrives } from '@kortix/sdk';
 import { useTranslations } from '../../i18n';
 import { ArrowUpRightIcon, FolderIcon, WarningIcon } from '@phosphor-icons/react';
 import { useUiLink } from '../../providers/ui-provider';
 import { useEffect, useRef } from 'react';
+
+type SkippedReason = NonNullable<NonNullable<SessionDrives['skipped']>[number]['reason']>;
+
+/**
+ * One notice per cause of a folder the box does not mount: storage refused it
+ * at boot (it mounts later), it is too large to mount, or it did not fit.
+ */
+const SKIPPED_NOTICES: Array<{ key: 'sessionSkippedUnavailable' | 'sessionSkippedTooLarge' | 'sessionSkippedDrives'; matches: (reason: SkippedReason | undefined) => boolean }> = [
+  { key: 'sessionSkippedUnavailable', matches: (reason) => reason === 'unavailable' },
+  { key: 'sessionSkippedTooLarge', matches: (reason) => reason === 'too_large' },
+  { key: 'sessionSkippedDrives', matches: (reason) => reason !== 'unavailable' && reason !== 'too_large' },
+];
 
 /** Where the person's own folder also appears in the box: a path, not prose. */
 const DESKTOP_PATH = '~/Desktop';
@@ -58,15 +70,20 @@ export function SessionDrivesList({ projectId, sessionId }: { projectId: string;
           ))}
         </ul>
       )}
-      {skipped.length > 0 ? (
-        <p
-          role="status"
-          className="bg-kortix-orange/15 text-foreground flex items-start gap-2 rounded-md px-2.5 py-2 text-xs text-pretty"
-        >
-          <WarningIcon className="text-kortix-orange mt-px size-3.5 shrink-0" weight="fill" />
-          {t('sessionSkippedDrives', { count: skipped.length, names: skipped.map((d) => d.name).join(', ') })}
-        </p>
-      ) : null}
+      {SKIPPED_NOTICES.map(({ key, matches }) => {
+        const these = skipped.filter((d) => matches(d.reason));
+        if (!these.length) return null;
+        return (
+          <p
+            key={key}
+            role="status"
+            className="bg-kortix-orange/15 text-foreground flex items-start gap-2 rounded-md px-2.5 py-2 text-xs text-pretty"
+          >
+            <WarningIcon className="text-kortix-orange mt-px size-3.5 shrink-0" weight="fill" />
+            {t(key, { count: these.length, names: these.map((d) => d.name).join(', ') })}
+          </p>
+        );
+      })}
     </div>
   );
 }

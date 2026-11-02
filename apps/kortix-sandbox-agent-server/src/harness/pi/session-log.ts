@@ -230,6 +230,10 @@ const iso = (ms: unknown): string => new Date(typeof ms === 'number' && Number.i
 const isoOf = (value: unknown): string => (typeof value === 'string' ? value : iso(value))
 
 /** Takes v1 parts of one message in order, by type. */
+/** A compaction `details` of the context record: a reset with nothing summarized. */
+const isRecordReset = (details: unknown): details is { kind: 'record'; entries: number } =>
+  !!details && typeof details === 'object' && (details as { kind?: unknown }).kind === 'record' && typeof (details as { entries?: unknown }).entries === 'number'
+
 function partPool(v1: KortixMessage | undefined) {
   const parts = [...(v1?.parts ?? [])] as J[]
   return {
@@ -328,6 +332,8 @@ function deriveThread(input: {
         first_kept_message_id: firstKept(entries, e, idOf),
         tokens_before: e.tokensBefore,
         ...(part ? { trigger: part.overflow ? 'overflow' : part.auto ? 'auto' : 'manual' } : {}),
+        // A reset onto the record (extensions/context-record.ts): nothing was summarized.
+        ...(isRecordReset(e.details) ? { mode: 'record' as const, entries: e.details.entries } : {}),
       }]
       m.ext = { pi: { version: PI_VERSION, native_id: e.id, data: { firstKeptEntryId: e.firstKeptEntryId, ...(e.details !== undefined ? { details: e.details } : {}), ...(e.fromHook ? { fromHook: true } : {}) } } }
       out.push({ message: m, native: [e, marker ?? null] })

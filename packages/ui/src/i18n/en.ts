@@ -1338,20 +1338,8 @@ const catalog = {
     },
     "drive": "Drive",
     "repo": "Repo",
-    "customizeSidebar": "Customize sidebar",
     "searchApps": "Search apps",
     "appsNoMatches": "No matches",
-    "customizeSidebarDescription": "Drag rows between the two groups.",
-    "resetSidebar": "Reset to default",
-    "reorderItem": "Reorder {name}",
-    "reorderHint": "Drag to reorder. Or press the up and down arrow keys; moving past More hides the row from the sidebar.",
-    "reorderAnnouncement": "{name}: {group}, position {position} of {total}",
-    "more": "More",
-    "inSidebar": "Sidebar",
-    "underMore": "More",
-    "sidebarEmpty": "Drag a row here to show it in the sidebar.",
-    "moreEmpty": "Drag a row here to move it under More.",
-    "moreCaption": "Rows under More open from the More menu, below the nav.",
     "spaces": {
       "channels": "Channels",
       "directMessages": "Direct messages",
@@ -7449,6 +7437,8 @@ const catalog = {
     "agentFullWriteDescription": "In the sessions you start, this agent can change any file in your drive, not only its From agents folder.",
     "agentCardDrive": "{size} drive",
     "sessionSkippedDrives": "{count, plural, one {# drive did not fit in this session} other {# drives did not fit in this session}}: {names}. Take a drive out to make room, then restart the session.",
+    "sessionSkippedUnavailable": "{count, plural, one {# folder is not mounted yet} other {# folders are not mounted yet}}: {names}. The session runs without {count, plural, one {it} other {them}} and mounts {count, plural, one {it} other {them}} as soon as storage can.",
+    "sessionSkippedTooLarge": "{count, plural, one {# folder is too large to mount in a session} other {# folders are too large to mount in a session}}: {names}. The session runs without {count, plural, one {it} other {them}}. Move large files out, or share a smaller folder.",
     "shareFolder": "Share",
     "shareTitle": "Share {name}",
     "shareDescription": "People, teams and agents you add get this folder and everything in it. A session sees a folder when its agent, its project or the person who started it has access.",
@@ -9571,6 +9561,17 @@ const catalog = {
     "codeError": "Could not connect Claude with that code. Sign in again and paste the new code.",
     "connectClaude": "Connect Claude",
     "reconnectClaude": "Reconnect Claude"
+  },
+  "contextReset": {
+    "pill": "Fresh context · full history kept",
+    "pillRunning": "Freeing up context…",
+    "detail": "The context reached {tokens} tokens, so the agent continued in a fresh one. Nothing was summarized: it searches the full history ({entries} entries) when it needs a detail.",
+    "detailManual": "You started a fresh context at {tokens} tokens. Nothing was summarized: the agent searches the full history ({entries} entries) when it needs a detail.",
+    "showDetail": "Show details",
+    "hideDetail": "Hide details",
+    "dialogTitle": "Start a fresh context?",
+    "dialogDescription": "The agent continues in a fresh context and searches the full history when it needs a detail. Nothing is summarized, and the conversation stays here as it is.",
+    "dialogAction": "Start a fresh context"
   }
 };
 

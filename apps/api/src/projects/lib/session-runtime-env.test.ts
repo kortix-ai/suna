@@ -106,6 +106,14 @@ describe('buildSessionRuntimeEnv — KORTIX_PI_CODEMODE', () => {
   });
 });
 
+describe('buildSessionRuntimeEnv — KORTIX_PI_CONTEXT', () => {
+  test('only `summary` is sent; `record` and none leave the daemon default (the context record)', () => {
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, piContext: 'summary' }).KORTIX_PI_CONTEXT).toBe('summary');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, piContext: 'record' })).not.toHaveProperty('KORTIX_PI_CONTEXT');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, piContext: null })).not.toHaveProperty('KORTIX_PI_CONTEXT');
+  });
+});
+
 describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
   test('omits the key entirely for a v1 project (compiledAgentConfig absent) — byte-for-byte unaffected', () => {
     const env = buildSessionRuntimeEnv(BASE_INPUT);
