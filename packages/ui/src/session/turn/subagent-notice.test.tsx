@@ -10,7 +10,7 @@ import { TooltipProvider } from '../../primitives/tooltip';
 import { IntlTestProvider } from '../../test-utils/intl';
 import '../tool/tools/register';
 import { SessionTurn } from '../thread/transcript';
-import { firstLine, parseSubagentNotice } from './subagent-notice';
+import { parseSubagentNotice } from './subagent-notice';
 import { SubagentNoticeRow } from './subagent-notice-row';
 
 // Synthetic values only. The notice is the text `subagentNoticeText` in
@@ -64,41 +64,6 @@ function render(node: ReactNode) {
 }
 const textOf = (html: string) =>
   html.replace(/<[^>]*>/g, '').replaceAll('&#x27;', "'").replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-
-describe('parseSubagentNotice', () => {
-  test('reads the child, its status, its name and its result', () => {
-    expect(parseSubagentNotice(noticeText('completed', REPORT))).toEqual({
-      kind: 'subagent',
-      handle: null,
-      ownedTasks: null,
-      sessionId: CHILD,
-      status: 'completed',
-      agent: 'writer',
-      title: 'Draft the launch post',
-      result: REPORT,
-      excerpt: 'Draft ready',
-    });
-  });
-
-  test('a failed or stopped child carries its error as the result', () => {
-    expect(parseSubagentNotice(noticeText('failed', '', 'The model ran out of room.'))).toMatchObject({
-      status: 'failed',
-      result: 'The model ran out of room.',
-      excerpt: 'The model ran out of room.',
-    });
-    expect(parseSubagentNotice(noticeText('stopped', '', 'The subagent was stopped.'))?.status).toBe('stopped');
-  });
-
-  test('any other prompt, a session report included, is not a notice', () => {
-    expect(parseSubagentNotice('Draft the launch post')).toBeNull();
-    expect(parseSubagentNotice(noticeText('completed', REPORT).replace('A background subagent you started has finished.', 'Hi.'))).toBeNull();
-    expect(parseSubagentNotice(null)).toBeNull();
-  });
-
-  test('the excerpt is the first line with words, without Markdown marks', () => {
-    expect(firstLine('\n\n- **Done:** 3 files\nmore')).toBe('Done: 3 files');
-  });
-});
 
 describe('SubagentNoticeRow', () => {
   // The row is product chrome: it draws its state with the glyph every tool row

@@ -28,7 +28,6 @@
 
 import { PIXEL_KORTIX_ROWS } from '@kortix/shared/pixel-mark';
 import type { MouseEvent } from '@opentui/core';
-import { useRenderer } from '@opentui/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ditherBand, toBraille } from '../lib/dither.ts';
@@ -45,7 +44,6 @@ import {
   toBrailleRuns,
   toQuadrantRuns,
 } from '../lib/life.ts';
-import { demandMouse } from '../lib/mouse-demand.ts';
 import { theme } from '../theme.ts';
 
 export interface SplashLine {
@@ -332,12 +330,6 @@ function mergeWipe(
   });
 }
 
-/** Keep the mouse on while mounted; restore exactly the previous value. */
-function useSplashMouse() {
-  const renderer = useRenderer();
-  useEffect(() => demandMouse(renderer), [renderer]);
-}
-
 export function Splash({
   width,
   tagline,
@@ -347,7 +339,6 @@ export function Splash({
   ambient = false,
   lifeSignal,
 }: SplashProps) {
-  useSplashMouse();
   const layout = layoutFor(width, height, lines.length, Boolean(tagline), ambient, center);
   const { scale, bandRows, contentTop, total, indent } = layout;
 

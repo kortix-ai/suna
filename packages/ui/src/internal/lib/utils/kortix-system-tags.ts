@@ -8,7 +8,7 @@ import type { UiTranslator } from '../../../i18n';
  * state, PTY output, etc.) in <kortix_system type="..." source="..."> tags.
  *
  * - stripKortixSystemTags: removes ALL tags before markdown rendering
- * - extractSessionReport: parses session-report tags into structured data
+ * - extractSessionReport: parses session-report tags (re-exported from `@kortix/sdk`)
  *
  * Nothing here runs a regex over the message. The regexes these functions used
  * were quadratic or cubic in the text — extracting system messages from 60k
@@ -27,65 +27,8 @@ export function stripKortixSystemTags(text: string): string {
 
 // ── Session Report extraction ────────────────────────────────────────────────
 
-export interface SessionReport {
-  sessionId: string;
-  status: 'COMPLETE' | 'FAILED';
-  project: string;
-  prompt: string;
-  result: string;
-}
-
-export function extractSessionReport(text: string): SessionReport | null {
-  if (!text) return null;
-  const xml = sessionReportXml(text);
-  if (xml === null) return null;
-
-  const get = (tag: string) => tagBlocks(xml, tag, { limit: 1 })[0]?.body.trim() || '';
-
-  return {
-    sessionId: get('session-id'),
-    status: get('status') === 'FAILED' ? 'FAILED' : 'COMPLETE',
-    project: get('project'),
-    prompt: get('prompt'),
-    result: get('result'),
-  };
-}
-
-/**
- * The text between `<session-report>` and `</session-report>` after the first
- * `<kortix_system …>` tag that holds `type="session-report"`, with a closing
- * `</kortix_system>` after it — what
- * `/<kortix_system[^>]*type="session-report"[^>]*>[\s\S]*?<session-report>([\s\S]*?)<\/session-report>[\s\S]*?<\/kortix_system>/i`
- * captured. That regex was cubic: 7.6 s at 60k characters.
- */
-function sessionReportXml(text: string): string | null {
-  const marker = 'type="session-report"';
-  let from = 0;
-  // The first marker at or after the last position searched from; -2 until searched.
-  let markerAt = -2;
-  for (;;) {
-    const open = indexOfIgnoreCase(text, OPEN, from);
-    if (open === -1) return null;
-    const attrs = open + OPEN.length;
-    const gt = text.indexOf('>', attrs);
-    if (gt === -1) return null;
-    if (markerAt < attrs) markerAt = indexOfIgnoreCase(text, marker, attrs);
-    if (markerAt === -1) return null;
-    // The marker lies past this tag. Every opener before `gt` shares this tag's
-    // attributes, so none of them holds the marker either.
-    if (markerAt > gt) {
-      from = gt;
-      continue;
-    }
-    // Each search below failing means no later opener can succeed: its search starts later still.
-    const start = indexOfIgnoreCase(text, '<session-report>', gt + 1);
-    if (start === -1) return null;
-    const stop = indexOfIgnoreCase(text, '</session-report>', start + 16);
-    if (stop === -1) return null;
-    if (indexOfIgnoreCase(text, CLOSE, stop + 17) === -1) return null;
-    return text.slice(start + 16, stop);
-  }
-}
+/** The parser lives in `@kortix/sdk` (`core/turns/session-report.ts`). */
+export { extractSessionReport, type SessionReport } from '@kortix/sdk';
 
 /**
  * Check if a user message text is purely a kortix_system message
