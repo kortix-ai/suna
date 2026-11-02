@@ -399,11 +399,11 @@ Drive is the project's shared folders, for people and agents. Sessions open the 
 ### Folders
 
 - **Your own folder.** Every person has a folder of their own. Only they and the project's admins can open it. In a private session you started, it opens as `/drives/me` and as `~/Desktop`.
-- **Admins and people's folders.** A project admin can open every person's own folder from **Drive** → **People**. Each open is recorded: the folder's owner sees which admin opened it and when, under **Share**, and the audit log has a `drive.folder.admin_access` event. An admin's sessions and agents never get another person's folder.
+- **Admins and people's folders.** A project admin can open every person's own folder from **Drive** → **Users**. Each open is recorded: the folder's owner sees which admin opened it and when, under **Share**, and the audit log has a `drive.folder.admin_access` event. An admin's sessions and agents never get another person's folder.
 - **Company.** One folder every project member can open.
 - **Shared folders.** Any folder can be shared with people, groups and agents.
 - **What a session sees.** A new session opens the folders that its agent, or the whole project, has access to. In a private session that you started, it also opens your own folder and every folder shared with you or your groups.
-- **Where to find them.** Open **Drive** in the sidebar. It lists **My files**, **Shared with me**, the team folders, private channels' folders and, for admins, **People**. The top of the Drive shows each of them with who can open it and where sessions see it.
+- **Where to find them.** Open **Drive** in the sidebar. The Drive opens at the top of the project, as one folder: **Company**, **Users** (each person's folder, under their name) and any team folders. The folder tree beside it moves through all of it. A folder's header shows who can open it and where sessions see it.
 - **Search.** `kortix search <words>` finds files by name and by text in every folder you may open, beyond the folders a session mounts. It returns nothing from another person's own folder, for admins too. In a session it searches the folders that session may mount.
 - **Large files.** Drive takes a file of any size, up to the project's storage limit: in the web app, with `kortix drive put <local> <path>`, and through the API. A file over 64 MiB goes up in 1 MiB blocks, and only the blocks Drive does not have yet travel. The file appears when its last block lands.
 
