@@ -38,7 +38,6 @@ flow(
     timeoutMs: 180_000,
     routes: [
       'GET /v1/projects/:projectId/search',
-      'PATCH /v1/projects/:projectId/features',
       'GET /v1/drives',
       'PUT /v1/drives/:driveId/access',
       'POST /v1/accounts/tokens',
@@ -70,7 +69,6 @@ flow(
       });
 
       await ctx.step('OWNER and the member open Files → 200: one drive, each with their own folder', async () => {
-        (await owner.patch('/v1/projects/:projectId/features', { feature: 'volumes', enabled: true }, { params })).status(200);
         const mine = (await owner.get('/v1/drives', { query: { projectId: project.id } })).status(200).json<{ drives: any[] }>().drives[0];
         const theirs = (await asMember.get('/v1/drives', { query: { projectId: project.id } })).status(200).json<{ drives: any[] }>().drives[0];
         driveId = mine.driveId;
