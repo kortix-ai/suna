@@ -107,7 +107,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'banking',
       logo: {
-        src: '/media/case-studies/banking.svg?v=6488a2fe',
+        src: '/media/case-studies/banking.svg?v=02ed3983',
         alt: 'A banking mark',
         width: 100,
         height: 100,
