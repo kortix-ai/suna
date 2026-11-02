@@ -96,12 +96,12 @@ function CaseStudyCard({ item, className }: { item: CaseStudy; className?: strin
 /**
  * One random order of the visible cards per page load, shared by the row and
  * the grid. Made on first read in the browser and kept until the next full
- * load. A `pinLast` card is left out of the shuffle and always stays last.
+ * load.
  */
 let pageLoadOrder: string[] | null = null;
 function shuffledIds(): string[] {
   if (pageLoadOrder) return pageLoadOrder;
-  const ids = caseStudySource.items.filter((i) => !i.hidden && !i.pinLast).map((i) => i.id);
+  const ids = caseStudySource.items.filter((i) => !i.hidden).map((i) => i.id);
   for (let i = ids.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [ids[i], ids[j]] = [ids[j], ids[i]];
@@ -120,8 +120,7 @@ function useShuffledCaseStudies(items: readonly CaseStudy[]): CaseStudy[] {
   const order = useSyncExternalStore(noSubscribe, shuffledIds, () => null);
   const shown = items.filter((item) => !item.hidden);
   if (!order) return shown;
-  const rank = (item: CaseStudy) => (item.pinLast ? Infinity : order.indexOf(item.id));
-  return [...shown].sort((a, b) => rank(a) - rank(b));
+  return [...shown].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
 }
 
 /** Every case study as a two-column grid: the /case-studies page. */

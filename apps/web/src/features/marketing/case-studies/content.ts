@@ -6,7 +6,7 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  * decision. A card shows its category, never the client's name (founder,
  * 2026-11-02). `hidden: true` keeps a card's copy here without showing it.
  * The visible cards show in a random order on each page load (founder,
- * 2026-11-02); `pinLast: true` keeps Platinum last.
+ * 2026-11-02).
  *
  * ACCURACY AND NAMING (read before editing):
  *  - Named cases, each a founder decision: HKAI-Sci / SciencePal (2026-10-22,
@@ -65,8 +65,6 @@ export type CaseStudy = {
   mark?: 'kortix' | 'platinum';
   /** Kept in this file, not shown anywhere. */
   hidden?: boolean;
-  /** Stays the last card; every other visible card is shuffled on each page load. */
-  pinLast?: boolean;
   category: string;
   title: string;
   body: string;
@@ -205,7 +203,6 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     },
     {
       id: 'platinum',
-      pinLast: true,
       mark: 'platinum',
       category: 'Cloud infrastructure',
       title: 'An autonomous cloud company.',
