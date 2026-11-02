@@ -194,7 +194,10 @@ function imageStepReporter(sandboxId: string, tl: ProvisionTimeline): (step: Ima
           .where(eq(sessionSandboxes.sandboxId, sandboxId)),
       )
       .catch((error: unknown) =>
-        console.warn(`[session-sandbox] image step write failed for ${sandboxId}:`, error instanceof Error ? error.message : error),
+        logger.warn('[session-sandbox] image step write failed', {
+          sandboxId,
+          error: error instanceof Error ? error.message : String(error),
+        }),
       );
   };
 }

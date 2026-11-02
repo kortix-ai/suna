@@ -145,7 +145,7 @@ describe('the session-open envelope states what THIS call did', () => {
   });
 
   test('provisioning: the image step the row recorded is boot.image', () => {
-    const step = { state: 'building', image: 'kortix-default-abc', since: '2026-08-26T13:59:58.000Z' };
+    const step = { state: 'building' as const, image: 'kortix-default-abc', since: '2026-08-26T13:59:58.000Z' };
     const boot = deriveBoot(payload({ stage: 'provisioning' }), { initStatus: 'provisioning', imageStep: step }, 'inspected', OBSERVED_AT);
     expect(boot.image).toEqual(step);
   });
