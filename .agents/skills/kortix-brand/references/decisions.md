@@ -10,6 +10,16 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-11-02
+
+### D35 The home hero is "The CompanyOS", four traits above it, and the positioning line "the cloud-native agent harness for companies"
+- **Date:** 2026-11-02
+- **Decision:** The home hero title is the fixed line "The CompanyOS". Above it, a quiet muted line of four traits in this order: Open Source, Extensible, Multiplayer, Sovereign, each with its Phosphor glyph (`GitForkIcon`, then the home pillars' own `CodeIcon`, `UsersThreeIcon`, `ShieldCheckIcon`). No check marks, no divider; a two-by-two grid below `sm`. The subhead is the positioning line plus its mechanism: "The cloud-native agent harness for companies. Always-on agents that start on events, run in parallel and share one memory of your company." The same positioning line is the README tagline ("The open-source CompanyOS: the cloud-native agent harness for companies.") and opens the docs index, the Guide and the Developers page. The README and the docs carry the deeper mechanism (pi agents, My Kortix routing, triggers and loops, one cloud computer per session, persistent state).
+- **Why:** founder, 2026-11-02. On the README: "add that its a Harness Platform allowing u to deploy custom agents in pi to the cloud and orchestrate them with event driven design to form 24/7 loops and let agents run in swarms", as "a fundamental description change". On the hero: "The CompanyOS as the title", "put open Source first", "put Sovereign last", "instead of ticks something more suitable", the right-aligned list read as detached (the line-above-title layout won), and on "Hand it an outcome and AI agents run it 24/7. They work in your tools…": "so fluffy. it can apply to everything… call it company-based like harness, cloud-native like deepseek branding". A first harness-first draft that listed cloud computers and swarms was "too technical": the line names the category and three mechanisms in plain verbs, nothing more.
+- **Where:** `apps/web/src/features/marketing/landing-hero/sand-band-hero.tsx`, `README.md`, `apps/web/content/docs/index.mdx`, `apps/web/content/docs/guide.mdx`, `apps/web/content/docs/developers.mdx`, [positioning.md](verbal/positioning.md) section 1.
+- **Supersedes:** D21 (the cycling hero word). D18's Promise leaves the hero subhead; it stays a sanctioned line for pitches and the Outcomes section.
+- **Source:** the `harness-platform-copy` branch.
+
 ## 2026-10-31
 
 ### D34 Product chrome draws status with a glyph; status emoji stay in the agent's own words
