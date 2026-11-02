@@ -97,6 +97,12 @@ export function toTransportError(err: unknown, provider: string): Error {
     const headers = e.responseHeaders ?? e.cause?.responseHeaders;
     return new UpstreamHttpError(statusCode, body, provider, headers);
   }
+  // A RangeError is this process refusing the request (a stack overflow on
+  // nesting hidden inside a tool-call `arguments` string), never an upstream
+  // failure: a 400, which never trips the breaker (KRTX-3421).
+  if (err instanceof RangeError || (e?.cause as unknown) instanceof RangeError) {
+    return new UpstreamHttpError(400, 'The request could not be built: a value is nested too deeply.', provider);
+  }
   const message = e?.message ?? (err instanceof Error ? err.message : String(err));
   if (looksLikeTerminalAuthFailure(message)) {
     return new UpstreamHttpError(401, message, provider);

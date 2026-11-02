@@ -1507,6 +1507,26 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
       }
     });
 
+    // Strix on #11455: nesting hidden inside a tool-call `arguments` string passed
+    // the wire-JSON depth bound, then overflowed in the SDK outside the build
+    // step's catch, and a raw RangeError counted as a retryable network failure.
+    it('a tool-call arguments string nested 50,000 levels deep fails as a 400, never a network error', async () => {
+      const deepArguments = '{"a":'.repeat(50_000) + '1' + '}'.repeat(50_000);
+      const failure = await callUpstreamViaAiSdk({
+        messages: [
+          { role: 'user', content: 'hi' },
+          { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'f', arguments: deepArguments } }] },
+          { role: 'tool', tool_call_id: 'c1', content: 'done' },
+          { role: 'user', content: 'go on' },
+        ],
+      }, codex, { fetch: async () => new Response('{}', { status: 200 }) }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      const status = failure instanceof UpstreamHttpError ? failure.status : String(failure).slice(0, 80);
+      expect(status).toBe(400);
+    });
+
     it('collapses a streamed tool call into the same JSON shape generateText would produce', async () => {
       const call = { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'get_weather' };
       const { json, sentBodies } = await collapse(

@@ -32,14 +32,24 @@ export function requestFieldError(body: Record<string, unknown>): string | null 
 
 const MAX_BODY_DEPTH = 128;
 
-/** Iterative, so the walk cannot overflow the stack itself. */
+/**
+ * Iterative, so the walk cannot overflow the stack itself, and one frame per
+ * open container (an array is walked in place), so its memory grows with depth,
+ * not with the item count: a per-item frame cost ~50x a wide body's wire bytes.
+ */
 function fitsDepth(value: unknown): boolean {
-  const stack: [unknown, number][] = [[value, 0]];
-  while (stack.length) {
-    const [node, depth] = stack.pop()!;
-    if (depth > MAX_BODY_DEPTH) return false;
-    if (typeof node !== 'object' || node === null) continue;
-    for (const child of Object.values(node)) stack.push([child, depth + 1]);
+  const frames: { items: unknown[]; next: number }[] = [];
+  const enter = (node: unknown): boolean => {
+    if (typeof node !== 'object' || node === null) return true;
+    if (frames.length >= MAX_BODY_DEPTH) return false;
+    frames.push({ items: Array.isArray(node) ? node : Object.values(node), next: 0 });
+    return true;
+  };
+  if (!enter(value)) return false;
+  while (frames.length) {
+    const top = frames[frames.length - 1]!;
+    if (top.next >= top.items.length) frames.pop();
+    else if (!enter(top.items[top.next++])) return false;
   }
   return true;
 }
