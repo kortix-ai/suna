@@ -39,6 +39,8 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  *    or systems: they identify it. Its logo is the company's own mark, the
  *    symbol only with the wordmark cut out (founder, 2026-11-02). The file
  *    is `telecom.svg`: its name is a blocked term, so it appears nowhere here.
+ *  - Every logo `src` ends in `?v=` and the first 8 hex of the file's sha256:
+ *    the files are cached for a day, so a redrawn file needs a new URL.
  *  - Only what the engagement really contains. No metric, no quote, no
  *    outcome number until the company signs one off.
  *  - Banking, insurance, utilities, airlines, healthcare and retail are
@@ -72,7 +74,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'hkai-sci',
       logo: {
-        src: '/media/case-studies/cityu.svg',
+        src: '/media/case-studies/cityu.svg?v=185a2ee8',
         alt: 'City University of Hong Kong',
         width: 262,
         height: 147,
@@ -103,25 +105,25 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'banking',
       logo: {
-        src: '/media/case-studies/banking.svg',
+        src: '/media/case-studies/banking.svg?v=97eff69a',
         alt: 'A banking symbol',
         width: 100,
         height: 100,
       },
       category: 'Banking',
-      title: 'Client onboarding and KYC, run by agents.',
-      body: 'Agents verify the client, screen it against sanctions lists, map its owners, write the risk memo and keep monitoring. A compliance officer approves.',
+      title: 'SME lending, from application to funded loan.',
+      body: 'Agents collect the application, spread the financials, write the credit memo and track covenants after funding. A credit officer decides.',
       facts: [
-        'Identity and document checks',
-        'Sanctions and PEP screening',
-        'A risk memo with every source',
-        'Ongoing monitoring and alerts',
+        'Applications and documents collected',
+        'Financial statements spread',
+        'A credit memo with every source',
+        'Covenants tracked after funding',
       ],
     },
     {
       id: 'telecom',
       logo: {
-        src: '/media/case-studies/telecom.svg',
+        src: '/media/case-studies/telecom.svg?v=3241cd3d',
         alt: 'A leading US telecommunications infrastructure company',
         width: 246,
         height: 278,
@@ -139,7 +141,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'insurance',
       logo: {
-        src: '/media/case-studies/insurance.svg',
+        src: '/media/case-studies/insurance.svg?v=8dd04f10',
         alt: 'An insurance symbol',
         width: 100,
         height: 100,
@@ -157,7 +159,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'asset-management',
       logo: {
-        src: '/media/case-studies/asset-management.svg',
+        src: '/media/case-studies/asset-management.svg?v=54485925',
         alt: 'An AI-run asset manager.',
         width: 100,
         height: 100,
@@ -175,7 +177,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'airlines',
       logo: {
-        src: '/media/case-studies/airlines.svg',
+        src: '/media/case-studies/airlines.svg?v=0692c1e0',
         alt: 'An airline symbol',
         width: 100,
         height: 100,
@@ -193,7 +195,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'executive-search',
       logo: {
-        src: '/media/case-studies/executive-search.svg',
+        src: '/media/case-studies/executive-search.svg?v=ea5988cb',
         alt: 'An international executive search firm',
         width: 100,
         height: 100,
@@ -211,7 +213,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'utilities',
       logo: {
-        src: '/media/case-studies/utilities.svg',
+        src: '/media/case-studies/utilities.svg?v=3bad2f40',
         alt: 'A utilities symbol',
         width: 100,
         height: 100,
@@ -229,7 +231,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'healthcare',
       logo: {
-        src: '/media/case-studies/healthcare.svg',
+        src: '/media/case-studies/healthcare.svg?v=0b62bfc3',
         alt: 'A healthcare symbol',
         width: 100,
         height: 100,
@@ -247,7 +249,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'retail',
       logo: {
-        src: '/media/case-studies/retail.svg',
+        src: '/media/case-studies/retail.svg?v=f5123668',
         alt: 'A retail symbol',
         width: 100,
         height: 100,
@@ -264,7 +266,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     },
     {
       id: 'wring',
-      logo: { src: '/media/case-studies/wring.svg', alt: 'Wring', width: 74, height: 28 },
+      logo: { src: '/media/case-studies/wring.svg?v=2a1cb9ad', alt: 'Wring', width: 74, height: 28 },
       category: 'Cloud cost',
       title: 'Autonomous AWS cost optimization.',
       body: 'Agents find the AWS credit programs each customer qualifies for and prepare the applications. The customer approves.',
@@ -292,7 +294,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'writer',
       hidden: true,
-      logo: { src: '/media/case-studies/writer.svg', alt: 'WRITER', width: 110, height: 35 },
+      logo: { src: '/media/case-studies/writer.svg?v=521311b7', alt: 'WRITER', width: 110, height: 35 },
       category: 'Enterprise AI',
       title: 'The enterprise AI platform, built from Kortix’s open-source code.',
       body: 'Enterprises such as Salesforce, Vanguard and KPMG run their marketing, sales and support agents on WRITER.',

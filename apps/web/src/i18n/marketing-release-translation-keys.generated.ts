@@ -47,9 +47,9 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   'Autonomous AWS cost optimization.': 'text2b7f6fe76645',
   'Agents find the AWS credit programs each customer qualifies for and prepare the applications. The customer approves.':
     'text1d5d31148fec',
-  'Client onboarding and KYC, run by agents.': 'textdb907517543a',
-  'Agents verify the client, screen it against sanctions lists, map its owners, write the risk memo and keep monitoring. A compliance officer approves.':
-    'text577691487e34',
+  'SME lending, from application to funded loan.': 'text51d0779245a6',
+  'Agents collect the application, spread the financials, write the credit memo and track covenants after funding. A credit officer decides.':
+    'text30ed222befc0',
   'Claims, from first notice to payout.': 'text9060ed10df3a',
   'Agents take the first notice of loss, check coverage, validate the claim, flag fraud and draft the settlement. An adjuster approves the payout.':
     'textbe5e1747cddb',

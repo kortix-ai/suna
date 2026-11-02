@@ -53,7 +53,7 @@ function Mark({ item }: { item: CaseStudy }) {
           height={item.logo.height}
           unoptimized
           // A wordmark (wider than 2.5:1) sits lower so it matches a stacked mark's weight.
-          className={item.logo.width / item.logo.height > 2.5 ? 'h-12 w-auto' : 'h-24 w-auto'}
+          className={item.logo.width / item.logo.height > 2.5 ? 'h-12 w-auto' : 'h-20 w-auto'}
         />
       ) : item.mark === 'kortix' ? (
         <KortixLogo size={28} variant="logomark" />
