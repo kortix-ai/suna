@@ -14,7 +14,7 @@ type Thread = { thread_id: string; can_reply: boolean; can_resolve: boolean; pos
   comments: Array<{ comment_id: string; can_edit: boolean; can_delete: boolean; mentions: Array<{ kind: string; session_id?: string; user_id?: string; token?: string }> }> };
 type Context = { can_comment: boolean; can_moderate: boolean; comment_count: number; send_thread_ids: string[]; send_thread_count: number;
   people: Array<{ user_id: string; token: string }>; agents: Array<{ agent_name: string; session_id: string | null; token: string }>;
-  send_target: { kind: 'session' | 'new'; session_id: string | null; agent_name: string } | null;
+  send_target: { kind: 'session' | 'new'; session_id: string | null; agent_name: string } | null; agents_unavailable?: boolean;
   version: { commit_id: string | null; entry_version: string | null } };
 const AGENTS = [
   'project:', '  name: artifact-context', 'default_agent: writer', 'agents:',
@@ -80,7 +80,7 @@ flow('ART-9', {
     await ctx.step('context reports exact current version and accepted tokens without queueing jobs, commands, or sessions', async () => {
       const before = await counts();
       const read = await context();
-      if (!read.can_comment || !read.can_moderate || read.comment_count !== 0 || read.version.commit_id !== oldCommit || read.version.entry_version !== artifact.entry_version) throw new Error('Owner context permissions/version/count is incorrect');
+      if (!read.can_comment || !read.can_moderate || read.agents_unavailable !== false || read.comment_count !== 0 || read.version.commit_id !== oldCommit || read.version.entry_version !== artifact.entry_version) throw new Error('Owner context permissions/version/count is incorrect');
       if (read.send_target?.kind !== 'session' || read.send_target.session_id !== writer.sessionId || read.send_target.agent_name !== 'writer') throw new Error('Owner context did not select the actual accessible writer');
       for (const agent of ['writer', 'researcher', 'reader']) if (!read.agents.some((row) => row.agent_name === agent && row.token.startsWith('@agent.'))) throw new Error(`Enabled agent ${agent} is absent from the full roster`);
       for (const id of [ctx.P.OWNER.userId, member.userId]) if (!read.people.some((person) => person.user_id === id && person.token.startsWith('@') && !/\s/.test(person.token))) throw new Error('A current viewer has no accepted person insertion token');

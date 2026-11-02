@@ -706,15 +706,24 @@ Agent and session mentions can include their literal `token` for display without
 
 `useArtifactComments(projectId, artifactId, { status?, enabled? })` returns the
 thread query and `create`, `reply`, `setStatus`, `edit`, `remove`, and `send` writes.
-Each successful write refetches mounted Comments and Activity queries.
+Writes are optimistic: `create`, `reply`, `setStatus`, `edit` and `remove`
+change every loaded thread list at once, and a failed write undoes only its own
+change. A thread or comment that the server has not confirmed yet carries
+`optimistic: true`; a new one also has an `optimistic-` id, an empty author
+(`user_id: ''`) and every `can_*` action false. Hosts render it as pending.
+Mounted Comments and Activity queries refetch after the last concurrent write.
 `useArtifactActivity(projectId, artifactId, { limit?, cursor?, enabled? })`
 returns one activity page. Both hooks poll every 10 seconds while mounted and
-visible. A missing project or Artifact id disables reads.
+visible. A missing project or Artifact id disables reads. Comment reads never
+retry a 4xx and retry another 5xx once.
 
 `getArtifactCommentContext(projectId, artifactId, { version?, agent? })` returns
 the current action permissions, literal mention insertion tokens, eligible
 `send_thread_ids` (at most 100), the total eligible `send_thread_count`, and
-the proposed session or new-session target. Hosts show the bounded batch
+the proposed session or new-session target. When the project's agent manifest
+cannot be read, the context still answers: `agents` is empty, `send_target` is
+null and `agents_unavailable` is true. People keep commenting; an explicit
+`@agent.` mention is refused until the manifest reads again. Hosts show the bounded batch
 and total when more threads remain. A successful Send refreshes the next batch.
 Hosts use
 that response to label Send before it runs. They do not infer the target from
