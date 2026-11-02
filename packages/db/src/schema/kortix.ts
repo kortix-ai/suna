@@ -4,6 +4,7 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   date,
   foreignKey,
   index,
@@ -8201,6 +8202,10 @@ export const drives = kortixSchema.table('drives', {
   platinumVolumeMove: jsonb('platinum_volume_move').$type<DriveVolumeMoveRecord>(),
   /** The volume head the conflict scanner last read; null until the first scan. */
   conflictScanHead: text('conflict_scan_head'),
+  /** The volume head the search index holds every file of; null until the first full pass (drives/search-index). */
+  indexHead: text('index_head'),
+  /** When the indexer last compared the volume head with `index_head`; null = due now. */
+  indexCheckedAt: timestamp('index_checked_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -8383,6 +8388,43 @@ export const driveConflicts = kortixSchema.table('drive_conflicts', {
     .on(table.driveId)
     .where(sql`${table.resolvedAt} is null and ${table.dismissedAt} is null`),
 ]);
+
+/** A Postgres `tsvector`, read and written only by SQL (`drive_index_entries.search`). */
+const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' });
+
+/**
+ * The search index of a project's Files: one row per file or folder of the
+ * drive's volume at `drives.index_head` (drives/search-index). `body` is the
+ * extracted text of a text-like file, cut at 256 KiB (`INDEX_BODY_BYTES`);
+ * every other file has a name row only. `search` weights the name A, the path
+ * C and the body D, over the 'simple' configuration with every run of
+ * non-alphanumeric characters read as a space. Who may read a row is decided
+ * per request by the folder rules (drives/folders.ts), never stored here.
+ */
+export const driveIndexEntries = kortixSchema.table('drive_index_entries', {
+  driveId: uuid('drive_id')
+    .notNull()
+    .references(() => drives.driveId, { onDelete: 'cascade' }),
+  path: text('path').notNull(),
+  kind: text('kind').notNull(),
+  size: bigint('size', { mode: 'number' }).default(0).notNull(),
+  mtime: timestamp('mtime', { withTimezone: true }),
+  /** sha256 of the bytes read for `body`; null for a name-only row. */
+  contentHash: text('content_hash'),
+  name: text('name').notNull(),
+  body: text('body').default('').notNull(),
+  search: tsvector('search').generatedAlwaysAs(
+    sql`setweight(to_tsvector('simple'::regconfig, regexp_replace(name, '[^[:alnum:]]+', ' ', 'g')), 'A') || setweight(to_tsvector('simple'::regconfig, regexp_replace(path, '[^[:alnum:]]+', ' ', 'g')), 'C') || setweight(to_tsvector('simple'::regconfig, regexp_replace(body, '[^[:alnum:]]+', ' ', 'g')), 'D')`,
+  ),
+  indexedAt: timestamp('indexed_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.driveId, table.path] }),
+  index('idx_drive_index_entries_search').using('gin', table.search),
+  // `path=` scopes a search to a folder with a LIKE prefix, which the
+  // primary key (default collation) cannot serve.
+  index('idx_drive_index_entries_path_prefix').on(table.driveId, sql`${table.path} text_pattern_ops`),
+  check('drive_index_entries_kind', sql`${table.kind} in ('file', 'dir')`),
+]).enableRLS();
 
 // Platinum volumes whose owner row is gone (a drive, a session's state
 // volume), queued for deletion. A trigger fills it on every delete path,

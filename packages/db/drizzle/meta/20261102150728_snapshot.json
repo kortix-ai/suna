@@ -1,6 +1,6 @@
 {
-  "id": "c592419e-4322-4087-a102-752b829ed75f",
-  "prevId": "a5053b21-2580-4559-a4bd-21f86f7f0209",
+  "id": "916d9b3c-dc9c-46ca-a63f-16fbb3a02f7c",
+  "prevId": "40c86292-5840-44f7-bdf0-64bc0fd8ec2d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -13599,6 +13599,151 @@
       },
       "isRLSEnabled": false
     },
+    "kortix.drive_index_entries": {
+      "name": "drive_index_entries",
+      "schema": "kortix",
+      "columns": {
+        "drive_id": {
+          "name": "drive_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "size": {
+          "name": "size",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "mtime": {
+          "name": "mtime",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "search": {
+          "name": "search",
+          "type": "tsvector",
+          "primaryKey": false,
+          "notNull": false,
+          "generated": {
+            "as": "setweight(to_tsvector('simple'::regconfig, regexp_replace(name, '[^[:alnum:]]+', ' ', 'g')), 'A') || setweight(to_tsvector('simple'::regconfig, regexp_replace(path, '[^[:alnum:]]+', ' ', 'g')), 'C') || setweight(to_tsvector('simple'::regconfig, regexp_replace(body, '[^[:alnum:]]+', ' ', 'g')), 'D')",
+            "type": "stored"
+          }
+        },
+        "indexed_at": {
+          "name": "indexed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_drive_index_entries_search": {
+          "name": "idx_drive_index_entries_search",
+          "columns": [
+            {
+              "expression": "search",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        },
+        "idx_drive_index_entries_path_prefix": {
+          "name": "idx_drive_index_entries_path_prefix",
+          "columns": [
+            {
+              "expression": "drive_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "\"path\" text_pattern_ops",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "drive_index_entries_drive_id_drives_drive_id_fk": {
+          "name": "drive_index_entries_drive_id_drives_drive_id_fk",
+          "tableFrom": "drive_index_entries",
+          "tableTo": "drives",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "drive_id"
+          ],
+          "columnsTo": [
+            "drive_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "drive_index_entries_drive_id_path_pk": {
+          "name": "drive_index_entries_drive_id_path_pk",
+          "columns": [
+            "drive_id",
+            "path"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "drive_index_entries_kind": {
+          "name": "drive_index_entries_kind",
+          "value": "\"kortix\".\"drive_index_entries\".\"kind\" in ('file', 'dir')"
+        }
+      },
+      "isRLSEnabled": true
+    },
     "kortix.drive_mount_revocations": {
       "name": "drive_mount_revocations",
       "schema": "kortix",
@@ -13757,6 +13902,18 @@
         "conflict_scan_head": {
           "name": "conflict_scan_head",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "index_head": {
+          "name": "index_head",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "index_checked_at": {
+          "name": "index_checked_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },

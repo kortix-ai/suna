@@ -247,6 +247,11 @@ export const TIERS: readonly CommandTier[] = [
             args: '<subcommand>',
             blurb: "The project's Files: list, read, upload, move, delete, share folders",
           },
+          {
+            name: 'search',
+            args: '<query>',
+            blurb: "Search the project's Files by name and text, beyond your session's mounts",
+          },
           { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
           {
             name: 'review',

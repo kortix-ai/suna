@@ -155,6 +155,7 @@ export {
   platinumVolumeDeletions,
   driveMountRevocations,
   driveConflicts,
+  driveIndexEntries,
   // Notification inbox, preferences, watchers, Web Push (KRTX-1742)
   notifications,
   notificationPreferences,
