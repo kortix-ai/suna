@@ -29,7 +29,7 @@ export const PAGE_TABS: Record<string, PageTab> = {
   'page:browser':           { id: 'page:browser',           label: 'Browser' },
   'page:apps':              { id: 'page:apps',              label: 'Apps' },
   'page:secrets-nav':       { id: 'page:secrets-nav',       label: 'Secrets' },
-  'page:schedules':         { id: 'page:schedules',         label: 'Schedules' },
+  'page:schedules':         { id: 'page:schedules',         label: 'Trigger' },
   'page:review':            { id: 'page:review',            label: 'Review' },
   'page:files-nav':         { id: 'page:files-nav',         label: 'Files' },
   'page:settings':          { id: 'page:settings',          label: 'Settings' },

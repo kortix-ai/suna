@@ -56,7 +56,7 @@ describe('simple gateway pipeline', () => {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
-      }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+      }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }) });
       expect(response.status).toBe(200);
     }
     expect(calls).toEqual(['account']);
@@ -84,7 +84,7 @@ describe('simple gateway pipeline', () => {
           notePoolRateLimit: async (_principal, secretId) => { cooldowns.push(secretId); },
         },
         logger: { info() {}, warn() {}, error() {} },
-      }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+      }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }) });
       expect(response.status).toBe(429);
       expect(response.headers.get('retry-after')).toBe('7');
       // Each key is tried once, and each key's cooldown is recorded.
@@ -108,7 +108,7 @@ describe('simple gateway pipeline', () => {
             ? 'data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: {"error":{"code":429,"message":"limited"}}\n\ndata: [DONE]\n\n'
             : 'provider unavailable', { status, headers: { 'content-type': 'text/event-stream' } });
         },
-      }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', stream: true, messages: [] }) });
+      }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', stream: true, messages: [{ role: 'user', content: 'hi' }] }) });
       expect(response.status).toBe(status);
       const body = await response.text();
       if (status === 200) expect(body).toContain('hello');
@@ -137,7 +137,7 @@ describe('simple gateway pipeline', () => {
           headers: credential.includes('first') ? { 'retry-after': '12' } : undefined,
         });
       },
-    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }) });
     expect(response.status).toBe(200);
     expect(usedKeys).toEqual(['Bearer first', 'Bearer second']);
     expect(cooldowns).toEqual([{ secretId: 'key-a', seconds: 12 }]);
@@ -171,7 +171,7 @@ describe('simple gateway pipeline', () => {
       },
       {
         authorization: 'Bearer token',
-        rawBody: JSON.stringify({ model: 'requested-model', messages: [] }),
+        rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }),
       },
     );
     expect(response.status).toBe(503);
@@ -199,7 +199,7 @@ describe('simple gateway pipeline', () => {
       },
       {
         authorization: 'Bearer token',
-        rawBody: JSON.stringify({ model: 'requested-model', messages: [] }),
+        rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }),
       },
     );
 
@@ -224,7 +224,7 @@ describe('simple gateway pipeline', () => {
           throw new TypeError('fetch failed');
         },
       },
-      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }) },
     );
     expect(response.status).toBe(502);
     expect(await response.json()).toMatchObject({ code: 'upstream_error', message: 'fetch failed' });
@@ -267,7 +267,7 @@ describe('simple gateway pipeline', () => {
         logger: { info() {}, warn() {}, error() {} },
         fetchImpl: async () => reply(),
       },
-      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', stream, messages: [] }) },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', stream, messages: [{ role: 'user', content: 'hi' }] }) },
     );
     await response.text();
     expect(usage).toHaveLength(1);
@@ -465,7 +465,7 @@ describe('simple gateway pipeline', () => {
       },
       {
         authorization: 'Bearer token',
-        rawBody: JSON.stringify({ model: 'requested-model', messages: [] }),
+        rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }),
       },
     );
 
@@ -542,7 +542,7 @@ describe('simple gateway pipeline', () => {
         authorization: 'Bearer token',
         rawBody: JSON.stringify({
           model: 'requested-model',
-          messages: [],
+          messages: [{ role: 'user', content: 'hi' }],
           stream: true,
         }),
       },
@@ -653,7 +653,7 @@ describe('simple gateway pipeline', () => {
       },
       {
         authorization: 'Bearer token',
-        rawBody: JSON.stringify({ model: 'requested-model', stream: true, messages: [] }),
+        rawBody: JSON.stringify({ model: 'requested-model', stream: true, messages: [{ role: 'user', content: 'hi' }] }),
       },
     );
     await response.text();
@@ -719,7 +719,7 @@ describe('simple gateway pipeline', () => {
         ...runtime,
         fetchImpl: async () => new Response(upstreamBody, { headers: providerHeaders }),
       },
-      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'm', messages: [] }) },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }] }) },
     );
     expect(json.status).toBe(200);
     expect(json.headers.get('content-encoding')).toBeNull();
@@ -739,7 +739,7 @@ describe('simple gateway pipeline', () => {
       },
       {
         authorization: 'Bearer token',
-        rawBody: JSON.stringify({ model: 'm', messages: [], stream: true }),
+        rawBody: JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }], stream: true }),
       },
     );
     expect(sse.status).toBe(200);
@@ -784,7 +784,7 @@ describe('simple gateway pipeline', () => {
           );
         },
       },
-      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'm', messages: [], stream: true }) },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }], stream: true }) },
     );
     expect(response.status).toBe(200);
     const text = await response.text();
@@ -815,7 +815,7 @@ describe('simple gateway pipeline', () => {
           });
         },
       },
-      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'm', messages: [], stream: true }) },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }], stream: true }) },
     );
     expect(response.status).toBe(200);
     const text = await response.text();
@@ -1003,7 +1003,7 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
         controller.close();
       },
     }), { status: 200, headers: { 'content-type': 'text/event-stream' } }),
-    { model: 'requested-model', stream: true, messages: [] });
+    { model: 'requested-model', stream: true, messages: [{ role: 'user', content: 'hi' }] });
     expect(response.status).toBe(200);
     expect(text).not.toMatch(LEAK);
     const frames = text.split('\n\n').filter((f) => f.startsWith('data: {')).map((f) => JSON.parse(f.slice(6)));
@@ -1028,7 +1028,7 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
         controller.close();
       },
     }), { status: 200, headers: { 'content-type': 'text/event-stream' } }),
-    { model: 'requested-model', stream: true, messages: [] });
+    { model: 'requested-model', stream: true, messages: [{ role: 'user', content: 'hi' }] });
 
     expect(response.status).toBe(200);
     const events = text.trim().split(/\r?\n\r?\n/);
@@ -1473,7 +1473,7 @@ describe('trace timing', () => {
       },
       {
         authorization: 'Bearer token',
-        rawBody: JSON.stringify({ model: 'requested-model', messages: [], stream }),
+        rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }], stream }),
       },
     );
     await response.text();
@@ -1525,7 +1525,7 @@ describe('trace timing segments', () => {
             headers: { 'content-type': 'application/json' },
           }),
       },
-      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }) },
     );
     await response.text();
     for (let i = 0; i < 50 && traces.length === 0; i++) await sleep(10);
@@ -1559,7 +1559,7 @@ describe('refused requests are traced', () => {
         },
         logger,
       },
-      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }) },
     );
     expect(response.status).toBe(400);
     const body = (await response.json()) as { code?: string };
@@ -1587,7 +1587,7 @@ describe('refused requests are traced', () => {
         },
         logger,
       },
-      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }) },
     );
     expect(response.status).toBe(402);
     const trace = await firstTrace(traces);
@@ -1607,7 +1607,7 @@ describe('refused requests are traced', () => {
         hooks: { ...hooks(usage, traces), resolveUpstream: async () => [] },
         logger,
       },
-      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }) },
     );
     expect(response.status).toBe(400);
     const body = (await response.json()) as { code?: string };
@@ -1637,7 +1637,7 @@ describe('refused requests are traced', () => {
         },
         logger,
       },
-      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }) },
     );
     expect(response.status).toBe(402);
     const body = (await response.json()) as { code?: string };
@@ -1684,7 +1684,7 @@ describe('refused requests are traced', () => {
         },
         logger,
       },
-      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }) },
     );
     expect(response.status).toBe(401);
     await sleep(120);
@@ -1712,7 +1712,7 @@ describe('refused requests are traced', () => {
         },
         logger,
       },
-      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }) },
     );
     expect(response.status).toBe(401);
     const trace = await firstTrace(traces);
@@ -1757,7 +1757,7 @@ describe('one-call admission (hooks.admit)', () => {
         dispatchedModel = JSON.parse(String(init.body)).model;
         return ok();
       },
-    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }) });
     expect(response.status).toBe(200);
     expect(inputs).toEqual([{ token: 'token', input: { requestedModel: 'requested-model', requires: { imageInput: false } } }]);
     expect(dispatchedModel).toBe('primary-model');
@@ -1782,7 +1782,7 @@ describe('one-call admission (hooks.admit)', () => {
       },
       logger,
       fetchImpl: async () => ok(),
-    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }) });
     expect(response.status).toBe(200);
     await response.text();
     const timing = traces.at(-1)!.metadata.timing as Record<string, number>;
@@ -1804,7 +1804,7 @@ describe('one-call admission (hooks.admit)', () => {
       },
       logger,
       fetchImpl: async () => ok(),
-    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }) });
     expect(response.status).toBe(200);
     expect(calls).toEqual(['authorize', 'route', 'resolve', 'billing']);
   });
@@ -1814,7 +1814,7 @@ describe('one-call admission (hooks.admit)', () => {
       hooks: { ...hooks([], []), admit: async () => answer },
       logger,
       fetchImpl: async () => ok(),
-    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }) });
     const route = { policyId: 'route', primaryModel: 'primary-model' };
     expect((await run({ admission: { ok: false, status: 401, errorCode: 'invalid_token' } })).status).toBe(401);
     const unresolved = await run({
@@ -1865,7 +1865,7 @@ describe('one-call admission (hooks.admit)', () => {
           status: 200, headers: { 'content-type': 'application/json' },
         });
       },
-    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'primary-model', messages: [] }) });
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'primary-model', messages: [{ role: 'user', content: 'hi' }] }) });
     await Bun.sleep(0);
     return { response, usage, billingCalls, dispatched };
   };

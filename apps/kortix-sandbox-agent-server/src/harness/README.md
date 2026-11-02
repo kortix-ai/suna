@@ -339,6 +339,15 @@ turn runs at that point.
   manifest above this box's generation reads as behind even when every message
   in it is tombstoned. A brand-new session (no store, the manifest lists no
   live message or answers 404) boots empty, as before.
+- **The lease.** A 401 to the manifest or the restore is a wake that beat the
+  API to the sandbox row: the API refuses a session credential until the row
+  is `provisioning`/`active` again (`Session token is not active`), and a wake
+  can install a new credential right after (KRTX-2545). The same request goes
+  again 1 s apart with the env's current credential, 15 times in all; a 401
+  comes from the auth middleware, so it claims nothing. The last 401 reads as
+  a 403. Before this rule a 401 skipped the reconcile at once: prod, 2026-10-30
+  to 11-01, 30 boots (20 sessions) skipped it, and the same boxes' next
+  control-plane call answered 200 1-9 s later.
 - **D3, a partial restore** (the log's `restore_grade` is `partial`, the write
   dropped model-visible content, or a text kept its preview). The agent: a
   user message with one text block (`prt_kortix_restore_g<generation>`, naming

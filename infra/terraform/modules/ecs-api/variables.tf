@@ -343,7 +343,7 @@ variable "worker" {
 
     task_cpu / task_memory  Fargate size of the worker task.
     command                 Container command. Default ["bun","run","src/worker.ts"].
-    alarm_topic_arn         SNS topic for the two worker alarms. null = no alarms.
+    alarm_topic_arn         SNS topic for the worker alarms. null = no alarms.
     metric_environment      Environment dimension of Kortix/Worker StaleJobs
                             (the environment's INTERNAL_KORTIX_ENV). Required
                             when alarm_topic_arn is set.
