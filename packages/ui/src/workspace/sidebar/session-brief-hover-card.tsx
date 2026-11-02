@@ -447,15 +447,6 @@ export function SessionBriefDescription({
   );
 }
 
-export function MobileSessionCreatedTime({ createdAt }: { createdAt: string }) {
-  return (
-    <SessionCreatedTime
-      createdAt={createdAt}
-      className="text-muted-foreground block truncate text-xs leading-4 tabular-nums"
-    />
-  );
-}
-
 /**
  * The hover card of a sub-agent row: what it is and when it ran. Same store,
  * same shell as `SessionBriefHoverCard`, so one card is open at a time across
