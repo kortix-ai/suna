@@ -70,7 +70,7 @@ export type CaseStudy = {
 
 export const caseStudies: { title: string; titleMuted: string; items: readonly CaseStudy[] } = {
   title: 'Case studies.',
-  titleMuted: 'What runs on Kortix today.',
+  titleMuted: 'What runs on CompanyOS.',
   items: [
     {
       id: 'hkai-sci',

@@ -237,7 +237,7 @@ export default function ServicesPage() {
       </section>
 
       {/* ── proof first: the work, then the ask again ────────────────────── */}
-      <CaseStudies allLink />
+      <CaseStudies />
       <div className="flex flex-col items-start gap-5 px-8 pb-8 sm:flex-row sm:items-center sm:justify-between lg:px-28">
         <p className="text-foreground text-lg font-medium text-balance">{caseCta}</p>
         <div className="flex flex-wrap gap-2.5">
