@@ -36,6 +36,12 @@ export const config = {
   apiInternalUrl: process.env.KORTIX_API_INTERNAL_URL || undefined,
   apiToken: requiredApiToken(),
   internalEdgeKey: process.env.KORTIX_INTERNAL_EDGE_KEY || undefined,
+  // Requests per minute per credential on every model route (token-rate-limit.ts).
+  // The same setting as the API's /v1/llm limit, so one value covers both paths.
+  // A value of 0 or less falls back to 600, as in the API.
+  requestsPerMinutePerCredential: optionalInt('KORTIX_LLM_GATEWAY_REQS_PER_MIN', 600) > 0
+    ? optionalInt('KORTIX_LLM_GATEWAY_REQS_PER_MIN', 600)
+    : 600,
   langfuse: {
     publicKey: process.env.LANGFUSE_PUBLIC_KEY,
     secretKey: process.env.LANGFUSE_SECRET_KEY,
