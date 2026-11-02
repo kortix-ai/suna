@@ -17,6 +17,7 @@ import { useFeatureFlag, useProjectSession, useTeamTasks } from '@kortix/sdk/rea
 import { useKeyboard } from '@opentui/react';
 import { useMemo, useState } from 'react';
 
+import { printable } from '../../lib/printable.ts';
 import { theme } from '../../theme.ts';
 import { layoutRow, windowStart } from '../../ui/index.ts';
 import { type PeekTarget, useAgentNav } from './agent-nav.tsx';
@@ -111,7 +112,7 @@ export function TasksPanelView({
             >
               <span fg={theme.brand}>{isSelected ? '▌' : ' '}</span>
               <span fg={GLYPH_COLOR[row.status] ?? theme.faint}>{row.glyph}</span>
-              {` ${layoutRow(`#${row.seq} ${row.subject}`, right, inner - 3)}`}
+              {` ${layoutRow(printable(`#${row.seq} ${row.subject}`), printable(right), inner - 3)}`}
             </text>
           );
         })

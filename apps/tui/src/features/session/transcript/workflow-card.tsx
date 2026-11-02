@@ -276,8 +276,12 @@ function LiveWorkflowCard({
   boxSessionId,
   width,
 }: { run: WorkflowRun; projectId: string; boxSessionId: string; width: number }) {
+  // The run's final copy, once a source reported it ended. Latched: the card then reads
+  // nothing more. The call's snapshot says "running" for good, so without the latch a
+  // finished run kept a poll and a stream open for as long as the transcript showed it.
+  const [final, setFinal] = useState<WorkflowRun | null>(null);
   const { data } = useSessionWorkflows(projectId, boxSessionId, {
-    enabled: run.status === 'running',
+    enabled: run.status === 'running' && !final,
   });
   const live = useMemo(() => {
     const match = run.runId ? data?.find((candidate) => candidate.runId === run.runId) : undefined;
@@ -289,14 +293,20 @@ function LiveWorkflowCard({
   // `workflow` call in its session, so that call's metadata is the run's final document. A view
   // reads it from the API alone, without waking the box.
   const runner = run.background?.sessionId ?? null;
-  const view = useSessionView(projectId, runner ?? '', { enabled: Boolean(runner) && !live });
+  const view = useSessionView(projectId, runner ?? '', {
+    enabled: Boolean(runner) && !live && !final,
+  });
   const logged = useMemo(
     () => (view.thread ? runFromThread(view.thread.messages, run.runId) : null),
     [view.thread, run.runId],
   );
-  const shown =
+  const current =
     live ??
-    (logged ? { ...logged, ...(run.background ? { background: run.background } : {}) } : run);
+    (logged ? { ...logged, ...(run.background ? { background: run.background } : {}) } : null);
+  useEffect(() => {
+    if (!final && current && current.status !== 'running') setFinal(current);
+  }, [final, current]);
+  const shown = final ?? current ?? run;
   return (
     <WorkflowRunView run={shown} live={Boolean(live) && shown.status === 'running'} width={width} />
   );

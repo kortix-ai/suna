@@ -124,6 +124,21 @@ function startsNotice(text: string, index: number): boolean {
  * never splits one. Every piece must parse: one that does not makes the whole
  * prompt "not a batch", and it renders as the turn it is.
  */
+/** The blocks a notice quotes verbatim from its child: a lead inside one starts nothing. */
+const QUOTE_TAGS = ['kortix_system', 'task_result', 'task_error'] as const;
+
+function count(text: string, needle: string): number {
+  let n = 0;
+  for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + needle.length)) n += 1;
+  return n;
+}
+
+/** `index` lies inside an open `<kortix_system>`, `<task_result>` or `<task_error>` block. */
+function insideQuote(body: string, index: number): boolean {
+  const before = body.slice(0, index);
+  return QUOTE_TAGS.some((tag) => count(before, `<${tag}`) > count(before, `</${tag}>`));
+}
+
 export function parseNoticeBatch(text: string | null | undefined): NoticeBatchItem[] | null {
   if (!text) return null;
   const body = text.trim();
@@ -133,7 +148,9 @@ export function parseNoticeBatch(text: string | null | undefined): NoticeBatchIt
     // Several blank lines in a row: the notice starts at the first non-newline.
     let index = at + 2;
     while (body[index] === '\n') index += 1;
-    if (index > starts[starts.length - 1]! && startsNotice(body, index)) starts.push(index);
+    // A lead inside a quoted report is the report's words, not a new notice: a child's
+    // report could otherwise forge a row (and the session id a click opens).
+    if (index > starts[starts.length - 1]! && startsNotice(body, index) && !insideQuote(body, index)) starts.push(index);
     if (starts.length > MAX_NOTICES) return null;
   }
   const items: NoticeBatchItem[] = [];

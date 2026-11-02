@@ -21,15 +21,20 @@
  * `AgentsPanel` reads `useSessionAgents` and the nav.
  */
 
-import type { PeerMessage, SessionBoardState, WorkflowControlBody, WorkflowRunAgent } from '@kortix/sdk';
+import type {
+  PeerMessage,
+  SessionBoardState,
+  WorkflowControlBody,
+  WorkflowRunAgent,
+} from '@kortix/sdk';
 import { useKeyboard } from '@opentui/react';
 import { useEffect, useMemo, useState } from 'react';
 
+import { printable } from '../../lib/printable.ts';
 import { relativeAge } from '../../lib/relative-time.ts';
 import { theme } from '../../theme.ts';
 import { layoutRow, windowStart } from '../../ui/index.ts';
 import { type PeekTarget, useAgentNav } from './agent-nav.tsx';
-import { matchesAgentsBinding } from './keys.ts';
 import {
   type AgentGroups,
   type AgentRow,
@@ -42,6 +47,7 @@ import {
   panelRows,
   runProgress,
 } from './agents-model.ts';
+import { matchesAgentsBinding } from './keys.ts';
 import { type Notice, type StopTarget, useSessionAgents } from './use-session-agents.ts';
 
 export interface AgentsPanelViewProps {
@@ -98,7 +104,9 @@ function agentState(row: AgentRow, now: number): string {
           ? 'Waits for your approval'
           : 'Needs you';
     case 'working':
-      return row.workingSinceMs !== null ? `working · ${shortElapsed(now - row.workingSinceMs)}` : 'working';
+      return row.workingSinceMs !== null
+        ? `working · ${shortElapsed(now - row.workingSinceMs)}`
+        : 'working';
     case 'failed':
       return "Didn't finish";
     case 'stopped':
@@ -142,7 +150,10 @@ function canRestart(row: Extract<PanelRow, { kind: 'run-agent' }>): boolean {
 
 /** A workflow agent that runs, with its session: `x` stops it. */
 function canStopRunAgent(row: Extract<PanelRow, { kind: 'run-agent' }>): boolean {
-  return Boolean(row.agent.sessionId) && (row.agent.status === 'running' || row.agent.status === 'starting');
+  return (
+    Boolean(row.agent.sessionId) &&
+    (row.agent.status === 'running' || row.agent.status === 'starting')
+  );
 }
 
 /** The keys the selected row answers, for the bottom title. */
@@ -260,14 +271,19 @@ export function AgentsPanelView({
         onStop({ sessionId: selected.agent.sessionId, title: selected.agent.handle });
       else if (selected.kind === 'run' && selected.run.status === 'running')
         onControl(selected.run, { action: 'stop' });
-      else if (selected.kind === 'run-agent' && canStopRunAgent(selected) && selected.agent.sessionId)
+      else if (
+        selected.kind === 'run-agent' &&
+        canStopRunAgent(selected) &&
+        selected.agent.sessionId
+      )
         onStop({ sessionId: selected.agent.sessionId, title: selected.agent.label });
       return;
     }
     if (is('pause')) {
       key.preventDefault();
       const run = selected.kind === 'run' || selected.kind === 'run-agent' ? selected.run : null;
-      if (run && run.status === 'running') onControl(run, { action: run.paused ? 'resume' : 'pause' });
+      if (run && run.status === 'running')
+        onControl(run, { action: run.paused ? 'resume' : 'pause' });
       return;
     }
     if (is('restart')) {
@@ -377,7 +393,9 @@ function PanelLine({
       <span fg={theme.brand}>{selected ? '▌' : ' '}</span>
       {indent.slice(1)}
       <span fg={mark.color}>{mark.glyph}</span>
-      {` ${layoutRow(label, right, room)}`}
+      {/* Every word here was written by an agent (a handle, a summary, a phase): no
+          control character reaches the terminal. */}
+      {` ${layoutRow(printable(label), printable(right), room)}`}
     </text>
   );
 }
