@@ -1824,9 +1824,9 @@ export const SessionStartBootSchema = z
     /** Is a provider operation running for this session right now? */
     actively_starting: z.boolean(),
     /**
-     * The image step while `phase` is `provisioning`; null in every other
-     * phase and before provisioning reaches the image. Absent from an API
-     * older than this field.
+     * The image step. Present only while `phase` is `provisioning`: null
+     * until provisioning reaches the image, then the step it waits on.
+     * Absent in every other phase, and from an API older than this field.
      */
     image: SessionStartImageStepSchema.nullable().optional(),
   })

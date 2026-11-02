@@ -607,6 +607,11 @@ placeholder rows on `loading` and its boot screen only on `none`.
 `useSession().conversationEmpty` is true when the saved copy proves the conversation empty
 (a complete read of the runtime found no messages), no turn ended since, and nothing is open
 or queued. A host renders the composer then, not a boot screen.
+`useSession().bootImage` is the sandbox image step of a provisioning box (`/start`'s
+`boot.image`, a `SessionStartImageStep`): `state` is `resolving`, `serving_last_ready`,
+`waiting_for_build`, `building`, `copying_to_region` or `waiting_for_provider`, with
+`image` and `since`. A boot screen names that step. It is `null` outside the `provisioning`
+phase, once ready, and against an API that does not send it.
 
 A host that registers a saved-copy store (`setSavedCopyStore(createSavedCopyStore({ storage,
 userId }))`) gets the kept copy painted before the first frame; the server's copy reconciles

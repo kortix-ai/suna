@@ -23,7 +23,8 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function isSnapshotStillBuilding(error: unknown): boolean {
+/** The provider refused a create because it is still finishing the image (building or replicating). */
+export function isSnapshotStillBuilding(error: unknown): boolean {
   if (error instanceof SnapshotStillBuildingError) return true;
   // legacy: Daytona refuses a create from a snapshot it is still building with
   // only this text. Delete when Daytona types the refusal.
