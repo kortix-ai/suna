@@ -51,7 +51,7 @@ function gateway(options: {
         fetched.push(host);
         return options.respond(host);
       },
-    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'primary', messages: [] }) });
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'primary', messages: [{ role: 'user', content: 'hi' }] }) });
     await response.text();
     await new Promise((resolve) => setTimeout(resolve, 0));
     return { status: response.status, trace: traces.at(-1)! };

@@ -222,6 +222,14 @@ export interface ProjectCostRow {
    */
   llm_provider_cost: number;
   compute_cost: number;
+  /**
+   * Volume storage charged to the project: its Files folders and its sessions'
+   * /workspace volumes, in USD (1 credit = $0.01). Included in `total_cost`.
+   * Absent from an API older than this field.
+   */
+  storage_cost?: number;
+  /** GiB-hours of volume storage behind `storage_cost`. Absent from an older API. */
+  storage_gib_hours?: number;
   total_cost: number;
   last_activity_at: string | null;
 }
@@ -270,9 +278,17 @@ export interface CostSummaryTotals {
    */
   llm_provider_cost: number;
   compute_cost: number;
+  /**
+   * Volume storage charged in the window, in USD. Included in `total_cost`.
+   * Covers the account's Files folders outside any project at account scope.
+   * Absent from an API older than this field.
+   */
+  storage_cost?: number;
   total_cost: number;
   request_count: number;
   compute_seconds: number;
+  /** GiB-hours of volume storage behind `storage_cost`. Absent from an older API. */
+  storage_gib_hours?: number;
   session_count: number;
   project_count: number;
 }
@@ -281,6 +297,8 @@ export interface CostSeriesPoint {
   day: string;
   llm_cost: number;
   compute_cost: number;
+  /** Volume storage charged for the UTC day. Absent from an older API. */
+  storage_cost?: number;
   total_cost: number;
 }
 

@@ -13,7 +13,7 @@
  * value with no I/O, no clock of its own, and no cache.
  */
 
-import { ENTITLEMENT_OVERRIDE_KEYS, readOverride } from './entitlement-overrides';
+import { ENTITLEMENT_OVERRIDE_KEYS, LIMIT_OVERRIDE_KEYS, readOverride } from './entitlement-overrides';
 import { PLAN_FAMILY_LABELS, type PlanRecord, resolvePlanRecord } from './plan-catalog';
 
 /** The credit_accounts columns this resolver reads. */
@@ -57,6 +57,11 @@ export interface ResolvedBilling {
   entitlements: PlanRecord['entitlements'];
   /** Kept for the account-state shape; license grace is carried by overrides. */
   grace: AccessGrace | null;
+  /**
+   * Numeric limit overrides that apply now (expired ones dropped), in place
+   * of the plan's figure: Files storage in bytes (drives/limits.ts).
+   */
+  limitOverrides: { driveProjectBytes?: number; driveAccountBytes?: number };
   /** Customer-facing naming of the billing plan. */
   display: { label: string; sublabel: string | null };
 }
@@ -110,6 +115,7 @@ export function resolveBillingFromRow(
       source: 'no_account',
       entitlements: { ...plan.entitlements },
       grace: null,
+      limitOverrides: {},
       display: displayFor(plan),
     };
   }
@@ -134,5 +140,11 @@ export function resolveBillingFromRow(
   // Applied last, so no catalog row, override or demo can undo it.
   if (!paysForManagedModels(stored, enterprise)) entitlements.managedModels = false;
 
-  return { plan: stored, features, enterprise, source: 'stored', entitlements, grace: null, display: displayFor(stored) };
+  const limitOverrides: ResolvedBilling['limitOverrides'] = {};
+  for (const key of LIMIT_OVERRIDE_KEYS) {
+    const value = readOverride(row.entitlementOverrides, key, nowMs);
+    if (value !== undefined) limitOverrides[key] = value;
+  }
+
+  return { plan: stored, features, enterprise, source: 'stored', entitlements, grace: null, limitOverrides, display: displayFor(stored) };
 }

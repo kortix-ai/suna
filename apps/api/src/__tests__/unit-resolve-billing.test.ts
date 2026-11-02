@@ -217,6 +217,22 @@ describe('byokFee entitlement', () => {
   });
 });
 
+describe('storageBilling entitlement', () => {
+  test('on for every plan and Enterprise state: storage is usage, like compute', () => {
+    for (const row of [{}, { tier: 'free' }, { tier: 'credits' }, { tier: 'enterprise' }, { tier: 'free', demoEnterprise: true }]) {
+      expect(resolveBillingFromRow(row, NOW).entitlements.storageBilling).toBe(true);
+    }
+    expect(resolveBillingFromRow(null, NOW).entitlements.storageBilling).toBe(true);
+  });
+
+  test('an operator override waives it for one account until it expires', () => {
+    const waived = { tier: 'credits', entitlementOverrides: { storageBilling: { value: false } } };
+    expect(resolveBillingFromRow(waived, NOW).entitlements.storageBilling).toBe(false);
+    const expired = { tier: 'credits', entitlementOverrides: { storageBilling: { value: false, expires_at: new Date(NOW - 1).toISOString() } } };
+    expect(resolveBillingFromRow(expired, NOW).entitlements.storageBilling).toBe(true);
+  });
+});
+
 describe('Enterprise is a feature layer: off, demo, licensed', () => {
   test('off by default: the plan alone decides', () => {
     const r = resolveBillingFromRow({ tier: 'credits' }, NOW);

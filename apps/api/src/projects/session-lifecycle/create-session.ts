@@ -237,7 +237,6 @@ async function runInlineCreate(
       projectId: command.project.projectId,
       sessionId: result.sessionId,
       actions: command.postCreate,
-      commandId: row.commandId,
     });
     if (!postCreate.ok) {
       const outcome = await markCommandFailed(row, postCreate.error, {
@@ -457,9 +456,6 @@ export async function applyPostCreateActions(input: {
   projectId: string;
   sessionId: string;
   actions?: SessionLifecyclePostCreateAction[];
-  // ponytail: unused since `deliver_prompt` is a queue row keyed by the session
-  // (`post-create:<sessionId>`); drop it with its two call sites.
-  commandId?: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!input.actions?.length) return { ok: true };
   try {

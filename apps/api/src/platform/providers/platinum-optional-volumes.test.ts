@@ -115,6 +115,8 @@ const refusal = (status: number, body: Record<string, unknown>) => platinumHttpE
 const workspace = { '/workspace': { volume: 'kws-11111111-2222-4333-8444-555555555555' } };
 const company = { '/drives/company': { volume: 'kd-0a1b2c3d4e5f60718293', subdir: '/Company', share: 'node' as const } };
 const volumes = { ...workspace, ...company };
+/** What the create sends: a Files folder asks Platinum to hold it (#2427), /workspace stays required. */
+const sentVolumes = { ...workspace, '/drives/company': { ...company['/drives/company'], required: false } };
 
 const mountRefusals: Record<string, Error> = {
   // The prod error of 2026-11-01, verbatim apart from the file path.
@@ -142,7 +144,7 @@ describe('optional volumes: a mount Platinum refuses never stops the box', () =>
 
       const [first, second] = createCalls();
       expect(createCalls()).toHaveLength(2);
-      expect(first.body?.volumes).toEqual(volumes);
+      expect(first.body?.volumes).toEqual(sentVolumes);
       expect(second.body?.volumes).toEqual(workspace);
       expect(second.headers['Idempotency-Key']).not.toBe(first.headers['Idempotency-Key']);
       expect(second.body?.name).not.toBe(first.body?.name);
@@ -226,5 +228,79 @@ describe('optional volumes: a mount Platinum refuses never stops the box', () =>
     expect(createCalls()).toHaveLength(1);
     expect((err as Error).message).toContain('[drives]');
     expect((err as Error).message).toContain('scratch image over budget');
+  });
+});
+
+// Platinum #2427: a create that names a Files folder `required: false` answers
+// 201 with the folder held (pending: Platinum retries it; failed: it cannot
+// mount), never a refusal. The box runs, and the result names the held
+// folders exactly like the ones a refused create dropped.
+describe('optional volumes held by Platinum (#2427)', () => {
+  const heldAnswer = (mount: Record<string, unknown>, failures?: Array<Record<string, unknown>>) => ({
+    id: 'sbx_held',
+    state: 'running',
+    volume_mounts: [
+      { mount_path: '/workspace', state: 'mounted', required: true, code: null },
+      { mount_path: '/drives/company', required: false, ...mount },
+    ],
+    ...(failures ? { volume_mount_failures: failures } : {}),
+  });
+
+  test('a folder held pending ⇒ one create, the box runs, the folder is named with its code', async () => {
+    createSequence = [{ result: heldAnswer({ state: 'pending', code: 'sub_path_derive_failed', error: 'deriving the sub_path image failed', retry_at: '2026-11-01T10:30:02.000Z' }) }];
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    const result = await new PlatinumProvider().create({ ...baseOpts, createAttempt: 1, volumes, optionalVolumes: ['/drives/company'] });
+    warn.mockRestore();
+    expect(createCalls()).toHaveLength(1);
+    expect(createCalls()[0].body?.volumes).toEqual(sentVolumes);
+    expect(result.externalId).toBe('sbx_held');
+    expect(result.metadata?.droppedVolumes).toEqual([
+      { mountPath: '/drives/company', status: null, code: 'sub_path_derive_failed', reason: 'deriving the sub_path image failed' },
+    ]);
+  });
+
+  test('a folder failed too large carries its size and the cap', async () => {
+    createSequence = [{ result: heldAnswer({ state: 'failed', code: 'sub_path_too_large', error: 'the subdir is larger than a sub_path mount allows', bytes: 12_000, max_bytes: 10_000 }) }];
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    const result = await new PlatinumProvider().create({ ...baseOpts, createAttempt: 1, volumes, optionalVolumes: ['/drives/company'] });
+    warn.mockRestore();
+    expect(result.metadata?.droppedVolumes).toEqual([
+      { mountPath: '/drives/company', status: null, code: 'sub_path_too_large', reason: expect.any(String), bytes: 12_000, maxBytes: 10_000 },
+    ]);
+  });
+
+  test('a folder whose volume is gone is held in volume_mount_failures', async () => {
+    createSequence = [{
+      result: {
+        id: 'sbx_held',
+        state: 'running',
+        volume_mounts: [{ mount_path: '/workspace', state: 'mounted', required: true, code: null }],
+        volume_mount_failures: [{ mount_path: '/drives/company', volume: 'kd-x', required: false, state: 'failed', code: 'volume_not_found', error: 'volume kd-x not found' }],
+      },
+    }];
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    const result = await new PlatinumProvider().create({ ...baseOpts, createAttempt: 1, volumes, optionalVolumes: ['/drives/company'] });
+    warn.mockRestore();
+    expect(result.metadata?.droppedVolumes).toEqual([
+      { mountPath: '/drives/company', status: null, code: 'volume_not_found', reason: 'volume kd-x not found' },
+    ]);
+  });
+
+  test('a folder mounted, or still on its way in with no failure code, is not held; nor is a required mount', async () => {
+    for (const mount of [{ state: 'mounted', code: null }, { state: 'pending', code: null, retry_at: null }]) {
+      createCallCount = 0;
+      createSequence = [{ result: heldAnswer(mount) }];
+      const result = await new PlatinumProvider().create({ ...baseOpts, createAttempt: 1, volumes, optionalVolumes: ['/drives/company'] });
+      expect(result.metadata?.droppedVolumes).toBeUndefined();
+    }
+    createSequence = [{ result: { id: 'sbx_held', state: 'running', volume_mounts: [{ mount_path: '/workspace', state: 'pending', code: 'unavailable', retry_at: 'x' }] } }];
+    const result = await new PlatinumProvider().create({ ...baseOpts, createAttempt: 1, volumes, optionalVolumes: ['/drives/company'] });
+    expect(result.metadata?.droppedVolumes).toBeUndefined();
+  });
+
+  test('an older Platinum (no volume_mounts in the answer) ⇒ nothing held, exactly as before', async () => {
+    createSequence = [{ result: { id: 'sbx_old', state: 'running' } }];
+    const result = await new PlatinumProvider().create({ ...baseOpts, createAttempt: 1, volumes, optionalVolumes: ['/drives/company'] });
+    expect(result.metadata?.droppedVolumes).toBeUndefined();
   });
 });

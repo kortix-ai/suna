@@ -6,7 +6,8 @@ import { warningToast } from '../../primitives/toast';
 import { Home } from '../../internal/icons/home';
 import { useSessionDrives } from './use-drives';
 import type { SessionDrive, SessionDrives } from '@kortix/sdk';
-import { useTranslations } from '../../i18n';
+import { useLocale, useTranslations } from '../../i18n';
+import { formatStorageBytes } from './drive-storage';
 import { ArrowUpRightIcon, FolderIcon, WarningIcon } from '@phosphor-icons/react';
 import { useUiLink } from '../../providers/ui-provider';
 import { useEffect, useRef } from 'react';
@@ -37,9 +38,13 @@ export function SessionDrivesList({ projectId, sessionId }: { projectId: string;
   const t = useTranslations('drives');
   const Link = useUiLink();
   const driveHref = uiRoutes().drive(projectId);
+  const locale = useLocale();
   const session = useSessionDrives(projectId, sessionId);
   const rows = session.data?.drives ?? [];
   const skipped = session.data?.skipped ?? [];
+  // A folder too large to mount names its size: the number to get it under.
+  const named = (d: NonNullable<SessionDrives['skipped']>[number]) =>
+    d.reason === 'too_large' && typeof d.bytes === 'number' ? `${d.name} (${formatStorageBytes(d.bytes, locale)})` : d.name;
 
   return (
     <div className="flex flex-col gap-3">
@@ -80,7 +85,7 @@ export function SessionDrivesList({ projectId, sessionId }: { projectId: string;
             className="bg-kortix-orange/15 text-foreground flex items-start gap-2 rounded-md px-2.5 py-2 text-xs text-pretty"
           >
             <WarningIcon className="text-kortix-orange mt-px size-3.5 shrink-0" weight="fill" />
-            {t(key, { count: these.length, names: these.map((d) => d.name).join(', ') })}
+            {t(key, { count: these.length, names: these.map(named).join(', ') })}
           </p>
         );
       })}

@@ -1030,3 +1030,24 @@ resource "aws_cloudwatch_metric_alarm" "worker_stale_jobs" {
     Service     = lookup(var.tags, "Service", local.name)
   }
 }
+
+resource "aws_cloudwatch_metric_alarm" "worker_cpu" {
+  count             = local.worker_alarms && var.worker != null ? 1 : 0
+  alarm_name        = "${local.worker_name}-cpu-high"
+  alarm_description = "Worker CPU exceeds 80% for 10 minutes. Check scheduled job load and worker task sizing."
+  namespace         = "AWS/ECS"
+  metric_name       = "CPUUtilization"
+  dimensions = {
+    ClusterName = aws_ecs_cluster.this.name
+    ServiceName = aws_ecs_service.worker[0].name
+  }
+  statistic           = "Average"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 80
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [var.worker.alarm_topic_arn]
+  ok_actions          = [var.worker.alarm_topic_arn]
+  tags                = var.tags
+}

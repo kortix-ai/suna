@@ -78,6 +78,7 @@ const WORKERS: Record<string, string> = {
   'session-log-purge': 'worker/jobs/session-log-purge.ts',
   'gateway-spend-backfill': 'worker/jobs/gateway-spend-backfill.ts',
   'residential-proxy-billing': 'worker/jobs/residential-proxy-billing.ts',
+  'storage-billing': 'worker/jobs/storage-billing.ts',
 };
 
 /**

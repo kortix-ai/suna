@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { validateManifest } from '@kortix/manifest-schema';
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
   KORTIX_MANAGED_SKILL_NAMES,
@@ -346,6 +347,14 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
 
     const missing = KORTIX_MANAGED_SKILL_NAMES.filter((n) => !injected.has(n));
     expect(missing).toEqual([]);
+  });
+
+  // KRTX-3640: the manifest schema kept its own copy of this list and missed
+  // `kortix-chrome`, so an agent that granted it by name failed validation.
+  test('an agent may grant every managed skill by name', () => {
+    const manifest = `agents:\n  a:\n    prompt: x\n    tools: all\n    skills: [${KORTIX_MANAGED_SKILL_NAMES.join(', ')}]\n`;
+    const errors = validateManifest(manifest).issues.filter((i) => i.severity === 'error');
+    expect(errors).toEqual([]);
   });
 
   /**
