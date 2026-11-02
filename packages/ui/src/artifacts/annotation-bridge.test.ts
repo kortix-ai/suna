@@ -116,7 +116,7 @@ test("compiled bridge emits only validated page-owned inventory and excludes hid
     expect(parseArtifactAnnotationFrameMessage(message)).not.toBeNull();
 });
 
-test("mode defaults off, rejects other windows, and native text selection emits a bounded candidate", async () => {
+test("mode defaults off, rejects other windows, and native text selection offers the whole selection", async () => {
   const page = frame(`<p>${"🚀".repeat(20)} selected passage follows</p>`);
   await page.flush();
   const text = page.window.document.querySelector("p")!.firstChild!;
@@ -136,14 +136,216 @@ test("mode defaults off, rejects other windows, and native text selection emits 
   page.send({ type: "mode", mode: "text" });
   select();
   const candidate = page.messages("candidate").at(-1);
+  // 55 UTF-16 units: all 20 rockets and 15 more characters, not a 32-unit fragment.
   expect(candidate.anchor).toEqual({
     type: "text",
-    quote: "🚀".repeat(16),
+    quote: `${"🚀".repeat(20)} selected passa`,
     prefix: "",
-    suffix: `${"🚀".repeat(4)} selected passage follow`,
+    suffix: "ge follows",
   });
   expect(candidate.anchor.version).toBeUndefined();
   expect(parseArtifactAnnotationFrameMessage(candidate)).not.toBeNull();
+});
+
+/** A frame in text mode with `selection` selected, its range box stubbed to `box`. */
+async function selected(
+  html: string,
+  select: (document: Document) => Range,
+  box = { x: 40, y: 50, width: 120, height: 18 },
+) {
+  const page = frame(html);
+  await page.flush();
+  Object.defineProperty(page.window.Range.prototype, "getBoundingClientRect", {
+    configurable: true,
+    value: () => new page.window.DOMRect(box.x, box.y, box.width, box.height),
+  });
+  page.send({ type: "mode", mode: "text" });
+  const document = page.window.document as unknown as Document;
+  const mouse = (type: string) =>
+    page.window.document.dispatchEvent(
+      new page.window.MouseEvent(type, { bubbles: true }),
+    );
+  const key = (
+    type: string,
+    init: Pick<
+      KeyboardEventInit,
+      "key" | "code" | "altKey" | "metaKey" | "ctrlKey" | "shiftKey"
+    >,
+  ) => {
+    const event = new page.window.KeyboardEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      ...init,
+    });
+    page.window.document.dispatchEvent(event);
+    return event;
+  };
+  const choose = () => {
+    page.window.getSelection()!.removeAllRanges();
+    page.window.getSelection()!.addRange(select(document) as never);
+    mouse("mouseup");
+  };
+  choose();
+  return { ...page, mouse, key, choose };
+}
+const firstText = (from: number, to: number) => (document: Document) => {
+  const range = document.createRange();
+  const text = document.querySelector("p")!.firstChild!;
+  range.setStart(text, from);
+  range.setEnd(text, to);
+  return range;
+};
+
+test("a selection offer carries its page box; a press in the page withdraws it", async () => {
+  const page = await selected("<p>Pricing for every team</p>", firstText(0, 7));
+  const candidate = page.messages("candidate").at(-1);
+  expect(candidate.anchor).toEqual({
+    type: "text",
+    quote: "Pricing",
+    prefix: "",
+    suffix: " for every team",
+  });
+  expect(candidate.rect).toEqual({ x: 40, y: 50, width: 120, height: 18 });
+  expect(parseArtifactAnnotationFrameMessage(candidate)).not.toBeNull();
+  // The same selection is offered once.
+  page.mouse("mouseup");
+  expect(page.messages("candidate")).toHaveLength(1);
+  // A press starts a new selection: the offer is withdrawn at once.
+  page.mouse("mousedown");
+  expect(page.messages("selection")).toEqual([
+    { ...envelope, type: "selection", state: "none" },
+  ]);
+  page.window.getSelection()!.removeAllRanges();
+  page.mouse("mouseup");
+  expect(page.messages("selection")).toHaveLength(1);
+  expect(page.messages("candidate")).toHaveLength(1);
+  for (const message of page.sent)
+    expect(parseArtifactAnnotationFrameMessage(message)).not.toBeNull();
+});
+
+test("a selection longer than a text anchor is offered as too long, never cut", async () => {
+  const words = "pricing ".repeat(80);
+  const page = await selected(`<p>${words}</p>`, firstText(0, 501));
+  expect(page.messages("candidate")).toHaveLength(0);
+  expect(page.messages("selection")).toEqual([
+    {
+      ...envelope,
+      type: "selection",
+      state: "too_long",
+      rect: { x: 40, y: 50, width: 120, height: 18 },
+    },
+  ]);
+  const range = page.window.document.createRange();
+  const text = page.window.document.querySelector("p")!.firstChild!;
+  range.setStart(text, 0);
+  range.setEnd(text, 500);
+  page.window.getSelection()!.removeAllRanges();
+  page.window.getSelection()!.addRange(range);
+  page.mouse("mouseup");
+  expect(page.messages("candidate").at(-1).anchor.quote).toHaveLength(500);
+});
+
+test("Escape dismisses the offer until the selection changes; the shortcut is consumed only with an offer", async () => {
+  const page = await selected("<p>Pricing for every team</p>", firstText(0, 7));
+  expect(page.messages("candidate")).toHaveLength(1);
+  const shortcut = page.key("keydown", {
+    code: "KeyM",
+    key: "µ",
+    altKey: true,
+    metaKey: true,
+  });
+  expect(shortcut.defaultPrevented).toBe(true);
+  expect(page.messages("key")).toEqual([
+    { ...envelope, type: "key", key: "comment" },
+  ]);
+  // Shift, or no modifier: not the shortcut, and the page keeps the key.
+  const shifted = page.key("keydown", {
+    code: "KeyM",
+    altKey: true,
+    metaKey: true,
+    shiftKey: true,
+  });
+  expect(shifted.defaultPrevented).toBe(false);
+  const escape = page.key("keydown", { key: "Escape" });
+  expect(escape.defaultPrevented).toBe(false);
+  expect(page.messages("key").at(-1)).toEqual({
+    ...envelope,
+    type: "key",
+    key: "escape",
+  });
+  // The keyup and a layout keep the dismissed selection hidden.
+  page.key("keyup", { key: "Escape" });
+  page.send({ type: "request_layout" });
+  await page.flush();
+  expect(page.messages("candidate")).toHaveLength(1);
+  // Without an offer, Escape and the shortcut stay with the page.
+  const quiet = page.key("keydown", {
+    code: "KeyM",
+    altKey: true,
+    ctrlKey: true,
+  });
+  expect(quiet.defaultPrevented).toBe(false);
+  page.key("keydown", { key: "Escape" });
+  expect(page.messages("key")).toHaveLength(2);
+  // A new press tells the parent the dismissed selection is gone; the same selection again is offered again.
+  page.mouse("mousedown");
+  expect(page.messages("selection").at(-1)).toEqual({
+    ...envelope,
+    type: "selection",
+    state: "none",
+  });
+  page.choose();
+  expect(page.messages("candidate")).toHaveLength(2);
+});
+
+test("scroll withdraws the offer at once and the next layout offers it at its new box", async () => {
+  const page = await selected("<p>Pricing for every team</p>", firstText(0, 7));
+  const revision = page.messages("layout").at(-1).revision;
+  page.window.dispatchEvent(new page.window.Event("scroll"));
+  // "moved": the person made no new selection, so a selection the parent dismissed stays dismissed.
+  expect(page.messages("selection")).toEqual([
+    { ...envelope, type: "selection", state: "none", moved: true },
+  ]);
+  await page.flush();
+  const again = page.messages("candidate").at(-1);
+  expect(page.messages("candidate")).toHaveLength(2);
+  expect(again.revision).toBeGreaterThan(revision);
+  expect(again.revision).toBe(page.messages("layout").at(-1).revision);
+  for (const message of page.sent)
+    expect(parseArtifactAnnotationFrameMessage(message)).not.toBeNull();
+});
+
+test("a press right after a layout withdrawal still tells the parent a new gesture began", async () => {
+  const page = await selected("<p>Pricing for every team</p>", firstText(0, 7));
+  page.window.dispatchEvent(new page.window.Event("resize"));
+  // The press comes before the next layout offers the selection again.
+  page.mouse("mousedown");
+  expect(page.messages("selection")).toEqual([
+    { ...envelope, type: "selection", state: "none", moved: true },
+    { ...envelope, type: "selection", state: "none" },
+  ]);
+  // The press collapsed the selection: the next layout offers nothing and sends nothing more.
+  page.window.getSelection()!.removeAllRanges();
+  await page.flush();
+  expect(page.messages("candidate")).toHaveLength(1);
+  expect(page.messages("selection")).toHaveLength(2);
+  // A press with nothing offered since the last one stays silent.
+  page.mouse("mousedown");
+  expect(page.messages("selection")).toHaveLength(2);
+});
+
+test("comment mode drops the offer, and its Escape still reaches the parent", async () => {
+  const page = await selected("<p>Pricing for every team</p>", firstText(0, 7));
+  page.send({ type: "mode", mode: "comment" });
+  page.key("keydown", { key: "Escape" });
+  expect(page.messages("key")).toEqual([
+    { ...envelope, type: "key", key: "escape" },
+  ]);
+  page.mouse("mouseup");
+  expect(page.messages("candidate")).toHaveLength(1);
+  page.send({ type: "mode", mode: "off" });
+  page.key("keydown", { key: "Escape" });
+  expect(page.messages("key")).toHaveLength(1);
 });
 
 test("point and clipped region candidates retain fractional geometry and page selector", async () => {
@@ -229,6 +431,84 @@ test("only current validated parent draws render numeric pins and keyboard focus
     focus: false,
   });
   expect(overlay.shadowRoot!.textContent).not.toContain("private sentinel");
+});
+
+test("a pin's accessible name is the parent's label with its number, never other text", async () => {
+  const page = frame();
+  await page.flush();
+  const revision = page.messages("layout").at(-1).revision;
+  const pin = {
+    n: 7,
+    rects: [{ x: 10, y: 30, width: 100, height: 20 }],
+    ranges: [],
+  };
+  const overlay = page.window.document.querySelector(
+    "[data-kortix-annotation-overlay]",
+  )!;
+  const draw = (pins: object[]) =>
+    page.send({ type: "draw", revision, pins, active: null, focus: false });
+  draw([{ ...pin, label: "Comment 7" }]);
+  const button = overlay.shadowRoot!.querySelector("button")!;
+  expect(button.getAttribute("aria-label")).toBe("Comment 7");
+  expect(button.textContent).toBe("7");
+  // A label that does not name the pin's number, or one over 64 units, is refused whole.
+  draw([{ ...pin, label: "Pricing looks wrong" }]);
+  expect(
+    overlay.shadowRoot!.querySelector("button")!.getAttribute("aria-label"),
+  ).toBe("Comment 7");
+  draw([{ ...pin, label: `Comment 7 ${"x".repeat(64)}` }]);
+  expect(
+    overlay.shadowRoot!.querySelector("button")!.getAttribute("aria-label"),
+  ).toBe("Comment 7");
+  // Without a label the number names the pin, as before.
+  draw([pin]);
+  expect(
+    overlay.shadowRoot!.querySelector("button")!.getAttribute("aria-label"),
+  ).toBe("7");
+});
+
+test("the selection protocol carries geometry and fixed states only", () => {
+  const anchor = { type: "text", quote: "Pricing", prefix: "", suffix: "" };
+  const rect = { x: 40, y: 50, width: 120, height: 18 };
+  const parse = parseArtifactAnnotationFrameMessage;
+  expect(
+    parse({ ...envelope, type: "candidate", revision: 1, anchor, rect }),
+  ).not.toBeNull();
+  expect(
+    parse({ ...envelope, type: "candidate", revision: 1, anchor }),
+  ).not.toBeNull();
+  for (const state of ["none", "too_long"])
+    expect(
+      parse({ ...envelope, type: "selection", state, rect }),
+    ).not.toBeNull();
+  expect(
+    parse({ ...envelope, type: "selection", state: "none", moved: true }),
+  ).not.toBeNull();
+  for (const key of ["escape", "comment"])
+    expect(parse({ ...envelope, type: "key", key })).not.toBeNull();
+  for (const forged of [
+    {
+      ...envelope,
+      type: "candidate",
+      revision: 1,
+      anchor,
+      rect: { ...rect, width: 0 },
+    },
+    {
+      ...envelope,
+      type: "candidate",
+      revision: 1,
+      anchor,
+      rect: { ...rect, label: "x" },
+    },
+    { ...envelope, type: "selection", state: "open" },
+    { ...envelope, type: "selection", state: "none", quote: "Pricing" },
+    { ...envelope, type: "selection", state: "none", moved: false },
+    { ...envelope, type: "selection", state: "none", moved: "Pricing" },
+    { ...envelope, type: "key", key: "enter" },
+    { ...envelope, type: "key", key: "comment", text: "Forged comment" },
+  ])
+    expect(parse(forged)).toBeNull();
 });
 
 test("inventory packs actual UTF-8 bytes, keeps long text offsets, and marks truncation", async () => {
@@ -481,6 +761,20 @@ test("compiled bridge refuses stale capture and never accepts capture from anoth
     reason: "stale",
   });
   expect(page.messages("capture_chunk")).toHaveLength(0);
+});
+
+test("snippets separate text from different blocks with a space and keep inline runs joined", async () => {
+  const page = frame(
+    '<div id="plan"><h2>Free</h2><p>$0</p><p>One <b>project</b>, community support.</p><button>Start free</button></div>',
+  );
+  await page.flush();
+  const elements = page.messages("layout").flatMap((chunk) => chunk.elements);
+  expect(elements.find((item) => item.selector === "#plan")?.snippet).toBe(
+    "Free $0 One project, community support. Start free",
+  );
+  expect(elements.find((item) => item.selector === "html")?.snippet).toBe(
+    "Free $0 One project, community support. Start free",
+  );
 });
 
 test("page inventory includes bounded document geometry for a whole-area drawing region", async () => {
