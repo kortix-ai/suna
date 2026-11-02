@@ -271,6 +271,8 @@ test('check --enforce re-arms a missing heartbeat, counts wakes and, at the cap,
     expect(fake.reminders).toHaveLength(1);
     expect(read()).toMatchObject({ reminder_id: fake.reminders[0]!.id, wake_count: 1 });
 
+    // Force a heartbeat before tomorrow even when now + 4h crosses midnight.
+    for (const reminder of fake.reminders) reminder.next_fire_at = '2000-01-01T00:00:00.000Z';
     await cli(fake, root, 'owner', ['check', '--enforce', '--quiet']);
     expect(read().wake_count).toBe(2);
     expect(fake.reminders).toHaveLength(1);
