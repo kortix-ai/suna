@@ -607,6 +607,11 @@ placeholder rows on `loading` and its boot screen only on `none`.
 `useSession().conversationEmpty` is true when the saved copy proves the conversation empty
 (a complete read of the runtime found no messages), no turn ended since, and nothing is open
 or queued. A host renders the composer then, not a boot screen.
+`useSession().bootImage` is the sandbox image step of a provisioning box (`/start`'s
+`boot.image`, a `SessionStartImageStep`): `state` is `resolving`, `serving_last_ready`,
+`waiting_for_build`, `building`, `copying_to_region` or `waiting_for_provider`, with
+`image` and `since`. A boot screen names that step. It is `null` outside the `provisioning`
+phase, once ready, and against an API that does not send it.
 
 A host that registers a saved-copy store (`setSavedCopyStore(createSavedCopyStore({ storage,
 userId }))`) gets the kept copy painted before the first frame; the server's copy reconciles
@@ -673,8 +678,8 @@ const threads = await artifact.comments.list(artifactId, { status: 'all' });
 const activity = await artifact.activity(artifactId, { limit: 50 });
 ```
 
-Text anchors carry `version`, `quote`, `prefix`, and `suffix`. `quote`,
-`prefix`, and `suffix` each accept up to 32 UTF-16 code units. Point and region anchors carry a CSS selector,
+Text anchors carry `version`, `quote`, `prefix`, and `suffix`.
+`quote` accepts up to 500 UTF-16 code units, and `prefix` and `suffix` up to 32 each. Point and region anchors carry a CSS selector,
 element-relative fractions, viewport width, and scroll position.
 
 The root exports `listArtifactComments`, `createArtifactComment`,
@@ -706,15 +711,24 @@ Agent and session mentions can include their literal `token` for display without
 
 `useArtifactComments(projectId, artifactId, { status?, enabled? })` returns the
 thread query and `create`, `reply`, `setStatus`, `edit`, `remove`, and `send` writes.
-Each successful write refetches mounted Comments and Activity queries.
+Writes are optimistic: `create`, `reply`, `setStatus`, `edit` and `remove`
+change every loaded thread list at once, and a failed write undoes only its own
+change. A thread or comment that the server has not confirmed yet carries
+`optimistic: true`; a new one also has an `optimistic-` id, an empty author
+(`user_id: ''`) and every `can_*` action false. Hosts render it as pending.
+Mounted Comments and Activity queries refetch after the last concurrent write.
 `useArtifactActivity(projectId, artifactId, { limit?, cursor?, enabled? })`
 returns one activity page. Both hooks poll every 10 seconds while mounted and
-visible. A missing project or Artifact id disables reads.
+visible. A missing project or Artifact id disables reads. Comment reads never
+retry a 4xx and retry another 5xx once.
 
 `getArtifactCommentContext(projectId, artifactId, { version?, agent? })` returns
 the current action permissions, literal mention insertion tokens, eligible
 `send_thread_ids` (at most 100), the total eligible `send_thread_count`, and
-the proposed session or new-session target. Hosts show the bounded batch
+the proposed session or new-session target. When the project's agent manifest
+cannot be read, the context still answers: `agents` is empty, `send_target` is
+null and `agents_unavailable` is true. People keep commenting; an explicit
+`@agent.` mention is refused until the manifest reads again. Hosts show the bounded batch
 and total when more threads remain. A successful Send refreshes the next batch.
 Hosts use
 that response to label Send before it runs. They do not infer the target from

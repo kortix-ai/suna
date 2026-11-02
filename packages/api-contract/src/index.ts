@@ -1779,6 +1779,43 @@ export const SessionStartObservationSchema = z
   .strict();
 export type SessionStartObservation = z.infer<typeof SessionStartObservationSchema>;
 
+/**
+ * Where a provisioning session is in getting its sandbox image. A session
+ * waits on its image only in the states below, and each one says so, so a
+ * client never shows a long bare "provisioning".
+ *
+ * - `resolving`: the server is choosing the image (seconds).
+ * - `serving_last_ready`: the wanted image is not ready; the session boots the
+ *   last ready image of its template (`image`) and the new one builds behind it.
+ * - `waiting_for_build`: no image of this template was ever ready; the session
+ *   waits for a build another request started.
+ * - `building`: no image of this template was ever ready; this request builds it.
+ * - `copying_to_region`: the image is ready and being copied to the session's region.
+ * - `waiting_for_provider`: the provider refused the create while it finishes
+ *   the image (building or replicating); the server retries.
+ */
+export const SESSION_START_IMAGE_STATES = [
+  'resolving',
+  'serving_last_ready',
+  'waiting_for_build',
+  'building',
+  'copying_to_region',
+  'waiting_for_provider',
+] as const;
+export const SessionStartImageStateSchema = z.enum(SESSION_START_IMAGE_STATES);
+export type SessionStartImageState = z.infer<typeof SessionStartImageStateSchema>;
+
+export const SessionStartImageStepSchema = z
+  .object({
+    state: SessionStartImageStateSchema,
+    /** The image this step is about, when known (a provider snapshot name). */
+    image: z.string().nullable(),
+    /** When this step began. */
+    since: z.string(),
+  })
+  .strict();
+export type SessionStartImageStep = z.infer<typeof SessionStartImageStepSchema>;
+
 export const SessionStartBootSchema = z
   .object({
     phase: SessionStartBootPhaseSchema,
@@ -1786,6 +1823,12 @@ export const SessionStartBootSchema = z
     since: z.string().nullable(),
     /** Is a provider operation running for this session right now? */
     actively_starting: z.boolean(),
+    /**
+     * The image step. Present only while `phase` is `provisioning`: null
+     * until provisioning reaches the image, then the step it waits on.
+     * Absent in every other phase, and from an API older than this field.
+     */
+    image: SessionStartImageStepSchema.nullable().optional(),
   })
   .strict();
 export type SessionStartBoot = z.infer<typeof SessionStartBootSchema>;

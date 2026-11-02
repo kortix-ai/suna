@@ -4,6 +4,7 @@ import type { Auth } from './api/auth.ts';
 import type { ApiClient } from './api/client.ts';
 import { kortixFromAuth, withKortixScope } from './api/sdk.ts';
 import type { ProjectSession } from './api/types.ts';
+import { type SessionStartPayload, startPollIntervalMs } from './session-boot.ts';
 
 /**
  * The PRINT-FREE core of "get me a session I can talk to".
@@ -62,10 +63,12 @@ export interface SessionRuntime {
 export interface WaitForSessionReadyOptions {
   /** Poll attempts (default 75). */
   attempts?: number;
-  /** Delay between attempts in ms (default 4000). */
+  /** Delay between attempts in ms (default `startPollIntervalMs()`, 4000). */
   intervalMs?: number;
   /** Test seam for the delay. */
   sleep?: (ms: number) => Promise<void>;
+  /** Called with every `/start` payload, so a caller can print the step (`startProgressTracker`). */
+  onProgress?: (start: SessionStartPayload) => void;
 }
 
 const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -83,23 +86,19 @@ export async function waitForSessionReady(
   options: WaitForSessionReadyOptions = {},
 ): Promise<void> {
   const attempts = options.attempts ?? 75;
-  const intervalMs = options.intervalMs ?? 4000;
+  const intervalMs = options.intervalMs ?? startPollIntervalMs();
   const sleep = options.sleep ?? defaultSleep;
 
   for (let i = 0; i < attempts; i += 1) {
     if (i > 0) await sleep(intervalMs);
-    let stage: string;
-    let reason: string | undefined;
+    let start: SessionStartPayload;
     try {
-      const start = await client.post<{
-        stage: 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
-        reason?: string;
-      }>(`/projects/${projectId}/sessions/${sessionId}/start`, {});
-      stage = start.stage;
-      reason = start.reason;
+      start = await client.post<SessionStartPayload>(`/projects/${projectId}/sessions/${sessionId}/start`, {});
     } catch (err) {
       throw new SessionRuntimeError('api', (err as Error).message, err);
     }
+    options.onProgress?.(start);
+    const { stage, reason } = start;
     if (stage === 'ready') return;
     // A just-restarted session can report `stopped` for a few polls before the
     // provisioner picks it up — only treat it as terminal once that grace is

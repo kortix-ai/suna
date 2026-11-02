@@ -33,7 +33,13 @@ function install() {
   let drawn: ArtifactAnnotationPin[] = [];
   let active: number | null = null;
   let drag: { element: number; start: { x: number; y: number }; pointer: number } | null = null;
-  let lastSelection = '';
+  // The selection the parent shows a Comment chip for, and one that Escape dismissed: it is not
+  // offered again until it changes.
+  let offered = '';
+  let dismissed = '';
+  // The parent heard an offer since the last withdrawal by the person. A scroll can withdraw the
+  // offer first, so the next press reports a new gesture even with nothing offered at that moment.
+  let heard = false;
   let capture: { request: number; revision: number; abort: AbortController } | null = null;
   const scroll = () => ({ x: Math.max(0, window.scrollX), y: Math.max(0, window.scrollY) });
   const send = (message: ArtifactAnnotationFrameMessage) => {
@@ -63,7 +69,7 @@ function install() {
         marks.append(mark);
       }
       const button = document.createElement('button'); button.type = 'button'; button.textContent = String(pin.n);
-      button.setAttribute('aria-label', String(pin.n));
+      button.setAttribute('aria-label', pin.label ?? String(pin.n));
       button.style.left = `${first.x - window.scrollX - 20}px`; button.style.top = `${first.y - window.scrollY - 20}px`;
       if (pin.n === active) button.dataset.active = '';
       const focusPin = (event: Event) => { event.preventDefault(); event.stopPropagation(); send({ kortix: 'annotate', v: 1, type: 'focus', n: pin.n }); };
@@ -73,19 +79,50 @@ function install() {
       if (focus && pin.n === active) window.scrollTo({ left: Math.max(0, first.x - window.innerWidth / 2), top: Math.max(0, first.y - window.innerHeight / 2), behavior: 'instant' });
     }
   };
+  // The person withdrew the offer: the selection is gone, or a press starts a new one. The parent
+  // also forgets a selection it dismissed itself.
+  const withdraw = () => {
+    offered = '';
+    heard = false;
+    send({ kortix: 'annotate', v: 1, type: 'selection', state: 'none' });
+  };
+  // Offer the page's text selection to the parent: its anchor and its box, never an action.
+  // `moved`: the layout changed, so an offered selection is sent again with its new box.
+  const offer = (moved = false) => {
+    if (mode !== 'text' || dirty) return;
+    const selected = window.getSelection();
+    const anchor = annotationSelection(selected, inventory);
+    if (!anchor) { dismissed = ''; if (heard) withdraw(); return; }
+    const key = JSON.stringify(anchor);
+    if (key === dismissed || (key === offered && !moved)) return;
+    offered = key;
+    heard = true;
+    const box = selected?.rangeCount === 1 ? selected.getRangeAt(0).getBoundingClientRect?.() : undefined;
+    const rect = box ? annotationRect(box, window.scrollX, window.scrollY) : null;
+    const geometry = rect ? { rect } : {};
+    if (anchor === 'too_long') send({ kortix: 'annotate', v: 1, type: 'selection', state: 'too_long', ...geometry });
+    else send({ kortix: 'annotate', v: 1, type: 'candidate', revision, anchor, ...geometry });
+  };
   const report = () => {
     timer = undefined;
     inventory = annotationInventory(document); revision = revision === 2_147_483_647 ? 1 : revision + 1;
-    dirty = false; lastSelection = ''; drawn = []; marks.replaceChildren(); hover.hidden = true; drag = null;
+    dirty = false; drawn = []; marks.replaceChildren(); hover.hidden = true; drag = null;
     const viewport = { width: window.innerWidth, height: window.innerHeight, scroll: scroll() };
     const chunks = annotationLayoutChunks(inventory, revision, viewport);
     inventory.complete = chunks.every(chunk => chunk.complete);
     for (const chunk of chunks) send(chunk);
+    offer(true);
   };
   const schedule = () => {
     capture?.abort.abort('stale');
     dirty = true; hover.hidden = true; drag = null;
     if (timer === undefined) timer = setTimeout(() => requestAnimationFrame(report), 100);
+  };
+  // Scroll and resize move the selection: hide the chip now; the next report offers it at its new box.
+  // `moved` tells the parent the person did nothing, so a selection it dismissed stays dismissed.
+  const moved = () => {
+    if (offered) { offered = ''; send({ kortix: 'annotate', v: 1, type: 'selection', state: 'none', moved: true }); }
+    schedule();
   };
   const owned = (event: Event) => event.composedPath().includes(overlay);
   const targetIndex = (event: Event): number => {
@@ -98,20 +135,40 @@ function install() {
   const point = (event: PointerEvent) => ({ x: event.clientX + window.scrollX, y: event.clientY + window.scrollY });
   const stop = (event: Event) => { event.preventDefault(); event.stopImmediatePropagation(); };
   const selection = (event: Event) => {
-    if (mode !== 'text' || dirty || owned(event)) return;
-    const anchor = annotationSelection(window.getSelection(), inventory);
-    if (!anchor) { lastSelection = ''; return; }
-    const key = JSON.stringify(anchor);
-    if (key === lastSelection) return;
-    lastSelection = key;
-    send({ kortix: 'annotate', v: 1, type: 'candidate', revision, anchor });
+    if (!owned(event)) offer();
+  };
+  // A press starts a new selection: the offered one is gone, and a dismissed one may be offered
+  // again. The parent hears "none" for either, so it also forgets a selection it dismissed itself.
+  const press = (event: Event) => {
+    if (owned(event) || (!heard && !dismissed)) return;
+    dismissed = '';
+    withdraw();
+  };
+  // Escape and the comment shortcut reach the parent only while annotation is on. The shortcut
+  // needs an offered selection, and it is the one key the bridge consumes.
+  const key = (event: KeyboardEvent) => {
+    if (mode === 'off') return;
+    if (event.key === 'Escape') {
+      if (mode === 'text') {
+        if (!offered) return;
+        dismissed = offered; offered = '';
+      }
+      send({ kortix: 'annotate', v: 1, type: 'key', key: 'escape' });
+    } else if (mode === 'text' && offered && event.code === 'KeyM' && event.altKey && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
+      event.preventDefault();
+      send({ kortix: 'annotate', v: 1, type: 'key', key: 'comment' });
+    }
   };
 
   window.addEventListener('message', event => {
     if (event.source !== window.parent) return;
     const message = parseArtifactAnnotationHostMessage(event.data);
     if (!message) return;
-    if (message.type === 'mode') { mode = message.mode; hover.hidden = true; drag = null; lastSelection = ''; }
+    if (message.type === 'mode') {
+      // Comment mode replaces the selection offer. 'off' also comes while a layout loads: the offer stays.
+      if (message.mode === 'comment') { offered = ''; dismissed = ''; heard = false; }
+      mode = message.mode; hover.hidden = true; drag = null;
+    }
     else if (message.type === 'request_layout') schedule();
     else if (message.type === "cancel_capture") {
       if (capture?.request === message.request)
@@ -196,6 +253,8 @@ function install() {
   });
   document.addEventListener('mouseup', selection);
   document.addEventListener('keyup', selection);
+  document.addEventListener('keydown', key, true);
+  document.addEventListener('mousedown', press, true);
   document.addEventListener('pointerdown', event => {
     if (mode !== 'comment' || event.button !== 0 || owned(event)) return;
     const element = targetIndex(event);
@@ -218,8 +277,8 @@ function install() {
   }, true);
   document.addEventListener('pointercancel', () => { drag = null; hover.hidden = true; }, true);
   document.addEventListener('click', event => { if (mode === 'comment' && !owned(event)) stop(event); }, true);
-  window.addEventListener('scroll', schedule, { passive: true });
-  window.addEventListener('resize', schedule, { passive: true });
+  window.addEventListener('scroll', moved, { passive: true });
+  window.addEventListener('resize', moved, { passive: true });
   const resourceLayout = (event: Event) => {
     if (event.target instanceof Element && !owned(event)) schedule();
   };

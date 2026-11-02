@@ -1284,5 +1284,16 @@
     "retryHour_other": "Réessayez dans {{count}} heures.",
     "unavailable": "Image indisponible",
     "details": "Détails de l'image"
+  },
+  "sessionImage": {
+    "title": "Préparation de l’image du sandbox",
+    "states": {
+      "resolving": "Choix de l’image pour cette session.",
+      "serving_last_ready": "Démarrage à partir de la dernière image prête. La nouvelle se construit en arrière-plan.",
+      "waiting_for_build": "La première image de ce projet est en cours de construction. La session démarre dès qu’elle est prête.",
+      "building": "Construction de la première image de ce projet. Cela n’arrive qu’une fois et prend quelques minutes.",
+      "copying_to_region": "Copie de l’image vers la région de cette session.",
+      "waiting_for_provider": "L’image est en cours de finalisation. La session démarre dès qu’elle est prête."
+    }
   }
 }

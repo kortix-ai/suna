@@ -33,14 +33,20 @@ for (const locale of locales)
       onError: (error) => errors.push(error.message),
     });
     for (const count of [1, 2, 5]) {
-      expect(t('artifacts.discussion.sendToAgent', { count })).toContain(String(count));
+      const send = t('artifacts.discussion.sendThreads', { count, agent: 'Writer' });
+      expect(send).toContain(String(count));
+      expect(send).toContain('Writer');
       expect(t('artifacts.discussion.retrySend', { count })).toContain(String(count));
       expect(t('artifacts.discussion.unshareComments', { count })).toContain(String(count));
+      expect(t('artifacts.discussion.moreReplies', { count })).toContain(String(count));
+      expect(t('artifacts.discussion.newComments', { count })).toContain(String(count));
     }
     const batch = t('artifacts.discussion.sendBatchHint', { count: 100, total: 101 });
     expect(batch).toContain('100');
     expect(batch).toContain('101');
-    expect(t('artifacts.discussion.sendNew', { agent: 'Writer' })).toContain('Writer');
+    expect(t('artifacts.discussion.sentToAgent', { agent: 'Writer' })).toContain('Writer');
+    expect(t('artifacts.discussion.resolvedBy', { name: 'Dana' })).toContain('Dana');
+    expect(t('artifacts.discussion.newCommentFrom', { name: 'Dana' })).toContain('Dana');
     expect(t('artifacts.discussion.annotationLoading')).toBe(copy.annotationLoading);
     const unavailable = t('artifacts.discussion.annotationUnavailable', {
       refresh: 'REFRESH_TEST',

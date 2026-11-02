@@ -34,6 +34,7 @@ import {
   attemptArchivedBoxRemoval,
 } from './archived-box-removal';
 import { applyStoppedState } from './sandbox-state-sync';
+import { recoverRemovedParkedRuntime } from './parked-runtime-verification';
 import { transitionSandbox, transitionSession } from '../session-lifecycle/status-transitions';
 
 /** A row with no lease that has not changed for this long has no live owner. */
@@ -174,7 +175,11 @@ export async function convergeStuckProvisioningRuntimes(now = new Date()): Promi
       }
 
       if (action === 'preserve-lost') {
-        await preserveEstablishedRuntime(row, 'provisioning_runtime_removed', 'provider_removed', now);
+        // Platinum's removed status also covers recoverable failed starts and
+        // backed-up identities. Use the shared recovery fence before declaring loss.
+        const { outcome, row: lossRow } = await recoverRemovedParkedRuntime(row, externalId, now);
+        if (outcome !== 'preserve-lost') continue;
+        await preserveEstablishedRuntime(lossRow, 'provisioning_runtime_removed', 'provider_removed', now);
         out.lost += 1;
         continue;
       }

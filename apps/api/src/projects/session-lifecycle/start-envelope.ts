@@ -28,12 +28,14 @@
  * `retriable` stays DERIVED per call. Nothing here reads a persisted verdict.
  */
 
-import type {
-  SessionStartAction,
-  SessionStartBoot,
-  SessionStartBootPhase,
-  SessionStartObservation,
-  SessionStartResult,
+import {
+  SessionStartImageStepSchema,
+  type SessionStartAction,
+  type SessionStartBoot,
+  type SessionStartBootPhase,
+  type SessionStartImageStep,
+  type SessionStartObservation,
+  type SessionStartResult,
 } from '@kortix/api-contract';
 import { runtimeWakeInProgress } from './runtime-wake-fence';
 
@@ -185,7 +187,22 @@ export function deriveBoot(
             ? firstTimestamp(metadata, 'initUpdatedAt', 'initStartedAt')
             : firstTimestamp(metadata, 'runtimeStartFailedAt', 'runtimeWakeFailedAt', 'stoppedAt');
 
-  return { phase, since, actively_starting: activelyStarting };
+  return {
+    phase,
+    since,
+    actively_starting: activelyStarting,
+    ...(phase === 'provisioning' ? { image: imageStepOf(metadata) } : {}),
+  };
+}
+
+/**
+ * The image step provisioning recorded (`metadata.imageStep`, written by
+ * `imageStepReporter` in session-sandbox.ts), or null. A malformed value is
+ * null, never a guess.
+ */
+export function imageStepOf(metadata: Record<string, unknown>): SessionStartImageStep | null {
+  const parsed = SessionStartImageStepSchema.safeParse(metadata.imageStep);
+  return parsed.success ? parsed.data : null;
 }
 
 /**

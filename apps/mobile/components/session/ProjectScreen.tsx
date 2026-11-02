@@ -245,7 +245,7 @@ export function ProjectScreen() {
     setHomeKey((key) => key + 1);
   }, []);
   const {
-    connectingProjectSessionId, connectError, restartingSession,
+    connectingProjectSessionId, connectError, connectImage, restartingSession,
     connectingRow, connectingFirstPrompt, connectingTitle, activeProjectSession,
     openedThreadRef, openedProjectSessionIdsRef, pendingThreadFocusRef, returnThreadRef,
     isHomeRef, ensuringRef, navigateToSession, goHome, refreshSessionLists,
@@ -709,6 +709,7 @@ export function ProjectScreen() {
               firstMessage={connectingFirstPrompt?.text}
               firstFiles={connectingFirstPrompt?.files}
               error={connectError}
+              imageStep={connectImage}
               onCancel={handleCancelConnect}
               onRestart={handleRestartSession}
               restarting={restartingSession}

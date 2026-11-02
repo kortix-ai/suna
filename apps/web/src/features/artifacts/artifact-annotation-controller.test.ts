@@ -405,3 +405,215 @@ test('resolved region geometry remains private and clears with a frame reset', (
   expect(regions).toEqual({});
   controller.dispose();
 });
+
+/** A controller with the selection, key and pin callbacks recorded, on a page scrolled 200 px. */
+function selectionFixture(threads: ArtifactCommentThread[] = []) {
+  const sent: any[] = [];
+  /** [callback, value], plus 'moved' for a selection withdrawn by a page layout. */
+  const events: ([string, unknown] | [string, unknown, 'moved'])[] = [];
+  const config = {
+    version: 'immutable-commit',
+    canComment: true,
+    mode: 'text' as 'text' | 'comment',
+    threads,
+    focusedThreadId: null,
+    focusRevision: 0,
+    pinLabel: (n: number) => `Comment ${n}`,
+  };
+  const controller = createArtifactAnnotationController(
+    {
+      post: (message) => {
+        sent.push(message);
+        return true;
+      },
+      onThreads() {},
+      onFocus() {},
+      onCandidate: (value) => events.push(['candidate', value]),
+      onSelection: (value, moved) => {
+        events.push(moved ? ['selection', value, 'moved'] : ['selection', value]);
+      },
+      onKey: (value) => events.push(['key', value]),
+      onPins: (value) => events.push(['pins', [...value]]),
+    },
+    () => () => {},
+  );
+  controller.update(config);
+  const scrolled = { ...layout, viewport: { ...layout.viewport, scroll: { x: 0, y: 200 } } };
+  controller.receive(scrolled as never);
+  events.length = 0;
+  return { controller, config, sent, events };
+}
+const envelope = { kortix: 'annotate', v: 1 } as const;
+const textCandidate = { type: 'text', quote: 'quote', prefix: 'Page ', suffix: '' } as const;
+
+test('a text selection is only an offer with viewport geometry; a pin or region still asks to comment', () => {
+  const f = selectionFixture();
+  const rect = { x: 40, y: 250, width: 120, height: 18 };
+  f.controller.receive({
+    ...envelope,
+    type: 'candidate',
+    revision: 1,
+    anchor: textCandidate,
+    rect,
+  });
+  // The page box is in document coordinates: the parent subtracts the page's scroll.
+  expect(f.events).toEqual([
+    ['selection', { state: 'candidate', anchor, rect: { x: 40, y: 50, width: 120, height: 18 } }],
+  ]);
+  f.controller.receive({ ...envelope, type: 'candidate', revision: 1, anchor: textCandidate });
+  expect(f.events.at(-1)).toEqual(['selection', { state: 'candidate', anchor, rect: null }]);
+  const point = {
+    type: 'point',
+    selector: '#title',
+    snippet: 'Page quote',
+    viewport_width: 800,
+    scroll: { x: 0, y: 200 },
+    offset: { x: 0.5, y: 0.5 },
+  } as const;
+  // The bridge places pins only in pin mode: a pin posted in text mode is forged.
+  f.events.length = 0;
+  f.controller.receive({ ...envelope, type: 'candidate', revision: 1, anchor: point, rect });
+  expect(f.events).toEqual([]);
+  f.controller.update({ ...f.config, mode: 'comment' });
+  f.controller.receive({ ...envelope, type: 'candidate', revision: 1, anchor: point, rect });
+  expect(f.events.at(-1)).toEqual(['candidate', { ...point, version: 'immutable-commit' }]);
+  // Comment mode takes no text offers.
+  f.events.length = 0;
+  f.controller.receive({ ...envelope, type: 'candidate', revision: 1, anchor: textCandidate });
+  expect(f.events).toEqual([]);
+});
+
+test('the page withdraws an offer, reports a too-long selection, and forwards keys only with permission', () => {
+  const f = selectionFixture();
+  const tooLong = {
+    ...envelope,
+    type: 'selection',
+    state: 'too_long',
+    rect: { x: 0, y: 210, width: 50, height: 10 },
+  } as const;
+  f.controller.receive({ ...envelope, type: 'selection', state: 'none' });
+  f.controller.receive(tooLong);
+  f.controller.receive({ ...envelope, type: 'key', key: 'comment' });
+  f.controller.receive({ ...envelope, type: 'key', key: 'escape' });
+  expect(f.events).toEqual([
+    ['selection', null],
+    ['selection', { state: 'too_long', rect: { x: 0, y: 10, width: 50, height: 10 } }],
+    ['key', 'comment'],
+    ['key', 'escape'],
+  ]);
+  f.controller.update({ ...f.config, canComment: false });
+  f.events.length = 0;
+  f.controller.receive({ ...envelope, type: 'key', key: 'comment' });
+  f.controller.receive(tooLong);
+  expect(f.events.filter(([kind]) => kind !== 'pins')).toEqual([['selection', null]]);
+});
+
+test('a page key counts only where the bridge sends one, and never while the parent draws', () => {
+  const f = selectionFixture();
+  const press = (key: 'escape' | 'comment') =>
+    f.controller.receive({ ...envelope, type: 'key', key });
+  const keys = () => f.events.filter(([kind]) => kind === 'key').map(([, key]) => key);
+  // Text mode without an offered selection: the bridge sends neither key, so both are forged.
+  press('escape');
+  press('comment');
+  expect(keys()).toEqual([]);
+  f.controller.receive({ ...envelope, type: 'candidate', revision: 1, anchor: textCandidate });
+  press('escape');
+  press('comment');
+  expect(keys()).toEqual(['escape', 'comment']);
+  // Draw mode: the drawing layer covers the page and owns Escape. A page key cannot reach it.
+  f.events.length = 0;
+  f.controller.update({ ...f.config, drawing: true });
+  press('escape');
+  press('comment');
+  expect(keys()).toEqual([]);
+  // Pin mode: Escape leaves it. The shortcut has no selection there.
+  f.controller.update({ ...f.config, mode: 'comment' });
+  press('escape');
+  press('comment');
+  expect(keys()).toEqual(['escape']);
+  // A withdrawn offer takes its keys with it.
+  f.events.length = 0;
+  f.controller.update(f.config);
+  f.controller.receive({ ...envelope, type: 'candidate', revision: 1, anchor: textCandidate });
+  f.controller.receive({ ...envelope, type: 'selection', state: 'none' });
+  press('escape');
+  press('comment');
+  expect(keys()).toEqual([]);
+});
+
+test('an offer the page withdraws for a scroll or resize says so; one withdrawn by a gesture does not', () => {
+  const f = selectionFixture();
+  f.controller.receive({ ...envelope, type: 'selection', state: 'none', moved: true });
+  f.controller.receive({ ...envelope, type: 'selection', state: 'none' });
+  expect(f.events).toEqual([
+    ['selection', null, 'moved'],
+    ['selection', null],
+  ]);
+});
+
+test('a reset, a new version or a mode change withdraws the offer', () => {
+  const f = selectionFixture();
+  f.controller.reset();
+  f.controller.update({ ...f.config, mode: 'comment' });
+  f.controller.update({ ...f.config, mode: 'comment', version: 'next-commit' });
+  expect(f.events.filter(([kind]) => kind === 'selection')).toEqual([
+    ['selection', null],
+    ['selection', null],
+    ['selection', null],
+  ]);
+});
+
+test('pins carry a numbered label and the parent learns each thread pin number', () => {
+  const thread = {
+    thread_id: 'thread-a',
+    anchor,
+    status: 'open',
+    comments: [{ body: 'private body', deleted_at: null }],
+  } as ArtifactCommentThread;
+  const f = selectionFixture([thread]);
+  f.controller.update({ ...f.config, threads: [thread] });
+  const draw = f.sent.findLast((message) => message.type === 'draw');
+  expect(draw.pins).toEqual([
+    { n: 1, rects: [], ranges: [{ n: 0, start: 5, end: 10 }], label: 'Comment 1' },
+  ]);
+  expect(JSON.stringify(f.sent)).not.toContain('private');
+  expect(f.events.findLast(([kind]) => kind === 'pins')).toEqual(['pins', [['thread-a', 1]]]);
+  // A label that does not name the number, or runs over 64 units, is dropped: the pin keeps its number.
+  for (const label of [() => 'private body', (n: number) => `${n} ${'x'.repeat(64)}`]) {
+    f.controller.update({ ...f.config, threads: [thread], pinLabel: label });
+    const next = f.sent.findLast((message) => message.type === 'draw');
+    expect(next.pins).toEqual([{ n: 1, rects: [], ranges: [{ n: 0, start: 5, end: 10 }] }]);
+  }
+  f.controller.reset();
+  expect(f.events.findLast(([kind]) => kind === 'pins')).toEqual(['pins', []]);
+});
+
+test('a saved thread that replaces its optimistic copy takes the number the copy held', () => {
+  const thread = (id: string) =>
+    ({
+      thread_id: id,
+      anchor,
+      status: 'open',
+      comments: [{ deleted_at: null }],
+    }) as ArtifactCommentThread;
+  const f = selectionFixture();
+  const kept = thread('thread-kept');
+  f.controller.update({ ...f.config, threads: [kept, thread('optimistic-thread-1')] });
+  expect(f.events.findLast(([kind]) => kind === 'pins')).toEqual([
+    'pins',
+    [
+      ['thread-kept', 1],
+      ['optimistic-thread-1', 2],
+    ],
+  ]);
+  f.controller.update({ ...f.config, threads: [thread('thread-saved'), kept] });
+  // The kept thread keeps 1 although it moved; the saved thread takes the freed 2.
+  expect(f.events.findLast(([kind]) => kind === 'pins')).toEqual([
+    'pins',
+    [
+      ['thread-saved', 2],
+      ['thread-kept', 1],
+    ],
+  ]);
+});

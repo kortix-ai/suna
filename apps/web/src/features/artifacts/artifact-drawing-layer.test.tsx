@@ -43,7 +43,8 @@ function html(value = thread, width = 800, focusedThreadId: string | null = null
 test('stored marks project relative to the resolved region and current scroll', () => {
   const result = html();
   expect(result).toContain('points="110,170 190,230"');
-  expect(result).toContain('stroke="red"');
+  // The stored enum paints as the brand accent, never the CSS keyword.
+  expect(result).toContain('stroke="var(--kortix-red)"');
   expect(result).toContain('stroke-width="2"');
   expect(result).toContain('pointer-events-none');
 });
@@ -71,6 +72,16 @@ test('a pen tap remains a visible dot after its duplicate-point API roundtrip', 
     comments: [{ ...thread.comments[0]!, marks: [{ ...mark, points: [point, point] }] }],
   };
   const result = html(value);
-  expect(result).toContain('<circle cx="110" cy="170" r="1" fill="red"');
+  expect(result).toContain('<circle cx="110" cy="170" r="1" fill="var(--kortix-red)"');
   expect(result).not.toContain('<polyline');
+});
+
+test('black and blue marks paint as the brand ink and kortix-blue', () => {
+  const value = (color: string) => ({
+    ...thread,
+    comments: [{ ...thread.comments[0]!, marks: [{ ...mark, color }] }],
+  });
+  // Ink stays ink on the page in both app themes: the page keeps its own colors.
+  expect(html(value('black'))).toContain('stroke="#1f1f1f"');
+  expect(html(value('blue'))).toContain('stroke="var(--kortix-blue)"');
 });

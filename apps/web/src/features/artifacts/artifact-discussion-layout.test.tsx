@@ -40,12 +40,17 @@ browser.matchMedia = (query: string) => {
   return media;
 };
 let Layout: typeof import('./artifact-discussion-layout').ArtifactDiscussionLayout;
+let usePanel: typeof import('./artifact-discussion-layout').useArtifactDiscussionPanel;
+let minSize: typeof import('./artifact-discussion-layout').discussionPanelMinSize;
 const host = browser.document.createElement('div');
 browser.document.body.append(host);
 const root = createRoot(host as unknown as HTMLElement);
 const closeChanges: boolean[] = [];
 beforeAll(async () => {
-  Layout = (await import('./artifact-discussion-layout')).ArtifactDiscussionLayout;
+  const layout = await import('./artifact-discussion-layout');
+  Layout = layout.ArtifactDiscussionLayout;
+  usePanel = layout.useArtifactDiscussionPanel;
+  minSize = layout.discussionPanelMinSize;
 });
 afterEach(async () => {
   await act(async () => root.render(null));
@@ -59,12 +64,19 @@ afterAll(async () => {
     else Reflect.deleteProperty(globalThis, key);
   }
 });
-const discussion = (
-  <div data-artifact-discussion-header>
-    <button type="button">Comments</button>
-    <button type="button">Activity</button>
-  </div>
-);
+function Discussion() {
+  const panel = usePanel();
+  return (
+    <div data-artifact-discussion-header data-mode={panel.mode}>
+      <button type="button">Comments</button>
+      {panel.close ? (
+        <button type="button" onClick={panel.close}>
+          {panel.closeLabel}
+        </button>
+      ) : null}
+    </div>
+  );
+}
 async function withDiscussion(embedded: boolean) {
   await act(async () =>
     root.render(
@@ -75,46 +87,53 @@ async function withDiscussion(embedded: boolean) {
         title="Discussion"
         closeLabel="Close"
         resizeLabel="Resize discussion"
-        discussion={discussion}
+        discussion={<Discussion />}
       >
-        <p>Artifact</p>
+        <p data-artifact>Artifact</p>
       </Layout>,
     ),
   );
 }
 
-test('embedded discussion reserves a close-button lane only in its overlay header and keeps native Close working', async () => {
+test('an embedded discussion is a non-modal sheet: the artifact stays interactive, Close and Escape close it', async () => {
   await withDiscussion(true);
-  const header = browser.document.querySelector(
-    '[role="dialog"] [data-artifact-discussion-header]',
-  );
-  expect(header).not.toBeNull();
-  expect(
-    header!.parentElement!.classList.contains('[&_[data-artifact-discussion-header]]:pr-14'),
-  ).toBe(true);
-  const close = [...browser.document.querySelectorAll('button')].find(
-    (button) => button.textContent === 'Close',
-  );
+  expect(browser.document.querySelector('[role="dialog"]')).toBeNull();
+  const panel = host.querySelector('[data-slot="split-sheet-content"]')!;
+  expect(panel.getAttribute('aria-label')).toBe('Discussion');
+  expect(panel.querySelector('[data-artifact-discussion-header]')).not.toBeNull();
+  const artifact = host.querySelector('[data-artifact]')!;
+  expect(artifact.closest('[inert]')).toBeNull();
+  expect(artifact.closest('[aria-hidden="true"]')).toBeNull();
+  const close = [...host.querySelectorAll('button')].find((button) => button.textContent === 'Close');
   expect(close).toBeDefined();
   await act(async () => close!.click());
   expect(closeChanges).toEqual([false]);
+  await act(async () => {
+    panel
+      .querySelector('button')!
+      .dispatchEvent(new browser.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  });
+  expect(closeChanges).toEqual([false, false]);
 });
 
-test('a narrow standalone discussion uses the same overlay header reservation', async () => {
+test('a narrow standalone discussion uses the same sheet', async () => {
   narrow = true;
   await withDiscussion(false);
-  const header = browser.document.querySelector(
-    '[role="dialog"] [data-artifact-discussion-header]',
-  );
-  expect(header).not.toBeNull();
-  expect(
-    header!.parentElement!.classList.contains('[&_[data-artifact-discussion-header]]:pr-14'),
-  ).toBe(true);
+  expect(host.querySelector('[data-slot="split-sheet-content"] [data-mode="split"]')).not.toBeNull();
 });
 
-test('a wide docked discussion retains its full-width tabs without overlay-only padding', async () => {
+test('a wide docked discussion has no close action inside it and no sheet', async () => {
   await withDiscussion(false);
-  expect(browser.document.querySelector('[role="dialog"]')).toBeNull();
-  expect(host.querySelector('aside [data-artifact-discussion-header]')).not.toBeNull();
-  expect(host.innerHTML).not.toContain('[&amp;_[data-artifact-discussion-header]]:pr-14');
+  expect(host.querySelector('[data-slot="split-sheet-content"]')).toBeNull();
+  expect(host.querySelector('aside [data-mode="docked"]')).not.toBeNull();
+  expect([...host.querySelectorAll('button')].some((button) => button.textContent === 'Close')).toBe(
+    false,
+  );
+});
+
+test('the docked panel keeps 320 px within its 22–45% bounds', () => {
+  expect(minSize(0)).toBe(22);
+  expect(minSize(1440)).toBeCloseTo(22.22, 2);
+  expect(minSize(1024)).toBe(31.25);
+  expect(minSize(600)).toBe(45);
 });

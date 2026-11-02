@@ -165,6 +165,7 @@ export function registerArtifactCommentRoutes(): void {
       can_comment: z.boolean(), can_moderate: z.boolean(), comment_count: z.number().int(),
       people: z.array(z.object({ user_id: z.string(), name: z.string(), avatar_url: nullableId, token: z.string() })),
       agents: z.array(z.object({ agent_name: z.string(), name: z.string(), session_id: nullableId, token: z.string() })),
+      agents_unavailable: z.boolean().openapi({ description: 'True when the agent manifest could not be read: `agents` is empty and `send_target` is null, while people can still comment.' }),
       send_target: z.object({ kind: z.enum(['session', 'new']), session_id: nullableId, agent_name: z.string() }).nullable(),
       send_thread_ids: z.array(z.string()).max(ARTIFACT_COMMENT_SEND_LIMIT), send_thread_count: z.number().int().nonnegative(), version: z.object({ commit_id: nullableId, entry_version: nullableId }),
     }), 'The current or historical comment context'), ...responses },

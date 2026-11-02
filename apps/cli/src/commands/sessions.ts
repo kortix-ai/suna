@@ -40,6 +40,7 @@ import {
   sessionModelPin,
 } from '@kortix/sdk';
 import type { ProjectSession, ProjectSummary } from '../api/types.ts';
+import { type SessionStartPayload, startPollIntervalMs, startProgressTracker } from '../session-boot.ts';
 import { C, help, pad, status } from '../style.ts';
 import { sessionWebUrl } from '../web-url.ts';
 import { openInBrowser } from '../browser.ts';
@@ -117,7 +118,10 @@ Subcommands:
                                     --wait blocks until the runtime is
                                     ready, not until the prompt's turn
                                     ends, and exits 1 when that turn has
-                                    already failed. To wait for the turn,
+                                    already failed. While it waits, stderr
+                                    names each step once, e.g.
+                                    "provisioning · building the first
+                                    image for this project (0:42)". To wait for the turn,
                                     run kortix sessions wait-for <id> (exit
                                     1 when the turn fails). --json prints
                                     the session object (capture session_id
@@ -728,19 +732,20 @@ async function sessionsNew(
   // Row status alone can say "running" before the runtime is actually ready.
   const awaitReadiness = async (): Promise<boolean> => {
     process.stderr.write(`Session ${created.session_id}: created (${created.status}); waiting for readiness…\n`);
-    let previousStage = '';
+    // One line per change of stage or image step: `provisioning · building
+    // the first image for this project (0:42)` (session-boot.ts).
+    const progress = startProgressTracker();
+    const intervalMs = startPollIntervalMs();
     let ready = false;
     for (let i = 0; i < 75; i += 1) {
-      if (i > 0) await new Promise((r) => setTimeout(r, 4000));
+      if (i > 0) await new Promise((r) => setTimeout(r, intervalMs));
       try {
-        const start = await ctx.client.post<{
-          stage: 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
-          reason?: string;
-        }>(`/projects/${ctx.projectId}/sessions/${created.session_id}/start`, {});
-        if (start.stage !== previousStage) {
-          process.stderr.write(`Session ${created.session_id}: ${start.stage}\n`);
-          previousStage = start.stage;
-        }
+        const start = await ctx.client.post<SessionStartPayload>(
+          `/projects/${ctx.projectId}/sessions/${created.session_id}/start`,
+          {},
+        );
+        const line = progress(start);
+        if (line) process.stderr.write(`Session ${created.session_id}: ${line}\n`);
         created = await ctx.client.get<ProjectSession>(
           `/projects/${ctx.projectId}/sessions/${created.session_id}`,
         );
