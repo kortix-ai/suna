@@ -129,17 +129,31 @@ function claudeCode(gateway: Gateway, inflight: InflightBudget, recordOutcome: (
  * project's servable set (~80KB), fetched by sandboxes on every boot so their
  * `kortix` provider matches the web picker. See wire.ts.
  */
-export function registerRoutes(app: Hono, gateway: Gateway, inflight: InflightBudget, recordOutcome: (status: number) => void) {
-  const chat = inference(inflight, recordOutcome, 'chat', gateway.chatCompletions);
-  const messages = inference(inflight, recordOutcome, 'messages', gateway.messages);
-  const responses = inference(inflight, recordOutcome, 'responses', gateway.responses);
+export function registerRoutes(
+  app: Hono,
+  gateway: Gateway,
+  inflight: InflightBudget,
+  recordOutcome: (status: number) => void,
+  rateLimit: (request: Request) => Response | null,
+) {
+  // Every model route checks the per-credential limit first (token-rate-limit.ts).
+  const limited = <C extends { req: { raw: Request } }>(handler: (c: C) => Promise<Response>) =>
+    async (c: C) => rateLimit(c.req.raw) ?? handler(c);
+  const chat = limited(inference(inflight, recordOutcome, 'chat', gateway.chatCompletions));
+  const messages = limited(inference(inflight, recordOutcome, 'messages', gateway.messages));
+  const responses = limited(inference(inflight, recordOutcome, 'responses', gateway.responses));
   // The project's ChatGPT login generates and edits images (pipeline/images.ts).
   // A thrown error gets the Responses-style 503 envelope.
   const images = (operation: 'generations' | 'edits') =>
-    inference(inflight, recordOutcome, 'images', (request) => gateway.images({ ...request, operation }));
+    limited(inference(inflight, recordOutcome, 'images', (request) => gateway.images({ ...request, operation })));
   const generations = images('generations');
   const edits = images('edits');
-  const claude = claudeCode(gateway, inflight, recordOutcome);
+  const claude = limited(claudeCode(gateway, inflight, recordOutcome));
+  const models = limited((c: { req: { raw: Request; header: (name: string) => string | undefined; query: (name: string) => string | undefined } }) =>
+    gateway.listModels(c.req.header('authorization'), {
+      managedOnly: c.req.query('scope') === 'managed',
+      scope: c.req.query('scope') === 'picker' ? 'picker' : undefined,
+    }).then(cloudflareSafe));
   for (const prefix of ['/', '/v1/', '/v1/llm/', '/v1/openai/']) {
     app.all(prefix + 'claude-code/*', claude);
     app.post(prefix + 'chat/completions', chat);
@@ -147,9 +161,6 @@ export function registerRoutes(app: Hono, gateway: Gateway, inflight: InflightBu
     app.post(prefix + 'responses', responses);
     app.post(prefix + 'images/generations', generations);
     app.post(prefix + 'images/edits', edits);
-    app.get(prefix + 'models', (c) => gateway.listModels(c.req.header('authorization'), {
-      managedOnly: c.req.query('scope') === 'managed',
-      scope: c.req.query('scope') === 'picker' ? 'picker' : undefined,
-    }).then(cloudflareSafe));
+    app.get(prefix + 'models', models);
   }
 }

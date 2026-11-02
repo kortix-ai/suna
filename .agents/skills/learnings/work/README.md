@@ -18,6 +18,7 @@ planned, in flight, or parked, so another person or agent can pick it up.
 
 | Topic | Status |
 |---|---|
+| [`project-repository-access/`](project-repository-access/README.md) | phase 1 on dev (#11492 partial object store, #11501 named image steps); target decided: one Platinum volume per project (git inside, external repos only a sync target); interim: box checkouts off the API, branch-scoped refreshes, shared config snapshot |
 | [`stateless-sessions/`](stateless-sessions/README.md) | stage 1 on dev (#11503): `volume_flushing` retried; stage 2 designed (pi reads its conversation from the volume, layout v2 at `/session`); then a 72 h soak, default on, stateful path deleted |
 | [`long-horizon-runtime/`](long-horizon-runtime/README.md) | planned (`my-kortix-v2`), phase 1 decided: retrieval from the full record instead of compaction, an orchestrator that never waits, background commands, workers that own their threads |
 | [`long-horizon-follow-through/`](long-horizon-follow-through/README.md) | on dev (#11332 bd2d6ac89c, #11344, #11347, #11351): every agent sets its own wake-up after each wait: loops, session event triggers, App events |

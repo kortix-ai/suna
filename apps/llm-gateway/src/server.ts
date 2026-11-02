@@ -44,6 +44,7 @@ import { createGatewayLogger } from './observability/logger';
 import { registerHealth } from './health';
 import { trackInflight } from './inflight';
 import { registerRoutes } from './routes';
+import { createTokenRateLimit } from './token-rate-limit';
 import { createTraffic } from './traffic';
 
 export interface GatewayServer {
@@ -159,6 +160,6 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
   }
   const inflightRequests = trackInflight(app);
   registerHealth(app, api, inflight, traces, trafficSnapshot, upstreamSignals);
-  registerRoutes(app, gateway, inflight, recordOutcome);
+  registerRoutes(app, gateway, inflight, recordOutcome, createTokenRateLimit(config.requestsPerMinutePerCredential));
   return { app, traces, inflightRequests };
 }
