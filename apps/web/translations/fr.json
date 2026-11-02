@@ -22715,7 +22715,6 @@
       "noAdminOpens": "Aucun admin n'a ouvert ce dossier."
     },
     "folderTree": "Dossiers",
-    "treeEmpty": "Aucun dossier",
     "treeYou": "{name} (vous)",
     "treeExpand": "Déplier {name}",
     "treeCollapse": "Replier {name}"

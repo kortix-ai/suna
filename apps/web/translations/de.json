@@ -22715,7 +22715,6 @@
       "noAdminOpens": "Noch hat kein Admin diesen Ordner geöffnet."
     },
     "folderTree": "Ordner",
-    "treeEmpty": "Keine Ordner",
     "treeYou": "{name} (Du)",
     "treeExpand": "{name} aufklappen",
     "treeCollapse": "{name} zuklappen"

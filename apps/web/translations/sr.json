@@ -22715,7 +22715,6 @@
       "noAdminOpens": "Ниједан администратор није отворио ову фасциклу."
     },
     "folderTree": "Фасцикле",
-    "treeEmpty": "Нема фасцикли",
     "treeYou": "{name} (ти)",
     "treeExpand": "Отвори {name}",
     "treeCollapse": "Затвори {name}"

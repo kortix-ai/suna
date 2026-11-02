@@ -22715,7 +22715,6 @@
       "noAdminOpens": "还没有管理员打开过此文件夹。"
     },
     "folderTree": "文件夹",
-    "treeEmpty": "没有文件夹",
     "treeYou": "{name}（你）",
     "treeExpand": "展开 {name}",
     "treeCollapse": "收起 {name}"

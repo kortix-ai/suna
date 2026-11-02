@@ -22715,7 +22715,6 @@
       "noAdminOpens": "Ningún admin ha abierto esta carpeta."
     },
     "folderTree": "Carpetas",
-    "treeEmpty": "Sin carpetas",
     "treeYou": "{name} (tú)",
     "treeExpand": "Expandir {name}",
     "treeCollapse": "Contraer {name}"
