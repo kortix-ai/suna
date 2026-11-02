@@ -366,9 +366,19 @@ type AnswerFollowUp = (threadId: string, answer: string) => Pick<ChannelMessage,
  * the ticked options, a page turn redraws. A tap on another step changes
  * nothing; a tap on a question from before a reset, or of another session,
  * answers nothing. Throws to ask the transport for a retry, also when another
- * tap moved the steps first.
+ * tap moved the steps first (`onFreshSteps`).
  */
-export async function handleQuestionTap(
+export function handleQuestionTap(
+  port: ChannelPort & { questions: QuestionPort },
+  tap: QuestionTap,
+  followUp: AnswerFollowUp,
+  run: { finalAttempt: boolean },
+): Promise<void> {
+  return onFreshSteps(run, () => questionTap(port, tap, followUp, run));
+}
+
+/** One read of the steps for `handleQuestionTap`. */
+async function questionTap(
   port: ChannelPort & { questions: QuestionPort },
   tap: QuestionTap,
   followUp: AnswerFollowUp,
@@ -422,12 +432,23 @@ export async function handleQuestionTap(
  * options, when that question takes typed text, the message was sent after the
  * question message, its session is not deleted and nothing else answered it.
  * Two people typing on one step at once each answer a step: a typed message
- * names no step, as a tap does. The next question follows, and
- * the last answer goes as a tap's does. False: the message is not an answer,
- * and goes to the agent as itself. `message.id` names the message for its
- * retries. Throws to ask the transport for a retry.
+ * names no step, as a tap does. The next question follows, and the last answer
+ * goes as a tap's does. False: the message is not an answer, and goes to the
+ * agent as itself. `message.id` names the message for its retries. Throws to
+ * ask the transport for a retry (`onFreshSteps`).
  */
-export async function answerQuestionInChat(
+export function answerQuestionInChat(
+  port: ChannelPort & { questions: QuestionPort },
+  target: ChannelTarget,
+  message: { id: string; text: string },
+  followUp: AnswerFollowUp,
+  run: { finalAttempt: boolean },
+): Promise<boolean> {
+  return onFreshSteps(run, () => typedAnswer(port, target, message, followUp, run));
+}
+
+/** One read of the steps for `answerQuestionInChat`. */
+async function typedAnswer(
   port: ChannelPort & { questions: QuestionPort },
   target: ChannelTarget,
   message: { id: string; text: string },
@@ -476,6 +497,26 @@ interface StepContext {
   run: { finalAttempt: boolean };
 }
 
+/** Another tap or message moved the steps between their read and the write. */
+class StepsMoved extends Error {}
+
+/**
+ * `once` again on fresh steps after a `StepsMoved`: by the transport's retry, or
+ * here on its last attempt, at most 3 more times. Nothing reaches the chat
+ * before the write that lost, so a run again shows nothing twice.
+ */
+async function onFreshSteps<T>(run: { finalAttempt: boolean }, once: () => Promise<T>): Promise<T> {
+  // ponytail: 3 more reads on the last attempt; steps that move 4 times in a row
+  // drop the tap or message to the dead letters. Raise the bound if that shows up.
+  for (let again = run.finalAttempt ? 3 : 0; ; again--) {
+    try {
+      return await once();
+    } catch (error) {
+      if (!(error instanceof StepsMoved) || again <= 0) throw error;
+    }
+  }
+}
+
 /** `steps` with `pick` recorded: the next question on screen, nothing ticked. */
 const advance = (steps: QuestionSteps, pick: QuestionPick, at: Pick<QuestionSteps, 'by' | 'ref'>): QuestionSteps => ({
   step: steps.step + 1,
@@ -496,10 +537,9 @@ async function applySteps(ctx: StepContext, from: unknown, to: QuestionSteps, pa
     await ctx.reply({ kind: 'earlier' });
     return editQuestion(ctx.port.questions, ctx.target, ctx.ref);
   }
-  // Another tap or message moved the steps since the read: the retry reads them again.
-  // ponytail: a loss on the transport's last attempt leaves the tap unsettled; loop here if that shows up.
+  // Another tap or message moved the steps since the read: they are read again (`onFreshSteps`).
   if (!(await advancePendingQuestionSteps(ctx.target.projectId, ctx.pendingId, from, to))) {
-    throw new Error(`${ctx.target.platform} question steps moved`);
+    throw new StepsMoved(`${ctx.target.platform} question steps moved`);
   }
   if (decision) return sendAnswer(ctx, decision.answer, to);
   await ctx.reply();

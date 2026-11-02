@@ -35,6 +35,7 @@ import { DrizzleQueryError } from 'drizzle-orm/errors';
 import { Hono } from 'hono';
 import { deleteFromView, insertIntoView } from '../../__tests__/helpers/compat-views';
 import { projectsApp } from '../../projects/surface';
+import * as projectSurface from '../../projects/surface';
 import { registerTurnQuestionsRoutes } from '../../projects/routes/turn-questions';
 import { questionReleaseSentinel } from '../question-release';
 import { relayTurnQuestion } from '../turn-relay';
@@ -1792,6 +1793,47 @@ describe('Telegram questions one at a time — migrated PostgreSQL', () => {
     expect(lastEdit().text).toEndWith('\n\nAnswered in the chat.');
     expect(delivered.at(-1)!.text).toContain('> Favourite fruit?\nBanana\n\n> Favourite colour?\n(no answer given)\n\n> What next?\n(no answer given)\n\n(sticker 👍)\n');
     expect(await steps(sticker.id)).toMatchObject({ step: 1 });
+  });
+
+  test("steps another tap moved between the read and the write are read again on the inbox's last attempt, at most 3 more times", async () => {
+    const q = await posted(3015, THREE);
+    const cas = spyOn(projectSurface, 'advancePendingQuestionSteps');
+    /** The write loses: another replica's tap wrote `moved` first. */
+    const loseTo = (moved: unknown) =>
+      cas.mockImplementationOnce(async () => {
+        await db.update(sessionPendingQuestions).set({ chatSteps: moved as never }).where(eq(sessionPendingQuestions.id, q.id));
+        return false;
+      });
+    const tap = (data: string) => press(data, { chat: 3015, messageId: q.message });
+    const other = { step: 1, picks: [{ question: 0, options: [2] }], ticked: [], by: 'cbq-other', ref: String(q.message) };
+    try {
+      loseTo(other);
+      await handleTelegramPress(tap(`kq:${q.id}:0`), { finalAttempt: true });
+      expect(toasts()).toEqual(['This question was already answered.']);
+      expect(await steps(q.id)).toEqual(other);
+
+      // An attempt the inbox still retries throws, and the retry reads the steps again.
+      cas.mockImplementationOnce(async () => false);
+      await expect(handleTelegramPress(tap(`kq:${q.id}:1.0`))).rejects.toThrow('question steps moved');
+      expect(await steps(q.id)).toEqual(other);
+
+      // A typed message on the last attempt answers the step the other tap moved to.
+      loseTo({ ...other, step: 2, picks: [...other.picks, { question: 1, options: [1] }], by: 'cbq-other-2' });
+      await handleTelegramEvent(update('Plum', ALLOWED, 3015), { finalAttempt: true });
+      expect(delivered).toHaveLength(1);
+      expect(delivered[0]!.text).toContain('> Favourite fruit?\nCherry\n\n> Favourite colour?\nGreen\n\n> What next?\nPlum');
+
+      // Lost 4 times in a row on the last attempt: the tap goes to the inbox's dead letters.
+      const again = await posted(3016, THREE);
+      cas.mockImplementation(async () => false);
+      const before = cas.mock.calls.length;
+      await expect(handleTelegramPress(press(`kq:${again.id}:0`, { chat: 3016, messageId: again.message }), { finalAttempt: true })).rejects.toThrow(
+        'question steps moved',
+      );
+      expect(cas.mock.calls.length - before).toBe(4);
+    } finally {
+      cas.mockRestore();
+    }
   });
 
   test('a message sent before the question message (a late retry) is not its answer, and leaves its buttons', async () => {
