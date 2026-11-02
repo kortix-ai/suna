@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { artifactCommentAnchorSchema, reanchorArtifactText, type ArtifactCommentAnchor, type ArtifactTextAnchor } from './artifact-comments';
+import {
+  ARTIFACT_TEXT_CONTEXT_MAX,
+  ARTIFACT_TEXT_QUOTE_MAX,
+  artifactCommentAnchorSchema,
+  reanchorArtifactText,
+  type ArtifactCommentAnchor,
+  type ArtifactTextAnchor,
+} from './artifact-comments';
 
 const anchor = (quote: string, prefix = '', suffix = ''): ArtifactTextAnchor => ({ type: 'text', version: 'v1', quote, prefix, suffix });
 
@@ -16,7 +23,7 @@ describe('artifact comment anchors', () => {
 
   test('rejects invalid versions, selectors, lengths and geometry', () => {
     const page = { type: 'region', version: 'v1', selector: 'main', snippet: '', viewport_width: 1200, scroll: { x: 0, y: 0 }, offset: { x: 0, y: 0, width: 0.5, height: 0.5 } };
-    for (const value of [anchor(''), anchor('x'.repeat(33)), anchor('quote', 'x'.repeat(33)), anchor('quote', '', 'x'.repeat(33)),
+    for (const value of [anchor(''), anchor('x'.repeat(501)), anchor('quote', 'x'.repeat(33)), anchor('quote', '', 'x'.repeat(33)),
       { type: 'none', version: '' }, { ...page, selector: '' }, { ...page, snippet: 'x'.repeat(121) },
       { ...page, viewport_width: Infinity }, { ...page, scroll: { x: 0, y: -1 } },
       { ...page, offset: { x: 0.9, y: 0, width: 0.2, height: 0.5 } },
@@ -40,6 +47,13 @@ describe('artifact comment anchors', () => {
       }
     }
     expect(artifactCommentAnchorSchema.safeParse(anchor('A valid 😀 quote')).success).toBe(true);
+  });
+
+  test('a text quote holds up to 500 UTF-16 code units and its context stays at 32', () => {
+    expect(ARTIFACT_TEXT_QUOTE_MAX).toBe(500);
+    expect(ARTIFACT_TEXT_CONTEXT_MAX).toBe(32);
+    expect(artifactCommentAnchorSchema.safeParse(anchor('x'.repeat(500), 'p'.repeat(32), 's'.repeat(32))).success).toBe(true);
+    expect(artifactCommentAnchorSchema.safeParse(anchor('x'.repeat(501))).success).toBe(false);
   });
 });
 
@@ -92,5 +106,53 @@ describe('artifact text re-anchoring', () => {
     expect(text.length).toBe(16 * 1024 * 1024);
     expect(reanchorArtifactText(text, anchor(`${'ab'.repeat(15)}Xb`, 'a', 'a')))
       .toEqual({ start: repeated.length + 1, end: repeated.length + 33, outdated: false });
+  });
+});
+
+describe('long text quotes (33 to 500 code units)', () => {
+  const passage = 'The launch review covers pricing, onboarding, support staffing and the billing migration. ' +
+    'Each owner confirms the date, the risks and the rollback plan before the train leaves on Thursday.';
+  const doc = (body: string) => `# Plan\n\nIntro line.\n\n${body}\n\nOutro line.\n`;
+  const span = (text: string, body: string) => ({ start: text.indexOf(body), end: text.indexOf(body) + body.length, outdated: false });
+
+  test('an unchanged long quote resolves to its whole span, and context picks one of two copies', () => {
+    expect(passage.length).toBeGreaterThan(160);
+    expect(reanchorArtifactText(doc(passage), anchor(passage))).toEqual(span(doc(passage), passage));
+    const twice = `Alpha: ${passage}\nBeta: ${passage}\n`;
+    expect(reanchorArtifactText(twice, anchor(passage, 'Beta: ', '\n')))
+      .toEqual({ start: twice.lastIndexOf(passage), end: twice.lastIndexOf(passage) + passage.length, outdated: false });
+    expect(reanchorArtifactText(twice, anchor(passage)).outdated).toBe(true);
+  });
+
+  test('an edit inside a long quote within ten percent moves the end with the text', () => {
+    const edited = passage.replace('support staffing', 'support hiring').replace('Thursday', 'Friday');
+    expect(reanchorArtifactText(doc(edited), anchor(passage, 'Intro line.\n\n', '\n\nOutro line.\n'))).toEqual(span(doc(edited), edited));
+  });
+
+  test('an edit in the first words falls back to the end of the quote and still covers the whole span', () => {
+    const edited = passage.replace('launch review covers', 'launch plan review now covers');
+    expect(reanchorArtifactText(doc(edited), anchor(passage))).toEqual(span(doc(edited), edited));
+  });
+
+  test('a decoy copy of the first 32 characters does not capture an edited long quote', () => {
+    const edited = passage.replace('launch review covers', 'launch plan review now covers');
+    const text = `${passage.slice(0, 40)} is a different sentence.\n\n${edited}\n`;
+    expect(reanchorArtifactText(text, anchor(passage))).toEqual(span(text, edited));
+  });
+
+  test('a long quote changed by more than ten percent, or longer than 500, is outdated', () => {
+    const rewritten = passage.replace('pricing, onboarding, support staffing and the billing migration', 'nothing else');
+    expect(reanchorArtifactText(doc(rewritten), anchor(passage))).toEqual({ start: null, end: null, outdated: true });
+    const overlong = 'x'.repeat(501);
+    expect(reanchorArtifactText(`a ${overlong} b`, anchor(overlong)).outdated).toBe(true);
+  });
+
+  test('a 500 code unit quote resolves exactly and after a small edit', () => {
+    const words = Array.from({ length: 160 }, (_, index) => `w${index}`).join(' ');
+    const quote = words.slice(0, 500);
+    expect(quote).toHaveLength(500);
+    expect(reanchorArtifactText(doc(quote), anchor(quote))).toEqual(span(doc(quote), quote));
+    const edited = quote.replace('w40 w41', 'w40 inserted w41');
+    expect(reanchorArtifactText(doc(edited), anchor(quote))).toEqual(span(doc(edited), edited));
   });
 });

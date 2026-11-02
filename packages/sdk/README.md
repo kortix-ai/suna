@@ -673,8 +673,8 @@ const threads = await artifact.comments.list(artifactId, { status: 'all' });
 const activity = await artifact.activity(artifactId, { limit: 50 });
 ```
 
-Text anchors carry `version`, `quote`, `prefix`, and `suffix`. `quote`,
-`prefix`, and `suffix` each accept up to 32 UTF-16 code units. Point and region anchors carry a CSS selector,
+Text anchors carry `version`, `quote`, `prefix`, and `suffix`.
+`quote` accepts up to 500 UTF-16 code units, and `prefix` and `suffix` up to 32 each. Point and region anchors carry a CSS selector,
 element-relative fractions, viewport width, and scroll position.
 
 The root exports `listArtifactComments`, `createArtifactComment`,

@@ -12,13 +12,18 @@ const page = {
   scroll,
 };
 
+/** The longest text quote, in UTF-16 code units: a paragraph. A longer selection is refused, never cut. */
+export const ARTIFACT_TEXT_QUOTE_MAX = 500;
+/** The longest prefix and suffix, in UTF-16 code units. */
+export const ARTIFACT_TEXT_CONTEXT_MAX = 32;
+
 export const artifactCommentAnchorSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('text'),
     version,
-    quote: anchorText.min(1).max(32),
-    prefix: anchorText.max(32),
-    suffix: anchorText.max(32),
+    quote: anchorText.min(1).max(ARTIFACT_TEXT_QUOTE_MAX),
+    prefix: anchorText.max(ARTIFACT_TEXT_CONTEXT_MAX),
+    suffix: anchorText.max(ARTIFACT_TEXT_CONTEXT_MAX),
   }).strict(),
   z.object({ type: z.literal('point'), ...page, offset: z.object({ x: fraction, y: fraction }).strict() }).strict(),
   z.object({
@@ -98,10 +103,73 @@ function fuzzySpans(text: string, quote: string, end: number, limit: number, dis
   return matches;
 }
 
+/** The bit-vector fuzzy search below holds one quote character per bit of a 32-bit word. */
+const FUZZY_WORD = 32;
+
+/**
+ * The number of `text` code units, read from `at` forward (or backward), that
+ * align with the whole `quote` with at most `limit` edits. Ties go to the
+ * length closest to the quote's. null when no length is within `limit`.
+ */
+function alignedLength(text: string, quote: string, at: number, forward: boolean, limit: number): number | null {
+  const length = quote.length;
+  const width = Math.min(length + limit, forward ? text.length - at : at);
+  if (width < length - limit) return null;
+  let previous = new Uint16Array(width + 1);
+  let current = new Uint16Array(width + 1);
+  for (let j = 0; j <= width; j++) previous[j] = j;
+  for (let i = 1; i <= length; i++) {
+    current[0] = i;
+    const character = quote.charCodeAt(forward ? i - 1 : length - i);
+    for (let j = 1; j <= width; j++) {
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1,
+        previous[j - 1] + Number(character !== text.charCodeAt(forward ? at + j - 1 : at - j)));
+    }
+    [previous, current] = [current, previous];
+  }
+  let best: number | null = null;
+  for (let j = Math.max(1, length - limit); j <= width; j++) {
+    if (previous[j] > limit) continue;
+    if (best === null || previous[j] < previous[best] ||
+      (previous[j] === previous[best] && Math.abs(j - length) < Math.abs(best - length))) best = j;
+  }
+  return best;
+}
+
+/**
+ * A quote longer than one search word: find its first (else its last) 32 code
+ * units with the fuzzy search, then align the whole quote from there. The
+ * alignment is the proof: a decoy copy of the first words fails it, and the
+ * search falls back to the last words.
+ */
+function reanchorLongText(text: string, anchor: ArtifactTextAnchor): ArtifactTextPosition {
+  const { quote } = anchor;
+  const limit = Math.floor(quote.length / 10);
+  const head = reanchorArtifactText(text, {
+    ...anchor,
+    quote: quote.slice(0, FUZZY_WORD),
+    suffix: quote.slice(FUZZY_WORD, 2 * FUZZY_WORD),
+  });
+  if (head.start !== null) {
+    const length = alignedLength(text, quote, head.start, true, limit);
+    if (length !== null) return position({ start: head.start, end: head.start + length });
+  }
+  const tail = reanchorArtifactText(text, {
+    ...anchor,
+    quote: quote.slice(-FUZZY_WORD),
+    prefix: quote.slice(-2 * FUZZY_WORD, -FUZZY_WORD),
+  });
+  if (tail.end !== null) {
+    const length = alignedLength(text, quote, tail.end, false, limit);
+    if (length !== null) return position({ start: tail.end - length, end: tail.end });
+  }
+  return { ...outdated };
+}
+
 export function reanchorArtifactText(text: string, anchor: ArtifactTextAnchor): ArtifactTextPosition {
   const { quote, prefix, suffix } = anchor;
   const length = quote.length;
-  if (!length || length > 32) return { ...outdated };
+  if (!length || length > ARTIFACT_TEXT_QUOTE_MAX) return { ...outdated };
   const exact = text.indexOf(quote);
   if (exact !== -1) {
     if (text.indexOf(quote, exact + 1) === -1) return position({ start: exact, end: exact + length });
@@ -110,6 +178,7 @@ export function reanchorArtifactText(text: string, anchor: ArtifactTextAnchor): 
     if (start === -1 || text.indexOf(context, start + 1) !== -1) return { ...outdated };
     return position({ start: start + prefix.length, end: start + prefix.length + length });
   }
+  if (length > FUZZY_WORD) return reanchorLongText(text, anchor);
 
   const limit = Math.floor(length / 10);
   if (!limit) return { ...outdated };

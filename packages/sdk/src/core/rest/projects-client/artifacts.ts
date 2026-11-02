@@ -278,7 +278,7 @@ export interface ArtifactCommentSnapshot {
 }
 
 export interface CreateArtifactCommentInput {
-  /** Text quotes and their prefix/suffix are at most 32 UTF-16 code units each. */
+  /** A text quote is at most 500 UTF-16 code units; its prefix and suffix are at most 32 each. */
   anchor: ArtifactCommentAnchor;
   body: string;
   marks?: ArtifactCommentMark[];
