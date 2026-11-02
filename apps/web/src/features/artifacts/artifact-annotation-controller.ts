@@ -8,7 +8,7 @@ import {
   type ArtifactAnnotationRect,
   type ArtifactAnnotationViewport,
 } from '@kortix/shared/artifact-annotations';
-import { artifactCommentAnchorSchema } from '@kortix/shared/artifact-comments';
+import { artifactCommentAnchorSchema, createArtifactReanchorBudget } from '@kortix/shared/artifact-comments';
 import { createArtifactAnnotationCapture } from './artifact-annotation-capture';
 import {
   assembleArtifactAnnotationLayout,
@@ -152,10 +152,12 @@ export function createArtifactAnnotationController(
       used.add(cursor);
       return cursor;
     };
+    // One fuzzy re-anchoring budget per layout pass: a page of crafted quotes cannot freeze the tab.
+    const budget = createArtifactReanchorBudget();
     const rows = current.threads.map((thread) => {
       if (thread.anchor.type === 'none') return thread;
       const resolved = inventory
-        ? resolveArtifactAnnotationAnchor(thread.anchor, inventory, current.version)
+        ? resolveArtifactAnnotationAnchor(thread.anchor, inventory, current.version, budget)
         : null;
       if (
         resolved?.status === 'resolved' &&

@@ -109,8 +109,26 @@ const FUZZY_WORD = 32;
 const WORD_LIMIT = Math.floor(FUZZY_WORD / 10);
 /** More hits than this for one search word: the text repeats too much for that word to point anywhere. */
 const MAX_WORD_HITS = 1 << 16;
-/** The alignment work one long quote may spend, in edit-distance cells (about 50 ms). More marks it outdated. */
-const MAX_ALIGN_CELLS = 1 << 24;
+/** The alignment work one long quote may spend, in edit-distance cells (a few ms). More marks it outdated. */
+const MAX_ALIGN_CELLS = 1 << 20;
+
+/**
+ * The fuzzy re-anchoring work one read may spend across all its threads, in
+ * scanned code units plus alignment cells (about 100 ms). A list re-anchors
+ * every stored thread, and a commenter can store many unmatched quotes, so the
+ * cost of one read must not grow with the thread count. Exact matches are free;
+ * fuzzy work past the budget is outdated.
+ */
+export const ARTIFACT_REANCHOR_READ_UNITS = 1 << 24;
+
+export interface ArtifactReanchorBudget {
+  remaining: number;
+}
+
+/** One budget per read: pass the same object to every reanchorArtifactText call of that read. */
+export function createArtifactReanchorBudget(): ArtifactReanchorBudget {
+  return { remaining: ARTIFACT_REANCHOR_READ_UNITS };
+}
 
 /**
  * Every place where `word` (at most 32 code units) matches with at most
@@ -212,14 +230,27 @@ function align(text: string, quote: string, at: number, forward: boolean, limit:
  * skipped. When one side has too many hits, the other side alone decides, and
  * only a result of at most 3 edits is certain.
  */
-function reanchorLongText(text: string, anchor: ArtifactTextAnchor): ArtifactTextPosition {
+function reanchorLongText(text: string, anchor: ArtifactTextAnchor, budget: ArtifactReanchorBudget): ArtifactTextPosition {
   const { quote } = anchor;
   let best = Math.floor(quote.length / 10);
   const work: AlignWork = { cells: 0, previous: new Uint16Array(quote.length + best + 2), current: new Uint16Array(quote.length + best + 2) };
+  try {
+    return longTextPlace(text, anchor, budget, work, best);
+  } finally {
+    budget.remaining -= work.cells;
+  }
+}
+
+function longTextPlace(text: string, anchor: ArtifactTextAnchor, budget: ArtifactReanchorBudget, work: AlignWork, limit: number): ArtifactTextPosition {
+  const { quote } = anchor;
+  let best = limit;
   let spans: Match[] = [];
   let skipped = false;
   for (const fromStart of [true, false]) {
     if (!fromStart && spans.length && best <= WORD_LIMIT) break;
+    // Each word search reads the whole text once.
+    if (budget.remaining - work.cells <= 0) return { ...outdated };
+    budget.remaining -= text.length;
     // The opening words give starts (a backward search); the closing words give ends.
     const hits = wordHits(text, fromStart ? quote.slice(0, FUZZY_WORD) : quote.slice(-FUZZY_WORD), WORD_LIMIT, !fromStart);
     if (!hits) {
@@ -230,7 +261,7 @@ function reanchorLongText(text: string, anchor: ArtifactTextAnchor): ArtifactTex
       for (const at of hits[bound]!) {
         if (bound > best) break;
         const found = align(text, quote, at, fromStart, best, work);
-        if (work.cells > MAX_ALIGN_CELLS) return { ...outdated };
+        if (work.cells > MAX_ALIGN_CELLS || budget.remaining - work.cells <= 0) return { ...outdated };
         if (!found) continue;
         if (found.distance < best) {
           best = found.distance;
@@ -257,7 +288,16 @@ function reanchorLongText(text: string, anchor: ArtifactTextAnchor): ArtifactTex
   return contextual.length === 1 ? position(contextual[0]!) : { ...outdated };
 }
 
-export function reanchorArtifactText(text: string, anchor: ArtifactTextAnchor): ArtifactTextPosition {
+/**
+ * Where a text anchor sits in `text` now. An exact match is free. Fuzzy matching
+ * spends `budget`; a caller that re-anchors many threads in one read passes one
+ * shared budget (createArtifactReanchorBudget), so the read's cost is bounded.
+ */
+export function reanchorArtifactText(
+  text: string,
+  anchor: ArtifactTextAnchor,
+  budget: ArtifactReanchorBudget = createArtifactReanchorBudget(),
+): ArtifactTextPosition {
   const { quote, prefix, suffix } = anchor;
   const length = quote.length;
   if (!length || length > ARTIFACT_TEXT_QUOTE_MAX) return { ...outdated };
@@ -269,10 +309,13 @@ export function reanchorArtifactText(text: string, anchor: ArtifactTextAnchor): 
     if (start === -1 || text.indexOf(context, start + 1) !== -1) return { ...outdated };
     return position({ start: start + prefix.length, end: start + prefix.length + length });
   }
-  if (length > FUZZY_WORD) return reanchorLongText(text, anchor);
+  if (budget.remaining <= 0) return { ...outdated };
+  if (length > FUZZY_WORD) return reanchorLongText(text, anchor, budget);
 
   const limit = Math.floor(length / 10);
   if (!limit) return { ...outdated };
+  // The short-quote search reads the whole text once.
+  budget.remaining -= text.length;
   const masks = new Int32Array(65536);
   for (let i = 0; i < length; i++) masks[quote.charCodeAt(i)] |= 1 << i;
   const high = 1 << (length - 1);

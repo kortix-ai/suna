@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  ARTIFACT_REANCHOR_READ_UNITS,
   ARTIFACT_TEXT_CONTEXT_MAX,
   ARTIFACT_TEXT_QUOTE_MAX,
   artifactCommentAnchorSchema,
+  createArtifactReanchorBudget,
   reanchorArtifactText,
   type ArtifactCommentAnchor,
   type ArtifactTextAnchor,
@@ -106,6 +108,44 @@ describe('artifact text re-anchoring', () => {
     expect(text.length).toBe(16 * 1024 * 1024);
     expect(reanchorArtifactText(text, anchor(`${'ab'.repeat(15)}Xb`, 'a', 'a')))
       .toEqual({ start: repeated.length + 1, end: repeated.length + 33, outdated: false });
+  });
+});
+
+describe('re-anchoring budget for one read', () => {
+  // Strix: crafted unmatched long quotes on a repetitive document cost ~110 ms each, and a list read
+  // re-anchors every thread. One read now shares one budget; fuzzy work past it is outdated.
+  const line = 'Revenue grew in the quarter and churn fell again. ';
+  const text = line.repeat(460);
+  const crafted = anchor(`${line.slice(0, 30)}X${line.slice(31)}${line}${line}${line}`.slice(0, 200));
+
+  test('one crafted long quote stays within the per-anchor cap', () => {
+    const budget = createArtifactReanchorBudget();
+    reanchorArtifactText(text, crafted, budget);
+    // The cap is checked between alignments, so the last band may finish: at most (500 + 50) x 101 cells.
+    expect(ARTIFACT_REANCHOR_READ_UNITS - budget.remaining).toBeLessThanOrEqual((1 << 20) + 2 * text.length + 550 * 101);
+  });
+
+  test('sixty crafted quotes in one read spend at most the read budget, then come back outdated', () => {
+    const budget = createArtifactReanchorBudget();
+    const started = performance.now();
+    const results = Array.from({ length: 60 }, () => reanchorArtifactText(text, crafted, budget));
+    expect(performance.now() - started).toBeLessThan(1_500);
+    expect(budget.remaining).toBeLessThanOrEqual(0);
+    expect(results.at(-1)).toEqual({ start: null, end: null, outdated: true });
+  });
+
+  test('an exact match costs no budget and resolves even when the budget is spent', () => {
+    const budget = createArtifactReanchorBudget();
+    budget.remaining = 0;
+    const exact = anchor('churn fell to 2.1%');
+    expect(reanchorArtifactText('Revenue grew. churn fell to 2.1%. Done.', exact, budget)).toEqual({ start: 14, end: 32, outdated: false });
+    expect(budget.remaining).toBe(0);
+  });
+
+  test('a spent budget marks a short fuzzy quote outdated instead of scanning the text', () => {
+    const budget = createArtifactReanchorBudget();
+    budget.remaining = 0;
+    expect(reanchorArtifactText('Revenue grew. churn fell to 2.2%. Done.', anchor('churn fell to 2.1% in the quarter'.slice(0, 30)), budget).outdated).toBe(true);
   });
 });
 
