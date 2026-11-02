@@ -24,11 +24,13 @@ import {
   useFeatureFlag,
   usePeerMessages,
   useSessionChildren,
+  useSessionView,
   useSessionWorkflows,
   useTeammates,
 } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
+import { workflowRunDocs } from '../session/transcript/workflow-card.tsx';
 
 import { errorText } from '../../commands/session-actions.ts';
 import { kortix } from '../../kortix.ts';
@@ -143,9 +145,29 @@ export function useSessionAgents(
   const live0 = useSessionWorkflows(projectId, runners[0], { enabled: ready && !!runners[0] });
   const live1 = useSessionWorkflows(projectId, runners[1], { enabled: ready && !!runners[1] });
   const live2 = useSessionWorkflows(projectId, runners[2], { enabled: ready && !!runners[2] });
+  // A runner's box sleeps after its run: then its own log holds the final run document.
+  const log0 = useSessionView(projectId ?? '', runners[0] ?? '', {
+    enabled: ready && !!runners[0] && !live0.data?.length,
+  });
+  const log1 = useSessionView(projectId ?? '', runners[1] ?? '', {
+    enabled: ready && !!runners[1] && !live1.data?.length,
+  });
+  const log2 = useSessionView(projectId ?? '', runners[2] ?? '', {
+    enabled: ready && !!runners[2] && !live2.data?.length,
+  });
   const runs = useMemo(
-    () => mergeLiveRuns(ownRuns, [live0.data, live1.data, live2.data]),
-    [ownRuns, live0.data, live1.data, live2.data],
+    () =>
+      mergeLiveRuns(ownRuns, [
+        live0.data,
+        live1.data,
+        live2.data,
+        ...[log0.thread, log1.thread, log2.thread].map((thread) =>
+          thread
+            ? (workflowRunDocs(thread.messages) as unknown as WorkflowRunMetadata[])
+            : undefined,
+        ),
+      ]),
+    [ownRuns, live0.data, live1.data, live2.data, log0.thread, log1.thread, log2.thread],
   );
 
   const groups = useMemo(

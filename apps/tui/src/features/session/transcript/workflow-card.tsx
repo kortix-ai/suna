@@ -23,10 +23,12 @@
  */
 
 import {
-  type WorkflowRun,
-  type WorkflowRunAgent,
+  type SessionLogMessage,
   type ToolView,
   WORKFLOW_LARGE_AGENT_COUNT,
+  type WorkflowRun,
+  type WorkflowRunAgent,
+  classifySessionLogMessage,
   countAgents,
   elapsedMs,
   formatElapsed,
@@ -36,7 +38,7 @@ import {
   parseWorkflowRun,
   structuredSummary,
 } from '@kortix/sdk';
-import { useSessionWorkflows } from '@kortix/sdk/react';
+import { useSessionView, useSessionWorkflows } from '@kortix/sdk/react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { printable } from '../../../lib/printable.ts';
@@ -283,10 +285,47 @@ function LiveWorkflowCard({
     // The runner runs it in the foreground; this card still knows it as a background run.
     return parsed ? { ...parsed, ...(run.background ? { background: run.background } : {}) } : null;
   }, [data, run]);
-  const shown = live ?? run;
+  // The runner's box sleeps after the run: then its own log is the record. The runner ran the
+  // `workflow` call in its session, so that call's metadata is the run's final document. A view
+  // reads it from the API alone, without waking the box.
+  const runner = run.background?.sessionId ?? null;
+  const view = useSessionView(projectId, runner ?? '', { enabled: Boolean(runner) && !live });
+  const logged = useMemo(
+    () => (view.thread ? runFromThread(view.thread.messages, run.runId) : null),
+    [view.thread, run.runId],
+  );
+  const shown =
+    live ??
+    (logged ? { ...logged, ...(run.background ? { background: run.background } : {}) } : run);
   return (
     <WorkflowRunView run={shown} live={Boolean(live) && shown.status === 'running'} width={width} />
   );
+}
+
+/** The run documents of a session's `workflow` calls (their metadata), newest first. */
+export function workflowRunDocs(messages: readonly SessionLogMessage[]): Record<string, unknown>[] {
+  const docs: Record<string, unknown>[] = [];
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (!message || message.role !== 'assistant') continue;
+    for (const part of classifySessionLogMessage(message).parts) {
+      if (part.kind === 'tool' && isWorkflowCall(part.tool) && part.tool.metadata)
+        docs.push(part.tool.metadata);
+    }
+  }
+  return docs;
+}
+
+/** The newest `workflow` call of a session whose metadata is the run `runId` (any run without one). */
+export function runFromThread(
+  messages: readonly SessionLogMessage[],
+  runId: string | undefined,
+): WorkflowRun | null {
+  for (const doc of workflowRunDocs(messages)) {
+    const parsed = parseWorkflowRun(doc);
+    if (parsed && (!runId || parsed.runId === runId)) return parsed;
+  }
+  return null;
 }
 
 export interface WorkflowCardProps {

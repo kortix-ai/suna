@@ -13,22 +13,27 @@
 
 import {
   type ClassifiedPart,
-  type SessionLogMessage,
-  classifySessionLogMessage,
-  sessionLogMessageDelivery,
   type NoticeBatchItem,
   type PeerMessagePromptInfo,
+  type SessionLogMessage,
   type SubagentNotice,
+  classifySessionLogMessage,
   parseNoticeBatch,
   parsePeerMessagePrompt,
   parseSubagentNotice,
+  sessionLogMessageDelivery,
 } from '@kortix/sdk';
 import { useMemo } from 'react';
 
 import { useAgentNav } from '../../agents/agent-nav.tsx';
 
 import { printable } from '../../../lib/printable.ts';
-import { type TurnRow, clip, collapseToolRuns, formatRelativeTime } from '../../../lib/turn-layout.ts';
+import {
+  type TurnRow,
+  clip,
+  collapseToolRuns,
+  formatRelativeTime,
+} from '../../../lib/turn-layout.ts';
 import { theme } from '../../../theme.ts';
 import { ErrorBanner, describeTurnError } from './error-banner.tsx';
 import {
@@ -176,8 +181,11 @@ export function Turn({ message, width, expanded, cursorKey, streaming, now }: Tu
     return null;
   }, [classified.parts, message.role]);
   if (platform && 'peer' in platform && platform.peer)
-    return <PeerMessageRow peer={platform.peer} width={width} now={now} createdAt={message.created_at} />;
-  if (platform && 'notices' in platform) return <NoticeRows items={platform.notices} width={width} />;
+    return (
+      <PeerMessageRow peer={platform.peer} width={width} now={now} createdAt={message.created_at} />
+    );
+  if (platform && 'notices' in platform)
+    return <NoticeRows items={platform.notices} width={width} />;
 
   const body = (
     <box flexDirection="column" width={inner}>
@@ -253,7 +261,9 @@ function PeerMessageRow({
       <text wrapMode="none">
         <span fg={theme.brand}>{'✉ '}</span>
         <span fg={theme.fg}>{`@${printable(peer.from)}`}</span>
-        <span fg={theme.dim}>{`${kind}${peer.summary ? ` · ${clip(printable(peer.summary), inner - peer.from.length - 8)}` : ''}`}</span>
+        <span
+          fg={theme.dim}
+        >{`${kind}${peer.summary ? ` · ${clip(printable(peer.summary), inner - peer.from.length - 8)}` : ''}`}</span>
         <span fg={theme.faint}>{age ? ` · ${age}` : ''}</span>
       </text>
       {shown.map((line, index) => (
@@ -285,9 +295,18 @@ function NoticeRows({ items, width }: { items: readonly NoticeBatchItem[]; width
           );
         }
         const notice: SubagentNotice = item.notice;
-        const who = printable(notice.handle ? `@${notice.handle}` : notice.title || notice.agent || 'agent');
-        const verb = notice.status === 'completed' ? (item.kind === 'teammate' ? 'is idle' : 'finished') : notice.status;
+        const who = printable(
+          notice.handle ? `@${notice.handle}` : notice.title || notice.agent || 'agent',
+        );
+        const verb =
+          notice.status === 'completed'
+            ? item.kind === 'teammate'
+              ? 'is idle'
+              : 'finished'
+            : notice.status;
         const bad = notice.status !== 'completed';
+        // A structured result (a workflow's JSON) has no first line worth showing.
+        const excerpt = /^[[{]/.test(notice.excerpt.trim()) ? '' : notice.excerpt;
         return (
           <box
             // biome-ignore lint/suspicious/noArrayIndexKey: notices have no id
@@ -298,7 +317,11 @@ function NoticeRows({ items, width }: { items: readonly NoticeBatchItem[]; width
               <span fg={bad ? theme.danger : theme.brand}>{'◇ '}</span>
               <span fg={theme.fg}>{who}</span>
               <span fg={theme.dim}>{` ${verb}`}</span>
-              <span fg={theme.faint}>{notice.excerpt ? ` · ${clip(printable(notice.excerpt), Math.max(inner - who.length - verb.length - 6, 8))}` : ''}</span>
+              <span fg={theme.faint}>
+                {excerpt
+                  ? ` · ${clip(printable(excerpt), Math.max(inner - who.length - verb.length - 6, 8))}`
+                  : ''}
+              </span>
             </text>
           </box>
         );
