@@ -168,3 +168,19 @@ describe('session starting loader treatment', () => {
     expect(render(<SessionStartingLoader />)).toBe('');
   });
 });
+
+test('boot error formatting handles long non-suffix whitespace without quadratic work', () => {
+  const error = '\t'.repeat(40_000) + 'agent failed. \t.';
+  const start = performance.now();
+  const note = sessionWakeStatusNote({
+    reason: 'runtime_wake_cooldown',
+    failure: {
+      category: 'sandbox-provider', message: 'Boot failed', retryable: true,
+      evidence: { check: 'runtime_boot_error', error, observed_at: null },
+    },
+    now: 0,
+  });
+  const elapsed = performance.now() - start;
+  expect(note).toBe(`Could not start the agent: ${'\t'.repeat(40_000)}agent failed. Trying again automatically (attempt 2).`);
+  expect(elapsed).toBeLessThan(200);
+});
