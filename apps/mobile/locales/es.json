@@ -1284,5 +1284,16 @@
     "retryHour_other": "Vuelve a intentarlo en {{count}} horas.",
     "unavailable": "Imagen no disponible",
     "details": "Detalles de la imagen"
+  },
+  "sessionImage": {
+    "title": "Preparando la imagen del sandbox",
+    "states": {
+      "resolving": "Eligiendo la imagen para esta sesión.",
+      "serving_last_ready": "Iniciando desde la última imagen lista. La nueva se crea en segundo plano.",
+      "waiting_for_build": "Se está creando la primera imagen de este proyecto. La sesión se inicia cuando esté lista.",
+      "building": "Creando la primera imagen de este proyecto. Ocurre una sola vez y tarda unos minutos.",
+      "copying_to_region": "Copiando la imagen a la región de esta sesión.",
+      "waiting_for_provider": "La imagen se está terminando. La sesión se inicia cuando esté lista."
+    }
   }
 }

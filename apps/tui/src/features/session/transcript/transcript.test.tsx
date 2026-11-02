@@ -400,6 +400,34 @@ describe('<Transcript/> paging and prompts', () => {
   });
 });
 
+describe('<Transcript/> boot readout', () => {
+  test('a provisioning session names its image step with the step clock', async () => {
+    const session = fakeSession({
+      phase: 'starting',
+      stage: 'provisioning',
+      bootImage: {
+        state: 'building',
+        image: null,
+        since: new Date(Date.now() - 42_000).toISOString(),
+      },
+    });
+    const { captureCharFrame, flush, renderer } = await render(session);
+    await flush();
+    const frame = captureCharFrame();
+    expect(frame).toMatch(/Building the first image for this project \(0:4\d\)/);
+    expect(frame).not.toContain('Reserving your computer');
+    renderer.destroy();
+  });
+
+  test('a provisioning session without an image step keeps today’s text', async () => {
+    const session = fakeSession({ phase: 'starting', stage: 'provisioning', bootImage: null });
+    const { captureCharFrame, flush, renderer } = await render(session);
+    await flush();
+    expect(captureCharFrame()).toMatch(/Reserving your computer · \d+s/);
+    renderer.destroy();
+  });
+});
+
 describe('<Transcript/> inbox prompts', () => {
   const at = '2030-01-01T00:00:01.000Z';
   const queued = {

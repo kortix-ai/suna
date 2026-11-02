@@ -2004,6 +2004,17 @@
       "label": "重启会话",
       "pending": "正在重启…",
       "ownerOnly": "只有会话所有者或项目管理员可以重启此会话。"
+    },
+    "image": {
+      "title": "正在准备沙盒镜像",
+      "states": {
+        "resolving": "正在为此会话选择镜像。",
+        "serving_last_ready": "从最近一个就绪的镜像启动。新镜像在后台构建。",
+        "waiting_for_build": "正在构建此项目的第一个镜像。镜像就绪后会话即会开始。",
+        "building": "正在构建此项目的第一个镜像。此过程只需一次，耗时几分钟。",
+        "copying_to_region": "正在将镜像复制到此会话所在的区域。",
+        "waiting_for_provider": "镜像即将完成。镜像就绪后会话即会开始。"
+      }
     }
   },
   "sessionDelete": {

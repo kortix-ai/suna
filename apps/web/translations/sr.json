@@ -2004,6 +2004,17 @@
       "label": "Поново покрени сесију",
       "pending": "Поново покретање…",
       "ownerOnly": "Само власник сесије или менаџер пројекта може поново да покрене ову сесију."
+    },
+    "image": {
+      "title": "Priprema slike sandboxa",
+      "states": {
+        "resolving": "Bira se slika za ovu sesiju.",
+        "serving_last_ready": "Pokretanje sa poslednje spremne slike. Nova se pravi u pozadini.",
+        "waiting_for_build": "Prva slika za ovaj projekat se pravi. Sesija počinje kada bude spremna.",
+        "building": "Pravi se prva slika za ovaj projekat. To se dešava jednom i traje nekoliko minuta.",
+        "copying_to_region": "Slika se kopira u region ove sesije.",
+        "waiting_for_provider": "Slika se završava. Sesija počinje kada bude spremna."
+      }
     }
   },
   "sessionDelete": {
