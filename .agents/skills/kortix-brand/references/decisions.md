@@ -14,7 +14,7 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ### D37 The home hero subhead merges the positioning line with "Hand it an outcome"
 - **Date:** 2026-11-02
-- **Decision:** The home hero subhead is: "The cloud-native agent harness for companies. Hand it an outcome and AI agents run it 24/7. Connect your company's tools, share agents and context across your whole team, and own all of it as code: open source, on your infrastructure or ours." The positioning line leads; the earlier hero line follows as its mechanism. The title ("The CompanyOS") and the four traits stay as D35 set them.
+- **Decision:** The home hero subhead is: "The cloud-native agent harness for companies. Hand it an outcome and agents run it 24/7 on your tools and context. Open source, in our cloud or yours." The positioning line leads; the earlier hero line follows as its mechanism, cut to one sentence plus where it runs (the founder asked for it more concise the same day; a first merge ran to about 240 characters). The title ("The CompanyOS") and the four traits stay as D35 set them.
 - **Why:** founder, 2026-11-02: "improve the HERO text merge it with the og 'Hand it an outcome and AI agents run it 24/7…'". The D35 mechanism sentence ("Always-on agents that start on events, run in parallel and share one memory of your company") said the same thing in words buyers do not use.
 - **Where:** `apps/web/src/features/marketing/landing-hero/sand-band-hero.tsx`.
 - **Supersedes:** the subhead sentence of D35. The rest of D35 stands.
