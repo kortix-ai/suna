@@ -16,3 +16,13 @@ export function requestFieldError(body: Record<string, unknown>): string | null 
   }
   return null;
 }
+
+/**
+ * A chat body (and an Anthropic one) needs at least one message. Without this
+ * check an empty or missing `messages` reached the model's transport, or a held
+ * fallback's upstream, so one body got two different errors (KRTX-3421). Not in
+ * `requestFieldError`: a Responses body has `input`, checked after translation.
+ */
+export function chatMessagesError(body: Record<string, unknown>): string | null {
+  return Array.isArray(body.messages) && body.messages.length > 0 ? null : '`messages` must be a non-empty array';
+}

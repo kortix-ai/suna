@@ -77,6 +77,40 @@ describe('handleChatCompletions refuses a mistyped field before any upstream cal
     expect(traces).toHaveLength(1);
     expect(traces[0]).toMatchObject({ status: 400, ok: false, errorCode: 'invalid_request' });
   });
+
+  // KRTX-3421: an empty or missing `messages` reached the model's transport (or,
+  // during a fallback hold, the fallback upstream), so one body got two envelopes.
+  test('messages missing, empty or not an array → the gateway 400 with a request_id, no upstream fetch', async () => {
+    for (const patch of [{}, { messages: [] }, { messages: 'hi' }, { messages: null }]) {
+      let fetched = 0;
+      const hooks: GatewayHooks = {
+        authenticate: async () => principal,
+        authorize: async () => ({ ok: true, principal }),
+        resolveRoute: async () => ({ policyId: 'route', primaryModel: 'm', fallbackModels: [], fallbackOn: 'transient' }),
+        resolveUpstream: async () => [descriptor],
+        assertBillingActive: async () => {},
+        recordUsage: async () => {},
+        recordTrace: async () => {},
+      };
+      const response = await handleChatCompletions(
+        {
+          hooks,
+          logger: { info() {}, warn() {}, error() {} },
+          fetchImpl: async () => {
+            fetched++;
+            return new Response('{}', { status: 200 });
+          },
+        },
+        { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', ...patch }) },
+      );
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error?: Record<string, unknown> } & Record<string, unknown>;
+      const details = body.error ?? body;
+      expect(details).toMatchObject({ code: 'invalid_request', message: '`messages` must be a non-empty array', requested_model: 'requested-model' });
+      expect(typeof details.request_id).toBe('string');
+      expect(fetched).toBe(0);
+    }
+  });
 });
 
 describe('the Anthropic and Responses ingresses refuse a mistyped field in their own envelope', () => {
@@ -101,6 +135,25 @@ describe('the Anthropic and Responses ingresses refuse a mistyped field in their
       expect(res.status).toBe(400);
       expect(JSON.stringify(await res.json())).toContain(message);
     }
+  });
+
+  test('messages: no messages, even with a system prompt → 400 naming `messages`', async () => {
+    const gateway = createGateway(hooks);
+    for (const patch of [{ messages: [] }, { messages: [], system: 'be brief' }, {}]) {
+      const res = await gateway.messages({
+        authorization: 'Bearer good',
+        rawBody: JSON.stringify({ model: 'm', max_tokens: 16, ...patch }),
+      });
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(await res.json())).toContain('`messages` must be a non-empty array');
+    }
+  });
+
+  test('responses: an empty input and no instructions → 400 naming `messages`', async () => {
+    const gateway = createGateway(hooks);
+    const res = await gateway.responses({ authorization: 'Bearer good', rawBody: JSON.stringify({ model: 'm', input: [] }) });
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(await res.json())).toContain('`messages` must be a non-empty array');
   });
 
   test('responses: stream 1 and max_output_tokens 0 → 400 with the field named', async () => {
