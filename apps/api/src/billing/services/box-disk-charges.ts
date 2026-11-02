@@ -242,7 +242,8 @@ export const boxDiskDeps: BoxDiskDeps = {
   },
   readSetting: readPlatformSetting,
   writeSetting: writePlatformSetting,
-  storageBilled: accountStorageBilled,
+  // Metered always, charged only behind the switch: off records every row waived.
+  storageBilled: async (accountId) => config.KORTIX_BOX_DISK_CHARGE_ENABLED && (await accountStorageBilled(accountId)),
   settle: settleAndCheckAutoTopup,
   now: () => Date.now(),
 };

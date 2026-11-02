@@ -83,7 +83,7 @@ Paperclip never pays for the machine, so its ledger tracks what your providers b
 - **The Credits plan buys compute and managed models.** You choose a monthly amount and every tier buys 100 credits per dollar, so 5,000 credits is $50 a month. Members are unlimited and free, the account shares one wallet, and unused monthly credits roll over one month ([Kortix pricing](https://kortix.com/pricing), checked October 2026).
 - **Self-hosting is free.** The same stack on your infrastructure, with no managed models and no credits to buy.
 
-The two bills answer different questions. Paperclip's tells you what each agent spent at the provider. Kortix's tells you what the work cost to run, and a stopped computer bills only its disk and files, as storage. A team already paying agent subscriptions will find Paperclip's numbers closer to its invoice.
+The two bills answer different questions. Paperclip's tells you what each agent spent at the provider. Kortix's tells you what the work cost to run, and a stopped computer costs nothing. A team already paying agent subscriptions will find Paperclip's numbers closer to its invoice.
 
 ## Where Paperclip wins
 

@@ -59,7 +59,7 @@ agents:
 
 That last line decides how much review the job gets. `all` includes `project.gitops.merge`, so the starter agent can merge its own change request. Give it a list without that permission and a person merges every change the agent opens. The rule sits one grep away from the prompt it governs. A change to it made on a session branch arrives as a diff a teammate reads.
 
-Kortix bills machine time in credits. Free is $0 with 500 credits per month and 1 project, on your own provider keys or a ChatGPT subscription; managed models are on the Credits plan only. Paid starts at $50 a month. Every tier buys credits at 1 credit = $0.01, and the $200 tier carries 20,000 credits, about 1,830 agent-computer hours. Members are unlimited and free, and the account shares one credit pool ([Kortix pricing](https://kortix.com/pricing), checked October 2026). A running machine bills by the second. A stopped one uses no compute; its disk and files are billed as storage. A job that needs four attempts pays for four attempts, and you can watch each one.
+Kortix bills machine time in credits. Free is $0 with 500 credits per month and 1 project, on your own provider keys or a ChatGPT subscription; managed models are on the Credits plan only. Paid starts at $50 a month. Every tier buys credits at 1 credit = $0.01, and the $200 tier carries 20,000 credits, about 1,830 agent-computer hours. Members are unlimited and free, and the account shares one credit pool ([Kortix pricing](https://kortix.com/pricing), checked October 2026). A running machine bills by the second. A stopped one costs nothing. A job that needs four attempts pays for four attempts, and you can watch each one.
 
 ## Where Activepieces is the cheaper answer
 

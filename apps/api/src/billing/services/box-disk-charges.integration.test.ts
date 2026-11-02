@@ -16,6 +16,8 @@ const withDb = confirmed ? describe : describe.skip;
 // Billing is a managed-deployment feature; config validates at import time.
 Object.assign(process.env, {
   KORTIX_BILLING_INTERNAL_ENABLED: 'true',
+  // The charge switch is off in deployments until the owner turns it on.
+  KORTIX_BOX_DISK_CHARGE_ENABLED: 'true',
   STRIPE_SECRET_KEY: 'sk_test_box_disk',
   STRIPE_WEBHOOK_SECRET: 'whsec_box_disk',
   KORTIX_URL: 'http://127.0.0.1:1',
@@ -24,6 +26,7 @@ Object.assign(process.env, {
 });
 
 const { db } = await import('../../shared/db');
+const { config } = await import('../../config');
 const fixtures = await import('../../__tests__/helpers/integration-fixtures');
 const { invalidateAccountBilling } = await import('./billing-cache');
 const boxDisk = await import('./box-disk-charges');
@@ -209,6 +212,22 @@ withDb('box disk billing on PostgreSQL', () => {
       ['box_disk', '2026-11-02', 3.3333, 0], // 00:00 → 00:10, charged after the day ends
       ['box_disk_archived', '2026-11-02', 116.6667, 0], // 00:10 → 06:00 at 36 µ$
     ]);
+  });
+
+  test('with the charge switch off a stopped box is metered and recorded waived; nothing is debited', async () => {
+    (config as { KORTIX_BOX_DISK_CHARGE_ENABLED: boolean }).KORTIX_BOX_DISK_CHARGE_ENABLED = false;
+    try {
+      const paying = await account('box-disk-switch-off');
+      const s = await sessionBox(paying, ids.stopped);
+      await computeWindow(paying, s.sandboxId, '2026-10-31T08:00:00.000Z', '2026-10-31T10:00:30.000Z');
+      listed.stopped = [box(ids.stopped, 'stopped', '2026-10-31T10:00:00.000Z')];
+      now = at('2026-11-01T00:30:00.000Z');
+      const result = await syncBoxDiskCharges(deps);
+      expect(result).toMatchObject({ charged: 0, waived: 1 });
+      expect(await ledger(paying)).toEqual([]);
+    } finally {
+      (config as { KORTIX_BOX_DISK_CHARGE_ENABLED: boolean }).KORTIX_BOX_DISK_CHARGE_ENABLED = true;
+    }
   });
 
   test('a box Kortix still bills as running is skipped; it is billed from the moment its window closes', async () => {

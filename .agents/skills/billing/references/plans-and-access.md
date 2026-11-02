@@ -95,9 +95,12 @@ a day read from both sources is charged once. The first tick of a feed
 starts both sources at its own day: storage before the feature shipped is
 never charged.
 
-The disk of a session or App box that is not running is storage too, billed
-exactly as Platinum bills it to Kortix (`billing/services/box-disk-charges.ts`,
-the same hourly tick). Platinum bills a box's `disk_gb` while it runs (Kortix
+The disk of a session or App box that is not running is storage too, metered
+exactly as Platinum bills it to Kortix. It is charged only while
+`KORTIX_BOX_DISK_CHARGE_ENABLED` is true (default false: every row is recorded
+`waived`, nothing is debited, and customer copy says only stored files are
+billed). Turning it on charges the days still open, up to 3 days back. The meter is
+`billing/services/box-disk-charges.ts`, on the same hourly tick. Platinum bills a box's `disk_gb` while it runs (Kortix
 charges that inside compute), while it is stopped (72 µ$/GB-hour, kind
 `box_disk`) and while it is archived (36 µ$/GB-hour, `box_disk_archived`);
 a box that boots from a root volume bills no disk. Platinum's billing feed no
