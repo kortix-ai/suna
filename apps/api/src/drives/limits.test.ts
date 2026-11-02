@@ -136,3 +136,10 @@ test("folder sizes come from the volume's own measured folders, with no listing"
   expect(sizes.get('/Company')).toEqual({ path: '/Company', bytes: 7, complete: true });
   expect(volumeReads).toBe(1);
 });
+
+test('a drive whose row has no volume id is read by its volume name: 182 of 359 prod drives have none', async () => {
+  usedNow = 4096;
+  const unrecorded = { ...drive, platinumVolumeId: null, platinumVolumeName: 'kd-no-stored-id-00001' };
+  forgetDriveUsage(unrecorded.platinumVolumeName);
+  expect((await driveVolumeUsage(unrecorded, { fresh: true }))?.usedBytes).toBe(4096);
+});
