@@ -36,7 +36,7 @@ import {
 import { db } from '../../shared/db';
 import { type ChannelMessage, type ChannelPort, type ChannelTarget, type SessionQuestion, routeChannelMessage } from './conversation';
 import { parseQuestionButton, parseQuestionControl, questionButtonData, questionDoneData, questionPageData } from './question-token';
-import { findChatThread } from './threads';
+import { findChatThread, findChatThreadSession } from './threads';
 
 export { parseQuestionButton, questionButtonData };
 
@@ -419,7 +419,8 @@ export async function handleQuestionTap(
 /**
  * A message typed in a conversation whose newest question message shows one
  * question at a time: the answer to the question on screen, with its ticked
- * options, when that question takes typed text. The next question follows, and
+ * options, when that question takes typed text, its session is not deleted and
+ * nothing else answered it. The next question follows, and
  * the last answer goes as a tap's does. False: the message is not an answer,
  * and goes to the agent as itself. `message.id` names the message for its
  * retries. Throws to ask the transport for a retry.
@@ -432,8 +433,9 @@ export async function answerQuestionInChat(
   run: { finalAttempt: boolean },
 ): Promise<boolean> {
   const text = message.text.trim();
-  const thread = text ? await findChatThread(target) : null;
-  if (!thread) return false;
+  const thread = text ? await findChatThreadSession(target) : null;
+  // A session deleted in the web is none: the message starts a new one (commands.ts `chatSession`).
+  if (!thread || typeof (thread.metadata as Record<string, unknown> | null)?.deletedAt === 'string') return false;
   // A retry finds the question it answered; the buttons may be gone by then.
   const own = await pendingQuestionStepsBy(thread.sessionId, message.id);
   const shown = own ? null : await newestQuestionMessage(target);
@@ -448,6 +450,8 @@ export async function answerQuestionInChat(
     await replay(ctx, steps);
     return true;
   }
+  // Answered another way (the web, or a whole answer in the turn): no step waits on the message.
+  if (asked.answers != null) return false;
   const q = asked.questions[steps.step];
   if (!q || q.custom === false) return false;
   await applySteps(ctx, asked.chatSteps, advance(steps, { question: steps.step, options: steps.ticked, text }, { by: message.id, ref }));

@@ -1794,6 +1794,30 @@ describe('Telegram questions one at a time — migrated PostgreSQL', () => {
     expect(await steps(sticker.id)).toMatchObject({ step: 1 });
   });
 
+  test('a session deleted in the web takes no typed answer: the message starts a new session', async () => {
+    const q = await posted(3012, THREE);
+    await tapOn(q, `kq:${q.id}:0`);
+    await db.update(projectSessions).set({ metadata: { deletedAt: new Date().toISOString() } }).where(eq(projectSessions.sessionId, q.sessionId));
+    // What the delivery answers for a deleted session (follow-up-delivery.ts).
+    deliverResult = 'no-session';
+    await handleTelegramEvent(update('Purple', ALLOWED, 3012));
+    expect(created).toHaveLength(1);
+    expect(await steps(q.id)).toMatchObject({ step: 1, picks: [{ question: 0, options: [0] }] });
+  });
+
+  test('a question answered another way (the web) takes no typed answer: the message reaches the agent as itself', async () => {
+    const q = await posted(3013, THREE);
+    await tapOn(q, `kq:${q.id}:0`);
+    await db.update(sessionPendingQuestions).set({ answers: [['Cherry'], ['Red'], ['Ship']] }).where(eq(sessionPendingQuestions.id, q.id));
+    calls.length = 0;
+    await handleTelegramEvent(update('Purple', ALLOWED, 3013));
+    expect(await steps(q.id)).toMatchObject({ step: 1 });
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toMatchObject({ sessionId: q.sessionId });
+    expect(delivered[0]!.text).not.toContain('You asked:');
+    expect(lastEdit()).toEqual({ text: expect.stringMatching(/\n\nAnswered in the chat\.$/), buttons: [] });
+  });
+
   test('a press from someone not on the allow-list gets an alert and moves nothing', async () => {
     const q = await posted(3008, THREE);
     await tapOn(q, `kq:${q.id}:0`, '999');
