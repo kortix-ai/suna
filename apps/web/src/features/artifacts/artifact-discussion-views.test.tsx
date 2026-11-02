@@ -4,12 +4,39 @@ import type {
   ArtifactCommentContext,
   ArtifactCommentThread,
 } from '@kortix/sdk';
-import { afterEach, expect, test } from 'bun:test';
-import type { ComponentProps } from 'react';
+import { afterAll, expect, test } from 'bun:test';
+import { Window } from 'happy-dom';
+import { act, type ComponentProps } from 'react';
+import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { act, create } from 'react-test-renderer';
 import { ArtifactActivityTimeline } from './artifact-activity-timeline';
 import { ArtifactCommentThreadView } from './artifact-comment-thread';
+
+const page = new Window({ url: 'http://localhost' });
+const originals = new Map<string, PropertyDescriptor | undefined>();
+for (const [key, value] of Object.entries({
+  window: page,
+  document: page.document,
+  navigator: page.navigator,
+  HTMLElement: page.HTMLElement,
+  Element: page.Element,
+  Node: page.Node,
+  MutationObserver: page.MutationObserver,
+  getComputedStyle: page.getComputedStyle.bind(page),
+  requestAnimationFrame: page.requestAnimationFrame.bind(page),
+  cancelAnimationFrame: page.cancelAnimationFrame.bind(page),
+  IS_REACT_ACT_ENVIRONMENT: true,
+})) {
+  originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+  Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+}
+afterAll(async () => {
+  await page.happyDOM.close();
+  for (const [key, descriptor] of originals) {
+    if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+    else Reflect.deleteProperty(globalThis, key);
+  }
+});
 
 const userId = '11111111-1111-4111-8111-111111111111';
 const comment = (props: Partial<ArtifactComment> = {}) =>
@@ -78,12 +105,102 @@ const props = (
   ...extra,
 });
 
-test('a current writable thread shows quote focus, resolve, reply and an action menu', () => {
+test('a current writable thread shows quote focus, a Resolve icon, a collapsed reply and an action menu', () => {
   const html = renderToStaticMarkup(<ArtifactCommentThreadView {...props(thread())} />);
   expect(html).toContain('aria-label="Show passage"');
-  expect(html).toContain('>Resolve<');
+  expect(html).toContain('aria-label="Resolve"');
   expect(html).toContain('aria-label="Comment actions"');
-  expect(html).toContain('<form');
+  // The reply editor mounts only on demand: one line until the person replies.
+  expect(html).not.toContain('<form');
+  expect(html).toContain('aria-label="Reply"');
+});
+
+test('resolved, sent, waiting and failed threads say who and what', () => {
+  const resolved = renderToStaticMarkup(
+    <ArtifactCommentThreadView
+      {...props(
+        thread({
+          status: 'resolved',
+          resolved_by_user_id: userId,
+          resolved_at: '2026-10-29T13:00:00Z',
+        }),
+      )}
+    />,
+  );
+  expect(resolved).toContain('Resolved by Dana');
+  expect(resolved).toContain('>Reopen<');
+  expect(resolved).not.toContain('aria-label="Resolve"');
+  const sent = renderToStaticMarkup(
+    <ArtifactCommentThreadView
+      {...props(thread({ agent_state: 'sent', sent_session_id: 'session-7' }))}
+    />,
+  );
+  expect(sent).toContain('Sent to agent');
+  expect(sent).toContain('href="/projects/project/sessions/session-7"');
+  expect(
+    renderToStaticMarkup(
+      <ArtifactCommentThreadView {...props(thread({ agent_state: 'pending' }))} />,
+    ),
+  ).toContain('Sending to agent…');
+  expect(
+    renderToStaticMarkup(
+      <ArtifactCommentThreadView {...props(thread({ agent_state: 'paused', agent_error: null }))} />,
+    ),
+  ).toContain('Waiting for a person');
+  const failed = renderToStaticMarkup(
+    <ArtifactCommentThreadView
+      {...props(thread({ agent_state: 'paused', agent_error: 'Model refused' }), {
+        onRetryDelivery() {},
+      })}
+    />,
+  );
+  expect(failed).toContain('Not delivered');
+  expect(failed).toContain('Model refused');
+  expect(failed).toContain('>Try again<');
+});
+
+test('a long thread shows its first and last two comments behind "more replies"', () => {
+  const comments = Array.from({ length: 6 }, (_, index) =>
+    comment({ comment_id: `c${index}`, body: `Body ${index}` }),
+  );
+  const html = renderToStaticMarkup(
+    <ArtifactCommentThreadView {...props(thread({ comments }))} />,
+  );
+  expect(html).toContain('Body 0');
+  expect(html).not.toContain('Body 1');
+  expect(html).toContain('3 more replies');
+  expect(html).toContain('Body 4');
+  expect(html).toContain('Body 5');
+});
+
+test('an unconfirmed comment shows the viewer as author, dimmed, with no actions', () => {
+  const html = renderToStaticMarkup(
+    <ArtifactCommentThreadView
+      {...props(
+        thread({
+          thread_id: 'optimistic-thread-1',
+          can_reply: false,
+          can_resolve: false,
+          comments: [
+            {
+              ...comment({
+                comment_id: 'optimistic-comment-1',
+                author: { kind: 'user', user_id: '', name: '' },
+                can_edit: false,
+                can_delete: false,
+              }),
+              optimistic: true,
+            } as ArtifactComment,
+          ],
+        }),
+        { viewer: { userId: 'viewer', name: 'Ada Viewer', email: 'ada@example.test' } },
+      )}
+    />,
+  );
+  expect(html).toContain('Ada Viewer');
+  expect(html).toContain('opacity-60');
+  expect(html).not.toContain('aria-label="Comment actions"');
+  expect(html).not.toContain('aria-label="Resolve"');
 });
 
 test('historical and deleted-root threads hide every write control', () => {
@@ -100,8 +217,9 @@ test('historical and deleted-root threads hide every write control', () => {
   ]) {
     const html = renderToStaticMarkup(<ArtifactCommentThreadView {...value} />);
     expect(html).not.toContain('<form');
+    expect(html).not.toContain('aria-label="Reply"');
     expect(html).not.toContain('aria-label="Comment actions"');
-    expect(html).not.toContain('>Resolve<');
+    expect(html).not.toContain('aria-label="Resolve"');
   }
 });
 
@@ -121,7 +239,7 @@ test('missing action permissions fail closed; outdated quotes remain visible wit
   );
   expect(html).toContain('The source');
   expect(html).not.toContain('aria-label="Show passage"');
-  expect(html).not.toContain('<form');
+  expect(html).not.toContain('aria-label="Reply"');
   expect(html).not.toContain('aria-label="Comment actions"');
 });
 
@@ -179,16 +297,7 @@ test('stored agent and session mentions use server tokens without granting roste
   }
 });
 
-let tree: ReturnType<typeof create> | undefined;
-afterEach(async () => {
-  await act(async () => tree?.unmount());
-});
-
-test('activity save and thread rows invoke exact targets; Load more retains the loaded rows', async () => {
-  Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', {
-    value: true,
-    configurable: true,
-  });
+test('activity rows are whole-row targets that name their thread; Load more keeps the rows', async () => {
   const versions: string[] = [];
   const threads: string[] = [];
   let pages = 0;
@@ -203,14 +312,21 @@ test('activity save and thread rows invoke exact targets; Load more retains the 
     at: '2026-10-29T12:00:00Z',
     actor: { kind: 'user', id: userId, name: 'Dana' },
   });
-  await act(async () => {
-    tree = create(
+  const host = page.document.createElement('div');
+  page.document.body.append(host);
+  const root = createRoot(host as unknown as Element);
+  await act(async () =>
+    root.render(
       <ArtifactActivityTimeline
         projectId="project"
+        threads={[thread()]}
+        people={[
+          { user_id: userId, name: 'Dana', avatar_url: 'https://example.test/dana.png', token: '@dana@example.test' },
+        ]}
         activity={{
           items: [
             item('save', 'saved', { version: 'vc_saved' }),
-            item('reply', 'replied', { thread_id: 'thread' }),
+            item('reply', 'replied', { thread_id: 'thread', comment_id: 'comment' }),
           ],
           isLoading: false,
           isError: false,
@@ -225,21 +341,25 @@ test('activity save and thread rows invoke exact targets; Load more retains the 
         onOpenVersion={(version) => versions.push(version)}
         onFocusThread={(id) => threads.push(id)}
       />,
-    );
-  });
-  const buttons = tree!.root.findAllByType('button');
+    ),
+  );
+  const buttons = [...host.querySelectorAll('button')];
   await act(async () => {
+    buttons.find((button) => button.getAttribute('aria-label') === 'Dana saved a version')!.click();
     buttons
-      .find((button) => button.props['aria-label'] === 'Dana saved a version')!
-      .props.onClick();
-    buttons
-      .find((button) => button.props['aria-label'] === 'Dana replied to a thread')!
-      .props.onClick();
-    buttons.find((button) => button.children.includes('Load more'))!.props.onClick();
+      .find((button) => button.getAttribute('aria-label') === 'Dana replied to a thread')!
+      .click();
+    buttons.find((button) => button.textContent === 'Load more')!.click();
   });
   expect(versions).toEqual(['vc_saved']);
   expect(threads).toEqual(['thread']);
   expect(pages).toBe(1);
-  expect(tree!.root.findAll((node) => !!node.props['data-activity-id'])).toHaveLength(2);
-  expect(JSON.stringify(tree!.toJSON())).toContain('Older saves may be unavailable');
+  const reply = host.querySelector('[data-activity-id="reply"]')!;
+  // The reply row names the comment it added.
+  expect(reply.textContent).toContain('Review this.');
+  // The absolute time is one Tab away.
+  expect(reply.querySelector('time')?.getAttribute('tabindex')).toBe('0');
+  expect(host.querySelectorAll('[data-activity-id]')).toHaveLength(2);
+  expect(host.textContent).toContain('Older saves may be unavailable');
+  await act(async () => root.unmount());
 });
