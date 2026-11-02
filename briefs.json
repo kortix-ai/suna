@@ -257,6 +257,56 @@
       "slack": {
         "status": "skipped"
       }
+    },
+    "2026-W44": {
+      "week": "2026-W44",
+      "start": "2026-10-26T00:00:00.000Z",
+      "end": "2026-11-02T00:00:00.000Z",
+      "releases": [
+        "v0.14.14",
+        "v0.14.13",
+        "v0.14.12",
+        "v0.14.11",
+        "v0.14.10",
+        "v0.14.9"
+      ],
+      "highlights": [
+        {
+          "text": "Run agents, teams and workflows while you chat, with memory and automatic follow-ups.",
+          "tags": [
+            "v0.14.13"
+          ]
+        },
+        {
+          "text": "Watch and take control of a computer desktop in every session.",
+          "tags": [
+            "v0.14.11"
+          ]
+        },
+        {
+          "text": "Upload files of any size to your drive from the web, CLI and API.",
+          "tags": [
+            "v0.14.13"
+          ]
+        },
+        {
+          "text": "Discuss documents, comment on selected content and add drawn feedback to artifacts.",
+          "tags": [
+            "v0.14.12",
+            "v0.14.13"
+          ]
+        },
+        {
+          "text": "See the total cost of a session and the sessions it spawned.",
+          "tags": [
+            "v0.14.13"
+          ]
+        }
+      ],
+      "generated_at": "2026-11-02T06:05:52.463Z",
+      "slack": {
+        "status": "skipped"
+      }
     }
   }
 }
