@@ -66,9 +66,10 @@ Options:
   --no-sidebar      Start with the sidebar hidden, for this run. Without
                     either flag the TUI uses the last /sidebar choice
                     (hidden the first time).
-  --mouse           Let the TUI take the mouse. Off by default, so your
-                    terminal's own text selection, copy-on-select and
-                    Cmd+click on a URL keep working inside the TUI.
+  --no-mouse        Leave the mouse to the terminal. By default the TUI
+                    takes it: click tabs and the sidebar, scroll with the
+                    wheel, and drag over text to copy it. Most terminals
+                    still select natively with Shift (Option on macOS).
   --install         Install the TUI binary now and exit. No prompt.
   --uninstall       Remove ~/.kortix/tui/ and exit.
   -h, --help        Show this help.
@@ -129,9 +130,10 @@ interface TuiFlags {
   sidebar: boolean;
   /** Start with the sidebar hidden (`--no-sidebar`) for this run. */
   noSidebar: boolean;
-  /** Let the TUI take the mouse (`--mouse`). Off by default so the terminal's
-   *  own selection, copy-on-select and Cmd+click on URLs keep working. */
+  /** `--mouse`: the old opt-in. The TUI takes the mouse by default now; accepted, changes nothing. */
   mouse: boolean;
+  /** Leave the mouse to the terminal (`--no-mouse`): its own selection, Cmd+click on URLs. */
+  noMouse: boolean;
   install: boolean;
   uninstall: boolean;
   help: boolean;
@@ -155,6 +157,7 @@ export function parseTuiFlags(argv: string[]): TuiFlags {
     noSidebar: takeFlagBool(rest, ['--no-sidebar']),
     sidebar: takeFlagBool(rest, ['--sidebar']),
     mouse: takeFlagBool(rest, ['--mouse']),
+    noMouse: takeFlagBool(rest, ['--no-mouse']),
     host: takeFlagValue(rest, ['--host']),
     project: takeFlagValue(rest, ['--project']),
     session: takeFlagValue(rest, ['--session']),
@@ -193,7 +196,7 @@ export function tuiChildEnv(
       | 'terminal'
       | 'sidebar'
       | 'noSidebar'
-      | 'mouse'
+      | 'noMouse'
     >
   >,
   base: NodeJS.ProcessEnv,
@@ -208,7 +211,7 @@ export function tuiChildEnv(
     ...(flags.terminal ? { KORTIX_TUI_TERMINAL: '1' } : {}),
     ...(flags.sidebar ? { KORTIX_TUI_SIDEBAR: '1' } : {}),
     ...(flags.noSidebar ? { KORTIX_TUI_SIDEBAR: '0' } : {}),
-    ...(flags.mouse ? { KORTIX_TUI_MOUSE: '1' } : {}),
+    ...(flags.noMouse ? { KORTIX_TUI_MOUSE: '0' } : {}),
   };
 }
 

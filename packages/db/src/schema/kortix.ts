@@ -4818,6 +4818,12 @@ export const sessionPendingQuestions = kortixSchema.table(
     /** Null while the question is still open — the index keys on this. */
     answeredAt: timestamp('answered_at', { withTimezone: true, mode: 'string' }),
     answers: jsonb(),
+    /**
+     * A chat's answers so far while it shows the questions one at a time
+     * (`QuestionSteps`, api channels/core/questions.ts). Null: nothing picked.
+     * Written only by compare-and-set on its previous value.
+     */
+    chatSteps: jsonb('chat_steps'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .defaultNow()
       .notNull(),

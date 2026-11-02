@@ -54,7 +54,6 @@ export type OkResponse = z.infer<typeof OkResponseSchema>;
  */
 export const FeatureFlagMapSchema = z.object({
   marketplace: z.boolean(),
-  meta_agent: z.boolean(),
   reminders: z.boolean(),
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
@@ -203,6 +202,8 @@ export const ProjectSchema = z.object({
     connectors_v2: z.literal(true).optional(),
     /** Not a flag (integrations.sh is part of the one catalog); always `true` for older SDK and hosts. */
     connectors_api_discover: z.literal(true).optional(),
+    /** Not a flag since 2026-11-02 (My Kortix follows kortix.yaml `builtin_agents.my_kortix` alone); always `true` for older SDK and hosts. */
+    meta_agent: z.literal(true).optional(),
   }),
   experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */

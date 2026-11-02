@@ -4,6 +4,8 @@ import * as resolveCandidatesModule from './resolve-candidates';
 import * as modelPreferencesModule from '../../repositories/model-preferences';
 import * as secretsModule from '../../projects/secrets';
 import { runtimeModelCatalog } from '../models/runtime-catalog';
+import * as claudeAccountsModule from '../../claude-subscription/accounts';
+import * as projectModelAccessModule from '../../repositories/project-model-access';
 import {
   invalidateAccountModelDefaults,
   isModelServableForAccount,
@@ -275,6 +277,51 @@ describe('a ChatGPT default that left the lineup moves to the current ChatGPT fl
     };
     const result = await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: false });
     expect(result.model?.startsWith('openai/')).toBe(true);
+  });
+});
+
+// 2026-11-02 prod: a free account with only a Claude account connected got no
+// session model, so its box booted with none and pi refused to start.
+describe('an account without managed models defaults to its own Claude account last', () => {
+  let claudeUsable = true;
+  let claudeAsked = 0;
+  beforeEach(() => {
+    claudeUsable = true;
+    claudeAsked = 0;
+    // No ChatGPT flagship, no BYOK key: only the Claude account is left.
+    spyOn(runtimeModelCatalog, 'codexModelIds').mockImplementation(() => []);
+    spyOn(projectModelAccessModule, 'getProjectGatewayResolution').mockImplementation(
+      (async () => ({ access: { disabledProviders: [], disabledModels: [] } })) as unknown as typeof projectModelAccessModule.getProjectGatewayResolution,
+    );
+    spyOn(claudeAccountsModule, 'hasClaudeCredential').mockImplementation(async () => {
+      claudeAsked += 1;
+      return claudeUsable;
+    });
+  });
+
+  test('a session in a free account with a usable Claude account boots on claude-agent/opus', async () => {
+    expect(await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: true })).toEqual({
+      model: 'claude-agent/opus',
+      source: 'platform',
+    });
+  });
+
+  test('without a usable Claude account it stays without a model', async () => {
+    claudeUsable = false;
+    expect(await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: true })).toEqual({ model: null, source: 'platform' });
+  });
+
+  test('a connected BYOK key still comes first, and Claude is not asked', async () => {
+    connectedSecretNames = ['OPENAI_API_KEY'];
+    resolveCandidatesImpl = async () => [{ provider: 'openai' }];
+    const result = await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: true });
+    expect(result.model?.startsWith('openai/')).toBe(true);
+    expect(claudeAsked).toBe(0);
+  });
+
+  test('the gateway default never names a Claude subscription model', async () => {
+    expect(await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, freeModelsOnly: true })).toBeUndefined();
+    expect(claudeAsked).toBe(0);
   });
 });
 

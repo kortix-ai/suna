@@ -1262,10 +1262,6 @@
           "name": "市场",
           "description": "浏览并安装社区和供应商注册表中的技能。来源、更新和团队范围仍在调整。"
         },
-        "meta_agent": {
-          "name": "My Kortix",
-          "description": "My Kortix 是你唯一需要对话的智能体。它把每个任务交给最适合的智能体，并以你的权限运行。项目设置是 kortix.yaml 中的 `builtin_agents.my_kortix`；只有该键未设置时，此开关才生效。"
-        },
         "warm_sessions": {
           "name": "预热会话",
           "description": "保留一个沙盒以立即启动会话。空闲沙盒会占用计算资源。"
@@ -23284,8 +23280,8 @@
     "listPlaceholder": "值 1, 值 2"
   },
   "triggerAutoPause": {
-    "title": "已在运行上限处自动暂停",
-    "description": "它连续 2 小时达到每小时运行上限，因此已停止启动运行。找出持续触发它的原因，然后恢复它。"
+    "title": "已自动暂停",
+    "description": "由于以下原因，它已停止启动运行。解决原因后再恢复它。"
   },
   "featureGate": {
     "enable": "启用{name}",

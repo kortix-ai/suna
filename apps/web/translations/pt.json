@@ -1262,10 +1262,6 @@
           "name": "Marketplace",
           "description": "Explore e instale habilidades de registros da comunidade e de fornecedores. Fontes, atualizações e escopos de equipe ainda estão mudando."
         },
-        "meta_agent": {
-          "name": "My Kortix",
-          "description": "My Kortix, o único agente com quem você fala. Ele envia cada tarefa ao agente feito para ela e a executa com as suas permissões. A configuração do projeto é `builtin_agents.my_kortix` no kortix.yaml; este interruptor só vale quando essa chave não está definida."
-        },
         "warm_sessions": {
           "name": "Sessões aquecidas",
           "description": "Mantenha um sandbox pronto para iniciar sessões imediatamente. O sandbox ocioso usa computação."
@@ -23284,8 +23280,8 @@
     "listPlaceholder": "valor 1, valor 2"
   },
   "triggerAutoPause": {
-    "title": "Pausou-se ao atingir o limite de execuções",
-    "description": "Rodou no limite de execuções por hora por 2 horas seguidas, então parou de iniciar execuções. Descubra o que continua acionando-o e depois retome-o."
+    "title": "Pausado automaticamente",
+    "description": "Parou de iniciar execuções pelo motivo abaixo. Corrija a causa e depois retome-o."
   },
   "featureGate": {
     "enable": "Ativar {name}",
