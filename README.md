@@ -11,7 +11,9 @@
 
 Hand it an outcome and AI agents run it 24/7.<br />
 Events start them, My Kortix routes the work, and swarms of agents run it in parallel,<br />
-each on its own cloud computer. Your whole company stays in one git repo you own.
+each on its own cloud computer. Connect your company's tools, share agents and context<br />
+across your whole team, and own all of it as code: one git repo, open source,<br />
+on your infrastructure or ours.
 
 [![GitHub stars](https://img.shields.io/github/stars/kortix-ai/suna?style=flat&color=111111&label=Stars)](https://github.com/kortix-ai/suna/stargazers)
 [![Release](https://img.shields.io/github/v/release/kortix-ai/suna?style=flat&color=111111&label=Release)](https://github.com/kortix-ai/suna/releases/latest)
@@ -68,9 +70,10 @@ supplies everything around the agent loop that one session cannot.
    What lands on main goes through a change request a person approves
 ```
 
-Your agents, the skills they share, your company memory and every connector live in **one git
-repo you own**. Any model, your own keys, on Kortix Cloud, in your VPC or on your own on-prem
-network.
+Connect your company's tools once, and every agent and every teammate works with them, with the
+same skills and the same company memory. Your agents, skills, memory and connectors live in **one
+git repo you own**: your whole company as code. Any model, your own keys, on Kortix Cloud, in your
+VPC or on your own on-prem network.
 
 ---
 
