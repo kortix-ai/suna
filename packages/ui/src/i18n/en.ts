@@ -773,10 +773,6 @@ const catalog = {
           "name": "Marketplace",
           "description": "Browse and install skills from community and vendor registries. Sources, updates, and team scopes are still changing."
         },
-        "meta_agent": {
-          "name": "My Kortix",
-          "description": "My Kortix, the one agent you talk to. It routes each task to the agent made for it and runs it, with your permissions. The project setting is `builtin_agents.my_kortix` in kortix.yaml; this switch applies only when that key is not set."
-        },
         "warm_sessions": {
           "name": "Warm Sessions",
           "description": "Keep one sandbox ready for instant session starts. The idle sandbox uses compute."
@@ -907,6 +903,7 @@ const catalog = {
       "addCredits": "Add credits",
       "spentThisPeriod": "Spent this period",
       "compute": "Compute",
+      "storage": "Storage",
       "total": "Total",
       "history": "History",
       "historyDescription": "What every session cost, and every credit added or spent.",

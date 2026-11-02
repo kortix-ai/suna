@@ -63,6 +63,7 @@ export type FeatureFlagKey =
   | 'llm_gateway'
   /** @deprecated Graduated — Review Center is on for every project. Removed in the next major. */
   | 'review_center'
+  /** @deprecated Graduated — My Kortix follows kortix.yaml `builtin_agents.my_kortix` alone. The API sends `true` for every project. Removed in the next major. */
   | 'meta_agent'
   /** @deprecated Graduated — Apps is on for every project. Removed in the next major. */
   | 'apps'
@@ -115,7 +116,7 @@ export type FeatureFlagKey =
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
-/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `pi_harness`, `genui`) sends a constant `true`. */
+/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `pi_harness`, `genui`, `meta_agent`) sends a constant `true`. */
 type GraduatedFeatureFlagKey =
   | 'agent_tunnel'
   | 'teams'
@@ -135,7 +136,8 @@ type GraduatedFeatureFlagKey =
   | 'agentmail_email'
   | 'monitors'
   | 'connectors_v2'
-  | 'connectors_api_discover';
+  | 'connectors_api_discover'
+  | 'meta_agent';
 /** The keys `KortixProject.experimental` carries on every response. */
 type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
@@ -146,7 +148,6 @@ type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
  */
 export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'marketplace',
-  'meta_agent',
   'reminders',
   'warm_sessions',
   'secrets_egress',

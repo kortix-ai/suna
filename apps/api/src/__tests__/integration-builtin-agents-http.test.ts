@@ -26,7 +26,7 @@ const OWNER = crypto.randomUUID();
 const ON = crypto.randomUUID();
 /** `builtin_agents: { my_kortix: false }`. */
 const OFF = crypto.randomUUID();
-/** No key, and the project's legacy `meta_agent` switch is off. */
+/** No key, and the project still stores `experimental.meta_agent: false` from the removed flag. */
 const LEGACY_OFF = crypto.randomUUID();
 const upstreams: LocalGitUpstream[] = [];
 const secrets: Record<string, string> = {};
@@ -144,16 +144,17 @@ describe('builtin_agents.my_kortix: false (off)', () => {
   });
 });
 
-describe('no builtin_agents key, legacy meta_agent switch off', () => {
-  test('the project stays off until kortix.yaml sets the key', async () => {
+describe('no builtin_agents key, a stored `meta_agent: false` from the removed flag', () => {
+  test('the stored value is inert: GET /detail lists My Kortix first and makes it the default agent', async () => {
     const config = await detail(LEGACY_OFF);
-    expect(config.builtin_agents).toEqual({ my_kortix: false });
-    expect(config.agents.map((agent) => agent.name)).toEqual(['kortix']);
+    expect(config.builtin_agents).toEqual({ my_kortix: true });
+    expect(config.default_agent).toBe('mykortix');
+    expect(config.agents.map((agent) => agent.name)).toEqual(['mykortix', 'kortix']);
   });
 
-  test('POST /sessions naming `meta` is refused there too', async () => {
-    const res = await call(LEGACY_OFF, '/sessions', { method: 'POST', body: JSON.stringify({ agent_name: 'meta' }) });
-    expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ code: 'builtin_agent_disabled' });
+  test('GET /agents/mykortix/config answers the built-in view, not 404', async () => {
+    const res = await call(LEGACY_OFF, '/agents/mykortix/config');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ agent: 'mykortix', builtin: 'my_kortix', editable: false });
   });
 });

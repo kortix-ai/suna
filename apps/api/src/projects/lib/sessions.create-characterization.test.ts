@@ -11,7 +11,7 @@ mock.module('../../billing/services/billing-gate', () => ({ checkBillingAdmissio
 mock.module('../../billing/services/entitlements', () => ({ accountMayUseManagedModels: async () => mayUseManagedModels }));
 mock.module('../../shared/audit', () => ({ recordAuditEvent: async () => {} }));
 mock.module('../agents', () => ({
-  loadProjectAgents: async () => ({ defaultAgent: 'default' }),
+  loadProjectAgents: async () => ({ defaultAgent: 'default', builtinAgents: { my_kortix: false } }),
   repositoryAccessFromLoadedAgents: () => false,
   legacyReadWorkspaceFromLoadedAgents: () => false,
   sandboxFromLoadedAgents: () => null,
@@ -57,13 +57,13 @@ mock.module('../../llm-gateway/models/served-managed-models', () => ({
 
 import { createProjectSession } from './sessions';
 
-// meta_agent is default-on (2026-10-24). This suite characterizes the ordinary
-// (non-meta) session-create path — model pin, metadata fields, sandbox slug —
-// so it opts out of the meta coordinator explicitly to stay isolated from the
-// default. The meta path has its own coverage in unit-my-kortix-agent.test.ts.
+// My Kortix is on unless kortix.yaml turns it off. This suite characterizes the
+// ordinary (non-My Kortix) session-create path — model pin, metadata fields,
+// sandbox slug — so its mocked manifest sets `builtin_agents.my_kortix: false`.
+// The My Kortix path has its own coverage in unit-my-kortix-agent.test.ts.
 const project = {
   projectId: 'synthetic-project', accountId: 'synthetic-account', defaultBranch: 'main',
-  metadata: { experimental: { meta_agent: false } }, repoUrl: 'https://example.test/repo', manifestPath: 'kortix.yaml',
+  metadata: {}, repoUrl: 'https://example.test/repo', manifestPath: 'kortix.yaml',
 } as unknown as Parameters<typeof createProjectSession>[0]['project'];
 
 const originalKortixUrl = config.KORTIX_URL;

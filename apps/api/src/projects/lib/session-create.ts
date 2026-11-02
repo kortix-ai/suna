@@ -539,14 +539,11 @@ async function resolveSessionAgent(params: {
   );
   const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
   // My Kortix (slug `mykortix`) is on unless kortix.yaml sets
-  // `builtin_agents.my_kortix: false` (no key: the legacy `meta_agent` switch).
+  // `builtin_agents.my_kortix: false`.
   // Off: agent resolution below is the pre-meta behavior, and a session that
   // would run My Kortix is refused with 409 builtin_agent_disabled. Without the
   // refusal it ran with My Kortix's grant, prompt and sandbox anyway.
-  const metaAgentEnabled = resolveBuiltinAgents(
-    loadedAgents.builtinAgents ?? {},
-    resolveFeatureFlag(project.metadata, 'meta_agent'),
-  ).my_kortix;
+  const metaAgentEnabled = resolveBuiltinAgents(loadedAgents.builtinAgents ?? {}).my_kortix;
   // Meta→meta recursion stop. Anyone — dashboard users included — may spawn
   // the meta coordinator, and an omitted agent still defaults to it. The one
   // exception is a caller that IS a meta session: its omitted agent resolves

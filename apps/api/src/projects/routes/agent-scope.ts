@@ -21,8 +21,7 @@ import { GrantSecretToAgentInputSchema, GrantSecretToAgentResultSchema } from '@
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { auth, boundedIssues, errors, json } from '../../openapi';
 import { extractAgents, grantsByAgent } from '../agents';
-import { projectBuiltinAgents } from '../lib/builtin-agents';
-import { builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/my-kortix-agent';
+import { builtinAgentWriteRefusal, enabledBuiltinAgentKey, projectBuiltinAgents } from '../lib/my-kortix-agent';
 import { extractConnectors } from '../connectors';
 import { canonicalConnectorAlias } from '../../shared/connector-alias';
 import { policySetNameError } from '@kortix/manifest-schema';
@@ -169,7 +168,7 @@ export function registerAgentScopeRoutes(): void {
           400,
         );
       }
-      const builtinKey = enabledBuiltinAgentKey(agentName, projectBuiltinAgents(manifest.raw, loaded.row.metadata));
+      const builtinKey = enabledBuiltinAgentKey(agentName, projectBuiltinAgents(manifest.raw));
       if (builtinKey) return c.json(builtinAgentWriteRefusal(builtinKey), 409);
       // Read before the edit below replaces `manifest.raw`.
       const grantsBefore = grantsByAgent(extractAgents(manifest));

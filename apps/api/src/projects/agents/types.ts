@@ -77,6 +77,6 @@ export interface LoadedAgents {
    *  them names is off, and a refusal to start it names them. */
   issues?: ManifestIssue[];
   /** The manifest's explicit `builtin_agents` booleans. Absent key = not
-   *  set; `resolveBuiltinAgents` (lib/my-kortix-agent.ts) adds the fallback. */
+   *  set; `resolveBuiltinAgents` (lib/my-kortix-agent.ts) reads it as on. */
   builtinAgents?: Partial<Record<BuiltinAgentKey, boolean>>;
 }
