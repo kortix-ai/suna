@@ -25,7 +25,7 @@ import type { SharingIntent } from '../../connectors/share';
 import { CLAUDE_ACCOUNT } from '../../claude-subscription/accounts';
 import { reconnectProviderAccount, writeProviderAccount } from '../../secrets/provider-accounts';
 
-export const FLOW_TTL_MS = 10 * 60_000;
+const FLOW_TTL_MS = 10 * 60_000;
 const OWNER_POLL_MS = 500;
 /** An owner that has not polled for this long has stopped. */
 const OWNER_STALE_MS = 15_000;
@@ -50,7 +50,7 @@ export class ClaudeLoginFlowError extends Error {
 // replica-local: the processes this replica owns; the flow rows are the shared state.
 const liveRuns = new Map<string, SetupTokenRun>();
 
-export interface StartedClaudeLogin {
+interface StartedClaudeLogin {
   flowId: string;
   authorizeUrl: string;
   expiresAt: string;
@@ -61,7 +61,7 @@ export type ClaudeAccountTarget =
   | { kind: 'new'; secretId: string; label: string; sharing: SharingIntent }
   | { kind: 'reconnect'; secretId: string };
 
-export interface ClaudeLoginInput {
+interface ClaudeLoginInput {
   accountId: string;
   userId: string;
   projectId: string;

@@ -890,7 +890,7 @@ function emailWebhookBaseUrl(requestUrl: string): string {
 }
 
 /** The part before the @: lower case, letters, digits, dots and hyphens. */
-export function normalizeEmailUsername(input: string | null | undefined): string | null {
+function normalizeEmailUsername(input: string | null | undefined): string | null {
   const raw = (input ?? '')
     .toLowerCase()
     .replace(/[^a-z0-9.]+/g, '-')
