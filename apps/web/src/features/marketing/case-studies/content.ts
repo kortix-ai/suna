@@ -122,7 +122,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       logo: {
         src: '/media/case-studies/hedge-fund-desk.svg',
         alt: 'An AI-run hedge fund desk.',
-        width: 397,
+        width: 398,
         height: 100,
       },
       category: 'Finance',
@@ -141,7 +141,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       logo: {
         src: '/media/case-studies/executive-search.svg',
         alt: 'An international executive search firm',
-        width: 395,
+        width: 349,
         height: 100,
       },
       category: 'Professional services',
