@@ -17,6 +17,20 @@ hydrateEnvironmentSecret();
  */
 export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
+/**
+ * The environment of a child process: this process's environment plus
+ * `extra`. A child process is the one reader of the raw environment outside
+ * this file.
+ */
+export function childProcessEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  return { ...process.env, ...extra };
+}
+
+// No git process the API starts may download a missing object on its own
+// (projects/git/object-store.ts): it would run without credentials, one object
+// per round trip, with no size bound. Every child inherits this.
+process.env.GIT_NO_LAZY_FETCH = '1';
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 // Platinum is the reference provider. Daytona is a legacy fallback: its
@@ -614,6 +628,10 @@ const envSchema = z.object({
     .enum(['git', 'prefer-s3', 'require-s3'])
     .optional()
     .default('git'),
+  // What the API keeps of each project repository (projects/git/object-store.ts).
+  // `partial`: commits, then trees and files only when a read names them.
+  // `full`: the whole-history clone of before 2026-11-02 (the kill switch).
+  KORTIX_GIT_OBJECT_STORE: z.enum(['partial', 'full']).optional().default('partial'),
   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: optStr,
   KORTIX_PROJECT_SNAPSHOT_S3_REGION: optStr,
   KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT: optUrl(''),
@@ -1458,6 +1476,7 @@ export const config = {
   KORTIX_WORKSPACE_VOLUMES: env.KORTIX_WORKSPACE_VOLUMES,
   KORTIX_PLATINUM_US_REGION_DEFAULT: env.KORTIX_PLATINUM_US_REGION_DEFAULT,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
+  KORTIX_GIT_OBJECT_STORE: env.KORTIX_GIT_OBJECT_STORE,
   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET,
   KORTIX_PROJECT_SNAPSHOT_S3_REGION: env.KORTIX_PROJECT_SNAPSHOT_S3_REGION,
   KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT: env.KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT,

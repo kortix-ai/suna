@@ -24,11 +24,13 @@ import {
 // From the leaf, not the barrel: suites that stub '../git' by listing its
 // exports would otherwise lose these names and fail at import.
 import { remoteBranchExists, BRANCH_LIST_MAX_LIMIT, filterBranchesForResponse, isSessionBranchName } from '../git/branches';
+import { CommitDiffTooLargeError } from '../git/commits';
 import {
   DIRECTORY_PAGE_LIMIT,
   DIRECTORY_PAGE_MAX_LIMIT,
   decodeDirectoryCursor,
   encodeDirectoryCursor,
+  isRepoContentTooLargeError,
   listRepoDirectory,
 } from '../git/files';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -314,6 +316,7 @@ export function registerProjectFilesRoutes(): void {
       });
     } catch (error) {
       rethrowDatabaseError(error);
+      if (isRepoContentTooLargeError(error)) return c.json({ error: error.message }, 413);
       const message = error instanceof Error ? error.message : 'Failed to archive directory';
       return c.json({ error: message }, 400);
     }
@@ -440,6 +443,7 @@ export function registerProjectFilesRoutes(): void {
       return c.json({ path, ref, content: bytes.toString('utf8'), revision });
     } catch (error) {
       if (isGitRefNotFoundError(error)) return c.json({ error: 'ref not found' }, 404);
+      if (isRepoContentTooLargeError(error)) return c.json({ error: error.message }, 413);
       // `readRepoFile` converts a `git show` "path does not exist" failure into a
       // typed `RepoFileNotFoundError` (message: `file not found in repository at
       // '<ref>:<path>'`), which the `isMissingGitPathError` regex below does NOT
@@ -513,6 +517,7 @@ export function registerProjectFilesRoutes(): void {
       });
     } catch (error) {
       if (isGitRefNotFoundError(error)) return c.json({ error: 'ref not found' }, 404);
+      if (isRepoContentTooLargeError(error)) return c.json({ error: error.message }, 413);
       if (isRepoFileNotFoundError(error) || isMissingGitPathError(error)) {
         return c.json({ error: 'File not found' }, 404);
       }
@@ -767,6 +772,7 @@ export function registerProjectFilesRoutes(): void {
       return c.json({ path: path ?? null, ...diff });
     } catch (error) {
       rethrowDatabaseError(error);
+      if (error instanceof CommitDiffTooLargeError) return c.json({ error: error.message }, 413);
       const message = error instanceof Error ? error.message : 'Failed to load diff';
       return c.json({ error: message }, 400);
     }

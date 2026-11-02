@@ -33,6 +33,7 @@ import { execFile, spawn } from 'node:child_process';
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { childProcessEnv, config } from '../../config';
 
 const execFileAsync = promisify(execFile);
 
@@ -53,7 +54,7 @@ let partialSupport: Promise<boolean> | null = null;
  * Mac) cannot refuse an implicit fetch, so it keeps whole clones too.
  */
 export function partialStoresEnabled(): Promise<boolean> {
-  if (process.env.KORTIX_GIT_OBJECT_STORE === 'full') return Promise.resolve(false);
+  if (config.KORTIX_GIT_OBJECT_STORE === 'full') return Promise.resolve(false);
   partialSupport ??= execFileAsync('git', ['--version'], { timeout: 10_000 })
     .then(({ stdout }) => gitVersionSupportsPartialStores(String(stdout)))
     .catch(() => false);
@@ -94,7 +95,7 @@ export async function missingObjects(repoPath: string, oids: readonly string[]):
     ['cat-file', '--batch-check=%(objectname)'],
     repoPath,
     `${wanted.join('\n')}\n`,
-    { ...process.env, GIT_TERMINAL_PROMPT: '0', ...NO_LAZY_FETCH_ENV },
+    childProcessEnv({ GIT_TERMINAL_PROMPT: '0', ...NO_LAZY_FETCH_ENV }),
     60_000,
   );
   const missing: string[] = [];
@@ -176,7 +177,7 @@ async function fetchMissing(
   ];
   const child = spawn('git', args, {
     cwd: repoPath,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...env, ...NO_LAZY_FETCH_ENV },
+    env: childProcessEnv({ GIT_TERMINAL_PROMPT: '0', ...env, ...NO_LAZY_FETCH_ENV }),
     stdio: ['pipe', 'ignore', 'pipe'],
   });
   let stderr = '';

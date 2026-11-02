@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { mapLimit } from '@kortix/registry';
 import { validateRef } from '../git-ref';
 import {
+  ensureCommitTrees,
   hostFromRepoUrl,
   invalidateProjectMirror,
   isGitOperationError,
@@ -264,7 +265,11 @@ async function pushCommitWithRaceRecovery(
   expectedFileRevision: NormalizedExpectedFileRevision | undefined,
   authHost: string,
 ): Promise<boolean> {
-  const pushArgs = ['push'];
+  // `--no-thin`: a thin pack stores an edited file as a delta against its
+  // previous version, so git reads that version first. On a partial store
+  // (object-store.ts) it is not present, and the push would fetch it only
+  // to send less. An API write sends a few small files whole instead.
+  const pushArgs = ['push', '--no-thin'];
   if (expectedFileRevision) {
     pushArgs.push(`--force-with-lease=refs/heads/${branch}:${parentSha ?? ''}`);
   }
@@ -349,7 +354,10 @@ async function buildCommit(
   for (const path of deletes) {
     await runGit(['update-index', '--force-remove', path], repoPath, false, null, deleteEnv);
   }
-  const treeSha = (await runGit(['write-tree'], repoPath, false, null, indexEnv)).stdout.trim();
+  // `--missing-ok`: on a partial store (object-store.ts) the unchanged files
+  // of the parent are not present, and plain write-tree refuses an index that
+  // names them. The remote holds them, so the push needs none of them.
+  const treeSha = (await runGit(['write-tree', '--missing-ok'], repoPath, false, null, indexEnv)).stdout.trim();
   if (!/^[0-9a-f]{40}$/.test(treeSha))
     throw new Error('git write-tree did not return a tree SHA');
 
@@ -414,6 +422,10 @@ export async function commitMultipleFilesToBranch(
   if (opts.expectedCommit !== undefined && parentSha !== opts.expectedCommit) {
     throw new GitFileRevisionConflictError(branch);
   }
+  // The revision checks and the new tree read the parent's trees. The refresh
+  // above brings those of the default branch only. No file of the parent is
+  // read: the new tree names unchanged files by id.
+  if (parentSha) await ensureCommitTrees(repoPath, [parentSha]);
   const expectedFileRevision = normalizeExpectedFileRevision(opts);
   await assertExpectedRevisions(repoPath, parentSha, expectedFileRevision, opts);
 

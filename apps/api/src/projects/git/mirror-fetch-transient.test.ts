@@ -122,6 +122,10 @@ async function makeWarmMirror(root: string): Promise<GitBackedProject> {
   // fail) work; only `fetch` is intercepted.
   await execFileAsync(realGit, ['init', '--bare', mirrorPath]);
   await execFileAsync(realGit, ['remote', 'add', 'origin', project.repoUrl], { cwd: mirrorPath });
+  // A warm store is a partial clone (object-store.ts). A store without these
+  // settings is one from before partial stores, and a refresh replaces it.
+  await execFileAsync(realGit, ['config', 'remote.origin.promisor', 'true'], { cwd: mirrorPath });
+  await execFileAsync(realGit, ['config', 'remote.origin.partialclonefilter', 'tree:0'], { cwd: mirrorPath });
   return project;
 }
 
