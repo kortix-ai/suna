@@ -417,6 +417,7 @@ export function Composer({
         onToast={onToast}
         onKey={onKey}
         onMetrics={setInputMetrics}
+        onActivate={onRequestFocus}
         seed={seed}
         footer={showTray ? tray : null}
       />

@@ -222,18 +222,22 @@ printed is one chord away. Only `http:` and `https:` URLs are opened.
 
 ## Mouse, selection and copying
 
-The TUI does not take the mouse. Your terminal's own text selection,
-copy-on-select and `Cmd`/`Ctrl`+click on a URL therefore keep working inside
-it, exactly as in a plain shell; in Ghostty that means drag to select and the
-selection is on the clipboard. Nothing in the app needs a click. `kortix tui
---mouse` (`KORTIX_TUI_MOUSE=1`) gives the mouse to the app instead, and
-then Shift+drag is the way to select natively in most terminals.
+The TUI takes the mouse, as OpenCode does:
 
-Exceptions: the app takes the mouse while something on screen is clickable —
-the Kortix symbol in the empty state (a click starts Game of Life from it;
-`/life` does the same from the keyboard), the session tabs, and the sidebar.
-Shift+drag selects natively then. With none of them on screen (the default
-layout with a session open), the mouse is the terminal's again.
+- **Drag over any text to copy it.** On release the selection goes to the
+  clipboard (OSC 52, which also works over SSH and inside tmux) and a toast
+  says "Copied N characters".
+- **Click** the session tabs, the sidebar, or the Kortix symbol in the empty
+  state (a click starts Game of Life; `/life` does the same from the keyboard).
+  The wheel scrolls the transcript.
+- **A click never takes the keyboard from the chat input.** The input owns the
+  keyboard whenever no picker, panel, sidebar or terminal does; a click on the
+  input gives it back from those.
+
+Hold Shift (Option in some macOS terminals) to use the terminal's own
+selection instead. `kortix tui --no-mouse` (`KORTIX_TUI_MOUSE=0`) leaves the
+mouse to the terminal for the whole run: its own selection, copy-on-select and
+`Cmd`/`Ctrl`+click on a URL.
 
 ### Alt on a Mac
 

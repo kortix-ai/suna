@@ -139,14 +139,14 @@ describe('Splash', () => {
     expect(living).toMatch(BRAILLE);
   });
 
-  test('turns the mouse on while mounted, a click on the symbol starts Life, unmount restores it', async () => {
+  test('a click on the symbol starts Life; the splash leaves the mouse as the app set it', async () => {
     const setup = await render(
       <Host width={120} height={36} center tagline="Type a prompt." lines={LINES} />,
       120,
       36,
+      true,
     );
     await act(async () => {});
-    expect(setup.renderer.useMouse).toBe(true);
 
     const rows = setup.captureCharFrame().split('\n');
     const y = rows.findIndex((row) => row.includes(SYMBOL_2X_TOP));
@@ -159,12 +159,8 @@ describe('Splash', () => {
     expect(frame).not.toContain(SYMBOL_2X_TOP);
     expect(frame).toMatch(BRAILLE);
 
-    await act(async () => control.unmount());
-    expect(setup.renderer.useMouse).toBe(false);
-  });
-
-  test('leaves the mouse on at unmount when the app started with it on', async () => {
-    const setup = await render(<Host width={60} tagline="Type a prompt." />, 60, 24, true);
+    // The mouse is the app's (on by default, `--no-mouse` off): a splash that took it and
+    // gave it back leaked it on every boot repaint, and the terminal's copy never worked.
     await act(async () => control.unmount());
     expect(setup.renderer.useMouse).toBe(true);
   });
