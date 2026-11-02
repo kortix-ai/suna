@@ -115,6 +115,21 @@ test('sign-in intent routes to signInWithPassword only', async () => {
   expect(supabaseCalls).toEqual(['signIn']);
 });
 
+test('password sign-in rejects invalid credentials without issuing a session', async () => {
+  signInResult = async () => ({
+    data: { user: null, session: null },
+    error: { code: 'invalid_credentials', message: 'Invalid login credentials' },
+  });
+  const res = await passwordPost(passwordRequest('signin'));
+  expect(res.headers.get('content-type')).toContain('application/json');
+  expect(await res.json()).toEqual({
+    message: 'Invalid login credentials',
+    code: 'invalid_credentials',
+  });
+  expect(res.headers.get('set-cookie')).toBeNull();
+  expect(supabaseCalls).toEqual(['signIn']);
+});
+
 test('a cross-origin POST is rejected without reaching the action', async () => {
   const res = await sendCodePost(sendCodeRequest('https://evil.example'));
   expect(res.status).toBe(403);
