@@ -314,6 +314,31 @@ const MOUNT_REFUSAL_CODES = new Set([
 ]);
 
 /**
+ * Platinum's "the last box's writes on this volume are still being saved;
+ * retry shortly" (`409 volume_flushing`, `retry_after` in seconds): the box a
+ * session had a moment ago is still departing. Transient, so a create waits
+ * and tries again with the same mounts. Prod 2026-11-01: 33 sessions failed
+ * on it in one day, because a create treated it as a refusal.
+ */
+const FLUSHING_CODES = new Set(['volume_flushing', 'root_volume_flushing', 'exclusive_volume_flushing']);
+/** How long a create waits out a departing box's final save. Platinum measured 26 s, and 107 s at worst (rig 2026-11-01). */
+export const VOLUME_FLUSH_WAIT_MS = 120_000;
+
+/** The wait before the next create when `error` is a volume still saving, else null: `retry_after`, 1 to 15 s. */
+export function volumeFlushRetryMs(error: unknown): number | null {
+  const { status, code, body } = platinumHttp(error);
+  if (status !== 409 || !code || !FLUSHING_CODES.has(code)) return null;
+  let seconds = 5;
+  try {
+    const after = (JSON.parse(body ?? '') as { retry_after?: unknown }).retry_after;
+    if (typeof after === 'number' && after > 0) seconds = after;
+  } catch {
+    // not JSON: the default
+  }
+  return Math.min(15, Math.max(1, seconds)) * 1000;
+}
+
+/**
  * The optional mounts a refused create boots without, and why
  * (`metadata.droppedVolumes`): the ones the refusal names, else every
  * optional mount. The next create keeps the rest optional, so each refused
@@ -716,6 +741,22 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       sandbox = await postCreate();
     } catch (err) {
+      // Before the optional-mount fallback: a volume still saving is not a
+      // folder to drop, and dropping folders would not make it finish sooner.
+      const flushWait = volumeFlushRetryMs(err);
+      const flushUntil = opts.volumeFlushDeadline ?? Date.now() + VOLUME_FLUSH_WAIT_MS;
+      if (flushWait !== null && Date.now() + flushWait <= flushUntil) {
+        // Stable message: alert on it.
+        logger.warn('[platinum] a volume still saves the last box\'s writes: the create waits and tries again', {
+          template,
+          sandboxId: opts.sandboxId ?? opts.name,
+          waitMs: flushWait,
+          code: platinumHttp(err).code,
+        });
+        await Bun.sleep(flushWait);
+        // A new attempt (a new name and Idempotency-Key), with the same mounts.
+        return this.provisionFromTemplate(template, { ...opts, createAttempt: dedupAttempt + 1, volumeFlushDeadline: flushUntil });
+      }
       const elsewhere = opts.location && createBody.volumes ? volumeRegionRefusal(err) : null;
       if (elsewhere && !opts.locationRequired) {
         // A box must run where its drives live. With no region the create goes
