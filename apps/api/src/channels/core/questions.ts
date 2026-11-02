@@ -448,6 +448,8 @@ async function applySteps(ctx: StepContext, from: unknown, to: QuestionSteps, pa
     await ctx.reply({ kind: 'earlier' });
     return editQuestion(ctx.port.questions, ctx.target, ctx.ref);
   }
+  // Another tap or message moved the steps since the read: the retry reads them again.
+  // ponytail: a loss on the transport's last attempt leaves the tap unsettled; loop here if that shows up.
   if (!(await advancePendingQuestionSteps(ctx.target.projectId, ctx.pendingId, from, to))) {
     throw new Error(`${ctx.target.platform} question steps moved`);
   }
