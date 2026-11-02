@@ -97,7 +97,7 @@ function failure(c: Context, error: unknown) {
   if (error instanceof ArtifactError || error instanceof ArtifactCommentError || error instanceof ArtifactCommentDeliveryError || error instanceof ArtifactActivityQueryError || error instanceof DriveStorageError || error instanceof ArtifactCommentScreenshotError) {
     if (error instanceof ArtifactCommentError && error.status === 429) c.header('Retry-After', String(error.retryAfterSeconds));
     const status = error instanceof DriveStorageError ? legacyDriveStatus(error) : error.status;
-    return c.json({ error: error.message, code: error.code, ...(error instanceof ArtifactCommentScreenshotError && error.limits ? { limits: error.limits } : {}) }, status);
+    return c.json({ error: error.message, code: error.code, ...(error instanceof DriveStorageError ? (error.detail ?? {}) : {}), ...(error instanceof ArtifactCommentScreenshotError && error.limits ? { limits: error.limits } : {}) }, status);
   }
   if (error instanceof Error && error.name === 'ArtifactCommentAuthorityError') return c.json({ error: 'You cannot send Artifact comments to that agent', code: 'artifact_comment_agent_forbidden' }, 403);
   throw error;

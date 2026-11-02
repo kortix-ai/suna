@@ -167,18 +167,22 @@ export function useDriveConflicts(driveId: string | null, enabled = true) {
   return useQuery(driveConflictsQueryOptions(driveId, enabled));
 }
 
+/** A session's writes move the figure slowly; every write made here refreshes it at once. */
+const USAGE_POLL_MS = 5 * 60_000;
+
 /**
  * What the project's Files hold against their limits, and each folder sessions
- * mount against the folder-mount cap. A session's writes land within seconds,
- * so it polls once a minute while on screen.
+ * mount against the folder-mount cap. Polls every 5 minutes while on screen
+ * (never in a background tab); a write in Files invalidates it at once.
  */
 export function driveUsageQueryOptions(driveId: string | null, enabled = true) {
   return {
     queryKey: qk.drives.usage(driveId ?? ''),
     queryFn: (): Promise<DriveUsage> => getDriveUsage(driveId!),
     enabled: !!driveId && enabled,
-    staleTime: 15_000,
-    refetchInterval: pollUnlessFailing(LIVE_POLL_MS * 6),
+    staleTime: 60_000,
+    refetchInterval: pollUnlessFailing(USAGE_POLL_MS),
+    refetchIntervalInBackground: false,
   };
 }
 

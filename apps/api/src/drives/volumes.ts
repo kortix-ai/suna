@@ -332,6 +332,23 @@ export interface VolumeInfo {
   size_limit_bytes?: number | null;
 }
 
+/**
+ * What one folder holds, summed the way a folder mount sums it
+ * (`GET /v1/volumes/:v/files/usage?path=`, #2422; Platinum caches it per
+ * commit). Null on a Platinum without the route or for a missing folder.
+ */
+export async function volumeFolderUsage(volume: DriveVolume, path: string): Promise<{ bytes: number; complete: boolean } | null> {
+  try {
+    const r = await callJson<{ bytes?: number; complete?: boolean }>(volume, `${v(volume)}/files/usage?${new URLSearchParams({ path })}`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    return Number.isFinite(Number(r.bytes)) ? { bytes: Number(r.bytes), complete: r.complete !== false } : null;
+  } catch (err) {
+    if (err instanceof DriveStorageError && (err.status === 404 || err.status === 400)) return null;
+    throw err;
+  }
+}
+
 /** The volume does not exist on this storage account (never opened here, or deleted). */
 export function isMissingVolume(err: unknown): boolean {
   return err instanceof DriveStorageError && err.code === 'volume_not_found';

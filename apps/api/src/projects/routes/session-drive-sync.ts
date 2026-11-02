@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { recordDriveCommitAuthor } from '../../artifacts/events-store';
 import { normalizeDrivePath } from '../../drives/access';
-import { assertDriveWriteFits, forgetDriveUsage } from '../../drives/limits';
+import { assertDriveFilesFit, assertDriveWriteFits, forgetDriveUsage } from '../../drives/limits';
 import { noteDriveWrite } from '../../drives/conflicts';
 import {
   type DriveRow,
@@ -331,12 +331,16 @@ export function registerSessionDriveSyncRoutes(): void {
     const scope = await scopeOf(c);
     if (scope instanceof Response) return scope;
     // The plan's files against the Files limits, before any block is sent.
-    for (const f of plan.files as Array<{ path: string; size?: unknown }>) {
-      const size = Number(f.size ?? 0);
-      if (!Number.isFinite(size) || size <= 0) continue;
-      const fits = await storage(c, () => assertDriveWriteFits(drive, { bytes: size, replaces: () => syncedFileSize(drive, f.path) }));
-      if (fits instanceof Response) return fits;
-    }
+    // One commit lands every file at once, so the plan's total is what must
+    // fit, judged on what the drive holds now (not a cached figure). A file
+    // with no size, or a size that is not a whole number of bytes, is refused:
+    // the plan goes to storage whole either way.
+    const sized = (plan.files as Array<{ path: string; size?: unknown }>).map((f) => ({
+      path: f.path,
+      bytes: typeof f.size === 'number' ? f.size : Number.NaN,
+    }));
+    const fits = await storage(c, () => assertDriveFilesFit(drive, sized, { overwrite: true }));
+    if (fits instanceof Response) return fits;
     const r = await storage(c, async () => planVolumeUpload(await openVolumeFor(drive), { ...plan, overwrite: true }));
     if (r instanceof Response) return r;
     const uploadId = (r as { upload_id?: unknown }).upload_id;
@@ -386,6 +390,7 @@ export function registerSessionDriveSyncRoutes(): void {
       logger.warn(`[drive-sync] forgetting upload ${uploadId} failed:`, { error: err instanceof Error ? err.message : String(err) }),
     );
     noteDriveWrite(drive.driveId);
+    forgetDriveUsage(drive.platinumVolumeName);
     return c.json(r as Record<string, unknown>);
   });
 

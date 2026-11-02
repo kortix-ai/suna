@@ -61,8 +61,7 @@ export interface DriveLimits {
 export interface DriveFolderUsage {
   path: string;
   bytes: number;
-  files: number;
-  /** False when the drive was too large to measure to the end: `bytes` is then a floor. */
+  /** False when storage stopped before the end of the folder: `bytes` is then a floor. */
   complete: boolean;
   /** `near_limit` from 80 % of the folder-mount cap; `over_limit` past it: sessions cannot mount it. */
   state: 'ok' | 'near_limit' | 'over_limit';

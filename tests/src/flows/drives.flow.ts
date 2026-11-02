@@ -440,6 +440,7 @@ flow(
       'PUT /v1/drives/:driveId/files/content',
       'POST /v1/drives/:driveId/files/upload',
       'PUT /v1/admin/api/accounts/:id/overrides',
+      'POST /v1/projects/:projectId/artifacts',
     ],
   },
   async (ctx) => {
@@ -492,6 +493,23 @@ flow(
         (await ctx.client.as(ctx.P.ANON).get('/v1/drives/usage', { query: { account_id: team.id } })).status(401);
       });
 
+      await ctx.step("an account member with no access to the project never sees its name or storage in the account's list", async () => {
+        const member = await team.addMember('member');
+        // Membership reaches every API process within 15 s; until then the route may answer 403.
+        const deadline = Date.now() + 45_000;
+        let r = await ctx.client.as(member).get('/v1/drives/usage', { query: { account_id: team.id } });
+        while (r.statusCode !== 200 && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+          r = await ctx.client.as(member).get('/v1/drives/usage', { query: { account_id: team.id } });
+        }
+        if (r.statusCode === 403) return; // no billing.read: nothing is disclosed either
+        r.status(200);
+        const listed = r.json<{ projects: { projectId: string; name: string }[] }>().projects;
+        if (listed.some((p) => p.projectId === project.id)) {
+          throw new Error(`a member without project access sees the project in the storage list: ${JSON.stringify(listed)}`);
+        }
+      });
+
       if (!admin) return;
 
       await ctx.step('an operator sets a 1 KiB project limit; the usage reads it back', async () => {
@@ -515,6 +533,17 @@ flow(
           .body()
           .has('$.code', 'storage_limit_exceeded')
           .has('$.limit', 'project_bytes');
+      });
+
+      await ctx.step('an Artifact publish is held to the same limit → refused with storage_limit_exceeded', async () => {
+        (await owner.patch('/v1/projects/:projectId/features', { feature: 'artifacts', enabled: true }, { params: { projectId: project.id } })).status(200);
+        const r = await owner.post(
+          '/v1/projects/:projectId/artifacts',
+          { files: { 'index.md': { content: `# Big\n\n${'z'.repeat(4096)}` } } },
+          { params: { projectId: project.id } },
+        );
+        // The artifact routes answer a storage refusal with their older status (409).
+        r.status(409).body().has('$.code', 'storage_limit_exceeded').has('$.limit', 'project_bytes').has('$.max', 1024);
       });
 
       await ctx.step('the account limit applies across projects → 403 limit account_bytes', async () => {

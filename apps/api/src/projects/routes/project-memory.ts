@@ -113,7 +113,7 @@ export async function withMemoryCaller<R>(
   } catch (error) {
     if (error instanceof MemoryError) return c.json(error.body, error.status);
     if (error instanceof DriveStorageError) {
-      return c.json({ error: error.message, code: error.code ?? 'drive_storage_error' }, legacyDriveStatus(error));
+      return c.json({ error: error.message, code: error.code ?? 'drive_storage_error', ...(error.detail ?? {}) }, legacyDriveStatus(error));
     }
     throw error;
   }

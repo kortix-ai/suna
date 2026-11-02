@@ -20,10 +20,12 @@ import {
   DriveStorageError,
   formatBytes,
   getDriveVolume,
-  listVolumeFilesPage,
   type PlatinumMountLimits,
   platinumVolumeLimits,
   sandboxMountLimit,
+  statVolumeFile,
+  type VolumeInfo,
+  volumeFolderUsage,
 } from './volumes';
 
 const GIB = 1024 ** 3;
@@ -123,54 +125,88 @@ export async function driveLimitsFor(accountId: string): Promise<DriveLimits> {
 
 // ─── Usage ────────────────────────────────────────────────────────────────
 
+/** A folder Platinum measured for its folder mounts (`GET /v1/volumes/:v` `folders`, #2422). */
+interface MeasuredFolder {
+  path: string;
+  bytes: number;
+}
+
 /** What a volume holds, as Platinum last answered. */
 interface VolumeUsage {
   usedBytes: number;
   fileCount: number;
-  /** Platinum's id of the head commit: the folder sizes below are cached per head. */
+  /** Platinum's id of the head commit: folder sizes are cached per head. */
   head: string | null;
+  /** The folders Platinum measured (mounted ones); empty on an older Platinum. */
+  folders: MeasuredFolder[];
   at: number;
 }
 
 // replica-local: a per-API-process read-through cache of Platinum volume sizes; staleness is bounded by USAGE_TTL_MS.
 const usageCache = new Map<string, VolumeUsage>();
-const USAGE_TTL_MS = 30_000;
+// replica-local: the one read in flight per volume, shared by concurrent callers (single-flight).
+const usageInFlight = new Map<string, Promise<VolumeUsage | null>>();
+/** A display may be this old; a write decision always reads fresh. */
+const USAGE_TTL_MS = 60_000;
 const USAGE_CACHE_MAX = 5_000;
 
 type UsageDrive = { platinumVolumeName: string; platinumVolumeRegion: string | null; platinumVolumeId: string | null };
 
 const volumeOf = (d: UsageDrive): DriveVolume => ({ name: d.platinumVolumeName, region: d.platinumVolumeRegion ?? null });
 
-/**
- * What one drive's volume holds, cached 30 s. Null when the drive has no
- * volume yet (it holds nothing) is reported as 0; null only when Platinum
- * could not say.
- */
-export async function driveVolumeUsage(drive: UsageDrive, opts: { fresh?: boolean } = {}): Promise<VolumeUsage | null> {
-  if (!drive.platinumVolumeId) return { usedBytes: 0, fileCount: 0, head: null, at: Date.now() };
+const empty = (): VolumeUsage => ({ usedBytes: 0, fileCount: 0, head: null, folders: [], at: Date.now() });
+
+function measuredFolders(raw: unknown): MeasuredFolder[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((f): f is { path: string; bytes: number } => !!f && typeof f.path === 'string' && Number.isFinite(Number(f.bytes)))
+    .map((f) => ({ path: f.path, bytes: Number(f.bytes) }));
+}
+
+async function readVolumeUsage(drive: UsageDrive): Promise<VolumeUsage | null> {
   const cached = usageCache.get(drive.platinumVolumeName);
-  if (!opts.fresh && cached && Date.now() - cached.at < USAGE_TTL_MS) return cached;
   try {
-    const info = await getDriveVolume(volumeOf(drive), AbortSignal.timeout(5_000));
+    const info = (await getDriveVolume(volumeOf(drive), AbortSignal.timeout(5_000))) as VolumeInfo & {
+      usage?: { logical_bytes?: number; file_count?: number };
+      folders?: unknown;
+    };
     const value: VolumeUsage = {
-      usedBytes: Number(info.logical_bytes ?? 0),
-      fileCount: Number(info.file_count ?? 0),
+      usedBytes: Number(info.usage?.logical_bytes ?? info.logical_bytes ?? 0),
+      fileCount: Number(info.usage?.file_count ?? info.file_count ?? 0),
       head: info.head_commit_id ?? null,
+      folders: measuredFolders(info.folders),
       at: Date.now(),
     };
     if (usageCache.size >= USAGE_CACHE_MAX) usageCache.clear();
     usageCache.set(drive.platinumVolumeName, value);
     return value;
   } catch (err) {
-    if (err instanceof DriveStorageError && err.code === 'volume_not_found') return { usedBytes: 0, fileCount: 0, head: null, at: Date.now() };
+    if (err instanceof DriveStorageError && err.code === 'volume_not_found') return empty();
     return cached ?? null;
   }
 }
 
 /**
- * A write, a delete or a restore changed what the drive holds: the next check
- * reads it from storage again. A committed write is in Platinum's figure at
- * once; an overwrite's growth is unknown here, so it is never guessed.
+ * What one drive's volume holds: one `GET /v1/volumes/:v`, cached 60 s and
+ * shared by concurrent callers. `fresh` skips the cache (a write decision):
+ * it still joins a read already in flight. A drive with no volume yet holds
+ * nothing; null only when Platinum could not say.
+ */
+export async function driveVolumeUsage(drive: UsageDrive, opts: { fresh?: boolean } = {}): Promise<VolumeUsage | null> {
+  if (!drive.platinumVolumeId) return empty();
+  const cached = usageCache.get(drive.platinumVolumeName);
+  if (!opts.fresh && cached && Date.now() - cached.at < USAGE_TTL_MS) return cached;
+  const inFlight = usageInFlight.get(drive.platinumVolumeName);
+  if (inFlight) return inFlight;
+  const read = readVolumeUsage(drive).finally(() => usageInFlight.delete(drive.platinumVolumeName));
+  usageInFlight.set(drive.platinumVolumeName, read);
+  return read;
+}
+
+/**
+ * A write, a delete or a restore changed what the drive holds: the next read
+ * asks storage again. A committed write is in Platinum's figure at once; an
+ * overwrite's growth is unknown here, so it is never guessed.
  */
 export function forgetDriveUsage(volumeName: string): void {
   usageCache.delete(volumeName);
@@ -184,8 +220,15 @@ export interface ProjectStorageUsage {
   fileCount: number | null;
 }
 
-/** Every project drive of the account and what each holds. Drives are read 8 at a time. */
-export async function accountDriveUsage(accountId: string): Promise<{ usedBytes: number; complete: boolean; projects: ProjectStorageUsage[] }> {
+/**
+ * Every project drive of the account and what each holds, 8 reads at a time,
+ * each from the 60 s cache. `freshVolume` is read fresh: the drive a write
+ * decision is about.
+ */
+export async function accountDriveUsage(
+  accountId: string,
+  opts: { freshVolume?: string } = {},
+): Promise<{ usedBytes: number; complete: boolean; projects: ProjectStorageUsage[] }> {
   const rows = await db
     .select({
       driveId: drives.driveId,
@@ -203,7 +246,7 @@ export async function accountDriveUsage(accountId: string): Promise<{ usedBytes:
       while (next < rows.length) {
         const i = next++;
         const row = rows[i]!;
-        const usage = await driveVolumeUsage(row);
+        const usage = await driveVolumeUsage(row, { fresh: row.platinumVolumeName === opts.freshVolume });
         projects[i] = { projectId: row.projectId!, driveId: row.driveId, usedBytes: usage?.usedBytes ?? null, fileCount: usage?.fileCount ?? null };
       }
     }),
@@ -221,64 +264,61 @@ export async function accountDriveUsage(accountId: string): Promise<{ usedBytes:
 export interface DriveFolderSize {
   path: string;
   bytes: number;
-  files: number;
-  /** False when the listing stopped before the end: `bytes` is then a floor. */
+  /** False when storage stopped before the end of the folder: `bytes` is then a floor. */
   complete: boolean;
 }
 
-// replica-local: folder sizes per volume head; a commit is immutable, so an entry is right until the head moves.
-const folderSizeCache = new Map<string, { head: string; sizes: Map<string, DriveFolderSize> }>();
-/** The listing reads at most this many pages of 5,000 entries (200,000 entries). */
-const FOLDER_SIZE_MAX_PAGES = 40;
-
-const within = (path: string, folder: string) => path === folder || path.startsWith(`${folder}/`);
+// replica-local: one folder's size per volume head; a commit is immutable, so an entry is right until the head moves.
+const folderSizeCache = new Map<string, DriveFolderSize>();
+// replica-local: the one folder read in flight per key, shared by concurrent callers.
+const folderInFlight = new Map<string, Promise<DriveFolderSize | null>>();
+/** Folders sized per request beyond the ones Platinum already measured. */
+const FOLDER_LOOKUPS_PER_REQUEST = 16;
 
 /**
- * What each folder holds, from one recursive listing of the volume, cached
- * per head commit. Platinum's own `files/usage` (#2422) sums a folder the
- * same way a mount does; the listing works on every Platinum and needs no
- * call per folder.
+ * What each folder holds. A folder sessions mount is in the volume's own
+ * `folders` (Platinum measures it at the mount, #2422); any other folder costs
+ * one `files/usage?path=`, which Platinum caches per commit, cached here per
+ * head and shared by concurrent callers: at most 16 per request. An older
+ * Platinum without either answers nothing, never a recursive listing.
  */
 export async function driveFolderSizes(drive: UsageDrive, folders: string[]): Promise<Map<string, DriveFolderSize>> {
   const wanted = [...new Set(folders.filter((f) => f && f !== '/'))];
   const out = new Map<string, DriveFolderSize>();
   if (!wanted.length || !drive.platinumVolumeId) return out;
   const usage = await driveVolumeUsage(drive);
-  const head = usage?.head ?? null;
-  const cached = head ? folderSizeCache.get(drive.platinumVolumeName) : undefined;
-  if (cached && cached.head === head && wanted.every((f) => cached.sizes.has(f))) {
-    for (const f of wanted) out.set(f, cached.sizes.get(f)!);
-    return out;
+  if (!usage) return out;
+  const measured = new Map(usage.folders.map((f) => [f.path, f]));
+  const missing: string[] = [];
+  for (const path of wanted) {
+    const m = measured.get(path);
+    if (m) out.set(path, { path, bytes: m.bytes, complete: true });
+    else missing.push(path);
   }
-  for (const f of wanted) out.set(f, { path: f, bytes: 0, files: 0, complete: true });
-  let cursor: string | undefined;
-  let pages = 0;
-  let complete = true;
-  try {
-    do {
-      const page = await listVolumeFilesPage(volumeOf(drive), '/', { recursive: true, cursor, signal: AbortSignal.timeout(15_000) });
-      for (const e of page.entries) {
-        if (e.type !== 'file') continue;
-        for (const f of wanted) {
-          if (!within(e.path, f)) continue;
-          const size = out.get(f)!;
-          size.bytes += Number(e.size ?? 0);
-          size.files += 1;
-        }
+  if (!usage.head) return out;
+  await Promise.all(
+    missing.slice(0, FOLDER_LOOKUPS_PER_REQUEST).map(async (path) => {
+      const key = `${drive.platinumVolumeName}:${usage.head}:${path}`;
+      const hit = folderSizeCache.get(key);
+      if (hit) return void out.set(path, hit);
+      let read = folderInFlight.get(key);
+      if (!read) {
+        read = volumeFolderUsage(volumeOf(drive), path)
+          .then((u) => {
+            if (!u) return null;
+            const size = { path, bytes: u.bytes, complete: u.complete };
+            if (folderSizeCache.size >= USAGE_CACHE_MAX) folderSizeCache.clear();
+            folderSizeCache.set(key, size);
+            return size;
+          })
+          .catch(() => null)
+          .finally(() => folderInFlight.delete(key));
+        folderInFlight.set(key, read);
       }
-      cursor = page.next_cursor ?? undefined;
-      pages++;
-    } while (cursor && pages < FOLDER_SIZE_MAX_PAGES);
-    if (cursor) complete = false;
-  } catch (err) {
-    logger.warn('[drives] measuring folder sizes failed', { volume: drive.platinumVolumeName, error: err instanceof Error ? err.message : String(err) });
-    return new Map();
-  }
-  if (!complete) for (const size of out.values()) size.complete = false;
-  if (head && complete) {
-    if (folderSizeCache.size >= USAGE_CACHE_MAX) folderSizeCache.clear();
-    folderSizeCache.set(drive.platinumVolumeName, { head, sizes: new Map(out) });
-  }
+      const size = await read;
+      if (size) out.set(path, size);
+    }),
+  );
   return out;
 }
 
@@ -316,35 +356,91 @@ export function fileLimitRefusal(max: number, requested: number): DriveStorageEr
 }
 
 /**
+ * The verdict on one write (or one commit of many files): null when it fits,
+ * else the refusal. PURE. The sizes count together, because one commit lands
+ * them all at once; `credit` is what the write replaces (an overwrite).
+ */
+export function driveWriteRefusal(input: {
+  limits: DriveLimits;
+  sizes: number[];
+  projectUsed: number;
+  /** Null when the account has no limit, or it was not read. */
+  accountUsed: number | null;
+  credit: number;
+}): DriveStorageError | null {
+  const { limits, sizes } = input;
+  if (sizes.some((n) => !Number.isSafeInteger(n) || n < 0)) {
+    return new DriveStorageError(400, 'Every file of an upload names its size: a whole number of bytes.', 'invalid_size');
+  }
+  const largest = Math.max(0, ...sizes);
+  if (largest > limits.fileBytes) return fileLimitRefusal(limits.fileBytes, largest);
+  const total = sizes.reduce((n, size) => n + size, 0);
+  if (total <= 0) return null;
+  if (limits.projectBytes !== null && input.projectUsed + total - input.credit > limits.projectBytes) {
+    return storageLimitRefusal({ limit: 'project_bytes', max: limits.projectBytes, used: input.projectUsed, requested: total });
+  }
+  if (limits.accountBytes !== null && input.accountUsed !== null && input.accountUsed + total - input.credit > limits.accountBytes) {
+    return storageLimitRefusal({ limit: 'account_bytes', max: limits.accountBytes, used: input.accountUsed, requested: total });
+  }
+  return null;
+}
+
+/**
  * Refuse a write that does not fit the project's or the account's Files.
- * `bytes` is what the write adds; `replaces` answers the size of the file it
- * overwrites (asked only when the write would not fit without that credit).
- * A size Platinum cannot read counts as 0: Platinum's own limits still hold.
+ * `sizes` are the files one commit lands (one for a single write);
+ * `replaces` answers the bytes they overwrite, asked only when the write
+ * would not fit without that credit. The decision reads what the drive
+ * holds fresh from storage, never the display cache: two writes in one
+ * cache window must not both pass on the same old figure. A size storage
+ * cannot read counts as 0: Platinum's own limits still hold.
  */
 export async function assertDriveWriteFits(
   drive: UsageDrive & { accountId: string },
-  input: { bytes: number; replaces?: () => Promise<number> },
+  input: { bytes: number; replaces?: () => Promise<number> } | { sizes: number[]; replaces?: () => Promise<number> },
 ): Promise<void> {
+  const sizes = 'sizes' in input ? input.sizes : [input.bytes];
   const limits = await driveLimitsFor(drive.accountId);
-  if (input.bytes > limits.fileBytes) throw fileLimitRefusal(limits.fileBytes, input.bytes);
-  if (input.bytes <= 0 || (limits.projectBytes === null && limits.accountBytes === null)) return;
-  const project = await driveVolumeUsage(drive);
-  const used = project?.usedBytes ?? 0;
-  let credit: number | null = null;
-  const replaced = async () => {
-    credit ??= input.replaces ? Math.max(0, await input.replaces().catch(() => 0)) : 0;
-    return credit;
-  };
-  if (limits.projectBytes !== null && used + input.bytes > limits.projectBytes) {
-    if (used + input.bytes - (await replaced()) > limits.projectBytes) {
-      throw storageLimitRefusal({ limit: 'project_bytes', max: limits.projectBytes, used, requested: input.bytes });
-    }
-  }
-  if (limits.accountBytes === null) return;
-  const account = await accountDriveUsage(drive.accountId);
-  if (account.usedBytes + input.bytes > limits.accountBytes) {
-    if (account.usedBytes + input.bytes - (await replaced()) > limits.accountBytes) {
-      throw storageLimitRefusal({ limit: 'account_bytes', max: limits.accountBytes, used: account.usedBytes, requested: input.bytes });
-    }
-  }
+  const early = driveWriteRefusal({ limits, sizes, projectUsed: 0, accountUsed: null, credit: 0 });
+  if (early) throw early;
+  if (limits.projectBytes === null && limits.accountBytes === null) return;
+  const project = await driveVolumeUsage(drive, { fresh: true });
+  const account = limits.accountBytes === null ? null : await accountDriveUsage(drive.accountId, { freshVolume: drive.platinumVolumeName });
+  const verdict = (credit: number) =>
+    driveWriteRefusal({ limits, sizes, projectUsed: project?.usedBytes ?? 0, accountUsed: account?.usedBytes ?? null, credit });
+  if (!verdict(0)) return;
+  const credit = input.replaces ? Math.max(0, await input.replaces().catch(() => 0)) : 0;
+  const refusal = credit > 0 ? verdict(credit) : verdict(0);
+  if (refusal) throw refusal;
+}
+
+/** At most this many files of one write are looked up for the overwrite credit. */
+const CREDIT_LOOKUPS = 200;
+
+/**
+ * {@link assertDriveWriteFits} for a write of named files: an overwrite gets
+ * credit for the files it replaces (looked up only when it would not fit
+ * without it, at most 200).
+ */
+export async function assertDriveFilesFit(
+  drive: UsageDrive & { accountId: string },
+  files: Array<{ path: string; bytes: number }>,
+  opts: { overwrite: boolean },
+): Promise<void> {
+  await assertDriveWriteFits(drive, {
+    sizes: files.map((f) => f.bytes),
+    ...(opts.overwrite && drive.platinumVolumeId
+      ? {
+          replaces: async () => {
+            const sizes = await Promise.all(
+              files.slice(0, CREDIT_LOOKUPS).map((f) =>
+                statVolumeFile(volumeOf(drive), f.path)
+                  .then((st) => (st.type === 'file' ? st.size : 0))
+                  .catch(() => 0),
+              ),
+            );
+            return sizes.reduce((n, size) => n + size, 0);
+          },
+        }
+      : {}),
+  });
 }

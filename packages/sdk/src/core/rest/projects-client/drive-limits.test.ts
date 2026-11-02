@@ -33,7 +33,7 @@ const usage = {
   fileCount: 12,
   limits: { projectBytes: 5 * GIB, accountBytes: 5 * GIB, fileBytes: 10 * GIB, requestBytes: 64 * 1024 * 1024, folderMountBytes: 10 * GIB, mountsPerSession: 8 },
   account: { usedBytes: 4.5 * GIB, limitBytes: 5 * GIB, complete: true },
-  folders: [{ path: '/Company', bytes: 9 * GIB, files: 3, complete: true, state: 'near_limit' }],
+  folders: [{ path: '/Company', bytes: 9 * GIB, complete: true, state: 'near_limit' }],
 };
 
 test('getDriveUsage reads the project Files usage and limits', async () => {

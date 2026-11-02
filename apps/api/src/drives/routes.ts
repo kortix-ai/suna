@@ -15,6 +15,8 @@ import { callerKortixSessionId } from '../middleware/caller-session';
 import { rejectSandboxTokens } from '../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { actorOf } from '../iam/actor';
+import { PROJECT_ACTIONS } from '../iam/actions';
+import { listAccessible } from '../iam/authorize';
 import { visibleDirectory } from '../iam/directory-visibility';
 import { loadProjectForUser } from '../projects/surface';
 import { ensureAgentServiceAccount } from '../repositories/service-accounts';
@@ -480,8 +482,7 @@ const DriveFolderUsageSchema = z
   .object({
     path: z.string(),
     bytes: z.number(),
-    files: z.number(),
-    /** False when the drive was too large to measure to the end: `bytes` is then a floor. */
+    /** False when storage stopped before the end of the folder: `bytes` is then a floor. */
     complete: z.boolean(),
     /** `near_limit` from 80 % of `folderMountBytes`; `over_limit` past it: sessions cannot mount the folder. */
     state: z.enum(['ok', 'near_limit', 'over_limit']),
@@ -520,7 +521,7 @@ drivesApp.openapi(
     tags: ['drives'],
     summary: 'Files storage of an account, per project',
     description:
-      'What each project’s Files hold against the plan’s limits, and the account’s total. Needs `billing.read` on the account (`account_id`, else the caller’s own).',
+      'The account’s total Files storage against the plan’s limits, and what each project the caller may read holds. Needs `billing.read` on the account (`account_id`, else the caller’s own); a project the caller cannot read is counted in the total but not listed.',
     ...auth,
     request: { query: z.object({ account_id: z.string().optional() }) },
     responses: {
@@ -543,14 +544,24 @@ drivesApp.openapi(
   async (c) => {
     const { resolveBillingReadAccountId } = await import('../billing/http-require-billing-write');
     const accountId = await resolveBillingReadAccountId(c);
-    const [limits, usage] = await Promise.all([driveLimitsFor(accountId), accountDriveUsage(accountId)]);
-    const names = await projectNames(usage.projects.map((p) => p.projectId));
+    // billing.read shows the account's total, not every project's name: the
+    // rows are the projects the caller may read (owners and admins: all), as
+    // the account cost rollup does (router/routes/usage.ts).
+    const [limits, usage, accessible] = await Promise.all([
+      driveLimitsFor(accountId),
+      accountDriveUsage(accountId),
+      actorOf(c, accountId).then((actor) => listAccessible(actor, PROJECT_ACTIONS.PROJECT_READ, 'project')),
+    ]);
+    const visible = usage.projects.filter((p) =>
+      accessible.mode === 'all' ? true : accessible.mode === 'allow_only' ? accessible.allowed.has(p.projectId) : false,
+    );
+    const names = await projectNames(visible.map((p) => p.projectId));
     return c.json({
       accountId,
       usedBytes: usage.usedBytes,
       complete: usage.complete,
       limits: LimitsShape(limits),
-      projects: usage.projects
+      projects: visible
         .map((p) => ({ ...p, name: names.get(p.projectId) ?? '' }))
         .sort((a, b) => (b.usedBytes ?? 0) - (a.usedBytes ?? 0)),
     });

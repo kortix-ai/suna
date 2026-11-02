@@ -3,6 +3,7 @@
  * fake volume (`setVolumeOpsForTests`). The real one reads and writes the
  * project drive's Platinum volume and tells conflict scans about every write.
  */
+import { assertDriveFilesFit, forgetDriveUsage } from '../drives/limits';
 import { noteDriveWrite } from '../drives/conflicts';
 import { type DriveRow, readDriveVolume, writeDriveVolume } from '../drives/service';
 import {
@@ -69,8 +70,12 @@ const driveOps: VolumeOps = {
     ),
   stat: (drive, path, at) => missingAsNull(() => readDriveVolume(drive, (volume) => statVolumeFile(volume, path, at), () => null)),
   write: async (drive, path, text, opts) => {
-    await writeDriveVolume(drive, (volume) => writeVolumeFile(volume, path, new TextEncoder().encode(text) as Uint8Array<ArrayBuffer>, opts));
+    const bytes = new TextEncoder().encode(text) as Uint8Array<ArrayBuffer>;
+    // The project's Files limits hold for Memory as for any upload (drives/limits.ts).
+    await assertDriveFilesFit(drive, [{ path, bytes: bytes.byteLength }], { overwrite: opts.overwrite });
+    await writeDriveVolume(drive, (volume) => writeVolumeFile(volume, path, bytes, opts));
     noteDriveWrite(drive.driveId);
+    forgetDriveUsage(drive.platinumVolumeName);
   },
   remove: async (drive, path) => {
     await writeDriveVolume(drive, (volume) => removeVolumeFile(volume, path, false));

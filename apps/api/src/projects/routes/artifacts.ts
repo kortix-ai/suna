@@ -264,7 +264,7 @@ function author(c: Context, userId: string) {
 /** A service error as a response; anything else rethrows. */
 function failure(c: Context, err: unknown) {
   if (err instanceof ArtifactError) return c.json({ error: err.message, code: err.code }, err.status);
-  if (err instanceof DriveStorageError) return c.json({ error: err.message, code: err.code }, legacyDriveStatus(err));
+  if (err instanceof DriveStorageError) return c.json({ error: err.message, code: err.code, ...(err.detail ?? {}) }, legacyDriveStatus(err));
   throw err;
 }
 

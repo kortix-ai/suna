@@ -3,12 +3,30 @@
 // its limit and numbers.
 import { expect, mock, test } from 'bun:test';
 
+let volumeReads = 0;
+let usedNow = 0;
 mock.module('../shared/platinum', () => ({
   isPlatinumConfigured: () => true,
   platinumRegionControlPlane: () => null,
-  platinumFetch: async () => Response.json({}),
+  platinumFetch: async (path: string) => {
+    if (path.startsWith('/v1/volumes/kd-')) {
+      volumeReads++;
+      await Bun.sleep(5);
+      return Response.json({ id: 'v', logical_bytes: usedNow, file_count: 1, head_commit_id: 'c1', usage: { logical_bytes: usedNow, file_count: 1 }, folders: [{ path: '/Company', bytes: 7, commit_id: 'c1' }] });
+    }
+    return Response.json({});
+  },
 }));
-const { combineDriveLimits, storageLimitRefusal, fileLimitRefusal, DEFAULT_FOLDER_MOUNT_BYTES } = await import('./limits');
+const {
+  combineDriveLimits,
+  storageLimitRefusal,
+  fileLimitRefusal,
+  DEFAULT_FOLDER_MOUNT_BYTES,
+  driveWriteRefusal,
+  driveVolumeUsage,
+  forgetDriveUsage,
+  driveFolderSizes,
+} = await import('./limits');
 
 const GIB = 1024 ** 3;
 const platinum = { max_bytes_per_volume: 100 * GIB, subdir_max_bytes: 10 * GIB, max_mounts_per_sandbox: 8 };
@@ -67,4 +85,54 @@ test('a refusal names the limit and its numbers, in a sentence a person can act 
   expect([file.status, file.code, file.detail]).toEqual([413, 'file_too_large', { limit: 'file_bytes', max: 10 * GIB, requested: 12 * GIB }]);
   expect(file.message).toBe('This file is 12 GB. A file in Files can be at most 10 GB, the largest folder a session can mount.');
   expect(fileLimitRefusal(10 * GIB, 10 * GIB + 1).message).toMatch(/^This file is larger than 10 GB\./);
+});
+
+const limits5 = combineDriveLimits({ plan, overrides: {}, platinum, mountsPerSession: 8 });
+
+test('a plan is judged by its total: ten 4 GiB files never pass a 5 GiB project limit', () => {
+  const sizes = Array.from({ length: 10 }, () => 4 * GIB);
+  // Each file alone would fit an empty project; the commit lands all ten.
+  expect(driveWriteRefusal({ limits: limits5, sizes: [4 * GIB], projectUsed: 0, accountUsed: 0, credit: 0 })).toBeNull();
+  const refusal = driveWriteRefusal({ limits: limits5, sizes, projectUsed: 0, accountUsed: 0, credit: 0 });
+  expect(refusal?.code).toBe('storage_limit_exceeded');
+  expect(refusal?.detail).toEqual({ limit: 'project_bytes', max: 5 * GIB, used: 0, requested: 40 * GIB });
+});
+
+test('the account total is judged too, with the overwrite credit; a file over the cap is refused first', () => {
+  const tight = { ...limits5, projectBytes: 100 * GIB, accountBytes: 5 * GIB };
+  expect(driveWriteRefusal({ limits: tight, sizes: [GIB, GIB], projectUsed: 0, accountUsed: 4 * GIB, credit: 0 })?.detail?.limit).toBe('account_bytes');
+  expect(driveWriteRefusal({ limits: tight, sizes: [GIB, GIB], projectUsed: 0, accountUsed: 4 * GIB, credit: GIB })).toBeNull();
+  expect(driveWriteRefusal({ limits: limits5, sizes: [11 * GIB], projectUsed: 0, accountUsed: 0, credit: 0 })?.code).toBe('file_too_large');
+});
+
+test('a size that is not a whole number of bytes is refused, never skipped', () => {
+  for (const bad of [Number.NaN, -1, 1.5]) {
+    const refusal = driveWriteRefusal({ limits: limits5, sizes: [1, bad], projectUsed: 0, accountUsed: 0, credit: 0 });
+    expect(refusal?.status).toBe(400);
+    expect(refusal?.code).toBe('invalid_size');
+  }
+});
+
+const drive = { platinumVolumeName: 'kd-cache-test', platinumVolumeRegion: null, platinumVolumeId: 'vol_1' };
+
+test('usage reads are cached, shared while in flight, and a write decision reads fresh', async () => {
+  volumeReads = 0;
+  usedNow = 100;
+  forgetDriveUsage(drive.platinumVolumeName);
+  const [a, b, c] = await Promise.all([driveVolumeUsage(drive), driveVolumeUsage(drive), driveVolumeUsage(drive)]);
+  expect(volumeReads).toBe(1);
+  expect([a?.usedBytes, b?.usedBytes, c?.usedBytes]).toEqual([100, 100, 100]);
+  usedNow = 200;
+  expect((await driveVolumeUsage(drive))?.usedBytes).toBe(100);
+  expect(volumeReads).toBe(1);
+  expect((await driveVolumeUsage(drive, { fresh: true }))?.usedBytes).toBe(200);
+  expect(volumeReads).toBe(2);
+});
+
+test("folder sizes come from the volume's own measured folders, with no listing", async () => {
+  volumeReads = 0;
+  forgetDriveUsage(drive.platinumVolumeName);
+  const sizes = await driveFolderSizes(drive, ['/Company']);
+  expect(sizes.get('/Company')).toEqual({ path: '/Company', bytes: 7, complete: true });
+  expect(volumeReads).toBe(1);
 });
