@@ -7,11 +7,11 @@
 
 # Kortix CompanyOS
 
-**The open-source CompanyOS: the operating system for your company.**
+**The open-source CompanyOS: a harness platform for always-on agents.**
 
 Hand it an outcome and AI agents run it 24/7.<br />
-Connect your company's tools, share agents and context across your whole team,<br />
-and own all of it as code: open source, on your infrastructure or ours.
+Events start them, My Kortix routes the work, and swarms of agents run it in parallel,<br />
+each on its own cloud computer. Your whole company stays in one git repo you own.
 
 [![GitHub stars](https://img.shields.io/github/stars/kortix-ai/suna?style=flat&color=111111&label=Stars)](https://github.com/kortix-ai/suna/stargazers)
 [![Release](https://img.shields.io/github/v/release/kortix-ai/suna?style=flat&color=111111&label=Release)](https://github.com/kortix-ai/suna/releases/latest)
@@ -28,11 +28,49 @@ and own all of it as code: open source, on your infrastructure or ours.
 
 ---
 
-Kortix CompanyOS is the open-source operating system for your company. Your agents, the skills
-they share, your company memory and every connector live in **one git repo you own**. Every session runs on **its own cloud
-computer**, and work lands through a **change request a person approves**.
+## A new kind of system
 
-Any model, your own keys, on Kortix Cloud, in your VPC or on your own on-prem network.
+An agent today is one chat session on one machine. It waits for a person to type. It blocks while a
+long job runs. Every task it takes on shares one context. It stops when the laptop sleeps. A person
+can follow only a few such sessions at once, so human attention runs out long before the model does.
+
+Kortix CompanyOS takes the session out of the person's hands. It is a **harness platform**: you
+write custom agents on pi, an open-source agent harness, and Kortix deploys them to the cloud and
+supplies everything around the agent loop that one session cannot.
+
+| | |
+| --- | --- |
+| **Always on** | Compute and state are separate. Every session runs on its own cloud computer. The computer sleeps 15 to 20 minutes after the last turn and wakes on the next message or event, with its full history. State lives in the repo, in Drive, in the session's `/workspace` and in the session's record. |
+| **Event-driven** | Triggers start agents from schedules, signed webhooks, connector events, App events and merged change requests. A filter in code drops noise before any model runs. A session subscribes to the events of its own work, and an agent sets its own check-in before it stops. |
+| **One agent to talk to** | You talk to **My Kortix**. It answers at once, hands writing, research, code and app work to the agent made for it in a session of its own, and tells you the result. Nothing it hands off blocks the conversation. A follow-up goes to the same agent, with everything that agent already knows. |
+| **Swarms** | A session hands work off in the background, runs a workflow that coordinates many agents, and messages other sessions. Every child reports back by itself. Thousands of agents run in parallel on one config. |
+| **Long horizon** | When a context fills, the agent continues in a fresh one and searches the session's full record for the exact lines it needs. Nothing is summarized. A job outlives one turn and one context window. |
+| **Scales out** | Compute is disposable and state persists, so capacity grows by adding computers, not by growing one. Each new session gets its own computer. A sleeping computer uses no compute. |
+
+```
+  You, in the web app             Slack · Teams · email        Events
+        │                         threads                      schedules · webhooks
+        ▼                              │                       app + connector events
+ ┌─────────────┐                       │                       change requests · loops
+ │  My Kortix  │ answers at once,      │                              │
+ │             │ never blocks          │                       ┌──────┴──────┐
+ └──────┬──────┘                       │                       │  Triggers   │ filter in code,
+        │ hands off in the background  │                       └──────┬──────┘ then start or wake
+        ▼                              ▼                              ▼
+ ┌────────────────────────────────────────────────────────────────────────┐
+ │ Agent sessions: custom pi agents, each on its own cloud computer       │
+ │ hand-offs · workflows · messages between sessions · reports back       │
+ └────────────────────────────────────────────────────────────────────────┘
+                                     │
+                                     │ sleeps when idle, wakes with its full history
+                                     ▼
+   State that persists: git repo · Drive · /workspace · session record
+   What lands on main goes through a change request a person approves
+```
+
+Your agents, the skills they share, your company memory and every connector live in **one git
+repo you own**. Any model, your own keys, on Kortix Cloud, in your VPC or on your own on-prem
+network.
 
 ---
 
@@ -43,12 +81,13 @@ a company: the place its AI agents do the work, and the rules they work under.
 
 | A computer's OS | Kortix CompanyOS |
 | --- | --- |
-| Programs | **Agents**: a job, a model and a set of permissions each |
+| Shell | **My Kortix**: the one agent you talk to. It routes the work. |
+| Programs | **Agents**: custom pi agents, each with a job, a model and a set of permissions |
 | Libraries | **Skills**: written playbooks every agent shares |
 | File system | **Drive**: shared folders, with company memory as Markdown files |
 | Drivers | **Connectors**: 3,000+ apps, plus MCP, OpenAPI and raw HTTP |
-| Processes | **Sessions**: each one on its own isolated cloud computer |
-| Scheduler | **Triggers**: schedules, webhooks and app events, 24/7 |
+| Processes | **Sessions**: each one on its own cloud computer that sleeps when idle |
+| Interrupts and scheduler | **Triggers**: schedules, webhooks and app events, 24/7 |
 | Users and permissions | **Roles, groups and approvals**: a person approves what reaches `main` |
 
 `kortix.yaml` declares all of it, and every agent, skill and rule is a file in one repo you own.
@@ -116,6 +155,7 @@ The **[Guide](https://kortix.com/docs/guide)** walks you through Kortix CompanyO
 
 | | | Guide |
 | --- | --- | --- |
+| **My Kortix** | The one agent you talk to. It routes each task to the agent made for it, runs the work in the background and reports the result. | [My Kortix](https://kortix.com/docs/guide#the-built-in-agent) |
 | **Agents** | Assistants with a job, a model and a set of permissions. An agent can propose changes to its own configuration; a person approves them. | [Agents](https://kortix.com/docs/guide#agents) |
 | **Skills** | Written playbooks for how your company does a job, shared by every agent. | [Skills](https://kortix.com/docs/guide#skills) |
 | **Drive** | Shared folders for people and agents, including the company's memory as Markdown files. | [Drive](https://kortix.com/docs/guide#drive) |
@@ -157,6 +197,7 @@ Competitor rows reflect publicly documented behavior as of July 2026.
 
 | If you are looking at… | Pick it when | Pick Kortix CompanyOS when |
 | --- | --- | --- |
+| **A coding agent on your laptop** (one session at a time) | You drive one task at a time from your terminal and watch it. | The work must keep running when the laptop sleeps, start from events, and run as many tasks at once, each on its own cloud computer. |
 | **n8n** (workflow automation) | The job is a fixed flowchart: the same steps, in the same order, every time. | The job is open-ended work an agent does on its own computer, with the configuration in git and a person approving what it changes. |
 | **OpenHands** (coding agents) | You want a coding-agent control center for an engineering team. | Coding is one of many jobs: the same agents also work in Slack, on schedules and across 3,000+ apps. |
 | **Paperclip** (agent orchestration) | You already run agents and want an org chart and a task board on top of them. | You want the platform to run the agents too, each session on its own cloud computer, from one repo. |
