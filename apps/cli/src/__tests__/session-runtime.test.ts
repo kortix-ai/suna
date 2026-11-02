@@ -51,6 +51,17 @@ describe('waitForSessionReady', () => {
     expect(posts).toEqual(['/projects/proj/sessions/sess/start', '/projects/proj/sessions/sess/start']);
   });
 
+  test('hands every /start payload to onProgress, image step included', async () => {
+    const building = {
+      stage: 'provisioning',
+      boot: { phase: 'provisioning', since: null, actively_starting: true, image: { state: 'building', image: null, since: '2026-01-01T00:00:00.000Z' } },
+    };
+    const { client } = fakeClient([building as StartReply, { stage: 'ready' }]);
+    const seen: unknown[] = [];
+    await waitForSessionReady(client, 'proj', 'sess', { sleep: noSleep, onProgress: (start) => seen.push(start) });
+    expect(seen).toEqual([building, { stage: 'ready' }]);
+  });
+
   test('tolerates `stopped` for the first five polls after a restart', async () => {
     const { client, posts } = fakeClient([
       { stage: 'stopped' },

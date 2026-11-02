@@ -48,6 +48,7 @@ import { formatRuntimeError } from '../core/http/runtime-errors';
 import {
   type CreateSessionPromptInput,
   type SessionPromptPart,
+  type SessionStartImageStep,
   type SessionStartResult,
   createSessionPrompt,
   isSessionStartError,
@@ -493,6 +494,15 @@ export const SESSION_START_FRESH_MS = 30_000;
 
 /** At most one `/start` re-read per this window when the proxy reports the box gone. */
 const RUNTIME_GONE_REFETCH_MIN_MS = 3_000;
+
+/**
+ * The image step of a `/start` answer, only while its box provisions. A ready
+ * answer, any other boot phase, and an API without `boot.image` read `null`.
+ */
+function sessionBootImage(start: SessionStartResult | null): SessionStartImageStep | null {
+  if (!start || start.stage === 'ready' || start.boot?.phase !== 'provisioning') return null;
+  return start.boot.image ?? null;
+}
 
 /**
  * OUTCOME-AWARE `staleTime` for the `/start` query (TanStack's function
@@ -2204,6 +2214,13 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
      *  latest /start's `boot.actively_starting`? `false` while a `starting`
      *  stage is only waiting out a retry cooldown, not driving the box. */
     activelyStarting: startData?.boot?.actively_starting ?? false,
+    /** Where the box's sandbox image is while it provisions, per the latest
+     *  /start's `boot.image`: building, serving the last ready image while a
+     *  new one builds, copying to the region, or waiting on the provider. A
+     *  boot screen names this step instead of a bare "provisioning". `null`
+     *  outside the `provisioning` phase, once ready, and against an API that
+     *  does not send it. */
+    bootImage: sessionBootImage(startData),
     /** Terminal /start failure, for hosts to render instead of spinning forever. */
     startError,
     /** Typed provider-neutral terminal provisioning failure. */

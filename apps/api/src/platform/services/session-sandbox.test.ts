@@ -289,20 +289,25 @@ mock.module('./provider-balancer', () => ({
   selectProvider: async () => 'platinum',
 }));
 
+const ensureSandboxImageMock = async (_gitProject: unknown, opts: Record<string, unknown>) => {
+  imageRequests.push(opts);
+  const queued = imageResolutionQueue.shift();
+  if (queued) return queued;
+  return {
+    snapshotName: 'snap-test-1',
+    slug: 'default',
+    contentHash: 'hash-1',
+    isDefault: true,
+    built: false,
+  };
+};
+
 mock.module('../../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
-  ensureSandboxImage: async (_gitProject: unknown, opts: Record<string, unknown>) => {
-    imageRequests.push(opts);
-    const queued = imageResolutionQueue.shift();
-    if (queued) return queued;
-    return {
-      snapshotName: 'snap-test-1',
-      slug: 'default',
-      contentHash: 'hash-1',
-      isDefault: true,
-      built: false,
-    };
-  },
+  ensureSandboxImage: ensureSandboxImageMock,
+  // Session starts resolve through the budgeted entry point; the budget is
+  // covered in snapshots/builder-session-image.test.ts.
+  ensureSessionImage: ensureSandboxImageMock,
   ensureMyKortixSandboxImage: async (opts: Record<string, unknown>) => {
     imageRequests.push(opts);
     return {

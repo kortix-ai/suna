@@ -17,7 +17,16 @@ import { clearComposerDraftIfSent } from '@/stores/composer-draft-store';
 import { draftKey } from '@/lib/session/composer-draft';
 import { getSandboxUrl, type SandboxProviderName } from '@/lib/platform/client';
 import { deleteProjectSession, recoverProjectSession, startProjectSession, restartProjectSession, type ProjectSession, type SessionStartResult } from '@/lib/projects/projects-client';
-import { connectStepFromRequestError, connectStepFromStart, shouldAwaitHealthProbe, startPollDelayMs } from '@/lib/session/connect-step';
+import {
+  connectStepFromRequestError,
+  connectStepFromStart,
+  MAX_START_WAIT_MS,
+  sessionImageStep,
+  shouldAwaitHealthProbe,
+  startPollDelayMs,
+  startWaitDeadline,
+  type SessionImageStep,
+} from '@/lib/session/connect-step';
 import { createSessionCommitted } from '@/lib/session/create-session';
 import { firstPromptSeed, SEED_BUSY_WATCHDOG_MS, seedUndelivered } from '@/lib/session/first-prompt-seed';
 import {
@@ -56,6 +65,12 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
   connectingIdRef.current = connectingProjectSessionId;
   // Inline runtime-failure state for the connecting screen (web parity).
   const [connectError, setConnectError] = useState<SessionConnectError | null>(null);
+  // The sandbox image step a connecting session waits on (`/start`'s
+  // `boot.image`), for the connecting screen's status card. Keyed by session,
+  // so a loop that another open superseded never shows its step there.
+  const [imageAnswer, setImageAnswer] = useState<{ sessionId: string; step: SessionImageStep | null } | null>(null);
+  const connectImage =
+    imageAnswer && imageAnswer.sessionId === connectingProjectSessionId ? imageAnswer.step : null;
   const [restartingSession, setRestartingSession] = useState(false);
   // Sessions whose connect loop ended in an error — guards the auto-connect
   // effect from immediately re-driving (and re-looping) a known-failed session.
@@ -247,12 +262,12 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
     async (sessionId: string) => {
       if (!projectId || ensuringRef.current === sessionId) return;
       ensuringRef.current = sessionId;
-      const startedAt = Date.now();
-      const MAX_WAIT_MS = 4 * 60_000;
+      // An image build moves this deadline (`startWaitDeadline`).
+      let deadline = Date.now() + MAX_START_WAIT_MS;
       try {
         let attempt = 0;
         let requestFailures = 0;
-        while (Date.now() - startedAt < MAX_WAIT_MS) {
+        while (Date.now() < deadline) {
           if (ensuringRef.current !== sessionId) return; // superseded by another open
           attempt += 1;
 
@@ -276,6 +291,10 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
             continue;
           }
           if (ensuringRef.current !== sessionId) return; // back on project home (goHome)
+
+          const image = sessionImageStep(start);
+          setImageAnswer({ sessionId, step: image });
+          deadline = startWaitDeadline(deadline, Date.now(), image);
 
           const step = connectStepFromStart(start);
           if (step.kind === 'fail') {
@@ -358,6 +377,8 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
         });
       } finally {
         if (ensuringRef.current === sessionId) ensuringRef.current = null;
+        // Opened, failed or left: the session waits on no image any more.
+        setImageAnswer((current) => (current?.sessionId === sessionId ? null : current));
       }
     },
     [projectId, queryClient, connectToProjectSession, failConnect, showUpgradeForError]
@@ -568,7 +589,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
     }
   }, [connectingProjectSessionId, goHome, projectId, refreshSessionLists]);
   return {
-    connectingProjectSessionId, connectError, restartingSession,
+    connectingProjectSessionId, connectError, connectImage, restartingSession,
     connectingRow, connectingFirstPrompt, connectingTitle, activeProjectSession,
     openedThreadRef, openedProjectSessionIdsRef, pendingThreadFocusRef, returnThreadRef,
     isHomeRef, ensuringRef, navigateToSession, goHome, refreshSessionLists,
