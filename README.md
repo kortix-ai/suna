@@ -7,7 +7,7 @@
 
 # Kortix CompanyOS
 
-**The open-source CompanyOS: a harness platform for always-on agents.**
+**The open-source CompanyOS: a harness platform for always-on agents to run your company.**
 
 Hand it an outcome and AI agents run it 24/7.
 
@@ -193,27 +193,6 @@ The **[Guide](https://kortix.com/docs/guide)** walks you through Kortix CompanyO
 - **Wring**, autonomous AWS cost optimization.
 
 [See the case studies →](https://kortix.com/#case-studies)
-
----
-
-## How it compares
-
-| | Claude Cowork | ChatGPT Work | **Kortix CompanyOS** |
-| --- | --- | --- | --- |
-| **Source** | Closed | Closed | **Open source: read it, fork it, audit it** |
-| **Models** | Anthropic only | OpenAI only | **Any provider, your own API keys** |
-| **Where it runs** | Anthropic's cloud or its cloud partners, no self-host | OpenAI's cloud, no self-host | **Our cloud, your VPC, or your own on-prem network** |
-| **Your configuration** | In their product | In their product | **Files in a git repo you own** |
-
-Competitor rows reflect publicly documented behavior as of July 2026.
-
-| If you are looking at… | Pick it when | Pick Kortix CompanyOS when |
-| --- | --- | --- |
-| **A coding agent on your laptop** (one session at a time) | You drive one task at a time from your terminal and watch it. | The work must keep running when the laptop sleeps, start from events, and run as many tasks at once, each on its own cloud computer. |
-| **n8n** (workflow automation) | The job is a fixed flowchart: the same steps, in the same order, every time. | The job is open-ended work an agent does on its own computer, with the configuration in git and a person approving what it changes. |
-| **OpenHands** (coding agents) | You want a coding-agent control center for an engineering team. | Coding is one of many jobs: the same agents also work in Slack, on schedules and across 3,000+ apps. |
-| **Paperclip** (agent orchestration) | You already run agents and want an org chart and a task board on top of them. | You want the platform to run the agents too, each session on its own cloud computer, from one repo. |
-| **Onyx, Open WebUI, LibreChat** (chat and search) | You want a chat window or search over company documents. | You want agents that return finished work and take real actions in your tools. |
 
 ---
 
