@@ -14,7 +14,8 @@
  *                     file (photo, document, audio, voice, video) goes with it
  *   a button press  → a command button (`kc:`) on a menu Kortix sent runs its command
  *                     over the pressed message (core/commands.ts `runCommandPress`); a
- *                     question button answers the agent's question (core/questions.ts)
+ *                     question button answers the agent's question (core/questions.ts),
+ *                     one question at a time; so does a message typed while one shows
  *
  * The agent answers through the `kortix_telegram` connector (connectors/channels.ts);
  * the bot token never enters the sandbox.
@@ -33,15 +34,17 @@ import { gateSender, refusedPressText } from '../core/channel-access';
 import { CHANNEL_COMMANDS, parseChannelCommand } from '../core/command-list';
 import { type CommandPress, isCommandPressData, pressData } from '../core/command-press';
 import { type CommandReply, rememberCommandMenu, runChannelCommand, runCommandPress } from '../core/commands';
-import { type ChannelNotice, type ChannelPort, type ChannelTarget, routeChannelMessage } from '../core/conversation';
+import { type ChannelMessage, type ChannelNotice, type ChannelPort, type ChannelTarget, routeChannelMessage } from '../core/conversation';
 import { chatSessionStart, chatTurnModel } from '../core/model-choice';
 import { connectorReply } from '../core/prompt';
 import {
+  answerQuestionInChat,
   clearQuestionButtons,
   handleQuestionTap,
   type QuestionFooter,
   type QuestionMessage,
   type QuestionPort,
+  type QuestionTapReply,
 } from '../core/questions';
 import { registerSessionPort } from '../core/session-notice';
 import type { SettingsChannel } from '../core/settings';
@@ -206,7 +209,7 @@ export function telegramPressEvent(projectId: string, botId: string, update: Tel
   };
 }
 
-/** One tap per option up to this many (Teams parity, teams/cards.ts); more is a numbered list. */
+/** Option buttons on one page (Teams parity, teams/cards.ts); more options turn pages. */
 const MAX_BUTTONS = CHANNELS.telegram.buttons.max;
 /** 3900: of the 4096 characters a message holds, the footer gets 190, the blank line 2, and 4 stay spare. */
 const QUESTION_BODY_MAX = CHANNELS.telegram.messageChars - 196;
@@ -219,12 +222,19 @@ function clip(text: string, max: number): string {
   return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
 }
 
-/** Questions as chat text: each question with its numbered options, then the footer. */
-export function telegramQuestionText(questions: RuntimeQuestion[], footer: string): string {
+/**
+ * Questions as chat text: each question with its numbered options, then the
+ * footer. `step`: one question of several, under "Question <at> of <count>".
+ */
+export function telegramQuestionText(questions: RuntimeQuestion[], footer: string, step?: QuestionMessage['step']): string {
+  const title = (q: RuntimeQuestion, i: number) =>
+    step
+      ? `Question ${step.at} of ${step.count}${q.header ? ` · ${q.header}` : ''}\n${q.question}`
+      : `${questions.length > 1 ? `${i + 1}) ` : ''}${q.header ? `${q.header}: ` : ''}${q.question}`;
   const body = questions
     .map((q, i) =>
       [
-        `${questions.length > 1 ? `${i + 1}) ` : ''}${q.header ? `${q.header}: ` : ''}${q.question}${q.multiple ? ' (pick one or more)' : ''}`,
+        `${title(q, i)}${q.multiple ? ' (pick one or more)' : ''}`,
         ...q.options.map((o, j) => `${j + 1}. ${o.label}${o.description ? ` — ${o.description}` : ''}`),
       ].join('\n'),
     )
@@ -233,12 +243,18 @@ export function telegramQuestionText(questions: RuntimeQuestion[], footer: strin
 }
 
 /** A question message's last line; a tap's toast uses the same words. */
-function questionFooter(footer: QuestionFooter): string {
+function questionFooter(footer: QuestionFooter | QuestionTapReply): string {
   switch (footer.kind) {
     case 'ask':
       return footer.buttons
         ? 'Tap an option, or reply to this message with your own answer.'
         : `Reply to this message with your answer${footer.numbered ? ', each question by its number' : ''}.`;
+    case 'step':
+      return `${footer.many ? 'Tap each option you want, then Done' : 'Tap an option'}${footer.typed ? ', or type your own answer' : ''}.`;
+    case 'already_answered':
+      return 'This question was already answered.';
+    case 'none_ticked':
+      return 'Tap at least one option first.';
     case 'answered':
       return `Answered: ${footer.label}`;
     case 'answered_in_chat':
@@ -251,9 +267,18 @@ function questionFooter(footer: QuestionFooter): string {
 }
 
 const questionMessageText = (m: QuestionMessage) =>
-  m.questions.length ? telegramQuestionText(m.questions, questionFooter(m.footer)) : questionFooter(m.footer);
+  m.questions.length ? telegramQuestionText(m.questions, questionFooter(m.footer), m.step) : questionFooter(m.footer);
 
-const inlineKeyboard = (m: QuestionMessage) => (m.buttons ?? []).map((b) => [{ text: clip(b.label, 60), callback_data: b.data }]);
+/** One option a row, ✓ on a ticked one; then the page turns; then Done. */
+function inlineKeyboard(m: QuestionMessage): InlineButton[][] {
+  const button = (text: string, data: string): InlineButton => ({ text: clip(text, 60), callback_data: data });
+  const turn = [...(m.back ? [button('‹ Back', m.back)] : []), ...(m.more ? [button('More ›', m.more)] : [])];
+  return [
+    ...(m.buttons ?? []).map((b) => [button(`${b.ticked ? '✓ ' : ''}${b.label}`, b.data)]),
+    ...(turn.length ? [turn] : []),
+    ...(m.done ? [[button('Done ›', m.done)]] : []),
+  ];
+}
 
 /** The question as the agent would send it with `send_message`. */
 function questionBody(target: ChannelTarget, m: QuestionMessage): Record<string, unknown> {
@@ -284,15 +309,16 @@ async function botToken(projectId: string): Promise<string> {
 
 /**
  * The agent's questions (core/questions.ts), posted as the agent would post
- * them with `send_message`. A bot that cannot take presses gets a numbered list
- * to reply to. A message ref is the Telegram message id.
+ * them with `send_message`. A bot connected before buttons is subscribed to
+ * presses first, once, as before its first menu; one that cannot be gets a
+ * numbered list to reply to. A message ref is the Telegram message id.
  */
 const telegramQuestions: QuestionPort = {
   maxButtons: MAX_BUTTONS,
   agentCall: (target, m) => ({ slug: TELEGRAM_CHANNEL_CONNECTOR_SLUG, actionPath: 'send_message', args: questionBody(target, m) }),
   async tapsReady(target) {
     const token = await loadTelegramBotToken(target.projectId);
-    return !!token && subscribeToButtons(token, target.projectId);
+    return !!token && ensureTelegramButtons(token, target.projectId, target.workspaceId);
   },
   async send(target, m) {
     const sent = await telegramCall<{ message_id: number }>(await botToken(target.projectId), 'sendMessage', questionBody(target, m));
@@ -304,7 +330,11 @@ const telegramQuestions: QuestionPort = {
     const token = await botToken(target.projectId);
     await (m
       ? telegramCall(token, 'editMessageText', { ...message, text: questionMessageText(m), reply_markup: { inline_keyboard: inlineKeyboard(m) } })
-      : telegramCall(token, 'editMessageReplyMarkup', { ...message, reply_markup: { inline_keyboard: [] } }));
+      : telegramCall(token, 'editMessageReplyMarkup', { ...message, reply_markup: { inline_keyboard: [] } })
+    ).catch((error) => {
+      // A redraw of what the message already shows (a tap on an answered step).
+      if (!String(error).includes('message is not modified')) throw error;
+    });
   },
   async answerTap(tap, reply) {
     const token = await loadTelegramBotToken(tap.target.projectId).catch(() => null);
@@ -467,6 +497,10 @@ export async function handleTelegramEvent(
     );
     return;
   }
+  // A question shown one at a time takes a typed answer; a message with a file is never one.
+  if (!file && (await answerQuestionInChat(telegramPort, target, { id: `message:${event.id}`, text }, answerFollowUp(event, install.botId, message, message.from), run))) {
+    return;
+  }
   await clearQuestionButtons(telegramQuestions, target, 'answered_in_chat');
 
   await telegramCall(token, 'sendChatAction', {
@@ -562,26 +596,36 @@ export async function handleTelegramPress(
       data: press.data ?? '',
       id: press.id,
     },
-    (threadId, answer) => {
-      const [, topicId] = threadId.split(':');
-      const reply: TelegramMessage = {
-        message_id: message.message_id,
-        chat: message.chat,
-        from: press.from,
-        text: answer,
-        ...(topicId ? { is_topic_message: true, message_thread_id: Number(topicId) } : {}),
-      };
-      return {
-        keys: {
-          followUp: `telegram:${install.botId}:${event.id}`,
-          create: `telegram:create:${install.botId}:${event.id}`,
-          createClaim: `telegram:threadcreate:${event.projectId}:${install.botId}:${threadId}`,
-        },
-        followUp: telegramEnvelope(reply),
-      };
-    },
+    answerFollowUp(event, install.botId, message, press.from),
     run,
   );
+}
+
+/** An answer to the agent's question, as a follow-up under the key of the update (a press or a typed message) that gave it. */
+function answerFollowUp(
+  event: IntegrationEvent,
+  botId: string,
+  message: Pick<TelegramMessage, 'message_id' | 'chat'>,
+  from: TelegramMessage['from'],
+): (threadId: string, answer: string) => Pick<ChannelMessage, 'keys' | 'followUp'> {
+  return (threadId, answer) => {
+    const [, topicId] = threadId.split(':');
+    const reply: TelegramMessage = {
+      message_id: message.message_id,
+      chat: message.chat,
+      from,
+      text: answer,
+      ...(topicId ? { is_topic_message: true, message_thread_id: Number(topicId) } : {}),
+    };
+    return {
+      keys: {
+        followUp: `telegram:${botId}:${event.id}`,
+        create: `telegram:create:${botId}:${event.id}`,
+        createClaim: `telegram:threadcreate:${event.projectId}:${botId}:${threadId}`,
+      },
+      followUp: telegramEnvelope(reply),
+    };
+  };
 }
 
 /** A tap on a command button: the core runs it in the pressed message's chat and topic (core/commands.ts `runCommandPress`). */
@@ -687,14 +731,17 @@ function telegramCommandMessage(reply: CommandReply): { text: string; keyboard: 
 }
 
 /**
- * Once per bot: a bot connected before #10994 (2026-10-28) receives messages only
- * (`allowed_updates: ['message']`), so its buttons would never answer. Not
- * subscribed: the claim goes, and the next menu tries again.
+ * Once per bot, before its first menu or question: a bot connected before
+ * #10994 (2026-10-28) receives messages only (`allowed_updates: ['message']`),
+ * so its buttons would never answer. Not subscribed: false, the claim goes, and
+ * the next menu or question tries again.
  */
-async function ensureTelegramButtons(token: string, projectId: string, botId: string): Promise<void> {
+async function ensureTelegramButtons(token: string, projectId: string, botId: string): Promise<boolean> {
   const key = `telegram:buttons:${botId}`;
   const claim = await claimThreadCreate(key, 365 * 24 * 60 * 60_000).catch(() => null);
-  if (claim && !(await subscribeToButtons(token, projectId))) await releaseThreadCreate(key, claim).catch(() => undefined);
+  if (!claim || (await subscribeToButtons(token, projectId))) return true;
+  await releaseThreadCreate(key, claim).catch(() => undefined);
+  return false;
 }
 
 /** What the Kortix Channels page calls a chat: its title, else the @username or the first name of a private chat. */
@@ -763,7 +810,8 @@ export function telegramEnvelope(message: TelegramMessage): ChannelEnvelope {
         ? ['This message is one item of an album. Telegram sends each item as its own message, and usually only the first carries the caption.']
         : []),
       `One message holds at most ${CHANNELS.telegram.messageChars} characters; send a longer answer as several messages.`,
-      'To let the user choose between options, call your question tool: Kortix posts it in this chat when it can, with buttons for a single choice; otherwise its result says how to ask.',
+      'Whenever you need the user to choose or to answer, call your question tool, with every question in one call: Kortix shows them in this chat as buttons, one question at a time.',
+      'Never list choices or questions as plain text. Ask in plain words only when the tool result says the question could not be posted.',
       `While you work on a long task, show typing: ${connectorReply(TELEGRAM_CHANNEL_CONNECTOR_SLUG, 'send_chat_action', { chat_id: String(chat.id) })}.`,
       'For bold or code, add `"parse_mode":"HTML"` and use <b>, <i>, <code>, <pre>; otherwise send plain text.',
       'The bot token is resolved server-side. Do not look for it in the sandbox.',

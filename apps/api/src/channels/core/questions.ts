@@ -4,24 +4,37 @@
  * tap answers. The port renders, sends and edits. The adapter keeps intake and
  * the sender gate: it hands the core only taps from admitted senders.
  *
- *   post       → one single-select question with up to `maxButtons` options gets
- *                one button per option, anything else a numbered list; posted
- *                only where the agent's own call would run without approval
- *   a message  → the buttons go, and the footer says why (`clearQuestionButtons`)
- *   a tap      → the answer: in the turn the question still blocks, else a
- *                follow-up into the question's own session that quotes it
+ *   post       → buttons: one single-select question gets one button per
+ *                option; several questions or a multi-select show one question
+ *                at a time (`QuestionSteps`). Options past `maxButtons` turn
+ *                pages. A numbered list only where a tap cannot arrive or a
+ *                question has no option to tap. Posted only where the agent's
+ *                own call would run without approval
+ *   a message  → on a question shown one at a time that takes typed text: its
+ *                answer (`answerQuestionInChat`); else the buttons go, and the
+ *                footer says why (`clearQuestionButtons`)
+ *   a tap      → a pick, a tick, Done or a page turn; the last answer goes in
+ *                the turn the question still blocks, else as a follow-up into
+ *                the question's own session that quotes it
  *   a press    → the same answer for an adapter that acknowledges and edits
  *                itself: `decideQuestionPress`, then `settleQuestionAnswer`
  */
 import type { RuntimeQuestion } from '@kortix/api-contract/transcript';
 import { chatEventDedup, projectSessions } from '@kortix/db';
-import { eq, like } from 'drizzle-orm';
+import { desc, eq, like } from 'drizzle-orm';
 import { connectorActionAlwaysRuns } from '../../connectors/db-deps-rows';
 import { logger } from '../../lib/logger';
-import { getPendingQuestion, releaseRuntimeQuestion, renderAnswerPrompt, resolvePendingQuestion } from '../../projects/surface';
+import {
+  advancePendingQuestionSteps,
+  getPendingQuestion,
+  pendingQuestionStepsBy,
+  releaseRuntimeQuestion,
+  renderAnswerPrompt,
+  resolvePendingQuestion,
+} from '../../projects/surface';
 import { db } from '../../shared/db';
 import { type ChannelMessage, type ChannelPort, type ChannelTarget, type SessionQuestion, routeChannelMessage } from './conversation';
-import { parseQuestionButton, questionButtonData } from './question-token';
+import { parseQuestionButton, parseQuestionControl, questionButtonData, questionDoneData, questionPageData } from './question-token';
 import { findChatThread } from './threads';
 
 export { parseQuestionButton, questionButtonData };
@@ -29,6 +42,8 @@ export { parseQuestionButton, questionButtonData };
 /** The last line of a question message. The port words it, as it words a `ChannelNotice`. */
 export type QuestionFooter =
   | { kind: 'ask'; buttons: boolean; numbered: boolean }
+  /** A question shown one at a time: `many` ticks options for Done; `typed`: a typed message answers it. */
+  | { kind: 'step'; many: boolean; typed: boolean }
   | { kind: 'answered'; label: string }
   | { kind: 'answered_in_chat' }
   | { kind: 'new_conversation' }
@@ -39,8 +54,15 @@ export interface QuestionMessage {
   /** Empty when the stored question is gone: the footer only. */
   questions: RuntimeQuestion[];
   footer: QuestionFooter;
-  /** One per option of a one-tap question. Absent: no buttons, and an edit removes them. */
-  buttons?: Array<{ label: string; data: string }>;
+  /** One per option on this page; `ticked` on a multi-select. Absent: no buttons, and an edit removes them. */
+  buttons?: Array<{ label: string; data: string; ticked?: boolean }>;
+  /** The page turns of a question with more options than `maxButtons`. */
+  back?: string;
+  more?: string;
+  /** A multi-select's Done. */
+  done?: string;
+  /** Several questions: the one shown, from 1, of `count`. */
+  step?: { at: number; count: number };
 }
 
 /** A tap from a sender the adapter admitted. */
@@ -55,7 +77,13 @@ export interface QuestionTap {
   id: string;
 }
 
-export type QuestionTapReply = { kind: 'answered'; label: string } | { kind: 'earlier' };
+export type QuestionTapReply =
+  | { kind: 'answered'; label: string }
+  | { kind: 'earlier' }
+  /** A tap on a step already answered: a double tap, two people, an old copy. */
+  | { kind: 'already_answered' }
+  /** Done with no option ticked. */
+  | { kind: 'none_ticked' };
 
 /** One question's answer in a press: indexes into the stored question's options, and free text. */
 export interface QuestionPick {
@@ -96,6 +124,29 @@ export interface QuestionAnswer {
 export type QuestionDecision = { kind: 'earlier'; questions: RuntimeQuestion[] } | { kind: 'answer'; answer: QuestionAnswer };
 
 /**
+ * A chat's answers so far (`session_pending_questions.chat_steps`), written
+ * only by compare-and-set on the value read. Persisted: add fields, never
+ * change one.
+ */
+export interface QuestionSteps {
+  /** The question on screen, from 0; the question count once every answer is in. */
+  step: number;
+  /** One per question before `step`. */
+  picks: QuestionPick[];
+  /** The options ticked on a multi-select `step`. */
+  ticked: number[];
+  /** The tap or message that wrote this: its retry changes nothing. */
+  by: string;
+  /** The message that shows the questions. */
+  ref: string;
+}
+
+const NO_STEPS: QuestionSteps = { step: 0, picks: [], ticked: [], by: '', ref: '' };
+
+/** Several questions, or a multi-select: shown one at a time, answered with the last one. */
+const isStepped = (questions: RuntimeQuestion[]) => questions.length > 1 || !!questions[0]?.multiple;
+
+/**
  * Deliver an answer as a follow-up: only into its `sessionId`, never creating
  * or reviving a session, with one idempotency key per press. 'gone': the
  * session is gone or the conversation moved on. Throws to ask for a retry.
@@ -104,14 +155,14 @@ export type AnswerDelivery = (answer: QuestionAnswer) => Promise<'handled' | 'go
 
 /** What a platform does to show agent questions. */
 export interface QuestionPort {
-  /** One button per option up to this many; more is a numbered list. At most 100 (a two-digit index). */
+  /** Option buttons on one page; more options turn pages. At most 100 (a two-digit index). */
   maxButtons: number;
   /**
    * The agent's own call this post stands in for. `args` is the exact body the
    * port sends, so the connector policy decides on what is sent. Absent: no gate.
    */
   agentCall?(target: ChannelTarget, m: QuestionMessage): { slug: string; actionPath: string; args: Record<string, unknown> };
-  /** Whether a tap can arrive. False: the question is posted as a list. Absent: true. */
+  /** Whether a tap can arrive. False: the question is posted as a numbered list. Absent: true. */
   tapsReady?(target: ChannelTarget): Promise<boolean>;
   /** Post the message; returns its ref (no `|`). Throws on a refusal. */
   send(target: ChannelTarget, m: QuestionMessage): Promise<string>;
@@ -136,26 +187,20 @@ export async function postQuestion(
 ): Promise<boolean> {
   try {
     if (principal.projectId !== target.projectId || principal.sessionId !== sessionId) return false;
-    const q = questions[0];
-    const oneTap = questions.length === 1 && !!q && !q.multiple && q.options.length >= 1 && q.options.length <= Math.min(port.maxButtons, 100);
-    const message = (buttons: boolean): QuestionMessage => ({
-      questions,
-      footer: { kind: 'ask', buttons, numbered: questions.length > 1 },
-      ...(buttons
-        ? { buttons: q!.options.map((o, i) => ({ label: o.label.trim() || String(i + 1), data: questionButtonData(pendingId, i) })) }
-        : {}),
-    });
+    // A button names its question and option in two digits each (question-token.ts).
+    const tappable = questions.length >= 1 && questions.length <= 100 && questions.every((q) => q.options.length >= 1 && q.options.length <= 100);
+    const list: QuestionMessage = { questions, footer: { kind: 'ask', buttons: false, numbered: questions.length > 1 } };
     const runsUnattended = async (m: QuestionMessage) => {
       const call = port.agentCall?.(target, m);
       return !call || connectorActionAlwaysRuns({ principal, ...call });
     };
-    let m = message(oneTap);
+    let m = tappable ? stepMessage(port, pendingId, questions, NO_STEPS) : list;
     if (!(await runsUnattended(m))) {
       logger.info('[channel] question left to the agent: its own call needs approval', { platform: target.platform, sessionId });
       return false;
     }
-    if (oneTap && port.tapsReady && !(await port.tapsReady(target))) {
-      m = message(false);
+    if (m.buttons && port.tapsReady && !(await port.tapsReady(target))) {
+      m = list;
       if (!(await runsUnattended(m))) return false;
     }
     const ref = await port.send(target, m);
@@ -167,6 +212,36 @@ export async function postQuestion(
     return false;
   }
 }
+
+/**
+ * The message for `steps`: its question, the options of `page` (clamped) as
+ * buttons, the page turns, a multi-select's Done. A single single-select
+ * question keeps the one-tap message.
+ */
+function stepMessage(port: QuestionPort, pendingId: string, questions: RuntimeQuestion[], steps: QuestionSteps, page = 0): QuestionMessage {
+  const at = steps.step;
+  const q = questions[at]!;
+  const per = perPage(port);
+  const last = Math.ceil(q.options.length / per) - 1;
+  const shown = Math.min(Math.max(page, 0), last);
+  const first = shown * per;
+  const stepped = isStepped(questions);
+  return {
+    questions: stepped ? [q] : questions,
+    footer: stepped ? { kind: 'step', many: !!q.multiple, typed: q.custom !== false } : { kind: 'ask', buttons: true, numbered: false },
+    buttons: q.options.slice(first, first + per).map((o, j) => ({
+      label: o.label.trim() || String(first + j + 1),
+      data: questionButtonData(pendingId, first + j, at),
+      ...(steps.ticked.includes(first + j) ? { ticked: true } : {}),
+    })),
+    ...(shown > 0 ? { back: questionPageData(pendingId, at, shown - 1) } : {}),
+    ...(shown < last ? { more: questionPageData(pendingId, at, shown + 1) } : {}),
+    ...(q.multiple ? { done: questionDoneData(pendingId, at) } : {}),
+    ...(questions.length > 1 ? { step: { at: at + 1, count: questions.length } } : {}),
+  };
+}
+
+const perPage = (port: QuestionPort) => Math.min(Math.max(port.maxButtons, 1), 100);
 
 /**
  * A question with buttons stays answerable until someone answers it another
@@ -239,61 +314,205 @@ export async function clearQuestionButtons(
   }
 }
 
+/** The follow-up of an answer: the adapter's persisted keys and envelope, delivered into `threadId`. */
+type AnswerFollowUp = (threadId: string, answer: string) => Pick<ChannelMessage, 'keys' | 'followUp'>;
+
 /**
- * A tap on a question button. In a conversation of the question's session, it
- * answers the question: in the turn it still blocks (the server could not
- * release it when it was posted), else as a follow-up that quotes it. A tap on
- * a question from before a reset, or of another session, answers nothing.
- * `followUp`: the adapter's persisted keys and envelope for the answer, delivered
- * into `threadId`. Throws to ask the transport for a retry.
+ * A tap on a question button. In a conversation of the question's session, a
+ * pick answers the question on screen: the next question follows in the same
+ * message, and the last answer goes to the question's session: in the turn it
+ * still blocks (the server could not release it when it was posted), else as a
+ * follow-up that quotes it. A multi-select tap ticks or unticks, Done takes
+ * the ticked options, a page turn redraws. A tap on another step changes
+ * nothing; a tap on a question from before a reset, or of another session,
+ * answers nothing. Throws to ask the transport for a retry, also when another
+ * tap moved the steps first.
  */
 export async function handleQuestionTap(
   port: ChannelPort & { questions: QuestionPort },
   tap: QuestionTap,
-  followUp: (threadId: string, answer: string) => Pick<ChannelMessage, 'keys' | 'followUp'>,
+  followUp: AnswerFollowUp,
   run: { finalAttempt: boolean },
 ): Promise<void> {
   const questions = port.questions;
-  const button = parseQuestionButton(tap.data);
+  const option = parseQuestionButton(tap.data);
+  const control = option ? null : parseQuestionControl(tap.data);
+  const button = option ?? control;
   // A button Kortix did not post (the agent may post its own).
   if (!button) return settleTap(questions, tap);
 
-  const press: QuestionPress = {
-    target: tap.target,
-    ref: tap.ref,
-    pendingId: button.pendingId,
-    picks: [{ question: button.question, options: [button.index] }],
-  };
-  const decision = await decideQuestionPress(press, questions.threadOfTap?.bind(questions, tap));
-  if (decision.kind === 'earlier') {
-    await settleTap(questions, tap, { kind: 'earlier' });
+  const reply = (r?: QuestionTapReply) => settleTap(questions, tap, r);
+  const earlier = async () => {
+    await reply({ kind: 'earlier' });
     await editQuestion(questions, tap.target, tap.ref);
-    return;
-  }
+  };
+  const asked = await getPendingQuestion(tap.target.projectId, button.pendingId);
+  const threadOf = questions.threadOfTap?.bind(questions, tap) ?? ownThread(tap.target);
+  const threadId = asked && (await threadOf(asked.sessionId));
+  if (!asked || !threadId) return earlier();
 
-  const { answer } = decision;
-  await settleTap(questions, tap, { kind: 'answered', label: answer.label });
-  await editQuestion(questions, tap.target, tap.ref, { questions: answer.questions, footer: { kind: 'answered', label: answer.label } });
-  const deliver: AnswerDelivery = async (a) => {
+  const steps = (asked.chatSteps as QuestionSteps | null) ?? NO_STEPS;
+  const ctx: StepContext = { port, target: tap.target, ref: tap.ref, pendingId: button.pendingId, asked, threadId, reply, followUp, run };
+  if (steps.by === tap.id) return replay(ctx, steps);
+  const q = asked.questions[steps.step];
+  if (!q || button.question !== steps.step) {
+    await reply({ kind: 'already_answered' });
+    return redraw(ctx, steps);
+  }
+  if (control && control.control !== 'done') {
+    await reply();
+    return editQuestion(questions, tap.target, tap.ref, stepMessage(questions, button.pendingId, asked.questions, steps, control.control));
+  }
+  const at = { by: tap.id, ref: tap.ref };
+  if (control) {
+    if (!q.multiple) return earlier();
+    if (!steps.ticked.length) return reply({ kind: 'none_ticked' });
+    return applySteps(ctx, asked.chatSteps, advance(steps, { question: steps.step, options: steps.ticked }, at));
+  }
+  const index = option!.index;
+  if (!q.options[index]) return earlier();
+  if (!q.multiple) return applySteps(ctx, asked.chatSteps, advance(steps, { question: steps.step, options: [index] }, at));
+  const ticked = steps.ticked.includes(index) ? steps.ticked.filter((o) => o !== index) : [...steps.ticked, index].sort((a, b) => a - b);
+  return applySteps(ctx, asked.chatSteps, { ...steps, ticked, ...at }, Math.floor(index / perPage(questions)));
+}
+
+/**
+ * A message typed in a conversation whose newest question message shows one
+ * question at a time: the answer to the question on screen, with its ticked
+ * options, when that question takes typed text. The next question follows, and
+ * the last answer goes as a tap's does. False: the message is not an answer,
+ * and goes to the agent as itself. `message.id` names the message for its
+ * retries. Throws to ask the transport for a retry.
+ */
+export async function answerQuestionInChat(
+  port: ChannelPort & { questions: QuestionPort },
+  target: ChannelTarget,
+  message: { id: string; text: string },
+  followUp: AnswerFollowUp,
+  run: { finalAttempt: boolean },
+): Promise<boolean> {
+  const text = message.text.trim();
+  const thread = text ? await findChatThread(target) : null;
+  if (!thread) return false;
+  // A retry finds the question it answered; the buttons may be gone by then.
+  const own = await pendingQuestionStepsBy(thread.sessionId, message.id);
+  const shown = own ? null : await newestQuestionMessage(target);
+  const pendingId = own ?? shown?.pendingId;
+  const asked = pendingId ? await getPendingQuestion(target.projectId, pendingId) : null;
+  if (!pendingId || !asked || asked.sessionId !== thread.sessionId || !isStepped(asked.questions)) return false;
+
+  const steps = (asked.chatSteps as QuestionSteps | null) ?? NO_STEPS;
+  const ref = shown?.ref ?? steps.ref;
+  const ctx: StepContext = { port, target, ref, pendingId, asked, threadId: target.threadId, reply: async () => {}, followUp, run };
+  if (steps.by === message.id) {
+    await replay(ctx, steps);
+    return true;
+  }
+  const q = asked.questions[steps.step];
+  if (!q || q.custom === false) return false;
+  await applySteps(ctx, asked.chatSteps, advance(steps, { question: steps.step, options: steps.ticked, text }, { by: message.id, ref }));
+  return true;
+}
+
+/** A question message, its stored question and where its answer goes. */
+interface StepContext {
+  port: ChannelPort & { questions: QuestionPort };
+  target: ChannelTarget;
+  ref: string;
+  pendingId: string;
+  asked: NonNullable<Awaited<ReturnType<typeof getPendingQuestion>>>;
+  threadId: string;
+  /** Settle the tap; a typed message has none. */
+  reply: (r?: QuestionTapReply) => Promise<void>;
+  followUp: AnswerFollowUp;
+  run: { finalAttempt: boolean };
+}
+
+/** `steps` with `pick` recorded: the next question on screen, nothing ticked. */
+const advance = (steps: QuestionSteps, pick: QuestionPick, at: Pick<QuestionSteps, 'by' | 'ref'>): QuestionSteps => ({
+  step: steps.step + 1,
+  picks: [...steps.picks, pick],
+  ticked: [],
+  ...at,
+});
+
+/**
+ * Write `to` over `from` (the value read), then show it: the next question, or
+ * the answer once every question has one. A last answer the stored question
+ * does not take writes nothing.
+ */
+async function applySteps(ctx: StepContext, from: unknown, to: QuestionSteps, page = 0): Promise<void> {
+  const done = to.step >= ctx.asked.questions.length;
+  const decision = done ? await decideQuestionPress(stepsPress(ctx, to), async () => ctx.threadId) : null;
+  if (decision?.kind === 'earlier') {
+    await ctx.reply({ kind: 'earlier' });
+    return editQuestion(ctx.port.questions, ctx.target, ctx.ref);
+  }
+  if (!(await advancePendingQuestionSteps(ctx.target.projectId, ctx.pendingId, from, to))) {
+    throw new Error(`${ctx.target.platform} question steps moved`);
+  }
+  if (decision) return sendAnswer(ctx, decision.answer, to);
+  await ctx.reply();
+  await editQuestion(ctx.port.questions, ctx.target, ctx.ref, stepMessage(ctx.port.questions, ctx.pendingId, ctx.asked.questions, to, page));
+}
+
+/** A retry of the tap or message that wrote `steps`: a last answer is sent again (its delivery is idempotent), else redrawn. */
+async function replay(ctx: StepContext, steps: QuestionSteps): Promise<void> {
+  if (steps.step < ctx.asked.questions.length) {
+    await ctx.reply();
+    return redraw(ctx, steps);
+  }
+  const decision = await decideQuestionPress(stepsPress(ctx, steps), async () => ctx.threadId);
+  if (decision.kind === 'answer') return sendAnswer(ctx, decision.answer, steps);
+  await ctx.reply({ kind: 'earlier' });
+  await editQuestion(ctx.port.questions, ctx.target, ctx.ref);
+}
+
+/** Show `steps` again, so an edit the platform lost heals on the next tap. Every answer in: the buttons go. */
+const redraw = (ctx: StepContext, steps: QuestionSteps) =>
+  editQuestion(
+    ctx.port.questions,
+    ctx.target,
+    ctx.ref,
+    steps.step < ctx.asked.questions.length ? stepMessage(ctx.port.questions, ctx.pendingId, ctx.asked.questions, steps) : undefined,
+  );
+
+const stepsPress = (ctx: StepContext, steps: QuestionSteps): QuestionPress => ({ target: ctx.target, ref: ctx.ref, pendingId: ctx.pendingId, picks: steps.picks });
+
+/** Every question answered: say so on the message, then answer the session. */
+async function sendAnswer(ctx: StepContext, answer: QuestionAnswer, steps: QuestionSteps): Promise<void> {
+  const questions = ctx.port.questions;
+  await ctx.reply({ kind: 'answered', label: answer.label });
+  await editQuestion(questions, ctx.target, ctx.ref, { questions: answer.questions, footer: { kind: 'answered', label: answer.label } });
+  // Nothing reached the agent (its session is gone, or the conversation moved
+  // on to another): the message must not keep saying "Answered".
+  if ((await settleQuestionAnswer(stepsPress(ctx, steps), answer, deliverAnswer(ctx), ctx.run)) === 'gone') {
+    await editQuestion(questions, ctx.target, ctx.ref, { questions: answer.questions, footer: { kind: 'earlier' } });
+  }
+}
+
+/** Deliver an answer only into its own session, as a follow-up of the conversation. */
+function deliverAnswer({ port, target, followUp, run }: StepContext): AnswerDelivery {
+  return async (a) => {
     let gone = false;
     await routeChannelMessage(
       {
-        notify: (target, notice) => port.notify(target, notice),
+        notify: (t, notice) => port.notify(t, notice),
         // Only into the question's own session: a conversation that moved on (a
-        // reset, then a new message) since the check refuses it. A tap never
+        // reset, then a new message) since the check refuses it. An answer never
         // restarts a conversation: any verdict but deliver is a refusal.
-        prepareFollowUp: async (target, thread) => {
-          const verdict = thread.sessionId === a.sessionId ? await (port.prepareFollowUp?.(target, thread) ?? 'deliver') : 'refuse';
+        prepareFollowUp: async (t, thread) => {
+          const verdict = thread.sessionId === a.sessionId ? await (port.prepareFollowUp?.(t, thread) ?? 'deliver') : 'refuse';
           if (verdict === 'deliver') return verdict;
           gone = true;
           return 'refuse';
         },
-        ...(port.turnModel ? { turnModel: (target, thread) => port.turnModel!(target, thread) } : {}),
+        ...(port.turnModel ? { turnModel: (t, thread) => port.turnModel!(t, thread) } : {}),
       },
       {
-        target: { ...tap.target, threadId: a.threadId },
+        target: { ...target, threadId: a.threadId },
         ...followUp(a.threadId, a.prompt),
-        // A tap never starts a session.
+        // An answer never starts a session.
         plan: async () => {
           gone = true;
           return null;
@@ -303,11 +522,24 @@ export async function handleQuestionTap(
     );
     return gone ? 'gone' : 'handled';
   };
-  // Nothing reached the agent (its session is gone, or the conversation moved
-  // on to another): the message must not keep saying "Answered".
-  if ((await settleQuestionAnswer(press, answer, deliver, run)) === 'gone') {
-    await editQuestion(questions, tap.target, tap.ref, { questions: answer.questions, footer: { kind: 'earlier' } });
-  }
+}
+
+/** The conversation of `sessionId` a press belongs to: its own, when it is that session's. */
+const ownThread = (target: ChannelTarget) => async (sessionId: string) =>
+  (await findChatThread(target))?.sessionId === sessionId ? target.threadId : null;
+
+/** The newest question message with buttons in this conversation. */
+async function newestQuestionMessage(target: ChannelTarget): Promise<{ ref: string; pendingId: string } | null> {
+  const prefix = questionButtonsPrefix(target);
+  const [row] = await db
+    .select({ key: chatEventDedup.eventId })
+    .from(chatEventDedup)
+    .where(like(chatEventDedup.eventId, startsWith(prefix)))
+    .orderBy(desc(chatEventDedup.expiresAt))
+    .limit(1)
+    .catch(() => []);
+  const [ref, pendingId] = row ? row.key.slice(prefix.length).split('|') : [];
+  return ref && pendingId ? { ref, pendingId } : null;
 }
 
 /**
@@ -319,8 +551,7 @@ export async function handleQuestionTap(
  */
 export async function decideQuestionPress(
   p: QuestionPress,
-  threadOf: (sessionId: string) => Promise<string | null> = async (sessionId) =>
-    (await findChatThread(p.target))?.sessionId === sessionId ? p.target.threadId : null,
+  threadOf: (sessionId: string) => Promise<string | null> = ownThread(p.target),
 ): Promise<QuestionDecision> {
   const asked = await getPendingQuestion(p.target.projectId, p.pendingId);
   if (!asked) return { kind: 'earlier', questions: [] };
