@@ -22,12 +22,12 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   'All case studies': 'text4bba111d6e4f',
   'Case studies': 'text6b1df2ba950c',
   'Case studies.': 'text0949ea4157c6',
-  'SciencePal: a science agent for researchers.': 'text8ce3e896977d',
+  'A science agent for researchers.': 'text9be6f4e5dd42',
   'The institute’s AI research assistant. It searches the scientific literature with citations and runs agents for protein design and materials science.':
     'textbc76493f60fc',
   'An autonomous cloud company.': 'text6e78e53edc57',
-  'A sandbox cloud for AI agents, run by agents on Kortix. Agents ship changes from Linear issues and test every flow. People approve.':
-    'text84a280e51c67',
+  'Engineering, marketing and sales: everything runs in a loop of agents. People set the direction and approve.':
+    'text1082d3207b0e',
   'Fiber network design, run by agents.': 'textfef24d788a3e',
   'Agents design fiber routes from GIS data and imagery, build bills of materials and track every project, self-hosted in the company’s own cloud.':
     'textc22871a19ba5',
