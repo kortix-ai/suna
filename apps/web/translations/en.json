@@ -1084,10 +1084,6 @@
           "name": "Marketplace",
           "description": "Browse and install skills from community and vendor registries. Sources, updates, and team scopes are still changing."
         },
-        "meta_agent": {
-          "name": "My Kortix",
-          "description": "My Kortix, the one agent you talk to. It routes each task to the agent made for it and runs it, with your permissions. The project setting is `builtin_agents.my_kortix` in kortix.yaml; this switch applies only when that key is not set."
-        },
         "warm_sessions": {
           "name": "Warm Sessions",
           "description": "Keep one sandbox ready for instant session starts. The idle sandbox uses compute."
@@ -23284,8 +23280,8 @@
     "listPlaceholder": "value 1, value 2"
   },
   "triggerAutoPause": {
-    "title": "Paused itself at its run limit",
-    "description": "It ran at its hourly run limit for 2 hours in a row, so it stopped starting runs. Find what keeps firing it, then resume it."
+    "title": "Paused automatically",
+    "description": "It stopped starting runs for the reason below. Fix the cause, then resume it."
   },
   "featureGate": {
     "enable": "Enable {name}",

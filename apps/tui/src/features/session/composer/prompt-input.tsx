@@ -20,6 +20,7 @@
  */
 
 import type { KeyEvent, TextareaRenderable } from '@opentui/core';
+import { useKeyboard } from '@opentui/react';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -68,6 +69,8 @@ export interface PromptInputProps {
   seed?: { text: string; seq: number } | null;
   /** Drawn under the box: the tray. */
   footer?: ReactNode;
+  /** A click on the input: the host gives it the keyboard (a click never moves focus by itself). */
+  onActivate?(): void;
 }
 
 /** A word that looks like a command name: `/deploy`, not `/etc/hosts`. */
@@ -132,6 +135,7 @@ export function PromptInput({
   onMetrics,
   seed = null,
   footer,
+  onActivate,
 }: PromptInputProps) {
   const textareaRef = useRef<TextareaRenderable>(null);
   const [draft, setDraft] = useState('');
@@ -148,6 +152,18 @@ export function PromptInput({
       renderable.cursorOffset = value.length;
     }
   }, []);
+
+  // The input is the keyboard's default owner. When the app says it owns the keys
+  // (`focused`) but the renderer's focus is elsewhere (a click focused the transcript, a
+  // closed overlay did not hand focus back), the next key takes it back. A global listener
+  // runs before the focused element, so the same key lands in the input: no key is lost.
+  useEffect(() => {
+    if (focused && textareaRef.current && !textareaRef.current.focused) textareaRef.current.focus();
+  }, [focused]);
+  useKeyboard(() => {
+    const textarea = textareaRef.current;
+    if (focused && textarea && !textarea.focused && !textarea.isDestroyed) textarea.focus();
+  });
 
   // A seed from the host replaces the draft once per `seq`.
   const seedSeq = seed?.seq;
@@ -303,6 +319,7 @@ export function PromptInput({
       ) : null}
 
       <box
+        onMouseDown={() => onActivate?.()}
         border
         borderStyle="rounded"
         borderColor={focused ? theme.borderFocus : theme.border}

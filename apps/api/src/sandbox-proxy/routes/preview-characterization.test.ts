@@ -176,7 +176,7 @@ mock.module('../backend', () => ({
   },
 }));
 
-const { forwardToSandbox, resolvePreviewWsUpstream } = await import('./preview');
+const { preview, forwardToSandbox, resolvePreviewWsUpstream } = await import('./preview');
 const { publicShareApp } = await import('./public-share');
 const { KORTIX_USER_CONTEXT_HEADER } = await import('../../shared/kortix-user-context');
 const { __resetPromptDedupe } = await import('../prompt-dedupe');
@@ -395,6 +395,39 @@ describe('forwardToSandbox refusal branches', () => {
     expect(fetchCalls).toBe(0);
   });
 });
+
+// KRTX-3842: exercise the real route and forwarder. Ownership decisions are
+// stubbed here; integration-preview-access.test.ts covers the real IAM rules.
+const mountedPreview = new Hono<{ Variables: { userId: string } }>();
+mountedPreview.use('*', async (c, next) => {
+  c.set('userId', principal.userId);
+  await next();
+});
+mountedPreview.route('/v1/p', preview);
+
+for (const gate of ['account', 'session']) {
+  for (const method of ['GET', 'POST', 'DELETE']) {
+    for (const path of ['/file.txt', '/../../v1/health', '/%2e%2e/%2e%2e/v1/health']) {
+      test(`${gate} gate refuses ${method} ${path} before an upstream hop`, async () => {
+        previewAccessAllowed = gate !== 'account';
+        sessionAccessAllowed = gate !== 'session';
+        queueFetch(new Response('must not reach upstream'));
+        // Hono's string URL helper normalizes dot segments. Supply the raw
+        // request target so this covers server-side routing, not URL cleanup.
+        const request = new Request('http://localhost/v1/p/ext-1/3000/file.txt', { method });
+        Object.defineProperty(request, 'url', { value: `http://localhost/v1/p/ext-1/3000${path}` });
+        const response = await mountedPreview.request(request);
+        expect(response.status).toBe(403);
+        expect(await response.text()).toBe(gate === 'account'
+          ? 'Not authorized to access this sandbox, userId: u1, sandboxId: ext-1'
+          : 'Not authorized to access this session');
+        expect(fetchCalls).toBe(0);
+        expect(counts.wakeSandbox).toBe(0);
+        expect(counts.resumeStopped).toBe(0);
+      });
+    }
+  }
+}
 
 // ── the stopped-box policy at the forwarder ──────────────────────────────────
 

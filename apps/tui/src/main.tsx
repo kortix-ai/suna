@@ -41,6 +41,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 
 import { App } from './app.tsx';
+import { QueryPolling } from './lib/query-polling.ts';
 import {
   type ResolvedHost,
   hostOrigin,
@@ -76,10 +77,9 @@ export interface RunTuiOptions {
   /** Printed on the boot screen. The CLI passes its own; a source run is `dev`. */
   version?: string;
   /**
-   * Take the mouse (`--mouse`). Off by default: with mouse reporting on, the
-   * host terminal hands every click and drag to the app, so its own text
-   * selection, copy-on-select and Cmd+click on a URL stop working — and the
-   * app has no mouse features to give back for that.
+   * Take the mouse. On by default: clicks on tabs, the sidebar and the symbol, the
+   * wheel in the transcript, and select-to-copy (`lib/copy-on-select.ts`).
+   * `--no-mouse` (`KORTIX_TUI_MOUSE=0`) leaves it to the terminal instead.
    */
   mouse?: boolean;
 }
@@ -322,7 +322,11 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
 
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
-    useMouse: Boolean(options.mouse),
+    useMouse: options.mouse !== false,
+    // A click never moves the keyboard: the app decides who owns it (`focused` props), and
+    // the chat input is the owner whenever nothing else is open. OpenTUI's default focuses
+    // whatever was clicked, which took the keyboard from the input with no way back.
+    autoFocus: false,
   });
   const root = createRoot(renderer);
   const version = options.version?.trim() || 'dev';
@@ -445,6 +449,7 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
 
       root.render(
         <QueryClientProvider client={queryClient}>
+          <QueryPolling client={queryClient} />
           <Root
             initialHost={host}
             initialNotice={notice}

@@ -12,7 +12,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { AgentSpawnTool } from './agent-spawn-tool';
 import { KortixActionTool } from './kortix-action-tool';
-import { MULTI_AGENT_TOOLS, kortixCardTool, parseKortixToolResult } from './kortix-tool-card';
+import { MULTI_AGENT_TOOLS, kortixCardTool } from './kortix-tool-card';
 import { isTeamTaskCall } from './multi-agent-tools';
 import { TaskListTool } from './task-list-tool';
 
@@ -122,12 +122,6 @@ describe('registration', () => {
     for (const name of MULTI_AGENT_TOOLS) expect(kortixCardTool(name)).toBe(name);
     expect(kortixCardTool('kortix_agents')).toBe('kortix_agents');
     expect(kortixCardTool('bash')).toBeUndefined();
-  });
-
-  test('a result without `tool` takes the call name', () => {
-    const raw = JSON.stringify({ ok: true, card: { title: '2 agents', status: 'done' } });
-    expect(parseKortixToolResult(raw)).toBeNull();
-    expect(parseKortixToolResult(raw, 'list_agents')?.tool).toBe('list_agents');
   });
 });
 

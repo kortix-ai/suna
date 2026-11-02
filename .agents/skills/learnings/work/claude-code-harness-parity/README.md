@@ -65,7 +65,7 @@ runtime, promotable to yaml.
 ### F2 — The Meta Agent (the default cloud agent)
 
 **Already seeded in Kortix:** `apps/api/src/projects/lib/platform-meta-agent.ts`
-(a `platform: true` agent the API injects), flag `meta_agent`,
+(a `platform: true` agent the API injects), flag `meta_agent` (removed 2026-11-02; kortix.yaml `builtin_agents.my_kortix` is the only switch),
 `isMetaAgentName`, with routing hooks already in `session-create.ts`
 (caller-session aware). This RFC **elevates it to the default experience.**
 

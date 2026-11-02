@@ -539,14 +539,11 @@ async function resolveSessionAgent(params: {
   );
   const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
   // My Kortix (slug `mykortix`) is on unless kortix.yaml sets
-  // `builtin_agents.my_kortix: false` (no key: the legacy `meta_agent` switch).
+  // `builtin_agents.my_kortix: false`.
   // Off: agent resolution below is the pre-meta behavior, and a session that
   // would run My Kortix is refused with 409 builtin_agent_disabled. Without the
   // refusal it ran with My Kortix's grant, prompt and sandbox anyway.
-  const metaAgentEnabled = resolveBuiltinAgents(
-    loadedAgents.builtinAgents ?? {},
-    resolveFeatureFlag(project.metadata, 'meta_agent'),
-  ).my_kortix;
+  const metaAgentEnabled = resolveBuiltinAgents(loadedAgents.builtinAgents ?? {}).my_kortix;
   // Meta→meta recursion stop. Anyone — dashboard users included — may spawn
   // the meta coordinator, and an omitted agent still defaults to it. The one
   // exception is a caller that IS a meta session: its omitted agent resolves
@@ -619,6 +616,23 @@ async function resolveSessionAgent(params: {
     };
   }
   return { loadedAgents, projectDefaultAgent, agentName, platformMetaAgent, repositoryAccess };
+}
+
+/**
+ * The model ref of the first prompt's pick (`pending_prompt.model`), or null.
+ * `{ providerID: 'claude-agent', modelID: 'opus' }` is `claude-agent/opus`;
+ * an unknown Claude id is null.
+ */
+export function firstPromptModelRef(pendingPrompt: unknown): string | null {
+  if (!pendingPrompt || typeof pendingPrompt !== 'object' || Array.isArray(pendingPrompt)) return null;
+  const model = (pendingPrompt as { model?: unknown }).model as { providerID?: unknown; modelID?: unknown } | null | undefined;
+  const providerID = typeof model?.providerID === 'string' ? model.providerID.trim() : '';
+  const modelID = typeof model?.modelID === 'string' ? model.modelID.trim() : '';
+  if (!providerID || !modelID || /\s/.test(providerID + modelID)) return null;
+  const ref = `${providerID}/${modelID}`;
+  const claude = checkClaudeAgentRef(ref);
+  if (claude.kind === 'invalid') return null;
+  return claude.kind === 'valid' ? claude.ref : ref;
 }
 
 /**
@@ -761,6 +775,14 @@ async function resolveSessionModel(params: {
       if (concreteModel) {
         opencodeModel = toOpencodeModelRef(concreteModel);
         opencodeModelSource = resolved.model ? resolved.source : 'platform';
+      } else {
+        // No default: the box would boot with no model, and pi does not start
+        // without one. The web names the person's pick only on the first prompt.
+        const picked = firstPromptModelRef(body.pending_prompt);
+        if (picked && (await isModelServableForAccount({ userId, accountId, projectId, freeModelsOnly, model: picked, providerSecretPools }))) {
+          opencodeModel = toOpencodeModelRef(picked);
+          opencodeModelSource = 'explicit';
+        }
       }
     } catch (error) {
       console.error('[projects] Failed to resolve the session default model:', error);
