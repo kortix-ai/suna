@@ -398,14 +398,16 @@ Drive is the project's shared folders, for people and agents. Sessions open the 
 
 ### Folders
 
-- **Your own folder.** Every person has a private folder. In a private session you started, it opens as `/drives/me`.
+- **Your own folder.** Every person has a folder of their own. Only they and the project's admins can open it. In a private session you started, it opens as `/drives/me` and as `~/Desktop`.
+- **Admins and people's folders.** A project admin can open every person's own folder from **Drive** → **People**. Each open is recorded: the folder's owner sees which admin opened it and when, under **Share**, and the audit log has a `drive.folder.admin_access` event. An admin's sessions and agents never get another person's folder.
 - **Company.** One folder every project member can open.
 - **Shared folders.** Any folder can be shared with people, groups and agents.
 - **What a session sees.** A new session opens the folders that its agent, or the whole project, has access to. In a private session that you started, it also opens your own folder and every folder shared with you or your groups.
-- **Where to manage them.** Open **Drive** in the sidebar: **My files** (only you), **Company** (everyone) and, for admins, **All files**.
+- **Where to find them.** Open **Drive** in the sidebar. It lists **My files**, **Shared with me**, the team folders, private channels' folders and, for admins, **People**. The top of the Drive shows each of them with who can open it and where sessions see it.
+- **Search.** `kortix search <words>` finds files by name and by text in every folder you may open, beyond the folders a session mounts. It returns nothing from another person's own folder, for admins too. In a session it searches the folders that session may mount.
 - **Large files.** Drive takes a file of any size, up to the project's storage limit: in the web app, with `kortix drive put <local> <path>`, and through the API. A file over 64 MiB goes up in 1 MiB blocks, and only the blocks Drive does not have yet travel. The file appears when its last block lands.
 
-Drive is on by default. It is experimental. Its folders are stored on Platinum, where sessions run.
+Every project has a Drive wherever Kortix runs on Platinum: it is not a feature flag. Its folders are stored on Platinum, where sessions run.
 
 ### Memory
 
@@ -904,7 +906,7 @@ The goal decides nothing about access. An email, a Slack message or a connector 
 
 <Steps>
 <Step title="Turn on the features">
-Goals is an experimental feature that needs Platinum. It is off by default: turn on **Goals** in **Customize** → **Settings** → **Feature flags**. It also needs Volumes and Loops.
+Goals is an experimental feature that needs Platinum. It is off by default: turn on **Goals** in **Customize** → **Settings** → **Feature flags**. It also needs Loops.
 </Step>
 <Step title="State the outcome">
 In a chat, describe the outcome, for example "make sure…" or "keep at it until…". In a chat that is already under way, say "make this a goal". On the Goals page, **New goal** starts one from the outcome.
