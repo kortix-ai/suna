@@ -22704,17 +22704,8 @@
     "accountStorageDescription": "每个项目的文件占用的空间。你的套餐允许每个项目 {project}，所有项目合计 {account}。",
     "accountStorageEmpty": "还没有项目包含文件。",
     "accountStorageIncomplete": "部分项目暂时无法测量。",
-    "overview": {
-      "yours": "你的",
+    "folderInfo": {
       "audienceYouAndAdmins": "你和项目管理员",
-      "sharedWithYou": "与你共享",
-      "channels": "频道",
-      "channelsNote": "私有频道的文件夹仅对其成员和其中的会话开放。",
-      "channelMembers": "频道成员",
-      "admin": "管理员",
-      "people": "成员",
-      "peopleNote": "作为管理员，你可以打开每个人的个人文件夹。每次打开都会被记录，文件夹所有者可以看到。",
-      "noPeople": "这里还没有其他人的文件夹。",
       "audienceOwnerAndAdmins": "所有者和管理员",
       "boxPathHint": "会话在这里看到此文件夹。点击复制。",
       "pathCopied": "已复制",
@@ -22722,7 +22713,12 @@
       "adminsOpenRecorded": "可以打开它。每次打开你都能看到。",
       "openedByAdmins": "管理员打开记录",
       "noAdminOpens": "还没有管理员打开过此文件夹。"
-    }
+    },
+    "folderTree": "文件夹",
+    "treeEmpty": "没有文件夹",
+    "treeYou": "{name}（你）",
+    "treeExpand": "展开 {name}",
+    "treeCollapse": "收起 {name}"
   },
   "genui": {
     "showData": "显示数据",

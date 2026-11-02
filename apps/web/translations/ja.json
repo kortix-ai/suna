@@ -22704,17 +22704,8 @@
     "accountStorageDescription": "各プロジェクトのファイルの使用量です。プランではプロジェクトごとに {project}、すべてのプロジェクトで {account} まで使えます。",
     "accountStorageEmpty": "まだファイルのあるプロジェクトはありません。",
     "accountStorageIncomplete": "一部のプロジェクトは現在測定できませんでした。",
-    "overview": {
-      "yours": "あなたのもの",
+    "folderInfo": {
       "audienceYouAndAdmins": "あなたとプロジェクト管理者",
-      "sharedWithYou": "あなたと共有",
-      "channels": "チャンネル",
-      "channelsNote": "プライベートチャンネルのフォルダーは、そのメンバーとスレッドだけが開けます。",
-      "channelMembers": "チャンネルメンバー",
-      "admin": "管理者",
-      "people": "メンバー",
-      "peopleNote": "管理者は各メンバーの個人フォルダーを開けます。開くたびに記録され、本人がそれを確認できます。",
-      "noPeople": "ほかにフォルダーを持つメンバーはまだいません。",
       "audienceOwnerAndAdmins": "本人と管理者",
       "boxPathHint": "セッションがこのフォルダーを見る場所です。クリックでコピー。",
       "pathCopied": "コピーしました",
@@ -22722,7 +22713,12 @@
       "adminsOpenRecorded": "開くことができます。開くたびにあなたに表示されます。",
       "openedByAdmins": "管理者が開いた記録",
       "noAdminOpens": "このフォルダーを開いた管理者はいません。"
-    }
+    },
+    "folderTree": "フォルダー",
+    "treeEmpty": "フォルダーはありません",
+    "treeYou": "{name}（あなた）",
+    "treeExpand": "{name} を開く",
+    "treeCollapse": "{name} を閉じる"
   },
   "genui": {
     "showData": "データを表示",

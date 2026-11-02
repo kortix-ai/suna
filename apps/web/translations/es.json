@@ -22704,17 +22704,8 @@
     "accountStorageDescription": "Lo que ocupan los archivos de cada proyecto. Tu plan permite {project} por proyecto y {account} en todos los proyectos.",
     "accountStorageEmpty": "Ningún proyecto tiene archivos todavía.",
     "accountStorageIncomplete": "Algunos proyectos no se pudieron medir ahora.",
-    "overview": {
-      "yours": "Tuyo",
+    "folderInfo": {
       "audienceYouAndAdmins": "Tú y los admins del proyecto",
-      "sharedWithYou": "Compartidos contigo",
-      "channels": "Canales",
-      "channelsNote": "La carpeta de un canal privado se abre para sus miembros y sus hilos.",
-      "channelMembers": "Miembros del canal",
-      "admin": "Admin",
-      "people": "Personas",
-      "peopleNote": "Como admin puedes abrir la carpeta propia de cada persona. Cada apertura queda registrada y la persona la ve.",
-      "noPeople": "Nadie más tiene una carpeta aquí todavía.",
       "audienceOwnerAndAdmins": "Propietario y admins",
       "boxPathHint": "Aquí ven las sesiones esta carpeta. Haz clic para copiar.",
       "pathCopied": "Copiado",
@@ -22722,7 +22713,12 @@
       "adminsOpenRecorded": "Pueden abrirla. Ves cada vez que lo hacen.",
       "openedByAdmins": "Abierta por admins",
       "noAdminOpens": "Ningún admin ha abierto esta carpeta."
-    }
+    },
+    "folderTree": "Carpetas",
+    "treeEmpty": "Sin carpetas",
+    "treeYou": "{name} (tú)",
+    "treeExpand": "Expandir {name}",
+    "treeCollapse": "Contraer {name}"
   },
   "genui": {
     "showData": "Mostrar datos",

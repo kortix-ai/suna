@@ -22704,17 +22704,8 @@
     "accountStorageDescription": "Koliko zauzimaju fajlovi svakog projekta. Vaš plan dozvoljava {project} po projektu i {account} u svim projektima.",
     "accountStorageEmpty": "Nijedan projekat još nema fajlove.",
     "accountStorageIncomplete": "Neki projekti trenutno nisu mogli da se izmere.",
-    "overview": {
-      "yours": "Твоје",
+    "folderInfo": {
       "audienceYouAndAdmins": "Ти и администратори пројекта",
-      "sharedWithYou": "Подељено са тобом",
-      "channels": "Канали",
-      "channelsNote": "Фасцикла приватног канала отвара се његовим члановима и нитима.",
-      "channelMembers": "Чланови канала",
-      "admin": "Администратор",
-      "people": "Особе",
-      "peopleNote": "Као администратор можеш да отвориш личну фасциклу сваке особе. Свако отварање се бележи и особа то види.",
-      "noPeople": "Још нико други нема фасциклу овде.",
       "audienceOwnerAndAdmins": "Власник и администратори",
       "boxPathHint": "Овде сесије виде ову фасциклу. Кликни да копираш.",
       "pathCopied": "Копирано",
@@ -22722,7 +22713,12 @@
       "adminsOpenRecorded": "Могу да је отворе. Видиш сваки пут када то ураде.",
       "openedByAdmins": "Отворили администратори",
       "noAdminOpens": "Ниједан администратор није отворио ову фасциклу."
-    }
+    },
+    "folderTree": "Фасцикле",
+    "treeEmpty": "Нема фасцикли",
+    "treeYou": "{name} (ти)",
+    "treeExpand": "Отвори {name}",
+    "treeCollapse": "Затвори {name}"
   },
   "genui": {
     "showData": "Прикажи податке",

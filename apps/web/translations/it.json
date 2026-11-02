@@ -22704,17 +22704,8 @@
     "accountStorageDescription": "Quanto occupano i file di ogni progetto. Il tuo piano consente {project} per progetto e {account} in tutti i progetti.",
     "accountStorageEmpty": "Nessun progetto contiene ancora file.",
     "accountStorageIncomplete": "Non è stato possibile misurare alcuni progetti in questo momento.",
-    "overview": {
-      "yours": "Tuoi",
+    "folderInfo": {
       "audienceYouAndAdmins": "Tu e gli admin del progetto",
-      "sharedWithYou": "Condivisi con te",
-      "channels": "Canali",
-      "channelsNote": "La cartella di un canale privato si apre per i suoi membri e i suoi thread.",
-      "channelMembers": "Membri del canale",
-      "admin": "Admin",
-      "people": "Persone",
-      "peopleNote": "Come admin puoi aprire la cartella personale di ogni persona. Ogni apertura viene registrata e la persona la vede.",
-      "noPeople": "Nessun altro ha ancora una cartella qui.",
       "audienceOwnerAndAdmins": "Proprietario e admin",
       "boxPathHint": "Qui le sessioni vedono questa cartella. Fai clic per copiare.",
       "pathCopied": "Copiato",
@@ -22722,7 +22713,12 @@
       "adminsOpenRecorded": "Possono aprirla. Vedi ogni volta che lo fanno.",
       "openedByAdmins": "Aperta dagli admin",
       "noAdminOpens": "Nessun admin ha aperto questa cartella."
-    }
+    },
+    "folderTree": "Cartelle",
+    "treeEmpty": "Nessuna cartella",
+    "treeYou": "{name} (tu)",
+    "treeExpand": "Espandi {name}",
+    "treeCollapse": "Comprimi {name}"
   },
   "genui": {
     "showData": "Mostra dati",

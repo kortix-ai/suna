@@ -70,8 +70,8 @@ export function FolderAccessPanel({
           {audience.owner ? (
             <AccessRow
               avatar={<ShieldCheckIcon className="text-muted-foreground size-6 shrink-0 p-1" />}
-              label={t('overview.projectAdmins')}
-              meta={t('overview.adminsOpenRecorded')}
+              label={t('folderInfo.projectAdmins')}
+              meta={t('folderInfo.adminsOpenRecorded')}
             />
           ) : restricted ? (
             <AccessRow
@@ -129,9 +129,9 @@ function AdminOpens({ driveId, path }: { driveId: string; path: string }) {
   const rows = reads.data.reads;
   return (
     <div className="space-y-1.5">
-      <p className="text-foreground text-xs font-medium">{t('overview.openedByAdmins')}</p>
+      <p className="text-foreground text-xs font-medium">{t('folderInfo.openedByAdmins')}</p>
       {rows.length === 0 ? (
-        <p className="text-muted-foreground text-xs">{t('overview.noAdminOpens')}</p>
+        <p className="text-muted-foreground text-xs">{t('folderInfo.noAdminOpens')}</p>
       ) : (
         <ul className="space-y-1">
           {rows.slice(0, 5).map((r) => (

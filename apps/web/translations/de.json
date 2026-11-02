@@ -22704,17 +22704,8 @@
     "accountStorageDescription": "Was die Dateien jedes Projekts belegen. Ihr Tarif erlaubt {project} pro Projekt und {account} über alle Projekte.",
     "accountStorageEmpty": "Noch kein Projekt enthält Dateien.",
     "accountStorageIncomplete": "Einige Projekte konnten gerade nicht gemessen werden.",
-    "overview": {
-      "yours": "Deins",
+    "folderInfo": {
       "audienceYouAndAdmins": "Du und Projekt-Admins",
-      "sharedWithYou": "Mit dir geteilt",
-      "channels": "Kanäle",
-      "channelsNote": "Der Ordner eines privaten Kanals öffnet sich für seine Mitglieder und seine Threads.",
-      "channelMembers": "Kanalmitglieder",
-      "admin": "Admin",
-      "people": "Personen",
-      "peopleNote": "Als Admin kannst du den eigenen Ordner jeder Person öffnen. Jedes Öffnen wird festgehalten, und die Person sieht es.",
-      "noPeople": "Noch hat niemand sonst hier einen Ordner.",
       "audienceOwnerAndAdmins": "Inhaber und Admins",
       "boxPathHint": "Hier sehen Sitzungen diesen Ordner. Zum Kopieren klicken.",
       "pathCopied": "Kopiert",
@@ -22722,7 +22713,12 @@
       "adminsOpenRecorded": "Können ihn öffnen. Du siehst jedes Mal, wenn sie es tun.",
       "openedByAdmins": "Von Admins geöffnet",
       "noAdminOpens": "Noch hat kein Admin diesen Ordner geöffnet."
-    }
+    },
+    "folderTree": "Ordner",
+    "treeEmpty": "Keine Ordner",
+    "treeYou": "{name} (Du)",
+    "treeExpand": "{name} aufklappen",
+    "treeCollapse": "{name} zuklappen"
   },
   "genui": {
     "showData": "Daten anzeigen",

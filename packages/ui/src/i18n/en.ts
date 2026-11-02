@@ -7520,17 +7520,8 @@ const catalog = {
     "accountStorageDescription": "What each project's Files hold. Your plan allows {project} per project and {account} across all projects.",
     "accountStorageEmpty": "No project holds files yet.",
     "accountStorageIncomplete": "Some projects could not be measured right now.",
-    "overview": {
-      "yours": "Yours",
+    "folderInfo": {
       "audienceYouAndAdmins": "You and project admins",
-      "sharedWithYou": "Shared with you",
-      "channels": "Channels",
-      "channelsNote": "Each private channel's folder opens for its members and its threads.",
-      "channelMembers": "Channel members",
-      "admin": "Admin",
-      "people": "People",
-      "peopleNote": "As an admin you can open every person's own folder. Each open is recorded, and the folder's owner can see it.",
-      "noPeople": "No one else has a folder here yet.",
       "audienceOwnerAndAdmins": "Owner and admins",
       "boxPathHint": "Where sessions see this folder. Click to copy.",
       "pathCopied": "Copied",
@@ -7538,7 +7529,12 @@ const catalog = {
       "adminsOpenRecorded": "Can open it. You see each time they do.",
       "openedByAdmins": "Opened by admins",
       "noAdminOpens": "No admin has opened this folder."
-    }
+    },
+    "folderTree": "Folders",
+    "treeEmpty": "No folders",
+    "treeYou": "{name} (You)",
+    "treeExpand": "Open {name}",
+    "treeCollapse": "Close {name}"
   },
   "genui": {
     "showData": "Show data",

@@ -22704,17 +22704,8 @@
     "accountStorageDescription": "Ce que contiennent les fichiers de chaque projet. Votre forfait autorise {project} par projet et {account} pour tous les projets.",
     "accountStorageEmpty": "Aucun projet ne contient encore de fichiers.",
     "accountStorageIncomplete": "Certains projets n’ont pas pu être mesurés pour le moment.",
-    "overview": {
-      "yours": "À vous",
+    "folderInfo": {
       "audienceYouAndAdmins": "Vous et les admins du projet",
-      "sharedWithYou": "Partagés avec vous",
-      "channels": "Canaux",
-      "channelsNote": "Le dossier d'un canal privé s'ouvre pour ses membres et ses fils.",
-      "channelMembers": "Membres du canal",
-      "admin": "Admin",
-      "people": "Personnes",
-      "peopleNote": "En tant qu'admin, vous pouvez ouvrir le dossier personnel de chaque personne. Chaque ouverture est enregistrée, et la personne la voit.",
-      "noPeople": "Personne d'autre n'a encore de dossier ici.",
       "audienceOwnerAndAdmins": "Propriétaire et admins",
       "boxPathHint": "C'est ici que les sessions voient ce dossier. Cliquez pour copier.",
       "pathCopied": "Copié",
@@ -22722,7 +22713,12 @@
       "adminsOpenRecorded": "Peuvent l'ouvrir. Vous voyez chaque fois qu'ils le font.",
       "openedByAdmins": "Ouvert par des admins",
       "noAdminOpens": "Aucun admin n'a ouvert ce dossier."
-    }
+    },
+    "folderTree": "Dossiers",
+    "treeEmpty": "Aucun dossier",
+    "treeYou": "{name} (vous)",
+    "treeExpand": "Déplier {name}",
+    "treeCollapse": "Replier {name}"
   },
   "genui": {
     "showData": "Afficher les données",

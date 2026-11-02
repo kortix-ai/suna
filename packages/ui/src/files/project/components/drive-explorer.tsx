@@ -138,7 +138,6 @@ export function DriveExplorer({
   onOpenFolder,
   onTeamFolderCreated,
   listingAs,
-  overview,
   panels,
   children,
 }: {
@@ -185,11 +184,6 @@ export function DriveExplorer({
    * that controls it, and the host still gets one row instead of two.
    */
   listingAs?: ElementType<{ className?: string; children?: ReactNode }>;
-  /**
-   * Shown at the root instead of the folder listing: Drive's overview of
-   * its sections. The action row (New, view menu, the host's actions) stays.
-   */
-  overview?: ReactNode;
   /** Rendered inside the relative content area (slide-in side panels). */
   panels?: ReactNode;
   /** Rendered at the root (portal dialogs owned by the wrapping surface). */
@@ -1410,9 +1404,6 @@ export function DriveExplorer({
         }}
       />
 
-      {overview && isRootPath ? (
-        <div className="relative min-h-0 flex-1 overflow-y-auto">{overview}</div>
-      ) : (
       <ListingRegion className="relative min-h-0 flex-1">
         {/* Right-click on empty space: the New menu. A row's own menu wins —
             it prevents the default, so this trigger never opens over it. */}
@@ -1641,7 +1632,6 @@ export function DriveExplorer({
 
         {panels}
       </ListingRegion>
-      )}
 
       {/* Drag & drop overlay: inset from the edges, the focus-ring blue for
           "this is the target", and the folder the drop lands in. */}

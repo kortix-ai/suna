@@ -18,7 +18,7 @@ import { actorOf } from '../iam/actor';
 import { PROJECT_ACTIONS } from '../iam/actions';
 import { listAccessible } from '../iam/authorize';
 import { visibleDirectory } from '../iam/directory-visibility';
-import { loadProjectForUser } from '../projects/surface';
+import { loadProjectForUser, resolveUserIdentities } from '../projects/surface';
 import { ensureAgentServiceAccount } from '../repositories/service-accounts';
 import { isUuid } from '../shared/validate';
 import type { AppEnv } from '../types';
@@ -235,6 +235,26 @@ interface Caller {
   subject: FolderSubject;
   grants: FolderGrant[];
   personalFolder: string;
+}
+
+/**
+ * The name each person's own folder lists under: their display name, else
+ * their email, else the folder's handle. Owners come from the folder's
+ * system grant (the one Kortix made for its person).
+ */
+async function personalFolderNames(grants: readonly FolderGrant[], paths: readonly string[]): Promise<Map<string, string>> {
+  const owners = new Map<string, string>();
+  for (const g of grants) {
+    if (g.source === 'system' && g.principalType === 'user' && personalFolderOf(g.path) === g.path && paths.includes(g.path)) owners.set(g.path, g.principalId);
+  }
+  const people = await resolveUserIdentities([...owners.values()]);
+  const names = new Map<string, string>();
+  for (const [path, userId] of owners) {
+    const who = people.get(userId);
+    const name = who?.displayName?.trim() || who?.email || null;
+    if (name) names.set(path, name);
+  }
+  return names;
 }
 
 /** The person behind the request on `drive` (`driveSubjectFor`), after the HTTP refusals. */
@@ -684,6 +704,8 @@ drivesApp.openapi(
     if (path === '/' && !seen.has(USERS_DIR)) virtual.add(USERS_DIR);
     for (const v of virtual) entries.push({ path: v, name: baseName(v), type: 'dir', size: 0, mtime: 0 });
     const sharedPaths = new Set(grants.filter((g) => g.source !== 'system').map((g) => g.path));
+    // A person's own folder is named by their handle (`/Users/ana.lima`); it lists under their name.
+    const personNames = path === USERS_DIR ? await personalFolderNames(grants, entries.map((e) => e.path)) : null;
     // A private channel's folder is named by its id (`/Channels/<space_id>`); it lists under `#<slug>`.
     const channelNames = entries.some((e) => privateChannelFolderOf(e.path, privateFolders(caller)) === e.path)
       ? new Map((await privateChannelRows(drive.projectId!)).flatMap((r) => (r.folder && r.slug ? [[r.folder, `#${r.slug}`] as const] : [])))
@@ -695,6 +717,7 @@ drivesApp.openapi(
         .map((e) => ({
           ...e,
           ...(channelNames?.has(e.path) ? { name: channelNames.get(e.path)! } : {}),
+          ...(personNames?.has(e.path) ? { name: personNames.get(e.path)! } : {}),
           access: folderAccess(e.path, grants, subject),
           ...(e.type === 'dir' && sharedPaths.has(e.path) ? { shared: true } : {}),
         })),
