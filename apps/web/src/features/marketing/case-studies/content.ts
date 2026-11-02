@@ -179,6 +179,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     },
     {
       id: 'airlines',
+      hidden: true,
       logo: {
         src: '/media/case-studies/airlines.svg?v=92d4c4af',
         alt: 'An airline symbol',
@@ -215,6 +216,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     },
     {
       id: 'healthcare',
+      hidden: true,
       logo: {
         src: '/media/case-studies/healthcare.svg?v=35ab0f7e',
         alt: 'A healthcare symbol',
