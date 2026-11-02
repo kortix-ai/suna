@@ -419,8 +419,10 @@ export async function handleQuestionTap(
 /**
  * A message typed in a conversation whose newest question message shows one
  * question at a time: the answer to the question on screen, with its ticked
- * options, when that question takes typed text, its session is not deleted and
- * nothing else answered it. The next question follows, and
+ * options, when that question takes typed text, the message was sent after the
+ * question message, its session is not deleted and nothing else answered it.
+ * Two people typing on one step at once each answer a step: a typed message
+ * names no step, as a tap does. The next question follows, and
  * the last answer goes as a tap's does. False: the message is not an answer,
  * and goes to the agent as itself. `message.id` names the message for its
  * retries. Throws to ask the transport for a retry.
@@ -452,6 +454,8 @@ export async function answerQuestionInChat(
   }
   // Answered another way (the web, or a whole answer in the turn): no step waits on the message.
   if (asked.answers != null) return false;
+  // A message sent before the question message (a late retry) is not its answer.
+  if (!sentBefore(ref, target)) return false;
   const q = asked.questions[steps.step];
   if (!q || q.custom === false) return false;
   await applySteps(ctx, asked.chatSteps, advance(steps, { question: steps.step, options: steps.ticked, text }, { by: message.id, ref }));

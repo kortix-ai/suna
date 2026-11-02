@@ -1794,6 +1794,20 @@ describe('Telegram questions one at a time — migrated PostgreSQL', () => {
     expect(await steps(sticker.id)).toMatchObject({ step: 1 });
   });
 
+  test('a message sent before the question message (a late retry) is not its answer, and leaves its buttons', async () => {
+    const early = update('Purple', ALLOWED, 3014);
+    const q = await posted(3014, THREE);
+    await handleTelegramEvent(early);
+    expect(await steps(q.id)).toBeNull();
+    expect(calls.filter((c) => c.method === 'editMessageText')).toEqual([]);
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]!.text).toContain('\nPurple\n');
+    expect(delivered[0]!.text).not.toContain('You asked:');
+    // A message sent after it still answers the question on screen.
+    await handleTelegramEvent(update('Plum', ALLOWED, 3014));
+    expect(await steps(q.id)).toMatchObject({ step: 1, picks: [{ question: 0, options: [], text: 'Plum' }] });
+  });
+
   test('a session deleted in the web takes no typed answer: the message starts a new session', async () => {
     const q = await posted(3012, THREE);
     await tapOn(q, `kq:${q.id}:0`);
