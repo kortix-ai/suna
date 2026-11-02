@@ -240,7 +240,7 @@ const thread = (over: Record<string, unknown> = {}) => ({
  * change the cache after that, so a test sees the optimistic state, the
  * server's answer, or the rollback, never a refetch hiding a missing one.
  */
-function holdingServer() {
+function holdingServer(threads: unknown[] = [thread()]) {
   const writes: Array<{ method: string; path: string; answer: (status: number, body: unknown) => void }> = [];
   let threadReads = 0;
   globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -249,7 +249,7 @@ function holdingServer() {
     if (method === 'GET') {
       if (url.pathname.endsWith('/activity')) return Response.json({ items: [], next_cursor: null, older_versions: false });
       if (++threadReads > 1) return new Promise<Response>(() => {});
-      return Response.json({ threads: [thread()] });
+      return Response.json({ threads });
     }
     return new Promise<Response>((resolve) => {
       writes.push({ method, path: url.pathname, answer: (status, body) => resolve(Response.json(body, { status })) });
@@ -394,4 +394,37 @@ test('delete shows a tombstone at once, keeps the server answer, and restores th
   await answer(server, 1, 200, { comment: comment({ body: '', deleted_at: '2026-11-01T11:00:00.000Z', can_edit: false, can_delete: false }) }, done);
   expect(comments.data![0]!.comments[0]).toMatchObject({ body: '', deleted_at: '2026-11-01T11:00:00.000Z' });
   expect(comments.data![0]!.comments[0]!.optimistic).toBeUndefined();
+});
+
+test('a write answer carries no text position, so the cached position and outdated flag stay until the next read', async () => {
+  // The server reads the document only for a list. A create or status answer has position null and outdated false.
+  const text = { anchor: { type: 'text', version: 'commit-a', quote: 'Selected', prefix: '', suffix: '' }, anchor_version: 'commit-a' };
+  const placed = thread({ ...text, position: { start: 4, end: 12 } });
+  const lost = (over: Record<string, unknown> = {}) => thread({
+    ...text, thread_id: 'thread-b', outdated: true, comments: [comment({ comment_id: 'comment-b', thread_id: 'thread-b' })], ...over,
+  });
+  const server = holdingServer([placed, lost()]);
+  function Probe() {
+    comments = hooks.useArtifactComments('project-a', 'artifact-a', { status: 'all' });
+    return null;
+  }
+  await act(async () => { renderer = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe))); });
+  await settle();
+  const resolvedAt = '2026-11-01T11:00:00.000Z';
+  let done = await start(() => comments.setStatus('thread-a', 'resolved'));
+  await answer(server, 0, 200, { thread: thread({ ...text, status: 'resolved', resolved_at: resolvedAt }) }, done);
+  expect(comments.data![0]).toMatchObject({ status: 'resolved', resolved_at: resolvedAt, position: { start: 4, end: 12 }, outdated: false });
+  done = await start(() => comments.setStatus('thread-b', 'resolved'));
+  await answer(server, 1, 200, { thread: lost({ status: 'resolved', resolved_at: resolvedAt, outdated: false }) }, done);
+  expect(comments.data![1]).toMatchObject({ status: 'resolved', position: null, outdated: true });
+  done = await start(() => comments.setStatus('thread-b', 'open'));
+  await answer(server, 2, 200, { thread: lost({ outdated: false }) }, done);
+  expect(comments.data![1]).toMatchObject({ status: 'open', position: null, outdated: true });
+  // A brand-new thread has no cached copy: the server's value stands.
+  done = await start(() => comments.create({ anchor: text.anchor as never, body: 'New.' }));
+  await answer(server, 3, 201, {
+    thread: thread({ ...text, thread_id: 'thread-c', comments: [comment({ comment_id: 'comment-c', thread_id: 'thread-c', body: 'New.' })] }),
+  }, done);
+  expect(comments.data!.map((item) => [item.thread_id, item.position, item.outdated]))
+    .toEqual([['thread-a', { start: 4, end: 12 }, false], ['thread-b', null, true], ['thread-c', null, false]]);
 });

@@ -92,6 +92,18 @@ function placeThread(threads: ThreadEntry[], filter: string, thread: ThreadEntry
   return next < 0 ? [...threads, thread] : [...threads.slice(0, next), thread, ...threads.slice(next)];
 }
 
+/**
+ * A write's answer has `position: null, outdated: false`: the server reads the
+ * document text only for a list, and a read-back text position is never that
+ * pair. So that pair means "not computed". The cached copy's `position` and
+ * `outdated` stay until the next list read. A thread with no cached copy keeps
+ * the server's value.
+ */
+function keepPosition(saved: ThreadEntry, cached: ThreadEntry | undefined): ThreadEntry {
+  if (!cached || saved.position !== null || saved.outdated) return saved;
+  return { ...saved, position: cached.position, outdated: cached.outdated };
+}
+
 /** Server comments first; a pending reply the server copy does not contain yet stays at the end. */
 function keepPendingComments(saved: CommentEntry[] | undefined, current: CommentEntry[]): CommentEntry[] {
   const ids = new Set((saved ?? []).map((item) => item.comment_id));
@@ -147,7 +159,9 @@ export function useArtifactCommentScreenshot(
  *
  * Each changed thread or comment carries the client-only field
  * `optimistic: true` until the server answers. Then the server's copy replaces
- * it and the field is gone. When the write fails, the change is rolled back and
+ * it and the field is gone. A write's answer carries no text position, so a
+ * known thread keeps its cached `position` and `outdated` until the next list
+ * read. When the write fails, the change is rolled back and
  * the returned promise rejects as before. A new thread or reply has a client id
  * that starts with `optimistic-`, `can_reply`/`can_resolve`/`can_edit`/
  * `can_delete` false, and a placeholder author (`user_id: ''`, `name: ''`):
@@ -238,7 +252,9 @@ export function useArtifactComments(
     },
     onSuccess: (saved, _input, pending) => {
       if (!pending) return;
-      patchLists((threads, filter) => placeThread(threads.filter((thread) => thread.thread_id !== pending.threadId), filter, saved));
+      // A list read can land while the write is in flight and already hold the new thread with its position.
+      patchLists((threads, filter) => placeThread(threads.filter((thread) => thread.thread_id !== pending.threadId), filter,
+        keepPosition(saved, threads.find((thread) => thread.thread_id === saved.thread_id))));
     },
     onError: (_error, _input, pending) => {
       if (pending) patchLists((threads) => threads.filter((thread) => thread.thread_id !== pending.threadId));
@@ -294,7 +310,8 @@ export function useArtifactComments(
       if (!pending) return;
       patchLists((threads, filter) => {
         const current = threads.find((thread) => thread.thread_id === pending.threadId);
-        return placeThread(threads, filter, { ...saved, comments: keepPendingComments(saved.comments, current ? commentsOf(current) : []) });
+        return placeThread(threads, filter, keepPosition(
+          { ...saved, comments: keepPendingComments(saved.comments, current ? commentsOf(current) : []) }, current ?? pending.before));
       });
     },
     onError: (_error, _variables, pending) => {

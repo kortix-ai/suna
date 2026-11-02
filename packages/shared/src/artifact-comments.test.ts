@@ -147,6 +147,34 @@ describe('long text quotes (33 to 500 code units)', () => {
     expect(reanchorArtifactText(`a ${overlong} b`, anchor(overlong)).outdated).toBe(true);
   });
 
+  test('the whole quote picks the closer of two paragraphs, not the closer opening words', () => {
+    const quote = 'Team South revenue grew twelve percent in the third quarter after the regional offices opened and hired four engineers.';
+    expect(quote).toHaveLength(119);
+    // 1 edit in the opening 32 characters, 10 overall: inside the 11-edit budget, but not the closest paragraph.
+    const decoy = quote.replace('South', 'Mouth').replace('four engineers', 'nine designers');
+    // 2 edits in the opening 32 characters, 2 overall.
+    const edited = quote.replace('Team', 'Tim');
+    const text = `# Quarterly notes\n${decoy}\n\n${edited}\n`;
+    expect(text.indexOf(edited)).toBe(139);
+    expect(reanchorArtifactText(text, anchor(quote))).toEqual({ start: 139, end: 139 + edited.length, outdated: false });
+  });
+
+  test('two passages at the same fewest edits are outdated unless exactly one matches the context', () => {
+    const quote = 'Team South revenue grew twelve percent in the third quarter after the regional offices opened and hired four engineers.';
+    const edited = quote.replace('Team', 'Tim');
+    const twice = `Alpha: ${edited}\nBeta: ${edited}\n`;
+    expect(reanchorArtifactText(twice, anchor(quote))).toEqual({ start: null, end: null, outdated: true });
+    const second = twice.lastIndexOf(edited);
+    expect(reanchorArtifactText(twice, anchor(quote, 'Beta: ', '\n'))).toEqual({ start: second, end: second + edited.length, outdated: false });
+  });
+
+  test('opening words that match everywhere leave the closing words to decide', () => {
+    const quote = `${' '.repeat(40)}return the regional total for the third quarter;`;
+    const edited = quote.replace('regional', 'regionel');
+    const text = `${' '.repeat(70_000)}\n${edited}\n`;
+    expect(reanchorArtifactText(text, anchor(quote))).toEqual({ start: text.indexOf(edited), end: text.indexOf(edited) + edited.length, outdated: false });
+  });
+
   test('a 500 code unit quote resolves exactly and after a small edit', () => {
     const words = Array.from({ length: 160 }, (_, index) => `w${index}`).join(' ');
     const quote = words.slice(0, 500);
