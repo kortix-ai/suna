@@ -176,7 +176,7 @@ test('boot error formatting handles long non-suffix whitespace without quadratic
     reason: 'runtime_wake_cooldown',
     failure: {
       category: 'sandbox-provider', message: 'Boot failed', retryable: true,
-      evidence: { check: 'runtime_boot_error', error, observed_at: null },
+      evidence: { check: 'runtime_boot_error', error, observed_at: null, attempts: 1, next_retry_at: null },
     },
     now: 0,
   });
