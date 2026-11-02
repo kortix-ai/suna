@@ -4,12 +4,13 @@ import { ProjectNavRow } from '../../../internal/layout/project-nav-row';
 
 import { useTranslations } from '../../../i18n';
 import { useQueryClient } from '@tanstack/react-query';
-import { useUiPathname } from '../../../providers/ui-provider';
+import { useUiPathname, useUiSearchParams } from '../../../providers/ui-provider';
 import { useCallback } from 'react';
 
 import { CountBadge } from '../../../primitives/count-badge';
 import { useProjectNavRows } from '../../../internal/layout/project-settings-nav';
 import { useProjectDrive } from '../../../files/drives/use-drives';
+import { ProjectDriveNav } from './project-drive-nav';
 import { getProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { FoldersIcon, HardDrivesIcon } from '@phosphor-icons/react';
@@ -50,12 +51,17 @@ export function ProjectFilesNavItem({ projectId }: { projectId: string }) {
   const tDrives = useTranslations('drives');
   const drive = useProjectDrive(projectId, target === 'drive');
   const conflicts = target === 'drive' ? (drive.data?.openConflicts ?? 0) : 0;
-  const isActive =
+  const onPage =
     !!pathname &&
     (target === 'drive'
       ? /^\/projects\/[^/]+\/drive(\/|$)/
       : /^\/projects\/[^/]+\/files(\/|$)/
     ).test(pathname);
+  // On a Drive page the row opens into the Drive's places; the row itself is
+  // active only at the top of the Drive, so one row is highlighted at a time.
+  const pathParam = useUiSearchParams().get('path');
+  const showPlaces = target === 'drive' && onPage && !!drive.data;
+  const isActive = onPage && (!showPlaces || !pathParam);
 
   // The Files view cannot pick a git ref (`resolveFilesRef`,
   // `project-layout/resolve-files-ref.ts`) until it knows the project's
@@ -84,27 +90,30 @@ export function ProjectFilesNavItem({ projectId }: { projectId: string }) {
   const { label, href } = row;
 
   return (
-    <ProjectNavRow
-      active={isActive}
-      label={t(label)}
-      href={href}
-      prefetch
+    <>
+      <ProjectNavRow
+        active={isActive}
+        label={t(label)}
+        href={href}
+        prefetch
 
-      onMouseEnter={prefetchSummary}
-      onFocus={prefetchSummary}
-      onTouchStart={prefetchSummary}
-    >
-      {label === 'drive' ? <HardDrivesIcon /> : <FoldersIcon />}
-      {t(label)}
-      {conflicts > 0 ? (
-        <span className="ml-auto flex shrink-0 items-center gap-1">
-          <CountBadge
-            count={conflicts}
-            tone="conflict"
-            aria-label={tDrives('conflictCount', { count: conflicts })}
-          />
-        </span>
-      ) : null}
-    </ProjectNavRow>
+        onMouseEnter={prefetchSummary}
+        onFocus={prefetchSummary}
+        onTouchStart={prefetchSummary}
+      >
+        {label === 'drive' ? <HardDrivesIcon /> : <FoldersIcon />}
+        {t(label)}
+        {conflicts > 0 ? (
+          <span className="ml-auto flex shrink-0 items-center gap-1">
+            <CountBadge
+              count={conflicts}
+              tone="conflict"
+              aria-label={tDrives('conflictCount', { count: conflicts })}
+            />
+          </span>
+        ) : null}
+      </ProjectNavRow>
+      {showPlaces && drive.data ? <ProjectDriveNav projectId={projectId} drive={drive.data} /> : null}
+    </>
   );
 }

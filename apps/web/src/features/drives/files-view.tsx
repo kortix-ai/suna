@@ -1,14 +1,6 @@
 'use client';
 
 import { Button } from '@kortix/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@kortix/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@kortix/ui/popover';
 import { Skeleton } from '@kortix/ui/skeleton';
 import {
@@ -20,31 +12,29 @@ import { Home } from '@kortix/ui/internal/icons/home';
 import { ErrorState } from '@kortix/ui/error-state';
 import {
   DriveExplorer,
-  DriveStorageSummary,
   FileExplorerSourceProvider,
   FilesStoreProvider,
+  drivePathFromParam,
+  drivePathToParam,
+  driveUrlWithPath,
   useDriveAvailability,
   useDriveFolder,
   useDriveUsage,
   useFolderAccess,
-  useFolderMountNotice,
   useProjectDrive,
 } from '@kortix/ui/files';
 import Hint from '@kortix/ui/hint';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@kortix/ui';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { type Drive, getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
-  CaretDownIcon,
   FolderSimpleIcon,
-  WarningIcon,
   HardDriveIcon,
   LockSimpleIcon,
   ShareNetworkIcon,
-  ShieldIcon,
-  SquaresFourIcon,
+  TerminalWindowIcon,
+  UserIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -58,20 +48,19 @@ import {
   parentDrivePath,
   toDrivePath,
 } from './drive-explorer-source';
-import { drivePathFromParam, drivePathToParam, driveUrlWithPath } from './drive-path-param';
+import { DriveOverview, boxPathOf } from './drive-overview';
 import { FolderAccessDialog } from './folder-access-dialog';
 import { FolderAccessPanel } from './folder-access-panel';
 import { folderAudience } from './folder-audience';
 
 /**
- * /projects/[id]/drive — the project's Drive, a sidebar page: one folder tree
- * everyone in the project works in, in the same explorer as Repo. A rail on
- * the left (a switcher on small screens) picks where to look: My files,
- * folders shared with the caller, the team folders (the top-level folders,
- * each with who can open it), and for admins All files. It is one Drive: a
- * team folder is a folder, not a volume of its own. Share shows who can open
- * the folder in view. A person's own folder (`Users/<name>`) is private, even
- * from admins, until they share it, and is the desktop of their sessions.
+ * /projects/[id]/drive — the project's Drive: one folder tree everyone in the
+ * project works in. The app sidebar's Drive row is the way around it (My
+ * files, Shared with me, team folders, channels, People for admins); the top
+ * of the Drive is an overview of those places. A folder's header names who
+ * can open it and where sessions see it (the same path under /drives, your
+ * own folder at ~/Desktop). A person's own folder (`Users/<name>`) opens for
+ * its owner and the project's admins; each admin open is recorded for the owner.
  */
 export function FilesView({ projectId }: { projectId: string }) {
   const t = useTranslations('drives');
@@ -147,8 +136,8 @@ function FilesBrowser({ drive, projectId }: { drive: Drive; projectId: string })
 
 /**
  * Writes the folder in view to `?path=` (see `drive-path-param.ts`), so a
- * reload or a shared link opens it. 300 ms after the last move, and through
- * `history.replaceState`: no route re-render, no history entry per folder.
+ * reload or a shared link opens it, and the sidebar marks the place. 300 ms
+ * after the last move, through `history.replaceState`: no history entry per folder.
  */
 function DrivePathInUrl({ personal }: { personal: string | null }) {
   const currentPath = useFilesStore((s) => s.currentPath);
@@ -166,7 +155,10 @@ function DrivePathInUrl({ personal }: { personal: string | null }) {
   useEffect(() => {
     const next = driveUrlWithPath(window.location.href, drivePathToParam(debouncedValue, personal));
     const now = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    if (next !== now) window.history.replaceState(window.history.state, '', next);
+    // `null`, not `window.history.state`: Next syncs `useSearchParams` only for
+    // a replace that does not carry its own marker, and the sidebar's Drive
+    // places read the folder from `?path=`. Still no history entry per folder.
+    if (next !== now) window.history.replaceState(null, '', next);
   }, [debouncedValue, personal]);
   return null;
 }
@@ -174,6 +166,7 @@ function DrivePathInUrl({ personal }: { personal: string | null }) {
 function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }) {
   const router = useRouter();
   const t = useTranslations('drives');
+  const locale = useLocale();
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
   const path = toDrivePath(currentPath);
@@ -205,8 +198,7 @@ function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }
     [canWrite, maxUploadBytes],
   );
   const open = (p: string) => navigateToPath(p.replace(/^\//, '') || '/');
-  const { locate } = useDriveLocation(drive);
-  const here = locate(path);
+  const here = locateInDrive(path, drive, t);
   const HereGlyph = here.icon;
   // My files or a shared folder reads as its own root: `Users/<name>` and the
   // folders above a share are storage paths, not places people go.
@@ -222,71 +214,63 @@ function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }
     ],
   };
 
-  // The rail picks where to look; small screens keep the switcher.
-  const leading = (
-    <div className="md:hidden">
-      <DriveSwitcher drive={drive} path={path} onOpen={open} />
-    </div>
-  );
-  // Share closes the action group, after New and the view menu.
-  // A folder the caller only passes through (on the way to a share) has no
-  // sharing they may see.
+  // The action row's start names the place: Drive at the top, else the
+  // folder with who can open it.
+  const leading = path === '/' ? <PlaceTitle icon={HardDriveIcon} title={t('driveLabel')} /> : <FolderTitle drive={drive} path={path} label={nameOfPath(path, here)} />;
+  // Where sessions see the folder, then Share. A folder the caller only
+  // passes through (on the way to a share) has no sharing they may see.
   const trailing =
     path !== '/' && access !== 'none' ? (
-      <Popover open={accessOpen} onOpenChange={setAccessOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="gap-1.5 active:scale-[0.96]"
-          >
-            <ShareNetworkIcon className="size-3.5 shrink-0" />
-            <span className="hidden sm:inline">{t('shareFolder')}</span>
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="w-88 p-4">
-          <FolderAccessPanel
-            driveId={drive.driveId}
-            path={path}
-            onManage={() => {
-              setAccessOpen(false);
-              setSharing(true);
-            }}
-          />
-        </PopoverContent>
-      </Popover>
+      <>
+        <BoxPathChip path={boxPathOf(path, drive.personalFolder)} />
+        <Popover open={accessOpen} onOpenChange={setAccessOpen}>
+          <PopoverTrigger asChild>
+            <Button type="button" variant="secondary" size="sm" className="gap-1.5 active:scale-[0.96]">
+              <ShareNetworkIcon className="size-3.5 shrink-0" />
+              <span className="hidden sm:inline">{t('shareFolder')}</span>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-88 p-4">
+            <FolderAccessPanel
+              driveId={drive.driveId}
+              path={path}
+              onManage={() => {
+                setAccessOpen(false);
+                setSharing(true);
+              }}
+            />
+          </PopoverContent>
+        </Popover>
+      </>
     ) : undefined;
 
   return (
     <FileExplorerSourceProvider value={source}>
-      <div className="flex min-h-0 min-w-0 flex-1">
-        <DriveRail drive={drive} path={path} onOpen={open} />
-        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-          <DriveExplorer
-            leading={leading}
-            trailing={trailing}
-            rootLabel={t('driveLabel')}
-            rootIcon={<HardDriveIcon className="text-muted-foreground" />}
-            location={location}
-            pathBase={base}
-            onTeamFolderCreated={(p, audience) => {
-              // Specific people: open the new folder and pick them there.
-              if (audience !== 'specific') return;
-              open(p);
-              setSharing(true);
-            }}
-            onOpenFolder={(p) =>
-              router.push(
-                driveUrlWithPath(
-                  `${window.location.origin}/projects/${projectId}/drive`,
-                  drivePathToParam(p, drive.personalFolder),
-                ),
-              )
-            }
-          />
-          <DriveConflictsBar driveId={drive.driveId} onOpenFolder={open} />
-        </div>
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <DriveExplorer
+          leading={leading}
+          trailing={trailing}
+          rootLabel={t('driveLabel')}
+          rootIcon={<HardDriveIcon className="text-muted-foreground" />}
+          location={location}
+          pathBase={base}
+          overview={<DriveOverview drive={drive} locale={locale} onOpen={open} />}
+          onTeamFolderCreated={(p, audience) => {
+            // Specific people: open the new folder and pick them there.
+            if (audience !== 'specific') return;
+            open(p);
+            setSharing(true);
+          }}
+          onOpenFolder={(p) =>
+            router.push(
+              driveUrlWithPath(
+                `${window.location.origin}/projects/${projectId}/drive`,
+                drivePathToParam(p, drive.personalFolder),
+              ),
+            )
+          }
+        />
+        <DriveConflictsBar driveId={drive.driveId} onOpenFolder={open} />
       </div>
       <FolderAccessDialog
         driveId={drive.driveId}
@@ -299,331 +283,94 @@ function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }
   );
 }
 
-/** Top-level folders that are not the per-person tree: the team folders. */
 const PEOPLE_ROOT = '/Users';
 
 function isUnder(path: string, root: string): boolean {
   return path === root || path.startsWith(`${root}/`);
 }
 
-function absolute(path: string): string {
-  return path.startsWith('/') ? path : `/${path}`;
-}
-
 type DriveGlyph = ComponentType<{ className?: string }>;
 
 /**
- * Names where a path is, the way the rail does: My files, a team folder, a
- * folder shared with the caller, or All files. The
- * switcher's trigger and the create dialog both read it, so "where am I" has
- * one answer.
+ * Where a path is: My files, a folder shared with the caller, or a folder of
+ * the tree. `base` is the folder that reads as the root there (My files, a
+ * shared folder), so `Users/<name>` never shows as a crumb.
  */
-function useDriveLocation(drive: Drive) {
-  const t = useTranslations('drives');
-  const root = useDriveFolder(drive.driveId, '/');
-  // A team folder is one the caller can open: a folder they only pass
-  // through on the way to a share (no access of its own) is not theirs.
-  const companyDrives = (root.data?.entries ?? [])
-    .filter((e) => e.type === 'dir' && e.access !== 'none' && !isUnder(absolute(e.path), PEOPLE_ROOT))
-    .map((e) => ({ name: e.name, path: absolute(e.path) }));
+function locateInDrive(
+  path: string,
+  drive: Drive,
+  t: ReturnType<typeof useTranslations>,
+): { icon: DriveGlyph; label: string; base?: string } {
   const personal = drive.personalFolder;
-  const shared = drive.sharedWithMe ?? [];
-
-  /** `base`: the folder that reads as the root there (My files, a shared folder). */
-  const locate = (path: string): { icon: DriveGlyph; label: string; base?: string } => {
-    if (personal && isUnder(path, personal)) return { icon: Home, label: t('myDrive'), base: personal };
-    const company = companyDrives.find((d) => isUnder(path, d.path));
-    if (company) return { icon: FolderSimpleIcon, label: company.name };
-    const sharedHere = shared.find((f) => isUnder(path, f.path));
-    if (sharedHere)
-      return {
-        icon: FolderSimpleIcon,
-        label: sharedHere.path.split('/').filter(Boolean).pop() ?? sharedHere.path,
-        base: sharedHere.path,
-      };
-    return { icon: SquaresFourIcon, label: t('allFiles') };
-  };
-  return { locate, companyDrives, isLoadingDrives: root.isLoading, personal, shared };
+  if (personal && isUnder(path, personal)) return { icon: Home, label: t('myDrive'), base: personal };
+  const shared = (drive.sharedWithMe ?? []).find((f) => isUnder(path, f.path));
+  if (shared) return { icon: FolderSimpleIcon, label: shared.path.split('/').filter(Boolean).pop() ?? shared.path, base: shared.path };
+  return { icon: HardDriveIcon, label: t('driveLabel') };
 }
 
-/**
- * The rail's choices as a menu, for screens too narrow for the rail. The
- * trigger names where the view is, so the header always answers "where am I".
- */
-function DriveSwitcher({
-  drive,
-  path,
-  onOpen,
-}: {
-  drive: Drive;
-  path: string;
-  onOpen: (path: string) => void;
-}) {
-  const t = useTranslations('drives');
-  const { locate, companyDrives, isLoadingDrives, personal, shared } = useDriveLocation(drive);
-  const isAdmin = drive.access === 'manage';
-  const current = locate(path);
-  const CurrentGlyph = current.icon;
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          className="gap-1.5 font-medium active:scale-[0.96]"
-        >
-          <CurrentGlyph className="size-4 shrink-0" />
-          <span className="max-w-40 truncate">{current.label}</span>
-          <CaretDownIcon className="text-muted-foreground size-3 shrink-0" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-72">
-        {personal ? (
-          <DropdownMenuItem onSelect={() => onOpen(personal)} title={t('myFolderHint')}>
-            <Home className="size-4 shrink-0" />
-            <span className="flex-1 truncate">{t('myDrive')}</span>
-          </DropdownMenuItem>
-        ) : null}
-        {isAdmin ? (
-          <DropdownMenuItem onSelect={() => onOpen('/')}>
-            <SquaresFourIcon className="size-4 shrink-0" />
-            <span className="flex-1 truncate">{t('allFiles')}</span>
-          </DropdownMenuItem>
-        ) : null}
-        {shared.length > 0 ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
-              {t('sharedWithMe')}
-            </DropdownMenuLabel>
-            {shared.map((f) => (
-              <DropdownMenuItem key={f.path} onSelect={() => onOpen(f.path)} title={f.path}>
-                <FolderSimpleIcon className="size-4 shrink-0" />
-                <span className="flex-1 truncate">
-                  {f.path.split('/').filter(Boolean).pop() ?? f.path}
-                </span>
-              </DropdownMenuItem>
-            ))}
-          </>
-        ) : null}
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
-          {t('teamFolders')}
-        </DropdownMenuLabel>
-        {isLoadingDrives ? (
-          <div className="space-y-1 px-2 py-1">
-            <Skeleton className="h-6 w-full rounded-sm" />
-            <Skeleton className="h-6 w-3/4 rounded-sm" />
-          </div>
-        ) : companyDrives.length === 0 ? (
-          <p className="text-muted-foreground px-2 py-1.5 text-xs">{t('noTeamFolders')}</p>
-        ) : (
-          companyDrives.map((d) => (
-            <DropdownMenuItem key={d.path} onSelect={() => onOpen(d.path)}>
-              <FolderSimpleIcon className="size-4 shrink-0" />
-              <span className="flex-1 truncate">{d.name}</span>
-            </DropdownMenuItem>
-          ))
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+function nameOfPath(path: string, here: { label: string; base?: string }): string {
+  if (here.base === path) return here.label;
+  return path.split('/').filter(Boolean).pop() ?? path;
 }
 
-/**
- * Where to look in Drive, always in view: My files, what others shared with
- * the caller, the team folders with who can open each, and for admins All
- * files. A team folder that nobody was given reads "Admins only" with a lock,
- * so an admin-only folder is never one by accident.
- */
-function DriveRail({
-  drive,
-  path,
-  onOpen,
-}: {
-  drive: Drive;
-  path: string;
-  onOpen: (path: string) => void;
-}) {
-  const t = useTranslations('drives');
-  const { companyDrives: teamFolders, isLoadingDrives, personal, shared } = useDriveLocation(drive);
-  const isAdmin = drive.access === 'manage';
-
+function PlaceTitle({ icon: Glyph, title, meta }: { icon: DriveGlyph; title: string; meta?: ReactNode }) {
   return (
-    <nav
-      aria-label={t('driveLabel')}
-      className="border-border hidden w-60 shrink-0 flex-col gap-5 overflow-y-auto border-r p-2 md:flex"
-    >
-      <div className="flex flex-col gap-0.5">
-        {personal ? (
-          <RailRow
-            icon={Home}
-            label={t('myDrive')}
-            meta={<FolderMountMeta driveId={drive.driveId} path={personal}>{t('audienceOnlyYou')}</FolderMountMeta>}
-            active={isUnder(path, personal)}
-            onClick={() => onOpen(personal)}
-          />
-        ) : null}
-      </div>
-      {shared.length > 0 ? (
-        <RailSection label={t('sharedWithMe')}>
-          {shared.map((f) => (
-            <RailRow
-              key={f.path}
-              icon={FolderSimpleIcon}
-              label={f.path.split('/').filter(Boolean).pop() ?? f.path}
-              title={f.path}
-              active={isUnder(path, f.path)}
-              onClick={() => onOpen(f.path)}
-            />
-          ))}
-        </RailSection>
-      ) : null}
-      <RailSection label={t('teamFolders')}>
-        {isLoadingDrives ? (
-          <div className="space-y-1 px-2 py-1">
-            <Skeleton className="h-6 w-full rounded-sm" />
-            <Skeleton className="h-6 w-3/4 rounded-sm" />
-          </div>
-        ) : teamFolders.length === 0 ? (
-          <p className="text-muted-foreground px-2 py-1 text-xs">{t('noTeamFolders')}</p>
-        ) : (
-          teamFolders.map((d) => (
-            <TeamFolderRow
-              key={d.path}
-              driveId={drive.driveId}
-              name={d.name}
-              path={d.path}
-              active={isUnder(path, d.path)}
-              onClick={() => onOpen(d.path)}
-            />
-          ))
-        )}
-      </RailSection>
-      {isAdmin ? (
-        <RailSection label={t('adminSection')}>
-          <RailRow
-            icon={ShieldIcon}
-            label={t('allFiles')}
-            active={path === '/'}
-            onClick={() => onOpen('/')}
-          />
-        </RailSection>
-      ) : null}
-      <div className="mt-auto flex flex-col gap-3 px-2 pb-1">
-        <DriveStorageSummary driveId={drive.driveId} />
-        <p className="text-muted-foreground text-xs">{t('privateNote')}</p>
-      </div>
-    </nav>
-  );
-}
-
-function RailSection({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <p className="text-muted-foreground px-2 pb-1 text-xs">{label}</p>
-      {children}
+    <div className="flex min-w-0 items-center gap-2">
+      <Glyph className="text-muted-foreground size-4 shrink-0" />
+      <h1 className="text-foreground truncate text-sm font-medium">{title}</h1>
+      {meta ? <span className="text-muted-foreground hidden min-w-0 items-center gap-1 truncate text-xs md:flex">{meta}</span> : null}
     </div>
   );
 }
 
-function RailRow({
-  icon: Glyph,
-  label,
-  meta,
-  title,
-  active,
-  onClick,
-}: {
-  icon: DriveGlyph;
-  label: string;
-  meta?: ReactNode;
-  title?: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      aria-current={active ? 'page' : undefined}
-      onClick={onClick}
-      className={cn(
-        'flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm transition-colors',
-        active ? 'bg-accent text-foreground font-medium' : 'text-foreground/85 hover:bg-accent/60',
-      )}
-    >
-      <Glyph className="text-muted-foreground size-4 shrink-0" />
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {meta ? (
-        <span className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs font-normal">
-          {meta}
-        </span>
-      ) : null}
-    </button>
-  );
-}
-
-/** A team folder and who can open it: Everyone, Admins only, or how many people. */
-function TeamFolderRow({
-  driveId,
-  name,
-  path,
-  active,
-  onClick,
-}: {
-  driveId: string;
-  name: string;
-  path: string;
-  active: boolean;
-  onClick: () => void;
-}) {
+/** A folder's name and who can open it: Everyone, Admins only, how many people, or its owner. */
+function FolderTitle({ drive, path, label }: { drive: Drive; path: string; label: string }) {
   const t = useTranslations('drives');
-  const access = useFolderAccess(driveId, path);
+  const access = useFolderAccess(drive.driveId, path);
   const audience = access.data ? folderAudience(access.data.grants) : null;
-  const meta =
-    audience?.mode === 'everyone' ? (
-      t('badgeEveryone')
-    ) : audience?.mode === 'restricted' ? (
-      <>
-        <LockSimpleIcon className="size-3" />
-        {t('audienceAdmins')}
-      </>
-    ) : audience?.mode === 'specific' ? (
-      t('badgePeople', { count: audience.named.length })
-    ) : undefined;
-  return (
-    <RailRow
-      icon={FolderSimpleIcon}
-      label={name}
-      meta={<FolderMountMeta driveId={driveId} path={path}>{meta}</FolderMountMeta>}
-      active={active}
-      onClick={onClick}
-    />
+  const personal = drive.personalFolder;
+  const inPeople = isUnder(path, PEOPLE_ROOT);
+  let meta: ReactNode = null;
+  if (personal && isUnder(path, personal)) meta = drive.access === 'manage' ? t('overview.audienceYouAndAdmins') : t('overview.audienceYou');
+  else if (inPeople) meta = (
+    <>
+      <LockSimpleIcon className="size-3" />
+      {t('overview.audienceOwnerAndAdmins')}
+    </>
   );
+  else if (audience?.mode === 'everyone' || audience?.inheritedEveryone) meta = t('everyoneInProject');
+  else if (audience?.mode === 'specific') meta = t('badgePeople', { count: audience.named.length });
+  else if (audience?.mode === 'restricted') meta = (
+    <>
+      <LockSimpleIcon className="size-3" />
+      {t('audienceAdmins')}
+    </>
+  );
+  const glyph = personal && path === personal ? Home : inPeople ? UserIcon : FolderSimpleIcon;
+  return <PlaceTitle icon={glyph} title={label} meta={meta} />;
 }
 
-/**
- * A folder close to, or past, the largest folder a session mounts shows a
- * warning before a session fails to mount it; the hint says its size and the
- * cap. Every other folder shows its meta unchanged.
- */
-function FolderMountMeta({ driveId, path, children }: { driveId: string; path: string; children?: ReactNode }) {
-  const usage = useDriveUsage(driveId);
-  const notice = useFolderMountNotice();
-  const folder = usage.data?.folders.find((f) => f.path === path);
-  const text = usage.data ? notice(folder, usage.data.limits.folderMountBytes) : null;
-  if (!text) return <>{children}</>;
+/** Where sessions see this folder, copyable: the same path under /drives, or ~/Desktop for your own. */
+function BoxPathChip({ path }: { path: string }) {
+  const t = useTranslations('drives');
+  const [copied, setCopied] = useState(false);
   return (
-    <>
-      {children}
-      <Hint label={text} side="right">
-        <span role="img" aria-label={text} className="inline-flex">
-          <WarningIcon className="text-kortix-orange size-3.5" weight="fill" />
-        </span>
-      </Hint>
-    </>
+    <Hint label={copied ? t('overview.pathCopied') : t('overview.boxPathHint')}>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        className="hidden max-w-64 gap-1.5 font-mono lg:inline-flex"
+        onClick={() => {
+          void navigator.clipboard?.writeText(path).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          });
+        }}
+      >
+        <TerminalWindowIcon className="size-3.5 shrink-0" />
+        <span className="truncate">{path}</span>
+      </Button>
+    </Hint>
   );
 }
