@@ -5,11 +5,11 @@ import { requestClientKey } from './client-ip';
 /** Pre-validation budget: malformed bodies and missing credentials count too. */
 export function createPublicEdgeRateLimitMiddleware(): MiddlewareHandler {
   // replica-local: budget scales with API replicas; this is abuse protection, not a quota.
-  const limiter = new TokenBucketRateLimiter('public-auth-edge');
+  const authLimiter = new TokenBucketRateLimiter('public-auth-edge');
+  // replica-local: general abuse budget, independent of the stricter auth budget.
+  const apiLimiter = new TokenBucketRateLimiter('public-api-edge');
   return async (c, next) => {
-    if (c.req.method === 'OPTIONS' || !['/v1/auth', '/v1/oauth', '/v1/access', '/v1/tunnel/device-auth'].some(
-      (prefix) => c.req.path === prefix || c.req.path.startsWith(`${prefix}/`),
-    )) {
+    if (c.req.method === 'OPTIONS' || ['/v1/health', '/v1/health/live', '/v1/health/ready'].includes(c.req.path)) {
       return next();
     }
     const clientKey = requestClientKey(c);
@@ -19,7 +19,12 @@ export function createPublicEdgeRateLimitMiddleware(): MiddlewareHandler {
     // every such caller in a single 30/minute bucket throttled the whole flow
     // suite. Production is always behind the edge and always carries one.
     if (clientKey === 'unknown') return next();
-    const result = limiter.check(clientKey, { limit: 30, windowMs: 60_000 });
+    const isAuth = ['/v1/auth', '/v1/oauth', '/v1/access', '/v1/tunnel/device-auth'].some(
+      (prefix) => c.req.path === prefix || c.req.path.startsWith(`${prefix}/`),
+    );
+    const result = isAuth
+      ? authLimiter.check(clientKey, { limit: 30, windowMs: 60_000 })
+      : apiLimiter.check(clientKey, { limit: 300, windowMs: 60_000 });
     c.header('X-RateLimit-Limit', String(result.limit));
     c.header('X-RateLimit-Remaining', String(result.remaining));
     c.header('X-RateLimit-Reset', String(Math.ceil(result.resetMs / 1000)));
