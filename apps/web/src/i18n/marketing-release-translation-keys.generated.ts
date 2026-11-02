@@ -36,8 +36,8 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
     'text34ff4020f800',
   'An AI-run asset manager.': 'text75230f197e2d',
   'Asset management': 'textacf058bd8604',
-  'Our own fund, on real market data with simulated capital. Agents research, trade, value the book, strike NAV and run compliance. A person signs every decision.':
-    'text298b410da754',
+  'Agents run the firm front to back office: research, IC memos, trading, reconciliation, valuation, NAV, compliance and investor reporting. People sign every decision.':
+    'textd58278b21ab7',
   'An executive search firm, rebuilt around agents.': 'text0213c53e2373',
   'Agents research candidates, prepare client and pitch materials and run the firm’s internal operations.':
     'text2c5d3af9483a',

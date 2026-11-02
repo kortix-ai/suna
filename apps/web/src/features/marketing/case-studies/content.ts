@@ -21,10 +21,12 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  *    (engineer and QA agents, Linear). Kortix: the `kortix-ai/company`
  *    project (engineering factory, compliance agency, sales, support and
  *    marketing agents).
- *  - The asset manager is Kortix's own simulated fund (`kortix-ai/hedgefund`,
- *    its CASE-STUDY.md): real public market data, simulated investors,
- *    capital and trades, agents front to back office, a person at every
- *    gate. Always say it is ours and that the capital is simulated.
+ *  - The asset manager card describes how an asset manager runs on Kortix
+ *    end to end, in general terms (founder, 2026-11-02: no "own fund", no
+ *    "simulated capital"). Its source is Kortix's own fund project
+ *    (`kortix-ai/hedgefund`, CASE-STUDY.md): real public market data,
+ *    simulated investors, capital and trades. Name only steps that project
+ *    runs, and never a fund size, a return or a client.
  *  - Bodies stay minimal (founder, 2026-11-02): one or two short sentences
  *    on what the agents do there. Only the WRITER card says "built from
  *    Kortix's open-source code".
@@ -81,19 +83,6 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       ],
     },
     {
-      id: 'wring',
-      logo: { src: '/media/case-studies/wring.svg', alt: 'Wring', width: 74, height: 28 },
-      category: 'Cloud cost',
-      title: 'Autonomous AWS cost optimization.',
-      body: 'Agents find the AWS credit programs each customer qualifies for and prepare the applications. The customer approves.',
-      facts: [
-        'Credit programs found per customer',
-        'Applications prepared by agents',
-        'A person approves every submission',
-        'Runs as one Kortix project',
-      ],
-    },
-    {
       id: 'platinum',
       mark: 'platinum',
       category: 'Cloud infrastructure',
@@ -134,12 +123,12 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       },
       category: 'Asset management',
       title: 'An AI-run asset manager.',
-      body: 'Our own fund, on real market data with simulated capital. Agents research, trade, value the book, strike NAV and run compliance. A person signs every decision.',
+      body: 'Agents run the firm front to back office: research, IC memos, trading, reconciliation, valuation, NAV, compliance and investor reporting. People sign every decision.',
       facts: [
         'Research, IC and trading',
         'Risk, valuation and NAV',
         'Compliance and investor reporting',
-        'Real market data, simulated capital',
+        'Settlement and reconciliation',
       ],
     },
     {
@@ -158,6 +147,19 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
         'Client and pitch materials',
         'Internal operations automated',
         'The whole firm on one CompanyOS',
+      ],
+    },
+    {
+      id: 'wring',
+      logo: { src: '/media/case-studies/wring.svg', alt: 'Wring', width: 74, height: 28 },
+      category: 'Cloud cost',
+      title: 'Autonomous AWS cost optimization.',
+      body: 'Agents find the AWS credit programs each customer qualifies for and prepare the applications. The customer approves.',
+      facts: [
+        'Credit programs found per customer',
+        'Applications prepared by agents',
+        'A person approves every submission',
+        'Runs as one Kortix project',
       ],
     },
     {
