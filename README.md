@@ -9,7 +9,7 @@
 
 **The open-source CompanyOS: a harness platform for always-on agents to run your company.**
 
-✓ Sovereign &nbsp; ✓ Extensible &nbsp; ✓ Multiplayer &nbsp; ✓ Open source
+Open Source &nbsp;·&nbsp; Extensible &nbsp;·&nbsp; Multiplayer &nbsp;·&nbsp; Sovereign
 
 Hand it an outcome and AI agents run it 24/7.
 

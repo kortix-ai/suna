@@ -2,13 +2,24 @@
 
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
-import { CheckIcon } from '@phosphor-icons/react/dist/ssr';
+import {
+  CodeIcon,
+  GitForkIcon,
+  ShieldCheckIcon,
+  UsersThreeIcon,
+} from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
 
 import { WorkspaceFramework } from './workspace-framework';
 
-// The three pillars and "open source", as ticks beside the title (kortix-brand D35).
-const HERO_TICKS = ['Sovereign', 'Extensible', 'Multiplayer', 'Open source'];
+// What the CompanyOS is, beside the title (kortix-brand D35). Multiplayer,
+// Extensible and Sovereign use the glyphs of their pillars below the hero.
+const HERO_TRAITS = [
+  { label: 'Open Source', icon: GitForkIcon },
+  { label: 'Extensible', icon: CodeIcon },
+  { label: 'Multiplayer', icon: UsersThreeIcon },
+  { label: 'Sovereign', icon: ShieldCheckIcon },
+];
 
 /**
  * Landing hero, Paper "Kortix 2" Hero D (Accrue layout): the two-tone
@@ -24,7 +35,7 @@ export function SandBandHero() {
   return (
     <section id="hero" className="relative">
       <div className="relative flex flex-col gap-7.5 px-8 pt-32 pb-18 lg:px-28 lg:pt-40">
-        {/* Title and one plain sentence on the left; the four ticks on the
+        {/* Title and one plain sentence on the left; the four traits on the
             right from lg up, and as a row under the sentence below lg. */}
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between lg:gap-16">
           <div className="flex flex-col gap-4 lg:gap-5">
@@ -36,11 +47,11 @@ export function SandBandHero() {
               whole team, and everything they do is yours to keep, on your infrastructure or ours.
             </p>
           </div>
-          <ul className="flex flex-wrap gap-x-5 gap-y-2 lg:flex-col lg:items-start lg:gap-y-2.5 lg:pb-1">
-            {HERO_TICKS.map((tick) => (
-              <li key={tick} className="text-foreground flex items-center gap-2 text-base lg:text-lg">
-                <CheckIcon className="size-4 shrink-0 lg:size-5" weight="bold" aria-hidden />
-                {tick}
+          <ul className="grid w-fit grid-cols-2 gap-x-8 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-6 lg:shrink-0 lg:flex-col lg:gap-y-4 lg:border-l lg:py-1 lg:pl-8">
+            {HERO_TRAITS.map(({ label, icon: Icon }) => (
+              <li key={label} className="text-foreground flex items-center gap-2.5 text-base lg:text-lg">
+                <Icon className="size-5 shrink-0" aria-hidden />
+                {label}
               </li>
             ))}
           </ul>
