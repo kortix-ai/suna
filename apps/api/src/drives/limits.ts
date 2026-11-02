@@ -193,7 +193,10 @@ async function readVolumeUsage(drive: UsageDrive): Promise<VolumeUsage | null> {
  * nothing; null only when Platinum could not say.
  */
 export async function driveVolumeUsage(drive: UsageDrive, opts: { fresh?: boolean } = {}): Promise<VolumeUsage | null> {
-  if (!drive.platinumVolumeId) return empty();
+  // The volume is addressed by its deterministic name; a row may hold data
+  // with no stored id (2026-11-02: 182 of 359 prod drives). A volume that was
+  // never opened answers volume_not_found, which reads as empty.
+  if (!drive.platinumVolumeName) return empty();
   const cached = usageCache.get(drive.platinumVolumeName);
   if (!opts.fresh && cached && Date.now() - cached.at < USAGE_TTL_MS) return cached;
   const inFlight = usageInFlight.get(drive.platinumVolumeName);
@@ -285,7 +288,7 @@ const FOLDER_LOOKUPS_PER_REQUEST = 16;
 export async function driveFolderSizes(drive: UsageDrive, folders: string[]): Promise<Map<string, DriveFolderSize>> {
   const wanted = [...new Set(folders.filter((f) => f && f !== '/'))];
   const out = new Map<string, DriveFolderSize>();
-  if (!wanted.length || !drive.platinumVolumeId) return out;
+  if (!wanted.length || !drive.platinumVolumeName) return out;
   const usage = await driveVolumeUsage(drive);
   if (!usage) return out;
   const measured = new Map(usage.folders.map((f) => [f.path, f]));
@@ -401,7 +404,13 @@ export async function assertDriveWriteFits(
   const sizes = 'sizes' in input ? input.sizes : [input.bytes];
   const limits = await driveLimitsFor(drive.accountId);
   const early = driveWriteRefusal({ limits, sizes, projectUsed: 0, accountUsed: null, credit: 0 });
-  if (early) throw early;
+  if (early) {
+    // Larger than the whole limit: no fresh read can change the answer, but
+    // the refusal names what the project holds (the display cache is enough).
+    if (early.code !== 'storage_limit_exceeded') throw early;
+    const held = await driveVolumeUsage(drive).catch(() => null);
+    throw driveWriteRefusal({ limits, sizes, projectUsed: held?.usedBytes ?? 0, accountUsed: null, credit: 0 }) ?? early;
+  }
   if (limits.projectBytes === null && limits.accountBytes === null) return;
   const project = await driveVolumeUsage(drive, { fresh: true });
   const account = limits.accountBytes === null ? null : await accountDriveUsage(drive.accountId, { freshVolume: drive.platinumVolumeName });
@@ -428,7 +437,7 @@ export async function assertDriveFilesFit(
 ): Promise<void> {
   await assertDriveWriteFits(drive, {
     sizes: files.map((f) => f.bytes),
-    ...(opts.overwrite && drive.platinumVolumeId
+    ...(opts.overwrite && drive.platinumVolumeName
       ? {
           replaces: async () => {
             const sizes = await Promise.all(
