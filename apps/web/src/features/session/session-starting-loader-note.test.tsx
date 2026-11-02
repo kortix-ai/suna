@@ -48,6 +48,22 @@ describe('escalation note reaches the pixels', () => {
     expect(html).not.toContain(NOTE);
   });
 
+  test('a computer whose agent did not start names the error, not "still starting"', () => {
+    const html = render(
+      <SessionStartingLoader
+        reason="runtime_wake_cooldown"
+        failure={{
+          ...cooldown,
+          message: 'Could not start the agent: pi harness has no model. Trying again automatically.',
+          evidence: { ...cooldown.evidence, check: 'runtime_boot_error', error: 'pi harness has no model.' },
+        }}
+      />,
+    );
+    expect(html).toContain('Could not start the agent: pi harness has no model. Trying again');
+    expect(html).toContain('attempt 2');
+    expect(html).not.toContain('Still starting your computer');
+  });
+
   test('the conversation banner shows the same waiting state', () => {
     const html = render(
       <SessionConnectingBanner

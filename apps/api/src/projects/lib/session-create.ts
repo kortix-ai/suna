@@ -622,6 +622,23 @@ async function resolveSessionAgent(params: {
 }
 
 /**
+ * The model ref of the first prompt's pick (`pending_prompt.model`), or null.
+ * `{ providerID: 'claude-agent', modelID: 'opus' }` is `claude-agent/opus`;
+ * an unknown Claude id is null.
+ */
+export function firstPromptModelRef(pendingPrompt: unknown): string | null {
+  if (!pendingPrompt || typeof pendingPrompt !== 'object' || Array.isArray(pendingPrompt)) return null;
+  const model = (pendingPrompt as { model?: unknown }).model as { providerID?: unknown; modelID?: unknown } | null | undefined;
+  const providerID = typeof model?.providerID === 'string' ? model.providerID.trim() : '';
+  const modelID = typeof model?.modelID === 'string' ? model.modelID.trim() : '';
+  if (!providerID || !modelID || /\s/.test(providerID + modelID)) return null;
+  const ref = `${providerID}/${modelID}`;
+  const claude = checkClaudeAgentRef(ref);
+  if (claude.kind === 'invalid') return null;
+  return claude.kind === 'valid' ? claude.ref : ref;
+}
+
+/**
  * Resolve and validate the session model, and the provider key selection a
  * pooled-key model needs. Runs before the billing hold.
  */
@@ -761,6 +778,14 @@ async function resolveSessionModel(params: {
       if (concreteModel) {
         opencodeModel = toOpencodeModelRef(concreteModel);
         opencodeModelSource = resolved.model ? resolved.source : 'platform';
+      } else {
+        // No default: the box would boot with no model, and pi does not start
+        // without one. The web names the person's pick only on the first prompt.
+        const picked = firstPromptModelRef(body.pending_prompt);
+        if (picked && (await isModelServableForAccount({ userId, accountId, projectId, freeModelsOnly, model: picked, providerSecretPools }))) {
+          opencodeModel = toOpencodeModelRef(picked);
+          opencodeModelSource = 'explicit';
+        }
       }
     } catch (error) {
       console.error('[projects] Failed to resolve the session default model:', error);
