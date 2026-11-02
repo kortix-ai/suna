@@ -13,11 +13,42 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { validateRef } from '../git-ref';
 import { invalidateBranchList } from './branch-list-cache';
+import { resolveRefSha } from './read-cache';
+import {
+  COMMITS_ONLY_FILTER,
+  NO_LAZY_FETCH_ENV,
+  ObjectFetchTooLargeError,
+  fetchObjects,
+  isObjectFetchTooLargeError,
+  missingObjectIdsFromGitError,
+  missingObjects,
+  partialStoresEnabled,
+} from './object-store';
 import type { GitBackedProject } from './types';
 import { getRequestContext } from '../../lib/request-context';
 import { timeStage } from '../../lib/server-timing';
 
 export const execFileAsync = promisify(execFile);
+
+/**
+ * The project each store on this replica belongs to, with the credentials of
+ * its most recent read. An object fetch into a store (`ensureStoreObjects`)
+ * authenticates with them.
+ */
+// replica-local: the stores live on this replica's disk.
+const storeOwners = new Map<string, GitBackedProject>();
+const MAX_STORE_OWNERS = 5_000;
+
+function recordStoreOwner(repoPath: string, project: GitBackedProject): void {
+  storeOwners.delete(repoPath);
+  storeOwners.set(repoPath, project);
+  if (storeOwners.size > MAX_STORE_OWNERS) storeOwners.delete(storeOwners.keys().next().value!);
+}
+
+/** The most bytes one object fetch may transfer, unless its caller sets a bound. */
+const DEFAULT_OBJECT_FETCH_MAX_BYTES = 64 * 1024 * 1024;
+/** How many missing objects one git command may fault in before it fails. */
+const MAX_FAULTS_PER_COMMAND = 32;
 
 const refreshLocks = new Map<string, { promise: Promise<string>; forced: boolean; epoch: number }>();
 /** When the last whole-mirror fetch landed. Unforced reads fetch again once it is an interval old. */
@@ -279,6 +310,8 @@ export class GitOperationError extends Error {
   readonly exitCode: number | null;
   readonly stdout: string;
   readonly stderr: string;
+  /** The command's output passed the caller's buffer (a file too large to read in one piece). */
+  readonly outputTooLarge: boolean;
   constructor(opts: {
     kind: 'timeout' | 'failed' | 'busy';
     message: string;
@@ -288,6 +321,7 @@ export class GitOperationError extends Error {
     stdout?: string;
     stderr?: string;
     cause?: unknown;
+    outputTooLarge?: boolean;
   }) {
     super(opts.message, { cause: opts.cause });
     this.name = 'GitOperationError';
@@ -297,6 +331,7 @@ export class GitOperationError extends Error {
     this.exitCode = opts.exitCode ?? null;
     this.stdout = opts.stdout ?? '';
     this.stderr = opts.stderr ?? '';
+    this.outputTooLarge = opts.outputTooLarge ?? false;
   }
 }
 
@@ -328,8 +363,22 @@ export function classifyGitError(error: unknown, args: readonly string[], timeou
   // cause is the timeout — the stderr git managed to write before being killed
   // is just the `Cloning into …` / `remote: …` progress line and must NOT
   // become the message.
-  const isTimeout = killed || Boolean(signal) || msg.includes('timed out') || err.code === 'ETIMEDOUT';
   const subcommand = args[0] || 'git';
+  // The output passed the caller's buffer. Checked first: Node also kills the
+  // child here, which would read as a timeout.
+  if (err.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' || /maxBuffer/i.test(msg)) {
+    return new GitOperationError({
+      kind: 'failed',
+      message: `git ${subcommand} output exceeded the read buffer`,
+      gitArgs: args,
+      signal,
+      exitCode: null,
+      stderr,
+      cause: error,
+      outputTooLarge: true,
+    });
+  }
+  const isTimeout = killed || Boolean(signal) || msg.includes('timed out') || err.code === 'ETIMEDOUT';
   if (isTimeout) {
     const detail = signal ? ` (signal ${signal})` : '';
     return new GitOperationError({
@@ -343,7 +392,9 @@ export function classifyGitError(error: unknown, args: readonly string[], timeou
       cause: error,
     });
   }
-  const cleaned = stripGitProgress(stderr) || stripGitProgress(stdout) || msg || 'git failed';
+  // Never stdout: for `show` and `cat-file` it is repository content, and the
+  // message reaches logs and error reports.
+  const cleaned = stripGitProgress(stderr) || `git ${subcommand} failed${typeof err.code === 'number' ? ` (exit ${err.code})` : ''}`;
   return new GitOperationError({
     kind: 'failed',
     message: cleaned,
@@ -597,22 +648,48 @@ export async function runGitBuffer(
   maxBufferBytes: number = 10 * 1024 * 1024,
 ): Promise<{ stdout: Buffer; stderr: string }> {
   const authEnv = auth ? gitAuthEnv(authToken, authHost, authHeaders) : {};
-  try {
-    const result = await timeStage('git', () => execFileAsync('git', args, {
-      cwd,
-      encoding: 'buffer',
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...authEnv, ...(extraEnv || {}) },
-      maxBuffer: maxBufferBytes,
-      timeout: timeoutMs,
-    }));
-    const raw = result.stdout;
-    return {
-      stdout: Buffer.isBuffer(raw) ? raw : Buffer.from(String(raw), 'utf8'),
-      stderr: result.stderr.toString(),
-    };
-  } catch (error) {
-    throw classifyGitError(error, args, timeoutMs);
+  const faulted = new Set<string>();
+  for (;;) {
+    try {
+      const result = await timeStage('git', () => execFileAsync('git', args, {
+        cwd,
+        encoding: 'buffer',
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...authEnv, ...(extraEnv || {}), ...NO_LAZY_FETCH_ENV },
+        maxBuffer: maxBufferBytes,
+        timeout: timeoutMs,
+      }));
+      const raw = result.stdout;
+      return {
+        stdout: Buffer.isBuffer(raw) ? raw : Buffer.from(String(raw), 'utf8'),
+        stderr: result.stderr.toString(),
+      };
+    } catch (error) {
+      const classified = classifyGitError(error, args, timeoutMs);
+      if (await faultInMissingObjects(cwd, classified.stderr, faulted)) continue;
+      throw classified;
+    }
   }
+}
+
+/**
+ * The safety net under every read path: a git command on a partial store
+ * failed because an object is not there yet. Fetch exactly the objects its
+ * error names and run the command again, up to `MAX_FAULTS_PER_COMMAND`
+ * objects per command. True when something was fetched and a retry can help.
+ *
+ * Paths that know what they read fetch it first (`ensureCommitTrees`,
+ * `ensurePathObjects`, `ensureTreeContents`); this catches the rest, and costs
+ * one round trip per object it catches. Git names only some missing objects:
+ * `show <commit>:<path>` with the file absent says "bad object
+ * <commit>:<path>", which is why file reads fetch first.
+ */
+async function faultInMissingObjects(cwd: string | undefined, stderr: string, faulted: Set<string>): Promise<boolean> {
+  if (!cwd || !storeOwners.has(cwd)) return false;
+  const ids = missingObjectIdsFromGitError(stderr).filter((id) => !faulted.has(id));
+  if (ids.length === 0 || faulted.size + ids.length > MAX_FAULTS_PER_COMMAND) return false;
+  for (const id of ids) faulted.add(id);
+  await ensureStoreObjects(cwd, ids);
+  return true;
 }
 
 export async function runGit(
@@ -646,26 +723,228 @@ export async function runGitCapture(
   authHost = 'github.com',
   authHeaders?: Record<string, string>,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  try {
-    const result = await timeStage('git', () => execFileAsync('git', args, {
-      cwd,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...gitAuthEnv(authToken, authHost, authHeaders), ...(extraEnv || {}) },
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: 30_000,
-    }));
-    return { stdout: result.stdout.toString(), stderr: result.stderr.toString(), exitCode: 0 };
-  } catch (error) {
-    const err = error as { stderr?: Buffer | string; stdout?: Buffer | string; code?: number };
-    return {
-      stdout: err.stdout?.toString() || '',
-      stderr: err.stderr?.toString() || '',
-      exitCode: typeof err.code === 'number' ? err.code : 1,
-    };
+  const faulted = new Set<string>();
+  for (;;) {
+    try {
+      const result = await timeStage('git', () => execFileAsync('git', args, {
+        cwd,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...gitAuthEnv(authToken, authHost, authHeaders), ...(extraEnv || {}), ...NO_LAZY_FETCH_ENV },
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: 30_000,
+      }));
+      return { stdout: result.stdout.toString(), stderr: result.stderr.toString(), exitCode: 0 };
+    } catch (error) {
+      const err = error as { stderr?: Buffer | string; stdout?: Buffer | string; code?: number };
+      const stderr = err.stderr?.toString() || '';
+      if (await faultInMissingObjects(cwd, stderr, faulted)) continue;
+      return {
+        stdout: err.stdout?.toString() || '',
+        stderr,
+        exitCode: typeof err.code === 'number' ? err.code : 1,
+      };
+    }
   }
 }
 
 /** Re-export so callers that spawn directly (archive streaming) share one import surface. */
 export { spawn };
+
+// ── Object store: fetch exactly what a read needs (object-store.ts) ──────────
+
+export interface EnsureObjectsOptions {
+  /** Bytes the fetch may transfer. Over it: `ObjectFetchTooLargeError`, nothing kept. */
+  maxBytes?: number;
+  timeoutMs?: number;
+}
+
+/**
+ * Make `oids` present in the store at `repoPath`, in one authenticated
+ * request, and return the bytes received. A tree arrives with its subtrees and without blobs; a blob arrives
+ * itself. A no-op for objects already present, for a store that is not
+ * partial, and for a path that is not a project store (a scratch repository).
+ */
+export async function ensureStoreObjects(
+  repoPath: string,
+  oids: readonly string[],
+  options: EnsureObjectsOptions = {},
+): Promise<number> {
+  const project = storeOwners.get(repoPath);
+  if (!project || oids.length === 0) return 0;
+  const missing = await missingObjects(repoPath, oids);
+  if (missing.length === 0) return 0;
+  const access = await ensureMirrorAccess(project);
+  const { receivedBytes } = await timeStage('git', () =>
+    fetchObjects(repoPath, missing, {
+      env: gitAuthEnv(access.token, hostFromRepoUrl(access.repoUrl), access.headers),
+      maxBytes: options.maxBytes ?? DEFAULT_OBJECT_FETCH_MAX_BYTES,
+      timeoutMs: options.timeoutMs,
+    }),
+  );
+  return receivedBytes;
+}
+
+/**
+ * The root tree ids of `revs` (commits, branches, `HEAD~2`), read from the
+ * commit objects alone: `rev-parse <rev>^{tree}` needs the tree itself.
+ */
+async function rootTreeIds(repoPath: string, revs: readonly string[]): Promise<string[]> {
+  if (revs.length === 0) return [];
+  const listed = await runGitCapture(['log', '--no-walk=unsorted', '--format=%T', ...revs, '--'], repoPath);
+  if (listed.exitCode !== 0) return [];
+  return listed.stdout.split('\n').map((line) => line.trim()).filter((id) => /^[0-9a-f]{40}$/.test(id));
+}
+
+/**
+ * Make every tree of `revs` present: what `ls-tree`, `diff --name-status`,
+ * `rev-parse <rev>:<path>` and `read-tree` read. One request for all of them.
+ * An unresolvable rev is skipped; the read that follows reports it.
+ */
+export async function ensureCommitTrees(repoPath: string, revs: readonly string[]): Promise<void> {
+  if (!storeOwners.has(repoPath)) return;
+  await ensureStoreObjects(repoPath, await rootTreeIds(repoPath, revs));
+}
+
+/**
+ * Make the files at `paths` in `rev` present, plus the trees that lead to
+ * them. A path that does not exist at `rev` is skipped: the read that follows
+ * answers "not found" from the tree, which is present.
+ */
+export async function ensurePathObjects(
+  repoPath: string,
+  rev: string,
+  paths: readonly string[],
+  options: EnsureObjectsOptions = {},
+): Promise<void> {
+  if (!storeOwners.has(repoPath) || paths.length === 0) return;
+  await ensureCommitTrees(repoPath, [rev]);
+  const listed = await runGitCapture(['ls-tree', '-z', rev, '--', ...paths], repoPath);
+  if (listed.exitCode !== 0) return;
+  const blobs = listed.stdout
+    .split('\0')
+    .map((record) => /^\d+ blob ([0-9a-f]{40})\t/.exec(record)?.[1])
+    .filter((id): id is string => Boolean(id));
+  await ensureStoreObjects(repoPath, blobs, options);
+}
+
+/**
+ * Make every file under `treeish` (`<commit>`, `<commit>:<dir>`, a tree id)
+ * present: what `git archive`, `git grep` and a checkout read. Bounded by
+ * `maxBytes`; over it nothing is kept and `ObjectFetchTooLargeError` says so.
+ */
+export async function ensureTreeContents(
+  repoPath: string,
+  treeish: string,
+  options: EnsureObjectsOptions = {},
+): Promise<void> {
+  if (!storeOwners.has(repoPath)) return;
+  if (/^[0-9a-f]{40}$/.test(treeish)) {
+    // A tree id, or a commit id: fetching the id itself covers the tree; a
+    // commit is present already and also needs its root tree.
+    await ensureStoreObjects(repoPath, [treeish]);
+    await ensureCommitTrees(repoPath, [treeish]);
+  } else {
+    await ensureCommitTrees(repoPath, [treeish.split(':', 1)[0]!]);
+  }
+  const tree = (await runGitCapture(['rev-parse', '--verify', '--quiet', `${treeish}^{tree}`], repoPath)).stdout.trim();
+  const listed = await runGitCapture(['ls-tree', '-r', '-z', treeish], repoPath);
+  if (listed.exitCode !== 0) return;
+  const blobs = listed.stdout
+    .split('\0')
+    .map((record) => /^\d+ blob ([0-9a-f]{40})\t/.exec(record)?.[1])
+    .filter((id): id is string => Boolean(id));
+  await withOverLimitMemo(repoPath, `tree:${tree || treeish}`, options, () => ensureStoreObjects(repoPath, blobs, options));
+}
+
+/**
+ * The smallest byte limit each whole-tree or range fetch was already over, per
+ * store and per tree or range. A tree id names exact content, so the answer
+ * never changes: a zip download a user retries does not download 512 MB
+ * again to learn the same thing.
+ */
+// replica-local: a fact about immutable content, kept with this replica's store.
+const overLimit = new Map<string, number>();
+const MAX_OVER_LIMIT_ENTRIES = 1_000;
+
+async function withOverLimitMemo<T>(
+  repoPath: string,
+  what: string,
+  options: EnsureObjectsOptions,
+  fetch: () => Promise<T>,
+): Promise<T> {
+  const key = `${repoPath}\0${what}`;
+  const maxBytes = options.maxBytes ?? DEFAULT_OBJECT_FETCH_MAX_BYTES;
+  const exceeded = overLimit.get(key);
+  if (exceeded !== undefined && maxBytes <= exceeded) throw new ObjectFetchTooLargeError(maxBytes, maxBytes);
+  try {
+    return await fetch();
+  } catch (err) {
+    if (isObjectFetchTooLargeError(err)) {
+      overLimit.delete(key);
+      overLimit.set(key, Math.max(maxBytes, exceeded ?? 0));
+      if (overLimit.size > MAX_OVER_LIMIT_ENTRIES) overLimit.delete(overLimit.keys().next().value!);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Make every object reachable from `revArgs` (`rev-list` arguments such as
+ * `[tip, '^root']`) present: what `git bundle` and `pack-objects` read.
+ * Trees arrive first, then the files they name, each in one request.
+ */
+export async function ensureRangeObjects(
+  repoPath: string,
+  revArgs: readonly string[],
+  options: EnsureObjectsOptions = {},
+): Promise<void> {
+  if (!storeOwners.has(repoPath)) return;
+  const commits = (await runGitCapture(['rev-parse', ...revArgs], repoPath)).stdout.trim().replace(/\s+/g, ' ');
+  await withOverLimitMemo(repoPath, `range:${commits || revArgs.join(' ')}`, options, () => fetchRange(repoPath, revArgs, options));
+}
+
+async function fetchRange(repoPath: string, revArgs: readonly string[], options: EnsureObjectsOptions): Promise<void> {
+  // The trees of excluded commits first: without them `rev-list` cannot see
+  // which files the range shares with them, and would fetch those too.
+  const excluded = revArgs.filter((arg) => arg.startsWith('^')).map((arg) => arg.slice(1));
+  if (excluded.length > 0) await ensureCommitTrees(repoPath, excluded);
+  // Trees, then files, in separate requests: under `--filter=blob:none` a
+  // file asked for in the same request as a tree that contains it is left out.
+  await ensureRangeTrees(repoPath, revArgs);
+  const listed = await runGitCapture(['rev-list', '--objects', '--missing=print', '--no-object-names', ...revArgs], repoPath);
+  const missing = listed.stdout
+    .split('\n')
+    .filter((line) => line.startsWith('?'))
+    .map((line) => line.slice(1).trim());
+  if (missing.length > 0) await ensureStoreObjects(repoPath, missing, options);
+}
+
+/**
+ * Make every tree reachable from `revArgs` present, and no file: what a
+ * path-limited `git log`, `diff-tree` and `diff --name-status` over a range
+ * read. At most three rounds (a fetched tree can reveal subtrees it did not
+ * bring when the server sent them separately).
+ */
+export async function ensureRangeTrees(repoPath: string, revArgs: readonly string[]): Promise<void> {
+  if (!storeOwners.has(repoPath)) return;
+  for (let round = 0; round < 3; round += 1) {
+    const listed = await runGitCapture(
+      ['rev-list', '--objects', '--filter=blob:none', '--missing=print', '--no-object-names', ...revArgs],
+      repoPath,
+    );
+    const missing = listed.stdout
+      .split('\n')
+      .filter((line) => line.startsWith('?'))
+      .map((line) => line.slice(1).trim());
+    if (missing.length === 0) return;
+    await ensureStoreObjects(repoPath, missing);
+  }
+}
+
+/** Is `repoPath` a partial store (cloned with a filter)? */
+async function isPartialStore(repoPath: string): Promise<boolean> {
+  const promisor = await runGitCapture(['config', '--get', 'remote.origin.promisor'], repoPath);
+  return promisor.exitCode === 0 && promisor.stdout.trim() === 'true';
+}
 
 export function refreshIntervalMs() {
   const value = Number(process.env.KORTIX_GIT_REFRESH_INTERVAL_MS || 60_000);
@@ -781,6 +1060,7 @@ async function doRefreshMirror(
   await mkdir(dirname(repoPath), { recursive: true });
   if (existsSync(join(repoPath, 'shallow'))) {
     await rm(repoPath, { recursive: true, force: true });
+    treesPresent.delete(repoPath);
   }
   let needsClone = !existsSync(repoPath);
   if (!needsClone && !looksLikeBareMirror(repoPath)) {
@@ -791,6 +1071,7 @@ async function doRefreshMirror(
     await rm(repoPath, { recursive: true, force: true });
     lastRefreshAt.delete(project.projectId);
     baseRefsProvenAt.delete(project.projectId);
+    treesPresent.delete(repoPath);
     needsClone = true;
   }
   if (!needsClone && force === 'tip-proof' && freshRef) {
@@ -802,6 +1083,17 @@ async function doRefreshMirror(
   const needsFetch = !needsClone && (!!force || Date.now() - lastRefresh >= refreshIntervalMs());
   // Nothing to do over the network — serve the warm cache without touching git.
   if (!needsClone && !needsFetch) return repoPath;
+
+  // A whole-history store from before partial stores downloads every new file
+  // version on each fetch. Replace it: a partial clone takes about a second.
+  const partial = await partialStoresEnabled();
+  if (!needsClone && partial && !(await isPartialStore(repoPath))) {
+    await rm(repoPath, { recursive: true, force: true });
+    lastRefreshAt.delete(project.projectId);
+    baseRefsProvenAt.delete(project.projectId);
+    treesPresent.delete(repoPath);
+    needsClone = true;
+  }
 
   // Resolve a token before EITHER network op. Whichever caller wins the
   // refresh lock, the shared clone/fetch is authenticated whenever the project
@@ -826,11 +1118,23 @@ async function doRefreshMirror(
     // (timeout / network / GitHub's ambiguous private-repo 404 — see
     // `isTransientGitMirrorError`), and ALWAYS remove the partial dir on
     // failure so the next caller re-clones cleanly.
-    const cloneArgs = ['clone', '--bare', access.repoUrl, repoPath] as const;
+    //
+    // A partial store clones commits only (`object-store.ts`): trees and files
+    // arrive when a read names them. On a 6.4 GB repository that is 217 KB.
+    const cloneArgs = [
+      'clone',
+      '--bare',
+      ...(partial ? [`--filter=${COMMITS_ONLY_FILTER}`] : []),
+      access.repoUrl,
+      repoPath,
+    ];
     await cloneBareWithRetry({
       run: () =>
         runGit([...cloneArgs], undefined, true, access.token, undefined, authHost, BARE_CLONE_TIMEOUT_MS, access.headers),
-      cleanup: () => rm(repoPath, { recursive: true, force: true }),
+      cleanup: () => {
+        treesPresent.delete(repoPath);
+        return rm(repoPath, { recursive: true, force: true });
+      },
     });
     if (unmoved()) recordFullFetch(project.projectId, noSessionPush());
     return repoPath;
@@ -910,21 +1214,58 @@ function viewableWarmMirror(project: GitBackedProject): string | null {
   return repoPath;
 }
 
+type RefreshOptions = {
+  /** Freshness is only needed for THIS ref. Forced: fetch that branch alone
+   *  and skip the whole-mirror fetch.
+   *  Unforced, a full commit SHA the mirror already holds skips the fetch:
+   *  nothing at a commit can change. */
+  freshRef?: string;
+  /** Forced with `freshRef`: when that branch cannot be fetched, stop there
+   *  instead of fetching the whole mirror. */
+  branchOnly?: boolean;
+};
+
+/**
+ * The project's store, refreshed as `force` asks, with the trees of the ref
+ * the caller reads (`freshRef`, else the default branch) present. Commits
+ * arrive with the refresh; those trees arrive here, once per commit.
+ */
 export async function refreshMirror(
   project: GitBackedProject,
   force: MirrorRefresh = false,
-  opts?: {
-    /** Freshness is only needed for THIS ref. Forced: fetch that branch alone
-     *  and skip the whole-mirror fetch.
-     *  Unforced, a full commit SHA the mirror already holds skips the fetch:
-     *  nothing at a commit can change. */
-    freshRef?: string;
-    /** Forced with `freshRef`: when that branch cannot be fetched, stop there
-     *  instead of fetching the whole mirror. */
-    branchOnly?: boolean;
-  },
+  opts?: RefreshOptions,
   epochRetries = 0,
 ) {
+  recordStoreOwner(repoCachePath(project), project);
+  const repoPath = await refreshStore(project, force, opts, epochRetries);
+  await ensureRefTrees(repoPath, opts?.freshRef ?? project.defaultBranch);
+  return repoPath;
+}
+
+/** Commits whose trees this replica already holds, per store. */
+// replica-local: describes the store on this replica's disk.
+const treesPresent = new Map<string, Set<string>>();
+const MAX_TREES_PRESENT_PER_STORE = 2_000;
+
+/** `ensureCommitTrees` for one ref, skipped without a git process when this replica already fetched them. */
+export async function ensureRefTrees(repoPath: string, ref: string): Promise<void> {
+  if (!storeOwners.has(repoPath)) return;
+  const sha = await resolveRefSha(repoPath, ref).catch(() => null);
+  const known = sha ? treesPresent.get(repoPath) : undefined;
+  if (sha && known?.has(sha)) return;
+  await ensureCommitTrees(repoPath, [sha ?? ref]);
+  if (!sha) return;
+  const set = known ?? new Set<string>();
+  if (set.size >= MAX_TREES_PRESENT_PER_STORE) set.clear();
+  treesPresent.set(repoPath, set.add(sha));
+}
+
+async function refreshStore(
+  project: GitBackedProject,
+  force: MirrorRefresh = false,
+  opts?: RefreshOptions,
+  epochRetries = 0,
+): Promise<string> {
   if (!force && opts?.freshRef && /^[0-9a-f]{40}$/.test(opts.freshRef)) {
     const held = await mirrorHoldingCommit(project, opts.freshRef);
     if (held) return held;
@@ -1084,6 +1425,7 @@ export async function reapGitCacheOverBudget(
     if (now - mirror.mtimeMs < GIT_CACHE_EVICT_GRACE_MS) break;
     try {
       await rm(mirror.path, { recursive: true, force: true });
+      treesPresent.delete(mirror.path);
       totalBytes -= mirror.bytes;
       freedBytes += mirror.bytes;
       deleted++;
@@ -1179,6 +1521,9 @@ export function normalizeTreePath(input?: string | null) {
  * Returns the absolute path where the context was extracted. Caller is
  * responsible for `rm -rf`ing it when done.
  */
+/** Every file one materialized context may fetch into the store. */
+const MATERIALIZE_MAX_BYTES = 512 * 1024 * 1024;
+
 export async function materializeRepoContext(
   project: GitBackedProject,
   ref: string,
@@ -1209,6 +1554,8 @@ export async function materializeRepoContext(
 
   const archivePath = `${target}.tar`;
   try {
+    // `git archive` reads every file under `treeish`: fetch them first, bounded.
+    await ensureTreeContents(repoPath, treeish, { maxBytes: MATERIALIZE_MAX_BYTES, timeoutMs: 600_000 });
     await runGit(['archive', '--format=tar', '-o', archivePath, treeish], repoPath, false);
     await execFileAsync('tar', ['-xf', archivePath, '-C', target], {
       env: { ...process.env },

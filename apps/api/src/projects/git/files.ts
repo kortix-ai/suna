@@ -14,7 +14,23 @@ import {
 import { HTTPException } from 'hono/http-exception';
 import { validateRef } from '../git-ref';
 import { listCommits } from './commits';
-import { type MirrorRefresh, isGitOperationError, isGitPathNotFoundError, isGitRefNotFoundError, normalizeTreePath, refreshMirror, runGit, runGitBuffer, runGitCapture, spawn } from './mirror';
+import {
+  type MirrorRefresh,
+  ensurePathObjects,
+  ensureRefTrees,
+  ensureStoreObjects,
+  ensureTreeContents,
+  isGitOperationError,
+  isGitPathNotFoundError,
+  isGitRefNotFoundError,
+  normalizeTreePath,
+  refreshMirror,
+  runGit,
+  runGitBuffer,
+  runGitCapture,
+  spawn,
+} from './mirror';
+import { isObjectFetchTooLargeError } from './object-store';
 import { cachedGitRead, resolveRefSha } from './read-cache';
 import type {
   GetFileHistoryOptions,
@@ -23,6 +39,32 @@ import type {
   ProjectFileEntry,
   RepoGrepMatch,
 } from './types';
+
+/**
+ * Byte limits for reads that fetch file contents into the project store
+ * (`object-store.ts`). A store holds no file until a read names it, so each
+ * limit bounds what one request can make the API download.
+ */
+/** One file opened in the file browser or read by a config loader. */
+export const FILE_READ_MAX_BYTES = 64 * 1024 * 1024;
+/** A file read as text (`readRepoFile`): the default git read buffer. */
+const TEXT_READ_MAX_BYTES = 10 * 1024 * 1024;
+/** Every file a content search reads at one commit. Over it, the search covers the files fetched so far. */
+export const CONTENT_SEARCH_MAX_BYTES = 64 * 1024 * 1024;
+/** Every file in one zip download. */
+export const ARCHIVE_MAX_BYTES = 512 * 1024 * 1024;
+
+/** The repository is too large for the operation: a request for less (a folder, one file) can still succeed. */
+export class RepoContentTooLargeError extends Error {
+  constructor(readonly maxBytes: number) {
+    super(`The repository content exceeds the ${maxBytes}-byte limit for this operation. Download a folder or a single file instead.`);
+    this.name = 'RepoContentTooLargeError';
+  }
+}
+
+export function isRepoContentTooLargeError(err: unknown): err is RepoContentTooLargeError {
+  return err instanceof RepoContentTooLargeError;
+}
 
 export async function listRepoFiles(
   project: GitBackedProject,
@@ -173,9 +215,13 @@ export async function listRepoDirectory(
   const limit = opts?.limit ?? DIRECTORY_LISTING_LIMIT;
   const list = async (repoPath: string, pinned?: string) => {
     const sha = pinned ?? (await resolveRefSha(repoPath, treeRef));
+    // A page can name a commit this store has not read yet (another replica served the first page).
+    if (pinned) await ensureRefTrees(repoPath, pinned);
     const listLevel = (at: string) => {
       // The trailing slash lists the folder's children, not the folder itself.
-      // -l adds each blob's size.
+      // -l adds each blob's size, read from the blob itself: a file the store
+      // has not fetched prints `BAD`, and the listing omits its size rather
+      // than download it.
       const args = ['ls-tree', '-z', '-l', at, '--'];
       if (treePath) args.push(`${treePath}/`);
       return runGit(args, repoPath, false).then((result) => result.stdout);
@@ -188,9 +234,11 @@ export async function listRepoDirectory(
     const entries = stdout
       .split('\0')
       .map<ProjectDirectoryEntry | null>((line) => {
-        const match = line.match(/^\d+\s+(\w+)\s+[0-9a-f]+\s+(\d+|-)\t([\s\S]+)$/);
+        const match = line.match(/^\d+\s+(\w+)\s+[0-9a-f]+\s+(\d+|-|BAD)\t([\s\S]+)$/);
         if (!match) return null;
-        if (match[1] === 'blob') return { path: match[3]!, type: 'file', size: Number(match[2]) };
+        if (match[1] === 'blob') {
+          return /^\d+$/.test(match[2]!) ? { path: match[3]!, type: 'file', size: Number(match[2]) } : { path: match[3]!, type: 'file' };
+        }
         if (match[1] === 'tree') return { path: match[3]!, type: 'directory' };
         return null;
       })
@@ -277,6 +325,9 @@ export async function grepRepoFiles(
   if (!q) return [];
   const treeRef = validateRef(ref || project.defaultBranch);
   const repoPath = await refreshMirror(project, false, { freshRef: treeRef });
+  await fetchSearchableFiles(repoPath, treeRef);
+  // A file the store does not hold prints "unable to read" on stderr; git grep
+  // still searches the rest and exits 0 or 1.
   const result = await runGitCapture(
     ['grep', '-n', '-I', '-i', '-F', '-m', '10', '-e', q, treeRef],
     repoPath,
@@ -300,6 +351,31 @@ export async function grepRepoFiles(
   }
   return matches;
 }
+
+/**
+ * Fetch the files a content search at `treeRef` reads, in batches, until
+ * `CONTENT_SEARCH_MAX_BYTES`. A batch over the limit is dropped and the search
+ * covers what arrived before it: a 6 GB repository answers from its first
+ * files instead of downloading all of them.
+ */
+async function fetchSearchableFiles(repoPath: string, treeRef: string): Promise<void> {
+  const listed = await runGitCapture(['ls-tree', '-r', '-z', treeRef], repoPath);
+  if (listed.exitCode !== 0) return;
+  const blobs = listed.stdout
+    .split('\0')
+    .map((record) => /^\d+ blob ([0-9a-f]{40})\t/.exec(record)?.[1])
+    .filter((id): id is string => Boolean(id));
+  let budget = CONTENT_SEARCH_MAX_BYTES;
+  for (let start = 0; start < blobs.length && budget > 0; start += SEARCH_FETCH_BATCH) {
+    try {
+      budget -= await ensureStoreObjects(repoPath, blobs.slice(start, start + SEARCH_FETCH_BATCH), { maxBytes: budget });
+    } catch (err) {
+      if (isObjectFetchTooLargeError(err)) return;
+      throw err;
+    }
+  }
+}
+const SEARCH_FETCH_BATCH = 500;
 
 export async function readRepoFile(
   project: GitBackedProject,
@@ -360,9 +436,21 @@ export async function readRepoFileBytes(
   const repoPath = await refreshMirror(project, false, { freshRef: treeRef });
   const cat = async (at: string) => {
     const object = `${at}:${normalized}`;
+    await fetchFileForRead(repoPath, at, normalized);
     try {
-      return await runGitBuffer(['cat-file', 'blob', object], repoPath, false);
+      return await runGitBuffer(
+        ['cat-file', 'blob', object],
+        repoPath,
+        false,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        FILE_READ_MAX_BYTES,
+      );
     } catch (err) {
+      if (isGitOperationError(err) && err.outputTooLarge) throw new RepoContentTooLargeError(FILE_READ_MAX_BYTES);
       // cat-file reports a tree as "bad file", not "path does not exist".
       // Check the object type rather than hiding corruption with the same wording.
       if (isGitOperationError(err) && err.kind === 'failed') {
@@ -394,6 +482,7 @@ export async function readRepoFileBytes(
 
 async function readFileAt(repoPath: string, treeRef: string, normalized: string): Promise<string> {
   const sha = await resolveRefSha(repoPath, treeRef);
+  await fetchFileForRead(repoPath, sha ?? treeRef, normalized);
   if (!sha) return (await runGit(['show', `${treeRef}:${normalized}`], repoPath, false)).stdout;
   // "Not in this commit" is an answer too, so it is cached as one; any other
   // failure rejects and is retried by the next read.
@@ -402,11 +491,27 @@ async function readFileAt(repoPath: string, treeRef: string, normalized: string)
       return { found: true as const, content: (await runGit(['show', `${sha}:${normalized}`], repoPath, false)).stdout };
     } catch (err) {
       if (isGitPathNotFoundError(err)) return { found: false as const, error: err };
+      if (isGitOperationError(err) && err.outputTooLarge) throw new RepoContentTooLargeError(TEXT_READ_MAX_BYTES);
       throw err;
     }
   });
   if (!shown.found) throw shown.error;
   return shown.content;
+}
+
+/**
+ * Fetch the one file a read names, before `git show` / `cat-file` reads it. On
+ * a partial store a missing file reads as "bad object <ref>:<path>", which no
+ * caller can tell from a real failure. A path that is not in the tree fetches
+ * nothing, and the read that follows answers "not found" from the tree.
+ */
+async function fetchFileForRead(repoPath: string, at: string, path: string): Promise<void> {
+  try {
+    await ensurePathObjects(repoPath, at, [path], { maxBytes: FILE_READ_MAX_BYTES });
+  } catch (err) {
+    if (isObjectFetchTooLargeError(err)) throw new RepoContentTooLargeError(FILE_READ_MAX_BYTES);
+    throw err;
+  }
 }
 
 /**
@@ -532,9 +637,10 @@ export async function readManifestFromRepo(
   const revision = revisions.get(winner);
   if (!revision) return null;
   // A blob is addressed by its own id: the same bytes at every commit.
-  const shown = await cachedGitRead(repoPath, revision, 'blob', winner, () =>
-    runGit(['show', `${treeSha ?? treeRef}:${winner}`], repoPath, false),
-  );
+  const shown = await cachedGitRead(repoPath, revision, 'blob', winner, async () => {
+    await ensureStoreObjects(repoPath, [revision], { maxBytes: FILE_READ_MAX_BYTES });
+    return runGit(['show', `${treeSha ?? treeRef}:${winner}`], repoPath, false);
+  });
   const resolveCommit = () =>
     runGitCapture(['rev-parse', '--verify', '--quiet', `${treeSha ?? treeRef}^{commit}`], repoPath);
   const resolved = treeSha
@@ -622,7 +728,10 @@ async function convertLegacyRead<T extends { path: string; content: string; root
   const paths = listed.exitCode === 0 ? listed.stdout.split('\0').filter(Boolean) : [];
   const conversion = await convertLegacyManifestAsync(raw, from, found.path, paths, async (path) => {
     if (!paths.includes(path)) return null;
-    const shown = await cache('legacy-show', path, () => runGitCapture(['show', `${ref}:${path}`], repoPath));
+    const shown = await cache('legacy-show', path, async () => {
+      await ensurePathObjects(repoPath, ref, [path], { maxBytes: FILE_READ_MAX_BYTES });
+      return runGitCapture(['show', `${ref}:${path}`], repoPath);
+    });
     return shown.exitCode === 0 ? shown.stdout : null;
   });
   return {
@@ -656,10 +765,15 @@ function gitManifestImportReader(repoPath: string, ref: string): ManifestImportR
         const match = line.match(/^\d+\s+blob\s+([0-9a-f]{40})\t(.+)$/);
         if (match?.[1] && match[2]) entries.push({ path: match[2], revision: match[1] });
       }
+      // The resolver reads every file it lists: fetch them in one request.
+      await ensureStoreObjects(repoPath, entries.map((entry) => entry.revision), { maxBytes: FILE_READ_MAX_BYTES });
       return entries;
     },
     async read(path) {
-      return cache('import-show', path, async () => (await runGit(['show', `${ref}:${path}`], repoPath, false)).stdout);
+      return cache('import-show', path, async () => {
+        await ensurePathObjects(repoPath, ref, [path], { maxBytes: FILE_READ_MAX_BYTES });
+        return (await runGit(['show', `${ref}:${path}`], repoPath, false)).stdout;
+      });
     },
   };
 }
@@ -681,6 +795,13 @@ export async function archiveRepoSubtree(
   const repoPath = await refreshMirror(project, false, { freshRef: treeRef });
   const normalized = path ? normalizeTreePath(path) : null;
   const treeish = normalized ? `${treeRef}:${normalized}` : treeRef;
+  // `git archive` reads every file under `treeish`: fetch them first, bounded.
+  try {
+    await ensureTreeContents(repoPath, treeish, { maxBytes: ARCHIVE_MAX_BYTES, timeoutMs: 600_000 });
+  } catch (err) {
+    if (isObjectFetchTooLargeError(err)) throw new RepoContentTooLargeError(ARCHIVE_MAX_BYTES);
+    throw err;
+  }
 
   const proc = spawn('git', ['archive', '--format=zip', treeish], {
     cwd: repoPath,
