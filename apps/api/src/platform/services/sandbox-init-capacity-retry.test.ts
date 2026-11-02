@@ -1,10 +1,31 @@
-// A create the fleet refused for room gets two quick retries (1 s, then 2 s)
-// before the session's next `/start` takes over with its own backoff. Quota-type
-// "capacity" (an org pool, an org limit, a full disk) still fails on the first
-// refusal: it does not clear in seconds.
+// A create Platinum refused because no host has room right now gets two quick
+// retries (1 s, then 2 s) before the session's next `/start` takes over with
+// its own backoff. Every other capacity refusal (an org pool or limit, a full
+// disk, another provider's placement error) still fails on the first attempt.
 import { describe, expect, test } from 'bun:test';
 import type { CreateSandboxOpts, ProvisionResult, SandboxProvider } from '../providers';
-import { CAPACITY_QUICK_RETRY_DELAYS_MS, isFleetPlacementRefusal, retrySandboxProvisionCreate } from './sandbox-init-state';
+
+function setTestEnv(name: string, value: string): void {
+  if (!process.env[name] || process.env[name]?.startsWith('encrypted:')) {
+    process.env[name] = value;
+  }
+}
+
+setTestEnv('DATABASE_URL', 'postgres://postgres:postgres@127.0.0.1:54322/postgres');
+setTestEnv('SUPABASE_URL', 'http://127.0.0.1:54321');
+setTestEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-service-role');
+setTestEnv('API_KEY_SECRET', 'test-api-key-secret');
+setTestEnv('TUNNEL_SIGNING_SECRET', 'test-tunnel-signing-secret');
+setTestEnv('ALLOWED_SANDBOX_PROVIDERS', 'platinum');
+setTestEnv('KORTIX_URL', 'https://api.example.com');
+setTestEnv('FRONTEND_URL', 'http://localhost:3000');
+setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
+setTestEnv('PLATINUM_API_URL', 'https://api.platinum.dev');
+setTestEnv('PLATINUM_API_KEY', 'pt_test_key');
+
+const { CAPACITY_QUICK_RETRY_DELAYS_MS, isFleetPlacementRefusal, retrySandboxProvisionCreate } = await import(
+  './sandbox-init-state'
+);
 
 const FLEET_FULL =
   'platinum POST /v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000 -> 503 {"error":"no capacity on a host that can mount these volumes","code":"capacity","region":"eu-west","pinned_host":null}';
@@ -68,7 +89,8 @@ describe('retrySandboxProvisionCreate on a capacity refusal', () => {
   test('only fleet placement refusals qualify', () => {
     expect(isFleetPlacementRefusal(new Error(FLEET_FULL))).toBe(true);
     expect(isFleetPlacementRefusal(new Error(PLAIN_NO_CAPACITY))).toBe(true);
-    expect(isFleetPlacementRefusal(new Error('too many starts in flight'))).toBe(true);
+    expect(isFleetPlacementRefusal(new Error('500: Failed to place sandbox'))).toBe(false);
+    expect(isFleetPlacementRefusal(new Error('too many starts in flight'))).toBe(false);
     expect(isFleetPlacementRefusal(new Error(ORG_POOL_FULL))).toBe(false);
     expect(isFleetPlacementRefusal(new Error('maximum number of concurrent sandboxes reached'))).toBe(false);
     expect(isFleetPlacementRefusal(new Error('total disk limit exceeded'))).toBe(false);

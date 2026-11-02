@@ -31,12 +31,13 @@ const SNAPSHOT_BUILDING_RETRY_DELAY_MS = 10_000;
 export const CAPACITY_QUICK_RETRY_DELAYS_MS = [1_000, 2_000] as const;
 
 /**
- * The capacity refusals a slot freeing on the fleet clears: no host can take
- * the box right now. An org quota, an org pool, a rate limit or a full disk is
- * also "capacity" (sandbox-provisioning-error.ts) but does not clear in
- * seconds, so it keeps failing fast.
+ * Platinum's "no host can take this box right now" (`no capacity`, or `no
+ * capacity on a host that can mount these volumes`): a slot freeing on the
+ * fleet clears it. Every other capacity refusal (an org quota or pool, a rate
+ * limit, a full disk, another provider's placement error) keeps failing fast
+ * on the first attempt, as before.
  */
-const FLEET_PLACEMENT_REFUSAL = /no capacity on a host|"error":"no capacity"|failed to place sandbox|too many starts in flight|too many sandboxes starting on this node/i;
+const FLEET_PLACEMENT_REFUSAL = /"error":"no capacity(?: on a host that can mount these volumes)?"/i;
 
 export function isFleetPlacementRefusal(error: unknown): boolean {
   return FLEET_PLACEMENT_REFUSAL.test(errorMessage(error));
