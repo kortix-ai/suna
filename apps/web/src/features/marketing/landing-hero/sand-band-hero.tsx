@@ -50,8 +50,9 @@ export function SandBandHero() {
             The CompanyOS
           </h1>
           <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
-            The cloud-native agent harness for companies. Always-on agents that start on events,
-            run in parallel and share one memory of your company.
+            The cloud-native agent harness for companies. Hand it an outcome and AI agents run it
+            24/7. Connect your company’s tools, share agents and context across your whole team, and
+            own all of it as code: open source, on your infrastructure or ours.
           </p>
         </div>
 

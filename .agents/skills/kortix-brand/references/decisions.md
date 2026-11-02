@@ -12,6 +12,14 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-11-02
 
+### D37 The home hero subhead merges the positioning line with "Hand it an outcome"
+- **Date:** 2026-11-02
+- **Decision:** The home hero subhead is: "The cloud-native agent harness for companies. Hand it an outcome and AI agents run it 24/7. Connect your company's tools, share agents and context across your whole team, and own all of it as code: open source, on your infrastructure or ours." The positioning line leads; the earlier hero line follows as its mechanism. The title ("The CompanyOS") and the four traits stay as D35 set them.
+- **Why:** founder, 2026-11-02: "improve the HERO text merge it with the og 'Hand it an outcome and AI agents run it 24/7…'". The D35 mechanism sentence ("Always-on agents that start on events, run in parallel and share one memory of your company") said the same thing in words buyers do not use.
+- **Where:** `apps/web/src/features/marketing/landing-hero/sand-band-hero.tsx`.
+- **Supersedes:** the subhead sentence of D35. The rest of D35 stands.
+- **Source:** the `case-studies` branch.
+
 ### D36 Case-study cards show a drawn mark, never a firm name
 - **Date:** 2026-11-02
 - **Decision:** A case study that names only a class (a firm, not its name) may carry a mark that Kortix drew for that card: a symbol, sometimes with one or two invented letters, never a firm name, a real client's initials or a likeness of the firm's real logo. It sits on the white logo tile like a third-party logo, in its own colors, so the row reads as a row of logos. The AI-run asset manager is a pinwheel of four quarter-discs turning around the center (a diversified portfolio), deep navy and azure; it replaced two forward slashes on the founder's ask. The executive search firm is two discs, deep emerald (the firm) and a lighter green (the candidate), whose overlap is cut out where they meet (the match); it replaced two ink-blue rings on the founder's ask for a better symbol and its own color. The founder chose both from twelve options. The five industry lifecycle cards each carry a drawn mark in its own style and colors, so no two marks look alike and the row never reads as an icon set. Some carry one or two invented letters, set as outlines, never a real client's initials: banking a coin seal: a gold milled edge around an engraved burgundy rosette, a high-contrast serif N at its heart; insurance an editorial, consulting-style monogram: a white high-contrast serif "Ry" on an ink-navy square over one electric-blue rule (the founder asked for "hardcore McKinsey style": the register, never McKinsey's own mark); airlines an H on a tail fin with livery stripes (blue), healthcare an "m" between two gradient crescents (teal), retail "ro" on a pink badge. A client that allows its logo shows its own symbol only, with the wordmark cut out. No card shows a client name: the line under the category is gone.
