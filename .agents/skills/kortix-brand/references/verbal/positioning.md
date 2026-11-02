@@ -16,6 +16,7 @@ Rule format: **Rule.** — *Why:* — *Where:* — *When silent:*.
 | Manifesto line | A company is going to be a git repository | The deep thesis. Manifesto, founder voice, vision talks. Never a page title. |
 | Mission | Take a company from human to AGI, and let it keep every byte of itself on the way there. | Founder voice, about, hiring. Never a category. |
 | Promise | Hand it an outcome, AI agents run it 24/7 | What Kortix does for a company, beside what it is (D18, D29). Home hero subhead, the Outcomes section header, pitches. Never a page title. |
+| Developer line | A harness platform for always-on agents to run your company | What Kortix is underneath, for developers (D35). README tagline, docs index, Guide and Developers intros. Never in the home hero. |
 
 **Rule.** Use "CompanyOS" as the category and "The open-source CompanyOS" as the tagline. — *Why:* D28 (2026-10-29, founder) renames the category from "AI Operating System" to CompanyOS; D10 (2026-10-04) set the operating-system idea. An operating system is the layer everything else runs on: agents, skills, memory, connectors, computers, channels and triggers. The phrase names that layer, and it scales from one person to a company. — *Where:* app | marketing | mobile | deck | email | CLI | GitHub. — *When silent:* use the tagline in titles and the category noun in sentences.
 

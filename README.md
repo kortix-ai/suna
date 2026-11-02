@@ -9,6 +9,8 @@
 
 **The open-source CompanyOS: a harness platform for always-on agents to run your company.**
 
+✓ Sovereign &nbsp; ✓ Extensible &nbsp; ✓ Multiplayer &nbsp; ✓ Open source
+
 Hand it an outcome and AI agents run it 24/7.
 
 Build custom agents on pi and ship them from one git repo. Schedules, webhooks, your tools' events

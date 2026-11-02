@@ -10,6 +10,16 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-11-02
+
+### D35 The home hero reads "The CompanyOS" with four ticks; developer surfaces call Kortix a harness platform for always-on agents
+- **Date:** 2026-11-02
+- **Decision:** The home hero title is the fixed line "The CompanyOS". Beside it, right-aligned from `lg` up and as a row under the subhead below `lg`, four ticks: Sovereign, Extensible, Multiplayer, Open source. The subhead is plain language: "Hand it an outcome and AI agents run it 24/7. They work in your tools, next to your whole team, and everything they do is yours to keep, on your infrastructure or ours." It does not say "open source" again, because the tick says it. The README tagline, the docs index, the Guide and the Developers page say what Kortix is underneath: "a harness platform for always-on agents to run your company" (README), with the mechanism in the body (events start agents, My Kortix routes the work, agents run in parallel on their own cloud computers, state persists). The home hero never says "harness", "cloud computers" or "swarms".
+- **Why:** founder, 2026-11-02: "What about we say The CompanyOS as the title in the HERO (Sovereign. Extensible. Multiplayer.", "the 3 points can be elsewhere maybe right aligned like ticks", "also maybe lets add Open Source", and on a harness-first subhead: "THIS IS MAYBE TOO TECHNICAL". On the README: "add that its a Harness Platform allowing u to deploy custom agents in pi to the cloud and orchestrate them with event driven design to form 24/7 loops and let agents run in swarms", as "a fundamental description change", not an add-on.
+- **Where:** `apps/web/src/features/marketing/landing-hero/sand-band-hero.tsx`, `README.md`, `apps/web/content/docs/index.mdx`, `apps/web/content/docs/guide.mdx`, `apps/web/content/docs/developers.mdx`, [positioning.md](verbal/positioning.md) section 1.
+- **Supersedes:** D21 (the cycling hero word). D18's Promise stays as the subhead opener.
+- **Source:** the `harness-platform-copy` branch.
+
 ## 2026-10-31
 
 ### D34 Product chrome draws status with a glyph; status emoji stay in the agent's own words
