@@ -24060,6 +24060,7 @@
       "contextLoadError": "Impossible de charger les autorisations des commentaires.",
       "activityLoadError": "Impossible de charger l’activité.",
       "retry": "Réessayer",
+      "sendAgainTo": "Renvoyer à {agent}",
       "noComments": "Aucun commentaire ouvert",
       "noCommentsHint": "Sélectionnez un passage pour le commenter, ou commencez un nouveau commentaire.",
       "noResolved": "Aucun commentaire résolu",

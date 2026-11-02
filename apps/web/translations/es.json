@@ -24060,6 +24060,7 @@
       "contextLoadError": "No se pudieron cargar los permisos de los comentarios.",
       "activityLoadError": "No se pudo cargar la actividad.",
       "retry": "Reintentar",
+      "sendAgainTo": "Enviar de nuevo a {agent}",
       "noComments": "No hay comentarios abiertos",
       "noCommentsHint": "Selecciona un fragmento para comentarlo o empieza un comentario nuevo.",
       "noResolved": "No hay comentarios resueltos",

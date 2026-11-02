@@ -155,12 +155,15 @@ export const artifactAnnotationFrameMessageSchema = z.discriminatedUnion(
       })
       .strict(),
     // The offered selection is gone ("none"), or it is longer than a text anchor holds ("too_long").
+    // `moved`: a scroll or resize withdrew the offer, not the person. The parent keeps a selection
+    // it dismissed hidden when the next layout offers it again. Absent from older bridges.
     z
       .object({
         ...envelope,
         type: z.literal("selection"),
         state: z.enum(["none", "too_long"]),
         rect: rectSchema.optional(),
+        moved: z.literal(true).optional(),
       })
       .strict(),
     // A key the page saw while annotation is on: Escape, or the comment shortcut (⌘⌥M / Ctrl+Alt+M).

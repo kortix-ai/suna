@@ -1,4 +1,4 @@
-import type { ArtifactActivityItem, ArtifactCommentThread } from '@kortix/sdk';
+import { ApiError, type ArtifactActivityItem, type ArtifactCommentThread } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import {
   activityExcerpt,
@@ -7,10 +7,12 @@ import {
   arrivedComments,
   collapseComments,
   commentEnterAction,
+  deliveryAgent,
   groupActivityDays,
   groupCommentThreads,
   mentionAtCaret,
   replaceMention,
+  serverAnswered,
   threadCounts,
   threadDeleted,
 } from './artifact-discussion-logic';
@@ -191,5 +193,41 @@ describe('comment composer keyboard and mention ranges', () => {
       value: '@dana@example.test ',
       caret: 19,
     });
+  });
+});
+
+describe('Delivery retry', () => {
+  const comment = (
+    id: string,
+    mentions: ArtifactCommentThread['comments'][number]['mentions'],
+    deleted_at: string | null = null,
+  ) => ({ comment_id: id, mentions, deleted_at }) as ArtifactCommentThread['comments'][number];
+  test('a failed delivery went to the agent the latest comment that names an agent mentions first', () => {
+    const reviewer = comment('root', [
+      { kind: 'user', user_id: 'dana' },
+      { kind: 'agent', agent_name: 'reviewer' },
+      { kind: 'agent', agent_name: 'writer' },
+    ]);
+    expect(deliveryAgent(thread('t', { comments: [reviewer] }))).toBe('reviewer');
+    // A reply that names no agent goes to the agents earlier comments reached.
+    const plain = comment('reply', [{ kind: 'user', user_id: 'dana' }]);
+    expect(deliveryAgent(thread('t', { comments: [reviewer, plain] }))).toBe('reviewer');
+    // A session mention names the agent of the session that made the Artifact.
+    const session = comment('later', [{ kind: 'session', session_id: 's', agent_name: 'kortix' }]);
+    expect(deliveryAgent(thread('t', { comments: [reviewer, session, plain] }))).toBe('kortix');
+    // A deleted comment no longer names its agent.
+    const deleted = comment('gone', [{ kind: 'agent', agent_name: 'gone' }], '2026-10-29');
+    expect(deliveryAgent(thread('t', { comments: [reviewer, deleted] }))).toBe('reviewer');
+    expect(deliveryAgent(thread('t', { comments: [plain] }))).toBeUndefined();
+  });
+  test('only an HTTP status proves the server answered; a network failure or a timeout has none', () => {
+    expect(serverAnswered(new ApiError('could not be sent', { status: 409 }))).toBe(true);
+    expect(serverAnswered(new ApiError('Bad gateway', { status: 502 }))).toBe(true);
+    expect(serverAnswered(new ApiError('Failed to fetch'))).toBe(false);
+    expect(serverAnswered(new ApiError('Request timed out', { code: 'TIMEOUT' }))).toBe(false);
+    expect(serverAnswered(new TypeError('Failed to fetch'))).toBe(false);
+    expect(serverAnswered({ code: 'artifact_comment_screenshot_limit' })).toBe(false);
+    expect(serverAnswered({ status: '409' })).toBe(false);
+    expect(serverAnswered(null)).toBe(false);
   });
 });

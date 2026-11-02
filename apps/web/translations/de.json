@@ -24060,6 +24060,7 @@
       "contextLoadError": "Kommentarberechtigungen konnten nicht geladen werden.",
       "activityLoadError": "Aktivität konnte nicht geladen werden.",
       "retry": "Erneut versuchen",
+      "sendAgainTo": "Erneut an {agent} senden",
       "noComments": "Keine offenen Kommentare",
       "noCommentsHint": "Wähle eine Passage aus, um sie zu kommentieren, oder beginne einen neuen Kommentar.",
       "noResolved": "Keine erledigten Kommentare",

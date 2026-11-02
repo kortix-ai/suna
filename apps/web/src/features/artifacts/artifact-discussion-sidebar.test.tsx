@@ -1,4 +1,9 @@
-import type { ArtifactCommentContext, ArtifactCommentThread, ArtifactDetail } from '@kortix/sdk';
+import {
+  ApiError,
+  type ArtifactCommentContext,
+  type ArtifactCommentThread,
+  type ArtifactDetail,
+} from '@kortix/sdk';
 import { afterEach, beforeAll, expect, mock, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import { act } from 'react';
@@ -61,6 +66,7 @@ mock.module('./artifact-comment-composer', () => ({
     error,
     pending,
     submitDisabled,
+    autoFocus,
   }: {
     value: string;
     onChange: (value: string) => void;
@@ -70,8 +76,10 @@ mock.module('./artifact-comment-composer', () => ({
     error?: string;
     pending?: boolean;
     submitDisabled?: boolean;
+    autoFocus?: boolean;
   }) => (
     <form
+      data-autofocus={String(!!autoFocus)}
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit();
@@ -865,8 +873,8 @@ test('Resolve shows a toast whose Undo reopens the thread', async () => {
   expect(calls).toEqual(['resolved', 'open']);
 });
 
-test('a failed delivery retries only its thread and repeats the batch id after a failure', async () => {
-  const calls: { thread_ids: string[]; batch_id?: string }[] = [];
+test('a failed delivery retries only its thread and repeats the batch id after a network failure', async () => {
+  const calls: { thread_ids: string[]; batch_id?: string; agent?: string }[] = [];
   const value = props({ context: { ...context, send_thread_ids: [] } });
   value.comments.data = [{ ...item, agent_state: 'paused', agent_error: 'Model refused' }];
   value.comments.send = async (input) => {
@@ -877,10 +885,95 @@ test('a failed delivery retries only its thread and repeats the batch id after a
   await render(value);
   expect(container.textContent).toContain('Not delivered');
   expect(container.textContent).toContain('Model refused');
-  await click(button('Try again'));
-  await click(button('Try again'));
+  // A thread that names no agent goes to the Send target.
+  await click(button('Send again to writer'));
+  await click(button('Send again to writer'));
   expect(calls.map((call) => call.thread_ids)).toEqual([['thread'], ['thread']]);
+  expect(calls.map((call) => call.agent)).toEqual(['writer', 'writer']);
   expect(calls[1]!.batch_id).toBe(calls[0]!.batch_id!);
+});
+
+test('a failed delivery sends again to the agent the thread mentioned, and the button names it', async () => {
+  const calls: { thread_ids: string[]; batch_id?: string; agent?: string }[] = [];
+  const value = props({ context: { ...context, send_thread_ids: [] } });
+  const mention = { kind: 'agent' as const, agent_name: 'researcher', token: '@agent.researcher' };
+  value.comments.data = [
+    {
+      ...item,
+      agent_state: 'paused',
+      agent_error: 'Model refused',
+      comments: [{ ...item.comments[0]!, mentions: [mention] }],
+    },
+  ];
+  value.comments.send = async (input) => {
+    calls.push(input);
+    return { session_id: 'session', created: false };
+  };
+  await render(value);
+  // The Send footer still targets writer; the failed delivery went to researcher.
+  await click(button('Send again to researcher'));
+  expect(calls).toEqual([
+    { thread_ids: ['thread'], batch_id: expect.any(String), agent: 'researcher' },
+  ]);
+  expect(toasts.map((toast) => toast.message)).toEqual(['Comments sent to researcher']);
+});
+
+/** The server's answer to a batch id whose job failed: an HTTP 409. */
+const refused = () => new ApiError('The comment batch could not be sent', { status: 409 });
+
+test('a delivery retry the server refused starts a new batch id', async () => {
+  const calls: { batch_id?: string }[] = [];
+  const value = props({ context: { ...context, send_thread_ids: [] } });
+  value.comments.data = [{ ...item, agent_state: 'paused', agent_error: 'Model refused' }];
+  value.comments.send = async (input) => {
+    calls.push(input);
+    if (calls.length === 1) throw refused();
+    return { session_id: 'session', created: false };
+  };
+  await render(value);
+  await click(button('Send again to writer'));
+  await click(button('Send again to writer'));
+  expect(calls).toHaveLength(2);
+  expect(calls[1]!.batch_id).not.toBe(calls[0]!.batch_id!);
+});
+
+test('a Send the server refused leaves no retained batch: the next Send is a new request', async () => {
+  const calls: { thread_ids: string[]; batch_id?: string; agent?: string }[] = [];
+  const value = props();
+  value.comments.send = async (input) => {
+    calls.push(input);
+    if (calls.length === 1) throw refused();
+    return { session_id: 'session', created: false };
+  };
+  await render(value);
+  await click(button('Send 1 open thread to writer'));
+  expect(container.textContent).not.toContain('Retry send');
+  await click(button('Send 1 open thread to writer'));
+  expect(calls).toHaveLength(2);
+  expect(calls[1]).toMatchObject({ thread_ids: ['thread'], agent: 'writer' });
+  expect(calls[1]!.batch_id).not.toBe(calls[0]!.batch_id!);
+});
+
+test('a composer the page opened shows its passage without taking keyboard focus', async () => {
+  const anchor = {
+    type: 'text' as const,
+    version: 'version',
+    quote: 'Page passage',
+    prefix: '',
+    suffix: '',
+  };
+  const form = () => container.querySelector('form') as InstanceType<typeof browser.HTMLElement>;
+  await render(props({ pendingAnchor: anchor, pageOpenedAnchor: anchor }));
+  expect(container.textContent).toContain('Page passage');
+  expect(form().dataset.autofocus).toBe('false');
+  // New comment is the person's own request: it focuses the composer.
+  await openComposer();
+  expect(form().dataset.autofocus).toBe('true');
+  // A passage the person chose in the parent focuses the composer.
+  await act(async () => root.unmount());
+  root = createRoot(container as unknown as HTMLElement);
+  await render(props({ pendingAnchor: { ...anchor }, pageOpenedAnchor: anchor }));
+  expect(form().dataset.autofocus).toBe('true');
 });
 
 test('the live region announces a polled comment by someone else, never the first read', async () => {

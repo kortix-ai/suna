@@ -46,7 +46,9 @@ import {
 import { useArtifactDiscussionPanel } from './artifact-discussion-layout';
 import {
   arrivedComments,
+  deliveryAgent,
   groupCommentThreads,
+  serverAnswered,
   threadCounts,
   threadDeleted,
   type CommentFilter,
@@ -77,6 +79,11 @@ export interface ArtifactDiscussionSidebarProps {
   focusRevision?: number;
   onFocusThread: (threadId: string) => void;
   pendingAnchor?: ArtifactCommentAnchor | null;
+  /**
+   * The pending anchor the page itself sent (its comment shortcut). Its composer shows without
+   * keyboard focus: the page can forge the key. New comment focuses it.
+   */
+  pageOpenedAnchor?: ArtifactCommentAnchor | null;
   pendingDrawing?: ArtifactDrawingDraft | null;
   selectionCapture?: 'idle' | 'pending' | 'failed';
   onClearAnchor: (expected?: ArtifactCommentAnchor) => void;
@@ -105,8 +112,11 @@ export function useArtifactDiscussionState() {
   const latestCaptureRef = useRef<'idle' | 'pending' | 'failed'>('idle');
   const [sendRequest, setSendRequest] = useState<SendRequest | null>(null);
   const sendBatchRef = useRef<SendRequest | null>(null);
-  /** thread_id → batch_id of a failed single-thread retry, so a second retry repeats it. */
-  const threadBatchRef = useRef(new Map<string, string>());
+  /**
+   * thread_id → the batch of a single-thread retry that got no answer from the server, so the
+   * next retry to the same agent repeats it.
+   */
+  const threadBatchRef = useRef(new Map<string, { id: string; agent: string }>());
   return {
     tab,
     setTab,
@@ -151,6 +161,7 @@ export function ArtifactDiscussionSidebar({
   focusRevision = 0,
   onFocusThread,
   pendingAnchor,
+  pageOpenedAnchor,
   pendingDrawing,
   selectionCapture = 'idle',
   onClearAnchor,
@@ -197,6 +208,8 @@ export function ArtifactDiscussionSidebar({
   const heading = useRef<HTMLHeadingElement>(null);
   const newButton = useRef<HTMLButtonElement>(null);
   const [composerFocus, setComposerFocus] = useState(0);
+  // A page-opened anchor whose composer the person focused with New comment.
+  const [focusedPageAnchor, setFocusedPageAnchor] = useState<ArtifactCommentAnchor | null>(null);
   const scope = `${projectId}:${artifact.artifact_id}`;
   const draftKey = (kind: string, id = '') => `${scope}:${kind}:${id}`;
   const draft = (kind: string, id = '') => drafts[draftKey(kind, id)] ?? '';
@@ -371,10 +384,13 @@ export function ArtifactDiscussionSidebar({
     }
   };
   const composerOpen = canComment && (composing || !!pendingAnchor || selectionCapture !== 'idle');
+  const composerAutoFocus =
+    !pendingAnchor || pendingAnchor !== pageOpenedAnchor || pendingAnchor === focusedPageAnchor;
   const startComment = () => {
     setTab('comments');
     setComposing(true);
     setComposerFocus((value) => value + 1);
+    setFocusedPageAnchor(pendingAnchor ?? null);
   };
   const closeComposer = (discardText: boolean) => {
     if (pendingAnchor || selectionCapture !== 'idle') onClearAnchor();
@@ -476,11 +492,17 @@ export function ArtifactDiscussionSidebar({
     void perform(
       'send',
       () =>
-        comments.send({
-          thread_ids: [...request.threadIds],
-          batch_id: request.id,
-          agent: request.agent,
-        }),
+        comments
+          .send({ thread_ids: [...request.threadIds], batch_id: request.id, agent: request.agent })
+          .catch((cause: unknown) => {
+            // The server answered, so this batch is final: its job replays the same failure for
+            // the same batch id. Only a request with no answer keeps the batch for Retry send.
+            if (serverAnswered(cause) && sendBatchRef.current === request) {
+              sendBatchRef.current = null;
+              setSendRequest((current) => (current === request ? null : current));
+            }
+            throw cause;
+          }),
       (result) => {
         if (sendBatchRef.current === request) {
           sendBatchRef.current = null;
@@ -497,20 +519,39 @@ export function ArtifactDiscussionSidebar({
     setSendRequest(null);
     setErrors((current) => ({ ...current, send: '' }));
   };
-  const retryDelivery = (threadId: string) => {
-    if (!canComment || !context?.send_target || !chosenAgent) return;
-    const batchId = threadBatchRef.current.get(threadId) ?? crypto.randomUUID();
-    threadBatchRef.current.set(threadId, batchId);
-    const agent = chosenAgent;
+  const retryDelivery = (threadId: string, agent: string) => {
+    if (!canComment || !context?.send_target) return;
+    const held = threadBatchRef.current.get(threadId);
+    const batch = held?.agent === agent ? held : { id: crypto.randomUUID(), agent };
+    threadBatchRef.current.set(threadId, batch);
     void perform(
       `deliver:${threadId}`,
-      () => comments.send({ thread_ids: [threadId], batch_id: batchId, agent }),
+      () =>
+        comments
+          .send({ thread_ids: [threadId], batch_id: batch.id, agent })
+          .catch((cause: unknown) => {
+            // The server answered: a retry with this batch id replays the same failure.
+            if (serverAnswered(cause) && threadBatchRef.current.get(threadId) === batch)
+              threadBatchRef.current.delete(threadId);
+            throw cause;
+          }),
       (result) => {
         threadBatchRef.current.delete(threadId);
         sentToast(agent, result.session_id);
       },
       t('sendFailed'),
     );
+  };
+  /** A failed delivery's retry goes to the agent the delivery went to, else the Send target. */
+  const retryProps = (thread: ArtifactCommentThread) => {
+    const agent = deliveryAgent(thread) ?? chosenAgent;
+    return {
+      retryAgentLabel: agentLabel(agent),
+      onRetryDelivery:
+        canComment && context?.send_target && agent
+          ? () => retryDelivery(thread.thread_id, agent)
+          : undefined,
+    };
   };
   const renderThread = (thread: (typeof threads)[number]) => (
     <ArtifactCommentThreadView
@@ -574,9 +615,7 @@ export function ArtifactDiscussionSidebar({
       }}
       onCancelEdit={() => setEditing(null)}
       onDelete={(comment) => setDeleting({ threadId: thread.thread_id, comment })}
-      onRetryDelivery={
-        canComment && context?.send_target ? () => retryDelivery(thread.thread_id) : undefined
-      }
+      {...retryProps(thread)}
     />
   );
   const quote =
@@ -750,7 +789,7 @@ export function ArtifactDiscussionSidebar({
                 pending={!!pending.new}
                 submitDisabled={selectionCapture !== 'idle'}
                 error={errors.new}
-                autoFocus
+                autoFocus={composerAutoFocus}
                 focusKey={`${focusRevision}:${composerFocus}:${JSON.stringify(pendingAnchor)}`}
               />
             </section>

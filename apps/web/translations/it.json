@@ -24060,6 +24060,7 @@
       "contextLoadError": "Impossibile caricare i permessi dei commenti.",
       "activityLoadError": "Impossibile caricare l’attività.",
       "retry": "Riprova",
+      "sendAgainTo": "Invia di nuovo a {agent}",
       "noComments": "Nessun commento aperto",
       "noCommentsHint": "Seleziona un passaggio per commentarlo o inizia un nuovo commento.",
       "noResolved": "Nessun commento risolto",

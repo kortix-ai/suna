@@ -26,6 +26,8 @@ type Config = {
   focusRevision: number;
   /** The accessible name of pin `n` ("Comment 3"). It must name the number; anything else is dropped. */
   pinLabel?: (n: number) => string;
+  /** The parent's drawing layer covers the page and handles its own Escape: page keys are dropped. */
+  drawing?: boolean;
 };
 const envelope = { kortix: 'annotate', v: 1 } as const;
 export type ArtifactAnnotationStatus = 'loading' | 'ready' | 'unavailable';
@@ -55,9 +57,15 @@ export function createArtifactAnnotationController(
     post: (message: ArtifactAnnotationHostMessage) => boolean;
     /** A pin or region placed in comment mode: the person asked to comment there. */
     onCandidate: (anchor: ArtifactCommentAnchor) => void;
-    /** The page's text selection changed: an offer to comment on it, or null when it is gone. */
-    onSelection?: (selection: ArtifactAnnotationSelection | null) => void;
-    /** Escape or the comment shortcut, pressed inside the page. */
+    /**
+     * The page's text selection changed: an offer to comment on it, or null when it is gone.
+     * `moved`: a scroll or resize in the page withdrew the offer, not the person.
+     */
+    onSelection?: (selection: ArtifactAnnotationSelection | null, moved?: boolean) => void;
+    /**
+     * Escape or the comment shortcut, from the page. The page can post either at any time: a key
+     * arrives only where the bridge sends one, and never while the parent draws.
+     */
     onKey?: (key: ArtifactAnnotationKey) => void;
     onFocus: (threadId: string) => void;
     onThreads: (threads: ArtifactCommentThread[]) => void;
@@ -79,6 +87,12 @@ export function createArtifactAnnotationController(
   let sent = new Map<number, string>();
   const ordinals = new Map<string, number>();
   let focused = '';
+  // A selection offer is current. In text mode the bridge sends its keys only then.
+  let offered = false;
+  const select = (selection: ArtifactAnnotationSelection | null, moved?: boolean) => {
+    offered = !!selection;
+    callbacks.onSelection?.(selection, moved);
+  };
   let status: ArtifactAnnotationStatus | null = null;
   let cancelDeadline: (() => void) | null = null;
   let generation = 0;
@@ -297,12 +311,12 @@ export function createArtifactAnnotationController(
       config = next;
       if (changedVersion) loading(true);
       if (modeChanged) postMode();
-      if (changedVersion || modeChanged) callbacks.onSelection?.(null);
+      if (changedVersion || modeChanged) select(null);
       redraw();
     },
     reset() {
       if (disposed) return;
-      callbacks.onSelection?.(null);
+      select(null);
       inventory = null;
       chunks = [];
       units = 0;
@@ -377,27 +391,39 @@ export function createArtifactAnnotationController(
         // A text selection is only an offer: the parent shows a Comment chip and waits for the person.
         if (result.data.type === 'text' && callbacks.onSelection) {
           if (offersSelection())
-            callbacks.onSelection({
+            select({
               state: 'candidate',
               anchor: result.data,
               rect: selectionGeometry(message.rect, inventory.viewport),
             });
           return;
         }
+        // The bridge places a pin or a region only in pin mode. One posted in text mode is forged:
+        // it would open the composer, and take keyboard focus, with no action by the person.
+        if (result.data.type !== 'text' && config.mode !== 'comment') return;
         callbacks.onCandidate(result.data);
         return;
       }
       if (message.type === 'selection') {
-        if (message.state === 'none' || !offersSelection()) callbacks.onSelection?.(null);
+        if (message.state === 'none') select(null, message.moved === true);
+        else if (!offersSelection()) select(null);
         else
-          callbacks.onSelection?.({
+          select({
             state: 'too_long',
             rect: selectionGeometry(message.rect, inventory!.viewport),
           });
         return;
       }
       if (message.type === 'key') {
-        if (config.canComment) callbacks.onKey?.(message.key);
+        // Anything in the page can post a key, so a key counts only where the bridge sends one:
+        // Escape in pin mode or with a selection offer, the shortcut with a selection offer. The
+        // drawing layer covers the page and handles its own Escape, so no page key reaches it.
+        if (!config.canComment || config.drawing) return;
+        const sendable =
+          message.key === 'escape'
+            ? config.mode === 'comment' || offered
+            : config.mode === 'text' && offered;
+        if (sendable) callbacks.onKey?.(message.key);
         return;
       }
       if (message.type !== 'focus') return;

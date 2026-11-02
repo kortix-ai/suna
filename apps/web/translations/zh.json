@@ -24060,6 +24060,7 @@
       "contextLoadError": "无法加载评论权限。",
       "activityLoadError": "无法加载动态。",
       "retry": "重试",
+      "sendAgainTo": "重新发送给 {agent}",
       "noComments": "没有未解决的评论",
       "noCommentsHint": "选择一段内容进行评论，或新建一条评论。",
       "noResolved": "没有已解决的评论",

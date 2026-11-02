@@ -8362,6 +8362,7 @@ const catalog = {
       "contextLoadError": "Could not load comment permissions.",
       "activityLoadError": "Could not load activity.",
       "retry": "Try again",
+      "sendAgainTo": "Send again to {agent}",
       "noComments": "No open comments",
       "noCommentsHint": "Select a passage to comment on it, or start a new comment.",
       "noResolved": "No resolved comments",

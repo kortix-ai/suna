@@ -214,6 +214,7 @@ export function ArtifactCommentThreadView({
   onSaveEdit,
   onCancelEdit,
   onDelete,
+  retryAgentLabel,
   onRetryDelivery,
 }: {
   projectId: string;
@@ -239,6 +240,8 @@ export function ArtifactCommentThreadView({
   onSaveEdit: (comment: ArtifactComment) => void;
   onCancelEdit: () => void;
   onDelete: (comment: ArtifactComment) => void;
+  /** The name of the agent `onRetryDelivery` sends to: the button says where the thread goes. */
+  retryAgentLabel?: string;
   /** Sends this one thread again after a delivery failure. Absent when the viewer cannot send. */
   onRetryDelivery?: () => void;
 }) {
@@ -592,12 +595,15 @@ export function ArtifactCommentThreadView({
                 type="button"
                 size="xs"
                 variant="outline"
+                className="max-w-48 min-w-0"
                 disabled={deliveryPending}
                 aria-busy={deliveryPending}
                 onClick={onRetryDelivery}
               >
                 {deliveryPending ? <Loading className="size-3.5 shrink-0" /> : null}
-                {t('retry')}
+                <span className="truncate">
+                  {retryAgentLabel ? t('sendAgainTo', { agent: retryAgentLabel }) : t('retry')}
+                </span>
               </Button>
             ) : undefined
           }

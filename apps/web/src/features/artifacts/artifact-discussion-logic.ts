@@ -53,6 +53,32 @@ export function resolverName(
   return null;
 }
 
+/**
+ * The agent a thread's failed delivery went to: the first agent or session mention of the latest
+ * comment that names one. A reply without a mention goes to the agents earlier comments reached,
+ * so the search walks back past it. Undefined when no comment names an agent: the caller uses the
+ * Send target.
+ */
+export function deliveryAgent(thread: Pick<ArtifactCommentThread, 'comments'>): string | undefined {
+  for (let index = thread.comments.length - 1; index >= 0; index--) {
+    const comment = thread.comments[index]!;
+    if (comment.deleted_at) continue;
+    for (const mention of comment.mentions ?? [])
+      if (mention.kind !== 'user') return mention.agent_name;
+  }
+  return undefined;
+}
+
+/**
+ * The server answered the request: its error carries an HTTP status. A network failure or a
+ * timeout carries none, and the server may still finish that request.
+ */
+export function serverAnswered(cause: unknown): boolean {
+  if (!cause || typeof cause !== 'object' || !('status' in cause)) return false;
+  const { status } = cause;
+  return typeof status === 'number' && status >= 100 && status <= 599;
+}
+
 /** The quoted passage of a thread, or '' for a whole-Artifact comment. */
 export function threadQuote(thread: Pick<ArtifactCommentThread, 'anchor'>): string {
   const anchor = thread.anchor;

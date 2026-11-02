@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test';
-import { isCommentShortcut, selectionChipPosition } from './artifact-selection-chip';
+import {
+  isCommentShortcut,
+  nextSelectionOffer,
+  selectionChipPosition,
+  selectionOfferKey,
+} from './artifact-selection-chip';
 
 const frame = { width: 800, height: 600 };
 const chip = { width: 100, height: 32 };
@@ -41,4 +46,39 @@ test('the comment shortcut is ⌘⌥M or Ctrl+Alt+M by key position, never with 
   expect(isCommentShortcut({ ...key, altKey: false })).toBe(false);
   expect(isCommentShortcut({ ...key, metaKey: false })).toBe(false);
   expect(isCommentShortcut({ ...key, code: 'KeyN' })).toBe(false);
+});
+
+const offer = {
+  state: 'candidate' as const,
+  anchor: { type: 'text' as const, version: 'v', quote: 'Pricing', prefix: '', suffix: '' },
+  rect: null,
+};
+const shown = () => false;
+
+test('a dismissed offer stays hidden through a page layout; a new gesture offers it again', () => {
+  const dismissed = selectionOfferKey(offer);
+  // A scroll or resize in the page withdraws the offer ("moved"), then offers it at its new box.
+  let state = nextSelectionOffer(null, true, dismissed, shown);
+  expect(state).toEqual({ offer: null, dismissed });
+  state = nextSelectionOffer(offer, false, state.dismissed, shown);
+  expect(state).toEqual({ offer: null, dismissed });
+  // A press in the page, or a selection that is gone: the dismissal is forgotten.
+  state = nextSelectionOffer(null, false, state.dismissed, shown);
+  expect(state).toEqual({ offer: null, dismissed: '' });
+  expect(nextSelectionOffer(offer, false, state.dismissed, shown)).toEqual({
+    offer,
+    dismissed: '',
+  });
+});
+
+test('another selection shows while one is dismissed; a hidden key never shows', () => {
+  const other = { ...offer, anchor: { ...offer.anchor, quote: 'Plans' } };
+  const dismissed = selectionOfferKey(offer);
+  expect(nextSelectionOffer(other, false, dismissed, shown)).toEqual({ offer: other, dismissed });
+  const tooLong = { state: 'too_long' as const, rect: null };
+  expect(selectionOfferKey(tooLong)).toBe('too_long');
+  expect(nextSelectionOffer(tooLong, false, '', (key) => key === 'too_long')).toEqual({
+    offer: null,
+    dismissed: '',
+  });
 });

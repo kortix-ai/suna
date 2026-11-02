@@ -24060,6 +24060,7 @@
       "contextLoadError": "Não foi possível carregar as permissões dos comentários.",
       "activityLoadError": "Não foi possível carregar a atividade.",
       "retry": "Tentar novamente",
+      "sendAgainTo": "Enviar novamente para {agent}",
       "noComments": "Nenhum comentário em aberto",
       "noCommentsHint": "Selecione um trecho para comentar ou comece um novo comentário.",
       "noResolved": "Nenhum comentário resolvido",

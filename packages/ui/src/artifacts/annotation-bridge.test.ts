@@ -302,14 +302,36 @@ test("scroll withdraws the offer at once and the next layout offers it at its ne
   const page = await selected("<p>Pricing for every team</p>", firstText(0, 7));
   const revision = page.messages("layout").at(-1).revision;
   page.window.dispatchEvent(new page.window.Event("scroll"));
+  // "moved": the person made no new selection, so a selection the parent dismissed stays dismissed.
   expect(page.messages("selection")).toEqual([
-    { ...envelope, type: "selection", state: "none" },
+    { ...envelope, type: "selection", state: "none", moved: true },
   ]);
   await page.flush();
   const again = page.messages("candidate").at(-1);
   expect(page.messages("candidate")).toHaveLength(2);
   expect(again.revision).toBeGreaterThan(revision);
   expect(again.revision).toBe(page.messages("layout").at(-1).revision);
+  for (const message of page.sent)
+    expect(parseArtifactAnnotationFrameMessage(message)).not.toBeNull();
+});
+
+test("a press right after a layout withdrawal still tells the parent a new gesture began", async () => {
+  const page = await selected("<p>Pricing for every team</p>", firstText(0, 7));
+  page.window.dispatchEvent(new page.window.Event("resize"));
+  // The press comes before the next layout offers the selection again.
+  page.mouse("mousedown");
+  expect(page.messages("selection")).toEqual([
+    { ...envelope, type: "selection", state: "none", moved: true },
+    { ...envelope, type: "selection", state: "none" },
+  ]);
+  // The press collapsed the selection: the next layout offers nothing and sends nothing more.
+  page.window.getSelection()!.removeAllRanges();
+  await page.flush();
+  expect(page.messages("candidate")).toHaveLength(1);
+  expect(page.messages("selection")).toHaveLength(2);
+  // A press with nothing offered since the last one stays silent.
+  page.mouse("mousedown");
+  expect(page.messages("selection")).toHaveLength(2);
 });
 
 test("comment mode drops the offer, and its Escape still reaches the parent", async () => {
@@ -459,6 +481,9 @@ test("the selection protocol carries geometry and fixed states only", () => {
     expect(
       parse({ ...envelope, type: "selection", state, rect }),
     ).not.toBeNull();
+  expect(
+    parse({ ...envelope, type: "selection", state: "none", moved: true }),
+  ).not.toBeNull();
   for (const key of ["escape", "comment"])
     expect(parse({ ...envelope, type: "key", key })).not.toBeNull();
   for (const forged of [
@@ -478,6 +503,8 @@ test("the selection protocol carries geometry and fixed states only", () => {
     },
     { ...envelope, type: "selection", state: "open" },
     { ...envelope, type: "selection", state: "none", quote: "Pricing" },
+    { ...envelope, type: "selection", state: "none", moved: false },
+    { ...envelope, type: "selection", state: "none", moved: "Pricing" },
     { ...envelope, type: "key", key: "enter" },
     { ...envelope, type: "key", key: "comment", text: "Forged comment" },
   ])

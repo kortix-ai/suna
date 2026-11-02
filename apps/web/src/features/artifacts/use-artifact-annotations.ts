@@ -40,11 +40,16 @@ export function useArtifactAnnotations(
     threads: ArtifactCommentThread[] | undefined;
     focusedThreadId: string | null;
     focusRevision: number;
+    /** The parent's drawing layer covers the page: page keys are dropped. */
+    drawing?: boolean;
     /** A pin or region placed in comment mode. */
     onCandidate: (anchor: ArtifactCommentAnchor) => void;
-    /** The page's text selection: an offer to comment on it, or null when it is gone. */
-    onSelection?: (selection: ArtifactAnnotationSelection | null) => void;
-    /** Escape or the comment shortcut, pressed inside the page. */
+    /**
+     * The page's text selection: an offer to comment on it, or null when it is gone. `moved`: a
+     * scroll or resize in the page withdrew it, not the person.
+     */
+    onSelection?: (selection: ArtifactAnnotationSelection | null, moved?: boolean) => void;
+    /** Escape or the comment shortcut from the page, only where the bridge sends one. */
     onKey?: (key: ArtifactAnnotationKey) => void;
     onFocus: (threadId: string) => void;
     /** The accessible name of pin `n` on the page; it must contain the number. */
@@ -79,7 +84,7 @@ export function useArtifactAnnotations(
       {
         post: channel.post,
         onCandidate: (anchor) => latest.current.onCandidate(anchor),
-        onSelection: (selection) => latest.current.onSelection?.(selection),
+        onSelection: (selection, moved) => latest.current.onSelection?.(selection, moved),
         onKey: (key) => latest.current.onKey?.(key),
         onFocus: (id) => latest.current.onFocus(id),
         onPins: (next) => setPins((previous) => (samePins(previous, next) ? previous : next)),
@@ -121,6 +126,7 @@ export function useArtifactAnnotations(
     options.version,
     options.canComment,
     options.mode,
+    options.drawing,
     threads,
     options.focusedThreadId,
     options.focusRevision,

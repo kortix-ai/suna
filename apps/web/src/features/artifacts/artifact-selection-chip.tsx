@@ -6,6 +6,8 @@ import { Kbd, KbdGroup } from '@kortix/ui/kbd';
 import { ChatCircleIcon } from '@phosphor-icons/react';
 import { forwardRef, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
+import type { ArtifactAnnotationSelection } from './artifact-annotation-controller';
+
 type Box = { x: number; y: number; width: number; height: number };
 type Size = { width: number; height: number };
 
@@ -49,6 +51,29 @@ export function isCommentShortcut(
   return (
     event.code === 'KeyM' && event.altKey && !event.shiftKey && (event.metaKey || event.ctrlKey)
   );
+}
+
+/** An offer's identity: two offers of the same selection compare equal. */
+export function selectionOfferKey(offer: ArtifactAnnotationSelection): string {
+  return offer.state === 'candidate' ? JSON.stringify(offer.anchor) : 'too_long';
+}
+
+/**
+ * The chip after the page reports its selection. `dismissed` is the key of the offer the person
+ * dismissed (Escape, a press elsewhere). A scroll or resize in the page withdraws the offer
+ * (`moved`) and the next layout offers the same selection again: it stays hidden. A press in the
+ * page or a selection that is gone (`moved` false) forgets the dismissal. `hidden`: keys the
+ * parent never shows a chip for (draw mode, the passage the composer already holds).
+ */
+export function nextSelectionOffer(
+  next: ArtifactAnnotationSelection | null,
+  moved: boolean,
+  dismissed: string,
+  hidden: (key: string) => boolean,
+): { offer: ArtifactAnnotationSelection | null; dismissed: string } {
+  if (!next) return { offer: null, dismissed: moved ? dismissed : '' };
+  const key = selectionOfferKey(next);
+  return { offer: key === dismissed || hidden(key) ? null : next, dismissed };
 }
 
 /**

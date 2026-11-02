@@ -24060,6 +24060,7 @@
       "contextLoadError": "コメントの権限を読み込めませんでした。",
       "activityLoadError": "アクティビティを読み込めませんでした。",
       "retry": "再試行",
+      "sendAgainTo": "{agent} に再送信",
       "noComments": "未解決のコメントはありません",
       "noCommentsHint": "箇所を選択してコメントするか、新しいコメントを作成してください。",
       "noResolved": "解決済みのコメントはありません",

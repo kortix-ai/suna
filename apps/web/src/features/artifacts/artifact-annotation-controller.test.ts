@@ -409,7 +409,8 @@ test('resolved region geometry remains private and clears with a frame reset', (
 /** A controller with the selection, key and pin callbacks recorded, on a page scrolled 200 px. */
 function selectionFixture(threads: ArtifactCommentThread[] = []) {
   const sent: any[] = [];
-  const events: [string, unknown][] = [];
+  /** [callback, value], plus 'moved' for a selection withdrawn by a page layout. */
+  const events: ([string, unknown] | [string, unknown, 'moved'])[] = [];
   const config = {
     version: 'immutable-commit',
     canComment: true,
@@ -428,7 +429,9 @@ function selectionFixture(threads: ArtifactCommentThread[] = []) {
       onThreads() {},
       onFocus() {},
       onCandidate: (value) => events.push(['candidate', value]),
-      onSelection: (value) => events.push(['selection', value]),
+      onSelection: (value, moved) => {
+        events.push(moved ? ['selection', value, 'moved'] : ['selection', value]);
+      },
       onKey: (value) => events.push(['key', value]),
       onPins: (value) => events.push(['pins', [...value]]),
     },
@@ -467,10 +470,14 @@ test('a text selection is only an offer with viewport geometry; a pin or region 
     scroll: { x: 0, y: 200 },
     offset: { x: 0.5, y: 0.5 },
   } as const;
+  // The bridge places pins only in pin mode: a pin posted in text mode is forged.
+  f.events.length = 0;
+  f.controller.receive({ ...envelope, type: 'candidate', revision: 1, anchor: point, rect });
+  expect(f.events).toEqual([]);
+  f.controller.update({ ...f.config, mode: 'comment' });
   f.controller.receive({ ...envelope, type: 'candidate', revision: 1, anchor: point, rect });
   expect(f.events.at(-1)).toEqual(['candidate', { ...point, version: 'immutable-commit' }]);
   // Comment mode takes no text offers.
-  f.controller.update({ ...f.config, mode: 'comment' });
   f.events.length = 0;
   f.controller.receive({ ...envelope, type: 'candidate', revision: 1, anchor: textCandidate });
   expect(f.events).toEqual([]);
@@ -499,6 +506,50 @@ test('the page withdraws an offer, reports a too-long selection, and forwards ke
   f.controller.receive({ ...envelope, type: 'key', key: 'comment' });
   f.controller.receive(tooLong);
   expect(f.events.filter(([kind]) => kind !== 'pins')).toEqual([['selection', null]]);
+});
+
+test('a page key counts only where the bridge sends one, and never while the parent draws', () => {
+  const f = selectionFixture();
+  const press = (key: 'escape' | 'comment') =>
+    f.controller.receive({ ...envelope, type: 'key', key });
+  const keys = () => f.events.filter(([kind]) => kind === 'key').map(([, key]) => key);
+  // Text mode without an offered selection: the bridge sends neither key, so both are forged.
+  press('escape');
+  press('comment');
+  expect(keys()).toEqual([]);
+  f.controller.receive({ ...envelope, type: 'candidate', revision: 1, anchor: textCandidate });
+  press('escape');
+  press('comment');
+  expect(keys()).toEqual(['escape', 'comment']);
+  // Draw mode: the drawing layer covers the page and owns Escape. A page key cannot reach it.
+  f.events.length = 0;
+  f.controller.update({ ...f.config, drawing: true });
+  press('escape');
+  press('comment');
+  expect(keys()).toEqual([]);
+  // Pin mode: Escape leaves it. The shortcut has no selection there.
+  f.controller.update({ ...f.config, mode: 'comment' });
+  press('escape');
+  press('comment');
+  expect(keys()).toEqual(['escape']);
+  // A withdrawn offer takes its keys with it.
+  f.events.length = 0;
+  f.controller.update(f.config);
+  f.controller.receive({ ...envelope, type: 'candidate', revision: 1, anchor: textCandidate });
+  f.controller.receive({ ...envelope, type: 'selection', state: 'none' });
+  press('escape');
+  press('comment');
+  expect(keys()).toEqual([]);
+});
+
+test('an offer the page withdraws for a scroll or resize says so; one withdrawn by a gesture does not', () => {
+  const f = selectionFixture();
+  f.controller.receive({ ...envelope, type: 'selection', state: 'none', moved: true });
+  f.controller.receive({ ...envelope, type: 'selection', state: 'none' });
+  expect(f.events).toEqual([
+    ['selection', null, 'moved'],
+    ['selection', null],
+  ]);
 });
 
 test('a reset, a new version or a mode change withdraws the offer', () => {

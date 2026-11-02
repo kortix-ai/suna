@@ -94,7 +94,12 @@ import { ArtifactDrawingCanvas } from './artifact-drawing-canvas';
 import { prepareDrawingDraft, type ArtifactDrawingDraft } from './artifact-drawing-draft';
 import { ArtifactDrawingLayer } from './artifact-drawing-layer';
 import { VISIBILITY_ICON, relativeTime } from './artifact-meta';
-import { ArtifactSelectionChip, isCommentShortcut } from './artifact-selection-chip';
+import {
+  ArtifactSelectionChip,
+  isCommentShortcut,
+  nextSelectionOffer,
+  selectionOfferKey,
+} from './artifact-selection-chip';
 import { AskAgentSheet } from './ask-agent-sheet';
 import { DocEditor, type DocSaveStatus } from './doc-editor';
 import { ShareArtifactDialog } from './share-artifact-dialog';
@@ -111,11 +116,9 @@ import { rootRem, useElementWidth } from './use-element-width';
 const MODE_TOGGLE =
   'aria-pressed:bg-foreground aria-pressed:text-background aria-pressed:hover:bg-foreground/90';
 
-/** An anchor's identity: two offers of the same selection compare equal. */
+/** An anchor's identity: it equals the key of an offer of the same selection. */
 const anchorKey = (anchor: ArtifactCommentAnchor | null | undefined) =>
   anchor ? JSON.stringify(anchor) : '';
-const offerKey = (offer: ArtifactAnnotationSelection) =>
-  offer.state === 'candidate' ? anchorKey(offer.anchor) : 'too_long';
 
 /** A keyboard target that owns Escape itself: a field, or an open dialog, menu or list. */
 function ownsEscape(target: EventTarget | null): boolean {
@@ -215,8 +218,11 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   // A text selection the page offers: the Comment chip. Selecting text never opens the panel.
   const [offer, setOffer] = useState<ArtifactAnnotationSelection | null>(null);
   // The offer the person dismissed (Escape, a click elsewhere): the page sends it again after a
-  // layout, and it stays hidden until the page reports the selection gone.
+  // layout, and it stays hidden until the page reports a new gesture (`nextSelectionOffer`).
   const dismissedOffer = useRef('');
+  // The passage the page itself sent to the composer (its ⌘⌥M). Its composer shows without
+  // keyboard focus: the page can forge the key, and the person may be typing in a page form.
+  const [pageOpenedAnchor, setPageOpenedAnchor] = useState<ArtifactCommentAnchor | null>(null);
   const chip = useRef<HTMLDivElement>(null);
   const header = useRef<HTMLElement>(null);
   const pinButton = useRef<HTMLButtonElement>(null);
@@ -341,18 +347,22 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     },
     [scope, version, comments.data, clearSelection],
   );
-  /** Open the composer on an anchor the person chose: a pin, a region, or the Comment chip. */
-  const commentOn = (anchor: ArtifactCommentAnchor) => {
+  /**
+   * Open the composer on an anchor the person chose: a pin, a region, or the Comment chip.
+   * `fromPage`: the page's shortcut chose it, so the composer does not take keyboard focus.
+   */
+  const commentOn = (anchor: ArtifactCommentAnchor, fromPage = false) => {
     setOffer(null);
     setPendingDrawing(null);
     selection.begin();
     if (!selection.publish(anchor)) return;
+    setPageOpenedAnchor(fromPage ? anchor : null);
     defaultPanel.current = scope;
     setDiscussionOpen(true);
   };
   const dismissOffer = () => {
     if (!offer) return false;
-    dismissedOffer.current = offerKey(offer);
+    dismissedOffer.current = selectionOfferKey(offer);
     setOffer(null);
     return true;
   };
@@ -365,6 +375,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     version: annotationVersion,
     canComment: context.data?.can_comment === true && !version,
     mode: annotationMode,
+    drawing: drawingOpen,
     threads: comments.data,
     focusedThreadId,
     focusRevision,
@@ -373,26 +384,21 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
       if (!drawingOpen) commentOn(anchor);
     },
     // Text mode: a selection only offers the Comment chip. The panel opens on the chip or ⌘⌥M.
-    onSelection: (next) => {
-      if (!next) {
-        dismissedOffer.current = '';
-        setOffer(null);
-        return;
-      }
-      const key = offerKey(next);
-      if (
-        drawingOpen ||
-        key === dismissedOffer.current ||
-        (next.state === 'candidate' && key === anchorKey(selection.anchor))
-      ) {
-        setOffer(null);
-        return;
-      }
-      setOffer(next);
+    onSelection: (next, moved) => {
+      const result = nextSelectionOffer(
+        next,
+        moved === true,
+        dismissedOffer.current,
+        (key) => drawingOpen || key === anchorKey(selection.anchor),
+      );
+      dismissedOffer.current = result.dismissed;
+      setOffer(result.offer);
     },
+    // Anything in the page can post these keys. Escape only leaves the chip or pin mode, and a
+    // composer the shortcut opens shows without keyboard focus.
     onKey: (key) => {
-      if (key === 'escape') escapeAnnotation();
-      else if (offer?.state === 'candidate' && userActivated()) commentOn(offer.anchor);
+      if (key === 'escape') escapeAnnotation(true);
+      else if (offer?.state === 'candidate' && userActivated()) commentOn(offer.anchor, true);
     },
     onFocus: focusThread,
     // The page hears "Comment 3": one UI word and the number, never the comment.
@@ -434,10 +440,15 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     }
     setAnnotationMode((mode) => (mode === 'comment' ? 'text' : 'comment'));
   };
-  /** Escape, from the parent or the page: the chip, then draw mode, then pin mode. Focus returns to the mode's button. */
-  const escapeAnnotation = (): boolean => {
+  /**
+   * Escape, from the parent or the page: the chip, then draw mode, then pin mode. Focus returns to
+   * the mode's button. `fromPage`: the drawing layer covers the page and handles its own Escape,
+   * so an Escape from the page is forged there and the strokes stay.
+   */
+  const escapeAnnotation = (fromPage = false): boolean => {
     if (dismissOffer()) return true;
     if (drawingOpen) {
+      if (fromPage) return false;
       cancelDrawing();
       focusSoon(compact ? actionsButton.current : drawButton.current);
       return true;
@@ -593,6 +604,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
           focusRevision={focusRevision}
           onFocusThread={focusThread}
           pendingAnchor={pendingAnchor}
+          pageOpenedAnchor={pageOpenedAnchor}
           pendingDrawing={pendingDrawing}
           onClearAnchor={clearCommentSelection}
           selectionCapture={selection.status}

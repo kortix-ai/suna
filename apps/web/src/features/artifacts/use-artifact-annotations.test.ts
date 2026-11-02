@@ -235,3 +235,34 @@ test('the hook offers text selections, forwards page keys, labels pins and repor
   f.render({ ...options, enabled: false });
   expect(observed.pinNumbers.size).toBe(0);
 });
+
+test('a forged page Escape never reaches a drawing, and a layout withdrawal reports moved', () => {
+  const f = fixture();
+  const selections: unknown[] = [];
+  const keys: unknown[] = [];
+  const options: Options = {
+    ...f.options,
+    enabled: true,
+    drawing: true,
+    onSelection: (value, moved) => selections.push([value, moved]),
+    onKey: (value) => keys.push(value),
+  };
+  f.render(options);
+  f.message({ ...layout, texts: [{ n: 0, offset: 0, text: 'Pricing page' }] });
+  const anchor = { type: 'text', quote: 'page', prefix: 'Pricing ', suffix: '' };
+  f.message({ kortix: 'annotate', v: 1, type: 'candidate', revision: 1, anchor });
+  // The page posts Escape in a loop while the person draws: the strokes stay.
+  for (let index = 0; index < 3; index++)
+    f.message({ kortix: 'annotate', v: 1, type: 'key', key: 'escape' });
+  expect(keys).toEqual([]);
+  f.render({ ...options, drawing: false });
+  f.message({ kortix: 'annotate', v: 1, type: 'key', key: 'escape' });
+  expect(keys).toEqual(['escape']);
+  selections.length = 0;
+  f.message({ kortix: 'annotate', v: 1, type: 'selection', state: 'none', moved: true });
+  f.message({ kortix: 'annotate', v: 1, type: 'selection', state: 'none' });
+  expect(selections).toEqual([
+    [null, true],
+    [null, false],
+  ]);
+});
