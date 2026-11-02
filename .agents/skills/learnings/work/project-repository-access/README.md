@@ -1,6 +1,6 @@
 ---
 title: Project repository access (how the API and the boxes get a project's files, and what it costs)
-status: phase 1 on dev (#11492 650ac3e492 partial object store; #11501 aec9dafaf3 named image steps); revamp planned, nothing started
+status: phase 1 on dev (#11492 650ac3e492 partial object store; #11501 aec9dafaf3 named image steps); target decided (one Platinum volume per project, git secondary); nothing of it built
 owner: Marko (decisions)
 updated: 2026-11-02
 ---
@@ -88,15 +88,76 @@ Ledger entry for the outage: [`entries/2026-11-02T175853Z-never-copy-a-whole-git
    - Content search covers at most 64 MB of files per commit.
    - A first file read pays about 0.4 s per round trip.
 
-## The long-term direction (Marko, 2026-11-02)
+## Target architecture: one Platinum volume per project (decided direction, Marko, 2026-11-02)
 
-"Project = volume, git second." A project's files live on a Platinum volume
-that every session mounts. Git becomes a sync mechanism, possibly optional:
-data is either synced or only available over the network (S3-backed). This
-would remove items 1, 3 and most of 2 by construction. The partial store
-remains the fallback for git-only hosts and for history features. Related:
-`work/platinum-machines-apps/`, and the Drive one-tree work (Platinum volumes
-per project).
+The canonical home of a project is **one Platinum volume**, not a git
+repository. Everything above is a repair of the git-first model; this is where
+the design goes.
+
+Marko's words, 2026-11-02:
+- "Kortix project should just be a volume, and repo is secondary. Volume
+  first, git second (as a sync mechanism or if even at all)."
+- "Long term [we] want to not give a fuck about a git repo & its size, have it
+  as a second tier sync potentially even if its huge? Or not have git at all &
+  rely on Volumes entirely – with clear distinguishments what is synced & what
+  is just network based available so u can have it as big data storage, s3
+  backed. The whole concept of 1 Project = 1 PT VOLUME."
+- "Imo even this like sparse git checkout is temporary, we need to figure out a
+  way to make PT Volume primary, even perhaps with a git-inside, git support
+  api inside & then u can configure a general sync towards an external repo on
+  something like GH but all canonical is PT Volume."
+
+What that means for the design:
+
+1. **Canonical store.** One Platinum volume per project holds the project's
+   files: config, agents, skills, data. Every session box mounts it. Nothing
+   clones the project to start a session.
+2. **Git inside the volume.** The volume carries the history (a repository
+   inside it), and the platform serves a git API on top of it: log, diff,
+   branches, change requests. Git is a feature of the volume, not the source
+   of truth.
+3. **External repositories are a sync target.**
+   - Linking GitHub or another host configures a general sync between the
+     volume and that repository. The repository is a mirror; the volume is
+     canonical.
+   - Size limits and policy can be enforced at the sync and the Kortix git
+     proxy. A host such as GitHub accepts any push, so enforcing at the host
+     is not possible.
+4. **Two tiers of data.**
+   - *Synced*: files every box has locally, such as config and code.
+   - *Network-available*: large data on S3-backed storage, read on demand and
+     never copied into every box or into git.
+   - The project states which is which, so a 6 GB dataset is storage, not
+     repository history.
+5. **The API reads the volume, not git.**
+   - Project config, the file browser and search read the volume through
+     Platinum.
+   - The partial object store (`object-store.ts`) is then the bridge for
+     projects still on git-only hosts, and for the migration, not the main
+     path.
+
+Consequences:
+- Items 1, 3 and most of 2 above disappear by construction: there are no box
+  clones through the API and no per-replica stores.
+- Item 4 becomes a volume listing with pages.
+- Repository size stops being a platform problem.
+
+Open design questions (decide here, in `decisions.md`):
+- **Git inside:** a bare repository on the volume with working trees per
+  session, or a git server in Platinum.
+- **Concurrency:** how two sessions on one volume isolate their edits. Today
+  each session has its own branch and checkout.
+- **Sync semantics:** one-way or two-way with an external host, and conflict
+  handling.
+- **Where tier boundaries are declared:** `kortix.yaml`, or per folder.
+- **Migration:** moving existing git-first projects, and the order of
+  surfaces.
+- **Self-host:** what a self-hosted install without Platinum volumes keeps.
+
+Related:
+- `work/platinum-machines-apps/` (the sandbox as a Machine);
+- the Drive work: one Platinum volume per project for Files (the `drives`
+  table, `drives/service.ts`), which is the closest existing piece.
 
 ## How to measure
 
@@ -125,5 +186,7 @@ per project).
    247 GB/day, start there.
 2. Item 2: small and low risk; ship it with any other item.
 3. Item 3 before item 1 if cold reads after deploys hurt more than traffic.
-4. The volume-first design is a separate decision for Marko; record it in
-   `decisions.md` here.
+4. The target architecture (one Platinum volume per project) is the decided
+   direction. Before building items 1–3 at length, check whether the volume
+   work makes them unnecessary. Answer the open design questions in
+   `decisions.md` first.
