@@ -473,10 +473,28 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     }
   });
 
-  test('404 session_log_missing (no log yet) starts no timed retry: the next turn end reads it', async () => {
-    const state = mount({ loader: async () => { throw failure(404, { code: 'session_log_missing' }); } });
+  test('404 session_log_missing (no log yet) is read again on a backoff, 3 s up to every 30 s, until the log exists', async () => {
+    // A view (`useSessionView`) joins the stream without the full control state, so it never
+    // sees the turn end that used to be the only re-read: a sub-agent's row stayed empty
+    // after the agent finished (measured in the TUI, 2026-11-02).
+    let calls = 0;
+    let stored = false;
+    const state = mount({ loader: async () => { calls++; if (!stored) throw failure(404, { code: 'session_log_missing' }); return v1Page(); } });
     await flush();
     expect(state.dialect).toBe('missing');
+    expect(timers.map((t) => t.ms)).toEqual([3_000]);
+    await runTimers();
+    expect(calls).toBe(2);
+    expect(timers.map((t) => t.ms)).toEqual([5_000]);
+    await runTimers();
+    await runTimers();
+    await runTimers();
+    expect(timers.map((t) => t.ms)).toEqual([30_000]);
+    await runTimers();
+    expect(timers.map((t) => t.ms)).toEqual([30_000]);
+    stored = true;
+    await runTimers();
+    expect(state.dialect).toBe('v2');
     expect(timers).toEqual([]);
   });
 
@@ -497,6 +515,9 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(calls).toEqual([[PROJECT, SESSION, { limit: 40 }]]);
     expect(useSyncStore.getState().sessionLogs[SESSION]!.session.session_id).toBe(log.session_id);
     expect(joined.map((j) => [j.options.projectId, j.options.sessionId, j.options.schema])).toEqual([[PROJECT, SESSION, 'v2']]);
+    // The `log.*` frames ride the runtime channel: a view (`useSessionView`) has no other
+    // runtime subscriber, and without this its thread froze at the first page.
+    expect(joined[0]!.options.runtime).toBe(true);
     act(() => renderer?.unmount());
     renderer = null;
     expect(useSyncStore.getState().sessionLogs[SESSION]).toBeUndefined();
@@ -650,7 +671,7 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     });
   });
 
-  test('session_log_missing while a turn runs: the page is read 6 s after the turn starts, once per turn, not only at its end', async () => {
+  test('session_log_missing while a turn runs: the page is read again within seconds, one pending read at a time, not only at the turn end', async () => {
     // A new session's first prompt can run before this tab's runtime connection exists: that
     // connection is live-only, so the user message frame is gone, and pi journals mid-turn
     // every 5 s. Measured in the TUI: the first message showed only at the turn end.
@@ -664,11 +685,11 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     const state = mount({ loader: async () => { calls++; if (!stored) throw missing(); return v1Page(); } });
     await flush();
     expect(state.dialect).toBe('missing');
-    expect(timers).toEqual([]);
-    // The state at join already holds the running turn: that counts as its start.
+    expect(timers.map((t) => t.ms)).toEqual([3_000]);
+    // The state at join already holds the running turn: it adds no second pending read.
     act(() => joined[0]!.options.onControl(running('t1')));
     act(() => joined[0]!.options.onControl(running('t1')));
-    expect(timers.map((t) => t.ms)).toEqual([6_000]);
+    expect(timers.map((t) => t.ms)).toEqual([3_000]);
     stored = true;
     await runTimers();
     expect(calls).toBe(2);

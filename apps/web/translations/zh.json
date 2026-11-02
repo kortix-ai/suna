@@ -23280,8 +23280,8 @@
     "listPlaceholder": "值 1, 值 2"
   },
   "triggerAutoPause": {
-    "title": "已在运行上限处自动暂停",
-    "description": "它连续 2 小时达到每小时运行上限，因此已停止启动运行。找出持续触发它的原因，然后恢复它。"
+    "title": "已自动暂停",
+    "description": "由于以下原因，它已停止启动运行。解决原因后再恢复它。"
   },
   "featureGate": {
     "enable": "启用{name}",

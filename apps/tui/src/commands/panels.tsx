@@ -1,6 +1,7 @@
 /**
  * The lists a slash command opens above the input: `/sessions`, `/projects`,
- * `/accounts`, and the y/N confirm a destructive command asks.
+ * `/accounts`, `/agents`, `/workflows`, `/tasks`, and the y/N confirm a
+ * destructive command asks.
  *
  * They are in-flow `InlinePicker`s, like the model picker, so they sit right
  * where the user is typing and never cover the transcript. Each one reads the
@@ -13,6 +14,8 @@ import { useAccounts, useProjectSessions, useProjects } from '@kortix/sdk/react'
 import { useKeyboard } from '@opentui/react';
 import { useMemo } from 'react';
 
+import { AgentsPanel } from '../features/agents/agents-panel.tsx';
+import { TasksPanel } from '../features/agents/tasks-panel.tsx';
 import { InlinePicker } from '../features/session/pickers/inline-picker.tsx';
 import { relativeAge } from '../lib/relative-time.ts';
 import { sessionActivityMs, sessionTitle } from '../lib/session-groups.ts';
@@ -28,6 +31,12 @@ export type CommandPanel =
   | { kind: 'accounts'; query: string }
   | { kind: 'confirm'; title: string; yes: string; action: ConfirmAction }
   | { kind: 'status'; lines: readonly { label: string; value: string }[] }
+  /** `/agents`: this session's agents, workflow runs and held messages. */
+  | { kind: 'agents' }
+  /** `/workflows`: the same panel, workflow runs only. */
+  | { kind: 'workflows' }
+  /** `/tasks`: the team's shared task list. */
+  | { kind: 'tasks' }
   /** `/ui` and the first-run layout picker. `app.tsx` draws it (it owns the layout). */
   | { kind: 'ui'; welcome: boolean };
 
@@ -90,6 +99,25 @@ export function CommandPanelView(props: PanelProps) {
   if (panel.kind === 'accounts') return <AccountsPanel {...props} query={panel.query} />;
   if (panel.kind === 'status')
     return <StatusPanel lines={panel.lines} width={props.width} onClose={props.onClose} />;
+  if (panel.kind === 'agents' || panel.kind === 'workflows')
+    return (
+      <AgentsPanel
+        projectId={props.projectId}
+        sessionId={props.sessionId}
+        width={props.width}
+        only={panel.kind === 'workflows' ? 'workflows' : 'all'}
+        onClose={props.onClose}
+      />
+    );
+  if (panel.kind === 'tasks')
+    return (
+      <TasksPanel
+        projectId={props.projectId}
+        sessionId={props.sessionId}
+        width={props.width}
+        onClose={props.onClose}
+      />
+    );
   if (panel.kind === 'ui') return null;
   return (
     <InlinePicker

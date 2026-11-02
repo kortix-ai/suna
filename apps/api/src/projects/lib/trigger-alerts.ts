@@ -17,6 +17,11 @@
 // Alerts are behind the project's `notification_center` flag. Off, a raise
 // writes no edge, so a project that turns the flag on starts clean, and a
 // clear ends an edge left from an on period without a word.
+//
+// One exception: an auto-pause (`alertTriggerAutoPaused`) is sent with the
+// flag off too. The trigger stopped running and stays stopped until a person
+// resumes it; with the flag off nobody would ever hear (2026-11-02: one
+// project's triggers failed ~1,250 times a day for a month, unseen).
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { projectTriggerRuntime, projects } from '@kortix/db';
@@ -156,10 +161,12 @@ export function alertTriggerThrottled(input: { projectId: string; accountId?: st
 }
 
 /**
- * A trigger that paused itself after a sustained run-limit breach (KRTX-1721)
- * tells its watchers once per pause. The fire path calls this only from the
- * update that set `auto_paused_at`, and the inbox dedupe key carries that
- * time, so a later pause after a resume is a new alert. Never throws.
+ * A trigger that paused itself (a sustained run-limit breach, KRTX-1721, or
+ * 24 hours of runs only its owner can fix, trigger-failure-pause.ts) tells its
+ * watchers once per pause, whatever the `notification_center` flag says. The
+ * caller calls this only from the update that set `auto_paused_at`, and the
+ * inbox dedupe key carries that time, so a later pause after a resume is a
+ * new alert. Never throws.
  */
 export function alertTriggerAutoPaused(input: { projectId: string; accountId?: string | null; slug: string; reason: string; pausedAt: Date }): void {
   const alertInput: TriggerAlertInput = { projectId: input.projectId, slug: input.slug, source: 'fire', accountId: input.accountId };
@@ -170,7 +177,7 @@ export function alertTriggerAutoPaused(input: { projectId: string; accountId?: s
       .from(projectTriggerRuntime)
       .where(runtimeRow(alertInput))
       .limit(1);
-    announce('automation_failed', alertInput, alertTitle(input.slug, row ?? { name: null, reminder: false }), dedupeKey, input.reason, false);
+    announce('automation_failed', alertInput, alertTitle(input.slug, row ?? { name: null, reminder: false }), dedupeKey, input.reason, true);
   })().catch((err) => {
     logger.warn('[trigger-alerts] auto-pause alert failed', { projectId: input.projectId, slug: input.slug, error: reason(err) });
   });
@@ -178,7 +185,7 @@ export function alertTriggerAutoPaused(input: { projectId: string; accountId?: s
   void run.finally(() => inFlight.delete(run));
 }
 
-/** `flagChecked`: the caller already read the flag as on (a raise). */
+/** `flagChecked`: no flag read. The caller read it as on (a raise), or the alert goes out regardless (an auto-pause). */
 function announce(
   kind: NotificationKindName,
   input: TriggerAlertInput,

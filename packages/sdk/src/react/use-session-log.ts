@@ -321,6 +321,8 @@ export function useSessionLogSync(
     let onV2 = false;
     // Failed reads since the last answer, and the pending timed retry.
     let failures = 0;
+    // Reads that answered "no log yet", for the backoff of the next one.
+    let missingReads = 0;
     let cancelRetry: (() => void) | null = null;
     const join = (options: Omit<SessionControlStreamOptions, 'projectId' | 'sessionId'>) => {
       stream?.close();
@@ -359,12 +361,15 @@ export function useSessionLogSync(
     };
     const goV2 = () => {
       failures = 0;
+      missingReads = 0;
       cancelRetry?.();
       cancelRetry = null;
       setMissingKey(null);
       // A v2 connection resumes at the v1 cursor; a server on another epoch answers
       // `kortix.resync` and replays nothing, so the page is read again then, as after a reconnect.
-      join({ schema: 'v2', onConnectionChange: onReconnect(() => void reload()), onRuntimeResync: () => void reload() });
+      // `runtime: true`: the `log.*` frames ride the runtime channel. A full session already has a
+      // runtime subscriber; a view (`useSessionView`) has none, and its thread froze at the first page.
+      join({ schema: 'v2', runtime: true, onConnectionChange: onReconnect(() => void reload()), onRuntimeResync: () => void reload() });
     };
     // A box loader that arrived after the first read: its page, and v2 if the API had none.
     readLiveRef.current = () => {
@@ -397,6 +402,12 @@ export function useSessionLogSync(
         // The API holds no log for this session: a copy kept on the device is not its history.
         failures = 0;
         store().dropSessionLog(sessionId);
+        // A new session's journal posts within seconds of its first turn. A view
+        // (`useSessionView`) joins without the full control state and never sees that turn
+        // end, so the page is also read again on a backoff until the log exists.
+        const ms = SESSION_LOG_MISSING_DELAYS_MS[Math.min(missingReads, SESSION_LOG_MISSING_DELAYS_MS.length - 1)]!;
+        missingReads += 1;
+        cancelRetry = schedule(() => void attempt(), ms);
       } else if (failures < SESSION_LOG_RETRY_DELAYS_MS.length) {
         // A failed read is not "no log": the copy on screen stays, and the page is read again.
         const ms = Math.min(retryAfterMs ?? SESSION_LOG_RETRY_DELAYS_MS[failures]!, SESSION_LOG_RETRY_MAX_MS);
@@ -465,6 +476,8 @@ export function useSessionLogSync(
 
 /** The waits before the timed re-reads of a page that failed: three tries in about 42 s. */
 const SESSION_LOG_RETRY_DELAYS_MS = [2_000, 10_000, 30_000];
+/** The waits before reading a session with no log yet again: then every 30 s until it has one. */
+const SESSION_LOG_MISSING_DELAYS_MS = [3_000, 5_000, 10_000, 15_000, 30_000];
 /** A running turn's read on a session with no log yet: after pi's mid-turn journal post (5 s). */
 const SESSION_LOG_MID_TURN_READ_MS = 6_000;
 /** The longest wait a `Retry-After` can set. */

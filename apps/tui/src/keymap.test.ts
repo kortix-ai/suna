@@ -7,6 +7,7 @@ import { APPROVALS_KEYS } from './features/approvals/keys.ts';
 import { APPS_KEYS } from './features/apps/keys.ts';
 import { ARTIFACTS_KEYS } from './features/artifacts/keys.ts';
 import { AUDIT_KEYS } from './features/audit/keys.ts';
+import { AGENTS_KEYS } from './features/agents/keys.ts';
 import { CUSTOMIZE_KEYS } from './features/customize/keys.ts';
 import { DRIVE_KEYS } from './features/drive/keys.ts';
 import { FILES_KEYS } from './features/files/keys.ts';
@@ -133,6 +134,7 @@ describe('allBindings', () => {
     ['rooms', ROOMS_KEYS],
     ['loops', LOOPS_KEYS],
     ['audit', AUDIT_KEYS],
+    ['agents', AGENTS_KEYS],
   ];
 
   test('every feature table is included, whole', () => {

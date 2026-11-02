@@ -7,6 +7,7 @@ import { db } from '../../shared/db';
 import { resolveProjectAutomationActor } from '../session-lifecycle/actor';
 import { ABORT_END_ERROR_NAMES, isRequestedStopName, type SandboxTurnCompletionOutcome } from '../session-turn-ledger';
 import { clearTriggerAlert, raiseTriggerAlert } from './trigger-alerts';
+import { pauseTriggerIfAlwaysFailing } from './trigger-failure-pause';
 
 /**
  * A trigger's runtime row records whether its prompt was DELIVERED
@@ -324,6 +325,10 @@ export async function recordTriggerRunEnd(
       .returning({ slug: projectTriggerRuntime.slug });
     result = refreshed.length > 0 ? 'still_failed' : 'unchanged';
   }
+  // A run the owner must fix (a model the plan does not include) stops the
+  // trigger after 24 hours of such runs: the reused session's box otherwise
+  // wakes every fire to fail again (2026-11-02: every 30 min for a week).
+  await pauseTriggerIfAlwaysFailing({ projectId: end.projectId, accountId: end.accountId, slug, error: lastError, now });
   if (!(await projectNotificationsEnabled(end.projectId))) {
     if (transitioned.length === 0) return result;
     // The identity every trigger runs as. `owner_user_id` is deprecated and
