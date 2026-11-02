@@ -41,6 +41,11 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  *    is `telecom.svg`: its name is a blocked term, so it appears nowhere here.
  *  - Only what the engagement really contains. No metric, no quote, no
  *    outcome number until the company signs one off.
+ *  - Banking, insurance, utilities, airlines, healthcare and retail are
+ *    industry lifecycle cards (founder, 2026-11-02), modelled on the
+ *    per-industry lifecycles enterprise AI vendors publish: each walks one
+ *    lifecycle end to end and names the person who approves. They name no
+ *    client and carry no metric or quote. Their symbols are drawn by Kortix.
  *  - The asset manager and executive search logos are symbols Kortix drew
  *    for these cards (founder, 2026-11-02; brand decision D35): no type at
  *    all. They are not the firm's real logo. Never add a name or text to
@@ -96,6 +101,24 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       ],
     },
     {
+      id: 'banking',
+      logo: {
+        src: '/media/case-studies/banking.svg',
+        alt: 'A banking symbol',
+        width: 100,
+        height: 100,
+      },
+      category: 'Banking',
+      title: 'Client onboarding and KYC, run by agents.',
+      body: 'Agents verify the client, screen it against sanctions lists, map its owners, write the risk memo and keep monitoring. A compliance officer approves.',
+      facts: [
+        'Identity and document checks',
+        'Sanctions and PEP screening',
+        'A risk memo with every source',
+        'Ongoing monitoring and alerts',
+      ],
+    },
+    {
       id: 'telecom',
       logo: {
         src: '/media/case-studies/telecom.svg',
@@ -111,6 +134,24 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
         'Bills of materials from GIS layers',
         'Schedule health across every project',
         'Self-hosted in its own cloud, with SSO',
+      ],
+    },
+    {
+      id: 'insurance',
+      logo: {
+        src: '/media/case-studies/insurance.svg',
+        alt: 'An insurance symbol',
+        width: 100,
+        height: 100,
+      },
+      category: 'Insurance',
+      title: 'Claims, from first notice to payout.',
+      body: 'Agents take the first notice of loss, check coverage, validate the claim, flag fraud and draft the settlement. An adjuster approves the payout.',
+      facts: [
+        'First notice of loss intake',
+        'Coverage checked against the policy',
+        'Fraud signals flagged',
+        'Settlement drafted for approval',
       ],
     },
     {
@@ -132,6 +173,24 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       ],
     },
     {
+      id: 'airlines',
+      logo: {
+        src: '/media/case-studies/airlines.svg',
+        alt: 'An airline symbol',
+        width: 100,
+        height: 100,
+      },
+      category: 'Airlines',
+      title: 'Disruptions and EU261 claims, end to end.',
+      body: 'Agents rebook passengers in a disruption, check each EU261 claim against the flight record and draft the payment or the answer. People approve large payouts.',
+      facts: [
+        'Rebooking during disruptions',
+        'Claims checked against flight data',
+        'EU261 rules applied per claim',
+        'An audit trail for the regulator',
+      ],
+    },
+    {
       id: 'executive-search',
       logo: {
         src: '/media/case-studies/executive-search.svg',
@@ -147,6 +206,60 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
         'Client and pitch materials',
         'Internal operations automated',
         'The whole firm on one CompanyOS',
+      ],
+    },
+    {
+      id: 'utilities',
+      logo: {
+        src: '/media/case-studies/utilities.svg',
+        alt: 'A utilities symbol',
+        width: 100,
+        height: 100,
+      },
+      category: 'Utilities',
+      title: 'Outages, from the first alert to the last bill.',
+      body: 'Agents watch weather and grid alerts, notify customers before they call, plan crews and reconcile billing afterwards. People dispatch the crews.',
+      facts: [
+        'Weather and grid alerts watched',
+        'Customers notified first',
+        'Crew plans with ready tickets',
+        'Billing credits reconciled',
+      ],
+    },
+    {
+      id: 'healthcare',
+      logo: {
+        src: '/media/case-studies/healthcare.svg',
+        alt: 'A healthcare symbol',
+        width: 100,
+        height: 100,
+      },
+      category: 'Healthcare',
+      title: 'Prior authorization, without the paperwork.',
+      body: 'Agents read the chart, match it to the payer’s rules, assemble the request and track it to a decision. A clinician signs every request.',
+      facts: [
+        'A chart summary per request',
+        'Payer rules matched per procedure',
+        'Requests tracked to a decision',
+        'A clinician signs every request',
+      ],
+    },
+    {
+      id: 'retail',
+      logo: {
+        src: '/media/case-studies/retail.svg',
+        alt: 'A retail symbol',
+        width: 100,
+        height: 100,
+      },
+      category: 'Retail',
+      title: 'Returns and supplier invoices, closed out by agents.',
+      body: 'Agents resolve returns and refunds, match supplier invoices to orders and receipts, and chase every discrepancy. People approve amounts above a limit.',
+      facts: [
+        'Returns and refunds resolved',
+        'Invoices matched to orders and receipts',
+        'Discrepancies chased with suppliers',
+        'Approval above a set limit',
       ],
     },
     {

@@ -47,6 +47,24 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   'Autonomous AWS cost optimization.': 'text2b7f6fe76645',
   'Agents find the AWS credit programs each customer qualifies for and prepare the applications. The customer approves.':
     'text1d5d31148fec',
+  'Client onboarding and KYC, run by agents.': 'textdb907517543a',
+  'Agents verify the client, screen it against sanctions lists, map its owners, write the risk memo and keep monitoring. A compliance officer approves.':
+    'text577691487e34',
+  'Claims, from first notice to payout.': 'text9060ed10df3a',
+  'Agents take the first notice of loss, check coverage, validate the claim, flag fraud and draft the settlement. An adjuster approves the payout.':
+    'textbe5e1747cddb',
+  'Outages, from the first alert to the last bill.': 'textad02ac657386',
+  'Agents watch weather and grid alerts, notify customers before they call, plan crews and reconcile billing afterwards. People dispatch the crews.':
+    'text2623d428ba32',
+  'Disruptions and EU261 claims, end to end.': 'text66ab060f0449',
+  'Agents rebook passengers in a disruption, check each EU261 claim against the flight record and draft the payment or the answer. People approve large payouts.':
+    'textb7827a3c054c',
+  'Prior authorization, without the paperwork.': 'text3dffbe0d084f',
+  'Agents read the chart, match it to the payer’s rules, assemble the request and track it to a decision. A clinician signs every request.':
+    'text607ed431d026',
+  'Returns and supplier invoices, closed out by agents.': 'text6fe28a8b509e',
+  'Agents resolve returns and refunds, match supplier invoices to orders and receipts, and chase every discrepancy. People approve amounts above a limit.':
+    'text45e3c04ebea4',
   'Arcadia · Identity': 'texte5ef926b9bd7',
   'Arcadia · Groups': 'text50e40164f19a',
   'From your directory': 'texta67b277c1791',
