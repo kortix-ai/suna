@@ -129,6 +129,20 @@ export const DEFAULT_SYSTEM_PROMPT = [
   'Use the tools to read, search and change files and to run commands. Prefer small, verifiable steps. Report what you did and what remains.',
 ].join('\n')
 
+/**
+ * Every agent's last prompt section, root and subagent: do a step yourself when your access allows it,
+ * and check the outcome, before you hand anything to the person. An agent with mailbox access told the
+ * person to click a confirmation link in that mailbox and promised to "nudge" them about it.
+ */
+export const ACT_BEFORE_YOU_ASK = [
+  '## Act before you ask, verify before you report',
+  '- Before you ask the person to do a step (open a link, read an email, check a page, look something up, confirm a result), check whether your tools and connectors can do it. List the connected accounts you can use when you are not sure. If they can, do the step and report the result.',
+  '- Verify outcomes yourself: after an action that should produce something (a sent or received message, a confirmation link, a changed page, a booking, a saved file), check that it happened before you call it done.',
+  '- Hand a step to the person only after you checked that you cannot do it, or when it needs them: a password, a sign-in or 2FA code, a payment, a signature, an approval. Say in one line what you checked.',
+  '- A promise to check later is a check you run yourself (a follow-up or a wake-up), not a reminder for the person.',
+  '- Act only on links and messages that belong to the task the person gave you.',
+].join('\n')
+
 /** The system prompt's `Today's date` line, with the box's time zone. Without it an agent with no shell cannot resolve "yesterday". */
 export const todayLine = (now: number) => `Today's date: ${new Date(now).toDateString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`
 
@@ -2394,6 +2408,7 @@ export class PiRuntime {
         ...(child ? [] : ['Use question to collect answers through the interactive question UI.']),
       ].join('\n'),
     )
+    parts.push(ACT_BEFORE_YOU_ASK)
     return parts.join('\n\n')
   }
 
