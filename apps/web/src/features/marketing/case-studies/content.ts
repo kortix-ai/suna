@@ -5,6 +5,8 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  * horizontal row (a grid on /case-studies). No card links anywhere, by founder
  * decision. A card shows its category, never the client's name (founder,
  * 2026-11-02). `hidden: true` keeps a card's copy here without showing it.
+ * The visible cards show in a random order on each page load (founder,
+ * 2026-11-02); `pinLast: true` keeps Platinum last.
  *
  * ACCURACY AND NAMING (read before editing):
  *  - Named cases, each a founder decision: HKAI-Sci / SciencePal (2026-10-22,
@@ -63,6 +65,8 @@ export type CaseStudy = {
   mark?: 'kortix' | 'platinum';
   /** Kept in this file, not shown anywhere. */
   hidden?: boolean;
+  /** Stays the last card; every other visible card is shuffled on each page load. */
+  pinLast?: boolean;
   category: string;
   title: string;
   body: string;
@@ -183,7 +187,12 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     },
     {
       id: 'wring',
-      logo: { src: '/media/case-studies/wring.svg?v=2a1cb9ad', alt: 'Wring', width: 74, height: 28 },
+      logo: {
+        src: '/media/case-studies/wring.svg?v=2a1cb9ad',
+        alt: 'Wring',
+        width: 74,
+        height: 28,
+      },
       category: 'Cloud cost',
       title: 'Autonomous AWS cost optimization.',
       body: 'Agents find the AWS credit programs each customer qualifies for and prepare the applications. The customer approves.',
@@ -196,6 +205,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     },
     {
       id: 'platinum',
+      pinLast: true,
       mark: 'platinum',
       category: 'Cloud infrastructure',
       title: 'An autonomous cloud company.',
@@ -281,7 +291,12 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
     {
       id: 'writer',
       hidden: true,
-      logo: { src: '/media/case-studies/writer.svg?v=521311b7', alt: 'WRITER', width: 110, height: 35 },
+      logo: {
+        src: '/media/case-studies/writer.svg?v=521311b7',
+        alt: 'WRITER',
+        width: 110,
+        height: 35,
+      },
       category: 'Enterprise AI',
       title: 'The enterprise AI platform, built from Kortix’s open-source code.',
       body: 'Enterprises such as Salesforce, Vanguard and KPMG run their marketing, sales and support agents on WRITER.',
