@@ -1,9 +1,9 @@
 import type { ArtifactCommentThread } from '@kortix/sdk';
-import { createArtifactReanchorBudget, reanchorArtifactText } from '@kortix/shared/artifact-comments';
+import { createArtifactReanchorBudgets, reanchorArtifactText } from '@kortix/shared/artifact-comments';
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
-import { threadDeleted } from './artifact-discussion-logic';
+import { threadAuthor, threadDeleted } from './artifact-discussion-logic';
 import { docMarkdownPositions, docRangesForSource } from './doc-comment-positions';
 
 export const docCommentPluginKey = new PluginKey<DecorationSet>('artifactDocComments');
@@ -71,8 +71,9 @@ export function createDocCommentPlugin(onFocus: (threadId: string) => void): Plu
         focusedThreadId = input.focusedThreadId ?? null;
         const map = docMarkdownPositions(input.markdown, transaction.doc);
         const boundaries = new Map<number, Map<string, number>>();
-        // One fuzzy re-anchoring budget per pass: a page of crafted quotes cannot freeze the tab.
-        const budget = createArtifactReanchorBudget();
+        // One re-anchoring budget per pass, split per thread author: crafted quotes cannot freeze the tab
+        // or leave other people's highlights out.
+        const budgetFor = createArtifactReanchorBudgets(input.comments.map(threadAuthor));
         for (const thread of input.comments) {
           // The rule of the HTML pins: an open thread, or the resolved one open in the panel.
           if (
@@ -84,7 +85,7 @@ export function createDocCommentPlugin(onFocus: (threadId: string) => void): Plu
               thread.anchor.version !== input.entryVersion)
           )
             continue;
-          const position = reanchorArtifactText(input.markdown, thread.anchor, budget);
+          const position = reanchorArtifactText(input.markdown, thread.anchor, budgetFor(threadAuthor(thread)));
           if (position.start === null || position.end === null) continue;
           for (const range of docRangesForSource(map, position.start, position.end)) {
             for (const [at, delta] of [[range.from, 1], [range.to, -1]] as const) {

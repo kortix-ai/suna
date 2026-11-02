@@ -11,6 +11,11 @@ export function threadDeleted(thread: ArtifactCommentThread): boolean {
   return !thread.comments[0] || thread.comments[0].deleted_at !== null;
 }
 
+/** Who opened the thread, as a re-anchoring budget key: the person, else the agent session. */
+export function threadAuthor(thread: Pick<ArtifactCommentThread, 'created_by_user_id' | 'created_by_session_id'>): string {
+  return thread.created_by_user_id ? `user:${thread.created_by_user_id}` : `session:${thread.created_by_session_id ?? ''}`;
+}
+
 /** Open and resolved counts for the filter. A deleted root counts in neither: its tombstone lists only under All. */
 export function threadCounts(threads: readonly ArtifactCommentThread[]) {
   let open = 0;

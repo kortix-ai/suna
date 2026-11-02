@@ -1,5 +1,5 @@
 import { artifactCommentThreads, artifactComments, artifactCommentWriteLimits, artifacts } from '@kortix/db';
-import { artifactCommentAnchorSchema, artifactCommentMarksSchema, createArtifactReanchorBudget, reanchorArtifactText, type ArtifactCommentAnchor, type ArtifactReanchorBudget } from '@kortix/shared/artifact-comments';
+import { artifactCommentAnchorSchema, artifactCommentMarksSchema, createArtifactReanchorBudgets, reanchorArtifactText, type ArtifactCommentAnchor, type ArtifactReanchorBudget } from '@kortix/shared/artifact-comments';
 import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
 import type { Actor } from '../iam/actor';
 import { db } from '../shared/db';
@@ -129,9 +129,11 @@ async function readThreads(access: ArtifactCommentAccess, status: CommentStatus 
   const text = access.artifact.type === 'doc' && threads.some((t) => (t.anchor as ArtifactCommentAnchor).type === 'text')
     ? await (await readArtifactFile(access.artifact, access.artifact.entry, version)).text()
     : undefined;
-  // One fuzzy re-anchoring budget for the whole read: its cost does not grow with the thread count.
-  const budget = createArtifactReanchorBudget();
-  return hydrateThreads(access, threads.map((thread) => threadView(thread, comments.filter((c) => c.threadId === thread.threadId), access, text, version !== undefined, budget)));
+  // One re-anchoring budget for the whole read, split per thread author: the read's cost does not grow
+  // with the thread count, and one author's unmatched quotes cannot leave other people's threads outdated.
+  const author = (thread: Thread) => thread.createdByUserId ? `user:${thread.createdByUserId}` : `session:${thread.createdBySessionId ?? ''}`;
+  const budgetFor = createArtifactReanchorBudgets(threads.map(author));
+  return hydrateThreads(access, threads.map((thread) => threadView(thread, comments.filter((c) => c.threadId === thread.threadId), access, text, version !== undefined, budgetFor(author(thread)))));
 }
 
 export async function listArtifactCommentThreads(access: ArtifactCommentAccess, status: CommentStatus | 'all', version?: string) {

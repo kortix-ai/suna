@@ -131,6 +131,22 @@ export function createArtifactReanchorBudget(): ArtifactReanchorBudget {
 }
 
 /**
+ * The read budget split into equal shares, one per thread author (a person or an
+ * agent session). A commenter whose quotes match nothing spends only their own
+ * share, so other people's threads still re-anchor; the read's total stays at
+ * ARTIFACT_REANCHOR_READ_UNITS. Name every author of the read up front.
+ */
+export function createArtifactReanchorBudgets(authors: Iterable<string>): (author: string) => ArtifactReanchorBudget {
+  const share = Math.floor(ARTIFACT_REANCHOR_READ_UNITS / Math.max(1, new Set(authors).size));
+  const budgets = new Map<string, ArtifactReanchorBudget>();
+  return (author) => {
+    let budget = budgets.get(author);
+    if (!budget) budgets.set(author, (budget = { remaining: share }));
+    return budget;
+  };
+}
+
+/**
  * Every place where `word` (at most 32 code units) matches with at most
  * `limit` edits, grouped by edit count. Forward, a place is the end of a match;
  * backward, it is the start. null when there are more than MAX_WORD_HITS.

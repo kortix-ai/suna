@@ -5,6 +5,7 @@ import {
   ARTIFACT_TEXT_QUOTE_MAX,
   artifactCommentAnchorSchema,
   createArtifactReanchorBudget,
+  createArtifactReanchorBudgets,
   reanchorArtifactText,
   type ArtifactCommentAnchor,
   type ArtifactTextAnchor,
@@ -142,6 +143,16 @@ describe('re-anchoring budget for one read', () => {
     expect(ARTIFACT_REANCHOR_READ_UNITS - budget.remaining).toBe(2 * Math.ceil(text.length / 8));
     budget.remaining = 0;
     expect(reanchorArtifactText(text, exact, budget)).toEqual({ start: null, end: null, outdated: true });
+  });
+
+  test("one author's unmatched quotes spend only their own share: another author's thread still re-anchors (Strix: starvation)", () => {
+    const budgetFor = createArtifactReanchorBudgets(['user:a', 'user:b']);
+    const placed = 'Revenue grew in the quarter and churn fell to 2.1 percent.';
+    const doc = `${text}${placed}`;
+    for (let i = 0; i < 60; i++) reanchorArtifactText(doc, crafted, budgetFor('user:a'));
+    expect(budgetFor('user:a').remaining).toBeLessThanOrEqual(0);
+    expect(reanchorArtifactText(doc, anchor(placed), budgetFor('user:b')).outdated).toBe(false);
+    expect(budgetFor('user:a').remaining + budgetFor('user:b').remaining).toBeLessThanOrEqual(ARTIFACT_REANCHOR_READ_UNITS);
   });
 
   test('many unmatched quotes on a 2 MB document stay within one read budget (Strix: exact scans were unbounded)', () => {

@@ -8,14 +8,14 @@ import {
   type ArtifactAnnotationRect,
   type ArtifactAnnotationViewport,
 } from '@kortix/shared/artifact-annotations';
-import { artifactCommentAnchorSchema, createArtifactReanchorBudget } from '@kortix/shared/artifact-comments';
+import { artifactCommentAnchorSchema, createArtifactReanchorBudgets } from '@kortix/shared/artifact-comments';
 import { createArtifactAnnotationCapture } from './artifact-annotation-capture';
 import {
   assembleArtifactAnnotationLayout,
   resolveArtifactAnnotationAnchor,
   type ArtifactAnnotationInventory,
 } from './artifact-annotation-layout';
-import { threadDeleted } from './artifact-discussion-logic';
+import { threadAuthor, threadDeleted } from './artifact-discussion-logic';
 
 type Config = {
   version: string;
@@ -152,12 +152,13 @@ export function createArtifactAnnotationController(
       used.add(cursor);
       return cursor;
     };
-    // One fuzzy re-anchoring budget per layout pass: a page of crafted quotes cannot freeze the tab.
-    const budget = createArtifactReanchorBudget();
+    // One re-anchoring budget per layout pass, split per thread author: crafted quotes cannot freeze the
+    // tab or leave other people's pins out.
+    const budgetFor = createArtifactReanchorBudgets(current.threads.map(threadAuthor));
     const rows = current.threads.map((thread) => {
       if (thread.anchor.type === 'none') return thread;
       const resolved = inventory
-        ? resolveArtifactAnnotationAnchor(thread.anchor, inventory, current.version, budget)
+        ? resolveArtifactAnnotationAnchor(thread.anchor, inventory, current.version, budgetFor(threadAuthor(thread)))
         : null;
       if (
         resolved?.status === 'resolved' &&
