@@ -5,7 +5,7 @@ description: "A plain-language guide to Kortix CompanyOS: every part of it, how 
 
 Kortix is an open-source CompanyOS. It is two things:
 
-1. **A backend framework and server for agents.** Your agents, their skills and their access are code in one git repo. Kortix runs them.
+1. **A harness platform for always-on agents.** Your agents, their skills and their access are code in one git repo. Kortix deploys them to the cloud, events start them, and they run in parallel, each on its own cloud computer.
 2. **A workspace and command center for people.** Your team starts work, reviews and approves what agents do, and manages the agents from the Kortix apps.
 
 This page covers every part of Kortix, in the order you meet it.
@@ -14,8 +14,12 @@ This page covers every part of Kortix, in the order you meet it.
 
 - **A project is a git repo.** Kortix hosts the repo for you, or you connect your own on GitHub.
 - **`kortix.yaml` declares the project.** It lists the agents and the skills, tools, connectors and triggers they use. See [kortix.yaml reference](/docs/developers#kortixyaml-reference).
-- **Every session runs on its own isolated cloud computer.** A session never touches your laptop or another session. See [Computers](/docs/guide#computers).
+- **Every agent is a custom pi agent.** pi is an open-source agent harness. Every new session runs it, and you extend it with pi extensions. See [Agents](/docs/guide#agents).
+- **Every session runs on its own isolated cloud computer.** A session never touches your laptop or another session. The computer sleeps when idle and wakes with its full history on the next message or event. See [Computers](/docs/guide#computers).
 - **Triggers run agents 24/7.** A schedule, a webhook or an App event starts a session, with nobody at the keyboard. See [Triggers](/docs/guide#triggers).
+- **My Kortix routes the work.** You talk to one agent. It hands each task to the agent made for it, in a session of its own, and tells you the result. Nothing it hands off blocks the conversation. See [The built-in agent](/docs/guide#the-built-in-agent).
+- **Agents run in swarms.** A session hands work off in the background, runs a workflow of many agents, and messages other sessions. Each one reports back by itself. See [Several agents at once](/docs/guide#several-agents-at-once).
+- **Long jobs outlive one context.** When a context fills, the agent continues in a fresh one and searches the session's full record for the exact lines it needs. Nothing is summarized.
 - **Developers build on the same backend.** The [REST API](/docs/developers#rest-api), the [CLI](/docs/developers#cli), [`@kortix/sdk`](/docs/developers#sdk) and [`@kortix/ui`](/docs/developers#kortix-ui) reach every project and session.
 
 ## A workspace for people

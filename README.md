@@ -9,11 +9,15 @@
 
 **The open-source CompanyOS: a harness platform for always-on agents.**
 
-Hand it an outcome and AI agents run it 24/7.<br />
-Events start them, My Kortix routes the work, and swarms of agents run it in parallel,<br />
-each on its own cloud computer. Connect your company's tools, share agents and context<br />
-across your whole team, and own all of it as code: one git repo, open source,<br />
-on your infrastructure or ours.
+Hand it an outcome and AI agents run it 24/7.
+
+Build custom agents on pi and ship them from one git repo. Schedules, webhooks, your tools' events
+and your team's messages start them. My Kortix routes the work, and swarms of agents run it in
+parallel, each on its own cloud computer with state that persists.
+
+Agents connect to 3,000+ apps, build and host the apps your company needs, and land every change
+through a review your team approves. Share agents and context across your whole team.
+Open source, any model, on your infrastructure or ours.
 
 [![GitHub stars](https://img.shields.io/github/stars/kortix-ai/suna?style=flat&color=111111&label=Stars)](https://github.com/kortix-ai/suna/stargazers)
 [![Release](https://img.shields.io/github/v/release/kortix-ai/suna?style=flat&color=111111&label=Release)](https://github.com/kortix-ai/suna/releases/latest)
@@ -74,6 +78,29 @@ Connect your company's tools once, and every agent and every teammate works with
 same skills and the same company memory. Your agents, skills, memory and connectors live in **one
 git repo you own**: your whole company as code. Any model, your own keys, on Kortix Cloud, in your
 VPC or on your own on-prem network.
+
+---
+
+## Kortix, end to end
+
+One system, from the message that starts the work to the change that lands it.
+
+| Layer | What it does | Guide |
+| --- | --- | --- |
+| **Reach** | People work from the web, desktop and mobile apps, the terminal, Slack, Microsoft Teams and email, and from other AI tools through MCP. All of them read the same projects and sessions. | [Everywhere](https://kortix.com/docs/guide#everywhere) |
+| **Triggers** | Schedules, signed webhooks, connector events, App events and merged change requests start agents with nobody at the keyboard. A filter in code drops noise first. A loop wakes a session later, once or on repeat. | [Triggers](https://kortix.com/docs/guide#triggers) |
+| **My Kortix** | The one agent you talk to. It hands each task to the agent made for it, runs the work in the background and reports the result. | [The built-in agent](https://kortix.com/docs/guide#the-built-in-agent) |
+| **Agents** | Custom pi agents: a prompt, a model, permissions, and the skills, tools, commands and pi extensions they may use. An agent proposes changes to its own skills, and a person approves them. | [Agents](https://kortix.com/docs/guide#agents), [Skills](https://kortix.com/docs/guide#skills) |
+| **Swarms** | Background hand-offs, workflows that run many agents at once, and messages between sessions. Thousands of agents run in parallel on one config. | [Several agents at once](https://kortix.com/docs/guide#several-agents-at-once) |
+| **Outcomes** | A goal with a definition of done. An agent works it, wake after wake, until a separate verifier session confirms it is done. | [Outcomes](https://kortix.com/docs/guide#outcomes) |
+| **Computers** | Every session gets its own isolated cloud computer: a terminal, a browser, a desktop you can watch live, the tools its sandbox template installs. It sleeps when idle and wakes with its full history. Connect your own computer for work that must run on it. | [Computers](https://kortix.com/docs/guide#computers) |
+| **Memory and state** | The git repo holds the company's agents, skills and rules. Drive holds shared folders and company memory. `/workspace` keeps a session's files. When a context fills, the agent searches the session's full record word for word. | [Drive](https://kortix.com/docs/guide#drive) |
+| **Connectors** | 3,000+ apps, plus MCP, OpenAPI, GraphQL and raw HTTP. Allow, Ask or Block per tool. Credentials stay on the server and never enter the machine. | [Connectors](https://kortix.com/docs/guide#connectors) |
+| **Apps** | Agents build and host sites, internal tools and backends at a stable URL, behind Kortix sign-in. Always-on or on-demand machines, up to 20 per group, persistent volumes, snapshots, releases and rollback. | [Apps](https://kortix.com/docs/guide#apps) |
+| **Models** | Kortix-managed models, your own provider keys, a ChatGPT subscription or a Claude subscription. Every request goes through the Kortix LLM gateway with budgets and access rules. | [Models](https://kortix.com/docs/guide#models) |
+| **Team and control** | Roles, groups and per-resource permissions. Change requests a person approves, approval rules, an audit log, SAML 2.0 SSO and SCIM 2.0, secrets encrypted with a key per project. | [Teams](https://kortix.com/docs/guide#teams), [Security](https://kortix.com/docs/guide#security) |
+| **Build on it** | The `kortix` CLI, the REST API, `@kortix/sdk`, its React hooks, `@kortix/ui` and generative UI. | [Developers](https://kortix.com/docs/developers) |
+| **Run it anywhere** | Kortix Cloud, your VPC or your own on-prem network, from the same images. | [Self-host](https://kortix.com/docs/developers#self-hosting) |
 
 ---
 
@@ -151,24 +178,6 @@ kortix chat           # talk to a session's agent from your terminal
 
 No setup: sign up at **[kortix.com](https://kortix.com)**, create a project and start a session.
 The **[Guide](https://kortix.com/docs/guide)** walks you through Kortix CompanyOS from A to Z.
-
----
-
-## The building blocks
-
-| | | Guide |
-| --- | --- | --- |
-| **My Kortix** | The one agent you talk to. It routes each task to the agent made for it, runs the work in the background and reports the result. | [My Kortix](https://kortix.com/docs/guide#the-built-in-agent) |
-| **Agents** | Assistants with a job, a model and a set of permissions. An agent can propose changes to its own configuration; a person approves them. | [Agents](https://kortix.com/docs/guide#agents) |
-| **Skills** | Written playbooks for how your company does a job, shared by every agent. | [Skills](https://kortix.com/docs/guide#skills) |
-| **Drive** | Shared folders for people and agents, including the company's memory as Markdown files. | [Drive](https://kortix.com/docs/guide#drive) |
-| **Connectors** | 3,000+ apps, plus MCP, OpenAPI, GraphQL and raw HTTP. Allow, Ask or Block per tool. Credentials stay on the server and never enter the machine. | [Connectors](https://kortix.com/docs/guide#connectors) |
-| **Automations** | Schedules, signed webhooks and app events that start agents with nobody at the keyboard. | [Automations](https://kortix.com/docs/guide#automations) |
-| **Outcomes** | An agent owns an objective until a separate check confirms it is met. | [Outcomes](https://kortix.com/docs/guide#outcomes) |
-| **Computers** | Every session gets its own isolated machine and branch. You can also connect your own computer. | [Computers](https://kortix.com/docs/guide#computers) |
-| **Apps** | The compute platform: sites, internal tools and backends with data, functions and realtime, at a stable URL. | [Apps](https://kortix.com/docs/guide#apps) |
-| **Channels** | Start and continue work from Slack, Microsoft Teams and email. | [Channels](https://kortix.com/docs/guide#channels) |
-| **Models** | Any provider with your own keys, the ChatGPT plan you already pay for, or Kortix-managed models. | [Models](https://kortix.com/docs/guide#models) |
 
 ---
 
