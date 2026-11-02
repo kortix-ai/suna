@@ -274,19 +274,26 @@ describe('the next request after a restore equals modelView (the 7 golden fixtur
     return model.bodies.slice(before)
   }
 
-  test('reasoning (P7.3): a compaction summarizes no reasoning, on another model or the same one (pi 1.2.0 serializeConversation)', async () => {
-    for (const summarizer of ['other-model', MODEL_ID]) {
-      const rt = await freshBox(`sess-pi-compact-${summarizer}`).start()
+  test('a context reset makes no model call and preserves the exact conversation in its record (#11428)', async () => {
+    for (const selected of ['other-model', MODEL_ID]) {
+      const rt = await freshBox(`sess-pi-compact-${selected}`).start()
       await turnOn(rt, MODEL_ID, 'first', [{ thinking: 'THOUGHT-A', text: 'answer-a' }])
-      await turnOn(rt, summarizer, 'second', [{ text: 'answer-b' }])
-      model.script([{ text: 'SUMMARY-P73' }])
+      await turnOn(rt, selected, 'second', [{ text: 'answer-b' }])
       const before = model.bodies.length
       rt.compact()
       await waitFor(() => rt.idle())
-      const sent = JSON.stringify(model.bodies.slice(before))
-      expect(sent).toContain('<conversation>')
-      expect(sent).toContain('answer-a')
-      expect(sent).not.toContain('THOUGHT-A')
+      expect(model.bodies.slice(before)).toEqual([])
+      const { log } = piSessionLog(rt.sessionLogSnapshot()!)
+      const reset = log.threads[0]!.messages.find((m) => m.kind === 'compaction')!
+      const block = reset.blocks.find((b) => b.type === 'compaction')!
+      expect(block.type).toBe('compaction')
+      if (block.type !== 'compaction') throw new Error('missing reset')
+      expect(block.summary).toContain('Nothing was summarized.')
+      const path = block.summary!.match(/is the file (.+?): \d+ entries/)![1]!
+      const record = readFileSync(path, 'utf8')
+      expect(record).toContain('THOUGHT-A')
+      expect(record).toContain('answer-a')
+      expect(record).toContain('answer-b')
       for (const service of services.splice(0)) await service.lifecycle.stop()
     }
   }, 60_000)
@@ -393,7 +400,6 @@ describe('a pi session recorded here, restored into a fresh box', () => {
     await turn(rt, 'what is this', [{ text: 'an image' }], [{ mime: 'image/png', url: `data:image/png;base64,${PNG.toString('base64')}`, filename: 'shot.png' }])
     await turn(rt, 'list the files', [{ tool: 'bash', args: { command: 'printf a > a.txt && ls' } }, { text: 'listed' }])
     await turn(rt, 'spawn a helper', [TASK, { tool: 'bash', args: { command: 'printf sub > sub.txt' } }, { text: 'child wrote sub.txt' }, { text: 'parent done' }])
-    model.script([{ text: 'SUMMARY-ONE: an image, a listing and a helper.' }])
     rt.compact()
     await waitFor(() => rt.idle())
     // A call stopped while it runs: pi records its own error result; the reply cut after it is out of context.
@@ -448,8 +454,8 @@ describe('a pi session recorded here, restored into a fresh box', () => {
       expect(fresh).toEqual([...fresh].sort((a, b) => a - b))
       expect(new Set(fresh).size).toBe(fresh.length)
     }
-    // The view held the compaction summary, the kept turns and the stopped call.
-    expect(rootCheck.expected.map((x) => x.role[0]).join('')).toBe('sauatuau')
+    // The record reset replaces all earlier turns; the stopped call and later turns remain.
+    expect(rootCheck.expected.map((x) => x.role[0]).join('')).toBe('suatuau')
   }, 60_000)
 })
 
@@ -524,12 +530,11 @@ describe('P2.10 and P2.12 on the real pi runtime', () => {
       expect(await flushSessionLogJournal()).toBe(true)
       const compactions = () => api.stored().threads.flatMap((t) => t.messages).filter((m) => m.kind === 'compaction')
       expect(compactions()).toEqual([])
-      model.script([{ text: 'SUMMARY-P2-12: one listing.' }])
       rt.compact()
       // No turn and no flush from here: the compaction must reach the API on its own.
       await waitFor(() => compactions().length === 1)
       expect(compactions()[0]!.blocks[0]).toMatchObject({ type: 'compaction', trigger: 'manual' })
-      expect((compactions()[0]!.blocks[0] as { summary: string }).summary).toContain('SUMMARY-P2-12')
+      expect((compactions()[0]!.blocks[0] as { summary: string }).summary).toContain('Nothing was summarized.')
     } finally {
       api.stop()
     }
