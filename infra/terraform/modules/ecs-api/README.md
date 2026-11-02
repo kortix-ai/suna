@@ -63,8 +63,9 @@ It creates, in the API's cluster:
 | Log metric filter | `<name>-worker-stale-jobs` | `Kortix/Worker` `StaleJobs` = `$.stale_jobs` of the `{"kortix_metric":"worker_jobs",…}` line, dimension `Environment` = `$.environment`. Created without an alarm topic too. |
 | Alarm | `<name>-worker-not-running` | `ECS/ContainerInsights` `RunningTaskCount` (Maximum) < 1 for 5 of 5 one-minute periods. Only with `alarm_topic_arn`. |
 | Alarm | `<name>-worker-stale-jobs` | `Kortix/Worker` `StaleJobs` (Maximum) >= 1 for 5 of 5 one-minute periods, `Environment = metric_environment`. Only with `alarm_topic_arn`. |
+| Alarm | `<name>-worker-cpu-high` | `AWS/ECS` `CPUUtilization` (Average) > 80% for two five-minute periods, scoped to the worker service and cluster. Only with `alarm_topic_arn`. |
 
-Both alarms treat missing data as not breaching and send ALARM and OK to
+All three alarms treat missing data as not breaching and send ALARM and OK to
 `alarm_topic_arn`.
 
 **Lifecycle.** Terraform applies before the database migrations in every
