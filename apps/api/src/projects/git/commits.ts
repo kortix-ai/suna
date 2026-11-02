@@ -7,6 +7,7 @@ import { validateRef, validateSha } from '../git-ref';
 import {
   ensureCommitTrees,
   ensureStoreObjects,
+  type MirrorRefresh,
   normalizeTreePath,
   refreshMirror,
   repoCachePath,
@@ -100,9 +101,15 @@ export function decodeStatusChar(code: string): GitCommitFile['status'] {
  * Used by the snapshot builder to pin a build to a specific commit even
  * when the default branch moves underneath it.
  */
-export async function resolveCommitSha(project: GitBackedProject, ref?: string): Promise<string> {
+export async function resolveCommitSha(
+  project: GitBackedProject,
+  ref?: string,
+  freshness: Extract<MirrorRefresh, false | 'tip-proof'> = false,
+): Promise<string> {
   const treeRef = validateRef(ref || project.defaultBranch);
-  const repoPath = await refreshMirror(project);
+  const repoPath = await (freshness
+    ? refreshMirror(project, freshness, { freshRef: treeRef })
+    : refreshMirror(project));
   return resolveCommitShaAt(repoPath, treeRef);
 }
 
