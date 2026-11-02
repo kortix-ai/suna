@@ -25,6 +25,15 @@ describe('requestFieldError', () => {
     }
   });
 
+  test('a Responses input that is not a string or an array of objects is refused', () => {
+    for (const input of [5, {}, [null], [1], ['hi']]) {
+      expect({ input, error: requestFieldError({ input }) }).toEqual({ input, error: '`input` must be a string or an array of input items' });
+    }
+    for (const input of ['hi', [], [{ type: 'message', role: 'user', content: 'hi' }], null]) {
+      expect({ input, error: requestFieldError({ input }) }).toEqual({ input, error: null });
+    }
+  });
+
   test('a non-boolean stream is refused', () => {
     for (const stream of ['true', 'false', 1, 0, {}]) {
       expect(requestFieldError({ stream })).toBe('`stream` must be true or false');
@@ -223,6 +232,23 @@ describe('the Anthropic and Responses ingresses refuse a mistyped field in their
     });
     expect(res.status).toBe(400);
     expect(JSON.stringify(await res.json())).toContain('`messages` must be an array of message objects');
+  });
+
+  // These threw a TypeError in the translators before authentication: a 503.
+  test('a malformed input item or content block is a 400, never a crash', async () => {
+    const gateway = createGateway(hooks);
+    for (const input of [[null], 5]) {
+      const res = await gateway.responses({ authorization: 'Bearer good', rawBody: JSON.stringify({ model: 'm', input }) });
+      expect({ input, status: res.status }).toEqual({ input, status: 400 });
+      expect(JSON.stringify(await res.json())).toContain('`input` must be a string or an array of input items');
+    }
+    const res = await gateway.messages({
+      authorization: 'Bearer good',
+      rawBody: JSON.stringify({ model: 'm', max_tokens: 16, messages: [{ role: 'user', content: [null, { type: 'text', text: 'hi' }] }] }),
+    });
+    // The null block is skipped; the text reaches routing, where this test's hooks have no provider.
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(await res.json())).not.toContain('TypeError');
   });
 
   test('responses: an empty input, with or without instructions → 400', async () => {

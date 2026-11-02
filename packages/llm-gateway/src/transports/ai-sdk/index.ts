@@ -256,31 +256,40 @@ export async function callUpstreamViaAiSdk(
     // request (see http/call-upstream.ts).
     extraHeaders: opts.requestId ? { 'x-kortix-request-id': opts.requestId } : undefined,
   });
-  const args = buildAiSdkArgs(body, family, {
-    // The ChatGPT Codex backend always expects a reasoning effort; the native
-    // transport defaults to 'low' when the caller sends none (see
-    // openai-responses/request.ts's `chatToResponses`) — mirrored here via
-    // buildAiSdkArgs's opt-in default rather than in buildAiSdkArgs itself, so
-    // every non-Codex caller's "no default effort" behavior is untouched.
-    defaultReasoningEffort: isCodex ? 'low' : undefined,
-    // Codex needs `store: false` and no output-token cap (see request.ts).
-    providerName: descriptor.provider,
-    // The resolved catalog model for the WIRE model id (managed slug, BYOK
-    // `provider/id`, or `codex/id` — `catalogModelForWireModel` stitches all
-    // three), so buildAiSdkArgs can gate reasoning_effort/temperature/top_p/
-    // max_tokens against its real models.dev capabilities (see request.ts's
-    // normalizeRequest). `undefined` for an unknown/unresolvable id → no gating
-    // (permissive parity). Keyed off the client wire id, not descriptor
-    // .resolvedModel (which is the UPSTREAM id — a Bedrock/OpenRouter slug that
-    // wouldn't resolve here). The bundled static CATALOG is authoritative for
-    // capability shape; the transport has no live snapshot.
-    model: catalogModelForWireModel(String(body.model ?? ''), CATALOG),
-    // The UPSTREAM model id — gates the bedrock adapter's Claude-Converse-only
-    // primitives (cachePoint, adaptive reasoningConfig). Same signal
-    // clampMaxOutputTokensForBedrock (below) keys the Nova clamp off of, so a
-    // non-Claude Bedrock model (global.openai.*, Nova) never gets Claude fields.
-    resolvedModel: descriptor.resolvedModel,
-  });
+  let args: ReturnType<typeof buildAiSdkArgs>;
+  try {
+    args = buildAiSdkArgs(body, family, {
+      // The ChatGPT Codex backend always expects a reasoning effort; the native
+      // transport defaults to 'low' when the caller sends none (see
+      // openai-responses/request.ts's `chatToResponses`) — mirrored here via
+      // buildAiSdkArgs's opt-in default rather than in buildAiSdkArgs itself, so
+      // every non-Codex caller's "no default effort" behavior is untouched.
+      defaultReasoningEffort: isCodex ? 'low' : undefined,
+      // Codex needs `store: false` and no output-token cap (see request.ts).
+      providerName: descriptor.provider,
+      // The resolved catalog model for the WIRE model id (managed slug, BYOK
+      // `provider/id`, or `codex/id` — `catalogModelForWireModel` stitches all
+      // three), so buildAiSdkArgs can gate reasoning_effort/temperature/top_p/
+      // max_tokens against its real models.dev capabilities (see request.ts's
+      // normalizeRequest). `undefined` for an unknown/unresolvable id → no gating
+      // (permissive parity). Keyed off the client wire id, not descriptor
+      // .resolvedModel (which is the UPSTREAM id — a Bedrock/OpenRouter slug that
+      // wouldn't resolve here). The bundled static CATALOG is authoritative for
+      // capability shape; the transport has no live snapshot.
+      model: catalogModelForWireModel(String(body.model ?? ''), CATALOG),
+      // The UPSTREAM model id — gates the bedrock adapter's Claude-Converse-only
+      // primitives (cachePoint, adaptive reasoningConfig). Same signal
+      // clampMaxOutputTokensForBedrock (below) keys the Nova clamp off of, so a
+      // non-Claude Bedrock model (global.openai.*, Nova) never gets Claude fields.
+      resolvedModel: descriptor.resolvedModel,
+    });
+  } catch {
+    // A malformed body (a `tools` or `tool_calls` item that is not an object)
+    // threw here, outside the error mapping. A raw TypeError counts as a network
+    // failure, so five of them opened a shared upstream's breaker (KRTX-3421).
+    // It is the caller's request error: a 400, which never trips the breaker.
+    throw new UpstreamHttpError(400, 'The request has a malformed field.', descriptor.provider);
+  }
   const clientWantsStream = body.stream === true;
   const ctx = {
     model: descriptor.resolvedModel || String(body.model ?? ''),

@@ -3,10 +3,12 @@
  * silence, as a client-facing message; null when every field it reads is well
  * typed. `stream: "true"` used to mean "do not stream" and `max_tokens: -1` was
  * dropped (KRTX-3410), so an SSE client waited for events that never came.
- * A `messages` element that is not an object crashed the transports, and five
- * such requests opened a shared upstream's circuit breaker (KRTX-3421).
- * `null` stays allowed, as in OpenAI's API. Each ingress (chat completions,
- * Anthropic messages, Responses) checks its own body before translating it.
+ * A `messages` element or Responses `input` item that is not an object crashed
+ * a translator or transport, and five such requests opened a shared upstream's
+ * circuit breaker (KRTX-3421). `null` stays allowed, as in OpenAI's API. Each
+ * ingress (chat completions, Anthropic messages, Responses) checks its own body
+ * before translating it, so on those two ingresses this runs before
+ * authentication (the KRTX-3410 order); on chat it runs after admission.
  */
 export function requestFieldError(body: Record<string, unknown>): string | null {
   if (body.stream != null && typeof body.stream !== 'boolean') return '`stream` must be true or false';
@@ -18,6 +20,10 @@ export function requestFieldError(body: Record<string, unknown>): string | null 
   }
   if (body.messages != null && !(Array.isArray(body.messages) && body.messages.every(isMessage))) {
     return '`messages` must be an array of message objects';
+  }
+  // A Responses `input` item that is not an object threw in the translator.
+  if (body.input != null && typeof body.input !== 'string' && !(Array.isArray(body.input) && body.input.every(isMessage))) {
+    return '`input` must be a string or an array of input items';
   }
   return null;
 }

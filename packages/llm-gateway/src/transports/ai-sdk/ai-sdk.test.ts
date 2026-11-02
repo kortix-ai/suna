@@ -1485,6 +1485,28 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
       expect((failure as UpstreamHttpError).body).toContain('unauthorized_unknown');
     });
 
+    // KRTX-3421: these threw a raw TypeError outside the error mapping, which
+    // counted as a network failure, so five of them opened a shared breaker.
+    it('a tools or tool_calls item that is not an object fails as a 400 before any fetch', async () => {
+      for (const patch of [
+        { tools: [null] },
+        { messages: [{ role: 'user', content: 'hi' }, { role: 'assistant', content: '', tool_calls: [null] }] },
+      ]) {
+        let fetched = 0;
+        const failure = await callUpstreamViaAiSdk({ messages: [{ role: 'user', content: 'hi' }], ...patch }, codex, {
+          fetch: async () => {
+            fetched++;
+            return new Response('{}', { status: 200 });
+          },
+        }).then(
+          () => null,
+          (error: unknown) => error,
+        );
+        const status = failure instanceof UpstreamHttpError ? failure.status : String(failure);
+        expect({ patch, status, fetched }).toEqual({ patch, status: 400, fetched: 0 });
+      }
+    });
+
     it('collapses a streamed tool call into the same JSON shape generateText would produce', async () => {
       const call = { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'get_weather' };
       const { json, sentBodies } = await collapse(
