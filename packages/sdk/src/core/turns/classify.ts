@@ -101,6 +101,12 @@ export interface ToolView {
   answers?: string[][];
   /** The child session a delegating call (`task`) runs. */
   childSessionId?: string;
+  /**
+   * The tool state's own metadata, as the harness reported it: a `workflow` call's run
+   * document (`WorkflowRunMetadata`), an `agent` call's `{ sessionId, model, background, … }`.
+   * Absent when the state carries none.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 /** Never parse (or diff/pretty-print) an output blob larger than this — a
@@ -277,6 +283,7 @@ function classifyToolState(tool: string, state: ToolState): ToolView {
     diagnostics,
     answers: kind === 'question' ? toolAnswers(metadata) : undefined,
     childSessionId: getChildSessionId({ tool, state }),
+    ...(Object.keys(metadata).length ? { metadata } : {}),
   };
 }
 

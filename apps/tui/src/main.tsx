@@ -41,6 +41,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 
 import { App } from './app.tsx';
+import { QueryPolling } from './lib/query-polling.ts';
 import {
   type ResolvedHost,
   hostOrigin,
@@ -448,6 +449,7 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
 
       root.render(
         <QueryClientProvider client={queryClient}>
+          <QueryPolling client={queryClient} />
           <Root
             initialHost={host}
             initialNotice={notice}

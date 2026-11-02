@@ -848,11 +848,15 @@ flow(
     const goldenMarker = `golden-e2e-${crypto.randomUUID()}`;
     const goldenDone = `GOLD1_DONE_${Date.now()}`;
     await ctx.step('agent writes the requested file and produces output', async () => {
+      // "Do not commit": the next step proves the host commit-push pushes the
+      // change. An agent that commits and pushes on its own leaves that call
+      // nothing to do (`pushed: false`, `nothing_to_do: true`; v0.14.15
+      // release suite, 2026-11-02). RUN-7 uses the same instruction.
       await sendPrompt(
         ctx,
         project.id,
         session.id,
-        `Create the file ${goldenPath} containing exactly this single line: ${goldenMarker}. Use the file-writing tool; do not merely describe the change. Then reply with exactly: ${goldenDone}`,
+        `Create the file ${goldenPath} containing exactly this single line: ${goldenMarker}. Use the file-writing tool; do not merely describe the change. Do not commit. Then reply with exactly: ${goldenDone}`,
       );
       await waitForAssistantText(ctx, project.id, session.id, goldenDone);
       const file = await ctx.client

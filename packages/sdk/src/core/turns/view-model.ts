@@ -103,7 +103,24 @@ export type ToolViewModel =
   | { kind: 'file-write'; path: string; preview?: string }
   | { kind: 'file-edit'; path: string; diff?: DiffLine[] }
   | { kind: 'search'; pattern: string; matches?: SearchMatch[] }
-  | { kind: 'task'; description: string; agent?: string }
+  | {
+      kind: 'task';
+      description: string;
+      agent?: string;
+      /** The name the call gave the agent (`name`), shown in place of a generic label. */
+      name?: string;
+      /** The child session it runs in, once it exists (`metadata.sessionId`). */
+      sessionId?: string;
+      /** It runs on after the call returned; its report arrives later as a notice. */
+      background?: boolean;
+      /** A teammate of an agent team (`team: true`). */
+      teammate?: boolean;
+      /** The call returned at once and the agent is still working (`<task_started>`). */
+      started?: boolean;
+      model?: string;
+      /** The first line of its report (`<task_result>`) that holds words. */
+      resultExcerpt?: string;
+    }
   | { kind: 'todo'; items: TodoItem[] }
   | { kind: 'question'; questions: QuestionItem[]; answers?: string[][] }
   | { kind: 'generic'; label: string; inputPretty?: string; outputPretty?: string };
@@ -395,7 +412,22 @@ function taskViewModel(tool: ToolView): Extract<ToolViewModel, { kind: 'task' }>
   const description =
     firstString(tool.input?.description, tool.input?.title, tool.input?.prompt) ?? tool.title;
   const agent = firstString(tool.input?.subagent_type, tool.input?.agent);
-  return { kind: 'task', description, agent };
+  const meta = tool.metadata ?? {};
+  const output = tool.outputText ?? tool.output ?? '';
+  const result = /<task_result>([\s\S]*?)(?:<\/task_result>|$)/.exec(output)?.[1];
+  const resultExcerpt = result?.split('\n').map((line) => line.trim()).find((line) => line.length > 0);
+  const extra = {
+    name: firstString(tool.input?.name, meta.name),
+    sessionId: firstString(meta.sessionId) ?? tool.childSessionId,
+    background: meta.background === true ? true : undefined,
+    teammate: meta.teammate === true ? true : undefined,
+    started: output.includes('<task_started>') ? true : undefined,
+    // pi reports `{ providerID, modelID }`; `default` names no model a reader would know.
+    model: firstString(meta.model) ?? (firstString(asRecord(meta.model)?.modelID)?.replace(/^default$/, '') || undefined),
+    resultExcerpt,
+  };
+  const defined = Object.fromEntries(Object.entries(extra).filter(([, value]) => value !== undefined));
+  return { kind: 'task', description, agent, ...defined };
 }
 
 // ============================================================================
