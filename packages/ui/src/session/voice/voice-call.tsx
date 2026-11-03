@@ -5,6 +5,7 @@ import { PhoneIcon } from '@phosphor-icons/react';
 import { lazy, Suspense, useEffect } from 'react';
 
 import { useTranslations } from '../../i18n';
+import { isDesktop } from '../../internal/lib/desktop-detect';
 import { Button } from '../../primitives/button';
 import Hint from '../../primitives/hint';
 import { useVoiceCallStore } from './voice-call-store';
@@ -12,13 +13,16 @@ import { useVoiceCallStore } from './voice-call-store';
 // The call itself (socket, audio, screen share) loads with the first call, never for a project without the flag.
 const VoiceCallBar = lazy(() => import('./voice-call-bar').then((m) => ({ default: m.VoiceCallBar })));
 
-/** The session header's Call button: only while the project's `voice_call` flag is on. It opens and ends the call. */
+/**
+ * The session header's Call button: only while the project's `voice_call` flag is on, and not in the desktop
+ * shell, whose signed app has no microphone entitlement yet (apps/desktop-electron). It opens and ends the call.
+ */
 export function VoiceCallButton({ projectId, sessionId }: { projectId: string; sessionId: string }) {
   const t = useTranslations('voiceCall');
   const { enabled } = useFeatureFlag(projectId, 'voice_call');
   const open = useVoiceCallStore((s) => s.sessionId === sessionId);
   const toggle = useVoiceCallStore((s) => s.toggle);
-  if (!enabled) return null;
+  if (!enabled || isDesktop()) return null;
   const label = open ? t('end') : t('start');
   return (
     <Hint side="bottom" sideOffset={4} delayDuration={300} label={label}>

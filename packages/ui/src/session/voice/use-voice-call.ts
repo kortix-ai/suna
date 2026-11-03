@@ -147,11 +147,11 @@ export function useVoiceCall(sessionId: string) {
       }
     };
 
-    const dial = async (wake: boolean) => {
+    const dial = async (redial: boolean) => {
       const token = await getAuthToken().catch(() => null);
       if (disposed) return;
       const opened = new WebSocket(
-        voiceCallSocketUrl(portUrl, { session: sessionId, token, wake, securePage: location.protocol === 'https:' }),
+        voiceCallSocketUrl(portUrl, { session: sessionId, token, redial, securePage: location.protocol === 'https:' }),
       );
       opened.binaryType = 'arraybuffer';
       socket = opened;
@@ -168,7 +168,7 @@ export function useVoiceCall(sessionId: string) {
           return;
         }
         const next = step({ type: 'drop' });
-        if (next.phase === 'reconnecting') redial = setTimeout(() => void dial(false), REDIAL_MS[next.redials]);
+        if (next.phase === 'reconnecting') redial = setTimeout(() => void dial(true), REDIAL_MS[next.redials]);
       };
     };
 
@@ -186,7 +186,7 @@ export function useVoiceCall(sessionId: string) {
       useVoiceCallStore.getState().close(sessionId);
     };
     window.addEventListener('pagehide', onPageHide);
-    void dial(true);
+    void dial(false);
     return () => {
       window.removeEventListener('pagehide', onPageHide);
       teardown();

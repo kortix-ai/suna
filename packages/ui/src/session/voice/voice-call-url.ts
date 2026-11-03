@@ -9,19 +9,19 @@ export const VOICE_PORT = 6902;
  * deployment has one) refuses a WebSocket from this page's site and reads no token.
  *
  * The rest is `getKortixPtyWebSocketUrl`'s conversion: http→ws, wss on an https page (a browser blocks
- * ws:// there), the token as a query parameter (a browser WebSocket sends no header), and `wake=1` for
- * an attach a person started.
+ * ws:// there), and the token as a query parameter (a browser WebSocket sends no header). A redial asks
+ * the relay not to greet again (`greet=0`): the call already said who is speaking when it started.
  */
 export function voiceCallSocketUrl(
   portUrl: string,
-  opts: { session: string; token: string | null; wake: boolean; securePage: boolean },
+  opts: { session: string; token: string | null; redial: boolean; securePage: boolean },
 ): string {
   const url = new URL(portUrl);
   url.protocol = url.protocol === 'https:' || opts.securePage ? 'wss:' : 'ws:';
   url.pathname = url.pathname.endsWith('/') ? `${url.pathname}stream` : `${url.pathname}/stream`;
   url.searchParams.set('session', opts.session);
   if (opts.token) url.searchParams.set('token', opts.token);
-  if (opts.wake) url.searchParams.set('wake', '1');
+  if (opts.redial) url.searchParams.set('greet', '0');
   return url.toString();
 }
 
