@@ -18,6 +18,7 @@ const {
   aliasForHost,
   DOMAIN_ALIAS_CONTEXT_FIELD,
   domainAliases,
+  forRequestApiUrl,
   forRequestDomain,
 } = await import('./domain-aliases');
 const { isAllowedPreviewOrigin, previewUrlTemplate, resolvePreviewHost } = await import('../sandbox-proxy/preview-hosts');
@@ -80,6 +81,33 @@ describe('URLs follow the domain a request arrived on', () => {
     for (const base of ['p.kortix.acme.cloud', 'p.kortix.acme.com']) {
       expect(resolvePreviewHost(`dev-p3000-${LABEL}.${base}`)).toEqual({ port: 3000, sandboxLabel: LABEL, local: false });
     }
+  });
+});
+
+describe('stored sandbox URLs follow the domain a request arrived on', () => {
+  const stored = 'https://api.kortix.acme.cloud/v1/p/sbx-1/8000';
+
+  test('a visitor on the alias gets the alias API host; the primary keeps its own', () => {
+    expect(onHost('api.kortix.acme.com', () => forRequestApiUrl(stored))).toBe('https://api.kortix.acme.com/v1/p/sbx-1/8000');
+    expect(onHost('api.kortix.acme.cloud', () => forRequestApiUrl(stored))).toBe(stored);
+    expect(forRequestApiUrl(stored)).toBe(stored);
+  });
+
+  test('after a domain move, a row stored under the old primary (now an alias) moves to the new primary', () => {
+    configState.FRONTEND_URL = 'https://kortix.acme.com';
+    configState.KORTIX_URL = 'https://api.kortix.acme.com';
+    configState.KORTIX_DOMAIN_ALIASES = 'kortix.acme.cloud';
+    try {
+      expect(onHost('api.kortix.acme.com', () => forRequestApiUrl(stored))).toBe('https://api.kortix.acme.com/v1/p/sbx-1/8000');
+      expect(onHost('api.kortix.acme.cloud', () => forRequestApiUrl(stored))).toBe(stored);
+    } finally {
+      configState.KORTIX_URL = 'https://api.kortix.acme.cloud';
+    }
+  });
+
+  test('a URL on a host this instance does not serve is left alone', () => {
+    expect(onHost('api.kortix.acme.com', () => forRequestApiUrl('https://sandbox.example.net/x'))).toBe('https://sandbox.example.net/x');
+    expect(forRequestApiUrl(null)).toBeNull();
   });
 });
 
