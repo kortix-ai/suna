@@ -307,7 +307,8 @@ resource "aws_ec2_managed_prefix_list" "github" {
   name           = "${var.name}-github"
   address_family = "IPv4"
   # A route that names a prefix list counts its max_entries against the route
-  # table quota (`L-93826ACB`, raised to 200 in security-baseline). 81 ranges
+  # table quota (`L-93826ACB`; above 200 in eu-west-2 and us-east-2, which a
+  # request for 200 proved on 2026-11-03: "value less than current"). 81 ranges
   # on 2026-11-03.
   max_entries = 150
 
