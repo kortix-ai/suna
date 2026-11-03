@@ -55,7 +55,6 @@ export type OkResponse = z.infer<typeof OkResponseSchema>;
 export const FeatureFlagMapSchema = z.object({
   marketplace: z.boolean(),
   reminders: z.boolean(),
-  warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
   pooled_provider_secrets: z.boolean(),
   us_region: z.boolean(),
@@ -202,6 +201,8 @@ export const ProjectSchema = z.object({
     connectors_api_discover: z.literal(true).optional(),
     /** Not a flag since 2026-11-02 (My Kortix follows kortix.yaml `builtin_agents.my_kortix` alone); always `true` for older SDK and hosts. */
     meta_agent: z.literal(true).optional(),
+    /** Not a flag since 2026-11-03 (warm sessions were removed); always `false` for older SDK, web and mobile clients, which pre-create a session only while it is true. */
+    warm_sessions: z.literal(false).optional(),
     /** Not a flag since 2026-11-02 (every project has a Drive); `true` wherever the platform stores a Drive (Platinum), for older SDK, CLI and hosts. */
     volumes: z.boolean().optional(),
     /** Not a flag since 2026-11-02 (every project has a Drive); `true` wherever the platform stores a Drive (Platinum), for older SDK, CLI and hosts. */
@@ -1272,37 +1273,7 @@ export const SessionDeleteResultSchema = z.object({
 });
 export type SessionDeleteResult = z.infer<typeof SessionDeleteResultSchema>;
 
-export const WarmProjectSessionWorkspaceRefreshSchema = z.object({
-  status: z.enum(['skipped', 'unchanged', 'updated', 'failed']),
-  before_sha: z.string().nullable().optional(),
-  after_sha: z.string().nullable().optional(),
-  error: z.string().optional(),
-});
-export type WarmProjectSessionWorkspaceRefresh = z.infer<
-  typeof WarmProjectSessionWorkspaceRefreshSchema
->;
 
-export const WarmProjectSessionResultSchema = z.object({
-  session: ProjectSessionSchema,
-  reused: z.boolean(),
-  workspace_refresh: WarmProjectSessionWorkspaceRefreshSchema,
-});
-export type WarmProjectSessionResult = z.infer<typeof WarmProjectSessionResultSchema>;
-
-export const ClaimWarmProjectSessionInputSchema = z
-  .object({
-    session_id: z
-      .string()
-      .regex(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-        'session_id must be an RFC 4122 v4 UUID',
-      ),
-    agent_name: z.string().min(1).optional(),
-    sandbox_slug: z.string().min(1).optional(),
-    pending_prompt: PendingSessionPromptSchema.optional(),
-  })
-  .strict();
-export type ClaimWarmProjectSessionInput = z.infer<typeof ClaimWarmProjectSessionInputSchema>;
 
 /**
  * A project space: a channel (product word "Channel") or the caller's DM with

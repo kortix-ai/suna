@@ -2862,29 +2862,6 @@ describe('project session runtime guards', () => {
     });
   });
 
-  // The warm create runs `createProjectSession` with an empty body: no prompt,
-  // so no title source. The first real prompt titles the session later.
-  test('a warm session is created without a prompt or a title source', async () => {
-    projectRow.metadata = { ...projectRow.metadata, experimental: { warm_sessions: true } };
-    const app = createApp();
-    sessionRow = null;
-
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/warm`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ reused: false });
-    const metadata = lastSessionInsertValues?.metadata as Record<string, unknown>;
-    expect(metadata.warm).toBe(true);
-    for (const key of ['initial_prompt', 'pending_prompt', 'title_source', 'name']) {
-      expect(metadata).not.toHaveProperty(key);
-    }
-    expect(lifecycleCommandInserts).toEqual([]);
-  });
-
   test('e2e: only explicit sandbox secrets are injected as plaintext env vars', async () => {
     const app = createApp();
 

@@ -475,7 +475,7 @@ Next.js ── forwardKortixRequest(firm secret) ──▶ Kortix API / session 
    edit-and-rewind, and the composer's file search inside `/workspace`.
    Everything else returns `403`: agent config, secret writes, members,
    access, triggers, tokens, credentials, project deletion, the project's
-   session list, warm sessions, billing, every account route, public shares
+   session list, billing, every account route, public shares
    and session visibility (`public-shares`, `sharing`, `p/share`), reminders,
    drives and drive sync, the session log and config, provider credential
    pools, the runtime's shell, command, terminal (`pty`), git, environment,

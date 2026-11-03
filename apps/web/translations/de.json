@@ -1262,10 +1262,6 @@
           "name": "Marktplatz",
           "description": "Suchen und installieren Sie Skills aus Community- und Anbieterregistern. Quellen, Updates und Teambreiche ändern sich noch."
         },
-        "warm_sessions": {
-          "name": "Vorgewärmte Sitzungen",
-          "description": "Halten Sie eine Sandbox für sofortige Sitzungsstarts bereit. Die inaktive Sandbox verbraucht Rechenleistung."
-        },
         "secrets_egress": {
           "name": "Netzwerkerzwungene Geheimnisse",
           "description": "Steuern Sie, welche Werkzeuge und Ziele Projektgeheimnisse empfangen dürfen."

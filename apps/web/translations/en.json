@@ -1084,10 +1084,6 @@
           "name": "Marketplace",
           "description": "Browse and install skills from community and vendor registries. Sources, updates, and team scopes are still changing."
         },
-        "warm_sessions": {
-          "name": "Warm Sessions",
-          "description": "Keep one sandbox ready for instant session starts. The idle sandbox uses compute."
-        },
         "secrets_egress": {
           "name": "Network-Enforced Secrets",
           "description": "Control which tools and destinations can receive project secrets."

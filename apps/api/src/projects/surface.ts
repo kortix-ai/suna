@@ -44,7 +44,6 @@ export {
   deliverThroughQueue,
   drainSessionLifecycleQueue,
   resolveProjectAutomationActor,
-  retireWarmProjectSessions,
 } from './session-lifecycle';
 export type { CreateSessionCommand } from './session-lifecycle';
 export type { PromptPartWire } from './session-lifecycle/prompt-payload';

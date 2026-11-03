@@ -47,8 +47,6 @@ import {
   TriggerListSchema,
   TriggerSchema,
   UpdateConnectionCredentialInputSchema,
-  WarmProjectSessionResultSchema,
-  ClaimWarmProjectSessionInputSchema,
 } from '../index';
 
 const NOW = '2026-07-01T12:00:00.000Z';
@@ -502,38 +500,6 @@ describe('session group contracts', () => {
   });
 });
 
-describe('warm project session schemas', () => {
-  test('accepts the ensure response with workspace refresh state', () => {
-    expect(
-      WarmProjectSessionResultSchema.parse({
-        session: sessionFixture(),
-        reused: true,
-        workspace_refresh: {
-          status: 'updated',
-          before_sha: 'abc123',
-          after_sha: 'def456',
-        },
-      }),
-    ).toMatchObject({
-      reused: true,
-      workspace_refresh: { status: 'updated' },
-    });
-  });
-
-  test('requires an RFC 4122 v4 session_id for claims', () => {
-    expect(
-      ClaimWarmProjectSessionInputSchema.safeParse({
-        session_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
-        agent_name: 'default',
-        sandbox_slug: 'default',
-      }).success,
-    ).toBe(true);
-    expect(ClaimWarmProjectSessionInputSchema.safeParse({ session_id: 'not-a-uuid' }).success).toBe(
-      false,
-    );
-  });
-});
-
 describe('SessionStartResultSchema', () => {
   test('accepts the provisioning payload without sandbox or runtime_url', () => {
     const parsed = SessionStartResultSchema.strict().parse({
@@ -589,7 +555,7 @@ describe('SessionStartResultSchema', () => {
 });
 
 describe('pending session prompt contract', () => {
-  test('accepts a durable prompt draft on normal create and warm claim', () => {
+  test('accepts a durable prompt draft on create', () => {
     const pendingPrompt = {
       text: 'Map the flood risk for this parcel.',
       agent: 'kortix',
@@ -600,12 +566,6 @@ describe('pending session prompt contract', () => {
 
     expect(
       SessionCreateInputSchema.strict().parse({ pending_prompt: pendingPrompt }).pending_prompt,
-    ).toEqual(pendingPrompt);
-    expect(
-      ClaimWarmProjectSessionInputSchema.strict().parse({
-        session_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
-        pending_prompt: pendingPrompt,
-      }).pending_prompt,
     ).toEqual(pendingPrompt);
   });
 
@@ -899,7 +859,6 @@ describe('envelopes', () => {
     expect(FEATURE_FLAG_KEYS as readonly string[]).toEqual([
       'marketplace',
       'reminders',
-      'warm_sessions',
       'secrets_egress',
       'pooled_provider_secrets',
       'us_region',

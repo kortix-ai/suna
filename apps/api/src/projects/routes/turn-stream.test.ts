@@ -184,7 +184,6 @@ mock.module('../session-turn-ledger', () => ({
 }));
 
 mock.module('../session-lifecycle', () => ({
-  retireWarmProjectSessions: async () => { throw new Error('retireWarmProjectSessions: not used by the turn-stream routes'); },
   continueSession: async () => { throw new Error('continueSession: not used by the turn-stream routes'); },
   startSession: async () => { throw new Error('startSession: not used by the turn-stream routes'); },
   buildContinueSessionCommandValues: async () => { throw new Error('buildContinueSessionCommandValues: not used by the turn-stream routes'); },

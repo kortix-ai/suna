@@ -278,35 +278,17 @@ test('project(id).sessions.list forwards manager inventory scope', async () => {
   expect(last().url).toContain('/projects/PID123/sessions?scope=project');
 });
 
-test('project(id).sessions exposes server-owned warm-session ensure and claim', async () => {
-  globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: unknown } = {}) => {
-    const requestUrl = String(url);
-    calls.push({
-      url: requestUrl,
-      method: opts.method ?? 'GET',
-      body: typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body,
-    });
-    const body = requestUrl.endsWith('/warm/claim')
-      ? { session_id: 'SID456' }
-      : {
-          session: { session_id: 'SID456' },
-          reused: true,
-          workspace_refresh: { status: 'unchanged' },
-        };
-    return new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
-  }) as unknown as typeof fetch;
-
-  await kortix.project('PID123').sessions.ensureWarm();
-  expect(last().url).toContain('/projects/PID123/sessions/warm');
-  expect(last().method).toBe('POST');
-
-  await kortix.project('PID123').sessions.claimWarm({ session_id: 'SID456' });
-  expect(last().url).toContain('/projects/PID123/sessions/warm/claim');
-  expect(last().method).toBe('POST');
-  expect(last().body).toEqual({ session_id: 'SID456' });
+// Warm sessions were removed on 2026-11-03: both verbs stay for semver and
+// reject as retired, with no request.
+test('project(id).sessions.ensureWarm and claimWarm reject with ENDPOINT_RETIRED and send no request', async () => {
+  const before = calls.length;
+  await expect(kortix.project('PID123').sessions.ensureWarm()).rejects.toMatchObject({
+    code: 'ENDPOINT_RETIRED',
+  });
+  await expect(
+    kortix.project('PID123').sessions.claimWarm({ session_id: 'SID456' }),
+  ).rejects.toMatchObject({ code: 'ENDPOINT_RETIRED' });
+  expect(calls.length).toBe(before);
 });
 
 test('top-level projects.list hits /projects', async () => {

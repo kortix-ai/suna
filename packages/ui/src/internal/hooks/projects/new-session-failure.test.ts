@@ -123,7 +123,7 @@ describe('isAmbiguousCreateFailure', () => {
 
   test('a definite refusal is not ambiguous', () => {
     expect(isAmbiguousCreateFailure('subscription_required')).toBe(false);
-    expect(isAmbiguousCreateFailure('WARM_SESSION_ALREADY_CLAIMED')).toBe(false);
+    expect(isAmbiguousCreateFailure('SESSION_OWNED_BY_OTHER_INSTANCE')).toBe(false);
     expect(isAmbiguousCreateFailure('CONNECTOR_CONNECTION_REQUIRED')).toBe(false);
     expect(isAmbiguousCreateFailure(undefined)).toBe(false);
   });

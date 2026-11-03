@@ -357,8 +357,7 @@ async function sessionSpaceId(world: AgentPrincipalsWorld, sessionId: string): P
 
 /**
  * Turn `project_channels` on and wait for its toggle effect to finish: it
- * retires warm sessions first, then files `canary` (a session in no space)
- * into `#general`. Returns `#general`'s id.
+ * files `canary` (a session in no space) into `#general`. Returns `#general`'s id.
  */
 async function enableChannelsAndSettle(world: AgentPrincipalsWorld, canary: string): Promise<string> {
   await world.setFeature('project_channels', true);
@@ -627,51 +626,6 @@ flow('SPACE-10', meta([ROUTES.list, ROUTES.create, SESSION_ROUTES.list, FEATURES
       for (const bad of ['created_by=not-a-uuid', 'updated_after=yesterday']) {
         (await world.owner.get(`${SESSIONS}?space_id=${channelId}&${bad}`, { params })).status(400);
       }
-    });
-  } finally {
-    await world.close();
-  }
-});
-
-const WARM_CLAIM_ROUTE = 'POST /v1/projects/:projectId/sessions/warm/claim';
-const WARM_CLAIM = '/v1/projects/:projectId/sessions/warm/claim';
-
-flow('SPACE-11', meta([WARM_CLAIM_ROUTE, ROUTES.list, SESSION_ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
-  const { project, world } = await openWorld(ctx, { manifest: true });
-  const params = { projectId: project.id };
-  /** An unclaimed warm session with a placed sandbox, as the warm pool leaves it. */
-  const warmSession = async (): Promise<string> => {
-    const sessionId = await insertSession(world, world.ownerUserId, 'private', { metadata: { warm: true } });
-    await world.db.query(`UPDATE kortix.project_sessions SET status = 'running' WHERE session_id = $1`, [sessionId]);
-    await world.db.query(
-      `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, provider, status, config, metadata)
-       VALUES ($1::uuid, $1, $2::uuid, $3::uuid, 'platinum', 'provisioning', '{}'::jsonb, '{"platinumRegion":"eu-west"}'::jsonb)`,
-      [sessionId, world.accountId, world.projectId],
-    );
-    return sessionId;
-  };
-  try {
-    await world.fund();
-    await world.setFeature('warm_sessions', true);
-
-    await ctx.step('flag off: a claimed warm session stays in no space and stores no first_prompt', async () => {
-      const sessionId = await warmSession();
-      const r = await world.owner.post(WARM_CLAIM, { session_id: sessionId, pending_prompt: { text: 'ke2e: flag off' } }, { params });
-      r.status(200).body().has('$.space_id', null).has('$.first_prompt', null);
-      if ((await sessionSpaceId(world, sessionId)) !== null) throw new Error('flag off: the claim filed the session');
-    });
-
-    const canary = await insertSession(world, world.ownerUserId, 'private');
-    const generalId = await enableChannelsAndSettle(world, canary);
-
-    await ctx.step('flag on: a claimed warm session becomes a #general thread whose first_prompt is the claimed prompt', async () => {
-      const sessionId = await warmSession();
-      const text = 'ke2e: a thread from the mobile composer';
-      const r = await world.owner.post(WARM_CLAIM, { session_id: sessionId, pending_prompt: { text } }, { params });
-      r.status(200).body().has('$.space_id', generalId).has('$.first_prompt', text);
-      if ((await sessionSpaceId(world, sessionId)) !== generalId) throw new Error('the claimed row is not in #general');
-      const ids = await listedInSpace(world.owner, project.id, generalId);
-      if (!ids.includes(sessionId)) throw new Error('the claimed thread is not listed in #general');
     });
   } finally {
     await world.close();

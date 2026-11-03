@@ -717,7 +717,7 @@ function ChangeRequestsPage({
  * **Why toggling here rather than linking there.** Every other flag surface
  * costs three navigations to answer "is Voice on for this workspace?". The
  * flags are also the one settings list whose ROWS are what people search for
- * ("warm sessions", "us_region" out of a changelog) — a single row pointing
+ * ("event triggers", "us_region" out of a changelog) — a single row pointing
  * at a page they then have to search again is the defect this whole change
  * exists to remove. Selecting a row when the permission probe denies (or is
  * still in flight) navigates to the section instead of failing silently.
@@ -784,7 +784,7 @@ function FeatureFlagsPage({
     if (!q) return withPending;
     // Matches `key` as well as `name`/`description`, for the same reason
     // `filterFeatures` in experimental-tab.tsx does: flags get turned on from
-    // docs and changelogs that name the raw key (`warm_sessions`).
+    // docs and changelogs that name the raw key (`us_region`).
     return withPending.filter(
       (f) =>
         f.name.toLowerCase().includes(q) ||

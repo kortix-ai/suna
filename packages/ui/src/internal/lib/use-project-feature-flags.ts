@@ -29,7 +29,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
 } {
   const marketplace = useFeatureFlag(projectId, 'marketplace');
   const reminders = useFeatureFlag(projectId, 'reminders');
-  const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
   const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
   const pooledProviderSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
   const usRegion = useFeatureFlag(projectId, 'us_region');
@@ -54,7 +53,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
     flags: {
       marketplace: marketplace.enabled,
       reminders: reminders.enabled,
-      warm_sessions: warmSessions.enabled,
       secrets_egress: secretsEgress.enabled,
       pooled_provider_secrets: pooledProviderSecrets.enabled,
       us_region: usRegion.enabled,

@@ -1262,10 +1262,6 @@
           "name": "Place de marché",
           "description": "Parcourez et installez des compétences depuis des registres communautaires et fournisseurs. Les sources, mises à jour et portées d’équipe évoluent encore."
         },
-        "warm_sessions": {
-          "name": "Sessions préchauffées",
-          "description": "Gardez une sandbox prête pour un démarrage immédiat. La sandbox inactive consomme du calcul."
-        },
         "secrets_egress": {
           "name": "Secrets protégés par le réseau",
           "description": "Contrôlez les outils et destinations autorisés à recevoir les secrets du projet."
