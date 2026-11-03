@@ -129,7 +129,9 @@ let postDelayMs = 0;
 const simulatedInFlightCommands = new Set<string>();
 
 let pauseAfterPosts: number | null = null;
+const realConfig = await import('../../../config');
 mock.module('../../../config', () => ({
+  ...realConfig,
   config: { KORTIX_URL: 'https://api.test' },
   SANDBOX_VERSION: 'test',
   KNOWN_PROVIDERS: ['platinum', 'daytona'],
