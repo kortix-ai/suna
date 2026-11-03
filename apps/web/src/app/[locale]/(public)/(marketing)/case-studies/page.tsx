@@ -24,7 +24,7 @@ export default function CaseStudiesPage() {
       <PageHero
         title={caseStudies.title}
         titleMuted={caseStudies.titleMuted}
-        sub="Research institutes, cloud companies, a telecom company, a hedge fund desk and Kortix itself, run on Kortix agents."
+        sub="Banking, telecom, asset management, retail, research and more, run on Kortix agents."
       />
       {/* Room before the footer's dither band, like every other page's last section. */}
       <div className="pb-20 lg:pb-28">
