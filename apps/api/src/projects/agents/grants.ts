@@ -65,7 +65,7 @@ export const OPENCODE_BUILTIN_AGENT_NAMES: ReadonlySet<string> = new Set([
  * DIFFERENT project, onto ~50 session tokens of unrelated projects, and every
  * one of those sessions lost its CLI and connector access.
  *
- *   - `default`, My Kortix (`meta`, unless `builtin_agents.my_kortix: false`)
+ *   - `default`, My Kortix (`mykortix`, when the project runs it: `builtinAgents`)
  *     and OpenCode's built-in agents are launchable: none of them is ever
  *     another project's agent. `build`/`plan`/`general`/`explore` are
  *     launchable only when declared.
@@ -80,8 +80,8 @@ export function isLaunchableAgentName(agentName: string, loaded: LoadedAgents): 
   const name = agentName.trim();
   if (!name) return false;
   if (name === DEFAULT_AGENT_SENTINEL) return true;
-  // My Kortix is launchable unless kortix.yaml turned it off.
-  if (isMyKortixAgentName(name)) return loaded.builtinAgents?.my_kortix !== false;
+  // My Kortix is launchable only when the project runs it (`builtin_agents.my_kortix: true`, or a manifest that needs repair).
+  if (isMyKortixAgentName(name)) return loaded.builtinAgents?.my_kortix === true;
   // OpenCode ships these in every runtime and a governed project's picker can
   // still send one. They are the runtime's own, not another project's, so they
   // keep running exactly as before: an undeclared built-in resolves to the
@@ -171,10 +171,10 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
   // token, so the deny-all overwrote the coordinator's real grant on its first
   // turn (every later `kortix` call then 403'd) and the null made the re-mint
   // refuse the prompt outright. Its grant is platform-owned, at mint and here.
-  // A kortix.yaml that turned My Kortix off (`builtin_agents.my_kortix: false`)
-  // strips an existing `meta` session of every project action on its next prompt.
+  // A project that does not run My Kortix (no `builtin_agents.my_kortix: true`)
+  // strips an existing `mykortix` session of every project action on its next prompt.
   if (isMyKortixAgentName(agentName)) {
-    return loaded.builtinAgents?.my_kortix === false ? disabledMyKortixAgentGrant() : myKortixAgentGrant();
+    return loaded.builtinAgents?.my_kortix === true ? myKortixAgentGrant() : disabledMyKortixAgentGrant();
   }
 
   // No `agents` parsed and no errors → project hasn't adopted

@@ -52,7 +52,6 @@ import {
   resolveSessionAgentGrant,
   withGrantProvenance,
 } from './secret-grant';
-import { resolveBuiltinAgents } from './my-kortix-agent';
 
 /** The re-mint could not be written. The caller must FAIL the prompt: letting it
  *  through would run the new agent against the previous agent's grant, which is
@@ -250,7 +249,7 @@ async function loadStoredSessionGrant(sessionId: string): Promise<AgentGrant | n
 
 /**
  * Does this project run My Kortix? kortix.yaml `builtin_agents.my_kortix`
- * (no key: on), as session create resolves it.
+ * (no key: off, unless the manifest needs repair), as session create resolves it.
  * A failed read answers `true`: the grant re-mint fails closed on its own.
  */
 async function myKortixEnabled(projectId: string): Promise<boolean> {
@@ -276,7 +275,8 @@ async function myKortixEnabled(projectId: string): Promise<boolean> {
           { forceRefresh: 'tip-proof' },
         )
       : null;
-    return resolveBuiltinAgents(loaded?.builtinAgents ?? {}).my_kortix;
+    // No default branch: nothing to read, the manifest needs repair.
+    return loaded ? loaded.builtinAgents?.my_kortix === true : true;
   } catch {
     return true;
   }

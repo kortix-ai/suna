@@ -23854,7 +23854,7 @@
       "project": {
         "title": "项目设置",
         "label": "My Kortix",
-        "help": "新会话以 My Kortix 开始。Kortix 维护它的提示词和工具。要关闭它，请在 kortix.yaml 中设置 <code>builtin_agents.my_kortix: false</code>。"
+        "help": "此项目已开启 My Kortix。Kortix 维护它的提示词和工具。要关闭它，请从 kortix.yaml 中删除 <code>builtin_agents.my_kortix</code>，或将其设为 false。"
       }
     },
     "modelView": {

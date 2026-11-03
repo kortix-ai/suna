@@ -61,11 +61,15 @@ flow('INIT-1', { domain: 'cli', routes: [] }, async (ctx) => {
         check('no harnesses/ folder', !sb.exists('init-one/harnesses'), false, sb.exists('init-one/harnesses'));
         check('no .kortix/ folder', !sb.exists('init-one/.kortix'), false, sb.exists('init-one/.kortix'));
         const manifest = readFileSync(join(sb.cwd, 'init-one', 'kortix.yaml'), 'utf8');
+        const starterShape =
+          manifest.includes('builtin_agents:\n  my_kortix: true') &&
+          manifest.includes('default_agent: mykortix') &&
+          manifest.includes('prompt_file: agents/worker.md');
         check(
-          'kortix.yaml declares the worker agent as the default and names its prompt file',
-          manifest.includes('default_agent: worker') && manifest.includes('prompt_file: agents/worker.md'),
+          'kortix.yaml turns My Kortix on as the default agent and names the worker prompt file',
+          starterShape,
           true,
-          manifest.includes('default_agent: worker') && manifest.includes('prompt_file: agents/worker.md'),
+          starterShape,
         );
         check('kortix.yaml has no kortix_version', !manifest.includes('kortix_version'), true, !manifest.includes('kortix_version'));
         // codex is the default primary → AGENTS.md pointer is wired.
