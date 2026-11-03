@@ -1798,15 +1798,11 @@ function readAcmeDnsAccounts(instance: string, bases: readonly string[]): Record
   return out;
 }
 
-function acmeDnsApi(env: SelfHostEnv): string {
-  return `http://127.0.0.1:${env.KORTIX_ACME_DNS_API_PORT || '13750'}`;
-}
-
-async function waitForAcmeDns(env: SelfHostEnv, timeoutMs = 30_000): Promise<boolean> {
+async function waitForAcmeDns(timeoutMs = 30_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`${acmeDnsApi(env)}/health`, { signal: AbortSignal.timeout(2000) });
+      const res = await fetch('http://127.0.0.1:13750/health', { signal: AbortSignal.timeout(2000) });
       if (res.ok) return true;
     } catch {
       // Not up yet.
@@ -1923,7 +1919,7 @@ async function selfHostTls(args: string[], flags: GlobalFlags): Promise<number> 
   writeCompose(flags.instance, env);
 
   const up = compose(flags.instance, ['up', '-d', '--no-deps', '--quiet-pull', ...(configChanged ? ['--force-recreate'] : []), 'acme-dns']);
-  if (up !== 0 || !(await waitForAcmeDns(env))) {
+  if (up !== 0 || !(await waitForAcmeDns())) {
     process.stderr.write(`${status.err('acme-dns did not start. See: kortix self-host logs acme-dns')}\n`);
     return 1;
   }
@@ -1931,7 +1927,7 @@ async function selfHostTls(args: string[], flags: GlobalFlags): Promise<number> 
   const accounts = readAcmeDnsAccounts(flags.instance, bases);
   for (const base of bases) {
     if (accounts[base]) continue;
-    const res = await fetch(`${acmeDnsApi(env)}/register`, { method: 'POST', signal: AbortSignal.timeout(10_000) });
+    const res = await fetch('http://127.0.0.1:13750/register', { method: 'POST', signal: AbortSignal.timeout(10_000) });
     if (!res.ok) {
       process.stderr.write(`${status.err(`acme-dns registration for ${base} failed: HTTP ${res.status}`)}\n`);
       return 1;
@@ -1947,7 +1943,7 @@ async function selfHostTls(args: string[], flags: GlobalFlags): Promise<number> 
   for (const base of bases) {
     const account = accounts[base]!;
     const probe = delegationProbeValue();
-    await fetch(`${acmeDnsApi(env)}/update`, {
+    await fetch('http://127.0.0.1:13750/update', {
       method: 'POST',
       headers: { 'X-Api-User': account.username, 'X-Api-Key': account.password, 'Content-Type': 'application/json' },
       body: JSON.stringify({ subdomain: account.subdomain, txt: probe }),
