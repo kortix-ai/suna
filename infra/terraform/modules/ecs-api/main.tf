@@ -660,6 +660,7 @@ resource "aws_ecs_task_definition" "this" {
 }
 
 resource "aws_ecs_service" "this" {
+  #checkov:skip=CKV_AWS_333:A task in the network module's egress subnets gets a public IP so its egress skips NAT processing. The service security group admits only the load balancer, so the IP opens no inbound path.
   name            = local.name
   cluster         = aws_ecs_cluster.this.id
   task_definition = aws_ecs_task_definition.this.arn
