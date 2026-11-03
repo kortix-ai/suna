@@ -6,7 +6,7 @@
  * (`chat_channel_bindings`). Re-pointing a channel bound to another project
  * also needs that project to allow the presser.
  */
-import { chatChannelBindings, chatInstalls, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls, chatThreads, projects } from '@kortix/db';
 import { and, eq, ne } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { readChannelAccess } from '../core/channel-access';
@@ -33,13 +33,13 @@ export const projectPressData = (projectId: string) => `kd:${projectId}`;
  * the server installed. In a DM: every project that allows the sender.
  */
 export async function connectReply(place: { guildId: string | null; userId: string }): Promise<{ content: string; components: unknown[] }> {
-  const ids = place.guildId ? await discordGuildProjects(place.guildId) : (await projectsAllowing(place.userId)).map((p) => p.projectId);
+  // Only the projects that allow the caller: no one else learns which projects share the server.
+  const allowing = (await projectsAllowing(place.userId)).map((p) => p.projectId);
+  const ids = place.guildId ? (await discordGuildProjects(place.guildId)).filter((id) => allowing.includes(id)) : allowing;
   const named = (await projectNames(ids)).slice(0, 25);
   if (!named.length) {
     return {
-      content: place.guildId
-        ? 'This server is not connected to a Kortix project. A project admin connects it under Customize → Connectors → Channels → Discord.'
-        : 'No Kortix project allows your Discord account yet. Ask a project admin to allow your Discord user id under Customize → Connectors → Channels → Discord.',
+      content: `No Kortix project here allows your Discord account yet. Ask a project admin to allow your Discord user ID ${place.userId} under Customize → Connectors → Channels → Discord.`,
       components: [],
     };
   }
@@ -56,11 +56,14 @@ export async function connectReply(place: { guildId: string | null; userId: stri
  */
 export async function bindDiscordChannel(conversation: DiscordConversation, projectId: string, userId: string): Promise<boolean> {
   const channelId = conversation.settingsId;
-  const held = await db
-    .select({ projectId: chatChannelBindings.projectId, metadata: projects.metadata })
-    .from(chatChannelBindings)
-    .innerJoin(projects, and(eq(projects.projectId, chatChannelBindings.projectId), eq(projects.status, 'active')))
-    .where(and(eq(chatChannelBindings.platform, 'discord'), eq(chatChannelBindings.channelId, channelId), ne(chatChannelBindings.projectId, projectId)));
+  // Only its person presses a button in their own DM: they move it wherever a project allows them.
+  const held = conversation.direct
+    ? []
+    : await db
+        .select({ projectId: chatChannelBindings.projectId, metadata: projects.metadata })
+        .from(chatChannelBindings)
+        .innerJoin(projects, and(eq(projects.projectId, chatChannelBindings.projectId), eq(projects.status, 'active')))
+        .where(and(eq(chatChannelBindings.platform, 'discord'), eq(chatChannelBindings.channelId, channelId), ne(chatChannelBindings.projectId, projectId)));
   if (held.some((row) => !readChannelAccess(row.metadata, 'discord').allowedUserIds.includes(userId))) return false;
   await db.transaction(async (tx) => {
     const [install] = await tx
@@ -71,6 +74,10 @@ export async function bindDiscordChannel(conversation: DiscordConversation, proj
     if (!install) return;
     // A DM has one row whatever guild it sits under; a guild channel has one in its guild.
     await tx.delete(chatChannelBindings).where(and(eq(chatChannelBindings.platform, 'discord'), eq(chatChannelBindings.channelId, channelId)));
+    // A conversation that is the channel itself (a DM, a channel without threads) leaves its old project's session.
+    await tx
+      .delete(chatThreads)
+      .where(and(eq(chatThreads.platform, 'discord'), eq(chatThreads.threadId, channelId), ne(chatThreads.projectId, projectId)));
     await tx.insert(chatChannelBindings).values({
       platform: 'discord',
       workspaceId: conversation.guildId,

@@ -24,7 +24,7 @@ import { allowChannelUser } from '../core/channel-access';
 import { frontendBase, type InstallCompletion, installHandoffUrl, stateForCaller } from '../core/install-completion';
 import { signChannelState, verifyChannelState } from '../core/signed-state';
 import { discordApiBase, discordConfigured } from './api';
-import { DISCORD_USER_ID, saveDiscordInstall } from './installs';
+import { DISCORD_USER_ID, discordGuildProjects, leaveDiscordGuild, saveDiscordInstall } from './installs';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -152,7 +152,9 @@ export async function completeDiscordOauthInstall(input: { projectId: string; us
     return done({ error: token.error === 'invalid_grant' ? 'oauth_code_expired' : 'discord_no_server' });
   }
 
-  await saveDiscordInstall({ projectId: input.projectId, guildId, guildName: token.guild?.name?.slice(0, 100) ?? null });
+  const { replacedGuildId } = await saveDiscordInstall({ projectId: input.projectId, guildId, guildName: token.guild?.name?.slice(0, 100) ?? null });
+  // The server this one replaced: the bot leaves it when no other project has it.
+  if (replacedGuildId && (await discordGuildProjects(replacedGuildId)).length === 0) await leaveDiscordGuild(replacedGuildId);
 
   // The installer talks to the bot at once: their Discord account is allowed.
   try {

@@ -39,11 +39,6 @@ export interface DiscordPlace {
   userId?: string;
 }
 
-async function activeProject(projectId: string): Promise<boolean> {
-  const [row] = await db.select({ status: projects.status }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
-  return row?.status === 'active';
-}
-
 /** The project of a bound channel row whose project still has the guild installed. */
 async function boundProject(guildId: string, channelId: string): Promise<string | null> {
   const [row] = await db
@@ -75,13 +70,14 @@ export async function resolveDiscordRoute(place: DiscordPlace): Promise<DiscordR
 
 async function resolveGuild(place: DiscordPlace & { guildId: string }): Promise<DiscordRoute> {
   const { guildId } = place;
+  const installs = await discordGuildProjects(guildId);
   if (place.threadId) {
+    // A thread of a project that left the server (or was deleted) routes as a new conversation.
     const thread = await findChatThread({ platform: 'discord', workspaceId: guildId, threadId: place.threadId });
-    if (thread && (await activeProject(thread.projectId))) return { kind: 'project', projectId: thread.projectId, guildId };
+    if (thread && installs.includes(thread.projectId)) return { kind: 'project', projectId: thread.projectId, guildId };
   }
   const bound = await boundProject(guildId, place.channelId);
   if (bound) return { kind: 'project', projectId: bound, guildId };
-  const installs = await discordGuildProjects(guildId);
   if (installs.length === 1) return { kind: 'project', projectId: installs[0]!, guildId };
   return installs.length ? { kind: 'ambiguous', projectIds: installs, guildId } : { kind: 'none' };
 }

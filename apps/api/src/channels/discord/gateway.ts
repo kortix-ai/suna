@@ -16,6 +16,10 @@
  * It routes each to its project (routing.ts) first; a server with no project,
  * or more than one, hears once per channel and hour what to do instead.
  */
+import { projects } from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { db } from '../../shared/db';
+import { readChannelAccess } from '../core/channel-access';
 import { CHANNEL_COMMANDS } from '../core/command-list';
 import { claimThreadCreate } from '../core/threads';
 import { config } from '../../config';
@@ -146,6 +150,12 @@ function storedMessage(m: GatewayMessage): DiscordStoredMessage {
   };
 }
 
+/** The project's Discord allow-list holds the user. */
+async function projectAllows(projectId: string, userId: string): Promise<boolean> {
+  const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  return readChannelAccess(row?.metadata, 'discord').allowedUserIds.includes(userId);
+}
+
 /** Message types a person writes: a plain message and a reply. Joins, pins and boosts are not. */
 const PERSON_MESSAGE_TYPES = new Set([0, 19]);
 
@@ -212,6 +222,8 @@ export async function intakeMessage(m: GatewayMessage, botUserId: string): Promi
     await noticeOnce(m.channel_id, m.id, text);
     return 'ignored';
   }
+  // A thread's other messages (the Message Content intent) are stored only from someone the project allows.
+  if (!place.addressed && !(await projectAllows(route.projectId, m.author.id))) return 'ignored';
   const data: DiscordMessageEventData = { message: storedMessage(m), conversation: { ...place, guildId: route.guildId }, botUserId };
   await emitIntegrationEvent({
     id: m.id,
@@ -268,6 +280,8 @@ export class DiscordGateway {
   private heartbeat: ReturnType<typeof setInterval> | null = null;
   private acked = true;
   private stopped = true;
+  /** A close Discord calls fatal (a bad token, intents the application lacks): no reconnect until the process restarts. */
+  fatal = false;
   private attempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   botUserId: string | null = null;
@@ -277,7 +291,8 @@ export class DiscordGateway {
   constructor(private readonly onMessage: (m: GatewayMessage, botUserId: string) => Promise<unknown> = intakeMessage) {}
 
   start(): void {
-    if (!this.stopped || !discordConfigured()) return;
+    // After a fatal close every identify fails the same way, and over 1,000 identifies a day reset the token.
+    if (!this.stopped || this.fatal || !discordConfigured()) return;
     this.stopped = false;
     this.connect(false);
   }
@@ -320,9 +335,17 @@ export class DiscordGateway {
       if (this.stopped) return;
       if (FATAL_CLOSES.has(event.code)) {
         this.stopped = true;
+        this.fatal = true;
         logger.error('[discord] the Gateway refused the bot; messages stop until it is fixed', {
           code: event.code,
-          hint: event.code === 4014 ? 'enable the Message Content intent of the Kortix Discord application' : event.code === 4004 ? 'DISCORD_BOT_TOKEN is wrong' : undefined,
+          hint:
+            event.code === 4014
+              ? 'DISCORD_MESSAGE_CONTENT is on but the application lacks the Message Content intent'
+              : event.code === 4004
+                ? 'DISCORD_BOT_TOKEN is wrong'
+                : event.code === 4011
+                  ? 'the bot is in too many servers for one shard: sharding is needed'
+                  : undefined,
         });
         return;
       }

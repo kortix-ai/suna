@@ -65,12 +65,10 @@ export async function saveDiscordInstall(input: { projectId: string; guildId: st
     .onConflictDoNothing();
   const replaced = previous && previous.guildId !== input.guildId ? previous.guildId : null;
   if (replaced) {
-    // Requests came from the old server's members; its channels and threads were the old server's.
+    // Requests came from the old server's members; its channels, threads and DMs were the old server's.
     await clearChannelAccessRequests('discord', input.projectId);
     await deleteDiscordBindings(input.projectId);
-    await db
-      .delete(chatThreads)
-      .where(and(eq(chatThreads.platform, 'discord'), eq(chatThreads.projectId, input.projectId), eq(chatThreads.workspaceId, replaced)));
+    await db.delete(chatThreads).where(and(eq(chatThreads.platform, 'discord'), eq(chatThreads.projectId, input.projectId)));
   }
   await upsertSecret(input.projectId, DISCORD_GUILD_NAME, input.guildName ?? '');
   return { replacedGuildId: replaced };
@@ -105,7 +103,7 @@ export async function discordGuildProjects(guildId: string): Promise<string[]> {
 
 /**
  * Disconnect and the project delete: the install, its bindings, settings,
- * secret and requests go. The allowed list stays for a reconnect. When no
+ * conversations (threads and DMs), secret and requests go. The allowed list stays for a reconnect. When no
  * project has the guild any more, the bot leaves it (best effort), so it reads
  * no more of its messages.
  */
@@ -115,6 +113,8 @@ export async function releaseDiscordInstall(projectId: string): Promise<void> {
     .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.projectId, projectId)))
     .returning({ guildId: chatInstalls.workspaceId });
   await deleteDiscordBindings(projectId);
+  // Its sessions' threads and DMs: no longer this project's conversations (the connector gate reads them).
+  await db.delete(chatThreads).where(and(eq(chatThreads.platform, 'discord'), eq(chatThreads.projectId, projectId)));
   await deleteProjectSecrets(projectId, [DISCORD_GUILD_NAME]);
   await clearChannelAccessRequests('discord', projectId);
   if (removed && discordConfigured() && (await discordGuildProjects(removed.guildId).catch(() => ['?'])).length === 0) {
@@ -141,5 +141,6 @@ export async function forgetDiscordGuild(guildId: string): Promise<string[]> {
     await deleteDiscordBindings(projectId);
     await clearChannelAccessRequests('discord', projectId);
   }
+  await db.delete(chatThreads).where(and(eq(chatThreads.platform, 'discord'), eq(chatThreads.workspaceId, guildId)));
   return removed.map((r) => r.projectId);
 }

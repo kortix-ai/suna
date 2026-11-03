@@ -14,6 +14,7 @@ export function startDiscordGateway(): void {
   discordGateway.start();
   checkTimer = setInterval(() => {
     void runWorkerTick('discord-gateway', async () => {
+      // A fatal close stays closed until the process restarts (gateway.ts `fatal`).
       if (!discordGateway.connected) discordGateway.start();
     });
   }, 60_000);

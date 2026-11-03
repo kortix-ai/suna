@@ -11,7 +11,7 @@ import { generateKeyPairSync, sign } from 'node:crypto';
 import { accounts, chatChannelBindings, chatInstalls, chatThreads, jobQueue, projectSessions, projects } from '@kortix/db';
 import { and, eq, like } from 'drizzle-orm';
 import { config } from '../../config';
-import { discordCallRefusal } from '../../connectors/channel-discord-scope';
+import { discordCallRefusal, resetDiscordScopeForTest } from '../../connectors/channel-discord-scope';
 import { db } from '../../shared/db';
 import { runJobBatch } from '../../shared/job-queue';
 import { resetChannelLifecycleForTest, setChannelLifecycleForTest } from '../core/conversation';
@@ -20,7 +20,8 @@ import { channelAppWebhookRoutes } from '../inbound/webhook-routes';
 import { snowflakeSequence } from './api';
 import { DiscordGateway, discordIntents, intakeMessage, type GatewayMessage } from './gateway';
 import { discordInbound } from './inbound';
-import { forgetDiscordGuild, loadDiscordInstall, saveDiscordInstall } from './installs';
+import { bindDiscordChannel } from './connect';
+import { forgetDiscordGuild, loadDiscordInstall, releaseDiscordInstall, saveDiscordInstall } from './installs';
 import { resolveDiscordRoute } from './routing';
 
 const webhook = channelAppWebhookRoutes(discordInbound);
@@ -306,6 +307,8 @@ describe('a conversation', () => {
       expect(await intakeMessage(reply, BOT)).toBe('stored');
       channels.set('760000000000000001', { id: '760000000000000001', type: 11, guild_id: GUILD, parent_id: CHANNEL, name: 'people talking' });
       expect(await intakeMessage(message({ channel_id: '760000000000000001', content: 'lunch?', mentions: [] }), BOT)).toBe('ignored');
+      // In the held thread, someone the project does not allow is not stored either: only a mention from them is.
+      expect(await intakeMessage(message({ channel_id: start.id, content: 'me too', mentions: [], author: { id: STRANGER, username: 'synthetic_kim' } }), BOT)).toBe('ignored');
       await drain();
       expect(delivered.map((d) => d.idempotencyKey)).toEqual([`discord:${GUILD}:${reply.id}`]);
       expect(String(delivered[0]!.text)).toContain('The next message in this conversation continues this session');
@@ -381,6 +384,15 @@ describe('/connect', () => {
     expect(told?.body.flags).toBe(64);
   });
 
+  test('/connect shows a person only the projects that allow them', async () => {
+    const reply = (await (await interact(command('connect', { id: OTHER_CHANNEL, type: 0, name: 'random' }, STRANGER))).json()) as {
+      data: { content: string; components: unknown[] };
+    };
+    expect(reply.data.components).toEqual([]);
+    expect(reply.data.content).toContain(`allows your Discord account yet`);
+    expect(reply.data.content).not.toContain('discord-main');
+  });
+
   test('a forged project button for a project without the server stores nothing', async () => {
     const stranger = crypto.randomUUID();
     const press = {
@@ -421,6 +433,62 @@ describe('the kortix_discord connector', () => {
     const [thread] = await db.select().from(chatThreads).where(eq(chatThreads.threadId, own));
     expect(await refusal({ channel_id: own }, thread!.sessionId)).toBeNull();
     expect(await refusal({ channel_id: CHANNEL }, thread!.sessionId)).toContain(`answers Discord conversation ${own} only`);
+  });
+});
+
+describe('the shared bot token stays in each project', () => {
+  const GUILD_B = '720000000000000002';
+  const DM2 = '750000000000000002';
+  const LEFT = crypto.randomUUID();
+
+  beforeEach(() => resetDiscordScopeForTest());
+
+  test("a DM moved to another project leaves its old project nothing there, and its history before the move stays closed", async () => {
+    await db.insert(projects).values({ projectId: LEFT, accountId: ACCOUNT, name: 'discord-left', repoUrl: 'file:///nonexistent/left.git', metadata: { discord: { allowedUserIds: [] } } });
+    await saveDiscordInstall({ projectId: LEFT, guildId: GUILD_B, guildName: null });
+    const old = await newSession(LEFT);
+    await bindChatThread({ platform: 'discord', workspaceId: GUILD_B, threadId: DM2, projectId: LEFT, sessionId: old });
+    await db.insert(chatChannelBindings).values({ platform: 'discord', workspaceId: GUILD_B, channelId: DM2, projectId: LEFT, channelType: 'dm' });
+    expect(await discordCallRefusal({ projectId: LEFT, args: { channel_id: DM2 } })).toBeNull();
+
+    // The person moves their DM, though the old project no longer allows them: only they press a button in it.
+    const moved = await bindDiscordChannel({ guildId: GUILD, threadId: DM2, settingsId: DM2, direct: true, startThread: false, addressed: true, channelName: null, threadName: null }, PROJECT, ALLOWED);
+    expect(moved).toBe(true);
+    expect(await discordCallRefusal({ projectId: LEFT, args: { channel_id: DM2 } })).toContain('not a conversation of this Kortix project');
+    expect(await db.select().from(chatThreads).where(and(eq(chatThreads.threadId, DM2), eq(chatThreads.projectId, LEFT)))).toEqual([]);
+
+    expect(await discordCallRefusal({ projectId: PROJECT, actionPath: 'send_message', args: { channel_id: DM2 } })).toBeNull();
+    expect(await discordCallRefusal({ projectId: PROJECT, actionPath: 'get_messages', args: { channel_id: DM2 } })).toContain('`after`');
+    expect(await discordCallRefusal({ projectId: PROJECT, actionPath: 'get_messages', args: { channel_id: DM2, after: snowflake() } })).toBeNull();
+  });
+
+  test('a project that left a server keeps no conversation there, and its old threads route to the server\'s project', async () => {
+    const left = '760000000000000009';
+    const session = await newSession(LEFT);
+    await bindChatThread({ platform: 'discord', workspaceId: GUILD, threadId: left, projectId: LEFT, sessionId: session });
+    // LEFT never had GUILD (or left it): its row grants nothing and routes nothing.
+    expect(await discordCallRefusal({ projectId: LEFT, args: { channel_id: left } })).not.toBeNull();
+    expect(await resolveDiscordRoute({ guildId: GUILD, channelId: CHANNEL, threadId: left })).toMatchObject({ kind: 'project', projectId: PROJECT });
+    await releaseDiscordInstall(LEFT);
+    expect(await db.select().from(chatThreads).where(eq(chatThreads.projectId, LEFT))).toEqual([]);
+  });
+
+  test('in a server shared by two projects, a channel no project holds is refused; path arguments stay in the channel; calls are budgeted', async () => {
+    const unbound = '730000000000000003';
+    channels.set(unbound, { id: unbound, type: 0, guild_id: GUILD, parent_id: null, name: 'general' });
+    // OTHER has the server too (/connect above).
+    expect(await discordCallRefusal({ projectId: PROJECT, args: { channel_id: unbound } })).toContain('more than one Kortix project');
+    await releaseDiscordInstall(OTHER);
+    expect(await discordCallRefusal({ projectId: PROJECT, args: { channel_id: unbound } })).toBeNull();
+
+    expect(await discordCallRefusal({ projectId: PROJECT, args: { channel_id: CHANNEL, message_id: '..' } })).toContain('`message_id`');
+    expect(await discordCallRefusal({ projectId: PROJECT, args: { channel_id: CHANNEL, message_id: snowflake(), emoji: '..' } })).toContain('`emoji`');
+
+    resetDiscordScopeForTest();
+    const verdicts = [];
+    for (let i = 0; i < 61; i++) verdicts.push(await discordCallRefusal({ projectId: PROJECT, args: { channel_id: CHANNEL } }));
+    expect(verdicts.slice(0, 60).every((v) => v === null)).toBe(true);
+    expect(verdicts[60]).toContain('more than 60 Discord calls');
   });
 });
 
@@ -465,6 +533,39 @@ describe('the Gateway', () => {
       socket!.send(JSON.stringify({ op: 7, d: null }));
       for (let i = 0; i < 300 && !received.some((p) => p.op === 6); i++) await Bun.sleep(10);
       expect(received.find((p) => p.op === 6)?.d).toEqual({ token: 'synthetic-token', session_id: 'synthetic-session', seq: 2 });
+    } finally {
+      client.stop();
+      gateway.stop(true);
+    }
+  });
+
+  test('a fatal close (a wrong token) stops the Gateway for good: no identify loop', async () => {
+    let connections = 0;
+    const gateway = Bun.serve({
+      port: 0,
+      fetch(req, server) {
+        return server.upgrade(req) ? undefined : new Response('no', { status: 400 });
+      },
+      websocket: {
+        open(ws) {
+          connections += 1;
+          ws.send(JSON.stringify({ op: 10, d: { heartbeat_interval: 600_000 } }));
+        },
+        message(ws, data) {
+          if (JSON.parse(String(data)).op === 2) ws.close(4004, 'Authentication failed');
+        },
+      },
+    });
+    (config as Record<string, unknown>).DISCORD_GATEWAY_URL = `ws://localhost:${gateway.port}`;
+    const client = new DiscordGateway(async () => {});
+    try {
+      client.start();
+      for (let i = 0; i < 200 && !client.fatal; i++) await Bun.sleep(10);
+      expect(client.fatal).toBe(true);
+      client.start();
+      await Bun.sleep(100);
+      expect(connections).toBe(1);
+      expect(client.connected).toBe(false);
     } finally {
       client.stop();
       gateway.stop(true);
