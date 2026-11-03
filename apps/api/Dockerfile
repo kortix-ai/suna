@@ -267,6 +267,7 @@ COPY --from=deps /app/packages/db/scripts/migration-target.ts ./packages/db/scri
 COPY --from=deps /app/packages/db/scripts/migration-ledger-repair.ts ./packages/db/scripts/migration-ledger-repair.ts
 COPY --from=deps /app/packages/db/scripts/migration-retry.ts ./packages/db/scripts/migration-retry.ts
 COPY --from=deps /app/packages/db/scripts/migration-runtime-overrides.ts ./packages/db/scripts/migration-runtime-overrides.ts
+COPY --from=deps /app/packages/db/scripts/contact-forms-prerequisite.sql ./packages/db/scripts/contact-forms-prerequisite.sql
 COPY --from=deps /app/packages/db/scripts/migration-status.ts ./packages/db/scripts/migration-status.ts
 COPY --from=deps /app/packages/db/scripts/catalog.ts ./packages/db/scripts/catalog.ts
 # Non-kortix bootstrap (basejump + credit RPCs + signup triggers) for FRESH
