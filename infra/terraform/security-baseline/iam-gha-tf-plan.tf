@@ -37,7 +37,7 @@ resource "aws_iam_role" "gha_tf_plan" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:kortix-ai/suna:ref:refs/heads/dev"
+          "token.actions.githubusercontent.com:sub" = [for repo in local.github_repos : "repo:${repo}:ref:refs/heads/dev"]
         }
       }
     }]
