@@ -9,6 +9,7 @@ import { canShareScreen, sampleScreen, SCREEN_MEDIA, type ScreenSampler } from '
 import {
   AUDIBLE_RMS,
   createPlayback,
+  DIAL_MS,
   INITIAL_CALL,
   reduceCall,
   REDIAL_MS,
@@ -160,10 +161,13 @@ export function useVoiceCall(sessionId: string) {
         if (disposed || socket !== opened) return;
         dropAudio();
         if (current.phase === 'connecting') {
-          // Before the first `ready`: a port nothing listens on is a sandbox without the relay, which a redial
-          // cannot fix. The proxy answers that itself (502/503/504).
+          // Before the first `ready`: dialed again while a box that just started opens the relay's port (DIAL_MS).
+          // After the last try, a port nothing listens on is a sandbox without the relay: the proxy answers that
+          // itself (502/503/504), and the probe tells it from a failed dial.
           void probePreviewPort(voiceRelayHealthUrl(portUrl)).then((relay) => {
-            if (!disposed) step({ type: 'drop', relay });
+            if (disposed) return;
+            const next = step({ type: 'drop', relay });
+            if (next.phase === 'connecting') redial = setTimeout(() => void dial(false), DIAL_MS[next.redials - 1]);
           });
           return;
         }

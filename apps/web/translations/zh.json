@@ -25051,6 +25051,7 @@
   },
   "voiceCall": {
     "title": "语音通话",
+    "call": "通话",
     "start": "开始语音通话",
     "end": "结束通话",
     "connecting": "正在连接…",

@@ -25007,6 +25007,7 @@
   },
   "voiceCall": {
     "title": "Voice call",
+    "call": "Call",
     "start": "Start a voice call",
     "end": "End call",
     "connecting": "Connecting…",

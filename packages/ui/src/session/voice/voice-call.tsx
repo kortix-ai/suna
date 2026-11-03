@@ -5,6 +5,7 @@ import { PhoneIcon } from '@phosphor-icons/react';
 import { lazy, Suspense, useEffect } from 'react';
 
 import { useTranslations } from '../../i18n';
+import { useNewProjectSession } from '../../internal/hooks/projects/use-new-project-session';
 import { isDesktop } from '../../internal/lib/desktop-detect';
 import { Button } from '../../primitives/button';
 import Hint from '../../primitives/hint';
@@ -14,27 +15,35 @@ import { useVoiceCallStore } from './voice-call-store';
 const VoiceCallBar = lazy(() => import('./voice-call-bar').then((m) => ({ default: m.VoiceCallBar })));
 
 /**
- * The session header's Call button: only while the project's `voice_call` flag is on, and not in the desktop
- * shell, whose signed app has no microphone entitlement yet (apps/desktop-electron). It opens and ends the call.
+ * The agent page's Call button (Customize → Agents → <agent>). A call is a session of its own on this agent: the
+ * agent answers with its own instructions, tools and memory, and the call's transcript is that session's chat, never
+ * mixed into one already open. It starts the session the way Start session does and opens the call for it, so the
+ * session page dials as soon as its box is up. Only while the project's `voice_call` flag is on, and not in the
+ * desktop shell, whose signed app has no microphone entitlement yet (apps/desktop-electron).
  */
-export function VoiceCallButton({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+export function AgentCallButton({ projectId, agentName }: { projectId: string; agentName: string }) {
   const t = useTranslations('voiceCall');
   const { enabled } = useFeatureFlag(projectId, 'voice_call');
-  const open = useVoiceCallStore((s) => s.sessionId === sessionId);
-  const toggle = useVoiceCallStore((s) => s.toggle);
+  const startSession = useNewProjectSession(projectId);
   if (!enabled || isDesktop()) return null;
-  const label = open ? t('end') : t('start');
+  const call = () => {
+    let placed: string | undefined;
+    startSession({
+      create: { agent_name: agentName },
+      onCreating: (sessionId) => {
+        placed = sessionId;
+        useVoiceCallStore.getState().open(sessionId);
+      },
+      onError: () => {
+        if (placed) useVoiceCallStore.getState().close(placed);
+      },
+    });
+  };
   return (
-    <Hint side="bottom" sideOffset={4} delayDuration={300} label={label}>
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label={label}
-        aria-pressed={open}
-        onClick={() => toggle(sessionId)}
-        className="text-muted-foreground hover:text-foreground aria-pressed:bg-foreground/10 aria-pressed:text-foreground cursor-pointer transition-colors active:scale-[0.96]"
-      >
-        <PhoneIcon className="h-4 w-4" />
+    <Hint side="bottom" sideOffset={4} delayDuration={300} label={t('start')}>
+      <Button variant="secondary" size="sm" aria-label={t('start')} onClick={call}>
+        <PhoneIcon weight="fill" className="size-3.5 shrink-0" />
+        <span className="hidden sm:inline">{t('call')}</span>
       </Button>
     </Hint>
   );

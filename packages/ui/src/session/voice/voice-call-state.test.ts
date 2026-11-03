@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   CLEAR_ROLLOFF_MS,
   createPlayback,
+  DIAL_MS,
   DUCK_GAIN,
   HOLD_PAUSE_MS,
   INITIAL_CALL,
@@ -19,10 +20,16 @@ describe('reduceCall', () => {
     expect(run([{ type: 'ready' }]).phase).toBe('live');
   });
 
-  test('a drop before ready ends the call: unavailable when nothing listens on the port, failed otherwise', () => {
-    expect(run([{ type: 'drop', relay: 'unreachable' }])).toMatchObject({ phase: 'ended', end: 'unavailable' });
-    expect(run([{ type: 'drop', relay: 'unknown' }])).toMatchObject({ phase: 'ended', end: 'failed' });
-    expect(run([{ type: 'drop', relay: 'reachable' }])).toMatchObject({ phase: 'ended', end: 'failed' });
+  test('a drop before ready is dialed again while a new box opens the relay, then ends the call', () => {
+    const drops = (relay: 'unreachable' | 'unknown' | 'reachable', n: number) =>
+      run(Array.from({ length: n }, () => ({ type: 'drop' as const, relay })));
+    for (let i = 1; i <= DIAL_MS.length; i++) expect(drops('unreachable', i)).toMatchObject({ phase: 'connecting', redials: i });
+    // After the last try: unavailable when nothing listens on the port, failed otherwise.
+    expect(drops('unreachable', DIAL_MS.length + 1)).toMatchObject({ phase: 'ended', end: 'unavailable' });
+    expect(drops('unknown', DIAL_MS.length + 1)).toMatchObject({ phase: 'ended', end: 'failed' });
+    expect(drops('reachable', DIAL_MS.length + 1)).toMatchObject({ phase: 'ended', end: 'failed' });
+    // The relay answers on a later try: the call goes live.
+    expect(run([{ type: 'drop', relay: 'unreachable' }, { type: 'ready' }])).toMatchObject({ phase: 'live', redials: 0 });
   });
 
   test('a live call that drops reconnects, and ends as lost after the last redial fails', () => {

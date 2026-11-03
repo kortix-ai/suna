@@ -25051,6 +25051,7 @@
   },
   "voiceCall": {
     "title": "Sprachanruf",
+    "call": "Anrufen",
     "start": "Sprachanruf starten",
     "end": "Anruf beenden",
     "connecting": "Verbinden…",
