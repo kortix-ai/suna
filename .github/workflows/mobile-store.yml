@@ -66,6 +66,9 @@ jobs:
         with:
           # The released code only: store builds call the production API.
           ref: ${{ github.event.workflow_run.head_sha || 'prod' }}
+          # The script ships only builds made from a commit of this history
+          # (git merge-base --is-ancestor), so it needs all of it.
+          fetch-depth: 0
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:

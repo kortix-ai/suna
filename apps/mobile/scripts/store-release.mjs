@@ -14,6 +14,10 @@
 // so native code that changed after the version's store build needs a version
 // bump; the run says so instead of building.
 //
+// Only released code ships: the run builds, submits or sends to review only a
+// build that EAS made from a clean tree at a commit of the checked-out history.
+// Any other build of the version is ignored with a warning.
+//
 // Auth: EXPO_TOKEN only. App Store Connect calls use the API key EAS Submit
 // already stores for this app, read from Expo at run time.
 import { execFileSync } from 'node:child_process';
@@ -69,6 +73,46 @@ export function iosStep(state) {
   }
 }
 
+/**
+ * Build ids EAS finished submitting to the store. An Android build counts only
+ * on `track` (eas.json): a build sent to internal testing reached no user.
+ */
+export function shippedBuildIds(submissions, platform, track) {
+  return new Set(
+    submissions
+      .filter((s) => s.status === 'FINISHED' && s.submittedBuild?.id)
+      .filter((s) => platform !== 'android' || s.androidConfig?.track === track)
+      .map((s) => s.submittedBuild.id),
+  );
+}
+
+/**
+ * Which store build of the version the run uses (`builds` newest first), and
+ * whether it still has to submit it. Android: a build on the production track
+ * is the release, so the run never ships a second one. iOS: an uploaded build
+ * reaches no user before App Review, which only gets a trusted build.
+ * `build: null`: no usable build; the run builds from the released commit.
+ * `ignored`: untrusted builds newer than the one used, never shipped by the run.
+ */
+export function pickBuild({ platform, builds, shipped, trusted }) {
+  const released = builds.find((b) => shipped.has(b.id) && (platform === 'android' || trusted(b)));
+  const build = released ?? builds.find(trusted) ?? null;
+  const newer = build ? builds.slice(0, builds.indexOf(build)) : builds;
+  return { build, ship: !released, ignored: newer.filter((b) => !trusted(b) && !shipped.has(b.id)) };
+}
+
+const REPO = join(MOBILE, '../..');
+/** EAS built it from a clean tree at a commit of the checked-out (released) history. */
+function trustedBuild(build) {
+  if (build.isGitWorkingTreeDirty !== false || !build.gitCommitHash) return false;
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', build.gitCommitHash, 'HEAD'], { cwd: REPO, stdio: 'ignore' });
+    return true;
+  } catch {
+    return false; // not an ancestor, or a commit this clone does not have
+  }
+}
+
 const eas = (args) =>
   execFileSync('eas', args, { cwd: MOBILE, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 1 << 28 });
 const easJson = (args) => JSON.parse(eas([...args, '--json', '--non-interactive']));
@@ -93,15 +137,28 @@ async function expoApi(query, variables) {
   return body.data;
 }
 
-/** True when EAS finished a submission of this build to its store. */
-async function submitted(projectId, platform, buildId) {
+/** Finished store builds of the version, newest first, with their git provenance. */
+async function storeBuilds(projectId, platform, appId, version) {
+  const data = await expoApi(
+    `query ($id: String!, $filter: BuildFilter) { app { byId(appId: $id) {
+      builds(offset: 0, limit: 20, filter: $filter) { id appBuildVersion gitCommitHash isGitWorkingTreeDirty }
+    } } }`,
+    {
+      id: projectId,
+      filter: { platform: platform.toUpperCase(), status: 'FINISHED', distribution: 'STORE', buildProfile: PROFILE, appVersion: version, appIdentifier: appId },
+    },
+  );
+  return data.app.byId.builds;
+}
+
+async function submissions(projectId, platform) {
   const data = await expoApi(
     `query ($id: String!, $platform: AppPlatform!) { app { byId(appId: $id) {
-      submissions(offset: 0, limit: 50, filter: { platform: $platform }) { status submittedBuild { id } }
+      submissions(offset: 0, limit: 50, filter: { platform: $platform }) { status submittedBuild { id } androidConfig { track } }
     } } }`,
     { id: projectId, platform: platform.toUpperCase() },
   );
-  return data.app.byId.submissions.some((s) => s.status === 'FINISHED' && s.submittedBuild?.id === buildId);
+  return data.app.byId.submissions;
 }
 
 async function ascClient(projectId) {
@@ -169,7 +226,10 @@ async function releaseIos({ projectId, appId, version, buildNumber, dryRun }) {
   const versions = (await asc('GET', `/v1/apps/${appId}/appStoreVersions?filter[platform]=IOS&limit=50`)).data;
   const stateOf = (v) => v.attributes.appVersionState ?? v.attributes.appStoreState;
   const newer = versions.find((v) => compareVersions(v.attributes.versionString, version) > 0);
-  if (newer) return note('notice', `iOS ${version}: App Store Connect already has ${newer.attributes.versionString} (${stateOf(newer)}); nothing to do.`);
+  if (newer) {
+    return note('warning', `iOS ${version}: App Store Connect has the higher version ${newer.attributes.versionString} (${stateOf(newer)}). `
+      + 'Nothing is submitted until apps/mobile/app.json carries a version above it.');
+  }
 
   // App Store Connect keeps one editable version: an unsubmitted draft of
   // another number is renamed to this version instead of creating a second.
@@ -245,12 +305,19 @@ async function releasePlatform({ platform, expo, easConfig, dryRun }) {
   const version = expo.version;
   const projectId = expo.extra.eas.projectId;
   const appId = appIdentifier(expo, platform);
-  const list = ['build:list', '--platform', platform, '--app-identifier', appId, '--build-profile', PROFILE,
-    '--distribution', 'store', '--status', 'finished', '--app-version', version, '--limit', '1'];
-  let [build] = easJson(list);
+  const track = easConfig.submit[PROFILE].android.track;
+  const builds = await storeBuilds(projectId, platform, appId, version);
+  const shipped = shippedBuildIds(await submissions(projectId, platform), platform, track);
+  let { build, ship, ignored } = pickBuild({ platform, builds, shipped, trusted: trustedBuild });
+  for (const b of ignored) {
+    note('warning', `${platform} ${version} (${b.appBuildVersion}): ignored EAS build ${b.id}, built from `
+      + `${b.isGitWorkingTreeDirty === false ? '' : 'uncommitted changes on '}${b.gitCommitHash?.slice(0, 10) ?? 'no commit'}, which is not released code.`);
+  }
 
   if (!build) {
-    if (dryRun) return note('notice', `${platform} ${version}: no store build yet; would build, submit${platform === 'ios' ? ' and send to App Review' : ' to Play production'} (dry run).`);
+    if (dryRun) return note('notice', `${platform} ${version}: no usable store build; would build, submit${platform === 'ios' ? ' and send to App Review' : ` to the Play ${track} track`} (dry run).`);
+    const dirty = execFileSync('git', ['status', '--porcelain'], { cwd: REPO, encoding: 'utf8' }).trim();
+    if (dirty) throw new Error(`refusing to build from a checkout with uncommitted changes:\n${dirty.slice(0, 500)}`);
     console.log(`building ${platform} ${version} on EAS (profile ${PROFILE})`);
     [build] = easJson(['build', '--platform', platform, '--profile', PROFILE, '--wait']);
     note('notice', `${platform} ${version} (${build.appBuildVersion}) built: https://expo.dev/accounts/kortix/projects/kortix/builds/${build.id}`, true);
@@ -267,13 +334,13 @@ async function releasePlatform({ platform, expo, easConfig, dryRun }) {
     }
   }
 
-  if (!(await submitted(projectId, platform, build.id))) {
+  if (ship) {
     if (dryRun) return note('notice', `${platform} ${version} (${build.appBuildVersion}): would submit build ${build.id} (dry run).`);
     eas(['submit', '--platform', platform, '--profile', PROFILE, '--id', build.id, '--non-interactive', '--wait']);
-    const where = platform === 'ios' ? 'App Store Connect' : `Google Play ${easConfig.submit[PROFILE].android.track} track`;
+    const where = platform === 'ios' ? 'App Store Connect' : `the Google Play ${track} track`;
     note('notice', `${platform} ${version} (${build.appBuildVersion}) submitted to ${where}.`, true);
   } else if (platform === 'android') {
-    note('notice', `android ${version} (${build.appBuildVersion}) is already submitted to Google Play.`);
+    note('notice', `android ${version} (${build.appBuildVersion}) is already on the Google Play ${track} track.`);
   }
 
   if (platform === 'ios') {

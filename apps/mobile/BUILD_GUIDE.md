@@ -70,6 +70,12 @@ step only when it is missing:
    App Review with "release automatically after approval". An approved version
    held for a manual release is released.
 
+Only released code ships. The run builds, submits or sends to review only an
+EAS build made from a clean tree at a commit of the deployed history. It
+ignores any other build of the version, such as a hand-made build from `dev`
+or one with uncommitted changes, and warns. Android counts as shipped only
+after a finished submission to the `production` track.
+
 A release without a version bump changes nothing. The run posts what it
 changed, and every warning, to the release Slack channel. It warns when native
 code changed after the version's store build: bump the version, or phones get
