@@ -70,7 +70,6 @@ import {
 
 import { type ProjectRow, type ProjectSessionRow, type RequestAuditContext, normalizeString } from './serializers';
 import { normalizeJsonObject } from '../../shared/json';
-import { resolveBuiltinAgents } from './my-kortix-agent';
 import { isUuid } from '../../shared/validate';
 import {
   canonicalConnectorAlias,
@@ -538,18 +537,17 @@ async function resolveSessionAgent(params: {
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
   const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
-  // My Kortix (slug `mykortix`) is on unless kortix.yaml sets
-  // `builtin_agents.my_kortix: false`.
-  // Off: agent resolution below is the pre-meta behavior, and a session that
-  // would run My Kortix is refused with 409 builtin_agent_disabled. Without the
-  // refusal it ran with My Kortix's grant, prompt and sandbox anyway.
-  const metaAgentEnabled = resolveBuiltinAgents(loadedAgents.builtinAgents ?? {}).my_kortix;
-  // Meta→meta recursion stop. Anyone — dashboard users included — may spawn
-  // the meta coordinator, and an omitted agent still defaults to it. The one
-  // exception is a caller that IS a meta session: its omitted agent resolves
-  // to the project default (the observed failure was meta "spawning a worker"
-  // and getting another coordinator), and an explicit meta request is
-  // rejected.
+  // My Kortix (slug `mykortix`) runs only when kortix.yaml sets
+  // `builtin_agents.my_kortix: true`, or when the manifest needs repair.
+  // Off: a session that would run My Kortix is refused with 409
+  // builtin_agent_disabled. Without the refusal it ran with My Kortix's grant,
+  // prompt and sandbox anyway.
+  const metaAgentEnabled = loadedAgents.builtinAgents?.my_kortix === true;
+  // Meta→meta recursion stop. Anyone — dashboard users included — may start
+  // My Kortix. The one exception is a caller that IS a My Kortix session: its
+  // omitted agent resolves to a project agent (the observed failure was meta
+  // "spawning a worker" and getting another coordinator), and an explicit
+  // My Kortix request is rejected.
   let callerIsMeta = false;
   if (metaAgentEnabled && input.callerSessionId) {
     const [caller] = await db
@@ -564,14 +562,24 @@ async function resolveSessionAgent(params: {
       .limit(1);
     callerIsMeta = !!caller && isMyKortixAgentName(caller.agentName);
   }
-  const agentName =
-    metaAgentEnabled && !requestedAgent && !callerIsMeta
+  const manifestDefaultAgent = normalizeString(loadedAgents.defaultAgent);
+  // A session that names no agent runs `default_agent`. A project that runs My
+  // Kortix and sets no `default_agent`, or whose manifest needs repair, runs My
+  // Kortix; the mirrored default is not read then, since it can name an agent
+  // the broken file turned off.
+  let agentName =
+    metaAgentEnabled && !requestedAgent && (!manifestDefaultAgent || loadedAgents.needsRepair === true) && !callerIsMeta
       ? MY_KORTIX_AGENT_NAME
       : resolveSessionAgentName({
           requestedAgent,
-          manifestDefaultAgent: normalizeString(loadedAgents.defaultAgent),
+          manifestDefaultAgent,
           mirroredDefaultAgent,
         });
+  // My Kortix starting a session without naming an agent, in a project whose
+  // `default_agent` is My Kortix: the first enabled primary agent the file declares.
+  if (callerIsMeta && !requestedAgent && isMyKortixAgentName(agentName)) {
+    agentName = loadedAgents.specs.find((spec) => spec.enabled && !spec.subagent)?.name ?? agentName;
+  }
   if (!metaAgentEnabled && isMyKortixAgentName(agentName)) {
     return {
       error: {

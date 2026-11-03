@@ -23854,7 +23854,7 @@
       "project": {
         "title": "Configuração do projeto",
         "label": "My Kortix",
-        "help": "Novas sessões começam com o My Kortix. A Kortix mantém o prompt e as ferramentas dele. Para desativá-lo, defina <code>builtin_agents.my_kortix: false</code> no kortix.yaml."
+        "help": "O My Kortix está ativado neste projeto. A Kortix mantém o prompt e as ferramentas dele. Para desativá-lo, remova <code>builtin_agents.my_kortix</code> do kortix.yaml ou defina-o como false."
       }
     },
     "modelView": {

@@ -37,7 +37,7 @@ export function canonicalAgentName<T extends string | null | undefined>(name: T)
 
 /**
  * The built-in agents a project can turn on or off in `kortix.yaml`
- * (`builtin_agents.<key>: true|false`, absent = on). Each key maps once to the
+ * (`builtin_agents.<key>: true|false`, absent = off). Each key maps once to the
  * agent slug the platform injects. Add a built-in here, nowhere else.
  */
 export const BUILTIN_AGENTS = {
