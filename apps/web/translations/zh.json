@@ -1290,14 +1290,6 @@
           "name": "Composio 事件触发器",
           "description": "当已连接的应用中发生事件时启动智能体：新邮件、拉取请求、日历事件。事件来自 Composio。Kortix 也会自行检查你已连接的应用。"
         },
-        "volumes": {
-          "name": "卷",
-          "description": "为此项目提供共享文件。"
-        },
-        "drives": {
-          "name": "云盘",
-          "description": "与会话保持同步的共享文件夹：你自己的云盘、每个智能体一个云盘，以及管理员关联到项目的公司云盘。新会话可在 /drives 下看到它们。"
-        },
         "session_log_restore": {
           "name": "会话日志恢复",
           "description": "当会话的计算机丢失对话时，从保存的会话日志重建该会话。由 Kortix 按项目启用。"

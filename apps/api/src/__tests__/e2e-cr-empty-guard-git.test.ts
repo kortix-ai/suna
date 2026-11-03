@@ -23,8 +23,10 @@ function git(args: string[], cwd?: string): string {
   }).trim();
 }
 
+/** The child's LAST stdout line: the JSON its script writes. Modules it imports
+ *  (config, through the git helpers) may print notices first. */
 function bunEval(script: string): string {
-  return execFileSync('bun', ['--eval', script], {
+  return lastLine(execFileSync('bun', ['--eval', script], {
     cwd: join(import.meta.dir, '..', '..', '..', '..'),
     encoding: 'utf8',
     env: {
@@ -32,7 +34,12 @@ function bunEval(script: string): string {
       GIT_TERMINAL_PROMPT: '0',
       KORTIX_GIT_CACHE_DIR: join(root, 'git-cache'),
     },
-  }).trim();
+  }));
+}
+
+function lastLine(output: string): string {
+  const lines = output.trim().split('\n');
+  return lines[lines.length - 1] ?? '';
 }
 
 function mergeModuleUrl(): string {

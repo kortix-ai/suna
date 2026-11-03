@@ -1290,14 +1290,6 @@
           "name": "Composio okidači događaja",
           "description": "Pokrenite agenta kada se nešto desi u povezanoj aplikaciji: nova e-pošta, pull request, događaj u kalendaru. Događaji dolaze iz Composio-a. Kortix i sam proverava vaše povezane aplikacije."
         },
-        "volumes": {
-          "name": "Volumeni",
-          "description": "Deljeni fajlovi za ovaj projekat."
-        },
-        "drives": {
-          "name": "Drive",
-          "description": "Deljeni folderi koji ostaju usklađeni sa sesijama: tvoj drive, po jedan za svakog agenta i drive-ovi kompanije koje administrator dodeli projektu. Nove sesije ih vide pod /drives."
-        },
         "session_log_restore": {
           "name": "Vraćanje iz loga sesije",
           "description": "Ponovo gradi sesiju iz njenog sačuvanog loga sesije kada je njen računar izgubio razgovor. Kortix ga uključuje po projektu."
