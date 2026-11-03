@@ -822,10 +822,15 @@ exit 0
       recreated: () => (existsSync(log) ? readFileSync(log, 'utf8') : '').split('\n')
         .filter((line) => line.includes(' up -d --force-recreate --no-deps '))
         .map((line) => line.split(' --no-deps ')[1]),
+      // The app services each `kortix-updater roll` call rolled start-first.
+      rolled: () => (existsSync(log) ? readFileSync(log, 'utf8') : '').split('\n')
+        .filter((line) => line.includes(' kortix-updater roll '))
+        .map((line) => line.split(' kortix-updater roll ')[1]),
+      calls: () => (existsSync(log) ? readFileSync(log, 'utf8') : ''),
     };
   }
 
-  test('env set DISABLE_SIGNUP recreates supabase-auth, and ENABLE_EMAIL_AUTOCONFIRM recreates supabase-auth with kortix-api', async () => {
+  test('env set DISABLE_SIGNUP recreates supabase-auth, and ENABLE_EMAIL_AUTOCONFIRM recreates supabase-auth and rolls kortix-api', async () => {
     const docker = runningStackDocker();
     expect((await run(['init', '--yes', '--domain', 'kortix.example.com'], docker.env)).code).toBe(0);
 
@@ -834,7 +839,21 @@ exit 0
     expect(signUp.stdout).toContain('restarted: supabase-auth');
     const autoconfirm = await run(['env', 'set', 'ENABLE_EMAIL_AUTOCONFIRM=false'], docker.env);
     expect(autoconfirm.code).toBe(0);
-    expect(docker.recreated()).toEqual(['supabase-auth', 'kortix-api supabase-auth']);
+    expect(docker.recreated()).toEqual(['supabase-auth', 'supabase-auth']);
+    // Behind Caddy the API runs 2 replicas: a config change rolls them start-first, never all at once.
+    expect(docker.rolled()).toEqual(['kortix-api']);
+  }, 60_000);
+
+  test('env set KORTIX_DOMAIN_ALIASES rolls the API and frontend, then reloads Caddy in place', async () => {
+    const docker = runningStackDocker();
+    expect((await run(['init', '--yes', '--domain', 'kortix.example.com'], docker.env)).code).toBe(0);
+
+    const { code, stdout } = await run(['env', 'set', 'KORTIX_DOMAIN_ALIASES=kortix.example.org'], docker.env);
+    expect(code).toBe(0);
+    expect(docker.rolled()).toEqual(['frontend kortix-api']);
+    expect(docker.recreated()).toEqual([]);
+    expect(docker.calls()).toContain('exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile');
+    expect(stdout).toContain('reloaded: caddy');
   }, 60_000);
 
   test('update --disable-signup recreates supabase-auth after the rollout', async () => {
