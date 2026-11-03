@@ -317,13 +317,22 @@ async function build(
   let treeId = source.rootTree;
   let files: ConfigReleaseFile[] | null = null;
   let freshArchive: Buffer | null = null;
-  // A project over the cap in the last 6 h is taken to be over it still: an
-  // archive build would download every file of the tree first, only to
-  // throw it away (`over-limit-memo.ts`).
+  // A project over the cap in the last 6 h is taken to be over it still while
+  // its tree holds every blob of the tree that was over: an archive build
+  // would download every file first, only to throw it away. A tree that
+  // dropped one of them is measured again (`over-limit-memo.ts`). Listing a
+  // tree reads tree objects only. A composed tree is known only once
+  // composed, so it keeps the 6 h rule.
+  const plainTreeBlobs =
+    !composed &&
+    !archiveBytes.has(configArchiveKey(project.projectId, treeId)) &&
+    recentOverLimit(project.projectId, 'config-archive')
+      ? (await listConfigFiles(mirror, treeId)).map(([, , blob]) => blob)
+      : undefined;
   let remembered = false;
   const archiveNeeded = (id: string) => {
     if (archiveBytes.has(configArchiveKey(project.projectId, id))) return false;
-    const recent = recentOverLimit(project.projectId, 'config-archive');
+    const recent = recentOverLimit(project.projectId, 'config-archive', { blobIds: plainTreeBlobs });
     remembered = recent !== null;
     if (recent) throw new ConfigArchiveTooLargeError(archiveLimit ?? MAX_CONFIG_ARCHIVE_BYTES, recent.bytes);
     return true;
@@ -341,19 +350,24 @@ async function build(
     }
   } catch (error) {
     if (error instanceof ConfigArchiveTooLargeError) {
-      // Only a measured result starts the 6 h: a remembered one must expire.
-      if (!remembered) noteOverLimit(project.projectId, 'config-archive', error.actualBytes ?? error.limit);
       // The release exists; only the API-built archive does not. A v3 box
       // builds it from its checkout or the project snapshot. The answer is a
       // fact of the commit, so it is cached like any release: each miss tars
       // and gzips the whole tree again (~1.5 s for 36 MB).
       const read = composed ? await readComposedRelease(mirror, source, { archive: false }) : null;
       treeId = read?.treeId ?? treeId;
+      const overFiles = read?.files ?? (await listConfigFiles(mirror, treeId));
+      // Only a measured result starts the 6 h: a remembered one must expire.
+      if (!remembered) {
+        noteOverLimit(project.projectId, 'config-archive', error.actualBytes ?? error.limit, {
+          blobIds: overFiles.map(([, , blob]) => blob),
+        });
+      }
       return {
         ...withGovernance,
         release_id: configReleaseId(treeId, etag),
         config_tree_id: treeId,
-        files: read?.files ?? (await listConfigFiles(mirror, treeId)),
+        files: overFiles,
         archive_reason:
           `the repository at ${commit.slice(0, 12)} exceeds the ${archiveLimit ?? MAX_CONFIG_ARCHIVE_BYTES}-byte config archive limit. ` +
           'Move large static files out of Git into object storage (S3, R2, GCS), or mark paths no agent reads ' +
