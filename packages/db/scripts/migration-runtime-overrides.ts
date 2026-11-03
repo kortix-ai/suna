@@ -10,6 +10,9 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+const SALES_PRODUCERS_MIGRATION = '20261103164800000_sales_event_producers.sql';
+const SALES_PRODUCERS_SHA256 = '85351778ea60fe5e895623bf716243af001b1738daf2528245920ebd0465507d';
+
 const AUDIT_V2_MIGRATION = '20260807221200000_centralized_audit_v2.sql';
 const AUDIT_V2_SHA256 = '769b863ef0b62c4693e232cf102757ce3c3ee904f0f44c9aea450901a56e07f9';
 const AUDIT_V2_TIMEOUT = "SET statement_timeout = '120s';";
@@ -85,13 +88,18 @@ export function materializeMigrationRuntimeDirectory(
   sourceDirectory: string,
   options: RuntimeOverrideOptions = {},
 ): MigrationRuntimeDirectory {
+  const salesPath = join(sourceDirectory, SALES_PRODUCERS_MIGRATION);
+  const salesSource = existsSync(salesPath) ? readFileSync(salesPath, 'utf8') : null;
+  if (salesSource && sha256(salesSource) !== SALES_PRODUCERS_SHA256) {
+    throw new Error(`${SALES_PRODUCERS_MIGRATION} checksum mismatch`);
+  }
   const auditPath = join(sourceDirectory, AUDIT_V2_MIGRATION);
   const removeLocalDockerPath = join(sourceDirectory, REMOVE_LOCAL_DOCKER_MIGRATION);
   const rbacCutoverViewsPath = join(sourceDirectory, RBAC_CUTOVER_VIEWS_MIGRATION);
   const hasAuditOverride = existsSync(auditPath);
   const hasRemoveLocalDockerOverride = existsSync(removeLocalDockerPath);
   const hasRbacCutoverViewsOverride = existsSync(rbacCutoverViewsPath);
-  if (!hasAuditOverride && !hasRemoveLocalDockerOverride && !hasRbacCutoverViewsOverride) {
+  if (!salesSource && !hasAuditOverride && !hasRemoveLocalDockerOverride && !hasRbacCutoverViewsOverride) {
     return { path: sourceDirectory, appliedOverrides: [], cleanup: () => {} };
   }
 
@@ -154,6 +162,15 @@ export function materializeMigrationRuntimeDirectory(
   const appliedOverrides: string[] = [];
   try {
     cpSync(sourceDirectory, runtimeDirectory, { recursive: true });
+    if (salesSource) {
+      // The immutable producer predates restoration of its bootstrap prerequisite.
+      // Pending runs need the table before CREATE TRIGGER, not in a later migration.
+      writeFileSync(
+        join(runtimeDirectory, SALES_PRODUCERS_MIGRATION),
+        readFileSync(join(import.meta.dir, 'contact-forms-prerequisite.sql'), 'utf8') + salesSource,
+      );
+      appliedOverrides.push(`${SALES_PRODUCERS_MIGRATION}: restore contact_forms prerequisite (${SALES_PRODUCERS_SHA256})`);
+    }
     if (auditSource) {
       writeFileSync(
         join(runtimeDirectory, AUDIT_V2_MIGRATION),

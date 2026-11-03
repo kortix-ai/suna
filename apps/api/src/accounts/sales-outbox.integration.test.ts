@@ -102,7 +102,7 @@ test('reconciliation authorizes, pages tied timestamps without loss and binds cu
   config.SALES_RECONCILIATION_TOKEN = 'synthetic-reconciliation-token';
   await db.execute(sql`DELETE FROM auth.users`);
   await db.execute(sql`INSERT INTO auth.users(id,email,created_at,email_confirmed_at)
-    SELECT ('00000000-0000-4000-8000-' || lpad(n::text,12,'0'))::uuid, 'agent@kortix.ai', '2026-01-01','2026-01-02'
+    SELECT ('00000000-0000-4000-8000-' || lpad(n::text,12,'0'))::uuid, 'agent+' || n || '@kortix.ai', '2026-01-01','2026-01-02'
     FROM generate_series(1,101) n`);
   const app = new OpenAPIHono();
   registerSalesReconciliation(app);

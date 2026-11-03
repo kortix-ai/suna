@@ -155,3 +155,12 @@ describe('materializeMigrationRuntimeDirectory', () => {
     ]);
   });
 });
+
+describe('Sales producer prerequisite runtime repair', () => {
+  test('rejects a changed producer instead of repairing unknown SQL', () => {
+    const root = mkdtempSync(join(tmpdir(), 'sales-producer-override-'));
+    roots.push(root);
+    writeFileSync(join(root, '20261103164800000_sales_event_producers.sql'), 'SELECT 1;');
+    expect(() => materializeMigrationRuntimeDirectory(root)).toThrow('checksum mismatch');
+  });
+});
