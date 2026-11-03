@@ -8,6 +8,7 @@ import { connectorConnections, connectors, projectSessions, projects } from '@ko
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../config';
+import { discordConfigured } from '../channels/discord/api';
 import { bindIntegrationPrincipal } from '../shared/audit-scope';
 import { isProjectSessionPrincipal } from '../middleware/agent-scope';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
@@ -131,6 +132,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   makeGatewayDeps: (principal) => makeDbGatewayDeps(principal),
   listCatalog,
   featureFlagEnabled: projectFeatureFlagEnabled,
+  discordAvailable: discordConfigured,
   resolveAdmin,
   resolveConnectionsManager,
   resolveReader,
