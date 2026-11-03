@@ -13,6 +13,7 @@ import { recordSessionActivity } from '../session-activity';
 import { deliveryCountsAsActivity } from './delivery-activity';
 import { DAEMON_PORT, PromptNeverLandedError } from './runtime-client';
 import { armSessionRuntimeActive } from './runtime-active-signal';
+import { prefetchPromptEnv } from '../lib/sandbox-env-push';
 import { transitionSession } from './status-transitions';
 
 // After a session's runtime reports `ready` we still have to hand the prompt to
@@ -241,7 +242,13 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
           });
           return 'pending';
         }
-        boxActive = (await armed.wait(boxActive ? ACTIVE_RECHECK_MS : POLL_INTERVAL_MS)) || boxActive;
+        const signalled = await armed.wait(boxActive ? ACTIVE_RECHECK_MS : POLL_INTERVAL_MS);
+        // The box row just went active: its daemon is about a second from ready.
+        // Start the first prompt's env reads now (sandbox-env-push.ts
+        // `prefetchPromptEnv`); the proxy's sync takes them instead of reading
+        // after the box is ready.
+        if (signalled && !boxActive) prefetchPromptEnv(session.projectId, sessionId, command.overrides?.agent ?? null);
+        boxActive = signalled || boxActive;
       } finally {
         armed.cancel();
       }
