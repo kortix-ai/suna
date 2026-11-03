@@ -44,6 +44,14 @@ const allowFor = (routes: Array<[string, string]>, reason: string): AllowEntry[]
 
 export const uncoveredAllow: AllowEntry[] = [
     ...allowFor(DRIVE_SYNC_ROUTES, DRIVE_SYNC_REASON),
+  // Sales reconciliation (#11610): a machine route behind its own bearer
+  // (SALES_RECONCILIATION_TOKEN), not a user or PAT. Its paging, cursor and
+  // auth are proven in apps/api/src/accounts/sales-outbox.integration.test.ts.
+  {
+    method: "GET",
+    path: "/v1/system/confirmed-signups",
+    reason: "sales reconciliation export behind its own token; covered by sales-outbox.integration.test.ts",
+  },
   // The CLI device-login (RFC 8628-style) routes. Covered by the CLI's own
   // device flow rather than by a browser journey: start → poll → decide is a
   // terminal handshake, and the CLI is not in the flow-runner matrix. They

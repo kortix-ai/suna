@@ -54,13 +54,13 @@ describe('only released code ships', () => {
     });
     expect(picked.build?.id).toBe('released');
     expect(picked.ship).toBe(true);
-    expect(picked.ignored.map((b) => b.id)).toEqual(['rogue']);
+    expect(picked.ignored.map((b: { id: string }) => b.id)).toEqual(['rogue']);
   });
 
   test('with no trusted build the run builds from the released commit', () => {
     const picked = pickBuild({ platform: 'ios', builds: [build('rogue')], shipped: new Set<string>(), trusted: () => false });
     expect(picked.build).toBeNull();
-    expect(picked.ignored.map((b) => b.id)).toEqual(['rogue']);
+    expect(picked.ignored.map((b: { id: string }) => b.id)).toEqual(['rogue']);
   });
 
   test('an Android version already on the production track is never shipped twice', () => {

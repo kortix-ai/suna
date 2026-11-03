@@ -24,8 +24,19 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-CREATE TRIGGER sales_signup_confirmed AFTER INSERT OR UPDATE OF email_confirmed_at ON auth.users
-FOR EACH ROW EXECUTE FUNCTION kortix.enqueue_confirmed_signup();
+-- Every Supabase auth.users has email_confirmed_at. The migration tests build a stub
+-- auth.users (id only) and run this whole chain against it; there the trigger is skipped.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'auth' AND table_name = 'users' AND column_name = 'email_confirmed_at'
+  ) THEN
+    CREATE TRIGGER sales_signup_confirmed AFTER INSERT OR UPDATE OF email_confirmed_at ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION kortix.enqueue_confirmed_signup();
+  END IF;
+END;
+$$;
 
 CREATE FUNCTION kortix.enqueue_demo_requested() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
