@@ -68,6 +68,7 @@ import {
   PROJECT_ACTIONS,
 } from '../../internal/lib/project-actions';
 import { useProjectCans, useProjectPageCans, type CanResult } from '../../internal/lib/use-project-can';
+import { capabilityTabHref } from '../../internal/lib/capability-tab-routes';
 import { cn } from '../../internal/lib/utils';
 import { useSettingsPanelStore } from '../../internal/stores/settings-panel-store';
 
@@ -79,6 +80,7 @@ import {
   parseProjectAdminSection,
   PROJECT_ADMIN_RESOURCES,
   projectAdminHref,
+  RETIRED_SECTIONS,
   type ProjectAdminResourceKey,
   type ProjectAdminSectionKey,
   type ProjectAdminSettingsKey,
@@ -106,8 +108,6 @@ function lazyPage<M>(load: () => Promise<M>, pick: (mod: M) => SectionPage) {
 const RESOURCE_PAGES: Partial<Record<ProjectAdminResourceKey, SectionPage>> = {
   connectors: lazyPage(() => import('../../customize/connectors/connectors-page'), (m) => m.ConnectorsPage),
   skills: lazyPage(() => import('../../customize/skills/skills-page'), (m) => m.SkillsPage),
-  tools: lazyPage(() => import('../../customize/skills/skills-page'), (m) => m.ToolsPage),
-  extensions: lazyPage(() => import('../../customize/skills/skills-page'), (m) => m.ExtensionsPage),
   drives: lazyPage(() => import('../../customize/agents/agent-drives-section'), (m) => m.AgentDrivesSection),
   triggers: lazyPage(() => import('../../customize/triggers/triggers-page'), (m) => m.TriggersPage),
   models: lazyPage(() => import('../../customize/models/models-page'), (m) => m.ModelsPage),
@@ -277,12 +277,18 @@ export function ProjectAdminDashboard({
   // back segment onto `/admin/<section>`, so a copied link names the pane on
   // screen. A page below a section (`content`) keeps its own URL.
   const legacyQuery = searchParams.get('section') !== null;
+  const retired = named !== null && named !== undefined && RETIRED_SECTIONS.includes(named);
   useEffect(() => {
+    // A retired section (Tools, Extensions) is switched per agent: open the Agents list.
+    if (retired) {
+      router.replace(capabilityTabHref(projectId, 'agent'));
+      return;
+    }
     if (!settled || !active || content) return;
     if (!legacyQuery && named === active) return;
     if (!legacyQuery && named === null && section === undefined) return;
     router.replace(projectAdminHref(projectId, active));
-  }, [settled, active, named, legacyQuery, section, content, projectId, router]);
+  }, [retired, settled, active, named, legacyQuery, section, content, projectId, router]);
 
   const membersTab = useSettingsPanelStore((s) => s.membersTab);
   const navigateTo = useCallback((href: string) => router.push(href), [router]);

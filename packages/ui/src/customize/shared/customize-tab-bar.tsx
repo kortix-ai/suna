@@ -1,10 +1,11 @@
 'use client';
 
 /**
- * Customize's top bar, over every Customize and Project admin page: the
- * project's libraries (Connectors, Secrets, Skills, Tools, Extensions, Drives,
- * Triggers, Models, Repo), Review, then Members ↗ and Settings on the right.
- * Agents are not a tab: the sidebar's Customize lists them. Prod's layout (Jay, 2026-10-29): one row of tabs,
+ * Customize's top bar, over every Customize and Project admin page, the
+ * agent pages included: Agents, a separator, the project's libraries
+ * (Connectors, Secrets, Skills, Tools, Extensions, Drives, Triggers, Models,
+ * Repo), Review, then Members ↗ and Settings on the right (Jay, 2026-11-03:
+ * Agents leads the bar again). Prod's layout (Jay, 2026-10-29): one row of tabs,
  * no second column beside the sidebar. A library tab opens its Project admin
  * page full width; Settings opens Project admin's settings sections, which
  * keep a short sub-nav of their own.
@@ -55,11 +56,8 @@ export function useInCustomizeFrame(): boolean {
 }
 
 /** The bar, then the page. Every Customize and Project admin route renders through it,
- *  except the agents' own pages (`/customize/agents/…`): an agent is reached from the
- *  sidebar's Customize and keeps its own header, with no bar over it. */
+ *  the Agents list and each agent's page included. */
 export function CustomizeFrame({ projectId, children }: { projectId: string; children: ReactNode }) {
-  const pathname = useUiPathname() ?? '';
-  if (/\/customize\/agents(\/|$)/.test(pathname)) return <>{children}</>;
   return (
     <InCustomizeFrame.Provider value>
       <CustomizeTabBar projectId={projectId} />
@@ -74,6 +72,7 @@ const MEMBERS_LINK_CLASS =
 
 /** The active tab: `/admin/<library>` that library, Review, or any settings section Settings. */
 function activeTab(pathname: string): string {
+  if (/\/customize\/agents(\/|$)/.test(pathname)) return 'agents';
   if (/\/customize\/review(\/|$)/.test(pathname)) return 'review';
   const section = pathname.match(/\/admin\/([^/?#]+)/)?.[1];
   const key = parseProjectAdminSection(section);
@@ -135,6 +134,13 @@ export function CustomizeTabBar({ projectId }: { projectId: string }) {
             className={cn('h-auto w-full justify-start gap-5 border-b-0 px-2', !access.settled && 'invisible')}
             aria-busy={!access.settled || undefined}
           >
+            {allowed.has('agent') ? (
+              <>
+                {tab('agents', capabilityTabHref(projectId, 'agent'), tI18nComplete.raw('text279b44d2ab4b'))}
+                {/* Agents are the object everything else is granted to: the rule sets them apart from the libraries. */}
+                <span aria-hidden className="bg-border h-4 w-px shrink-0 self-center" />
+              </>
+            ) : null}
             {libraries.map((r) => {
               const legacy = RESOURCE_LABEL_KEYS[r.key];
               return tab(r.key, projectAdminHref(projectId, r.key), legacy ? tI18nComplete.raw(legacy) : tAdmin(r.key));
