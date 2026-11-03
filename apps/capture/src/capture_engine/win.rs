@@ -521,7 +521,7 @@ pub fn windows(fg: &Foreground) -> Vec<WinInfo> {
                 title,
                 rect,
                 focused: is_fg,
-                overlay: ex & overlay == overlay && !is_fg,
+                overlay: ex & overlay == overlay,
             });
         }
     }
