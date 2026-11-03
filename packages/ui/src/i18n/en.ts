@@ -801,14 +801,6 @@ const catalog = {
           "name": "Composio event triggers",
           "description": "Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. Events come from Composio. Kortix also checks your connected apps itself."
         },
-        "volumes": {
-          "name": "Volumes",
-          "description": "Shared Files for this project."
-        },
-        "drives": {
-          "name": "Drive",
-          "description": "Shared folders that stay in sync with sessions: your own drive, one per agent, and company drives an admin attaches to the project. New sessions see them under /drives."
-        },
         "session_log_restore": {
           "name": "Session log restore",
           "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."
@@ -1390,6 +1382,17 @@ const catalog = {
       "label": "Restart session",
       "pending": "Restarting…",
       "ownerOnly": "Only the session owner or a project manager can restart this session."
+    },
+    "image": {
+      "title": "Preparing the sandbox image",
+      "states": {
+        "resolving": "Choosing the image for this session.",
+        "serving_last_ready": "Starting from the last ready image. The new one builds in the background.",
+        "waiting_for_build": "The first image for this project is building. The session starts when it is ready.",
+        "building": "Building the first image for this project. This happens once and takes a few minutes.",
+        "copying_to_region": "Copying the image to this session's region.",
+        "waiting_for_provider": "The image is finishing. The session starts when it is ready."
+      }
     }
   },
   "sessionDelete": {

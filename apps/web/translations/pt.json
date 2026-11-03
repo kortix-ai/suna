@@ -1290,14 +1290,6 @@
           "name": "Gatilhos de eventos do Composio",
           "description": "Inicie um agente quando algo acontece em um app conectado: um novo e-mail, um pull request, um evento do calendário. Os eventos vêm do Composio. O Kortix também verifica por conta própria seus apps conectados."
         },
-        "volumes": {
-          "name": "Volumes",
-          "description": "Arquivos compartilhados para este projeto."
-        },
-        "drives": {
-          "name": "Drive",
-          "description": "Pastas compartilhadas que ficam sincronizadas com as sessões: o seu próprio drive, um por agente e os drives da empresa que um administrador vincula ao projeto. Novas sessões os veem em /drives."
-        },
         "session_log_restore": {
           "name": "Restauro do registo de sessão",
           "description": "Reconstrói uma sessão a partir do seu registo de sessão guardado quando o seu computador perdeu a conversa. A Kortix ativa-o por projeto."

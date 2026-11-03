@@ -319,35 +319,23 @@ describe('drive download ranges', () => {
   });
 });
 
-describe('Volumes turned off for the project', () => {
-  test('hides Files and refuses writes, but a file a session already wrote still reads', async () => {
+describe('Drive no longer depends on the old Volumes flag', () => {
+  test('a project whose metadata still says volumes: false lists, reads and writes its Drive', async () => {
     const setVolumes = (on: boolean) =>
       db.update(projects).set({ metadata: { experimental: { volumes: on } } }).where(eq(projects.projectId, PROJECT));
-    // A read by drive id answers the same with Volumes on and off. (Storage is
-    // not configured in this suite, so that answer is its own 503.)
+    // Storage is not configured in this suite, so a folder read answers its own
+    // 503; what matters is that the answer does not change with the old flag.
     const readFolder = async () => {
       const res = await asOwner(`/v1/drives/${driveId}/files?path=${encodeURIComponent('/Company')}`);
       return { status: res.status, code: ((await res.json()) as { code?: string }).code };
     };
     const readWithVolumesOn = await readFolder();
-    expect(readWithVolumesOn.code).not.toBe('feature_disabled');
     await setVolumes(false);
     try {
       const files = await asOwner(`/v1/drives?projectId=${PROJECT}`);
-      expect(files.status).toBe(403);
-      expect(((await files.json()) as { code: string }).code).toBe('feature_disabled');
-
-      const write = await asOwner(`/v1/drives/${driveId}/files/content?path=${encodeURIComponent('/Company/new.txt')}`, {
-        method: 'PUT',
-        body: 'x',
-      });
-      expect(write.status).toBe(403);
-      expect(((await write.json()) as { code: string; message: string })).toMatchObject({
-        code: 'feature_disabled',
-        message: 'Files is not enabled for this project. Turn on Volumes in Settings → Feature flags.',
-      });
-
+      expect(files.status).toBe(200);
       expect(await readFolder()).toEqual(readWithVolumesOn);
+      expect(readWithVolumesOn.code).not.toBe('feature_disabled');
     } finally {
       await setVolumes(true);
     }

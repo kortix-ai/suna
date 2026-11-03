@@ -349,6 +349,8 @@ function nameOfPath(path: string, here: { label: string; base?: string }): strin
   return path.split('/').filter(Boolean).pop() ?? path;
 }
 
+const COMPANY_FOLDER = '/Company';
+
 /**
  * Small screens have no folder tree: one menu jumps to My files, Company,
  * the top of the Drive and what others shared.
@@ -371,9 +373,10 @@ function DriveJump({ drive, projectName, onOpen }: { drive: Drive; projectName: 
               {t('myDrive')}
             </DropdownMenuItem>
           ) : null}
-          <DropdownMenuItem onSelect={() => onOpen('/Company')}>
+          <DropdownMenuItem onSelect={() => onOpen(COMPANY_FOLDER)}>
             <BuildingsIcon className="size-4 shrink-0" />
-            Company
+            {/* The folder's own name, as the folder tree shows it: not UI copy. */}
+            {COMPANY_FOLDER.slice(1)}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => onOpen('/')}>
             <HardDriveIcon className="size-4 shrink-0" />

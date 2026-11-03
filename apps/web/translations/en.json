@@ -1112,14 +1112,6 @@
           "name": "Composio event triggers",
           "description": "Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. Events come from Composio. Kortix also checks your connected apps itself."
         },
-        "volumes": {
-          "name": "Volumes",
-          "description": "Shared Files for this project."
-        },
-        "drives": {
-          "name": "Drive",
-          "description": "Shared folders that stay in sync with sessions: your own drive, one per agent, and company drives an admin attaches to the project. New sessions see them under /drives."
-        },
         "session_log_restore": {
           "name": "Session log restore",
           "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."
