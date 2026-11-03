@@ -34,11 +34,12 @@ export function __clearPlatinumByokCacheForTest(): void {
   cache.clear();
 }
 
-/** The models a Platinum key may call, as `platinum/<id>` catalog entries. */
+/** The models a Platinum key may call, as `platinum/<id>` catalog entries. A private model is never listed. */
 export async function platinumByokCatalog(key: string | null): Promise<Record<string, GatewayModel>> {
   if (!key) return {};
   const out: Record<string, GatewayModel> = {};
   for (const m of await platinumModelsForKey(key)) {
+    if (m.private) continue;
     out[`${PLATINUM_PROVIDER.id}/${m.id}`] = platinumGatewayModel(m, PLATINUM_PROVIDER.id, PLATINUM_PROVIDER.name);
   }
   return out;

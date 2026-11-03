@@ -235,6 +235,12 @@ export const externalRoutes: AllowEntry[] = [
   { method: "POST", path: "/v1/messages", reason: "llm-gateway standalone service Anthropic-Messages ingress" },
   { method: "POST", path: "/v1/responses", reason: "llm-gateway standalone service OpenAI Responses ingress" },
   { method: "POST", path: "/v1/openai/messages", reason: "llm-gateway standalone service Anthropic-Messages ingress, OpenAI-compat-namespace alias" },
+  { method: "POST", path: "/v1/audio/transcriptions", reason: "llm-gateway standalone service speech-to-text" },
+  { method: "POST", path: "/v1/audio/speech", reason: "llm-gateway standalone service text-to-speech" },
+  { method: "GET", path: "/v1/audio/voices", reason: "llm-gateway standalone service voice list" },
+  { method: "POST", path: "/v1/llm/audio/transcriptions", reason: "main-API bridge into the llm-gateway speech-to-text route" },
+  { method: "POST", path: "/v1/llm/audio/speech", reason: "main-API bridge into the llm-gateway text-to-speech route" },
+  { method: "GET", path: "/v1/llm/audio/voices", reason: "main-API bridge into the llm-gateway voice list" },
   ...allowFor(SETUP_ROUTES, SETUP_REASON),
   { method: "POST", path: "/v1/webhooks/sandbox/platinum", reason: "mounted only when PLATINUM_WEBHOOK_SECRET is set; the cloud manifest profile sets none" },
 ];

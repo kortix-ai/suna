@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test';
-import { platinumModelsForKey, __clearPlatinumByokCacheForTest } from './platinum-byok-models';
+import { platinumByokCatalog, platinumModelsForKey, __clearPlatinumByokCacheForTest } from './platinum-byok-models';
 
 const list = {
   object: 'list',
@@ -49,4 +49,11 @@ test('an outage keeps the last good list; a rejected key has no models', async (
   answer = () => new Response('no', { status: 401 });
   expect(await platinumModelsForKey('pt_live_a', fakeFetch, 800_000)).toEqual([]);
   expect(await platinumModelsForKey('pt_live_new', fakeFetch, 800_001)).toEqual([]);
+});
+
+test("a key's catalog never lists a model Platinum marks private", async () => {
+  answer = () => Response.json({ ...list, data: [...list.data, { ...list.data[1], id: 'small-private', private: true }] });
+  // Fills the cache the catalog reads, so the catalog makes no network call.
+  expect((await platinumModelsForKey('pt_live_a', fakeFetch)).map((m) => m.id)).toEqual(['deepseek-v4.1-flash', 'small-private']);
+  expect(Object.keys(await platinumByokCatalog('pt_live_a'))).toEqual(['platinum/deepseek-v4.1-flash']);
 });

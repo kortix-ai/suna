@@ -1774,6 +1774,20 @@ A gateway key (`kortix_gw_…`) also calls the image endpoints:
 
 Both take `{ model, prompt, aspect_ratio, quality, background, images }`. `model` defaults to `auto`. `images` is for edits only: `[{ "image_url": "data:image/png;base64,..." }]`. The gateway makes one image per request and drops every other field. A legacy `size` (`1024x1024`, `1536x1024`, `1024x1536`) is read as the matching ratio when `aspect_ratio` is absent. The answer is `{ created, model, provider, data: [{ b64_json, mime_type }], size, usage }` for every provider. `size` and `usage` are present when the provider reports them.
 
+#### Audio endpoints on the gateway
+
+A gateway key (`kortix_gw_…`) also calls the OpenAI audio endpoints. They run on Kortix-managed audio models only, so they need a plan that includes managed models. `model` names a Kortix-managed audio model; these models are not in the model list or the model picker.
+
+| Endpoint | Format |
+| --- | --- |
+| `POST /v1/audio/transcriptions` | Speech-to-text. A multipart body: `file`, `model`, and optional `language`, `prompt`, `temperature`, `response_format` (`json`, `verbose_json` or `text`; default `json`). |
+| `POST /v1/audio/speech` | Text-to-speech. `{ model, input, voice, response_format, sample_rate, speed }`: `pcm` (16-bit mono, the default) or `mp3`, `sample_rate` from 8000 to 48000 (default 24000), `speed` from 0.5 to 1.5. The audio streams as it is made. A `pcm` answer names its rate in `x-sample-rate`. |
+| `GET /v1/audio/voices?model=` | The voices of a speech model: `{ object: "list", data: [{ id, name, description, languages, tags }] }`. |
+
+- A `json` or `verbose_json` transcript carries `usage: { type: "duration", seconds }`: the billed duration. A `text` transcript is plain text.
+- The gateway forwards only the fields above and drops every other field.
+- **Costs:** each request is charged in credits at the price the managed upstream reports, with the same markup as a managed chat model. A refused request is not charged, and any credit hold is returned. A speech stream is charged once its first audio arrives, also when the client stops it. The voice list is free.
+
 ## CLI
 
 `kortix` is the Kortix command line. It does in a terminal what the web app does: create and clone projects, run sessions, review change requests, and configure agents, connectors and secrets. Use it on your own computer, in CI, from a coding agent, and inside a session sandbox, where it is already installed and signed in.
