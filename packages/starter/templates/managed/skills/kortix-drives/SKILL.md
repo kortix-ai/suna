@@ -1,12 +1,12 @@
 ---
 name: kortix-drives
-description: "The project's Drive under `/drives`: the user's own folder (their desktop, also at `~/Desktop`) and the folders shared with you, synced with the Kortix web app and every other session. A program the user wants \"on my desktop\" is not a file: the `kortix-computer` skill says where it goes. Load before you read or save a file the user should keep, look for the user's notes, preferences or context, keep memory across sessions (with `kortix-user-memory`), or when you see a file named `... (conflict <date> <time>)...`."
+description: "The project's Drive under `/drives`: the user's own folder (their desktop, also at `~/Desktop`), this agent's Drive, and the folders granted to this agent, synced with the Kortix web app and every other session. A program the user wants \"on my desktop\" is not a file: the `kortix-computer` skill says where it goes. Load before you read or save a file the user should keep, look for the user's notes, preferences or context, keep memory across sessions (with `kortix-user-memory`), or when you see a file named `... (conflict <date> <time>)...`."
 ---
 
 <skill name="kortix-drives">
 
 <overview>
-**Drive** is the project's shared folder tree. It lives outside this sandbox,
+**Drive** is the project's folder tree. It lives outside this sandbox,
 syncs both ways within seconds with the Kortix web app and with every other
 session that mounts it, keeps a version history, and outlives this session.
 Each folder under `/drives` is one folder of Drive that this session may use.
@@ -14,8 +14,8 @@ Each folder under `/drives` is one folder of Drive that this session may use.
 What is kept:
 
 - `/workspace` holds this session's files, kept for the life of the session.
-- `/drives` (Drive) holds your files and the company's files, shared across
-  sessions and kept until deleted.
+- `/drives` (Drive) holds the user's own files and this agent's Drive, shared
+  across sessions and kept until deleted.
 - Anything else (home directory, `/tmp`, installed packages) can be gone when
   the session reopens. Put tools in a sandbox template.
 
@@ -29,14 +29,17 @@ rewrites it whenever access changes. Read it first; never edit it.
 | --- | --- | --- |
 | `/drives/me` (and `~/Desktop`) | the user's own folder, `Users/<name>` in Drive | read-write |
 | `/drives/me/Memory` | what you keep about this user across sessions (the `kortix-user-memory` skill) | read-write |
-| `/drives/company` | the project's shared `Company` folder, with `Company/Memory` for what the whole team should know and `Company/Channels/<channel>/Memory` for each public channel | as shared; read-only in a private channel's thread |
+| `/drives/<agent>` | this agent's Drive, `Agents/<agent>` in Drive: everyone who may use this agent sees it | read-write; read-only in a private channel's thread |
 | the private channel's folder | in a private channel's thread only: its files and `Memory/`, at the path `/drives/README.md` names | read-write |
-| `/drives/<name>` | any other folder shared with you, this agent or this user | as shared |
+| `/drives/<name>` | any other folder a project admin granted to this agent | as granted |
 
 - Look in `/drives/me` for the user's context before you ask them for it.
-- Save files you make for the user in `/drives/me`.
-- You see only folders someone shared. If you need another folder, ask the
-  user to share it with you in Drive.
+- Save files you make for the user in `/drives/me`. Only the user sees it.
+- Put work in this agent's Drive only when it is meant for everyone who uses
+  this agent. Never copy the user's own files there unless the user asks.
+- Nothing is shared with the whole project. You see only the folders above.
+  If you need another folder, ask the user to have a project admin grant it
+  to this agent in Drive.
 - Access can change while you run. Re-read `/drives/README.md` when a path you
   expected is missing or refuses writes.
 </layout>
@@ -51,12 +54,12 @@ where a durable fact goes:
 | this user: preferences, corrections, their work | `/drives/me/Memory/` (the `kortix-user-memory` skill) |
 | what you learn in a DM with this user | `/drives/me/Memory/<your agent name>/` (the `kortix-channel-memory` skill) |
 | this channel's work: decisions, people, workstreams, playbooks | the channel's `Memory/` folder, at the path `/drives/README.md` names |
-| the whole team | `/drives/company/Memory/` |
+| everyone who uses this agent | `/drives/<agent>/Memory/`, only when the user asks for it |
 | what the project is and how it is built | the repo `memory/` (the `kortix-memory` skill, through a change request) |
 
 **In a private channel's thread** (`/drives/README.md` says the channel is
 private) every fact you learn there, team facts included, goes only in that
-channel's `Memory/` folder. Only its members may read it. `/drives/company`
+channel's `Memory/` folder. Only its members may read it. This agent's Drive
 and `/drives/me` are read-only there: never copy the channel's content into
 them, into another channel, or out of the sandbox, unless a member asks.
 
@@ -92,7 +95,7 @@ one version stays at the path and the other is saved beside it as
 <commands>
 `kortix drive` reaches all of Drive over the API, as the user who started this
 session and with their folder access, including folders not mounted here.
-Paths are Drive paths (`/Company/plan.md`), not `/drives` paths.
+Paths are Drive paths (`/Agents/<agent>/plan.md`), not `/drives` paths.
 
 | Command | What it does |
 | --- | --- |
@@ -103,7 +106,7 @@ Paths are Drive paths (`/Company/plan.md`), not `/drives` paths.
 | `kortix drive mv <from> <to>` | Move or rename |
 | `kortix drive rm <path> [-r]` | Delete a file, or a folder with `-r` |
 | `kortix drive access <path>` | Who has access to a folder, with grant ids |
-| `kortix drive share <path> (--everyone \| --user <email> \| --agent <name>) [--write]` | Share a folder (read, or write) |
+| `kortix drive share <path> --agent <name> [--write]` | Grant a folder to an agent (read, or write); admins only |
 | `kortix drive unshare <path> <grantId>` | Stop one share |
 
 - Every command takes `--json`.

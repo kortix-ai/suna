@@ -30,8 +30,10 @@ export async function personSearchReader(
   drive: DriveRow,
   userId: string,
   may: (action: 'session' | 'write') => Promise<boolean>,
+  /** The agents the person may use: their Drives are searched too. */
+  usableAgents?: () => Promise<readonly string[]>,
 ): Promise<SearchReader> {
-  const caller = await driveSubjectFor(drive, userId, may, null);
+  const caller = await driveSubjectFor(drive, userId, may, null, false, usableAgents);
   return personReader(caller.grants, caller.subject);
 }
 

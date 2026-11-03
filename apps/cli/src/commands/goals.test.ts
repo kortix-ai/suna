@@ -199,8 +199,9 @@ async function cli(fake: Fake, root: string, sessionId: string, args: string[]) 
 test('the real CLI runs a goal end to end: new, active, verify, a FAIL back to active, verify again, PASS → done', async () => {
   const fake = fakeApi();
   const root = mkdtempSync(join(tmpdir(), 'goals-e2e-'));
-  mkdirSync(join(root, 'drives', 'company'), { recursive: true });
-  const folder = join(root, 'drives', 'company', 'Goals', 'eu-billing');
+  // A new goal lands in the user's own folder (/drives/me): nothing is shared with the whole project.
+  mkdirSync(join(root, 'drives', 'me'), { recursive: true });
+  const folder = join(root, 'drives', 'me', 'Goals', 'eu-billing');
   const read = () => parseGoalFile(readFileSync(join(folder, 'GOAL.md'), 'utf8'))!;
   const write = (doc: ProjectGoalDocument) => writeFileSync(join(folder, 'GOAL.md'), formatGoalFile(doc));
   try {

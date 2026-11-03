@@ -93,6 +93,8 @@ let ownerToken = '';
 const sessionTokens: Record<string, string> = {};
 let driveId = '';
 let researchGrant = '';
+/** The researcher agent's own Drive: every session of the agent mounts it read-write, no grant needed. */
+const AGENT_DRIVE = '/Agents/researcher';
 
 const mount = (subdir: string, readOnly = false) => ({
   driveId,
@@ -183,9 +185,9 @@ beforeAll(async () => {
     grantedBy: OWNER,
   });
   ownerToken = (await createAccountToken({ accountId: ACCOUNT, userId: OWNER, name: 'drive-enforcement-owner' })).secretKey;
-  await box(NATIVE, { provider: 'platinum', externalId: 'box-native', mounts: [mount('/Research'), mount('/Company')] });
-  await box(SYNCED, { provider: 'daytona', externalId: 'box-synced', mounts: [mount('/Research'), mount('/Company')] });
-  await box(FENCED, { provider: 'daytona', externalId: 'box-fenced', mounts: [mount('/Research'), mount('/Company')] });
+  await box(NATIVE, { provider: 'platinum', externalId: 'box-native', mounts: [mount('/Research'), mount(AGENT_DRIVE)] });
+  await box(SYNCED, { provider: 'daytona', externalId: 'box-synced', mounts: [mount('/Research'), mount(AGENT_DRIVE)] });
+  await box(FENCED, { provider: 'daytona', externalId: 'box-fenced', mounts: [mount('/Research'), mount(AGENT_DRIVE)] });
   await box(RESUMED, { provider: 'platinum', externalId: 'box-resumed', mounts: [] });
 });
 
@@ -204,11 +206,11 @@ describe('a block upload is authorized by the paths its plan writes', () => {
     });
     expect(plan.status).toBe(200);
 
-    // The folder turns read-only for this box; /Company stays writable.
+    // The folder turns read-only for this box; the agent's Drive stays writable.
     await db
       .update(sessionSandboxes)
       .set({
-        metadata: sql`${sessionSandboxes.metadata} || ${JSON.stringify({ driveMounts: [mount('/Research', true), mount('/Company')] })}::jsonb`,
+        metadata: sql`${sessionSandboxes.metadata} || ${JSON.stringify({ driveMounts: [mount('/Research', true), mount(AGENT_DRIVE)] })}::jsonb`,
       })
       .where(eq(sessionSandboxes.sandboxId, SYNCED));
     calls.length = 0;
@@ -217,7 +219,7 @@ describe('a block upload is authorized by the paths its plan writes', () => {
     expect(block.status).toBe(403);
     const commit = await asBox(SYNCED, '/files/upload/up-1/commit', { method: 'POST' });
     expect(commit.status).toBe(403);
-    const elsewhere = await asBox(SYNCED, `/files/upload/up-1/commit?path=${encodeURIComponent('/Company/big.bin')}`, { method: 'POST' });
+    const elsewhere = await asBox(SYNCED, `/files/upload/up-1/commit?path=${encodeURIComponent(`${AGENT_DRIVE}/big.bin`)}`, { method: 'POST' });
     expect(elsewhere.status).not.toBe(200);
     expect(calls).toEqual([]);
   });
@@ -240,7 +242,7 @@ describe('a revocation whose detach fails', () => {
     await db.update(driveMountRevocations).set({ notBefore: new Date(0) });
     await retryPendingRevocations();
     expect(await pending(NATIVE)).toBe(false);
-    expect(await recordedMounts(NATIVE)).toEqual([['/Company', false]]);
+    expect(await recordedMounts(NATIVE)).toEqual([[AGENT_DRIVE, false]]);
   });
 
   test('while pending, the sync routes refuse the folder the session lost', async () => {
@@ -248,7 +250,7 @@ describe('a revocation whose detach fails', () => {
     // landed), but no grant reaches the folder any more.
     await db
       .update(sessionSandboxes)
-      .set({ metadata: sql`${sessionSandboxes.metadata} || ${JSON.stringify({ driveMounts: [mount('/Research'), mount('/Company')] })}::jsonb` })
+      .set({ metadata: sql`${sessionSandboxes.metadata} || ${JSON.stringify({ driveMounts: [mount('/Research'), mount(AGENT_DRIVE)] })}::jsonb` })
       .where(eq(sessionSandboxes.sandboxId, FENCED));
     const research = encodeURIComponent('/Research');
     // Not pending: the record is what the box was given, and is honored as such.
@@ -258,12 +260,12 @@ describe('a revocation whose detach fails', () => {
     expect(
       (await asBox(FENCED, `/files/content?path=${encodeURIComponent('/Research/a.md')}`, { method: 'PUT', body: 'x' })).status,
     ).toBe(404);
-    expect((await asBox(FENCED, `/files?path=${encodeURIComponent('/Company')}`)).status).toBe(200);
+    expect((await asBox(FENCED, `/files?path=${encodeURIComponent(AGENT_DRIVE)}`)).status).toBe(200);
     const answer = await app.request(`/v1/projects/${PROJECT}/sessions/${FENCED}/drive-sync/mounts`, {
       headers: { Authorization: `Bearer ${sessionTokens[FENCED]}` },
     });
     const mounts = (await answer.json()) as { mounts: Array<{ subdir?: string }> };
-    expect(mounts.mounts.map((m) => m.subdir)).toEqual(['/Company']);
+    expect(mounts.mounts.map((m) => m.subdir)).toEqual([AGENT_DRIVE]);
   });
 });
 
@@ -295,14 +297,15 @@ describe('a resumed sandbox whose guest kept mounts Platinum ended', () => {
   test('reconcile clears the stale mounts and attaches the folders, and records them', async () => {
     staleGuest.clear();
     staleGuest.add('/drives/me');
-    staleGuest.add('/drives/company');
+    staleGuest.add('/drives/researcher');
     calls.length = 0;
     await reconcileSessionDrives(RESUMED);
     const attached = calls.filter((c) => c.startsWith('attach ')).map((c) => c.slice('attach '.length));
     expect(attached.length).toBeGreaterThan(0);
-    expect(attached.some((p) => p === '/drives/me' || p === '/drives/company')).toBe(true);
+    // A trigger session of the researcher agent (the /Research grant was revoked above): its agent's Drive.
+    expect(attached).toEqual(['/drives/researcher']);
     for (const p of attached) {
-      if (p === '/drives/me' || p === '/drives/company') expect(calls.indexOf(`unmount ${p}`)).toBeLessThan(calls.indexOf(`attach ${p}`));
+      if (p === '/drives/me' || p === '/drives/researcher') expect(calls.indexOf(`unmount ${p}`)).toBeLessThan(calls.indexOf(`attach ${p}`));
     }
     expect((await recordedMounts(RESUMED)).length).toBe(attached.length);
     expect(await pending(RESUMED)).toBe(false);

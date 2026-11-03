@@ -4,8 +4,10 @@
  * fold of the earlier per-person / per-account / per-agent drives into it.
  *
  *   a grant covers its folder and everything below it;
- *   a person's own folder is theirs alone (admins included) until shared;
- *   an agent reaches only what is shared with it, the project or its person;
+ *   a person's own folder is theirs alone (admins included);
+ *   nothing is shared with the whole project or person to person: only a
+ *   grant to an agent counts, plus the Agent Drive of each agent a person may use;
+ *   an agent reaches only its own Drive and what was granted to it;
  *   folding is idempotent and never overwrites a file already there.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
@@ -13,7 +15,7 @@ import { accountGroupMembers, accountGroups, accountMembers, accounts, driveGran
 import { eq } from 'drizzle-orm';
 import { driveVolumeName } from '../drives/access';
 import { type FoldStorage, foldDrive } from '../drives/fold';
-import { folderAccess } from '../drives/folders';
+import { agentDriveGrants, folderAccess } from '../drives/folders';
 import {
   ensurePersonalFolder,
   ensureProjectDrive,
@@ -70,59 +72,72 @@ afterAll(async () => {
 });
 
 describe('folder access in a project’s Files', () => {
-  test('grants inherit down the tree; own folders stay private; agents reach only what was shared', async () => {
+  test('grants inherit down the tree; own folders stay private; agents reach only their Drive and what was granted', async () => {
     const drive = await ensureProjectDrive(ACCOUNT, PROJECT);
     expect((await ensureProjectDrive(ACCOUNT, PROJECT)).driveId).toBe(drive.driveId);
+    // A new drive shares nothing with the project: no `/Company` grant, no project grant at all.
+    expect((await listFolderGrants(drive)).filter((g) => !g.path.startsWith('/Users/'))).toEqual([]);
     const anaFolder = await ensurePersonalFolder(drive, ANA);
     const bobFolder = await ensurePersonalFolder(drive, BOB);
     expect(anaFolder).toMatch(/^\/Users\//);
     expect(bobFolder).not.toBe(anaFolder);
 
-    // Ana shares one subfolder with the Design team, read-only; the agent gets Research.
+    // A person-to-team share and a project-wide grant (stored before Drive went
+    // agent-first) reach nobody; the agent's grant on Research counts.
     await setFolderGrant({ drive, path: `${anaFolder}/Shared`, principal: { type: 'group', id: DESIGN }, level: 'read', grantedBy: ANA });
     await setFolderGrant({ drive, path: '/Research', principal: { type: 'agent', id: RESEARCHER }, level: 'write', grantedBy: ANA });
     // Sharing again changes the level instead of adding a second grant.
     await setFolderGrant({ drive, path: '/Research', principal: { type: 'agent', id: RESEARCHER }, level: 'manage', grantedBy: ANA });
-    const grants = await listFolderGrants(drive);
-    expect(grants.filter((g) => g.path === '/Research')).toHaveLength(1);
+    const stored = await listFolderGrants(drive);
+    expect(stored.filter((g) => g.path === '/Research')).toHaveLength(1);
+    expect(stored.filter((g) => g.principalType === 'group')).toEqual([]);
 
-    const ana = { userId: ANA, projectMember: true };
-    const bob = { userId: BOB, groupIds: new Set([DESIGN]), projectMember: true };
-    const admin = { userId: crypto.randomUUID(), projectMember: true, admin: true };
-    const agent = { agentId: RESEARCHER, projectMember: true };
+    // Bob may use the researcher agent: he writes its Drive, derived, never stored.
+    const grants = [...stored, ...agentDriveGrants(BOB, ['researcher'])];
+    const ana = { userId: ANA };
+    const bob = { userId: BOB, groupIds: new Set([DESIGN]) };
+    const admin = { userId: crypto.randomUUID(), admin: true };
+    const agent = { agentId: RESEARCHER };
 
     expect(folderAccess(`${anaFolder}/deep/notes.md`, grants, ana)).toBe('manage');
-    expect(folderAccess(`${anaFolder}/Shared/plan.md`, grants, bob)).toBe('read');
+    // The team share no longer counts.
+    expect(folderAccess(`${anaFolder}/Shared/plan.md`, grants, bob)).toBe('none');
     expect(folderAccess(`${anaFolder}/private.md`, grants, bob)).toBe('none');
     // Admins manage everything but people's own folders.
     expect(folderAccess(anaFolder, grants, admin)).toBe('none');
-    expect(folderAccess('/Company/Memory/team.md', grants, admin)).toBe('manage');
-    // Everyone in the project writes Company by default.
-    expect(folderAccess('/Company/Memory/team.md', grants, bob)).toBe('write');
-    // The agent: its grant and the project's, nothing of Ana's.
+    expect(folderAccess('/Agents/researcher/notes.md', grants, admin)).toBe('manage');
+    // No folder is the whole project's: Bob writes the Drive of the agent he may use, nothing else.
+    expect(folderAccess('/Agents/researcher/notes.md', grants, bob)).toBe('write');
+    expect(folderAccess('/Agents/other/notes.md', grants, bob)).toBe('none');
+    expect(folderAccess('/Company/Memory/team.md', grants, bob)).toBe('none');
+    expect(folderAccess('/Agents/researcher/notes.md', grants, ana)).toBe('none');
+    // The agent: its grant, nothing of Ana's.
     expect(folderAccess('/Research/sources/a.pdf', grants, agent)).toBe('manage');
     expect(folderAccess(`${anaFolder}/notes.md`, grants, agent)).toBe('none');
     expect(folderAccess(`${anaFolder}/Shared/plan.md`, grants, agent)).toBe('none');
 
-    // Ana's own session: her folder as the desktop, plus what the agent and project reach.
+    // Ana's own session: her folder as the desktop, then the agent's own Drive, then the folder granted to the agent.
     const personal = await planSessionDrives({ accountId: ACCOUNT, projectId: PROJECT, sessionId: ANA_SESSION, bootingUserId: ANA, agentName: 'researcher', slots: 6 });
     expect(personal.mounts.map((m) => [m.path, m.mountPath, m.readOnly])).toEqual([
       [anaFolder, '/drives/me', false],
+      ['/Agents/researcher', '/drives/researcher', false],
       ['/Research', '/drives/research', false],
-      ['/Company', '/drives/company', false],
     ]);
     // A trigger of the same agent: no person, so no one's own folder.
     const unattended = await planSessionDrives({ accountId: ACCOUNT, projectId: PROJECT, sessionId: TRIGGER_SESSION, bootingUserId: null, agentName: 'researcher', slots: 6 });
-    expect(unattended.mounts.map((m) => m.path).sort()).toEqual(['/Company', '/Research']);
+    expect(unattended.mounts.map((m) => m.path).sort()).toEqual(['/Agents/researcher', '/Research']);
     // Out of slots: the rest is reported, never dropped silently.
     const tight = await planSessionDrives({ accountId: ACCOUNT, projectId: PROJECT, sessionId: ANA_SESSION, bootingUserId: ANA, agentName: 'researcher', slots: 1 });
     expect(tight.mounts.map((m) => m.path)).toEqual([anaFolder]);
-    expect(tight.skipped).toEqual(['/Research', '/Company']);
+    expect(tight.skipped).toEqual(['/Agents/researcher', '/Research']);
+    // Two slots: the agent's own Drive wins over a granted folder.
+    const two = await planSessionDrives({ accountId: ACCOUNT, projectId: PROJECT, sessionId: ANA_SESSION, bootingUserId: ANA, agentName: 'researcher', slots: 2 });
+    expect(two.mounts.map((m) => m.path)).toEqual([anaFolder, '/Agents/researcher']);
   });
 });
 
 describe('folding the earlier drives into the project’s Files', () => {
-  test('personal, company and agent drives land in folders with the same access, once', async () => {
+  test('personal, company and agent drives land in folders, only agent grants carried over, once', async () => {
     const files = new Map<string, Map<string, Uint8Array<ArrayBuffer>>>();
     const vol = (name: string) => files.get(name) ?? files.set(name, new Map()).get(name)!;
     const bytes = (s: string) => new TextEncoder().encode(s) as Uint8Array<ArrayBuffer>;
@@ -173,13 +188,17 @@ describe('folding the earlier drives into the project’s Files', () => {
     expect(new TextDecoder().decode(dest.get(`${anaFolder}/notes.md`))).toBe('newer');
     expect(dest.has('/Shared/Specs/plan.md')).toBe(true);
 
+    // Only the agent grants survive the fold: Bob's read on Ana's drive and the
+    // project's read on Specs are dropped, the agent Drive needs no grant.
     const grants = await listFolderGrants(project);
-    const bob = { userId: BOB, groupIds: new Set([DESIGN]), projectMember: true };
-    const agent = { agentId: RESEARCHER, projectMember: true };
-    expect(folderAccess(`${anaFolder}/notes.md`, grants, bob)).toBe('read');
-    expect(folderAccess('/Shared/Specs/plan.md', grants, bob)).toBe('read');
+    expect(grants.filter((g) => g.path === '/Agents/researcher')).toEqual([]);
+    const bob = { userId: BOB, groupIds: new Set([DESIGN]) };
+    const agent = { agentId: RESEARCHER };
+    expect(folderAccess(`${anaFolder}/notes.md`, grants, bob)).toBe('none');
+    expect(folderAccess('/Shared/Specs/plan.md', grants, bob)).toBe('none');
     expect(folderAccess('/Shared/Specs/plan.md', grants, agent)).toBe('write');
-    expect(folderAccess('/Agents/researcher/memory.md', grants, agent)).toBe('write');
+    // Whoever may use the agent reaches its Drive, derived from IAM, not from a folded grant.
+    expect(folderAccess('/Agents/researcher/memory.md', [...grants, ...agentDriveGrants(BOB, ['researcher'])], bob)).toBe('write');
 
     // Run again: every target is marked done and nothing is copied twice.
     const again = [...(await foldDrive(mine, storage)), ...(await foldDrive(specs, storage)), ...(await foldDrive(agentDrive, storage))];

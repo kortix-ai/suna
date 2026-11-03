@@ -12,6 +12,7 @@ import { combinedAuth } from '../middleware/auth';
 import { callerKortixSessionId } from '../middleware/caller-session';
 import { isHumanCaller } from '../connectors/share';
 import { actorFor } from '../middleware/actor';
+import { usableDriveAgents } from './agent-drives';
 import { rejectSandboxTokens } from '../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { actorOf } from '../iam/actor';
@@ -35,7 +36,11 @@ import { normalizeDrivePath } from './access';
 import { listAdminFolderReads, noteAdminFolderAccess } from './admin-access';
 import { noteDriveWrite } from './conflicts';
 import {
-  COMPANY_DIR,
+  AGENT_DRIVE_SOURCE,
+  AGENTS_DIR,
+  agentDriveFolder,
+  agentDriveOf,
+  isAgentDriveRoot,
   type FolderAccess,
   type FolderGrant,
   type FolderLevel,
@@ -136,8 +141,10 @@ const DriveSchema = z
     access: AccessSchema,
     personalFolder: z.string().nullable(),
     openConflicts: z.number(),
-    /** Folders other people shared with the caller (directly or through a team), outside their own folder. */
+    /** @deprecated Always empty: nothing is shared with a person. Read `agentDrives`. */
     sharedWithMe: z.array(z.object({ path: z.string(), access: AccessSchema })).optional(),
+    /** The Drives of the agents the caller may use (`/Agents/<agent>`), by agent name. An admin sees every agent's. */
+    agentDrives: z.array(z.object({ agentName: z.string(), path: z.string(), access: AccessSchema })).optional(),
   })
   .openapi('Drive');
 
@@ -147,9 +154,9 @@ const FolderGrantSchema = z
     path: z.string(),
     /** Granted on a folder above this one. */
     inherited: z.boolean(),
-    /** Made by Kortix: a person's own folder, the default for Company. */
+    /** Made by Kortix: a person's own folder, a private channel's members. */
     system: z.boolean(),
-    principalType: z.enum(['user', 'group', 'agent', 'project']),
+    principalType: z.enum(['user', 'group', 'agent']),
     principalId: z.string(),
     label: z.string(),
     level: LevelSchema,
@@ -263,8 +270,14 @@ async function callerOn(c: DriveContext, drive: DriveRow): Promise<Caller> {
   const projectId = drive.projectId!;
   if (!(await mayUseProject(c, projectId, 'read'))) fail(404, 'Files not found');
   const bound = callerKortixSessionId(c);
-  const human = isHumanCaller({ credentialKind: (await actorFor(c, drive.accountId))?.credential.kind, boundSessionId: bound });
-  return { drive, ...(await driveSubjectFor(drive, userId, (action) => mayUseProject(c, projectId, action), bound, human)) };
+  const actor = await actorFor(c, drive.accountId);
+  const human = isHumanCaller({ credentialKind: actor?.credential.kind, boundSessionId: bound });
+  return {
+    drive,
+    ...(await driveSubjectFor(drive, userId, (action) => mayUseProject(c, projectId, action), bound, human, () =>
+      usableDriveAgents(actor ?? null, projectId),
+    )),
+  };
 }
 
 /** An admin opened `path` in another person's own folder: the owner sees it, and the audit log has it. */
@@ -303,22 +316,12 @@ function need(caller: Caller, path: string, level: FolderLevel): FolderAccess {
   return access;
 }
 
-/**
- * Folders shared with the caller by someone else: a grant naming them or one
- * of their teams, never Kortix's own grants and never inside their own folder.
- * Nearest the root first, each folder once.
- */
-function sharedWithCaller(caller: Caller): Array<{ path: string; access: FolderAccess }> {
-  const paths = new Set<string>();
-  for (const g of caller.grants) {
-    if (g.source === 'system' || (g.principalType !== 'user' && g.principalType !== 'group')) continue;
-    if (!grantReaches(g, caller.subject) || pathWithinFolder(g.path, caller.personalFolder)) continue;
-    paths.add(g.path);
-  }
-  return [...paths]
-    .filter((p) => ![...paths].some((other) => other !== p && pathWithinFolder(p, other)))
-    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
-    .map((path) => ({ path, access: folderAccess(path, caller.grants, caller.subject) }));
+/** The Drives of the agents the caller may use, by agent name, with the caller's access to each. */
+function agentDrivesOf(caller: Caller): Array<{ agentName: string; path: string; access: FolderAccess }> {
+  return caller.grants
+    .filter((g) => g.source === AGENT_DRIVE_SOURCE)
+    .map((g) => ({ agentName: agentDriveOf(g.path)!, path: g.path, access: folderAccess(g.path, caller.grants, caller.subject) }))
+    .sort((a, b) => (a.agentName < b.agentName ? -1 : a.agentName > b.agentName ? 1 : 0));
 }
 
 /** The project's private channel folders, as the caller's folder rules know them. */
@@ -331,7 +334,9 @@ function structural(path: string, caller: Caller): boolean {
   return (
     path === '/' ||
     path === USERS_DIR ||
-    path === COMPANY_DIR ||
+    path === AGENTS_DIR ||
+    // An Agent Drive is its agent's for as long as the agent exists.
+    isAgentDriveRoot(path) ||
     // `/Channels` holds the tree together only while it holds a private channel's folder.
     (path === PRIVATE_CHANNELS_DIR && privateFolders(caller).size > 0) ||
     personalFolderOf(path) === path ||
@@ -483,7 +488,7 @@ drivesApp.openapi(
             stats,
             limitBytes: limits?.projectBytes ?? null,
           }),
-          sharedWithMe: sharedWithCaller(caller),
+          agentDrives: agentDrivesOf(caller),
         },
       ],
     });
@@ -692,8 +697,8 @@ drivesApp.openapi(
       // Kortix's own bookkeeping (the fold job's markers) is not a folder of anyone's.
       .filter((e) => !e.path.startsWith('/.kortix'))
       .map((e) => ({ path: e.path, name: baseName(e.path), type: e.type, size: Number(e.size ?? 0), mtime: Number(e.mtime ?? 0) }));
-    // Folders that exist only as grants so far (a new person's folder, Company
-    // before the first write): shown, so the tree can be walked to them.
+    // Folders that exist only as grants so far (a new person's folder, an
+    // Agent Drive before its first write): shown, so the tree can be walked to them.
     const seen = new Set(entries.map((e) => e.path));
     const virtual = new Set<string>();
     for (const g of grants) {
@@ -703,7 +708,7 @@ drivesApp.openapi(
     }
     if (path === '/' && !seen.has(USERS_DIR)) virtual.add(USERS_DIR);
     for (const v of virtual) entries.push({ path: v, name: baseName(v), type: 'dir', size: 0, mtime: 0 });
-    const sharedPaths = new Set(grants.filter((g) => g.source !== 'system').map((g) => g.path));
+    const sharedPaths = new Set(grants.filter((g) => g.source !== 'system' && g.source !== AGENT_DRIVE_SOURCE).map((g) => g.path));
     // A person's own folder is named by their handle (`/Users/ana.lima`); it lists under their name.
     const personNames = path === USERS_DIR ? await personalFolderNames(grants, entries.map((e) => e.path)) : null;
     // A private channel's folder is named by its id (`/Channels/<space_id>`); it lists under `#<slug>`.
@@ -1105,7 +1110,6 @@ async function grantLabels(drive: DriveRow, grants: FolderGrant[]): Promise<Map<
   for (const [id, email] of emails) out.set(`user:${id}`, email);
   for (const g of groupRows) out.set(`group:${g.id}`, g.name);
   for (const a of agentRows) out.set(`agent:${a.id}`, a.name ?? 'agent');
-  out.set(`project:${drive.projectId}`, 'Everyone in this project');
   return out;
 }
 
@@ -1194,9 +1198,10 @@ drivesApp.openapi(
 
 const ShareBody = z.object({
   path: z.string(),
-  principalType: z.enum(['user', 'group', 'agent', 'project']),
-  /** A user id, a team (group) id, or for `agent` the agent's name. Ignored for `project`. */
-  principalId: z.string().min(1).max(128).optional(),
+  /** Only an agent: a person reaches a folder through an agent they may use. */
+  principalType: z.literal('agent'),
+  /** The agent's name. */
+  principalId: z.string().min(1).max(128),
   level: LevelSchema,
 });
 
@@ -1208,8 +1213,8 @@ drivesApp.openapi(
     tags: ['drives'],
     summary: 'Share a folder',
     description:
-      'Gives a person, a team, an agent or everyone in the project `read`, `write` or `manage` on a folder and everything below it. Sharing again changes the level. ' +
-      'Running sessions pick the change up at once.',
+      'Gives an agent `read`, `write` or `manage` on a folder and everything below it: every session of the agent mounts it, and everyone who may use the agent reaches it. ' +
+      'Sharing again changes the level. Running sessions pick the change up at once. Nothing is shared with a person, a team or the whole project.',
     ...auth,
     request: { params: DriveParams, body: { required: true, content: { 'application/json': { schema: ShareBody } } } },
     responses: {
@@ -1224,30 +1229,20 @@ drivesApp.openapi(
     if (!grantableFolder(path, privateFolders(caller))) fail(400, 'Share a folder inside Files');
     need(caller, path, 'manage');
     const { drive } = caller;
-    let principalId: string;
-    if (body.principalType === 'project') {
-      principalId = drive.projectId!;
-    } else if (body.principalType === 'agent') {
-      const name = body.principalId?.trim();
-      if (!name) fail(400, 'Name the agent');
-      // An agent's identity is its service account; the first share makes it.
-      // The agent must be one the project declares (or one that already ran).
-      const declared = await projectAgentNames(drive.projectId!);
-      const existing = await projectAgentServiceAccount(drive.projectId!, name);
-      if (!declared.includes(name) && !existing) fail(404, 'No agent by that name in this project');
-      principalId = existing ?? (await ensureAgentServiceAccount({ accountId: drive.accountId, projectId: drive.projectId!, agentName: name }));
-    } else {
-      if (!body.principalId || !isUuid(body.principalId)) fail(400, 'principalId is required');
-      principalId = body.principalId;
-      if (body.principalType === 'user') {
-        if (path === caller.personalFolder && principalId === caller.userId) fail(400, 'This is already your folder');
-        if (!(await isAccountMember(drive.accountId, principalId))) fail(404, 'That person is not a member of this account');
-      }
-    }
+    if (agentDriveOf(path)) fail(400, "An agent's Drive is reached through its agent: grant another folder");
+    const name = body.principalId.trim();
+    if (!name) fail(400, 'Name the agent');
+    // An agent's identity is its service account; the first share makes it.
+    // The agent must be one the project declares (or one that already ran).
+    const declared = await projectAgentNames(drive.projectId!);
+    const existing = await projectAgentServiceAccount(drive.projectId!, name);
+    if (!declared.includes(name) && !existing) fail(404, 'No agent by that name in this project');
+    const principalId =
+      existing ?? (await ensureAgentServiceAccount({ accountId: drive.accountId, projectId: drive.projectId!, agentName: name }));
     const grantId = await setFolderGrant({
       drive,
       path,
-      principal: { type: body.principalType, id: principalId },
+      principal: { type: 'agent', id: principalId },
       level: body.level,
       grantedBy: caller.userId,
     });
@@ -1292,33 +1287,33 @@ drivesApp.openapi(
 
 // GET /v1/drives/:driveId/agents/:agentName/mounts
 const AgentMountSchema = z.object({
-  /** The Files folder, e.g. `/Company/Reports`. */
+  /** The Files folder, e.g. `/Agents/sales`. */
   path: z.string(),
-  /** Where a session sees it, e.g. `/drives/Company/Reports`. */
+  /** Where a session sees it, e.g. `/drives/sales`. */
   mountPath: z.string(),
   readOnly: z.boolean(),
-  /** `agent`: shared with this agent. `project`: shared with everyone in the project. */
-  via: z.enum(['agent', 'project']),
-  /** The agent's own grant on this folder, to change or remove; absent when it comes through the project. */
+  /** `drive`: the agent's own Drive. `agent`: a folder granted to the agent. `project` is never sent (nothing is shared with the whole project). */
+  via: z.enum(['drive', 'agent', 'project']),
+  /** The agent's grant on this folder, to change or remove; absent for its own Drive. */
   grantId: z.string().optional(),
   level: LevelSchema,
 });
 
 const MountPlanSchema = z.object({ mounts: z.array(AgentMountSchema), skipped: z.array(z.string()), slots: z.number() });
 
-/** The folders a new session mounts through an agent (when named) and through the project, planned as a boot plans them. */
+/**
+ * The folders a new session of `agentName` mounts, planned as a boot plans
+ * them: its own Drive and the folders granted to it. Without an agent: none
+ * (nothing mounts through the project). Lists only folders the caller may see.
+ */
 async function mountPlan(c: DriveContext, agentName: string | null) {
-  // Every person who works in the project asks (the Drive page shows where
-  // sessions see a folder), so no folder is required: the plan lists only the
-  // folders the caller may see.
   const caller = await loadDrive(c);
   const { drive } = caller;
-  const [grants, agentId, slots] = await Promise.all([
-    listFolderGrants(drive),
-    agentName ? projectAgentServiceAccount(drive.projectId!, agentName) : Promise.resolve(null),
-    sandboxMountLimit(),
-  ]);
+  const slots = await sandboxMountLimit();
+  if (!agentName) return { mounts: [], skipped: [], slots };
+  const [grants, agentId] = await Promise.all([listFolderGrants(drive), projectAgentServiceAccount(drive.projectId!, agentName)]);
   const candidates = sessionMountCandidates(grants, {
+    agentName,
     agentId,
     owner: null,
     groupIds: new Set(),
@@ -1327,26 +1322,26 @@ async function mountPlan(c: DriveContext, agentName: string | null) {
     privateChannelFolders: privateFolders(caller),
   });
   const plan = planFolderMounts(candidates, slots, privateFolders(caller));
-  const ownGrant = (path: string) =>
+  const ownDrive = agentDriveFolder(agentName);
+  const agentGrant = (path: string) =>
     agentId ? grants.find((g) => g.principalType === 'agent' && g.principalId === agentId && g.path === path) : undefined;
-  const projectGrant = (path: string) =>
-    grants.find((g) => g.principalType === 'project' && g.path === path && g.source !== 'system');
   return {
-    mounts: plan.mounts.filter((m) => folderVisible(m.path, caller.grants, caller.subject)).map((m) => {
-      const viaAgent = candidates.some((x) => x.path === m.path && x.priority === 0);
-      const grant = agentName ? ownGrant(m.path) : projectGrant(m.path);
-      const level = candidates
-        .filter((x) => x.path === m.path)
-        .reduce<FolderLevel>((acc, x) => (RANK_OF[x.level] > RANK_OF[acc] ? x.level : acc), 'read');
-      return {
-        path: m.path,
-        mountPath: m.mountPath,
-        readOnly: m.readOnly,
-        via: viaAgent ? ('agent' as const) : ('project' as const),
-        ...(grant?.grantId ? { grantId: grant.grantId } : {}),
-        level,
-      };
-    }),
+    mounts: plan.mounts
+      .filter((m) => folderVisible(m.path, caller.grants, caller.subject))
+      .map((m) => {
+        const grant = agentGrant(m.path);
+        const level = candidates
+          .filter((x) => x.path === m.path)
+          .reduce<FolderLevel>((acc, x) => (RANK_OF[x.level] > RANK_OF[acc] ? x.level : acc), 'read');
+        return {
+          path: m.path,
+          mountPath: m.mountPath,
+          readOnly: m.readOnly,
+          via: m.path === ownDrive ? ('drive' as const) : ('agent' as const),
+          ...(grant?.grantId ? { grantId: grant.grantId } : {}),
+          level,
+        };
+      }),
     skipped: plan.skipped,
     slots,
   };
@@ -1359,7 +1354,7 @@ drivesApp.openapi(
     tags: ['drives'],
     summary: 'The folders every session mounts',
     description:
-      "The Files folders every new session of the project mounts: the ones shared with everyone in the project, where each appears and read-only or not. `grantId` is the project grant to change or remove (absent for the ones Kortix made, such as Company). An agent adds its own folders (`/agents/{agentName}/mounts`); a person's own folders join the sessions they start.",
+      "Always empty: nothing mounts in every session of the project. Each agent's sessions mount its Drive and the folders granted to it (`/agents/{agentName}/mounts`); a person's own folder joins the sessions they start.",
     ...auth,
     request: { params: DriveParams },
     responses: { 200: json(MountPlanSchema, 'Project mounts'), ...errors(401, 404) },
@@ -1374,7 +1369,7 @@ drivesApp.openapi(
     tags: ['drives'],
     summary: 'The folders an agent mounts',
     description:
-      "The Files folders a new session of this agent mounts, where, and read-only or not: the folders shared with the agent and with everyone in the project, planned the way a session boots (a folder inside a mounted one at the same level or less is not mounted twice). A person's own folder and folders shared with them join a session they start and are not listed. `skipped` names folders past the sandbox's mount slots.",
+      "The Files folders a new session of this agent mounts, where, and read-only or not: its own Drive (`/Agents/{agentName}`) and the folders granted to it, planned the way a session boots (a folder inside a mounted one at the same level or less is not mounted twice). A person's own folder and folders shared with them join a session they start and are not listed. `skipped` names folders past the sandbox's mount slots.",
     ...auth,
     request: { params: DriveParams.extend({ agentName: z.string().min(1).max(128) }) },
     responses: { 200: json(MountPlanSchema, 'Agent mounts'), ...errors(401, 404) },
@@ -1493,7 +1488,7 @@ const RESTORE_CLOCK_MARGIN_MS = 10 * 60_000;
 
 /**
  * A restore is one whole-volume version: it rewrites every private channel's
- * folder and can bring a converted channel's files back into `/Company`.
+ * folder and can bring a converted channel's files back into a public channel's folder.
  * While the project has a private channel, only an admin who is a member of
  * every one may restore (403), and only to a version newer than each private
  * channel's last change (its creation, conversion or rename: 409

@@ -18,10 +18,17 @@
 //   passes the project's private channel folders (`PrivateChannelFolders`):
 //   any other path under `/Channels` (a folder a person made, `/Channels/notes`)
 //   is an ordinary folder, as it is in a project with no private channel.
-// - `/` and `/Users` hold the tree together and cannot be granted, nor can
-//   `/Channels` while it holds a private channel's folder.
+// - `/Agents/<agent>` is that agent's Drive. Nobody grants it: everyone who
+//   may use the agent may write it (`agentDriveGrants`), and every session of
+//   the agent mounts it. My Kortix has none: every member may use it, so its
+//   Drive would be everyone's.
+// - `/`, `/Users` and `/Agents` hold the tree together and cannot be granted,
+//   nor can `/Channels` while it holds a private channel's folder.
+//
+// Nothing is shared with the whole project. The only grants anyone makes name
+// an agent: an admin mounts a folder into an agent's sessions.
 
-import { PRIVATE_CHANNELS_DIR, spaceDriveFolders } from '@kortix/shared';
+import { isMyKortixAgentName, PRIVATE_CHANNELS_DIR, spaceDriveFolders } from '@kortix/shared';
 
 export { PRIVATE_CHANNELS_DIR };
 
@@ -44,20 +51,57 @@ export function maxFolderAccess(a: FolderAccess, b: FolderAccess): FolderAccess 
 }
 
 export const USERS_DIR = '/Users';
-export const COMPANY_DIR = '/Company';
-/** The memory folder inside a person's folder and inside the shared Company folder. */
+/** The agents' Drives: `/Agents/<agent>`. */
+export const AGENTS_DIR = '/Agents';
+/** The memory folder inside a person's folder. */
 export const MEMORY_DIR_NAME = 'Memory';
-export const COMPANY_MEMORY_DIR = `${COMPANY_DIR}/${MEMORY_DIR_NAME}`;
+/** `source` of the grants {@link agentDriveGrants} derives: never stored, never removed by a person. */
+export const AGENT_DRIVE_SOURCE = 'agent-drive';
+
+/** One plain path segment, as `spaceDriveFolders` takes an agent name. */
+const AGENT_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+/** `/Agents/<agent>`; null for My Kortix (every member's) and a name that is not one plain path segment. */
+export function agentDriveFolder(agentName: string): string | null {
+  if (!AGENT_SEGMENT.test(agentName) || isMyKortixAgentName(agentName)) return null;
+  return `${AGENTS_DIR}/${agentName}`;
+}
+
+/** The agent whose Drive holds `path` (`/Agents/<agent>/…`), else null. */
+export function agentDriveOf(path: string): string | null {
+  const parts = path.split('/').filter(Boolean);
+  if (parts.length < 2 || `/${parts[0]}` !== AGENTS_DIR) return null;
+  return parts[1]!;
+}
+
+/** `path` is an Agent Drive itself (`/Agents/<agent>`), not a folder inside one. */
+export function isAgentDriveRoot(path: string): boolean {
+  const agent = agentDriveOf(path);
+  return agent !== null && path === `${AGENTS_DIR}/${agent}`;
+}
+
+/**
+ * A person's `write` on the Drive of each agent they may use (`agents`, the
+ * IAM answer). Derived on every request, never stored: who may use an agent
+ * is the one switch.
+ */
+export function agentDriveGrants(userId: string, agents: readonly string[]): FolderGrant[] {
+  return agents.flatMap((name) => {
+    const path = agentDriveFolder(name);
+    return path ? [{ path, level: 'write' as const, principalType: 'user' as const, principalId: userId, source: AGENT_DRIVE_SOURCE }] : [];
+  });
+}
 
 /** Where a person's own folder mounts in their sessions (with `~/Desktop` linked to it). */
 export const DESKTOP_MOUNT_PATH = '/drives/me';
 export const DRIVES_ROOT = '/drives';
 
 /**
- * Who a grant names: a person, a team (account group), an agent (its service
- * account) or everyone who works in the project.
+ * Who a grant names: an agent (its service account), or a person or team.
+ * People and teams get only Kortix's own grants (their folder, a private
+ * channel's, an Agent Drive's); a grant anyone makes names an agent.
  */
-export type FolderPrincipalType = 'user' | 'group' | 'agent' | 'project';
+export type FolderPrincipalType = 'user' | 'group' | 'agent';
 
 export interface FolderGrant {
   grantId?: string;
@@ -65,7 +109,7 @@ export interface FolderGrant {
   level: FolderLevel;
   principalType: FolderPrincipalType;
   principalId: string;
-  /** `system` grants are the ones Kortix made (a person's own folder, the Company default). */
+  /** `system` grants are the ones Kortix made (a person's own folder, a private channel's); `agent-drive` ones are derived. */
   source?: string;
 }
 
@@ -75,8 +119,12 @@ export interface FolderSubject {
   groupIds?: ReadonlySet<string>;
   /** The agent's service account id. */
   agentId?: string | null;
-  /** Reaches grants to the whole project (people who may work in it, and its sessions). */
-  projectMember?: boolean;
+  /**
+   * The service accounts of the agents a person may use (or a session's own
+   * agent): grants to those agents reach them too. Access to a folder follows
+   * access to the agent it is granted to.
+   */
+  agentIds?: ReadonlySet<string>;
   /** Project admin: manage everywhere except in private channels' folders, and in people's own folders only with `adminPeople`. */
   admin?: boolean;
   /**
@@ -97,12 +145,12 @@ export function pathWithinFolder(path: string, folder: string): boolean {
 
 /**
  * A folder the tree holds before anything was written to it: `/Users`,
- * `/Company`, a granted folder (a new person's own folder exists only as their
+ * `/Agents`, a granted folder (an Agent Drive) (a new person's own folder exists only as their
  * grant until a session or an upload writes into it), or a folder on the way
  * to one. Listing it answers empty instead of "not found".
  */
 export function folderKnownToTree(path: string, grants: readonly Pick<FolderGrant, 'path'>[]): boolean {
-  if (path === '/' || path === USERS_DIR || path === COMPANY_DIR) return true;
+  if (path === '/' || path === USERS_DIR || path === AGENTS_DIR) return true;
   return grants.some((g) => pathWithinFolder(g.path, path));
 }
 
@@ -155,9 +203,9 @@ export function adminOnlyPersonalFolder(path: string, grants: readonly FolderGra
   return folderVisible(path, grants, { ...subject, adminPeople: false }) ? null : folder;
 }
 
-/** A folder a grant may name: not the root, not `/Users` itself, nothing that is or holds a private channel's folder (Kortix grants those). */
+/** A folder a grant may name: not the root, not `/Users` or `/Agents` itself, nothing that is or holds a private channel's folder (Kortix grants those). */
 export function grantableFolder(path: string, channels: PrivateChannelFolders): boolean {
-  return path !== '/' && path !== USERS_DIR && !touchesPrivateChannel(path, channels);
+  return path !== '/' && path !== USERS_DIR && path !== AGENTS_DIR && !touchesPrivateChannel(path, channels);
 }
 
 export function grantReaches(grant: FolderGrant, subject: FolderSubject): boolean {
@@ -167,9 +215,7 @@ export function grantReaches(grant: FolderGrant, subject: FolderSubject): boolea
     case 'group':
       return !!subject.groupIds?.has(grant.principalId);
     case 'agent':
-      return !!subject.agentId && grant.principalId === subject.agentId;
-    case 'project':
-      return !!subject.projectMember;
+      return (!!subject.agentId && grant.principalId === subject.agentId) || !!subject.agentIds?.has(grant.principalId);
   }
 }
 
@@ -214,11 +260,11 @@ export function grantsCovering(path: string, grants: readonly FolderGrant[], cha
 export interface FolderMountCandidate {
   path: string;
   level: FolderLevel;
-  /** Lower mounts first when not all fit: the person's own folder, agent, project, people. */
+  /** Lower mounts first when not all fit: the person's own folder, the agent's Drive (-1), folders granted to the agent (0), the person's own grants (2). */
   priority: number;
   /** The session owner's own folder. */
   desktop?: boolean;
-  /** The mount reaches the session through its person (their folder or a share with them), not its agent or project. */
+  /** The mount reaches the session through its person (their folder or a share with them), not its agent. */
   viaPerson?: boolean;
 }
 
@@ -329,8 +375,10 @@ export function planFolderMounts(
 
 /**
  * The folders a session may mount, before {@link planFolderMounts} picks
- * them: each grant that reaches the session's agent, the project, or (in the
- * person's own session, `owner`) its person and their teams. A grant on or
+ * them: its agent's own Drive (`agentName`, read-write), each grant that
+ * reaches its agent, and (in the person's own session, `owner`) the grants
+ * of its person and their teams. Another agent's Drive never mounts through
+ * the person: only an admin's grant to this agent mounts it. A grant on or
  * inside a private channel's folder never counts, a member's included, nor
  * one on a folder that holds one (`/Channels` then: its mount would show
  * them): a private channel's folder reaches only its own threads, as
@@ -340,6 +388,8 @@ export function planFolderMounts(
 export function sessionMountCandidates(
   grants: readonly FolderGrant[],
   who: {
+    /** The session's agent, whose Drive it mounts. */
+    agentName: string | null;
     agentId: string | null;
     owner: string | null;
     groupIds: ReadonlySet<string>;
@@ -352,21 +402,26 @@ export function sessionMountCandidates(
   },
 ): FolderMountCandidate[] {
   const candidates: FolderMountCandidate[] = [];
+  // A private channel's thread writes only its channel's folder: everything
+  // else (the agent's Drive, the person's own folder) is read-only there, so
+  // the thread cannot copy the channel's content where others read it.
+  const level = (l: FolderLevel): FolderLevel => (who.channelFolder ? 'read' : l);
+  const agentDrive = who.agentName ? agentDriveFolder(who.agentName) : null;
+  // Before any granted folder when not all fit: the agent's own Drive is where its work lives.
+  if (agentDrive) candidates.push({ path: agentDrive, level: level('write'), priority: -1 });
   for (const g of grants) {
     if (touchesPrivateChannel(g.path, who.privateChannelFolders)) continue;
     const viaAgent = grantReaches(g, { agentId: who.agentId });
-    const viaProject = grantReaches(g, { projectMember: true });
-    const viaPerson = !!who.owner && grantReaches(g, { userId: who.owner, groupIds: who.groupIds });
-    if (!viaAgent && !viaProject && !viaPerson) continue;
+    // Kortix's own grants on Agent Drives are derived, never stored; a stored
+    // person grant inside one (none is made) would still not carry it.
+    const viaPerson = !!who.owner && !agentDriveOf(g.path) && grantReaches(g, { userId: who.owner, groupIds: who.groupIds });
+    if (!viaAgent && !viaPerson) continue;
     candidates.push({
       path: g.path,
-      // A private channel's thread writes only its channel's folder: everything
-      // else (Company, the person's own folder) is read-only there, so the
-      // thread cannot copy the channel's content where others read it.
-      level: who.channelFolder ? 'read' : g.level,
-      priority: viaAgent ? 0 : viaProject ? 1 : 2,
+      level: level(g.level),
+      priority: viaAgent ? 0 : 2,
       desktop: g.path === who.own,
-      viaPerson: !viaAgent && !viaProject,
+      viaPerson: !viaAgent,
     });
   }
   if (who.channelFolder) candidates.push({ path: who.channelFolder, level: 'write', priority: 0 });
@@ -437,7 +492,7 @@ export function spaceNotesLines(
     '',
     ...(space.visibility === 'private'
       ? [
-          `#${name} is a private channel: only its members see its threads, files and memory. Save what you learn here, team facts included, in this channel’s memory folder, never in Company/Memory or another channel. Company/ and every other folder are read-only in this thread.`,
+          `#${name} is a private channel: only its members see its threads, files and memory. Save what you learn here, team facts included, in this channel’s memory folder, never in another channel or another folder. Every other folder is read-only in this thread.`,
           '',
         ]
       : []),

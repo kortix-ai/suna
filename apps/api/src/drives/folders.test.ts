@@ -11,6 +11,8 @@ import {
   planFolderMounts,
   privateChannelFolderOf,
   sessionMountCandidates,
+  agentDriveFolder,
+  agentDriveGrants,
 } from './folders';
 
 describe('folderKnownToTree', () => {
@@ -21,7 +23,8 @@ describe('folderKnownToTree', () => {
     expect(folderKnownToTree('/Research', grants)).toBe(true);
     expect(folderKnownToTree('/Research/Q3', grants)).toBe(true);
     expect(folderKnownToTree('/Users', [])).toBe(true);
-    expect(folderKnownToTree('/Company', [])).toBe(true);
+    expect(folderKnownToTree('/Agents', [])).toBe(true);
+    expect(folderKnownToTree('/Company', [])).toBe(false);
   });
 
   test('anything else is not found', () => {
@@ -38,12 +41,12 @@ describe('a private channel folder is reached only by its members', () => {
   const P = '/Channels/deals';
   const CH = new Set([P]);
   const grants: FolderGrant[] = [
-    { path: '/Company', level: 'write', principalType: 'project', principalId: 'proj', source: 'system' },
+    { path: '/Company', level: 'write', principalType: 'agent', principalId: 'sa', source: 'system' },
     { path: P, level: 'write', principalType: 'user', principalId: 'alice', source: 'system' },
   ];
-  const alice = { userId: 'alice', projectMember: true, privateChannelFolders: CH };
-  const bob = { userId: 'bob', projectMember: true, privateChannelFolders: CH };
-  const admin = { userId: 'root', projectMember: true, admin: true, privateChannelFolders: CH };
+  const alice = { userId: 'alice', privateChannelFolders: CH };
+  const bob = { userId: 'bob', privateChannelFolders: CH };
+  const admin = { userId: 'root', admin: true, privateChannelFolders: CH };
 
   test('privateChannelFolderOf names the channel folder of any path in it, and only of a private channel of the project', () => {
     expect(privateChannelFolderOf(`${P}/Memory/a.md`, CH)).toBe(P);
@@ -90,23 +93,24 @@ describe('a private channel folder is reached only by its members', () => {
 describe('a person-made /Channels folder is an ordinary folder', () => {
   const NOTES = '/Channels/notes';
   const grants: FolderGrant[] = [
-    { path: '/Company', level: 'write', principalType: 'project', principalId: 'proj', source: 'system' },
+    { path: '/Company', level: 'write', principalType: 'agent', principalId: 'sa', source: 'system' },
     { path: NOTES, level: 'write', principalType: 'user', principalId: 'bob' },
-    { path: '/Channels/team', level: 'read', principalType: 'project', principalId: 'proj' },
+    { path: '/Channels/team', level: 'read', principalType: 'agent', principalId: 'sa' },
   ];
   // Flag off and no private channel (every project today), then a project with one private channel.
   for (const [label, channels] of [
     ['no private channel', NO_PRIVATE_CHANNEL_FOLDERS],
     ['a private channel elsewhere in /Channels', new Set(['/Channels/1f0e7c9a-0000-4000-8000-000000000001'])],
   ] as const) {
-    const bob = { userId: 'bob', projectMember: true, privateChannelFolders: channels };
-    const carol = { userId: 'carol', projectMember: true, privateChannelFolders: channels };
-    const admin = { userId: 'root', projectMember: true, admin: true, privateChannelFolders: channels };
+    const bob = { userId: 'bob', privateChannelFolders: channels };
+    const carol = { userId: 'carol', privateChannelFolders: channels };
+    const admin = { userId: 'root', admin: true, privateChannelFolders: channels };
 
     test(`${label}: its grants count, admins manage it, it can be shared`, () => {
       expect(folderAccess(`${NOTES}/a.md`, grants, bob)).toBe('write');
       expect(folderAccess(`${NOTES}/a.md`, grants, carol)).toBe('none');
-      expect(folderAccess('/Channels/team/x.md', grants, carol)).toBe('read');
+      // A folder granted to an agent: a person reaches it only through that agent's Drive rules, never by being in the project.
+      expect(folderAccess('/Channels/team/x.md', grants, carol)).toBe('none');
       expect(folderAccess(`${NOTES}/a.md`, grants, admin)).toBe('manage');
       expect(folderVisible(NOTES, grants, carol)).toBe(false);
       expect(folderVisible(NOTES, grants, bob)).toBe(true);
@@ -117,7 +121,7 @@ describe('a person-made /Channels folder is an ordinary folder', () => {
 
     test(`${label}: a session mounts it`, () => {
       const plan = planFolderMounts(
-        sessionMountCandidates(grants, { agentId: null, owner: 'bob', groupIds: new Set(), own: null, channelFolder: null, privateChannelFolders: channels }),
+        sessionMountCandidates(grants, { agentName: null, agentId: 'sa', owner: 'bob', groupIds: new Set(), own: null, channelFolder: null, privateChannelFolders: channels }),
         16,
         channels,
       ).mounts.map((m) => `${m.path}${m.readOnly ? ':ro' : ''}`);
@@ -126,11 +130,11 @@ describe('a person-made /Channels folder is an ordinary folder', () => {
   }
 
   test('no private channel: /Channels itself is shared and mounted like any folder', () => {
-    const top: FolderGrant[] = [{ path: '/Channels', level: 'read', principalType: 'project', principalId: 'proj' }];
+    const top: FolderGrant[] = [{ path: '/Channels', level: 'read', principalType: 'agent', principalId: 'sa' }];
     expect(grantableFolder('/Channels', NO_PRIVATE_CHANNEL_FOLDERS)).toBe(true);
-    expect(folderAccess('/Channels/x.md', top, { projectMember: true })).toBe('read');
+    expect(folderAccess('/Channels/x.md', top, { agentId: 'sa' })).toBe('read');
     const mounts = planFolderMounts(
-      sessionMountCandidates(top, { agentId: null, owner: null, groupIds: new Set(), own: null, channelFolder: null, privateChannelFolders: NO_PRIVATE_CHANNEL_FOLDERS }),
+      sessionMountCandidates(top, { agentName: null, agentId: 'sa', owner: null, groupIds: new Set(), own: null, channelFolder: null, privateChannelFolders: NO_PRIVATE_CHANNEL_FOLDERS }),
       16,
     ).mounts;
     expect(mounts.map((m) => m.path)).toEqual(['/Channels']);
@@ -140,11 +144,11 @@ describe('a person-made /Channels folder is an ordinary folder', () => {
     const PRIV = '/Channels/1f0e7c9a-0000-4000-8000-000000000001';
     const channels = new Set([PRIV]);
     const top: FolderGrant[] = [{ path: '/Channels', level: 'manage', principalType: 'user', principalId: 'bob' }];
-    const bob = { userId: 'bob', projectMember: true, privateChannelFolders: channels };
+    const bob = { userId: 'bob', privateChannelFolders: channels };
     expect(folderAccess('/Channels/notes/a.md', top, bob)).toBe('manage');
     expect(folderAccess(`${PRIV}/a.md`, top, bob)).toBe('none');
     const mounts = planFolderMounts(
-      sessionMountCandidates(top, { agentId: null, owner: 'bob', groupIds: new Set(), own: null, channelFolder: null, privateChannelFolders: channels }),
+      sessionMountCandidates(top, { agentName: null, agentId: 'sa', owner: 'bob', groupIds: new Set(), own: null, channelFolder: null, privateChannelFolders: channels }),
       16,
       channels,
     ).mounts;
@@ -155,14 +159,14 @@ describe('a person-made /Channels folder is an ordinary folder', () => {
 describe('only the channel’s own threads mount a private channel folder', () => {
   const CH = new Set(['/Channels/deals', '/Channels/legal']);
   const grants: FolderGrant[] = [
-    { path: '/Company', level: 'write', principalType: 'project', principalId: 'proj', source: 'system' },
+    { path: '/Company', level: 'write', principalType: 'agent', principalId: 'sa', source: 'system' },
     { path: '/Users/alice', level: 'manage', principalType: 'user', principalId: 'alice', source: 'system' },
     { path: '/Channels/deals', level: 'write', principalType: 'user', principalId: 'alice', source: 'system' },
     { path: '/Channels/legal', level: 'write', principalType: 'user', principalId: 'alice', source: 'system' },
   ];
   const paths = (channelFolder: string | null, owner: string | null) =>
     planFolderMounts(
-      sessionMountCandidates(grants, { agentId: null, owner, groupIds: new Set(), own: owner ? '/Users/alice' : null, channelFolder, privateChannelFolders: CH }),
+      sessionMountCandidates(grants, { agentName: null, agentId: 'sa', owner, groupIds: new Set(), own: owner ? '/Users/alice' : null, channelFolder, privateChannelFolders: CH }),
       16,
       CH,
     ).mounts.map((m) => `${m.path}${m.readOnly ? ':ro' : ''}`);
@@ -173,13 +177,13 @@ describe('only the channel’s own threads mount a private channel folder', () =
   });
 
   test('a thread of #deals mounts /Channels/deals read-write and no other private channel', () => {
-    expect(paths('/Channels/deals', null)).toEqual(['/Channels/deals', '/Company:ro']);
-    expect(paths('/Channels/deals', 'alice')).toEqual(['/Users/alice:ro', '/Channels/deals', '/Company:ro']);
+    expect(paths('/Channels/deals', null)).toEqual(['/Company:ro', '/Channels/deals']);
+    expect(paths('/Channels/deals', 'alice')).toEqual(['/Users/alice:ro', '/Company:ro', '/Channels/deals']);
   });
 
   test('in a private channel thread every folder but the channel’s own is read-only, so nothing of it is copied out', () => {
     const plan = planFolderMounts(
-      sessionMountCandidates(grants, { agentId: null, owner: 'alice', groupIds: new Set(), own: '/Users/alice', channelFolder: '/Channels/deals', privateChannelFolders: CH }),
+      sessionMountCandidates(grants, { agentName: null, agentId: 'sa', owner: 'alice', groupIds: new Set(), own: '/Users/alice', channelFolder: '/Channels/deals', privateChannelFolders: CH }),
       16,
     ).mounts;
     expect(plan.filter((m) => !m.readOnly).map((m) => m.path)).toEqual(['/Channels/deals']);
@@ -192,12 +196,12 @@ describe("a person's own folder opens for its owner and for admins as people", (
   const ANA = '/Users/ana';
   const grants: FolderGrant[] = [
     { path: ANA, level: 'manage', principalType: 'user', principalId: 'ana', source: 'system' },
-    { path: '/Company', level: 'write', principalType: 'project', principalId: 'proj', source: 'system' },
+    { path: '/Company', level: 'write', principalType: 'agent', principalId: 'sa', source: 'system' },
   ];
-  const ana = { userId: 'ana', projectMember: true };
-  const bob = { userId: 'bob', projectMember: true };
-  const adminPerson = { userId: 'root', projectMember: true, admin: true, adminPeople: true };
-  const adminSession = { userId: 'root', projectMember: true, admin: true };
+  const ana = { userId: 'ana' };
+  const bob = { userId: 'bob' };
+  const adminPerson = { userId: 'root', admin: true, adminPeople: true };
+  const adminSession = { userId: 'root', admin: true };
 
   test('an admin signed in as a person manages it and sees it listed; a session of that admin does not', () => {
     expect(folderAccess(`${ANA}/notes.md`, grants, adminPerson)).toBe('manage');
@@ -221,7 +225,77 @@ describe("a person's own folder opens for its owner and for admins as people", (
   });
 
   test("a session never mounts another person's folder through its admin", () => {
-    const candidates = sessionMountCandidates(grants, { agentId: null, owner: 'root', groupIds: new Set(), own: null, channelFolder: null, privateChannelFolders: NO_PRIVATE_CHANNEL_FOLDERS });
+    const candidates = sessionMountCandidates(grants, { agentName: null, agentId: 'sa', owner: 'root', groupIds: new Set(), own: null, channelFolder: null, privateChannelFolders: NO_PRIVATE_CHANNEL_FOLDERS });
     expect(candidates.some((c) => c.path === ANA)).toBe(false);
+  });
+});
+
+// Agent Drives (2026-11-03): a person sees their own folder and the Drive of
+// each agent they may use; nothing is shared with the whole project.
+describe('Agent Drives', () => {
+  const grants: FolderGrant[] = [{ path: '/Users/ana', level: 'manage', principalType: 'user', principalId: 'ana', source: 'system' }];
+
+  test('every agent but My Kortix has a Drive at /Agents/<agent>; a name that is no plain segment has none', () => {
+    expect(agentDriveFolder('sales')).toBe('/Agents/sales');
+    expect(agentDriveFolder('mykortix')).toBeNull();
+    expect(agentDriveFolder('meta')).toBeNull();
+    expect(agentDriveFolder('../x')).toBeNull();
+    expect(agentDriveFolder('a b')).toBeNull();
+  });
+
+  test('a person writes the Drives of the agents they may use, and nothing of any other agent', () => {
+    const ana = [...grants, ...agentDriveGrants('ana', ['sales', 'mykortix'])];
+    expect(folderAccess('/Agents/sales/report.csv', ana, { userId: 'ana' })).toBe('write');
+    expect(folderAccess('/Agents/support/x.md', ana, { userId: 'ana' })).toBe('none');
+    expect(folderVisible('/Agents/support', ana, { userId: 'ana' })).toBe(false);
+    expect(folderVisible('/Agents', ana, { userId: 'ana' })).toBe(true);
+    expect(folderAccess('/Agents/sales/x', ana, { userId: 'bob' })).toBe('none');
+  });
+
+  test('a folder granted to an agent reaches everyone who may use that agent, at the grant level, and nobody else', () => {
+    const shared: FolderGrant[] = [...grants, { path: '/Research', level: 'read', principalType: 'agent', principalId: 'sa-sales' }];
+    expect(folderAccess('/Research/q3.md', shared, { userId: 'ana', agentIds: new Set(['sa-sales']) })).toBe('read');
+    expect(folderAccess('/Research/q3.md', shared, { userId: 'ana', agentIds: new Set(['sa-support']) })).toBe('none');
+    expect(folderAccess('/Research/q3.md', shared, { userId: 'ana' })).toBe('none');
+  });
+
+  test('a member with no agent sees only their own folder', () => {
+    const ana = { userId: 'ana' };
+    expect(folderVisible('/Users/ana', grants, ana)).toBe(true);
+    expect(folderVisible('/Agents', grants, ana)).toBe(false);
+    expect(folderVisible('/Company', grants, ana)).toBe(false);
+    expect(folderAccess('/Company/Memory/x.md', grants, ana)).toBe('none');
+  });
+
+  test('/Agents itself cannot be granted', () => {
+    expect(grantableFolder('/Agents', NO_PRIVATE_CHANNEL_FOLDERS)).toBe(false);
+    expect(grantableFolder('/Agents/sales/Reports', NO_PRIVATE_CHANNEL_FOLDERS)).toBe(true);
+  });
+
+  test("a session mounts its agent's Drive read-write at /drives/<agent>, never another agent's through its person", () => {
+    const withShare: FolderGrant[] = [...grants, ...agentDriveGrants('ana', ['support'])];
+    const plan = planFolderMounts(
+      sessionMountCandidates(withShare, { agentName: 'sales', agentId: null, owner: 'ana', groupIds: new Set(), own: '/Users/ana', channelFolder: null, privateChannelFolders: NO_PRIVATE_CHANNEL_FOLDERS }),
+      16,
+    ).mounts.map((m) => `${m.path}@${m.mountPath}${m.readOnly ? ':ro' : ''}`);
+    expect(plan).toEqual(['/Users/ana@/drives/me', '/Agents/sales@/drives/sales']);
+  });
+
+  test('a My Kortix session mounts no Agent Drive', () => {
+    const plan = planFolderMounts(
+      sessionMountCandidates(grants, { agentName: 'mykortix', agentId: null, owner: 'ana', groupIds: new Set(), own: '/Users/ana', channelFolder: null, privateChannelFolders: NO_PRIVATE_CHANNEL_FOLDERS }),
+      16,
+    ).mounts.map((m) => m.path);
+    expect(plan).toEqual(['/Users/ana']);
+  });
+
+  test("a private channel thread mounts its agent's Drive read-only", () => {
+    const CH = new Set(['/Channels/deals']);
+    const plan = planFolderMounts(
+      sessionMountCandidates(grants, { agentName: 'sales', agentId: null, owner: null, groupIds: new Set(), own: null, channelFolder: '/Channels/deals', privateChannelFolders: CH }),
+      16,
+      CH,
+    ).mounts.map((m) => `${m.path}${m.readOnly ? ':ro' : ''}`);
+    expect(plan).toEqual(['/Agents/sales:ro', '/Channels/deals']);
   });
 });

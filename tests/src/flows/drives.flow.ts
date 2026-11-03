@@ -41,6 +41,8 @@ flow(
       'GET /v1/projects/:projectId',
       'PATCH /v1/projects/:projectId/features',
       'GET /v1/drives',
+      'GET /v1/projects/:projectId/resource-grants',
+      'POST /v1/projects/:projectId/resource-grants',
       'GET /v1/drives/:driveId/files',
       'GET /v1/drives/:driveId/files/content',
       'PUT /v1/drives/:driveId/files/content',
@@ -62,7 +64,8 @@ flow(
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    const project = await team.project();
+    // A managed repository, so a step can declare an agent in kortix.yaml.
+    const project = await team.project({ managedGit: true });
     const member = await team.addMember('member');
     await team.grantProjectRole(project.id, member.userId!, 'user');
     // Another account member: a plain member may not see them (MEM-8).
@@ -115,7 +118,7 @@ flow(
         throw new Error(`member saw ${JSON.stringify(drive)}`);
       }
       memberFolder = drive.personalFolder;
-      if (drive.sharedWithMe?.length) throw new Error(`nothing is shared yet: ${JSON.stringify(drive.sharedWithMe)}`);
+      if (drive.sharedWithMe?.length) throw new Error(`nothing is shared with a person: ${JSON.stringify(drive.sharedWithMe)}`);
     });
 
     await ctx.step('NONMEMBER cannot open Files → 403/404', async () => {
@@ -137,31 +140,53 @@ flow(
       (await asMember.get('/v1/drives/:driveId/access', files(ownerFolder))).status(404);
     });
 
-    await ctx.step('OWNER shares a folder inside their own with the member (read); the member walks to it', async () => {
-      const shared = `${ownerFolder}/shared`;
-      const r = await owner.put(
-        '/v1/drives/:driveId/access',
-        { path: shared, principalType: 'user', principalId: member.userId!, level: 'read' },
-        { params: { driveId } },
-      );
-      r.status(200);
-      const grantId = r.json<{ grantId: string }>().grantId;
-      const users = entries((await asMember.get('/v1/drives/:driveId/files', files('/Users'))).status(200));
-      if (users.join(',') !== [ownerFolder, memberFolder].sort().join(',')) throw new Error(`Users lists ${users.join(',')}`);
-      const way = entries((await asMember.get('/v1/drives/:driveId/files', files(ownerFolder))).status(200));
-      if (way.join(',') !== shared) throw new Error(`owner folder lists ${way.join(',')} for the member`);
-      (await asMember.get('/v1/drives/:driveId/files', files(shared))).status(200).body().has('$.access', 'read');
-      const drive = (await asMember.get('/v1/drives', listFiles)).status(200).json<{ drives: any[] }>().drives[0];
-      if (JSON.stringify(drive.sharedWithMe) !== JSON.stringify([{ path: shared, access: 'read' }])) {
-        throw new Error(`sharedWithMe ${JSON.stringify(drive.sharedWithMe)}`);
+    await ctx.step('nothing is shared with a person or the whole project: a user or project share → 400; no Company folder', async () => {
+      for (const body of [
+        { path: `${ownerFolder}/shared`, principalType: 'user', principalId: member.userId!, level: 'read' },
+        { path: '/Reports', principalType: 'project', level: 'read' },
+      ]) {
+        (await owner.put('/v1/drives/:driveId/access', body, { params: { driveId } })).status(400);
       }
-      (await asMember.put('/v1/drives/:driveId/files/content', 'x', { ...files(`${shared}/x.txt`), raw: true })).status(403);
-      (await asMember.put('/v1/drives/:driveId/access', { path: shared, principalType: 'project', level: 'read' }, { params: { driveId } })).status(403);
-      const access = (await owner.get('/v1/drives/:driveId/access', files(shared))).status(200);
-      if (!access.json<{ grants: { grantId: string }[] }>().grants.some((g) => g.grantId === grantId)) throw new Error('share missing from the folder access');
-      (await owner.del('/v1/drives/:driveId/access/:grantId', { params: { driveId, grantId } })).status(204);
-      (await asMember.get('/v1/drives/:driveId/files', files(shared))).status(404);
-      (await asMember.get('/v1/drives/:driveId/files', files(ownerFolder))).status(404);
+      const top = entries((await asMember.get('/v1/drives/:driveId/files', files('/'))).status(200));
+      if (top.includes('/Company')) throw new Error(`a member sees Company at the top: ${top.join(',')}`);
+      (await asMember.get('/v1/drives/:driveId/files', files('/Company'))).status(404);
+      (await asMember.get('/v1/drives/:driveId/files', files('/Company/Memory'))).status(404);
+      (await asMember.put('/v1/drives/:driveId/files/content', 'x', { ...files('/Company/x.txt'), raw: true })).status(404);
+      const drive = (await asMember.get('/v1/drives', listFiles)).status(200).json<{ drives: any[] }>().drives[0];
+      if (drive.agentDrives?.length) throw new Error(`a member with no agent sees Agent Drives: ${JSON.stringify(drive.agentDrives)}`);
+    });
+
+    await ctx.step("a member granted an agent reaches that agent's Drive and writes it; nothing of another agent", async () => {
+      const params = { projectId: project.id };
+      const catalog = (await owner.get('/v1/projects/:projectId/resource-grants', { params })).status(200);
+      // The managed project's starter declares its agents; any but My Kortix owns a Drive.
+      const agents = catalog.json<{ resources: { agents: Array<{ id: string }> } }>().resources.agents.map((a) => a.id);
+      const agent = agents.find((a) => a !== 'mykortix' && a !== 'meta');
+      if (!agent) throw new Error(`no agent to grant: ${catalog.text().slice(0, 400)}`);
+      (await owner.post(
+        '/v1/projects/:projectId/resource-grants',
+        { resource_type: 'agent', resource_id: agent, principal_type: 'member', principal_id: member.userId },
+        { params },
+      )).status(201);
+      const path = `/Agents/${agent}`;
+      // Access caches per API process for up to 15 s: read until every process agrees.
+      const deadline = Date.now() + 45_000;
+      let seen: unknown = null;
+      for (let streak = 0; streak < 6; ) {
+        if (Date.now() > deadline) throw new Error(`member never saw ${path}: ${JSON.stringify(seen)}`);
+        const d = (await asMember.get('/v1/drives', listFiles)).status(200).json<{ drives: any[] }>().drives[0];
+        seen = d.agentDrives;
+        streak = JSON.stringify(d.agentDrives) === JSON.stringify([{ agentName: agent, path, access: 'write' }]) ? streak + 1 : 0;
+        if (streak === 0) await new Promise((r) => setTimeout(r, 500));
+      }
+      // The member opens and may write the Drive (the local profile stores no bytes: the access answer is the proof).
+      (await asMember.get('/v1/drives/:driveId/files', files(path))).status(200).body().has('$.access', 'write');
+      (await asMember.get('/v1/drives/:driveId/access', files(path))).status(200).body().has('$.access', 'write');
+      const top = entries((await asMember.get('/v1/drives/:driveId/files', files('/Agents'))).status(200));
+      if (top.join(',') !== path) throw new Error(`/Agents lists ${top.join(',')} for the member`);
+      (await asMember.get('/v1/drives/:driveId/files', files('/Agents/some-other-agent'))).status(404);
+      // The Agent Drive itself is reached through its agent: it cannot be shared.
+      (await owner.put('/v1/drives/:driveId/access', { path, principalType: 'agent', principalId: agent, level: 'read' }, { params: { driveId } })).status(400);
     });
 
     await ctx.step('OWNER can name the people of the project to share with', async () => {

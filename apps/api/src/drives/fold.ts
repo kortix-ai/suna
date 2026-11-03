@@ -160,11 +160,9 @@ export async function foldTargets(source: DriveRow): Promise<FoldTarget[]> {
     return [
       {
         projectId: source.projectId,
+        // The agent's Drive: whoever may use the agent reaches it, so it needs no grant.
         path: `/Agents/${segment(source.agentName)}`,
-        grants: [
-          { principal: { type: 'agent', id: source.agentName }, level: 'write' },
-          { principal: { type: 'project', id: source.projectId }, level: 'write' },
-        ],
+        grants: [],
       },
     ];
   }
@@ -176,10 +174,7 @@ export async function foldTargets(source: DriveRow): Promise<FoldTarget[]> {
       projectId,
       path: `/Shared/${segment(source.name)}`,
       grants: grants.flatMap<FoldTarget['grants'][number]>((g) => {
-        if (g.subjectType === 'user' && g.userId) return [{ principal: { type: 'user' as const, id: g.userId }, level: level(g.access) }];
-        if (g.subjectType === 'project' && g.projectId === projectId) {
-          return [{ principal: { type: 'project' as const, id: projectId }, level: level(g.access) }];
-        }
+        // Only agents hold folder grants: a person reaches the folder through an agent they may use.
         if (g.subjectType === 'agent' && g.projectId === projectId && g.agentName) {
           return [{ principal: { type: 'agent' as const, id: g.agentName }, level: level(g.access) }];
         }
