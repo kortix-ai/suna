@@ -8,10 +8,15 @@ import { DUCK_GAIN } from './voice-call-state';
  */
 const WORKLET = `
   class Mic extends AudioWorkletProcessor {
-    constructor() { super(); this.b = new Int16Array(sampleRate / 50); this.n = 0 }
+    // rate: the relay's, when this context runs at the device's own (Firefox); each output sample averages the input
+    // samples of its period, a box filter against aliasing. Unset, the context already runs at the relay's rate.
+    constructor(o) { super(); this.r = o?.processorOptions?.rate || sampleRate; this.step = sampleRate / this.r; this.t = 0; this.a = 0; this.c = 0
+      this.b = new Int16Array(this.r / 50); this.n = 0 }
+    put(x) { this.b[this.n++] = Math.max(-1, Math.min(1, x)) * 0x7fff
+      if (this.n === this.b.length) { this.port.postMessage(this.b.buffer, [this.b.buffer]); this.b = new Int16Array(this.r / 50); this.n = 0 } }
     process([i]) { const c = i[0]; if (!c) return true
-      for (let k = 0; k < c.length; k++) { this.b[this.n++] = Math.max(-1, Math.min(1, c[k])) * 0x7fff
-        if (this.n === this.b.length) { this.port.postMessage(this.b.buffer, [this.b.buffer]); this.b = new Int16Array(sampleRate / 50); this.n = 0 } }
+      if (this.step === 1) { for (let k = 0; k < c.length; k++) this.put(c[k]); return true }
+      for (let k = 0; k < c.length; k++) { this.a += c[k]; this.c++; if (++this.t >= this.step) { this.t -= this.step; this.put(this.a / this.c); this.a = 0; this.c = 0 } }
       return true }
   }
   class Spk extends AudioWorkletProcessor {
@@ -90,11 +95,21 @@ export class CallAudio {
     }
     if (!stream) return false;
     this.stream = stream;
-    const input = (this.input = new AudioContext({ sampleRate: opts.inRate }));
+    let input = (this.input = new AudioContext({ sampleRate: opts.inRate }));
     await input.audioWorklet.addModule(workletModule());
     if (this.stopped) return false;
-    const mic = new AudioWorkletNode(input, 'mic', { numberOfOutputs: 0 });
-    input.createMediaStreamSource(stream).connect(mic);
+    let mic = new AudioWorkletNode(input, 'mic', { numberOfOutputs: 0 });
+    try {
+      input.createMediaStreamSource(stream).connect(mic);
+    } catch {
+      // Firefox joins a microphone only to a context at the device's rate: there the worklet brings it to inRate.
+      void input.close();
+      input = this.input = new AudioContext();
+      await input.audioWorklet.addModule(workletModule());
+      if (this.stopped) return false;
+      mic = new AudioWorkletNode(input, 'mic', { numberOfOutputs: 0, processorOptions: { rate: opts.inRate } });
+      input.createMediaStreamSource(stream).connect(mic);
+    }
     // Muted, the track sends silence: the relay keeps receiving frames.
     mic.port.onmessage = (event: MessageEvent<ArrayBuffer>) => opts.onFrame(event.data);
     this.mute(opts.muted());
