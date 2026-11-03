@@ -302,3 +302,40 @@ describe('previewPlan', () => {
     expect(upcomingCalls).toHaveLength(0);
   });
 });
+
+describe('paired preview and execution characterization', () => {
+  test('unchanged and kept decisions agree without preview writes', async () => {
+    for (const scheduled of [false, true]) {
+      account = { tier: 'credits', stripeSubscriptionId: 'sub_live', planMonthlyUsd: '500', scheduledMonthlyUsd: scheduled ? '100' : null }; liveSubscription = sub([{ price: CREDITS_PRICE, quantity: scheduled ? 10_000 : 50_000 }]);
+      expect(await previewPlan({ accountId: base.accountId, monthlyUsd: 500 })).toEqual({
+        change: scheduled ? 'kept' : 'none', monthly_usd: 500, current_monthly_usd: 500, due_now_usd: 0, credits_now: 0, effective_at: null,
+      });
+      expect(updates).toHaveLength(0); expect(await setPlan({ ...base, monthlyUsd: 500 })).toEqual(scheduled
+        ? { status: 'updated', change: 'kept', monthly_usd: 500 }
+        : { status: 'unchanged', change: 'none', monthly_usd: 500 });
+    }
+    expect(updates).toHaveLength(1); expect(updates[0].params.items).toEqual([{ id: 'si_0', quantity: 50_000 }]); expect(grants).toHaveLength(0);
+  });
+  test('legacy multi-item preview and execution replace every old item', async () => {
+    account = { tier: 'per_seat', stripeSubscriptionId: 'sub_live' }; liveSubscription = sub([{ price: PER_SEAT_PRICE, quantity: 2 }, { price: PER_SEAT_PRICE, quantity: 3 }]);
+    upcomingLines = [{ amount: 1200, proration: true }]; updateResult = { latest_invoice: paidInvoice(1200) };
+    expect((await previewPlan({ accountId: base.accountId, monthlyUsd: 240 })).change).toBe('raised'); expect(updates).toHaveLength(0);
+    await setPlan({ ...base, monthlyUsd: 240 }); const items = [{ id: 'si_0', deleted: true }, { id: 'si_1', deleted: true }, { price: CREDITS_PRICE, quantity: 24_000 }];
+    expect(upcomingCalls[0].subscription_items).toEqual(items); expect(updates[0].params.items).toEqual(items);
+  });
+  for (const status of ['missing-account', 'missing-mapping', 'missing-remote', 'canceled', 'incomplete_expired']) {
+    test(`${status} previews and executes Checkout`, async () => {
+      account = status === 'missing-account' ? null : { tier: 'credits', stripeSubscriptionId: status === 'missing-mapping' ? null : 'sub_live' }; liveSubscription = status === 'missing-remote' ? null : sub([{ price: CREDITS_PRICE, quantity: 10_000 }], status);
+      expect(await previewPlan({ accountId: base.accountId, monthlyUsd: 100 })).toEqual({
+        change: 'checkout', monthly_usd: 100, current_monthly_usd: null, due_now_usd: 100, credits_now: 10_000, effective_at: null,
+      });
+      expect(checkouts).toHaveLength(0); expect((await setPlan({ ...base, monthlyUsd: 100 })).status).toBe('checkout_created'); expect(updates).toHaveLength(0); expect(syncs).toHaveLength(0); expect(grants).toHaveLength(0);
+    });
+  }
+  test('preview remains available during an execution-only yearly commitment', async () => {
+    account = { tier: 'credits', stripeSubscriptionId: 'sub_live', commitmentType: 'yearly_commitment', commitmentEndDate: '2099-01-01' }; liveSubscription = sub([{ price: CREDITS_PRICE, quantity: 10_000 }]);
+    expect((await previewPlan({ accountId: base.accountId, monthlyUsd: 100 })).change).toBe('none');
+    await expect(setPlan({ ...base, monthlyUsd: 100 })).rejects.toThrow(/yearly commitment/);
+    expect(updates).toHaveLength(0);
+  });
+});
