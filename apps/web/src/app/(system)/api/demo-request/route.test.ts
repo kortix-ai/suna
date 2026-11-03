@@ -32,6 +32,16 @@ function post(body: string, ip = '203.0.113.1') {
 }
 
 describe('POST /api/demo-request', () => {
+  test('database outage returns retryable failure, never success', async () => {
+    globalThis.fetch = Object.assign(async () => new Response('{"message":"unavailable"}', {
+      status: 503, headers: { 'content-type': 'application/json' },
+    }), { preconnect: realFetch.preconnect });
+    const res = await post(JSON.stringify({ email: 'agent@kortix.ai' }));
+    expect(res.status).toBe(503);
+    expect(res.headers.get('Retry-After')).toBe('5');
+    expect(await res.json()).not.toHaveProperty('ok', true);
+  });
+
   test('refuses a body over 8 KB', async () => {
     const res = await post(JSON.stringify({ email: 'a@b.co', goal: 'x'.repeat(9000) }));
     expect(res.status).toBe(413);
