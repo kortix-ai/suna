@@ -86,6 +86,8 @@ for (const [name, experimental] of [
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
     client = queryClient;
     queryClient.setQueryData(qk.project.detail(projectId), { project: { project_id: projectId, experimental } });
+    // Flags come from the bare project row (`useFeatureFlag`).
+    queryClient.setQueryData(qk.project.summary(projectId), { project_id: projectId, experimental });
     queryClient.setQueryData(qk.project.apps(projectId), []);
     const host = win.document.createElement('div');
     win.document.body.append(host);

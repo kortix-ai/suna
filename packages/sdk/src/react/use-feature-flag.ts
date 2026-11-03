@@ -1,11 +1,7 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-
-import { getProjectDetail } from '../core/rest/projects-client';
 import type { FeatureFlagKey } from '../core/rest/projects-client';
-import { contract } from './query-contracts';
-import { qk } from './query-keys';
+import { useProjectRow } from './use-project-row';
 
 /**
  * Keys that graduated out of the flag system. Their features are on for every
@@ -32,7 +28,7 @@ const GRADUATED_FEATURE_FLAG_KEYS: ReadonlySet<FeatureFlagKey> = new Set([
 export interface FeatureFlagState {
   /** The server said EXACTLY `true` for this project. Never optimistic. */
   enabled: boolean;
-  /** The project detail has not answered yet. Treat as "not enabled". */
+  /** The project row has not answered yet. Treat as "not enabled". */
   isLoading: boolean;
 }
 
@@ -41,8 +37,9 @@ export interface FeatureFlagState {
  *
  * Every flag-gated surface — a nav entry, a command-palette action, a page,
  * a Customize section — reads this hook, so they light up and go dark
- * together. Reads the shared `qk.project.detail(id)` cache entry, so it costs
- * no extra fetch alongside the detail query a project shell already runs.
+ * together. Reads the shared bare project row (`qk.project.summary(id)`,
+ * `GET /projects/:id`, one database read), never the git-backed detail, so a
+ * flag-gated page renders without waiting on the repository.
  *
  * **Fail-closed by construction.** `enabled` is `=== true`, so a missing
  * project id, an in-flight query, an error, an older server that does not
@@ -58,17 +55,11 @@ export function useFeatureFlag(
   projectId: string | null | undefined,
   key: FeatureFlagKey,
 ): FeatureFlagState {
-  const query = useQuery({
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId as string),
-    enabled: !!projectId,
-    ...contract('config'),
-    refetchOnWindowFocus: false,
-  });
+  const query = useProjectRow(projectId, { refetchOnWindowFocus: false });
 
   return {
     enabled:
-      GRADUATED_FEATURE_FLAG_KEYS.has(key) || query.data?.project?.experimental?.[key] === true,
+      GRADUATED_FEATURE_FLAG_KEYS.has(key) || query.data?.experimental?.[key] === true,
     isLoading: query.isLoading,
   };
 }

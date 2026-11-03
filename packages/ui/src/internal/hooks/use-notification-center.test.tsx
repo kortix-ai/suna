@@ -113,15 +113,46 @@ describe('cache readers', () => {
   });
 });
 
+describe('the bare project row', () => {
+  test('one project: the cached row answers, and it wins over the detail', () => {
+    const queryClient = client();
+    queryClient.setQueryData(qk.project.summary('p1'), flagged(true));
+    expect(cachedNotificationCenter(queryClient, 'p1')).toBe(true);
+    queryClient.setQueryData(qk.project.detail('p1'), { project: flagged(false) });
+    expect(cachedNotificationCenter(queryClient, 'p1')).toBe(true);
+    queryClient.setQueryData(qk.project.summary('p1'), flagged(false));
+    expect(cachedNotificationCenter(queryClient, 'p1')).toBe(false);
+  });
+
+  test('any project: a cached row counts', () => {
+    const queryClient = client();
+    queryClient.setQueryData(qk.project.summary('p1'), flagged(true));
+    expect(anyCachedNotificationCenter(queryClient)).toBe(true);
+  });
+
+  test('the host gate turns on from a loaded row while the detail still loads', async () => {
+    const queryClient = client();
+    loading(queryClient, 'p1');
+    const gate = await mountGate(queryClient, 'p1');
+    expect(gate.answer()).toBe(false);
+    await act(async () => {
+      queryClient.setQueryData(qk.project.summary('p1'), { experimental: { notification_center: true } });
+      await tick();
+    });
+    expect(gate.answer()).toBe(true);
+  });
+});
+
 describe('useNotificationCenter', () => {
   test('with a project id: that project only', async () => {
     const queryClient = client();
-    queryClient.setQueryData(qk.project.detail('p1'), { project: flagged(false) });
+    // `useFeatureFlag` reads the bare project row (`qk.project.summary`).
+    queryClient.setQueryData(qk.project.summary('p1'), flagged(false));
     queryClient.setQueryData(qk.projects.list('acc-1'), [flagged(true)]);
     const answer = await mountHook(queryClient, 'p1');
     expect(answer()).toBe(false);
     await act(async () => {
-      queryClient.setQueryData(qk.project.detail('p1'), { project: flagged(true) });
+      queryClient.setQueryData(qk.project.summary('p1'), flagged(true));
       // The query observer reports on the next tick.
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
@@ -329,8 +360,9 @@ describe('Artifact comment inbox gating', () => {
 
   test('the real inbox hook enables comments while the session mute/watch gate stays off', async () => {
     const queryClient = client();
-    const project = (comments: boolean) => ({ project: { experimental: { notification_center: false, artifacts: true, artifact_comments: comments } } });
-    queryClient.setQueryData(qk.project.detail('p1'), project(true));
+    // The hooks read the bare project row (`qk.project.summary`) through `useFeatureFlag`.
+    const project = (comments: boolean) => ({ experimental: { notification_center: false, artifacts: true, artifact_comments: comments } });
+    queryClient.setQueryData(qk.project.summary('p1'), project(true));
     let answer: { inbox: boolean; center: boolean } | undefined;
     function Probe() {
       answer = { inbox: useNotificationInboxEnabled('p1'), center: useNotificationCenter('p1') };
@@ -340,7 +372,7 @@ describe('Artifact comment inbox gating', () => {
       renderer = create(createElement(QueryClientProvider, { client: queryClient }, createElement(Probe)));
     });
     expect(answer).toEqual({ inbox: true, center: false });
-    await act(async () => { queryClient.setQueryData(qk.project.detail('p1'), project(false)); await tick(); });
+    await act(async () => { queryClient.setQueryData(qk.project.summary('p1'), project(false)); await tick(); });
     expect(answer).toEqual({ inbox: false, center: false });
     expect(queryClient.isFetching()).toBe(0);
   });
