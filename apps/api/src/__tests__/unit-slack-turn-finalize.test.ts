@@ -33,6 +33,7 @@ mock.module('../channels/slack-api', () => ({
   getSlackUserDisplayName: async () => null,
 }));
 
+mock.module('../channels/slack/persona', () => ({ slackAgentPersona: async () => ({ username: 'Synthetic agent' }) }));
 const { finalizeTurn } = await import('../channels/slack/turn');
 import type { LiveTurn } from '../channels/slack/types';
 
@@ -197,4 +198,54 @@ describe('finalizeTurn — silent-loss guards (block render rejected / answer to
     expect(calls.some((c) => c.fn === 'postBlocks')).toBe(true);
     expect(fns()).toContain('removeReaction');
   });
+});
+
+
+describe('finalizeTurn block-path characterization', () => {
+  for (const path of ['plan', 'blocks', 'error']) {
+    for (const outcome of ['reject', 'throw']) {
+      for (const fallback of ['success', 'null']) {
+        test(`${path}: ${outcome}, fallback ${fallback}`, async () => {
+          const render = path === 'plan' ? 'updateBlocks' : 'postBlocks';
+          if (outcome === 'throw') failFn = render;
+          else overrides[render] = render === 'updateBlocks' ? false : null;
+          overrides.postMessage = fallback === 'success' ? 'fallback.ts' : null;
+          const handle = makeHandle(path === 'plan' ? {
+            ts: 'plan.ts',
+            steps: [{ type: 'task_update', id: 'step', title: 'Working', status: 'in_progress' }],
+          } : {});
+          await finalizeTurn(handle, path === 'error' ? { error: 'failure' } : {
+            answer: 'answer', ...(path === 'blocks' ? { blocks: [{ type: 'divider' }] } : {}),
+          });
+          const expected = [render];
+          if (outcome === 'reject') {
+            expected.push('postMessage');
+            if (fallback === 'success' && path !== 'error') expected.push('addReaction');
+          }
+          expected.push('removeReaction');
+          expect(fns()).toEqual(expected);
+          if (outcome === 'reject') {
+            const post = calls.find((call) => call.fn === 'postMessage');
+            expect(post?.args[0]).toBe(handle.token);
+            expect(post?.args[1]).toBe(handle.channel);
+            expect(post?.args[2]).toContain(path === 'error' ? 'failure' : 'answer');
+            expect(post?.args[3]).toBe('100.0');
+          }
+        });
+      }
+    }
+  }
+});
+
+describe('plain posts do not acquire a block fallback', () => {
+  for (const failure of ['reject', 'throw']) {
+    test(`does not retry a plain post on ${failure}`, async () => {
+      if (failure === 'throw') failFn = 'postMessage';
+      else overrides.postMessage = null;
+      await finalizeTurn(makeHandle(), { answer: 'plain answer' });
+      expect(fns().filter(fn => fn === 'postMessage')).toHaveLength(1);
+      expect(fns()).not.toContain('addReaction');
+      expect(fns()).toContain('removeReaction');
+    });
+  }
 });

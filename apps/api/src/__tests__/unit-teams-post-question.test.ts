@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
+const ordered: string[] = [];
+let failStage: string | null = null;
+let sentRef: unknown;
+
 const SESSION_ID = 'sess-asking';
 
 let turn: Record<string, unknown> | null = null;
@@ -9,15 +13,19 @@ const replied: string[] = [];
 /** The conversation the session still owns, for a prompt with no card of its own. */
 let ownedRef: Record<string, unknown> | null = null;
 mock.module('../channels/teams/turn', () => ({
-  loadTurn: async () => turn,
-  conversationRefForSession: async () => ownedRef,
+  loadTurn: async () => { ordered.push('load'); return turn; },
+  conversationRefForSession: async () => { ordered.push('reference'); return ownedRef; },
   finalizeTurn: async (_h: unknown, opts: Record<string, unknown>) => {
+    ordered.push('finalize');
+    if (failStage === 'finalize') throw new Error('finalize failed');
     finalized.push(opts);
   },
   deleteTurn: async (id: string) => {
     deleted.push(id);
   },
   markTurnReplied: async (id: string) => {
+    ordered.push('replied');
+    if (failStage === 'replied') throw new Error('replied failed');
     replied.push(id);
   },
 }));
@@ -27,6 +35,8 @@ let cardOk = true;
 const texts: string[] = [];
 mock.module('../channels/teams-api', () => ({
   sendCard: async (_ref: unknown, card: Record<string, unknown>) => {
+    ordered.push('card');
+    sentRef = _ref;
     cardPosted = card;
     return cardOk ? 'activity-1' : null;
   },
@@ -39,6 +49,10 @@ mock.module('../channels/teams-api', () => ({
 const load = async () => await import('../channels/teams/questions');
 
 beforeEach(() => {
+  ordered.length = 0;
+  failStage = null;
+  sentRef = undefined;
+  ownedRef = null;
   turn = {
     sessionId: SESSION_ID,
     serviceUrl: 'https://smba.trafficmanager.net/emea/',
@@ -112,7 +126,7 @@ describe('postTeamsQuestion', () => {
     // waits here holds a sandbox open for nothing.
     const { postTeamsQuestion } = await load();
 
-    const res = await postTeamsQuestion(SESSION_ID, [{ question: 'Ready?', options: [] }] as never);
+    const res = await postTeamsQuestion(SESSION_ID, [{ header: 'Ready', question: 'Ready?', options: [] }]);
 
     expect(res.answers).toHaveLength(1);
     expect(res.answers?.[0][0]).toContain('finish this turn now');
@@ -122,7 +136,7 @@ describe('postTeamsQuestion', () => {
     turn = null;
     const { postTeamsQuestion } = await load();
 
-    const res = await postTeamsQuestion(SESSION_ID, [{ question: 'Ready?', options: [] }] as never);
+    const res = await postTeamsQuestion(SESSION_ID, [{ header: 'Ready', question: 'Ready?', options: [] }]);
 
     expect(res.ok).toBe(false);
     expect(res.error).toContain('No active Teams turn');
@@ -145,4 +159,33 @@ describe('postTeamsQuestion', () => {
     // No card of its own, so nothing to close.
     expect(finalized).toEqual([]);
   });
+});
+
+describe('postTeamsQuestion waiting-turn characterization', () => {
+  test('finalizes, marks replied, then posts to the exact stored reference', async () => {
+    const { postTeamsQuestion } = await load();
+    await postTeamsQuestion(SESSION_ID, [{ header: 'Ready', question: 'Ready?', options: [] }]);
+    expect(ordered).toEqual(['load', 'finalize', 'replied', 'card']);
+    expect(sentRef).toEqual({
+      serviceUrl: turn?.serviceUrl, conversationId: turn?.conversationId,
+      botId: undefined, fromId: undefined, tenantId: turn?.tenantId, projectId: turn?.projectId,
+    });
+  });
+  test('uses the owned reference unchanged without a live turn', async () => {
+    turn = null;
+    ownedRef = { serviceUrl: 'https://example.test', conversationId: 'synthetic-conversation' };
+    const { postTeamsQuestion } = await load();
+    await postTeamsQuestion(SESSION_ID, [{ header: 'Ready', question: 'Ready?', options: [] }]);
+    expect(ordered).toEqual(['load', 'reference', 'card']);
+    expect(sentRef).toBe(ownedRef);
+  });
+  for (const stage of ['finalize', 'replied']) {
+    test(`propagates ${stage} failure without posting`, async () => {
+      failStage = stage;
+      const { postTeamsQuestion } = await load();
+      await expect(postTeamsQuestion(SESSION_ID, [{ header: 'Ready', question: 'Ready?', options: [] }])).rejects.toThrow(`${stage} failed`);
+      expect(ordered).toEqual(stage === 'finalize' ? ['load', 'finalize'] : ['load', 'finalize', 'replied']);
+      expect(sentRef).toBeUndefined();
+    });
+  }
 });
