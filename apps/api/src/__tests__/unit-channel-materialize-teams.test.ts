@@ -28,6 +28,7 @@ mock.module('../channels/install-store', () => ({
   loadTeamsInstall: async () => (hasTeamsInstall ? { tenantId: 'tenant-1' } : null),
   hasEmailInboxes: async () => false,
   loadTelegramInstall: async () => null,
+  loadDiscordInstall: async () => null,
 }));
 
 const { synthesizeChannelConnectors } = await import('../connectors/channel-materialize');
