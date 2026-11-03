@@ -9,13 +9,16 @@
  * `SANDBOX_VERSION`, which is the exact break that made
  * `bun test src/projects/reaping/` unrunnable.
  *
- * Importing the real module here is not an option: it validates env at import
- * time and rejects dotenvx ciphertext outside `dotenvx run`.
+ * Keep the real named exports; the hermetic test environment supplies the
+ * synthetic values required to validate config at import time.
  */
+import * as realConfig from '../../../config';
+
 export function mockConfigModule(
   overrides: Partial<Record<string, unknown>> = {},
 ): Record<string, unknown> {
   return {
+    ...realConfig,
     config: {
       KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15,
       ALLOWED_SANDBOX_PROVIDERS: ['daytona'],
