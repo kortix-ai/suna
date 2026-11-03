@@ -9,7 +9,8 @@
 import { afterEach, expect, test } from 'bun:test';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { loadProjectConfig } from './config';
+import { loadProjectConfig, loadRepoConfigSummary, withKortixSkills } from './config';
+import { listRepoFiles } from './files';
 import { createPartialStoreFixture, type PartialStoreFixture } from './__tests__/partial-store-fixture';
 
 let fx: PartialStoreFixture | null = null;
@@ -55,4 +56,17 @@ test('a cold store reads 4 imports and 20 skills in at most 4 fetches after the 
   // The clone (commits), the trees, the imported manifests, the skills. The
   // root manifest may take one more. Per-file fetches made this 26.
   expect(await packCount(fx.storePath())).toBeLessThanOrEqual(5);
+});
+
+test('a summary pinned to a commit reads that commit after the branch moved, and adds up to the live config', async () => {
+  fx = await createPartialStoreFixture(seed());
+  const before = await fx.push({}, 'pin here');
+  await fx.push({ 'alpha/skills/alpha-skill-0/SKILL.md': '---\nname: alpha-skill-0\ndescription: Changed.\n---\n' }, 'change a skill');
+
+  const pinned = await loadRepoConfigSummary(fx.project, await listRepoFiles(fx.project, before), before);
+  expect(pinned.skills.find((skill) => skill.name === 'alpha-skill-0')?.description).toBe('The alpha-skill-0 skill.');
+
+  const live = await loadProjectConfig(fx.project);
+  expect(live.skills.find((skill) => skill.name === 'alpha-skill-0')?.description).toBe('Changed.');
+  expect(withKortixSkills(await loadRepoConfigSummary(fx.project))).toEqual(live);
 });

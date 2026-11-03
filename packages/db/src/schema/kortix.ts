@@ -716,6 +716,38 @@ export const configReleaseHeads = kortixSchema.table(
 );
 
 /**
+ * The project config summary of one ref at one commit: what `GET
+ * /projects/:id/detail` serves (agents, skills, commands, manifest health,
+ * the file paths). Built once when the ref moves, so a page view runs no git.
+ * Per-user filtering and the Kortix managed skills are applied at read time,
+ * never stored. A row whose `format` is not the API's current one is ignored
+ * and rebuilt. One row per `(project, ref)`.
+ */
+export const projectConfigSummaries = kortixSchema.table(
+  'project_config_summaries',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    ref: varchar('ref', { length: 255 }).notNull(),
+    /** The commit every file of the summary was read at. */
+    sourceCommit: varchar('source_commit', { length: 64 }).notNull(),
+    /** `CONFIG_SUMMARY_FORMAT` of the API that built it. */
+    format: integer('format').notNull(),
+    /** The repository-derived `ProjectConfigSummary`, before the Kortix managed skills. */
+    config: jsonb('config').$type<Record<string, unknown>>().notNull(),
+    /** File paths at `source_commit`; the first 50,000 when `files_complete` is false. */
+    files: jsonb('files').$type<string[]>().notNull(),
+    fileCount: integer('file_count').notNull(),
+    filesComplete: boolean('files_complete').notNull(),
+    /** When the build read the ref's tip. An older build never overwrites a newer one. */
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }).notNull(),
+    builtAt: timestamp('built_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.ref] })],
+).enableRLS();
+
+/**
  * The last time any API process asked a base ref's upstream for its tip, and
  * the tip it read. Every running box asks for its desired release every 60 s;
  * this row makes those asks share one upstream check per `(project, ref)` per
