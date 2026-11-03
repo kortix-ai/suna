@@ -2516,17 +2516,24 @@ unchanged list answers `304` with no body.
 
 A rate-limited route returns `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and
 `X-RateLimit-Reset` (seconds until the window resets). When the limit is
-reached it returns `429` with `Retry-After` and this body:
+reached it returns `429` with `Retry-After`. The API edge budgets return:
 
 ```json
-{ "error": "rate_limit_exceeded", "message": "Rate limit exceeded. Please retry shortly.", "retry_after_seconds": 12 }
+{ "error": "rate_limit_exceeded", "retry_after_seconds": 12 }
 ```
 
 | Route | Limit |
 |---|---|
-| Headless sign-in routes under `/v1/auth` | 30 requests per minute per IP address. The `429` body is `{ "error": "over_request_rate_limit", "error_description": "…" }` with `Retry-After`, and no `X-RateLimit-*` headers. |
+| API routes under `/v1`, except the health endpoints and public auth families below | 300 requests per minute per client address per API replica; one token refills every 200 ms. |
+| Public auth families `/v1/auth`, `/v1/oauth`, `/v1/access`, `/v1/tunnel/device-auth` | Separate shared budget of 30 requests per minute per client address per API replica, before validation and authentication. |
 | The sandbox proxy, `/v1/p/<external_id>/<port>/*`: previews and the session runtime | 600 requests per minute per sandbox |
 | Secret writes in one project | 100 per hour, `code: "project_secret_write_limit"` |
+
+The edge budgets count rejected requests too. `OPTIONS` and `/v1/health`,
+`/v1/health/live`, and `/v1/health/ready` are exempt. Direct internal requests
+without forwarding headers retain their existing exemption. These replica-local
+abuse budgets are not account quotas; a deployment with multiple API replicas
+can accept a multiple of each budget.
 
 ### What the reference does not cover
 
@@ -3787,6 +3794,36 @@ kortix self-host start
 | Update policy | Auto-update on or off, channel, daily time and timezone. |
 
 SAML sign-in is on in every instance, and `init` generates `SAML_PRIVATE_KEY` once. Do not change that key after you register an identity provider: it is the instance's SAML identity. To set up SSO, see [Single sign-on and directory sync](/docs/guide#single-sign-on-and-directory-sync).
+
+#### Change or add a domain
+
+An instance has one primary domain and can answer on more. `kortix self-host domain show` lists them.
+
+To move to a new domain, point its records at the server first: `<domain>`, `api.<domain>`, and `*.apps.<domain>` and `*.p.<domain>` when Apps hosting and preview origins are on. Then run:
+
+```bash
+kortix self-host domain move <domain>
+```
+
+The command checks that every new name resolves to the same address as the current domain, writes the new configuration, runs `caddy validate`, and restarts Caddy, the frontend, the API, the gateway and auth. A failed validation restores the previous configuration. Hosts under the old domain move with it, and the old domain becomes an alias in `KORTIX_DOMAIN_ALIASES`:
+
+| Old host | After the move |
+|---|---|
+| `<old>` | Redirects (`308`) to the same path on the new domain. |
+| `api.<old>` | Keeps serving. Sandboxes, Capture devices and webhooks set up before the move keep working. |
+| `*.apps.<old>`, `*.p.<old>` | Keep serving the same App or sandbox port. New links use the new domain. |
+
+People sign in once more on the new domain. Re-register URLs that outside services store: the GitHub App callback and OAuth redirect URIs.
+
+If people sign in with SAML SSO, update the identity provider **before** the move. The service provider's entity ID and ACS URL follow the domain, and every SSO sign-in fails until the identity provider knows them. Microsoft Entra ID and Okta accept several values, so add the new ones next to the current ones:
+
+| Field | Value |
+|---|---|
+| Identifier (entity ID) | `https://<domain>/auth/v1/sso/saml/metadata` |
+| Reply URL (ACS) | `https://<domain>/auth/v1/sso/saml/acs` |
+| Logout URL | `https://<domain>/auth/v1/sso/saml/slo` |
+
+To add an alias without moving, run `kortix self-host env set KORTIX_DOMAIN_ALIASES=<domain>[,<domain>]`. To retire an alias, remove it from the list.
 
 ### First sign-in and setup
 

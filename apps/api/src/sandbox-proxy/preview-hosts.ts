@@ -89,6 +89,21 @@ export function previewBaseDomain(): string | null {
 }
 
 /**
+ * Every base domain a preview host may sit under: the primary one, then the
+ * self-host alias bases (KORTIX_PREVIEW_BASE_DOMAIN_ALIASES) that keep preview
+ * links from before a domain move working. URLs are only ever built on the
+ * primary.
+ */
+export function previewServedBaseDomains(): string[] {
+  const primary = previewBaseDomain();
+  const aliases = (config.KORTIX_PREVIEW_BASE_DOMAIN_ALIASES ?? '')
+    .split(',')
+    .map(normalizeDomain)
+    .filter((domain) => domain && domain !== primary);
+  return primary ? [primary, ...aliases] : aliases;
+}
+
+/**
  * The template the SDK substitutes to build a preview URL without duplicating
  * the hostname shape client-side. `{port}` and `{sandbox}` are the only slots;
  * `{sandbox}` receives the RAW external id, which the client label-encodes the
@@ -134,8 +149,8 @@ export function resolvePreviewHost(hostname: string): ResolvedPreviewHost | null
     return { port: Number(local[1]), sandboxLabel: local[2]!, local: true };
   }
 
-  const domain = previewBaseDomain();
-  if (!domain || !host.endsWith(`.${domain}`)) return null;
+  const domain = previewServedBaseDomains().find((base) => host.endsWith(`.${base}`));
+  if (!domain) return null;
   const label = host.slice(0, -(domain.length + 1));
   if (label.includes('.')) return null;
   const match = DEPLOYED_LABEL.exec(label);

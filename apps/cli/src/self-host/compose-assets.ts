@@ -2,6 +2,8 @@ import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parse, stringify } from 'yaml';
 
+import type { DomainAliasHosts } from './domain-aliases';
+
 import kortixCompose from './assets/kortix-compose.yml' with { type: 'text' };
 import kortixCaddyfile from './assets/Caddyfile.txt' with { type: 'text' };
 import kortixUpdaterScript from './assets/updater.sh' with { type: 'text' };
@@ -221,6 +223,42 @@ export interface RenderCaddyfileOptions {
    * unchanged with the `@capture` handler intact.
    */
   captureStoreExternal?: boolean;
+  /**
+   * Hosts this instance also answers on (KORTIX_DOMAIN_ALIASES; see
+   * domain-aliases.ts). Alias API hosts join the API site address, alias
+   * Apps/preview bases join their wildcard site addresses, and alias web-app
+   * hosts get one block that redirects to the primary domain. Omitted or empty:
+   * the rendered file is unchanged.
+   */
+  domainAliases?: DomainAliasHosts;
+}
+
+/**
+ * The API site address line of the base Caddyfile. Alias API hosts are appended
+ * to it; the guard in renderCaddyfile throws if the line ever changes.
+ */
+const CADDY_API_SITE = '\n{$KORTIX_API_DOMAIN} {\n';
+
+/**
+ * Former web-app hosts: every request moves to the same path on the primary
+ * domain. The app is not served twice: its session cookies are host-only, CORS
+ * allows one app origin, and auth redirects point at SITE_URL.
+ */
+function aliasRedirectBlock(hosts: readonly string[]): string {
+  return `# Former or extra domains (KORTIX_DOMAIN_ALIASES): the web app lives on the
+# primary domain only, so every request here moves to it with its path. The
+# alias API, Apps and preview hosts are served directly by the blocks above.
+${hosts.join(', ')} {
+	header Strict-Transport-Security "max-age=2592000"
+	redir https://{$KORTIX_DOMAIN}{uri} 308
+}`;
+}
+
+function withWildcardAliases(block: string, primaryAddress: string, bases: readonly string[]): string {
+  if (bases.length === 0) return block;
+  const address = `${primaryAddress} {`;
+  if (!block.includes(address)) throw new Error(`Caddy site address ${primaryAddress} changed; cannot add aliases`);
+  return block.replace(address, `${[primaryAddress, ...bases.map((b) => `*.${b}`)].join(', ')} {`);
 }
 
 /**
@@ -245,21 +283,36 @@ export function renderCaddyfile(options: RenderCaddyfileOptions = {}): string {
     }
     caddyfile = caddyfile.replace(CAPTURE_CADDY_BLOCK, '');
   }
-  const blocks = [
-    options.appsHostingConfigured ? APPS_SITE_BLOCK : null,
-    options.previewHostingConfigured ? PREVIEW_SITE_BLOCK : null,
-  ].filter((block): block is string => block !== null);
-  if (blocks.length === 0) return caddyfile;
-  if (!caddyfile.includes(CADDY_GLOBAL_CLOSE)) {
-    throw new Error('Caddyfile global options block changed; cannot inject on_demand_tls');
+  const aliases = options.domainAliases ?? { app: [], api: [], apps: [], preview: [] };
+  if (aliases.api.length > 0) {
+    if (!caddyfile.includes(CADDY_API_SITE)) {
+      throw new Error('Caddyfile API site address changed; cannot add alias API hosts');
+    }
+    caddyfile = caddyfile.replace(CADDY_API_SITE, `\n${['{$KORTIX_API_DOMAIN}', ...aliases.api].join(', ')} {\n`);
   }
-  // on_demand_tls is GLOBAL-only and Caddy allows one global block, so the
-  // `ask` is injected once no matter how many wildcard families are served.
-  const withOnDemand = caddyfile.replace(
-    CADDY_GLOBAL_CLOSE,
-    `email {$KORTIX_ACME_EMAIL}\n\n\ton_demand_tls {\n\t\task ${EDGE_TLS_CHECK_URL}\n\t}\n}`,
-  );
-  return `${withOnDemand.trimEnd()}\n\n${blocks.join('\n\n')}\n`;
+  const blocks = [
+    options.appsHostingConfigured
+      ? withWildcardAliases(APPS_SITE_BLOCK, '*.{$KORTIX_APPS_BASE_DOMAIN}', aliases.apps)
+      : null,
+    options.previewHostingConfigured
+      ? withWildcardAliases(PREVIEW_SITE_BLOCK, '*.{$KORTIX_PREVIEW_BASE_DOMAIN}', aliases.preview)
+      : null,
+  ].filter((block): block is string => block !== null);
+  const redirect = aliases.app.length > 0 ? aliasRedirectBlock(aliases.app) : null;
+  if (blocks.length > 0) {
+    if (!caddyfile.includes(CADDY_GLOBAL_CLOSE)) {
+      throw new Error('Caddyfile global options block changed; cannot inject on_demand_tls');
+    }
+    // on_demand_tls is GLOBAL-only and Caddy allows one global block, so the
+    // `ask` is injected once no matter how many wildcard families are served.
+    caddyfile = caddyfile.replace(
+      CADDY_GLOBAL_CLOSE,
+      `email {$KORTIX_ACME_EMAIL}\n\n\ton_demand_tls {\n\t\task ${EDGE_TLS_CHECK_URL}\n\t}\n}`,
+    );
+  }
+  const appended = [...blocks, ...(redirect ? [redirect] : [])];
+  if (appended.length === 0) return caddyfile;
+  return `${caddyfile.trimEnd()}\n\n${appended.join('\n\n')}\n`;
 }
 
 export function writeKortixRuntimeAssets(root: string, options: RenderCaddyfileOptions = {}): void {

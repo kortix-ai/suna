@@ -111,12 +111,26 @@ export function appServiceUrl(row: { slug: string; routeKey: string }, service: 
   return `https://${label}.${appsBaseDomain()}`;
 }
 
+/**
+ * Every base domain an App host may sit under: the primary one, then the
+ * self-host alias bases (KORTIX_APPS_BASE_DOMAIN_ALIASES) that keep links from
+ * before a domain move working. URLs are only ever built on the primary.
+ */
+export function appsServedBaseDomains(): string[] {
+  const primary = appsBaseDomain();
+  const aliases = (config.KORTIX_APPS_BASE_DOMAIN_ALIASES ?? '')
+    .split(',')
+    .map(normalizeDomain)
+    .filter((domain) => domain && domain !== primary);
+  return primary ? [primary, ...aliases] : aliases;
+}
+
 export function resolveAppHost(hostname: string): ResolvedAppHost | null {
   const host = hostname.toLowerCase().replace(/\.$/, '');
   const local = LOCAL_HOST.exec(host);
   if (local) return { routeKey: local[1]!, local: true, service: local[2] ?? 'http' };
-  const domain = appsBaseDomain();
-  if (!domain || !host.endsWith(`.${domain}`)) return null;
+  const domain = appsServedBaseDomains().find((base) => host.endsWith(`.${base}`));
+  if (!domain) return null;
   const label = host.slice(0, -(domain.length + 1));
   if (label.includes('.')) return null;
   const match = APP_LABEL.exec(label);
