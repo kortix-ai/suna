@@ -26,6 +26,7 @@ import { asc, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { nonSsoIdentitySql } from '../shared/auth-identity';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { selfHostOperatorAllowlist } from '../shared/self-host-operator';
 import { type AccountBranding, isBrandingEmpty, normalizeBranding } from './branding';
 
@@ -41,7 +42,7 @@ export async function loadOldestOperatorBranding(
     operatorEmails.length > 0
       ? sql`OR EXISTS (
           SELECT 1 FROM auth.users u
-          WHERE u.id = ${accounts.accountId}
+          WHERE u.id = ${qualifiedColumn(accounts.accountId)}
             AND lower(u.email) IN (${sql.join(
               operatorEmails.map((email) => sql`${email}`),
               sql`, `,
@@ -53,8 +54,8 @@ export async function loadOldestOperatorBranding(
     .select({ branding: accounts.branding })
     .from(accounts)
     .where(
-      sql`${accounts.branding} <> '{}'::jsonb AND (
-        NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = ${accounts.accountId})
+      sql`${qualifiedColumn(accounts.branding)} <> '{}'::jsonb AND (
+        NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = ${qualifiedColumn(accounts.accountId)})
         ${operatorPersonal}
       )`,
     )
