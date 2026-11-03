@@ -76,7 +76,10 @@ code changed after the version's store build: bump the version, or phones get
 neither a store build nor OTA updates with that change. It never resubmits a
 version Apple rejected (`REJECTED`, `METADATA_REJECTED`, `INVALID_BINARY`) or
 one a person pulled from review (`DEVELOPER_REJECTED`): fix it in App Store
-Connect.
+Connect. When Apple refuses the review submission, the run names Apple's reason.
+Example: Apple added the age-rating question `socialMedia` in 2026 and refused
+1.5.5 until it had an answer (App Store Connect → App Information → Age
+Rating). Questionnaire answers are declarations, so the run never fills them.
 
 Auth is `EXPO_TOKEN` only. App Store Connect calls use the API key that EAS
 Submit stores for the app (`eas credentials -p ios`), read from Expo at run

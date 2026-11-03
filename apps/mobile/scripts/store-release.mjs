@@ -136,8 +136,13 @@ async function ascClient(projectId) {
     const text = await res.text();
     const json = text ? JSON.parse(text) : {};
     if (!res.ok) {
-      const detail = json.errors?.map((e) => e.detail ?? e.title).join('; ') ?? text.slice(0, 300);
-      throw Object.assign(new Error(`App Store Connect ${method} ${path.split('?')[0]} -> ${res.status}: ${detail}`), { status: res.status });
+      // A 409 names the real cause in meta.associatedErrors, e.g. a missing
+      // age-rating answer: "You must provide a value for the attribute 'socialMedia'".
+      const detail = (json.errors ?? []).flatMap((e) => [
+        e.detail ?? e.title,
+        ...Object.values(e.meta?.associatedErrors ?? {}).flat().map((a) => a.detail ?? a.title),
+      ]).join('; ') || text.slice(0, 300);
+      throw new Error(`App Store Connect ${method} ${path.split('?')[0]} -> ${res.status}: ${detail}`);
     }
     return json;
   };
@@ -218,7 +223,8 @@ async function releaseIos({ projectId, appId, version, buildNumber, dryRun }) {
   const submission = drafts[0] ?? (await asc('POST', '/v1/reviewSubmissions', {
     data: { type: 'reviewSubmissions', attributes: { platform: 'IOS' }, relationships: { app: { data: { type: 'apps', id: appId } } } },
   })).data;
-  try {
+  const items = (await asc('GET', `/v1/reviewSubmissions/${submission.id}/items?include=appStoreVersion&limit=50`)).data;
+  if (!items.some((item) => item.relationships?.appStoreVersion?.data?.id === target.id)) {
     await asc('POST', '/v1/reviewSubmissionItems', {
       data: {
         type: 'reviewSubmissionItems',
@@ -228,8 +234,6 @@ async function releaseIos({ projectId, appId, version, buildNumber, dryRun }) {
         },
       },
     });
-  } catch (error) {
-    if (error.status !== 409) throw error; // 409: the draft already holds this version
   }
   await asc('PATCH', `/v1/reviewSubmissions/${submission.id}`, {
     data: { type: 'reviewSubmissions', id: submission.id, attributes: { submitted: true } },
