@@ -37,6 +37,14 @@ describe('transactional Sales outbox on PostgreSQL', () => {
     expect(await db.execute(sql`SELECT 1 FROM kortix.sales_event_outbox WHERE delivered_at IS NOT NULL`)).toHaveLength(1);
   });
 
+  test('unset receiver leaves confirmed signup durable without a delivery attempt', async () => {
+    await confirm();
+    config.SIGNUP_WEBHOOK_URL = '';
+    await processSalesOutbox();
+    expect(await db.execute(sql`SELECT 1 FROM kortix.sales_event_outbox WHERE attempts=0 AND delivered_at IS NULL AND lease_token IS NULL`)).toHaveLength(1);
+    expect(await db.execute(sql`SELECT 1 FROM auth.users WHERE id=${userId} AND email_confirmed_at IS NOT NULL`)).toHaveLength(1);
+  });
+
   test('receiver outage retries durably, crash after receipt redelivers identical event', async () => {
     await confirm();
     globalThis.fetch = Object.assign(async () => new Response(null, { status: 503 }), { preconnect: originalFetch.preconnect });

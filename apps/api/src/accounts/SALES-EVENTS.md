@@ -1,6 +1,6 @@
 # Sales event delivery
 
-Apply the two `sales_event_*` migrations before rolling out the API/web change. No production migration, configuration or deployment was performed by this PR.
+Apply all three Sales migrations (outbox, producers, and trusted-writer) before rolling out the API/web change. No production migration, configuration or deployment was performed by this PR.
 
 ## Configuration
 
