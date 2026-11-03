@@ -159,7 +159,7 @@ export { PURGE_BATCH_SIZE, purgeSessionContent } from './session-log-purge';
 
 // Git reads (consumed by config-releases/publish.ts and config-releases/base-tip.ts).
 export { resolveCommitSha, resolveCommitShaAt } from './git/commits';
-export { refreshIntervalMs, refreshMirror, useSharedTipProof } from './git/mirror';
+export { publishTipProofsTo, refreshIntervalMs, refreshMirror, useSharedTipProof } from './git/mirror';
 export type { GitBackedProject } from './git/types';
 // Saved config summaries, rebuilt when a base ref moves (consumed by ../config-releases/publish).
 export { savedProjectConfig, scheduleConfigSummary } from './config-summary/service';
