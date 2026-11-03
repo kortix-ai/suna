@@ -181,3 +181,24 @@ test('reconciliation accepts date-only days 16 and 31 in both bounds', async () 
     }
   }
 });
+
+test('expired or reclaimed lease during enrichment cannot dispatch', async () => {
+  config.SIGNUP_WEBHOOK_URL = 'https://sales.example.test/events';
+  config.SIGNUP_WEBHOOK_SECRET = 'synthetic-secret';
+  for (const reclaimed of [false, true]) {
+    await db.execute(sql`DELETE FROM kortix.sales_event_outbox`);
+    await db.execute(sql`INSERT INTO kortix.sales_event_outbox(event_id,payload) VALUES ('demo.requested:lease-probe','{"type":"demo.requested"}')`);
+    let sends = 0;
+    globalThis.fetch = Object.assign(async () => { sends++; return new Response(null, { status: 202 }); }, { preconnect: originalFetch.preconnect });
+    try {
+      await processSalesOutbox(db, async (payload) => {
+        await db.execute(sql`UPDATE kortix.sales_event_outbox SET available_at = now() - interval '1 second'`);
+        if (reclaimed) await db.execute(sql`UPDATE kortix.sales_event_outbox SET lease_token = '00000000-0000-4000-8000-000000000088', available_at = now() + interval '5 minutes'`);
+        return payload;
+      });
+      expect(sends).toBe(0);
+      const rows = await db.execute<{ delivered_at: string | null }>(sql`SELECT delivered_at FROM kortix.sales_event_outbox`);
+      expect(rows[0]?.delivered_at).toBeNull();
+    } finally { globalThis.fetch = originalFetch; }
+  }
+});

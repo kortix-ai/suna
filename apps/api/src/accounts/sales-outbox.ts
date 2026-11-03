@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { enrichSalesCustomer } from './sales-customer-lookup';
 import type { Database } from '@kortix/db';
 import { sql } from 'drizzle-orm';
 import { config } from '../config';
@@ -6,7 +7,7 @@ import { db } from '../shared/db';
 import { deliverSalesEvent, SALES_MAX_ATTEMPTS, salesRetryDelay } from './sales-delivery';
 
 /** Claims commit before HTTP. A crash leaves a lease that another worker reclaims. */
-export async function processSalesOutbox(database: Database = db): Promise<void> {
+export async function processSalesOutbox(database: Database = db, enrich: typeof enrichSalesCustomer = enrichSalesCustomer): Promise<void> {
   if (!config.SIGNUP_WEBHOOK_URL || !config.SIGNUP_WEBHOOK_SECRET) return;
   const token = randomUUID();
   const rows = await database.execute<{ event_id: string; payload: Record<string, unknown>; attempts: number }>(sql`
@@ -19,7 +20,16 @@ export async function processSalesOutbox(database: Database = db): Promise<void>
     ) RETURNING event_id, payload, attempts
   `);
   for (const row of rows) {
-    const error = await deliverSalesEvent(row.payload, config.SIGNUP_WEBHOOK_URL, config.SIGNUP_WEBHOOK_SECRET);
+    const payload = await enrich(row.payload);
+    // Slow billing reads must not dispatch a row reclaimed by another worker.
+    const owned = await database.execute(sql`
+      UPDATE kortix.sales_event_outbox SET available_at = now() + interval '5 minutes'
+      WHERE event_id = ${row.event_id} AND lease_token = ${token}::uuid
+        AND available_at > now() AND delivered_at IS NULL AND dead_letter_at IS NULL
+      RETURNING event_id
+    `);
+    if (!owned.length) continue;
+    const error = await deliverSalesEvent(payload, config.SIGNUP_WEBHOOK_URL, config.SIGNUP_WEBHOOK_SECRET);
     await database.execute(sql`
       UPDATE kortix.sales_event_outbox SET
         delivered_at = CASE WHEN ${error}::text IS NULL THEN now() ELSE NULL END,
