@@ -168,7 +168,7 @@ describe('instanceBranding — what the sign-in page shows', () => {
     expect(reads).toBe(0);
   });
 
-  test('licensed → the oldest team account branding, normalized', async () => {
+  test('licensed → the instance branding, normalized', async () => {
     expect(await instanceBranding(true, async () => ({ app_name: 'Acme', icon_url: 'http://x/i.png' }))).toEqual({
       app_name: 'Acme',
       logo_url: null,
