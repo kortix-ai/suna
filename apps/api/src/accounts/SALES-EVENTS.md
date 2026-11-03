@@ -36,13 +36,22 @@ server-side route are present. Rollback must keep the anonymous-role exclusion;
 restoring the anonymous web writer disables demo events rather than weakening
 that boundary.
 
-### Database reversal boundary
+### Reviewed operator database reversal
 
-These are forward-only additive migrations, not automatically reversible migrations.
-Unsetting the URL pauses delivery; it does **not** reverse the database changes.
-The supported application rollback retains the outbox, queued payloads, producers
-and trusted-writer restriction. Do not drop the table or triggers as an incident
-rollback: that loses queued evidence or stops capture. A complete database reversal
-requires a separately reviewed migration, an exported/reconciled outbox, and a
-replacement capture path before disabling the producers. No down-migration SQL is
-provided or authorized by this change.
+Operator-only SQL lives in `packages/db/rollback/sales-events.sql`, outside the
+migration runner. Stop the outbox worker and unset the delivery URL first. Roll
+application code back before executing it; the new worker needs the live table.
+This transaction drops only the two Sales triggers/functions and moves the entire
+outbox table, indexes, payloads and receipts to `sales_events_rollback`. Anonymous
+and authenticated roles cannot access that archive. Auth users/contact forms are
+untouched. The archive schema must not already exist: a second execution fails
+closed instead of replacing an earlier backlog. No production reversal was run.
+
+Capture stops after reversal; record its time and reconcile signups and persisted
+contact submissions before resuming delivery. Never connect the old incompatible
+sender to the v1 sink. To restore: move the archived table back to `kortix`, drop
+the now-empty archive schema, then reapply the producer and trusted-writer SQL
+under review (do not rerun the create-table migration or erase migration history).
+An isolated PostgreSQL reversal verified exact full-row backlog equality and the
+absence of the live table; restoration reapplied both producers and trusted-writer
+restriction, then reran the integration suite.
