@@ -25051,6 +25051,7 @@
   },
   "voiceCall": {
     "title": "Chamada de voz",
+    "call": "Ligar",
     "start": "Iniciar uma chamada de voz",
     "end": "Encerrar chamada",
     "connecting": "Conectando…",

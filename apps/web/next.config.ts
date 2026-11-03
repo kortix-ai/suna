@@ -1201,7 +1201,7 @@ const nextConfig = (): NextConfig => ({
             key: 'X-Content-Type-Options',
             value: 'nosniff',
           },
-          // The microphone for this origin only: a voice call (the session page's
+          // The microphone for this origin only: a voice call (an agent page's
           // Call button, project flag `voice_call`) asks for it, and the browser
           // still asks the person. Set on every document, not the session route
           // alone: a session opened by client-side navigation keeps the policy of
