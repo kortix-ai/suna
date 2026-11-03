@@ -98,3 +98,34 @@ test('reconciliation authorizes, pages tied timestamps without loss and binds cu
   expect((await app.request(`${url}&cursor=invalid`, { headers })).status).toBe(400);
   expect((await app.request(`${url.replace('2026-02-01','2026-03-01')}&cursor=${first.next_cursor}`, { headers })).status).toBe(400);
 });
+
+test('real HTTP receiver recovers, validates signature, and concurrent workers claim once', async () => {
+  const { createHmac } = await import('node:crypto');
+  await db.execute(sql`DELETE FROM kortix.sales_event_outbox`);
+  await db.execute(sql`INSERT INTO kortix.sales_event_outbox(event_id,payload) VALUES
+    ('demo.requested:synthetic-http','{"schema_version":1,"event_id":"demo.requested:synthetic-http","type":"demo.requested","data":{"email":"agent@kortix.ai"}}')`);
+  let healthy = false;
+  const bodies: string[] = [];
+  const signatures: boolean[] = [];
+  const server = Bun.serve({ port: 0, async fetch(request) {
+    const body = await request.text();
+    bodies.push(body);
+    signatures.push(request.headers.get('x-kortix-signature') === `sha256=${createHmac('sha256', 'synthetic-secret').update(`${request.headers.get('x-kortix-timestamp')}.${body}`).digest('hex')}`);
+    return new Response(null, { status: healthy ? 202 : 503 });
+  } });
+  config.SIGNUP_WEBHOOK_URL = `http://localhost:${server.port}/sales/ingest`;
+  config.SIGNUP_WEBHOOK_SECRET = 'synthetic-secret';
+  globalThis.fetch = originalFetch;
+  try {
+    await processSalesOutbox();
+    expect(bodies).toHaveLength(1);
+    expect(await db.execute(sql`SELECT 1 FROM kortix.sales_event_outbox WHERE delivered_at IS NULL AND attempts=1`)).toHaveLength(1);
+    healthy = true;
+    await db.execute(sql`UPDATE kortix.sales_event_outbox SET available_at=now()`);
+    await Promise.all([processSalesOutbox(), processSalesOutbox()]);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toBe(bodies[1]);
+    expect(signatures).toEqual([true, true]);
+    expect(await db.execute(sql`SELECT 1 FROM kortix.sales_event_outbox WHERE delivered_at IS NOT NULL AND attempts=2`)).toHaveLength(1);
+  } finally { await server.stop(true); }
+});
