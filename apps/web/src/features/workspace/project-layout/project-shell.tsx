@@ -82,7 +82,8 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   const searchParams = useSearchParams();
   const { user, isLoading: authLoading, bootstrapError } = useAuth();
 
-  const { data: projectDetail, error: projectDetailError, isStale: projectDetailStale } = useQuery({
+  // Warms the config cache for the capability pages; nothing in the shell waits on it.
+  const { data: projectDetail } = useQuery({
     queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
     enabled: !!projectId,
@@ -91,7 +92,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   // The owning account rides the bare project row (~10 ms on the server).
   // `/detail` reads git (0.5–2.6 s on prod) and every billing read on the
   // page, the model picker's gate included, waited behind it.
-  const { data: projectRow } = useQuery({
+  const { data: projectRow, error: projectRowError, isStale: projectRowStale } = useQuery({
     queryKey: qk.project.summary(projectId),
     queryFn: () => getProject(projectId),
     enabled: !!projectId,
@@ -109,15 +110,16 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
 
   // Remember the project so the next `/` hit and the next sign-in land straight
   // back here instead of going through the id-free landing door. Gated on a
-  // detail read the server confirmed: recording a project the user cannot
+  // project-row read the server confirmed (`GET /projects/:id` asserts read
+  // access, like the detail, without waiting on git): recording a project the user cannot
   // actually read would send them into a 404 bounce loop on their next visit.
   // A copy restored from this device's cache is stale until it refetches, and
   // it outlives a deleted project: never remember that stale copy again.
   // ProjectAccessBoundary owns terminal errors and forgetting unreadable projects.
   useEffect(() => {
-    if (!projectDetail || projectDetailError || projectDetailStale) return;
+    if (!projectRow || projectRowError || projectRowStale) return;
     writeLastProjectId(user?.id, projectId);
-  }, [projectDetail, projectDetailError, projectDetailStale, projectId, user?.id]);
+  }, [projectRow, projectRowError, projectRowStale, projectId, user?.id]);
 
   // The project's owning account, falling back to the app-wide selected one
   // — the same resolution every account-scoped surface uses. Feeds the
