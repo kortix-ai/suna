@@ -4,7 +4,8 @@
 //!   window: the composed desktop, so GPU-rendered content (AutoCAD's drawing
 //!   area, games, video, flip-model DirectX apps) is in the frame. GDI `BitBlt`
 //!   misses that content and paints it black; it stays the fallback when
-//!   duplication is unavailable (a desktop switch, no GPU output). Neither asks
+//!   duplication is unavailable (a desktop switch, no GPU output, a rotated
+//!   monitor whose turn is not proven). Neither asks
 //!   for consent or draws a Graphics Capture border.
 //!   Hidden apps are painted black in `mod.rs::redact` from the z-ordered
 //!   window list, because a desktop grab cannot exclude windows.
@@ -809,10 +810,14 @@ unsafe fn read_staging(d: &mut Dup, r: RECT) -> Result<RgbImage> {
     Ok(if d.rotation == DXGI_MODE_ROTATION_ROTATE180 {
         rotate180(&panel)
     } else if quarter {
-        let expect = d.rotation == DXGI_MODE_ROTATION_ROTATE90;
-        let cw = *d
-            .clockwise
-            .get_or_insert_with(|| turns_clockwise(&panel, r, expect));
+        let cw = match d.clockwise {
+            Some(cw) => cw,
+            None => {
+                let cw = turns_clockwise(&panel, r)?;
+                d.clockwise = Some(cw);
+                cw
+            }
+        };
         if cw {
             rotate90(&panel)
         } else {
@@ -823,32 +828,33 @@ unsafe fn read_staging(d: &mut Dup, r: RECT) -> Result<RgbImage> {
     })
 }
 
-/// Which quarter turn of a rotated monitor's texture matches the desktop. The
-/// DXGI rotation names the mode, so the first frame is compared once with a GDI
-/// grab, whose chrome (taskbar, title bars) is always right side up.
-fn turns_clockwise(panel: &RgbImage, r: RECT, expect: bool) -> bool {
-    let Ok(gdi) = blit(r) else {
-        return expect;
-    };
+/// Which quarter turn of a rotated monitor's texture matches the desktop. A
+/// wrong turn would paint redaction at mirrored positions, so the direction is
+/// proven once against a GDI grab, which is always right side up: the better
+/// turn must match it closely and beat the other by a clear margin. Otherwise
+/// the error sends this monitor to BitBlt, and duplication is tried again later.
+fn turns_clockwise(panel: &RgbImage, r: RECT) -> Result<bool> {
+    let gdi = blit(r)?;
     let thumb = |i: &RgbImage| image::imageops::thumbnail(&image::imageops::grayscale(i), 64, 64);
     let g = thumb(&gdi);
-    let diff = |i: RgbImage| -> u64 {
-        thumb(&i)
+    // Mean absolute luma difference per thumbnail pixel.
+    let diff = |i: RgbImage| -> f64 {
+        let t = thumb(&i);
+        let sum: u64 = t
             .as_raw()
             .iter()
             .zip(g.as_raw())
             .map(|(a, b)| u64::from(a.abs_diff(*b)))
-            .sum()
+            .sum();
+        sum as f64 / t.as_raw().len().max(1) as f64
     };
-    let (cw, ccw) = (
-        diff(image::imageops::rotate90(panel)),
-        diff(image::imageops::rotate270(panel)),
-    );
-    if cw == ccw {
-        expect
-    } else {
-        cw < ccw
+    let cw = diff(image::imageops::rotate90(panel));
+    let ccw = diff(image::imageops::rotate270(panel));
+    let (best, other) = (cw.min(ccw), cw.max(ccw));
+    if best > 24.0 || best * 2.0 > other {
+        bail!("rotation not proven (diff {cw:.1} clockwise, {ccw:.1} counterclockwise)");
     }
+    Ok(cw < ccw)
 }
 
 /// The pixels of one rectangle of the virtual screen (GDI `BitBlt`).
