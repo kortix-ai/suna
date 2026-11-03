@@ -1031,7 +1031,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
   const expected: FeatureFlagKey[] = [
     'drives',
     'marketplace',
-    'meta_agent',
     'reminders',
     'secrets_egress',
     'pooled_provider_secrets',

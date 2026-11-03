@@ -1262,10 +1262,6 @@
           "name": "Marktplatz",
           "description": "Suchen und installieren Sie Skills aus Community- und Anbieterregistern. Quellen, Updates und Teambreiche ändern sich noch."
         },
-        "meta_agent": {
-          "name": "My Kortix",
-          "description": "My Kortix, der eine Agent, mit dem du sprichst. Er leitet jede Aufgabe an den passenden Agenten weiter und führt sie mit deinen Berechtigungen aus. Die Projekteinstellung ist `builtin_agents.my_kortix` in kortix.yaml; dieser Schalter gilt nur, wenn der Schlüssel nicht gesetzt ist."
-        },
         "warm_sessions": {
           "name": "Vorgewärmte Sitzungen",
           "description": "Halten Sie eine Sandbox für sofortige Sitzungsstarts bereit. Die inaktive Sandbox verbraucht Rechenleistung."
@@ -23284,8 +23280,8 @@
     "listPlaceholder": "Wert 1, Wert 2"
   },
   "triggerAutoPause": {
-    "title": "Hat sich an seinem Ausführungslimit selbst pausiert",
-    "description": "Er lief 2 Stunden in Folge an seinem stündlichen Ausführungslimit und startet daher keine Ausführungen mehr. Finde heraus, was ihn ständig auslöst, und setze ihn dann fort."
+    "title": "Automatisch pausiert",
+    "description": "Er startet aus dem unten genannten Grund keine Ausführungen mehr. Behebe die Ursache und setze ihn dann fort."
   },
   "featureGate": {
     "enable": "{name} aktivieren",

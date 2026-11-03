@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { DEFAULT_EXPERIMENTAL_COPY, ExperimentalTabView, filterFeatures, localizeFeatureFlag } from './experimental-tab';
 
 const betaFeature: FeatureFlagView = {
-  key: 'meta_agent',
+  key: 'agent_teams',
   name: 'Meta Agent',
   description: 'Coordinate agent sessions.',
   stability: 'beta',
@@ -106,9 +106,9 @@ describe('ExperimentalTabView', () => {
     const out = renderToStaticMarkup(
       <ExperimentalTabView features={[betaFeature, experimentalFeature]} />,
     );
-    expect(out).toContain('id="feature-flag-meta_agent"');
+    expect(out).toContain('id="feature-flag-agent_teams"');
     expect(out).toContain('id="feature-flag-monitors"');
-    expect(out).toMatch(/role="switch"[^>]*aria-labelledby="feature-flag-meta_agent"/);
+    expect(out).toMatch(/role="switch"[^>]*aria-labelledby="feature-flag-agent_teams"/);
     expect(out).toMatch(/role="switch"[^>]*aria-labelledby="feature-flag-monitors"/);
     // Every switch in the pane is named — none may ship unlabelled.
     expect(out.match(/role="switch"/g)?.length).toBe(2);
@@ -119,12 +119,12 @@ describe('ExperimentalTabView', () => {
     // `aria-labelledby` is only a name if the target exists and holds the text.
     // A dangling id would leave the switch just as unnamed as before.
     const out = renderToStaticMarkup(<ExperimentalTabView features={[betaFeature]} />);
-    expect(out).toMatch(/id="feature-flag-meta_agent"[^>]*>Meta Agent</);
+    expect(out).toMatch(/id="feature-flag-agent_teams"[^>]*>Meta Agent</);
   });
 
   test('a pending feature key disables its own switch', () => {
     const out = renderToStaticMarkup(
-      <ExperimentalTabView features={[betaFeature]} pendingKeys={['meta_agent']} canManage />,
+      <ExperimentalTabView features={[betaFeature]} pendingKeys={['agent_teams']} canManage />,
     );
     expect(out).toMatch(/role="switch"[^>]*disabled/);
   });
@@ -275,7 +275,7 @@ describe('filterFeatures', () => {
   });
 
   test('matches the description', () => {
-    expect(filterFeatures(all, 'coordinate agent').map((f) => f.key)).toEqual(['meta_agent']);
+    expect(filterFeatures(all, 'coordinate agent').map((f) => f.key)).toEqual(['agent_teams']);
   });
 
   test('is case-insensitive and ignores surrounding whitespace', () => {
@@ -289,8 +289,8 @@ describe('filterFeatures', () => {
 
 describe('localizeFeatureFlag', () => {
   const messages: Record<string, string> = {
-    'flags.meta_agent.name': 'Мета агент',
-    'flags.meta_agent.description': 'Координишите сесије агената.',
+    'flags.agent_teams.name': 'Мета агент',
+    'flags.agent_teams.description': 'Координишите сесије агената.',
   };
   const t = Object.assign((key: string) => messages[key] ?? key, {
     has: (key: string) => key in messages,

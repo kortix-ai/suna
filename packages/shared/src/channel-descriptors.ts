@@ -20,7 +20,11 @@ export interface ChannelDescriptor {
   catalog: { domain: string; description: string };
   /** The most characters one message holds. */
   messageChars?: number;
-  /** One tap per option up to `max` options. `dataBytes`: the platform's cap on a button's data. */
+  /**
+   * Up to `max` option buttons on one question: Teams posts more options as a
+   * form, Telegram turns pages of `max`. `dataBytes`: the platform's cap on a
+   * button's data.
+   */
   buttons?: { max: number; dataBytes?: number };
   /** The token a person pastes to connect. */
   connect?: { tokenPattern: RegExp; tokenPlaceholder: string };

@@ -40,6 +40,9 @@ type StartFailure = SessionStartResult['failure'];
  */
 const MAX_COUNTDOWN_SECONDS = 60 * 60;
 
+/** `failure.evidence.check` of a box whose agent did not start (apps/api `RUNTIME_BOOT_ERROR_PARK_REASON`). */
+const RUNTIME_BOOT_ERROR_CHECK = 'runtime_boot_error';
+
 /**
  * Keep the server's retry visible while `/start` waits for its retry clock.
  * The server re-attempts on its own, so this is a waiting state, not an error.
@@ -51,19 +54,26 @@ export function sessionWakeStatusNote(input: {
   now: number;
 }): string | null {
   if (input.reason !== 'runtime_wake_cooldown' || !input.failure) return input.note ?? null;
-  const attempts = Math.max(1, input.failure.evidence?.attempts ?? 1);
+  const evidence = input.failure.evidence;
+  // The computer ran and the agent in it did not start: say why, not "still starting".
+  const error = evidence?.check === RUNTIME_BOOT_ERROR_CHECK ? evidence.error : null;
+  let end = error?.length ?? 0;
+  while (error && end > 0 && /[.\s]/.test(error[end - 1])) end--;
+  const bootError = error?.slice(0, end);
+  const lead = bootError ? `Could not start the agent: ${bootError}.` : 'Still starting your computer.';
+  const attempts = Math.max(1, evidence?.attempts ?? 1);
   const nextAttempt = attempts + 1;
-  const retryAt = Date.parse(input.failure.evidence?.next_retry_at ?? '');
+  const retryAt = Date.parse(evidence?.next_retry_at ?? '');
   const seconds = Math.max(0, Math.ceil((retryAt - input.now) / 1_000));
   if (!Number.isFinite(seconds) || seconds > MAX_COUNTDOWN_SECONDS) {
-    return `Still starting your computer. Trying again automatically (attempt ${nextAttempt}).`;
+    return `${lead} Trying again automatically (attempt ${nextAttempt}).`;
   }
-  if (seconds === 0) return `Still starting your computer. Trying again now (attempt ${nextAttempt}).`;
+  if (seconds === 0) return `${lead} Trying again now (attempt ${nextAttempt}).`;
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
   // One unit: a line break never falls between the minutes and the seconds.
   const duration = minutes > 0 ? `${minutes}m\u00a0${remainder}s` : `${remainder}s`;
-  return `Still starting your computer. Trying again in ${duration} (attempt ${nextAttempt}).`;
+  return `${lead} Trying again in ${duration} (attempt ${nextAttempt}).`;
 }
 
 /** A 1 s tick: the retry countdown and the stuck clock read it. */

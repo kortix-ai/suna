@@ -146,6 +146,11 @@ export interface SessionViewProps {
   seed?: { text: string; seq: number } | null;
   /** No frame: the sidebar is hidden and the session fills the screen. */
   borderless?: boolean;
+  /**
+   * Drawn in place of the transcript and the input (a peek at another agent). The session
+   * stays mounted underneath: its stream and runtime keep running.
+   */
+  overlay?: ReactNode;
   /** Left side of the tray (`host · project`). */
   trayLeft?: string;
   /** Splash metadata for an empty session. */
@@ -196,6 +201,7 @@ export function SessionView({
   panel = null,
   seed = null,
   borderless = false,
+  overlay = null,
   trayLeft = '',
   splashLines = [],
   info = null,
@@ -384,6 +390,12 @@ export function SessionView({
               </box>
             ) : null}
 
+            {overlay ? (
+              <box flexGrow={1} flexDirection="column">
+                {overlay}
+              </box>
+            ) : (
+              <>
             {empty ? (
               <>
                 {/* A fixed background layer: the input and the menu draw over it. */}
@@ -448,6 +460,8 @@ export function SessionView({
               title={title}
               showTray={showTray}
             />
+              </>
+            )}
           </box>
         </Panel>
       ) : null}

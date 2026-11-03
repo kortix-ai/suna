@@ -1276,18 +1276,7 @@ describe('project session runtime guards', () => {
 
   beforeEach(() => resetState());
 
-  // The platform coordinator is a per-project experimental opt-in. Every other
-  // test in this file runs with the flag OFF and asserts the pre-meta default
-  // behavior byte-for-byte.
-  function enableMetaAgent() {
-    projectRow.metadata = {
-      ...(projectRow.metadata as Record<string, unknown>),
-      experimental: { meta_agent: true },
-    };
-  }
-
   test('creates an omitted-agent session with the meta REST runtime', async () => {
-    enableMetaAgent();
     const app = createApp();
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -1399,7 +1388,6 @@ describe('project session runtime guards', () => {
     }
   });
   test('a meta session with an omitted agent spawns the project default, not another meta', async () => {
-    enableMetaAgent();
     sessionRow = { ...sessionRow!, agentName: 'mykortix' };
     const app = createApp();
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {

@@ -1,45 +1,57 @@
-Files never block a session, storage limits and storage billing, searchable session continuity
+Telegram question buttons, steerable agents in the terminal, and free-plan session fixes
 
 ### New
-- Files storage limits per project and per account, by plan: Free 5 GB, Credits 50 GB per project and 250 GB per account, Enterprise 100 GB per project and 1 TB per account. An upload that does not fit is refused before it starts, with what is used, what it needs and what is left (#11435, #11459).
-- Files storage is billed in credits at cost, like compute: project Files, each session's workspace and scratch disks. Billing shows Storage per project next to compute (#11435).
-- The Files page shows a project's storage against its limit and warns before a folder is too large to mount in a session (#11435).
-- Full contexts continue from the searchable session record instead of a summary (#11428).
-- My Kortix can set up event-driven automations with filters, per-item sessions, caps, dry runs, and review (#11430).
-- My Kortix can build and retire watcher Apps that post App events (#11440).
+- Continue full-context sessions from a searchable record instead of a summary (#11428).
+- Set up event-driven automations with filters, per-item sessions, caps, dry runs and review (#11430).
+- Build event sources as watcher Apps, managed by My Kortix (#11440).
+- Apply Files storage limits per project and account, with storage billed in credits (#11435).
+- Answer agent questions with Telegram buttons, including several questions at once (#11469).
+- See and steer agents, workflows and messages in the terminal interface (#11476).
 
 ### Improved
-- New sessions in large projects request their box up to 1.6 seconds sooner (#11419).
-- Connector calls no longer re-sample every cron trigger (#11427).
-- Every sidebar navigation row is directly visible, without More or Customize sidebar (#11439).
-- Agents know their microVM, which desktop a request refers to, and how to preserve an installation (#11443).
-- Mobile schedules are now named Trigger (#11433).
+- Ask for a session's box up to 1.6 seconds sooner in large projects (#11419).
+- Avoid re-sampling every cron trigger on each connector call (#11427).
+- Show all sidebar navigation rows directly, without More or Customize sidebar (#11439).
+- Help agents understand their microVM, desktop and persistent installs (#11443).
+- Pause triggers that can never run and notify their owners (#11477).
+- Limit model requests per credential at the LLM gateway, as the API already does (#11509).
 
 ### Fixed
-- A Files folder that storage cannot mount no longer prevents a session from starting: the session starts without it, names the folder and why, and mounts it as soon as storage can (#11421, #11435).
-- The home pillars band is even again, and the header switcher no longer covers Pricing (#11420).
-- Opening Settings or Drive no longer shows a “Not found” toast (#11423).
-- Boxes that wake before their session lease restore the session log (#11434).
-- Unreleased Kortix in Chrome surfaces are disabled, preventing Chrome endpoint 404s (#11436).
-- The daemon's Bun version matches lockfile v3 (#11437).
-- A gateway request with no user or assistant message, or a malformed item, gets one 400 on every route (#11455).
-- One Kortix skill list, so an agent may be granted kortix-chrome (#11453).
-- Listing a folder in a session no longer restarts the session's daemon, so the next file action no longer fails with 503 (#11467).
+- Restore even home-page pillars and keep the header switcher clear of Pricing (#11420).
+- Stop Settings and Drive from showing a spurious “Not found” toast (#11423).
+- Let sessions start when a Files folder cannot mount (#11421).
+- Restore session logs when a box wakes before its session lease (#11434).
+- Rename the mobile schedules page to Trigger (#11433).
+- Hide unlaunched Chrome surfaces to prevent missing-route errors (#11436).
+- Match the daemon's Bun version to lockfile v3 (#11437).
+- Count every drive's real usage toward Files limits and explain refusals (#11459).
+- Allow free-plan sessions to start and show failed-start errors (#11463).
+- Enable My Kortix unless explicitly disabled in kortix.yaml (#11464).
+- Prevent file listings from restarting the daemon on Bun 1.4 (#11467).
+- Keep keyboard focus in terminal chat input and copy dragged text selections (#11470).
 
 ### Security
-- The account Files usage list shows only the projects the caller may read (#11435).
+- Return consistent 400 responses for malformed gateway messages on every route (#11455).
+- Pin sandbox-proxy authorization parity in regression coverage (#11471).
+- Trim long session start errors in linear time (#11490).
 
 ### Internal
-- Stopped-computer disk is metered as storage but not charged; `KORTIX_BOX_DISK_CHARGE_ENABLED` stays off (#11435).
-- Kortix's own Platinum cost for unattributed volumes and orphan boxes is recorded (#11435).
-- Worker CPU is monitored with SNS alerts (#11452).
-- The committed UI stylesheet is refreshed from component sources (#11449).
-- pi summary fixtures and the session-log switch gaps follow the context record (#11447, #11448, #11457).
-- apps-api cleanup sweep (#11454).
-- The learnings index lists each entry once, matching its generator (#11424).
-- Database script-private declarations stay local (#11429).
-- Dev's version advances to 0.14.15 after 0.14.14 (88b3618).
-- Boot guidance documents retrying a 401 when wake races the session lease (#11438).
-- Goals is marked work in progress in Feature flags (#11441).
-- Watcher App guidance specifies POST for /tick (#11442).
-- Release-suite repairs: qualified box-disk subquery, Drive usage audit labels, `storage_charges` classified for purge and transfer, the billing Storage label in the UI catalog, billing tab tests, and a GOLD-1 prompt that leaves the commit to the host (#11461, #11465, #11472).
+- Regenerate the learnings index without duplicate entries (#11424).
+- Keep database script-private declarations local (#11429).
+- Prepare the next development version, 0.14.15 (88b3618).
+- Document boot-time lease-race retries (#11438).
+- Mark Goals as work in progress in feature flags (#11441).
+- Correct watcher App /tick guidance to use POST (#11442).
+- Update session-log switch-gap coverage for context records (#11448).
+- Restore summary fixtures in summary-context mode (#11447).
+- Refresh the generated UI stylesheet (#11449).
+- Monitor worker CPU with SNS alerts (#11452).
+- Consolidate the Kortix skill list for Chrome grants (#11453).
+- Remove five apps-api cleanup leftovers (#11454).
+- Update nightly session-log expectations for context-record capabilities (#11457).
+- Correct box-disk SQL, usage-audit labels, storage-charge classification and a file race in release checks (#11461).
+- Align billing-tab tests, UI skill exports and the English UI catalog (#11465).
+- Keep the GOLD-1 agent from committing before the host's commit-push step (#11472).
+- Document generated-file refreshes on staging fixes and runner bind-failure handling (#11479).
+- Make the goal wake-cap test independent of the UTC hour (#11515).
+- Document cancelling runs still queued on the old runner label after a runner swap (#11512).

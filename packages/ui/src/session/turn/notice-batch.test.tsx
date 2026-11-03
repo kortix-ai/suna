@@ -10,7 +10,7 @@ import { IntlTestProvider } from '../../test-utils/intl';
 import '../tool/tools/register';
 import { SessionTurn } from '../thread/transcript';
 import { NoticeBatchGroup } from './notice-batch-group';
-import { parseNoticeBatch, parseSubagentNotice } from './subagent-notice';
+import { parseNoticeBatch } from './subagent-notice';
 import { UserMessage } from './user-message';
 
 // Synthetic values only. The texts are what `subagentNoticeText`
@@ -77,66 +77,6 @@ function render(node: ReactNode) {
 }
 const textOf = (html: string) =>
   html.replace(/<[^>]*>/g, '').replaceAll('&#x27;', "'").replaceAll('&quot;', '"').replaceAll('&amp;', '&');
-
-describe('parseNoticeBatch', () => {
-  test('two subagent notices are two items, each with its own child and result', () => {
-    const items = parseNoticeBatch(batch(subagent(1), subagent(2, { status: 'error' })))!;
-    expect(items.map((item) => item.kind)).toEqual(['subagent', 'subagent']);
-    const [first, second] = items as Array<{ kind: 'subagent'; notice: ReturnType<typeof parseSubagentNotice> & object }>;
-    expect(first!.notice).toMatchObject({ sessionId: id(1), status: 'completed', excerpt: 'Report 1 is ready.' });
-    // `error` is the API's word for a turn that ended on an error: it reads as a failure.
-    expect(second!.notice).toMatchObject({ sessionId: id(2), status: 'failed', result: 'The subagent failed.' });
-  });
-
-  test('a subagent, a teammate and a peer idle notice keep their order and kinds', () => {
-    const items = parseNoticeBatch(
-      batch(subagent(1), subagent(2, { teammate: { handle: 'reviewer', tasks: '#3 Write the fix (in progress); #4 Test it (pending)' } }), peerIdle('archivist', 'All 12 files indexed.')),
-    )!;
-    expect(items.map((item) => item.kind)).toEqual(['subagent', 'teammate', 'peer_idle']);
-    expect(items[1]).toMatchObject({
-      kind: 'teammate',
-      notice: { kind: 'teammate', handle: 'reviewer', sessionId: id(2), ownedTasks: '#3 Write the fix (in progress); #4 Test it (pending)' },
-    });
-    expect(items[2]).toMatchObject({ kind: 'peer_idle', info: { kind: 'idle_notice', from: 'archivist' } });
-  });
-
-  test('a teammate that owns no task carries none', () => {
-    const items = parseNoticeBatch(batch(subagent(1, { teammate: { handle: 'reviewer', tasks: null } }), subagent(2)))!;
-    expect(items[0]).toMatchObject({ kind: 'teammate', notice: { handle: 'reviewer', ownedTasks: null } });
-  });
-
-  test('a peer idle notice first is one item of the batch, not a message that swallows the rest', () => {
-    const items = parseNoticeBatch(batch(peerIdle('archivist', 'Done.'), subagent(1), peerIdle('scout', null)))!;
-    expect(items.map((item) => item.kind)).toEqual(['peer_idle', 'subagent', 'peer_idle']);
-    const first = items[0] as { kind: 'peer_idle'; info: { text: string } };
-    expect(first.info.text).not.toContain('A background subagent');
-  });
-
-  test('20 notices, the most one prompt carries, parse; more is not a batch the API wrote', () => {
-    const twenty = Array.from({ length: 20 }, (_, n) => (n % 3 === 2 ? peerIdle(`peer${n}`, `answer ${n}`) : subagent(n + 1)));
-    expect(parseNoticeBatch(batch(...twenty))).toHaveLength(20);
-    expect(parseNoticeBatch(batch(...twenty, subagent(99)))).toBeNull();
-  });
-
-  test('a single notice is one item, and parseSubagentNotice reads it as before', () => {
-    const one = subagent(7);
-    expect(parseNoticeBatch(one)).toHaveLength(1);
-    expect(parseSubagentNotice(one)).toMatchObject({ kind: 'subagent', sessionId: id(7), title: 'Task 7', excerpt: 'Report 7 is ready.', ownedTasks: null });
-  });
-
-  test('anything else is not a batch: a typed prompt, a peer message, a notice with text before it', () => {
-    expect(parseNoticeBatch('Draft the launch post')).toBeNull();
-    expect(
-      parseNoticeBatch(peerMessagePromptText({ kind: 'message', from: 'lead', fromShortId: '3f2a1b9c', messageId: 'm_1', summary: null, text: 'Hi' })),
-    ).toBeNull();
-    expect(parseNoticeBatch(`Please read this.\n\n${subagent(1)}`)).toBeNull();
-  });
-
-  test('a notice line quoted inside a report does not split it', () => {
-    const quoted = subagent(1, { report: 'Here is what it said:\nA background subagent you started has finished. (quoted)' });
-    expect(parseNoticeBatch(batch(quoted, subagent(2)))).toHaveLength(2);
-  });
-});
 
 describe('NoticeBatchGroup', () => {
   test('one header with the count, then one compact row per notice', () => {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { CHANNELS } from '@kortix/shared/channel-descriptors';
-import { parseQuestionButton, questionButtonData } from './question-token';
+import { parseQuestionButton, parseQuestionControl, questionButtonData, questionDoneData, questionPageData } from './question-token';
 
 // A question button's data is persisted in chats: a message posted before a
 // deploy must still parse after it.
@@ -47,6 +47,28 @@ describe('question button data', () => {
       '',
     ]) {
       expect(parseQuestionButton(data)).toBeNull();
+    }
+  });
+});
+
+describe('question control data (Done, a page turn)', () => {
+  test('Done and a page turn round-trip in the button format, in at most 46 bytes, and are no option', () => {
+    expect(questionDoneData(ID, 0)).toBe(`kq:${ID}:d`);
+    expect(questionDoneData(ID, 2)).toBe(`kq:${ID}:2.d`);
+    expect(questionPageData(ID, 0, 1)).toBe(`kq:${ID}:p1`);
+    expect(questionPageData(ID, 3, 16)).toBe(`kq:${ID}:3.p16`);
+    expect(parseQuestionControl(`kq:${ID}:d`)).toEqual({ pendingId: ID, question: 0, control: 'done' });
+    expect(parseQuestionControl(`kq:${ID}:2.d`)).toEqual({ pendingId: ID, question: 2, control: 'done' });
+    expect(parseQuestionControl(`kq:${ID}:3.p16`)).toEqual({ pendingId: ID, question: 3, control: 16 });
+    expect(parseQuestionControl(`kq:${ID}:p0`)).toEqual({ pendingId: ID, question: 0, control: 0 });
+    expect(Buffer.byteLength(questionPageData(ID, 99, 99))).toBe(46);
+    for (const data of [questionDoneData(ID, 1), questionPageData(ID, 1, 2)]) expect(parseQuestionButton(data)).toBeNull();
+    expect(parseQuestionControl(questionButtonData(ID, 1, 1))).toBeNull();
+  });
+
+  test('control data Kortix did not post parses as nothing', () => {
+    for (const data of [`kq:${ID}:0.d`, `kq:${ID}:p`, `kq:${ID}:p01`, `kq:${ID}:p100`, `kq:${ID}:1.dd`, `kq:${ID}:D`, 'kq:not-a-uuid:d', '']) {
+      expect(parseQuestionControl(data)).toBeNull();
     }
   });
 });
