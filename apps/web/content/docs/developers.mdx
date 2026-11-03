@@ -1132,7 +1132,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `max_runs_per_hour` | integer, 1 or more | `60` | Runs the trigger starts in any 60 minutes. |
 | `max_runs_per_day` | integer, 1 or more | — | Runs the trigger starts in a UTC day. |
 | `max_lateness` | string | — | Schedules only, `60s` or more. A missed fire later than this does not run. |
-| `overlap` | `skip`, `allow` | `skip` for a schedule, `allow` for others | `skip` holds a fire while the previous run is active. With `run.session: reuse`, `pinned` or `keyed`, it holds a fire while the previous prompt still waits in that session's queue. |
+| `overlap` | `skip`, `allow` | `skip` for a schedule, `allow` for others | `skip` holds a fire while the previous run is active. With `run.session: reuse`, `pinned` or `keyed`: while the previous prompt still waits in that session. |
 | `on` | map | required | What fires the trigger: a schedule (`cron`, `every` or `at`), a webhook, or an App event. |
 | `on.cron` | string | — | A 6-field cron expression, seconds first: `"0 0 9 * * 1"` is 09:00 every Monday. A trigger fires at most once every 60 seconds. |
 | `on.timezone` | string | `UTC` | An IANA time zone for `cron` and `at`. |
