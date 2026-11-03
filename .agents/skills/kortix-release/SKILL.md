@@ -262,6 +262,13 @@ gh release view "vX.Y.Z" --repo kortix-ai/suna --json name,body,assets --jq '{na
 Then check Better Stack for an API error, 5xx, or frontend-exception spike in
 the minutes after the rollout.
 
+`Deploy Prod` starts two mobile workflows on the deployed commit. `Mobile OTA`
+publishes the JS bundle. `Mobile Store` builds and submits a new app version
+when `apps/mobile/app.json` carries one: Android to the Play production track,
+iOS to App Review with release after approval. Both must end green. A
+`Mobile Store` warning asks for a version bump or a person in App Store
+Connect (runbook: `apps/mobile/BUILD_GUIDE.md`).
+
 ### Step 10 — self-host `:stable`
 
 `:stable` moves **only** on the user's explicit, per-release consent — never
@@ -348,7 +355,7 @@ no `vX.Y.Z` Release.
    owner's explicit OK).
 7. `Deploy Prod` confirmed for the merge SHA; api/gateway/frontend `/health`,
    the three npm packages, the GitHub Release (24 assets), and Better Stack all
-   verified on the new version.
+   verified on the new version; `Mobile OTA` and `Mobile Store` green.
 8. `:stable` moved only if the user explicitly asked for it this release.
 9. **One-time per env: the `/internal/*` edge key** (#9272, and the pentest
    2026-10-13 fix that made the API enforce it too). Done on dev; staging and
