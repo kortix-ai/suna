@@ -386,6 +386,26 @@ function replying(agent: Agent | null, turn: PiTurnEvents | null | undefined): {
   return message && turn?.messageId ? { id: turn.messageId, timestamp: message.timestamp } : null
 }
 
+/**
+ * Load, ahead of time, the modules `PiRuntime.start` imports. Boot calls this
+ * while the config release downloads, so `start` finds them evaluated instead
+ * of loading the coding agent, its tools and extensions after the release
+ * lands. The same specifiers as `start`: a module loads once per process.
+ * Never throws; a failed load surfaces where `start` imports it.
+ */
+export function preloadPiRuntimeModules(): void {
+  void Promise.all([
+    import('./model'),
+    import('./tools'),
+    import('@earendil-works/pi-agent-core'),
+    import('@earendil-works/pi-coding-agent'),
+    import('./extensions/host'),
+    import('./extensions/subagents'),
+    import('./extensions/workflow'),
+    import('./codemode'),
+  ]).catch(() => undefined)
+}
+
 export class PiRuntime {
   /** `ses_pi<sha>` of the session, or the root a restored dump names (adopted at `start`). */
   rootId: string
