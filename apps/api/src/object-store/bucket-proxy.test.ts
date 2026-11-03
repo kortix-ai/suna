@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from 'bun:test';
-import { captureStoreProxy } from './store-proxy';
+import { bucketProxy } from './bucket-proxy';
 
 // A scripted store: echoes what reached it.
 const store = Bun.serve({
@@ -11,7 +11,7 @@ const store = Bun.serve({
   },
 });
 afterAll(() => store.stop(true));
-const handle = captureStoreProxy(`http://127.0.0.1:${store.port}/`, 'kortix-capture');
+const handle = bucketProxy(`http://127.0.0.1:${store.port}/`, 'kortix-capture', 'capture');
 
 test('forwards path, query, method, body and the signed Host and Authorization unchanged', async () => {
   const res = await handle(
@@ -35,6 +35,15 @@ test('forwards path, query, method, body and the signed Host and Authorization u
   });
 });
 
+test('sends the host the client signed for when a proxy in front rewrote Host', async () => {
+  // A preview's Platinum ingress rewrites Host; the store then rejects the
+  // presigned signature (SignatureDoesNotMatch) unless the signed host is restored.
+  const signed = bucketProxy(`http://127.0.0.1:${store.port}/`, 'kortix-project-snapshots', 'project snapshot', 'api.example.test');
+  const res = await signed(new Request('http://internal.example.test/kortix-project-snapshots/a/tree.tar.gz?X-Amz-Signature=synthetic', { headers: { host: 'internal.example.test' } }));
+  expect(res.status).toBe(200);
+  expect(await res.json()).toMatchObject({ method: 'GET', path: '/kortix-project-snapshots/a/tree.tar.gz', query: '?X-Amz-Signature=synthetic', host: 'api.example.test' });
+});
+
 test('passes the store’s status and headers through', async () => {
   const res = await handle(new Request('http://api.example.test/kortix-capture/boom'));
   expect(res.status).toBe(403);
@@ -49,7 +58,7 @@ test('serves the bucket root and nothing outside the bucket prefix', async () =>
 });
 
 test('an unreachable store answers 503 with Retry-After', async () => {
-  const down = captureStoreProxy('http://127.0.0.1:1', 'kortix-capture');
+  const down = bucketProxy('http://127.0.0.1:1', 'kortix-capture', 'capture');
   const res = await down(new Request('http://api.example.test/kortix-capture/k', { method: 'PUT', body: 'x' }));
   expect(res.status).toBe(503);
   expect(res.headers.get('retry-after')).toBe('5');

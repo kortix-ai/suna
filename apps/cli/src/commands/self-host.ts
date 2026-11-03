@@ -798,8 +798,11 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
   applyFeatureFlags(env, flags);
   const changedFlagKeys = Object.keys(env).filter((key) => env[key] !== beforeFlags[key]);
   applyReachabilityFlags(env, flags);
+  const caddyfilePath = join(instanceDir(flags.instance), 'Caddyfile');
+  const caddyfileBefore = existsSync(caddyfilePath) ? readFileSync(caddyfilePath, 'utf8') : null;
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
+  const caddyfileChanged = existsSync(caddyfilePath) && readFileSync(caddyfilePath, 'utf8') !== caddyfileBefore;
 
   process.stdout.write(`  ${C.dim}version  ${C.reset}${oldVersion} ${C.dim}→${C.reset} ${C.cyan}${env.KORTIX_VERSION}${C.reset}\n\n`);
 
@@ -841,6 +844,21 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
   // it only when its rendered configuration differs: a no-op on every later run.
   const converge = compose(flags.instance, ['up', '-d', '--no-deps', 'kortix-api']);
   if (converge !== 0) return converge;
+
+  // A version that changes the Caddyfile (a new route, such as Capture's
+  // `@capture` or the project snapshots' `@snapshots`) reaches the running
+  // Caddy only through a reload. Compose never recreates a container for a
+  // changed bind-mounted file, so the old routes stay live and the new prefix
+  // answers the API's 404 (learnings entry 2026-10-20T071256Z). Caddy keeps
+  // serving through a reload, and refuses a config that does not load.
+  if (caddyfileChanged && Boolean(env.KORTIX_DOMAIN?.trim())) {
+    const reload = compose(flags.instance, ['exec', '-T', 'caddy', 'caddy', 'reload', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile']);
+    if (reload !== 0) {
+      process.stderr.write(`${status.err('Caddy did not load the new Caddyfile. It keeps serving the previous routes.')}\n`);
+      return reload;
+    }
+    process.stdout.write(`${C.dim}  reloaded: caddy${C.reset}\n`);
+  }
 
   // The rollout recreates only the app services whose image moved. A flag this
   // run changed reaches its readers through the same restart `env set` does:

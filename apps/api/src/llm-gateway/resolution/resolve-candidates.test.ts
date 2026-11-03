@@ -138,8 +138,9 @@ mock.module('../routing', () => ({
   resolveGatewayRoute: async () => ({ primaryModel: 'anthropic/claude-sonnet-4.6' }),
 }));
 
-let runtimeManagedModel: { id: string } | undefined;
+let runtimeManagedModel: { id: string; private?: true } | undefined;
 let knownManagedModelId: string | null = null;
+let managedAudioModelId: string | null = null;
 const managedModels = await import('../models/managed-models');
 mock.module('../models/managed-models', () => ({
   ...managedModels,
@@ -148,6 +149,7 @@ mock.module('../models/managed-models', () => ({
     runtimeManagedModel?.id === id ? runtimeManagedModel : undefined,
   isRuntimeManagedModelId: (id: string) => runtimeManagedModel?.id === id,
   isKnownManagedModelId: (id: string) => id === knownManagedModelId,
+  isManagedAudioModelId: (id: string) => id === managedAudioModelId,
 }));
 
 let capabilities = { reasoning: false, temperature: true };
@@ -188,6 +190,7 @@ beforeEach(() => {
   catalogUpstream = null;
   runtimeManagedModel = undefined;
   knownManagedModelId = null;
+  managedAudioModelId = null;
   capabilities = { reasoning: false, temperature: true };
   livePricingCalls = [];
   getAccountTier.mockClear();
@@ -653,6 +656,18 @@ describe('resolveCandidates — managed model tier gating', () => {
     const candidates = await resolveCandidates(p, 'glm-5.3-flash');
     expect(candidates).toHaveLength(1);
     expect(candidates[0]).toMatchObject({ provider: 'kortix-managed' });
+  });
+
+  test('a private chat model and a managed audio model resolve to the managed upstream behind the same plan gate', async () => {
+    runtimeManagedModel = { id: 'small-private', private: true };
+    managedAudioModelId = 'stt-private';
+    const p = principal();
+    expect((await resolveCandidates(p, 'small-private'))[0]).toMatchObject({ provider: 'kortix-managed', resolvedModel: 'small-private' });
+    expect((await resolveCandidates(p, 'stt-private'))[0]).toMatchObject({ provider: 'kortix-managed', resolvedModel: 'stt-private' });
+    await expect(resolveCandidates(principal({ freeModelsOnly: true }), 'stt-private'))
+      .rejects.toMatchObject({ code: 'plan_upgrade_required' });
+    modelAccess = { disabledProviders: ['kortix'], disabledModels: [] };
+    await expect(resolveCandidates(p, 'stt-private')).rejects.toMatchObject({ code: 'provider_disabled' });
   });
 
   test('a known managed model with the provider disabled throws model_disabled_on_deployment', async () => {

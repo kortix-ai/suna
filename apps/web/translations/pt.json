@@ -1329,6 +1329,10 @@
         "agent_teams": {
           "name": "Equipes de agentes",
           "description": "Uma sessão líder inicia colegas de equipe com nome que compartilham uma lista de tarefas. Cada colega assume uma tarefa, trabalha nela na própria sessão e avisa o líder quando termina. Você vê cada colega e suas tarefas abaixo da caixa de mensagem do líder. Mensagens entre sessões funcionam sem esta opção."
+        },
+        "voice_call": {
+          "name": "Chamadas de voz",
+          "description": "Ligue para o agente da sessão a partir da página da sessão e converse com ele. Ele ouve você, responde por voz, vê a tela que você compartilha e trabalha na mesma sessão, então a conversa fica no chat."
         }
       },
       "channelsSwitch": {
@@ -25040,6 +25044,27 @@
     "agentControl": "O Kortix está no controle",
     "returnControl": "Devolver o controle",
     "escape": "Esc"
+  },
+  "voiceCall": {
+    "title": "Chamada de voz",
+    "start": "Iniciar uma chamada de voz",
+    "end": "Encerrar chamada",
+    "connecting": "Conectando…",
+    "listening": "Ouvindo",
+    "speaking": "Falando",
+    "reconnecting": "Reconectando…",
+    "you": "Você",
+    "mute": "Desativar o microfone",
+    "unmute": "Ativar o microfone",
+    "noMicrophone": "Sem acesso ao microfone. Permita o microfone para este site e ligue de novo.",
+    "shareScreen": "Compartilhar tela",
+    "stopSharing": "Parar de compartilhar a tela",
+    "ended": "Chamada encerrada",
+    "failed": "Não foi possível iniciar a chamada",
+    "lost": "Não foi possível reconectar a chamada",
+    "unavailable": "O sandbox desta sessão foi iniciado antes de as chamadas de voz serem ativadas. As chamadas funcionam a partir do próximo início dele.",
+    "callAgain": "Ligar de novo",
+    "close": "Fechar"
   },
   "agentMounts": {
     "lead": "Pastas de Arquivos montadas pelas sessões deste agente. Uma mudança vale de imediato para cada nova sessão.",

@@ -995,6 +995,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|skills",
   "GET|v1|skills|:name",
   "GET|v1|skills|:name|file",
+  "GET|v1|system|confirmed-signups",
   "POST|v1|system|demo-request",
   "GET|v1|system|maintenance",
   "PUT|v1|system|maintenance",

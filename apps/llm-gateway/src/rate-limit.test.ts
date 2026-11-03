@@ -36,7 +36,7 @@ test('registered model routes return counters and reject before the gateway call
   const reply = async () => { calls++; return Response.json({ data: [] }); };
   registerRoutes(app, {
     chatCompletions: reply, messages: reply, responses: reply,
-    listModels: reply, images: reply, claudeCode: reply,
+    listModels: reply, images: reply, audio: reply, voices: reply, claudeCode: reply,
   }, new InflightBudget({ maxBytes: 1024, perRequestMaxBytes: 1024, amplification: 1 }),
   () => {}, createTokenRateLimit(1));
   const headers = { authorization: 'Bearer synthetic-route-credential' };

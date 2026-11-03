@@ -265,3 +265,16 @@ describe('ChatGPT subscription pricing', () => {
     expect(subscription.limit!.context).toBeGreaterThan(0);
   });
 });
+
+describe('a private managed model', () => {
+  test('is in no served catalog: not the managed scope, not the project catalog', () => {
+    __setManagedLineupForTest([...TEST_MANAGED_LINEUP, { ...TEST_MANAGED_LINEUP[1]!, id: 'small-private', private: true }]);
+    try {
+      expect(gatewayModelCatalog(undefined)).not.toHaveProperty(['small-private']);
+      expect(gatewayModelCatalog('proj')).not.toHaveProperty(['small-private']);
+      expect(gatewayModelCatalog('proj')).toHaveProperty(['glm-5.3-flash']);
+    } finally {
+      __setManagedLineupForTest(TEST_MANAGED_LINEUP);
+    }
+  });
+});

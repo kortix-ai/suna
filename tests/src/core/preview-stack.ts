@@ -158,8 +158,11 @@ export function buildPreviewCaddyfile(publicHost: string): string {
   # serves reaches it. A preview shares ONE origin with the frontend and splits
   # by prefix, so each API route mounted outside \`/v1\` has to be listed here or
   # it falls through to the frontend, which answers 307 -> /auth. Keep in sync
-  # with the non-\`/v1\` mounts in \`apps/api/src/index.ts\`.
-  @api path /v1* /health /health/* /metrics /scim/v2/* /internal/* /.well-known/oauth-authorization-server
+  # with the non-\`/v1\` mounts in \`apps/api/src/index.ts\`. The two bucket
+  # prefixes are the API's passthrough to the bundled MinIO (a preview runs the
+  # self-host stack without a domain): Capture uploads, and the presigned
+  # project snapshot URLs a sandbox downloads.
+  @api path /v1* /health /health/* /metrics /scim/v2/* /internal/* /.well-known/oauth-authorization-server /kortix-capture /kortix-capture/* /kortix-project-snapshots /kortix-project-snapshots/*
   handle @api {
     reverse_proxy kortix-api:8008 {
       import swap_tolerant
@@ -444,7 +447,9 @@ function buildPreviewTestEnvironment(
     KE2E_CAP_SANDBOX: rawSecrets.PLATINUM_API_KEY ? '1' : '0',
     KE2E_CAP_MANAGED_GIT: managedGitEnabled ? '1' : '0',
     KE2E_CAP_MANAGED_GIT_PUSH: managedGitEnabled ? '1' : '0',
-    // A preview publishes no project snapshots (no KORTIX_PROJECT_SNAPSHOT_S3_BUCKET).
+    // The self-host stack publishes project snapshots to its bundled MinIO. The
+    // snapshot flows (CFG-15, CFG-16) stay off here until a preview
+    // `--target-full` run proves them on this stack.
     KE2E_CAP_PROJECT_SNAPSHOTS: '0',
     KE2E_DEFAULT_FLOW_ATTEMPTS: '1',
   };

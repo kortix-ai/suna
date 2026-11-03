@@ -1329,6 +1329,10 @@
         "agent_teams": {
           "name": "Équipes d’agents",
           "description": "Une session principale lance des coéquipiers nommés qui partagent une liste de tâches. Chaque coéquipier prend une tâche, la traite dans sa propre session et prévient la session principale quand elle est terminée. Vous voyez chaque coéquipier et ses tâches sous la zone de saisie de la session principale. Les messages entre sessions fonctionnent sans cette option."
+        },
+        "voice_call": {
+          "name": "Appels vocaux",
+          "description": "Appelle l'agent de la session depuis la page de la session et parle-lui. Il t'entend, répond à voix haute, voit l'écran que tu partages et travaille dans la même session : la conversation reste dans le chat."
         }
       },
       "channelsSwitch": {
@@ -25040,6 +25044,27 @@
     "agentControl": "Kortix a le contrôle",
     "returnControl": "Rendre le contrôle",
     "escape": "Échap"
+  },
+  "voiceCall": {
+    "title": "Appel vocal",
+    "start": "Démarrer un appel vocal",
+    "end": "Terminer l’appel",
+    "connecting": "Connexion…",
+    "listening": "À l’écoute",
+    "speaking": "Parle",
+    "reconnecting": "Reconnexion…",
+    "you": "Vous",
+    "mute": "Couper le micro",
+    "unmute": "Réactiver le micro",
+    "noMicrophone": "Pas d’accès au micro. Autorisez le micro pour ce site et rappelez.",
+    "shareScreen": "Partager l’écran",
+    "stopSharing": "Arrêter le partage d’écran",
+    "ended": "Appel terminé",
+    "failed": "Impossible de démarrer l’appel",
+    "lost": "Impossible de rétablir l’appel",
+    "unavailable": "Le bac à sable de cette session a démarré avant l’activation des appels vocaux. Les appels fonctionnent à partir de son prochain démarrage.",
+    "callAgain": "Rappeler",
+    "close": "Fermer"
   },
   "agentMounts": {
     "lead": "Dossiers de Fichiers montés par les sessions de cet agent. Une modification s’applique aussitôt à chaque nouvelle session.",

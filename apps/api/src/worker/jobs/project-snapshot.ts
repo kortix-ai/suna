@@ -1,5 +1,5 @@
 import { runProjectSnapshotWorkerOnce } from '../../git-proxy/project-snapshot-worker';
-import { projectSnapshotStorageConfigured } from '../../git-proxy/project-snapshot-store';
+import { ensureProjectSnapshotBucket, projectSnapshotStorageConfigured } from '../../git-proxy/project-snapshot-store';
 import { runWorkerTick } from '../../shared/audit-scope';
 
 const IDLE_MS = 5_000;
@@ -9,11 +9,17 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 let running = false;
 let stopped = true;
 let activeTick: Promise<void> | null = null;
+// Self-host's bundled store starts empty: no build may claim a row before the bucket exists.
+let bucketReady = false;
 
 async function tick(): Promise<void> {
   if (stopped) return;
   let delay = IDLE_MS;
   try {
+    if (!bucketReady) {
+      await ensureProjectSnapshotBucket();
+      bucketReady = true;
+    }
     const processed = await runProjectSnapshotWorkerOnce();
     // Drain a backlog promptly; sleep only when the queue was empty.
     if (processed.length > 0) delay = 250;
