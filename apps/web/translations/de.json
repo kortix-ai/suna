@@ -1329,6 +1329,10 @@
         "agent_teams": {
           "name": "Agenten-Teams",
           "description": "Eine leitende Session startet benannte Teammitglieder mit einer gemeinsamen Aufgabenliste. Jedes Teammitglied übernimmt eine Aufgabe, bearbeitet sie in seiner eigenen Session und meldet der Leitung, wenn sie erledigt ist. Du siehst jedes Teammitglied und seine Aufgaben unter dem Eingabefeld der Leitung. Nachrichten zwischen Sessions funktionieren auch ohne dieses Flag."
+        },
+        "voice_call": {
+          "name": "Sprachanrufe",
+          "description": "Ruf den Agenten der Session von der Session-Seite aus an und sprich mit ihm. Er hört dich, antwortet mit Stimme, sieht einen geteilten Bildschirm und arbeitet in derselben Session, sodass das Gespräch im Chat bleibt."
         }
       },
       "channelsSwitch": {
@@ -25040,6 +25044,27 @@
     "agentControl": "Kortix hat die Kontrolle",
     "returnControl": "Kontrolle zurückgeben",
     "escape": "Esc"
+  },
+  "voiceCall": {
+    "title": "Sprachanruf",
+    "start": "Sprachanruf starten",
+    "end": "Anruf beenden",
+    "connecting": "Verbinden…",
+    "listening": "Hört zu",
+    "speaking": "Spricht",
+    "reconnecting": "Verbindung wird wiederhergestellt…",
+    "you": "Du",
+    "mute": "Mikrofon stummschalten",
+    "unmute": "Mikrofon einschalten",
+    "noMicrophone": "Kein Zugriff auf das Mikrofon. Erlaube das Mikrofon für diese Website und rufe erneut an.",
+    "shareScreen": "Bildschirm teilen",
+    "stopSharing": "Bildschirmfreigabe beenden",
+    "ended": "Anruf beendet",
+    "failed": "Der Anruf konnte nicht gestartet werden",
+    "lost": "Der Anruf konnte nicht wiederhergestellt werden",
+    "unavailable": "Die Sandbox dieser Sitzung wurde gestartet, bevor Sprachanrufe aktiviert wurden. Anrufe funktionieren ab ihrem nächsten Start.",
+    "callAgain": "Erneut anrufen",
+    "close": "Schließen"
   },
   "agentMounts": {
     "lead": "Ordner aus Dateien, die Sitzungen dieses Agenten einbinden. Änderungen gelten sofort für jede neue Sitzung.",

@@ -1,0 +1,15 @@
+{
+  "name": "@kortix/voice",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kortix voice calls: a realtime voice relay that talks with a session's own agent (speech-to-text, turn-taking, a fast lane, text-to-speech, screen reading). kortixd loads it only while a project's voice_call flag is on.",
+  "license": "Elastic-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./kortix": "./src/kortix.ts"
+  },
+  "scripts": {
+    "test": "bun test src"
+  }
+}

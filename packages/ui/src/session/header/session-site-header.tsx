@@ -38,6 +38,7 @@ import { SessionRemindersIndicator } from './session-reminders-indicator';
 import { SessionTitleInput } from './session-title-input';
 import { subagentTitle } from '../agents/agent-model';
 import { SubagentHoverCard } from './subagent-hover-card';
+import { VoiceCallButton } from '../voice/voice-call';
 import { Copy } from '../../icons/copy';
 import { Home } from '../../internal/icons/home';
 import { openSessionQuickView } from '../panel/open-session-quick-view';
@@ -741,6 +742,12 @@ export function SessionSiteHeader({
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+
+            {/* A voice call with this session: nothing without the project's
+                `voice_call` flag. A subsession has no relay binding of its own. */}
+            {isProjectSession && !parent && (
+              <VoiceCallButton projectId={projectId!} sessionId={projectSessionId!} />
+            )}
 
             {/* The one Share entry point (it left the session menu). Shown to
                 everyone in the session: the owner changes access and copies

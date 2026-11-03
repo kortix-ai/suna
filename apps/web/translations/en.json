@@ -1151,6 +1151,10 @@
         "agent_teams": {
           "name": "Agent teams",
           "description": "A lead session starts named teammates that share one task list. Each teammate takes a task, works on it in its own session and tells the lead when it is done. You see every teammate and its tasks under the lead's composer. Messages between sessions work without this flag."
+        },
+        "voice_call": {
+          "name": "Voice calls",
+          "description": "Call the session's agent from the session page and talk it through. It hears you, answers in a voice, sees a screen you share, and works in the same session, so the conversation stays in the chat."
         }
       },
       "channelsSwitch": {
@@ -24996,6 +25000,27 @@
     "agentControl": "Kortix has control",
     "returnControl": "Return control",
     "escape": "Esc"
+  },
+  "voiceCall": {
+    "title": "Voice call",
+    "start": "Start a voice call",
+    "end": "End call",
+    "connecting": "Connecting…",
+    "listening": "Listening",
+    "speaking": "Speaking",
+    "reconnecting": "Reconnecting…",
+    "you": "You",
+    "mute": "Mute microphone",
+    "unmute": "Unmute microphone",
+    "noMicrophone": "No microphone access. Allow the microphone for this site and call again.",
+    "shareScreen": "Share screen",
+    "stopSharing": "Stop sharing screen",
+    "ended": "Call ended",
+    "failed": "Could not start the call",
+    "lost": "Could not reconnect the call",
+    "unavailable": "This session's sandbox started before voice calls were turned on. Calls work from its next start.",
+    "callAgain": "Call again",
+    "close": "Close"
   },
   "agentCapabilities": {
     "skillsTitle": "Skills",
