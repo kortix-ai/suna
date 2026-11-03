@@ -16,6 +16,7 @@ import * as realAccess from '../lib/access';
 import * as realLifecycle from '../session-lifecycle';
 import * as realHoldSettle from '../session-lifecycle/inbox-hold-settle';
 import * as realTurnLifecycle from '../sandbox-turn-lifecycle';
+import { mintWireMessageId } from '../wire-message-id';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -573,7 +574,10 @@ describe('POST .../prompts', () => {
   // would break every installed CLI; delivering it as-is renders every later
   // turn above it. The server places it instead.
   test('a far-future message_id is accepted and re-placed on delivery', async () => {
-    const cliId = `msg_${((BigInt(Date.now()) * BigInt(0x1000)) >> BigInt(8)).toString(16).slice(0, 12)}SyntheticCli03`;
+    // ~40 days ahead of the clock, as that CLI minted. Built from `ms * 16`, the
+    // id read as ahead on the 48-bit ring only part of the time (behind from
+    // 2026-11-03 12:37 UTC until 2026-11-08 12:37 UTC).
+    const cliId = `${mintWireMessageId({ nowMs: Date.now() + 40 * 86_400_000 }).id.slice(0, 16)}SyntheticCli03`;
     const res = await post({ ...validBody, message_id: cliId });
     expect(res.status).toBe(202);
     expect(enqueued[0].wireMessageId).toBe(cliId);

@@ -20,12 +20,12 @@ variable "public_subnet_ids" {
 }
 
 variable "private_subnet_ids" {
-  description = "Subnets for the Fargate tasks (private; egress via NAT)."
+  description = "Subnets for the Fargate tasks: private subnets (all egress via NAT) or the network module's egress subnets with assign_public_ip = true."
   type        = list(string)
 }
 
 variable "assign_public_ip" {
-  description = "Give tasks public IPs. Keep false when tasks run in private subnets with a NAT."
+  description = "Give tasks public IPs. true in egress subnets (internet direct, GitHub via NAT); false in private subnets."
   type        = bool
   default     = false
 }

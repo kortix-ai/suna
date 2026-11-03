@@ -58,6 +58,14 @@ export const TELEGRAM_START_ERROR_COMMANDS: StartErrorCommands = {
   login: 'Channels → Telegram in the Kortix project',
 };
 
+/** Discord renders Markdown: `/status` and `/connect` are slash commands; the login lives in Kortix. */
+export const DISCORD_START_ERROR_COMMANDS: StartErrorCommands = {
+  surface: 'conversation',
+  settings: '`/status`',
+  switchProject: '`/connect`',
+  login: 'Channels → Discord in the Kortix project',
+};
+
 export function startErrorMessage(
   status: number | undefined,
   body: unknown,

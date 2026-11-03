@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1022,
+  "count": 1034,
   "routes": [
     {
       "method": "GET",
@@ -1487,12 +1487,12 @@
       "path": "/v1/drives/:driveId/access"
     },
     {
-      "method": "GET",
-      "path": "/v1/drives/:driveId/admin-reads"
-    },
-    {
       "method": "DELETE",
       "path": "/v1/drives/:driveId/access/:grantId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/admin-reads"
     },
     {
       "method": "GET",
@@ -2297,6 +2297,46 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/channels/bindings/:bindingId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/discord"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/discord/access-requests/:user_id"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/discord/allowed-users"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/channels/discord/allowed-users"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/discord/allowed-users/:user_id"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/discord/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/discord/mode"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/discord/oauth/complete"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/discord/users"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/discord/users/:user_id/photo"
     },
     {
       "method": "POST",
@@ -4025,6 +4065,14 @@
     {
       "method": "POST",
       "path": "/v1/webhooks/auth/send-email"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/discord"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/webhooks/discord/oauth/callback"
     },
     {
       "method": "POST",

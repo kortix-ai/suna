@@ -12,7 +12,7 @@ defaults keep today's behavior, so a valid file stays valid.
 
 | Key | Holds |
 | --- | --- |
-| `default_agent` | The agent that runs when nothing names one and My Kortix is off, and the agent My Kortix starts when it names none. A declared, enabled agent that is not `mode: subagent`. |
+| `default_agent` | The agent that runs when nothing names one, and the agent My Kortix starts when it names none. A declared, enabled agent that is not `mode: subagent`, or `mykortix` when My Kortix is on. Omitted: My Kortix when it is on. |
 | `project` | `name`, `description`: shown in the dashboard. |
 | `imports` | Repository paths of more YAML files or folders (below). |
 | `env` | `required` and `optional` secret names. Values live in Kortix, never here. |
@@ -25,7 +25,7 @@ defaults keep today's behavior, so a valid file stays valid.
 | `apps` | Map of Apps and their settings (the `kortix-apps` skill). |
 | `triggers` | List of triggers (below). |
 | `policy`, `policies`, `approvals` | Connector call policies and how long a held call stays decidable (`approvals.ttl`: `30m`, `4h`, `7d`; default 24h). Approve runs the held call once, as its caller, and resumes the agent with the result: the agent does not repeat it. A caller without a project-scoped token repeats it within 15 minutes. |
-| `builtin_agents` | `my_kortix: false` removes My Kortix, the built-in agent (slug `mykortix`). Absent = on. |
+| `builtin_agents` | `my_kortix: true` adds My Kortix, the built-in agent (slug `mykortix`). Absent, `false` or an unreadable file = off. |
 | `spaces` | Work in progress: channels per area of work (below). |
 | `agents` | Map of agent name → agent block. Omitted: My Kortix only. |
 
@@ -193,7 +193,7 @@ triggers:
 
 | `run:` | Does |
 | --- | --- |
-| `prompt` (+ `agent`, `model`, `session`, `session_key`, `session_id`) | Prompts an agent session. Without `agent` it runs My Kortix (`default_agent` when My Kortix is off). |
+| `prompt` (+ `agent`, `model`, `session`, `session_key`, `session_id`) | Prompts an agent session. Without `agent` it runs `default_agent` (My Kortix when it is on and `default_agent` is omitted). |
 | `app` (+ `path` default `/`, `method` `POST` or `GET`, `payload`) | Calls the App. No session, no model. |
 
 - Other fields: `slug` (required, `[a-z0-9][a-z0-9_-]{0,127}`, unique across
@@ -239,7 +239,7 @@ error:
 | An agent or a trigger | That entry is off. A session that names the agent fails with the issue. |
 | A connector, App, skill, tool, command, extension, space or sandbox template | That entry is gone. |
 | `project` or `default_agent` | The key falls back to its default. |
-| Anything else (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, an unknown format version, YAML syntax) | Only My Kortix runs, so it can fix the file. |
+| Anything else (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, an unknown format version, YAML syntax) | No project agent runs. My Kortix runs when the file sets `builtin_agents.my_kortix: true`, so it can fix the file. |
 
 Each rule only takes access away. The project page shows the errors and
 the warnings without a fix id, with **Fix with My Kortix**. Every session's

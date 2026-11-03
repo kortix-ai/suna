@@ -1,6 +1,6 @@
 /**
  * Channel connectors — the chat platforms of `@kortix/shared/channel-descriptors`
- * (Slack, Teams, Email, Telegram) as first-class connectors. Unlike the
+ * (Slack, Teams, Email, Telegram, Discord) as first-class connectors. Unlike the
  * spec-driven providers, a channel's catalog is a FIXED, hand-curated set of
  * actions (the platform's stable API surface), and its credential is the
  * platform's existing install token, resolved server-side from the
@@ -28,6 +28,7 @@ export const SLACK_CHANNEL_CONNECTOR_SLUG = channelConnectorSlug('slack');
 export const TEAMS_CHANNEL_CONNECTOR_SLUG = channelConnectorSlug('teams');
 export const EMAIL_CHANNEL_CONNECTOR_SLUG = channelConnectorSlug('email');
 export const TELEGRAM_CHANNEL_CONNECTOR_SLUG = channelConnectorSlug('telegram');
+export const DISCORD_CHANNEL_CONNECTOR_SLUG = channelConnectorSlug('discord');
 
 export function channelDefaultSlug(platform: string): string {
   return isChannelPlatform(platform) ? channelConnectorSlug(platform) : platform;
@@ -39,6 +40,8 @@ export function channelDefaultSlug(platform: string): string {
 export function channelAuth(platform: string): ConnectorAuth {
   // Telegram's Bot API takes the token as the first path segment: /bot<token>/<method>.
   if (platform === 'telegram') return { type: 'custom', in: 'path', name: null, prefix: 'bot' };
+  // A Discord bot token goes as `Authorization: Bot <token>`.
+  if (platform === 'discord') return { type: 'custom', in: 'header', name: 'Authorization', prefix: 'Bot ' };
   return { type: 'bearer', in: 'header', name: null, prefix: null };
 }
 
@@ -52,6 +55,7 @@ const API_BASE: Record<ChannelPlatformId, () => string> = {
   teams: () => 'https://graph.microsoft.com/v1.0',
   email: () => config.RESEND_API_URL,
   telegram: () => config.TELEGRAM_API_URL,
+  discord: () => config.DISCORD_API_URL,
 };
 
 /** Per-platform API base — the connector's baseUrl, where http bindings resolve. */
@@ -70,8 +74,8 @@ interface ChannelActionDef {
   path: string;
   /** Platform API path/method tail. */
   method: string;
-  /** HTTP verb — POST methods send a JSON body; GET methods send a query string. */
-  verb: 'GET' | 'POST';
+  /** HTTP verb — POST, PUT and PATCH send a JSON body; GET methods send a query string. */
+  verb: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   name: string;
   description: string;
   risk: Risk;
@@ -733,11 +737,130 @@ const TELEGRAM_ACTIONS: ChannelActionDef[] = [
   },
 ];
 
+const DISCORD_CHANNEL_ID = {
+  type: 'string',
+  description: 'The channel id: the thread or DM of the conversation (its Reply line names it), or a channel of this project\'s server.',
+} as const;
+const DISCORD_MESSAGE_ID = { type: 'string', description: 'The message id (a snowflake).' } as const;
+const DISCORD_COMPONENTS = {
+  type: 'array',
+  description: 'Optional action rows of buttons, for example [{"type":1,"components":[{"type":2,"style":5,"label":"Open","url":"https://…"}]}]. Link buttons only: a custom_id button press reaches no one.',
+} as const;
+// Pings: a user named in the content, never @everyone, @here or a role.
+const DISCORD_MENTIONS = { allowed_mentions: { parse: ['users'] } };
+
+/**
+ * The Discord catalog: the REST routes a conversation needs, through the Kortix
+ * Discord application's bot. Every call names one `channel_id`, and the gateway
+ * runs it only in this project's conversations (channel-discord-scope.ts).
+ */
+const DISCORD_ACTIONS: ChannelActionDef[] = [
+  {
+    path: 'send_message',
+    method: 'channels/{channel_id}/messages',
+    verb: 'POST',
+    name: 'Send message',
+    description:
+      `Send a message to a Discord channel, thread or DM, at most ${CHANNELS.discord.messageChars} characters; split longer answers. ` +
+      'Discord renders Markdown. Set `message_reference.message_id` to reply to a message of the same channel.',
+    risk: 'write',
+    properties: {
+      channel_id: DISCORD_CHANNEL_ID,
+      content: { type: 'string', description: `Message text, 1-${CHANNELS.discord.messageChars} characters.` },
+      message_reference: { type: 'object', description: 'Optional `{ "message_id": "<id>" }` of a message in the same channel to reply to.' },
+      components: DISCORD_COMPONENTS,
+    },
+    required: ['channel_id'],
+    defaults: DISCORD_MENTIONS,
+  },
+  {
+    path: 'edit_message',
+    method: 'channels/{channel_id}/messages/{message_id}',
+    verb: 'PATCH',
+    name: 'Edit message',
+    description: 'Replace the content of a message the bot sent. Requires `channel_id`, `message_id` and `content`.',
+    risk: 'write',
+    properties: {
+      channel_id: DISCORD_CHANNEL_ID,
+      message_id: DISCORD_MESSAGE_ID,
+      content: { type: 'string', description: `New text, 1-${CHANNELS.discord.messageChars} characters.` },
+      components: DISCORD_COMPONENTS,
+    },
+    required: ['channel_id', 'message_id'],
+    defaults: DISCORD_MENTIONS,
+  },
+  {
+    path: 'delete_message',
+    method: 'channels/{channel_id}/messages/{message_id}',
+    verb: 'DELETE',
+    name: 'Delete message',
+    description: 'Delete a message the bot sent.',
+    risk: 'destructive',
+    properties: { channel_id: DISCORD_CHANNEL_ID, message_id: DISCORD_MESSAGE_ID },
+    required: ['channel_id', 'message_id'],
+  },
+  {
+    path: 'add_reaction',
+    method: 'channels/{channel_id}/messages/{message_id}/reactions/{emoji}/@me',
+    verb: 'PUT',
+    name: 'Add reaction',
+    description: 'React to a message with an emoji: a Unicode emoji such as 👍, or a custom emoji as `name:id`.',
+    risk: 'write',
+    properties: {
+      channel_id: DISCORD_CHANNEL_ID,
+      message_id: DISCORD_MESSAGE_ID,
+      emoji: { type: 'string', description: 'A Unicode emoji, or `name:id` for a custom one.' },
+    },
+    required: ['channel_id', 'message_id', 'emoji'],
+  },
+  {
+    path: 'trigger_typing',
+    method: 'channels/{channel_id}/typing',
+    verb: 'POST',
+    name: 'Show typing',
+    description: 'Show "typing…" in a channel for about 10 seconds while you work on an answer.',
+    risk: 'read',
+    properties: { channel_id: DISCORD_CHANNEL_ID },
+    required: ['channel_id'],
+  },
+  {
+    path: 'get_messages',
+    method: 'channels/{channel_id}/messages',
+    verb: 'GET',
+    name: 'Get messages',
+    description:
+      'Read messages of a conversation, newest first: up to `limit` (1-100, default 50). Give at most one of `before`, `after` or `around`. ' +
+      'In a direct message, read with `after` (the tool says from which id): `after` returns the messages right after it, so page forward for the newest. ' +
+      "Discord sends a message's text and files only when the app may read them: always in a direct message, in a message that mentions the app and in the app's own; " +
+      "in a server without the Message Content intent, other people's messages come back without text or files.",
+    risk: 'read',
+    properties: {
+      channel_id: DISCORD_CHANNEL_ID,
+      limit: { type: 'integer', description: 'How many messages, 1-100.' },
+      before: { type: 'string', description: 'Optional message id: only messages before it.' },
+      after: { type: 'string', description: 'Optional message id: only messages after it.' },
+      around: { type: 'string', description: 'Optional message id: messages around it.' },
+    },
+    required: ['channel_id'],
+  },
+  {
+    path: 'get_channel',
+    method: 'channels/{channel_id}',
+    verb: 'GET',
+    name: 'Get channel',
+    description: 'Fetch a channel or thread: its type, name and parent channel.',
+    risk: 'read',
+    properties: { channel_id: DISCORD_CHANNEL_ID },
+    required: ['channel_id'],
+  },
+];
+
 const CHANNEL_ACTIONS: Record<ChannelPlatformId, ChannelActionDef[]> = {
   slack: SLACK_ACTIONS,
   teams: TEAMS_ACTIONS,
   email: EMAIL_ACTIONS,
   telegram: TELEGRAM_ACTIONS,
+  discord: DISCORD_ACTIONS,
 };
 
 /**

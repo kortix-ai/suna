@@ -241,7 +241,7 @@ export interface ManifestV3 {
   approvals?: { ttl?: string };
   /** Spaces (channels): slug → label, description, header and tabs. */
   spaces?: Record<string, SpaceV3>;
-  /** Built-in agents the platform injects, keyed by built-in (`my_kortix`). Absent = on; `false` removes it from the project. */
+  /** Built-in agents the platform injects, keyed by built-in (`my_kortix`). `true` adds it to the project; absent or `false` = off. */
   builtin_agents?: Partial<Record<BuiltinAgentKey, boolean>>;
   agents: Record<string, AgentBlockV3>;
 }
@@ -382,7 +382,7 @@ export function validateManifestBody(parsed: Record<string, unknown>, issues: Ma
   };
   const agents = validateAgentsV3(parsed.agents, 'agents', registry, issues);
   validateBuiltinAgentsV3(parsed.builtin_agents, 'builtin_agents', agents, issues);
-  validateDefaultAgentV3(parsed.default_agent, 'default_agent', agents, issues);
+  validateDefaultAgentV3(parsed.default_agent, 'default_agent', agents, myKortixDeclaredOn(parsed.builtin_agents), issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', [...agents.keys()], issues);
   validateAgentPolicySetRefs(parsed.agents, parsed.connectors, 'agents', issues);
 }
@@ -815,7 +815,8 @@ function validateNetworkEgressV3(value: unknown, where: string, issues: Manifest
 }
 
 /**
- * `builtin_agents`: built-in key → on/off. Absent or `true` = on. A built-in's
+ * `builtin_agents`: built-in key → on/off. `true` = on. Absent or `false` = off,
+ * like an agent the file does not declare. A built-in's
  * slug (`mykortix` for My Kortix, and its old `meta`) is reserved whatever the switch says: the
  * platform keys that slug's grant, prompt and sandbox, so a declared block
  * would never run as written.
@@ -839,19 +840,27 @@ function validateBuiltinAgentsV3(node: unknown, path: string, agents: AgentScanV
     // My Kortix's slug before the rename stays reserved: every read still treats it as My Kortix.
     for (const agent of key === 'my_kortix' ? [slug, LEGACY_MY_KORTIX_AGENT_NAME] : [slug]) {
       if (agents.has(agent)) {
-        issues.push({ path: `agents.${agent}`, message: `"${agent}" is reserved for ${displayName}, the built-in agent. Rename this agent. To turn ${displayName} off, set \`${path}.${key}: false\`.`, severity: 'error' });
+        issues.push({ path: `agents.${agent}`, message: `"${agent}" is reserved for ${displayName}, the built-in agent. Rename this agent. To turn ${displayName} on, set \`${path}.${key}: true\`.`, severity: 'error' });
       }
     }
   }
 }
 
-function validateDefaultAgentV3(node: unknown, path: string, agents: AgentScanV3, issues: ManifestIssue[]): void {
-  // Omitted: a session or trigger that names no agent runs My Kortix.
+/** Does `builtin_agents` turn My Kortix on (`my_kortix: true`)? */
+function myKortixDeclaredOn(node: unknown): boolean {
+  return isTable(node) && node.my_kortix === true;
+}
+
+function validateDefaultAgentV3(node: unknown, path: string, agents: AgentScanV3, myKortixOn: boolean, issues: ManifestIssue[]): void {
+  // Omitted: a session or trigger that names no agent runs My Kortix when it is on.
   if (node === undefined || node === null) return;
   const name = typeof node === 'string' ? node.trim() : '';
   const scan = agents.get(name);
   if (!name) {
-    issues.push({ path, message: '`default_agent` must be the name of a declared primary agent. Omit it to run My Kortix.', severity: 'error' });
+    issues.push({ path, message: '`default_agent` must be the name of a declared primary agent, or `mykortix`.', severity: 'error' });
+  } else if (name === BUILTIN_AGENTS.my_kortix.agent) {
+    // My Kortix is a default like any agent, once the file turns it on.
+    if (!myKortixOn) issues.push({ path, message: `"${name}" is My Kortix, the built-in agent. Set \`builtin_agents.my_kortix: true\` to make it the default.`, severity: 'error' });
   } else if (!scan) {
     issues.push({ path, message: `"${name}" is not a declared agent.`, severity: 'error' });
   } else if (!scan.enabled) {

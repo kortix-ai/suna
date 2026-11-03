@@ -36,7 +36,7 @@ describe('teams channel catalog', () => {
   });
 
   test('unknown platform stays empty', () => {
-    expect(channelCatalog('discord')).toEqual([]);
-    expect(channelApiBase('discord')).toBe('');
+    expect(channelCatalog('matrix')).toEqual([]);
+    expect(channelApiBase('matrix')).toBe('');
   });
 });

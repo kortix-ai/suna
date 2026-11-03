@@ -1723,6 +1723,7 @@
         "chat": "Chat",
         "slack": "Slack",
         "telegram": "Telegram",
+        "discord": "Discord",
         "teams": "Teams",
         "email": "E-mail",
         "scheduled": "Programmato",
@@ -15223,6 +15224,7 @@
       "textedac6130dac7": "Esegue il commit di un SKILL.md nel repository senza una sessione di chat.",
       "textfc73e9ad2dae": "Ha risposto in Slack",
       "text8faf56a14a8d": "Ha risposto in Telegram",
+      "text3416de570ab5": "Ha risposto in Discord",
       "text8ccfe10f2f2d": "Pubblica nel catalogo Teams",
       "text36f6474748b3": "Pubblicazione dell'app nel catalogo Teams…",
       "text45b9df5730ac": "In attesa dell'approvazione dell'app da parte di un amministratore Teams",
@@ -21917,6 +21919,21 @@
     "channelAccessAllowAria": "Autorizza {name}",
     "channelAccessRemoveTitle": "Rimuovere {name}?",
     "telegramRemoveDescription": "{name} non può più parlare con il bot. Per autorizzarlo di nuovo, aggiungi il suo ID utente o autorizza la sua prossima richiesta.",
+    "discordHeroTitle": "Porta il tuo agente su Discord",
+    "discordHeroLede": "Aggiungi l'app Kortix al tuo server. Menzionala in un canale e l'agente risponde in un thread. Si può anche scriverle direttamente.",
+    "discordUnavailable": "Discord non è configurato su questa installazione di Kortix.",
+    "discordPitch": "Chatta con il tuo agente nel tuo server Discord.",
+    "discordAddToDiscord": "Aggiungi a Discord",
+    "discordDisconnected": "Discord disconnesso",
+    "discordUsersDescription": "Solo queste persone possono parlare con il bot. Quando qualcun altro lo menziona o gli scrive, compare qui.",
+    "discordUsersEmptyDescription": "Chiedi a qualcuno di menzionare il bot o di scrivergli, poi consenti la sua richiesta o aggiungi il suo ID utente.",
+    "discordUsersLoadError": "Impossibile caricare gli utenti Discord.",
+    "discordAddByIdHint": "Il bot risponde a chi non conosce con il suo ID utente.",
+    "discordAddByIdInvalid": "Un ID utente Discord è un numero di 17-20 cifre, ad esempio 123456789012345678.",
+    "discordRemoveDescription": "{name} non può più parlare con il bot. Per consentirlo di nuovo, aggiungi il suo ID utente o consenti la sua prossima richiesta.",
+    "mockDiscordThread": "launch",
+    "mockDiscordAsk": "Il deploy è finito?",
+    "mockDiscordReply": "Sì, 4 minuti fa. Tutti i controlli sono verdi e il sito è online.",
     "otherWaysToConnect": "Altri modi per collegarsi",
     "computerHeroTitle": "Porta il tuo agente sul tuo computer",
     "computerConnectedTitle": "{count, plural, one {Il tuo computer è collegato} other {# computer sono collegati}}",
@@ -23837,7 +23854,7 @@
       "project": {
         "title": "Impostazione del progetto",
         "label": "My Kortix",
-        "help": "Le nuove sessioni iniziano con My Kortix. Kortix gestisce il suo prompt e i suoi strumenti. Per disattivarlo, imposta <code>builtin_agents.my_kortix: false</code> in kortix.yaml."
+        "help": "My Kortix è attivo in questo progetto. Kortix gestisce il suo prompt e i suoi strumenti. Per disattivarlo, rimuovi <code>builtin_agents.my_kortix</code> da kortix.yaml o impostalo su false."
       }
     },
     "modelView": {

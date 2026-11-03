@@ -1723,6 +1723,7 @@
         "chat": "チャット",
         "slack": "Slack",
         "telegram": "Telegram",
+        "discord": "Discord",
         "teams": "Teams",
         "email": "電子メール",
         "scheduled": "スケジュール済み",
@@ -15223,6 +15224,7 @@
       "textedac6130dac7": "チャットセッションを使わずに SKILL.md をリポジトリへコミットします。",
       "textfc73e9ad2dae": "Slack で返信しました",
       "text8faf56a14a8d": "Telegram で返信しました",
+      "text3416de570ab5": "Discord で返信しました",
       "text8ccfe10f2f2d": "Teams カタログに公開",
       "text36f6474748b3": "Teams カタログにアプリを公開しています…",
       "text45b9df5730ac": "Teams 管理者によるアプリの承認を待っています",
@@ -21917,6 +21919,21 @@
     "channelAccessAllowAria": "{name} を許可",
     "channelAccessRemoveTitle": "{name} を削除しますか？",
     "telegramRemoveDescription": "{name} はボットと話せなくなります。再び許可するには、ユーザー ID を追加するか、次のリクエストを許可します。",
+    "discordHeroTitle": "エージェントを Discord に",
+    "discordHeroLede": "Kortix アプリをサーバーに追加します。チャンネルでメンションすると、エージェントがスレッドで返信します。直接メッセージを送ることもできます。",
+    "discordUnavailable": "この Kortix 環境では Discord が設定されていません。",
+    "discordPitch": "Discord サーバーでエージェントとチャットできます。",
+    "discordAddToDiscord": "Discord に追加",
+    "discordDisconnected": "Discord の接続を解除しました",
+    "discordUsersDescription": "ボットと話せるのはこのユーザーだけです。他の人がメンションやメッセージを送ると、ここに表示されます。",
+    "discordUsersEmptyDescription": "ボットにメンションかメッセージを送ってもらい、そのリクエストを許可するか、ユーザー ID を追加してください。",
+    "discordUsersLoadError": "Discord のユーザーを読み込めませんでした。",
+    "discordAddByIdHint": "ボットは知らない相手にその人のユーザー ID を返信します。",
+    "discordAddByIdInvalid": "Discord のユーザー ID は 17〜20 桁の数字です（例: 123456789012345678）。",
+    "discordRemoveDescription": "{name} はボットと話せなくなります。再び許可するには、ユーザー ID を追加するか、次のリクエストを許可してください。",
+    "mockDiscordThread": "launch",
+    "mockDiscordAsk": "デプロイは終わりましたか？",
+    "mockDiscordReply": "はい、4 分前に終わりました。すべてのチェックが成功し、サイトは公開中です。",
     "otherWaysToConnect": "その他の接続方法",
     "computerHeroTitle": "エージェントをあなたのコンピューターに",
     "computerConnectedTitle": "{count, plural, other {# 台のコンピューターが接続済み}}",
@@ -23837,7 +23854,7 @@
       "project": {
         "title": "プロジェクト設定",
         "label": "My Kortix",
-        "help": "新しいセッションは My Kortix で始まります。プロンプトとツールは Kortix が管理します。オフにするには、kortix.yaml で <code>builtin_agents.my_kortix: false</code> を設定します。"
+        "help": "このプロジェクトでは My Kortix がオンです。プロンプトとツールは Kortix が管理します。オフにするには、kortix.yaml から <code>builtin_agents.my_kortix</code> を削除するか、false に設定します。"
       }
     },
     "modelView": {

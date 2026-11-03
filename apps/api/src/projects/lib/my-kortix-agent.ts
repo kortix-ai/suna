@@ -47,15 +47,14 @@ export function declaredBuiltinAgents(
 }
 
 /**
- * Which built-in agents this project runs. Per key: the manifest's boolean
- * (the repository is the source of truth), else on. The per-project
- * `meta_agent` flag that once sat between the two was removed on 2026-11-02:
- * a stored `experimental.meta_agent` value is inert.
+ * Which built-in agents this project runs. Per key: on only when the manifest
+ * sets it to `true` (the repository is the source of truth). Anything else is
+ * off: absent, `false`, a non-boolean, a missing or broken file.
  */
 export function resolveBuiltinAgents(
   declared: Partial<Record<BuiltinAgentKey, boolean>>,
 ): Record<BuiltinAgentKey, boolean> {
-  return { my_kortix: declared.my_kortix ?? true };
+  return { my_kortix: declared.my_kortix === true };
 }
 
 /** {@link resolveBuiltinAgents} for a raw kortix.yaml manifest: what every API surface reads. */
@@ -101,16 +100,21 @@ export function builtinAgentConfigView(key: BuiltinAgentKey, defaultAgent: strin
 /** The refusal for a write that targets a built-in agent's configuration. */
 export function builtinAgentWriteRefusal(key: BuiltinAgentKey) {
   return {
-    error: `${BUILTIN_AGENTS[key].displayName} is built in: Kortix maintains its prompt, tools and model. To remove it from this project, set \`builtin_agents: { ${key}: false }\` in kortix.yaml.`,
+    error: `${BUILTIN_AGENTS[key].displayName} is built in: Kortix maintains its prompt, tools and model. To remove it from this project, delete \`builtin_agents.${key}\` from kortix.yaml or set it to false.`,
     code: 'builtin_agent_managed' as const,
   };
 }
 
+/**
+ * The config of a project that runs My Kortix: My Kortix listed first.
+ * `default_agent` stays the manifest's; with none, My Kortix is the default.
+ */
 export function addMyKortixAgent(config: ProjectConfigSummary): ProjectConfigSummary {
+  const defaultAgent = config.default_agent ?? MY_KORTIX_AGENT_NAME;
   return {
     ...config,
-    default_agent: MY_KORTIX_AGENT_NAME,
-    open_code_default_agent: MY_KORTIX_AGENT_NAME,
+    default_agent: defaultAgent,
+    open_code_default_agent: defaultAgent,
     agents: [
       {
         name: MY_KORTIX_AGENT_NAME,

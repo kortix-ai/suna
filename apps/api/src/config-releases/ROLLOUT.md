@@ -131,7 +131,7 @@ unbootable.
    release: each box keeps what it runs, and `fallback_reason` says why.
 
 **The meta coordinator is the exception.** A session whose agent is `meta`
-(My Kortix, on unless kortix.yaml sets `builtin_agents.my_kortix: false`) is never assigned the project's release. It gets the `meta`
+(My Kortix, on when kortix.yaml sets `builtin_agents.my_kortix: true`) is never assigned the project's release. It gets the `meta`
 variant: the platform's own governance (`buildMyKortixConfig`) on
 the image default config dir, with no archive. Its release ID does not change
 when the base branch moves. Its box holds no project checkout and the meta

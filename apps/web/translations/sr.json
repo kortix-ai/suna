@@ -1723,6 +1723,7 @@
         "chat": "Ћаскање",
         "slack": "Slack",
         "telegram": "Telegram",
+        "discord": "Discord",
         "teams": "Teams",
         "email": "Е-пошта",
         "scheduled": "Заказано",
@@ -15223,6 +15224,7 @@
       "textedac6130dac7": "Комитује SKILL.md у спремиште без сесије ћаскања.",
       "textfc73e9ad2dae": "Одговорено у Slack-у",
       "text8faf56a14a8d": "Одговорено у Telegram-у",
+      "text3416de570ab5": "Одговорено у Discord-у",
       "text8ccfe10f2f2d": "Објави у вашем Teams каталогу",
       "text36f6474748b3": "Објављивање апликације у вашем Teams каталогу…",
       "text45b9df5730ac": "Чека се да Teams администратор одобри апликацију",
@@ -21917,6 +21919,21 @@
     "channelAccessAllowAria": "Dozvoli: {name}",
     "channelAccessRemoveTitle": "Ukloniti {name}?",
     "telegramRemoveDescription": "{name} više ne može da priča sa botom. Da ga ponovo dozvoliš, dodaj njegov korisnički ID ili dozvoli njegov sledeći zahtev.",
+    "discordHeroTitle": "Dovedite svog agenta na Discord",
+    "discordHeroLede": "Dodajte Kortix aplikaciju na svoj server. Pomenite je u kanalu i agent odgovara u niti. Može joj se pisati i direktno.",
+    "discordUnavailable": "Discord nije podešen na ovoj Kortix instalaciji.",
+    "discordPitch": "Ćaskajte sa svojim agentom na svom Discord serveru.",
+    "discordAddToDiscord": "Dodaj na Discord",
+    "discordDisconnected": "Discord je isključen",
+    "discordUsersDescription": "Samo ove osobe mogu da razgovaraju sa botom. Kada ga neko drugi pomene ili mu piše, pojavljuje se ovde.",
+    "discordUsersEmptyDescription": "Zamolite nekoga da pomene bota ili mu piše, zatim odobrite zahtev ili dodajte korisnički ID.",
+    "discordUsersLoadError": "Nije moguće učitati Discord korisnike.",
+    "discordAddByIdHint": "Bot svakome koga ne poznaje odgovara njegovim korisničkim ID-jem.",
+    "discordAddByIdInvalid": "Discord korisnički ID je broj od 17 do 20 cifara, na primer 123456789012345678.",
+    "discordRemoveDescription": "{name} više ne može da razgovara sa botom. Da biste ponovo dozvolili, dodajte korisnički ID ili odobrite sledeći zahtev.",
+    "mockDiscordThread": "launch",
+    "mockDiscordAsk": "Da li je deploy završen?",
+    "mockDiscordReply": "Da, pre 4 minuta. Sve provere su zelene i sajt je aktivan.",
     "otherWaysToConnect": "Drugi načini povezivanja",
     "computerHeroTitle": "Dovedi agenta na svoj računar",
     "computerConnectedTitle": "{count, plural, one {Tvoj računar je povezan} few {# računara su povezana} other {# računara je povezano}}",
@@ -23837,7 +23854,7 @@
       "project": {
         "title": "Подешавање пројекта",
         "label": "My Kortix",
-        "help": "Нове сесије почињу са My Kortix. Kortix одржава његов промпт и алате. Да бисте га искључили, поставите <code>builtin_agents.my_kortix: false</code> у kortix.yaml."
+        "help": "My Kortix је укључен у овом пројекту. Kortix одржава његов промпт и алате. Да бисте га искључили, уклоните <code>builtin_agents.my_kortix</code> из kortix.yaml или га поставите на false."
       }
     },
     "modelView": {

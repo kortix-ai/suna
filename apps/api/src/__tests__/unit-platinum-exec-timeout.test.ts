@@ -6,10 +6,14 @@ mock.module('../lib/sentry', () => ({
   captureException: (error: unknown) => captured.push(error),
   isSentryIgnoredError: () => false,
 }));
-mock.module('../config', () => ({ config: {
-  PLATINUM_API_KEY: 'synthetic-key', PLATINUM_API_URL: 'http://provider.test',
-  SANDBOX_PROVIDER: 'platinum',
-} }));
+const realConfig = await import('../config');
+mock.module('../config', () => ({
+  ...realConfig,
+  config: {
+    PLATINUM_API_KEY: 'synthetic-key', PLATINUM_API_URL: 'http://provider.test',
+    SANDBOX_PROVIDER: 'platinum',
+  },
+}));
 const { platinumJson } = await import('../shared/platinum');
 const { installHttpErrors } = await import('../http-errors');
 const originalFetch = globalThis.fetch;

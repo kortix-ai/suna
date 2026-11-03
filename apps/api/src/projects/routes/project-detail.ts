@@ -163,9 +163,9 @@ export function registerProjectDetailRoutes(): void {
         actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
       };
       const filteredConfig = await filterConfigResourcesForUser(rawConfig, denierCtx);
-      // My Kortix (slug `mykortix`) is listed first and is the default agent unless
-      // kortix.yaml sets `builtin_agents.my_kortix: false`. Off: the config is
-      // exactly the repo-declared surface.
+      // My Kortix (slug `mykortix`) is listed first when kortix.yaml sets
+      // `builtin_agents.my_kortix: true`. Off: the config is exactly the
+      // repo-declared surface.
       const builtinAgents = projectBuiltinAgents(rawConfig.manifest);
       const withAgents = {
         ...(builtinAgents.my_kortix ? addMyKortixAgent(filteredConfig) : filteredConfig),

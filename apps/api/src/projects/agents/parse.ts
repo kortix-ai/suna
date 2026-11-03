@@ -10,7 +10,7 @@ import {
   type GrantSetV2,
 } from '@kortix/manifest-schema';
 import { readAgentBlockV2 } from '../lib/agent-config-v2';
-import { declaredBuiltinAgents } from '../lib/my-kortix-agent';
+import { projectBuiltinAgents } from '../lib/my-kortix-agent';
 import {
   MANIFEST_FILENAME,
   type AgentParseError,
@@ -148,6 +148,8 @@ export async function loadProjectAgents(
         error: (err as Error).message || 'Failed to read manifest',
       }],
       defaultAgent: null,
+      // A manifest that cannot be read or parsed turns nothing on.
+      builtinAgents: { my_kortix: false },
       manifest: null,
     };
   }
@@ -155,7 +157,8 @@ export async function loadProjectAgents(
   return {
     ...extractAgents(applied),
     issues: applied.issues,
-    builtinAgents: declaredBuiltinAgents(applied.raw),
+    // The file's own switch: no manifest committed yet turns nothing on.
+    builtinAgents: projectBuiltinAgents(manifest?.raw ?? null),
     manifest: { revision: applied.revision ?? null, commit: applied.commit ?? null },
   };
 }
@@ -222,6 +225,7 @@ function parseAgentEntry(name: string, block: unknown, filename: string): ParseO
       name,
       path: `${filename}#agents.${name}`,
       enabled,
+      ...(row.mode === 'subagent' ? { subagent: true as const } : {}),
       connectors: toGrantSet(connectorsResolved),
       connectorsRequired,
       ...(policySets ? { policySets } : {}),

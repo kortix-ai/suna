@@ -9,6 +9,8 @@ let storedConnectors: Record<string, unknown>[] = [];
 let commitCalls = 0;
 let commitAttempts = 0;
 let syncCalls = 0;
+let syncedSlugs: string[] = [];
+let conflictEntry: Record<string, unknown> | undefined;
 let holdNextCommit = false;
 let manifestRevision = 0;
 let commitTail: Promise<void> = Promise.resolve();
@@ -109,6 +111,7 @@ mock.module('../projects/surface', () => ({
       }
       if (forcedCommitConflicts > 0) {
         forcedCommitConflicts -= 1;
+        if (conflictEntry) storedConnectors = [structuredClone(conflictEntry)];
         return {
           error: 'File "kortix.yaml" changed since it was read',
           status: 409,
@@ -134,7 +137,8 @@ mock.module('../projects/surface', () => ({
 // whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('./sync', () => ({
   ...realConnectorSync,
-  syncProjectConnectors: async () => {
+  syncProjectConnectors: async (_projectId: string, _accountId: string, options?: { onlySlugs?: Set<string> }) => {
+    syncedSlugs = [...(options?.onlySlugs ?? [])];
     syncCalls += 1;
     return { synced: storedConnectors.length, errors: [] };
   },
@@ -161,6 +165,8 @@ beforeEach(() => {
   commitCalls = 0;
   commitAttempts = 0;
   syncCalls = 0;
+  syncedSlugs = [];
+  conflictEntry = undefined;
   holdNextCommit = false;
   manifestRevision = 0;
   manifestReads = 0;
@@ -465,5 +471,62 @@ describe('channel connector manifest mutations retry one revision conflict', () 
     expect(commitAttempts).toBe(2);
     expect(commitCalls).toBe(1);
     expect(storedConnectors).toEqual([]);
+  });
+});
+
+
+describe('entry mutation boundary characterization', () => {
+  const mutations = [
+    () => setConnectorCredentialModeInManifest('project-1', 'account-1', 'mail-primary', 'shared'),
+    () => setConnectorAuthorizationStrategyInManifest('project-1', 'account-1', 'mail-primary', 'user'),
+    () => setConnectorSensitiveInManifest('project-1', 'account-1', 'mail-primary', false),
+    () => setConnectorNameInManifest('project-1', 'account-1', 'mail-primary', '  Mail  '),
+  ];
+
+  for (const [index, mutate] of mutations.entries()) {
+    test(`mutation ${index} edits the fresh retry entry and syncs only its slug`, async () => {
+      storedConnectors = [{ slug: 'mail-primary', provider: 'pipedream', app: 'gmail', name: 'Old' }];
+      conflictEntry = { slug: 'mail-primary', provider: 'pipedream', app: 'gmail', name: 'Concurrent', sensitive: true };
+      forcedCommitConflicts = 1;
+      expect(await mutate()).toMatchObject({ ok: true });
+      expect(storedConnectors[0]?.name).toBe(index === 3 ? 'Mail' : 'Concurrent');
+      expect(storedConnectors[0]?.sensitive).toBe(index === 2 ? undefined : true);
+      expect(commitAttempts).toBe(2);
+      expect(commitCalls).toBe(1);
+      expect(syncCalls).toBe(1);
+      expect(syncedSlugs).toEqual(['mail-primary']);
+    });
+
+    test(`mutation ${index} refuses a missing entry without commit or sync`, async () => {
+      expect(await mutate()).toEqual({ ok: false, error: 'connector not found', status: 404 });
+      expect(commitAttempts).toBe(0);
+      expect(syncCalls).toBe(0);
+    });
+
+    test(`mutation ${index} refuses an invalid connector without commit or sync`, async () => {
+      storedConnectors = [{ slug: 'mail-primary', provider: 'invalid' }];
+      expect(await mutate()).toMatchObject({ ok: false, status: 400 });
+      expect(commitAttempts).toBe(0);
+      expect(syncCalls).toBe(0);
+    });
+  }
+
+  test('name validation precedes manifest lookup', async () => {
+    expect(await setConnectorNameInManifest('project-1', 'account-1', 'mail-primary', '  '))
+      .toEqual({ ok: false, error: 'name is required', status: 400 });
+    expect(await setConnectorNameInManifest('project-1', 'account-1', 'mail-primary', 'x'.repeat(256)))
+      .toEqual({ ok: false, error: 'name is too long (max 255)', status: 400 });
+    expect(manifestReads).toBe(0);
+  });
+
+  test('name trims, sensitive false deletes, and shared removes the legacy credential key', async () => {
+    storedConnectors = [{ slug: 'mail-primary', provider: 'pipedream', app: 'gmail', sensitive: true }];
+    expect(await mutations[3]()).toMatchObject({ ok: true });
+    expect(storedConnectors[0]?.name).toBe('Mail');
+    expect(await mutations[2]()).toMatchObject({ ok: true });
+    expect(storedConnectors[0]).not.toHaveProperty('sensitive');
+    storedConnectors[0].credential = 'per_user';
+    expect(await mutations[0]()).toMatchObject({ ok: true });
+    expect(storedConnectors[0]).not.toHaveProperty('credential');
   });
 });

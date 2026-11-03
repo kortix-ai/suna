@@ -19,8 +19,12 @@ import { notificationsApp } from './notifications/routes';
 import { drivesApp } from './drives/routes';
 import { feedbackApp } from './feedback';
 import {
+  channelAppWebhookRoutes,
   channelWebhookRoutes,
+  discordInbound,
+  discordOauthApp,
   emailWebhookApp,
+  registerDiscordOauthRoutes,
   registerEmailWebhookRoutes,
   registerSlackWebhookRoutes,
   registerTeamsWebhookRoutes,
@@ -264,6 +268,9 @@ app.route('/v1/webhooks/teams', teamsWebhookApp); // /v1/webhooks/teams/messages
 app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
 app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', channelWebhookRoutes(telegramInbound)); // /v1/webhooks/telegram/:projectId — Telegram updates
+registerDiscordOauthRoutes();
+app.route('/v1/webhooks/discord/oauth', discordOauthApp); // /v1/webhooks/discord/oauth/callback — Add to Discord
+app.route('/v1/webhooks/discord', channelAppWebhookRoutes(discordInbound)); // /v1/webhooks/discord — the application's interactions
 registerEmailWebhookRoutes();
 app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/resend — Resend inbound inbox email (Svix-signed)
 registerSendEmailHookRoutes();

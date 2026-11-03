@@ -188,7 +188,8 @@ describe("database-only project fixture", () => {
       );
       expect(manifest.status).toBe(0);
       expect(manifest.stdout).not.toContain("kortix_version");
-      expect(manifest.stdout).toContain("default_agent: worker");
+      expect(manifest.stdout).toContain("default_agent: mykortix");
+      expect(manifest.stdout).toContain("my_kortix: true");
     } finally {
       await repository.dispose();
     }

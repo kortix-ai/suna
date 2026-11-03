@@ -4,7 +4,7 @@
  * transient failures a freshly woken runtime throws.
  */
 
-import { projectSessions } from '@kortix/db';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
@@ -27,6 +27,7 @@ import { sessionTransitionLeaves, transitionSession } from './status-transitions
 import { promptAgent } from './agent-availability';
 import { effortVariantForPrompt } from '../lib/effort-default';
 import type { ContinueSessionCommand, SessionDeliveryOutcome } from './types';
+import { onDevTunnel, staleDevTunnelReason } from '../../platform/dev-tunnel-stamp';
 import { PromptNeverLandedError, postPrompt, readRuntimeMessage } from './runtime-client';
 
 export async function continueSession(
@@ -100,6 +101,15 @@ export async function continueSession(
       sessionId,
       commandProjectId: command.projectId,
     });
+    return 'no-session';
+  }
+  // A box an earlier dev stack created calls a dead quick tunnel: it would take
+  // the prompt and never answer, and no start gives it the new URL. To this
+  // stack the session is gone: a channel starts its conversation over in a new
+  // session, which answers. A stable API URL (deployed envs) never reads the box.
+  const stale = await staleDevTunnelBox(sessionId);
+  if (stale) {
+    logger.warn('[session-lifecycle] refusing delivery to a box of an earlier dev tunnel', { sessionId, reason: stale });
     return 'no-session';
   }
   const userId = command.userId ?? (await resolveProjectAutomationActor(session.accountId));
@@ -269,4 +279,15 @@ export async function continueSession(
     await undoWake();
   }
   return outcome;
+}
+
+/** Why the session's box cannot answer: an earlier dev tunnel made it. No read unless this stack runs on a quick tunnel. */
+async function staleDevTunnelBox(sessionId: string): Promise<string | null> {
+  if (!onDevTunnel()) return null;
+  const [box] = await db
+    .select({ config: sessionSandboxes.config })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sessionId, sessionId))
+    .limit(1);
+  return box ? staleDevTunnelReason(box.config) : null;
 }

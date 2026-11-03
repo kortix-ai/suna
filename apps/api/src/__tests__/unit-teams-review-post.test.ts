@@ -1,25 +1,31 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
+const ordered: string[] = [];
+let failStage: string | null = null;
+let sentRef: unknown;
+
 const SESSION_ID = 'sess-review';
 
 let turn: Record<string, unknown> | null = null;
 const finalized: Array<Record<string, unknown>> = [];
 let ownedRef: Record<string, unknown> | null = null;
 mock.module('../channels/teams/turn', () => ({
-  loadTurn: async () => turn,
-  conversationRefForSession: async () => ownedRef,
+  loadTurn: async () => { ordered.push('load'); return turn; },
+  conversationRefForSession: async () => { ordered.push('reference'); return ownedRef; },
   finalizeTurn: async (_h: unknown, opts: Record<string, unknown>) => {
+    ordered.push('finalize');
+    if (failStage === 'finalize') throw new Error('finalize failed');
     finalized.push(opts);
   },
   deleteTurn: async () => {},
-  markTurnReplied: async () => {},
+  markTurnReplied: async () => { ordered.push('replied'); if (failStage === 'replied') throw new Error('replied failed'); },
 }));
 
 let cardOk = true;
 let textOk = true;
 const texts: string[] = [];
 mock.module('../channels/teams-api', () => ({
-  sendCard: async () => (cardOk ? 'activity-1' : null),
+  sendCard: async (ref: unknown) => { ordered.push('card'); sentRef = ref; return cardOk ? 'activity-1' : null; },
   sendText: async (_ref: unknown, text: string) => {
     texts.push(text);
     return textOk ? 'activity-2' : null;
@@ -36,6 +42,10 @@ const ITEM = {
 const load = async () => await import('../channels/teams/review');
 
 beforeEach(() => {
+  ordered.length = 0;
+  failStage = null;
+  sentRef = undefined;
+  ownedRef = null;
   turn = {
     sessionId: SESSION_ID,
     serviceUrl: 'https://smba.trafficmanager.net/emea/',
@@ -122,4 +132,33 @@ describe('postTeamsReviewCard', () => {
     expect(finalized).toEqual([]);
     ownedRef = null;
   });
+});
+
+describe('postTeamsReviewCard waiting-turn characterization', () => {
+  test('finalizes, marks replied, then posts to the exact stored reference', async () => {
+    const { postTeamsReviewCard } = await load();
+    await postTeamsReviewCard(SESSION_ID, { ...ITEM, kind: 'decision', risk: 'low' });
+    expect(ordered).toEqual(['load', 'finalize', 'replied', 'card']);
+    expect(sentRef).toEqual({
+      serviceUrl: turn?.serviceUrl, conversationId: turn?.conversationId,
+      botId: undefined, fromId: undefined, tenantId: turn?.tenantId, projectId: turn?.projectId,
+    });
+  });
+  test('uses the owned reference unchanged without a live turn', async () => {
+    turn = null;
+    ownedRef = { serviceUrl: 'https://example.test', conversationId: 'synthetic-conversation' };
+    const { postTeamsReviewCard } = await load();
+    await postTeamsReviewCard(SESSION_ID, { ...ITEM, kind: 'decision', risk: 'low' });
+    expect(ordered).toEqual(['load', 'reference', 'card']);
+    expect(sentRef).toBe(ownedRef);
+  });
+  for (const stage of ['finalize', 'replied']) {
+    test(`propagates ${stage} failure without posting`, async () => {
+      failStage = stage;
+      const { postTeamsReviewCard } = await load();
+      await expect(postTeamsReviewCard(SESSION_ID, { ...ITEM, kind: 'decision', risk: 'low' })).rejects.toThrow(`${stage} failed`);
+      expect(ordered).toEqual(stage === 'finalize' ? ['load', 'finalize'] : ['load', 'finalize', 'replied']);
+      expect(sentRef).toBeUndefined();
+    });
+  }
 });

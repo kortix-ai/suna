@@ -16,6 +16,9 @@ import {
   getSlackManifest,
   getSlackMode,
   getTelegramInstallation,
+  getDiscordInstallation,
+  getDiscordMode,
+  disconnectDiscord,
   getChannelUserPhoto,
   listChannelUsers,
   allowChannelUser,
@@ -32,6 +35,8 @@ import {
   type SlackMode,
   type ConnectTelegramInput,
   type TelegramInstallation,
+  type DiscordInstallation,
+  type DiscordMode,
   type ChannelAccessList,
   type ChannelAccessPlatform,
   type ChannelUser,
@@ -49,6 +54,8 @@ export type {
   SlackInstallation,
   SlackMode,
   TelegramInstallation,
+  DiscordInstallation,
+  DiscordMode,
   ChannelAccessPlatform,
   ChannelUser,
 };
@@ -320,6 +327,40 @@ export function useDisconnectTelegram() {
     onSuccess: (_data, projectId) => {
       qc.invalidateQueries({ queryKey: telegramKey(projectId) });
       qc.removeQueries({ queryKey: telegramUsersKey(projectId) });
+      qc.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
+    },
+  });
+}
+
+const discordKey = (projectId: string | null) => installKey('discord', projectId);
+
+/** Whether this deployment has the Kortix Discord application, and the "Add to Discord" link. */
+export function useDiscordMode(projectId: string | null) {
+  return useQuery({
+    queryKey: ['channels', 'discord-mode', projectId ?? 'none'],
+    enabled: !!projectId,
+    staleTime: 5 * 60_000,
+    queryFn: () => (projectId ? getDiscordMode(projectId) : ({ available: false, install_url: null } satisfies DiscordMode)),
+  });
+}
+
+/** The project's Discord server. Pass null to keep the query off. */
+export function useDiscordInstall(projectId: string | null) {
+  return useQuery({
+    queryKey: discordKey(projectId),
+    enabled: !!projectId,
+    staleTime: 30_000,
+    queryFn: () => (projectId ? getDiscordInstallation(projectId) : null),
+  });
+}
+
+export function useDisconnectDiscord() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) => disconnectDiscord(projectId),
+    onSuccess: (_data, projectId) => {
+      qc.invalidateQueries({ queryKey: discordKey(projectId) });
+      qc.removeQueries({ queryKey: usersKey('discord', projectId) });
       qc.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
     },
   });

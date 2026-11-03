@@ -85,6 +85,10 @@ jobs:
         run: |
           terraform -chdir=infra/terraform/modules/ecs-api init -backend=false -input=false -no-color
           terraform -chdir=infra/terraform/modules/ecs-api test -filter=tests/worker.tftest.hcl -no-color
+      - name: network egress subnets plan test (GitHub through the NAT)
+        run: |
+          terraform -chdir=infra/terraform/modules/network init -backend=false -input=false -no-color
+          terraform -chdir=infra/terraform/modules/network test -filter=tests/egress.tftest.hcl -no-color
       - name: audit archive tag readability regression test (Drata 8028)
         run: python3 infra/terraform/scripts/test_audit_archive_tag_readability.py
       - name: ALB TargetResponseTime alarm regression test
