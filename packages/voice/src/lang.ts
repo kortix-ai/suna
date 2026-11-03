@@ -144,9 +144,9 @@ async function translate(lang: string): Promise<Book | undefined> {
     }),
   }).catch(() => undefined)
   try {
-    const j = await res!.json()
+    const j = (await res!.json()) as { choices: { message: { content: string } }[] }
     chargeReply('lang', process.env.VOICE_LLM_MODEL ?? 'google/gemini-3.5-flash-lite', j)
-    const out = JSON.parse(j.choices[0].message.content) as Book
+    const out = JSON.parse(j.choices[0]!.message.content) as Book
     return out.acks?.length && out.doing ? { ...out, disclosure: DISCLOSURES[lang] ?? out.disclosure } : undefined
   } catch {
     return undefined

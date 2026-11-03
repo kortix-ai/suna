@@ -170,7 +170,10 @@ export function route(text: string, context = '', workspace = '', ms = 1200): Pr
       ],
     }),
   })
-  const overran = async (res: Response) => res.status === 400 && await res.clone().json().then((j: { error?: { code?: string; failed_generation?: string } }) => j?.error?.code === 'json_validate_failed' && !j.error.failed_generation, () => false)
+  const overran = async (res: Response) => res.status === 400 && await res.clone().json().then((body) => {
+    const j = body as { error?: { code?: string; failed_generation?: string } }
+    return j?.error?.code === 'json_validate_failed' && !j.error.failed_generation
+  }, () => false)
   const ask = (input = focused) => hedged((signal) => send(input, signal).then(async (res) => (await overran(res) ? send(input, signal, 1200) : res))
     .then((res) => metered(res, 'router', MODEL)), ROUTE_HEDGE, ac.signal, false, false) // a failed route is not retried (not cached: the next lookup tries again); the loser finishes unread
     .then(async (res) => { const json: unknown = await res.json(); return json })

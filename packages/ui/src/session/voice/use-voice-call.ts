@@ -147,11 +147,11 @@ export function useVoiceCall(sessionId: string) {
       }
     };
 
-    const dial = async (redial: boolean) => {
+    const dial = async (again: boolean) => {
       const token = await getAuthToken().catch(() => null);
       if (disposed) return;
       const opened = new WebSocket(
-        voiceCallSocketUrl(portUrl, { session: sessionId, token, redial, securePage: location.protocol === 'https:' }),
+        voiceCallSocketUrl(portUrl, { session: sessionId, token, redial: again, securePage: location.protocol === 'https:' }),
       );
       opened.binaryType = 'arraybuffer';
       socket = opened;

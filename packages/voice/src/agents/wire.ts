@@ -25,16 +25,19 @@ function headers(extra: Record<string, string> = {}): Record<string, string> {
 }
 const get = (path: string, signal?: AbortSignal) => fetch(url + path, { headers: headers(), signal })
 
-async function post(path: string, body: object) {
+/** A POST to the wire, its JSON answer typed by the caller (the wire's documented shape), null for 204. */
+async function post<T>(path: string, body: object): Promise<T> {
   const res = await fetch(url + path, { method: 'POST', headers: headers({ 'content-type': 'application/json' }), body: JSON.stringify(body) })
   if (!res.ok) throw new Error(`opencode ${path} ${res.status} ${await res.text()}`)
-  return res.status === 204 ? null : res.json()
+  return (res.status === 204 ? null : await res.json()) as T
 }
+/** A message as the wire answers it: its parts, and the assistant's info (cost, error). */
+type WireMessage = { info?: Parameters<typeof chargeAgent>[0] & { role?: string; error?: unknown }; parts: { type: string; text?: string; synthetic?: boolean }[] }
 
 let shared: Promise<string> | undefined
 /** `new` starts a fresh session; no id reuses OPENCODE_SESSION, or one session per process. */
 export function session(id?: string | null): Promise<string> {
-  const once = () => post('/session', { title: 'voice' }).then((s) => s.id as string)
+  const once = () => post<{ id: string }>('/session', { title: 'voice' }).then((s) => s.id)
   const create = () => once().catch(() => Bun.sleep(1000).then(once)) // a box still starting answers a second later
   if (id === 'new') return create()
   if (id) return Promise.resolve(id)
@@ -46,7 +49,7 @@ const text = (parts: { type: string; text?: string; synthetic?: boolean }[]) =>
 
 /** Runs one agent turn and returns its final text. */
 export async function ask(sid: string, request: string): Promise<string> {
-  const r = await post(`/session/${sid}/message`, { ...(model && { model }), parts: [{ type: 'text', text: request }] })
+  const r = await post<WireMessage>(`/session/${sid}/message`, { ...(model && { model }), parts: [{ type: 'text', text: request }] })
   if (r.info?.role === 'assistant') chargeAgent(r.info)
   return text(r.parts) || (r.info?.error ? `The agent failed: ${JSON.stringify(r.info.error).slice(0, 200)}` : 'Done.')
 }
