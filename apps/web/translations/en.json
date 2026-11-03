@@ -25001,6 +25001,27 @@
     "returnControl": "Return control",
     "escape": "Esc"
   },
+  "voiceCall": {
+    "title": "Voice call",
+    "start": "Start a voice call",
+    "end": "End call",
+    "connecting": "Connecting…",
+    "listening": "Listening",
+    "speaking": "Speaking",
+    "reconnecting": "Reconnecting…",
+    "you": "You",
+    "mute": "Mute microphone",
+    "unmute": "Unmute microphone",
+    "noMicrophone": "No microphone access. Allow the microphone for this site and call again.",
+    "shareScreen": "Share screen",
+    "stopSharing": "Stop sharing screen",
+    "ended": "Call ended",
+    "failed": "Could not start the call",
+    "lost": "Could not reconnect the call",
+    "unavailable": "This session's sandbox started before voice calls were turned on. Calls work from its next start.",
+    "callAgain": "Call again",
+    "close": "Close"
+  },
   "agentCapabilities": {
     "skillsTitle": "Skills",
     "skillsDescription": "Each skill this agent may load. Built-in skills come with Kortix.",

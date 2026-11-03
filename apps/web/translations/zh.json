@@ -25045,6 +25045,27 @@
     "returnControl": "交还控制权",
     "escape": "Esc"
   },
+  "voiceCall": {
+    "title": "语音通话",
+    "start": "开始语音通话",
+    "end": "结束通话",
+    "connecting": "正在连接…",
+    "listening": "正在聆听",
+    "speaking": "正在说话",
+    "reconnecting": "正在重新连接…",
+    "you": "你",
+    "mute": "麦克风静音",
+    "unmute": "取消麦克风静音",
+    "noMicrophone": "无法访问麦克风。请为此网站允许使用麦克风，然后重新呼叫。",
+    "shareScreen": "共享屏幕",
+    "stopSharing": "停止共享屏幕",
+    "ended": "通话已结束",
+    "failed": "无法开始通话",
+    "lost": "无法重新连接通话",
+    "unavailable": "此会话的沙盒在语音通话开启之前启动。从它下次启动起即可通话。",
+    "callAgain": "重新呼叫",
+    "close": "关闭"
+  },
   "agentMounts": {
     "lead": "此智能体的会话从“文件”中挂载的文件夹。更改立即生效，并适用于所有新会话。",
     "mount": "Mount folder",

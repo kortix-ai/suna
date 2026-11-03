@@ -25045,6 +25045,27 @@
     "returnControl": "Kontrolle zurückgeben",
     "escape": "Esc"
   },
+  "voiceCall": {
+    "title": "Sprachanruf",
+    "start": "Sprachanruf starten",
+    "end": "Anruf beenden",
+    "connecting": "Verbinden…",
+    "listening": "Hört zu",
+    "speaking": "Spricht",
+    "reconnecting": "Verbindung wird wiederhergestellt…",
+    "you": "Du",
+    "mute": "Mikrofon stummschalten",
+    "unmute": "Mikrofon einschalten",
+    "noMicrophone": "Kein Zugriff auf das Mikrofon. Erlaube das Mikrofon für diese Website und rufe erneut an.",
+    "shareScreen": "Bildschirm teilen",
+    "stopSharing": "Bildschirmfreigabe beenden",
+    "ended": "Anruf beendet",
+    "failed": "Der Anruf konnte nicht gestartet werden",
+    "lost": "Der Anruf konnte nicht wiederhergestellt werden",
+    "unavailable": "Die Sandbox dieser Sitzung wurde gestartet, bevor Sprachanrufe aktiviert wurden. Anrufe funktionieren ab ihrem nächsten Start.",
+    "callAgain": "Erneut anrufen",
+    "close": "Schließen"
+  },
   "agentMounts": {
     "lead": "Ordner aus Dateien, die Sitzungen dieses Agenten einbinden. Änderungen gelten sofort für jede neue Sitzung.",
     "mount": "Mount folder",

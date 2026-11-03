@@ -25045,6 +25045,27 @@
     "returnControl": "Rendre le contrôle",
     "escape": "Échap"
   },
+  "voiceCall": {
+    "title": "Appel vocal",
+    "start": "Démarrer un appel vocal",
+    "end": "Terminer l’appel",
+    "connecting": "Connexion…",
+    "listening": "À l’écoute",
+    "speaking": "Parle",
+    "reconnecting": "Reconnexion…",
+    "you": "Vous",
+    "mute": "Couper le micro",
+    "unmute": "Réactiver le micro",
+    "noMicrophone": "Pas d’accès au micro. Autorisez le micro pour ce site et rappelez.",
+    "shareScreen": "Partager l’écran",
+    "stopSharing": "Arrêter le partage d’écran",
+    "ended": "Appel terminé",
+    "failed": "Impossible de démarrer l’appel",
+    "lost": "Impossible de rétablir l’appel",
+    "unavailable": "Le bac à sable de cette session a démarré avant l’activation des appels vocaux. Les appels fonctionnent à partir de son prochain démarrage.",
+    "callAgain": "Rappeler",
+    "close": "Fermer"
+  },
   "agentMounts": {
     "lead": "Dossiers de Fichiers montés par les sessions de cet agent. Une modification s’applique aussitôt à chaque nouvelle session.",
     "mount": "Mount folder",

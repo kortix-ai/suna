@@ -25045,6 +25045,27 @@
     "returnControl": "Restituisci il controllo",
     "escape": "Esc"
   },
+  "voiceCall": {
+    "title": "Chiamata vocale",
+    "start": "Avvia una chiamata vocale",
+    "end": "Termina chiamata",
+    "connecting": "Connessione…",
+    "listening": "In ascolto",
+    "speaking": "Sta parlando",
+    "reconnecting": "Riconnessione…",
+    "you": "Tu",
+    "mute": "Disattiva il microfono",
+    "unmute": "Riattiva il microfono",
+    "noMicrophone": "Nessun accesso al microfono. Consenti il microfono per questo sito e richiama.",
+    "shareScreen": "Condividi schermo",
+    "stopSharing": "Interrompi condivisione schermo",
+    "ended": "Chiamata terminata",
+    "failed": "Impossibile avviare la chiamata",
+    "lost": "Impossibile riconnettere la chiamata",
+    "unavailable": "La sandbox di questa sessione è stata avviata prima che le chiamate vocali fossero attivate. Le chiamate funzionano dal suo prossimo avvio.",
+    "callAgain": "Richiama",
+    "close": "Chiudi"
+  },
   "agentMounts": {
     "lead": "Cartelle di File montate dalle sessioni di questo agente. Le modifiche si applicano subito a ogni nuova sessione.",
     "mount": "Mount folder",
