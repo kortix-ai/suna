@@ -49,5 +49,6 @@ export const routed = (service: string, path: string) => ((r = router()) => r &&
 
 /** The models base's speech and voices endpoints (OpenAI-shaped speech, streamed PCM), for the `models` voice. */
 export const speechUrl = (): string => `${base()}/audio/speech`
-export const voicesUrl = (): string => `${base()}/audio/voices`
+// The gateway finds the voices' upstream from a speech model's id.
+export const voicesUrl = (): string => `${base()}/audio/voices?model=${encodeURIComponent(process.env.INWORLD_MODEL ?? 'inworld-tts-2')}`
 export const modelsHeaders = (): Record<string, string> => baseHeaders({})
