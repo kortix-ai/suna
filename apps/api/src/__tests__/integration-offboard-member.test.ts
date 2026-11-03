@@ -296,6 +296,7 @@ describe('the YOLO token ends with the membership', () => {
     });
     expect(removed.status).toBe(200);
     expect(await attributeYoloToken(removedToken)).toBeNull();
+    expect(await attributeYoloToken(leftToken)).toEqual({ userId: world.peer, accountId: world.team });
 
     const left = await app.request(`/v1/accounts/${world.team}/leave`, {
       method: 'POST',

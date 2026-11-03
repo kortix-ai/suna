@@ -7,7 +7,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { accountMembers, creditAccounts, creditLedger, enterpriseContracts } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
-import { runAccessSweep } from '../billing/services/access-notices';
+import { runAccessSweep } from '../billing/services/access-sweep';
 import { createContract, endContract, getActiveContract } from '../billing/services/enterprise-contracts';
 import { resolveBillingFromRow } from '../billing/services/resolve-billing';
 import { setOwnerAlertSenderForTest } from '../billing/services/owner-alerts';
@@ -134,4 +134,19 @@ describe('a manual Enterprise license', () => {
     expect(customerEmails().map((m) => m.category)).toEqual(['billing-contract-ended']);
     expect(opsEmails().map((m) => m.category)).toEqual(['billing-contract-ended-ops']);
   });
+});
+test('the sweep expires an overdue manual license once, preserves money and gives SSO/SCIM grace', async () => {
+  const contract = await createContract({ accountId: licensed.account_id, licenseUsd: 100, collection: 'manual' });
+  await db.update(enterpriseContracts).set({ endsAt: new Date(Date.now() - DAY).toISOString() }).where(eq(enterpriseContracts.id, contract.id));
+  const [before] = await db.select().from(creditAccounts).where(eq(creditAccounts.accountId, licensed.account_id));
+  expect((await runAccessSweep()).contractsEnded).toBe(1);
+  const [after] = await db.select().from(creditAccounts).where(eq(creditAccounts.accountId, licensed.account_id));
+  expect([after?.tier, after?.balance, after?.nonExpiringCredits]).toEqual([before?.tier, before?.balance, before?.nonExpiringCredits]);
+  const resolved = resolveBillingFromRow(after);
+  expect(resolved.enterprise).toBe('off');
+  expect(resolved.entitlements.sso).toBe(true);
+  expect(resolved.entitlements.scim).toBe(true);
+  expect(customerEmails().map((m) => m.category)).toEqual(['billing-contract-ended']);
+  expect((await runAccessSweep()).contractsEnded).toBe(0);
+  expect(customerEmails()).toHaveLength(1);
 });

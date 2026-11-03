@@ -1,3 +1,4 @@
+import { notifyContractEnded } from './access-notices';
 import { createHostedCheckout } from './hosted-checkout';
 /**
  * Enterprise license contracts: an annual license fee that turns the
@@ -137,42 +138,31 @@ function addMonths(from: Date, months: number): Date {
 
 // ─── Stripe plumbing ────────────────────────────────────────────────────────
 
-// replica-local: Stripe product ids of the two contract line items, cached per process.
-const productIds = new Map<string, string>();
+// replica-local: Stripe license product id, cached per process.
+let licenseProductId: string | undefined;
 
-/**
- * The Stripe product of one contract line item, found by metadata or created
- * once. Every contract's custom yearly price hangs off these two products, so
- * revenue reports group by them.
- */
-async function contractProductId(kind: 'license' | 'credits'): Promise<string> {
-  const cached = productIds.get(kind);
-  if (cached) return cached;
+/** The Stripe license product, found by metadata or created once. */
+async function contractProductId(): Promise<string> {
+  if (licenseProductId) return licenseProductId;
   const stripe = getStripe();
-  const tag = `enterprise_${kind}`;
-  const found = await stripe.products.search({ query: `metadata['kortix_product']:'${tag}'`, limit: 1 });
+  const found = await stripe.products.search({ query: "metadata['kortix_product']:'enterprise_license'", limit: 1 });
   const id =
     found.data[0]?.id ??
     (
       await stripe.products.create({
-        name: kind === 'license' ? 'Kortix Enterprise license' : 'Kortix Enterprise credits',
-        metadata: { kortix_product: tag },
+        name: 'Kortix Enterprise license',
+        metadata: { kortix_product: 'enterprise_license' },
       })
     ).id;
-  productIds.set(kind, id);
+  licenseProductId = id;
   return id;
 }
 
-/** The yearly line items of a contract: license and credits, each skipped at $0. */
-async function contractLineItems(
-  contract: ContractRow,
-): Promise<Array<{ product: string; amountCents: number; intervalCount: number }>> {
-  const items: Array<{ product: string; amountCents: number; intervalCount: number }> = [];
-  const intervalCount = contract.termMonths;
+/** The license line item of a contract, skipped at $0. */
+async function contractLineItems(contract: ContractRow) {
   // A license carries no credits: credits are bought on the Credits plan.
   const usd = Number(contract.licenseUsd);
-  if (usd > 0) items.push({ product: await contractProductId('license'), amountCents: Math.round(usd * 100), intervalCount });
-  return items;
+  return usd > 0 ? [{ product: await contractProductId(), amountCents: Math.round(usd * 100), intervalCount: contract.termMonths }] : [];
 }
 
 function contractMetadata(contract: ContractRow): Record<string, string> {
@@ -416,7 +406,6 @@ export async function endContract(
     { userId: actorUserId, action: `enterprise.contract.end.${reason}` },
   );
   invalidateCaches(contract.accountId);
-  const { notifyContractEnded } = await import('./access-notices');
   await notifyContractEnded(contract.accountId, graceEnds).catch((err) =>
     logger.warn('[enterprise-contracts] contract-ended notice failed', { error: (err as Error).message }),
   );

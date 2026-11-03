@@ -139,7 +139,7 @@ billingApp.openapi(
     if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
       return c.json({ skipped: true, reason: 'billing disabled' });
     }
-    const { runAccessSweep } = await import('./services/access-notices');
+    const { runAccessSweep } = await import('./services/access-sweep');
     const result = await runAccessSweep();
     return c.json({
       contracts_ended: result.contractsEnded,
