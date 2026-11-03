@@ -7,7 +7,7 @@ import { db } from '../shared/db';
 import { deliverSalesEvent, SALES_MAX_ATTEMPTS, salesRetryDelay } from './sales-delivery';
 
 /** Claims commit before HTTP. A crash leaves a lease that another worker reclaims. */
-export async function processSalesOutbox(database: Database = db): Promise<void> {
+export async function processSalesOutbox(database: Database = db, enrich: typeof enrichSalesCustomer = enrichSalesCustomer): Promise<void> {
   if (!config.SIGNUP_WEBHOOK_URL || !config.SIGNUP_WEBHOOK_SECRET) return;
   const token = randomUUID();
   const rows = await database.execute<{ event_id: string; payload: Record<string, unknown>; attempts: number }>(sql`
@@ -20,7 +20,7 @@ export async function processSalesOutbox(database: Database = db): Promise<void>
     ) RETURNING event_id, payload, attempts
   `);
   for (const row of rows) {
-    const payload = await enrichSalesCustomer(row.payload);
+    const payload = await enrich(row.payload);
     // Slow billing reads must not dispatch a row reclaimed by another worker.
     const owned = await database.execute(sql`
       UPDATE kortix.sales_event_outbox SET available_at = now() + interval '5 minutes'
