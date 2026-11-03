@@ -110,6 +110,7 @@ import {
 } from '../component/channel-row';
 import { TeamsChannelMock, TeamsConnectCard } from '../component/teams-connect-card';
 import { TelegramChannelRow } from '../component/telegram-channel-row';
+import { DiscordChannelRow } from '../component/discord-channel-row';
 import { SlackChannelMock, SlackConnectCard } from '../component/slack-connect-card';
 import { ChannelHeroLayoutProvider } from '../component/channel-hero-frame';
 import { EmailHero } from '../../connectors/detail/email-inboxes';
@@ -252,6 +253,8 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
         return <EmailHero projectId={projectId} canWrite={canWrite} />;
       case 'telegram':
         return <TelegramChannelRow projectId={projectId} canWrite={canWrite} />;
+      case 'discord':
+        return <DiscordChannelRow projectId={projectId} canWrite={canWrite} />;
       default: {
         // A new channel id fails here until it has a hero.
         const _exhaustive: never = pf;
