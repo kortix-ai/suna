@@ -128,6 +128,8 @@ jobs:
             git --version
             exit 0
           fi
+          # Minimal runner images can start with empty APT package indexes.
+          sudo apt-get update -qq
           command -v add-apt-repository >/dev/null || sudo apt-get install -y -qq --no-install-recommends software-properties-common
           sudo add-apt-repository -y ppa:git-core/ppa
           sudo apt-get update -qq
