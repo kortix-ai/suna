@@ -616,7 +616,7 @@ describe('parseChannelMessage — Email', () => {
   });
 
   // Every deployed build reads an unknown word as Slack (`legacyParse`); this build does too.
-  test.each(['Discord', 'email'])('a platform word this build does not know (%s) still reads as Slack', (word) => {
+  test.each(['Matrix', 'email'])('a platform word this build does not know (%s) still reads as Slack', (word) => {
     const prompt = `[${word} · #general · message from sam]\nhello`;
     expect(parseChannelMessage(prompt)?.platform).toBe('Slack');
     expect(parseChannelMessage(prompt)).toEqual(legacyParse(prompt) as never);

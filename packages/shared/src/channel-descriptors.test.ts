@@ -27,6 +27,6 @@ describe('channel descriptors', () => {
 
   test('only a descriptor id is a channel platform', () => {
     for (const id of CHANNEL_PLATFORM_IDS) expect(isChannelPlatform(id)).toBe(true);
-    for (const other of ['discord', 'Slack', '', 'constructor', '__proto__', 'toString']) expect(isChannelPlatform(other)).toBe(false);
+    for (const other of ['matrix', 'Discord', 'Slack', '', 'constructor', '__proto__', 'toString']) expect(isChannelPlatform(other)).toBe(false);
   });
 });

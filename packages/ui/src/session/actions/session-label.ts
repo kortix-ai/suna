@@ -24,7 +24,7 @@ import {
 /**
  * Where a session came from, derived from the creation metadata stamped by
  * the API: channel sessions carry `metadata.source` ('slack' | 'telegram' |
- * 'teams' | 'email'),
+ * 'teams' | 'email' | 'discord'),
  * trigger fires carry `metadata.trigger_source` ('cron' | 'webhook' | 'event' |
  * 'manual') + `trigger_type`/`trigger_slug`. Everything else is a regular
  * chat the user started.
@@ -33,6 +33,7 @@ export type SessionSourceKind =
   | 'chat'
   | 'slack'
   | 'telegram'
+  | 'discord'
   | 'teams'
   | 'email'
   | 'schedule'
@@ -71,6 +72,8 @@ export function sessionSource(session: ProjectSession, tI18nComplete: UiTranslat
     return { kind: 'slack', label: tI18nComplete.raw('textb27fb38ba323'), triggerSlug: null };
   if (source === 'telegram')
     return { kind: 'telegram', label: tI18nComplete.raw('textacdd1e734125'), triggerSlug: null };
+  if (source === 'discord')
+    return { kind: 'discord', label: tI18nComplete.raw('text053bc65874ad'), triggerSlug: null };
   if (source === 'teams')
     return { kind: 'teams', label: tI18nComplete.raw('texta7b52b269a23'), triggerSlug: null };
   if (source === 'email')
@@ -192,6 +195,7 @@ export type SessionSourceFilter =
   | 'shared'
   | 'slack'
   | 'telegram'
+  | 'discord'
   | 'teams'
   | 'email'
   | 'schedule'
@@ -204,6 +208,7 @@ export const SESSION_SOURCE_FILTERS: Array<{ value: SessionSourceFilter; label: 
   { value: 'shared', label: 'Shared' },
   { value: 'slack', label: 'Slack' },
   { value: 'telegram', label: 'Telegram' },
+  { value: 'discord', label: 'Discord' },
   { value: 'teams', label: 'Teams' },
   { value: 'email', label: 'Email' },
   { value: 'schedule', label: 'Scheduled' },

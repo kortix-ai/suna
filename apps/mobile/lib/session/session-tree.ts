@@ -148,6 +148,7 @@ const CHANNEL_ICONS: Record<string, StarterIcon> = {
   email: 'envelope',
   teams: 'chat',
   telegram: 'chat',
+  discord: 'chat',
 };
 
 /**
