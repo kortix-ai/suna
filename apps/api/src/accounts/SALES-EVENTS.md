@@ -35,3 +35,14 @@ web route. Keep delivery paused until both the trusted-writer migration and the
 server-side route are present. Rollback must keep the anonymous-role exclusion;
 restoring the anonymous web writer disables demo events rather than weakening
 that boundary.
+
+### Database reversal boundary
+
+These are forward-only additive migrations, not automatically reversible migrations.
+Unsetting the URL pauses delivery; it does **not** reverse the database changes.
+The supported application rollback retains the outbox, queued payloads, producers
+and trusted-writer restriction. Do not drop the table or triggers as an incident
+rollback: that loses queued evidence or stops capture. A complete database reversal
+requires a separately reviewed migration, an exported/reconciled outbox, and a
+replacement capture path before disabling the producers. No down-migration SQL is
+provided or authorized by this change.
