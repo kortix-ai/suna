@@ -21920,6 +21920,8 @@
     "discordUnavailable": "Discord is not set up on this Kortix deployment.",
     "discordPitch": "Chat with your agent in your Discord server.",
     "discordAddToDiscord": "Add to Discord",
+    "discordConnectedLede": "Mention @Kortix in a channel, or message it directly. It answers the people you allow.",
+    "discordOpen": "Open Discord",
     "discordDisconnected": "Discord disconnected",
     "discordUsersDescription": "Only these people can talk to the bot. When someone else mentions or messages it, they show up here.",
     "discordUsersEmptyDescription": "Ask someone to mention or message the bot, then allow their request or add their user ID.",

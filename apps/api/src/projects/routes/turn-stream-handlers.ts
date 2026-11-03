@@ -13,13 +13,13 @@ import { projectSessions } from '@kortix/db';
 import { genuiToMarkdown } from '@kortix/sdk/genui';
 import { and, eq } from 'drizzle-orm';
 import { type TeamsFormSpec, buildFormCard } from '../../channels/teams/cards';
-import { notifySessionChannel } from '../../channels/core/session-notice';
+import { notifySessionChannel, settleSessionChat } from '../../channels/core/session-notice';
 import {
   relayTurnAnswerDetailed,
   relayTurnEnd,
   relayTurnStepDetailed,
 } from '../../channels/turn-relay';
-import { notifySessionEvent, turnEndPushType } from '../../notifications/session-push';
+import { chatTurnSettlement, notifySessionEvent, turnEndPushType } from '../../notifications/session-push';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { trackDetached } from '../../shared/drain';
@@ -511,6 +511,15 @@ async function publishTurnEnd(
         .then((promptSource) => notifySessionChannel({ kind: 'run_failed', sessionId, error: errorInfo, promptSource })),
     );
   }
+  // The session went idle: its chat clears what it showed while the agent worked (Discord's ⏳).
+  const settlement = chatTurnSettlement({
+    outcome: turnCompletion.outcome,
+    status,
+    errorName: errorInfo?.name,
+    childSession,
+    promoted: promotedPromptId !== null,
+  });
+  if (settlement) trackDetached(settleSessionChat(sessionId, settlement));
   return c.json({
     ok,
     turn_completion: {

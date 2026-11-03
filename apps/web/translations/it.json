@@ -21920,6 +21920,8 @@
     "discordUnavailable": "Discord non è configurato su questa installazione di Kortix.",
     "discordPitch": "Chatta con il tuo agente nel tuo server Discord.",
     "discordAddToDiscord": "Aggiungi a Discord",
+    "discordConnectedLede": "Menziona @Kortix in un canale o scrivigli direttamente. Risponde alle persone che autorizzi.",
+    "discordOpen": "Apri Discord",
     "discordDisconnected": "Discord disconnesso",
     "discordUsersDescription": "Solo queste persone possono parlare con il bot. Quando qualcun altro lo menziona o gli scrive, compare qui.",
     "discordUsersEmptyDescription": "Chiedi a qualcuno di menzionare il bot o di scrivergli, poi consenti la sua richiesta o aggiungi il suo ID utente.",
