@@ -35,6 +35,12 @@ export const WILDCARD_CADDY_IMAGE = 'kortix/caddy:2.10.2-acmedns-0.7.0';
 export const ACME_DNS_IMAGE = 'joohoi/acme-dns:v2.0.2';
 /** The acme-dns API inside the Compose network. Caddy calls it; nothing outside the box can. */
 export const ACME_DNS_SERVER_URL = 'http://acme-dns';
+/**
+ * The same API published on the box's loopback for the CLI. A fixed address, so
+ * the CLI SDK-boundary lint can allow exactly this origin
+ * (apps/cli/scripts/sdk-boundary.mjs) and no other loopback port.
+ */
+export const ACME_DNS_LOOPBACK_URL = 'http://127.0.0.1:13750';
 /** Where the caddy container reads one credentials file per wildcard base. */
 export const CADDY_ACME_DNS_DIR = '/etc/caddy/acme-dns';
 

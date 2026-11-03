@@ -31,7 +31,9 @@ import { useProjectSessionHref } from '../../internal/lib/navigation/session-hre
 import { cn } from '../../lib/utils';
 import { getFilename } from '../../internal/lib/utils/file-utils';
 import { openTabAndNavigate } from '../../internal/stores/tab-store';
-import { useUiShallowNavigate } from '../../providers/ui-provider';
+import { useUiShallowNavigate, useUiViewer } from '../../providers/ui-provider';
+import { MessageSenderAbove } from '../participants/session-participants';
+import { viewerAuthor } from '../turn/message-author';
 
 // `BUBBLE_SURFACE` / `BUBBLE_TEXT` are imported from `turn/user-message.tsx`,
 // not redeclared here. A local copy drifted twice already — first the dark
@@ -204,36 +206,46 @@ function OptimisticUserBubble({
     return [...pastes.map(pastedAttachment), ...fromText, ...fromStaged];
   }, [pastes, files, deferPreview, staged]);
 
+  // This tab sent the prompt: the viewer's avatar sits above it, as on the
+  // server turn that replaces it (`MessageSenderAbove`).
+  const viewer = useUiViewer();
+  const sender = useMemo(() => {
+    const author = viewerAuthor(viewer);
+    return author?.kind === 'member' ? author : null;
+  }, [viewer]);
+
   return (
     <div className="ml-auto flex w-full max-w-[80%] flex-col items-end gap-2 self-end">
       {attachments.length > 0 && (
         <MessageAttachments attachments={attachments} status={uploadStatus} />
       )}
       {(cleanText || quotedPieces) && (
-        <div className={cn(BUBBLE_SURFACE, 'w-fit overflow-hidden')}>
-          {quotedPieces ? (
-            <QuotedMessageBody
-              pieces={quotedPieces}
-              renderText={(runText) => (
+        <MessageSenderAbove sender={sender} reserve>
+          <div className={cn(BUBBLE_SURFACE, 'w-fit overflow-hidden rounded-tr-[calc(var(--radius)-6px)]')}>
+            {quotedPieces ? (
+              <QuotedMessageBody
+                pieces={quotedPieces}
+                renderText={(runText) => (
+                  <HighlightMentions
+                    text={runText}
+                    sessions={sessions}
+                    agentNames={agentNames}
+                    onFileClick={onFileClick}
+                  />
+                )}
+              />
+            ) : (
+              <p className={BUBBLE_TEXT}>
                 <HighlightMentions
-                  text={runText}
+                  text={cleanText}
                   sessions={sessions}
                   agentNames={agentNames}
                   onFileClick={onFileClick}
                 />
-              )}
-            />
-          ) : (
-            <p className={BUBBLE_TEXT}>
-              <HighlightMentions
-                text={cleanText}
-                sessions={sessions}
-                agentNames={agentNames}
-                onFileClick={onFileClick}
-              />
-            </p>
-          )}
-        </div>
+              </p>
+            )}
+          </div>
+        </MessageSenderAbove>
       )}
       {/* The same row the server turn renders, for the same reason the
           attachments strip is shared: anything shaped differently on one side

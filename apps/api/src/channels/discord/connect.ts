@@ -95,9 +95,10 @@ export async function bindDiscordChannel(conversation: DiscordConversation, proj
  * The first project a conversation runs, kept: when a second project installs
  * the server (or allows the person of a DM), the channels already in use stay
  * with the first. Never takes a channel another project holds, except a DM
- * whose project removed its one person (`senderId`) from its list.
+ * whose project removed its one person (`senderId`) from its list. A DM is
+ * named after its person (`senderName`), as the Channels page lists it.
  */
-export async function claimDiscordChannel(conversation: DiscordConversation, projectId: string, senderId: string): Promise<void> {
+export async function claimDiscordChannel(conversation: DiscordConversation, projectId: string, senderId: string, senderName?: string): Promise<void> {
   if (conversation.direct) {
     // A DM's row may sit under any guild: one row at most.
     const rows = await db
@@ -116,7 +117,7 @@ export async function claimDiscordChannel(conversation: DiscordConversation, pro
       workspaceId: conversation.guildId,
       channelId: conversation.settingsId,
       projectId,
-      channelName: conversation.direct ? 'direct message' : conversation.channelName ? `#${conversation.channelName}` : null,
+      channelName: conversation.direct ? clip(senderName || 'direct message', 100) : conversation.channelName ? `#${conversation.channelName}` : null,
       channelType: conversation.direct ? 'dm' : 'channel',
     })
     .onConflictDoNothing({ target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId] });

@@ -1051,7 +1051,7 @@ A mention or a direct message from an allowed user starts a session. Anyone else
 - **One thread is one session.** A mention in a text or announcement channel starts a thread on the message. A later mention in that thread continues the session. A direct message with the app is one session until `/new`, and every message in it reaches the agent. In a channel that has no threads, such as a voice channel's chat, the channel is the conversation.
 - **In a server, only a mention reaches the agent, as in Slack.** People talk in the thread without the agent until someone mentions it. A reply to the app counts only with **@mention** on; when it is off, Kortix says so once. An edit that adds a mention within 15 minutes counts. A self-hosted Kortix whose Discord application has the Message Content intent can let every message in a Kortix thread through (`DISCORD_MESSAGE_CONTENT`).
 - **Without the Message Content intent, the agent cannot read other people's messages.** Discord shows it only the messages that mention it, direct messages and its own. To ask about a conversation, paste the part you mean.
-- **Slash commands run in Kortix, not in the agent:** `/help`, `/status`, `/new`, `/stop`, `/model`, `/agent` and `/connect`. They work in a channel, in a thread and in a direct message, and also typed after a mention. A command in a channel works on the channel: `/model` there sets the model of every thread in it.
+- **Slash commands run in Kortix, not in the agent:** `/help`, `/status`, `/new`, `/stop`, `/model`, `/agent` and `/connect`. They work in a channel, in a thread and in a direct message, and also typed after a mention. A command in a channel works on the channel: `/model` there sets the model of every thread in it. On the web, **N channels** on the Discord card lists every channel and direct message Kortix answered in; pick one to set its agent and model.
 - **Commands open menus.** `/model` and `/agent` list the choices in a menu, with **More ›** and **‹ Back** between pages. `/help` and `/status` add buttons that run a command. A pick, **Stop** or **New conversation** works once. A press on an old menu answers "This menu is out of date": use the command again.
 - **Questions come with buttons.** One question shows one button per option, 4 per page, with **‹ Back**, **More ›** and, where you pick several, **Done ›**. Several questions show one at a time. A notice that only you see confirms a tap, or says why it changed nothing.
 - **Photos, files and voice messages reach the agent**, up to 8 MB per message, as in Telegram. So do a forwarded message's text and files, and a poll's question and answers.
@@ -1308,6 +1308,18 @@ Two things to know:
 - Your server must be reachable from the internet, so those sandboxes can call back.
 
 A self-hosted instance has billing off by default. A Kortix Enterprise license turns on the Enterprise features for every account on it.
+
+#### Brand your instance
+
+With an Enterprise license, your instance can show your company's name and logo instead of Kortix, including on the sign-in page.
+
+1. Sign in with an account owner or admin of your company account.
+2. Open **Account settings** → **Branding**.
+3. Enter the product name, then upload the logo, the square icon and the favicon. Each image can have a dark version.
+
+The sign-in page then shows your logo and "Welcome to" followed by your product name. The browser tab shows your name and icon. Every account on the instance without its own branding shows the same. A change reaches the sign-in page within 30 seconds.
+
+The sign-in page uses the oldest account with branding among the company accounts and the personal accounts of the instance's admins. The admins are the addresses in `KORTIX_PLATFORM_ADMIN_EMAILS`, the admin email you gave at setup. Branding that another person sets on their own personal account never changes the sign-in page.
 
 ### Set it up
 

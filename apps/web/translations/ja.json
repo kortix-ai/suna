@@ -2864,7 +2864,7 @@
       "sending": "送信中..."
     },
     "unified": {
-      "welcome": "Kortix CompanyOSへようこそ",
+      "welcome": "{name}へようこそ",
       "email": "メールアドレス",
       "emailPlaceholder": "メールアドレスを入力",
       "password": "パスワード",
@@ -21559,7 +21559,7 @@
     "createProjectInstead": "代わりに新しいプロジェクトを作成"
   },
   "projectSelector": {
-    "welcome": "Kortix CompanyOS へようこそ",
+    "welcome": "{name} へようこそ",
     "welcomeBack": "おかえりなさい",
     "descriptionNew": "最初のプロジェクトを作成するか、チームが共有したプロジェクトに参加してください。",
     "descriptionReturning": "プロジェクトを開くか、新しく作成してください。",

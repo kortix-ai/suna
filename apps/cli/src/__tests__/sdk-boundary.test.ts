@@ -46,6 +46,12 @@ describe('scanSource raw-kortix-fetch', () => {
     expect(scanSource(source)).toEqual([]);
   });
 
+  test("allows a self-host's own acme-dns API on its one loopback port, and no other loopback port", () => {
+    expect(scanSource("await fetch('http://127.0.0.1:13750/register', { method: 'POST' })")).toEqual([]);
+    expect(scanSource("await fetch('http://127.0.0.1:8008/v1/projects')").map((v) => v.rule)).toEqual(['raw-kortix-fetch']);
+    expect(scanSource("await fetch('http://127.0.0.1:137500/x')").map((v) => v.rule)).toEqual(['raw-kortix-fetch']);
+  });
+
   test('allows a template whose static prefix is an allowed origin', () => {
     const source = 'await fetch(`https://hub.docker.com/v2/repositories/${repo}/tags`)';
 

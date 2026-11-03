@@ -2864,7 +2864,7 @@
       "sending": "Envoi..."
     },
     "unified": {
-      "welcome": "Bienvenue sur Kortix CompanyOS",
+      "welcome": "Bienvenue sur {name}",
       "email": "E-mail",
       "emailPlaceholder": "Votre adresse e-mail",
       "password": "Mot de passe",
@@ -21559,7 +21559,7 @@
     "createProjectInstead": "Créer plutôt un nouveau projet"
   },
   "projectSelector": {
-    "welcome": "Bienvenue sur Kortix CompanyOS",
+    "welcome": "Bienvenue sur {name}",
     "welcomeBack": "Bon retour",
     "descriptionNew": "Créez votre premier projet ou rejoignez un projet partagé par votre équipe.",
     "descriptionReturning": "Ouvrez un projet ou créez-en un nouveau.",

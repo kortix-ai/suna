@@ -1,6 +1,8 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { accessRequests } from '@kortix/db';
 import { sql } from 'drizzle-orm';
+import { EffectiveBrandingSchema } from '../accounts/core/app';
+import { instanceBranding } from '../accounts/instance-branding';
 import { config } from '../config';
 import { errors, json, makeOpenApiApp } from '../openapi';
 import { ssoEnforcedForEmail } from '../repositories/sso';
@@ -38,6 +40,25 @@ accessControlApp.openapi(
     },
   }),
   (c) => c.json({ signupsEnabled: areSignupsEnabled() }),
+);
+
+// The instance branding for signed-out pages (see accounts/instance-branding.ts).
+// Public: a product name and logo URLs are what the sign-in page shows anyway.
+// `null` on every instance without the enterprise license, the cloud included.
+accessControlApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/branding',
+    tags: ['access'],
+    summary: 'Instance branding for the sign-in page',
+    responses: {
+      200: json(
+        z.object({ branding: EffectiveBrandingSchema }),
+        'The instance branding, or null for default Kortix',
+      ),
+    },
+  }),
+  async (c) => c.json({ branding: await instanceBranding() }),
 );
 
 // `mode` drives the unified auth flow: 'signin' when the address already has
