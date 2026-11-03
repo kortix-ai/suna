@@ -1088,18 +1088,18 @@ jobs:
           push: true
           cache-from: type=registry,ref=kortix/kortix-frontend:dev-buildcache
           cache-to: type=registry,ref=kortix/kortix-frontend:dev-buildcache,mode=max
+          # :dev-<sha8> is pushed by this build, like the API's. A retag that
+          # read :dev-latest back from Docker Hub 5 s after the push got the
+          # previous run's image (2026-11-03: dev-68fd3646 served 01:19 build
+          # output of d34d3283, and verify timed out on the commit).
           tags: |
             kortix/kortix-frontend:dev-latest
-      - name: Retag :dev-latest → :dev-<sha8>
+            kortix/kortix-frontend:dev-${{ needs.detect-changes.outputs.sha8 }}
+      - name: Name the pushed image
         id: tag
         run: |
           set -euo pipefail
-          SHA8="${GITHUB_SHA::8}"
-          docker buildx imagetools create \
-            --tag "kortix/kortix-frontend:dev-${SHA8}" \
-            "kortix/kortix-frontend:dev-latest"
-          echo "image=kortix/kortix-frontend:dev-${SHA8}" >> "$GITHUB_OUTPUT"
-          echo "Pushed kortix/kortix-frontend:dev-${SHA8} + :dev-latest"
+          echo "image=kortix/kortix-frontend:dev-${{ needs.detect-changes.outputs.sha8 }}" >> "$GITHUB_OUTPUT"
 
   deploy-web-ecs:
     name: Deploy frontend to dev (ECS Fargate)
