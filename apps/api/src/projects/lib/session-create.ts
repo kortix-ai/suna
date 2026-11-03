@@ -575,6 +575,19 @@ async function resolveSessionAgent(params: {
   if (callerIsMeta && !requestedAgent && isMyKortixAgentName(agentName)) {
     agentName = loadedAgents.specs.find((spec) => spec.enabled && !spec.subagent)?.name ?? agentName;
   }
+  // kortix.yaml is not YAML: repair mode. Only My Kortix runs, so the file can
+  // be fixed. Any other agent is a typed refusal that names the error, never a 500.
+  if (loadedAgents.manifestSyntaxError && !isMyKortixAgentName(agentName)) {
+    return {
+      error: {
+        status: 409,
+        body: {
+          error: `kortix.yaml is not valid YAML (${loadedAgents.manifestSyntaxError}). Only My Kortix runs until it is fixed.`,
+          code: 'manifest_invalid',
+        },
+      },
+    };
+  }
   if (!metaAgentEnabled && isMyKortixAgentName(agentName)) {
     return {
       error: {

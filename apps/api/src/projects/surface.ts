@@ -188,3 +188,12 @@ export { readPublicResponse } from './lib/public-response';
 export { drainClaudeLogins } from './claude-subscription/flows';
 // The turn gate for Claude subscription models (sandbox-proxy/forward/turn-start.ts).
 export { missingClaudeSubscription, sessionModelPin } from './claude-subscription/gate';
+
+// The push gate's manifest check (consumed by the git proxy).
+export {
+  MAX_CHECKED_PUSH_BYTES,
+  pushedManifestRefusal,
+  pushedManifestSyntaxError,
+} from './git/push-manifest-check';
+// A manifest write refused while the default branch's kortix.yaml is not YAML (consumed by the HTTP error handler).
+export { ManifestWriteRefusedError } from './manifest-io';

@@ -716,6 +716,54 @@ export async function readManifestFromRepo(
   return legacyFrom ? convertLegacyRead(merged, legacyFrom, repoPath, commit ?? treeRef, imports.raw) : merged;
 }
 
+/** How far back the last-good manifest walk looks: first-parent commits, and distinct file versions. */
+const LAST_GOOD_MANIFEST_COMMITS = 200;
+const LAST_GOOD_MANIFEST_VERSIONS = 20;
+
+/**
+ * The newest commit on `headCommit`'s first-parent line whose file at `path`
+ * passes `isGood`, or null. The walk stops where the file did not exist: an
+ * older commit without it is not a version of it.
+ *
+ * Cheap on the partial store: one request for the root trees of every commit,
+ * then only the distinct file versions, newest first. A run of commits that
+ * keep the same broken file costs one check.
+ */
+export async function findLastGoodManifestCommit(
+  project: GitBackedProject,
+  path: string,
+  headCommit: string,
+  isGood: (content: string) => boolean,
+): Promise<string | null> {
+  const normalized = normalizeTreePath(path);
+  if (!normalized) return null;
+  const repoPath = await refreshMirror(project);
+  const listed = await runGitCapture(
+    ['rev-list', '--first-parent', `--max-count=${LAST_GOOD_MANIFEST_COMMITS}`, headCommit],
+    repoPath,
+  );
+  if (listed.exitCode !== 0) throw new Error(listed.stderr.trim() || `git rev-list ${headCommit} failed`);
+  const commits = listed.stdout.split('\n').map((line) => line.trim()).filter(Boolean);
+  await ensureCommitTrees(repoPath, commits);
+  const checked = new Set<string>();
+  for (const commit of commits) {
+    // A nested manifest path needs the trees that lead to it.
+    if (normalized.includes('/')) await ensurePathObjects(repoPath, commit, [normalized]);
+    const tree = await runGitCapture(['ls-tree', commit, '--', normalized], repoPath);
+    if (tree.exitCode !== 0) throw new Error(tree.stderr.trim() || `git ls-tree ${commit} failed`);
+    const blob = /^\d+ blob ([0-9a-f]{40})\t/m.exec(tree.stdout)?.[1];
+    if (!blob) return null;
+    if (checked.has(blob)) continue;
+    if (checked.size >= LAST_GOOD_MANIFEST_VERSIONS) return null;
+    checked.add(blob);
+    await ensureStoreObjects(repoPath, [blob], { maxBytes: FILE_READ_MAX_BYTES });
+    const shown = await runGitCapture(['cat-file', 'blob', blob], repoPath);
+    if (shown.exitCode !== 0) throw new Error(shown.stderr.trim() || `git cat-file ${blob} failed`);
+    if (isGood(shown.stdout)) return commit;
+  }
+  return null;
+}
+
 /** A legacy manifest as the latest shape, and what the conversion read (`legacy`). */
 export interface ManifestLegacy {
   /** The format the file is in: 1 (`kortix.toml`) or 2. */
