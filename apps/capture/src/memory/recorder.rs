@@ -3130,7 +3130,7 @@ mod tests {
                     "windows": [
                         w(10, "com.spotify.client", "Spotify", None, 0, 1728, 1117),
                         w(30, "com.tinyspeck.slackmacgap", "general", None, 2000, 1600, 1400),
-                        w(40, "com.google.Chrome", "PR", Some("https://github.com/kortix-ai/suna"), 1728, 3440, 1440),
+                        w(40, "com.google.Chrome", "PR", Some("https://github.com/kortix-ai/CompanyOS"), 1728, 3440, 1440),
                         w(50, "com.google.Chrome", "Video", Some("https://youtube.com/watch"), 1728, 800, 600),
                     ],
                 }),

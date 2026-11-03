@@ -28,7 +28,7 @@ export const hero = {
   title: 'Sovereign and open.',
   titleMuted: 'Open source, on your infrastructure, with any model.',
   sub: 'Read every line of Kortix. Run it on Kortix Cloud, in your VPC or on your own on-prem network. Bring any model with your own keys, and keep your company in a git repository you own.',
-  github: { label: 'View on GitHub', href: 'https://github.com/kortix-ai/suna' },
+  github: { label: 'View on GitHub', href: 'https://github.com/kortix-ai/CompanyOS' },
   selfHost: { label: 'Self-host Kortix', href: '/self-hosted' },
   caption: 'Kortix Cloud or your own server.',
   captionMuted: 'The same images either way.',
@@ -323,7 +323,7 @@ export const faqItems = [
     id: 'open-source',
     question: 'Is Kortix open source?',
     answer:
-      'Yes. The web app, the API, the LLM gateway, the CLI and @kortix/sdk live in one public repository, kortix-ai/suna. Every new session runs an open-source agent harness.',
+      'Yes. The web app, the API, the LLM gateway, the CLI and @kortix/sdk live in one public repository, kortix-ai/CompanyOS. Every new session runs an open-source agent harness.',
   },
   {
     id: 'self-host-where',

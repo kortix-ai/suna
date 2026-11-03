@@ -26,7 +26,7 @@ import { isSupervised } from './supervised.ts';
 // Release is the unified vX.Y.Z build.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const REPO = process.env.KORTIX_REPO ?? 'kortix-ai/suna';
+const REPO = process.env.KORTIX_REPO ?? 'kortix-ai/CompanyOS';
 const CHECK_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const FETCH_TIMEOUT_MS = 1500;
 

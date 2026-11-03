@@ -292,10 +292,10 @@ Commands:
 
 ```bash
 # Dry run: checks every guard, publishes nothing.
-gh workflow run mobile-ota.yml --repo kortix-ai/suna --ref dev -f channel=dev -f dry_run=true
+gh workflow run mobile-ota.yml --repo kortix-ai/CompanyOS --ref dev -f channel=dev -f dry_run=true
 
 # Publish to dev-backend builds (after genui is merged to dev and dev is deployed).
-gh workflow run mobile-ota.yml --repo kortix-ai/suna --ref dev -f channel=dev
+gh workflow run mobile-ota.yml --repo kortix-ai/CompanyOS --ref dev -f channel=dev
 
 # Production: no manual step for new code. The next production release
 # (Deploy Prod) publishes the released prod commit automatically.

@@ -32,8 +32,8 @@ describe('readWeeklyBriefs', () => {
     });
     expect(await readWeeklyBriefs(g.impl)).toEqual({ '2026-W42': ['One credits plan for every account', 'Enterprise SSO'] });
     expect(g.urls).toEqual([
-      'https://api.github.com/repos/kortix-ai/suna/git/ref/kortix/changelog-weekly',
-      'https://api.github.com/repos/kortix-ai/suna/contents/briefs.json?ref=c0ffee',
+      'https://api.github.com/repos/kortix-ai/CompanyOS/git/ref/kortix/changelog-weekly',
+      'https://api.github.com/repos/kortix-ai/CompanyOS/contents/briefs.json?ref=c0ffee',
     ]);
   });
 

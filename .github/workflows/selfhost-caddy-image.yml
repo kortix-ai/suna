@@ -10,7 +10,7 @@ name: Self-host Caddy image
 
 # Dispatch only: a push to dev runs no image build (Actions minutes, 2026-10-03).
 # Run it after a merge that changes the Dockerfile:
-#   gh workflow run selfhost-caddy-image.yml --repo kortix-ai/suna --ref dev
+#   gh workflow run selfhost-caddy-image.yml --repo kortix-ai/CompanyOS --ref dev
 on:
   workflow_dispatch:
 

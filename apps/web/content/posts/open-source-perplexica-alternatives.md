@@ -27,7 +27,7 @@ None of that is a flaw in an answer engine. Questions and answers are the job it
 
 ## Kortix: the open-source system you own
 
-Everything a team's agents need is a file in Kortix. Agents, skills, company memory, connector config, and triggers sit in one git repo the company owns, and the repo is versioned and diffable, so you can grep the whole company or roll any part of it back ([Kortix on GitHub](https://github.com/kortix-ai/suna)).
+Everything a team's agents need is a file in Kortix. Agents, skills, company memory, connector config, and triggers sit in one git repo the company owns, and the repo is versioned and diffable, so you can grep the whole company or roll any part of it back ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS)).
 
 Every session runs on its own isolated cloud computer on its own branch. The agent can install, run, and break anything, and only what it commits survives. Session work reaches the main branch through a change request a person reviews, and merge is default-deny for agents, so nothing lands unreviewed.
 

@@ -61,7 +61,7 @@ agents:
     skills: all
 ```
 
-The exception sits in the same file: the starter agent is granted everything so a fresh project works out of the box, and the comment says to narrow that once you know what the project needs. That is the first task on a new project, and it is a diff a colleague reads ([Kortix on GitHub](https://github.com/kortix-ai/suna), [agents and permissions](https://kortix.com/docs/project/agents)).
+The exception sits in the same file: the starter agent is granted everything so a fresh project works out of the box, and the comment says to narrow that once you know what the project needs. That is the first task on a new project, and it is a diff a colleague reads ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS), [agents and permissions](https://kortix.com/docs/project/agents)).
 
 An agent's behavior sits next to its grant, in `agents/<name>.md`. The starter file spells out what a session is:
 
@@ -73,11 +73,11 @@ One isolated sandbox per session. Each session has its own isolated machine and 
 
 Merge is where an agent's work becomes the company's. In Kortix it is a permission. Session work reaches `main` through a change request. Merge is default-deny for agents. A person with `project.gitops.merge` reads the change request and merges it, and a session merges its own only when its agent's grant lists that permission ([change requests](https://kortix.com/docs/git)). Give the agent a list without it and a person merges.
 
-Kortix runs its own repository on that gate: between 2026-09-21 and 2026-10-21, two in five of the commits that landed on the default branch of [Kortix on GitHub](https://github.com/kortix-ai/suna) were authored by the agent itself, each one through the same change request a person could read. The rest came from people and two bots. The count is reproducible from the clone:
+Kortix runs its own repository on that gate: between 2026-09-21 and 2026-10-21, two in five of the commits that landed on the default branch of [Kortix on GitHub](https://github.com/kortix-ai/CompanyOS) were authored by the agent itself, each one through the same change request a person could read. The rest came from people and two bots. The count is reproducible from the clone:
 
 ```bash
 git clone --bare --filter=tree:0 --single-branch --branch dev \
-  https://github.com/kortix-ai/suna /tmp/kortix.git
+  https://github.com/kortix-ai/CompanyOS /tmp/kortix.git
 git -C /tmp/kortix.git log dev --first-parent \
   --since=2026-09-21 --until=2026-10-22 --format=%an > authors.txt
 wc -l < authors.txt

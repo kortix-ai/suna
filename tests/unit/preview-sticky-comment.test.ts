@@ -53,7 +53,7 @@ function run(env: Record<string, string>, options: { existing?: boolean; write?:
       PATH: `${join(dir, 'bin')}:${process.env.PATH ?? ''}`,
       STUB_DIR: dir,
       STUB_WRITE: options.write ?? 'ok',
-      GITHUB_REPOSITORY: 'kortix-ai/suna',
+      GITHUB_REPOSITORY: 'kortix-ai/CompanyOS',
       NUM: '7763',
       COMMIT: 'a'.repeat(40),
       PREVIEW_URL: 'https://preview.example.test',
@@ -63,7 +63,7 @@ function run(env: Record<string, string>, options: { existing?: boolean; write?:
       DEPLOY_OUTCOME: 'success',
       SUITE: '1',
       SUITE_OUTCOME: '',
-      RUN_URL: 'https://github.com/kortix-ai/suna/actions/runs/9',
+      RUN_URL: 'https://github.com/kortix-ai/CompanyOS/actions/runs/9',
       ...env,
     },
   });
@@ -82,18 +82,18 @@ describe('preview-sticky-comment.sh', () => {
     const r = run({});
 
     expect(r.status).toBe(0);
-    expect(r.writes).toBe('POST repos/kortix-ai/suna/issues/7763/comments');
+    expect(r.writes).toBe('POST repos/kortix-ai/CompanyOS/issues/7763/comments');
     expect(r.body.startsWith('<!-- preview-status -->\n## Preview environment - live; tests running\n')).toBe(true);
     expect(r.body).toContain('- **Preview:** https://preview.example.test');
     expect(r.body).toContain('- **Test report:** running');
-    expect(r.body).toContain('https://github.com/kortix-ai/suna/actions/runs/9');
+    expect(r.body).toContain('https://github.com/kortix-ai/CompanyOS/actions/runs/9');
     expect(r.body).not.toContain('passed');
   });
 
   it('says "live and tested" only when the suite step succeeded', () => {
     const r = run({ SUITE_OUTCOME: 'success', REPORT_URL: 'https://preview.example.test/_tests/' }, { existing: true });
 
-    expect(r.writes).toBe('PATCH repos/kortix-ai/suna/issues/comments/42');
+    expect(r.writes).toBe('PATCH repos/kortix-ai/CompanyOS/issues/comments/42');
     expect(r.body).toContain('## Preview environment - live and tested');
     expect(r.body).toContain('`pnpm test -- --target-full` passed.');
     expect(r.body).toContain('- **Test report:** https://preview.example.test/_tests/');

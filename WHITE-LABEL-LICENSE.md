@@ -88,7 +88,7 @@ force from that moment (the "Effective Date"). Kortix does not need to countersi
 ### 1. Definitions
 
 **"Licensed Software"** means the Kortix software in the repository at
-`github.com/kortix-ai/suna`, in any version that Kortix makes available under the
+`github.com/kortix-ai/CompanyOS`, in any version that Kortix makes available under the
 Elastic License during the Term, and every copy and modification of it.
 
 **"Elastic License"** means the Elastic License 2.0 under which Kortix makes the

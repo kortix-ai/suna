@@ -47,7 +47,7 @@ kortix init
 kortix ship
 ```
 
-You bring any model provider with your own keys, or the ChatGPT plan you already pay for, and pick the model per agent, per session or per message. Connectors reach 3,000+ apps plus MCP, OpenAPI, Postman, GraphQL and raw HTTP, and connector credentials are brokered server-side so they never enter the machine. Run it on Kortix Cloud, in your VPC, or on your own on-prem network, and self-hosting is free. The full capability list is at [Kortix on GitHub](https://github.com/kortix-ai/suna).
+You bring any model provider with your own keys, or the ChatGPT plan you already pay for, and pick the model per agent, per session or per message. Connectors reach 3,000+ apps plus MCP, OpenAPI, Postman, GraphQL and raw HTTP, and connector credentials are brokered server-side so they never enter the machine. Run it on Kortix Cloud, in your VPC, or on your own on-prem network, and self-hosting is free. The full capability list is at [Kortix on GitHub](https://github.com/kortix-ai/CompanyOS).
 
 ## Side by side
 

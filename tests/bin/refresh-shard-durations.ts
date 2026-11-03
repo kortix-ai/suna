@@ -38,7 +38,7 @@ export function medianTable(perRun: Record<string, number>[]): Record<string, nu
 }
 
 function gh(...args: string[]): string {
-  const p = Bun.spawnSync(['gh', ...args, '--repo', 'kortix-ai/suna'], { stderr: 'inherit' });
+  const p = Bun.spawnSync(['gh', ...args, '--repo', 'kortix-ai/CompanyOS'], { stderr: 'inherit' });
   if (p.exitCode !== 0) throw new Error(`gh ${args.join(' ')} failed`);
   return p.stdout.toString();
 }

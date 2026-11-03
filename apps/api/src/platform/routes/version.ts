@@ -14,7 +14,7 @@ import { logger } from '../../lib/logger';
  * - Dev builds: Docker Hub tags for kortix/kortix-sandbox.
  */
 
-const GITHUB_REPO = 'kortix-ai/suna';
+const GITHUB_REPO = 'kortix-ai/CompanyOS';
 const GITHUB_API_BASE = 'https://api.github.com';
 const DOCKERHUB_REPO = 'kortix/kortix-sandbox';
 const DOCKERHUB_TAGS_URL = `https://hub.docker.com/v2/repositories/${DOCKERHUB_REPO}/tags`;

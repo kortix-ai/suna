@@ -89,4 +89,4 @@ Pick LangGraph when you are building agent logic inside an application you alrea
 
 Pick Kortix when the agents stop being one application's feature and become how the company works. The signals are concrete. Several people and several agents draw on one memory. Agents act in tools where permissions and an audit trail have to hold up. The work has to pass a review gate before it counts. At that point the graph is the smaller half of the problem, and the system around it is what you want to own.
 
-[Kortix on GitHub](https://github.com/kortix-ai/suna) is where to read, fork and audit that system. Create a project at [Kortix](https://kortix.com) and run a first session, or self-host it for free.
+[Kortix on GitHub](https://github.com/kortix-ai/CompanyOS) is where to read, fork and audit that system. Create a project at [Kortix](https://kortix.com) and run a first session, or self-host it for free.

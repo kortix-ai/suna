@@ -38,7 +38,7 @@ afterEach(() => {
 });
 
 describe('Connect Proxy wire format', () => {
-  const TARGET = 'https://api.github.com/repos/kortix-ai/suna/issues/1/comments';
+  const TARGET = 'https://api.github.com/repos/kortix-ai/CompanyOS/issues/1/comments';
 
   test('builds the proxy URL with base64url target + query params, passes body through', async () => {
     const res = await runPipedreamProxy(

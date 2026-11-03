@@ -128,7 +128,7 @@ export const openSourceLine = {
   title: '20,000+ GitHub stars.',
   titleMuted: 'Open source. Read it, fork it, audit it.',
   ctaLabel: 'Read the source',
-  ctaHref: 'https://github.com/kortix-ai/suna',
+  ctaHref: 'https://github.com/kortix-ai/CompanyOS',
 } as const;
 
 export const faqHeading = {

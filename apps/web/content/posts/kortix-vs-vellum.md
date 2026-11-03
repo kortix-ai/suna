@@ -38,7 +38,7 @@ A company rule such as mail going out from the shared inbox is, on a personal as
 
 ## The setup a second colleague can read
 
-Kortix keeps a project's configuration in a `kortix.yaml` manifest and one markdown file per agent, both in the project's git repo. The starter manifest explains the split in its own header: the `agents:` map is `governance only`, holding the connectors, secrets, permissions, skills and workspace grants alongside `file`, the path of the agent's markdown file, while agent behavior "lives entirely in that `.md`" ([starter manifest](https://github.com/kortix-ai/suna/blob/dev/packages/starter/templates/base/kortix.yaml)).
+Kortix keeps a project's configuration in a `kortix.yaml` manifest and one markdown file per agent, both in the project's git repo. The starter manifest explains the split in its own header: the `agents:` map is `governance only`, holding the connectors, secrets, permissions, skills and workspace grants alongside `file`, the path of the agent's markdown file, while agent behavior "lives entirely in that `.md`" ([starter manifest](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/kortix.yaml)).
 
 ```yaml
 agents:
@@ -56,7 +56,7 @@ Vellum's setup is also files, and good ones, but they sit in one account's works
 
 ## Work lands as a diff
 
-The starter agent file calls the session an isolated sandbox and "an ephemeral branch of this repo", where "Only what you commit + push survives" ([starter agent](https://github.com/kortix-ai/suna/blob/dev/packages/starter/templates/base/agents/kortix.md)). Session work reaches `main` through a change request. Merge is default-deny for agents. A teammate therefore reads the result the way they read code: a diff, with the agent's reasoning behind it and a rollback one commit away.
+The starter agent file calls the session an isolated sandbox and "an ephemeral branch of this repo", where "Only what you commit + push survives" ([starter agent](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/agents/kortix.md)). Session work reaches `main` through a change request. Merge is default-deny for agents. A teammate therefore reads the result the way they read code: a diff, with the agent's reasoning behind it and a rollback one commit away.
 
 Per-resource permissions for people and agents. Roles, groups, and an audit trail. Every action is recorded. Reading, exporting and streaming the audit log depend on the plan.
 
