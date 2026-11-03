@@ -219,3 +219,212 @@ test("screenshot hook reads a scoped authenticated Blob and never substitutes an
   expect(screenshot!.error).toMatchObject({ status: 404 });
   expect(fetched).toHaveLength(2);
 });
+
+// ── Retry policy and optimistic writes (KRTX-3659) ──────────────────────────
+
+const comment = (over: Record<string, unknown> = {}) => ({
+  comment_id: 'comment-a', thread_id: 'thread-a', author_user_id: 'user-a', author_session_id: null,
+  author: { kind: 'user', user_id: 'user-a', name: 'Ada' }, body: 'Original.', mentions: [], marks: [], screenshot_key: null,
+  created_at: '2026-11-01T10:00:00.000Z', edited_at: null, deleted_at: null, can_edit: true, can_delete: true, ...over,
+});
+const thread = (over: Record<string, unknown> = {}) => ({
+  thread_id: 'thread-a', artifact_id: 'artifact-a', project_id: 'project-a', anchor: { type: 'none', version: 'commit-a' },
+  anchor_version: 'commit-a', created_by_user_id: 'user-a', created_by_session_id: null, status: 'open', resolved_by_user_id: null,
+  resolved_by_session_id: null, resolved_at: null, agent_state: 'none', agent_error: null, sent_session_id: null, sent_at: null,
+  created_at: '2026-11-01T10:00:00.000Z', updated_at: '2026-11-01T10:00:00.000Z', comments: [comment()], outdated: false,
+  position: null, can_reply: true, can_resolve: true, ...over,
+});
+
+/**
+ * The first thread read answers; every later read hangs. Only the hook can
+ * change the cache after that, so a test sees the optimistic state, the
+ * server's answer, or the rollback, never a refetch hiding a missing one.
+ */
+function holdingServer(threads: unknown[] = [thread()]) {
+  const writes: Array<{ method: string; path: string; answer: (status: number, body: unknown) => void }> = [];
+  let threadReads = 0;
+  globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? 'GET';
+    if (method === 'GET') {
+      if (url.pathname.endsWith('/activity')) return Response.json({ items: [], next_cursor: null, older_versions: false });
+      if (++threadReads > 1) return new Promise<Response>(() => {});
+      return Response.json({ threads });
+    }
+    return new Promise<Response>((resolve) => {
+      writes.push({ method, path: url.pathname, answer: (status, body) => resolve(Response.json(body, { status })) });
+    });
+  }) as unknown as typeof fetch;
+  return { writes };
+}
+
+async function mountThreads() {
+  function Probe() {
+    comments = hooks.useArtifactComments('project-a', 'artifact-a', { status: 'all' });
+    return null;
+  }
+  await act(async () => { renderer = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe))); });
+  await settle();
+  expect(comments.data?.map((item) => item.thread_id)).toEqual(['thread-a']);
+}
+
+/**
+ * Start a write without awaiting it. `done` settles to the result or the error.
+ * It is wrapped: an async function that returned the bare promise would wait for it.
+ */
+async function start(write: () => Promise<unknown>) {
+  let done!: Promise<unknown>;
+  await act(async () => { done = write().catch((error: unknown) => error); });
+  await settle();
+  return { done };
+}
+async function answer(server: ReturnType<typeof holdingServer>, index: number, status: number, body: unknown, write: { done: Promise<unknown> }) {
+  await act(async () => { server.writes[index]!.answer(status, body); await write.done; });
+  await settle();
+}
+
+// The transport already retries a GET twice on 502/503/504 (`makeRequest`), so
+// a 503 costs 3 requests and the hook adds none. A 500 gets one hook retry.
+test('comment reads never retry a 4xx, retry a 5xx at most once, and add nothing to the transport 503 retries', async () => {
+  for (const [status, expected] of [[500, 2], [503, 3], [403, 1]] as const) {
+    client = new QueryClient({ defaultOptions: { queries: { retry: 3, retryDelay: 0 } } });
+    const hits = { context: 0, comments: 0, activity: 0 };
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname;
+      hits[path.endsWith('/context') ? 'context' : path.endsWith('/activity') ? 'activity' : 'comments']++;
+      return Response.json({ error: 'unavailable' }, { status });
+    }) as unknown as typeof fetch;
+    let context: ReturnType<typeof hooks.useArtifactCommentContext>;
+    let infinite: ReturnType<typeof hooks.useInfiniteArtifactActivity>;
+    function Probe() {
+      comments = hooks.useArtifactComments('project-a', 'artifact-a', { status: 'all' });
+      context = hooks.useArtifactCommentContext('project-a', 'artifact-a');
+      activity = hooks.useArtifactActivity('project-a', 'artifact-a');
+      infinite = hooks.useInfiniteArtifactActivity('project-a', 'artifact-a');
+      return null;
+    }
+    await act(async () => { renderer = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe))); });
+    const queries = () => [comments!, context!, activity!, infinite!];
+    for (let attempt = 0; attempt < 100 && queries().some((query) => !query.isError); attempt++) await settle();
+    for (const query of queries()) expect(query.error).toMatchObject({ status });
+    expect(hits).toEqual({ context: expected, comments: expected, activity: expected * 2 });
+    await act(async () => renderer!.unmount());
+    renderer = undefined;
+    client.clear();
+  }
+});
+
+test('create shows a pending thread at once, swaps in the server thread, and removes it when the write fails', async () => {
+  const server = holdingServer();
+  await mountThreads();
+  let done = await start(() => comments.create({ anchor: { type: 'none', version: 'commit-a' }, body: 'Fresh idea.' }));
+  expect(server.writes.map((write) => write.method)).toEqual(['POST']);
+  const pending = comments.data![1]!;
+  expect(pending.optimistic).toBe(true);
+  expect(pending.thread_id.startsWith('optimistic-')).toBe(true);
+  expect(pending).toMatchObject({ status: 'open', anchor_version: 'commit-a', can_reply: false, can_resolve: false });
+  expect(pending.comments).toHaveLength(1);
+  expect(pending.comments[0]).toMatchObject({ optimistic: true, body: 'Fresh idea.', thread_id: pending.thread_id, can_edit: false, can_delete: false });
+  await answer(server, 0, 201, { thread: thread({ thread_id: 'thread-b', comments: [comment({ comment_id: 'comment-b', thread_id: 'thread-b', body: 'Fresh idea.' })] }) }, done);
+  expect(comments.data!.map((item) => item.thread_id)).toEqual(['thread-a', 'thread-b']);
+  expect(comments.data![1]!.optimistic).toBeUndefined();
+  done = await start(() => comments.create({ anchor: { type: 'none', version: 'commit-a' }, body: 'Lost idea.' }));
+  expect(comments.data!.map((item) => item.comments[0]!.body)).toEqual(['Original.', 'Fresh idea.', 'Lost idea.']);
+  await answer(server, 1, 500, { error: 'boom' }, done);
+  expect(await done.done).toMatchObject({ status: 500 });
+  expect(comments.data!.map((item) => item.thread_id)).toEqual(['thread-a', 'thread-b']);
+});
+
+test('reply shows a pending comment at once, swaps in the server comment, and removes it when the write fails', async () => {
+  const server = holdingServer();
+  await mountThreads();
+  let done = await start(() => comments.reply('thread-a', { body: 'Agreed.' }));
+  const pending = comments.data![0]!.comments[1]!;
+  expect(pending).toMatchObject({ optimistic: true, body: 'Agreed.', thread_id: 'thread-a', can_edit: false, can_delete: false });
+  expect(pending.comment_id.startsWith('optimistic-')).toBe(true);
+  await answer(server, 0, 201, { comment: comment({ comment_id: 'comment-b', body: 'Agreed.' }) }, done);
+  expect(comments.data![0]!.comments.map((item) => [item.comment_id, item.optimistic])).toEqual([['comment-a', undefined], ['comment-b', undefined]]);
+  done = await start(() => comments.reply('thread-a', { body: 'Lost reply.' }));
+  expect(comments.data![0]!.comments).toHaveLength(3);
+  await answer(server, 1, 500, { error: 'boom' }, done);
+  expect(comments.data![0]!.comments.map((item) => item.comment_id)).toEqual(['comment-a', 'comment-b']);
+});
+
+test('resolve and reopen flip the status at once, keep the server answer, and flip back when the write fails', async () => {
+  const server = holdingServer();
+  await mountThreads();
+  let done = await start(() => comments.setStatus('thread-a', 'resolved'));
+  expect(comments.data![0]).toMatchObject({ status: 'resolved', optimistic: true });
+  expect(comments.data![0]!.resolved_at).not.toBeNull();
+  await answer(server, 0, 200, { thread: thread({ status: 'resolved', resolved_at: '2026-11-01T11:00:00.000Z', resolved_by_user_id: 'user-a' }) }, done);
+  expect(comments.data![0]).toMatchObject({ status: 'resolved', resolved_at: '2026-11-01T11:00:00.000Z' });
+  expect(comments.data![0]!.optimistic).toBeUndefined();
+  done = await start(() => comments.setStatus('thread-a', 'open'));
+  expect(comments.data![0]).toMatchObject({ status: 'open', resolved_at: null, optimistic: true });
+  await answer(server, 1, 500, { error: 'boom' }, done);
+  expect(comments.data![0]).toMatchObject({ status: 'resolved', resolved_at: '2026-11-01T11:00:00.000Z' });
+  expect(comments.data![0]!.optimistic).toBeUndefined();
+});
+
+test('edit shows the new body at once, keeps the server answer, and restores the old body when the write fails', async () => {
+  const server = holdingServer();
+  await mountThreads();
+  let done = await start(() => comments.edit('thread-a', 'comment-a', { body: 'Changed.' }));
+  expect(comments.data![0]!.comments[0]).toMatchObject({ body: 'Changed.', optimistic: true });
+  expect(comments.data![0]!.comments[0]!.edited_at).not.toBeNull();
+  await answer(server, 0, 200, { comment: comment({ body: 'Changed.', edited_at: '2026-11-01T11:00:00.000Z' }) }, done);
+  expect(comments.data![0]!.comments[0]).toMatchObject({ body: 'Changed.', edited_at: '2026-11-01T11:00:00.000Z' });
+  expect(comments.data![0]!.comments[0]!.optimistic).toBeUndefined();
+  done = await start(() => comments.edit('thread-a', 'comment-a', { body: 'Lost edit.' }));
+  expect(comments.data![0]!.comments[0]!.body).toBe('Lost edit.');
+  await answer(server, 1, 500, { error: 'boom' }, done);
+  expect(comments.data![0]!.comments[0]).toMatchObject({ body: 'Changed.', edited_at: '2026-11-01T11:00:00.000Z' });
+  expect(comments.data![0]!.comments[0]!.optimistic).toBeUndefined();
+});
+
+test('delete shows a tombstone at once, keeps the server answer, and restores the comment when the write fails', async () => {
+  const server = holdingServer();
+  await mountThreads();
+  let done = await start(() => comments.remove('thread-a', 'comment-a'));
+  expect(comments.data![0]!.comments[0]).toMatchObject({ body: '', optimistic: true, can_edit: false, can_delete: false });
+  expect(comments.data![0]!.comments[0]!.deleted_at).not.toBeNull();
+  await answer(server, 0, 500, { error: 'boom' }, done);
+  expect(comments.data![0]!.comments[0]).toEqual(comment() as never);
+  done = await start(() => comments.remove('thread-a', 'comment-a'));
+  await answer(server, 1, 200, { comment: comment({ body: '', deleted_at: '2026-11-01T11:00:00.000Z', can_edit: false, can_delete: false }) }, done);
+  expect(comments.data![0]!.comments[0]).toMatchObject({ body: '', deleted_at: '2026-11-01T11:00:00.000Z' });
+  expect(comments.data![0]!.comments[0]!.optimistic).toBeUndefined();
+});
+
+test('a write answer carries no text position, so the cached position and outdated flag stay until the next read', async () => {
+  // The server reads the document only for a list. A create or status answer has position null and outdated false.
+  const text = { anchor: { type: 'text', version: 'commit-a', quote: 'Selected', prefix: '', suffix: '' }, anchor_version: 'commit-a' };
+  const placed = thread({ ...text, position: { start: 4, end: 12 } });
+  const lost = (over: Record<string, unknown> = {}) => thread({
+    ...text, thread_id: 'thread-b', outdated: true, comments: [comment({ comment_id: 'comment-b', thread_id: 'thread-b' })], ...over,
+  });
+  const server = holdingServer([placed, lost()]);
+  function Probe() {
+    comments = hooks.useArtifactComments('project-a', 'artifact-a', { status: 'all' });
+    return null;
+  }
+  await act(async () => { renderer = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe))); });
+  await settle();
+  const resolvedAt = '2026-11-01T11:00:00.000Z';
+  let done = await start(() => comments.setStatus('thread-a', 'resolved'));
+  await answer(server, 0, 200, { thread: thread({ ...text, status: 'resolved', resolved_at: resolvedAt }) }, done);
+  expect(comments.data![0]).toMatchObject({ status: 'resolved', resolved_at: resolvedAt, position: { start: 4, end: 12 }, outdated: false });
+  done = await start(() => comments.setStatus('thread-b', 'resolved'));
+  await answer(server, 1, 200, { thread: lost({ status: 'resolved', resolved_at: resolvedAt, outdated: false }) }, done);
+  expect(comments.data![1]).toMatchObject({ status: 'resolved', position: null, outdated: true });
+  done = await start(() => comments.setStatus('thread-b', 'open'));
+  await answer(server, 2, 200, { thread: lost({ outdated: false }) }, done);
+  expect(comments.data![1]).toMatchObject({ status: 'open', position: null, outdated: true });
+  // A brand-new thread has no cached copy: the server's value stands.
+  done = await start(() => comments.create({ anchor: text.anchor as never, body: 'New.' }));
+  await answer(server, 3, 201, {
+    thread: thread({ ...text, thread_id: 'thread-c', comments: [comment({ comment_id: 'comment-c', thread_id: 'thread-c', body: 'New.' })] }),
+  }, done);
+  expect(comments.data!.map((item) => [item.thread_id, item.position, item.outdated]))
+    .toEqual([['thread-a', { start: 4, end: 12 }, false], ['thread-b', null, true], ['thread-c', null, false]]);
+});

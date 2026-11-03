@@ -17,6 +17,7 @@ export const ARTIFACT_ANNOTATION_LIMITS = {
   texts: 8192,
   textUnits: 524_288,
   pins: 1000,
+  pinLabel: 64,
   ranges: 64,
   rects: 64,
   coordinate: 10_000_000,
@@ -149,6 +150,28 @@ export const artifactAnnotationFrameMessageSchema = z.discriminatedUnion(
         type: z.literal("candidate"),
         revision,
         anchor: candidateSchema,
+        // A text selection's bounding box in page coordinates: the parent places its Comment chip there.
+        rect: rectSchema.optional(),
+      })
+      .strict(),
+    // The offered selection is gone ("none"), or it is longer than a text anchor holds ("too_long").
+    // `moved`: a scroll or resize withdrew the offer, not the person. The parent keeps a selection
+    // it dismissed hidden when the next layout offers it again. Absent from older bridges.
+    z
+      .object({
+        ...envelope,
+        type: z.literal("selection"),
+        state: z.enum(["none", "too_long"]),
+        rect: rectSchema.optional(),
+        moved: z.literal(true).optional(),
+      })
+      .strict(),
+    // A key the page saw while annotation is on: Escape, or the comment shortcut (⌘⌥M / Ctrl+Alt+M).
+    z
+      .object({
+        ...envelope,
+        type: z.literal("key"),
+        key: z.enum(["escape", "comment"]),
       })
       .strict(),
     z.object({ ...envelope, type: z.literal("focus"), n: pinNumber }).strict(),
@@ -206,11 +229,17 @@ const pinSchema = z
     n: pinNumber,
     rects: z.array(rectSchema).max(ARTIFACT_ANNOTATION_LIMITS.rects),
     ranges: z.array(rangeSchema).max(ARTIFACT_ANNOTATION_LIMITS.ranges),
+    // The pin's accessible name ("Comment 3"): one UI word and the pin number, never comment text.
+    label: unicode.min(1).max(ARTIFACT_ANNOTATION_LIMITS.pinLabel).optional(),
   })
   .strict()
   .refine(
     (pin) => pin.rects.length + pin.ranges.length > 0,
     "Empty annotation pin",
+  )
+  .refine(
+    (pin) => pin.label === undefined || pin.label.includes(String(pin.n)),
+    "A pin label names its number",
   );
 
 export const artifactAnnotationHostMessageSchema = z.discriminatedUnion(

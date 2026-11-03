@@ -5,6 +5,9 @@ import { mentionTokens, mentionsMember } from '../projects/rooms/envelope';
 let reads = 0;
 let manifests = 0;
 let aliceName = 'Alice';
+let manifestFails = false;
+const warnings: string[] = [];
+mock.module('../lib/logger', () => ({ logger: { warn: (message: string) => warnings.push(message), info() {}, error() {}, debug() {} } }));
 const people = [{ userId: 'alice-identifier' }, { userId: 'hidden-identifier' }];
 mock.module('../shared/db', () => ({ db: { select: () => ({ from: (table: unknown) => ({ where: async () => {
   reads++;
@@ -18,12 +21,24 @@ mock.module('../projects/surface', () => ({ mentionTokens, mentionsMember,
     ['alice-identifier', { displayName: aliceName, email: 'alice@example.test' }],
     ['hidden-identifier', { displayName: 'Hidden', email: 'hidden@example.test' }],
   ]),
-  loadProjectAgents: async () => { manifests++; return { specs: [{ name: 'writer', enabled: true }, { name: 'researcher', enabled: true }, { name: 'disabled', enabled: false }] }; },
+  loadProjectAgents: async () => { manifests++; if (manifestFails) throw new Error('git read failed'); return { specs:[{ name: 'writer', enabled: true }, { name: 'researcher', enabled: true }, { name: 'disabled', enabled: false }] }; },
 }));
 mock.module('../notifications/access', () => ({ filterArtifactRecipients: async (_artifact: unknown, ids: string[]) => ids.filter((id) => id === 'alice-identifier') }));
 const { resolveArtifactCommentMentions } = await import('./comment-mentions');
 const artifact = { accountId: 'account-one', projectId: 'project-one', createdBySessionId: 'source-session' } as Parameters<typeof resolveArtifactCommentMentions>[0];
-beforeEach(() => { reads = 0; manifests = 0; aliceName = 'Alice'; });
+beforeEach(() => { reads = 0; manifests = 0; aliceName = 'Alice'; manifestFails = false; warnings.length = 0; });
+
+test('an unreadable manifest keeps people mentions and treats an unmatched plain @word as text', async () => {
+  manifestFails = true;
+  expect(await resolveArtifactCommentMentions(artifact, '@Alice please check with @finance')).toEqual([{ kind: 'user', user_id: 'alice-identifier' }]);
+  expect(manifests).toBe(1);
+  expect(warnings).toHaveLength(1);
+});
+
+test('an unreadable manifest still refuses an explicit @agent. mention: it fails closed, never silently undelivered', async () => {
+  manifestFails = true;
+  await expect(resolveArtifactCommentMentions(artifact, '@Alice @agent.researcher shorten this')).rejects.toThrow('git read failed');
+});
 
 test('feedback without mention tokens reads no members, sessions, or manifest', async () => {
   expect(await resolveArtifactCommentMentions(artifact, 'Check the heading.')).toEqual([]);

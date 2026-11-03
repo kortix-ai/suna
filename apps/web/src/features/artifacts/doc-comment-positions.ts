@@ -1,4 +1,6 @@
 import {
+  ARTIFACT_TEXT_CONTEXT_MAX,
+  ARTIFACT_TEXT_QUOTE_MAX,
   artifactCommentAnchorSchema,
   reanchorArtifactText,
   type ArtifactTextAnchor,
@@ -270,35 +272,36 @@ export function docRangesForSource(
   return ranges;
 }
 
+/**
+ * The anchor of an editor selection: the whole selected Markdown span (with
+ * its syntax) as the quote, plus up to 32 code units of context on each side.
+ * A span longer than `ARTIFACT_TEXT_QUOTE_MAX` is `too_long`: the anchor never
+ * covers less than the selection.
+ */
 export function docSelectionAnchor(
   map: DocMarkdownPositions | null,
   from: number,
   to: number,
   version: string,
-): { anchor: ArtifactTextAnchor } | { error: 'unmapped' | 'ambiguous' } {
+): { anchor: ArtifactTextAnchor } | { error: 'unmapped' | 'ambiguous' | 'too_long' } {
   const selected = map?.runs.filter((run) => run.from < to && run.to > from);
   if (!map || !selected?.length || from === to) return { error: 'unmapped' };
   const first = selected[0]!;
   const last = selected.at(-1)!;
-  const start =
+  let start =
     first.to - first.from === first.end - first.start
       ? first.start + Math.max(0, from - first.from)
       : first.start;
-  const fullEnd =
+  let end =
     last.to - last.from === last.end - last.start ? last.end - Math.max(0, last.to - to) : last.end;
-  const limit = Math.min(fullEnd, start + 32);
-  let end = start;
-  for (const run of selected) {
-    if (run.start >= limit) break;
-    if (run.to - run.from === run.end - run.start) end = Math.min(run.end, limit);
-    else if (run.end <= limit) end = run.end;
-    else break;
-  }
+  // A selection edge inside a surrogate pair takes the whole character.
+  if (map.markdown.charCodeAt(start) >= 0xdc00 && map.markdown.charCodeAt(start) <= 0xdfff) start--;
   if (map.markdown.charCodeAt(end - 1) >= 0xd800 && map.markdown.charCodeAt(end - 1) <= 0xdbff)
-    end--;
+    end++;
   if (end <= start) return { error: 'unmapped' };
-  let prefix = map.markdown.slice(Math.max(0, start - 32), start);
-  let suffix = map.markdown.slice(end, end + 32);
+  if (end - start > ARTIFACT_TEXT_QUOTE_MAX) return { error: 'too_long' };
+  let prefix = map.markdown.slice(Math.max(0, start - ARTIFACT_TEXT_CONTEXT_MAX), start);
+  let suffix = map.markdown.slice(end, end + ARTIFACT_TEXT_CONTEXT_MAX);
   if (prefix.charCodeAt(0) >= 0xdc00 && prefix.charCodeAt(0) <= 0xdfff) prefix = prefix.slice(1);
   if (
     suffix.charCodeAt(suffix.length - 1) >= 0xd800 &&

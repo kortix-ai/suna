@@ -16,6 +16,9 @@ let markdown = initialMarkdown;
 let saves = 0;
 const sdkReact = await import('@kortix/sdk/react');
 mock.module('@kortix/sdk/react', () => ({ ...sdkReact, useArtifactText: () => ({ data: markdown }), useArtifactMutations: () => ({ save: { mutateAsync: async () => { saves++; return { entry_version: 'saved-entry' }; } } }) }));
+const toasts: string[] = [];
+const toast = await import('@kortix/ui/toast');
+mock.module('@kortix/ui/toast', () => ({ ...toast, errorToast: (message: string) => { toasts.push(message); } }));
 const { DocEditor } = await import('./doc-editor');
 const container = browser.document.createElement('div');
 browser.document.body.append(container);
@@ -28,9 +31,10 @@ afterEach(async () => {
   root = createRoot(container as unknown as HTMLElement);
   saves = 0;
   markdown = initialMarkdown;
+  toasts.length = 0;
 });
 const artifact = (id: string) => ({ artifact_id: id, type: 'doc', entry: 'note.md', path: '/workspace/note.md', entry_version: 'entry', version: { id: 'commit', view_url: 'https://example.test/note.md' } }) as ArtifactDetail;
-const comments = (prefix: string) => ['one', 'two'].map((id) => ({ thread_id: `${prefix}-${id}`, anchor: { type: 'text', version: 'commit', quote: 'selected', prefix: '', suffix: '' }, status: 'open' })) as ArtifactCommentThread[];
+const comments = (prefix: string) => ['one', 'two'].map((id) => ({ thread_id: `${prefix}-${id}`, anchor: { type: 'text', version: 'commit', quote: 'selected', prefix: '', suffix: '' }, status: 'open', comments: [{ deleted_at: null }] })) as ArtifactCommentThread[];
 
 function boundedMutationObservers() {
   const NativeObserver = browser.MutationObserver;
@@ -141,6 +145,45 @@ test('actual read-only DocEditor routes highlight clicks and keyboard to fresh p
   expect(Array.from(container.querySelectorAll('.tiptap')).map((node) => node.innerHTML)).toEqual(before);
   expect(saves).toBe(0);
 });
+
+for (const [label, words, outcome] of [
+  ['a 299-character paragraph anchors whole', 59, 'anchor'],
+  ['a 554-character paragraph is refused with the limit', 110, 'refused'],
+] as const) {
+  test(`the comment shortcut on a read-only DocEditor: ${label}`, async () => {
+    markdown = `${'word '.repeat(words)}end.\n`;
+    const anchors: string[] = [];
+    await act(async () => root.render(
+      <DocEditor projectId="project" artifact={artifact(`shortcut-${words}`)} editable={false} onStatus={() => {}} onReload={() => {}}
+        canComment onComment={(anchor) => anchors.push(anchor.quote)} readCommentSnapshot={async () => ({ version: 'commit', text: markdown })} />,
+    ));
+    const element = container.querySelector('.tiptap') as unknown as HTMLElement & { editor: Editor };
+    const text = element.querySelector('p')!.firstChild!;
+    await act(async () => {
+      element.editor.commands.setTextSelection({ from: 1, to: element.editor.state.doc.content.size - 1 });
+      const range = browser.document.createRange();
+      range.selectNodeContents(text as never);
+      browser.document.getSelection()!.removeAllRanges();
+      browser.document.getSelection()!.addRange(range);
+    });
+    const mac = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform ?? '');
+    await act(async () => {
+      browser.document.body.dispatchEvent(new browser.KeyboardEvent('keydown', { key: 'm', code: 'KeyM', metaKey: mac, ctrlKey: !mac, altKey: true, bubbles: true, cancelable: true }) as never);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+    const paragraph = markdown.trimEnd();
+    if (outcome === 'anchor') {
+      expect(anchors).toEqual([paragraph]);
+      expect(toasts).toEqual([]);
+      // The passage now lives in the composer: the selection collapses, so the formatting bubble hides.
+      expect(element.editor.state.selection.empty).toBe(true);
+    } else {
+      expect(anchors).toEqual([]);
+      expect(toasts).toEqual(['This passage is too long to comment on. Select 500 characters or fewer.']);
+    }
+    expect(saves).toBe(0);
+  });
+}
 
 test('actual editable DocEditor forwards slash-menu keys through its configured extension', async () => {
   await act(async () => root.render(<DocEditor projectId="project" artifact={artifact('slash')} editable onStatus={() => {}} onReload={() => {}} />));

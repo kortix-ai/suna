@@ -1,57 +1,34 @@
-Telegram question buttons, steerable agents in the terminal, and free-plan session fixes
+One Drive tree, clearer session starts, and multi-domain self-hosting
+
+One Drive tree, clearer session starts, and multi-domain self-hosting
 
 ### New
-- Continue full-context sessions from a searchable record instead of a summary (#11428).
-- Set up event-driven automations with filters, per-item sessions, caps, dry runs and review (#11430).
-- Build event sources as watcher Apps, managed by My Kortix (#11440).
-- Apply Files storage limits per project and account, with storage billed in credits (#11435).
-- Answer agent questions with Telegram buttons, including several questions at once (#11469).
-- See and steer agents, workflows and messages in the terminal interface (#11476).
+- Browse Drive as one folder tree, with pinned My files and Company folders, project search, and admin access to people's folders. (#11478, #11493)
+- See, reply to, and route artifact comments. (#11482)
+- See which sandbox image step a session start is waiting on. (#11501)
+- Serve a self-hosted instance on multiple domains, move its primary domain in one command, and use domain-aware URLs throughout. (#11526, #11533)
 
 ### Improved
-- Ask for a session's box up to 1.6 seconds sooner in large projects (#11419).
-- Avoid re-sampling every cron trigger on each connector call (#11427).
-- Show all sidebar navigation rows directly, without More or Customize sidebar (#11439).
-- Help agents understand their microVM, desktop and persistent installs (#11443).
-- Pause triggers that can never run and notify their owners (#11477).
-- Limit model requests per credential at the LLM gateway, as the API already does (#11509).
+- Start a new session's turn up to 0.7 seconds sooner. (#11510)
+- Read only the git objects each API request needs instead of whole repositories. (#11492)
+- Keep sidebar session rows consistent across widths and touch devices. (#11506)
+- Guide agents to act before asking and verify before reporting. (#11497)
+- Clarify that connecting Codex means connecting your ChatGPT subscription. (#11498)
+- Update the website's company positioning and case studies. (#11514, #11500)
 
 ### Fixed
-- Restore even home-page pillars and keep the header switcher clear of Pricing (#11420).
-- Stop Settings and Drive from showing a spurious “Not found” toast (#11423).
-- Let sessions start when a Files folder cannot mount (#11421).
-- Restore session logs when a box wakes before its session lease (#11434).
-- Rename the mobile schedules page to Trigger (#11433).
-- Hide unlaunched Chrome surfaces to prevent missing-route errors (#11436).
-- Match the daemon's Bun version to lockfile v3 (#11437).
-- Count every drive's real usage toward Files limits and explain refusals (#11459).
-- Allow free-plan sessions to start and show failed-start errors (#11463).
-- Enable My Kortix unless explicitly disabled in kortix.yaml (#11464).
-- Prevent file listings from restarting the daemon on Bun 1.4 (#11467).
-- Keep keyboard focus in terminal chat input and copy dragged text selections (#11470).
+- Close TUI panels with Esc even when it arrives as meta+Esc. (#11486)
+- Avoid quadratic trimming of boot-error output. (#11490)
+- Wait for a stateless session volume's last save rather than failing, and recover stuck runtimes before declaring them lost. (#11503, #11502)
+- Show the saved prompt on failure cards for agent-created sessions. (#11524)
+- Explain which SAML values to update before moving a self-hosted domain. (#11527)
 
 ### Security
-- Return consistent 400 responses for malformed gateway messages on every route (#11455).
-- Pin sandbox-proxy authorization parity in regression coverage (#11471).
-- Trim long session start errors in linear time (#11490).
+- Reject TRACE and CONNECT requests at the API origin. (#11488)
+- Enforce general API edge rate limits and per-credential model request limits at the gateway, with visible credential rate-limit counters. (#11521, #11509, #11520)
 
 ### Internal
-- Regenerate the learnings index without duplicate entries (#11424).
-- Keep database script-private declarations local (#11429).
-- Prepare the next development version, 0.14.15 (88b3618).
-- Document boot-time lease-race retries (#11438).
-- Mark Goals as work in progress in feature flags (#11441).
-- Correct watcher App /tick guidance to use POST (#11442).
-- Update session-log switch-gap coverage for context records (#11448).
-- Restore summary fixtures in summary-context mode (#11447).
-- Refresh the generated UI stylesheet (#11449).
-- Monitor worker CPU with SNS alerts (#11452).
-- Consolidate the Kortix skill list for Chrome grants (#11453).
-- Remove five apps-api cleanup leftovers (#11454).
-- Update nightly session-log expectations for context-record capabilities (#11457).
-- Correct box-disk SQL, usage-audit labels, storage-charge classification and a file race in release checks (#11461).
-- Align billing-tab tests, UI skill exports and the English UI catalog (#11465).
-- Keep the GOLD-1 agent from committing before the host's commit-push step (#11472).
-- Document generated-file refreshes on staging fixes and runner bind-failure handling (#11479).
-- Make the goal wake-cap test independent of the UTC hour (#11515).
-- Document cancelling runs still queued on the old runner label after a runner swap (#11512).
+- Add regression coverage for free-tier managed billing refusals and rejected password sign-in. (#11487, #11489)
+- Make goal wake-cap tests independent of the UTC hour and wait for background claim deletion in Telegram bot-swap tests. (#11515, #11525)
+- Document owner-only automation refusals, project repository access, unique ledger entries, project-volume ownership, stateless-session architecture, runner-swap cleanup, and finite regional sandbox pools. (#11481, #11504, #11505, #11507, #11511, #11512, #11513, #11529)
+- Advance development version bookkeeping after releases 0.14.15 and 0.14.16.

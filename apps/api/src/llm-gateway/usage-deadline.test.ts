@@ -18,7 +18,9 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let extendCalls: Array<{ target: unknown; grantMs: number | undefined }> = [];
 let usageRows = 0;
 
+const realConfig = await import('../config');
 mock.module('../config', () => ({
+  ...realConfig,
   config: new Proxy(
     {},
     {

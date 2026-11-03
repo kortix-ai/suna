@@ -7,8 +7,9 @@
 //
 // Some folders are special:
 // - `/Users/<name>` is one person's folder. Grants above it never reach into
-//   it, and project admins have no implicit access to it: it is private until
-//   its owner shares it.
+//   it, and only its owner and the project's admins may open it until its
+//   owner shares it. An admin reaches it as a person, never through a session
+//   (`adminPeople`), and every such open is recorded for the owner to see.
 // - `/Channels/<space_id>`, where `<space_id>` is a private channel of the
 //   project, is that channel's folder, protected the same way. Kortix gives
 //   each channel member one `write` grant; nobody holds `manage`, so nothing in
@@ -76,8 +77,14 @@ export interface FolderSubject {
   agentId?: string | null;
   /** Reaches grants to the whole project (people who may work in it, and its sessions). */
   projectMember?: boolean;
-  /** Project admin: manage everywhere except in people's own folders and private channels' folders. */
+  /** Project admin: manage everywhere except in private channels' folders, and in people's own folders only with `adminPeople`. */
   admin?: boolean;
+  /**
+   * The admin is a person, not a session (2026-11-02, Marko: admins get full
+   * access): their admin reach covers people's own folders too. A session of
+   * an admin never has it, so no agent inherits another person's folder.
+   */
+  adminPeople?: boolean;
   /** The project's private channel folders; absent means none. */
   privateChannelFolders?: PrivateChannelFolders;
 }
@@ -127,13 +134,25 @@ function protectedFolderOf(path: string, channels: PrivateChannelFolders): strin
 }
 
 /**
- * Project admins manage every folder except people's own and private
- * channels', and `/Channels` itself while it holds one (a non-member never
+ * Project admins manage every folder except private channels' and, unless
+ * `people` (an admin person, not a session), people's own; and not
+ * `/Channels` itself while it holds a private channel (a non-member never
  * learns that a private channel exists from an empty `/Channels`).
  */
-function adminReaches(path: string, channels: PrivateChannelFolders): boolean {
+function adminReaches(path: string, channels: PrivateChannelFolders, people = false): boolean {
   if (channels.size > 0 && path === PRIVATE_CHANNELS_DIR) return false;
-  return !personalFolderOf(path) && !privateChannelFolderOf(path, channels);
+  return (people || !personalFolderOf(path)) && !privateChannelFolderOf(path, channels);
+}
+
+/**
+ * The person's own folder (`/Users/<name>`) that `subject` reaches at `path`
+ * only as an admin person: the open the owner sees. Null when a grant of
+ * their own reaches it, or it is no one's own folder.
+ */
+export function adminOnlyPersonalFolder(path: string, grants: readonly FolderGrant[], subject: FolderSubject): string | null {
+  const folder = personalFolderOf(path);
+  if (!folder || !subject.admin || !subject.adminPeople) return null;
+  return folderVisible(path, grants, { ...subject, adminPeople: false }) ? null : folder;
 }
 
 /** A folder a grant may name: not the root, not `/Users` itself, nothing that is or holds a private channel's folder (Kortix grants those). */
@@ -164,7 +183,7 @@ function grantCovers(grantPath: string, path: string, channels: PrivateChannelFo
 /** What `subject` may do at `path`. */
 export function folderAccess(path: string, grants: readonly FolderGrant[], subject: FolderSubject): FolderAccess {
   const channels = subject.privateChannelFolders ?? NO_PRIVATE_CHANNEL_FOLDERS;
-  let best: FolderAccess = subject.admin && adminReaches(path, channels) ? 'manage' : 'none';
+  let best: FolderAccess = subject.admin && adminReaches(path, channels, subject.adminPeople) ? 'manage' : 'none';
   for (const g of grants) {
     if (best === 'manage') break;
     if (grantCovers(g.path, path, channels) && grantReaches(g, subject)) best = maxFolderAccess(best, g.level);
@@ -179,7 +198,7 @@ export function folderAccess(path: string, grants: readonly FolderGrant[], subje
  */
 export function folderVisible(path: string, grants: readonly FolderGrant[], subject: FolderSubject): boolean {
   if (folderAccess(path, grants, subject) !== 'none') return true;
-  if (subject.admin && adminReaches(path, subject.privateChannelFolders ?? NO_PRIVATE_CHANNEL_FOLDERS)) return true;
+  if (subject.admin && adminReaches(path, subject.privateChannelFolders ?? NO_PRIVATE_CHANNEL_FOLDERS, subject.adminPeople)) return true;
   return grants.some((g) => g.path !== path && pathWithinFolder(g.path, path) && grantReaches(g, subject));
 }
 

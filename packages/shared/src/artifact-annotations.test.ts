@@ -3,6 +3,7 @@ import {
   parseArtifactAnnotationFrameMessage,
   parseArtifactAnnotationHostMessage,
 } from "./artifact-annotations";
+import { ARTIFACT_TEXT_QUOTE_MAX } from "./artifact-comments";
 
 const envelope = { kortix: "annotate", v: 1 } as const;
 const viewport = { width: 1440, height: 900, scroll: { x: 0, y: 200 } };
@@ -96,7 +97,7 @@ test("frame protocol rejects unknown versions, types, keys, and page-supplied Fi
 
 test("candidate validation preserves the server Unicode and bounded-anchor contract", () => {
   for (const anchor of [
-    { ...textAnchor, quote: "x".repeat(33) },
+    { ...textAnchor, quote: "x".repeat(ARTIFACT_TEXT_QUOTE_MAX + 1) },
     { ...textAnchor, quote: "\ud800" },
     { ...textAnchor, prefix: "\0" },
     { ...pointAnchor, viewport_width: Infinity },

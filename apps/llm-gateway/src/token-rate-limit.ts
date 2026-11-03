@@ -20,18 +20,23 @@ import { TokenBucketRateLimiter } from '@kortix/shared/rate-limit';
  *
  * Returns the 429 response, or null when the request may continue.
  */
-export function createTokenRateLimit(limitPerMinute: number): (request: Request) => Response | null {
+export function createTokenRateLimit(limitPerMinute: number): (request: Request, headers?: Headers) => Response | null {
   const limiter = new TokenBucketRateLimiter('gateway_token');
-  return (request) => {
+  return (request, headers = new Headers()) => {
     const credential = credentialOf(request);
     if (!credential) return null;
     const key = createHash('sha256').update(credential).digest('hex');
     const result = limiter.check(key, { limit: limitPerMinute, windowMs: 60_000 });
+    headers.set('RateLimit-Limit', String(result.limit));
+    headers.set('RateLimit-Remaining', String(result.remaining));
+    headers.set('RateLimit-Reset', String(Math.ceil(result.resetMs / 1000)));
     if (result.allowed) return null;
     // A refusal must also stop the upload: an unread body is still buffered.
     request.body?.cancel().catch(() => {});
     const retryAfterSeconds = Math.max(1, Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000));
-    return rateLimitedResponse(new URL(request.url).pathname, retryAfterSeconds);
+    const response = rateLimitedResponse(new URL(request.url).pathname, retryAfterSeconds);
+    headers.forEach((value, name) => response.headers.set(name, value));
+    return response;
   };
 }
 

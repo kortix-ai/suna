@@ -41,6 +41,7 @@
  * and only matched here.
  */
 import { config } from '../config';
+import { aliasFormsOf, aliasFrontendOrigins, forRequestDomain } from '../shared/domain-aliases';
 
 /** `{env}-p{port}-{label}` on a real domain; `p{port}-{label}` on localhost. */
 const DEPLOYED_LABEL = /^(dev|staging|prod|preview)-p(\d{1,5})-([a-z0-9-]+)$/;
@@ -83,9 +84,33 @@ function normalizeDomain(value: string): string {
  * inferred from an API hostname, so an operator states it or gets the path
  * proxy, which always works.
  */
-export function previewBaseDomain(): string | null {
+function primaryPreviewBaseDomain(): string | null {
   const configured = config.KORTIX_PREVIEW_BASE_DOMAIN;
   return configured && normalizeDomain(configured) ? normalizeDomain(configured) : null;
+}
+
+/**
+ * The base domain preview URLs are built on. A request that arrived on a
+ * self-host alias domain gets the alias form, so its links stay on that domain.
+ */
+export function previewBaseDomain(): string | null {
+  const primary = primaryPreviewBaseDomain();
+  return primary ? forRequestDomain(primary) : null;
+}
+
+/**
+ * Every base domain a preview host may sit under: the primary one, then the
+ * self-host alias bases (KORTIX_PREVIEW_BASE_DOMAIN_ALIASES) that keep preview
+ * links from before a domain move working. URLs are only ever built on the
+ * primary.
+ */
+export function previewServedBaseDomains(): string[] {
+  const primary = primaryPreviewBaseDomain();
+  const aliases = [
+    ...aliasFormsOf(primary),
+    ...(config.KORTIX_PREVIEW_BASE_DOMAIN_ALIASES ?? '').split(',').map(normalizeDomain),
+  ];
+  return [...new Set([primary, ...aliases])].filter((domain): domain is string => Boolean(domain));
 }
 
 /**
@@ -134,8 +159,8 @@ export function resolvePreviewHost(hostname: string): ResolvedPreviewHost | null
     return { port: Number(local[1]), sandboxLabel: local[2]!, local: true };
   }
 
-  const domain = previewBaseDomain();
-  if (!domain || !host.endsWith(`.${domain}`)) return null;
+  const domain = previewServedBaseDomains().find((base) => host.endsWith(`.${base}`));
+  if (!domain) return null;
   const label = host.slice(0, -(domain.length + 1));
   if (label.includes('.')) return null;
   const match = DEPLOYED_LABEL.exec(label);
@@ -162,7 +187,8 @@ export function isAllowedPreviewOrigin(origin: string): boolean {
   const frontend = (config.FRONTEND_URL || '').trim();
   if (!frontend) return false;
   try {
-    return new URL(origin).origin === new URL(frontend).origin;
+    const candidate = new URL(origin).origin;
+    return candidate === new URL(frontend).origin || aliasFrontendOrigins().includes(candidate);
   } catch {
     return false;
   }

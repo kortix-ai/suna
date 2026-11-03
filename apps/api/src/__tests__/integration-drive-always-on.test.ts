@@ -1,9 +1,10 @@
 /**
- * Integration test (real HTTP route, real Postgres): `volumes` is an ordinary
- * per-project flag. A project admin who is not a platform operator turns it
- * on and off with `PATCH /v1/projects/:id/features`; the choice lives in the
- * project's metadata and the derived `drives` flag follows it. The Stateless
- * sessions flag is gone: its key is unknown, and a stored choice is inert.
+ * Integration test (real HTTP route, real Postgres): every project has a
+ * Drive where the platform stores one. `volumes` and `drives` are no flags
+ * since 2026-11-02: the project detail sends both as `true` (Platinum is
+ * configured here), the catalog has no row for either, a write of either key
+ * is an unknown flag, and a stored `false` from before is inert. The
+ * Stateless sessions flag is gone the same way.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
@@ -66,27 +67,31 @@ async function setFlag(feature: string, enabled: boolean | null) {
 
 const row = (body: any, key: string) => body.experimental_features.find((f: { key: string }) => f.key === key);
 
-describe('Volumes is a project flag', () => {
-  test('a project admin (not a platform operator) turns it on and off; drives follows', async () => {
-    // Unset, it follows the platform default: on (Platinum is configured above).
+describe('Every project has a Drive', () => {
+  test('the detail sends volumes and drives as true; the catalog lists neither; a write is an unknown flag', async () => {
     const fresh = await app.request(`/v1/projects/${PROJECT}`, { headers: { Authorization: `Bearer ${ownerSecret}` } });
     expect(fresh.status).toBe(200);
     const freshBody = (await fresh.json()) as any;
     expect(freshBody.experimental).toMatchObject({ volumes: true, drives: true });
-    expect(row(freshBody, 'volumes')).toMatchObject({ enabled: true, overridden: false, operator_only: false, scope: 'project' });
+    expect(row(freshBody, 'volumes')).toBeUndefined();
+    expect(row(freshBody, 'drives')).toBeUndefined();
 
-    const off = await setFlag('volumes', false);
-    expect(off.status).toBe(200);
-    expect(off.body.experimental).toMatchObject({ volumes: false, drives: false });
-
-    const on = await setFlag('volumes', true);
-    expect(on.status).toBe(200);
-    expect(on.body.experimental).toMatchObject({ volumes: true, drives: true });
-    expect(row(on.body, 'volumes')).toMatchObject({ enabled: true, overridden: true, operator_only: false, scope: 'project' });
-    expect(await storedFlags()).toEqual({ volumes: true });
-
-    expect((await setFlag('volumes', null)).status).toBe(200);
+    for (const feature of ['volumes', 'drives']) {
+      const write = await setFlag(feature, false);
+      expect(write.status).toBe(400);
+      expect(write.body.error).toBe(`Unknown feature flag '${feature}'`);
+    }
     expect(await storedFlags()).toBeUndefined();
+  });
+
+  test('a stored false from before the graduation is inert', async () => {
+    await db.execute(sql`
+      update kortix.projects
+         set metadata = coalesce(metadata, '{}'::jsonb) || '{"experimental":{"volumes":false,"drives":false}}'::jsonb
+       where project_id = ${PROJECT}`);
+    const res = await app.request(`/v1/projects/${PROJECT}`, { headers: { Authorization: `Bearer ${ownerSecret}` } });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as any).experimental).toMatchObject({ volumes: true, drives: true });
   });
 
   test('Stateless sessions is gone: the key is unknown, and a stored choice is inert', async () => {
@@ -104,15 +109,5 @@ describe('Volumes is a project flag', () => {
     expect(body.experimental).not.toHaveProperty('stateless_sessions');
     expect(body.experimental).not.toHaveProperty('ephemeral_sandboxes');
     expect(row(body, 'stateless_sessions')).toBeUndefined();
-  });
-
-  test('a derived flag is not a choice of its own', async () => {
-    const res = await app.request(`/v1/projects/${PROJECT}/features`, {
-      method: 'PATCH',
-      headers: { Authorization: `Bearer ${ownerSecret}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ feature: 'drives', enabled: true }),
-    });
-    expect(res.status).toBe(400);
-    expect(((await res.json()) as { error: string }).error).toContain("follows the project's Volumes flag");
   });
 });

@@ -30,6 +30,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
+import { startProgressTracker } from '../session-boot.ts';
 import {
   resolveSessionRuntime,
   SessionRuntimeError,
@@ -93,6 +94,8 @@ export async function loadSessionForChat(
   // The state check + `ensureReady()` live in the print-free core
   // (`session-runtime.ts`). This function only maps its failures onto the
   // CLI's output.
+  // One dim stderr line per change of stage or image step while it boots.
+  const progress = startProgressTracker();
   let runtime: SessionRuntime;
   try {
     runtime = await resolveSessionRuntime({
@@ -106,6 +109,12 @@ export async function loadSessionForChat(
       onStarting: options.onStarting ?? (() => {
         process.stderr.write(`${C.dim}  Starting session…${C.reset}\n`);
       }),
+      wait: {
+        onProgress: (start) => {
+          const line = progress(start);
+          if (line) process.stderr.write(`${C.dim}  ${line}${C.reset}\n`);
+        },
+      },
     });
   } catch (error) {
     if (error instanceof SessionRuntimeError && error.kind === 'not-running') {

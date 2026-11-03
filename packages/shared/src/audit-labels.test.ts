@@ -50,6 +50,18 @@ function badTitle(title: string): boolean {
 }
 
 describe('route lookup', () => {
+  test('Drive index search and Git repository search round-trip to distinct audit routes', () => {
+    const searches = [
+      { route: '/v1/projects/:projectId/search', action: 'drive.file.search', title: 'Searched project Drive' },
+      { route: '/v1/projects/:projectId/files/search', action: 'file.search', title: 'Searched project files' },
+    ];
+    for (const { route, action, title } of searches) {
+      expect(auditLabelForRoute('GET', route)).toEqual({ action, title });
+      expect(auditLabelForAction(action)?.title).toBe(title);
+      expect(auditRouteForAction(action)).toEqual({ method: 'GET', route });
+    }
+  });
+
   test('a method route resolves by its method and template', () => {
     expect(auditLabelForRoute('GET', '/v1/projects')).toEqual(
       AUDIT_ROUTE_LABELS['GET /v1/projects'] as AuditRouteLabel,

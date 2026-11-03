@@ -27,6 +27,7 @@ export {
   useDriveUsage,
   useFolderMountNotice,
 } from './drives/drive-storage';
+export { drivePathFromParam, drivePathToParam, driveUrlWithPath } from './drives/drive-path-param';
 export { FilePreviewHost } from './file-preview-host';
 export { FilesStoreProvider, getFileIcon } from './project';
 export { ChangeRequestDetailDialog } from './project/components/change-request-detail-dialog';

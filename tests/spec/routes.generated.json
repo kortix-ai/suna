@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1020,
+  "count": 1022,
   "routes": [
     {
       "method": "GET",
@@ -1489,6 +1489,10 @@
     {
       "method": "DELETE",
       "path": "/v1/drives/:driveId/access/:grantId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/admin-reads"
     },
     {
       "method": "GET",
@@ -3049,6 +3053,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sandboxes"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/search"
     },
     {
       "method": "POST",

@@ -74,6 +74,7 @@ const WORKERS: Record<string, string> = {
   'drive-conflict-scan': 'worker/jobs/drive.ts',
   'volume-deletions': 'worker/jobs/drive.ts',
   'drive-mount-revocations': 'worker/jobs/drive.ts',
+  'drive-index': 'worker/jobs/drive.ts',
   'notification-digest': 'worker/jobs/notification.ts',
   'session-log-purge': 'worker/jobs/session-log-purge.ts',
   'gateway-spend-backfill': 'worker/jobs/gateway-spend-backfill.ts',
@@ -97,6 +98,7 @@ const PER_PROCESS: Record<string, string> = {
 const NOT_WORKERS: Record<string, string> = {
   'apps/public-proxy-handler.ts': 'stamps app activity while one proxied request streams; runs inside that request',
   'apps/ws-proxy.ts': 'stamps app activity for one open WebSocket; runs inside that connection',
+  'projects/git/object-store.ts': 'measures the pack one git fetch downloads, every 50 ms while it runs; runs inside that call',
   'llm-gateway/models/runtime-catalog.ts': 'refreshes the in-memory models.dev catalog',
   'projects/lib/session-control-reconciler.ts': 'read-only reconcile of one open session stream',
   'projects/provider-transition/provider-transition-service.ts': 'renews a lease inside the provider-transition tick',

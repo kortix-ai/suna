@@ -1,7 +1,9 @@
 ---
 title: Developers
-description: "Build on Kortix: the CLI, git and change requests, the kortix.yaml reference, the REST API, Apps, self-hosting and the @kortix/sdk."
+description: "Build on Kortix, the cloud-native agent harness for companies: the CLI, git and change requests, the kortix.yaml reference, the REST API, Apps, self-hosting and the @kortix/sdk."
 ---
+
+Kortix is the cloud-native agent harness for companies. You write custom agents on pi, an open-source agent harness, declare them in `kortix.yaml`, and `kortix ship` deploys them to the cloud. [Triggers](#triggers-keys) start them from events, they hand work to each other in the background ([Agents working together](#agents-working-together)), and each session runs on its own cloud computer.
 
 Everything a developer needs to build on Kortix, on one page: the CLI and git workflow, the `kortix.yaml` reference, the REST API, Apps, self-hosting, and the TypeScript SDK with its React hooks and UI components. For what Kortix is and how people use it, read the [Guide](/docs/guide).
 
@@ -2091,6 +2093,7 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 | --- | --- | --- |
 | `files <subcommand>` | Read the committed repository: files, history, branches, commits, diffs and a zip download. | [Git](/docs/developers#git) |
 | `drive <subcommand>` | The project's Drive: list, read, upload, move and delete files, and share folders. | [Drive](/docs/guide#drive) |
+| `search <query>` | Search the project's Drive by file name and text, with your folder access. Inside a session it covers every folder the session may mount, also the ones past its mounts. | [Drive](/docs/guide#drive) |
 | `cr <subcommand>` | Change requests: list, show, diff, open, merge, request changes, close and reopen. | [Git](/docs/developers#git) |
 | `review <subcommand>` | The review inbox: change requests, held connector calls and submitted outputs. | [Git](/docs/developers#git) |
 | `triggers <subcommand>` | Every trigger, `kortix.yaml` and runtime: `ls` lists both, `add` writes `kortix.yaml` (with `--on`, `--session` or `--runtime` it creates a runtime trigger), `fire`, `enable`, `disable`, `run`, `pause`, `resume` and `rm` take a slug or a runtime id. | [Triggers](/docs/guide#triggers) |
@@ -2513,17 +2516,24 @@ unchanged list answers `304` with no body.
 
 A rate-limited route returns `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and
 `X-RateLimit-Reset` (seconds until the window resets). When the limit is
-reached it returns `429` with `Retry-After` and this body:
+reached it returns `429` with `Retry-After`. The API edge budgets return:
 
 ```json
-{ "error": "rate_limit_exceeded", "message": "Rate limit exceeded. Please retry shortly.", "retry_after_seconds": 12 }
+{ "error": "rate_limit_exceeded", "retry_after_seconds": 12 }
 ```
 
 | Route | Limit |
 |---|---|
-| Headless sign-in routes under `/v1/auth` | 30 requests per minute per IP address. The `429` body is `{ "error": "over_request_rate_limit", "error_description": "…" }` with `Retry-After`, and no `X-RateLimit-*` headers. |
+| API routes under `/v1`, except the health endpoints and public auth families below | 300 requests per minute per client address per API replica; one token refills every 200 ms. |
+| Public auth families `/v1/auth`, `/v1/oauth`, `/v1/access`, `/v1/tunnel/device-auth` | Separate shared budget of 30 requests per minute per client address per API replica, before validation and authentication. |
 | The sandbox proxy, `/v1/p/<external_id>/<port>/*`: previews and the session runtime | 600 requests per minute per sandbox |
 | Secret writes in one project | 100 per hour, `code: "project_secret_write_limit"` |
+
+The edge budgets count rejected requests too. `OPTIONS` and `/v1/health`,
+`/v1/health/live`, and `/v1/health/ready` are exempt. Direct internal requests
+without forwarding headers retain their existing exemption. These replica-local
+abuse budgets are not account quotas; a deployment with multiple API replicas
+can accept a multiple of each budget.
 
 ### What the reference does not cover
 
@@ -3784,6 +3794,44 @@ kortix self-host start
 | Update policy | Auto-update on or off, channel, daily time and timezone. |
 
 SAML sign-in is on in every instance, and `init` generates `SAML_PRIVATE_KEY` once. Do not change that key after you register an identity provider: it is the instance's SAML identity. To set up SSO, see [Single sign-on and directory sync](/docs/guide#single-sign-on-and-directory-sync).
+
+#### Change or add a domain
+
+An instance has one primary domain and serves any number of alias domains in full. `kortix self-host domain show` lists them.
+
+**Add a domain.** Point its records at the server: `<domain>`, `api.<domain>`, and `*.apps.<domain>` and `*.p.<domain>` when Apps hosting and preview origins are on. Then run:
+
+```bash
+kortix self-host env set KORTIX_DOMAIN_ALIASES=<domain>[,<domain>]
+```
+
+Every alias works like the primary domain:
+
+| Host | Serves |
+|---|---|
+| `<alias>` | The web app. A page opened here calls the API and auth on the same alias. |
+| `api.<alias>` | The API. |
+| `*.apps.<alias>`, `*.p.<alias>` | Apps and sandbox previews. Links the app shows on an alias use the alias. |
+
+Emails, sandbox callbacks and webhooks keep using the primary domain. People sign in once on each domain they open. SAML SSO uses the primary domain: an SSO sign-in started on an alias finishes on the primary domain. To retire an alias, remove it from the list.
+
+**Move the primary domain.** Point the new domain's records at the server, then run:
+
+```bash
+kortix self-host domain move <domain>
+```
+
+The command checks that every new name resolves to the same address as the current domain, writes the new configuration, runs `caddy validate`, and restarts Caddy, the frontend, the API, the gateway and auth. A failed validation restores the previous configuration. Hosts under the old domain move with it, and the old domain becomes an alias, so every old link keeps working.
+
+Re-register URLs that outside services store: the GitHub App callback and OAuth redirect URIs.
+
+If people sign in with SAML SSO, update the identity provider **before** the move. The service provider's entity ID and ACS URL follow the primary domain, and every SSO sign-in fails until the identity provider knows them. Microsoft Entra ID and Okta accept several values, so add the new ones next to the current ones:
+
+| Field | Value |
+|---|---|
+| Identifier (entity ID) | `https://<domain>/auth/v1/sso/saml/metadata` |
+| Reply URL (ACS) | `https://<domain>/auth/v1/sso/saml/acs` |
+| Logout URL | `https://<domain>/auth/v1/sso/saml/slo` |
 
 ### First sign-in and setup
 

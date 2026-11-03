@@ -12,7 +12,9 @@ const OTHER = 'proj-2';
 const TENANT = 'tenant-1';
 const CONVO = '19:abc@thread.tacv2';
 
+const realConfig = await import('../config');
 mock.module('../config', () => ({
+  ...realConfig,
   SANDBOX_VERSION: 'test',
   config: { FRONTEND_URL: 'https://dev.kortix.com', TEAMS_REQUIRE_USER_IDENTITY: true },
   KNOWN_PROVIDERS: ['platinum', 'daytona'],
