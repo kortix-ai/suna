@@ -3934,6 +3934,16 @@ A wildcard certificate needs the ACME DNS-01 challenge. Kortix does not need an 
 
 Each alias domain gets its own two CNAME records. The server must accept UDP and TCP port 53 from anywhere (a cloud firewall or security group rule). acme-dns serves only its own zone and answers no other query.
 
+What the wildcard setup exposes and stores:
+
+| Part | Where | Who can reach it |
+|---|---|---|
+| acme-dns DNS server | UDP and TCP port 53 on the server's own address (`KORTIX_ACME_DNS_LISTEN_IP`) | The internet. It answers only for `acme.<domain>`: the zone's NS and A records and the current challenge TXT values. It is not a resolver. |
+| acme-dns API (register an account, write a challenge value) | `127.0.0.1:13750` on the server, and `http://acme-dns` inside the Compose network | The server itself and the Caddy container. It is never published on a public address. |
+| Account credentials, one file per base | `<instance>/acme-dns/accounts/<base>.json`, file mode `0600`, directory `0700` | The server's root user and the Caddy container, read-only. |
+
+The command accepts an acme-dns account only when every field has the exact acme-dns format (UUIDs, the password alphabet, a full domain of `<subdomain>.acme.<domain>`). It refuses anything else, and it writes no other field to disk. A credentials file that fails the same check is replaced by a new registration, and the command prints the new CNAME value. Code scanners flag two flows here: the credentials go from an HTTP answer to a file, and from that file into an HTTP request. Both are reviewed, intended and kept: the data goes from the server's own acme-dns, on loopback, to a `0600` file, and back from that file to the same acme-dns.
+
 Run the command again after you add the records. It checks them through the zone's own nameserver and a public resolver, and switches only the bases whose records work. A base without records keeps one certificate per host, so nothing stops serving. The first switch restarts Caddy once with the Kortix Caddy image (`kortix/caddy`, Caddy with the acme-dns module), which takes a few seconds; later switches reload Caddy without a dropped connection. Caddy renews the wildcard certificates itself. `kortix self-host tls show` lists how each host gets its certificate. To go back to one certificate per host, remove the bases from `KORTIX_WILDCARD_TLS_BASES` with `kortix self-host env set`.
 
 Other rules that keep a domain clear of these filters:
