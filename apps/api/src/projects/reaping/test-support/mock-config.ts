@@ -1,19 +1,6 @@
-/**
- * A COMPLETE stand-in for the `config` module, for use with `mock.module`.
- *
- * `mock.module` in bun is process-global and replaces the module wholesale, so a
- * factory returning `{ config: {...} }` deletes every other named export for
- * every suite in the same process. `src/config.ts` also exports `SANDBOX_VERSION`,
- * `KNOWN_PROVIDERS`, `parseAllowedProviders`,
- * `PLATFORM_FEE_MARKUP`, and `getToolCost` — and `src/snapshots/hash.ts` imports
- * `SANDBOX_VERSION`, which is the exact break that made
- * `bun test src/projects/reaping/` unrunnable.
- *
- * Keep the real named exports; the hermetic test environment supplies the
- * synthetic values required to validate config at import time.
- */
 import * as realConfig from '../../../config';
 
+/** Preserve config exports while overriding settings for reaping tests. */
 export function mockConfigModule(
   overrides: Partial<Record<string, unknown>> = {},
 ): Record<string, unknown> {
