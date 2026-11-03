@@ -2365,15 +2365,27 @@ flow(
         if (r.status !== 413) throw new Error(`expected 413, got ${r.status}`);
       });
 
-      await ctx.step('back under the cap, v2 and v3 assign the same release, and both carry the archive', async () => {
-        await commitTo(fixture.repo, {}, 'back under the cap', ['data']);
+      await ctx.step('back under the cap, the six-hour memo still refuses archives while v3 assigns the new release', async () => {
+        const smallTip = await commitTo(fixture.repo, {}, 'back under the cap', ['data']);
         const v2r = await fixture.descriptor(own.secret, own.sessionId);
         const v3r = await fixture.descriptor(own.secret, own.sessionId, V3);
         if (v2r.status !== 200 || v3r.status !== 200) throw new Error(`statuses ${v2r.status}/${v3r.status}`);
-        if (!HEX64.test(v2r.body.release_id ?? '') || v2r.body.release_id !== v3r.body.release_id) {
-          throw new Error(`v2 ${v2r.body.release_id} and v3 ${v3r.body.release_id} disagree`);
+        if (v2r.body.release_id !== null || v2r.body.files !== null || v2r.body.archive !== null) {
+          throw new Error('v2 assigned a release during the over-limit memo');
         }
-        if (!v2r.body.archive || !v3r.body.archive) throw new Error('a release under the cap has no archive');
+        if (!v2r.body.reason?.includes('exceeds the 33554432-byte config archive limit')) {
+          throw new Error(`v2 reason ${v2r.body.reason}`);
+        }
+        const small = v3r.body as Descriptor;
+        if (small.source_commit !== smallTip || small.release_id !== (await releaseIdOf(small)) || small.release_id === v3.release_id) {
+          throw new Error('v3 did not assign the smaller tree its own release');
+        }
+        if (small.archive !== null || small.reason !== null) throw new Error('v3 did not preserve the archive fallback');
+        if (!small.files?.some(([path]) => path === 'agents/kortix.md') || small.files.some(([path]) => path.startsWith('data/'))) {
+          throw new Error('v3 does not list the smaller tree');
+        }
+        const archive = await fixture.download(own.secret, small.config_tree_id!);
+        if (archive.status !== 200 || archive.bytes.byteLength === 0) throw new Error(`explicit small-tree archive: ${archive.status}`);
       });
     } finally {
       await fixture.cleanup();
