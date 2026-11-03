@@ -491,6 +491,7 @@ pub fn windows(fg: &Foreground) -> Vec<WinInfo> {
             let title = window_text(hwnd);
             let class = class_name(hwnd);
             let ex = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+            let overlay = WS_EX_LAYERED.0 | WS_EX_TRANSPARENT.0;
             let is_fg = hwnd_id(hwnd) == fg.id;
             // Titleless windows are shell chrome or invisible helpers; keep menus and the focused window.
             if title.is_empty() && class != "#32768" && !is_fg {
@@ -502,13 +503,7 @@ pub fn windows(fg: &Foreground) -> Vec<WinInfo> {
             if class == "Progman" || class == "WorkerW" {
                 continue;
             }
-            // A click-through overlay (a game or GPU overlay, a screen dimmer) shows
-            // the windows under it: it names no frame and covers nothing. A window
-            // excluded from capture is not in the image at all.
-            let overlay = WS_EX_LAYERED.0 | WS_EX_TRANSPARENT.0;
-            if ex & overlay == overlay && !is_fg {
-                continue;
-            }
+            // A window excluded from capture is not in the image at all.
             let mut affinity = 0u32;
             if GetWindowDisplayAffinity(hwnd, &mut affinity).is_ok()
                 && affinity == WDA_EXCLUDEFROMCAPTURE.0
@@ -526,6 +521,7 @@ pub fn windows(fg: &Foreground) -> Vec<WinInfo> {
                 title,
                 rect,
                 focused: is_fg,
+                overlay: ex & overlay == overlay && !is_fg,
             });
         }
     }
