@@ -70,6 +70,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /sitemap.xml': { action: 'system.sitemap.read', title: 'Read the sitemap' },
   'POST /v1/access/check-email': { action: 'auth.email.check', title: 'Checked sign-in email' },
   'POST /v1/access/request-access': { action: 'auth.access_request.create', title: 'Requested early access' },
+  'GET /v1/access/branding': { action: 'auth.branding.read', title: 'Viewed sign-in branding' },
   'GET /v1/access/signup-status': { action: 'auth.signup_status.read', title: 'Viewed signup status' },
   'GET /v1/account-invites': { action: 'invite.received.list', title: 'Listed received invitations' },
   'GET /v1/account-invites/:inviteId': { action: 'invite.read', title: 'Viewed account invitation' },
