@@ -36,8 +36,8 @@ export const PRICE = { now: '$20,000', per: '/month' } as const;
 export const GUARANTEE = 'Not loving it in the first 2 weeks? Get 50% back, no questions asked.';
 
 export const hero = {
-  title: 'Your company, run by agents.',
-  titleMuted: 'We build it. You own it.',
+  title: 'AI adopted across your company.',
+  titleMuted: 'Built for you. Owned by you.',
   sub: 'Our team maps how your company works, connects your data and ships the agents and apps that run it, on Kortix. Everything lives in a git repo you own.',
   /** One quiet line under the buttons. The price waits for the pricing section. */
   terms: 'Strategy and build, one team · One flat monthly fee · Everything in a repo you own',
