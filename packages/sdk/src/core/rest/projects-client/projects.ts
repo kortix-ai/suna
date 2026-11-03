@@ -118,6 +118,8 @@ export type FeatureFlagKey =
   | 'chrome'
   /** Agent teams: a lead session with named teammates and a shared task list. Experimental, off by default. */
   | 'agent_teams'
+  /** Voice calls: talk with the session's agent from the session page, with screen share. Off by default. */
+  | 'voice_call'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -174,6 +176,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'session_groups',
   'chrome',
   'agent_teams',
+  'voice_call',
 ] as const;
 
 /**

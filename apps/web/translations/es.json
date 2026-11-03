@@ -1329,6 +1329,10 @@
         "agent_teams": {
           "name": "Equipos de agentes",
           "description": "Una sesión líder inicia compañeros de equipo con nombre que comparten una lista de tareas. Cada compañero toma una tarea, la trabaja en su propia sesión y avisa al líder cuando termina. Ves a cada compañero y sus tareas bajo el cuadro de mensaje del líder. Los mensajes entre sesiones funcionan sin esta opción."
+        },
+        "voice_call": {
+          "name": "Llamadas de voz",
+          "description": "Llama al agente de la sesión desde la página de la sesión y habla con él. Te escucha, responde con voz, ve la pantalla que compartes y trabaja en la misma sesión, así la conversación queda en el chat."
         }
       },
       "channelsSwitch": {

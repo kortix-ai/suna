@@ -1201,9 +1201,14 @@ const nextConfig = (): NextConfig => ({
             key: 'X-Content-Type-Options',
             value: 'nosniff',
           },
+          // The microphone for this origin only: a voice call (the session page's
+          // Call button, project flag `voice_call`) asks for it, and the browser
+          // still asks the person. Set on every document, not the session route
+          // alone: a session opened by client-side navigation keeps the policy of
+          // the page the app first loaded. Frames from other origins stay without it.
           {
             key: 'Permissions-Policy',
-            value: 'camera=(), microphone=(), geolocation=()',
+            value: 'camera=(), microphone=(self), geolocation=()',
           },
           {
             key: 'Referrer-Policy',

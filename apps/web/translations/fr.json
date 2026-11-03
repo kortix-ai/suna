@@ -1329,6 +1329,10 @@
         "agent_teams": {
           "name": "Équipes d’agents",
           "description": "Une session principale lance des coéquipiers nommés qui partagent une liste de tâches. Chaque coéquipier prend une tâche, la traite dans sa propre session et prévient la session principale quand elle est terminée. Vous voyez chaque coéquipier et ses tâches sous la zone de saisie de la session principale. Les messages entre sessions fonctionnent sans cette option."
+        },
+        "voice_call": {
+          "name": "Appels vocaux",
+          "description": "Appelle l'agent de la session depuis la page de la session et parle-lui. Il t'entend, répond à voix haute, voit l'écran que tu partages et travaille dans la même session : la conversation reste dans le chat."
         }
       },
       "channelsSwitch": {

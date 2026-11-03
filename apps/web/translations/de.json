@@ -1329,6 +1329,10 @@
         "agent_teams": {
           "name": "Agenten-Teams",
           "description": "Eine leitende Session startet benannte Teammitglieder mit einer gemeinsamen Aufgabenliste. Jedes Teammitglied übernimmt eine Aufgabe, bearbeitet sie in seiner eigenen Session und meldet der Leitung, wenn sie erledigt ist. Du siehst jedes Teammitglied und seine Aufgaben unter dem Eingabefeld der Leitung. Nachrichten zwischen Sessions funktionieren auch ohne dieses Flag."
+        },
+        "voice_call": {
+          "name": "Sprachanrufe",
+          "description": "Ruf den Agenten der Session von der Session-Seite aus an und sprich mit ihm. Er hört dich, antwortet mit Stimme, sieht einen geteilten Bildschirm und arbeitet in derselben Session, sodass das Gespräch im Chat bleibt."
         }
       },
       "channelsSwitch": {

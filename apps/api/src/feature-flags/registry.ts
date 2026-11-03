@@ -541,6 +541,21 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'routes) do not read this flag. The session list `team_lead` filter and the session row fields stay on: ' +
       'without teammates they return nothing new.',
   },
+  {
+    key: 'voice_call',
+    name: 'Voice calls',
+    description:
+      'Call the session\'s agent from the session page and talk it through: it hears you, answers in a voice, sees a screen you share, and works in the same session, so the conversation stays in the chat.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'Off ⇒ nothing of the voice loads. BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so ' +
+      'kortixd registers no voice extension and opens no voice port; a change reaches the next new box. WEB: no call ' +
+      'button on the session page. The gateway\'s audio routes are inference like chat: billed per use, not gated here.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(
