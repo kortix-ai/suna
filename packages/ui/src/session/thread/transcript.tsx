@@ -109,6 +109,8 @@ import { SubagentDialog } from '../agents/subagent-view';
 import { parseNoticeBatch, parseSubagentNotice, type NoticeBatchItem, type SubagentNotice } from '../turn/subagent-notice';
 import { SubagentNoticeRow } from '../turn/subagent-notice-row';
 import { NoticeBatchGroup } from '../turn/notice-batch-group';
+import { PeerMessageRow } from '../turn/peer-message-row';
+import { parsePeerMessagePrompt, type PeerMessagePromptInfo } from '@kortix/shared';
 import { ToolPartRenderer, TurnLiveContext } from '../tool/tool-renderers';
 import {
   ImageGenDigestsContext,
@@ -1062,6 +1064,18 @@ const subagentNotice = useMemo<SubagentNotice | null>(() => {
   }
   return null;
 }, [texts, sessionReport, noticeBatch]);
+// A message from another Kortix session (`send_message`). The API delivers it as
+// harness context (`synthetic`), so the bubble, which draws only what a person
+// typed, never shows it: its row is drawn here. A typed one stays the bubble's.
+const peerMessage = useMemo<PeerMessagePromptInfo | null>(() => {
+  if (sessionReport || noticeBatch) return null;
+  for (const t of texts) {
+    if (!t.synthetic) continue;
+    const info = parsePeerMessagePrompt(t.text);
+    if (info) return info;
+  }
+  return null;
+}, [texts, sessionReport, noticeBatch]);
 // Extract kortix_system messages for inline rendering (goal continuations, etc.)
 const systemMessages = useMemo<KortixSystemMessage[]>(() => {
   const msgs: KortixSystemMessage[] = [];
@@ -1116,7 +1130,7 @@ const commandOutput = useMemo(() => {
   const source = Array.isArray(commands) ? commands.find((c) => c.name === commandForTurn.name)?.source : undefined;
   return source === 'skill' ? undefined : commandForTurn;
 }, [commandForTurn, commands]);
-  return { sessionReport, noticeBatch, subagentNotice, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn, commandOutput };
+  return { sessionReport, noticeBatch, subagentNotice, peerMessage, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn, commandOutput };
 }
 
 /** The throttled working status of the working turn: one status change per
@@ -1544,7 +1558,7 @@ function TurnUserBlock(
   },
 ) {
   const { userContent } = props;
-  const { sessionReport, noticeBatch, subagentNotice, systemMessages, hasVisibleUserContent } = userContent;
+  const { sessionReport, noticeBatch, subagentNotice, peerMessage, systemMessages, hasVisibleUserContent } = userContent;
   // P5.6: the note a partial restore left for the agent is a notice, not a person's prompt.
   if (isSessionLogRestoreNote(props.turn.user)) return <RestoreNoteMarker />;
   return (
@@ -1553,11 +1567,13 @@ function TurnUserBlock(
         <NoticeBatchGroup items={noticeBatch} />
       ) : subagentNotice ? (
         <SubagentNoticeRow notice={subagentNotice} />
+      ) : peerMessage ? (
+        <PeerMessageRow info={peerMessage} />
       ) : (
         sessionReport && <TurnSessionReport report={sessionReport} />
       )}
       {/* ── System message indicator — shown for kortix_system-only messages ── */}
-      {!hasVisibleUserContent && !sessionReport && !noticeBatch && systemMessages.length > 0 && (
+      {!hasVisibleUserContent && !sessionReport && !noticeBatch && !peerMessage && systemMessages.length > 0 && (
         <SystemMessageIndicator messages={systemMessages} />
       )}
       {hasVisibleUserContent && <TurnUserBubble {...props} />}
@@ -2414,7 +2430,7 @@ function SessionTurnImpl(props: SessionTurnProps) {
     const showAnswer = turn.assistant.length > 0 || model.working || !!errors.turnErrorRow.text;
     return (
       <div className="text-factor-[2]">
-        {userContent.hasVisibleUserContent || userContent.sessionReport || userContent.noticeBatch || userContent.systemMessages.length > 0 ? (
+        {userContent.hasVisibleUserContent || userContent.sessionReport || userContent.noticeBatch || userContent.peerMessage || userContent.systemMessages.length > 0 ? (
           <MessageRow
             // The first message's turn clips its toolbar's overhang: it sits inside the row.
             className={cn('group/turn', props.isFirstTurn && '[&_[data-slot=row-toolbar]]:top-0.5')}
