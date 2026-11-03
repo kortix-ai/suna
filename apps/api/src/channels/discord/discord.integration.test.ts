@@ -69,6 +69,7 @@ const fake = Bun.serve({
       return found ? Response.json(found) : Response.json({ message: 'Unknown Channel', code: 10003 }, { status: 404 });
     }
     if (/\/typing$/.test(path)) return new Response(null, { status: 204 });
+    if (path.startsWith('/cdn/') || path === '/elsewhere.txt') return new Response('quarterly numbers: 42\n', { headers: { 'content-type': 'text/plain' } });
     return Response.json({ id: snowflake() });
   },
 });
@@ -145,6 +146,8 @@ beforeAll(async () => {
     DISCORD_PUBLIC_KEY: PUBLIC_KEY_HEX,
     DISCORD_CLIENT_SECRET: 'synthetic-secret',
     DISCORD_BOT_TOKEN: 'synthetic-token',
+    // `localhost`: the CDN host. The same server as `127.0.0.1` is another host.
+    DISCORD_CDN_URL: `${fake.url.origin}/cdn`,
   });
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'discord-test' });
   for (const [projectId, name] of [[PROJECT, 'discord-main'], [OTHER, 'discord-other']] as const) {
@@ -253,6 +256,26 @@ describe('a conversation', () => {
     // The channel stays this project's when another project installs the server.
     const [binding] = await db.select().from(chatChannelBindings).where(and(eq(chatChannelBindings.platform, 'discord'), eq(chatChannelBindings.channelId, CHANNEL)));
     expect(binding?.projectId).toBe(PROJECT);
+  });
+
+  test("a message's files reach the prompt from Discord's CDN only; a file elsewhere is never fetched", async () => {
+    const m = message({
+      channel_id: CHANNEL,
+      content: `<@${BOT}> read the attached report`,
+      attachments: [
+        { id: '770000000000000001', filename: 'q3 report.txt', size: 22, url: `${fake.url.origin}/cdn/attachments/1/q3.txt`, content_type: 'text/plain' },
+        { id: '770000000000000002', filename: 'notes.txt', size: 22, url: `http://127.0.0.1:${fake.port}/elsewhere.txt`, content_type: 'text/plain' },
+      ],
+    });
+    expect(await intakeMessage(m, BOT)).toBe('stored');
+    await drain();
+    const prompt = created[0]!.postCreate[1];
+    expect(prompt.parts.filter((p: { type: string }) => p.type === 'file')).toEqual([
+      expect.objectContaining({ type: 'file', filename: 'document.txt', mime: 'text/plain' }),
+    ]);
+    expect(String(prompt.parts[0].text)).toContain('(file q3 report.txt)');
+    expect(routes()).toContain('GET /cdn/attachments/1/q3.txt');
+    expect(routes()).not.toContain('GET /elsewhere.txt');
   });
 
   test("in the session's thread a mention follows up; without the Message Content intent nothing else is read", async () => {

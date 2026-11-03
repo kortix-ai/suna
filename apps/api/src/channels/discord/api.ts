@@ -83,11 +83,24 @@ export function discordUnreachable(error: unknown): boolean {
   return !(error instanceof DiscordApiError) || error.status === 0 || error.status === 429 || error.status >= 500;
 }
 
+/** Discord's attachment hosts, and the configured CDN (a test's fake). */
+function attachmentHost(url: string): boolean {
+  try {
+    const { host, protocol } = new URL(url);
+    if (host === new URL(config.DISCORD_CDN_URL).host) return true;
+    return protocol === 'https:' && (host === 'cdn.discordapp.com' || host === 'media.discordapp.net');
+  } catch {
+    return false;
+  }
+}
+
 /**
- * An attachment's bytes from its CDN URL, at most `maxBytes`. The URL is
+ * An attachment's bytes from its CDN URL, at most `maxBytes`. Only from
+ * Discord's CDN: a URL elsewhere is 'unavailable' and never fetched. The URL is
  * signed and expires; it never reaches an error or a log.
  */
 export async function discordDownload(url: string, maxBytes: number): Promise<Uint8Array<ArrayBuffer> | 'too_large' | 'unavailable'> {
+  if (!attachmentHost(url)) return 'unavailable';
   let res: Response;
   try {
     res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
