@@ -73,6 +73,17 @@ describe('MessageSenderAbove', () => {
   test('no sender: the message renders alone', () => {
     expect(render(<MessageSenderAbove sender={null}><p>hello</p></MessageSenderAbove>)).toBe('<p>hello</p>');
   });
+
+  test('reserve: no sender yet keeps an avatar-sized slot above the message', () => {
+    const markup = render(
+      <MessageSenderAbove sender={null} reserve>
+        <p>hello</p>
+      </MessageSenderAbove>,
+    );
+    expect(markup).toContain('size-6');
+    expect(markup).not.toContain('data-slot="avatar"');
+    expect(markup.indexOf('size-6')).toBeLessThan(markup.indexOf('hello'));
+  });
 });
 
 describe('SessionParticipantStack', () => {
