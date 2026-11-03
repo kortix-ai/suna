@@ -23,14 +23,16 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  *    (engineer and QA agents, Linear). Kortix: the `kortix-ai/company`
  *    project (engineering factory, compliance agency, sales, support and
  *    marketing agents).
- *  - The asset manager card describes how an asset manager runs on Kortix
- *    end to end, in general terms (founder, 2026-11-02: no "own fund", no
+ *  - The asset manager card shows only the autonomous investment analysis
+ *    (founder, 2026-11-03), in general terms (2026-11-02: no "own fund", no
  *    "simulated capital"). Its source is Kortix's own fund project
  *    (`kortix-ai/hedgefund`, CASE-STUDY.md): real public market data,
  *    simulated investors, capital and trades. Name only steps that project
  *    runs, and never a fund size, a return or a client.
- *  - Bodies stay minimal (founder, 2026-11-02): one or two short sentences
- *    on what the agents do there. Only the WRITER card says "built from
+ *  - Each card shows one autonomous job, never the whole company (founder,
+ *    2026-11-03): its title names that job, its body and facts stay on it.
+ *    Bodies stay minimal (2026-11-02): one or two short sentences on what
+ *    the agents do there and who decides. Only the WRITER card says "built from
  *    Kortix's open-source code".
  *  - Every other case is a CLASS, never a name. Customer names are blocked
  *    commit terms (CLAUDE.md, `scripts/check-blocked-terms.sh`). Keep each
@@ -102,44 +104,44 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
         height: 278,
       },
       category: 'Telecommunications',
-      title: 'Fiber network design, run by agents.',
-      body: 'Agents design fiber routes from GIS data and imagery, build bills of materials and track every project, self-hosted in the company’s own cloud.',
+      title: 'Autonomous fiber network design.',
+      body: 'Agents design fiber routes from GIS data and imagery and build the bill of materials for each route.',
       facts: [
         'Fiber routes designed from GIS and imagery',
         'Bills of materials from GIS layers',
-        'Schedule health across every project',
-        'Self-hosted in its own cloud, with SSO',
+        'Self-hosted in its own cloud',
+        'Single sign-on',
       ],
     },
     {
       id: 'asset-management',
       logo: {
         src: '/media/case-studies/asset-management.svg?v=54485925',
-        alt: 'An AI-run asset manager.',
+        alt: 'An asset management symbol',
         width: 100,
         height: 100,
       },
       category: 'Asset management',
-      title: 'An AI-run asset manager.',
-      body: 'Agents run the firm front to back office: research, IC memos, trading, reconciliation, valuation, NAV, compliance and investor reporting. People sign every decision.',
+      title: 'Autonomous investment analysis.',
+      body: 'Agents read filings and market data, build the thesis and write the investment memo. A portfolio manager decides.',
       facts: [
-        'Research, IC and trading',
-        'Risk, valuation and NAV',
-        'Compliance and investor reporting',
-        'Settlement and reconciliation',
+        'Filings and market data read',
+        'A thesis for every idea',
+        'An investment memo with sources',
+        'A portfolio manager decides',
       ],
     },
     {
       id: 'platinum',
       mark: 'platinum',
       category: 'Cloud infrastructure',
-      title: 'An autonomous cloud company.',
-      body: 'Agents build, test and ship the product, then market and sell it. People set the direction and approve what ships.',
+      title: 'Autonomous software engineering.',
+      body: 'Engineering agents pick up issues, write the code and test every flow on video. People approve what ships.',
       facts: [
         'Engineering agents ship from Linear issues',
         'QA agents test every flow on video',
-        'MicroVM sandboxes that boot in 400 ms',
-        'Every Kortix session runs on Platinum',
+        'Agents work in parallel',
+        'People approve what ships',
       ],
     },
     {
@@ -151,13 +153,13 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
         height: 100,
       },
       category: 'Banking',
-      title: 'SME lending, from application to funded loan.',
-      body: 'Agents collect the application, spread the financials, write the credit memo and track covenants after funding. A credit officer decides.',
+      title: 'Autonomous credit analysis.',
+      body: 'Agents spread the financials, check them against the bank’s credit policy and write the credit memo. A credit officer decides.',
       facts: [
-        'Applications and documents collected',
         'Financial statements spread',
+        'Checked against credit policy',
         'A credit memo with every source',
-        'Covenants tracked after funding',
+        'A credit officer decides',
       ],
     },
     {
@@ -169,13 +171,13 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
         height: 100,
       },
       category: 'Professional services',
-      title: 'An executive search firm, rebuilt around agents.',
-      body: 'Agents research candidates, prepare client and pitch materials and run the firm’s internal operations.',
+      title: 'Autonomous candidate research.',
+      body: 'Agents research candidates for every search and write a profile of each one. Consultants choose the shortlist.',
       facts: [
         'Candidate research agents',
-        'Client and pitch materials',
-        'Internal operations automated',
-        'The whole firm on one CompanyOS',
+        'A profile for every candidate',
+        'Research for every search',
+        'Consultants choose the shortlist',
       ],
     },
     {
@@ -205,12 +207,12 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
         height: 100,
       },
       category: 'Retail',
-      title: 'Returns and supplier invoices, closed out by agents.',
-      body: 'Agents resolve returns and refunds, match supplier invoices to orders and receipts, and chase every discrepancy. People approve amounts above a limit.',
+      title: 'Autonomous invoice matching.',
+      body: 'Agents match every supplier invoice to its order and receipt and chase each discrepancy. People approve amounts above a limit.',
       facts: [
-        'Returns and refunds resolved',
         'Invoices matched to orders and receipts',
         'Discrepancies chased with suppliers',
+        'Every match with its documents',
         'Approval above a set limit',
       ],
     },

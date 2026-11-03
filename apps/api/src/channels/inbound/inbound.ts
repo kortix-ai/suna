@@ -51,6 +51,17 @@ export interface ChannelInbound<V extends { projectId: string }> {
   normalize(body: unknown, verified: V): Promise<{ events: IntegrationEvent[]; reply?: InboundReply }>;
 }
 
+/**
+ * A webhook for a platform's whole application rather than one project's install:
+ * one URL for every project (Discord's interactions endpoint, `POST /` under the
+ * channel's prefix). `verify` proves the request with the application's key;
+ * `normalize` finds each event's project, and its reply answers the platform at once.
+ */
+export interface ChannelAppInbound<V> extends Omit<ChannelInbound<{ projectId: string }>, 'verify' | 'normalize'> {
+  verify(req: Omit<InboundRequest, 'projectId'>): Promise<{ verified: V } | InboundReply>;
+  normalize(body: unknown, verified: V): Promise<{ events: IntegrationEvent[]; reply?: InboundReply }>;
+}
+
 /** Constant-time string compare, so a secret cannot be recovered from response timing. */
 export function safeEqual(presented: string, expected: string): boolean {
   const a = Buffer.from(presented);

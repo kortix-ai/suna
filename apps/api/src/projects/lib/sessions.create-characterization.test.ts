@@ -58,7 +58,7 @@ mock.module('../../llm-gateway/models/served-managed-models', () => ({
 
 import { createProjectSession } from './sessions';
 
-// My Kortix is on unless kortix.yaml turns it off. This suite characterizes the
+// My Kortix runs only when kortix.yaml turns it on. This suite characterizes the
 // ordinary (non-My Kortix) session-create path — model pin, metadata fields,
 // sandbox slug — so its mocked manifest sets `builtin_agents.my_kortix: false`.
 // The My Kortix path has its own coverage in unit-my-kortix-agent.test.ts.

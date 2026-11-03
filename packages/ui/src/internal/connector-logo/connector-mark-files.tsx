@@ -13,6 +13,7 @@ const LABEL: Record<NativeConnectorApp, string> = {
   slack: 'Slack',
   teams: 'Microsoft Teams',
   telegram: 'Telegram',
+  discord: 'Discord',
   email: 'Email',
   computer: 'Computer',
 };

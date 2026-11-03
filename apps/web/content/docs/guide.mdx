@@ -24,7 +24,7 @@ This page covers every part of Kortix, in the order you meet it.
 
 ## A workspace for people
 
-- **People start work where they already are.** Use the web app, the desktop app or the mobile app. Or mention the Kortix bot in Slack, Microsoft Teams or Telegram, or send it an email. See [Everywhere](/docs/guide#everywhere) and [Channels](/docs/guide#channels).
+- **People start work where they already are.** Use the web app, the desktop app or the mobile app. Or mention the Kortix bot in Slack, Microsoft Teams, Telegram or Discord, or send it an email. See [Everywhere](/docs/guide#everywhere) and [Channels](/docs/guide#channels).
 - **People review and approve.** A change an agent makes to the project waits on the **Review** page until a person merges it. A connector rule set to **Ask** holds the action until a person approves it.
 - **People manage the agents.** **Customize** holds agents, skills, connectors, triggers, models and secrets. **Drive** holds shared folders. **Apps** lists what agents built and deployed.
 - **People control access.** You decide who can open each project, which agents each person may run, and who sees each session. See [Teams](/docs/guide#teams).
@@ -58,7 +58,7 @@ When an agent changes the project itself, for example a skill or its memory, it 
 | Outcomes | An agent owns an objective until an independent check confirms it is met. | [Outcomes](/docs/guide#outcomes) |
 | Computers | Each session gets its own cloud computer. You can also connect your own machine. | [Computers](/docs/guide#computers) |
 | Apps | Sites, services and backends that agents build and deploy from a project. | [Apps](/docs/guide#apps) |
-| Channels | Start work from Slack, Microsoft Teams, Telegram or email. | [Channels](/docs/guide#channels) |
+| Channels | Start work from Slack, Microsoft Teams, Telegram, Discord or email. | [Channels](/docs/guide#channels) |
 | Models | The AI models your agents run on, including your own provider keys. | [Models](/docs/guide#models) |
 | Everywhere | Web, desktop, mobile and the other places you use Kortix. | [Everywhere](/docs/guide#everywhere) |
 | Teams | Accounts, members, roles and who may run which agent. | [Teams](/docs/guide#teams) |
@@ -929,7 +929,7 @@ Do not delete the owner session of an open goal. If you delete it, the goal stop
 
 ## Channels
 
-Channels connect a project to Slack, Microsoft Teams and Telegram. Mention the bot with a task, and the agent replies in the same thread. In Slack and Teams, each person links their Kortix account once, so Kortix knows who asked and checks that this person may run the agent.
+Channels connect a project to Slack, Microsoft Teams, Telegram and Discord. Mention the bot with a task, and the agent replies in the same thread. In Slack and Teams, each person links their Kortix account once, so Kortix knows who asked and checks that this person may run the agent.
 
 ### How it works
 
@@ -1031,6 +1031,37 @@ A message from an allowed user starts a session. Anyone else gets a reply that s
 - **An access request keeps only who asked:** the user ID, the username, the name and when they last wrote, never the message. Kortix keeps the newest 20 requests for 30 days. Disconnecting the bot deletes them.
 - **Deleting the project disconnects the bot.** The bot answers no one: Kortix deletes its token, and removes its webhook unless that webhook now points at another project.
 - **In a group, the bot reads only commands, replies to it and mentions.** To let it read every message, send `/setprivacy` to @BotFather, or make the bot a group admin.
+
+#### Discord
+
+People mention the Kortix app in a Discord server, or message it directly, and the agent answers in a thread.
+
+<Steps>
+<Step title="Add Kortix to your server">
+Open **Project admin → Connectors**, select the **Channels** scope, and select **Add to Discord** on Discord. On Discord's page, pick the server. You need the **Manage Server** permission there. Kortix allows your own Discord account at once.
+</Step>
+<Step title="Mention the app with a task">
+In a text channel, mention the app: `@Kortix what changed in the release?`. Kortix starts a thread on your message, and the agent answers in the thread. Mention the app in the thread to continue.
+</Step>
+<Step title="Allow the people">
+A mention or a direct message from an allowed user starts a session. Anyone else gets a reply that shows their user ID, and appears under **Allowed users → Wants access**. A slash command from them gets the same reply, and only they see it. A project manager allows them with one click or dismisses the request. You can still add a user by ID.
+</Step>
+</Steps>
+
+- **One thread is one session.** A mention in a text or announcement channel starts a thread on the message. A later mention in that thread continues the session. A direct message with the app is one session until `/new`, and every message in it reaches the agent. In a channel that has no threads, such as a voice channel's chat, the channel is the conversation.
+- **In a server, only a mention reaches the agent, as in Slack.** People talk in the thread without the agent until someone mentions it. A reply to the app counts only with **@mention** on; when it is off, Kortix says so once. An edit that adds a mention within 15 minutes counts. A self-hosted Kortix whose Discord application has the Message Content intent can let every message in a Kortix thread through (`DISCORD_MESSAGE_CONTENT`).
+- **Without the Message Content intent, the agent cannot read other people's messages.** Discord shows it only the messages that mention it, direct messages and its own. To ask about a conversation, paste the part you mean.
+- **Slash commands run in Kortix, not in the agent:** `/help`, `/status`, `/new`, `/stop`, `/model`, `/agent` and `/connect`. They work in a channel, in a thread and in a direct message, and also typed after a mention. A command in a channel works on the channel: `/model` there sets the model of every thread in it.
+- **Commands open menus.** `/model` and `/agent` list the choices in a menu, with **More ›** and **‹ Back** between pages. `/help` and `/status` add buttons that run a command. A pick, **Stop** or **New conversation** works once. A press on an old menu answers "This menu is out of date": use the command again.
+- **Questions come with buttons.** One question shows one button per option, 4 per page, with **‹ Back**, **More ›** and, where you pick several, **Done ›**. Several questions show one at a time. A notice that only you see confirms a tap, or says why it changed nothing.
+- **Photos, files and voice messages reach the agent**, up to 8 MB per message, as in Telegram. So do a forwarded message's text and files, and a poll's question and answers.
+- **Messages arrive in the order you send them.** One conversation's messages and taps reach the agent one at a time, in Discord's order. When Kortix cannot take a message after several tries, it asks you to send it again.
+- **One project has one server.** A server can serve several projects. A channel goes to the first project that answered there; `/connect` shows the projects and binds the channel to the one you pick. A direct message goes to the one project that allows you, else `/connect` picks.
+- **The agent stays in its project.** The `kortix_discord` connector reads and writes only in the project's own server and conversations. In a server that several projects share, it acts only in its own threads, DMs and bound channels. A session that a conversation started reads and writes only in that conversation. A DM moved to another project with `/connect` keeps its earlier messages from the new project. Kortix refuses any other channel, and one project makes at most 60 Discord calls a minute.
+- **The app needs its permissions.** Discord asks for them when you add the app: view channels, send messages, send messages in threads, create public threads, read message history, attach files, add reactions and embed links. When a channel denies one, Kortix says so. A slash command where the app cannot post answers with the permission to grant, and only you see it. In a private thread, mention the app or add it first.
+- **Kortix threads archive after a day without messages.** A new message opens the thread again. When a server reaches Discord's limit of active threads, Kortix says so instead of starting one.
+- **Disconnecting removes the server from the project.** When no other project uses the server, the app leaves it. Removing the app from the server disconnects it from every project.
+- **An access request keeps only who asked:** the user ID, the username, the display name and when they last wrote, never the message.
 
 ## Everywhere
 
@@ -1276,6 +1307,18 @@ Two things to know:
 - Your server must be reachable from the internet, so those sandboxes can call back.
 
 A self-hosted instance has billing off by default. A Kortix Enterprise license turns on the Enterprise features for every account on it.
+
+#### Brand your instance
+
+With an Enterprise license, your instance can show your company's name and logo instead of Kortix, including on the sign-in page.
+
+1. Sign in with an account owner or admin of your company account.
+2. Open **Account settings** → **Branding**.
+3. Enter the product name, then upload the logo, the square icon and the favicon. Each image can have a dark version.
+
+The sign-in page then shows your logo and "Welcome to" followed by your product name. The browser tab shows your name and icon. Every account on the instance without its own branding shows the same. A change reaches the sign-in page within 30 seconds.
+
+The sign-in page uses the oldest account with branding among the company accounts and the personal accounts of the instance's admins. The admins are the addresses in `KORTIX_PLATFORM_ADMIN_EMAILS`, the admin email you gave at setup. Branding that another person sets on their own personal account never changes the sign-in page.
 
 ### Set it up
 

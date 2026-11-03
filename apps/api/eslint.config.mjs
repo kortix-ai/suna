@@ -26,7 +26,7 @@ const NO_QUERIES = {
 };
 /** A `no-restricted-imports` pattern for shared channel code: the platform folders and their sibling files (`slack-webhook.ts`, `resend-email-api.ts`, …). */
 const NO_PLATFORM = {
-  group: ['../slack*', '../teams*', '../telegram*', '../email*', '../resend*'],
+  group: ['../slack*', '../teams*', '../telegram*', '../discord*', '../email*', '../resend*'],
   message: 'Shared channel code names no platform. The platform adapter registers its port.',
 };
 

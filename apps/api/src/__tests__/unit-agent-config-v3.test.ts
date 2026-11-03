@@ -303,8 +303,11 @@ describe('the shipped v3 starter compiles', () => {
 
     expect(compiled.schema).toBe(3);
     expect(compiled.manifest_issues?.filter((issue) => issue.severity === 'error') ?? []).toEqual([]);
-    expect(compiled.default_agent).toBe(raw.default_agent as string);
-    expect(compiled.agent[raw.default_agent as string]!.prompt?.trim()).toBeTruthy();
+    // The starter's default is My Kortix, which is built in: the compiled set
+    // holds only declared agents, and session create adds My Kortix.
+    expect(raw.default_agent).toBe('mykortix');
+    expect(compiled.default_agent).toBeUndefined();
+    expect(compiled.agent.worker!.prompt?.trim()).toBeTruthy();
     expect(compiled.extensions ?? {}).toEqual({});
     for (const builtin of ['build', 'plan', 'general', 'explore']) expect(compiled.agent[builtin]).toEqual({ disable: true });
     expect(Object.keys(compiled.skills ?? {})).toContain('pdf');

@@ -2,11 +2,7 @@
 //
 // One token per (user_id, account_id). Plaintext is generated at mint and
 // returned to the caller exactly once; only a hash + a short prefix are
-// persisted. The plaintext is kept in an in-process cache so sandbox bootstrap
-// can read it without re-minting — but the cache is best-effort: a cache miss
-// triggers a rotation (mint a fresh token, plaintext returned to the bootstrap
-// flow, old hash revoked). This keeps the secret accessible without ever
-// storing recoverable plaintext at rest.
+// persisted.
 //
 // Spec ref: manager wants "PER MEMBER secret" injected into the sandbox so
 // each member's YOLO usage is attributable. Token is what the kortix-agent-
@@ -17,16 +13,8 @@ import {
   revokeYoloToken,
 } from '../repositories/yolo-tokens';
 
-// In-process plaintext cache. Wiped on restart — bootstrap reissues on miss.
-// Keyed by `${userId}::${accountId}`.
-const plaintextCache = new Map<string, string>();
-
 const TOKEN_BYTES = 32; // 256-bit secret
 const PREFIX_LEN = 12;
-
-function cacheKey(userId: string, accountId: string): string {
-  return `${userId}::${accountId}`;
-}
 
 function hashToken(plaintext: string): string {
   return createHash('sha256').update(plaintext).digest('hex');
@@ -43,9 +31,7 @@ function newPlaintext(): string {
  * and revoked_at is cleared. We can't insert a new row because the table has
  * PRIMARY KEY (user_id, account_id) — there's at most one row per pair, ever.
  *
- * Returns the plaintext — caller MUST inject it into the sandbox immediately;
- * subsequent fetches return cached plaintext, but the cache can be wiped at
- * any time by a server restart.
+ * Returns the plaintext — caller MUST inject it into the sandbox immediately.
  */
 export async function mintYoloTokenForMember(
   userId: string,
@@ -71,7 +57,6 @@ export async function mintYoloTokenForMember(
       },
     });
 
-  plaintextCache.set(cacheKey(userId, accountId), plaintext);
   return plaintext;
 }
 
@@ -84,7 +69,6 @@ export async function revokeYoloTokenForMember(
   accountId: string,
 ): Promise<void> {
   await revokeYoloToken(userId, accountId);
-  plaintextCache.delete(cacheKey(userId, accountId));
 }
 
 /**

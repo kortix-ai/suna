@@ -20,11 +20,13 @@ import { db } from '../shared/db';
 import { deleteSlackInstall } from './slack/installs';
 import { deleteTeamsInstall } from './teams/installs';
 import { releaseTelegramBot } from './telegram/installs';
+import { releaseDiscordInstall } from './discord/installs';
 
 export * from './slack/installs';
 export * from './email/installs';
 export * from './teams/installs';
 export * from './telegram/installs';
+export * from './discord/installs';
 
 /**
  * The project delete releases its chat channels; the tombstone keeps their rows
@@ -35,6 +37,7 @@ export * from './telegram/installs';
  */
 export async function releaseProjectChannels(projectId: string): Promise<void> {
   await releaseTelegramBot(projectId);
+  await releaseDiscordInstall(projectId);
   await deleteSlackInstall(projectId);
   await deleteTeamsInstall(projectId);
   await db

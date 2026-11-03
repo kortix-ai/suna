@@ -130,6 +130,8 @@ const PROTECTED_APP_PREFIXES = [
   '/cli',
   '/connections',
   '/debug',
+  // The Add to Discord completion page (/discord/install).
+  '/discord',
   '/github',
   '/oauth',
   '/preview',

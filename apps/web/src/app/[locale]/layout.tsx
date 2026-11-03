@@ -21,6 +21,7 @@ import { DESKTOP_INIT_SCRIPT } from '@kortix/ui/internal/lib/desktop';
 import { INTERFACE_THEME_INIT_SCRIPT } from '@/lib/interface-themes';
 import { RouterBridge } from '@/lib/navigation/router-bridge-mount';
 import '@/lib/polyfills';
+import { readInstanceBranding } from '@/lib/instance-branding-server';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { runtimeConfigIsBakedAtBuild } from '@/lib/runtime-config-mode';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
@@ -243,6 +244,9 @@ export default async function RootLayout({
     requestHost = (await headers()).get('host');
   }
   const runtimeEnv = getServerPublicEnv(requestHost);
+  // A self-host instance's own logo and name, for signed-out pages and for an
+  // account without branding. Always null on Vercel (the Kortix cloud).
+  const instanceBranding = await readInstanceBranding();
 
   return (
     <html
@@ -380,8 +384,10 @@ export default async function RootLayout({
                       account's own logo / icon / favicon / product name.
                       Reads the shared account-list query, so it sits inside
                       ReactQueryProvider and above everything that renders a
-                      KortixLogo. */}
-                      <BrandingProvider>
+                      KortixLogo. `instanceBranding` is the self-host
+                      instance's own, for signed-out pages and accounts
+                      without branding. */}
+                      <BrandingProvider instanceBranding={instanceBranding}>
                         <RequestDemoProvider>
                           {/* Account-wide MFA: catches the SDK's kortix:mfa-required
                           event (coded 403) and walks the user through a TOTP

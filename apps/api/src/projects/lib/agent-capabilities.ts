@@ -24,39 +24,8 @@
 import type { PlatformExtensionId } from '@kortix/api-contract/runtime-relay';
 import { KORTIX_SKILL_NAMES, KORTIX_TOOL_NAMES, kortixToolRef } from '@kortix/manifest-schema';
 
-export type AgentCapabilityToolGroup = 'workspace' | 'interaction' | 'kortix' | 'project';
-
-export interface AgentCapabilityTool {
-  id: string;
-  group: AgentCapabilityToolGroup;
-  description: string | null;
-  aliases: string[];
-  source: string | null;
-}
-
-export interface AgentCapabilitySkill {
-  id: string;
-  group: 'builtin' | 'project';
-  description: string | null;
-  feature_flag: string | null;
-  available: boolean;
-}
-
-export interface AgentCapabilityExtension {
-  id: string;
-  group: 'platform' | 'project';
-  description: string | null;
-  required: boolean;
-  controlled_by: string | null;
-}
-
-export interface AgentCapabilities {
-  agent: string;
-  schema_version: number;
-  tools: AgentCapabilityTool[];
-  skills: AgentCapabilitySkill[];
-  extensions: AgentCapabilityExtension[];
-}
+import type { AgentCapabilityToolGroup, AgentCapabilityTool, AgentCapabilitySkill, AgentCapabilityExtension, AgentCapabilities } from '@kortix/sdk';
+export type { AgentCapabilityToolGroup, AgentCapabilityTool, AgentCapabilitySkill, AgentCapabilityExtension, AgentCapabilities } from '@kortix/sdk';
 
 /** The built-in tools, in the order the agent page lists them. */
 const BUILTIN_TOOLS: ReadonlyArray<{ id: string; group: AgentCapabilityToolGroup; description: string; aliases?: string[] }> = [

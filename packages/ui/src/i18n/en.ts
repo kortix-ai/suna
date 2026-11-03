@@ -1202,6 +1202,7 @@ const catalog = {
         "chat": "Chat",
         "slack": "Slack",
         "telegram": "Telegram",
+        "discord": "Discord",
         "teams": "Teams",
         "email": "Email",
         "scheduled": "Scheduled",
@@ -1665,7 +1666,7 @@ const catalog = {
       "sending": "Sending..."
     },
     "unified": {
-      "welcome": "Welcome to Kortix CompanyOS",
+      "welcome": "Welcome to {name}",
       "email": "Email",
       "emailPlaceholder": "Your email address",
       "password": "Password",
@@ -4281,6 +4282,7 @@ const catalog = {
       "textedac6130dac7": "Commit a SKILL.md to the repo without a chat session.",
       "textfc73e9ad2dae": "Replied in Slack",
       "text8faf56a14a8d": "Replied in Telegram",
+      "text3416de570ab5": "Replied in Discord",
       "text8ccfe10f2f2d": "Publish to your Teams catalog",
       "text36f6474748b3": "Publishing the app to your Teams catalog…",
       "text45b9df5730ac": "Waiting for a Teams admin to approve the app",
@@ -6462,7 +6464,7 @@ const catalog = {
     "createProjectInstead": "Create a new project instead"
   },
   "projectSelector": {
-    "welcome": "Welcome to Kortix CompanyOS",
+    "welcome": "Welcome to {name}",
     "welcomeBack": "Welcome back",
     "descriptionNew": "Create your first project, or join one your team shared.",
     "descriptionReturning": "Open a project, or create a new one.",
@@ -6746,6 +6748,21 @@ const catalog = {
     "channelAccessAllowAria": "Allow {name}",
     "channelAccessRemoveTitle": "Remove {name}?",
     "telegramRemoveDescription": "{name} can no longer talk to the bot. To allow them again, add their user ID or allow their next request.",
+    "discordHeroTitle": "Bring your agent to Discord",
+    "discordHeroLede": "Add the Kortix app to your server. Mention it in a channel and the agent answers in a thread. People can also message it directly.",
+    "discordUnavailable": "Discord is not set up on this Kortix deployment.",
+    "discordPitch": "Chat with your agent in your Discord server.",
+    "discordAddToDiscord": "Add to Discord",
+    "discordDisconnected": "Discord disconnected",
+    "discordUsersDescription": "Only these people can talk to the bot. When someone else mentions or messages it, they show up here.",
+    "discordUsersEmptyDescription": "Ask someone to mention or message the bot, then allow their request or add their user ID.",
+    "discordUsersLoadError": "Could not load the Discord users.",
+    "discordAddByIdHint": "The bot replies to anyone it does not know with their user ID.",
+    "discordAddByIdInvalid": "A Discord user ID is a number of 17 to 20 digits, such as 123456789012345678.",
+    "discordRemoveDescription": "{name} can no longer talk to the bot. To allow them again, add their user ID or allow their next request.",
+    "mockDiscordThread": "launch",
+    "mockDiscordAsk": "Did the deploy finish?",
+    "mockDiscordReply": "Yes, 4 minutes ago. All checks are green and the site is live.",
     "otherWaysToConnect": "Other ways to connect",
     "computerHeroTitle": "Bring your agent to your computer",
     "computerConnectedTitle": "{count, plural, one {Your computer is connected} other {# computers are connected}}",
@@ -8146,7 +8163,7 @@ const catalog = {
       "project": {
         "title": "Project setting",
         "label": "My Kortix",
-        "help": "New sessions start with My Kortix. Kortix maintains its prompt and tools. To turn it off, set <code>builtin_agents.my_kortix: false</code> in kortix.yaml."
+        "help": "My Kortix is on in this project. Kortix maintains its prompt and tools. To turn it off, delete <code>builtin_agents.my_kortix</code> from kortix.yaml or set it to false."
       }
     },
     "modelView": {

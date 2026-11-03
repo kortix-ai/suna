@@ -1578,6 +1578,29 @@ flow(
   },
 );
 
+// ACCT-BRAND-2 — instance branding for the sign-in page. Only an instance
+// with the enterprise license (a self-host operator's setting) has one. The
+// local profile models the cloud, which has no license, so the public read
+// answers null for everyone: no account's branding reaches a sign-in page here.
+flow(
+  'ACCT-BRAND-2',
+  {
+    domain: 'accounts',
+    routes: ['GET /v1/access/branding'],
+  },
+  async (ctx) => {
+    await ctx.step('ANON GET /v1/access/branding → 200 {branding:null} without a license', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/access/branding');
+      r.status(200).body().has('$.branding', null);
+    });
+
+    await ctx.step('a signed-in OWNER reads the same null instance branding', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/access/branding');
+      r.status(200).body().has('$.branding', null);
+    });
+  },
+);
+
 // ACCT-5 — an invite-first signup. The invites exist before the identity
 // does, and the identity is a raw Supabase user with no fixture bootstrap, so
 // its first Kortix read is the one that must create the personal account

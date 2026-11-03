@@ -265,8 +265,8 @@ triggers:
     run: { agent: kortix, prompt: "Summarize yesterday's merged change requests." }
 ```
 
-- `agents` and `default_agent` are optional. Naming no agent runs My Kortix;
-  `default_agent` runs when My Kortix is off or starts a session naming none.
+- `agents`, `default_agent` optional. My Kortix runs only with `builtin_agents: { my_kortix: true }`.
+  No agent named runs `default_agent` (may be `mykortix` when on), else My Kortix when on.
 - An agent gets nothing it does not grant. Without `skills` it loads no
   skill, `kortix-system` included. `skills` and `extensions` also take
   `{ exclude: [names] }`: every one but those.
