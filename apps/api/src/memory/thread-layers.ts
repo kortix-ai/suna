@@ -5,15 +5,18 @@
  *
  * | Thread                       | Reads                                        |
  * |------------------------------|----------------------------------------------|
- * | channel                      | Company, the channel                         |
- * | private channel thread  | Company, the channel, the owner's DM layer   |
- * | DM                           | Company, the DM layer                        |
+ * | channel                      | the channel                                  |
+ * | private channel thread       | the channel, the owner's DM layer            |
+ * | DM                           | the DM layer                                 |
  * | no space                     | nothing (null)                               |
+ *
+ * No layer is read by every thread of the project: nothing is shared with
+ * the whole project.
  */
 import type { MemoryLayerScope } from '@kortix/api-contract';
 import { spaceDriveFolders } from '@kortix/shared';
 import { sql } from 'drizzle-orm';
-import { COMPANY_MEMORY_DIR, MEMORY_DIR_NAME } from '../drives/folders';
+import { MEMORY_DIR_NAME } from '../drives/folders';
 import { db } from '../shared/db';
 
 /** One row of the thread query. */
@@ -53,10 +56,9 @@ export interface PlannedLayer {
   dmAgent: string | null;
 }
 
-/** Which layers a thread reads (pure): Company first, then its own, then the owner's DM. Null for a thread in no space. */
+/** Which layers a thread reads (pure): its own, then the owner's DM. Null for a thread in no space. */
 export function threadPlan(row: ThreadRow): PlannedLayer[] | null {
   if (!row.space_id || !row.space_kind) return null;
-  const company: PlannedLayer = { key: 'company', scope: 'company', name: 'Company', slug: null, dmUserId: null, dmAgent: null };
   const own: PlannedLayer =
     row.space_kind === 'channel'
       ? {
@@ -69,7 +71,7 @@ export function threadPlan(row: ThreadRow): PlannedLayer[] | null {
           dmAgent: null,
         }
       : { key: row.space_id, scope: 'dm', name: row.space_dm_agent ?? 'Direct message', slug: null, dmUserId: row.space_dm_user_id, dmAgent: row.space_dm_agent };
-  const read = [company, own];
+  const read = [own];
   if (row.space_kind === 'channel' && row.root_visibility === 'private' && row.dm_space_id) {
     read.push({ key: row.dm_space_id, scope: 'dm', name: row.dm_agent ?? 'Direct message', slug: null, dmUserId: row.dm_user_id, dmAgent: row.dm_agent });
   }
@@ -78,7 +80,8 @@ export function threadPlan(row: ThreadRow): PlannedLayer[] | null {
 
 /** A planned layer's folder, its DM agent folder, given the DM owner's own folder; null when it has none. */
 export function layerFolders(layer: PlannedLayer, personalFolder: string | null): { root: string; agentFolder: string | null } | null {
-  if (layer.scope === 'company') return { root: COMPANY_MEMORY_DIR, agentFolder: null };
+  // The project-wide Company layer is gone (`/Company` is shared with no one).
+  if (layer.scope === 'company') return null;
   if (layer.scope === 'channel') {
     const folders = layer.slug ? spaceDriveFolders('channel', layer.slug, null, layer.visibility === 'private' ? layer.key : null) : null;
     return folders ? { root: folders.memory, agentFolder: null } : null;

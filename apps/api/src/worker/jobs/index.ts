@@ -48,6 +48,8 @@ import { startProjectTriggerScheduler, stopProjectTriggerScheduler, triggerSweep
 import { startTunnelCleanup, stopTunnelCleanup } from './tunnel-cleanup';
 import { startTunnelForwardExpiry, stopTunnelForwardExpiry } from './tunnel-forward-expiry';
 
+import { startSalesOutbox, stopSalesOutbox } from './sales-outbox';
+
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 
@@ -55,6 +57,7 @@ const HOUR = 60 * MIN;
 // successful tick the heartbeat reports it stale (the longest wait between two
 // ticks, plus the longest legitimate tick, with margin; at least 10 min).
 export const JOBS: readonly Job[] = [
+  { ticks: { 'sales-outbox': 10 * MIN }, start: startSalesOutbox, stop: stopSalesOutbox },
   { ticks: { 'active-turn-renewal': 10 * MIN }, start: () => startActiveTurnRenewal(), stop: stopActiveTurnRenewal },
   { ticks: { 'project-maintenance': 20 * MIN }, start: startProjectMaintenance, stop: stopProjectMaintenance },
   {

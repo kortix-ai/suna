@@ -90,8 +90,8 @@ const GIT_VIEW_ACTIONS = [
   PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
 ] as const;
 
-const DOCS_CLI = '/docs/cli';
-const DOCS_MANIFEST = '/docs/project/manifest';
+const DOCS_CLI = '/docs/developers#cli';
+const DOCS_MANIFEST = '/docs/developers#kortixyaml-reference';
 
 type ProjectWithOrigin = KortixProject & { git_origin_url?: string };
 

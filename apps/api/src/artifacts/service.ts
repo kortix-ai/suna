@@ -192,7 +192,6 @@ async function accessAt(drive: DriveRow, path: string, viewer: Viewer, level: Fo
   if (viewer.channelFolder) grants = readOnlyOutside(grants, viewer.channelFolder);
   const access = folderAccess(path, grants, {
     userId: viewer.userId,
-    projectMember: true,
     admin: viewer.projectWrite && !viewer.channelFolder,
     privateChannelFolders: viewer.allPrivateFolders,
   });

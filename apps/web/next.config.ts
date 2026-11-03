@@ -887,7 +887,7 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/docs/project/legacy-toml',
-        destination: '/docs/developers#migrate-to-v3',
+        destination: '/docs/developers#older-formats',
         permanent: true,
       },
       {

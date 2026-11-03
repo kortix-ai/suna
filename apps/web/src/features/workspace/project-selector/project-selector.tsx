@@ -35,6 +35,7 @@ import { writeLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-proj
 import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
 import { cn } from '@kortix/ui';
 import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
+import { useBrandName } from '@kortix/ui/internal/branding/branding-provider';
 
 import {
   COLLAPSED_PROJECT_LIMIT,
@@ -76,6 +77,7 @@ export interface ProjectSelectorViewProps {
 
 export function ProjectSelectorView(props: ProjectSelectorViewProps) {
   const t = useTranslations('projectSelector');
+  const brandName = useBrandName();
   const { email, loading, loadFailed, sections, invites } = props;
   const createHref = props.createHref && props.connectComputer
     ? `${props.createHref}&connect=computer`
@@ -96,7 +98,7 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
   );
   const noAccess = !loading && !loadFailed && !createHref && !hasAnything;
 
-  const title = total > 0 ? t('welcomeBack') : t('welcome');
+  const title = total > 0 ? t('welcomeBack') : t('welcome', { name: brandName });
   const description = noAccess
     ? t('noAccessBody', { email: email ?? '' })
     : total > 0
