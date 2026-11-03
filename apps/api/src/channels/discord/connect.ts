@@ -9,6 +9,7 @@
 import { chatChannelBindings, chatInstalls, chatThreads, projects } from '@kortix/db';
 import { and, eq, inArray, ne } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { isUuid } from '../../shared/validate';
 import { readChannelAccess } from '../core/channel-access';
 import { clip } from './render';
 import { discordGuildProjects } from './installs';
@@ -16,13 +17,12 @@ import { projectNames, projectsAllowing } from './routing';
 import type { DiscordConversation } from './types';
 
 /** `kd:<project id>`: 39 bytes. The press binds the channel it is in; the token names no channel. */
-const PROJECT_PRESS = /^kd:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
-
 export const isProjectPress = (data: string) => data.startsWith('kd:');
 
 /** The project a `kd:` token names; '' when it is not one. */
 export function parseProjectPress(data: string): string {
-  return PROJECT_PRESS.exec(data)?.[1] ?? '';
+  const projectId = isProjectPress(data) ? data.slice('kd:'.length) : '';
+  return isUuid(projectId) ? projectId : '';
 }
 
 export const projectPressData = (projectId: string) => `kd:${projectId}`;
