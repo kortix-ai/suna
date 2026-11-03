@@ -123,7 +123,7 @@ describe('Compose with wildcard TLS', () => {
     expect(doc.services['acme-dns']?.ports).toEqual([
       '${KORTIX_ACME_DNS_LISTEN_IP}:53:53/udp',
       '${KORTIX_ACME_DNS_LISTEN_IP}:53:53/tcp',
-      '127.0.0.1:${KORTIX_ACME_DNS_API_PORT:-13750}:80',
+      '127.0.0.1:13750:80',
     ]);
     expect(doc.volumes).toHaveProperty('kortix-acme-dns-data');
   });
