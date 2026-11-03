@@ -5,8 +5,8 @@
 //!   area, games, video, flip-model DirectX apps) is in the frame. GDI `BitBlt`
 //!   misses that content and paints it black; it stays the fallback when
 //!   duplication is unavailable (a desktop switch, no GPU output, a rotated
-//!   monitor whose turn is not proven). Neither asks
-//!   for consent or draws a Graphics Capture border.
+//!   monitor whose turn is not proven). Neither asks for consent or draws a
+//!   Graphics Capture border.
 //!   Hidden apps are painted black in `mod.rs::redact` from the z-ordered
 //!   window list, because a desktop grab cannot exclude windows.
 //! * Foreground / process: `GetForegroundWindow`, `QueryFullProcessImageNameW`,
