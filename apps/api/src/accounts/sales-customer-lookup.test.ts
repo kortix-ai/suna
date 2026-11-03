@@ -38,6 +38,12 @@ test('partial pagination and Stripe outages cannot prove negative', async () => 
   reads = [[], [billing], [customer]];
   expect(await lookupSalesCustomer('synthetic')).toBeNull();
 });
+test('stale active subscription evidence remains unknown', async () => {
+  memberships = [{ accountId: 'synthetic' }];
+  reads = [[], [billing], [customer]];
+  pages = [{ has_more: false, data: [{ ...subscription(0), current_period_end: 1 }] }];
+  expect(await lookupSalesCustomer('synthetic')).toBeNull();
+});
 test('one paid membership overrides unsupported membership', async () => {
   memberships = [{ accountId: 'first' }, { accountId: 'second' }];
   reads = [[], [{ ...billing, provider: 'revenuecat' }], [], [], [billing], [customer]];
