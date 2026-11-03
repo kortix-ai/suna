@@ -9,24 +9,26 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { RUNTIME_ARTIFACTS } from './templates';
 import { metaRuntimeArtifacts } from './runtime-images';
 
 const repoRoot = resolve(import.meta.dir, '../../../..');
-const DAEMON_SRC = resolve(repoRoot, 'apps/kortix-sandbox-agent-server/src');
 const DAEMON_BUILD = resolve(repoRoot, 'apps/kortix-sandbox-agent-server/scripts/build.sh');
 
 describe('image fingerprints follow the daemon build script', () => {
+  // The daemon source is found by label, not by path: tests outside kortixd do
+  // not name its source tree (tests/unit/kortixd-package-boundary.test.ts).
   const sets = [
-    { name: 'session templates', artifacts: RUNTIME_ARTIFACTS },
-    { name: 'My Kortix image', artifacts: metaRuntimeArtifacts(repoRoot) },
+    { name: 'session templates', artifacts: RUNTIME_ARTIFACTS, daemonLabel: 'kortix-agent-src' },
+    { name: 'My Kortix image', artifacts: metaRuntimeArtifacts(repoRoot), daemonLabel: 'agent' },
   ];
-  for (const { name, artifacts } of sets) {
+  for (const { name, artifacts, daemonLabel } of sets) {
     test(`${name}: hashes the daemon source and its build script`, () => {
-      const paths = artifacts.map((artifact) => artifact.path);
-      expect(paths).toContain(DAEMON_SRC);
-      expect(paths).toContain(DAEMON_BUILD);
+      const daemonSource = artifacts.find((artifact) => artifact.label === daemonLabel);
+      expect(daemonSource).toBeDefined();
+      expect(resolve(dirname(daemonSource!.path), 'scripts/build.sh')).toBe(DAEMON_BUILD);
+      expect(artifacts.map((artifact) => artifact.path)).toContain(DAEMON_BUILD);
     });
   }
 
