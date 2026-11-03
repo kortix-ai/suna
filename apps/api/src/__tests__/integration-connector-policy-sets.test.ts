@@ -10,11 +10,12 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { accounts, connectorPolicySets, connectors, projects } from '@kortix/db';
+import { accounts, connectorActions, connectorProjectPolicies, connectorPolicySets, connectors, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { parse as parseYaml } from 'yaml';
 
 import { dbConnectorRouterDeps } from '../connectors/db-deps';
+import { getConnectorPolicies } from '../connectors/db-deps-admin';
 import { loadConnectorPoliciesFor, loadConnectorPolicySetFor } from '../connectors/db-deps-rows';
 import {
   deleteConnectorPolicySetInManifest,
@@ -106,6 +107,13 @@ afterAll(async () => {
 });
 
 describe('connector policy sets', () => {
+  test('manifest-only connector has no effective actions or project defaults', async () => {
+    expect(await getConnectorPolicies(PROJECT, SLUG, 'read_only')).toEqual({
+      policies: [{ match: 'send_*', action: 'block' }], policy_set: 'read_only',
+      effective: [], project_policies: [], default_mode: 'allow_all',
+    });
+  });
+
   test('sync materializes one row per set; the base-rule readers never see a set rule', async () => {
     await syncProjectConnectors(PROJECT, ACCOUNT);
     const id = await connectorId();
@@ -127,6 +135,36 @@ describe('connector policy sets', () => {
     expect(view && 'policy_set' in view ? view.policy_set : null).toBe('read_only');
     const missing = await dbConnectorRouterDeps.getConnectorPolicies!(PROJECT, SLUG, 'nope');
     expect(missing).toMatchObject({ code: 'policy_set_not_found' });
+  });
+
+  test('effective projection preserves scope precedence, conditions, risk and sensitive defaults', async () => {
+    const id = await connectorId();
+    await db.insert(connectorActions).values([
+      { connectorId: id, path: 'send_email', name: 'Send', risk: 'write' },
+      { connectorId: id, path: 'delete_email', name: 'Delete', risk: 'write' },
+      { connectorId: id, path: 'read_email', name: 'Read', risk: 'read' },
+    ]);
+    await db.insert(connectorProjectPolicies).values({
+      projectId: PROJECT, match: `${SLUG}.send_email`, action: 'require_approval',
+      conditions: [{ arg: 'to', match: '*@example.test' }],
+    });
+    await db.update(connectors).set({ config: { sensitive: true } }).where(eq(connectors.connectorId, id));
+    const view = await getConnectorPolicies(PROJECT, SLUG, 'read_only');
+    expect(view).toMatchObject({ sensitive: true, default_mode: 'allow_all' });
+    if (!view || 'error' in view) throw new Error('expected policy view');
+    expect(view.effective.find((a) => a.path === 'send_email')).toEqual({
+      path: 'send_email', action: 'require_approval', source: 'project', risk: 'write', likely_risk: 'write',
+      rule: { match: `${SLUG}.send_email`, action: 'require_approval', conditions: [{ arg: 'to', match: '*@example.test' }] },
+    });
+    expect(view.effective.find((a) => a.path === 'delete_email')).toMatchObject({ action: 'block', source: 'connector', rule: { match: 'delete_*', action: 'block' } });
+    expect(view.effective.find((a) => a.path === 'read_email')).toMatchObject({ action: 'require_approval', risk: 'read' });
+    await db.delete(connectorProjectPolicies).where(eq(connectorProjectPolicies.projectId, PROJECT));
+    const setView = await getConnectorPolicies(PROJECT, SLUG, 'read_only');
+    if (!setView || 'error' in setView) throw new Error('expected set view');
+    expect(setView.effective.find((a) => a.path === 'send_email')).toMatchObject({ action: 'block', source: 'policy_set' });
+    await db.delete(connectorActions).where(eq(connectorActions.connectorId, id));
+    const emptyView = await getConnectorPolicies(PROJECT, SLUG);
+    expect(emptyView).toMatchObject({ effective: [] });
   });
 
   test('deleting a set an agent uses is refused with 409, naming the agents', async () => {

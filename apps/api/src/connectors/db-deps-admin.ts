@@ -25,6 +25,7 @@ import {
   type EffectiveResolveResult,
   type Policy,
   type PolicyAction,
+  type Risk,
   resolveEffectiveRule,
   selectPoliciesForRead,
 } from './policy';
@@ -212,36 +213,7 @@ export async function getConnectorPolicies(
       .then((stored) => withComputerCatalog(row.connectorId, row.providerType, stored)),
   ]);
   const sensitive = (row.config as { sensitive?: unknown } | null)?.sensitive === true;
-  const effective = actions.map((a) => {
-    const resolved = resolveEffectiveRule({
-      fullPath: `${slug}.${a.path}`,
-      relPath: a.path,
-      projectPolicies,
-      setPolicies: setRules ? setRules.map(enginePolicy) : undefined,
-      connectorPolicies: base.map(enginePolicy),
-      risk: a.risk,
-      defaultMode,
-      sensitive,
-    });
-    // `risk`: the stored risk the default decided on. `rule`: the rule that
-    // decided, when one did (`conditions`: it decides only for matching args).
-    return {
-      path: a.path,
-      action: resolved.action,
-      source: resolved.source,
-      risk: a.risk,
-      likely_risk: likelyToolRisk(row.providerType, a.path, a.risk),
-      ...(resolved.rule
-        ? {
-            rule: {
-              match: resolved.rule.match,
-              action: resolved.rule.action,
-              ...(resolved.rule.conditions?.length ? { conditions: resolved.rule.conditions } : {}),
-            },
-          }
-        : {}),
-    };
-  });
+  const effective = projectEffectivePolicies(slug, row.providerType, actions, projectPolicies, base, setRules, defaultMode, sensitive);
   return {
     policies,
     ...setView,
@@ -270,7 +242,43 @@ export async function policySetsUnsupportedFor(projectId: string, slug: string) 
   const error = `${row.providerType} connectors cannot carry policy sets`;
   return { ok: false as const, error, status: 400, body: { error, code: 'policy_sets_unsupported' } };
 }
-
+function projectEffectivePolicies(
+  slug: string, providerType: string, actions: Array<{ path: string; risk: Risk }>, projectPolicies: Policy[],
+  base: ApiRule[], setRules: ApiRule[] | null, defaultMode: DefaultMode, sensitive: boolean,
+) {
+  const setPolicies = setRules ? setRules.map(enginePolicy) : undefined;
+  const connectorPolicies = base.map(enginePolicy);
+  return actions.map((a) => {
+    const resolved = resolveEffectiveRule({
+      fullPath: `${slug}.${a.path}`,
+      relPath: a.path,
+      projectPolicies,
+      setPolicies,
+      connectorPolicies,
+      risk: a.risk,
+      defaultMode,
+      sensitive,
+    });
+    // `risk`: the stored risk the default decided on. `rule`: the rule that
+    // decided, when one did (`conditions`: it decides only for matching args).
+    return {
+      path: a.path,
+      action: resolved.action,
+      source: resolved.source,
+      risk: a.risk,
+      likely_risk: likelyToolRisk(providerType, a.path, a.risk),
+      ...(resolved.rule
+        ? {
+            rule: {
+              match: resolved.rule.match,
+              action: resolved.rule.action,
+              ...(resolved.rule.conditions?.length ? { conditions: resolved.rule.conditions } : {}),
+            },
+          }
+        : {}),
+    };
+  });
+}
 /** A rule as the policy API answers it: conditions kept when present. */
 type ApiRule = { match: string; action: PolicyAction; conditions?: PolicyArgCondition[] | null };
 
