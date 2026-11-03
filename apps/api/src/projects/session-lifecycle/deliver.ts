@@ -13,7 +13,6 @@ import { recordSessionActivity } from '../session-activity';
 import { deliveryCountsAsActivity } from './delivery-activity';
 import { DAEMON_PORT, PromptNeverLandedError } from './runtime-client';
 import { armSessionRuntimeActive } from './runtime-active-signal';
-import { prefetchPromptEnv } from '../lib/sandbox-env-push';
 import { transitionSession } from './status-transitions';
 
 // After a session's runtime reports `ready` we still have to hand the prompt to
@@ -246,8 +245,14 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
         // The box row just went active: its daemon is about a second from ready.
         // Start the first prompt's env reads now (sandbox-env-push.ts
         // `prefetchPromptEnv`); the proxy's sync takes them instead of reading
-        // after the box is ready.
-        if (signalled && !boxActive) prefetchPromptEnv(session.projectId, sessionId, command.overrides?.agent ?? null);
+        // after the box is ready. Best effort, and a dynamic import: the env
+        // graph stays out of this module's static imports, which suites that
+        // mock `sandbox-env-sync` rely on.
+        if (signalled && !boxActive) {
+          void import('../lib/sandbox-env-push')
+            .then(({ prefetchPromptEnv }) => prefetchPromptEnv(session.projectId, sessionId, command.overrides?.agent ?? null))
+            .catch(() => undefined);
+        }
         boxActive = signalled || boxActive;
       } finally {
         armed.cancel();
