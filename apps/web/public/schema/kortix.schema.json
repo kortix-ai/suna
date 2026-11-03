@@ -131,7 +131,7 @@
     "default_agent": {
       "type": "string",
       "pattern": "\\S",
-      "description": "The agent that runs when nothing names one and My Kortix is off, and the agent My Kortix starts when it names none. A session or trigger that names no agent runs My Kortix while it is on. A declared agent that is enabled and whose `mode` is `primary` or `all`."
+      "description": "The agent a session or trigger runs when it names none, and the agent My Kortix starts when it names none. A declared agent that is enabled and whose `mode` is `primary` or `all`, or `mykortix` when `builtin_agents.my_kortix` is true. Omitted: My Kortix when it is on."
     },
     "runtime": {
       "type": "string",
@@ -1115,7 +1115,7 @@
                   "skip",
                   "allow"
                 ],
-                "description": "`skip` holds a fire while the previous run is active. Only with `run.session: fresh`. Default: `skip` for a schedule, `allow` for others."
+                "description": "`skip` holds a fire while the previous run is active. With `run.session: reuse`, `pinned` or `keyed`: while the previous prompt still waits in that session. Default: `skip` for a schedule, `allow` for others."
               },
               "on": {
                 "description": "What fires the trigger: a schedule (`cron`, `every` or `at`), a webhook, or an App event.",
@@ -1354,7 +1354,7 @@
           "slug": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
-            "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_telegram` and `computer` are reserved for the built-in connectors."
+            "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_telegram`, `kortix_discord` and `computer` are reserved for the built-in connectors."
           },
           "name": {
             "type": "string",
@@ -1433,11 +1433,12 @@
                   "slack",
                   "teams",
                   "email",
-                  "telegram"
+                  "telegram",
+                  "discord"
                 ]
               },
               {
-                "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL]|[tT][eE][lL][eE][gG][rR][aA][mM])\\s*$(?![\\s\\S])"
+                "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL]|[tT][eE][lL][eE][gG][rR][aA][mM]|[dD][iI][sS][cC][oO][rR][dD])\\s*$(?![\\s\\S])"
               }
             ]
           },
@@ -1752,6 +1753,32 @@
               "properties": {
                 "slug": {
                   "const": "kortix_telegram"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "channel"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "slug": {
+                  "const": "kortix_discord"
                 }
               }
             },
@@ -3009,12 +3036,12 @@
     },
     "builtin_agents": {
       "type": "object",
-      "description": "Built-in agents the platform adds to this project. Absent = on.",
+      "description": "Built-in agents the platform adds to this project. Each is off unless set to true.",
       "properties": {
         "my_kortix": {
           "type": "boolean",
-          "default": true,
-          "description": "My Kortix, the built-in agent you talk to. false removes it from this project."
+          "default": false,
+          "description": "My Kortix, the built-in agent you talk to (slug `mykortix`). true adds it to this project; absent or false leaves it out. A kortix.yaml that cannot be used at all still runs My Kortix, so that it can fix the file."
         }
       },
       "additionalProperties": false

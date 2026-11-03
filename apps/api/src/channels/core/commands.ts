@@ -87,6 +87,8 @@ export interface CommandContext {
   label: { name: string | null; type: string | null; lookupName?: () => Promise<string | null> };
   /** `ChannelMessage.keys.createClaim` of this conversation. */
   createClaim: string;
+  /** A chat another project holds stays with it: a setting here is refused (Discord, where `/connect` moves a channel). */
+  keepsOtherProjects?: boolean;
   /** Present: the platform shows the agent's questions, and /new clears their buttons. */
   questions?: QuestionPort;
   /** The kind of a file the command's message carried ('photo'); the command does not send it. */
@@ -200,6 +202,13 @@ async function pickedValue(ctx: CommandContext, name: 'model' | 'agent', ref: st
 const notice = (text: string, url?: string): CommandReply => ({ kind: 'notice', text, ...(url ? { url } : {}) });
 
 const NOT_CONNECTED = 'This bot is no longer connected to this Kortix project.';
+const HELD_ELSEWHERE = 'This channel uses another Kortix project. Use /connect to move it to this one first.';
+
+/** The chat's settings row in the project, else the notice that says why there is none. */
+async function bindForSetting(ctx: CommandContext, projectId: string): Promise<CommandReply | null> {
+  const bound = await ensureChatBinding(ctx.settings, projectId, ctx.label, { keepsOtherProjects: ctx.keepsOtherProjects });
+  return bound === 'bound' ? null : notice(bound === 'held' ? HELD_ELSEWHERE : NOT_CONNECTED);
+}
 /** A create holds the chat: the session it binds was planned before the choice changed. */
 const CREATING = "Kortix is still creating this chat's session, which keeps its own";
 /** A queued session has no sandbox yet: its turn cannot run, or be stopped. */
@@ -461,7 +470,8 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
     if (!verdict.ok) {
       return notice(`${modelName(arg)} is not available in this chat. Only models and keys the whole project shares work here. Send /model to see them.`);
     }
-    if (!(await ensureChatBinding(ctx.settings, projectId, ctx.label))) return notice(NOT_CONNECTED);
+    const unbound = await bindForSetting(ctx, projectId);
+    if (unbound) return unbound;
     // No row to write: a disconnect dropped it after the check.
     if (!(await setChannelModel(ctx.settings, verdict.model))) return notice(NOT_CONNECTED);
     if (session) await applyChannelSessionKeys({ sessionId: session.sessionId, keys: verdict.keys, replace: true });
@@ -486,7 +496,8 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
     }
     // The list a stranger in a group may pick from: never a name a grant restricts, and never one a failed read let through.
     if (/\s/.test(arg) || !(await chatAgents(projectId)).some((a) => a.name === arg)) return refusal;
-    if (!(await ensureChatBinding(ctx.settings, projectId, ctx.label))) return notice(NOT_CONNECTED);
+    const unbound = await bindForSetting(ctx, projectId);
+    if (unbound) return unbound;
     const set = await setChannelAgent(ctx.settings, arg);
     if (!set.ok) return set.reason === 'unknown_agent' ? refusal : notice(NOT_CONNECTED);
     const session = await chatSession(ctx);

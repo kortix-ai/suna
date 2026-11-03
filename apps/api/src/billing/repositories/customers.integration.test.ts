@@ -9,7 +9,6 @@ import { db } from '../../shared/db';
 import {
   getCustomerByAccountId,
   getCustomerByStripeId,
-  listAccountStripeCustomerIds,
   upsertCustomer,
 } from './customers';
 
@@ -105,18 +104,4 @@ withDb('billing customer mapping', () => {
     expect(await getCustomerByStripeId(`cus_missing_${accountId.slice(0, 8)}`)).toBeNull();
   });
 
-  test('every Stripe customer id of the account is listed, active or not', async () => {
-    const suffix = accountId.slice(0, 8);
-    await seed(accountId, [
-      { id: `cus_live_${suffix}`, active: true, provider: 'stripe' },
-      { id: `cus_old_${suffix}`, active: false, provider: 'stripe' },
-      { id: `rc_${suffix}`, active: true, provider: 'revenuecat' },
-    ]);
-    await seed(otherAccountId, [{ id: `cus_other_${suffix}`, active: true, provider: 'stripe' }]);
-
-    expect((await listAccountStripeCustomerIds(accountId)).sort()).toEqual([
-      `cus_live_${suffix}`,
-      `cus_old_${suffix}`,
-    ]);
-  });
 });

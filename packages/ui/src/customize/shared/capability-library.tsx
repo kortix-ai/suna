@@ -44,10 +44,10 @@ import {
 } from '../../primitives/input-group';
 import { Skeleton } from '../../primitives/skeleton';
 import { UiLink as Link } from '../../providers/ui-provider';
-import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { cn } from '../../internal/lib/utils';
 import { BuiltinSkillModal } from '../skills/builtin-skill-modal';
 import { CatalogCard } from './catalog/catalog-card';
+import { CatalogGridSkeleton } from './catalog/catalog-grid';
 import { GRID_CLASSNAME } from './catalog/catalog-grid-tokens';
 import { AccessGroup, type AccessItem, AccessList, BuiltinGroup } from './access-list';
 import type { AgentDraft } from '../sections/view/agent-editor';
@@ -226,8 +226,6 @@ export function CapabilityLibrary({
   const query = useProjectCapabilities(projectId);
   const catalog = query.data;
   const [search, setSearch] = useState('');
-  // Project admin's filter: the project's own items, Kortix's built-in ones, or both.
-  const [scope, setScope] = useState<'all' | 'project' | 'kortix'>('all');
   // A built-in skill's card opens it here (it is not a file in the project).
   const [builtinSkill, setBuiltinSkill] = useState<string | null>(null);
   const skills = useSkillManagement(projectId, view === 'skills');
@@ -295,59 +293,45 @@ export function CapabilityLibrary({
     </>
   );
 
-  // Project admin. Skills: the All / Project / Kortix filter, Kortix's skills as cards.
-  // Tools and Extensions: no filter; the project's own group only when it has
-  // items, then the built-ins under the API's real groups.
-  let projectSections: ReactNode;
-  if (view === 'skills') {
-    projectSections = (
-      <>
-        {scope !== 'kortix' ? (
-          <AccessGroup title={t('groups.project')} items={project} empty={search ? t('noMatch') : empty} />
-        ) : null}
-        {scope !== 'project' ? (
-          <section className="space-y-3">
-            <h3 className="text-foreground text-sm font-medium">{t('groups.kortix')}</h3>
-            {builtin.length > 0 ? (
-              <div className={GRID_CLASSNAME}>
-                {builtin.map((row) => (
-                  <CatalogCard
-                    key={row.id}
-                    title={<span className="font-mono !tracking-normal">{row.id}</span>}
-                    description={row.disabled ? t('flagOff') : typeof row.description === 'string' ? row.description : undefined}
-                    className={cn(row.disabled && 'opacity-60')}
-                    onClick={() => setBuiltinSkill(row.id)}
-                  />
-                ))}
-              </div>
-            ) : (
-              <p className="text-muted-foreground text-sm text-pretty">{t('noMatch')}</p>
-            )}
-          </section>
-        ) : null}
-      </>
-    );
-  } else {
-    const builtinGroups =
-      view === 'tools'
-        ? BUILTIN_TOOL_GROUPS.map((group) => ({
-            group,
-            items: builtin.filter((row) => catalog?.tools.find((tool) => tool.id === row.id)?.group === group),
-          }))
-        : [{ group: 'platform' as const, items: builtin }];
-    const shown = builtinGroups.filter((g) => g.items.length > 0);
-    projectSections = (
-      <>
-        {project.length > 0 ? <AccessGroup title={t('groups.project')} items={project} /> : null}
-        {shown.map((g) => (
-          <AccessGroup key={g.group} title={t(`groups.${g.group}`)} items={g.items} />
+  // Project admin: one card grid in all three views (Jay, 2026-11-03). The
+  // project's own items lead under "Project"; Kortix's built-ins follow under
+  // their own headings (Tools' under the API's real groups). No filter: the
+  // headings already split the two.
+  const cardGrid = (key: string, title: string, items: AccessItem[], openBuiltin: boolean) => (
+    <section key={key} className="space-y-3">
+      <h3 className="text-foreground text-sm font-medium">{title}</h3>
+      <div className={GRID_CLASSNAME}>
+        {items.map((row) => (
+          <CatalogCard
+            key={row.id}
+            title={row.title ?? <span className="font-mono !tracking-normal">{row.id}</span>}
+            description={row.disabled && openBuiltin ? t('flagOff') : typeof row.description === 'string' ? row.description : undefined}
+            badges={row.status}
+            className={cn(row.disabled && 'opacity-60')}
+            onClick={openBuiltin && view === 'skills' ? () => setBuiltinSkill(row.id) : row.onOpen}
+          />
         ))}
-        {project.length === 0 && shown.length === 0 ? (
-          <p className="text-muted-foreground text-sm text-pretty">{search ? t('noMatch') : empty}</p>
-        ) : null}
-      </>
-    );
-  }
+      </div>
+    </section>
+  );
+  const builtinGroups =
+    view === 'tools'
+      ? BUILTIN_TOOL_GROUPS.map((group) => ({
+          group: group as string,
+          items: builtin.filter((row) => catalog?.tools.find((tool) => tool.id === row.id)?.group === group),
+        }))
+      : [{ group: 'kortix', items: builtin }];
+  const shownProject = project;
+  const shownBuiltin = builtinGroups.filter((g) => g.items.length > 0);
+  const projectSections: ReactNode = (
+    <>
+      {shownProject.length > 0 ? cardGrid('project', t('groups.project'), shownProject, false) : null}
+      {shownBuiltin.map((g) => cardGrid(g.group, t(`groups.${g.group}`), g.items, true))}
+      {shownProject.length === 0 && shownBuiltin.length === 0 ? (
+        <p className="text-muted-foreground text-sm text-pretty">{search ? t('noMatch') : empty}</p>
+      ) : null}
+    </>
+  );
 
   const body = catalog && railCard ? (
     <div data-testid={`capability-library-${view}`} data-grant={JSON.stringify(agent?.editor.draft[view] ?? null)}>
@@ -371,6 +355,9 @@ export function CapabilityLibrary({
         </Button>
       }
     />
+  ) : !agent ? (
+    // Project admin loads into the same card grid it renders.
+    <CatalogGridSkeleton count={6} />
   ) : (
     <EditorList>
       {[0, 1, 2, 3].map((i) => (
@@ -403,15 +390,7 @@ export function CapabilityLibrary({
       filters={
         agent ? (
           grant ? <GrantModeTabs grant={grant} label={t(VIEW_COPY[view].access)} agentName={agent.name} /> : undefined
-        ) : view !== 'skills' ? undefined : (
-          <Tabs value={scope} onValueChange={(next) => setScope(next as typeof scope)}>
-            <TabsList aria-label={t(VIEW_COPY[view].titleKey)}>
-              <TabsTrigger value="all">{t('scopeAll')}</TabsTrigger>
-              <TabsTrigger value="project">{t('groups.project')}</TabsTrigger>
-              <TabsTrigger value="kortix">{t('groups.kortix')}</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        )
+        ) : undefined
       }
     >
       {body}

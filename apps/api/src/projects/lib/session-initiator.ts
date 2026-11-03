@@ -29,9 +29,9 @@ export function resolveRootSessionInitiator(input: {
   const source = typeof input.source === 'string' ? input.source : '';
   if (source.startsWith('trigger:')) return { type: 'trigger', id: input.triggerSlug || null };
   if (source.startsWith('system:')) return { type: 'system', id: source };
-  // Email and Telegram senders are never Kortix identities: the actor is the
-  // account-owner stand-in, not the person who started the run.
-  if (source === 'email' || source === 'telegram') return { type: 'channel', id: source };
+  // Email, Telegram and Discord senders are never Kortix identities: the actor
+  // is the account-owner stand-in, not the person who started the run.
+  if (source === 'email' || source === 'telegram' || source === 'discord') return { type: 'channel', id: source };
   if ((source === 'slack' || source === 'teams') && !input.channelSenderIsLinked) {
     return { type: 'channel', id: source };
   }

@@ -24,17 +24,18 @@ export const isBillingEnabled = (): boolean => {
 };
 
 /**
- * Whether /services and /case-studies are live, with every link to them.
+ * Whether /services is live, with every link to it. /case-studies and the
+ * case studies on the home page are always live (founder, 2026-11-03).
  * Off by default: dev sets KORTIX_PUBLIC_SERVICES_PAGES_ENABLED=true, and
- * `next dev` turns it on locally. Prod leaves it unset until the pages ship.
+ * `next dev` turns it on locally. Prod leaves it unset until the page ships.
  */
 export const isServicesPagesEnabled = (): boolean => {
   return getEnv().SERVICES_PAGES_ENABLED;
 };
 
-const SERVICES_PAGES = new Set(['/services', '/case-studies']);
+const SERVICES_PAGES = new Set(['/services']);
 
-/** False for a link to /services or /case-studies while those pages are off. */
+/** False for a link to /services while that page is off. */
 export const showsMarketingLink = (href: string): boolean => {
   return !SERVICES_PAGES.has(href) || isServicesPagesEnabled();
 };

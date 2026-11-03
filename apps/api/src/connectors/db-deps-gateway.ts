@@ -23,7 +23,9 @@ import {
   loadTeamsBotCredentials,
   loadTeamsTenantForProject,
   loadTelegramBotToken,
+  loadDiscordInstall,
 } from '../channels/install-store';
+import { discordConfigured } from '../channels/discord/api';
 import { approvalPageUrl } from '../setup-links/token';
 import { config } from '../config';
 import { logger } from '../lib/logger';
@@ -290,6 +292,8 @@ async function channelToken(
     return account ? resolveEmailApiKey(await emailOwnKeyForAccount(account)) : null;
   }
   if (platform === 'telegram') return loadTelegramBotToken(projectId);
+  // The Kortix Discord application's token, for a project with a server installed.
+  if (platform === 'discord') return (await loadDiscordInstall(projectId)) && discordConfigured() ? config.DISCORD_BOT_TOKEN : null;
   return null;
 }
 

@@ -1,23 +1,23 @@
 'use client';
 
 /**
- * The agent page's frame: one identity header, one row of tabs under it, and
- * the content below, all on one left edge. A tab with several views
- * (Capabilities, Access) lists them in a rail left of its content.
+ * The agent page's frame: a breadcrumb header, then one left rail of rows
+ * beside the content, the Settings page's shape.
  *
- *   ┌ ▣ researcher                         [Share] [Start session] [⋯] ┐
- *   │   ● Enabled · Space: workspace · People start it                 │
- *   │ Overview  Model  Capabilities  Access  Workspace  Triggers 1     │
- *   ├──────────────────────────────────────────────────────────────────┤
- *   │ Tools   All but 2 │ content (the one scroller)                   │
- *   │ Skills     4 of 9 │   (a tab with several views: the rail;      │
- *   │ …                 │    below `md`, a row of pills instead)       │
- *   └──────────────────────── [ ● Unsaved changes  Skills  Discard  Save ⌘S ]
+ *   ┌ Agents › ▣ Researcher  Default         [Share] [Start session] [⋯] ┐
+ *   ├──────────────┬─────────────────────────────────────────────────────┤
+ *   │ General      │                                                     │
+ *   │  Overview    │   the row's content, one centered column            │
+ *   │  Basics      │   (the one scroller)                                │
+ *   │  People      │                                                     │
+ *   │  Triggers    │                                                     │
+ *   │ Access       │                                                     │
+ *   │  Skills …    │                                                     │
+ *   │ Runtime      │                                                     │
+ *   │  Model …     │                                                     │
+ *   └──────────────┴────────── [ ● Unsaved changes  Skills  Discard  Save ⌘S ]
  *
- * The header echoes the Space channel header (`space-page.tsx`): a tile, the
- * name at `text-xl font-medium`, one muted line. It is also the window's
- * title-bar row (`kx-titlebar-row`), so it holds the sidebar opener and the
- * desktop drag band: the page adds no bar for either.
+ * Below `md` the rail is one horizontal row of pills under the header.
  */
 
 import { type MouseEvent, type ReactNode, useCallback } from 'react';
@@ -25,6 +25,8 @@ import { type MouseEvent, type ReactNode, useCallback } from 'react';
 import { useTranslations as useI18nTranslations } from '../../i18n';
 import { AgentMark, agentDisplayName } from '../../internal/components/agent-mark';
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
+import { SETTINGS_SIDEBAR_WIDTH_PX } from '../../internal/account-hub/account-settings-shell';
+import { CaretRightIcon } from '@phosphor-icons/react';
 import { useInCustomizeFrame } from '../shared/customize-tab-bar';
 import { cn } from '../../internal/lib/utils';
 import { Button } from '../../primitives/button';
@@ -48,6 +50,7 @@ import { m, useReducedMotion } from 'motion/react';
 
 import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 
+import { SECTION_ICON } from './agent-overview';
 import type { AgentRailKey } from './agent-tabs';
 
 /** One fact on the header's meta line. A `tone` draws the status dot first. */
@@ -126,98 +129,157 @@ export interface AgentRailItem {
   label: string;
   href: string;
   count?: number | string;
+  /** A row that opens something instead of navigating (People: the Share dialog). */
+  onSelect?: () => void;
 }
 
-/** One top tab of the agent page: one view, or several shown as pills. */
-export interface AgentTabGroup {
+/** One group of the rail: General, Access or Runtime, with its rows. */
+export interface AgentRailGroup {
   key: string;
   label: string;
   items: AgentRailItem[];
 }
 
 /**
- * The agent page's navigation: one row of tabs under the header, and, when the
- * active tab holds several views, one row of pills for them. Every
- * `agents.<name>` key in kortix.yaml lives on exactly one tab or pill
- * (`YAML_KEY_ROW`). A tab or pill holding an unsaved edit carries a dot. The
- * row scrolls sideways on a narrow window instead of wrapping.
+ * The agent page's header: one breadcrumb row. "Agents" links back to the
+ * list, the last crumb is the agent (its mark and name, the page's `h1`),
+ * then the status badges, and every action on the right. It is the window's
+ * title-bar row when no Customize bar sits above it.
+ *
+ *   Agents › ▣ Researcher  Default          [pins] [Share] [Start session] [⋯]
  */
-export function AgentTabBar({
+export function AgentBreadcrumbHeader({
+  listHref,
+  slug,
+  title,
+  badges,
+  actions,
+}: {
+  listHref: string;
+  slug: string;
+  title: ReactNode;
+  badges?: ReactNode;
+  actions?: ReactNode;
+}) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const sidebar = useOptionalSidebar();
+  const framed = useInCustomizeFrame();
+  return (
+    <header
+      className={cn('flex min-h-12 shrink-0 items-center gap-3 border-b px-4 py-2', !framed && 'kx-titlebar-row')}
+      data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
+    >
+      {framed ? null : <SidebarToggle />}
+      <nav aria-label={tI18nComplete.raw('text2bd873d6c734')} className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">
+        <Link
+          href={listHref}
+          prefetch
+          className="text-muted-foreground hover:text-foreground shrink-0 transition-colors duration-fast"
+        >
+          {tI18nComplete.raw('text279b44d2ab4b')}
+        </Link>
+        <CaretRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+        <AgentMark slug={slug} />
+        <h1 className="text-foreground min-w-0 truncate text-sm font-medium">{title}</h1>
+        {badges ? <span className="flex shrink-0 items-center gap-1.5">{badges}</span> : null}
+      </nav>
+      {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+    </header>
+  );
+}
+
+/**
+ * The agent page's navigation: one left rail in the Settings rail's dialect
+ * (`account-settings-shell.tsx`), its rows under group labels (General,
+ * Access, Runtime). Every `agents.<name>` key in kortix.yaml lives on exactly
+ * one row (`YAML_KEY_ROW`); a row holding an unsaved edit carries a dot.
+ * A row with `onSelect` is a button (People opens the Share dialog), every
+ * other row is a link. Below `md` the rail is one horizontal row of pills.
+ */
+export function AgentRail({
   groups,
   active,
   dirty,
 }: {
-  groups: AgentTabGroup[];
+  groups: AgentRailGroup[];
   active: AgentRailKey;
   dirty?: readonly AgentRailKey[];
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const go = useInPageNavigate();
   const shown = groups.filter((group) => group.items.length > 0);
-  const current = shown.find((group) => group.items.some((item) => item.key === active)) ?? shown[0];
   const dot = <span role="img" aria-label={t('unsavedTab')} className="bg-foreground size-1.5 shrink-0 rounded-full" />;
+  const row = (item: AgentRailItem, horizontal: boolean) => {
+    const on = item.key === active;
+    const Icon = item.key in SECTION_ICON ? SECTION_ICON[item.key as keyof typeof SECTION_ICON] : null;
+    const className = horizontal
+      ? cn(
+          'flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-sm whitespace-nowrap transition-colors duration-fast',
+          on ? 'bg-active text-foreground font-medium' : 'text-muted-foreground hover:bg-hover hover:text-foreground',
+        )
+      : cn(
+          'flex h-8 w-full shrink-0 items-center gap-2 rounded-md px-2.5 text-left text-sm transition-colors duration-fast',
+          'text-foreground hover:bg-hover',
+          on && 'bg-active font-medium',
+          on ? '[&>svg]:text-foreground' : '[&>svg]:text-muted-foreground',
+        );
+    const content = (
+      <>
+        {Icon && !horizontal ? <Icon className="size-4 shrink-0" /> : null}
+        <span className={cn('min-w-0', !horizontal && 'flex-1 truncate')}>{item.label}</span>
+        {dirty?.includes(item.key) ? dot : null}
+        {item.count !== undefined ? (
+          <span className="text-muted-foreground shrink-0 text-xs font-normal tabular-nums">{item.count}</span>
+        ) : null}
+      </>
+    );
+    if (item.onSelect) {
+      return (
+        <button key={item.key} type="button" onClick={item.onSelect} data-testid={`agent-rail-${horizontal ? 'pill-' : ''}${item.key}`} className={className}>
+          {content}
+        </button>
+      );
+    }
+    return (
+      <Link
+        key={item.key}
+        href={item.href}
+        prefetch={false}
+        onClick={(e) => go(e, item.href)}
+        aria-current={on ? 'page' : undefined}
+        data-testid={`agent-rail-${horizontal ? 'pill-' : ''}${item.key}`}
+        className={className}
+      >
+        {content}
+      </Link>
+    );
+  };
   return (
     <>
-      <nav aria-label={t('tabsLabel')} className="shrink-0 border-b">
+      <nav aria-label={tI18nComplete.raw('text7be318295927')} className="shrink-0 border-b md:hidden">
         <FadedScrollArea orientation="horizontal" fadeColor="from-background">
-          <div className="flex w-max items-center gap-1 px-2">
-            {shown.map((group) => {
-              const on = group === current;
-              const single = group.items.length === 1 ? group.items[0] : null;
-              return (
-                <Link
-                  key={group.key}
-                  href={group.items[0].href}
-                  prefetch={false}
-                  onClick={(e) => go(e, group.items[0].href)}
-                  aria-current={on ? 'page' : undefined}
-                  data-testid={`agent-tab-${group.key}`}
-                  className={cn(
-                    '-mb-px flex h-10 items-center gap-1.5 border-b-2 px-2 text-sm whitespace-nowrap transition-colors',
-                    on ? 'border-foreground text-foreground' : 'text-muted-foreground hover:text-foreground border-transparent',
-                  )}
-                >
-                  {group.label}
-                  {group.items.some((item) => dirty?.includes(item.key)) ? dot : null}
-                  {single && single.key === 'triggers' && single.count !== undefined ? (
-                    <span className="text-muted-foreground tabular-nums">{single.count}</span>
-                  ) : null}
-                </Link>
-              );
-            })}
+          <div className="flex w-max items-center gap-1 px-2 py-2">
+            {shown.flatMap((group) => group.items.map((item) => row(item, true)))}
           </div>
         </FadedScrollArea>
       </nav>
-      {current && current.items.length > 1 ? (
-        // Below `md` only: wider, the content's rail (`agent-section-rail.tsx`) lists the views.
-        <div className="shrink-0 md:hidden">
-          <FadedScrollArea orientation="horizontal" fadeColor="from-background">
-            <div className="flex w-max items-center gap-1 px-2 pt-4">
-              {current.items.map((item) => {
-                const on = item.key === active;
-                return (
-                  <Link
-                    key={item.key}
-                    href={item.href}
-                    prefetch={false}
-                    onClick={(e) => go(e, item.href)}
-                    aria-current={on ? 'page' : undefined}
-                    data-testid={`agent-view-${item.key}`}
-                    className={cn(
-                      'flex h-7 items-center gap-1.5 rounded-md px-2.5 text-sm whitespace-nowrap transition-colors',
-                      on ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-hover hover:text-foreground',
-                    )}
-                  >
-                    {item.label}
-                    {dirty?.includes(item.key) ? dot : null}
-                    {item.count !== undefined ? <span className="text-muted-foreground tabular-nums">{item.count}</span> : null}
-                  </Link>
-                );
-              })}
+      <aside
+        className="hidden min-h-0 shrink-0 flex-col border-r md:flex"
+        style={{ width: SETTINGS_SIDEBAR_WIDTH_PX }}
+      >
+        <nav
+          aria-label={tI18nComplete.raw('text7be318295927')}
+          className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-2 pt-3 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {shown.map((group) => (
+            <div key={group.key} role="group" aria-label={group.label}>
+              <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs font-medium">{group.label}</div>
+              <div className="flex flex-col gap-px">{group.items.map((item) => row(item, false))}</div>
             </div>
-          </FadedScrollArea>
-        </div>
-      ) : null}
+          ))}
+        </nav>
+      </aside>
     </>
   );
 }
@@ -245,15 +307,15 @@ export function useInPageNavigate(): (event: MouseEvent<HTMLAnchorElement>, href
 export function AgentTabBody({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className={cn('w-full px-4 pt-5 pb-24 md:px-8', className)}>{children}</div>
+      <div className={cn('w-full px-4 pt-8 pb-24 md:px-8 lg:pt-12', className)}>{children}</div>
     </div>
   );
 }
 
 /**
- * The page before its reads land: the header, the tab row, and the Overview's
- * centered column as three grouped blocks (description, instructions,
- * properties). Grouped on purpose: a line per field reads as noise.
+ * The page before its reads land: the breadcrumb header, the rail, and the
+ * Overview's centered column as grouped blocks (title, description,
+ * instructions). Grouped on purpose: a line per field reads as noise.
  */
 export function AgentPageSkeleton() {
   const sidebar = useOptionalSidebar();
@@ -261,24 +323,27 @@ export function AgentPageSkeleton() {
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col" aria-busy>
       <header
-        className={cn('flex min-h-12 shrink-0 items-center gap-3 px-4 py-2', !framed && 'kx-titlebar-row')}
+        className={cn('flex min-h-12 shrink-0 items-center gap-3 border-b px-4 py-2', !framed && 'kx-titlebar-row')}
         data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
       >
         {framed ? null : <SidebarToggle />}
-        {/* The mark tile's literal 28px (`agent-mark.tsx` TILE[21]). */}
-        <Skeleton className="shrink-0 rounded-md py-0" style={{ width: 28, height: 28 }} />
+        <Skeleton className="h-3.5 w-14 rounded-sm py-0" />
         <Skeleton className="h-4 w-40 rounded-sm py-0" />
       </header>
-      <div className="flex h-10 shrink-0 items-center gap-4 border-b px-4" aria-hidden>
-        <Skeleton className="h-3.5 w-16 rounded-sm py-0" />
-        <Skeleton className="h-3.5 w-16 rounded-sm py-0" />
-        <Skeleton className="h-3.5 w-16 rounded-sm py-0" />
-      </div>
-      <div className="min-h-0 flex-1 overflow-hidden px-4 pt-5 md:px-8" aria-hidden>
-        <div className="mx-auto w-full max-w-3xl space-y-6">
-          <Skeleton className="h-20 w-full rounded-md py-0" />
-          <Skeleton className="h-80 w-full rounded-lg py-0" />
-          <Skeleton className="h-48 w-full rounded-md py-0" />
+      <div className="flex min-h-0 flex-1" aria-hidden>
+        <div className="hidden shrink-0 space-y-1.5 border-r px-2 pt-3 md:block" style={{ width: SETTINGS_SIDEBAR_WIDTH_PX }}>
+          <Skeleton className="mb-2 h-3 w-16 rounded-sm py-0" />
+          {Array.from({ length: 4 }).map((_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length placeholder
+            <Skeleton key={i} className="h-8 w-full rounded-md py-0" />
+          ))}
+        </div>
+        <div className="min-h-0 flex-1 overflow-hidden px-4 pt-8 md:px-8 lg:pt-12">
+          <div className="mx-auto w-full max-w-3xl space-y-6">
+            <Skeleton className="h-6 w-32 rounded-sm py-0" />
+            <Skeleton className="h-20 w-full rounded-md py-0" />
+            <Skeleton className="h-80 w-full rounded-lg py-0" />
+          </div>
         </div>
       </div>
     </div>

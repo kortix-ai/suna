@@ -6,9 +6,7 @@ import {
   HardDrivesIcon,
   KeyIcon,
   PlugsConnectedIcon,
-  PuzzlePieceIcon,
   TimerIcon,
-  WrenchIcon,
   type Icon,
 } from '@phosphor-icons/react';
 
@@ -26,7 +24,9 @@ import {
  * on. Project admin is the other view: the project-wide libraries an agent is
  * granted from, plus every project setting. Two rail groups:
  *
- *  1. **Project resources** — the global variant of each library page.
+ *  1. **Project resources** — the global variant of each library page. Tools
+ *     and Extensions have none (Jay, 2026-11-03): they are switched per agent,
+ *     on the agent's own page, and a project-wide list changed nothing.
  *  2. **Settings** — the sections of `project-settings-sections.ts`, unchanged.
  *
  * A key IS its URL segment (`/admin/<key>`), so renaming one breaks live links. The
@@ -36,8 +36,6 @@ import {
 export type ProjectAdminResourceKey =
   | 'connectors'
   | 'skills'
-  | 'tools'
-  | 'extensions'
   | 'triggers'
   | 'models'
   | 'secrets'
@@ -78,8 +76,6 @@ export const PROJECT_ADMIN_RESOURCES: readonly ProjectAdminResource[] = [
   { key: 'connectors', icon: PlugsConnectedIcon, capability: 'connectors', host: false },
   { key: 'secrets', icon: KeyIcon, capability: 'secrets', host: false },
   { key: 'skills', icon: BookOpenTextIcon, capability: 'skills', host: false },
-  { key: 'tools', icon: WrenchIcon, capability: 'agent', host: false },
-  { key: 'extensions', icon: PuzzlePieceIcon, capability: 'agent', host: false },
   { key: 'drives', icon: HardDrivesIcon, capability: null, host: false, flag: 'drives' },
   { key: 'apps', icon: AppWindowIcon, capability: null, host: true },
   // Triggers: kortix.yaml triggers and runtime triggers (loops) on one page.
@@ -88,6 +84,9 @@ export const PROJECT_ADMIN_RESOURCES: readonly ProjectAdminResource[] = [
   { key: 'models', icon: CpuIcon, capability: 'models', host: false },
   { key: 'repo', icon: FoldersIcon, capability: 'files', host: false, flag: 'drives' },
 ];
+
+/** Sections that no longer exist here: their links open the Agents list. */
+export const RETIRED_SECTIONS: readonly string[] = ['tools', 'extensions'];
 
 /** `/projects/<id>/admin` with no section opens the first resource. */
 export const DEFAULT_PROJECT_ADMIN_SECTION: ProjectAdminSectionKey = 'connectors';
@@ -100,6 +99,8 @@ export function parseProjectAdminSection(
   raw: string | null | undefined,
 ): ProjectAdminSectionKey | null {
   if (!raw) return null;
+  // `/admin/tools` and `/admin/extensions` were read-only lists until
+  // 2026-11-03; the dashboard sends them to the Agents list (`RETIRED_SECTIONS`).
   // `/admin/loops` was the Loops page until 2026-10-28: loops are triggers now.
   if (raw === 'loops') return 'triggers';
   const resource = PROJECT_ADMIN_RESOURCES.find((r) => r.key === raw);

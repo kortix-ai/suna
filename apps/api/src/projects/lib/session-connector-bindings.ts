@@ -22,6 +22,7 @@ import {
   loadSlackInstall,
   loadTeamsInstall,
   loadTelegramInstall,
+  loadDiscordInstall,
 } from '../../channels/install-store';
 import {
   credentialExists,
@@ -127,6 +128,9 @@ export async function connectorConnectionIsConnected(input: {
       }
       if (platform === 'telegram') {
         return (await loadTelegramInstall(connector.projectId).catch(() => null)) !== null;
+      }
+      if (platform === 'discord') {
+        return (await loadDiscordInstall(connector.projectId).catch(() => null)) !== null;
       }
       if (platform === 'email') {
         // An email account is connected while it is its inbox's active account.

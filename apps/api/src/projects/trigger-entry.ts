@@ -173,8 +173,8 @@ export function parseRunCaps(
 
 /**
  * A trigger's `overlap` (KRTX-1721): `skip` or `allow`. Absent → omitted, and
- * the default applies (`skip` for cron, `allow` otherwise). It acts on fresh
- * session mode only (`lib/trigger-overlap.ts`).
+ * the default applies (`skip` for cron, `allow` otherwise). It acts on every
+ * session mode (`lib/trigger-overlap.ts`).
  */
 export function parseOverlap(row: Record<string, unknown>): { overlap?: 'skip' | 'allow' } | { error: string } {
   const raw = row.overlap;

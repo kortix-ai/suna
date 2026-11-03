@@ -329,6 +329,7 @@ export function SessionFilterMenu({
     shared: t('sourceValue.shared'),
     slack: sectionLabels.slack,
     telegram: sectionLabels.telegram,
+    discord: sectionLabels.discord,
     teams: sectionLabels.teams,
     email: sectionLabels.email,
     schedule: sectionLabels.schedule,

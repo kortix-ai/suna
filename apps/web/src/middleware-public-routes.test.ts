@@ -97,7 +97,7 @@ test('surface pages are public, and the auth flows that share their slug are not
     const response = await middleware(new NextRequest(`http://localhost:3000${path}`));
     expect(response.headers.get('x-middleware-rewrite')).toContain(path.startsWith('/de') ? path : `/en${path}`);
   }
-  for (const path of ['/cli/authorize', '/slack/install', '/slack/login/tok', '/teams/install', '/teams/login/tok']) {
+  for (const path of ['/cli/authorize', '/slack/install', '/slack/login/tok', '/teams/install', '/teams/login/tok', '/discord/install']) {
     const response = await middleware(new NextRequest(`https://dev.kortix.com${path}`));
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toBe(

@@ -499,6 +499,32 @@ const envSchema = z.object({
   // ── Channels — Telegram Bot API. Overridable for tests. ──
   TELEGRAM_API_URL: optUrl('https://api.telegram.org'),
 
+  // ── Channels — the Kortix Discord application (optional) ──────────────────
+  // One application for every project, like the Kortix Slack app: projects
+  // install it in a server with "Add to Discord". Unset: Discord is off.
+  // From the Developer Portal: General Information → Application ID and
+  // Public Key; OAuth2 → Client Secret; Bot → Token.
+  DISCORD_APPLICATION_ID: optStr,
+  DISCORD_PUBLIC_KEY: optStr,
+  DISCORD_CLIENT_SECRET: optStr,
+  DISCORD_BOT_TOKEN: optStr,
+  // The privileged Message Content intent, switched on for the application in
+  // the Developer Portal (Bot → Privileged Gateway Intents). On: every message in
+  // a thread a Kortix session holds reaches the agent. Off (default, like Slack):
+  // only a message that mentions the app, and every direct message.
+  DISCORD_MESSAGE_CONTENT: optBoolFalse,
+  // The OAuth2 redirect URI registered in the Developer Portal. Unset:
+  // `${KORTIX_URL}/v1/webhooks/discord/oauth/callback`.
+  DISCORD_REDIRECT_URI: optStr,
+  // The REST API base and the Gateway URL. Overridable for tests.
+  DISCORD_API_URL: optUrl('https://discord.com/api/v10'),
+  DISCORD_CDN_URL: optUrl('https://cdn.discordapp.com'),
+  DISCORD_GATEWAY_URL: z
+    .string()
+    .optional()
+    .default('wss://gateway.discord.gg')
+    .refine((v) => /^wss?:\/\//.test(v), { message: 'Must be a ws(s):// URL' }),
+
   // ── MCP apps — Kortix-owned OAuth clients ───────────────
   // JSON: {"google":{"client_id":"…","client_secret":"…"},"github":{…}}. One
   // client per vendor whose MCP server has no dynamic client registration
@@ -1446,6 +1472,15 @@ export const config = {
   RESEND_MANAGED_DOMAIN: env.RESEND_MANAGED_DOMAIN,
   RESEND_MANAGED_EMAIL_ENABLED: env.RESEND_MANAGED_EMAIL_ENABLED,
   TELEGRAM_API_URL: env.TELEGRAM_API_URL,
+  DISCORD_APPLICATION_ID: env.DISCORD_APPLICATION_ID,
+  DISCORD_PUBLIC_KEY: env.DISCORD_PUBLIC_KEY,
+  DISCORD_CLIENT_SECRET: env.DISCORD_CLIENT_SECRET,
+  DISCORD_BOT_TOKEN: env.DISCORD_BOT_TOKEN,
+  DISCORD_MESSAGE_CONTENT: env.DISCORD_MESSAGE_CONTENT,
+  DISCORD_REDIRECT_URI: env.DISCORD_REDIRECT_URI,
+  DISCORD_API_URL: env.DISCORD_API_URL,
+  DISCORD_CDN_URL: env.DISCORD_CDN_URL,
+  DISCORD_GATEWAY_URL: env.DISCORD_GATEWAY_URL,
   KORTIX_OAUTH_CLIENTS: env.KORTIX_OAUTH_CLIENTS,
 
   // ─── Channels (Microsoft Teams) ───────────────────────────────────────────

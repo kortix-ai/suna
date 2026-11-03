@@ -2,7 +2,7 @@
 title: Project repository access (how the API and the boxes get a project's files, and what it costs)
 status: phase 1 on dev (#11492 650ac3e492 partial object store; #11501 aec9dafaf3 named image steps); target decided (one Platinum volume per project, git secondary); nothing of it built
 owner: Marko (decisions)
-updated: 2026-11-02
+updated: 2026-11-03
 ---
 
 # Project repository access
@@ -87,6 +87,29 @@ Ledger entry for the outage: [`entries/2026-11-02T175853Z-never-copy-a-whole-git
      API (GitHub trees) or a stored file index.
    - Content search covers at most 64 MB of files per commit.
    - A first file read pays about 0.4 s per round trip.
+
+## Prod NAT inbound, 24 h to 2026-11-02 16:00Z (809 GB)
+
+| Source | GB/day | Share | Status |
+|---|---|---|---|
+| GitHub | 576.7 | 71.3% | API replica clones: fixed by #11492, reaches prod with the next Promote. Box checkouts through the git proxy: item 1 above. |
+| Platinum sandbox ingress | 130.2 | 16.1% | Box responses proxied by the API. `[proxy-bytes]` (`sandbox-proxy/proxy-bytes.ts`) logs bytes per route class per replica per minute; read a day of it before moving any route off the proxy. Design notes below. |
+| Supabase Postgres (direct host, IPv4 add-on) | 60.1 | 7.4% | Admission polling loop and the orphan-box full scan fixed (`nat-egress` branch). Private connectivity is an open decision, below. |
+| Cloudflare (Platinum control plane) | ~20 | ~2.5% | Not addressed. |
+| CloudFront, London edges | 19.4 | 2.4% | Not attributed. Needs an AWS MFA session. |
+| S3 + ECR | ~1.1 | 0.1% | S3 gateway endpoint added to the network module (`nat-egress` branch). |
+
+**Database private connectivity: open decision.** NAT processing costs $0.05/GB in eu-west-2, so this line costs about $90/month.
+- *IPv6 with an egress-only internet gateway* costs nothing per GB. Supabase serves the AAAA record only after the IPv4 add-on is turned off, which drops connections for under a minute and breaks every IPv4-only client of the direct host. GitHub-hosted runners that run migrations are IPv4-only and would need the session pooler.
+- *Supabase PrivateLink* (VPC Lattice resource endpoint, $0.01/GB plus about $16/month) keeps IPv4 and takes the database off the public internet. It is beta and needs the Team plan or higher.
+
+**Platinum direct access: design notes, nothing built.** Platinum's edge already accepts a per-port HMAC token (`POST /v1/sandboxes/:id/expose`, `?t=`). Moving reads direct needs:
+- daemon CORS and OPTIONS handling;
+- a read-only user context that the daemon enforces;
+- an SDK route that tries the edge and falls back to `/v1/p`;
+- a client heartbeat to the API, because the proxy is what records `lastUsedAt`.
+
+Writes, app previews, self-host and old mobile builds stay on the proxy. The edge hostnames match the pattern that a consumer security filter blocked for `*.kortix.cloud`, so the fallback is mandatory.
 
 ## Target architecture: one Platinum volume per project (decided direction, Marko, 2026-11-02)
 

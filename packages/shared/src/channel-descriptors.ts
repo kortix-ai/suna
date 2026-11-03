@@ -8,7 +8,7 @@
  */
 
 /** The `platform` of a `channel` connector. The order is the manifest schema's enum order. */
-export const CHANNEL_PLATFORM_IDS = ['slack', 'teams', 'email', 'telegram'] as const;
+export const CHANNEL_PLATFORM_IDS = ['slack', 'teams', 'email', 'telegram', 'discord'] as const;
 export type ChannelPlatformId = (typeof CHANNEL_PLATFORM_IDS)[number];
 
 export interface ChannelDescriptor {
@@ -67,6 +67,24 @@ export const CHANNELS = {
       userId: /^\d{1,20}$/,
       idPlaceholder: '123456789',
       idsPlaceholder: '123456789, 987654321',
+      idInputMode: 'numeric',
+    },
+  },
+  discord: {
+    label: 'Discord',
+    envelope: 'Discord',
+    catalog: {
+      domain: 'discord.com',
+      description: 'Message the agent in Discord: mentions, DMs and threads, through the Kortix Discord app.',
+    },
+    messageChars: 2000,
+    // A message holds 5 rows of components: one option a row, then one row for ‹ Back, More › and Done.
+    buttons: { max: 4, dataBytes: 100 },
+    // A user id is a snowflake: 17 to 20 digits.
+    access: {
+      userId: /^\d{17,20}$/,
+      idPlaceholder: '123456789012345678',
+      idsPlaceholder: '123456789012345678, 876543210987654321',
       idInputMode: 'numeric',
     },
   },
