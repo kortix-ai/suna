@@ -1147,6 +1147,16 @@ describe('the Gateway under failure', () => {
   });
 });
 
+describe('the Channels page', () => {
+  test('a DM is listed under its person, not as "direct message"', async () => {
+    const dm = '750000000000000009';
+    expect(await intakeMessage(message({ channel_id: dm, guild_id: undefined, content: 'hello from a new DM', mentions: [] }), BOT)).toBe('stored');
+    await drain();
+    const [row] = await db.select({ name: chatChannelBindings.channelName, type: chatChannelBindings.channelType }).from(chatChannelBindings).where(eq(chatChannelBindings.channelId, dm));
+    expect(row).toEqual({ name: 'Sam (@synthetic_sam)', type: 'dm' });
+  });
+});
+
 describe('the working mark', () => {
   const HOURGLASS = encodeURIComponent('⏳');
   const CHECK = encodeURIComponent('✅');

@@ -4,8 +4,9 @@
  * Discord as a channel row: "Add to Discord" installs the Kortix Discord app in
  * one server for this project (Discord's own page picks the server), the
  * allowed users dialog is `ChannelAccessPanel`, and disconnect removes the
- * server. Connected, the row says how to start and opens the server in
- * Discord. On a deployment without the Kortix Discord app the row says so and
+ * server. Connected, the row says how to start, opens the server in Discord,
+ * and, once a channel is bound, opens the bindings dialog on its Discord tab
+ * (`channelsAction`, drawn by the Channels view). On a deployment without the Kortix Discord app the row says so and
  * offers no action: it shows on the Channels tab like every channel.
  */
 import { CHANNELS } from '@kortix/shared/channel-descriptors';
@@ -26,7 +27,16 @@ import { ChannelDisconnectButton, ChannelRow } from './channel-row';
 
 const DISCORD = CHANNELS.discord;
 
-export function DiscordChannelRow({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+export function DiscordChannelRow({
+  projectId,
+  canWrite,
+  channelsAction,
+}: {
+  projectId: string;
+  canWrite: boolean;
+  /** "N channels": the bindings dialog on the Discord tab. */
+  channelsAction?: React.ReactNode;
+}) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const tPages = useTranslations('connectorPages');
   const { data: mode } = useDiscordMode(projectId);
@@ -51,9 +61,13 @@ export function DiscordChannelRow({ projectId, canWrite }: { projectId: string; 
         pitch={tPages('discordPitch')}
         actions={
           install && !canWrite ? (
-            <OpenDiscordButton guildId={install.guild_id} label={tPages('discordOpen')} />
+            <>
+              {channelsAction}
+              <OpenDiscordButton guildId={install.guild_id} label={tPages('discordOpen')} />
+            </>
           ) : !canWrite ? null : install ? (
             <>
+              {channelsAction}
               <OpenDiscordButton guildId={install.guild_id} label={tPages('discordOpen')} />
               <Button size="sm" variant="ghost" onClick={() => setUsersOpen(true)}>
                 {t.raw('text2c3059c25723')}

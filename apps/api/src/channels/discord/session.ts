@@ -603,7 +603,7 @@ export async function handleDiscordMessage(
   }
 
   if (conversation.startThread && !(await startThread(message, conversation, botUserId))) return;
-  await claimDiscordChannel(conversation, event.projectId, message.author.id);
+  await claimDiscordChannel(conversation, event.projectId, message.author.id, senderName(message.author, message.nick));
   // The message is on its way to the agent: ⏳ until the run settles (`discordPort.turnSettled`).
   await markWorking(message.channel_id, message.id);
   const files = discordFiles(message);
