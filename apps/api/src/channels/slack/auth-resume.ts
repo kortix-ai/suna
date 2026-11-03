@@ -7,6 +7,13 @@ import { logger } from '../../lib/logger';
 
 const PENDING_AUTH_TTL_MS = 10 * 60 * 1000;
 
+async function persistPendingSlackMessage(values: () => typeof chatPendingAuthMessages.$inferInsert): Promise<string | null> {
+  await db.delete(chatPendingAuthMessages).where(lt(chatPendingAuthMessages.expiresAt, new Date()));
+  const rows = await db.insert(chatPendingAuthMessages).values(values())
+    .returning({ pendingId: chatPendingAuthMessages.pendingId });
+  return rows[0]?.pendingId ?? null;
+}
+
 export async function createPendingSlackAuthMessage(input: {
   projectId: string;
   teamId: string;
@@ -16,11 +23,7 @@ export async function createPendingSlackAuthMessage(input: {
 }): Promise<string | null> {
   if (!input.teamId || !input.slackUserId) return null;
   try {
-    const now = new Date();
-    await db.delete(chatPendingAuthMessages).where(lt(chatPendingAuthMessages.expiresAt, now));
-    const rows = await db
-      .insert(chatPendingAuthMessages)
-      .values({
+    return await persistPendingSlackMessage(() => ({
         projectId: input.projectId,
         platform: 'slack',
         workspaceId: input.teamId,
@@ -28,9 +31,7 @@ export async function createPendingSlackAuthMessage(input: {
         envelope: input.envelope as unknown as Record<string, unknown>,
         event: input.event as unknown as Record<string, unknown>,
         expiresAt: new Date(Date.now() + PENDING_AUTH_TTL_MS),
-      })
-      .returning({ pendingId: chatPendingAuthMessages.pendingId });
-    return rows[0]?.pendingId ?? null;
+      }));
   } catch (err) {
     console.warn('[slack-auth] failed to store pending Slack message', err);
     return null;
@@ -87,10 +88,7 @@ export async function createPendingSlackPickerMessage(input: {
   const event = input.envelope.event;
   if (!input.teamId || !event) return null;
   try {
-    await db.delete(chatPendingAuthMessages).where(lt(chatPendingAuthMessages.expiresAt, new Date()));
-    const rows = await db
-      .insert(chatPendingAuthMessages)
-      .values({
+    return await persistPendingSlackMessage(() => ({
         projectId: null,
         platform: 'slack',
         workspaceId: input.teamId,
@@ -98,9 +96,7 @@ export async function createPendingSlackPickerMessage(input: {
         envelope: input.envelope as unknown as Record<string, unknown>,
         event: event as unknown as Record<string, unknown>,
         expiresAt: new Date(Date.now() + input.ttlMs),
-      })
-      .returning({ pendingId: chatPendingAuthMessages.pendingId });
-    return rows[0]?.pendingId ?? null;
+      }));
   } catch (err) {
     logger.warn('[slack-picker] failed to store pending picker message', { error: err instanceof Error ? err.message : String(err) });
     return null;

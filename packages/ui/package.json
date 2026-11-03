@@ -275,6 +275,7 @@
     "./internal/hooks/use-notification-center": "./src/internal/hooks/use-notification-center.ts",
     "./internal/hooks/use-slash-focus": "./src/internal/hooks/use-slash-focus.ts",
     "./internal/icons/claude": "./src/internal/icons/claude.tsx",
+    "./internal/icons/discord": "./src/internal/icons/discord.tsx",
     "./internal/icons/download": "./src/internal/icons/download.tsx",
     "./internal/icons/edge": "./src/internal/icons/edge.tsx",
     "./internal/icons/github": "./src/internal/icons/github.tsx",
@@ -1563,6 +1564,10 @@
       "./internal/icons/claude": {
         "types": "./dist/internal/icons/claude.d.ts",
         "import": "./dist/internal/icons/claude.js"
+      },
+      "./internal/icons/discord": {
+        "types": "./dist/internal/icons/discord.d.ts",
+        "import": "./dist/internal/icons/discord.js"
       },
       "./internal/icons/download": {
         "types": "./dist/internal/icons/download.d.ts",

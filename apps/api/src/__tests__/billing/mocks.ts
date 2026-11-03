@@ -33,7 +33,6 @@ export const mockRegistry = {
   getCustomerByAccountId: null as ((id: string) => Promise<any>) | null,
   getCustomerByStripeId: null as ((id: string) => Promise<any>) | null,
   upsertCustomer: null as ((data: any) => Promise<void>) | null,
-  listAccountStripeCustomerIds: null as ((id: string) => Promise<string[]>) | null,
   deleteCustomerByStripeId: null as ((id: string) => Promise<void>) | null,
   recordWebhookEvent: null as ((eventId: string, eventType: string) => Promise<boolean>) | null,
   isWebhookEventProcessed: null as ((eventId: string) => Promise<boolean>) | null,
@@ -118,8 +117,6 @@ export function registerGlobalMocks() {
     },
     upsertCustomer: async (data: any) =>
       mockRegistry.upsertCustomer ? mockRegistry.upsertCustomer(data) : undefined,
-    listAccountStripeCustomerIds: async (id: string) =>
-      mockRegistry.listAccountStripeCustomerIds ? mockRegistry.listAccountStripeCustomerIds(id) : [],
     deleteCustomerByStripeId: async (id: string) =>
       mockRegistry.deleteCustomerByStripeId ? mockRegistry.deleteCustomerByStripeId(id) : undefined,
   }));

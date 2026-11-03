@@ -260,12 +260,13 @@ Run the install script.
     const urls = new Set(sitemap().map((entry) => entry.url));
     const records = getPublicContentRecords({ includeUseCases: true });
     for (const record of records) {
-      // /services and /case-studies stay out while SERVICES_PAGES_ENABLED is off.
+      // /services stays out while SERVICES_PAGES_ENABLED is off; /case-studies is always in.
       const listed = showsMarketingLink(record.htmlPath);
       expect(urls.has(absoluteUrl(record.htmlPath))).toBe(listed);
       if (record.markdownPath) expect(urls.has(absoluteUrl(record.markdownPath))).toBe(listed);
     }
     expect(showsMarketingLink('/services')).toBe(false);
+    expect(urls.has(absoluteUrl('/case-studies'))).toBe(true);
     expect(
       [...urls].every((url) => url.startsWith(CANONICAL_ORIGIN) && !url.includes('www.')),
     ).toBe(true);

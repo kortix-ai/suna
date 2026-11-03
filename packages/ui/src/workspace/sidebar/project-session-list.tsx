@@ -970,6 +970,7 @@ function SessionListSection({
     chat: 'chat',
     slack: 'slack',
     telegram: 'telegram',
+    discord: 'discord',
     teams: 'teams',
     email: 'email',
     schedule: 'scheduled',

@@ -26,7 +26,7 @@ describe('changedItems', () => {
         },
         { behavior: { prompt: 'old' } },
       ).sort(),
-    ).toEqual(['actions', 'connectors', 'model', 'overview', 'tools', 'workspace']);
+    ).toEqual(['actions', 'basics', 'connectors', 'model', 'overview', 'tools', 'workspace']);
   });
 });
 
@@ -79,7 +79,7 @@ describe('resolveAgentLocation', () => {
       instructions: { tab: 'overview', view: null, open: 'instructions' },
       people: { tab: 'overview', view: null, open: 'share' },
       triggers: { tab: 'triggers', view: null },
-      basics: { tab: 'overview', view: null },
+      basics: { tab: 'basics', view: null },
       skills: { tab: 'access', view: 'skills' },
       connectors: { tab: 'access', view: 'connectors' },
       secrets: { tab: 'access', view: 'secrets' },
@@ -122,7 +122,7 @@ describe('hrefs', () => {
   });
   test('a view writes tab and view', () => {
     expect(agentLocationHref('/a', 'access', 'actions')).toBe('/a?tab=access&view=permissions');
-    expect(sectionLocationHref('/a', 'basics')).toBe('/a');
+    expect(sectionLocationHref('/a', 'basics')).toBe('/a?tab=basics');
     expect(sectionLocationHref('/a', 'model')).toBe('/a?tab=runtime&view=model');
   });
 });

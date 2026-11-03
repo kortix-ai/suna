@@ -72,8 +72,9 @@ export interface GitTriggerSpec {
   /** Any trigger type (`max_runs_per_day`): runs started in a UTC day. Omitted when unset: no daily cap. */
   maxRunsPerDay?: number;
   /**
-   * `overlap` (KRTX-1721), fresh session mode only: `skip` holds a fire while
-   * the trigger's previous run is still active (`lib/trigger-overlap.ts`).
+   * `overlap` (KRTX-1721): `skip` holds a fire while the trigger's previous run
+   * is still active, or (reuse, pinned, keyed) while its previous prompt still
+   * waits in that session's queue (`lib/trigger-overlap.ts`).
    * Omitted when unset: `skip` for a cron trigger, `allow` for the others.
    */
   overlap?: 'skip' | 'allow';

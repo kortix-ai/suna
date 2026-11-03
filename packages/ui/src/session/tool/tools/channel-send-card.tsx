@@ -13,6 +13,7 @@ const REPLIED_IN_KEY: Record<ChannelSend['platform'], string> = {
   Teams: 'text72b5b0c53de9',
   Slack: 'textfc73e9ad2dae',
   Telegram: 'text8faf56a14a8d',
+  Discord: 'text3416de570ab5',
 };
 
 /** "Replied in Microsoft Teams" — the row title for a channel send. */

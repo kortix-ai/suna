@@ -13,6 +13,8 @@ export interface AgentSpec {
   path: string;
   /** False: the agent cannot start a session (`enabled: false`, or a validation error on its block). */
   enabled: boolean;
+  /** `mode: subagent`: the agent only runs as another agent's subagent. */
+  subagent?: true;
   /** Which connectors (by slug) this agent may use. `[]` = none (default). */
   connectors: GrantSet;
   /** Connectors that must resolve before the session starts. */
@@ -76,7 +78,12 @@ export interface LoadedAgents {
   /** The manifest's validation errors (`runtimeManifest`): an agent one of
    *  them names is off, and a refusal to start it names them. */
   issues?: ManifestIssue[];
-  /** The manifest's explicit `builtin_agents` booleans. Absent key = not
-   *  set; `resolveBuiltinAgents` (lib/my-kortix-agent.ts) reads it as on. */
-  builtinAgents?: Partial<Record<BuiltinAgentKey, boolean>>;
+  /** Which built-in agents the project runs, resolved by
+   *  `projectBuiltinAgents` (lib/my-kortix-agent.ts): `builtin_agents.<key>`,
+   *  absent = off unless the manifest needs repair. Unset = off. */
+  builtinAgents?: Record<BuiltinAgentKey, boolean>;
+  /** The manifest is unusable as a whole (`manifestNeedsRepair`): no file, an
+   *  unreadable or unparseable one, or an error that voids every key. A session
+   *  that names no agent then runs My Kortix, so that it can fix the file. */
+  needsRepair?: boolean;
 }

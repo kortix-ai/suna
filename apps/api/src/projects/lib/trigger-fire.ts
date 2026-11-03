@@ -396,9 +396,15 @@ export async function fireGitTrigger(input: {
       alertTriggerThrottled({ projectId: project.projectId, accountId: project.accountId, slug: spec.slug, reason: held.reason, now });
       return { status: 'skipped', reason: held.reason };
     }
-    // Overlap (KRTX-1721): a fresh run waits for the previous one to finish.
+    // Overlap (KRTX-1721): a run waits for the previous one to finish.
     if (triggerChecksOverlap(spec)) {
-      const overlap = await triggerOverlapReason({ projectId: project.projectId, slug: spec.slug, now });
+      const overlap = await triggerOverlapReason({
+        projectId: project.projectId,
+        slug: spec.slug,
+        now,
+        sessionMode: spec.sessionMode,
+        sessionKey: renderSessionKey(spec, payload),
+      });
       if (overlap) return { status: 'skipped', reason: overlap };
     }
   }

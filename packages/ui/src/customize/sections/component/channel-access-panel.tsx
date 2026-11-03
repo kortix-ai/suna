@@ -65,6 +65,22 @@ export const CHANNEL_ACCESS: Record<
       removeDescription: 'telegramRemoveDescription',
     },
   },
+  discord: {
+    parseUserId: (raw) => {
+      const id = raw.trim();
+      return CHANNELS.discord.access.userId.test(id) ? id : null;
+    },
+    idPlaceholder: CHANNELS.discord.access.idPlaceholder,
+    idInputMode: CHANNELS.discord.access.idInputMode,
+    copy: {
+      descriptionKey: 'discordUsersDescription',
+      emptyDescription: 'discordUsersEmptyDescription',
+      loadError: 'discordUsersLoadError',
+      addByIdHint: 'discordAddByIdHint',
+      addByIdInvalid: 'discordAddByIdInvalid',
+      removeDescription: 'discordRemoveDescription',
+    },
+  },
 };
 
 /** First and last name, else @username, else the id. */

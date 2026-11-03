@@ -2,7 +2,7 @@ import { z } from '@hono/zod-openapi';
 import { config } from '../../config';
 
 /**
- * The OAuth install hand-off shared by Slack and Teams.
+ * The OAuth install hand-off shared by Slack, Teams and Discord.
  *
  * The provider redirects the browser to the API callback, which carries no
  * Kortix credential. The callback therefore installs nothing: it verifies the
@@ -11,7 +11,7 @@ import { config } from '../../config';
  * route installs only when the state names that same user and project. An
  * install always lands in the project of the Kortix user who started it.
  */
-export type ChatInstallPlatform = 'slack' | 'teams';
+export type ChatInstallPlatform = 'slack' | 'teams' | 'discord';
 
 export type InstallCompletion =
   | { ok: true; redirectUrl: string }

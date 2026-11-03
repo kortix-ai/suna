@@ -130,6 +130,7 @@
     "./internal/hooks/use-notification-center",
     "./internal/hooks/use-slash-focus",
     "./internal/icons/claude",
+    "./internal/icons/discord",
     "./internal/icons/download",
     "./internal/icons/edge",
     "./internal/icons/github",

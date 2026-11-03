@@ -25,21 +25,6 @@ async function listKortixCustomersByAccountId(accountId: string): Promise<Billin
     .where(eq(billingCustomers.accountId, accountId));
 }
 
-/**
- * Every Stripe customer id ever associated with this account — kortix
- * billing_customers, active AND inactive, deduped. The legacy→per-seat
- * migration uses this to cancel subs that live on a deactivated/older
- * customer, not just the canonical one (a user can have several Stripe
- * customers; their machine subs may be on a non-canonical one).
- */
-export async function listAccountStripeCustomerIds(accountId: string): Promise<string[]> {
-  const ids = new Set<string>();
-  for (const row of await listKortixCustomersByAccountId(accountId)) {
-    if ((row.provider ?? 'stripe') === 'stripe' && row.id) ids.add(row.id);
-  }
-  return Array.from(ids);
-}
-
 async function deactivateConflictingCustomers(accountId: string, canonicalId: string, provider?: string | null) {
   const conditions = [
     eq(billingCustomers.accountId, accountId),

@@ -1,6 +1,7 @@
 'use client';
 
 import { ChatCircleIcon } from '@phosphor-icons/react';
+import { Discord, DISCORD_BLURPLE } from '../../internal/icons/discord';
 import { Email } from '../../internal/icons/email';
 import { MicrosoftTeams } from '../../internal/icons/microsoft-teams';
 import { Slack } from '../../internal/icons/slack';
@@ -25,6 +26,7 @@ export const CHANNEL_BRAND_COLOR: Record<ChannelPlatform, string | undefined> = 
   Slack: undefined,
   Teams: '#5B5FC7',
   Email: undefined,
+  Discord: DISCORD_BLURPLE,
 };
 
 const TELEGRAM_PATH =
@@ -46,6 +48,7 @@ export function ChannelBrandMark({
   if (platform === 'Teams') return <MicrosoftTeams className={className} />;
   if (platform === 'Slack') return <Slack className={className} />;
   if (platform === 'Email') return <Email className={className} />;
+  if (platform === 'Discord') return <Discord className={className} />;
   if (platform !== 'Telegram') return <ChatCircleIcon className={className} aria-hidden="true" />;
   return (
     <svg className={className} viewBox="0 0 24 24" fill={CHANNEL_BRAND_COLOR.Telegram} aria-hidden="true">

@@ -366,13 +366,14 @@ describe('provisionFirm: one shared project, one folder + agent + service accoun
       plan: 'trial', seats: 5, billingStatus: 'none', createdBy,
     }));
 
-  test('the first firm bootstraps the project once: Files on, /Company unshared, kit uploaded, starter agents locked', async () => {
+  test('the first firm bootstraps the project once: /Company unshared, kit uploaded, starter agents locked', async () => {
     const t = lumenTest();
     const firm = await pending(t, 'org_1', 'user_1');
     await t.action(internal.kortix.provisionFirm, { firmId: firm });
     const c = kortixFake.calls;
     expect(c.provisions).toEqual([{ name: 'lumen', idempotency_key: 'lumen-deployment' }]);
-    expect(c.flags).toContain('volumes=true');
+    // Drive is on for every project (the volumes flag graduated): no flag call.
+    expect(c.flags).toEqual([]);
     expect(c.unshared).toEqual(['g_company']);
     expect(c.folders).toEqual(expect.arrayContaining(['/Lumen', '/Lumen/Kit', '/Lumen/Firms']));
     expect(c.uploads).toContain(`/Lumen/Kit/${KIT.version}/agents/lumen-extractor.md`);
