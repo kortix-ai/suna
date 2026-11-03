@@ -4,8 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { localizeUiCatalog } from '@kortix/ui/i18n';
 
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
-import { CaseStudies, PlatinumMark } from '@/features/marketing/case-studies/case-studies';
-import { caseStudies } from '@/features/marketing/case-studies/content';
+import { CaseStudies } from '@/features/marketing/case-studies/case-studies';
 import { DitherField } from '@/features/marketing/kit/dither-field';
 import { FeatureSplit } from '@/features/marketing/kit/feature-split';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
@@ -48,11 +47,6 @@ import type { ReactNode } from 'react';
  */
 
 const CHECKOUT_URL = process.env.NEXT_PUBLIC_SERVICES_CHECKOUT_URL;
-
-/** A third-party logo is drawn for a white ground: white in both themes (color.md, logo tile rule). */
-const LOGO_TILE_BACKGROUND = 'bg-white';
-/** A mark drawn in code (Platinum) takes black on the white tile, in both themes. */
-const LOGO_TILE_INK = 'text-black';
 
 /** "Join now": the Stripe checkout when it is configured, else the intro call. */
 function JoinButton({
@@ -183,7 +177,7 @@ export default function ServicesPage() {
 
   return (
     <PageFrame>
-      {/* ── hero: one promise, one ask, the logos ──────────────────────────── */}
+      {/* ── hero: one promise, one ask ─────────────────────────────────────── */}
       <section
         id="hero"
         className="relative overflow-hidden px-6 pt-32 pb-16 lg:px-28 lg:pt-40 lg:pb-20"
@@ -212,41 +206,6 @@ export default function ServicesPage() {
             </MarketingButton>
           </div>
           <p className="text-muted-foreground text-sm text-pretty">{hero.terms}</p>
-        </div>
-
-        {/* The proof sits right under the ask: products built on Kortix. */}
-        <div className="relative mt-10 flex flex-wrap items-center justify-center gap-3">
-          <span className="text-muted-foreground text-sm">{hero.logosLabel}</span>
-          {hero.logoCaseStudies.map((id) => {
-            const item = caseStudies.items.find((study) => study.id === id);
-            if (!item) return null;
-            return (
-              <span
-                key={id}
-                className={cn(
-                  LOGO_TILE_BACKGROUND,
-                  LOGO_TILE_INK,
-                  'flex h-12 items-center rounded-md border px-4',
-                )}
-              >
-                {item.logo ? (
-                  <Image
-                    src={item.logo.src}
-                    alt={item.logo.alt}
-                    width={item.logo.width}
-                    height={item.logo.height}
-                    unoptimized
-                    // A stacked mark (CityU, the telecom symbol) reads small at a wordmark's height.
-                    className={
-                      item.logo.width / item.logo.height > 2.5 ? 'h-6 w-auto' : 'h-9 w-auto'
-                    }
-                  />
-                ) : (
-                  <PlatinumMark small />
-                )}
-              </span>
-            );
-          })}
         </div>
       </section>
 

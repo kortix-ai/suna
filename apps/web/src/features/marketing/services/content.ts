@@ -41,13 +41,6 @@ export const hero = {
   sub: 'Our team maps how your company works, connects your data and ships the agents and apps that run it, on Kortix. Everything lives in a git repo you own.',
   /** One quiet line under the buttons. The price waits for the pricing section. */
   terms: 'Strategy and build, one team · One flat monthly fee · Everything in a repo you own',
-  /**
-   * The logo row: case studies whose card shows the client's own logo, by id
-   * (case-studies/content.ts). Real clients only: a mark Kortix drew is never
-   * proof that a client exists.
-   */
-  logosLabel: 'Built on Kortix',
-  logoCaseStudies: ['hkai-sci', 'telecom', 'platinum', 'wring'],
   logosLink: 'See the work',
 } as const;
 

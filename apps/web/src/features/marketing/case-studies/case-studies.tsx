@@ -17,20 +17,17 @@ import { localizeMarketingContent as localizeContent, type CaseStudy } from './c
 const PLATINUM_TRACKING = 'tracking-[0.22em]'; // audit:allow Platinum's own wordmark tracking (pt-logo.tsx), a third-party mark
 
 /** Platinum's mark as platinum.dev draws it (`pt-logo.tsx`): a square and PLATINUM in mono, both in the tile's ink. */
-export function PlatinumMark({ small = false }: { small?: boolean }) {
+function PlatinumMark() {
   const tMarketing = useTranslations('hardcodedUi.i18nComplete');
 
   return (
     <span
-      className={cn('inline-flex items-center', small ? 'gap-2' : 'gap-4')}
+      className="inline-flex items-center gap-4"
       role="img"
       aria-label={tMarketing('text5a98505ed913')}
     >
-      <span aria-hidden className={cn('block bg-current', small ? 'size-3' : 'size-5')} />
-      <span
-        aria-hidden
-        className={cn('font-mono', small ? 'text-sm' : 'text-xl', PLATINUM_TRACKING)}
-      >
+      <span aria-hidden className="block size-5 bg-current" />
+      <span aria-hidden className={`font-mono text-xl ${PLATINUM_TRACKING}`}>
         PLATINUM
       </span>
     </span>
