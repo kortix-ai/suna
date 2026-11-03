@@ -3785,7 +3785,7 @@ kortix self-host start
 |---|---|
 | Reachability | `domain` (domain, API subdomain, ACME email) or `tunnel` (quick or named tunnel). |
 | Admin email | `KORTIX_PLATFORM_ADMIN_EMAILS`, comma-separated. These people are platform admins. Also `--admin-email <email>`. |
-| Enterprise license | `ENTERPRISE_LICENSE_AVAILABLE`. With a license, it unlocks SSO, SCIM, role-based access control, audit and branding. The oldest company account with branding also brands the sign-in page (`GET /v1/access/branding`). Also `--enterprise-license`. |
+| Enterprise license | `ENTERPRISE_LICENSE_AVAILABLE`. With a license, it unlocks SSO, SCIM, role-based access control, audit and branding. The oldest branded company account, or personal account of an admin in `KORTIX_PLATFORM_ADMIN_EMAILS`, also brands the sign-in page (`GET /v1/access/branding`). Also `--enterprise-license`. |
 | Restrict account creation | On by default. Only a platform admin can create a new account. Others get `403` `account_creation_restricted`. Sign-ups, invites, SSO and each person's personal account still work. Also `--no-restrict-account-creation` and `--restrict-account-creation`. |
 | Platinum | `PLATINUM_API_KEY`, `PLATINUM_API_URL` (default `https://api.platinum.dev`) and `PLATINUM_TEMPLATE` (optional). |
 | Apps hosting | `KORTIX_APPS_BASE_DOMAIN`, which needs a `*.apps.<domain>` record. A new instance on a domain gets `apps.<domain>`. |
