@@ -7,6 +7,8 @@ import { enrichSalesEvent } from './sales-event';
 
 function isTimestamp(value: unknown): value is string {
   if (typeof value !== 'string' || !/^(?!0000)\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}(?::?\d{2})?))?$/.test(value)) return false;
+  const offset = value.match(/[+-](\d{2})(?::?(\d{2}))?$/);
+  if (offset && (Number(offset[1]) > 15 || Number(offset[2] ?? 0) > 59)) return false;
   const day = value.slice(0, 10);
   const date = new Date(`${day}T00:00:00Z`);
   return Number.isFinite(date.getTime()) && date.toISOString().startsWith(day) && Number.isFinite(Date.parse(value));

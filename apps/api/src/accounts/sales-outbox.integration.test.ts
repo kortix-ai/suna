@@ -158,7 +158,7 @@ test('reconciliation rejects ambiguous bounds and cursor timestamps before SQL c
   const headers = { authorization: 'Bearer synthetic-reconciliation-token' };
   const from = '2026-01-01';
   const to = '2026-02-01';
-  for (const invalid of ['0', '1', '01/02/2026', '2026-02-30', 'not-a-date']) {
+  for (const invalid of ['0', '1', '01/02/2026', '2026-02-30', 'not-a-date', '2026-01-01T00:00:00+16:00']) {
     for (const key of ['from', 'to']) {
       const query = new URLSearchParams({ from, to, [key]: invalid });
       expect((await app.request(`/v1/system/confirmed-signups?${query}`, { headers })).status).toBe(400);
