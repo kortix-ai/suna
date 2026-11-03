@@ -20,7 +20,16 @@ export async function processSalesOutbox(database: Database = db): Promise<void>
     ) RETURNING event_id, payload, attempts
   `);
   for (const row of rows) {
-    const error = await deliverSalesEvent(await enrichSalesCustomer(row.payload), config.SIGNUP_WEBHOOK_URL, config.SIGNUP_WEBHOOK_SECRET);
+    const payload = await enrichSalesCustomer(row.payload);
+    // Slow billing reads must not dispatch a row reclaimed by another worker.
+    const owned = await database.execute(sql`
+      UPDATE kortix.sales_event_outbox SET available_at = now() + interval '5 minutes'
+      WHERE event_id = ${row.event_id} AND lease_token = ${token}::uuid
+        AND available_at > now() AND delivered_at IS NULL AND dead_letter_at IS NULL
+      RETURNING event_id
+    `);
+    if (!owned.length) continue;
+    const error = await deliverSalesEvent(payload, config.SIGNUP_WEBHOOK_URL, config.SIGNUP_WEBHOOK_SECRET);
     await database.execute(sql`
       UPDATE kortix.sales_event_outbox SET
         delivered_at = CASE WHEN ${error}::text IS NULL THEN now() ELSE NULL END,
