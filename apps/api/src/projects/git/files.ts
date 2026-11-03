@@ -6,7 +6,9 @@ import {
   convertLegacyManifestAsync,
   type ManifestImportReader,
   type ResolvedManifest,
+  MANIFEST_IMPORTS_KEY,
   hasManifestImports,
+  normalizeImportPath,
   parseManifestText,
   resolveManifestImports,
   serializeManifestObject,
@@ -16,6 +18,7 @@ import { validateRef } from '../git-ref';
 import { listCommits } from './commits';
 import {
   type MirrorRefresh,
+  ensureCommitTrees,
   ensurePathObjects,
   ensureRefTrees,
   ensureStoreObjects,
@@ -377,6 +380,31 @@ async function fetchSearchableFiles(repoPath: string, treeRef: string): Promise<
 }
 const SEARCH_FETCH_BATCH = 500;
 
+/**
+ * Fetch the files at `paths` into the store in one request, before a caller
+ * reads them one by one with `readRepoFile`.
+ *
+ * Why (2026-11-03): `loadProjectConfig` reads every skill's `SKILL.md`. On a
+ * cold partial store each read was its own fetch from the host, and fetches
+ * into one store run one at a time. A project with 45 skills paid 45 fetches
+ * of ~0.5 s each, and `/detail` failed with 503 `request_deadline`.
+ *
+ * Best effort: on any failure (a set over the byte limit, a network error)
+ * the reads that follow fetch their own file, as before.
+ */
+export async function prefetchRepoFiles(project: GitBackedProject, paths: readonly string[], ref?: string): Promise<void> {
+  try {
+    const normalized = paths.map((path) => normalizeTreePath(path)).filter((path): path is string => Boolean(path));
+    if (normalized.length === 0) return;
+    const treeRef = validateRef(ref || project.defaultBranch);
+    const repoPath = await refreshMirror(project, false, { freshRef: treeRef });
+    const sha = await resolveRefSha(repoPath, treeRef);
+    await ensurePathObjects(repoPath, sha ?? treeRef, normalized, { maxBytes: FILE_READ_MAX_BYTES });
+  } catch {
+    // The per-file reads fetch what is missing.
+  }
+}
+
 export async function readRepoFile(
   project: GitBackedProject,
   filePath: string,
@@ -482,11 +510,15 @@ export async function readRepoFileBytes(
 
 async function readFileAt(repoPath: string, treeRef: string, normalized: string): Promise<string> {
   const sha = await resolveRefSha(repoPath, treeRef);
-  await fetchFileForRead(repoPath, sha ?? treeRef, normalized);
-  if (!sha) return (await runGit(['show', `${treeRef}:${normalized}`], repoPath, false)).stdout;
+  if (!sha) {
+    await fetchFileForRead(repoPath, treeRef, normalized);
+    return (await runGit(['show', `${treeRef}:${normalized}`], repoPath, false)).stdout;
+  }
   // "Not in this commit" is an answer too, so it is cached as one; any other
-  // failure rejects and is retried by the next read.
+  // failure rejects and is retried by the next read. The fetch runs inside the
+  // loader: a cached read spawns no git process.
   const shown = await cachedGitRead(repoPath, sha, 'show', normalized, async () => {
+    await fetchFileForRead(repoPath, sha, normalized);
     try {
       return { found: true as const, content: (await runGit(['show', `${sha}:${normalized}`], repoPath, false)).stdout };
     } catch (err) {
@@ -675,6 +707,7 @@ export async function readManifestFromRepo(
   if (!hasManifestImports(rootRaw)) return legacyFrom ? convertLegacyRead(found, legacyFrom, repoPath, commit ?? treeRef) : found;
   // Read imports at the commit the root was read at, not the branch name: a
   // push landing between the two reads would otherwise mix two revisions.
+  await prefetchDeclaredImports(repoPath, commit ?? treeRef, rootRaw);
   const imports = await resolveManifestImports(
     { path: winner, raw: rootRaw, revision },
     gitManifestImportReader(repoPath, commit ?? treeRef),
@@ -744,6 +777,32 @@ async function convertLegacyRead<T extends { path: string; content: string; root
       deletes: conversion.changes.filter((change) => change.action === 'delete').map((change) => change.path),
     },
   };
+}
+
+/**
+ * Fetch every file the root manifest imports in one request. The resolver
+ * lists one import at a time, and on a cold partial store each list was one
+ * fetch from the host: 8 imports cost ~4 s (2026-11-03). Best effort: a list
+ * fetches what is still missing. Nested imports still fetch per list.
+ */
+async function prefetchDeclaredImports(repoPath: string, ref: string, rootRaw: Record<string, unknown>): Promise<void> {
+  const declared = rootRaw[MANIFEST_IMPORTS_KEY];
+  if (!Array.isArray(declared)) return;
+  const paths = declared.map((entry) => normalizeImportPath(entry)).filter((path): path is string => path !== null);
+  if (paths.length === 0) return;
+  try {
+    await ensureCommitTrees(repoPath, [ref]);
+    // `-r`: a directory import reads every YAML file under it.
+    const listed = await runGitCapture(['--literal-pathspecs', 'ls-tree', '-r', '-z', ref, '--', ...paths], repoPath);
+    if (listed.exitCode !== 0) return;
+    const blobs = listed.stdout
+      .split('\0')
+      .map((record) => /^\d+ blob ([0-9a-f]{40})\t.+\.ya?ml$/.exec(record)?.[1])
+      .filter((id): id is string => Boolean(id));
+    await ensureStoreObjects(repoPath, blobs, { maxBytes: FILE_READ_MAX_BYTES });
+  } catch {
+    // The resolver's own reads fetch what is missing.
+  }
 }
 
 /** `ManifestImportReader` over a bare mirror at one fixed ref. */

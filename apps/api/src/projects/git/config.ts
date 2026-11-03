@@ -25,7 +25,7 @@ import { parse as parseYaml } from 'yaml';
 import { listManagedSkills } from '../../skills/catalog';
 import { runtimeManifest } from '../manifest-io';
 import { type FileManifestIssue, type ManifestHealth, manifestHealthOf, manifestHealthWithout } from '../lib/manifest-health';
-import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
+import { listRepoFiles, prefetchRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
 
 async function optionalFile(project: GitBackedProject, filePath: string) {
@@ -375,9 +375,11 @@ export async function loadProjectConfig(
   });
   const { agents } = resolveConfigAgents(natives, loadedAgents, (spec) => text(map(blocks[spec.name]).prompt_file) ?? undefined);
 
+  const skillEntries = Object.entries(map(manifest.skills)).map(([name, folder]) => ({ name, path: `${String(folder)}/SKILL.md` }));
+  // One fetch for every SKILL.md, not one per skill (`prefetchRepoFiles`).
+  await prefetchRepoFiles(project, skillEntries.map(({ path }) => path).filter((path) => repoPaths.has(path)), project.defaultBranch);
   const projectSkills = await Promise.all(
-    Object.entries(map(manifest.skills)).map(async ([name, folder]) => {
-      const path = `${String(folder)}/SKILL.md`;
+    skillEntries.map(async ({ name, path }) => {
       const meta = repoPaths.has(path) ? parseFrontmatter(await optionalFile(project, path)) : {};
       return { name, path, description: meta.description || null };
     }),
