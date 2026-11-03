@@ -1603,7 +1603,7 @@ export const cascade: Provider = (o, h) => {
     // The call's state and how to act on it: the fast lane writes tags; an agent whose host gave it the voice's tools
     // (src/kortix.ts) acts with them, so its turns carry a line naming them instead of the tag list.
     const laneMeta = user ? personaNote(me, NAME) + metaNote(callNow) : ''
-    const agentMeta = user && brain.tools(sid) ? personaNote(me, NAME) + metaNote(callNow, 'tools') : laneMeta
+    const agentMeta = user && o.agentTools ? personaNote(me, NAME) + metaNote(callNow, 'tools') : laneMeta
     const forAgent = (context: string) => (agentMeta === laneMeta ? context : context.split(laneMeta).join(agentMeta))
     const heardAs = (user ? hearing(user) : '') + shown + (user && inRoom() ? `${ROOM_NOTE}${roomNotes ? `\n(Earlier in the meeting: ${roomNotes})` : ''}` : '') + laneMeta
     if (user && inworldFamily) void toneOf(user, clean(last?.text ?? '').slice(-200)).then((d) => void (d && !t.tone && ((t.tone = d), note('tone', { tone: d }))))
