@@ -113,7 +113,11 @@ windows = { version = "0.58", optional = true, features = [
     "Win32_System_Registry",
     "Win32_System_RemoteDesktop",
     # capture engine (src/capture_engine/windows.rs)
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
     "Win32_Graphics_Dwm",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
     "Win32_Media_MediaFoundation",
     "Win32_Storage_FileSystem",
     "Win32_Storage_Packaging_Appx",
