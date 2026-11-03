@@ -21924,6 +21924,8 @@
     "discordUnavailable": "この Kortix 環境では Discord が設定されていません。",
     "discordPitch": "Discord サーバーでエージェントとチャットできます。",
     "discordAddToDiscord": "Discord に追加",
+    "discordConnectedLede": "チャンネルで @Kortix をメンションするか、直接メッセージを送ってください。許可した人に応答します。",
+    "discordOpen": "Discord を開く",
     "discordDisconnected": "Discord の接続を解除しました",
     "discordUsersDescription": "ボットと話せるのはこのユーザーだけです。他の人がメンションやメッセージを送ると、ここに表示されます。",
     "discordUsersEmptyDescription": "ボットにメンションかメッセージを送ってもらい、そのリクエストを許可するか、ユーザー ID を追加してください。",

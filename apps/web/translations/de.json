@@ -21924,6 +21924,8 @@
     "discordUnavailable": "Discord ist in dieser Kortix-Installation nicht eingerichtet.",
     "discordPitch": "Chatte mit deinem Agenten auf deinem Discord-Server.",
     "discordAddToDiscord": "Zu Discord hinzufügen",
+    "discordConnectedLede": "Erwähne @Kortix in einem Kanal oder schreib der App direkt. Sie antwortet den Personen, die du zulässt.",
+    "discordOpen": "Discord öffnen",
     "discordDisconnected": "Discord getrennt",
     "discordUsersDescription": "Nur diese Personen können mit dem Bot sprechen. Wenn jemand anderes ihn erwähnt oder ihm schreibt, erscheint die Person hier.",
     "discordUsersEmptyDescription": "Bitte jemanden, den Bot zu erwähnen oder ihm zu schreiben, und erlaube dann die Anfrage oder füge die Benutzer-ID hinzu.",

@@ -21924,6 +21924,8 @@
     "discordUnavailable": "Discord nije podešen na ovoj Kortix instalaciji.",
     "discordPitch": "Ćaskajte sa svojim agentom na svom Discord serveru.",
     "discordAddToDiscord": "Dodaj na Discord",
+    "discordConnectedLede": "Pomenite @Kortix u kanalu ili joj pišite direktno. Odgovara ljudima kojima dozvolite.",
+    "discordOpen": "Otvori Discord",
     "discordDisconnected": "Discord je isključen",
     "discordUsersDescription": "Samo ove osobe mogu da razgovaraju sa botom. Kada ga neko drugi pomene ili mu piše, pojavljuje se ovde.",
     "discordUsersEmptyDescription": "Zamolite nekoga da pomene bota ili mu piše, zatim odobrite zahtev ili dodajte korisnički ID.",

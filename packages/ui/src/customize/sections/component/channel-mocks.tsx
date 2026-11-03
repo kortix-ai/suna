@@ -111,6 +111,10 @@ export function DiscordThreadMock() {
             <p className="text-foreground text-pretty">
               <span className="rounded-sm bg-(--discord-accent)/15 px-0.5 text-(--discord-accent)">@Kortix</span> {t('mockDiscordAsk')}
             </p>
+            {/* Kortix's own mark on the message: ⏳ while the agent works, ✅ once it answered. */}
+            <span className="mt-1 inline-flex items-center gap-1 rounded-md border border-(--discord-accent)/40 bg-(--discord-accent)/10 px-1.5 py-0.5 text-xs text-foreground">
+              <span aria-hidden>✅</span>1
+            </span>
           </div>
         </div>
         <div className="flex gap-2.5">

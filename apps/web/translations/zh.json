@@ -21924,6 +21924,8 @@
     "discordUnavailable": "此 Kortix 部署未设置 Discord。",
     "discordPitch": "在你的 Discord 服务器中与智能体聊天。",
     "discordAddToDiscord": "添加到 Discord",
+    "discordConnectedLede": "在频道中提及 @Kortix，或直接给它发消息。它会回复你允许的人。",
+    "discordOpen": "打开 Discord",
     "discordDisconnected": "已断开 Discord",
     "discordUsersDescription": "只有这些人可以与机器人交谈。其他人提及它或给它发消息时，会显示在这里。",
     "discordUsersEmptyDescription": "请某人提及机器人或给它发消息，然后允许其请求或添加其用户 ID。",
