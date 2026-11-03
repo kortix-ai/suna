@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { manifestCandidatePaths, parseManifestText, serializeManifestObject } from './format';
+import { isManifestSyntaxError, ManifestSyntaxError, manifestCandidatePaths, parseManifestText, serializeManifestObject } from './format';
 import { validateManifest } from './index';
 
 describe('manifestCandidatePaths', () => {
@@ -38,6 +38,27 @@ describe('parse/serialize round-trip', () => {
   test('empty yaml doc normalizes to {}', () => {
     expect(parseManifestText('')).toEqual({});
     expect(parseManifestText('# just a comment\n')).toEqual({});
+  });
+});
+
+describe('parseManifestText on text that is not YAML', () => {
+  test('a duplicate key throws ManifestSyntaxError with its line and column', () => {
+    const text = 'apps:\n  site:\n    always_on: true\n  site:\n    always_on: false\n';
+    let thrown: unknown;
+    try {
+      parseManifestText(text);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(ManifestSyntaxError);
+    expect(isManifestSyntaxError(thrown)).toBe(true);
+    expect(thrown).toMatchObject({ code: 'manifest_invalid', line: 4, column: 3 });
+    expect((thrown as Error).message).toContain('Map keys must be unique');
+  });
+
+  test('isManifestSyntaxError is false for any other error', () => {
+    expect(isManifestSyntaxError(new Error('git fetch failed'))).toBe(false);
+    expect(isManifestSyntaxError(null)).toBe(false);
   });
 });
 

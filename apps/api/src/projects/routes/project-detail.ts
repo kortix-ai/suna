@@ -22,6 +22,7 @@ import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { MANIFEST_PROJECT_NAME_KEY, commitProjectName } from '../lib/manifest-project-name';
+import { MANIFEST_SYNTAX_ISSUE_PATH } from '@kortix/manifest-schema';
 import { addMyKortixAgent, projectBuiltinAgents } from '../lib/my-kortix-agent';
 import { normalizeProjectGlyph } from '../lib/project-glyph';
 import { normalizeProjectIcon } from '../lib/project-icon';
@@ -165,8 +166,13 @@ export function registerProjectDetailRoutes(): void {
       const filteredConfig = await filterConfigResourcesForUser(rawConfig, denierCtx);
       // My Kortix (slug `mykortix`) is listed first when kortix.yaml sets
       // `builtin_agents.my_kortix: true`. Off: the config is exactly the
-      // repo-declared surface.
-      const builtinAgents = projectBuiltinAgents(rawConfig.manifest);
+      // repo-declared surface. A kortix.yaml that is not YAML runs the last
+      // version that parses (`rawConfig.manifest`); with none it is repair
+      // mode, where My Kortix runs so it can be fixed (`loadProjectAgents`).
+      const repairMode =
+        rawConfig.manifest_health.issues.some((issue) => issue.path === MANIFEST_SYNTAX_ISSUE_PATH) &&
+        Object.keys(rawConfig.manifest).length === 0;
+      const builtinAgents = repairMode ? { my_kortix: true } : projectBuiltinAgents(rawConfig.manifest);
       const withAgents = {
         ...(builtinAgents.my_kortix ? addMyKortixAgent(filteredConfig) : filteredConfig),
         builtin_agents: builtinAgents,
