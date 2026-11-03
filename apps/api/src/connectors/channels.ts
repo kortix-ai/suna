@@ -828,12 +828,18 @@ const DISCORD_ACTIONS: ChannelActionDef[] = [
     method: 'channels/{channel_id}/messages',
     verb: 'GET',
     name: 'Get messages',
-    description: 'Read the latest messages of a conversation, newest first: up to `limit` (1-100, default 50), before the message `before`.',
+    description:
+      'Read messages of a conversation, newest first: up to `limit` (1-100, default 50). Give at most one of `before`, `after` or `around`. ' +
+      'In a direct message, read with `after` (the tool says from which id): `after` returns the messages right after it, so page forward for the newest. ' +
+      "Discord sends a message's text and files only when the app may read them: always in a direct message, in a message that mentions the app and in the app's own; " +
+      "in a server without the Message Content intent, other people's messages come back without text or files.",
     risk: 'read',
     properties: {
       channel_id: DISCORD_CHANNEL_ID,
       limit: { type: 'integer', description: 'How many messages, 1-100.' },
       before: { type: 'string', description: 'Optional message id: only messages before it.' },
+      after: { type: 'string', description: 'Optional message id: only messages after it.' },
+      around: { type: 'string', description: 'Optional message id: messages around it.' },
     },
     required: ['channel_id'],
   },

@@ -28,12 +28,16 @@ export interface DiscordStoredMessage {
   /** The sender's server nickname. */
   nick?: string | null;
   content: string;
+  /** A forward's message or a poll, as text: the sender sent it, so it is theirs and untrusted. */
+  carried?: string;
   /** `MessageFlags`: 8192 marks a voice message. */
   flags?: number;
   attachments: DiscordAttachment[];
   /** The users the message mentions: their ids and names, to show `<@id>` as a name. */
   mentions: Array<Pick<DiscordUser, 'id' | 'username' | 'global_name'>>;
   stickers: string[];
+  /** The message mentioned the app's role, not the app: Discord may send it without its text. */
+  viaRole?: boolean;
 }
 
 /** Where a message or interaction runs, as the intake or the webhook found it. */
@@ -77,6 +81,8 @@ export interface DiscordMessageEventData {
   conversation: DiscordConversation;
   /** The bot's own user id: a mention of it is stripped from the text. */
   botUserId: string;
+  /** The Gateway read every message of a held thread (the Message Content intent). Absent: the deployment's setting. */
+  messageContent?: boolean;
 }
 
 export interface DiscordInteractionEventData {

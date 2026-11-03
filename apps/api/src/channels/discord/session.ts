@@ -23,6 +23,7 @@
  * The agent answers through the `kortix_discord` connector (connectors/channels.ts);
  * the bot token never enters the sandbox.
  */
+import { createHash } from 'node:crypto';
 import { projectSessions, projects } from '@kortix/db';
 import type { ChannelEnvelope } from '@kortix/shared';
 import { CHANNELS } from '@kortix/shared/channel-descriptors';
@@ -54,12 +55,13 @@ import {
   questionPicksSoFar,
 } from '../core/questions';
 import { registerSessionPort } from '../core/session-notice';
+import { claimThreadCreate } from '../core/threads';
 import type { SettingsChannel } from '../core/settings';
 import { classifyTurnError } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
 import { DISCORD_START_ERROR_COMMANDS, startErrorMessage } from '../start-error';
 import { discordAccessPort } from './access';
-import { DiscordApiError, discordCall, discordDownload, discordUnreachable } from './api';
+import { DiscordApiError, discordCall, discordDownload, discordPost, discordUnreachable } from './api';
 import { bindDiscordChannel, claimDiscordChannel, isProjectPress, parseProjectPress } from './connect';
 import { loadDiscordInstall } from './installs';
 import {
@@ -82,6 +84,10 @@ import {
 
 /** Discord's error for a thread start on a message that already has one: a retry's. */
 const THREAD_ALREADY_CREATED = 160004;
+/** The server reached Discord's cap on active threads. */
+const MAX_ACTIVE_THREADS = 160006;
+/** The message was deleted before Kortix started its thread. */
+const UNKNOWN_MESSAGE = 10008;
 /** `MessageFlags.EPHEMERAL`: only the person who used the command or button sees the reply. */
 const EPHEMERAL = 64;
 /** `MessageFlags.IS_VOICE_MESSAGE`. */
@@ -89,16 +95,28 @@ const VOICE_MESSAGE = 8192;
 
 // ── Posting ──────────────────────────────────────────────────────────────────
 
+/** Discord's code for a write into an archived thread. */
+const THREAD_ARCHIVED = 50083;
+/** An interaction token that expired (15 minutes) or is unknown. */
+const TOKEN_GONE = new Set([10015, 50027]);
+
+/**
+ * A write into a thread that archived after a week idle unarchives it once and
+ * tries again; a locked thread stays refused.
+ */
+async function intoThread<T>(channelId: string, write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (error) {
+    if (!(error instanceof DiscordApiError) || error.code !== THREAD_ARCHIVED) throw error;
+    await discordCall('PATCH /channels/{id}', `/channels/${channelId}`, { method: 'PATCH', body: { archived: false } });
+    return write();
+  }
+}
+
 /** Post into a channel or thread. Returns the message id; null when Discord refused it (logged). */
 async function postMessage(channelId: string, body: Partial<DiscordMessageBody>, replyTo?: string): Promise<string | null> {
-  return discordCall<{ id: string }>('POST /channels/{id}/messages', `/channels/${channelId}/messages`, {
-    method: 'POST',
-    body: {
-      ...body,
-      allowed_mentions: { parse: [] },
-      ...(replyTo ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } } : {}),
-    },
-  }).then(
+  return intoThread(channelId, () => discordPost(channelId, { ...body, allowed_mentions: { parse: [] } }, replyTo)).then(
     (sent) => sent.id,
     (error) => {
       logger.warn('[discord] reply failed', { error: String(error) });
@@ -108,25 +126,47 @@ async function postMessage(channelId: string, body: Partial<DiscordMessageBody>,
 }
 
 async function editMessage(channelId: string, messageId: string, body: Partial<DiscordMessageBody>): Promise<void> {
-  await discordCall('PATCH /channels/{id}/messages/{id}', `/channels/${channelId}/messages/${messageId}`, {
-    method: 'PATCH',
-    body: { ...body, allowed_mentions: { parse: [] } },
-  });
+  await intoThread(channelId, () =>
+    discordCall('PATCH /channels/{id}/messages/{id}', `/channels/${channelId}/messages/${messageId}`, {
+      method: 'PATCH',
+      body: { ...body, allowed_mentions: { parse: [] } },
+    }),
+  );
 }
 
-/** The reply to a deferred slash command (the webhook answered type 5). Returns the message id. */
-async function editInteractionReply(token: string, body: Partial<DiscordMessageBody>): Promise<string | null> {
+/**
+ * The reply to a deferred slash command (the webhook answered type 5). Returns the message id.
+ * An expired token (the command waited over 15 minutes behind its conversation) posts the
+ * reply in the channel instead, so it is never lost.
+ */
+async function editInteractionReply(token: string, body: Partial<DiscordMessageBody>, channelId?: string): Promise<string | null> {
   return discordCall<{ id: string }>(
     'PATCH /webhooks/{app}/{token}/messages/@original',
     `/webhooks/${config.DISCORD_APPLICATION_ID}/${token}/messages/@original`,
     { method: 'PATCH', auth: false, body: { ...body, allowed_mentions: { parse: [] } } },
   ).then(
     (sent) => sent.id,
-    (error) => {
+    async (error) => {
+      if (channelId && error instanceof DiscordApiError && (TOKEN_GONE.has(error.code) || error.status === 401)) {
+        return postMessage(channelId, body);
+      }
       logger.warn('[discord] command reply not drawn', { error: String(error) });
       return null;
     },
   );
+}
+
+/**
+ * A refused slash command: the deferred reply ("Kortix is thinking…") is
+ * public, and Discord cannot make it private, so it goes and the refusal is
+ * a follow-up only the sender sees. Never throws.
+ */
+async function refuseCommand(token: string, content: string): Promise<void> {
+  await discordCall('DELETE /webhooks/{app}/{token}/messages/@original', `/webhooks/${config.DISCORD_APPLICATION_ID}/${token}/messages/@original`, {
+    method: 'DELETE',
+    auth: false,
+  }).catch((error) => logger.warn('[discord] deferred reply not removed', { error: String(error) }));
+  await ephemeralFollowUp(token, content);
 }
 
 /** A notice only the presser sees, after the webhook's deferred update (type 6). Never throws. */
@@ -158,17 +198,23 @@ const discordQuestions: QuestionPort = {
     args: { channel_id: target.threadId, ...discordQuestionMessage(m) },
   }),
   async send(target, m) {
-    const sent = await discordCall<{ id: string }>('POST /channels/{id}/messages', `/channels/${target.threadId}/messages`, {
-      method: 'POST',
-      body: { ...discordQuestionMessage(m), allowed_mentions: { parse: [] } },
-    });
+    const sent = await intoThread(target.threadId, () =>
+      discordCall<{ id: string }>('POST /channels/{id}/messages', `/channels/${target.threadId}/messages`, {
+        method: 'POST',
+        body: { ...discordQuestionMessage(m), allowed_mentions: { parse: [] } },
+      }),
+    );
     return sent.id;
   },
   async edit(target, ref, m) {
     await editMessage(target.threadId, ref, m ? discordQuestionMessage(m) : { components: [] });
   },
   async answerTap(tap, reply) {
-    if (reply) await ephemeralFollowUp(tap.id, discordQuestionFooter(reply));
+    if (!reply) return;
+    // A retried tap answers again; the person sees each follow-up, so one per tap and outcome.
+    const key = `discord:tap:${createHash('sha256').update(tap.id).digest('hex').slice(0, 32)}:${reply.kind}`;
+    if (!(await claimThreadCreate(key, 20 * 60_000).catch(() => new Date()))) return;
+    await ephemeralFollowUp(tap.id, discordQuestionFooter(reply));
   },
 };
 
@@ -287,7 +333,7 @@ function mentionsAsNames(content: string, message: DiscordStoredMessage, botUser
  * its label under the content, so its name reaches the agent in the sender's own (untrusted) text.
  */
 export function discordText(message: DiscordStoredMessage, botUserId: string): string {
-  const content = mentionsAsNames(message.content, message, botUserId).trim();
+  const content = [mentionsAsNames(message.content, message, botUserId).trim(), message.carried ?? ''].filter(Boolean).join('\n');
   const voice = ((message.flags ?? 0) & VOICE_MESSAGE) !== 0;
   const labels = [
     ...message.attachments.map((a) => {
@@ -327,8 +373,11 @@ export function discordEnvelope(
   sender: { user: DiscordStoredMessage['author']; nick?: string | null },
   text: string,
   messageId: string,
+  messageContent = config.DISCORD_MESSAGE_CONTENT,
 ): ChannelEnvelope {
   const { threadId } = conversation;
+  // A channel that is itself the conversation (a voice channel's chat) is read only where people mention the bot.
+  const everyMessage = conversation.direct || (messageContent && conversation.threadId !== conversation.settingsId);
   return {
     platform: CHANNELS.discord.envelope,
     sender: senderName(sender.user, sender.nick),
@@ -343,9 +392,14 @@ export function discordEnvelope(
       'Never list choices or questions as plain text. Ask in plain words only when the tool result says the question could not be posted.',
       `While you work on a long task, show typing: ${connectorReply(DISCORD_CHANNEL_CONNECTOR_SLUG, 'trigger_typing', { channel_id: threadId })}.`,
       'The bot token is resolved server-side. Do not look for it in the sandbox.',
-      conversation.direct || config.DISCORD_MESSAGE_CONTENT
+      everyMessage
         ? `The next message in this conversation continues this session. Kortix answers ${KORTIX_COMMANDS} itself; those commands never reach you.`
-        : `The next message that mentions you in this thread continues this session; people's other messages there do not reach you. Kortix answers ${KORTIX_COMMANDS} itself; those commands never reach you.`,
+        : `The next message that mentions you in this ${conversation.threadId !== conversation.settingsId ? 'thread' : 'channel'} continues this session; people's other messages there do not reach you. Kortix answers ${KORTIX_COMMANDS} itself; those commands never reach you.`,
+      ...(conversation.direct || messageContent
+        ? []
+        : [
+            "Discord shows you the text only of messages that mention you, of direct messages and of your own: `get_messages` returns other people's messages here without their text or files. Do not summarize what you cannot read; ask the person to paste it.",
+          ]),
     ],
   };
 }
@@ -362,19 +416,23 @@ async function startThread(message: DiscordStoredMessage, conversation: DiscordC
   try {
     await discordCall('POST /channels/{id}/messages/{id}/threads', `/channels/${message.channel_id}/messages/${message.id}/threads`, {
       method: 'POST',
-      // A week idle before it archives; a message unarchives it.
-      body: { name, auto_archive_duration: 10080 },
+      // A day idle before it archives: archived threads do not count toward the server's cap, and a message unarchives one.
+      body: { name, auto_archive_duration: 1440 },
     });
     return true;
   } catch (error) {
     if (error instanceof DiscordApiError && error.code === THREAD_ALREADY_CREATED) return true;
     if (discordUnreachable(error)) throw error;
     logger.warn('[discord] thread not started', { error: String(error) });
+    // The message is gone: no one to tell.
+    if (error instanceof DiscordApiError && error.code === UNKNOWN_MESSAGE) return false;
     await postMessage(
       conversation.settingsId,
       {
         content:
-          'Kortix could not start a thread for your message. A server admin can give the Kortix app the Create Public Threads and Send Messages in Threads permissions in this channel.',
+          error instanceof DiscordApiError && error.code === MAX_ACTIVE_THREADS
+            ? "Kortix could not start a thread for your message: this server has reached Discord's limit of active threads. Archive threads you no longer need, then mention me again."
+            : 'Kortix could not start a thread for your message. A server admin can give the Kortix app the Create Public Threads and Send Messages in Threads permissions in this channel.',
       },
       message.id,
     );
@@ -398,10 +456,20 @@ export async function handleDiscordMessage(
   event: IntegrationEvent,
   run: { finalAttempt: boolean } = { finalAttempt: false },
 ): Promise<void> {
-  const { message, conversation, botUserId } = event.data as unknown as DiscordMessageEventData;
+  const { message, conversation, botUserId, messageContent } = event.data as unknown as DiscordMessageEventData;
   const project = await loadProject(event.projectId);
   const install = project && (await installFor(event.projectId, conversation));
-  if (!project || !install) return;
+  if (!project || !install) {
+    // Disconnected between the intake and now: a message written to the bot hears it, once an hour per channel.
+    if (conversation.addressed && (await claimThreadCreate(`discord:gone:${message.channel_id}`, 60 * 60_000).catch(() => null))) {
+      await postMessage(
+        message.channel_id,
+        { content: `This ${conversation.direct ? 'conversation' : 'channel'} is not connected to a Kortix project any more. Use /connect to pick one.` },
+        message.id,
+      );
+    }
+    return;
+  }
 
   const target: ChannelTarget = {
     platform: 'discord',
@@ -423,11 +491,26 @@ export async function handleDiscordMessage(
       direct: true,
       from: message.author,
     });
-    if (refusal) await reply(refusal);
+    // In a server the reply is public: once an hour per person, however often they mention the app. A DM always hears it.
+    const once = conversation.direct || (await claimThreadCreate(`discord:refused:${conversation.guildId}:${message.author.id}`, 60 * 60_000).catch(() => null));
+    if (refusal && once) await reply(refusal);
     return;
   }
 
   const text = discordText(message, botUserId);
+  // "@Kortix" alone: no session for nothing. A file, a sticker, a forward or a poll is something.
+  if (!mentionsAsNames(message.content, message, botUserId).trim() && !message.carried && !message.attachments.length && !message.stickers.length) {
+    // A thread's other messages (an empty one, a pin) are not written to the bot: no hint.
+    if (!conversation.addressed) return;
+    await reply(
+      message.viaRole
+        ? 'You mentioned the Kortix role, so Discord did not show me your message. Mention the app itself: pick @Kortix with the app badge, not the role.'
+        : conversation.direct
+          ? 'Send me what you need, for example: what changed in the last release? /help lists the commands.'
+          : 'Mention me with what you need, for example: @Kortix what changed in the last release? /help lists the commands.',
+    );
+    return;
+  }
   const command = parseChannelCommand(mentionsAsNames(message.content, message, botUserId).trim(), null);
   const settings = discordSettings(target, conversation.settingsId);
   if (command) {
@@ -445,7 +528,7 @@ export async function handleDiscordMessage(
   }
 
   if (conversation.startThread && !(await startThread(message, conversation, botUserId))) return;
-  await claimDiscordChannel(conversation, event.projectId);
+  await claimDiscordChannel(conversation, event.projectId, message.author.id);
   const files = discordFiles(message);
   // A question shown one at a time takes a typed answer; a message with a file is never one.
   if (!files.length && (await answerQuestionInChat(discordPort, target, { id: `message:${event.id}`, text }, answerFollowUp(event, conversation, message.author, message.nick), run))) {
@@ -454,7 +537,7 @@ export async function handleDiscordMessage(
   // The message carries the answers given so far on a question it ends. Read
   // before it routes and cleared after, so a retry carries them again.
   const picks = await questionPicksSoFar(target);
-  const envelope = discordEnvelope(conversation, { user: message.author, nick: message.nick }, text, message.id);
+  const envelope = discordEnvelope(conversation, { user: message.author, nick: message.nick }, text, message.id, messageContent);
   await showTyping(target.threadId);
 
   await routeChannelMessage(
@@ -543,6 +626,8 @@ function commandContext(ctx: DiscordCommandContext) {
     settings: ctx.settings,
     label: { name: discordWhere(ctx.conversation), type: ctx.conversation.direct ? 'dm' : 'channel' },
     createClaim: createClaimOf(ctx.project.projectId, ctx.target),
+    // A channel another project holds moves only through /connect, which checks the presser.
+    keepsOtherProjects: true,
     questions: discordQuestions,
     ...(ctx.droppedFile ? { droppedFile: ctx.droppedFile } : {}),
   };
@@ -572,11 +657,12 @@ export async function handleDiscordInteraction(
   const press = interaction.type === 3;
   if (!project || !install) {
     const gone = 'This channel is not connected to a Kortix project any more. Use /connect to pick one.';
-    return void (press ? await ephemeralFollowUp(interaction.token, gone) : await editInteractionReply(interaction.token, { content: gone }));
+    return void (press ? await ephemeralFollowUp(interaction.token, gone) : await refuseCommand(interaction.token, gone));
   }
+  // The webhook refused them already; an admin removed them since.
   if (!install.allowedUserIds.includes(interaction.user.id)) {
     const refused = refusedPressText(discordAccessPort, interaction.user.id);
-    return void (press ? await ephemeralFollowUp(interaction.token, refused) : await editInteractionReply(interaction.token, { content: refused }));
+    return void (press ? await ephemeralFollowUp(interaction.token, refused) : await refuseCommand(interaction.token, refused));
   }
   const target: ChannelTarget = {
     platform: 'discord',
@@ -591,7 +677,7 @@ export async function handleDiscordInteraction(
     const spec = CHANNEL_COMMANDS.find((c) => c.name === interaction.command?.name);
     if (!spec) return void (await editInteractionReply(interaction.token, { content: 'Kortix does not know this command.' }));
     await runCommand(ctx, { name: spec.name, arg: interaction.command?.arg ?? '' }, async (body) => {
-      const sent = await editInteractionReply(interaction.token, body);
+      const sent = await editInteractionReply(interaction.token, body, conversation.threadId);
       if (sent && body.components.length) await rememberCommandMenu(target, sent);
     });
     return;
@@ -640,10 +726,44 @@ export function isDiscordInteractionEvent(event: IntegrationEvent): boolean {
   return event.type === DISCORD_INTERACTION_EVENT;
 }
 
+/**
+ * The last try of an event failed with an error the core did not answer (a
+ * database outage): the event goes dead, and the person hears it instead of
+ * silence. Never throws.
+ */
+export async function tellDeadDiscordEvent(event: IntegrationEvent): Promise<void> {
+  const text = 'Kortix could not handle this after several tries. Send it again in a few minutes. If it keeps failing, a project admin can check Kortix.';
+  try {
+    if (isDiscordInteractionEvent(event)) {
+      const { interaction, conversation } = event.data as unknown as DiscordInteractionEventData;
+      if (interaction.type === 3) await ephemeralFollowUp(interaction.token, text);
+      else await editInteractionReply(interaction.token, { content: text }, conversation.threadId);
+      return;
+    }
+    const { message, conversation } = event.data as unknown as DiscordMessageEventData;
+    if (conversation.addressed) await postMessage(message.channel_id, { content: text }, message.id);
+  } catch (error) {
+    logger.warn('[discord] dead event notice not sent', { error: String(error) });
+  }
+}
+
+/** Longer than the worst run: a session start waits for a sandbox, then its files download. */
+const CONSUMER_VISIBILITY_MS = 7 * 60_000;
+
 // One queue for every Discord event, and one order per conversation: a message
 // and a press run in the order Discord stamped them (gateway.ts, inbound.ts `sequence`).
-registerEventConsumer('discord.', (event, run) =>
-  isDiscordInteractionEvent(event) ? handleDiscordInteraction(event, run) : handleDiscordMessage(event, run));
+registerEventConsumer(
+  'discord.',
+  async (event, run) => {
+    try {
+      await (isDiscordInteractionEvent(event) ? handleDiscordInteraction(event, run) : handleDiscordMessage(event, run));
+    } catch (error) {
+      if (run.finalAttempt) await tellDeadDiscordEvent(event);
+      throw error;
+    }
+  },
+  { visibilityMs: CONSUMER_VISIBILITY_MS },
+);
 registerSessionPort('discord', discordPort);
 
 export type { DiscordStoredInteraction };

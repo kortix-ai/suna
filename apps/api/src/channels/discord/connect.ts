@@ -7,7 +7,7 @@
  * also needs that project to allow the presser.
  */
 import { chatChannelBindings, chatInstalls, chatThreads, projects } from '@kortix/db';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { readChannelAccess } from '../core/channel-access';
 import { clip } from './render';
@@ -52,7 +52,8 @@ export async function connectReply(place: { guildId: string | null; userId: stri
 /**
  * Bind the conversation's settings channel to `projectId`, whose install is the
  * conversation's guild (the webhook checked it). False: another project holds
- * the channel and does not allow `userId`.
+ * the channel and does not allow `userId`, or the project left the server
+ * since the press.
  */
 export async function bindDiscordChannel(conversation: DiscordConversation, projectId: string, userId: string): Promise<boolean> {
   const channelId = conversation.settingsId;
@@ -65,13 +66,13 @@ export async function bindDiscordChannel(conversation: DiscordConversation, proj
         .innerJoin(projects, and(eq(projects.projectId, chatChannelBindings.projectId), eq(projects.status, 'active')))
         .where(and(eq(chatChannelBindings.platform, 'discord'), eq(chatChannelBindings.channelId, channelId), ne(chatChannelBindings.projectId, projectId)));
   if (held.some((row) => !readChannelAccess(row.metadata, 'discord').allowedUserIds.includes(userId))) return false;
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     const [install] = await tx
       .select({ id: chatInstalls.installId })
       .from(chatInstalls)
       .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.workspaceId, conversation.guildId), eq(chatInstalls.projectId, projectId)))
       .limit(1);
-    if (!install) return;
+    if (!install) return false;
     // A DM has one row whatever guild it sits under; a guild channel has one in its guild.
     await tx.delete(chatChannelBindings).where(and(eq(chatChannelBindings.platform, 'discord'), eq(chatChannelBindings.channelId, channelId)));
     // A conversation that is the channel itself (a DM, a channel without threads) leaves its old project's session.
@@ -86,24 +87,27 @@ export async function bindDiscordChannel(conversation: DiscordConversation, proj
       channelName: conversation.direct ? 'direct message' : conversation.channelName ? `#${conversation.channelName}` : null,
       channelType: conversation.direct ? 'dm' : 'channel',
     });
+    return true;
   });
-  return true;
 }
 
 /**
  * The first project a conversation runs, kept: when a second project installs
  * the server (or allows the person of a DM), the channels already in use stay
- * with the first. Never takes a channel another project holds.
+ * with the first. Never takes a channel another project holds, except a DM
+ * whose project removed its one person (`senderId`) from its list.
  */
-export async function claimDiscordChannel(conversation: DiscordConversation, projectId: string): Promise<void> {
+export async function claimDiscordChannel(conversation: DiscordConversation, projectId: string, senderId: string): Promise<void> {
   if (conversation.direct) {
     // A DM's row may sit under any guild: one row at most.
-    const [any] = await db
-      .select({ id: chatChannelBindings.bindingId })
+    const rows = await db
+      .select({ id: chatChannelBindings.bindingId, projectId: chatChannelBindings.projectId, metadata: projects.metadata })
       .from(chatChannelBindings)
-      .where(and(eq(chatChannelBindings.platform, 'discord'), eq(chatChannelBindings.channelId, conversation.settingsId)))
-      .limit(1);
-    if (any) return;
+      .leftJoin(projects, eq(projects.projectId, chatChannelBindings.projectId))
+      .where(and(eq(chatChannelBindings.platform, 'discord'), eq(chatChannelBindings.channelId, conversation.settingsId)));
+    const stale = rows.filter((r) => r.projectId !== projectId && !readChannelAccess(r.metadata, 'discord').allowedUserIds.includes(senderId));
+    if (stale.length) await db.delete(chatChannelBindings).where(inArray(chatChannelBindings.bindingId, stale.map((r) => r.id)));
+    if (rows.length > stale.length) return;
   }
   await db
     .insert(chatChannelBindings)

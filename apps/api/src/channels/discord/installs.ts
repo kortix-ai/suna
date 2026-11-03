@@ -144,3 +144,9 @@ export async function forgetDiscordGuild(guildId: string): Promise<string[]> {
   await db.delete(chatThreads).where(and(eq(chatThreads.platform, 'discord'), eq(chatThreads.workspaceId, guildId)));
   return removed.map((r) => r.projectId);
 }
+
+/** A channel or thread Discord deleted: its conversation and its binding go, for every project. */
+export async function forgetDiscordChannel(channelId: string): Promise<void> {
+  await db.delete(chatThreads).where(and(eq(chatThreads.platform, 'discord'), eq(chatThreads.threadId, channelId)));
+  await db.delete(chatChannelBindings).where(and(eq(chatChannelBindings.platform, 'discord'), eq(chatChannelBindings.channelId, channelId)));
+}
