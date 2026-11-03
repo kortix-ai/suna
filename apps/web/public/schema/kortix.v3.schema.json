@@ -1115,7 +1115,7 @@
                   "skip",
                   "allow"
                 ],
-                "description": "`skip` holds a fire while the previous run is active. Only with `run.session: fresh`. Default: `skip` for a schedule, `allow` for others."
+                "description": "`skip` holds a fire while the previous run is active. With `run.session: reuse`, `pinned` or `keyed`: while the previous prompt still waits in that session. Default: `skip` for a schedule, `allow` for others."
               },
               "on": {
                 "description": "What fires the trigger: a schedule (`cron`, `every` or `at`), a webhook, or an App event.",
