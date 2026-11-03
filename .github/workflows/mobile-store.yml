@@ -20,6 +20,7 @@ on:
   workflow_run:
     workflows: [Deploy Prod]
     types: [completed]
+    branches: [prod]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -34,7 +35,15 @@ permissions:
 jobs:
   release:
     name: Release to the stores
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    # Only a green Deploy Prod of `prod` in this repository, started by a push
+    # or a person, starts a release. A pull request can run its own copy of a
+    # workflow named "Deploy Prod"; that run must never reach the credentials.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       contains(fromJSON('["push", "workflow_dispatch"]'), github.event.workflow_run.event) &&
+       github.event.workflow_run.head_branch == 'prod' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     # An iOS build (~20 min), Apple processing (up to 60 min) and an Android
     # build run one after another; EAS builds may also queue.
@@ -45,6 +54,22 @@ jobs:
       group: mobile-store
       cancel-in-progress: false
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The released code only: store builds call the production API.
+          ref: ${{ github.event.workflow_run.head_sha || 'prod' }}
+          # The script ships only builds made from a commit of this history
+          # (git merge-base --is-ancestor), so it needs all of it.
+          fetch-depth: 0
+
+      # Before any credential is read: the commit must be part of `prod`.
+      - name: Require a commit of prod
+        run: |
+          git merge-base --is-ancestor HEAD origin/prod || {
+            echo "::error::$(git rev-parse HEAD) is not a commit of origin/prod; refusing to release it."
+            exit 1
+          }
+
       - name: Check out the aws-env action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -61,14 +86,6 @@ jobs:
             EXPO_TOKEN
             SLACK_BOT_TOKEN?
             SLACK_RELEASE_CHANNEL?
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # The released code only: store builds call the production API.
-          ref: ${{ github.event.workflow_run.head_sha || 'prod' }}
-          # The script ships only builds made from a commit of this history
-          # (git merge-base --is-ancestor), so it needs all of it.
-          fetch-depth: 0
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
