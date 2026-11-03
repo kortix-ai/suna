@@ -332,6 +332,9 @@ COPY --from=deps /app/packages/sdk ./packages/sdk
 COPY apps/kortix-sandbox-agent-server/package.json ./apps/kortix-sandbox-agent-server/package.json
 COPY apps/kortix-sandbox-agent-server/scripts/build.sh ./apps/kortix-sandbox-agent-server/scripts/build.sh
 COPY apps/kortix-sandbox-agent-server/src ./apps/kortix-sandbox-agent-server/src
+# kortixd bundles the voice runtime (KORTIXD_SHARED_SOURCES), so the fingerprint
+# hashes it here too. Without it every session start failed with ENOENT (dev, 2026-11-03).
+COPY packages/voice/src ./packages/voice/src
 COPY apps/cli/package.json ./apps/cli/package.json
 COPY apps/cli/src ./apps/cli/src
 
