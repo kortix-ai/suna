@@ -278,7 +278,10 @@ export function buildPlatinumTemplateSpec(input: {
     default_cpu: 8,
     default_ram_mb: PREVIEW_HOST_RAM_MB,
     default_disk_gb: 50,
-    size_mb: 20_480,
+    // The build refuses an image larger than this cap minus its headroom. On
+    // 2026-11-02 the lockfile at dev deab382f8d built a 14,560 MB image that
+    // needed 20,640 MB, and every preview deploy failed at the template step.
+    size_mb: 24_576,
   };
 }
 

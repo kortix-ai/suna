@@ -152,14 +152,23 @@ export async function findServableLastReadyImage(
 export const SESSION_IMAGE_BUDGET_MS = 8_000;
 
 /**
+ * A resolution in one of these states is waiting on a build, which takes
+ * minutes: the budget cannot end in the new image, so the session does not wait
+ * it out. Every new session in the window after a runtime change paid the full
+ * 8 s here (preview, 2026-11-02: `image:serving_last_ready=+8004ms`).
+ */
+const BUILD_WAIT_STATES: ReadonlySet<ImageStep['state']> = new Set(['waiting_for_build', 'building']);
+
+/**
  * The image for a session start, never a silent wait.
  *
  * `ensureSandboxImage` already boots the last ready image instead of waiting
  * for a build. This bounds everything else (a slow database, a slow provider,
- * a lock): past `budgetMs` the session boots the image its project's latest
- * session booted (`lastBootedImage`), says so through `onStep`, and logs the
- * step that was slow. The resolution keeps running behind it. With no earlier
- * boot to fall back to, the session waits, and `onStep` names what it waits on.
+ * a lock): past `budgetMs`, or as soon as the resolution reports a build, the
+ * session boots the image its project's latest session booted
+ * (`lastBootedImage`), says so through `onStep`, and logs the step. The
+ * resolution keeps running behind it. With no earlier boot to fall back to, the
+ * session waits, and `onStep` names what it waits on.
  */
 export async function ensureSessionImage(
   project: GitBackedProject,
@@ -174,18 +183,24 @@ export async function ensureSessionImage(
   const started = Date.now();
   let current: ImageStep = { state: 'resolving', image: null };
   let answered = false;
+  const OVER_BUDGET = Symbol('over-budget');
+  let buildNeeded = () => {};
+  const buildWait = new Promise<typeof OVER_BUDGET>((resolve) => {
+    buildNeeded = () => resolve(OVER_BUDGET);
+  });
   const resolution = (opts.resolve ?? ensureSandboxImage)(project, {
     ...opts,
     source: opts.source ?? 'session-start',
     onStep: (step) => {
       current = step;
       if (!answered) opts.onStep?.(step);
+      if (BUILD_WAIT_STATES.has(step.state)) buildNeeded();
     },
   });
-  const OVER_BUDGET = Symbol('over-budget');
   let timer: ReturnType<typeof setTimeout> | undefined;
   const first = await Promise.race([
     resolution,
+    buildWait,
     new Promise<typeof OVER_BUDGET>((resolve) => {
       timer = setTimeout(() => resolve(OVER_BUDGET), opts.budgetMs ?? SESSION_IMAGE_BUDGET_MS);
     }),
@@ -202,7 +217,10 @@ export async function ensureSessionImage(
     elapsedMs: Date.now() - started,
   };
   if (!fallback) {
-    logger.warn('[snapshots] image resolution over budget; no earlier boot to fall back to', context);
+    // Only past the budget: a project's first image build is not a slow step.
+    if (!BUILD_WAIT_STATES.has(current.state)) {
+      logger.warn('[snapshots] image resolution over budget; no earlier boot to fall back to', context);
+    }
     return resolution;
   }
   answered = true;
@@ -213,7 +231,12 @@ export async function ensureSessionImage(
       error: error instanceof Error ? error.message : String(error),
     }),
   );
-  logger.warn('[snapshots] image resolution over budget; booting the previous image', { ...context, image: fallback.snapshotName });
+  logger.warn(
+    BUILD_WAIT_STATES.has(current.state)
+      ? '[snapshots] session image is building; booting the previous image'
+      : '[snapshots] image resolution over budget; booting the previous image',
+    { ...context, image: fallback.snapshotName },
+  );
   opts.onStep?.({ state: 'serving_last_ready', image: fallback.snapshotName });
   return fallback;
 }

@@ -48,6 +48,31 @@ describe('ensureSessionImage', () => {
     expect(seen.at(-1)).toEqual({ state: 'serving_last_ready', image: 'previous' });
   });
 
+  for (const state of ['building', 'waiting_for_build'] as const) {
+    test(`a resolution that reports ${state} hands over the earlier boot at once, not after the budget`, async () => {
+      const seen: ImageStep[] = [];
+      const started = Date.now();
+      const result = await ensureSessionImage(project, {
+        budgetMs: 5_000,
+        onStep: (step) => seen.push(step),
+        resolve: resolution([{ state: 'resolving', image: null }, { state, image: 'wanted' }], 400),
+        lastBooted: async () => image('previous'),
+      });
+      expect(Date.now() - started).toBeLessThan(300);
+      expect(result.snapshotName).toBe('previous');
+      expect(seen.map((step) => step.state)).toEqual(['resolving', state, 'serving_last_ready']);
+    });
+  }
+
+  test('a build with no earlier boot still waits for the image', async () => {
+    const result = await ensureSessionImage(project, {
+      budgetMs: 5_000,
+      resolve: resolution([{ state: 'building', image: 'wanted' }], 40),
+      lastBooted: async () => null,
+    });
+    expect(result.snapshotName).toBe('wanted');
+  });
+
   test('steps the slow resolution reports after the fallback do not reach the caller', async () => {
     const seen: ImageStep[] = [];
     const slow = (async (_project: unknown, opts: { onStep?: (step: ImageStep) => void } = {}) => {

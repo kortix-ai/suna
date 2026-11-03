@@ -338,36 +338,41 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   // `secrets` grant, applied below by identifier).
   // One `[provision-timeline] session-env` line per build: create, restart and open all wait on it.
   const tl = new ProvisionTimeline(input.sessionId, 'session-env');
-  const { agentGrantEnv, compiledAgentConfig, manifestPackages, manifestCodemode, manifestContext } =
-    await resolveSessionAgentConfig(input);
-  tl.mark('agent-config');
-  const sessionLogRestore = await resolveSessionLogRestore(input);
-  tl.mark('log-restore');
+  // Every provisioning path waits on this build before it asks the provider for
+  // a box (session-sandbox.ts awaits `extraEnvVars`), so it is on the critical
+  // path of every new session. The reads below used to run one after another:
+  // p50 823 ms / p90 1.3 s on prod (2026-11-02, 26 builds), of which the
+  // agent-config git read is p50 532 ms and the other ten steps the rest. They
+  // now start together. Steps that need another's answer chain on it (pi
+  // packages and the model re-point and secrets on the agent config, the last
+  // two also on the policy row), so nothing writes before the agent config
+  // resolved, exactly as before. Each read is AWAITED in the old order, so the
+  // first failure in program order is still the one that throws.
+  const started = <T>(promise: Promise<T>): Promise<T> => {
+    // Owned by its own await below; this only keeps a rejection that lands
+    // before that await from being reported as unhandled.
+    promise.catch(() => undefined);
+    return promise;
+  };
+  const agentConfigRead = started(tl.span('agent-config', () => resolveSessionAgentConfig(input)));
+  const logRestoreRead = started(tl.span('log-restore', () => resolveSessionLogRestore(input)));
   // The prebuilt bundle of the project's pi packages (one S3 HEAD + presign; none without npm packages).
-  const piPackagesBundle =
-    manifestPackages.length > 0
-      ? await piPackageBundleForSession(manifestPackages, { projectId: input.projectId, sessionId: input.sessionId })
-      : null;
-  tl.mark('pi-packages');
+  const piPackagesRead = started(
+    agentConfigRead.then(({ manifestPackages }) =>
+      manifestPackages.length > 0
+        ? tl.span('pi-packages', () =>
+            piPackageBundleForSession(manifestPackages, { projectId: input.projectId, sessionId: input.sessionId }),
+          )
+        : null,
+    ),
+  );
 
   // Per-session secret policy, read by sessionId inside the builder so all three
   // call sites (create, restart, open/ensure) are covered — no caller can
   // forget them. `secretsAllowlist` NARROWS the agent grant to (grant) ∩ (list)
   // so a backend-vouched session only receives the secrets the wrapper named
   // (null → passthrough, byte-identical to pre-KaaB).
-  const [sessionPolicyRow] = await db
-    .select({
-      secretsAllowlist: projectSessions.secretsAllowlist,
-      createdBy: projectSessions.createdBy,
-      metadata: projectSessions.metadata,
-    })
-    .from(projectSessions)
-    .where(eq(projectSessions.sessionId, input.sessionId))
-    .limit(1);
-  const grantEnvForSession = input.platformMetaAgent
-    ? []
-    : intersectSecretGrants(agentGrantEnv, sessionPolicyRow?.secretsAllowlist ?? null);
-
+  //
   // The secrets principal is the session's OWNER (`createdBy`), read here by
   // sessionId — NOT `input.userId`, which is whoever is provisioning this run.
   // On create those coincide, but restart/open/ensure-runtime provision on
@@ -385,13 +390,27 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   // Spec 2026-09-22 §2.3 (agent-principal model, flag ON): the override owner
   // is the session's on-behalf-of human, and only in a private session. A
   // trigger/channel run or a shared session gets shared values only.
-  const secretsPrincipalUserId = await resolveSessionPersonalOwner({
-    projectId: input.projectId,
-    sessionId: input.sessionId,
-    accountId: input.accountId,
-    legacyUserId: sessionPolicyRow?.createdBy ?? input.userId,
-  });
-  tl.mark('policy-owner');
+  const policyRead = started(
+    tl.span('policy-owner', async () => {
+      const [sessionPolicyRow] = await db
+        .select({
+          secretsAllowlist: projectSessions.secretsAllowlist,
+          createdBy: projectSessions.createdBy,
+          metadata: projectSessions.metadata,
+        })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, input.sessionId))
+        .limit(1);
+      const secretsPrincipalUserId = await resolveSessionPersonalOwner({
+        projectId: input.projectId,
+        sessionId: input.sessionId,
+        accountId: input.accountId,
+        legacyUserId: sessionPolicyRow?.createdBy ?? input.userId,
+      });
+      return { sessionPolicyRow, secretsPrincipalUserId };
+    }),
+  );
+  const managedModelsRead = input.opencodeModel ? started(accountMayUseManagedModels(input.accountId)) : null;
 
   // A session's stored model pin outlives any single boot — the runtime
   // managed lineup can rotate past it while the session sits open. Re-point
@@ -399,27 +418,56 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   // open/ensure) already shares, before the box boots on a dead id. No-op for
   // the overwhelming common case (a still-servable or non-managed pin) — see
   // llm-gateway/resolution/session-model-repoint.ts.
-  let opencodeModel = input.opencodeModel ?? null;
-  if (opencodeModel) {
-    opencodeModel = await repointRetiredSessionModel(opencodeModel, {
-      projectId: input.projectId,
-      accountId: input.accountId,
-      sessionId: input.sessionId,
-      userId: secretsPrincipalUserId ?? input.userId,
-      agentName: input.agentName,
-      freeModelsOnly: !(await accountMayUseManagedModels(input.accountId)),
-      metadata: sessionPolicyRow?.metadata ?? null,
-    });
-  }
-
-  tl.mark('model-repoint');
-  const runtimeSecrets = await loadSessionRuntimeSecrets(
-    input,
-    secretsPrincipalUserId,
-    grantEnvForSession,
-    agentGrantEnv,
+  const modelRead = started(
+    Promise.all([agentConfigRead, policyRead]).then(async ([, { sessionPolicyRow, secretsPrincipalUserId }]) => {
+      const opencodeModel = input.opencodeModel ?? null;
+      if (!opencodeModel) return null;
+      const freeModelsOnly = !(await managedModelsRead);
+      return tl.span('model-repoint', () =>
+        repointRetiredSessionModel(opencodeModel, {
+          projectId: input.projectId,
+          accountId: input.accountId,
+          sessionId: input.sessionId,
+          userId: secretsPrincipalUserId ?? input.userId,
+          agentName: input.agentName,
+          freeModelsOnly,
+          metadata: sessionPolicyRow?.metadata ?? null,
+        }),
+      );
+    }),
   );
-  tl.mark('secrets');
+  const secretsRead = started(
+    Promise.all([agentConfigRead, policyRead]).then(([{ agentGrantEnv }, { sessionPolicyRow, secretsPrincipalUserId }]) => {
+      const grantEnvForSession = input.platformMetaAgent
+        ? []
+        : intersectSecretGrants(agentGrantEnv, sessionPolicyRow?.secretsAllowlist ?? null);
+      return tl.span('secrets', () =>
+        loadSessionRuntimeSecrets(input, secretsPrincipalUserId, grantEnvForSession, agentGrantEnv),
+      );
+    }),
+  );
+  // pi boots from the published release: signed store URLs, no API call (config-releases/publish.ts).
+  // Any other session, and any lookup that fails, leaves it out: the box asks the descriptor route.
+  // A read with a fire-and-forget publish (publish.ts), so it needs nothing above.
+  const configReleaseRead = started(
+    tl.span('config-release', () =>
+      (input.repositoryAccess ?? true) && !input.platformMetaAgent
+        ? configReleaseEnvForSession({
+            projectId: input.projectId,
+            ref: input.baseRef,
+            agentName: input.agentName,
+            tip: input.baseSha ?? null,
+          }).catch((error: Error) => {
+            logger.warn('[config-releases] published release lookup failed; the box asks the route', {
+              projectId: input.projectId,
+              sessionId: input.sessionId,
+              error: error.message,
+            });
+            return null;
+          })
+        : Promise.resolve(null),
+    ),
+  );
   // Restore the session's channel binding on EVERY (re)provision. A session
   // created from a chat channel (e.g. Slack) persists its binding in
   // metadata.slack; the in-box relay gates turn-end/answer on SLACK_THREAD_TS /
@@ -427,25 +475,23 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   // must get these back or the resurrected agent can't talk to its thread. The
   // session is the durable source of truth; the first boot got these via
   // extraEnvVars, every later rebuild gets them here.
-  // pi boots from the published release: signed store URLs, no API call (config-releases/publish.ts).
-  // Any other session, and any lookup that fails, leaves it out: the box asks the descriptor route.
-  const configRelease =
-    (input.repositoryAccess ?? true) && !input.platformMetaAgent
-      ? await configReleaseEnvForSession({
-          projectId: input.projectId,
-          ref: input.baseRef,
-          agentName: input.agentName,
-          tip: input.baseSha ?? null,
-        }).catch((error: Error) => {
-          logger.warn('[config-releases] published release lookup failed; the box asks the route', {
-            projectId: input.projectId,
-            sessionId: input.sessionId,
-            error: error.message,
-          });
-          return null;
-        })
-      : null;
-  tl.mark('config-release');
+  const channelContextFlagsRead = started(
+    tl.span('channel-context-flags', () =>
+      Promise.all([
+        buildSessionChannelEnv(input.sessionId),
+        buildSessionRuntimeContextEnv(input.sessionId),
+        buildFeatureFlagSandboxEnv(input.projectId),
+      ]),
+    ),
+  );
+
+  const { compiledAgentConfig, manifestPackages, manifestCodemode, manifestContext } = await agentConfigRead;
+  const sessionLogRestore = await logRestoreRead;
+  const piPackagesBundle = await piPackagesRead;
+  await policyRead;
+  const opencodeModel = await modelRead;
+  const runtimeSecrets = await secretsRead;
+  const configRelease = await configReleaseRead;
   if (compiledAgentConfig && !fitsInEnvString(COMPILED_AGENT_CONFIG_ENV, compiledAgentConfig)) {
     // Sizes only. An image whose kortixd predates the gzip form boots without
     // this config, so the line is how to find sessions that need a newer image.
@@ -455,10 +501,7 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
       configBytes: Buffer.byteLength(compiledAgentConfig, 'utf8'),
     });
   }
-  const channelEnv = await buildSessionChannelEnv(input.sessionId);
-  const sessionContextEnv = await buildSessionRuntimeContextEnv(input.sessionId);
-  const featureFlagEnv = await buildFeatureFlagSandboxEnv(input.projectId);
-  tl.mark('channel-context-flags');
+  const [channelEnv, sessionContextEnv, featureFlagEnv] = await channelContextFlagsRead;
   tl.log();
   return {
     ...runtimeSecrets.env,

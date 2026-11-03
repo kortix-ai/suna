@@ -78,4 +78,24 @@ describe('ProvisionTimeline', () => {
       marks: { admit: summary.marks[0]!.deltaMs, 'open-session:ready': summary.marks[1]!.deltaMs },
     });
   });
+  test('span() records a concurrent step with its own duration and end time', async () => {
+    const tl = new ProvisionTimeline('0123456789abcdef', 'session-env');
+    const slow = tl.span('slow', () => new Promise((r) => setTimeout(() => r('a'), 40)));
+    const fast = tl.span('fast', () => new Promise((r) => setTimeout(() => r('b'), 5)));
+    expect(await Promise.all([slow, fast])).toEqual(['a', 'b']);
+    const marks = tl.summary().marks;
+    expect(marks.map((m) => m.label)).toEqual(['fast', 'slow']);
+    const slowMark = marks.find((m) => m.label === 'slow')!;
+    const fastMark = marks.find((m) => m.label === 'fast')!;
+    // Both started at ~0: each delta is the step's own duration, not the gap since the previous mark.
+    expect(slowMark.deltaMs).toBeGreaterThanOrEqual(35);
+    expect(fastMark.deltaMs).toBeLessThan(slowMark.deltaMs);
+    expect(slowMark.atMs).toBeGreaterThanOrEqual(slowMark.deltaMs);
+  });
+
+  test('a failed span leaves no mark and rethrows', async () => {
+    const tl = new ProvisionTimeline('0123456789abcdef', 'session-env');
+    await expect(tl.span('boom', async () => { throw new Error('nope'); })).rejects.toThrow('nope');
+    expect(tl.summary().marks).toEqual([]);
+  });
 });
