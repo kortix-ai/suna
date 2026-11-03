@@ -19,11 +19,13 @@
 import { describe, expect, test } from 'bun:test';
 
 import { grantFromLoadedAgents, type LoadedAgents } from '../projects/agents';
-import { myKortixAgentGrant } from '../projects/lib/my-kortix-agent';
+import { disabledMyKortixAgentGrant, myKortixAgentGrant } from '../projects/lib/my-kortix-agent';
 import { remintDecisionFor } from '../projects/lib/session-token-grant';
 import { agentGrantDiffers } from '../projects/lib/secret-grant';
 
-const UNGOVERNED: LoadedAgents = { specs: [], errors: [], defaultAgent: null };
+// Both shapes run My Kortix: since #11578 it is on only when kortix.yaml sets
+// `builtin_agents.my_kortix: true`.
+const UNGOVERNED: LoadedAgents = { specs: [], errors: [], defaultAgent: null, builtinAgents: { my_kortix: true } };
 
 const GOVERNED: LoadedAgents = {
   specs: [
@@ -44,6 +46,7 @@ const GOVERNED: LoadedAgents = {
   ] as unknown as LoadedAgents['specs'],
   errors: [],
   defaultAgent: 'kortix',
+  builtinAgents: { my_kortix: true },
 };
 
 const UNREADABLE: LoadedAgents = {
@@ -65,11 +68,12 @@ describe('grantFromLoadedAgents — the reserved meta coordinator', () => {
     expect(grantFromLoadedAgents('meta', UNGOVERNED)).toEqual(myKortixAgentGrant());
   });
 
-  test('resolves to the platform grant even when the manifest is unreadable', () => {
-    // Fail-closed still holds: the platform grant is a fixed, known value that
-    // never depends on repository content, so an unreadable manifest cannot
-    // widen it.
-    expect(grantFromLoadedAgents('meta', UNREADABLE)).toEqual(myKortixAgentGrant());
+  test('resolves to the no-action grant when the manifest is unreadable or does not turn My Kortix on', () => {
+    // Fail closed: a file that cannot be read says nothing, and My Kortix is on
+    // only on an explicit `my_kortix: true`.
+    expect(grantFromLoadedAgents('meta', UNREADABLE)).toEqual(disabledMyKortixAgentGrant());
+    expect(grantFromLoadedAgents('meta', { ...GOVERNED, builtinAgents: undefined })).toEqual(disabledMyKortixAgentGrant());
+    expect(grantFromLoadedAgents('meta', { ...UNGOVERNED, builtinAgents: { my_kortix: false } })).toEqual(disabledMyKortixAgentGrant());
   });
 
   test('carries no connectors and no secrets, on every manifest shape', () => {
