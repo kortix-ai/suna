@@ -1646,7 +1646,7 @@ function printDomains(env: SelfHostEnv): number {
     return 0;
   }
   process.stdout.write(`\n${C.bold}Alias domains${C.reset} ${C.dim}(KORTIX_DOMAIN_ALIASES)${C.reset}\n`);
-  row('app', `${aliases.app.join(', ')} ${C.dim}→ redirects to ${env.KORTIX_DOMAIN}${C.reset}`);
+  row('app', `${aliases.app.join(', ')} ${C.dim}(served)${C.reset}`);
   if (aliases.api.length) row('api', `${aliases.api.join(', ')} ${C.dim}(served)${C.reset}`);
   if (aliases.apps.length) row('apps', `${aliases.apps.map((d) => `*.${d}`).join(', ')} ${C.dim}(served)${C.reset}`);
   if (aliases.preview.length) row('previews', `${aliases.preview.map((d) => `*.${d}`).join(', ')} ${C.dim}(served)${C.reset}`);
@@ -1665,8 +1665,7 @@ function validateCaddyfile(instance: string): number {
  * `kortix self-host domain [show]` and `kortix self-host domain move <domain>`.
  *
  * `move` makes <domain> the primary domain and keeps the current one as an
- * alias (KORTIX_DOMAIN_ALIASES): the old web-app host redirects to the new one,
- * and the old API, Apps and preview hosts keep serving. Hosts under the old
+ * alias (KORTIX_DOMAIN_ALIASES): every old host keeps serving. Hosts under the old
  * domain move with it. DNS is checked first, the rendered Caddyfile is
  * validated before any service restarts, and a failed validation restores the
  * previous configuration.
@@ -1713,8 +1712,8 @@ async function selfHostDomain(args: string[], flags: GlobalFlags): Promise<numbe
     process.stdout.write(`  ${pad(key, 30)}${env[key] || C.dim + '(empty)' + C.reset} → ${value}\n`);
   }
   process.stdout.write(
-    `  ${C.dim}${plan.from} keeps working: its web app redirects to ${plan.to}; its API, Apps and preview hosts keep serving.${C.reset}\n` +
-      `  ${C.dim}Signed-in users sign in once more on ${plan.to}.${C.reset}\n\n`,
+    `  ${C.dim}${plan.from} keeps working as an alias: its web app, API, Apps and preview hosts keep serving.${C.reset}\n` +
+      `  ${C.dim}People who open ${plan.to} sign in once there.${C.reset}\n\n`,
   );
   // GoTrue derives the SAML service provider from API_EXTERNAL_URL, so a move
   // changes the entity ID and ACS URL an identity provider has registered. Every

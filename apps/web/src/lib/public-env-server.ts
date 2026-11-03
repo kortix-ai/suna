@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { withDomainAlias } from '@/lib/domain-alias-env';
 import { type RuntimeEnv, parseRuntimeEnv } from '@/lib/env-schema';
 
 export type PublicRuntimeEnv = RuntimeEnv;
@@ -8,7 +9,16 @@ function read(name: string): string | undefined {
   return process.env[`KORTIX_PUBLIC_${name}`] ?? process.env[`NEXT_PUBLIC_${name}`];
 }
 
-export function getServerPublicEnv(): PublicRuntimeEnv {
+/**
+ * The public runtime config. Pass the Host a page was requested on: on a
+ * self-host alias domain (KORTIX_DOMAIN_ALIASES) the instance URLs move onto
+ * that alias (see lib/domain-alias-env.ts).
+ */
+export function getServerPublicEnv(requestHost?: string | null): PublicRuntimeEnv {
+  return withDomainAlias(readServerPublicEnv(), requestHost, process.env.KORTIX_DOMAIN_ALIASES);
+}
+
+function readServerPublicEnv(): PublicRuntimeEnv {
   return parseRuntimeEnv({
     SUPABASE_URL:
       read('SUPABASE_URL') || process.env.SUPABASE_PUBLIC_URL || process.env.SUPABASE_URL,
@@ -46,10 +56,10 @@ export function getServerPublicEnv(): PublicRuntimeEnv {
  * only change character encoding — the JS parser decodes them back to the same
  * characters, so the resulting config object is identical to the unescaped form.
  */
-export function serializeRuntimeConfigScript(): string {
+export function serializeRuntimeConfigScript(requestHost?: string | null): string {
   const LINE_SEPARATOR = String.fromCharCode(0x2028);
   const PARAGRAPH_SEPARATOR = String.fromCharCode(0x2029);
-  const json = JSON.stringify(getServerPublicEnv())
+  const json = JSON.stringify(getServerPublicEnv(requestHost))
     .replace(/[<>&]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)
     .split(LINE_SEPARATOR)
     .join('\\u2028')

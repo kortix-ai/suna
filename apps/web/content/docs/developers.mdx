@@ -3797,33 +3797,41 @@ SAML sign-in is on in every instance, and `init` generates `SAML_PRIVATE_KEY` on
 
 #### Change or add a domain
 
-An instance has one primary domain and can answer on more. `kortix self-host domain show` lists them.
+An instance has one primary domain and serves any number of alias domains in full. `kortix self-host domain show` lists them.
 
-To move to a new domain, point its records at the server first: `<domain>`, `api.<domain>`, and `*.apps.<domain>` and `*.p.<domain>` when Apps hosting and preview origins are on. Then run:
+**Add a domain.** Point its records at the server: `<domain>`, `api.<domain>`, and `*.apps.<domain>` and `*.p.<domain>` when Apps hosting and preview origins are on. Then run:
+
+```bash
+kortix self-host env set KORTIX_DOMAIN_ALIASES=<domain>[,<domain>]
+```
+
+Every alias works like the primary domain:
+
+| Host | Serves |
+|---|---|
+| `<alias>` | The web app. A page opened here calls the API and auth on the same alias. |
+| `api.<alias>` | The API. |
+| `*.apps.<alias>`, `*.p.<alias>` | Apps and sandbox previews. Links the app shows on an alias use the alias. |
+
+Emails, sandbox callbacks and webhooks keep using the primary domain. People sign in once on each domain they open. SAML SSO uses the primary domain: an SSO sign-in started on an alias finishes on the primary domain. To retire an alias, remove it from the list.
+
+**Move the primary domain.** Point the new domain's records at the server, then run:
 
 ```bash
 kortix self-host domain move <domain>
 ```
 
-The command checks that every new name resolves to the same address as the current domain, writes the new configuration, runs `caddy validate`, and restarts Caddy, the frontend, the API, the gateway and auth. A failed validation restores the previous configuration. Hosts under the old domain move with it, and the old domain becomes an alias in `KORTIX_DOMAIN_ALIASES`:
+The command checks that every new name resolves to the same address as the current domain, writes the new configuration, runs `caddy validate`, and restarts Caddy, the frontend, the API, the gateway and auth. A failed validation restores the previous configuration. Hosts under the old domain move with it, and the old domain becomes an alias, so every old link keeps working.
 
-| Old host | After the move |
-|---|---|
-| `<old>` | Redirects (`308`) to the same path on the new domain. |
-| `api.<old>` | Keeps serving. Sandboxes, Capture devices and webhooks set up before the move keep working. |
-| `*.apps.<old>`, `*.p.<old>` | Keep serving the same App or sandbox port. New links use the new domain. |
+Re-register URLs that outside services store: the GitHub App callback and OAuth redirect URIs.
 
-People sign in once more on the new domain. Re-register URLs that outside services store: the GitHub App callback and OAuth redirect URIs.
-
-If people sign in with SAML SSO, update the identity provider **before** the move. The service provider's entity ID and ACS URL follow the domain, and every SSO sign-in fails until the identity provider knows them. Microsoft Entra ID and Okta accept several values, so add the new ones next to the current ones:
+If people sign in with SAML SSO, update the identity provider **before** the move. The service provider's entity ID and ACS URL follow the primary domain, and every SSO sign-in fails until the identity provider knows them. Microsoft Entra ID and Okta accept several values, so add the new ones next to the current ones:
 
 | Field | Value |
 |---|---|
 | Identifier (entity ID) | `https://<domain>/auth/v1/sso/saml/metadata` |
 | Reply URL (ACS) | `https://<domain>/auth/v1/sso/saml/acs` |
 | Logout URL | `https://<domain>/auth/v1/sso/saml/slo` |
-
-To add an alias without moving, run `kortix self-host env set KORTIX_DOMAIN_ALIASES=<domain>[,<domain>]`. To retire an alias, remove it from the list.
 
 ### First sign-in and setup
 

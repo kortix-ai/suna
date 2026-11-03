@@ -353,8 +353,8 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   KORTIX_DOMAIN: ['caddy', 'frontend', 'kortix-api', 'llm-gateway', 'supabase-auth'],
   KORTIX_API_DOMAIN: ['caddy', 'frontend', 'kortix-api', 'llm-gateway', 'supabase-auth'],
   KORTIX_ACME_EMAIL: ['caddy'],
-  // Alias hosts: Caddy serves them, the API accepts their Apps/preview hosts.
-  KORTIX_DOMAIN_ALIASES: ['kortix-api', 'caddy'],
+  // Alias hosts: Caddy serves them, the frontend and API build URLs on them.
+  KORTIX_DOMAIN_ALIASES: ['kortix-api', 'frontend', 'caddy'],
   KORTIX_PREVIEW_ALLOW_DIRECT_EDGE: ['kortix-api'],
   KORTIX_APPS_ALLOW_DIRECT_EDGE: ['kortix-api'],
   KORTIX_FRONTEND_MEMORY_LIMIT: ['frontend'],
