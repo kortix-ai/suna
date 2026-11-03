@@ -561,7 +561,7 @@ export function validateTriggerAgentRefsV2(
     if (!agentNames.includes(name) && name !== 'default' && !isMyKortixAgentName(name)) {
       issues.push({
         path: where,
-        message: `agent "${name}" does not match any declared agent in \`agents\`; omit it to run My Kortix (\`default_agent\` when My Kortix is off).`,
+        message: `agent "${name}" does not match any declared agent in \`agents\`; omit it to run \`default_agent\`.`,
         severity: 'error',
       });
     }

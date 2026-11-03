@@ -23854,7 +23854,7 @@
       "project": {
         "title": "Подешавање пројекта",
         "label": "My Kortix",
-        "help": "Нове сесије почињу са My Kortix. Kortix одржава његов промпт и алате. Да бисте га искључили, поставите <code>builtin_agents.my_kortix: false</code> у kortix.yaml."
+        "help": "My Kortix је укључен у овом пројекту. Kortix одржава његов промпт и алате. Да бисте га искључили, уклоните <code>builtin_agents.my_kortix</code> из kortix.yaml или га поставите на false."
       }
     },
     "modelView": {

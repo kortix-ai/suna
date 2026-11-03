@@ -2229,10 +2229,10 @@ flow(
         await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), fixture.team.id);
       });
 
-      await ctx.step('the project runs My Kortix (no builtin_agents key), and its config holds a tool with a dependency', async () => {
+      await ctx.step('the project runs My Kortix as its default agent (builtin_agents.my_kortix: true, default_agent: mykortix), and its config holds a tool with a dependency', async () => {
         await fixture.commit(
           {
-            'kortix.yaml': MANIFEST.replace('agents:\n', 'tools:\n  needs_dep: tools/needs_dep.ts\nagents:\n'),
+            'kortix.yaml': MANIFEST.replace('default_agent: kortix\n', 'default_agent: mykortix\n').replace('agents:\n', 'builtin_agents:\n  my_kortix: true\ntools:\n  needs_dep: tools/needs_dep.ts\nagents:\n'),
             'tools/needs_dep.ts': DEPENDENT_TOOL('one'),
           },
           'a tool that imports a dependency',

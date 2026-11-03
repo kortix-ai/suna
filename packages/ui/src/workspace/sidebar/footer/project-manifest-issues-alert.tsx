@@ -12,7 +12,7 @@
  * Expanded, it lists each issue (`file:line:col`, severity, key, message) and
  * offers "Fix with My Kortix": a new session, seeded with `manifestFixPrompt`,
  * that fixes the file, runs `kortix validate` and opens a change request it
- * does not merge. With My Kortix turned off (`builtin_agents.my_kortix: false`)
+ * does not merge. In a project that does not run My Kortix (no `builtin_agents.my_kortix: true`)
  * the session runs the project's default agent.
  *
  * Renders only for `state === 'issues'` and `project.write`. `ok`, `missing`
@@ -147,7 +147,7 @@ export function ProjectManifestIssuesAlertView({
 
 export function ProjectManifestIssuesAlert({ projectId }: { projectId: string }) {
   const health = useProjectManifestHealth(projectId);
-  const myKortix = useProjectConfig(projectId)?.builtin_agents?.my_kortix !== false;
+  const myKortix = useProjectConfig(projectId)?.builtin_agents?.my_kortix === true;
   const canWrite = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === true;
   const configure = useConfigureThread(projectId, { resetOnNavigate: true });
   if (!canWrite || !health) return null;

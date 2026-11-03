@@ -23854,7 +23854,7 @@
       "project": {
         "title": "プロジェクト設定",
         "label": "My Kortix",
-        "help": "新しいセッションは My Kortix で始まります。プロンプトとツールは Kortix が管理します。オフにするには、kortix.yaml で <code>builtin_agents.my_kortix: false</code> を設定します。"
+        "help": "このプロジェクトでは My Kortix がオンです。プロンプトとツールは Kortix が管理します。オフにするには、kortix.yaml から <code>builtin_agents.my_kortix</code> を削除するか、false に設定します。"
       }
     },
     "modelView": {

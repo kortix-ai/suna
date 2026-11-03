@@ -8146,7 +8146,7 @@ const catalog = {
       "project": {
         "title": "Project setting",
         "label": "My Kortix",
-        "help": "New sessions start with My Kortix. Kortix maintains its prompt and tools. To turn it off, set <code>builtin_agents.my_kortix: false</code> in kortix.yaml."
+        "help": "My Kortix is on in this project. Kortix maintains its prompt and tools. To turn it off, delete <code>builtin_agents.my_kortix</code> from kortix.yaml or set it to false."
       }
     },
     "modelView": {
