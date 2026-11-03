@@ -21,7 +21,7 @@ import { updateCard } from '../teams-api';
 import { runWebhookWork } from '../webhook-work';
 import { QUESTION_EARLIER, buildNoticeCard } from './cards';
 import type { TeamsInbound } from './inbound';
-import { type TeamsInvokeResponse, cardResponse, messageResponse } from './interactivity';
+import { type TeamsInvokeResponse, cardResponse, messageResponse } from './invoke-response';
 import { type TeamsFollowUp, admitTeamsFollowUp, deliverAdmittedFollowUp, resolveTeamsTurnActor } from './session';
 import { noticeOnLiveCard, startTurn } from './turn';
 import type { TeamsActivity, TeamsLiveTurn } from './types';

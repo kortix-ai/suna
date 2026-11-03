@@ -730,7 +730,7 @@ agents:
     workspace: { project_repository: true }  # omitted: no repository in /workspace
 ```
 
-Every key is optional. No tool call of this agent waits for a person: an omitted `permission` is `allow`. A file with no `agents` runs My Kortix, the built-in agent, only.
+Every key is optional. No tool call of this agent waits for a person: an omitted `permission` is `allow`. A file with no `agents` runs only the built-in agents it turns on (`builtin_agents`).
 
 ### File and schema
 
@@ -792,7 +792,7 @@ Kortix refuses to write a file with an error, an unknown key included: `kortix s
 | An agent or a trigger | That agent or trigger is off. A session that names the agent fails with an error that names the issue. A trigger that is off does not fire. |
 | A connector, App, skill, tool, command, extension, space or sandbox template | That entry is not available. |
 | `project` or `default_agent` | The key takes its default. |
-| Any other key (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, `builtin_agents`), a YAML syntax error, or an unknown `kortix_version` | Only My Kortix runs, so that it can fix the file. |
+| Any other key (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, `builtin_agents`), a YAML syntax error, or an unknown `kortix_version` | Only My Kortix runs, so that it can fix the file. This holds without `builtin_agents.my_kortix: true`, and not with `my_kortix: false`. |
 
 Each rule takes access away. No error gives an agent more than the file grants.
 
@@ -989,7 +989,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 - **Names must exist.** A listed skill, command, extension, subagent or tool that is not registered or built in is an error.
 - **`secrets` reaches the sandbox.** A granted secret is an environment variable or a network-enforced secret in the agent's sandbox. Model logins, connector and git credentials stay with Kortix services: the agent's model and connector settings decide their use.
 - **Built in, with no entry.** The Kortix skills: `kortix-cli`, `kortix-memory` and the other `kortix-*` skills. The Kortix tools: `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `show`. See [Kortix tools](/docs/developers#kortix-tools). The built-in tools: `bash`, `read`, `write`, `edit`, `glob`, `grep`, `question`, `task`. An agent loads a Kortix skill only when its `skills` grant names it or is `all`.
-- **My Kortix is built in.** A session or trigger that names no agent runs My Kortix. `builtin_agents: { my_kortix: false }` turns it off; then such a session runs `default_agent`. A session My Kortix starts without naming an agent also runs `default_agent`.
+- **My Kortix is built in and off by default.** `builtin_agents: { my_kortix: true }` turns it on. It is then an agent like the others: a session or trigger that names no agent runs `default_agent`, and `default_agent: mykortix` makes My Kortix the default. With My Kortix on and no `default_agent`, such a session runs My Kortix. A session My Kortix starts without naming an agent runs `default_agent`, or the first enabled primary agent when `default_agent` is `mykortix`. New projects start with both keys set. One exception: a `kortix.yaml` that cannot be used at all (missing, a YAML syntax error, an unknown `kortix_version`) runs My Kortix unless it sets `my_kortix: false`, so that My Kortix can fix the file.
 - **Extensions** are packages for the agent runtime. A package holds runtime extensions, skills, prompts or themes. The change request merge builds npm packages, and a session never installs them. A session loads its extensions when its runtime starts, so a change reaches a running session at its next start.
 
 {/* generated:kortix-yaml:start */}
@@ -1001,7 +1001,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `imports` | list | — | YAML files or folders whose collections merge into this file. See [imports](#imports). |
-| `default_agent` | string | — | The agent that runs when nothing names one and My Kortix is off, and the agent My Kortix starts when it names none. A session or trigger that names no agent runs My Kortix while it is on. A declared agent that is enabled and whose `mode` is `primary` or `all`. |
+| `default_agent` | string | — | The agent a session or trigger runs when it names none, and the agent My Kortix starts when it names none. A declared agent that is enabled and whose `mode` is `primary` or `all`, or `mykortix` when `builtin_agents.my_kortix` is true. Omitted: My Kortix when it is on. |
 | `project` | map | — | `name`: the project's name. A push that changes it renames the project, and a rename in Kortix commits it here. `description`: text for people who read the repository. |
 | `env` | map | — | The secret names the project expects. Values live in Secrets, never in this file. See [env keys](#env-keys). |
 | `sandbox` | map | the platform image | Sandbox templates and the project's default template. See [sandbox keys](#sandbox-keys). |
@@ -1016,7 +1016,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `policies` | list | — | Connector rules for the whole project. They run before every policy set and base rule. See [policy keys](#policy-keys). |
 | `approvals` | map | — | How long a held connector call waits for a decision. See [policy keys](#policy-keys). |
 | `spaces` | map | — | Spaces: channels with a room (always the first tab) and configured tabs. Agents join one with `agents.<name>.space`. |
-| `builtin_agents` | map | — | Built-in agents the platform adds to this project. Absent = on. |
+| `builtin_agents` | map | — | Built-in agents the platform adds to this project. Each is off unless set to true. |
 | `agents` | map | — | Agent name → agent block, here or in an imported file. A name is lowercase letters, digits, `-` and `_`, at most 128 characters. See [Agent keys](#agent-keys). |
 
 ### Agent keys
@@ -1132,7 +1132,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `max_runs_per_hour` | integer, 1 or more | `60` | Runs the trigger starts in any 60 minutes. |
 | `max_runs_per_day` | integer, 1 or more | — | Runs the trigger starts in a UTC day. |
 | `max_lateness` | string | — | Schedules only, `60s` or more. A missed fire later than this does not run. |
-| `overlap` | `skip`, `allow` | `skip` for a schedule, `allow` for others | `skip` holds a fire while the previous run is active. Only with `run.session: fresh`. |
+| `overlap` | `skip`, `allow` | `skip` for a schedule, `allow` for others | `skip` holds a fire while the previous run is active. With `run.session: reuse`, `pinned` or `keyed`: while the previous prompt still waits in that session. |
 | `on` | map | required | What fires the trigger: a schedule (`cron`, `every` or `at`), a webhook, or an App event. |
 | `on.cron` | string | — | A 6-field cron expression, seconds first: `"0 0 9 * * 1"` is 09:00 every Monday. A trigger fires at most once every 60 seconds. |
 | `on.timezone` | string | `UTC` | An IANA time zone for `cron` and `at`. |
@@ -1172,7 +1172,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `slug` | string | required | Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_telegram` and `computer` are reserved for the built-in connectors. |
+| `slug` | string | required | Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_telegram`, `kortix_discord` and `computer` are reserved for the built-in connectors. |
 | `name` | string | the slug | The label. |
 | `enabled` | boolean | `true` | `false`: the connector is off. |
 | `provider` | `pipedream`, `composio`, `mcp`, `openapi`, `postman`, `graphql`, `http`, `channel` | required | How Kortix reaches the app or API. Kortix writes the `channel` entry when you connect a channel. |
@@ -3936,6 +3936,7 @@ Set these with `kortix self-host env set`. Each row says what the variable turns
 | `KORTIX_OAUTH_CLIENTS` | Your own OAuth clients for the [app catalog](/docs/guide#connectors) apps whose servers have no dynamic client registration. JSON, one entry per vendor: `google`, `github`, `slack`, `hubspot`, `asana`, `box`. Without an entry, those apps are not listed. See [Kortix OAuth clients](#kortix-oauth-clients). |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET` | One-click **Add to Slack** with your own Slack app. Without all three, each project connects its own Slack app. See [Channels](/docs/guide#channels). |
 | `MICROSOFT_APP_ID`, `MICROSOFT_APP_PASSWORD`, `MICROSOFT_APP_TENANT` (default `botframework.com`) | One shared Microsoft Teams bot. Without them, each project brings its own bot app. |
+| `DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN`; optional `DISCORD_REDIRECT_URI` | **Add to Discord** with your own Discord application. In the Discord Developer Portal, set the Interactions Endpoint URL to `<api>/v1/webhooks/discord`, and add `<api>/v1/webhooks/discord/oauth/callback` as an OAuth2 redirect. Without all four, Discord is not offered. `DISCORD_MESSAGE_CONTENT=true` (with the **Message Content** intent turned on for the application) lets every message in a Kortix thread reach the agent; without it, a thread message must mention the app. When Discord refuses the intent, Kortix logs an error and runs without it: mentions and direct messages keep working. Discord requires verification for an application in 100 servers or more; Kortix logs a warning from 75. See [Channels](/docs/guide#channels). |
 | `RESEND_API_KEY` | Transactional email through Resend. |
 | `TUNNEL_ENABLED` | Default `true`. `false` turns off [computers](/docs/guide#computers): `/v1/tunnel/*` answers `503` `tunnel_disabled`. |
 | `PLATINUM_API_KEY` | Required. Sessions, App machines and volumes, and Drive (`/drives`). |

@@ -227,6 +227,14 @@ describe('builtin_agents (My Kortix switch)', () => {
     expect(errorPaths(declared.replace('agents:', 'builtin_agents:\n  my_kortix: false\nagents:'))).toEqual(['agents.meta']);
     expect(errorPaths(declared.replace('agents:', 'builtin_agents:\n  my_kortix: true\nagents:'))).toEqual(['agents.meta']);
   });
+
+  test('`default_agent: mykortix` is valid only when builtin_agents turns My Kortix on', () => {
+    const withDefault = (builtin: string) => `default_agent: mykortix\n${builtin}agents:\n  worker:\n    prompt: hi\n`;
+    expect(errorPaths(withDefault('builtin_agents:\n  my_kortix: true\n'))).toEqual([]);
+    expect(errorPaths(withDefault(''))).toEqual(['default_agent']);
+    expect(errorPaths(withDefault('builtin_agents:\n  my_kortix: false\n'))).toEqual(['default_agent']);
+    expect(check(withDefault('')).errors[0]?.message).toContain('builtin_agents.my_kortix: true');
+  });
 });
 
 describe('agents.<name>.workspace.project_repository default', () => {

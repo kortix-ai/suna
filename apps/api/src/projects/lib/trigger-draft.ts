@@ -286,7 +286,7 @@ export interface TriggerDraft {
   /** Any type — the run caps (`max_runs_per_hour`, `max_runs_per_day`, KRTX-1721). Omitted when unset. */
   maxRunsPerHour?: number;
   maxRunsPerDay?: number;
-  /** Fresh session mode only — `overlap` (KRTX-1721). Omitted when unset: the type's default applies. */
+  /** `overlap` (KRTX-1721), every session mode. Omitted when unset: the type's default applies. */
   overlap?: 'skip' | 'allow';
   /** For type=event only — connector, optional source adapter, the adapter's event type and event config. */
   event?: GitTriggerEventFields | null;

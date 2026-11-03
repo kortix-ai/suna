@@ -41,6 +41,7 @@ import { registerComputersRoutes } from './routes/computers';
 import { registerTriggersRoutes } from './routes/triggers';
 import { registerChannelSlackRoutes } from './routes/channel-slack';
 import { registerChannelTelegramRoutes } from './routes/channel-telegram';
+import { registerChannelDiscordRoutes } from './routes/channel-discord';
 import { registerChannelTeamsRoutes } from './routes/channel-teams';
 import { registerChannelEmailRoutes } from './routes/channel-email';
 import { registerTurnStreamRoutes } from './routes/turn-stream';
@@ -145,6 +146,7 @@ export function registerAllProjectRoutes(): void {
   registerTriggersRoutes();
   registerChannelSlackRoutes();
   registerChannelTelegramRoutes();
+  registerChannelDiscordRoutes();
   registerChannelTeamsRoutes();
   registerChannelEmailRoutes();
   registerTurnStreamRoutes();

@@ -110,6 +110,27 @@ describe('Discover catalogue routes', () => {
     expect((await request(app, `/projects/${PROJECT}/discover/connectors/detail?id=native:email`, { headers: ADMIN })).status).toBe(200);
   });
 
+  test('Discord is hidden from the catalogue on a deployment without the Kortix Discord app', async () => {
+    let available = false;
+    const seen: unknown[] = [];
+    const app = createConnectorRouter(
+      deps({
+        discordAvailable: () => available,
+        listDiscoverConnectors: async (input) => {
+          seen.push(input.exclude);
+          return { items: [], total: 0, hasMore: false };
+        },
+        getDiscoverConnector: async (id) => ({ item: { id }, variants: [] }),
+      }),
+    );
+    await request(app, `/projects/${PROJECT}/discover/connectors`, { headers: ADMIN });
+    expect((await request(app, `/projects/${PROJECT}/discover/connectors/detail?id=native:discord`, { headers: ADMIN })).status).toBe(404);
+    available = true;
+    await request(app, `/projects/${PROJECT}/discover/connectors`, { headers: ADMIN });
+    expect((await request(app, `/projects/${PROJECT}/discover/connectors/detail?id=native:discord`, { headers: ADMIN })).status).toBe(200);
+    expect(seen).toEqual([new Set(['native:discord']), new Set()]);
+  });
+
   test('sections forward their limits behind admin', async () => {
     const seen: unknown[] = [];
     const app = createConnectorRouter(

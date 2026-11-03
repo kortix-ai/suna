@@ -24,3 +24,8 @@ output "vpc_cidr" {
 output "availability_zones" {
   value = local.azs
 }
+
+output "s3_gateway_endpoint_id" {
+  description = "S3 gateway endpoint on the private route tables (S3 traffic skips the NAT)."
+  value       = aws_vpc_endpoint.s3.id
+}

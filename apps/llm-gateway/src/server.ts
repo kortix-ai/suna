@@ -150,6 +150,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
   const app = new Hono();
   app.use('*', async (c, next) => {
     await next();
+    c.header('Cache-Control', 'private, no-store');
     c.header('Content-Security-Policy', "default-src 'none';frame-ancestors 'none'");
     c.header('X-Frame-Options', 'DENY');
     // Permissions-Policy has no wildcard directive: deny each browser capability explicitly.

@@ -537,7 +537,7 @@ function printBuiltinAgent(cfg: AgentConfigResponse, json: boolean): number {
       `  ${C.dim}${pad('secrets', 20)}${C.reset} none\n` +
       `  ${C.dim}${pad('connectors', 20)}${C.reset} none\n` +
       `  ${C.dim}${pad('apps', 20)}${C.reset} none\n\n` +
-      `  ${C.dim}Kortix maintains its prompt, tools and model. To remove it, set ${C.reset}builtin_agents: { ${key}: false }${C.dim} in kortix.yaml.${C.reset}\n\n`,
+      `  ${C.dim}Kortix maintains its prompt, tools and model. To remove it, delete ${C.reset}builtin_agents.${key}${C.dim} from kortix.yaml or set it to false.${C.reset}\n\n`,
   );
   return 0;
 }

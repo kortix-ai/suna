@@ -3,7 +3,7 @@
 
 /** Trials and contracts: expire, end, and send the warnings that are due. */
 export async function runTrialExpirySweep(): Promise<void> {
-  const { runAccessSweep } = await import('./services/access-notices');
+  const { runAccessSweep } = await import('./services/access-sweep');
   await runAccessSweep();
 }
 

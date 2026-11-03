@@ -5,12 +5,13 @@ import './environment-secret';
 import './lib/sentry';
 
 // Notices a job can fire register their delivery at import. A failed box start
-// tells the session's chat (channels/core/session-notice.ts, Telegram's port);
+// tells the session's chat (channels/core/session-notice.ts, Telegram's and Discord's ports);
 // the API process imports these through its routes, the worker here. The
 // subagent notices load with projects/surface.ts.
 // unit-worker-entry-imports.test.ts fails when a registration is missing.
 import './channels/core/session-notice';
 import './channels/telegram/session';
+import './channels/discord/session';
 
 /**
  * The worker entry point: `bun run src/worker.ts`.

@@ -40,6 +40,21 @@ export function bindProjectPlatformSecurity(projectId: string) {
         userPhoto: (...a: DropFirst<Parameters<typeof P.getTelegramUserPhoto>>) =>
           P.getTelegramUserPhoto(projectId, ...a),
       },
+      discord: {
+        /** Whether this deployment has the Kortix Discord application, and the "Add to Discord" link. */
+        mode: () => P.getDiscordMode(projectId),
+        installation: () => P.getDiscordInstallation(projectId),
+        /** Finish an "Add to Discord" install as the signed-in user (web completion page). */
+        completeInstall: (input: Parameters<typeof P.completeDiscordInstall>[1]) => P.completeDiscordInstall(projectId, input),
+        /** Replace the whole allowed list. Prefer `allowUser` / `removeUser` for one person. */
+        setAllowedUsers: (userIds: string[]) => P.setDiscordAllowedUsers(projectId, userIds),
+        disconnect: () => P.disconnectDiscord(projectId),
+        /** The allowed users and the people who asked for access, with their Discord names. */
+        users: () => P.listChannelUsers(projectId, 'discord'),
+        allowUser: (userId: string) => P.allowChannelUser(projectId, 'discord', userId),
+        removeUser: (userId: string) => P.removeChannelUser(projectId, 'discord', userId),
+        dismissAccessRequest: (userId: string) => P.dismissChannelAccessRequest(projectId, 'discord', userId),
+      },
       email: {
         installation: (connectorSlug?: string | null) =>
           P.getEmailInstallation(projectId, connectorSlug),

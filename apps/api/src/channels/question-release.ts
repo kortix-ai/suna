@@ -38,7 +38,7 @@ export type ChatChannel = ChannelPlatform;
 export function channelOfSessionMetadata(metadata: unknown): ChatChannel | null {
   const m =
     metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>) : {};
-  for (const channel of ['teams', 'slack', 'telegram', 'email'] as const) {
+  for (const channel of ['teams', 'slack', 'telegram', 'discord', 'email'] as const) {
     if (m.source === channel || (m[channel] !== null && typeof m[channel] === 'object')) return channel;
   }
   return null;
@@ -54,6 +54,7 @@ const QUESTION_COPY: Record<ChatChannel, { where: string; send: string }> = {
   teams: { where: 'the Teams conversation', send: '`teams send`' },
   telegram: { where: 'the Telegram chat', send: '`kortix connectors call kortix_telegram.send_message`' },
   email: { where: 'the email thread', send: '`kortix connectors call email.reply_message`' },
+  discord: { where: 'the Discord conversation', send: '`kortix connectors call kortix_discord.send_message`' },
 };
 
 /**

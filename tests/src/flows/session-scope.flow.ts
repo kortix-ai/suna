@@ -425,7 +425,7 @@ flow(
     const sessionCount = async () =>
       (await db.query<{ n: number }>('SELECT count(*)::int AS n FROM kortix.project_sessions WHERE project_id = $1::uuid', [project.id])).rows[0]?.n ?? 0;
     try {
-      await ctx.step('the project runs My Kortix (no builtin_agents key); a My Kortix session and a worker each hold a session-bound credential', async () => {
+      await ctx.step('the project runs My Kortix (the seeded starter sets builtin_agents.my_kortix: true); a My Kortix session and a worker each hold a session-bound credential', async () => {
         meta = await seedBoundSession(ctx, db, project, 'SCOPE-8 meta');
         await db.query(`UPDATE kortix.project_sessions SET agent_name = 'mykortix' WHERE session_id = $1`, [meta.sessionId]);
         worker = await seedBoundSession(ctx, db, project, 'SCOPE-8 worker', 'scope-8-worker');

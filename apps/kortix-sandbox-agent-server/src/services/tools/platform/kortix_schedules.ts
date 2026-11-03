@@ -748,7 +748,7 @@ export default {
       config: { type: 'object', description: 'For wake_on connector_event: the event\'s config fields, as `events` lists them (only when it has required ones).' },
       app: { type: 'string', description: 'For wake_on app_event: the App slug.' },
       prompt: { type: 'string', description: 'For create and automate: the message each run starts with. In automate, read the event with {{ event.data.<field> }} or {{ body.<field> }}.' },
-      agent: { type: 'string', description: 'For create and automate: the agent each run starts a session of. Without it, create is a reminder to this session (prefer follow_up), and automate runs My Kortix.' },
+      agent: { type: 'string', description: 'For create and automate: the agent each run starts a session of. Without it, create is a reminder to this session (prefer follow_up), and automate runs the project default agent.' },
       every: { type: 'string', description: 'For follow_up, create and automate (schedule): repeat interval, e.g. "4h", "1d".' },
       cron: { type: 'string', description: 'For follow_up and create: a cron expression, e.g. "0 9 * * 1-5". For automate (schedule): 6 fields, seconds first, e.g. "0 0 9 * * 1-5".' },
       timezone: { type: 'string', description: 'With cron: an IANA time zone, e.g. "Europe/Berlin".' },

@@ -2090,7 +2090,7 @@ export type DiscoverConnectorKind = 'openapi' | 'mcp' | 'graphql' | 'composio' |
  *  computer it works on (`computer`). It is set up on its own page, never
  *  through `installDiscoverConnector`. */
 export interface DiscoverKortixApp {
-  app: 'slack' | 'teams' | 'email' | 'telegram' | 'computer';
+  app: 'slack' | 'teams' | 'email' | 'telegram' | 'discord' | 'computer';
 }
 
 export interface DiscoverConnector {

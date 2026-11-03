@@ -418,6 +418,28 @@ export async function setConnectorCredentialShared(
   };
 }
 
+async function mutateConnectorEntry(
+  projectId: string, accountId: string, operation: string, slug: string, commitMessage: string,
+  mutate: (entry: Record<string, unknown>) => void,
+): Promise<CrudResult> {
+  return mutateProjectConnectorManifest(
+    projectId, accountId, operation,
+    (manifest) => {
+      const current = connectorEntries(manifest);
+      const entry = current.find((candidate) => candidate?.slug === slug);
+      if (!entry) return { ok: false, error: 'connector not found', status: 404 };
+      mutate(entry);
+      manifest.raw.connectors = current;
+      const error = extractConnectors(manifest).errors.find(
+        (candidate) => candidate.slug === slug,
+      );
+      if (error) return { ok: false, error: error.error, status: 400 };
+      return { ok: true, commitMessage };
+    },
+    slug,
+  );
+}
+
 /**
  * `shared` is now the only credential mode (`per_user` removed 2026-07-05).
  * This entry
@@ -432,25 +454,12 @@ export async function setConnectorCredentialModeInManifest(
   slug: string,
   mode: 'shared',
 ): Promise<CrudResult> {
-  return mutateProjectConnectorManifest(
-    projectId,
-    accountId,
+  return mutateConnectorEntry(projectId, accountId,
     `the connector ${slug} credential mode was being updated`,
-    (manifest) => {
-      const current = Array.isArray(manifest.raw.connectors)
-        ? (manifest.raw.connectors as Record<string, unknown>[])
-        : [];
-      const entry = current.find((candidate) => candidate?.slug === slug);
-      if (!entry) return { ok: false, error: 'connector not found', status: 404 };
+    slug, `chore: set ${slug} credential mode → ${mode}`,
+    (entry) => {
       delete entry.credential;
-      manifest.raw.connectors = current;
-      const error = extractConnectors(manifest).errors.find(
-        (candidate) => candidate.slug === slug,
-      );
-      if (error) return { ok: false, error: error.error, status: 400 };
-      return { ok: true, commitMessage: `chore: set ${slug} credential mode → ${mode}` };
     },
-    slug,
   );
 }
 
@@ -461,28 +470,12 @@ export async function setConnectorAuthorizationStrategyInManifest(
   slug: string,
   authorizationStrategy: ConnectorAuthorizationStrategy,
 ): Promise<CrudResult> {
-  return mutateProjectConnectorManifest(
-    projectId,
-    accountId,
+  return mutateConnectorEntry(projectId, accountId,
     `the connector ${slug} connection strategy was being updated`,
-    (manifest) => {
-      const current = Array.isArray(manifest.raw.connectors)
-        ? (manifest.raw.connectors as Record<string, unknown>[])
-        : [];
-      const entry = current.find((candidate) => candidate?.slug === slug);
-      if (!entry) return { ok: false, error: 'connector not found', status: 404 };
+    slug, `chore: set ${slug} connection strategy to ${authorizationStrategy}`,
+    (entry) => {
       entry.authorization_strategy = authorizationStrategy;
-      manifest.raw.connectors = current;
-      const error = extractConnectors(manifest).errors.find(
-        (candidate) => candidate.slug === slug,
-      );
-      if (error) return { ok: false, error: error.error, status: 400 };
-      return {
-        ok: true,
-        commitMessage: `chore: set ${slug} connection strategy to ${authorizationStrategy}`,
-      };
     },
-    slug,
   );
 }
 
@@ -498,29 +491,13 @@ export async function setConnectorSensitiveInManifest(
   slug: string,
   sensitive: boolean,
 ): Promise<CrudResult> {
-  return mutateProjectConnectorManifest(
-    projectId,
-    accountId,
+  return mutateConnectorEntry(projectId, accountId,
     `the connector ${slug} sensitivity was being updated`,
-    (manifest) => {
-      const current = Array.isArray(manifest.raw.connectors)
-        ? (manifest.raw.connectors as Record<string, unknown>[])
-        : [];
-      const entry = current.find((candidate) => candidate?.slug === slug);
-      if (!entry) return { ok: false, error: 'connector not found', status: 404 };
+    slug, `chore: mark ${slug} ${sensitive ? 'sensitive' : 'not sensitive'}`,
+    (entry) => {
       if (sensitive) entry.sensitive = true;
       else delete entry.sensitive;
-      manifest.raw.connectors = current;
-      const error = extractConnectors(manifest).errors.find(
-        (candidate) => candidate.slug === slug,
-      );
-      if (error) return { ok: false, error: error.error, status: 400 };
-      return {
-        ok: true,
-        commitMessage: `chore: mark ${slug} ${sensitive ? 'sensitive' : 'not sensitive'}`,
-      };
     },
-    slug,
   );
 }
 
@@ -534,25 +511,12 @@ export async function setConnectorNameInManifest(
   const trimmed = name.trim();
   if (!trimmed) return { ok: false, error: 'name is required', status: 400 };
   if (trimmed.length > 255) return { ok: false, error: 'name is too long (max 255)', status: 400 };
-  return mutateProjectConnectorManifest(
-    projectId,
-    accountId,
+  return mutateConnectorEntry(projectId, accountId,
     `the connector ${slug} name was being updated`,
-    (manifest) => {
-      const current = Array.isArray(manifest.raw.connectors)
-        ? (manifest.raw.connectors as Record<string, unknown>[])
-        : [];
-      const entry = current.find((candidate) => candidate?.slug === slug);
-      if (!entry) return { ok: false, error: 'connector not found', status: 404 };
+    slug, `chore: rename connector ${slug} → ${trimmed}`,
+    (entry) => {
       entry.name = trimmed;
-      manifest.raw.connectors = current;
-      const error = extractConnectors(manifest).errors.find(
-        (candidate) => candidate.slug === slug,
-      );
-      if (error) return { ok: false, error: error.error, status: 400 };
-      return { ok: true, commitMessage: `chore: rename connector ${slug} → ${trimmed}` };
     },
-    slug,
   );
 }
 

@@ -93,7 +93,7 @@ An error exits `1`; warnings alone exit `0`. `kortix ship` runs the same
 checks. A file with `kortix_version: 3` gets one warning: the key is obsolete
 and ignored. Any other `kortix_version` value is a retired format and one
 error. A running project never stops on the manifest: it applies the valid
-part and runs My Kortix, which can fix the file.
+part, and a file it cannot use at all runs My Kortix, which can fix it.
 
 The local coding tools you wire up (`--primary`/`--agents`, default Codex)
 receive native discovery links to the canonical sources. Claude Code uses
