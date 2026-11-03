@@ -54,13 +54,15 @@ async function extract(url: string, signal: AbortSignal): Promise<string> {
   if (res.ok) chargeSearch('tavily-extract')
   return ((await res.json()) as { results?: { raw_content?: string }[] }).results?.[0]?.raw_content ?? ''
 }
+// A page is untrusted text: it can neither close its <data> envelope nor end its url attribute.
+const block = (p: Page) => `<data source="page, read in full" url="${p.url.replace(/"/g, '&quot;')}">\n${p.text.replace(/<\/?data\b[^>]*>/gi, '').slice(0, 4000)}\n</data>`
 /** Pages on this query read after `since` (ms epoch), as data: what a quiet moment after the answer can add. */
 export function freshPages(q: string, since: number): string {
-  return pagesFor(q).filter((p) => p.at > since).map((p) => `<data source="page, read in full" url="${p.url}">\n${p.text.slice(0, 4000)}\n</data>`).join('\n')
+  return pagesFor(q).filter((p) => p.at > since).map(block).join('\n')
 }
 /** The page for a live answer, as data: the best one only (two put 8000 characters in front of the fast lane: first token
  * ~320 ms against ~235 with one, ~175 with none). */
-export const pageBlocks = (q: string) => pagesFor(q).slice(0, 1).map((p) => `<data source="page, read in full" url="${p.url}">\n${p.text.slice(0, 4000)}\n</data>`).join('\n')
+export const pageBlocks = (q: string) => pagesFor(q).slice(0, 1).map(block).join('\n')
 /** The best page read behind these search results (their addresses, in their order), as data, or ''. A look-ahead's
  * results point at the page its question needs ("What are the new features in Bun 1.4.4?": the release post), read a
  * second after its search; the follow-up its match answers ("What changed in it?") shares too few words with it
@@ -69,7 +71,7 @@ export const pageBlocks = (q: string) => pagesFor(q).slice(0, 1).map((p) => `<da
 export function pagesOf(result: string): string {
   const urls = [...result.matchAll(/\((https?:\/\/[^\s)]+)\)/g)].map((m) => m[1]!)
   const p = urls.map((u) => read.find((x) => x.url === u && Date.now() - x.at < PAGE_TTL)).find((x) => x && !result.includes(`url="${x.url}"`))
-  return p ? `<data source="page, read in full" url="${p.url}">\n${p.text.slice(0, 4000)}\n</data>` : ''
+  return p ? block(p) : ''
 }
 /** Pages in hand that share two or more content words with the query (in their address or opening), best first. */
 export function pagesFor(q: string): Page[] {

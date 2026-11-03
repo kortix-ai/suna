@@ -39,10 +39,10 @@ describe('voiceCallSocketUrl', () => {
 });
 
 describe('voiceRelayHealthUrl', () => {
-  test('the health route on the same port, authenticated the same way', () => {
-    const url = new URL(voiceRelayHealthUrl(PORT_URL, 'jwt-fixture'));
+  test('the health route on the same port, with no credential in its URL', () => {
+    const url = new URL(voiceRelayHealthUrl(PORT_URL));
     expect(url.protocol).toBe('https:');
     expect(url.pathname).toBe('/v1/p/sbx-fixture/6902/health');
-    expect(url.searchParams.get('token')).toBe('jwt-fixture');
+    expect(url.searchParams.has('token')).toBe(false);
   });
 });

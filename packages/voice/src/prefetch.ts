@@ -239,7 +239,7 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
   const searchNow = () => fallback ??= hasSearch ? (raw ? firstUseful([words ? raw : reuse(r.query) ?? search(r.query), raw]) : reuse(r.query) ?? search(r.query)) : Promise.resolve('')
   const web = async () => {
     const data = await searchNow()
-    const found = data ? `<data source="web search" query="${r.query.replace(/"/g, "'")}">\n${data}\n</data>` : ''
+    const found = data ? `<data source="web search" query="${r.query.replace(/"/g, "'")}">\n${data.replace(/<\/?data\b[^>]*>/gi, '')}\n</data>` : '' // untrusted: cannot close its envelope
     return [found, pageBlocks(`${q} ${r.query}`)].filter(Boolean).join('\n')
   }
   const job = async () => {

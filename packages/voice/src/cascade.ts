@@ -1967,7 +1967,7 @@ export const cascade: Provider = (o, h) => {
     if (current !== t) return
     t.text = t.text.split('\n').filter((l) => !SILENT.test(untag(clean(l)))).join('\n') // "(nothing)" after a sentence: never said
     accept(t)
-    if (inRoom() && clean(t.text).trim()) roomLog.push({ who: roomName(), text: clean(t.text), at: performance.now() }) // our line in the room
+    if (inRoom() && clean(t.text).trim()) roomLog.push({ who: roomName(), text: clean(t.text), at: performance.now(), mine: true }) // our line in the room
     log('done', JSON.stringify(t.text.slice(0, 60)), t.tools, t.direct ? 'fast lane' : 'agent')
     const heardBack = clean(t.sp.spoken)
     if (heardBack) talk.push({ role: 'assistant', content: heardBack })
@@ -2346,7 +2346,7 @@ export const cascade: Provider = (o, h) => {
   // that meeting; the rest shared under 80%), the fuller.
   const bag = (t: string) => new Set(t.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [])
   function rewrite(prev: RoomLine | undefined, l: RoomLine): RoomLine | undefined {
-    if (!prev || prev.who !== l.who || prev.who === roomName() || l.at - prev.at >= 90_000) return undefined
+    if (!prev || prev.who !== l.who || prev.mine || l.at - prev.at >= 90_000) return undefined
     const a = bag(prev.text), b = bag(l.text)
     const ta = prev.text.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [], tb = l.text.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []
     if (ta.length >= 8 && tb.length >= 4)
@@ -2397,7 +2397,7 @@ export const cascade: Provider = (o, h) => {
     // is down" is about us, not to us); a "not now" with our name stops it until named again.
     if (over || named(l.text) || performance.now() < engaged) {
       // Likely ours: its lookup starts now (router, search, card: read-only, cached for the turn), the judge decides.
-      const since = roomLog.slice(roomLog.findLastIndex((x) => x.who === roomName()) + 1).slice(-3)
+      const since = roomLog.slice(roomLog.findLastIndex((x) => x.mine) + 1).slice(-3)
       if (named(l.text) || performance.now() < engaged) warmSearch(since.map((x) => `[${x.who}] ${x.text}`).join(' '), exchange())
       void lookRoom(l, true, over)
     }
@@ -2462,7 +2462,7 @@ export const cascade: Provider = (o, h) => {
           if (who === 'Screen') { screen = { text, read: '', at: now, from: 'the presentation' }; continue }
           const mine = who === roomName()
           // Its time of day, for the rewrite check: a caption sent again as it grew is one line here too.
-          const l = { who: mine ? roomName() : who, text, at: ((+hh * 60 + +mm) * 60 + +ss) * 1000 }
+          const l = { who: mine ? roomName() : who, text, at: ((+hh * 60 + +mm) * 60 + +ss) * 1000, ...(mine && { mine: true as const }) } // the bridge's own transcript names its own lines
           const again = rewrite(roomLog.at(-1), l)
           if (again) (roomLog[roomLog.length - 1] = again), (talk[talk.length - 1] = { role: 'user', content: `[${who}] ${again.text}` })
           else roomLog.push(l), talk.push(mine ? { role: 'assistant', content: text } : { role: 'user', content: `[${who}] ${text}` })
@@ -2487,7 +2487,7 @@ export const cascade: Provider = (o, h) => {
     if (!inRoom() || thinking || hushed()) return
     if (thought && performance.now() - thought.at > 120_000) (note('room-thought-dropped', { say: thought.say }), (thought = undefined))
     const lastLine = roomLog.at(-1)
-    if (thought && !checking && lastLine && lastLine.who !== roomName() && performance.now() - lastLine.at > THINK_PAUSE && performance.now() - (roomLog.findLast((x) => x.who === roomName())?.at ?? -Infinity) > THOUGHT_GAP && !talking && !othersTalking() && !current && !audible() && !paused && performance.now() - roomSpokeAt > THOUGHT_GAP && performance.now() - thoughtSaidAt > THOUGHT_GAP) {
+    if (thought && !checking && lastLine && !lastLine.mine && performance.now() - lastLine.at > THINK_PAUSE && performance.now() - (roomLog.findLast((x) => x.mine)?.at ?? -Infinity) > THOUGHT_GAP && !talking && !othersTalking() && !current && !audible() && !paused && performance.now() - roomSpokeAt > THOUGHT_GAP && performance.now() - thoughtSaidAt > THOUGHT_GAP) {
       const say = thought.say, at = lastLine.at
       thought = undefined
       checking = true
@@ -2515,13 +2515,13 @@ export const cascade: Provider = (o, h) => {
   // it has talked with them (a meeting's first voice is often "Morning everyone", others still to speak).
   const roomPeople = () => {
     const n = new Set(roomLog.filter((x) => x.who !== roomName() && performance.now() - x.at < 600_000).map((x) => x.who)).size
-    return n === 1 && !roomLog.some((x) => x.who === roomName()) ? 0 : n
+    return n === 1 && !roomLog.some((x) => x.mine) ? 0 : n
   }
   async function lookRoom(l: RoomLine, quick: boolean, over = false) {
     if (talking || (current && !quick) || roomLog.at(-1) !== l) return // someone spoke on, or we are speaking
     const turn = current // what we are saying or writing now, if anything (the judge reads it as our last line)
     if (over) roomDeciding++
-    const v = await roomJudge(roomName(), roomLog, clean(turn?.text ?? '') || (roomLog.findLast((x) => x.who === roomName())?.text ?? ''), undefined, 1500, roomNotes, screenNow(), roomPeople()).finally(() => void (over && roomDeciding--))
+    const v = await roomJudge(roomName(), roomLog, clean(turn?.text ?? '') || (roomLog.findLast((x) => x.mine)?.text ?? ''), undefined, 1500, roomNotes, screenNow(), roomPeople()).finally(() => void (over && roomDeciding--))
     note('room', { who: l.who, quick, over, to_me: v.to_me, speak: v.speak, say: v.say || undefined, lookup: v.lookup || undefined, hush: v.hush || undefined })
     if (talking) return
     // Over our voice, which waits on this verdict whatever was said after (and if our answer finished being written
@@ -2546,7 +2546,7 @@ export const cascade: Provider = (o, h) => {
       // history; the turn adds them).
       clearTimeout(roomTimer)
       roomUnanswered = 0
-      const since = roomLog.slice(roomLog.findLastIndex((x) => x.who === roomName()) + 1).slice(-3)
+      const since = roomLog.slice(roomLog.findLastIndex((x) => x.mine) + 1).slice(-3)
       for (const x of since) {
         const i = talk.findLastIndex((m) => m.role === 'user' && m.content === `[${x.who}] ${x.text}`)
         if (i >= 0) talk.splice(i, 1)

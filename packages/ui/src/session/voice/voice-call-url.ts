@@ -25,10 +25,12 @@ export function voiceCallSocketUrl(
   return url.toString();
 }
 
-/** The relay's health route behind the same proxy: the probe that tells "no relay" from a failed dial. */
-export function voiceRelayHealthUrl(portUrl: string, token: string | null): string {
+/**
+ * The relay's health route behind the same proxy: the probe that tells "no relay" from a failed dial. It carries no
+ * credential: only the WebSocket upgrade reads `?token=`, and a token in a plain URL would only reach logs and history.
+ */
+export function voiceRelayHealthUrl(portUrl: string): string {
   const url = new URL(portUrl);
   url.pathname = url.pathname.endsWith('/') ? `${url.pathname}health` : `${url.pathname}/health`;
-  if (token) url.searchParams.set('token', token);
   return url.toString();
 }

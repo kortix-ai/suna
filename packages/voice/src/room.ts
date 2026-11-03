@@ -14,12 +14,15 @@ import { fastFetch } from './models'
 
 const MODEL = process.env.VOICE_ROOM_MODEL ?? 'qwen/qwen3.8-27b'
 
-export type Line = { who: string; text: string; at: number }
+// mine: the assistant's own line, set only where the engine appends it, never read from a caption's label.
+export type Line = { who: string; text: string; at: number; mine?: true }
 
 /** "[Ana] what do we think?" -> who and words; a line with no speaker is someone in the room. */
 export function line(text: string, at = performance.now()): Line {
-  const m = text.match(/^\s*\[([^\]]{1,48})\]\s*(.*)$/s)
-  return m ? { who: m[1]!.trim(), text: m[2]!.trim(), at } : { who: 'Someone', text: text.trim(), at }
+  const m = text.match(/^\s*\[([^\]\n]{1,48})\]\s*(.*)$/s)
+  // The label is untrusted (whoever the bridge relays): one line, no control characters, bounded.
+  const who = (m?.[1] ?? '').replace(/[\p{Cc}\p{Cf}]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 48)
+  return who ? { who, text: m![2]!.trim(), at } : { who: 'Someone', text: text.trim(), at }
 }
 
 /** The room so far, oldest first, as the models read it ("[Ana]: ..."); the assistant's own lines as [You]. */
@@ -91,9 +94,10 @@ export async function judge(name: string, lines: Line[], youLast: string, signal
   }
 }
 
-/** The room as history for the answer models: each line a user message with its speaker; the assistant's own as itself. */
+/** The room as history for the answer models: each line a user message with its speaker; the assistant's own as itself.
+ * Only a line the engine marked as its own is the assistant's: a participant captioned under its name is not. */
 export const history = (lines: Line[], you: string, max = 16): Msg[] =>
-  lines.slice(-max).map((l) => (l.who === you ? { role: 'assistant' as const, content: l.text } : { role: 'user' as const, content: `[${l.who}] ${l.text}` }))
+  lines.slice(-max).map((l) => (l.mine ? { role: 'assistant' as const, content: l.text } : { role: 'user' as const, content: `[${l.who === you ? 'someone claiming your name' : l.who}] ${l.text}` }))
 
 // A long meeting, kept short: the lines before the last thirty folded into a running summary (decisions, owners,
 // numbers, open questions), so "sum up what we decided" twenty minutes in still sees the start.

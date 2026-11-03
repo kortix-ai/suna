@@ -181,6 +181,9 @@ export function serve(port = Number(process.env.PORT ?? 7860)) {
       const path = u.pathname.replace(/.*\/(?=[^/]*$)/, '/') // tolerate a proxy path prefix
       if (path === '/stream')
         return server.upgrade(req, { data: { q: u.searchParams, call: { sid: '', log: [], playing: 0 } } }) ? undefined : new Response('websocket only', { status: 426 })
+      // Text a caller never said, pushed into live calls: local only without a token, like /see, /persona and /call below.
+      if (path === '/inject' && !token && !/^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(server.requestIP(req)?.address ?? ''))
+        return new Response('local only (set VOICE_TOKEN to allow others)', { status: 403 })
       if (path === '/inject' && req.method === 'POST') {
         const { text, mode, session } = (await req.json()) as { text: string; mode?: 'say' | 'note'; session?: string }
         const hit = [...calls].filter((c) => !session || c.sid === session)

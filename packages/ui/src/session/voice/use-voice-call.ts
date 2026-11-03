@@ -162,7 +162,7 @@ export function useVoiceCall(sessionId: string) {
         if (current.phase === 'connecting') {
           // Before the first `ready`: a port nothing listens on is a sandbox without the relay, which a redial
           // cannot fix. The proxy answers that itself (502/503/504).
-          void probePreviewPort(voiceRelayHealthUrl(portUrl, token)).then((relay) => {
+          void probePreviewPort(voiceRelayHealthUrl(portUrl)).then((relay) => {
             if (!disposed) step({ type: 'drop', relay });
           });
           return;
