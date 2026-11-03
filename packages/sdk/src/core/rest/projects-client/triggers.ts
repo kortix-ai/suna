@@ -155,9 +155,10 @@ export interface ProjectTrigger {
   /** Runs the trigger may start in a UTC day. Null when unset: no daily cap. */
   max_runs_per_day?: number | null;
   /**
-   * Fresh session mode only (KRTX-1721): `skip` holds a fire while the
-   * trigger's previous run is still active. Null when unset: `skip` for a
-   * cron trigger, `allow` for the others. Optional: older servers omit it.
+   * (KRTX-1721) `skip` holds a fire while the trigger's previous run is still
+   * active; in reuse, pinned and keyed mode, while its previous prompt still
+   * waits in the session queue. Null when unset: `skip` for a cron trigger,
+   * `allow` for the others. Optional: older servers omit it.
    */
   overlap?: 'skip' | 'allow' | null;
   /**

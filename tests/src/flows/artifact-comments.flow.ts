@@ -139,7 +139,8 @@ flow('ART-4', {
       const privateParams = { ...params, artifactId: privateId };
       (await asMember.get(COMMENTS, { params: privateParams })).status(404);
       (await asMember.post(COMMENTS, { anchor, body: 'Private feedback.' }, { params: privateParams })).status(404);
-      (await owner.post(COMMENTS, { anchor: { ...anchor, quote: 'x'.repeat(33) }, body: 'Bad anchor.' }, { params }))
+      // A quote longer than ARTIFACT_TEXT_QUOTE_MAX (500, a paragraph) is refused, never cut.
+      (await owner.post(COMMENTS, { anchor: { ...anchor, quote: 'x'.repeat(501) }, body: 'Bad anchor.' }, { params }))
         .status(400).body().has('$.code', 'invalid_anchor');
       (await owner.post(COMMENTS, { anchor: { type: 'none', version: 'v\0' }, body: 'NUL anchor.' }, { params }))
         .status(400).body().has('$.code', 'invalid_anchor');

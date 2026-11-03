@@ -530,7 +530,7 @@ function onRunTriggerSchema(): JsonSchemaFragment {
         type: 'string',
         enum: ['skip', 'allow'],
         description:
-          '`skip` holds a fire while the previous run is active. Only with `run.session: fresh`. Default: `skip` for a schedule, `allow` for others.',
+          '`skip` holds a fire while the previous run is active. With `run.session: reuse`, `pinned` or `keyed`: while the previous prompt still waits in that session. Default: `skip` for a schedule, `allow` for others.',
       },
       on: {
         description: 'What fires the trigger: a schedule (`cron`, `every` or `at`), a webhook, or an App event.',
@@ -631,7 +631,7 @@ function triggerSchema(): JsonSchemaFragment {
       // in a UTC day (KRTX-1721).
       max_runs_per_hour: { type: 'integer', minimum: 1 },
       max_runs_per_day: { type: 'integer', minimum: 1 },
-      // Fresh session mode only: skip holds a fire while the previous run is active (KRTX-1721).
+      // skip holds a fire while the previous run is active, or its prompt still waits (KRTX-1721).
       overlap: { type: 'string', enum: ['skip', 'allow'] },
       secret_env: { type: 'string', pattern: ENV_NAME_PATTERN, description: 'Flat form of `on.webhook.secret`, with `type: webhook`.' },
       secretEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
