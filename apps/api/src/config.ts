@@ -204,6 +204,9 @@ const envSchema = z.object({
   // out always use the primary base. See apps/hostnames.ts and
   // sandbox-proxy/preview-hosts.ts.
   KORTIX_APPS_BASE_DOMAIN_ALIASES: optStr,
+  // Self-host: extra domains this instance serves in full (web app, API, Apps,
+  // previews), comma-separated. See shared/domain-aliases.ts.
+  KORTIX_DOMAIN_ALIASES: optStr,
   KORTIX_PREVIEW_BASE_DOMAIN_ALIASES: optStr,
   // Master switch: turns on real billing (Stripe + credit ledger), makes
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
@@ -1331,6 +1334,7 @@ export const config = {
   KORTIX_INSTANCE_ID: env.KORTIX_INSTANCE_ID || undefined,
   KORTIX_PREVIEW_BASE_DOMAIN: env.KORTIX_PREVIEW_BASE_DOMAIN,
   KORTIX_APPS_BASE_DOMAIN_ALIASES: env.KORTIX_APPS_BASE_DOMAIN_ALIASES,
+  KORTIX_DOMAIN_ALIASES: env.KORTIX_DOMAIN_ALIASES,
   KORTIX_PREVIEW_BASE_DOMAIN_ALIASES: env.KORTIX_PREVIEW_BASE_DOMAIN_ALIASES,
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,

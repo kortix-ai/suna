@@ -111,14 +111,15 @@ describe('renderCaddyfile with domain aliases', () => {
     expect(rendered.match(/on_demand_tls \{/g)).toHaveLength(1);
   });
 
-  test('alias web-app hosts redirect to the same path on the primary domain', () => {
-    expect(rendered).toContain('old.acme.cloud, older.acme.io {\n\theader Strict-Transport-Security "max-age=2592000"\n\tredir https://{$KORTIX_DOMAIN}{uri} 308\n}');
+  test('alias web-app hosts are served by the web-app site block itself', () => {
+    expect(rendered).toContain('\n{$KORTIX_DOMAIN}, old.acme.cloud, older.acme.io {\n');
+    expect(rendered).not.toContain('redir ');
   });
 
-  test('a redirect-only alias set adds no on-demand TLS gate', () => {
+  test('a web-app-only alias set adds no on-demand TLS gate', () => {
     const appOnly = renderCaddyfile({ domainAliases: { app: ['old.acme.cloud'], api: [], apps: [], preview: [] } });
     expect(appOnly).not.toContain('on_demand_tls');
-    expect(appOnly).toContain('redir https://{$KORTIX_DOMAIN}{uri} 308');
+    expect(appOnly).toContain('\n{$KORTIX_DOMAIN}, old.acme.cloud {\n');
   });
 
   test('no aliases: byte-identical to the file rendered without the option', () => {
