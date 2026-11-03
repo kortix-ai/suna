@@ -128,7 +128,10 @@ jobs:
             git --version
             exit 0
           fi
-          command -v add-apt-repository >/dev/null || sudo apt-get install -y -qq --no-install-recommends software-properties-common
+          if ! command -v add-apt-repository >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends software-properties-common
+          fi
           sudo add-apt-repository -y ppa:git-core/ppa
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends git
