@@ -3,6 +3,7 @@ import { parse } from 'yaml';
 
 import { renderCaddyfile, renderFullDockerCompose } from '../compose-assets.ts';
 import {
+  checkDelegation,
   delegationRecords,
   enabledWildcardBases,
   renderAcmeDnsConfig,
@@ -130,5 +131,35 @@ describe('Compose with wildcard TLS', () => {
   test('no domain: wildcard TLS adds nothing', () => {
     const doc = parse(renderFullDockerCompose('kortix-test', { wildcardTlsConfigured: true })) as Doc;
     expect(doc.services['acme-dns']).toBeUndefined();
+  });
+});
+
+describe('delegation check', () => {
+  const account = { fulldomain: 'abc.acme.kortix.acme.com' };
+  const cname = async () => ['abc.acme.kortix.acme.com'];
+
+  test('passes when the zone holds the CNAME and one public resolver reads the fresh TXT back', async () => {
+    let calls = 0;
+    const txt = async (_name: string, server: string) => {
+      calls++;
+      if (server === '1.1.1.1') throw Object.assign(new Error('cached miss'), { code: 'ENODATA' });
+      return [['fresh']];
+    };
+    const result = await checkDelegation('p.kortix.acme.com', account, 'fresh', { cname, txt, resolvers: ['1.1.1.1', '8.8.8.8'] });
+    expect(result.ok).toBe(true);
+    expect(calls).toBe(4); // three tries at the first resolver, then the second one answers
+  });
+
+  test('fails without the CNAME, on a CNAME to another account, and on a TXT that never reads back', async () => {
+    const missing = async () => {
+      throw Object.assign(new Error('nx'), { code: 'ENOTFOUND' });
+    };
+    expect((await checkDelegation('p.kortix.acme.com', account, 'fresh', { cname: missing, txt: async () => [['fresh']] })).ok).toBe(false);
+    expect(
+      (await checkDelegation('p.kortix.acme.com', account, 'fresh', { cname: async () => ['other.acme.kortix.acme.com'], txt: async () => [['fresh']] })).ok,
+    ).toBe(false);
+    const stale = await checkDelegation('p.kortix.acme.com', account, 'fresh', { cname, txt: async () => [['old']], resolvers: ['1.1.1.1'] });
+    expect(stale.ok).toBe(false);
+    expect(stale.detail).toContain('port 53');
   });
 });

@@ -162,46 +162,95 @@ export function delegationRecords(input: {
 export interface DelegationCheck {
   base: string;
   ok: boolean;
-  /** What the public DNS answered, for the operator. */
+  /** What the DNS answered, for the operator. */
   detail: string;
+}
+
+type CnameLookup = (name: string) => Promise<string[]>;
+type TxtLookup = (name: string, server: string) => Promise<string[][]>;
+
+function resolverFor(server: string): Resolver {
+  const resolver = new Resolver({ timeout: 4000, tries: 2 });
+  resolver.setServers([server]);
+  return resolver;
+}
+
+/**
+ * The CNAME of `name` as its zone's authoritative nameserver answers it. A
+ * public resolver may still cache "no such name" from an earlier run of
+ * `tls wildcard`, made before the operator added the record; the authoritative
+ * server caches nothing. The zone is the closest parent with NS records.
+ */
+export async function authoritativeCname(name: string, publicResolver = PUBLIC_RESOLVERS[0]!): Promise<string[]> {
+  const labels = name.split('.');
+  for (let i = 1; i < labels.length - 1; i++) {
+    const zone = labels.slice(i).join('.');
+    let servers: string[];
+    try {
+      servers = await resolverFor(publicResolver).resolveNs(zone);
+    } catch {
+      continue;
+    }
+    for (const server of servers) {
+      let address: string | undefined;
+      try {
+        address = (await resolverFor(publicResolver).resolve4(server))[0];
+      } catch {
+        continue;
+      }
+      if (!address) continue;
+      return (await resolverFor(address).resolveCname(name)).map((c) => c.replace(/\.$/, '').toLowerCase());
+    }
+  }
+  throw Object.assign(new Error(`no nameserver found for ${name}`), { code: 'ENOTFOUND' });
 }
 
 /**
  * Whether the public DNS routes `base`'s ACME challenge to this box's acme-dns:
- * the CNAME exists, and a TXT value written into acme-dns right before the
- * check reads back through two public resolvers. The read-back proves the NS
- * delegation and the port 53 path, not only that the records were typed in.
+ * the zone's own nameserver holds the CNAME, and a TXT value written into
+ * acme-dns right before the check reads back through a public resolver. The
+ * read-back proves the NS delegation and that port 53 of this box answers the
+ * internet. One resolver is enough; each gets three tries, since the first
+ * answer of a fresh name can be a cached miss.
  */
 export async function checkDelegation(
   base: string,
   account: Pick<AcmeDnsAccount, 'fulldomain'>,
   expectedTxt: string,
-  resolvers: readonly string[] = PUBLIC_RESOLVERS,
+  lookups: { cname?: CnameLookup; txt?: TxtLookup; resolvers?: readonly string[] } = {},
 ): Promise<DelegationCheck> {
+  const cnameOf = lookups.cname ?? ((name: string) => authoritativeCname(name));
+  const txtOf = lookups.txt ?? ((name: string, server: string) => resolverFor(server).resolveTxt(name));
+  const resolvers = lookups.resolvers ?? PUBLIC_RESOLVERS;
+  const challenge = `_acme-challenge.${base}`;
+  let target: string[];
+  try {
+    target = await cnameOf(challenge);
+  } catch (error) {
+    return { base, ok: false, detail: `${challenge}: no CNAME record (${dnsError(error)})` };
+  }
+  if (!target.includes(account.fulldomain.toLowerCase())) {
+    return { base, ok: false, detail: `${challenge} points to ${target.join(', ')}, expected ${account.fulldomain}` };
+  }
+  let lastProblem = '';
   for (const server of resolvers) {
-    const resolver = new Resolver({ timeout: 4000, tries: 2 });
-    resolver.setServers([server]);
-    let cname: string[] = [];
-    try {
-      cname = await resolver.resolveCname(`_acme-challenge.${base}`);
-    } catch (error) {
-      return { base, ok: false, detail: `_acme-challenge.${base}: no CNAME at ${server} (${dnsError(error)})` };
-    }
-    const target = cname.map((c) => c.replace(/\.$/, '').toLowerCase());
-    if (!target.includes(account.fulldomain.toLowerCase())) {
-      return { base, ok: false, detail: `_acme-challenge.${base} points to ${target.join(', ')} at ${server}, expected ${account.fulldomain}` };
-    }
-    let txt: string[][] = [];
-    try {
-      txt = await resolver.resolveTxt(account.fulldomain);
-    } catch (error) {
-      return { base, ok: false, detail: `${account.fulldomain}: no TXT at ${server} (${dnsError(error)}); check the NS and A records and that UDP and TCP port 53 reach this box` };
-    }
-    if (!txt.some((parts) => parts.join('') === expectedTxt)) {
-      return { base, ok: false, detail: `${account.fulldomain}: ${server} answers an old TXT value; the record may still be cached, run the check again in a minute` };
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const txt = await txtOf(account.fulldomain, server);
+        if (txt.some((parts) => parts.join('') === expectedTxt)) {
+          return { base, ok: true, detail: `delegated (${server} read the challenge back)` };
+        }
+        lastProblem = `${server} answers an older TXT value`;
+      } catch (error) {
+        lastProblem = `${server}: ${dnsError(error)}`;
+      }
     }
   }
-  return { base, ok: true, detail: `delegated (${resolvers.join(', ')} read the challenge back)` };
+  return {
+    base,
+    ok: false,
+    detail: `${account.fulldomain}: the challenge does not read back (${lastProblem}); check the NS and A records and that UDP and TCP port 53 reach this box`,
+  };
 }
 
 function dnsError(error: unknown): string {

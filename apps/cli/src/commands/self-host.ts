@@ -402,6 +402,7 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   applyImagesForTag(env, resolveTag(flags, existing));
   applyFeatureFlags(env, flags);
   applyReachabilityFlags(env, flags);
+  if (existing === null) applyDomainHostingDefaults(env);
   applyAdminEmail(env, flags);
   // Non-interactive fresh init never reaches promptAdminEmail below, so a
   // missing admin email would otherwise fail silently — and the operator only
@@ -467,6 +468,7 @@ function renderInitSummary(instance: string, dir: string, env: SelfHostEnv, refr
   process.stdout.write(`  ${C.dim}Images    ${C.reset}${env.FRONTEND_IMAGE}, ${env.API_IMAGE}\n`);
   process.stdout.write(`  ${C.dim}Channel   ${C.reset}${env.KORTIX_CHANNEL}${C.dim} (auto-update: ${env.KORTIX_AUTO_UPDATE === 'true' ? 'on' : 'off'}, nightly at ${env.KORTIX_UPDATE_TIME} ${env.KORTIX_UPDATE_TZ})${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Reachability ${C.reset}${describeReachability(env)}\n`);
+  printDomainDnsRecords(env);
   if (reachabilityMode(env) !== 'domain') {
     process.stdout.write(`  ${C.dim}${VPS_FIRST_NOTICE}${C.reset}\n`);
   }
@@ -727,6 +729,20 @@ function selfHostDoctor(flags: GlobalFlags): number {
             + `Point a *.${suggested} DNS record at this instance, then: `
             + `kortix self-host env set KORTIX_PREVIEW_BASE_DOMAIN=${suggested} KORTIX_PREVIEW_ALLOW_DIRECT_EDGE=true`,
       });
+      // One certificate per App or preview host lists every one of those host
+      // names, random preview labels included, in the public Certificate
+      // Transparency logs, which threat-intelligence feeds read (wildcard-tls.ts).
+      const perHost = wildcardBases(env).filter((base) => !enabledWildcardBases(env).includes(base));
+      if (wildcardBases(env).length > 0) {
+        checks.push({
+          name: 'wildcard-tls',
+          ok: perHost.length === 0,
+          detail: perHost.length === 0
+            ? 'Apps and previews use wildcard certificates'
+            : `${perHost.map((b) => `*.${b}`).join(', ')} get one public certificate per host, which lists every App and preview host name in the certificate logs. `
+              + 'Run: kortix self-host tls wildcard',
+        });
+      }
     }
   }
   if (existsSync(envPath(flags.instance))) {
@@ -1639,6 +1655,42 @@ async function selfHostEnvSet(args: string[], flags: GlobalFlags): Promise<numbe
   return restartServicesForKeys(flags.instance, env, changedKeys);
 }
 
+/**
+ * A NEW instance on a public domain serves Apps and sandbox previews on their
+ * own origins from the start: `apps.<domain>` and `p.<domain>`. The path proxy
+ * (`/v1/p/...`) breaks root-absolute links in a browser preview, and an App
+ * needs its own origin. An existing instance keeps its configuration: turning
+ * these on in an update would hand browsers host names whose DNS records the
+ * operator never added.
+ */
+function applyDomainHostingDefaults(env: SelfHostEnv): void {
+  if (reachabilityMode(env) !== 'domain') return;
+  const domain = normalizeHostname(env.KORTIX_DOMAIN);
+  if (!domain) return;
+  if (!env.KORTIX_APPS_BASE_DOMAIN?.trim()) {
+    env.KORTIX_APPS_BASE_DOMAIN = `apps.${domain}`;
+    env.KORTIX_APPS_ALLOW_DIRECT_EDGE = 'true';
+  }
+  if (!env.KORTIX_PREVIEW_BASE_DOMAIN?.trim()) {
+    env.KORTIX_PREVIEW_BASE_DOMAIN = `p.${domain}`;
+    env.KORTIX_PREVIEW_ALLOW_DIRECT_EDGE = 'true';
+  }
+}
+
+/** The A records a domain-mode instance needs, printed by `init` and `configure`. */
+function printDomainDnsRecords(env: SelfHostEnv): void {
+  if (reachabilityMode(env) !== 'domain') return;
+  const names = [
+    env.KORTIX_DOMAIN,
+    env.KORTIX_API_DOMAIN || `api.${env.KORTIX_DOMAIN}`,
+    env.KORTIX_APPS_BASE_DOMAIN?.trim() ? `*.${env.KORTIX_APPS_BASE_DOMAIN}` : '',
+    env.KORTIX_PREVIEW_BASE_DOMAIN?.trim() ? `*.${env.KORTIX_PREVIEW_BASE_DOMAIN}` : '',
+  ].filter(Boolean);
+  process.stdout.write(`  ${C.dim}DNS        ${C.reset}A records to this server's public IP, "DNS only" (no proxy):\n`);
+  for (const name of names) process.stdout.write(`               ${name}\n`);
+  process.stdout.write(`  ${C.dim}           Then run ${C.reset}${C.cyan}kortix self-host tls wildcard${C.reset}${C.dim} so Apps and previews share one wildcard certificate.${C.reset}\n`);
+}
+
 /** The public hosts an instance answers on, with a probe name for each wildcard. */
 function publicDomainHosts(env: SelfHostEnv): string[] {
   const hosts = [env.KORTIX_DOMAIN, env.KORTIX_API_DOMAIN || `api.${env.KORTIX_DOMAIN}`];
@@ -1702,10 +1754,19 @@ function printDomains(env: SelfHostEnv): number {
 
 /** Run `caddy validate` on the rendered Caddyfile with the container's own env. */
 function validateCaddyfile(instance: string): number {
-  return compose(instance, [
-    'run', '--rm', '--no-deps', '--entrypoint', 'caddy', 'caddy',
-    'validate', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile',
-  ]);
+  // Caddy logs a dozen JSON lines on a valid config; show them only when it fails.
+  const result = spawnSync(
+    'docker',
+    [
+      'compose', '--project-name', composeProject(instance), '--env-file', envPath(instance), '-f', composePath(instance),
+      'run', '--rm', '--no-deps', '--quiet-pull', '--entrypoint', 'caddy', 'caddy',
+      'validate', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile',
+    ],
+    { cwd: instanceDir(instance), encoding: 'utf8' },
+  );
+  const code = result.error ? 1 : (result.status ?? 1);
+  if (code !== 0) process.stderr.write(`${result.stdout ?? ''}${result.stderr ?? ''}${result.error ? `${result.error.message}\n` : ''}`);
+  return code;
 }
 
 /** The acme-dns config and the per-base credentials directory Caddy mounts. */
@@ -1781,9 +1842,11 @@ function delegationProbeValue(): string {
 
 function printDelegationRecords(records: ReturnType<typeof delegationRecords>, statusByName: Map<string, string>): void {
   process.stdout.write(`\n  ${C.bold}DNS records${C.reset} ${C.dim}(add once, in the DNS of each domain; "DNS only", no proxy)${C.reset}\n`);
+  const nameWidth = Math.max(...records.map((r) => r.name.length)) + 2;
+  const valueWidth = Math.max(...records.map((r) => r.value.length)) + 2;
   for (const record of records) {
     const state = statusByName.get(record.name) ?? '';
-    process.stdout.write(`    ${pad(record.name, 44)}${pad(record.type, 7)}${pad(record.value, 56)}${state}\n`);
+    process.stdout.write(`    ${pad(record.name, nameWidth)}${pad(record.type, 7)}${pad(record.value, valueWidth)}${state}\n`);
   }
   process.stdout.write(`  ${C.dim}This box must accept UDP and TCP port 53 from anywhere (a cloud firewall or security group rule).${C.reset}\n\n`);
 }
@@ -1859,7 +1922,7 @@ async function selfHostTls(args: string[], flags: GlobalFlags): Promise<number> 
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
 
-  const up = compose(flags.instance, ['up', '-d', '--no-deps', ...(configChanged ? ['--force-recreate'] : []), 'acme-dns']);
+  const up = compose(flags.instance, ['up', '-d', '--no-deps', '--quiet-pull', ...(configChanged ? ['--force-recreate'] : []), 'acme-dns']);
   if (up !== 0 || !(await waitForAcmeDns(env))) {
     process.stderr.write(`${status.err('acme-dns did not start. See: kortix self-host logs acme-dns')}\n`);
     return 1;
@@ -1932,7 +1995,7 @@ async function selfHostTls(args: string[], flags: GlobalFlags): Promise<number> 
   const onWildcardImage = (caddyImage.stdout ?? '').includes('kortix/caddy');
   const applied = onWildcardImage
     ? compose(flags.instance, ['exec', '-T', 'caddy', 'caddy', 'reload', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile'])
-    : compose(flags.instance, ['up', '-d', '--no-deps', 'caddy']);
+    : compose(flags.instance, ['up', '-d', '--no-deps', '--quiet-pull', 'caddy']);
   if (applied !== 0) return applied;
   for (const base of ready.filter((b) => !before.includes(b))) {
     process.stdout.write(`${status.ok(`*.${base}: wildcard certificate requested`)}\n`);

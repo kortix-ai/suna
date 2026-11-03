@@ -700,8 +700,25 @@ esac
   // it quietly loses every root-absolute link. `doctor` is the gate that turns
   // that silence into a non-zero exit. It stays silent on a laptop instance,
   // where the path form (and the client-built *.localhost origin) is correct.
+  test('a new domain instance serves Apps and previews on their own origins from the start', async () => {
+    await run(['init', '--yes', '--domain', 'kortix.example.com']);
+    const env = readFileSync(join(configRoot, instance, '.env'), 'utf8');
+    expect(env).toMatch(/^KORTIX_APPS_BASE_DOMAIN=apps\.kortix\.example\.com$/m);
+    expect(env).toMatch(/^KORTIX_PREVIEW_BASE_DOMAIN=p\.kortix\.example\.com$/m);
+    expect(env).toMatch(/^KORTIX_PREVIEW_ALLOW_DIRECT_EDGE=true$/m);
+    const doctor = await run(['doctor', '--json']);
+    const checks = JSON.parse(doctor.stdout).checks as Array<{ name: string; ok: boolean; detail: string }>;
+    expect(checks.find((c) => c.name === 'preview-origins')?.ok).toBe(true);
+    // Per-host certificates list every App and preview host name in the public logs: doctor says so.
+    const wildcard = checks.find((c) => c.name === 'wildcard-tls');
+    expect(wildcard?.ok).toBe(false);
+    expect(wildcard?.detail).toContain('kortix self-host tls wildcard');
+  }, 60_000);
+
   test('doctor FAILS when a domain instance has no preview base domain, and passes once it is set', async () => {
     await run(['init', '--yes', '--domain', 'kortix.example.com']);
+    // An instance that predates the default, or an operator who turned previews off.
+    await run(['env', 'set', 'KORTIX_PREVIEW_BASE_DOMAIN=']);
 
     const missing = await run(['doctor', '--json']);
     const missingCheck = (JSON.parse(missing.stdout).checks as Array<{ name: string; ok: boolean; detail: string }>)
@@ -894,10 +911,11 @@ exit 0
     writeFileSync(join(bin, 'docker'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
     const env = { PATH: `${bin}:${process.env.PATH}` };
     await run(['init', '--yes', '--domain', 'kortix.example.com'], env);
+    const envFile = join(configRoot, instance, '.env');
+    writeFileSync(envFile, readFileSync(envFile, 'utf8').replace(/^KORTIX_PREVIEW_BASE_DOMAIN=.*$/m, 'KORTIX_PREVIEW_BASE_DOMAIN='));
     const missing = await run(['status'], env);
     expect(missing.stdout).toContain('preview origins NOT configured');
 
-    const envFile = join(configRoot, instance, '.env');
     writeFileSync(
       envFile,
       readFileSync(envFile, 'utf8').replace(
