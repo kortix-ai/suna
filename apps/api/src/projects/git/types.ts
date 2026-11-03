@@ -39,7 +39,7 @@ export interface ProjectConfigSummary {
   /** The project's default agent. */
   default_agent: string | null;
   /** Which built-in agents the project runs (`builtin_agents` in kortix.yaml,
-   *  absent = off unless the manifest needs repair). Set by GET /detail;
+   *  `true` = on, anything else off). Set by GET /detail;
    *  `my_kortix` is the `mykortix` agent. */
   builtin_agents?: { my_kortix: boolean };
   /** @deprecated The pre-W4 name of `default_agent`. Same value. */

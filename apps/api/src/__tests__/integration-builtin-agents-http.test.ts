@@ -1,7 +1,6 @@
 /**
  * My Kortix, the built-in agent (slug `mykortix`), and its kortix.yaml switch
- * `builtin_agents.my_kortix` (`true` = on; absent = off, except for a
- * manifest that needs repair). The agent page and the CLI read
+ * `builtin_agents.my_kortix` (`true` = on; anything else off). The agent page and the CLI read
  * `GET /agents/meta/config`; it answered `404 No agent "meta" declared in
  * kortix.yaml` for an agent `/detail` lists. In-process app, real DB, real git.
  */
@@ -31,8 +30,10 @@ const ON_DEFAULT = crypto.randomUUID();
 const ABSENT = crypto.randomUUID();
 /** `builtin_agents: { my_kortix: false }`. */
 const OFF = crypto.randomUUID();
-/** No key, and an error that voids the whole file (`sandbox: 42`): My Kortix runs to fix it. */
+/** No key, and an error that voids the whole file (`sandbox: 42`): off. */
 const BROKEN = crypto.randomUUID();
+/** `my_kortix: true` and `sandbox: 42`: on, so My Kortix can fix the file. */
+const BROKEN_ON = crypto.randomUUID();
 /** No key, and the project still stores `experimental.meta_agent: true` from the removed flag. */
 const LEGACY_ON = crypto.randomUUID();
 const upstreams: LocalGitUpstream[] = [];
@@ -48,7 +49,10 @@ beforeAll(async () => {
     'kortix.yaml': manifest('builtin_agents:\n  my_kortix: false\n'),
   });
   const broken = createLocalGitUpstream('builtin-agents-broken', { 'kortix.yaml': manifest('sandbox: 42\n') });
-  upstreams.push(on, onDefault, absent, off, broken);
+  const brokenOn = createLocalGitUpstream('builtin-agents-broken-on', {
+    'kortix.yaml': manifest('sandbox: 42\nbuiltin_agents:\n  my_kortix: true\n'),
+  });
+  upstreams.push(on, onDefault, absent, off, broken, brokenOn);
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'builtin-agents-test' });
   await insertIntoView(db, accountMembers, [{ userId: OWNER, accountId: ACCOUNT, accountRole: 'owner', isSuperAdmin: false }]);
   for (const [projectId, repoUrl, metadata] of [
@@ -57,6 +61,7 @@ beforeAll(async () => {
     [ABSENT, absent.repoUrl, {}],
     [OFF, off.repoUrl, {}],
     [BROKEN, broken.repoUrl, {}],
+    [BROKEN_ON, brokenOn.repoUrl, {}],
     [LEGACY_ON, absent.repoUrl, { experimental: { meta_agent: true } }],
   ] as const) {
     await db.insert(projects).values({ projectId, accountId: ACCOUNT, name: `builtin-agents-${projectId.slice(0, 8)}`, repoUrl, metadata });
@@ -176,9 +181,18 @@ for (const [label, projectId] of [
   });
 }
 
-describe('no builtin_agents key, and a manifest that needs repair', () => {
-  test('GET /detail lists My Kortix and makes it the default, so that it can fix the file', async () => {
+describe('a file with an error that voids every key', () => {
+  test('without the key: My Kortix is off, and naming it is refused with 409', async () => {
     const config = await detail(BROKEN);
+    expect(config.builtin_agents).toEqual({ my_kortix: false });
+    expect(config.agents.map((agent) => agent.name)).not.toContain('mykortix');
+    const res = await call(BROKEN, '/sessions', { method: 'POST', body: JSON.stringify({ agent_name: 'mykortix' }) });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'builtin_agent_disabled' });
+  });
+
+  test('with `my_kortix: true`: My Kortix stays on and is the default, so that it can fix the file', async () => {
+    const config = await detail(BROKEN_ON);
     expect(config.builtin_agents).toEqual({ my_kortix: true });
     expect(config.default_agent).toBe('mykortix');
     expect(config.agents[0]?.name).toBe('mykortix');

@@ -248,9 +248,12 @@ async function loadStoredSessionGrant(sessionId: string): Promise<AgentGrant | n
 }
 
 /**
- * Does this project run My Kortix? kortix.yaml `builtin_agents.my_kortix`
- * (no key: off, unless the manifest needs repair), as session create resolves it.
- * A failed read answers `true`: the grant re-mint fails closed on its own.
+ * Does this project run My Kortix? kortix.yaml `builtin_agents.my_kortix: true`,
+ * as session create resolves it; anything the file says or lacks is off.
+ * A file that cannot be read or parsed is no answer and answers `true`: a
+ * running session is not refused on a git failure, and the grant re-mint keeps
+ * its last known good grant or fails closed on its own. A new session reads
+ * such a file as off (session create).
  */
 async function myKortixEnabled(projectId: string): Promise<boolean> {
   try {
@@ -263,7 +266,7 @@ async function myKortixEnabled(projectId: string): Promise<boolean> {
       .from(projects)
       .where(eq(projects.projectId, projectId))
       .limit(1);
-    if (!project) return true;
+    if (!project) return false;
     const loaded = project.defaultBranch
       ? await loadProjectAgents(
           {
@@ -272,11 +275,10 @@ async function myKortixEnabled(projectId: string): Promise<boolean> {
             defaultBranch: project.defaultBranch,
             manifestPath: project.manifestPath,
           },
-          { forceRefresh: 'tip-proof' },
+          { forceRefresh: 'tip-proof', rethrowReadErrors: true },
         )
       : null;
-    // No default branch: nothing to read, the manifest needs repair.
-    return loaded ? loaded.builtinAgents?.my_kortix === true : true;
+    return loaded?.builtinAgents?.my_kortix === true;
   } catch {
     return true;
   }

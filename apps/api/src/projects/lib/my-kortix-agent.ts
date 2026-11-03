@@ -21,7 +21,7 @@ import {
 import type { AgentGrant } from '@kortix/db';
 // Pure constants, no side effects: safe in the `bun --eval` chain above.
 import { KORTIX_PLATFORM_TOOL_NAMES } from '@kortix/api-contract/kortix-tool-card';
-import { KORTIX_TOOL_NAMES, usableManifest, validateManifest } from '@kortix/manifest-schema';
+import { KORTIX_TOOL_NAMES } from '@kortix/manifest-schema';
 import { MY_KORTIX_PROMPT } from './my-kortix-prompt';
 import type { ProjectConfigSummary } from '../git/types';
 
@@ -47,34 +47,21 @@ export function declaredBuiltinAgents(
 }
 
 /**
- * Is the manifest unusable as a whole? True for a missing or empty file, a
- * YAML syntax error, a retired format, and an error that voids every key
- * (`usableManifest` returns `{}`). No project agent can run then, so My Kortix
- * runs to fix the file.
- */
-export function manifestNeedsRepair(manifest: Record<string, unknown> | null | undefined): boolean {
-  if (!manifest || Object.keys(manifest).length === 0) return true;
-  return Object.keys(usableManifest(manifest, validateManifest(manifest).issues)).length === 0;
-}
-
-/**
- * Which built-in agents this project runs. Per key: the manifest's boolean
- * (the repository is the source of truth). Absent: off, like an agent the file
- * does not declare. The one exception is a manifest that needs repair
- * ({@link manifestNeedsRepair}): My Kortix then runs so that it can fix it.
+ * Which built-in agents this project runs. Per key: on only when the manifest
+ * sets it to `true` (the repository is the source of truth). Anything else is
+ * off: absent, `false`, a non-boolean, a missing or broken file.
  */
 export function resolveBuiltinAgents(
   declared: Partial<Record<BuiltinAgentKey, boolean>>,
-  needsRepair: boolean,
 ): Record<BuiltinAgentKey, boolean> {
-  return { my_kortix: declared.my_kortix ?? needsRepair };
+  return { my_kortix: declared.my_kortix === true };
 }
 
 /** {@link resolveBuiltinAgents} for a raw kortix.yaml manifest: what every API surface reads. */
 export function projectBuiltinAgents(
   manifest: Record<string, unknown> | null | undefined,
 ): Record<BuiltinAgentKey, boolean> {
-  return resolveBuiltinAgents(declaredBuiltinAgents(manifest), manifestNeedsRepair(manifest));
+  return resolveBuiltinAgents(declaredBuiltinAgents(manifest));
 }
 
 /**

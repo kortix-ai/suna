@@ -792,7 +792,7 @@ Kortix refuses to write a file with an error, an unknown key included: `kortix s
 | An agent or a trigger | That agent or trigger is off. A session that names the agent fails with an error that names the issue. A trigger that is off does not fire. |
 | A connector, App, skill, tool, command, extension, space or sandbox template | That entry is not available. |
 | `project` or `default_agent` | The key takes its default. |
-| Any other key (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, `builtin_agents`), a YAML syntax error, or an unknown `kortix_version` | Only My Kortix runs, so that it can fix the file. This holds without `builtin_agents.my_kortix: true`, and not with `my_kortix: false`. |
+| Any other key (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, `builtin_agents`), a YAML syntax error, or an unknown `kortix_version` | No project agent runs. My Kortix runs when the file sets `builtin_agents.my_kortix: true`, so that it can fix the file. |
 
 Each rule takes access away. No error gives an agent more than the file grants.
 
@@ -807,7 +807,7 @@ Kortix reads the file and the files it points at as the format on this page: eac
 
 `kortix validate --fix` converts the files for good: it writes `kortix.yaml`, keeps only the prompt in each agent `.md`, and deletes `kortix.toml` and the OpenCode files it replaces. The first change Kortix itself writes to the project, such as a new trigger, makes the same conversion in that commit. The other `kortix` commands that edit `kortix.yaml` ask you to run `kortix validate --fix` first.
 
-`kortix_version` with any other value is an error, and only My Kortix runs.
+`kortix_version` with any other value is an error, and no project agent runs (My Kortix runs when the file turns it on).
 
 ### Deprecated keys
 
@@ -989,7 +989,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 - **Names must exist.** A listed skill, command, extension, subagent or tool that is not registered or built in is an error.
 - **`secrets` reaches the sandbox.** A granted secret is an environment variable or a network-enforced secret in the agent's sandbox. Model logins, connector and git credentials stay with Kortix services: the agent's model and connector settings decide their use.
 - **Built in, with no entry.** The Kortix skills: `kortix-cli`, `kortix-memory` and the other `kortix-*` skills. The Kortix tools: `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `show`. See [Kortix tools](/docs/developers#kortix-tools). The built-in tools: `bash`, `read`, `write`, `edit`, `glob`, `grep`, `question`, `task`. An agent loads a Kortix skill only when its `skills` grant names it or is `all`.
-- **My Kortix is built in and off by default.** `builtin_agents: { my_kortix: true }` turns it on. It is then an agent like the others: a session or trigger that names no agent runs `default_agent`, and `default_agent: mykortix` makes My Kortix the default. With My Kortix on and no `default_agent`, such a session runs My Kortix. A session My Kortix starts without naming an agent runs `default_agent`, or the first enabled primary agent when `default_agent` is `mykortix`. New projects start with both keys set. One exception: a `kortix.yaml` that cannot be used at all (missing, a YAML syntax error, an unknown `kortix_version`) runs My Kortix unless it sets `my_kortix: false`, so that My Kortix can fix the file.
+- **My Kortix is built in and off by default.** `builtin_agents: { my_kortix: true }` turns it on; anything else leaves it off: no key, `false`, or a file Kortix cannot read. It is then an agent like the others: a session or trigger that names no agent runs `default_agent`, and `default_agent: mykortix` makes My Kortix the default. With My Kortix on and no `default_agent`, such a session runs My Kortix. A session My Kortix starts without naming an agent runs `default_agent`, or the first enabled primary agent when `default_agent` is `mykortix`. New projects start with both keys set. A file with an error keeps My Kortix on when it sets `my_kortix: true`, so My Kortix can fix it.
 - **Extensions** are packages for the agent runtime. A package holds runtime extensions, skills, prompts or themes. The change request merge builds npm packages, and a session never installs them. A session loads its extensions when its runtime starts, so a change reaches a running session at its next start.
 
 {/* generated:kortix-yaml:start */}
