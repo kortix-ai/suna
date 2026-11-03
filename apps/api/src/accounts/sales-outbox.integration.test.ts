@@ -63,6 +63,19 @@ describe('transactional Sales outbox on PostgreSQL', () => {
     expect(await db.execute(sql`SELECT 1 FROM kortix.sales_event_outbox WHERE attempts=20`)).toHaveLength(1);
   });
 
+  test('anonymous and authenticated database writers cannot enqueue signed demo events', async () => {
+    for (const role of ['anon', 'authenticated']) {
+      await db.transaction(async (tx) => {
+        if (role === 'anon') await tx.execute(sql`SET LOCAL ROLE anon`);
+        else await tx.execute(sql`SET LOCAL ROLE authenticated`);
+        await tx.execute(sql`INSERT INTO public.contact_forms(data) VALUES ('{"email":"agent@kortix.ai","form":"demo"}')`);
+      });
+    }
+    expect(await db.execute(sql`SELECT 1 FROM kortix.sales_event_outbox`)).toHaveLength(0);
+    await db.execute(sql`INSERT INTO public.contact_forms(data) VALUES ('{"email":"agent@kortix.ai","form":"demo"}')`);
+    expect(await db.execute(sql`SELECT 1 FROM kortix.sales_event_outbox`)).toHaveLength(1);
+  });
+
   test('demo persistence enqueues atomically, careers excluded, rollback leaves nothing', async () => {
     await db.execute(sql`INSERT INTO public.contact_forms(data) VALUES ('{"email":"agent@kortix.ai","source":"contact","form":"demo"}'), ('{"email":"agent@kortix.ai","source":"careers-application","opening":"synthetic"}')`);
     expect(await db.execute(sql`SELECT 1 FROM kortix.sales_event_outbox WHERE payload->>'type'='demo.requested'`)).toHaveLength(1);

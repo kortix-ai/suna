@@ -22,3 +22,16 @@ Envelope: `{schema_version:1,event_id,type,occurred_at,data}`. Signup ID is `acc
 `kortix.sales_event_outbox` stores immutable payloads and mutable delivery receipts. Failures retry exponentially from 30 seconds to a one-day cap, dead-lettering at 20 attempts. `last_error` contains only HTTP status or a generic network error, never receiver bodies. Alert on nonempty dead letters and overdue pending rows using existing DB monitoring. An authorized operator may replay a reviewed dead letter by clearing `dead_letter_at`, resetting `attempts=0` and setting `available_at=now()`; retain the original event ID. Replays require receiver deduplication.
 
 To pause delivery unset the webhook URL; rows remain durable. Keep the additive table/triggers during rollback. Rolling API bootstrap back to old code would re-enable the legacy sender with its incompatible signature; do not point a rolled-back API at the new receiver. No Mailtrap or welcome-email behavior changes.
+
+### Trusted demo persistence
+
+The web server must have `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_SERVICE_KEY`)
+in its server-only runtime environment. Never expose this key through a
+`NEXT_PUBLIC_` variable. Missing server credentials return retryable 503; the
+route never falls back to the public anonymous key. The trusted-writer migration
+keeps direct `anon`/`authenticated` contact inserts as storage only: they cannot
+produce signed Sales events. Deploy the server credential before switching the
+web route. Keep delivery paused until both the trusted-writer migration and the
+server-side route are present. Rollback must keep the anonymous-role exclusion;
+restoring the anonymous web writer disables demo events rather than weakening
+that boundary.

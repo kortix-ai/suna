@@ -25,14 +25,14 @@ function isValidEmail(value: string): boolean {
   return dot > 0 && dot < domain.length - 1;
 }
 
-function anonClient() {
+function serverClient() {
   // Runtime (non-NEXT_PUBLIC_) vars first — NEXT_PUBLIC_ are inlined at build
   // time and hold placeholders in Docker builds. Mirrors lib/supabase/server.ts.
   const url =
     process.env.SUPABASE_SERVER_URL ||
     process.env.SUPABASE_URL ||
     process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
   if (!url || !key) return null;
   return createClient(url, key, { auth: { persistSession: false } });
 }
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
   };
 
   let persisted = false;
-  const supabase = anonClient();
+  const supabase = serverClient();
   if (!supabase) {
     console.error('[api/demo-request] Supabase env missing; lead not persisted');
   } else {

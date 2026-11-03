@@ -12,6 +12,7 @@ beforeEach(() => {
   inserted = [];
   process.env.SUPABASE_URL = 'http://supabase.test';
   process.env.SUPABASE_ANON_KEY = 'anon';
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'synthetic-service-role';
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input).includes('supabase.test') && init?.body) inserted.push(JSON.parse(String(init.body)));
     return new Response('{}', { status: 201, headers: { 'content-type': 'application/json' } });
@@ -32,6 +33,17 @@ function post(body: string, ip = '203.0.113.1') {
 }
 
 describe('POST /api/demo-request', () => {
+  test('persists with server-only credentials, never the public anonymous key', async () => {
+    const keys: string[] = [];
+    globalThis.fetch = Object.assign(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const key = new Headers(init?.headers).get('apikey');
+      if (key) keys.push(key);
+      return new Response('{}', { status: 201 });
+    }, { preconnect: realFetch.preconnect });
+    expect((await post(JSON.stringify({ email: 'agent@kortix.ai' }))).status).toBe(200);
+    expect(keys).toEqual(['synthetic-service-role']);
+  });
+
   test('database outage returns retryable failure, never success', async () => {
     globalThis.fetch = Object.assign(async () => new Response('{"message":"unavailable"}', {
       status: 503, headers: { 'content-type': 'application/json' },
