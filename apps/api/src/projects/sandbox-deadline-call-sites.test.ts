@@ -71,13 +71,12 @@ describe('every isSandboxAuthored call site resolves the session id safely', () 
   });
 });
 
-// Two observations are single call sites whose BEHAVIOUR is unit-tested but whose
-// WIRING was not. Deleting either silently removes lifecycle authority nothing
-// else provides. The warm-pool grant is the only life a warm box gets. The
-// token-scoped completion is the only event that removes terminal turn authority.
+// An observation that is a single call site has its BEHAVIOUR unit-tested but
+// not its WIRING. Deleting it silently removes lifecycle authority nothing else
+// provides. The token-scoped completion is the only event that removes terminal
+// turn authority.
 describe('the fire-and-forget deadline wirings are actually wired', () => {
   for (const [file, call] of [
-    ['platform/services/session-sandbox.ts', 'grantWarmPoolLifetime('],
     // The token-scoped completion moved with the `end`/`turn_end` handler out
     // of the turn-stream route sleeve (KRTX-280); the wiring must still exist.
     ['projects/routes/turn-stream-handlers.ts', 'completeSandboxTurn('],

@@ -34,8 +34,8 @@ export interface StartStash {
  * How long a stash stays deliverable. A stash is a hand-off for the
  * navigation that wrote it — a failed replay restores it (re-stamped), but
  * one that then sits unconsumed is a stale prompt, and replaying it into the
- * session's by-then-real conversation on a much later visit is exactly the
- * mis-delivery the warm-session work exists to prevent. 10 minutes matches
+ * session's by-then-real conversation on a much later visit is a
+ * mis-delivery. 10 minutes matches
  * the API's own bound for "how stale can a delivery be and still count"
  * (UNDELIVERED_PROMPT_STARVATION_MS).
  */

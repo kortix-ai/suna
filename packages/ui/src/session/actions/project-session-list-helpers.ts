@@ -75,19 +75,9 @@ export function groupChangeRequestsBySession(
 }
 
 /** Whether the session list should keep polling — true while any session is
- *  still mid-provisioning (queued/branching/provisioning).
- *
- *  A warm row (pre-created, never prompted) is skipped: the API reports its
- *  idle, billed shell as `provisioning` for as long as the box lives
- *  (KRTX-1466), and polling that static status 5s-fast for up to the warm
- *  grant would buy nothing — the next real change is the marker drop at the
- *  first accepted turn, which the open-session interval covers. */
+ *  still mid-provisioning (queued/branching/provisioning). */
 export function shouldPollProjectSessions(sessions: ProjectSession[] | undefined): boolean {
-  return (sessions ?? []).some(
-    (session) =>
-      LIVE_SESSION_STATUSES.includes(session.status) &&
-      (session.metadata as Record<string, unknown> | null)?.warm !== true,
-  );
+  return (sessions ?? []).some((session) => LIVE_SESSION_STATUSES.includes(session.status));
 }
 
 /** Fast poll: a provisioning session changes status within seconds. */
@@ -278,13 +268,9 @@ const TITLE_WAIT_WINDOW_MS = 2 * 60_000;
  * be proven young, and guessing wrong in that direction is the unbounded poll
  * this window exists to prevent.
  *
- * The window opens from the LATER of creation and last activity. An adopted
- * warm session was created when the user landed on the project home —
- * possibly long before the send — but its title generation starts at the
- * first prompt, i.e. at adoption, which stamps `metadata.last_activity_at`
- * (apps/api/src/projects/routes/warm-sessions.ts). Windowing on `created_at`
- * alone skipped the fast poll for exactly the sessions the home send
- * produces.
+ * The window opens from the LATER of creation and last activity: a session
+ * created empty gets its title from its first prompt, which stamps
+ * `metadata.last_activity_at` and can come long after the create.
  */
 export function isAwaitingTitle(session: ProjectSession, now: number): boolean {
   if (sessionTitleHasLanded(session)) return false;

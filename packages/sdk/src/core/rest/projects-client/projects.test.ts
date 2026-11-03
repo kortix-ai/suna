@@ -1035,7 +1035,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'pooled_provider_secrets',
     'us_region',
     'event_triggers',
-    'warm_sessions',
     'notification_center',
     'session_log_restore',
     'workspace_volume',

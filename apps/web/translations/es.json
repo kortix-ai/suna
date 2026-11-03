@@ -1262,10 +1262,6 @@
           "name": "Marketplace",
           "description": "Explora e instala habilidades de registros de la comunidad y proveedores. Las fuentes, actualizaciones y ámbitos de equipo aún cambian."
         },
-        "warm_sessions": {
-          "name": "Sesiones preparadas",
-          "description": "Mantén un sandbox listo para iniciar sesiones al instante. El sandbox inactivo usa cómputo."
-        },
         "secrets_egress": {
           "name": "Secretos protegidos por la red",
           "description": "Controla qué herramientas y destinos pueden recibir los secretos del proyecto."

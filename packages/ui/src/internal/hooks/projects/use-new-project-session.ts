@@ -22,16 +22,6 @@ import {
   useNewSessionGuardStore,
 } from './new-session-guard';
 import { useProjectCanRun } from './use-project-can-run';
-import {
-  createWarmSession,
-  primeTakenWarmSession,
-  tabIsVisible,
-  takeWarmSessionEntry,
-} from './use-warm-project-session';
-import {
-  reconcileSessionsAfterCreate,
-  seedAdoptedWarmSession,
-} from './warm-session-seed';
 import { useConnectorGateStore } from '../../stores/connector-gate-store';
 import { useUpgradeDialogStore } from '../../stores/upgrade-dialog-store';
 import {
@@ -56,17 +46,9 @@ import { randomUUID } from '../../lib/utils/random-uuid';
  * A session is persisted only after an explicit user action. The route bundle
  * and `/start` are prefetched before navigation.
  *
- * The session id comes from one of two places. When the project shell has a warm
- * session ready that fits this send (`use-warm-project-session.ts`) this takes
- * it and the SERVER owns the id. Otherwise the id is minted client-side and
- * created as before. `takeWarmSessionEntry` returns null whenever nothing
- * suitable is held, so the create path below remains the authority on billing
- * and connector requirements — the user sees the same outcome
- * either way. When it DOES fit, `onReady` also seeds the sessions-list cache
- * with the entry's server row (JAY-599/T21, `warm-session-seed.ts`), so the
- * sidebar shows the session the instant this tab sends — it does not wait for
- * the server's own marker-drop (`POST .../start`) to round-trip back through
- * the reconciling `invalidateQueries` below.
+ * The session id is minted client-side, so a create that times out can ask the
+ * server whether it committed instead of creating a second session. The create
+ * path is the authority on billing and connector requirements.
  *
  * `onNavigate(sessionId)` runs synchronously right before the push — use it
  * for entry-point-specific side effects (open a tab, close a drawer, timing
@@ -89,7 +71,7 @@ import { randomUUID } from '../../lib/utils/random-uuid';
 /**
  * Options for a new-session start.
  * `create.space_id` files the session in a channel or DM (`project_channels`).
- * It never claims a warm session, shows no toast, and does not navigate: the
+ * It shows no toast and does not navigate: the
  * space view stays and `onNavigate(sessionId)` opens the thread beside it.
  * `agent_name` chooses the session's boot agent. Later prompts can name another
  * agent; the API re-scopes its grants before forwarding the prompt.
@@ -104,8 +86,8 @@ import { randomUUID } from '../../lib/utils/random-uuid';
 export type NewProjectSessionOpts = {
   onNavigate?: (sessionId: string) => void;
   /**
-   * Runs with the client-minted id right before the create POST (never on the
-   * warm path). A space draws its optimistic thread row here; `onError` takes it back.
+   * Runs with the client-minted id right before the create POST. A space draws
+   * its optimistic thread row here; `onError` takes it back.
    */
   onCreating?: (sessionId: string) => void;
   onError?: () => void;
@@ -120,92 +102,44 @@ export type NewProjectSessionOpts = {
   };
 };
 
-function makeTakeOrCreateSession(
+function makeCreateSession(
   projectId: string,
   opts: NewProjectSessionOpts,
   router: UiRouter,
   queryClient: ReturnType<typeof useQueryClient>,
-  onAdopt: (session: ProjectSession) => void,
 ) {
-      // Use the project's warm session when there is one that fits, else create
-      // one exactly as before. The warm session already exists — it is an
-      // ordinary session created a few seconds ago — so this is a synchronous,
-      // network-free hand-off that skips the sandbox boot the user would
-      // otherwise watch after pressing Enter. `takeWarmSessionEntry` returns
-      // null whenever there is nothing suitable, so the create path below stays
-      // the authority on billing and connector requirements.
-      async function takeOrCreateSession() {
-        // A space thread always creates: a warm session belongs to no space.
-        const warm = opts.create?.space_id
-          ? null
-          : takeWarmSessionEntry(projectId, {
-              create: opts?.create,
-              // Replenish after /start, not beside the claim and /start requests.
-              replenish: false,
-            });
-        if (warm) {
-          // The first prompt is a DURABLE inbox row, never a client-side
-          // replay (the start stash carries picks only — see the producers).
-          // The ordinary path gets that row from `create.pending_prompt` in
-          // the create transaction; an adopted warm session was created
-          // seconds ago with an EMPTY body, so its prompt has to land now,
-          // through the server's claim (`primeTakenWarmSession`): one
-          // transaction that inserts the row, drops the warm marker, and kicks
-          // the drain. Without this the local take navigated into a session
-          // that had never heard the prompt — the "my first message
-          // disappears" bug, on the warm path.
-          //
-          // A refused claim (another tab took it, marker already gone) is not
-          // an error the user should see: fall through to the ordinary create,
-          // which carries the same prompt.
-          const pending = opts?.create?.pending_prompt;
-          const primed = pending
-            ? await primeTakenWarmSession(projectId, warm, {
-                pending_prompt: pending,
-                ...(opts?.create?.agent_name ? { agent_name: opts.create.agent_name } : {}),
-                ...(opts?.create?.sandbox_slug ? { sandbox_slug: opts.create.sandbox_slug } : {}),
-              })
-            : true;
-          if (primed) {
-            onAdopt(warm.session);
-            router.prefetch(uiRoutes().session(projectId, warm.sessionId));
-            return warm.sessionId;
-          }
-        }
-
-        const sessionId = randomUUID();
-        markSessionFresh(sessionId);
-        opts.onCreating?.(sessionId);
-        if (!opts.create?.space_id) router.prefetch(uiRoutes().session(projectId, sessionId));
-        let created: ProjectSession | undefined;
-        try {
-          created = await createProjectSession(projectId, {
-            session_id: sessionId,
-            ...opts?.create,
-          });
-        } catch (error) {
-          // A timeout is not a refusal: the server keeps running the create and
-          // commits the session WITH its first prompt. Rejecting here left the
-          // user on the page they sent from, composer unlocked with a prompt the
-          // agent was already answering. The id is ours, so ask for it.
-          const committed =
-            isAmbiguousCreateFailure(errorCode(error)) &&
-            (await confirmCommitted(async () =>
-              Boolean(await getProjectSession(projectId, sessionId, { showErrors: false })),
-            ));
-          if (!committed) throw error;
-        }
-        // Into every cached list the moment the server has the row, so the
-        // sidebar shows it before the navigation and the reconciling refetch.
-        // A 202 ("accepted, poll the session") carries no row and inserts
-        // nothing; neither does the timeout path above.
-        if (created?.project_id === projectId) {
-          upsertCachedProjectSession(queryClient, projectId, created);
-        }
-        return sessionId;
-      }
-
-  return takeOrCreateSession;
+  return async function createSessionRow() {
+    const sessionId = randomUUID();
+    markSessionFresh(sessionId);
+    opts.onCreating?.(sessionId);
+    if (!opts.create?.space_id) router.prefetch(uiRoutes().session(projectId, sessionId));
+    let created: ProjectSession | undefined;
+    try {
+      created = await createProjectSession(projectId, {
+        session_id: sessionId,
+        ...opts?.create,
+      });
+    } catch (error) {
+      // A timeout is not a refusal: the server keeps running the create and
+      // commits the session WITH its first prompt. Rejecting here left the
+      // user on the page they sent from, composer unlocked with a prompt the
+      // agent was already answering. The id is ours, so ask for it.
+      const committed =
+        isAmbiguousCreateFailure(errorCode(error)) &&
+        (await confirmCommitted(async () =>
+          Boolean(await getProjectSession(projectId, sessionId, { showErrors: false })),
+        ));
+      if (!committed) throw error;
+    }
+    // Into every cached list the moment the server has the row, so the
+    // sidebar shows it before the navigation and the reconciling refetch.
+    // A 202 ("accepted, poll the session") carries no row and inserts
+    // nothing; neither does the timeout path above.
+    if (created?.project_id === projectId) {
+      upsertCachedProjectSession(queryClient, projectId, created);
+    }
+    return sessionId;
+  };
 }
 
 export function useNewProjectSession(projectId: string | undefined) {
@@ -304,16 +238,7 @@ export function useNewProjectSession(projectId: string | undefined) {
       }
       releaseTimerRef.current = setTimeout(release, NEW_SESSION_GUARD_MAX_MS);
 
-      // The taken warm session's server row, so `onReady` below can seed the
-      // sessions-list cache with it (JAY-599/T21). Set only when a warm
-      // session was actually adopted THIS call — a closure local, not a ref,
-      // so back-to-back activations of this same hook instance never leak one
-      // call's row into another's `onReady`.
-      let adoptedWarmSession: ProjectSession | null = null;
-
-      const takeOrCreateSession = makeTakeOrCreateSession(projectId, opts, router, queryClient, (session) => {
-        adoptedWarmSession = session;
-      });
+      const createSessionRow = makeCreateSession(projectId, opts, router, queryClient);
 
       // A space thread shows up in the timeline at once, so it gets no toast.
       const inSpace = Boolean(opts.create?.space_id);
@@ -326,8 +251,8 @@ export function useNewProjectSession(projectId: string | undefined) {
       // correctly translated in all nine catalogs.
       const createSession = () =>
         inSpace
-          ? takeOrCreateSession()
-          : loadingToast(t('startingSession'), takeOrCreateSession(), {
+          ? createSessionRow()
+          : loadingToast(t('startingSession'), createSessionRow(), {
               success: t('sessionStarted'),
             });
 
@@ -342,52 +267,19 @@ export function useNewProjectSession(projectId: string | undefined) {
           // Keep the claim engaged through the navigation: the effect above
           // releases it once the browser is actually showing this session.
           useNewSessionGuardStore.getState().target(projectId, sessionId);
-          // Adoption: this only ever runs once create (+ any scope
-          // replacement) has already SUCCEEDED, so a warm session that got
-          // taken but never made it this far (a scope-replacement failure,
-          // say) never seeds a phantom row here — see warm-session-seed.ts.
-          if (adoptedWarmSession) {
-            // Every cached shape, not just the flat key. The sidebar caches
-            // PAGES now (`useProjectSessions`), so a write aimed at the flat
-            // list left a brand-new session invisible there until the next
-            // refetch — the one surface the user is watching when they start
-            // one. `seedAdoptedWarmSession` still owns what an adopted row
-            // looks like; the cache write is the only part that moved.
-            const [adopted] = seedAdoptedWarmSession(
-              undefined,
-              adoptedWarmSession!,
-              new Date().toISOString(),
-            );
-            if (adopted) upsertCachedProjectSession(queryClient, projectId, adopted);
-          }
           // The row exists — kick provisioning so it overlaps the navigation.
-          // For an adopted warm session this is also the call that drops the
-          // server's `metadata.warm` marker (apps/api/.../routes/session-runtime.ts).
-          const started = prefetchSessionStart(queryClient, projectId, sessionId);
-          if (adoptedWarmSession) {
-            const replenish = () => {
-              if (!tabIsVisible()) return;
-              void createWarmSession(projectId, undefined, { excludeSessionId: sessionId });
-            };
-            void started.then(replenish, replenish);
-          }
-          // Warm adoption defers the list reconcile until that /start settles,
-          // so the refetch cannot observe the row still marker-hidden and wipe
-          // the seed above — see reconcileSessionsAfterCreate.
-          reconcileSessionsAfterCreate({
-            adoptedWarm: adoptedWarmSession !== null,
-            started,
-            invalidate: () =>
-              queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) }),
-          });
+          void prefetchSessionStart(queryClient, projectId, sessionId);
+          // The row is visible server-side the moment the create returns, so
+          // reconcile the cached lists now.
+          void queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
           opts?.onNavigate?.(sessionId);
           // The space view stays on screen, so no navigation lands to release the claim.
           if (inSpace) {
             release();
             return;
           }
-          // nav-contract: prefetch-only — the session id is minted or returned
-          // by the create POST, so no anchor can name it. `takeOrCreateSession`
+          // nav-contract: prefetch-only — the session id is minted client-side
+          // at the click, so no anchor can name it. `createSessionRow`
           // prefetches the route the moment the id exists.
           router.push(uiRoutes().session(projectId, sessionId));
         },

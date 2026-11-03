@@ -25,8 +25,7 @@
  * One exception: an HTTP route that hands work to the scoped queue. The drain
  * here never claims a command for a foreign sandbox, so accepting one strands
  * it when the owner is down. `POST .../prompts` refuses it (409
- * `SESSION_OWNED_BY_OTHER_INSTANCE`) and the warm lookup
- * (`findWarmProjectSession`) never offers a foreign session.
+ * `SESSION_OWNED_BY_OTHER_INSTANCE`).
  */
 import { config } from '../config';
 

@@ -42,8 +42,8 @@
  *
  *   • API — `requireFeatureFlag` on its routes (403 `feature_disabled`).
  *   • Session box — the API lists the enabled flags in KORTIX_FEATURE_FLAGS
- *     (projects/lib/feature-flag-env.ts). Boot-only; a change retires warm
- *     sessions (toggle-effects.ts) and reaches the next new box.
+ *     (projects/lib/feature-flag-env.ts). Boot-only; a change reaches the next
+ *     new box.
  *   • Managed skill — put the feature's agent docs in their own skill under
  *     packages/starter/templates/managed/skills, with `metadata:
  *     kortix-feature-flag: <key>` in its frontmatter. kortixd withholds it from a
@@ -196,6 +196,11 @@ const FLAGS: readonly FeatureFlagDef[] = [
   // `monitors` (the per-project monitor box) was removed: an App with a
   // schedule or `type: app` trigger replaces it. A stored
   // `experimental.monitors` override is inert.
+  // `warm_sessions` removed (2026-11-03): a session boots fast enough on its
+  // own, and 66 % of the pre-created sessions were never used. Clients no
+  // longer pre-create a session; POST /sessions/warm and /sessions/warm/claim
+  // answer 410 (routes/retired.ts). A stored `experimental.warm_sessions`
+  // override is inert; the API still sends `false` to older clients.
   {
     key: 'reminders',
     name: 'Loops',
@@ -207,21 +212,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => true,
     // Routes 403 `feature_disabled`; the scheduler also skips reminder rows of
     // a project with the flag off (trigger-execution-store claimDueScheduleSlots).
-    enforcement: 'routes',
-  },
-  {
-    key: 'warm_sessions',
-    name: 'Warm Sessions',
-    description:
-      'Keep one sandbox booted and waiting while you have a project open, so a new session starts instantly instead of waiting for a cold boot. A warm sandbox is billed compute even when idle, until you use it or it expires. Turn this off to trade instant starts for lower cost.',
-    stability: 'beta',
-    available: () => true,
-    // Idle compute requires explicit opt-in. Opening a project or sending its
-    // first prompt must not create an unused replacement sandbox by default.
-    platformDefault: () => false,
-    // NOT 'ui-only'. A flag that only hid client surface would let any other
-    // caller keep booting billed sandboxes, which defeats the reason someone
-    // turns this off.
     enforcement: 'routes',
   },
   {
@@ -438,7 +428,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
     enforcementNote:
       'Every /projects/:id/spaces route returns 403 feature_disabled while off. Session create/list ignore space_id while off. ' +
-      'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-channel-memory skill; a change reaches the next new box and retires warm sessions (feature-flags/toggle-effects.ts). ' +
+      'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-channel-memory skill; a change reaches the next new box. ' +
       'PRIVATE CHANNELS (shared/space-access.ts) are enforced whatever this flag says, and created only with KORTIX_PRIVATE_CHANNELS_ENABLED. ' +
       'Revocation windows after a removal or a conversion: REST ≤ 10 s on another replica (access memo; busted at once on the serving one), ' +
       'proxy ≤ 10 s more (verdict cache; cleared on the serving replica), /events SSE, proxied SSE and proxied WebSockets ≤ 60 s (re-check; WebSockets of the serving replica at once). ' +
@@ -458,7 +448,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => false,
     enforcement: 'routes',
     enforcementNote:
-      'Off ⇒ nothing of Rooms exists in the project. ROUTES: every /projects/:id/rooms* route and POST /projects/:id/sessions/:sid/idle-notice answer 403 `feature_disabled` (projects/routes/rooms.ts); a post fans out only to members whose own project still has the flag on (projects/rooms/service.ts); room notifications leave the inbox (notifications/inbox-read.ts). BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-rooms skill and the CLI hides and refuses `kortix rooms` / `kortix peers`; a change reaches the next new box, and retires warm sessions (feature-flags/toggle-effects.ts). CLI outside a box: hidden and refused unless the linked project has the flag on. IAM: project.room.* leave the account permission catalog until a project of the account has it on. NOTIFICATIONS: the `message` kind is in `hidden_kinds` (no settings row) unless the person is in a room of a flag-on project. WEB: no sidebar row, no More entry, no Rooms permission group; a deep link shows the flag-off screen. DOCS: the reference is the kortix-rooms skill (references/rooms.md), not the public docs.',
+      'Off ⇒ nothing of Rooms exists in the project. ROUTES: every /projects/:id/rooms* route and POST /projects/:id/sessions/:sid/idle-notice answer 403 `feature_disabled` (projects/routes/rooms.ts); a post fans out only to members whose own project still has the flag on (projects/rooms/service.ts); room notifications leave the inbox (notifications/inbox-read.ts). BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-rooms skill and the CLI hides and refuses `kortix rooms` / `kortix peers`; a change reaches the next new box. CLI outside a box: hidden and refused unless the linked project has the flag on. IAM: project.room.* leave the account permission catalog until a project of the account has it on. NOTIFICATIONS: the `message` kind is in `hidden_kinds` (no settings row) unless the person is in a room of a flag-on project. WEB: no sidebar row, no More entry, no Rooms permission group; a deep link shows the flag-off screen. DOCS: the reference is the kortix-rooms skill (references/rooms.md), not the public docs.',
   },
   {
     key: 'workspace_volume',

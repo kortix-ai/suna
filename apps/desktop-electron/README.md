@@ -206,7 +206,7 @@ Enter starts a new session with that prompt. The same bar opens from
   main process, brings the app window forward, and pokes it
   (`kortix:quick-entry`, no text). The web app pulls the prompt once with the
   sender-gated `quick_entry_take` command and submits it from the project home
-  composer: the same agent, model, billing gate and warm session as a typed
+  composer: the same agent, model and billing gate as a typed
   message (`apps/web/src/components/desktop/desktop-quick-entry.tsx`). A
   window that is still loading, or signed out, takes it when the app mounts.
   An untaken prompt expires after 10 minutes.

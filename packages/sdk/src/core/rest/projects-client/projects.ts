@@ -1,4 +1,4 @@
-// Projects — project CRUD, detail, feature flags, warm pool, onboarding.
+// Projects — project CRUD, detail, feature flags, onboarding.
 
 import type { CatalogModel } from '@kortix/llm-catalog';
 import type { ManifestIssue } from './change-request-recovery';
@@ -70,6 +70,7 @@ export type FeatureFlagKey =
   /** @deprecated Withdrawn — the monitor box was removed; an App with a schedule or a `type: app` trigger replaces it. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'monitors'
   | 'reminders'
+  /** @deprecated Withdrawn — warm sessions were removed; a session boots on its own. The API sends `false` for every project. Removed in the next major. */
   | 'warm_sessions'
   | 'secrets_egress'
   /** @deprecated Withdrawn — the pi worker split left the product; pi runs in the session sandbox. The API no longer lists, resolves, or accepts it. Removed in the next major. */
@@ -140,6 +141,7 @@ type GraduatedFeatureFlagKey =
   | 'connectors_v2'
   | 'connectors_api_discover'
   | 'meta_agent'
+  | 'warm_sessions'
   | 'volumes'
   | 'drives';
 /** The keys `KortixProject.experimental` carries on every response. */
@@ -153,7 +155,6 @@ type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'marketplace',
   'reminders',
-  'warm_sessions',
   'secrets_egress',
   'pooled_provider_secrets',
   'us_region',

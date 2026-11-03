@@ -19,7 +19,7 @@ import { positiveEnvInt } from './reaper-constants';
 
 /**
  * Application cap for observations that are not durable active-turn evidence.
- * Preview traffic, gateway activity, and warm-pool grants cannot keep one
+ * Preview traffic and gateway activity cannot keep one
  * provider run alive forever. sandbox-turn-lifecycle.ts intentionally does not
  * use this cap: an exact OpenCode turn with fresh control-plane evidence renews
  * until that evidence becomes terminal or unreadable past its deadline.
@@ -233,24 +233,6 @@ export function previewGrantMs(): number {
 }
 
 /**
- * The whole lifetime of an UNCLAIMED warm-pool box.
- *
- * A warm box is baked speculatively so that session start feels instant. Until
- * somebody claims it, it has no turns, no LLM calls and no human traffic — so it
- * can NEVER receive an extend, and under the plain 15-minute boot floor every
- * warm box was reaped before it could be handed out, which defeats the feature
- * outright. It therefore gets its lifetime up front instead of by observation.
- *
- * 60 minutes is a deliberate ceiling, not an exemption: the exemption this
- * replaces was unbounded, and warm `available` boxes holding for hours were
- * measured as pure billed dead time. An hour covers "open the app, get
- * distracted, come back"; past that the box is waste and dies like anything else.
- */
-export function warmPoolGrantMs(): number {
-  return positiveEnvInt('KORTIX_SANDBOX_WARM_GRANT_MINUTES', 60) * 60_000;
-}
-
-/**
  * Granted on a sandbox-REPORTED terminal turn end: "die after 15 minutes of
  * inactivity". Reuses KORTIX_SANDBOX_AUTOSTOP_MINUTES, which is ALREADY 15 in
  * kortix-prod-env, so production needs no config change to get this behaviour.
@@ -394,11 +376,6 @@ export function isTerminalTurnEnd(
 ): boolean {
   if (status !== 'error') return true;
   return error?.isRetryable !== true;
-}
-
-/** A speculative session carries the same marker into its sandbox at provision. */
-export function isWarmPoolBox(metadata: Record<string, unknown> | null | undefined): boolean {
-  return metadata?.warm === true;
 }
 
 /**
