@@ -34,6 +34,8 @@ export interface DiscordStoredMessage {
   /** The users the message mentions: their ids and names, to show `<@id>` as a name. */
   mentions: Array<Pick<DiscordUser, 'id' | 'username' | 'global_name'>>;
   stickers: string[];
+  /** The message mentioned the app's role, not the app: Discord may send it without its text. */
+  viaRole?: boolean;
 }
 
 /** Where a message or interaction runs, as the intake or the webhook found it. */

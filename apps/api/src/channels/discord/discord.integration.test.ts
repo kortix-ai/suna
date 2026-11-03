@@ -18,10 +18,19 @@ import { resetChannelLifecycleForTest, setChannelLifecycleForTest } from '../cor
 import { bindChatThread } from '../core/threads';
 import { channelAppWebhookRoutes } from '../inbound/webhook-routes';
 import { snowflakeSequence } from './api';
-import { DiscordGateway, discordIntents, intakeMessage, type GatewayMessage } from './gateway';
+import {
+  DiscordGateway,
+  discordIntents,
+  type GatewayState,
+  intakeMessage,
+  leaveIfOrphan,
+  reconcileGuilds,
+  rememberBotRole,
+  type GatewayMessage,
+} from './gateway';
 import { discordInbound } from './inbound';
 import { bindDiscordChannel } from './connect';
-import { forgetDiscordGuild, loadDiscordInstall, releaseDiscordInstall, saveDiscordInstall } from './installs';
+import { forgetDiscordChannel, forgetDiscordGuild, loadDiscordInstall, releaseDiscordInstall, saveDiscordInstall } from './installs';
 import { resolveDiscordRoute } from './routing';
 
 const webhook = channelAppWebhookRoutes(discordInbound);
@@ -59,6 +68,11 @@ const fake = Bun.serve({
     const path = url.pathname.replace(/^\/api\/v10/, '');
     const body = req.method === 'GET' ? undefined : await req.json().catch(() => undefined);
     calls.push({ route: `${req.method} ${path}`, body });
+    const scripted = failures.get(`${req.method} ${path}`);
+    if (scripted?.times) {
+      scripted.times -= 1;
+      return Response.json(scripted.body, { status: scripted.status });
+    }
     const thread = /^\/channels\/(\d+)\/messages\/(\d+)\/threads$/.exec(path);
     if (thread) {
       channels.set(thread[2]!, { id: thread[2]!, type: 11, guild_id: GUILD, parent_id: thread[1]!, name: body?.name });
@@ -75,6 +89,8 @@ const fake = Bun.serve({
   },
 });
 const routes = () => calls.map((c) => c.route);
+/** A route the fake refuses the next `times` calls of, with Discord's error body. */
+const failures = new Map<string, { status: number; body: unknown; times: number }>();
 
 /** The fields of the session create the core asked for. */
 const created: Array<Record<string, any>> = [];
@@ -182,6 +198,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  failures.clear();
   calls.length = 0;
   created.length = 0;
   delivered.length = 0;
@@ -436,6 +453,89 @@ describe('the kortix_discord connector', () => {
   });
 });
 
+describe('edge cases', () => {
+  test('"@Kortix" alone gets a hint and starts no session; a mention of the app\'s role counts as a mention', async () => {
+    expect(await intakeMessage(message({ channel_id: CHANNEL, content: `<@${BOT}>` }), BOT)).toBe('stored');
+    await drain();
+    expect(created).toHaveLength(0);
+    expect(calls.find((c) => c.route === `POST /channels/${CHANNEL}/messages`)?.body.content).toContain('Mention me with what you need');
+    expect(routes().some((r) => r.endsWith('/threads'))).toBe(false);
+
+    const ROLE = '780000000000000001';
+    rememberBotRole(GUILD, ROLE);
+    calls.length = 0;
+    const viaRole = message({ channel_id: CHANNEL, content: `<@&${ROLE}> what is the status?`, mentions: [], mention_roles: [ROLE] });
+    expect(await intakeMessage(viaRole, BOT)).toBe('stored');
+    await drain();
+    expect(String(created.at(-1)!.postCreate[1].text)).toContain('\nwhat is the status?');
+    // Without the Message Content intent Discord may send a role mention with no text: the hint says why.
+    calls.length = 0;
+    expect(await intakeMessage(message({ channel_id: CHANNEL, content: '', mentions: [], mention_roles: [ROLE] }), BOT)).toBe('stored');
+    await drain();
+    expect(calls.find((c) => c.route === `POST /channels/${CHANNEL}/messages`)?.body.content).toContain('not the role');
+  });
+
+  test('a person no project allows hears the pairing reply once an hour in a server, however often they mention the app', async () => {
+    const someone = '740000000000000077';
+    for (let i = 0; i < 3; i++) {
+      await intakeMessage(message({ channel_id: CHANNEL, author: { id: someone, username: 'synthetic_lee' } }), BOT);
+    }
+    await drain();
+    expect(calls.filter((c) => c.route === `POST /channels/${CHANNEL}/messages` && String(c.body.content).includes(someone))).toHaveLength(1);
+    expect((await loadDiscordInstall(PROJECT))?.accessRequests.map((r) => r.id)).toContain(someone);
+  });
+
+  test("Kortix's reply into a thread that archived is posted after it unarchives the thread", async () => {
+    const archived = '760000000000000044';
+    channels.set(archived, { id: archived, type: 11, guild_id: GUILD, parent_id: CHANNEL, name: 'old' });
+    failures.set(`POST /channels/${archived}/messages`, { status: 400, body: { message: 'Thread is archived', code: 50083 }, times: 1 });
+    await intakeMessage(message({ channel_id: archived, content: `<@${BOT}>` }), BOT);
+    await drain();
+    const order = routes().filter((r) => r.includes(archived) && !r.startsWith('GET '));
+    expect(order).toEqual([`POST /channels/${archived}/messages`, `PATCH /channels/${archived}`, `POST /channels/${archived}/messages`]);
+    expect(calls.find((c) => c.route === `PATCH /channels/${archived}`)?.body).toEqual({ archived: false });
+  });
+
+  test('a slash command whose interaction token expired is answered in the channel', async () => {
+    const body = command('help', { id: CHANNEL, type: 0, name: 'launch' });
+    failures.set(`PATCH /webhooks/${APP}/${body.token}/messages/@original`, { status: 404, body: { message: 'Unknown Webhook', code: 10015 }, times: 1 });
+    expect(await (await interact(body)).json()).toEqual({ type: 5 });
+    await drain();
+    expect(calls.find((c) => c.route === `POST /channels/${CHANNEL}/messages`)?.body.content).toContain('/new');
+  });
+
+  test('a deleted thread or channel leaves no conversation and no binding behind', async () => {
+    const gone = '760000000000000055';
+    const session = await newSession();
+    await bindChatThread({ platform: 'discord', workspaceId: GUILD, threadId: gone, projectId: PROJECT, sessionId: session });
+    await db.insert(chatChannelBindings).values({ platform: 'discord', workspaceId: GUILD, channelId: gone, projectId: PROJECT });
+    await forgetDiscordChannel(gone);
+    expect(await db.select().from(chatThreads).where(eq(chatThreads.threadId, gone))).toEqual([]);
+    expect(await db.select().from(chatChannelBindings).where(eq(chatChannelBindings.channelId, gone))).toEqual([]);
+  });
+
+  test("a server that removed the bot while no Gateway listened is forgotten at READY; a suspicious READY removes nothing", async () => {
+    const gone = '720000000000000777';
+    const extra = crypto.randomUUID();
+    await db.insert(projects).values({ projectId: extra, accountId: ACCOUNT, name: 'discord-gone', repoUrl: 'file:///nonexistent/gone.git', metadata: {} });
+    await saveDiscordInstall({ projectId: extra, guildId: gone, guildName: null });
+    // An empty list is a broken READY, not a bot removed from every server.
+    expect(await reconcileGuilds([])).toEqual([]);
+    expect(await reconcileGuilds([GUILD])).toEqual([gone]);
+    expect(await db.select().from(chatInstalls).where(eq(chatInstalls.workspaceId, gone))).toEqual([]);
+  });
+
+  test('the bot leaves a server no project has, but never one it joined in the last hour (an install in progress)', async () => {
+    const orphan = '720000000000000888';
+    const now = Date.now();
+    expect(await leaveIfOrphan(orphan, new Date(now - 5 * 60_000).toISOString(), now)).toBe(false);
+    expect(await leaveIfOrphan(GUILD, new Date(now - 3 * 60 * 60_000).toISOString(), now)).toBe(false);
+    expect(await leaveIfOrphan(orphan, new Date(now - 3 * 60 * 60_000).toISOString(), now)).toBe(true);
+    expect(routes()).toContain(`DELETE /users/@me/guilds/${orphan}`);
+    expect(routes()).not.toContain(`DELETE /users/@me/guilds/${GUILD}`);
+  });
+});
+
 describe('the shared bot token stays in each project', () => {
   const GUILD_B = '720000000000000002';
   const DM2 = '750000000000000002';
@@ -518,9 +618,9 @@ describe('the Gateway', () => {
     });
     (config as Record<string, unknown>).DISCORD_GATEWAY_URL = `ws://localhost:${gateway.port}`;
     const seen: string[] = [];
-    const client = new DiscordGateway(async (m, botUserId) => void seen.push(`${botUserId}:${m.channel_id}`));
+    const client = new DiscordGateway(async (m, botUserId) => void seen.push(`${botUserId}:${m.channel_id}`), { load: async () => null, save: async () => {} });
     try {
-      client.start();
+      await client.start();
       for (let i = 0; i < 100 && !seen.length; i++) await Bun.sleep(10);
       const identify = received.find((p) => p.op === 2);
       // GUILDS, GUILD_MESSAGES, DIRECT_MESSAGES; MESSAGE_CONTENT only when the deployment turns it on.
@@ -534,7 +634,55 @@ describe('the Gateway', () => {
       for (let i = 0; i < 300 && !received.some((p) => p.op === 6); i++) await Bun.sleep(10);
       expect(received.find((p) => p.op === 6)?.d).toEqual({ token: 'synthetic-token', session_id: 'synthetic-session', seq: 2 });
     } finally {
-      client.stop();
+      await client.stop();
+      gateway.stop(true);
+    }
+  });
+
+  test("the next leader resumes the session the last one saved, so Discord replays what was sent in between", async () => {
+    const received: Array<{ op: number; d: any }> = [];
+    const gateway = Bun.serve({
+      port: 0,
+      fetch(req, server) {
+        return server.upgrade(req) ? undefined : new Response('no', { status: 400 });
+      },
+      websocket: {
+        open(ws) {
+          ws.send(JSON.stringify({ op: 10, d: { heartbeat_interval: 600_000 } }));
+        },
+        message(ws, data) {
+          const p = JSON.parse(String(data));
+          received.push(p);
+          if (p.op === 2) ws.send(JSON.stringify({ op: 0, t: 'READY', s: 5, d: { session_id: 'saved-session', resume_gateway_url: `ws://localhost:${gateway.port}`, user: { id: BOT }, guilds: [{ id: GUILD }] } }));
+          if (p.op === 6) ws.send(JSON.stringify({ op: 0, t: 'RESUMED', s: p.d.seq + 1, d: {} }));
+        },
+      },
+    });
+    (config as Record<string, unknown>).DISCORD_GATEWAY_URL = `ws://localhost:${gateway.port}`;
+    let saved: GatewayState | null = null;
+    const store = { load: async () => saved, save: async (s: GatewayState) => void (saved = s) };
+    const first = new DiscordGateway(async () => {}, store);
+    try {
+      await first.start();
+      for (let i = 0; i < 200 && !saved; i++) await Bun.sleep(10);
+      await first.stop();
+      expect(saved).toMatchObject({ sessionId: 'saved-session', seq: 5, botUserId: BOT });
+
+      const next = new DiscordGateway(async () => {}, store);
+      await next.start();
+      for (let i = 0; i < 200 && !received.some((p) => p.op === 6); i++) await Bun.sleep(10);
+      expect(received.filter((p) => p.op === 2)).toHaveLength(1);
+      expect(received.find((p) => p.op === 6)?.d).toEqual({ token: 'synthetic-token', session_id: 'saved-session', seq: 5 });
+      await next.stop();
+
+      // A session saved too long ago is not tried: the next leader identifies.
+      saved = { ...saved!, savedAt: Date.now() - 10 * 60_000 };
+      const late = new DiscordGateway(async () => {}, store);
+      await late.start();
+      for (let i = 0; i < 200 && received.filter((p) => p.op === 2).length < 2; i++) await Bun.sleep(10);
+      expect(received.filter((p) => p.op === 2)).toHaveLength(2);
+      await late.stop();
+    } finally {
       gateway.stop(true);
     }
   });
@@ -557,17 +705,17 @@ describe('the Gateway', () => {
       },
     });
     (config as Record<string, unknown>).DISCORD_GATEWAY_URL = `ws://localhost:${gateway.port}`;
-    const client = new DiscordGateway(async () => {});
+    const client = new DiscordGateway(async () => {}, { load: async () => null, save: async () => {} });
     try {
-      client.start();
+      await client.start();
       for (let i = 0; i < 200 && !client.fatal; i++) await Bun.sleep(10);
       expect(client.fatal).toBe(true);
-      client.start();
+      await client.start();
       await Bun.sleep(100);
       expect(connections).toBe(1);
       expect(client.connected).toBe(false);
     } finally {
-      client.stop();
+      await client.stop();
       gateway.stop(true);
     }
   });

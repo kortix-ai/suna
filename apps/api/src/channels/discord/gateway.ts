@@ -16,8 +16,8 @@
  * It routes each to its project (routing.ts) first; a server with no project,
  * or more than one, hears once per channel and hour what to do instead.
  */
-import { projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { chatInstalls, platformSettings, projects } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { readChannelAccess } from '../core/channel-access';
 import { CHANNEL_COMMANDS } from '../core/command-list';
@@ -27,7 +27,7 @@ import { emitIntegrationEvent } from '../../integrations/event-inbox';
 import { logger } from '../../lib/logger';
 import { type DiscordChannel, discordCall, discordConfigured, isDiscordThread, snowflakeSequence } from './api';
 import { findChatThread } from '../core/threads';
-import { forgetDiscordGuild } from './installs';
+import { forgetDiscordChannel, forgetDiscordGuild, leaveDiscordGuild } from './installs';
 import { resolveDiscordRoute } from './routing';
 import {
   DISCORD_MESSAGE_EVENT,
@@ -77,13 +77,22 @@ export interface GatewayMessage {
   flags?: number;
   attachments?: DiscordAttachment[];
   mentions?: Array<{ id: string; username?: string; global_name?: string | null }>;
+  mention_roles?: string[];
   sticker_items?: Array<{ name: string }>;
 }
 
 type CachedChannel = Pick<DiscordChannel, 'id' | 'type' | 'name' | 'parent_id' | 'guild_id'> & { at: number };
 
+// replica-local: the bot's own managed role in each guild (GUILD_CREATE), so a mention of the role counts as one of the app.
+const botRoles = new Map<string, string>();
+
 // replica-local: the leader's view of the channels its Gateway reported, refilled from REST on a miss.
 const channels = new Map<string, CachedChannel>();
+
+/** The bot's managed role in a guild (GUILD_CREATE). */
+export function rememberBotRole(guildId: string, roleId: string): void {
+  botRoles.set(guildId, roleId);
+}
 
 function cacheChannel(channel: Partial<DiscordChannel> & { id?: string }, guildId?: string): void {
   if (!channel.id || typeof channel.type !== 'number') return;
@@ -164,9 +173,22 @@ const PERSON_MESSAGE_TYPES = new Set([0, 19]);
  * the bot, else nothing. Throws when the store fails (the Gateway cannot
  * redeliver it; the caller logs it).
  */
-export async function intakeMessage(m: GatewayMessage, botUserId: string): Promise<'stored' | 'ignored'> {
+export async function intakeMessage(message: GatewayMessage, botUserId: string): Promise<'stored' | 'ignored'> {
+  let m = message;
   if (!m.author?.id || m.author.bot || m.webhook_id || !PERSON_MESSAGE_TYPES.has(m.type ?? 0)) return 'ignored';
+  const authorId = m.author.id;
   const guildId = m.guild_id ?? null;
+  // People often pick the app's role ("@Kortix" with the role icon) instead of the app: it counts as a mention.
+  const botRole = guildId ? botRoles.get(guildId) : undefined;
+  let viaRole = false;
+  if (botRole && (m.mention_roles ?? []).includes(botRole) && !(m.mentions ?? []).some((u) => u.id === botUserId)) {
+    viaRole = true;
+    m = {
+      ...m,
+      content: (m.content ?? '').replaceAll(`<@&${botRole}>`, `<@${botUserId}>`),
+      mentions: [...(m.mentions ?? []), { id: botUserId }],
+    };
+  }
   let place: Omit<DiscordConversation, 'guildId'>;
   if (!guildId) {
     place = { threadId: m.channel_id, settingsId: m.channel_id, direct: true, startThread: false, addressed: true, channelName: null, threadName: null };
@@ -209,7 +231,7 @@ export async function intakeMessage(m: GatewayMessage, botUserId: string): Promi
     guildId,
     channelId: place.settingsId,
     ...(guildId && place.threadId === m.channel_id && place.threadId !== place.settingsId ? { threadId: m.channel_id } : {}),
-    userId: m.author.id,
+    userId: authorId,
   });
   if (route.kind !== 'project') {
     if (!place.addressed) return 'ignored';
@@ -218,13 +240,17 @@ export async function intakeMessage(m: GatewayMessage, botUserId: string): Promi
         ? `More than one Kortix project can answer ${guildId ? 'in this channel' : 'you here'}. Use /connect to pick one.`
         : guildId
           ? 'This server is not connected to a Kortix project. A project admin connects it under Customize → Connectors → Channels → Discord.'
-          : `Kortix does not know your Discord account yet. Ask a Kortix project admin to allow your Discord user id ${m.author.id} under Customize → Connectors → Channels → Discord.`;
+          : `Kortix does not know your Discord account yet. Ask a Kortix project admin to allow your Discord user id ${authorId} under Customize → Connectors → Channels → Discord.`;
     await noticeOnce(m.channel_id, m.id, text);
     return 'ignored';
   }
   // A thread's other messages (the Message Content intent) are stored only from someone the project allows.
-  if (!place.addressed && !(await projectAllows(route.projectId, m.author.id))) return 'ignored';
-  const data: DiscordMessageEventData = { message: storedMessage(m), conversation: { ...place, guildId: route.guildId }, botUserId };
+  if (!place.addressed && !(await projectAllows(route.projectId, authorId))) return 'ignored';
+  const data: DiscordMessageEventData = {
+    message: { ...storedMessage(m), ...(viaRole ? { viaRole: true } : {}) },
+    conversation: { ...place, guildId: route.guildId },
+    botUserId,
+  };
   await emitIntegrationEvent({
     id: m.id,
     source: `discord:${guildId ?? 'dm'}`,
@@ -237,6 +263,48 @@ export async function intakeMessage(m: GatewayMessage, botUserId: string): Promi
     data: data as unknown as Record<string, unknown>,
   });
   return 'stored';
+}
+
+/**
+ * After a connect, the installs of guilds the bot is no longer in (it was
+ * removed while no Gateway listened) go. Not when the list looks wrong: an
+ * empty list, or one missing more than half the installed guilds, is logged.
+ */
+export async function reconcileGuilds(present: string[]): Promise<string[]> {
+  try {
+    const installed = [...new Set((await db.select({ guildId: chatInstalls.workspaceId }).from(chatInstalls).where(eq(chatInstalls.platform, 'discord'))).map((r) => r.guildId))];
+    const missing = installed.filter((id) => !present.includes(id));
+    if (!missing.length) return [];
+    if (!present.length || missing.length > installed.length / 2) {
+      logger.warn('[discord] READY lists far fewer servers than are installed; nothing removed', { installed: installed.length, present: present.length });
+      return [];
+    }
+    for (const guildId of missing) await forgetDiscordGuild(guildId);
+    logger.info('[discord] servers that removed the bot while no Gateway listened are gone', { count: missing.length });
+    return missing;
+  } catch (error) {
+    logger.warn('[discord] server reconcile failed', { error: String(error) });
+    return [];
+  }
+}
+
+/** A server no project has installed for an hour: the bot leaves it. Never one it joined just now (an install in progress). */
+export async function leaveIfOrphan(guildId: string, joinedAt: string | null, now = Date.now()): Promise<boolean> {
+  try {
+    if (!joinedAt || now - Date.parse(joinedAt) < 60 * 60_000) return false;
+    const [install] = await db
+      .select({ id: chatInstalls.installId })
+      .from(chatInstalls)
+      .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.workspaceId, guildId)))
+      .limit(1);
+    if (install) return false;
+    await leaveDiscordGuild(guildId);
+    logger.info('[discord] left a server no project has');
+    return true;
+  } catch (error) {
+    logger.warn('[discord] orphan server check failed', { error: String(error) });
+    return false;
+  }
 }
 
 /** The slash commands of the application: the chat commands, and `/connect`. */
@@ -271,6 +339,39 @@ export async function syncDiscordCommands(): Promise<void> {
   }
 }
 
+/** What a resume needs: Discord keeps a session for a few minutes after its connection closes. */
+export interface GatewayState {
+  sessionId: string;
+  resumeUrl: string | null;
+  seq: number | null;
+  botUserId: string | null;
+  savedAt: number;
+}
+
+/** Where the leader keeps its session, so the next leader (a deploy, a failover) resumes it and Discord replays the gap. */
+export interface GatewayStateStore {
+  load(): Promise<GatewayState | null>;
+  save(state: GatewayState): Promise<void>;
+}
+
+const STATE_KEY = 'discord.gateway';
+/** A saved session older than this is not tried: Discord has dropped it, and a resume would only fail first. */
+const RESUMABLE_FOR_MS = 2 * 60_000;
+
+export const dbGatewayStateStore: GatewayStateStore = {
+  async load() {
+    const [row] = await db.select({ value: platformSettings.value }).from(platformSettings).where(eq(platformSettings.key, STATE_KEY)).limit(1);
+    const v = row?.value as Partial<GatewayState> | undefined;
+    return v && typeof v.sessionId === 'string' && typeof v.savedAt === 'number' ? (v as GatewayState) : null;
+  },
+  async save(state) {
+    await db
+      .insert(platformSettings)
+      .values({ key: STATE_KEY, value: state, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: platformSettings.key, set: { value: state, updatedAt: new Date() } });
+  },
+};
+
 /** The leader's one Gateway connection. */
 export class DiscordGateway {
   private ws: WebSocket | null = null;
@@ -288,24 +389,44 @@ export class DiscordGateway {
   /** The last time Discord acknowledged a heartbeat or sent an event. */
   lastSeen = 0;
 
-  constructor(private readonly onMessage: (m: GatewayMessage, botUserId: string) => Promise<unknown> = intakeMessage) {}
+  constructor(
+    private readonly onMessage: (m: GatewayMessage, botUserId: string) => Promise<unknown> = intakeMessage,
+    private readonly store: GatewayStateStore = dbGatewayStateStore,
+  ) {}
 
-  start(): void {
+  /** Resumes the session the last leader saved when it is fresh enough, else identifies. */
+  async start(): Promise<void> {
     // After a fatal close every identify fails the same way, and over 1,000 identifies a day reset the token.
     if (!this.stopped || this.fatal || !discordConfigured()) return;
     this.stopped = false;
-    this.connect(false);
+    const saved = await this.store.load().catch(() => null);
+    if (saved && Date.now() - saved.savedAt < RESUMABLE_FOR_MS && !this.sessionId) {
+      this.sessionId = saved.sessionId;
+      this.resumeUrl = saved.resumeUrl;
+      this.seq = saved.seq;
+      this.botUserId = saved.botUserId;
+    }
+    if (this.stopped) return;
+    this.connect(this.sessionId !== null);
   }
 
-  /** Closes so Discord keeps the session for a resume; no reconnect follows. */
-  stop(): void {
+  /** Saves the session and closes so Discord keeps it for a resume; no reconnect follows. */
+  async stop(): Promise<void> {
     this.stopped = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
     this.clearHeartbeat();
+    await this.saveState();
     const ws = this.ws;
     this.ws = null;
     ws?.close(RESUME_CLOSE, 'stopping');
+  }
+
+  private async saveState(): Promise<void> {
+    if (!this.sessionId) return;
+    await this.store
+      .save({ sessionId: this.sessionId, resumeUrl: this.resumeUrl, seq: this.seq, botUserId: this.botUserId, savedAt: Date.now() })
+      .catch((error) => logger.warn('[discord] Gateway session not saved', { error: String(error) }));
   }
 
   /** Open, or opening: a check that sees neither starts over. */
@@ -389,6 +510,8 @@ export class DiscordGateway {
           if (!this.acked) return void ws.close(RESUME_CLOSE, 'heartbeat not acknowledged');
           this.acked = false;
           this.send(ws, 1, this.seq);
+          // A leader that dies without a stop leaves a session at most one beat old.
+          void this.saveState();
         }, interval);
         if (resume && this.sessionId) {
           this.send(ws, 6, { token: config.DISCORD_BOT_TOKEN, session_id: this.sessionId, seq: this.seq });
@@ -431,17 +554,23 @@ export class DiscordGateway {
         this.resumeUrl = typeof data.resume_gateway_url === 'string' ? data.resume_gateway_url : null;
         this.botUserId = (data.user as { id?: string } | undefined)?.id ?? null;
         logger.info('[discord] Gateway ready', { guilds: Array.isArray(data.guilds) ? data.guilds.length : 0 });
+        void this.saveState();
         void syncDiscordCommands();
+        void reconcileGuilds((data.guilds as Array<{ id?: string }> | undefined)?.flatMap((g) => (g.id ? [g.id] : [])) ?? []);
         return;
       }
       case 'RESUMED':
         this.attempts = 0;
+        logger.info('[discord] Gateway resumed');
         return;
       case 'GUILD_CREATE': {
         const guildId = typeof data.id === 'string' ? data.id : undefined;
         for (const channel of [...((data.channels as unknown[]) ?? []), ...((data.threads as unknown[]) ?? [])]) {
           cacheChannel(channel as DiscordChannel, guildId);
         }
+        const role = ((data.roles as Array<{ id?: string; tags?: { bot_id?: string } }>) ?? []).find((r) => r.tags?.bot_id === this.botUserId);
+        if (guildId && role?.id) rememberBotRole(guildId, role.id);
+        if (guildId) void leaveIfOrphan(guildId, typeof data.joined_at === 'string' ? data.joined_at : null);
         return;
       }
       case 'CHANNEL_CREATE':
@@ -451,7 +580,10 @@ export class DiscordGateway {
         return cacheChannel(data as Partial<DiscordChannel>);
       case 'CHANNEL_DELETE':
       case 'THREAD_DELETE':
-        if (typeof data.id === 'string') channels.delete(data.id);
+        if (typeof data.id === 'string') {
+          channels.delete(data.id);
+          void forgetDiscordChannel(data.id).catch((error) => logger.warn('[discord] deleted channel not forgotten', { error: String(error) }));
+        }
         return;
       case 'THREAD_LIST_SYNC':
         for (const thread of (data.threads as unknown[]) ?? []) cacheChannel(thread as DiscordChannel);

@@ -11,17 +11,18 @@ let checkTimer: ReturnType<typeof setInterval> | null = null;
  */
 export function startDiscordGateway(): void {
   if (checkTimer) return;
-  discordGateway.start();
+  void discordGateway.start();
   checkTimer = setInterval(() => {
     void runWorkerTick('discord-gateway', async () => {
       // A fatal close stays closed until the process restarts (gateway.ts `fatal`).
-      if (!discordGateway.connected) discordGateway.start();
+      if (!discordGateway.connected) await discordGateway.start();
     });
   }, 60_000);
 }
 
-export function stopDiscordGateway(): void {
+/** Saves the session before it closes, so the next leader resumes it (a deploy loses no message). */
+export async function stopDiscordGateway(): Promise<void> {
   if (checkTimer) clearInterval(checkTimer);
   checkTimer = null;
-  discordGateway.stop();
+  await discordGateway.stop();
 }

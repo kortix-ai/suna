@@ -54,6 +54,7 @@ import {
   questionPicksSoFar,
 } from '../core/questions';
 import { registerSessionPort } from '../core/session-notice';
+import { claimThreadCreate } from '../core/threads';
 import type { SettingsChannel } from '../core/settings';
 import { classifyTurnError } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
@@ -89,16 +90,37 @@ const VOICE_MESSAGE = 8192;
 
 // ── Posting ──────────────────────────────────────────────────────────────────
 
+/** Discord's code for a write into an archived thread. */
+const THREAD_ARCHIVED = 50083;
+/** An interaction token that expired (15 minutes) or is unknown. */
+const TOKEN_GONE = new Set([10015, 50027]);
+
+/**
+ * A write into a thread that archived after a week idle unarchives it once and
+ * tries again; a locked thread stays refused.
+ */
+async function intoThread<T>(channelId: string, write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (error) {
+    if (!(error instanceof DiscordApiError) || error.code !== THREAD_ARCHIVED) throw error;
+    await discordCall('PATCH /channels/{id}', `/channels/${channelId}`, { method: 'PATCH', body: { archived: false } });
+    return write();
+  }
+}
+
 /** Post into a channel or thread. Returns the message id; null when Discord refused it (logged). */
 async function postMessage(channelId: string, body: Partial<DiscordMessageBody>, replyTo?: string): Promise<string | null> {
-  return discordCall<{ id: string }>('POST /channels/{id}/messages', `/channels/${channelId}/messages`, {
-    method: 'POST',
-    body: {
-      ...body,
-      allowed_mentions: { parse: [] },
-      ...(replyTo ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } } : {}),
-    },
-  }).then(
+  return intoThread(channelId, () =>
+    discordCall<{ id: string }>('POST /channels/{id}/messages', `/channels/${channelId}/messages`, {
+      method: 'POST',
+      body: {
+        ...body,
+        allowed_mentions: { parse: [] },
+        ...(replyTo ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } } : {}),
+      },
+    }),
+  ).then(
     (sent) => sent.id,
     (error) => {
       logger.warn('[discord] reply failed', { error: String(error) });
@@ -108,21 +130,30 @@ async function postMessage(channelId: string, body: Partial<DiscordMessageBody>,
 }
 
 async function editMessage(channelId: string, messageId: string, body: Partial<DiscordMessageBody>): Promise<void> {
-  await discordCall('PATCH /channels/{id}/messages/{id}', `/channels/${channelId}/messages/${messageId}`, {
-    method: 'PATCH',
-    body: { ...body, allowed_mentions: { parse: [] } },
-  });
+  await intoThread(channelId, () =>
+    discordCall('PATCH /channels/{id}/messages/{id}', `/channels/${channelId}/messages/${messageId}`, {
+      method: 'PATCH',
+      body: { ...body, allowed_mentions: { parse: [] } },
+    }),
+  );
 }
 
-/** The reply to a deferred slash command (the webhook answered type 5). Returns the message id. */
-async function editInteractionReply(token: string, body: Partial<DiscordMessageBody>): Promise<string | null> {
+/**
+ * The reply to a deferred slash command (the webhook answered type 5). Returns the message id.
+ * An expired token (the command waited over 15 minutes behind its conversation) posts the
+ * reply in the channel instead, so it is never lost.
+ */
+async function editInteractionReply(token: string, body: Partial<DiscordMessageBody>, channelId?: string): Promise<string | null> {
   return discordCall<{ id: string }>(
     'PATCH /webhooks/{app}/{token}/messages/@original',
     `/webhooks/${config.DISCORD_APPLICATION_ID}/${token}/messages/@original`,
     { method: 'PATCH', auth: false, body: { ...body, allowed_mentions: { parse: [] } } },
   ).then(
     (sent) => sent.id,
-    (error) => {
+    async (error) => {
+      if (channelId && error instanceof DiscordApiError && (TOKEN_GONE.has(error.code) || error.status === 401)) {
+        return postMessage(channelId, body);
+      }
       logger.warn('[discord] command reply not drawn', { error: String(error) });
       return null;
     },
@@ -158,10 +189,12 @@ const discordQuestions: QuestionPort = {
     args: { channel_id: target.threadId, ...discordQuestionMessage(m) },
   }),
   async send(target, m) {
-    const sent = await discordCall<{ id: string }>('POST /channels/{id}/messages', `/channels/${target.threadId}/messages`, {
-      method: 'POST',
-      body: { ...discordQuestionMessage(m), allowed_mentions: { parse: [] } },
-    });
+    const sent = await intoThread(target.threadId, () =>
+      discordCall<{ id: string }>('POST /channels/{id}/messages', `/channels/${target.threadId}/messages`, {
+        method: 'POST',
+        body: { ...discordQuestionMessage(m), allowed_mentions: { parse: [] } },
+      }),
+    );
     return sent.id;
   },
   async edit(target, ref, m) {
@@ -423,11 +456,22 @@ export async function handleDiscordMessage(
       direct: true,
       from: message.author,
     });
-    if (refusal) await reply(refusal);
+    // In a server the reply is public: once an hour per person, however often they mention the app. A DM always hears it.
+    const once = conversation.direct || (await claimThreadCreate(`discord:refused:${conversation.guildId}:${message.author.id}`, 60 * 60_000).catch(() => null));
+    if (refusal && once) await reply(refusal);
     return;
   }
 
   const text = discordText(message, botUserId);
+  // "@Kortix" alone: no session for nothing. A file or a sticker is something.
+  if (!mentionsAsNames(message.content, message, botUserId).trim() && !message.attachments.length && !message.stickers.length) {
+    await reply(
+      message.viaRole
+        ? 'You mentioned the Kortix role, so Discord did not show me your message. Mention the app itself: pick @Kortix with the app badge, not the role.'
+        : 'Mention me with what you need, for example: @Kortix summarize this thread. /help lists the commands.',
+    );
+    return;
+  }
   const command = parseChannelCommand(mentionsAsNames(message.content, message, botUserId).trim(), null);
   const settings = discordSettings(target, conversation.settingsId);
   if (command) {
@@ -591,7 +635,7 @@ export async function handleDiscordInteraction(
     const spec = CHANNEL_COMMANDS.find((c) => c.name === interaction.command?.name);
     if (!spec) return void (await editInteractionReply(interaction.token, { content: 'Kortix does not know this command.' }));
     await runCommand(ctx, { name: spec.name, arg: interaction.command?.arg ?? '' }, async (body) => {
-      const sent = await editInteractionReply(interaction.token, body);
+      const sent = await editInteractionReply(interaction.token, body, conversation.threadId);
       if (sent && body.components.length) await rememberCommandMenu(target, sent);
     });
     return;
