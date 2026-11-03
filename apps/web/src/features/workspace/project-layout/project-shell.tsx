@@ -31,9 +31,7 @@ import {
 } from '@kortix/ui/customize/settings/settings-tabs';
 import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
 import { useNewProjectSession } from '@kortix/ui/internal/hooks/projects/use-new-project-session';
-import { useProjectCanRun } from '@kortix/ui/internal/hooks/projects/use-project-can-run';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
-import { useWarmProjectSession } from '@kortix/ui/internal/hooks/projects/use-warm-project-session';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { writeLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
 import { cn, uiRoutes } from '@kortix/ui';
@@ -106,28 +104,6 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   // Customize renders from memory instead of waiting on the API.
   useCustomizePrefetch(projectId);
   // GET needs-input is polled by the session lists (`useSessionNeedsYouCounts`), once per project.
-
-  // Presence: this shell is mounted for EVERY /projects/[id] route and survives
-  // in-project navigation, so mounting the warm hook here means "one ensure
-  // while the user is on this project", not one per page they click through.
-  // Gated on the `warm_sessions` flag (a warm sandbox is billed compute) and on
-  // the account being able to run at all. The server enforces the flag too —
-  // this is the client short-circuit that avoids a 403 on every project visit.
-  const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
-  // Channels on: every thread is created in its space and never claims a warm
-  // session, so holding one would bill an idle computer nobody uses.
-  const channels = useFeatureFlag(projectId, 'project_channels').enabled;
-  const { canRun, isLoading: billingLoading } = useProjectCanRun(projectId);
-  // `params.sessionId` (read again below for the tabs store) doubles as the
-  // hook's adoption signal: navigating to a session — from ANY surface,
-  // including the manager inventory's unbadged warm rows or a direct URL —
-  // consumes a matching held warm entry and publishes the id cross-tab.
-  const routeParams = useParams<{ sessionId?: string }>();
-  useWarmProjectSession(
-    projectId,
-    warmSessions.enabled && !channels && !billingLoading && canRun,
-    routeParams?.sessionId ?? null,
-  );
 
   useSignedOutRedirect();
 
@@ -229,6 +205,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
 
   // Channels on: "New session" (Mod+T, the desktop File menu) opens the
   // default channel and focuses its composer, where a message starts a thread.
+  const channels = useFeatureFlag(projectId, 'project_channels').enabled;
   const spaces = useProjectSpaces(projectId, { enabled: channels });
   const defaultChannelSlug = spaces.data?.find((space) => space.kind === 'channel' && space.is_default)?.slug;
   const openDefaultChannel = useCallback(() => {

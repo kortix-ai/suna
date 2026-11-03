@@ -1038,7 +1038,7 @@ People mention the Kortix app in a Discord server, or message it directly, and t
 
 <Steps>
 <Step title="Add Kortix to your server">
-Open **Project admin → Connectors**, select the **Channels** scope, and select **Add to Discord** on Discord. On Discord's page, pick the server. You need the **Manage Server** permission there. Kortix allows your own Discord account at once.
+Open **Project admin → Connectors**, select the **Channels** scope, and select **Add to Discord** on Discord. On Discord's page, pick the server. You need the **Manage Server** permission there. Kortix allows your own Discord account at once, and **Open Discord** takes you to the server.
 </Step>
 <Step title="Mention the app with a task">
 In a text channel, mention the app: `@Kortix what changed in the release?`. Kortix starts a thread on your message, and the agent answers in the thread. Mention the app in the thread to continue.
@@ -1056,6 +1056,7 @@ A mention or a direct message from an allowed user starts a session. Anyone else
 - **Questions come with buttons.** One question shows one button per option, 4 per page, with **‹ Back**, **More ›** and, where you pick several, **Done ›**. Several questions show one at a time. A notice that only you see confirms a tap, or says why it changed nothing.
 - **Photos, files and voice messages reach the agent**, up to 8 MB per message, as in Telegram. So do a forwarded message's text and files, and a poll's question and answers.
 - **Messages arrive in the order you send them.** One conversation's messages and taps reach the agent one at a time, in Discord's order. When Kortix cannot take a message after several tries, it asks you to send it again.
+- **⏳ means the agent is working on your message.** Kortix puts ⏳ on each message it hands to the agent. When the run finishes, ✅ replaces it. When the run fails or you stop it, the ⏳ goes and the reply says what happened.
 - **One project has one server.** A server can serve several projects. A channel goes to the first project that answered there; `/connect` shows the projects and binds the channel to the one you pick. A direct message goes to the one project that allows you, else `/connect` picks.
 - **The agent stays in its project.** The `kortix_discord` connector reads and writes only in the project's own server and conversations. In a server that several projects share, it acts only in its own threads, DMs and bound channels. A session that a conversation started reads and writes only in that conversation. A DM moved to another project with `/connect` keeps its earlier messages from the new project. Kortix refuses any other channel, and one project makes at most 60 Discord calls a minute.
 - **The app needs its permissions.** Discord asks for them when you add the app: view channels, send messages, send messages in threads, create public threads, read message history, attach files, add reactions and embed links. When a channel denies one, Kortix says so. A slash command where the app cannot post answers with the permission to grant, and only you see it. In a private thread, mention the app or add it first.

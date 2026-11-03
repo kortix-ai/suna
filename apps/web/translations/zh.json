@@ -1262,10 +1262,6 @@
           "name": "市场",
           "description": "浏览并安装社区和供应商注册表中的技能。来源、更新和团队范围仍在调整。"
         },
-        "warm_sessions": {
-          "name": "预热会话",
-          "description": "保留一个沙盒以立即启动会话。空闲沙盒会占用计算资源。"
-        },
         "secrets_egress": {
           "name": "网络强制保护的机密",
           "description": "控制哪些工具和目标可以接收项目机密。"
@@ -20903,7 +20899,7 @@
       "text2eb1d24bcc04": "智能体根据 GIS 数据和影像设计光纤路由，并为每条路由编制物料清单。",
       "textf2d996d89263": "Kortix，运行在 Kortix 上。",
       "text34ff4020f800": "我们公司本身就是一个 Kortix 项目。智能体分拣并修复问题，保持 SOC 2 证据最新，并负责销售和支持。由人审批。",
-      "textf9d6c20c90a0": "自主投资分析。",
+      "textdd57f275a118": "每一笔交易，都由智能体评估。",
       "textacf058bd8604": "资产管理",
       "textffbda9db2206": "免费开始",
       "text9ef9267ca343": "团队问题。",
@@ -21071,7 +21067,7 @@
       "texta4262e1c9bcb": "关于",
       "text9baf10b26300": "停止在 4xx 上重试 webhooks",
       "text51b5c4ae0cad": "#12 · 更改了 2 个文件",
-      "text6e515c096274": "智能体阅读公司公告和市场数据，构建投资论点并撰写投资备忘录。由投资组合经理做决定。",
+      "text313f92aeb061": "每一笔进来的交易都会得到完整分析。智能体对照投资授权进行筛选，阅读公司公告和市场数据，对投资论点和下行情景做压力测试，并撰写投资备忘录。由投资委员会做决定。",
       "textdc7f8ac95166": "自主候选人调研。",
       "textb5947f5f79c9": "智能体为每个寻访项目调研候选人，并为每人撰写简介。由顾问确定候选名单。",
       "textc81f1483737e": "基于 Kortix 开源代码构建的企业级 AI 平台。",
@@ -21924,6 +21920,8 @@
     "discordUnavailable": "此 Kortix 部署未设置 Discord。",
     "discordPitch": "在你的 Discord 服务器中与智能体聊天。",
     "discordAddToDiscord": "添加到 Discord",
+    "discordConnectedLede": "在频道中提及 @Kortix，或直接给它发消息。它会回复你允许的人。",
+    "discordOpen": "打开 Discord",
     "discordDisconnected": "已断开 Discord",
     "discordUsersDescription": "只有这些人可以与机器人交谈。其他人提及它或给它发消息时，会显示在这里。",
     "discordUsersEmptyDescription": "请某人提及机器人或给它发消息，然后允许其请求或添加其用户 ID。",

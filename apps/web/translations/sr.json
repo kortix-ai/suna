@@ -1262,10 +1262,6 @@
           "name": "Тржиште",
           "description": "Прегледајте и инсталирајте вештине из регистара заједнице и добављача. Извори, ажурирања и тимски опсези се још мењају."
         },
-        "warm_sessions": {
-          "name": "Загрејане сесије",
-          "description": "Држите један песковник спремним за тренутно покретање. Неактиван песковник троши рачунарске ресурсе."
-        },
         "secrets_egress": {
           "name": "Тајне заштићене на мрежи",
           "description": "Контролишите који алати и одредишта могу да приме тајне пројекта."
@@ -20751,7 +20747,7 @@
       "text633f72787367": "$ kortix self-host init --domain kortix.arcadia.example --admin-email ops@arcadia.example",
       "text71734a05b815": "✓ Конфигурација за самостално хостовање је креирана",
       "texteaabf51b312c": "Контролна табла https://kortix.arcadia.example",
-      "text6e515c096274": "Агенти читају финансијске извештаје и тржишне податке, граде тезу и пишу инвестициони меморандум. Одлуку доноси портфолио менаџер.",
+      "text313f92aeb061": "Сваки посао који стигне добија потпуну анализу. Агенти га проверавају у односу на мандат, читају финансијске извештаје и тржишне податке, стрес-тестирају тезу и негативни сценарио и пишу инвестициони меморандум. Одлуку доноси инвестициони комитет.",
       "textdc7f8ac95166": "Аутономно истраживање кандидата.",
       "textb5947f5f79c9": "Агенти истражују кандидате за сваку потрагу и пишу профил сваког од њих. Консултанти бирају ужи избор.",
       "textc81f1483737e": "Платформа за корпоративну вештачку интелигенцију, изграђена од Kortix-овог отвореног кода.",
@@ -20916,7 +20912,7 @@
       "text2eb1d24bcc04": "Агенти пројектују оптичке трасе из ГИС података и снимака и праве спецификацију материјала за сваку трасу.",
       "textf2d996d89263": "Kortix, покренут на Kortix-у.",
       "text34ff4020f800": "Наша компанија је један Kortix пројекат. Агенти тријажирају и исправљају задатке, одржавају SOC 2 доказе ажурним и воде продају и подршку. Људи одобравају.",
-      "textf9d6c20c90a0": "Аутономна инвестициона анализа.",
+      "textdd57f275a118": "Сваки посао, оцењен од стране агената.",
       "textacf058bd8604": "Управљање имовином",
       "textf95db4c9e815": "# ваша компанија као код",
       "text1e8058334a6e": "$ kortix init arcadia",
@@ -21924,6 +21920,8 @@
     "discordUnavailable": "Discord nije podešen na ovoj Kortix instalaciji.",
     "discordPitch": "Ćaskajte sa svojim agentom na svom Discord serveru.",
     "discordAddToDiscord": "Dodaj na Discord",
+    "discordConnectedLede": "Pomenite @Kortix u kanalu ili joj pišite direktno. Odgovara ljudima kojima dozvolite.",
+    "discordOpen": "Otvori Discord",
     "discordDisconnected": "Discord je isključen",
     "discordUsersDescription": "Samo ove osobe mogu da razgovaraju sa botom. Kada ga neko drugi pomene ili mu piše, pojavljuje se ovde.",
     "discordUsersEmptyDescription": "Zamolite nekoga da pomene bota ili mu piše, zatim odobrite zahtev ili dodajte korisnički ID.",

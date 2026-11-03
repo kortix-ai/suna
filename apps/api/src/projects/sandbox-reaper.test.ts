@@ -2821,17 +2821,6 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect((await reapAndReconcileSandboxes(NOW)).stopped).toBe(1);
   });
 
-  // An unclaimed warm box used to be exempt from the idle TTL entirely, so it
-  // burned until the 240-min ceiling. It now dies at its 20-minute boot floor
-  // like anything else nobody prompted.
-  test('an expired WARM box is stopped like any other', async () => {
-    candidates = [candidate({ deadlineAt: new Date(NOW.getTime() - 60_000) })];
-    statusByExternal['ext-1'] = 'running';
-
-    expect((await reapAndReconcileSandboxes(NOW)).stopped).toBe(1);
-    expect(stops).toEqual(['ext-1']);
-  });
-
   // ═══ TOCTOU: the snapshot is stale by a whole provider round-trip ═══
   // The pass selects candidates, then spends seconds per row in getStatus, and
   // only then decides — from `row.deadlineAt`, read BEFORE that round-trip. A

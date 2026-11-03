@@ -4,8 +4,9 @@
  * Discord as a channel row: "Add to Discord" installs the Kortix Discord app in
  * one server for this project (Discord's own page picks the server), the
  * allowed users dialog is `ChannelAccessPanel`, and disconnect removes the
- * server. On a deployment without the Kortix Discord app the row says so and
- * offers no action.
+ * server. Connected, the row says how to start and opens the server in
+ * Discord. On a deployment without the Kortix Discord app the row says so and
+ * offers no action: it shows on the Channels tab like every channel.
  */
 import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { useState } from 'react';
@@ -44,13 +45,16 @@ export function DiscordChannelRow({ projectId, canWrite }: { projectId: string; 
         hero={{
           title: tPages('discordHeroTitle'),
           connectedTitle: tPages('channelConnectedTitle', { name: DISCORD.label }),
-          ...(install ? {} : { lede: mode && !mode.available ? tPages('discordUnavailable') : tPages('discordHeroLede') }),
+          lede: install ? tPages('discordConnectedLede') : mode && !mode.available ? tPages('discordUnavailable') : tPages('discordHeroLede'),
           preview: <DiscordThreadMock />,
         }}
         pitch={tPages('discordPitch')}
         actions={
-          !canWrite ? null : install ? (
+          install && !canWrite ? (
+            <OpenDiscordButton guildId={install.guild_id} label={tPages('discordOpen')} />
+          ) : !canWrite ? null : install ? (
             <>
+              <OpenDiscordButton guildId={install.guild_id} label={tPages('discordOpen')} />
               <Button size="sm" variant="ghost" onClick={() => setUsersOpen(true)}>
                 {t.raw('text2c3059c25723')}
                 {install.access_request_count ? <CountBadge count={install.access_request_count} tone="waiting" /> : null}
@@ -81,5 +85,16 @@ export function DiscordChannelRow({ projectId, canWrite }: { projectId: string; 
         </ModalContent>
       </Modal>
     </>
+  );
+}
+
+/** The connected server in Discord: the web app, or the desktop app when it handles discord.com links. */
+function OpenDiscordButton({ guildId, label }: { guildId: string; label: string }) {
+  return (
+    <Button asChild size="sm" variant="ghost">
+      <a href={`https://discord.com/channels/${encodeURIComponent(guildId)}`} target="_blank" rel="noreferrer">
+        {label}
+      </a>
+    </Button>
   );
 }

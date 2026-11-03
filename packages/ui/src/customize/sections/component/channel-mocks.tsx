@@ -89,6 +89,9 @@ export function TelegramChatMock() {
   );
 }
 
+/** The bot as a Discord mention: the product name, never translated. */
+const DISCORD_BOT_MENTION = '@Kortix';
+
 /**
  * A Discord thread started from a mention: Maya asks in `#launch`, the agent
  * answers in the thread Kortix opened on her message.
@@ -109,8 +112,12 @@ export function DiscordThreadMock() {
           <div className="min-w-0 space-y-0.5">
             <p className="text-foreground font-semibold">Maya</p>
             <p className="text-foreground text-pretty">
-              <span className="rounded-sm bg-(--discord-accent)/15 px-0.5 text-(--discord-accent)">@Kortix</span> {t('mockDiscordAsk')}
+              <span className="rounded-sm bg-(--discord-accent)/15 px-0.5 text-(--discord-accent)">{DISCORD_BOT_MENTION}</span> {t('mockDiscordAsk')}
             </p>
+            {/* Kortix's own mark on the message: ⏳ while the agent works, ✅ once it answered. */}
+            <span className="mt-1 inline-flex items-center gap-1 rounded-md border border-(--discord-accent)/40 bg-(--discord-accent)/10 px-1.5 py-0.5 text-xs text-foreground">
+              <span aria-hidden>✅</span>1
+            </span>
           </div>
         </div>
         <div className="flex gap-2.5">

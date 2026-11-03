@@ -1084,10 +1084,6 @@
           "name": "Marketplace",
           "description": "Browse and install skills from community and vendor registries. Sources, updates, and team scopes are still changing."
         },
-        "warm_sessions": {
-          "name": "Warm Sessions",
-          "description": "Keep one sandbox ready for instant session starts. The idle sandbox uses compute."
-        },
         "secrets_egress": {
           "name": "Network-Enforced Secrets",
           "description": "Control which tools and destinations can receive project secrets."
@@ -20696,9 +20692,9 @@
       "text2eb1d24bcc04": "Agents design fiber routes from GIS data and imagery and build the bill of materials for each route.",
       "textf2d996d89263": "Kortix, run on Kortix.",
       "text34ff4020f800": "Our company is one Kortix project. Agents triage and fix issues, keep SOC 2 evidence current and run sales and support. People approve.",
-      "textf9d6c20c90a0": "Autonomous investment analysis.",
+      "textdd57f275a118": "Every deal, evaluated by agents.",
       "textacf058bd8604": "Asset management",
-      "text6e515c096274": "Agents read filings and market data, build the thesis and write the investment memo. A portfolio manager decides.",
+      "text313f92aeb061": "Every deal that comes in gets a full analysis. Agents screen it against the mandate, read the filings and market data, stress-test the thesis and the downside, and write the investment memo. The investment committee decides.",
       "textdc7f8ac95166": "Autonomous candidate research.",
       "textb5947f5f79c9": "Agents research candidates for every search and write a profile of each one. Consultants choose the shortlist.",
       "textc81f1483737e": "The enterprise AI platform, built from Kortix’s open-source code.",
@@ -21924,6 +21920,8 @@
     "discordUnavailable": "Discord is not set up on this Kortix deployment.",
     "discordPitch": "Chat with your agent in your Discord server.",
     "discordAddToDiscord": "Add to Discord",
+    "discordConnectedLede": "Mention @Kortix in a channel, or message it directly. It answers the people you allow.",
+    "discordOpen": "Open Discord",
     "discordDisconnected": "Discord disconnected",
     "discordUsersDescription": "Only these people can talk to the bot. When someone else mentions or messages it, they show up here.",
     "discordUsersEmptyDescription": "Ask someone to mention or message the bot, then allow their request or add their user ID.",

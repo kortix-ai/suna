@@ -61,7 +61,6 @@ import {
   runSessionsRestore,
   runSessionsStart,
   runSessionsStop,
-  runSessionsWarm,
 } from './sessions-lifecycle.ts';
 import { runSessionsQueue, wireMessageId } from './sessions-queue.ts';
 import { runSessionsAttachments } from './sessions-attachments.ts';
@@ -259,9 +258,6 @@ Subcommands:
                                     place, disk kept. --json.
   start <session-id>                Wake a session (provision or resume) and
                                     resolve its runtime. --wait, --json.
-  warm                              Pre-create the session you are about to
-                                    use, so the box is already up.
-                                    --exclude <session-id>, --json.
   model <session-id> <model-id>     Change the model a session runs. A live
                                     box restarts, ending the turn in flight.
                                     A session with no keys for the new
@@ -402,9 +398,6 @@ export async function runSessions(argv: string[]): Promise<number> {
   }
   if (sub === 'recover') {
     return runSessionsRecover(argv.slice(1));
-  }
-  if (sub === 'warm') {
-    return runSessionsWarm(argv.slice(1));
   }
   if (sub === 'model') {
     return runSessionsModel(argv.slice(1));

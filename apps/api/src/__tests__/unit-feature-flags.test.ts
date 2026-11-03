@@ -98,20 +98,6 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('agent_tunnel');
   });
 
-  test('warm sessions require explicit opt-in before spending idle compute', () => {
-    for (const metadata of [undefined, null, {}, { experimental: {} }, { experimental: { warm_sessions: 'true' } }]) {
-      expect(resolveFeatureFlag(metadata, 'warm_sessions')).toBe(false);
-    }
-    expect(resolveFeatureFlags({}).warm_sessions).toBe(false);
-    expect(findCatalogFlag('warm_sessions')).toMatchObject({
-      available: true,
-      enabled: false,
-      overridden: false,
-    });
-    expect(resolveFeatureFlag({ experimental: { warm_sessions: true } }, 'warm_sessions')).toBe(true);
-    expect(resolveFeatureFlag({ experimental: { warm_sessions: false } }, 'warm_sessions')).toBe(false);
-  });
-
   test('email_channel is an explicit opt-in', () => {
     // The Resend inbox channel ships behind its own flag; the retired
     // `agentmail_email` key stays graduated and inert.
@@ -273,9 +259,10 @@ describe('resolveFeatureFlags', () => {
     // Review Center graduated out of the flag system. Projects that toggled it
     // before graduation still carry `experimental.review_center` in metadata.
     // That value must not resurface as a key, a catalog row, or a gate.
-    // `meta_agent` was removed the same way on 2026-11-02.
-    const metadata = { experimental: { review_center: false, meta_agent: false, reminders: false } };
-    for (const key of ['review_center', 'meta_agent']) {
+    // `meta_agent` was removed the same way on 2026-11-02, and
+    // `warm_sessions` on 2026-11-03: a stored `true` turns nothing on.
+    const metadata = { experimental: { review_center: false, meta_agent: false, warm_sessions: true, reminders: false } };
+    for (const key of ['review_center', 'meta_agent', 'warm_sessions']) {
       expect(isFeatureFlagKey(key)).toBe(false);
       expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key as string)).not.toContain(key);
     }

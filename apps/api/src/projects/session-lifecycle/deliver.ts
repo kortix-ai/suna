@@ -12,7 +12,7 @@ import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
 import { recordSessionActivity } from '../session-activity';
 import { deliveryCountsAsActivity } from './delivery-activity';
 import { DAEMON_PORT, PromptNeverLandedError } from './runtime-client';
-import { waitForSessionRuntimeActive } from './runtime-active-signal';
+import { armSessionRuntimeActive } from './runtime-active-signal';
 import { transitionSession } from './status-transitions';
 
 // After a session's runtime reports `ready` we still have to hand the prompt to
@@ -220,26 +220,31 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
     let opened: Awaited<ReturnType<typeof openOnce>>;
     // The box going active wakes this loop on any replica
     // (`runtime-active-signal`), so it re-opens at once instead of up to 3 s later.
+    // Armed BEFORE each open: a signal that lands while the open is in flight
+    // (the daemon's runtime-ready NOTIFY usually does) ends the next wait at once.
     let boxActive = false;
     for (;;) {
-      opened = await openOnce();
-      if (!opened) return 'no-session';
-      if (opened.stage === 'ready') {
-        tl?.mark('open-ready');
-        break;
+      const armed = armSessionRuntimeActive(sessionId);
+      try {
+        opened = await openOnce();
+        if (!opened) return 'no-session';
+        if (opened.stage === 'ready') {
+          tl?.mark('open-ready');
+          break;
+        }
+        // Runtime down, prompt fine. See `deliverWithRetry`'s identical branch.
+        if (opened.stage === 'failed' || opened.stage === 'stopped') return 'unreachable';
+        if (Date.now() >= deadline) {
+          console.warn('[session-lifecycle] runtime not ready before delivery deadline', {
+            sessionId,
+            stage: opened.stage,
+          });
+          return 'pending';
+        }
+        boxActive = (await armed.wait(boxActive ? ACTIVE_RECHECK_MS : POLL_INTERVAL_MS)) || boxActive;
+      } finally {
+        armed.cancel();
       }
-      // Runtime down, prompt fine. See `deliverWithRetry`'s identical branch.
-      if (opened.stage === 'failed' || opened.stage === 'stopped') return 'unreachable';
-      if (Date.now() >= deadline) {
-        console.warn('[session-lifecycle] runtime not ready before delivery deadline', {
-          sessionId,
-          stage: opened.stage,
-        });
-        return 'pending';
-      }
-      boxActive =
-        (await waitForSessionRuntimeActive(sessionId, boxActive ? ACTIVE_RECHECK_MS : POLL_INTERVAL_MS)) ||
-        boxActive;
     }
 
     // The box converges before the prompt reaches it in the proxy:

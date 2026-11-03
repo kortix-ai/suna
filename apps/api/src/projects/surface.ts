@@ -44,7 +44,6 @@ export {
   deliverThroughQueue,
   drainSessionLifecycleQueue,
   resolveProjectAutomationActor,
-  retireWarmProjectSessions,
 } from './session-lifecycle';
 export type { CreateSessionCommand } from './session-lifecycle';
 export type { PromptPartWire } from './session-lifecycle/prompt-payload';
@@ -172,6 +171,8 @@ export { turnPromptSource } from './lib/notification-recipients';
 export { mayRewindSession } from './session-lifecycle/rewind-authority';
 // Wakes the first prompts waiting on a box that went active on any replica (consumed by bootstrap.ts).
 export { signalSessionRuntimeActive } from './session-lifecycle/runtime-active-signal';
+// The session-open admission read, handed to the turn-start gates (consumed by runtime-convergence).
+export { noteSandboxHealthBody } from './lib/turn-start-convergence';
 
 export { registerRuntimeFork } from './lib/runtime-session-snapshot';
 

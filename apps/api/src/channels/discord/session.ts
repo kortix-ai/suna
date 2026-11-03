@@ -44,6 +44,7 @@ import {
   type ChannelPort,
   type ChannelTarget,
   routeChannelMessage,
+  type TurnSettlement,
 } from '../core/conversation';
 import { chatSessionStart, chatTurnModel } from '../core/model-choice';
 import { connectorReply } from '../core/prompt';
@@ -178,6 +179,76 @@ export async function ephemeralFollowUp(token: string, content: string): Promise
   }).catch((error) => logger.warn('[discord] press notice not sent', { error: String(error) }));
 }
 
+// ── Working marks ────────────────────────────────────────────────────────────
+
+/** On a person's message while the agent works on it; ✅ replaces it when the run finishes. */
+export const WORKING_EMOJI = '⏳';
+export const DONE_EMOJI = '✅';
+/** How far back a settle looks for its own ⏳: a conversation's latest messages. */
+const SETTLE_SCAN = 25;
+
+const reactionPath = (channelId: string, messageId: string, emoji: string) =>
+  `/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}/@me`;
+
+/** Add or remove the bot's own reaction. Never throws: a mark is a courtesy (logged). */
+async function react(method: 'PUT' | 'DELETE', channelId: string, messageId: string, emoji: string): Promise<boolean> {
+  try {
+    await discordCall(`${method} /channels/{id}/messages/{id}/reactions/{emoji}/@me`, reactionPath(channelId, messageId, emoji), { method });
+    return true;
+  } catch (error) {
+    logger.info('[discord] reaction not changed', { method, error: String(error) });
+    return false;
+  }
+}
+
+/** ⏳ on a message Kortix handed to the agent. */
+const markWorking = (channelId: string, messageId: string) => react('PUT', channelId, messageId, WORKING_EMOJI);
+
+type ReactedMessage = { id: string; channel_id?: string; reactions?: Array<{ me?: boolean; emoji?: { name?: string | null; id?: string | null } }> };
+const markedWorking = (m: ReactedMessage) => (m.reactions ?? []).some((r) => r.me && !r.emoji?.id && r.emoji?.name === WORKING_EMOJI);
+
+/**
+ * The parent channel of a thread Kortix started on a mention (the thread has
+ * the mention's id, and the mention lives in the parent), or null. A session
+ * names it in its metadata; without one, Discord does.
+ */
+async function starterParent(threadId: string, sessionId: string | null, messageId?: string): Promise<string | null> {
+  if (sessionId) {
+    const [row] = await db.select({ metadata: projectSessions.metadata }).from(projectSessions).where(eq(projectSessions.sessionId, sessionId)).limit(1);
+    const meta = (row?.metadata as { discord?: { channel_id?: unknown; thread_id?: unknown; message_id?: unknown } } | null)?.discord;
+    const parent = typeof meta?.channel_id === 'string' ? meta.channel_id : null;
+    return parent && meta?.thread_id === threadId && meta.message_id === threadId && parent !== threadId ? parent : null;
+  }
+  if (messageId !== threadId) return null;
+  const thread = await discordCall<{ parent_id?: string | null }>('GET /channels/{id}', `/channels/${threadId}`).catch(() => null);
+  return thread?.parent_id ?? null;
+}
+
+/** The messages that carry Kortix's ⏳ in a conversation: its latest messages, and a thread's starter. */
+async function workingMessages(channelId: string, sessionId: string | null, messageId?: string): Promise<Array<{ channelId: string; messageId: string }>> {
+  const found: Array<{ channelId: string; messageId: string }> = [];
+  const recent = await discordCall<ReactedMessage[]>('GET /channels/{id}/messages', `/channels/${channelId}/messages?limit=${SETTLE_SCAN}`).catch(() => []);
+  for (const m of Array.isArray(recent) ? recent : []) if (markedWorking(m)) found.push({ channelId, messageId: m.id });
+  const parent = await starterParent(channelId, sessionId, messageId);
+  if (parent) {
+    const starter = await discordCall<ReactedMessage>('GET /channels/{id}/messages/{id}', `/channels/${parent}/messages/${channelId}`).catch(() => null);
+    if (starter && markedWorking(starter)) found.push({ channelId: parent, messageId: channelId });
+  }
+  return found;
+}
+
+/** The run ended: each ⏳ goes, and a finished run leaves ✅. Never throws. */
+async function settleWorking(channelId: string, outcome: TurnSettlement, sessionId: string | null, messageId?: string): Promise<void> {
+  for (const m of await workingMessages(channelId, sessionId, messageId)) {
+    if ((await react('DELETE', m.channelId, m.messageId, WORKING_EMOJI)) && outcome === 'done') {
+      await react('PUT', m.channelId, m.messageId, DONE_EMOJI);
+    }
+  }
+}
+
+/** Notices that end a message's way into a session before any run: its ⏳ goes with them. */
+const UNTAKEN: ReadonlySet<ChannelNotice['kind']> = new Set(['create_failed', 'create_in_flight', 'follow_up_failed', 'start_failed']);
+
 /** "typing…" for about 10 seconds. Never throws. */
 async function showTyping(channelId: string): Promise<void> {
   await discordCall('POST /channels/{id}/typing', `/channels/${channelId}/typing`, { method: 'POST' }).catch(() => undefined);
@@ -254,6 +325,10 @@ export const discordPort: ChannelPort & { questions: QuestionPort } = {
   async notify(target, notice) {
     const text = discordNotice(target, notice);
     if (text) await postMessage(target.threadId, { content: clip(text, DISCORD_MESSAGE_CHARS) }, target.messageId);
+    if (UNTAKEN.has(notice.kind)) await settleWorking(target.threadId, 'failed', 'sessionId' in notice ? notice.sessionId : null, target.messageId);
+  },
+  async turnSettled(target, outcome, sessionId) {
+    await settleWorking(target.threadId, outcome, sessionId);
   },
   questions: discordQuestions,
   turnModel: async (target, thread) => chatTurnModel(await settingsOfSession(target, thread.sessionId), thread),
@@ -529,6 +604,8 @@ export async function handleDiscordMessage(
 
   if (conversation.startThread && !(await startThread(message, conversation, botUserId))) return;
   await claimDiscordChannel(conversation, event.projectId, message.author.id);
+  // The message is on its way to the agent: ⏳ until the run settles (`discordPort.turnSettled`).
+  await markWorking(message.channel_id, message.id);
   const files = discordFiles(message);
   // A question shown one at a time takes a typed answer; a message with a file is never one.
   if (!files.length && (await answerQuestionInChat(discordPort, target, { id: `message:${event.id}`, text }, answerFollowUp(event, conversation, message.author, message.nick), run))) {

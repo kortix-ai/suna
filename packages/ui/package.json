@@ -267,7 +267,6 @@
     "./internal/hooks/projects/use-new-project-session": "./src/internal/hooks/projects/use-new-project-session.ts",
     "./internal/hooks/projects/use-project-can-run": "./src/internal/hooks/projects/use-project-can-run.ts",
     "./internal/hooks/projects/use-restart-project-session": "./src/internal/hooks/projects/use-restart-project-session.ts",
-    "./internal/hooks/projects/use-warm-project-session": "./src/internal/hooks/projects/use-warm-project-session.ts",
     "./internal/hooks/use-auto-scroll": "./src/internal/hooks/use-auto-scroll.ts",
     "./internal/hooks/use-channel-bindings": "./src/internal/hooks/use-channel-bindings.ts",
     "./internal/hooks/use-copy": "./src/internal/hooks/use-copy.ts",
@@ -1532,10 +1531,6 @@
       "./internal/hooks/projects/use-restart-project-session": {
         "types": "./dist/internal/hooks/projects/use-restart-project-session.d.ts",
         "import": "./dist/internal/hooks/projects/use-restart-project-session.js"
-      },
-      "./internal/hooks/projects/use-warm-project-session": {
-        "types": "./dist/internal/hooks/projects/use-warm-project-session.d.ts",
-        "import": "./dist/internal/hooks/projects/use-warm-project-session.js"
       },
       "./internal/hooks/use-auto-scroll": {
         "types": "./dist/internal/hooks/use-auto-scroll.d.ts",

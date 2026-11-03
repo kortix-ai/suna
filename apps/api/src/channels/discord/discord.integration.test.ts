@@ -18,6 +18,7 @@ import { undeclaredChannelArg } from '../../connectors/channels';
 import * as defaultModel from '../../llm-gateway/resolution/default-model';
 import { ensureChatBinding } from '../core/settings';
 import { resetChannelLifecycleForTest, setChannelLifecycleForTest } from '../core/conversation';
+import { settleSessionChat } from '../core/session-notice';
 import { bindChatThread } from '../core/threads';
 import { channelAppWebhookRoutes } from '../inbound/webhook-routes';
 import { snowflakeSequence } from './api';
@@ -37,7 +38,7 @@ import {
 } from './gateway';
 import { discordInbound } from './inbound';
 import { bindDiscordChannel, claimDiscordChannel } from './connect';
-import { discordEnvelope, handleDiscordMessage, tellDeadDiscordEvent } from './session';
+import { discordEnvelope, discordPort, handleDiscordMessage, tellDeadDiscordEvent } from './session';
 import { forgetDiscordChannel, forgetDiscordGuild, loadDiscordInstall, releaseDiscordInstall, saveDiscordInstall } from './installs';
 import { resolveDiscordRoute } from './routing';
 
@@ -104,9 +105,9 @@ const failures = new Map<string, { status: number; body: unknown; times: number 
 const created: Array<Record<string, any>> = [];
 const delivered: Array<Record<string, any>> = [];
 
-async function newSession(projectId = PROJECT) {
+async function newSession(projectId = PROJECT, metadata?: Record<string, unknown>) {
   const sessionId = crypto.randomUUID();
-  await db.insert(projectSessions).values({ sessionId, accountId: ACCOUNT, projectId, branchName: sessionId, createdBy: ACTOR });
+  await db.insert(projectSessions).values({ sessionId, accountId: ACCOUNT, projectId, branchName: sessionId, createdBy: ACTOR, ...(metadata ? { metadata } : {}) });
   return sessionId;
 }
 
@@ -193,7 +194,8 @@ beforeAll(async () => {
     sleep: async () => {},
     createSession: (async (input: Record<string, any>) => {
       created.push(input);
-      const sessionId = await newSession(input.project.projectId);
+      // The session row keeps the create's metadata, as the lifecycle's does (`discord.channel_id` …).
+      const sessionId = await newSession(input.project.projectId, input.metadata);
       const { type: _type, createClaim: _claim, ...thread } = input.postCreate[0];
       await bindChatThread({ ...thread, projectId: input.project.projectId, sessionId });
       return { status: 'created', sessionId };
@@ -1142,5 +1144,51 @@ describe('the Gateway under failure', () => {
       await client.stop();
       fake.server.stop(true);
     }
+  });
+});
+
+describe('the working mark', () => {
+  const HOURGLASS = encodeURIComponent('⏳');
+  const CHECK = encodeURIComponent('✅');
+  const marked = (id: string, me = true) => ({ id, reactions: [{ me, count: 1, emoji: { name: '⏳', id: null } }] });
+
+  test("a message handed to the agent shows ⏳; when the session goes idle, ✅ replaces it on the thread's starter and on a follow-up", async () => {
+    const m = message({ channel_id: CHANNEL });
+    await intakeMessage(m, BOT);
+    await drain();
+    expect(routes()).toContain(`PUT /channels/${CHANNEL}/messages/${m.id}/reactions/${HOURGLASS}/@me`);
+    const [thread] = await db.select({ sessionId: chatThreads.sessionId }).from(chatThreads).where(eq(chatThreads.threadId, m.id));
+
+    // Discord lists the bot's own ⏳ (`me`) on a follow-up in the thread; someone else's ⏳ is not Kortix's.
+    const followUp = snowflake();
+    failures.set(`GET /channels/${m.id}/messages`, { status: 200, body: [marked(followUp), marked(snowflake(), false)], times: 1 });
+    failures.set(`GET /channels/${CHANNEL}/messages/${m.id}`, { status: 200, body: marked(m.id), times: 1 });
+    calls.length = 0;
+    await settleSessionChat(thread!.sessionId, 'done');
+    expect(routes().filter((r) => !r.startsWith('GET '))).toEqual([
+      `DELETE /channels/${m.id}/messages/${followUp}/reactions/${HOURGLASS}/@me`,
+      `PUT /channels/${m.id}/messages/${followUp}/reactions/${CHECK}/@me`,
+      `DELETE /channels/${CHANNEL}/messages/${m.id}/reactions/${HOURGLASS}/@me`,
+      `PUT /channels/${CHANNEL}/messages/${m.id}/reactions/${CHECK}/@me`,
+    ]);
+
+    // A failed or stopped run clears the mark and claims nothing.
+    failures.set(`GET /channels/${m.id}/messages`, { status: 200, body: [marked(followUp)], times: 1 });
+    calls.length = 0;
+    await settleSessionChat(thread!.sessionId, 'failed');
+    expect(routes().filter((r) => !r.startsWith('GET '))).toEqual([`DELETE /channels/${m.id}/messages/${followUp}/reactions/${HOURGLASS}/@me`]);
+  });
+
+  test('a message that never reached a session loses its ⏳ with the notice that says so, a thread start included', async () => {
+    const started = snowflake();
+    // The thread Kortix started on the mention: Discord names its parent.
+    channels.set(started, { id: started, type: 11, guild_id: GUILD, parent_id: CHANNEL, name: 'started' });
+    failures.set(`GET /channels/${CHANNEL}/messages/${started}`, { status: 200, body: marked(started), times: 1 });
+    await discordPort.notify(
+      { platform: 'discord', workspaceId: GUILD, threadId: started, projectId: PROJECT, messageId: started },
+      { kind: 'create_in_flight' },
+    );
+    expect(routes()).toContain(`DELETE /channels/${CHANNEL}/messages/${started}/reactions/${HOURGLASS}/@me`);
+    expect(routes().some((r) => r.includes(CHECK))).toBe(false);
   });
 });

@@ -1486,8 +1486,8 @@ export const projectSessions = kortixSchema.table(
     ),
     // NOTE: `idx_project_sessions_one_available_warm` (one `available` warm
     // session per project+creator) USED to be declared here. It arbitrated a
-    // create race that no longer exists: a warm session is now an ordinary
-    // session and a duplicate costs one extra box. Dropped by
+    // create race that no longer exists (warm sessions were removed on
+    // 2026-11-03). Dropped by
     // migrations/20260813203000000_drop_one_available_warm_index.concurrent.ts.
     // NOTE: three more indexes exist, built CONCURRENTLY and listed in
     // scripts/schema-contract-sql-only.ts:

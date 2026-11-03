@@ -3788,8 +3788,8 @@ kortix self-host start
 | Enterprise license | `ENTERPRISE_LICENSE_AVAILABLE`. With a license, it unlocks SSO, SCIM, role-based access control and audit. Also `--enterprise-license`. |
 | Restrict account creation | On by default. Only a platform admin can create a new account. Others get `403` `account_creation_restricted`. Sign-ups, invites, SSO and each person's personal account still work. Also `--no-restrict-account-creation` and `--restrict-account-creation`. |
 | Platinum | `PLATINUM_API_KEY`, `PLATINUM_API_URL` (default `https://api.platinum.dev`) and `PLATINUM_TEMPLATE` (optional). |
-| Apps hosting | Optional. `KORTIX_APPS_BASE_DOMAIN`, which needs a wildcard DNS record. |
-| Preview origins | `KORTIX_PREVIEW_BASE_DOMAIN`, suggested `p.<domain>`, which needs a `*.p.<domain>` record. In domain mode the default answer is configure. |
+| Apps hosting | `KORTIX_APPS_BASE_DOMAIN`, which needs a `*.apps.<domain>` record. A new instance on a domain gets `apps.<domain>`. |
+| Preview origins | `KORTIX_PREVIEW_BASE_DOMAIN`, which needs a `*.p.<domain>` record. A new instance on a domain gets `p.<domain>`. |
 | Composio | Optional. `COMPOSIO_API_KEY`, the app catalog for [connectors](/docs/guide#connectors). |
 | Update policy | Auto-update on or off, channel, daily time and timezone. |
 
@@ -3821,7 +3821,7 @@ Emails, sandbox callbacks and webhooks keep using the primary domain. People sig
 kortix self-host domain move <domain>
 ```
 
-The command checks that every new name resolves to the same address as the current domain, writes the new configuration, runs `caddy validate`, and restarts Caddy, the frontend, the API, the gateway and auth. A failed validation restores the previous configuration. Hosts under the old domain move with it, and the old domain becomes an alias, so every old link keeps working.
+The command checks that every new name resolves to the same address as the current domain, writes the new configuration, and runs `caddy validate`. It then rolls the frontend, the API and the gateway one replica at a time, and restarts Caddy and auth, which takes a few seconds. A failed validation restores the previous configuration. Hosts under the old domain move with it, and the old domain becomes an alias, so every old link keeps working.
 
 Re-register URLs that outside services store: the GitHub App callback and OAuth redirect URIs.
 
@@ -3832,6 +3832,35 @@ If people sign in with SAML SSO, update the identity provider **before** the mov
 | Identifier (entity ID) | `https://<domain>/auth/v1/sso/saml/metadata` |
 | Reply URL (ACS) | `https://<domain>/auth/v1/sso/saml/acs` |
 | Logout URL | `https://<domain>/auth/v1/sso/saml/slo` |
+
+#### Certificates and security filters
+
+Home-router and ISP security filters (for example Spectrum Security Shield and Xfinity Advanced Security) block a whole domain when a threat-intelligence feed scores it as risky, and a blocked browser shows `ERR_SSL_PROTOCOL_ERROR`. One signal those feeds read is the public Certificate Transparency log: every certificate Caddy issues lists its host name there. With one certificate per host, the log lists every App and every sandbox preview, and preview names are random by design (`dev-p3000-<sandbox>.p.<domain>`). A stream of random-looking names under one domain looks like malware infrastructure.
+
+Give Apps and previews one wildcard certificate per base instead:
+
+```bash
+kortix self-host tls wildcard --zone acme.<domain>
+```
+
+A wildcard certificate needs the ACME DNS-01 challenge. Kortix does not need an API token for your DNS: the command starts a small DNS server on this server (acme-dns) that answers for one zone only, `acme.<domain>`, and prints the records to add once in your DNS:
+
+| Name | Type | Value |
+|---|---|---|
+| `acme.<domain>` | NS | `ns.acme.<domain>` |
+| `ns.acme.<domain>` | A | The server's public IPv4 address |
+| `_acme-challenge.apps.<domain>` | CNAME | The value the command prints |
+| `_acme-challenge.p.<domain>` | CNAME | The value the command prints |
+
+Each alias domain gets its own two CNAME records. The server must accept UDP and TCP port 53 from anywhere (a cloud firewall or security group rule). acme-dns serves only its own zone and answers no other query.
+
+Run the command again after you add the records. It checks them through the zone's own nameserver and a public resolver, and switches only the bases whose records work. A base without records keeps one certificate per host, so nothing stops serving. The first switch restarts Caddy once with the Kortix Caddy image (`kortix/caddy`, Caddy with the acme-dns module), which takes a few seconds; later switches reload Caddy without a dropped connection. Caddy renews the wildcard certificates itself. `kortix self-host tls show` lists how each host gets its certificate.
+
+Other rules that keep a domain clear of these filters:
+
+- Use your own domain for each instance. Do not share one parent domain between unrelated instances: a block on the parent covers every instance under it.
+- Point no DNS record at an address the instance does not own, and remove records for retired hosts.
+- Keep the Cloudflare proxy off ("DNS only") for every record above. Caddy issues the certificates and needs the direct path.
 
 ### First sign-in and setup
 
@@ -3873,6 +3902,7 @@ A new instance starts with these defaults:
 | `instance-dir` | The instance directory moved since the last write | Run `kortix self-host configure`, or any of `init`, `start`, `update`, `env set`. |
 | `email-url` | `EMAIL_URL` is set but does not parse | Correct the value. |
 | `preview-origins` | Domain mode and `KORTIX_PREVIEW_BASE_DOMAIN` is empty | Point `*.p.<domain>` at the server, then `kortix self-host env set KORTIX_PREVIEW_BASE_DOMAIN=p.<domain> KORTIX_PREVIEW_ALLOW_DIRECT_EDGE=true`. |
+| `wildcard-tls` | Domain mode and an Apps or preview base still gets one certificate per host | Run `kortix self-host tls wildcard` and add the records it prints. See [Certificates and security filters](#certificates-and-security-filters). |
 | `open-sign-up` | A domain or tunnel instance has sign-up open and email confirmation off | Set `EMAIL_URL`, or set `DISABLE_SIGNUP=true` once your team is in. |
 
 <Callout type="warning">
@@ -3936,7 +3966,7 @@ Set these with `kortix self-host env set`. Each row says what the variable turns
 | `KORTIX_OAUTH_CLIENTS` | Your own OAuth clients for the [app catalog](/docs/guide#connectors) apps whose servers have no dynamic client registration. JSON, one entry per vendor: `google`, `github`, `slack`, `hubspot`, `asana`, `box`. Without an entry, those apps are not listed. See [Kortix OAuth clients](#kortix-oauth-clients). |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET` | One-click **Add to Slack** with your own Slack app. Without all three, each project connects its own Slack app. See [Channels](/docs/guide#channels). |
 | `MICROSOFT_APP_ID`, `MICROSOFT_APP_PASSWORD`, `MICROSOFT_APP_TENANT` (default `botframework.com`) | One shared Microsoft Teams bot. Without them, each project brings its own bot app. |
-| `DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN`; optional `DISCORD_REDIRECT_URI` | **Add to Discord** with your own Discord application. In the Discord Developer Portal, set the Interactions Endpoint URL to `<api>/v1/webhooks/discord`, and add `<api>/v1/webhooks/discord/oauth/callback` as an OAuth2 redirect. Without all four, Discord is not offered. `DISCORD_MESSAGE_CONTENT=true` (with the **Message Content** intent turned on for the application) lets every message in a Kortix thread reach the agent; without it, a thread message must mention the app. When Discord refuses the intent, Kortix logs an error and runs without it: mentions and direct messages keep working. Discord requires verification for an application in 100 servers or more; Kortix logs a warning from 75. See [Channels](/docs/guide#channels). |
+| `DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN`; optional `DISCORD_REDIRECT_URI` | **Add to Discord** with your own Discord application. In the Discord Developer Portal, create the app, turn on **Requires OAuth2 Code Grant**, and add `<api>/v1/webhooks/discord/oauth/callback` as an OAuth2 redirect. Store the bot token and the client secret, then run `apps/api/scripts/discord-app-setup.ts` (steps in its header): it checks the portal settings, writes the application ID and public key, and, once the API runs with them, sets the Interactions Endpoint URL to `<api>/v1/webhooks/discord`. Without all four values, Discord shows as not set up. `DISCORD_MESSAGE_CONTENT=true` (with the **Message Content** intent turned on for the application) lets every message in a Kortix thread reach the agent; without it, a thread message must mention the app. When Discord refuses the intent, Kortix logs an error and runs without it: mentions and direct messages keep working. Discord requires verification for an application in 100 servers or more; Kortix logs a warning from 75. See [Channels](/docs/guide#channels). |
 | `RESEND_API_KEY` | Transactional email through Resend. |
 | `TUNNEL_ENABLED` | Default `true`. `false` turns off [computers](/docs/guide#computers): `/v1/tunnel/*` answers `503` `tunnel_disabled`. |
 | `PLATINUM_API_KEY` | Required. Sessions, App machines and volumes, and Drive (`/drives`). |
@@ -4051,7 +4081,9 @@ People see the effect of these values in [Computers](/docs/guide#computers).
 
 | Variable | Default | Effect |
 |---|---|---|
-| `KORTIX_APPS_BASE_DOMAIN` | none | The domain [Apps](/docs/developers#apps-reference) are served on, for example `apps.kortix.example.com`. It needs a `*.apps.kortix.example.com` DNS record. `kortix self-host configure` sets it. Caddy serves Apps only when it is set. |
+| `KORTIX_APPS_BASE_DOMAIN` | `apps.<domain>` on a new domain instance | The domain [Apps](/docs/developers#apps-reference) are served on, for example `apps.kortix.example.com`. It needs a `*.apps.kortix.example.com` DNS record. `kortix self-host configure` sets it. Caddy serves Apps only when it is set. |
+| `KORTIX_ACME_DNS_ZONE` | none | The zone the bundled acme-dns answers for, for example `acme.kortix.example.com`. `kortix self-host tls wildcard` sets it with `KORTIX_ACME_DNS_PUBLIC_IP` (the address in its records) and `KORTIX_ACME_DNS_LISTEN_IP` (the address port 53 binds). See [Certificates and security filters](#certificates-and-security-filters). |
+| `KORTIX_WILDCARD_TLS_BASES` | none | The Apps and preview bases on one wildcard certificate each. `kortix self-host tls wildcard` adds a base when its DNS records work. |
 | `KORTIX_APPS_RETAINED_DEPLOYMENTS` | `5` | The ready releases each App keeps as rollback targets, beside the live one. At least `1`. |
 
 #### Logs, containers and the database console

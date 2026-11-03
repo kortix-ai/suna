@@ -52,6 +52,11 @@ import { createPiSessionLogPort } from './session-log'
 import { JOURNAL_MID_TURN_MS, startSessionLogJournal } from '../shared/session-log-journal'
 import { reconcileSessionLog, type SessionLogBoot } from '../shared/session-log-boot'
 import { readPiSnapshot } from './session-log-restore'
+import { afterFirstTurn } from '../shared/after-first-turn'
+import { preloadPiRuntimeModules } from './runtime'
+
+/** The first runtime-assets pass waits for the first turn to end, at most this long after ready. */
+const FIRST_ASSETS_PASS_MAX_DELAY_MS = 15_000
 
 export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootState: PiBootState }): Promise<void> {
   const { cfg, bootState, bootMark, serve } = context
@@ -59,17 +64,26 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
   const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_RUNTIME_SESSION ?? '').trim() === '1'
   const home = homedir()
 
-  try {
-    await configureGlobalGitIdentity(cfg, home)
-  } catch (err) {
-    logger.warn('[boot] default git identity setup failed', { err: (err as Error).message })
-  }
-  try {
-    await configureGitCredentialHelper(cfg, home)
-  } catch (err) {
-    logger.warn('[boot] git credential helper setup failed', { err: (err as Error).message })
-  }
-  bootMark('git-identity')
+  // Git identity and the credential helper write ~/.gitconfig with a few git
+  // spawns (~45 ms). Only the workspace checkout and the runtime (its tools run
+  // git) read them, so they run beside the serve and config steps, not before them.
+  const gitReady = (async () => {
+    try {
+      await configureGlobalGitIdentity(cfg, home)
+    } catch (err) {
+      logger.warn('[boot] default git identity setup failed', { err: (err as Error).message })
+    }
+    try {
+      await configureGitCredentialHelper(cfg, home)
+    } catch (err) {
+      logger.warn('[boot] git credential helper setup failed', { err: (err as Error).message })
+    }
+    bootMark('git-identity')
+  })()
+  // The first runtime-assets pass can rebuild a ~100 MB binary from chunks and
+  // hash it. It waits for the first turn (after-first-turn.ts); every tick still
+  // reaches it (Rule 3), the ones in that window once the gate opens.
+  const assetsGate = afterFirstTurn(() => scheduleRuntimeAssetsReconcile(), FIRST_ASSETS_PASS_MAX_DELAY_MS)
 
   const projectEnv = createProjectEnvStore()
   if (!agentEnvDirIsTmpfs()) {
@@ -108,6 +122,7 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
       turnOrder.begin(messageId, relayTurnBegin(rootId, messageId))
     },
     onTurnEnd: ({ rootId, messageId, status, error }) => {
+      assetsGate.turnEnded()
       kortixEventBus().publishDaemon('kortix.turn', { runtime_session_id: rootId, verdict: status, error: error ?? null }, rootId)
       const begun = turnOrder.end(messageId)
       if (relayedTurnEnds.has(messageId)) return
@@ -189,13 +204,19 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
   // pi starts on the config alone. The workspace gates turns, not the runtime:
   // the readiness gate (service.ts) holds every turn until it lands.
   const configReady = harness.releases.boot(bootMark)
+  // pi's start loads the coding agent, its tools and extensions after the
+  // release lands. Load them while that fetch is in flight instead.
+  preloadPiRuntimeModules()
   if (cfg.autoClone) bootState.workspaceReady = false
   const workspace: Promise<string | null> = cfg.autoClone
-    ? provideWorkspace(cfg, {
-        onSummary: (summary) => {
-          bootState.workspaceProvider = summary
-        },
-      })
+    ? gitReady
+        .then(() =>
+          provideWorkspace(cfg, {
+            onSummary: (summary) => {
+              bootState.workspaceProvider = summary
+            },
+          }),
+        )
         .then(async (result) => {
           if (result.provider === 's3') bootState.deferredHistoryBackfill = backfillAfterHydration(cfg, result)
           if (!bootState.deferredHistoryBackfill) scheduleHistoryBackfill(cfg, cfg.projectTarget)
@@ -225,6 +246,7 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     logger.error('[boot] session log restore failed; the session does not start', { err: bootState.initialRuntimeSessionError })
     return
   }
+  await gitReady
   try {
     await harness.lifecycle.start()
   } catch (err) {
@@ -237,7 +259,7 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
   // The reconcile floor: every 60 s the box re-checks its release and its
   // runtime assets, so no failure is permanent. pi has no model catalog to converge.
   configureRuntimeTruth({
-    reconcileAssets: scheduleRuntimeAssetsReconcile,
+    reconcileAssets: assetsGate.request,
     readConfigRelease: () => harness.releases.report(),
     reconcileConfigRelease: async () => {
       await harness.releases.converge(harness.runtime()).catch((err) => {
@@ -246,6 +268,8 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     },
   })
   startRuntimeTruthTicker()
+  // The gate's clock runs from ready on every path below, the early returns included.
+  assetsGate.start()
 
   // Everything below runs in the project: hooks, the first turn.
   await workspace
@@ -301,7 +325,7 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     run()
   }
   scheduleRuntimeProjectionPush('boot')
-  scheduleRuntimeAssetsReconcile()
+  assetsGate.request()
 }
 
 /**

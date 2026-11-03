@@ -1262,10 +1262,6 @@
           "name": "Marketplace",
           "description": "Explora e instala habilidades de registros de la comunidad y proveedores. Las fuentes, actualizaciones y ámbitos de equipo aún cambian."
         },
-        "warm_sessions": {
-          "name": "Sesiones preparadas",
-          "description": "Mantén un sandbox listo para iniciar sesiones al instante. El sandbox inactivo usa cómputo."
-        },
         "secrets_egress": {
           "name": "Secretos protegidos por la red",
           "description": "Controla qué herramientas y destinos pueden recibir los secretos del proyecto."
@@ -20856,7 +20852,7 @@
       "textb8a8023af3cf": "Redacta la publicación de LinkedIn de esta semana a partir de los pull requests fusionados.",
       "textb6b779e41308": "agent: marketing",
       "texta17bcc0bdbe1": "trigger: weekly-post",
-      "text6e515c096274": "Los agentes leen informes regulatorios y datos de mercado, construyen la tesis y redactan el memorando de inversión. Un gestor de cartera decide.",
+      "text313f92aeb061": "Cada operación que llega recibe un análisis completo. Los agentes la contrastan con el mandato, leen los informes y los datos de mercado, someten la tesis y el escenario bajista a pruebas de estrés y redactan el memorando de inversión. Decide el comité de inversiones.",
       "textdc7f8ac95166": "Investigación de candidatos autónoma.",
       "textb5947f5f79c9": "Los agentes investigan candidatos para cada búsqueda y redactan un perfil de cada uno. Los consultores eligen la lista final.",
       "textc81f1483737e": "La plataforma de IA empresarial, construida a partir del código de código abierto de Kortix.",
@@ -20870,7 +20866,7 @@
       "text2eb1d24bcc04": "Los agentes diseñan rutas de fibra a partir de datos GIS e imágenes y elaboran la lista de materiales de cada ruta.",
       "textf2d996d89263": "Kortix, ejecutado en Kortix.",
       "text34ff4020f800": "Nuestra empresa es un proyecto de Kortix. Los agentes clasifican y corrigen issues, mantienen al día la evidencia SOC 2 y llevan ventas y soporte. Las personas aprueban.",
-      "textf9d6c20c90a0": "Análisis de inversiones autónomo.",
+      "textdd57f275a118": "Cada operación, evaluada por agentes.",
       "textacf058bd8604": "Gestión de activos",
       "text794c7f0fc2b4": "Configúralo una vez.",
       "text9d58e473a6dc": "Compartir una sesión",
@@ -21924,6 +21920,8 @@
     "discordUnavailable": "Discord no está configurado en esta instalación de Kortix.",
     "discordPitch": "Chatea con tu agente en tu servidor de Discord.",
     "discordAddToDiscord": "Añadir a Discord",
+    "discordConnectedLede": "Menciona a @Kortix en un canal o escríbele directamente. Responde a las personas que permitas.",
+    "discordOpen": "Abrir Discord",
     "discordDisconnected": "Discord desconectado",
     "discordUsersDescription": "Solo estas personas pueden hablar con el bot. Cuando otra persona lo menciona o le escribe, aparece aquí.",
     "discordUsersEmptyDescription": "Pide a alguien que mencione al bot o le escriba, y luego permite su solicitud o añade su ID de usuario.",

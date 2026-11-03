@@ -1262,10 +1262,6 @@
           "name": "Marketplace",
           "description": "Explore e instale habilidades de registros da comunidade e de fornecedores. Fontes, atualizações e escopos de equipe ainda estão mudando."
         },
-        "warm_sessions": {
-          "name": "Sessões aquecidas",
-          "description": "Mantenha um sandbox pronto para iniciar sessões imediatamente. O sandbox ocioso usa computação."
-        },
         "secrets_egress": {
           "name": "Segredos protegidos pela rede",
           "description": "Controle quais ferramentas e destinos podem receber os segredos do projeto."
@@ -20936,7 +20932,7 @@
       "text446559c1e209": "Ativo para cada nova sessão",
       "textbdd586e9579c": "Personalizar · Agentes",
       "text4190b0de521a": "Revisar · Aprovações",
-      "text6e515c096274": "Os agentes leem relatórios regulatórios e dados de mercado, constroem a tese e redigem o memorando de investimento. Um gestor de portfólio decide.",
+      "text313f92aeb061": "Cada operação que chega recebe uma análise completa. Os agentes a verificam contra o mandato, leem os relatórios e os dados de mercado, fazem testes de estresse da tese e do cenário de baixa e redigem o memorando de investimento. O comitê de investimentos decide.",
       "textdc7f8ac95166": "Pesquisa de candidatos autônoma.",
       "textb5947f5f79c9": "Os agentes pesquisam candidatos para cada busca e redigem um perfil de cada um. Os consultores escolhem a lista final.",
       "textc81f1483737e": "A plataforma de IA empresarial, construída a partir do código open-source da Kortix.",
@@ -21019,7 +21015,7 @@
       "text2eb1d24bcc04": "Os agentes projetam rotas de fibra a partir de dados GIS e imagens e montam a lista de materiais de cada rota.",
       "textf2d996d89263": "Kortix, executado no Kortix.",
       "text34ff4020f800": "Nossa empresa é um projeto Kortix. Os agentes triam e corrigem issues, mantêm as evidências de SOC 2 em dia e cuidam de vendas e suporte. As pessoas aprovam.",
-      "textf9d6c20c90a0": "Análise de investimentos autônoma.",
+      "textdd57f275a118": "Cada operação, avaliada por agentes.",
       "textacf058bd8604": "Gestão de ativos",
       "text81a42b091ada": "Arcadia · Registro de auditoria",
       "text109e9aeb5205": "Como um administrador configura os controles",
@@ -21924,6 +21920,8 @@
     "discordUnavailable": "O Discord não está configurado nesta instalação da Kortix.",
     "discordPitch": "Converse com seu agente no seu servidor do Discord.",
     "discordAddToDiscord": "Adicionar ao Discord",
+    "discordConnectedLede": "Mencione @Kortix em um canal ou envie uma mensagem direta. O app responde às pessoas que você permitir.",
+    "discordOpen": "Abrir o Discord",
     "discordDisconnected": "Discord desconectado",
     "discordUsersDescription": "Só estas pessoas podem falar com o bot. Quando outra pessoa o menciona ou envia uma mensagem, ela aparece aqui.",
     "discordUsersEmptyDescription": "Peça a alguém para mencionar o bot ou enviar uma mensagem e depois permita a solicitação ou adicione o ID de usuário.",

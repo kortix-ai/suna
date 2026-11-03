@@ -132,7 +132,6 @@ import {
   useDisconnectSlack,
   useSlackInstall,
   useSlackMode,
-  useDiscordMode,
 } from '../../../internal/hooks/channels/use-channels-installations';
 import {
   type TeamsInstallation,
@@ -190,8 +189,6 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
   // no surface, and its inboxes are never read (EmailHero is not mounted).
   const emailFlag = useFeatureFlag(projectId, 'email_channel');
   const emailEnabled = emailFlag.enabled;
-  // Discord needs the deployment's Kortix Discord application: without it, Discord shows on its own page only.
-  const discordAvailable = useDiscordMode(projectId).data?.available === true;
   const loading = loadingInstall || loadingMode || emailFlag.isLoading;
   const tPages = useTranslations('connectorPages');
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
@@ -212,7 +209,7 @@ export function ChannelsSection({ projectId, platform }: { projectId: string; pl
   // platform, the Channels tab every platform, one under the other.
   const platforms: ChannelPlatform[] = platform
     ? [platform]
-    : CHANNEL_PLATFORM_IDS.filter((pf) => (pf !== 'email' || emailEnabled) && (pf !== 'discord' || discordAvailable));
+    : CHANNEL_PLATFORM_IDS.filter((pf) => pf !== 'email' || emailEnabled);
   // The Kortix tab also holds the computer, where this deployment can pair one
   // (the machine list answers 503 where computers are off).
   const computersEnabled = useTunnelConnections({ refetchInterval: false }).isSuccess;

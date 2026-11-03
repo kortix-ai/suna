@@ -12,10 +12,8 @@ import { sessionStartKey, startProjectSession } from '../core/rest/projects-clie
  * bundle. Use at every createProjectSession→navigate site.
  *
  * Returns the prefetch promise (it never rejects — `prefetchQuery` swallows
- * errors) so a caller can sequence work on `/start` having settled. The warm
- * adoption path needs this: `/start` is what drops a warm session's
- * `metadata.warm`, so a sessions-list refetch issued before it settles can
- * still see the row hidden. Fire-and-forget callers just ignore the return.
+ * errors) so a caller can sequence work on `/start` having settled.
+ * Fire-and-forget callers just ignore the return.
  */
 export function prefetchSessionStart(
   queryClient: QueryClient,

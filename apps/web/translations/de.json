@@ -1262,10 +1262,6 @@
           "name": "Marktplatz",
           "description": "Suchen und installieren Sie Skills aus Community- und Anbieterregistern. Quellen, Updates und Teambreiche ändern sich noch."
         },
-        "warm_sessions": {
-          "name": "Vorgewärmte Sitzungen",
-          "description": "Halten Sie eine Sandbox für sofortige Sitzungsstarts bereit. Die inaktive Sandbox verbraucht Rechenleistung."
-        },
         "secrets_egress": {
           "name": "Netzwerkerzwungene Geheimnisse",
           "description": "Steuern Sie, welche Werkzeuge und Ziele Projektgeheimnisse empfangen dürfen."
@@ -20737,7 +20733,7 @@
       "text2eb1d24bcc04": "Agenten planen Glasfasertrassen aus GIS-Daten und Bildmaterial und erstellen für jede Trasse die Stückliste.",
       "textf2d996d89263": "Kortix, betrieben auf Kortix.",
       "text34ff4020f800": "Unser Unternehmen ist ein Kortix-Projekt. Agenten sichten und beheben Issues, halten SOC-2-Nachweise aktuell und betreiben Vertrieb und Support. Menschen geben frei.",
-      "textf9d6c20c90a0": "Autonome Investmentanalyse.",
+      "textdd57f275a118": "Jeder Deal, von Agenten bewertet.",
       "textacf058bd8604": "Vermögensverwaltung",
       "textfe1a97562904": "Kortix die Nutzung des Arbeitslaptops erlauben?",
       "text57f26e9fc12a": "Ein Agent möchte die Shell verwenden. Wenn du dies erlaubst, kann jeder Kortix-Agent, der diesen Computer erreichen kann, bis zum Ablauf der Zeit auf dessen Dateien, die Shell sowie Bildschirm und Tastatur zugreifen.",
@@ -20885,7 +20881,7 @@
       "textcf7a9a50fdfd": "Jede Nachricht erreicht den Agenten. Eine Sitzung bis /new.",
       "texte48f2d548989": "Erwähne ihn. Eine Sitzung bis /new.",
       "texte31204e91d82": "Erwähne ihn. Jeder Beitrag ist eine eigene Sitzung.",
-      "text6e515c096274": "Agenten lesen Geschäftsberichte und Marktdaten, entwickeln die These und schreiben das Investment-Memo. Ein Portfoliomanager entscheidet.",
+      "text313f92aeb061": "Jeder eingehende Deal wird vollständig analysiert. Agenten prüfen ihn gegen das Mandat, lesen Geschäftsberichte und Marktdaten, unterziehen These und Verlustszenario einem Stresstest und schreiben das Investment-Memo. Das Investmentkomitee entscheidet.",
       "textdc7f8ac95166": "Autonome Kandidatenrecherche.",
       "textb5947f5f79c9": "Agenten recherchieren Kandidaten für jedes Mandat und schreiben zu jedem ein Profil. Die Berater wählen die Shortlist.",
       "textc81f1483737e": "Die Enterprise-KI-Plattform, aufgebaut auf Kortix' Open-Source-Code.",
@@ -21924,6 +21920,8 @@
     "discordUnavailable": "Discord ist in dieser Kortix-Installation nicht eingerichtet.",
     "discordPitch": "Chatte mit deinem Agenten auf deinem Discord-Server.",
     "discordAddToDiscord": "Zu Discord hinzufügen",
+    "discordConnectedLede": "Erwähne @Kortix in einem Kanal oder schreib der App direkt. Sie antwortet den Personen, die du zulässt.",
+    "discordOpen": "Discord öffnen",
     "discordDisconnected": "Discord getrennt",
     "discordUsersDescription": "Nur diese Personen können mit dem Bot sprechen. Wenn jemand anderes ihn erwähnt oder ihm schreibt, erscheint die Person hier.",
     "discordUsersEmptyDescription": "Bitte jemanden, den Bot zu erwähnen oder ihm zu schreiben, und erlaube dann die Anfrage oder füge die Benutzer-ID hinzu.",

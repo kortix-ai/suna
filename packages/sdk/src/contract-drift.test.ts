@@ -73,7 +73,6 @@ import type {
   SessionTurnEnded,
   SessionTurnFailure,
   SessionTurnStatus,
-  WarmProjectSessionResult,
 } from './core/rest/projects-client/sessions';
 import type {
   ProjectTrigger,
@@ -173,9 +172,6 @@ export function contractDrift(): void {
   noPhantom<NoPhantom<SessionStartImageStep, C.SessionStartImageStep>>();
   fits<SessionStartImageState>(wire<C.SessionStartImageState>());
   fits<C.SessionStartImageState>(wire<SessionStartImageState>());
-
-  fits<WarmProjectSessionResult>(wire<C.WarmProjectSessionResult>());
-  noPhantom<NoPhantom<WarmProjectSessionResult, C.WarmProjectSessionResult>>();
 
   fits<ProjectTrigger>(wire<C.Trigger>());
   noPhantom<NoPhantom<ProjectTrigger, C.Trigger>>();

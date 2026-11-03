@@ -23,8 +23,8 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  *    (engineer and QA agents, Linear). Kortix: the `kortix-ai/company`
  *    project (engineering factory, compliance agency, sales, support and
  *    marketing agents).
- *  - The asset manager card shows only the autonomous investment analysis
- *    (founder, 2026-11-03), in general terms (2026-11-02: no "own fund", no
+ *  - The asset manager card shows only the analysis: every deal evaluated
+ *    end to end (founder, 2026-11-03), in general terms (2026-11-02: no "own fund", no
  *    "simulated capital"). Its source is Kortix's own fund project
  *    (`kortix-ai/hedgefund`, CASE-STUDY.md): real public market data,
  *    simulated investors, capital and trades. Name only steps that project
@@ -122,13 +122,13 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
         height: 100,
       },
       category: 'Asset management',
-      title: 'Autonomous investment analysis.',
-      body: 'Agents read filings and market data, build the thesis and write the investment memo. A portfolio manager decides.',
+      title: 'Every deal, evaluated by agents.',
+      body: 'Every deal that comes in gets a full analysis. Agents screen it against the mandate, read the filings and market data, stress-test the thesis and the downside, and write the investment memo. The investment committee decides.',
       facts: [
+        'Every deal screened against the mandate',
         'Filings and market data read',
-        'A thesis for every idea',
-        'An investment memo with sources',
-        'A portfolio manager decides',
+        'Thesis and downside stress-tested',
+        'An investment memo for every deal',
       ],
     },
     {

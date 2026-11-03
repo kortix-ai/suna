@@ -24,8 +24,6 @@ import { START_AWAIT_MAX_MS } from '../session-lifecycle/await-stage';
 import { recoverLostSession } from '../session-lifecycle/recover-lost-session';
 import { stoppedSubagentNotice } from '../subagent-notice';
 import { trackDetached } from '../../shared/drain';
-import { isWarmProjectSession } from '../lib/warm-sessions';
-import { dropWarmSessionMarkerOnAdopt, warmSessionPlacement } from './warm-sessions';
 import { readSessionTurnState } from '../lib/session-turn-read';
 import { canStopTurns } from '../session-lifecycle/turn-stop-authority';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
@@ -105,37 +103,6 @@ export function registerSessionRuntimeRoutes(): void {
       // Booting a box needs the repository; a running box keeps working (its
       // keep-alive polls must not fail because GitHub went away under it).
       if (visible.row.status !== 'running') await assertRepositoryConnected(loaded.row);
-
-      // Adoption (JAY-599/T21): a still-warm row (pre-created, never prompted)
-      // stops being speculative the instant a user's tab calls /start on it —
-      // see dropWarmSessionMarkerOnAdopt for why this is safe unconditionally.
-      // Independent of billing/provisioning below: it is a metadata fact about
-      // this row, not a spend, so it lands even if the billing gate rejects the
-      // resume that follows.
-      if (isWarmProjectSession(visible.row.metadata)) {
-        // A held browser entry can predate the project's region preference.
-        // Wait for actual placement while creation is pending; never adopt an
-        // EU or unknown active box as US, and never move an existing box.
-        const placement = await warmSessionPlacement(sessionId, projectMetadata, loaded.row.projectId);
-        if (placement === 'pending') {
-          return c.json({
-            stage: 'provisioning' as const,
-            agent_name: visible.row.agentName ?? 'default',
-            sandbox: null,
-            opencode_session_id: null,
-            retriable: true,
-            runtime_transport: 'rest' as const,
-          }, 200);
-        }
-        if (placement === 'mismatch') {
-          return c.json({
-            error: 'The warm session does not match the project compute region',
-            code: 'WARM_SESSION_CONFIGURATION_MISMATCH',
-          }, 409);
-        }
-        await dropWarmSessionMarkerOnAdopt(sessionId);
-        stl.mark('warm-adopted');
-      }
 
       // Same gate as wake/create: resuming or provisioning spends compute.
       const billing = await checkBillingAdmission(loaded.row.accountId);
