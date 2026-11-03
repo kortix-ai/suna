@@ -33,7 +33,7 @@ import { WHITE_LABEL_TRANSLATION_KEYS } from '@/i18n/white-label-translation-key
  */
 
 export const SIGN_URL = 'https://app.documenso.com/d/gaAaA6NPc_E9c6C-sl9YB';
-export const AGREEMENT_URL = 'https://github.com/kortix-ai/suna/blob/dev/WHITE-LABEL-LICENSE.md';
+export const AGREEMENT_URL = 'https://github.com/kortix-ai/CompanyOS/blob/dev/WHITE-LABEL-LICENSE.md';
 export const CUSTOM_TERMS_URL = 'mailto:marko@kortix.ai';
 
 /** The real config a licensed partner sets: agreement, "After you sign", step 2. */

@@ -109,7 +109,7 @@ export const siteConfig = {
       links: [
         { id: 7, title: 'Documentation', url: '/docs' },
         { id: 8, title: 'Discord', url: 'https://discord.com/invite/RvFhXUdZ9H' },
-        { id: 9, title: 'GitHub', url: 'https://github.com/kortix-ai/suna' },
+        { id: 9, title: 'GitHub', url: 'https://github.com/kortix-ai/CompanyOS' },
       ],
     },
     {
@@ -117,7 +117,7 @@ export const siteConfig = {
       links: [
         { id: 10, title: 'Privacy Policy', url: '/legal?tab=privacy' },
         { id: 11, title: 'Terms of Service', url: '/legal/terms' },
-        { id: 12, title: 'License', url: 'https://github.com/kortix-ai/suna/blob/dev/LICENSE' },
+        { id: 12, title: 'License', url: 'https://github.com/kortix-ai/CompanyOS/blob/dev/LICENSE' },
       ],
     },
   ],

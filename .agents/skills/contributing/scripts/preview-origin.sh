@@ -25,7 +25,7 @@ if ! [[ "$pr" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-repo="${PREVIEW_REPO:-kortix-ai/suna}"
+repo="${PREVIEW_REPO:-kortix-ai/CompanyOS}"
 deadline=$(( $(date +%s) + 45 * 60 ))
 
 # One line per deployment, newest first: "<sha> <state> <environment_url>".

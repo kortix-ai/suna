@@ -494,7 +494,7 @@ jobs:
   # The required status check on `prod` branch protection is this job's NAME.
   # Sharding turned one job into seven, so this aggregator keeps the single
   # context that branch protection already requires. Do not rename it without
-  # updating repos/kortix-ai/suna/branches/prod/protection in the same change.
+  # updating repos/kortix-ai/CompanyOS/branches/prod/protection in the same change.
   # The contract lanes (core-flows, core-db, packages-*) on the release tree:
   # the same lanes the nightly run on `dev` uses (tests.yml), run once here so
   # the release suite is the one gate. They run beside the deployed jobs, so

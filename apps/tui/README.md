@@ -56,7 +56,7 @@ Resolution order, highest first:
    `~/.kortix/tui/dev/kortix-tui`, so a locally built binary dropped there
    works with no environment variable.
 3. Download `kortix-tui-<os>-<arch>` +  its `.sha256` from
-   `https://github.com/kortix-ai/suna/releases/download/<tag>/`, where `<tag>`
+   `https://github.com/kortix-ai/CompanyOS/releases/download/<tag>/`, where `<tag>`
    is `v<version>` for a release and `dev-latest` for a `-dev.<sha>` build.
 
 | Flag | Effect |

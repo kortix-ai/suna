@@ -2291,7 +2291,7 @@ test('does NOT suppress a same-shaped message reading a different property', () 
 // `didTimeout` branch) and surfaces `ApiError(..., { code: 'TIMEOUT' })`. This
 // is the frontend mirror of the API's request-deadline 503
 // (`apps/api/src/middleware/request-deadline.ts`, de-noised from Sentry by
-// kortix-ai/suna#4524): the API bounds every non-streaming request to a 25s
+// kortix-ai/CompanyOS#4524): the API bounds every non-streaming request to a 25s
 // server deadline (clean 503 + Retry-After), and react-query retries background
 // polls — the session-audit route is polled every 5–15s from several session
 // surfaces — so a 30s client abort is an EXPECTED, retryable degradation under

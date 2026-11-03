@@ -26,7 +26,7 @@ Every entry in the table ships its source, which already sets the five apart fro
 
 The first column is easy to check. The last two decide what the team keeps once the person who set everything up moves on.
 
-Two names are deliberately absent from the table. OpenAI's version of the category is ChatGPT Work, shipped in July 2026: closed, usage-metered, on OpenAI's cloud. No open-source build sits behind it ([Kortix on GitHub](https://github.com/kortix-ai/suna) keeps the running comparison). Cowork itself is no longer a separate product either. Anthropic folded it into Claude on September 16, 2026 ([release notes](https://support.claude.com/en/articles/12138966-release-notes)). The merged experience is reaching Pro and Max plans first, and there is no Cowork-only free tier to sign up for. Pro runs $17 a month billed annually or $20 month to month, checked October 2026 ([Claude's pricing page](https://claude.com/pricing)).
+Two names are deliberately absent from the table. OpenAI's version of the category is ChatGPT Work, shipped in July 2026: closed, usage-metered, on OpenAI's cloud. No open-source build sits behind it ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS) keeps the running comparison). Cowork itself is no longer a separate product either. Anthropic folded it into Claude on September 16, 2026 ([release notes](https://support.claude.com/en/articles/12138966-release-notes)). The merged experience is reaching Pro and Max plans first, and there is no Cowork-only free tier to sign up for. Pro runs $17 a month billed annually or $20 month to month, checked October 2026 ([Claude's pricing page](https://claude.com/pricing)).
 
 ## Kortix: the system a team runs
 

@@ -441,7 +441,7 @@ section "Windows signing setup".
 
 The installed app self-updates via **electron-updater**, reading the `vX.Y.Z`
 **GitHub Releases** as its feed (the `publish: github` block in
-`electron-builder.yml` bakes an `app-update.yml` pointing at `kortix-ai/suna`).
+`electron-builder.yml` bakes an `app-update.yml` pointing at `kortix-ai/CompanyOS`).
 
 Flow (`src/updater.js`, wired from `src/main.js`):
 

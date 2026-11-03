@@ -15,9 +15,9 @@ Eigent is a strong local-first desktop cowork product and Kuse is a purpose-buil
 
 Kortix treats a company's AI setup as source code. Agents, skills, company memory, connector configuration and triggers are text files in one git repository, so a change in how an agent behaves arrives as a diff like any other change ([kortix.com](https://kortix.com/)). The same repository runs on your hardware or on Kortix Cloud.
 
-Each session works in its own sandbox, on a branch of its own. Its work arrives as a branch diff a reviewer opens first, and merge is default-deny for that agent unless an admin grants it the merge capability, so review stays a gate rather than a notification ([Kortix on GitHub](https://github.com/kortix-ai/suna)).
+Each session works in its own sandbox, on a branch of its own. Its work arrives as a branch diff a reviewer opens first, and merge is default-deny for that agent unless an admin grants it the merge capability, so review stays a gate rather than a notification ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS)).
 
-Self-hosting runs from Docker images on a laptop, a VPS, your own VPC or an on-prem network, and the CLI switches between your hosts and Kortix Cloud ([Kortix on GitHub](https://github.com/kortix-ai/suna)). Self-host is free. Kortix is open source: read it, fork it, audit it ([README](https://github.com/kortix-ai/suna#readme)). Models are a per-agent setting. Bring your own provider key, aim Kortix at any OpenAI-compatible endpoint, or use the ChatGPT subscription you already pay for ([kortix.com](https://kortix.com/)).
+Self-hosting runs from Docker images on a laptop, a VPS, your own VPC or an on-prem network, and the CLI switches between your hosts and Kortix Cloud ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS)). Self-host is free. Kortix is open source: read it, fork it, audit it ([README](https://github.com/kortix-ai/CompanyOS#readme)). Models are a per-agent setting. Bring your own provider key, aim Kortix at any OpenAI-compatible endpoint, or use the ChatGPT subscription you already pay for ([kortix.com](https://kortix.com/)).
 
 Managed cloud starts free on 500 credits a month. The Credits plan runs from $50 a month and up, where every dollar buys 100 credits, members are unlimited at no per-member charge and unused credits roll over one month, checked October 2026 ([kortix.com/pricing](https://kortix.com/pricing)).
 
@@ -51,7 +51,7 @@ Kuse also publishes Kuse Cowork, an MIT-licensed open-source desktop app for the
 
 ## Which team each one fits
 
-Pick Kortix when owning the control plane is the point. It fits teams that store configuration, shared memory and connector definitions as files in a git repository they own. They also need isolated execution per session on their own infrastructure, and a human review gate on every change before it reaches main, with merge default-deny for agents ([kortix.com](https://kortix.com/); [Kortix on GitHub](https://github.com/kortix-ai/suna)).
+Pick Kortix when owning the control plane is the point. It fits teams that store configuration, shared memory and connector definitions as files in a git repository they own. They also need isolated execution per session on their own infrastructure, and a human review gate on every change before it reaches main, with merge default-deny for agents ([kortix.com](https://kortix.com/); [Kortix on GitHub](https://github.com/kortix-ai/CompanyOS)).
 
 Pick Eigent when a local-first desktop cowork experience matters more than a shared server-side control plane. Eigent fits individuals and small teams that want multi-agent work on one machine, with Spaces, Memory and bring-your-own-key or local models. They need to accept its compliance position while SOC 2 and GDPR work is still in progress ([eigent.ai](https://www.eigent.ai)).
 

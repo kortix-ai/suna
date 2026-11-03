@@ -69,7 +69,7 @@ result on the commit. Fix it forward on `dev`, or revert the culprit after 1 hou
 ### Step 2 — check the nightly run and cost migrations
 
 ```bash
-gh run list --repo kortix-ai/suna --workflow tests.yml --branch dev --event schedule \
+gh run list --repo kortix-ai/CompanyOS --workflow tests.yml --branch dev --event schedule \
   --limit 1 --json conclusion,headSha --jq '.[0]'
 ```
 
@@ -81,7 +81,7 @@ before you dispatch: Promote applies it to the staging database within minutes.
 Write the title and notes (Step 7 shows how), then:
 
 ```bash
-gh workflow run promote.yml --repo kortix-ai/suna --ref dev \
+gh workflow run promote.yml --repo kortix-ai/CompanyOS --ref dev \
   -f ref=dev -f title="<title>" -f notes="$(cat <<'EOF'
 <markdown notes>
 EOF
@@ -206,7 +206,7 @@ Only that pull request run's `full suite + quality gates` counts for the `prod`
 ruleset. A dispatched run on the same SHA does not (v0.13.57: green dispatched
 gate, PR still `BLOCKED`), so never dispatch a second gate. If the Promote
 summary warns that approval failed, approve it yourself:
-`gh api -X POST repos/kortix-ai/suna/actions/runs/<run id>/approve`.
+`gh api -X POST repos/kortix-ai/CompanyOS/actions/runs/<run id>/approve`.
 
 ### Step 8 — release gate triage
 
@@ -238,7 +238,7 @@ approval comment by a second person within 2 business days (compliance rule
 CM-3).
 
 ```bash
-gh pr merge <release-pr> --repo kortix-ai/suna --merge
+gh pr merge <release-pr> --repo kortix-ai/CompanyOS --merge
 ```
 
 Never add `--admin` to merge over a red or missing gate unless the owner
@@ -256,7 +256,7 @@ curl -fsS https://kortix.com/api/health | jq '{version,commit}'
 npm view @kortix/sdk version
 npm view @kortix/agent-tunnel version
 npm view @kortix/llm-catalog version
-gh release view "vX.Y.Z" --repo kortix-ai/suna --json name,body,assets --jq '{name,assetCount:(.assets|length)}'   # 24 assets
+gh release view "vX.Y.Z" --repo kortix-ai/CompanyOS --json name,body,assets --jq '{name,assetCount:(.assets|length)}'   # 24 assets
 ```
 
 Then check Better Stack for an API error, 5xx, or frontend-exception spike in
@@ -298,7 +298,7 @@ written, evidence-backed justification, never silently.
   desktop changed").
 - **deploy-prod retags; it does not rebuild.** The staging build for the exact
   promoted commit must already be green:
-  `gh run list --repo kortix-ai/suna --workflow build-staging.yml --branch staging --limit 3 --json status,conclusion,headSha`.
+  `gh run list --repo kortix-ai/CompanyOS --workflow build-staging.yml --branch staging --limit 3 --json status,conclusion,headSha`.
 - **`/changelog` and `/changelog/releases` show every published `vX.Y.Z` release** and read
   GitHub Release bodies — so a thin/auto-generated body shows up as a thin entry. The weekly
   page reads only the bullets under `### New`, `### Improved` and `### Fixed`; a body without
@@ -322,7 +322,7 @@ real Release), remove it cleanly. `dev` is protected from force-push, so revert 
 git push origin :refs/tags/vX.Y.Z                       # delete the tag
 git push -f origin <prev-release-sha>:refs/heads/prod    # reset prod to the prior release
 git revert --no-edit <version-bump-commit>               # put dev VERSION back; then push
-gh release delete vX.Y.Z --repo kortix-ai/suna           # only if a Release was actually cut
+gh release delete vX.Y.Z --repo kortix-ai/CompanyOS           # only if a Release was actually cut
 # cancel any deploy-prod the prod reset triggered
 ```
 Verify: tag gone, `prod` VERSION = prior, `dev` VERSION = prior, api-prod unchanged,

@@ -3,7 +3,7 @@
 #   kortix-gha-ecs-deploy       any ref of the repo (CI on every branch and pull
 #                               request reads kortix-ci-env through it).
 #   kortix-gha-ecs-deploy-prod  only a job with `environment: prod`
-#                               (sub = repo:kortix-ai/suna:environment:prod).
+#                               (sub = repo:kortix-ai/CompanyOS:environment:prod).
 #                               Prod ECS, prod PassRole, prod blobs. The `prod`
 #                               GitHub environment admits branch `prod` only.
 # PHASE 2 (done): the broad role holds NO prod permission. Prod ECS, prod
@@ -216,7 +216,7 @@ resource "aws_iam_role_policy" "gha_ecs_deploy_secrets" {
 
 # ── kortix-gha-ecs-deploy-prod — prod only, reachable only from `environment: prod` ──
 # The OIDC subject of a job that declares `environment: prod` is
-# `repo:kortix-ai/suna:environment:prod`. A job without it (any branch, any pull
+# `repo:kortix-ai/CompanyOS:environment:prod`. A job without it (any branch, any pull
 # request, any workflow_dispatch ref) gets a ref subject and cannot assume this
 # role. The `prod` environment's deployment-branch policy admits branch `prod`
 # only, so GitHub refuses to start the job from any other ref. Same containment

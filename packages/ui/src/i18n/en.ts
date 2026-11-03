@@ -4519,7 +4519,7 @@ const catalog = {
       "texta5e68dfbff0b": "#d63a37",
       "texta619e901f9c0": "Failed to paste: {value0}",
       "texta63fb2eebd02": "Every tool runs without asking. Only the rules below can stop one.",
-      "texta64b1e9803b3": "GitHub stars on kortix-ai/suna",
+      "texta64b1e9803b3": "GitHub stars on kortix-ai/CompanyOS",
       "texta67b04cd5c49": "Worker",
       "texta680491a9229": "Last activity: {value0}",
       "texta6879661926e": "Downloading {value0}…",

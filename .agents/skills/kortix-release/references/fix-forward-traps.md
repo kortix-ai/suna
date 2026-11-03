@@ -84,7 +84,7 @@ Two outcomes, never a third:
   flagged code correct, then re-run the check:
 
   ```bash
-  gh api -X PATCH repos/kortix-ai/suna/code-scanning/alerts/<n> \
+  gh api -X PATCH repos/kortix-ai/CompanyOS/code-scanning/alerts/<n> \
     -f state=dismissed -f dismissed_reason="false positive" \
     -f dismissed_comment="<spec/evidence>"
   ```

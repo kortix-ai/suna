@@ -699,7 +699,7 @@ function renderMarketingMarkdown(record: PublicContentRecord): string {
     `- [Documentation](${CANONICAL_ORIGIN}/docs)`,
     `- [Blog](${CANONICAL_ORIGIN}/blog)`,
     `- [Use cases](${CANONICAL_ORIGIN}/use-cases)`,
-    `- [GitHub](https://github.com/kortix-ai/suna)`,
+    `- [GitHub](https://github.com/kortix-ai/CompanyOS)`,
   ];
 
   if (record.slug === 'pricing' || record.slug === 'enterprise') {

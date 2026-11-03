@@ -792,7 +792,7 @@ const envSchema = z.object({
   KORTIX_CAPTURE_ALERT_AFTER_MINUTES: optInt(30),
   /** The update manifest that names the newest published Capture version. Empty: no version check. */
   KORTIX_CAPTURE_UPDATE_MANIFEST_URL: optUrl(
-    'https://github.com/kortix-ai/suna/releases/latest/download/capture-update.json',
+    'https://github.com/kortix-ai/CompanyOS/releases/latest/download/capture-update.json',
   ),
 
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──

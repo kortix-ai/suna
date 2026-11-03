@@ -367,7 +367,7 @@ RUN mkdir -p /app/${SERVICE}/.kortix-data && \
 
 LABEL org.opencontainers.image.title="kortix-api" \
       org.opencontainers.image.description="Kortix API server" \
-      org.opencontainers.image.source="https://github.com/kortix-ai/suna" \
+      org.opencontainers.image.source="https://github.com/kortix-ai/CompanyOS" \
       org.opencontainers.image.licenses="Elastic-2.0" \
       org.opencontainers.image.vendor="Kortix"
 

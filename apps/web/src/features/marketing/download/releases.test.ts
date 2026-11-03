@@ -103,7 +103,7 @@ describe('formatSize', () => {
 });
 
 describe('getLatestCaptureRelease', () => {
-  const asset = (name: string) => ({ name, browser_download_url: `https://github.com/kortix-ai/suna/releases/download/x/${name}`, size: 2_097_152 });
+  const asset = (name: string) => ({ name, browser_download_url: `https://github.com/kortix-ai/CompanyOS/releases/download/x/${name}`, size: 2_097_152 });
   const withReleases = async (releases: unknown[], run: () => Promise<void>) => {
     const real = globalThis.fetch;
     const urls: string[] = [];
@@ -135,7 +135,7 @@ describe('getLatestCaptureRelease', () => {
         expect(release?.assets.map((a) => a.name)).toEqual(['KortixCapture-x64.msi', 'kortix-capture_amd64.deb']);
       },
     );
-    expect(urls[0]).toBe('https://api.github.com/repos/kortix-ai/suna/releases?per_page=30');
+    expect(urls[0]).toBe('https://api.github.com/repos/kortix-ai/CompanyOS/releases?per_page=30');
   });
 
   test('none published, or GitHub failing: null, so the caller degrades', async () => {
@@ -159,8 +159,8 @@ describe('deploymentChannel', () => {
   });
 
   test('a channel falls back to its own prerelease, never to the production release', () => {
-    expect(desktopReleasesPage('dev')).toBe('https://github.com/kortix-ai/suna/releases/tag/desktop-dev-latest');
-    expect(desktopReleasesPage('staging')).toBe('https://github.com/kortix-ai/suna/releases/tag/desktop-staging-latest');
-    expect(desktopReleasesPage('stable')).toBe('https://github.com/kortix-ai/suna/releases/latest');
+    expect(desktopReleasesPage('dev')).toBe('https://github.com/kortix-ai/CompanyOS/releases/tag/desktop-dev-latest');
+    expect(desktopReleasesPage('staging')).toBe('https://github.com/kortix-ai/CompanyOS/releases/tag/desktop-staging-latest');
+    expect(desktopReleasesPage('stable')).toBe('https://github.com/kortix-ai/CompanyOS/releases/latest');
   });
 });

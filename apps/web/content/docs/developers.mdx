@@ -1628,7 +1628,7 @@ Each session row of the API carries the board's fields: `board_state`, `attentio
 
 #### From the SDK
 
-The SDK exposes the same surface, session-scoped. See [`@kortix/sdk` README](https://github.com/kortix-ai/suna/tree/dev/packages/sdk#agents-working-together).
+The SDK exposes the same surface, session-scoped. See [`@kortix/sdk` README](https://github.com/kortix-ai/CompanyOS/tree/dev/packages/sdk#agents-working-together).
 
 ```ts
 const s = kortix.session(projectId, sessionId);
@@ -3744,7 +3744,7 @@ Create A or AAAA records for `kortix.example.com` and `api.kortix.example.com`, 
 It installs Docker and the CLI, then starts the stack with a TLS certificate and your Platinum API key. It sets `apps.<domain>` and `p.<domain>` as the Apps and preview domains.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kortix-ai/suna/dev/scripts/kortix-selfhost-up.sh \
+curl -fsSL https://raw.githubusercontent.com/kortix-ai/CompanyOS/dev/scripts/kortix-selfhost-up.sh \
   | bash -s -- --domain kortix.example.com --email ops@example.com --platinum-key <platinum_api_key>
 ```
 </Step>
@@ -4463,7 +4463,7 @@ Each run creates a new session, and the session appears in the web app with the 
 - `@kortix/sdk/internal/*` serves the Kortix web app and has no semver. It can change in any release.
 - Other subpaths, such as `@kortix/sdk/turns` and `@kortix/sdk/projects-client`, are deprecated aliases of root names. They resolve until the next major version. The list is in the [SDK reference](/docs/developers#sdk-reference).
 - A runtime does not serve every session control. Check a control with `runtimeSupports` before you show it: see [Gate on runtime capabilities](/docs/developers#gate-on-runtime-capabilities).
-- Changes per release are in the [CHANGELOG](https://github.com/kortix-ai/suna/blob/dev/packages/sdk/CHANGELOG.md). Runnable examples are in [packages/sdk/examples](https://github.com/kortix-ai/suna/tree/dev/packages/sdk/examples) on GitHub. The npm package does not include them.
+- Changes per release are in the [CHANGELOG](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/sdk/CHANGELOG.md). Runnable examples are in [packages/sdk/examples](https://github.com/kortix-ai/CompanyOS/tree/dev/packages/sdk/examples) on GitHub. The npm package does not include them.
 
 ## SDK authentication
 
@@ -7058,7 +7058,7 @@ The components read the one client you created in [Create the client](/docs/deve
 npm i @kortix/ui @kortix/sdk @tanstack/react-query @openuidev/lang-core@0.3.1 zod @phosphor-icons/react@2.1.10 react@19 react-dom@19
 ```
 
-Install the same release version of `@kortix/ui` and `@kortix/sdk`. Version rules are in [Versions and stability](/docs/developers#versions-and-stability). The module entries (`@kortix/ui/session`, `/workspace`, `/theme` and the others in [Modules](/docs/developers#modules)) ship from 0.14.4; 0.14.3 has the root, the component subpaths and the stylesheets. Inside the [kortix-ai/suna](https://github.com/kortix-ai/suna) repository, add `"@kortix/ui": "workspace:*"` to your package's dependencies instead.
+Install the same release version of `@kortix/ui` and `@kortix/sdk`. Version rules are in [Versions and stability](/docs/developers#versions-and-stability). The module entries (`@kortix/ui/session`, `/workspace`, `/theme` and the others in [Modules](/docs/developers#modules)) ship from 0.14.4; 0.14.3 has the root, the component subpaths and the stylesheets. Inside the [kortix-ai/CompanyOS](https://github.com/kortix-ai/CompanyOS) repository, add `"@kortix/ui": "workspace:*"` to your package's dependencies instead.
 
 | Peer | Required for |
 | --- | --- |
@@ -7863,10 +7863,10 @@ createRoot(document.getElementById('root')!).render(
 
 - More data comes from the hooks in [React hooks](/docs/developers#react-hooks), for example `useProjectSessions`, `useProjectApps` and `useProjectTriggers`.
 - Never `fetch` the Kortix API yourself. If the SDK lacks a call you need, report it as an SDK gap.
-- Three white-label examples follow this structure ([overview](https://github.com/kortix-ai/suna/tree/dev/apps/white-label)):
-  - [Lumen Workspace](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/reskin): the Kortix workspace under its own theme, with direct mode (the browser holds the credential) or wrapper mode (its own server holds it).
-  - [Team Console](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/team-console): a static [Kortix App](/docs/guide#apps) over one account, signed in as the viewer.
-  - [Lumen](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/lumen): a product with its own users, data and billing, with Kortix as the agent backend.
+- Three white-label examples follow this structure ([overview](https://github.com/kortix-ai/CompanyOS/tree/dev/apps/white-label)):
+  - [Lumen Workspace](https://github.com/kortix-ai/CompanyOS/tree/dev/apps/white-label/reskin): the Kortix workspace under its own theme, with direct mode (the browser holds the credential) or wrapper mode (its own server holds it).
+  - [Team Console](https://github.com/kortix-ai/CompanyOS/tree/dev/apps/white-label/team-console): a static [Kortix App](/docs/guide#apps) over one account, signed in as the viewer.
+  - [Lumen](https://github.com/kortix-ai/CompanyOS/tree/dev/apps/white-label/lumen): a product with its own users, data and billing, with Kortix as the agent backend.
 
 ### For agents
 

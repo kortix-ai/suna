@@ -13,7 +13,7 @@ export const hero = {
   ctaPrimary: 'Get started',
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Star on GitHub',
-  ctaSecondaryHref: 'https://github.com/kortix-ai/suna',
+  ctaSecondaryHref: 'https://github.com/kortix-ai/CompanyOS',
 } as const;
 
 export const pillars = {
