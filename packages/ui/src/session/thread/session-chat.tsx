@@ -294,6 +294,7 @@ import { RestoreNotice, hasOutOfContext, type FullTextState } from './session-hi
 
 import {
   TranscriptTurnRow,
+  isAgentNoticeTurn,
   strandedPromptIds,
   optimisticAnswersCache,
   promptTexts,
@@ -2353,6 +2354,12 @@ export function SessionChat({
    * 1.5k "two children with the same key" errors in one churn). The origin
    * key goes to the FIRST claimant; any other turn falls back to its own id.
    */
+  // Turns whose prompt is another agent's notice: the work continues across
+  // them, so they sit a continuation's distance below the turn above.
+  const agentNoticeTurnIds = useMemo(
+    () => new Set(turns.filter((turn) => isAgentNoticeTurn(turn)).map((turn) => turn.id)),
+    [turns],
+  );
   const turnRenderKeys = useMemo(() => {
     const keys = new Map<string, string>();
     const used = new Set<string>();
@@ -4656,8 +4663,8 @@ export function SessionChat({
                               viewportClassName={
                                 turnIndex === 0 || transcriptRows
                                   ? ''
-                                  : // A compaction and the work after it continue the turn above.
-                                    turn.compaction || turn.continues
+                                  : // A compaction, the work after it and another agent's notice continue the turn above.
+                                    turn.compaction || turn.continues || agentNoticeTurnIds.has(turn.id)
                                     ? 'mt-6'
                                     : lastTurnWorking &&
                                       pendingTurnIds.has(turn.id) &&
