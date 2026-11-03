@@ -1276,7 +1276,8 @@ describe('project session runtime guards', () => {
 
   beforeEach(() => resetState());
 
-  test('creates an omitted-agent session with the meta REST runtime', async () => {
+  test('creates an omitted-agent session with the meta REST runtime when kortix.yaml turns My Kortix on', async () => {
+    manifestYaml = 'builtin_agents:\n  my_kortix: true\nagents:\n  worker: { tools: all, workspace: { project_repository: true } }\n';
     const app = createApp();
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',

@@ -538,7 +538,7 @@ async function resolveSessionAgent(params: {
   );
   const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
   // My Kortix (slug `mykortix`) runs only when kortix.yaml sets
-  // `builtin_agents.my_kortix: true`, or when the manifest needs repair.
+  // `builtin_agents.my_kortix: true`.
   // Off: a session that would run My Kortix is refused with 409
   // builtin_agent_disabled. Without the refusal it ran with My Kortix's grant,
   // prompt and sandbox anyway.
@@ -564,11 +564,10 @@ async function resolveSessionAgent(params: {
   }
   const manifestDefaultAgent = normalizeString(loadedAgents.defaultAgent);
   // A session that names no agent runs `default_agent`. A project that runs My
-  // Kortix and sets no `default_agent`, or whose manifest needs repair, runs My
-  // Kortix; the mirrored default is not read then, since it can name an agent
-  // the broken file turned off.
+  // Kortix and sets no `default_agent` runs My Kortix; the mirrored default is
+  // not read then, since it can name an agent the file turned off.
   let agentName =
-    metaAgentEnabled && !requestedAgent && (!manifestDefaultAgent || loadedAgents.needsRepair === true) && !callerIsMeta
+    metaAgentEnabled && !requestedAgent && !manifestDefaultAgent && !callerIsMeta
       ? MY_KORTIX_AGENT_NAME
       : resolveSessionAgentName({
           requestedAgent,

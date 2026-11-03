@@ -10,7 +10,7 @@ import {
   type GrantSetV2,
 } from '@kortix/manifest-schema';
 import { readAgentBlockV2 } from '../lib/agent-config-v2';
-import { manifestNeedsRepair, projectBuiltinAgents } from '../lib/my-kortix-agent';
+import { projectBuiltinAgents } from '../lib/my-kortix-agent';
 import {
   MANIFEST_FILENAME,
   type AgentParseError,
@@ -148,9 +148,8 @@ export async function loadProjectAgents(
         error: (err as Error).message || 'Failed to read manifest',
       }],
       defaultAgent: null,
-      // A manifest that cannot be read or parsed needs repair: My Kortix runs to fix it.
-      builtinAgents: { my_kortix: true },
-      needsRepair: true,
+      // A manifest that cannot be read or parsed turns nothing on.
+      builtinAgents: { my_kortix: false },
       manifest: null,
     };
   }
@@ -158,9 +157,8 @@ export async function loadProjectAgents(
   return {
     ...extractAgents(applied),
     issues: applied.issues,
-    // No manifest committed yet reads as one that needs repair, as GET /detail reads it.
+    // The file's own switch: no manifest committed yet turns nothing on.
     builtinAgents: projectBuiltinAgents(manifest?.raw ?? null),
-    needsRepair: manifestNeedsRepair(manifest?.raw ?? null),
     manifest: { revision: applied.revision ?? null, commit: applied.commit ?? null },
   };
 }
