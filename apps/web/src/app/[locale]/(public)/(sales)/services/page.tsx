@@ -199,11 +199,8 @@ export default function ServicesPage() {
           <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg">
             {hero.sub}
           </p>
-          <div className="flex flex-wrap justify-center gap-2.5 pt-2">
+          <div className="flex justify-center pt-2">
             <IntroButton variant="primary" className="hit-area-y-1" />
-            <MarketingButton size="md" variant="secondary" className="hit-area-y-1" asChild>
-              <a href="#case-studies">{hero.logosLink}</a>
-            </MarketingButton>
           </div>
           <p className="text-muted-foreground text-sm text-pretty">{hero.terms}</p>
         </div>

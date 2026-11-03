@@ -25,31 +25,31 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   'A science agent for researchers.': 'text9be6f4e5dd42',
   'The institute’s AI research assistant. It searches the scientific literature with citations and runs agents for protein design and materials science.':
     'textbc76493f60fc',
-  'An autonomous cloud company.': 'text6e78e53edc57',
-  'Agents build, test and ship the product, then market and sell it. People set the direction and approve what ships.':
-    'text891412cf65bf',
-  'Fiber network design, run by agents.': 'textfef24d788a3e',
-  'Agents design fiber routes from GIS data and imagery, build bills of materials and track every project, self-hosted in the company’s own cloud.':
-    'textc22871a19ba5',
+  'Autonomous software engineering.': 'text0b42434e3eea',
+  'Engineering agents pick up issues, write the code and test every flow on video. People approve what ships.':
+    'textb35acf6e7819',
+  'Autonomous fiber network design.': 'text431417f96d98',
+  'Agents design fiber routes from GIS data and imagery and build the bill of materials for each route.':
+    'text2eb1d24bcc04',
   'Kortix, run on Kortix.': 'textf2d996d89263',
   'Our company is one Kortix project. Agents triage and fix issues, keep SOC 2 evidence current and run sales and support. People approve.':
     'text34ff4020f800',
-  'An AI-run asset manager.': 'text75230f197e2d',
+  'Autonomous investment analysis.': 'textf9d6c20c90a0',
   'Asset management': 'textacf058bd8604',
-  'Agents run the firm front to back office: research, IC memos, trading, reconciliation, valuation, NAV, compliance and investor reporting. People sign every decision.':
-    'textd58278b21ab7',
-  'An executive search firm, rebuilt around agents.': 'text0213c53e2373',
-  'Agents research candidates, prepare client and pitch materials and run the firm’s internal operations.':
-    'text2c5d3af9483a',
+  'Agents read filings and market data, build the thesis and write the investment memo. A portfolio manager decides.':
+    'text6e515c096274',
+  'Autonomous candidate research.': 'textdc7f8ac95166',
+  'Agents research candidates for every search and write a profile of each one. Consultants choose the shortlist.':
+    'textb5947f5f79c9',
   'The enterprise AI platform, built from Kortix’s open-source code.': 'textc81f1483737e',
   'Enterprises such as Salesforce, Vanguard and KPMG run their marketing, sales and support agents on WRITER.':
     'text4a271fd37da2',
   'Autonomous AWS cost optimization.': 'text2b7f6fe76645',
   'Agents find the AWS credit programs each customer qualifies for and prepare the applications. The customer approves.':
     'text1d5d31148fec',
-  'SME lending, from application to funded loan.': 'text51d0779245a6',
-  'Agents collect the application, spread the financials, write the credit memo and track covenants after funding. A credit officer decides.':
-    'text30ed222befc0',
+  'Autonomous credit analysis.': 'text25bf11bde520',
+  'Agents spread the financials, check them against the bank’s credit policy and write the credit memo. A credit officer decides.':
+    'textedcda83a14c8',
   'Claims, from first notice to payout.': 'text9060ed10df3a',
   'Agents take the first notice of loss, check coverage, validate the claim, flag fraud and draft the settlement. An adjuster approves the payout.':
     'textbe5e1747cddb',
@@ -59,9 +59,9 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   'Prior authorization, without the paperwork.': 'text3dffbe0d084f',
   'Agents read the chart, match it to the payer’s rules, assemble the request and track it to a decision. A clinician signs every request.':
     'text607ed431d026',
-  'Returns and supplier invoices, closed out by agents.': 'text6fe28a8b509e',
-  'Agents resolve returns and refunds, match supplier invoices to orders and receipts, and chase every discrepancy. People approve amounts above a limit.':
-    'text45e3c04ebea4',
+  'Autonomous invoice matching.': 'texta6c03c86526a',
+  'Agents match every supplier invoice to its order and receipt and chase each discrepancy. People approve amounts above a limit.':
+    'textaafd2677aaa5',
   'Arcadia · Identity': 'texte5ef926b9bd7',
   'Arcadia · Groups': 'text50e40164f19a',
   'From your directory': 'texta67b277c1791',
@@ -214,7 +214,7 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   'Open proposals': 'text23caaccd7b6e',
   'Updated by an agent': 'text5ac2ceb659a9',
   'Needs attention': 'textc1ebc7817870',
-  'CompanyOS': 'text40866a29060e',
+  CompanyOS: 'text40866a29060e',
   Services: 'text604dce445e32',
   Site: 'textfa7955814e32',
   arcadia: 'text3259138318d8',
