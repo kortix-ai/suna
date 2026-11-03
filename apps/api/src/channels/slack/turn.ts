@@ -387,22 +387,12 @@ export async function finalizeTurn(
         planTitleFor(opts),
         buildFinalPlanBlocks(handle, body, opts, truncated),
       );
-      // chat.update rejected the blocks (e.g. invalid_blocks) — don't lose real
-      // content; post it fresh as plain text so it still lands in the thread.
-      if (!rendered && hasContent) {
-        const ts = await postMessage(handle.token, handle.channel, plainFallback(handle, body), threadRoot, persona);
-        rendered = ts != null;
-      }
     } else if (hasContent) {
       // The agent posted no `slack step` (no plan message) but we have a reply or
       // an error to surface — post it fresh in-thread.
       if (opts.blocks && opts.blocks.length > 0) {
         const ts = await postBlocks(handle.token, handle.channel, body, opts.blocks, threadRoot, persona);
         rendered = ts != null;
-        if (!rendered) {
-          const f = await postMessage(handle.token, handle.channel, plainFallback(handle, body), threadRoot, persona);
-          rendered = f != null;
-        }
       } else if (opts.error && handle.projectId && handle.sessionId) {
         // An error with no plan stream: post the failure copy WITH an "Open
         // session" footer so the thread always has a way to see what went wrong
@@ -420,16 +410,18 @@ export async function finalizeTurn(
           persona,
         );
         rendered = ts != null;
-        if (!rendered) {
-          const f = await postMessage(handle.token, handle.channel, plainFallback(handle, body), threadRoot, persona);
-          rendered = f != null;
-        }
       } else {
         // Plain post already — slackApiCall retries transient failures, so there's
         // no block-vs-text fallback to add here.
         const ts = await postMessage(handle.token, handle.channel, body, threadRoot, persona);
         rendered = ts != null;
       }
+    }
+    // chat.update rejected the blocks (e.g. invalid_blocks) — don't lose real
+    // content; post it fresh as plain text so it still lands in the thread.
+    if (!rendered && hasContent && (handle.ts && handle.steps.length > 0 || opts.blocks && opts.blocks.length > 0 || opts.error && handle.projectId && handle.sessionId)) {
+      const ts = await postMessage(handle.token, handle.channel, plainFallback(handle, body), threadRoot, persona);
+      rendered = ts != null;
     }
     // A silent finalize with no plan message and no content leaves the thread
     // untouched — we just clear the ⏳ below. The ✅ is reserved for a real answer
