@@ -81,8 +81,9 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     bootMark('git-identity')
   })()
   // The first runtime-assets pass can rebuild a ~100 MB binary from chunks and
-  // hash it. It waits for the first turn (after-first-turn.ts).
-  const assetsGate = afterFirstTurn(scheduleRuntimeAssetsReconcile, FIRST_ASSETS_PASS_MAX_DELAY_MS)
+  // hash it. It waits for the first turn (after-first-turn.ts); every tick still
+  // reaches it (Rule 3), the ones in that window once the gate opens.
+  const assetsGate = afterFirstTurn(() => scheduleRuntimeAssetsReconcile(), FIRST_ASSETS_PASS_MAX_DELAY_MS)
 
   const projectEnv = createProjectEnvStore()
   if (!agentEnvDirIsTmpfs()) {

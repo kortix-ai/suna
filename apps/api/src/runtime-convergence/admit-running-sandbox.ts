@@ -49,7 +49,7 @@ export interface AdmitRunningSandboxDeps {
 }
 
 async function defaultNoteHealth(sessionId: string, health: unknown): Promise<void> {
-  const { noteSandboxHealthBody } = await import('../projects/lib/turn-start-convergence');
+  const { noteSandboxHealthBody } = await import('../projects/surface');
   await noteSandboxHealthBody(sessionId, health);
 }
 
