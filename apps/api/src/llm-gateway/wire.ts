@@ -310,6 +310,130 @@ function imagesRoute(path: string, operation: 'generations' | 'edits') {
   });
 }
 
+const AUDIO_ERROR_CODES = [
+  '- `400`: `invalid_request` (the message names the field), `audio_model_unsupported` or `model_not_found` (Kortix serves no such audio model), `plan_upgrade_required`, `provider_disabled`, `model_disabled`.',
+  '- `401`: `missing_token`, a refused gateway credential.',
+  '- `402`: a budget limit, or the wallet refused the request.',
+  '- `403`: the credential has no project context.',
+  '- `413`: `request_too_large`.',
+  '- `429`: `model_busy`, with `retry-after`.',
+  '- `499`: `client_aborted`.',
+  '- `502`, sent as `503`: `audio_upstream_error`, `audio_model_unpriced`, `routing_unavailable`.',
+  '- `503`: `model_unavailable`, `admission_unavailable`, `gateway_overloaded`, `gateway_unavailable`.',
+  '- `504`, sent as `503`: `audio_timeout`.',
+].join('\n');
+
+const AUDIO_BILLING =
+  'Kortix-managed audio models need a plan that includes managed models. A request is billed in Kortix credits at the price the managed upstream reports for it, with the managed-model markup, exactly as a managed chat model. A refused request records no charge and returns any credit hold. A speech stream is charged once its first audio arrives, even when the client stops it.';
+
+const TranscriptionRequestSchema = z
+  .object({
+    file: z.string().openapi({ type: 'string', format: 'binary', description: 'The audio file.' }),
+    model: z.string().openapi({ example: 'whisper-large-v3-turbo' }),
+    language: z.string().optional().openapi({ example: 'en' }),
+    prompt: z.string().optional(),
+    temperature: z.string().optional(),
+    response_format: z.enum(['json', 'verbose_json', 'text']).optional().openapi({ description: 'Default `json`.' }),
+  })
+  .openapi('GatewayTranscriptionRequest');
+
+const TranscriptionResponseSchema = z
+  .object({
+    text: z.string(),
+    usage: z
+      .object({ type: z.literal('duration'), seconds: z.number() })
+      .optional()
+      .openapi({ description: 'The billed audio duration.' }),
+  })
+  .passthrough()
+  .openapi('GatewayTranscription', { example: { text: 'Hello there.', usage: { type: 'duration', seconds: 10 } } });
+
+const SpeechRequestSchema = z
+  .object({
+    model: z.string().openapi({ example: 'inworld-tts-2-flash' }),
+    input: z.string().min(1).openapi({ example: 'Hello there.' }),
+    voice: z.string().min(1).openapi({ description: 'A voice id from `GET /audio/voices`.', example: 'Ashley' }),
+    response_format: z.enum(['pcm', 'mp3']).optional().openapi({ description: '`pcm` (default): raw 16-bit mono PCM at `sample_rate`. `mp3`: MPEG audio.' }),
+    sample_rate: z.number().int().min(8000).max(48000).optional().openapi({ description: 'Hz. Default 24000.' }),
+    speed: z.number().min(0.5).max(1.5).optional().openapi({ description: 'Default 1.' }),
+  })
+  .openapi('GatewaySpeechRequest');
+
+const VoicesResponseSchema = z
+  .object({
+    object: z.literal('list'),
+    data: z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+      description: z.string(),
+      languages: z.array(z.string()),
+      tags: z.array(z.string()),
+    })),
+  })
+  .openapi('GatewayVoices');
+
+const AUDIO_ERRORS = { ...errors(400, 401, 402, 403, 413, 429, 503), 499: { description: 'The client cancelled the request (`client_aborted`).' } };
+
+function transcriptionsRoute(path: string) {
+  return createRoute({
+    method: 'post' as const,
+    path,
+    tags: [GATEWAY_INFERENCE_TAG],
+    summary: 'Transcribe audio (OpenAI-compatible)',
+    description: `Speech-to-text on a Kortix-managed transcription model. The gateway forwards \`file\`, \`language\`, \`prompt\` and \`temperature\` and drops every other field. \`json\` and \`verbose_json\` answer with \`usage: { type: "duration", seconds }\`; \`text\` answers \`text/plain\`.\n\n${AUDIO_BILLING}\n\nError codes (the body's \`code\`):\n${AUDIO_ERROR_CODES}\n\nAuth: ${AUTH_DESCRIPTION}`,
+    ...auth,
+    request: { body: { required: true, content: { 'multipart/form-data': { schema: TranscriptionRequestSchema } } } },
+    responses: {
+      200: {
+        description: 'The transcript',
+        content: {
+          'application/json': { schema: TranscriptionResponseSchema },
+          'text/plain': { schema: z.string().openapi({ example: 'Hello there.' }) },
+        },
+      },
+      ...AUDIO_ERRORS,
+    },
+  });
+}
+
+function speechRoute(path: string) {
+  return createRoute({
+    method: 'post' as const,
+    path,
+    tags: [GATEWAY_INFERENCE_TAG],
+    summary: 'Speak text (OpenAI-compatible)',
+    description: `Text-to-speech on a Kortix-managed speech model. The audio streams as it is made: the first bytes arrive before the whole answer exists. A \`pcm\` answer carries its rate in the \`x-sample-rate\` header. An error before the first audio byte is a JSON error; after it, the stream ends early.\n\n${AUDIO_BILLING}\n\nError codes (the body's \`code\`):\n${AUDIO_ERROR_CODES}\n\nAuth: ${AUTH_DESCRIPTION}`,
+    ...auth,
+    request: { body: { required: true, content: { 'application/json': { schema: SpeechRequestSchema } } } },
+    responses: {
+      200: {
+        description: 'The audio, streamed',
+        headers: { 'x-sample-rate': { description: 'The PCM sample rate in Hz (`pcm` only).', schema: { type: 'string' } } },
+        content: {
+          'audio/pcm': { schema: z.string().openapi({ type: 'string', format: 'binary' }) },
+          'audio/mpeg': { schema: z.string().openapi({ type: 'string', format: 'binary' }) },
+        },
+      },
+      ...AUDIO_ERRORS,
+    },
+  });
+}
+
+function voicesRoute(path: string) {
+  return createRoute({
+    method: 'get' as const,
+    path,
+    tags: [GATEWAY_INFERENCE_TAG],
+    summary: 'List the voices of a speech model',
+    description: `The voices \`POST /audio/speech\` takes for \`model\`. Not billed.\n\nAuth: ${AUTH_DESCRIPTION}`,
+    ...auth,
+    request: {
+      query: z.object({ model: z.string().openapi({ description: 'The speech model.', example: 'inworld-tts-2-flash' }) }),
+    },
+    responses: { 200: json(VoicesResponseSchema, 'The voices'), ...errors(400, 401, 429, 503) },
+  });
+}
+
 // The reasoning_options entry shape — three real forms models.dev emits
 // (effort/toggle/budget_tokens; see @kortix/llm-catalog's
 // CatalogReasoningOption for the full field-by-field rationale). All fields
@@ -579,6 +703,9 @@ export function mountLlmGateway(app: OpenAPIHono): void {
   llm.openAPIRegistry.registerPath(messagesRoute('/v1/messages'));
   llm.openAPIRegistry.registerPath(imagesRoute('/images/generations', 'generations'));
   llm.openAPIRegistry.registerPath(imagesRoute('/images/edits', 'edits'));
+  llm.openAPIRegistry.registerPath(transcriptionsRoute('/audio/transcriptions'));
+  llm.openAPIRegistry.registerPath(speechRoute('/audio/speech'));
+  llm.openAPIRegistry.registerPath(voicesRoute('/audio/voices'));
   llm.all('*', (c) => {
     const tail = c.req.path.slice('/v1/llm'.length) || '/';
     return proxy(c, tail);
