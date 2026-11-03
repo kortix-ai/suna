@@ -20,8 +20,8 @@ let scaffoldTreeImpl: () => Promise<string> = async () => 'b'.repeat(40);
 const realMirror = await import('./mirror');
 mock.module('./mirror', () => ({
   ...realMirror,
-  refreshMirror: async (project: unknown, force?: unknown) => {
-    refreshCalls.push({ project, force });
+  refreshMirror: async (project: unknown, force?: unknown, opts?: unknown) => {
+    refreshCalls.push({ project, force, ...(opts ? { opts } : {}) });
     return '/scripted/mirror';
   },
   runGit: (args: string[]) => {
@@ -129,6 +129,14 @@ describe('parseGitFileChanges', () => {
     // Defensive branch: git never truncates the pair, but a malformed answer
     // must terminate the scan rather than index past it.
     expect(parseGitFileChanges('R100\0only-old\0', '').files).toEqual([]);
+  });
+});
+
+describe('resolveCommitSha freshness', () => {
+  test("'tip-proof' proves that one branch instead of asking for the mirror's TTL fetch", async () => {
+    script({ stdout: `${'a'.repeat(40)}\n`, stderr: '' });
+    await expect(resolveCommitSha(project, 'main', 'tip-proof')).resolves.toBe('a'.repeat(40));
+    expect(refreshCalls.at(-1)).toEqual({ project, force: 'tip-proof', opts: { freshRef: 'main' } });
   });
 });
 

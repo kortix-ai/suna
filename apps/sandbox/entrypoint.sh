@@ -351,7 +351,11 @@ DEADLINE_S=120
 STABLE_REQUIRED=2
 # A /workspace volume is mounted before the guest runs (Platinum reports the box
 # running only after the guest mount), so the overlay race does not apply.
-if [ "${KORTIX_WORKSPACE_VOLUME:-}" = "1" ]; then STABLE_REQUIRED=1; fi
+# Nor does it on any Platinum guest (pt-init writes /etc/pt-env before the image
+# runs): /workspace is a directory on the box's own ext4 root, not a Daytona
+# overlay, and the second probe was a flat 250 ms before every daemon start
+# (measured on a session box 2026-11-02: entrypoint at 470 ms, daemon at 780 ms).
+if [ "${KORTIX_WORKSPACE_VOLUME:-}" = "1" ] || [ -f /etc/pt-env ]; then STABLE_REQUIRED=1; fi
 INTERVAL_S=0.25
 
 start=$(date +%s)

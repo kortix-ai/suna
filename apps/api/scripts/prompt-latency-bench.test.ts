@@ -54,3 +54,19 @@ test('telemetry failure cannot mutate results or call delivery/auth paths', asyn
 test('benchmark report excludes missing observations from success', () => {
   expect(table([session])).toContain('sessions ok 0/1');
 });
+
+test('BENCH_FLOW=web sessions report create→first token from the create POST', () => {
+  const web = (firstTokenMs: number, error?: string) => ({
+    ...session,
+    readyMs: 2_400,
+    createMs: 80,
+    web: { readyMs: 2_400, busyMs: 2_900, firstTokenMs, idleMs: firstTokenMs + 400 },
+    ...(error ? { error } : {}),
+  });
+  const report = table([web(3_800), web(4_200), web(9_999, 'no idle before timeout')]);
+  const row = (name: string) => report.split('\n').find((line) => line.startsWith(name)) ?? '';
+  // The failed session counts for ready (it got a box) but never for busy or first token.
+  expect(row('web: create→first token')).toMatch(/\s2\s+3800\s+4200$/);
+  expect(row('web: create→busy')).toMatch(/\s2\s+2900\s+2900$/);
+  expect(row('web: create→ready (/start)')).toMatch(/\s3\s+2400\s+2400$/);
+});
