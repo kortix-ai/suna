@@ -132,7 +132,7 @@ describe('send_message', () => {
 
   test('done shows the receiver, the preview and that it arrived', () => {
     const text = textOf(drawn('send_message', done('send_message', SENT), { open: true }));
-    expect(text).toContain('Sent to @reviewer');
+    expect(text).toContain('Message to @reviewer');
     expect(text).toContain('@reviewer');
     expect(text).toContain('Migration finished');
     expect(text).toContain('Delivered');

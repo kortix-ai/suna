@@ -3163,6 +3163,13 @@
       "large": "大型运行",
       "largeHint": "此次运行会启动超过 25 个智能体。你可以在每一行停止对应的智能体。",
       "openRun": "打开运行",
+      "viewingAgent": "正在查看",
+      "startsAfter": "在 {phase} 之后开始",
+      "didntFinish": "未完成",
+      "retryNow": "重试",
+      "retryAgent": "重试 {label}",
+      "waitsFor": "还在等待 {count} 个",
+      "phaseProgress": "{phase} 已完成 {done}/{total}",
       "openRunLabel": "打开此次运行的会话",
       "backgroundIdle": "在独立会话中",
       "savedName": "已保存的工作流 {name}",
@@ -3194,7 +3201,17 @@
     },
     "agent": {
       "backgroundWorking": "正在后台工作",
-      "backgroundSession": "在独立会话中"
+      "backgroundSession": "在独立会话中",
+      "open": "打开",
+      "openAgent": "打开 {name}",
+      "state": {
+        "working": "工作中",
+        "needs_input": "需要你处理",
+        "idle": "已完成",
+        "completed": "已完成",
+        "failed": "未完成",
+        "stopped": "已停止"
+      }
     }
   },
   "agentRunLimit": {
@@ -25092,6 +25109,9 @@
       "completed": "{name} 已完成",
       "failed": "{name} 未完成",
       "stopped": "{name} 已停止",
+      "viewRun": "查看运行",
+      "peerFinished": "{name} 已完成",
+      "result": "结果",
       "fallbackName": "你的智能体",
       "openSession": "打开会话",
       "expand": "显示完整结果",
@@ -25108,6 +25128,8 @@
         "stopping": "正在停止智能体…"
       },
       "to": "收件人",
+      "messageTo": "发给 @{to} 的消息",
+      "messageSent": "消息已发送",
       "peerStatus": {
         "delivered": "已送达",
         "held": "等待批准",
@@ -25197,7 +25219,11 @@
       "retry": "重试",
       "emptyTitle": "暂无内容",
       "emptyDescription": "它工作时的消息会显示在这里。",
-      "loadOlder": "显示更早的消息"
+      "loadOlder": "显示更早的消息",
+      "runsLabel": "工作流运行",
+      "previousAgent": "上一个代理",
+      "nextAgent": "下一个代理",
+      "moreActions": "更多操作"
     },
     "tasks": {
       "label": "团队任务",
@@ -25215,6 +25241,8 @@
       "title": "来自 {from} 的消息",
       "titleShutdown": "{from} 请求停止此会话",
       "waiting": "等待你的批准。5 分钟后过期。",
+      "waitingShort": "等待你的批准",
+      "expires": "5 分钟后过期",
       "deny": "拒绝",
       "approve": "批准",
       "approveFailed": "无法送达消息",
@@ -25226,6 +25254,9 @@
       "paused": "已暂停",
       "pause": "暂停运行",
       "resume": "恢复运行",
+      "pauseShort": "暂停",
+      "resumeShort": "继续",
+      "stopShort": "停止",
       "pauseHint": "暂停：不再启动新的智能体，正在运行的智能体会完成 (p)",
       "resumeHint": "恢复运行 (p)",
       "stop": "停止运行",
@@ -25235,6 +25266,7 @@
       "savePrompt": "请将工作流运行“{title}”（运行 {runId}）保存为已保存的工作流：把它的脚本写入 {file}，并为此发起一个变更请求。",
       "saveSent": "已请求保存工作流",
       "saveFailed": "无法请求保存工作流",
+      "viewing": "正在查看",
       "restartHint": "用相同的提示词重启此智能体 (r)",
       "restartAgent": "重启 {label}",
       "failed": {

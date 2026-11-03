@@ -4,7 +4,9 @@ import { Button } from '../../primitives/button';
 import { SessionDotMatrix } from '../../primitives/dot-matrix/session-dot-matrix';
 import { errorToast } from '../../primitives/toast';
 import { useTranslations } from '../../i18n';
-import { ChatCircleDotsIcon } from '@phosphor-icons/react';
+import { cn } from '../../lib/utils';
+import { AgentMarkGlyph, agentMarkTileClass, agentMarkVars } from '../../internal/components/agent-mark';
+import { AgentCard } from './agent-surface';
 import { peerHandleLabel } from '@kortix/shared';
 import type { PeerMessage } from '@kortix/sdk';
 import { usePeerMessages } from '@kortix/sdk/react';
@@ -35,27 +37,39 @@ export interface HeldMessageCardProps {
 export function HeldMessageCard({ message, pending, onApprove, onDeny }: HeldMessageCardProps) {
   const t = useTranslations('multiAgent.held');
   const kind = message.type === 'shutdown_request' ? 'titleShutdown' : 'title';
+  const handle = message.from_handle;
+  const slug = /^(mykortix|meta)-[0-9a-f]{8}$/.test(handle) ? 'mykortix' : handle;
+  // The same message card a delivered message draws, waiting on the person: who, what, and the two answers.
   return (
-    <div
-      data-held-message={message.id}
-      className="bg-popover flex items-start gap-2.5 rounded-md border px-3 py-2.5 text-xs"
-    >
-      <ChatCircleDotsIcon aria-hidden className="text-muted-foreground mt-0.5 size-4 shrink-0" />
-      <div className="min-w-0 flex-1 space-y-0.5">
-        <p className="text-foreground text-sm font-medium">{t(kind, { from: peerHandleLabel(message.from_handle) })}</p>
-        <p className="text-foreground line-clamp-2 wrap-break-word">{heldPreview(message)}</p>
-        <p className="text-muted-foreground">{t('waiting')}</p>
+    <div data-held-message={message.id}>
+    <AgentCard testId="held-message-card">
+      <div className="flex min-w-0 items-center gap-2.5 px-3.5 py-2.5">
+        <span
+          aria-hidden
+          style={agentMarkVars(slug)}
+          className={cn('flex size-5 shrink-0 items-center justify-center rounded-sm bg-(--mark-tile)', agentMarkTileClass(slug))}
+        >
+          <AgentMarkGlyph slug={slug} size={14} />
+        </span>
+        <span className="text-foreground min-w-0 truncate font-medium">{t(kind, { from: peerHandleLabel(handle) })}</span>
+        <span className="flex-1" />
+        <span className="text-kortix-blue shrink-0 text-xs">{t('waitingShort')}</span>
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
-        <Button type="button" size="xs" variant="outline-ghost" disabled={pending !== null} onClick={onDeny}>
-          {pending === 'deny' ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
-          {t('deny')}
-        </Button>
-        <Button type="button" size="xs" disabled={pending !== null} onClick={onApprove}>
-          {pending === 'approve' ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
-          {t('approve')}
-        </Button>
+      <div className="border-border flex flex-col gap-2.5 border-t px-3.5 py-2.5">
+        <p className="text-foreground line-clamp-3 wrap-break-word">{heldPreview(message)}</p>
+        <div className="flex items-center gap-1.5">
+          <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">{t('expires')}</span>
+          <Button type="button" size="xs" variant="secondary" disabled={pending !== null} onClick={onDeny}>
+            {pending === 'deny' ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
+            {t('deny')}
+          </Button>
+          <Button type="button" size="xs" disabled={pending !== null} onClick={onApprove}>
+            {pending === 'approve' ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
+            {t('approve')}
+          </Button>
+        </div>
       </div>
+    </AgentCard>
     </div>
   );
 }

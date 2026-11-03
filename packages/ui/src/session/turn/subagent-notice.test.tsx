@@ -69,7 +69,7 @@ describe('SubagentNoticeRow', () => {
   // The row is product chrome: it draws its state with the glyph every tool row
   // uses, never an emoji. Emoji status labels belong to the agent's own words
   // (brand D31), and the reply under the row often starts with one.
-  test('a finished child is one tool row: a check mark, its name, the first line of its result', () => {
+  test('a finished child is one quiet line between rules: its mark, its name, View run; no box, no fold', () => {
     const html = render(<SubagentNoticeRow notice={parseSubagentNotice(noticeText('completed', REPORT))!} />);
     const text = textOf(html);
     expect(html).toContain('data-testid="subagent-notice"');
@@ -77,11 +77,20 @@ describe('SubagentNoticeRow', () => {
     expect(html).toContain('data-notice-mark="completed"');
     expect(text).not.toContain('✅');
     expect(text).toContain('Draft the launch post finished');
+    expect(text).toContain('View run');
+    // The report waits in one card under the line, closed: its first line, the rest on open.
     expect(text).toContain('Draft ready');
-    // Closed: the rest of the report stays folded.
     expect(text).not.toContain('600 words');
+    expect(html).toContain('data-testid="notice-result"');
     expect(html).toContain('aria-expanded="false"');
-    expect(text).toContain('View');
+  });
+
+  test('a workflow report reads without its result tag: the card shows its real first line', () => {
+    const report = '<workflow_result>\nCompleted the full strategy.\n\nThe plan has three bets.\n</workflow_result>';
+    const text = textOf(render(<SubagentNoticeRow notice={parseSubagentNotice(noticeText('completed', report))!} />));
+    expect(text).toContain('Completed the full strategy.');
+    expect(text).not.toContain('workflow_result');
+    expect(text).not.toContain('workflowresult');
   });
 
   test('a first line that only says it is done adds nothing to "finished" and is left out', () => {
@@ -103,26 +112,6 @@ describe('SubagentNoticeRow', () => {
     expect(textOf(html)).toContain('Draft the launch post was stopped');
   });
 
-  test('the row opens in place to the whole result', async () => {
-    // The "Open session" hint's tooltip listens on `document`.
-    const dom = new Window();
-    const globals = globalThis as unknown as Record<string, unknown>;
-    const saved = { window: globals.window, document: globals.document };
-    globals.window = dom;
-    globals.document = dom.document;
-    let tree: ReturnType<typeof create> | undefined;
-    await act(async () => {
-      tree = create(wrap(<SubagentNoticeRow notice={parseSubagentNotice(noticeText('completed', REPORT))!} />));
-    });
-    const disclosure = () => tree!.root.findAll((node) => typeof node.type === 'string' && node.props['aria-expanded'] !== undefined)[0]!;
-    await act(async () => disclosure().props.onClick());
-    expect(disclosure().props['aria-expanded']).toBe(true);
-    expect(JSON.stringify(tree!.toJSON())).toContain('600 words');
-    await act(async () => tree!.unmount());
-    globals.window = saved.window;
-    globals.document = saved.document;
-    await dom.happyDOM.close();
-  });
 });
 
 describe('in the transcript', () => {

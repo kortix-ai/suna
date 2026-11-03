@@ -1024,6 +1024,17 @@ export function promptTexts(message: SessionLogMessage): PromptText[] {
   });
 }
 
+/**
+ * The turn opens on an agent's report (a background sub-agent or workflow
+ * finished, or several did), not on a person's prompt. It continues the reply
+ * above it, so the thread spaces it as a continuation, not as a new exchange.
+ */
+export function isAgentNoticeTurn(message: SessionLogMessage): boolean {
+  return promptTexts(message).some(
+    (t) => (parseNoticeBatch(t.text)?.length ?? 0) > 1 || (!!extractSessionReport(t.text || '') && !!parseSubagentNotice(t.text)),
+  );
+}
+
 /** The user side of the turn: the worker-run report, the system pills, the
  *  bubble's visibility, and the command pill. */
 function useTurnUserContent({

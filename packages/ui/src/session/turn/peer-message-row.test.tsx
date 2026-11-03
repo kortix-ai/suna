@@ -91,14 +91,29 @@ describe('a cross-session message in the thread', () => {
     await act(async () => {
       tree = create(wrap(<PeerMessageRow info={info} />));
     });
-    const button = () => tree!.root.findByType('button');
+    // The tool row's trigger: the element that carries the disclosure state.
+    const button = () => tree!.root.findAll((node) => typeof node.type === 'string' && node.props['aria-expanded'] !== undefined)[0]!;
     expect(button().props['aria-expanded']).toBe(false);
     await act(async () => button().props.onClick());
     expect(button().props['aria-expanded']).toBe(true);
     expect(JSON.stringify(tree!.toJSON())).toContain('Line one.\\nLine two.');
     await act(async () => button().props.onClick());
+    // Closed again; the tool row keeps its body mounted and hidden, as every tool row does.
     expect(button().props['aria-expanded']).toBe(false);
-    expect(JSON.stringify(tree!.toJSON())).not.toContain('Line two.');
     await act(async () => tree!.unmount());
   });
 });
+
+describe('the message row', () => {
+  test('a message is one plain tool row with the sender avatar; an idle notice is the finish line', () => {
+    const message = render(<PeerMessageRow info={parsePeerMessagePrompt(prompt('message', 'Line one.\nLine two.', 'Heads up'))!} />);
+    expect(message).toContain('data-tone="agent"');
+    expect(message).not.toContain('rounded-lg border');
+    expect(textOf(message)).toContain('Heads up');
+    expect(message).not.toContain('data-testid="finish-line"');
+    const idle = render(<PeerMessageRow info={parsePeerMessagePrompt(prompt('idle_notice', 'reviewer finished its turn and is idle.'))!} />);
+    expect(idle).toContain('data-testid="finish-line"');
+    expect(idle).not.toContain('data-tone="agent"');
+  });
+});
+

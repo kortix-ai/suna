@@ -3163,6 +3163,13 @@
       "large": "Esecuzione grande",
       "largeHint": "Questa esecuzione avvia più di 25 agenti. Puoi interrompere ogni agente dalla sua riga.",
       "openRun": "Apri esecuzione",
+      "viewingAgent": "In visualizzazione",
+      "startsAfter": "inizia dopo {phase}",
+      "didntFinish": "Non ha finito",
+      "retryNow": "Riprova",
+      "retryAgent": "Riprova {label}",
+      "waitsFor": "Attende altri {count}",
+      "phaseProgress": "{phase}: {done} di {total} fatti",
       "openRunLabel": "Apri la sessione dell'esecuzione",
       "backgroundIdle": "Nella sua sessione",
       "savedName": "Workflow salvato {name}",
@@ -3194,7 +3201,17 @@
     },
     "agent": {
       "backgroundWorking": "Al lavoro in background",
-      "backgroundSession": "Nella sua sessione"
+      "backgroundSession": "Nella sua sessione",
+      "open": "Apri",
+      "openAgent": "Apri {name}",
+      "state": {
+        "working": "Al lavoro",
+        "needs_input": "Serve il tuo intervento",
+        "idle": "Fatto",
+        "completed": "Fatto",
+        "failed": "Non ha finito",
+        "stopped": "Interrotto"
+      }
     }
   },
   "agentRunLimit": {
@@ -25092,6 +25109,9 @@
       "completed": "{name} ha finito",
       "failed": "{name} non ha finito",
       "stopped": "{name} è stato interrotto",
+      "viewRun": "Vedi esecuzione",
+      "peerFinished": "{name} ha finito",
+      "result": "Risultato",
       "fallbackName": "Il tuo agente",
       "openSession": "Apri sessione",
       "expand": "Mostra tutto il risultato",
@@ -25108,6 +25128,8 @@
         "stopping": "Interruzione di un agente…"
       },
       "to": "A",
+      "messageTo": "Messaggio a @{to}",
+      "messageSent": "Messaggio inviato",
       "peerStatus": {
         "delivered": "Consegnato",
         "held": "In attesa di approvazione",
@@ -25197,7 +25219,11 @@
       "retry": "Riprova",
       "emptyTitle": "Ancora niente",
       "emptyDescription": "I suoi messaggi compaiono qui mentre lavora.",
-      "loadOlder": "Mostra i messaggi precedenti"
+      "loadOlder": "Mostra i messaggi precedenti",
+      "runsLabel": "Esecuzioni del workflow",
+      "previousAgent": "Agente precedente",
+      "nextAgent": "Agente successivo",
+      "moreActions": "Altre azioni"
     },
     "tasks": {
       "label": "Attività del team",
@@ -25215,6 +25241,8 @@
       "title": "Messaggio da {from}",
       "titleShutdown": "{from} chiede di interrompere questa sessione",
       "waiting": "In attesa della tua approvazione. Scade dopo 5 minuti.",
+      "waitingShort": "In attesa della tua approvazione",
+      "expires": "Scade dopo 5 minuti",
       "deny": "Nega",
       "approve": "Approva",
       "approveFailed": "Impossibile consegnare il messaggio",
@@ -25226,6 +25254,9 @@
       "paused": "In pausa",
       "pause": "Metti in pausa l’esecuzione",
       "resume": "Riprendi l’esecuzione",
+      "pauseShort": "Pausa",
+      "resumeShort": "Riprendi",
+      "stopShort": "Interrompi",
       "pauseHint": "Pausa: nessun nuovo agente parte, gli agenti in corso finiscono (p)",
       "resumeHint": "Riprendi l’esecuzione (p)",
       "stop": "Interrompi l’esecuzione",
@@ -25235,6 +25266,7 @@
       "savePrompt": "Salva l’esecuzione del workflow «{title}» (esecuzione {runId}) come workflow salvato: scrivi il suo script in {file} e apri una richiesta di modifica per esso.",
       "saveSent": "Salvataggio del workflow richiesto",
       "saveFailed": "Impossibile richiedere il salvataggio del workflow",
+      "viewing": "In visualizzazione",
       "restartHint": "Riavvia questo agente con lo stesso prompt (r)",
       "restartAgent": "Riavvia {label}",
       "failed": {

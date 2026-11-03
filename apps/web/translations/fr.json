@@ -3163,6 +3163,13 @@
       "large": "Grande exécution",
       "largeHint": "Cette exécution lance plus de 25 agents. Vous pouvez arrêter chaque agent depuis sa ligne.",
       "openRun": "Ouvrir l'exécution",
+      "viewingAgent": "Affiché",
+      "startsAfter": "commence après {phase}",
+      "didntFinish": "N’a pas terminé",
+      "retryNow": "Réessayer",
+      "retryAgent": "Réessayer {label}",
+      "waitsFor": "Attend encore {count}",
+      "phaseProgress": "{phase} : {done} sur {total} terminés",
       "openRunLabel": "Ouvrir la session de l'exécution",
       "backgroundIdle": "Dans sa propre session",
       "savedName": "Workflow enregistré {name}",
@@ -3194,7 +3201,17 @@
     },
     "agent": {
       "backgroundWorking": "Travaille en arrière-plan",
-      "backgroundSession": "Dans sa propre session"
+      "backgroundSession": "Dans sa propre session",
+      "open": "Ouvrir",
+      "openAgent": "Ouvrir {name}",
+      "state": {
+        "working": "Travaille",
+        "needs_input": "Vous attend",
+        "idle": "Terminé",
+        "completed": "Terminé",
+        "failed": "N’a pas terminé",
+        "stopped": "Arrêté"
+      }
     }
   },
   "agentRunLimit": {
@@ -25092,6 +25109,9 @@
       "completed": "{name} a terminé",
       "failed": "{name} n’a pas terminé",
       "stopped": "{name} a été arrêté",
+      "viewRun": "Voir l’exécution",
+      "peerFinished": "{name} a terminé",
+      "result": "Résultat",
       "fallbackName": "Votre agent",
       "openSession": "Ouvrir la session",
       "expand": "Afficher tout le résultat",
@@ -25108,6 +25128,8 @@
         "stopping": "Arrêt d’un agent…"
       },
       "to": "À",
+      "messageTo": "Message à @{to}",
+      "messageSent": "Message envoyé",
       "peerStatus": {
         "delivered": "Transmis",
         "held": "En attente d’approbation",
@@ -25197,7 +25219,11 @@
       "retry": "Réessayer",
       "emptyTitle": "Rien pour l’instant",
       "emptyDescription": "Ses messages s’affichent ici pendant qu’il travaille.",
-      "loadOlder": "Afficher les messages précédents"
+      "loadOlder": "Afficher les messages précédents",
+      "runsLabel": "Exécutions du workflow",
+      "previousAgent": "Agent précédent",
+      "nextAgent": "Agent suivant",
+      "moreActions": "Plus d’actions"
     },
     "tasks": {
       "label": "Tâches de l’équipe",
@@ -25215,6 +25241,8 @@
       "title": "Message de {from}",
       "titleShutdown": "{from} demande d’arrêter cette session",
       "waiting": "En attente de votre approbation. Elle expire au bout de 5 minutes.",
+      "waitingShort": "En attente de votre approbation",
+      "expires": "Expire au bout de 5 minutes",
       "deny": "Refuser",
       "approve": "Approuver",
       "approveFailed": "Impossible de transmettre le message",
@@ -25226,6 +25254,9 @@
       "paused": "En pause",
       "pause": "Mettre l’exécution en pause",
       "resume": "Reprendre l’exécution",
+      "pauseShort": "Pause",
+      "resumeShort": "Reprendre",
+      "stopShort": "Arrêter",
       "pauseHint": "Pause : aucun nouvel agent ne démarre, les agents en cours terminent (p)",
       "resumeHint": "Reprendre l’exécution (p)",
       "stop": "Arrêter l’exécution",
@@ -25235,6 +25266,7 @@
       "savePrompt": "Enregistrez l’exécution de workflow « {title} » (exécution {runId}) comme workflow enregistré : écrivez son script dans {file} et ouvrez une demande de modification pour celui-ci.",
       "saveSent": "Enregistrement du workflow demandé",
       "saveFailed": "Impossible de demander l’enregistrement du workflow",
+      "viewing": "Affiché",
       "restartHint": "Redémarrer cet agent avec le même prompt (r)",
       "restartAgent": "Redémarrer {label}",
       "failed": {

@@ -6,9 +6,12 @@ import { Hint } from '../../../primitives/hint';
 import { ToolResultCard } from '../shared/result-card';
 import { SubagentDialog } from '../../agents/subagent-view';
 import { useTranslations } from '../../../i18n';
+import { cn } from '../../../lib/utils';
 import { AgentStateMark } from '../../agents/agent-state-mark';
 import { subagentTitle } from '../../agents/agent-model';
-import { agentDisplayName } from '../../../internal/components/agent-mark';
+import { AgentMarkGlyph, agentDisplayName, agentMarkTileClass, agentMarkVars } from '../../../internal/components/agent-mark';
+import { AgentHandle, SmallGlyph, taskGlyphStatus } from '../../agents/agent-surface';
+import { BasicTool } from '../shared/infrastructure';
 import {
   ArrowSquareOutIcon,
   ArrowUpRightIcon,
@@ -103,26 +106,60 @@ const TASK_KEY: Record<TeamTaskStatus, string> = {
 
 const ROW_CLASS = 'flex min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-xs';
 
-function PeerSendBody({ send }: { send: PeerSendSummary }) {
-  const t = useTranslations('multiAgent.tools');
-  const preview = send.summary ?? send.message;
+/** An agent's face as a tool row's 16px icon: its pixel mark on its own tile. */
+export function AgentAvatarIcon({ handle }: { handle: string }) {
+  const slug = /^(mykortix|meta)-[0-9a-f]{8}$/.test(handle) ? 'mykortix' : handle;
   return (
-    <ToolResultCard bodyClassName="space-y-1 px-2 py-1.5 text-xs">
-      <div className="flex min-w-0 items-center gap-1.5" data-testid="peer-send-body">
-        {send.to && (
-          <>
-            <span className="text-muted-foreground shrink-0">{t('to')}</span>
-            <span className="text-foreground min-w-0 truncate font-medium">@{send.to}</span>
-          </>
-        )}
-        <span className="flex-1" />
-        <Badge variant={PEER_VARIANT[send.status]} size="sm" className="shrink-0">
-          {t(`peerStatus.${send.status}`)}
-        </Badge>
-      </div>
-      {preview && <p className="text-muted-foreground line-clamp-3 whitespace-pre-wrap wrap-break-word">{preview}</p>}
-      {send.note && send.status !== 'delivered' && <p className="text-muted-foreground">{send.note}</p>}
-    </ToolResultCard>
+    <span
+      aria-hidden
+      data-tone="agent"
+      style={agentMarkVars(slug)}
+      className={cn('flex size-4 shrink-0 items-center justify-center rounded-sm bg-(--mark-tile)', agentMarkTileClass(slug))}
+    >
+      <AgentMarkGlyph slug={slug} size={14} />
+    </span>
+  );
+}
+
+/**
+ * `send_message`: one plain tool row, the receiver's face as its icon (Claude
+ * Code's message row): "Message to @scout · the message · Delivered". Open, the
+ * whole message, and why it did not arrive when it did not. A failed send is the
+ * same row in red, never a card of its own.
+ */
+export function PeerSendRow({ send, defaultOpen, forceOpen, locked }: { send: PeerSendSummary; defaultOpen?: boolean; forceOpen?: boolean; locked?: boolean }) {
+  const t = useTranslations('multiAgent.tools');
+  const delivered = send.status === 'delivered';
+  // Not delivered, the row says why; the message itself is one click away.
+  const preview = (!delivered && send.note) || send.summary || send.message || undefined;
+  const body = send.message ? (
+    <div className="text-muted-foreground border-border ml-1.5 space-y-1 border-l pl-3 text-sm whitespace-pre-wrap wrap-break-word">
+      {send.message && <p className="text-foreground">{send.message}</p>}
+
+    </div>
+  ) : undefined;
+  return (
+    <BasicTool
+      icon={send.to ? <AgentAvatarIcon handle={send.to} /> : undefined}
+      trigger={
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-sm">
+          <span className="text-foreground shrink-0">{send.to ? t('messageTo', { to: send.to }) : t('messageSent')}</span>
+          {preview && (
+            <span className="text-muted-foreground min-w-0 flex-1 truncate" title={preview}>
+              {preview}
+            </span>
+          )}
+          <span className={cn('ml-auto shrink-0 text-xs', delivered ? 'text-muted-foreground' : 'text-kortix-red')}>
+            {t(`peerStatus.${send.status}`)}
+          </span>
+        </div>
+      }
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      {body}
+    </BasicTool>
   );
 }
 
@@ -192,10 +229,12 @@ function AgentLine({ agent }: { agent: ReachableAgentRow }) {
 
 function TaskLine({ task }: { task: TeamTaskRow }) {
   const t = useTranslations('multiAgent.tools');
+  const done = task.status === 'completed';
   return (
     <div className={ROW_CLASS} data-task-seq={task.seq}>
+      <SmallGlyph status={task.blocked && !done ? 'stopped' : taskGlyphStatus(task.status)} label={t(`taskStatus.${TASK_KEY[task.status]}`)} />
       <span className="text-muted-foreground shrink-0 tabular-nums">#{task.seq}</span>
-      <span className="text-foreground min-w-0 flex-1 truncate" title={task.subject}>
+      <span className={cn('min-w-0 flex-1 truncate', done ? 'text-muted-foreground' : 'text-foreground')} title={task.subject}>
         {task.subject}
       </span>
       {task.blockedBy.length > 0 && task.blocked && (
@@ -203,14 +242,7 @@ function TaskLine({ task }: { task: TeamTaskRow }) {
           {t('blockedBy', { tasks: task.blockedBy.map((n) => `#${n}`).join(', ') })}
         </span>
       )}
-      {task.owner && (
-        <Badge variant="outline" size="sm" className="shrink-0">
-          @{task.owner}
-        </Badge>
-      )}
-      <Badge variant={TASK_VARIANT[task.status]} size="sm" className="shrink-0">
-        {t(`taskStatus.${TASK_KEY[task.status]}`)}
-      </Badge>
+      {task.owner && <AgentHandle handle={task.owner} />}
     </div>
   );
 }
@@ -274,7 +306,7 @@ export function multiAgentBody(tool: MultiAgentTool, result: KortixToolResult): 
   switch (tool) {
     case 'send_message': {
       const send = parsePeerSend(result.data);
-      return send ? <PeerSendBody send={send} /> : null;
+      return send ? <PeerSendRow send={send} /> : null;
     }
     case 'list_agents': {
       const agents = parseReachable(result.data);

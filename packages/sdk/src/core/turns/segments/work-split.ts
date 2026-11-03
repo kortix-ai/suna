@@ -15,21 +15,30 @@
  * that never groups show calls uses the same rule.
  */
 import { formatDuration } from '../state';
-import { isNoGroupActivityTool } from './session-activity-groups';
+import { isNoGroupActivityTool, normalizeActivityToolName } from './session-activity-groups';
 import type { ShowGroupedSegment } from './show-group';
 
 export interface TurnWorkSplit<S extends ShowGroupedSegment = ShowGroupedSegment> {
   /** Folded behind the "Worked for" row. Never empty. */
   work: S[];
-  /** Deliverable cards (`show`, `show_user`, `image_gen`), in call order, rendered above the final text. */
+  /** Deliverable cards (`show`, `show_user`, `image_gen`) and the calls that started an agent or a workflow, in call order, rendered above the final text. */
   hoisted: S[];
   /** The final text segment, or empty when the turn did not end on text. */
   final: S[];
 }
 
+/**
+ * Calls that started work the person tracks after the turn ends: a sub-agent
+ * (`agent`, OpenCode's `task`, a teammate's `agent_spawn`) or a workflow run.
+ * Folded behind "Worked for", the turn would say "I asked a researcher" with
+ * no researcher in sight. Reading the roster (`list_agents`) stays work.
+ */
+const STARTED_WORK_TOOLS: ReadonlySet<string> = new Set(['agent', 'task', 'agent_spawn', 'workflow']);
+
 function isDeliverableSegment(segment: ShowGroupedSegment): boolean {
   if (segment.kind === 'show-group') return true;
-  return segment.kind === 'standalone' && isNoGroupActivityTool(segment.part.tool);
+  if (segment.kind !== 'standalone') return false;
+  return isNoGroupActivityTool(segment.part.tool) || STARTED_WORK_TOOLS.has(normalizeActivityToolName(segment.part.tool));
 }
 
 function isBlankText(segment: ShowGroupedSegment): boolean {

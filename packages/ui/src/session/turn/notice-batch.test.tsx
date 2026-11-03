@@ -88,8 +88,9 @@ describe('NoticeBatchGroup', () => {
     expect(html).toContain('data-testid="notice-batch"');
     expect(html).toContain('data-notice-count="3"');
     expect(text).toContain('3 agents finished');
-    expect(html.match(/data-testid="subagent-notice"/g)).toHaveLength(2);
-    expect(html.match(/data-testid="peer-message-turn"/g)).toHaveLength(1);
+    // One finish line, then one row per notice in one card.
+    expect(html.match(/data-testid="finish-line"/g)).toHaveLength(1);
+    expect(html.match(/data-batch-row/g)).toHaveLength(3);
     expect(text).toContain('Task 1 finished');
     expect(text).toContain('reviewer finished');
     expect(text).toContain('Still owns #3 Write the fix (in progress)');
@@ -145,7 +146,7 @@ describe('in the thread', () => {
   test('a batch of peer idle notices only (no session report) is a group too', () => {
     const html = turnHtml(batch(peerIdle('archivist', 'Indexed.'), peerIdle('scout', 'Mapped.')));
     expect(html.match(/data-testid="notice-batch"/g)).toHaveLength(1);
-    expect(html.match(/data-testid="peer-message-turn"/g)).toHaveLength(2);
+    expect(html.match(/data-batch-row/g)).toHaveLength(2);
     expect(textOf(html)).toContain('2 agents finished');
   });
 
@@ -161,7 +162,7 @@ describe('in the thread', () => {
   test('UserMessage draws a batch whose first notice is a peer idle notice as the group', () => {
     const html = render(<UserMessage message={logOf(batch(peerIdle('archivist', 'Indexed.'), subagent(1)))} sessionId="session-1" ownsPlan={false} />);
     expect(html).toContain('data-testid="notice-batch"');
-    expect(html.match(/data-testid="peer-message-turn"/g)).toHaveLength(1);
-    expect(html).toContain('data-testid="subagent-notice"');
+    // One row per notice, the peer's and the sub-agent's.
+    expect(html.match(/data-batch-row/g)).toHaveLength(2);
   });
 });

@@ -3163,6 +3163,13 @@
       "large": "大規模な実行",
       "largeHint": "この実行は 25 個を超えるエージェントを起動します。各エージェントは行から停止できます。",
       "openRun": "実行を開く",
+      "viewingAgent": "表示中",
+      "startsAfter": "{phase} の後に開始",
+      "didntFinish": "完了しませんでした",
+      "retryNow": "再試行",
+      "retryAgent": "{label} を再試行",
+      "waitsFor": "あと {count} 件を待機中",
+      "phaseProgress": "{phase} {total} 件中 {done} 件完了",
       "openRunLabel": "実行のセッションを開く",
       "backgroundIdle": "専用のセッションで実行",
       "savedName": "保存済みワークフロー {name}",
@@ -3194,7 +3201,17 @@
     },
     "agent": {
       "backgroundWorking": "バックグラウンドで作業中",
-      "backgroundSession": "専用のセッションで実行"
+      "backgroundSession": "専用のセッションで実行",
+      "open": "開く",
+      "openAgent": "{name} を開く",
+      "state": {
+        "working": "作業中",
+        "needs_input": "対応が必要",
+        "idle": "完了",
+        "completed": "完了",
+        "failed": "完了しませんでした",
+        "stopped": "停止"
+      }
     }
   },
   "agentRunLimit": {
@@ -25092,6 +25109,9 @@
       "completed": "{name} が完了しました",
       "failed": "{name} は完了しませんでした",
       "stopped": "{name} は停止されました",
+      "viewRun": "実行を表示",
+      "peerFinished": "{name} が完了しました",
+      "result": "結果",
       "fallbackName": "あなたのエージェント",
       "openSession": "セッションを開く",
       "expand": "結果全体を表示",
@@ -25108,6 +25128,8 @@
         "stopping": "エージェントを停止中…"
       },
       "to": "宛先",
+      "messageTo": "@{to} へのメッセージ",
+      "messageSent": "メッセージを送信しました",
       "peerStatus": {
         "delivered": "配信済み",
         "held": "承認待ち",
@@ -25197,7 +25219,11 @@
       "retry": "再試行",
       "emptyTitle": "まだ何もありません",
       "emptyDescription": "作業中のメッセージがここに表示されます。",
-      "loadOlder": "以前のメッセージを表示"
+      "loadOlder": "以前のメッセージを表示",
+      "runsLabel": "ワークフローの実行",
+      "previousAgent": "前のエージェント",
+      "nextAgent": "次のエージェント",
+      "moreActions": "その他の操作"
     },
     "tasks": {
       "label": "チームのタスク",
@@ -25215,6 +25241,8 @@
       "title": "{from} からのメッセージ",
       "titleShutdown": "{from} がこのセッションの停止を求めています",
       "waiting": "承認を待っています。5 分後に期限切れになります。",
+      "waitingShort": "承認を待っています",
+      "expires": "5 分後に期限切れ",
       "deny": "拒否",
       "approve": "承認",
       "approveFailed": "メッセージを配信できませんでした",
@@ -25226,6 +25254,9 @@
       "paused": "一時停止中",
       "pause": "実行を一時停止",
       "resume": "実行を再開",
+      "pauseShort": "一時停止",
+      "resumeShort": "再開",
+      "stopShort": "停止",
       "pauseHint": "一時停止: 新しいエージェントは起動せず、実行中のエージェントは完了します (p)",
       "resumeHint": "実行を再開 (p)",
       "stop": "実行を停止",
@@ -25235,6 +25266,7 @@
       "savePrompt": "ワークフローの実行「{title}」(実行 {runId}) を保存済みワークフローとして保存してください。スクリプトを {file} に書き込み、そのための変更リクエストを作成してください。",
       "saveSent": "ワークフローの保存を依頼しました",
       "saveFailed": "ワークフローの保存を依頼できませんでした",
+      "viewing": "表示中",
       "restartHint": "同じプロンプトでこのエージェントを再起動 (r)",
       "restartAgent": "{label} を再起動",
       "failed": {

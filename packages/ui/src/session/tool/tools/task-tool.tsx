@@ -2,7 +2,6 @@
 
 import { SubagentDialog } from '../../agents/subagent-view';
 import {
-  BasicTool,
   firstMeaningfulLine,
   partInput,
   partMetadata,
@@ -10,20 +9,21 @@ import {
   partError,
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
-import {
-  SubAgentActivity,
-  SubAgentStatusBanner,
-  useSubAgentThread,
-} from '../shared/sub-agent';
+import { SubAgentStatusBanner, useSubAgentThread } from '../shared/sub-agent';
 import type { ToolProps } from '../shared/types';
 import { ToolError } from '../tool-error';
-import { FullViewAction } from '../shared/full-view-action';
 import { useTranslations } from '../../../i18n';
-import { getChildSessionId, getToolInfo } from '../../../internal/session-types';
-import { KanbanIcon as SquareKanban } from '@phosphor-icons/react';
-import { useCallback, useMemo, useState } from 'react';
-import { subAgentCalls, type SessionLogThread } from '@kortix/sdk';
-import { useSessionStateStore } from '@kortix/sdk/react';
+import { getChildSessionId } from '../../../internal/session-types';
+import { useMemo, useState } from 'react';
+import type { SessionLogThread } from '@kortix/sdk';
+import { useProjectSession, useSessionStateStore } from '@kortix/sdk/react';
+import type { ProjectSession } from '@kortix/sdk';
+import { agentDisplayName } from '../../../internal/components/agent-mark';
+import { cn } from '../../../lib/utils';
+import { useSessionIds } from '../../../providers/session-ids';
+import type { SessionDisplayStatus } from '../../actions/session-label';
+import { agentRowOf, type AgentRowState } from '../../agents/agent-model';
+import { AgentCard, AgentGlyph } from '../../agents/agent-surface';
 
 /**
  * Whether a background hand-off's child still works. The child's status is
@@ -84,7 +84,6 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(call), [call]);
 
   const childThread = useSubAgentThread(childSessionId);
-  const childCalls = useMemo(() => subAgentCalls(childThread), [childThread]);
 
   // `agent(…, { background: true })` returns as soon as the child exists. The call is
   // over; the work goes on in the child's own session, and the row says so.
@@ -92,7 +91,7 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const backgroundWorking = useBackgroundWorking(background ? childSessionId : undefined, childThread);
 
   const [modalOpen, setModalOpen] = useState(false);
-  const openModal = useCallback(() => setModalOpen(true), []);
+  const openModal = () => setModalOpen(true);
 
   const isRunning = status === 'running' || status === 'pending';
   const isCompleted = status === 'completed';
@@ -103,86 +102,54 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   // dispatch, never the error (KRTX-1746).
   const errorText = partError(call);
 
-  const lastActivity = useMemo(() => {
-    if (childCalls.length === 0) return null;
-    const last = childCalls[childCalls.length - 1];
-    const info = getToolInfo(last.name, partInput(last) as Record<string, any>);
-    return info.title + (info.subtitle ? ` · ${info.subtitle}` : '');
-  }, [childCalls]);
+  // The child's own session row says how it is doing; the call's status is the fallback.
+  const ids = useSessionIds();
+  const childRow = useProjectSession(ids.projectId, childSessionId, { enabled: !!ids.projectId && !!childSessionId });
+  const childState: AgentRowState | null = childRow.data ? agentRowOf(childRow.data as ProjectSession).state : null;
+  const state: AgentRowState = errorText
+    ? 'failed'
+    : (childState ?? (isRunning || (background && backgroundWorking) ? 'working' : isCompleted ? 'completed' : 'idle'));
+  const agentName = agentDisplayName(subagentType);
+  const title = description || tI18nComplete('text9471197a871a', { value0: agentName });
 
-  const subtitle = isRunning ? (lastActivity ?? description) : description || undefined;
-  const backgroundLabel =
-    background && childSessionId && !errorText
-      ? backgroundWorking
-        ? tAgent('backgroundWorking')
-        : tAgent('backgroundSession')
-      : undefined;
-
-  /**
-   * Whether this row can show the sub-agent's work WITHOUT leaving the
-   * transcript.
-   *
-   * It is not the same question as "does this call have a sub-agent". A child
-   * session's transcript is only resident while the parent streamed it:
-   * `useOpenCodeMessages` reads the sync store, and `pruneDetachedSessions`
-   * evicts detached sessions past `DETACHED_SESSION_LIMIT`. A turn that
-   * dispatches three agents therefore ends up with the last one's steps in
-   * memory and the first two gone — which is exactly the "clicking the row does
-   * nothing" report: two of the three rows had no body to open.
-   */
-  const hasInlineSteps = Boolean(childSessionId) && childCalls.length > 0;
-
+  // One card, one way in (Paper F2): the agent's live state, what it was asked, and Open. Its
+  // steps and its transcript are in the agent pane, a click away; they never fold under the row.
   return (
     <>
-      <BasicTool
-        icon={<SquareKanban className="size-3.5 shrink-0" />}
-        trigger={{
-          title: tI18nComplete('text9471197a871a', { value0: subagentType }),
-          subtitle,
-          args: backgroundLabel ? [backgroundLabel] : undefined,
-        }}
-        defaultOpen={defaultOpen}
-        forceOpen={forceOpen}
-        locked={locked}
-        badge={
-          isCompleted && childCalls.length > 0 ? `${childCalls.length} steps` : undefined
-        }
-        triggerAction={childSessionId ? <FullViewAction onOpen={openModal} /> : undefined}
-        // A click on an agent row always leads somewhere. With steps in hand
-        // the row is a disclosure and opens them in place; with the child
-        // session evicted there is nothing to disclose, so the row becomes a
-        // plain button onto the full view — the same destination the `View`
-        // action carries, so the row and its action never disagree. Without
-        // this the reader met a row that looked openable and was not.
-        // A FAILED dispatch keeps the disclosure instead: its body is the
-        // failure reason, which `ClickableToolRow` would drop, and the reason
-        // must stay readable on the row exactly as the generic error card
-        // showed it (KRTX-1746). The child thread stays one `View` away.
-        onClick={childSessionId && !hasInlineSteps && !errorText ? openModal : undefined}
+      <AgentCard
+        testId="agent-call-card"
+        label={tAgent('openAgent', { name: title })}
+        onClick={childSessionId ? openModal : undefined}
+        className="mt-1.5"
       >
-        {(errorText || hasInlineSteps) ? (
-          <>
-            {errorText ? <ToolError error={errorText} toolName={call.name} /> : undefined}
-            {hasInlineSteps ? (
-              <SubAgentActivity childSessionId={childSessionId} calls={childCalls} />
-            ) : undefined}
-          </>
-        ) : undefined}
-      </BasicTool>
+        <AgentGlyph status={STATE_GLYPH[state]} />
+        <span className="text-foreground min-w-0 truncate font-medium" title={title}>
+          {title}
+        </span>
+        <span className="text-muted-foreground shrink-0 text-xs">{agentName}</span>
+        <span className="flex-1" />
+        <span className={cn('shrink-0 text-xs', state === 'failed' ? 'text-kortix-red' : state === 'needs_input' ? 'text-kortix-blue' : 'text-muted-foreground')}>
+          {tAgent(`state.${state}`)}
+        </span>
+        {childSessionId && <span className="text-foreground shrink-0 text-xs">{tAgent('open')}</span>}
+      </AgentCard>
+      {errorText ? <ToolError error={errorText} toolName={call.name} /> : null}
       <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />
       {childSessionId && (
-        <SubagentDialog
-          open={modalOpen}
-          onOpenChange={setModalOpen}
-          sessionId={childSessionId}
-          title={tI18nComplete('text7decbfdbacee', {
-            value0: subagentType,
-            value1: description ? tI18nComplete('textb581fd88ea24', { value0: description }) : '',
-          })}
-        />
+        <SubagentDialog open={modalOpen} onOpenChange={setModalOpen} sessionId={childSessionId} title={title} />
       )}
     </>
   );
 }
+
+/** The session-list glyph an agent's state draws. */
+const STATE_GLYPH: Record<AgentRowState, SessionDisplayStatus> = {
+  working: 'running',
+  needs_input: 'needs-you',
+  failed: 'failed',
+  idle: 'done',
+  completed: 'done',
+  stopped: 'stopped',
+};
 // pi's `agent` (`task` is its deprecated alias) reaches this row through its kind (`toolKind`).
 ToolRegistry.register('task', TaskTool);

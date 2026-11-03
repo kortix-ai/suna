@@ -294,6 +294,7 @@ import {
   TranscriptTurnRow,
   strandedPromptIds,
   optimisticAnswersCache,
+  isAgentNoticeTurn,
   promptTexts,
   resolveTurnError,
 } from './transcript';
@@ -4616,7 +4617,8 @@ export function SessionChat({
                                 turnIndex === 0 || transcriptRows
                                   ? ''
                                   : // A compaction and the work after it continue the turn above.
-                                    turn.compaction || turn.continues
+                                    // So does an agent's report: it answers the reply above.
+                                    turn.compaction || turn.continues || isAgentNoticeTurn(turn.user)
                                     ? 'mt-6'
                                     : lastTurnWorking &&
                                       pendingTurnIds.has(turn.id) &&

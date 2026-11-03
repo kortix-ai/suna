@@ -82,6 +82,29 @@ describe('splitTurnWork', () => {
     expect((split!.final[0] as { part: { id: string } }).part.id).toBe('6');
   });
 
+  test('a call that started an agent or a workflow is hoisted: the person tracks it after the turn', () => {
+    const s = segments([
+      tool('1', 'list_agents'),
+      tool('2', 'agent', { description: 'Research', run_in_background: true }),
+      tool('3', 'bash'),
+      tool('4', 'workflow'),
+      tool('5', 'task'),
+      tool('6', 'agent_spawn'),
+      text('7', 'I asked a researcher to look into it.'),
+    ]);
+    const split = splitTurnWork(s, { working: false });
+
+    expect(split!.hoisted.map((seg) => (seg as { part: ToolPart }).part.id)).toEqual(['2', '4', '5', '6']);
+    // Checking the roster is work, not something to track.
+    expect(split!.work.map((seg) => (seg.kind === 'standalone' ? seg.part.id : seg.kind))).toEqual(['1', 'burst']);
+    expect((split!.final[0] as { part: { id: string } }).part.id).toBe('7');
+  });
+
+  test('a turn whose only work started an agent has nothing left to fold', () => {
+    const s = segments([tool('1', 'agent'), text('2', 'On it.')]);
+    expect(splitTurnWork(s, { working: false })).toBeNull();
+  });
+
   test('a settled turn hoists an image_gen card above the final text', () => {
     const s = segments([
       tool('1', 'bash'),
@@ -115,12 +138,14 @@ describe('splitTurnWork', () => {
     expect(split!.work.map((seg) => seg.kind)).toEqual(['burst']);
   });
 
-  test('a sub-agent standalone stays in work', () => {
-    const s = segments([tool('1', 'agent_spawn'), text('2', 'Done.')]);
+  test('a sub-agent call beside other work is hoisted, the other work stays folded', () => {
+    // #9558 folded sub-agent calls; since the agent pane, the call that started
+    // an agent stays in view so the person can open it after the turn.
+    const s = segments([tool('1', 'bash'), tool('2', 'agent_spawn'), text('3', 'Done.')]);
     const split = splitTurnWork(s, { working: false });
 
-    expect(split!.work.map((seg) => seg.kind)).toEqual(['standalone']);
-    expect(split!.hoisted).toEqual([]);
+    expect(split!.work.map((seg) => seg.kind)).toEqual(['burst']);
+    expect(split!.hoisted.map((seg) => (seg as { part: ToolPart }).part.id)).toEqual(['2']);
   });
 
   test('whitespace-only text is not final', () => {

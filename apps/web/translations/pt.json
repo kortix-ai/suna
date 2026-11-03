@@ -3163,6 +3163,13 @@
       "large": "Execução grande",
       "largeHint": "Esta execução inicia mais de 25 agentes. Você pode parar qualquer agente na linha dele.",
       "openRun": "Abrir execução",
+      "viewingAgent": "Visualizando",
+      "startsAfter": "começa depois de {phase}",
+      "didntFinish": "Não terminou",
+      "retryNow": "Tentar novamente",
+      "retryAgent": "Tentar {label} novamente",
+      "waitsFor": "Aguarda mais {count}",
+      "phaseProgress": "{phase}: {done} de {total} concluídos",
       "openRunLabel": "Abrir a sessão da execução",
       "backgroundIdle": "Na própria sessão",
       "savedName": "Fluxo de trabalho salvo {name}",
@@ -3194,7 +3201,17 @@
     },
     "agent": {
       "backgroundWorking": "Trabalhando em segundo plano",
-      "backgroundSession": "Na sua própria sessão"
+      "backgroundSession": "Na sua própria sessão",
+      "open": "Abrir",
+      "openAgent": "Abrir {name}",
+      "state": {
+        "working": "Trabalhando",
+        "needs_input": "Precisa de você",
+        "idle": "Concluído",
+        "completed": "Concluído",
+        "failed": "Não terminou",
+        "stopped": "Parado"
+      }
     }
   },
   "agentRunLimit": {
@@ -25092,6 +25109,9 @@
       "completed": "{name} terminou",
       "failed": "{name} não terminou",
       "stopped": "{name} foi parado",
+      "viewRun": "Ver execução",
+      "peerFinished": "{name} terminou",
+      "result": "Resultado",
       "fallbackName": "Seu agente",
       "openSession": "Abrir sessão",
       "expand": "Mostrar o resultado inteiro",
@@ -25108,6 +25128,8 @@
         "stopping": "Parando um agente…"
       },
       "to": "Para",
+      "messageTo": "Mensagem para @{to}",
+      "messageSent": "Mensagem enviada",
       "peerStatus": {
         "delivered": "Entregue",
         "held": "Aguardando aprovação",
@@ -25197,7 +25219,11 @@
       "retry": "Tentar novamente",
       "emptyTitle": "Nada ainda",
       "emptyDescription": "As mensagens dele aparecem aqui enquanto trabalha.",
-      "loadOlder": "Mostrar mensagens anteriores"
+      "loadOlder": "Mostrar mensagens anteriores",
+      "runsLabel": "Execuções do workflow",
+      "previousAgent": "Agente anterior",
+      "nextAgent": "Próximo agente",
+      "moreActions": "Mais ações"
     },
     "tasks": {
       "label": "Tarefas da equipe",
@@ -25215,6 +25241,8 @@
       "title": "Mensagem de {from}",
       "titleShutdown": "{from} pede para parar esta sessão",
       "waiting": "Aguardando a sua aprovação. Expira em 5 minutos.",
+      "waitingShort": "Aguardando a sua aprovação",
+      "expires": "Expira em 5 minutos",
       "deny": "Negar",
       "approve": "Aprovar",
       "approveFailed": "Não foi possível entregar a mensagem",
@@ -25226,6 +25254,9 @@
       "paused": "Pausada",
       "pause": "Pausar a execução",
       "resume": "Retomar a execução",
+      "pauseShort": "Pausar",
+      "resumeShort": "Retomar",
+      "stopShort": "Parar",
       "pauseHint": "Pausar: nenhum agente novo começa; os agentes em andamento terminam (p)",
       "resumeHint": "Retomar a execução (p)",
       "stop": "Parar a execução",
@@ -25235,6 +25266,7 @@
       "savePrompt": "Salve a execução do fluxo de trabalho “{title}” (execução {runId}) como fluxo de trabalho salvo: escreva o script dela em {file} e abra uma solicitação de alteração para ele.",
       "saveSent": "Pedido para salvar o fluxo de trabalho enviado",
       "saveFailed": "Não foi possível pedir para salvar o fluxo de trabalho",
+      "viewing": "Visualizando",
       "restartHint": "Reiniciar este agente com o mesmo prompt (r)",
       "restartAgent": "Reiniciar {label}",
       "failed": {

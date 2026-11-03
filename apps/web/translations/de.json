@@ -3163,6 +3163,13 @@
       "large": "Großer Lauf",
       "largeHint": "Dieser Lauf startet mehr als 25 Agenten. Du kannst jeden Agenten in seiner Zeile stoppen.",
       "openRun": "Lauf öffnen",
+      "viewingAgent": "Wird angezeigt",
+      "startsAfter": "beginnt nach {phase}",
+      "didntFinish": "Nicht abgeschlossen",
+      "retryNow": "Erneut versuchen",
+      "retryAgent": "{label} erneut versuchen",
+      "waitsFor": "Wartet auf {count} weitere",
+      "phaseProgress": "{phase} {done} von {total} erledigt",
       "openRunLabel": "Sitzung des Laufs öffnen",
       "backgroundIdle": "In einer eigenen Sitzung",
       "savedName": "Gespeicherter Workflow {name}",
@@ -3194,7 +3201,17 @@
     },
     "agent": {
       "backgroundWorking": "Arbeitet im Hintergrund",
-      "backgroundSession": "In einer eigenen Sitzung"
+      "backgroundSession": "In einer eigenen Sitzung",
+      "open": "Öffnen",
+      "openAgent": "{name} öffnen",
+      "state": {
+        "working": "Arbeitet",
+        "needs_input": "Braucht dich",
+        "idle": "Erledigt",
+        "completed": "Erledigt",
+        "failed": "Nicht abgeschlossen",
+        "stopped": "Gestoppt"
+      }
     }
   },
   "agentRunLimit": {
@@ -25092,6 +25109,9 @@
       "completed": "{name} ist fertig",
       "failed": "{name} wurde nicht abgeschlossen",
       "stopped": "{name} wurde gestoppt",
+      "viewRun": "Lauf ansehen",
+      "peerFinished": "{name} ist fertig",
+      "result": "Ergebnis",
       "fallbackName": "Dein Agent",
       "openSession": "Sitzung öffnen",
       "expand": "Ganzes Ergebnis anzeigen",
@@ -25108,6 +25128,8 @@
         "stopping": "Agent wird gestoppt…"
       },
       "to": "An",
+      "messageTo": "Nachricht an @{to}",
+      "messageSent": "Nachricht gesendet",
       "peerStatus": {
         "delivered": "Zugestellt",
         "held": "Wartet auf Freigabe",
@@ -25197,7 +25219,11 @@
       "retry": "Erneut versuchen",
       "emptyTitle": "Noch nichts",
       "emptyDescription": "Seine Nachrichten erscheinen hier, während er arbeitet.",
-      "loadOlder": "Frühere Nachrichten anzeigen"
+      "loadOlder": "Frühere Nachrichten anzeigen",
+      "runsLabel": "Workflow-Läufe",
+      "previousAgent": "Vorheriger Agent",
+      "nextAgent": "Nächster Agent",
+      "moreActions": "Weitere Aktionen"
     },
     "tasks": {
       "label": "Aufgaben des Teams",
@@ -25215,6 +25241,8 @@
       "title": "Nachricht von {from}",
       "titleShutdown": "{from} bittet darum, diese Sitzung zu stoppen",
       "waiting": "Wartet auf deine Freigabe. Sie läuft nach 5 Minuten ab.",
+      "waitingShort": "Wartet auf deine Freigabe",
+      "expires": "Läuft nach 5 Minuten ab",
       "deny": "Ablehnen",
       "approve": "Genehmigen",
       "approveFailed": "Die Nachricht konnte nicht zugestellt werden",
@@ -25226,6 +25254,9 @@
       "paused": "Pausiert",
       "pause": "Lauf pausieren",
       "resume": "Lauf fortsetzen",
+      "pauseShort": "Pausieren",
+      "resumeShort": "Fortsetzen",
+      "stopShort": "Stoppen",
       "pauseHint": "Pausieren: Kein neuer Agent startet, laufende Agenten werden fertig (p)",
       "resumeHint": "Lauf fortsetzen (p)",
       "stop": "Lauf stoppen",
@@ -25235,6 +25266,7 @@
       "savePrompt": "Speichere den Workflow-Lauf „{title}“ (Lauf {runId}) als gespeicherten Workflow: Schreibe sein Skript nach {file} und eröffne dafür eine Änderungsanfrage.",
       "saveSent": "Speichern des Workflows angefragt",
       "saveFailed": "Das Speichern des Workflows konnte nicht angefragt werden",
+      "viewing": "Wird angezeigt",
       "restartHint": "Diesen Agenten mit demselben Prompt neu starten (r)",
       "restartAgent": "{label} neu starten",
       "failed": {
