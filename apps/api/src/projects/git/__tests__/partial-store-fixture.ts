@@ -8,6 +8,11 @@
  *   `uploadpack.allowAnySHA1InWant`), as GitHub does;
  * - the project's `repoUrl` is a `file://` URL. Git ignores `--filter` on a
  *   plain path ("--filter is ignored in local clones").
+ *
+ * The host's git must be 2.45 or later, as in the API image (2.47): older git
+ * makes the API keep whole clones (`partialStoresEnabled`), and every
+ * assertion here would test that fallback instead. The fixture refuses to
+ * start on older git with one clear error.
  */
 import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -16,6 +21,7 @@ import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { repoCachePath } from '../mirror';
+import { gitVersionSupportsPartialStores } from '../object-store';
 import type { GitBackedProject } from '../types';
 
 const exec = promisify(execFile);
@@ -59,6 +65,10 @@ export async function createPartialStoreFixture(
   files: Record<string, string | Buffer>,
   options: { projectId?: string } = {},
 ): Promise<PartialStoreFixture> {
+  const version = await git(['--version']);
+  if (!gitVersionSupportsPartialStores(version)) {
+    throw new Error(`partial-store tests need git 2.45 or later, as in the API image; this host has "${version}"`);
+  }
   const root = await mkdtemp(join(tmpdir(), 'kortix-partial-store-'));
   const upstream = join(root, 'upstream.git');
   const seed = join(root, 'seed');

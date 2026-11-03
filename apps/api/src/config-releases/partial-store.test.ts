@@ -91,7 +91,7 @@ describe('config release on a partial store', () => {
     expect(await fx.storeHas(await fx.upstreamBlob('notes.md', `${tip}~1`))).toBe(false);
   });
 
-  test('over the cap: the release has no archive, keeps no downloaded file, and the project is remembered for 6 h', async () => {
+  test('over the cap: no archive, no downloaded file, and the project is remembered while its tree keeps the large file', async () => {
     fx = await createPartialStoreFixture({ ...FILES, 'data/big.bin': randomBytes(3_000_000) }, { projectId: crypto.randomUUID() });
     const tip = await fx.push({ 'notes.md': 'Notes, second edit.\n' }, 'second');
     const big = await fx.upstreamBlob('data/big.bin');
@@ -106,18 +106,28 @@ describe('config release on a partial store', () => {
     expect(await fx.storeHas(big)).toBe(false);
     expect(await fx.storeHas(await fx.upstreamBlob('tools/unused.ts'))).toBe(false);
 
-    // The large file is gone, but the memo answers for 6 h without a download.
-    const small = await fx.push({ 'data/big.bin': null }, 'drop data');
-    const remembered = await buildConfigRelease(fx.project, small, 'project', options);
+    // A new tip that still holds the large file is answered by the memo, without a download.
+    const edited = await fx.push({ 'notes.md': 'Notes, third edit.\n' }, 'third');
+    const remembered = await buildConfigRelease(fx.project, edited, 'project', options);
     expect(remembered.archive).toBeNull();
     expect(remembered.archive_reason).toContain('exceeds');
-    expect(await fx.storeHas(await fx.upstreamBlob('tools/unused.ts', small))).toBe(false);
+    expect(await fx.storeHas(await fx.upstreamBlob('tools/unused.ts', edited))).toBe(false);
 
-    // Once the 6 h passed, the archive is built again.
-    noteOverLimit(fx.project.projectId, 'config-archive', 1, Date.now() - OVER_LIMIT_MEMO_TTL_MS - 1);
+    // A tip that dropped it is measured again at once (CFG-14), and gets its archive.
+    const small = await fx.push({ 'data/big.bin': null }, 'drop data');
     const rebuilt = await buildConfigRelease(fx.project, small, 'project', options);
     expect(rebuilt.archive).not.toBeNull();
     expect(await fx.storeHas(await fx.upstreamBlob('tools/unused.ts', small))).toBe(true);
+  });
+
+  test('a remembered result without a witness expires after 6 h', async () => {
+    fx = await createPartialStoreFixture(FILES, { projectId: crypto.randomUUID() });
+    const tip = await fx.push({ 'notes.md': 'Notes, second edit.\n' }, 'second');
+    const options = { store, noCache: true };
+    noteOverLimit(fx.project.projectId, 'config-archive', 1);
+    expect((await buildConfigRelease(fx.project, tip, 'project', options)).archive).toBeNull();
+    noteOverLimit(fx.project.projectId, 'config-archive', 1, { now: Date.now() - OVER_LIMIT_MEMO_TTL_MS - 1 });
+    expect((await buildConfigRelease(fx.project, tip, 'project', options)).archive).not.toBeNull();
   });
 
   test('the agent variant downloads only the tool modules its agent loads', async () => {
