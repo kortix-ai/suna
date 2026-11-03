@@ -157,6 +157,11 @@ const running = new Map<string, { again: string | null | undefined }>();
  * while a publish of the same ref runs makes it run once more afterwards.
  */
 export function schedulePublish(projectId: string, ref: string, commit: string | null = null): void {
+  // Every trigger of a release moves the saved config summary too (/detail
+  // reads it). Imported lazily: this module loads without the projects surface.
+  void import('../projects/surface')
+    .then(({ scheduleConfigSummary }) => scheduleConfigSummary(projectId, ref, commit))
+    .catch(() => {});
   const key = `${projectId}\0${ref}`;
   const busy = running.get(key);
   if (busy) {

@@ -23,7 +23,7 @@ import {
 import { ProjectScope } from '../../internal/project-scope';
 import { useUiComponents, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
 import {
-  getProjectDetail,
+  getProject,
   listProjectAccessRequests,
   listProjectSandboxes,
   setProjectOnboardingComplete,
@@ -180,22 +180,21 @@ function ProjectHomeView({
     refetchOnWindowFocus: false,
   });
 
-  // Same query key page.tsx (`ProjectIndexPage`) already fetches for this
-  // project — this dedupes against that cache entry rather than firing a
-  // second request. Needed here only to resolve `account_id` for the pending
-  // access requests bell below, which now routes into the account hub's
-  // Access tab (`/accounts/<id>?tab=access-projects`) instead of the deleted
-  // project Members capability tab.
-  const projectDetailQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
+  // The bare project row (`GET /projects/:id`, one database read), the same
+  // entry page.tsx and the shell read. Not the detail: it reads the
+  // repository and can take seconds, and the home must not wait on it. It
+  // resolves `account_id` for the access-requests bell, the onboarding stamp
+  // and the notification-center flag.
+  const projectRowQuery = useQuery({
+    queryKey: qk.project.summary(projectId),
+    queryFn: () => getProject(projectId),
     enabled: !!projectId,
     ...contract('config'),
   });
-  const accountId = projectDetailQuery.data?.project?.account_id;
+  const accountId = projectRowQuery.data?.account_id;
   // The promo waits for the onboarding stamp (KRTX-2378).
   const onboarded = Boolean(
-    (projectDetailQuery.data?.project?.metadata as { onboarding_completed_at?: string } | undefined)
+    (projectRowQuery.data?.metadata as { onboarding_completed_at?: string } | undefined)
       ?.onboarding_completed_at,
   );
   // Only someone who can finish the onboarding is sent into it: the kickoff
@@ -209,7 +208,7 @@ function ProjectHomeView({
     (action) => onboardingCans[action]?.allowed === true,
   );
   const onboarding =
-    onboardingEnabled && projectDetailQuery.isSuccess && !onboarded && canSetUpProject;
+    onboardingEnabled && projectRowQuery.isSuccess && !onboarded && canSetUpProject;
   // The onboarding lands on the first chat: it starts the chat (the sidebar
   // row) and moves the address to it. Rendered as the first chat from this
   // render on, so the usual home never paints in between.
@@ -385,7 +384,7 @@ function ProjectHomeView({
       <AccessRequestsBell
         requests={accessRequests.data?.requests ?? []}
         to={accessRequestsTo}
-        notificationCenter={notificationCenterOn(projectDetailQuery.data?.project)}
+        notificationCenter={notificationCenterOn(projectRowQuery.data)}
       />
       {/* Not while the project is in its first-chat era, and not over the
           onboarding wizard: onboarding owns those screens. The era starts when

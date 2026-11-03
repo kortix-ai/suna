@@ -7,6 +7,8 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { readJsonObject } from '../../shared/http-body';
 import { listRepoFiles, loadProjectConfig } from '../git';
+import { withKortixSkills } from '../git/config';
+import { readServableConfigSummary, refreshConfigSummaryIfMoved } from '../config-summary/service';
 import { disconnectedProjectConfig } from '../git/config';
 import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { allowStaleMirrorReads } from '../git/mirror';
@@ -132,29 +134,57 @@ export function registerProjectDetailRoutes(): void {
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
       // A page view: serve the warm git mirror, refresh it behind the response.
       allowStaleMirrorReads();
+      const ref = loaded.row.defaultBranch;
 
-      // A disconnected repository still renders the project shell: no files,
-      // and a config whose `manifest_health.state` names the cause.
-      // `git_connection` below carries the reason and the fix.
-      const gitProject = await withProjectGitAuth(loaded.row).catch((error) => {
-        if (isRepositoryDisconnectedError(error)) return null;
-        throw error;
-      });
+      // The saved summary of the default branch: no git on this path
+      // (`config-summary/service.ts`). A moved tip rebuilds it behind the response.
+      const saved = await readServableConfigSummary(projectId, ref);
       let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
-      if (!gitProject) {
-        c.header('X-Kortix-Repo-Status', 'disconnected');
-      } else {
+      let rawConfig: Awaited<ReturnType<typeof loadProjectConfig>>;
+      const listLive = async (gitProject: Awaited<ReturnType<typeof withProjectGitAuth>>) => {
         try {
-          files = await listRepoFiles(gitProject, loaded.row.defaultBranch);
+          return await listRepoFiles(gitProject, ref);
         } catch (error) {
           console.warn('[projects] repo detail listing unavailable', {
             projectId,
             error: error instanceof Error ? error.message : String(error),
           });
           c.header('X-Kortix-Repo-Status', 'unavailable');
+          return [];
         }
+      };
+      if (saved) {
+        c.header('X-Kortix-Config-Source', `snapshot; commit=${saved.sourceCommit}`);
+        rawConfig = withKortixSkills(saved.config);
+        // Past the stored path cap the list comes from git, as before.
+        if (saved.filesComplete) files = saved.files;
+        else {
+          const gitProject = await withProjectGitAuth(loaded.row).catch((error) => {
+            if (isRepositoryDisconnectedError(error)) return null;
+            throw error;
+          });
+          if (gitProject) files = await listLive(gitProject);
+          else c.header('X-Kortix-Repo-Status', 'disconnected');
+        }
+      } else {
+        c.header('X-Kortix-Config-Source', 'live');
+        // A disconnected repository still renders the project shell: no files,
+        // and a config whose `manifest_version.unknown_reason` names the cause.
+        // `git_connection` below carries the reason and the fix.
+        const gitProject = await withProjectGitAuth(loaded.row).catch((error) => {
+          if (isRepositoryDisconnectedError(error)) return null;
+          throw error;
+        });
+        if (!gitProject) {
+          c.header('X-Kortix-Repo-Status', 'disconnected');
+        } else {
+          files = await listLive(gitProject);
+        }
+        rawConfig = gitProject ? await loadProjectConfig(gitProject, files) : disconnectedProjectConfig();
       }
-      const rawConfig = gitProject ? await loadProjectConfig(gitProject, files) : disconnectedProjectConfig();
+      // Behind the response: prove the tip, and rebuild the saved summary when
+      // it is not the tip. The next view then reads the row.
+      refreshConfigSummaryIfMoved(loaded.row, ref, saved?.sourceCommit ?? null);
       // Per-resource scoping: hide agents/skills this member isn't granted (owner/
       // admins/SAs see everything). No-op when the project has no resource grants.
       const denierCtx = {

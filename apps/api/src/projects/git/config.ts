@@ -30,9 +30,9 @@ import { type FileManifestIssue, type ManifestHealth, manifestHealthOf, manifest
 import { listRepoFiles, prefetchRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
 
-async function optionalFile(project: GitBackedProject, filePath: string) {
+async function optionalFile(project: GitBackedProject, filePath: string, ref = project.defaultBranch) {
   try {
-    return await readRepoFile(project, filePath, project.defaultBranch);
+    return await readRepoFile(project, filePath, ref);
   } catch {
     return null;
   }
@@ -204,14 +204,15 @@ type ManifestRead = Awaited<ReturnType<typeof readManifestFromRepo>>;
  */
 async function readProjectManifest(
   project: GitBackedProject,
+  ref = project.defaultBranch,
 ): Promise<{ found: ManifestRead; importError: ManifestIssue | null; failed: boolean }> {
   const candidates = manifestCandidatePaths(project.manifestPath);
   let importError: ManifestIssue | null = null;
   try {
-    const found = await readManifestFromRepo(project, candidates, project.defaultBranch).catch((err) => {
+    const found = await readManifestFromRepo(project, candidates, ref).catch((err) => {
       if (!(err instanceof ManifestImportError)) throw err;
       importError = { path: 'imports', message: err.message, severity: 'error' };
-      return readManifestFromRepo(project, candidates, project.defaultBranch, { resolveImports: false });
+      return readManifestFromRepo(project, candidates, ref, { resolveImports: false });
     });
     return { found, importError, failed: false };
   } catch {
@@ -347,13 +348,29 @@ function withSyntaxErrorConsequence(health: ManifestHealth, lastGoodCommit: stri
   };
 }
 
+/** The project config summary at the default branch, with the Kortix skills. */
 export async function loadProjectConfig(
   project: GitBackedProject,
   files?: ProjectFileEntry[],
 ): Promise<ProjectConfigSummary> {
+  return withKortixSkills(await loadRepoConfigSummary(project, files));
+}
+
+/**
+ * The config summary of the repository alone, at `ref` (a commit pins every
+ * read to it): `loadProjectConfig` without the Kortix skills, which change
+ * with the API, not with the repository. The saved summaries
+ * (`projects/config-summary/`) store this. `files` must be the listing at the
+ * same `ref`.
+ */
+export async function loadRepoConfigSummary(
+  project: GitBackedProject,
+  files?: ProjectFileEntry[],
+  ref = project.defaultBranch,
+): Promise<ProjectConfigSummary> {
   const [repoFiles, read] = await Promise.all([
-    files ?? listRepoFiles(project, project.defaultBranch),
-    readProjectManifest(project),
+    files ?? listRepoFiles(project, ref),
+    readProjectManifest(project, ref),
   ]);
   const repoPaths = new Set(repoFiles.map((file) => file.path));
   let health = projectManifestHealth(read, repoPaths, project.manifestPath);
@@ -409,10 +426,10 @@ export async function loadProjectConfig(
 
   const skillEntries = Object.entries(map(manifest.skills)).map(([name, folder]) => ({ name, path: `${String(folder)}/SKILL.md` }));
   // One fetch for every SKILL.md, not one per skill (`prefetchRepoFiles`).
-  await prefetchRepoFiles(project, skillEntries.map(({ path }) => path).filter((path) => repoPaths.has(path)), project.defaultBranch);
+  await prefetchRepoFiles(project, skillEntries.map(({ path }) => path).filter((path) => repoPaths.has(path)), ref);
   const projectSkills = await Promise.all(
     skillEntries.map(async ({ name, path }) => {
-      const meta = repoPaths.has(path) ? parseFrontmatter(await optionalFile(project, path)) : {};
+      const meta = repoPaths.has(path) ? parseFrontmatter(await optionalFile(project, path, ref)) : {};
       return { name, path, description: meta.description || null };
     }),
   );
@@ -440,7 +457,7 @@ export async function loadProjectConfig(
     open_code_default_agent: loadedAgents.defaultAgent ?? null,
     agent_discovery: 'declarative',
     agents,
-    skills: withKortixSkills(projectSkills),
+    skills: projectSkills,
     commands,
     spaces: spacesFromManifest(manifest),
   };
@@ -451,7 +468,11 @@ export async function loadProjectConfig(
  * into every session, so every project lists them. A repo copy of the same name
  * (the scaffold's `kortix-cli`) is listed once.
  */
-function withKortixSkills(skills: ProjectConfigSummary['skills']): ProjectConfigSummary['skills'] {
+export function withKortixSkills(config: ProjectConfigSummary): ProjectConfigSummary {
+  return { ...config, skills: withKortixSkillList(config.skills) };
+}
+
+function withKortixSkillList(skills: ProjectConfigSummary['skills']): ProjectConfigSummary['skills'] {
   const names = new Set(skills.map((skill) => skill.name));
   const kortixSkills = listManagedSkills()
     .filter((skill) => !names.has(skill.name))
