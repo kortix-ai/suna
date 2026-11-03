@@ -14,6 +14,7 @@ import { CHANNEL_MAX_ALLOWED_USERS, setChannelAllowedUsers } from '../../channel
 import { reconcileChannelConnectors } from '../../connectors/sync';
 import { PROJECT_ACTIONS } from '../../iam';
 import { logger } from '../../lib/logger';
+import { readJsonObject } from '../../shared/http-body';
 import { auth, errors, json } from '../../openapi';
 import { AnyObject, projectsApp } from '../lib/app';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
@@ -96,8 +97,9 @@ export function registerChannelDiscordRoutes(): void {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
-      const body = (await c.req.json().catch(() => ({}))) as { code?: string; state?: string };
-      const result = await completeDiscordOauthInstall({ projectId, userId: loaded.userId, code: body.code ?? '', state: body.state ?? '' });
+      const body = await readJsonObject(c);
+      const text = (value: unknown) => (typeof value === 'string' ? value : '');
+      const result = await completeDiscordOauthInstall({ projectId, userId: loaded.userId, code: text(body.code), state: text(body.state) });
       if (!result.ok) return c.json({ error: result.error, ...(result.code ? { code: result.code } : {}) }, result.status);
       return c.json({ redirect_url: result.redirectUrl }, 200);
     },
