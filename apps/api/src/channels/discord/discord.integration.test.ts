@@ -18,7 +18,7 @@ import { resetChannelLifecycleForTest, setChannelLifecycleForTest } from '../cor
 import { bindChatThread } from '../core/threads';
 import { channelAppWebhookRoutes } from '../inbound/webhook-routes';
 import { snowflakeSequence } from './api';
-import { DiscordGateway, DISCORD_INTENTS, intakeMessage, type GatewayMessage } from './gateway';
+import { DiscordGateway, discordIntents, intakeMessage, type GatewayMessage } from './gateway';
 import { discordInbound } from './inbound';
 import { forgetDiscordGuild, loadDiscordInstall, saveDiscordInstall } from './installs';
 import { resolveDiscordRoute } from './routing';
@@ -238,7 +238,7 @@ describe('a conversation', () => {
     expect(await intakeMessage(m, BOT)).toBe('stored');
     await drain();
 
-    expect(routes()).toContain(`POST /channels/${CHANNEL}/messages/${m.id}/threads`);
+    expect(calls.find((c) => c.route === `POST /channels/${CHANNEL}/messages/${m.id}/threads`)?.body.auto_archive_duration).toBe(10080);
     expect(routes()).toContain(`POST /channels/${m.id}/typing`);
     expect(created).toHaveLength(1);
     const [create] = created;
@@ -255,22 +255,40 @@ describe('a conversation', () => {
     expect(binding?.projectId).toBe(PROJECT);
   });
 
-  test("the session's thread follows up without a mention; another thread's chatter is not read", async () => {
+  test("in the session's thread a mention follows up; without the Message Content intent nothing else is read", async () => {
     const start = message({ channel_id: CHANNEL });
     await intakeMessage(start, BOT);
     await drain();
     const sessionId = (await db.select().from(chatThreads).where(eq(chatThreads.threadId, start.id)))[0]!.sessionId;
 
-    const reply = message({ channel_id: start.id, content: 'and the migration?', mentions: [] });
+    expect(await intakeMessage(message({ channel_id: start.id, content: 'people talking', mentions: [] }), BOT)).toBe('ignored');
+    const reply = message({ channel_id: start.id, content: `<@${BOT}> and the migration?` });
     expect(await intakeMessage(reply, BOT)).toBe('stored');
-    channels.set('760000000000000001', { id: '760000000000000001', type: 11, guild_id: GUILD, parent_id: CHANNEL, name: 'people talking' });
-    expect(await intakeMessage(message({ channel_id: '760000000000000001', content: 'lunch?', mentions: [] }), BOT)).toBe('ignored');
     await drain();
 
     expect(delivered).toHaveLength(1);
     expect(delivered[0]).toMatchObject({ source: 'discord', sessionId, idempotencyKey: `discord:${GUILD}:${reply.id}` });
     expect(String(delivered[0]!.text)).toContain('and the migration?');
+    expect(String(delivered[0]!.text)).toContain('The next message that mentions you in this thread continues this session');
     expect(created).toHaveLength(1);
+  });
+
+  test("with the Message Content intent the session's thread follows up without a mention; another thread's chatter is not read", async () => {
+    (config as Record<string, unknown>).DISCORD_MESSAGE_CONTENT = true;
+    try {
+      const start = message({ channel_id: CHANNEL });
+      await intakeMessage(start, BOT);
+      await drain();
+      const reply = message({ channel_id: start.id, content: 'and the migration?', mentions: [] });
+      expect(await intakeMessage(reply, BOT)).toBe('stored');
+      channels.set('760000000000000001', { id: '760000000000000001', type: 11, guild_id: GUILD, parent_id: CHANNEL, name: 'people talking' });
+      expect(await intakeMessage(message({ channel_id: '760000000000000001', content: 'lunch?', mentions: [] }), BOT)).toBe('ignored');
+      await drain();
+      expect(delivered.map((d) => d.idempotencyKey)).toEqual([`discord:${GUILD}:${reply.id}`]);
+      expect(String(delivered[0]!.text)).toContain('The next message in this conversation continues this session');
+    } finally {
+      (config as Record<string, unknown>).DISCORD_MESSAGE_CONTENT = false;
+    }
   });
 
   test("an unknown sender's mention gets the pairing reply and an access request; a thread's other people are not answered", async () => {
@@ -414,7 +432,9 @@ describe('the Gateway', () => {
       client.start();
       for (let i = 0; i < 100 && !seen.length; i++) await Bun.sleep(10);
       const identify = received.find((p) => p.op === 2);
-      expect(identify?.d.intents).toBe(DISCORD_INTENTS);
+      // GUILDS, GUILD_MESSAGES, DIRECT_MESSAGES; MESSAGE_CONTENT only when the deployment turns it on.
+      expect(identify?.d.intents).toBe(4609);
+      expect(discordIntents(true)).toBe(4609 + 32768);
       expect(identify?.d.token).toBe('synthetic-token');
       expect(seen).toEqual([`${BOT}:${CHANNEL}`]);
 

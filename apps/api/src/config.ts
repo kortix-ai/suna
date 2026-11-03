@@ -508,6 +508,11 @@ const envSchema = z.object({
   DISCORD_PUBLIC_KEY: optStr,
   DISCORD_CLIENT_SECRET: optStr,
   DISCORD_BOT_TOKEN: optStr,
+  // The privileged Message Content intent, switched on for the application in
+  // the Developer Portal (Bot → Privileged Gateway Intents). On: every message in
+  // a thread a Kortix session holds reaches the agent. Off (default, like Slack):
+  // only a message that mentions the app, and every direct message.
+  DISCORD_MESSAGE_CONTENT: optBoolFalse,
   // The OAuth2 redirect URI registered in the Developer Portal. Unset:
   // `${KORTIX_URL}/v1/webhooks/discord/oauth/callback`.
   DISCORD_REDIRECT_URI: optStr,
@@ -1471,6 +1476,7 @@ export const config = {
   DISCORD_PUBLIC_KEY: env.DISCORD_PUBLIC_KEY,
   DISCORD_CLIENT_SECRET: env.DISCORD_CLIENT_SECRET,
   DISCORD_BOT_TOKEN: env.DISCORD_BOT_TOKEN,
+  DISCORD_MESSAGE_CONTENT: env.DISCORD_MESSAGE_CONTENT,
   DISCORD_REDIRECT_URI: env.DISCORD_REDIRECT_URI,
   DISCORD_API_URL: env.DISCORD_API_URL,
   DISCORD_CDN_URL: env.DISCORD_CDN_URL,

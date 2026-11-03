@@ -343,7 +343,9 @@ export function discordEnvelope(
       'Never list choices or questions as plain text. Ask in plain words only when the tool result says the question could not be posted.',
       `While you work on a long task, show typing: ${connectorReply(DISCORD_CHANNEL_CONNECTOR_SLUG, 'trigger_typing', { channel_id: threadId })}.`,
       'The bot token is resolved server-side. Do not look for it in the sandbox.',
-      `The next message in this conversation continues this session. Kortix answers ${KORTIX_COMMANDS} itself; those commands never reach you.`,
+      conversation.direct || config.DISCORD_MESSAGE_CONTENT
+        ? `The next message in this conversation continues this session. Kortix answers ${KORTIX_COMMANDS} itself; those commands never reach you.`
+        : `The next message that mentions you in this thread continues this session; people's other messages there do not reach you. Kortix answers ${KORTIX_COMMANDS} itself; those commands never reach you.`,
     ],
   };
 }
@@ -360,7 +362,8 @@ async function startThread(message: DiscordStoredMessage, conversation: DiscordC
   try {
     await discordCall('POST /channels/{id}/messages/{id}/threads', `/channels/${message.channel_id}/messages/${message.id}/threads`, {
       method: 'POST',
-      body: { name, auto_archive_duration: 1440 },
+      // A week idle before it archives; a message unarchives it.
+      body: { name, auto_archive_duration: 10080 },
     });
     return true;
   } catch (error) {

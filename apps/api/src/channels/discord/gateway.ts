@@ -11,7 +11,8 @@
  * (a bad token, intents the application lacks) stops it, logged.
  *
  * The intake (`intakeMessage`) stores in the event inbox only what is written
- * to the bot: a DM, a mention, a message in a thread a Kortix session holds.
+ * to the bot: a DM, a mention, and, with the Message Content intent
+ * (`DISCORD_MESSAGE_CONTENT`), any message in a thread a Kortix session holds.
  * It routes each to its project (routing.ts) first; a server with no project,
  * or more than one, hears once per channel and hour what to do instead.
  */
@@ -32,8 +33,15 @@ import {
   type DiscordStoredMessage,
 } from './types';
 
-/** GUILDS, GUILD_MESSAGES, DIRECT_MESSAGES, MESSAGE_CONTENT (privileged: a thread's replies carry no text without it). */
-export const DISCORD_INTENTS = (1 << 0) | (1 << 9) | (1 << 12) | (1 << 15);
+/**
+ * GUILDS, GUILD_MESSAGES, DIRECT_MESSAGES. Discord sends a message's text
+ * without a privileged intent for a DM and a mention of the app. MESSAGE_CONTENT
+ * (privileged) adds the text of every other message: identifying with it when
+ * the application lacks it is a fatal close (4014).
+ */
+export function discordIntents(messageContent = config.DISCORD_MESSAGE_CONTENT): number {
+  return (1 << 0) | (1 << 9) | (1 << 12) | (messageContent ? 1 << 15 : 0);
+}
 
 /** Closes after which a reconnect cannot help: authentication, sharding, API version, intents. */
 const FATAL_CLOSES = new Set([4004, 4010, 4011, 4012, 4013, 4014]);
@@ -157,7 +165,10 @@ export async function intakeMessage(m: GatewayMessage, botUserId: string): Promi
     const channel = await discordChannelInfo(m.channel_id);
     if (!channel) return 'ignored';
     if (isDiscordThread(channel.type)) {
-      if (!mention && !(await findChatThread({ platform: 'discord', workspaceId: guildId, threadId: m.channel_id }))) return 'ignored';
+      // Without the Message Content intent a thread's other messages carry no text: only a mention counts.
+      if (!mention && !(config.DISCORD_MESSAGE_CONTENT && (await findChatThread({ platform: 'discord', workspaceId: guildId, threadId: m.channel_id })))) {
+        return 'ignored';
+      }
       const parent = channel.parent_id ? channels.get(channel.parent_id) : undefined;
       place = {
         threadId: m.channel_id,
@@ -361,7 +372,7 @@ export class DiscordGateway {
         } else {
           this.send(ws, 2, {
             token: config.DISCORD_BOT_TOKEN,
-            intents: DISCORD_INTENTS,
+            intents: discordIntents(),
             properties: { os: process.platform, browser: 'kortix', device: 'kortix' },
           });
         }

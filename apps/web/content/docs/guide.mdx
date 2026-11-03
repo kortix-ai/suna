@@ -1041,15 +1041,15 @@ People mention the Kortix app in a Discord server, or message it directly, and t
 Open **Project admin → Connectors**, select the **Channels** scope, and select **Add to Discord** on Discord. On Discord's page, pick the server. You need the **Manage Server** permission there. Kortix allows your own Discord account at once.
 </Step>
 <Step title="Mention the app with a task">
-In a text channel, mention the app: `@Kortix what changed in the release?`. Kortix starts a thread on your message, and the agent answers in the thread.
+In a text channel, mention the app: `@Kortix what changed in the release?`. Kortix starts a thread on your message, and the agent answers in the thread. Mention the app in the thread to continue.
 </Step>
 <Step title="Allow the people">
 A mention or a direct message from an allowed user starts a session. Anyone else gets a reply that shows their user ID, and appears under **Allowed users → Wants access**. A project manager allows them with one click or dismisses the request. You can still add a user by ID.
 </Step>
 </Steps>
 
-- **One thread is one session.** A mention in a text or announcement channel starts a thread on the message. Every later message in that thread reaches the agent, without a mention. A direct message with the app is one session until `/new`. In a channel that has no threads, such as a voice channel's chat, the channel is the conversation.
-- **Elsewhere, only a mention reaches the agent.** The app does not read a channel's other messages, or a thread that no session holds, until someone mentions it there.
+- **One thread is one session.** A mention in a text or announcement channel starts a thread on the message. A later mention in that thread continues the session. A direct message with the app is one session until `/new`, and every message in it reaches the agent. In a channel that has no threads, such as a voice channel's chat, the channel is the conversation.
+- **In a server, only a mention reaches the agent, as in Slack.** People talk in the thread without the agent until someone mentions it. A self-hosted Kortix whose Discord application has the Message Content intent can let every message in a Kortix thread through (`DISCORD_MESSAGE_CONTENT`).
 - **Slash commands run in Kortix, not in the agent:** `/help`, `/status`, `/new`, `/stop`, `/model`, `/agent` and `/connect`. They work in a channel, in a thread and in a direct message, and also typed after a mention. A command in a channel works on the channel: `/model` there sets the model of every thread in it.
 - **Commands open menus.** `/model` and `/agent` list the choices in a menu, with **More ›** and **‹ Back** between pages. `/help` and `/status` add buttons that run a command. A pick, **Stop** or **New conversation** works once. A press on an old menu answers "This menu is out of date": use the command again.
 - **Questions come with buttons.** One question shows one button per option, 4 per page, with **‹ Back**, **More ›** and, where you pick several, **Done ›**. Several questions show one at a time. A notice that only you see confirms a tap, or says why it changed nothing.
