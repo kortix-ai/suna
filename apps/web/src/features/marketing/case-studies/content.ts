@@ -134,7 +134,7 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       mark: 'platinum',
       category: 'Cloud infrastructure',
       title: 'An autonomous cloud company.',
-      body: 'Engineering, marketing and sales: everything runs in a loop of agents. People set the direction and approve.',
+      body: 'Agents build, test and ship the product, then market and sell it. People set the direction and approve what ships.',
       facts: [
         'Engineering agents ship from Linear issues',
         'QA agents test every flow on video',

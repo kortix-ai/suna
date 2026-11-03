@@ -26,8 +26,8 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   'The institute’s AI research assistant. It searches the scientific literature with citations and runs agents for protein design and materials science.':
     'textbc76493f60fc',
   'An autonomous cloud company.': 'text6e78e53edc57',
-  'Engineering, marketing and sales: everything runs in a loop of agents. People set the direction and approve.':
-    'text1082d3207b0e',
+  'Agents build, test and ship the product, then market and sell it. People set the direction and approve what ships.':
+    'text891412cf65bf',
   'Fiber network design, run by agents.': 'textfef24d788a3e',
   'Agents design fiber routes from GIS data and imagery, build bills of materials and track every project, self-hosted in the company’s own cloud.':
     'textc22871a19ba5',
