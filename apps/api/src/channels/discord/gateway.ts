@@ -35,6 +35,7 @@ import { logger } from '../../lib/logger';
 import { type DiscordChannel, discordCall, discordConfigured, discordPost, discordUnreachable, isDiscordThread, snowflakeSequence } from './api';
 import { forgetDiscordChannel, forgetDiscordGuild, leaveDiscordGuild } from './installs';
 import { resolveDiscordRoute } from './routing';
+import { discordHeartbeatInterval, discordResumeUrl } from './gateway-policy';
 import {
   DISCORD_MESSAGE_EVENT,
   type DiscordAttachment,
@@ -643,7 +644,7 @@ export class DiscordGateway {
         return;
       }
     }
-    const base = (resume && this.resumeUrl) || config.DISCORD_GATEWAY_URL;
+    const base = (resume && this.resumeUrl && discordResumeUrl(this.resumeUrl)) || config.DISCORD_GATEWAY_URL;
     let ws: WebSocket;
     try {
       ws = new WebSocket(`${base.replace(/\/+$/, '')}/?v=10&encoding=json`);
@@ -737,7 +738,7 @@ export class DiscordGateway {
     this.lastSeen = Date.now();
     switch (payload.op) {
       case 10: {
-        const interval = (payload.d as { heartbeat_interval?: number })?.heartbeat_interval ?? 41_250;
+        const interval = discordHeartbeatInterval((payload.d as { heartbeat_interval?: unknown })?.heartbeat_interval);
         this.clearHeartbeat();
         this.acked = true;
         setTimeout(() => this.send(ws, 1, this.seq), interval * Math.random());
