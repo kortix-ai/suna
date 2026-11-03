@@ -27,13 +27,15 @@ import { parse as parseYaml } from 'yaml';
 import { listManagedSkills } from '../../skills/catalog';
 import { readManifest, runtimeManifest } from '../manifest-io';
 import { type FileManifestIssue, type ManifestHealth, manifestHealthOf, manifestHealthWithout } from '../lib/manifest-health';
-import { listRepoFiles, prefetchRepoFiles, readManifestFromRepo, readRepoFile } from './files';
+import { isRepoFileNotFoundError, listRepoFiles, prefetchRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
 
-async function optionalFile(project: GitBackedProject, filePath: string, ref = project.defaultBranch) {
+/** A strict read (a saved summary build) rethrows every error except "not in this commit". */
+async function optionalFile(project: GitBackedProject, filePath: string, ref = project.defaultBranch, strict = false) {
   try {
     return await readRepoFile(project, filePath, ref);
-  } catch {
+  } catch (err) {
+    if (strict && !isRepoFileNotFoundError(err)) throw err;
     return null;
   }
 }
@@ -205,6 +207,7 @@ type ManifestRead = Awaited<ReturnType<typeof readManifestFromRepo>>;
 async function readProjectManifest(
   project: GitBackedProject,
   ref = project.defaultBranch,
+  strict = false,
 ): Promise<{ found: ManifestRead; importError: ManifestIssue | null; failed: boolean }> {
   const candidates = manifestCandidatePaths(project.manifestPath);
   let importError: ManifestIssue | null = null;
@@ -215,7 +218,9 @@ async function readProjectManifest(
       return readManifestFromRepo(project, candidates, ref, { resolveImports: false });
     });
     return { found, importError, failed: false };
-  } catch {
+  } catch (err) {
+    // A saved summary must never record a failed read as the commit's config.
+    if (strict) throw err;
     return { found: null, importError: null, failed: true };
   }
 }
@@ -367,10 +372,15 @@ export async function loadRepoConfigSummary(
   project: GitBackedProject,
   files?: ProjectFileEntry[],
   ref = project.defaultBranch,
+  opts: { strict?: boolean } = {},
 ): Promise<ProjectConfigSummary> {
+  // `strict`: a saved summary is kept until the next commit, so a read that
+  // failed (a fetch timeout, a byte limit) throws instead of reading as
+  // "no manifest" or "no description". The build fails and keeps the last row.
+  const strict = opts.strict === true;
   const [repoFiles, read] = await Promise.all([
     files ?? listRepoFiles(project, ref),
-    readProjectManifest(project, ref),
+    readProjectManifest(project, ref, strict),
   ]);
   const repoPaths = new Set(repoFiles.map((file) => file.path));
   let health = projectManifestHealth(read, repoPaths, project.manifestPath);
@@ -385,7 +395,7 @@ export async function loadRepoConfigSummary(
     // (`readManifest`), and with none only My Kortix. `manifest_health` names
     // the error and says which of the two applies.
     if (!isManifestSyntaxError(err)) throw err;
-    const lastGood = await readManifest(project).catch(() => null);
+    const lastGood = strict ? await readManifest(project, { rethrowReadErrors: true }) : await readManifest(project).catch(() => null);
     if (lastGood?.fallback) {
       manifest = lastGood.raw;
       source = lastGood.imports ? null : (lastGood.source ?? null);
@@ -429,7 +439,7 @@ export async function loadRepoConfigSummary(
   await prefetchRepoFiles(project, skillEntries.map(({ path }) => path).filter((path) => repoPaths.has(path)), ref);
   const projectSkills = await Promise.all(
     skillEntries.map(async ({ name, path }) => {
-      const meta = repoPaths.has(path) ? parseFrontmatter(await optionalFile(project, path, ref)) : {};
+      const meta = repoPaths.has(path) ? parseFrontmatter(await optionalFile(project, path, ref, strict)) : {};
       return { name, path, description: meta.description || null };
     }),
   );

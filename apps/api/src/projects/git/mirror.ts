@@ -817,7 +817,8 @@ export async function ensurePathObjects(
 ): Promise<void> {
   if (!storeOwners.has(repoPath) || paths.length === 0) return;
   await ensureCommitTrees(repoPath, [rev]);
-  const listed = await runGitCapture(['ls-tree', '-z', rev, '--', ...paths], repoPath);
+  // Literal: a path from a repository-controlled manifest is never a pathspec.
+  const listed = await runGitCapture(['--literal-pathspecs', 'ls-tree', '-z', rev, '--', ...paths], repoPath);
   if (listed.exitCode !== 0) return;
   const blobs = listed.stdout
     .split('\0')
@@ -1201,6 +1202,17 @@ function staleMirrorReadsAllowed(): boolean {
 function viewMaxStaleMs(): number {
   const value = Number(process.env.KORTIX_GIT_VIEW_MAX_STALE_MS || 5 * 60_000);
   return Number.isFinite(value) && value >= 0 ? value : 5 * 60_000;
+}
+
+/**
+ * The oldest shared tip proof a page view may still trust for `projectId`:
+ * inside the view staleness bound, and newer than the last base move this
+ * process heard of (`invalidateProjectMirror`, set synchronously by a write
+ * before it answers). The saved config summary gate uses it, the same rule a
+ * view of the warm mirror follows.
+ */
+export function viewTipProofSince(projectId: string, now = Date.now()): number {
+  return Math.max(now - viewMaxStaleMs(), invalidatedAt.get(projectId) ?? 0);
 }
 
 /** The warm mirror path when a view may read it without fetching, else null. */

@@ -734,6 +734,8 @@ export const projectConfigSummaries = kortixSchema.table(
     sourceCommit: varchar('source_commit', { length: 64 }).notNull(),
     /** `CONFIG_SUMMARY_FORMAT` of the API that built it. */
     format: integer('format').notNull(),
+    /** The project's `manifest_path` the summary was built with. A row of another path is not served. */
+    manifestPath: text('manifest_path').notNull().default(''),
     /** The repository-derived `ProjectConfigSummary`, before the Kortix managed skills. */
     config: jsonb('config').$type<Record<string, unknown>>().notNull(),
     /** File paths at `source_commit`; the first 50,000 when `files_complete` is false. */

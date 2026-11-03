@@ -7,6 +7,7 @@ import {
   type ManifestImportReader,
   type ResolvedManifest,
   MANIFEST_IMPORTS_KEY,
+  MAX_IMPORT_FILES,
   hasManifestImports,
   normalizeImportPath,
   parseManifestText,
@@ -33,7 +34,7 @@ import {
   runGitCapture,
   spawn,
 } from './mirror';
-import { isObjectFetchTooLargeError } from './object-store';
+import { isObjectFetchTooLargeError, partialStoresEnabled } from './object-store';
 import { cachedGitRead, resolveRefSha } from './read-cache';
 import type {
   GetFileHistoryOptions,
@@ -394,12 +395,17 @@ const SEARCH_FETCH_BATCH = 500;
  */
 export async function prefetchRepoFiles(project: GitBackedProject, paths: readonly string[], ref?: string): Promise<void> {
   try {
+    // A whole-history store holds every file already.
+    if (!(await partialStoresEnabled())) return;
     const normalized = paths.map((path) => normalizeTreePath(path)).filter((path): path is string => Boolean(path));
     if (normalized.length === 0) return;
     const treeRef = validateRef(ref || project.defaultBranch);
     const repoPath = await refreshMirror(project, false, { freshRef: treeRef });
     const sha = await resolveRefSha(repoPath, treeRef);
-    await ensurePathObjects(repoPath, sha ?? treeRef, normalized, { maxBytes: FILE_READ_MAX_BYTES });
+    const fetch = () => ensurePathObjects(repoPath, sha ?? treeRef, normalized, { maxBytes: FILE_READ_MAX_BYTES }).then(() => true);
+    // Once per commit and path set: a warm read spawns no git process.
+    if (sha) await cachedGitRead(repoPath, sha, 'prefetch-files', normalized.join('\0'), fetch);
+    else await fetch();
   } catch {
     // The per-file reads fetch what is missing.
   }
@@ -839,18 +845,31 @@ async function prefetchDeclaredImports(repoPath: string, ref: string, rootRaw: R
   const paths = declared.map((entry) => normalizeImportPath(entry)).filter((path): path is string => path !== null);
   if (paths.length === 0) return;
   try {
-    await ensureCommitTrees(repoPath, [ref]);
-    // `-r`: a directory import reads every YAML file under it.
-    const listed = await runGitCapture(['--literal-pathspecs', 'ls-tree', '-r', '-z', ref, '--', ...paths], repoPath);
-    if (listed.exitCode !== 0) return;
-    const blobs = listed.stdout
-      .split('\0')
-      .map((record) => /^\d+ blob ([0-9a-f]{40})\t.+\.ya?ml$/.exec(record)?.[1])
-      .filter((id): id is string => Boolean(id));
-    await ensureStoreObjects(repoPath, blobs, { maxBytes: FILE_READ_MAX_BYTES });
+    // A whole-history store holds every file already.
+    if (!(await partialStoresEnabled())) return;
+    // Once per commit: a warm read spawns no git process.
+    if (/^[0-9a-f]{40}$/.test(ref)) {
+      await cachedGitRead(repoPath, ref, 'prefetch-imports', paths.join('\0'), () => fetchDeclaredImports(repoPath, ref, paths).then(() => true));
+    } else {
+      await fetchDeclaredImports(repoPath, ref, paths);
+    }
   } catch {
     // The resolver's own reads fetch what is missing.
   }
+}
+
+async function fetchDeclaredImports(repoPath: string, ref: string, paths: string[]): Promise<void> {
+  await ensureCommitTrees(repoPath, [ref]);
+  // `-r`: a directory import reads every YAML file under it.
+  const listed = await runGitCapture(['--literal-pathspecs', 'ls-tree', '-r', '-z', ref, '--', ...paths], repoPath);
+  if (listed.exitCode !== 0) return;
+  const blobs = listed.stdout
+    .split('\0')
+    .map((record) => /^\d+ blob ([0-9a-f]{40})\t.+\.ya?ml$/i.exec(record)?.[1])
+    .filter((id): id is string => Boolean(id))
+    // The resolver reads at most this many files; past it the import fails anyway.
+    .slice(0, MAX_IMPORT_FILES);
+  await ensureStoreObjects(repoPath, blobs, { maxBytes: FILE_READ_MAX_BYTES });
 }
 
 /** `ManifestImportReader` over a bare mirror at one fixed ref. */
