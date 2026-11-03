@@ -28,7 +28,7 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { bumpBounded } from '../../shared/ttl-memo';
 import { readGitHealth } from '../../shared/repository-health';
-import { loadRepoConfigSummary } from '../git/config';
+import { loadRepoConfigSummary, withKortixSkills } from '../git/config';
 import { listRepoFiles } from '../git/files';
 import { refreshMirror } from '../git/mirror';
 import { resolveRefSha } from '../git/read-cache';
@@ -87,6 +87,22 @@ export async function readServableConfigSummary(projectId: string, ref: string):
   ]);
   if (readGitHealth(connection) || !saved || proof?.tip !== saved.sourceCommit) return null;
   return saved;
+}
+
+/**
+ * The project's config from its saved summary, as `loadProjectConfig` returns it
+ * (Kortix skills included), or null when no row may be served: the caller then
+ * reads git as before. Every call also checks the tip behind the response and
+ * rebuilds the row when it moved. Database reads only; never throws.
+ *
+ * Every hot reader of the default branch's config goes through this: /detail,
+ * the secrets route, the resource-grant config, the Slack agent picker.
+ */
+export async function savedProjectConfig(project: GitBackedProject): Promise<SavedConfigSummary | null> {
+  const ref = project.defaultBranch;
+  const saved = await readServableConfigSummary(project.projectId, ref).catch(() => null);
+  refreshConfigSummaryIfMoved(project, ref, saved?.sourceCommit ?? null);
+  return saved ? { ...saved, config: withKortixSkills(saved.config) } : null;
 }
 
 /**

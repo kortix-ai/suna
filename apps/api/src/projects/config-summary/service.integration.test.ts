@@ -15,7 +15,8 @@ import { db } from '../../shared/db';
 import { loadRepoConfigSummary } from '../git/config';
 import { listRepoFiles } from '../git/files';
 import { createPartialStoreFixture, type PartialStoreFixture } from '../git/__tests__/partial-store-fixture';
-import { buildConfigSummary, CONFIG_SUMMARY_FORMAT, readConfigSummary, readServableConfigSummary } from './service';
+import { loadConfigWithFiles } from '../lib/project-resources';
+import { buildConfigSummary, CONFIG_SUMMARY_FORMAT, readConfigSummary, readServableConfigSummary, savedProjectConfig } from './service';
 
 let fx: PartialStoreFixture;
 let accountId: string;
@@ -131,4 +132,27 @@ test('a stored disconnect serves no saved summary', async () => {
     lastValidatedAt: new Date(),
   });
   expect(await readServableConfigSummary(fx.project.projectId, 'main')).toBeNull();
+});
+
+test('savedProjectConfig serves the config the live loader returns, Kortix skills included, and the resource config reads it with no git', async () => {
+  const commit = await fx.push({}, 'tip');
+  const { loadProjectConfig } = await import('../git/config');
+  const live = await loadProjectConfig(fx.project);
+  expect(await buildConfigSummary(fx.project, 'main', commit)).toBe('built');
+  await prove(commit);
+  // No git from here on.
+  await rm(fx.upstream, { recursive: true, force: true });
+  await rm(fx.storePath(), { recursive: true, force: true });
+
+  const saved = await savedProjectConfig(fx.project);
+  expect(saved?.config).toEqual(live);
+  expect(await loadConfigWithFiles({ ...fx.project } as never)).toEqual(live);
+});
+
+test('savedProjectConfig serves nothing after a base move, and a forced resource read never takes the row', async () => {
+  const commit = await fx.push({}, 'tip');
+  expect(await buildConfigSummary(fx.project, 'main', commit)).toBe('built');
+  await prove(commit);
+  await expireBaseTips(fx.project.projectId);
+  expect(await savedProjectConfig(fx.project)).toBeNull();
 });

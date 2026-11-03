@@ -7,8 +7,7 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { readJsonObject } from '../../shared/http-body';
 import { listRepoFiles, loadProjectConfig } from '../git';
-import { withKortixSkills } from '../git/config';
-import { readServableConfigSummary, refreshConfigSummaryIfMoved } from '../config-summary/service';
+import { savedProjectConfig } from '../config-summary/service';
 import { disconnectedProjectConfig } from '../git/config';
 import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { allowStaleMirrorReads } from '../git/mirror';
@@ -138,7 +137,7 @@ export function registerProjectDetailRoutes(): void {
 
       // The saved summary of the default branch: no git on this path
       // (`config-summary/service.ts`). A moved tip rebuilds it behind the response.
-      const saved = await readServableConfigSummary(projectId, ref);
+      const saved = await savedProjectConfig(loaded.row);
       let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
       let rawConfig: Awaited<ReturnType<typeof loadProjectConfig>>;
       const listLive = async (gitProject: Awaited<ReturnType<typeof withProjectGitAuth>>) => {
@@ -155,7 +154,7 @@ export function registerProjectDetailRoutes(): void {
       };
       if (saved) {
         c.header('X-Kortix-Config-Source', `snapshot; commit=${saved.sourceCommit}`);
-        rawConfig = withKortixSkills(saved.config);
+        rawConfig = saved.config;
         // Past the stored path cap the list comes from git, as before.
         if (saved.filesComplete) files = saved.files;
         else {
@@ -182,9 +181,6 @@ export function registerProjectDetailRoutes(): void {
         }
         rawConfig = gitProject ? await loadProjectConfig(gitProject, files) : disconnectedProjectConfig();
       }
-      // Behind the response: prove the tip, and rebuild the saved summary when
-      // it is not the tip. The next view then reads the row.
-      refreshConfigSummaryIfMoved(loaded.row, ref, saved?.sourceCommit ?? null);
       // Per-resource scoping: hide agents/skills this member isn't granted (owner/
       // admins/SAs see everything). No-op when the project has no resource grants.
       const denierCtx = {
