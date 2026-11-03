@@ -3,6 +3,7 @@ import { chatChannelBindings, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { withProjectGitAuth } from '../../projects/lib/git';
 import { listRepoFiles, loadProjectConfig } from '../../projects/git';
+import { savedProjectConfig } from '../../projects/surface';
 
 // Per-channel agent + model selection. A Slack channel is bound to a project
 // (chat_channel_bindings); these helpers read/write the optional agent + model
@@ -206,14 +207,8 @@ export async function loadProjectAgentGovernance(projectId: string): Promise<Pro
     .where(eq(projects.projectId, projectId))
     .limit(1);
   if (!row) return { agents: [], declared: false };
-  const gitProject = await withProjectGitAuth(row);
-  let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
-  try {
-    files = await listRepoFiles(gitProject, row.defaultBranch);
-  } catch {
-    // Repo unreachable — fall back to whatever loadProjectConfig can infer.
-  }
-  const config = await loadProjectConfig(gitProject, files);
+  // The saved config summary first: no git inside Slack's 3 s window.
+  const config = (await savedProjectConfig(row))?.config ?? (await loadLiveConfig(row));
   return {
     // Launchable agents only: the config summary lists every registered agent
     // (a disabled one with `enabled: false`, for the project's own management
@@ -297,4 +292,15 @@ export async function getChannelBindingById(
     .limit(1);
   if (!row?.projectId) return null;
   return row as ChannelBindingRow;
+}
+
+async function loadLiveConfig(row: typeof projects.$inferSelect) {
+  const gitProject = await withProjectGitAuth(row);
+  let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
+  try {
+    files = await listRepoFiles(gitProject, row.defaultBranch);
+  } catch {
+    // Repo unreachable — fall back to whatever loadProjectConfig can infer.
+  }
+  return loadProjectConfig(gitProject, files);
 }

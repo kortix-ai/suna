@@ -13,16 +13,18 @@ import { expireBaseTips } from '../../config-releases/base-tip';
 import { eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { loadRepoConfigSummary } from '../git/config';
+import { refreshMirror } from '../git/mirror';
 import { listRepoFiles } from '../git/files';
 import { createPartialStoreFixture, type PartialStoreFixture } from '../git/__tests__/partial-store-fixture';
-import { buildConfigSummary, CONFIG_SUMMARY_FORMAT, readConfigSummary, readServableConfigSummary } from './service';
+import { loadConfigWithFiles } from '../lib/project-resources';
+import { buildConfigSummary, CONFIG_SUMMARY_FORMAT, readConfigSummary, readServableConfigSummary, savedProjectConfig } from './service';
 
 let fx: PartialStoreFixture;
 let accountId: string;
 
 /** Record `tip` as the proven tip of main, as a tip check does. */
-async function prove(tip: string) {
-  const now = new Date();
+async function prove(tip: string, ageMs = 0) {
+  const now = new Date(Date.now() - ageMs);
   await db
     .insert(baseTipChecks)
     .values({ projectId: fx.project.projectId, ref: 'main', tip, checkedAt: now, provenAt: now })
@@ -61,7 +63,7 @@ test('a build saves the live summary at that commit, and a read serves it with n
   await rm(fx.upstream, { recursive: true, force: true });
   await rm(fx.storePath(), { recursive: true, force: true });
 
-  const saved = await readServableConfigSummary(fx.project.projectId, 'main');
+  const saved = await readServableConfigSummary(fx.project, 'main');
   expect(saved?.sourceCommit).toBe(commit);
   expect(saved?.config).toEqual(JSON.parse(JSON.stringify(live)));
   expect(saved?.config.skills.map((s) => [s.name, s.description])).toEqual([['alpha', 'The alpha skill.']]);
@@ -104,14 +106,14 @@ test('a base move clears the proof: the next read does not serve the row from be
   const commit = await fx.push({}, 'tip');
   await buildConfigSummary(fx.project, 'main', commit);
   await prove(commit);
-  expect((await readServableConfigSummary(fx.project.projectId, 'main'))?.sourceCommit).toBe(commit);
+  expect((await readServableConfigSummary(fx.project, 'main'))?.sourceCommit).toBe(commit);
 
   await expireBaseTips(fx.project.projectId);
-  expect(await readServableConfigSummary(fx.project.projectId, 'main')).toBeNull();
+  expect(await readServableConfigSummary(fx.project, 'main')).toBeNull();
 
   // A proven tip the row does not name is not served either.
   await prove('e'.repeat(40));
-  expect(await readServableConfigSummary(fx.project.projectId, 'main')).toBeNull();
+  expect(await readServableConfigSummary(fx.project, 'main')).toBeNull();
 });
 
 test('a stored disconnect serves no saved summary', async () => {
@@ -130,5 +132,61 @@ test('a stored disconnect serves no saved summary', async () => {
     lastErrorCode: 'app_uninstalled',
     lastValidatedAt: new Date(),
   });
-  expect(await readServableConfigSummary(fx.project.projectId, 'main')).toBeNull();
+  expect(await readServableConfigSummary(fx.project, 'main')).toBeNull();
+});
+
+test('savedProjectConfig serves the config the live loader returns, Kortix skills included, and the resource config reads it with no git', async () => {
+  const commit = await fx.push({}, 'tip');
+  const { loadProjectConfig } = await import('../git/config');
+  const live = await loadProjectConfig(fx.project);
+  expect(await buildConfigSummary(fx.project, 'main', commit)).toBe('built');
+  await prove(commit);
+  // No git from here on.
+  await rm(fx.upstream, { recursive: true, force: true });
+  await rm(fx.storePath(), { recursive: true, force: true });
+
+  const saved = await savedProjectConfig(fx.project);
+  expect(saved?.config).toEqual(live);
+  expect(await loadConfigWithFiles({ ...fx.project } as never)).toEqual(live);
+});
+
+test('savedProjectConfig serves nothing after a base move, and a forced resource read never takes the row', async () => {
+  const commit = await fx.push({}, 'tip');
+  expect(await buildConfigSummary(fx.project, 'main', commit)).toBe('built');
+  await prove(commit);
+  await expireBaseTips(fx.project.projectId);
+  expect(await savedProjectConfig(fx.project)).toBeNull();
+});
+
+test('a row built for another manifest_path is not served, and a rebuild for the new path replaces it', async () => {
+  const commit = await fx.push({ 'other/kortix.yaml': 'agents:\n  other:\n    connectors: all\n' }, 'tip');
+  expect(await buildConfigSummary(fx.project, 'main', commit)).toBe('built');
+  await prove(commit);
+  const moved = { ...fx.project, manifestPath: 'other/kortix.yaml' };
+  expect(await readServableConfigSummary(moved, 'main')).toBeNull();
+
+  expect(await buildConfigSummary(moved, 'main', commit)).toBe('built');
+  const saved = await readServableConfigSummary(moved, 'main');
+  expect(saved?.config.agents.map((agent) => agent.name)).toContain('other');
+});
+
+test('a proof older than the view staleness bound serves no row', async () => {
+  const commit = await fx.push({}, 'tip');
+  expect(await buildConfigSummary(fx.project, 'main', commit)).toBe('built');
+  await prove(commit, 10 * 60_000);
+  expect(await readServableConfigSummary(fx.project, 'main')).toBeNull();
+  await prove(commit);
+  expect((await readServableConfigSummary(fx.project, 'main'))?.sourceCommit).toBe(commit);
+});
+
+test('a build whose manifest read fails throws and keeps the last row', async () => {
+  const first = await fx.push({}, 'first');
+  expect(await buildConfigSummary(fx.project, 'main', first)).toBe('built');
+  const second = await fx.push({ 'kortix.yaml': 'imports:\n  - team/kortix.yaml\nenv:\n  required: [NEW_KEY]\n' }, 'edit the manifest');
+  // The trees of `second` arrive; its manifest blob cannot: the upstream is gone.
+  await refreshMirror(fx.project, true, { freshRef: 'main' });
+  await rm(fx.upstream, { recursive: true, force: true });
+
+  await expect(buildConfigSummary(fx.project, 'main', second)).rejects.toThrow();
+  expect((await readConfigSummary(fx.project.projectId, 'main'))?.sourceCommit).toBe(first);
 });

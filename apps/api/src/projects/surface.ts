@@ -162,7 +162,7 @@ export { resolveCommitSha, resolveCommitShaAt } from './git/commits';
 export { refreshIntervalMs, refreshMirror, useSharedTipProof } from './git/mirror';
 export type { GitBackedProject } from './git/types';
 // Saved config summaries, rebuilt when a base ref moves (consumed by ../config-releases/publish).
-export { scheduleConfigSummary } from './config-summary/service';
+export { savedProjectConfig, scheduleConfigSummary } from './config-summary/service';
 
 // Who may stop a running turn (consumed by channels/core/turn-stop.ts and
 // sandbox-proxy/forward/abort-authority.ts).
