@@ -10,7 +10,7 @@
     "./kortix": "./src/kortix.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p .",
+    "typecheck": "tsgo --noEmit",
     "test": "bun test src"
   }
 }
