@@ -14,3 +14,8 @@ RUN xcaddy build \
 
 FROM caddy:${CADDY_VERSION}-alpine
 COPY --from=build /usr/bin/caddy /usr/bin/caddy
+
+# Healthy while Caddy's admin API answers on loopback: the same endpoint
+# `caddy reload` uses. busybox wget ships in the alpine base image.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --start-interval=2s --retries=3 \
+	CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]

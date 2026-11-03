@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes, createHmac, generateKeyPairSync } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -30,12 +30,12 @@ import { deriveDomainAliasHosts, normalizeHostname, parseDomainList, planDomainM
 import {
   accountFileName,
   type AcmeDnsAccount,
-  ACME_DNS_SERVER_URL,
   checkDelegation,
   defaultAcmeDnsZone,
   delegationRecords,
   enabledWildcardBases,
   isIPv4,
+  parseAcmeDnsAccount,
   renderAcmeDnsConfig,
   wildcardBases,
   wildcardTlsConfigured,
@@ -1802,18 +1802,70 @@ function writeAcmeDnsAssets(instance: string, env: SelfHostEnv): void {
   );
 }
 
-function readAcmeDnsAccounts(instance: string, bases: readonly string[]): Record<string, AcmeDnsAccount> {
+/**
+ * The acme-dns account of each base that has a valid credentials file for
+ * `zone`. A missing, damaged or foreign file (another zone, a hand-edited
+ * value) is left out, and `tls wildcard` registers a new account for that base.
+ */
+function readAcmeDnsAccounts(instance: string, bases: readonly string[], zone: string): Record<string, AcmeDnsAccount> {
   const out: Record<string, AcmeDnsAccount> = {};
   for (const base of bases) {
     const path = join(acmeDnsDir(instance), 'accounts', accountFileName(base));
     if (!existsSync(path)) continue;
+    let account: AcmeDnsAccount | null = null;
     try {
-      out[base] = JSON.parse(readFileSync(path, 'utf8')) as AcmeDnsAccount;
+      account = parseAcmeDnsAccount(JSON.parse(readFileSync(path, 'utf8')), zone);
     } catch {
-      // A damaged file is replaced by a new registration.
+      // Not JSON: registered again below.
     }
+    if (account) out[base] = account;
   }
   return out;
+}
+
+/**
+ * Saves the credentials Caddy uses to answer DNS-01 for `base`. The path is
+ * `<instance>/acme-dns/accounts/<base>.json`: `base` is a wildcard base from the
+ * instance's own env, never a value from acme-dns. The file is 0600 in a 0700
+ * directory, and the write goes through a temp file and a rename, so Caddy
+ * never reads half a file. `account` passed parseAcmeDnsAccount.
+ *
+ * CodeQL js/http-to-file-access flags this write because the data came from an
+ * HTTP response. That response is the box's own acme-dns on loopback, and
+ * saving it is the purpose. Dismissed as a false positive with this reason;
+ * see "Certificates and security filters" in apps/web/content/docs/developers.mdx.
+ */
+function writeAcmeDnsAccount(instance: string, base: string, account: AcmeDnsAccount): void {
+  const dir = join(acmeDnsDir(instance), 'accounts');
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const path = join(dir, accountFileName(base));
+  const tmp = `${path}.tmp-${process.pid}`;
+  writeFileSync(tmp, `${JSON.stringify(account, null, 2)}\n`, { mode: 0o600 });
+  renameSync(tmp, path);
+}
+
+/**
+ * Writes `txt` as the challenge value of `account` in acme-dns, so the DNS
+ * check can read it back through public DNS. Returns null on success, else
+ * what went wrong.
+ *
+ * CodeQL js/file-access-to-http flags this request because the credentials
+ * come from the file writeAcmeDnsAccount saved. They go back to the acme-dns
+ * that issued them, at the fixed loopback URL; no file data reaches another
+ * host. Dismissed as a false positive with this reason.
+ */
+async function writeAcmeDnsProbe(account: AcmeDnsAccount, txt: string): Promise<string | null> {
+  try {
+    const res = await fetch('http://127.0.0.1:13750/update', {
+      method: 'POST',
+      headers: { 'X-Api-User': account.username, 'X-Api-Key': account.password, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subdomain: account.subdomain, txt }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    return res.ok ? null : `acme-dns refused the probe value: HTTP ${res.status}`;
+  } catch (error) {
+    return `acme-dns did not answer: ${error instanceof Error ? error.message : String(error)}`;
+  }
 }
 
 async function waitForAcmeDns(timeoutMs = 30_000): Promise<boolean> {
@@ -1942,7 +1994,7 @@ async function selfHostTls(args: string[], flags: GlobalFlags): Promise<number> 
     return 1;
   }
 
-  const accounts = readAcmeDnsAccounts(flags.instance, bases);
+  const accounts = readAcmeDnsAccounts(flags.instance, bases, zone);
   for (const base of bases) {
     if (accounts[base]) continue;
     const res = await fetch('http://127.0.0.1:13750/register', { method: 'POST', signal: AbortSignal.timeout(10_000) });
@@ -1950,9 +2002,12 @@ async function selfHostTls(args: string[], flags: GlobalFlags): Promise<number> 
       process.stderr.write(`${status.err(`acme-dns registration for ${base} failed: HTTP ${res.status}`)}\n`);
       return 1;
     }
-    const registered = (await res.json()) as Omit<AcmeDnsAccount, 'server_url'>;
-    const account: AcmeDnsAccount = { ...registered, server_url: ACME_DNS_SERVER_URL };
-    writeFileSync(join(acmeDnsDir(flags.instance), 'accounts', accountFileName(base)), `${JSON.stringify(account, null, 2)}\n`, { mode: 0o600 });
+    const account = parseAcmeDnsAccount(await res.json().catch(() => null), zone);
+    if (!account) {
+      process.stderr.write(`${status.err(`acme-dns answered the registration for ${base} with an account for another zone or in an unknown format. See: kortix self-host logs acme-dns`)}\n`);
+      return 1;
+    }
+    writeAcmeDnsAccount(flags.instance, base, account);
     accounts[base] = account;
   }
 
@@ -1961,13 +2016,8 @@ async function selfHostTls(args: string[], flags: GlobalFlags): Promise<number> 
   for (const base of bases) {
     const account = accounts[base]!;
     const probe = delegationProbeValue();
-    await fetch('http://127.0.0.1:13750/update', {
-      method: 'POST',
-      headers: { 'X-Api-User': account.username, 'X-Api-Key': account.password, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subdomain: account.subdomain, txt: probe }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    results.push(await checkDelegation(base, account, probe));
+    const problem = await writeAcmeDnsProbe(account, probe);
+    results.push(problem ? { base, ok: false, detail: problem } : await checkDelegation(base, account, probe));
   }
   const statusByName = new Map<string, string>();
   for (const result of results) {
