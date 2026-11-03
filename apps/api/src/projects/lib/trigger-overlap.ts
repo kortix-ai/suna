@@ -1,9 +1,15 @@
 /**
- * Trigger overlap (KRTX-1721): a fresh-mode trigger with `overlap: skip` does
- * not start a run while its previous run is still active. `skip` is the default
- * for a cron trigger, `allow` for every other type. A person's fire is never
- * held. The reuse, pinned and keyed modes queue into one session and never run
- * two turns at once, so overlap does not apply to them.
+ * Trigger overlap (KRTX-1721): a trigger with `overlap: skip` does not start a
+ * run while its previous run is still active. `skip` is the default for a cron
+ * trigger, `allow` for every other type. A person's fire is never held.
+ *
+ * The reuse, pinned and keyed modes queue into one session and never run two
+ * turns at once. For them "still active" means the previous fire's prompt is
+ * still waiting in the queue: a run longer than the schedule otherwise stacks
+ * one prompt per fire, without bound (prod 2026-11-03: 49 cron prompts queued
+ * in one session over a day, each re-polled every 2 s). A keyed fire checks
+ * only the session of its own key; a key that renders empty starts a fresh
+ * session and is never held.
  *
  * "Still active" reads live session state, not `project_trigger_executions`:
  * that table has no reliable end for a run (a turn closed by the reaper, a box
@@ -27,13 +33,24 @@ const ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const RECENT_SESSIONS = 20;
 
 /** Whether a fire of this trigger checks for a run still in progress. */
-export function triggerChecksOverlap(spec: Pick<GitTriggerSpec, 'type' | 'sessionMode' | 'overlap'>): boolean {
-  if (spec.sessionMode !== 'fresh') return false;
+export function triggerChecksOverlap(spec: Pick<GitTriggerSpec, 'type' | 'overlap'>): boolean {
   return (spec.overlap ?? (spec.type === 'cron' ? 'skip' : 'allow')) === 'skip';
 }
 
 /** Why this fire must wait for the trigger's previous run, or null when it may start. */
-export async function triggerOverlapReason(input: { projectId: string; slug: string; now: Date }): Promise<string | null> {
+export async function triggerOverlapReason(input: {
+  projectId: string;
+  slug: string;
+  now: Date;
+  sessionMode?: GitTriggerSpec['sessionMode'];
+  /** The rendered key of a keyed fire; null when it rendered empty. */
+  sessionKey?: string | null;
+}): Promise<string | null> {
+  const { projectId, slug } = input;
+  if (input.sessionMode === 'reuse' || input.sessionMode === 'pinned') return waitingPromptReason({ projectId, slug });
+  if (input.sessionMode === 'keyed') {
+    return input.sessionKey ? waitingPromptReason({ projectId, slug, sessionKey: input.sessionKey }) : null;
+  }
   const recent = await db
     .select({
       sessionId: projectSessions.sessionId,
@@ -77,4 +94,40 @@ export async function triggerOverlapReason(input: { projectId: string; slug: str
     )
     .limit(1);
   return queued ? `overlap: the previous run is still queued (command ${queued.commandId})` : null;
+}
+
+/**
+ * A reuse, pinned or keyed trigger's previous prompt that is still waiting to
+ * be delivered. A keyed fire looks only in the sessions of its own key.
+ */
+async function waitingPromptReason(input: { projectId: string; slug: string; sessionKey?: string }): Promise<string | null> {
+  const [waiting] = await db
+    .select({ commandId: sessionLifecycleCommands.commandId })
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        eq(sessionLifecycleCommands.projectId, input.projectId),
+        eq(sessionLifecycleCommands.commandType, 'continue_session'),
+        inArray(sessionLifecycleCommands.status, ['queued', 'running']),
+        sql`${sessionLifecycleCommands.source} LIKE 'trigger:%'`,
+        sql`${sessionLifecycleCommands.payload} ->> 'triggerSlug' = ${input.slug}`,
+        input.sessionKey === undefined
+          ? undefined
+          : inArray(
+              sessionLifecycleCommands.sessionId,
+              db
+                .select({ sessionId: projectSessions.sessionId })
+                .from(projectSessions)
+                .where(
+                  and(
+                    eq(projectSessions.projectId, input.projectId),
+                    sql`${projectSessions.metadata} ->> 'trigger_slug' = ${input.slug}`,
+                    sql`${projectSessions.metadata} ->> 'trigger_session_key' = ${input.sessionKey}`,
+                  ),
+                ),
+            ),
+      ),
+    )
+    .limit(1);
+  return waiting ? `overlap: the previous prompt is still waiting (command ${waiting.commandId})` : null;
 }

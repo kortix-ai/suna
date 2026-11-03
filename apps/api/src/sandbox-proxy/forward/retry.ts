@@ -38,6 +38,7 @@ import {
   sendUpstreamAttempt,
 } from './upstream';
 import { isDaemonRuntimeNotReady } from './wake';
+import { countProxyResponseBytes, proxyByteClass } from '../proxy-bytes';
 
 // The retry loop around the upstream hop: per-attempt budget, auto-wake of a
 // stopped box, re-resolving a stale ingress link, and the give-up response.
@@ -215,7 +216,10 @@ async function forwardAttempt(
   const failure = await handleUpstreamFailureStatus(req, state, plan, upstream, previewUrl, attempt);
   if (failure) return failure;
 
-  return respondFromUpstream(req, state, upstream, plan.sseStallKey);
+  return countProxyResponseBytes(
+    await respondFromUpstream(req, state, upstream, plan.sseStallKey),
+    proxyByteClass(req.upstreamPort, req.remainingPath),
+  );
 }
 
 /**

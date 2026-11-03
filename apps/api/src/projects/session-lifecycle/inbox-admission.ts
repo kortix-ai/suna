@@ -85,6 +85,13 @@ export const INBOX_ORDER_MAX_BACKOFF_MS = 2_000;
  * a removed head (`deleteInboxPrompt`), and a head closed without a post
  * (`executeQueuedContinue`: consumed in band, skipped).
  */
+/*
+ * The same minute applies to a row that waits behind a live turn but is not the
+ * session's head. Prod 2026-11-03: 93 cron prompts queued behind turns in 4
+ * sessions were each re-polled every 2 s, 29 claims a second, each reading the
+ * sandbox row twice. Only the head can be admitted next, and the turn's end
+ * wakes the head, never a row behind it.
+ */
 export const INBOX_STALE_ORDER_REFUSALS = 64;
 export const INBOX_STALE_ORDER_BACKOFF_MS = 60_000;
 const INBOX_BACKOFF_FREE_REFUSALS = 4;
@@ -533,7 +540,10 @@ export async function admitInboxPrompt(
       return {
         admit: false,
         reason: 'turn_active',
-        retryAfterMs: orderBackoffMs,
+        // Only the head needs the short clock. A row behind it is woken by the
+        // head's own progress (`promoteNextInboxRow` makes the next row due the
+        // moment the head goes out), so it re-polls once a minute as a fallback.
+        retryAfterMs: isHead ? orderBackoffMs : Math.max(orderBackoffMs, INBOX_STALE_ORDER_BACKOFF_MS),
         ...(interruptAtBoundary ? { interruptAtBoundary } : {}),
       };
     }

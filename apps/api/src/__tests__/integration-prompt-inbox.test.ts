@@ -14,6 +14,7 @@ import { sessionLifecycleCommands } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import {
   INBOX_ORDER_BACKOFF_MS,
+  INBOX_STALE_ORDER_BACKOFF_MS,
   admitInboxPrompt,
   hasLaterReleasedSibling,
   liveInboxAdmissionDeps,
@@ -483,10 +484,12 @@ describe('admitInboxPrompt against real rows', () => {
       retryAfterMs: INBOX_ORDER_BACKOFF_MS,
       interruptAtBoundary: { opencodeSessionId: 'ses_root', messageId: WIRE_ID },
     });
+    // Not the head: the head's progress wakes it, so it keeps only the
+    // one-minute fallback clock.
     expect(await admitInboxPrompt(queueList)).toEqual({
       admit: false,
       reason: 'turn_active',
-      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+      retryAfterMs: INBOX_STALE_ORDER_BACKOFF_MS,
     });
     // Only the HEAD Quick Queue entry arms the interrupt: a second one behind
     // it would stop the turn for a prompt that is not next.
