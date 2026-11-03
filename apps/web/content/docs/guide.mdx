@@ -5,7 +5,7 @@ description: "A plain-language guide to Kortix CompanyOS: every part of it, how 
 
 Kortix is an open-source CompanyOS. It is two things:
 
-1. **A backend framework and server for agents.** Your agents, their skills and their access are code in one git repo. Kortix runs them.
+1. **The cloud-native agent harness for companies.** Your agents, their skills and their access are code in one git repo. Kortix deploys them to the cloud, events start them, and they run in parallel, each on its own cloud computer.
 2. **A workspace and command center for people.** Your team starts work, reviews and approves what agents do, and manages the agents from the Kortix apps.
 
 This page covers every part of Kortix, in the order you meet it.
@@ -14,8 +14,12 @@ This page covers every part of Kortix, in the order you meet it.
 
 - **A project is a git repo.** Kortix hosts the repo for you, or you connect your own on GitHub.
 - **`kortix.yaml` declares the project.** It lists the agents and the skills, tools, connectors and triggers they use. See [kortix.yaml reference](/docs/developers#kortixyaml-reference).
-- **Every session runs on its own isolated cloud computer.** A session never touches your laptop or another session. See [Computers](/docs/guide#computers).
+- **Every agent is a custom pi agent.** pi is an open-source agent harness. Every new session runs it, and you extend it with pi extensions. See [Agents](/docs/guide#agents).
+- **Every session runs on its own isolated cloud computer.** A session never touches your laptop or another session. The computer sleeps when idle and wakes with its full history on the next message or event. See [Computers](/docs/guide#computers).
 - **Triggers run agents 24/7.** A schedule, a webhook or an App event starts a session, with nobody at the keyboard. See [Triggers](/docs/guide#triggers).
+- **My Kortix routes the work.** You talk to one agent. It hands each task to the agent made for it, in a session of its own, and tells you the result. Nothing it hands off blocks the conversation. See [The built-in agent](/docs/guide#the-built-in-agent).
+- **Agents run in swarms.** A session hands work off in the background, runs a workflow of many agents, and messages other sessions. Each one reports back by itself. See [Several agents at once](/docs/guide#several-agents-at-once).
+- **Long jobs outlive one context.** When a context fills, the agent continues in a fresh one and searches the session's full record for the exact lines it needs. Nothing is summarized.
 - **Developers build on the same backend.** The [REST API](/docs/developers#rest-api), the [CLI](/docs/developers#cli), [`@kortix/sdk`](/docs/developers#sdk) and [`@kortix/ui`](/docs/developers#kortix-ui) reach every project and session.
 
 ## A workspace for people
@@ -398,14 +402,16 @@ Drive is the project's shared folders, for people and agents. Sessions open the 
 
 ### Folders
 
-- **Your own folder.** Every person has a private folder. In a private session you started, it opens as `/drives/me`.
+- **Your own folder.** Every person has a folder of their own. Only they and the project's admins can open it. In a private session you started, it opens as `/drives/me` and as `~/Desktop`.
+- **Admins and people's folders.** A project admin can open every person's own folder from **Drive** → **Users**. Each open is recorded: the folder's owner sees which admin opened it and when, under **Share**, and the audit log has a `drive.folder.admin_access` event. An admin's sessions and agents never get another person's folder.
 - **Company.** One folder every project member can open.
 - **Shared folders.** Any folder can be shared with people, groups and agents.
 - **What a session sees.** A new session opens the folders that its agent, or the whole project, has access to. In a private session that you started, it also opens your own folder and every folder shared with you or your groups.
-- **Where to manage them.** Open **Drive** in the sidebar: **My files** (only you), **Company** (everyone) and, for admins, **All files**.
+- **Where to find them.** Open **Drive** in the sidebar. The Drive opens at the top of the project, as one folder: **Company**, **Users** (each person's folder, under their name) and any team folders. The folder tree beside it moves through all of it. A folder's header shows who can open it and where sessions see it.
+- **Search.** `kortix search <words>` finds files by name and by text in every folder you may open, beyond the folders a session mounts. It returns nothing from another person's own folder, for admins too. In a session it searches the folders that session may mount.
 - **Large files.** Drive takes a file of any size, up to the project's storage limit: in the web app, with `kortix drive put <local> <path>`, and through the API. A file over 64 MiB goes up in 1 MiB blocks, and only the blocks Drive does not have yet travel. The file appears when its last block lands.
 
-Drive is on by default. It is experimental. Its folders are stored on Platinum, where sessions run.
+Every project has a Drive wherever Kortix runs on Platinum: it is not a feature flag. Its folders are stored on Platinum, where sessions run.
 
 ### Memory
 
@@ -904,7 +910,7 @@ The goal decides nothing about access. An email, a Slack message or a connector 
 
 <Steps>
 <Step title="Turn on the features">
-Goals is an experimental feature that needs Platinum. It is off by default: turn on **Goals** in **Customize** → **Settings** → **Feature flags**. It also needs Volumes and Loops.
+Goals is an experimental feature that needs Platinum. It is off by default: turn on **Goals** in **Customize** → **Settings** → **Feature flags**. It also needs Loops.
 </Step>
 <Step title="State the outcome">
 In a chat, describe the outcome, for example "make sure…" or "keep at it until…". In a chat that is already under way, say "make this a goal". On the Goals page, **New goal** starts one from the outcome.

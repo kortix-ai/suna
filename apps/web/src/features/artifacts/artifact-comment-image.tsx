@@ -4,7 +4,6 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useArtifactCommentScreenshot } from '@kortix/sdk/react';
 import { Button } from '@kortix/ui/button';
 import { ErrorState } from '@kortix/ui/error-state';
-import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -13,7 +12,11 @@ import {
   ModalTitle,
   ModalTrigger,
 } from '@kortix/ui/modal';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { useEffect, useState } from 'react';
+
+/** Region screenshots without a known shape load as a 16:10 frame. */
+const FALLBACK_RATIO = 16 / 10;
 
 export function ArtifactCommentImage({ image }: { image: Blob | undefined }) {
   const t = useTranslations('artifacts.discussion');
@@ -63,14 +66,26 @@ export function SavedArtifactCommentImage({
   projectId,
   artifactId,
   commentId,
+  aspectRatio,
 }: {
   projectId: string;
   artifactId: string;
   commentId: string;
+  /** Width / height of the captured region, so the placeholder keeps the final shape. */
+  aspectRatio?: number;
 }) {
   const t = useTranslations('artifacts.discussion');
   const image = useArtifactCommentScreenshot(projectId, artifactId, commentId);
-  if (image.isLoading) return <Loading className="size-3" />;
+  if (image.isLoading) {
+    const ratio = aspectRatio && Number.isFinite(aspectRatio) ? aspectRatio : FALLBACK_RATIO;
+    // The image renders at most max-h-40 tall and full width, so the frame is the smaller fit.
+    return (
+      <Skeleton
+        className="max-w-full"
+        style={{ aspectRatio: String(ratio), width: `min(100%, calc(var(--spacing) * 40 * ${ratio}))` }}
+      />
+    );
+  }
   if (image.isError)
     return (
       <ErrorState

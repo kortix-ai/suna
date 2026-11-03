@@ -905,8 +905,6 @@ describe('envelopes', () => {
       'us_region',
       'event_triggers',
       'notification_center',
-      'volumes',
-      'drives',
       'session_log_restore',
       'project_channels',
       'agent_rooms',

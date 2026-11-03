@@ -148,12 +148,14 @@ export {
   pushDeviceTokens,
   // Drives (shared folders backed by Platinum volumes)
   drives,
+  driveFolderAdminReads,
   driveGrants,
   storageCharges,
   providerOrphanBoxCosts,
   platinumVolumeDeletions,
   driveMountRevocations,
   driveConflicts,
+  driveIndexEntries,
   // Notification inbox, preferences, watchers, Web Push (KRTX-1742)
   notifications,
   notificationPreferences,

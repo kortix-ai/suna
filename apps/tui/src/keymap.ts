@@ -485,7 +485,11 @@ export function matchesChord(event: KeyEvent, target: Chord): boolean {
   const wanted = normalizeKey(target.key, Boolean(target.shift));
   if (pressed.key !== wanted.key) return false;
   if (Boolean(target.ctrl) !== Boolean(event.ctrl)) return false;
-  if (Boolean(target.alt) !== altPressed(event)) return false;
+  // An Esc can arrive with meta set: a doubled ESC (`ESC ESC`, a quick double tap, or a
+  // terminal with Option-as-Meta) parses as meta+escape. No binding means Alt+Esc, so it is Esc;
+  // refusing it left every panel open with nothing on screen saying why.
+  const metaEscape = wanted.key === 'escape' && !target.alt;
+  if (!metaEscape && Boolean(target.alt) !== altPressed(event)) return false;
   if (shiftIsSignificant(wanted.key) && pressed.shift !== wanted.shift) return false;
   return true;
 }

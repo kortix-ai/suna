@@ -3,6 +3,7 @@ import {
   type ArtifactAnnotationCandidate,
   type ArtifactAnnotationLayout,
 } from '@kortix/shared/artifact-annotations';
+import { ARTIFACT_TEXT_CONTEXT_MAX, ARTIFACT_TEXT_QUOTE_MAX } from '@kortix/shared/artifact-comments';
 
 type Rect = ArtifactAnnotationLayout['elements'][number]['rect'];
 export type AnnotationInventory = {
@@ -65,9 +66,39 @@ export function annotationInventory(document: Document): AnnotationInventory {
   if (!document.body || !visible(document.body)) return inventory;
   const indices = new WeakMap<Element, number>();
   const snippets: string[] = [];
+  let pageSnippet = '';
   const walker = document.createTreeWalker(document.body, 5, {
     acceptNode: node => node.nodeType === 1 && !visible(node as Element) ? 2 : 1,
   });
+  // Snippets read like the rendered page: text from two different blocks ("Free" in an h2,
+  // "$0" in a p) is joined with a space; inline runs ("One <b>project</b>,") stay joined.
+  const inline = new WeakMap<Element, boolean>();
+  const isInline = (element: Element) => {
+    let value = inline.get(element);
+    if (value === undefined) {
+      const display = view.getComputedStyle(element).display;
+      // An empty value is the initial value, `inline`.
+      value = !display || display.startsWith('inline') || display === 'contents';
+      inline.set(element, value);
+    }
+    return value;
+  };
+  const blockBetween = (previous: Text, current: Text) => {
+    const ancestors = new Set<Element>();
+    for (let element = previous.parentElement; element; element = element.parentElement) ancestors.add(element);
+    let common: Element | null = null;
+    for (let element = current.parentElement; element; element = element.parentElement) {
+      if (ancestors.has(element)) { common = element; break; }
+      if (!isInline(element)) return true;
+    }
+    for (let element = previous.parentElement; element && element !== common; element = element.parentElement) {
+      if (!isInline(element)) return true;
+    }
+    return false;
+  };
+  const appendSnippet = (current: string, run: string, separate: boolean) =>
+    safeAnnotationSlice((current + (separate && current ? ' ' : '') + run).replace(/\s+/g, ' ').trimStart(), 0, 122);
+  let previousText: Text | null = null;
   let units = 0;
   let node: Node | null;
   while ((node = walker.nextNode())) {
@@ -87,6 +118,8 @@ export function annotationInventory(document: Document): AnnotationInventory {
       const textNode = node as Text;
       const n = inventory.textNodes.length;
       inventory.textNodes.push(textNode);
+      let separate = previousText !== null && blockBetween(previousText, textNode);
+      previousText = textNode;
       let offset = 0;
       let run = '';
       let runStart = 0;
@@ -95,10 +128,10 @@ export function annotationInventory(document: Document): AnnotationInventory {
           inventory.texts.push({ n, offset: runStart, text: run });
           for (let parent = textNode.parentElement; parent; parent = parent.parentElement) {
             const index = indices.get(parent);
-            if (index !== undefined && snippets[index]!.length < 122) {
-              snippets[index] = safeAnnotationSlice((snippets[index] + run).replace(/\s+/g, ' ').trimStart(), 0, 122);
-            }
+            if (index !== undefined && snippets[index]!.length < 122) snippets[index] = appendSnippet(snippets[index]!, run, separate);
           }
+          if (pageSnippet.length < 122) pageSnippet = appendSnippet(pageSnippet, run, separate);
+          separate = false;
         }
         run = '';
       };
@@ -120,13 +153,14 @@ export function annotationInventory(document: Document): AnnotationInventory {
   const root = annotationRect({ x: 0, y: 0, width: Math.max(view.innerWidth, document.documentElement.scrollWidth), height: Math.max(view.innerHeight, document.documentElement.scrollHeight) });
   if (root && inventory.elements.length < limits.elements) {
     const n = inventory.elementNodes.length;
-    inventory.elements.push({ n, selector: 'html', snippet: safeAnnotationSlice(inventory.texts.map(part => part.text).join('').replace(/\s+/g, ' ').trim(), 0, 120), rect: root });
+    inventory.elements.push({ n, selector: 'html', snippet: safeAnnotationSlice(pageSnippet.trim(), 0, 120), rect: root });
     inventory.elementNodes.push(document.documentElement);
   }
   return inventory;
 }
 
-export function annotationSelection(selection: Selection | null, inventory: AnnotationInventory): ArtifactAnnotationCandidate | null {
+/** The selection as a text candidate; 'too_long' when it exceeds a text anchor; null when nothing is selected. */
+export function annotationSelection(selection: Selection | null, inventory: AnnotationInventory): ArtifactAnnotationCandidate | 'too_long' | null {
   if (!inventory.complete || !selection || selection.isCollapsed || selection.rangeCount !== 1) return null;
   const range = selection.getRangeAt(0);
   const text = inventory.texts.map(part => part.text).join('');
@@ -154,9 +188,15 @@ export function annotationSelection(selection: Selection | null, inventory: Anno
   }
   if (start === null || end <= start) return null;
   if (/[\uDC00-\uDFFF]/.test(text[start] ?? '') && /[\uD800-\uDBFF]/.test(text[start - 1] ?? '')) start++;
-  const quote = safeAnnotationSlice(text, start, Math.min(end, start + 32));
-  if (!quote) return null;
-  return { type: 'text', quote, prefix: safeAnnotationSlice(text, Math.max(0, start - 32), start), suffix: safeAnnotationSlice(text, start + quote.length, start + quote.length + 32) };
+  // The whole selection is the quote. A longer one is refused, never cut: a cut quote anchors a different passage.
+  const quote = safeAnnotationSlice(text, start, end);
+  if (!quote.trim()) return null;
+  if (quote.length > ARTIFACT_TEXT_QUOTE_MAX) return 'too_long';
+  return {
+    type: 'text', quote,
+    prefix: safeAnnotationSlice(text, Math.max(0, start - ARTIFACT_TEXT_CONTEXT_MAX), start),
+    suffix: safeAnnotationSlice(text, start + quote.length, start + quote.length + ARTIFACT_TEXT_CONTEXT_MAX),
+  };
 }
 
 export function annotationPoint(

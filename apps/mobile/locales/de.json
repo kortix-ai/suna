@@ -1284,5 +1284,16 @@
     "retryHour_other": "Versuchen Sie es in {{count}} Stunden erneut.",
     "unavailable": "Bild nicht verfügbar",
     "details": "Bilddetails"
+  },
+  "sessionImage": {
+    "title": "Sandbox-Image wird vorbereitet",
+    "states": {
+      "resolving": "Das Image für diese Sitzung wird ausgewählt.",
+      "serving_last_ready": "Start mit dem letzten fertigen Image. Das neue wird im Hintergrund gebaut.",
+      "waiting_for_build": "Das erste Image für dieses Projekt wird gebaut. Die Sitzung startet, sobald es fertig ist.",
+      "building": "Das erste Image für dieses Projekt wird gebaut. Das passiert einmal und dauert einige Minuten.",
+      "copying_to_region": "Das Image wird in die Region dieser Sitzung kopiert.",
+      "waiting_for_provider": "Das Image wird fertiggestellt. Die Sitzung startet, sobald es fertig ist."
+    }
   }
 }

@@ -1279,5 +1279,16 @@
     "retryHour_other": "{{count}}小时后重试。",
     "unavailable": "图片不可用",
     "details": "图片详情"
+  },
+  "sessionImage": {
+    "title": "正在准备沙盒镜像",
+    "states": {
+      "resolving": "正在为此会话选择镜像。",
+      "serving_last_ready": "从最近一个就绪的镜像启动。新镜像在后台构建。",
+      "waiting_for_build": "正在构建此项目的第一个镜像。镜像就绪后会话即会开始。",
+      "building": "正在构建此项目的第一个镜像。此过程只需一次，耗时几分钟。",
+      "copying_to_region": "正在将镜像复制到此会话所在的区域。",
+      "waiting_for_provider": "镜像即将完成。镜像就绪后会话即会开始。"
+    }
   }
 }

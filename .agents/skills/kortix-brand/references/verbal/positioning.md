@@ -15,7 +15,8 @@ Rule format: **Rule.** — *Why:* — *Where:* — *When silent:*.
 | Comparative | The leading open-source alternative to Claude Cowork and ChatGPT Work | Search, social, launch, GitHub. Anchors against the known category. |
 | Manifesto line | A company is going to be a git repository | The deep thesis. Manifesto, founder voice, vision talks. Never a page title. |
 | Mission | Take a company from human to AGI, and let it keep every byte of itself on the way there. | Founder voice, about, hiring. Never a category. |
-| Promise | Hand it an outcome, AI agents run it 24/7 | What Kortix does for a company, beside what it is (D18, D29). Home hero subhead, the Outcomes section header, pitches. Never a page title. |
+| Promise | Hand it an outcome, AI agents run it 24/7 | What Kortix does for a company, beside what it is (D18, D29). The Outcomes section header, pitches. Not the home hero subhead since D35. Never a page title. |
+| Positioning line | The cloud-native agent harness for companies | What Kortix is underneath (D35). Home hero subhead, README tagline, docs index, Guide and Developers intros. The name stays CompanyOS; this line defines it. |
 
 **Rule.** Use "CompanyOS" as the category and "The open-source CompanyOS" as the tagline. — *Why:* D28 (2026-10-29, founder) renames the category from "AI Operating System" to CompanyOS; D10 (2026-10-04) set the operating-system idea. An operating system is the layer everything else runs on: agents, skills, memory, connectors, computers, channels and triggers. The phrase names that layer, and it scales from one person to a company. — *Where:* app | marketing | mobile | deck | email | CLI | GitHub. — *When silent:* use the tagline in titles and the category noun in sentences.
 

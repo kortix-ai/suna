@@ -278,3 +278,14 @@ describe('formatting', () => {
     expect(formatChord({ key: 'G' })).toBe('G');
   });
 });
+
+describe('Esc', () => {
+  test('an Esc that arrives with meta or option (ESC ESC, Option-as-Meta) is still Esc: every panel closes', () => {
+    const esc = (extra: Record<string, boolean>) => ({ name: 'escape', ctrl: false, shift: false, meta: false, option: false, ...extra }) as never;
+    expect(matchesBinding(esc({}), 'back')).toBe(true);
+    expect(matchesBinding(esc({ meta: true }), 'back')).toBe(true);
+    expect(matchesBinding(esc({ option: true }), 'back')).toBe(true);
+    // Ctrl+Esc is not Esc.
+    expect(matchesBinding(esc({ ctrl: true }), 'back')).toBe(false);
+  });
+});

@@ -208,7 +208,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'case-studies',
     title: 'Case studies',
     description:
-      'What runs on Kortix today: a science agent at City University of Hong Kong, an AI-run hedge fund desk, a cloud company built by agents, Kortix itself and more.',
+      'What runs on CompanyOS: a science agent at City University of Hong Kong, an AI-run asset manager, a cloud company built by agents, and agents for banking and retail.',
     htmlPath: '/case-studies',
   },
   {

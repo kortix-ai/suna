@@ -18,6 +18,7 @@ import { runDoctor } from './commands/doctor.ts';
 import { runEnv } from './commands/env.ts';
 import { runFeedback } from './commands/feedback.ts';
 import { runDrive } from './commands/drive.ts';
+import { runSearch } from './commands/search.ts';
 import { runFiles } from './commands/files.ts';
 import { runGateway } from './commands/gateway.ts';
 import { runGitCredential } from './commands/git-credential.ts';
@@ -243,6 +244,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   t: (rest) => runTui(rest),
   files: (rest) => runFiles(rest),
   drive: (rest) => runDrive(rest),
+  search: (rest) => runSearch(rest),
   cr: (rest) => runCr(rest),
   review: (rest) => runReview(rest),
   // Hidden alias, not in the command table: the name `automations` had before Triggers won. Its `add` was runtime.

@@ -144,6 +144,28 @@ describe('the session-open envelope states what THIS call did', () => {
     expect(log.action).toBe('resumed');
   });
 
+  test('provisioning: the image step the row recorded is boot.image', () => {
+    const step = { state: 'building' as const, image: 'kortix-default-abc', since: '2026-08-26T13:59:58.000Z' };
+    const boot = deriveBoot(payload({ stage: 'provisioning' }), { initStatus: 'provisioning', imageStep: step }, 'inspected', OBSERVED_AT);
+    expect(boot.image).toEqual(step);
+  });
+
+  test('provisioning before the image step: boot.image is null; a malformed step is null, never a guess', () => {
+    expect(deriveBoot(payload({ stage: 'provisioning' }), { initStatus: 'provisioning' }, 'inspected', OBSERVED_AT).image).toBeNull();
+    const malformed = { initStatus: 'provisioning', imageStep: { state: 'compiling', image: 1, since: 'later' } };
+    expect(deriveBoot(payload({ stage: 'provisioning' }), malformed, 'inspected', OBSERVED_AT).image).toBeNull();
+  });
+
+  test('a ready session carries no image step, even when the row still holds one', () => {
+    const boot = deriveBoot(
+      payload({ stage: 'ready' }),
+      { imageStep: { state: 'serving_last_ready', image: 'x', since: '2026-08-26T13:59:58.000Z' } },
+      'inspected',
+      OBSERVED_AT,
+    );
+    expect('image' in boot).toBe(false);
+  });
+
   test('deriveBoot never reports actively_starting for a parked row nobody is waking', () => {
     const boot = deriveBoot(payload({ stage: 'stopped' }), { stoppedAt: '2026-08-26T13:00:00.000Z' }, 'inspected', OBSERVED_AT);
     expect(boot).toEqual({

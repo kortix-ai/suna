@@ -24,6 +24,7 @@ import {
 } from '../self-host/compose-assets.ts';
 import { SHARED_AUTH_DEFAULTS, SHARED_SELF_HOST_DEFAULTS } from '../self-host/shared-runtime-defaults.ts';
 import { applyEmailWiring } from '../self-host/email-wiring.ts';
+import { deriveDomainAliasHosts, normalizeHostname, parseDomainList, planDomainMove } from '../self-host/domain-aliases.ts';
 import { parseEmailTargets, redactUrl } from '@kortix/shared/email-url';
 import {
   CATEGORY_LABELS,
@@ -84,6 +85,8 @@ Subcommands:
   env ls [--show]         Show every value (secrets masked; --show reveals).
   env set K=V ...         Set any value; restarts only the services it affects.
   env rotate KEY|--all-generated  Regenerate a rotatable generated secret.
+  domain show             The primary domain and its alias domains.
+  domain move <domain>    Make <domain> primary; the current domain keeps working as an alias.
 
 Options:
   --instance <name>       Instance name (default: ${DEFAULT_INSTANCE}).
@@ -292,6 +295,8 @@ export async function runSelfHost(argv: string[]): Promise<number> {
       return selfHostUninstall(args, flags);
     case 'env':
       return selfHostEnv(args, flags);
+    case 'domain':
+      return selfHostDomain(args, flags);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
@@ -1563,6 +1568,15 @@ async function selfHostEnvSet(args: string[], flags: GlobalFlags): Promise<numbe
     if (stop !== null) return stop;
   }
 
+  if (changedKeys.includes('KORTIX_DOMAIN_ALIASES')) {
+    try {
+      env.KORTIX_DOMAIN_ALIASES = parseDomainList(env.KORTIX_DOMAIN_ALIASES).join(',');
+    } catch (err) {
+      process.stderr.write(`${status.err(`KORTIX_DOMAIN_ALIASES: ${(err as Error).message}`)} Nothing was written.\n`);
+      return 2;
+    }
+  }
+
   // EMAIL_URL is the one email setting; everything else it implies (the GoTrue
   // send-email hook, its shared secret, the sender identity, and the auth
   // behavior flags) is derived here rather than typed by the operator.
@@ -1576,6 +1590,165 @@ async function selfHostEnvSet(args: string[], flags: GlobalFlags): Promise<numbe
     process.stdout.write(`  ${C.dim}${note}${C.reset}\n`);
   }
   return restartServicesForKeys(flags.instance, env, changedKeys);
+}
+
+/** The public hosts an instance answers on, with a probe name for each wildcard. */
+function publicDomainHosts(env: SelfHostEnv): string[] {
+  const hosts = [env.KORTIX_DOMAIN, env.KORTIX_API_DOMAIN || `api.${env.KORTIX_DOMAIN}`];
+  if (env.KORTIX_APPS_BASE_DOMAIN?.trim()) hosts.push(`kortix-dns-check.${env.KORTIX_APPS_BASE_DOMAIN}`);
+  if (env.KORTIX_PREVIEW_BASE_DOMAIN?.trim()) hosts.push(`kortix-dns-check.${env.KORTIX_PREVIEW_BASE_DOMAIN}`);
+  return hosts.map((host) => normalizeHostname(host)).filter((host): host is string => host !== null);
+}
+
+async function resolveIpv4(host: string): Promise<string[]> {
+  const { resolve4 } = await import('node:dns/promises');
+  try {
+    return (await resolve4(host)).sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Every new host must resolve to the same addresses as the current domain
+ * before Caddy is told to serve it. Serving a name first makes Caddy request a
+ * certificate that HTTP-01 cannot validate, and the instance advertises URLs
+ * that do not resolve (2026-08-22 preview-origin outage).
+ */
+async function domainMoveDnsProblems(current: SelfHostEnv, next: SelfHostEnv): Promise<string[]> {
+  const expected = await resolveIpv4(current.KORTIX_DOMAIN);
+  const problems: string[] = [];
+  for (const host of publicDomainHosts(next)) {
+    const got = await resolveIpv4(host);
+    const shown = host.startsWith('kortix-dns-check.') ? `*.${host.slice('kortix-dns-check.'.length)}` : host;
+    if (got.length === 0) problems.push(`${shown} does not resolve (add an A record to ${expected.join(', ') || 'this server'})`);
+    else if (expected.length > 0 && got.join(',') !== expected.join(',')) {
+      problems.push(`${shown} resolves to ${got.join(', ')}, but ${current.KORTIX_DOMAIN} resolves to ${expected.join(', ')}`);
+    }
+  }
+  return problems;
+}
+
+function printDomains(env: SelfHostEnv): number {
+  if (!env.KORTIX_DOMAIN?.trim()) {
+    process.stdout.write(`${C.dim}No domain configured (local or tunnel reachability).${C.reset}\n`);
+    return 0;
+  }
+  const aliases = deriveDomainAliasHosts(env);
+  const row = (label: string, value: string) => process.stdout.write(`  ${pad(label, 14)}${value}\n`);
+  process.stdout.write(`${C.bold}Primary domain${C.reset}\n`);
+  row('app', env.KORTIX_DOMAIN);
+  row('api', env.KORTIX_API_DOMAIN);
+  if (env.KORTIX_APPS_BASE_DOMAIN) row('apps', `*.${env.KORTIX_APPS_BASE_DOMAIN}`);
+  if (env.KORTIX_PREVIEW_BASE_DOMAIN) row('previews', `*.${env.KORTIX_PREVIEW_BASE_DOMAIN}`);
+  if (aliases.app.length === 0) {
+    process.stdout.write(`\n${C.dim}No alias domains (KORTIX_DOMAIN_ALIASES is empty).${C.reset}\n`);
+    return 0;
+  }
+  process.stdout.write(`\n${C.bold}Alias domains${C.reset} ${C.dim}(KORTIX_DOMAIN_ALIASES)${C.reset}\n`);
+  row('app', `${aliases.app.join(', ')} ${C.dim}(served)${C.reset}`);
+  if (aliases.api.length) row('api', `${aliases.api.join(', ')} ${C.dim}(served)${C.reset}`);
+  if (aliases.apps.length) row('apps', `${aliases.apps.map((d) => `*.${d}`).join(', ')} ${C.dim}(served)${C.reset}`);
+  if (aliases.preview.length) row('previews', `${aliases.preview.map((d) => `*.${d}`).join(', ')} ${C.dim}(served)${C.reset}`);
+  return 0;
+}
+
+/** Run `caddy validate` on the rendered Caddyfile with the container's own env. */
+function validateCaddyfile(instance: string): number {
+  return compose(instance, [
+    'run', '--rm', '--no-deps', '--entrypoint', 'caddy', 'caddy',
+    'validate', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile',
+  ]);
+}
+
+/**
+ * `kortix self-host domain [show]` and `kortix self-host domain move <domain>`.
+ *
+ * `move` makes <domain> the primary domain and keeps the current one as an
+ * alias (KORTIX_DOMAIN_ALIASES): every old host keeps serving. Hosts under the old
+ * domain move with it. DNS is checked first, the rendered Caddyfile is
+ * validated before any service restarts, and a failed validation restores the
+ * previous configuration.
+ */
+async function selfHostDomain(args: string[], flags: GlobalFlags): Promise<number> {
+  const action = args.shift() ?? 'show';
+  const env = loadEnvWithDefaults(flags);
+  if (!env) {
+    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    return 1;
+  }
+  if (action === 'show' || action === 'ls') return printDomains(env);
+  if (action !== 'move') {
+    process.stderr.write(`${status.err(`unknown domain subcommand "${action}"`)} Use ${C.cyan}domain show${C.reset} or ${C.cyan}domain move <domain>${C.reset}.\n`);
+    return 2;
+  }
+  const skipDnsCheck = takeFlagBool(args, ['--skip-dns-check']);
+  const target = args.shift();
+  if (!target) {
+    process.stderr.write(`${status.err('Pass the new domain: kortix self-host domain move <domain>')}\n`);
+    return 2;
+  }
+  let plan: ReturnType<typeof planDomainMove>;
+  try {
+    plan = planDomainMove(env, target);
+  } catch (err) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
+  const next = { ...env, ...plan.changes } as SelfHostEnv;
+
+  if (!skipDnsCheck) {
+    const problems = await domainMoveDnsProblems(env, next);
+    if (problems.length > 0) {
+      process.stderr.write(`${status.err('DNS is not ready for the new domain. Nothing was changed.')}\n`);
+      for (const problem of problems) process.stderr.write(`  - ${problem}\n`);
+      process.stderr.write(`  ${C.dim}Fix the records and run this again, or pass --skip-dns-check.${C.reset}\n`);
+      return 1;
+    }
+  }
+
+  process.stdout.write(`${C.bold}Move ${plan.from} → ${plan.to}${C.reset}\n`);
+  for (const [key, value] of Object.entries(plan.changes)) {
+    process.stdout.write(`  ${pad(key, 30)}${env[key] || C.dim + '(empty)' + C.reset} → ${value}\n`);
+  }
+  process.stdout.write(
+    `  ${C.dim}${plan.from} keeps working as an alias: its web app, API, Apps and preview hosts keep serving.${C.reset}\n` +
+      `  ${C.dim}People who open ${plan.to} sign in once there.${C.reset}\n\n`,
+  );
+  // GoTrue derives the SAML service provider from API_EXTERNAL_URL, so a move
+  // changes the entity ID and ACS URL an identity provider has registered. Every
+  // SSO sign-in fails until the IdP knows the new values; most IdPs (Entra ID,
+  // Okta) accept the new ones next to the old ones, so add them BEFORE moving.
+  const newAuth = `https://${plan.to}/auth/v1/sso/saml`;
+  process.stdout.write(
+    `  ${C.yellow}SAML SSO:${C.reset} before you move, add these to your identity provider next to the current values:\n` +
+      `    Identifier (entity ID)  ${newAuth}/metadata\n` +
+      `    Reply URL (ACS)         ${newAuth}/acs\n` +
+      `    Logout URL              ${newAuth}/slo\n` +
+      `  ${C.dim}Skip this if no one signs in with SSO.${C.reset}\n\n`,
+  );
+  if (!flags.yes) {
+    if (!shouldPrompt(flags)) {
+      process.stderr.write(`${status.err('Refusing to move the domain non-interactively without --yes.')} Nothing was written.\n`);
+      return 2;
+    }
+    if (!(await confirm(`Move this instance to ${plan.to}?`, false))) {
+      process.stderr.write(`${status.err('Domain unchanged. Nothing was written.')}\n`);
+      return 1;
+    }
+  }
+
+  const previous = { ...env } as SelfHostEnv;
+  writeEnv(flags.instance, next);
+  writeCompose(flags.instance, next);
+  if (validateCaddyfile(flags.instance) !== 0) {
+    writeEnv(flags.instance, previous);
+    writeCompose(flags.instance, previous);
+    process.stderr.write(`${status.err('caddy validate rejected the new Caddyfile. The previous configuration is restored.')}\n`);
+    return 1;
+  }
+  process.stdout.write(`${status.ok(`Primary domain is now ${plan.to}`)}\n`);
+  return restartServicesForKeys(flags.instance, next, Object.keys(plan.changes));
 }
 
 /**
@@ -2572,6 +2745,7 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
     appsHostingConfigured: Boolean(env.KORTIX_APPS_BASE_DOMAIN?.trim()),
     previewHostingConfigured: Boolean(env.KORTIX_PREVIEW_BASE_DOMAIN?.trim()),
     captureStoreExternal,
+    domainAliases: deriveDomainAliasHosts(env),
   });
   writeFileSync(
     composePath(instance),
@@ -2653,6 +2827,13 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
     env.API_PUBLIC_URL = `https://${env.KORTIX_API_DOMAIN}`;
     env.SUPABASE_PUBLIC_URL = `https://${env.KORTIX_DOMAIN}`;
   }
+
+  // Alias Apps/preview base domains the API must also accept as its own
+  // hosts (resolveAppHost / resolvePreviewHost and the on-demand TLS gate).
+  // Derived from KORTIX_DOMAIN_ALIASES on every write; see domain-aliases.ts.
+  const aliasHosts = deriveDomainAliasHosts(env);
+  env.KORTIX_APPS_BASE_DOMAIN_ALIASES = aliasHosts.apps.join(',');
+  env.KORTIX_PREVIEW_BASE_DOMAIN_ALIASES = aliasHosts.preview.join(',');
 
   // The app-tier replica count the auto-updater rolls to: 2 (behind Caddy,
   // no host ports) once a domain is configured, else 1 (loopback host ports,

@@ -790,9 +790,6 @@
   "src/config-releases/release-tree.ts": {
     "kortix-api/projects-surface": {
       "count": 2
-    },
-    "no-restricted-properties": {
-      "count": 1
     }
   },
   "src/config-releases/routes.ts": {
@@ -1052,7 +1049,7 @@
       "count": 2
     },
     "no-restricted-properties": {
-      "count": 2
+      "count": 1
     }
   },
   "src/git-proxy/project-snapshot-ledger.ts": {

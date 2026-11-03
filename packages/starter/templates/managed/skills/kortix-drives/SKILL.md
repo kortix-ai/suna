@@ -112,6 +112,12 @@ Paths are Drive paths (`/Company/plan.md`), not `/drives` paths.
   session, or ask the user to make the change in Drive.
 - In a private channel's thread `kortix drive` writes only that channel's
   folder; everything else is read-only (403 on a write).
+- `kortix search <words> [--path <folder>] [--json]` finds files by name and
+  text in every folder this session may use, also the folders that did not
+  fit in its mounts. It works in every session. Search before you ask the
+  user where something is. Hits are Drive paths: open one through its mount
+  (`/drives/README.md` maps folders to mounts), or with `kortix drive cat
+  <path>` in the user's own private session.
 </commands>
 
 <limits>
@@ -121,7 +127,7 @@ Paths are Drive paths (`/Company/plan.md`), not `/drives` paths.
 - Do not put secrets or credentials in Drive: other people with access to a
   folder read the same files.
 - A session mounts a limited number of folders. Folders that did not fit are
-  listed in `/drives/README.md`; tell the user rather than look for them.
+  listed in `/drives/README.md`; `kortix search` still finds their files.
 </limits>
 
 </skill>

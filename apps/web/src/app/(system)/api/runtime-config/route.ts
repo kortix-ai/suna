@@ -1,10 +1,11 @@
 import { serializeRuntimeConfigScript } from '@/lib/public-env-server';
+import { headers } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export async function GET() {
-  const script = serializeRuntimeConfigScript();
+  const script = serializeRuntimeConfigScript((await headers()).get('host'));
 
   return new Response(script, {
     headers: {

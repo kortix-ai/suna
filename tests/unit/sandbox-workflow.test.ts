@@ -670,3 +670,25 @@ describe('the preview label is one fast deploy, and a superseded run never deplo
     expect(previewWorkflow).not.toContain("if: always() && needs.authorize.outputs.public_worker != ''");
   });
 });
+
+describe('preview teardown', () => {
+  const workflow = readFileSync(resolve(root, '.github/workflows/deploy-preview.yml'), 'utf8');
+  const start = workflow.indexOf('\n  teardown:\n');
+  const job = workflow.slice(start, workflow.indexOf('\n  teardown-branch:\n'));
+
+  test('reads the label as it stands now before anything is deleted', () => {
+    expect(start, 'the teardown job is missing').toBeGreaterThan(-1);
+    const guard = job.indexOf('name: Read the label as it stands now');
+    expect(guard, 'the label read is missing').toBeGreaterThan(-1);
+    expect(job.indexOf('uses: actions/checkout'), 'no step may run before the label read').toBeGreaterThan(guard);
+    expect(job.indexOf('sandbox-preview.ts teardown')).toBeGreaterThan(guard);
+  });
+
+  test('every step after the label read stops when the label came back', () => {
+    const steps = job.slice(job.indexOf('id: label')).split(/\n      - /).slice(1);
+    expect(steps.length).toBeGreaterThanOrEqual(7);
+    for (const step of steps) {
+      expect(step, step.split('\n')[0]).toContain("if: steps.label.outputs.relabeled != 'true'");
+    }
+  });
+});
