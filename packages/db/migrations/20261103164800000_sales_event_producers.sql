@@ -46,5 +46,23 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+-- public.contact_forms exists on every hosted database (packages/db/drizzle/0000_bootstrap.sql,
+-- applied outside this chain) but not on a database built from migrations alone (the DB test
+-- template, a fresh local stack). Create it there with the bootstrap's exact shape; elsewhere
+-- every statement below is a no-op.
+CREATE TABLE IF NOT EXISTS public.contact_forms (
+  id uuid DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,
+  created_at timestamp with time zone DEFAULT now() NOT NULL,
+  data jsonb DEFAULT '{}'::jsonb NOT NULL
+);
+ALTER TABLE public.contact_forms ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'contact_forms' AND policyname = 'contact_forms_insert') THEN
+    CREATE POLICY contact_forms_insert ON public.contact_forms FOR INSERT TO anon, authenticated WITH CHECK (true);
+  END IF;
+END;
+$$;
+GRANT ALL ON TABLE public.contact_forms TO anon, authenticated, service_role;
 CREATE TRIGGER sales_demo_requested AFTER INSERT ON public.contact_forms
 FOR EACH ROW EXECUTE FUNCTION kortix.enqueue_demo_requested();

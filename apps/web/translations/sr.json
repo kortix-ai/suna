@@ -1333,6 +1333,10 @@
         "voice_call": {
           "name": "Гласовни позиви",
           "description": "Позови агента сесије са странице сесије и разговарај с њим. Чује те, одговара гласом, види екран који делиш и ради у истој сесији, па разговор остаје у ћаскању."
+        },
+        "shared_drives": {
+          "name": "Deljeni drajvovi",
+          "description": "Drajvovi koje ceo tim može da koristi: administrator pravi drajv i dodaje mu agente. Svaka sesija tih agenata ga montira, a svako ko sme da koristi nekog od njih može da ga otvori. Isključeno, svaka osoba ima samo Moje fajlove."
         }
       },
       "channelsSwitch": {

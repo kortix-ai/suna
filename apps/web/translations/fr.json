@@ -1333,6 +1333,10 @@
         "voice_call": {
           "name": "Appels vocaux",
           "description": "Appelle l'agent de la session depuis la page de la session et parle-lui. Il t'entend, répond à voix haute, voit l'écran que tu partages et travaille dans la même session : la conversation reste dans le chat."
+        },
+        "shared_drives": {
+          "name": "Drives partagés",
+          "description": "Des Drives pour toute l'équipe : un admin crée un Drive et y ajoute des agents. Chaque session de ces agents le monte, et toute personne autorisée à utiliser l'un d'eux peut l'ouvrir. Désactivé, chaque personne n'a que Mes fichiers."
         }
       },
       "channelsSwitch": {
