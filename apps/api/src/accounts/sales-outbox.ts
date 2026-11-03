@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { enrichSalesCustomer } from './sales-customer-lookup';
 import type { Database } from '@kortix/db';
 import { sql } from 'drizzle-orm';
 import { config } from '../config';
@@ -19,7 +20,7 @@ export async function processSalesOutbox(database: Database = db): Promise<void>
     ) RETURNING event_id, payload, attempts
   `);
   for (const row of rows) {
-    const error = await deliverSalesEvent(row.payload, config.SIGNUP_WEBHOOK_URL, config.SIGNUP_WEBHOOK_SECRET);
+    const error = await deliverSalesEvent(await enrichSalesCustomer(row.payload), config.SIGNUP_WEBHOOK_URL, config.SIGNUP_WEBHOOK_SECRET);
     await database.execute(sql`
       UPDATE kortix.sales_event_outbox SET
         delivered_at = CASE WHEN ${error}::text IS NULL THEN now() ELSE NULL END,

@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../shared/db';
 import { enrichSalesEvent } from './sales-event';
+import { enrichSalesCustomer } from './sales-customer-lookup';
 
 function isTimestamp(value: unknown): value is string {
   if (typeof value !== 'string' || !/^(?!0000)\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}(?::?\d{2})?))?$/.test(value)) return false;
@@ -54,7 +55,7 @@ export function registerSalesReconciliation(app: OpenAPIHono): void {
     `);
     const page = rows.slice(0, 100);
     const last = page.at(-1);
-    return c.json({ events: page.map((row) => enrichSalesEvent(row.payload)), upper_watermark: upper,
+    return c.json({ events: await Promise.all(page.map((row) => enrichSalesCustomer(enrichSalesEvent(row.payload)))), upper_watermark: upper,
       next_cursor: rows.length > 100 && last ? Buffer.from(JSON.stringify({ from, to: upper, time: last.confirmed, id: last.id })).toString('base64url') : null });
   });
 }
