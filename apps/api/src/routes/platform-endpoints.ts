@@ -1,3 +1,4 @@
+import { registerSalesReconciliation } from '../accounts/sales-reconciliation';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json } from '../openapi';
 import { supabaseAuth } from '../middleware/auth';
@@ -25,6 +26,7 @@ import { getPlatformRole } from '../shared/platform-roles';
 import { createDemoRequestRateLimitMiddleware } from '../middleware/rate-limit';
 
 export function registerPlatformEndpoints(app: OpenAPIHono) {
+registerSalesReconciliation(app);
 // Also expose system status at root for backward compat with frontend
 app.openapi(
   createRoute({
