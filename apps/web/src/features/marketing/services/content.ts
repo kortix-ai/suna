@@ -41,7 +41,6 @@ export const hero = {
   sub: 'Our team maps how your company works, connects your data and ships the agents and apps that run it, on Kortix. Everything lives in a git repo you own.',
   /** One quiet line under the buttons. The price waits for the pricing section. */
   terms: 'Strategy and build, one team · One flat monthly fee · Everything in a repo you own',
-  logosLink: 'See the work',
 } as const;
 
 /** Why companies buy this: the gap between the mandate and the team. */
