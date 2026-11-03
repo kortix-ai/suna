@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } fr
 import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
 import { mockConfigModule } from '../projects/reaping/test-support/mock-config';
 
-mock.module('../config', () => mockConfigModule({ API_KEY_SECRET: 'test-pepper' }));
+const realConfig = await import('../config');
+mock.module('../config', () => ({
+  ...realConfig,
+  ...mockConfigModule({ API_KEY_SECRET: 'test-pepper' }),
+}));
 
 // #9272: a secret link works only while its minter is still in the account.
 let memberRows: Array<{ found: number }> = [{ found: 1 }];
