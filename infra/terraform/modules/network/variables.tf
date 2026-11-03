@@ -10,9 +10,14 @@ variable "cidr" {
 }
 
 variable "az_count" {
-  description = "Number of AZs to spread public/private subnets across. 2 is the minimum for ALB."
+  description = "Number of AZs to spread public/egress/private subnets across. 2 is the minimum for ALB."
   type        = number
   default     = 2
+  validation {
+    # The /16 is carved into /20s: public 0-3, egress 4-7, private 8-11.
+    condition     = var.az_count >= 2 && var.az_count <= 4
+    error_message = "az_count must be 2 to 4."
+  }
 }
 
 variable "single_nat_gateway" {

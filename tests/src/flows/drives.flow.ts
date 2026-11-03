@@ -180,6 +180,15 @@ flow(
       (await ctx.client.as(ctx.P.ANON).get(route, { params: { driveId } })).status(401);
     });
 
+    await ctx.step('a plain member reads the project mounts (the Drive page asks on every open): 200, never a folder they cannot see', async () => {
+      const plan = (await asMember.get('/v1/drives/:driveId/mounts', { params: { driveId } }))
+        .status(200)
+        .json<{ mounts: { path: string }[] }>();
+      if (plan.mounts.some((m) => m.path === ownerFolder || m.path.startsWith(`${ownerFolder}/`))) {
+        throw new Error(`a member sees the owner's folder in the mount plan: ${JSON.stringify(plan.mounts)}`);
+      }
+    });
+
     await ctx.step("an agent's mounts are the session plan: the project's folders at /drives paths; ANON 401", async () => {
       const plan = (await owner.get('/v1/drives/:driveId/agents/:agentName/mounts', { params: { driveId, agentName: 'kortix' } }))
         .status(200)

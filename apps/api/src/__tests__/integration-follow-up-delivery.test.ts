@@ -9,6 +9,8 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
+import { config } from '../config';
+import { devTunnelStamp } from '../platform/dev-tunnel-stamp';
 import { deliverThroughQueue } from '../projects/session-lifecycle/follow-up-delivery';
 import { claimDueLifecycleCommands, enqueueContinueSessionCommand, markCommandFailed } from '../projects/session-lifecycle/store';
 import { db } from '../shared/db';
@@ -128,5 +130,47 @@ describe('a dead-lettered follow-up', () => {
     });
     await deadLetter('trigger-it-1');
     expect(await sessionStatus()).toBe('failed');
+  });
+});
+
+describe('a box an earlier dev stack created under another quick tunnel', () => {
+  const OLD_TUNNEL = 'https://old-tunnel-it.trycloudflare.com';
+  const urlBefore = config.KORTIX_URL;
+
+  async function withBox(stampedTunnel: string, kortixUrl: string, run: () => Promise<void>) {
+    (config as Record<string, unknown>).KORTIX_URL = kortixUrl;
+    await db.execute(sql`
+      INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, provider, status, config)
+      VALUES (${SESSION_ID}, ${SESSION_ID}, ${ACCOUNT_ID}::uuid, ${PROJECT_ID}::uuid, 'platinum', 'stopped',
+              ${JSON.stringify({ serviceKey: 'synthetic', devTunnelUrl: stampedTunnel })}::jsonb)`);
+    try {
+      await run();
+    } finally {
+      await db.execute(sql`DELETE FROM kortix.session_sandboxes WHERE session_id = ${SESSION_ID}`);
+      (config as Record<string, unknown>).KORTIX_URL = urlBefore;
+    }
+  }
+
+  test('a follow-up answers no-session, so the channel starts over in a new session instead of the box taking it and never answering', async () => {
+    await withBox(OLD_TUNNEL, 'https://new-tunnel-it.trycloudflare.com', async () => {
+      expect(await deliverThroughQueue(reply('slack:T1:C1:1700000000.000900'))).toBe('no-session');
+      const [row] = await commands();
+      expect(row.last_error).toBe('that session no longer exists');
+      expect(row.status).not.toBe('queued');
+    });
+  });
+
+  test('a box of this tunnel takes the follow-up as before', async () => {
+    await withBox('https://same-tunnel-it.trycloudflare.com', 'https://same-tunnel-it.trycloudflare.com/', async () => {
+      expect(await deliverThroughQueue(reply('slack:T1:C1:1700000000.000901'))).toBe('queued');
+    });
+  });
+
+  test('on a stable API URL (a deployed environment) nothing is stamped and the stamp is never read', async () => {
+    expect(devTunnelStamp('https://api.example.test')).toEqual({});
+    expect(devTunnelStamp('https://fresh-it.trycloudflare.com/')).toEqual({ devTunnelUrl: 'https://fresh-it.trycloudflare.com' });
+    await withBox(OLD_TUNNEL, 'https://api.example.test', async () => {
+      expect(await deliverThroughQueue(reply('slack:T1:C1:1700000000.000902'))).toBe('queued');
+    });
   });
 });

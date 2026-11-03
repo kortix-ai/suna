@@ -196,11 +196,11 @@ describe('What Kortix built, in the catalogue', () => {
       toolkits: async () => [toolkit('telegram', 'Telegram')],
     });
     const kortix = items.filter((item) => item.kind === 'kortix').map((item) => item.id);
-    expect(kortix).toEqual(['native:slack', 'native:teams', 'native:email', 'native:telegram', 'native:computer']);
+    expect(kortix).toEqual(['native:slack', 'native:teams', 'native:email', 'native:telegram', 'native:discord', 'native:computer']);
     const catalog = createConnectorCatalog({ source: { items: async () => items, surfaces: () => [] } });
     expect((await catalog.list({ q: 'slack' })).items[0]?.id).toBe('native:slack');
     expect((await catalog.list({ q: 'telegram' })).items.map((item) => item.id)).toEqual(['native:telegram']);
-    expect((await catalog.list({ kinds: ['kortix'], limit: 10 })).items).toHaveLength(5);
+    expect((await catalog.list({ kinds: ['kortix'], limit: 10 })).items).toHaveLength(6);
     expect((await catalog.list({ q: 'computer' })).items[0]).toMatchObject({ id: 'native:computer', kind: 'kortix', kortix: { app: 'computer' } });
     // Links from before the rename (`channel:<platform>`) still open the app.
     expect((await catalog.detail('channel:email')).item.id).toBe('native:email');

@@ -363,8 +363,8 @@ const RESET_KEYS = new Set(['project', 'default_agent', 'runtime']);
  * template with an error is dropped. Each of these only takes access away.
  * `project`, `default_agent` and `runtime` fall back to their defaults. An
  * error anywhere else (`sandbox`, `env`, `approvals`, `policy`, `imports`, a
- * retired format, …) returns `{}`: the project runs its built-in agents only,
- * so My Kortix can still start and fix the file. Pure: `raw` is not changed.
+ * retired format, …) returns `{}`: the project runs only the built-in agents
+ * the file turns on, so My Kortix (`builtin_agents.my_kortix: true`) can fix it. Pure: `raw` is not changed.
  */
 export function usableManifest(raw: Record<string, unknown> | null, issues: readonly ManifestIssue[]): Record<string, unknown> {
   // A legacy file is usable only once converted (`convertLegacyManifest`); unconverted it means nothing here.

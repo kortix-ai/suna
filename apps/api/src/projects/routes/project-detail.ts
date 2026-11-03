@@ -164,8 +164,8 @@ export function registerProjectDetailRoutes(): void {
       };
       const filteredConfig = await filterConfigResourcesForUser(rawConfig, denierCtx);
       // My Kortix (slug `mykortix`) is listed first when kortix.yaml sets
-      // `builtin_agents.my_kortix: true` (or the manifest needs repair). Off: the
-      // config is exactly the repo-declared surface.
+      // `builtin_agents.my_kortix: true`. Off: the config is exactly the
+      // repo-declared surface.
       const builtinAgents = projectBuiltinAgents(rawConfig.manifest);
       const withAgents = {
         ...(builtinAgents.my_kortix ? addMyKortixAgent(filteredConfig) : filteredConfig),

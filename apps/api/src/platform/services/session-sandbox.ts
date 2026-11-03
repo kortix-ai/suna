@@ -74,6 +74,7 @@ import { instanceStampMetadata } from '../../projects/instance-scope';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { myKortixAgentGrant } from '../../projects/lib/my-kortix-agent';
+import { devTunnelStamp } from '../dev-tunnel-stamp';
 import { resolveSessionOnBehalfOf } from '../../projects/lib/on-behalf-of';
 import { agentPrincipalModeFor } from '../../iam/agent-principal';
 import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
@@ -1300,7 +1301,8 @@ async function activateProvisionedSandbox(
     columns: {
       externalId: result.externalId,
       baseUrl: result.baseUrl || null,
-      config: { serviceKey: sessionToken },
+      // On a quick-tunnel dev stack, the tunnel this box calls back to (platform/dev-tunnel-stamp.ts).
+      config: { serviceKey: sessionToken, ...devTunnelStamp() },
       lastUsedAt: new Date(),
     },
     metadata: sandboxInitMetadataPatch(snapshot, finishMetadata),
