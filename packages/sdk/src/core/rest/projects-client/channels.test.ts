@@ -11,6 +11,11 @@ import {
   verifyEmailDomain,
   completeSlackInstall,
   completeTeamsInstall,
+  completeDiscordInstall,
+  disconnectDiscord,
+  getDiscordInstallation,
+  getDiscordMode,
+  setDiscordAllowedUsers,
   connectSlack,
   allowChannelUser,
   dismissChannelAccessRequest,
@@ -831,6 +836,70 @@ test('removeEmailInbox deletes one inbox and says whether Resend deleted it too'
 test('a refused add surfaces the server error', async () => {
   nextResponse = { status: 400, body: { error: 'Connect your own Resend API key.', code: 'email_key_required' } };
   await expect(addEmailInbox('P1', { username: 'support' })).rejects.toThrow();
+});
+
+test('getDiscordMode returns the Add to Discord link, and unavailable on failure', async () => {
+  nextResponse = { status: 200, body: { available: true, install_url: 'https://discord.com/oauth2/authorize?x=1' } };
+  expect(await getDiscordMode('P1')).toEqual({ available: true, install_url: 'https://discord.com/oauth2/authorize?x=1' });
+  expect(last().url).toContain('/projects/P1/channels/discord/mode');
+  expect(last().method).toBe('GET');
+
+  nextResponse = { status: 500, body: {} };
+  expect(await getDiscordMode('P1')).toEqual({ available: false, install_url: null });
+});
+
+test('getDiscordInstallation reads the server install, and null when none', async () => {
+  nextResponse = {
+    status: 200,
+    body: { guild_id: '123456789012345678', guild_name: 'Team', allowed_user_ids: ['223456789012345678'], access_request_count: 1 },
+  };
+  const install = await getDiscordInstallation('P1');
+  expect(last().url).toContain('/projects/P1/channels/discord/installation');
+  expect(install?.guild_name).toBe('Team');
+  expect(install?.allowed_user_ids).toEqual(['223456789012345678']);
+
+  nextResponse = { status: 404, body: { error: 'Discord is not connected' } };
+  expect(await getDiscordInstallation('P1')).toBeNull();
+});
+
+test('completeDiscordInstall posts the code and state, and surfaces a refusal', async () => {
+  nextResponse = { status: 200, body: { redirect_url: 'https://kortix.test/projects/P1?success=1' } };
+  const done = await completeDiscordInstall('P1', { code: 'c0de', state: 'st' });
+  expect(last().url).toContain('/projects/P1/channels/discord/oauth/complete');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ code: 'c0de', state: 'st' });
+  expect(done.redirect_url).toBe('https://kortix.test/projects/P1?success=1');
+
+  nextResponse = { status: 403, body: { error: 'This install was started by someone else.', code: 'CHANNEL_INSTALL_STATE_MISMATCH' } };
+  await expect(completeDiscordInstall('P1', { code: 'c0de', state: 'st' })).rejects.toThrow();
+});
+
+test('setDiscordAllowedUsers replaces the allowed list', async () => {
+  nextResponse = { status: 200, body: { guild_id: '123456789012345678', guild_name: null, allowed_user_ids: ['223456789012345678'], access_request_count: 0 } };
+  await setDiscordAllowedUsers('P1', ['223456789012345678']);
+  expect(last().url).toContain('/projects/P1/channels/discord/allowed-users');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ user_ids: ['223456789012345678'] });
+});
+
+test('disconnectDiscord deletes the install, and throws on a refusal', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  await disconnectDiscord('P1');
+  expect(last().url).toMatch(/\/projects\/P1\/channels\/discord$/);
+  expect(last().method).toBe('DELETE');
+
+  nextResponse = { status: 403, body: { error: 'forbidden' } };
+  await expect(disconnectDiscord('P1')).rejects.toThrow();
+});
+
+test('the access routes take the Discord platform', async () => {
+  nextResponse = { status: 200, body: { allowed: [], requests: [] } };
+  await listChannelUsers('P1', 'discord');
+  expect(last().url).toContain('/projects/P1/channels/discord/users');
+  nextResponse = { status: 200, body: { allowed_user_ids: ['223456789012345678'], access_request_count: 0 } };
+  await allowChannelUser('P1', 'discord', '223456789012345678');
+  expect(last().url).toContain('/projects/P1/channels/discord/allowed-users');
+  expect(last().body).toEqual({ user_id: '223456789012345678' });
 });
 
 // The published unions stay literal; the private channel descriptor in

@@ -25,6 +25,7 @@ import { ParticipantAvatar } from '../ParticipantAvatar';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { SlackIcon } from '@/components/icons/slack-icon';
 import { TeamsIcon } from '@/components/icons/teams-icon';
+import { DiscordIcon } from '@/components/icons/discord-icon';
 import { TelegramIcon } from '@/components/icons/telegram-icon';
 import {
   AlarmIcon,
@@ -129,12 +130,14 @@ const CHANNEL_LABEL_COLOR: Record<ChannelPlatform, string | undefined> = {
   Teams: '#5B5FC7', // hex-allowlist: Microsoft Teams purple #5B5FC7, web CHANNEL_BRAND_COLOR.Teams
   Telegram: TELEGRAM_BRAND_COLOR,
   Email: undefined,
+  Discord: '#5865F2', // hex-allowlist: Discord blurple #5865F2, web CHANNEL_BRAND_COLOR.Discord
 };
 const CHANNEL_LABEL: Record<ChannelPlatform, string> = {
   Slack: 'Slack',
   Teams: 'Microsoft Teams',
   Telegram: 'Telegram',
   Email: 'Email',
+  Discord: 'Discord',
 };
 
 /** `className` colors only the glyphs with no brand: Email's envelope, and the neutral chat glyph of a platform this build does not know. */
@@ -142,6 +145,7 @@ function ChannelMark({ platform, size, className }: { platform: ChannelPlatform;
   if (platform === 'Teams') return <TeamsIcon size={size} />;
   if (platform === 'Slack') return <SlackIcon size={size} />;
   if (platform === 'Telegram') return <TelegramIcon size={size} />;
+  if (platform === 'Discord') return <DiscordIcon size={size} />;
   return <Icon as={platform === 'Email' ? EnvelopeIcon : ChatCircleIcon} size={size} className={className} />;
 }
 

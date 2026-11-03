@@ -137,9 +137,10 @@ kortix connectors catalog show composio:gmail       # every way to connect it + 
 Ways to connect, best first (the first is marked `recommended`):
 
 0. built by Kortix (`kind: kortix`): the channels Slack, Microsoft Teams,
-   Email and Telegram, and Computer. They are never installed. The human
-   sets them up: `kortix channels connect` (Slack; `--platform teams`),
-   `kortix channels email inboxes add`, Telegram on its web page, Computer
+   Email, Telegram and Discord, and Computer. They are never installed. The
+   human sets them up: `kortix channels connect` (Slack; `--platform teams`),
+   `kortix channels email inboxes add`, Telegram and Discord on their web
+   pages, Computer
    with `npx --yes @kortix/agent-tunnel@latest connect` on that machine or
    the desktop app;
 1. a one-click MCP server: the vendor's own; the human only signs in;

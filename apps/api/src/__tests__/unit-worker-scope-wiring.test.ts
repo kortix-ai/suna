@@ -64,6 +64,7 @@ const WORKERS: Record<string, string> = {
   'account-deletion': 'worker/jobs/account-deletion.ts',
   'slack-turn-gc': 'worker/jobs/slack-turn-gc.ts',
   'teams-turn-gc': 'worker/jobs/teams-turn-gc.ts',
+  'discord-gateway': 'worker/jobs/discord-gateway.ts',
   'job-queue': 'replica/job-queue.ts',
   'trigger-event-poll': 'replica/trigger-event-poll.ts',
   'capture-store-bucket': 'worker/jobs/capture.ts',
@@ -98,6 +99,7 @@ const PER_PROCESS: Record<string, string> = {
 const NOT_WORKERS: Record<string, string> = {
   'apps/public-proxy-handler.ts': 'stamps app activity while one proxied request streams; runs inside that request',
   'apps/ws-proxy.ts': 'stamps app activity for one open WebSocket; runs inside that connection',
+  'channels/discord/gateway.ts': 'heartbeat of the one Discord Gateway WebSocket the leader holds; runs inside that connection',
   'projects/git/object-store.ts': 'measures the pack one git fetch downloads, every 50 ms while it runs; runs inside that call',
   'llm-gateway/models/runtime-catalog.ts': 'refreshes the in-memory models.dev catalog',
   'projects/lib/session-control-reconciler.ts': 'read-only reconcile of one open session stream',

@@ -5,6 +5,7 @@ import {
   loadSlackInstall,
   loadTeamsInstall,
   loadTelegramInstall,
+  loadDiscordInstall,
 } from '../channels/install-store';
 /**
  * Auto-materialize channel connectors from platform installs.
@@ -111,6 +112,15 @@ export async function synthesizeChannelConnectors(
     (await loadTelegramInstall(projectId).catch(() => null))
   ) {
     specs.push(channelSpec('telegram', telegramSlug));
+  }
+
+  // Discord: the server install is the registration, like Slack.
+  const discordSlug = channelDefaultSlug('discord');
+  if (
+    !channelAlreadyDeclared(declared, 'discord', discordSlug) &&
+    (await loadDiscordInstall(projectId).catch(() => null))
+  ) {
+    specs.push(channelSpec('discord', discordSlug));
   }
 
   // One `kortix_email` connector; every inbox is one of its accounts. Not

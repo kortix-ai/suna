@@ -78,11 +78,12 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // restart copy into the sandbox (`legacy-migration-rehydrate.ts`).
   'legacy_migration',
   // Channel origin. Reply targets and the channel runtime env
-  // (`session-channel-env.ts`, the Slack/Teams/email/Telegram relays).
+  // (`session-channel-env.ts`, the Slack/Teams/email/Telegram/Discord relays).
   'slack',
   'teams',
   'email',
   'telegram',
+  'discord',
   // Warm-session marker and trusted provisioning intent (`lib/warm-sessions.ts`).
   'warm',
   WARM_SESSION_LOCATION_KEY,

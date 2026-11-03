@@ -29,6 +29,7 @@ import { startAuditWebhookWorker, stopAuditWebhookWorker } from './audit-webhook
 import { startBillingRotation, stopBillingRotation } from './billing-rotation';
 import { startCaptureWorkers, stopCaptureWorkers } from './capture';
 import { startCaptureHealthWorker, stopCaptureHealthWorker } from './capture-health';
+import { startDiscordGateway, stopDiscordGateway } from './discord-gateway';
 import { startDriveWorkers, stopDriveWorkers } from './drive';
 import { startGatewaySpendBackfillWorker, stopGatewaySpendBackfillWorker } from './gateway-spend-backfill';
 import { startGrantExpirySweeper, stopGrantExpirySweeper } from './grant-expiry';
@@ -105,6 +106,8 @@ export const JOBS: readonly Job[] = [
   // Close Slack/Teams live cards whose run ended without a reply.
   { ticks: { 'slack-turn-gc': 20 * MIN }, start: startSlackTurnGc, stop: stopSlackTurnGc },
   { ticks: { 'teams-turn-gc': 20 * MIN }, start: startTeamsTurnGc, stop: stopTeamsTurnGc },
+  // The Discord Gateway: the one connection that delivers the bot's messages (channels/discord/gateway.ts).
+  { ticks: { 'discord-gateway': 10 * MIN }, start: startDiscordGateway, stop: stopDiscordGateway },
   // Scheduled account deletions past their 14-day grace; the first tick drains the backlog.
   { ticks: { 'account-deletion': 2 * HOUR }, start: startAccountDeletionSchedule, stop: stopAccountDeletionSchedule },
   // The unread-row email digest and the 90-day retention sweep.

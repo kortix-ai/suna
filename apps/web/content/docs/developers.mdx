@@ -1132,7 +1132,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `max_runs_per_hour` | integer, 1 or more | `60` | Runs the trigger starts in any 60 minutes. |
 | `max_runs_per_day` | integer, 1 or more | — | Runs the trigger starts in a UTC day. |
 | `max_lateness` | string | — | Schedules only, `60s` or more. A missed fire later than this does not run. |
-| `overlap` | `skip`, `allow` | `skip` for a schedule, `allow` for others | `skip` holds a fire while the previous run is active. With `run.session: reuse`, `pinned` or `keyed`, it holds a fire while the previous prompt still waits in that session's queue. |
+| `overlap` | `skip`, `allow` | `skip` for a schedule, `allow` for others | `skip` holds a fire while the previous run is active. With `run.session: reuse`, `pinned` or `keyed`: while the previous prompt still waits in that session. |
 | `on` | map | required | What fires the trigger: a schedule (`cron`, `every` or `at`), a webhook, or an App event. |
 | `on.cron` | string | — | A 6-field cron expression, seconds first: `"0 0 9 * * 1"` is 09:00 every Monday. A trigger fires at most once every 60 seconds. |
 | `on.timezone` | string | `UTC` | An IANA time zone for `cron` and `at`. |
@@ -3936,6 +3936,7 @@ Set these with `kortix self-host env set`. Each row says what the variable turns
 | `KORTIX_OAUTH_CLIENTS` | Your own OAuth clients for the [app catalog](/docs/guide#connectors) apps whose servers have no dynamic client registration. JSON, one entry per vendor: `google`, `github`, `slack`, `hubspot`, `asana`, `box`. Without an entry, those apps are not listed. See [Kortix OAuth clients](#kortix-oauth-clients). |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET` | One-click **Add to Slack** with your own Slack app. Without all three, each project connects its own Slack app. See [Channels](/docs/guide#channels). |
 | `MICROSOFT_APP_ID`, `MICROSOFT_APP_PASSWORD`, `MICROSOFT_APP_TENANT` (default `botframework.com`) | One shared Microsoft Teams bot. Without them, each project brings its own bot app. |
+| `DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN`; optional `DISCORD_REDIRECT_URI` | **Add to Discord** with your own Discord application. In the Discord Developer Portal, set the Interactions Endpoint URL to `<api>/v1/webhooks/discord`, and add `<api>/v1/webhooks/discord/oauth/callback` as an OAuth2 redirect. Without all four, Discord is not offered. `DISCORD_MESSAGE_CONTENT=true` (with the **Message Content** intent turned on for the application) lets every message in a Kortix thread reach the agent; without it, a thread message must mention the app. See [Channels](/docs/guide#channels). |
 | `RESEND_API_KEY` | Transactional email through Resend. |
 | `TUNNEL_ENABLED` | Default `true`. `false` turns off [computers](/docs/guide#computers): `/v1/tunnel/*` answers `503` `tunnel_disabled`. |
 | `PLATINUM_API_KEY` | Required. Sessions, App machines and volumes, and Drive (`/drives`). |
