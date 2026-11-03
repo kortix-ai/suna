@@ -25,7 +25,7 @@ Host header and path untouched.
 | Mode | What serves `https://api.<domain>/kortix-capture/*` |
 |---|---|
 | domain | Caddy, `@capture` in `apps/cli/src/self-host/assets/Caddyfile.txt`. Uploads do not depend on the API. |
-| tunnel, local | The API, `apps/api/src/capture/store-proxy.ts`, when `KORTIX_CAPTURE_S3_PROXY_TARGET` is set. A named tunnel has an operator-set origin, so only the API can serve the prefix there. |
+| tunnel, local | The API, `apps/api/src/object-store/bucket-proxy.ts` (mounted by `capture/store-proxy.ts`), when `KORTIX_CAPTURE_S3_PROXY_TARGET` is set. A named tunnel has an operator-set origin, so only the API can serve the prefix there. |
 
 Rejected:
 
@@ -51,6 +51,13 @@ Rejected:
   `KORTIX_CAPTURE_S3_CREATE_BUCKET` is on.
 - No bucket events without SQS: the index reader polls every 30 s
   (`KORTIX_CAPTURE_INDEX_POLL_SECONDS`).
+- The store holds a second bucket, `kortix-project-snapshots`: the prebuilt
+  project snapshots a new session boots from (the `KORTIX_PROJECT_SNAPSHOT_*`
+  block of `kortix-api`, mode `prefer-s3`). It has its own path prefix, the
+  `@snapshots` Caddy route and its own passthrough
+  (`git-proxy/project-snapshot-store-proxy.ts`). The API creates it with a
+  30-day expiry rule (`ensureProjectSnapshotBucket()`). The external mode
+  below drops this wiring with the store.
 
 ## External object store (AWS S3 / R2)
 
@@ -115,7 +122,9 @@ signal as a store that is not configured.
 
 The nightly updater never re-renders Compose. On the box:
 `kortix self-host update` with a CLI that knows the store. It generates the
-secrets, adds `capture-store`, and recreates `kortix-api` once. The API image
+secrets, adds `capture-store`, recreates `kortix-api` once, and reloads Caddy
+when the Caddyfile changed (a CLI from before that reload needs the manual
+`caddy reload` of learnings entry 2026-10-20T071256Z). The API image
 must be a release with the passthrough. `kortix self-host doctor` reports
 `capture-store`.
 

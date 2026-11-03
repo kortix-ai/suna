@@ -3697,7 +3697,7 @@ Run `kortix self-host doctor` and fix every failing check. See [Secure the insta
 | `llm-gateway` | The standalone LLM gateway. Caddy sends `api.<domain>/v1/llm*` here. |
 | `kortix-migrate` | A one-shot job. It migrates the database before `kortix-api` starts. |
 | `kortix-updater` | Pulls new images once a day, migrates, and rolls the app services. It mounts the Docker socket. |
-| `capture-store` | The object store for [Kortix Capture](/docs/capture) recordings (MinIO). It publishes no port: devices reach it through the API. Its data is in the `kortix-capture-data` volume and grows with every enrolled device. |
+| `capture-store` | The object store (MinIO) for [Kortix Capture](/docs/capture) recordings and for the project snapshots a new session starts from. It publishes no port: devices and sandboxes reach it through the API origin. Its data is in the `kortix-capture-data` volume. Capture data grows with every enrolled device; snapshots expire after 30 days. |
 | `supabase-*` | The Supabase distribution, every image pinned by digest: Postgres (`supabase-db`), auth, REST, realtime, storage, imgproxy, meta, functions, Kong, the Supavisor pooler, Studio, analytics and vector. |
 | `caddy` | Domain mode only. Terminates TLS on ports 80 and 443 with ACME HTTP-01 and routes traffic. |
 | `cloudflared` | Tunnel mode only. Publishes `kortix-api` through a Cloudflare tunnel. |
