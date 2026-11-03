@@ -1308,8 +1308,10 @@ const MountPlanSchema = z.object({ mounts: z.array(AgentMountSchema), skipped: z
 
 /** The folders a new session mounts through an agent (when named) and through the project, planned as a boot plans them. */
 async function mountPlan(c: DriveContext, agentName: string | null) {
+  // Every person who works in the project asks (the Drive page shows where
+  // sessions see a folder), so no folder is required: the plan lists only the
+  // folders the caller may see.
   const caller = await loadDrive(c);
-  need(caller, '/', 'read');
   const { drive } = caller;
   const [grants, agentId, slots] = await Promise.all([
     listFolderGrants(drive),
@@ -1330,7 +1332,7 @@ async function mountPlan(c: DriveContext, agentName: string | null) {
   const projectGrant = (path: string) =>
     grants.find((g) => g.principalType === 'project' && g.path === path && g.source !== 'system');
   return {
-    mounts: plan.mounts.map((m) => {
+    mounts: plan.mounts.filter((m) => folderVisible(m.path, caller.grants, caller.subject)).map((m) => {
       const viaAgent = candidates.some((x) => x.path === m.path && x.priority === 0);
       const grant = agentName ? ownGrant(m.path) : projectGrant(m.path);
       const level = candidates
