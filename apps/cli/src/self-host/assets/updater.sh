@@ -859,6 +859,33 @@ if [ "${1:-}" = "once" ]; then
   exit "$rc"
 fi
 
+# `updater.sh roll <service>...` re-rolls the named app services onto their
+# CURRENT config with the same start-first swap a version update uses: no pull,
+# no migration. `kortix self-host env set` / `domain move` call it after a
+# config change, so a new environment value reaches the API, gateway and
+# frontend with zero downtime instead of a recreate of every replica at once.
+if [ "${1:-}" = "roll" ]; then
+  shift
+  log "config roll: $*"
+  (
+    if ! flock -n 9; then
+      log "another update run is already in progress; config roll skipped"
+      exit 75
+    fi
+    printf 'kind=roll pid=%s since=%s\n' "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$HOLDER_FILE"
+    rc=0
+    for svc in "$@"; do
+      case " $ROLL_SERVICES " in
+        *" $svc "*) roll_or_recreate_with_retry "$svc" || rc=1 ;;
+        *) log "ERROR: $svc is not a rolling service"; rc=1 ;;
+      esac
+    done
+    rm -f "$HOLDER_FILE" 2>/dev/null || true
+    exit "$rc"
+  ) 9>"$LOCK_FILE"
+  exit $?
+fi
+
 # `updater.sh status` / `updater.sh report`: read-only, no lock needed — used
 # by `kortix self-host status` to surface the last outcome plus a live drift
 # check without running an update.
