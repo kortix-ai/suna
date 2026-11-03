@@ -26,6 +26,7 @@ import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flag
 // Re-exported here so every importer and mock keeps working.
 export { requestAuditContext } from '../../middleware/request-audit';
 import { CHANNEL_ACCESS_PLATFORMS } from '../../shared/channel-access-platforms';
+import { forRequestApiUrl } from '../../shared/domain-aliases';
 import { normalizeJsonObject } from '../../shared/json';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
@@ -205,7 +206,7 @@ export function serializeSession(
     // A legacy `e2b` row passes through as stored: E2B support is discontinued.
     sandbox_provider: row.sandboxProvider as ProjectSession['sandbox_provider'],
     sandbox_id: row.sandboxId,
-    sandbox_url: row.sandboxUrl,
+    sandbox_url: forRequestApiUrl(row.sandboxUrl),
     runtime_session_id: row.runtimeSessionId,
     opencode_session_id: row.runtimeSessionId,
     name: customName ?? runtimeTitle ?? autoName,

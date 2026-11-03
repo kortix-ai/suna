@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1034,
+  "count": 1035,
   "routes": [
     {
       "method": "GET",
@@ -169,6 +169,10 @@
     {
       "method": "GET",
       "path": "/sitemap.xml"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/access/branding"
     },
     {
       "method": "POST",
