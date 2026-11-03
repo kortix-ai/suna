@@ -1,20 +1,7 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import type { KortixProject } from '../core/rest/projects-client';
-import { getProjectDetail } from '../core/rest/projects-client';
-import { qk } from './query-keys';
-import { contract } from './query-contracts';
-
-function useProjectDetail(projectId: string | undefined) {
-  const id = projectId ?? '';
-  return useQuery({
-    queryKey: qk.project.detail(id),
-    queryFn: () => getProjectDetail(id),
-    enabled: Boolean(projectId),
-    ...contract('config'),
-  });
-}
+import { useProjectRow } from './use-project-row';
 
 /**
  * The ONLY way to read a project's name.
@@ -27,29 +14,29 @@ function useProjectDetail(projectId: string | undefined) {
  *
  * One accessor makes that structurally impossible rather than merely currently
  * invalidated. Do not reintroduce a `??` fallback to another source here.
+ *
+ * The source is the bare project row (`qk.project.summary`, one database read),
+ * not the detail, which reads the repository and can take seconds: the name in
+ * the project shell must never wait on git.
  */
 export function useProjectName(projectId: string | undefined): string | undefined {
-  const { data } = useProjectDetail(projectId);
-  return data?.project?.name;
+  const { data } = useProjectRow(projectId);
+  return data?.name;
 }
 
 /**
- * The owning account id, read off the SAME `qk.project.detail(id)` entry
- * `useProjectName` reads — every capability surface already mounts that
- * observer, so this shares the cache instead of adding a fetch. Previously
- * lived in `apps/web`'s `project-detail-query.ts` as a host-local hook; moved
- * here because `qk.project.detail` + `contract('config')` is SDK-owned
- * wiring, not something a host should hand-roll a second time.
+ * The owning account id, read off the SAME bare project row
+ * (`qk.project.summary(id)`, `GET /projects/:id`) `useProjectName` reads, so
+ * it shares one cache entry instead of adding a fetch.
  */
 export function useProjectAccountId(projectId: string | undefined): string | undefined {
-  const { data } = useProjectDetail(projectId);
-  return data?.project?.account_id;
+  const { data } = useProjectRow(projectId);
+  return data?.account_id;
 }
 
 /**
  * A project's icon — the emoji XOR the named glyph — read off the SAME
- * `qk.project.detail(id)` entry `useProjectName` and `useProjectAccountId`
- * read. No extra fetch, and structurally no way for the name a surface prints
+ * bare project row `useProjectName` and `useProjectAccountId` read. No extra fetch, and structurally no way for the name a surface prints
  * and the icon it draws to come from two caches that have diverged.
  *
  * The two fields are returned under their STORED names (`icon`, `icon_glyph`),
@@ -67,8 +54,7 @@ export function useProjectAccountId(projectId: string | undefined): string | und
 export function useProjectIcon(
   projectId: string | undefined,
 ): Pick<KortixProject, 'icon' | 'icon_glyph'> | undefined {
-  const { data } = useProjectDetail(projectId);
-  const project = data?.project;
+  const { data: project } = useProjectRow(projectId);
   if (!project) return undefined;
   return { icon: project.icon ?? null, icon_glyph: project.icon_glyph ?? null };
 }
