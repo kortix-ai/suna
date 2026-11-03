@@ -1333,6 +1333,10 @@
         "voice_call": {
           "name": "Sprachanrufe",
           "description": "Ruf den Agenten der Session von der Session-Seite aus an und sprich mit ihm. Er hört dich, antwortet mit Stimme, sieht einen geteilten Bildschirm und arbeitet in derselben Session, sodass das Gespräch im Chat bleibt."
+        },
+        "shared_drives": {
+          "name": "Geteilte Drives",
+          "description": "Drives für das ganze Team: Ein Admin legt ein Drive an und fügt ihm Agenten hinzu. Jede Session dieser Agenten bindet es ein, und alle, die einen davon nutzen dürfen, können es öffnen. Aus: Jede Person hat nur Meine Dateien."
         }
       },
       "channelsSwitch": {

@@ -1333,6 +1333,10 @@
         "voice_call": {
           "name": "Llamadas de voz",
           "description": "Llama al agente de la sesión desde la página de la sesión y habla con él. Te escucha, responde con voz, ve la pantalla que compartes y trabaja en la misma sesión, así la conversación queda en el chat."
+        },
+        "shared_drives": {
+          "name": "Unidades compartidas",
+          "description": "Unidades que todo el equipo puede usar: un admin crea una unidad y le añade agentes. Cada sesión de esos agentes la monta, y quien pueda usar uno de ellos puede abrirla. Desactivado, cada persona solo tiene Mis archivos."
         }
       },
       "channelsSwitch": {
