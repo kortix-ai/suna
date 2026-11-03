@@ -57,7 +57,7 @@ resource "aws_iam_role" "gha_ecs_deploy" {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
         }
         StringLike = {
-          "token.actions.githubusercontent.com:sub" = "repo:kortix-ai/suna:*"
+          "token.actions.githubusercontent.com:sub" = [for repo in local.github_repos : "repo:${repo}:*"]
         }
       }
     }]
@@ -234,7 +234,7 @@ resource "aws_iam_role" "gha_ecs_deploy_prod" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:kortix-ai/suna:environment:prod"
+          "token.actions.githubusercontent.com:sub" = [for repo in local.github_repos : "repo:${repo}:environment:prod"]
         }
       }
     }]

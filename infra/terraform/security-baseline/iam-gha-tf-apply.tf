@@ -49,7 +49,7 @@ resource "aws_iam_role" "gha_tf_apply" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:kortix-ai/suna:environment:${each.key}"
+          "token.actions.githubusercontent.com:sub" = [for repo in local.github_repos : "repo:${repo}:environment:${each.key}"]
         }
       }
     }]
@@ -152,7 +152,7 @@ resource "aws_iam_role" "gha_tf_apply_global" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:kortix-ai/suna:environment:infra-global"
+          "token.actions.githubusercontent.com:sub" = [for repo in local.github_repos : "repo:${repo}:environment:infra-global"]
         }
       }
     }]
