@@ -39,7 +39,7 @@ import { useLocalizedUiCatalog } from '../../i18n/ui-catalog/use-localized-ui-ca
 import { useTranslations } from '../../i18n';
 import { cn } from '../../internal/lib/utils';
 
-const GATEWAY_DOCS_HREF = '/docs/project/models#use-the-gateway-from-your-own-tools';
+const GATEWAY_DOCS_HREF = '/docs/developers#call-the-llm-gateway-from-your-own-app';
 
 /** The endpoint tiles under the hero. Labels reuse the reference's own names. */
 const ENDPOINT_TILES = [
