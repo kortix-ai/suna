@@ -33,6 +33,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
 const AGENT_SRC_DIR = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src');
 const AGENT_PKG_JSON = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/package.json');
+// The compile recipe: its flags (`--bytecode --format=esm`) change the binary
+// with no source change. Without it a build-flag change kept every template.
+const AGENT_BUILD_SCRIPT = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/scripts/build.sh');
 const ENTRYPOINT_PATH = process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
 const MACHINE_DOC_PATH = process.env.KORTIX_SNAPSHOT_MACHINE_DOC_PATH
@@ -229,6 +232,7 @@ const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v53';
 const AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-agent-src', path: AGENT_SRC_DIR, excludeNames: FINGERPRINT_EXCLUDES },
   { label: 'kortix-agent-pkg', path: AGENT_PKG_JSON },
+  { label: 'kortix-agent-build', path: AGENT_BUILD_SCRIPT },
   // The contract and SDK files the daemon bundles: a change there changes the binary.
   ...KORTIXD_SHARED_SOURCES.map((path) => ({ label: `kortix-agent-shared:${path}`, path: resolve(REPO_ROOT, path) })),
 ];

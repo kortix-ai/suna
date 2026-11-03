@@ -156,6 +156,10 @@ export async function continueSession(
     modelOverride: command.overrides?.model ?? undefined,
     sessionModelRef: sessionMeta.opencode_model,
   });
+  // The agent this turn runs: the prompt body carries it to the proxy, whose
+  // pre-prompt env sync resolves that agent's grant. The delivery's env
+  // prefetch must name the SAME string, or the sync cannot take it.
+  const turnAgent = promptAgent(command.overrides?.agent, session.agentName);
   const sendPrompt = async (
     externalId: string,
     opencodeSessionId: string,
@@ -178,7 +182,7 @@ export async function continueSession(
           ...(projectEffortVariant && !command.overrides?.variant
             ? { variant: projectEffortVariant }
             : {}),
-          agent: promptAgent(command.overrides?.agent, session.agentName),
+          agent: turnAgent,
         },
         wireMessageId: command.wireMessageId,
         materializationKey: command.materializationKey,
@@ -270,7 +274,7 @@ export async function continueSession(
         error: err instanceof Error ? err.message : String(err),
       }),
     );
-  const outcome = await deliverAfterWake({ command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend: revalidateBeforeSend, identityBound: turnIdentity, tl })
+  const outcome = await deliverAfterWake({ command, session, sessionId, userId, turnAgent, awakeEarly, sendPrompt, beforeSend: revalidateBeforeSend, identityBound: turnIdentity, tl })
     .catch(async (err) => {
       if (wokeFrom) await undoWake();
       throw err;

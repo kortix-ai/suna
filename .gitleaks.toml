@@ -72,6 +72,16 @@ regexes = [
 ]
 
 [[allowlists]]
+description = "False-positive Discord client id: the SDK channel test uses a synthetic Discord user id (an 18-digit snowflake) next to the word discord, which the discord-client-id rule reads as an application id. Exact test path and exact synthetic value."
+condition = "AND"
+paths = [
+  '''packages/sdk/src/core/rest/projects-client/channels\.test\.ts$''',
+]
+regexes = [
+  '''223456789012345678''',
+]
+
+[[allowlists]]
 description = "False-positive LinkedIn labels in generated i18n source maps. The linkedin-client-secret rule matches the product name followed by a generated message identifier. This exception requires both an exact generated map path and a line containing the literal product name."
 condition = "AND"
 regexTarget = "line"

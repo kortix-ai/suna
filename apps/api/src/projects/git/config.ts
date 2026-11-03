@@ -9,6 +9,8 @@ import {
   locateIssues,
   ManifestImportError,
   type ManifestIssue,
+  MANIFEST_SYNTAX_ISSUE_PATH,
+  isManifestSyntaxError,
   manifestCandidatePaths,
   parseManifestText,
   SKILLS_DIR,
@@ -23,9 +25,9 @@ import {
 import { type LoadedAgents, extractAgents } from '../agents';
 import { parse as parseYaml } from 'yaml';
 import { listManagedSkills } from '../../skills/catalog';
-import { runtimeManifest } from '../manifest-io';
+import { readManifest, runtimeManifest } from '../manifest-io';
 import { type FileManifestIssue, type ManifestHealth, manifestHealthOf, manifestHealthWithout } from '../lib/manifest-health';
-import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
+import { listRepoFiles, prefetchRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
 
 async function optionalFile(project: GitBackedProject, filePath: string) {
@@ -329,6 +331,22 @@ function spacesFromManifest(manifest: Record<string, unknown>): NonNullable<Proj
     );
 }
 
+/**
+ * The syntax-error issue, with what the project runs until the file is fixed:
+ * the last commit's file that parses, or (none) only My Kortix.
+ */
+function withSyntaxErrorConsequence(health: ManifestHealth, lastGoodCommit: string | null): ManifestHealth {
+  const consequence = lastGoodCommit
+    ? ` Kortix keeps running this file as of commit ${lastGoodCommit.slice(0, 7)}, the last version that parses, until it is fixed. Edits from Kortix are refused until then.`
+    : ' No earlier version parses, so only My Kortix runs until it is fixed.';
+  return {
+    ...health,
+    issues: health.issues.map((issue) =>
+      issue.path === MANIFEST_SYNTAX_ISSUE_PATH ? { ...issue, message: `${issue.message.trimEnd()}${consequence}` } : issue,
+    ),
+  };
+}
+
 export async function loadProjectConfig(
   project: GitBackedProject,
   files?: ProjectFileEntry[],
@@ -338,13 +356,27 @@ export async function loadProjectConfig(
     readProjectManifest(project),
   ]);
   const repoPaths = new Set(repoFiles.map((file) => file.path));
-  const health = projectManifestHealth(read, repoPaths, project.manifestPath);
+  let health = projectManifestHealth(read, repoPaths, project.manifestPath);
   const { found } = read;
   let manifest: Record<string, unknown> = {};
+  let source: string | null = found && !found.imports ? found.content : null;
+  let imports = found?.imports;
   try {
     if (found) manifest = found.imports?.raw ?? parseManifestText(found.content);
-  } catch {
-    // A YAML syntax error: `manifest_health` names it.
+  } catch (err) {
+    // Not YAML: the project runs the last commit's file that is
+    // (`readManifest`), and with none only My Kortix. `manifest_health` names
+    // the error and says which of the two applies.
+    if (!isManifestSyntaxError(err)) throw err;
+    const lastGood = await readManifest(project).catch(() => null);
+    if (lastGood?.fallback) {
+      manifest = lastGood.raw;
+      source = lastGood.imports ? null : (lastGood.source ?? null);
+      imports = lastGood.imports;
+    } else {
+      source = null;
+    }
+    health = withSyntaxErrorConsequence(health, lastGood?.fallback?.commit ?? null);
   }
   // The roster a running project applies: an agent with an error is listed off.
   const loadedAgents = extractAgents(
@@ -352,8 +384,8 @@ export async function loadProjectConfig(
       raw: manifest,
       path: found?.path ?? project.manifestPath,
       // The import origins: an agent declared in an imported file is attributed to that file.
-      imports: found?.imports,
-      source: found && !found.imports ? found.content : null,
+      imports,
+      source,
     }),
   );
 
@@ -375,9 +407,11 @@ export async function loadProjectConfig(
   });
   const { agents } = resolveConfigAgents(natives, loadedAgents, (spec) => text(map(blocks[spec.name]).prompt_file) ?? undefined);
 
+  const skillEntries = Object.entries(map(manifest.skills)).map(([name, folder]) => ({ name, path: `${String(folder)}/SKILL.md` }));
+  // One fetch for every SKILL.md, not one per skill (`prefetchRepoFiles`).
+  await prefetchRepoFiles(project, skillEntries.map(({ path }) => path).filter((path) => repoPaths.has(path)), project.defaultBranch);
   const projectSkills = await Promise.all(
-    Object.entries(map(manifest.skills)).map(async ([name, folder]) => {
-      const path = `${String(folder)}/SKILL.md`;
+    skillEntries.map(async ({ name, path }) => {
       const meta = repoPaths.has(path) ? parseFrontmatter(await optionalFile(project, path)) : {};
       return { name, path, description: meta.description || null };
     }),

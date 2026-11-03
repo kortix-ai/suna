@@ -3,6 +3,8 @@ import {
   fixManifestText,
   type ManifestIssue,
   ManifestImportError,
+  ManifestSyntaxError,
+  isManifestSyntaxError,
   isTable,
   manifestCandidatePaths,
   parseManifestText,
@@ -15,8 +17,8 @@ import {
 } from '@kortix/manifest-schema';
 import { isDeepStrictEqual } from 'node:util';
 import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml';
-import { type GitBackedProject, type MirrorRefresh, readManifestFromRepo, resolveRemoteBranchTip } from './git';
-import type { ParsedManifest } from './trigger-types';
+import { type GitBackedProject, type MirrorRefresh, findLastGoodManifestCommit, readManifestFromRepo, resolveRemoteBranchTip } from './git';
+import type { ManifestFallback, ParsedManifest } from './trigger-types';
 
 /** Where the manifest lives (`kortix.yaml`, or `kortix.yml`). */
 export { MANIFEST_FILENAME };
@@ -47,11 +49,67 @@ async function readManifestAtRemoteTip(project: GitBackedProject, candidates: st
   return found;
 }
 
+// replica-local: the last-good commit per broken default-branch commit
+// (`<projectId>:<commit>`). A commit never changes, so an entry never goes
+// stale; a fix is a new commit and a new key. Failed walks are not kept.
+const lastGoodCommits = new Map<string, Promise<string | null>>();
+const LAST_GOOD_CACHE_SIZE = 500;
+
+function parsesAsYaml(text: string): boolean {
+  try {
+    parseManifestText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The manifest of the newest commit before `brokenCommit` whose file parses,
+ * marked with `fallback`, or null when there is none.
+ */
+async function readLastGoodManifest(
+  project: GitBackedProject,
+  found: NonNullable<ManifestRead>,
+  brokenCommit: string,
+  error: ManifestSyntaxError,
+): Promise<ParsedManifest | null> {
+  const key = `${project.projectId}:${brokenCommit}`;
+  let pending = lastGoodCommits.get(key);
+  if (!pending) {
+    pending = findLastGoodManifestCommit(project, found.path, brokenCommit, parsesAsYaml);
+    lastGoodCommits.set(key, pending);
+    pending.catch(() => lastGoodCommits.delete(key));
+    if (lastGoodCommits.size > LAST_GOOD_CACHE_SIZE) lastGoodCommits.delete(lastGoodCommits.keys().next().value!);
+  }
+  const commit = await pending.catch(() => null);
+  if (!commit) return null;
+  const read = await readManifestFromRepo(project, [found.path], commit).catch(() => null);
+  if (!read) return null;
+  let manifest: ParsedManifest;
+  try {
+    manifest = parseManifestString(read.content, read.path, read.sha, found.candidatePaths, read.commit);
+  } catch {
+    return null;
+  }
+  if (read.imports) manifest.imports = read.imports;
+  if (read.legacy) {
+    manifest.legacy = read.legacy;
+    manifest.source = null;
+  }
+  const fallback: ManifestFallback = { error: error.message, brokenCommit, commit };
+  if (error.line !== undefined) fallback.line = error.line;
+  if (error.column !== undefined) fallback.column = error.column;
+  manifest.fallback = fallback;
+  return manifest;
+}
+
 /**
  * Read + parse the project's manifest. Returns null if no manifest file is
  * present (so the caller can treat the repo as "not a Kortix project yet").
- * Throws on a YAML syntax error so the caller can surface it — we don't
- * silently swallow a malformed manifest.
+ * A file that is not YAML reads as the last commit's file that is, marked
+ * `fallback` (the error stays visible: `manifest_health`, and every write
+ * refuses). With no such commit it throws `ManifestSyntaxError`.
  *
  * `kortix.yaml` wins over `kortix.yml`; a custom `manifest_path` keeps its
  * directory. The resolved file rides along on the ParsedManifest so the commit
@@ -92,7 +150,18 @@ export async function readManifest(
     return null;
   }
   if (!found) return null;
-  const manifest = parseManifestString(found.content, found.path, found.sha, found.candidatePaths, found.commit);
+  let manifest: ParsedManifest;
+  try {
+    manifest = parseManifestString(found.content, found.path, found.sha, found.candidatePaths, found.commit);
+  } catch (err) {
+    // Not YAML: the project runs the last commit's file that is, so nothing
+    // stops. With no such commit the error propagates: repair mode
+    // (`loadProjectAgents`), where only My Kortix runs.
+    if (!isManifestSyntaxError(err) || !found.commit) throw err;
+    const lastGood = await readLastGoodManifest(project, found, found.commit, err);
+    if (!lastGood) throw err;
+    return lastGood;
+  }
   if (found.imports) manifest.imports = found.imports;
   if (found.legacy) {
     manifest.legacy = found.legacy;
@@ -481,6 +550,27 @@ export interface ManifestWrites {
 }
 
 /**
+ * Why Kortix may not write `manifest`, or null. A last-good manifest
+ * (`fallback`) stands in while the default branch's file is not YAML: an edit
+ * of it would revert every change since that commit.
+ */
+export function manifestWriteRefusal(manifest: ParsedManifest): ManifestWriteRefusedError | null {
+  if (!manifest.fallback) return null;
+  return new ManifestWriteRefusedError(
+    `${manifest.path || MANIFEST_FILENAME} on the default branch is not valid YAML (${manifest.fallback.error}). Kortix does not change it until it is fixed.`,
+  );
+}
+
+/** A write Kortix refuses because the default branch's manifest is not YAML (409 `manifest_invalid`). */
+export class ManifestWriteRefusedError extends Error {
+  readonly code = 'manifest_invalid';
+  constructor(message: string) {
+    super(message);
+    this.name = 'ManifestWriteRefusedError';
+  }
+}
+
+/**
  * The file writes for an edited manifest — THE serializer every commit path
  * uses. Without `imports:` it is the root file, exactly as before. With
  * imports, `manifest.raw` is the merged document, so it is split back by
@@ -490,6 +580,11 @@ export interface ManifestWrites {
  * entry into it and make the next read fail on duplicate names.
  */
 export function manifestWrites(manifest: ParsedManifest, fallbackPath?: string): ManifestWrites {
+  // The last-good file stands in while the default branch's is not YAML. An
+  // edit of it would revert every change since that commit: refuse, and name
+  // the error (409 manifest_invalid).
+  const refusal = manifestWriteRefusal(manifest);
+  if (refusal) throw refusal;
   // A legacy file's first write saves the latest shape: `kortix.toml` becomes `kortix.yaml`,
   // and each prompt file loses its frontmatter (the overlay). Harness files left behind are no longer read.
   const rootPath = (manifest.path || fallbackPath || MANIFEST_FILENAME).replace(/\.toml$/i, manifest.legacy ? '.yaml' : '.toml');

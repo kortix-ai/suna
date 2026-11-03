@@ -24,6 +24,7 @@ import { Cron } from 'croner';
 import { normalizeTriggerList } from './trigger-shape';
 import { Document, isMap, LineCounter, parseDocument } from 'yaml';
 import { type AppliedFix, applyDeprecations, DEPRECATIONS } from './deprecations';
+import { MANIFEST_SYNTAX_ISSUE_PATH, yamlErrorSummary } from './format';
 import { legacyFormatMessage, legacyFormatOf } from './legacy';
 import { areValidConditions, isValidMatcher, MAX_CONDITIONS_PER_POLICY } from './policy-rules';
 import { parseConnectorHeaders } from './connector-headers';
@@ -117,6 +118,10 @@ export {
 
 export {
   MANIFEST_FILENAME,
+  MANIFEST_SYNTAX_ISSUE_PATH,
+  ManifestSyntaxError,
+  isManifestSyntaxError,
+  yamlErrorSummary,
   manifestCandidatePaths,
   parseManifestText,
   serializeManifestObject,
@@ -421,7 +426,7 @@ export function validateManifest(input: string | Record<string, unknown>): Manif
     const error = doc.errors[0];
     if (error) {
       const pos = error.linePos?.[0];
-      issues.push({ path: '<yaml>', message: `Syntax error: ${error.message}`, severity: 'error', line: pos?.line, column: pos?.col });
+      issues.push({ path: MANIFEST_SYNTAX_ISSUE_PATH, message: `Syntax error: ${yamlErrorSummary(error.message)}.`, severity: 'error', line: pos?.line, column: pos?.col });
       return { valid: false, parsed: null, issues };
     }
   } else {

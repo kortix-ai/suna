@@ -536,6 +536,31 @@ export const dbGatewayStateStore: GatewayStateStore = {
 };
 
 /** The leader's one Gateway connection. */
+
+/**
+ * The resume URL Discord's READY named, when it is a Discord Gateway host (or
+ * the configured Gateway's own host, a test double). A resume sends the bot
+ * token to that URL, so a stored or relayed value that names any other host is
+ * dropped and the session identifies on the configured Gateway instead.
+ */
+export function trustedResumeUrl(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    const configured = new URL(config.DISCORD_GATEWAY_URL);
+    const discord = parsed.protocol === 'wss:' && (parsed.hostname === 'discord.gg' || parsed.hostname.endsWith('.discord.gg'));
+    const configuredHost = parsed.protocol === configured.protocol && parsed.host === configured.host;
+    return discord || configuredHost ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/** HELLO's heartbeat interval, bounded to 1 s – 2 min (Discord sends ~41 s). */
+export function heartbeatIntervalMs(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.min(Math.max(value, 1_000), 120_000) : 41_250;
+}
+
 export class DiscordGateway {
   private ws: WebSocket | null = null;
   private seq: number | null = null;
@@ -643,7 +668,7 @@ export class DiscordGateway {
         return;
       }
     }
-    const base = (resume && this.resumeUrl) || config.DISCORD_GATEWAY_URL;
+    const base = (resume && trustedResumeUrl(this.resumeUrl)) || config.DISCORD_GATEWAY_URL;
     let ws: WebSocket;
     try {
       ws = new WebSocket(`${base.replace(/\/+$/, '')}/?v=10&encoding=json`);
@@ -737,7 +762,7 @@ export class DiscordGateway {
     this.lastSeen = Date.now();
     switch (payload.op) {
       case 10: {
-        const interval = (payload.d as { heartbeat_interval?: number })?.heartbeat_interval ?? 41_250;
+        const interval = heartbeatIntervalMs((payload.d as { heartbeat_interval?: unknown })?.heartbeat_interval);
         this.clearHeartbeat();
         this.acked = true;
         setTimeout(() => this.send(ws, 1, this.seq), interval * Math.random());
