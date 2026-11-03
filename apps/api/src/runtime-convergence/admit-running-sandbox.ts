@@ -44,6 +44,13 @@ export interface AdmitRunningSandboxDeps {
     userId: string | undefined,
   ) => Promise<{ capabilities?: unknown; runtime_truth?: unknown } | null>;
   resolveReleaseId: (input: AdmitRunningSandboxInput) => Promise<string | null>;
+  /** Record the health read for the turn-start gates (`noteSandboxHealthBody` in production). */
+  noteHealth?: (sessionId: string, health: unknown) => Promise<void>;
+}
+
+async function defaultNoteHealth(sessionId: string, health: unknown): Promise<void> {
+  const { noteSandboxHealthBody } = await import('../projects/surface');
+  await noteSandboxHealthBody(sessionId, health);
 }
 
 async function defaultFetchHealth(
@@ -84,6 +91,7 @@ async function defaultResolveReleaseId(input: AdmitRunningSandboxInput): Promise
 const defaultDeps: AdmitRunningSandboxDeps = {
   fetchHealth: defaultFetchHealth,
   resolveReleaseId: defaultResolveReleaseId,
+  noteHealth: defaultNoteHealth,
 };
 
 export async function admitRunningSandbox(
@@ -92,6 +100,12 @@ export async function admitRunningSandbox(
 ): Promise<RuntimeAdmissionVerdict> {
   try {
     const health = await deps.fetchHealth(input.externalId, input.userId);
+    // The first prompt's turn-start gates read this same endpoint. Hand them
+    // this read (dynamic import: the convergence graph must stay out of this
+    // module's static imports).
+    if (health) {
+      await deps.noteHealth?.(input.sessionId, health).catch(() => undefined);
+    }
     return await admitSandboxForSession(
       { health },
       {
