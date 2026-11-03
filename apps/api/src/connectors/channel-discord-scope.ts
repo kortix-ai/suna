@@ -22,7 +22,8 @@
  *      as for Telegram) acts only in its own conversations
  *      (`sessionChannelChats`).
  *   5. A direct message's history is read from the time the DM came to this
- *      project: a DM moved from another project keeps that project's replies.
+ *      project (`after` only): a DM moved from another project keeps that
+ *      project's replies.
  *   6. A reply quotes a message of the same channel: `message_reference` names
  *      no other channel and never forwards. `message_id` is a snowflake and
  *      `emoji` names one emoji, so no path argument leaves the channel's route.
@@ -162,8 +163,9 @@ export async function discordCallRefusal(input: {
     if (held.dmSince && input.actionPath === 'get_messages') {
       const since = snowflakeAt(held.dmSince.getTime());
       const after = typeof input.args.after === 'string' && SNOWFLAKE.test(input.args.after) ? input.args.after : null;
-      if (!after || BigInt(after) < BigInt(since)) {
-        return `In this direct message, read with \`after\` set to ${since} or later: earlier messages belong to the conversation before it came to this project.`;
+      // `before` and `around` reach back past the move; Discord takes one of the three, so `after` alone.
+      if (!after || BigInt(after) < BigInt(since) || input.args.before !== undefined || input.args.around !== undefined) {
+        return `In this direct message, read with \`after\` set to ${since} or later, and no \`before\` or \`around\`: earlier messages belong to the conversation before it came to this project.`;
       }
     }
     return null;
@@ -180,7 +182,10 @@ export async function discordCallRefusal(input: {
   } catch (error) {
     // A refusal (unknown channel, no access) is remembered; an outage is not.
     const status = (error as { status?: number }).status ?? 0;
-    if (status >= 400 && status < 500 && status !== 429) refusedChannels.set(channelId, Date.now() + REFUSED_CHANNEL_TTL_MS);
+    if (status >= 400 && status < 500 && status !== 429) {
+      if (refusedChannels.size > 10_000) refusedChannels.clear();
+      refusedChannels.set(channelId, Date.now() + REFUSED_CHANNEL_TTL_MS);
+    }
     return `Kortix could not check Discord channel ${channelId}, so the call did not run.`;
   }
   if (channel.guild_id !== guildId) {

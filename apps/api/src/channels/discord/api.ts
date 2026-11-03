@@ -38,9 +38,54 @@ export function discordConfigured(): boolean {
 /** The longest a rate-limited call waits for its bucket before it fails. */
 const MAX_RETRY_AFTER_MS = 5_000;
 
+// replica-local: the buckets Discord said are spent (`X-RateLimit-Remaining: 0`), until their reset.
+const spentBuckets = new Map<string, number>();
+// replica-local: a global rate limit pauses every bot call on this replica until this time.
+let globalPauseUntil = 0;
+
+/**
+ * A bucket's key: the method, the route and its top-level id (a channel, a
+ * guild, a webhook), as Discord counts them. An interaction's webhook has no
+ * key: its token is its own bucket and no bot call shares it.
+ */
+function bucketKey(method: string, route: string, path: string, auth: boolean): string | null {
+  if (!auth) return null;
+  const major = /^\/(?:channels|guilds|webhooks)\/(\d+)/.exec(path)?.[1] ?? '';
+  return `${method} ${route} ${major}`;
+}
+
+/** How long a bot call must wait before Discord takes it: a global pause, or its spent bucket. Interaction webhooks are outside both. */
+function waitFor(key: string | null, now = Date.now()): number {
+  if (!key) return 0;
+  const bucket = spentBuckets.get(key) ?? 0;
+  if (bucket && bucket <= now) spentBuckets.delete(key);
+  return Math.max(0, globalPauseUntil - now, bucket - now);
+}
+
+function rememberBucket(key: string | null, res: Response, now = Date.now()): void {
+  if (!key) return;
+  const remaining = res.headers.get('x-ratelimit-remaining');
+  const resetAfter = Number(res.headers.get('x-ratelimit-reset-after'));
+  if (remaining === '0' && Number.isFinite(resetAfter) && resetAfter > 0) {
+    if (spentBuckets.size > 5_000) for (const [k, until] of spentBuckets) if (until <= now) spentBuckets.delete(k);
+    spentBuckets.set(key, now + resetAfter * 1000);
+  } else if (remaining !== null) {
+    spentBuckets.delete(key);
+  }
+}
+
+/** For tests: forget the buckets and the global pause. */
+export function resetDiscordRateLimitsForTest(): void {
+  spentBuckets.clear();
+  globalPauseUntil = 0;
+}
+
 /**
  * One REST call. `route` is the path template for errors and logs
- * (`POST /channels/{id}/messages`); `path` the real path. A 429 waits for
+ * (`POST /channels/{id}/messages`); `path` the real path. Every customer shares
+ * the one bot token, so the client keeps Discord's buckets: a call to a spent
+ * bucket, or during a global limit, waits up to 5 s, else fails without asking
+ * Discord (a 429 counts toward its invalid-request ban). A 429 waits for
  * `retry_after` once, up to 5 s. `auth: false` for an interaction webhook,
  * which its token authorizes.
  */
@@ -50,7 +95,13 @@ export async function discordCall<T = unknown>(
   init: { method?: string; body?: unknown; timeoutMs?: number; auth?: boolean; reason?: string } = {},
 ): Promise<T> {
   const method = init.method ?? 'GET';
+  const key = bucketKey(method, route, path, init.auth !== false);
+  // A 429 on a call with no bucket of its own (an interaction webhook) waits here.
+  let retryAt = 0;
   for (let attempt = 0; ; attempt++) {
+    const wait = Math.max(waitFor(key), retryAt - Date.now());
+    if (wait > MAX_RETRY_AFTER_MS) throw new DiscordApiError(route, 429, 0, 'rate limited');
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     let res: Response;
     try {
       res = await fetch(`${discordApiBase()}${path}`, {
@@ -66,15 +117,40 @@ export async function discordCall<T = unknown>(
     } catch (error) {
       throw new DiscordApiError(route, 0, 0, error instanceof Error ? error.name : 'network error');
     }
+    rememberBucket(key, res);
     if (res.status === 204) return undefined as T;
-    const data = (await res.json().catch(() => null)) as (T & { message?: string; code?: number; retry_after?: number }) | null;
+    const data = (await res.json().catch(() => null)) as (T & { message?: string; code?: number; retry_after?: number; global?: boolean }) | null;
     if (res.ok) return data as T;
     const retryAfterMs = Math.ceil((data?.retry_after ?? Number(res.headers.get('retry-after') ?? NaN)) * 1000);
-    if (res.status === 429 && attempt === 0 && retryAfterMs >= 0 && retryAfterMs <= MAX_RETRY_AFTER_MS) {
-      await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
-      continue;
+    if (res.status === 429 && retryAfterMs >= 0) {
+      if (data?.global || res.headers.get('x-ratelimit-scope') === 'global') globalPauseUntil = Date.now() + retryAfterMs;
+      else if (key) spentBuckets.set(key, Date.now() + retryAfterMs);
+      retryAt = Date.now() + retryAfterMs;
+      if (attempt === 0 && retryAfterMs <= MAX_RETRY_AFTER_MS) continue;
     }
     throw new DiscordApiError(route, res.status, data?.code ?? 0, data?.message ?? 'no response');
+  }
+}
+
+/** Discord refuses a reply where the bot cannot read the message history. */
+const CANNOT_REPLY = 160002;
+
+/**
+ * Post a message, as a reply to `replyTo` when given. Where the bot may not
+ * read the history, Discord refuses every reply: the message goes without its
+ * reference, so it still arrives.
+ */
+export async function discordPost<T = { id: string }>(channelId: string, body: Record<string, unknown>, replyTo?: string): Promise<T> {
+  const send = (reference: boolean) =>
+    discordCall<T>('POST /channels/{id}/messages', `/channels/${channelId}/messages`, {
+      method: 'POST',
+      body: { ...body, ...(reference && replyTo ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } } : {}) },
+    });
+  try {
+    return await send(true);
+  } catch (error) {
+    if (replyTo && error instanceof DiscordApiError && error.code === CANNOT_REPLY) return send(false);
+    throw error;
   }
 }
 

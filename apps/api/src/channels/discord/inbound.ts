@@ -10,14 +10,23 @@
  *   another command → a deferred reply (5); the consumer draws it (session.ts)
  *   a press         → a deferred update (6); the consumer acts on it
  *   no project      → a notice only the sender sees
+ *   not allowed     → a command's refusal, now, only the sender sees it (a deferred
+ *                     reply is public, and Discord cannot make it private later)
+ *   no permission   → a command where the bot cannot see or post: a notice only the
+ *                     sender sees, so no menu appears that nothing can answer
  *
  * Importing ./session also registers the `discord.` event consumer.
  */
 import { createPublicKey, verify } from 'node:crypto';
+import { projects } from '@kortix/db';
+import { eq } from 'drizzle-orm';
 import { config } from '../../config';
+import { db } from '../../shared/db';
+import { readChannelAccess, refusedPressText } from '../core/channel-access';
 import type { IntegrationEvent } from '../../integrations/event-inbox';
 import type { ChannelAppInbound, InboundReply } from '../inbound/inbound';
 import { type DiscordChannel, type DiscordUser, isDiscordThread, snowflakeSequence } from './api';
+import { discordAccessPort } from './access';
 import { connectReply, isProjectPress, parseProjectPress } from './connect';
 import { discordGuildProjects } from './installs';
 import { type DiscordRoute, projectsAllowing, resolveDiscordRoute } from './routing';
@@ -58,6 +67,8 @@ interface Interaction {
   channel?: Pick<DiscordChannel, 'id' | 'type' | 'name' | 'parent_id'>;
   member?: { user?: DiscordUser; nick?: string | null };
   user?: DiscordUser;
+  /** The app's permissions where the interaction came from, a bitfield as a decimal string. */
+  app_permissions?: string;
   message?: { id: string };
   data?: {
     name?: string;
@@ -78,6 +89,32 @@ const NOT_CONNECTED: Record<Exclude<DiscordRoute['kind'], 'project'>, (direct: b
       ? 'No Kortix project allows your Discord account yet. Ask a project admin to allow your Discord user id under Customize → Connectors → Channels → Discord.'
       : 'This server is not connected to a Kortix project. A project admin connects it under Customize → Connectors → Channels → Discord.',
 };
+
+const VIEW_CHANNEL = 1n << 10n;
+const SEND_MESSAGES = 1n << 11n;
+const SEND_MESSAGES_IN_THREADS = 1n << 38n;
+
+/**
+ * Why the bot cannot answer a command where it came from, or null. A command
+ * works without the bot in the channel, but its menus, replies and the agent's
+ * answers need it to see and post there. In a DM it always can.
+ */
+export function missingPermission(interaction: Pick<Interaction, 'guild_id' | 'app_permissions' | 'channel'>): string | null {
+  if (!interaction.guild_id || !interaction.app_permissions || !/^\d{1,20}$/.test(interaction.app_permissions)) return null;
+  const has = BigInt(interaction.app_permissions);
+  const thread = interaction.channel ? isDiscordThread(interaction.channel.type) : false;
+  if ((has & VIEW_CHANNEL) && (has & (thread ? SEND_MESSAGES_IN_THREADS : SEND_MESSAGES))) return null;
+  if (interaction.channel?.type === 12) {
+    return 'Kortix is not in this private thread. Mention @Kortix here or add it to the thread, then use the command again.';
+  }
+  return `Kortix cannot ${has & VIEW_CHANNEL ? 'post' : 'see or post'} in this ${thread ? 'thread' : 'channel'}. A server admin can give the Kortix app the View Channel and Send Messages${thread ? ' in Threads' : ''} permissions here.`;
+}
+
+/** The project's Discord allow-list holds the user. */
+async function projectAllows(projectId: string, userId: string): Promise<boolean> {
+  const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  return readChannelAccess(row?.metadata, 'discord').allowedUserIds.includes(userId);
+}
 
 /** The conversation an interaction runs in: a thread, a DM, or the channel itself. */
 function conversationOf(interaction: Interaction, guildId: string): DiscordConversation {
@@ -162,6 +199,10 @@ export const discordInbound: ChannelAppInbound<true> = {
     const user = interaction.member?.user ?? interaction.user;
     if (!user?.id || !interaction.id || !interaction.token || !interaction.channel_id) return { events: [], reply: ephemeral('Kortix could not read this request.') };
     const direct = !interaction.guild_id;
+    if (interaction.type === 2) {
+      const missing = missingPermission(interaction);
+      if (missing) return { events: [], reply: ephemeral(missing) };
+    }
 
     if (interaction.type === 2 && interaction.data?.name === 'connect') {
       const choice = await connectReply({ guildId: interaction.guild_id ?? null, userId: user.id });
@@ -178,6 +219,10 @@ export const discordInbound: ChannelAppInbound<true> = {
     }
     const route = await routeOf(interaction, user);
     if (route.kind !== 'project') return { events: [], reply: ephemeral(NOT_CONNECTED[route.kind](direct)) };
+    // A press is deferred privately (6), and the consumer refuses it in a notice only the presser sees.
+    if (interaction.type === 2 && !(await projectAllows(route.projectId, user.id))) {
+      return { events: [], reply: ephemeral(refusedPressText(discordAccessPort, user.id)) };
+    }
     return { events: [interactionEvent(interaction, user, route.projectId, conversationOf(interaction, route.guildId), pressData)], reply: ack };
   },
 };
