@@ -535,6 +535,24 @@ export const dbGatewayStateStore: GatewayStateStore = {
   },
 };
 
+/** Discord may select a regional Gateway, never an unrelated network destination. */
+export function gatewayResumeUrl(value: string, configured: string): string {
+  try {
+    const url = new URL(value);
+    const trusted = new URL(configured);
+    if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) return configured;
+    if (trusted.origin === 'wss://gateway.discord.gg' && !url.port && url.protocol === 'wss:' && /^gateway(?:-[a-z0-9-]+)?\.discord\.gg$/.test(url.hostname)) return url.origin;
+    return url.origin === trusted.origin ? trusted.origin : configured;
+  } catch {
+    return configured;
+  }
+}
+
+/** Reject timer overflow and intervals that turn a bad HELLO into a busy loop. */
+export function gatewayHeartbeatInterval(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 1_000 && value <= 600_000 ? value : 41_250;
+}
+
 /** The leader's one Gateway connection. */
 export class DiscordGateway {
   private ws: WebSocket | null = null;
@@ -643,7 +661,7 @@ export class DiscordGateway {
         return;
       }
     }
-    const base = (resume && this.resumeUrl) || config.DISCORD_GATEWAY_URL;
+    const base = resume && this.resumeUrl ? gatewayResumeUrl(this.resumeUrl, config.DISCORD_GATEWAY_URL) : config.DISCORD_GATEWAY_URL;
     let ws: WebSocket;
     try {
       ws = new WebSocket(`${base.replace(/\/+$/, '')}/?v=10&encoding=json`);
@@ -737,7 +755,7 @@ export class DiscordGateway {
     this.lastSeen = Date.now();
     switch (payload.op) {
       case 10: {
-        const interval = (payload.d as { heartbeat_interval?: number })?.heartbeat_interval ?? 41_250;
+        const interval = gatewayHeartbeatInterval((payload.d as { heartbeat_interval?: unknown })?.heartbeat_interval);
         this.clearHeartbeat();
         this.acked = true;
         setTimeout(() => this.send(ws, 1, this.seq), interval * Math.random());
