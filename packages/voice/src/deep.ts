@@ -7,7 +7,7 @@
 // fast model (qwen3.8-27b on Groq, ~150 ms, while the answer plays), never by word lists. Off with VOICE_DEEP=0.
 import { chargeReply } from './cost'
 import type { Msg } from './lane'
-import { fastFetch } from './models'
+import { fastFetch, fastOn } from './models'
 
 const MODEL = process.env.VOICE_DEEP_MODEL ?? 'qwen/qwen3.8-27b'
 const SYSTEM =
@@ -22,7 +22,7 @@ const SYSTEM =
 
 /** The sentence announcing a deeper look, or undefined (not worth one, off, no key, or no verdict within `ms`). */
 export async function deeper(user: string, answer: string, history: Msg[], signal: AbortSignal, ms = 900): Promise<string | undefined> {
-  if (process.env.VOICE_DEEP === '0' || !process.env.GROQ_API_KEY || signal.aborted) return undefined
+  if (process.env.VOICE_DEEP === '0' || !fastOn() || signal.aborted) return undefined
   try {
     const before = history.slice(-4).map((m) => `${m.role === 'user' ? 'Caller' : 'Assistant'}: ${m.content}`).join('\n')
     const res = await fastFetch({
@@ -66,7 +66,7 @@ const STILL =
   '{"say": true} or {"say": false}.'
 /** Whether the finding is still news for this conversation (yes when the model cannot be asked: the look was promised). */
 export async function still(finding: string, history: Msg[], ms = 1500): Promise<boolean> {
-  if (process.env.VOICE_DEEP === '0' || !process.env.GROQ_API_KEY) return true
+  if (process.env.VOICE_DEEP === '0' || !fastOn()) return true
   try {
     const talk = history.slice(-8).map((m) => `${m.role === 'user' ? 'Caller' : 'Assistant'}: ${m.content}`).join('\n')
     const res = await fastFetch({
@@ -110,7 +110,7 @@ const CONNECT =
   'With nothing new, or when the caller has clearly left the topic for good, the line is empty. Reply with JSON only: {"new": ["..."], "say": "..."}'
 /** The finding as the next line of this conversation, or '' when it is not news now (as found when the model cannot be asked). */
 export async function connect(finding: string, history: Msg[], movedOn: boolean, ms = 3000): Promise<string> {
-  if (process.env.VOICE_DEEP === '0' || !process.env.GROQ_API_KEY) return finding
+  if (process.env.VOICE_DEEP === '0' || !fastOn()) return finding
   try {
     const talk = history.slice(-8).map((m) => `${m.role === 'user' ? 'Caller' : 'Assistant'}: ${m.content}`).join('\n')
     const where = movedOn ? 'They have talked about other things since its answer on this topic: open with a way back.' : 'Its answer on this topic was the last thing said: go straight on from it.'

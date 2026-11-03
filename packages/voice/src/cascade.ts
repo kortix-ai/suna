@@ -32,7 +32,7 @@ import { resolved, type Card, type Route } from './route'
 import { cardData, cue, glance, judge as judgeCard, leans, routeAhead, spokenCard, whenHeard } from './judge'
 import { content } from './pages'
 import { Thread } from './thread'
-import { viaModels } from './models'
+import { fastOn, viaModels } from './models'
 
 const EAGER = Number(process.env.VOICE_EAGER_MS ?? 200) // pause that commits the transcript
 const GUESS = Number(process.env.VOICE_GUESS_MS ?? 120) // pause that starts transcribing, kept if the pause reaches EAGER (RESEARCH.md §3.16); never inside HANG: a clip cut at 40 ms of quiet lost a soft final consonant ("I asked" heard "I ask.") and was reused
@@ -144,8 +144,8 @@ const explaining = (text: string) => is(EXPLAIN, text) || text.split(/\s+/).leng
 const STATE = Number(process.env.VOICE_STATE_MS ?? 1200)
 const MURMUR = process.env.VOICE_MURMUR === '1' // listening sounds in the caller's pauses
 const SPECULATE = process.env.VOICE_SPECULATE !== '0' // the agent starts beside the router
-// An end-of-turn model is at hand (src/eot.ts: VOICE_EOT, GROQ_API_KEY, VOICE_EOT_MODELS); without one the word rules decide.
-const semantic = () => process.env.VOICE_EOT !== '0' && !!process.env.GROQ_API_KEY && (process.env.VOICE_EOT_MODELS ?? 'default').split(',').some(Boolean)
+// An end-of-turn model is at hand (src/eot.ts: VOICE_EOT, fastOn(), VOICE_EOT_MODELS); without one the word rules decide.
+const semantic = () => process.env.VOICE_EOT !== '0' && fastOn() && (process.env.VOICE_EOT_MODELS ?? 'default').split(',').some(Boolean)
 const social = (text: string) => is(THANKS, text) || (text.split(/\s+/).length <= 4 && is(HELLO, text))
 // A short utterance with a stop word is a stop ("Okay, stop.", "wait wait"); a long one is a turn
 // that happens to contain it ("Wait, am I talking to a real person?").
@@ -420,7 +420,11 @@ export const cascade: Provider = (o, h) => {
   // The voice's connection, opened ahead (a request for the host, no synthesis) at most every 30 s.
   let voiceWarm = 0
   const warmVoice = () => { if (viaModels() || performance.now() - voiceWarm < 30_000) return; voiceWarm = performance.now(); void fetch('https://api.inworld.ai/', { method: 'HEAD' }).catch(() => {}) }
-  const one: 'xai' | 'gemini' | 'inworld' | 'mock' = process.env.VOICE_ONE === 'gemini' ? 'gemini' : TTS.startsWith('inworld') ? 'inworld' : TTS === 'mock' ? 'mock' : 'xai'
+  // The voice of fixed phrases (the greeting, acknowledgments, progress): the call's own. In a Kortix box that is the
+  // models base (TTS=models); before, it fell to xAI there, which has no key in the box, and every fixed phrase was mute.
+  const one: 'xai' | 'gemini' | 'inworld' | 'mock' | 'models' = process.env.VOICE_ONE === 'gemini' ? 'gemini' : TTS.startsWith('inworld') ? 'inworld' : TTS === 'mock' ? 'mock' : TTS === 'models' ? 'models' : 'xai'
+  // Inworld's voices, its own API or the models base's: their names, stage directions and tone tags.
+  const inworldFamily = one === 'inworld' || one === 'models'
   // xAI's language setting: the call's language when it keeps to one, else "auto" (a Spanish-then-English call
   // scored pronunciation 5/5/5 on auto vs 3/5/4 switching the setting per language; one voice either way, measured).
   const tongue = () => (expected.length > 1 || family(lang) !== expected[0] ? 'auto' : family(lang))
@@ -429,7 +433,7 @@ export const cascade: Provider = (o, h) => {
   const bk = () => book(lang) // undefined while a new language is being translated: then say nothing fixed
   const warm = () => {
     if (one === 'xai') voice(tongue()) // its socket opens now, not at the first sentence
-    if (one === 'inworld') warmVoice() // and its TLS connection
+    if (inworldFamily) warmVoice() // and its TLS connection
   }
   warm()
   preconnect()
@@ -623,9 +627,9 @@ export const cascade: Provider = (o, h) => {
   let SELF = o.name?.trim() || NAME
   const me: Persona = { name: SELF, voice: o.voice, look: o.look, style: o.style }
   let voiceChoices = someVoices([])
-  if (one === 'inworld') void inworldVoices().then((v) => (voiceChoices = someVoices(v)))
+  if (inworldFamily) void inworldVoices().then((v) => (voiceChoices = someVoices(v)))
   // A voice asked for at join by description ("deep calm British male") is the catalog voice it names, as later.
-  if (o.voice && one === 'inworld') (o.voice = inworldVoice(o.voice) || undefined), (me.voice = o.voice)
+  if (o.voice && inworldFamily) (o.voice = inworldVoice(o.voice) || undefined), (me.voice = o.voice)
   queueMicrotask(() => note('persona', { ...me, by: 'join' })) // the page learns who it is from the start
   function setPersona(p: Partial<Persona>, by: 'page' | 'self') {
     // A mode set now (even the one it is in) ends a "back to normal in ten minutes" planned before it: told to talk
@@ -639,7 +643,7 @@ export const cascade: Provider = (o, h) => {
     if (p.name) { for (const x of roomLog) if (x.who === SELF) x.who = p.name; (me.name = p.name), (SELF = p.name) }
     if (p.mode) (me.mode = p.mode), (roomHushed = false) // a mode of its own (quiet for a while, back) supersedes a room's hush
     // A voice by name or by description, from the voices this call's provider has (Inworld's catalog); others keep theirs.
-    if (p.voice !== undefined && one === 'inworld') {
+    if (p.voice !== undefined && inworldFamily) {
       const id = p.voice ? inworldVoice(p.voice) : ''
       if (id || !p.voice) (me.voice = id || undefined), (o.voice = id || undefined)
     }
@@ -1149,10 +1153,10 @@ export const cascade: Provider = (o, h) => {
       get spoken() { return told },
       say(text, fixed) {
         const raw = clean(text ?? '').trim()
-        const opening = one === 'inworld' && !fixed ? DELIVERY.exec(raw)?.[1] : undefined
+        const opening = inworldFamily && !fixed ? DELIVERY.exec(raw)?.[1] : undefined
         if (opening && !SOUNDS.test(opening)) t.tone = opening.toLowerCase().trim() // this reply's delivery, for each sentence
         // Stage directions other than the voice's own tags are never read out.
-        const line = (one === 'inworld' ? raw.replace(INWORLD_STAGE, ' ') : raw.replace(STAGE, ' ')).replace(/\s{2,}/g, ' ').trim()
+        const line = (inworldFamily ? raw.replace(INWORLD_STAGE, ' ') : raw.replace(STAGE, ' ')).replace(/\s{2,}/g, ' ').trim()
         if (!line || !sp.alive) return
         // An unsent status must not make generated speech wait for its synthesis.
         if (!fixed && pendingFixed) {
@@ -1196,7 +1200,7 @@ export const cascade: Provider = (o, h) => {
           fixed
             ? cached(line, o.voice, tongue(), one).then((pcm) => pcm && new Response(pcm as Uint8Array<ArrayBuffer>))
             : tts
-              ? tts.speak(`${one === 'inworld' && t.tone ? `[${t.tone}] ` : ''}${en ? speakable(line) : bare(line)}`, o.voice, ac.signal, me.rate) // xAI and Inworld both perform [chuckle] and [sigh] (measured: neither is read aloud)
+              ? tts.speak(`${inworldFamily && t.tone ? `[${t.tone}] ` : ''}${en ? speakable(line) : bare(line)}`, o.voice, ac.signal, me.rate) // xAI and Inworld both perform [chuckle] and [sigh] (measured: neither is read aloud)
               : gem.speak((en ? speakable(line) : bare(line)).replace(TAGS, ''), o.voice, ac.signal)
         let skipped = false
         const superseded = fixed ? Promise.withResolvers<undefined>() : undefined
@@ -1595,8 +1599,14 @@ export const cascade: Provider = (o, h) => {
             : VISUAL.test(user) && !views.size
               ? '\n\n(Nothing is shared with you right now. You see their screen or camera once they share it from the call page: say so if it comes up; never that you cannot see at all.)'
               : ''
-    const heardAs = (user ? hearing(user) : '') + shown + (user && inRoom() ? `${ROOM_NOTE}${roomNotes ? `\n(Earlier in the meeting: ${roomNotes})` : ''}` : '') + (user ? personaNote(me, NAME) + metaNote({ pending: plans, shared: liveShared(), background: background(), now: Date.now(), voices: voiceChoices, people: inRoom() ? state().people : undefined, sinceS: Math.round((Date.now() - callOpened) / 1000), usd: h.spent?.() }) : '')
-    if (user && one === 'inworld') void toneOf(user, clean(last?.text ?? '').slice(-200)).then((d) => void (d && !t.tone && ((t.tone = d), note('tone', { tone: d }))))
+    const callNow = { pending: plans, shared: liveShared(), background: background(), now: Date.now(), voices: voiceChoices, people: inRoom() ? state().people : undefined, sinceS: Math.round((Date.now() - callOpened) / 1000), usd: h.spent?.() }
+    // The call's state and how to act on it: the fast lane writes tags; an agent whose host gave it the voice's tools
+    // (src/kortix.ts) acts with them, so its turns carry a line naming them instead of the tag list.
+    const laneMeta = user ? personaNote(me, NAME) + metaNote(callNow) : ''
+    const agentMeta = user && brain.tools(sid) ? personaNote(me, NAME) + metaNote(callNow, 'tools') : laneMeta
+    const forAgent = (context: string) => (agentMeta === laneMeta ? context : context.split(laneMeta).join(agentMeta))
+    const heardAs = (user ? hearing(user) : '') + shown + (user && inRoom() ? `${ROOM_NOTE}${roomNotes ? `\n(Earlier in the meeting: ${roomNotes})` : ''}` : '') + laneMeta
+    if (user && inworldFamily) void toneOf(user, clean(last?.text ?? '').slice(-200)).then((d) => void (d && !t.tone && ((t.tone = d), note('tone', { tone: d }))))
     if (heardAs) note('heard-as', { text: heardAs.trim() })
     const plain = `Reply in the language of the user's last words (so far the call has been in ${NAMES.of(lang)}).${lost}${heardAs}${ledger()}`
     // The fast lane (src/lane.ts) answers a turn that needs no tool, ~80-150 ms to its first word vs the agent's 0.6-2.7 s
@@ -1788,7 +1798,7 @@ export const cascade: Provider = (o, h) => {
       if (t.ac.signal.aborted) return
       const ac = (run = new AbortController())
       t.ac.signal.addEventListener('abort', () => ac.abort())
-      await brain.turn(events, sid, user ?? hidden, { system, context: context + seeHint(), model, signal: ac.signal, synthetic: !user && !!hidden }, on)
+      await brain.turn(events, sid, user ?? hidden, { system, context: forAgent(context) + seeHint(), model, signal: ac.signal, synthetic: !user && !!hidden }, on)
     }
     // The fast lane answers unless it hands the turn to the agent: a workspace question too, when its data (the code and
     // git state read just now) is in hand. The agent (Flash-Lite) took 1.2-2.8 s to its first words on those turns and
@@ -1903,7 +1913,7 @@ export const cascade: Provider = (o, h) => {
       t.text += '\n'
       // The fast lane has no tools: the agent takes the caller's turn itself (it has not seen it).
       if (t.direct) (t.direct = false), await go(turnContext)
-      else await brain.turn(events, sid, NUDGE, { system, context: turnContext, model, signal: t.ac.signal, synthetic: true }, on)
+      else await brain.turn(events, sid, NUDGE, { system, context: forAgent(turnContext), model, signal: t.ac.signal, synthetic: true }, on)
     }
     // The agent failed with nothing of its own said (a dead key, its backend down): the fast lane takes the turn after all,
     // with the turn's data or the search begun when it was handed over, never handing it over again (bench/agentdown-proof.ts).
@@ -2790,7 +2800,7 @@ export const cascade: Provider = (o, h) => {
         talking = spoke = true
         preconnect() // the search providers' connections are open by the time the question is
         if (views.size) h.snap?.() // and what they share is fresh by then (the page sends its frames now), if they ask about it
-        if (one === 'inworld') warmVoice() // and the voice's, by the time the answer is
+        if (inworldFamily) warmVoice() // and the voice's, by the time the answer is
         if (!said.length) echoable = audible()
         peekAt = PEEK
         cleared = heardBc = false

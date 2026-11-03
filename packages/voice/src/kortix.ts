@@ -36,7 +36,7 @@ export const relayPort = (): Promise<number> => start()
 export function attach(pi: KortixPi, session: string): void {
   let ctx: ContextLike | undefined
   const agent = fromExtension(pi, () => ctx)
-  brain.bind(session, agent)
+  brain.bind(session, agent, { tools: true })
   pi.on('session_start', (_event: unknown, c: ContextLike) => {
     ctx = c
     void start().catch((err) => console.error(`[voice] the relay did not start on ${PORT()}: ${(err as Error).message}`))
