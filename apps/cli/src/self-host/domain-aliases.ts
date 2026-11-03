@@ -1,27 +1,22 @@
 /**
- * Domain aliases: one self-host instance answers on its primary domain
- * (KORTIX_DOMAIN) and on any number of former or extra domains
- * (KORTIX_DOMAIN_ALIASES, comma-separated).
+ * Domain aliases: one self-host instance serves its primary domain
+ * (KORTIX_DOMAIN) and any number of extra or former domains
+ * (KORTIX_DOMAIN_ALIASES, comma-separated) in full.
  *
- * Per alias `<a>`, the reverse proxy:
- *   - redirects `<a>` (the web app) to the primary domain, path kept (308).
- *     The browser session, CORS and auth redirects all belong to one origin,
- *     so the app itself is never served twice.
- *   - serves the alias API host exactly like the primary API host. Sandboxes,
- *     Capture devices and webhooks created before a move still call the old
- *     API origin; they keep working with no restart.
- *   - serves the alias Apps and preview wildcards exactly like the primary
- *     ones. Links handed out before a move keep resolving to the same App or
- *     sandbox port.
+ * Each alias `<a>` is a peer of the primary domain: Caddy serves `<a>` (web
+ * app), `api.<a>`, `*.apps.<a>` and `*.p.<a>` exactly like their primary twins.
+ * The frontend hands a page on `<a>` runtime URLs on `<a>`, and the API builds
+ * App and preview URLs on the domain a request arrived on, so a visitor on an
+ * alias never gets a link to a domain their network may block. Background work
+ * (emails, sandbox callbacks, webhooks) stays on the primary domain.
  *
- * Alias hosts are derived from the primary ones: a host that sits under the
- * primary domain (`api.<primary>`, `apps.<primary>`, `p.<primary>`) has the
- * same prefix under each alias. A host outside the primary domain (an API on
- * an unrelated domain) has no alias form.
+ * Alias hosts are derived from the primary ones: a host under the primary
+ * domain (`api.<primary>`, `apps.<primary>`, `p.<primary>`) has the same prefix
+ * under each alias. A host outside the primary domain has no alias form.
  */
 
 export interface DomainAliasHosts {
-  /** Web-app hosts that redirect to the primary domain. */
+  /** Web-app hosts, served like KORTIX_DOMAIN. */
   app: string[];
   /** API hosts served like KORTIX_API_DOMAIN. */
   api: string[];
