@@ -5,6 +5,13 @@ import { config } from '../config';
 import { db } from '../shared/db';
 import { enrichSalesEvent } from './sales-event';
 
+function isTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^(?!0000)\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}(?::?\d{2})?))?$/.test(value)) return false;
+  const day = value.slice(0, 10);
+  const date = new Date(`${day}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().startsWith(day) && Number.isFinite(Date.parse(value));
+}
+
 export function registerSalesReconciliation(app: OpenAPIHono): void {
   app.get('/v1/system/confirmed-signups', async (c) => {
     const expected = config.SALES_RECONCILIATION_TOKEN;
@@ -14,7 +21,7 @@ export function registerSalesReconciliation(app: OpenAPIHono): void {
       !timingSafeEqual(Buffer.from(received), Buffer.from(bearer))) return c.json({ error: 'Unauthorized' }, 401);
     const from = c.req.query('from');
     const upper = c.req.query('to') ?? new Date().toISOString();
-    if (!from || !Number.isFinite(Date.parse(from)) || !Number.isFinite(Date.parse(upper)) || Date.parse(from) > Date.parse(upper)) {
+    if (!isTimestamp(from) || !isTimestamp(upper) || Date.parse(from) > Date.parse(upper)) {
       return c.json({ error: 'Invalid time range' }, 400);
     }
     let afterTime = from;
@@ -23,7 +30,7 @@ export function registerSalesReconciliation(app: OpenAPIHono): void {
     if (cursor) {
       try {
         const parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString());
-        if (!parsed || typeof parsed !== 'object' || parsed.from !== from || parsed.to !== upper || !Number.isFinite(Date.parse(parsed.time)) ||
+        if (!parsed || typeof parsed !== 'object' || parsed.from !== from || parsed.to !== upper || !isTimestamp(parsed.time) ||
           !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(parsed.id)) throw new Error('cursor');
         afterTime = parsed.time;
         afterId = parsed.id;

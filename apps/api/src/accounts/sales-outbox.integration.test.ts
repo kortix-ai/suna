@@ -142,3 +142,21 @@ test('real HTTP receiver recovers, validates signature, and concurrent workers c
     expect(await db.execute(sql`SELECT 1 FROM kortix.sales_event_outbox WHERE delivered_at IS NOT NULL AND attempts=2`)).toHaveLength(1);
   } finally { await server.stop(true); }
 });
+
+test('reconciliation rejects ambiguous bounds and cursor timestamps before SQL casting', async () => {
+  config.SALES_RECONCILIATION_TOKEN = 'synthetic-reconciliation-token';
+  const app = new OpenAPIHono();
+  registerSalesReconciliation(app);
+  const headers = { authorization: 'Bearer synthetic-reconciliation-token' };
+  const from = '2026-01-01';
+  const to = '2026-02-01';
+  for (const invalid of ['0', '1', '01/02/2026', '2026-02-30', 'not-a-date']) {
+    for (const key of ['from', 'to']) {
+      const query = new URLSearchParams({ from, to, [key]: invalid });
+      expect((await app.request(`/v1/system/confirmed-signups?${query}`, { headers })).status).toBe(400);
+    }
+    const cursor = Buffer.from(JSON.stringify({ from, to, time: invalid, id: userId })).toString('base64url');
+    expect((await app.request(`/v1/system/confirmed-signups?${new URLSearchParams({ from, to, cursor })}`, { headers })).status).toBe(400);
+  }
+  expect((await app.request(`/v1/system/confirmed-signups?${new URLSearchParams({ from, to })}`, { headers })).status).toBe(200);
+});
