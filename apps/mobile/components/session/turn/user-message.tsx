@@ -43,7 +43,10 @@ import type { Command } from '@/lib/session/runtime-data';
 import type { SessionLogTurn } from '@kortix/sdk';
 import { recordTimeMs } from '@/lib/session/turn-meta';
 import { type ChannelPlatform, channelPromptTail, isChannelFileLabel, parseChannelMessage } from '@kortix/shared';
-import { parseReminderPrompt, parseRoomDigest, parseRoomPrompt, parseTriggerEvent, type ChannelMessageInfo } from '@kortix/shared';
+import { parsePeerMessagePrompt, parseReminderPrompt, parseRoomDigest, parseRoomPrompt, parseTriggerEvent, type ChannelMessageInfo } from '@kortix/shared';
+import { agentNoticeOf } from '@/lib/session/agent-notice';
+import { AgentNotice } from './agent-notice';
+import { PeerMessage } from './peer-message';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { SourcePill } from './source-pill';
 import { CopyContentButton, KortixBottomSheetModal } from '@/components/kortix/sheet';
@@ -383,6 +386,10 @@ function UserMessageImpl({
   const roomInfo = useMemo(() => parseRoomPrompt(rawText), [rawText]);
   // Room traffic batched into one turn: `[room dev · #a–#b · N new messages]`.
   const roomDigestInfo = useMemo(() => parseRoomDigest(rawText), [rawText]);
+  // A background sub-agent's or a workflow run's end, delivered as a prompt: nobody typed it.
+  const agentNotice = useMemo(() => agentNoticeOf(rawText), [rawText]);
+  // A message another agent sent this one (web `PeerMessageRow`): a message card, never a bubble.
+  const peerInfo = useMemo(() => (agentNotice ? null : parsePeerMessagePrompt(rawText)), [agentNotice, rawText]);
 
   // Queued dim: `duration-slow transition-opacity` + `opacity-50`.
   const dim = useSharedValue(queueState ? 0.5 : 1);
@@ -456,6 +463,10 @@ function UserMessageImpl({
       </View>
     );
   }
+
+  // An agent's finish: a quiet line and its report, not a bubble (web `SubagentNoticeRow`).
+  if (agentNotice) return <AgentNotice prompt={agentNotice} onOpenSession={onSessionMention} />;
+  if (peerInfo) return <PeerMessage info={peerInfo} />;
 
   // A prompt a person did not type here (Slack / Teams / Telegram, a reminder,
   // a trigger): the source pill over the files a channel sender sent and the
