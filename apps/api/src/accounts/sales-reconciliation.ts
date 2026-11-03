@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
-import type { OpenAPIHono } from '@hono/zod-openapi';
+import { type OpenAPIHono, z } from '@hono/zod-openapi';
 import { sql } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../shared/db';
@@ -15,6 +15,28 @@ function isTimestamp(value: unknown): value is string {
 }
 
 export function registerSalesReconciliation(app: OpenAPIHono): void {
+  app.openAPIRegistry.registerPath({
+    method: 'get',
+    path: '/v1/system/confirmed-signups',
+    tags: ['system'],
+    summary: 'Confirmed signups for sales reconciliation',
+    description:
+      'Signups confirmed in `[from, to)`, 100 per page, ordered by confirmation time then user id. ' +
+      'Bearer `SALES_RECONCILIATION_TOKEN` (not a user token). Reuse `upper_watermark` as `to` and pass `next_cursor` until it is null. See `src/accounts/SALES-EVENTS.md`.',
+    security: [{ bearerAuth: [] }],
+    request: {
+      query: z.object({
+        from: z.string().describe('ISO timestamp, inclusive'),
+        to: z.string().optional().describe('ISO timestamp, exclusive; default now'),
+        cursor: z.string().optional().describe('next_cursor of the previous page'),
+      }),
+    },
+    responses: {
+      200: { description: 'A page of signup events, the upper watermark and the next cursor' },
+      400: { description: 'Invalid time range or cursor' },
+      401: { description: 'Missing or wrong reconciliation token' },
+    },
+  });
   app.get('/v1/system/confirmed-signups', async (c) => {
     const expected = config.SALES_RECONCILIATION_TOKEN;
     const received = c.req.header('authorization') ?? '';

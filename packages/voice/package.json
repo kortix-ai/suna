@@ -10,6 +10,6 @@
     "./kortix": "./src/kortix.ts"
   },
   "scripts": {
-    "test": "bun test src"
+    "test": "node ../../scripts/test-guard.mjs \"bun test\""
   }
 }
