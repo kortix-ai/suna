@@ -32,6 +32,7 @@ import { getTranslations } from '@/i18n/get-translations';
 import { normalizeLocale } from '@/i18n/locale';
 import { loadMessages } from '@/i18n/messages';
 import { notFound } from 'next/navigation';
+import { headers } from 'next/headers';
 import { connection } from 'next/server';
 import { Toaster } from 'sonner';
 
@@ -235,8 +236,13 @@ export default async function RootLayout({
   // (Docker, self-host) builds opt into request-time rendering so process.env
   // is read per request: the image is built once with placeholder values and
   // configured by the container environment. See lib/runtime-config-mode.ts.
-  if (!runtimeConfigIsBakedAtBuild()) await connection();
-  const runtimeEnv = getServerPublicEnv();
+  // A self-host alias domain gets its own instance URLs (lib/domain-alias-env.ts).
+  let requestHost: string | null = null;
+  if (!runtimeConfigIsBakedAtBuild()) {
+    await connection();
+    requestHost = (await headers()).get('host');
+  }
+  const runtimeEnv = getServerPublicEnv(requestHost);
 
   return (
     <html

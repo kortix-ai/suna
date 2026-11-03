@@ -30,6 +30,7 @@ import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from './sandbox-proxy/
 import { upstreamTiming } from './middleware/upstream-timing';
 import { auditApiRequest } from './middleware/audit';
 import { isUuid } from './shared/validate';
+import { aliasCorsOrigins, aliasForHost, DOMAIN_ALIAS_CONTEXT_FIELD } from './shared/domain-aliases';
 
 // The global middleware chain, in the registration order the request sees it.
 // Every line inside installHttpMiddleware is moved verbatim from the former
@@ -87,11 +88,15 @@ app.use("*", protectResponseCache);
 // kilobyte of the body, never by buffering it. See middleware/compress.ts.
 app.use('*', compressResponse);
 
-const extraOrigins = config.CORS_ALLOWED_ORIGINS
-  ? config.CORS_ALLOWED_ORIGINS.split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-  : [];
+const extraOrigins = [
+  ...(config.CORS_ALLOWED_ORIGINS
+    ? config.CORS_ALLOWED_ORIGINS.split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : []),
+  // Self-host alias domains serve the same web app (shared/domain-aliases.ts).
+  ...aliasCorsOrigins(),
+];
 
 app.use(
   '*',
@@ -149,6 +154,9 @@ app.use('*', async (c, next) => {
     }
     const sbMatch = path.match(/\/sandbox(?:es)?\/([^/]+)/) || path.match(/\/p\/([^/]+)/);
     if (sbMatch) setContextField('sandboxId', sbMatch[1]);
+    // A self-host alias domain: URLs built for this request stay on it.
+    const alias = aliasForHost(c.req.header('host'));
+    if (alias) setContextField(DOMAIN_ALIAS_CONTEXT_FIELD, alias);
     await next();
     const ctx = getRequestContext();
     if (ctx) {
