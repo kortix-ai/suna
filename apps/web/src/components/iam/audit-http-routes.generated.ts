@@ -44,6 +44,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "PATCH|scim|v2|accounts|:accountId|Users|:userId",
   "PUT|scim|v2|accounts|:accountId|Users|:userId",
   "GET|sitemap.xml",
+  "GET|v1|access|branding",
   "POST|v1|access|check-email",
   "POST|v1|access|request-access",
   "GET|v1|access|signup-status",

@@ -61,6 +61,15 @@ the instance. Set the product name and upload the logo, the symbol, and the
 favicon (each with a dark variant). `packages/ui/src/primitives/kortix-logo.tsx`
 and the browser-tab title use these values after the account loads.
 
+The same branding is the instance branding, with no extra setting. With
+`ENTERPRISE_LICENSE_AVAILABLE=true`, the oldest team account that set branding
+brands the sign-in page ("Welcome to <product name>", its logo, tab title and
+favicon) and every account that has none of its own. A personal account never
+counts. `GET /v1/access/branding` (public) serves it, from
+`apps/api/src/accounts/instance-branding.ts`. The web server reads it once per
+30 s (`apps/web/src/lib/instance-branding-server.ts`). Without the license
+(the Kortix cloud) it is always `null`.
+
 **B. Source rebrand of `apps/web`.** For what path A does not cover:
 
 | What | Where |

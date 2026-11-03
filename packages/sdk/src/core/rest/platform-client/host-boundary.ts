@@ -8,6 +8,7 @@
  */
 
 import { retiredEndpointError } from '../../http/api/errors';
+import type { AccountBranding } from '../projects-client/accounts';
 import { auditFilterQuery } from '../projects-client/audit-filter';
 import { platformApiBase } from './shared';
 import { getBackendUrl } from '../../session/server-store/url-helpers';
@@ -155,6 +156,18 @@ export function checkAccessEmail<T = Record<string, unknown>>(
     method: 'POST',
     body: { email },
   });
+}
+
+/**
+ * The branding of the whole instance, for pages that show before anyone signs
+ * in (the sign-in page, the browser tab) and for an account with no branding
+ * of its own. Public: no token. `branding` is `null` on every instance
+ * without one, which includes the Kortix cloud.
+ */
+export function getInstanceBranding(
+  options: HostRequestOptions,
+): Promise<{ branding: AccountBranding | null }> {
+  return requestJson('/access/branding', options);
 }
 
 export function submitAccessRequest(
