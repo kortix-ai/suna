@@ -257,3 +257,26 @@ resource "aws_route_table_association" "private" {
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = aws_route_table.private[count.index].id
 }
+
+# ── S3 gateway endpoint ───────────────────────────────────────────────────────
+# Without it, every S3 request from a private subnet (project snapshots, ECR
+# image layers, which ECR serves from S3) leaves through the NAT gateway and
+# pays NAT processing per GB. A gateway endpoint adds a route for the region's
+# S3 prefix list to each private route table; it has no hourly or per-GB
+# charge. Buckets in other regions still route through the NAT.
+data "aws_region" "current" {}
+
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.this.id
+  service_name      = "com.amazonaws.${data.aws_region.current.region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = aws_route_table.private[*].id
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${var.name}-s3-gateway"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Platform    = lookup(var.tags, "Platform", "network")
+  }
+}

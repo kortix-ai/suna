@@ -143,6 +143,30 @@ describe('admitInboxPrompt', () => {
     expect(live).toMatchObject({ reason: 'turn_active', retryAfterMs: INBOX_ORDER_MAX_BACKOFF_MS });
   });
 
+  test('a row behind the head of a live turn re-polls once a minute; the head keeps the 2s cap', async () => {
+    // Prod 2026-11-03: 93 cron prompts behind live turns in 4 sessions were each
+    // re-polled every 2s (29 claims a second). Only the head is admitted next,
+    // and the turn's end wakes the head (`promoteNextInboxRow`).
+    const live = (older: boolean, inFlight: boolean) => ({
+      readSandbox: async () => ({ status: 'active', metadata: { activeTurns: activeTurn('t1') } }),
+      hasInFlightPrompt: async () => inFlight,
+      hasOlderPendingPrompt: async () => older,
+    });
+    const waiting = row({ result: { admission_reason: 'turn_active', admission_refusals: 10_000 } });
+    for (const [older, inFlight] of [[true, false], [false, true]] as const) {
+      expect(await admitInboxPrompt(waiting, live(older, inFlight))).toEqual({
+        admit: false,
+        reason: 'turn_active',
+        retryAfterMs: INBOX_STALE_ORDER_BACKOFF_MS,
+      });
+    }
+    expect(await admitInboxPrompt(waiting, live(false, false))).toEqual({
+      admit: false,
+      reason: 'turn_active',
+      retryAfterMs: INBOX_ORDER_MAX_BACKOFF_MS,
+    });
+  });
+
   test('a long wait on a RUNNING box keeps the 2s cap, whatever reason the refusals had', async () => {
     // `admission_refusals` counts every reason. A row that waited 64 refusals
     // behind a live turn must not get the minute at its first
