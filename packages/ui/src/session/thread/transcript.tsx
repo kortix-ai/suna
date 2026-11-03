@@ -1017,6 +1017,24 @@ type PromptText = { text: string; synthetic: boolean; ignored: boolean };
  * A user message's text as its v1 text parts held it: a text block, or an
  * `ignored` text (a model-invisible `harness` block whose data is the part).
  */
+/**
+ * Whether a turn's prompt is a notice from another agent, not something a
+ * person wrote: a peer message (`send_message`), a subagent or teammate that
+ * finished, or a batch of those. The agent's work continues across it, so the
+ * thread spaces it like a continuation, not like a new prompt.
+ */
+export function isAgentNoticeTurn(turn: Pick<SessionLogTurn, 'user'>): boolean {
+  // A stream delta remakes the turns, not the prompt: read each prompt once.
+  const known = agentNoticeOf.get(turn.user);
+  if (known !== undefined) return known;
+  const notice = promptTexts(turn.user).some(
+    (t) => !!parsePeerMessagePrompt(t.text) || !!parseSubagentNotice(t.text) || (parseNoticeBatch(t.text)?.length ?? 0) > 1,
+  );
+  agentNoticeOf.set(turn.user, notice);
+  return notice;
+}
+const agentNoticeOf = new WeakMap<SessionLogMessage, boolean>();
+
 export function promptTexts(message: SessionLogMessage): PromptText[] {
   return message.blocks.flatMap((b): PromptText[] => {
     if (b.type === 'text') return [{ text: b.text, synthetic: b.synthetic === true, ignored: false }];
@@ -2151,7 +2169,9 @@ function TurnFooter(
           On touch there is no hover, so Copy and the turn's finished-at /
           duration / cost would be permanently invisible, and tap-emulated
           `:hover` would leave exactly one arbitrary turn's bar lit. */}
-      {!working && !props.hideActionBar && (
+      {/* A turn that ended in tool calls alone ("Worked for 13s") has nothing to
+          copy or share: no bar, so no empty hover band under it. */}
+      {!working && !props.hideActionBar && hasCopyableResponse(response, answered.inlineContentParts) && (
         <TurnActionBar
           response={response}
           inlineContentParts={answered.inlineContentParts}
@@ -2232,6 +2252,12 @@ function TurnBusyRow(
 
 /** Copy + the turn's settled meta row — the hover-revealed bar at the end of
  *  a settled turn. Owns the copy state: it is the only consumer. */
+/** Whether the turn wrote any text: the response, or a text item of its inline content. */
+function hasCopyableResponse(response: string, inlineContentParts: TurnAnsweredState['inlineContentParts']): boolean {
+  if (response.trim()) return true;
+  return !!inlineContentParts?.some((item) => item.type === 'text' && item.block.text.trim());
+}
+
 function TurnActionBar({
   response,
   inlineContentParts,

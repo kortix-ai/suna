@@ -8,7 +8,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { TooltipProvider } from '../../primitives/tooltip';
 import { IntlTestProvider } from '../../test-utils/intl';
 import '../tool/tools/register';
-import { SessionTurn } from '../thread/transcript';
+import { SessionTurn, isAgentNoticeTurn } from '../thread/transcript';
 import { NoticeBatchGroup } from './notice-batch-group';
 import { parseNoticeBatch } from './subagent-notice';
 import { UserMessage } from './user-message';
@@ -136,6 +136,15 @@ describe('in the thread', () => {
       />,
     );
   };
+
+  test("another agent's notice is a continuation; a person's prompt is not", () => {
+    const user = (text: string) => ({ user: message('u', 'user', text) });
+    const peer = peerMessagePromptText({ kind: 'message', from: 'builder', fromShortId: '3f2a1b9c', messageId: 'm_1', summary: null, text: 'Done.' });
+    expect(isAgentNoticeTurn(user(peer))).toBe(true);
+    expect(isAgentNoticeTurn(user(subagent(1)))).toBe(true);
+    expect(isAgentNoticeTurn(user(batch(subagent(1), subagent(2))))).toBe(true);
+    expect(isAgentNoticeTurn(user('Can you check the build?'))).toBe(false);
+  });
 
   test('a peer message the API delivered as harness context draws its row, not an empty gap', () => {
     const prompt = peerMessagePromptText({
