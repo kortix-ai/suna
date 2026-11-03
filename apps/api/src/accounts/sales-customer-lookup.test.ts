@@ -30,6 +30,12 @@ test('fresh Stripe evidence distinguishes zero-dollar, paid minor-unit, and laps
     expect(await lookupSalesCustomer('synthetic')).toBe(expected);
   }
 });
+test('missing canonical subscription from Stripe response cannot prove negative', async () => {
+  memberships = [{ accountId: 'synthetic' }];
+  reads = [[], [{ ...billing, stripeSubscriptionId: 'sub_missing' }], [customer]];
+  pages = [{ has_more: false, data: [subscription(0)] }];
+  expect(await lookupSalesCustomer('synthetic')).toBeNull();
+});
 test('partial pagination and Stripe outages cannot prove negative', async () => {
   memberships = [{ accountId: 'synthetic' }];
   reads = [[], [billing], [customer]];

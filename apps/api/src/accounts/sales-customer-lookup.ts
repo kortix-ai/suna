@@ -21,6 +21,7 @@ export async function lookupSalesCustomer(userId: string): Promise<boolean | nul
         const account: Evidence = { complete: !!billing && customers.length > 0, unsupported: !billing || billing.provider !== 'stripe' ||
           !['none', 'expired'].includes(billing.trialStatus ?? '') || contracts.length > 0,
           subscriptions: [] };
+        let canonicalSubscriptionSeen = !billing?.stripeSubscriptionId;
         for (const customer of customers) {
           if (customer.provider !== 'stripe' || !customer.id.startsWith('cus_')) {
             account.unsupported = true;
@@ -30,6 +31,7 @@ export async function lookupSalesCustomer(userId: string): Promise<boolean | nul
             const subscriptions = await getStripe().subscriptions.list({ customer: customer.id, status: 'all', limit: 100 });
             account.complete &&= !subscriptions.has_more;
             for (const subscription of subscriptions.data) {
+              if (subscription.id === billing?.stripeSubscriptionId) canonicalSubscriptionSeen = true;
               const items = subscription.items;
               const amounts = items.data.map((item) => item.price.unit_amount);
               const status = subscription.status === 'active' &&
@@ -41,6 +43,7 @@ export async function lookupSalesCustomer(userId: string): Promise<boolean | nul
             }
           } catch { account.complete = false; }
         }
+        account.complete &&= canonicalSubscriptionSeen;
         evidence.push(account);
         if (customerStatus([account]) === true) return true;
       } catch { evidence.push({ complete: false, unsupported: true, subscriptions: [] }); }
