@@ -10,15 +10,8 @@ export const revalidate = 0;
 // ---------------------------------------------------------------------------
 // POST /api/demo-request — public lead capture for the /contact qualifier.
 //
-// Two best-effort side effects, neither of which may fail the user's flow:
-//   1. Persist the whole submission as one JSON blob in public.contact_forms
-//      (RLS allows INSERT only — see migration 109). Schema-agnostic: no DB
-//      migration needed when a form's fields change.
-//   2. Fire an internal notification email by calling the API's public
-//      POST /v1/system/demo-request. The email is sent API-side so it uses the
-//      API's email-provider credentials (from AWS Secrets Manager) — the Vercel
-//      frontend never needs the secret.
-// ---------------------------------------------------------------------------
+// Persistence (including the transactional Sales outbox trigger) must commit
+// before success. Notification email remains best-effort and unchanged.
 
 function isValidEmail(value: string): boolean {
   if (value.length === 0 || value.length > 254) return false;
@@ -32,14 +25,14 @@ function isValidEmail(value: string): boolean {
   return dot > 0 && dot < domain.length - 1;
 }
 
-function anonClient() {
+function serverClient() {
   // Runtime (non-NEXT_PUBLIC_) vars first — NEXT_PUBLIC_ are inlined at build
   // time and hold placeholders in Docker builds. Mirrors lib/supabase/server.ts.
   const url =
     process.env.SUPABASE_SERVER_URL ||
     process.env.SUPABASE_URL ||
     process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
   if (!url || !key) return null;
   return createClient(url, key, { auth: { persistSession: false } });
 }
@@ -132,22 +125,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid email' }, { status: 400 });
   }
 
-  // Fire the notification and persist concurrently — both are best-effort and
-  // independent. Await the notification before returning so it isn't dropped
-  // when the serverless function freezes.
-  const notifyPromise = notify(body);
-
-  // Store the whole submission verbatim, plus a couple of server-side fields.
   const data = {
     ...body,
-    form: body.source ?? 'contact',
+    form: body.opening || String(body.source ?? '').startsWith('careers') ? 'careers' : 'contact',
     user_agent: request.headers.get('user-agent')?.slice(0, 500) ?? null,
   };
 
   let persisted = false;
-  const supabase = anonClient();
+  const supabase = serverClient();
   if (!supabase) {
-    // Don't fail the user's flow if capture is misconfigured — log and move on.
     console.error('[api/demo-request] Supabase env missing; lead not persisted');
   } else {
     const { error } = await supabase.from('contact_forms').insert({ data });
@@ -155,6 +141,10 @@ export async function POST(request: NextRequest) {
     else persisted = true;
   }
 
-  await notifyPromise;
+  if (!persisted) {
+    return NextResponse.json({ error: 'Unable to save submission; please retry' },
+      { status: 503, headers: { 'Retry-After': '5' } });
+  }
+  await notify(body);
   return NextResponse.json({ ok: true, persisted });
 }

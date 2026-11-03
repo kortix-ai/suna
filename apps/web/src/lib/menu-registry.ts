@@ -982,7 +982,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/docs/credits',
+    href: '/docs/guide#billing',
     // `explained` stays in the keywords because /credits-explained was the
     // original public URL and is still what people type for this page.
     keywords: 'credits coins billing usage tokens cost explain explained',

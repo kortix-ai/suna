@@ -436,6 +436,23 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Accepted limits: a private thread\'s git branch is readable like any branch, and agent config, skills, MCP tools and network egress are not private.',
   },
   {
+    key: 'shared_drives',
+    name: 'Shared drives',
+    description:
+      'Drives the whole team can use: an admin makes a Drive and adds agents to it. Every session of those agents mounts it, and everyone who may use one of them can open it. Off, every person has only My files.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    // Off by default (Marko, 2026-11-03): Drive is My files until shared Drives are figured out.
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'PUT /v1/drives/:driveId/access answers 403 feature_disabled while off. Off, driveSubjectFor gives a person no agent reach (agentIds empty) and ' +
+      'planSessionDrives mounts no folder granted to an agent: a session mounts only its person\'s own folder (and a private channel thread its channel folder). ' +
+      'Grants made while on stay stored and count again when it is turned on; a change reaches running sessions at their next mount enforcement or boot. ' +
+      'WEB: the Drive tree shows only My files while off (no Drives section, no All files, no Share).',
+  },
+  {
     key: 'agent_rooms',
     name: 'Rooms',
     iamActions: ['project.room.read', 'project.room.write'],

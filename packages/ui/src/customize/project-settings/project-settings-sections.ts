@@ -106,7 +106,7 @@ const STATIC_SECTIONS: readonly ProjectSettingsSection[] = [
     // built a machine from it.
     description:
       'The recipe for the machine a session runs on, and the record of every time Kortix prepared one.',
-    docsHref: '/docs/work/runtime',
+    docsHref: '/docs/developers#sandbox-templates',
     gate: 'sandbox',
   },
 ];

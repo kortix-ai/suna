@@ -1048,7 +1048,8 @@ const envSchema = z.object({
   // ── Signup webhook (signup → sales factory) ─────────────────────────────
   // Every genuinely new account POSTs one `account.signup` event here, signed
   // `X-Kortix-Signature: sha256=<HMAC-SHA256 of the raw body>` with the secret.
-  // Inert unless both are set (accounts/signup-webhook.ts).
+  // Inert unless both are set (accounts/sales-outbox.ts).
+  SALES_RECONCILIATION_TOKEN: optStr,
   SIGNUP_WEBHOOK_URL: optStr,
   SIGNUP_WEBHOOK_SECRET: optStr,
 
@@ -1731,6 +1732,7 @@ export const config = {
   MAILTRAP_BUSINESS_SIGNUPS_LIST_ID: env.MAILTRAP_BUSINESS_SIGNUPS_LIST_ID,
 
   // ─── Signup webhook (signup → sales factory) ──────────────────────────────
+  SALES_RECONCILIATION_TOKEN: env.SALES_RECONCILIATION_TOKEN,
   SIGNUP_WEBHOOK_URL: env.SIGNUP_WEBHOOK_URL,
   SIGNUP_WEBHOOK_SECRET: env.SIGNUP_WEBHOOK_SECRET,
 

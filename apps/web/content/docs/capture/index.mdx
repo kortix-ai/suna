@@ -3,19 +3,15 @@ title: Capture
 description: Record each member's screen, input actions and audio 24/7 into a searchable timeline that belongs to the Kortix account.
 ---
 
-Kortix Capture records a member's own computer 24/7:
+Kortix Capture records a member's own computer all day, so you can find and replay anything that happened on screen. It records three layers:
 
 - the screen: video, the app, the window title, the URL and the on-screen text;
-- input actions (clicks, typing) with a screenshot of each;
+- input actions (clicks, typing), each with a screenshot;
 - audio, with a transcript, when the account's policy turns it on.
 
-Kortix indexes the recordings into one timeline per person. You can rewatch
-any moment and search all of it. Capture v1 is raw capture: it records,
-uploads and indexes. It does no further processing.
+Kortix uploads the recordings, indexes them into one timeline per person, and lets you rewatch and search any moment.
 
-Capture belongs to the **Kortix account** (your organization), not to a
-project. One account has one Capture workspace: one switch and one policy.
-Devices sign in to the account.
+Capture belongs to the Kortix account (your organization), not to a project. One account has one Capture workspace: one switch and one policy. Every computer signs in to the account.
 
 ## Turn Capture on
 
@@ -27,11 +23,12 @@ it is off:
 - a device cannot sign in or get storage credentials;
 - Kortix indexes nothing new.
 
-Everything about Kortix Capture lives under `/capture` in Kortix. Open
-**Kortix Capture** (command palette, or `/capture`), then **Settings**
-(owners and admins), and turn on **Kortix Capture** for the organization. The
-same page holds the organization's rules: what computers record, how long
-Kortix keeps it, an account-wide pause and an optional notice.
+Kortix Capture has its own area at `/capture`. Open **Kortix Capture** from
+the command palette (or go to `/capture`), choose **Settings**, and turn on
+**Kortix Capture** for the organization. The same page holds the organization's
+rules: what computers record, how long Kortix keeps it, where it is stored, an
+account-wide pause and an optional notice. The area also has **Devices** and
+**Timeline**.
 
 From the API: `PATCH /v1/accounts/<account_id>/capture` with `{"enabled": true}`.
 From TypeScript: `kortix.capture.account(accountId).workspace.setEnabled(true)`.
@@ -50,13 +47,13 @@ connects in one of two ways:
 
 Download the installer for the computer: [Windows](/download/capture/windows)
 (`.msi`), [macOS](/download/capture/macos) (`.pkg`) or
-[Linux](/download/capture/linux) (`.deb`).
+[Linux](/download/capture/linux) (`.deb`). The same links are in **Devices** under
+**Get Kortix Capture**.
 
-The installers are attached to every Kortix release, under the same version.
-Each one is also on the
-[releases page](https://github.com/kortix-ai/suna/releases/latest) with its
-checksums in `CAPTURE-SHA256SUMS`. Install a newer installer over the old one to
-update; the configuration stays.
+Every Kortix release carries the installers, under the same version. The
+[releases page](https://github.com/kortix-ai/suna/releases/latest) lists them
+with their checksums in `CAPTURE-SHA256SUMS`. To update, install a newer
+installer over the old one. The configuration stays.
 
 To sign in with Kortix:
 
@@ -68,25 +65,24 @@ To sign in with Kortix:
    screen, Accessibility and Input Monitoring for actions, Microphone for
    audio. Windows and Linux ask for none.
 
-Without the icon, the same sign-in is
+Without the icon, run
 `kortix-capture sync setup --provider kortix --issuer <your Kortix API>`.
 
-The computer records into that account as you, 24/7, and uploads every
-finished item. It gets a revocable device token and, from it, short-lived
-storage credentials for its own folder (`orgs/<account_id>/<device_id>/`) and
-read access to the policy. Signing in again on the same computer reuses the
-device. Forgetting a time range on the device removes it from Kortix too.
+The computer then records into that account as you and uploads every finished
+item. It gets a revocable device token and, from it, short-lived storage
+credentials for its own folder (`orgs/<account_id>/<device_id>/`) and read
+access to the policy. Signing in again on the same computer reuses the device.
+Forgetting a time range on the device removes it from Kortix too.
 
 ## Link a computer to a person
 
-Every computer is a device in **Capture → Devices**. A computer you signed in
+Every computer is a device in **Devices**. The list shows each device's state (**Recording**, **Paused**, **Offline**, **Needs permission** and others), when it last recorded, and a fleet summary. Kortix sends a notification to the people who manage Capture when a computer stops recording, and again when it recovers. A computer you signed in
 records for you. A computer IT enrolled with a personal token records for the
 member the token names. A computer IT enrolled with a company token records for
 the account, **linked to no one**. That is a normal state: link it to a person
 only when you want it in their timeline.
 
-To link or change it, choose **Link to a person…** on the device
-(`capture.manage`). From then on the computer records for that person. What it
+To link a device, choose **Link to a person…** on it; to change the person, choose **Change linked person…** (`capture.manage`). From then on the computer records for that person. What it
 recorded linked to no one moves to them within minutes; what it recorded for
 an earlier person stays theirs. From the API:
 `PUT /v1/accounts/<account_id>/capture/devices/<device_id>/link` with
@@ -109,7 +105,7 @@ Access is Kortix IAM. Capture has no roles of its own.
 
 Account owners and admins have `capture.read_all` and `capture.manage` by
 default. To give either one to someone else, add it to a custom role
-(**Account → Roles**, area **Capture**). A Kortix API key acts as the person
+(**Account** → **Roles**). A Kortix API key acts as the person
 who made it, with the same permissions.
 
 Every read of another member's data writes `capture.member_view` to the
@@ -148,14 +144,13 @@ One policy applies to every device of the account:
   every 2 s, 1440p). Set, every computer uses it and shows it locked. Clicks,
   typing and scrolling are recorded with their own screenshots at any interval;
   pick 1 s when screens change fast without input, such as live dashboards;
-- how long Kortix keeps recordings (`remote_days`);
+- retention: **In Kortix** is how many days Kortix keeps recordings (`remote_days`, default 90, `0` keeps them without a limit), and **On the computer** is how many hours a computer keeps its local copy after upload (`local_hours`, default 0);
 - an optional notice: each person sees it once, and again when its text changes;
 - **Experimental → Privacy controls** (off by default) shows personal-data
   masking on the computer (each computer first downloads a ~1 GB model).
   Turning the switch off hides it; what is set keeps applying.
 
-Each computer chooses how long it keeps recordings after uploading them
-(7 days by default).
+Retention is a ceiling: a person can keep recordings on their own computer for a shorter time than the policy allows, not longer. By default a computer keeps recordings that are not uploaded yet, and deletes uploaded ones after 7 days.
 
 A computer gets the policy the moment it signs in or IT enrolls it, so a new
 computer starts under your exclusion or inclusion policy with nothing to set up.
@@ -173,12 +168,25 @@ A device records every connected display, the active one (the display with
 the focused window) first. Each display is its own recorded item; the
 timeline names the display of every item and frame.
 
+## Where recordings are stored
+
+By default Kortix keeps and indexes the recordings (**Kortix-managed**). Under **Settings** → **Storage**, an owner or admin can point the account at an S3 bucket they own instead: AWS S3, or an S3-compatible store such as MinIO. Kortix reads, indexes and signs recordings in that bucket.
+
+| Field | Meaning |
+|---|---|
+| **Endpoint** | Leave empty for AWS. For another S3-compatible store, the full URL. |
+| **Region**, **Bucket** | The bucket's location and name. |
+| **Path-style URLs** | On for MinIO and most self-hosted stores; off for AWS. |
+| **Access** | An **IAM role (STS)** that Kortix assumes (recommended: each computer gets credentials for its own folder), or a static **Access key** pair (every computer gets account-wide access to the bucket). |
+
+Kortix writes a test object before it saves the choice. Switching does not move recordings that are already stored. Client-side encryption on a computer is incompatible with indexing: a recording a computer encrypts cannot be searched or played in Kortix. From the API: `GET` and `PUT /v1/accounts/<account_id>/capture/storage` (`capture.manage`). On a self-hosted Kortix, see [Self-hosting](/docs/developers#self-hosting).
+
 ## Kortix Capture API
 
 Everything Capture records is readable with a Kortix API key, from a script, a
 notebook, a BI tool or an agent.
 
-**Auth.** Create a key in Kortix (Settings → API keys) or with
+**Auth.** Create a key in Kortix (**Settings** → **Personal access keys**, or **Create an API key** in the **Kortix Capture API** dialog on **Devices**) or with
 `POST /v1/accounts/tokens`. Send it as `Authorization: Bearer kortix_pat_…`.
 
 **Base URL.** `https://<your Kortix API>/v1/accounts/<account_id>/capture`.
@@ -201,6 +209,8 @@ read outside your permissions answers `403`
 | `GET enrollment-tokens` · `POST enrollment-tokens` · `DELETE enrollment-tokens/<token_id>` | the IT rollout tokens; needs `capture.manage` (see [IT rollout](/docs/capture/rollout)) |
 | `GET enrollments?status=pending` · `POST enrollments/<id>/approve` `{ "user_id" }` · `POST enrollments/<id>/deny` | computers that wait for a decision; needs `capture.manage` |
 | `PUT devices/<device_id>/link` `{ "user_id" }` | links the device to a member, or unlinks it with `null`; needs `capture.manage` |
+| `POST devices/<device_id>/sync` | reads the device's status and index now and queues new items for indexing |
+| `GET storage` · `PUT storage` | where the account keeps recordings; needs `capture.manage`; the secret is never returned |
 | `GET devices?user_id=&scope=account` | devices with their live state: what the device last reported (for example `recording`, `paused`), or `offline` after 2 minutes of silence |
 | `DELETE devices/<device_id>` | revokes the device: its token stops working at once |
 | `GET devices/<device_id>/assets/<name>` | a signed URL of one action screenshot (5 minutes) |

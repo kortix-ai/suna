@@ -104,6 +104,8 @@ export type FeatureFlagKey =
   | 'connectors_v2'
   | 'project_channels'
   | 'agent_rooms'
+  /** Shared Drives: an admin makes a Drive and adds agents to it. Off by default: people have only My files. */
+  | 'shared_drives'
   | 'goals'
   | 'workspace_volume'
   | 'artifacts'
@@ -163,6 +165,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'session_log_restore',
   'project_channels',
   'agent_rooms',
+  'shared_drives',
   'goals',
   'workspace_volume',
   'artifacts',

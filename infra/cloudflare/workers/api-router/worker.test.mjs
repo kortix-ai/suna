@@ -572,101 +572,67 @@ describe('api-router worker', () => {
     expect(gatewayResponse.headers.get('X-Backend')).toBeNull();
   });
 
-  test('serves the independent maintenance state without contacting the API origin', async () => {
-    const maintenanceEnv = {
-      ...env,
-      MAINTENANCE_STATE_URL: 'https://kortix.com/api/maintenance',
-    };
+  // ── Maintenance write freeze ─────────────────────────────────────────────
+  // The worker refuses writes only when an operator sets
+  // MAINTENANCE_LEVEL_OVERRIDE=blocking on it. Until 2026-11 it also fetched
+  // kortix.com/api/maintenance/edge (Vercel Edge Config) before every write:
+  // ~115,000 Vercel function calls a day, 79 % of the web app's function calls,
+  // for a switch no release or workflow set. The worker now reads no
+  // maintenance state over the network.
+  test('passes the maintenance config read to the API like any other route', async () => {
     const fetchedUrls = [];
     globalThis.fetch = async (request) => {
       fetchedUrls.push(fetchUrl(request));
-      if (
-        fetchUrl(request) === 'https://api-fargate.kortix.com/v1/system/maintenance'
-      ) {
-        return new Response('unavailable', { status: 503 });
-      }
-      return Response.json({
-        level: 'blocking',
-        title: 'Database maintenance',
-        message: 'Writes are paused.',
-        updatedAt: '2026-07-26T15:00:00.000Z',
-      });
+      return Response.json({ level: 'none', title: '' }, { headers: { 'x-request-id': 'req-maint' } });
     };
 
     const response = await worker.fetch(
       new Request('https://api.kortix.com/v1/system/maintenance'),
-      maintenanceEnv,
+      { ...env, MAINTENANCE_STATE_URL: 'https://kortix.com/api/maintenance/edge' },
     );
 
-    expect(fetchedUrls).toEqual([
-      'https://api-fargate.kortix.com/v1/system/maintenance',
-      'https://kortix.com/api/maintenance',
-    ]);
+    expect(fetchedUrls).toEqual(['https://api-fargate.kortix.com/v1/system/maintenance']);
     expect(response.status).toBe(200);
-    expect(response.headers.get('X-Maintenance-Source')).toBe('edge-config');
-    expect(await response.json()).toMatchObject({
-      level: 'blocking',
-      message: 'Writes are paused.',
-    });
+    expect(response.headers.get('x-request-id')).toBe('req-maint');
+    expect(response.headers.get('X-Maintenance-Source')).toBeNull();
+    expect(await response.json()).toMatchObject({ level: 'none' });
   });
 
-  test('serves the database maintenance state before Edge Config', async () => {
-    const maintenanceEnv = {
-      ...env,
-      MAINTENANCE_STATE_URL: 'https://kortix.com/api/maintenance/edge',
-    };
+  test('an API failure on the maintenance config read passes through, with no made-up state', async () => {
+    globalThis.fetch = async () => new Response('unavailable', { status: 503 });
+
+    const response = await worker.fetch(
+      new Request('https://api.kortix.com/v1/system/maintenance'),
+      env,
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.text()).toBe('unavailable');
+    expect(response.headers.get('X-Maintenance-Source')).toBeNull();
+  });
+
+  test('a write calls only the origin, even with a leftover maintenance state URL', async () => {
     const fetchedUrls = [];
     globalThis.fetch = async (request) => {
       fetchedUrls.push(fetchUrl(request));
-      return Response.json({
-        level: 'none',
-        title: '',
-        message: '',
-        updatedAt: '2026-07-26T15:00:00.000Z',
-      });
+      return Response.json({ created: true }, { status: 201 });
     };
 
-    const response = await worker.fetch(
-      new Request('https://api.kortix.com/v1/system/maintenance'),
-      maintenanceEnv,
+    const apiResponse = await worker.fetch(
+      new Request('https://api.kortix.com/v1/projects', { method: 'POST' }),
+      { ...env, MAINTENANCE_STATE_URL: 'https://kortix.com/api/maintenance/edge' },
+    );
+    const gatewayResponse = await worker.fetch(
+      new Request('https://gateway.kortix.com/v1/chat/completions', { method: 'POST' }),
+      { ...env, MAINTENANCE_STATE_URL: 'https://kortix.com/api/maintenance/edge' },
     );
 
+    expect(apiResponse.status).toBe(201);
+    expect(gatewayResponse.status).toBe(201);
     expect(fetchedUrls).toEqual([
-      'https://api-fargate.kortix.com/v1/system/maintenance',
+      'https://api-fargate.kortix.com/v1/projects',
+      'https://gateway-fargate.kortix.com/v1/chat/completions',
     ]);
-    expect(response.headers.get('X-Maintenance-Source')).toBe('database');
-    expect(await response.json()).toMatchObject({ level: 'none' });
-  });
-
-  test('returns none (not automatic blocking) when database is unavailable and Edge Config is none', async () => {
-    const maintenanceEnv = {
-      ...env,
-      MAINTENANCE_STATE_URL: 'https://kortix.com/api/maintenance/edge',
-    };
-    globalThis.fetch = async (request) => {
-      if (
-        fetchUrl(request) === 'https://api-fargate.kortix.com/v1/system/maintenance'
-      ) {
-        return new Response('unavailable', { status: 503 });
-      }
-      return Response.json({
-        level: 'none',
-        title: '',
-        message: '',
-        updatedAt: '2026-07-26T15:00:00.000Z',
-      });
-    };
-
-    const response = await worker.fetch(
-      new Request('https://api.kortix.com/v1/system/maintenance'),
-      maintenanceEnv,
-    );
-
-    // Prefer the Edge Config state (none) over automatic blocking, so a
-    // transient API blip doesn't trigger a full lockdown.
-    expect(response.status).toBe(200);
-    expect(response.headers.get('X-Maintenance-Source')).toBe('edge-config');
-    expect(await response.json()).toMatchObject({ level: 'none' });
   });
 
   test('allows the authenticated maintenance update route through the blocking gate', async () => {
@@ -694,20 +660,16 @@ describe('api-router worker', () => {
     ]);
   });
 
-  test('blocks API and gateway writes while blocking maintenance is active', async () => {
+  test('blocks API and gateway writes while the blocking override is set, without any fetch', async () => {
     const maintenanceEnv = {
       ...env,
-      MAINTENANCE_STATE_URL: 'https://kortix.com/api/maintenance',
+      MAINTENANCE_LEVEL_OVERRIDE: 'blocking',
+      MAINTENANCE_MESSAGE_OVERRIDE: 'Final database synchronization is running.',
     };
-    const fetchedUrls = [];
-    globalThis.fetch = async (request) => {
-      fetchedUrls.push(fetchUrl(request));
-      return Response.json({
-        level: 'blocking',
-        title: 'Database maintenance',
-        message: 'Writes are paused.',
-        updatedAt: '2026-07-26T15:00:00.000Z',
-      });
+    let fetched = false;
+    globalThis.fetch = async () => {
+      fetched = true;
+      return new Response('unexpected');
     };
 
     const apiResponse = await worker.fetch(
@@ -718,82 +680,38 @@ describe('api-router worker', () => {
       maintenanceEnv,
     );
     const gatewayResponse = await worker.fetch(
-      new Request('https://gateway.kortix.com/v1/chat/completions', {
-        method: 'POST',
-      }),
-      maintenanceEnv,
-    );
-
-    expect(fetchedUrls).toEqual([
-      'https://kortix.com/api/maintenance',
-      'https://kortix.com/api/maintenance',
-    ]);
-    expect(apiResponse.status).toBe(503);
-    expect(apiResponse.headers.get('X-Maintenance-Mode')).toBe('blocking');
-    expect(apiResponse.headers.get('Access-Control-Allow-Origin')).toBe(
-      'https://kortix.com',
-    );
-    expect(gatewayResponse.status).toBe(503);
-    expect(await gatewayResponse.json()).toMatchObject({
-      error: { code: 'MAINTENANCE_MODE' },
-      message: 'Writes are paused.',
-    });
-  });
-
-  test('uses the blocking override without contacting the independent state endpoint', async () => {
-    const maintenanceEnv = {
-      ...env,
-      MAINTENANCE_STATE_URL: 'https://kortix.com/api/maintenance',
-      MAINTENANCE_LEVEL_OVERRIDE: 'blocking',
-      MAINTENANCE_MESSAGE_OVERRIDE:
-        'Final database synchronization is running.',
-    };
-    let fetched = false;
-    globalThis.fetch = async () => {
-      fetched = true;
-      return new Response('unexpected');
-    };
-
-    const response = await worker.fetch(
-      new Request('https://api.kortix.com/v1/projects', { method: 'POST' }),
+      new Request('https://gateway.kortix.com/v1/chat/completions', { method: 'POST' }),
       maintenanceEnv,
     );
 
     expect(fetched).toBe(false);
-    expect(response.status).toBe(503);
-    expect(await response.json()).toMatchObject({
+    expect(apiResponse.status).toBe(503);
+    expect(apiResponse.headers.get('X-Maintenance-Mode')).toBe('blocking');
+    expect(apiResponse.headers.get('Access-Control-Allow-Origin')).toBe('https://kortix.com');
+    expect(await apiResponse.json()).toMatchObject({
       message: 'Final database synchronization is running.',
       maintenance: { level: 'blocking' },
     });
+    expect(gatewayResponse.status).toBe(503);
+    expect(await gatewayResponse.json()).toMatchObject({
+      error: { code: 'MAINTENANCE_MODE' },
+      message: 'Final database synchronization is running.',
+    });
   });
 
-  test('keeps read-only API requests available during blocking maintenance', async () => {
-    const maintenanceEnv = {
-      ...env,
-      MAINTENANCE_STATE_URL: 'https://kortix.com/api/maintenance',
-    };
+  test('keeps read-only API requests available while the blocking override is set', async () => {
     const fetchedUrls = [];
     globalThis.fetch = async (request) => {
       fetchedUrls.push(fetchUrl(request));
-      if (fetchUrl(request) === maintenanceEnv.MAINTENANCE_STATE_URL) {
-        return Response.json({
-          level: 'blocking',
-          title: 'Database maintenance',
-          message: 'Writes are paused.',
-          updatedAt: '2026-07-26T15:00:00.000Z',
-        });
-      }
       return Response.json({ accounts: [] });
     };
 
     const response = await worker.fetch(
       new Request('https://api.kortix.com/v1/accounts'),
-      maintenanceEnv,
+      { ...env, MAINTENANCE_LEVEL_OVERRIDE: 'blocking' },
     );
 
     expect(response.status).toBe(200);
-    // Blocking maintenance only ever refuses writes, so a read never waits on
-    // the maintenance state: it goes straight to the origin.
     expect(fetchedUrls).toEqual(['https://api-fargate.kortix.com/v1/accounts']);
   });
 
@@ -895,34 +813,6 @@ describe('api-router worker', () => {
     await worker.fetch(preflight('/v1/accounts'), env);
 
     expect(calls).toHaveLength(2);
-  });
-
-  test('fails open when the independent maintenance state is unavailable', async () => {
-    const maintenanceEnv = {
-      ...env,
-      MAINTENANCE_STATE_URL: 'https://kortix.com/api/maintenance',
-    };
-    const fetchedUrls = [];
-    globalThis.fetch = async (request) => {
-      fetchedUrls.push(fetchUrl(request));
-      if (fetchUrl(request) === maintenanceEnv.MAINTENANCE_STATE_URL) {
-        return new Response('unavailable', { status: 503 });
-      }
-      return Response.json({ created: true }, { status: 201 });
-    };
-
-    const response = await worker.fetch(
-      new Request('https://api.kortix.com/v1/projects', { method: 'POST' }),
-      maintenanceEnv,
-    );
-
-    // A transient Edge Config / state URL failure should not trigger a
-    // full maintenance lockdown. The request passes through to the origin.
-    expect(response.status).toBe(201);
-    expect(fetchedUrls).toEqual([
-      'https://kortix.com/api/maintenance',
-      'https://api-fargate.kortix.com/v1/projects',
-    ]);
   });
 
   // ── Origin errors pass through verbatim ───────────────────────────────────

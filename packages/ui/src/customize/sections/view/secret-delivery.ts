@@ -971,7 +971,7 @@ export function enforcedEchoNotice(hosts: string, tI18nComplete: UiTranslator): 
       `curl -s -o /dev/null -w '%{http_code}\\n' https://${host}/<authenticated-path>`,
       '# 200 = the real value was substituted. 401 = it was not.',
     ].join('\n'),
-    docsHref: '/docs/project/secrets#verify-it-with-two-probes',
+    docsHref: '/docs/guide#verify-it-with-two-probes',
     docsLabel: 'Verify it with two probes',
   };
 }

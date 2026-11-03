@@ -339,7 +339,7 @@ export function AppsView({
         titleAccessory={
           <Hint label={tI18nComplete.raw('text7af023c43013')}>
             <Link
-              href="/docs/apps"
+              href="/docs/developers#apps-reference"
               target="_blank"
               rel="noopener noreferrer"
               prefetch={false}

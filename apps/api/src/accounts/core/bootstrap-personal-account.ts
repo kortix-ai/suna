@@ -3,7 +3,6 @@ import { accountMemberships, accounts } from '@kortix/db';
 import { initializeFreeTierAccount } from '../../billing/services/free-tier';
 import { config } from '../../config';
 import { syncSignupContactToMailtrap } from '../mailtrap-contacts';
-import { sendSignupWebhook } from '../signup-webhook';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { anyAccountMembershipOf } from '../../iam/membership-read';
 import { db } from '../../shared/db';
@@ -82,8 +81,6 @@ export async function bootstrapPersonalAccount(
     void syncSignupContactToMailtrap(email).catch((err) =>
       console.warn('[accounts] Mailtrap contact sync failed for %s:', userId, err),
     );
-    // Same contract for the sales factory's signup webhook (inert when unset).
-    if (email) void sendSignupWebhook({ userId, email, name: profile });
 
     return { accountId: userId, created: true };
   }
