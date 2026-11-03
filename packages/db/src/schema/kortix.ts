@@ -24,6 +24,20 @@ import {
 
 export const kortixSchema = pgSchema('kortix');
 
+// Immutable payload, mutable delivery receipt. Producers enqueue in their own transaction.
+export const salesEventOutbox = kortixSchema.table('sales_event_outbox', {
+  eventId: text('event_id').primaryKey(),
+  payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  attempts: integer('attempts').default(0).notNull(),
+  availableAt: timestamp('available_at', { withTimezone: true }).defaultNow().notNull(),
+  leaseToken: uuid('lease_token'),
+  deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+  deadLetterAt: timestamp('dead_letter_at', { withTimezone: true }),
+  lastError: text('last_error'),
+}, (table) => [index('sales_event_outbox_due_idx').on(table.availableAt)
+  .where(sql`${table.deliveredAt} IS NULL AND ${table.deadLetterAt} IS NULL`)]);
+
 export const usedRefreshTokens = kortixSchema.table('used_refresh_tokens', {
   tokenHash: text('token_hash').primaryKey(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
