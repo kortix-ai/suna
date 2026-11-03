@@ -35,7 +35,7 @@ For one person with a folder of contracts, every item on that list is the right 
 
 The gap shows up as repeat work. A second analyst opens the same documents and gets the same first answers, because the corrections the first analyst made sit in that person's own account.
 
-Kortix puts the company in one git repository you own: agents, shared skills, memory, connector configuration and triggers, all plain files ([Kortix on GitHub](https://github.com/kortix-ai/suna)). You can grep the whole company and roll back a bad week, because that configuration is version controlled and does not sit inside a product database.
+Kortix puts the company in one git repository you own: agents, shared skills, memory, connector configuration and triggers, all plain files ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS)). You can grep the whole company and roll back a bad week, because that configuration is version controlled and does not sit inside a product database.
 
 A new teammate clones the repository and gets the whole company: agents in Markdown, runtime settings in `kortix.yaml`. One team's finding sits in the files for the next team to read.
 

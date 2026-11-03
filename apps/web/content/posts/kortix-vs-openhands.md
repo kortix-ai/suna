@@ -40,14 +40,14 @@ A harness is built to get an agent through a task in a repository, and OpenHands
 
 A team can change its coding harness in a quarter. Unplug one, plug in the next, keep the repositories. What is expensive to rebuild is the trail of what each agent was allowed to touch, who approved that, and what changed last Tuesday. A transcript answers the last of those, for one conversation, inside one product.
 
-We run Kortix on itself in public, which makes our argument checkable. Over the past month, `Kortix Agent` authored about two in five of the first-parent commits that landed on the trunk of [Kortix on GitHub](https://github.com/kortix-ai/suna). The rest came from release bots and from people. Anyone can reproduce the count from the public repository:
+We run Kortix on itself in public, which makes our argument checkable. Over the past month, `Kortix Agent` authored about two in five of the first-parent commits that landed on the trunk of [Kortix on GitHub](https://github.com/kortix-ai/CompanyOS). The rest came from release bots and from people. Anyone can reproduce the count from the public repository:
 
 ```bash
 git log --first-parent --since="one month ago" --format=%an \
   | sort | uniq -c | sort -rn
 ```
 
-One of those merges was [PR #10587](https://github.com/kortix-ai/suna/pull/10587), `fix(api): revoke credentials on deletion confirmation (KRTX-2919)`, merged in October 2026: two commits and a small diff. The diff names the author, and the merge carries a timestamp anyone can read. What matters is the trail. Four months of agent work sits in the same history as the code it changed, so a reviewer can ask who gave the agent a credential and find an answer.
+One of those merges was [PR #10587](https://github.com/kortix-ai/CompanyOS/pull/10587), `fix(api): revoke credentials on deletion confirmation (KRTX-2919)`, merged in October 2026: two commits and a small diff. The diff names the author, and the merge carries a timestamp anyone can read. What matters is the trail. Four months of agent work sits in the same history as the code it changed, so a reviewer can ask who gave the agent a credential and find an answer.
 
 ## What stays in the repo
 

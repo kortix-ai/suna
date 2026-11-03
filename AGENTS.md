@@ -379,7 +379,7 @@ turns red on your change, you fix forward on `dev` the same day.
    again on dev after the merge (rule 8). Green tests are not the bar. Someone
    used it.
 7. After the merge, deploy dev yourself: `gh workflow run deploy-dev.yml
-   --repo kortix-ai/suna -f surface=changed` (`all` or `frontend` force a
+   --repo kortix-ai/CompanyOS -f surface=changed` (`all` or `frontend` force a
    rebuild). Deploys queue, they never cancel. Wait for the run to finish.
    `/health` on every changed surface must serve the merge SHA: a successful
    `/health` response alone is not deployment proof. The run comments "Live on

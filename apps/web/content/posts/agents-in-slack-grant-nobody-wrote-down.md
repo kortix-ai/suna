@@ -40,7 +40,7 @@ An afternoon gives you a working bot with your company's tools behind it. Nothin
 
 ## What the install leaves open
 
-The starter project is the easy case: nobody edited its `agents:` block. In `kortix.yaml` that map is governance only: connectors, secrets, Kortix permissions, skills, the workspace boundary and the enabled flag, plus `file`. Grants are deny-by-default: an omitted `connectors`, `secrets` or `kortix_permissions` resolves to none, while an omitted `skills` grant leaves `permission.skill` in the agent's `.md` in charge ([manifest reference](https://kortix.com/docs/project/manifest)). The front-door agent ships with everything open ([`kortix.yaml`](https://github.com/kortix-ai/suna/blob/dev/packages/starter/templates/base/kortix.yaml)):
+The starter project is the easy case: nobody edited its `agents:` block. In `kortix.yaml` that map is governance only: connectors, secrets, Kortix permissions, skills, the workspace boundary and the enabled flag, plus `file`. Grants are deny-by-default: an omitted `connectors`, `secrets` or `kortix_permissions` resolves to none, while an omitted `skills` grant leaves `permission.skill` in the agent's `.md` in charge ([manifest reference](https://kortix.com/docs/project/manifest)). The front-door agent ships with everything open ([`kortix.yaml`](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/kortix.yaml)):
 
 ```yaml
 agents:

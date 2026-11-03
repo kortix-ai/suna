@@ -606,7 +606,7 @@ function buildUseCasePackProjectItem(): RegistryItem {
 
 let BASE: Catalog | null = null;
 
-const KORTIX_REPO = "https://github.com/kortix-ai/suna";
+const KORTIX_REPO = "https://github.com/kortix-ai/CompanyOS";
 
 /** Source-of-truth GitHub path for a bundled `kortix-projects` item — these
  *  are real files in this repo, not a synthetic/external registry, so "View

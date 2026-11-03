@@ -38,7 +38,7 @@ The Starter tier costs €20 a month billed annually for 2,500 executions ([n8n 
 
 ## The grant file n8n has nowhere to put
 
-Every Kortix project is a git repository, and the part that governs an agent is a short block of YAML inside it. These lines come from the starter manifest that ships with a new project: the file is `packages/starter/templates/base/kortix.yaml` in [Kortix on GitHub](https://github.com/kortix-ai/suna) (read October 2026). The header of that file labels the `agents:` map GOVERNANCE ONLY, and it sets the default that matters:
+Every Kortix project is a git repository, and the part that governs an agent is a short block of YAML inside it. These lines come from the starter manifest that ships with a new project: the file is `packages/starter/templates/base/kortix.yaml` in [Kortix on GitHub](https://github.com/kortix-ai/CompanyOS) (read October 2026). The header of that file labels the `agents:` map GOVERNANCE ONLY, and it sets the default that matters:
 
 ```yaml
 # v2 is deny-by-default: an omitted connectors/secrets/kortix_permissions/

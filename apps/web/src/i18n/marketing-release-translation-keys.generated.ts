@@ -479,7 +479,7 @@ export const MARKETING_RELEASE_TRANSLATION_KEYS = {
   '- HELPDESK_API_KEY': 'texteca665e8b7c8',
   'secrets: [HELPDESK_API_KEY]': 'text92a51dd3e468',
   'No lock-in.': 'text68a08970653c',
-  'github.com/kortix-ai/suna': 'text70d13140dd29',
+  'github.com/kortix-ai/CompanyOS': 'text70d13140dd29',
   'Customize → Models → Providers': 'text541a2ff8599c',
   'Terminal: your laptop': 'textcc59c4ac4977',
   'Every agent, skill and memory file, with its history.': 'text0749a8e92dda',

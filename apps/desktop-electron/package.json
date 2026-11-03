@@ -5,7 +5,7 @@
   "private": true,
   "description": "Kortix desktop shell — Electron wrapper around the web app",
   "author": "Kortix",
-  "repository": "https://github.com/kortix-ai/suna",
+  "repository": "https://github.com/kortix-ai/CompanyOS",
   "main": "src/main.js",
   "scripts": {
     "test": "node ../../scripts/test-guard.mjs \"bun test src\"",

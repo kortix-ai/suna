@@ -38,7 +38,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 const root = resolve(import.meta.dirname, '../..');
 const installer = resolve(root, 'scripts/install.sh');
-const REPO = 'kortix-ai/suna';
+const REPO = 'kortix-ai/CompanyOS';
 const TAG = 'v9.9.9-test';
 
 // The asset name detect_platform() resolves on this host.
