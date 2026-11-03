@@ -45,18 +45,14 @@ app. Read `/drives/README.md` first: it lists what this session has mounted.
 | What | Path in this session | Who sees it | In the app |
 |---|---|---|---|
 | **The person**: name, role, background, preferences, corrections, their work | `/drives/me/Memory/` (`profile.md`, `preferences.md`, `feedback.md`, `work.md`, indexed by `MEMORY.md`) | Only them, until they share it | Drive → My files → Memory |
-| **The company**: what it does, customers, team, software, how work runs, glossary | `/drives/<agent>/Memory/`, this agent's Drive (`company.md`, `team.md`, `software.md`, `how-we-work.md`, indexed by `MEMORY.md`) | Everyone who may use this agent | Drive → Agents → <agent> → Memory |
-| **The company's files**: docs, decks, policies, data the team shares | `/drives/<agent>/`, this agent's Drive | Everyone who may use this agent | Drive → Agents → <agent> |
+| **The company**: what it does, customers, team, software, how work runs, glossary | `/drives/me/Memory/company/` (`company.md`, `team.md`, `software.md`, `how-we-work.md`, indexed by `/drives/me/Memory/MEMORY.md`) | Only them | Drive → My files → Memory → company |
+| **The company's files**: docs, decks, policies, data they work from | `/drives/me/Company/` | Only them | Drive → My files → Company |
 
-- `/drives/README.md` names this agent's Drive. Nothing in Drive is shared with
-  the whole project: a project admin decides who may use this agent, and so who
-  reads its Drive. Say that in one line the first time you write there.
-- No agent Drive is mounted (My Kortix has none): keep the company files in
-  `/drives/me/Memory/` and `/drives/me/`, say they are private to the person,
-  and tell them an admin can run onboarding with a team agent to share them.
-- Personal facts never go to the agent's Drive, and company facts never go to
-  the personal folder when an agent Drive is mounted. A fact about the person's job at the company ("runs
-  operations") is personal; a fact about the company ("6 clinics") is company.
+- Nothing in Drive is shared with the whole project: everything you write
+  here is the person's own. Say that in one line the first time you write.
+- Keep company facts in `Memory/company/`, apart from the person's own facts.
+  A fact about the person's job at the company ("runs operations") is
+  personal; a fact about the company ("6 clinics") is company.
 - `kortix-user-memory` is the protocol for the personal folder; follow it.
 - When `/drives/me` is missing, Drive is off for this project: keep the same
   files in the project brain `memory/` (the `kortix-memory` change-request
@@ -115,7 +111,7 @@ c = Card("You stay in control", "Nothing becomes permanent until you approve it.
 ```openui
 root = Steps([a, b, c, d, e])
 a = Step("You", "Your name and role, in your private memory.", null, "1 min")
-b = Step("Your company workspace", "What the company does, in this agent's Drive.", null, "2 min")
+b = Step("Your company workspace", "What the company does, in your own folder.", null, "2 min")
 c = Step("Your team", "Invite people, connect Slack or Microsoft Teams.", null, "2 min")
 d = Step("Your software", "A setup link for each tool you run on.", null, "2 min")
 e = Step("Your first result", "One real task, finished end to end.", null, "5 min")
@@ -143,7 +139,7 @@ root = Callout("success", "<the fact, one line>. <Where it lives in the app>.", 
 **The workspace** (stage 2): what you wrote in Drive.
 
 ```openui
-root = Table(["File in Drive → Agents → <agent>", "What it holds"], [["README.md", "<…>"], ["Memory/company.md", "<…>"], ["Memory/team.md", "<…>"], ["Memory/how-we-work.md", "<…>"]], "Everyone who may use this agent reads these")
+root = Table(["File in Drive → My files", "What it holds"], [["Company/README.md", "<…>"], ["Memory/company/company.md", "<…>"], ["Memory/company/team.md", "<…>"], ["Memory/company/how-we-work.md", "<…>"]], "Only you read these")
 ```
 
 **Links** (invites, team chat, software): a `Stack` of `Card`s, one per link,
@@ -192,8 +188,8 @@ what the options say.
 - `cat /drives/README.md`: which Drive folders this session has.
 - `cat /drives/me/Memory/MEMORY.md`: what you already know about this person
   (`kortix-user-memory`).
-- `cat /drives/<agent>/Memory/MEMORY.md` and `ls /drives/<agent>` (the agent
-  Drive `/drives/README.md` names): what the company workspace already holds. `ls memory/`: the project brain.
+- `ls /drives/me/Memory/company /drives/me/Company`: what the company
+  workspace already holds. `ls memory/`: the project brain.
 - `kortix access ls`: who is in the project. More than one member → this
   person may be a teammate (see **Teammates**).
 - `kortix channels status`: Slack or Microsoft Teams already connected.
@@ -234,7 +230,7 @@ and not a namesake. Then:
   let me correct it / Not me). Nothing found, or a common name with no match:
   say so in one line and ask their role instead.
 - Write the confirmed person to `/drives/me/Memory/profile.md` and the
-  confirmed company to `/drives/<agent>/Memory/company.md` (see **Where things
+  confirmed company to `/drives/me/Memory/company/company.md` (see **Where things
   are kept**). Show one receipt for each.
 
 Then one `question` call for what research cannot tell you:
@@ -245,13 +241,13 @@ Then one `question` call for what research cannot tell you:
   Options are the recurring work of that role at that kind of company.
 
 **Done when** `profile.md` and `work.md` in `/drives/me/Memory/` hold the
-person, `company.md` in `/drives/<agent>/Memory/` holds the company, and both
-`MEMORY.md` files index them.
+person, `company.md` in `/drives/me/Memory/company/` holds the company, and
+`MEMORY.md` indexes them.
 
 ## Stage 2: the company workspace and the team
 
-Set up the company workspace in this agent's Drive: the one place everyone
-who may use this agent reads the company from. Skip the parts that already
+Set up the company workspace in the person's own folder: the one place you
+read the company from in their sessions. Skip the parts that already
 exist (stage 0).
 
 1. One `question` call:
@@ -260,15 +256,17 @@ exist (stage 0).
    - **How the company works** (`multiple: true`): the teams or functions
      research suggests (e.g., for a clinic group: front desk, clinicians,
      billing), so the workspace mirrors the real company.
-2. Write the workspace in `/drives/<agent>/`:
-   - `Memory/company.md` (from stage 1), `Memory/team.md` (functions, and the
-     people you learn about), `Memory/how-we-work.md` (what you learned about
-     how work runs), and `Memory/MEMORY.md`, one line per file.
-   - `README.md`: one short page on what this workspace is and what lives where.
+2. Write the workspace in `/drives/me/`:
+   - `Memory/company/company.md` (from stage 1), `Memory/company/team.md`
+     (functions, and the people you learn about),
+     `Memory/company/how-we-work.md` (what you learned about how work runs),
+     each one line in `Memory/MEMORY.md`.
+   - `Company/README.md`: one short page on what this workspace is and what
+     lives where.
    Then show **The workspace** table.
-3. Invite them to put the company's key files in Drive → Agents → <agent>
-   (policies, price lists, templates, the docs the team works from): "Drop
-   them in and I work from them, and so does everyone who uses me."
+3. Invite them to put the company's key files in Drive → My files → Company
+   (policies, price lists, templates, the docs they work from): "Drop them in
+   and I work from them."
 
 Say what you built in one line: this is "all data in one place".
 
@@ -276,10 +274,9 @@ Say what you built in one line: this is "all data in one place".
 option). For each: `kortix access invite <email> --role member`. When the
 output says no email was sent, give them the printed invite link. Each invitee
 gets their own private folder and personal onboarding when they first chat
-(see **Teammates**). They read the company workspace once a project admin
-lets them use this agent.
+(see **Teammates**).
 
-**Done when** `/drives/<agent>/` holds `README.md` and the `Memory/` files,
+**Done when** `/drives/me/Company/` holds `README.md`, `Memory/company/` holds the files,
 and every email they gave has an invite or a link.
 
 ## Stage 3: where the team talks
@@ -306,7 +303,7 @@ For each pick, load `kortix-connectors`, add the connector, and mint its setup
 link with `kortix connectors connect <slug>`. Show all links in ONE **Links** block (**The look**), body
 = the one thing each lets you do for them, in their words. Raw credentials never pass
 through chat. Record the company's software in
-`/drives/<agent>/Memory/software.md`. This is "all software in one place": say
+`/drives/me/Memory/company/software.md`. This is "all software in one place": say
 so in one line.
 
 **Done when** every picked tool has a setup link on screen, or a one-line
@@ -348,13 +345,11 @@ complete; from here they are a user.
 
 ## Teammates
 
-A teammate (stage 0: other members exist, `/drives/<agent>/Memory/` already
-holds the company, their own `/drives/me/Memory` is empty) gets the personal
-part only: stage 1 (name, research, their private memory; the story told from
-what the team already set up: "Your team already runs <connected software>
-through Kortix"), the software they personally use (stage 4), the tour, and
-stage 6. Read the company from `/drives/<agent>/` instead of asking. Skip
-stages 2 and 3.
+A teammate (stage 0: other members exist, their own `/drives/me/Memory` is
+empty) gets every stage in their own folder: their company workspace is theirs
+too, since nothing in Drive is shared with the whole project. Tell the story
+from what the team already set up ("Your team already runs <connected
+software> through Kortix"). Skip stage 3 when a channel is connected.
 
 ## Tone
 

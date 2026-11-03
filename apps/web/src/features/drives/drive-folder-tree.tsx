@@ -5,17 +5,17 @@ import { useDriveFolder } from '@kortix/ui/files';
 import { Home } from '@kortix/ui/internal/icons/home';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { cn } from '@kortix/ui';
-import { CaretRightIcon, FolderSimpleIcon, HardDriveIcon, HashIcon, RobotIcon, UsersIcon } from '@phosphor-icons/react';
+import { CaretRightIcon, FolderSimpleIcon, HardDriveIcon, HashIcon, UsersIcon } from '@phosphor-icons/react';
 import { type ComponentType, type ReactNode, useCallback, useEffect, useState } from 'react';
 
 import { useTranslations } from '@/i18n/use-translations';
 
-const AGENTS = '/Agents';
 const USERS = '/Users';
 
 type Glyph = ComponentType<{ className?: string }>;
 
 const within = (path: string, folder: string) => path === folder || path.startsWith(`${folder}/`);
+const nameOf = (path: string) => path.split('/').filter(Boolean).pop() ?? path;
 
 /** `/a/b/c` → `['/a', '/a/b', '/a/b/c']`. */
 function ancestors(path: string): string[] {
@@ -24,12 +24,12 @@ function ancestors(path: string): string[] {
 }
 
 /**
- * Beside the folder in view: My files, then the Drive of each agent the
- * caller may use. Only an admin (`manage` at the top) also gets the whole
- * Drive as one tree under the project, every folder as it is stored. A
- * folder lists its subfolders when it is expanded; the folders on the way to
- * the one in view are expanded by themselves, and a folder with no subfolders
- * has no caret.
+ * Beside the folder in view: My files. With `shared_drives` on, also the
+ * shared Drives the caller reaches through an agent they may use and, for an
+ * admin (`manage` at the top), the whole Drive as one tree under the project.
+ * A folder lists its subfolders when it is expanded; the folders on the way
+ * to the one in view are expanded by themselves, and a folder with no
+ * subfolders has no caret.
  */
 export function DriveFolderTree({
   drive,
@@ -75,8 +75,9 @@ export function DriveFolderTree({
     [],
   );
   const personal = drive.personalFolder;
-  const agents = drive.agentDrives ?? [];
-  const admin = drive.access === 'manage';
+  const sharedOn = !!drive.sharedDrives;
+  const shared = sharedOn ? (drive.sharedWithMe ?? []) : [];
+  const admin = sharedOn && drive.access === 'manage';
   const tree = { drive, current: path, expanded, leaves, onToggle: toggle, onLeaf: markLeaf, onOpen };
 
   return (
@@ -86,12 +87,12 @@ export function DriveFolderTree({
           <PlaceRow icon={Home} label={t('myDrive')} active={within(path, personal)} onClick={() => onOpen(personal)} />
         ) : null}
       </ul>
-      {agents.length > 0 ? (
+      {shared.length > 0 ? (
         <section className="space-y-1">
-          <p className="text-muted-foreground px-2 text-xs">{t('agentsSection')}</p>
+          <p className="text-muted-foreground px-2 text-xs">{t('drivesSection')}</p>
           <ul className="space-y-0.5">
-            {agents.map((a) => (
-              <PlaceRow key={a.path} icon={RobotIcon} label={a.agentName} active={within(path, a.path)} onClick={() => onOpen(a.path)} />
+            {shared.map((f) => (
+              <PlaceRow key={f.path} icon={HardDriveIcon} label={nameOf(f.path)} active={within(path, f.path)} onClick={() => onOpen(f.path)} />
             ))}
           </ul>
         </section>
@@ -164,7 +165,7 @@ function TreeChildren({ parent, ...tree }: TreeProps & { parent: string }) {
       {folders.map((e) => {
         const mine = e.path === drive.personalFolder;
         const channel = e.name.startsWith('#');
-        const icon: Glyph = mine ? Home : e.path === AGENTS || e.path.startsWith(`${AGENTS}/`) && e.path.split('/').length === 3 ? RobotIcon : e.path === USERS ? UsersIcon : channel ? HashIcon : FolderSimpleIcon;
+        const icon: Glyph = mine ? Home : e.path === USERS ? UsersIcon : channel ? HashIcon : FolderSimpleIcon;
         return (
           <TreeRow key={e.path} {...tree} path={e.path} name={mine ? t('treeYou', { name: e.name }) : channel ? e.name.slice(1) : e.name} icon={icon}>
             <TreeChildren {...tree} parent={e.path} />

@@ -160,9 +160,10 @@ export async function foldTargets(source: DriveRow): Promise<FoldTarget[]> {
     return [
       {
         projectId: source.projectId,
-        // The agent's Drive: whoever may use the agent reaches it, so it needs no grant.
+        // A shared Drive added to its agent: its sessions mount it, and with
+        // `shared_drives` on everyone who may use the agent reaches it.
         path: `/Agents/${segment(source.agentName)}`,
-        grants: [],
+        grants: [{ principal: { type: 'agent', id: source.agentName }, level: 'write' }],
       },
     ];
   }

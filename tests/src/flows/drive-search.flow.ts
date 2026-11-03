@@ -4,10 +4,9 @@
  * indexer fills them from Platinum volumes, which the local profile has
  * none of), so this flow proves the route's contract: who sees which hit.
  * A team account: OWNER (project admin), a member who may use the agent
- * `worker`, and an account member without project access. Drive is
- * agent-first: a person finds their own folder, the Drive of each agent they
- * may use, and the folders granted to those agents; nothing of the project
- * at large.
+ * `worker`, and an account member without project access. With
+ * `shared_drives` on, a person finds their own folder and the shared Drives
+ * added to an agent they may use; nothing of the project at large.
  */
 import { randomUUID } from 'node:crypto';
 import { flow } from '../core/flow';
@@ -30,7 +29,7 @@ async function openDb(ctx: FlowContext): Promise<Db> {
 type Hit = { path: string; name: string; kind: string; snippet: string | null; access: string };
 type Page = { hits: Hit[]; next_cursor: string | null };
 
-/** Nine folders granted to the agent: with the owner's folder and the agent's Drive, more than a session's 8 mount slots. */
+/** Nine shared Drives added to the agent: with the owner's folder and /Sales, more than a session's 8 mount slots. */
 const TEAM_FOLDERS = Array.from({ length: 9 }, (_, i) => `/Team-${i + 1}`);
 
 flow(
@@ -46,6 +45,7 @@ flow(
       'POST /v1/accounts/tokens',
       'GET /v1/projects/:projectId/resource-grants',
       'POST /v1/projects/:projectId/resource-grants',
+      'PATCH /v1/projects/:projectId/features',
     ],
   },
   async (ctx) => {
@@ -64,7 +64,7 @@ flow(
     // One word nothing else in the drive holds.
     const word = `zephyrine${randomUUID().slice(0, 6)}`;
     const AGENT = 'worker';
-    const AGENT_DRIVE = `/Agents/${AGENT}`;
+    const AGENT_DRIVE = '/Sales';
     let driveId = '';
     let ownerFolder = '';
     let memberFolder = '';
@@ -87,7 +87,9 @@ flow(
         }
       });
 
-      await ctx.step('OWNER grants the nine team folders to the agent (read) → 200; a share with a person or the project → 400', async () => {
+      await ctx.step('OWNER turns shared_drives on, adds the agent to /Sales (write) and the nine team Drives (read) → 200; a share with a person or the project → 400', async () => {
+        (await owner.patch('/v1/projects/:projectId/features', { feature: 'shared_drives', enabled: true }, { params })).status(200);
+        (await owner.put('/v1/drives/:driveId/access', { path: AGENT_DRIVE, principalType: 'agent', principalId: AGENT, level: 'write' }, { params: { driveId } })).status(200);
         (await owner.put('/v1/drives/:driveId/access', { path: '/Shared', principalType: 'user', principalId: member.userId, level: 'read' }, { params: { driveId } })).status(400);
         (await owner.put('/v1/drives/:driveId/access', { path: '/Shared', principalType: 'project', level: 'read' }, { params: { driveId } })).status(400);
         for (const path of TEAM_FOLDERS) {
@@ -103,9 +105,9 @@ flow(
         )).status(201);
         const deadline = Date.now() + 45_000;
         for (let streak = 0; streak < 6; ) {
-          if (Date.now() > deadline) throw new Error('the member never saw the agent Drive');
+          if (Date.now() > deadline) throw new Error(`the member never reached ${AGENT_DRIVE}`);
           const d = (await asMember.get('/v1/drives', { query: { projectId: project.id } })).status(200).json<{ drives: any[] }>().drives[0];
-          streak = d.agentDrives?.some((a: { path: string }) => a.path === AGENT_DRIVE) ? streak + 1 : 0;
+          streak = d.sharedWithMe?.some((a: { path: string }) => a.path === AGENT_DRIVE) ? streak + 1 : 0;
           if (streak === 0) await new Promise((r) => setTimeout(r, 500));
         }
       });
@@ -114,7 +116,7 @@ flow(
         const rows: Array<[string, string]> = [
           [`${ownerFolder}/diary.md`, `the ${word} budget is the owner's own`],
           [`${memberFolder}/notes.md`, `the member's ${word} notes`],
-          [`${AGENT_DRIVE}/plan.md`, `agent plan: ${word} starts in week 46`],
+          [`${AGENT_DRIVE}/plan.md`, `sales plan: ${word} starts in week 46`],
           ['/Company/old.md', `a file from before: ${word} is admin-only now`],
           ['/Leadership/pricing.md', `admin-only ${word} pricing`],
           ['/Shared/q3.md', `never shared ${word} forecast`],
@@ -134,7 +136,7 @@ flow(
         );
       });
 
-      await ctx.step("the member's search → 200: their own folder, the agent's Drive and the folders granted to it; never Company, OWNER's folder or an admin-only folder", async () => {
+      await ctx.step("the member's search → 200: their own folder and the shared Drives of their agent; never Company, OWNER's folder or an admin-only folder", async () => {
         const r = (await search(asMember, { q: word, limit: '100' })).status(200);
         const got = paths(r);
         const want = [`${AGENT_DRIVE}/${word}-logo.png`, `${AGENT_DRIVE}/plan.md`, `${memberFolder}/notes.md`, ...TEAM_FOLDERS.map((f) => `${f}/brief.md`)].sort();
@@ -142,7 +144,7 @@ flow(
         const hits = r.json<Page>().hits;
         if (hits[0]!.path !== `${AGENT_DRIVE}/${word}-logo.png`) throw new Error(`a name hit must rank first: ${hits[0]!.path}`);
         if (hits.find((h) => h.path === `${AGENT_DRIVE}/plan.md`)?.snippet?.includes(word) !== true) throw new Error('no snippet around the word');
-        if (hits.find((h) => h.path === `${AGENT_DRIVE}/plan.md`)?.access !== 'write') throw new Error("the agent's Drive must answer access write");
+        if (hits.find((h) => h.path === `${AGENT_DRIVE}/plan.md`)?.access !== 'write') throw new Error('a write Drive must answer access write');
         if (hits.find((h) => h.path === `${TEAM_FOLDERS[0]}/brief.md`)?.access !== 'read') throw new Error('a read grant to the agent must answer access read');
       });
 

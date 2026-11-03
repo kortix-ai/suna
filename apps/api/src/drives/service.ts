@@ -30,8 +30,6 @@ import { config } from '../config';
 import { db, withDbTransaction } from '../shared/db';
 import { driveVolumeName, skippedDrivesMessage } from './access';
 import {
-  agentDriveGrants,
-  isAgentDriveRoot,
   DESKTOP_MOUNT_PATH,
   DRIVES_ROOT,
   type FolderAccess,
@@ -435,10 +433,10 @@ export interface DriveCaller {
 /**
  * The person behind a request, as the folder rules see them: a project
  * admin (`may('write')`) manages every folder but people's own; everyone
- * writes their own folder (made when they have none) and the Drive of each
- * agent they may use (`usableAgents`, the IAM answer). A session-bound
- * credential reaches only its own agent's Drive, whoever its person may also
- * use. The Drive routes and the memory routes share it.
+ * writes their own folder (made when they have none). With `shared_drives`
+ * on, they also reach the shared Drives added to an agent they may use
+ * (`usableAgents`, the IAM answer); a session-bound credential reaches only
+ * its own agent's. The Drive routes and the memory routes share it.
  */
 export async function driveSubjectFor(
   drive: DriveRow,
@@ -455,15 +453,15 @@ export async function driveSubjectFor(
   /** The agents the person may use (`filterAccessibleObjects`); absent: none. */
   usableAgents: () => Promise<readonly string[]> = async () => [],
 ): Promise<DriveCaller> {
+  const shared = await sharedDrivesOn(drive.projectId!);
   const [admin, groupIds, agents] = await Promise.all([
     may('write'),
     groupIdsOf(userId, drive.accountId),
-    bound ? sessionFacts(bound).then((s) => (s?.agentName ? [s.agentName] : [])) : usableAgents(),
+    !shared ? [] : bound ? sessionFacts(bound).then((s) => (s?.agentName ? [s.agentName] : [])) : usableAgents(),
   ]);
   let grants = await listFolderGrants(drive);
   const personalFolder = await ensurePersonalFolder(drive, userId, grants);
   if (!grants.some((g) => g.path === personalFolder)) grants = await listFolderGrants(drive);
-  grants = [...grants, ...agentDriveGrants(userId, agents)];
   const agentIds = await agentServiceAccountIds(drive.accountId, drive.projectId!, agents);
   // Membership is the key to a private channel's folder; its grant
   // (`syncPrivateChannelGrants`) only mirrors it. A grant whose channel the
@@ -610,6 +608,11 @@ export async function sessionPrivateChannelFolder(sessionId: string): Promise<st
     .limit(1);
   if (row?.kind !== 'channel' || row.visibility !== 'private') return null;
   return privateFolderOfSpace(row.spaceId);
+}
+
+/** The project's `shared_drives` flag: off, nothing but people's own folders (and private channels') reaches anyone. */
+export function sharedDrivesOn(projectId: string): Promise<boolean> {
+  return projectFeatureFlagEnabled(projectId, 'shared_drives');
 }
 
 /** The service accounts of `agentNames` that have one (a grant to the agent made it). */
@@ -818,11 +821,10 @@ export interface SessionFolderPlan {
 }
 
 /**
- * The folders a new sandbox of this session mounts: its agent's Drive
- * (`/Agents/<agent>` at /drives/<agent>, read-write), the folders granted to
- * its agent, and, in a personal session (see {@link isPersonalSession}), its
- * person's own folder read-write at /drives/me. Never another agent's Drive
- * through the person, and nothing through the project. Project admins get no folder by role here: a session sees only what
+ * The folders a new sandbox of this session mounts: in a personal session
+ * (see {@link isPersonalSession}) its person's own folder read-write at
+ * /drives/me, and with `shared_drives` on the shared Drives added to its
+ * agent. Nothing through the project. Project admins get no folder by role here: a session sees only what
  * a grant gives it, so nobody's private folder lands in an admin's session.
  */
 export async function planSessionDrives(input: {
@@ -844,8 +846,9 @@ export async function planSessionDrives(input: {
     await ensurePersonalFolder(drive, owner, grants);
     grants = await listFolderGrants(drive);
   }
+  // `shared_drives` off: no folder mounts through the agent, only the person's own (and a private channel's).
   const [agentId, groupIds, channelFolder, privateChannelFolders] = await Promise.all([
-    agentServiceAccountId(accountId, projectId, agentName),
+    sharedDrivesOn(projectId).then((on) => (on ? agentServiceAccountId(accountId, projectId, agentName) : null)),
     owner ? groupIdsOf(owner, accountId) : Promise.resolve(new Set<string>()),
     sessionPrivateChannelFolder(sessionId),
     projectPrivateChannelFolders(projectId),
@@ -853,7 +856,7 @@ export async function planSessionDrives(input: {
   const own = owner ? personalFolderFor(grants, owner) : null;
   // A private channel's folder mounts only in that channel's threads (and
   // their subagents, which inherit the channel), never through a member's grant.
-  const candidates = sessionMountCandidates(grants, { agentName, agentId, owner, groupIds, own, channelFolder, privateChannelFolders });
+  const candidates = sessionMountCandidates(grants, { agentId, owner, groupIds, own, channelFolder, privateChannelFolders });
   const plan = planFolderMounts(candidates, input.slots ?? (await sandboxMountLimit()), privateChannelFolders);
   return { drive, mounts: plan.mounts, skipped: plan.skipped };
 }
@@ -1356,7 +1359,7 @@ export function renderDriveNotes(
   conflicts: Array<{ mountPath: string; path: string }>,
   skippedMessage?: string | null,
   spaceLines: readonly string[] = [],
-  /** A private channel's thread: every fact stays in the channel's folder, never the agent's Drive or the user's folder. */
+  /** A private channel's thread: every fact stays in the channel's folder, never a shared Drive or the user's folder. */
   opts: { privateChannel?: boolean } = {},
 ): string {
   const lines = [
@@ -1369,7 +1372,7 @@ export function renderDriveNotes(
     '| --- | --- | --- |',
     ...mounts.map(
       (m) =>
-        `| ${m.mountPath} | ${m.subdir}${m.role === 'me' ? ' (the user’s own folder, their desktop)' : isAgentDriveRoot(m.subdir) ? ' (this agent’s Drive: everyone who may use this agent sees it)' : ''} | ${m.readOnly ? 'read-only' : 'read-write'} |`,
+        `| ${m.mountPath} | ${m.subdir}${m.role === 'me' ? ' (the user’s own folder, their desktop)' : ' (a shared Drive: everyone who may use this agent sees it)'} | ${m.readOnly ? 'read-only' : 'read-write'} |`,
     ),
     '',
   ];
@@ -1380,13 +1383,13 @@ export function renderDriveNotes(
       '',
     );
   } else if (me) {
-    const agentDrive = mounts.find((m) => m.role !== 'me' && isAgentDriveRoot(m.subdir));
+    const shared = mounts.find((m) => m.role !== 'me');
     lines.push(
       `${me.mountPath} is the user’s own folder (also at ~/Desktop): only the user sees it. Save files you make for the user there.`,
       `Keep what you learn about the user in ${me.mountPath}/${MEMORY_DIR_NAME}/ (load the kortix-user-memory skill).`,
-      ...(agentDrive
+      ...(shared
         ? [
-            `${agentDrive.mountPath} is this agent’s Drive: everyone who may use this agent sees it. Put work there only when it is meant for them; never copy the user’s own files there unless the user asks.`,
+            'A shared Drive is seen by everyone who may use this agent. Put work there only when it is meant for them; never copy the user’s own files there unless the user asks.',
           ]
         : []),
       '',

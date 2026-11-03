@@ -13,21 +13,13 @@ import { stripTrailingSlashes } from '../../../platform/strings';
 export type FolderLevel = 'read' | 'write' | 'manage';
 export type FolderAccess = 'none' | FolderLevel;
 /**
- * Who a folder grant names. A grant anyone makes names an `agent`: a person
- * reaches a folder through an agent they may use. `user` and `group` are only
- * Kortix's own grants (a person's folder, a private channel's members).
- * `project` is never returned or accepted since 2026-11-03 (kept so existing
- * code compiles).
+ * Who a folder grant names. A grant anyone makes names an `agent` (a shared
+ * Drive added to it, with `shared_drives` on): a person reaches it through an
+ * agent they may use. `user` and `group` are only Kortix's own grants (a
+ * person's folder, a private channel's members). `project` is never returned
+ * or accepted since 2026-11-03 (kept so existing code compiles).
  */
 export type FolderPrincipalType = 'user' | 'group' | 'agent' | 'project';
-
-/** The Drive of one agent the caller may use (`Drive.agentDrives`). */
-export interface AgentDrive {
-  agentName: string;
-  /** `/Agents/<agentName>`. */
-  path: string;
-  access: FolderAccess;
-}
 
 export interface Drive {
   driveId: string;
@@ -48,10 +40,10 @@ export interface Drive {
   personalFolder: string | null;
   /** "(conflict ...)" copies in folders the caller can see that nobody resolved or dismissed yet. */
   openConflicts?: number;
-  /** @deprecated Always empty since 2026-11-03: nothing is shared with a person. Read `agentDrives`. */
+  /** The shared Drives the caller reaches through an agent they may use; empty while `shared_drives` is off. */
   sharedWithMe?: Array<{ path: string; access: FolderAccess }>;
-  /** The Drives of the agents the caller may use, by agent name. Absent from an API older than 2026-11-03. */
-  agentDrives?: AgentDrive[];
+  /** The project's `shared_drives` flag: off, Drive is My files only. Absent from an API older than 2026-11-03. */
+  sharedDrives?: boolean;
 }
 
 /**
@@ -227,14 +219,14 @@ export interface FolderAccessView {
 
 /** One folder a new session of an agent mounts (`listAgentMounts`). */
 export interface AgentMount {
-  /** The Files folder, e.g. `/Agents/sales`. */
+  /** The Files folder, e.g. `/Sales`. */
   path: string;
   /** Where a session sees it, e.g. `/drives/sales`. */
   mountPath: string;
   readOnly: boolean;
-  /** `drive`: the agent's own Drive. `agent`: a folder granted to the agent. `project`: only from an API older than 2026-11-03. */
-  via: 'drive' | 'agent' | 'project';
-  /** The agent's grant on the folder, to change or remove. Absent for its own Drive. */
+  /** `agent`: a shared Drive added to the agent. `project`: only from an API older than 2026-11-03. */
+  via: 'agent' | 'project';
+  /** The agent's grant on the folder, to change or remove. */
   grantId?: string;
   level: FolderLevel;
 }

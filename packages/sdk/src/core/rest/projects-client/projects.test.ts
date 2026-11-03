@@ -1040,6 +1040,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'workspace_volume',
     'project_channels',
     'agent_rooms',
+    'shared_drives',
     'goals',
     'artifacts',
     'artifact_comments',

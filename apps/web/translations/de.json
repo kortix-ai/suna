@@ -22701,7 +22701,7 @@
     "viewFolderAccess": "Zugriff ansehen",
     "myDrive": "My drive",
     "allFiles": "All files",
-    "agentsSection": "Agenten",
+    "drivesSection": "Drives",
     "volumeHint": "A separate volume. Sessions mount each one on its own under /drives.",
     "teamFolders": "Team folders",
     "adminSection": "Admin",

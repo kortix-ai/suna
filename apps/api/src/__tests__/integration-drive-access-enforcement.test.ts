@@ -93,8 +93,14 @@ let ownerToken = '';
 const sessionTokens: Record<string, string> = {};
 let driveId = '';
 let researchGrant = '';
-/** The researcher agent's own Drive: every session of the agent mounts it read-write, no grant needed. */
-const AGENT_DRIVE = '/Agents/researcher';
+/** A second shared Drive added to the researcher agent (write): it stays granted when /Research is revoked. */
+const AGENT_DRIVE = '/Sales';
+/** Files follows the project's own Volumes flag; shared Drives (folders granted to an agent) need `shared_drives`. */
+const metadataWith = (flags: { volumes?: boolean; shared_drives?: boolean }) => ({
+  experimental: { volumes: true, shared_drives: true, ...flags },
+});
+const setFlags = (flags: { volumes?: boolean; shared_drives?: boolean }) =>
+  db.update(projects).set({ metadata: metadataWith(flags) }).where(eq(projects.projectId, PROJECT));
 
 const mount = (subdir: string, readOnly = false) => ({
   driveId,
@@ -161,8 +167,7 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'drive-enforcement',
     repoUrl: 'https://example.test/drive-enforcement.git',
-    // Files follows the project's own Volumes flag.
-    metadata: { experimental: { volumes: true } },
+    metadata: metadataWith({}),
   });
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: ACCOUNT, accountRole: 'owner' });
   await db.insert(serviceAccounts).values({
@@ -184,6 +189,7 @@ beforeAll(async () => {
     level: 'write',
     grantedBy: OWNER,
   });
+  await setFolderGrant({ drive, path: AGENT_DRIVE, principal: { type: 'agent', id: RESEARCHER }, level: 'write', grantedBy: OWNER });
   ownerToken = (await createAccountToken({ accountId: ACCOUNT, userId: OWNER, name: 'drive-enforcement-owner' })).secretKey;
   await box(NATIVE, { provider: 'platinum', externalId: 'box-native', mounts: [mount('/Research'), mount(AGENT_DRIVE)] });
   await box(SYNCED, { provider: 'daytona', externalId: 'box-synced', mounts: [mount('/Research'), mount(AGENT_DRIVE)] });
@@ -266,6 +272,21 @@ describe('a revocation whose detach fails', () => {
     });
     const mounts = (await answer.json()) as { mounts: Array<{ subdir?: string }> };
     expect(mounts.mounts.map((m) => m.subdir)).toEqual([AGENT_DRIVE]);
+
+    // shared_drives off: the agent's grant on the Drive no longer reaches the session either.
+    await setFlags({ shared_drives: false });
+    try {
+      expect((await asBox(FENCED, `/files?path=${encodeURIComponent(AGENT_DRIVE)}`)).status).toBe(404);
+      expect(
+        (await asBox(FENCED, `/files/content?path=${encodeURIComponent(`${AGENT_DRIVE}/a.md`)}`, { method: 'PUT', body: 'x' })).status,
+      ).toBe(404);
+      const off = await app.request(`/v1/projects/${PROJECT}/sessions/${FENCED}/drive-sync/mounts`, {
+        headers: { Authorization: `Bearer ${sessionTokens[FENCED]}` },
+      });
+      expect(((await off.json()) as { mounts: Array<{ subdir?: string }> }).mounts.map((m) => m.subdir)).not.toContain(AGENT_DRIVE);
+    } finally {
+      await setFlags({});
+    }
   });
 });
 
@@ -297,15 +318,15 @@ describe('a resumed sandbox whose guest kept mounts Platinum ended', () => {
   test('reconcile clears the stale mounts and attaches the folders, and records them', async () => {
     staleGuest.clear();
     staleGuest.add('/drives/me');
-    staleGuest.add('/drives/researcher');
+    staleGuest.add('/drives/sales');
     calls.length = 0;
     await reconcileSessionDrives(RESUMED);
     const attached = calls.filter((c) => c.startsWith('attach ')).map((c) => c.slice('attach '.length));
     expect(attached.length).toBeGreaterThan(0);
-    // A trigger session of the researcher agent (the /Research grant was revoked above): its agent's Drive.
-    expect(attached).toEqual(['/drives/researcher']);
+    // A trigger session of the researcher agent (the /Research grant was revoked above): the Drive still added to it.
+    expect(attached).toEqual(['/drives/sales']);
     for (const p of attached) {
-      if (p === '/drives/me' || p === '/drives/researcher') expect(calls.indexOf(`unmount ${p}`)).toBeLessThan(calls.indexOf(`attach ${p}`));
+      if (p === '/drives/me' || p === '/drives/sales') expect(calls.indexOf(`unmount ${p}`)).toBeLessThan(calls.indexOf(`attach ${p}`));
     }
     expect((await recordedMounts(RESUMED)).length).toBe(attached.length);
     expect(await pending(RESUMED)).toBe(false);
@@ -324,8 +345,7 @@ describe('drive download ranges', () => {
 
 describe('Drive no longer depends on the old Volumes flag', () => {
   test('a project whose metadata still says volumes: false lists, reads and writes its Drive', async () => {
-    const setVolumes = (on: boolean) =>
-      db.update(projects).set({ metadata: { experimental: { volumes: on } } }).where(eq(projects.projectId, PROJECT));
+    const setVolumes = (on: boolean) => setFlags({ volumes: on });
     // Storage is not configured in this suite, so a folder read answers its own
     // 503; what matters is that the answer does not change with the old flag.
     const readFolder = async () => {

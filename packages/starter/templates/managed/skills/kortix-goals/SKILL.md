@@ -23,8 +23,8 @@ A goal is a folder in Files, `Goals/<slug>/` in the user's own folder by
 default (`/drives/me/Goals/<slug>/` in a session). It is the goal's context:
 every session that works the goal reads it and appends to it. Sessions come
 and go; a new session with no transcript must be able to continue from the
-folder. Only the user sees their own folder. For a goal everyone who uses this
-agent should see, pass `--folder /drives/<agent>` (this agent's Drive).
+folder. Only the user sees their own folder. `--folder` puts it in another
+read-write folder `/drives/README.md` lists.
 
 | File | Holds | Who writes |
 | --- | --- | --- |
