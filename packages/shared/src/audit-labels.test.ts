@@ -96,6 +96,17 @@ describe('route lookup', () => {
     );
   });
 
+  test('drive-index search and repository search have distinct audit identities', () => {
+    expect(auditLabelForRoute('GET', '/v1/projects/:projectId/search')).toEqual({
+      action: 'drive.search',
+      title: 'Searched project drive',
+    });
+    expect(auditRouteForAction('file.search')).toEqual({
+      method: 'GET',
+      route: '/v1/projects/:projectId/files/search',
+    });
+  });
+
   test('an unknown route has no label', () => {
     expect(auditLabelForRoute('GET', '/v1/no-such-route')).toBeNull();
   });
