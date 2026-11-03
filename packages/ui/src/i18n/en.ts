@@ -1666,7 +1666,7 @@ const catalog = {
       "sending": "Sending..."
     },
     "unified": {
-      "welcome": "Welcome to Kortix CompanyOS",
+      "welcome": "Welcome to {name}",
       "email": "Email",
       "emailPlaceholder": "Your email address",
       "password": "Password",
@@ -6464,7 +6464,7 @@ const catalog = {
     "createProjectInstead": "Create a new project instead"
   },
   "projectSelector": {
-    "welcome": "Welcome to Kortix CompanyOS",
+    "welcome": "Welcome to {name}",
     "welcomeBack": "Welcome back",
     "descriptionNew": "Create your first project, or join one your team shared.",
     "descriptionReturning": "Open a project, or create a new one.",

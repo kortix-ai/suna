@@ -2868,7 +2868,7 @@
       "sending": "发送中..."
     },
     "unified": {
-      "welcome": "欢迎使用 Kortix CompanyOS",
+      "welcome": "欢迎使用 {name}",
       "email": "邮箱",
       "emailPlaceholder": "您的邮箱地址",
       "password": "密码",
@@ -21563,7 +21563,7 @@
     "createProjectInstead": "改为创建新项目"
   },
   "projectSelector": {
-    "welcome": "欢迎使用 Kortix CompanyOS",
+    "welcome": "欢迎使用 {name}",
     "welcomeBack": "欢迎回来",
     "descriptionNew": "创建你的第一个项目，或加入团队共享的项目。",
     "descriptionReturning": "打开一个项目，或创建新项目。",
