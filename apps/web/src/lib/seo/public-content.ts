@@ -208,7 +208,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'case-studies',
     title: 'Case studies',
     description:
-      'What runs on CompanyOS: a science agent at City University of Hong Kong, and autonomous investment analysis, software engineering, credit analysis and invoice matching.',
+      'What runs on CompanyOS: a science agent at City University of Hong Kong, and agents that evaluate every deal, write software, analyze credit and match invoices.',
     htmlPath: '/case-studies',
   },
   {
