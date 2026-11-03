@@ -313,7 +313,7 @@ export const faq = {
     {
       id: 'talk',
       q: 'Can we talk before we pay?',
-      a: 'Yes. Book an intro call. We look at how your company works and pick the first function together.',
+      a: 'Yes. The intro call is free and commits you to nothing. We look at how your company works and pick the first function to hand to agents. You pay only when you decide to start.',
     },
   ],
 } as const;

@@ -91,11 +91,9 @@ export default async function UseCasesIndexPage() {
             <MarketingButton size="md" className="hit-area-y-1" asChild>
               <Link href="/auth">Start for free</Link>
             </MarketingButton>
-            {isServicesPagesEnabled() ? (
-              <MarketingButton size="md" variant="secondary" className="hit-area-y-1" asChild>
-                <Link href="/case-studies">See case studies</Link>
-              </MarketingButton>
-            ) : null}
+            <MarketingButton size="md" variant="secondary" className="hit-area-y-1" asChild>
+              <Link href="/case-studies">See case studies</Link>
+            </MarketingButton>
           </>
         }
       />
