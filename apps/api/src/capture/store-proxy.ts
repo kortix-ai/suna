@@ -7,5 +7,5 @@ import { mountBucketProxy } from '../object-store/bucket-proxy';
  * and the bucket are set (self-host without a domain). See object-store/bucket-proxy.ts.
  */
 export function registerCaptureStoreProxy(app: OpenAPIHono): void {
-  mountBucketProxy(app, { target: config.KORTIX_CAPTURE_S3_PROXY_TARGET, bucket: config.KORTIX_CAPTURE_S3_BUCKET, name: 'capture' });
+  mountBucketProxy(app, { target: config.KORTIX_CAPTURE_S3_PROXY_TARGET, bucket: config.KORTIX_CAPTURE_S3_BUCKET, publicEndpoint: config.KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT, name: 'capture' });
 }

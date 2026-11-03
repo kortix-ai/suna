@@ -43,13 +43,18 @@ function responseHeaders(from: IncomingHttpHeaders): Headers {
 /**
  * The handler for one bucket: `target` is the store's in-network origin,
  * `bucket` the only path prefix it serves, `name` the label in logs and in
- * the 503 body.
+ * the 503 body. `signedHost` is the host of the public endpoint every
+ * client signs for (the API signs presigned URLs and hands devices that
+ * endpoint). A proxy in front of the API can rewrite Host (a preview's
+ * Platinum ingress does), and the store then answers `SignatureDoesNotMatch`,
+ * so the request goes out with `signedHost` when one is set. A signature made
+ * for any other host still fails at the store.
  *
  * node:http, not fetch: a streamed request body goes out chunked in fetch, and
  * the store refuses a chunked PUT without a Content-Length (411). node:http
  * keeps the client's Content-Length and still streams, with no buffering.
  */
-export function bucketProxy(target: string, bucket: string, name: string): (request: Request) => Promise<Response> {
+export function bucketProxy(target: string, bucket: string, name: string, signedHost?: string): (request: Request) => Promise<Response> {
   const origin = new URL(target);
   const send = origin.protocol === 'https:' ? httpsRequest : httpRequest;
   return (request) =>
@@ -68,8 +73,9 @@ export function bucketProxy(target: string, bucket: string, name: string): (requ
           port: origin.port || undefined,
           method: request.method,
           path: `${url.pathname}${url.search}`,
-          // The signature covers the Host the client used: keep it.
-          headers: requestHeaders(request.headers),
+          // The signature covers the Host the client signed for: keep it, or
+          // restore it when a proxy in front rewrote it.
+          headers: { ...requestHeaders(request.headers), ...(signedHost ? { host: signedHost } : {}) },
         },
         (res) => {
           const noBody = request.method === 'HEAD' || res.statusCode === 204 || res.statusCode === 304;
@@ -87,12 +93,24 @@ export function bucketProxy(target: string, bucket: string, name: string): (requ
     });
 }
 
+/** The host of a public endpoint URL, or undefined when it is unset or not a URL. */
+function hostOf(endpoint: string | undefined): string | undefined {
+  try {
+    return endpoint?.trim() ? new URL(endpoint.trim()).host : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Mounts the passthrough for one bucket when both its target and its bucket are set. */
-export function mountBucketProxy(app: OpenAPIHono, input: { target: string | undefined; bucket: string | undefined; name: string }): void {
+export function mountBucketProxy(
+  app: OpenAPIHono,
+  input: { target: string | undefined; bucket: string | undefined; publicEndpoint: string | undefined; name: string },
+): void {
   const target = (input.target ?? '').trim();
   const bucket = (input.bucket ?? '').trim();
   if (!target || !bucket) return;
-  const handle = bucketProxy(target, bucket, input.name);
+  const handle = bucketProxy(target, bucket, input.name, hostOf(input.publicEndpoint));
   app.all(`/${bucket}`, (c) => handle(c.req.raw));
   app.all(`/${bucket}/*`, (c) => handle(c.req.raw));
 }

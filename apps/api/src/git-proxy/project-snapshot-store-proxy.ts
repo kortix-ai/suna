@@ -8,5 +8,5 @@ import { mountBucketProxy } from '../object-store/bucket-proxy';
  * presigned snapshot URL on the API origin. See object-store/bucket-proxy.ts.
  */
 export function registerProjectSnapshotStoreProxy(app: OpenAPIHono): void {
-  mountBucketProxy(app, { target: config.KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET, bucket: config.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET, name: 'project snapshot' });
+  mountBucketProxy(app, { target: config.KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET, bucket: config.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET, publicEndpoint: config.KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT, name: 'project snapshot' });
 }

@@ -35,6 +35,15 @@ test('forwards path, query, method, body and the signed Host and Authorization u
   });
 });
 
+test('sends the host the client signed for when a proxy in front rewrote Host', async () => {
+  // A preview's Platinum ingress rewrites Host; the store then rejects the
+  // presigned signature (SignatureDoesNotMatch) unless the signed host is restored.
+  const signed = bucketProxy(`http://127.0.0.1:${store.port}/`, 'kortix-project-snapshots', 'project snapshot', 'api.example.test');
+  const res = await signed(new Request('http://internal.example.test/kortix-project-snapshots/a/tree.tar.gz?X-Amz-Signature=synthetic', { headers: { host: 'internal.example.test' } }));
+  expect(res.status).toBe(200);
+  expect(await res.json()).toMatchObject({ method: 'GET', path: '/kortix-project-snapshots/a/tree.tar.gz', query: '?X-Amz-Signature=synthetic', host: 'api.example.test' });
+});
+
 test('passes the store’s status and headers through', async () => {
   const res = await handle(new Request('http://api.example.test/kortix-capture/boom'));
   expect(res.status).toBe(403);
