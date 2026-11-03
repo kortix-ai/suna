@@ -45,17 +45,55 @@ The version changes once per store release. The build number changes on every
 build. `runtimeVersion` equals the version, so an OTA update only reaches
 binaries built from the same release.
 
+To release a store version, bump it on `dev` and let the release carry it:
+
 ```bash
 cd apps/mobile
-node scripts/set-version.mjs 1.4.4          # writes all 6 copies (app.json, ios/, android/)
-eas build --profile prod-store --platform ios --auto-submit       # TestFlight
-eas build --profile prod-store --platform android --auto-submit   # Play internal track
-git tag mobile-v1.4.4 && git push origin mobile-v1.4.4            # the submitted commit
+node scripts/set-version.mjs 1.5.6          # writes all 6 copies (app.json, ios/, android/)
 ```
 
 `scripts/set-version.test.ts` fails when the copies disagree. A native change
 (new native module, permission, Expo SDK, anything under `ios/` or `android/`)
 needs a new version and a store build: OTA cannot ship it.
+
+After every successful `Deploy Prod`, `.github/workflows/mobile-store.yml` runs
+`scripts/store-release.mjs` on the deployed commit. Per platform it does each
+step only when it is missing:
+
+1. **Build:** no finished `prod-store` store build of this version exists, so
+   it builds one on EAS.
+2. **Submit:** the newest store build has no finished EAS submission. Android
+   goes to the Play **production** track (`releaseStatus: completed`, every
+   user). iOS goes to App Store Connect.
+3. **iOS review:** it creates the App Store version (or renames an unsubmitted
+   draft), attaches the build, fills an empty "What's New", and submits it for
+   App Review with "release automatically after approval". An approved version
+   held for a manual release is released.
+
+Only released code ships. The run builds, submits or sends to review only an
+EAS build made from a clean tree at a commit of the deployed history. It
+ignores any other build of the version, such as a hand-made build from `dev`
+or one with uncommitted changes, and warns. Android counts as shipped only
+after a finished submission to the `production` track.
+
+A release without a version bump changes nothing. The run posts what it
+changed, and every warning, to the release Slack channel. It warns when native
+code changed after the version's store build: bump the version, or phones get
+neither a store build nor OTA updates with that change. It never resubmits a
+version Apple rejected (`REJECTED`, `METADATA_REJECTED`, `INVALID_BINARY`) or
+one a person pulled from review (`DEVELOPER_REJECTED`): fix it in App Store
+Connect. When Apple refuses the review submission, the run names Apple's reason.
+Example: Apple added the age-rating question `socialMedia` in 2026 and refused
+1.5.5 until it had an answer (App Store Connect → App Information → Age
+Rating). Questionnaire answers are declarations, so the run never fills them.
+
+Auth is `EXPO_TOKEN` only. App Store Connect calls use the API key that EAS
+Submit stores for the app (`eas credentials -p ios`), read from Expo at run
+time. CI holds no Apple secret.
+
+Run it by hand: Actions → Mobile Store → Run workflow (it always uses `prod`;
+`dry_run` reads every state and changes nothing). Locally, from a `prod`
+checkout with `EXPO_TOKEN` set: `node apps/mobile/scripts/store-release.mjs --dry-run`.
 
 ## Require a minimum app version
 

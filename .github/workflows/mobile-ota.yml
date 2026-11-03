@@ -20,6 +20,7 @@ on:
   workflow_run:
     workflows: [Deploy Prod]
     types: [completed]
+    branches: [prod]
   workflow_dispatch:
     inputs:
       channel:
@@ -40,7 +41,15 @@ permissions:
 jobs:
   publish:
     name: Publish ${{ github.event_name == 'workflow_run' && 'production' || inputs.channel || 'dev' }}
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    # Only a green Deploy Prod of `prod` in this repository, started by a push
+    # or a person, starts a release. A pull request can run its own copy of a
+    # workflow named "Deploy Prod"; that run must never reach the credentials.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       contains(fromJSON('["push", "workflow_dispatch"]'), github.event.workflow_run.event) &&
+       github.event.workflow_run.head_branch == 'prod' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 30
     # One publish per channel at a time, never cancelled: a cancelled run can
@@ -51,6 +60,23 @@ jobs:
     env:
       CHANNEL: ${{ github.event_name == 'workflow_run' && 'production' || inputs.channel || 'dev' }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A manual production run ships `prod`, the released code, not the branch
+          # the button ran from: store builds call the production API.
+          ref: ${{ github.event.workflow_run.head_sha || (inputs.channel == 'production' && 'prod') || github.sha }}
+          # The script diffs against the commit of the channel's last update.
+          fetch-depth: 0
+
+      # Before any credential is read: the commit must be part of `prod`.
+      - name: Require a commit of prod
+        if: env.CHANNEL == 'production'
+        run: |
+          git merge-base --is-ancestor HEAD origin/prod || {
+            echo "::error::$(git rev-parse HEAD) is not a commit of origin/prod; refusing to publish it."
+            exit 1
+          }
+
       - name: Check out the aws-env action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -64,14 +90,6 @@ jobs:
           # An Expo robot access token for the `kortix` account.
           keys: |
             EXPO_TOKEN
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # A manual production run ships `prod`, the released code, not the branch
-          # the button ran from: store builds call the production API.
-          ref: ${{ github.event.workflow_run.head_sha || (inputs.channel == 'production' && 'prod') || github.sha }}
-          # The script diffs against the commit of the channel's last update.
-          fetch-depth: 0
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
