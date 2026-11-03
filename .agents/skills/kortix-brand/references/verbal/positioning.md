@@ -55,7 +55,7 @@ Kortix is the open-source CompanyOS: your agents, their skills, your company mem
 | PWA manifest `name` | "Kortix" | `description` = Short. |
 | README, GitHub About | Tagline (README) and Short (About) | Already correct. |
 | CLI banner and `--help` | Tagline | Already correct. |
-| Auth screen subtitle | None | The heading "Welcome to Kortix CompanyOS" stands alone (D30). |
+| Auth screen subtitle | None | The heading "Welcome to Kortix CompanyOS" stands alone (D30). A branded self-host instance shows its own product name there. |
 | Transactional email footer | "Kortix CompanyOS – the open-source operating system for your company" | Shipped since 2026-10-01 (`BRAND_FOOTER`). |
 | Slack and Teams app description | Standard, then one sentence on the channel | "Start a session from any Slack thread." |
 | Package descriptions (root, CLI, SDK) | Short (root, CLI); "the Kortix API" (SDK) | Not "agent platform". |
