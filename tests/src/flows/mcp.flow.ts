@@ -284,7 +284,7 @@ flow(
       const want = [
         "add_connector", "call_api", "call_connector", "connect_connector", "describe_api", "describe_connector_action", "get_connector_app", "kortix",
         "list_connector_accounts", "list_connectors", "list_files", "list_projects", "list_sessions", "read_file", "read_session", "read_skill",
-        "remove_connector", "run_command", "search_api", "search_connector_actions", "search_connector_apps",
+        "remove_connector", "run_command", "search_api", "search_connector_actions", "search_connector_apps", "search_project",
         "send_message", "start_session", "upload_connector_attachment", "write_file",
       ];
       if (JSON.stringify(names) !== JSON.stringify(want)) throw new Error(`tools: ${names}`);
