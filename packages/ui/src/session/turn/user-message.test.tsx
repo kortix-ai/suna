@@ -1351,10 +1351,17 @@ describe('UserMessage member author', () => {
     expect(renderWith(MEMBER, false)).not.toContain('rounded-tr-[calc(var(--radius)-6px)]');
   });
 
-  test('an author that is not shown, or no author: the message is unchanged', () => {
+  test('an author that is not shown: the message is unchanged', () => {
     expect(renderWith(MEMBER, false)).not.toContain('Sent by');
     expect(renderWith(MEMBER, false)).not.toContain('data-slot="avatar"');
-    expect(renderWith(undefined, true)).toBe(renderWith(undefined, false));
+  });
+
+  test('shown but not loaded yet: an empty avatar-sized slot holds the bubble in place', () => {
+    const reserved = renderWith(undefined, true);
+    expect(reserved).not.toContain('data-slot="avatar"');
+    expect(reserved).toContain('<span aria-hidden="true" class="size-6 shrink-0"></span>');
+    expect(reserved).toContain('rounded-tr-[calc(var(--radius)-6px)]');
+    expect(renderWith(undefined, false)).not.toContain('size-6 shrink-0');
   });
 });
 

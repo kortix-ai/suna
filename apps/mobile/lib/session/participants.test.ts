@@ -94,27 +94,18 @@ describe('messageAvatarPerson', () => {
   const BOT = { kind: 'session' as const, session_id: 'ses', name: 'Lead' };
   const authors = (map: SessionMessageAuthors['authors']): SessionMessageAuthors => ({ authors: map, initial_author: null });
 
-  test('a shared session draws every member author, the viewer included, with their photo', () => {
+  test('every member author draws, the viewer included, in a one-person session too', () => {
     const data = authors({ m1: ME, m2: THEM });
-    expect(messageAvatarPerson(data, view(), 'owner', 'm1')).toEqual({ name: 'Owner Name', email: 'owner@example.test', avatar_url: 'https://img.example.test/o.png' });
-    expect(messageAvatarPerson(data, view(), 'owner', 'm2')).toEqual({ name: 'member', email: 'member@example.test', avatar_url: null });
-  });
-
-  test('a one-person session draws nothing for the viewer, but still draws someone else', () => {
-    const solo = view({ participants: [OWNER], total: 1, multi_user: false });
-    expect(messageAvatarPerson(authors({ m1: ME }), solo, 'owner', 'm1')).toBeNull();
-    expect(messageAvatarPerson(authors({ m2: THEM }), solo, 'owner', 'm2')).not.toBeNull();
-  });
-
-  test('two distinct authors make a group chat even before participants load', () => {
-    expect(messageAvatarPerson(authors({ m1: ME, m2: THEM }), undefined, 'owner', 'm1')).not.toBeNull();
+    expect(messageAvatarPerson(data, 'm1')).toEqual({ name: 'Owner Name', email: 'owner@example.test', avatar_url: 'https://img.example.test/o.png' });
+    expect(messageAvatarPerson(data, 'm2')).toEqual({ name: 'member', email: 'member@example.test', avatar_url: null });
+    expect(messageAvatarPerson(authors({ m1: ME }), 'm1')).not.toBeNull();
   });
 
   test("another session's agent, an unknown message, or no data draws no avatar", () => {
     const data = authors({ m1: ME, m3: BOT });
-    expect(messageAvatarPerson(data, view(), 'owner', 'm3')).toBeNull();
-    expect(messageAvatarPerson(data, view(), 'owner', 'nope')).toBeNull();
-    expect(messageAvatarPerson(undefined, view(), 'owner', 'm1')).toBeNull();
+    expect(messageAvatarPerson(data, 'm3')).toBeNull();
+    expect(messageAvatarPerson(data, 'nope')).toBeNull();
+    expect(messageAvatarPerson(undefined, 'm1')).toBeNull();
   });
 });
 
