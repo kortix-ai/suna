@@ -461,6 +461,11 @@ function installFetch(transcript: unknown | 'unreachable') {
 }
 
 const NOW = Date.now();
+// The pre-fix CLI's high-bits mint put ids ~40 days ahead of the clock
+// (WIRE_ID_CLOCK_TOLERANCE). Built from `ms * 16` instead, the fixture sat on
+// the 48-bit ring wherever that product fell, and read as ahead only part of
+// the time: it flipped to "behind" at 2026-11-03 12:37 UTC and failed every run.
+const farAheadClock = (nowMs: number) => mintWireMessageId({ nowMs: nowMs + 40 * 86_400_000 }).id.slice(0, 16);
 
 describe('forwardToSandbox — wire id placement on the direct prompt path', () => {
   test('a STALE client id into a streaming CHILD session is re-minted above the tip, ledger + echo agree', async () => {
@@ -554,7 +559,7 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
     // Any client can send `X-Kortix-Wire-Id-Placed: 1`; the inbox drain is the
     // only intended sender. A far-future id (the pre-fix CLI's high-bits
     // mint) is re-minted on the id alone, without the transcript read.
-    const farFuture = `msg_${((BigInt(NOW) * BigInt(0x1000)) >> BigInt(8)).toString(16).slice(0, 12)}SyntheticCli07`;
+    const farFuture = `${farAheadClock(NOW)}SyntheticCli07`;
     installFetch([]);
     const placedHeaders = jsonHeaders();
     placedHeaders.set('X-Kortix-Wire-Id-Placed', '1');
@@ -585,7 +590,7 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
 
   test('on a runtime that keeps message ids, a far-future id is still re-minted on the id alone', async () => {
     boxKeepsMessageIds = true;
-    const farFuture = `msg_${((BigInt(NOW) * BigInt(0x1000)) >> BigInt(8)).toString(16).slice(0, 12)}SyntheticCli08`;
+    const farFuture = `${farAheadClock(NOW)}SyntheticCli08`;
     installFetch([]);
     await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', jsonHeaders(), bodyOf({ messageID: farFuture, parts: [{ type: 'text', text: 'hi' }] }), 'http://app.local');
     expect(fetchLog.map((f) => f.method)).toEqual(['POST']);
