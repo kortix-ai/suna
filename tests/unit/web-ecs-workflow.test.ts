@@ -298,12 +298,18 @@ describe('web ECS migration', () => {
     expect(branchTeardown).not.toContain('gh api');
   });
 
-  it('disables Vercel auto-deploys everywhere except staging', () => {
+  it('disables Vercel git auto-deploys for main, staging and prod', () => {
     const config = read('apps/web/vercel.json');
     const ignore = read('apps/web/scripts/vercel-ignore.sh');
+    const stagingWorkflow = read('.github/workflows/deploy-staging.yml');
 
     expect(config).toContain('"main": false');
-    expect(config).toContain('"staging": true');
+    // staging.kortix.com is the build deploy-staging.yml uploads and aliases.
+    // A git build of the staging branch is never served: from 2026-10-13 to
+    // 2026-11-02 it doubled 136 staging builds, 45 % of all finished builds.
+    expect(config).toContain('"staging": false');
+    expect(stagingWorkflow).toContain('npx vercel alias set "$url" "$WEB_HOST"');
+    expect(ignore).toContain('staging deploys only via deploy-staging.yml');
     // prod must NOT auto-deploy on push: during the 2026-08-10 v0.12.7 rollout
     // the auto-deployed new frontend called routes the still-old API lacked
     // and every project load failed. kortix.com deploys only from
