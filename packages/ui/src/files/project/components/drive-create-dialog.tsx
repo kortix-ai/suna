@@ -57,13 +57,13 @@ export function DriveCreateDialog({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const id = useId();
   const [name, setName] = useState('');
-  const [audience, setAudience] = useState<FolderAudienceMode>('everyone');
+  const [audience, setAudience] = useState<FolderAudienceMode>('restricted');
   // The last kind keeps the title through the exit animation.
   const [shownKind, setShownKind] = useState<DriveCreateKind>('folder');
   if (kind && kind !== shownKind) setShownKind(kind);
   const close = () => {
     setName('');
-    setAudience('everyone');
+    setAudience('restricted');
     onClose();
   };
 
@@ -139,14 +139,6 @@ export function DriveCreateDialog({
                   onValueChange={(mode) => setAudience(mode as FolderAudienceMode)}
                   className="space-y-2"
                 >
-                  <RadioGroupItem
-                    value="everyone"
-                    id={`${id}-everyone`}
-                    label={t('everyoneInProject')}
-                    description={t('audienceEveryoneDescription')}
-                    size="lg"
-                    variant="outline"
-                  />
                   <RadioGroupItem
                     value="restricted"
                     id={`${id}-restricted`}
