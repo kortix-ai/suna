@@ -18,6 +18,7 @@ import {
   svgCarriesActiveContent,
   svgRootFollowsPrologue,
 } from '../accounts/branding';
+import { instanceBranding } from '../accounts/instance-branding';
 
 // The entitlement read is injected (no `mock.module` — bun shares module mocks
 // across every file in one run, and a mocked entitlements module would poison
@@ -153,6 +154,35 @@ describe('effectiveBranding — what members are SERVED', () => {
   test('stored but the entitlement lapsed → null (fall back to Kortix, no write)', async () => {
     entitled = false;
     expect(await effectiveBranding('acc', { logo_url: 'http://x/l.svg' }, check)).toBeNull();
+  });
+});
+
+describe('instanceBranding — what the sign-in page shows', () => {
+  test('no enterprise license (the Kortix cloud) → null, and the database is never read', async () => {
+    let reads = 0;
+    const load = async () => {
+      reads += 1;
+      return { app_name: 'Acme', logo_url: 'http://x/l.svg' };
+    };
+    expect(await instanceBranding(false, load)).toBeNull();
+    expect(reads).toBe(0);
+  });
+
+  test('licensed → the oldest team account branding, normalized', async () => {
+    expect(await instanceBranding(true, async () => ({ app_name: 'Acme', icon_url: 'http://x/i.png' }))).toEqual({
+      app_name: 'Acme',
+      logo_url: null,
+      icon_url: 'http://x/i.png',
+      favicon_url: null,
+      logo_dark_url: null,
+      icon_dark_url: null,
+      favicon_dark_url: null,
+    });
+  });
+
+  test('licensed but no team account set branding → null (default Kortix)', async () => {
+    expect(await instanceBranding(true, async () => null)).toBeNull();
+    expect(await instanceBranding(true, async () => ({}))).toBeNull();
   });
 });
 

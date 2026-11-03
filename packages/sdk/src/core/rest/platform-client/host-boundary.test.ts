@@ -389,3 +389,32 @@ describe('public response share', () => {
     });
   });
 });
+
+describe('instance branding', () => {
+  test('reads /access/branding without a token and returns the branding', async () => {
+    const branding = {
+      app_name: 'Acme',
+      logo_url: 'https://storage.example.test/branding/a/logo-1.svg',
+      icon_url: 'https://storage.example.test/branding/a/icon-1.png',
+      favicon_url: null,
+      logo_dark_url: null,
+      icon_dark_url: null,
+      favicon_dark_url: null,
+    };
+    responseFactory = () => Response.json({ branding });
+    const result = await boundary.getInstanceBranding({ backendUrl: 'https://api.example.test/v1' });
+
+    expect(requests[0]?.url).toBe('https://api.example.test/v1/access/branding');
+    expect(requests[0]?.init?.method).toBe('GET');
+    expect(new Headers(requests[0]?.init?.headers).has('Authorization')).toBe(false);
+    expect(result).toEqual({ branding });
+  });
+
+  test('an instance without branding answers null', async () => {
+    responseFactory = () => Response.json({ branding: null });
+    const result = await boundary.getInstanceBranding({ backendUrl: 'https://api.example.test' });
+
+    expect(requests[0]?.url).toBe('https://api.example.test/v1/access/branding');
+    expect(result.branding).toBeNull();
+  });
+});

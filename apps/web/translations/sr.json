@@ -2864,7 +2864,7 @@
       "sending": "Слање..."
     },
     "unified": {
-      "welcome": "Добродошли у Kortix CompanyOS",
+      "welcome": "Добродошли у {name}",
       "email": "Имејл",
       "emailPlaceholder": "Ваша имејл адреса",
       "password": "Лозинка",
@@ -21559,7 +21559,7 @@
     "createProjectInstead": "Umesto toga napravite novi projekat"
   },
   "projectSelector": {
-    "welcome": "Dobro došli u Kortix CompanyOS",
+    "welcome": "Dobro došli u {name}",
     "welcomeBack": "Dobro došli nazad",
     "descriptionNew": "Napravite svoj prvi projekat ili se pridružite onom koji je vaš tim podelio.",
     "descriptionReturning": "Otvorite projekat ili napravite novi.",
