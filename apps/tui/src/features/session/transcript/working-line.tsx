@@ -33,6 +33,8 @@ export interface WorkingLineProps {
   stage?: BootInput['stage'];
   /** `session.reason`. */
   reason?: BootInput['reason'];
+  /** `session.bootImage`. */
+  image?: BootInput['image'];
   /** `session.failure`. */
   failure?: BootInput['failure'];
   /** Test seam for the clock. */
@@ -45,6 +47,7 @@ export function WorkingLine({
   phase = 'ready',
   stage,
   reason,
+  image,
   failure,
   now = Date.now,
 }: WorkingLineProps) {
@@ -77,16 +80,20 @@ export function WorkingLine({
       phase,
       stage,
       reason,
+      image,
       failure,
       msInStage: at - stageSinceRef.current.at,
       msTotal: at - bootSinceRef.current,
       now: at,
     });
     if (status) {
-      const elapsed = formatElapsed(at - bootSinceRef.current);
+      // An image step carries its own clock from the server's `since`.
+      const label = status.timed
+        ? status.label
+        : `${status.label} · ${formatElapsed(at - bootSinceRef.current)}`;
       return (
         <box flexDirection="column">
-          <Spinner label={`${status.label} · ${elapsed}`} />
+          <Spinner label={label} />
           {status.note ? (
             <text fg={theme.dim} wrapMode="word">
               {status.note}

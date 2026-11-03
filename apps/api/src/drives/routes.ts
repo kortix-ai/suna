@@ -8,17 +8,17 @@ import { recordDriveCommitAuthor } from '../artifacts/events-store';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { featureDisabledBody, requireFeatureFlag } from '../feature-flags/gate';
-import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { combinedAuth } from '../middleware/auth';
 import { callerKortixSessionId } from '../middleware/caller-session';
+import { isHumanCaller } from '../connectors/share';
+import { actorFor } from '../middleware/actor';
 import { rejectSandboxTokens } from '../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { actorOf } from '../iam/actor';
 import { PROJECT_ACTIONS } from '../iam/actions';
 import { listAccessible } from '../iam/authorize';
 import { visibleDirectory } from '../iam/directory-visibility';
-import { loadProjectForUser } from '../projects/surface';
+import { loadProjectForUser, resolveUserIdentities } from '../projects/surface';
 import { ensureAgentServiceAccount } from '../repositories/service-accounts';
 import { isUuid } from '../shared/validate';
 import type { AppEnv } from '../types';
@@ -32,6 +32,7 @@ import {
   shareablePrincipals,
 } from './queries';
 import { normalizeDrivePath } from './access';
+import { listAdminFolderReads, noteAdminFolderAccess } from './admin-access';
 import { noteDriveWrite } from './conflicts';
 import {
   COMPANY_DIR,
@@ -40,6 +41,7 @@ import {
   type FolderLevel,
   type FolderSubject,
   USERS_DIR,
+  adminOnlyPersonalFolder,
   folderAccess,
   folderAccessAtLeast,
   folderVisible,
@@ -235,19 +237,49 @@ interface Caller {
   personalFolder: string;
 }
 
+/**
+ * The name each person's own folder lists under: their display name, else
+ * their email, else the folder's handle. Owners come from the folder's
+ * system grant (the one Kortix made for its person).
+ */
+async function personalFolderNames(grants: readonly FolderGrant[], paths: readonly string[]): Promise<Map<string, string>> {
+  const owners = new Map<string, string>();
+  for (const g of grants) {
+    if (g.source === 'system' && g.principalType === 'user' && personalFolderOf(g.path) === g.path && paths.includes(g.path)) owners.set(g.path, g.principalId);
+  }
+  const people = await resolveUserIdentities([...owners.values()]);
+  const names = new Map<string, string>();
+  for (const [path, userId] of owners) {
+    const who = people.get(userId);
+    const name = who?.displayName?.trim() || who?.email || null;
+    if (name) names.set(path, name);
+  }
+  return names;
+}
+
 /** The person behind the request on `drive` (`driveSubjectFor`), after the HTTP refusals. */
 async function callerOn(c: DriveContext, drive: DriveRow): Promise<Caller> {
   const userId = callerId(c);
   const projectId = drive.projectId!;
   if (!(await mayUseProject(c, projectId, 'read'))) fail(404, 'Files not found');
-  // Volumes off for the project: nothing new is written to Files. Reads stay
-  // open, so a file a session already wrote under /drives still opens in its
-  // transcript; the Files page itself is gated on GET /v1/drives?projectId=.
-  if (c.req.method !== 'GET' && !(await projectFeatureFlagEnabled(projectId, 'drives'))) {
-    const { error } = featureDisabledBody('drives');
-    fail(403, error, 'feature_disabled');
-  }
-  return { drive, ...(await driveSubjectFor(drive, userId, (action) => mayUseProject(c, projectId, action), callerKortixSessionId(c))) };
+  const bound = callerKortixSessionId(c);
+  const human = isHumanCaller({ credentialKind: (await actorFor(c, drive.accountId))?.credential.kind, boundSessionId: bound });
+  return { drive, ...(await driveSubjectFor(drive, userId, (action) => mayUseProject(c, projectId, action), bound, human)) };
+}
+
+/** An admin opened `path` in another person's own folder: the owner sees it, and the audit log has it. */
+function noteAdminOpen(caller: Caller, path: string, level: FolderAccess | FolderLevel): void {
+  const folder = adminOnlyPersonalFolder(path, caller.grants, caller.subject);
+  if (!folder) return;
+  void noteAdminFolderAccess({
+    driveId: caller.drive.driveId,
+    accountId: caller.drive.accountId,
+    projectId: caller.drive.projectId!,
+    folder,
+    path,
+    adminUserId: caller.userId,
+    level,
+  });
 }
 
 async function loadDrive(c: DriveContext): Promise<Caller> {
@@ -267,6 +299,7 @@ function need(caller: Caller, path: string, level: FolderLevel): FolderAccess {
   if (!folderAccessAtLeast(access, level)) {
     fail(403, level === 'manage' ? 'You cannot change who has access to this folder' : level === 'write' ? 'You can only view this folder' : 'You cannot open this folder');
   }
+  noteAdminOpen(caller, path, level);
   return access;
 }
 
@@ -432,8 +465,6 @@ drivesApp.openapi(
     if (tokenProjectId && tokenProjectId !== projectId) fail(404, 'Project not found');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) fail(404, 'Project not found');
-    const gate = requireFeatureFlag(c, loaded.row.metadata, 'drives');
-    if (gate) return gate;
     const drive = await ensureProjectDrive(loaded.row.accountId, projectId);
     const caller = await callerOn(c, drive);
     const [stats, conflicts, limits] = await Promise.all([
@@ -640,6 +671,7 @@ drivesApp.openapi(
     // person's folder). The visibility filter below lists only the entries on
     // that way, never the folder's other contents.
     if (path !== '/' && !folderVisible(path, grants, subject)) notFound();
+    noteAdminOpen(caller, path, 'read');
     const raw = await withStorage(() =>
       readDriveVolume(
         drive,
@@ -672,6 +704,8 @@ drivesApp.openapi(
     if (path === '/' && !seen.has(USERS_DIR)) virtual.add(USERS_DIR);
     for (const v of virtual) entries.push({ path: v, name: baseName(v), type: 'dir', size: 0, mtime: 0 });
     const sharedPaths = new Set(grants.filter((g) => g.source !== 'system').map((g) => g.path));
+    // A person's own folder is named by their handle (`/Users/ana.lima`); it lists under their name.
+    const personNames = path === USERS_DIR ? await personalFolderNames(grants, entries.map((e) => e.path)) : null;
     // A private channel's folder is named by its id (`/Channels/<space_id>`); it lists under `#<slug>`.
     const channelNames = entries.some((e) => privateChannelFolderOf(e.path, privateFolders(caller)) === e.path)
       ? new Map((await privateChannelRows(drive.projectId!)).flatMap((r) => (r.folder && r.slug ? [[r.folder, `#${r.slug}`] as const] : [])))
@@ -683,6 +717,7 @@ drivesApp.openapi(
         .map((e) => ({
           ...e,
           ...(channelNames?.has(e.path) ? { name: channelNames.get(e.path)! } : {}),
+          ...(personNames?.has(e.path) ? { name: personNames.get(e.path)! } : {}),
           access: folderAccess(e.path, grants, subject),
           ...(e.type === 'dir' && sharedPaths.has(e.path) ? { shared: true } : {}),
         })),
@@ -1113,6 +1148,47 @@ drivesApp.openapi(
         level: g.level,
       })),
     });
+  },
+);
+
+// GET /v1/drives/:driveId/admin-reads?path=
+drivesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{driveId}/admin-reads',
+    tags: ['drives'],
+    summary: 'Admins who opened a person\'s own folder',
+    description:
+      'Project admins may open every person\'s own folder (`/Users/<name>`). Each admin who did, per day, over the last 90 days, newest first. ' +
+      'Only the folder\'s owner and the project\'s admins may read it; any other folder answers an empty list.',
+    ...auth,
+    request: { params: DriveParams, query: z.object({ path: z.string() }) },
+    responses: {
+      200: json(
+        z.object({
+          folder: z.string().nullable(),
+          reads: z.array(
+            z.object({ adminUserId: z.string(), label: z.string(), day: z.string(), firstAt: z.string(), lastAt: z.string(), opens: z.number() }),
+          ),
+        }),
+        'Admin opens',
+      ),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c) => {
+    const caller = await loadDrive(c);
+    const path = drivePath(c.req.query('path'), { allowRoot: true });
+    const folder = personalFolderOf(path);
+    if (!folder) return c.json({ folder: null, reads: [] });
+    if (folder !== caller.personalFolder) {
+      if (!folderVisible(folder, caller.grants, caller.subject)) fail(404, 'File or folder not found');
+      if (folderAccess(folder, caller.grants, caller.subject) !== 'manage') fail(403, 'Only the folder\'s owner and project admins see who opened it');
+    }
+    const reads = await listAdminFolderReads(caller.drive.driveId, folder);
+    const admins = await resolveUserIdentities(reads.map((r) => r.adminUserId));
+    const label = (id: string) => admins.get(id)?.displayName?.trim() || admins.get(id)?.email || id;
+    return c.json({ folder, reads: reads.map((r) => ({ ...r, label: label(r.adminUserId) })) });
   },
 );
 

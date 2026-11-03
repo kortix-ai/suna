@@ -18,12 +18,37 @@ const RETRY_DELAY_BASE_MS = 250;
 const RETRY_DELAY_MAX_MS = 4_000;
 const SNAPSHOT_BUILDING_MAX_ATTEMPTS = 30;
 const SNAPSHOT_BUILDING_RETRY_DELAY_MS = 10_000;
+/**
+ * A capacity refusal gets two quick retries before the create gives up and
+ * the session's next `/start` takes over with its own backoff (5 s, 10 s, …,
+ * session-open-provision.ts). Platinum refuses when every host that could take
+ * the box is at its RAM allocation cap; boxes start and stop on that fleet every
+ * few seconds, so a slot often frees within one or two. Measured on the dev org
+ * 2026-11-02: a refused create landed on its third `/start` attempt ~20 s later.
+ * Bounded at ~3 s on purpose: #5993 stopped the 30-attempt loop that held a
+ * refused session in "starting" for five minutes.
+ */
+export const CAPACITY_QUICK_RETRY_DELAYS_MS = [1_000, 2_000] as const;
+
+/**
+ * Platinum's "no host can take this box right now" (`no capacity`, or `no
+ * capacity on a host that can mount these volumes`): a slot freeing on the
+ * fleet clears it. Every other capacity refusal (an org quota or pool, a rate
+ * limit, a full disk, another provider's placement error) keeps failing fast
+ * on the first attempt, as before.
+ */
+const FLEET_PLACEMENT_REFUSAL = /"error":"no capacity(?: on a host that can mount these volumes)?"/i;
+
+export function isFleetPlacementRefusal(error: unknown): boolean {
+  return FLEET_PLACEMENT_REFUSAL.test(errorMessage(error));
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function isSnapshotStillBuilding(error: unknown): boolean {
+/** The provider refused a create because it is still finishing the image (building or replicating). */
+export function isSnapshotStillBuilding(error: unknown): boolean {
   if (error instanceof SnapshotStillBuildingError) return true;
   // legacy: Daytona refuses a create from a snapshot it is still building with
   // only this text. Delete when Daytona types the refusal.
@@ -167,6 +192,7 @@ export async function retrySandboxProvisionCreate(
   // exact pinned template id (with the same retry/backoff behavior on transient
   // errors, but fail-fast on a definitive GC'd-pin 404 — see below).
   createFn: (opts: CreateSandboxOpts) => Promise<ProvisionResult> = (opts) => provider.create(opts),
+  sleep: (ms: number) => Promise<unknown> = (ms) => Bun.sleep(ms),
 ): Promise<{ result: ProvisionResult; attempts: number }> {
   let lastError: unknown;
   // Outer bound is the longest patience-window we'd extend for any retry class.
@@ -193,22 +219,28 @@ export async function retrySandboxProvisionCreate(
       const snapshotStillBuilding = isSnapshotStillBuilding(error);
       const capacityLimited =
         !snapshotStillBuilding && classifySandboxProvisioningFailure(error).isCapacity;
+      const quickCapacityRetry = capacityLimited && isFleetPlacementRefusal(error);
       const maxAttempts = snapshotStillBuilding
         ? SNAPSHOT_BUILDING_MAX_ATTEMPTS
         : capacityLimited
-          ? 1
+          ? quickCapacityRetry
+            ? 1 + CAPACITY_QUICK_RETRY_DELAYS_MS.length
+            : 1
           : SANDBOX_INIT_MAX_ATTEMPTS;
       currentMaxAttempts = maxAttempts;
       const willRetry = attempt < maxAttempts;
       await hooks.onAttemptFailure?.(attempt, error, willRetry, maxAttempts);
       if (!willRetry) throw error;
       // Snapshot-building keeps its separate long polling window. Capacity
-      // fails this create fast and never reaches this delay branch: the
-      // session's next `/start` re-attempts it with backoff.
+      // gets its short quick-retry window (CAPACITY_QUICK_RETRY_DELAYS_MS);
+      // past it the create fails and the session's next `/start` re-attempts
+      // it with backoff.
       const delay = snapshotStillBuilding
         ? SNAPSHOT_BUILDING_RETRY_DELAY_MS
-        : exponentialBackoffMs({ attempt, baseMs: RETRY_DELAY_BASE_MS, capMs: RETRY_DELAY_MAX_MS });
-      await Bun.sleep(delay);
+        : quickCapacityRetry
+          ? CAPACITY_QUICK_RETRY_DELAYS_MS[attempt - 1] ?? CAPACITY_QUICK_RETRY_DELAYS_MS.at(-1)!
+          : exponentialBackoffMs({ attempt, baseMs: RETRY_DELAY_BASE_MS, capMs: RETRY_DELAY_MAX_MS });
+      await sleep(delay);
     }
   }
   throw lastError instanceof Error ? lastError : new Error('Sandbox initialization failed');

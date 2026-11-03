@@ -92,6 +92,7 @@ import { registerSessionRemindersRoutes } from './routes/session-reminders';
 import { registerRuntimeTriggersRoutes } from './routes/runtime-triggers';
 import { registerProjectSpacesRoutes } from './routes/project-spaces';
 import { registerProjectMemoryRoutes } from './routes/project-memory';
+import { registerProjectSearchRoutes } from './routes/project-search';
 import { registerProjectMyMemoryRoutes } from './routes/project-my-memory';
 import { registerChangeRequestsRoutes } from './routes/change-requests';
 import { registerPromptAttachmentsRoutes } from './routes/prompt-attachments';
@@ -194,6 +195,7 @@ export function registerAllProjectRoutes(): void {
   registerRuntimeTriggersRoutes();
   registerProjectSpacesRoutes();
   registerProjectMemoryRoutes();
+  registerProjectSearchRoutes();
   registerProjectMyMemoryRoutes();
   registerChangeRequestsRoutes();
   registerPromptAttachmentsRoutes();

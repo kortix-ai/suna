@@ -9,7 +9,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { validateRef, validateSha } from '../git-ref';
 import { UnexpectedRevParseOutputError, resolveCommitShaAt } from './commits';
-import { refreshMirror, runGit } from './mirror';
+import { isObjectFetchTooLarge, noteOverLimit, recentOverLimit } from '../../shared/over-limit-memo';
+import { ensureCommitTrees, ensureRangeObjects, ensureRangeTrees, refreshMirror, runGit } from './mirror';
 import { scaffoldTreeSha } from './scaffold-identity';
 import type { GitBackedProject } from './types';
 
@@ -79,8 +80,10 @@ export async function resolveScaffoldDeltaBoundary(
   ).stdout.trim();
   if (!/^[0-9a-f]{40}$/.test(root) || root === baseSha) return null;
   if (opts.scaffoldTreeSha) {
+    // From the commit object: `rev-parse <root>^{tree}` needs the tree itself,
+    // which a partial mirror may not hold.
     const rootTree = (
-      await runGit(['rev-parse', '--verify', `${root}^{tree}`], repoPath, false)
+      await runGit(['log', '--no-walk', '--format=%T', root, '--'], repoPath, false)
     ).stdout.trim();
     if (rootTree !== opts.scaffoldTreeSha) return null;
   }
@@ -94,6 +97,34 @@ export async function resolveScaffoldDeltaBoundary(
 }
 
 /**
+ * Make every object of the bundle `refs/heads/<ref> ^parent` present in the
+ * mirror: `git bundle create` packs them, and a partial mirror never fetches
+ * on its own. The parent's trees come first. Without them git cannot tell
+ * which files the parent already has, and the bundle would carry (and
+ * download) every file of the tip. The download is bounded like the bundle.
+ * Returns the bytes received when it passed the bound; nothing is kept then.
+ */
+async function ensureBundleObjects(
+  repoPath: string,
+  treeRef: string,
+  parentSha: string,
+  maxBytes = MAX_FAST_BOOT_GIT_BUNDLE_BYTES,
+): Promise<number | null> {
+  try {
+    const range = [`refs/heads/${treeRef}`, `^${parentSha}`];
+    await ensureCommitTrees(repoPath, [parentSha]);
+    // Trees in their own request: one `want` request that names a tree and a
+    // file inside it gets the tree without that file (`--filter=blob:none`).
+    await ensureRangeTrees(repoPath, range);
+    await ensureRangeObjects(repoPath, range, { maxBytes });
+    return null;
+  } catch (error) {
+    if (isObjectFetchTooLarge(error)) return error.receivedBytes;
+    throw error;
+  }
+}
+
+/**
  * Build the bundle `tip ^root`: every commit the project accumulated above
  * its scaffold root. The sandbox image already owns the root (see
  * `resolveScaffoldDeltaBoundary`), so this payload supplies the exact base
@@ -103,12 +134,29 @@ export async function resolveScaffoldDeltaBoundary(
 export async function buildScaffoldDeltaBundle(
   repoPath: string,
   ref: string,
-  opts: { scaffoldTreeSha?: string | null; inlineCapBytes?: number } = {},
+  opts: {
+    scaffoldTreeSha?: string | null;
+    inlineCapBytes?: number;
+    /** Remember a delta over the cap for this project (`over-limit-memo.ts`). */
+    projectId?: string;
+    /** Tests only: a smaller bundle cap, so the over-limit case needs no 64 MiB fixture. */
+    maxBytes?: number;
+  } = {},
 ): Promise<ScaffoldDeltaBundle | null> {
   const treeRef = validateRef(ref);
   const boundary = await resolveScaffoldDeltaBoundary(repoPath, treeRef, opts);
   if (!boundary) return null;
   const { baseSha, parentSha } = boundary;
+  // A project over the cap in the last 6 h is taken to be over it still: the
+  // box clones, and no tip move pays a download that is thrown away.
+  if (opts.projectId && recentOverLimit(opts.projectId, 'fast-boot-bundle')) return null;
+  const overLimit = (bytes: number) => {
+    if (opts.projectId) noteOverLimit(opts.projectId, 'fast-boot-bundle', bytes);
+    return null;
+  };
+  const maxBytes = opts.maxBytes ?? MAX_FAST_BOOT_GIT_BUNDLE_BYTES;
+  const received = await ensureBundleObjects(repoPath, treeRef, parentSha, maxBytes);
+  if (received !== null) return overLimit(received);
   const parentCommitBase64 = Buffer.from(
     (await runGit(['cat-file', 'commit', parentSha], repoPath, false)).stdout,
   ).toString('base64');
@@ -121,7 +169,7 @@ export async function buildScaffoldDeltaBundle(
       false,
     );
     const bytes = await readFile(bundlePath);
-    if (bytes.byteLength > MAX_FAST_BOOT_GIT_BUNDLE_BYTES) return null;
+    if (bytes.byteLength > maxBytes) return overLimit(bytes.byteLength);
     const bundleBase64 = bytes.toString('base64');
     const inlineCap = opts.inlineCapBytes ?? MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES;
     const fitsInline =
@@ -164,6 +212,11 @@ export async function writeScaffoldDeltaBundle(
   if (!ancestor) {
     throw new Error(`fast-boot bundle: ${parentSha} is not an ancestor of ${tipSha}`);
   }
+  const received = await ensureBundleObjects(repoPath, treeRef, parentSha);
+  if (received !== null) {
+    // The route answers 413 on "exceeds".
+    throw new Error(`fast-boot bundle exceeds ${MAX_FAST_BOOT_GIT_BUNDLE_BYTES} bytes (download stopped at ${received})`);
+  }
   await runGit(
     ['bundle', 'create', outPath, `refs/heads/${treeRef}`, `^${parentSha}`],
     repoPath,
@@ -187,7 +240,7 @@ export async function resolveFastBootGitHint(
   const repoPath = await refreshMirror(project, forceRefresh);
   const baseSha = await resolveCommitShaAt(repoPath, treeRef);
   const delta = await scaffoldTreeSha()
-    .then((tree) => buildScaffoldDeltaBundle(repoPath, treeRef, { scaffoldTreeSha: tree }))
+    .then((tree) => buildScaffoldDeltaBundle(repoPath, treeRef, { scaffoldTreeSha: tree, projectId: project.projectId }))
     .catch((error) => {
       console.warn('[git] fast-boot delta bundle unavailable', {
         projectId: project.projectId,

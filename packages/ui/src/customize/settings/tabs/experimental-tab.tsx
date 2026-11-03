@@ -501,7 +501,6 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
     if (key === 'project_channels') setChannelsTarget(next);
     else apply(key, next);
   };
-  const drive = rawFeatures.find((f) => f.key === 'drives');
 
   return (
     <>
@@ -510,12 +509,10 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
         onOpenChange={(open) => !open && setChannelsTarget(null)}
         turningOn={channelsTarget === true}
         projectName={project?.name ?? ''}
-        driveOff={!!drive && !drive.enabled && drive.operator_only !== true}
-        onConfirm={(alsoDrive) => {
+        onConfirm={() => {
           const target = channelsTarget === true;
           setChannelsTarget(null);
           apply('project_channels', target);
-          if (alsoDrive) apply('drives', true);
         }}
       />
       <ExperimentalTabView

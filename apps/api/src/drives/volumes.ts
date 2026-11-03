@@ -439,10 +439,11 @@ export async function writeVolumeFile(
 export async function listVolumeFilesPage(
   volume: DriveVolume,
   path: string,
-  opts: { recursive: boolean; cursor?: string; signal?: AbortSignal },
+  opts: { recursive: boolean; cursor?: string; signal?: AbortSignal; at?: string },
 ): Promise<{ entries: VolumeEntry[]; next_cursor: string | null }> {
   const q = new URLSearchParams({ path, recursive: String(opts.recursive), limit: '5000' });
   if (opts.cursor) q.set('cursor', opts.cursor);
+  if (opts.at) q.set('at', opts.at);
   const r = await callJson<{ entries: VolumeEntry[]; next_cursor?: string | null }>(volume, `${v(volume)}/files?${q}`,
     opts.signal ? { signal: opts.signal } : {},
   );

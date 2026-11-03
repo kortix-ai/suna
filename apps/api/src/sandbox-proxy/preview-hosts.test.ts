@@ -5,6 +5,7 @@ const configState: Record<string, unknown> = {
   INTERNAL_KORTIX_ENV: 'dev',
   PORT: 8008,
   KORTIX_PREVIEW_BASE_DOMAIN: undefined,
+  KORTIX_PREVIEW_BASE_DOMAIN_ALIASES: undefined,
 };
 mock.module('../config', () => ({ config: configState }));
 
@@ -23,6 +24,7 @@ const LABEL = 'sbx-01aaaaaaaaaaaaaaaaaaaaaaaa';
 const savedEnv = { ...process.env };
 beforeEach(() => {
   configState.KORTIX_PREVIEW_BASE_DOMAIN = undefined;
+  configState.KORTIX_PREVIEW_BASE_DOMAIN_ALIASES = undefined;
   delete process.env.KORTIX_PREVIEW_LOCAL;
   delete process.env.KORTIX_PREVIEW_LOCAL_PORT;
   configState.KORTIX_URL = 'https://dev-api.kortix.com';
@@ -201,5 +203,23 @@ describe('warnIfPreviewOriginsMissing', () => {
     const log = spy();
     expect(() => warnIfPreviewOriginsMissing(log)).not.toThrow();
     expect(log.calls).toEqual([]);
+  });
+});
+
+describe('preview alias base domains (self-host domain move)', () => {
+  test('a preview host under an alias base resolves like one under the primary; URLs use the primary', () => {
+    configState.KORTIX_PREVIEW_BASE_DOMAIN = 'p.acme.com';
+    configState.KORTIX_PREVIEW_BASE_DOMAIN_ALIASES = 'p.old-acme.cloud';
+    expect(previewOriginFor(SBX, 3000)).toBe(`https://dev-p3000-${LABEL}.p.acme.com`);
+    for (const base of ['p.acme.com', 'p.old-acme.cloud']) {
+      expect(resolvePreviewHost(`dev-p3000-${LABEL}.${base}`)).toEqual({ port: 3000, sandboxLabel: LABEL, local: false });
+    }
+    expect(resolvePreviewHost(`dev-p3000-${LABEL}.p.other.cloud`)).toBeNull();
+    expect(resolvePreviewHost(`prod-p3000-${LABEL}.p.old-acme.cloud`)).toBeNull();
+  });
+
+  test('no alias configured: only the primary base is served', () => {
+    configState.KORTIX_PREVIEW_BASE_DOMAIN = 'p.acme.com';
+    expect(resolvePreviewHost(`dev-p3000-${LABEL}.p.old-acme.cloud`)).toBeNull();
   });
 });

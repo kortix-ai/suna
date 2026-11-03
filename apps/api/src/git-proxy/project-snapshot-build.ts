@@ -6,9 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as tar from 'tar';
-import { config } from '../config';
+import { childProcessEnv, config } from '../config';
 import { validateSha } from '../shared/git-ref';
-import { refreshMirror, runGit } from '../projects/git/mirror';
+import { isObjectFetchTooLarge, noteOverLimit, recentOverLimit } from '../shared/over-limit-memo';
+import { ensureTreeContents, refreshMirror, runGit } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
 import { normalizeSnapshotRef, PROJECT_SNAPSHOT_MARKER_PATH, type ProjectSnapshotMarker } from './project-snapshot-shared';
 import { PROJECT_SNAPSHOT_FORMAT, PROJECT_SNAPSHOT_ARCHIVE_CONTENT_TYPE, PROJECT_SNAPSHOT_BLOBS_CONTENT_TYPE, getObjectText, headObject, projectSnapshotBlobsKey, projectSnapshotManifestKey, projectSnapshotTreeKey, projectSnapshotObjectPrefix, putObjectIfAbsent, type ProjectSnapshotManifest, type ProjectSnapshotRepository } from './project-snapshot-store';
@@ -16,7 +17,10 @@ import { PROJECT_SNAPSHOT_FORMAT, PROJECT_SNAPSHOT_ARCHIVE_CONTENT_TYPE, PROJECT
 // ── Build ───────────────────────────────────────────────────────────────────
 
 export class ProjectSnapshotTooLargeError extends Error {
-  constructor(maxBytes: number, actualBytes: number) {
+  constructor(
+    readonly maxBytes: number,
+    readonly actualBytes: number,
+  ) {
     super(`project snapshot exceeds ${maxBytes} bytes (${actualBytes})`);
     this.name = 'ProjectSnapshotTooLargeError';
   }
@@ -76,7 +80,7 @@ function spawnGit(
   return new Promise((resolve, reject) => {
     const child = spawn('git', args, {
       cwd,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      env: childProcessEnv({ GIT_TERMINAL_PROMPT: '0' }),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -121,6 +125,23 @@ function spawnGit(
     });
   });
 }
+
+/**
+ * Make every file of `sha` present in the mirror. The checkout fetches from
+ * the mirror, and a partial mirror serves only the objects it holds. The
+ * download is bounded like the snapshot: over it, nothing is kept.
+ */
+async function ensureSnapshotObjects(mirror: string, sha: string, maxBytes: number): Promise<void> {
+  try {
+    await ensureTreeContents(mirror, sha, { maxBytes, timeoutMs: SNAPSHOT_FETCH_TIMEOUT_MS });
+  } catch (error) {
+    if (isObjectFetchTooLarge(error)) throw new ProjectSnapshotTooLargeError(maxBytes, error.receivedBytes);
+    throw error;
+  }
+}
+
+/** Inside the worker's 15 min build lease, with room for the archive and the upload. */
+const SNAPSHOT_FETCH_TIMEOUT_MS = 8 * 60_000;
 
 async function prepareSnapshotCheckout(mirror: string, checkout: string, ref: string, sha: string): Promise<void> {
   await mkdir(checkout);
@@ -241,6 +262,12 @@ export async function buildProjectSnapshotArchive(
 ): Promise<BuiltProjectSnapshot> {
   const ref = normalizeSnapshotRef(refInput);
   const sha = validateSha(shaInput);
+  const maxBytes = config.KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES;
+  // A project over the cap in the last 6 h is taken to be over it still: the
+  // build would download every file of the commit, only to throw it away.
+  // The box clones instead (`over-limit-memo.ts`).
+  const recent = recentOverLimit(project.projectId, 'project-snapshot');
+  if (recent) throw new ProjectSnapshotTooLargeError(maxBytes, recent.bytes);
   let mirror = await refreshMirror(project);
   if (!(await mirrorHasCommit(mirror, sha))) {
     mirror = await refreshMirror(project, true);
@@ -255,6 +282,7 @@ export async function buildProjectSnapshotArchive(
   const blobsPath = join(root, `${sha}.blobs.pack`);
   const treePackPath = join(root, `${sha}.tree.pack`);
   try {
+    await ensureSnapshotObjects(mirror, sha, maxBytes);
     await prepareSnapshotCheckout(mirror, checkout, ref, sha);
     await sanitizeSnapshotCheckout(checkout);
     await splitSnapshotObjects(checkout, blobsPath, treePackPath, sha);
@@ -277,7 +305,6 @@ export async function buildProjectSnapshotArchive(
     );
     const treeBytes = (await stat(treePath)).size;
     const blobsBytes = (await stat(blobsPath)).size;
-    const maxBytes = config.KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES;
     if (treeBytes > maxBytes) throw new ProjectSnapshotTooLargeError(maxBytes, treeBytes);
     if (blobsBytes > maxBytes) throw new ProjectSnapshotTooLargeError(maxBytes, blobsBytes);
     const [treeSha256, blobsSha256] = await Promise.all([sha256File(treePath), sha256File(blobsPath)]);
@@ -285,6 +312,7 @@ export async function buildProjectSnapshotArchive(
     return { treePath, treeSha256, treeBytes, entries, blobsPath, blobsSha256, blobsBytes, cleanup };
   } catch (error) {
     await cleanup();
+    if (error instanceof ProjectSnapshotTooLargeError) noteOverLimit(project.projectId, 'project-snapshot', error.actualBytes);
     throw error;
   }
 }

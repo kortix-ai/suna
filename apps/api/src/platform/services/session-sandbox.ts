@@ -43,17 +43,19 @@ import {
   buildSandboxInitAttemptMetadata,
   buildSandboxInitFailureMetadata,
   buildSandboxInitSuccessMetadata,
+  isSnapshotStillBuilding,
   retrySandboxProvisionCreate,
   SANDBOX_INIT_MAX_ATTEMPTS,
   sandboxInitMetadataPatch,
 } from './sandbox-init-state';
 import {
-  ensureSandboxImage,
+  ensureSessionImage,
   ensureMyKortixSandboxImage,
   deleteSandboxImage,
   resolveTemplate,
   DEFAULT_SANDBOX_SLUG,
   type EnsureSandboxImageResult,
+  type ImageStep,
   type SandboxImageSpec,
 } from '../../snapshots/builder';
 import { templateResidentialProxy } from '../../snapshots/templates';
@@ -173,6 +175,33 @@ function isSnapshotMissingOnProvider(error: unknown): boolean {
  * credential. The grant is read from the default branch, so any `[[agents]]`
  * change activates only through a merged change request.
  */
+/**
+ * Each image step a session start waits on, written to its sandbox row
+ * (`metadata.imageStep`, read by `/start` into `boot.image`) and to the
+ * provision timeline. Writes run in order, off the provisioning path: a
+ * failed write costs the client one step label, never the session.
+ */
+function imageStepReporter(sandboxId: string, tl: ProvisionTimeline): (step: ImageStep) => void {
+  let writes: Promise<unknown> = Promise.resolve();
+  return (step) => {
+    tl.note(`image:${step.state}`);
+    const imageStep = { state: step.state, image: step.image, since: new Date().toISOString() };
+    writes = writes
+      .then(() =>
+        db
+          .update(sessionSandboxes)
+          .set({ metadata: patchedSandboxMetadata({ merge: { imageStep } }), updatedAt: new Date() })
+          .where(eq(sessionSandboxes.sandboxId, sandboxId)),
+      )
+      .catch((error: unknown) =>
+        logger.warn('[session-sandbox] image step write failed', {
+          sandboxId,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+  };
+}
+
 export async function mintSessionToken(opts: {
   accountId: string;
   userId: string;
@@ -392,6 +421,8 @@ interface SessionProvisionContext {
   providerWasExplicitlySelected: boolean;
   resolveGitProject: () => Promise<GitBackedProject>;
   resolveImage: (gitProject: GitBackedProject, targetProvider: string) => Promise<EnsureSandboxImageResult>;
+  /** Record the image step this session waits on (`imageStepReporter`). */
+  reportImageStep: (step: ImageStep) => void;
   /** The template slug this session boots. */
   slug: string;
   // Kortix Drive: a project with drives boots its sessions on Platinum only,
@@ -561,6 +592,7 @@ export async function provisionSessionSandbox(opts: {
     workspaceVolumePromise: undefined,
   };
   const tl = new ProvisionTimeline(sandboxId, 'provision');
+  const reportImageStep = imageStepReporter(sandboxId, tl);
 
   const slug = (opts.sandboxSlug ?? '').trim() || DEFAULT_SANDBOX_SLUG;
   // Resolve the project + fresh provider-neutral git access (the snapshot
@@ -572,7 +604,7 @@ export async function provisionSessionSandbox(opts: {
   const drivesRequirePlatinum =
     !isMyKortixSandboxSlug(slug) &&
     (await import('../../drives/service')
-      .then((m) => m.sessionDrivesEnabled(projectId))
+      .then((m) => m.sessionDriveMountEnabled())
       .catch(() => false));
   const drivesSyncAllowed =
     drivesRequirePlatinum && (await import('../../drives/sync').then((m) => m.driveSyncEnabled()).catch(() => false));
@@ -582,12 +614,14 @@ export async function provisionSessionSandbox(opts: {
   ): Promise<EnsureSandboxImageResult> =>
     isMyKortixSandboxSlug(slug)
       ? ensureMyKortixSandboxImage({ source: 'session-start', provider: targetProvider, projectId })
-      : ensureSandboxImage(gitProject, {
+      : ensureSessionImage(gitProject, {
           slug,
           accountId,
           source: 'session-start',
           provider: targetProvider,
           allowProjectImage: opts.allowProjectImage,
+          onStep: reportImageStep,
+          onTiming: (step) => tl.note(`image-step:${step}`),
         });
 
   // Kick image resolution off NOW, in parallel with the token round-trip below.
@@ -742,6 +776,7 @@ export async function provisionSessionSandbox(opts: {
       providerWasExplicitlySelected,
       resolveGitProject,
       resolveImage,
+      reportImageStep,
       slug,
       drivesRequirePlatinum,
       drivesSyncAllowed,
@@ -1037,6 +1072,10 @@ async function createAttemptSandbox(
     onAttemptFailure: async (attempt, error, willRetry, maxAttempts) => {
       state.lastProvisionAttempt = attempt;
       state.lastProvisionMaxAttempts = maxAttempts;
+      // Retries of up to 10 s each while the provider finishes the image: say so.
+      if (willRetry && isSnapshotStillBuilding(error)) {
+        ctx.reportImageStep({ state: 'waiting_for_provider', image: state.imageInfo?.snapshotName ?? null });
+      }
       const snapshot = sandbox.metadata as Record<string, unknown> | null;
       await transitionSandbox(willRetry ? 'reprovision' : 'failProvisioning', sandbox.sandboxId, {
         metadata: sandboxInitMetadataPatch(
@@ -1222,6 +1261,8 @@ async function activateProvisionedSandbox(
       {
         ...result.metadata,
         provisioningStage: firstStage?.id,
+        // The box has its image: no image step is pending any more.
+        imageStep: null,
         provisionTimeline: timeline,
         providerExternalId: result.externalId,
         ...boot.box,
@@ -1232,6 +1273,9 @@ async function activateProvisionedSandbox(
           sandboxSlug: state.imageInfo!.slug,
           isPlatformDefault: state.imageInfo!.isDefault,
           runtimeProfile: state.imageInfo!.runtimeProfile ?? 'standard',
+          // The machine size the image boots with. A later session start that
+          // falls back to this image (`lastBootedImage`) meters compute from it.
+          ...(state.imageInfo!.spec ? { spec: state.imageInfo!.spec } : {}),
           branch,
           provider: providerName,
         },

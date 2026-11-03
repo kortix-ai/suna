@@ -566,6 +566,25 @@ const TOOLS = [
     annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
+    name: 'search_project',
+    title: "Search a project's Files",
+    description:
+      "Search a project's Files (its Drive: /Company, /Users/<name>, team and channel folders) by file name and by text (Markdown, text, CSV, JSON, YAML, HTML, code; the first 256 KiB of each file), with your folder access: you never see a folder you could not open in Files. Every word of `query` must match as the start of a word; name matches come first. Returns path, kind, a snippet around the words, size, mtime and your access per hit. `next_cursor` is set when more exist: pass it back as `cursor`. A file written in the last ~20 s may not be found yet.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: PROJECT_ID,
+        query: { type: 'string', description: 'What to find, 1-200 characters, e.g. "launch plan".' },
+        path: { type: 'string', description: 'Only below this folder, e.g. /Company.' },
+        limit: { type: 'number', description: 'Max hits (default 20, max 100).' },
+        cursor: { type: 'string', description: 'The next_cursor of the previous page (same query).' },
+      },
+      required: ['project_id', 'query'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
     name: 'read_skill',
     title: 'Read Kortix guides',
     description:
@@ -682,6 +701,18 @@ function labelsArg(input: Record<string, unknown>): string[] | undefined {
   return labels;
 }
 
+/** Query for the search route: the same rules the route checks, refused here with a clear message. */
+export function searchProjectQuery(input: Record<string, unknown>): Record<string, string | number> {
+  const q = arg(input, 'query');
+  if (q.length > 200) throw new ToolInputError('query is at most 200 characters');
+  const query: Record<string, string | number> = { q, limit: limitArg(input, 'limit', 20, 100) };
+  const path = optionalArg(input, 'path');
+  if (path !== undefined) query.path = path;
+  const cursor = optionalArg(input, 'cursor');
+  if (cursor !== undefined) query.cursor = cursor;
+  return query;
+}
+
 /** The POST /sessions body for start_session. */
 export function startSessionBody(input: Record<string, unknown>): Record<string, unknown> {
   const body: Record<string, unknown> = { initial_prompt: arg(input, 'prompt') };
@@ -780,6 +811,11 @@ export async function runTool(ctx: ToolContext, name: string, input: Record<stri
     }
     case 'list_files':
       return listFilesTool(ctx, input);
+    case 'search_project': {
+      const r = await callApi(ctx, 'GET', `/v1/projects/${projectArg(input)}/search`, { query: searchProjectQuery(input) });
+      if (r.status >= 400) return apiResult(r);
+      return text(JSON.stringify(JSON.parse(r.body), null, 2));
+    }
     case 'read_skill':
       return readSkillTool(ctx, input);
     case 'kortix':

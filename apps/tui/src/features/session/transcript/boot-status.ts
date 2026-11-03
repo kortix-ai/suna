@@ -7,9 +7,15 @@
  * (`packages/sdk/src/react/use-session.ts`, `startEnabled`).
  *
  * The labels are the boot steps the web app used to narrate before its wake
- * went silent. Pure so every branch is asserted without a renderer or a
- * clock.
+ * went silent. While the box provisions, `/start` also names the sandbox image
+ * step (`boot.image`, read through `useSession(...).bootImage`): building the
+ * first image can take minutes, and a bare "Reserving your computer" for that
+ * long reads as a hang. The image phrases match the CLI's
+ * (`apps/cli/src/session-boot.ts`). Pure so every branch is asserted without a
+ * renderer or a clock.
  */
+
+import type { SessionStartImageStep } from '@kortix/sdk';
 
 /** The SDK's raw `/start` stage plus the two the hook derives. */
 export type BootStage = 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
@@ -21,6 +27,8 @@ export interface BootInput {
   stage?: BootStage | string | null;
   /** `session.reason` — e.g. `runtime_wake_cooldown`. */
   reason?: string | null;
+  /** `session.bootImage`: the sandbox image step while the box provisions. */
+  image?: SessionStartImageStep | null;
   /** `session.failure`, kept visible while a retry clock runs. */
   failure?: { evidence?: { attempts?: number; next_retry_at?: string | null } | null } | null;
   /** Milliseconds since the current stage was first seen. */
@@ -35,12 +43,51 @@ export interface BootStatus {
   label: string;
   /** A second line when the boot is not going to plan. */
   note: string | null;
+  /**
+   * True when `label` carries its own `m:ss` clock (an image step counts from
+   * the server's `since`). The caller then adds no boot clock of its own.
+   */
+  timed: boolean;
 }
 
 /** `starting` splits into two labels after this long, as on the web. */
 export const STARTING_SUBSTEP_MS = 5_000;
 /** After this long the note says so; sandboxes occasionally wedge silently. */
 export const SLOW_BOOT_MS = 45_000;
+
+/** `SESSION_START_IMAGE_STATES`, in the CLI's words, sentence case. */
+const IMAGE_STEP_TEXT: Record<SessionStartImageStep['state'], { text: string; note?: string }> = {
+  resolving: { text: 'Choosing the image' },
+  serving_last_ready: { text: 'Starting from the last ready image while the new one builds' },
+  waiting_for_build: { text: 'Waiting for the first image for this project to finish building' },
+  building: { text: 'Building the first image for this project' },
+  copying_to_region: { text: "Copying the image to the session's region" },
+  waiting_for_provider: { text: 'Waiting for the provider to finish the image', note: 'retrying' },
+};
+
+/** `0:42`, `12:05`, `1:02:03` — the CLI's image-step clock. */
+export function formatStepElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = String(total % 60).padStart(2, '0');
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+}
+
+/**
+ * One image step as a label: `Building the first image for this project (0:42)`.
+ * The clock counts from `step.since` to `now`. A state a newer API adds reads
+ * humanized.
+ */
+export function imageStepLabel(step: SessionStartImageStep, now: number): string {
+  const known = IMAGE_STEP_TEXT[step.state] as { text: string; note?: string } | undefined;
+  const raw = String(step.state).replace(/_/g, ' ');
+  const text = known?.text ?? raw.charAt(0).toUpperCase() + raw.slice(1);
+  const since = Date.parse(step.since);
+  const extras = [known?.note, Number.isFinite(since) ? formatStepElapsed(now - since) : undefined]
+    .filter((part): part is string => Boolean(part));
+  return extras.length > 0 ? `${text} (${extras.join(', ')})` : text;
+}
 
 function bootLabel(stage: BootInput['stage'], msInStage: number): string {
   switch (stage) {
@@ -82,14 +129,19 @@ export function wakeCooldownNote(
  */
 export function bootStatus(input: BootInput): BootStatus | null {
   if (input.phase !== 'starting') return null;
-  const label = bootLabel(input.stage, input.msInStage);
+  const image = input.stage === 'provisioning' ? (input.image ?? null) : null;
+  const label = image ? imageStepLabel(image, input.now) : bootLabel(input.stage, input.msInStage);
+  const timed = image !== null;
   const cooldown = wakeCooldownNote(input);
-  if (cooldown) return { label, note: cooldown };
-  if (input.msTotal >= SLOW_BOOT_MS) {
+  if (cooldown) return { label, note: cooldown, timed };
+  // A named image step is the server saying what the wait is: an image build
+  // takes minutes, so the "may be wedged" note would be false there.
+  if (!image && input.msTotal >= SLOW_BOOT_MS) {
     return {
       label,
       note: 'Taking longer than usual. The sandbox may be wedged; /new starts another.',
+      timed,
     };
   }
-  return { label, note: null };
+  return { label, note: null, timed };
 }

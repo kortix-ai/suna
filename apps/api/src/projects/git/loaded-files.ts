@@ -1,6 +1,6 @@
 import { posix } from 'node:path';
 import { manifestCandidatePaths, parseManifestText } from '@kortix/manifest-schema';
-import { runGitCapture } from './mirror';
+import { ensureCommitTrees, ensurePathObjects, runGitCapture } from './mirror';
 import type { GitBackedProject } from './types';
 
 /** The parsed manifest at `sha` in the API's bare mirror, or null when the commit has none. */
@@ -9,7 +9,10 @@ export async function readManifestAtSha(
   project: Pick<GitBackedProject, 'manifestPath'>,
   sha: string,
 ): Promise<Record<string, unknown> | null> {
-  for (const path of manifestCandidatePaths(project.manifestPath)) {
+  const candidates = manifestCandidatePaths(project.manifestPath);
+  // On a partial store a missing file reads like an absent one: fetch first.
+  await ensurePathObjects(mirror, sha, candidates);
+  for (const path of candidates) {
     const manifest = await runGitCapture(['show', `${sha}:${path}`], mirror);
     if (manifest.exitCode !== 0) continue;
     try {
@@ -48,6 +51,8 @@ export async function loadedFilesChangedBetween(
     const known = await runGitCapture(['cat-file', '-e', `${sha}^{commit}`], mirror);
     if (known.exitCode !== 0) return null;
   }
+  // `diff --quiet` compares the two trees by blob id: trees only, no file.
+  await ensureCommitTrees(mirror, [boxSha, tipSha]);
   const manifest = await readManifestAtSha(mirror, project, tipSha);
   const paths = manifest ? loadedPaths(manifest) : [];
   if (paths.length === 0) return false;

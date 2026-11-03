@@ -2,38 +2,24 @@
 
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import {
+  CodeIcon,
+  GitForkIcon,
+  ShieldCheckIcon,
+  UsersThreeIcon,
+} from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
 
 import { WorkspaceFramework } from './workspace-framework';
 
-// The hero's adjective cycles through the three pillars and "open" (kortix-brand D16, D21).
-const PILLAR_WORDS = ['sovereign', 'multiplayer', 'extensible', 'open'];
-
-/**
- * "The <word> CompanyOS", the word changing every 2.5 s. The new
- * word mounts and fades in (opacity only, so reduced motion needs no variant,
- * motion.md); the line reflows to its width. Screen readers get one static
- * sentence.
- */
-function PillarWord() {
-  const [shown, setShown] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => setShown((n) => (n + 1) % PILLAR_WORDS.length), 2500);
-    return () => clearInterval(timer);
-  }, []);
-  const word = PILLAR_WORDS.at(shown);
-
-  return (
-    <span
-      key={word}
-      aria-hidden
-      className="animate-in fade-in duration-slower whitespace-nowrap ease-out"
-    >
-      {word}
-    </span>
-  );
-}
+// What the CompanyOS is, beside the title (kortix-brand D35). Multiplayer,
+// Extensible and Sovereign use the glyphs of their pillars below the hero.
+const HERO_TRAITS = [
+  { label: 'Open Source', icon: GitForkIcon },
+  { label: 'Extensible', icon: CodeIcon },
+  { label: 'Multiplayer', icon: UsersThreeIcon },
+  { label: 'Sovereign', icon: ShieldCheckIcon },
+];
 
 /**
  * Landing hero, Paper "Kortix 2" Hero D (Accrue layout): the two-tone
@@ -49,21 +35,23 @@ export function SandBandHero() {
   return (
     <section id="hero" className="relative">
       <div className="relative flex flex-col gap-7.5 px-8 pt-32 pb-18 lg:px-28 lg:pt-40">
-        {/* Title, then one plain sentence on what it is (Devin's hero
-            pattern): sits close under the title, muted, two lines at most. */}
+        {/* The four traits as a quiet line above the title, then the title and
+            one sentence on what it is. */}
         <div className="flex flex-col gap-4 lg:gap-5">
-          <h1 className="max-w-261 text-3xl font-medium tracking-tight text-balance sm:text-4xl lg:text-[44px] lg:leading-13">
-            <span className="sr-only">
-              The sovereign, multiplayer, extensible and open CompanyOS
-            </span>
-            <span aria-hidden className="text-foreground block">
-              The <PillarWord /> CompanyOS
-            </span>
+          <ul className="text-muted-foreground grid w-fit grid-cols-2 gap-x-6 gap-y-2 sm:flex sm:flex-wrap sm:items-center sm:gap-x-5">
+            {HERO_TRAITS.map(({ label, icon: Icon }) => (
+              <li key={label} className="flex items-center gap-1.5 text-sm">
+                <Icon className="size-4 shrink-0" aria-hidden />
+                {label}
+              </li>
+            ))}
+          </ul>
+          <h1 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl lg:text-[44px] lg:leading-13">
+            The CompanyOS
           </h1>
           <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
-            Hand it an outcome and AI agents run it 24/7. Connect your company&rsquo;s tools, share
-            agents and context across your whole team, and own all of it as code: open source, on
-            your infrastructure or ours.
+            The cloud-native agent harness for companies. Hand it an outcome and agents run it 24/7
+            on your tools and context. Open source, in our cloud or yours.
           </p>
         </div>
 

@@ -454,6 +454,12 @@ export async function driveSubjectFor(
   may: (action: 'session' | 'write') => Promise<boolean>,
   /** The session-bound credential's session (`callerKortixSessionId`), null for a person. */
   bound: string | null = null,
+  /**
+   * A person's own credential (browser login or PAT, no session binding,
+   * `isHumanCaller`): an admin then reaches people's own folders too. Never a
+   * session's or an agent's.
+   */
+  human = false,
 ): Promise<DriveCaller> {
   const [projectMember, admin, groupIds] = await Promise.all([may('session'), may('write'), groupIdsOf(userId, drive.accountId)]);
   let grants = await listFolderGrants(drive);
@@ -479,7 +485,12 @@ export async function driveSubjectFor(
       subject: { userId, groupIds, projectMember, admin: false, privateChannelFolders },
     };
   }
-  return { userId, grants, personalFolder, subject: { userId, groupIds, projectMember, admin, privateChannelFolders } };
+  return {
+    userId,
+    grants,
+    personalFolder,
+    subject: { userId, groupIds, projectMember, admin, adminPeople: admin && human && bound === null, privateChannelFolders },
+  };
 }
 
 /** Every grant outside `channelFolder` at most `read`: what a private channel's thread may do with its person's access. */
@@ -868,7 +879,7 @@ export async function sessionVolumeMounts(input: {
   /** Mount slots the box's other volumes take (its /workspace volume). */
   reservedSlots?: number;
 }): Promise<SessionDriveMounts | undefined> {
-  if (!(await sessionDrivesEnabled(input.projectId))) return undefined;
+  if (!sessionDriveMountEnabled()) return undefined;
   const slots = Math.max(0, (await sandboxMountLimit()) - (input.reservedSlots ?? 0));
   const plan = await planSessionDrives({ ...input, slots });
   const region = plan.drive.platinumVolumeRegion ?? null;
@@ -910,12 +921,6 @@ export async function sessionVolumeMounts(input: {
     planned.volumes[p.mountPath] = { volume: volume.name, ...(p.readOnly ? { read_only: true } : {}), subdir: p.path, share: 'node' };
   }
   return planned;
-}
-
-/** Files mount in this project's sessions: storage configured, the operator override not set, the project's Volumes flag on. */
-export async function sessionDrivesEnabled(projectId: string): Promise<boolean> {
-  if (!sessionDriveMountEnabled()) return false;
-  return projectFeatureFlagEnabled(projectId, 'drives');
 }
 
 /**
@@ -1270,7 +1275,7 @@ export async function reconcileSessionDrives(sessionId: string): Promise<void> {
       .from(projectSessions)
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
-    if (!row || !(await sessionDrivesEnabled(row.projectId))) return;
+    if (!row || !sessionDriveMountEnabled()) return;
     const drive = await ensureProjectDrive(row.accountId, row.projectId);
     await applyDriveToRunningSandbox({
       accountId: row.accountId,
@@ -1603,7 +1608,7 @@ export async function enforceDriveMounts(
     );
   };
   const bringInLine = async (row: (typeof rows)[number]): Promise<void> => {
-    if (!(await sessionDrivesEnabled(row.projectId))) return;
+    if (!sessionDriveMountEnabled()) return;
     const base = {
       accountId: row.accountId,
       projectId: row.projectId,

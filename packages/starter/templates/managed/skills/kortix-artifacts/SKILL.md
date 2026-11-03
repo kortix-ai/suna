@@ -195,7 +195,7 @@ When asked to review, open one thread per issue, anchored to an exact quote:
 
     kortix artifacts comment <id> "Confirm the source for this figure, @name." --quote "Revenue rose."
 
-Quotes contain at most 32 characters. A missing quote exits nonzero and creates
+Quotes contain at most 500 characters. A missing quote exits nonzero and creates
 no thread. The CLI reads a pinned Files history version before it posts.
 Omit the anchor flag for a comment on the whole artifact. For an HTML element,
 use `--selector "#chart"`; the CLI records its center (0.5, 0.5), viewport width

@@ -7,30 +7,22 @@ import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { Band, Heading } from '@/features/marketing/kit/page-frame';
 import { cn } from '@kortix/ui';
 import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
-import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  BriefcaseIcon,
-  CellTowerIcon,
-  ChartLineUpIcon,
-} from '@phosphor-icons/react/dist/ssr';
+import { ArrowLeftIcon, ArrowRightIcon } from '@phosphor-icons/react/dist/ssr';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
 import { localizeMarketingContent as localizeContent, type CaseStudy } from './content';
 
-const ICONS = { telecom: CellTowerIcon, search: BriefcaseIcon, finance: ChartLineUpIcon } as const;
-
 const PLATINUM_TRACKING = 'tracking-[0.22em]'; // audit:allow Platinum's own wordmark tracking (pt-logo.tsx), a third-party mark
 
-/** Platinum's mark as platinum.dev draws it (`pt-logo.tsx`): a square and PLATINUM in mono, both currentColor. */
+/** Platinum's mark as platinum.dev draws it (`pt-logo.tsx`): a square and PLATINUM in mono, both in the tile's ink. */
 function PlatinumMark() {
   const tMarketing = useTranslations('hardcodedUi.i18nComplete');
 
   return (
     <span
-      className="text-foreground inline-flex items-center gap-4"
+      className="inline-flex items-center gap-4"
       role="img"
       aria-label={tMarketing('text5a98505ed913')}
     >
@@ -44,14 +36,16 @@ function PlatinumMark() {
 
 /** A third-party logo is drawn for a white ground: white in both themes (color.md, logo tile rule). */
 const LOGO_TILE_BACKGROUND = 'bg-white';
+/** A mark drawn in code (Platinum, Kortix) takes black on the white tile, in both themes. */
+const LOGO_TILE_INK = 'text-black';
 
-/** The card's top: the logo on its white tile, or the glyph on the muted ground. */
+/** The card's top: every card's mark on the same white tile, a logo file or a mark drawn in code. */
 function Mark({ item }: { item: CaseStudy }) {
-  if (item.logo) {
-    return (
-      <div
-        className={`${LOGO_TILE_BACKGROUND} flex h-40 items-center justify-center rounded-md border`}
-      >
+  return (
+    <div
+      className={`${LOGO_TILE_BACKGROUND} ${LOGO_TILE_INK} flex h-40 items-center justify-center rounded-md border`}
+    >
+      {item.logo ? (
         <Image
           src={item.logo.src}
           alt={item.logo.alt}
@@ -59,26 +53,18 @@ function Mark({ item }: { item: CaseStudy }) {
           height={item.logo.height}
           unoptimized
           // A wordmark (wider than 2.5:1) sits lower so it matches a stacked mark's weight.
-          className={item.logo.width / item.logo.height > 2.5 ? 'h-12 w-auto' : 'h-24 w-auto'}
+          className={item.logo.width / item.logo.height > 2.5 ? 'h-12 w-auto' : 'h-20 w-auto'}
         />
-      </div>
-    );
-  }
-  const Icon = ICONS[item.icon ?? 'search'];
-  return (
-    <div className="bg-muted flex h-40 items-center justify-center rounded-md">
-      {item.mark === 'kortix' ? (
+      ) : item.mark === 'kortix' ? (
         <KortixLogo size={28} variant="logomark" />
-      ) : item.mark === 'platinum' ? (
-        <PlatinumMark />
       ) : (
-        <Icon className="text-foreground size-12" aria-hidden />
+        <PlatinumMark />
       )}
     </div>
   );
 }
 
-/** One case study: its mark, who, the title, the story and four facts. */
+/** One case study: its mark, its category, the title, the story and four facts. */
 function CaseStudyCard({ item, className }: { item: CaseStudy; className?: string }) {
   return (
     <li
@@ -86,10 +72,7 @@ function CaseStudyCard({ item, className }: { item: CaseStudy; className?: strin
       className={cn('bg-background flex scroll-mt-20 flex-col gap-5 p-6 lg:p-11', className)}
     >
       <Mark item={item} />
-      <div className="flex flex-col gap-1">
-        <p className="text-muted-foreground text-sm">{item.category}</p>
-        <p className="text-foreground text-sm font-medium">{item.org}</p>
-      </div>
+      <p className="text-muted-foreground text-sm">{item.category}</p>
       <h3 className="text-foreground text-xl font-medium tracking-tight text-balance">
         {item.title}
       </h3>
@@ -110,11 +93,12 @@ function CaseStudyCard({ item, className }: { item: CaseStudy; className?: strin
 export function CaseStudyGrid() {
   const tMarketing = useTranslations('hardcodedUi.i18nComplete');
   const { caseStudies } = localizeContent(tMarketing);
+  const items = caseStudies.items.filter((item) => !item.hidden);
 
   return (
     <Band>
       <ul className="bg-border grid grid-cols-1 gap-px lg:grid-cols-2">
-        {caseStudies.items.map((item) => (
+        {items.map((item) => (
           <CaseStudyCard key={item.id} item={item} />
         ))}
       </ul>
@@ -136,6 +120,7 @@ export function CaseStudies({
 }) {
   const tMarketing = useTranslations('hardcodedUi.i18nComplete');
   const { caseStudies } = localizeContent(tMarketing);
+  const items = caseStudies.items.filter((item) => !item.hidden);
 
   const row = useRef<HTMLUListElement>(null);
   const [edge, setEdge] = useState({ start: true, end: false });
@@ -202,7 +187,7 @@ export function CaseStudies({
           aria-label={tMarketing('text6b1df2ba950c')}
           className="bg-border scrollbar-hide outline-ring flex snap-x snap-mandatory gap-px overflow-x-auto focus-visible:outline-2 focus-visible:-outline-offset-2"
         >
-          {caseStudies.items.map((item) => (
+          {items.map((item) => (
             <CaseStudyCard
               key={item.id}
               item={item}

@@ -134,11 +134,16 @@ export function registerRoutes(
   gateway: Gateway,
   inflight: InflightBudget,
   recordOutcome: (status: number) => void,
-  rateLimit: (request: Request) => Response | null,
+  rateLimit: (request: Request, headers?: Headers) => Response | null,
 ) {
   // Every model route checks the per-credential limit first (token-rate-limit.ts).
   const limited = <C extends { req: { raw: Request } }>(handler: (c: C) => Promise<Response>) =>
-    async (c: C) => rateLimit(c.req.raw) ?? handler(c);
+    async (c: C) => {
+      const headers = new Headers();
+      const response = rateLimit(c.req.raw, headers) ?? await handler(c);
+      headers.forEach((value, name) => response.headers.set(name, value));
+      return response;
+    };
   const chat = limited(inference(inflight, recordOutcome, 'chat', gateway.chatCompletions));
   const messages = limited(inference(inflight, recordOutcome, 'messages', gateway.messages));
   const responses = limited(inference(inflight, recordOutcome, 'responses', gateway.responses));

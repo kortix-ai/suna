@@ -17,6 +17,20 @@ hydrateEnvironmentSecret();
  */
 export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
+/**
+ * The environment of a child process: this process's environment plus
+ * `extra`. A child process is the one reader of the raw environment outside
+ * this file.
+ */
+export function childProcessEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  return { ...process.env, ...extra };
+}
+
+// No git process the API starts may download a missing object on its own
+// (projects/git/object-store.ts): it would run without credentials, one object
+// per round trip, with no size bound. Every child inherits this.
+process.env.GIT_NO_LAZY_FETCH = '1';
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 // Platinum is the reference provider. Daytona is a legacy fallback: its
@@ -183,6 +197,17 @@ const envSchema = z.object({
   // whose DNS does not fit that shape. A deployment with neither keeps previews
   // on the path proxy. See sandbox-proxy/preview-hosts.ts.
   KORTIX_PREVIEW_BASE_DOMAIN: optStr,
+  // Self-host alias domains (KORTIX_DOMAIN_ALIASES, derived by the CLI): extra
+  // Apps / preview base domains this deployment also serves, comma-separated.
+  // Hosts under them resolve exactly like hosts under the primary base, so
+  // links handed out before a domain move keep working. URLs this API hands
+  // out always use the primary base. See apps/hostnames.ts and
+  // sandbox-proxy/preview-hosts.ts.
+  KORTIX_APPS_BASE_DOMAIN_ALIASES: optStr,
+  // Self-host: extra domains this instance serves in full (web app, API, Apps,
+  // previews), comma-separated. See shared/domain-aliases.ts.
+  KORTIX_DOMAIN_ALIASES: optStr,
+  KORTIX_PREVIEW_BASE_DOMAIN_ALIASES: optStr,
   // Master switch: turns on real billing (Stripe + credit ledger), makes
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
   // Set to true on managed/cloud deployments; leave false for self-host + dev.
@@ -614,6 +639,10 @@ const envSchema = z.object({
     .enum(['git', 'prefer-s3', 'require-s3'])
     .optional()
     .default('git'),
+  // What the API keeps of each project repository (projects/git/object-store.ts).
+  // `partial`: commits, then trees and files only when a read names them.
+  // `full`: the whole-history clone of before 2026-11-02 (the kill switch).
+  KORTIX_GIT_OBJECT_STORE: z.enum(['partial', 'full']).optional().default('partial'),
   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: optStr,
   KORTIX_PROJECT_SNAPSHOT_S3_REGION: optStr,
   KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT: optUrl(''),
@@ -1304,6 +1333,9 @@ export const config = {
   // blank value must not turn into an instance called "".
   KORTIX_INSTANCE_ID: env.KORTIX_INSTANCE_ID || undefined,
   KORTIX_PREVIEW_BASE_DOMAIN: env.KORTIX_PREVIEW_BASE_DOMAIN,
+  KORTIX_APPS_BASE_DOMAIN_ALIASES: env.KORTIX_APPS_BASE_DOMAIN_ALIASES,
+  KORTIX_DOMAIN_ALIASES: env.KORTIX_DOMAIN_ALIASES,
+  KORTIX_PREVIEW_BASE_DOMAIN_ALIASES: env.KORTIX_PREVIEW_BASE_DOMAIN_ALIASES,
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_BOX_DISK_CHARGE_ENABLED: env.KORTIX_BOX_DISK_CHARGE_ENABLED,
@@ -1461,6 +1493,7 @@ export const config = {
   KORTIX_WORKSPACE_VOLUMES: env.KORTIX_WORKSPACE_VOLUMES,
   KORTIX_PLATINUM_US_REGION_DEFAULT: env.KORTIX_PLATINUM_US_REGION_DEFAULT,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
+  KORTIX_GIT_OBJECT_STORE: env.KORTIX_GIT_OBJECT_STORE,
   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET,
   KORTIX_PROJECT_SNAPSHOT_S3_REGION: env.KORTIX_PROJECT_SNAPSHOT_S3_REGION,
   KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT: env.KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT,

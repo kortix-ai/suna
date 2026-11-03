@@ -10,7 +10,9 @@ import type { ArtifactAnnotationCaptureResult } from './artifact-annotation-capt
 import { connectArtifactAnnotationFrame } from './artifact-annotation-channel';
 import {
   createArtifactAnnotationController,
+  type ArtifactAnnotationKey,
   type ArtifactAnnotationScheduler,
+  type ArtifactAnnotationSelection,
   type ArtifactAnnotationStatus,
 } from './artifact-annotation-controller';
 export type {
@@ -18,8 +20,15 @@ export type {
   ArtifactAnnotationViewport,
 } from '@kortix/shared/artifact-annotations';
 export type { ArtifactAnnotationCaptureResult } from './artifact-annotation-capture';
+export type {
+  ArtifactAnnotationKey,
+  ArtifactAnnotationSelection,
+} from './artifact-annotation-controller';
 
 const EMPTY_THREADS: ArtifactCommentThread[] = [];
+const NO_PINS: ReadonlyMap<string, number> = new Map();
+const samePins = (a: ReadonlyMap<string, number>, b: ReadonlyMap<string, number>) =>
+  a.size === b.size && [...a].every(([id, n]) => b.get(id) === n);
 export function useArtifactAnnotations(
   options: {
     enabled: boolean;
@@ -31,13 +40,26 @@ export function useArtifactAnnotations(
     threads: ArtifactCommentThread[] | undefined;
     focusedThreadId: string | null;
     focusRevision: number;
+    /** The parent's drawing layer covers the page: page keys are dropped. */
+    drawing?: boolean;
+    /** A pin or region placed in comment mode. */
     onCandidate: (anchor: ArtifactCommentAnchor) => void;
+    /**
+     * The page's text selection: an offer to comment on it, or null when it is gone. `moved`: a
+     * scroll or resize in the page withdrew it, not the person.
+     */
+    onSelection?: (selection: ArtifactAnnotationSelection | null, moved?: boolean) => void;
+    /** Escape or the comment shortcut from the page, only where the bridge sends one. */
+    onKey?: (key: ArtifactAnnotationKey) => void;
     onFocus: (threadId: string) => void;
+    /** The accessible name of pin `n` on the page; it must contain the number. */
+    pinLabel?: (n: number) => string;
   },
   schedule?: ArtifactAnnotationScheduler,
 ) {
   const [viewport, setViewport] = useState<ArtifactAnnotationViewport | null>(null);
   const [regions, setRegions] = useState<Readonly<Record<string, ArtifactAnnotationRect>>>({});
+  const [pins, setPins] = useState<ReadonlyMap<string, number>>(NO_PINS);
   const scope = useRef<{ frame: HTMLIFrameElement; version: string } | null>(null);
   const [resolved, setResolved] = useState<ArtifactCommentThread[]>(EMPTY_THREADS);
   const [readiness, setReadiness] = useState<{
@@ -62,7 +84,10 @@ export function useArtifactAnnotations(
       {
         post: channel.post,
         onCandidate: (anchor) => latest.current.onCandidate(anchor),
+        onSelection: (selection, moved) => latest.current.onSelection?.(selection, moved),
+        onKey: (key) => latest.current.onKey?.(key),
         onFocus: (id) => latest.current.onFocus(id),
+        onPins: (next) => setPins((previous) => (samePins(previous, next) ? previous : next)),
         onThreads: setResolved,
         onViewport: setViewport,
         onRegions: setRegions,
@@ -76,6 +101,7 @@ export function useArtifactAnnotations(
     const state = latest.current;
     current.update({
       ...state,
+      pinLabel: (n) => latest.current.pinLabel?.(n) ?? '',
       version: options.version,
       threads: state.threads ?? EMPTY_THREADS,
     });
@@ -90,11 +116,17 @@ export function useArtifactAnnotations(
   useEffect(() => {
     const state = latest.current;
     if (!state.version) return;
-    controller.current?.update({ ...state, version: state.version, threads });
+    controller.current?.update({
+      ...state,
+      pinLabel: (n) => latest.current.pinLabel?.(n) ?? '',
+      version: state.version,
+      threads,
+    });
   }, [
     options.version,
     options.canComment,
     options.mode,
+    options.drawing,
     threads,
     options.focusedThreadId,
     options.focusRevision,
@@ -139,6 +171,8 @@ export function useArtifactAnnotations(
     isCurrentViewport,
     viewport: options.enabled && current && readiness?.status === 'ready' ? viewport : null,
     regions: options.enabled && current && readiness?.status === 'ready' ? regions : {},
+    /** thread_id → the number of its pin on the page. */
+    pinNumbers: options.enabled && current ? pins : NO_PINS,
     capture,
     cancelCapture,
     regionForViewportRect,

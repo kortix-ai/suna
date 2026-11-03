@@ -8,6 +8,34 @@ export type DrawingStroke = {
   points: DrawingPoint[];
   width: number;
 };
+/**
+ * A stroke's stored color (`black | red | blue`, the API enum) as it paints. Red and blue are
+ * the kortix-red and kortix-blue accents; black is the brand ink. The page under a drawing
+ * keeps its own colors in either app theme, so the ink never flips to white.
+ *
+ * The screenshot is burned on a canvas, where CSS variables do not reach: it takes the hex
+ * values (visual-system.json `color.accents`, ink `#1f1f1f`).
+ */
+const DRAWING_INK_HEX = '#1f1f1f';
+const DRAWING_RED_HEX = '#f14b4c';
+const DRAWING_BLUE_HEX = '#2b91f7';
+export const DRAWING_IMAGE_COLORS: Readonly<Record<DrawingStroke['color'], string>> = {
+  black: DRAWING_INK_HEX,
+  red: DRAWING_RED_HEX,
+  blue: DRAWING_BLUE_HEX,
+};
+/** In the app (the live canvas, the stored marks, the swatches) red and blue follow the tokens. */
+export const DRAWING_COLORS: Readonly<Record<DrawingStroke['color'], string>> = {
+  black: DRAWING_INK_HEX,
+  red: 'var(--kortix-red)',
+  blue: 'var(--kortix-blue)',
+};
+/** The toolbar order. Red is the default: it reads on light and dark pages. */
+export const DRAWING_COLOR_ORDER = [
+  'red',
+  'blue',
+  'black',
+] as const satisfies readonly DrawingStroke['color'][];
 const MAX_POINTS = 1024;
 const MAX_TOTAL_POINTS = 8192;
 const MAX_STROKES = 64;

@@ -1284,5 +1284,16 @@
     "retryHour_other": "Riprova tra {{count}} ore.",
     "unavailable": "Immagine non disponibile",
     "details": "Dettagli immagine"
+  },
+  "sessionImage": {
+    "title": "Preparazione dell’immagine della sandbox",
+    "states": {
+      "resolving": "Scelta dell’immagine per questa sessione.",
+      "serving_last_ready": "Avvio dall’ultima immagine pronta. La nuova viene creata in background.",
+      "waiting_for_build": "La prima immagine di questo progetto è in costruzione. La sessione si avvia quando è pronta.",
+      "building": "Costruzione della prima immagine di questo progetto. Avviene una sola volta e richiede alcuni minuti.",
+      "copying_to_region": "Copia dell’immagine nella regione di questa sessione.",
+      "waiting_for_provider": "L’immagine è in fase di completamento. La sessione si avvia quando è pronta."
+    }
   }
 }
