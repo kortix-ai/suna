@@ -1487,12 +1487,12 @@
       "path": "/v1/drives/:driveId/access"
     },
     {
-      "method": "GET",
-      "path": "/v1/drives/:driveId/admin-reads"
-    },
-    {
       "method": "DELETE",
       "path": "/v1/drives/:driveId/access/:grantId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/admin-reads"
     },
     {
       "method": "GET",
