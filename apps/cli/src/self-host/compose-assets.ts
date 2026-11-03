@@ -437,7 +437,7 @@ const ACME_DNS_SERVICE: YamlRecord = {
   ports: [
     '${KORTIX_ACME_DNS_LISTEN_IP}:53:53/udp',
     '${KORTIX_ACME_DNS_LISTEN_IP}:53:53/tcp',
-    '127.0.0.1:${KORTIX_ACME_DNS_API_PORT:-13750}:80',
+    '127.0.0.1:13750:80', // ACME_DNS_LOOPBACK_URL in wildcard-tls.ts
   ],
   volumes: ['./acme-dns/config.cfg:/etc/acme-dns/config.cfg:ro', 'kortix-acme-dns-data:/var/lib/acme-dns'],
   restart: 'unless-stopped',
