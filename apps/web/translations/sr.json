@@ -1723,6 +1723,7 @@
         "chat": "Ћаскање",
         "slack": "Slack",
         "telegram": "Telegram",
+        "discord": "Discord",
         "teams": "Teams",
         "email": "Е-пошта",
         "scheduled": "Заказано",

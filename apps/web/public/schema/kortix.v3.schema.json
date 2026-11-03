@@ -1354,7 +1354,7 @@
           "slug": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
-            "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_telegram` and `computer` are reserved for the built-in connectors."
+            "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_telegram`, `kortix_discord` and `computer` are reserved for the built-in connectors."
           },
           "name": {
             "type": "string",
@@ -1433,11 +1433,12 @@
                   "slack",
                   "teams",
                   "email",
-                  "telegram"
+                  "telegram",
+                  "discord"
                 ]
               },
               {
-                "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL]|[tT][eE][lL][eE][gG][rR][aA][mM])\\s*$(?![\\s\\S])"
+                "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL]|[tT][eE][lL][eE][gG][rR][aA][mM]|[dD][iI][sS][cC][oO][rR][dD])\\s*$(?![\\s\\S])"
               }
             ]
           },
@@ -1752,6 +1753,32 @@
               "properties": {
                 "slug": {
                   "const": "kortix_telegram"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "channel"
+                      ]
+                    },
+                    {
+                      "pattern": "^\\s*(?:[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "slug": {
+                  "const": "kortix_discord"
                 }
               }
             },

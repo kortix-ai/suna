@@ -1723,6 +1723,7 @@
         "chat": "Chat",
         "slack": "Slack",
         "telegram": "Telegram",
+        "discord": "Discord",
         "teams": "Teams",
         "email": "Email",
         "scheduled": "Scheduled",

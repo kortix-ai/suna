@@ -1723,6 +1723,7 @@
         "chat": "チャット",
         "slack": "Slack",
         "telegram": "Telegram",
+        "discord": "Discord",
         "teams": "Teams",
         "email": "電子メール",
         "scheduled": "スケジュール済み",
