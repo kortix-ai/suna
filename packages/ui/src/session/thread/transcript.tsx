@@ -11,8 +11,6 @@
 
 
 import { isQuestionTool } from '@kortix/sdk';
-import { parsePeerMessagePrompt } from '@kortix/shared';
-import { PeerMessageRow } from '../turn/peer-message-row';
 
 import { UnifiedMarkdown } from '../../markdown/unified-markdown';
 import { detectCommandFromText } from './detect-command';
@@ -111,6 +109,8 @@ import { SubagentDialog } from '../agents/subagent-view';
 import { parseNoticeBatch, parseSubagentNotice, type NoticeBatchItem, type SubagentNotice } from '../turn/subagent-notice';
 import { SubagentNoticeRow } from '../turn/subagent-notice-row';
 import { NoticeBatchGroup } from '../turn/notice-batch-group';
+import { PeerMessageRow } from '../turn/peer-message-row';
+import { parsePeerMessagePrompt, type PeerMessagePromptInfo } from '@kortix/shared';
 import { ToolPartRenderer, TurnLiveContext } from '../tool/tool-renderers';
 import {
   ImageGenDigestsContext,
@@ -1017,6 +1017,24 @@ type PromptText = { text: string; synthetic: boolean; ignored: boolean };
  * A user message's text as its v1 text parts held it: a text block, or an
  * `ignored` text (a model-invisible `harness` block whose data is the part).
  */
+/**
+ * Whether a turn's prompt is a notice from another agent, not something a
+ * person wrote: a peer message (`send_message`), a subagent or teammate that
+ * finished, or a batch of those. The agent's work continues across it, so the
+ * thread spaces it like a continuation, not like a new prompt.
+ */
+export function isAgentNoticeTurn(turn: Pick<SessionLogTurn, 'user'>): boolean {
+  // A stream delta remakes the turns, not the prompt: read each prompt once.
+  const known = agentNoticeOf.get(turn.user);
+  if (known !== undefined) return known;
+  const notice = promptTexts(turn.user).some(
+    (t) => !!parsePeerMessagePrompt(t.text) || !!parseSubagentNotice(t.text) || (parseNoticeBatch(t.text)?.length ?? 0) > 1,
+  );
+  agentNoticeOf.set(turn.user, notice);
+  return notice;
+}
+const agentNoticeOf = new WeakMap<SessionLogMessage, boolean>();
+
 export function promptTexts(message: SessionLogMessage): PromptText[] {
   return message.blocks.flatMap((b): PromptText[] => {
     if (b.type === 'text') return [{ text: b.text, synthetic: b.synthetic === true, ignored: false }];
@@ -1035,14 +1053,6 @@ function useTurnUserContent({
 }: Pick<SessionTurnProps, 'turn' | 'commandMessages' | 'commands'>) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
 const texts = useMemo(() => promptTexts(turn.user), [turn.user]);
-const peerMessage = useMemo(() => {
-  for (const text of texts) {
-    if (text.ignored) continue;
-    const peer = parsePeerMessagePrompt(text.text);
-    if (peer) return peer;
-  }
-  return undefined;
-}, [texts]);
 // Whether the user message has any visible content (non-synthetic, non-ignored
 // text, or attachments). Background task notifications inject synthetic-only
 // user messages that should not render a user bubble.
@@ -1069,6 +1079,18 @@ const subagentNotice = useMemo<SubagentNotice | null>(() => {
   for (const t of texts) {
     const notice = parseSubagentNotice(t.text);
     if (notice) return notice;
+  }
+  return null;
+}, [texts, sessionReport, noticeBatch]);
+// A message from another Kortix session (`send_message`). The API delivers it as
+// harness context (`synthetic`), so the bubble, which draws only what a person
+// typed, never shows it: its row is drawn here. A typed one stays the bubble's.
+const peerMessage = useMemo<PeerMessagePromptInfo | null>(() => {
+  if (sessionReport || noticeBatch) return null;
+  for (const t of texts) {
+    if (!t.synthetic) continue;
+    const info = parsePeerMessagePrompt(t.text);
+    if (info) return info;
   }
   return null;
 }, [texts, sessionReport, noticeBatch]);
@@ -1126,7 +1148,7 @@ const commandOutput = useMemo(() => {
   const source = Array.isArray(commands) ? commands.find((c) => c.name === commandForTurn.name)?.source : undefined;
   return source === 'skill' ? undefined : commandForTurn;
 }, [commandForTurn, commands]);
-  return { sessionReport, noticeBatch, subagentNotice, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn, commandOutput, peerMessage };
+  return { sessionReport, noticeBatch, subagentNotice, peerMessage, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn, commandOutput };
 }
 
 /** The throttled working status of the working turn: one status change per
@@ -1554,7 +1576,7 @@ function TurnUserBlock(
   },
 ) {
   const { userContent } = props;
-  const { sessionReport, noticeBatch, subagentNotice, systemMessages, hasVisibleUserContent } = userContent;
+  const { sessionReport, noticeBatch, subagentNotice, peerMessage, systemMessages, hasVisibleUserContent } = userContent;
   // P5.6: the note a partial restore left for the agent is a notice, not a person's prompt.
   if (isSessionLogRestoreNote(props.turn.user)) return <RestoreNoteMarker />;
   return (
@@ -1563,16 +1585,16 @@ function TurnUserBlock(
         <NoticeBatchGroup items={noticeBatch} />
       ) : subagentNotice ? (
         <SubagentNoticeRow notice={subagentNotice} />
+      ) : peerMessage ? (
+        <PeerMessageRow info={peerMessage} />
       ) : (
         sessionReport && <TurnSessionReport report={sessionReport} />
       )}
       {/* ── System message indicator — shown for kortix_system-only messages ── */}
-      {!hasVisibleUserContent && !sessionReport && !noticeBatch && systemMessages.length > 0 && (
+      {!hasVisibleUserContent && !sessionReport && !noticeBatch && !peerMessage && systemMessages.length > 0 && (
         <SystemMessageIndicator messages={systemMessages} />
       )}
-      {userContent.peerMessage && !hasVisibleUserContent && !noticeBatch ? (
-        <PeerMessageRow info={userContent.peerMessage} />
-      ) : hasVisibleUserContent && <TurnUserBubble {...props} />}
+      {hasVisibleUserContent && <TurnUserBubble {...props} />}
     </>
   );
 }
@@ -2147,7 +2169,9 @@ function TurnFooter(
           On touch there is no hover, so Copy and the turn's finished-at /
           duration / cost would be permanently invisible, and tap-emulated
           `:hover` would leave exactly one arbitrary turn's bar lit. */}
-      {!working && !props.hideActionBar && (
+      {/* A turn that ended in tool calls alone ("Worked for 13s") has nothing to
+          copy or share: no bar, so no empty hover band under it. */}
+      {!working && !props.hideActionBar && hasCopyableResponse(response, answered.inlineContentParts) && (
         <TurnActionBar
           response={response}
           inlineContentParts={answered.inlineContentParts}
@@ -2228,6 +2252,12 @@ function TurnBusyRow(
 
 /** Copy + the turn's settled meta row — the hover-revealed bar at the end of
  *  a settled turn. Owns the copy state: it is the only consumer. */
+/** Whether the turn wrote any text: the response, or a text item of its inline content. */
+function hasCopyableResponse(response: string, inlineContentParts: TurnAnsweredState['inlineContentParts']): boolean {
+  if (response.trim()) return true;
+  return !!inlineContentParts?.some((item) => item.type === 'text' && item.block.text.trim());
+}
+
 function TurnActionBar({
   response,
   inlineContentParts,
@@ -2426,7 +2456,7 @@ function SessionTurnImpl(props: SessionTurnProps) {
     const showAnswer = turn.assistant.length > 0 || model.working || !!errors.turnErrorRow.text;
     return (
       <div className="text-factor-[2]">
-        {userContent.hasVisibleUserContent || userContent.peerMessage || userContent.sessionReport || userContent.noticeBatch || userContent.systemMessages.length > 0 ? (
+        {userContent.hasVisibleUserContent || userContent.sessionReport || userContent.noticeBatch || userContent.peerMessage || userContent.systemMessages.length > 0 ? (
           <MessageRow
             // The first message's turn clips its toolbar's overhang: it sits inside the row.
             className={cn('group/turn', props.isFirstTurn && '[&_[data-slot=row-toolbar]]:top-0.5')}
