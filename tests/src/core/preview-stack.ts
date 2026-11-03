@@ -447,8 +447,10 @@ function buildPreviewTestEnvironment(
     KE2E_CAP_SANDBOX: rawSecrets.PLATINUM_API_KEY ? '1' : '0',
     KE2E_CAP_MANAGED_GIT: managedGitEnabled ? '1' : '0',
     KE2E_CAP_MANAGED_GIT_PUSH: managedGitEnabled ? '1' : '0',
-    // The self-host stack publishes project snapshots to its bundled MinIO.
-    KE2E_CAP_PROJECT_SNAPSHOTS: '1',
+    // The self-host stack publishes project snapshots to its bundled MinIO, but
+    // the snapshot flows (CFG-15, CFG-16) provision a managed repository, and
+    // the preview GitHub App cannot create one.
+    KE2E_CAP_PROJECT_SNAPSHOTS: '0',
     KE2E_DEFAULT_FLOW_ATTEMPTS: '1',
   };
 }
