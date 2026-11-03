@@ -26,6 +26,10 @@ describe('ephemeral self-host preview stack', () => {
       '/scim/v2/*',
       '/internal/*',
       '/.well-known/oauth-authorization-server',
+      // The API's passthrough to the bundled MinIO: Capture uploads and the
+      // presigned project snapshot downloads.
+      '/kortix-capture/*',
+      '/kortix-project-snapshots/*',
     ]) {
       expect(caddy.split('\n').find((line) => line.startsWith('  @api path '))).toContain(path);
     }

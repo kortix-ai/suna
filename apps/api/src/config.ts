@@ -679,6 +679,18 @@ const envSchema = z.object({
    */
   KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT: optUrl(''),
   KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE: optBoolFalse,
+  /**
+   * Self-host's bundled store (MinIO) starts empty, so the API creates the
+   * bucket and its expiry rule (`ensureProjectSnapshotBucket`). AWS:
+   * Terraform owns both (infra/terraform/modules/project-snapshots-bucket).
+   */
+  KORTIX_PROJECT_SNAPSHOT_S3_CREATE_BUCKET: optBoolFalse,
+  /**
+   * The store's in-network origin for the `/<bucket>/*` passthrough on the API
+   * origin (self-host without a domain; object-store/bucket-proxy.ts). Domain
+   * mode leaves it unset: Caddy serves the prefix.
+   */
+  KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET: optUrl(''),
   // S3 Transfer Acceleration for the SANDBOX downloads only: presigned URLs
   // target <bucket>.s3-accelerate.amazonaws.com, so a box's connection ends at
   // the nearest AWS edge and the distance to the bucket rides AWS's backbone.
@@ -1535,6 +1547,8 @@ export const config = {
   KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT: env.KORTIX_PROJECT_SNAPSHOT_S3_ENDPOINT,
   KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT: env.KORTIX_PROJECT_SNAPSHOT_S3_PUBLIC_ENDPOINT,
   KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE: env.KORTIX_PROJECT_SNAPSHOT_S3_FORCE_PATH_STYLE,
+  KORTIX_PROJECT_SNAPSHOT_S3_CREATE_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_CREATE_BUCKET,
+  KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET: env.KORTIX_PROJECT_SNAPSHOT_S3_PROXY_TARGET,
   KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE,
   KORTIX_PROJECT_SNAPSHOT_S3_PREFIX: env.KORTIX_PROJECT_SNAPSHOT_S3_PREFIX,
   KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID,
