@@ -174,6 +174,15 @@ interface PlatinumSandbox {
   volume_mounts?: Array<Record<string, unknown>>;
   /** Optional mounts whose volume did not resolve: no mount row (#2427). */
   volume_mount_failures?: Array<Record<string, unknown>>;
+  /**
+   * The ports the create body's `expose` opened, when the box reached
+   * `running` inside the wait. Absent on a wait timeout (202), on an
+   * Idempotency-Key replay (Platinum stores no tokens twice) and on a Platinum
+   * without inline expose: the caller then calls `POST /:id/expose`.
+   */
+  exposed?: PlatinumExposedPort[];
+  /** `restore` (memory snapshot) or `cold-boot`. Absent on older Platinum. */
+  via?: string;
 }
 
 /** `GET /v1/sandboxes?paginated=true` — Platinum's list envelope. */
@@ -611,6 +620,7 @@ export class PlatinumProvider implements SandboxProvider {
   ): Promise<ProvisionResult> {
     const _t0 = Date.now();
     const workloadType = sandboxWorkloadType(opts);
+    const ingressPort = workloadType === 'app' ? 8080 : AGENT_PORT;
     const sandboxApiBase = config.KORTIX_URL
       .replace(/\/+$/, '')
       .replace(/\/v1\/router$/, '')
@@ -692,6 +702,10 @@ export class PlatinumProvider implements SandboxProvider {
         // environments.
         ...(currentInstanceId() ? { 'kortix.instance': currentInstanceId()! } : {}),
       },
+      // Open the ingress port in the create's own round trip (Platinum's inline
+      // expose: the same token and route as `POST /:id/expose`). The separate
+      // call below stays as the fallback for an answer without `exposed`.
+      expose: [{ port: ingressPort, public: false, ttl_seconds: PREVIEW_TOKEN_TTL_SECONDS }],
     };
     if (dedup) {
       createBody.name = dedup.name;
@@ -972,7 +986,6 @@ export class PlatinumProvider implements SandboxProvider {
       });
     }
 
-    const ingressPort = workloadType === 'app' ? 8080 : AGENT_PORT;
     const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/${ingressPort}`;
 
     // Eagerly expose the agent port so the *.sbx edge route is LIVE the moment
@@ -981,9 +994,15 @@ export class PlatinumProvider implements SandboxProvider {
     // /agent, /session, /global/events calls hit an un-routed edge → 504s right
     // after runtime-ready. Best-effort: a failure here just falls back to the
     // lazy expose in resolveEndpoint.
-    let exposedUrl = '';
+    //
+    // The create body asked for it inline (`expose` above), so a create that
+    // answered `running` already opened the port and this costs no round trip.
+    // The standalone call runs only when the answer has no URL for it: a wait
+    // timeout, an Idempotency-Key replay, or a Platinum without inline expose.
+    const inlineExposed = sandbox.exposed?.find((port) => port.port === ingressPort && !!port.url);
+    let exposedUrl = (inlineExposed?.url ?? '').replace(/\/$/, '');
     const _tExpose0 = Date.now();
-    try {
+    if (!exposedUrl) try {
       const exposed = await platinumJson<PlatinumExposedPort>(
         `/v1/sandboxes/${externalId}/expose`,
         {
@@ -1021,7 +1040,7 @@ export class PlatinumProvider implements SandboxProvider {
     // becomes usable without any create-path hang.
     console.log(
       `[platinum-timing] ${externalId} ` +
-        `vm-running=${_vmMs}ms expose=${_exposeMs}ms ` +
+        `vm-running=${_vmMs}ms expose=${inlineExposed ? 'inline' : `${_exposeMs}ms`} via=${sandbox.via ?? 'unknown'} ` +
         `edge=${exposedUrl ? 'ready' : 'lazy'} total=${Date.now() - _t0}ms (runtime-ready deferred to FE poll, like daytona)` +
         (sandbox.replayed ? ' [S1: Idempotency-Key replay — adopted an already-committed box]' : ''),
     );
