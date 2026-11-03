@@ -388,6 +388,13 @@ async function noteAssetsFromHealth(
  *
  * The same box report, read a few hundred ms earlier than the gate would have
  * read it. Never throws.
+ *
+ * It records the catalog and the release, NOT the runtime-asset verdict. A
+ * `behind` verdict known at the first turn start makes the asset lane POST
+ * `/kortix/refresh` at once, and the box rebuilt a ~100 MB binary in the middle
+ * of its first turn (preview trace 2026-11-03). Unrecorded, the first turn
+ * only schedules the probe, as before, and the box runs its own first pass
+ * after that turn (harness/shared/after-first-turn.ts in the daemon).
  */
 export async function noteSandboxHealthBody(sessionId: string, body: unknown): Promise<void> {
   try {
@@ -402,9 +409,12 @@ export async function noteSandboxHealthBody(sessionId: string, body: unknown): P
       const release = parseDaemonConfigReport(report.config);
       if (release) noteRunningRelease(sessionId, release.release_id);
     }
-    await noteAssetsFromHealth(sessionId, parseDaemonRuntimeReport(report.runtime));
+    const running = parseDaemonRuntimeReport(report.runtime)?.running;
+    if (running) {
+      noteRunningCatalog(sessionId, running.managed_model_ids, running.managed_catalog_fallback_reason);
+    }
   } catch (error) {
-    logger.warn('[runtime-assets] could not record an admission health read', {
+    logger.warn('[turn-start] could not record an admission health read', {
       session_id: sessionId,
       error: error instanceof Error ? error.message : String(error),
     });

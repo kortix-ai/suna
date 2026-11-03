@@ -9,16 +9,19 @@
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-// Keep the real ~200MB-hashing runtime-assets manifest out of this file.
+// Keep the real ~200MB-hashing runtime-assets manifest out of this file. The
+// verdict is `behind`: were the admission read to record it, the asset test
+// below would see it.
 mock.module('../../../runtime-assets/manifest', () => ({
   manifestFingerprint: async () => 'fp',
-  runningAssetsVerdict: async () => 'unknown',
+  runningAssetsVerdict: async () => 'behind',
 }));
 
 const { noteSandboxHealthBody, __resetTurnStartConvergenceForTests } = await import('../turn-start-convergence');
 const { convergeModelCatalogBeforeTurnStart } = await import('../model-catalog-turn-start');
 const { lastKnownManagedCatalog } = await import('../../../runtime-assets/running-catalog');
 const { lastKnownRunningRelease } = await import('../../../config-releases/running-release');
+const { lastKnownAssetVerdict } = await import('../../../runtime-assets/running-assets');
 
 const HEALTH = {
   capabilities: ['config.release.v1'],
@@ -58,6 +61,11 @@ describe('noteSandboxHealthBody — the admission read feeds the turn-start gate
       fallbackReason: null,
     });
     expect(lastKnownRunningRelease('sess-note-1')).toBe('a'.repeat(64));
+  });
+
+  test('records no runtime-asset verdict: a known "behind" would refresh the box mid first turn', async () => {
+    await noteSandboxHealthBody('sess-note-6', HEALTH);
+    expect(lastKnownAssetVerdict('sess-note-6', 'fp')).toBeUndefined();
   });
 
   test('the first prompt for a listed model makes no health read of its own', async () => {
