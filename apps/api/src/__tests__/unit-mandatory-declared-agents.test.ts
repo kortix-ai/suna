@@ -11,8 +11,10 @@
  * granted the permissive null grant or silently default-denied-to-running.
  */
 import { describe, expect, test } from 'bun:test';
+import { isMyKortixAgentName } from '@kortix/shared';
 import { DEFAULT_STARTER_TEMPLATE_ID, getStarterFiles } from '@kortix/starter';
 import { extractAgents, projectRequiresDeclaredAgents, resolveGovernedAgentGrant } from '../projects/agents';
+import { projectBuiltinAgents } from '../projects/lib/my-kortix-agent';
 import { parseManifestString, runtimeManifest } from '../projects/triggers';
 
 /**
@@ -293,42 +295,50 @@ describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its
     expect(starterFiles.some((f) => f.path === 'kortix.toml')).toBe(false);
   });
 
-  test('a first session with no explicit agent ("default") RESOLVES — ok:true, not AGENT_NOT_DECLARED', () => {
+  test('a first session with no explicit agent runs My Kortix, which the starter turns on', () => {
     const manifest = parseManifestString(manifestFile!.content, 'kortix.yaml');
     const loaded = extractAgents(manifest);
     expect(loaded.errors).toEqual([]);
-    // The manifest must name a default agent, and must declare it.
-    const declaredDefault = declaredDefaultAgent(loaded);
-    expect(loaded.specs.map((spec) => spec.name)).toContain(declaredDefault);
+    // My Kortix is built in, never declared: session create runs it with the
+    // platform grant and skips the declared-agent check (`platformMetaAgent`).
+    expect(isMyKortixAgentName(declaredDefaultAgent(loaded))).toBe(true);
+    expect(projectBuiltinAgents(manifest.raw).my_kortix).toBe(true);
+  });
+
+  test('the worker My Kortix starts RESOLVES with the full grant — ok:true, not AGENT_NOT_DECLARED', () => {
+    const manifest = parseManifestString(manifestFile!.content, 'kortix.yaml');
+    const loaded = extractAgents(manifest);
+    expect(loaded.specs.map((spec) => spec.name)).toContain('worker');
 
     // Mirrors projects.ts /projects/provision exactly: subject=true (the metadata
     // stamp), and no project.metadata.default_agent mirror set yet.
-    const governed = resolveGovernedAgentGrant('default', loaded, {
+    const governed = resolveGovernedAgentGrant('worker', loaded, {
       subject: true,
       projectDefaultAgent: null,
     });
 
     expect(governed.ok).toBe(true);
     if (!governed.ok) return;
-    // The default agent is the one a new user drives from the UI with no
-    // configuration, so it must carry the full grant — a narrowed default is a
-    // silently crippled first session.
+    // The agent a new user's first task runs on, with no configuration, so it
+    // must carry the full grant — a narrowed one is a silently crippled first task.
     expect(governed.grant).toEqual({
-      agent: declaredDefault,
+      agent: 'worker',
       connectors: 'all',
       permissions: 'all',
       env: 'all',
     });
   });
 
-  test('the starter\'s declared default agent also resolves when named explicitly', () => {
+  test('every agent the starter declares resolves when named explicitly', () => {
     const manifest = parseManifestString(manifestFile!.content, 'kortix.yaml');
     const loaded = extractAgents(manifest);
-    const governed = resolveGovernedAgentGrant(declaredDefaultAgent(loaded), loaded, {
-      subject: true,
-      projectDefaultAgent: null,
-    });
-    expect(governed.ok).toBe(true);
+    for (const spec of loaded.specs) {
+      const governed = resolveGovernedAgentGrant(spec.name, loaded, {
+        subject: true,
+        projectDefaultAgent: null,
+      });
+      expect(governed.ok).toBe(true);
+    }
   });
 
 });
