@@ -11,6 +11,8 @@
 
 
 import { isQuestionTool } from '@kortix/sdk';
+import { parsePeerMessagePrompt } from '@kortix/shared';
+import { PeerMessageRow } from '../turn/peer-message-row';
 
 import { UnifiedMarkdown } from '../../markdown/unified-markdown';
 import { detectCommandFromText } from './detect-command';
@@ -1033,6 +1035,14 @@ function useTurnUserContent({
 }: Pick<SessionTurnProps, 'turn' | 'commandMessages' | 'commands'>) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
 const texts = useMemo(() => promptTexts(turn.user), [turn.user]);
+const peerMessage = useMemo(() => {
+  for (const text of texts) {
+    if (text.ignored) continue;
+    const peer = parsePeerMessagePrompt(text.text);
+    if (peer) return peer;
+  }
+  return undefined;
+}, [texts]);
 // Whether the user message has any visible content (non-synthetic, non-ignored
 // text, or attachments). Background task notifications inject synthetic-only
 // user messages that should not render a user bubble.
@@ -1116,7 +1126,7 @@ const commandOutput = useMemo(() => {
   const source = Array.isArray(commands) ? commands.find((c) => c.name === commandForTurn.name)?.source : undefined;
   return source === 'skill' ? undefined : commandForTurn;
 }, [commandForTurn, commands]);
-  return { sessionReport, noticeBatch, subagentNotice, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn, commandOutput };
+  return { sessionReport, noticeBatch, subagentNotice, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn, commandOutput, peerMessage };
 }
 
 /** The throttled working status of the working turn: one status change per
@@ -1560,7 +1570,9 @@ function TurnUserBlock(
       {!hasVisibleUserContent && !sessionReport && !noticeBatch && systemMessages.length > 0 && (
         <SystemMessageIndicator messages={systemMessages} />
       )}
-      {hasVisibleUserContent && <TurnUserBubble {...props} />}
+      {userContent.peerMessage && !hasVisibleUserContent && !noticeBatch ? (
+        <PeerMessageRow info={userContent.peerMessage} />
+      ) : hasVisibleUserContent && <TurnUserBubble {...props} />}
     </>
   );
 }
@@ -2414,7 +2426,7 @@ function SessionTurnImpl(props: SessionTurnProps) {
     const showAnswer = turn.assistant.length > 0 || model.working || !!errors.turnErrorRow.text;
     return (
       <div className="text-factor-[2]">
-        {userContent.hasVisibleUserContent || userContent.sessionReport || userContent.noticeBatch || userContent.systemMessages.length > 0 ? (
+        {userContent.hasVisibleUserContent || userContent.peerMessage || userContent.sessionReport || userContent.noticeBatch || userContent.systemMessages.length > 0 ? (
           <MessageRow
             // The first message's turn clips its toolbar's overhang: it sits inside the row.
             className={cn('group/turn', props.isFirstTurn && '[&_[data-slot=row-toolbar]]:top-0.5')}
