@@ -5,8 +5,10 @@
 //   the session it runs in (pi/extension.ts).
 // The mapping: a turn is a prompt (a hidden one is a custom message with display false that starts a turn), followed
 // through message_update text deltas and tool_execution_start events until the agent settles; steer is pi's steer;
-// a note is a hidden custom message that starts no turn; the per-turn system text and hidden context go in through
-// before_agent_start, only for the run the voice started; abort is pi's abort; recall reads the session's messages.
+// a note is a hidden custom message that starts no turn; the per-turn system text goes in through before_agent_start
+// and the per-turn context through pi's `context` event, which joins it to the voice's own prompt in each model call
+// of that run and stores nothing: the session keeps the caller's words and the answer, never the call's state;
+// abort is pi's abort; recall reads the session's messages.
 // Both pi 1.x (@earendil-works) and omp (@oh-my-pi) are taken by shape, not by import: nothing here loads pi.
 import { randomUUID } from 'node:crypto'
 import type { Agent, Bus, Recall, SendExtra, TurnEvents, TurnOptions } from '../agent'
@@ -68,6 +70,9 @@ type Port = {
   subscribe(fn: (e: PiEvent) => void): void
   /** before_agent_start, registered once; false when this face has none (then system is dropped, context inlined). */
   hook(fn: Handler): boolean
+  /** pi's `context` event (the messages of one model call, changed for that call only), registered once; false when
+   * this face has none (then context is a hidden message beside the words, stored in the session). */
+  transform(fn: Handler): boolean
   prompt(text: string, hidden: { id: string } | undefined, busy: boolean): Promise<unknown>
   steer(text: string): Promise<unknown>
   note(text: string, details: object): Promise<unknown>
@@ -77,7 +82,8 @@ type Port = {
   dispose(): void
 }
 
-/** The custom type of the voice's messages in pi's session (notes, hidden turns); `voice-context` is per-turn context. */
+/** The custom type of the voice's messages in pi's session (notes, hidden turns); `voice-context` is per-turn context
+ * on a host without pi's `context` event. */
 export const VOICE = 'voice'
 const CONTEXT = 'voice-context'
 // The events a turn reads; an extension subscribes to each by name.
@@ -107,9 +113,53 @@ const charge = (m: PiMessage) => {
 /** The adapter over a port. */
 function adapter(port: Port): PiAgent {
   const listeners = new Set<(e: PiEvent) => void>()
-  port.subscribe((e) => { for (const fn of [...listeners]) fn(e) })
-  // The run the voice is about to start: its system text and hidden context, applied by before_agent_start only to
-  // that run (a run someone else starts in the same session, e.g. typed in pi's own UI, keeps its own prompt).
+  // The voice's prompts in the session's runs, each with its context: pi's `context` event joins each to its prompt in
+  // every model call that carries it, and nothing of it is stored. One is dropped at the end of a run that carried it,
+  // or of the second run that did not (its words never reached the model).
+  const joins = new Map<string, { text: string; context: string; seen?: true; runs: number }>()
+  let answered = false
+  let joined = false
+  port.subscribe((e) => {
+    if (e.type === 'message_start' && e.message?.role === 'assistant') answered = true
+    if (e.type === 'agent_settled' || (e.type === 'agent_end' && !continues(e))) {
+      // A host whose model answered with the voice's prompts in its run but never fired `context` would lose every
+      // turn's context: from then on it gets the hidden message (or the inline text, queued).
+      if (transformed && answered && !joined && joins.size) {
+        transformed = false
+        console.error('[voice] pi fired no context event for a run: per-turn context goes in as a hidden message')
+      }
+      for (const [id, j] of joins) if (j.seen || ++j.runs > 1) joins.delete(id)
+      answered = joined = false
+    }
+    for (const fn of [...listeners]) fn(e)
+  })
+  let transformed = port.transform((e) => {
+    const messages = e?.messages as PiMessage[] | undefined
+    if (!joins.size || !Array.isArray(messages)) return
+    joined = true
+    // Each prompt of the voice is its latest match: its hidden turn's message, or a user message that holds its words
+    // (an earlier one with the same words is an earlier turn).
+    const at = new Map<number, string>()
+    for (const [id, j] of joins) {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i]
+        if (!(m?.details?.voiceTurn === id || (m?.role === 'user' && textOf(m.content).includes(j.text)))) continue
+        if (!at.has(i)) at.set(i, j.context), (j.seen = true)
+        break
+      }
+    }
+    if (!at.size) return
+    return {
+      messages: messages.map((m, i) => {
+        const context = at.get(i)
+        if (context === undefined) return m
+        return { ...m, content: typeof m.content === 'string' ? `${context}\n\n${m.content}` : [{ type: 'text', text: context }, ...(m.content ?? [])] }
+      }),
+    }
+  })
+  // The run the voice is about to start: its system text (and, on a host without `context`, its hidden context),
+  // applied by before_agent_start only to that run (a run someone else starts in the same session, e.g. typed in pi's
+  // own UI, keeps its own prompt).
   let pending: { id: string; text: string; system?: string; context?: string } | undefined
   const hooked = port.hook((e) => {
     const p = pending
@@ -117,16 +167,18 @@ function adapter(port: Port): PiAgent {
     pending = undefined
     const out: { systemPrompt?: string | string[]; message?: Custom } = {}
     if (p.system) out.systemPrompt = Array.isArray(e.systemPrompt) ? [...e.systemPrompt, p.system] : [e.systemPrompt, p.system].filter(Boolean).join('\n\n')
-    if (p.context) out.message = { customType: CONTEXT, content: p.context.trim(), display: false, details: { voiceTurn: p.id } }
+    if (p.context && !transformed) out.message = { customType: CONTEXT, content: p.context, display: false, details: { voiceTurn: p.id } }
     return out
   })
 
   /** Starts a run (`now`: the session is idle, the next run is this one) or queues the words behind the running one. */
   const start = (id: string, text: string, o: { system?: string; context?: string; synthetic?: boolean }, now: boolean) => {
-    // A queued message joins a run whose system prompt is set: its context rides in its own text.
-    const inline = o.context?.trim() && (!now || !hooked)
-    if (now && hooked) pending = { id, text, system: o.system, context: o.context }
-    return port.prompt(inline ? `${o.context!.trim()}\n\n${text}` : text, o.synthetic ? { id } : undefined, !now)
+    const context = o.context?.trim() || undefined
+    if (context && transformed) joins.set(id, { text, context, runs: 0 })
+    // Without `context`, a queued message joins a run whose system prompt is set: its context rides in its own text.
+    const inline = context && !transformed && (!now || !hooked)
+    if (now && hooked) pending = { id, text, system: o.system, context }
+    return port.prompt(inline ? `${context}\n\n${text}` : text, o.synthetic ? { id } : undefined, !now)
   }
 
   const bus = (): Bus => {
@@ -165,6 +217,7 @@ function adapter(port: Port): PiAgent {
         clearTimeout(guard), stopSettle(), off()
         opts.signal?.removeEventListener('abort', end)
         if (pending?.id === id) pending = undefined
+        joins.delete(id)
         done()
       }
       // Our words entering the session: the user message (its text holds ours) or the hidden turn's custom message.
@@ -279,6 +332,12 @@ export function fromSession(session: AgentSessionLike, ext?: Pick<ExtensionLike,
       if (typeof off === 'function') offs.push(off as () => void)
       return true
     },
+    transform(fn) {
+      if (!ext) return false
+      const off = ext.on('context', (e) => (live ? fn(e) : undefined))
+      if (typeof off === 'function') offs.push(off as () => void)
+      return true
+    },
     prompt: (text, hidden, busy) =>
       hidden
         ? session.sendCustomMessage({ customType: VOICE, content: text, display: false, details: { voiceTurn: hidden.id } }, { triggerTurn: true, ...(busy && { deliverAs: 'followUp' as const }) })
@@ -325,6 +384,7 @@ export function fromExtension(pi: ExtensionLike, ctx: ContextLike | (() => Conte
     id: () => current().sessionManager.getSessionId(),
     subscribe: (fn) => { for (const event of EVENTS) on(event, (e) => fn({ ...e, type: e?.type ?? event })) },
     hook: (fn) => (on('before_agent_start', fn), true),
+    transform: (fn) => (on('context', fn), true),
     prompt: async (text, hidden, busy) =>
       hidden
         ? pi.sendMessage({ customType: VOICE, content: text, display: false, details: { voiceTurn: hidden.id } }, { triggerTurn: true, ...(busy && { deliverAs: 'followUp' as const }) })
