@@ -78,3 +78,41 @@ test('API rejections share a general budget across routes and return retry heade
   }
   expect((await app.request('/v1/projects', { method: 'OPTIONS', headers })).status).toBe(401);
 });
+
+test('a validated sandbox token spends its own budget, not its host address; a forged one does not', async () => {
+  const { candidateSecretKeyHashesAsync, markTokenValidated, resetTokenHashCache } = await import('../shared/token-hash');
+  resetTokenHashCache();
+  setSystemTime(new Date('2026-11-03T12:00:00Z'));
+  const app = new Hono();
+  app.use('*', createPublicEdgeRateLimitMiddleware());
+  app.all('*', (c) => c.json({ ok: true }));
+  // Two boxes on one Platinum host: one egress address.
+  const host = '51.158.248.121';
+  const boxA = 'kortix_sb_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  const boxB = 'kortix_sb_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
+  for (const token of [boxA, boxB]) {
+    // What the auth middleware's validateSecretKey does on a live key row.
+    await candidateSecretKeyHashesAsync(token);
+    markTokenValidated(token);
+  }
+  const from = (token?: string) => ({ 'X-Forwarded-For': host, ...(token ? { Authorization: `Bearer ${token}` } : {}) });
+  // Unauthenticated traffic from the host spends the address budget to zero.
+  for (let i = 0; i < 300; i++) expect((await app.request('/v1/projects', { headers: from() })).status).toBe(200);
+  expect((await app.request('/v1/projects', { headers: from() })).status).toBe(429);
+  // A box with a validated token still gets through, on a budget of its own.
+  const a = await app.request('/v1/projects/p1/turn-stream', { method: 'POST', headers: from(boxA) });
+  expect(a.status).toBe(200);
+  expect(a.headers.get('X-RateLimit-Remaining')).toBe('299');
+  // A second box on the same host is not charged for the first.
+  const b = await app.request('/v1/platform/boot-timeline', { method: 'POST', headers: from(boxB) });
+  expect(b.headers.get('X-RateLimit-Remaining')).toBe('299');
+  // A sandbox-shaped token this process never validated stays on the address budget.
+  const forged = await app.request('/v1/projects', { headers: from('kortix_sb_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC') });
+  expect(forged.status).toBe(429);
+  // So does a validated key of another family: only sandbox tokens move.
+  const userKey = 'kortix_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD';
+  await candidateSecretKeyHashesAsync(userKey);
+  markTokenValidated(userKey);
+  expect((await app.request('/v1/projects', { headers: from(userKey) })).status).toBe(429);
+  resetTokenHashCache();
+});

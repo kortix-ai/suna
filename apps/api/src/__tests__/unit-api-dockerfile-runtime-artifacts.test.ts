@@ -9,6 +9,11 @@ describe('API image sandbox runtime artifacts', () => {
     const dockerfile = readFileSync(resolve(repoRoot, 'apps/api/Dockerfile'), 'utf8');
 
     expect(dockerfile).toContain('COPY apps/sandbox/MACHINE.md ./apps/sandbox/MACHINE.md');
+    // The daemon fingerprint hashes the compile recipe; a missing input fails
+    // every template listing (ENOENT).
+    expect(dockerfile).toContain(
+      'COPY apps/kortix-sandbox-agent-server/scripts/build.sh ./apps/kortix-sandbox-agent-server/scripts/build.sh',
+    );
   });
 
   test('refreshes the compiled agent time after the final source copy', () => {
