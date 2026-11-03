@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
@@ -804,6 +805,29 @@ describe('full self-host Docker distribution', () => {
     expect(fn).toContain('wait_healthy');
     expect(fn).toContain('(go)');
     expect(fn).toContain('(no-go)');
+  });
+
+  test('updater.sh: a stateful recreate that comes back healthy reports success, and one that does not reports failure', () => {
+    // Runs the real functions in sh with Docker stubbed. POSIX sh has no
+    // locals: wait_healthy's own all_ok once leaked into this function's result
+    // and turned every healthy recreate into a "degraded" run.
+    const script = kortixRuntimeAssets['updater.sh'];
+    const pick = (name: string, next: string) => script.slice(script.indexOf(`${name}()`), script.indexOf(`${next}()`));
+    const functions = `${pick('wait_healthy', 'remove_containers')}\n${pick('reconcile_stateful_services', 'check_drift').replace(/\n# [^\n]*$/gm, '')}`;
+    const run = (health: string) =>
+      spawnSync('sh', ['-c', `
+        ROLLOUT_TIMEOUT=5; HEALTH_POLL_S=0
+        COMPOSE=compose_stub
+        compose_stub() { [ "$1" = config ] && printf 'caddy\\nsupabase-db\\n'; return 0; }
+        log() { :; }
+        service_up_to_date() { [ "$1" != caddy ]; }
+        running_container_ids() { echo "id-$1"; }
+        container_health() { echo ${health}; }
+        ${functions}
+        reconcile_stateful_services
+      `]).status;
+    expect(run('healthy')).toBe(0);
+    expect(run('unhealthy')).toBe(1);
   });
 
   test('updater.sh: a post-swap crash-loop is watched for and stamped, with a one-line rollback hint', () => {
