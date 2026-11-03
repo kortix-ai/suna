@@ -18,7 +18,7 @@ How a Kortix image, cover, share card or screenshot is directed. The goal is one
 
 **Rule.** Use the art layer in an image only as a still: a Paper shader frame, the pixel or dither mark, a dot-matrix glyph, or a wallpaper download. Composite it. Do not ask an image model to imitate it. — *Why:* the art layer is a sanctioned set of shipped modules (D4d). A model's imitation is a fifth style. — *Where:* image, marketing, social. — *When silent:* take a still from `apps/web/public/wallpapers/downloads/` or render the module. Dark art stays dark in both themes (`graphic-elements.md`).
 
-**Rule.** Avoid: robot mascots, glowing brains, neon grids, holograms, glassmorphism, rainbow gradients, invented logos, generated product UI, stock office scenes, busy dashboards, meaningless charts, and the words "futuristic", "next-gen" and "seamless". — *Why:* each is a generic-AI signal. — *Where:* image, deck, social, marketing. — *When silent:* if it could appear in any AI company's deck, cut it.
+**Rule.** Avoid: robot mascots, glowing brains, neon grids, holograms, glassmorphism, rainbow gradients, invented logos, generated product UI, stock office scenes, busy dashboards, meaningless charts, and the words "futuristic", "next-gen" and "seamless". — *Why:* each is a generic-AI signal. — *Where:* image, deck, social, marketing. — *When silent:* if it could appear in any AI company's deck, cut it. Exception: the drawn mark on an anonymous case-study card (D36).
 
 **Rule.** Reject, and do not ship, an image with a drawn or garbled logo, more than one accent, mangled text, generated product UI, or generic AI slop. — *Why:* these are the five failure modes seen in practice. — *Where:* image. — *When silent:* regenerate or crop.
 

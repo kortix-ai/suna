@@ -2516,17 +2516,24 @@ unchanged list answers `304` with no body.
 
 A rate-limited route returns `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and
 `X-RateLimit-Reset` (seconds until the window resets). When the limit is
-reached it returns `429` with `Retry-After` and this body:
+reached it returns `429` with `Retry-After`. The API edge budgets return:
 
 ```json
-{ "error": "rate_limit_exceeded", "message": "Rate limit exceeded. Please retry shortly.", "retry_after_seconds": 12 }
+{ "error": "rate_limit_exceeded", "retry_after_seconds": 12 }
 ```
 
 | Route | Limit |
 |---|---|
-| Headless sign-in routes under `/v1/auth` | 30 requests per minute per IP address. The `429` body is `{ "error": "over_request_rate_limit", "error_description": "…" }` with `Retry-After`, and no `X-RateLimit-*` headers. |
+| API routes under `/v1`, except the health endpoints and public auth families below | 300 requests per minute per client address per API replica; one token refills every 200 ms. |
+| Public auth families `/v1/auth`, `/v1/oauth`, `/v1/access`, `/v1/tunnel/device-auth` | Separate shared budget of 30 requests per minute per client address per API replica, before validation and authentication. |
 | The sandbox proxy, `/v1/p/<external_id>/<port>/*`: previews and the session runtime | 600 requests per minute per sandbox |
 | Secret writes in one project | 100 per hour, `code: "project_secret_write_limit"` |
+
+The edge budgets count rejected requests too. `OPTIONS` and `/v1/health`,
+`/v1/health/live`, and `/v1/health/ready` are exempt. Direct internal requests
+without forwarding headers retain their existing exemption. These replica-local
+abuse budgets are not account quotas; a deployment with multiple API replicas
+can accept a multiple of each budget.
 
 ### What the reference does not cover
 
