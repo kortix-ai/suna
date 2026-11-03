@@ -168,3 +168,16 @@ test('reconciliation rejects ambiguous bounds and cursor timestamps before SQL c
   }
   expect((await app.request(`/v1/system/confirmed-signups?${new URLSearchParams({ from, to })}`, { headers })).status).toBe(200);
 });
+
+
+test('reconciliation accepts date-only days 16 and 31 in both bounds', async () => {
+  config.SALES_RECONCILIATION_TOKEN = 'synthetic-reconciliation-token';
+  const app = new OpenAPIHono();
+  registerSalesReconciliation(app);
+  const headers = { authorization: 'Bearer synthetic-reconciliation-token' };
+  for (const day of ['16', '31']) {
+    for (const bounds of [{ from: `2026-01-${day}`, to: '2026-02-01' }, { from: '2026-01-01', to: `2026-01-${day}` }]) {
+      expect((await app.request(`/v1/system/confirmed-signups?${new URLSearchParams(bounds)}`, { headers })).status).toBe(200);
+    }
+  }
+});
