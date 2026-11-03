@@ -124,17 +124,20 @@ dispatch only; the `preview` label deploys without it) and `tests-release.yml` (
 staging, whose `full suite + quality gates` job is the only required check in
 the repository).
 
-The run is six lanes in parallel, each natively on one free GitHub-hosted
-runner (`CI_RUNNER_L`, default `ubuntu-24.04`, 4 vCPU / 16 GB). Two core lanes
+The run is seven lanes in parallel, each natively on one runner
+(`CI_RUNNER_L`, fallback `ubuntu-24.04`, 4 vCPU / 16 GB). Two core lanes
 split the default run without package quality: `core-flows` runs
 `pnpm test -- --core-group=flows` (the REST and CLI flows) and `core-db` runs
 `pnpm test -- --core-group=db` (the DB suites, runner unit tests, route
 coverage, worktree tests, then the SDK). On one runner the flows and the DB
-suites shared 4 vCPU and the lane took 11-12 min. Four package lanes run one slice of package
+suites shared 4 vCPU and the lane took 11-12 min. Five package lanes run one slice of package
 quality each: `pnpm test -- --packages-only --package-group=api` (`cli`,
-`kortixd`, `rest`; `rest` holds the repo-wide checks and every other package).
-On one runner the API, CLI and kortixd suites and three `tsc` shared 4 vCPU and
-the lane took 18.5 min. No browser journey runs in `tests.yml`: the journeys
+`kortixd`, `publish`, `rest`). `publish` runs the typecheck, lint, build, pack
+and install smokes of the npm packages (`@kortix/sdk`, `@kortix/ui`,
+`@kortix/llm-catalog`, `@kortix/agent-tunnel`); `rest` holds the repo-wide
+checks and the tests of every other package. On one runner the API, CLI and
+kortixd suites and three `tsc` shared 4 vCPU and the lane took 18.5 min; with
+the npm package checks in front of its tests, `rest` took 16.9 min. No browser journey runs in `tests.yml`: the journeys
 run once, in the release suite, against deployed staging (`tests-release.yml`).
 Each lane checks out the exact requested SHA, runs
 `pnpm install --frozen-lockfile`, and invokes the unchanged root command. Every

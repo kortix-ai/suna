@@ -601,11 +601,13 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   larger runner): Blacksmith billed ~$2.7k in September 2026 for minutes
   GitHub gives this repo for free. `tests/unit/image-build-speed-workflow.test.ts`
   enforces the free default.
-- `.github/workflows/tests.yml` holds the six contract lanes — `core-flows`,
+- `.github/workflows/tests.yml` holds the seven contract lanes — `core-flows`,
   `core-db`, `packages-api`, `packages-cli`, `packages-kortixd`,
-  `packages-rest` — one GitHub-hosted runner each (`CI_RUNNER_L`). `core-*`
-  split the core run (`--core-group=flows|db`); `packages-*` are slices of
-  package quality (`--packages-only --package-group=<g>`). The concurrency
+  `packages-publish`, `packages-rest` — one runner each (`CI_RUNNER_L`).
+  `core-*` split the core run (`--core-group=flows|db`); `packages-*` are
+  slices of package quality (`--packages-only --package-group=<g>`).
+  `publish` builds, packs and install-tests the npm packages; `rest` runs the
+  repo-wide checks and the tests of every other package. The concurrency
   settings in `tests/bin/package-quality.ts` must not be raised. Each lane is
   the unchanged root command at the exact requested SHA. Do not add CI-only
   test logic.

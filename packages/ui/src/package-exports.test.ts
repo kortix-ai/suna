@@ -43,8 +43,9 @@ test('the published manifest never depends on the private @kortix/shared (the bu
 });
 
 // dist/ (except the committed styles.css) exists only after `pnpm --filter @kortix/ui build`.
-// The packages lane builds before it runs this file; scripts/stage-npm-publish.mjs and
-// scripts/smoke-install.mjs check the same targets on every publish.
+// The `packages-rest` lane runs this file without a build, so this test skips there. The
+// `packages-publish` lane checks the same targets: scripts/smoke-install.mjs builds
+// @kortix/ui and runs scripts/stage-npm-publish.mjs, which fails on a missing target.
 test.skipIf(!existsSync(at('dist/index.js')))('every publishConfig target exists after the build', () => {
   const targets = [
     pkg.publishConfig.main,
