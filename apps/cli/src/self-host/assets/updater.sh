@@ -426,7 +426,10 @@ downtime_swap() {
 # considered "reconciled" without a post-start go/no-go check, logged
 # explicitly either way.
 reconcile_stateful_services() {
-  all_ok=0
+  # Not `all_ok`: POSIX sh has no locals, and wait_healthy sets all_ok=1 when
+  # every container is healthy, which this function's caller read as "failed"
+  # (every successful stateful recreate reported the run degraded).
+  stateful_rc=0
   for svc in $($COMPOSE config --services 2>/dev/null); do
     case "$svc" in
       kortix-api | llm-gateway | frontend | kortix-migrate | kortix-updater) continue ;;
@@ -440,10 +443,10 @@ reconcile_stateful_services() {
       log "$svc: healthy after recreate (go)"
     else
       log "ERROR: $svc did not become healthy after recreate (no-go) — investigate before the next scheduled run retries it"
-      all_ok=1
+      stateful_rc=1
     fi
   done
-  return "$all_ok"
+  return "$stateful_rc"
 }
 
 # Logs one line per service whose running container image doesn't match what
