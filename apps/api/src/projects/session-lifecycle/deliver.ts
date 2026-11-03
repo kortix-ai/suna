@@ -135,6 +135,8 @@ interface WakeDeliveryContext {
   session: { projectId: string; accountId: string };
   sessionId: string;
   userId: string;
+  /** The agent the prompt body names (`promptAgent`): the env prefetch keys on it. */
+  turnAgent?: string | null;
   awakeEarly: Promise<DeliveryTarget | null>;
   sendPrompt: (externalId: string, opencodeSessionId: string, record?: SandboxRecord) => Promise<SendOutcome>;
   beforeSend?: () => Promise<void>;
@@ -146,7 +148,7 @@ interface WakeDeliveryContext {
 }
 
 export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<SessionDeliveryOutcome> {
-  const { command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend, identityBound, tl } = ctx;
+  const { command, session, sessionId, userId, turnAgent, awakeEarly, sendPrompt, beforeSend, identityBound, tl } = ctx;
   // Loaded LAZILY: only `openSession` (the slow path that wakes a box) reads
   // the project row, and the session's foreign key already proves it exists.
   // On the fast path this saved a full round trip per delivery.
@@ -250,7 +252,7 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
         // mock `sandbox-env-sync` rely on.
         if (signalled && !boxActive) {
           void import('../lib/sandbox-env-push')
-            .then(({ prefetchPromptEnv }) => prefetchPromptEnv(session.projectId, sessionId, command.overrides?.agent ?? null))
+            .then(({ prefetchPromptEnv }) => prefetchPromptEnv(session.projectId, sessionId, turnAgent ?? null))
             .catch(() => undefined);
         }
         boxActive = signalled || boxActive;
