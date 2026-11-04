@@ -65,7 +65,7 @@ export async function storeSessionModelSwitch(input: {
       .where(eq(projectSessions.sessionId, input.sessionId));
     const needsPush = modelChangeNeedsLivePush({ current: typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null, next: input.model, status: session.status });
     // Keep the session lock until live reconfiguration finishes: another writer cannot push an older pin last.
-    const push = needsPush && input.push ? await input.push(input.model) : undefined;
+    const push = needsPush && input.push ? await input.push(input.model).catch(() => ({ applied: false, reason: 'live reconfiguration failed' })) : undefined;
     return { kind: 'stored', promptId: row.commandId, model: input.model, needsPush, push, deduped: false } as const;
   });
 }

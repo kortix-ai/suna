@@ -36,6 +36,12 @@ test('concurrent retry stores one continuation and refuses a changed payload', a
     expect(latest?.metadata?.opencode_model).toBe(human.model);
     const [plain] = await db.select().from(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.idempotencyKey, `model-switch:${sessionId}:human-set`));
     expect(plain?.status).toBe('succeeded');
+    await db.update(projectSessions).set({ status: 'running' }).where(eq(projectSessions.sessionId, sessionId));
+    const failedPush = await storeSessionModelSwitch({ ...human, key: 'throwing-push', model: 'kortix/after-error',
+      push: async () => { throw new Error('synthetic transport failure'); } });
+    expect(failedPush).toMatchObject({ kind: 'stored', push: { applied: false } });
+    const [afterError] = await db.select().from(projectSessions).where(eq(projectSessions.sessionId, sessionId));
+    expect(afterError?.metadata?.opencode_model).toBe('kortix/after-error');
 
   } finally {
     await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, sessionId));

@@ -474,15 +474,15 @@ export function registerSessionScopeRoutes(): void {
         if (!billing.ok) return c.json({ error: billing.message, code: billing.reason }, 402);
       }
       const stored = await storeSessionModelSwitch({
-          projectId, accountId: loaded.row.accountId, sessionId, actorUserId: loaded.userId,
-          actorSessionId: isProjectSessionPrincipal(c) ? callerKortixSessionId(c) : null,
-          model: nextModel,
-          ...(switchInput.kind === 'switch' ? { prompt: switchInput.prompt } : {}),
-          key: switchInput.kind === 'switch' ? switchInput.key : crypto.randomUUID(),
-          push: (model) => pushSessionModelToSandbox({ projectId, sessionId, model }),
-        });
-        if (stored.kind === 'conflict') return c.json({ error: 'Retry key belongs to a different model switch' }, 409);
-        if (stored.kind === 'limited') return c.json({ error: 'At most three self model switches per hour' }, 409);
+        projectId, accountId: loaded.row.accountId, sessionId, actorUserId: loaded.userId,
+        actorSessionId: isProjectSessionPrincipal(c) ? callerKortixSessionId(c) : null,
+        model: nextModel,
+        ...(switchInput.kind === 'switch' ? { prompt: switchInput.prompt } : {}),
+        key: switchInput.kind === 'switch' ? switchInput.key : crypto.randomUUID(),
+        push: (model) => pushSessionModelToSandbox({ projectId, sessionId, model }),
+      });
+      if (stored.kind === 'conflict') return c.json({ error: 'Retry key belongs to a different model switch' }, 409);
+      if (stored.kind === 'limited') return c.json({ error: 'At most three self model switches per hour' }, 409);
       if (switchInput.kind === 'switch') {
         void drainSessionLifecycleQueue({ idempotencyKey: `model-switch:${sessionId}:${switchInput.key}` }).catch(() => undefined);
       }
