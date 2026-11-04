@@ -68,4 +68,35 @@ describe('buildGatewayTraceRow', () => {
     const row = buildGatewayTraceRow(baseInput({ request }));
     expect(row.request).toEqual(request);
   });
+
+  // KRTX-4023: the dashboard aggregates read served_model / usage_estimated
+  // as real columns (a jsonb expression cannot join the covering indexes'
+  // INCLUDE lists) — the writer must lift the metadata keys into them.
+  test('lifts the servedModel and usageEstimated metadata keys into columns', () => {
+    const row = buildGatewayTraceRow(
+      baseInput({ metadata: { servedModel: 'gpt-6.1-sol', usageEstimated: true } }),
+    );
+    expect(row.servedModel).toBe('gpt-6.1-sol');
+    expect(row.usageEstimated).toBe(true);
+  });
+
+  test('an explicit false flag reads false; a missing key reads null (the pre-promotion shape)', () => {
+    const explicit = buildGatewayTraceRow(baseInput({ metadata: { usageEstimated: false } }));
+    expect(explicit.usageEstimated).toBe(false);
+    expect(explicit.servedModel).toBeNull();
+
+    const absent = buildGatewayTraceRow(baseInput());
+    expect(absent.servedModel).toBeNull();
+    expect(absent.usageEstimated).toBe(false);
+  });
+
+  test('a non-string servedModel value never reaches the column', () => {
+    const row = buildGatewayTraceRow(
+      baseInput({ metadata: { servedModel: 42, usageEstimated: 'yes' } }),
+    );
+    expect(row.servedModel).toBeNull();
+    // The SQL flag is the strict boolean the emit writes; a stray string is
+    // not a trusted 'true'.
+    expect(row.usageEstimated).toBe(false);
+  });
 });

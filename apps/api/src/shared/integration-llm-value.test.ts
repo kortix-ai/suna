@@ -50,6 +50,9 @@ test('SQL values reconcile with sources; estimates never alter charges or duplic
     {
       ...base,
       requestId: crypto.randomUUID(),
+      // KRTX-4023: the flag is a real column now; the writer sets column and
+      // metadata key together (gateway-trace-row.ts), so the seed does too.
+      usageEstimated: true,
       metadata: { usageEstimated: true },
     },
     { ...base, requestId: crypto.randomUUID(), cachedTokens: 1001 },
