@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 1033,
+  "count": 1035,
   "routes": [
     {
       "method": "GET",
@@ -2269,6 +2269,14 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/artifacts/types"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/asks"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/asks/:askId/answer"
     },
     {
       "method": "POST",

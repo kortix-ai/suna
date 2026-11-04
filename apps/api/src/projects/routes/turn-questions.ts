@@ -21,6 +21,7 @@ import {
   renderAnswerPrompt,
   resolvePendingQuestion,
 } from '../lib/pending-questions';
+import { askExpiresAt, liveWaitMsFor, surfaceSessionIdOf } from '../lib/session-asks';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
 import {
@@ -141,6 +142,7 @@ export function registerTurnQuestionsRoutes(): void {
           accountId: projectSessions.accountId,
           origin: projectSessions.origin,
           metadata: projectSessions.metadata,
+          parentSessionId: projectSessions.parentSessionId,
           projectMetadata: projects.metadata,
         })
         .from(projectSessions)
@@ -208,6 +210,10 @@ export function registerTurnQuestionsRoutes(): void {
       // deleted.
       const resolvedAccountId = (c as any).get('accountId') as string | undefined;
       const pendingRequestId = body.request_id?.trim() || `q-${sessionId}`;
+      // A daemon that parks says so (`parkable`): the question then outlives
+      // the turn and waits in Review until a person answers (lib/session-asks.ts).
+      const parkable = (body as { parkable?: unknown }).parkable === true;
+      const liveWaitMs = liveWaitMsFor(turnQuestionSession);
       let notify = false;
       let pendingId: string | null = null;
       if (resolvedAccountId) {
@@ -218,6 +224,9 @@ export function registerTurnQuestionsRoutes(): void {
           requestId: pendingRequestId,
           opencodeSessionId: body.runtime_session_id ?? null,
           questions,
+          parkable,
+          surfaceSessionId: await surfaceSessionIdOf(sessionId, turnQuestionSession),
+          expiresAt: parkable ? askExpiresAt() : null,
         }).catch((err) => {
           // Never fail the relay on a bookkeeping error — the agent is blocked and
           // the channel render is still worth attempting.
@@ -331,8 +340,10 @@ export function registerTurnQuestionsRoutes(): void {
       }
 
       // A trigger-started session has nobody to answer: release the call now so
-      // the turn finishes and the next fire is not queued behind it.
-      if (!channel && runtimeRequestId && isUnattendedSessionMetadata(turnQuestionSession.metadata)) {
+      // the turn finishes and the next fire is not queued behind it. A daemon
+      // that parks needs no release: `live_wait_ms: 0` parks the question at
+      // once, and it waits in Review instead of being answered by a sentinel.
+      if (!channel && runtimeRequestId && !parkable && isUnattendedSessionMetadata(turnQuestionSession.metadata)) {
         const answers = Array.from({ length: Math.max(1, questions.length) }, () => [unattendedQuestionSentinel()]);
         const released = await releaseRuntimeQuestion(sessionId, runtimeRequestId, answers);
         if (released === 'unreachable') {
@@ -347,10 +358,11 @@ export function registerTurnQuestionsRoutes(): void {
         }
       }
 
+      // `live_wait_ms` (AskRelayResponse): how long the runtime holds the call before it parks.
       if (!result.ok) {
-        return c.json({ ok: true, persisted: true, answers: [], channel_error: result.error });
+        return c.json({ ok: true, persisted: true, answers: [], channel_error: result.error, live_wait_ms: liveWaitMs });
       }
-      return c.json({ ok: true, persisted: true, answers: result.answers });
+      return c.json({ ok: true, persisted: true, answers: result.answers, live_wait_ms: liveWaitMs });
     },
   );
 

@@ -143,6 +143,7 @@ export async function seedTurnSession(
       'notification_watchers',
       'session_presence_leases',
       'session_pending_questions',
+      'session_pending_permissions',
       'permission_push_claims',
       'session_turns',
       'session_lifecycle_commands',
