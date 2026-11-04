@@ -20,7 +20,7 @@
  * session, so a `resolve` failure always comes first.
  * `projects/lib/session-model-fallback-revert.ts` moves the session back once
  * the original model can serve again: at a turn end, and on an idle session
- * from `workers/session-model-fallback-worker.ts`.
+ * from `worker/jobs/session-model-fallback.ts`.
  *
  * No push to the box: each prompt carries its model, so the next one runs on
  * the fallback without an OpenCode restart.

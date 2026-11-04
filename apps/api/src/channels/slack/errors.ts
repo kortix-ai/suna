@@ -23,24 +23,11 @@
  *
  * Pure + dependency-free so it's unit-tested in isolation (no Slack, no DB).
  */
-import type { TurnErrorCode } from '@kortix/api-contract/transcript';
 import { formatUsdAsCredits, parseBalanceUsd } from '@kortix/shared';
 
-/** Flattened opencode error detail relayed from the sandbox. */
-export interface TurnErrorInfo {
-  /** opencode error name, e.g. `APIError` / `ProviderAuthError` / `MessageAbortedError`. */
-  name?: string;
-  /** Human message from `error.data.message`. */
-  message?: string;
-  /** Upstream HTTP status for an `APIError` (e.g. 402 = credits, 429 = rate limit). */
-  statusCode?: number;
-  /** `APIError.data.isRetryable` — opencode's own transient/permanent signal. */
-  isRetryable?: boolean;
-  /** `ProviderAuthError.data.providerID` — names the provider in the copy. */
-  providerID?: string;
-  /** The daemon's classification (`TurnErrorCode`), when it sends one. */
-  code?: TurnErrorCode;
-}
+// The core owns the shape (a channel-neutral turn error); Slack's classifier reads it.
+import type { TurnErrorInfo } from '../core/conversation';
+export type { TurnErrorInfo } from '../core/conversation';
 
 /** How the platform tells a user to fix a turn error, in its own markup. */
 export interface TurnErrorCommands {

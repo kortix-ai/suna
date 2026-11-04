@@ -1,11 +1,15 @@
 'use client';
 
-import { Button } from '@kortix/ui/button';
-import { CodeInput, FieldError, InfoStrip, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useTranslations } from '@/i18n/use-translations';
 import type { EmailFlowMode } from '@/lib/auth/unified-auth-flow';
+import { Button } from '@kortix/ui/button';
+import {
+  CodeInput,
+  FieldError,
+  InfoStrip,
+  StepHeader,
+} from '@kortix/ui/internal/auth/auth-primitives';
 import { m, useReducedMotion } from 'motion/react';
-import { useEffect, useRef } from 'react';
 
 const EASE = [0.23, 1, 0.32, 1] as const;
 
@@ -44,16 +48,11 @@ export function EmailLinkStep({
   onVerify?: () => void;
 }) {
   const t = useTranslations('auth.unified');
-  const tAuth = useTranslations('auth');
   // The copy must name the email the mailbox receives (KRTX-2195): a signup
   // gets the confirmation email, so "a link" read the mail as the wrong
   // message. Unknown mode keeps the generic link copy.
   const confirmed = mode === 'signup';
   const prefersReducedMotion = useReducedMotion();
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    if (errorMessage && detailsRef.current) detailsRef.current.open = true;
-  }, [errorMessage]);
   const rise = (delay = 0) => ({
     initial: { opacity: 0, y: prefersReducedMotion ? 0 : 8 },
     animate: { opacity: 1, y: 0 },
@@ -77,35 +76,29 @@ export function EmailLinkStep({
         {info && <InfoStrip message={info} />}
 
         {onCodeChange && onVerify && (
-          // An error opens the code panel so its message is visible under the input.
-          <details ref={detailsRef}>
-            <summary className="text-muted-foreground cursor-pointer text-sm">
-              {tAuth('enterCode')}
-            </summary>
-            <form
-              className="mt-4 space-y-5"
-              onSubmit={(event) => {
-                event.preventDefault();
-                onVerify();
-              }}
+          <form
+            className="space-y-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onVerify();
+            }}
+          >
+            <CodeInput
+              value={code ?? ''}
+              onChange={onCodeChange}
+              disabled={pending}
+              invalid={!!errorMessage}
+            />
+            {errorMessage && <FieldError id="code-error" message={errorMessage} />}
+            <Button
+              type="submit"
+              size="lg"
+              className="w-full"
+              disabled={pending || !/^\d{6}$/.test(code ?? '')}
             >
-              <CodeInput
-                value={code ?? ''}
-                onChange={onCodeChange}
-                disabled={pending}
-                invalid={!!errorMessage}
-              />
-              {errorMessage && <FieldError id="code-error" message={errorMessage} />}
-              <Button
-                type="submit"
-                size="lg"
-                className="w-full"
-                disabled={pending || !/^\d{6}$/.test(code ?? '')}
-              >
-                {pendingAction === 'continue' ? t('oneMoment') : t('continue')}
-              </Button>
-            </form>
-          </details>
+              {pendingAction === 'continue' ? t('oneMoment') : t('continue')}
+            </Button>
+          </form>
         )}
         {errorMessage && !(onCodeChange && onVerify) && (
           <FieldError id="code-error" message={errorMessage} />

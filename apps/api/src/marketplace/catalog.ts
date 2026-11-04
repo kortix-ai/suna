@@ -23,11 +23,12 @@ import {
   getStarterFiles,
   isKortixManagedSkillName,
 } from "@kortix/starter";
-import { AGENTS_DIR, agentFileCandidates, SKILLS_DIR } from "@kortix/manifest-schema";
+import { AGENTS_DIR, SKILLS_DIR } from "@kortix/manifest-schema";
 import { parse as parseYaml } from "yaml";
 import {
   buildRegistry,
   describeRegistry,
+  isPrivateRegistryHost,
   loadItem,
   loadRegistry,
   parseRegistryAddress,
@@ -118,23 +119,10 @@ export interface CatalogItemDetail extends CatalogItem {
   template?: Record<string, unknown>;
 }
 
-/** Parse a project item's `kortix.yaml` (+ each agent's own `.md` frontmatter)
- *  to surface its agents and triggers in the detail view, the same way its
- *  skills are surfaced from `registryDependencies`. Best-effort: any parse
- *  failure just yields empty lists. */
-/** Parse a markdown file's `--- … ---` YAML frontmatter with the real YAML
- *  parser, so multi-line / folded block scalars resolve correctly. */
-function frontmatterOf(raw: string | undefined): Record<string, unknown> {
-  if (!raw?.startsWith("---")) return {};
-  const end = raw.indexOf("\n---", 3);
-  if (end === -1) return {};
-  try {
-    return (parseYaml(raw.slice(3, end)) ?? {}) as Record<string, unknown>;
-  } catch {
-    return {};
-  }
-}
-
+/** Parse a project item's `kortix.yaml` to surface its agents and triggers in
+ *  the detail view, the same way its skills are surfaced from
+ *  `registryDependencies`. Best-effort: any parse failure just yields empty
+ *  lists. */
 function projectAgentsAndTriggers(
   files: Array<{ path: string; target?: string; content?: string }>,
 ): { agents: ProjectAgent[]; triggers: ProjectTrigger[] } {
@@ -151,15 +139,9 @@ function projectAgentsAndTriggers(
 
   const agentNames = m.agents && typeof m.agents === "object" ? Object.keys(m.agents) : [];
   const agents: ProjectAgent[] = agentNames.map((name) => {
-    const candidates = agentFileCandidates(manifest, name);
-    const md = candidates
-      .map((candidate) => files.find((f) => pathOf(f) === candidate))
-      .find((file) => file !== undefined);
-    // Parse the agent's own `.md` frontmatter with the YAML parser (not a
-    // line-based one) so folded block scalars (`description: >-`) resolve to the
-    // real text, and collapse it to a single line for the card.
-    const fm = frontmatterOf(md?.content);
-    const desc = typeof fm.description === "string" ? fm.description.replace(/\s+/g, " ").trim() : null;
+    // The block's `description`, collapsed to a single line for the card.
+    const block = (m.agents?.[name] ?? {}) as { description?: unknown };
+    const desc = typeof block.description === "string" ? block.description.replace(/\s+/g, " ").trim() : null;
     return { name, title: name, description: desc || null };
   });
 
@@ -310,10 +292,14 @@ function entryToCatalogItem(e: CatalogEntry): CatalogItem {
   };
 }
 
-function bundlesFirst(a: CatalogItem, b: CatalogItem): number {
+/** The catalog's one order: bundles first, then by name, then by id. Two
+ *  sources can publish the same name; without the id, ties kept the order in
+ *  which sources finished resolving, so `offset` paging skipped or repeated
+ *  rows between requests (KRTX-3284). Ids are unique, so the order is total. */
+export function compareCatalogItems(a: CatalogItem, b: CatalogItem): number {
   if (a.type === "registry:bundle" && b.type !== "registry:bundle") return -1;
   if (b.type === "registry:bundle" && a.type !== "registry:bundle") return 1;
-  return a.name.localeCompare(b.name);
+  return a.name.localeCompare(b.name) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 
 function readmeOf(item: RegistryItem): string | null {
@@ -620,7 +606,7 @@ function buildUseCasePackProjectItem(): RegistryItem {
 
 let BASE: Catalog | null = null;
 
-const KORTIX_REPO = "https://github.com/kortix-ai/suna";
+const KORTIX_REPO = "https://github.com/kortix-ai/CompanyOS";
 
 /** Source-of-truth GitHub path for a bundled `kortix-projects` item — these
  *  are real files in this repo, not a synthetic/external registry, so "View
@@ -680,7 +666,7 @@ function getBaseCatalog(): Catalog {
       items.push(entryToCatalogItem(entry));
     }
   }
-  items.sort(bundlesFirst);
+  items.sort(compareCatalogItems);
   BASE = { items, byId };
   return BASE;
 }
@@ -894,34 +880,13 @@ export const githubLoaderOptions: { fetchImpl: typeof fetch } = {
 // metadata, localhost, RFC-1918). `local` is dev-only behind an opt-in flag.
 const ALLOW_LOCAL_SOURCES = process.env.KORTIX_MARKETPLACE_ALLOW_LOCAL === "1";
 
-function isPrivateHost(host: string): boolean {
-  const h = host.toLowerCase().replace(/\.$/, "");
-  if (!h || h === "localhost" || h.endsWith(".localhost")) return true;
-  if (
-    h === "127.0.0.1" ||
-    h === "0.0.0.0" ||
-    h === "::1" ||
-    h.startsWith("127.")
-  )
-    return true;
-  if (h.startsWith("169.254.")) return true; // link-local incl. 169.254.169.254 cloud metadata
-  if (
-    /^10\./.test(h) ||
-    /^192\.168\./.test(h) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(h)
-  )
-    return true;
-  if (h.endsWith(".internal") || h.endsWith(".local")) return true;
-  return false;
-}
-
 function isAllowedSourceRef(ref: RegistryRef): boolean {
   if (ref.kind === "github" || ref.kind === "namespace") return true;
   if (ref.kind === "local") return ALLOW_LOCAL_SOURCES;
   if (ref.kind === "url") {
     try {
       const u = new URL(ref.url);
-      return u.protocol === "https:" && !isPrivateHost(u.hostname);
+      return u.protocol === "https:" && !isPrivateRegistryHost(u.hostname);
     } catch {
       return false;
     }
@@ -1024,7 +989,7 @@ export function assertAllowedEndpointUrl(address: string): void {
       "Connector endpoints must use https on a public host.",
     );
   }
-  if (isPrivateHost(parsed.hostname)) {
+  if (isPrivateRegistryHost(parsed.hostname)) {
     throw new AllowedSourceValidationError(
       "Connector endpoints must use https on a public host.",
     );
@@ -1158,7 +1123,7 @@ function progressiveMerge(): Catalog {
     if (!byName.has(it.name)) byName.set(it.name, e);
     items.push(it);
   }
-  items.sort(bundlesFirst);
+  items.sort(compareCatalogItems);
   CACHE.merged = { items, byId, byName };
   CACHE.mergedGen = CACHE.gen;
   return CACHE.merged;
@@ -1963,18 +1928,11 @@ function filterCatalogItems(
 }
 
 /** Maximum `limit` the `/marketplace/items` route accepts, once a caller opts
- *  into pagination. Bounds the payload/memory a single request can demand
- *  while leaving headroom above `MARKETPLACE_EXPLORE_LANDING_LIMIT` (120, in
- *  the web's `marketplace-public.ts`) so that SSR fetch is actually honored
- *  instead of silently truncated by this clamp. */
+ *  into pagination; a larger value answers 400. Bounds the payload/memory a
+ *  single request can demand while leaving headroom above
+ *  `MARKETPLACE_EXPLORE_LANDING_LIMIT` (120, in the web's
+ *  `marketplace-public.ts`). */
 export const MARKETPLACE_ITEMS_MAX_LIMIT = 200;
-
-/** Clamps a parsed `limit` query value into `[1, MARKETPLACE_ITEMS_MAX_LIMIT]`.
- *  Extracted from the route handler so the clamp boundary is unit-testable
- *  without spinning up an HTTP server or a catalog with 200+ real items. */
-export function clampMarketplaceItemsLimit(parsedLimit: number): number {
-  return Math.min(Math.max(parsedLimit, 1), MARKETPLACE_ITEMS_MAX_LIMIT);
-}
 
 /** Pure filter + optional slice — the sliceable core of `listCatalogItemsPage`,
  *  factored out so it can be unit-tested against an injected `CatalogItem[]`

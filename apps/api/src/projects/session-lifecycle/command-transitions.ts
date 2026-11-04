@@ -1,5 +1,6 @@
 import { sessionLifecycleCommands } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
+import { releaseCreateClaims } from '../../channels/core/threads';
 import { deadLetterCause } from './dead-letter-cause';
 import { logger } from '../../lib/logger';
 import { extendSandboxDeadline } from '../sandbox-deadline';
@@ -84,7 +85,9 @@ export const MAX_LANDING_RETRIES = 2;
  * Put a prompt whose landing proof FAILED back on the queue — with a fresh
  * attempt number, which is what gives the next POST a fresh
  * `Idempotency-Key` (`${commandId}:r${attempt}`) and, via `remintOnDelivery`,
- * a fresh wire id. Re-POSTing under the SAME key is answered
+ * a fresh wire id on a runtime that orders by id. A runtime that keeps ids
+ * (pi) gets the same id again: it never held that message, so it admits it.
+ * Re-POSTing under the SAME key is answered
  * `200 {"deduplicated": true}` by the proxy's 10-minute claim, which
  * `postPrompt` reads as delivered: the exact silent loss the proof exists to
  * stop, arriving 3.6 s later than before (review finding, 2026-09-05).
@@ -456,6 +459,12 @@ export async function markCommandFailed(
   const triggerSlug = commandTriggerSlug(row);
   if (triggerSlug && !lease.lockedBy?.startsWith(INLINE_CREATE_LOCK_PREFIX)) {
     await raiseTriggerAlert({ projectId: row.projectId, accountId: row.accountId, slug: triggerSlug, source: 'fire', error });
+  }
+
+  // A channel create given up frees its thread: the next message starts at
+  // once instead of waiting out the claim.
+  if (row.commandType === 'create_session' && Array.isArray(payload.postCreate)) {
+    await releaseCreateClaims(payload.postCreate);
   }
 
   // A dead-lettered head opens no turn, so no turn end wakes the prompt behind

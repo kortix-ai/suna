@@ -5,6 +5,13 @@ import { useQuery } from '@tanstack/react-query';
 import type { VcsFileDiff } from '../../core/runtime/runtime-types';
 
 import { getClient } from '../../core/runtime/client';
+import {
+  activeRuntimeAction,
+  runtimeActionError,
+  runtimeActionPaths,
+  type RuntimeWorkspaceFileDiff,
+  type RuntimeWorkspaceInfo,
+} from '../../core/session/runtime-actions';
 import { useCurrentRuntime } from '../use-current-runtime';
 import { runtimeKeys, useRuntimeReady } from './keys';
 import { unwrap } from './shared';
@@ -47,6 +54,12 @@ export function useRuntimeVcsDiff(
   return useQuery<VcsFileDiff[]>({
     queryKey: runtimeKeys.vcsDiff(mode, serverId),
     queryFn: async () => {
+      const read = await activeRuntimeAction('GET', runtimeActionPaths.workspaceDiff(mode));
+      if (read) {
+        if (!read.ok) throw await runtimeActionError(read, 'Reading the changes failed');
+        const body = (await read.json()) as { files?: RuntimeWorkspaceFileDiff[] };
+        return (Array.isArray(body.files) ? body.files : []).map(({ path, ...diff }) => ({ file: path, ...diff }));
+      }
       const client = getClient();
       const result = await client.vcs.diff({ mode });
       const data = unwrap(result);
@@ -59,6 +72,30 @@ export function useRuntimeVcsDiff(
     staleTime: 30_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * Where the session's checkout is: its directory, the home directory, whether
+ * it is a git repository and its default branch.
+ */
+export function useRuntimeWorkspace() {
+  const runtimeReady = useRuntimeReady();
+  return useQuery<RuntimeWorkspaceInfo>({
+    queryKey: runtimeKeys.workspace(),
+    queryFn: async () => {
+      const read = await activeRuntimeAction('GET', runtimeActionPaths.workspace);
+      if (read) {
+        if (!read.ok) throw await runtimeActionError(read, 'Reading the workspace failed');
+        return (await read.json()) as RuntimeWorkspaceInfo;
+      }
+      const client = getClient();
+      const [path, project] = await Promise.all([client.path.get().then(unwrap), client.project.current().then(unwrap)]);
+      return { directory: path.directory, home: path.home, vcs: project.vcs === 'git' ? 'git' : null, default_branch: null };
+    },
+    enabled: runtimeReady,
+    staleTime: Infinity,
+    gcTime: 10 * 60 * 1000,
   });
 }
 

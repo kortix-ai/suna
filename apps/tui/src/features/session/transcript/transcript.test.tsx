@@ -3,7 +3,14 @@ import { act } from 'react';
 
 import { testRender } from '@opentui/react/test-utils';
 
-import { fakeSession, message, seedSessionStore, shellOutput, textPart, toolPart } from './test-session.ts';
+import {
+  fakeSession,
+  message,
+  seedSessionStore,
+  shellOutput,
+  textPart,
+  toolPart,
+} from './test-session.ts';
 import { type SessionState, Transcript } from './transcript.tsx';
 
 // React 19 needs this before `act`. Without `act` a key press updates state but
@@ -55,11 +62,19 @@ describe('<Transcript/> turns', () => {
     renderer.destroy();
   });
 
-  test('a compaction is one message: its marker and its summary under one compaction header', async () => {
+  test('a compaction is one line under a compaction header; its summary (model context) is not shown', async () => {
     const session = fakeSession({
       messages: [
-        message('m1', 'user', [{ id: 'pc', sessionID: 's1', messageID: 'm1', type: 'compaction', auto: false }]),
-        message('m2', 'assistant', [textPart('p2', 'SUMMARY of the work so far.')], { agent: 'compaction', mode: 'compaction', summary: true, parentID: 'm1', time: { created: Date.now() - 50_000, completed: Date.now() - 49_000 } }),
+        message('m1', 'user', [
+          { id: 'pc', sessionID: 's1', messageID: 'm1', type: 'compaction', auto: false },
+        ]),
+        message('m2', 'assistant', [textPart('p2', 'SUMMARY of the work so far.')], {
+          agent: 'compaction',
+          mode: 'compaction',
+          summary: true,
+          parentID: 'm1',
+          time: { created: Date.now() - 50_000, completed: Date.now() - 49_000 },
+        }),
       ],
     });
     const { captureCharFrame, flush, renderer } = await render(session);
@@ -67,7 +82,8 @@ describe('<Transcript/> turns', () => {
     const frame = captureCharFrame();
     expect(frame).toContain('◆ compaction');
     expect(frame).toContain('context compacted (manual)');
-    expect(frame).toContain('SUMMARY of the work so far.');
+    // pi's summary is the continuation prompt, with the path of the full record: model-facing.
+    expect(frame).not.toContain('SUMMARY of the work so far.');
     expect(frame).not.toContain('❯ you');
     renderer.destroy();
   });
@@ -380,6 +396,149 @@ describe('<Transcript/> paging and prompts', () => {
     );
     await settle(flush);
     expect(captureCharFrame()).not.toContain('needs permission');
+    renderer.destroy();
+  });
+});
+
+describe('<Transcript/> boot readout', () => {
+  test('a provisioning session names its image step with the step clock', async () => {
+    const session = fakeSession({
+      phase: 'starting',
+      stage: 'provisioning',
+      bootImage: {
+        state: 'building',
+        image: null,
+        since: new Date(Date.now() - 42_000).toISOString(),
+      },
+    });
+    const { captureCharFrame, flush, renderer } = await render(session);
+    await flush();
+    const frame = captureCharFrame();
+    expect(frame).toMatch(/Building the first image for this project \(0:4\d\)/);
+    expect(frame).not.toContain('Reserving your computer');
+    renderer.destroy();
+  });
+
+  test('a provisioning session without an image step keeps today’s text', async () => {
+    const session = fakeSession({ phase: 'starting', stage: 'provisioning', bootImage: null });
+    const { captureCharFrame, flush, renderer } = await render(session);
+    await flush();
+    expect(captureCharFrame()).toMatch(/Reserving your computer · \d+s/);
+    renderer.destroy();
+  });
+});
+
+describe('<Transcript/> inbox prompts', () => {
+  const at = '2030-01-01T00:00:01.000Z';
+  const queued = {
+    prompt_id: 'p2',
+    client_message_id: 'c2',
+    message_id: 'msg_queuedprompt000000002',
+    wire_message_id: 'msg_queuedprompt000000002',
+    state: 'queued' as const,
+    reason: null,
+    text: 'and then this',
+    full_text: 'and then this',
+    attempts: 0,
+    last_error: null,
+    attachments: [],
+    created_at: at,
+    available_at: at,
+  };
+
+  test('a booting session draws its first prompt and a queued one, not "No messages yet"', async () => {
+    const session = fakeSession({ messages: [] });
+    seedSessionStore(session);
+    const inbox = {
+      prompts: [queued],
+      sent: [{ message_id: 'msg_firstprompt0000000001', prompt_id: null, text: 'yo', attachments: [], author_user_id: null, created_at: at }],
+    };
+    const { captureCharFrame, flush } = await testRender(
+      <Transcript session={session} focused width={70} height={22} inbox={inbox} />,
+      SIZE,
+    );
+    await settle(flush);
+    const frame = captureCharFrame();
+    expect(frame).not.toContain('No messages yet');
+    expect(frame).toContain('yo');
+    expect(frame).toContain('you · queued');
+    expect(frame).toContain('and then this');
+  });
+});
+
+describe('<Transcript/> messages from other agents', () => {
+  test('a message another agent sent is one compact row with its sender, not a turn of yours', async () => {
+    const { peerMessagePromptText } = await import('@kortix/shared');
+    const text = peerMessagePromptText({
+      kind: 'message',
+      from: 'reviewer',
+      fromShortId: 'a1b2c3d4',
+      messageId: 'pm_1',
+      summary: 'Found 2 issues',
+      text: 'The retry loop never backs off.\nThe test mocks the clock wrong.',
+    });
+    const session = fakeSession({ messages: [message('m1', 'user', [textPart('p1', text)])] });
+    const { captureCharFrame, flush, renderer } = await render(session);
+    await settle(flush);
+    const frame = captureCharFrame();
+    expect(frame).toContain('✉ @reviewer · Found 2 issues');
+    expect(frame).toContain('The retry loop never backs off.');
+    expect(frame).not.toContain('❯ you');
+    expect(frame).not.toContain('carries no authority');
+    renderer.destroy();
+  });
+});
+
+describe('<Transcript/> platform notices and tool result cards', () => {
+  test('a background agent that finished is one line with its first report line, not a turn of yours', async () => {
+    const child = 'kses_child_0001';
+    const text = [
+      'A background subagent you started has finished. This message is from the platform, not from the user.',
+      `task_id: ${child}`,
+      'status: completed',
+      '',
+      '<kortix_system type="session-report" source="subagent">',
+      '<session-report>',
+      `<session-id>${child}</session-id>`,
+      '<status>COMPLETE</status>',
+      '<project>writer</project>',
+      '<prompt>Draft the launch post (@writer subagent)</prompt>',
+      '<result>\n<task_result>\nThe draft is in docs/launch.md.\n</task_result>\n</result>',
+      '</session-report>',
+      '</kortix_system>',
+      '',
+      `Continue your task with this result. To send this subagent a follow-up, call \`agent\` with task_id ${child}.`,
+    ].join('\n');
+    const session = fakeSession({ messages: [message('m1', 'user', [textPart('p1', text)])] });
+    const { captureCharFrame, flush, renderer } = await render(session);
+    await settle(flush);
+    const frame = captureCharFrame();
+    expect(frame).toContain('◇ Draft the launch post finished · The draft is in docs/launch');
+    expect(frame).not.toContain('❯ you');
+    expect(frame).not.toContain('This message is from the platform');
+    renderer.destroy();
+  });
+
+  test('a platform tool answers with its card, not JSON', async () => {
+    const output = JSON.stringify({
+      ok: true,
+      tool: 'send_message',
+      action: 'send',
+      card: { title: 'Sent to @reviewer', subtitle: 'delivered', status: 'done', rows: [{ title: 'reviewer', detail: 'Code review', badge: 'working' }] },
+    });
+    const session = fakeSession({
+      messages: [
+        message('m1', 'assistant', [
+          toolPart('t1', 'send_message', 'completed', { to: 'reviewer', message: 'hi' }, output),
+        ]),
+      ],
+    });
+    const { captureCharFrame, flush, renderer } = await render(session);
+    await settle(flush);
+    const frame = captureCharFrame();
+    expect(frame).toContain('✓ Sent to @reviewer · delivered');
+    expect(frame).toContain('reviewer');
+    expect(frame).not.toContain('"ok": true');
     renderer.destroy();
   });
 });

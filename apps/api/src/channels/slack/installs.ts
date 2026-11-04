@@ -13,6 +13,8 @@ export const SLACK_SIGNING_SECRET = 'SLACK_SIGNING_SECRET';
 export const SLACK_TEAM_ID = 'SLACK_TEAM_ID';
 export const SLACK_BOT_USER_ID = 'SLACK_BOT_USER_ID';
 export const SLACK_TEAM_NAME = 'SLACK_TEAM_NAME';
+/** The install's bot id (`auth.test`), resolved on first use: keys the self-loop guard for agent-named posts. */
+export const SLACK_BOT_ID = 'SLACK_BOT_ID';
 
 const SLACK_KEYS = [
   SLACK_BOT_TOKEN,
@@ -20,6 +22,7 @@ const SLACK_KEYS = [
   SLACK_TEAM_ID,
   SLACK_BOT_USER_ID,
   SLACK_TEAM_NAME,
+  SLACK_BOT_ID,
 ] as const;
 
 export interface SlackInstallSummary {
@@ -139,6 +142,25 @@ export async function loadSlackSigningSecretForProject(projectId: string): Promi
 
 export async function loadSlackBotUserIdForProject(projectId: string): Promise<string | null> {
   return readSecret(projectId, SLACK_BOT_USER_ID);
+}
+
+export async function loadSlackBotIdForProject(projectId: string): Promise<string | null> {
+  return readSecret(projectId, SLACK_BOT_ID);
+}
+
+/**
+ * The install's bot id, asking Slack (`auth.test`) once and storing it. A post
+ * under an agent's name arrives back with no `event.user`, so the self-loop
+ * guard keys it on this id; without it no post carries a persona.
+ */
+export async function ensureSlackBotId(projectId: string, token: string): Promise<string | null> {
+  const known = await readSecret(projectId, SLACK_BOT_ID);
+  if (known) return known;
+  // Lazy: this module sits under every Slack import, and slack-api does not need to.
+  const { authTestBotId } = await import('../slack-api');
+  const botId = await authTestBotId(token);
+  if (botId) await upsertSecret(projectId, SLACK_BOT_ID, botId);
+  return botId;
 }
 
 export async function loadSlackTeamIdForProject(projectId: string): Promise<string | null> {

@@ -19,7 +19,7 @@ originals.set('Notification', Object.getOwnPropertyDescriptor(globalThis, 'Notif
 Object.defineProperty(globalThis, 'Notification', { configurable: true, value: notification });
 Object.defineProperty(browser, 'Notification', { configurable: true, value: notification });
 
-mock.module('../hooks/use-notification-center', () => ({ useNotificationCenter: () => true, cachedNotificationCenter: () => true, cachedNotificationCenterAnswer: () => true }));
+mock.module('../hooks/use-notification-center', () => ({ useNotificationInboxEnabled: () => true, cachedNotificationCenter: () => true, cachedNotificationCenterAnswer: () => true }));
 const sdkReact = await import('@kortix/sdk/react');
 mock.module('@kortix/sdk/react', () => ({
   ...sdkReact,

@@ -346,7 +346,7 @@ const AUTH_CATALOG = [
   authToolkit('twitter', { schemes: ['OAUTH2'] }),
   authToolkit('gmail', { schemes: ['OAUTH2'], managed: ['OAUTH2'] }),
   authToolkit('firecrawl', { schemes: ['API_KEY'] }),
-  authToolkit('shopify', { schemes: ['OAUTH2', 'API_KEY'] }),
+  authToolkit('notion', { schemes: ['OAUTH2', 'API_KEY'] }),
   authToolkit('composio_search', { noAuth: true }),
 ];
 
@@ -396,7 +396,7 @@ test('the catalogue hides a toolkit Composio cannot connect until an auth config
   expect(sections.sections[0].toolkits.map((item) => item.slug)).toEqual([
     'gmail',
     'firecrawl',
-    'shopify',
+    'notion',
     'composio_search',
   ]);
   expect(sections.categories).toEqual([{ key: 'social', label: 'Social', count: 4 }]);

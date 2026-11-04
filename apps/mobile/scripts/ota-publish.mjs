@@ -19,7 +19,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const MOBILE = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Update channel -> EAS environment its builds use (eas.json `environment`).
 const CHANNEL_ENVIRONMENTS = { dev: 'preview', production: 'production' };
-const JS_PATHS = ['apps/mobile', 'packages/sdk', 'pnpm-lock.yaml'];
+const JS_PATHS = ['apps/mobile', 'packages/sdk', 'packages/shared', 'pnpm-lock.yaml'];
 // Fingerprint sources that configure EAS itself and never reach the binary.
 const NOT_NATIVE = new Set(['eas.json', '.easignore', '.gitignore']);
 

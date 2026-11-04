@@ -15,7 +15,7 @@ import { getSessionLogPage } from '../../core/rest/projects-client/sessions';
 import { EMPTY_SESSION_LOG_STATE, applySessionLogPage, type SessionLogState } from '../../core/session-log/store';
 import { loadSessionLogPage, readSessionLogAnswer } from '../../core/session-log/source';
 import { sessionLogRowsFor, sessionLogThreadIdOf } from '../../core/session-log/v1-view';
-import { loadSavedSessionTranscriptMessages, parseKortixSessionScope } from './server-transcript-mirror';
+import { parseKortixSessionScope } from './server-transcript-mirror';
 
 interface MessagesResponse {
   data?: Array<{ info: Message; parts: Part[] }>;
@@ -470,12 +470,12 @@ async function loadSessionLogExportRows(
  * Every message of a session for an export, oldest first. The session log first: the log the
  * store holds for `kortixSessionScope` (v2), else the log's newest page read from the API. The
  * export is then the log's thread of `sessionId`, every page of it, and nothing else is read.
- * A 404 coded `session_log_missing` (a new session) leaves the runtime alone: its history, or
- * nothing. Only when the log answers a 404 without that code or an invalid page (a server older
- * than the log) does it read v1: while the computer runs, the runtime's whole history;
- * when the runtime cannot answer (asleep, stopped, failed) or answers empty, the v1 saved copy
- * (deprecated), every window of it. `kortixSessionScope` (`projectId/sessionId`) names the
- * session; without it only the runtime is read, and a runtime failure throws.
+ * Without a page the runtime's whole history answers while the computer runs. A 404 coded
+ * `session_log_missing` (a new session) answers that history, or nothing. Any other answer
+ * without a page (an unconverted mirror, a failed read) throws when the runtime has nothing: a
+ * partial export must not pass for a whole one. No v1 saved copy is read (`GET …/transcript`,
+ * P8.3). `kortixSessionScope` (`projectId/sessionId`) names the session; without it only the
+ * runtime is read, and a runtime failure throws.
  */
 export async function loadSessionExportMessages(
   sessionId: string,
@@ -498,7 +498,7 @@ export async function loadSessionExportMessages(
     if (!saved) throw error;
   }
   if (live.length > 0 || !saved || missing) return live;
-  return loadSavedSessionTranscriptMessages(saved);
+  throw new Error('The session log could not be read');
 }
 
 /**

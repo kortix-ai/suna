@@ -1,12 +1,14 @@
 // Project sessions — session CRUD, sharing, public shares, preview candidates.
 
 import { type ApiClientOptions, ApiError, backendApi } from '../../http/api-client';
+import { retiredEndpointError } from '../../http/api/errors';
 import { markSessionFresh } from '../../http/fresh-sessions';
 import { currentSavedCopyStore } from '../../session-sync/saved-copy-store';
 import { noteSessionDeleted, noteSessionStopped } from '../../http/session-stopped';
 import { isSessionLogPage } from '../../session-log/guard';
 import { loadSessionLogPage, type SessionLogPage, type SessionLogPageQuery } from '../../session-log/source';
 import type { AuditEvent } from './audit';
+import type { SessionAttention, SessionBoardState, SessionInbound } from './multi-agent';
 import { type ConnectorSharing, unwrap } from './shared';
 
 // ---------------------------------------------------------------------------
@@ -67,6 +69,17 @@ export interface ProjectSessionInitiator {
 export interface ProjectSession {
   /** Conversation model from the durable log; creation pin until one is recorded. Absent on older APIs. */
   model?: string | null;
+  /** The space (channel or DM) the session is filed in; null outside every space. Absent on older APIs. */
+  space_id?: string | null;
+  /** The session group it is filed in (`session_groups`); null in no group. Absent on older APIs. */
+  group_id?: string | null;
+  /** The first 500 characters of the first prompt; stored for sessions created while `project_channels` is on, else null. Absent on older APIs. */
+  first_prompt?: string | null;
+  /**
+   * A channel or DM thread list only (`listProjectSessions({ spaceId })`): the
+   * messages after the first prompt. Null on every other read. Absent on older APIs.
+   */
+  reply_count?: number | null;
   session_id: string;
   account_id: string;
   project_id: string;
@@ -152,6 +165,13 @@ export interface ProjectSession {
    * re-share its contents.
    */
   can_manage_lifecycle?: boolean;
+  /**
+   * May the viewer publish one assistant response of this session through a
+   * public link (`shareTurn`)? A human (not an agent or service credential) who
+   * can read the session and is its owner or a project manager. Only the
+   * single-session reads carry it; absent means unknown, so hide the control.
+   */
+  can_publish_response?: boolean;
   /** Whether the current viewer may open/read this session. */
   can_access?: boolean;
   /** Exact lifecycle state of the backing runtime resource, when present. */
@@ -167,6 +187,20 @@ export interface ProjectSession {
    *  agent, an API key or a service account. */
   pinned_at?: string | null;
   archived_at?: string | null;
+  /** Where the session sits on the agent board. Absent on an API before multi-agent. */
+  board_state?: SessionBoardState;
+  /** What the session waits for from its person, or null. Absent on an API before multi-agent. */
+  attention?: SessionAttention;
+  /** The newest turn activity (ISO 8601), or null. Absent on an API before multi-agent. */
+  last_activity_at?: string | null;
+  /** At most 280 characters of the last assistant text, or null. Absent on an API before multi-agent. */
+  result_excerpt?: string | null;
+  /** The name an agent gave this child (`agent({ name })`, metadata `agent_handle`), or null. */
+  agent_handle?: string | null;
+  /** The lead session of a teammate (metadata `team_lead`), or null. */
+  team_lead_session_id?: string | null;
+  /** Who may send this session a message. Absent on an API before multi-agent. */
+  inbound?: SessionInbound;
   created_at: string;
   updated_at: string;
 }
@@ -238,8 +272,15 @@ export interface PendingSessionPrompt {
  * The later `/start` call is an idempotent readiness/resume operation.
  */
 export interface CreateProjectSessionInput {
+  /** Visible same-project parent. Does not change the authenticated caller or inherit sharing. */
+  parent_session_id?: string;
   /** Authorized platform session whose saved conversation is copied before boot. */
   fork_from_session_id?: string;
+  /**
+   * The space (channel or DM, `listProjectSpaces`) to file the session in. Needs
+   * the project's `project_channels` flag. Omitted with the flag on: `#general`.
+   */
+  space_id?: string;
   base_ref?: string;
   agent_name?: string;
   /** Slug of the sandbox template to boot from. Defaults to "default". */
@@ -302,6 +343,7 @@ export interface CreateProjectSessionInput {
   secrets?: string[];
 }
 
+/** @deprecated Warm sessions were removed. Removed in the next major. */
 export interface WarmProjectSessionWorkspaceRefresh {
   status: 'skipped' | 'unchanged' | 'updated' | 'failed';
   before_sha?: string | null;
@@ -309,12 +351,14 @@ export interface WarmProjectSessionWorkspaceRefresh {
   error?: string;
 }
 
+/** @deprecated Warm sessions were removed. Removed in the next major. */
 export interface WarmProjectSessionResult {
   session: ProjectSession;
   reused: boolean;
   workspace_refresh: WarmProjectSessionWorkspaceRefresh;
 }
 
+/** @deprecated Warm sessions were removed. Removed in the next major. */
 export interface ClaimWarmProjectSessionInput {
   session_id: string;
   agent_name?: string;
@@ -381,6 +425,22 @@ export interface ListProjectSessionsOptions {
    *  deleted, the deleted sessions the caller may restore
    *  (`restoreProjectSession`) inside their window, each with `restore_until`. */
   view?: 'pinned' | 'archived' | 'deleted';
+  /** Only the sessions filed in this space (`ProjectSession.space_id`). Sent as `space_id`. */
+  spaceId?: string;
+  /**
+   * Only the sessions filed in this session group (`ProjectSession.group_id`),
+   * or `'none'` for the sessions in no group. Ignored by the API while the
+   * project's `session_groups` flag is off.
+   */
+  group?: string;
+  /** Only the sessions this person started (a user id; `startedBy: 'me'` for the caller). Sent as `created_by`. */
+  createdBy?: string;
+  /** Only the sessions that run this agent (its slug, `ProjectSession.agent_name`). */
+  agent?: string;
+  /** Only the sessions with activity at or after this ISO 8601 time (`updated_at`). Sent as `updated_after`. */
+  updatedAfter?: string;
+  /** Only the teammates of this lead session (metadata `team_lead`). Sent as `team_lead`. */
+  teamLead?: string;
 }
 
 /** One keyset page of a project's sessions. */
@@ -401,6 +461,12 @@ function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   if (q) params.set('q', q);
   for (const label of options?.labels ?? []) params.append('label', label);
   if (options?.view) params.set(options.view, 'only');
+  if (options?.spaceId) params.set('space_id', options.spaceId);
+  if (options?.group) params.set('group', options.group);
+  if (options?.createdBy) params.set('created_by', options.createdBy);
+  if (options?.agent) params.set('agent', options.agent);
+  if (options?.updatedAfter) params.set('updated_after', options.updatedAfter);
+  if (options?.teamLead) params.set('team_lead', options.teamLead);
   return params.size > 0 ? `?${params}` : '';
 }
 
@@ -719,6 +785,65 @@ export async function revokeSessionPublicShare(
 }
 
 /**
+ * The public share of ONE assistant response (one turn). The turn is keyed by
+ * its user message id (`SessionLogTurn.id`). The server publishes the response
+ * text as an immutable snapshot at `url`; `stale` is true when the live
+ * response no longer matches it (edited or regenerated): `shareTurn` again
+ * refreshes the snapshot and keeps the URL.
+ */
+export interface TurnShare {
+  share_id: string;
+  turn_id: string;
+  token: string;
+  url: string;
+  created_at: string;
+  snapshot_at: string;
+  stale: boolean;
+  /** The snapshot also publishes the prompt that started the turn. */
+  include_prompt: boolean;
+}
+
+function turnSharePath(projectId: string, sessionId: string, turnId: string): string {
+  return `/projects/${projectId}/sessions/${sessionId}/turns/${encodeURIComponent(turnId)}/share`;
+}
+
+/** The live share of one turn, or `{ share: null }`. */
+export async function getTurnShare(projectId: string, sessionId: string, turnId: string): Promise<{ share: TurnShare | null }> {
+  return unwrap(
+    await backendApi.get<{ share: TurnShare | null }>(turnSharePath(projectId, sessionId, turnId), { showErrors: false }),
+  );
+}
+
+/**
+ * Share one response publicly, or refresh the snapshot of its live share (same
+ * URL). `include_prompt: true` also publishes the prompt's text (default off;
+ * every call sets it anew). Rejects with status 409 while the turn has no
+ * response text, 404 for an unknown turn.
+ */
+export async function shareTurn(
+  projectId: string,
+  sessionId: string,
+  turnId: string,
+  options?: { include_prompt?: boolean },
+): Promise<{ share: TurnShare }> {
+  return unwrap(
+    // `showErrors: false`: the share dialog shows the failure inline, once.
+    await backendApi.put<{ share: TurnShare }>(
+      turnSharePath(projectId, sessionId, turnId),
+      { include_prompt: options?.include_prompt === true },
+      { showErrors: false },
+    ),
+  );
+}
+
+/** Revoke the public share of one turn. The link answers 410 afterwards. */
+export async function unshareTurn(projectId: string, sessionId: string, turnId: string): Promise<{ share: null }> {
+  return unwrap(
+    await backendApi.delete<{ share: null }>(turnSharePath(projectId, sessionId, turnId), { showErrors: false }),
+  );
+}
+
+/**
  * Create a session and immediately kick its runtime provisioning.
  *
  * Await any project-secret or connector-credential mutations that the runtime
@@ -742,63 +867,35 @@ export async function createProjectSession(projectId: string, input?: CreateProj
   return session;
 }
 
+/** @deprecated Warm sessions were removed. Removed in the next major. */
 export interface EnsureWarmProjectSessionOptions {
-  /**
-   * The id of a warm session this call must NOT reuse — typically the one the
-   * caller just took for a send. The server's reuse lookup skips it even
-   * though its `metadata.warm` marker is still set (it only drops when the
-   * first prompt reaches the preview proxy, seconds after take), so a
-   * replenish fired in that window creates a FRESH session instead of handing
-   * the just-taken one straight back.
-   */
   excludeSessionId?: string;
 }
 
+const WARM_SESSIONS_REMOVED = 'Warm sessions were removed: create the session with createProjectSession().';
+
 /**
- * Pre-create the session a present user is about to start.
- *
- * Speculative by contract: the caller ignores every failure and falls through to
- * `createProjectSession`, which re-evaluates every gate and surfaces the real
- * error. `showErrors: false` keeps the recoverable `409 WARM_SESSION_UNAVAILABLE`
- * — a project whose repo cannot be read, say — out of the global error sink, where it became a toast on an ordinary
- * project page view.
+ * @deprecated Warm sessions were removed (2026-11-03): the API answers 410.
+ * Always rejects with `ENDPOINT_RETIRED` and sends no request. Create the
+ * session with `createProjectSession`. Removed in the next major.
  */
 export async function ensureWarmProjectSession(
-  projectId: string,
-  options?: EnsureWarmProjectSessionOptions,
-) {
-  const body = options?.excludeSessionId ? { exclude_session_id: options.excludeSessionId } : {};
-  const result = unwrap(
-    await backendApi.post<WarmProjectSessionResult>(`/projects/${projectId}/sessions/warm`, body, {
-      showErrors: false,
-    }),
-  );
-  // A REUSED session is, by definition, not fresh: it is the same session a
-  // previous take (or a previous tab) already consumed, possibly with turns
-  // already in flight. Marking it fresh painted the resumed session as an
-  // instant typeable EMPTY shell, hiding exactly the mis-delivery this whole
-  // exclusion mechanism exists to prevent.
-  if (!result.reused) markSessionFresh(result.session.session_id);
-  return result;
+  _projectId: string,
+  _options?: EnsureWarmProjectSessionOptions,
+): Promise<WarmProjectSessionResult> {
+  throw retiredEndpointError('ensureWarmProjectSession', WARM_SESSIONS_REMOVED);
 }
 
 /**
- * @deprecated A warm session is an ordinary session. Navigate to
- * `ensureWarmProjectSession`'s `session.session_id` and prompt it — the first
- * prompt makes it visible on its own. This call remains only so consumers
- * pinned to an older shape keep working; it will be removed in the next major.
+ * @deprecated Warm sessions were removed (2026-11-03): the API answers 410.
+ * Always rejects with `ENDPOINT_RETIRED` and sends no request. Create the
+ * session with `createProjectSession`. Removed in the next major.
  */
 export async function claimWarmProjectSession(
-  projectId: string,
-  input: ClaimWarmProjectSessionInput,
-) {
-  const session = unwrap(
-    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions/warm/claim`, input, {
-      showErrors: false,
-    }),
-  );
-  markSessionFresh(session.session_id);
-  return session;
+  _projectId: string,
+  _input: ClaimWarmProjectSessionInput,
+): Promise<ProjectSession> {
+  throw retiredEndpointError('claimWarmProjectSession', WARM_SESSIONS_REMOVED);
 }
 
 export async function getProjectSession(
@@ -1464,6 +1561,8 @@ export interface SessionPrompt {
   /** Posted without a turn: no agent answers it, so show no "thinking"
    *  state. Absent from servers older than this field. */
   no_reply?: boolean;
+  /** Harness context (an auto-recovery continuation), not a person's prompt. Absent from an older API. */
+  synthetic?: boolean;
   /** The member who sent it. The prompt runs as this member, so only they
    *  edit, send now or retry it (`sessionPromptActions`). Null for a prompt
    *  with no recorded sender; absent from servers older than this field. */
@@ -1549,6 +1648,23 @@ export async function createSessionPrompt(
   );
 }
 
+/**
+ * A prompt the runtime accepted that the session log does not hold yet, or the session's
+ * `initial_prompt`: it left the inbox at delivery and is in the log once the box journals it.
+ * `message_id` is the id the log will hold it under. `prompt_id` is null for an
+ * `initial_prompt`. Listed by `GET …/prompts` `sent` and the `kortix.control.queue` frame.
+ */
+export interface SessionSentPrompt {
+  message_id: string;
+  /** The id the prompt was sent under (the host's optimistic message), when it differs. Absent from an older API. */
+  wire_message_id?: string | null;
+  prompt_id: string | null;
+  text: string;
+  attachments: Array<{ filename: string; mime: string }>;
+  author_user_id: string | null;
+  created_at: string;
+}
+
 /** Every prompt this session still owes the user, oldest first. Delivered
  *  prompts are omitted — they are in the transcript. `observed_at` is the
  *  SERVER's clock captured BEFORE the read: the ordering stamp this snapshot
@@ -1556,9 +1672,9 @@ export async function createSessionPrompt(
 export async function listSessionPrompts(
   projectId: string,
   sessionId: string,
-): Promise<{ prompts: SessionPrompt[]; observed_at?: string }> {
+): Promise<{ prompts: SessionPrompt[]; sent?: SessionSentPrompt[]; observed_at?: string }> {
   return unwrap(
-    await backendApi.get<{ prompts: SessionPrompt[]; observed_at?: string }>(
+    await backendApi.get<{ prompts: SessionPrompt[]; sent?: SessionSentPrompt[]; observed_at?: string }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts`,
       // A background poll: a failed tick must not toast every second.
       { showErrors: false },
@@ -1732,8 +1848,8 @@ export async function updateProjectSession(
 
 /**
  * Delete a session. It stays restorable until `restore_until` (30 days):
- * `restoreProjectSession` brings it back. Its branch is kept for good; its
- * messages and stored files are deleted after the window. `restore_until` is
+ * `restoreProjectSession` brings it back. After the window its messages,
+ * stored files and branch are deleted. `restore_until` is
  * absent from an API that predates restore.
  */
 export async function deleteProjectSession(projectId: string, sessionId: string) {
@@ -1896,8 +2012,8 @@ export interface SessionConfigState {
    * TRI-STATE, and the distinction is the point.
    *
    * `null` means "could not tell", NEVER "up to date": the sandbox is
-   * unreachable, or the project has no compiled config at all (a v1
-   * `kortix.toml` project). Branch on `=== true` and `=== false`; `!stale`
+   * unreachable, or the project has no compiled config at all. Branch on
+   * `=== true` and `=== false`; `!stale`
    * silently reports an unaskable session as current, which is the exact
    * failure this field exists to prevent.
    */
@@ -2388,5 +2504,56 @@ export async function getSessionModelUsage(
       `/projects/${projectId}/sessions/${sessionId}/model-usage`,
       { showErrors: false },
     ),
+  );
+}
+
+/** The model usage of one session or of a session tree, from the gateway's request record. */
+export interface SessionUsageTotals {
+  /** Every dollar the model requests cost, in USD: `kortix_cost + provider_cost`. */
+  cost: number;
+  /** Debited from the Kortix wallet, in USD. */
+  kortix_cost: number;
+  /** Paid to the account's own provider key, in USD. */
+  provider_cost: number;
+  request_count: number;
+  error_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  cache_write_tokens: number;
+}
+
+/** One session of a `SessionUsage` tree. */
+export interface SessionUsageEntry extends SessionUsageTotals {
+  session_id: string;
+  /** Null for the session the read starts at. */
+  parent_session_id: string | null;
+  /** 0 for the session the read starts at. */
+  depth: number;
+  title: string | null;
+  agent_name: string | null;
+  status: string;
+  created_at: string;
+}
+
+export interface SessionUsage {
+  session_id: string;
+  currency: 'USD';
+  /** The sum over `sessions`. */
+  total: SessionUsageTotals;
+  /** The session first, then every session it started that the caller may open, depth-first, oldest child first. */
+  sessions: SessionUsageEntry[];
+  /** Started sessions the caller may not open. Their cost is not in `total`. */
+  hidden_sessions: number;
+  /** True when the read stopped at its limit (10 levels, 500 sessions). */
+  truncated: boolean;
+}
+
+/** What a session and every session it started cost, in USD, from the gateway's
+ *  request record. A sub-agent in the session's sandbox bills under the session
+ *  itself, so its cost is in the session's own entry. */
+export async function getSessionUsage(projectId: string, sessionId: string): Promise<SessionUsage> {
+  return unwrap(
+    await backendApi.get<SessionUsage>(`/projects/${projectId}/sessions/${sessionId}/usage`, { showErrors: false }),
   );
 }

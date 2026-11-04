@@ -151,6 +151,72 @@ export function __pendingEnvChecksForTests(): Promise<void>[] {
 }
 
 /**
+ * A new session's first prompt resolves the box's env (session rows, the
+ * agent's secret grant through a manifest read, the network boundary) AFTER the
+ * box is ready: preview 2026-11-03, 104–123 ms p50 and 295–398 ms p90 of every
+ * first prompt, with the grant read up to 466 ms. None of those reads needs the
+ * box. The delivery starts them when the box row goes active, about a second
+ * before the daemon is ready (`prefetchPromptEnv`), and the first sync takes
+ * them once.
+ *
+ * Freshness: the result is at most `PROMPT_ENV_PREFETCH_TTL_MS` old and only
+ * serves the agent and the person it was read for: a prompt bound to another
+ * person (the turn-identity bind runs just before the sync) resolves afresh, so
+ * no one's personal secrets reach a turn that acts for someone else. A prefetch that failed in any part is not
+ * used: the sync resolves afresh, so a failure still surfaces where and how it
+ * always did. A secret written in the second between the prefetch and the push
+ * reaches the box at the next prompt, as with the trusted fast path below.
+ */
+export const PROMPT_ENV_PREFETCH_TTL_MS = 15_000;
+const PROMPT_ENV_PREFETCH_MAX = 2_000;
+type PrefetchedPromptEnv = {
+  /** The person the session token acted for when the reads ran (personal secrets depend on it). */
+  person: string | null;
+  context: Awaited<ReturnType<typeof loadSessionSecretContext>>;
+  boundary: Awaited<ReturnType<typeof resolveSessionNetworkBoundary>>;
+  snapshot: Awaited<ReturnType<typeof resolveSandboxEnvSnapshot>>;
+};
+// replica-local: the delivery that prefetches is the one that forwards the prompt.
+const prefetchedPromptEnv = new Map<string, { agent: string; atMs: number; ready: Promise<PrefetchedPromptEnv | null> }>();
+
+export function prefetchPromptEnv(projectId: string, sessionId: string, requestedAgent: string | null | undefined): void {
+  const agent = requestedAgent ?? '';
+  const now = Date.now();
+  const existing = prefetchedPromptEnv.get(sessionId);
+  if (existing && existing.agent === agent && now - existing.atMs < PROMPT_ENV_PREFETCH_TTL_MS) return;
+  for (const [key, entry] of prefetchedPromptEnv) {
+    if (now - entry.atMs >= PROMPT_ENV_PREFETCH_TTL_MS || prefetchedPromptEnv.size >= PROMPT_ENV_PREFETCH_MAX) {
+      prefetchedPromptEnv.delete(key);
+    } else break;
+  }
+  const ready = (async () => {
+    const person = await sessionTokenPerson(sessionId);
+    const secretContext = loadSessionSecretContext(projectId, sessionId, requestedAgent ?? null);
+    const [context, boundary, snapshot] = await Promise.all([
+      secretContext,
+      resolveSessionNetworkBoundary(projectId, sessionId, requestedAgent ?? null, secretContext),
+      resolveSandboxEnvSnapshot(projectId, sessionId, requestedAgent ?? null, secretContext),
+    ]);
+    return { person, context, boundary, snapshot };
+  })().catch(() => null);
+  prefetchedPromptEnv.delete(sessionId);
+  prefetchedPromptEnv.set(sessionId, { agent, atMs: now, ready });
+}
+
+/** The prefetch for this session and agent, at most once and only while fresh. */
+function takePrefetchedPromptEnv(sessionId: string, requestedAgent: string | null | undefined): Promise<PrefetchedPromptEnv | null> | null {
+  const entry = prefetchedPromptEnv.get(sessionId);
+  if (!entry) return null;
+  prefetchedPromptEnv.delete(sessionId);
+  if (entry.agent !== (requestedAgent ?? '') || Date.now() - entry.atMs >= PROMPT_ENV_PREFETCH_TTL_MS) return null;
+  return entry.ready;
+}
+
+export function __resetPromptEnvPrefetchForTests(): void {
+  prefetchedPromptEnv.clear();
+}
+
+/**
  * Digest of EVERY value `syncSandboxEnvForPrompt` sends that can move the
  * daemon's `result.changed || opencodeEnvChanged` gate (`routes/env.ts:196`):
  *
@@ -423,22 +489,33 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
   // boundary's fail-closed grant error included.
   // Both read the session row, the project row, the running agent's grant and
   // the personal-override owner. One context answers both.
-  const secretContext = loadSessionSecretContext(args.projectId, args.sessionId, args.requestedAgent);
+  // The first prompt's reads, started while the box booted (`prefetchPromptEnv`).
+  // A sync takes it only when every read succeeded; otherwise everything below
+  // resolves afresh, exactly as before.
+  const taken = mode === 'sync' ? await takePrefetchedPromptEnv(args.sessionId, args.requestedAgent) : null;
+  const prefetched = taken && taken.person === person ? taken : null;
+  const secretContext = prefetched
+    ? Promise.resolve(prefetched.context)
+    : loadSessionSecretContext(args.projectId, args.sessionId, args.requestedAgent);
   secretContext.catch(() => undefined);
-  const boundaryRead = resolveSessionNetworkBoundary(
-    args.projectId,
-    args.sessionId,
-    args.requestedAgent,
-    secretContext,
-  );
+  // When the snapshot's inputs landed (ms from t0): the session rows, then the
+  // agent's secret grant (a manifest read). Logged beside `timing` to split the
+  // per-prompt `snapshot` cost of a large project.
+  const at: Record<string, number> = {};
+  if (prefetched) at.prefetched = 1;
+  secretContext.then(() => {
+    at.context = Math.round(performance.now() - t0);
+  }, () => {});
+  const boundaryRead = prefetched
+    ? Promise.resolve(prefetched.boundary)
+    : resolveSessionNetworkBoundary(args.projectId, args.sessionId, args.requestedAgent, secretContext);
   boundaryRead.catch(() => undefined);
-  const snapshot = await resolveSandboxEnvSnapshot(
-    args.projectId,
-    args.sessionId,
-    args.requestedAgent,
-    secretContext,
-  );
+  const snapshot = prefetched
+    ? prefetched.snapshot
+    : await resolveSandboxEnvSnapshot(args.projectId, args.sessionId, args.requestedAgent, secretContext);
   lap('snapshot');
+  const grantSettled = (await secretContext).grantSettledAt?.();
+  if (grantSettled != null) at.grant = Math.round(grantSettled - t0);
   if (!snapshot) return;
   // Resolving the bindings stays FAIL-CLOSED: it re-reads the agent's grant, and
   // an unresolvable grant must refuse the prompt (the caller maps
@@ -584,7 +661,7 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
     }
     console.log(
       `[env-sync] timing sandbox=${args.externalId} push=skipped ` +
-        `background_refresh=${backgroundRefreshScheduled} ${JSON.stringify(timing)}`,
+        `background_refresh=${backgroundRefreshScheduled} ${JSON.stringify({ ...timing, at })}`,
     );
     return;
   }
@@ -627,7 +704,7 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
         `(ready=${ready}) session=${args.sessionId}`,
     );
   }
-  console.log(`[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=true ${JSON.stringify(timing)}`);
+  console.log(`[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=true ${JSON.stringify({ ...timing, at })}`);
 }
 
 export async function runBounded<T>(

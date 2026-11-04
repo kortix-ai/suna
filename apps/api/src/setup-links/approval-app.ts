@@ -1,4 +1,4 @@
-import { connectors, connectorCalls, projects } from '@kortix/db';
+import { connectorHeldCalls, connectors, connectorCalls, projects } from '@kortix/db';
 import { composioToolkitLogo } from '../connectors/composio';
 /**
  * Approval links — the AUTHENTICATED half, mounted at /v1/approval-links.
@@ -61,6 +61,10 @@ const ApprovalLinkSchema = z.object({
   status: z.string(),
   /** Only `pending_approval` is actionable; every other status is an outcome. */
   pending: z.boolean(),
+  /** The held call's run once approved (`approved` status): `queued`,
+   *  `dispatched`, `ok`, `error`, `refused` or `unknown`. Null when the gate
+   *  holds no input (the caller repeats the call) or is not approved. */
+  run_state: z.string().nullable(),
   args_preview: z.record(z.string(), z.unknown()).nullable(),
   review_complete: z.boolean(),
   args_summary: z.string().nullable(),
@@ -71,6 +75,9 @@ const ApprovalLinkSchema = z.object({
   /** `unavailable` when that read failed or timed out. */
   resolved_error: z.string().nullable(),
   policy_source: z.string().nullable(),
+  /** The agent policy set that held this call (`policy_source: policy_set`), and its agent. */
+  policy_set: z.string().nullable().optional(),
+  agent: z.string().nullable().optional(),
   requested_at: z.string(),
   resolved_at: z.string().nullable(),
   expires_at: z.string(),
@@ -183,6 +190,14 @@ approvalLinksApp.openapi(createRoute({
   }
 
   const expired = isApprovalExpired(row);
+  const [run] =
+    row.status === 'approved'
+      ? await db
+          .select({ state: connectorHeldCalls.state })
+          .from(connectorHeldCalls)
+          .where(eq(connectorHeldCalls.executionId, row.executionId))
+          .limit(1)
+      : [];
   // Only reached by a caller allowed to resolve: a row held before its action
   // had an enricher reads its content once (approval-enrich-pending.ts).
   const resultSummary = await enrichPendingCallOnce(row);
@@ -209,6 +224,7 @@ approvalLinksApp.openapi(createRoute({
     // A pending row past its window reads as expired before the worker flips it.
     status: expired ? 'expired' : row.status,
     pending: row.status === 'pending_approval' && !row.resolvedAt && !expired,
+    run_state: run?.state ?? null,
     args_preview: argsPreview,
     review_complete: summary.args_preview_complete === true,
     args_summary: summarizeArgsPreview(argsPreview),
@@ -217,6 +233,8 @@ approvalLinksApp.openapi(createRoute({
     resolved_preview: isPlainRecord(summary.resolved_preview) ? summary.resolved_preview : null,
     resolved_error: typeof summary.resolved_error === 'string' ? summary.resolved_error : null,
     policy_source: typeof summary.policy_source === 'string' ? summary.policy_source : null,
+    policy_set: summary.policy_source === 'policy_set' && typeof summary.policy_set === 'string' ? summary.policy_set : null,
+    agent: summary.policy_source === 'policy_set' && typeof summary.agent === 'string' ? summary.agent : null,
     requested_at: row.createdAt.toISOString(),
     resolved_at: row.resolvedAt?.toISOString() ?? null,
     // The earlier of the link token's expiry and the approval's own window.

@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as piAgentCore from '@earendil-works/pi-agent-core'
 import * as piAi from '@earendil-works/pi-ai/compat'
+import * as piAiModels from '@earendil-works/pi-ai/models'
 import * as piAiOauth from '@earendil-works/pi-ai/oauth'
 import * as piAiProviders from '@earendil-works/pi-ai/providers/all'
 import * as piCodingAgent from '@earendil-works/pi-coding-agent'
@@ -36,6 +37,7 @@ function hostModules(): Record<string, unknown> {
     '@earendil-works/pi-tui': piTui,
     '@earendil-works/pi-ai': piAi,
     '@earendil-works/pi-ai/compat': piAi,
+    '@earendil-works/pi-ai/models': piAiModels,
     '@earendil-works/pi-ai/oauth': piAiOauth,
     '@earendil-works/pi-ai/providers/all': piAiProviders,
     '@earendil-works/pi-coding-agent': piCodingAgent,

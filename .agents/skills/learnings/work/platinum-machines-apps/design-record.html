@@ -1,0 +1,1259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Platinum Machines and Apps: design record</title>
+<style>
+:root { --bg: #ffffff; --ink: #18181b; --quiet: #6b6b72; --rule: #e4e4e7; --axis: #a1a1aa; --code-bg: #f4f4f5; --accent: #2563eb; --accent-bg: rgba(37, 99, 235, 0.12); --warn: #d97706; --warn-bg: rgba(217, 119, 6, 0.12); }
+@media (prefers-color-scheme: dark) { :root { --bg: #0f0f11; --ink: #ececee; --quiet: #9a9aa3; --rule: #2a2a2e; --axis: #5c5c64; --code-bg: #1c1c20; --accent: #60a5fa; --accent-bg: rgba(96, 165, 250, 0.14); --warn: #f59e0b; --warn-bg: rgba(245, 158, 11, 0.14); } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 860px; margin: 0 auto; padding: 48px 24px 96px; }
+h1 { font-size: 28px; line-height: 1.25; margin: 0 0 8px; }
+h2 { font-size: 21px; margin: 56px 0 12px; padding-top: 16px; border-top: 1px solid var(--rule); }
+h3 { font-size: 16px; margin: 28px 0 8px; }
+p, li { max-width: 72ch; }
+a { color: var(--accent); }
+code { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+.meta { color: var(--quiet); margin: 0 0 24px; }
+nav.toc { border: 1px solid var(--rule); border-radius: 8px; padding: 12px 20px; margin: 24px 0 8px; }
+nav.toc p { margin: 0 0 4px; font-weight: 600; }
+nav.toc ol { margin: 0; padding-left: 20px; }
+.table-wrap { overflow-x: auto; margin: 12px 0 20px; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; line-height: 1.45; }
+th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--rule); }
+th { font-weight: 600; border-bottom: 1px solid var(--axis); }
+ul.contains-task-list, li.task-list-item { list-style: none; }
+li.task-list-item input { margin-right: 8px; }
+figure.diagram { margin: 20px 0; }
+figure.diagram svg { width: 100%; height: auto; display: block; }
+figcaption { color: var(--quiet); font-size: 13px; margin-top: 4px; }
+.bx { fill: none; stroke: var(--axis); stroke-width: 1.25; }
+.bx-warn { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 2; }
+.bx-accent { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 2; }
+.conn { fill: none; stroke: var(--axis); stroke-width: 1.25; }
+.arrowhead { fill: var(--axis); }
+.t-title { font-size: 15px; font-weight: 600; fill: var(--ink); }
+.t-label, .t-name { font-weight: 600; fill: var(--ink); }
+.t-line { font-size: 11.5px; fill: var(--ink); }
+.t-quiet { font-size: 11.5px; fill: var(--quiet); }
+</style>
+</head>
+<body>
+<main>
+<h1>Platinum Machines and Apps: design record</h1>
+<p class="meta">As of 2026-10-29 · Internal design record, not shipped text · Owner: Marko Kraemer (decisions)</p>
+<nav class="toc"><p>Contents</p><ol><li><a href="#summary">Summary</a></li><li><a href="#the-ask-and-the-sources">The ask and the sources</a></li><li><a href="#kortix-apps-today">Kortix Apps today</a></li><li><a href="#platinum-apps-today">Platinum Apps today</a></li><li><a href="#feature-comparison-against-fly">Feature comparison against Fly</a></li><li><a href="#is-fly-the-right-reference">Is Fly the right reference</a></li><li><a href="#naming-and-object-model">Naming and object model</a></li><li><a href="#storage-separate-from-compute">Storage separate from compute</a></li><li><a href="#split-of-work-and-build-order">Split of work and build order</a></li><li><a href="#rename-cost-migration-path-and-risks">Rename cost, migration path and risks</a></li><li><a href="#open-decisions">Open decisions</a></li><li><a href="#parked-idea-layered-primitives-and-a-bare-metal-marketplace">Parked idea: layered primitives and a bare-metal marketplace</a></li><li><a href="#evidence-unverified-items-glossary-next-steps">Evidence, unverified items, glossary, next steps</a></li></ol></nav>
+<h2 id="summary">Summary</h2>
+<p>Build the machine platform in Platinum, name its core object <strong>Machine</strong>, and keep Kortix Apps as a thin product layer on top. Nothing is built yet. 7 decisions are open (section &quot;Open decisions&quot;).</p>
+<ol>
+<li><strong>Kortix Apps</strong> (<code>apps/api/src/apps/</code>, 12,765 non-test lines) already has most of Fly&#39;s App model: releases, machines, process groups, deploy strategies, volumes. It runs the machine layer itself, two proxy hops in front of the VM.</li>
+<li><strong>Platinum Apps</strong> (<code>/v1/apps</code>, about 1,180 lines) is an experimental prototype: one VM per App, HTTP only, flag off by default.</li>
+<li><strong>Fly is the right model for the App layer and for speed. It is the wrong model for the machine.</strong> A Fly Machine&#39;s root filesystem resets on restart, and its volumes are pinned to one host.</li>
+<li><strong>The machine contract</strong> = a regular cloud VM (EC2 class), plus what only Platinum has: stop that keeps memory, fork, live resize, point-in-time volume restore, credentials kept outside the VM.</li>
+<li><strong>One VM object, named Machine.</strong> &quot;Sandbox&quot; becomes a preset of a Machine and a compatibility name for the API.</li>
+<li><strong>Storage separate from compute.</strong> A Machine is the durable identity. An Instance is the disposable VM on one host. Two storage modes: <code>local</code> and <code>volume</code>.</li>
+<li><strong>The split.</strong> Platinum owns machines, proxy, network, volumes, regions and domains. Kortix owns <code>kortix.yaml</code>, access, App events, display and templates. About 4,855 lines of Kortix machine-layer code move to Platinum or are deleted.</li>
+</ol>
+<h2 id="the-ask-and-the-sources">The ask and the sources</h2>
+<p>Marko asked four questions in one thread on 2026-10-29. This record holds the whole thread.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Marko&#39;s words</th>
+<th>Answered in</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>&quot;can u compare KORTIX APPS implemenation with ../platinum APPS Implementation – basically I want 1 100% fly.io recreation e2e as an apps primitive to be used entirely and we can have it directly on platinum level even perhaps better then on kortix level&quot;</td>
+<td>Kortix Apps today, Platinum Apps today, Feature comparison, Split of work</td>
+</tr>
+<tr>
+<td>2</td>
+<td>&quot;do u think FLY.io is a good reference here, basically I want Platinum Apps/Machines to be the closest to a regular VM offering, &amp; more I guess?&quot;</td>
+<td>Is Fly the right reference</td>
+</tr>
+<tr>
+<td>3</td>
+<td>&quot;do we want to like refactor &amp; just call a sandbox a &quot;machine&quot; or &quot;vm&quot; or perhaps just &quot;compute unit&quot; … or like going even further a stateless, like storage from compute decoupled compute unit … there is both Fly machine &amp; fly apps right?&quot;</td>
+<td>Naming and object model, Storage separate from compute</td>
+</tr>
+<tr>
+<td>4</td>
+<td>&quot;document all of this from this thread for future reference, everything from a to z&quot;</td>
+<td>This record</td>
+</tr>
+</tbody></table></div>
+<p><strong>Sources read:</strong></p>
+<ul>
+<li>suna <code>origin/dev</code> at <code>c2bd329ae5</code>.</li>
+<li>platinum <code>origin/main</code> at <code>ea6920c24</code>. A path that starts with <code>platinum/</code> is in the kortix-ai/platinum repository at that SHA. Every other path is in this repository.</li>
+</ul>
+<p><strong>Earlier decisions this builds on:</strong></p>
+<ul>
+<li>2026-10-10: Marko asked to adopt the Fly/Railway/Render model in its entirety for Kortix Apps, with nothing specific to one backend. The result shipped as suna #9527: releases, machines, process groups, services, volumes, templates.</li>
+<li>2026-10-11: shipped text never describes Kortix Apps as &quot;the Fly.io model&quot;. Fly is an internal reference only. This record is internal.</li>
+<li>2026-10-24: Apps became the one compute platform for 24/7 code (suna #10876). All scheduling runs through the trigger engine, and the monitor box was removed.</li>
+<li>Policy: Apps run on Platinum only, never on Daytona.</li>
+</ul>
+<h2 id="kortix-apps-today">Kortix Apps today</h2>
+<p>Kortix Apps is the working implementation: 12,765 non-test lines in <code>apps/api/src/apps/</code>, 68 commits since 2026-09-01. It runs on Platinum sandboxes but runs its own machine layer in the Kortix API. The App model is written for agents in <code>packages/starter/templates/managed/skills/kortix-apps/references/apps-model.md</code>.</p>
+<h3 id="the-model">The model</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Concept</th>
+<th>What Kortix Apps does</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Release</td>
+<td>Each deploy makes an immutable <code>vN</code>. Rollback creates a new release from an old one. The 5 newest ready releases are kept as rollback targets.</td>
+<td><code>deployment-worker.ts</code></td>
+</tr>
+<tr>
+<td>Machine</td>
+<td>A stable <code>machine_id</code> per machine. Each box that runs it is an instance: one <code>app_runtimes</code> row. A new release&#39;s instance inherits the machine id and the volume.</td>
+<td><code>machines.ts</code></td>
+</tr>
+<tr>
+<td>Process group</td>
+<td><code>processes:</code> in <code>kortix.yaml</code>. A group with no service is a worker and never idle-stops.</td>
+<td><code>machines.ts</code></td>
+</tr>
+<tr>
+<td>Scale</td>
+<td>0–20 machines per group. <code>vm:</code> sets the size per group. A resize is a new release, never an image rebuild.</td>
+<td><code>fleet.ts</code></td>
+</tr>
+<tr>
+<td>Service</td>
+<td><code>http_service</code> on the App&#39;s host, more <code>services</code> on <code>&lt;host&gt;--&lt;name&gt;</code>. Access is <code>public</code>, <code>app</code> or <code>admins</code>.</td>
+<td><code>public-proxy-*.ts</code></td>
+</tr>
+<tr>
+<td>Checks</td>
+<td>HTTP checks run inside the machine. A release goes live only when every check of every new machine passes.</td>
+<td><code>machines.ts</code></td>
+</tr>
+<tr>
+<td>Deploy strategy</td>
+<td><code>bluegreen</code> (default without a mount), <code>rolling</code> (default with a mount), <code>canary</code>, <code>immediate</code>.</td>
+<td><code>machines.ts</code></td>
+</tr>
+<tr>
+<td>Release command</td>
+<td>Runs once per release in a temporary machine, before any machine changes. A non-zero exit fails the release.</td>
+<td><code>deployment-worker.ts</code></td>
+</tr>
+<tr>
+<td>Auto stop/start</td>
+<td><code>auto_stop_machines: off|stop|suspend</code>. Suspend behaves as stop today. <code>min_machines_running</code>, <code>idle_timeout_seconds</code> (120–86400, default 300), <code>always_on</code>.</td>
+<td><code>idle-reaper.ts</code></td>
+</tr>
+<tr>
+<td>Volume</td>
+<td>On Platinum volumes. One volume per machine. Kortix enforces one writer (<code>app_volumes.attached_runtime_id</code>). Daily snapshots, kept 5 days by default (60 at most), plus fork and restore. Fixed at 100 GB.</td>
+<td><code>volumes.ts</code></td>
+</tr>
+<tr>
+<td>Exec</td>
+<td><code>kortix apps exec</code>, for project admins, audited.</td>
+<td><code>fleet.ts</code></td>
+</tr>
+<tr>
+<td>Templates</td>
+<td><code>kortix apps launch --template convex</code>: pinned images, config and files. Nothing runs specially.</td>
+<td>CLI + <code>routes.ts</code></td>
+</tr>
+<tr>
+<td>Product layer</td>
+<td>Access gate and sign-in tokens, viewer tokens, App events and triggers, App runs, <code>uses</code> bindings, <code>display</code>, IAM <code>project.app.*</code>, static sites served without a VM.</td>
+<td><code>access.ts</code>, <code>viewer.ts</code>, <code>event-routes.ts</code>, <code>static-site.ts</code></td>
+</tr>
+</tbody></table></div>
+<p><strong>Source kinds</strong> (<code>spec.ts</code>): <code>static</code>, <code>bundle</code>, <code>dockerfile</code>, <code>oci_image</code>. The in-machine supervisor <code>kortix-appd</code> owns <code>ENTRYPOINT</code>. Ports 7331 and 8080 are reserved for it.</p>
+<h3 id="how-it-runs-on-platinum">How it runs on Platinum</h3>
+<ol>
+<li><strong>Build:</strong> the deployment worker builds a Platinum template. Images are shared per set of build inputs (<code>kortix-appimg-&lt;env&gt;-&lt;key&gt;</code>). A quota guard handles Platinum&#39;s per-org template cap (10, 50 or 500 by tier).</li>
+<li><strong>Create:</strong> one Platinum sandbox per instance. It publishes the appd control port and ingress port, gets <code>KORTIX_APPD_TOKEN</code>, and mounts its volumes. An always-on App sets <code>autoStopInterval: 0</code>.</li>
+<li><strong>Request path:</strong> client → Cloudflare → Kortix API public proxy (<code>public-proxy-handler.ts</code>: access gate, wake through <code>ensureAppRuntimeRunning</code>, activity record) → Platinum preview ingress → host edge → appd ingress → the app.</li>
+<li><strong>Lifecycle loops in the Kortix API:</strong> the idle reaper stops machines past <code>idle_deadline_at</code>. The keep-alive pass runs every 5 minutes for always-on groups. A failed upstream fetch triggers a provider recovery and a retry.</li>
+</ol>
+<h3 id="known-problems">Known problems</h3>
+<ol>
+<li><strong>Wake under load.</strong> On 2026-10-15, 212 parallel GETs to a running App returned 142×<code>200</code>, 56×<code>202 app_starting</code> and 14×<code>503</code>. The App&#39;s Next.js page rendered blank until a reload. The issue is still open.</li>
+<li><strong>Latency.</strong> On 2026-10-11, dev added about 300 ms per request between edge and origin (dev 380–460 ms, prod 80–180 ms for a 1 ms <code>/health</code>).</li>
+<li><strong>No real suspend.</strong> <code>suspend</code> acts as <code>stop</code>, and Kortix documents a stop as losing memory.</li>
+<li><strong>No TCP.</strong> <code>protocol: tcp</code> is refused. A database that speaks raw TCP is reachable only from inside its own machine.</li>
+<li><strong>No private networking</strong> between Apps.</li>
+<li><strong>Volumes.</strong> Fixed at 100 GB with no grow. A group with a mount runs one machine (<code>409 volume_single_machine</code>).</li>
+<li><strong>Missing:</strong> regions, custom domains, load balancing by concurrency, autoscaling.</li>
+</ol>
+<h2 id="platinum-apps-today">Platinum Apps today</h2>
+<p>Platinum Apps is an experimental prototype behind <code>flags.apps_enabled</code>, which defaults to <code>false</code> (<code>platinum/apps/api/src/config.ts:740</code>). It has had 1 commit since 2026-09-01 (<code>b4e82c7c3</code>, platinum #1872). With the flag off, the whole <code>/v1/apps</code> namespace answers 404 before any Apps code runs (<code>platinum/apps/api/src/server.ts:1938</code>). An org can be opted in through <code>limits.org_overrides[orgId].apps</code>.</p>
+<h3 id="files">Files</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>File</th>
+<th>Lines</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>platinum/apps/api/src/api/apps.ts</code></td>
+<td>618</td>
+<td>HTTP routes</td>
+</tr>
+<tr>
+<td><code>platinum/apps/api/src/apps/rollout.ts</code></td>
+<td>321</td>
+<td>Blue-green rollout</td>
+</tr>
+<tr>
+<td><code>platinum/apps/api/src/apps/github.ts</code></td>
+<td>130</td>
+<td>GitHub PAT and GitHub App connections</td>
+</tr>
+<tr>
+<td><code>platinum/apps/api/src/apps/schema.ts</code></td>
+<td>109</td>
+<td>3 tables</td>
+</tr>
+</tbody></table></div>
+<h3 id="data-model">Data model</h3>
+<ul>
+<li><code>apps</code>: <code>slug</code> (unique per org, becomes <code>&lt;slug&gt;.apps.&lt;domain&gt;</code>), <code>source</code> (jsonb), <code>build_env</code>, <code>runtime_env</code> (secret values encrypted), <code>port</code>, <code>health_path</code>, <code>cpu</code>, <code>ram_mb</code>, <code>disk_gb</code>, <code>region</code>, <code>current_deployment_id</code>, <code>current_sandbox_id</code>, <code>state</code> (<code>created|deploying|running|degraded|stopped|failed</code>).</li>
+<li><code>app_deployments</code>: <code>seq</code>, <code>template_id</code>, <code>sandbox_id</code>, <code>env_snapshot</code>, <code>status</code> (<code>building|booting|healthy|live|superseded|failed</code>).</li>
+<li><code>git_connections</code>: kind <code>pat</code> or <code>github_app_installation</code>.</li>
+<li>The module adds no column to <code>sandboxes</code> or <code>templates</code>. An App&#39;s real state is a template row (the build) and a sandbox row (the VM). Billing, backup, host-loss failover and audit come with them.</li>
+</ul>
+<h3 id="sources">Sources</h3>
+<ul>
+<li><code>image</code>: pinned references only. Floating tags such as <code>latest</code> are refused.</li>
+<li><code>source</code>: a build context in S3 plus a Dockerfile.</li>
+<li><code>git</code>: clone, then a Dockerfile if one exists, else nixpacks framework detection. Private repos work through an encrypted token or a <code>git_connections</code> row. <code>POST /v1/apps/:id/git-push</code> also exists.</li>
+</ul>
+<h3 id="routes">Routes</h3>
+<p><code>POST /v1/apps</code>, <code>GET /v1/apps</code>, <code>GET|PATCH|DELETE /v1/apps/:id</code>, <code>POST /:id/deploy</code>, <code>GET /:id/deployments</code>, <code>GET /:id/deployments/:d</code>, <code>POST /:id/rollback</code>, <code>POST /:id/stop|start|restart</code>, <code>GET /:id/logs</code>, and the connection routes (<code>/connections</code>, <code>/github/install</code>, <code>/github/callback</code>).</p>
+<h3 id="rollout-rollout-ts">Rollout (<code>rollout.ts</code>)</h3>
+<ol>
+<li>Build a template through an in-process call to the templates route. Wait up to 15 minutes for <code>ready</code>.</li>
+<li>Boot a persistent sandbox: <code>auto_stop_minutes: 0</code>, <code>PORT</code> set to the App port, the port exposed publicly, warm pool skipped. Wait for <code>running</code>.</li>
+<li>Probe the health path from inside the guest with curl, wget or a raw <code>/dev/tcp</code> GET. Any status from 200 to 499 passes. Timeout: 120 s.</li>
+<li>Flip <code>current_deployment_id</code> and <code>current_sandbox_id</code> in one UPDATE.</li>
+<li>Delete the old VM.</li>
+</ol>
+<p>On failure the live release keeps serving, and the template built for the failed attempt is deleted. Traffic reaches the VM through <code>platinum/apps/api/src/sandboxProxy.ts:183</code>, which joins the slug to <code>current_sandbox_id</code>.</p>
+<h3 id="limits">Limits</h3>
+<ul>
+<li>One VM per App: no machines, no process groups, no scale.</li>
+<li>HTTP only. No volumes. No auto stop/start.</li>
+<li><strong>Deploys are not durable.</strong> <code>POST /:id/deploy</code> calls <code>void deploy(...)</code> inside the API process. An API restart in the middle of a deploy leaves the deployment in <code>building</code>.</li>
+</ul>
+<h3 id="platinum-primitives-that-kortix-apps-does-not-use">Platinum primitives that Kortix Apps does not use</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Primitive</th>
+<th>What it does</th>
+<th>Where documented</th>
+<th>How Kortix Apps does it</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Raw TCP expose</td>
+<td>A public port from 20000–29999 on the region control plane. <code>direct: true</code> adds a one-hop port on the host.</td>
+<td><code>platinum/docs/FEATURES.md</code> §2</td>
+<td>Refuses <code>protocol: tcp</code></td>
+</tr>
+<tr>
+<td>Stop that keeps memory</td>
+<td>A stop saves memory where it can. The next start resumes processes. The stop reports <code>memory_saved</code>.</td>
+<td><code>platinum/docs/sandboxes.md:320</code></td>
+<td>Treats suspend as stop</td>
+</tr>
+<tr>
+<td>Edge auto-resume</td>
+<td>A request to a stopped, exposed port resumes the sandbox (<code>AUTO_RESUME_MS</code> 30 s)</td>
+<td><code>platinum/docs/FEATURES.md</code> §10</td>
+<td>Wakes machines in the Kortix API</td>
+</tr>
+<tr>
+<td>Live CPU/RAM resize</td>
+<td>Changes a running sandbox in place</td>
+<td><code>platinum/docs/sandboxes.md:414</code></td>
+<td>A resize is a new release</td>
+</tr>
+<tr>
+<td>Regions</td>
+<td>EU by default, US by grant, fixed at create</td>
+<td><code>platinum/docs/regions.md</code></td>
+<td>No region field</td>
+</tr>
+<tr>
+<td>Exclusive volume mounts</td>
+<td>One writer per work volume, fenced (behind a flag)</td>
+<td>platinum PR #2046</td>
+<td>Its own lock in <code>app_volumes</code></td>
+</tr>
+<tr>
+<td>Org secrets</td>
+<td>A credential the VM never holds, injected by the egress proxy</td>
+<td><code>platinum/docs/FEATURES.md</code> §7</td>
+<td>Secrets as env vars</td>
+</tr>
+<tr>
+<td>Boot from a volume</td>
+<td><code>root_volume</code>: the root disk is a volume. PTXP boxes run this way.</td>
+<td><code>platinum/docs/sandboxes.md:382</code></td>
+<td>Not used</td>
+</tr>
+<tr>
+<td>Fork, signed snapshots</td>
+<td>Fork a running sandbox. Ed25519-signed snapshot manifests.</td>
+<td><code>platinum/docs/FEATURES.md</code> §2</td>
+<td>Volume fork only</td>
+</tr>
+</tbody></table></div>
+<h2 id="feature-comparison-against-fly">Feature comparison against Fly</h2>
+<p>Kortix Apps matches Fly on the App config model. Neither implementation has Fly&#39;s networking: TCP/UDP services, a private network, regions, custom domains. Platinum has the primitives for TCP and regions, but its Apps layer does not use them.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Fly feature</th>
+<th>Kortix Apps (dev)</th>
+<th>Platinum Apps (main)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Releases, rollback</td>
+<td>Yes: <code>vN</code>, rollback is a new release, 5 kept</td>
+<td>Yes: <code>seq</code>, rollback reuses the old template</td>
+</tr>
+<tr>
+<td>Machines with a stable id</td>
+<td>Yes</td>
+<td>No: one VM per App</td>
+</tr>
+<tr>
+<td>Process groups, scale count, size per group</td>
+<td>Yes: 0–20 per group</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Deploy strategies</td>
+<td>All 4</td>
+<td>Blue-green only</td>
+</tr>
+<tr>
+<td><code>release_command</code></td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Health checks</td>
+<td>HTTP, inside the machine</td>
+<td>One in-guest HTTP probe</td>
+</tr>
+<tr>
+<td>Durable deploy job</td>
+<td>Yes: a queue worker</td>
+<td>No: runs inside the API request process</td>
+</tr>
+<tr>
+<td>Auto stop/start, <code>min_machines_running</code></td>
+<td>Yes, run by Kortix loops and the Kortix proxy</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Suspend (memory kept)</td>
+<td>No: acts as stop</td>
+<td>The primitive exists (<code>memory_saved</code>); Apps does not use it</td>
+</tr>
+<tr>
+<td>Load balancing by concurrency, autoscaling</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
+<td>TCP services</td>
+<td>Refused</td>
+<td>The primitive exists (TCP expose); Apps does not use it</td>
+</tr>
+<tr>
+<td>UDP</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Private network, <code>.internal</code> DNS</td>
+<td>No</td>
+<td>No: only isolation between tenants (<code>platinum/hosts/host-agent/internal/l2iso</code>)</td>
+</tr>
+<tr>
+<td>Regions</td>
+<td>No</td>
+<td>One <code>region</code> per App</td>
+</tr>
+<tr>
+<td>Custom domains and certificates</td>
+<td>No. The self-host Caddy has an on-demand TLS check (<code>edge.ts</code>).</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Volumes</td>
+<td>Yes: one per machine, single writer, snapshots, fork, restore, fixed 100 GB</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Secrets</td>
+<td>Project secrets as env vars</td>
+<td>Encrypted env, plus org secrets that never enter the VM</td>
+</tr>
+<tr>
+<td>Builders</td>
+<td>static, bundle, Dockerfile, OCI image</td>
+<td>Image, build context, git with nixpacks detection, GitHub App, git push</td>
+</tr>
+<tr>
+<td>Exec, console</td>
+<td><code>apps exec</code>, audited</td>
+<td>Sandbox exec, terminal, SSH keys</td>
+</tr>
+<tr>
+<td>Request path</td>
+<td>client → Cloudflare → Kortix API → Platinum preview edge → host edge → appd → app</td>
+<td>client → Platinum control plane proxy → host edge → VM</td>
+</tr>
+</tbody></table></div>
+<h2 id="is-fly-the-right-reference">Is Fly the right reference</h2>
+<p>Fly is the right reference for two things: the App layer (releases, process groups, proxy, auto stop/start) and speed. It is the wrong reference for the machine itself. For the machine, the reference is a regular cloud VM (EC2, GCE, Hetzner Cloud). Platinum already beats both on stop/start with memory, fork, live resize and secrets. It loses on the networking basics and on volume size.</p>
+<p>The Fly facts below are from Fly&#39;s public docs as known on 2026-10-29, not re-checked that day. The Platinum facts are from <code>platinum</code> <code>origin/main</code>.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Regular VM (EC2)</th>
+<th>Fly Machine</th>
+<th>Platinum sandbox today</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Root disk survives a stop</td>
+<td>Yes</td>
+<td>No: rebuilt from the image on restart</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Memory survives a stop</td>
+<td>Hibernate, with limits</td>
+<td>Suspend, with limits</td>
+<td>Yes, where it can (<code>memory_saved</code>)</td>
+</tr>
+<tr>
+<td>Start time</td>
+<td>Tens of seconds</td>
+<td>About 1 s</td>
+<td>About 0.7–0.9 s from memory; under 200 ms from the warm pool (<code>platinum/docs/FEATURES.md</code>, written 2026-05-29)</td>
+</tr>
+<tr>
+<td>Volume</td>
+<td>Network disk, any host in the zone, can grow</td>
+<td>Local disk, machine pinned to its host, can grow</td>
+<td>Saved to S3 about every 5 s, restorable on any host; fixed at 100 GB, cannot grow</td>
+</tr>
+<tr>
+<td>Fork a running VM</td>
+<td>No</td>
+<td>No (volume fork only)</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Change CPU/RAM</td>
+<td>Stop, then change the type</td>
+<td>An update restarts the machine</td>
+<td>Live, no restart</td>
+</tr>
+<tr>
+<td>Private network between VMs</td>
+<td>VPC</td>
+<td>Private network with <code>.internal</code> names</td>
+<td>None</td>
+</tr>
+<tr>
+<td>Public IP, every port, TCP + UDP</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>HTTP preview URLs, plus TCP on a random port in 20000–29999; no UDP</td>
+</tr>
+<tr>
+<td>Inbound firewall</td>
+<td>Security groups</td>
+<td>Through the service config only</td>
+<td>Egress rules only; inbound is limited to exposed ports</td>
+</tr>
+<tr>
+<td>Credentials outside the VM</td>
+<td>No</td>
+<td>No</td>
+<td>Yes (org secrets)</td>
+</tr>
+</tbody></table></div>
+<h3 id="the-target-contract-a-regular-vm-and-more">The target contract: a regular VM, and more</h3>
+<p><strong>A regular VM</strong> gives you:</p>
+<ul>
+<li>a persistent root disk;</li>
+<li>a stable private IP and DNS name inside the org;</li>
+<li>an optional dedicated public IP with every port, TCP and UDP;</li>
+<li>inbound firewall rules;</li>
+<li>SSH;</li>
+<li>user-data at boot;</li>
+<li>volumes you can attach and grow;</li>
+<li>images and snapshots;</li>
+<li>a choice of region.</li>
+</ul>
+<p><strong>&quot;And more&quot;</strong> is what Platinum already has and neither EC2 nor Fly has:</p>
+<ul>
+<li>stop/start that keeps memory and processes, in under 1 s;</li>
+<li>fork of a running VM;</li>
+<li>live CPU/RAM resize;</li>
+<li>point-in-time volume restore from commits;</li>
+<li>credentials injected outside the VM;</li>
+<li>an exec, files and managed-processes API that agents can drive.</li>
+</ul>
+<p><strong>Design rule:</strong> an App is only Machines plus proxy config. Anything an App does must also work through the raw Machine API. This is Fly&#39;s best idea, and it keeps the App layer thin.</p>
+<h2 id="naming-and-object-model">Naming and object model</h2>
+<p>Name the core object <strong>Machine</strong>. Keep one VM object. &quot;Sandbox&quot; becomes a preset of a Machine and stays as a compatibility API name. An App is a named group of Machines, the same split Fly makes between Fly Machines and Fly Apps.</p>
+<h3 id="names-considered">Names considered</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Verdict</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Machine</td>
+<td><strong>Use</strong></td>
+<td>The standard term: Fly Machines, GCE machine types, Kortix Apps <code>machines</code>. It describes what the object is, not how it is built.</td>
+</tr>
+<tr>
+<td>VM</td>
+<td>No</td>
+<td>It names how the object is built. Platinum also has a second runtime (<code>cell</code>, <code>/v1/workers</code>) that is not a VM.</td>
+</tr>
+<tr>
+<td>Compute unit</td>
+<td>No</td>
+<td>Vague, and it sounds like a billing unit.</td>
+</tr>
+<tr>
+<td>Sandbox</td>
+<td>Keep as a preset and a compatibility name</td>
+<td>The word agent buyers search for. <code>platinum/docs/POSITIONING.md</code> sells &quot;existing sandbox SDKs work with a base-URL + key swap&quot;.</td>
+</tr>
+</tbody></table></div>
+<h3 id="terms-in-use-today-for-one-concept">Terms in use today for one concept</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Where</th>
+<th>Term</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Platinum API</td>
+<td>sandbox (<code>sbx_</code> ids, <code>/v1/sandboxes</code>)</td>
+</tr>
+<tr>
+<td>PTXP</td>
+<td>box</td>
+</tr>
+<tr>
+<td>Kortix Apps</td>
+<td>machine, plus instance (the <code>app_runtimes</code> table)</td>
+</tr>
+<tr>
+<td>Kortix sessions</td>
+<td>session (<code>session_id == sandbox_id</code>)</td>
+</tr>
+</tbody></table></div>
+<p>One term removes this split.</p>
+<h3 id="one-vm-object-no-new-type">One VM object, no new type</h3>
+<p>A sandbox and a 24/7 Postgres differ only in their defaults: auto-stop, auto-delete, backups, restart policy and storage mode. A second VM type would mean two schedulers, two billing paths and two lifecycle state machines for one hypervisor. The Platinum Apps prototype already builds on sandbox rows, which is correct.</p>
+<h3 id="presets-of-one-machine">Presets of one Machine</h3>
+<p>A sandbox and a persistent Machine are one object with two sets of defaults. <strong>Sandbox:</strong> <code>local</code> storage, auto-stop and auto-delete on, agent tools (exec, files, processes). <strong>Persistent:</strong> <code>volume</code> storage, no auto-delete.</p>
+<p>The preset names and their exact fields are not decided.</p>
+<h3 id="machines-vs-apps">Machines vs Apps</h3>
+<p>Fly has both. A Fly Machine is the VM API. A Fly App is a named group of Machines that share releases, config, secrets, IPs, certificates and proxy routing. A Fly App runs no compute of its own. Platinum should copy this split.</p>
+<h3 id="the-object-list">The object list</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Object</th>
+<th>What it is</th>
+<th>Today in Platinum</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Machine</td>
+<td>The compute object: identity, config, size, volumes, network</td>
+<td>Sandbox</td>
+</tr>
+<tr>
+<td>Instance</td>
+<td>One run of a Machine on one host. Disposable.</td>
+<td>Implicit: the sandbox&#39;s current host placement</td>
+</tr>
+<tr>
+<td>App</td>
+<td>A named group of Machines: releases, deploy strategy, services, proxy, autoscale, hostname</td>
+<td><code>/v1/apps</code> prototype</td>
+</tr>
+<tr>
+<td>Release</td>
+<td>An immutable image plus config of an App</td>
+<td><code>app_deployments</code></td>
+</tr>
+<tr>
+<td>Image</td>
+<td>A built root filesystem</td>
+<td>Template</td>
+</tr>
+<tr>
+<td>Volume</td>
+<td>A durable disk with commits, tags and fork</td>
+<td>Volume</td>
+</tr>
+<tr>
+<td>Snapshot</td>
+<td>A saved disk and memory state</td>
+<td>Snapshot</td>
+</tr>
+<tr>
+<td>Network</td>
+<td>A private network per org</td>
+<td><strong>New</strong></td>
+</tr>
+<tr>
+<td>Address</td>
+<td>A public IPv4/IPv6</td>
+<td><strong>New</strong></td>
+</tr>
+<tr>
+<td>Domain</td>
+<td>A custom domain with its certificate</td>
+<td><strong>New</strong></td>
+</tr>
+</tbody></table></div>
+<p><strong>A Kortix App</strong> then becomes a Platinum App, plus what only Kortix has: the access gate and sign-in, App events, <code>uses</code> bindings, <code>display</code>, templates and IAM.</p>
+<h2 id="storage-separate-from-compute">Storage separate from compute</h2>
+<p>Separate storage from compute inside the one Machine object. Platinum already runs most of this model: PTXP boxes boot from a root volume, and their compute is disposable. The one real gap is that a Machine booted from a volume never keeps memory across a stop.</p>
+<h3 id="the-model-2">The model</h3>
+<ul>
+<li><strong>Machine</strong> = the durable identity and config: id, name, private IP and DNS name, image, size, volumes (root and data), network rules, secrets.</li>
+<li><strong>Instance</strong> = the disposable compute: one VM on one host. It is created on start. It is replaced on host loss, migration or a move to another region.</li>
+<li><strong>Memory snapshot</strong> = a cache that speeds up a start. It is not where state lives.</li>
+</ul>
+<p>Kortix Apps already has this split: a stable <code>machine_id</code>, and one <code>app_runtimes</code> row per instance.</p>
+<h3 id="evidence-that-platinum-has-most-of-it">Evidence that Platinum has most of it</h3>
+<ul>
+<li><code>root_volume</code>: a sandbox can boot from a volume (<code>platinum/docs/sandboxes.md:382</code>). PTXP boxes run this way.</li>
+<li>Work volumes are committed to S3 about every 5 s and can be restored on any host (measured 2026-10-14 on dev).</li>
+<li>Cross-host migration and host-loss failover exist (<code>platinum/docs/FEATURES.md</code> §3, §6).</li>
+</ul>
+<h3 id="what-it-buys">What it buys</h3>
+<ul>
+<li>A host failure becomes a restart on another host with no data loss. Fly is weak here: its volumes are pinned to one host.</li>
+<li>A move between regions becomes a restart somewhere else.</li>
+<li>Scale to zero leaves nothing on a host.</li>
+</ul>
+<h3 id="the-gap">The gap</h3>
+<p>A Machine that boots from a volume never saves memory on stop: &quot;Sandboxes that boot from a volume (<code>root_volume</code>) never save memory, so their stops are always <code>false</code>&quot; (<code>platinum/docs/sandboxes.md:382</code>). The fix: a stop that saves the root volume commit and the memory image together, consistently. With it, the durable mode starts as fast as the sandbox mode.</p>
+<h3 id="two-storage-modes-of-one-object">Two storage modes of one object</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Root disk</th>
+<th>Use</th>
+<th>Today</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>local</code></td>
+<td>Fast local disk on the host</td>
+<td>Disposable sandboxes, agent runs</td>
+<td>Today&#39;s sandbox</td>
+</tr>
+<tr>
+<td><code>volume</code></td>
+<td>A volume, detachable, restorable anywhere</td>
+<td>Servers, databases, dev boxes</td>
+<td>Today&#39;s <code>root_volume</code> and PTXP</td>
+</tr>
+</tbody></table></div>
+<p>The cost of <code>volume</code> mode is disk I/O over the network. Ephemeral sandboxes keep <code>local</code> so they lose no speed.</p>
+<h3 id="out-of-scope">Out of scope</h3>
+<ul>
+<li><strong>Stateless compute in the Lambda sense</strong> (request-scoped, no state). <code>platinum/docs/POSITIONING.md</code> already says Platinum is not the answer for stateless function compute. The <code>cell</code> runtime (<code>/v1/workers</code>, behind <code>flags.cell_runtime_enabled</code>, default <code>false</code>, <code>platinum/apps/api/src/config.ts:753</code>) covers that case.</li>
+<li>An App that scales to zero covers most of the same need.</li>
+</ul>
+<h2 id="split-of-work-and-build-order">Split of work and build order</h2>
+<p>Platinum owns everything on the byte path and everything that touches a VM. Kortix owns the product layer. The reason: wake-on-request, load balancing, private networking and TCP must sit at the host edge. Kortix runs wake in its API, two hops before the VM, which causes the <code>202 app_starting</code> bug and about 300 ms of extra latency on dev.</p>
+<figure class="diagram">
+<svg viewBox="0 0 760 404" role="img" aria-label="Target: the Platinum host edge gates, wakes and routes" font-size="13">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="arrowhead" d="M0 0L10 5L0 10z"/></marker></defs>
+<text class="t-title" x="24" y="34">Target: the Platinum host edge gates, wakes and routes</text>
+<text class="t-label" x="24" y="72">Today: Kortix Apps</text>
+<path class="conn" d="M128 128H145.6" marker-end="url(#arrow)"/><path class="conn" d="M249.6 128H267.2" marker-end="url(#arrow)"/><path class="conn" d="M371.2 128H388.8" marker-end="url(#arrow)"/><path class="conn" d="M492.8 128H510.4" marker-end="url(#arrow)"/><path class="conn" d="M614.4 128H632" marker-end="url(#arrow)"/>
+<rect class="bx" x="24" y="84" width="104" height="88" rx="8"/><text class="t-name" x="76" y="108" text-anchor="middle">Client</text>
+<rect class="bx" x="145.6" y="84" width="104" height="88" rx="8"/><text class="t-name" x="197.6" y="108" text-anchor="middle">Cloudflare</text>
+<rect class="bx bx-warn" x="267.2" y="84" width="104" height="88" rx="8"/><text class="t-name" x="319.2" y="108" text-anchor="middle">Kortix API</text><text class="t-line" x="319.2" y="124" text-anchor="middle">access gate</text><text class="t-line" x="319.2" y="140" text-anchor="middle">wake</text><text class="t-line" x="319.2" y="156" text-anchor="middle">idle stop</text>
+<rect class="bx" x="388.8" y="84" width="104" height="88" rx="8"/><text class="t-name" x="440.8" y="108" text-anchor="middle">Platinum</text><text class="t-line" x="440.8" y="124" text-anchor="middle">preview edge</text>
+<rect class="bx" x="510.4" y="84" width="104" height="88" rx="8"/><text class="t-name" x="562.4" y="108" text-anchor="middle">Host edge</text>
+<rect class="bx" x="632" y="84" width="104" height="88" rx="8"/><text class="t-name" x="684" y="108" text-anchor="middle">VM</text><text class="t-line" x="684" y="124" text-anchor="middle">appd → app</text>
+<text class="t-quiet" x="24" y="196">Wake runs in the Kortix API, two hops before the VM: 202 app_starting under load, about 300 ms extra on dev</text>
+<text class="t-label" x="24" y="240">Target: Platinum Apps</text>
+<path class="conn" d="M128 296H510.4" marker-end="url(#arrow)"/><path class="conn" d="M614.4 296H632" marker-end="url(#arrow)"/>
+<text class="t-quiet" x="319.2" y="288" text-anchor="middle">one hop</text>
+<rect class="bx" x="24" y="252" width="104" height="88" rx="8"/><text class="t-name" x="76" y="276" text-anchor="middle">Client</text>
+<rect class="bx bx-accent" x="510.4" y="252" width="104" height="104" rx="8"/><text class="t-name" x="562.4" y="276" text-anchor="middle">Host edge</text><text class="t-line" x="562.4" y="292" text-anchor="middle">access gate</text><text class="t-line" x="562.4" y="308" text-anchor="middle">wake</text><text class="t-line" x="562.4" y="324" text-anchor="middle">load balance</text><text class="t-line" x="562.4" y="340" text-anchor="middle">idle stop</text>
+<rect class="bx" x="632" y="252" width="104" height="88" rx="8"/><text class="t-name" x="684" y="276" text-anchor="middle">VM</text><text class="t-line" x="684" y="292" text-anchor="middle">app</text>
+<text class="t-quiet" x="24" y="380">Kortix leaves the request path (decision 1a). It keeps kortix.yaml, App events, display and templates.</text>
+</svg>
+<figcaption>Request path, today vs target</figcaption>
+</figure>
+<p>Today a request crosses Cloudflare and the Kortix API before it reaches Platinum. In the target, the host edge does the gate, the wake and the balancing, one hop before the VM.</p>
+<h3 id="who-owns-what">Who owns what</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Platinum (<code>/v1/machines</code>, <code>/v1/apps</code>)</th>
+<th>Kortix (Kortix Apps)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Machine API: create, start, stop, suspend, destroy, exec, metadata</td>
+<td>Translate <code>kortix.yaml</code> into the Platinum App spec</td>
+</tr>
+<tr>
+<td>Releases and all 4 deploy strategies, as a durable job</td>
+<td>Access gate, sign-in tokens, viewer tokens</td>
+</tr>
+<tr>
+<td>Process groups and services: HTTP, TCP, later UDP</td>
+<td>App events, triggers, App runs</td>
+</tr>
+<tr>
+<td>Proxy at the host edge: wake, idle stop, <code>min_machines_running</code>, concurrency limits</td>
+<td><code>uses</code> bindings, <code>display</code>, templates</td>
+</tr>
+<tr>
+<td>Private network and <code>&lt;name&gt;.&lt;org&gt;.internal</code> DNS</td>
+<td>IAM (<code>project.app.*</code>)</td>
+</tr>
+<tr>
+<td>Volumes per machine, single-writer fencing</td>
+<td>Static sites served without a VM</td>
+</tr>
+<tr>
+<td>Regions, addresses, custom domains, certificates</td>
+<td>The <code>kortix apps</code> CLI and the SDK, as a client of the Platinum API</td>
+</tr>
+</tbody></table></div>
+<h3 id="kortix-code-that-moves-to-platinum-or-is-deleted">Kortix code that moves to Platinum or is deleted</h3>
+<p>11 files, 4,855 lines in <code>apps/api/src/apps/</code>: <code>machines.ts</code>, <code>fleet.ts</code>, <code>fleet-routes.ts</code>, <code>idle-reaper.ts</code>, <code>public-proxy-runtime.ts</code>, <code>public-proxy-handler.ts</code>, <code>volumes.ts</code>, <code>volume-store.ts</code>, <code>images.ts</code>, <code>hosting.ts</code>, <code>deployment-worker.ts</code>. Parts of these files stay in Kortix: the access gate inside the proxy handler, and the <code>kortix.yaml</code> translation inside the deployment worker.</p>
+<h3 id="build-order">Build order</h3>
+<ol>
+<li><strong>Proxy at the host edge:</strong> wake, load balancing, concurrency limits, idle stop. This fixes the <code>app_starting</code> bug.</li>
+<li><strong>Private network</strong> and <code>.internal</code> DNS between Machines, across hosts.</li>
+<li><strong>TCP services in Apps.</strong> Platinum already has TCP expose; this connects it to App services.</li>
+<li><strong>Real suspend:</strong> connect App stop to <code>memory_saved</code>. Also fix the memory save for <code>volume</code> mode.</li>
+<li><strong>Real public IPs:</strong> a dedicated IPv4/IPv6 per Machine or per App, every port, TCP and UDP. Today a game server needs an SRV record that points to a random port.</li>
+<li><strong>Inbound firewall rules</strong> per Machine.</li>
+<li><strong>Volumes:</strong> a chosen size, growth, and attach/detach while running. Platinum gives every volume a fixed 100 GB today.</li>
+<li><strong>Custom domains and certificates.</strong></li>
+<li><strong>Regions:</strong> Machines placed in several regions, and a move between regions through a snapshot.</li>
+<li><strong>Autoscaling</strong> by load.</li>
+</ol>
+<p>Items 1–4 were the first proposed batch: one Platinum branch plus one Kortix branch. Whether to build all 10 is open decision 4.</p>
+<h2 id="rename-cost-migration-path-and-risks">Rename cost, migration path and risks</h2>
+<p>The safe path: <code>/v1/machines</code> becomes the main API, and <code>/v1/sandboxes</code> stays as an alias served by the same handlers. No client breaks.</p>
+<h3 id="surfaces-the-rename-touches">Surfaces the rename touches</h3>
+<ul>
+<li><code>/v1/sandboxes</code> and the <code>sbx_</code> ids;</li>
+<li>the TS and Python SDK <code>Sandbox</code> classes (83 files in Platinum&#39;s SDK, CLI and MCP packages mention &quot;sandbox&quot;);</li>
+<li>the <code>pt sandbox</code> CLI;</li>
+<li>the MCP tool names (<code>sandbox_create</code>, <code>sandbox_delete</code>, …);</li>
+<li>the <code>sandbox.*</code> webhooks and the <code>sandbox.uptime</code> billing events;</li>
+<li>the DB tables;</li>
+<li>Kortix&#39;s Platinum provider code and <code>session_id == sandbox_id</code>;</li>
+<li>the Daytona-compatible surface (<code>x-daytona-preview-token</code>, &quot;base-URL + key swap&quot;).</li>
+</ul>
+<h3 id="risks">Risks</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Risk</th>
+<th>What could go wrong</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Apps become Platinum-only</td>
+<td>Kortix Apps cannot run on another provider</td>
+<td>Already policy: Apps run on Platinum only</td>
+</tr>
+<tr>
+<td>Live prod Apps</td>
+<td>A customer&#39;s prod backend App and an enterprise self-host customer&#39;s Apps carry volume data. A bad cutover loses data.</td>
+<td>Per-App cutover with a volume handover, after new Apps run on the new layer</td>
+</tr>
+<tr>
+<td>Access-gated Apps</td>
+<td>Platinum&#39;s edge serves an <code>app</code> or <code>admins</code> service without the Kortix gate</td>
+<td>Open decision 1</td>
+</tr>
+<tr>
+<td>Self-host</td>
+<td>Self-host boxes serve Apps through their own Caddy and the Kortix API</td>
+<td>Open decision 2</td>
+</tr>
+<tr>
+<td>Positioning</td>
+<td><code>platinum/docs/POSITIONING.md</code> says: &quot;Highly available web apps. This isn&#39;t an app platform.&quot; Machines plus Apps reverses that.</td>
+<td>Open decision 5</td>
+</tr>
+<tr>
+<td>ID change</td>
+<td>A new id prefix breaks every stored reference and every regex that expects <code>sbx_</code>, Kortix included</td>
+<td>Open decision 6</td>
+</tr>
+<tr>
+<td>Shipped wording</td>
+<td>Docs, CLI and PR text describe Apps as &quot;the Fly model&quot;</td>
+<td>Rule since 2026-10-11: shipped text uses Platinum and Kortix terms only</td>
+</tr>
+</tbody></table></div>
+<h2 id="open-decisions">Open decisions</h2>
+<p>7 decisions block the Platinum spec. All are Marko&#39;s. Each row has a recommendation. Status as of 2026-10-29.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Decision</th>
+<th>Options</th>
+<th>Recommendation</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>How the Platinum edge enforces Kortix access for <code>app</code> and <code>admins</code> services</td>
+<td>(a) Verify the Kortix viewer JWT at the edge. (b) Call Kortix on each request (forward-auth).</td>
+<td>(a): no extra hop, and Kortix already publishes JWKS (<code>KORTIX_AUTH_JWKS</code>)</td>
+<td>Open</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Where self-host App traffic goes</td>
+<td>(a) App hostnames move to a Platinum self-host edge. (b) Self-host keeps its Caddy and the Kortix proxy.</td>
+<td>None yet: needs a check of the self-host topology first</td>
+<td>Open</td>
+</tr>
+<tr>
+<td>3</td>
+<td>When live prod Apps move</td>
+<td>(a) Move them now. (b) New Apps first, then a per-App cutover with a volume handover.</td>
+<td>(b)</td>
+<td>Open</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Scope and order</td>
+<td>(a) All 10 build items, including UDP and autoscaling. (b) Items 1–4 first, as one Platinum branch plus one Kortix branch.</td>
+<td>(b)</td>
+<td>Open</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Platinum positioning</td>
+<td>Approve &quot;Machines plus Apps&quot; and rewrite <code>platinum/docs/POSITIONING.md</code>, or keep &quot;not an app platform&quot;</td>
+<td>Approve, and rewrite the doc on the same Platinum branch</td>
+<td>Open</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Machine id prefix</td>
+<td>(a) Keep <code>sbx_</code> for every Machine. (b) A new prefix for new Machines, with <code>sbx_</code> valid forever.</td>
+<td>(a): ids are opaque, and a second prefix breaks every regex that expects <code>sbx_</code></td>
+<td>Open</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Is &quot;instance&quot; a public API term</td>
+<td>(a) A public instance resource, as in Kortix Apps. (b) Only fields on the Machine: current host, region, generation.</td>
+<td>(b), until a client needs the instance history</td>
+<td>Open</td>
+</tr>
+</tbody></table></div>
+<h2 id="parked-idea-layered-primitives-and-a-bare-metal-marketplace">Parked idea: layered primitives and a bare-metal marketplace</h2>
+<p><strong>Status: unproven, long-term idea from 2026-10-29. Not a plan. Nothing is decided, researched or built.</strong> Marko asked to keep it for later: decouple everything into base primitives, put Apps and similar products on top, and let users buy bare-metal CPU and GPU servers from many providers in one click through Platinum.</p>
+<h3 id="decouple-everything">Decouple everything</h3>
+<p>Two things that change separately get two objects.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Pair that changes separately</th>
+<th>Object that separates them</th>
+<th>Status in Platinum</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Compute vs storage</td>
+<td>Machine vs Volume; the Instance is disposable</td>
+<td>Mostly built (<code>root_volume</code>, volumes)</td>
+</tr>
+<tr>
+<td>Compute vs capacity</td>
+<td>Machine vs Host/Pool; placement is only a constraint (<code>pool:</code>, <code>region:</code>)</td>
+<td>Pools exist, owned by the operator only</td>
+</tr>
+<tr>
+<td>Compute vs ingress</td>
+<td>Endpoint targets Machines by label and outlives them</td>
+<td>New</td>
+</tr>
+<tr>
+<td>Identity vs placement</td>
+<td>Private IP and DNS name stay when the Instance moves</td>
+<td>New (Network)</td>
+</tr>
+<tr>
+<td>Compute vs credentials</td>
+<td>Secret injected at egress</td>
+<td>Built</td>
+</tr>
+<tr>
+<td>Build vs run</td>
+<td>Image vs Machine</td>
+<td>Built (templates)</td>
+</tr>
+<tr>
+<td>Who supplies the hardware vs who meters usage</td>
+<td>Host supplier vs Platinum billing</td>
+<td>New: the marketplace</td>
+</tr>
+<tr>
+<td>Product vs platform</td>
+<td>Kortix uses only the public API</td>
+<td>Target</td>
+</tr>
+</tbody></table></div>
+<h3 id="four-layers">Four layers</h3>
+<p>Each layer uses only the public API of the layer under it. Kortix is an ordinary customer of L2, which proves the primitives are complete.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>L3 Products</td>
+<td>Kortix (agents), PTXP (dev boxes), Inference, Marketplace</td>
+</tr>
+<tr>
+<td>L2 Composites</td>
+<td>App, Job, Schedule, Function, Workspace, Template</td>
+</tr>
+<tr>
+<td>L1 Primitives</td>
+<td>Machine, Volume, Image, Snapshot, Network, Endpoint, Secret</td>
+</tr>
+<tr>
+<td>L0 Capacity</td>
+<td>Host, Pool, Region: the Platinum fleet, your own servers, or servers bought in the marketplace</td>
+</tr>
+</tbody></table></div>
+<h3 id="the-7-primitives-l1">The 7 primitives (L1)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Primitive</th>
+<th>What it is</th>
+<th>Today in Platinum</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Machine</td>
+<td>CPU/RAM/GPU, image, lifecycle: start, stop, suspend, fork, resize, exec</td>
+<td><code>/v1/sandboxes</code></td>
+</tr>
+<tr>
+<td>Volume</td>
+<td>Durable bytes with commits, tags, fork</td>
+<td><code>/v1/volumes</code></td>
+</tr>
+<tr>
+<td>Image</td>
+<td>A bootable root filesystem from a Dockerfile, OCI image, git repo or spec</td>
+<td><code>/v1/templates</code></td>
+</tr>
+<tr>
+<td>Snapshot</td>
+<td>Memory plus disk at one point in time; a source for restore and fork</td>
+<td>Sandbox snapshots</td>
+</tr>
+<tr>
+<td>Network</td>
+<td>A private network per org, plus DNS (<code>&lt;name&gt;.internal</code>)</td>
+<td>None</td>
+</tr>
+<tr>
+<td>Endpoint</td>
+<td>Ingress: HTTP host, TCP/UDP port, IP, domain plus certificate, access rule. Targets Machines by label. Does wake-on-request, balancing and idle stop.</td>
+<td><code>expose</code> per sandbox (HTTP + TCP)</td>
+</tr>
+<tr>
+<td>Secret</td>
+<td>A credential injected on egress, never stored in the VM</td>
+<td><code>/v1/secrets</code></td>
+</tr>
+</tbody></table></div>
+<p>The key move: the host-edge proxy is the Endpoint primitive, so an App needs no proxy of its own. These are not primitives: App, Database and Cron (compositions), GPU (a Machine field), Sandbox (a Machine preset), Workspace (a Machine plus volumes). Contracts that apply to every primitive: identity and scoped keys, durable operations, events, metering, audit, quotas, placement.</p>
+<h3 id="composites-l2">Composites (L2)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Composite</th>
+<th>Turns into</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>App</td>
+<td>Machines per process group, Endpoints, release history, deploy strategy</td>
+<td>Web apps, APIs, bots</td>
+</tr>
+<tr>
+<td>Job</td>
+<td>One Machine that runs to exit, with retries</td>
+<td>Migrations, batch, agent tasks</td>
+</tr>
+<tr>
+<td>Schedule</td>
+<td>A cron or interval that starts a Job or calls an Endpoint</td>
+<td>Nightly reports, polling</td>
+</tr>
+<tr>
+<td>Function</td>
+<td>The <code>cell</code> runtime (<code>/v1/workers</code>, behind a flag)</td>
+<td>Request-scoped handlers</td>
+</tr>
+<tr>
+<td>Workspace</td>
+<td>A Machine with a root volume, a home volume and a Network</td>
+<td>PTXP dev boxes</td>
+</tr>
+<tr>
+<td>Template</td>
+<td>A parameterized bundle of specs</td>
+<td>Postgres, Redis, Convex, GPU apps</td>
+</tr>
+</tbody></table></div>
+<p>A composite labels every child it creates (<code>owner: app/web</code>). The user can see, exec into and detach each child.</p>
+<h3 id="dx-principles">DX principles</h3>
+<ol>
+<li>One resource model for the API, TS/Python SDK, <code>pt</code> CLI, MCP and dashboard, generated from one OpenAPI.</li>
+<li>Declarative and imperative on one API: <code>pt apply</code> shows a plan and applies it; <code>pt machine run</code> acts now. Both upsert by name.</li>
+<li>Names, not IDs, in specs: <code>volume: pg-data</code>, <code>db.internal</code>.</li>
+<li>An escape hatch at every level: App → Machines → exec or SSH.</li>
+<li>Durable operations with an id that can be waited on, streamed and cancelled.</li>
+<li>Every state change is an event (webhook and stream). Composites react to events.</li>
+<li>Templates are data and can be shared.</li>
+<li>Agent-first: MCP tools map 1:1 to primitives; every write has a dry-run plan; every error has a code and a fix.</li>
+</ol>
+<p>Spec sketch. The field names are not decided:</p>
+<pre><code class="language-yaml">network: default
+volumes:
+  pg-data: {}
+apps:
+  db:
+    image: postgres:17
+    mounts: [{ volume: pg-data, path: /var/lib/postgresql/data }]
+    endpoints: [{ port: 5432, protocol: tcp, private: true }]     # db.internal:5432
+  web:
+    build: ./web
+    env: { DATABASE_URL: &quot;postgres://db.internal:5432/app&quot; }
+    secrets: [STRIPE_KEY]
+    endpoints: [{ port: 3000, domain: app.example.com, idle_stop: 5m }]
+    scale: { min: 0, max: 10 }
+jobs:
+  migrate: { app: web, run: [&quot;npm&quot;, &quot;run&quot;, &quot;migrate&quot;], on: release }
+schedules:
+  nightly-report: { cron: &quot;0 3 * * *&quot;, job: { app: web, run: [&quot;npm&quot;, &quot;run&quot;, &quot;report&quot;] } }
+</code></pre>
+<p><code>kortix.yaml</code> would be a superset: Kortix adds access, App events and display, and compiles the rest to this spec.</p>
+<h3 id="bare-metal-marketplace">Bare-metal marketplace</h3>
+<p>Marko&#39;s framing: &quot;u can easy 1 click buy through us all aggregated baremetal from all the various providers, so u can easy buy CPU&quot;. It covers CPU and GPU servers from providers such as OVHcloud, Scaleway and Latitude.sh.</p>
+<p>The one-click flow:</p>
+<ol>
+<li><strong>Catalog:</strong> one list of offers from all providers in one shape: CPU model and family, cores, RAM, disk, GPU model and count, region, delivery time, minimum term, price.</li>
+<li><strong>Buy:</strong> pick an offer and a target pool, then pay.</li>
+<li><strong>Order:</strong> Platinum orders the server through the provider&#39;s API and waits for delivery.</li>
+<li><strong>Install:</strong> Platinum installs its host image (pinned guest kernel) and registers the host into the org&#39;s pool with a bootstrap token.</li>
+<li><strong>Burn-in:</strong> a check of CPU, RAM, disk and GPU passthrough before the host is <code>ready</code>.</li>
+<li><strong>Use:</strong> Machines land on it with <code>pool: &lt;name&gt;</code>, or the pool becomes the org&#39;s default.</li>
+<li><strong>End of life:</strong> Platinum drains the host, then cancels or renews the server.</li>
+</ol>
+<p>Whose account places the order:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>On Platinum&#39;s account (Platinum sells)</th>
+<th>On the user&#39;s connected account</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>UX</td>
+<td>True one click, one bill</td>
+<td>One click after the user connects each provider account</td>
+</tr>
+<tr>
+<td>Who pays the provider</td>
+<td>Platinum, which bills the user from credits</td>
+<td>The user; Platinum charges a platform fee</td>
+</tr>
+<tr>
+<td>Platinum&#39;s risk</td>
+<td>The server term, abuse (mining), payment default</td>
+<td>None on hardware</td>
+</tr>
+<tr>
+<td>Needs</td>
+<td>Reseller terms per provider, ID checks on users</td>
+<td>Only the API integration</td>
+</tr>
+</tbody></table></div>
+<p>Suggestion from the thread, not decided: sell through Platinum first, only for providers that bill by the hour, so a cancel ends the cost. Add monthly-term providers through connected accounts.</p>
+<p><strong>Exists in Platinum</strong> (checked on <code>platinum</code> <code>origin/main</code>):</p>
+<ul>
+<li>dedicated host pools (<code>hosts.pool</code>, the org grant <code>limits.org_overrides[org].pools</code>, <code>403 pool_not_enabled</code>);</li>
+<li>host provisioning scripts for AWS, Hetzner and Scaleway (<code>platinum/infra/scripts/providers/</code>);</li>
+<li>bootstrap-token registration;</li>
+<li>GPU passthrough (VFIO);</li>
+<li>a billing wallet: credits, auto top-up, spend limits.</li>
+</ul>
+<p><strong>New:</strong></p>
+<ul>
+<li>org-owned hosts and pools;</li>
+<li>provider order and terminate integrations (no terminate API today);</li>
+<li>the catalog;</li>
+<li>burn-in;</li>
+<li>drain at end of term;</li>
+<li>billing for host purchases.</li>
+</ul>
+<p><strong>Hard constraints:</strong></p>
+<ul>
+<li>Memory snapshots do not cross CPU families. A family is vendor plus CPU class plus region, and the control plane refuses a cross-family migration. Fork, suspend and migrate with memory stay inside one family; <code>volume</code> mode moves anywhere. Offers must show their family.</li>
+<li>A template boots only on a host with the same guest kernel (<code>templates.guest_kernel</code>). The install must pin the host image.</li>
+<li>Bare metal arrives in minutes to days, so &quot;create a Machine now&quot; must use existing capacity.</li>
+<li>Most dedicated servers bill monthly while Machines bill per second. Someone carries the unused hours.</li>
+<li>A private network across providers needs an encrypted overlay and costs egress per provider.</li>
+<li>GPU offers need boards that support passthrough. Check this per SKU.</li>
+</ul>
+<p><strong>Not verified:</strong> which providers have an ordering API, bill by the hour, deliver fast, sell GPUs, allow resale, or verify identity on signup. Everything above about providers is from memory.</p>
+<h3 id="if-someone-picks-this-up">If someone picks this up</h3>
+<ol>
+<li>Research each provider (OVHcloud, Scaleway, Hetzner, Latitude.sh, Vultr, phoenixNAP, Cherry Servers): ordering API, billing unit, delivery time, CPU and GPU SKUs, resale terms, signup ID checks. Cite every source page.</li>
+<li>Smallest first step: let an org bring its own server into a private pool. Pools exist already.</li>
+<li>Then: connect a provider account and show the catalog.</li>
+<li>Sell through Platinum only when demand is proven.</li>
+</ol>
+<h2 id="evidence-unverified-items-glossary-next-steps">Evidence, unverified items, glossary, next steps</h2>
+<p>Every number in this record comes from the two source trees at the SHAs named in &quot;The ask and the sources&quot;, or from dated measurements. The items below are not verified.</p>
+<h3 id="how-the-numbers-were-measured">How the numbers were measured</h3>
+<ul>
+<li>Line counts: <code>git show origin/dev:&lt;file&gt; | wc -l</code> per file in <code>apps/api/src/apps/</code>, test files excluded → 12,765. The 11 machine-layer files → 4,855.</li>
+<li>Activity: <code>git log --oneline --since=2026-09-01 -- &lt;Apps paths&gt; | wc -l</code> → Platinum 1, Kortix 68.</li>
+<li>Platinum code read: <code>platinum/apps/api/src/apps/schema.ts</code>, <code>platinum/apps/api/src/apps/rollout.ts</code>, <code>platinum/apps/api/src/api/apps.ts</code>, <code>platinum/apps/api/src/server.ts:1900–1940</code>, <code>platinum/apps/api/src/config.ts:740</code> and <code>:753</code>.</li>
+<li>Platinum docs read: <code>platinum/docs/FEATURES.md</code>, <code>platinum/docs/sandboxes.md</code>, <code>platinum/docs/regions.md</code>, <code>platinum/docs/POSITIONING.md</code>, <code>platinum/docs/volumes.md</code>, <code>platinum/docs/networking.md</code> (search).</li>
+<li>Kortix code read: <code>spec.ts</code>, <code>machines.ts</code>, <code>fleet.ts</code>, <code>hosting.ts</code>, <code>public-proxy-handler.ts</code>, <code>public-proxy-runtime.ts</code>, <code>idle-reaper.ts</code>, <code>edge.ts</code>, <code>volumes.ts</code>, <code>images.ts</code>, and the skill reference <code>apps-model.md</code>.</li>
+<li>Dated measurements from earlier work: wake under load (2026-10-15), dev latency (2026-10-11), volume commits and restore (2026-10-14).</li>
+</ul>
+<h3 id="not-verified">Not verified</h3>
+<ul>
+<li><strong>Private networking is missing in Platinum:</strong> checked by searching the docs and the host-agent code only, not with a live test.</li>
+<li><strong><code>flags.apps_enabled</code> in Platinum prod:</strong> unknown. The prod config was not read.</li>
+<li><strong>Fly facts:</strong> from Fly&#39;s public docs as known, not re-checked on 2026-10-29.</li>
+<li><strong>Platinum start times</strong> (0.7–0.9 s, under 200 ms): from <code>platinum/docs/FEATURES.md</code>, written 2026-05-29, not re-measured.</li>
+<li><strong>Kortix stop and memory:</strong> Kortix documents a stop as losing memory. Whether appd restarts the process after a Platinum stop that saved memory was not checked.</li>
+<li><strong><code>platinum/docs/POSITIONING.md</code></strong> may be out of date. It still says &quot;single CP / single PG today&quot;.</li>
+</ul>
+<h3 id="glossary">Glossary</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meaning in this record</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Machine</td>
+<td>The one VM object: durable identity, config, size, volumes, network</td>
+</tr>
+<tr>
+<td>Instance</td>
+<td>One run of a Machine on one host; disposable</td>
+</tr>
+<tr>
+<td>App</td>
+<td>A named group of Machines with releases, services and a proxy config</td>
+</tr>
+<tr>
+<td>Release</td>
+<td>An immutable image plus config of an App</td>
+</tr>
+<tr>
+<td>Process group</td>
+<td>The Machines of an App that run one command</td>
+</tr>
+<tr>
+<td>Service</td>
+<td>A named port of a process group, served by the proxy</td>
+</tr>
+<tr>
+<td>Preset</td>
+<td>A set of Machine defaults (sandbox, persistent)</td>
+</tr>
+<tr>
+<td>Storage mode</td>
+<td><code>local</code> (host disk) or <code>volume</code> (detachable volume)</td>
+</tr>
+<tr>
+<td>Image</td>
+<td>A built root filesystem (Platinum: template)</td>
+</tr>
+</tbody></table></div>
+<h3 id="next-steps">Next steps</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Marko decides the 7 open decisions.</li>
+<li><input disabled="" type="checkbox"> Check the networking design against the host-agent code: private network and public IPs. These two items set the cost of everything else.</li>
+<li><input disabled="" type="checkbox"> Write the Platinum spec: the Machine contract, the two storage modes, Apps, and the build order.</li>
+<li><input disabled="" type="checkbox"> Rewrite <code>platinum/docs/POSITIONING.md</code> if decision 5 is approved.</li>
+<li><input disabled="" type="checkbox"> Plan the cutover of each live prod App, with its volume handover.</li>
+</ul>
+
+</main>
+</body>
+</html>

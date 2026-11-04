@@ -120,7 +120,7 @@ describe('ComposerCard (the moved card subtrees)', () => {
     expect(html).toContain('pointer-events-none absolute inset-0');
     expect(html).toContain('Drop files to attach');
     expect(html).toContain('opacity-30');
-    expect(html).toContain('border-kortix-blue/80');
+    expect(html).toContain('border-ring ring-ring/15');
   });
 
   test('without a drag, the overlay is absent and the card paints normally', () => {

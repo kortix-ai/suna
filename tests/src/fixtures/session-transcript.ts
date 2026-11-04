@@ -15,14 +15,9 @@ type SavedMessage = {
 };
 
 /**
- * A stopped session with saved history. By default the history is an old session's v1 mirror
- * (`session_transcript_*`), as a session saved before the journal left it: nothing reads the
- * mirror itself (P8.2), so the first read converts it into the session log
- * (`convertMirrorOnRead`). The fixture marks the backfill not drained, so a stack whose backfill
- * pass already found nothing converts it. With `log`, the history is the session log, written
- * the way a box's daemon writes it: `fromV1` of the same rows under producer `opencode`, posted
- * to `POST …/log/journal` with a session sandbox credential minted for the call. No mirror row
- * is written then.
+ * A stopped session with saved history in its session log, written the way a box's daemon
+ * writes it: `fromV1` of the rows under producer `opencode`, posted to `POST …/log/journal` with
+ * a session sandbox credential minted for the call (`journalSessionLog`).
  */
 /**
  * The default prompt and reply a seeded transcript stores when the caller does
@@ -94,10 +89,10 @@ export async function seedSessionTranscript(
      */
     messages?: (root: string, defaults: SavedMessage[]) => SavedMessage[];
     /**
-     * Store the history in the session log. `bearer`: the session owner's JWT or PAT, which mints the journal credential.
-     * Without it the history goes to the v1 mirror, which the first read converts.
+     * The session owner's JWT or PAT, which mints the journal credential. Without it no history is
+     * stored: the caller journals `messages` itself.
      */
-    log?: { bearer: string };
+    bearer?: string;
   },
 ) {
   if (!env.databaseUrl || env.target === 'prod')
@@ -114,32 +109,7 @@ export async function seedSessionTranscript(
       "UPDATE kortix.project_sessions SET status = 'stopped', opencode_session_id = $2, sandbox_id = $1, sandbox_url = 'http://127.0.0.1:1' WHERE session_id = $1",
       [input.sessionId, root],
     );
-    if (input.log) {
-      await journalSessionLog(env, { ...input, bearer: input.log.bearer, root, messages });
-    } else {
-      // A mirror-only session after the backfill drained (nothing writes the mirror since P8.2): reopen it.
-      await db.query(
-        "UPDATE kortix.session_log_backfill_state SET state = jsonb_set(state, '{drainedWithDeleted}', 'false'), rev = rev + 1 WHERE id = 'pass'",
-      );
-      await db.query(
-        'INSERT INTO kortix.session_transcript_mirrors (session_id, project_id, account_id, opencode_session_id, head_complete) VALUES ($1,$2,$3,$4,true)',
-        [input.sessionId, input.projectId, input.accountId, root],
-      );
-      for (const message of messages) {
-        await db.query(
-          'INSERT INTO kortix.session_transcript_messages (session_id, message_id, opencode_session_id, role, message_created_at, info, parts) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-          [
-            input.sessionId,
-            message.info.id,
-            typeof message.info.sessionID === 'string' ? message.info.sessionID : root,
-            message.info.role,
-            new Date(message.info.time.created),
-            JSON.stringify(message.info),
-            JSON.stringify(message.parts),
-          ],
-        );
-      }
-    }
+    if (input.bearer) await journalSessionLog(env, { ...input, bearer: input.bearer, root, messages });
     if (input.ensureSandbox !== false) {
       await db.query(
         "INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status, external_id, base_url) VALUES ($1::uuid,$1,$2,$3,'stopped',$1,'http://127.0.0.1:1')",
@@ -154,7 +124,7 @@ export async function seedSessionTranscript(
 
 /**
  * Journals `messages` (the whole conversation, in order) into the session log of a session
- * {@link seedSessionTranscript} seeded with `log`, as the box's daemon does after a turn: every
+ * {@link seedSessionTranscript} seeded, as the box's daemon does after a turn: every
  * message again at a newer rev, so a message that is new gets its seq and one that is stored
  * is replaced. Turns the project's `session_log` flag on.
  */

@@ -22,7 +22,7 @@ export interface ReadyChipState {
 }
 
 /** The panel surfaces reachable from outside the panel. */
-export type QuickView = 'terminal' | 'audit' | 'browser' | 'files' | 'reminders';
+export type QuickView = 'terminal' | 'audit' | 'browser' | 'files' | 'reminders' | 'desktop';
 
 /**
  * Extra aim for a quick-view request — "open the browser" vs "open the browser
@@ -160,6 +160,7 @@ interface KortixComputerState {
   // from the Easy/Advanced panel — no `isSidePanelOpen`, no pending consume.
   // Closing the drawer lands back on chat. Desktop never sets this.
   mobileToolView: QuickView | null;
+  mobileToolTarget: QuickViewTarget | null;
 
   // === ACTIONS ===
 
@@ -269,7 +270,7 @@ interface KortixComputerState {
   ) => { view: QuickView; target?: QuickViewTarget } | null;
 
   /** Mobile only — open `view` in the standalone tool drawer. */
-  openMobileTool: (view: QuickView) => void;
+  openMobileTool: (view: QuickView, target?: QuickViewTarget) => void;
   closeMobileTool: () => void;
 
   // Reset all state (full reset)
@@ -302,6 +303,7 @@ const initialState = {
     target?: QuickViewTarget;
   } | null,
   mobileToolView: null as QuickView | null,
+  mobileToolTarget: null as QuickViewTarget | null,
   /** A quick-view consumed by the transient BOOT shell (e.g. Terminal clicked
    *  while the sandbox boots). The shell's provider dies at the boot→ready
    *  handoff, taking the view with it — this remembers the intent so
@@ -405,6 +407,9 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         if (!open) {
           // The person closed it: coming back must not reopen it.
           forgetActivePanel(get());
+          // A tool closed while the computer boots stays closed after the
+          // boot→ready handoff: drop the intent it would replant.
+          update._bootQuickView = null;
           update.panelSplit = null;
           update.panelAspect = null;
           update.isExpanded = false;
@@ -588,6 +593,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           pendingToolNavIndex: null,
           // A tool drawer belonging to the session the user just left.
           mobileToolView: null,
+          mobileToolTarget: null,
           // The ⌘I restore memory dies with the session. Within a session the
           // key is a minimise/restore pair; across one it is not, and a detail
           // last seen on a page the user has navigated away from must never be
@@ -619,27 +625,36 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         // invariant instead of a patch: this is the single point where
         // "does this session have detail content" changes, so there is no
         // second route into the broken state to remember later.
+        //
+        // It closes the side panel itself, not only `detailOpen`: the layout
+        // shows the right side on `isSidePanelOpen` alone, so a lone
+        // `detailOpen` reset left it open and white. Not `setIsSidePanelOpen`:
+        // the person did not close it, so the panel memory stays and the
+        // provider's arrival restore reopens what it showed.
         const losingDetail = has === null || has === false;
         const isActive = get()._activeSessionId === sessionId;
         const closeDetail = losingDetail && isActive && get().detailOpen;
+        const closePatch = closeDetail
+          ? { ...CLOSED_PANEL_PATCH, detailOpen: false, skipNextExpandAnimation: true }
+          : {};
 
         if (has === null) {
           if (!(sessionId in map)) {
-            if (closeDetail) set({ detailOpen: false });
+            if (closeDetail) set(closePatch);
             return;
           }
           const next = { ...map };
           delete next[sessionId];
-          set({ _detailContentBySession: next, ...(closeDetail ? { detailOpen: false } : {}) });
+          set({ _detailContentBySession: next, ...closePatch });
           return;
         }
         if (map[sessionId] === has) {
-          if (closeDetail) set({ detailOpen: false });
+          if (closeDetail) set(closePatch);
           return;
         }
         set({
           _detailContentBySession: { ...map, [sessionId]: has },
-          ...(closeDetail ? { detailOpen: false } : {}),
+          ...closePatch,
         });
       },
 
@@ -736,11 +751,11 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         return { view: pending.view, target: pending.target };
       },
 
-      openMobileTool: (view: QuickView) => {
-        set({ mobileToolView: view });
+      openMobileTool: (view: QuickView, target?: QuickViewTarget) => {
+        set({ mobileToolView: view, mobileToolTarget: target ? { ...target } : null });
       },
       closeMobileTool: () => {
-        set({ mobileToolView: null });
+        set({ mobileToolView: null, mobileToolTarget: null });
       },
 
       reset: () => {

@@ -3,6 +3,7 @@ import { config } from '../config';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { createLlmGatewayRateLimitMiddleware } from '../middleware/rate-limit';
 import { createInternalGatewayRoutes } from './internal-routes';
+import { rethrowDatabaseError } from '../shared/database-errors';
 
 // ─── OpenAPI documentation for the inference surface ────────────────────────
 //
@@ -238,6 +239,201 @@ function messagesRoute(path: string) {
   });
 }
 
+const ImageRequestSchema = z
+  .object({
+    model: z.string().optional().openapi({
+      description: 'Any image model the project can reach, or `auto` (the default): the gateway picks one.',
+      example: 'auto',
+    }),
+    prompt: z.string().min(1).openapi({ example: 'A red cube on a white table' }),
+    aspect_ratio: z
+      .enum(['auto', '1:1', '3:2', '2:3', '16:9', '9:16', '4:3', '3:4'])
+      .optional()
+      .openapi({ example: '16:9' }),
+    quality: z.string().optional().openapi({ example: 'auto' }),
+    background: z.string().optional().openapi({ example: 'auto' }),
+    images: z
+      .array(z.object({ image_url: z.string() }))
+      .min(1)
+      .max(5)
+      .optional()
+      .openapi({ description: 'Edits only, required there: 1 to 5 reference images as `data:` URLs.' }),
+  })
+  .openapi('GatewayImageRequest');
+
+const ImageResponseSchema = z
+  .object({
+    created: z.number(),
+    model: z.string().openapi({ description: 'The model that made the image.', example: 'codex/gpt-image-2' }),
+    provider: z.string().openapi({ example: 'openai-codex' }),
+    data: z.array(z.object({ b64_json: z.string(), mime_type: z.string().openapi({ example: 'image/png' }) })),
+    size: z.string().optional().openapi({ description: 'The image size, when the upstream reports it.', example: '1024x1024' }),
+    usage: z
+      .object({ input_tokens: z.number(), output_tokens: z.number(), total_tokens: z.number() })
+      .optional()
+      .openapi({ description: 'Present when the upstream reports token usage.' }),
+  })
+  .openapi('GatewayImageResponse');
+
+// No 502 or 504 reaches a client: the gateway's `cloudflareSafe` (apps/llm-gateway/src/server.ts,
+// applied to every inference answer in routes.ts `inference`) sends both as 503 with
+// `x-kortix-upstream-status` and the body's `upstream_status`; the API's `EDGE_REWRITTEN_STATUSES`
+// middleware (http-middleware.ts) does the same for any 502, 504 or 520-524 it relays.
+const IMAGE_ERROR_CODES = [
+  '- `400`: `invalid_request`, `image_model_unavailable` (no image model is reachable), `not_an_image_model`, `image_model_unsupported`, `image_model_unpriced`, `provider_not_connected`, `model_unavailable`.',
+  '- `401`: `missing_token`, a refused gateway credential, `provider_reauth_required`.',
+  '- `402`: a budget limit, or the wallet refused a Kortix-billed model.',
+  '- `403`: the credential has no access to the project.',
+  '- `413`: `request_too_large`: the request body is over the gateway limit.',
+  '- `429`: `image_rate_limited`, or `provider_pool_rate_limited` (every pooled ChatGPT account rests), with `retry-after`.',
+  '- `499`: `client_aborted`: the client cancelled the request.',
+  '- `502`, sent as `503`: `image_upstream_error`, `image_upstream_unreachable` (the provider could not be reached), `image_response_too_large`, `routing_unavailable`.',
+  '- `503`: `admission_unavailable`, `gateway_overloaded` (the gateway is at capacity), `gateway_unavailable` (no gateway is configured), `gateway_proxy_error` and `gateway_proxy_unreachable` (the API could not relay the gateway).',
+  '- `504`, sent as `503`: `image_timeout`: the request ran out of its 300 s budget.',
+  'Any other upstream 4xx answers with that status and `image_upstream_error`.',
+].join('\n');
+
+function imagesRoute(path: string, operation: 'generations' | 'edits') {
+  return createRoute({
+    method: 'post' as const,
+    path,
+    tags: [GATEWAY_INFERENCE_TAG],
+    summary: operation === 'generations' ? 'Generate an image' : 'Edit an image',
+    description: `${operation === 'generations' ? 'Makes one image from a prompt' : 'Makes one image from a prompt and reference images'}; \`n\` is always 1. \`model\` names any image model the project can reach (the project's ChatGPT login, or an OpenAI, Google, xAI or OpenRouter key). With \`auto\` or no \`model\`, the gateway picks a reachable image model and tries the next planned model when one fails. The gateway reads \`prompt\`, \`aspect_ratio\`, \`quality\`, \`background\` and, for edits, \`images\`. A legacy \`size\` (\`1024x1024\`, \`1536x1024\`, \`1024x1536\`) maps to its aspect ratio; every other field is dropped. The response is the same shape for every provider. A ChatGPT image carries the \`x-codex-primary-used-percent\`, \`x-codex-primary-reset-after-seconds\` and \`x-codex-primary-window-minutes\` headers on 200 and 429.\n\nError codes (the body's \`code\`):\n${IMAGE_ERROR_CODES}\n\nThe body's \`provider\` names the provider that failed by its public id (\`openai-codex\` is ChatGPT); it is empty or absent when no model resolved.\n\nA client never receives 502 or 504. The gateway sends every 502 and 504 as 503, with the original status in the \`x-kortix-upstream-status\` header and in the JSON body's \`upstream_status\`. The API sends any 502 or 504 it relays as 503 with the same header. The \`code\` stays the one listed above.\n\nAuth: ${AUTH_DESCRIPTION}`,
+    ...auth,
+    request: { body: { required: true, content: { 'application/json': { schema: ImageRequestSchema } } } },
+    responses: {
+      200: json(ImageResponseSchema, 'One image, base64-encoded'),
+      ...errors(400, 401, 402, 403, 413, 429, 503),
+      499: { description: 'The client cancelled the request (`client_aborted`).' },
+    },
+  });
+}
+
+const AUDIO_ERROR_CODES = [
+  '- `400`: `invalid_request` (the message names the field), `audio_model_unsupported` or `model_not_found` (Kortix serves no such audio model), `plan_upgrade_required`, `provider_disabled`, `model_disabled`.',
+  '- `401`: `missing_token`, a refused gateway credential.',
+  '- `402`: a budget limit, or the wallet refused the request.',
+  '- `403`: the credential has no project context.',
+  '- `413`: `request_too_large`.',
+  '- `429`: `model_busy`, with `retry-after`.',
+  '- `499`: `client_aborted`.',
+  '- `502`, sent as `503`: `audio_upstream_error`, `audio_model_unpriced`, `routing_unavailable`.',
+  '- `503`: `model_unavailable`, `admission_unavailable`, `gateway_overloaded`, `gateway_unavailable`.',
+  '- `504`, sent as `503`: `audio_timeout`.',
+].join('\n');
+
+const AUDIO_BILLING =
+  'Kortix-managed audio models need a plan that includes managed models. A request is billed in Kortix credits at the price the managed upstream reports for it, with the managed-model markup, exactly as a managed chat model. A refused request records no charge and returns any credit hold. A speech stream is charged once its first audio arrives, even when the client stops it.';
+
+const TranscriptionRequestSchema = z
+  .object({
+    file: z.string().openapi({ type: 'string', format: 'binary', description: 'The audio file.' }),
+    model: z.string().openapi({ example: 'whisper-large-v3-turbo' }),
+    language: z.string().optional().openapi({ example: 'en' }),
+    prompt: z.string().optional(),
+    temperature: z.string().optional(),
+    response_format: z.enum(['json', 'verbose_json', 'text']).optional().openapi({ description: 'Default `json`.' }),
+  })
+  .openapi('GatewayTranscriptionRequest');
+
+const TranscriptionResponseSchema = z
+  .object({
+    text: z.string(),
+    usage: z
+      .object({ type: z.literal('duration'), seconds: z.number() })
+      .optional()
+      .openapi({ description: 'The billed audio duration.' }),
+  })
+  .passthrough()
+  .openapi('GatewayTranscription', { example: { text: 'Hello there.', usage: { type: 'duration', seconds: 10 } } });
+
+const SpeechRequestSchema = z
+  .object({
+    model: z.string().openapi({ example: 'inworld-tts-2-flash' }),
+    input: z.string().min(1).openapi({ example: 'Hello there.' }),
+    voice: z.string().min(1).openapi({ description: 'A voice id from `GET /audio/voices`.', example: 'Ashley' }),
+    response_format: z.enum(['pcm', 'mp3']).optional().openapi({ description: '`pcm` (default): raw 16-bit mono PCM at `sample_rate`. `mp3`: MPEG audio.' }),
+    sample_rate: z.number().int().min(8000).max(48000).optional().openapi({ description: 'Hz. Default 24000.' }),
+    speed: z.number().min(0.5).max(1.5).optional().openapi({ description: 'Default 1.' }),
+  })
+  .openapi('GatewaySpeechRequest');
+
+const VoicesResponseSchema = z
+  .object({
+    object: z.literal('list'),
+    data: z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+      description: z.string(),
+      languages: z.array(z.string()),
+      tags: z.array(z.string()),
+    })),
+  })
+  .openapi('GatewayVoices');
+
+const AUDIO_ERRORS = { ...errors(400, 401, 402, 403, 413, 429, 503), 499: { description: 'The client cancelled the request (`client_aborted`).' } };
+
+function transcriptionsRoute(path: string) {
+  return createRoute({
+    method: 'post' as const,
+    path,
+    tags: [GATEWAY_INFERENCE_TAG],
+    summary: 'Transcribe audio (OpenAI-compatible)',
+    description: `Speech-to-text on a Kortix-managed transcription model. The gateway forwards \`file\`, \`language\`, \`prompt\` and \`temperature\` and drops every other field. \`json\` and \`verbose_json\` answer with \`usage: { type: "duration", seconds }\`; \`text\` answers \`text/plain\`.\n\n${AUDIO_BILLING}\n\nError codes (the body's \`code\`):\n${AUDIO_ERROR_CODES}\n\nAuth: ${AUTH_DESCRIPTION}`,
+    ...auth,
+    request: { body: { required: true, content: { 'multipart/form-data': { schema: TranscriptionRequestSchema } } } },
+    responses: {
+      200: {
+        description: 'The transcript',
+        content: {
+          'application/json': { schema: TranscriptionResponseSchema },
+          'text/plain': { schema: z.string().openapi({ example: 'Hello there.' }) },
+        },
+      },
+      ...AUDIO_ERRORS,
+    },
+  });
+}
+
+function speechRoute(path: string) {
+  return createRoute({
+    method: 'post' as const,
+    path,
+    tags: [GATEWAY_INFERENCE_TAG],
+    summary: 'Speak text (OpenAI-compatible)',
+    description: `Text-to-speech on a Kortix-managed speech model. The audio streams as it is made: the first bytes arrive before the whole answer exists. A \`pcm\` answer carries its rate in the \`x-sample-rate\` header. An error before the first audio byte is a JSON error; after it, the stream ends early.\n\n${AUDIO_BILLING}\n\nError codes (the body's \`code\`):\n${AUDIO_ERROR_CODES}\n\nAuth: ${AUTH_DESCRIPTION}`,
+    ...auth,
+    request: { body: { required: true, content: { 'application/json': { schema: SpeechRequestSchema } } } },
+    responses: {
+      200: {
+        description: 'The audio, streamed',
+        headers: { 'x-sample-rate': { description: 'The PCM sample rate in Hz (`pcm` only).', schema: { type: 'string' } } },
+        content: {
+          'audio/pcm': { schema: z.string().openapi({ type: 'string', format: 'binary' }) },
+          'audio/mpeg': { schema: z.string().openapi({ type: 'string', format: 'binary' }) },
+        },
+      },
+      ...AUDIO_ERRORS,
+    },
+  });
+}
+
+function voicesRoute(path: string) {
+  return createRoute({
+    method: 'get' as const,
+    path,
+    tags: [GATEWAY_INFERENCE_TAG],
+    summary: 'List the voices of a speech model',
+    description: `The voices \`POST /audio/speech\` takes for \`model\`. Not billed.\n\nAuth: ${AUTH_DESCRIPTION}`,
+    ...auth,
+    request: {
+      query: z.object({ model: z.string().openapi({ description: 'The speech model.', example: 'inworld-tts-2-flash' }) }),
+    },
+    responses: { 200: json(VoicesResponseSchema, 'The voices'), ...errors(400, 401, 429, 503) },
+  });
+}
+
 // The reasoning_options entry shape — three real forms models.dev emits
 // (effort/toggle/budget_tokens; see @kortix/llm-catalog's
 // CatalogReasoningOption for the full field-by-field rationale). All fields
@@ -465,6 +661,7 @@ export function mountLlmGateway(app: OpenAPIHono): void {
       if (c.req.raw.signal.aborted || err?.name === 'AbortError') {
         return new Response(null, { status: 499 });
       }
+      rethrowDatabaseError(error);
       // Say what actually happened. Until 2026-08-24 every throw here was
       // reported as "unreachable", which is what a ZlibError (the gateway
       // forwarded `content-encoding: gzip` on a body fetch had already
@@ -504,6 +701,11 @@ export function mountLlmGateway(app: OpenAPIHono): void {
   llm.openAPIRegistry.registerPath(chatCompletionsRoute('/v1/chat/completions'));
   llm.openAPIRegistry.registerPath(modelsRoute('/v1/models'));
   llm.openAPIRegistry.registerPath(messagesRoute('/v1/messages'));
+  llm.openAPIRegistry.registerPath(imagesRoute('/images/generations', 'generations'));
+  llm.openAPIRegistry.registerPath(imagesRoute('/images/edits', 'edits'));
+  llm.openAPIRegistry.registerPath(transcriptionsRoute('/audio/transcriptions'));
+  llm.openAPIRegistry.registerPath(speechRoute('/audio/speech'));
+  llm.openAPIRegistry.registerPath(voicesRoute('/audio/voices'));
   llm.all('*', (c) => {
     const tail = c.req.path.slice('/v1/llm'.length) || '/';
     return proxy(c, tail);

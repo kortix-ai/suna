@@ -1,13 +1,11 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, writeFileSync } from 'node:fs'
-import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, readlink, rm, stat, symlink } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   AGENT_SWAP_EXIT_CODE,
-  applyStagedAssetsIfIdle,
-  configureRuntimeConvergence,
   reconcileRuntimeAssets,
   registerAgentSwapBlocker,
   requestAgentSwapIfIdle,
@@ -22,11 +20,7 @@ import {
   registerHarnessAssets,
   resetHarnessAssetsForTests,
 } from '@/services/runtime-assets/runtime-assets'
-import {
-  createOpenCodeAssetsService,
-  type OpenCodeAssetsOptions,
-  type OpenCodeAssetsRuntime,
-} from '@/harness/open-code/assets'
+import { createPiAssetsService } from '@/harness/pi/assets'
 import { resolveHarness } from '@/harness/harness'
 
 // Production registers this lookup in main.ts before anything runs.
@@ -38,10 +32,10 @@ afterAll(() => resetHarnessAssetsForTests())
  *
  * Everything here is a way the mechanism could break a box: a manifest that
  * moves backwards, an artifact that does not match its digest, a swap requested
- * while a turn is running, an opencode binary installed without its matching
- * plugin. The v1 half stays covered by runtime-assets.test.ts, and the "a v1
- * manifest still converges the CLI" case below is the compatibility contract
- * for daemons that talk to an API which has not shipped v2 yet.
+ * while a turn is running. The v1 half stays covered by runtime-assets.test.ts,
+ * and the "a v1 manifest still converges the CLI" case below is the
+ * compatibility contract for daemons that talk to an API which has not shipped
+ * v2 yet.
  */
 
 const API_URL = 'https://api.test.invalid'
@@ -52,19 +46,8 @@ const dirs: string[] = []
 async function workspace() {
   const dir = await mkdtemp(join(tmpdir(), 'runtime-convergence-'))
   dirs.push(dir)
-  // Every real box has `/opt/kortix/opencode.current` — the image creates it
-  // (apps/sandbox/Dockerfile:205) and lifecycle.ts LAUNCHES through it. The
-  // rollback half reads and rewrites the same link, so a fixture without one is
-  // not a box: it is a box whose opencode we could not put back.
-  const opencodeInstalled = join(dir, 'opencode-installed.exe')
-  await Bun.write(opencodeInstalled, '#!/bin/sh\nexit 0\n')
-  // Executable, because `publishOpencodeNativeLink` refuses a target it cannot
-  // exec — the rollback republishes through that same guard.
-  await chmod(opencodeInstalled, 0o755)
   await mkdir(join(dir, 'state'), { recursive: true })
-  await symlink(opencodeInstalled, join(dir, 'state', 'opencode.current'))
   return {
-    opencodeInstalled,
     root: dir,
     cliPath: join(dir, 'bin', 'kortix'),
     agentBakedPath: join(dir, 'usr', 'kortix-agent'),
@@ -75,10 +58,6 @@ async function workspace() {
     agentPinned: join(dir, 'state', 'agent.pinned'),
     skillsDir: join(dir, 'opt', 'managed-skills'),
     statePath: join(dir, 'state', 'runtime-assets-state.json'),
-    depsDir: join(dir, 'opencode-config-deps'),
-    opencodeCurrent: join(dir, 'state', 'opencode.current'),
-    opencodePrev: join(dir, 'state', 'opencode.prev'),
-    opencodePinned: join(dir, 'state', 'opencode.pinned'),
   }
 }
 
@@ -105,7 +84,6 @@ interface ManifestOptions {
   agentSha?: string
   agentPath?: string
   agentSelfUpdate?: boolean
-  opencodeVersion?: string
   /** Emit a v1-only document — no `components`, no `build`, no `policy`. */
   v1Only?: boolean
 }
@@ -133,7 +111,6 @@ function buildManifest(opts: ManifestOptions = {}): Record<string, unknown> {
         sha256: sha(CLI_BYTES),
         size: CLI_BYTES.length,
       },
-      opencode: { version: opts.opencodeVersion ?? '1.18.19', source: 'npm' },
       'managed-skills': { hash: SKILLS_HASH, count: SKILL_FILES.length },
     },
     policy: { agent_self_update: opts.agentSelfUpdate ?? true },
@@ -164,21 +141,8 @@ function stubFetch(opts: ManifestOptions & { agentBody?: string; agentStatus?: n
 async function run(
   ws: Awaited<ReturnType<typeof workspace>>,
   stub: ReturnType<typeof stubFetch>,
-  extra: RuntimeAssetsOptions & OpenCodeAssetsOptions & { runtime?: OpenCodeAssetsRuntime } = {},
+  shared: RuntimeAssetsOptions = {},
 ) {
-  const {
-    runtime,
-    installOpencode,
-    readOpencodeVersion,
-    opencodeBinaryExists,
-    turnProbe,
-    opencodeDepsDir,
-    installPluginDeps,
-    opencodeCurrentLinkPath,
-    opencodePrevPath,
-    opencodePinnedPath,
-    ...shared
-  } = extra
   return reconcileRuntimeAssets({
     apiUrl: API_URL,
     token: TOKEN,
@@ -194,36 +158,8 @@ async function run(
     agentBakedPath: ws.agentBakedPath,
     fetchImpl: stub.impl,
     ...shared,
-    assets:
-      shared.assets ??
-      createOpenCodeAssetsService(runtime, {
-        installOpencode,
-        readOpencodeVersion,
-        opencodeBinaryExists,
-        turnProbe,
-        opencodeDepsDir,
-        installPluginDeps,
-        // Never the real `/opt/kortix/*` paths: the rollback half reads and writes
-        // them, and a unit test must not depend on (or touch) a machine's own box
-        // layout.
-        opencodeCurrentLinkPath: opencodeCurrentLinkPath ?? ws.opencodeCurrent,
-        opencodePrevPath: opencodePrevPath ?? ws.opencodePrev,
-        opencodePinnedPath: opencodePinnedPath ?? ws.opencodePinned,
-      }),
+    assets: shared.assets ?? createPiAssetsService(),
   })
-}
-
-/** A seam whose opencode is reachable and idle unless a test says otherwise. */
-function opencodeSeam(restarts: string[] = []) {
-  return {
-    runtime: {
-      getInternalUrl: () => 'http://127.0.0.1:4096',
-      workspace: () => '/workspace',
-      restart: async () => {
-        restarts.push('restart')
-      },
-    },
-  }
 }
 
 describe('epoch guard', () => {
@@ -452,258 +388,6 @@ describe('agent convergence — stage only', () => {
   })
 })
 
-describe('opencode convergence — idle only', () => {
-  async function bakeDeps(ws: Awaited<ReturnType<typeof workspace>>, pin: string) {
-    await Bun.write(
-      join(ws.depsDir, 'package.json'),
-      `${JSON.stringify({ name: 'kortix-opencode-config', dependencies: { '@opencode-ai/plugin': pin, zod: '4.1.8' } }, null, 2)}\n`,
-    )
-  }
-
-  test('a version mismatch installs the exact version and refreshes the plugin pin', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    await bakeDeps(ws, '1.17.11')
-    const installs: string[] = []
-    const depsInstalls: string[] = []
-    const restarts: string[] = []
-
-    const result = await run(ws, stubFetch(), {
-      ...opencodeSeam(restarts),
-      opencodeDepsDir: ws.depsDir,
-      readOpencodeVersion: async () => '1.17.11',
-      turnProbe: async () => false,
-      installOpencode: async (version: string) => {
-        installs.push(version)
-      },
-      installPluginDeps: async (dir: string) => {
-        depsInstalls.push(dir)
-      },
-    })
-
-    expect(result.harness?.opencode).toBe('updated')
-    expect(installs).toEqual(['1.18.19'])
-    // Same step, always: a binary and a plugin that disagree is the stall this
-    // pairing exists to prevent.
-    const pkg = JSON.parse(await readFile(join(ws.depsDir, 'package.json'), 'utf8')) as {
-      dependencies: Record<string, string>
-    }
-    expect(pkg.dependencies['@opencode-ai/plugin']).toBe('1.18.19')
-    expect(pkg.dependencies.zod).toBe('4.1.8')
-    expect(depsInstalls).toEqual([ws.depsDir])
-    expect(restarts).toEqual(['restart'])
-  })
-
-  test('a turn in flight defers everything — no install, no restart', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    await bakeDeps(ws, '1.17.11')
-    const installs: string[] = []
-    const restarts: string[] = []
-
-    const result = await run(ws, stubFetch(), {
-      ...opencodeSeam(restarts),
-      opencodeDepsDir: ws.depsDir,
-      readOpencodeVersion: async () => '1.17.11',
-      turnProbe: async () => true,
-      installOpencode: async (v: string) => {
-        installs.push(v)
-      },
-      installPluginDeps: async () => {
-        throw new Error('a busy box must never install plugin deps')
-      },
-    })
-
-    expect(result.harness?.opencode).toBe('skipped')
-    expect(result.reasons?.opencode).toBe('a turn is in flight')
-    expect(installs).toEqual([])
-    expect(restarts).toEqual([])
-    const pkg = JSON.parse(await readFile(join(ws.depsDir, 'package.json'), 'utf8')) as {
-      dependencies: Record<string, string>
-    }
-    expect(pkg.dependencies['@opencode-ai/plugin']).toBe('1.17.11')
-  })
-
-  test('UNREADABLE turn state counts as busy', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    await bakeDeps(ws, '1.17.11')
-    const installs: string[] = []
-
-    const result = await run(ws, stubFetch(), {
-      ...opencodeSeam(),
-      opencodeDepsDir: ws.depsDir,
-      readOpencodeVersion: async () => '1.17.11',
-      turnProbe: async () => null,
-      installOpencode: async (v: string) => {
-        installs.push(v)
-      },
-      installPluginDeps: async () => {
-        throw new Error('a busy box must never install plugin deps')
-      },
-    })
-
-    expect(result.harness?.opencode).toBe('skipped')
-    expect(result.reasons?.opencode).toBe('turn state unreadable')
-    expect(installs).toEqual([])
-  })
-
-  test('a matching binary AND pin is a no-op', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    await bakeDeps(ws, '1.18.19')
-    const installs: string[] = []
-
-    const result = await run(ws, stubFetch(), {
-      ...opencodeSeam(),
-      opencodeDepsDir: ws.depsDir,
-      readOpencodeVersion: async () => '1.18.19',
-      turnProbe: async () => {
-        throw new Error('the turn probe must not be consulted for a no-op')
-      },
-      installOpencode: async (v: string) => {
-        installs.push(v)
-      },
-    })
-
-    expect(result.harness?.opencode).toBe('current')
-    expect(installs).toEqual([])
-  })
-
-  test('a pin that drifted from a matching binary is repaired without a restart', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    await bakeDeps(ws, '1.17.11')
-    const installs: string[] = []
-    const restarts: string[] = []
-
-    const result = await run(ws, stubFetch(), {
-      ...opencodeSeam(restarts),
-      opencodeDepsDir: ws.depsDir,
-      readOpencodeVersion: async () => '1.18.19',
-      turnProbe: async () => false,
-      installOpencode: async (v: string) => {
-        installs.push(v)
-      },
-      installPluginDeps: async () => {},
-    })
-
-    expect(result.harness?.opencode).toBe('updated')
-    expect(installs).toEqual([])
-    // The plugin is read when opencode boots, so the refreshed pin takes effect
-    // on its own. Cutting a session short for it would buy nothing.
-    expect(restarts).toEqual([])
-  })
-
-  test('a malformed version from the manifest is refused, never executed', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    const installs: string[] = []
-
-    const result = await run(ws, stubFetch({ opencodeVersion: '1.18.19; rm -rf /' }), {
-      ...opencodeSeam(),
-      opencodeDepsDir: ws.depsDir,
-      readOpencodeVersion: async () => '1.17.11',
-      turnProbe: async () => false,
-      installOpencode: async (v: string) => {
-        installs.push(v)
-      },
-    })
-
-    expect(result.harness?.opencode).toBe('skipped')
-    expect(result.reasons?.opencode).toBe('manifest opencode version is malformed')
-    expect(installs).toEqual([])
-  })
-
-  test('a missing managed opencode binary is installed when the runtime is unreadable', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    const installs: string[] = []
-
-    const result = await run(ws, stubFetch(), {
-      ...opencodeSeam(),
-      opencodeDepsDir: ws.depsDir,
-      readOpencodeVersion: async () => null,
-      opencodeBinaryExists: async () => false,
-      turnProbe: async () => false,
-      installOpencode: async (v: string) => {
-        installs.push(v)
-      },
-    })
-
-    expect(result.harness?.opencode).toBe('updated')
-    expect(result.reasons?.opencode).toBeUndefined()
-    expect(installs).toEqual(['1.18.19'])
-  })
-
-  test('an existing managed binary is not replaced during a transient unreadable runtime', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    const installs: string[] = []
-
-    const result = await run(ws, stubFetch(), {
-      ...opencodeSeam(),
-      opencodeDepsDir: ws.depsDir,
-      readOpencodeVersion: async () => null,
-      opencodeBinaryExists: async () => true,
-      installOpencode: async (v: string) => {
-        installs.push(v)
-      },
-    })
-
-    expect(result.harness?.opencode).toBe('skipped')
-    expect(result.reasons?.opencode).toBe('opencode did not report its version')
-    expect(installs).toEqual([])
-  })
-
-  test('a failing install leaves the pin alone and never restarts', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    await bakeDeps(ws, '1.17.11')
-    const restarts: string[] = []
-
-    const result = await run(ws, stubFetch(), {
-      ...opencodeSeam(restarts),
-      opencodeDepsDir: ws.depsDir,
-      readOpencodeVersion: async () => '1.17.11',
-      turnProbe: async () => false,
-      installOpencode: async () => {
-        throw new Error('npm registry unreachable')
-      },
-    })
-
-    expect(result.harness?.opencode).toBe('failed')
-    expect(restarts).toEqual([])
-    const pkg = JSON.parse(await readFile(join(ws.depsDir, 'package.json'), 'utf8')) as {
-      dependencies: Record<string, string>
-    }
-    expect(pkg.dependencies['@opencode-ai/plugin']).toBe('1.17.11')
-    // The rest of the pass is unaffected — one failure never costs the others.
-    expect(result.cli).toBe('current')
-    expect(result.skills).toBe('updated')
-  })
-
-  test('no live runtime in this process → reported, not attempted', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-
-    const result = await run(ws, stubFetch())
-
-    expect(result.harness?.opencode).toBe('skipped')
-    expect(result.reasons?.opencode).toBe('no opencode runtime in this process')
-  })
-})
-
 describe('v1 compatibility', () => {
   test('a v1-only manifest still converges the CLI and reports no v2 components', async () => {
     const ws = await workspace()
@@ -717,9 +401,9 @@ describe('v1 compatibility', () => {
     expect(result.skills).toBe('updated')
     expect(await readFile(ws.cliPath, 'utf8')).toBe(CLI_BYTES)
     // An API that has never heard of `components` says nothing about the agent
-    // or opencode — which is different from saying "skip them".
+    // or the harness — which is different from saying "skip them".
     expect(result.agent).toBeUndefined()
-    expect(result.harness?.opencode).toBeUndefined()
+    expect(result.harness).toBeUndefined()
     expect(result.build).toBeUndefined()
     // And nothing was staged from a manifest that never described an agent.
     expect(await stat(ws.agentNext).catch(() => null)).toBeNull()
@@ -775,7 +459,7 @@ describe('requestAgentSwapIfIdle', () => {
     ['a digest side-car without its binary', { staged: 'sidecar-only' }, 'nothing-staged'],
     ['a pinned box', { pinned: true }, 'pinned'],
     ['no turn oracle configured', { configured: false }, 'not-configured'],
-    // The boot reconcile fires seconds after opencode is ready, the moment a
+    // The boot reconcile fires seconds after the harness is ready, the moment a
     // first prompt arrives. The supervisor promotes before every launch anyway.
     ['a freshly booted daemon', { uptimeMs: 20_000 }, 'too-young'],
   ] as const)('%s keeps the daemon running', async (_name, row, decision) => {
@@ -838,7 +522,7 @@ describe('runtime convergence report', () => {
       cli: 'current',
       skills: 'current',
       agent: 'staged',
-      harness: { opencode: 'updated' },
+      harness: { 'harness-asset': 'updated' },
       build: 1787241641,
       agentSwapPending: true,
     })
@@ -848,13 +532,13 @@ describe('runtime convergence report', () => {
       cli: 'current',
       skills: 'current',
       agent: 'staged',
-      opencode: 'updated',
+      'harness-asset': 'updated',
     })
     expect(report.agentSwapPending).toBe(true)
     expect(typeof report.at).toBe('string')
   })
 
-  test('omits agent/opencode for a v1 manifest instead of claiming they were skipped', async () => {
+  test('omits agent and harness components for a v1 manifest instead of claiming they were skipped', async () => {
     noteRuntimeConvergence({ cli: 'current', skills: 'current' })
     const report = await runtimeConvergenceReport(reportDir())
     expect(report.components).toEqual({ cli: 'current', skills: 'current' })
@@ -878,8 +562,8 @@ describe('runtime convergence report', () => {
         agent_sha256: 'c'.repeat(64),
         agent_path: '/opt/kortix/agent.current',
         staged_agent_sha256: 'd'.repeat(64),
-        harness: 'opencode',
-        harness_version: '1.18.23',
+        harness: 'pi',
+        harness_version: '1.4.0',
         build: 1787241641,
       }),
     )
@@ -892,13 +576,9 @@ describe('runtime convergence report', () => {
       agent_sha256: 'c'.repeat(64),
       agent_path: '/opt/kortix/agent.current',
       staged_agent_sha256: 'd'.repeat(64),
-      harness: 'opencode',
-      harness_version: '1.18.23',
+      harness: 'pi',
+      harness_version: '1.4.0',
       build: 1787241641,
-      // Never on disk — this call supplied no `catalogSnapshot`, so it reads
-      // as "unconfirmed", the same as an older daemon with no such concept.
-      managed_model_ids: null,
-      managed_catalog_fallback_reason: null,
     })
     // The pass-level fields stay honest about having no pass yet.
     expect(report.build).toBeNull()
@@ -917,8 +597,6 @@ describe('runtime convergence report', () => {
       harness: null,
       harness_version: null,
       build: null,
-      managed_model_ids: null,
-      managed_catalog_fallback_reason: null,
     })
   })
 
@@ -930,25 +608,6 @@ describe('runtime convergence report', () => {
     noteRuntimeConvergence({ cli: 'current', skills: 'current', build: 7 })
     expect((await runtimeConvergenceReport(dir)).pinned).toBe(false)
     writeFileSync(join(dir, 'agent.pinned'), '')
-    expect((await runtimeConvergenceReport(dir)).pinned).toBe(true)
-  })
-
-  test('an OPENCODE rollback latch reaches the same `pinned` field', async () => {
-    // `pinned` is the control plane's one answer to "will this box heal
-    // itself". It was built from `agent.pinned` alone, so an OpenCode rollback
-    // latched the box locally and reported `pinned: false` — a box that needs a
-    // human, reported as a box that is fine.
-    const dir = reportDir()
-    const latch = join(dir, 'opencode.pinned')
-    configureRuntimeConvergence({
-      assets: createOpenCodeAssetsService(undefined, {
-        opencodePinnedPath: latch,
-      }),
-      turnInFlight: async () => false,
-    })
-    noteRuntimeConvergence({ cli: 'current', skills: 'current', build: 7 })
-    expect((await runtimeConvergenceReport(dir)).pinned).toBe(false)
-    writeFileSync(latch, 'rolled back\n')
     expect((await runtimeConvergenceReport(dir)).pinned).toBe(true)
   })
 })
@@ -968,8 +627,7 @@ describe('runtime convergence report', () => {
 // prints a DECORATED header (`header('Kortix CLI', VERSION)`), so an equality
 // check against the manifest's `cli_version` would assert a formatting detail,
 // not a fact — and a false negative there would freeze CLI updates fleet-wide
-// while looking like a safety feature. `opencode --version` prints a bare
-// version, which is why `installOpencodeVersion` can and does compare it.
+// while looking like a safety feature.
 // ---------------------------------------------------------------------------
 describe('a candidate binary must run before it replaces a working one', () => {
   test('a CLI that cannot exec is NOT renamed into place', async () => {
@@ -1140,33 +798,24 @@ describe('the CLI falls back to the PATH fallback when /usr/local/bin is not wri
 })
 
 // ---------------------------------------------------------------------------
-// THE TRIGGER THAT WAS MISSING. `scheduleRuntimeAssetsReconcile` had exactly
-// two non-test call sites — `runtimeReadyTail` (boot) and `POST /kortix/refresh`
-// — and `requestAgentSwapIfIdle` is reached only from the tail of that same
-// pass. The boot pass fires seconds after `opencode-ready`, so it always
-// answered `too-young` against `AGENT_SWAP_MIN_UPTIME_MS = 5 min`, and no later
-// pass existed. A long-lived box therefore staged a daemon and NEVER installed
-// it.
-//
-// The uptime floor is a BOOT-FLAP guard: a restart moments after opencode-ready
-// is a readiness flap on the session-start hot path. A `session.idle` frame is
-// the opposite of that — a turn just finished, so the box is provably past boot
-// and provably not serving anyone. The floor is therefore waived at an idle
-// boundary and NOWHERE else.
+// The swap request. The 60 s runtime-truth tick asks it after every asset
+// pass; the uptime floor keeps a box from restarting moments after its runtime
+// is ready, and every other refusal protects live work.
 // ---------------------------------------------------------------------------
-describe('the idle boundary is a real swap trigger, not a timer', () => {
+describe('a staged daemon is installed only when nothing would be lost', () => {
   async function staged(ws: Awaited<ReturnType<typeof workspace>>) {
     await Bun.write(ws.agentNext, AGENT_BYTES)
     await Bun.write(ws.agentNextSha, `${sha(AGENT_BYTES)}\n`)
   }
+  const OLD_ENOUGH = 10 * 60_000
 
-  test('a young box still swaps at an idle boundary — the boot-flap floor is waived', async () => {
+  test('a box past the boot-flap floor swaps', async () => {
     const ws = await workspace()
     await staged(ws)
     const exits: number[] = []
-    const decision = await applyStagedAssetsIfIdle({
+    const decision = await requestAgentSwapIfIdle({
       agentStateDir: ws.stateDir,
-      uptimeMs: 3_000,
+      uptimeMs: OLD_ENOUGH,
       turnInFlight: async () => false,
       exit: (code) => exits.push(code),
     })
@@ -1174,7 +823,7 @@ describe('the idle boundary is a real swap trigger, not a timer', () => {
     expect(exits).toEqual([AGENT_SWAP_EXIT_CODE])
   })
 
-  test('the same young box is refused OUTSIDE an idle boundary', async () => {
+  test('a young box is refused', async () => {
     const ws = await workspace()
     await staged(ws)
     const exits: number[] = []
@@ -1188,14 +837,14 @@ describe('the idle boundary is a real swap trigger, not a timer', () => {
     expect(exits).toEqual([])
   })
 
-  test('an open PTY still blocks it — the shell dies with the daemon', async () => {
+  test('an open PTY blocks it — the shell dies with the daemon', async () => {
     const ws = await workspace()
     await staged(ws)
     registerAgentSwapBlocker('pty', () => true)
     const exits: number[] = []
-    const decision = await applyStagedAssetsIfIdle({
+    const decision = await requestAgentSwapIfIdle({
       agentStateDir: ws.stateDir,
-      uptimeMs: 3_000,
+      uptimeMs: OLD_ENOUGH,
       turnInFlight: async () => false,
       exit: (code) => exits.push(code),
     })
@@ -1203,13 +852,13 @@ describe('the idle boundary is a real swap trigger, not a timer', () => {
     expect(exits).toEqual([])
   })
 
-  test('"cannot tell whether a turn is running" still counts as busy', async () => {
+  test('"cannot tell whether a turn is running" counts as busy', async () => {
     const ws = await workspace()
     await staged(ws)
     const exits: number[] = []
-    const decision = await applyStagedAssetsIfIdle({
+    const decision = await requestAgentSwapIfIdle({
       agentStateDir: ws.stateDir,
-      uptimeMs: 3_000,
+      uptimeMs: OLD_ENOUGH,
       turnInFlight: async () => null,
       exit: (code) => exits.push(code),
     })
@@ -1217,377 +866,16 @@ describe('the idle boundary is a real swap trigger, not a timer', () => {
     expect(exits).toEqual([])
   })
 
-  test('the rollback latch still wins, even at an idle boundary', async () => {
+  test('the rollback latch wins', async () => {
     const ws = await workspace()
     await staged(ws)
     await Bun.write(ws.agentPinned, '')
-    const decision = await applyStagedAssetsIfIdle({
+    const decision = await requestAgentSwapIfIdle({
       agentStateDir: ws.stateDir,
-      uptimeMs: 3_000,
+      uptimeMs: OLD_ENOUGH,
       turnInFlight: async () => false,
       exit: () => {},
     })
     expect(decision).toBe('pinned')
-  })
-})
-
-// ---------------------------------------------------------------------------
-// OPENCODE HAD NO ROLLBACK AT ALL — the one real hole the other three do not
-// have. `publishOpencodeNativeLink` symlink-renames `opencode.current` with NO
-// retained predecessor, `pnpm add -g` replaces the global install, and
-// `seam.restart()` is `lifecycle.restart()` = a hard stop+start, NOT the
-// verified `reloadVerified` the config path uses. So an OpenCode that installed
-// cleanly and then failed to serve left the box DOWN, with no previous version
-// on disk and no latch to stop the next pass doing it again.
-//
-// The agent half has all three protections (`agent.prev`, the supervisor's
-// failure budget, `agent.pinned`). These give OpenCode the two it can have.
-// ---------------------------------------------------------------------------
-describe('opencode rollback', () => {
-  async function bakeDeps(ws: Awaited<ReturnType<typeof workspace>>, pin: string) {
-    await Bun.write(
-      join(ws.depsDir, 'package.json'),
-      `${JSON.stringify({ name: 'kortix-opencode-config', dependencies: { '@opencode-ai/plugin': pin } }, null, 2)}\n`,
-    )
-  }
-
-  /** A seam whose restart leaves the runtime in a state the test chooses. */
-  function seamWith(states: Array<'ok' | 'down'>, restarts: string[] = []) {
-    let index = -1
-    return {
-      runtime: {
-        getInternalUrl: () => 'http://127.0.0.1:4096',
-        workspace: () => '/workspace',
-        restart: async () => {
-          restarts.push('restart')
-          index += 1
-        },
-        getState: () => states[Math.min(Math.max(index, 0), states.length - 1)] ?? 'ok',
-      },
-    }
-  }
-
-  function opencodeWorkspace(ws: Awaited<ReturnType<typeof workspace>>) {
-    return {
-      installed: ws.opencodeInstalled,
-      currentLink: ws.opencodeCurrent,
-      prevPath: ws.opencodePrev,
-      pinnedPath: ws.opencodePinned,
-    }
-  }
-
-  test('a throwing restart restores the predecessor and latches the update', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    await bakeDeps(ws, '1.17.11')
-    const events: string[] = []
-    const result = await run(ws, stubFetch(), {
-      runtime: {
-        getInternalUrl: () => 'http://127.0.0.1:4096',
-        workspace: () => '/workspace',
-        restart: async () => {
-          events.push('restart')
-          if (events.length === 3) throw new Error('restart failed')
-        },
-      },
-      opencodeDepsDir: ws.depsDir,
-      readOpencodeVersion: async () => '1.17.11',
-      turnProbe: async () => false,
-      installOpencode: async () => {
-        events.push('install')
-      },
-      installPluginDeps: async () => {
-        events.push('deps')
-      },
-    })
-    expect(result.harness?.opencode).toBe('failed')
-    expect(result.reasons?.opencode).toContain('rolled back')
-    expect(events).toEqual(['install', 'deps', 'restart', 'restart'])
-    expect(await readlink(ws.opencodeCurrent)).toBe(ws.opencodePrev)
-    expect(
-      await stat(ws.opencodePinned).then(
-        () => true,
-        () => false,
-      ),
-    ).toBe(true)
-  })
-
-  test('a failed first install on a missing binary does not change the pin or restart', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    await bakeDeps(ws, '1.17.11')
-    const events: string[] = []
-    const result = await run(ws, stubFetch(), {
-      ...opencodeSeam(events),
-      opencodeDepsDir: ws.depsDir,
-      readOpencodeVersion: async () => null,
-      opencodeBinaryExists: async () => false,
-      turnProbe: async () => {
-        throw new Error('missing binary must not probe')
-      },
-      installOpencode: async () => {
-        throw new Error('install failed')
-      },
-      installPluginDeps: async () => {
-        events.push('deps')
-      },
-    })
-    expect(result.harness?.opencode).toBe('failed')
-    expect(result.reasons?.opencode).toContain('install failed')
-    expect(events).toEqual([])
-    expect(
-      JSON.parse(await readFile(join(ws.depsDir, 'package.json'), 'utf8')).dependencies['@opencode-ai/plugin'],
-    ).toBe('1.17.11')
-  })
-
-  test('a restart that never reaches ok re-points current at prev and latches', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    await bakeDeps(ws, '1.17.11')
-    const oc = opencodeWorkspace(ws)
-    const restarts: string[] = []
-    const installed: string[] = []
-
-    const result = await run(ws, stubFetch(), {
-      ...seamWith(['down', 'ok'], restarts),
-      opencodeDepsDir: ws.depsDir,
-      opencodeCurrentLinkPath: oc.currentLink,
-      opencodePrevPath: oc.prevPath,
-      opencodePinnedPath: oc.pinnedPath,
-      readOpencodeVersion: async () => '1.17.11',
-      turnProbe: async () => false,
-      installOpencode: async (v: string) => {
-        installed.push(v)
-      },
-      installPluginDeps: async () => {},
-    })
-
-    expect(result.harness?.opencode).toBe('failed')
-    expect(result.reasons?.opencode).toContain('rolled back')
-    // Two restarts: the one that failed, and the one onto the previous version.
-    expect(restarts).toEqual(['restart', 'restart'])
-    // The box is pointed back at the RETAINED copy of the binary it was
-    // serving before — not at the store path pnpm would have deleted.
-    expect(await readlink(oc.currentLink)).toBe(oc.prevPath)
-    expect(await readFile(oc.currentLink, 'utf8')).toBe(await readFile(oc.installed, 'utf8'))
-    // And it will not try again unaided.
-    expect(
-      await stat(oc.pinnedPath).then(
-        () => true,
-        () => false,
-      ),
-    ).toBe(true)
-  })
-
-  test('the latch stops the NEXT pass installing anything', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    await bakeDeps(ws, '1.17.11')
-    const oc = opencodeWorkspace(ws)
-    await Bun.write(oc.pinnedPath, 'rolled back\n')
-    const installed: string[] = []
-
-    const result = await run(ws, stubFetch(), {
-      ...seamWith(['ok']),
-      opencodeDepsDir: ws.depsDir,
-      opencodeCurrentLinkPath: oc.currentLink,
-      opencodePrevPath: oc.prevPath,
-      opencodePinnedPath: oc.pinnedPath,
-      readOpencodeVersion: async () => '1.17.11',
-      turnProbe: async () => false,
-      installOpencode: async (v: string) => {
-        installed.push(v)
-      },
-    })
-
-    expect(result.harness?.opencode).toBe('skipped')
-    expect(result.reasons?.opencode).toContain('pinned')
-    expect(installed).toEqual([])
-  })
-
-  test('a restart that reaches ok records the predecessor and does not latch', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    await bakeDeps(ws, '1.17.11')
-    const oc = opencodeWorkspace(ws)
-
-    const result = await run(ws, stubFetch(), {
-      ...seamWith(['ok']),
-      opencodeDepsDir: ws.depsDir,
-      opencodeCurrentLinkPath: oc.currentLink,
-      opencodePrevPath: oc.prevPath,
-      opencodePinnedPath: oc.pinnedPath,
-      readOpencodeVersion: async () => '1.17.11',
-      turnProbe: async () => false,
-      installOpencode: async () => {},
-      installPluginDeps: async () => {},
-    })
-
-    expect(result.harness?.opencode).toBe('updated')
-    // The predecessor is RETAINED on disk BEFORE the install — its own bytes,
-    // not a link to a path pnpm is about to delete.
-    expect(await readFile(oc.prevPath, 'utf8')).toBe(await readFile(oc.installed, 'utf8'))
-    expect(await lstat(oc.prevPath).then((info) => info.isSymbolicLink())).toBe(false)
-    expect(
-      await stat(oc.pinnedPath).then(
-        () => true,
-        () => false,
-      ),
-    ).toBe(false)
-  })
-
-  // "If `opencode.prev` cannot be resolved, do not install — report the reason
-  // and leave the box working." A box serving a version we cannot name is a box
-  // we cannot put back.
-  test('an unresolvable predecessor refuses the install rather than risking the box', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    await bakeDeps(ws, '1.17.11')
-    // opencode IS serving, but the link that names WHICH binary is gone — so
-    // there is a running version and no way to point back at it.
-    await rm(ws.opencodeCurrent, { force: true })
-    const installed: string[] = []
-
-    const result = await run(ws, stubFetch(), {
-      ...seamWith(['ok']),
-      opencodeDepsDir: ws.depsDir,
-      readOpencodeVersion: async () => '1.17.11',
-      opencodeBinaryExists: async () => true,
-      turnProbe: async () => false,
-      installOpencode: async (v: string) => {
-        installed.push(v)
-      },
-    })
-
-    expect(result.harness?.opencode).toBe('skipped')
-    expect(result.reasons?.opencode).toContain('no rollback target')
-    expect(installed).toEqual([])
-  })
-
-  // The latch is the promise that the next pass will not repeat this. It used
-  // to depend on the restore succeeding, which is how it was lost entirely.
-  test('the latch is written even when the restore itself cannot be applied', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    await bakeDeps(ws, '1.17.11')
-    const oc = opencodeWorkspace(ws)
-
-    const result = await run(ws, stubFetch(), {
-      ...seamWith(['down', 'ok']),
-      opencodeDepsDir: ws.depsDir,
-      opencodeCurrentLinkPath: oc.currentLink,
-      opencodePrevPath: oc.prevPath,
-      opencodePinnedPath: oc.pinnedPath,
-      readOpencodeVersion: async () => '1.17.11',
-      turnProbe: async () => false,
-      installOpencode: async () => {
-        // The predecessor was retained and then lost anyway — a disk wiped, a
-        // reaper, an operator. The box is down; it must still stop trying.
-        await rm(oc.prevPath, { force: true })
-      },
-      installPluginDeps: async () => {},
-    })
-
-    expect(result.harness?.opencode).toBe('failed')
-    expect(result.reasons?.opencode).toContain('rollback could not be applied')
-    expect(
-      await stat(oc.pinnedPath).then(
-        () => true,
-        () => false,
-      ),
-    ).toBe(true)
-  })
-
-  // THE CASE EVERY TEST ABOVE IS BLIND TO.
-  //
-  // They all stub `installOpencode`, so the binary the rollback target names is
-  // still sitting on disk when the rollback runs. The REAL install is
-  // `pnpm add -g opencode-ai@<new>`, which removes the version it replaces from
-  // pnpm's global virtual store — and that store is exactly where
-  // `opencode.current` points on the shipped image:
-  //
-  //   opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)"
-  //   ln -sfn "$opencode_native" /opt/kortix/opencode.current
-  //   (apps/sandbox/Dockerfile)
-  //
-  // So recording the SYMLINK TARGET recorded a path pnpm was about to delete.
-  // The rollback then threw ENOENT inside `publishOpencodeNativeLink` BEFORE
-  // the latch was written: box down, no latch, next pass reinstalls the same
-  // broken version.
-  test('the rollback survives pnpm deleting the version it replaced', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    await bakeDeps(ws, '1.17.11')
-    const oc = opencodeWorkspace(ws)
-    const nextNative = join(ws.root, 'opencode-next.exe')
-
-    const result = await run(ws, stubFetch(), {
-      ...seamWith(['down', 'ok']),
-      opencodeDepsDir: ws.depsDir,
-      opencodeCurrentLinkPath: oc.currentLink,
-      opencodePrevPath: oc.prevPath,
-      opencodePinnedPath: oc.pinnedPath,
-      readOpencodeVersion: async () => '1.17.11',
-      turnProbe: async () => false,
-      installOpencode: async () => {
-        // Exactly what `pnpm add -g` + `installOpencodeVersion` do on a box:
-        // the replaced version leaves the store, the new one arrives, and
-        // `opencode.current` is repointed at it.
-        await rm(ws.opencodeInstalled, { force: true })
-        await Bun.write(nextNative, '#!/bin/sh\nexit 0\n')
-        await chmod(nextNative, 0o755)
-        await rm(oc.currentLink, { force: true })
-        await symlink(nextNative, oc.currentLink)
-      },
-      installPluginDeps: async () => {},
-    })
-
-    expect(result.harness?.opencode).toBe('failed')
-    expect(result.reasons?.opencode).toContain('rolled back')
-    // The box is SERVING again. `readFile` follows the link and throws ENOENT on
-    // a dangling one, so reading the bytes proves BOTH that the link resolves
-    // and that it resolves to the binary the box was serving. One read, no
-    // check-then-use.
-    expect(await readFile(oc.currentLink, 'utf8')).toBe('#!/bin/sh\nexit 0\n')
-    // And the latch was written, so the next pass does not repeat the install.
-    expect(
-      await stat(oc.pinnedPath).then(
-        () => true,
-        () => false,
-      ),
-    ).toBe(true)
-  })
-
-  // An old snapshot with NO managed binary at all has nothing to roll back to
-  // and nothing to lose. It must still be able to repair itself.
-  test('a box with no opencode binary installs anyway — there is nothing to protect', async () => {
-    const ws = await workspace()
-    await Bun.write(ws.cliPath, CLI_BYTES)
-    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
-    await bakeDeps(ws, '1.17.11')
-    const installed: string[] = []
-
-    const result = await run(ws, stubFetch(), {
-      ...seamWith(['ok']),
-      opencodeDepsDir: ws.depsDir,
-      readOpencodeVersion: async () => null,
-      opencodeBinaryExists: async () => false,
-      turnProbe: async () => false,
-      installOpencode: async (v: string) => {
-        installed.push(v)
-      },
-      installPluginDeps: async () => {},
-    })
-
-    expect(result.harness?.opencode).toBe('updated')
-    expect(installed).toEqual(['1.18.19'])
   })
 })

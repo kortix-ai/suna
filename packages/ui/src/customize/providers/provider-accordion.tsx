@@ -28,6 +28,7 @@
 import {
   ArrowSquareOutIcon,
   CaretDownIcon,
+  CreditCardIcon,
   MagnifyingGlassIcon,
   XIcon,
 } from '@phosphor-icons/react';
@@ -44,6 +45,7 @@ import {
   AlertDialogTitle,
 } from '../../primitives/alert-dialog';
 import { Button } from '../../primitives/button';
+import { useModelConnectionGate } from '../../session/models/use-model-connection-gate';
 import { Input } from '../../primitives/input';
 import {
   InputGroupSearch,
@@ -70,6 +72,7 @@ import {
   useProviderMeta,
 } from './provider-connect';
 import {
+  ClaudeCodeStep,
   DeviceCode,
   ProviderKeyForm,
   RemoveKeyDialog,
@@ -508,6 +511,8 @@ function SignInSubRows({
   const sign = useSubscriptionSignIn({ projectId, kind: sub.kind, onConnected: () => undefined });
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const waiting = sign.phase === 'waiting';
+  // A Claude login is the member's own: any member signs in. A shared login needs write access.
+  const canSignIn = canWrite || sign.pastesCode;
 
   const copyCode = () => {
     if (!sign.challenge?.code) return;
@@ -518,7 +523,7 @@ function SignInSubRows({
     <>
       <AccordionSubRow
         action={
-          !canWrite ? null : waiting ? (
+          !canSignIn ? null : waiting ? (
             <Button type="button" size="xs" variant="ghost" onClick={sign.cancel}>
               {t('cancel')}
             </Button>
@@ -546,7 +551,11 @@ function SignInSubRows({
             ? t('signingIn', { name: sub.name })
             : `${t('subscription', { plan: sub.plan })} · ${t('notConnected')}`}
       </AccordionSubRow>
-      {waiting ? (
+      {waiting && sign.pastesCode ? (
+        <div className="border-border border-t py-3">
+          <ClaudeCodeStep url={sign.challenge?.url ?? null} checking={sign.checking} onSubmit={(code) => void sign.submitCode(code)} />
+        </div>
+      ) : waiting ? (
         <div className="border-border border-t py-3">
           <DeviceCode
             name={sub.name}
@@ -583,6 +592,31 @@ function SignInSubRows({
   );
 }
 
+/**
+ * Kortix with no servable model, as one static row: the logo, one line and
+ * Upgrade in the place of the chevron. Nothing to expand, so it says its line
+ * once. The caller renders it only where billing sells a plan: a self-hosted
+ * deployment has no Kortix-managed models, so the row would be a dead end.
+ */
+function ManagedUpgradeRow({ projectId, row }: { projectId: string; row: AccordionRowHeaderProps['row'] }) {
+  const t = useTranslations('sessionUi.modelGate');
+  const tAccess = useTranslations('modelAccess');
+  const { openUpgrade } = useModelConnectionGate(undefined, { projectId });
+  return (
+    <div className="flex items-center gap-3">
+      <ProviderLogoStatus providerId={row.id} label={row.label} status={row.status} size="medium" />
+      <span className="min-w-0 flex-1">
+        <span className="text-foreground block truncate text-sm font-medium">{row.label}</span>
+        <span className="text-muted-foreground block truncate text-xs">{tAccess('managedRowHint')}</span>
+      </span>
+      <Button type="button" size="xs" className="shrink-0" onClick={openUpgrade}>
+        <CreditCardIcon className="size-3.5 shrink-0" />
+        {t('upgrade')}
+      </Button>
+    </div>
+  );
+}
+
 /** What an open card holds, by how the provider connects. */
 function ExpandedBody({
   projectId,
@@ -612,7 +646,9 @@ function ExpandedBody({
 
   let content: ReactNode;
   if (method === 'included' || (entry.envVars.length === 0 && !SUBSCRIPTION_BY_PROVIDER[entry.id])) {
-    content = <AccordionSubRow>{entry.hint}</AccordionSubRow>;
+    content = (
+      <AccordionSubRow>{entry.hint}</AccordionSubRow>
+    );
   } else if (pooled.pooledSecretsEnabled && pooled.accountId && entry.id === 'openai') {
     content = (
       <div className="border-border space-y-3 border-t py-3">
@@ -629,8 +665,38 @@ function ExpandedBody({
         <ChatGptSubscriptionConnect projectId={projectId} onConnected={() => undefined} legacyOnly />
       </div>
     );
+  } else if (pooled.pooledSecretsEnabled && pooled.accountId && entry.id === 'anthropic') {
+    // Claude accounts, exactly as OpenAI lists ChatGPT accounts; Anthropic API keys below them.
+    content = (
+      <>
+        <div className="border-border space-y-3 border-t py-3">
+          <p className="text-foreground text-xs font-medium">{tPooled('claudeAccounts')}</p>
+          <AccountSecretResourcesPanel
+            accountId={pooled.accountId}
+            projectId={projectId}
+            providerId="claude-agent"
+            providerName="Claude Pro/Max"
+            envVar="CLAUDE_CODE_OAUTH_TOKEN"
+            canWrite
+            oauth={{ projectId, onConnected: () => undefined, kind: 'claude' }}
+          />
+        </div>
+        <div className="border-border border-t py-3">
+          <AccountSecretResourcesPanel
+            accountId={pooled.accountId}
+            projectId={projectId}
+            providerId={entry.id}
+            providerName={entry.label}
+            envVar={entry.envVars[0]!}
+            canWrite
+          />
+        </div>
+      </>
+    );
   } else if (pooled.pooledSecretsEnabled && pooled.accountId && supportsPooledProviderKey(entry)) {
     content = (
+      <>
+      {SUBSCRIPTION_BY_PROVIDER[entry.id] ? <SignInSubRows projectId={projectId} entry={entry} canWrite={canWrite} /> : null}
       <div className="border-border border-t py-3">
         <AccountSecretResourcesPanel
           accountId={pooled.accountId}
@@ -641,6 +707,7 @@ function ExpandedBody({
           canWrite
         />
       </div>
+      </>
     );
   } else if (SUBSCRIPTION_BY_PROVIDER[entry.id]) {
     content = (
@@ -700,6 +767,9 @@ export function ProviderAccordion({
   const meta = useProviderMeta();
   const access = useModelAccess(enabled ? projectId : null);
   const managedProvider = useManagedProvider(enabled ? projectId : null);
+  // Where billing sells no plan (a self-hosted deployment) Kortix-managed
+  // models do not exist, so the managed row with no models is left out.
+  const { showUpgradeOption } = useModelConnectionGate(undefined, { projectId });
   const pooled = usePooledProviderIds(projectId, enabled);
   useLiveLlmProviderCatalog(projectId, enabled);
   const catalogRevision = useLlmProviderCatalogRevision();
@@ -813,6 +883,17 @@ export function ProviderAccordion({
           row={row}
           onDone={() => setAddingId(null)}
         />
+      );
+    }
+
+    if (entry.managed && entry.models.length === 0) {
+      if (!showUpgradeOption) return null;
+      return (
+        <AccordionRowFrame key={row.id} expanded={false}>
+          <div className="px-3.5 py-2.5">
+            <ManagedUpgradeRow projectId={projectId} row={row} />
+          </div>
+        </AccordionRowFrame>
       );
     }
 

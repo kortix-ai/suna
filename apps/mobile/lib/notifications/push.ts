@@ -5,7 +5,7 @@
  *
  * The server sends `data = { notificationId, kind, type, projectId,
  * sessionId, triggerSlug, url }`, an iOS `sound`, and an Android `channelId`
- * (apps/api/src/notifications/push-payload.ts). `kind` is one of the 7 inbox
+ * (apps/api/src/notifications/push-payload.ts). `kind` is one of the inbox
  * kinds (KRTX-1742); `type` keeps the pre-inbox name of the 4 session kinds
  * (`completion`, `error`, `question`, `permission`), which a server from
  * before the inbox sends alone, with no `notificationId`. An automation alert
@@ -36,6 +36,7 @@ export interface PushData {
   sessionId: string | null;
   /** The inbox row the push reports, marked read on tap. Null from a server before the inbox. */
   notificationId: string | null;
+  artifactPath?: string;
 }
 
 /** Android channel ids. A channel's sound cannot change after creation. */
@@ -63,7 +64,7 @@ export const ANDROID_CHANNELS: readonly AndroidChannelSpec[] = [
 /**
  * The Android channel and iOS sound for one kind. With `playSound` false: the
  * silent channel and no iOS sound. Mirrors the server's choice
- * (`buildExpoMessages`). The 3 kinds added with the inbox reuse the 4
+ * (`buildExpoMessages`). Additional inbox kinds reuse the 4
  * existing channels: a new channel or sound needs a native build, and this
  * ships over the air.
  */
@@ -85,6 +86,7 @@ export function deliveryForKind(
     case 'permission':
     case 'shared':
     case 'message':
+    case 'artifact_comment':
       return { channelId: CHANNEL_ATTENTION, iosSound: 'kortix_attention.wav' };
   }
 }
@@ -114,12 +116,29 @@ export function parsePushData(raw: unknown): PushData | null {
   const data = raw as Record<string, unknown>;
   const kind = kindOf(data);
   if (!kind || !nonEmptyString(data.projectId)) return null;
+  const artifactPath = kind === 'artifact_comment' ? artifactNotificationPath(data.url, data.projectId) : null;
+  if (kind === 'artifact_comment' && !artifactPath) return null;
   return {
     kind,
     projectId: data.projectId,
-    sessionId: nonEmptyString(data.sessionId) ? data.sessionId : null,
+    sessionId: kind === 'artifact_comment' ? null : nonEmptyString(data.sessionId) ? data.sessionId : null,
     notificationId: nonEmptyString(data.notificationId) ? data.notificationId : null,
+    ...(artifactPath ? { artifactPath } : {}),
   };
+}
+
+export function artifactNotificationPath(value: unknown, projectId: string): string | null {
+  if (typeof value !== 'string' || !value.startsWith('/projects/')) return null;
+  try {
+    const url = new URL(value, 'https://kortix.invalid');
+    const match = /^\/projects\/([^/]+)\/artifacts\/([0-9a-f-]{36})$/i.exec(url.pathname);
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (url.origin !== 'https://kortix.invalid' || !uuid.test(projectId) || !match || match[1] !== projectId || !uuid.test(match[2]!) || url.hash || value.split(/[?#]/)[0] !== url.pathname) return null;
+    for (const [key, entry] of url.searchParams) if (!['thread', 'notification'].includes(key) || !uuid.test(entry) || url.searchParams.getAll(key).length !== 1) return null;
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return null;
+  }
 }
 
 function hostOf(url: string): string | null {

@@ -52,51 +52,121 @@ review and send.
 ## How it works
 
 <Steps>
-<Step title="Connect the call as the trigger">
+<Step title="Copy the setup prompt into a new session">
 
-The meeting recorder is connected so the end of a call is the trigger. When a
-recording finishes, the transcript fires a fresh **session** in its own sandbox,
-seeded with the call. One call maps to one session on one disposable machine, so
-nothing carries between deals and concurrent calls process in parallel.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the recap skill and the 15-minute trigger, and opens a change request for you to review. Prefer
+clicks? Choose **Use this template** instead.
 
-</Step>
-<Step title="Give the agent the recap playbook">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a sales call follow-up agent in this project.
 
-How we write a follow-up lives as **skills** and **memory** that travel with the
-agent: the shape of a good recap, how we phrase next steps, which objections need
-a considered answer, and the account's own history. When a rep improves a recap,
-we write it down and the agent applies it on the next call.
+1. Create the agent agents/sales-call-followup.md. Its job is to turn each finished sales call into an updated deal, follow-up tasks and a drafted recap email. It may use the Google Drive, HubSpot and Linear connectors.
 
-</Step>
-<Step title="Connect HubSpot and Linear">
+2. Create the skill skills/call-recap/SKILL.md with these rules:
+   - Read the full transcript from the Call Transcripts folder in Google Drive. Each call is its own case. Nothing carries over between calls.
+   - Match the call to a HubSpot deal from the attendees. If no deal or more than one deal matches, skip the deal update and flag the call instead of guessing.
+   - Advance the deal stage only when the call clearly moved it. Append a call summary to the notes and add new attendees as contacts.
+   - File one Linear task in Team per commitment, assigned to the rep who hosted the call. If the host is unclear, file it unassigned with a note.
+   - Draft the recap email: a short summary, an answer to every open question and the next steps. Hold it for the rep. Never send it.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger call-ended-check to kortix.yaml. It runs the sales-call-followup agent every 15 minutes with the prompt "Load the call-recap skill and process every new call transcript in the Call Transcripts folder since the last run."
 
-- **Read the transcript** — the full call, including the questions raised and what
-  was committed to.
-- **Update the HubSpot deal** — stage, notes, and contacts, written back from what
-  the call actually covered.
-- **File follow-up tasks in Linear** — the concrete next steps, assigned and dated.
-- **Draft the recap email** — summary, answers to the open questions, and clear
-  next steps, ready for the rep.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent reads the transcript and writes to the CRM and the task tracker on its
-own, but the outbound email never sends itself. Every recap stops at a **human
-approval gate**, so the rep reads it, edits if needed, and sends. Credentials are
-encrypted in the Secrets Manager and injected at runtime, scoped to the agents you grant them to
-or written to logs.
+Open **Connectors** in your project and connect the Drive folder your call
+recorder writes to, your CRM and your task tracker. Credentials are brokered
+server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="Google Drive" domain="drive.google.com" tag="Required" alternatives={[['Gong', 'gong.io'], ['Zoom', 'zoom.us']]}>
+    Finds each new call transcript in the connected folder.
+  </ToolNeed>
+  <ToolNeed name="HubSpot" domain="hubspot.com" tag="Required" alternatives={[['Salesforce', 'salesforce.com'], ['Pipedrive', 'pipedrive.com']]}>
+    Updates the matching deal with the call outcome.
+  </ToolNeed>
+  <ToolNeed name="Linear" domain="linear.app" tag="Required" alternatives={[['Jira', 'atlassian.com'], ['Asana', 'asana.com']]}>
+    Files one follow-up task per commitment made on the call.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Let the follow-up be ready when the call ends">
+<Step title="Run it once with this prompt">
 
-With that in place, hanging up is the whole task. By the time the rep looks, the
-deal is updated, the tasks are filed, and a recap email is drafted and waiting:
-the summary, the answers, and the next steps. The rep reviews and sends. The
-follow-up happens while the call is still fresh instead of days later.
+Merge the change request, then start a session with the **sales-call-followup**
+agent and send this prompt. Check the deal update, the tasks and the draft
+before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Process the most recent call transcript in the Call Transcripts folder in Google Drive.
+
+1. Read the full transcript and match it to one HubSpot deal from the attendees. If no deal or more than one deal matches, do not update any deal. Flag the call for me instead.
+2. If one deal matches, change its stage only if the call clearly moved it, append a summary to the notes, and add any new attendee as a contact.
+3. File one Linear task in Team for each commitment made on the call, assigned to the rep who hosted it.
+4. Draft the recap email: summary, answers to the open questions, and next steps. Hold it for review. Do not send it.`}
+/>
+
+</Step>
+<Step title="Let the 15-minute schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+checks for new transcripts every 15 minutes, and each call runs in a new
+session on its own cloud computer. To change the interval, edit the cron line,
+or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: call-ended-check
+    name: Call-ended check
+    on:
+      cron: "0 */15 * * * *"
+    run:
+      agent: sales-call-followup
+      prompt: Load the call-recap skill and process every new call transcript in the Call Transcripts folder since the last run.`}
+/>
+
+</Step>
+<Step title="Hold every recap email for the rep">
+
+The deal update and the Linear tasks are written on their own. The recap email
+is always a draft, held in the approval channel for the rep to read, edit and
+send. A call that matches no deal, or more than one, skips the CRM update and
+is flagged so a person links it to the right deal.
+
+</Step>
+<Step title="Review the recap draft">
+
+Each run ends with an updated deal, filed tasks and one held draft. This is what a run looks like
+in the session:
+
+<ExampleRun
+  title="Call-ended check · 14:15"
+  message="Load the call-recap skill and process every new call transcript in the Call Transcripts folder since the last run."
+  worked="Worked for 2m 41s"
+  tools={[
+    'google_drive · list files',
+    'google_drive · read file',
+    'hubspot · search deals',
+    'hubspot · update deal',
+    'hubspot · create contact × 2',
+    'linear · create issue × 3',
+  ]}
+  note="Illustrative example. Your counts depend on what each call covers."
+>
+  Found **1** new transcript and matched it to one HubSpot deal. Moved the
+  deal to **Contract sent**, added **2** new contacts and filed **3** Linear
+  tasks. The recap email is drafted and waiting for the rep to review and send.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -107,6 +177,25 @@ follow-up happens while the call is still fresh instead of days later.
   **skills** and **memory**. The CRM and tasks update automatically; the outbound
   email waits for the rep at an approval gate.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Prep the next call"
+  code="Before each scheduled call on an open deal, draft a one-paragraph brief for the rep: the last call's summary, open commitments and unanswered questions."
+/>
+
+<CopyBlock
+  title="Chase overdue commitments"
+  code="Every Friday, list the Linear tasks from call commitments that are past due, and name the deal each one belongs to."
+/>
+
+<CopyBlock
+  title="Learn from sent recaps"
+  code="When I paste a recap the rep sent, compare it to your draft and write the difference into the recap playbook in memory."
+/>
 
 ## Guardrails
 

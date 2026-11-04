@@ -5,6 +5,8 @@ export interface ModelRouteInput {
   requestedModel: string;
   requires: {
     imageInput: boolean;
+    /** The request generates images (`/images/*`): the host plans only image-output models. */
+    imageOutput?: boolean;
   };
 }
 

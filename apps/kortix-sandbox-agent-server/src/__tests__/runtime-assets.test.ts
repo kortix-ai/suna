@@ -39,7 +39,6 @@ async function workspace() {
     cliPath: join(dir, 'bin', 'kortix'),
     skillsDir: join(dir, 'opt', 'managed-skills'),
     statePath: join(dir, 'opt', 'runtime-assets-state.json'),
-    configDir: join(dir, 'config'),
   }
 }
 
@@ -347,43 +346,41 @@ describe('reconcileRuntimeAssets', () => {
     expect(await readFile(join(ws.skillsDir, 'kortix-cli/SKILL.md'), 'utf8')).toBe('cli skill v2\n')
   })
 
-  test('an overlay update re-injects into the live config dir', async () => {
+  test('an overlay update tells the runtime its skills changed', async () => {
     const ws = await workspace()
     await Bun.write(ws.cliPath, 'NEW-CLI-BYTES')
-    const injected: string[] = []
+    let updates = 0
     const result = await run(ws, stubFetch(), {
-      configDir: ws.configDir,
       assets: {
+        harness: 'test',
         componentNames: [],
-        resolveConfigDir: async () => ws.configDir,
-        injectSkills: async (configDir: string, bakedDir: string) => {
-          injected.push(`${configDir}|${bakedDir}`)
+        skillsUpdated: async () => {
+          updates += 1
         },
         reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
       },
     })
     expect(result.skills).toBe('updated')
-    expect(injected).toEqual([`${ws.configDir}|${ws.skillsDir}`])
+    expect(updates).toBe(1)
   })
 
-  test('no re-injection when the overlay was already current', async () => {
+  test('no skill reload when the overlay was already current', async () => {
     const ws = await workspace()
     await Bun.write(ws.cliPath, 'NEW-CLI-BYTES')
     await run(ws, stubFetch())
-    const injected: string[] = []
+    let updates = 0
     const result = await run(ws, stubFetch(), {
-      configDir: ws.configDir,
       assets: {
+        harness: 'test',
         componentNames: [],
-        resolveConfigDir: async () => ws.configDir,
-        injectSkills: async () => {
-          injected.push('called')
+        skillsUpdated: async () => {
+          updates += 1
         },
         reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
       },
     })
     expect(result.skills).toBe('current')
-    expect(injected).toEqual([])
+    expect(updates).toBe(0)
   })
 
   test('the digest cache is keyed on size and mtime: a stale mtime forces a real hash and a download', async () => {
@@ -454,7 +451,7 @@ describe('bakeRuntimeAssetsState', () => {
     expect(state.agent_sha256).toBe(sha('AGENT-BYTES'))
     expect(state.agent_path).toBe(join(ws.root, 'bin', 'kortix-agent'))
     expect(state.managed_skills_hash).toBe(BAKED_SKILLS_HASH)
-    expect(state.harness).toBe('opencode')
+    expect(state.harness).toBe('pi')
     expect(state.harness_version).toBe('1.18.23')
     // `build` is the epoch of a manifest this box READ. An image build reads
     // none, so claiming one would let the epoch guard refuse a legitimate API.
@@ -497,7 +494,7 @@ describe('bakeRuntimeAssetsState', () => {
     expect(running.cli_sha256).toBe(sha('NEW-CLI-BYTES'))
     expect(running.agent_sha256).toBe(sha('AGENT-BYTES'))
     expect(running.managed_skills_hash).toBe(BAKED_SKILLS_HASH)
-    expect(running.harness).toBe('opencode')
+    expect(running.harness).toBe('pi')
     expect(running.harness_version).toBe('1.18.23')
   })
 

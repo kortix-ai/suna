@@ -6,7 +6,9 @@
  *
  * A route that returns null is a page the host does not serve: every link to
  * it is hidden and no navigation goes there. `project` and `session` are the
- * two pages every session host serves, so they cannot be null.
+ * two pages every session host serves, so they cannot be null. `channel` and
+ * `dm` cannot be null either: the sidebar links them only while the project's
+ * `project_channels` flag is on.
  *
  * Defaults: apps/web's paths.
  */
@@ -24,6 +26,10 @@ export interface UiRoutes {
   rooms: (projectId: string) => string | null;
   /** The project's goals (flag `goals`); a goal is `<goals>/<scope>/<slug>`. */
   goals: (projectId: string) => string | null;
+  /** The project's artifacts (flag `artifacts`); one is `<artifacts>/<artifact_id>`. */
+  artifacts: (projectId: string) => string | null;
+  /** One space: a channel, its room and its tabs (`?tab=` opens one). */
+  space: (projectId: string, slug: string) => string | null;
   members: (projectId: string) => string | null;
   /** The project settings page, on its sandbox section. */
   sandboxSettings: (projectId: string) => string | null;
@@ -33,6 +39,18 @@ export interface UiRoutes {
    * capability root, for example `models` or `triggers?id=<slug>`.
    */
   customize: (projectId: string, path?: string) => string | null;
+  /**
+   * Project admin: the project-wide libraries (connectors, skills, triggers,
+   * loops, models, secrets, apps, repo) and settings, one section each.
+   * `path` is the section and anything below it (`connectors/<app>`).
+   */
+  admin: (projectId: string, path?: string) => string | null;
+  /** A channel of the project, by slug (`project_channels` flag). */
+  channel: (projectId: string, slug: string) => string;
+  /** The caller's direct messages with one agent, by agent name (`project_channels` flag). */
+  dm: (projectId: string, agentName: string) => string;
+  /** The project's Company memory (`project_channels` flag); a page is `?page=<page_id>`. */
+  memory: (projectId: string) => string | null;
 }
 
 const DEFAULT_ROUTES = {
@@ -44,22 +62,43 @@ const DEFAULT_ROUTES = {
   apps: (p: string) => `/projects/${p}/apps`,
   rooms: (p: string) => `/projects/${p}/rooms`,
   goals: (p: string) => `/projects/${p}/goals`,
+  artifacts: (p: string) => `/projects/${p}/artifacts`,
+  space: (p: string, slug: string) => `/projects/${p}/spaces/${encodeURIComponent(slug)}`,
   members: (p: string) => `/projects/${p}/members`,
-  sandboxSettings: (p: string) => `/projects/${p}/config?section=sandbox`,
+  sandboxSettings: (p: string) => `/projects/${p}/admin/sandbox`,
   customize: (p: string, path?: string) => `/projects/${p}/customize${path ? `/${path}` : ''}`,
+  admin: (p: string, path?: string) => `/projects/${p}/admin${path ? `/${path}` : ''}`,
+  channel: (p: string, slug: string) => `/projects/${p}/c/${slug}`,
+  dm: (p: string, agentName: string) => `/projects/${p}/dm/${encodeURIComponent(agentName)}`,
+  memory: (p: string) => `/projects/${p}/memory`,
 };
 
 export const defaultUiRoutes: UiRoutes = DEFAULT_ROUTES;
 
 let routes: UiRoutes = DEFAULT_ROUTES;
 
-/** Replaces the routes the host passes. Omitted routes keep their default. */
+/**
+ * Replaces the routes the host passes. Omitted routes keep their default,
+ * except `admin`: a host that maps `customize` (to its own pages, or to null)
+ * and says nothing of `admin` gets the same mapping for it, since the
+ * libraries left Customize for Project admin (2026-10-27).
+ */
 export function setUiRoutes(overrides: Partial<UiRoutes>): void {
-  routes = { ...DEFAULT_ROUTES, ...overrides };
+  const admin = overrides.admin ?? overrides.customize;
+  routes = { ...DEFAULT_ROUTES, ...overrides, ...(admin ? { admin } : {}) };
 }
 
 export function uiRoutes(): UiRoutes {
   return routes;
+}
+
+/** A channel slug or DM agent name from its URL segment; null when a hand-typed escape is malformed. */
+export function decodeSpaceSegment(segment: string): string | null {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -69,6 +108,11 @@ export function uiRoutes(): UiRoutes {
  */
 export function customizePath(projectId: string, path?: string): string {
   return routes.customize(projectId, path) ?? DEFAULT_ROUTES.customize(projectId, path);
+}
+
+/** A Project admin URL, with the same fallback as `customizePath`. */
+export function adminPath(projectId: string, path?: string): string {
+  return routes.admin(projectId, path) ?? DEFAULT_ROUTES.admin(projectId, path);
 }
 
 /**

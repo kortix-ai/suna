@@ -21,6 +21,7 @@ import { DESKTOP_INIT_SCRIPT } from '@kortix/ui/internal/lib/desktop';
 import { INTERFACE_THEME_INIT_SCRIPT } from '@/lib/interface-themes';
 import { RouterBridge } from '@/lib/navigation/router-bridge-mount';
 import '@/lib/polyfills';
+import { readInstanceBranding } from '@/lib/instance-branding-server';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { runtimeConfigIsBakedAtBuild } from '@/lib/runtime-config-mode';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
@@ -32,6 +33,7 @@ import { getTranslations } from '@/i18n/get-translations';
 import { normalizeLocale } from '@/i18n/locale';
 import { loadMessages } from '@/i18n/messages';
 import { notFound } from 'next/navigation';
+import { headers } from 'next/headers';
 import { connection } from 'next/server';
 import { Toaster } from 'sonner';
 
@@ -169,20 +171,20 @@ const SITE_JSON_LD = {
       description: siteMetadata.description,
       foundingDate: '2024',
       sameAs: [
-        'https://github.com/kortix-ai/suna',
+        'https://github.com/kortix-ai/CompanyOS',
         'https://x.com/kortix',
         'https://linkedin.com/company/kortix',
       ],
-      contactPoint: { '@type': 'ContactPoint', contactType: 'Customer Support', url: `${siteMetadata.url}/support` },
+      contactPoint: { '@type': 'ContactPoint', contactType: 'Customer Support', url: `${siteMetadata.url}/contact` },
     },
     {
       '@type': 'SoftwareApplication',
       '@id': `${siteMetadata.url}/#software`,
-      name: siteMetadata.name,
-      alternateName: ['Kortix AI Operating System', 'Kortix AI OS', 'Suna'],
+      name: 'Kortix CompanyOS',
+      alternateName: ['Kortix', 'Suna'],
       url: siteMetadata.url,
       applicationCategory: 'BusinessApplication',
-      applicationSubCategory: 'AI Operating System',
+      applicationSubCategory: 'Company operating system',
       operatingSystem: 'Web, macOS, Linux',
       downloadUrl: `${siteMetadata.url}/download`,
       description: siteMetadata.description,
@@ -210,8 +212,8 @@ const SITE_JSON_LD = {
     {
       '@type': 'SoftwareSourceCode',
       '@id': `${siteMetadata.url}/#source`,
-      name: 'Kortix',
-      codeRepository: 'https://github.com/kortix-ai/suna',
+      name: 'Kortix CompanyOS',
+      codeRepository: 'https://github.com/kortix-ai/CompanyOS',
       programmingLanguage: 'TypeScript',
       isPartOf: { '@id': `${siteMetadata.url}/#software` },
     },
@@ -235,8 +237,16 @@ export default async function RootLayout({
   // (Docker, self-host) builds opt into request-time rendering so process.env
   // is read per request: the image is built once with placeholder values and
   // configured by the container environment. See lib/runtime-config-mode.ts.
-  if (!runtimeConfigIsBakedAtBuild()) await connection();
-  const runtimeEnv = getServerPublicEnv();
+  // A self-host alias domain gets its own instance URLs (lib/domain-alias-env.ts).
+  let requestHost: string | null = null;
+  if (!runtimeConfigIsBakedAtBuild()) {
+    await connection();
+    requestHost = (await headers()).get('host');
+  }
+  const runtimeEnv = getServerPublicEnv(requestHost);
+  // A self-host instance's own logo and name, for signed-out pages and for an
+  // account without branding. Always null on Vercel (the Kortix cloud).
+  const instanceBranding = await readInstanceBranding();
 
   return (
     <html
@@ -374,8 +384,10 @@ export default async function RootLayout({
                       account's own logo / icon / favicon / product name.
                       Reads the shared account-list query, so it sits inside
                       ReactQueryProvider and above everything that renders a
-                      KortixLogo. */}
-                      <BrandingProvider>
+                      KortixLogo. `instanceBranding` is the self-host
+                      instance's own, for signed-out pages and accounts
+                      without branding. */}
+                      <BrandingProvider instanceBranding={instanceBranding}>
                         <RequestDemoProvider>
                           {/* Account-wide MFA: catches the SDK's kortix:mfa-required
                           event (coded 403) and walks the user through a TOTP

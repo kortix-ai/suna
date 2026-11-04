@@ -38,12 +38,12 @@ const RUNTIME = ['node:*', 'node:*/**', ...pkg('bun', 'zod', 'tar')]
  * entry here (see ARCHITECTURE.md).
  */
 export const SERVICES = [
+  'chrome',
   'config-provider',
   'drive-sync',
   'egress-shim',
   'event-bus',
   'llm-proxy',
-  'monitor',
   'resources',
   'runtime-assets',
   'sandbox-env',
@@ -61,6 +61,11 @@ const API_CONTRACT = [`${apiContract}/**`, at('../../packages/api-contract/src/*
 // The SDK's import-free message-id codec, reached the same way (pi and the session-log boot mint ids with it).
 const SDK_WIRE_MESSAGE_ID_FILE = 'packages/sdk/src/core/session/wire-message-id.ts'
 const SDK_WIRE_MESSAGE_ID = [resolve(import.meta.dirname, '../..', SDK_WIRE_MESSAGE_ID_FILE).split(sep).join('/'), at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)]
+// The import-free prompt envelopes of a cross-session and a room message (pi reads a turn's origin from them).
+const PROMPT_ENVELOPE_FILES = ['packages/shared/src/peer-message-prompt.ts', 'packages/shared/src/room-prompt.ts']
+const PROMPT_ENVELOPES = PROMPT_ENVELOPE_FILES.flatMap((file) => [resolve(import.meta.dirname, '../..', file).split(sep).join('/'), at(`../../${file}`)])
+// The voice (packages/voice): imported by the kortix-voice extension only while the project's voice_call flag is on.
+const VOICE = [`${resolve(import.meta.dirname, '../../packages/voice/src').split(sep).join('/')}/**`, at('../../packages/voice/src/**')]
 /** @type {Record<string, string[]>} */
 const SERVICE_EXTERNALS = {
   // How the compiled agent config is carried in env (`@kortix/api-contract/compiled-agent-config-env`).
@@ -75,10 +80,23 @@ const SERVICE_EXTERNALS = {
 }
 /** Harness adapters and the packages only they may load. @type {Record<string, string[]>} */
 export const ADAPTERS = {
-  'open-code': ['bun:sqlite'],
-  // quickjs-wasi: codemode's VM, embedded as a file. The pi-coding-agent dist path: a setter pi does not export (pi/codemode.ts).
+  // quickjs-wasi: codemode's VM, embedded as a file. The pi-coding-agent dist paths: a setter and the codemode tool
+  // (for a subagent) pi does not export (pi/codemode.ts).
   // photon-node: pi's image resizer wasm, embedded as a file (pi/images.ts).
-  pi: [...pkg('@earendil-works/*'), ...pkg('typebox'), ...pkg('quickjs-wasi'), ...pkg('@silvia-odwyer/photon-node'), at('node_modules/@earendil-works/pi-coding-agent/dist/config.*'), ...SDK_WIRE_MESSAGE_ID],
+  // claude-agent-sdk + the MCP SDK: Claude subscription models, run through Claude Code (pi/claude/).
+  pi: [
+    ...pkg('@earendil-works/*'),
+    ...pkg('typebox'),
+    ...pkg('quickjs-wasi'),
+    ...pkg('@silvia-odwyer/photon-node'),
+    ...pkg('@anthropic-ai/claude-agent-sdk'),
+    ...pkg('@modelcontextprotocol/sdk'),
+    at('node_modules/@earendil-works/pi-coding-agent/dist/config.*'),
+    at('node_modules/@earendil-works/pi-coding-agent/dist/extensions/codemode/tool.*'),
+    ...SDK_WIRE_MESSAGE_ID,
+    ...PROMPT_ENVELOPES,
+    ...VOICE,
+  ],
 }
 
 const lib = at('src/lib/**')
@@ -117,6 +135,9 @@ const independentModules = createIndependentModules({
       '@kortix/shared/ssrf-guard': [at('../../packages/shared/src/ssrf-guard.ts')],
       '@kortix/api-contract/*': [at('../../packages/api-contract/src/*')],
       '@kortix/sdk/wire-message-id': [at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)],
+      '@kortix/shared/peer-message-prompt': [at('../../packages/shared/src/peer-message-prompt.ts')],
+      '@kortix/shared/room-prompt': [at('../../packages/shared/src/room-prompt.ts')],
+      '@kortix/voice/*': [at('../../packages/voice/src/*')],
     },
   },
   reusableImportPatterns: { sharedLayer: [lib, types] },
@@ -181,6 +202,13 @@ const independentModules = createIndependentModules({
       [],
       pkg('@earendil-works/pi-codemode'),
       'The codemode worker entrypoint (scripts/build.sh) imports pi-codemode only.',
+    ),
+    layer(
+      'image-resize-worker',
+      at('src/utils/image-resize-worker.ts'),
+      [at('src/harness/pi/images.ts')],
+      [at('node_modules/@earendil-works/pi-coding-agent/dist/utils/image-resize-worker.*')],
+      "The image resize worker entrypoint (scripts/build.sh) imports the photon wasm redirect (harness/pi/images.ts) and pi's resize worker only.",
     ),
     // Last: a file no layer above matched is in no layer at all (a new
     // top-level folder, an unregistered service or adapter).
@@ -250,55 +278,34 @@ const importStyle = {
   },
 }
 
-// E18: OpenCode names live in harness/open-code/ only. Outside both adapters a
-// new OpenCode-named identifier or string fails; the names that exist today are
-// allowlisted per file. The list only shrinks: an entry whose word no longer
-// occurs in its file fails too, so the PR that removes a name deletes its entry.
+// E18: OpenCode is deleted. An OpenCode-named identifier or string fails
+// (the resolver, harness.ts, may name the id it maps).
 // harness/pi/ is in the scope since W5 E2: pi emits the Kortix format.
 // Comments are not checked.
 const OPENCODE_NAME = /open.?code/i
 const OPENCODE_WORD = /[A-Za-z0-9_.$-]*open.?code[A-Za-z0-9_.$-]*/gi
 const OPENCODE_SCOPE = /^(?:(?:lib|types|services|routes|app|harness\/contract|harness\/shared|harness\/pi)\/.*|main\.ts)$/
-/** Allowed OpenCode words per file, package-relative. Delete entries; never add. @type {Record<string, string[]>} */
-export const OPENCODE_NAMES_ALLOWED = {
-  // W3 exit: the pre-W3 wire names an older API still reads and sends. Only
-  // this compatibility module spells them; delete it with its callers.
-  'src/routes/kortix/legacy-names.ts': ['opencode', 'opencodeEnv', 'opencode_env_changed', 'opencode_env_names', 'opencode_pid', 'opencode_port', 'opencode_reload', 'opencode_session_id', 'opencode_session_required', 'opencode_turn_ended', 'opencode_version'],
-  // The legacy project layout's config directory, `.kortix/opencode`: pi reads
-  // its skills and releases it for a project that has not moved to the root layout.
-  'src/harness/pi/config.ts': ['opencode'],
-  'src/harness/pi/config-release.ts': ['opencode'],
-}
 /** @type {import('eslint').Rule.RuleModule} */
 const opencodeNames = {
   meta: {
     type: 'problem',
     messages: {
-      unexpected: "OpenCode name '{{word}}' outside harness/open-code/. Use a harness-neutral name or move the code into the adapter (E18, ARCHITECTURE.md).",
-      stale: "E18 allowlist entry '{{word}}' no longer occurs in this file. Delete it from OPENCODE_NAMES_ALLOWED.",
+      unexpected: "OpenCode name '{{word}}'. OpenCode is deleted: use a harness-neutral name (E18, ARCHITECTURE.md).",
     },
     schema: [],
   },
   create(context) {
     const rel = posixPath(relative(SRC, context.filename))
     if (rel.startsWith('..') || isAbsolute(rel) || !OPENCODE_SCOPE.test(rel) || rel.endsWith('.test.ts') || rel.includes('__tests__/')) return {}
-    const allowed = new Set(OPENCODE_NAMES_ALLOWED[`src/${rel}`] ?? [])
-    const seen = new Set()
     /** @param {any} node @param {unknown} text */
     const check = (node, text) => {
       if (typeof text !== 'string' || !OPENCODE_NAME.test(text)) return
-      for (const [word] of text.matchAll(OPENCODE_WORD)) {
-        seen.add(word)
-        if (!allowed.has(word)) context.report({ node, messageId: 'unexpected', data: { word } })
-      }
+      for (const [word] of text.matchAll(OPENCODE_WORD)) context.report({ node, messageId: 'unexpected', data: { word } })
     }
     return {
       Identifier: (node) => check(node, node.name),
       Literal: (node) => check(node, node.value),
       TemplateElement: (node) => check(node, node.value.cooked),
-      'Program:exit': (node) => {
-        for (const word of allowed) if (!seen.has(word)) context.report({ node, messageId: 'stale', data: { word } })
-      },
     }
   },
 }

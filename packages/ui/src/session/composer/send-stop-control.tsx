@@ -4,6 +4,7 @@ import { Button } from '../../primitives/button';
 import Hint from '../../primitives/hint';
 import { Kbd } from '../../primitives/kbd';
 import Loading from '../../primitives/loading';
+import { cn } from '../../lib/utils';
 import { ArrowUpIcon as ArrowUp, SquareIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from '../../i18n';
@@ -87,6 +88,7 @@ export function SendStopControl({
 }: SendStopControlProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('threads');
+  const tDesktop = useTranslations('sessionDesktop');
   const tAttachments = useTranslations('hardcodedUi.composerAttachments');
   // One line, the same one the agent picker's tooltip carries — the two
   // controls are refusing for one reason and must not word it two ways.
@@ -179,13 +181,31 @@ export function SendStopControl({
     const stop = (
       <div className="relative flex items-center">
         {escCount > 0 && (
-          <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute right-1/2 bottom-full mb-2 translate-x-1/2 duration-(--duration-normal)">
-            <div className="bg-background text-foreground z-[9999] inline-flex w-fit items-center gap-1.5 overflow-hidden rounded-sm border p-1 px-1.5 text-xs whitespace-nowrap">
-              <Kbd>ESC</Kbd>
-              <span>
-                {escCount === 1
-                  ? tI18nComplete.raw('textb9ef397631ca')
-                  : tI18nComplete.raw('text9754e2d14f9e')}
+          // Progress toward the triple-ESC stop: one pip per press, so the
+          // count reads at a glance instead of as a bare "×2".
+          <div
+            role="status"
+            className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute right-1/2 bottom-full mb-2 translate-x-1/2 duration-(--duration-normal)"
+          >
+            <div className="bg-background text-foreground inline-flex w-fit items-center gap-2 rounded-md border px-2 py-1 text-xs whitespace-nowrap">
+              <span className="flex items-center gap-1" aria-hidden>
+                {[0, 1, 2].map((pip) => (
+                  <span
+                    key={pip}
+                    className={cn(
+                      'size-1.5 rounded-full',
+                      pip < escCount ? 'bg-foreground' : 'bg-muted-foreground/30',
+                    )}
+                  />
+                ))}
+              </span>
+              <span className="flex items-center gap-1">
+                <Kbd className="h-4 w-auto">{tDesktop('escape')}</Kbd>
+                <span className="tabular-nums">
+                  {escCount === 1
+                    ? tI18nComplete.raw('textb9ef397631ca')
+                    : tI18nComplete.raw('text9754e2d14f9e')}
+                </span>
               </span>
             </div>
           </div>
@@ -193,9 +213,13 @@ export function SendStopControl({
         <Hint
           side="top"
           label={
-            <p>
-              {tI18nComplete.raw('textcae7d57bc067')} <Kbd>ESC</Kbd> ×3
-            </p>
+            <span className="flex items-center gap-2">
+              {tI18nComplete.raw('textcae7d57bc067')}
+              <span className="flex items-center gap-1 opacity-60">
+                <Kbd className="h-4 w-auto">{tDesktop('escape')}</Kbd>
+                <span className="tabular-nums">×3</span>
+              </span>
+            </span>
           }
         >
           <Button

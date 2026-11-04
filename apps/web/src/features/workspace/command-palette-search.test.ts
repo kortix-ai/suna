@@ -262,13 +262,11 @@ describe('queries return the rows they name', () => {
     expect(result).toContain('nav:proj-invite');
   });
 
-  test('"customize" returns the two rows that say it, not seventeen', () => {
+  test('"customize" returns the one row that says it, not seventeen', () => {
     // 12 settings tabs + 5 navigation rows carried the legacy `project
-    // customize` tail. Two rows keep the word: the Customize INDEX — the card
-    // grid that introduces every capability tab (it used to be the Settings
-    // tab, one of the eight things that index introduces) — and "Customize
-    // Sidebar", whose label says it.
-    expect(hits('customize').sort()).toEqual(['nav:customize-sidebar', 'nav:proj-customize']);
+    // customize` tail. One row keeps the word: the Customize INDEX — the card
+    // grid that introduces every capability tab.
+    expect(hits('customize').sort()).toEqual(['nav:proj-customize']);
   });
 
   test('"project" returns the three rows that say the word, not every project-scoped row', () => {
@@ -506,7 +504,7 @@ describe('genuine synonyms still answer', () => {
     ['secret', 'nav:proj-secrets'],
     ['environment', 'nav:proj-secrets'],
     ['slack', 'nav:proj-channels'],
-    ['agentmail', 'nav:proj-channels'],
+    ['telegram', 'nav:proj-channels'],
     ['roster', 'nav:proj-members'],
     ['collaborators', 'nav:proj-members'],
     // The config page's four rows became overlay rows (derived from the rail)
@@ -516,7 +514,6 @@ describe('genuine synonyms still answer', () => {
     ['approvals', 'nav:proj-review-inbox'],
     ['experimental', 'nav:proj-config-feature-flags'],
     ['labs', 'nav:proj-config-feature-flags'],
-    ['migration', 'nav:proj-config-upgrades'],
     ['change requests', 'nav:review-changes'],
     ['github', 'nav:account-git'],
     ['grants', 'nav:account-access-projects'],

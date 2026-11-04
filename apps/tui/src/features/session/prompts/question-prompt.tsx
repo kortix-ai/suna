@@ -160,7 +160,7 @@ export function QuestionPrompt({
             fg={selected ? theme.fg : theme.dim}
             bg={selected ? theme.surface : undefined}
           >
-            <span fg={theme.accent}>{selected && focused ? glyph.selected : ' '}</span>
+            <span fg={theme.brand}>{selected && focused ? glyph.selected : ' '}</span>
             {` ${mark} ${clip(option.label, Math.max(body - 6, 4))}`}
           </text>
         );

@@ -11,13 +11,14 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { projectSessions, serviceAccounts } from '@kortix/db';
+import { CHANNEL_PLATFORM_IDS } from '@kortix/shared/channel-descriptors';
 import { db } from './db';
 import { ttlMemo } from './ttl-memo';
 
 export type AgentAuditInitiatorType = 'human' | 'trigger' | 'channel' | 'system';
 
 /** `project_sessions.metadata.source` values that name a channel platform. */
-const CHANNEL_SOURCES: ReadonlySet<string> = new Set(['slack', 'teams', 'email', 'telegram']);
+const CHANNEL_SOURCES: ReadonlySet<string> = new Set(CHANNEL_PLATFORM_IDS);
 const TRIGGER_ORIGINS: ReadonlySet<string> = new Set(['trigger', 'schedule']);
 
 export interface AgentAuditSessionFacts {

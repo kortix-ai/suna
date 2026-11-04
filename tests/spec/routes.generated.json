@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 885,
+  "count": 1036,
   "routes": [
     {
       "method": "GET",
@@ -17,6 +17,10 @@
     {
       "method": "GET",
       "path": "/.well-known/openid-configuration"
+    },
+    {
+      "method": "GET",
+      "path": "/.well-known/security.txt"
     },
     {
       "method": "GET",
@@ -52,6 +56,14 @@
     },
     {
       "method": "POST",
+      "path": "/internal/gateway/claude-credentials"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/claude-refused"
+    },
+    {
+      "method": "POST",
       "path": "/internal/gateway/models"
     },
     {
@@ -81,6 +93,10 @@
     {
       "method": "GET",
       "path": "/metrics"
+    },
+    {
+      "method": "GET",
+      "path": "/robots.txt"
     },
     {
       "method": "GET",
@@ -149,6 +165,14 @@
     {
       "method": "PUT",
       "path": "/scim/v2/accounts/:accountId/Users/:userId"
+    },
+    {
+      "method": "GET",
+      "path": "/sitemap.xml"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/access/branding"
     },
     {
       "method": "POST",
@@ -884,6 +908,26 @@
     },
     {
       "method": "GET",
+      "path": "/v1/artifacts/meta/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/p/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/p/:artifactId/*"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/s/:token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/s/:token/*"
+    },
+    {
+      "method": "GET",
       "path": "/v1/auth/client-config"
     },
     {
@@ -1200,6 +1244,30 @@
     },
     {
       "method": "POST",
+      "path": "/v1/chrome/attach"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/chrome/connections"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/chrome/connections/:id"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/chrome/connections/:id"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chrome/panel-session"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chrome/release"
+    },
+    {
+      "method": "POST",
       "path": "/v1/cli/device/decide"
     },
     {
@@ -1275,6 +1343,10 @@
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/accounts"
     },
     {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/agents"
+    },
+    {
       "method": "PUT",
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/authorization-strategy"
     },
@@ -1307,12 +1379,32 @@
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/name"
     },
     {
+      "method": "PUT",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/oauth2/connection"
+    },
+    {
       "method": "GET",
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/policies"
     },
     {
       "method": "PUT",
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/policies"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policy-sets"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name/name"
     },
     {
       "method": "PUT",
@@ -1344,6 +1436,14 @@
     },
     {
       "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/discover/connectors/tools"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/projects/:projectId/discover/install"
+    },
+    {
+      "method": "GET",
       "path": "/v1/connectors/projects/:projectId/discover/sections"
     },
     {
@@ -1361,6 +1461,10 @@
     {
       "method": "PUT",
       "path": "/v1/connectors/projects/:projectId/policies"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/rules-matrix"
     },
     {
       "method": "GET",
@@ -1389,6 +1493,14 @@
     {
       "method": "DELETE",
       "path": "/v1/drives/:driveId/access/:grantId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/admin-reads"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/agents/:agentName/mounts"
     },
     {
       "method": "GET",
@@ -1423,6 +1535,22 @@
       "path": "/v1/drives/:driveId/files/move"
     },
     {
+      "method": "POST",
+      "path": "/v1/drives/:driveId/files/upload"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/drives/:driveId/files/upload/:uploadId/blocks/:sha"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/drives/:driveId/files/upload/:uploadId/commit"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/mounts"
+    },
+    {
       "method": "GET",
       "path": "/v1/drives/:driveId/principals"
     },
@@ -1432,7 +1560,15 @@
     },
     {
       "method": "GET",
+      "path": "/v1/drives/:driveId/usage"
+    },
+    {
+      "method": "GET",
       "path": "/v1/drives/:driveId/versions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/usage"
     },
     {
       "method": "GET",
@@ -1812,6 +1948,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/agents/:agentName/capabilities"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/agents/:agentName/config"
     },
     {
@@ -1892,6 +2032,14 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/events"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/events/credentials"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/exec"
     },
     {
@@ -1917,6 +2065,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/rollback"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/runs"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/apps/:appId/runs/:runId"
     },
     {
       "method": "PUT",
@@ -1975,6 +2131,102 @@
       "path": "/v1/projects/:projectId/apps/artifacts/:artifactId/finalize"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifact-comment-threads/:threadId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/activity"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:commentId/screenshot"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/:commentId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/:commentId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/replies"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/context"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/comments/send"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/content"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/pin"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/pin"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/restore"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/versions"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/share"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/types"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/attachments"
     },
@@ -1997,6 +2249,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/branches"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/capabilities"
     },
     {
       "method": "GET",
@@ -2047,8 +2303,76 @@
       "path": "/v1/projects/:projectId/channels/bindings/:bindingId"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/discord"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/discord/access-requests/:user_id"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/discord/allowed-users"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/channels/discord/allowed-users"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/discord/allowed-users/:user_id"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/discord/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/discord/mode"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/discord/oauth/complete"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/discord/users"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/discord/users/:user_id/photo"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/channels/email/connect"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/email/domains"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/email/domains/add"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/email/domains/verify"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/email/inboxes"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/email/inboxes"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/email/inboxes/:connectionId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/channels/email/inboxes/:connectionId"
     },
     {
       "method": "DELETE",
@@ -2151,8 +2475,20 @@
       "path": "/v1/projects/:projectId/channels/telegram"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/telegram/access-requests/:user_id"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/telegram/allowed-users"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/channels/telegram/allowed-users"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/telegram/allowed-users/:user_id"
     },
     {
       "method": "POST",
@@ -2161,6 +2497,34 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/channels/telegram/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/telegram/users"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/telegram/users/:user_id/photo"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/claude-subscription"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/claude-subscription"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/claude-subscription/login/complete"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/claude-subscription/login/start"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/claude-subscription/token"
     },
     {
       "method": "GET",
@@ -2480,6 +2844,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/link-preview"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/llm-catalog"
     },
     {
@@ -2493,6 +2861,58 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/marketplace/install-session"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/layers/:layerKey"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/memory/layers/:layerKey/notes"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/layers/:layerKey/pages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/memory/layers/:layerKey/pages"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/me/agent/:agent"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/memory/me/agent/:agent/pages/:name"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/me/agent/:agent/pages/:name"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/memory/me/agent/:agent/pages/:name"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/memory/pages/:pageId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/pages/:pageId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/memory/pages/:pageId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/pages/:pageId/history"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/search"
     },
     {
       "method": "GET",
@@ -2523,10 +2943,6 @@
       "path": "/v1/projects/:projectId/model-picker"
     },
     {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/monitors/ingest"
-    },
-    {
       "method": "GET",
       "path": "/v1/projects/:projectId/oauth"
     },
@@ -2545,6 +2961,14 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/onboarding"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/onboarding/channels"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/onboarding/channels/marks"
     },
     {
       "method": "GET",
@@ -2675,6 +3099,10 @@
       "path": "/v1/projects/:projectId/sandboxes"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/search"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/secret-requests"
     },
@@ -2717,6 +3145,26 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/secrets/sync"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/session-groups"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/session-groups"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/session-groups/:groupId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/session-groups/:groupId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/session-groups/order"
     },
     {
       "method": "GET",
@@ -2823,8 +3271,16 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/events"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/group"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/idle-notice"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/inbound"
     },
     {
       "method": "GET",
@@ -2856,6 +3312,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/memory-usage"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/message-authors"
     },
     {
@@ -2873,6 +3333,22 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/participants"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/peer-messages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/peer-messages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/peer-messages/:messageId/approve"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/peer-messages/:messageId/deny"
     },
     {
       "method": "PUT",
@@ -2941,6 +3417,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/question"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reachable"
     },
     {
       "method": "POST",
@@ -3024,11 +3504,47 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/tasks"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/tasks"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/tasks/:seq"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/tasks/:seq"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/tasks/:seq"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/transcript"
     },
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/turn"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/usage"
     },
     {
       "method": "GET",
@@ -3065,6 +3581,62 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/snapshots/rebuild"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/spaces/:spaceId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/apps"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/join"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/links"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/links"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/links/:linkId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/links/:linkId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/members"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/members"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/members/:userId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces/dm"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces/private"
     },
     {
       "method": "POST",
@@ -3108,11 +3680,31 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/triggers/all"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/triggers/event-apps"
     },
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/triggers/event-types"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/triggers/runtime"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/triggers/runtime/:id"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/triggers/runtime/:id"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/triggers/runtime/:id/run"
     },
     {
       "method": "POST",
@@ -3213,6 +3805,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/suna-migration/status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/public/responses/:token"
     },
     {
       "method": "POST",
@@ -3379,6 +3975,10 @@
       "path": "/v1/skills/:name/file"
     },
     {
+      "method": "GET",
+      "path": "/v1/system/confirmed-signups"
+    },
+    {
       "method": "POST",
       "path": "/v1/system/demo-request"
     },
@@ -3476,7 +4076,15 @@
     },
     {
       "method": "POST",
-      "path": "/v1/webhooks/email/agentmail"
+      "path": "/v1/webhooks/discord"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/webhooks/discord/oauth/callback"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/email/resend"
     },
     {
       "method": "POST",
@@ -3489,10 +4097,6 @@
     {
       "method": "POST",
       "path": "/v1/webhooks/sandbox/daytona"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/webhooks/sandbox/platinum"
     },
     {
       "method": "POST",

@@ -8,21 +8,18 @@ import {
   extractConnectors,
   manifestHashForConnector,
 } from '../projects/connectors';
-import {
-  KNOWN_SCHEMA_VERSION,
-  parseManifestString,
-} from '../projects/triggers';
+import { parseManifestString } from '../projects/triggers';
 
 const MIN_PROJECT = `project:
   name: test
 `;
 
 function manifestWith(body: string): string {
-  return [`kortix_version: ${KNOWN_SCHEMA_VERSION}`, MIN_PROJECT, body].join('\n');
+  return [MIN_PROJECT, body].join('\n');
 }
 
 function parseAndExtract(body: string) {
-  return extractConnectors(parseManifestString(manifestWith(body), 'yaml', 'kortix.yaml'));
+  return extractConnectors(parseManifestString(manifestWith(body), 'kortix.yaml'));
 }
 
 describe('connectors: — happy paths per provider', () => {
@@ -210,7 +207,7 @@ connectors:
   - slug: internal-http
     provider: http
     base_url: https://api.internal
-    spec: .kortix/connectors/internal.http.toml
+    spec: .kortix/connectors/internal.http.yaml
     auth:
       type: custom
       in: query
@@ -222,7 +219,7 @@ connectors:
     expect(specs[0]).toMatchObject({
       provider: 'http',
       baseUrl: 'https://api.internal',
-      spec: '.kortix/connectors/internal.http.toml',
+      spec: '.kortix/connectors/internal.http.yaml',
       auth: { type: 'custom', in: 'query', name: 'api_key', prefix: 'tok_', secret: 'INTERNAL_API_TOKEN' },
     });
   });
@@ -577,7 +574,7 @@ connectors:
     expect(errors[0]!.error).toContain('connected account');
   });
 
-  test('oauth1 on an unsupported provider names the manifest the user wrote (yaml)', () => {
+  test('oauth1 on an unsupported provider names the manifest the user wrote', () => {
     const { errors } = parseAndExtract(`
 connectors:
   - slug: x
@@ -589,32 +586,6 @@ connectors:
     expect(errors).toHaveLength(1);
     expect(errors[0]!.path).toBe('kortix.yaml#connectors.x');
     expect(errors[0]!.error).toContain('openapi/postman/http');
-  });
-
-  test('oauth1 rejection keeps naming kortix.toml for a TOML project', () => {
-    const { errors } = extractConnectors(
-      parseManifestString(
-        [
-          `kortix_version = ${KNOWN_SCHEMA_VERSION}`,
-          '',
-          '[project]',
-          'name = "test"',
-          '',
-          '[[connectors]]',
-          'slug = "x"',
-          'provider = "mcp"',
-          'url = "https://m"',
-          '',
-          '[connectors.auth]',
-          'type = "oauth1"',
-          '',
-        ].join('\n'),
-        'toml',
-        'kortix.toml',
-      ),
-    );
-    expect(errors).toHaveLength(1);
-    expect(errors[0]!.path).toBe('kortix.toml#connectors.x');
   });
 
   test('duplicate slugs', () => {
@@ -811,7 +782,7 @@ describe('connectors: — runtime parser ⇄ schema gate provider agreement', ()
   const { validateManifest } = require('@kortix/manifest-schema') as typeof import('@kortix/manifest-schema');
 
   function schemaConnectorErrors(body: string): string[] {
-    return validateManifest(manifestWith(body), 'yaml')
+    return validateManifest(manifestWith(body))
       .issues.filter((i) => i.severity === 'error' && i.path.startsWith('connectors['))
       .map((i) => i.path);
   }
@@ -853,6 +824,16 @@ describe('connectors: — runtime parser ⇄ schema gate provider agreement', ()
         const body = `connectors:\n  - slug: kortix_${platform}\n    provider: channel\n    platform: ${platform}`;
         expect(parseAndExtract(body).errors).toEqual([]);
         expect(schemaConnectorErrors(body)).toEqual([]);
+      });
+    }
+  });
+
+  // A user connector under a channel's built-in slug stops that channel's
+  // connector from materializing (channel-materialize.ts channelAlreadyDeclared).
+  describe('every CHANNEL_PLATFORMS value reserves its built-in slug for the channel provider', () => {
+    for (const platform of SCHEMA_CHANNEL_PLATFORMS) {
+      test(`kortix_${platform}`, () => {
+        expect(SCHEMA_RESERVED_SLUG_PROVIDERS[`kortix_${platform}`]).toBe('channel');
       });
     }
   });

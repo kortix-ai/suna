@@ -8,9 +8,11 @@
  * mount and immediately clears, so the prefill only applies once. Scoped
  * per-project so prefills don't leak across projects.
  *
- * A prefill fills the box. Only `submit: true` also sends it, and only the
- * desktop Quick Entry sets that: a prompt the person typed into the app's own
- * bar (`components/desktop/desktop-quick-entry.tsx`). A URL (`?q=`) never
+ * A prefill fills the box. Only `submit: true` also sends it, and only two
+ * callers set that, each for a prompt the person typed into Kortix's own
+ * composer: the desktop Quick Entry bar (`components/desktop/desktop-quick-entry.tsx`)
+ * and the Kortix in Chrome side panel (`features/chrome/panel/chrome-panel-home.tsx`).
+ * A URL (`?q=`) never
  * sends, because anyone can write a link. The onboarding hand-off that used to
  * auto-send its kickoff prompt now opens the first chat instead
  * (`first-chat-store.ts`).
@@ -22,8 +24,13 @@ import { create } from 'zustand';
 
 interface ComposerPrefill {
   text: string;
-  /** Send once it lands, exactly as if the person pressed Enter. */
-  submit?: boolean;
+  /**
+   * Send once it lands, exactly as if the person pressed Enter. `'when-ready'`
+   * waits until the composer can send (models and entitlements loaded, Send
+   * enabled): an image for a model that cannot read one then stays in the box,
+   * where the composer says why.
+   */
+  submit?: boolean | 'when-ready';
   /** Files to attach (desktop Quick Entry screenshots and files). */
   files?: AttachedFile[];
   /** The agent, model and effort to select before it lands (desktop Quick Entry). */

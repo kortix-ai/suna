@@ -60,57 +60,122 @@ a vendor approved and never sets up a payment method or banking profile.
 ## How it works
 
 <Steps>
-<Step title="Run on a daily cron, fresh each time">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the agent once a day. Each firing spawns a fresh
-**session** in its own sandbox with no memory of the previous run — the vendor
-register it reads from Google Sheets is the only carry-over, so the same vendor
-is never processed twice and nothing depends on the agent remembering anything
-itself.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the intake skill and the daily trigger, and opens a change request for you to review. Prefer
+clicks? Choose **Use this template** instead.
 
-</Step>
-<Step title="Give the agent the intake checklist">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a vendor onboarding intake agent in this project.
 
-What counts as a complete W-9, a complete banking form, and a valid signed
-contract lives as a **skill** that travels with the agent — the exact fields
-each document needs, how the vendor name must match across all three, and what
-"invalid" looks like versus "missing." This is the fixed standard every vendor
-is checked against, every run.
+1. Create the agent agents/vendor-onboarding.md. Its job is to check new vendor paperwork and record its status. It may use the Gmail and Google Sheets connectors and post to Slack.
 
-</Step>
-<Step title="Connect the systems it needs">
+2. Create the skill skills/vendor-doc-intake/SKILL.md with these rules:
+   - Read the Vendor Register sheet first, and skip any Gmail thread already recorded there.
+   - A W-9 needs a legal name, a TIN or EIN, a signature and a date. A banking form needs a bank name, an account number, a routing number and a signature. A contract needs a dated signature and the same legal name as the W-9.
+   - Mark a document missing when it is absent and invalid when a field is missing. Flag a legal name that differs across the documents or from the contact email's domain.
+   - Record every vendor in the register, clean or flagged. Never copy an account or routing number into it.
+   - Draft a Gmail follow-up for each flagged vendor and never send it. Post the batch to #finance.
+   - Never approve a vendor, and never set up payment or banking in any system.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent:
+3. Add a cron trigger vendor-intake to kortix.yaml. It runs the vendor-onboarding agent every day at 07:00 with the prompt "Load the vendor-doc-intake skill and process every new request in the Vendor Onboarding label."
 
-- **Reads new vendor requests from Gmail** — the request thread and its
-  attachments, filed under a dedicated label.
-- **Reads and writes the vendor register in Google Sheets** — the prior state
-  of every vendor, and this run's recorded status for each one.
-- **Drafts follow-up emails in Gmail** — requesting a missing or corrected
-  document, saved as a draft, never sent by the agent.
-- **Posts to Slack** — a summary of every vendor processed this run, flagged
-  ones called out with exactly what's missing or invalid.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent's job stops at collect, validate, and record. It never marks a vendor
-approved, never initiates a payment method, and never touches a banking or ACH
-setup in any system — not even for a vendor whose paperwork is fully complete.
-Outbound email to a vendor is created as a draft only; a person reviews and
-sends it. Bank account and routing numbers are checked for presence and
-completeness but never copied into the register — only the document's status
-is recorded.
+Open **Connectors** in your project and connect the inbox where vendor requests
+arrive, the register sheet and Slack. Credentials are brokered server-side and
+never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="Gmail" domain="gmail.com" tag="Required" alternatives={[['Google Sheets', 'docs.google.com']]}>
+    Reads each new vendor request and its attachments.
+  </ToolNeed>
+  <ToolNeed name="DocuSign" domain="docusign.com" tag="Optional" alternatives={[['Google Drive', 'drive.google.com']]}>
+    Confirms the signed contract when it lives there.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Posts the daily batch of vendor statuses and flags.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Record every vendor and flag what's missing">
+<Step title="Run it once with this prompt">
 
-With that in place, each day the register gains one row per new vendor request
-— complete or flagged, with the specific missing or invalid item named — and
-Slack gets one summary post. Anything incomplete has a draft email already
-written and waiting. A person reviews the flag, sends the draft or requests
-something else, and makes the actual onboarding decision.
+Merge the change request, then start a session with the **vendor-onboarding**
+agent and send this prompt. Check the register rows and the drafted follow-ups
+before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Process the new vendor requests in the Vendor Onboarding label in Gmail.
+
+1. Read the Vendor Register sheet and skip threads already recorded.
+2. Check each vendor's W-9, banking form and signed contract against the checklist, and check that the legal name matches across all three.
+3. Add one row per vendor to the register with each document's status. Do not copy account or routing numbers.
+4. Draft a Gmail follow-up for every flagged vendor. Do not send it.
+5. Post the batch to #finance, clean and flagged. Do not approve any vendor.`}
+/>
+
+</Step>
+<Step title="Let the daily schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every day at 07:00, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: vendor-intake
+    name: Vendor document intake
+    on:
+      cron: "0 0 7 * * *"
+    run:
+      agent: vendor-onboarding
+      prompt: Load the vendor-doc-intake skill and process every new request in the Vendor Onboarding label.`}
+/>
+
+</Step>
+<Step title="Keep approval and payment with a person">
+
+The agent collects, checks and records. It never marks a vendor approved and
+never sets up a payment method, ACH enrollment or banking profile, even when all
+three documents are clean. Every follow-up email is a draft that a person
+reviews and sends.
+
+</Step>
+<Step title="Read the daily batch">
+
+Each run ends with one message in #finance. This is what a run looks like
+in the session:
+
+<ExampleRun
+  title="Vendor document intake · 07:00"
+  message="Load the vendor-doc-intake skill and process every new request in the Vendor Onboarding label."
+  worked="Worked for 3m 05s"
+  tools={[
+    'google_sheets · read rows',
+    'gmail · list threads',
+    'gmail · get attachment × 15',
+    'google_sheets · append rows × 5',
+    'gmail · create draft × 2',
+    'slack · post message → #finance',
+  ]}
+  note="Illustrative example. Your counts depend on your request volume."
+>
+  Processed **5** new vendor requests. **3** are clean and **2** are flagged:
+  one unsigned W-9 and one contract with a different legal name. Both
+  follow-ups are drafted and waiting to be sent.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -122,6 +187,25 @@ something else, and makes the actual onboarding decision.
   not the agent's memory, is the state. Anything missing gets a drafted email
   and a Slack flag. The agent never approves a vendor or touches payment.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Chase stale requests"
+  code="Each Monday, post to #finance the flagged vendors whose follow-up is more than 5 days old with no reply."
+/>
+
+<CopyBlock
+  title="Check insurance certificates"
+  code="Also check each vendor for a current certificate of insurance, and flag it as missing or expired like the other documents."
+/>
+
+<CopyBlock
+  title="Weekly intake summary"
+  code="Every Friday, post to #finance how many vendors arrived, how many were flagged and how many still wait for documents."
+/>
 
 ## Guardrails
 

@@ -41,7 +41,7 @@ describe('pi turn errors carry a TurnErrorCode', () => {
     })
     expect(assistantMessageError({ stopReason: 'length', errorMessage: undefined })).toEqual({
       name: 'MessageOutputLengthError',
-      data: {},
+      data: { message: 'The answer reached the model output limit and was cut off. Ask for the rest, or narrow the request.' },
       code: 'output_length',
     })
     expect(assistantMessageError({ stopReason: 'stop', errorMessage: undefined })).toBeUndefined()

@@ -13,8 +13,7 @@
 //              resolveBranchTip (+ shared git-log parsing primitives)
 //   fast-boot-bundle — resolveFastBootGitHint and the scaffold-delta bundle
 //              builders (session fast-boot provisioning)
-//   branches — listBranches, createRemoteSessionBranch,
-//              deleteRemoteSessionBranch, commitFileToBranch
+//   branches — listBranches, deleteRemoteSessionBranch, commitFileToBranch
 //   merge    — getMergeBase, getBranchDiff, getDiffBetweenShas, previewMerge,
 //              mergeBranches, diffStat
 //   config   — loadProjectConfig
@@ -51,6 +50,7 @@ export {
   readRepoFile,
   readRepoFileBytes,
   readManifestFromRepo,
+  findLastGoodManifestCommit,
   archiveRepoSubtree,
   getFileHistory,
   RepoFileNotFoundError,
@@ -71,7 +71,6 @@ export {
   listBranches,
   remoteBranchExists,
   resolveRemoteBranchTip,
-  createRemoteSessionBranch,
   deleteRemoteSessionBranch,
   commitFileToBranch,
   isSessionBranchName,
@@ -88,6 +87,7 @@ export {
   previewMerge,
   MergeConflictError,
   mergeBranches,
+  headRefsLandedIn,
   resolveBranchAheadState,
 } from './git/merge';
 

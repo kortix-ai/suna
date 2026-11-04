@@ -1,8 +1,8 @@
 'use client';
 
 import { useTranslations } from '../../../i18n';
-import { GlobeIcon, MonitorIcon } from '@phosphor-icons/react';
-import { memo, useState } from 'react';
+import { GlobeIcon } from '@phosphor-icons/react';
+import { memo } from 'react';
 
 import { Badge } from '../../../primitives/badge';
 import { Button } from '../../../primitives/button';
@@ -21,7 +21,13 @@ import {
 } from '../../shared/catalog/catalog-grid-tokens';
 import { cn } from '../../../internal/lib/utils';
 import { InstallButton } from '../install/install-menu';
-import { catalogEntryKindLabel, isCatalogEntryConnected, type CatalogEntry } from './catalog-entry';
+import { ConnectorLogo } from '../../../internal/connector-logo/connector-logo';
+import {
+  catalogEntryKindLabel,
+  catalogEntryLogoSource,
+  isCatalogEntryConnected,
+  type CatalogEntry,
+} from './catalog-entry';
 import { catalogFootSummary } from './catalog-foot';
 import type { CatalogState } from './use-catalog';
 import { useCatalogAutoload } from './use-catalog-autoload';
@@ -37,10 +43,9 @@ export interface CatalogInstall {
   onInstall: (entry: CatalogEntry) => void;
 }
 
-/** The Install control is offered only where the caller may add the app, and
- *  never on the computer card: a computer is paired, not installed. */
-function canInstallEntry(entry: CatalogEntry, install: CatalogInstall): boolean {
-  return install.canWrite && entry.source !== 'computer';
+/** The Install control is offered only where the caller may add the app. */
+function canInstallEntry(install: CatalogInstall): boolean {
+  return install.canWrite;
 }
 
 /**
@@ -69,14 +74,16 @@ function CatalogAffordance({
       </Badge>
     );
   }
-  if (!canInstallEntry(entry, install)) return null;
+  if (!canInstallEntry(install)) return null;
+  // What Kortix built is set up on its own page, not installed.
+  const channel = entry.source === 'discover' && entry.connector.kind === 'kortix';
   return (
     <InstallButton
-      label={t('install')}
+      label={channel ? t('waySetUp') : t('install')}
       variant="outline"
       className="gap-1 rounded-full"
       // A page holds dozens of these; the name says which app each installs.
-      aria-label={t('installNamed', { name: entry.name })}
+      aria-label={channel ? t('setUpNamed', { name: entry.name }) : t('installNamed', { name: entry.name })}
       onInstall={() => install.onInstall(entry)}
       pending={install.pendingKey === entry.slug}
       // `pendingKey` holds one install. A second one started beside it would
@@ -88,64 +95,6 @@ function CatalogAffordance({
 }
 
 /**
- * A catalog favicon, or a neutral glyph tile when the record has none or its
- * URL fails to load.
- *
- * A plain `<img>`, not `next/image`. These are third-party favicons on
- * arbitrary hosts, so the loader was already bypassed with `unoptimized` — which
- * left `fill` costing an absolutely-positioned child inside a `relative`
- * wrapper, per card, for no optimisation in return. Native `loading="lazy"`
- * defers every icon below the fold, which is most of them on a browse page.
- *
- * `width`/`height` are set so the box is reserved before the image arrives and
- * the grid never reflows around a late favicon.
- *
- * The broken-image state is the fallback the null case already had: a logo
- * URL that 404s used to render the browser's broken-image glyph inside the
- * tile, which is worse than no imagery at all. `onError` swaps to the same
- * glyph tile — the same fallback a record with no icon gets, so "missing" and
- * "unavailable" look identical. Mirrors `ConnectorAppIcon`'s broken state.
- *
- * The latch is per URL (`failedUrl`, not a boolean): a URL that failed stays
- * failed, while a swapped URL gets a fresh try without any call-site key —
- * merge-search swaps a merged twin's icon to the managed logo as catalogue
- * pages stream in.
- */
-export function ConnectorIcon({
-  icon,
-  computer = false,
-}: {
-  icon: string | null;
-  computer?: boolean;
-}) {
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  if (!icon || failedUrl === icon) {
-    return (
-      <span className="bg-card flex size-9 shrink-0 items-center justify-center rounded-sm">
-        {computer ? <MonitorIcon className="size-5" /> : <GlobeIcon className="size-5" />}
-      </span>
-    );
-  }
-  return (
-    <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-sm">
-      {/* eslint-disable-next-line @next/next/no-img-element -- third-party
-          favicons on arbitrary hosts; the Next loader is bypassed anyway. */}
-      <img
-        src={icon}
-        alt=""
-        width={36}
-        height={36}
-        loading="lazy"
-        decoding="async"
-        referrerPolicy="no-referrer"
-        className="size-9 object-contain"
-        onError={() => setFailedUrl(icon)}
-      />
-    </span>
-  );
-}
-
-/**
  * One catalogue card: icon and title on the bare page — no border, no
  * description — with one quiet line under the title saying how the entry
  * connects.
@@ -153,42 +102,37 @@ export function ConnectorIcon({
  * `memo`'d because the grid renders several hundred of these. `entry` and `connectedKeys` are referentially stable
  * across a page landing (the arrays they come from are rebuilt, but the entry
  * objects inside them are not), so the comparison actually pays off.
- * `hrefFor`, `onOpen` and `install` must be stable for the same reason;
+ * `hrefFor` and `install` must be stable for the same reason;
  * `install` changes identity only when an install starts or ends.
  */
 const CatalogEntryCard = memo(function CatalogEntryCard({
   entry,
   connectedKeys,
   hrefFor,
-  onOpen,
   install,
 }: {
   entry: CatalogEntry;
   connectedKeys: ReadonlySet<string>;
-  hrefFor: (entry: CatalogEntry) => string | null;
-  onOpen: (entry: CatalogEntry) => void;
+  hrefFor: (entry: CatalogEntry) => string;
   install: CatalogInstall;
 }) {
   const href = hrefFor(entry);
   const connected = isCatalogEntryConnected(entry, connectedKeys);
   const shared = {
     variant: 'plain' as const,
-    leading: <ConnectorIcon icon={entry.icon} computer={entry.source === 'computer'} />,
+    leading: <ConnectorLogo source={catalogEntryLogoSource(entry)} size="lg" />,
     title: entry.name,
     subtitle: <span className="text-muted-foreground text-xs">{catalogEntryKindLabel(entry)}</span>,
     trailing: <CatalogAffordance entry={entry} connected={connected} install={install} />,
   };
-  // An entry with no page of its own (the computer card) opens in place.
-  return href ? (
-    // Only the Install control needs to sit beside the link. The "Added" badge
-    // stays inside it, so a click on the badge still opens the page.
+  // Only the Install control needs to sit beside the link. The "Added" badge
+  // stays inside it, so a click on the badge still opens the page.
+  return (
     <CatalogCard
       {...shared}
       href={href}
-      trailingInteractive={!connected && canInstallEntry(entry, install)}
+      trailingInteractive={!connected && canInstallEntry(install)}
     />
-  ) : (
-    <CatalogCard {...shared} onClick={() => onOpen(entry)} />
   );
 });
 
@@ -244,7 +188,7 @@ function CatalogFoot({
           every idle count change would narrate the whole scroll. */}
       {summary ? (
         <p
-          className="text-muted-foreground/70 flex items-center gap-2 text-xs tabular-nums"
+          className="text-muted-foreground flex items-center gap-2 text-xs tabular-nums"
           role={isLoadingMore ? 'status' : undefined}
           aria-live={isLoadingMore ? 'polite' : undefined}
         >
@@ -268,7 +212,6 @@ export function ConnectorBrowse({
   state,
   connectedKeys,
   hrefFor,
-  onOpen,
   install,
   emptyTitle,
   emptyDescription,
@@ -276,9 +219,8 @@ export function ConnectorBrowse({
 }: {
   state: CatalogState;
   connectedKeys: ReadonlySet<string>;
-  /** The card's page, or `null` for an entry that opens in place. */
-  hrefFor: (entry: CatalogEntry) => string | null;
-  onOpen: (entry: CatalogEntry) => void;
+  /** The card's app page. */
+  hrefFor: (entry: CatalogEntry) => string;
   install: CatalogInstall;
   emptyTitle: string;
   emptyDescription: string;
@@ -319,7 +261,7 @@ export function ConnectorBrowse({
         empty={
           searching ? (
             suppressNoMatch ? null : (
-              <CatalogNoMatch query={activeQuery} excludedNoActions={state.excludedNoActions} />
+              <CatalogNoMatch query={activeQuery} />
             )
           ) : (
             <EmptyState icon={GlobeIcon} size="sm" title={emptyTitle} description={emptyDescription} />
@@ -360,7 +302,6 @@ export function ConnectorBrowse({
               entry={entry}
               connectedKeys={connectedKeys}
               hrefFor={hrefFor}
-              onOpen={onOpen}
               install={install}
             />
           ))}

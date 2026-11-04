@@ -171,15 +171,12 @@ function CommandBlock({
   output,
   richOutput,
   exitCode,
-  recovered = false,
   settled,
 }: {
   command: string;
   output: string;
   richOutput: React.ReactNode;
   exitCode?: number;
-  /** A later step of the turn worked: the strip keeps the code, in the muted ink. */
-  recovered?: boolean;
   /** The call has finished. Until it has, silence means "not yet", not "none". */
   settled: boolean;
 }) {
@@ -260,10 +257,10 @@ function CommandBlock({
       {failed && (
         <div
           className={cn(
-            // `kortix-red`, matching the trigger's "Command failed": the strip
-            // is the card's own copy of the verdict, so the two agree in tone.
-            'border-border/60 border-t py-2 font-mono text-xs tabular-nums',
-            recovered ? 'text-muted-foreground' : 'text-kortix-red',
+            // Muted ink, like the trigger's "Command failed": a failed command
+            // is ordinary agent work (it reads the error and tries again), so
+            // the words carry the verdict and no color raises an alarm.
+            'border-border/60 border-t py-2 font-mono text-xs tabular-nums text-muted-foreground',
             // Metadata about the card, not a third pane: it keeps the shorter
             // 8px vertical inset, and only the horizontal one is the surface's
             // to supply.
@@ -353,7 +350,7 @@ function BashTrigger({
         {/* `truncate`, not `shrink-0`: a description title is a sentence, and
             on a narrow row a rigid one would be clipped mid-word by the
             trigger's `overflow-hidden` instead of ending in an ellipsis. */}
-        <span className={cn('min-w-0 truncate', failed ? 'text-kortix-red' : 'text-foreground')}>
+        <span className="min-w-0 truncate text-foreground">
           {title}
         </span>
         {!open && (
@@ -507,7 +504,6 @@ export function BashTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
             output={plainOutput}
             richOutput={richOutput}
             exitCode={exitCode}
-            recovered={recovered}
             settled={status === 'completed' || status === 'error'}
           />
         </div>

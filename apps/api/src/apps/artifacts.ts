@@ -223,28 +223,37 @@ export async function inspectAppArchive(archivePath: string): Promise<ArchiveIns
   }
   let files = 0;
   let extractedBytes = 0;
+  // Entry callbacks run outside tar's promise. Capture their verdict and reject
+  // only after parsing completes, before extraction can create any files.
+  let validationError: unknown;
   await tar.t({
     file: archivePath,
     strict: true,
     onentry: (entry) => {
-      validateArchiveEntry({
-        path: entry.path,
-        type: entry.type,
-        size: entry.size,
-        linkpath: entry.linkpath,
-      });
-      if (entry.type === 'File' || entry.type === 'OldFile') {
-        files += 1;
-        extractedBytes += entry.size;
-        if (files > MAX_ARCHIVE_FILES) {
-          throw new Error(`App artifact exceeds ${MAX_ARCHIVE_FILES} files`);
+      if (validationError) return;
+      try {
+        validateArchiveEntry({
+          path: entry.path,
+          type: entry.type,
+          size: entry.size,
+          linkpath: entry.linkpath,
+        });
+        if (entry.type === 'File' || entry.type === 'OldFile') {
+          files += 1;
+          extractedBytes += entry.size;
+          if (files > MAX_ARCHIVE_FILES) {
+            throw new Error(`App artifact exceeds ${MAX_ARCHIVE_FILES} files`);
+          }
+          if (extractedBytes > MAX_EXTRACTED_BYTES) {
+            throw new Error(`App artifact exceeds ${MAX_EXTRACTED_BYTES} extracted bytes`);
+          }
         }
-        if (extractedBytes > MAX_EXTRACTED_BYTES) {
-          throw new Error(`App artifact exceeds ${MAX_EXTRACTED_BYTES} extracted bytes`);
-        }
+      } catch (error) {
+        validationError = error;
       }
     },
   });
+  if (validationError) throw validationError;
   return { files, extractedBytes };
 }
 

@@ -124,7 +124,13 @@ async function executeRequest<T>(
     );
     if (response instanceof AuthError) return { error: response, success: false };
     if (!response.ok) {
-      return await handleErrorResponse(response, state.activeController.signal, showErrors, errorContext);
+      return await handleErrorResponse(
+        response,
+        state.activeController.signal,
+        showErrors,
+        errorContext,
+        fetchOptions.method,
+      );
     }
 
     let data: T;

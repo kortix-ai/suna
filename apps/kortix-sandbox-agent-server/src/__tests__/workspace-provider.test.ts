@@ -13,7 +13,7 @@
  */
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -85,9 +85,9 @@ function makeSourceRepo(root: string, marker = 'v1'): { checkout: string; sha: s
   for (let i = 0; i < 12; i += 1) {
     writeFileSync(join(checkout, 'src', `file-${i}.txt`), `${marker} file ${i}\n${'x'.repeat(4096 + i * 97)}\n`)
   }
-  mkdirSync(join(checkout, '.kortix', 'opencode'), { recursive: true })
-  writeFileSync(join(checkout, '.kortix', 'opencode', 'opencode.jsonc'), '{"$schema":"x"}\n')
-  writeFileSync(join(checkout, 'kortix.yaml'), 'kortix_version: 2\n')
+  mkdirSync(join(checkout, '.github', 'workflows'), { recursive: true })
+  writeFileSync(join(checkout, '.github', 'workflows', 'ci.yml'), 'on: push\n')
+  writeFileSync(join(checkout, 'kortix.yaml'), 'agents:\n  build:\n    prompt: Build the project.\n')
   // An in-tree symlink is ordinary Git content and must survive extraction.
   symlinkSync('README.md', join(checkout, 'README-link'))
   git(checkout, 'add', '-A')
@@ -710,9 +710,31 @@ describe('provideWorkspace — require-s3 and git', () => {
     const cfg = makeConfig(api, target, archive.sha, { KORTIX_PROJECT_SNAPSHOT_MODE: 'git' })
     const result = await provideWorkspace(cfg)
     expect(result.provider).toBe('git')
-    expect(result.summary).toMatchObject({ mode: 'git', s3_attempted: false, fallback: false, sha_matches: true })
+    expect(result.summary).toMatchObject({ mode: 'git', s3_attempted: false, fallback: false, sha_matches: true, volume: false })
     expect(api.requests).toHaveLength(0)
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
+  })
+
+  test('an empty workspace volume is filled from S3 and health reports the volume', async () => {
+    const target = join(root, 'ws')
+    // ext4's lost+found, as the runtime user sees it when the entrypoint could not remove it: unlistable.
+    const lostFound = join(target, 'lost+found')
+    mkdirSync(join(lostFound, 'x'), { recursive: true })
+    chmodSync(lostFound, 0o000)
+    try {
+      const cfg = makeConfig(api, target, archive.sha, { KORTIX_WORKSPACE_VOLUME: '1' })
+      const result = await provideWorkspace(cfg)
+      expect(result.provider).toBe('s3')
+      expect(result.summary).toMatchObject({ volume: true, fallback: false, sha_matches: true })
+      await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
+      expect(existsSync(lostFound)).toBe(true)
+      // pnpm's store and lost+found sit at the volume root: git never sees them.
+      const exclude = readFileSync(join(target, '.git', 'info', 'exclude'), 'utf8')
+      expect(exclude).toContain('/.pnpm-store/\n')
+      expect(exclude).toContain('/lost+found/\n')
+    } finally {
+      chmodSync(lostFound, 0o755)
+    }
   })
 
   test('with KORTIX_PROJECT_SNAPSHOT_MODE unset the box boots from git, with zero snapshot traffic', async () => {

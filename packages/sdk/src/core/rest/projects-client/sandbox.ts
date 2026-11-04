@@ -47,6 +47,13 @@ export interface SandboxTemplate {
   provider_state: string;
   ready: boolean;
   /**
+   * The template's residential IP (kortix.yaml `residential_proxy`, or the
+   * form's "Residential IP"): the sandbox's web traffic leaves through a
+   * residential IP address, in `country` when set. null = off. Absent from an
+   * API older than the field.
+   */
+  residential_proxy?: { country?: string } | null;
+  /**
    * Fresh launch-readiness observations for this exact content-addressed image
    * on every supported provider. The legacy single state follows the project's
    * routing mode; this array preserves the independent provider truth.
@@ -253,6 +260,8 @@ export interface CreateSandboxTemplateInput {
   cpu?: number;
   memory_gb?: number;
   disk_gb?: number;
+  /** Residential IP: true, or a country (ISO 3166-1 alpha-2). Omitted = off. */
+  residential_proxy?: boolean | { country?: string } | null;
 }
 
 export interface UpdateSandboxTemplateInput {
@@ -263,6 +272,8 @@ export interface UpdateSandboxTemplateInput {
   cpu?: number | null;
   memory_gb?: number | null;
   disk_gb?: number | null;
+  /** Residential IP: true or a country turns it on; false or null turns it off. */
+  residential_proxy?: boolean | { country?: string } | null;
 }
 
 export async function createSandboxTemplate(

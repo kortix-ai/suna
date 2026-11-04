@@ -1,6 +1,6 @@
 /**
- * When the boot restores a session log (P6.4). Both harnesses call `reconcileSessionLog`
- * before their runtime serves a turn and start the journal with what it returns
+ * When the boot restores a session log (P6.4). The pi harness calls `reconcileSessionLog`
+ * before its runtime serves a turn and starts the journal with what it returns
  * (`startSessionLogJournal(port, boot)`). When the manifest cannot be read after its retries
  * (no claim has happened yet), a box whose `held()` is not null boots on its native store at
  * its persisted generation and logs one warning; a box without a store throws. A restore that
@@ -10,14 +10,17 @@
  * journal starts without the cursors `restore` returned.
  *
  * - The flag. apps/api sets `KORTIX_SESSION_LOG_RESTORE=1` when the project flag
- *   `session_log_restore` is on. Off: no manifest read, no restore; the box keeps its native
- *   state and journals at its persisted generation (0 when it never restored).
+ *   `session_log_restore` is on; `loadConfig` sets it on a box OpenCode booted before the sunset, which
+ *   boots pi on an empty store. Off: no manifest read, no restore; the box keeps its native
+ *   state and journals at its persisted generation (0 when it never restored) with its persisted
+ *   seq offsets (a box that lost its store numbers above the log after the first 422:
+ *   `session-log-journal.ts`).
  * - Behind. `GET …/log/manifest` lists every stored message (`deleted` for a tombstone) and the
  *   session generation. The native store is behind the log when the log holds a live message
  *   and (1) the adapter's `held()` is null (no store, no pinned root, a lost seq map), or (2) the
  *   manifest generation is above the one this box persisted (another box claimed the session
  *   and wrote at it), or (3) a live message id is neither held nor one the last restore left
- *   unwritten (a `context` record, which pi and OpenCode rebuild themselves).
+ *   unwritten (a `context` record, which pi rebuilds itself).
  * - Never behind for unsent work. Ids only: a message the native store holds that the log
  *   lacks (a turn not yet journaled), a newer version of a message the log holds, and a
  *   message the store deleted after holding it (a revert not yet tombstoned: `held()` keeps
@@ -34,11 +37,16 @@
  *   dir, after the write, so a crash mid-write reads as behind at the next boot. A 404 (no
  *   stored log) or 503 (the operator switch is off) claims nothing and restores nothing. Any
  *   other failure is retried: 3 attempts, each a new claim; then the boot fails.
- * - Over the cap. A 413 `session_log_too_large` claimed but carries no message: the box writes the
- *   log's root with the D3 note alone (above `seq_max`), keeps no other thread, and persists every
- *   stored id (`revs`) as unwritten, so later boots do not read the store as behind. The notice
- *   counts the left-out messages as `dropped.message`. A 413 with another body (a proxy) claimed
- *   nothing: no restore, as a 404.
+ * - The lease. A 401 to the manifest or the restore is a wake that beat the API to the sandbox row
+ *   (`LEASE_ATTEMPTS`): the request goes again, `retryMs` apart, with the env's current credential,
+ *   15 times in all. A 401 claims nothing. The last one reads as a 403: no reconcile here.
+ * - Over the cap. A 413 `session_log_too_large` claimed, and carries the part of the log that fits (`kept`).
+ *   The box writes the threads as sent and persists every other stored id (`revs`) as unwritten, so later
+ *   boots do not read the store as behind. `model_view`: what the model sees; the cut adds no note and no
+ *   `dropped.message` (the writer's own losses still count). `newest`: the newest turns; the D3 note names
+ *   the left-out messages, counted as `dropped.message`. No `kept` (an API before it, or nothing fits): the
+ *   box writes the log's root with the D3 note alone (above `seq_max`) and keeps no other thread. A 413 with
+ *   another body (a proxy) claimed nothing: no restore, as a 404.
  * - D3, a partial restore (the log's grade is `partial`, or the write dropped content, or a
  *   text kept its preview). The agent: a user message with one text block
  *   (`prt_kortix_restore_g<generation>`) after every seq the API holds, under a wire id above
@@ -86,13 +94,15 @@ export type SessionLogBoot = {
   session?: SessionLogSessionPatch
   /** The restored log's harness history: the journal keeps it and appends this box's harness when it is another (P7.1). */
   harness?: HarnessCarry
+  /** The journal's seq offsets (a 422 moved a thread above the log: `session-log-journal.ts`); a restore clears them. */
+  seq_offsets?: Record<string, number>
 }
 
 /** The log's harness history at the restore, and the root seq and time from which this box's harness serves the session. */
 export type HarnessCarry = { history: SessionLog['harness']['history']; from_seq: number; at: string }
 
 /** `claiming`: a restore POST went out and no answer settled it; the API may hold a claim above `generation`. */
-type BootState = { version: 1; generation: number; unwritten: string[]; session?: SessionLogSessionPatch; harness?: HarnessCarry; claiming?: true }
+type BootState = { version: 1; generation: number; unwritten: string[]; session?: SessionLogSessionPatch; harness?: HarnessCarry; claiming?: true; seq_offsets?: Record<string, number> }
 
 export const sessionLogBootStatePath = () => join(resolveKortixRuntimeStateDirectory(), 'session-log-restore.json')
 
@@ -113,7 +123,22 @@ function writeState(s: BootState): void {
   renameSync(`${path}.tmp`, path)
 }
 
-const kept = (s: BootState): SessionLogBoot => ({ generation: s.generation, cursors: [], ...(s.session && { session: s.session }), ...(s.harness && { harness: s.harness }) })
+const kept = (s: BootState): SessionLogBoot => ({
+  generation: s.generation,
+  cursors: [],
+  ...(s.session && { session: s.session }),
+  ...(s.harness && { harness: s.harness }),
+  ...(s.seq_offsets && { seq_offsets: s.seq_offsets }),
+})
+
+/** The journal keeps its seq offsets beside the generation they belong to. A restore writes a state without them. */
+export function saveSeqOffsets(seq_offsets: Record<string, number>): void {
+  try {
+    writeState({ ...readState(), seq_offsets })
+  } catch (err) {
+    logger.warn('[session-log] could not persist the seq offsets; a restarted daemon learns them again', { err: String(err) })
+  }
+}
 
 /** No claim above `generation` stands: clear the mark a restore POST left. */
 function settled(s: BootState): SessionLogBoot {
@@ -132,7 +157,7 @@ export async function reconcileSessionLog(port: SessionLogPort, { retryMs = 1_00
   const held = await port.held()
   let manifest: Awaited<ReturnType<typeof readManifest>>
   try {
-    manifest = await attempts('manifest', retryMs, () => readManifest(ctx))
+    manifest = await attempts('manifest', retryMs, () => readManifest(ctx, retryMs))
   } catch (err) {
     // No claim happens before the manifest: a box with a store boots on it. A box with no store fails, and so
     // does one whose earlier restore POST may have claimed (`claiming`): its store may be below that claim.
@@ -155,7 +180,7 @@ export async function reconcileSessionLog(port: SessionLogPort, { retryMs = 1_00
   // A 404/503 settles the claim only before any attempt failed: a failed attempt may have claimed.
   let failed = false
   return attempts('restore', retryMs, async () => {
-    const boot = await restore(ctx, port).catch((err) => {
+    const boot = await restore(ctx, port, retryMs).catch((err) => {
       failed = true
       throw err
     })
@@ -179,14 +204,32 @@ async function attempts<T>(what: string, retryMs: number, run: () => Promise<T>)
 
 const url = (ctx: SandboxRelayContext, path: string) => `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/log/${path}`
 
+/**
+ * A 401 at a wake is the box racing its session lease: the API refuses a session credential until the
+ * sandbox row is `provisioning`/`active` again, and a wake can install a new credential right after
+ * (KRTX-2545). Prod, 2026-10-30 to 11-01: 30 manifest reads answered `Session token is not active`, and
+ * the same box's next control-plane call, 1-9 s later, answered 200. A 401 comes from the auth
+ * middleware, before any claim, so the same request goes again `retryMs` apart with the env's current
+ * credential, up to this many times in all. The last 401 reads as before: no reconcile here.
+ */
+const LEASE_ATTEMPTS = 15
+
 /** The response, or null for an answer that says "no reconcile here" (403, 404, 503, another 4xx); throws on what a retry may fix. */
-async function call(ctx: SandboxRelayContext, path: string, method: 'GET' | 'POST'): Promise<Response | null> {
-  const response = await fetch(url(ctx, path), {
-    method,
-    headers: { Authorization: `Bearer ${ctx.token}`, 'Accept-Encoding': 'gzip' },
-    signal: AbortSignal.timeout(path === 'restore' ? 120_000 : 15_000),
-  })
-  // A 413 to the restore claimed: the answer is the log without messages (`session_log_too_large`).
+async function call(ctx: SandboxRelayContext, path: string, method: 'GET' | 'POST', retryMs: number): Promise<Response | null> {
+  const send = () =>
+    fetch(url(ctx, path), {
+      method,
+      headers: { Authorization: `Bearer ${(sandboxRelayContext() ?? ctx).token}`, 'Accept-Encoding': 'gzip' },
+      signal: AbortSignal.timeout(path === 'restore' ? 120_000 : 15_000),
+    })
+  let response = await send()
+  for (let n = 1; response.status === 401 && n < LEASE_ATTEMPTS; n++) {
+    if (n === 1) logger.warn(`[session-log] ${path} answered 401; waiting for the session lease`)
+    await response.body?.cancel()
+    await Bun.sleep(retryMs)
+    response = await send()
+  }
+  // A 413 to the restore claimed: the answer is the part of the log that fits (`session_log_too_large`).
   if (response.ok || (path === 'restore' && response.status === 413)) return response
   const body = (await response.text().catch(() => '')).slice(0, 200)
   if (response.status >= 500 && response.status !== 503) throw new Error(`${path} answered ${response.status}: ${body}`)
@@ -195,8 +238,8 @@ async function call(ctx: SandboxRelayContext, path: string, method: 'GET' | 'POS
   return null
 }
 
-async function readManifest(ctx: SandboxRelayContext) {
-  const response = await call(ctx, 'manifest', 'GET')
+async function readManifest(ctx: SandboxRelayContext, retryMs: number) {
+  const response = await call(ctx, 'manifest', 'GET', retryMs)
   return response && SessionLogManifestSchema.parse(await response.json())
 }
 
@@ -212,9 +255,11 @@ function behind(manifest: { generation: number; messages: Array<{ message_id: st
 }
 
 /** Claim, read and write. Null when the API claimed nothing (404, 503). */
-async function restore(ctx: SandboxRelayContext, port: SessionLogPort): Promise<SessionLogBoot | null> {
-  const response = await call(ctx, 'restore', 'POST')
+async function restore(ctx: SandboxRelayContext, port: SessionLogPort, retryMs: number): Promise<SessionLogBoot | null> {
+  const response = await call(ctx, 'restore', 'POST', retryMs)
   if (!response) return null
+  // The attachment and text reads carry the credential that got the answer (a wake may have replaced it).
+  const reads = sandboxRelayContext() ?? ctx
   const status = response.status
   const answer = (await response.json().catch((err) => (status === 413 ? null : Promise.reject(err)))) as SessionLogRestore | SessionLogRestoreTooLarge | null
   // A 413 from anything but the API (a proxy) reached no claim.
@@ -224,15 +269,20 @@ async function restore(ctx: SandboxRelayContext, port: SessionLogPort): Promise<
   }
   if (!answer || !Number.isSafeInteger(answer.generation) || !Array.isArray(answer.log?.threads)) throw new Error('the restore answer is not a SessionLogRestore')
   const tooLarge = status === 413 ? (answer as SessionLogRestoreTooLarge) : null
-  // Over the cap: the root alone, which gets the D3 note; the box keeps no other thread.
-  if (tooLarge) {
+  // Over the cap without `kept`: the root alone, which gets the D3 note; the box keeps no other thread.
+  if (tooLarge && !tooLarge.kept) {
     const root = tooLarge.log.threads.find((t) => t.parent_thread_id === null) ?? tooLarge.log.threads[0]
     tooLarge.log.threads = root ? [{ ...root, messages: [] }] : []
     logger.warn('[session-log] the log is over the restore cap; the box boots with the D3 note alone', { generation: answer.generation, bytes: tooLarge.bytes, limit: tooLarge.limit, messages: tooLarge.messages })
+  } else if (tooLarge) {
+    const kept = tooLarge.log.threads.reduce((n, t) => n + t.messages.length, 0)
+    logger.info('[session-log] the log is over the restore cap; the box restores a part of it', { mode: tooLarge.kept, kept, left_out: tooLarge.messages, threads: tooLarge.log.threads.length, generation: answer.generation, bytes: tooLarge.bytes, limit: tooLarge.limit })
   }
+  // The cut is a loss only when the model does not get what it saw: not for `model_view`.
+  const cut = tooLarge?.kept === 'model_view' ? null : tooLarge
   // Both budgets run at once: the attachment reads do not wait for the texts.
-  const bytes = attachmentBytes(answer.log as SessionLog, apiBytesReader(ctx))
-  const { log, seq_max, truncated } = await sessionLogFromRestore(answer, apiTextReader(ctx))
+  const bytes = attachmentBytes(answer.log as SessionLog, apiBytesReader(reads))
+  const { log, seq_max, truncated } = await sessionLogFromRestore(answer, apiTextReader(reads))
   const prefetched = await bytes
   const read = async (ref: string) => prefetched.get(ref) ?? null
   if (log.threads.length === 0) {
@@ -243,11 +293,12 @@ async function restore(ctx: SandboxRelayContext, port: SessionLogPort): Promise<
   const floor = Math.max(seq_max[root.thread_id] ?? 0, ...root.messages.map((m) => m.seq))
   const harness: HarnessCarry = { history: restoredHistory(log), from_seq: floor + 1, at: new Date().toISOString() }
   let result = await port.restore(log, seq_max, read)
-  const dropped = tooLarge ? { ...result.dropped, message: tooLarge.messages } : result.dropped
+  const dropped = cut ? { ...result.dropped, message: cut.messages } : result.dropped
   let note: SessionLogMessage | null = null
-  const notice = partialNotice(log, dropped, truncated, answer.generation, tooLarge)
+  const notice = partialNotice(log, dropped, truncated, answer.generation, cut)
   // One note per loss: a partial log that already holds an earlier note gets none for the old loss.
-  const earlierNote = log.threads.some((t) => t.messages.some(isRestoreNote))
+  // A `model_view` part may have left that note out, so it gets a note only for its own losses.
+  const earlierNote = tooLarge?.kept === 'model_view' || log.threads.some((t) => t.messages.some(isRestoreNote))
   if (notice && (Object.keys(dropped).length > 0 || truncated.length > 0 || !earlierNote)) {
     note = noteMessage(root, floor + 1, answer.generation, notice.text)
     root.messages.push(note)
@@ -333,9 +384,11 @@ function partialNotice(log: SessionLog, dropped: Record<string, number>, truncat
   const size = (n: number) => (n >= 1024 ** 2 ? `${+(n / 1024 ** 2).toFixed(1)} MiB` : n >= 1024 ? `${+(n / 1024).toFixed(1)} KiB` : `${n} bytes`)
   const text =
     'Kortix: this session was restored from its saved session log. ' +
-    (tooLarge
-      ? `Its earlier conversation (${tooLarge.messages} messages, ${size(tooLarge.bytes)}) is above the ${size(tooLarge.limit)} restore limit and was not restored. `
-      : `Some earlier content could not be restored${items.length ? `: ${items.join(', ')}` : ''}. `) +
+    (tooLarge?.kept === 'newest'
+      ? `Its ${tooLarge.messages} earliest messages were not restored: the conversation (${size(tooLarge.bytes)}) is above the ${size(tooLarge.limit)} restore limit, and the newest messages that fit were restored. `
+      : tooLarge
+        ? `Its earlier conversation (${tooLarge.messages} messages, ${size(tooLarge.bytes)}) is above the ${size(tooLarge.limit)} restore limit and was not restored. `
+        : `Some earlier content could not be restored${items.length ? `: ${items.join(', ')}` : ''}. `) +
     'If you need it, ask the user to send it again.'
   return {
     text,

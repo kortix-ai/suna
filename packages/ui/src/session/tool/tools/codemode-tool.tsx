@@ -96,7 +96,7 @@ function formatDuration(ms: number): string {
 function CallMark({ status }: { status: ScriptCall['status'] }) {
   if (status === 'running') return <Loading className="text-muted-foreground size-3 shrink-0" />;
   if (status === 'ok') return <CheckIcon className="text-kortix-green size-3 shrink-0" />;
-  if (status === 'error') return <WarningIcon weight="fill" className="text-kortix-red size-3 shrink-0" />;
+  if (status === 'error') return <WarningIcon weight="fill" className="text-muted-foreground size-3 shrink-0" />;
   if (status === 'refused') return <ProhibitIcon weight="fill" className="text-kortix-orange size-3 shrink-0" />;
   return <MinusIcon className="text-muted-foreground size-3 shrink-0" />;
 }

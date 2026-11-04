@@ -2,6 +2,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies, headers } from 'next/headers';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from './constants';
+import { authCookieOptions, hasPanelMarker } from './panel-cookies';
 
 export async function createClient() {
   const cookieStore = await cookies();
@@ -38,14 +39,13 @@ export async function createClient() {
 
   return createServerClient(supabaseUrl, supabaseAnonKey, {
     global: { headers: forwarded },
+    // `@supabase/ssr` never sets `secure` itself — see the doc comment in
+    // `lib/supabase/client.ts`. Server-side, `NODE_ENV` is the reliable signal
+    // (mirrors `MAINTENANCE_BYPASS_COOKIE`'s route handler). A request from the
+    // Kortix in Chrome side panel gets partitioned cookies (panel-cookies.ts).
     cookieOptions: {
       name: KORTIX_SUPABASE_AUTH_COOKIE,
-      path: '/',
-      sameSite: 'lax',
-      // `@supabase/ssr` never sets this itself — see the doc comment in
-      // `lib/supabase/client.ts`. Server-side, `NODE_ENV` is the reliable
-      // signal (mirrors `MAINTENANCE_BYPASS_COOKIE`'s route handler).
-      secure: process.env.NODE_ENV === 'production',
+      ...authCookieOptions(hasPanelMarker(cookieStore), process.env.NODE_ENV === 'production'),
     },
     cookies: {
       getAll() {

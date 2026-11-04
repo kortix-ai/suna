@@ -56,6 +56,17 @@ export interface GatewayLogsResponse {
 }
 
 export interface GatewayOverview {
+  valuation?: {
+    rate_version: string;
+    rate_source: string;
+    coverage: string;
+    subscription_fee: number | null;
+    subscription_allocation: number | null;
+  };
+  /** Comparable retail LLM value, not a charge. Null means unknown. */
+  estimated_usage_value?: number | null;
+  priced_requests?: number;
+  unpriced_requests?: number;
   window_days: number;
   requests: number;
   errors: number;
@@ -76,6 +87,10 @@ export interface GatewayOverview {
 }
 
 export interface GatewaySeriesPoint {
+  /** Comparable retail LLM value, not a charge. Null means unknown. */
+  estimated_usage_value?: number | null;
+  priced_requests?: number;
+  unpriced_requests?: number;
   day: string;
   requests: number;
   errors: number;
@@ -114,6 +129,10 @@ export interface GatewaySeries {
 }
 
 export interface GatewayModelStat {
+  /** Comparable retail LLM value, not a charge. Null means unknown. */
+  estimated_usage_value?: number | null;
+  priced_requests?: number;
+  unpriced_requests?: number;
   model: string;
   provider: string;
   requests: number;
@@ -139,6 +158,10 @@ export interface GatewayBreakdown {
 }
 
 export interface GatewaySessionStat {
+  /** Comparable retail LLM value, not a charge. Null means unknown. */
+  estimated_usage_value?: number | null;
+  priced_requests?: number;
+  unpriced_requests?: number;
   session_id: string;
   llm_cost: number;
   compute_cost: number;

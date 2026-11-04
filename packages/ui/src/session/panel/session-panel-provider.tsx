@@ -1,5 +1,6 @@
 'use client';
 
+import { ArtifactPanelPreview } from '../../artifacts/artifact-session';
 import { useTranslations } from '../../i18n';
 /**
  * `SessionPanelProvider` — the single owner of everything a session's panel
@@ -29,7 +30,9 @@ import { useTranslations } from '../../i18n';
 
 import { SessionAuditPanel } from './session-audit-panel';
 import { SessionRemindersPanel } from './session-reminders-panel';
-import { SessionFilesExplorer } from './session-files-explorer';
+import { SessionDesktop } from './session-desktop';
+import { SessionFilesBooting, SessionFilesExplorer } from './session-files-explorer';
+import { SessionBootStatus } from '../status/session-starting-loader';
 import { useSandboxProxy } from '../../internal/hooks/use-sandbox-proxy';
 import { OutputPathsContext } from '../../markdown/code/output-paths-context';
 import { useIsMobile } from '../../hooks/use-mobile';
@@ -48,9 +51,7 @@ import {
 } from '../../internal/stores/session-panel-memory-store';
 import { useUserPreferencesStore } from '../../internal/stores/user-preferences-store';
 import { getProjectSession, SANDBOX_PORTS } from '@kortix/sdk';
-import { qk } from '@kortix/sdk/react';
 import { FileTextIcon as FileText } from '@phosphor-icons/react';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   createContext,
   type ReactNode,
@@ -61,7 +62,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { AppPreview } from './easy/app-preview';
+import { AppPreview, AppPreviewBooting } from './easy/app-preview';
 import type { Detail } from './easy/detail-view';
 import {
   isWideDeliverable,
@@ -86,6 +87,9 @@ export interface SessionPanelValue {
   sessionId: string;
   projectId?: string;
   projectSessionId?: string;
+  /** The session's computer is still starting (the boot shell). Tool cards
+   *  draw their chrome around a status body until it is up. */
+  booting?: boolean;
 
   /** Card data — everything the floating overlay renders. */
   files: OutputItem[];
@@ -107,6 +111,7 @@ export interface SessionPanelValue {
   openFiles: (changes?: boolean) => void;
   openAudit: () => void;
   openReminders: () => void;
+  openDesktop: () => void;
 }
 
 /**
@@ -121,7 +126,7 @@ export const SessionPanelContext = createContext<SessionPanelValue | null>(null)
  * The panel value, or null outside a provider.
  *
  * Optional on purpose, exactly as `useOptionalSidebar` is: `SessionChat` has a
- * second call site in `sub-session-modal.tsx` that renders it read-only and
+ * second call site in `legacy-subagent-chat.tsx` that renders it read-only and
  * OUTSIDE `SessionLayout`. The floating overlay self-gates to null there rather
  * than every call site having to know which tree it is in.
  */
@@ -129,11 +134,21 @@ export function useOptionalSessionPanel(): SessionPanelValue | null {
   return useContext(SessionPanelContext);
 }
 
+/**
+ * A tool card's body: `boot` while the session's computer starts, `children`
+ * once it is up. Read at render time, not when the card opens, so a card
+ * opened during boot turns live in place.
+ */
+export function SessionBootGate({ boot, children }: { boot: ReactNode; children: ReactNode }) {
+  return useOptionalSessionPanel()?.booting ? boot : children;
+}
+
 export function SessionPanelProvider({
   sessionId,
   isSessionBusy = false,
   projectId,
   projectSessionId,
+  booting = false,
   children,
 }: {
   /** The runtime session id: the root thread of the session log. */
@@ -145,9 +160,12 @@ export function SessionPanelProvider({
    *  case the palette's "Open Audit" consume below becomes a no-op. */
   projectId?: string;
   projectSessionId?: string;
+  /** See `SessionPanelValue.booting`. */
+  booting?: boolean;
   children: ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tDesktop = useTranslations('sessionDesktop');
   const tReminders = useTranslations('reminders');
   const { steps, outputs, context, apps, files, isRunning, outcome } = usePanelDerivations({
     sessionId, projectId, projectSessionId, isSessionBusy,
@@ -443,19 +461,41 @@ export function SessionPanelProvider({
           padded: false,
           nav,
           body: (
-            <AppPreview
-              url={output.url ?? ''}
-              name={displayName}
-              projectId={projectId}
-              shareContext={
-                projectId && projectSessionId
-                  ? { projectId, sessionId: projectSessionId }
-                  : undefined
+            <SessionBootGate
+              boot={
+                <AppPreviewBooting onClose={closeDetail}>
+                  <SessionBootStatus projectId={projectId} sessionId={projectSessionId} />
+                </AppPreviewBooting>
               }
-              onClose={closeDetail}
-              onSendToAgent={() => sendAppToAgent(output)}
-            />
+            >
+              <AppPreview
+                url={output.url ?? ''}
+                name={displayName}
+                projectId={projectId}
+                shareContext={
+                  projectId && projectSessionId
+                    ? { projectId, sessionId: projectSessionId }
+                    : undefined
+                }
+                onClose={closeDetail}
+                onSendToAgent={() => sendAppToAgent(output)}
+              />
+            </SessionBootGate>
           ),
+        });
+        setPanelSplit(split);
+        return;
+      }
+
+      if (output.kind === 'artifact') {
+        track('deliverable_opened', { kind: output.kind, source });
+        openDetail({
+          key: `artifact:${output.url}`,
+          title: displayName,
+          hideHeader: true,
+          padded: false,
+          nav,
+          body: <ArtifactPanelPreview url={output.url} onClose={closeDetail} />,
         });
         setPanelSplit(split);
         return;
@@ -521,6 +561,23 @@ export function SessionPanelProvider({
     });
   }, [openDetail, projectId, projectSessionId, tReminders]);
 
+  /** The session computer's live screen (`SessionDesktop`), at the wide split
+   *  a presentation gets: the stream is a 16:10 screen, not a text column. */
+  const openDesktop = useCallback(() => {
+    openDetail({
+      key: 'desktop',
+      title: tDesktop('title'),
+      hideHeader: true,
+      padded: false,
+      body: (
+        <SessionBootGate boot={<SessionBootStatus projectId={projectId} sessionId={projectSessionId} />}>
+          <SessionDesktop projectId={projectId} projectSessionId={projectSessionId} onClose={closeDetail} />
+        </SessionBootGate>
+      ),
+    });
+    setPanelSplit(70);
+  }, [openDetail, closeDetail, setPanelSplit, projectId, projectSessionId, tDesktop]);
+
   /**
    * The opt-in File Explorer (Marko's ask). Never a default view and never a
    * tab — it opens only when asked for, exactly like Terminal and Audit, so
@@ -541,13 +598,21 @@ export function SessionPanelProvider({
         title: changes ? 'Changes' : 'Files',
         padded: false,
         body: (
-          <SessionFilesExplorer
-            chatSessionId={sessionId}
-            projectId={projectId}
-            projectSessionId={projectSessionId}
-            ephemeral
-            initialMode={changes ? 'changes' : 'files'}
-          />
+          <SessionBootGate
+            boot={
+              <SessionFilesBooting mode={changes ? 'changes' : 'files'}>
+                <SessionBootStatus projectId={projectId} sessionId={projectSessionId} />
+              </SessionFilesBooting>
+            }
+          >
+            <SessionFilesExplorer
+              chatSessionId={sessionId}
+              projectId={projectId}
+              projectSessionId={projectSessionId}
+              ephemeral
+              initialMode={changes ? 'changes' : 'files'}
+            />
+          </SessionBootGate>
         ),
       });
     },
@@ -579,7 +644,7 @@ export function SessionPanelProvider({
 
   const { outputsDefaultOpen, pendingQuickView } = usePanelHandoffs({
     sessionId, projectId, projectSessionId, isRunning, outcome, apps, files, steps,
-    detail, handleOpenOutput, openDetail, openTerminal, openAudit, openReminders, openBrowser, openFiles,
+    detail, handleOpenOutput, openDetail, openTerminal, openAudit, openReminders, openDesktop, openBrowser, openFiles,
   });
 
   // The panel comes back with the session: what it showed is remembered while
@@ -594,7 +659,6 @@ export function SessionPanelProvider({
   const sidePanelOpen = useKortixComputerStore((s) => s.isSidePanelOpen);
   const advancedPanel = useUserPreferencesStore((s) => s.preferences.panelMode === 'advanced');
   const isMobile = useIsMobile();
-  const queryClient = useQueryClient();
   // Nothing is recorded before the arrival is decided: until then the panel is
   // closed by the arrival itself, not by the person.
   const [restoreSettled, setRestoreSettled] = useState(false);
@@ -611,12 +675,11 @@ export function SessionPanelProvider({
     let alive = true;
     // A FRESH row, never the cached one: it can be 30 s old, and reopening a
     // Terminal on a session stopped since then wakes its computer (measured).
-    void queryClient
-      .fetchQuery({
-        queryKey: qk.project.session(projectId, projectSessionId),
-        queryFn: () => getProjectSession(projectId, projectSessionId, { showErrors: false }),
-        staleTime: 0,
-      })
+    // Its own request, not the query cache's: `fetchQuery` joins the page's
+    // in-flight fetch of the same row, a refetch on arrival cancels that
+    // (`CancelledError`), and the restore was dropped on about half the
+    // returns from another session (measured).
+    void getProjectSession(projectId, projectSessionId, { showErrors: false })
       .then((row) => {
         if (!alive) return;
         const panel = panelToRestore({
@@ -640,7 +703,7 @@ export function SessionPanelProvider({
       alive = false;
       setRestoreSettled(true);
     };
-  }, [isActivePanel, memoryKey, isMobile, projectId, projectSessionId, queryClient, sessionId]);
+  }, [isActivePanel, memoryKey, isMobile, projectId, projectSessionId, sessionId]);
   // A file preview reopens once the transcript has derived its output, and only
   // if the person has not opened something else meanwhile.
   useEffect(() => {
@@ -691,6 +754,7 @@ export function SessionPanelProvider({
       sessionId,
       projectId,
       projectSessionId,
+      booting,
       files,
       context,
       apps,
@@ -707,11 +771,13 @@ export function SessionPanelProvider({
       openFiles,
       openAudit,
       openReminders,
+      openDesktop,
     }),
     [
       sessionId,
       projectId,
       projectSessionId,
+      booting,
       files,
       context,
       apps,
@@ -728,6 +794,7 @@ export function SessionPanelProvider({
       openFiles,
       openAudit,
       openReminders,
+      openDesktop,
     ],
   );
 

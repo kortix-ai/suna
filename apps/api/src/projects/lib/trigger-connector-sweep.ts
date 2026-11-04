@@ -2,12 +2,15 @@ import { connectors, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq, gt, or, sql } from 'drizzle-orm';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { db } from '../../shared/db';
-import { invalidateProjectMirror } from '../git';
-import { countUncatalogedTriggerProjects } from '../trigger-execution-store';
 import type { ProjectRow } from './serializers';
 import { schedulerHealth, connectorProjectConcurrency, connectorProjectTimeoutMs, manifestCatalogBatchSize, manifestDiscoveryBatchSize, mapWithConcurrency, withTimeout } from './trigger-scheduler-state';
 
-let manifestCatalogCursor: string | null = null;
+// A new leader starts both cursors at a random project. They live in this
+// process, and autoscaling moves the leader every few hours: from a fixed start
+// every short leader term visits the same first projects and rarely the last.
+// ponytail: uniform coverage in expectation only; keep the cursors in the
+// database if a hard bound on the time between two visits is ever needed.
+let manifestCatalogCursor: string | null = crypto.randomUUID();
 
 /** Select one keyset-paginated batch of known trigger or connector projects. */
 async function selectManifestCatalogProjects(): Promise<ProjectRow[]> {
@@ -41,7 +44,7 @@ async function selectManifestCatalogProjects(): Promise<ProjectRow[]> {
   return rows;
 }
 
-let manifestDiscoveryCursor: string | null = null;
+let manifestDiscoveryCursor: string | null = crypto.randomUUID();
 
 /**
  * Select one keyset-paginated batch for raw git pushes.
@@ -78,16 +81,12 @@ export async function runProjectConnectorSweep(): Promise<{
   const startedMs = Date.now();
   const out = { scanned: 0, synced: 0, errors: 0 };
   let status: 'completed' | 'failed' = 'completed';
-  let catalogCycleCompleted = false;
-  let discoveryCycleCompleted = false;
   try {
     const { syncProjectConnectors } = await import('../../connectors/sync');
     const [catalogProjects, discoveryProjects] = await Promise.all([
       selectManifestCatalogProjects(),
       selectManifestDiscoveryProjects(),
     ]);
-    catalogCycleCompleted = manifestCatalogCursor === null;
-    discoveryCycleCompleted = manifestDiscoveryCursor === null;
     const uniqueProjects = new Map<string, ProjectRow>();
     for (const project of [...catalogProjects, ...discoveryProjects]) {
       uniqueProjects.set(project.projectId, project);
@@ -98,10 +97,9 @@ export async function runProjectConnectorSweep(): Promise<{
       projectsForSweep,
       connectorProjectConcurrency(),
       async (project) => {
-        invalidateProjectMirror(project.projectId);
         try {
           const result = await withTimeout(
-            syncProjectConnectors(project.projectId, project.accountId),
+            syncProjectConnectors(project.projectId, project.accountId, { reuseManifestAtTip: true }),
             connectorProjectTimeoutMs(),
             `sync connectors ${project.projectId}`,
           );
@@ -120,7 +118,6 @@ export async function runProjectConnectorSweep(): Promise<{
       out.synced += result.synced;
       out.errors += result.errors;
     }
-    schedulerHealth.catalogPendingProjects = await countUncatalogedTriggerProjects();
     schedulerHealth.lastCatalogSweepError = null;
     return out;
   } catch (error) {
@@ -137,12 +134,6 @@ export async function runProjectConnectorSweep(): Promise<{
     schedulerHealth.lastCatalogSweepResult = out;
     schedulerHealth.catalogCursor = manifestCatalogCursor;
     schedulerHealth.discoveryCursor = manifestDiscoveryCursor;
-    if (status === 'completed' && catalogCycleCompleted) {
-      schedulerHealth.catalogCycleCompletedAt = completedAt;
-    }
-    if (status === 'completed' && discoveryCycleCompleted) {
-      schedulerHealth.discoveryCycleCompletedAt = completedAt;
-    }
     connectorSweepRunning = false;
     console.log('[project-connectors] sweep completed', {
       status,

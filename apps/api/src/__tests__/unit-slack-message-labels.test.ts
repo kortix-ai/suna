@@ -21,6 +21,8 @@ let userDelayMs = 0;
 let userGate: Promise<void> | null = null;
 
 mock.module('../channels/install-store', () => ({
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   loadSlackTokenForProject: async () => token,
 }));
 

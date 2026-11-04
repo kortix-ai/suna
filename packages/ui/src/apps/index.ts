@@ -13,11 +13,15 @@ export {
   scheduleSlowPreview,
 } from './app-preview';
 export {
+  claimFrame,
   ensureFrame,
   frameKey,
   framesKeepAlive,
   pruneFrames,
   reloadFrame,
+  restyleFrame,
+  useFrameStatus,
+  type FramePlacement,
 } from './app-preview-pool';
 export {
   ANONYMOUS_MODES,
@@ -25,12 +29,17 @@ export {
   appCan,
   appCommand,
   appHost,
+  appSizeLabel,
+  DeployCommand,
   appStatus,
   appTabLabel,
   cardPreviewApp,
   childApps,
   deployNotice,
   gridApps,
+  hiddenApps,
+  appTriggers,
+  backgroundSummary,
   localizedAppCopy,
 } from './app-shared';
 export { isKortixAppUrl } from './kortix-app-url';

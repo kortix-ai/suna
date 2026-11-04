@@ -1,13 +1,11 @@
 /**
  * Control operations for a pi session: live environment apply, repository
- * refresh, abort. The host-level steps (project env store, agent env file,
- * egress shim, LLM gateway target) are the same ones the OpenCode adapter runs;
- * the harness-specific part is trivially cheaper — pi re-reads its settings in
- * place, there is no process to restart and no turn to interrupt.
+ * refresh, abort. pi re-reads its settings in place: there is no process to
+ * restart and no turn to interrupt.
  */
 import { writeAgentEnvFile } from '../shared/agent-env-file'
 import { syncEgressShim } from '@/services/egress-shim'
-import { readRepoInfo, refreshRepo, syncWorkspaceToBase } from '@/lib/git/git'
+import { readRepoInfo, refreshRepo } from '@/lib/git/git'
 import { llmProxyBaseUrl, setLlmProxyToken } from '@/services/llm-proxy/llm-proxy'
 import { logger } from '@/lib/log/logger'
 import { reconcileProjectEnv } from '@/services/sandbox-env/project-env'
@@ -21,7 +19,7 @@ import type { PiRuntime } from './runtime'
 /** A config release owns these while it runs; the next convergence delivers newer ones. */
 const RELEASE_OWNED_ENV_NAMES = new Set(['KORTIX_COMPILED_AGENT_CONFIG', 'KORTIX_COMPILED_AGENT_CONFIG_ETAG'])
 
-/** The session-runtime values a live `POST /kortix/env` may move. Same allowlist as OpenCode's. */
+/** The session-runtime values a live `POST /kortix/env` may move. */
 const RUNTIME_ENV_NAMES = new Set([
   'KORTIX_LLM_BASE_URL',
   'KORTIX_LLM_PROXY_URL',
@@ -126,8 +124,9 @@ export function createPiControlService(
             reload = 'disposed'
             logger.info('[env] runtime env applied to pi in place', { runtimeEnvNames, changed: applied.changed })
           } else if (rt && body.refreshModels === true) {
-            // Only the served models changed (a custom endpoint saved): re-read their limits.
-            await rt.refreshModels()
+            // Only the served models changed (a custom endpoint saved), or nothing did: re-read their
+            // limits in the background. The prompt this push precedes never waits for the gateway.
+            rt.refreshModelsSoon()
           }
           onStateChanged()
 
@@ -152,17 +151,13 @@ export function createPiControlService(
             runtime_turn_ended: reload ? false : null,
           }
         },
-        async refresh({ syncBase, skipRepo, baseSha }: HarnessRefreshInput) {
-          const repo = syncBase
-            ? await syncWorkspaceToBase(cfg, baseSha)
-            : skipRepo
-              ? await unchangedRepo(cfg.projectTarget)
-              : await refreshRepo(cfg)
+        async refresh({ skipRepo }: HarnessRefreshInput) {
+          const repo = skipRepo ? await unchangedRepo(cfg.projectTarget) : await refreshRepo(cfg)
           const rt = runtime()
           // Off the release path skills live in the working tree, and a pull can
           // change them. On it, reloading reads the same release again.
           if (rt) await rt.reloadSkills().catch((err) => logger.warn('[refresh] pi skill reload failed', { err: (err as Error).message }))
-          if (rt?.getState() === 'ok') scheduleRuntimeAssetsReconcile(cfg)
+          if (rt?.getState() === 'ok') scheduleRuntimeAssetsReconcile()
           return {
             ok: true,
             repo: { before: repo.before, after: repo.after },

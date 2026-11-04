@@ -4,13 +4,13 @@ import { Drawer, DrawerContent } from '../primitives/drawer';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../primitives/resizable';
 import { BrowserPanel } from '../browser/browser-panel';
 import { SessionDetailPanel } from '../session/panel/session-detail-panel';
+import { SessionOutcomesBridge } from '../session/outcomes/session-outcomes-bridge';
 import { SessionPanelProvider } from '../session/panel/session-panel-provider';
 import { MobileToolDrawer } from '../session/panel/mobile-tool-drawer';
 import { ProviderPoolDraftBoundary } from '../session/overrides/provider-pool-draft-context';
 import { SessionAuditPanel } from '../session/panel/session-audit-panel';
 import { SessionFilesExplorer } from '../session/panel/session-files-explorer';
 import { PanelHeaderSwitcher } from '../session/panel/session-panel-header';
-import { SessionStartingLoader } from '../session/status/session-starting-loader';
 import { SessionTerminalPanel } from '../terminal/session-terminal-panel';
 import { SessionWallpaperLayerContext } from '../session/panel/session-wallpaper-layer';
 import { useSessionPanelLayout } from '../session/panel/use-session-panel-layout';
@@ -46,6 +46,7 @@ type SessionPanelProps = {
   sessionId: string;
   projectId?: string;
   projectSessionId?: string;
+  booting: boolean;
   isExpanded: boolean;
   shouldShowPanel: boolean;
 } & ReturnType<typeof useSessionPanelView> &
@@ -87,14 +88,14 @@ export const SessionLayout = memo(function SessionLayout({
     sessionId,
     projectId,
     projectSessionId,
-    isEasy,
+    // Boot draws the Easy body (the detail shell, gated inside on `booting`)
+    // whatever the mode: Advanced's tabs mount the PTY, browser and explorer.
+    isEasy: isEasy || booting,
     effectiveView,
   });
   const surfaces = useSessionPanelSurfaces({
     sessionId,
-    projectId,
-    projectSessionId,
-    bootStage,
+    booting,
     isEasy,
     effectiveView,
     auditPendingCount,
@@ -106,6 +107,7 @@ export const SessionLayout = memo(function SessionLayout({
     sessionId,
     projectId,
     projectSessionId,
+    booting,
     ...panels,
     isSessionBusy,
     effectiveView,
@@ -158,9 +160,7 @@ function useSessionPanelSplitState() {
 
 function useSessionPanelSurfaces({
   sessionId,
-  projectId,
-  projectSessionId,
-  bootStage,
+  booting,
   isEasy,
   effectiveView,
   auditPendingCount,
@@ -168,16 +168,13 @@ function useSessionPanelSurfaces({
   panelBody,
 }: {
   sessionId: string;
-  projectId?: string;
-  projectSessionId?: string;
-  bootStage: SessionStartStage | null;
+  booting: boolean;
   isEasy: boolean;
   effectiveView: SessionPanelView;
   auditPendingCount: number;
   togglePanelMode: () => void;
   panelBody: React.ReactNode;
 }) {
-  const booting = !!bootStage;
   const isSidePanelOpen = useKortixComputerStore((s) => s.isSidePanelOpen);
   const setIsSidePanelOpen = useKortixComputerStore((s) => s.setIsSidePanelOpen);
   const setPanelView = useSessionBrowserStore((s) => s.setView);
@@ -197,10 +194,12 @@ function useSessionPanelSurfaces({
     />
   );
 
-  // While booting, the panel is JUST the wake status — empty unless the wake
-  // needs attention, and then dead-center in the card — with no header bar.
-  // The runtime-coupled views (Actions/Files/Terminal/Browser) need a
-  // live sandbox, so they only render once booted.
+  // While booting there is no header bar. The body is the same `panelBody`
+  // tree as when ready, so the boot→ready flip never remounts the detail shell;
+  // `SessionDetailPanel` reads `booting` from the provider: a Terminal/Browser/
+  // Files card wears its real chrome over the wake status, and with no card
+  // open the panel is the wake status alone. The runtime-coupled bodies (PTY,
+  // preview frame, file listing) mount only once booted.
   //
   // Easy mode has no header either: it is the three cards and nothing else. No
   // title, no view tabs, no mode button, no border. The mode is switched from
@@ -210,11 +209,7 @@ function useSessionPanelSurfaces({
   // own close DISCARDS the detail (it is done with), while ⌘I only puts it
   // away — press it again and the same detail comes back.
   const effectivePanelHeader = booting || isEasy ? null : panelHeader;
-  const effectivePanelBody = booting ? (
-    <SessionStartingLoader projectId={projectId} sessionId={projectSessionId} />
-  ) : (
-    panelBody
-  );
+  const effectivePanelBody = panelBody;
 
   return { effectivePanelHeader, effectivePanelBody };
 }
@@ -298,7 +293,11 @@ const withPanelProvider = (
     projectId,
     projectSessionId,
     isSessionBusy,
-  }: Pick<SessionPanelProps, 'sessionId' | 'projectId' | 'projectSessionId' | 'isSessionBusy'>,
+    booting,
+  }: Pick<
+    SessionPanelProps,
+    'sessionId' | 'projectId' | 'projectSessionId' | 'isSessionBusy' | 'booting'
+  >,
   node: React.ReactNode,
 ) => (
   <ProviderPoolDraftBoundary identity={`${projectId}/${projectSessionId ?? sessionId}`}>
@@ -307,8 +306,9 @@ const withPanelProvider = (
       isSessionBusy={isSessionBusy}
       projectId={projectId}
       projectSessionId={projectSessionId}
+      booting={booting}
     >
-      {node}
+      <SessionOutcomesBridge key={`${projectId}/${projectSessionId ?? sessionId}`}>{node}</SessionOutcomesBridge>
     </SessionPanelProvider>
   </ProviderPoolDraftBoundary>
 );
@@ -411,13 +411,19 @@ function DesktopSessionLayout({ panel, children }: SessionSurfaceProps) {
             <ResizablePanel
               ref={mainPanelRef}
               defaultSize={shouldShowPanel ? (isEasy ? 65 : 50) : 100}
-              minSize={shouldShowPanel ? (isAnimating ? 0 : isExpanded ? 0 : 30) : 100}
-              maxSize={shouldShowPanel ? (isAnimating ? 100 : isExpanded ? 0 : 65) : 100}
+              // Expanded: no constraint, so the frozen split survives the
+              // layer covering it (see `SessionPanelSide`).
+              minSize={shouldShowPanel ? (isAnimating || isExpanded ? 0 : 30) : 100}
+              maxSize={shouldShowPanel ? (isAnimating || isExpanded ? 100 : 65) : 100}
               collapsible={isExpanded || isAnimating}
               className={cn(
-                'relative flex w-full flex-col overflow-hidden bg-transparent transition-[padding] duration-300 ease-out',
-                isExpanded && !isAnimating && 'pointer-events-none opacity-0',
+                // `isolate`: the chat's own z-indexes (the site header is
+                // z-50) stay inside this panel, so the full-screen layer
+                // (z-30, `SessionPanelSide`) always paints above all of it.
+                'relative isolate flex w-full flex-col overflow-hidden bg-transparent transition-[padding] duration-(--duration-slow) ease-out',
+                isExpanded && 'pointer-events-none',
               )}
+              aria-hidden={isExpanded || undefined}
             >
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
             </ResizablePanel>
@@ -457,7 +463,7 @@ function SessionPanelHandle({ panel }: { panel: SessionPanelProps }) {
       withHandle={handleEnabled}
       disabled={!handleEnabled}
       className={cn(
-        'z-20 w-0 transition-opacity duration-300',
+        'z-20 w-0 transition-opacity duration-(--duration-slow)',
         'after:absolute after:inset-y-0 after:-left-1.5 after:w-3',
         handleEnabled ? '-right-3' : 'pointer-events-none',
         handleVisible
@@ -483,18 +489,37 @@ function SessionPanelSide({ panel }: { panel: SessionPanelProps }) {
     <ResizablePanel
       ref={sidePanelRef}
       defaultSize={shouldShowPanel ? (isEasy ? 35 : 50) : 0}
-      minSize={shouldShowPanel ? (isAnimating ? 0 : isExpanded ? 100 : 35) : 0}
-      maxSize={shouldShowPanel ? (isAnimating ? 100 : isExpanded ? 100 : 70) : 0}
+      minSize={shouldShowPanel ? (isAnimating || isExpanded ? 0 : 35) : 0}
+      maxSize={shouldShowPanel ? (isAnimating || isExpanded ? 100 : 70) : 0}
       collapsible={!isExpanded || isAnimating}
-      className={cn('bg-background relative overflow-hidden', !shouldShowPanel && 'hidden')}
+      className={cn(
+        'bg-background overflow-hidden',
+        // Full screen is a LAYER over the chat, not a split at 100%. The
+        // panel drops `relative`, so the content below positions against the
+        // panel group instead (the panel's own overflow cannot clip a child
+        // whose containing block is outside it). Same nodes, same parent: the
+        // open document does not remount. The split behind stays frozen
+        // (`usePanelGlide`), so the chat never squeezes under the viewer.
+        !isExpanded && 'relative',
+        !shouldShowPanel && 'hidden',
+      )}
     >
-      <div className={cn('bg-background h-full transition-[padding] duration-300 ease-out')}>
+      <div
+        className={cn(
+          'bg-background h-full transition-[padding] duration-(--duration-slow) ease-out',
+          // The backdrop fades over the chat while the detail card slides in
+          // on top of it (`DetailLayer`) — one layer arriving, nothing resizing.
+          isExpanded &&
+            'animate-in fade-in-0 absolute inset-0 z-30 duration-(--duration-normal)',
+        )}
+      >
         <div
           className={cn(
             'border-border flex h-full min-h-0 w-full min-w-0 flex-col overflow-clip',
             // Easy mode is chrome-free — the cards carry their own
-            // borders, so a panel border would just box a box.
-            !isEasy && 'border-l',
+            // borders, so a panel border would just box a box. A full-screen
+            // layer has no neighbour to separate from.
+            !isEasy && !isExpanded && 'border-l',
           )}
         >
           {effectivePanelHeader}

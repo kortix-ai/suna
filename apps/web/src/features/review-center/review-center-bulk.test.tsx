@@ -243,11 +243,11 @@ describe('selecting rows', () => {
 });
 
 describe('the bar enables a verb only for rows that support it', () => {
-  test('an output: Dismiss only', () => {
+  test('an output: Approve, Deny and Dismiss, the verdicts of its own dialog', () => {
     mount([OUTPUT, call(1)]);
     click(rowCheckbox(OUTPUT.title));
-    expect(barButton('Approve')?.disabled).toBe(true);
-    expect(barButton('Deny')?.disabled).toBe(true);
+    expect(barButton('Approve')?.disabled).toBe(false);
+    expect(barButton('Deny')?.disabled).toBe(false);
     expect(barButton('Dismiss')?.disabled).toBe(false);
   });
 
@@ -261,7 +261,7 @@ describe('the bar enables a verb only for rows that support it', () => {
 });
 
 describe('bulk Approve', () => {
-  test('confirms with each approval, its call and risk, then sends only approvable ids', async () => {
+  test('confirms with each item, its call and risk, then sends every approvable id', async () => {
     nextResults = (ids) => ids.map((id) => ({ id, ok: id !== 'call:e2', code: 'expired' }));
     mount([call(1), call(2, 'high'), OUTPUT]);
     click(rowCheckbox('Send report 1'));
@@ -269,7 +269,8 @@ describe('bulk Approve', () => {
     click(option(OUTPUT.title));
     click(barButton('Approve')!);
     const dialog = document.querySelector('[role="alertdialog"]')!;
-    expect(dialog.textContent).toContain('Approve 2 actions?');
+    expect(dialog.textContent).toContain('Approve 3 actions?');
+    expect(dialog.textContent).toContain(OUTPUT.title);
     // Rows read the app and action, not the tool id.
     expect(dialog.textContent).toContain('Send email 1');
     expect(dialog.textContent).toContain('Send email 2');
@@ -282,15 +283,16 @@ describe('bulk Approve', () => {
     expect(dialog.textContent).toContain('Low risk');
     expect(bulkCalls).toEqual([]);
     const confirm = [...dialog.querySelectorAll('button')].find(
-      (b) => b.textContent === 'Approve 2',
+      (b) => b.textContent === 'Approve 3',
     )!;
     click(confirm);
     await flush();
-    expect(bulkCalls).toEqual(['approve call:e1,call:e2']);
-    // Only the ok id leaves Needs you; the refused one stays, still selected.
+    expect(bulkCalls).toEqual([`approve call:e1,call:e2,${OUTPUT.id}`]);
+    // Only the ok ids leave Needs you; the refused one stays, still selected.
     expect(text()).not.toContain('Send report 1');
+    expect(text()).not.toContain(OUTPUT.title);
     expect(text()).toContain('Send report 2');
-    expect(text()).toContain('2 selected');
+    expect(text()).toContain('1 selected');
   });
 });
 

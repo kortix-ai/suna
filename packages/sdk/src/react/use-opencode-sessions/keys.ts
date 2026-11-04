@@ -139,6 +139,8 @@ export const runtimeKeys = {
   commands: () => ['opencode', 'commands', activeServerKey()] as const,
   providers: () => ['opencode', 'providers', activeServerKey()] as const,
   pathInfo: () => ['opencode', 'path-info', activeServerKey()] as const,
+  /** `GET /kortix/runtime/workspace`: where the session's checkout is. */
+  workspace: () => ['opencode', 'workspace', activeServerKey()] as const,
   mcpStatus: () => ['opencode', 'mcp-status', activeServerKey()] as const,
   worktrees: () => ['opencode', 'worktrees', activeServerKey()] as const,
   /**

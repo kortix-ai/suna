@@ -16,7 +16,7 @@ import { qk } from './query-keys';
 // that once, at import. The poll is the subject here, so define it first.
 (globalThis as { window?: unknown }).window ??= {};
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
-const { useSessionPrompts } = await import('./use-session-prompts');
+const { useSessionPrompts, __resetSentPromptsForTests } = await import('./use-session-prompts');
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const originalFetch = globalThis.fetch;
@@ -30,6 +30,8 @@ interface FakeConnection {
 }
 let connections: FakeConnection[] = [];
 let promptReads = 0;
+/** `sent` of the list read; undefined: an older API that omits it. */
+let listedSent: unknown[] | undefined;
 
 const at = '2026-10-06T10:00:00.000Z';
 const row = (id: string) => ({
@@ -55,14 +57,20 @@ const queueFrame = (cseq: number, prompts: unknown[], observedAt: string) => ({
   at: 1,
   payload: { known: true, prompts, held: false, observed_at: observedAt },
 });
+const sentPrompt = (id: string) => ({ message_id: id, prompt_id: null, text: id, attachments: [], author_user_id: null, created_at: at });
+const queueFrameWithSent = (cseq: number, sent: unknown[], observedAt: string) => {
+  const frame = queueFrame(cseq, [], observedAt);
+  return { ...frame, payload: { ...frame.payload, sent } };
+};
 
 function setup(): void {
   connections = [];
   promptReads = 0;
+  listedSent = undefined;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = input instanceof Request ? input.url : String(input);
     if (url.endsWith('/prompts')) promptReads += 1;
-    return new Response(JSON.stringify({ prompts: [row('polled')], observed_at: '2026-10-06T09:00:00.000Z' }), {
+    return new Response(JSON.stringify({ prompts: [row('polled')], ...(listedSent ? { sent: listedSent } : {}), observed_at: '2026-10-06T09:00:00.000Z' }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
@@ -107,6 +115,7 @@ afterEach(async () => {
   root = undefined;
   client?.clear();
   __resetSessionControlStreamsForTests();
+  __resetSentPromptsForTests();
   useSessionWorkingStore.getState().reset();
   globalThis.fetch = originalFetch;
 });
@@ -199,4 +208,30 @@ test('while connected, the last queue frame keeps the inbox observation fresh', 
   const later = useSessionWorkingStore.getState().inbox.s1!;
   expect(later.pending).toBe(1);
   expect(later.atMs).toBeGreaterThan(first.atMs + 2_500);
+});
+
+test('sent: the list read and the queue frame carry the accepted prompts the log lacks; an older snapshot cannot replace a newer one', async () => {
+  listedSent = [sentPrompt('msg_initial')];
+  const queue = await mount(60_000);
+  await wait(20);
+  expect(queue().sent.map((p) => p.message_id)).toEqual(['msg_initial']);
+
+  await act(async () => connections[0]!.push(hello));
+  await act(async () => connections[0]!.push(queueFrameWithSent(1, [sentPrompt('msg_initial'), sentPrompt('msg_second')], '2026-10-06T11:00:00.000Z')));
+  await wait(10);
+  expect(queue().sent.map((p) => p.message_id)).toEqual(['msg_initial', 'msg_second']);
+
+  await act(async () => connections[0]!.push(queueFrameWithSent(2, [], '2026-10-06T10:30:00.000Z')));
+  await wait(10);
+  expect(queue().sent.map((p) => p.message_id)).toEqual(['msg_initial', 'msg_second']);
+
+  await act(async () => connections[0]!.push(queueFrameWithSent(3, [], '2026-10-06T11:30:00.000Z')));
+  await wait(10);
+  expect(queue().sent).toEqual([]);
+});
+
+test('sent: an API that omits it leaves an empty list', async () => {
+  const queue = await mount(60_000);
+  await wait(20);
+  expect(queue().sent).toEqual([]);
 });

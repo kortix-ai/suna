@@ -15,7 +15,6 @@ describe('buildRuntimeArtifactFingerprint', () => {
 
       const input = {
         sandboxVersion: 'dev-test',
-        opencodeVersion: '1.2.3',
         artifacts: [
           { label: 'kortix-agent', path: join(root, 'agent') },
           { label: 'kortix-entrypoint', path: join(root, 'entrypoint') },
@@ -50,7 +49,6 @@ describe('buildRuntimeArtifactFingerprint', () => {
 
       const before = await buildRuntimeArtifactFingerprint({
         sandboxVersion: 'dev-test',
-        opencodeVersion: '1.2.3',
         artifacts,
       });
 
@@ -58,7 +56,6 @@ describe('buildRuntimeArtifactFingerprint', () => {
 
       const after = await buildRuntimeArtifactFingerprint({
         sandboxVersion: 'dev-test',
-        opencodeVersion: '1.2.3',
         artifacts,
       });
 
@@ -82,7 +79,6 @@ describe('buildRuntimeArtifactFingerprint', () => {
 
       const before = await buildRuntimeArtifactFingerprint({
         sandboxVersion: 'dev-test',
-        opencodeVersion: '1.2.3',
         artifacts,
       });
 
@@ -90,7 +86,6 @@ describe('buildRuntimeArtifactFingerprint', () => {
 
       const after = await buildRuntimeArtifactFingerprint({
         sandboxVersion: 'dev-test',
-        opencodeVersion: '1.2.3',
         artifacts,
       });
 

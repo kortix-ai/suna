@@ -24,6 +24,7 @@ export { resetIdentityState } from './reset-identity-state';
 // and type). This is the single source of truth the web UI binds to.
 export * from './opencode';
 export { useRuntimeSupports } from './use-runtime-supports';
+export { useHasSessionDesktop } from './use-has-session-desktop';
 // The session's one live connection (R5.3). `useSession` mounts it; a host that
 // runs its own copy of a poll (self-heal, sync) gates it on this.
 export { useSessionStreamConnected } from './use-session-stream';
@@ -152,8 +153,11 @@ export {
   type TriggerRunsQueryOptions,
 } from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
+export { useUnifiedTriggers } from './use-unified-triggers';
 export { useProjectGoalFiles, useProjectGoals, useSessionGoal } from './use-goals';
-export { useRoom, useRoomConversations, useRoomMessages, useRoomThread, useRooms } from './use-rooms';
+export { useRoom, useRoomConversations, useRoomMessages, useRoomThread, useRooms, useSpaceRoom } from './use-rooms';
+export { usePeerMessages, useReachableAgents, useSessionWorkflows, useTeamTasks, useTeammates } from './use-multi-agent';
+export { prefetchArtifact, useArtifact, useArtifactActivity, useArtifactCommentContext, useArtifactComments, useArtifactCommentScreenshot, useInfiniteArtifactActivity, useArtifactMutations, useArtifactText, useArtifactTypes, useArtifactVersions, useArtifacts } from './use-artifacts';
 export {
   useApproveCaptureDevice,
   useApproveCaptureEnrollment,
@@ -181,6 +185,7 @@ export {
 } from './use-capture';
 export { useSessionMessageAuthors } from './use-session-message-authors';
 export { useSessionModelUsage } from './use-session-model-usage';
+export { useSessionUsage } from './use-session-usage';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
 export {
@@ -216,6 +221,7 @@ export * from './use-billing-plan';
 export * from './use-impersonation';
 export * from './use-teams-installations';
 export * from './use-tunnel';
+export * from './use-chrome-connections';
 export * from './use-admin-sandboxes';
 export * from './use-authenticated-preview-url';
 export * from './use-static-file-preview';
@@ -253,6 +259,36 @@ export * from './use-project-name';
 export * from './use-project-session';
 export * from './use-session-participants';
 export * from './use-project-sessions';
+export {
+  useAddProjectSpaceLink,
+  useAddProjectSpaceMembers,
+  useChannelsOnboarding,
+  useJoinProjectSpace,
+  useLeaveProjectSpace,
+  useProjectSpaceMembers,
+  useRemoveProjectSpaceMember,
+  useCreateProjectSpace,
+  useMarkChannelsOnboarding,
+  useOpenProjectDm,
+  usePinProjectSpaceLink,
+  useProjectSpaceApps,
+  useProjectSpaceGeneralNotice,
+  usePrivateChannelsAvailable,
+  usePrivateChannelsNotIn,
+  useProjectSpaceLinks,
+  useProjectSpaces,
+  useRemoveProjectSpaceLink,
+  useUpdateProjectSpace,
+} from './use-project-spaces';
+// Session groups (`session_groups`): the project's shared folders of sessions.
+export {
+  useCreateProjectSessionGroup,
+  useDeleteProjectSessionGroup,
+  useProjectSessionGroups,
+  useRenameProjectSessionGroup,
+  useReorderProjectSessionGroups,
+  useSetProjectSessionGroup,
+} from './use-session-groups';
 export * from './use-sessions-needing-input';
 // The review inbox: needs-you counts for badges, and the paged list (KRTX-2316).
 export * from './use-review-summary';
@@ -262,6 +298,8 @@ export * from './use-session-list-state';
 export * from './session-cache-write';
 export * from './invalidate-project';
 export * from './use-feature-flag';
+export * from './use-project-memory';
+export * from './use-project-search';
 export * from './use-project-files';
 
 // "Sign in with Kortix" — the browser half of `createKortixAuth`

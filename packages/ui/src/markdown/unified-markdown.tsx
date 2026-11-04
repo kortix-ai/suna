@@ -246,7 +246,7 @@ export function MarkdownImage({
         alt={alt || ''}
         loading="lazy"
         onError={onError}
-        className="h-auto max-w-full rounded-lg outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
+        className="h-auto max-w-full rounded-lg outline outline-1 -outline-offset-1 outline-border"
       />
     </span>
   );
@@ -290,13 +290,13 @@ const MARKDOWN_COMPONENTS = {
   ),
 
   p: ({ children }: { children?: React.ReactNode }) => (
-    <div className="text-foreground/95 my-4 leading-relaxed font-medium [overflow-wrap:anywhere] first:mt-0 last:mb-0 [&:has(img)]:my-0">
+    <div className="text-foreground my-4 leading-relaxed font-medium [overflow-wrap:anywhere] first:mt-0 last:mb-0 [&:has(img)]:my-0">
       {wrapChildrenWithPaths(children)}
     </div>
   ),
 
   ul: ({ children }: { children?: React.ReactNode }) => (
-    <ul className="marker:text-muted-foreground/60 my-4 list-outside list-disc space-y-1 pl-6 first:mt-0 last:mb-0 [&_p]:mb-2 [&_p]:last:mb-0">
+    <ul className="marker:text-muted-foreground my-4 list-outside list-disc space-y-1 pl-6 first:mt-0 last:mb-0 [&_p]:mb-2 [&_p]:last:mb-0">
       {children}
     </ul>
   ),
@@ -305,7 +305,7 @@ const MARKDOWN_COMPONENTS = {
   // data (`liftSetupLinkBlocks` lifted the ones that were not), so it renders
   // as an inline chip rather than a full-width card.
   li: ({ children }: { children?: React.ReactNode }) => (
-    <li className="text-foreground/95 leading-relaxed font-medium [overflow-wrap:anywhere]">
+    <li className="text-foreground leading-relaxed font-medium [overflow-wrap:anywhere]">
       <SetupLinkInlineContext.Provider value={true}>
         {wrapChildrenWithPaths(children)}
       </SetupLinkInlineContext.Provider>
@@ -393,7 +393,7 @@ const MARKDOWN_COMPONENTS = {
     <strong className="text-foreground font-semibold">{children}</strong>
   ),
   em: ({ children }: { children?: React.ReactNode }) => (
-    <em className="text-foreground/90 italic">{children}</em>
+    <em className="text-foreground italic">{children}</em>
   ),
   del: ({ children }: { children?: React.ReactNode }) => (
     <del className="text-muted-foreground decoration-muted-foreground/50 line-through">

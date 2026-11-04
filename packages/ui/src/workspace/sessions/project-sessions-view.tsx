@@ -7,7 +7,7 @@ import { Button } from '../../primitives/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../primitives/disclosure';
 import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 import { Skeleton } from '../../primitives/skeleton';
-import { Tabs, TabsListCompact, TabsTriggerCompact } from '../../primitives/tabs';
+import { Tabs, TabsList, TabsListCompact, TabsTrigger, TabsTriggerCompact } from '../../primitives/tabs';
 import { errorToast, successToast, warningToast } from '../../primitives/toast';
 import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
@@ -60,10 +60,11 @@ import {
 import {
   qk,
   removeCachedProjectSession,
+  useFeatureFlag,
   useProjectSessions,
   useSessionChildren,
 } from '@kortix/sdk/react';
-import { CaretRightIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
+import { CaretRightIcon, KanbanIcon, ListIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import { useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
@@ -86,6 +87,8 @@ import { SessionRow, type SessionRowActions } from './session-row';
 import { SessionsEmptyState } from './sessions-empty-state';
 import { SessionsSelectionBar } from './sessions-selection-bar';
 import { SessionsToolbar } from './sessions-toolbar';
+import { sessionsLayoutOf, withSessionsLayout, type SessionsLayout } from './board-dispatch';
+import { SessionsBoard } from './sessions-board';
 
 /**
  * This page's view state is its OWN — narrowing the manager inventory here must not
@@ -266,10 +269,12 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const tPinArchive = useTranslations('sidebar.pinArchive');
   const tDeleted = useTranslations('sidebar.recentlyDeleted');
   const tSessionDelete = useTranslations('sessionDelete');
+  const tBoard = useTranslations('multiAgent.board');
   const queryClient = useQueryClient();
   const router = useUiRouter();
   const pathname = useUiPathname();
   const searchParams = useUiSearchParams();
+  const channelsOn = useFeatureFlag(projectId, 'project_channels').enabled;
   const [search, setSearch] = useState('');
   // `?view=archived` opens the archive, `?view=deleted` Recently deleted (the
   // sidebar menu's links).
@@ -287,6 +292,13 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     const tab = viewTab(viewParam);
     if (tab) setStartedBy(tab);
   }
+  // `?view=board` is the agent board (Claude Code's agent view); the toggle writes it.
+  const layout = sessionsLayoutOf(viewParam);
+  const selectLayout = (next: SessionsLayout) => {
+    if (next === layout) return;
+    const query = withSessionsLayout(searchParams?.toString() ?? '', next);
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  };
   // A tab writes `?view=`: a reload keeps it, and the sidebar link opens the
   // view again after the viewer picked another tab.
   const selectTab = (tab: SessionsTab) => {
@@ -800,6 +812,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       onEnterSelectMode={() => setSelectMode(true)}
       creatingSession={creatingSession}
       canSelect={sessions.length > 0 && !deletedTab}
+      showNewSession={!channelsOn}
     />
   );
 
@@ -821,10 +834,29 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
               {tI18nComplete.raw('text6fa3cbf451b2')}
             </h2>
           </div>
-          <div className="mt-2 shrink-0 sm:mt-0">{header}</div>
+          <div className="mt-2 flex shrink-0 items-center gap-2 sm:mt-0">
+            <Tabs value={layout} onValueChange={(value) => selectLayout(value as SessionsLayout)}>
+              <TabsList aria-label={tBoard('layoutLabel')}>
+                <TabsTrigger value="list" size="sm" className="gap-1.5">
+                  <ListIcon className="size-3.5" />
+                  {tBoard('layoutList')}
+                </TabsTrigger>
+                <TabsTrigger value="board" size="sm" className="gap-1.5">
+                  <KanbanIcon className="size-3.5" />
+                  {tBoard('layoutBoard')}
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            {/* The board has its own input: it starts sessions and filters them. */}
+            {layout === 'list' ? header : null}
+          </div>
         </header>
 
         <div className={cn('mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col px-4 pb-4')}>
+          {layout === 'board' ? (
+            <SessionsBoard projectId={projectId} />
+          ) : (
+          <>
           <Tabs
             value={startedBy}
             onValueChange={(value) => selectTab(value as SessionsTab)}
@@ -946,6 +978,8 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                 </FadedScrollArea>
               </div>
             </div>
+          )}
+          </>
           )}
         </div>
       </div>

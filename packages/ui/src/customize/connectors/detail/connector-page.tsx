@@ -27,12 +27,9 @@ import { errorToast } from '../../../primitives/toast';
 import { EmptyState } from '../../../primitives/empty-state';
 import { ErrorState } from '../../../primitives/error-state';
 import { ComputerConnectModal } from '../../../internal/tunnel/computer-connect';
-import { ConnectorAppIcon } from '../connector-identity';
-import {
-  appHref,
-  appRefFromLocation,
-  connectorsHref,
-} from '../connector-routes';
+import { ConnectorLogo } from '../../../internal/connector-logo/connector-logo';
+import { installedConnectorLogoSource } from '../../../internal/connector-logo/connector-logo-source';
+import { appRefFromLocation, connectorsHref, type AppRef } from '../connector-routes';
 import { startDiscoveredSignIn } from '../../sections/connector-oauth2-start';
 import { SetCredentialModal } from '../../sections/connectors-view';
 import { useOauth2Return } from '../../../internal/hooks/connectors/use-oauth2-return';
@@ -55,7 +52,7 @@ import { useConnectorDetail } from './use-connector-detail';
 /** The column `CapabilityPageShell` gives the list page beside this one. */
 
 /**
- * `/projects/<id>/customize/connectors/<app>/<connector>` — one connector, as
+ * `/projects/<id>/admin/connectors/<app>/<connector>` — one connector, as
  * a page: its accounts, its tools, its settings.
  *
  * `appSegment` is navigation context only. It decides where Back goes: the
@@ -104,8 +101,9 @@ export function ConnectorPage({
   }, [connectorSlug, projectId, queryClient]);
   useOauth2Return(invalidate);
 
+  // Back goes to the list: an installed app's page only redirects here.
   const app = appRefFromLocation(appSegment, search);
-  const backHref = app ? appHref(projectId, app) : connectorsHref(projectId, 'connected');
+  const backHref = connectorsHref(projectId);
 
   const state = connectorPageState({
     found: connector !== null,
@@ -116,15 +114,17 @@ export function ConnectorPage({
 
   if (state === 'loading') {
     return (
+      // Grouped, in the loaded page's order: back link, name, the status card,
+      // the tab row, the tab body. One block per group, no line per field.
       <DetailPageShell busy>
         <Skeleton className="h-4 w-24 rounded-sm py-0" />
         <div className="flex items-center gap-3">
-          <Skeleton className="size-10 py-0" />
-          <Skeleton className="h-6 w-48 rounded-sm py-0" />
+          <Skeleton className="size-10 shrink-0 rounded-md py-0" />
+          <Skeleton className="h-6 w-40 rounded-sm py-0" />
         </div>
-        <Skeleton className="h-8 w-64 py-0" />
-        <Skeleton className="h-20 w-full py-0" />
-        <Skeleton className="h-20 w-full py-0" />
+        <Skeleton className="h-36 w-full rounded-md py-0" />
+        <Skeleton className="h-10 w-96 max-w-full rounded-lg py-0" />
+        <Skeleton className="h-48 w-full rounded-md py-0" />
       </DetailPageShell>
     );
   }
@@ -160,7 +160,7 @@ export function ConnectorPage({
           description={t('notFoundDescription')}
           action={
             <Button asChild size="sm" variant="secondary">
-              <Link href={connectorsHref(projectId, 'connected')}>{t('backToConnectors')}</Link>
+              <Link href={connectorsHref(projectId)}>{t('backToConnectors')}</Link>
             </Button>
           }
         />
@@ -175,6 +175,7 @@ export function ConnectorPage({
       connector={connector}
       canWrite={canWrite}
       backHref={backHref}
+      app={app}
       onChanged={invalidate}
       onRemoved={invalidateAfterRemove}
     />
@@ -198,7 +199,7 @@ function ConnectorPageBody({
           </Link>
         </Button>
       }
-      onLeave={() => router.push(connectorsHref(props.projectId, 'connected'))}
+      onLeave={() => router.push(connectorsHref(props.projectId))}
     />
   );
 }
@@ -219,6 +220,8 @@ export interface ConnectorDetailViewProps {
   /** The view's own connector is gone: leave it (the page routes back, the
    *  modal closes). */
   onLeave: () => void;
+  /** The catalogue app the URL names, when it names one: Settings links to its page. */
+  app?: AppRef | null;
   /** The tab and the install hand-offs live in the URL on the page. The modal
    *  keeps its tab in state, so it never rewrites its host page's URL. */
   urlState?: boolean;
@@ -243,6 +246,7 @@ export function ConnectorDetailView({
   onLeave,
   urlState = true,
   columnClassName = PAGE_COLUMN,
+  app = null,
 }: ConnectorDetailViewProps) {
   const t = useTranslations('connectorPages');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -318,7 +322,8 @@ export function ConnectorDetailView({
     settled: !connectionsQuery.isFetching && !manageProbeLoading,
     refetched: refetchedFor === connectId,
     canManageConnections,
-    direct: !isManagedProvider && !isComputer && !isChannel,
+    // An inbox account has no credential to open: it is made by Add inbox.
+    direct: !isManagedProvider && !isComputer && connector.provider !== 'channel',
   });
   const handoffAction = handoff.action;
   const handoffConnectionId = handoff.action === 'open' ? handoff.connectionId : null;
@@ -444,7 +449,10 @@ export function ConnectorDetailView({
   const connectAccount = (account: (typeof accounts)[number]) =>
     isManagedProvider ? reconnectAccount(account) : signIn.mutate(account);
 
-  const tone = connectorStatusTone(connector);
+  const tone = connectorStatusTone(
+    connector,
+    connectionsQuery.isSuccess ? accounts.length : undefined,
+  );
   const providerManagedBy = isManagedConnectorProvider(connector.provider)
     ? connectorRunsOver(connector.provider)
     : null;
@@ -503,7 +511,7 @@ export function ConnectorDetailView({
 
           <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
-              <ConnectorAppIcon connector={connector} size="lg" />
+              <ConnectorLogo source={installedConnectorLogoSource(connector)} size="lg" />
               {wrapTitle(
                 <h1
                   ref={headingRef}
@@ -544,7 +552,8 @@ export function ConnectorDetailView({
               ))}
             </dl>
 
-            {notice.kind !== 'none' ? (
+            {/* The Accounts tab has its own Add account; one call to action, not two. */}
+            {notice.kind !== 'none' && !(notice.kind === 'no_account' && tab === 'accounts') ? (
               <ConnectorNoticeRow
                 title={t(NOTICE_TITLE[notice.kind], { name: displayName })}
                 detail={
@@ -649,6 +658,7 @@ export function ConnectorDetailView({
                 projectId: projectId,
                 connector: connector,
                 displayName: displayName,
+                app,
                 onChanged: onChanged,
                 onRemoved: () => {
                   onLeave();

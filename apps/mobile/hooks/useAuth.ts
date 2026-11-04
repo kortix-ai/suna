@@ -16,6 +16,7 @@ import {
 import { readCallbackTokens } from '@/lib/auth/callback-tokens';
 import { mfaChallengeRequired, verifiedTotpFactor } from '@/lib/auth/mfa';
 import { admitMobileOAuthSession } from '@/lib/auth/mobile-admission';
+import { oauthQueryParams, prefersEphemeralAuthSession } from '@/lib/auth/oauth-browser';
 import { parsePersistedSession, sessionForNullAuthResult } from '@/lib/auth/persisted-session';
 import { sessionExpiry } from '@/lib/auth/session-expiry-monitor';
 import { signOutThisDevice } from '@/lib/auth/sign-out';
@@ -57,7 +58,6 @@ import type { Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { log, setLoggerUserId } from '@/lib/logger';
 import { queryCachePersistence } from '@/lib/query/query-cache';
 import { releaseSavedCopies } from '@/lib/session/saved-copy-registry';
-import { warmSessionPool } from '@/lib/session/warm-session-pool';
 
 /**
  * Sign-out: reset the in-memory stores that hold the previous user's data.
@@ -79,8 +79,6 @@ function resetUserStores() {
   useSessionTreeStore.getState().reset();
   // Also deletes the screenshot files.
   useTabScreenshotStore.getState().clear();
-  // A warm session belongs to the signed-in user.
-  warmSessionPool.reset();
 }
 
 // Complete any pending auth sessions (required for web)
@@ -510,12 +508,13 @@ export function useAuth() {
    * Sign in with OAuth provider (Supabase standard implementation)
    *
    * Uses Supabase's OAuth flow:
-   * - iOS Google: WebBrowser.openAuthSessionAsync (ASWebAuthenticationSession)
+   * - iOS Google: WebBrowser.openAuthSessionAsync (ASWebAuthenticationSession), shared with Safari
    * - Android Google: Linking.openURL (external browser) + deep link callback
    * - Android Other: Linking.openURL (external browser) + deep link callback
    * - Apple: Native Apple Authentication on iOS
    * - 'sso': enterprise SSO for `ssoEmail`, completed by the web auth page
-   *   (registration handoff), then the same browser + callback path as Google
+   *   (registration handoff), then the same browser + callback path as Google,
+   *   but in an ephemeral session
    */
   const signInWithOAuth = useCallback(async (provider: OAuthProvider | 'sso', ssoEmail?: string) => {
     try {
@@ -577,7 +576,7 @@ export function useAuth() {
       // ========================================
       // SUPABASE OAUTH FLOW (Google and other providers)
       // Uses web-based OAuth for all providers:
-      // - iOS Google: WebBrowser.openAuthSessionAsync (ASWebAuthenticationSession)
+      // - iOS Google: WebBrowser.openAuthSessionAsync (ASWebAuthenticationSession), shared with Safari
       // - Android Google: External browser via Linking.openURL (reliable callback handling)
       // - Other providers: Platform-specific browser handling
       // ========================================
@@ -599,6 +598,7 @@ export function useAuth() {
               options: {
                 redirectTo,
                 skipBrowserRedirect: true,
+                queryParams: oauthQueryParams(provider),
               },
             });
 
@@ -762,7 +762,7 @@ export function useAuth() {
         await new Promise((resolve) => setTimeout(resolve, 100));
 
         const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectTo, {
-          preferEphemeralSession: true,
+          preferEphemeralSession: prefersEphemeralAuthSession(provider),
           showInRecents: true,
         });
 

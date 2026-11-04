@@ -10,30 +10,15 @@
  * `chat_event_dedup` makes it once-only across replicas and sweeps.
  */
 import { logger } from '../../lib/logger';
-import { chatEventDedup, enterpriseContracts } from '@kortix/db';
-import { and, eq, gt, isNotNull, lte } from 'drizzle-orm';
+import { chatEventDedup } from '@kortix/db';
 import { config } from '../../config';
 import { actionButton, renderEmail, renderText, S } from '../../lib/email/template';
 import { db } from '../../shared/db';
 import { escapeHtml } from '../../shared/html';
-import { endExpiredManualContracts } from './enterprise-contracts';
 import { billingPaneUrl, emailBillingManagers, sendAlertEmail } from './owner-alerts';
 import { ACCESS_GRACE_DAYS } from './resolve-billing';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-export const CONTRACT_WARNING_DAYS = [30, 7, 1] as const;
-
-/** Whole days until `endsAt`, rounded up (0 once it has passed). */
-export function daysLeft(endsAt: string, nowMs: number): number {
-  return Math.max(0, Math.ceil((new Date(endsAt).getTime() - nowMs) / DAY_MS));
-}
-
-/** The smallest warning threshold `left` days falls under, or null when none applies yet. */
-export function warningThreshold(left: number, thresholds: readonly number[]): number | null {
-  const due = thresholds.filter((t) => left <= t);
-  return due.length > 0 ? Math.min(...due) : null;
-}
-
 export async function claimOnce(key: string): Promise<boolean> {
   const claimed = await db
     .insert(chatEventDedup)
@@ -59,7 +44,6 @@ async function send(accountId: string, category: string, notice: (accountName: s
       subject: n.subject,
       category,
       html: renderEmail({
-        kicker: 'Billing',
         title: n.title,
         body: `${n.paragraphs.map((p) => `<p style="${S.p}">${escapeHtml(p)}</p>`).join('')}${actionButton(url, n.cta)}`,
       }),
@@ -75,7 +59,6 @@ async function send(accountId: string, category: string, notice: (accountName: s
       subject: `[Kortix billing] ${n.subject}`,
       category: `${category}-ops`,
       html: renderEmail({
-        kicker: 'Billing ops',
         title: n.title,
         body: `<p style="${S.p}">Account <span style="${S.strong}">${escapeHtml(accountLabel)}</span> (${escapeHtml(accountId)}).</p>${n.paragraphs.map((p) => `<p style="${S.p}">${escapeHtml(p)}</p>`).join('')}`,
       }),
@@ -107,42 +90,4 @@ export async function notifyContractEnded(accountId: string, graceEnds: string) 
     ],
     cta: 'Open billing',
   }));
-}
-
-/**
- * The hourly access sweep: end manual licenses whose term is over, and send the
- * warnings that are due.
- */
-export async function runAccessSweep(now: Date = new Date()): Promise<{
-  contractsEnded: number;
-  warningsSent: number;
-}> {
-  const nowMs = now.getTime();
-  const contractsEnded = await endExpiredManualContracts(now);
-  let warningsSent = 0;
-
-  const contracts = await db
-    .select({ id: enterpriseContracts.id, accountId: enterpriseContracts.accountId, endsAt: enterpriseContracts.endsAt })
-    .from(enterpriseContracts)
-    .where(
-      and(
-        eq(enterpriseContracts.status, 'active'),
-        eq(enterpriseContracts.autoRenews, false),
-        isNotNull(enterpriseContracts.endsAt),
-        gt(enterpriseContracts.endsAt, now.toISOString()),
-        lte(enterpriseContracts.endsAt, new Date(nowMs + Math.max(...CONTRACT_WARNING_DAYS) * DAY_MS).toISOString()),
-      ),
-    );
-  for (const contract of contracts) {
-    if (!contract.endsAt) continue;
-    const left = daysLeft(contract.endsAt, nowMs);
-    const threshold = warningThreshold(left, CONTRACT_WARNING_DAYS);
-    if (threshold === null) continue;
-    if (!(await claimOnce(`billing:contract-ending:${contract.id}:${new Date(contract.endsAt).getTime()}:${threshold}`))) continue;
-    await notifyContractEnding(contract.accountId, contract.endsAt, left)
-      .then(() => warningsSent++)
-      .catch((err) => logger.warn('[access-notices] contract warning failed', { error: (err as Error).message }));
-  }
-
-  return { contractsEnded, warningsSent };
 }

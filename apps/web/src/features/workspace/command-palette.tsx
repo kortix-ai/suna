@@ -1,5 +1,6 @@
 'use client';
 
+import { useChromeOffered } from '@kortix/ui/internal/chrome/use-chrome-offered';
 import { SessionSharedIcon } from '@kortix/ui/workspace/projects/session-shared-icon';
 import {
   AlertDialog,
@@ -23,6 +24,7 @@ import {
 } from '@kortix/ui/command';
 import { useCommandState } from 'cmdk';
 import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
 import { FadedScrollArea } from '@kortix/ui/faded-scroll-area';
 import { Kbd } from '@kortix/ui/kbd';
 import Loading from '@kortix/ui/loading';
@@ -65,6 +67,7 @@ import {
   paletteRowPermitted,
 } from '@/features/workspace/command-palette-visibility';
 import { useAppsRowVisible } from '@kortix/ui/workspace/sidebar/footer/project-apps-nav';
+import { agentLabel, ChannelGlyph, useMemoryPageHref } from '@kortix/ui/workspace';
 import { ModelCapabilityIcons } from '@kortix/ui/customize/sections/llm-provider/model-capability-icons';
 import { modelIdAddsInformation } from '@/features/workspace/model-id-display';
 import {
@@ -111,9 +114,8 @@ import {
 import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { track } from '@/lib/track';
 import { useProjectFeatureFlags } from '@kortix/ui/internal/lib/use-project-feature-flags';
-import { cn } from '@kortix/ui';
+import { cn, uiRoutes } from '@kortix/ui';
 import { DEFAULT_WALLPAPER_ID } from '@kortix/ui/theme';
-import { openCustomizeSidebar } from '@kortix/ui/internal/stores/sidebar-nav-store';
 import { hubTarget, openAccountPanel } from '@kortix/ui/internal/stores/account-panel-store';
 import { useChatSendStore } from '@kortix/ui/internal/stores/chat-send-store';
 import { firstChatHref, useFirstChatPending } from '@kortix/ui/internal/stores/first-chat-store';
@@ -152,12 +154,14 @@ import {
   useCreatePty,
   useCreateRuntimeSession,
   useModelStore,
+  useProjectMemorySearch,
   useProjectSessions,
+  useProjectSpaces,
   useRuntimeConnectionStore,
   useRuntimeProviders,
   useVisibleAgents,
 } from '@kortix/sdk/react';
-import { capitalizeWords, chalkColors, formatRelativeTime } from '@kortix/shared';
+import { capitalizeWords, formatRelativeTime } from '@kortix/shared';
 import {
   ArrowDownIcon as ArrowDown,
   ArrowUpIcon as ArrowUp,
@@ -173,6 +177,7 @@ import {
   ChatCircleIcon as MessageCircle,
   MinusIcon as Minus,
   MagnifyingGlassIcon as Search,
+  SunDimIcon,
   TextAlignLeftIcon as TextAlignLeft,
   UsersIcon as UsersSolid,
   XIcon as X,
@@ -712,7 +717,7 @@ function ChangeRequestsPage({
  * **Why toggling here rather than linking there.** Every other flag surface
  * costs three navigations to answer "is Voice on for this workspace?". The
  * flags are also the one settings list whose ROWS are what people search for
- * ("warm sessions", "us_region" out of a changelog) — a single row pointing
+ * ("event triggers", "us_region" out of a changelog) — a single row pointing
  * at a page they then have to search again is the defect this whole change
  * exists to remove. Selecting a row when the permission probe denies (or is
  * still in flight) navigates to the section instead of failing silently.
@@ -779,7 +784,7 @@ function FeatureFlagsPage({
     if (!q) return withPending;
     // Matches `key` as well as `name`/`description`, for the same reason
     // `filterFeatures` in experimental-tab.tsx does: flags get turned on from
-    // docs and changelogs that name the raw key (`warm_sessions`).
+    // docs and changelogs that name the raw key (`us_region`).
     return withPending.filter(
       (f) =>
         f.name.toLowerCase().includes(q) ||
@@ -1045,6 +1050,35 @@ export function CommandPalette() {
   // per-project feature flags this gates on.
   const { flags: projectFlags } = useProjectFeatureFlags(open ? projectId : null);
 
+  // Memory pages (`project_channels`): the server's search, at 2 characters
+  // or more. Hits of an older query stay in the hook while the next loads, so
+  // a query cut below 2 characters shows none.
+  const tMemory = useTranslations('spaces.memory');
+  const memoryOn = open && !!projectId && projectFlags.project_channels === true && page === 'root';
+  const memorySearch = useProjectMemorySearch(
+    projectId ?? '',
+    { q: serverSessionQuery, limit: 5 },
+    { enabled: memoryOn },
+  );
+  const memoryHref = useMemoryPageHref(projectId, memoryOn);
+  const memoryQueryLongEnough = query.trim().length >= 2 && serverSessionQuery.length >= 2;
+  const rootMemoryResults = useMemo(
+    () =>
+      memoryOn && memoryQueryLongEnough
+        ? (memorySearch.data?.hits ?? []).flatMap((hit) => {
+            const href = memoryHref({ scope: hit.scope, key: hit.layer_key }, hit.page_id);
+            const place =
+              hit.scope === 'company'
+                ? tMemory('used.company')
+                : hit.scope === 'dm'
+                  ? capitalizeWords(hit.layer_name)
+                  : hit.layer_name;
+            return href ? [{ hit, href, place }] : [];
+          })
+        : [],
+    [memoryOn, memoryQueryLongEnough, memorySearch.data, memoryHref, tMemory],
+  );
+
   const allModels = useMemo(
     () => flattenModels(providers, { providerMode: modelProviderMode(providers) }),
     [providers],
@@ -1218,7 +1252,6 @@ export function CommandPalette() {
         // who can act on reviews gets the list.
         'review-changes': customizeTabs.split(' ').includes('review'),
         // Customize tabs with their own row: shown exactly when the tab is.
-        'proj-reminders': customizeTabs.split(' ').includes('reminders'),
         'proj-repo': customizeTabs.split(' ').includes('files'),
       },
     };
@@ -1233,6 +1266,8 @@ export function CommandPalette() {
       if (item.requiresRuntime && !runtimeSupports(runtimeCapabilities, item.requiresRuntime)) continue;
       if (item.requiresProject && !projectId) continue;
       if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;
+      // Channels replace New session: a thread starts from a channel's composer.
+      if (item.id === 'new-session' && projectFlags.project_channels) continue;
       // Token substitution. An href that still holds an UNRESOLVED token after
       // this is dropped, not offered: navigating to a literal
       // `/accounts/{accountId}?tab=billing` is a 404, and offering a row that
@@ -1309,9 +1344,10 @@ export function CommandPalette() {
   // No `flags` argument any more: Marketplace, Review and Voice were the only
   // flag-gated rail rows and all three moved to `/projects/<id>/config`, whose
   // own sub-nav composes them. Nothing left in the rail varies by flag.
+  const chromeOffered = useChromeOffered(open);
   const allSettingsGroups = useMemo(
-    () => settingsPaletteGroups({ hasProject: !!projectId }, (key) => tSettingsRail(key as never)),
-    [projectId, tSettingsRail],
+    () => settingsPaletteGroups({ hasProject: !!projectId, chromeOffered }, (key) => tSettingsRail(key as never)),
+    [projectId, chromeOffered, tSettingsRail],
   );
 
   const filteredSettingsGroups = useMemo(
@@ -1587,6 +1623,23 @@ export function CommandPalette() {
     return filteredProjectSessionsList.slice(0, 8);
   }, [hasQuery, projectId, filteredProjectSessionsList]);
 
+  // Channels (`project_channels`): sessions are threads, and channels and DMs
+  // are found by name, as the sidebar lists them (its DMs are the visible agents).
+  const channelsOn = projectFlags.project_channels === true;
+  const tSidebar = useTranslations('sidebar');
+  const projectSpaces = useProjectSpaces(projectId, { enabled: open && channelsOn });
+  const rootSpaceResults = useMemo(() => {
+    const q = query.trim().toLowerCase().replace(/^#/, '');
+    if (!q || !projectId || !channelsOn) return { channels: [], dms: [] };
+    const channels = (projectSpaces.data ?? [])
+      .filter((space) => space.kind === 'channel' && !space.archived_at && space.slug)
+      .filter((space) => `${space.slug} ${space.name}`.toLowerCase().includes(q))
+      .slice(0, 5);
+    const dms = agents.filter((agent) => `${agentLabel(agent.name)} ${agent.name}`.toLowerCase().includes(q)).slice(0, 5);
+    return { channels, dms };
+  }, [query, projectId, channelsOn, projectSpaces.data, agents]);
+  const sessionsHeading = channelsOn ? tPalette('threads') : 'Sessions';
+
   const tFirstChat = useTranslations('firstChat');
   const firstChatPending = useFirstChatPending(projectId ?? '');
   const firstChatTitle = tFirstChat('title');
@@ -1800,12 +1853,16 @@ export function CommandPalette() {
   );
 
   const hasSessionResults = rootSessionResults.length > 0 || firstChatResult;
+  const hasSpaceResults = rootSpaceResults.channels.length + rootSpaceResults.dms.length > 0;
+  const hasMemoryResults = rootMemoryResults.length > 0;
   const hasWorkspaceResults = rootWorkspaceRows.length > 0;
   const hasSettingsResults = settingsResultCount > 0;
   const hasAnyResults =
     rootCopyResults.length > 0 ||
     hasNavResults ||
     hasSessionResults ||
+    hasSpaceResults ||
+    hasMemoryResults ||
     hasWorkspaceResults ||
     hasSessionActionResults ||
     hasSettingsResults;
@@ -1846,11 +1903,6 @@ export function CommandPalette() {
     sidebarCtx?.toggleSidebar({ instant: true });
     close();
   }, [sidebarCtx, close]);
-
-  const handleCustomizeSidebar = useCallback(() => {
-    close();
-    openCustomizeSidebar();
-  }, [close]);
 
   const handleTogglePanelMode = useCallback(() => {
     close();
@@ -2182,7 +2234,6 @@ export function CommandPalette() {
       // the action branch runs — same arrangement as `conversationDensity`.
       reviewChanges: handleReviewChanges,
       toggleSidebar: handleToggleSidebar,
-      customizeSidebar: handleCustomizeSidebar,
       togglePanelMode: handleTogglePanelMode,
       // Fallback only: SUBMENU_PAGE_BY_ID intercepts `activity-density`
       // before the action branch runs. If that map entry is ever removed, the
@@ -2207,7 +2258,6 @@ export function CommandPalette() {
       handleOpenProjectMembers,
       handleReviewChanges,
       handleToggleSidebar,
-      handleCustomizeSidebar,
       handleTogglePanelMode,
       goToPage,
       handleOpenSessionTerminal,
@@ -2359,6 +2409,9 @@ export function CommandPalette() {
       filteredNavItems.length +
       rootSessionResults.length +
       (firstChatResult ? 1 : 0) +
+      rootSpaceResults.channels.length +
+      rootSpaceResults.dms.length +
+      rootMemoryResults.length +
       rootWorkspaceRows.length +
       sessionActionItems.length +
       settingsResultCount +
@@ -2370,6 +2423,8 @@ export function CommandPalette() {
     filteredNavItems,
     rootSessionResults,
     firstChatResult,
+    rootSpaceResults,
+    rootMemoryResults,
     rootWorkspaceRows,
     sessionActionItems,
     settingsResultCount,
@@ -2392,8 +2447,8 @@ export function CommandPalette() {
     if (page === 'density') return tI18nComplete.raw('textf0f41388d721');
     if (page === 'changes') return tI18nComplete.raw('text3db1f0d55a5b');
     if (page === 'flags') return tI18nComplete.raw('textfd20bd366efb');
-    return tI18nComplete.raw('text7b355872be1c');
-  }, [page, tI18nComplete]);
+    return channelsOn ? tPalette('searchChannels') : tI18nComplete.raw('text7b355872be1c');
+  }, [page, tI18nComplete, channelsOn, tPalette]);
 
   const pageTitle = useMemo(() => {
     if (page === 'agents') return tI18nComplete.raw('text6fb2caa0ee1c');
@@ -2566,7 +2621,7 @@ export function CommandPalette() {
                             value="suggestion change agent worker switch"
                             onSelect={() => goToPage('agents')}
                           >
-                            <Bot className="size-4" />
+                            {currentAgent ? <AgentMark slug={currentAgent.name} /> : <Bot className="size-4" />}
                             <span className="flex-1">
                               {tHardcodedUi.raw(
                                 'componentsCommandPalette.line1209JsxTextChangeAgent',
@@ -2632,9 +2687,11 @@ export function CommandPalette() {
 
                     {projectId && recentProjectSessions.length > 0 && (
                       <CommandGroup
-                        heading={tHardcodedUi.raw(
-                          'componentsCommandPalette.line1260JsxAttrHeadingRecentSessions',
-                        )}
+                        heading={
+                          channelsOn
+                            ? tPalette('recentThreads')
+                            : tHardcodedUi.raw('componentsCommandPalette.line1260JsxAttrHeadingRecentSessions')
+                        }
                         forceMount
                       >
                         {recentProjectSessions.map((session) => (
@@ -2696,6 +2753,43 @@ export function CommandPalette() {
 
                 {hasQuery && (
                   <>
+                    {/* Channels and DMs lead: with Channels on they are where work lives. */}
+                    {rootSpaceResults.channels.length > 0 && projectId && (
+                      <CommandGroup heading={tSidebar('spaces.channels')} forceMount>
+                        {rootSpaceResults.channels.map((channel) => (
+                          <CommandItem
+                            key={channel.space_id}
+                            value={sanitizeCmdkValue(`channel ${channel.slug} ${channel.name}`)}
+                            onSelect={() => {
+                              router.push(uiRoutes().channel(projectId, channel.slug ?? ''));
+                              close();
+                            }}
+                          >
+                            <ChannelGlyph visibility={channel.visibility} className="size-4 shrink-0" />
+                            <span className="flex-1 truncate">{channel.slug}</span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    )}
+
+                    {rootSpaceResults.dms.length > 0 && projectId && (
+                      <CommandGroup heading={tSidebar('spaces.directMessages')} forceMount>
+                        {rootSpaceResults.dms.map((agent) => (
+                          <CommandItem
+                            key={agent.name}
+                            value={sanitizeCmdkValue(`dm ${agentLabel(agent.name)} ${agent.name}`)}
+                            onSelect={() => {
+                              router.push(uiRoutes().dm(projectId, agent.name));
+                              close();
+                            }}
+                          >
+                            <AgentMark slug={agent.name} />
+                            <span className="flex-1 truncate">{agentLabel(agent.name)}</span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    )}
+
                     {hasSessionActionResults && (
                       <CommandGroup heading="Session" forceMount>
                         {sessionActionItems.map((item) => (
@@ -2705,7 +2799,7 @@ export function CommandPalette() {
                             onSelect={() => goToPage(item.targetPage)}
                           >
                             {item.id === 'change-agent' ? (
-                              <Bot className="size-4" />
+                              currentAgent ? <AgentMark slug={currentAgent.name} /> : <Bot className="size-4" />
                             ) : (
                               <Cpu className="size-4" />
                             )}
@@ -2816,7 +2910,7 @@ export function CommandPalette() {
                     ))}
 
                     {hasSessionResults && (
-                      <CommandGroup heading="Sessions" forceMount>
+                      <CommandGroup heading={sessionsHeading} forceMount>
                         {rootSessionResults.map((session) => (
                           <CommandItem
                             key={session.session_id}
@@ -2851,6 +2945,29 @@ export function CommandPalette() {
                             <span className="flex-1 truncate">{firstChatTitle}</span>
                           </CommandItem>
                         )}
+                      </CommandGroup>
+                    )}
+
+                    {hasMemoryResults && (
+                      <CommandGroup heading={tMemory('palette.heading')} forceMount>
+                        {rootMemoryResults.map(({ hit, href, place }) => (
+                          <CommandItem
+                            key={hit.page_id}
+                            // The server matched the body too; cmdk scores only `value`, so a
+                            // body-only hit would unmount. The value stays its selection identity.
+                            forceMount
+                            // Label plus curated keywords: the title, its layer, its summary.
+                            value={sanitizeCmdkValue(`memory ${hit.title} ${place} ${hit.summary}`)}
+                            onSelect={() => {
+                              router.push(href);
+                              close();
+                            }}
+                          >
+                            <SunDimIcon aria-hidden className="size-4 shrink-0" />
+                            <span className="flex-1 truncate">{hit.title}</span>
+                            <span className="text-muted-foreground max-w-40 shrink-0 truncate text-xs">{place}</span>
+                          </CommandItem>
+                        ))}
                       </CommandGroup>
                     )}
 
@@ -2960,7 +3077,6 @@ export function CommandPalette() {
                   <CommandGroup heading="Agents" forceMount>
                     {filteredAgents.map((agent) => {
                       const isActive = currentAgent?.name === agent.name;
-                      const chalk = chalkColors(agent.name);
                       return (
                         <CommandItem
                           key={agent.name}
@@ -2969,16 +3085,8 @@ export function CommandPalette() {
                           )}
                           onSelect={() => handleSelectAgent(agent.name)}
                         >
-                          <div
-                            className="inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold"
-                            style={{
-                              backgroundColor: chalk.background,
-                              color: chalk.foreground,
-                              borderColor: chalk.border,
-                            }}
-                          >
-                            <Bot className="size-5 shrink-0" />
-                          </div>
+                          {/* The agent's pixel mark, its face on every surface. */}
+                          <AgentMark slug={agent.name} size={21} />
                           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
                             <span className="truncate text-sm font-medium">
                               {capitalizeWords(agent.name)}
@@ -3196,7 +3304,7 @@ export function CommandPalette() {
 
             {page === 'sessions' &&
               (filteredProjectSessionsList.length > 0 ? (
-                <CommandGroup heading="Sessions" forceMount>
+                <CommandGroup heading={sessionsHeading} forceMount>
                   {filteredProjectSessionsList.map((session) => (
                     <CommandItem
                       key={session.session_id}

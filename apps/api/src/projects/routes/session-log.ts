@@ -49,17 +49,17 @@ import {
 } from '@kortix/api-contract/session-log';
 import type { Context } from 'hono';
 import { config } from '../../config';
+import { logger } from '../../lib/logger';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
-import { auth, errors, json } from '../../openapi';
+import { auth, boundedIssues, errors, json } from '../../openapi';
 import type { AppEnv } from '../../types';
 import { assertProjectCapability, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { findSessionLogBlob, storeSessionLogBlob } from '../session-log-blobs';
 import { ingestSessionLogJournal, readSessionLogManifest, sessionExists, type SessionLogScope } from '../session-log-ingest';
-import { SessionLogConvertingError } from '../session-log-backfill';
 import { readSessionLogPage } from '../session-log-read';
 import { claimSessionLog } from '../session-log-restore';
 import { sessionLogSwitchPreflight } from '../session-log-switch';
@@ -113,6 +113,14 @@ async function readBlobBody(request: Request, ms: number): Promise<Buffer | 'lat
     clearTimeout(timer);
   }
   return late ? 'late' : Buffer.concat(chunks);
+}
+
+/**
+ * One WARN per journal request the API refuses (400, 403, 409, 413, 422). kortixd's own log stays in the box and
+ * never reaches CloudWatch, so this line is how a refused batch shows up.
+ */
+function journalRejected(scope: Pick<SessionLogScope, 'projectId' | 'sessionId'>, status: number, code: string, detail: Record<string, unknown> = {}): void {
+  logger.warn('[session-log] journal rejected', { status, code, projectId: scope.projectId, sessionId: scope.sessionId, ...detail });
 }
 
 /** The calling box's scope, or null when the credential is not this session's sandbox credential. */
@@ -252,19 +260,35 @@ export function registerSessionLogRoutes(): void {
     }),
     async (c) => {
       const scope = sandboxScope(c);
-      if (!scope) return c.json({ error: 'The session log takes the session sandbox credential' }, 403);
+      if (!scope) {
+        // kortixd keeps the batch and backs off: a credential that regains access sends it.
+        journalRejected({ projectId: c.req.param('projectId') ?? '', sessionId: c.req.param('sessionId') ?? '' }, 403, 'not_session_credential');
+        return c.json({ error: 'The session log takes the session sandbox credential' }, 403);
+      }
       if (!config.SESSION_LOG_INGEST_ENABLED) return c.json({ error: 'Session log ingest is off' }, 503);
       const read = await readJournalBody(c);
-      if (!read.ok) return c.json({ error: read.error }, read.status);
+      if (!read.ok) {
+        journalRejected(scope, read.status, read.status === 413 ? 'too_large' : 'unreadable_body', { error: read.error });
+        return c.json({ error: read.error }, read.status);
+      }
       const parsed = SessionLogJournalRequestSchema.safeParse(read.body);
       if (!parsed.success) {
-        return c.json({ error: 'Invalid journal body', issues: parsed.error.issues.slice(0, 5) }, 400);
+        const issues = parsed.error.issues.slice(0, 5);
+        journalRejected(scope, 400, 'invalid_body', { issues: issues.map((i) => `${i.path.join('.')}: ${i.message}`) });
+        return c.json({ error: 'Invalid journal body', ...boundedIssues(parsed.error.issues) }, 400);
       }
       // The body as sent: the parse would drop fields this API does not know.
       const outcome = await ingestSessionLogJournal(scope, read.body as SessionLogJournalRequest);
       if (outcome.status === 200) return c.json(outcome.body, 200);
-      if (outcome.status === 409) return c.json(outcome.body, 409);
-      if (outcome.status === 422) return c.json(outcome.body, 422);
+      if (outcome.status === 409) {
+        journalRejected(scope, 409, 'generation_conflict', { generation: outcome.body.generation, batchGeneration: parsed.data.generation });
+        return c.json(outcome.body, 409);
+      }
+      if (outcome.status === 422) {
+        const { thread_id, seq, seq_max, message_id } = outcome.body;
+        journalRejected(scope, 422, 'seq_conflict', { threadId: thread_id, seq, seqMax: seq_max, messageId: message_id });
+        return c.json(outcome.body, 422);
+      }
       if (outcome.status === 429) {
         // Header inline, never `c.header(...)` first: the request deadline may
         // have answered this request already, and Context#header on the
@@ -311,13 +335,13 @@ export function registerSessionLogRoutes(): void {
         'included) and each text stored by reference. A box still journaling at an older generation then gets 409. ' +
         'Gzipped when the request accepts gzip and the body is 1 KiB or more. 404 `no_session_log`: no stored log, nothing claimed. ' +
         '413 `session_log_too_large`: the live messages are over `SESSION_LOG_RESTORE_MAX_BYTES`; the claim stands and the answer ' +
-        'carries every thread, rev and seq but no message.',
+        'carries every rev and seq and the part of the log that fits (`kept`): what the model sees, else the newest turns, else no message.',
       ...auth,
       request: { params },
       responses: {
         200: json(SessionLogRestoreSchema, 'The claimed generation and the whole stored log'),
         404: json(SessionLogRestoreMissingSchema, 'The session has no stored log; nothing was claimed'),
-        413: json(SessionLogRestoreTooLargeSchema, 'The log is over the restore cap; claimed, answered without messages'),
+        413: json(SessionLogRestoreTooLargeSchema, 'The log is over the restore cap; claimed, answered with the part that fits'),
         ...errors(403, 503),
       },
     }),
@@ -343,9 +367,7 @@ export function registerSessionLogRoutes(): void {
         '`thread` defaults to the root thread; `messages` are the newest `limit` (default 40, max 500) ' +
         'with `seq < before_seq`, ascending by seq, tombstoned messages left out. Session read permission, ' +
         'the same gate as `GET .../transcript`: a session-bound token reads the sessions that route serves it. ' +
-        '404 when the session has no stored log (`code: session_log_missing`) or no such thread. A session whose history is still only in the ' +
-        'v1 mirror is converted to the log before the read answers; one over the conversion size cap answers ' +
-        '503 `session_log_converting` with `Retry-After` while the backfill converts it.',
+        '404 when the session has no stored log (`code: session_log_missing`) or no such thread.',
       ...auth,
       request: {
         params,
@@ -353,7 +375,7 @@ export function registerSessionLogRoutes(): void {
       },
       responses: {
         200: json(SessionLogPageSchema, 'One page of the session log'),
-        ...errors(400, 403, 404, 503),
+        ...errors(400, 403, 404),
       },
     }),
     async (c) => {
@@ -372,18 +394,9 @@ export function registerSessionLogRoutes(): void {
       const gate = await sessionReadGate(c, projectId, sessionId);
       if (gate.denied) return gate.denied as never;
 
-      let page: Awaited<ReturnType<typeof readSessionLogPage>>;
-      try {
-        page = await readSessionLogPage({ sessionId, threadId: query.thread ?? null, beforeSeq, limit: limit.value });
-      } catch (err) {
-        if (!(err instanceof SessionLogConvertingError)) throw err;
-        c.header('Retry-After', '60');
-        return c.json({ error: err.message, code: err.code }, 503);
-      }
+      const page = await readSessionLogPage({ sessionId, threadId: query.thread ?? null, beforeSeq, limit: limit.value });
       // The code tells a client this API serves the log and the session has nothing saved (a new
-      // session): it stays on the log. An API without this route answers a bare 404, and so does
-      // a session whose v1 mirror another read is converting: the client reads v1, which converts it.
-      if (page === 'mirror_unconverted') return c.json({ error: 'No session log for this session' }, 404);
+      // session): it stays on the log and reads it again at the next turn end (`useSessionLogSync`).
       if (!page) return c.json({ error: 'No session log for this session', code: 'session_log_missing' }, 404);
       if (page === 'unknown_thread') return c.json({ error: 'Unknown thread' }, 404);
       return c.json(page, 200);

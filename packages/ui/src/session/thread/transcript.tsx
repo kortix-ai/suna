@@ -16,7 +16,7 @@ import { UnifiedMarkdown } from '../../markdown/unified-markdown';
 import { detectCommandFromText } from './detect-command';
 import { GenuiTelemetryContext } from '../../markdown/genui/block-telemetry';
 import { copyGenuiText } from '../../markdown/genui/to-markdown';
-import { useTranslations } from '../../i18n';
+import { useLocale, useTranslations } from '../../i18n';
 import {
   type SessionLogBlock,
   type SessionLogCompaction,
@@ -49,7 +49,15 @@ import {
   StopCircleIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AfterFirstPromptContext } from './after-first-prompt';
+import { TranscriptRowsContext } from './transcript-rows';
+import { AgentBusyRow } from './thread-boot-rows';
+import { MessageRow } from '../turn/message-row';
+import { agentDisplayLabel } from '../composer/agent-selector';
+import { participantLabel } from '../participants/session-participants';
+import { AgentMark } from '../../internal/components/agent-mark';
+import { UserAvatar } from '../../primitives/user-avatar';
 import {
   SystemNotificationCard,
   parseSystemNotifications,
@@ -57,7 +65,7 @@ import {
 } from './message-parsing';
 import { ActivityBurst } from '../turn/activity-burst';
 import { TurnWorkAccordion } from '../turn/turn-work-accordion';
-import { CompactionFailedRow, CompactionMarker } from '../turn/compaction-card';
+import { CompactionFailedRow, CompactionMarker, compactionReset } from '../turn/compaction-card';
 import { ExpandableOutput } from '../turn/expandable-output';
 import { isPlanWriteTool } from '../turn/plan-anchor';
 import { TurnFallbackRows } from '../turn/fallback-row';
@@ -87,6 +95,7 @@ import type {
 import type { TurnServedModel } from '../turn/served-model';
 import { SessionBusyIndicator } from '../status/session-busy-indicator';
 import { SessionTurnMeta } from './session-turn-meta';
+import { TurnShareButton } from './turn-share';
 import {
   sessionTurnDurationMs,
   sessionTurnEndedAt,
@@ -96,9 +105,21 @@ import {
 import { Button } from '../../primitives/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../primitives/disclosure';
 import { useUserPreferencesStore, type ConversationDensity } from '../../internal/stores/user-preferences-store';
-import { SubSessionModal } from './sub-session-modal';
+import { SubagentDialog } from '../agents/subagent-view';
+import { parseNoticeBatch, parseSubagentNotice, type NoticeBatchItem, type SubagentNotice } from '../turn/subagent-notice';
+import { SubagentNoticeRow } from '../turn/subagent-notice-row';
+import { NoticeBatchGroup } from '../turn/notice-batch-group';
+import { PeerMessageRow } from '../turn/peer-message-row';
+import { parsePeerMessagePrompt, type PeerMessagePromptInfo } from '@kortix/shared';
 import { ToolPartRenderer, TurnLiveContext } from '../tool/tool-renderers';
-import { RecoveredCallsContext } from '../tool/shared/infrastructure';
+import {
+  ImageGenDigestsContext,
+  ImageGenPathsContext,
+  ImageGenRunsContext,
+  InTranscriptTurnContext,
+  RecoveredCallsContext,
+} from '../tool/shared/infrastructure';
+import { imageDigestsShownByImageGen, imagePathsShownByImageGen, sessionLogImageGenRuns, showDrawnByImageGen } from '@kortix/sdk';
 import { recoveredShellFailures } from '../turn/recovered-failures';
 import { type SentAttachment } from '../composer/sent-attachment-previews';
 import { cn } from '../../lib/utils';
@@ -133,6 +154,9 @@ import { isOptimisticSessionPrompt, useSessionWorking } from '@kortix/sdk/react'
 import { CodeBlockEndpoints, SandboxUrlDetector } from '../media/sandbox-url-detector';
 import { resolveLastTurnWorking } from '../composer/session-composer-readiness';
 import { HarnessSwitchMarker, RestoreNoteMarker, TurnFullText, type FullTextState } from './session-history';
+
+/** The agent whose mark stands in when a row does not name its agent. */
+const DEFAULT_AGENT_SLUG = 'kortix';
 
 // ============================================================================
 // Optimistic answers cache
@@ -205,7 +229,7 @@ function SystemMessageIndicator({ messages }: { messages: KortixSystemMessage[] 
   return (
     <div className="-my-1 flex items-center gap-2">
       <div className="bg-border/30 h-px flex-1" />
-      <span className="text-muted-foreground/30 text-xs whitespace-nowrap select-none">{text}</span>
+      <span className="text-muted-foreground text-xs whitespace-nowrap select-none">{text}</span>
       <div className="bg-border/30 h-px flex-1" />
     </div>
   );
@@ -398,6 +422,10 @@ interface SessionTurnProps {
   isLast: boolean;
   ownsPlan: boolean;
   sessionId: string;
+  /** The Kortix project and project-session ids. With both, a settled turn
+   *  offers Share (`TurnShareButton`). Absent (a child session): no Share. */
+  projectId?: string;
+  projectSessionId?: string;
   sessionStatus: import('../../internal/session-types').SessionStatus | undefined;
   permissions: PermissionRequest[];
   questions: QuestionRequest[];
@@ -559,7 +587,7 @@ export function SessionReportCard({
           <span className="text-muted-foreground block truncate text-xs">
             {report.project}
             {report.project && report.prompt && (
-              <span className="text-muted-foreground/40">
+              <span className="text-muted-foreground">
                 {' '}
                 {tI18nComplete.raw('text3b9453dad42b')}{' '}
               </span>
@@ -569,7 +597,7 @@ export function SessionReportCard({
         )}
       </span>
 
-      <ExternalLink className="text-muted-foreground/40 group-hover/report:text-muted-foreground size-3.5 shrink-0 transition-colors" />
+      <ExternalLink className="text-muted-foreground group-hover/report:text-foreground size-3.5 shrink-0 transition-colors" />
     </button>
   );
 }
@@ -989,6 +1017,24 @@ type PromptText = { text: string; synthetic: boolean; ignored: boolean };
  * A user message's text as its v1 text parts held it: a text block, or an
  * `ignored` text (a model-invisible `harness` block whose data is the part).
  */
+/**
+ * Whether a turn's prompt is a notice from another agent, not something a
+ * person wrote: a peer message (`send_message`), a subagent or teammate that
+ * finished, or a batch of those. The agent's work continues across it, so the
+ * thread spaces it like a continuation, not like a new prompt.
+ */
+export function isAgentNoticeTurn(turn: Pick<SessionLogTurn, 'user'>): boolean {
+  // A stream delta remakes the turns, not the prompt: read each prompt once.
+  const known = agentNoticeOf.get(turn.user);
+  if (known !== undefined) return known;
+  const notice = promptTexts(turn.user).some(
+    (t) => !!parsePeerMessagePrompt(t.text) || !!parseSubagentNotice(t.text) || (parseNoticeBatch(t.text)?.length ?? 0) > 1,
+  );
+  agentNoticeOf.set(turn.user, notice);
+  return notice;
+}
+const agentNoticeOf = new WeakMap<SessionLogMessage, boolean>();
+
 export function promptTexts(message: SessionLogMessage): PromptText[] {
   return message.blocks.flatMap((b): PromptText[] => {
     if (b.type === 'text') return [{ text: b.text, synthetic: b.synthetic === true, ignored: false }];
@@ -1018,6 +1064,36 @@ const sessionReport = useMemo<SessionReport | null>(() => {
   }
   return null;
 }, [texts]);
+// Several notices the API coalesced into one prompt (`session-notice-batch.ts`): one group of
+// compact rows. Read whether or not a session report is in it: idle notices carry none.
+const noticeBatch = useMemo<NoticeBatchItem[] | null>(() => {
+  for (const t of texts) {
+    const batch = parseNoticeBatch(t.text);
+    if (batch && batch.length > 1) return batch;
+  }
+  return null;
+}, [texts]);
+// A background subagent's end notice (`subagentNoticeText` in the API): a compact row, not a card.
+const subagentNotice = useMemo<SubagentNotice | null>(() => {
+  if (!sessionReport || noticeBatch) return null;
+  for (const t of texts) {
+    const notice = parseSubagentNotice(t.text);
+    if (notice) return notice;
+  }
+  return null;
+}, [texts, sessionReport, noticeBatch]);
+// A message from another Kortix session (`send_message`). The API delivers it as
+// harness context (`synthetic`), so the bubble, which draws only what a person
+// typed, never shows it: its row is drawn here. A typed one stays the bubble's.
+const peerMessage = useMemo<PeerMessagePromptInfo | null>(() => {
+  if (sessionReport || noticeBatch) return null;
+  for (const t of texts) {
+    if (!t.synthetic) continue;
+    const info = parsePeerMessagePrompt(t.text);
+    if (info) return info;
+  }
+  return null;
+}, [texts, sessionReport, noticeBatch]);
 // Extract kortix_system messages for inline rendering (goal continuations, etc.)
 const systemMessages = useMemo<KortixSystemMessage[]>(() => {
   const msgs: KortixSystemMessage[] = [];
@@ -1029,7 +1105,7 @@ const systemMessages = useMemo<KortixSystemMessage[]>(() => {
 
 const hasVisibleUserContent = useMemo(() => {
   // Session reports render as their own card — don't show as user bubble
-  if (sessionReport) return false;
+  if (sessionReport || noticeBatch) return false;
   // The prompt is not loaded (a long run's tail): its stand-in has no blocks
   // and must not render as the empty bubble a loading prompt would.
   if (turn.partial) return false;
@@ -1046,7 +1122,7 @@ const hasVisibleUserContent = useMemo(() => {
   // Has any agent mention?
   if (turn.user.blocks.some((b) => b.type === 'harness' && b.kind === 'agent')) return true;
   return false;
-}, [turn.partial, turn.user.blocks, turn.attachments, texts, sessionReport]);
+}, [turn.partial, turn.user.blocks, turn.attachments, texts, sessionReport, noticeBatch]);
 
 // User message text — for copy action
 const userMessageText = useMemo(() => {
@@ -1068,10 +1144,11 @@ const commandForTurn = useMemo(() => {
 // A skill run as `/name` answers like any chat turn; only a real command's output sits in the command card.
 const commandOutput = useMemo(() => {
   if (!commandForTurn) return undefined;
+  if ('source' in commandForTurn && commandForTurn.source === 'skill') return undefined;
   const source = Array.isArray(commands) ? commands.find((c) => c.name === commandForTurn.name)?.source : undefined;
   return source === 'skill' ? undefined : commandForTurn;
 }, [commandForTurn, commands]);
-  return { sessionReport, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn, commandOutput };
+  return { sessionReport, noticeBatch, subagentNotice, peerMessage, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn, commandOutput };
 }
 
 /** The throttled working status of the working turn: one status change per
@@ -1451,6 +1528,7 @@ const openCompactionSummary = useCallback(() => {
           running={compactionRunning}
           summary={response}
           onOpenSummary={onOpenCompactionSummary ? openCompactionSummary : undefined}
+          reset={compactionReset(compactionInfo.block)}
         />
       </div>
     );
@@ -1478,7 +1556,7 @@ function TurnSessionReport({ report }: { report: SessionReport }) {
         report={report}
         onOpen={() => setSessionReportModalOpen(true)}
       />
-      <SubSessionModal
+      <SubagentDialog
         open={sessionReportModalOpen}
         onOpenChange={setSessionReportModalOpen}
         sessionId={report.sessionId}
@@ -1498,14 +1576,22 @@ function TurnUserBlock(
   },
 ) {
   const { userContent } = props;
-  const { sessionReport, systemMessages, hasVisibleUserContent } = userContent;
+  const { sessionReport, noticeBatch, subagentNotice, peerMessage, systemMessages, hasVisibleUserContent } = userContent;
   // P5.6: the note a partial restore left for the agent is a notice, not a person's prompt.
   if (isSessionLogRestoreNote(props.turn.user)) return <RestoreNoteMarker />;
   return (
     <>
-      {sessionReport && <TurnSessionReport report={sessionReport} />}
+      {noticeBatch ? (
+        <NoticeBatchGroup items={noticeBatch} />
+      ) : subagentNotice ? (
+        <SubagentNoticeRow notice={subagentNotice} />
+      ) : peerMessage ? (
+        <PeerMessageRow info={peerMessage} />
+      ) : (
+        sessionReport && <TurnSessionReport report={sessionReport} />
+      )}
       {/* ── System message indicator — shown for kortix_system-only messages ── */}
-      {!hasVisibleUserContent && !sessionReport && systemMessages.length > 0 && (
+      {!hasVisibleUserContent && !sessionReport && !noticeBatch && !peerMessage && systemMessages.length > 0 && (
         <SystemMessageIndicator messages={systemMessages} />
       )}
       {hasVisibleUserContent && <TurnUserBubble {...props} />}
@@ -1627,6 +1713,22 @@ function TurnToolBlocks(
     () => (working ? NO_RECOVERED_CALLS : recoveredShellFailures(turnBlocks(turn))),
     [turn, working],
   );
+  // D5: a `show` of an image this turn's `image_gen` already drew does not draw it again.
+  // Read from the segments, not the raw blocks: a script's nested call (a v2 `nested_part`
+  // block) is a real `image_gen` call there. Keyed by its content so the context keeps one
+  // identity across stream frames.
+  // R38: the same bytes at another path (a Drive copy) count too, by sha256.
+  const [imageGenPathsKey, imageGenDigestsKey] = useMemo(() => {
+    const blocks = segments.flatMap((s) => (s.kind === 'burst' || s.kind === 'show-group' ? s.blocks : [s.block]));
+    return [[...imagePathsShownByImageGen(blocks)].join('\n'), [...imageDigestsShownByImageGen(blocks)].join('\n')];
+  }, [segments]);
+  const imageGenPaths = useMemo(() => new Set(imageGenPathsKey ? imageGenPathsKey.split('\n') : []), [imageGenPathsKey]);
+  const imageGenDigests = useMemo(() => new Set(imageGenDigestsKey ? imageGenDigestsKey.split('\n') : []), [imageGenDigestsKey]);
+  // R38: consecutive image_gen deliverables draw as one grid at the first call, live and settled.
+  const imageGenRuns = useMemo(
+    () => sessionLogImageGenRuns(segments, { paths: imageGenPaths, digests: imageGenDigests }),
+    [segments, imageGenPaths, imageGenDigests],
+  );
   const renderSegment = (segment: TurnSegments[number]) => {
     const key = turnSegmentKey(segment);
     if (key === null) return null;
@@ -1674,6 +1776,10 @@ function TurnToolBlocks(
       // See `TurnLiveContext`.
       <TurnLiveContext.Provider value={working}>
        <RecoveredCallsContext.Provider value={recovered}>
+       <ImageGenPathsContext.Provider value={imageGenPaths}>
+       <ImageGenDigestsContext.Provider value={imageGenDigests}>
+       <ImageGenRunsContext.Provider value={imageGenRuns}>
+       <InTranscriptTurnContext.Provider value>
         <div className="space-y-3">
           {/* One keyed array in both states, so the hoisted deliverables and
               the final text keep their instances at settle: a `show` iframe
@@ -1691,6 +1797,10 @@ function TurnToolBlocks(
               ]
             : segments.map(renderSegment)}
         </div>
+       </InTranscriptTurnContext.Provider>
+       </ImageGenRunsContext.Provider>
+       </ImageGenDigestsContext.Provider>
+       </ImageGenPathsContext.Provider>
        </RecoveredCallsContext.Provider>
       </TurnLiveContext.Provider>
     )}
@@ -1741,6 +1851,12 @@ function TurnSegment({
   disableNavigation: boolean | undefined;
   conversationDensity: ConversationDensity;
 }) {
+  // A `show` whose every file this turn's `image_gen` already drew renders nothing,
+  // not even ToolPartRenderer's wrapper (it would leave a gap in the stack).
+  const imageGenPaths = useContext(ImageGenPathsContext);
+  const imageGenDigests = useContext(ImageGenDigestsContext);
+  const imageGenRuns = useContext(ImageGenRunsContext);
+  const drawnByImageGen = (call: ToolCallBlock) => showDrawnByImageGen(call, imageGenPaths, imageGenDigests);
   if (segment.kind === 'burst') {
     return (
       <ActivityBurst
@@ -1754,7 +1870,8 @@ function TurnSegment({
     );
   }
   if (segment.kind === 'show-group') {
-    const visible = segment.blocks.filter(shouldShowToolPart);
+    const visible = segment.blocks.filter((block) => shouldShowToolPart(block) && !drawnByImageGen(block));
+    if (visible.length === 0) return null;
     if (visible.length === 1) {
       return (
         <ToolPartRenderer call={visible[0]} sessionId={sessionId} disableNavigation={disableNavigation} />
@@ -1763,7 +1880,10 @@ function TurnSegment({
     return <ShowGroupRenderer calls={visible} sessionId={sessionId} disableNavigation={disableNavigation} />;
   }
   if (segment.kind === 'standalone') {
-    if (!shouldShowToolPart(segment.block)) return null;
+    if (!shouldShowToolPart(segment.block) || drawnByImageGen(segment.block)) return null;
+    // A later call of an image_gen run draws in the first call's grid (R38).
+    const run = imageGenRuns.get(segment.block.id);
+    if (run && run[0] !== segment.block) return null;
     return (
       <ToolPartRenderer
         call={segment.block}
@@ -1976,7 +2096,9 @@ function TurnAutoRetryNote({ count }: { count: number }) {
 /** The turn's footer: the working row, the error banner, the outcomes, the
  *  action bar, the connect-provider dialog, and who stopped the turn. */
 function TurnFooter(
-  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel' | 'stoppedBy' | 'modelOptions'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'projectId' | 'projectSessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel' | 'stoppedBy' | 'modelOptions'> & {
+    /** The row's floating toolbar draws the action bar instead (`TranscriptRowsContext`). */
+    hideActionBar?: boolean;
     model: TurnModelState;
     errors: TurnErrorState;
     answered: TurnAnsweredState;
@@ -1991,6 +2113,7 @@ function TurnFooter(
   const {
     turn, providers, model, errors, answered, status, retry, meta, tHardcodedUi,
     connectProviderOpen, onConnectProviderOpenChange, servedModel, stoppedBy, modelOptions,
+    projectId, projectSessionId,
   } = props;
   const { working, response } = model;
   const { turnError, turnErrorRow, turnErrorRowDetails, turnErrorRaw } = errors;
@@ -2046,7 +2169,9 @@ function TurnFooter(
           On touch there is no hover, so Copy and the turn's finished-at /
           duration / cost would be permanently invisible, and tap-emulated
           `:hover` would leave exactly one arbitrary turn's bar lit. */}
-      {!working && (
+      {/* A turn that ended in tool calls alone ("Worked for 13s") has nothing to
+          copy or share: no bar, so no empty hover band under it. */}
+      {!working && !props.hideActionBar && hasCopyableResponse(response, answered.inlineContentParts) && (
         <TurnActionBar
           response={response}
           inlineContentParts={answered.inlineContentParts}
@@ -2055,6 +2180,17 @@ function TurnFooter(
           costInfo={costInfo}
           servedModel={servedModel}
           tHardcodedUi={tHardcodedUi}
+          // A continuation turn's id names a compaction marker, not a user
+          // message, so it has no response of its own to share.
+          share={
+            turn.continues
+              ? undefined
+              : {
+                  projectId,
+                  sessionId: projectSessionId,
+                  turnId: turn.id,
+                }
+          }
         />
       )}
     <ConnectProviderDialog
@@ -2116,6 +2252,12 @@ function TurnBusyRow(
 
 /** Copy + the turn's settled meta row — the hover-revealed bar at the end of
  *  a settled turn. Owns the copy state: it is the only consumer. */
+/** Whether the turn wrote any text: the response, or a text item of its inline content. */
+function hasCopyableResponse(response: string, inlineContentParts: TurnAnsweredState['inlineContentParts']): boolean {
+  if (response.trim()) return true;
+  return !!inlineContentParts?.some((item) => item.type === 'text' && item.block.text.trim());
+}
+
 function TurnActionBar({
   response,
   inlineContentParts,
@@ -2124,7 +2266,11 @@ function TurnActionBar({
   costInfo,
   servedModel,
   tHardcodedUi,
+  inToolbar = false,
+  share,
 }: {
+  /** Inside a message row's toolbar, which owns the hover reveal. */
+  inToolbar?: boolean;
   response: string;
   inlineContentParts: TurnAnsweredState['inlineContentParts'];
   turnEndedAt: TurnSettledMeta['turnEndedAt'];
@@ -2132,6 +2278,7 @@ function TurnActionBar({
   costInfo: TurnSettledMeta['costInfo'];
   servedModel?: TurnServedModel;
   tHardcodedUi: ReturnType<typeof useTranslations>;
+  share?: { projectId?: string; sessionId?: string; turnId: string };
 }) {
   const [copied, setCopied] = useState(false);
 // ---- Copy response ----
@@ -2156,7 +2303,13 @@ const handleCopy = async () => {
   }
 };
   return (
-    <div className="duration-normal flex items-center gap-0.5 opacity-0 transition-opacity group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100 max-md:opacity-100">
+    <div
+      className={cn(
+        'flex items-center gap-0.5',
+        !inToolbar &&
+          'duration-normal opacity-0 transition-opacity group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100 max-md:opacity-100',
+      )}
+    >
       {response ? (
           <Button
             variant="ghost"
@@ -2176,24 +2329,40 @@ const handleCopy = async () => {
                   className="absolute inset-0 inline-flex items-center justify-center"
                 >
                   {copied ? (
-                    <CheckIcon className="text-muted-foreground size-[1.05rem]" />
+                    <CheckIcon className={cn('text-muted-foreground', inToolbar ? 'size-3.5' : 'size-[1.05rem]')} />
                   ) : (
-                    <Copy className="text-muted-foreground size-[1.05rem]" />
+                    <Copy className={cn('text-muted-foreground', inToolbar ? 'size-3.5' : 'size-[1.05rem]')} />
                   )}
                 </m.span>
               </AnimatePresence>
             </span>
           </Button>
       ) : null}
+      {response && share ? (
+        <TurnShareButton projectId={share.projectId} sessionId={share.sessionId} turnId={share.turnId} />
+      ) : null}
         <SessionTurnMeta
           endedAt={turnEndedAt}
           durationMs={turnDurationMs}
           cost={costInfo}
           served={servedModel}
-          className="flex items-center justify-center"
+          // `icon-sm`, the same as the copy button beside it; in a row's
+          // toolbar its dots match the 14px icons of the toolbar.
+          className={cn('flex items-center justify-center', inToolbar && '[&_svg]:size-4!')}
         />
     </div>
   );
+}
+
+/** A row's time: "1:44 AM" beside the name, the full date on hover. Null without a stamp. */
+function rowTime(at: number, locale: string): Parameters<typeof MessageRow>[0]['time'] {
+  if (!Number.isFinite(at) || at <= 0) return null;
+  const date = new Date(at);
+  return {
+    iso: date.toISOString(),
+    label: date.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' }),
+    title: date.toLocaleString(locale, { dateStyle: 'full', timeStyle: 'short' }),
+  };
 }
 
 function SessionTurnImpl(props: SessionTurnProps) {
@@ -2204,6 +2373,9 @@ function SessionTurnImpl(props: SessionTurnProps) {
     providers, commandMessages, commands,
   } = props;
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const locale = useLocale();
+  const afterFirstPrompt = useContext(AfterFirstPromptContext);
+  const rows = useContext(TranscriptRowsContext);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
   // `?? 'normal'` — legacy persisted preferences predate this key (same rule
   // as every `panelMode` read site).
@@ -2267,9 +2439,97 @@ function SessionTurnImpl(props: SessionTurnProps) {
       />
     );
   }
+  if (rows) {
+    const userAt = Date.parse(turn.user.created_at);
+    const answerAt = Date.parse(turn.assistant[0]?.created_at ?? '');
+    const author = props.author;
+    // Another session's agent wrote this prompt (a spawned thread's first
+    // message, a coordinator): its agent's row, not the thread owner's.
+    const sender =
+      author?.kind === 'session'
+        ? (author.agent ? agentDisplayLabel([], author.agent) : author.name) || rows.unknownAuthor
+        : null;
+    const person = author?.kind === 'member'
+      ? { name: author.name, email: author.email, avatarUrl: author.avatar_url ?? null }
+      : rows.owner;
+    const personName = person ? participantLabel(person) : '';
+    const showAnswer = turn.assistant.length > 0 || model.working || !!errors.turnErrorRow.text;
+    return (
+      <div className="text-factor-[2]">
+        {userContent.hasVisibleUserContent || userContent.sessionReport || userContent.noticeBatch || userContent.peerMessage || userContent.systemMessages.length > 0 ? (
+          <MessageRow
+            // The first message's turn clips its toolbar's overhang: it sits inside the row.
+            className={cn('group/turn', props.isFirstTurn && '[&_[data-slot=row-toolbar]]:top-0.5')}
+            avatar={
+              sender ? (
+                // 36px, the `lg` avatar column (`w-10`).
+                <AgentMark
+                  slug={author?.kind === 'session' && author.agent ? author.agent : DEFAULT_AGENT_SLUG}
+                  size={28}
+                  tile={36}
+                  label={sender}
+                />
+              ) : (
+                <UserAvatar email={person?.email ?? ''} name={personName} avatarUrl={person?.avatarUrl} size="lg" />
+              )
+            }
+            name={sender ?? (personName || rows.unknownAuthor)}
+            time={rowTime(userAt, locale)}
+          >
+            <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />
+          </MessageRow>
+        ) : null}
+        {props.isFirstTurn ? afterFirstPrompt : null}
+        {showAnswer ? (
+          <MessageRow
+            className="group/turn"
+            avatar={<AgentMark slug={rows.agentSlug ?? DEFAULT_AGENT_SLUG} size={28} tile={36} label={rows.agent} />}
+            name={rows.agent}
+            time={rowTime(answerAt, locale)}
+            toolbar={
+              model.working ? null : (
+                <TurnActionBar
+                  inToolbar
+                  response={model.response}
+                  inlineContentParts={answered.inlineContentParts}
+                  turnEndedAt={meta.turnEndedAt}
+                  turnDurationMs={meta.turnDurationMs}
+                  costInfo={meta.costInfo}
+                  servedModel={props.servedModel}
+                  tHardcodedUi={tHardcodedUi}
+                  share={
+                    turn.continues
+                      ? undefined
+                      : { projectId: props.projectId, sessionId: props.projectSessionId, turnId: turn.id }
+                  }
+                />
+              )
+            }
+          >
+            <div className="mt-0.5 space-y-2.5">
+              <TurnFallbackRows working={model.working} events={props.servedModel?.fallbacks} />
+              <GenuiTelemetryContext.Provider value={genuiTelemetry}>
+                <TurnToolBlocks
+                  {...props}
+                  model={model}
+                  segments={segments}
+                  conversationDensity={conversationDensity}
+                  fold={!answered.shouldUseInlineContent}
+                  durationMs={meta.turnDurationMs}
+                />
+                <TurnAssistantBlock {...props} model={model} answered={answered} userContent={userContent} tHardcodedUi={tHardcodedUi} />
+              </GenuiTelemetryContext.Provider>
+              <TurnFooter {...props} hideActionBar model={model} errors={errors} answered={answered} status={status} retry={retry} meta={meta} tHardcodedUi={tHardcodedUi} connectProviderOpen={connectProviderOpen} onConnectProviderOpenChange={setConnectProviderOpen} />
+            </div>
+          </MessageRow>
+        ) : null}
+      </div>
+    );
+  }
   return (
     <div className="group/turn text-factor-[2] space-y-2.5">
       <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />
+      {props.isFirstTurn ? afterFirstPrompt : null}
       {/* Model switches happened while the turn worked, so they sit above
           its work and its answer, not under the answer. */}
       <TurnFallbackRows working={model.working} events={props.servedModel?.fallbacks} />
@@ -2333,6 +2593,12 @@ interface TranscriptTurnRowProps extends SessionTurnProps {
  * settled `SessionTurn` bailed out. Every prop here is a primitive or a
  * reference that holds while another turn streams.
  */
+/** The fallback waiting row: a channel thread's agent row, or the bare line under a bubble. */
+function TurnFallbackBusyRow({ sessionId }: { sessionId: string }) {
+  const rows = useContext(TranscriptRowsContext);
+  return rows ? <AgentBusyRow sessionId={sessionId} /> : <SessionBusyIndicator sessionId={sessionId} className="mt-2.5" />;
+}
+
 export const TranscriptTurnRow = memo(function TranscriptTurnRow({
   turnId,
   viewportClassName,
@@ -2362,7 +2628,7 @@ export const TranscriptTurnRow = memo(function TranscriptTurnRow({
       {/* Queued bubbles follow this turn. The waiting
           row stays above them, where the working turn
           draws its own, so it never jumps. */}
-      {showBusyRow && <SessionBusyIndicator sessionId={turnProps.sessionId} className="mt-2.5" />}
+      {showBusyRow && <TurnFallbackBusyRow sessionId={turnProps.sessionId} />}
     </TurnViewport>
   );
 });

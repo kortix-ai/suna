@@ -54,6 +54,7 @@ import { cn } from '../../../internal/lib/utils';
 import { modelRefToKey, type ProjectTrigger, updateProjectTrigger } from '@kortix/sdk';
 import {
   type Agent,
+  useProjectApps,
   useProjectTriggerEventApps,
   useProjectTriggerEventTypes,
   useVisibleAgents,
@@ -85,18 +86,22 @@ import { TriggerCallouts } from './trigger-callouts';
 import {
   type ComposerBlock,
   type ComposerDraft,
+  eventSendingApps,
   findDraftApp,
   resolveProfile,
   validate,
 } from './trigger-composer-logic';
 import type { TriggerControls } from './trigger-controls';
 import { draftFromTrigger, triggerPatch } from './trigger-edit-logic';
+import { PostToField } from './post-to-field';
 import { TriggerOptions } from './trigger-options';
 import { TriggerReadOnly } from './trigger-readonly';
 import { TriggerRunsPanel } from './trigger-runs-panel';
 import { TriggerTestDialog } from './trigger-test-dialog';
 import { TriggerTile } from './trigger-tile';
 import { useEventAppConnect } from './use-event-app-connect';
+import { WhenApp } from './when-app';
+import { WhenChangeRequest } from './when-change-request';
 import { WhenEvent } from './when-event';
 import { WhenEventSummary } from './when-event-summary';
 import { WhenSchedule } from './when-schedule';
@@ -532,6 +537,10 @@ function SheetForm({
 }) {
   const t = useI18nTranslations('hardcodedUi.i18nComplete');
   const { add, canConnect } = useEventAppConnect(projectId);
+  // A null project id keeps the hook idle: only an App event trigger lists the project's Apps.
+  const kortixApps = eventSendingApps(
+    useProjectApps(trigger.type === 'app' ? projectId : null).data,
+  );
 
   // What the server holds, as a draft. A refetch that changes nothing changes nothing here.
   const server = useMemo(
@@ -668,6 +677,10 @@ function SheetForm({
               <WhenSchedule draft={draft} patch={patch} error={blockError('when')} />
             ) : draft.kind === 'webhook' ? (
               <WhenWebhookAddress trigger={trigger} draft={draft} patch={patch} canWrite />
+            ) : draft.kind === 'app' ? (
+              <WhenApp apps={kortixApps} draft={draft} patch={patch} error={blockError('when')} />
+            ) : draft.kind === 'change_request' ? (
+              <WhenChangeRequest draft={draft} patch={patch} />
             ) : app || (!draft.appSlug && !draft.profile) ? (
               <WhenEvent
                 projectId={projectId}
@@ -712,6 +725,7 @@ function SheetForm({
               aria-invalid={blockError('name') ? true : undefined}
             />
             <InlineError message={blockError('name')} />
+            <PostToField projectId={projectId} draft={draft} patch={patch} baseAccess={base.sessionAccess} />
           </section>
 
           <section data-sheet-block data-block="options">

@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
-import { LEGACY_OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_DIR } from '@kortix/manifest-schema/layout';
+import { manifestCandidatePaths } from '@kortix/manifest-schema';
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
   STARTER_TEMPLATE_IDS,
@@ -25,10 +25,8 @@ import { selectMultiFromList } from '../tui-select.ts';
 
 function agentSublabel(agent: CodingAgent): string {
   switch (agent) {
-    case 'opencode':
-      return 'symlink .opencode → harnesses/opencode, .agents/skills → skills';
     case 'claude':
-      return 'link .claude skills, agents, and commands';
+      return 'link .claude skills and agents';
     case 'codex':
       return 'symlink .agents/skills → skills + AGENTS.md';
     case 'pi':
@@ -59,16 +57,13 @@ linked into each native discovery location. Local tool files remain in
 .claude, .codex, and .pi.
 Codex, Pi, and Cursor also get a root AGENTS.md pointer.
 
-This local tool selection does not change the cloud OpenCode REST runtime.
-
 Options:
   --name <project>     Alias for the positional project-name.
   --primary <agent>    Primary coding agent to wire up (${SUPPORTED_AGENTS.join('|')}).
   --agents <list>      Comma-separated extras to wire up alongside --primary.
                        Example: --agents claude,cursor
   --force              Configure the current cloned Kortix repository in place.
-                       Requires kortix.yaml (or kortix.toml) and an OpenCode
-                       config dir (harnesses/opencode, or .kortix/opencode).
+                       Requires kortix.yaml.
   --no-git             Don't run \`git init\` in the new project directory.
   -y, --yes            Skip prompts (requires a project-name).
   -h, --help           Show this help.
@@ -118,7 +113,7 @@ function gitAvailable(): boolean {
 function excludeLocalAgentWiring(repoRoot: string): void {
   appendGitExcludeEntries(
     repoRoot,
-    ['/.agents', '/.claude', '/.opencode', '/.pi', '/AGENTS.md'],
+    ['/.agents', '/.claude', '/.pi', '/AGENTS.md'],
     'Kortix local coding-agent wiring',
   );
 }
@@ -136,7 +131,7 @@ function printAgentPreamble(): void {
     `  Pick the local coding tools to wire into this Kortix project.`,
     '',
     `  ${dim}Each tool receives the starter's canonical Kortix system skills.${reset}`,
-    `  ${dim}Ask it to configure triggers, agents, or OpenCode settings.${reset}`,
+    `  ${dim}Ask it to configure triggers, agents, or skills.${reset}`,
     '',
     `  ${opts}`,
     '',
@@ -273,7 +268,7 @@ async function initNewProject(flags: InitFlags): Promise<number> {
   // ── Detect existing Kortix files ─────────────────────────────────────
   let overwrite = flags.overwrite;
   if (
-    ['kortix.yaml', 'kortix.toml', '.kortix'].some((path) => existsSync(resolve(cwd, path))) &&
+    ['kortix.yaml', 'kortix.yml', '.kortix'].some((path) => existsSync(resolve(cwd, path))) &&
     !overwrite &&
     !flags.yes
   ) {
@@ -313,15 +308,11 @@ function initExistingProject(flags: InitFlags): number {
   const projectName = normalizeProjectName(basename(process.cwd()));
   const cwd = resolve(process.cwd());
 
-  const hasManifest =
-    existsSync(resolve(cwd, 'kortix.yaml')) || existsSync(resolve(cwd, 'kortix.toml'));
-  const hasRuntime = [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR].some((dir) =>
-    existsSync(resolve(cwd, dir)),
-  );
-  if (!hasManifest || !hasRuntime) {
+  // The manifest is the project.
+  if (!manifestCandidatePaths().some((path) => existsSync(resolve(cwd, path)))) {
     process.stderr.write(
       'kortix init --force: this directory is not a cloned Kortix project.\n' +
-        'Expected kortix.yaml (or kortix.toml) and harnesses/opencode (or .kortix/opencode).\n',
+        'Expected kortix.yaml.\n',
     );
     return 1;
   }

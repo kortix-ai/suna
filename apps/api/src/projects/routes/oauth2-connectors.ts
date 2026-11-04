@@ -38,6 +38,7 @@ import { loadMutableConnection } from '../lib/connection-mutation';
 import { readJsonObject } from '../../shared/http-body';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { OkSchema } from '../lib/app';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 // Bodies are documented with `lenientBody` and parsed by each handler, so a bad
 // body still answers its own 400 message, and only after the 404/403 checks.
@@ -207,6 +208,7 @@ export function registerOauth2ConnectorsRoutes(): void {
         metadata: await discoverConfiguredOAuth2Application(parsed.data.discovery_url),
       });
     } catch (error) {
+      rethrowDatabaseError(error);
       return c.json({ error: (error as Error).message }, 400);
     }
   });
@@ -245,6 +247,7 @@ export function registerOauth2ConnectorsRoutes(): void {
           }),
         });
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json({ error: (error as Error).message }, 400);
       }
     },
@@ -283,6 +286,7 @@ export function registerOauth2ConnectorsRoutes(): void {
       });
       return c.json({ application: redactOAuth2Application(application) });
     } catch (error) {
+      rethrowDatabaseError(error);
       return c.json({ error: (error as Error).message }, 400);
     }
   });
@@ -325,6 +329,7 @@ export function registerOauth2ConnectorsRoutes(): void {
     } catch (error) {
       // The application config cannot be decrypted: 409, naming it (http-errors.ts).
       if (error instanceof SecretUndecryptableError) throw error;
+      rethrowDatabaseError(error);
       return c.json({ error: (error as Error).message }, 400);
     }
   });
@@ -368,6 +373,7 @@ export function registerOauth2ConnectorsRoutes(): void {
     } catch (error) {
       // The application config cannot be decrypted: 409, naming it (http-errors.ts).
       if (error instanceof SecretUndecryptableError) throw error;
+      rethrowDatabaseError(error);
       return c.json({ error: (error as Error).message }, 400);
     }
   });
@@ -398,6 +404,7 @@ export function registerOauth2ConnectorsRoutes(): void {
       } catch (error) {
         // The application config cannot be decrypted: 409, naming it (http-errors.ts).
         if (error instanceof SecretUndecryptableError) throw error;
+        rethrowDatabaseError(error);
         return c.json({ error: (error as Error).message }, 400);
       }
     },

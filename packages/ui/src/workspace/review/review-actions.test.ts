@@ -76,10 +76,17 @@ describe('bulkSupports: which bar verb acts on which row', () => {
     expect(bulkSupports(item, 'deny', all)).toBe(true);
     expect(bulkSupports(item, 'dismiss', all)).toBe(false);
   });
-  test('a native output takes Dismiss only', () => {
-    expect(bulkSupports(output, 'approve', all)).toBe(false);
-    expect(bulkSupports(output, 'deny', all)).toBe(false);
+  test('a native output takes Approve, Deny and Dismiss: the verdicts of its own dialog', () => {
+    expect(bulkSupports(output, 'approve', all)).toBe(true);
+    expect(bulkSupports(output, 'deny', all)).toBe(true);
     expect(bulkSupports(output, 'dismiss', all)).toBe(true);
+  });
+
+  test('a question takes Dismiss only: an answer needs its options', () => {
+    const question = MOCK_ITEMS.find((i) => i.kind === 'decision')!;
+    expect(bulkSupports(question, 'approve', all)).toBe(false);
+    expect(bulkSupports(question, 'deny', all)).toBe(false);
+    expect(bulkSupports(question, 'dismiss', all)).toBe(true);
   });
   test('a change request takes no verb', () => {
     const cr = { ...output, id: 'cr:c1' } as ReviewItem;

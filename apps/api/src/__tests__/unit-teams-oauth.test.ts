@@ -17,7 +17,7 @@ import { createHmac } from 'node:crypto';
 const PROJECT_ID = '40c2e222-c4c2-47f6-ba40-05e8f40098b3';
 const TENANT_ID = '5a1e0c09-0000-4000-8000-000000000009';
 const BASE_URL = 'https://dev-api.kortix.com';
-const CHANNELS_URL = `https://dev.kortix.com/projects/${PROJECT_ID}/customize/connectors?scope=channels`;
+const CHANNELS_URL = `https://dev.kortix.com/projects/${PROJECT_ID}/admin/connectors?scope=channels`;
 
 let tokenExchangeOk = true;
 const saved: Array<Record<string, unknown>> = [];
@@ -27,7 +27,9 @@ const catalogIds: string[] = [];
 const appVersions: string[] = [];
 let publishImpl: () => Promise<Record<string, unknown>> = async () => ({ ok: true, published: true, teamsAppId: 'cat-1' });
 
+const realConfig = await import('../config');
 mock.module('../config', () => ({
+  ...realConfig,
   SANDBOX_VERSION: 'test',
   config: {
     MICROSOFT_APP_ID: '62b4470a-e8e6-4e13-a73f-363de2209dfc',
@@ -41,6 +43,8 @@ mock.module('../config', () => ({
 const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
   ...realInstallStore,
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   saveTeamsInstall: async (input: Record<string, unknown>) => {
     saved.push(input);
     return { tenantId: input.tenantId };

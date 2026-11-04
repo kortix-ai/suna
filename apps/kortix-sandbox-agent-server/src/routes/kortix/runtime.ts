@@ -1,6 +1,16 @@
 /** HTTP controllers for the existing runtime API; the selected harness owns operations. */
 import { Hono, type Context } from 'hono'
-import { RUNTIME_NOT_READY_CODE } from '@kortix/api-contract/runtime-relay'
+import {
+  RUNTIME_NOT_READY_CODE,
+  RuntimeCommandBodySchema,
+  RuntimeGrantsBodySchema,
+  RuntimePermissionReplyBodySchema,
+  RuntimeQuestionReplyBodySchema,
+  type RuntimeWorkspaceFileDiff,
+  type RuntimeWorkspaceInfo,
+} from '@kortix/api-contract/runtime-relay'
+import { WorkflowControlBodySchema } from '@kortix/api-contract/multi-agent'
+import type { z } from 'zod'
 import type { Config } from '@/lib/config/config'
 import { logger } from '@/lib/log/logger'
 import { KORTIX_SERVICE_CALL_HEADER, KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/kortix-api/kortix-user-context'
@@ -9,6 +19,7 @@ import { etagMatches, notModified, timedJson } from './kortix-http'
 import type { HarnessQueryService } from '@/harness/contract/queries'
 import type { HarnessReadiness } from '@/harness/contract/proxy'
 import type { HarnessTurnService, RuntimePromptInput } from '@/harness/contract/turns'
+import { isGitRepo, vcsDiff } from '@/lib/git/vcs-diff'
 
 /** Existing transcript page-size contract. */
 export const DEFAULT_MESSAGE_PAGE = 20
@@ -55,20 +66,23 @@ function authorize(cfg: Config, c: Context): AuthOutcome {
 }
 
 const optionalString = (value: unknown): value is string | undefined => value === undefined || typeof value === 'string'
+/** `system`: the per-turn system prompt addition apps/api sends (the memory file list). */
+export const MAX_TURN_SYSTEM_CHARS = 16_000
 
 /**
  * Validate a `POST /sessions/:id/prompt` body:
- * `{ message_id?, parts, agent?, model?: "provider/model", variant?, directory?, no_reply? }`.
+ * `{ message_id?, parts, agent?, model?: "provider/model", variant?, directory?, no_reply?, system? }`.
  */
 export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | string {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 'body must be a JSON object'
   const body = raw as Record<string, unknown>
   if (!Array.isArray(body.parts) || body.parts.length === 0) return 'parts must be a non-empty array'
   if (body.parts.some((part) => !part || typeof part !== 'object' || Array.isArray(part))) return 'parts must be objects'
-  for (const key of ['message_id', 'agent', 'model', 'variant', 'directory'] as const) {
+  for (const key of ['message_id', 'agent', 'model', 'variant', 'directory', 'system'] as const) {
     if (!optionalString(body[key])) return `${key} must be a string`
   }
   if (body.no_reply !== undefined && typeof body.no_reply !== 'boolean') return 'no_reply must be a boolean'
+  if (typeof body.system === 'string' && body.system.length > MAX_TURN_SYSTEM_CHARS) return `system must be at most ${MAX_TURN_SYSTEM_CHARS} characters`
   let model: RuntimePromptInput['model']
   if (typeof body.model === 'string') {
     const slash = body.model.indexOf('/')
@@ -84,7 +98,22 @@ export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | strin
     ...(text('variant') ? { variant: text('variant') } : {}),
     ...(text('directory') ? { directory: text('directory') } : {}),
     ...(body.no_reply === true ? { noReply: true } : {}),
+    ...(text('system') ? { system: text('system') } : {}),
   }
+}
+
+/** The attachment types the blob route serves as themselves. */
+const INERT_IMAGE = /^image\/(png|jpeg|gif|webp)$/
+
+/** A seq from a query parameter, or null when absent or not a non-negative integer. */
+function seqParam(value: string | undefined): number | null {
+  return value !== undefined && /^\d+$/.test(value) ? Number(value) : null
+}
+
+/** The JSON body, parsed with `schema`; the 400 that refuses it otherwise. */
+async function parsedBody<T extends z.ZodTypeAny>(c: Context, schema: T): Promise<z.infer<T> | Response> {
+  const parsed = schema.safeParse(await c.req.json().catch(() => undefined))
+  return parsed.success ? parsed.data : c.json({ error: 'invalid body', issues: parsed.error.issues }, 400)
 }
 
 function intParam(value: string | undefined, fallback: number, max: number): number {
@@ -153,6 +182,8 @@ export function createRuntimeRouter(
       const input = parseRuntimePromptBody(raw)
       if (typeof input === 'string') return c.json({ error: input }, 400)
       if (!input.messageId) return c.json({ error: 'message_id is required' }, 400)
+      // A steer joins the running turn, which keeps its prompt's `system`: a steer's own is dropped.
+      delete input.system
       return answer(c, () => turns.steer(c.req.param('sessionId'), input))
     })
 
@@ -186,7 +217,164 @@ export function createRuntimeRouter(
       if (!auth.ok) return auth.response
       return answer(c, () => turns.agents(c.req.query('directory')?.trim() || null))
     })
+
+    // The session-log actions (`RUNTIME_ACTIONS_CAPABILITY`).
+    app.post('/permissions/:requestId/reply', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      const body = await parsedBody(c, RuntimePermissionReplyBodySchema)
+      if (body instanceof Response) return body
+      return answer(c, () => turns.replyPermission(c.req.param('requestId'), body))
+    })
+
+    app.post('/questions/:requestId/reply', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      const body = await parsedBody(c, RuntimeQuestionReplyBodySchema)
+      if (body instanceof Response) return body
+      return answer(c, () => turns.replyQuestion(c.req.param('requestId'), body.answers))
+    })
+
+    app.post('/questions/:requestId/reject', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () => turns.rejectQuestion(c.req.param('requestId')))
+    })
+
+    app.post('/sessions/:sessionId/compact', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () => turns.compact(c.req.param('sessionId')))
+    })
+
+    app.post('/sessions/:sessionId/command', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      const body = await parsedBody(c, RuntimeCommandBodySchema)
+      if (body instanceof Response) return body
+      return answer(c, () => turns.command(c.req.param('sessionId'), body))
+    })
+
+    app.put('/sessions/:sessionId/grants', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      const body = await parsedBody(c, RuntimeGrantsBodySchema)
+      if (body instanceof Response) return body
+      return answer(c, () => turns.setGrants(c.req.param('sessionId'), body.grants))
+    })
+
+    /**
+     * The workflow runs of this session (`@kortix/api-contract/multi-agent`).
+     * `GET /workflows` lists the runs this box ran or started, newest first:
+     * its own live runs with their live document, and every earlier run as
+     * last saved. A background run is listed on the parent box with
+     * `background.sessionId` (its runner session) and its last known state;
+     * the runner session's own `GET /workflows` serves its live progress.
+     * `POST /workflows/:runId/control` pauses, resumes, restarts one agent
+     * or stops a run this box runs. A background run answers 409
+     * `run_in_runner` with `runner_session_id` here: send the control to the
+     * runner session's box, which runs it.
+     */
+    app.get('/workflows', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () => turns.workflows())
+    })
+
+    app.post('/workflows/:runId/control', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      const body = await parsedBody(c, WorkflowControlBodySchema)
+      if (body instanceof Response) return body
+      return answer(c, () => turns.controlWorkflow(c.req.param('runId'), body))
+    })
+
+    app.get('/commands', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () => turns.commands())
+    })
+
+    app.get('/pending', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () => turns.pending())
+    })
+
+    // The box's own session log: ahead of the API's copy while a turn runs.
+    app.get('/log', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () =>
+        turns.readLog({
+          threadId: c.req.query('thread')?.trim() || null,
+          afterSeq: seqParam(c.req.query('after_seq')),
+          beforeSeq: seqParam(c.req.query('before_seq')),
+          limit: intParam(c.req.query('limit'), DEFAULT_MESSAGE_PAGE, MAX_MESSAGE_PAGE),
+        }),
+      )
+    })
+
+    app.get('/log/messages/:messageId', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () => turns.readLogMessage(c.req.param('messageId')))
+    })
+
+    app.get('/log/blobs/:sha256', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      const sha256 = c.req.param('sha256')
+      if (!/^[0-9a-f]{64}$/.test(sha256)) return c.json({ error: 'invalid sha256' }, 400)
+      const blob = await turns.readBlob(sha256)
+      if (!blob) return c.json({ error: 'unknown attachment' }, 404)
+      // The bytes are untrusted. Only a raster image keeps its type; anything else is served inert,
+      // with the headers the API's attachment download sends.
+      return new Response(blob.bytes, {
+        headers: {
+          'content-type': INERT_IMAGE.test(blob.mime) ? blob.mime : 'application/octet-stream',
+          'content-disposition': 'attachment',
+          'x-content-type-options': 'nosniff',
+          'content-security-policy': "default-src 'none'; sandbox",
+          'cache-control': 'private, max-age=31536000, immutable',
+        },
+      })
+    })
   }
+
+  // The session checkout: where it is and what it changed. Host facts, the same on every harness.
+  const checkout = () => cfg.projectTarget || cfg.workspace || '/workspace'
+
+  app.get('/workspace', async (c) => {
+    const auth = authorize(cfg, c)
+    if (!auth.ok) return auth.response
+    const info: RuntimeWorkspaceInfo = {
+      directory: checkout(),
+      home: process.env.HOME ?? '/home/kortix',
+      vcs: (await isGitRepo(checkout())) ? 'git' : null,
+      default_branch: cfg.defaultBranch,
+    }
+    return c.json(info)
+  })
+
+  app.get('/workspace/diff', async (c) => {
+    const auth = authorize(cfg, c)
+    if (!auth.ok) return auth.response
+    const mode = c.req.query('mode') ?? 'branch'
+    if (mode !== 'branch' && mode !== 'git') return c.json({ error: 'mode must be branch or git' }, 400)
+    try {
+      const files: RuntimeWorkspaceFileDiff[] = (await vcsDiff(checkout(), mode, cfg.defaultBranch)).map((diff) => ({
+        path: diff.file,
+        status: diff.status,
+        additions: diff.additions,
+        deletions: diff.deletions,
+        ...(diff.patch !== undefined ? { patch: diff.patch } : {}),
+      }))
+      return c.json({ files })
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500)
+    }
+  })
 
   app.get('/state', async (c) => {
     const auth = authorize(cfg, c)

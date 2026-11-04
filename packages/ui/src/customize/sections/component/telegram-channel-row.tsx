@@ -1,11 +1,15 @@
 'use client';
 
+import { TelegramChatMock } from './channel-mocks';
+
 /**
- * Telegram as a channel row (the `connectors_v2` feature flag): connect a bot
+ * Telegram as a channel row: connect a bot
  * by its BotFather token, pick who may talk to it, disconnect. The token goes
- * to the API once and never comes back to the browser.
+ * to the API once and never comes back to the browser. The allowed users
+ * dialog is `ChannelAccessPanel`.
  */
 import { Button } from '../../../primitives/button';
+import { CountBadge } from '../../../primitives/count-badge';
 import { Field, FieldDescription, FieldGroup, FieldTitle } from '../../../primitives/field';
 import { Input } from '../../../primitives/input';
 import Loading from '../../../primitives/loading';
@@ -23,24 +27,27 @@ import {
   ChannelDisconnectButton,
   ChannelRow,
 } from './channel-row';
+import { ChannelAccessPanel } from './channel-access-panel';
 import {
   useConnectTelegram,
   useDisconnectTelegram,
-  useSetTelegramAllowedUsers,
   useTelegramInstall,
 } from '../../../internal/hooks/channels/use-channels-installations';
 import { useTranslations } from '../../../i18n';
-import { TelegramLogoIcon } from '@phosphor-icons/react';
+import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { useState } from 'react';
+
+const TELEGRAM = CHANNELS.telegram;
 
 /** "1, 2 3" → ["1","2","3"]; null when any entry is not a number. */
 export function parseTelegramUserIds(raw: string): string[] | null {
   const ids = raw.split(/[\s,]+/).filter(Boolean);
-  return ids.every((id) => /^\d{1,20}$/.test(id)) ? ids : null;
+  return ids.every((id) => TELEGRAM.access.userId.test(id)) ? ids : null;
 }
 
 export function TelegramChannelRow({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
+  const tPages = useTranslations('connectorPages');
   const { data: install } = useTelegramInstall(projectId);
   const disconnect = useDisconnectTelegram();
   const [dialog, setDialog] = useState<'connect' | 'users' | null>(null);
@@ -48,16 +55,25 @@ export function TelegramChannelRow({ projectId, canWrite }: { projectId: string;
   return (
     <>
       <ChannelRow
-        icon={<TelegramLogoIcon className="text-muted-foreground size-5 shrink-0" />}
-        name="Telegram"
+        app="telegram"
+        name={TELEGRAM.label}
         connected={Boolean(install)}
         detail={install?.username ? `@${install.username}` : null}
+        hero={{
+          title: tPages('telegramHeroTitle'),
+          connectedTitle: tPages('channelConnectedTitle', { name: TELEGRAM.label }),
+          ...(install ? {} : { lede: tPages('telegramHeroLede') }),
+          preview: <TelegramChatMock />,
+        }}
         pitch={t.raw('text51e6bc656528')}
         actions={
           !canWrite ? null : install ? (
             <>
               <Button size="sm" variant="ghost" onClick={() => setDialog('users')}>
                 {t.raw('text2c3059c25723')}
+                {install.access_request_count ? (
+                  <CountBadge count={install.access_request_count} tone="waiting" />
+                ) : null}
               </Button>
               <ChannelDisconnectButton
                 pending={disconnect.isPending}
@@ -73,7 +89,7 @@ export function TelegramChannelRow({ projectId, canWrite }: { projectId: string;
               />
             </>
           ) : (
-            <Button size="sm" variant="secondary" onClick={() => setDialog('connect')}>
+            <Button className="transition-transform active:scale-96" onClick={() => setDialog('connect')}>
               {t.raw('text1a2303ede074')}
             </Button>
           )
@@ -84,11 +100,7 @@ export function TelegramChannelRow({ projectId, canWrite }: { projectId: string;
           {dialog === 'connect' ? (
             <TelegramConnectForm projectId={projectId} onDone={() => setDialog(null)} />
           ) : dialog === 'users' ? (
-            <TelegramUsersForm
-              projectId={projectId}
-              initial={install?.allowed_user_ids ?? []}
-              onDone={() => setDialog(null)}
-            />
+            <ChannelAccessPanel projectId={projectId} platform="telegram" onDone={() => setDialog(null)} />
           ) : null}
         </ModalContent>
       </Modal>
@@ -132,7 +144,7 @@ function TelegramConnectForm({ projectId, onDone }: { projectId: string; onDone:
             <Input
               type="password"
               autoComplete="off"
-              placeholder="123456789:…"
+              placeholder={TELEGRAM.connect.tokenPlaceholder}
               value={token}
               onChange={(event) => setToken(event.target.value)}
             />
@@ -153,57 +165,6 @@ function TelegramConnectForm({ projectId, onDone }: { projectId: string; onDone:
   );
 }
 
-function TelegramUsersForm({
-  projectId,
-  initial,
-  onDone,
-}: {
-  projectId: string;
-  initial: string[];
-  onDone: () => void;
-}) {
-  const t = useTranslations('hardcodedUi.i18nComplete');
-  const save = useSetTelegramAllowedUsers();
-  const [users, setUsers] = useState(() => initial.join(', '));
-  const ids = parseTelegramUserIds(users);
-
-  return (
-    <form
-      className="space-y-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!ids) return;
-        save.mutate(
-          { projectId, userIds: ids },
-          {
-            onSuccess: () => {
-              successToast(t.raw('text2f95b1c9ee2b'));
-              onDone();
-            },
-            onError: (error) => errorToast(error.message),
-          },
-        );
-      }}
-    >
-      <ModalHeader>
-        <ModalTitle>{t.raw('text2c3059c25723')}</ModalTitle>
-      </ModalHeader>
-      <ModalBody>
-        <TelegramUsersField value={users} onChange={setUsers} invalid={!ids} />
-      </ModalBody>
-      <ModalFooter>
-        <Button type="button" variant="ghost" onClick={onDone}>
-          {t.raw('text19766ed6ccb2')}
-        </Button>
-        <Button type="submit" disabled={!ids || save.isPending}>
-          {save.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-          {t.raw('text1509f561f241')}
-        </Button>
-      </ModalFooter>
-    </form>
-  );
-}
-
 function TelegramUsersField({
   value,
   onChange,
@@ -218,8 +179,8 @@ function TelegramUsersField({
     <Field>
       <FieldTitle>{t.raw('text71552d197b53')}</FieldTitle>
       <Input
-        inputMode="numeric"
-        placeholder="123456789, 987654321"
+        inputMode={TELEGRAM.access.idInputMode}
+        placeholder={TELEGRAM.access.idsPlaceholder}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         aria-invalid={invalid}

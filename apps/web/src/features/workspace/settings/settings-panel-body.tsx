@@ -16,7 +16,6 @@ import { SettingsSectionHeader } from '@kortix/ui/settings-section-header';
 import { Tabs, TabsContent } from '@kortix/ui/tabs';
 import { SETTINGS_SIDEBAR_WIDTH_PX } from '@kortix/ui/internal/account-hub/account-settings-shell';
 import { Close } from '@kortix/ui/icons';
-import { UpgradesView } from '@kortix/ui/customize/migrate-to-v2/upgrade-view';
 import {
   SettingsNavProvider,
   type SettingsNav,
@@ -25,6 +24,7 @@ import { useIsMobile, cn, hasOpenFloatingLayer, hasOpenNestedDialog } from '@kor
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { useSettingsPanelStore, type MembersTab } from '@kortix/ui/internal/stores/settings-panel-store';
 import { getProjectDetail } from '@kortix/sdk';
+import { isTextEntry } from './text-entry';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -53,6 +53,8 @@ import { SessionsTab } from './tabs/sessions-tab';
 import { SnapshotsTab } from '@kortix/ui/customize/settings/tabs/snapshots-tab';
 import { TokensTab } from '@kortix/ui/customize/settings/tabs/tokens-tab';
 import type { RailGroup, RailItem } from '@kortix/ui/customize/settings/type';
+import { ChromeConnectionsTab } from '@kortix/ui/customize/settings/tabs/chrome-connections-tab';
+import { useChromeOffered } from '@kortix/ui/internal/chrome/use-chrome-offered';
 import { useSettingsAccountId } from './use-settings-account-id';
 
 export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
@@ -62,6 +64,8 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   'sessions',
   'preferences',
   'connected',
+  // The browsers a person connected are theirs, in any project or none.
+  'chrome',
   // Your own API keys are yours in ONE account (the read is account-scoped —
   // see `tabs/tokens-tab.tsx`), but never in one project, so this renders with
   // or without a project open like the three above it.
@@ -78,7 +82,7 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   // The MCP URL is one per person and reaches every project they can open.
   // `computer` is NOT here: pairing names the project it starts from.
   'mcp',
-  // `workspace`, `sandbox`, `feature-flags` and `upgrades` are deliberately ABSENT. They
+  // `workspace`, `sandbox` and `feature-flags` are deliberately ABSENT. They
   // are the project-scoped tabs in this overlay (`settings-tabs.ts` explains
   // why each came back), so leaving them out of this list is exactly what
   // makes `isSettingsTabAllowed` hide them — and with them the whole
@@ -164,9 +168,13 @@ export function SettingsPanelBody({ projectId }: { projectId?: string }) {
   // account-scoped tabs — see `ACCOUNT_SCOPED_SETTINGS_TABS` above.
   const resolvedAccountId = useSettingsAccountId(project?.account_id);
 
+  // Kortix in Chrome exists only where the platform switch is on (local, dev
+  // until launch): the browser list answers 404 elsewhere.
+  const chromeOffered = useChromeOffered(open);
   const isTabAllowed = useCallback(
-    (t: SettingsTab) => isSettingsTabAllowed(t, { hasProject: !!projectId }),
-    [projectId],
+    (t: SettingsTab) =>
+      isSettingsTabAllowed(t, { hasProject: !!projectId }) && (t !== 'chrome' || chromeOffered),
+    [projectId, chromeOffered],
   );
 
   const groups = useMemo(() => {
@@ -287,14 +295,15 @@ export function SettingsPanelView({
         animation="none"
         aria-describedby={undefined}
         onEscapeKeyDown={(event) => {
-          if (hasOpenFloatingLayer() || hasOpenNestedDialog()) {
+          // Escape in a text field belongs to the field (cancel a rename), not the dialog.
+          if (hasOpenFloatingLayer() || hasOpenNestedDialog() || isTextEntry(event.target)) {
             event.preventDefault();
           }
         }}
         // Full screen — the account settings shell (`/accounts/[id]`) as an
         // overlay, edge to edge (Jay, 2026-09-02: "make it full screen").
-        // Same recipe as the Apps modal (`apps/apps-view.tsx`) and the
-        // onboarding wizard: `side="fullscreen"` pins `inset-0`, and the
+        // Same recipe as the Apps modal (`apps/apps-view.tsx`):
+        // `side="fullscreen"` pins `inset-0`, and the
         // important-marked classes beat the centred-dialog defaults
         // `ModalVariants` adds at `lg:` (`top-1/2`, `-translate-x-1/2`,
         // `max-w-lg`, `rounded-xl`) plus the rounding `ModalContent` appends
@@ -500,13 +509,13 @@ function SettingsTabPane({
         </div>
       ) : null,
     'feature-flags': () => (projectId ? <ExperimentalTab projectId={projectId} /> : null),
-    upgrades: () => (projectId ? <UpgradesView projectId={projectId} /> : null),
     profile: () => <ProfileTab />,
     security: () => <SecurityTab />,
     appearance: () => <AppearanceTab />,
     sessions: () => <SessionsTab projectId={projectId} />,
     preferences: () => <PreferencesTab />,
     connected: () => <ConnectedAccountsTab accountId={accountId} />,
+    chrome: () => <ChromeConnectionsTab />,
     tokens: () => <TokensTab accountId={accountId} />,
     credits: () => <CreditsTab accountId={accountId} />,
     plan: () => <PlanTab accountId={accountId} />,
@@ -516,7 +525,7 @@ function SettingsTabPane({
   const pane = panes[item.tab];
   if (
     pane &&
-    (!['workspace', 'sandbox', 'feature-flags', 'upgrades', 'computer'].includes(item.tab) ||
+    (!['workspace', 'sandbox', 'feature-flags', 'computer'].includes(item.tab) ||
       projectId)
   )
     return pane();

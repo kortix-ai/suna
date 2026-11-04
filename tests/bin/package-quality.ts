@@ -65,8 +65,8 @@ function hermeticWorkspaceEnv(): Record<string, string | undefined> {
   delete env.BASH_ENV;
   delete env.ENV;
   // The same CI-shape rule for the two host files a Kortix sandbox image bakes:
-  // the session env file the daemon's readiness gate reads, and the image's
-  // baked model catalog. Neither exists on a laptop or a GitHub runner, so the
+  // the session env file the daemon's readiness gate reads, and the baked model
+  // catalog older images carry (OpenCode reads it). Neither exists on a laptop or a GitHub runner, so the
   // suites are written against their absence; point the overrides at paths
   // that do not exist instead of asking every suite to know about them.
   env.KORTIX_PT_ENV_PATH = '/nonexistent/kortix-test-pt-env';
@@ -228,6 +228,17 @@ if (repoChecks) {
     run(['node', '--test', 'scripts/dev-local.test.mjs']),
     run(['node', '--test', 'scripts/dev-local-cleanup.test.mjs']),
     run(['node', '--test', 'scripts/test-guard.test.mjs']),
+    run(['node', '--test', 'scripts/refresh-staged-web-artifacts.test.mjs']),
+    // No package owns these: `./infra` discovers every edge-worker and deploy-script
+    // test, and the two lockfile checks need Bun (Bun.YAML, Bun.semver), not vitest.
+    run([
+      'bun',
+      'test',
+      './infra',
+      './scripts/eslint-policy.test.mjs',
+      './tests/unit/dependency-advisories.test.js',
+      './tests/unit/undici-advisory.test.js',
+    ]),
   ]);
   await rejectFocusedTests();
 }

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { CatalogSnapshot, HarnessDiagnosticsContext } from '../contract/diagnostics'
+import type { HarnessDiagnosticsContext } from '../contract/diagnostics'
 import { readRepoInfo } from '@/lib/git/git'
 import { runtimeConvergenceReport } from '@/services/runtime-assets/runtime-assets'
 import { runtimeTruthReport } from '@/services/runtime-assets/runtime-truth'
@@ -51,7 +51,7 @@ function sessionWantsRepo(cfgAutoClone: boolean): boolean {
  * the same meaning; `routes/kortix/health.ts` adds the harness block and
  * computes `runtimeReady` from `repo_ready` plus the harness's own readiness.
  */
-export async function readHostHealth(context: HarnessDiagnosticsContext, catalogSnapshot?: CatalogSnapshot) {
+export async function readHostHealth(context: HarnessDiagnosticsContext) {
   const { cfg, bootState } = context
   const repoInfo = await readRepoInfo(cfg.projectTarget).catch(() => null)
   const repoRequired = sessionWantsRepo(cfg.autoClone)
@@ -65,12 +65,6 @@ export async function readHostHealth(context: HarnessDiagnosticsContext, catalog
   const wantBranch = repoRequired ? wantedSessionBranch() : ''
   const repoReady = !repoRequired || (repoInfo !== null && (!wantBranch || repoInfo.branch === wantBranch))
   return {
-    // Which boot path this daemon took. An agent binary that predates
-    // monitor mode omits the field entirely, which is exactly what the
-    // monitor-box reconciler uses to detect a stale-agent box and recreate
-    // it (a box whose env says KORTIX_WORKLOAD=monitor but whose daemon
-    // booted the session path can never run monitors).
-    workload: process.env.KORTIX_WORKLOAD === 'monitor' ? 'monitor' : 'session',
     uptime_s: Math.floor((Date.now() - context.bootTime) / 1000),
     // Static web server (preview/static files). The bound port when up, else
     // null — surfaces "preview won't load because static-web never bound".
@@ -92,9 +86,9 @@ export async function readHostHealth(context: HarnessDiagnosticsContext, catalog
     // a fleet-drain gate has actually cleared. `pinned: true` means an update
     // crash-looped and the supervisor latched it off: that box will not
     // self-heal and needs a human.
-    runtime: await runtimeConvergenceReport(undefined, undefined, catalogSnapshot),
+    runtime: await runtimeConvergenceReport(),
     // The runtime-convergence contract (PR #7785), Rule 1: the ONE actual-runtime
-    // document (release, catalog, daemon, cli, managed skills), each with its
+    // document (release, daemon, cli, managed skills), each with its
     // own convergence state. The API computes the desired document and diffs
     // the two; this is only the box's own answer. A pure read — never
     // triggers a reconcile attempt, so polling health cannot itself cause work.

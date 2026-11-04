@@ -22,10 +22,10 @@ import { join } from 'node:path';
 // now a named function with its own cases, plus a source contract on the call
 // site so the fix cannot be silently unwired.
 //
-// Loop safety is unchanged. Only OUR messages can loop, and event.user
-// identifies them — every post this codebase makes uses a plain bot token, with
-// no username/icon override anywhere under channels/slack, so Slack stamps our
-// bot user id on the resulting event. The last test pins that absence.
+// Loop safety. Only OUR messages can loop. A plain post comes back with our bot
+// user id as event.user. A post under a Kortix agent's name (slack/persona.ts)
+// comes back with no user, so isOwnBotEvent also matches our stored bot id, and
+// persona.ts names a post only once that id is known. The last tests pin both.
 
 // ─── Mocks so importing dispatch.ts (and its module graph) loads cleanly ──────
 function makeChain(): any {
@@ -60,6 +60,8 @@ mock.module('../channels/slack/turn', () => ({
 const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
   ...realInstallStore,
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   loadSlackBotUserIdForProject: async () => 'B1',
   loadSlackTokenForProject: async () => 'xoxb-test',
   loadSlackSigningSecretForProject: async () => null,
@@ -167,17 +169,28 @@ describe('the event another bot sends now classifies as real work', () => {
 });
 
 describe('source contracts', () => {
-  test('no username/icon override in the Slack send path — that is what keeps event.user ours', () => {
-    // isOwnBotEvent identifies our messages by event.user. Slack only sets that
-    // when a post goes out as the bot itself; posting with username/icon_emoji/
-    // icon_url instead yields bot_message with NO user, and the self-loop guard
-    // would stop matching. If this test ever reds, the fix is to key the guard on
-    // a stored bot_id (auth.test returns one) — not to delete this test.
+  test('an agent-named post (no event.user) is still our own, by bot id', () => {
+    const e = ev({ subtype: 'bot_message', channel_type: 'channel', text: 'answer', bot_id: 'B_OURS' });
+    delete (e as { user?: string }).user;
+    expect(isOwnBotEvent(e, BOT, 'B_OURS')).toBe(true);
+    // Another app's bot is not ours.
+    expect(isOwnBotEvent({ ...e, bot_id: 'B999' }, BOT, 'B_OURS')).toBe(false);
+  });
+
+  test('persona.ts names a post only once the bot id is stored', () => {
+    const src = readFileSync(join(import.meta.dir, '..', 'channels', 'slack', 'persona.ts'), 'utf8');
+    expect(src).toContain('ensureSlackBotId(');
+  });
+
+  test('no username/icon override in the Slack send path outside persona.ts', () => {
+    // isOwnBotEvent identifies a plain post by event.user. A post with
+    // username/icon_emoji/icon_url yields bot_message with NO user; only
+    // persona.ts may make one, because it waits for the bot id the guard needs.
     const dir = join(import.meta.dir, '..', 'channels', 'slack');
     const glob = new Bun.Glob('**/*.ts');
     const offenders: string[] = [];
     for (const rel of glob.scanSync({ cwd: dir })) {
-      if (rel.includes('__tests__') || rel.endsWith('.test.ts')) continue;
+      if (rel.includes('__tests__') || rel.endsWith('.test.ts') || rel === 'persona.ts') continue;
       const src = readFileSync(join(dir, rel), 'utf8')
         .split('\n')
         .filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*'))

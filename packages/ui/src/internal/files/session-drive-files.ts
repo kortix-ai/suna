@@ -72,11 +72,16 @@ interface DriveFilesScope {
 
 let scope: DriveFilesScope | null = null;
 
-/** Make `next` the session drive paths resolve against; returns its undo. */
+/**
+ * Make `next` the session drive paths resolve against; returns its undo. The
+ * undo restores the scope it replaced: a review item's files open over a
+ * session page, and closing them must not drop that page's scope.
+ */
 export function setSessionDriveFilesScope(next: DriveFilesScope): () => void {
+  const previous = scope;
   scope = next;
   return () => {
-    if (scope === next) scope = null;
+    if (scope === next) scope = previous;
   };
 }
 

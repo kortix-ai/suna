@@ -163,38 +163,21 @@ describe('the three @supabase/ssr cookieOptions sites set `secure`', () => {
     return source.replace(/(^|[^:])\/\/.*$/gm, '$1').replace(/\/\*[\s\S]*?\*\//g, '');
   }
 
-  function cookieOptionsBlocks(file: string): string[] {
-    const source = stripComments(readFileSync(resolve(import.meta.dir, file), 'utf8'));
-    const blocks: string[] = [];
-    let from = 0;
-    for (;;) {
-      const start = source.indexOf('cookieOptions:', from);
-      if (start < 0) break;
-      const end = source.indexOf('}', source.indexOf('{', start));
-      expect(end).toBeGreaterThan(start);
-      blocks.push(source.slice(start, end + 1));
-      from = end + 1;
-    }
-    return blocks;
-  }
-
-  test('lib/supabase/client.ts: both createBrowserClient() cookieOptions blocks set secure', () => {
-    const blocks = cookieOptionsBlocks('lib/supabase/client.ts');
-    expect(blocks.length).toBe(2);
-    for (const block of blocks) {
-      expect(block).toContain('secure');
-    }
+  // The `secure` flag comes from `authCookieOptions` (lib/supabase/panel-cookies.ts),
+  // whose output is asserted in panel-cookies.test.ts. Each site must call it.
+  test('lib/supabase/client.ts: the createBrowserClient() cookieOptions come from authCookieOptions with the secure flag', () => {
+    const source = stripComments(readFileSync(resolve(import.meta.dir, 'lib/supabase/client.ts'), 'utf8'));
+    expect(source).toContain('authCookieOptions(panel, secure)');
+    expect(source.match(/cookieOptions,/g)?.length).toBe(2);
   });
 
-  test('lib/supabase/server.ts: the createServerClient() cookieOptions block sets secure', () => {
-    const blocks = cookieOptionsBlocks('lib/supabase/server.ts');
-    expect(blocks.length).toBe(1);
-    expect(blocks[0]).toContain('secure');
+  test('lib/supabase/server.ts: the createServerClient() cookieOptions set secure from NODE_ENV', () => {
+    const source = stripComments(readFileSync(resolve(import.meta.dir, 'lib/supabase/server.ts'), 'utf8'));
+    expect(source).toContain("authCookieOptions(hasPanelMarker(cookieStore), process.env.NODE_ENV === 'production')");
   });
 
-  test('middleware.ts: the createServerClient() cookieOptions block sets secure', () => {
-    const blocks = cookieOptionsBlocks('middleware.ts');
-    expect(blocks.length).toBe(1);
-    expect(blocks[0]).toContain('secure');
+  test('middleware.ts: the createServerClient() cookieOptions set secure from NODE_ENV', () => {
+    const source = stripComments(readFileSync(resolve(import.meta.dir, 'middleware.ts'), 'utf8'));
+    expect(source).toContain("authCookieOptions(panelRequest, process.env.NODE_ENV === 'production')");
   });
 });

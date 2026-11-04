@@ -1,4 +1,5 @@
 /** The connector lists: the gateway catalog a principal can use (listCatalog) and the admin dashboard list (listConnectors). */
+import { likelyToolRisk } from './policy-templates';
 import { mapLimit } from '@kortix/registry';
 import {
   connectorConnections,
@@ -22,14 +23,15 @@ import { db } from '../shared/db';
 import { hideSupersededSlack } from './channel-rules';
 import { resolveFallbackIcons } from './connector-icon';
 import { connectorCatalogIcons } from './connector-catalog';
-import { buildAdminConnectorViews } from './connector-list';
+import { buildAdminConnectorViews, signedInComposioSlugs } from './connector-list';
 import {
   connectionIdsWithCredentials,
   connectionSignedIn,
   connectorIdsWithSharedCredentials,
   connectorIdsWithReachableMemberCredential,
 } from './credentials';
-import { resolveEffectiveAction } from './policy';
+import { type Policy, resolveEffectiveAction } from './policy';
+import { agentPolicySet } from '../iam/agent-scope';
 import type {
   AdminConnectorView,
   CatalogAccount,
@@ -44,6 +46,7 @@ import {
   channelPlatform,
   connectorConnected,
   loadConnectorPoliciesForMany,
+  loadConnectorPolicySetsForMany,
   loadDefaultModeFor,
   loadProjectPoliciesFor,
 } from './db-deps-rows';
@@ -111,7 +114,9 @@ export async function listCatalog(
 
   // Project-scoped layer is the same for every connector in this list — load once.
   const connectorIds = conns.map((row) => row.connectorId);
-  const [projectPolicies, defaultMode, accountVisibility, actionsByConnector, policiesByConnector] =
+  // Only an agent grant that names a set pays for the set read.
+  const grantSets = p.agentGrant?.policySets;
+  const [projectPolicies, defaultMode, accountVisibility, actionsByConnector, policiesByConnector, setsByConnector] =
     await Promise.all([
       loadProjectPoliciesFor(p.projectId),
       loadDefaultModeFor(p.projectId),
@@ -139,6 +144,9 @@ export async function listCatalog(
           return map;
         }),
       loadConnectorPoliciesForMany(connectorIds),
+      grantSets && Object.keys(grantSets).length > 0
+        ? loadConnectorPolicySetsForMany(connectorIds)
+        : Promise.resolve(new Map<string, Map<string, Policy[] | null>>()),
     ]);
 
   const preloaded = await loadSessionConnectorResolutionData({
@@ -192,6 +200,11 @@ export async function listCatalog(
     }
     const connectorPolicies = policiesByConnector.get(row.connectorId) ?? [];
     const actions = actionsByConnector.get(row.connectorId) ?? [];
+    // The same set layer the gateway applies: the catalog never advertises a
+    // tool the agent's set blocks, and a missing set lists no tool at all.
+    const setName = agentPolicySet(p.agentGrant, canonicalConnectorAlias(row.slug));
+    const setPolicies = setName === null ? undefined : setsByConnector.get(row.connectorId)?.get(setName);
+    const setMissing = setName !== null && !setPolicies;
     return {
       slug: row.slug,
       name: row.name,
@@ -206,6 +219,8 @@ export async function listCatalog(
               relPath: a.path,
               projectPolicies,
               connectorPolicies,
+              setPolicies: setPolicies ?? undefined,
+              setMissing,
               risk: a.risk,
               defaultMode,
             }).action !== 'block',
@@ -225,6 +240,7 @@ export async function listCatalog(
       default_account:
         accounts.find((account) => account.is_default)?.label ??
         (accounts.length === 1 ? accounts[0].label : null),
+      ...(setName === null ? {} : { policy_set: setName }),
     };
   });
   return resolved.filter((entry): entry is CatalogConnector => entry !== null);
@@ -429,11 +445,7 @@ export async function listConnectors(
       })),
     ]),
   );
-  const authorizedComposioSlugs = new Set(
-    composioRows
-      .filter((row) => (entitledByConnector.get(row.connectorId) ?? []).length > 0)
-      .map((row) => row.slug),
-  );
+  const authorizedComposioSlugs = signedInComposioSlugs(composioRows, entitledByConnector);
   // `authorization_strategy` is a DERIVED SUMMARY now, not a setting. The
   // column is retired (see migration 20260917160000000) and the PUT route is an
   // inert no-op, but the field stays on the wire so an older client keeps
@@ -559,6 +571,7 @@ export async function listConnectors(
         name: a.name,
         description: a.description ?? '',
         risk: a.risk,
+        likely_risk: likelyToolRisk(row.providerType, a.path, a.risk),
         // The full per-action JSON Schema is the bulk of this route's payload
         // (1.6 MB on prod). It is included unless the caller passes
         // `includeSchemas: false` (`?include_schemas=false`): baked sandbox

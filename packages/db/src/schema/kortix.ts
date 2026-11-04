@@ -4,6 +4,7 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   date,
   foreignKey,
   index,
@@ -22,6 +23,20 @@ import {
 } from 'drizzle-orm/pg-core';
 
 export const kortixSchema = pgSchema('kortix');
+
+// Immutable payload, mutable delivery receipt. Producers enqueue in their own transaction.
+export const salesEventOutbox = kortixSchema.table('sales_event_outbox', {
+  eventId: text('event_id').primaryKey(),
+  payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  attempts: integer('attempts').default(0).notNull(),
+  availableAt: timestamp('available_at', { withTimezone: true }).defaultNow().notNull(),
+  leaseToken: uuid('lease_token'),
+  deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+  deadLetterAt: timestamp('dead_letter_at', { withTimezone: true }),
+  lastError: text('last_error'),
+}, (table) => [index('sales_event_outbox_due_idx').on(table.availableAt)
+  .where(sql`${table.deliveredAt} IS NULL AND ${table.deadLetterAt} IS NULL`)]);
 
 export const usedRefreshTokens = kortixSchema.table('used_refresh_tokens', {
   tokenHash: text('token_hash').primaryKey(),
@@ -701,6 +716,40 @@ export const configReleaseHeads = kortixSchema.table(
 );
 
 /**
+ * The project config summary of one ref at one commit: what `GET
+ * /projects/:id/detail` serves (agents, skills, commands, manifest health,
+ * the file paths). Built once when the ref moves, so a page view runs no git.
+ * Per-user filtering and the Kortix managed skills are applied at read time,
+ * never stored. A row whose `format` is not the API's current one is ignored
+ * and rebuilt. One row per `(project, ref)`.
+ */
+export const projectConfigSummaries = kortixSchema.table(
+  'project_config_summaries',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    ref: varchar('ref', { length: 255 }).notNull(),
+    /** The commit every file of the summary was read at. */
+    sourceCommit: varchar('source_commit', { length: 64 }).notNull(),
+    /** `CONFIG_SUMMARY_FORMAT` of the API that built it. */
+    format: integer('format').notNull(),
+    /** The project's `manifest_path` the summary was built with. A row of another path is not served. */
+    manifestPath: text('manifest_path').notNull().default(''),
+    /** The repository-derived `ProjectConfigSummary`, before the Kortix managed skills. */
+    config: jsonb('config').$type<Record<string, unknown>>().notNull(),
+    /** File paths at `source_commit`; the first 50,000 when `files_complete` is false. */
+    files: jsonb('files').$type<string[]>().notNull(),
+    fileCount: integer('file_count').notNull(),
+    filesComplete: boolean('files_complete').notNull(),
+    /** When the build read the ref's tip. An older build never overwrites a newer one. */
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }).notNull(),
+    builtAt: timestamp('built_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.ref] })],
+).enableRLS();
+
+/**
  * The last time any API process asked a base ref's upstream for its tip, and
  * the tip it read. Every running box asks for its desired release every 60 s;
  * this row makes those asks share one upstream check per `(project, ref)` per
@@ -718,6 +767,12 @@ export const baseTipChecks = kortixSchema.table(
     /** Null while the first check runs. */
     tip: varchar('tip', { length: 64 }),
     checkedAt: timestamp('checked_at', { withTimezone: true }).notNull(),
+    /**
+     * When the check that stored `tip` asked the upstream. A later claim moves
+     * `checked_at` while the old `tip` stays readable, so only this column says
+     * how old the stored tip is. Null until a check lands and after a base move.
+     */
+    provenAt: timestamp('proven_at', { withTimezone: true }),
   },
   (table) => [primaryKey({ columns: [table.projectId, table.ref] })],
 );
@@ -1100,6 +1155,185 @@ export const projectSessionOriginEnum = kortixSchema.enum('project_session_origi
   'system',
 ]);
 
+export const projectSpaceKindEnum = kortixSchema.enum('project_space_kind', ['channel', 'dm']);
+/** Who sees a channel: every project member, or only its members (`project_space_members`). */
+export const projectSpaceVisibilityEnum = kortixSchema.enum('project_space_visibility', ['public', 'private']);
+
+/**
+ * A project space: a channel (product word "Channel") or a member's DM with one
+ * agent. A thread is a `project_sessions` row whose `space_id` points here.
+ * Named "space" in code because "channel" already means a chat integration
+ * (`chat_channel_bindings`, `initiator_type = 'channel'`).
+ */
+export const projectSpaces = kortixSchema.table(
+  'project_spaces',
+  {
+    spaceId: uuid('space_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    kind: projectSpaceKindEnum('kind').notNull(),
+    /** Channels: lowercase `a-z0-9-`, 1–40 chars. Null for DMs. */
+    slug: text('slug'),
+    /** Display name; for a DM, the agent name. */
+    name: text('name').notNull(),
+    description: text('description'),
+    /** True only for the project's `#general`. */
+    isDefault: boolean('is_default').default(false).notNull(),
+    /** DM owner; null for channels. */
+    dmUserId: uuid('dm_user_id'),
+    /** DM agent; null for channels. */
+    dmAgentName: text('dm_agent_name'),
+    /** Channels: the channel's agents, in order; the first is the channel's default. Empty: the project's default (as before). Always empty for a DM. */
+    agents: text('agents').array().default(sql`'{}'::text[]`).notNull(),
+    /** `private`: only the channel's members see it and its threads. `#general` and DMs are always `public` (check below). */
+    visibility: projectSpaceVisibilityEnum('visibility').default('public').notNull(),
+    createdBy: uuid('created_by'),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check(
+      'project_spaces_kind_shape_check',
+      sql`(${table.kind} = 'channel' and ${table.slug} is not null and ${table.dmUserId} is null and ${table.dmAgentName} is null) or (${table.kind} = 'dm' and ${table.slug} is null and ${table.dmUserId} is not null and ${table.dmAgentName} is not null)`,
+    ),
+    check(
+      'project_spaces_private_channel_check',
+      sql`${table.visibility} = 'public' or (${table.kind} = 'channel' and not ${table.isDefault})`,
+    ),
+    uniqueIndex('uniq_project_spaces_channel_slug')
+      .on(table.projectId, table.slug)
+      .where(sql`${table.kind} = 'channel'`),
+    uniqueIndex('uniq_project_spaces_dm')
+      .on(table.projectId, table.dmUserId, table.dmAgentName)
+      .where(sql`${table.kind} = 'dm'`),
+    uniqueIndex('uniq_project_spaces_default').on(table.projectId).where(sql`${table.isDefault}`),
+    index('idx_project_spaces_project').on(table.projectId),
+  ],
+);
+
+/** A link a member pinned to a channel (the channel's Links tab). */
+export const projectSpaceLinks = kortixSchema.table(
+  'project_space_links',
+  {
+    linkId: uuid('link_id').defaultRandom().primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => projectSpaces.spaceId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** http(s) only, at most 2,048 characters (checked by the API). */
+    url: text('url').notNull(),
+    title: text('title'),
+    /** The first person who added it ("Add link") or shared it in a thread. */
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    /** Agents read pinned links (the thread notes file). Every link starts unpinned until a member pins it; writers set it explicitly (the `true` default predates that). */
+    pinned: boolean('pinned').default(true).notNull(),
+    /** Who pinned it and when; null on a link "Add link" made before these columns (then `created_by`, `created_at`). */
+    pinnedBy: uuid('pinned_by'),
+    pinnedAt: timestamp('pinned_at', { withTimezone: true }),
+    /** `manual`: "Add link". `message`: collected from a person's message in a thread of the channel. */
+    source: text('source').$type<'manual' | 'message'>().default('manual').notNull(),
+    /** The latest thread that shared it. */
+    sessionId: text('session_id').references(() => projectSessions.sessionId, { onDelete: 'set null' }),
+    lastSharedAt: timestamp('last_shared_at', { withTimezone: true }).defaultNow().notNull(),
+    /** The page's own title (`og:title`, else `<title>`), fetched by the server (job `link-unfurl`). */
+    fetchedTitle: text('fetched_title'),
+    /** `og:site_name` of the page. */
+    siteName: text('site_name'),
+    /** The page's icon URL; stored only when its host passes the egress address check. Never fetched by the API. */
+    iconUrl: text('icon_url'),
+    /** The last successful fetch; the link is fetched again after 7 days. */
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }),
+    /** The last failed fetch; no new try for 24 hours. */
+    fetchFailedAt: timestamp('fetch_failed_at', { withTimezone: true }),
+  },
+  (table) => [
+    check('project_space_links_source_check', sql`${table.source} in ('manual', 'message')`),
+    // One row per address per channel: a second share moves `last_shared_at` and `session_id`.
+    uniqueIndex('uniq_project_space_links_space_url').on(table.spaceId, table.url),
+    index('idx_project_space_links_space').on(table.spaceId, table.createdAt.desc()),
+    // Serves the session_id FK: a session delete sets null without a scan.
+    index('idx_project_space_links_session').on(table.sessionId),
+    // Serves the project_id FK: a project delete cascades without a scan.
+    index('idx_project_space_links_project').on(table.projectId),
+  ],
+);
+
+/**
+ * A person in a channel (the header roster and the Members tab). `#general`
+ * has no rows: every project member is in it. DMs have no rows either. A row
+ * whose user left the project is ignored on read. A private channel
+ * (`project_spaces.visibility`) is visible only to the people in this table.
+ */
+export const projectSpaceMembers = kortixSchema.table(
+  'project_space_members',
+  {
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => projectSpaces.spaceId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    /** Who added them; equals `user_id` for a join or the creator. Null: the backfill. */
+    addedBy: uuid('added_by'),
+    addedAt: timestamp('added_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.spaceId, table.userId] }),
+    // "My channels" and the cleanup when someone leaves the account.
+    index('idx_project_space_members_user').on(table.userId),
+  ],
+);
+
+// ─── Memory ──────────────────────────────────────────────────────────────────
+// Memory is Markdown files in the project's Drive; the database holds only
+// what a thread's first turn was listed ("Used memory"). Only the API reads it
+// (RLS on, no policy).
+
+/** One entry of `memory_thread_loads.layers`. */
+export interface MemoryThreadLoadLayer {
+  /** The layer key: `company` or the space id. */
+  layer_id: string;
+  scope: 'company' | 'channel' | 'dm';
+  name: string;
+  /** Always 0 for file layers. */
+  version: number;
+  /** File page ids. */
+  page_ids: string[];
+}
+
+/** The memory layers a thread loaded at its first turn. */
+export const memoryThreadLoads = kortixSchema.table('memory_thread_loads', {
+  sessionId: text('session_id')
+    .primaryKey()
+    .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+  firstLoadedAt: timestamp('first_loaded_at', { withTimezone: true }).notNull(),
+  layers: jsonb('layers').$type<MemoryThreadLoadLayer[]>().notNull(),
+});
+
+/**
+ * One-time marks a member leaves in a project: the Channels intro seen, a
+ * "Get started" row done or the block dismissed. The API validates `mark`.
+ * Only the API reads it (RLS on, no policy).
+ */
+export const projectUserMarks = kortixSchema.table(
+  'project_user_marks',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    mark: text('mark').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.userId, table.mark] })],
+);
+
 // Who started a session's RUN (the whole spawn tree), for attribution and the
 // session list's "mine / shared / automated" split. Server-derived at create and
 // copied from the parent for a spawned session — see session-initiator.ts.
@@ -1112,6 +1346,37 @@ export const projectSessionInitiatorEnum = kortixSchema.enum('project_session_in
   'api',
   'system',
 ]);
+
+/**
+ * A session group: a named folder of a project's sessions in the sidebar,
+ * behind the `session_groups` flag. Every project member sees the same groups
+ * in the same order (`position`, 0-based). A session is in at most one group
+ * (`project_sessions.group_id`); deleting a group leaves its sessions in none.
+ */
+export const projectSessionGroups = kortixSchema.table(
+  'project_session_groups',
+  {
+    groupId: uuid('group_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** Trimmed, 1–80 characters; unique in the project in any case. */
+    name: text('name').notNull(),
+    position: integer('position').notNull(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('project_session_groups_name_check', sql`char_length(${table.name}) between 1 and 80`),
+    check('project_session_groups_position_check', sql`${table.position} >= 0`),
+    uniqueIndex('uniq_project_session_groups_name').on(table.projectId, sql`lower(${table.name})`),
+    index('idx_project_session_groups_project').on(table.projectId, table.position),
+  ],
+);
 
 export const projectSessions = kortixSchema.table(
   'project_sessions',
@@ -1149,6 +1414,11 @@ export const projectSessions = kortixSchema.table(
     // account id, or system source. null only on rows no backfill classified.
     initiatorType: projectSessionInitiatorEnum('initiator_type'),
     initiatorId: text('initiator_id'),
+    // The project space (channel or DM) this thread belongs to. null = no space
+    // (every session created before channels, or while the flag is off).
+    spaceId: uuid('space_id'),
+    // The session group it is filed in (`session_groups`). null = no group.
+    groupId: uuid('group_id'),
     // Backend-only per-session secrets allowlist (KaaB): a list of project-secret
     // IDENTIFIERS this session may receive. Set ONLY by a backend-origin caller
     // at create; immutable afterward. Semantics are pure NARROWING — the injected
@@ -1192,6 +1462,26 @@ export const projectSessions = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    foreignKey({
+      name: 'project_sessions_space_fk',
+      columns: [table.spaceId],
+      foreignColumns: [projectSpaces.spaceId],
+    }).onDelete('set null'),
+    foreignKey({
+      name: 'project_sessions_group_fk',
+      columns: [table.groupId],
+      foreignColumns: [projectSessionGroups.groupId],
+    }).onDelete('set null'),
+    // One group's sessions in the list order (updated_at desc); also serves the
+    // FK's ON DELETE SET NULL. Partial: sessions in no group are never listed by it.
+    index('idx_project_sessions_group')
+      .on(table.groupId, table.updatedAt.desc(), table.sessionId.desc())
+      .where(sql`${table.groupId} is not null`),
+    // One space's threads in the list order (updated_at desc). Partial:
+    // sessions outside a space are never listed by it.
+    index('idx_project_sessions_space')
+      .on(table.spaceId, table.updatedAt.desc(), table.sessionId.desc())
+      .where(sql`${table.spaceId} is not null`),
     index('idx_project_sessions_account').on(table.accountId),
     index('idx_project_sessions_project').on(table.projectId),
     index('idx_project_sessions_status').on(table.status),
@@ -1244,8 +1534,8 @@ export const projectSessions = kortixSchema.table(
     ),
     // NOTE: `idx_project_sessions_one_available_warm` (one `available` warm
     // session per project+creator) USED to be declared here. It arbitrated a
-    // create race that no longer exists: a warm session is now an ordinary
-    // session and a duplicate costs one extra box. Dropped by
+    // create race that no longer exists (warm sessions were removed on
+    // 2026-11-03). Dropped by
     // migrations/20260813203000000_drop_one_available_warm_index.concurrent.ts.
     // NOTE: three more indexes exist, built CONCURRENTLY and listed in
     // scripts/schema-contract-sql-only.ts:
@@ -1581,6 +1871,12 @@ export const projectSessionPublicShares = kortixSchema.table(
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    // `resource_type = 'response'`: one assistant response (one turn), keyed by
+    // the turn's user message id, published as an immutable text snapshot
+    // built server-side from the session log.
+    messageId: text('message_id'),
+    snapshot: jsonb('snapshot').$type<Record<string, unknown>>(),
+    snapshotAt: timestamp('snapshot_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -1588,6 +1884,10 @@ export const projectSessionPublicShares = kortixSchema.table(
     uniqueIndex('idx_project_session_public_shares_token_hash').on(table.tokenHash),
     index('idx_project_session_public_shares_session').on(table.sessionId),
     index('idx_project_session_public_shares_project').on(table.projectId),
+    // One live share per response: a re-share re-snapshots the same row (same URL).
+    uniqueIndex('idx_project_session_public_shares_live_response')
+      .on(table.sessionId, table.messageId)
+      .where(sql`${table.resourceType} = 'response' and ${table.revokedAt} is null`),
   ],
 );
 
@@ -1674,12 +1974,23 @@ export const projectTriggerRuntime = kortixSchema.table(
     autoPausedAt: timestamp('auto_paused_at', { withTimezone: true }),
     autoPausedReason: text('auto_paused_reason'),
     autoPauseResumedAt: timestamp('auto_pause_resumed_at', { withTimezone: true }),
+    // The channel or DM (`project_spaces`) this trigger's runs post to as
+    // threads (`project_channels` flag). Account-local like the access policy,
+    // so not in the manifest. null = no space: the run lands in `#general`.
+    spaceId: uuid('space_id'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.projectId, table.slug] }),
+    foreignKey({
+      name: 'project_trigger_runtime_space_fk',
+      columns: [table.spaceId],
+      foreignColumns: [projectSpaces.spaceId],
+    }).onDelete('set null'),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
     index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
+    // A space's triggers (its Triggers tab count) and the FK's ON DELETE SET NULL.
+    index('idx_project_trigger_runtime_space').on(table.spaceId).where(sql`${table.spaceId} is not null`),
   ],
 );
 
@@ -2037,6 +2348,7 @@ export const sessionLifecycleCommands = kortixSchema.table(
     commandId: uuid('command_id').defaultRandom().primaryKey(),
     commandType: varchar('command_type', { length: 64 }).notNull(),
     source: varchar('source', { length: 64 }).notNull(),
+    artifactId: uuid('artifact_id'),
     status: sessionLifecycleCommandStatusEnum('status').default('queued').notNull(),
     projectId: uuid('project_id')
       .notNull()
@@ -2060,6 +2372,8 @@ export const sessionLifecycleCommands = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    foreignKey({ columns: [table.artifactId], foreignColumns: [artifacts.artifactId], name: 'session_lifecycle_commands_artifact_fk' }).onDelete('cascade'),
+    index('idx_session_lifecycle_commands_artifact').on(table.artifactId).where(sql`${table.artifactId} is not null`),
     uniqueIndex('idx_session_lifecycle_commands_idempotency').on(table.idempotencyKey),
     index('idx_session_lifecycle_commands_due').on(table.status, table.availableAt),
     index('idx_session_lifecycle_commands_project').on(table.projectId),
@@ -2570,6 +2884,9 @@ export const sessionTurns = kortixSchema.table(
       sql`${table.endReason} IS NULL OR ${table.endReason} IN ('completed', 'runtime_gone', 'failed', 'abandoned', 'unknown')`,
     ),
     index('session_turns_session_idx').on(table.sessionId, table.startedAt.desc()),
+    index('session_turns_message_time_idx')
+      .on(table.sessionId, table.startedAt.desc())
+      .where(sql`${table.messageId} is not null`),
     // The stop writer settles every unsettled row of one sandbox in the same
     // transaction that erases its lifecycle authority. PARTIAL, on the exact
     // predicate that query uses: terminal rows are retained forever, so an
@@ -2578,136 +2895,6 @@ export const sessionTurns = kortixSchema.table(
     index('session_turns_open_idx')
       .on(table.sandboxId)
       .where(sql`${table.state} <> 'ended'`),
-  ],
-);
-
-/**
- * Durable transcript mirror — the server-side copy of a session's message
- * envelope, so the control plane can answer "what was said in this session"
- * for a session whose sandbox is STOPPED.
- *
- * Why it exists. `buildSessionTranscriptDigest` proxies the box's OpenCode
- * endpoint, so it answers `unavailable` for every non-running session. Opening
- * a hibernated session therefore showed a full-screen "Connecting…" for the
- * whole wake (5-240 s) with an empty transcript, although every message
- * existed. The browser-side IndexedDB mirror that used to cover this was
- * deleted because its freshness test could not see a turn ENDING, so it painted
- * a stale thread as live. This mirror inverts that: the SERVER writes it
- * BECAUSE a turn ended (`turn-stream` kind `end`/`turn_end`, routes/turn-stream.ts), so
- * freshness is a property of the write, not a client-side guess.
- *
- * Identity is the whole point. Rows are keyed by the OpenCode message id — the
- * SAME id the live sync store sees when the box answers — so a client can
- * hydrate from the mirror with `source: 'cache'` and let the live read SETTLE
- * each message by id instead of duplicating it. A mirror without ids would
- * reproduce the ghost-message failure that got the last one deleted.
- *
- * Attachment BYTES are never stored: a file part is reduced to
- * `{filename, mime}`, exactly as the live digest does. That is the 2026-08-24
- * "7-19 MB transcript" incident's rule, and it is enforced by the writer.
- */
-export const sessionTranscriptMirrors = kortixSchema.table(
-  'session_transcript_mirrors',
-  {
-    // Deleting the session must delete its transcript copy: unlike
-    // `session_turns` (routing telemetry that deliberately outlives its
-    // session), every row here is USER CONTENT.
-    sessionId: text('session_id').primaryKey(),
-    projectId: uuid('project_id').notNull(),
-    accountId: uuid('account_id').notNull(),
-    // The OpenCode root the newest capture read. A re-pin (a restarted box
-    // adopting a different root) keeps the previous root's rows: they stay
-    // under their own `opencode_session_id`, and a root read serves this root.
-    runtimeSessionId: text('opencode_session_id'),
-    // TRUE only when a capture proved it had seen the session's FIRST message
-    // (the box returned fewer messages than the capture window). This is the
-    // single bit `complete` is derived from; it is never assumed. Retention
-    // pruning clears it, because pruning is exactly "the head is gone now".
-    headComplete: boolean('head_complete').default(false).notNull(),
-    // When the newest successful capture ran. The client reads it to know how
-    // far behind the mirror can be, and never to decide whether to render.
-    capturedAt: timestamp('captured_at', { withTimezone: true }).defaultNow().notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-    // The message an OpenCode rewind (`POST /session/:id/revert`, seen by the
-    // sandbox proxy) points at. Set on the revert, cleared on `unrevert`.
-    // The ONLY licence a capture has to delete a stored row: a read that
-    // lacks this message deletes the rows from it onward that the read
-    // lacks, then clears it. Without it every read merges.
-    rewindMessageId: text('rewind_message_id'),
-  },
-  (table) => [
-    // Named explicitly: the drizzle-derived name
-    // (`..._session_id_project_sessions_session_id_fk`) exceeds Postgres's
-    // 63-byte identifier limit and would be silently truncated.
-    foreignKey({
-      columns: [table.sessionId],
-      foreignColumns: [projectSessions.sessionId],
-      name: 'session_transcript_mirrors_session_fk',
-    }).onDelete('cascade'),
-    index('session_transcript_mirrors_project_idx').on(table.projectId),
-  ],
-);
-
-/**
- * One mirrored message.
- *
- * `(session_id, message_id)` is the identity the live sync store settles
- * against — never a synthesized key.
- *
- * `info` is OpenCode's message envelope VERBATIM. That is deliberate and it is
- * the correction to the deleted client mirror: its freshness test read the
- * transcript's SHAPE (message count, part count, tail id), and the two things
- * that end a turn move none of them — `time.completed` stamped on the tail
- * message, and the `error` an abort stamps. A STOP appends no part at all, so a
- * stopped thread cold-painted as still running and every message under it
- * dimmed to "Queued". Storing `info` whole means the client reads the MESSAGE,
- * which is the acceptance criterion written into `use-session-sync.ts`.
- *
- * `parts` is the part array with the two unbounded fields removed: a tool
- * part's `state.input`/`state.output`, and a file part's `url` (base64 data
- * URLs are what made transcript bodies 7-19 MB). Everything a transcript needs
- * to render — text, reasoning, tool names and statuses, file names and types,
- * step boundaries — is kept.
- */
-export const sessionTranscriptMessages = kortixSchema.table(
-  'session_transcript_messages',
-  {
-    sessionId: text('session_id').notNull(),
-    // The OpenCode message id (`msg_...`), verbatim.
-    messageId: text('message_id').notNull(),
-    // `info.parentID` — the turn linkage OpenCode itself records (which user
-    // message a step was parented on). Null on messages that carry none.
-    parentMessageId: text('parent_message_id'),
-    runtimeSessionId: text('opencode_session_id'),
-    role: text('role').notNull(),
-    // Denormalized out of `info` so ordering and retention are index reads.
-    // Order is (message_created_at, message_id) — the order OpenCode's own
-    // `MessageV2.page()` uses, so the mirror and the live read never disagree
-    // about sequence.
-    messageCreatedAt: timestamp('message_created_at', { withTimezone: true }),
-    // The turn-ended bit, denormalized for the same reason. Never inferred.
-    messageCompletedAt: timestamp('message_completed_at', { withTimezone: true }),
-    info: jsonb('info').$type<Record<string, unknown>>().notNull(),
-    parts: jsonb('parts').default([]).$type<unknown[]>().notNull(),
-    capturedAt: timestamp('captured_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    primaryKey({
-      columns: [table.sessionId, table.messageId],
-      name: 'session_transcript_messages_pkey',
-    }),
-    // Named explicitly — see the sibling FK above for why.
-    foreignKey({
-      columns: [table.sessionId],
-      foreignColumns: [sessionTranscriptMirrors.sessionId],
-      name: 'session_transcript_messages_mirror_fk',
-    }).onDelete('cascade'),
-    index('session_transcript_messages_order_idx').on(
-      table.sessionId,
-      table.messageCreatedAt,
-      table.messageId,
-    ),
   ],
 );
 
@@ -2721,7 +2908,7 @@ export const sessionTranscriptMessages = kortixSchema.table(
  * Every table is read per session, so every index leads with `session_id`
  * (the policy is written out in the creating migration). Each table cascades
  * from `project_sessions`: a deleted session deletes its log. Only the service
- * role reads them (REVOKE + RLS with no policy, like the transcript mirror).
+ * role reads them (REVOKE + RLS with no policy).
  */
 export const sessionLogs = kortixSchema.table(
   'session_logs',
@@ -2742,7 +2929,7 @@ export const sessionLogs = kortixSchema.table(
     // When the daemon's journal first committed a batch for this session. Null:
     // no journal has written (an old daemon, a dump-dir daemon, or posts that
     // have not succeeded yet), so the API's transcript capture writes the log
-    // from the v1 mirror (P2.7). Set: the journal owns the rows; capture stops.
+    // from its read of the box (P8). Set: the journal owns the rows; capture stops.
     journalSeenAt: timestamp('journal_seen_at', { withTimezone: true }),
     // Row time. The session's own `created_at` lives in `record`.
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -2860,8 +3047,8 @@ export const sessionLogBlobs = kortixSchema.table(
 /**
  * One row per session whose content the retention purge (P2.8,
  * `apps/api/src/projects/session-log-purge.ts`) removed. It says WHEN the rows
- * went (`rows_purged_at`: the v2 `session_log*` rows and the v1
- * `session_transcript_*` rows) and when the session's `session-attachments`
+ * went (`rows_purged_at`: the `session_log*` rows and every other content
+ * row) and when the session's `session-attachments`
  * objects went (`objects_purged_at`, 7 days after the rows, null until then).
  * The row stays after both: it is the "done" marker that stops the purge from
  * selecting the session again. No content: ids, a reason and two timestamps.
@@ -2890,19 +3077,6 @@ export const sessionContentPurges = kortixSchema.table(
       .where(sql`${table.objectsPurgedAt} IS NULL`),
   ],
 );
-
-/**
- * The pass of the session-log backfill (P3.1, `apps/api/src/projects/session-log-backfill.ts`):
- * one row (`id` = 'pass') with the mode, the keyset cursor and the running totals as JSON, so a
- * new leader resumes the pass instead of starting over. `rev` fences a save: a tick saves only
- * over the rev it loaded. No content: counts, the mode and the cursor's (created_at, session_id).
- */
-export const sessionLogBackfillState = kortixSchema.table('session_log_backfill_state', {
-  id: text('id').primaryKey(),
-  state: jsonb('state').notNull(),
-  rev: integer('rev').notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
 
 /**
  * UNUSED since decision D6b (2026-10-14): an account closure, read from
@@ -3448,6 +3622,12 @@ export interface AgentGrant {
    *  declares no Apps, and grants minted before this field existed carry none
    *  — read it through `agentMayOpenApp` (apps/api iam/agent-scope.ts). */
   apps?: string[] | 'all';
+  /** Connector slug (canonical) → the policy set this agent gets on it
+   *  (`agents.<a>.policy_sets`). ABSENT key = the connector's base rules.
+   *  Key `*` = every connector (a malformed map). A name the connector does
+   *  not define blocks that connector (`policy_set_missing`). Read through
+   *  `agentPolicySet` (apps/api iam/agent-scope.ts). JSON only, no column. */
+  policySets?: Record<string, string>;
   /**
    * PROVENANCE — which manifest this grant was derived from. Stamped by the
    * resolver (`projects/lib/secret-grant.ts`) and read by the re-mint policy
@@ -4687,6 +4867,12 @@ export const sessionPendingQuestions = kortixSchema.table(
     /** Null while the question is still open — the index keys on this. */
     answeredAt: timestamp('answered_at', { withTimezone: true, mode: 'string' }),
     answers: jsonb(),
+    /**
+     * A chat's answers so far while it shows the questions one at a time
+     * (`QuestionSteps`, api channels/core/questions.ts). Null: nothing picked.
+     * Written only by compare-and-set on its previous value.
+     */
+    chatSteps: jsonb('chat_steps'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .defaultNow()
       .notNull(),
@@ -6723,6 +6909,8 @@ export const connectorCallStatusEnum = kortixSchema.enum('connector_call_status'
   'denied',
   'pending_approval',
   'expired',
+  // A person approved the gate; the held call runs on its own audit row.
+  'approved',
 ]);
 
 /**
@@ -7166,6 +7354,36 @@ export const connectorPolicies = kortixSchema.table(
 );
 
 /**
+ * Named rule sets on one connector (`connectors[].policy_sets` in kortix.yaml),
+ * which an agent is given through `agents.<name>.policy_sets`. One row per set:
+ * the row is the registry (a set with zero rules is a row with `[]`), so "this
+ * set exists" and "these are its rules" never disagree.
+ *
+ * Separate from `connector_policies` on purpose: every base-rule reader loads
+ * that table by `connector_id` alone, so set rows there would apply to every
+ * caller under API code that predates sets (rollout, rollback).
+ *
+ * Single writer: the manifest materializer (connectors/sync.ts).
+ */
+export const connectorPolicySets = kortixSchema.table(
+  'connector_policy_sets',
+  {
+    connectorId: uuid('connector_id')
+      .notNull()
+      .references(() => connectors.connectorId, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    /** Ordered rules: `{ match, action, conditions? }[]`, first match wins. */
+    policies: jsonb('policies')
+      .$type<Array<{ match: string; action: string; conditions?: ConnectorPolicyCondition[] | null }>>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.connectorId, table.name] })],
+);
+
+/**
  * Legacy authorization-policy storage.
  *
  * The runtime does not read or write this table. Connector policies
@@ -7314,6 +7532,62 @@ export const connectorCalls = kortixSchema.table(
     index('idx_connector_calls_connection').on(table.connectionId),
     index('idx_connector_calls_status').on(table.status),
     index('idx_connector_calls_account').on(table.accountId),
+  ],
+);
+
+/**
+ * The full input of a connector call held for approval, so Approve can run it
+ * once, as the original caller. One row per `pending_approval` gate.
+ *
+ * `input_enc` is ciphertext from `encryptProjectSecret(project_id, …)`. No API
+ * returns it, no log or export carries it, and every terminal state sets it to
+ * NULL. Only the redacted `outcome` leaves this table.
+ *
+ * `state`: `held` until a decision; Approve sets `queued` and `run_deadline`;
+ * the worker sets `dispatched` before the provider call, then one of `ok`,
+ * `error`, `refused` or `unknown`. Deny and expiry set `cancelled`.
+ */
+export const connectorHeldCalls = kortixSchema.table(
+  'connector_held_calls',
+  {
+    executionId: uuid('execution_id').primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    /** Encrypted held input; NULL once wiped. */
+    inputEnc: text('input_enc'),
+    state: text('state').notNull(),
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+    /** Set at approve: the run must start before this time. */
+    runDeadline: timestamp('run_deadline', { withTimezone: true }),
+    /** The `connector_calls` row of the real run. */
+    runExecutionId: uuid('run_execution_id'),
+    /** Redacted run result: status, reason, short message, output preview. */
+    outcome: jsonb('outcome').$type<Record<string, unknown> | null>(),
+    /** The chat approver and the card location, for the card update. */
+    chatDecider: jsonb('chat_decider').$type<Record<string, unknown> | null>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.executionId],
+      foreignColumns: [connectorCalls.executionId],
+      name: 'connector_held_calls_execution_fk',
+    }).onDelete('cascade'),
+    check(
+      'connector_held_calls_state_check',
+      sql`${table.state} in ('held', 'queued', 'dispatched', 'ok', 'error', 'refused', 'unknown', 'cancelled')`,
+    ),
+    index('idx_connector_held_calls_run_due')
+      .on(table.state, table.runDeadline)
+      .where(sql`${table.state} in ('queued', 'dispatched')`),
+    index('idx_connector_held_calls_project').on(table.projectId),
+    index('idx_connector_held_calls_input_age')
+      .on(table.createdAt)
+      .where(sql`${table.inputEnc} is not null`),
   ],
 );
 
@@ -7609,6 +7883,7 @@ export const jobQueue = kortixSchema.table(
     jobId: uuid('job_id').default(sql`kortix.uuid_v7()`).primaryKey(),
     queue: text('queue').notNull(),
     jobKey: text('job_key').notNull(),
+    artifactId: uuid('artifact_id'),
     payload: jsonb('payload').$type<Record<string, unknown>>().default({}).notNull(),
     status: text('status').default('queued').notNull(),
     runAt: timestamp('run_at', { withTimezone: true }).defaultNow().notNull(),
@@ -7616,12 +7891,18 @@ export const jobQueue = kortixSchema.table(
     maxAttempts: integer('max_attempts').default(8).notNull(),
     lockedUntil: timestamp('locked_until', { withTimezone: true }),
     lastError: text('last_error'),
+    /** With `order_seq`: jobs of the queue that share this key run one at a time, lowest seq first (job-queue.ts `claimJobs`). */
+    orderKey: text('order_key'),
+    orderSeq: bigint('order_seq', { mode: 'number' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    foreignKey({ columns: [table.artifactId], foreignColumns: [artifacts.artifactId], name: 'job_queue_artifact_fk' }).onDelete('cascade'),
+    index('idx_job_queue_artifact').on(table.artifactId).where(sql`${table.artifactId} is not null`),
     uniqueIndex('idx_job_queue_key').on(table.queue, table.jobKey),
     index('idx_job_queue_due').on(table.queue, table.runAt).where(sql`${table.status} = 'queued'`),
+    index('idx_job_queue_order').on(table.queue, table.orderKey, table.orderSeq).where(sql`${table.status} = 'queued'`),
     index('idx_job_queue_finished').on(table.updatedAt).where(sql`${table.status} <> 'queued'`),
     check('job_queue_status', sql`${table.status} in ('queued', 'done', 'dead')`),
   ],
@@ -7958,6 +8239,23 @@ export const timelineAudio = kortixSchema.table(
 // `agent` and `company` are the earlier per-person / per-agent / per-account
 // drives; they are read only by the job that folds them into project drives
 // (apps/api/src/drives/fold.ts). Server-only: the API is the sole reader.
+
+/** `drives.platinum_volume_move`: one region move of a drive's volume. */
+export interface DriveVolumeMoveRecord {
+  /** The region the drive moves to (a Platinum region key). */
+  to: string;
+  /** The volume and region it moves from; null region = home. Kept until purged. */
+  from_name: string;
+  from_region: string | null;
+  /** The old volume's head when the copy was taken. */
+  from_head?: string | null;
+  started_at: string;
+  /** Set when the row points at the new volume: the fence is off. */
+  finished_at?: string;
+  /** Set when the old volume was deleted after the retention window. */
+  purged_at?: string;
+}
+
 export const drives = kortixSchema.table('drives', {
   driveId: uuid('drive_id').defaultRandom().primaryKey(),
   accountId: uuid('account_id')
@@ -7971,8 +8269,25 @@ export const drives = kortixSchema.table('drives', {
   isDefault: boolean('is_default').default(false).notNull(),
   platinumVolumeId: text('platinum_volume_id'),
   platinumVolumeName: text('platinum_volume_name').notNull().unique('drives_platinum_volume_name_key'),
+  /**
+   * The Platinum region the volume lives in; null = Platinum's home region.
+   * Set when the row is inserted, changed only by a region move. Every call
+   * about the volume goes to that region's control plane, and every box that
+   * mounts it runs there.
+   */
+  platinumVolumeRegion: text('platinum_volume_region'),
+  /**
+   * The drive's last region move (drives/region-move.ts), null if it never
+   * moved. While `finished_at` is unset the drive is fenced: storage refuses
+   * writes and no box mounts it.
+   */
+  platinumVolumeMove: jsonb('platinum_volume_move').$type<DriveVolumeMoveRecord>(),
   /** The volume head the conflict scanner last read; null until the first scan. */
   conflictScanHead: text('conflict_scan_head'),
+  /** The volume head the search index holds every file of; null until the first full pass (drives/search-index). */
+  indexHead: text('index_head'),
+  /** When the indexer last compared the volume head with `index_head`; null = due now. */
+  indexCheckedAt: timestamp('index_checked_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -7988,6 +8303,113 @@ export const drives = kortixSchema.table('drives', {
     .on(table.projectId)
     .where(sql`${table.kind} = 'project'`),
   check('drives_kind', sql`${table.kind} in ('personal', 'agent', 'company', 'project')`),
+]);
+
+/**
+ * A project admin opened a folder in another person's own folder
+ * (`/Users/<name>`): one row per (drive, own folder, admin, UTC day). The
+ * owner reads it ("Opened by admins"); each open also leaves an audit event
+ * (`drive.folder.admin_access`). Only the API reads it (RLS on, no policy).
+ */
+export const driveFolderAdminReads = kortixSchema.table(
+  'drive_folder_admin_reads',
+  {
+    driveId: uuid('drive_id')
+      .notNull()
+      .references(() => drives.driveId, { onDelete: 'cascade' }),
+    /** The person's own folder, `/Users/<name>`. */
+    folder: text('folder').notNull(),
+    adminUserId: uuid('admin_user_id').notNull(),
+    day: date('day', { mode: 'string' }).notNull(),
+    firstAt: timestamp('first_at', { withTimezone: true }).defaultNow().notNull(),
+    lastAt: timestamp('last_at', { withTimezone: true }).defaultNow().notNull(),
+    opens: integer('opens').default(1).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.driveId, table.folder, table.adminUserId, table.day] })],
+);
+
+// Storage Platinum bills Kortix for, one row per (control plane, meter,
+// resource, UTC day): what was metered, who owns it, and what Kortix charged.
+// Volumes, scratch disks and Worker storage come from Platinum's meter
+// (apps/api/src/billing/services/storage-charges.ts); the disk of a stopped or
+// archived box is metered by Kortix with Platinum's rule
+// (apps/api/src/billing/services/box-disk-charges.ts). A row with no account is
+// Kortix's own cost: a volume no Kortix account owns (another deployment's, a
+// deleted owner's, one Platinum no longer lists). The account and project are
+// set null when they are deleted, so the cost stays recorded as unattributed.
+export const storageCharges = kortixSchema.table('storage_charges', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  /** The Platinum control plane: 'home', or the region key of a regional one. */
+  feed: text('feed').notNull(),
+  /**
+   * Platinum's resource_kind ('volume', 'volume_snapshot', 'scratch',
+   * 'worker_storage'), or a box disk: 'box_disk' (a stopped box) or
+   * 'box_disk_archived' (an archived box).
+   */
+  resourceKind: text('resource_kind').notNull(),
+  /** Platinum's resource_id: a volume id (vol_…), or a box id (sbx_…) for a scratch disk or a box disk. */
+  resourceId: text('resource_id').notNull(),
+  usageDay: date('usage_day', { mode: 'string' }).notNull(),
+  accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'set null' }),
+  projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'set null' }),
+  sessionId: text('session_id'),
+  driveId: uuid('drive_id'),
+  volumeName: text('volume_name'),
+  /** Why no account pays: 'not_kortix', 'volume_gone', 'owner_gone', 'unsupported_kind'. Null when attributed. */
+  unattributedReason: text('unattributed_reason'),
+  /** The storageBilling entitlement was off when this row last charged: nothing was taken. */
+  waived: boolean('waived').default(false).notNull(),
+  /** What was metered for the day so far: the larger of Platinum's receipt and the sum of its events. */
+  gibHours: numeric('gib_hours', { precision: 24, scale: 10 }).default('0').notNull(),
+  platinumMicros: bigint('platinum_micros', { mode: 'number' }).default(0).notNull(),
+  /** The sum of the `volume.storage` events applied to this row (GET /v1/billing/events). */
+  eventGibHours: numeric('event_gib_hours', { precision: 24, scale: 10 }).default('0').notNull(),
+  /** The ids of those events: each one is applied once. */
+  eventIds: text('event_ids').array().default(sql`'{}'::text[]`).notNull(),
+  /** A box disk row: the instant its GiB-hours are metered through. Null on every other row. */
+  meteredThrough: timestamp('metered_through', { withTimezone: true, mode: 'string' }),
+  /** What Kortix charged for the day so far: one ledger row per charge_seq. */
+  chargedGibHours: numeric('charged_gib_hours', { precision: 24, scale: 10 }).default('0').notNull(),
+  chargedUsd: numeric('charged_usd', { precision: 20, scale: 10 }).default('0').notNull(),
+  chargeSeq: integer('charge_seq').default(0).notNull(),
+  /** A charge written before its wallet call: replayed with the same key until it lands. */
+  pendingGibHours: numeric('pending_gib_hours', { precision: 24, scale: 10 }),
+  pendingUsd: numeric('pending_usd', { precision: 20, scale: 10 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('storage_charges_resource_day').on(table.feed, table.resourceKind, table.resourceId, table.usageDay),
+  index('idx_storage_charges_account_day').on(table.accountId, table.usageDay),
+  index('idx_storage_charges_project_day').on(table.projectId, table.usageDay),
+  check(
+    'storage_charges_kind',
+    sql`${table.resourceKind} in ('volume', 'volume_snapshot', 'scratch', 'worker_storage', 'box_disk', 'box_disk_archived')`,
+  ),
+  check(
+    'storage_charges_reason',
+    sql`${table.unattributedReason} is null or ${table.unattributedReason} in ('not_kortix', 'volume_gone', 'owner_gone', 'unsupported_kind')`,
+  ),
+]);
+
+// Kortix's own compute cost for Platinum boxes this deployment does not own
+// (no session, App or monitor row names them): what Platinum charged per
+// (control plane, box, UTC day, meter), summed from its billing feed
+// (apps/api/src/billing/services/orphan-box-costs.ts). Nothing here is ever
+// charged to a customer.
+export const providerOrphanBoxCosts = kortixSchema.table('provider_orphan_box_costs', {
+  feed: text('feed').notNull(),
+  sandboxId: text('sandbox_id').notNull(),
+  usageDay: date('usage_day', { mode: 'string' }).notNull(),
+  /** `<event_type>/<size_class>`, e.g. 'sandbox.uptime/cpu'. */
+  meter: text('meter').notNull(),
+  quantity: numeric('quantity', { precision: 24, scale: 6 }).default('0').notNull(),
+  amountMicros: bigint('amount_micros', { mode: 'number' }).default(0).notNull(),
+  events: integer('events').default(0).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.feed, table.sandboxId, table.usageDay, table.meter] }),
+  index('idx_provider_orphan_box_costs_day').on(table.usageDay),
 ]);
 
 // Where a drive mounts, beyond its owner's own sessions. One row per subject:
@@ -8049,11 +8471,50 @@ export const driveConflicts = kortixSchema.table('drive_conflicts', {
     .where(sql`${table.resolvedAt} is null and ${table.dismissedAt} is null`),
 ]);
 
+/** A Postgres `tsvector`, read and written only by SQL (`drive_index_entries.search`). */
+const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' });
+
+/**
+ * The search index of a project's Files: one row per file or folder of the
+ * drive's volume at `drives.index_head` (drives/search-index). `body` is the
+ * extracted text of a text-like file, cut at 256 KiB (`INDEX_BODY_BYTES`);
+ * every other file has a name row only. `search` weights the name A, the path
+ * C and the body D, over the 'simple' configuration with every run of
+ * non-alphanumeric characters read as a space. Who may read a row is decided
+ * per request by the folder rules (drives/folders.ts), never stored here.
+ */
+export const driveIndexEntries = kortixSchema.table('drive_index_entries', {
+  driveId: uuid('drive_id')
+    .notNull()
+    .references(() => drives.driveId, { onDelete: 'cascade' }),
+  path: text('path').notNull(),
+  kind: text('kind').notNull(),
+  size: bigint('size', { mode: 'number' }).default(0).notNull(),
+  mtime: timestamp('mtime', { withTimezone: true }),
+  /** sha256 of the bytes read for `body`; null for a name-only row. */
+  contentHash: text('content_hash'),
+  name: text('name').notNull(),
+  body: text('body').default('').notNull(),
+  search: tsvector('search').generatedAlwaysAs(
+    sql`setweight(to_tsvector('simple'::regconfig, regexp_replace(name, '[^[:alnum:]]+', ' ', 'g')), 'A') || setweight(to_tsvector('simple'::regconfig, regexp_replace(path, '[^[:alnum:]]+', ' ', 'g')), 'C') || setweight(to_tsvector('simple'::regconfig, regexp_replace(body, '[^[:alnum:]]+', ' ', 'g')), 'D')`,
+  ),
+  indexedAt: timestamp('indexed_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.driveId, table.path] }),
+  index('idx_drive_index_entries_search').using('gin', table.search),
+  // `path=` scopes a search to a folder with a LIKE prefix, which the
+  // primary key (default collation) cannot serve.
+  index('idx_drive_index_entries_path_prefix').on(table.driveId, sql`${table.path} text_pattern_ops`),
+  check('drive_index_entries_kind', sql`${table.kind} in ('file', 'dir')`),
+]).enableRLS();
+
 // Platinum volumes whose owner row is gone (a drive, a session's state
 // volume), queued for deletion. A trigger fills it on every delete path,
 // cascades included; the API's scheduler leader drains it.
 export const platinumVolumeDeletions = kortixSchema.table('platinum_volume_deletions', {
   volumeName: text('volume_name').primaryKey(),
+  /** The Platinum region the volume lives in; null = the home region. */
+  region: text('region'),
   reason: text('reason').notNull(),
   attempts: integer('attempts').default(0).notNull(),
   lastError: text('last_error'),
@@ -8099,6 +8560,8 @@ export const notifications = kortixSchema.table('notifications', {
   roomId: uuid('room_id'),
   // A thread reply: the thread's root seq, so the link opens the thread.
   roomThreadSeq: bigint('room_thread_seq', { mode: 'number' }),
+  artifactId: uuid('artifact_id'),
+  artifactThreadId: uuid('artifact_thread_id'),
   kind: text('kind').notNull(),
   title: text('title').notNull(),
   body: text('body').default('').notNull(),
@@ -8112,6 +8575,8 @@ export const notifications = kortixSchema.table('notifications', {
 }, (table) => [
   foreignKey({ columns: [table.accountId], foreignColumns: [accounts.accountId], name: 'notifications_account_fk' }).onDelete('cascade'),
   foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'notifications_project_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.artifactId], foreignColumns: [artifacts.artifactId], name: 'notifications_artifact_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.artifactThreadId], foreignColumns: [artifactCommentThreads.threadId], name: 'notifications_artifact_thread_fk' }).onDelete('cascade'),
   unique('notifications_user_dedupe').on(table.userId, table.dedupeKey),
   index('idx_notifications_user_id').on(table.userId, table.notificationId.desc()),
   index('idx_notifications_user_unread').on(table.userId).where(sql`${table.readAt} IS NULL`),
@@ -8120,8 +8585,10 @@ export const notifications = kortixSchema.table('notifications', {
   index('idx_notifications_digested').on(table.emailedAt, table.userId).where(sql`${table.emailDueAt} IS NOT NULL AND ${table.emailedAt} IS NOT NULL`),
   index('idx_notifications_account').on(table.accountId),
   index('idx_notifications_project').on(table.projectId),
+  index('idx_notifications_artifact').on(table.artifactId).where(sql`${table.artifactId} IS NOT NULL`),
+  index('idx_notifications_artifact_thread').on(table.artifactThreadId).where(sql`${table.artifactThreadId} IS NOT NULL`),
   index('idx_notifications_created').on(table.createdAt),
-  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message')`),
+  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message', 'artifact_comment')`),
 ]);
 
 /** One record per user: partial overrides of the default notification preferences. */
@@ -8279,6 +8746,87 @@ export const sessionIdleWatches = kortixSchema.table('session_idle_watches', {
 ]);
 
 /**
+ * Cross-session messages (`send_message`, `@kortix/api-contract/multi-agent`):
+ * one row per message one session sent another. A delivered message is also a
+ * durable `continue_session` row in `session_lifecycle_commands`; this row is
+ * the record both sides list, the rate and duplicate checks, the hold a
+ * receiver set to `hold` approves or denies, and the `notify_when_idle`
+ * watch (`idle_notice_until`). No `account_id`: the project
+ * names it. The retention purge deletes a session's rows with its content.
+ */
+export const sessionPeerMessages = kortixSchema.table('session_peer_messages', {
+  /** `m_` + 10 base62 characters: the `#m_…` the delivered text names. */
+  id: text('id').primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  fromSessionId: text('from_session_id').notNull(),
+  fromHandle: text('from_handle').notNull(),
+  toSessionId: text('to_session_id').notNull(),
+  toHandle: text('to_handle').notNull(),
+  type: varchar('type', { length: 24 }).notNull(),
+  message: text('message').notNull(),
+  summary: text('summary'),
+  status: varchar('status', { length: 16 }).notNull(),
+  notifyWhenIdle: boolean('notify_when_idle').default(false).notNull(),
+  /** The person the delivered turn acts as: the one who passed the prompt check at send time. */
+  actorUserId: uuid('actor_user_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  /** A held message expires at this instant. Null for every other status. */
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  /**
+   * `notify_when_idle`: the receiver's next turn end owes the sender one idle
+   * notice until this instant. Cleared when the notice goes out. Null: none owed.
+   */
+  idleNoticeUntil: timestamp('idle_notice_until', { withTimezone: true }),
+}, (table) => [
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'session_peer_messages_project_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.fromSessionId], foreignColumns: [projectSessions.sessionId], name: 'session_peer_messages_from_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.toSessionId], foreignColumns: [projectSessions.sessionId], name: 'session_peer_messages_to_fk' }).onDelete('cascade'),
+  // The sender's rate and duplicate checks, and `direction=out`.
+  index('idx_session_peer_messages_from').on(table.fromSessionId, table.createdAt.desc()),
+  // `direction=in`.
+  index('idx_session_peer_messages_to').on(table.toSessionId, table.createdAt.desc()),
+  // The receiver's held count and the hold expiry.
+  index('idx_session_peer_messages_held').on(table.toSessionId, table.expiresAt).where(sql`${table.status} = 'held'`),
+  // The idle notices a receiver's turn end owes.
+  index('idx_session_peer_messages_idle_due').on(table.toSessionId).where(sql`${table.idleNoticeUntil} is not null`),
+  check('session_peer_messages_type_check', sql`${table.type} in ('message', 'shutdown_request', 'shutdown_response')`),
+  check('session_peer_messages_status_check', sql`${table.status} in ('delivered', 'held', 'refused', 'denied', 'expired', 'dropped')`),
+]).enableRLS();
+
+/**
+ * A team's shared task list (flag `agent_teams`): the tasks of one lead
+ * session, numbered `seq` from 1 per lead. A teammate claims a task with one
+ * compare-and-set UPDATE (pending, unowned, every `blocked_by` completed).
+ * No `account_id`: the project names it.
+ */
+export const sessionTasks = kortixSchema.table('session_tasks', {
+  taskId: uuid('task_id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  leadSessionId: text('lead_session_id').notNull(),
+  seq: integer('seq').notNull(),
+  subject: text('subject').notNull(),
+  description: text('description').default('').notNull(),
+  status: varchar('status', { length: 16 }).default('pending').notNull(),
+  ownerHandle: text('owner_handle'),
+  ownerSessionId: text('owner_session_id'),
+  /** Task numbers (`seq`) of the same lead this task waits for. */
+  blockedBy: integer('blocked_by').array().default(sql`'{}'::integer[]`).notNull(),
+  createdBySessionId: text('created_by_session_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'session_tasks_project_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.leadSessionId], foreignColumns: [projectSessions.sessionId], name: 'session_tasks_lead_fk' }).onDelete('cascade'),
+  // One number per task in a team; serves the list by lead in seq order.
+  unique('session_tasks_lead_seq_key').on(table.leadSessionId, table.seq),
+  // "The tasks this teammate still owns" (the teammate notice).
+  index('idx_session_tasks_owner').on(table.ownerSessionId).where(sql`${table.ownerSessionId} is not null`),
+  check('session_tasks_status_check', sql`${table.status} in ('pending', 'in_progress', 'completed')`),
+  check('session_tasks_seq_check', sql`${table.seq} > 0`),
+]).enableRLS();
+
+/**
  * A browser's Web Push subscription. Bound to the sign-in that registered it:
  * a push goes only while that sign-in lives, like push_device_tokens.
  */
@@ -8317,6 +8865,70 @@ export const feedback = kortixSchema.table('feedback', {
   check('feedback_kind', sql`${table.kind} in ('bug', 'idea', 'friction')`),
 ]);
 
+/**
+ * Kortix in Chrome: a person's own Chrome, connected to Kortix through the
+ * extension's control socket (apps/api/src/chrome). One row per browser
+ * profile. `last_seen_at` is the liveness clock: online means not revoked and
+ * seen in the last 75 s. Protocol: .agents/skills/kortix-chrome/references/protocol.md.
+ */
+export const chromeConnections = kortixSchema.table('chrome_connections', {
+  chromeId: uuid('chrome_id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull(),
+  accountId: uuid('account_id').notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  brand: text('brand').notNull(),
+  os: text('os').notNull(),
+  profileLabel: text('profile_label'),
+  extensionVersion: text('extension_version'),
+  /** always | ask | off */
+  accessMode: text('access_mode').default('always').notNull(),
+  /** own | all */
+  tabScope: text('tab_scope').default('all').notNull(),
+  relayOwnerId: text('relay_owner_id'),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_chrome_connections_user').on(table.userId),
+  check('chrome_connections_access_mode', sql`${table.accessMode} in ('always', 'ask', 'off')`),
+  check('chrome_connections_tab_scope', sql`${table.tabScope} in ('own', 'all')`),
+]);
+
+/** A remembered consent decision. `session_id` null means the whole project. */
+export const chromeGrants = kortixSchema.table('chrome_grants', {
+  grantId: uuid('grant_id').defaultRandom().primaryKey(),
+  chromeId: uuid('chrome_id').notNull(),
+  projectId: text('project_id').notNull(),
+  sessionId: text('session_id'),
+  /** allow | deny */
+  decision: text('decision').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ name: 'chrome_grants_chrome_fk', columns: [table.chromeId], foreignColumns: [chromeConnections.chromeId] }).onDelete('cascade'),
+  index('idx_chrome_grants_chrome').on(table.chromeId, table.sessionId),
+  check('chrome_grants_decision', sql`${table.decision} in ('allow', 'deny')`),
+]);
+
+/** One session's use of one browser. */
+export const chromeAttachments = kortixSchema.table('chrome_attachments', {
+  attachmentId: uuid('attachment_id').defaultRandom().primaryKey(),
+  chromeId: uuid('chrome_id').notNull(),
+  userId: uuid('user_id'),
+  projectId: text('project_id'),
+  sessionId: text('session_id').notNull(),
+  /** pending | granted | connected | denied | ended | failed */
+  status: text('status').notNull(),
+  endReason: text('end_reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ name: 'chrome_attachments_chrome_fk', columns: [table.chromeId], foreignColumns: [chromeConnections.chromeId] }).onDelete('cascade'),
+  index('idx_chrome_attachments_chrome').on(table.chromeId, table.status),
+  index('idx_chrome_attachments_session').on(table.sessionId),
+  check('chrome_attachments_status', sql`${table.status} in ('pending', 'granted', 'connected', 'denied', 'ended', 'failed')`),
+]);
+
 /** CLI login grants contain no credential: only the device secret's hash and
  * the approving identity. Polling atomically consumes approval and mints a PAT. */
 export const cliDeviceGrants = kortixSchema.table('cli_device_grants', {
@@ -8328,3 +8940,229 @@ export const cliDeviceGrants = kortixSchema.table('cli_device_grants', {
   accountId: uuid('account_id'),
   status: text('status').notNull().default('pending'),
 });
+
+/**
+ * An artifact (flag `artifacts`): a path in the project's Files volume shared
+ * as a doc or a page. The files are plain files in Files (`root`, with `entry`
+ * the page a reader opens); their history is the volume's commit log. This
+ * row only says that the path is shared, how, and with whom.
+ *   entry       `index.md` / `index.html` in a folder `root`; a single file's
+ *               name otherwise (then only that file is served)
+ *   type        doc: the entry is Markdown; html: the entry is an HTML page
+ *   visibility  private: the creator and `shared_with_user_ids`
+ *               project: every member who may read the project
+ *               public:  anyone with the link
+ */
+export const artifacts = kortixSchema.table('artifacts', {
+  artifactId: uuid('artifact_id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  accountId: uuid('account_id').notNull(),
+  driveId: uuid('drive_id').notNull(),
+  root: text('root').notNull(),
+  entry: text('entry').notNull(),
+  folder: boolean('folder').notNull(),
+  title: text('title').notNull(),
+  description: text('description'),
+  type: varchar('type', { length: 16 }).notNull(),
+  visibility: varchar('visibility', { length: 16 }).default('private').notNull(),
+  sharedWithUserIds: uuid('shared_with_user_ids').array().default(sql`'{}'::uuid[]`).notNull(),
+  pinnedByUserIds: uuid('pinned_by_user_ids').array().default(sql`'{}'::uuid[]`).notNull(),
+  createdByUserId: uuid('created_by_user_id').notNull(),
+  createdBySessionId: text('created_by_session_id'),
+  /** Grouping only, never a grant: the space slug it is shown in. Null: through `agent`, else project-wide. */
+  space: text('space'),
+  /** Grouping only, never a grant: the owning agent (default: the publishing session's agent). */
+  agent: text('agent'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'artifacts_project_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.driveId], foreignColumns: [drives.driveId], name: 'artifacts_drive_fk' }).onDelete('cascade'),
+  index('idx_artifacts_project_updated').on(table.projectId, table.updatedAt),
+  uniqueIndex('idx_artifacts_drive_path').on(table.driveId, table.root, table.entry),
+  check('artifacts_type_check', sql`${table.type} in ('doc', 'html')`),
+  check('artifacts_visibility_check', sql`${table.visibility} in ('private', 'project', 'public')`),
+]);
+
+export const artifactCommentThreads = kortixSchema.table('artifact_comment_threads', {
+  threadId: uuid('thread_id').defaultRandom().primaryKey(),
+  artifactId: uuid('artifact_id').notNull().references(() => artifacts.artifactId, { onDelete: 'cascade' }),
+  projectId: uuid('project_id').notNull().references(() => projects.projectId, { onDelete: 'cascade' }),
+  anchor: jsonb('anchor').notNull().$type<Record<string, unknown>>(),
+  anchorVersion: text('anchor_version').notNull(),
+  createdByUserId: uuid('created_by_user_id'),
+  createdBySessionId: text('created_by_session_id'),
+  status: text('status').$type<'open' | 'resolved'>().default('open').notNull(),
+  resolvedByUserId: uuid('resolved_by_user_id'),
+  resolvedBySessionId: text('resolved_by_session_id'),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  agentState: text('agent_state').$type<'none' | 'pending' | 'sent' | 'paused'>().default('none').notNull(),
+  agentError: text('agent_error'),
+  sentSessionId: text('sent_session_id'),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_artifact_comment_threads_artifact_status_updated').on(table.artifactId, table.status, table.updatedAt),
+  index('idx_artifact_comment_threads_project').on(table.projectId),
+  check('artifact_comment_threads_author_check', sql`(${table.createdByUserId} is not null) <> (${table.createdBySessionId} is not null)`),
+  check('artifact_comment_threads_status_check', sql`${table.status} in ('open', 'resolved')`),
+  check('artifact_comment_threads_agent_state_check', sql`${table.agentState} in ('none', 'pending', 'sent', 'paused')`),
+]).enableRLS();
+
+export type ArtifactCommentMention =
+  | { kind: 'user'; user_id: string }
+  | { kind: 'session'; session_id: string; agent_name: string }
+  | { kind: 'agent'; agent_name: string };
+
+export const artifactComments = kortixSchema.table('artifact_comments', {
+  commentId: uuid('comment_id').defaultRandom().primaryKey(),
+  threadId: uuid('thread_id').notNull(),
+  authorUserId: uuid('author_user_id'),
+  authorSessionId: text('author_session_id'),
+  body: text('body').notNull(),
+  mentions: jsonb('mentions').default([]).notNull().$type<ArtifactCommentMention[]>(),
+  marks: jsonb('marks').default([]).notNull().$type<unknown[]>(),
+  screenshotKey: text('screenshot_key'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  editedAt: timestamp('edited_at', { withTimezone: true }),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => [
+  foreignKey({ name: 'artifact_comments_thread_fk', columns: [table.threadId], foreignColumns: [artifactCommentThreads.threadId] }).onDelete('cascade'),
+  index('idx_artifact_comments_thread_created').on(table.threadId, table.createdAt),
+  check('artifact_comments_author_check', sql`(${table.authorUserId} is not null) <> (${table.authorSessionId} is not null)`),
+  check('artifact_comments_body_check', sql`char_length(${table.body}) <= 10000 and (${table.deletedAt} is not null or char_length(${table.body}) >= 1)`),
+]).enableRLS();
+
+export const artifactCommentScreenshotObjects = kortixSchema.table('artifact_comment_screenshot_objects', {
+  objectKey: text('object_key').primaryKey(),
+  uploadConfirmed: boolean('upload_confirmed').notNull().default(false),
+  sizeBytes: integer('size_bytes'),
+  projectId: uuid('project_id').notNull(),
+  commentId: uuid('comment_id'),
+  state: text('state').notNull().default('uploading').$type<'uploading' | 'attached' | 'deleting'>(),
+  attempts: integer('attempts').notNull().default(0),
+  nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().default(sql`now() + interval '1 hour'`),
+  lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  leaseId: uuid('lease_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_artifact_screenshot_project').on(table.projectId),
+  index('idx_artifact_screenshot_comment').on(table.commentId),
+  index('idx_artifact_screenshot_due').on(table.nextAttemptAt).where(sql`${table.state} <> 'attached'`),
+  foreignKey({ name: 'artifact_screenshot_comment_fk', columns: [table.commentId], foreignColumns: [artifactComments.commentId] }).onDelete('set null'),
+  check('artifact_screenshot_state_check', sql`${table.state} in ('uploading', 'attached', 'deleting')`),
+  check('artifact_screenshot_attempts_check', sql`${table.attempts} >= 0`),
+  check('artifact_screenshot_attached_check', sql`${table.state} <> 'attached' or ${table.commentId} is not null`),
+  check('artifact_screenshot_key_check', sql`${table.objectKey} ~ ('^' || ${table.projectId}::text || '/artifact-comments/[0-9a-f-]{36}[.](png|webp)$')`),
+]).enableRLS();
+
+export const artifactCommentWriteLimits = kortixSchema.table('artifact_comment_write_limits', {
+  artifactId: uuid('artifact_id').notNull(),
+  actorKey: text('actor_key').notNull(),
+  windowStartedAt: timestamp('window_started_at', { withTimezone: true }).defaultNow().notNull(),
+  writes: integer('writes').default(0).notNull(),
+}, (table) => [
+  foreignKey({ name: 'artifact_comment_write_limits_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),
+  primaryKey({ columns: [table.artifactId, table.actorKey] }),
+  check('artifact_comment_write_limits_writes_check', sql`${table.writes} >= 0`),
+]).enableRLS();
+
+export const artifactEvents = kortixSchema.table('artifact_events', {
+  eventId: uuid('event_id').defaultRandom().primaryKey(),
+  artifactId: uuid('artifact_id').notNull(),
+  projectId: uuid('project_id').notNull(),
+  type: text('type').notNull(),
+  actorUserId: uuid('actor_user_id'),
+  actorSessionId: text('actor_session_id'),
+  data: jsonb('data').default({}).notNull().$type<Record<string, unknown>>(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ name: 'artifact_events_artifact_fk', columns: [table.artifactId], foreignColumns: [artifacts.artifactId] }).onDelete('cascade'),
+  foreignKey({ name: 'artifact_events_project_fk', columns: [table.projectId], foreignColumns: [projects.projectId] }).onDelete('cascade'),
+  index('idx_artifact_events_artifact_created').on(table.artifactId, table.createdAt.desc(), table.eventId.desc()),
+  index('idx_artifact_events_project').on(table.projectId),
+  check('artifact_events_actor_check', sql`${table.actorUserId} is null or ${table.actorSessionId} is null`),
+]).enableRLS();
+
+export const driveCommitAuthors = kortixSchema.table('drive_commit_authors', {
+  driveId: uuid('drive_id').notNull(),
+  commitId: text('commit_id').notNull(),
+  authorUserId: uuid('author_user_id'),
+  authorSessionId: text('author_session_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.driveId, table.commitId] }),
+  foreignKey({ name: 'drive_commit_authors_drive_fk', columns: [table.driveId], foreignColumns: [drives.driveId] }).onDelete('cascade'),
+  check('drive_commit_authors_author_check', sql`(${table.authorUserId} is not null) <> (${table.authorSessionId} is not null)`),
+]).enableRLS();
+
+export const sessionSandboxIdentities = kortixSchema.table('session_sandbox_identities', {
+  accountId: uuid('account_id').notNull(),
+  provider: text('provider').notNull(),
+  externalId: text('external_id').notNull(),
+  projectId: uuid('project_id').notNull(),
+  sessionId: text('session_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.accountId, table.provider, table.externalId] }),
+  foreignKey({ name: 'session_sandbox_identities_account_fk', columns: [table.accountId], foreignColumns: [accounts.accountId] }).onDelete('cascade'),
+  foreignKey({ name: 'session_sandbox_identities_project_fk', columns: [table.projectId], foreignColumns: [projects.projectId] }).onDelete('cascade'),
+  index('idx_session_sandbox_identities_project').on(table.projectId),
+]).enableRLS();
+
+/**
+ * A member's Claude subscription login, one per (account, user). The value is
+ * the long-lived token `claude setup-token` prints, encrypted with the account
+ * key. The API decrypts it only to deliver it to Claude Code in that same
+ * user's sessions (`KORTIX_CLAUDE_OAUTH_TOKEN`). The LLM gateway, the secret
+ * listings and the sandbox env sync never read this table.
+ */
+export const claudeSubscriptionLogins = kortixSchema.table('claude_subscription_logins', {
+  accountId: uuid('account_id').notNull(),
+  userId: uuid('user_id').notNull(),
+  valueEnc: text('value_enc').notNull(),
+  /** `setup_token` (the login ran in Kortix) or `pasted` (the member pasted a token). */
+  source: text('source').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.accountId, table.userId] }),
+  foreignKey({ name: 'claude_subscription_logins_member_fk', columns: [table.userId, table.accountId], foreignColumns: [accountMemberships.userId, accountMemberships.accountId] }).onDelete('cascade'),
+  check('claude_subscription_logins_source_check', sql`${table.source} in ('setup_token', 'pasted')`),
+]).enableRLS();
+
+/**
+ * One `claude setup-token` run. The replica that started it owns the process
+ * and polls this row: a complete call on any replica writes the pasted code
+ * here, and the owner feeds it to the process and records the outcome.
+ */
+export const claudeSubscriptionLoginFlows = kortixSchema.table('claude_subscription_login_flows', {
+  flowId: uuid('flow_id').defaultRandom().primaryKey(),
+  accountId: uuid('account_id').notNull(),
+  userId: uuid('user_id').notNull(),
+  status: text('status').notNull().default('starting'),
+  authorizeUrl: text('authorize_url'),
+  /** The pasted code, encrypted; cleared when the owner reads it. */
+  codeEnc: text('code_enc'),
+  error: text('error'),
+  /** The project the sign-in adds a Claude account to. Null on a flow from before named accounts. */
+  projectId: uuid('project_id'),
+  /** The new account's label; null when the flow reconnects `resource_id`. */
+  resourceLabel: text('resource_label'),
+  /** The new account's id, minted at start so a repeated completion writes one row; or the account a reconnect refreshes. */
+  resourceId: uuid('resource_id'),
+  /** True when the flow refreshes the login of the existing account `resource_id`. */
+  reconnect: boolean('reconnect').notNull().default(false),
+  /** Who may use the new account (`{mode:'private'|'project'|'members', …}`); null = private. */
+  sharing: jsonb('sharing'),
+  /** The owner's last poll: a complete call fails fast when the owner stopped. */
+  ownerSeenAt: timestamp('owner_seen_at', { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ name: 'claude_subscription_login_flows_member_fk', columns: [table.userId, table.accountId], foreignColumns: [accountMemberships.userId, accountMemberships.accountId] }).onDelete('cascade'),
+  index('idx_claude_subscription_login_flows_member').on(table.accountId, table.userId),
+  check('claude_subscription_login_flows_status_check', sql`${table.status} in ('starting', 'awaiting_code', 'exchanging', 'connected', 'failed')`),
+]).enableRLS();

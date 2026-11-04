@@ -4,8 +4,11 @@ import { attachmentMime } from '../../internal/lib/attachment-mime';
 import { AttachmentPreview } from './attachment-preview';
 import { getFileCategory } from '../../files/viewer/preview-policy';
 import { uiRoutes } from '../../lib/routes';
+import { remindersHref } from '../../internal/lib/capability-tab-routes';
 import { MessageSenderAbove } from '../participants/session-participants';
 import { MessageAuthorLabel } from './message-author-label';
+import { MESSAGE_TEXT_CLASS, RowToolbar } from './message-row';
+import { TranscriptRowsContext } from '../thread/transcript-rows';
 import { errorToast } from '../../primitives/toast';
 import {
   fetchSessionAttachment,
@@ -20,6 +23,8 @@ import {
 
 import { useTranslations } from '../../i18n';
 import {
+  channelPromptTail,
+  isChannelFileLabel,
   expandPastedContent,
   neutralizePastedTags,
   sanitizePromptUploadFilename,
@@ -27,7 +32,7 @@ import {
   splitPastedContent,
   type PastedContent,
 } from '@kortix/shared';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   PencilSimpleIcon,
@@ -79,6 +84,10 @@ import {
 } from '../thread/mention-segments';
 import { parseChannelMessage, slackConversationName, type ChannelMessageInfo } from './channel-message';
 import { SourceCard, SourcePill } from './source-pill';
+import { PeerMessageRow } from './peer-message-row';
+import { NoticeBatchGroup } from './notice-batch-group';
+import { parseNoticeBatch } from './subagent-notice';
+import { parsePeerMessagePrompt } from '@kortix/shared';
 import { useChannelBindings } from '../../internal/hooks/use-channel-bindings';
 import { useSessionIds } from '../../providers/session-ids';
 import { CHANNEL_BRAND_COLOR, ChannelBrandMark, channelPlatformLabel } from './channel-brand';
@@ -155,10 +164,11 @@ export const BUBBLE_SURFACE = cn(
 
 /**
  * Where a channel message came from, in the pill's hover card: the platform,
- * the channel or chat it was posted in, and who posted it. A Slack prompt
- * written before channel names were recorded carries a bare id (`C0DEV`); the
- * project's Slack bindings name it, read only while this card is open. A Teams
- * conversation id names nothing a person reads, so Teams shows no channel row.
+ * the channel or chat it was posted in (an email's subject, labelled Subject),
+ * and who posted it. A Slack prompt written before channel names were recorded
+ * carries a bare id (`C0DEV`); the project's Slack bindings name it, read only
+ * while this card is open. A Teams conversation id names nothing a person
+ * reads, so Teams shows no channel row.
  */
 export function ChannelOrigin({ info, platform }: { info: ChannelMessageInfo; platform: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -169,12 +179,13 @@ export function ChannelOrigin({ info, platform }: { info: ChannelMessageInfo; pl
     ? data?.bindings.find((b) => b.platform === 'slack' && b.channelId === info.context)
     : undefined;
   const channel = info.platform === 'Teams' ? '' : (binding && slackConversationName(binding)) || info.context;
+  const place = info.platform === 'Email' ? tI18nComplete('text68971283841a') : tI18nComplete('textce4683e7013a');
   return (
     <SourceCard
       mark={<ChannelBrandMark platform={info.platform} className="size-3.5 shrink-0" />}
       title={platform}
       rows={[
-        { label: tI18nComplete('textce4683e7013a'), value: channel },
+        { label: place, value: channel },
         { label: tI18nComplete('text218197693424'), value: info.userName },
       ]}
     />
@@ -183,16 +194,19 @@ export function ChannelOrigin({ info, platform }: { info: ChannelMessageInfo; pl
 
 /**
  * A message that arrived from a chat channel (Slack / Microsoft Teams /
- * Telegram): a source pill — mark, platform, sender — over the same bubble a
- * typed message gets. Every `@name` in the text (`@Kortix`, `@KortixDev`,
- * `@here`) is a `MentionChip`, the chip the composer draws, static because a
- * channel mention opens nothing here. Exported for `channel-message-card.test.tsx`.
+ * Telegram): a source pill — mark, platform, sender — over the files the
+ * sender sent (the strip a composer upload gets) and the same bubble a typed
+ * message gets. Every `@name` in the text (`@Kortix`, `@KortixDev`, `@here`)
+ * is a `MentionChip`, the chip the composer draws, static because a channel
+ * mention opens nothing here. Exported for `channel-message-card.test.tsx`.
  */
 export function ChannelMessage({
   info,
+  attachments = [],
   actions,
 }: {
   info: ChannelMessageInfo;
+  attachments?: NormalizedAttachment[];
   actions?: React.ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -206,7 +220,8 @@ export function ChannelMessage({
         sender={info.userName}
         card={<ChannelOrigin info={info} platform={platform} />}
       />
-      {info.messageText && (
+      <MessageAttachments attachments={attachments} />
+      {info.messageText && !(attachments.length > 0 && isChannelFileLabel(info.messageText)) && (
         <div className={cn(BUBBLE_SURFACE, 'max-w-[80%]')}>
           <div className={BUBBLE_TEXT}>
             {buildMentionSegments({ text: info.messageText }).map((segment, i) =>
@@ -253,15 +268,15 @@ function PlatformPromptMessage({
 }
 
 /**
- * A reminder fire (`[REMINDER reminder.<id> …]`). The pill says Reminder and
- * whether it repeats; its card carries the id and a link to the project's
- * reminders for this session.
+ * A loop fire (`[REMINDER reminder.<id> …]`, the wire name). The pill says
+ * Loop and whether it repeats; its card carries the id and a link to the
+ * project's Loops page, filtered to this session.
  */
 function ReminderMessage({ info, actions }: { info: ReminderPromptInfo; actions?: React.ReactNode }) {
   const t = useTranslations('reminders');
   const ids = useSessionIds();
-  const manageHref =
-    ids.projectId && ids.sessionId ? uiRoutes().customize(ids.projectId, `reminders?session=${ids.sessionId}`) : null;
+  const loopsHref = ids.projectId ? remindersHref(ids.projectId) : null;
+  const manageHref = loopsHref && ids.sessionId ? `${loopsHref}?session=${ids.sessionId}` : null;
   return (
     <PlatformPromptMessage
       data-testid="reminder-turn"
@@ -1261,7 +1276,14 @@ export function UserMessageActions({
   onRewind,
   rewindDisabled,
   deliveryStatus,
+  toolbar = false,
 }: {
+  /**
+   * A message row (`TranscriptRowsContext`): the row's header shows the time,
+   * so the buttons float in its toolbar and only the delivery status stays in
+   * the flow.
+   */
+  toolbar?: boolean;
   /** Epoch milliseconds, or `null` when the backend never stamped one. */
   timestamp: number | null;
   /** Omitted when there is nothing to copy — the row then carries meta alone
@@ -1286,6 +1308,45 @@ export function UserMessageActions({
 
   // Nothing to say and nothing to do — don't leave an empty row behind.
   if (!hasMeta && !copyText && !deliveryStatus) return null;
+
+  const buttons = copyText ? (
+    <div className="flex shrink-0 items-center gap-0.5">
+      {canRewind && (
+        <Hint label={tI18nComplete.raw('textc72e5d059e24')} side="top" align="center">
+          <Button
+            type="button"
+            variant="ghost"
+            size={toolbar ? 'icon-sm' : 'icon-xs'}
+            // 24px visible, 40px target — grown with a pseudo-element so the
+            // dense action row keeps its rhythm.
+            className={toolbar ? undefined : 'hit-area-2'}
+            aria-label={tI18nComplete.raw('text673d6a594efa')}
+            onClick={() => onRewind?.(messageId as string, rewindPromptText ?? '')}
+          >
+            <PencilSimpleIcon weight="regular" className={cn('text-foreground', toolbar ? 'size-3.5' : 'size-4')} />
+          </Button>
+        </Hint>
+      )}
+
+      <CopyButton
+        code={copyText}
+        size={toolbar ? 'md' : 'sm'}
+        // In a row's toolbar every glyph is 14px (`size-3.5`), the channel row's too.
+        className={toolbar ? 'focus-visible:ring-ring focus-visible:ring-2 [&_svg]:size-3.5!' : undefined}
+        hintSide="top"
+        label={tI18nComplete.raw('texte21f935f11d7')}
+      />
+    </div>
+  ) : null;
+
+  if (toolbar) {
+    return (
+      <>
+        {deliveryStatus}
+        {buttons ? <RowToolbar>{buttons}</RowToolbar> : null}
+      </>
+    );
+  }
 
   return (
     // The fade sits on the ROW, so the timestamp and the buttons reveal
@@ -1331,33 +1392,7 @@ export function UserMessageActions({
             {timestamp !== null && <MessageTimeLabel timestamp={timestamp} />}
           </InlineMeta>
         )}
-        {copyText && (
-          <div className="flex shrink-0 items-center gap-0.5">
-            {canRewind && (
-              <Hint label={tI18nComplete.raw('textc72e5d059e24')} side="top" align="center">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  // 24px visible, 40px target — grown with a pseudo-element so the
-                  // dense action row keeps its rhythm.
-                  className="hit-area-2"
-                  aria-label={tI18nComplete.raw('text673d6a594efa')}
-                  onClick={() => onRewind?.(messageId as string, rewindPromptText ?? '')}
-                >
-                  <PencilSimpleIcon weight="regular" className="text-foreground size-4" />
-                </Button>
-              </Hint>
-            )}
-
-            <CopyButton
-              code={copyText}
-              size="sm"
-              hintSide="top"
-              label={tI18nComplete.raw('texte21f935f11d7')}
-            />
-          </div>
-        )}
+        {buttons}
       </div>
       {deliveryStatus}
     </div>
@@ -1728,6 +1763,15 @@ export function UserMessage({
   // scaffolds these prompts with ids and turn instructions the person never
   // typed, so the card shows only the platform, the sender, and their words.
   const channelMessageInfo = useMemo(() => parseChannelMessage(rawText), [rawText]);
+  // Its files: the `<file>` tags Kortix wrote after the sender's text, and nothing else. A tag the sender
+  // typed is text; the image block pi records for a tag repeats it, and names no path when the sender typed one.
+  const channelAttachments = useMemo(
+    () =>
+      channelMessageInfo
+        ? normalizeAttachments([], parseFileReferences(channelPromptTail(rawText, channelMessageInfo.platform)).files)
+        : [],
+    [channelMessageInfo, rawText],
+  );
 
   // Detect trigger_event in user message
   const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
@@ -1739,6 +1783,14 @@ export function UserMessage({
   const roomInfo = useMemo(() => parseRoomPrompt(rawText), [rawText]);
   // A batched digest of room traffic: `[room <name> · #a–#b · N new messages]`.
   const roomDigestInfo = useMemo(() => parseRoomDigest(rawText), [rawText]);
+  // A message from another Kortix session (`send_message`): `[message from reviewer · session 3f2a1b9c · #m_1]`.
+  const peerInfo = useMemo(() => parsePeerMessagePrompt(rawText), [rawText]);
+  // Several notices in one prompt (`session-notice-batch.ts`), whatever the first one is: a peer
+  // idle notice first must not read as one peer message with the rest of the batch inside it.
+  const noticeBatch = useMemo(() => {
+    const batch = parseNoticeBatch(rawText);
+    return batch && batch.length > 1 ? batch : null;
+  }, [rawText]);
 
   // `messageCreatedAt`'s rule on the record's ISO time: a missing or non-positive time is no time.
   const createdAt = Date.parse(message.created_at);
@@ -1749,8 +1801,10 @@ export function UserMessage({
   // `copyText` is gated on `onRewind` to keep the buttons exactly as they were:
   // a read-only turn shows no controls. The row itself still renders, because
   // the timestamp is meta, not a control, and should not vanish with them.
+  const rows = useContext(TranscriptRowsContext) !== null;
   const actions = (
     <UserMessageActions
+      toolbar={rows}
       timestamp={Number.isFinite(createdAt) && createdAt > 0 ? createdAt : null}
       copyText={copyText && onRewind ? copyText : undefined}
       messageId={message.message_id}
@@ -1966,11 +2020,19 @@ export function UserMessage({
 
   // Channel messages (Slack / Microsoft Teams / Telegram): a branded card with the sender
   if (channelMessageInfo) {
-    return <ChannelMessage info={channelMessageInfo} actions={actions} />;
+    return <ChannelMessage info={channelMessageInfo} attachments={channelAttachments} actions={actions} />;
   }
 
   if (reminderInfo) {
     return <ReminderMessage info={reminderInfo} actions={actions} />;
+  }
+
+  if (noticeBatch) {
+    return <NoticeBatchGroup items={noticeBatch} actions={actions} />;
+  }
+
+  if (peerInfo) {
+    return <PeerMessageRow info={peerInfo} actions={actions} />;
   }
 
   if (roomInfo) {
@@ -1993,6 +2055,42 @@ export function UserMessage({
   // branch returned before the main path — silently dropped the message's
   // attachments. A command is now just a message whose first token is a chip,
   // so it falls through to the one bubble below.
+
+  // A message row: the row draws the author and the time, so the message is
+  // its text, left-aligned and unboxed, with its files under it.
+  if (rows) {
+    return (
+      <div className="flex w-full min-w-0 flex-col items-start gap-1.5">
+        {(bodyText || quotedPieces || effectiveCommandInfo) && (
+          <div className={cn(MESSAGE_TEXT_CLASS, 'w-full min-w-0 whitespace-pre-wrap wrap-anywhere select-text')}>
+            {quotedPieces ? (
+              <QuotedMessageBody pieces={quotedPieces} renderText={renderQuotedRun} />
+            ) : (
+              <>
+                {commandLead}
+                {renderSegments(segments)}
+              </>
+            )}
+          </div>
+        )}
+        {(allAttachments.length > 0 || uploadStatus?.state === 'failed') && (
+          <MessageAttachments
+            attachments={allAttachments}
+            status={uploadStatus}
+            onOpenPastedContent={onOpenPastedContent}
+          />
+        )}
+        {systemNotifications.length > 0 && !effectiveCommandInfo && (
+          <div className="flex w-full flex-col gap-1.5">
+            {withContentKeys(systemNotifications, (n) => `mixed-${n.tag}`).map(({ key, item }) => (
+              <SystemNotificationCard key={key} notification={item} />
+            ))}
+          </div>
+        )}
+        {actions}
+      </div>
+    );
+  }
 
   return (
     // The whole message is ONE right-aligned column capped at 80%, so the
@@ -2037,9 +2135,12 @@ export function UserMessage({
           the bubble used to render anyway — a padded surface with nothing in
           it, hanging under the attachments. The attachments ARE the message. */}
       {(bodyText || quotedPieces || effectiveCommandInfo) && (
-        <MessageSenderAbove sender={showAuthor && author?.kind === 'member' ? author : null}>
+        <MessageSenderAbove
+          sender={showAuthor && author?.kind === 'member' ? author : null}
+          reserve={showAuthor && !author}
+        >
           <UserMessageBubble
-            tail={showAuthor && author?.kind === 'member'}
+            tail={showAuthor && author?.kind !== 'session'}
             canExpand={canExpand}
             expanded={expanded}
             onToggle={() => setExpanded(!expanded)}

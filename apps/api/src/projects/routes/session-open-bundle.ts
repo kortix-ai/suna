@@ -77,6 +77,7 @@ import { readRuntimeLeg } from '../lib/session-runtime-projection';
 import { scheduleRuntimeProjectionRefresh } from '../lib/session-runtime-projection-refresh';
 import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
 import { readSessionConversationModels, readSessionLogPage } from '../session-log-read';
+import { turnPublishVerdict } from '../lib/http-session-access';
 
 /** Same ceiling `GET .../audit` uses for the pending-approvals poll. */
 const AUDIT_ACTIONS_LIMIT = 100;
@@ -279,6 +280,7 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
         viewerId: loaded.userId,
         canManageProject: visible.canManageProject,
         ownerIsMachine: visible.ownerIsMachine,
+        canPublishResponse: (await turnPublishVerdict(c, loaded, visible)) === 'allow',
         // Owner email is a second lookup for a display string the composer does
         // not need to paint. The session route still serves it.
         ownerEmail: null,

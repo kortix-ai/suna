@@ -129,6 +129,8 @@ describe('session reminders on the trigger tables', () => {
 
     expect(claimed).toHaveLength(1);
     expect((claimed[0]!.execution.spec as { reminder?: unknown }).reminder).toEqual({ everySeconds: 3600, createdAt: created.toISOString() });
+    // The run records the loop's real source, not `cron`.
+    expect(claimed[0]!.execution.source).toBe('reminder');
     const row = await getSessionReminder(PROJECT, sessionId, spec.slug);
     expect(row?.nextFireAt?.getTime()).toBe(now.getTime() + 3600_000);
     expect(row?.lastScheduledFor?.toISOString()).toBe(due.toISOString());
@@ -393,6 +395,6 @@ describe('session reminders on the trigger tables', () => {
       for (let i = 0; i < REMINDER_MAX_ACTIVE_PER_SESSION; i++) expect('row' in (await add(sessionId))).toBe(true);
     }
     const over = await add(sessions.at(-1)!);
-    expect(over).toEqual({ error: `This project already has ${REMINDER_MAX_ACTIVE_PER_PROJECT} active reminders. Stop one first.` });
+    expect(over).toEqual({ error: `This project already has ${REMINDER_MAX_ACTIVE_PER_PROJECT} active loops. Stop one first.` });
   });
 });

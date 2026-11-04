@@ -336,13 +336,14 @@ describe('renderLegacyBootstrapScript', () => {
     expect(s).toContain('npm install -g "pnpm@$want"');
     expect(s).toContain("RELAUNCH='pt-app'");
   });
-  test('pt-app re-checks OpenCode idle after the download, before the token swap and the kill', () => {
+  test('pt-app re-checks the daemon turn state after the download, before the token swap and the kill', () => {
     const s = renderLegacyBootstrapScript({ relaunch: 'pt-app' });
     const guard = s.indexOf('"stage\\":\\"deferred_busy');
     expect(guard).toBeGreaterThan(s.indexOf('download "$AGENT_PATH"'));
     expect(guard).toBeLessThan(s.indexOf('if [ -n "$NEW_KORTIX_TOKEN" ]'));
     expect(guard).toBeLessThan(s.indexOf('\nstop_runtime_chain\n'));
-    expect(s).toContain('http://127.0.0.1:4096/session/status');
+    expect(s).toContain("http://127.0.0.1:8000/kortix/health?turn=1");
+    expect(s).not.toContain('/session/status');
   });
   test('next-start strategy stages only', () => {
     const s = renderLegacyBootstrapScript({ relaunch: 'next-start' });
@@ -380,7 +381,7 @@ describe('parseScriptReport', () => {
 
 type Calls = { patches: Record<string, unknown>[]; audits: unknown[]; execs: string[][] };
 
-function makeDeps(over: Partial<LegacyBootstrapDeps> & { health?: unknown[]; status?: Record<string, unknown> | null }, calls: Calls, clock = { t: 1_000_000 }): LegacyBootstrapDeps {
+function makeDeps(over: Partial<LegacyBootstrapDeps> & { health?: unknown[]; turn?: boolean | null }, calls: Calls, clock = { t: 1_000_000 }): LegacyBootstrapDeps {
   const healths = over.health ?? [LEGACY_HEALTH, CURRENT_HEALTH];
   let i = 0;
   return {
@@ -390,7 +391,7 @@ function makeDeps(over: Partial<LegacyBootstrapDeps> & { health?: unknown[]; sta
     },
     manifestBuild: async () => 1788044234,
     fetchHealth: async () => healths[Math.min(i++, healths.length - 1)],
-    fetchOpencodeStatus: async () => (over.status === undefined ? {} : over.status),
+    fetchTurnInFlight: async () => (over.turn === undefined ? false : over.turn),
     exec: async (cmd) => {
       calls.execs.push(cmd);
       return { exitCode: 0, stdout: '{"ok":true,"stage":"relaunched","agent_sha256":"a","entrypoint_sha256":"e"}\n', stderr: '' };
@@ -500,10 +501,10 @@ describe('bootstrapLegacyRuntime', () => {
 
   test('busy OpenCode is never touched', async () => {
     const calls: Calls = { patches: [], audits: [], execs: [] };
-    const r = await bootstrapLegacyRuntime(input(), makeDeps({ status: { ses_1: { type: 'busy' } } }, calls));
+    const r = await bootstrapLegacyRuntime(input(), makeDeps({ turn: true }, calls));
     expect(r.outcome).toBe('skipped-busy');
     expect(calls.execs).toHaveLength(0);
-    const unreachable = await bootstrapLegacyRuntime(input(), makeDeps({ status: null }, calls));
+    const unreachable = await bootstrapLegacyRuntime(input(), makeDeps({ turn: null }, calls));
     expect(unreachable.outcome).toBe('skipped-busy');
   });
 

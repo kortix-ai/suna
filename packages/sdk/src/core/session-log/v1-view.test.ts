@@ -323,3 +323,62 @@ describe('sessionLogOfV1Rows: the session log of one runtime session\'s v1 store
     expect(next).toEqual(expected([...rows.slice(0, -1), changed]));
   });
 });
+
+describe('a codemode script\'s nested image_gen calls after a reload (pi `nested_part` blocks)', () => {
+  const RS = 'ses_nested00000000000000001';
+  const MID = 'msg_nested01';
+  const T = 1_790_000_000_000;
+  const at = (ms: number) => new Date(ms).toISOString();
+  const V = { schema: 'kortix.session/2', v: 1 } as const;
+  const head = (id: string) => ({ id, sessionID: RS, messageID: MID });
+  /** A nested call's v1 part, as the runtime publishes it live (`<script call>/<n>`). */
+  const nested = (n: number, tool: string, input: unknown, output: string) => ({
+    ...head(`${MID}-p${n}`), type: 'tool', callID: `call_code/${n}`, tool,
+    state: { status: 'completed', input, output, title: tool, metadata: {}, time: { start: T + n, end: T + n + 1 } },
+  });
+  const image = (n: number, prompt: string) => nested(n, 'image_gen', { action: 'generate', prompts: [prompt] }, JSON.stringify({ action: 'generate', images: [{ path: `/workspace/output/images/${prompt}.png`, size: '1024x1024', prompt }] }));
+  const cube = image(1, 'cube');
+  const sphere = image(2, 'sphere');
+  const show = nested(3, 'show', { action: 'show', type: 'text', content: 'Two images' }, '{"success":true}');
+  const harness = (part: ReturnType<typeof nested>) => {
+    const { id, sessionID: _s, messageID: _m, ...rest } = part;
+    return { type: 'harness' as const, id, harness: 'pi', kind: 'nested_part', data: { parent_call_id: 'call_code', part: rest }, model_visible: false };
+  };
+  /** The saved pi log of one script turn: one model-visible codemode call, its nested calls as `nested_part` blocks. */
+  const log: SessionLog = {
+    ...V, session_id: 'kses_nested', title: null, created_at: at(T), restore_grade: 'native',
+    harness: { current: 'pi', history: [] }, selection: { agent: null, model: null }, todos: [], pending: { questions: [], permissions: [] },
+    threads: [{
+      ...V, thread_id: RS, parent_thread_id: null, spawned_by: null, agent: 'build', title: null, created_at: at(T),
+      messages: [{
+        ...V, message_id: MID, thread_id: RS, seq: 2, role: 'assistant', kind: 'turn', status: 'complete', in_context: true,
+        model: { provider: 'kortix', model: 'm' }, usage: null, finish: 'tool_calls', error: null, created_at: at(T), completed_at: at(T + 9),
+        producer: { harness: 'pi', harness_version: '1.2.0', adapter_version: '1.2.0' },
+        blocks: [
+          { type: 'tool_call', id: `${MID}-p0`, call_id: 'call_code', name: 'codemode', kind: 'code', input: { code: 'tools.image_gen(…)' }, status: 'complete', result: { content: [{ type: 'text', text: 'cube+sphere' }], is_error: false }, started_at: at(T), ended_at: at(T + 8) },
+          harness(cube), harness(sphere), harness(show),
+        ],
+      }],
+    }],
+  };
+  const imageParts = (rows: V1MessageRow[]) => rows.filter((r) => r.info.id === MID).flatMap((r) => r.parts as unknown as Array<{ tool?: string }>).filter((p) => p.tool === 'image_gen');
+
+  test('the SDK projection of a reloaded transcript yields one image_gen part per nested call', () => {
+    const rows = sessionLogRowsFor({ kses_nested: stateOf(log) }, RS, NONE);
+    const parts = rows[0]!.parts as unknown as Array<{ tool: string; callID: string }>;
+    expect(parts.map((p) => [p.tool, p.callID])).toEqual([['codemode', 'call_code'], ['image_gen', 'call_code/1'], ['image_gen', 'call_code/2'], ['show', 'call_code/3']]);
+    // The saved part is the live one: same id, input, output and times.
+    expect(imageParts(rows)).toEqual([cube, sphere] as never);
+  });
+
+  test('no double draw: the live v1 row and the saved message of the same id give one image_gen part per call id', () => {
+    const live: V1MessageRow = {
+      info: { id: MID, sessionID: RS, role: 'assistant', time: { created: T } } as unknown as Message,
+      parts: [{ ...head(`${MID}-p0`), type: 'tool', callID: 'call_code', tool: 'codemode', state: { status: 'completed', input: {}, output: '', time: { start: T, end: T + 8 } } }, cube, sphere, show] as unknown as Part[],
+    };
+    const rows = sessionLogRowsFor({ kses_nested: stateOf(log) }, RS, [live]);
+    expect(rows.filter((r) => r.info.id === MID)).toHaveLength(1);
+    const ids = imageParts(rows).map((p) => (p as { callID: string }).callID);
+    expect(ids).toEqual(['call_code/1', 'call_code/2']);
+  });
+});

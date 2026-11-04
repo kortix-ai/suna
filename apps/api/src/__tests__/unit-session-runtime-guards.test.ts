@@ -18,6 +18,7 @@ import {
   projectSecrets,
   projectSessionRuntimeContexts,
   projectSessions,
+  projectSpaces,
   projects,
   sessionLifecycleCommands,
   sessionSandboxes,
@@ -51,17 +52,16 @@ process.env.ALLOWED_SANDBOX_PROVIDERS = 'platinum,daytona';
 
 const { config } = await import('../config');
 
-let branchCreateCalls = 0;
 // Committed manifest text served by the git mock; null = a blank project.
-// A declared agent only gets the project checkout with `repository_access: true`
-// (KRTX-165), so a test that names a non-default agent declares it here.
+// A declared agent only gets the project checkout with `workspace: { project_repository: true }`
+// (KRTX-165), so a test that names a non-default agent declares it here. The mocked
+// `readManifestFromRepo` returns the text as is, so it is in the current format.
 let manifestYaml: string | null = null;
 const REVIEWER_MANIFEST = [
-  'kortix_version: 2',
   'default_agent: kortix',
   'agents:',
-  '  kortix: { connectors: all, secrets: all, kortix_permissions: all, skills: all, repository_access: true }',
-  '  reviewer: { connectors: all, secrets: all, kortix_permissions: all, skills: all, repository_access: true }',
+  '  kortix: { tools: all, connectors: all, secrets: all, kortix_permissions: all, skills: all, workspace: { project_repository: true } }',
+  '  reviewer: { tools: all, connectors: all, secrets: all, kortix_permissions: all, skills: all, workspace: { project_repository: true } }',
   '',
 ].join('\n');
 let sandboxProvisionCalls = 0;
@@ -144,7 +144,6 @@ const projectRow: typeof projects.$inferSelect = {
 };
 
 function resetState() {
-  branchCreateCalls = 0;
   manifestYaml = null;
   sandboxProvisionCalls = 0;
   envBuildError = null;
@@ -202,6 +201,8 @@ function resetState() {
     parentSessionId: null,
     initiatorType: null,
     initiatorId: null,
+    spaceId: null,
+    groupId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
@@ -326,9 +327,6 @@ const actualGit = await import('../projects/git');
 mock.module('../projects/git', () => ({
   ...actualGit,
   MergeConflictError: class MergeConflictError extends Error {},
-  createRemoteSessionBranch: async () => {
-    branchCreateCalls += 1;
-  },
   remoteBranchExists: async () => true,
   archiveRepoSubtree: async () => undefined,
   deleteRemoteSessionBranch: async () => undefined,
@@ -389,9 +387,9 @@ mock.module('../snapshots/builder', () => ({
     built: false,
     isDefault: true,
   }),
-  ensureMetaSandboxImage: async () => ({
-    snapshotName: 'kortix-meta-test',
-    slug: 'meta',
+  ensureMyKortixSandboxImage: async () => ({
+    snapshotName: 'kortix-mykortix-test',
+    slug: 'mykortix',
     contentHash: 'b'.repeat(64),
     built: false,
     isDefault: false,
@@ -781,6 +779,8 @@ mock.module('../shared/db', () => ({
     // matching the auth admin mock above.
     execute: async (query: unknown) =>
       authUsersRows(query, () => ({ email: 'contract@example.test' })) ?? [],
+    // These sessions have neither unanswered questions nor pending approvals.
+    selectDistinct: () => ({ from: () => ({ where: async () => [] }) }),
     selectDistinctOn: () => ({ from: () => ({ where: () => ({ orderBy: async () => [] }) }) }),
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => {
@@ -805,6 +805,19 @@ mock.module('../shared/db', () => ({
             }),
             limit: async () => pairRows(),
           }),
+          // A fork or child reads its source's private channel
+          // (`inheritedPrivateSpace`): no session of this fake is in one.
+          // Any other join stays unsupported, as before.
+          innerJoin: (joined: unknown) => {
+            if (joined !== projectSpaces) throw new TypeError('innerJoin is not supported by this fake');
+            return {
+              where: (_predicate?: unknown) => ({
+                then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) =>
+                  Promise.resolve([]).then(resolve, reject),
+                limit: async () => [],
+              }),
+            };
+          },
           where: (predicate?: unknown) => ({
           then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
             Promise.resolve(table === projectSecrets ? secretRows : table === sessionSandboxes ? sessionSandboxRows : []).then(resolve, reject);
@@ -962,6 +975,8 @@ mock.module('../shared/db', () => ({
             parentSessionId: values.parentSessionId ?? null,
             initiatorType: values.initiatorType ?? null,
             initiatorId: values.initiatorId ?? null,
+            spaceId: values.spaceId ?? null,
+            groupId: values.groupId ?? null,
             secretsAllowlist: values.secretsAllowlist ?? null,
             requiredConnectors: null,
             connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
@@ -1261,18 +1276,8 @@ describe('project session runtime guards', () => {
 
   beforeEach(() => resetState());
 
-  // The platform coordinator is a per-project experimental opt-in. Every other
-  // test in this file runs with the flag OFF and asserts the pre-meta default
-  // behavior byte-for-byte.
-  function enableMetaAgent() {
-    projectRow.metadata = {
-      ...(projectRow.metadata as Record<string, unknown>),
-      experimental: { meta_agent: true },
-    };
-  }
-
-  test('creates an omitted-agent session with the meta REST runtime', async () => {
-    enableMetaAgent();
+  test('creates an omitted-agent session with the meta REST runtime when kortix.yaml turns My Kortix on', async () => {
+    manifestYaml = 'builtin_agents:\n  my_kortix: true\nagents:\n  worker: { tools: all, workspace: { project_repository: true } }\n';
     const app = createApp();
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -1283,9 +1288,9 @@ describe('project session runtime guards', () => {
     expect(response.status).toBe(201);
     const createdMeta = await response.json();
     expect(createdMeta).toMatchObject({
-      agent_name: 'meta',
+      agent_name: 'mykortix',
       metadata: {
-        sandbox_slug: 'meta',
+        sandbox_slug: 'mykortix',
       },
     });
     // A browser (supabase) create is not an in-session spawn — its Supabase
@@ -1293,10 +1298,10 @@ describe('project session runtime guards', () => {
     expect(createdMeta.metadata?.spawned_by_session).toBeUndefined();
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(lastProvisionInput).toMatchObject({
-      agentName: 'meta',
-      sandboxSlug: 'meta',
+      agentName: 'mykortix',
+      sandboxSlug: 'mykortix',
       extraEnvVars: {
-        KORTIX_AGENT_NAME: 'meta',
+        KORTIX_AGENT_NAME: 'mykortix',
         KORTIX_META_AGENT: '1',
         KORTIX_PROJECT_AUTO_CLONE: '0',
       },
@@ -1384,8 +1389,7 @@ describe('project session runtime guards', () => {
     }
   });
   test('a meta session with an omitted agent spawns the project default, not another meta', async () => {
-    enableMetaAgent();
-    sessionRow = { ...sessionRow!, agentName: 'meta' };
+    sessionRow = { ...sessionRow!, agentName: 'mykortix' };
     const app = createApp();
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -1398,10 +1402,10 @@ describe('project session runtime guards', () => {
 
     expect(response.status).toBe(201);
     const created = await response.json();
-    // The fixture project declares `default_agent: 'kortix'` — a meta-session
+    // The fixture project is blank, so it synthesizes `default_agent: 'worker'` — a meta-session
     // spawn resolves to it, never to another platform meta coordinator.
-    expect(created.agent_name).toBe('kortix');
-    expect(created.metadata?.sandbox_slug).not.toBe('meta');
+    expect(created.agent_name).toBe('worker');
+    expect(created.metadata?.sandbox_slug).not.toBe('mykortix');
     expect(created.metadata?.spawned_by_session).toBe(SESSION_ID);
   });
 
@@ -1456,6 +1460,65 @@ describe('project session runtime guards', () => {
     expect(created.metadata?.source).toBe('agent');
     // Ownership does not move: the coordinator's token still owns its worker.
     expect(lastSessionInsertValues?.createdBy).toBe(sessionRow!.createdBy);
+  });
+
+  test('a human explicit parent groups the session without inheriting sharing or automation identity', async () => {
+    const parentId = SESSION_ID;
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main', parent_session_id: parentId }),
+    });
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.parent_session_id).toBe(parentId);
+    expect(created.visibility).toBe('private');
+    expect(created.metadata?.spawned_by_session).toBeUndefined();
+    expect(created.initiator).toMatchObject({ type: 'member' });
+  });
+
+  test('kortix.* runtime_context keys come only from a session creating its own child; a person, an API key, a service account or a project token gets 400 and no session', async () => {
+    const app = createApp();
+    const create = (runtimeContext: Record<string, unknown>, token?: string) =>
+      app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ provider: 'platinum', base_ref: 'main', runtime_context: runtimeContext }),
+      });
+    // A declared workflow runner (it would run the script it names) and a declared child depth (no run approval).
+    const declared = { 'kortix.workflow.run_id': 'run-forged-0000001', 'kortix.workflow.handoff_sha256': 'a'.repeat(64), 'kortix.subagent.depth': 1, customer_id: 'c-42' };
+    for (const token of [undefined, PROJECT_SA_TOKEN, PROJECT_RUNTIME_PAT, PROJECT_SANDBOX_TOKEN]) {
+      const refused = await create(declared, token);
+      expect(refused.status).toBe(400);
+      const body = await refused.json();
+      expect(body.code).toBe('INVALID_SESSION_RUNTIME_CONTEXT');
+      expect(body.error).toContain('kortix.subagent.depth, kortix.workflow.handoff_sha256, kortix.workflow.run_id');
+    }
+    expect(lastSessionInsertValues).toBeNull();
+    expect(runtimeContextRows).toEqual([]);
+
+    // A customer's own keys stay theirs.
+    const own = await create({ customer_id: 'c-42' }, PROJECT_SA_TOKEN);
+    expect(own.status).toBe(201);
+    expect(runtimeContextRows[0]?.context).toEqual({ customer_id: 'c-42' });
+
+    // A box's session token creating its child: the child is the box's spawn, and its marks are kept.
+    const child = await create(declared, SESSION_BOUND_PAT);
+    expect(child.status).toBe(201);
+    expect((await child.json()).metadata?.spawned_by_session).toBe(SESSION_ID);
+    expect(runtimeContextRows[0]?.context).toEqual(declared);
+  });
+
+  test('a bound session ignores a body-selected parent', async () => {
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SESSION_BOUND_PAT}` },
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main', parent_session_id: '00000000-0000-4000-a000-000000000999' }),
+    });
+    expect(response.status).toBe(201);
+    expect((await response.json()).parent_session_id).toBe(SESSION_ID);
   });
 
   test('a browser create is its member’s, from the web; the CLI names itself (KRTX-639)', async () => {
@@ -2530,10 +2593,10 @@ describe('project session runtime guards', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'stopped',
-      agentName: 'meta',
+      agentName: 'mykortix',
       metadata: {
         ...((sessionRow!.metadata as Record<string, unknown>) ?? {}),
-        sandbox_slug: 'meta',
+        sandbox_slug: 'mykortix',
       },
     };
     sessionSandboxRows = [];
@@ -2545,9 +2608,9 @@ describe('project session runtime guards', () => {
     expect([200, 202]).toContain(res.status);
     await flushUntil(() => sandboxProvisionCalls === 1);
     // The rebuilt env must keep the meta runtime — losing it makes the daemon
-    // clone the project over the meta workspace and wipe /workspace/AGENTS.md.
+    // clone the project over My Kortix's empty workspace.
     expect(lastProvisionInput).toMatchObject({
-      agentName: 'meta',
+      agentName: 'mykortix',
       extraEnvVars: {
         KORTIX_META_AGENT: '1',
         KORTIX_PROJECT_AUTO_CLONE: '0',
@@ -2799,29 +2862,6 @@ describe('project session runtime guards', () => {
     });
   });
 
-  // The warm create runs `createProjectSession` with an empty body: no prompt,
-  // so no title source. The first real prompt titles the session later.
-  test('a warm session is created without a prompt or a title source', async () => {
-    projectRow.metadata = { ...projectRow.metadata, experimental: { warm_sessions: true } };
-    const app = createApp();
-    sessionRow = null;
-
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/warm`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ reused: false });
-    const metadata = lastSessionInsertValues?.metadata as Record<string, unknown>;
-    expect(metadata.warm).toBe(true);
-    for (const key of ['initial_prompt', 'pending_prompt', 'title_source', 'name']) {
-      expect(metadata).not.toHaveProperty(key);
-    }
-    expect(lifecycleCommandInserts).toEqual([]);
-  });
-
   test('e2e: only explicit sandbox secrets are injected as plaintext env vars', async () => {
     const app = createApp();
 
@@ -2925,8 +2965,6 @@ describe('project session runtime guards', () => {
     expect(body.status).toBe('provisioning');
     expect(body.opencode_session_id).toBeNull();
     expect(body.name).toBe('Contract session');
-    await flushUntil(() => branchCreateCalls === 1);
-    expect(branchCreateCalls).toBe(1);
     expect(sessionRow?.baseRef).toBe('dev');
     expect(sessionRow?.runtimeSessionId).toBeNull();
 

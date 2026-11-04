@@ -4,10 +4,10 @@
   "description": "Kortix UI: the shared React component library for apps/web, Kortix Apps and SDK hosts. Tailwind v4 classes, themed by CSS variables.",
   "type": "module",
   "license": "Elastic-2.0",
-  "homepage": "https://github.com/kortix-ai/suna/tree/dev/packages/ui",
+  "homepage": "https://github.com/kortix-ai/CompanyOS/tree/dev/packages/ui",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kortix-ai/suna.git",
+    "url": "git+https://github.com/kortix-ai/CompanyOS.git",
     "directory": "packages/ui"
   },
   "keywords": [
@@ -40,6 +40,7 @@
     "./alert": "./src/primitives/alert.tsx",
     "./alert-dialog": "./src/primitives/alert-dialog.tsx",
     "./apps": "./src/apps/index.ts",
+    "./artifacts": "./src/artifacts/index.ts",
     "./avatar": "./src/primitives/avatar.tsx",
     "./back-pill": "./src/primitives/back-pill.tsx",
     "./badge": "./src/primitives/badge.tsx",
@@ -63,31 +64,25 @@
     "./context-menu": "./src/primitives/context-menu.tsx",
     "./count-badge": "./src/primitives/count-badge.tsx",
     "./customize": "./src/customize/index.ts",
+    "./customize/agents/agent-apps-grant": "./src/customize/agents/agent-apps-grant.ts",
     "./customize/agents/agent-detail-aside": "./src/customize/agents/agent-detail-aside.tsx",
     "./customize/agents/agent-page": "./src/customize/agents/agent-page.tsx",
     "./customize/agents/agents-page": "./src/customize/agents/agents-page.tsx",
-    "./customize/connectors/catalog/use-catalog": "./src/customize/connectors/catalog/use-catalog.ts",
     "./customize/connectors/connector-routes": "./src/customize/connectors/connector-routes.ts",
     "./customize/connectors/connectors-app-return-bar": "./src/customize/connectors/connectors-app-return-bar.tsx",
-    "./customize/connectors/connectors-page": "./src/customize/connectors/connectors-page.tsx",
     "./customize/connectors/detail/app-page": "./src/customize/connectors/detail/app-page.tsx",
     "./customize/connectors/detail/connector-page": "./src/customize/connectors/detail/connector-page.tsx",
-    "./customize/migrate-to-v2/upgrade-view": "./src/customize/migrate-to-v2/upgrade-view.tsx",
-    "./customize/models/models-page": "./src/customize/models/models-page.tsx",
-    "./customize/project-settings/project-settings-page": "./src/customize/project-settings/project-settings-page.tsx",
-    "./customize/secrets/secrets-page": "./src/customize/secrets/secrets-page.tsx",
     "./customize/sections/add-account-fields": "./src/customize/sections/add-account-fields.tsx",
+    "./customize/sections/component/email-connect-form": "./src/customize/sections/component/email-connect-form.tsx",
     "./customize/sections/component/manifest-copy-block": "./src/customize/sections/component/manifest-copy-block.tsx",
     "./customize/sections/component/slack-byo-wizard": "./src/customize/sections/component/slack-byo-wizard.tsx",
     "./customize/sections/component/slack-connect-card": "./src/customize/sections/component/slack-connect-card.tsx",
     "./customize/sections/component/teams-byo-wizard": "./src/customize/sections/component/teams-byo-wizard.tsx",
     "./customize/sections/component/teams-connect-card": "./src/customize/sections/component/teams-connect-card.tsx",
     "./customize/sections/component/telegram-channel-row": "./src/customize/sections/component/telegram-channel-row.tsx",
-    "./customize/sections/connector-connection-form": "./src/customize/sections/connector-connection-form.ts",
     "./customize/sections/connector-oauth2": "./src/customize/sections/connector-oauth2.ts",
     "./customize/sections/connector-oauth2-application-fields": "./src/customize/sections/connector-oauth2-application-fields.tsx",
     "./customize/sections/connector-oauth2-fields": "./src/customize/sections/connector-oauth2-fields.tsx",
-    "./customize/sections/connectors-view": "./src/customize/sections/connectors-view.tsx",
     "./customize/sections/gateway-view": "./src/customize/sections/gateway-view.tsx",
     "./customize/sections/llm-provider/llm-provider-modal": "./src/customize/sections/llm-provider/llm-provider-modal.tsx",
     "./customize/sections/llm-provider/model-capability-icons": "./src/customize/sections/llm-provider/model-capability-icons.tsx",
@@ -107,6 +102,7 @@
     "./customize/settings/rail-copy-context": "./src/customize/settings/rail-copy-context.tsx",
     "./customize/settings/settings-tab-header": "./src/customize/settings/settings-tab-header.tsx",
     "./customize/settings/settings-tabs": "./src/customize/settings/settings-tabs.ts",
+    "./customize/settings/tabs/chrome-connections-tab": "./src/customize/settings/tabs/chrome-connections-tab.tsx",
     "./customize/settings/tabs/connected-apps": "./src/customize/settings/tabs/connected-apps.tsx",
     "./customize/settings/tabs/experimental-tab": "./src/customize/settings/tabs/experimental-tab.tsx",
     "./customize/settings/tabs/general-tab": "./src/customize/settings/tabs/general-tab.tsx",
@@ -114,17 +110,17 @@
     "./customize/settings/tabs/snapshots-tab": "./src/customize/settings/tabs/snapshots-tab.tsx",
     "./customize/settings/tabs/tokens-tab": "./src/customize/settings/tabs/tokens-tab.tsx",
     "./customize/settings/type": "./src/customize/settings/type.ts",
+    "./customize/shared/agent-resource-scope": "./src/customize/shared/agent-resource-scope.tsx",
     "./customize/shared/capability-access-gate": "./src/customize/shared/capability-access-gate.tsx",
+    "./customize/shared/capability-page-shell": "./src/customize/shared/capability-page-shell.tsx",
     "./customize/shared/capability-skeleton": "./src/customize/shared/capability-skeleton.tsx",
-    "./customize/shared/capability-tabs": "./src/customize/shared/capability-tabs.tsx",
+    "./customize/shared/customize-tab-bar": "./src/customize/shared/customize-tab-bar.tsx",
     "./customize/shared/entity/entity-files": "./src/customize/shared/entity/entity-files.ts",
     "./customize/shared/feature-gate-screen": "./src/customize/shared/feature-gate-screen.tsx",
     "./customize/shared/use-customize-prefetch": "./src/customize/shared/use-customize-prefetch.ts",
     "./customize/shared/with-search": "./src/customize/shared/with-search.ts",
-    "./customize/skills/skills-page": "./src/customize/skills/skills-page.tsx",
     "./customize/triggers/schedule-view": "./src/customize/triggers/schedule-view.tsx",
     "./customize/triggers/schedule/schedule-copy": "./src/customize/triggers/schedule/schedule-copy.ts",
-    "./customize/triggers/triggers-page": "./src/customize/triggers/triggers-page.tsx",
     "./data-grid": "./src/primitives/data-grid.tsx",
     "./date-range-picker": "./src/primitives/date-range-picker.tsx",
     "./definition-list": "./src/primitives/definition-list.tsx",
@@ -190,6 +186,7 @@
     "./emoji-picker": "./src/primitives/emoji-picker.tsx",
     "./emoji-tint": "./src/primitives/emoji-tint.ts",
     "./empty": "./src/primitives/empty.tsx",
+    "./empty-art": "./src/primitives/empty-art.tsx",
     "./empty-state": "./src/primitives/empty-state.tsx",
     "./entity-avatar": "./src/primitives/entity-avatar.tsx",
     "./error-boundary": "./src/primitives/error-boundary.tsx",
@@ -248,6 +245,9 @@
     "./internal/billing/use-transactions": "./src/internal/billing/use-transactions.ts",
     "./internal/branding/branding-provider": "./src/internal/branding/branding-provider.tsx",
     "./internal/capture/use-capture-area": "./src/internal/capture/use-capture-area.ts",
+    "./internal/chrome/extension": "./src/internal/chrome/extension.ts",
+    "./internal/chrome/use-chrome-offered": "./src/internal/chrome/use-chrome-offered.ts",
+    "./internal/components/agent-mark": "./src/internal/components/agent-mark.tsx",
     "./internal/components/hover-prefetch-link": "./src/internal/components/hover-prefetch-link.tsx",
     "./internal/components/mobile-store-qr": "./src/internal/components/mobile-store-qr.tsx",
     "./internal/desktop/desktop-back-button": "./src/internal/desktop/desktop-back-button.tsx",
@@ -258,6 +258,7 @@
     "./internal/hooks/account/use-my-invites": "./src/internal/hooks/account/use-my-invites.ts",
     "./internal/hooks/admin/use-admin-role": "./src/internal/hooks/admin/use-admin-role.ts",
     "./internal/hooks/channels/use-channels-installations": "./src/internal/hooks/channels/use-channels-installations.ts",
+    "./internal/hooks/channels/use-email-inboxes": "./src/internal/hooks/channels/use-email-inboxes.ts",
     "./internal/hooks/connectors/use-add-managed-account": "./src/internal/hooks/connectors/use-add-managed-account.ts",
     "./internal/hooks/connectors/use-pipedream-connect-member": "./src/internal/hooks/connectors/use-pipedream-connect-member.ts",
     "./internal/hooks/connectors/use-pipedream-connect-project": "./src/internal/hooks/connectors/use-pipedream-connect-project.ts",
@@ -266,17 +267,18 @@
     "./internal/hooks/projects/use-new-project-session": "./src/internal/hooks/projects/use-new-project-session.ts",
     "./internal/hooks/projects/use-project-can-run": "./src/internal/hooks/projects/use-project-can-run.ts",
     "./internal/hooks/projects/use-restart-project-session": "./src/internal/hooks/projects/use-restart-project-session.ts",
-    "./internal/hooks/projects/use-warm-project-session": "./src/internal/hooks/projects/use-warm-project-session.ts",
     "./internal/hooks/use-auto-scroll": "./src/internal/hooks/use-auto-scroll.ts",
     "./internal/hooks/use-channel-bindings": "./src/internal/hooks/use-channel-bindings.ts",
     "./internal/hooks/use-copy": "./src/internal/hooks/use-copy.ts",
     "./internal/hooks/use-debounced-value": "./src/internal/hooks/use-debounced-value.ts",
     "./internal/hooks/use-notification-center": "./src/internal/hooks/use-notification-center.ts",
+    "./internal/hooks/use-slash-focus": "./src/internal/hooks/use-slash-focus.ts",
     "./internal/icons/claude": "./src/internal/icons/claude.tsx",
+    "./internal/icons/discord": "./src/internal/icons/discord.tsx",
     "./internal/icons/download": "./src/internal/icons/download.tsx",
+    "./internal/icons/edge": "./src/internal/icons/edge.tsx",
     "./internal/icons/github": "./src/internal/icons/github.tsx",
     "./internal/icons/home": "./src/internal/icons/home.tsx",
-    "./internal/icons/kortix": "./src/internal/icons/kortix.tsx",
     "./internal/icons/microsoft-teams": "./src/internal/icons/microsoft-teams.tsx",
     "./internal/icons/open-ai": "./src/internal/icons/open-ai.tsx",
     "./internal/icons/plus": "./src/internal/icons/plus.tsx",
@@ -296,12 +298,13 @@
     "./internal/lib/code-theme": "./src/internal/lib/code-theme.ts",
     "./internal/lib/delivered-but-disconnected": "./src/internal/lib/delivered-but-disconnected.ts",
     "./internal/lib/desktop": "./src/internal/lib/desktop.ts",
+    "./internal/lib/detect-os": "./src/internal/lib/detect-os.ts",
     "./internal/lib/error-handler": "./src/internal/lib/error-handler.tsx",
     "./internal/lib/github-installations": "./src/internal/lib/github-installations.ts",
     "./internal/lib/github-user-proof": "./src/internal/lib/github-user-proof.ts",
     "./internal/lib/interface-theme-defaults": "./src/internal/lib/interface-theme-defaults.ts",
     "./internal/lib/kortix-cli": "./src/internal/lib/kortix-cli.ts",
-    "./internal/lib/manifest-version": "./src/internal/lib/manifest-version.ts",
+    "./internal/lib/manifest-health": "./src/internal/lib/manifest-health.ts",
     "./internal/lib/mobile-store-urls": "./src/internal/lib/mobile-store-urls.ts",
     "./internal/lib/navigation/modified-click": "./src/internal/lib/navigation/modified-click.ts",
     "./internal/lib/navigation/router-bridge": "./src/internal/lib/navigation/router-bridge.ts",
@@ -309,6 +312,7 @@
     "./internal/lib/onboarding/last-project-cookie": "./src/internal/lib/onboarding/last-project-cookie.ts",
     "./internal/lib/onboarding/provision-errors": "./src/internal/lib/onboarding/provision-errors.ts",
     "./internal/lib/onboarding/use-app-home": "./src/internal/lib/onboarding/use-app-home.ts",
+    "./internal/lib/project-preamble": "./src/internal/lib/project-preamble.ts",
     "./internal/lib/promo-art": "./src/internal/lib/promo-art.ts",
     "./internal/lib/provider-branding": "./src/internal/lib/provider-branding.tsx",
     "./internal/lib/query-client-singleton": "./src/internal/lib/query-client-singleton.ts",
@@ -336,10 +340,10 @@
     "./internal/notifications/notification-rows": "./src/internal/notifications/notification-rows.ts",
     "./internal/notifications/session-toast-cards": "./src/internal/notifications/session-toast-cards.tsx",
     "./internal/notifications/web-push": "./src/internal/notifications/web-push.ts",
-    "./internal/reminders/use-refetch-after-fire": "./src/internal/reminders/use-refetch-after-fire.ts",
     "./internal/session-types/index": "./src/internal/session-types/index.ts",
     "./internal/session-types/types": "./src/internal/session-types/types.ts",
     "./internal/stores/account-panel-store": "./src/internal/stores/account-panel-store.ts",
+    "./internal/stores/apps-modal-store": "./src/internal/stores/apps-modal-store.ts",
     "./internal/stores/billing-account-context": "./src/internal/stores/billing-account-context.tsx",
     "./internal/stores/browser-recents-store": "./src/internal/stores/browser-recents-store.ts",
     "./internal/stores/chat-send-store": "./src/internal/stores/chat-send-store.ts",
@@ -358,7 +362,6 @@
     "./internal/stores/session-browser-store": "./src/internal/stores/session-browser-store.ts",
     "./internal/stores/session-switch-store": "./src/internal/stores/session-switch-store.ts",
     "./internal/stores/settings-panel-store": "./src/internal/stores/settings-panel-store.ts",
-    "./internal/stores/sidebar-nav-store": "./src/internal/stores/sidebar-nav-store.ts",
     "./internal/stores/sound-store": "./src/internal/stores/sound-store.ts",
     "./internal/stores/subscription-store": "./src/internal/stores/subscription-store.tsx",
     "./internal/stores/tab-store": "./src/internal/stores/tab-store.ts",
@@ -385,6 +388,10 @@
     "./map": "./src/primitives/map.tsx",
     "./markdown": "./src/markdown/index.tsx",
     "./markdown/copy-button": "./src/markdown/copy-button.tsx",
+    "./markdown/doc-editor/doc-embed": "./src/markdown/doc-editor/doc-embed.tsx",
+    "./markdown/doc-editor/doc-extensions": "./src/markdown/doc-editor/doc-extensions.tsx",
+    "./markdown/doc-editor/doc-menus": "./src/markdown/doc-editor/doc-menus.tsx",
+    "./markdown/doc-editor/markdown": "./src/markdown/doc-editor/markdown.ts",
     "./markdown/setup-links/api-base": "./src/markdown/setup-links/api-base.ts",
     "./markdown/setup-links/approval-decision": "./src/markdown/setup-links/approval-decision.tsx",
     "./markdown/setup-links/connector-handshake": "./src/markdown/setup-links/connector-handshake.tsx",
@@ -410,10 +417,10 @@
     "./progress": "./src/primitives/progress.tsx",
     "./progress-ring": "./src/primitives/progress-ring.tsx",
     "./project-icon-picker": "./src/primitives/project-icon-picker.tsx",
-    "./providers/session-ids": "./src/providers/session-ids.tsx",
     "./providers/ui-provider": "./src/providers/ui-provider.tsx",
     "./radio-group": "./src/primitives/radio-group.tsx",
     "./resizable": "./src/primitives/resizable.tsx",
+    "./resize-seam": "./src/primitives/resize-seam.ts",
     "./scroll-area": "./src/primitives/scroll-area.tsx",
     "./section": "./src/primitives/section.tsx",
     "./section-card": "./src/primitives/section-card.tsx",
@@ -435,6 +442,7 @@
     "./session/models/model-selector": "./src/session/models/model-selector.tsx",
     "./session/panel/audit/audit-credential-label": "./src/session/panel/audit/audit-credential-label.ts",
     "./session/panel/easy/detail-view": "./src/session/panel/easy/detail-view.tsx",
+    "./session/participants/session-participants": "./src/session/participants/session-participants.tsx",
     "./session/prompts/session-approval-review": "./src/session/prompts/session-approval-review.ts",
     "./session/status/agent-git-reconciliation": "./src/session/status/agent-git-reconciliation.ts",
     "./session/status/previous-repository-session": "./src/session/status/previous-repository-session.tsx",
@@ -508,6 +516,7 @@
     "./user-avatar": "./src/primitives/user-avatar.tsx",
     "./wallpaper-shaders": "./src/primitives/wallpaper-shaders.tsx",
     "./workspace": "./src/workspace/index.ts",
+    "./workspace/admin/project-admin-dashboard": "./src/workspace/admin/project-admin-dashboard.tsx",
     "./workspace/home/access-requests-bell": "./src/workspace/home/access-requests-bell.tsx",
     "./workspace/home/first-chat": "./src/workspace/home/first-chat.tsx",
     "./workspace/home/mobile-app-promo": "./src/workspace/home/mobile-app-promo.tsx",
@@ -529,8 +538,6 @@
     "./workspace/new/workspace-name": "./src/workspace/new/workspace-name.ts",
     "./workspace/project-selector/project-selector-model": "./src/workspace/project-selector/project-selector-model.ts",
     "./workspace/projects/modal/project-icon-field": "./src/workspace/projects/modal/project-icon-field.tsx",
-    "./workspace/projects/onboarding/app-logo": "./src/workspace/projects/onboarding/app-logo.tsx",
-    "./workspace/projects/onboarding/connect-app": "./src/workspace/projects/onboarding/connect-app.ts",
     "./workspace/projects/policies-panel": "./src/workspace/projects/policies-panel.tsx",
     "./workspace/projects/session-shared-icon": "./src/workspace/projects/session-shared-icon.tsx",
     "./workspace/repository-disconnected": "./src/workspace/repository-disconnected.tsx",
@@ -538,11 +545,10 @@
     "./workspace/review/mock-data": "./src/workspace/review/mock-data.ts",
     "./workspace/review/review-center": "./src/workspace/review/review-center.tsx",
     "./workspace/review/types": "./src/workspace/review/types.ts",
-    "./workspace/sidebar/customize-sidebar-modal": "./src/workspace/sidebar/customize-sidebar-modal.tsx",
     "./workspace/sidebar/footer/project-apps-nav": "./src/workspace/sidebar/footer/project-apps-nav.tsx",
     "./workspace/sidebar/footer/project-balance-warning": "./src/workspace/sidebar/footer/project-balance-warning.tsx",
     "./workspace/sidebar/footer/project-computer-nav": "./src/workspace/sidebar/footer/project-computer-nav.tsx",
-    "./workspace/sidebar/footer/project-manifest-upgrade-alert": "./src/workspace/sidebar/footer/project-manifest-upgrade-alert.tsx",
+    "./workspace/sidebar/footer/project-manifest-issues-alert": "./src/workspace/sidebar/footer/project-manifest-issues-alert.tsx",
     "./workspace/sidebar/footer/project-mcp-nav": "./src/workspace/sidebar/footer/project-mcp-nav.tsx",
     "./workspace/sidebar/footer/project-sandbox-alert": "./src/workspace/sidebar/footer/project-sandbox-alert.tsx",
     "./workspace/sidebar/footer/project-upgrade-button": "./src/workspace/sidebar/footer/project-upgrade-button.tsx",
@@ -554,7 +560,8 @@
     "./workspace/sidebar/session-section-labels": "./src/workspace/sidebar/session-section-labels.ts",
     "./workspace/sidebar/session-source-icons": "./src/workspace/sidebar/session-source-icons.ts",
     "./workspace/sidebar/workspace-grouping": "./src/workspace/sidebar/workspace-grouping.ts",
-    "./workspace/sidebar/workspace-menu-section": "./src/workspace/sidebar/workspace-menu-section.tsx"
+    "./workspace/sidebar/workspace-menu-section": "./src/workspace/sidebar/workspace-menu-section.tsx",
+    "./workspace/space/space-page": "./src/workspace/space/space-page.tsx"
   },
   "publishConfig": {
     "access": "public",
@@ -625,6 +632,10 @@
       "./apps": {
         "types": "./dist/apps/index.d.ts",
         "import": "./dist/apps/index.js"
+      },
+      "./artifacts": {
+        "types": "./dist/artifacts/index.d.ts",
+        "import": "./dist/artifacts/index.js"
       },
       "./avatar": {
         "types": "./dist/primitives/avatar.d.ts",
@@ -715,6 +726,10 @@
         "types": "./dist/customize/index.d.ts",
         "import": "./dist/customize/index.js"
       },
+      "./customize/agents/agent-apps-grant": {
+        "types": "./dist/customize/agents/agent-apps-grant.d.ts",
+        "import": "./dist/customize/agents/agent-apps-grant.js"
+      },
       "./customize/agents/agent-detail-aside": {
         "types": "./dist/customize/agents/agent-detail-aside.d.ts",
         "import": "./dist/customize/agents/agent-detail-aside.js"
@@ -727,10 +742,6 @@
         "types": "./dist/customize/agents/agents-page.d.ts",
         "import": "./dist/customize/agents/agents-page.js"
       },
-      "./customize/connectors/catalog/use-catalog": {
-        "types": "./dist/customize/connectors/catalog/use-catalog.d.ts",
-        "import": "./dist/customize/connectors/catalog/use-catalog.js"
-      },
       "./customize/connectors/connector-routes": {
         "types": "./dist/customize/connectors/connector-routes.d.ts",
         "import": "./dist/customize/connectors/connector-routes.js"
@@ -738,10 +749,6 @@
       "./customize/connectors/connectors-app-return-bar": {
         "types": "./dist/customize/connectors/connectors-app-return-bar.d.ts",
         "import": "./dist/customize/connectors/connectors-app-return-bar.js"
-      },
-      "./customize/connectors/connectors-page": {
-        "types": "./dist/customize/connectors/connectors-page.d.ts",
-        "import": "./dist/customize/connectors/connectors-page.js"
       },
       "./customize/connectors/detail/app-page": {
         "types": "./dist/customize/connectors/detail/app-page.d.ts",
@@ -751,25 +758,13 @@
         "types": "./dist/customize/connectors/detail/connector-page.d.ts",
         "import": "./dist/customize/connectors/detail/connector-page.js"
       },
-      "./customize/migrate-to-v2/upgrade-view": {
-        "types": "./dist/customize/migrate-to-v2/upgrade-view.d.ts",
-        "import": "./dist/customize/migrate-to-v2/upgrade-view.js"
-      },
-      "./customize/models/models-page": {
-        "types": "./dist/customize/models/models-page.d.ts",
-        "import": "./dist/customize/models/models-page.js"
-      },
-      "./customize/project-settings/project-settings-page": {
-        "types": "./dist/customize/project-settings/project-settings-page.d.ts",
-        "import": "./dist/customize/project-settings/project-settings-page.js"
-      },
-      "./customize/secrets/secrets-page": {
-        "types": "./dist/customize/secrets/secrets-page.d.ts",
-        "import": "./dist/customize/secrets/secrets-page.js"
-      },
       "./customize/sections/add-account-fields": {
         "types": "./dist/customize/sections/add-account-fields.d.ts",
         "import": "./dist/customize/sections/add-account-fields.js"
+      },
+      "./customize/sections/component/email-connect-form": {
+        "types": "./dist/customize/sections/component/email-connect-form.d.ts",
+        "import": "./dist/customize/sections/component/email-connect-form.js"
       },
       "./customize/sections/component/manifest-copy-block": {
         "types": "./dist/customize/sections/component/manifest-copy-block.d.ts",
@@ -795,10 +790,6 @@
         "types": "./dist/customize/sections/component/telegram-channel-row.d.ts",
         "import": "./dist/customize/sections/component/telegram-channel-row.js"
       },
-      "./customize/sections/connector-connection-form": {
-        "types": "./dist/customize/sections/connector-connection-form.d.ts",
-        "import": "./dist/customize/sections/connector-connection-form.js"
-      },
       "./customize/sections/connector-oauth2": {
         "types": "./dist/customize/sections/connector-oauth2.d.ts",
         "import": "./dist/customize/sections/connector-oauth2.js"
@@ -810,10 +801,6 @@
       "./customize/sections/connector-oauth2-fields": {
         "types": "./dist/customize/sections/connector-oauth2-fields.d.ts",
         "import": "./dist/customize/sections/connector-oauth2-fields.js"
-      },
-      "./customize/sections/connectors-view": {
-        "types": "./dist/customize/sections/connectors-view.d.ts",
-        "import": "./dist/customize/sections/connectors-view.js"
       },
       "./customize/sections/gateway-view": {
         "types": "./dist/customize/sections/gateway-view.d.ts",
@@ -891,6 +878,10 @@
         "types": "./dist/customize/settings/settings-tabs.d.ts",
         "import": "./dist/customize/settings/settings-tabs.js"
       },
+      "./customize/settings/tabs/chrome-connections-tab": {
+        "types": "./dist/customize/settings/tabs/chrome-connections-tab.d.ts",
+        "import": "./dist/customize/settings/tabs/chrome-connections-tab.js"
+      },
       "./customize/settings/tabs/connected-apps": {
         "types": "./dist/customize/settings/tabs/connected-apps.d.ts",
         "import": "./dist/customize/settings/tabs/connected-apps.js"
@@ -919,17 +910,25 @@
         "types": "./dist/customize/settings/type.d.ts",
         "import": "./dist/customize/settings/type.js"
       },
+      "./customize/shared/agent-resource-scope": {
+        "types": "./dist/customize/shared/agent-resource-scope.d.ts",
+        "import": "./dist/customize/shared/agent-resource-scope.js"
+      },
       "./customize/shared/capability-access-gate": {
         "types": "./dist/customize/shared/capability-access-gate.d.ts",
         "import": "./dist/customize/shared/capability-access-gate.js"
+      },
+      "./customize/shared/capability-page-shell": {
+        "types": "./dist/customize/shared/capability-page-shell.d.ts",
+        "import": "./dist/customize/shared/capability-page-shell.js"
       },
       "./customize/shared/capability-skeleton": {
         "types": "./dist/customize/shared/capability-skeleton.d.ts",
         "import": "./dist/customize/shared/capability-skeleton.js"
       },
-      "./customize/shared/capability-tabs": {
-        "types": "./dist/customize/shared/capability-tabs.d.ts",
-        "import": "./dist/customize/shared/capability-tabs.js"
+      "./customize/shared/customize-tab-bar": {
+        "types": "./dist/customize/shared/customize-tab-bar.d.ts",
+        "import": "./dist/customize/shared/customize-tab-bar.js"
       },
       "./customize/shared/entity/entity-files": {
         "types": "./dist/customize/shared/entity/entity-files.d.ts",
@@ -947,10 +946,6 @@
         "types": "./dist/customize/shared/with-search.d.ts",
         "import": "./dist/customize/shared/with-search.js"
       },
-      "./customize/skills/skills-page": {
-        "types": "./dist/customize/skills/skills-page.d.ts",
-        "import": "./dist/customize/skills/skills-page.js"
-      },
       "./customize/triggers/schedule-view": {
         "types": "./dist/customize/triggers/schedule-view.d.ts",
         "import": "./dist/customize/triggers/schedule-view.js"
@@ -958,10 +953,6 @@
       "./customize/triggers/schedule/schedule-copy": {
         "types": "./dist/customize/triggers/schedule/schedule-copy.d.ts",
         "import": "./dist/customize/triggers/schedule/schedule-copy.js"
-      },
-      "./customize/triggers/triggers-page": {
-        "types": "./dist/customize/triggers/triggers-page.d.ts",
-        "import": "./dist/customize/triggers/triggers-page.js"
       },
       "./data-grid": {
         "types": "./dist/primitives/data-grid.d.ts",
@@ -1220,6 +1211,10 @@
         "types": "./dist/primitives/empty.d.ts",
         "import": "./dist/primitives/empty.js"
       },
+      "./empty-art": {
+        "types": "./dist/primitives/empty-art.d.ts",
+        "import": "./dist/primitives/empty-art.js"
+      },
       "./empty-state": {
         "types": "./dist/primitives/empty-state.d.ts",
         "import": "./dist/primitives/empty-state.js"
@@ -1449,6 +1444,18 @@
         "types": "./dist/internal/capture/use-capture-area.d.ts",
         "import": "./dist/internal/capture/use-capture-area.js"
       },
+      "./internal/chrome/extension": {
+        "types": "./dist/internal/chrome/extension.d.ts",
+        "import": "./dist/internal/chrome/extension.js"
+      },
+      "./internal/chrome/use-chrome-offered": {
+        "types": "./dist/internal/chrome/use-chrome-offered.d.ts",
+        "import": "./dist/internal/chrome/use-chrome-offered.js"
+      },
+      "./internal/components/agent-mark": {
+        "types": "./dist/internal/components/agent-mark.d.ts",
+        "import": "./dist/internal/components/agent-mark.js"
+      },
       "./internal/components/hover-prefetch-link": {
         "types": "./dist/internal/components/hover-prefetch-link.d.ts",
         "import": "./dist/internal/components/hover-prefetch-link.js"
@@ -1489,6 +1496,10 @@
         "types": "./dist/internal/hooks/channels/use-channels-installations.d.ts",
         "import": "./dist/internal/hooks/channels/use-channels-installations.js"
       },
+      "./internal/hooks/channels/use-email-inboxes": {
+        "types": "./dist/internal/hooks/channels/use-email-inboxes.d.ts",
+        "import": "./dist/internal/hooks/channels/use-email-inboxes.js"
+      },
       "./internal/hooks/connectors/use-add-managed-account": {
         "types": "./dist/internal/hooks/connectors/use-add-managed-account.d.ts",
         "import": "./dist/internal/hooks/connectors/use-add-managed-account.js"
@@ -1521,10 +1532,6 @@
         "types": "./dist/internal/hooks/projects/use-restart-project-session.d.ts",
         "import": "./dist/internal/hooks/projects/use-restart-project-session.js"
       },
-      "./internal/hooks/projects/use-warm-project-session": {
-        "types": "./dist/internal/hooks/projects/use-warm-project-session.d.ts",
-        "import": "./dist/internal/hooks/projects/use-warm-project-session.js"
-      },
       "./internal/hooks/use-auto-scroll": {
         "types": "./dist/internal/hooks/use-auto-scroll.d.ts",
         "import": "./dist/internal/hooks/use-auto-scroll.js"
@@ -1545,13 +1552,25 @@
         "types": "./dist/internal/hooks/use-notification-center.d.ts",
         "import": "./dist/internal/hooks/use-notification-center.js"
       },
+      "./internal/hooks/use-slash-focus": {
+        "types": "./dist/internal/hooks/use-slash-focus.d.ts",
+        "import": "./dist/internal/hooks/use-slash-focus.js"
+      },
       "./internal/icons/claude": {
         "types": "./dist/internal/icons/claude.d.ts",
         "import": "./dist/internal/icons/claude.js"
       },
+      "./internal/icons/discord": {
+        "types": "./dist/internal/icons/discord.d.ts",
+        "import": "./dist/internal/icons/discord.js"
+      },
       "./internal/icons/download": {
         "types": "./dist/internal/icons/download.d.ts",
         "import": "./dist/internal/icons/download.js"
+      },
+      "./internal/icons/edge": {
+        "types": "./dist/internal/icons/edge.d.ts",
+        "import": "./dist/internal/icons/edge.js"
       },
       "./internal/icons/github": {
         "types": "./dist/internal/icons/github.d.ts",
@@ -1560,10 +1579,6 @@
       "./internal/icons/home": {
         "types": "./dist/internal/icons/home.d.ts",
         "import": "./dist/internal/icons/home.js"
-      },
-      "./internal/icons/kortix": {
-        "types": "./dist/internal/icons/kortix.d.ts",
-        "import": "./dist/internal/icons/kortix.js"
       },
       "./internal/icons/microsoft-teams": {
         "types": "./dist/internal/icons/microsoft-teams.d.ts",
@@ -1641,6 +1656,10 @@
         "types": "./dist/internal/lib/desktop.d.ts",
         "import": "./dist/internal/lib/desktop.js"
       },
+      "./internal/lib/detect-os": {
+        "types": "./dist/internal/lib/detect-os.d.ts",
+        "import": "./dist/internal/lib/detect-os.js"
+      },
       "./internal/lib/error-handler": {
         "types": "./dist/internal/lib/error-handler.d.ts",
         "import": "./dist/internal/lib/error-handler.js"
@@ -1661,9 +1680,9 @@
         "types": "./dist/internal/lib/kortix-cli.d.ts",
         "import": "./dist/internal/lib/kortix-cli.js"
       },
-      "./internal/lib/manifest-version": {
-        "types": "./dist/internal/lib/manifest-version.d.ts",
-        "import": "./dist/internal/lib/manifest-version.js"
+      "./internal/lib/manifest-health": {
+        "types": "./dist/internal/lib/manifest-health.d.ts",
+        "import": "./dist/internal/lib/manifest-health.js"
       },
       "./internal/lib/mobile-store-urls": {
         "types": "./dist/internal/lib/mobile-store-urls.d.ts",
@@ -1692,6 +1711,10 @@
       "./internal/lib/onboarding/use-app-home": {
         "types": "./dist/internal/lib/onboarding/use-app-home.d.ts",
         "import": "./dist/internal/lib/onboarding/use-app-home.js"
+      },
+      "./internal/lib/project-preamble": {
+        "types": "./dist/internal/lib/project-preamble.d.ts",
+        "import": "./dist/internal/lib/project-preamble.js"
       },
       "./internal/lib/promo-art": {
         "types": "./dist/internal/lib/promo-art.d.ts",
@@ -1801,10 +1824,6 @@
         "types": "./dist/internal/notifications/web-push.d.ts",
         "import": "./dist/internal/notifications/web-push.js"
       },
-      "./internal/reminders/use-refetch-after-fire": {
-        "types": "./dist/internal/reminders/use-refetch-after-fire.d.ts",
-        "import": "./dist/internal/reminders/use-refetch-after-fire.js"
-      },
       "./internal/session-types/index": {
         "types": "./dist/internal/session-types/index.d.ts",
         "import": "./dist/internal/session-types/index.js"
@@ -1816,6 +1835,10 @@
       "./internal/stores/account-panel-store": {
         "types": "./dist/internal/stores/account-panel-store.d.ts",
         "import": "./dist/internal/stores/account-panel-store.js"
+      },
+      "./internal/stores/apps-modal-store": {
+        "types": "./dist/internal/stores/apps-modal-store.d.ts",
+        "import": "./dist/internal/stores/apps-modal-store.js"
       },
       "./internal/stores/billing-account-context": {
         "types": "./dist/internal/stores/billing-account-context.d.ts",
@@ -1888,10 +1911,6 @@
       "./internal/stores/settings-panel-store": {
         "types": "./dist/internal/stores/settings-panel-store.d.ts",
         "import": "./dist/internal/stores/settings-panel-store.js"
-      },
-      "./internal/stores/sidebar-nav-store": {
-        "types": "./dist/internal/stores/sidebar-nav-store.d.ts",
-        "import": "./dist/internal/stores/sidebar-nav-store.js"
       },
       "./internal/stores/sound-store": {
         "types": "./dist/internal/stores/sound-store.d.ts",
@@ -1997,6 +2016,22 @@
         "types": "./dist/markdown/copy-button.d.ts",
         "import": "./dist/markdown/copy-button.js"
       },
+      "./markdown/doc-editor/doc-embed": {
+        "types": "./dist/markdown/doc-editor/doc-embed.d.ts",
+        "import": "./dist/markdown/doc-editor/doc-embed.js"
+      },
+      "./markdown/doc-editor/doc-extensions": {
+        "types": "./dist/markdown/doc-editor/doc-extensions.d.ts",
+        "import": "./dist/markdown/doc-editor/doc-extensions.js"
+      },
+      "./markdown/doc-editor/doc-menus": {
+        "types": "./dist/markdown/doc-editor/doc-menus.d.ts",
+        "import": "./dist/markdown/doc-editor/doc-menus.js"
+      },
+      "./markdown/doc-editor/markdown": {
+        "types": "./dist/markdown/doc-editor/markdown.d.ts",
+        "import": "./dist/markdown/doc-editor/markdown.js"
+      },
       "./markdown/setup-links/api-base": {
         "types": "./dist/markdown/setup-links/api-base.d.ts",
         "import": "./dist/markdown/setup-links/api-base.js"
@@ -2091,10 +2126,6 @@
         "types": "./dist/primitives/project-icon-picker.d.ts",
         "import": "./dist/primitives/project-icon-picker.js"
       },
-      "./providers/session-ids": {
-        "types": "./dist/providers/session-ids.d.ts",
-        "import": "./dist/providers/session-ids.js"
-      },
       "./providers/ui-provider": {
         "types": "./dist/providers/ui-provider.d.ts",
         "import": "./dist/providers/ui-provider.js"
@@ -2106,6 +2137,10 @@
       "./resizable": {
         "types": "./dist/primitives/resizable.d.ts",
         "import": "./dist/primitives/resizable.js"
+      },
+      "./resize-seam": {
+        "types": "./dist/primitives/resize-seam.d.ts",
+        "import": "./dist/primitives/resize-seam.js"
       },
       "./scroll-area": {
         "types": "./dist/primitives/scroll-area.d.ts",
@@ -2190,6 +2225,10 @@
       "./session/panel/easy/detail-view": {
         "types": "./dist/session/panel/easy/detail-view.d.ts",
         "import": "./dist/session/panel/easy/detail-view.js"
+      },
+      "./session/participants/session-participants": {
+        "types": "./dist/session/participants/session-participants.d.ts",
+        "import": "./dist/session/participants/session-participants.js"
       },
       "./session/prompts/session-approval-review": {
         "types": "./dist/session/prompts/session-approval-review.d.ts",
@@ -2471,6 +2510,10 @@
         "types": "./dist/workspace/index.d.ts",
         "import": "./dist/workspace/index.js"
       },
+      "./workspace/admin/project-admin-dashboard": {
+        "types": "./dist/workspace/admin/project-admin-dashboard.d.ts",
+        "import": "./dist/workspace/admin/project-admin-dashboard.js"
+      },
       "./workspace/home/access-requests-bell": {
         "types": "./dist/workspace/home/access-requests-bell.d.ts",
         "import": "./dist/workspace/home/access-requests-bell.js"
@@ -2555,14 +2598,6 @@
         "types": "./dist/workspace/projects/modal/project-icon-field.d.ts",
         "import": "./dist/workspace/projects/modal/project-icon-field.js"
       },
-      "./workspace/projects/onboarding/app-logo": {
-        "types": "./dist/workspace/projects/onboarding/app-logo.d.ts",
-        "import": "./dist/workspace/projects/onboarding/app-logo.js"
-      },
-      "./workspace/projects/onboarding/connect-app": {
-        "types": "./dist/workspace/projects/onboarding/connect-app.d.ts",
-        "import": "./dist/workspace/projects/onboarding/connect-app.js"
-      },
       "./workspace/projects/policies-panel": {
         "types": "./dist/workspace/projects/policies-panel.d.ts",
         "import": "./dist/workspace/projects/policies-panel.js"
@@ -2591,10 +2626,6 @@
         "types": "./dist/workspace/review/types.d.ts",
         "import": "./dist/workspace/review/types.js"
       },
-      "./workspace/sidebar/customize-sidebar-modal": {
-        "types": "./dist/workspace/sidebar/customize-sidebar-modal.d.ts",
-        "import": "./dist/workspace/sidebar/customize-sidebar-modal.js"
-      },
       "./workspace/sidebar/footer/project-apps-nav": {
         "types": "./dist/workspace/sidebar/footer/project-apps-nav.d.ts",
         "import": "./dist/workspace/sidebar/footer/project-apps-nav.js"
@@ -2607,9 +2638,9 @@
         "types": "./dist/workspace/sidebar/footer/project-computer-nav.d.ts",
         "import": "./dist/workspace/sidebar/footer/project-computer-nav.js"
       },
-      "./workspace/sidebar/footer/project-manifest-upgrade-alert": {
-        "types": "./dist/workspace/sidebar/footer/project-manifest-upgrade-alert.d.ts",
-        "import": "./dist/workspace/sidebar/footer/project-manifest-upgrade-alert.js"
+      "./workspace/sidebar/footer/project-manifest-issues-alert": {
+        "types": "./dist/workspace/sidebar/footer/project-manifest-issues-alert.d.ts",
+        "import": "./dist/workspace/sidebar/footer/project-manifest-issues-alert.js"
       },
       "./workspace/sidebar/footer/project-mcp-nav": {
         "types": "./dist/workspace/sidebar/footer/project-mcp-nav.d.ts",
@@ -2658,6 +2689,10 @@
       "./workspace/sidebar/workspace-menu-section": {
         "types": "./dist/workspace/sidebar/workspace-menu-section.d.ts",
         "import": "./dist/workspace/sidebar/workspace-menu-section.js"
+      },
+      "./workspace/space/space-page": {
+        "types": "./dist/workspace/space/space-page.d.ts",
+        "import": "./dist/workspace/space/space-page.js"
       }
     },
     "files": [
@@ -2730,12 +2765,15 @@
     "@tiptap/extension-document": "3.30.5",
     "@tiptap/extension-floating-menu": "3.30.5",
     "@tiptap/extension-hard-break": "3.30.5",
+    "@tiptap/extension-list": "3.30.5",
     "@tiptap/extension-paragraph": "3.30.5",
     "@tiptap/extension-placeholder": "3.30.5",
+    "@tiptap/extension-table": "3.30.5",
     "@tiptap/extension-text": "3.30.5",
     "@tiptap/extensions": "3.30.5",
     "@tiptap/pm": "3.30.5",
     "@tiptap/react": "3.30.5",
+    "@tiptap/starter-kit": "3.30.5",
     "@tiptap/suggestion": "3.30.5",
     "@uiw/codemirror-extensions-langs": "^4.23.10",
     "@uiw/codemirror-themes": "4.23.10",
@@ -2752,7 +2790,7 @@
     "date-fns": "^3.6.0",
     "diff": "^8.0.3",
     "frimousse": "^0.3.0",
-    "heic2any": "0.0.4",
+    "heic-to": "1.6.7",
     "i18next": "^26.3.6",
     "jszip": "^3.10.1",
     "katex": "^0.18.7",
@@ -2784,7 +2822,14 @@
     "uqr": "0.1.3",
     "use-intl": "^4.13.4",
     "vaul": "^1.1.2",
-    "zustand": "^5.0.3"
+    "zustand": "^5.0.3",
+    "@tiptap/extension-code": "3.30.5",
+    "@tiptap/extension-code-block": "3.30.5",
+    "@tiptap/extension-image": "3.30.5",
+    "marked": "^16.4.2",
+    "turndown": "^7.2.1",
+    "turndown-plugin-gfm": "^1.0.2",
+    "yaml": "^2.8.2"
   },
   "peerDependencies": {
     "@kortix/sdk": "workspace:^",
@@ -2829,7 +2874,7 @@
     "@types/react-test-renderer": "^19.3.0",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "eslint": "^9.39.4",
-    "happy-dom": "^20.14.5",
+    "happy-dom": "^21.0.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-test-renderer": "^19.3.0",
@@ -2839,6 +2884,7 @@
     "tsc-alias": "^1.8.17",
     "tsup": "^8.5.1",
     "tw-animate-css": "^1.2.4",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "@types/turndown": "^5.0.5"
   }
 }

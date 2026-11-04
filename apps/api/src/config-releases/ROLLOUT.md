@@ -4,18 +4,15 @@ Config releases make a session run the base branch's **current, built**
 config, from a read-only release directory — never the session's own
 `/workspace` checkout. A release is a checkout of the base branch: the
 commit's whole tree, with the same files and folders `/workspace` holds
-(`release-tree.ts`). A `kortix_version: 3` session reads only the paths its compiled
-set names (prompt files, registered skill folders, project tool modules,
-extension modules) inside the release. A v1/v2 session reads its harness dirs
-inside it exactly as it reads them in `/workspace` (`harnesses/opencode`,
-`skills/`, `harnesses/pi`). The one change from the commit is per-agent plugin
-selection: an agent variant drops the plugin entry files its manifest does not
-select.
-Both session runtimes apply them: OpenCode swaps in a proven replacement
-process, pi reloads the release in place. Full contract:
+(`release-tree.ts`). A session reads only the paths its compiled set names
+(prompt files, registered skill folders, project tool modules, extension
+modules) inside the release; no session reads a harness config folder. The
+release leaves out files `.gitattributes` marks `export-ignore` and a leftover
+OpenCode config file (`harnesses/opencode/opencode.json[c]`,
+`.kortix/opencode/opencode.json[c]`).
+pi reloads the release in place (OpenCode is deleted from the daemon). Full contract:
 `apps/api/src/config-releases/`,
 `apps/kortix-sandbox-agent-server/src/services/config-provider/`,
-`apps/kortix-sandbox-agent-server/src/harness/open-code/config-release.ts`,
 `apps/kortix-sandbox-agent-server/src/harness/pi/config-release.ts`.
 
 ## Status: graduated, no lever
@@ -120,7 +117,7 @@ unbootable.
 **API side — which release a project's sessions get:**
 1. The base branch's current tip (the normal case, always).
 2. If the tip's release **cannot be built** (the archive is over the limit, a
-   plugin an agent selects is missing, a git error), or it fails in ≥
+   git error), or it fails in ≥
    `PROJECT_QUARANTINE_SESSIONS` (2) **distinct** sessions
    (`kortix.config_release_failures`), the project assigns the newest release
    of the same variant any session has **proven**
@@ -134,8 +131,8 @@ unbootable.
    release: each box keeps what it runs, and `fallback_reason` says why.
 
 **The meta coordinator is the exception.** A session whose agent is `meta`
-(`meta_agent` flag) is never assigned the project's release. It gets the `meta`
-variant: the platform's own governance (`buildPlatformMetaOpenCodeConfig`) on
+(My Kortix, on when kortix.yaml sets `builtin_agents.my_kortix: true`) is never assigned the project's release. It gets the `meta`
+variant: the platform's own governance (`buildMyKortixConfig`) on
 the image default config dir, with no archive. Its release ID does not change
 when the base branch moves. Its box holds no project checkout and the meta
 image has no `bun`, so a config dir whose tools import a dependency can never
@@ -187,7 +184,7 @@ request. The store is a cache; the Git mirror is always the source of truth.
 - A path the repository's `.gitattributes` marks `export-ignore` (the file or
   one of its directories) is left out of the release tree, as `git archive`
   would leave it out (`exportIgnoredPaths` in `release-tree.ts`, KRTX-1728).
-  The OpenCode config dir and the manifest always ship whole: the archive's
+  The manifest always ships whole: the archive's
   own `info/attributes` neutralises both attributes, so blob verification on
   the box matches. A pruned tree is composed, so its archive URL carries the
   commit. `kortix validate` and
@@ -199,14 +196,6 @@ request. The store is a cache; the Git mirror is always the source of truth.
   behind converges first.
 - A tool that imports another file of the repository by a relative path
   (`../../../shared/x`) resolves inside the release exactly as in `/workspace`.
-- OpenCode resolves a relative `instructions` entry against the session
-  directory (`/workspace`), not its config dir. While OpenCode serves a release,
-  the platform plugin `kortix-release-instructions.js`
-  (`harness/open-code/release-instructions.ts`) rewrites each relative entry to
-  the release root, so `"rules/RULES.md"` reads the base branch's file. URLs,
-  `~/`, absolute paths and globs in a directory part keep OpenCode's own
-  resolution. The project's `AGENTS.md` is OpenCode's own lookup from
-  `/workspace` and is not rewritten.
 - The descriptor format is `config-release-v3` for a daemon that sends
   `{"accept":["config-release-v3"]}`, else `config-release-v2`. A daemon built
   for v1 (the composed layout) refuses both and keeps its running config until

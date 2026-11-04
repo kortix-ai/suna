@@ -2219,11 +2219,11 @@ flow(
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    // managedGit: the local bare repo carries a kortix.yaml with one agent, `kortix`.
+    // managedGit: the local bare repo declares the `worker` agent.
     const project = await team.project({ managedGit: true });
     const member = await team.addMember('member');
     const outsider = await team.addMember('member');
-    const AGENT = 'kortix';
+    const AGENT = 'worker';
     const accountParams = { accountId: team.id };
     const everyone = {
       principal_type: 'project',
@@ -2252,7 +2252,7 @@ flow(
       const agents = await visibleAgents(ctx.P.OWNER);
       assert({
         kind: 'body',
-        description: 'owner sees the kortix agent',
+        description: 'owner sees the declared worker agent',
         pass: agents.includes(AGENT),
         expected: AGENT,
         actual: agents,

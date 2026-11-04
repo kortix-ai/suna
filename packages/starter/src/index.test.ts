@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { validateManifest } from '@kortix/manifest-schema';
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
   KORTIX_MANAGED_SKILL_NAMES,
@@ -18,7 +19,7 @@ function byPath(files: StarterFile[]): Map<string, string> {
 }
 
 describe('STARTER_TEMPLATE_IDS', () => {
-  test('contains the two OpenCode templates', () => {
+  test('contains the two starter templates', () => {
     expect([...STARTER_TEMPLATE_IDS]).toEqual([
       'minimal',
       'general-knowledge-worker',
@@ -167,24 +168,11 @@ describe('getStarterFiles', () => {
 
   test('every starter agent declares its project repository explicitly', () => {
     const manifest = byPath(getStarterFiles({ projectName: 'X' })).get('kortix.yaml') ?? '';
-    const agents = manifest.slice(manifest.indexOf('\nagents:\n'), manifest.indexOf('\ntriggers:\n'));
+    const agents = manifest.slice(manifest.indexOf('\nagents:\n'));
     const names = [...agents.matchAll(/^  ([a-z][a-z0-9-]*):$/gm)].map((m) => m[1]);
-    expect(names).toEqual(['kortix', 'harness-reflector', 'session-reviewer']);
-    // One explicit, uncommented line per agent: v3 defaults it to false.
+    expect(names).toEqual(['worker']);
+    // One explicit, uncommented line per agent: the format defaults it to false.
     expect(agents.match(/^    workspace: \{ project_repository: true \}/gm)?.length).toBe(names.length);
-  });
-
-  test('ships scheduled starter automation disabled by default', () => {
-    const manifest = byPath(getStarterFiles({ projectName: 'X', template: 'minimal' })).get(
-      'kortix.yaml',
-    );
-    expect(manifest).toBeDefined();
-    if (!manifest) throw new Error('minimal starter is missing kortix.yaml');
-    const lines = manifest.split('\n');
-    const start = lines.findIndex((line) => line.trim() === '- slug: harness-reflector');
-    expect(start).toBeGreaterThanOrEqual(0);
-    const enabled = lines.slice(start + 1).find((line) => line.trim().startsWith('enabled:'));
-    expect(enabled?.trim()).toBe('enabled: false');
   });
 
   test('default starter ships the general knowledge worker skills; internal minimal does not', () => {
@@ -194,6 +182,10 @@ describe('getStarterFiles', () => {
       true,
     );
     expect(dflt.some((f) => f.path === 'skills/pdf/SKILL.md')).toBe(true);
+    // Shipped folders are registered too: an unregistered skill is invisible to every agent.
+    const manifest = dflt.find((f) => f.path === 'kortix.yaml')?.content ?? '';
+    expect(manifest).toContain('  pdf: skills/pdf');
+    expect(manifest).toContain('  presentations: skills/presentations');
 
     // `minimal` stays base-only (used internally by the project-clone seed path).
     const minimal = getStarterFiles({ projectName: 'X', template: 'minimal' });
@@ -263,20 +255,17 @@ describe('getStarterFiles', () => {
     ].sort());
   });
 
-  test('minimal starter includes the runtime plugin but no tool copies or optional marketplace skills', () => {
+  test('minimal starter ships no harness folder, no tool copies and no optional marketplace skills', () => {
     const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
     const paths = new Set(files.map((f) => f.path));
 
-    // The Kortix tools (show, memory, web_search, …) are hosted by the runtime on every harness.
-    expect([...paths].filter((path) => path.startsWith('harnesses/opencode/tools/'))).toEqual([]);
+    // The Kortix tools (show, memory, web_search, …) are hosted by the runtime.
+    expect([...paths].filter((path) => path.startsWith('tools/') || path.startsWith('harnesses/'))).toEqual([]);
     // `kortix-cli` is the sole managed skill left in the scaffold; the rest of the
     // `kortix-*` family lives in `templates/managed/` and is injected at boot.
     expect(paths.has('skills/kortix-cli/SKILL.md')).toBe(true);
     expect(paths.has('skills/kortix-system/SKILL.md')).toBe(false);
     expect(paths.has('skills/agent-browser/SKILL.md')).toBe(false);
-    expect(paths.has('harnesses/opencode/plugins/pty.ts')).toBe(true);
-    expect(paths.has('harnesses/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts')).toBe(true);
-    expect(paths.has('harnesses/opencode/plugins/lib/tool.ts')).toBe(true);
   });
 
   test('marketplace source contains optional first-party skills only', () => {
@@ -302,8 +291,12 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
     expect([...KORTIX_MANAGED_SKILL_NAMES]).toEqual([
       'kortix-cli',
       'kortix-apps',
+      'kortix-artifacts',
+      'kortix-channel-memory',
+      'kortix-chrome',
       'kortix-computer',
       'kortix-connectors',
+      'kortix-design',
       'kortix-drives',
       'kortix-genui',
       'kortix-goals',
@@ -354,6 +347,14 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
 
     const missing = KORTIX_MANAGED_SKILL_NAMES.filter((n) => !injected.has(n));
     expect(missing).toEqual([]);
+  });
+
+  // KRTX-3640: the manifest schema kept its own copy of this list and missed
+  // `kortix-chrome`, so an agent that granted it by name failed validation.
+  test('an agent may grant every managed skill by name', () => {
+    const manifest = `agents:\n  a:\n    prompt: x\n    tools: all\n    skills: [${KORTIX_MANAGED_SKILL_NAMES.join(', ')}]\n`;
+    const errors = validateManifest(manifest).issues.filter((i) => i.severity === 'error');
+    expect(errors).toEqual([]);
   });
 
   /**

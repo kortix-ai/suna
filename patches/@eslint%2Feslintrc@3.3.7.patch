@@ -1,0 +1,13 @@
+--- a/lib/config-array/override-tester.js
++++ b/lib/config-array/override-tester.js
+@@ -20,9 +20,7 @@
+ import assert from "node:assert";
+ import path from "node:path";
+ import util from "node:util";
+-import minimatch from "minimatch";
+-
+-const { Minimatch } = minimatch;
++import { Minimatch } from "minimatch";
+ 
+ const minimatchOpts = { dot: true, matchBase: true };
+ 

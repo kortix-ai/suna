@@ -87,7 +87,7 @@ const fakes: Record<string, Record<string, unknown>> = {
   '@/components/navigation/FloatingTabBar': {
     FloatingTabCapsule: (props: any) => {
       tabSelect = props.onSelect;
-      return React.createElement('FloatingTabCapsule', null);
+      return React.createElement('FloatingTabCapsule', { items: props.items });
     },
   },
   '@/components/navigation/tab-bar-layout': { FLOATING_BAR_HEIGHT: 49 },
@@ -244,6 +244,16 @@ describe('ProjectSwitcherSheet', () => {
     act(() => searchInput!('zzz'));
     expect(rows()).toEqual([]);
     expect(texts().some((t: unknown) => String(t).includes('No matches for'))).toBe(true);
+  });
+
+  test('the switcher labels its tabs Accounts and Projects without changing their keys', async () => {
+    projectsData = [];
+    await openAs({ accounts: [ACCOUNT], selectedAccountId: 'acc-1' });
+    const capsule = tree.root.findByType('FloatingTabCapsule');
+    expect(capsule.props.items.map(({ key, label }: { key: string; label: string }) => ({ key, label }))).toEqual([
+      { key: 'account', label: 'Accounts' },
+      { key: 'projects', label: 'Projects' },
+    ]);
   });
 
   test('the account tab lists the other accounts plus New account', async () => {

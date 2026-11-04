@@ -5,7 +5,7 @@
  * S3 route (acquire.ts) both finish here, so `/workspace` looks the same
  * whichever route delivered it.
  */
-import { mkdir, readdir, rename, rm } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, readdir, rename, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 
 import type { Config } from '@/lib/config/config'
@@ -233,9 +233,10 @@ export async function checkoutLocalSessionBranch(target: string, branch: string)
   logger.info('[git] created local session branch from baked checkout', { branch })
 }
 
+/** Never `lost+found`: a volume's ext4 root has one only root can list or remove (EACCES as the runtime user). */
 export async function clearDirContents(dir: string, keep?: string): Promise<void> {
   for (const entry of await readdir(dir)) {
-    if (entry === keep) continue
+    if (entry === keep || entry === 'lost+found') continue
     await rm(join(dir, entry), { recursive: true, force: true })
   }
 }
@@ -340,11 +341,19 @@ export async function adoptOrClearBakedCheckout(cfg: Config): Promise<boolean> {
   const base = cfg.defaultBranch
   await mkdir(target, { recursive: true })
 
-  if (!(await pathExists(`${target}/.git`))) return false
+  if (!(await pathExists(`${target}/.git`))) {
+    // A volume holds only `lost+found` (ext4) and our own `.kortix-*` stages
+    // before its first acquisition. Anything else is the session's files.
+    if (cfg.workspaceVolume) {
+      const files = (await readdir(target)).filter((e) => e !== 'lost+found' && !e.startsWith('.kortix-'))
+      if (files.length) refuseVolumeClear(target, `it holds ${files.length} entries and no .git`)
+    }
+    return false
+  }
   {
     await configureSafeDirectory(target)
-    // The warm seed bakes the canonical SCAFFOLD at /workspace so opencode is
-    // already project-initialized in the snapshot. A fork may reuse it ONLY when
+    // A checkout already at /workspace may be a baked canonical SCAFFOLD (an
+    // image or snapshot that carries one). A box may reuse it ONLY when
     // the baked content IS this session's base — i.e. a fresh scaffold-rooted
     // project (baked HEAD == the server-resolved KORTIX_BASE_SHA). When it isn't
     // (an imported repo / diverged project), the baked scaffold is the WRONG
@@ -378,7 +387,38 @@ export async function adoptOrClearBakedCheckout(cfg: Config): Promise<boolean> {
       baseSha: cfg.baseSha,
       reason: restoreNeeded ? 'restore-session-branch' : 'base-mismatch',
     })
+    if (cfg.workspaceVolume) {
+      refuseVolumeClear(target, restoreNeeded ? 'the adoption marker does not match the session branch' : `HEAD ${bakedHead} is not KORTIX_BASE_SHA`)
+    }
     await clearDirContents(target)
     return false
+  }
+}
+
+/** On a workspace volume the checkout is the only copy of the session's files: fail the boot, never clear it. */
+function refuseVolumeClear(target: string, why: string): never {
+  logger.error('[git] refusing to clear the workspace volume', { event: 'workspace_volume_clear_refused', target, why })
+  throw new Error(`refusing to clear ${target}: it is a volume and ${why}. The session files stay; this box does not boot.`)
+}
+
+/**
+ * Hide what a volume puts in the checkout the way the CLI hides its own files
+ * (`.git/info/exclude`: never committed). Never throws.
+ * - pnpm puts its store at the root of the project's filesystem when $HOME is
+ *   on another one: `/workspace/.pnpm-store`, where `git add -A` would commit it.
+ * - The ext4 root's `lost+found`, when the entrypoint could not remove it: every
+ *   `git status` would warn that it cannot open it.
+ */
+export async function excludeVolumeEntries(target: string): Promise<void> {
+  const exclude = join(target, '.git', 'info', 'exclude')
+  try {
+    const existing = await readFile(exclude, 'utf8').catch(() => '')
+    const lines = existing.split(/\r?\n/)
+    const missing = ['/.pnpm-store/', '/lost+found/'].filter((e) => !lines.includes(e))
+    if (!missing.length) return
+    await mkdir(join(target, '.git', 'info'), { recursive: true })
+    await appendFile(exclude, `${existing && !existing.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`)
+  } catch (err) {
+    logger.warn('[git] could not hide volume entries from git', { error: (err as Error).message })
   }
 }

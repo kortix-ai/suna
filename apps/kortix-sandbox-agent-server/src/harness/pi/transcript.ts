@@ -89,7 +89,7 @@ export class TranscriptStore {
     return { info: m.info, parts: m.order.map((pid) => m.parts.get(pid)!).filter(Boolean) }
   }
 
-  /** Oldest-first page ending at `before` (exclusive), like OpenCode's list. */
+  /** Oldest-first page ending at `before` (exclusive): the transcript page cursor contract. */
   page(opts: { limit: number; before: string | null }): { messages: KortixMessage[]; hasMore: boolean } {
     const eligible = opts.before ? this.order.filter((id) => id < (opts.before as string)) : this.order
     const window = eligible.slice(-opts.limit)

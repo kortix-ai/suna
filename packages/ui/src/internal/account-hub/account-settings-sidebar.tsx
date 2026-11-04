@@ -79,7 +79,7 @@ const ROW_CLASS =
 // stay put. Same two targets the user menu's Help group lists first.
 const FOOTER_LINKS: ReadonlyArray<{ label: string; href: string; icon: Icon }> = [
   { label: 'Docs', href: '/docs', icon: BookOpenIcon },
-  { label: 'Support', href: '/support', icon: QuestionIcon },
+  { label: 'Support', href: '/contact', icon: QuestionIcon },
 ];
 
 interface NavEntry {

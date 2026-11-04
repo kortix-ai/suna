@@ -22,7 +22,6 @@
  */
 
 import {
-  getConnectStatus,
   getModelDefaults,
   getProject,
   getProjectDetail,
@@ -64,13 +63,12 @@ export interface CustomizePrefetchGates {
 
 type CatalogQueries = Pick<
   typeof import('../connectors/catalog/use-catalog'),
-  'catalogSectionsQuery' | 'connectStatusQuery'
+  'catalogSectionsQuery'
 >;
 
 /** The reads the prefetch issues. Injected in tests; the SDK in production. */
 export interface CustomizePrefetchApi {
   getProject: typeof getProject;
-  getConnectStatus: typeof getConnectStatus;
   getModelDefaults: typeof getModelDefaults;
   getProjectModelPicker: typeof getProjectModelPicker;
   listConnectors: typeof listConnectors;
@@ -87,7 +85,6 @@ export interface CustomizePrefetchApi {
 
 const sdkApi: CustomizePrefetchApi = {
   getProject,
-  getConnectStatus,
   getModelDefaults,
   getProjectModelPicker,
   listConnectors,
@@ -220,7 +217,10 @@ export async function prefetchCustomize(
   await Promise.all(work);
 }
 
-/** Connectors → Discover landing: the provider probe, then its sections. */
+/**
+ * Connectors → the catalogue's landing sections, as the page opens it: One-click
+ * only on, no type filter (`ConnectorsPage`). Same key as `useCatalog`.
+ */
 async function prefetchCatalogLanding(
   queryClient: QueryClient,
   projectId: string,
@@ -228,28 +228,10 @@ async function prefetchCatalogLanding(
 ): Promise<void> {
   const catalog = await api.loadCatalogQueries().catch(() => null);
   if (!catalog) return;
-  const { catalogSectionsQuery, connectStatusQuery } = catalog;
-  const gc = { gcTime: CUSTOMIZE_PREFETCH_GC_MS };
-  // The landing source stays managed, including projects opted into direct discovery.
-  // Same key and freshness as `useConnectProviderStatus`.
-  const status = await queryClient
-    .fetchQuery({
-      queryKey: connectStatusQuery.queryKey,
-      queryFn: api.getConnectStatus,
-      staleTime: 30_000,
-      retry: false,
-    })
-    .catch(() => null);
-  if (!status?.configured) return;
-  const providers = status.providers ?? (status.provider ? [status.provider] : []);
-  // Same provider choice as `useConnectProviderStatus`: Composio first.
-  const provider = providers.includes('composio')
-    ? 'composio'
-    : providers.includes('pipedream')
-      ? 'pipedream'
-      : null;
-  if (!provider) return;
-  await queryClient.prefetchQuery({ ...catalogSectionsQuery(projectId, provider), ...gc });
+  await queryClient.prefetchQuery({
+    ...catalog.catalogSectionsQuery(projectId, true),
+    gcTime: CUSTOMIZE_PREFETCH_GC_MS,
+  });
 }
 
 function whenIdle(run: () => void): () => void {

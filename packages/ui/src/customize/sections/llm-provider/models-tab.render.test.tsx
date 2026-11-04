@@ -21,6 +21,11 @@ const models = [
   contextWindow: 128000, capabilities: { vision: true, toolcall: true },
   cost: { input: 3, output: 9 },
 })) as FlatModel[];
+// A Claude subscription model the member has no usable Claude account for.
+models.push({
+  providerID: 'claude-agent', providerName: 'Claude subscription', modelID: 'sonnet', modelName: 'Claude Sonnet 5.5',
+  enabled: true, available: false, contextWindow: 1000000, capabilities: { vision: true, toolcall: true },
+} as FlatModel);
 mock.module('@kortix/sdk/react', () => ({
   useProjectModels: () => models,
   useProjectModelPickerCatalog: () => ({ platformFeePercent: 5 }),
@@ -148,4 +153,10 @@ test('owned search survives no-match and clear; Start over shares its row and re
     expect(input.props.value).toBe('');
     expect(root.findAll((node) => node.type === 'div' && node.props['data-model-id'])).toHaveLength(4);
   } finally { await act(async () => renderer.unmount()); }
+});
+
+test('a Claude subscription model without a usable Claude account is not listed', async () => {
+  const root = (await mount()).root;
+  expect(root.findAll((node) => node.type === 'div' && node.props['data-model-id'] === 'sonnet')).toHaveLength(0);
+  expect(text(root)).not.toContain('Claude Sonnet 5.5');
 });

@@ -22,17 +22,32 @@ import type { ProjectTrigger } from '@kortix/sdk';
 
 import { describeEventTitle } from './event-trigger-copy';
 
-export type TriggerKind = 'cron' | 'webhook' | 'event';
+export type TriggerKind = 'cron' | 'webhook' | 'event' | 'app' | 'change_request';
 
 /**
- * `ProjectTrigger['type']` on the wire also carries `'monitor'` — a separate
- * experimental feature (Monitors) with its own surface, not something this
- * screen edits. `ScheduleView` filters every list through this before it
- * reaches the table, the row actions, or the detail sheet, so `trigger.type`
- * is safe to treat as {@link TriggerKind} anywhere downstream of that filter.
+ * The trigger kinds this screen lists. `ScheduleView` filters every list
+ * through this before it reaches the table, the row actions, or the detail
+ * sheet, so `trigger.type` is safe to treat as {@link TriggerKind} anywhere
+ * downstream of that filter. `app` (an event that one of the project's Apps
+ * sends) and `change_request` (a merged change request) are listed, created
+ * and edited here, like the other kinds.
  */
 export function isTriggerKind(type: ProjectTrigger['type']): type is TriggerKind {
-  return type === 'cron' || type === 'webhook' || type === 'event';
+  return type === 'cron' || type === 'webhook' || type === 'event' || type === 'app' || type === 'change_request';
+}
+
+/**
+ * The kinds the composer offers, in its order. Every kind always shows: one
+ * the project cannot use yet (`event` with the flag `event_triggers` off,
+ * `app` with no App that sends events) says why in its panel.
+ */
+export const COMPOSER_KINDS: readonly TriggerKind[] = ['cron', 'app', 'event', 'webhook', 'change_request'];
+
+/** `every_seconds` as a sentence: "Every 5 minutes", "Every 2 hours". */
+export function describeEvery(seconds: number): string {
+  if (seconds % 3600 === 0) return seconds === 3600 ? 'Every hour' : `Every ${seconds / 3600} hours`;
+  if (seconds % 60 === 0) return seconds === 60 ? 'Every minute' : `Every ${seconds / 60} minutes`;
+  return `Every ${seconds} seconds`;
 }
 
 /**
@@ -176,8 +191,17 @@ export function describeWhen(
   eventNames?: ReadonlyMap<string, string>,
 ): string {
   if (trigger.type === 'webhook') return 'When a request arrives';
+  if (trigger.type === 'change_request') {
+    const base = trigger.filter?.base;
+    return typeof base === 'string' ? `When a change request merges into ${base}` : 'When a change request merges';
+  }
   if (trigger.type === 'event') return describeEventTitle(trigger.event, eventNames);
+  if (trigger.type === 'app') {
+    const name = trigger.filter?.['event.name'];
+    return name ? `When ${trigger.app} emits ${name}` : `When ${trigger.app} emits an event`;
+  }
   if (trigger.run_at) return describeOneOff(trigger.run_at);
+  if (trigger.every_seconds) return describeEvery(trigger.every_seconds);
   if (trigger.cron) return describeCadence(trigger.cron);
   return CUSTOM_TIMING_LABEL;
 }
@@ -198,12 +222,14 @@ export function describeNextRun(trigger: ProjectTrigger): string | null {
 
 /* ─── Names ─────────────────────────────────────────────────────────────── */
 
-/** Never blank: falls back to what the automation does, then to its kind. */
+/** Never blank: falls back to what the trigger does, then to its kind. */
 export function triggerName(trigger: ProjectTrigger): string {
   const named = trigger.name?.trim();
   if (named) return named;
   if (trigger.type === 'cron') return describeWhen(trigger);
   if (trigger.type === 'event') return describeWhen(trigger);
+  if (trigger.type === 'app') return describeWhen(trigger);
+  if (trigger.type === 'change_request') return describeWhen(trigger);
   return 'Untitled webhook';
 }
 
@@ -299,6 +325,8 @@ export const SESSION_MODE_HELP: Record<SessionMode, string> = {
 
 /** One-line summary for read-only views and the list. */
 export function describeRunLocation(trigger: ProjectTrigger): string {
+  // A trigger that calls an App starts no session.
+  if (trigger.target?.app) return `Calls ${trigger.target.app}${trigger.target.path ?? '/'}`;
   const base = SESSION_MODE_LABEL[trigger.session_mode];
   if (trigger.session_mode === 'pinned' && trigger.session_id) {
     return `${base} (${trigger.session_id.slice(0, 8)})`;
@@ -396,14 +424,34 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
     column: 'Security',
   },
   event: {
-    title: 'App events',
+    title: 'Connector events',
     description: 'Have an agent run when something happens in a connected app.',
-    noun: 'app event',
-    createLabel: 'New app event',
-    searchPlaceholder: 'Search app events',
-    emptyTitle: 'No app events yet',
+    noun: 'connector event',
+    createLabel: 'New connector event',
+    searchPlaceholder: 'Search connector events',
+    emptyTitle: 'No connector events yet',
     emptyBody: 'Create one to have an agent run when a connected app reports something new.',
     column: 'Status',
+  },
+  app: {
+    title: 'App events',
+    description: 'Have an agent run when one of your Kortix Apps emits an event.',
+    noun: 'App event',
+    createLabel: 'New App event',
+    searchPlaceholder: 'Search App events',
+    emptyTitle: 'No App events yet',
+    emptyBody: 'Create one to have an agent run when one of your Apps sends an event.',
+    column: 'Status',
+  },
+  change_request: {
+    title: 'Change request merged',
+    description: 'Have an agent run when a change request merges.',
+    noun: 'change request trigger',
+    createLabel: 'New change request trigger',
+    searchPlaceholder: 'Search change request triggers',
+    emptyTitle: 'No change request triggers yet',
+    emptyBody: 'Create one to have an agent run when a change request merges.',
+    column: 'Branch',
   },
 };
 
@@ -415,7 +463,7 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
  */
 export const TRIGGERS_COPY = {
   title: 'Triggers',
-  description: 'Run agents on a schedule, an app event, or a webhook.',
+  description: 'Start agents or wake sessions on a schedule or an event.',
   noun: 'trigger',
   createLabel: 'New trigger',
   searchPlaceholder: 'Search triggers',

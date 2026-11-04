@@ -1,5 +1,7 @@
 'use client';
 
+import type { ReactNode } from 'react';
+import { Hint } from './hint';
 import { emojiTint } from './emoji-tint';
 import { glyphFace } from './glyph-face';
 import { glyphForeground, glyphTint } from './glyph-tint';
@@ -83,9 +85,12 @@ export interface EntityAvatarProps {
   icon?: Icon | IconType;
   size?: EntityAvatarSize;
   className?: string;
+  /** Shows on hover, through `Hint`: who or what this avatar stands for. */
+  hint?: ReactNode;
 }
 
 export function EntityAvatar({
+  hint,
   label,
   glyph,
   emoji,
@@ -98,7 +103,7 @@ export function EntityAvatar({
   const chalk = chalkColors(`${label?.trim()}` || initial);
   const resolvedGlyph = resolveGlyph(glyph);
 
-  return (
+  const tile = (
     <span
       data-slot="entity-avatar"
       // chalkColors() is an inline style, so it beats any class a caller
@@ -170,5 +175,12 @@ export function EntityAvatar({
         initial
       )}
     </span>
+  );
+  return hint ? (
+    <Hint side="top" sideOffset={6} alignOffset={0} label={hint}>
+      {tile}
+    </Hint>
+  ) : (
+    tile
   );
 }

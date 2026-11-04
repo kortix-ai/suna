@@ -25,7 +25,6 @@ export interface TriggerSchedulerHealth {
     skipped: number;
   } | null;
   lastError: string | null;
-  catalogPendingProjects: number | null;
   lastCatalogSweepCompletedAt: string | null;
   lastCatalogSweepResult: {
     scanned: number;
@@ -35,8 +34,6 @@ export interface TriggerSchedulerHealth {
   lastCatalogSweepError: string | null;
   catalogCursor: string | null;
   discoveryCursor: string | null;
-  catalogCycleCompletedAt: string | null;
-  discoveryCycleCompletedAt: string | null;
   lastClaimLagMs: number | null;
   maxObservedClaimLagMs: number | null;
   lastExecutionDrainStartedAt: string | null;
@@ -55,14 +52,11 @@ export const schedulerHealth: TriggerSchedulerHealth = {
   lastSweepDurationMs: null,
   lastResult: null,
   lastError: null,
-  catalogPendingProjects: null,
   lastCatalogSweepCompletedAt: null,
   lastCatalogSweepResult: null,
   lastCatalogSweepError: null,
   catalogCursor: null,
   discoveryCursor: null,
-  catalogCycleCompletedAt: null,
-  discoveryCycleCompletedAt: null,
   lastClaimLagMs: null,
   maxObservedClaimLagMs: null,
   lastExecutionDrainStartedAt: null,
@@ -70,18 +64,6 @@ export const schedulerHealth: TriggerSchedulerHealth = {
   lastExecutionResult: null,
   lastExecutionError: null,
 };
-export function initialCatalogBackfillIncomplete(
-  health: Pick<
-    TriggerSchedulerHealth,
-    'catalogCycleCompletedAt' | 'discoveryCycleCompletedAt' | 'catalogPendingProjects'
-  >,
-): boolean {
-  return (
-    health.catalogCycleCompletedAt === null ||
-    health.discoveryCycleCompletedAt === null ||
-    (health.catalogPendingProjects ?? 1) > 0
-  );
-}
 
 // ─── Reliability: timeouts + stall detection ─────────────────────────────────
 // The 2026-06-21 fleet-wide cron outage: one trigger fire (continueSession
@@ -212,7 +194,7 @@ export const PROJECT_TRIGGERS_PAUSED_REASON = 'project triggers are paused';
 
 /**
  * Why no automatic fire of this project may run now: its own pause, then its
- * account's Pause all automations (KRTX-1721, `accounts/automation-pause.ts`).
+ * account's Pause all triggers (KRTX-1721, `accounts/automation-pause.ts`).
  * Null while they run. A manual fire never asks.
  */
 export async function automaticFirePauseReason(project: { accountId: string; metadata: unknown }): Promise<string | null> {

@@ -293,7 +293,7 @@ export function OAuthAppsCard({ accountId, canManage }: OAuthAppsCardProps) {
             <code className="text-foreground font-mono">createKortixAuth</code>{' '}
             {tI18nComplete.raw('text75857a458999')}{' '}
             <code className="text-foreground font-mono">@kortix/sdk/server</code>.{' '}
-            <Link href="/docs/sdk/auth#sign-in-with-kortix" className="text-foreground underline underline-offset-2">
+            <Link href="/docs/developers#sign-in-with-kortix" className="text-foreground underline underline-offset-2">
               {tI18nComplete.raw('text83b3b277abbf')}
             </Link>
             .

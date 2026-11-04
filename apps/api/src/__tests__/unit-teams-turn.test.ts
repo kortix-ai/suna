@@ -36,6 +36,8 @@ mock.module('../config', () => ({ config: { FRONTEND_URL: 'https://app', MICROSO
 mock.module('../channels/slack/util', () => ({ sessionWebUrl: () => 'https://app/session' }));
 let knownServiceUrl: string | null = 'https://smba/';
 mock.module('../channels/install-store', () => ({
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   saveTeamsServiceUrl: async () => {},
   loadTeamsTenantForProject: async () => 'tenant-1',
   loadTeamsServiceUrlForProject: async () => knownServiceUrl,

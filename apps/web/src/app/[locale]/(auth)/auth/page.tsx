@@ -35,6 +35,7 @@ import { Input } from '@kortix/ui/input';
 import Loading from '@kortix/ui/loading';
 import { errorToast } from '@kortix/ui/toast';
 import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
+import { useBrandName } from '@kortix/ui/internal/branding/branding-provider';
 import { FieldError, FieldLabel, InfoStrip, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
@@ -304,6 +305,7 @@ function AuthCardForm({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('auth.unified');
+  const brandName = useBrandName();
   const prefersReducedMotion = useReducedMotion();
   const enabledMethods = useMemo(() => parseAuthMethods(getEnv().AUTH_METHODS), []);
   const magicLinkEnabled = enabledMethods.includes('magic');
@@ -1174,7 +1176,7 @@ function AuthCardForm({
   return (
     <>
       <m.div {...rise(0)}>
-        <StepHeader title={t('welcome')} tagline={t('tagline')} />
+        <StepHeader title={t('welcome', { name: brandName })} />
       </m.div>
 
       <m.div {...rise(0.06)}>
@@ -1449,7 +1451,7 @@ function AuthContent() {
   // visual change at all.
   //
   // It used to render `<AuthFrame footerVariant="default">` with the entry
-  // step's own "Welcome to Kortix" / "Your AI Command Center" header. That is
+  // step's own "Welcome to Kortix CompanyOS" / "Your AI Command Center" header. That is
   // the headline a signed-OUT visitor is greeted with, so replaying it the
   // instant a password is accepted read as the form bouncing backwards — and
   // the legal footer it pinned then vanished one navigation later. Three

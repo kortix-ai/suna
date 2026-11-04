@@ -39,7 +39,9 @@ import { type FreshnessTier, contract } from './query-contracts';
 (globalThis as unknown as { window?: object }).window ??= {};
 
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
-const { useProjectName } = await import('./use-project-name');
+// useProjectName reads the bare project row since #11651; useProjectConfig still
+// reads the git-backed detail entry (qk.project.detail) these tests are about.
+const { useProjectConfig } = await import('./use-project-config');
 
 // A test that times out never reaches its own `finally { jest.useRealTimers() }`.
 // Restore real timers here too, so one stuck test cannot freeze every later
@@ -100,9 +102,9 @@ test('a failed detail read self-heals on the mounted page', async () => {
   // under jest, or advancing fake time would not advance a real interval.
   jest.useFakeTimers();
 
-  let name: string | undefined;
+  let config: object | undefined;
   function Probe() {
-    name = useProjectName('p1');
+    config = useProjectConfig('p1');
     return null;
   }
   let root: ReturnType<typeof create> | undefined;
@@ -116,7 +118,7 @@ test('a failed detail read self-heals on the mounted page', async () => {
 
   // The detail read failed; the page has nothing to render.
   expect(counts.detail).toBe(1);
-  expect(name).toBeUndefined();
+  expect(config).toBeUndefined();
 
   // The API recovers. Nothing remounts.
   detailFails = false;
@@ -142,7 +144,7 @@ test('a failed detail read self-heals on the mounted page', async () => {
   });
   // The detail entry refetched, carries data, and the page rendered it.
   expect(counts.detail).toBeGreaterThan(1);
-  expect(name).toBe('Project');
+  expect(config).toBeDefined();
 
   await act(async () => root?.unmount());
   client.clear();
@@ -166,7 +168,7 @@ test('a final 404 stands down: the self-heal interval never refires on the mount
   jest.useFakeTimers();
 
   function Probe() {
-    useProjectName('p1');
+    useProjectConfig('p1');
     return null;
   }
   let root: ReturnType<typeof create> | undefined;
@@ -213,7 +215,7 @@ test('a final 404 does not refetch when a new observer mounts the settled entry'
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   function Probe() {
-    useProjectName('p1');
+    useProjectConfig('p1');
     return null;
   }
   let root: ReturnType<typeof create> | undefined;
@@ -253,7 +255,7 @@ test('the self-heal interval stands down after the first success', async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   jest.useFakeTimers();
   function Probe() {
-    useProjectName('p1');
+    useProjectConfig('p1');
     return null;
   }
   let root: ReturnType<typeof create> | undefined;

@@ -51,7 +51,6 @@ process.env.KORTIX_URL = 'https://api.example.test';
 let repoFiles: Map<string, string>;
 let commitCalls: Array<{ path: string; message: string }>;
 let deleteCalls: Array<{ path: string; message: string }>;
-let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
 let lastProvisionEnv: Record<string, string> | null = null;
 let runtimeRows: any[];
@@ -121,7 +120,6 @@ function resetState() {
   repoFiles = new Map();
   commitCalls = [];
   deleteCalls = [];
-  branchCreateCalls = 0;
   sandboxProvisionCalls = 0;
   lastProvisionEnv = null;
   runtimeRows = [];
@@ -183,9 +181,6 @@ mock.module('../projects/git', () => ({
   ...actualGit,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
-  createRemoteSessionBranch: async () => {
-    branchCreateCalls += 1;
-  },
   archiveRepoSubtree: async () => undefined,
   listRepoFiles: async (_project: any, _ref: string, path?: string) => {
     const prefix = (path ?? '').replace(/\/$/, '');
@@ -253,7 +248,7 @@ mock.module('../projects/git', () => ({
 
 mock.module("../snapshots/builder", () => ({
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
-  ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
+  ensureMyKortixSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
@@ -544,6 +539,8 @@ const triggerDbMock: any = {
               parentSessionId: values.parentSessionId ?? null,
               initiatorType: values.initiatorType ?? null,
               initiatorId: values.initiatorId ?? null,
+              spaceId: values.spaceId ?? null,
+              groupId: values.groupId ?? null,
               secretsAllowlist: values.secretsAllowlist ?? null,
               requiredConnectors: null,
               connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
@@ -558,6 +555,7 @@ const triggerDbMock: any = {
           }
           if (table === sessionLifecycleCommands) {
             const row: typeof sessionLifecycleCommands.$inferSelect = {
+              artifactId: values.artifactId ?? null,
               commandId: values.commandId ?? randomUUID(),
               commandType: values.commandType,
               source: values.source,
@@ -591,6 +589,7 @@ const triggerDbMock: any = {
             if (existing) return [];
             const now = new Date('2026-01-02T00:00:00Z');
             const row: typeof sessionLifecycleCommands.$inferSelect = {
+              artifactId: values.artifactId ?? null,
               commandId: values.commandId ?? randomUUID(),
               commandType: values.commandType,
               source: values.source,
@@ -712,6 +711,10 @@ mock.module('../shared/db', () => ({
   db: triggerDbMock,
 }));
 
+// The fake db has no joins: no trigger in these tests posts to a channel or DM.
+const realTriggerSpace = await import('../projects/lib/trigger-space');
+mock.module('../projects/lib/trigger-space', () => ({ ...realTriggerSpace, loadTriggerSpace: async () => null }));
+
 // Spread the real module: a wholesale stub drops every export another importer
 // in the graph needs (#7936 added importers), and bun reports it as an
 // unhandled `Export named ... not found` between tests.
@@ -824,8 +827,6 @@ mock.module('../projects/trigger-execution-store', () => ({
     });
     return terminal ? 'dead_lettered' : 'queued';
   },
-  countUncatalogedTriggerProjects: async () =>
-    runtimeRows.some((row) => !row.scheduleRevision) ? 1 : 0,
 }));
 
 // The alert edge is SQL (integration-trigger-alerts.test.ts); here only which
@@ -899,11 +900,11 @@ function createApp() {
 // ─── Manifest seeding helpers ──────────────────────────────────────────────
 // All trigger config lives in `kortix.yaml` now. Tests seed manifest content
 // directly into the in-memory repo — same shape the CRUD handlers read/write.
-// Fixtures are hand-written v2 YAML; every string value goes through
+// Fixtures are hand-written YAML; every string value goes through
 // `JSON.stringify` so cron expressions (leading `*`), mustache prompts
 // (`{{ ... }}`) etc. round-trip as valid YAML scalars without special-casing.
 
-const MANIFEST_PREAMBLE = `kortix_version: 1\nproject:\n  name: Trigger Project\n`;
+const MANIFEST_PREAMBLE = `project:\n  name: Trigger Project\n`;
 
 function seedManifest(...triggerBlocks: string[]) {
   const body = triggerBlocks.length === 0
@@ -1154,6 +1155,8 @@ describe('git-backed triggers — runtime fire paths', () => {
       parentSessionId: null,
       initiatorType: null,
       initiatorId: null,
+      spaceId: null,
+      groupId: null,
       secretsAllowlist: null,
       requiredConnectors: null,
       connectorBindingsInheritUnbound: false,
@@ -1726,6 +1729,8 @@ function sessionRowsTemplate(): typeof projectSessions.$inferSelect {
     parentSessionId: null,
     initiatorType: null,
     initiatorId: null,
+    spaceId: null,
+    groupId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,

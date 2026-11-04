@@ -1,3 +1,4 @@
+import { wellKnownResponse } from '@kortix/shared/well-known';
 import {
   DEFAULT_BODY_AMPLIFICATION,
   DEFAULT_MAX_REQUEST_BYTES,
@@ -43,6 +44,7 @@ import { createGatewayLogger } from './observability/logger';
 import { registerHealth } from './health';
 import { trackInflight } from './inflight';
 import { registerRoutes } from './routes';
+import { createTokenRateLimit } from './token-rate-limit';
 import { createTraffic } from './traffic';
 
 export interface GatewayServer {
@@ -130,6 +132,8 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
       resolveUpstream: api.resolveUpstream,
       notePoolRateLimit: api.notePoolRateLimit,
       refreshCredential: api.refreshCredential,
+      claudeCredentials: api.claudeCredentials,
+      claudeRefused: api.claudeRefused,
       assertBillingActive: api.assertBillingActive,
       assertBudget: api.assertBudget,
       recordUsage: api.recordUsage,
@@ -141,18 +145,22 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
         await Promise.allSettled(sinks);
       },
     },
-    { logger, imageWindow: config.imageWindow },
+    { logger, imageWindow: config.imageWindow, claudeCodeUpstream: config.claudeCodeUpstream },
   );
   const app = new Hono();
   app.use('*', async (c, next) => {
     await next();
+    c.header('Cache-Control', 'private, no-store');
     c.header('Content-Security-Policy', "default-src 'none';frame-ancestors 'none'");
     c.header('X-Frame-Options', 'DENY');
     // Permissions-Policy has no wildcard directive: deny each browser capability explicitly.
     c.header('Permissions-Policy', 'accelerometer=(), ambient-light-sensor=(), attribution-reporting=(), autoplay=(), battery=(), bluetooth=(), browsing-topics=(), camera=(), clipboard-read=(), clipboard-write=(), compute-pressure=(), display-capture=(), encrypted-media=(), fullscreen=(), gamepad=(), geolocation=(), gyroscope=(), hid=(), identity-credentials-get=(), idle-detection=(), keyboard-map=(), local-fonts=(), magnetometer=(), microphone=(), midi=(), otp-credentials=(), payment=(), picture-in-picture=(), publickey-credentials-create=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), speaker-selection=(), storage-access=(), sync-xhr=(), usb=(), web-share=(), window-management=(), xr-spatial-tracking=()');
   });
+  for (const path of ['/.well-known/security.txt', '/robots.txt', '/sitemap.xml']) {
+    app.get(path, (c) => wellKnownResponse(c.req.path) ?? c.notFound());
+  }
   const inflightRequests = trackInflight(app);
   registerHealth(app, api, inflight, traces, trafficSnapshot, upstreamSignals);
-  registerRoutes(app, gateway, inflight, recordOutcome);
+  registerRoutes(app, gateway, inflight, recordOutcome, createTokenRateLimit(config.requestsPerMinutePerCredential));
   return { app, traces, inflightRequests };
 }

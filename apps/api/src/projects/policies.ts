@@ -1,7 +1,5 @@
 /**
- * Project-level `policies:` + `policy:` parsing for kortix.yaml (a legacy v1
- * project spells these as `[[policies]]` + `[policy]` in kortix.toml — same
- * parsed shape either way).
+ * Project-level `policies:` + `policy:` parsing for kortix.yaml.
  *
  * Project policies span EVERY connector in the project — patterns are
  * fully-qualified (`<connector-slug>.<path>` or globs over that), and they're
@@ -15,11 +13,8 @@
  * ones. Defaults are permissive (no policies + allow_all) so existing projects
  * without a `policy:` block keep current behavior.
  */
-import {
-  type PolicyArgCondition,
-  areValidConditions,
-  normalizeConditions,
-} from '../connectors/policy';
+import { type PolicyArgCondition, areValidConditions } from '@kortix/manifest-schema';
+import { normalizeConditions } from '../connectors/policy';
 import { parseApprovalTtl } from '../connectors/approval-expiry';
 import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
 
@@ -80,8 +75,7 @@ const DEFAULT_SETTINGS: ProjectPolicySettings = { defaultMode: 'allow_all' };
  */
 export function extractProjectPolicies(manifest: ParsedManifest): LoadedProjectPolicies {
   const errors: ProjectPolicyParseError[] = [];
-  // Use the ACTUAL manifest file in error paths so a YAML project reports
-  // `kortix.yaml#policy`, not a hardcoded `kortix.toml#…`.
+  // Use the ACTUAL manifest file in error paths (`kortix.yml`, a custom path).
   const filename = manifest.path || MANIFEST_FILENAME;
 
   // ── policy block (default_mode) ────────────────────────────────────────────
@@ -115,7 +109,7 @@ export function extractProjectPolicies(manifest: ParsedManifest): LoadedProjectP
       errors.push({
         path: filename,
         error:
-          '`policies` must be an array of tables — a YAML list (or a legacy TOML [[policies]]), not a single mapping',
+          '`policies` must be a YAML list, not a single mapping',
       });
     } else {
       raw.forEach((entry, i) => {
@@ -172,12 +166,10 @@ export function extractProjectPolicies(manifest: ParsedManifest): LoadedProjectP
 
 /**
  * Convert a list of project policies back to the raw entries that live in
- * `manifest.raw.policies` (format-agnostic — same shape serializes to a
- * kortix.yaml list or a legacy kortix.toml `[[policies]]` table array).
- * Inverse of `extractProjectPolicies`. Used by the admin CRUD path to
+ * `manifest.raw.policies`. Inverse of `extractProjectPolicies`. Used by the admin CRUD path to
  * round-trip a dashboard edit before committing.
  */
-export function projectPoliciesToTomlEntries(
+export function projectPoliciesToManifestEntries(
   policies: ProjectPolicySpec[],
 ): Array<Record<string, unknown>> {
   return policies.map((p) => {
@@ -196,7 +188,7 @@ export function projectPoliciesToTomlEntries(
 }
 
 /** Serialize `policy` settings — null when default (so we don't write empty blocks). */
-export function projectPolicySettingsToToml(
+export function projectPolicySettingsToManifest(
   settings: ProjectPolicySettings,
 ): Record<string, unknown> | null {
   if (settings.defaultMode === DEFAULT_SETTINGS.defaultMode) return null;

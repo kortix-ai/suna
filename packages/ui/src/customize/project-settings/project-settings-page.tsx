@@ -19,8 +19,6 @@ import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { SETTINGS_SIDEBAR_WIDTH_PX } from '../../internal/account-hub/account-settings-shell';
 import { useReviewSessionSummary } from '../../internal/hooks/use-review-session-summary';
 
-import { detectManifestVersion } from '../../internal/lib/manifest-version';
-import { UpgradesView } from '../migrate-to-v2/upgrade-view';
 import { GitView } from '../sections/view/git-view';
 import { ReviewView } from '../sections/view/review-view';
 import {
@@ -62,7 +60,7 @@ import {
  *
  * These six sections used to live in the Settings overlay behind the
  * sidebar's gear icon, in its `Workspace` and `Agent` rail groups plus the
- * pinned Upgrades row and the `experimental` row. They configure a project, and
+ * `experimental` row. They configure a project, and
  * the person allowed to change them is already the person who can open
  * Customize — a second overlay with a second rail and a second keyboard
  * shortcut was one surface too many. The overlay keeps what is genuinely
@@ -150,12 +148,6 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
       ? DEFAULT_PROJECT_SETTINGS_SECTION
       : (sections[0]?.key ?? DEFAULT_PROJECT_SETTINGS_SECTION));
 
-  // Pin Upgrades' attention dot only once the manifest read resolved to v1 —
-  // while the detail query is in flight (or on a v2 project) the dot stays off.
-  const upgradeAttention = detail.data
-    ? detectManifestVersion(detail.data.config.manifest_raw) === 1
-    : false;
-
   // "Needs you" count for the Review row — the SAME shared inbox summary the
   // sidebar Review pill and the per-session dots read, so they cannot drift.
   const reviewNeedsYou = useReviewSessionSummary(projectId).totalNeedsYou;
@@ -186,7 +178,6 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
         section={section}
         horizontal={horizontal}
         count={section.key === 'review' ? reviewNeedsYou : undefined}
-        attention={section.key === 'upgrades' && upgradeAttention}
       />
     ));
 
@@ -280,13 +271,11 @@ function SectionTrigger({
   projectId,
   section,
   count,
-  attention,
   horizontal = false,
 }: {
   projectId: string;
   section: ProjectSettingsSection;
   count?: number;
-  attention?: boolean;
   horizontal?: boolean;
 }) {
   const Icon = section.icon;
@@ -315,14 +304,6 @@ function SectionTrigger({
         <span className={cn(!horizontal && 'truncate')}>{section.label}</span>
         {showCount ? (
           <CountBadge count={count} className={cn(!horizontal && 'ml-auto')} />
-        ) : attention ? (
-          <span
-            aria-hidden
-            className={cn(
-              'bg-kortix-orange size-1.5 shrink-0 rounded-full',
-              !horizontal && 'ml-auto',
-            )}
-          />
         ) : null}
       </Link>
     </TabsTrigger>
@@ -371,8 +352,6 @@ function ProjectSettingsSectionPane({
       return <ReviewView projectId={projectId} />;
     case 'feature-flags':
       return <ExperimentalTab projectId={projectId} />;
-    case 'upgrades':
-      return <UpgradesView projectId={projectId} />;
   }
 }
 

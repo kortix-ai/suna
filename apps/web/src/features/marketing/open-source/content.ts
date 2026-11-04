@@ -76,14 +76,14 @@ export const openSource = {
   /** The one number on this section. Read live; never hardcoded. */
   stars: {
     /** Sits under the digits, and is the accessible label with them. */
-    caption: 'GitHub stars on kortix-ai/suna',
+    caption: 'GitHub stars on kortix-ai/CompanyOS',
   },
 
   /**
    * The whole note. Sentence one is `/about` → `hero.title` verbatim; sentence
    * two is the first clause of `hero.lead`. Keep the two files in step.
    */
-  title: 'We are building the open-source AI Operating System. Every company should own all of it.',
+  title: 'We are building the open-source CompanyOS. Every company should own all of it.',
 
   /** Primary way out: the rest of the reason. */
   aboutLabel: 'Why we are building it',
@@ -91,5 +91,5 @@ export const openSource = {
 
   /** Secondary: the proof the number is about something real. */
   repoLabel: 'Read the source',
-  repoHref: 'https://github.com/kortix-ai/suna',
+  repoHref: 'https://github.com/kortix-ai/CompanyOS',
 } as const;

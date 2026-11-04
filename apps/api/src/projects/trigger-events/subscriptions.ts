@@ -5,7 +5,7 @@
  */
 import { connectorConnections, connectors, projectTriggerRuntime } from '@kortix/db';
 import { createHash } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { connectedAsOf } from '../../connectors/connection-identity';
 import { defaultConnectionIdForConnector } from '../../connectors/credentials';
@@ -17,7 +17,7 @@ import { db } from '../../shared/db';
 import { canonicalJson } from './canonical-json';
 import { EVENT_TRIGGERS_OFF_MESSAGE, eventTriggersOffForProject } from './flag';
 import { appLabel, connectorEventApp, MCP_SOURCE_ID } from './mcp-source';
-import { eventSourceAvailable, eventSourceFor, unknownSourceMessage } from './registry';
+import { eventSourceFor, unknownSourceMessage } from './registry';
 import * as store from './store';
 import { EventConnectionNotReadyError, type EventSourceConnection, type EventSourceProvider } from './types';
 
@@ -63,11 +63,7 @@ export async function resolveSource(
   projectId: string,
   accountId: string,
   event: NonNullable<GitTriggerSpec['event']>,
-  projectMetadata?: unknown,
 ): Promise<Resolution & { providerId?: string }> {
-  const metadata = projectMetadata !== undefined
-    ? projectMetadata
-    : (await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1))[0]?.metadata ?? null;
   const [connector] = await db
     .select({
       connectorId: connectors.connectorId,
@@ -84,7 +80,7 @@ export async function resolveSource(
   }
   // The adapter is the declared `source`, else the connector's own provider.
   if (event.source) {
-    const unknown = unknownSourceMessage(event.source, metadata);
+    const unknown = unknownSourceMessage(event.source);
     if (unknown) return { kind: 'error', message: unknown };
     if (event.source !== connector.provider) {
       return {
@@ -94,7 +90,7 @@ export async function resolveSource(
     }
   }
   const provider = eventSourceFor(connector.provider);
-  if (!provider || !eventSourceAvailable(provider.id, metadata)) {
+  if (!provider) {
     return { kind: 'error', message: `Connector "${event.connector}" (${connector.provider}) has no app-event source. Use an app connector.` };
   }
   if (!provider.configured()) {
@@ -181,13 +177,12 @@ async function reconcileOne(
   spec: GitTriggerSpec,
   prev: store.EventSubscriptionRow | undefined,
   flagOff: boolean,
-  projectMetadata: unknown,
 ): Promise<void> {
   const event = spec.event!;
   // Flag off: the trigger stays declared but is never subscribed; a live instance is dropped below.
   const resolved: Resolution & { providerId?: string } = flagOff
     ? { kind: 'error', message: EVENT_TRIGGERS_OFF_MESSAGE }
-    : await resolveSource(projectId, accountId, event, projectMetadata);
+    : await resolveSource(projectId, accountId, event);
   const providerId = resolved.providerId ?? prev?.provider ?? 'composio';
   // The source changed (a connector moved from Composio to Kortix): the old
   // instance belongs to the old source, and only that source can drop it, once
@@ -276,14 +271,15 @@ export async function reconcileEventSubscriptions(
 ): Promise<void> {
   try {
     await store.withProjectEventLock(projectId, async () => {
-      const desired = specs.filter((s) => s.type === 'event' && s.enabled && s.event);
+      const all = await withRuntimeEventSpecs(projectId, specs);
+      const desired = all.filter((s) => s.type === 'event' && s.enabled && s.event);
       const desiredSlugs = new Set(desired.map((s) => s.slug));
       const rows = new Map((await store.listByProject(projectId)).map((r) => [r.slug, r]));
       const [project] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
       const flagOff = eventTriggersOffForProject(project?.metadata);
       for (const spec of desired) {
         try {
-          await reconcileOne(projectId, accountId, spec, rows.get(spec.slug), flagOff, project?.metadata ?? null);
+          await reconcileOne(projectId, accountId, spec, rows.get(spec.slug), flagOff);
         } catch (error) {
           logger.warn('[trigger-events] reconcile failed', { projectId, slug: spec.slug, error: errorText(error) });
         }
@@ -304,6 +300,29 @@ export async function reconcileEventSubscriptions(
 }
 
 /**
+ * `specs` plus the project's runtime event triggers (`lib/runtime-triggers.ts`).
+ * Callers pass the manifest's triggers; a runtime row is never in that list, so
+ * without this its subscription read as stale and was removed. Rows the caller
+ * already passed (a catalog read) are not added twice. The row's `enabled`
+ * wins over the stored spec's, as on every runtime row.
+ */
+export async function withRuntimeEventSpecs(projectId: string, specs: readonly GitTriggerSpec[]): Promise<GitTriggerSpec[]> {
+  const rows = await db
+    .select({ slug: projectTriggerRuntime.slug, enabled: projectTriggerRuntime.enabled, spec: projectTriggerRuntime.scheduleSpec })
+    .from(projectTriggerRuntime)
+    .where(and(
+      eq(projectTriggerRuntime.projectId, projectId),
+      eq(projectTriggerRuntime.triggerType, 'event'),
+      sql`position('.' in ${projectTriggerRuntime.slug}) > 0`,
+    ));
+  const passed = new Set(specs.map((s) => s.slug));
+  const runtime = rows
+    .filter((row) => row.spec && !passed.has(row.slug))
+    .map((row) => ({ ...(row.spec as unknown as GitTriggerSpec), enabled: row.enabled !== false }));
+  return [...specs, ...runtime];
+}
+
+/**
  * Reconcile from the cataloged specs (`project_trigger_runtime.schedule_spec`, no git read).
  * For paths that change a connection, not the manifest: connect, finalize, revoke, default.
  */
@@ -312,7 +331,12 @@ export async function reconcileEventSubscriptionsFromCatalog(projectId: string, 
     const rows = await db
       .select({ spec: projectTriggerRuntime.scheduleSpec })
       .from(projectTriggerRuntime)
-      .where(and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.triggerType, 'event')));
+      // Manifest rows only: reconcileEventSubscriptions adds the runtime rows itself.
+      .where(and(
+        eq(projectTriggerRuntime.projectId, projectId),
+        eq(projectTriggerRuntime.triggerType, 'event'),
+        sql`position('.' in ${projectTriggerRuntime.slug}) = 0`,
+      ));
     await reconcileEventSubscriptions(projectId, accountId, rows.map((r) => r.spec as unknown as GitTriggerSpec));
   } catch (error) {
     logger.warn('[trigger-events] catalog reconcile failed', { projectId, error: errorText(error) });

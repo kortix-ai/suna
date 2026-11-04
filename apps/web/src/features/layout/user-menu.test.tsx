@@ -87,9 +87,4 @@ describe('settings store and theme compatibility contracts', () => {
     }
     useSettingsPanelStore.getState().close();
   });
-
-  test('the compatibility entry point shares the live theme options', async () => {
-    const compat = await import('./user-menu');
-    expect(compat.INTERFACE_THEME_OPTIONS).toBe(INTERFACE_THEME_OPTIONS);
-  });
 });

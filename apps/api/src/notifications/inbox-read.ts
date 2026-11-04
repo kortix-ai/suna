@@ -6,10 +6,10 @@
 // project role, a removed member, a deleted session or an MFA step-up the
 // sign-in has not passed hides the row; it is never deleted here.
 import { and, desc, eq, inArray, isNull, lt, type SQL, sql } from 'drizzle-orm';
-import { notifications, projects, roomMembers, rooms } from '@kortix/db';
+import { accountMembers, notifications, projects, roomMembers, rooms } from '@kortix/db';
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
 import { db } from '../shared/db';
-import { loadSessionAccessRows, mayReadProjectRooms, mayReadProjectTriggers, maySeeSessions, type SessionAccessRow } from './access';
+import { loadArtifactAccessRows, loadSessionAccessRows, mayReadProjectArtifacts, mayReadProjectRooms, mayReadProjectTriggers, maySeeArtifacts, maySeeSessions, type SessionAccessRow } from './access';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { notificationsEnabled } from './enabled';
 import { mfaWithheldAccounts } from './mfa-gate';
@@ -32,6 +32,8 @@ export interface InboxRowForFilter {
   /** Set on a conversation message (`kind = 'message'`). */
   roomId?: string | null;
   roomThreadSeq?: number | null;
+  artifactId?: string | null;
+  artifactThreadId?: string | null;
   kind: string;
 }
 
@@ -58,6 +60,8 @@ export interface InboxNotification {
   session_id: string | null;
   trigger_slug: string | null;
   room_id: string | null;
+  artifact_id: string | null;
+  artifact_thread_id: string | null;
   actor_user_id: string | null;
   url: string;
   read: boolean;
@@ -82,6 +86,8 @@ const ROW = {
   triggerSlug: notifications.triggerSlug,
   roomId: notifications.roomId,
   roomThreadSeq: notifications.roomThreadSeq,
+  artifactId: notifications.artifactId,
+  artifactThreadId: notifications.artifactThreadId,
   kind: notifications.kind,
   title: notifications.title,
   body: notifications.body,
@@ -101,13 +107,14 @@ async function mfaBlockedAccounts(userId: string, accountIds: string[], ctx: Inb
  * The names of the projects with the `notification_center` flag on. Off, a
  * project has no inbox: its rows (from before a switch off) stay hidden.
  */
-async function notificationCenterProjects(projectIds: string[]): Promise<Map<string, string>> {
+async function notificationProjectGates(projectIds: string[]): Promise<Map<string, { name: string; center: boolean; artifactComments: boolean }>> {
   if (projectIds.length === 0) return new Map();
   const rows = await db
     .select({ projectId: projects.projectId, name: projects.name, metadata: projects.metadata })
     .from(projects)
     .where(inArray(projects.projectId, projectIds));
-  return new Map(rows.filter((row) => notificationsEnabled(row.metadata)).map((row) => [row.projectId, row.name]));
+  return new Map(rows.map((row) => [row.projectId, { name: row.name, center: notificationsEnabled(row.metadata),
+    artifactComments: resolveFeatureFlag(row.metadata, 'artifacts') && resolveFeatureFlag(row.metadata, 'artifact_comments') }]));
 }
 
 /**
@@ -123,13 +130,18 @@ async function visible<T extends InboxRowForFilter>(
 ): Promise<{ rows: T[]; sessions: Map<string, SessionAccessRow>; projectNames: Map<string, string> }> {
   const sessions = new Map<string, SessionAccessRow>();
   if (!userId || rows.length === 0) return { rows: [], sessions, projectNames: new Map() };
-  const [blocked, projectNames] = await Promise.all([
+  const [blocked, gates] = await Promise.all([
     mfaBlockedAccounts(userId, [...new Set(rows.map((row) => row.accountId))], ctx),
-    notificationCenterProjects([...new Set(rows.flatMap((row) => (row.projectId ? [row.projectId] : [])))]),
+    notificationProjectGates([...new Set(rows.flatMap((row) => (row.projectId ? [row.projectId] : [])))]),
   ]);
+  const projectNames = new Map([...gates].filter(([, gate]) => gate.center || gate.artifactComments).map(([id, gate]) => [id, gate.name]));
   const open = rows.filter(
-    (row) => !blocked.has(row.accountId) && (isAccountNotification(row.kind) || (row.projectId !== null && projectNames.has(row.projectId))),
+    (row) => !blocked.has(row.accountId) && (isAccountNotification(row.kind) || (row.projectId !== null &&
+      (row.kind === 'artifact_comment' ? gates.get(row.projectId)?.artifactComments : gates.get(row.projectId)?.center))),
   );
+
+  const artifacts = await loadArtifactAccessRows(open.flatMap((row) => row.kind === 'artifact_comment' && row.artifactId ? [row.artifactId] : []));
+  const seenArtifacts = await maySeeArtifacts(userId, [...artifacts.values()]);
 
   const loaded = await loadSessionAccessRows(open.flatMap((row) => (row.sessionId ? [row.sessionId] : [])));
   const seen = await maySeeSessions(userId, [...loaded.values()]);
@@ -141,7 +153,7 @@ async function visible<T extends InboxRowForFilter>(
 
   const triggerProjects = new Map<string, Set<string>>();
   for (const row of open) {
-    if (row.roomId || row.sessionId || !row.projectId) continue;
+    if (row.kind === 'artifact_comment' || row.roomId || row.sessionId || !row.projectId) continue;
     const ids = triggerProjects.get(row.accountId) ?? new Set<string>();
     ids.add(row.projectId);
     triggerProjects.set(row.accountId, ids);
@@ -153,7 +165,10 @@ async function visible<T extends InboxRowForFilter>(
 
   const kept = open.filter((row) =>
     isAccountNotification(row.kind) ||
-    (row.roomId ? rooms.has(row.roomId) : row.sessionId ? seen.has(row.sessionId) : readable.has(`${row.accountId}:${row.projectId}`)),
+    (row.kind === 'artifact_comment'
+      ? !!row.artifactId && !!row.artifactThreadId && seenArtifacts.has(row.artifactId)
+        && artifacts.get(row.artifactId)?.accountId === row.accountId && artifacts.get(row.artifactId)?.projectId === row.projectId
+      : row.roomId ? rooms.has(row.roomId) : row.sessionId ? seen.has(row.sessionId) : readable.has(`${row.accountId}:${row.projectId}`)),
   );
   return { rows: kept, sessions, projectNames };
 }
@@ -170,7 +185,15 @@ export async function hiddenNotificationKinds(userId: string): Promise<Notificat
     .innerJoin(rooms, eq(rooms.roomId, roomMembers.roomId))
     .innerJoin(projects, eq(projects.projectId, rooms.projectId))
     .where(eq(roomMembers.userId, userId));
-  return memberships.some((row) => resolveFeatureFlag(row.metadata, 'agent_rooms')) ? [] : ['message'];
+  const hidden: NotificationKindName[] = memberships.some((row) => resolveFeatureFlag(row.metadata, 'agent_rooms')) ? [] : ['message'];
+  const candidates = await db.select({ id: projects.projectId, accountId: projects.accountId, metadata: projects.metadata })
+    .from(projects).innerJoin(accountMembers, eq(accountMembers.accountId, projects.accountId)).where(eq(accountMembers.userId, userId));
+  const enabled = candidates.filter((row) => resolveFeatureFlag(row.metadata, 'artifacts') && resolveFeatureFlag(row.metadata, 'artifact_comments'));
+  const groups = new Map<string, string[]>();
+  for (const row of enabled) groups.set(row.accountId, [...(groups.get(row.accountId) ?? []), row.id]);
+  const accessible = await Promise.all([...groups].map(([accountId, ids]) => mayReadProjectArtifacts(userId, accountId, ids)));
+  if (!accessible.some((ids) => ids.size > 0)) hidden.push('artifact_comment');
+  return hidden;
 }
 
 /**
@@ -186,11 +209,15 @@ async function readableRoomsOf(userId: string, rows: readonly InboxRowForFilter[
     .innerJoin(rooms, eq(rooms.roomId, roomMembers.roomId))
     .innerJoin(projects, eq(projects.projectId, rooms.projectId))
     .where(and(eq(roomMembers.userId, userId), inArray(roomMembers.roomId, roomIds)));
-  const out = new Set<string>();
-  await Promise.all(memberships.filter((row) => resolveFeatureFlag(row.metadata, 'agent_rooms')).map(async (row) => {
-    if ((await mayReadProjectRooms(userId, row.accountId, [row.projectId])).has(row.projectId)) out.add(row.roomId);
+  const flagged = memberships.filter((row) => resolveFeatureFlag(row.metadata, 'agent_rooms'));
+  // One permission check per account, not one per room.
+  const byAccount = new Map<string, Set<string>>();
+  for (const row of flagged) byAccount.set(row.accountId, (byAccount.get(row.accountId) ?? new Set()).add(row.projectId));
+  const readable = new Set<string>();
+  await Promise.all([...byAccount].map(async ([accountId, projectIds]) => {
+    for (const projectId of await mayReadProjectRooms(userId, accountId, [...projectIds])) readable.add(projectId);
   }));
-  return out;
+  return new Set(flagged.filter((row) => readable.has(row.projectId)).map((row) => row.roomId));
 }
 
 /**
@@ -291,6 +318,8 @@ export async function listInbox(
       session_id: row.sessionId,
       trigger_slug: row.triggerSlug,
       room_id: row.roomId,
+      artifact_id: row.artifactId,
+      artifact_thread_id: row.artifactThreadId,
       actor_user_id: row.actorUserId,
       url: notificationUrl({
         notificationId: row.notificationId,
@@ -299,6 +328,8 @@ export async function listInbox(
         triggerSlug: row.triggerSlug,
         roomId: row.roomId,
         roomThreadSeq: row.roomThreadSeq,
+        artifactId: row.artifactId,
+        artifactThreadId: row.artifactThreadId,
         kind: row.kind,
         accountId: row.accountId,
       }),
@@ -339,11 +370,15 @@ export async function markInboxRead(
   target: InboxReadTarget,
   ctx: InboxReadContext = {},
 ): Promise<{ updated: number; unread_count: number }> {
-  const updated =
-    'ids' in target
-      ? await inboxStore().markRead(userId, target.ids)
-      : 'sessionId' in target
-        ? await markSessionNotificationsRead(userId, target.sessionId)
-        : await markWhere(userId);
-  return { updated, unread_count: await unreadCount(userId, ctx) };
+  // `updated` counts only rows the person may see: the drop in their visible
+  // unread count. The raw row count would disclose how many hidden rows (a
+  // private channel they left) they hold.
+  // ponytail: both counts read the newest INBOX_UNREAD_SCAN unread rows, so a
+  // larger backlog under-reports; exact per-row filtering when that matters.
+  const before = await unreadCount(userId, ctx);
+  if ('ids' in target) await inboxStore().markRead(userId, target.ids);
+  else if ('sessionId' in target) await markSessionNotificationsRead(userId, target.sessionId);
+  else await markWhere(userId);
+  const after = await unreadCount(userId, ctx);
+  return { updated: Math.max(0, before - after), unread_count: after };
 }

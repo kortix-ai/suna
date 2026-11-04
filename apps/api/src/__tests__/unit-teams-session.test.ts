@@ -81,7 +81,9 @@ mock.module('../shared/db', () => ({
 }));
 
 const testConfig = { TEAMS_REQUIRE_USER_IDENTITY: true, FRONTEND_URL: 'https://dev.kortix.com' };
+const realConfig = await import('../config');
 mock.module('../config', () => ({
+  ...realConfig,
   SANDBOX_VERSION: 'test',
   config: testConfig,
   KNOWN_PROVIDERS: ['platinum', 'daytona'],

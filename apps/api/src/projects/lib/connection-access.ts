@@ -75,7 +75,7 @@ export function connectionNeedsPrivateSession(
  * | `member`   | only `ownerId === actingUserId`; NEVER a service account.       |
  * |            | Agent-principal session: only `ownerId === on_behalf_of` in a   |
  * |            | `private` session (see `agentPrincipal` below)                  |
- * | `external` | only through `trustedManagedSystem` (the managed email channel) |
+ * | `external` | nobody (the retired pre-account email rows)                    |
  * | `agent` / `subject` | nobody — unchanged, deliberately not widened           |
  *
  * The caller keeps its own session-visibility guard: a `member`-owned account is
@@ -94,7 +94,6 @@ export function connectionIsReachable(input: {
   ownerId: string | null;
   actingUserId: string;
   actingPrincipalIsServiceAccount: boolean;
-  trustedManagedSystem?: boolean;
   agentPrincipal?: ConnectionAgentPrincipalReach | null;
   /**
    * The row's audience for the person this call acts for. Required so a new
@@ -104,7 +103,6 @@ export function connectionIsReachable(input: {
    */
   audience: ConnectionAudienceReach;
 }): boolean {
-  if (input.trustedManagedSystem === true) return true;
   if (input.ownerType === 'project') {
     if (input.audience === 'open') return true;
     // Shared with this session's agent: the agent is the principal, so neither
@@ -142,25 +140,6 @@ export function connectionIsReachable(input: {
   );
 }
 
-export function isTrustedManagedChannelAuthorization(input: {
-  providerType: string;
-  platform: string | null;
-  ownerType: ConnectionOwnerType;
-  ownerId: string | null;
-  metadata: Record<string, unknown>;
-}): boolean {
-  const inboxId = input.metadata.inbox_id;
-  return (
-    input.providerType === 'channel' &&
-    input.platform === 'email' &&
-    input.ownerType === 'external' &&
-    input.metadata.channel_connection === true &&
-    typeof inboxId === 'string' &&
-    inboxId.length > 0 &&
-    input.ownerId === `agentmail:${inboxId}`
-  );
-}
-
 /** The columns of a `connector_connections` row joined to its connector that
  *  decide reachability. */
 export interface ConnectionReachabilityRow {
@@ -180,9 +159,9 @@ export interface ConnectionReachabilityActor {
 }
 
 /**
- * `connectionIsReachable` for a loaded connection row. It derives the
- * trusted-managed-channel exception from the row and its connector config, so
- * every caller that holds a row asks the same question the same way.
+ * `connectionIsReachable` for a loaded connection row, so every caller that
+ * holds a row asks the same question the same way. Email inboxes are ordinary
+ * member- or project-owned accounts: no exception.
  * `audience` is the row's audience for this actor (`'open'` on a path that
  * manages the account rather than uses it).
  */
@@ -198,14 +177,6 @@ export function connectionRowIsReachable(
     actingPrincipalIsServiceAccount: actor.isServiceAccount,
     agentPrincipal: actor.agentPrincipal,
     audience,
-    trustedManagedSystem: isTrustedManagedChannelAuthorization({
-      providerType: row.providerType,
-      platform:
-        typeof row.connectorConfig.platform === 'string' ? row.connectorConfig.platform : null,
-      ownerType: row.ownerType,
-      ownerId: row.ownerId,
-      metadata: row.metadata,
-    }),
   });
 }
 

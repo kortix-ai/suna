@@ -129,7 +129,6 @@ class DaytonaAdapter implements SandboxProviderAdapter {
         userDockerfile,
         runtimeProfile: input.runtimeProfile,
         appContext: input.appContext,
-        isShared: input.isShared,
         // Daytona runs nested Docker without a kernel module profile.
         containerRuntime: input.containerRuntime,
       });

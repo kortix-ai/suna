@@ -65,7 +65,7 @@ import { useQuery } from '@tanstack/react-query';
 export const FIRST_CLASS_PROVIDER_IDS = ['anthropic', 'openai', 'google'] as const;
 
 /** Providers whose sheet offers a subscription sign-in beside the API key. */
-export const SUBSCRIPTION_PROVIDER_IDS: ReadonlySet<string> = new Set(['openai', 'opencode-go']);
+export const SUBSCRIPTION_PROVIDER_IDS: ReadonlySet<string> = new Set(['openai', 'opencode-go', 'anthropic']);
 
 /**
  * How many Available providers render before `Show more`, and how many each

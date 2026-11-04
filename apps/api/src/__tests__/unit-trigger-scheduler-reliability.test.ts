@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  initialCatalogBackfillIncomplete,
   isSweepStale,
   mapWithConcurrency,
   withTimeout,
@@ -147,37 +146,5 @@ describe('mapWithConcurrency', () => {
     });
 
     expect(peak).toBe(1);
-  });
-});
-
-describe('initialCatalogBackfillIncomplete', () => {
-  test('keeps startup batches continuous until both cursors complete', () => {
-    expect(
-      initialCatalogBackfillIncomplete({
-        catalogCycleCompletedAt: null,
-        discoveryCycleCompletedAt: '2026-07-27T04:00:00.000Z',
-        catalogPendingProjects: 0,
-      }),
-    ).toBe(true);
-  });
-
-  test('keeps startup batches continuous while active runtime rows remain uncataloged', () => {
-    expect(
-      initialCatalogBackfillIncomplete({
-        catalogCycleCompletedAt: '2026-07-27T04:00:00.000Z',
-        discoveryCycleCompletedAt: '2026-07-27T04:00:00.000Z',
-        catalogPendingProjects: 1,
-      }),
-    ).toBe(true);
-  });
-
-  test('returns to the bounded cadence after both cycles complete with no pending rows', () => {
-    expect(
-      initialCatalogBackfillIncomplete({
-        catalogCycleCompletedAt: '2026-07-27T04:00:00.000Z',
-        discoveryCycleCompletedAt: '2026-07-27T04:00:00.000Z',
-        catalogPendingProjects: 0,
-      }),
-    ).toBe(false);
   });
 });

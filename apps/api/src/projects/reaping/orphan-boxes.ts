@@ -21,12 +21,13 @@
  *    sweep continues.
  */
 
-import { isNotNull } from 'drizzle-orm';
+import { inArray } from 'drizzle-orm';
 import { appRuntimes, projectMonitorBoxes, sessionSandboxes } from '@kortix/db';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import { getProvider, type ProviderName } from '../../platform/providers';
 import { REAP_CONCURRENCY } from '../reaper-constants';
+import { recordOrphanBoxCost } from '../../billing/services/orphan-box-costs';
 import { hasProviderBoxReference } from './orphan-box-references';
 import {
   EMPTY_ROW_VM_DIVERGENCE,
@@ -36,6 +37,7 @@ import {
 
 const ORPHAN_BOX_GRACE_MS = 60 * 60_000; // a box must be this old to qualify
 const ORPHAN_REAP_MAX_PER_PASS = 50; // bound provider stop() calls per pass
+const KEEP_ROW_LOOKUP_CHUNK = 1000; // external ids per keep-row query
 
 export interface OrphanReapResult {
   listed: number;
@@ -77,30 +79,18 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
   }
   if (boxes.length === 0) return zero;
 
-  const [sessionKeepRows, appKeepRows, monitorKeepRows] = await Promise.all([
-    db
-      .select({
-        provider: sessionSandboxes.provider,
-        externalId: sessionSandboxes.externalId,
-        // Carried for the row↔VM divergence pass below: a row whose status says
-        // the box is off, over a box this listing proves is running.
-        status: sessionSandboxes.status,
-        sandboxId: sessionSandboxes.sandboxId,
-      })
-      .from(sessionSandboxes)
-      .where(isNotNull(sessionSandboxes.externalId)),
-    db
-      .select({ provider: appRuntimes.provider, externalId: appRuntimes.externalId })
-      .from(appRuntimes)
-      .where(isNotNull(appRuntimes.externalId)),
-    db
-      .select({
-        provider: projectMonitorBoxes.provider,
-        externalId: projectMonitorBoxes.externalId,
-      })
-      .from(projectMonitorBoxes)
-      .where(isNotNull(projectMonitorBoxes.externalId)),
-  ]);
+  // Read only the rows that reference a listed box. The keep set and the
+  // divergence pass below both match rows to listed boxes, so any other row
+  // changes nothing. Reading the whole table moved ~68k rows per pass on prod
+  // (2026-11-03, pg_stat_statements).
+  const listedIds = [...new Set(boxes.map((box) => box.externalId))];
+  const chunks: Array<Awaited<ReturnType<typeof readKeepRows>>> = [];
+  for (let i = 0; i < listedIds.length; i += KEEP_ROW_LOOKUP_CHUNK) {
+    chunks.push(await readKeepRows(listedIds.slice(i, i + KEEP_ROW_LOOKUP_CHUNK)));
+  }
+  const sessionKeepRows = chunks.flatMap((chunk) => chunk.sessionRows);
+  const appKeepRows = chunks.flatMap((chunk) => chunk.appRows);
+  const monitorKeepRows = chunks.flatMap((chunk) => chunk.monitorRows);
   const keepRows = [...sessionKeepRows, ...appKeepRows, ...monitorKeepRows];
   const keep = new Set(
     keepRows
@@ -143,6 +133,8 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
         if (await hasProviderBoxReference(box.provider, box.externalId)) continue;
         if (attempted >= ORPHAN_REAP_MAX_PER_PASS) break;
         attempted += 1;
+        // No customer paid for this box: record Kortix's cost before it stops.
+        await recordOrphanBoxCost(box);
         console.log('[reaper] stopping owned unreferenced box', { provider: box.provider, externalId: box.externalId });
         await getProvider(box.provider).stop(box.externalId);
         stopped += 1;
@@ -162,4 +154,33 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
     console.log('[reaper] orphan-box sweep', { listed: boxes.length, orphans: orphans.length, stopped, errors });
   }
   return { listed: boxes.length, orphans: orphans.length, stopped, errors, divergence };
+}
+
+/** The DB rows that reference any of `externalIds`, across every box owner. */
+async function readKeepRows(externalIds: string[]) {
+  const [sessionRows, appRows, monitorRows] = await Promise.all([
+    db
+      .select({
+        provider: sessionSandboxes.provider,
+        externalId: sessionSandboxes.externalId,
+        // Carried for the row↔VM divergence pass: a row whose status says the
+        // box is off, over a box the listing proves is running.
+        status: sessionSandboxes.status,
+        sandboxId: sessionSandboxes.sandboxId,
+      })
+      .from(sessionSandboxes)
+      .where(inArray(sessionSandboxes.externalId, externalIds)),
+    db
+      .select({ provider: appRuntimes.provider, externalId: appRuntimes.externalId })
+      .from(appRuntimes)
+      .where(inArray(appRuntimes.externalId, externalIds)),
+    db
+      .select({
+        provider: projectMonitorBoxes.provider,
+        externalId: projectMonitorBoxes.externalId,
+      })
+      .from(projectMonitorBoxes)
+      .where(inArray(projectMonitorBoxes.externalId, externalIds)),
+  ]);
+  return { sessionRows, appRows, monitorRows };
 }

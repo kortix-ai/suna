@@ -13,7 +13,7 @@
 import type { FileNode } from '@kortix/ui/internal/files/types';
 import type { FileContentResult, FileSource } from '@kortix/ui/file-viewer';
 import type { ExplorerQueryResult, FileExplorerSource } from '@kortix/ui/files';
-import { saveDriveFile } from '@kortix/ui/files';
+import { saveDriveFile, useDriveLimitMessage } from '@kortix/ui/files';
 import { blobToFileContent, typedDriveBlob } from '@kortix/ui/internal/files/session-drive-files';
 import {
   deleteDriveFile,
@@ -22,27 +22,30 @@ import {
   makeDriveFolder,
   moveDriveFile,
   readDriveFile,
-  shareFolder,
   uploadDriveFile,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { ScopedCache } from '@kortix/ui/internal/lib/storage/managed-storage';
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-const DriveFilesContext = createContext<{ driveId: string; userId?: string } | null>(null);
+const DriveFilesContext = createContext<{ driveId: string; userId?: string; personalFolder: string | null } | null>(null);
 
 /** `userId` turns on the saved listings below; they are kept per person. */
 export function DriveFilesProvider({
   driveId,
   userId,
+  personalFolder,
   children,
 }: {
   driveId: string;
   userId?: string;
+  /** The caller's own folder, listed with "(You)". */
+  personalFolder?: string | null;
   children: ReactNode;
 }) {
-  const value = useMemo(() => ({ driveId, userId }), [driveId, userId]);
+  const value = useMemo(() => ({ driveId, userId, personalFolder: personalFolder ?? null }), [driveId, userId, personalFolder]);
   return <DriveFilesContext.Provider value={value}>{children}</DriveFilesContext.Provider>;
 }
 
@@ -84,7 +87,8 @@ const idle = <T,>(): ExplorerQueryResult<T> => ({
 });
 
 function useDriveFileList(dirPath: string): ExplorerQueryResult<FileNode[]> {
-  const { driveId, userId } = useDriveFilesContext();
+  const { driveId, userId, personalFolder } = useDriveFilesContext();
+  const t = useTranslations('drives');
   const path = toDrivePath(dirPath);
   const scope = userId ? `${userId}:${driveId}:${path}` : null;
   const query = useQuery({
@@ -105,17 +109,14 @@ function useDriveFileList(dirPath: string): ExplorerQueryResult<FileNode[]> {
     () =>
       query.data?.entries
         .filter((e) => e.type !== 'symlink')
-        // `/Users` only holds people's own folders, each reached as My files
-        // or Shared with me: at the top it is a folder nobody can use.
-        .filter((e) => e.path !== '/Users')
         .map((e) => ({
-          name: e.name,
+          name: e.path === personalFolder ? t('treeYou', { name: e.name }) : e.name,
           path: fromDrivePath(e.path),
           absolute: e.path,
           type: e.type === 'dir' ? 'directory' : 'file',
           ignored: false,
         })),
-    [query.data],
+    [query.data, personalFolder, t],
   );
   return { data, isLoading: query.isLoading, isFetching: query.isFetching, error: query.error, refetch: query.refetch };
 }
@@ -246,6 +247,8 @@ function useDriveMutation<TArgs>(
           queryClient.invalidateQueries({ queryKey: qk.drives.files(driveId, folder), exact: true }),
         ),
         queryClient.invalidateQueries({ queryKey: qk.drives.versions(driveId), refetchType: 'none' }),
+        // What the Files hold changed: the storage meter and the folder warnings read it again.
+        queryClient.invalidateQueries({ queryKey: qk.drives.usage(driveId), exact: true }),
       ]),
     // A create, move or delete is not idempotent: retrying one the server
     // already applied answers "already exists" / "not found" for a success.
@@ -265,6 +268,8 @@ export const driveExplorerSource: FileExplorerSource = {
     hiddenToggle: false,
     gitStatusChip: false,
     newFile: false,
+    // Any size: above 64 MiB the SDK sends the file in 1 MiB blocks.
+    maxUploadBytes: null,
     // The top level and `/Users` hold only folders; files go inside one.
     filesAllowedAt: (path) => {
       const p = toDrivePath(path);
@@ -285,6 +290,7 @@ export const driveExplorerSource: FileExplorerSource = {
   useFileCommitDiff: () => idle(),
   useFileUpload: () => {
     const queryClient = useQueryClient();
+    const limitMessage = useDriveLimitMessage();
     return useDriveMutation<{
       file: File | Blob;
       targetPath?: string;
@@ -302,7 +308,9 @@ export const driveExplorerSource: FileExplorerSource = {
         return result;
       } catch (err) {
         queryClient.removeQueries({ queryKey: key, exact: true });
-        throw err;
+        // A refused limit reads in the reader's language, with its numbers.
+        const message = limitMessage(err, name, file.size);
+        throw message ? new Error(message) : err;
       }
       },
       ({ targetPath }) => [toDrivePath(targetPath)],
@@ -370,7 +378,9 @@ export const driveExplorerSource: FileExplorerSource = {
   useFileMkdir: () => {
     const queryClient = useQueryClient();
     return useDriveMutation<{ dirPath: string; everyone?: boolean }>(
-      async (driveId, { dirPath, everyone }) => {
+      // `everyone` is ignored: nothing is shared with the whole project. A new
+      // folder inherits its parent's agents; an admin adds more in Share.
+      async (driveId, { dirPath }) => {
         const path = toDrivePath(dirPath);
         // A new folder is empty: its card reads 0 at once and never lists a
         // folder the server has not made yet. Access is its parent's, which
@@ -380,11 +390,7 @@ export const driveExplorerSource: FileExplorerSource = {
           const parent = queryClient.getQueryData<FolderListing>(qk.drives.files(driveId, parentOf(path)));
           queryClient.setQueryData<FolderListing>(key, { entries: [], access: parent?.access ?? 'write' });
         }
-        const made = await makeDriveFolder(driveId, path);
-        // A team folder says who can open it when it is made. Should the share
-        // fail, the folder stays admins-only, which its badge shows.
-        if (everyone) await shareFolder(driveId, { path, principalType: 'project', level: 'write' });
-        return made;
+        return makeDriveFolder(driveId, path);
       },
       ({ dirPath }) => [parentOf(toDrivePath(dirPath))],
     );

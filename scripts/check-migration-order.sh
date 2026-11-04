@@ -40,7 +40,7 @@ for ref in refs/remotes/origin/dev refs/remotes/upstream/dev; do
 done
 if [ -z "$base" ]; then
   echo "migration-order: no origin/dev or upstream/dev ref with migrations; check skipped." >&2
-  echo "  Fetch the canonical dev branch (git fetch <kortix-ai/suna remote> dev) so this guard can run." >&2
+  echo "  Fetch the canonical dev branch (git fetch <kortix-ai/CompanyOS remote> dev) so this guard can run." >&2
   exit 0
 fi
 
@@ -50,6 +50,9 @@ out=$(while read -r _ local_sha remote_ref _; do
   git diff --no-renames --diff-filter=A --name-only "$base...$local_sha" -- \
     "$dir/*.sql" "$dir/*.concurrent.ts"
 done | sort -u | while read -r f; do
+  # origin/dev already runs this exact file (migrations are immutable): a
+  # stage-fix branch that cherry-picks a dev fix onto staging adds nothing new.
+  git cat-file -e "$base:$f" 2>/dev/null && continue
   ts=$(basename "$f" | sed -En 's#^([0-9]{17})_.*#\1#p')
   [ -n "$ts" ] && [ "$ts" -le "$base_max" ] && echo "  $f"
 done || true)

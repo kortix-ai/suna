@@ -79,6 +79,13 @@ describe('isPrivateIp', () => {
     ['::7f00:1', true],
     ['::ffff:808:808', false],
     ['0:0:0:0:0:ffff:7f00:1', true],
+    // IPv4-translated (SIIT, ::ffff:0:0/96) → unwrapped and checked as v4
+    ['::ffff:0:7f00:1', true],
+    ['::ffff:0:a9fe:a9fe', true],
+    ['::ffff:0:808:808', false],
+    // Deprecated site-local fec0::/10
+    ['fec0::1', true],
+    ['feff::1', true],
     ['not-an-ip', true], // non-IP → unsafe (defensive)
     ['', true],
   ];

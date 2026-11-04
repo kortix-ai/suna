@@ -23,9 +23,7 @@ function findCatalogFlag(key: string) {
 
 /** Registered but deliberately not offered as a toggle — see "Hidden flags" in
  *  the registry header. */
-// Flags derived from the project's Volumes flag are hidden too, but are not
-// choices of their own: they are covered by integration-volumes-feature-flag.test.ts.
-const HIDDEN_KEYS = REGISTERED_FEATURE_FLAGS.filter((f) => f.catalogHidden && !f.derivedFrom).map((f) => f.key);
+const HIDDEN_KEYS = REGISTERED_FEATURE_FLAGS.filter((f) => f.catalogHidden).map((f) => f.key);
 
 describe('registry ↔ contract', () => {
   // Compared as sets: the registry's order is the Settings display order and is
@@ -41,7 +39,7 @@ describe('registry ↔ contract', () => {
         .filter((key) => {
           const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === key);
           // A hidden flag is listed (read-only) only while it resolves on.
-          return !def?.derivedFrom && (!def?.catalogHidden || resolveFeatureFlag({}, key));
+          return !def?.catalogHidden || resolveFeatureFlag({}, key);
         })
         .sort(),
     );
@@ -81,8 +79,8 @@ describe('isFeatureFlagKey', () => {
 
 describe('resolveFeatureFlag — explicit override wins', () => {
   test('per-project map overrides the platform default', () => {
-    expect(resolveFeatureFlag({ experimental: { meta_agent: true } }, 'meta_agent')).toBe(true);
-    expect(resolveFeatureFlag({ experimental: { meta_agent: false } }, 'meta_agent')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { reminders: true } }, 'reminders')).toBe(true);
+    expect(resolveFeatureFlag({ experimental: { reminders: false } }, 'reminders')).toBe(false);
   });
 
   test('agent_principal graduated: no flag, and a stored override is inert', () => {
@@ -100,28 +98,23 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('agent_tunnel');
   });
 
-  test('warm sessions require explicit opt-in before spending idle compute', () => {
-    for (const metadata of [undefined, null, {}, { experimental: {} }, { experimental: { warm_sessions: 'true' } }]) {
-      expect(resolveFeatureFlag(metadata, 'warm_sessions')).toBe(false);
-    }
-    expect(resolveFeatureFlags({}).warm_sessions).toBe(false);
-    expect(findCatalogFlag('warm_sessions')).toMatchObject({
-      available: true,
-      enabled: false,
-      overridden: false,
-    });
-    expect(resolveFeatureFlag({ experimental: { warm_sessions: true } }, 'warm_sessions')).toBe(true);
-    expect(resolveFeatureFlag({ experimental: { warm_sessions: false } }, 'warm_sessions')).toBe(false);
+  test('email_channel is an explicit opt-in', () => {
+    // The Resend inbox channel ships behind its own flag; the retired
+    // `agentmail_email` key stays graduated and inert.
+    expect(resolveFeatureFlag({}, 'email_channel')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { email_channel: true } }, 'email_channel')).toBe(true);
+    expect(findCatalogFlag('email_channel')).toMatchObject({ stability: 'experimental', enabled: false });
   });
 
-  test('agentmail_email is explicit opt-in', () => {
-    expect(resolveFeatureFlag({}, 'agentmail_email')).toBe(false);
-    expect(
-      resolveFeatureFlag({ experimental: { agentmail_email: true } }, 'agentmail_email'),
-    ).toBe(true);
-    expect(
-      resolveFeatureFlag({ experimental: { agentmail_email: false } }, 'agentmail_email'),
-    ).toBe(false);
+  test('agentmail_email graduated: every project can connect email and a stored override is inert', () => {
+    // 2026-10-24: the email channel is on for every project. Turning it on
+    // never created an inbox (only an explicit connect does), so graduating
+    // provisions nothing. A stored `experimental.agentmail_email` stays in
+    // metadata; it must not resurface as a key, a catalog row, or a gate.
+    expect(isFeatureFlagKey('agentmail_email')).toBe(false);
+    const metadata = { experimental: { agentmail_email: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('agentmail_email');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('agentmail_email');
   });
 
   test('apps graduated: Apps is generally available and a stored override is inert', () => {
@@ -145,24 +138,9 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('llm_gateway');
   });
 
-  test('monitors is explicit opt-in and gated on Platinum availability', () => {
-    const available = Boolean(config.PLATINUM_API_KEY);
-    expect(findCatalogFlag('monitors')).toMatchObject({
-      name: 'Monitors',
-      stability: 'experimental',
-      available,
-      enabled: false,
-    });
-    // Off by default everywhere; a project's explicit opt-in wins only where
-    // the platform can actually run a persistent box (Platinum configured).
-    expect(resolveFeatureFlag({}, 'monitors')).toBe(false);
-    expect(resolveFeatureFlag({ experimental: { monitors: true } }, 'monitors')).toBe(available);
-    expect(resolveFeatureFlag({ experimental: { monitors: false } }, 'monitors')).toBe(false);
-  });
-
   test('event_triggers is a beta, explicit opt-in flag offered everywhere', () => {
     expect(findCatalogFlag('event_triggers')).toMatchObject({
-      name: 'App event triggers',
+      name: 'Composio event triggers',
       stability: 'beta',
       enabled: false,
       operator_only: false,
@@ -176,14 +154,26 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { event_triggers: false } }, 'event_triggers')).toBe(false);
   });
 
-  test('connectors_v2 is an experimental, explicit opt-in flag offered everywhere', () => {
-    expect(findCatalogFlag('connectors_v2')).toMatchObject({
+  test('connectors_v2 and connectors_api_discover graduated: one catalog for every project, a stored override is inert', () => {
+    // 2026-10-24: the Kortix catalog (MCP apps, integrations.sh, Composio) is the
+    // only connectors path. Projects that stored either key keep the value in
+    // metadata; it must not resurface as a key, a catalog row, or a gate.
+    for (const key of ['connectors_v2', 'connectors_api_discover']) {
+      expect(isFeatureFlagKey(key)).toBe(false);
+      const metadata = { experimental: { [key]: false } };
+      expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain(key);
+      expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain(key);
+    }
+  });
+
+  test('project_channels is an experimental, explicit opt-in flag offered everywhere', () => {
+    expect(findCatalogFlag('project_channels')).toMatchObject({
       stability: 'experimental',
       enabled: false,
       operator_only: false,
     });
-    expect(resolveFeatureFlag({}, 'connectors_v2')).toBe(false);
-    expect(resolveFeatureFlag({ experimental: { connectors_v2: true } }, 'connectors_v2')).toBe(true);
+    expect(resolveFeatureFlag({}, 'project_channels')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { project_channels: true } }, 'project_channels')).toBe(true);
   });
 
   test('session_transcript_history graduated: saved history has no off switch and a stored override is inert', () => {
@@ -223,21 +213,6 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('config_releases');
   });
 
-  test('connectors_api_discover requires explicit opt-in', () => {
-    expect(resolveFeatureFlag({}, 'connectors_api_discover')).toBe(false);
-    expect(
-      resolveFeatureFlag(
-        { experimental: { connectors_api_discover: true } },
-        'connectors_api_discover',
-      ),
-    ).toBe(true);
-    expect(
-      resolveFeatureFlag(
-        { experimental: { connectors_api_discover: false } },
-        'connectors_api_discover',
-      ),
-    ).toBe(false);
-  });
 
   test('session_log_restore follows the deployment default while a stored project value wins', () => {
     const previous = config.SESSION_LOG_RESTORE_DEFAULT_ENABLED;
@@ -256,9 +231,6 @@ describe('resolveFeatureFlag — explicit override wins', () => {
 
   test('non-boolean stored values are treated as "no override"', () => {
     for (const garbage of ['true', 1, 0, null, [], {}, 'yes']) {
-      expect(resolveFeatureFlag({ experimental: { monitors: garbage } }, 'monitors')).toBe(
-        resolveFeatureFlag({}, 'monitors'),
-      );
       expect(resolveFeatureFlag({ experimental: { marketplace: garbage } }, 'marketplace')).toBe(
         resolveFeatureFlag({}, 'marketplace'),
       );
@@ -267,53 +239,49 @@ describe('resolveFeatureFlag — explicit override wins', () => {
 
   test('a malformed experimental subtree never throws', () => {
     for (const metadata of [null, undefined, {}, { experimental: null }, { experimental: 'x' }, []]) {
-      expect(typeof resolveFeatureFlag(metadata, 'meta_agent')).toBe('boolean');
+      expect(typeof resolveFeatureFlag(metadata, 'reminders')).toBe('boolean');
       expect(typeof resolveFeatureFlag(metadata, 'marketplace')).toBe('boolean');
-      expect(typeof resolveFeatureFlag(metadata, 'agentmail_email')).toBe('boolean');
     }
   });
 });
 
 describe('resolveFeatureFlags', () => {
   test('returns a boolean for every registered key', () => {
-    const map = resolveFeatureFlags({ experimental: { meta_agent: true } });
+    const map = resolveFeatureFlags({ experimental: { reminders: false } });
     expect(Object.keys(map).sort()).toEqual([...FEATURE_FLAG_KEYS].sort());
     for (const key of FEATURE_FLAG_KEYS) {
       expect(typeof map[key]).toBe('boolean');
     }
-    expect(map.meta_agent).toBe(true);
+    expect(map.reminders).toBe(false);
   });
 
   test('a stored override for a graduated key is inert', () => {
     // Review Center graduated out of the flag system. Projects that toggled it
     // before graduation still carry `experimental.review_center` in metadata.
     // That value must not resurface as a key, a catalog row, or a gate.
-    const metadata = { experimental: { review_center: false, meta_agent: true } };
-    expect(isFeatureFlagKey('review_center')).toBe(false);
+    // `meta_agent` was removed the same way on 2026-11-02, and
+    // `warm_sessions` on 2026-11-03: a stored `true` turns nothing on.
+    const metadata = { experimental: { review_center: false, meta_agent: false, warm_sessions: true, reminders: false } };
+    for (const key of ['review_center', 'meta_agent', 'warm_sessions']) {
+      expect(isFeatureFlagKey(key)).toBe(false);
+      expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key as string)).not.toContain(key);
+    }
     expect(Object.keys(resolveFeatureFlags(metadata)).sort()).toEqual([...FEATURE_FLAG_KEYS].sort());
-    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('review_center');
-    expect(resolveFeatureFlags(metadata).meta_agent).toBe(true);
+    expect(resolveFeatureFlags(metadata).reminders).toBe(false);
   });
 });
 
 describe('buildFeatureFlagCatalog', () => {
   test('describes each flag with effective + overridden state', () => {
-    const catalog = buildFeatureFlagCatalog({ experimental: { meta_agent: true } });
+    const catalog = buildFeatureFlagCatalog({ experimental: { reminders: false } });
 
-    const metaAgent = catalog.find((f) => f.key === 'meta_agent');
-    if (!metaAgent) throw new Error('Missing Meta Agent flag');
-    expect(metaAgent.name).toBeTruthy();
-    expect(metaAgent.description).toBeTruthy();
-    expect(metaAgent.enabled).toBe(true);
-    expect(metaAgent.overridden).toBe(true);
-    expect(typeof metaAgent.available).toBe('boolean');
-
-    const email = catalog.find((f) => f.key === 'agentmail_email');
-    if (!email) throw new Error('Missing AgentMail Email flag');
-    expect(email.name).toBe('AgentMail Email');
-    expect(email.stability).toBe('experimental');
-    expect(email.enabled).toBe(false);
-    expect(email.overridden).toBe(false);
+    const reminders = catalog.find((f) => f.key === 'reminders');
+    if (!reminders) throw new Error('Missing Reminders flag');
+    expect(reminders.name).toBeTruthy();
+    expect(reminders.description).toBeTruthy();
+    expect(reminders.enabled).toBe(false);
+    expect(reminders.overridden).toBe(true);
+    expect(typeof reminders.available).toBe('boolean');
   });
 
   test('an unavailable flag is never enabled', () => {
@@ -334,15 +302,21 @@ describe('buildFeatureFlagCatalog', () => {
  * break (d) and take the operator lever with it.
  */
 describe('catalogHidden', () => {
-  test('only internal-only surfaces are hidden: session_log_restore (the boot restore from the session log)', () => {
-    // `apps` graduated (2026-10-14) and `session_log` (2026-10-22): neither is a flag.
-    expect(HIDDEN_KEYS).toEqual(['session_log_restore']);
+  test('only internal-only surfaces are hidden: session_log_restore (the boot restore from the session log) and workspace_volume (stateless sandboxes)', () => {
+    // `apps` graduated (2026-10-14), `session_log` (2026-10-22) and `meta_agent` was removed (2026-11-02): none is a flag.
+    expect(HIDDEN_KEYS).toEqual(['session_log_restore', 'workspace_volume']);
   });
 
-  test('session_log_restore is a behavioral flag that defaults off', () => {
+  test('workspace_volume is a behavioral flag that defaults off and needs Platinum', () => {
+    const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'workspace_volume');
+    expect(def?.enforcement).toBe('behavioral');
+    expect(resolveFeatureFlag({}, 'workspace_volume')).toBe(false);
+  });
+
+  test('session_log_restore is a behavioral flag that defaults on', () => {
     const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'session_log_restore');
     expect(def?.enforcement).toBe('behavioral');
-    expect(resolveFeatureFlag({}, 'session_log_restore')).toBe(false);
+    expect(resolveFeatureFlag({}, 'session_log_restore')).toBe(true);
   });
 
   for (const key of HIDDEN_KEYS) {
@@ -404,11 +378,18 @@ describe('featureDisabledBody', () => {
       expect(body.code).toBe('feature_disabled');
       expect(body.feature).toBe(key);
       expect(typeof body.error).toBe('string');
-      // A flag derived from Volumes points at the Volumes toggle, and a hidden
-      // flag has no toggle in Settings to point at. No message names an organization.
-      const derived = REGISTERED_FEATURE_FLAGS.find((f) => f.key === key)?.derivedFrom;
-      expect(body.error).toContain(derived ? 'Turn on Volumes' : HIDDEN_KEYS.includes(key) ? 'Contact Kortix' : 'Settings');
+      // A hidden flag has no toggle in Settings to point at. No message names an organization.
+      expect(body.error).toContain(HIDDEN_KEYS.includes(key) ? 'Contact Kortix' : 'Settings');
       expect(body.error).not.toContain('organization');
     }
+  });
+});
+
+
+describe('artifact comments require Artifacts', () => {
+  test('defaults off and cannot run when Artifacts is off', () => {
+    expect(resolveFeatureFlag({}, 'artifact_comments')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { artifacts: false, artifact_comments: true } }, 'artifact_comments')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { artifacts: true, artifact_comments: true } }, 'artifact_comments')).toBe(Boolean(config.PLATINUM_API_KEY));
   });
 });

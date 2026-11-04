@@ -214,11 +214,11 @@ export {
 } from './primitives/marker';
 export { useDebounce } from './hooks/use-debounce';
 export { useIsMobile } from './hooks/use-mobile';
-export { useMediaQuery } from './internal/hooks/use-media-query';
+export { useMediaQuery } from './hooks/use-media-query';
 export { useSlashFocus } from './internal/hooks/use-slash-focus';
 export { faviconUrlForHostname } from './lib/favicon';
 export { setUiHostEnv } from './lib/host-env';
-export { defaultUiRoutes, setUiRoutes, uiRoutes, type UiRoutes } from './lib/routes';
+export { decodeSpaceSegment, defaultUiRoutes, setUiRoutes, uiRoutes, type UiRoutes } from './lib/routes';
 export { DEFAULT_ICON_WEIGHT, ICON_WEIGHTS, SHIPPED_ICON_WEIGHTS } from './lib/icon-config';
 export { lazyClient } from './lib/lazy-client';
 export { spring } from './lib/springs';

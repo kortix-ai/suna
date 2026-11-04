@@ -67,12 +67,10 @@ describe('manifest compare-and-swap routing', () => {
     const result = await commitManifest(
       project,
       {
-        schemaVersion: 2,
-        format: 'yaml',
         path: 'kortix.yaml',
         revision: 'a'.repeat(40),
-        candidatePaths: ['kortix.yaml', 'kortix.yml', 'kortix.toml'],
-        raw: { kortix_version: 2, connectors: [] },
+        candidatePaths: ['kortix.yaml', 'kortix.yml'],
+        raw: { connectors: [] },
       },
       'manifest write',
     );
@@ -81,7 +79,7 @@ describe('manifest compare-and-swap routing', () => {
     expect(gitCommit?.options.expectedFileRevision).toEqual({
       path: 'kortix.yaml',
       sha: 'a'.repeat(40),
-      candidatePaths: ['kortix.yaml', 'kortix.yml', 'kortix.toml'],
+      candidatePaths: ['kortix.yaml', 'kortix.yml'],
     });
     expect(contentsWrites).toBe(0);
     expect(shaReads).toBe(0);
@@ -93,12 +91,10 @@ describe('manifest compare-and-swap routing', () => {
     const result = await commitManifest(
       project,
       {
-        schemaVersion: 2,
-        format: 'yaml',
         path: 'kortix.yaml',
         revision: 'a'.repeat(40),
-        candidatePaths: ['kortix.yaml', 'kortix.yml', 'kortix.toml'],
-        raw: { kortix_version: 2, connectors: [] },
+        candidatePaths: ['kortix.yaml', 'kortix.yml'],
+        raw: { connectors: [] },
       },
       'stale manifest write',
     );
@@ -121,12 +117,10 @@ describe('manifest compare-and-swap routing', () => {
     const result = await commitManifest(
       project,
       {
-        schemaVersion: 2,
-        format: 'yaml',
         path: 'kortix.yaml',
         revision: 'a'.repeat(40),
-        candidatePaths: ['kortix.yaml', 'kortix.yml', 'kortix.toml'],
-        raw: { kortix_version: 2, connectors: [] },
+        candidatePaths: ['kortix.yaml', 'kortix.yml'],
+        raw: { connectors: [] },
       },
       'protected manifest write',
     );
@@ -149,11 +143,9 @@ describe('manifest compare-and-swap routing', () => {
     const result = await commitManifest(
       project,
       {
-        schemaVersion: 2,
-        format: 'yaml',
         path: 'kortix.yaml',
         revision: 'a'.repeat(40),
-        raw: { kortix_version: 2, connectors: [] },
+        raw: { connectors: [] },
       },
       'manifest write',
     );
@@ -183,12 +175,10 @@ describe('manifest compare-and-swap routing', () => {
     const result = await commitManifest(
       project,
       {
-        schemaVersion: 2,
-        format: 'yaml',
         path: 'kortix.yaml',
         revision: 'a'.repeat(40),
-        candidatePaths: ['kortix.yaml', 'kortix.yml', 'kortix.toml'],
-        raw: { kortix_version: 2, connectors: [] },
+        candidatePaths: ['kortix.yaml', 'kortix.yml'],
+        raw: { connectors: [] },
       },
       'manifest write during a GitHub incident',
     );
@@ -201,10 +191,8 @@ describe('manifest compare-and-swap routing', () => {
     const result = await commitManifest(
       project,
       {
-        schemaVersion: 2,
-        format: 'yaml',
         path: 'kortix.yaml',
-        raw: { kortix_version: 2, connectors: [] },
+        raw: { connectors: [] },
       },
       'unguarded manifest write',
     );
@@ -225,10 +213,8 @@ describe('manifest compare-and-swap routing', () => {
     const result = await commitManifest(
       project,
       {
-        schemaVersion: 2,
-        format: 'yaml',
         path: 'kortix.yaml',
-        raw: { kortix_version: 2, connectors: [] },
+        raw: { connectors: [] },
       },
       'unguarded manifest write',
     );

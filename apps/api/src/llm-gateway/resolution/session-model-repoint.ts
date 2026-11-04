@@ -32,7 +32,7 @@ import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { isRetiredManagedModelId } from '../models/managed-models';
-import { platformDefaultModelId, servedManagedModels } from '../models/served-managed-models';
+import { platformDefaultModelId } from '../models/served-managed-models';
 import { resolveEffectiveModel } from './default-model';
 import { toOpencodeModelRef, toWireModel } from './effective';
 import { resolveSessionManagedModel } from './session-model';
@@ -81,7 +81,6 @@ export async function repointRetiredSessionModel(
   const projectDefault = resolved.model ? toWireModel(resolved.model) : null;
   const decision = resolveSessionManagedModel(
     wire,
-    servedManagedModels(),
     projectDefault,
     subject.freeModelsOnly ? null : platformDefaultModelId(),
   );

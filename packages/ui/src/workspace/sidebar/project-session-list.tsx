@@ -5,7 +5,6 @@ import { useTranslations } from '../../i18n';
 
 import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
 import {
-  isMetaCoordinatorSession,
   matchesSourceFilters,
   matchesStatusFilters,
   sessionCanBeStopped,
@@ -19,6 +18,10 @@ import { CountBadge } from '../../primitives/count-badge';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../primitives/disclosure';
 import {
   DropdownMenu,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
@@ -46,6 +49,7 @@ import {
 import { SessionsEmptyState } from '../sessions/sessions-empty-state';
 import { RenameSessionModal } from './modal/rename-session-modal';
 import { SessionDeleteModal } from '../../session/actions/session-delete-modal';
+import { subagentTitle } from '../../session/agents/agent-model';
 import { SessionLabelsModal } from './modal/session-labels-modal';
 import { ShareSessionModal } from './modal/share-session-modal';
 import {
@@ -57,13 +61,25 @@ import {
   starterSectionOf,
 } from '../../session/actions/project-session-list-helpers';
 import {
-  MobileSessionCreatedTime,
   SessionBriefDescription,
   SessionBriefCardHost,
   SessionBriefHoverCard,
   SubagentHoverCard,
 } from './session-brief-hover-card';
 import { SessionFilterMenu } from './session-filter-menu';
+import {
+  SESSION_MENU_TRIGGER_CLASS,
+  SESSION_ROW_HEIGHT_CLASS,
+  SIDEBAR_PAGE_SIZE,
+  ShowMoreButton,
+} from './session-list-chrome';
+import {
+  SessionGroupNameModal,
+  SessionGroupSections,
+  UngroupDropArea,
+  startSessionDrag,
+  useSessionGroupActions,
+} from './session-group-sections';
 import {
   groupSessions,
   type SessionSection,
@@ -100,6 +116,7 @@ import {
   type ChangeRequest,
   type ProjectRuntimeSession,
   type ProjectSession,
+  type ProjectSessionGroup,
 } from '@kortix/sdk';
 import {
   qk,
@@ -108,13 +125,18 @@ import {
   useRuntimeSupports,
   useSessionChildren,
   useFeatureFlag,
+  useProjectSessionGroups,
   useSessionGoal,
 } from '@kortix/sdk/react';
 import {
   ArchiveIcon,
   ArrowsSplitIcon,
   CaretRightIcon,
+  CheckIcon,
   DotsThreeIcon,
+  FolderSimpleIcon,
+  FolderSimpleMinusIcon,
+  FolderSimplePlusIcon,
   PushPinIcon,
   PushPinSlashIcon,
   RobotIcon,
@@ -123,7 +145,6 @@ import {
   PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
-  SparkleIcon,
   TargetIcon,
   SquareIcon as Square,
   TagIcon,
@@ -133,7 +154,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useUiPathname, useUiRouter, useUiSearchParams, useUiViewerId } from '../../providers/ui-provider';
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSessionListActions } from '../../session/actions/use-session-list-actions';
 import { Separator } from '../../primitives/separator';
 
@@ -144,79 +165,25 @@ interface ProjectSessionListProps {
 const SESSION_RELATIVE_TIME_CLASS =
   'text-muted-foreground block w-10 min-w-10 max-w-10 shrink-0 truncate text-right text-xs tabular-nums';
 
-/** The one `⋯` box. All three menus in this file — the `Sessions` header, every
- *  section header, and every session row — render `Button variant="ghost"
- *  size="icon-xs"` with THIS class, so the glyph sits on a single vertical
- *  axis at every level of the tree.
+/** The same trigger on a device that cannot hover (touch).
  *
- *  The geometry, given every row is `px-2` inside the same column: the trigger
- *  is flush to the right edge of that padded box, so its 24px square spans
- *  `[W-32, W-8]` and the 16px glyph inside spans `[W-28, W-12]` — identical for
- *  all three, at any sidebar width.
+ *  A row looks the same everywhere: one line, `h-8`, at every width. A touch
+ *  row is a desktop row under the pointer: the `⋯` square sits in the same
+ *  place at the same size, it is only always visible, because a finger cannot
+ *  hover to reveal it. An unpainted `::after` grows the tap target to the row's
+ *  height without growing the square.
  *
- *  Do NOT rebuild this from `SidebarMenuButton`. That primitive's base carries
- *  `p-2 w-full h-8 gap-2 overflow-hidden`; `size-6` only beats `w-full`/`h-8`
- *  through tailwind-merge, and `p-2` survives outright — leaving a 16px icon
- *  overflowing an 8px content box, centered by coincidence rather than by
- *  layout, with a different hover fill than the other two. */
-const SESSION_MENU_TRIGGER_CLASS = cn(
-  'text-muted-foreground shrink-0 transition-none',
-  // An OPAQUE hover fill, and the reason it has to be opaque:
-  //
-  // `variant="ghost"` hovers to `bg-foreground/10`. `background-color` is one
-  // property, so on the row trigger that 10% tint did not sit on top of the
-  // `bg-(--session-row-surface)` mask — it REPLACED it. The mask exists to hide
-  // the truncated session title running underneath the glyph, so hovering
-  // punched a translucent hole in it and the title bled through: the washed-out
-  // grey square in the bug report, with a muted `⋯` floating in it.
-  //
-  // `sidebar-row-control` is one opaque step above the row's own fill
-  // (`--sidebar-row`) on hover, in both themes. The square reads as lifted, stays a solid
-  // mask, and needs no pseudo-element to stack a tint above a fill.
-  'hover:bg-sidebar-row-control data-[state=open]:bg-sidebar-row-control',
-  // Full contrast once the pointer is on it — the glyph is a control now, not a
-  // marker.
-  'hover:text-foreground data-[state=open]:text-foreground',
-);
-
-/** The same trigger on a touch device.
- *
- *  It cannot stay hover-revealed and absolutely positioned — there is no hover,
- *  and the glyph has to hold a real finger target. It goes `relative` (in flex
- *  flow, nothing running underneath it) and permanently visible.
- *
- *  The size is split from the target on purpose. `size-12` made the button the
- *  full 44.16px of the row's own `min-h-12`, so pressing it lit a slab of
- *  `bg-sidebar-accent` spanning the entire row height — a control that reads as
- *  heavy as the row it belongs to. The square is `size-8` and an unpainted
- *  `::after` carries the touch target instead:
- *
- *    size-8            8 × 0.23rem = 29.44px   ← what you see
- *    after:-inset-2  + 2 × 7.36px   = 44.16px  ← what you can hit
- *
- *  44.16px is exactly `min-h-12`, so the target fills the row's height and not
- *  one pixel more: it can never annex a neighbouring row's right edge. Nothing
- *  in the row clips (`overflow-hidden` would drop the overflowing hit area), and
- *  `px-2` on the row is 7.36px, so the target ends flush with the row's edge.
- *
- *  All three variants are the exact complement of the hover-card gate
- *  (`min-width: 768px` AND `hover: hover` AND `pointer: fine`), which is why the
- *  same block is written narrow-viewport, no-hover, and coarse-pointer. */
+ *  A narrow window with a mouse is not a touch device: it keeps hover, so it
+ *  gets no variant here. */
 const SESSION_MENU_TRIGGER_TOUCH_CLASS = cn(
-  "max-md:pointer-events-auto max-md:relative max-md:size-8 max-md:translate-y-0 max-md:opacity-100 max-md:after:absolute max-md:after:-inset-2 max-md:after:content-['']",
-  "[@media(hover:none)]:pointer-events-auto [@media(hover:none)]:relative [@media(hover:none)]:size-8 [@media(hover:none)]:translate-y-0 [@media(hover:none)]:opacity-100 [@media(hover:none)]:after:absolute [@media(hover:none)]:after:-inset-2 [@media(hover:none)]:after:content-['']",
-  "pointer-coarse:pointer-events-auto pointer-coarse:relative pointer-coarse:size-8 pointer-coarse:translate-y-0 pointer-coarse:opacity-100 pointer-coarse:after:absolute pointer-coarse:after:-inset-2 pointer-coarse:after:content-['']",
+  "[@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(hover:none)]:after:absolute [@media(hover:none)]:after:-inset-1 [@media(hover:none)]:after:content-['']",
+  "pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 pointer-coarse:after:absolute pointer-coarse:after:-inset-1 pointer-coarse:after:content-['']",
 );
 
-/** Every row that can carry a `⋯` is this tall, so the trigger's 24px square is
- *  centered in an identical 32px line at all three levels. */
-const SESSION_ROW_HEIGHT_CLASS = 'h-8';
-
-/** Rows per page of an expanded parent, and per page of the Shared and
- *  Automated sections. */
-const SIDEBAR_PAGE_SIZE = 20;
 /** The Pinned section's id in the collapsed-sections store: open unless closed. */
 const PINNED_SECTION_ID = 'section:pinned';
+/** The whole Sessions list, collapsed from its header (same store as the sections). */
+const SESSIONS_SECTION_ID = 'section:sessions';
 
 /** The newest change requests the session briefs read: one server page. */
 const SIDEBAR_CHANGE_REQUEST_LIMIT = 50;
@@ -269,6 +236,27 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const labelFilters = useSessionFilterStore(selectLabelFilters(projectId));
   const labels = labelFilters.length > 0 ? labelFilters : undefined;
 
+  // Session groups (`session_groups`): every group is its own section above
+  // the rest, so the lists below hold only the sessions in no group. While the
+  // flag is unknown the lists wait: a list keyed without `group` would load,
+  // then load again with it.
+  const sessionGroupsFlag = useFeatureFlag(projectId, 'session_groups');
+  const groupsQuery = useProjectSessionGroups(projectId, { enabled: sessionGroupsFlag.enabled });
+  // Groups render once their list loaded. Until then the lists below wait; if
+  // the list cannot load, they list every session (as with the flag off), so
+  // a grouped session never disappears behind a failed read.
+  const groupsEnabled = sessionGroupsFlag.enabled && groupsQuery.isSuccess;
+  const listsReady = !sessionGroupsFlag.isLoading && !(sessionGroupsFlag.enabled && groupsQuery.isPending);
+  const groupFilter = groupsEnabled ? 'none' : undefined;
+  const groups = useMemo(
+    () => (groupsEnabled ? (groupsQuery.data ?? []) : []),
+    [groupsEnabled, groupsQuery.data],
+  );
+  const groupActions = useSessionGroupActions(projectId, groups);
+  const [groupToRename, setGroupToRename] = useState<ProjectSessionGroup | null>(null);
+  // `fileSessionId`: the row whose "New group…" opened the dialog goes into the new group.
+  const [groupCreate, setGroupCreate] = useState<{ fileSessionId: string | null } | null>(null);
+
   // Paged, not the whole inventory. This list is the always-mounted poller: it
   // re-fetches every 5s while any loaded row is still provisioning, so its cost
   // per tick is the cost of the whole surface. Unbounded, a 12,617-session
@@ -293,6 +281,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     parent: 'root',
     startedBy: 'me',
     labels,
+    group: groupFilter,
+    enabled: listsReady,
     refetchInterval: (loaded) =>
       projectSessionsRefetchInterval({
         sessions: loaded,
@@ -312,6 +302,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     parent: 'root',
     startedBy: 'others',
     labels,
+    group: groupFilter,
+    enabled: listsReady,
     limit: SIDEBAR_PAGE_SIZE,
     refetchOnWindowFocus: true,
   });
@@ -319,6 +311,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     parent: 'root',
     startedBy: 'automated',
     labels,
+    group: groupFilter,
+    enabled: listsReady,
     limit: SIDEBAR_PAGE_SIZE,
     refetchOnWindowFocus: true,
   });
@@ -348,6 +342,31 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     if (activeParentId) setExpanded(projectId, activeParentId, true);
     if (activeSection) setExpanded(projectId, `section:${activeSection}`, true);
   }, [projectId, activeParentId, activeSection, setExpanded]);
+
+  // The session you are in opens when it spawns a session, so the new row is
+  // in view. Only a rise while you watch opens it: a row you closed stays
+  // closed on every later read.
+  const activeChildCount =
+    [sessions, pinnedQuery.sessions, sharedQuery.sessions, automatedQuery.sessions]
+      .flat()
+      .find((session) => session.session_id === activeSessionId)?.child_count ?? null;
+  const seenChildCount = useRef<{ sessionId: string | null; count: number | null }>({
+    sessionId: null,
+    count: null,
+  });
+  useEffect(() => {
+    const seen = seenChildCount.current;
+    if (
+      activeSessionId &&
+      seen.sessionId === activeSessionId &&
+      seen.count !== null &&
+      activeChildCount !== null &&
+      activeChildCount > seen.count
+    ) {
+      setExpanded(projectId, activeSessionId, true);
+    }
+    seenChildCount.current = { sessionId: activeSessionId ?? null, count: activeChildCount };
+  }, [projectId, activeSessionId, activeChildCount, setExpanded]);
 
   // The brief is a session record, not a Review Center inbox. It therefore
   // loads every CR state, not only the ones awaiting review: the newest
@@ -430,7 +449,9 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     matchesStatusFilters(session, statusFilters) &&
     matchesSourceFilters(session, sourceFilters, tI18nComplete);
   const visiblePinned = pinnedQuery.sessions.filter(passesFacets);
-  const unpinned = (session: ProjectSession) => !session.pinned_at && passesFacets(session);
+  // A row filed into a group a moment ago leaves these lists before their refetch lands.
+  const unpinned = (session: ProjectSession) =>
+    !session.pinned_at && !(groupsEnabled && session.group_id) && passesFacets(session);
   const visibleSessions = sessions.filter(unpinned);
   const visibleShared = sharedQuery.sessions.filter(unpinned);
   const visibleAutomated = automatedQuery.sessions.filter(unpinned);
@@ -438,7 +459,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     sharedQuery.sessions.length + automatedQuery.sessions.length + pinnedQuery.sessions.length;
   const visibleOtherCount = visibleShared.length + visibleAutomated.length + visiblePinned.length;
 
-  const viewState = resolveSessionListViewState({
+  const resolvedViewState = resolveSessionListViewState({
     hasData: data !== undefined,
     isError,
     totalCount: sessions.length + otherCount,
@@ -449,6 +470,12 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     hasMore:
       hasNextPage || sharedQuery.hasNextPage || automatedQuery.hasNextPage || pinnedQuery.hasNextPage,
   });
+  // The groups are content too: a project whose every session sits in a group
+  // is not empty, and a filter that matches nothing below still shows them.
+  const viewState =
+    groups.length > 0 && (resolvedViewState === 'empty' || resolvedViewState === 'no-matches')
+      ? 'content'
+      : resolvedViewState;
 
   // One session row, its opencode sub-sessions, and (top-level rows only) the
   // sessions it spawned, loaded when the row opens. `nested` marks a spawned
@@ -484,7 +511,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               beginSessionSwitch(session.session_id);
             }
           }}
-          displayTitle={getSessionDisplayTitle(session)}
+          displayTitle={nested ? subagentTitle(getSessionDisplayTitle(session)) : getSessionDisplayTitle(session)}
           inSharedGroup={inSharedGroup}
           spawned={nested}
           subagentCount={children.length}
@@ -501,6 +528,16 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           onShare={(s) => setSessionToShare(s)}
           onRename={(id, name) => setSessionToRename({ id, name })}
           onEditLabels={setSessionToLabel}
+          // Top-level sessions only: a spawned session stays with its parent,
+          // also where it shows on its own (Pinned).
+          groups={groupsEnabled && !nested && sessionParentId(session) === null ? groups : undefined}
+          onMoveToGroup={(id, groupId) => void groupActions.move(id, groupId, { toast: true })}
+          onNewGroupFor={(id) => setGroupCreate({ fileSessionId: id })}
+          onDragStart={
+            groupsEnabled && !nested && sessionParentId(session) === null
+              ? (event) => startSessionDrag(event, session.session_id)
+              : undefined
+          }
           onRestart={(id, label) => restartMutation.mutate({ sessionId: id, label })}
           isRestarting={
             restartMutation.isPending && restartMutation.variables?.sessionId === session.session_id
@@ -628,7 +665,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     // that case here instead of letting `FadedScrollArea` render nothing with
     // no explanation.
     // `more`: no row yet, but a list has a next page. Its Load more renders below.
-    if (viewState !== 'more' && grouped.sections.length === 0 && visibleOtherCount === 0) {
+    if (viewState !== 'more' && grouped.sections.length === 0 && visibleOtherCount === 0 && groups.length === 0) {
       return (
         <div className="text-muted-foreground px-2 pt-1 pb-2 text-xs">{t('allSectionsHidden')}</div>
       );
@@ -648,11 +685,41 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           renderNode={(session) => renderSessionNode(session, false)}
           caretOnHover
         />
-        {visiblePinned.length > 0 && !grouped.showHeaders && (
+        {groups.length > 0 && (
+          <SessionGroupSections
+            projectId={projectId}
+            groups={groups}
+            labels={labels}
+            collapsedSectionIds={collapsedSectionIds}
+            onToggleSection={(sectionId) => toggleSectionCollapsed(projectId, sectionId)}
+            passesFacets={passesFacets}
+            renderNode={(session) => renderSessionNode(session, false)}
+            actions={groupActions}
+            onRename={setGroupToRename}
+          />
+        )}
+        {/* Without headers below, a line keeps the next row from reading as
+            part of the pinned rows or of the last group. */}
+        {(visiblePinned.length > 0 || groups.length > 0) && !grouped.showHeaders && (
           <div className="px-2 py-1">
             <Separator />
           </div>
         )}
+        {groupsEnabled ? (
+          <UngroupDropArea onDropSession={(sessionId) => void groupActions.move(sessionId, null)}>
+            {renderUngrouped(grouped)}
+          </UngroupDropArea>
+        ) : (
+          renderUngrouped(grouped)
+        )}
+      </FadedScrollArea>
+    );
+  }
+
+  /** The sessions in no group: the grouped sections, Load more, Shared, Automated and the first chat. */
+  function renderUngrouped(grouped: ReturnType<typeof groupSessions>) {
+    return (
+      <>
         {grouped.sections.map((section) => (
           <SessionListSection
             key={section.id}
@@ -703,20 +770,31 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               isActive={pathname === uiRoutes().project(projectId) && isFirstChatRequested(searchParams)}
             />
           )}
-      </FadedScrollArea>
+      </>
     );
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col space-y-px">
-      <SessionListHeader
-        projectId={projectId}
-        sessions={sessions}
-        reviewCountBySession={needsYouBySession}
-        onMenuOpenChange={holdPeek}
-      />
-
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{renderBody()}</div>
+      {/* The header collapses the whole list: Pinned, the time or status
+          sections, Shared, Automated. Open by default; the choice persists. */}
+      <Disclosure
+        open={!collapsedSectionIds.has(SESSIONS_SECTION_ID)}
+        onOpenChange={() => toggleSectionCollapsed(projectId, SESSIONS_SECTION_ID)}
+        className="group/sessions flex min-h-0 flex-1 flex-col space-y-px"
+        transition={{ duration: 0.15, ease: 'easeOut' }}
+      >
+        <SessionListHeader
+          projectId={projectId}
+          sessions={sessions}
+          reviewCountBySession={needsYouBySession}
+          onMenuOpenChange={holdPeek}
+          onNewGroup={groupsEnabled ? () => setGroupCreate({ fileSessionId: null }) : undefined}
+        />
+        <DisclosureContent className="flex min-h-0 flex-1 flex-col" contentClassName="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {renderBody()}
+        </DisclosureContent>
+      </Disclosure>
 
       <ShareSessionModal
         projectId={projectId}
@@ -742,6 +820,23 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         onOpenChange={(open) => !open && setSessionToRename(null)}
       />
 
+      {groupsEnabled && (
+        <SessionGroupNameModal
+          projectId={projectId}
+          group={groupToRename}
+          open={!!groupToRename || !!groupCreate}
+          onOpenChange={(open) => {
+            if (open) return;
+            setGroupToRename(null);
+            setGroupCreate(null);
+          }}
+          onCreated={(group) => {
+            // The row whose menu opened it goes in; the group appearing with it is the result.
+            if (groupCreate?.fileSessionId) void groupActions.move(groupCreate.fileSessionId, group.group_id);
+          }}
+        />
+      )}
+
       <SessionDeleteModal
         projectId={projectId}
         sessionId={sessionToDelete?.id ?? null}
@@ -758,40 +853,55 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
  *  — because everything it needs (the session list, the review summary, the
  *  filter facets) is already read by `ProjectSessionList`; hoisting it up meant
  *  a second `qk.project.sessions(projectId)` query and two files owning the
- *  same horizontal padding. The label opens the full sessions page; the `⋯`
- *  opens the nested Grouping/Ordering/Show/Filters menu (`SessionFilterMenu`)
- *  and appears whenever there is at least one session. */
+ *  same horizontal padding. The label is the trigger of the list's disclosure
+ *  (a caret on hover, the sidebar row's rounded hover fill); the full sessions
+ *  page is the first item of the `⋯` menu (`SessionFilterMenu`), which appears
+ *  whenever there is at least one session. */
 function SessionListHeader({
   projectId,
   sessions,
   reviewCountBySession,
   onMenuOpenChange,
+  onNewGroup,
 }: {
   projectId: string;
   sessions: ProjectSession[];
   reviewCountBySession: Record<string, number>;
   onMenuOpenChange: (open: boolean) => void;
+  /** Open the New group dialog; absent while `session_groups` is off. */
+  onNewGroup?: () => void;
 }) {
   const t = useTranslations('sidebar');
-  const sessionsHref = uiRoutes().sessions(projectId);
+  const tGroups = useTranslations('sidebar.sessionGroups');
   return (
     <div
       className={cn(
-        'flex w-full shrink-0 flex-row items-center gap-1 px-2',
+        'group/sessions-header hover:bg-sidebar-row flex w-full shrink-0 flex-row items-center gap-1 rounded-md px-2 transition-colors',
         SESSION_ROW_HEIGHT_CLASS,
       )}
     >
-      {sessionsHref ? (
-        <HoverPrefetchLink
-          href={sessionsHref}
-          className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium"
-        >
+      <DisclosureTrigger>
+        <div className="text-muted-foreground group-hover/sessions-header:text-sidebar-foreground flex min-w-0 flex-1 cursor-pointer flex-row items-center gap-1 self-stretch text-sm font-medium focus-visible:outline-none">
           <span className="truncate">{t('sessions')}</span>
-        </HoverPrefetchLink>
-      ) : (
-        <span className="text-muted-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium">
-          <span className="truncate">{t('sessions')}</span>
-        </span>
+          <CaretRightIcon
+            aria-hidden
+            className="duration-normal size-3 shrink-0 opacity-0 transition-transform ease-out group-hover/sessions-header:opacity-100 group-data-[state=open]/sessions:rotate-90"
+          />
+        </div>
+      </DisclosureTrigger>
+      {onNewGroup && (
+        <Hint side="top" label={tGroups('newGroup')}>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            type="button"
+            aria-label={tGroups('newGroup')}
+            className={SESSION_MENU_TRIGGER_CLASS}
+            onClick={onNewGroup}
+          >
+            <FolderSimplePlusIcon className="size-4" />
+          </Button>
+        </Hint>
       )}
       {sessions.length > 0 && (
         <DropdownMenu onOpenChange={onMenuOpenChange}>
@@ -860,6 +970,7 @@ function SessionListSection({
     chat: 'chat',
     slack: 'slack',
     telegram: 'telegram',
+    discord: 'discord',
     teams: 'teams',
     email: 'email',
     schedule: 'scheduled',
@@ -1085,32 +1196,6 @@ function StarterSection({
   );
 }
 
-function ShowMoreButton({
-  loading,
-  failed,
-  label,
-  onClick,
-}: {
-  loading: boolean;
-  failed: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  const t = useTranslations('sidebar');
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="text-muted-foreground hover:text-foreground h-8 w-full justify-start px-2 text-xs"
-      disabled={loading}
-      onClick={onClick}
-    >
-      {/* A failed page keeps the rows above it; the button is the retry. */}
-      {loading ? t('loadingMore') : failed ? t('retry') : label}
-    </Button>
-  );
-}
-
 /**
  * Everything one session started, on ONE trunk: its sub-agents first, then the
  * sessions it spawned (fetched when the row opens, 20 at a time). `ml-4` puts
@@ -1227,6 +1312,14 @@ interface ProjectSessionRowProps {
   onShare: (session: ProjectSession) => void;
   onRename: (sessionId: string, currentName: string) => void;
   onEditLabels: (session: ProjectSession) => void;
+  /** The project's session groups, for Move to group; absent: no groups here (flag off, or a spawned row). */
+  groups?: readonly ProjectSessionGroup[];
+  /** File the session into a group, or into none (`null`). */
+  onMoveToGroup?: (sessionId: string, groupId: string | null) => void;
+  /** Create a group and file the session into it. */
+  onNewGroupFor?: (sessionId: string) => void;
+  /** Start a drag of the row onto a group. */
+  onDragStart?: (event: React.DragEvent) => void;
   onRestart: (sessionId: string, label: string) => void;
   isRestarting: boolean;
   onStop: (sessionId: string, label: string) => void;
@@ -1268,6 +1361,10 @@ function ProjectSessionRow({
   onShare,
   onRename,
   onEditLabels,
+  groups,
+  onMoveToGroup,
+  onNewGroupFor,
+  onDragStart,
   onRestart,
   isRestarting,
   onStop,
@@ -1289,6 +1386,7 @@ function ProjectSessionRow({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('sidebar');
   const tPinArchive = useTranslations('sidebar.pinArchive');
+  const tGroups = useTranslations('sidebar.sessionGroups');
   const [menuOpen, setMenuOpen] = useState(false);
   const descriptionId = useId();
   // Start the session's open read (snapshot + row) on intent, so the click
@@ -1301,7 +1399,6 @@ function ProjectSessionRow({
   };
 
   const source = sessionSource(session, tI18nComplete);
-  const isMeta = isMetaCoordinatorSession(session);
   // The conversation the runtime can fork: the pinned root conversation id,
   // not the project-session id — `POST /session/{id}/fork` addresses the
   // runtime's own id space (`ses_…`). canFork already guarantees one.
@@ -1353,23 +1450,8 @@ function ProjectSessionRow({
 
       <SessionGoalMark projectId={session.project_id} sessionId={session.session_id} />
 
-      {isMeta && (
-        <Hint side="top" label={t('metaCoordinator')}>
-          <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center">
-            <SparkleIcon className="size-3.5" weight="fill" />
-          </span>
-        </Hint>
-      )}
-
       <span className="min-w-0 flex-1">
         <SessionTitle title={displayTitle} className={cn('min-w-0', isActive && 'font-medium')} />
-        <span
-          className="hidden max-md:block pointer-coarse:block [@media(hover:none)]:block"
-          aria-hidden
-          data-session-mobile-created-at="true"
-        >
-          <MobileSessionCreatedTime createdAt={session.created_at} />
-        </span>
       </span>
 
       {subagentCount + spawnedCount > 0 && onToggleChildRuns && (
@@ -1410,7 +1492,7 @@ function ProjectSessionRow({
         <div
           className={cn(
             'flex shrink-0 items-center gap-0 transition-none',
-            'max-md:hidden pointer-coarse:hidden [@media(hover:none)]:hidden',
+            'pointer-coarse:hidden [@media(hover:none)]:hidden',
             'group-hover/session-list:pointer-events-none group-hover/session-list:opacity-0',
             'group-has-data-[state=open]/session-list:pointer-events-none group-has-data-[state=open]/session-list:opacity-0',
           )}
@@ -1441,7 +1523,7 @@ function ProjectSessionRow({
   );
 
   return (
-    <div className="group/session-list block">
+    <div className="group/session-list block" onDragStart={onDragStart}>
       <div
         className={cn(
           // --session-row-surface paints the row AND the title fade in the same
@@ -1450,9 +1532,6 @@ function ProjectSessionRow({
           // Paint with the variable (not bg-card + a different surface token) so
           // the end fade can never disagree with the row fill.
           'relative flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 transition-none',
-          'max-md:h-auto max-md:min-h-12 max-md:gap-1',
-          '[@media(hover:none)]:h-auto [@media(hover:none)]:min-h-12 [@media(hover:none)]:gap-1',
-          'pointer-coarse:h-auto pointer-coarse:min-h-12 pointer-coarse:gap-1',
           isActive
             ? 'text-sidebar-foreground bg-(--session-row-surface) font-medium [--session-row-surface:var(--sidebar-row)]'
             : 'text-muted-foreground hover:text-sidebar-foreground bg-(--session-row-surface) [--session-row-surface:var(--background)] hover:[--session-row-surface:var(--sidebar-row)]',
@@ -1550,6 +1629,49 @@ function ProjectSessionRow({
               <TagIcon />
               {t('labels.menu')}
             </DropdownMenuItem>
+            {groups && onMoveToGroup && (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="cursor-pointer">
+                  <FolderSimpleIcon />
+                  {tGroups('moveTo')}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-48">
+                  {groups.map((group) => {
+                    const current = session.group_id === group.group_id;
+                    return (
+                      <DropdownMenuItem
+                        key={group.group_id}
+                        className="cursor-pointer"
+                        disabled={current}
+                        onSelect={() => deferAfterClose(() => onMoveToGroup(session.session_id, group.group_id))}
+                      >
+                        {current ? <CheckIcon /> : <FolderSimpleIcon />}
+                        <span className="truncate">{group.name}</span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                  {groups.length > 0 && <DropdownMenuSeparator />}
+                  {onNewGroupFor && (
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      onSelect={() => deferAfterClose(() => onNewGroupFor(session.session_id))}
+                    >
+                      <FolderSimplePlusIcon />
+                      {tGroups('newGroupFromMenu')}
+                    </DropdownMenuItem>
+                  )}
+                  {session.group_id && (
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      onSelect={() => deferAfterClose(() => onMoveToGroup(session.session_id, null))}
+                    >
+                      <FolderSimpleMinusIcon />
+                      {tGroups('removeFromGroup')}
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
             {/* Shown to everyone who can open the session: the owner
                 changes access here, everyone else reads who has it. */}
             <DropdownMenuItem
@@ -1650,9 +1772,6 @@ function FirstChatRow({ projectId, isActive }: { projectId: string; isActive: bo
       aria-current={isActive ? 'page' : undefined}
       className={cn(
         'flex h-8 items-center gap-2 rounded-md px-2 transition-none',
-        'max-md:h-auto max-md:min-h-12 max-md:gap-1',
-        '[@media(hover:none)]:h-auto [@media(hover:none)]:min-h-12 [@media(hover:none)]:gap-1',
-        'pointer-coarse:h-auto pointer-coarse:min-h-12 pointer-coarse:gap-1',
         'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
         isActive
           ? 'bg-sidebar-row text-sidebar-foreground'

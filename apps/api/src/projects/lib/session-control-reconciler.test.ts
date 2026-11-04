@@ -124,6 +124,10 @@ mock.module('../session-lifecycle/inbox-rows', () => ({
     return inboxRows;
   },
 }));
+// Accepted prompts the log lacks: none here. Its real module reads the DB this test mocks.
+mock.module('../session-lifecycle/sent-prompts', () => ({
+  listSentPrompts: async () => [],
+}));
 mock.module('./session-prompt-view', () => ({
   serializePrompt: (row: Record<string, unknown>) => row,
 }));
@@ -201,6 +205,8 @@ describe('emission', () => {
     expect(queue!.payload).toEqual({
       known: true,
       prompts: [{ id: 'p1', state: 'waiting', reason: 'held' }],
+      // Accepted prompts the log does not hold yet (`listSentPrompts`).
+      sent: [],
       // The derived bit the client would otherwise recompute.
       held: true,
       // The server clock at the read — the frame's rank among queue snapshots.

@@ -85,11 +85,8 @@ mock.module('@kortix/ui/files/project/hooks/use-change-requests', () => ({
 mock.module('@kortix/ui/files/project/hooks/use-change-request-recovery', () => ({
   useChangeRequestRecovery: () => ({ startRecovery() {}, startingCrId: null }),
 }));
-const manifestVersion =
-  await import('@kortix/ui/internal/lib/manifest-version');
-mock.module('@kortix/ui/internal/lib/manifest-version', () => ({
-  ...manifestVersion,
-  useProjectManifestVersion: () => ({ version: 2 }),
+mock.module('@kortix/ui/internal/lib/manifest-health', () => ({
+  useProjectManifestHealth: () => undefined,
 }));
 const projectCan = await import('@kortix/ui/internal/lib/use-project-can');
 mock.module('@kortix/ui/internal/lib/use-project-can', () => ({

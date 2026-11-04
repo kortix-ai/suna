@@ -1,6 +1,6 @@
 ---
 name: compliance
-description: "Customer-facing compliance duties that code runs: the subprocessor list and its automatic 30-day DPA notice, and the audit evidence it leaves. Load WHENEVER you add, remove or change a subprocessor (a new model provider, host, email or analytics vendor), route customer data to a new third party, touch apps/web/.../legal/subprocessors, packages/shared/src/subprocessors.ts or apps/api/src/billing/services/subprocessor-notices.ts, or need proof for an auditor that customers were notified. Load too for staff access to a customer account: act-as impersonation, 'Open as admin', and its audit trail; and for a penetration test report: the status of each finding and the risks Kortix accepts. Load too for the 90-day deletion of a terminated account's data (the retention backstop, kortix.retention_erasures, RETENTION_ERASURE_MODE) and its monthly evidence."
+description: "Customer-facing compliance duties that code runs: the subprocessor list and its automatic 30-day DPA notice, Terms of Service changes, customer logo use (publicity), and the audit evidence it leaves. Load WHENEVER you add, remove or change a subprocessor (a new model provider, host, email or analytics vendor), route customer data to a new third party, touch apps/web/.../legal/subprocessors, packages/shared/src/subprocessors.ts or apps/api/src/billing/services/subprocessor-notices.ts, the Terms of Service text or packages/shared/src/terms.ts, or need proof for an auditor that customers were notified. Load too for staff access to a customer account: act-as impersonation, 'Open as admin', and its audit trail; and for a penetration test report: the status of each finding and the risks Kortix accepts. Load too for the 90-day deletion of a terminated account's data (the retention backstop, kortix.retention_erasures, RETENTION_ERASURE_MODE) and its monthly evidence."
 ---
 
 # Compliance
@@ -68,6 +68,41 @@ The privacy@kortix.com reports give the per-sweep totals.
 
 `apps/api/src/__tests__/integration-subprocessor-notices.test.ts`:
 `pnpm test -- --db-only integration-subprocessor-notices`.
+
+## Change the Terms of Service
+
+The text is `apps/web/src/app/[locale]/(public)/(seo)/legal/terms-of-service.ts`.
+The version is `packages/shared/src/terms.ts`.
+
+Terms section 16: a material change needs 30 days' notice to self-serve
+customers. A signed Order keeps the Terms version it names.
+
+1. Edit the text. Update the version line at the top of `TERMS_OF_SERVICE`.
+2. In `terms.ts`: move `TERMS_PREVIOUS_VERSION` to the old version, set
+   `TERMS_VERSION` to the merge day and `TERMS_EFFECTIVE` 37 days later.
+3. If the change affects what a person accepts at signup, change the
+   consent line too (`packages/ui/src/internal/auth/auth-card-shell.tsx`).
+   The publicity clause has no line of its own on `/auth`; the Terms carry
+   it.
+4. Merge to `dev`. The notice ships with the next prod release.
+
+Kortix does not email a Terms change to its users. A sweep that emailed
+every signed-up user (#11004) used up the SES 24-hour quota and the Resend
+monthly quota on 2026-10-29, and magic-link sign-in failed on prod until it
+was removed. Bulk mail never goes through the transactional email chain:
+that chain carries sign-in mail. Past sends keep their
+`legal.terms_notice.sent` audit events.
+
+### Customer logos (Terms section 10, from version 2026-10-28)
+
+The clause covers every account on every plan, free plans and trials
+included. Kortix may show the name and logo of the customer's organization,
+also one known only from a user's email domain, in customer lists. It never
+publishes the name of an individual person, and never a quote, case study or
+endorsement without written approval. An opt-out arrives at legal@kortix.com:
+remove the name and logo from Kortix websites within 30 days. Never use a
+logo before `TERMS_EFFECTIVE`, or for a customer whose signed Order excludes
+it.
 
 ## Delete a terminated account within 90 days
 

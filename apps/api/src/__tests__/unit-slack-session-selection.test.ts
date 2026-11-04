@@ -35,6 +35,8 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     parentSessionId: null,
     initiatorType: null,
     initiatorId: null,
+    spaceId: null,
+    groupId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
@@ -68,7 +70,9 @@ mock.module('../shared/db', () => ({
   },
   hasDatabase: () => true,
 }));
+const realSessionLifecycle = await import('../projects/session-lifecycle');
 mock.module('../projects/session-lifecycle', () => ({
+  ...realSessionLifecycle,
   deliverThroughQueue: async () => 'delivered',
   createSession: async (input: { body: Record<string, unknown> }) => {
     lastBody = input.body;
@@ -100,7 +104,6 @@ mock.module('../channels/slack/selection', () => ({
 // Session selection is the subject here; model availability is pinned in
 // unit-channel-model-access and must not depend on provider credentials.
 mock.module('../channels/model-access', () => ({
-  agentGrantEnvFor: () => async () => null,
   projectChannelModelScope: async () => null,
   planChannelSessionStart: async ({ chosenModel }: { chosenModel?: string | null }) => ({ model: chosenModel ?? null }),
   planChannelFollowUp: async () => null,
@@ -149,6 +152,8 @@ mock.module('../channels/slack/turn', () => ({
 const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
   ...realInstallStore,
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   SLACK_BOT_TOKEN: 'SLACK_BOT_TOKEN',
   SLACK_SIGNING_SECRET: 'SLACK_SIGNING_SECRET',
   SLACK_TEAM_ID: 'SLACK_TEAM_ID',

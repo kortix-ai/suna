@@ -51,52 +51,117 @@ human reviews and merges.
 ## How it works
 
 <Steps>
-<Step title="Connect the release as the trigger">
+<Step title="Copy the setup prompt into a new session">
 
-A signed GitHub webhook points at the project. A pushed tag or published release
-fires it, and each firing spawns a fresh **session** in its own sandbox, seeded
-with the new tag. One release maps to one session on one disposable machine, so
-nothing carries over between releases.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the changelog-sync skill and the hourly
+trigger, and opens a change request for you to review. Prefer clicks? Choose
+**Use this template** instead.
 
-</Step>
-<Step title="Give the agent the notes playbook">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a release-notes agent in this project.
 
-How we write release notes lives as **skills** and **memory** that travel with the
-agent: how to group changes by area, which labels mark internal-only work to drop,
-the voice the changelog is written in, and the format the file expects. When we
-adjust how a section reads, we write it down and the agent follows it on the next
-release.
+1. Create the agent agents/release-notes.md. Its job is to turn each new release of owner/repo into changelog notes and open a pull request against CHANGELOG.md. It may use the GitHub connector and the gh CLI with the GH_TOKEN secret.
 
-</Step>
-<Step title="Connect the systems the notes need">
+2. Create the skill skills/changelog-sync/SKILL.md with these rules:
+   - Keep the last release tag covered as a checkpoint in memory/changelog-sync-log.md. Cover every release published after it, oldest first. Advance the checkpoint even when a release has nothing to publish.
+   - Read every PR merged between the previous tag and the new one in full: title, description, labels and files.
+   - Drop PRs labeled internal, chore, ci, dependencies or no-changelog, and PRs whose title starts with chore(deps), ci: or test:.
+   - Group the rest into Features, Fixes, Performance and Breaking changes. Write one plain-language line per change, and match the format that CHANGELOG.md already uses.
+   - Open one PR per release that changes only CHANGELOG.md. If a changelog PR is still open, extend it. Never open an empty PR.
+   - Never merge, tag, publish or announce a release. A person reviews the wording and merges.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger release-notes-check to kortix.yaml. It runs the release-notes agent every hour, on the hour with the prompt "Load the changelog-sync skill and check owner/repo for any release published since the last checkpoint."
 
-- **Find the range** — locate the previous release tag and the commit range up to
-  the new one.
-- **Read the merged PRs** — titles, descriptions, labels, and authors for every PR
-  merged in that range, to understand what actually changed.
-- **Group and write** — cluster the PRs by area and write plain-language notes,
-  dropping internal churn and dependency noise.
-- **Open a changelog PR on GitHub** — the drafted notes land as a pull request
-  against the changelog file.
+4. Tell me which of these connectors are not connected yet. Tell me if the GH_TOKEN secret is missing.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent's output is a **PR against the changelog**, nothing more — it does not
-publish, tag, or announce. A human reviews the wording and merges. Credentials are
-encrypted in the secrets manager and injected at runtime, scoped to the agents you grant them to
-or written to logs.
+Open **Connectors** in your project and connect GitHub. Credentials are
+brokered server-side and never enter the agent's machine. Then add a GitHub
+token as the `GH_TOKEN` secret for the gh CLI. It is injected at runtime and
+scoped to this agent.
+
+<ToolList>
+  <ToolNeed name="GitHub" domain="github.com" tag="Required" alternatives={[['GitLab', 'gitlab.com'], ['Bitbucket', 'bitbucket.org']]}>
+    Reads PRs merged since the last release and opens the changelog PR.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Let each release draft its own notes">
+<Step title="Run it once with this prompt">
 
-With that in place, a pushed tag reads its own history: the agent finds the range,
-reads the merged PRs, groups them by area, writes the notes, and opens a changelog
-PR — grouped, readable, with internal churn dropped. The team reviews the wording
-instead of assembling the notes from scratch.
+Merge the change request, then start a session with the **release-notes** agent
+and send this prompt. Replace owner/repo with your repository. Read the
+changelog PR it opens before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Draft release notes for the latest release of owner/repo.
+
+1. Find the newest release tag and the tag before it.
+2. Read every PR merged between them in full, not only the titles.
+3. Drop internal, chore, ci, dependency and no-changelog PRs.
+4. Group the rest into Features, Fixes, Performance and Breaking changes, and write one plain-language line per change in the format CHANGELOG.md already uses.
+5. Open one PR that changes only CHANGELOG.md, then stop. Do not merge, tag or publish anything.`}
+/>
+
+</Step>
+<Step title="Let the hourly schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every hour, on the hour, each run on its own cloud computer. It reads its
+checkpoint first, so it opens a PR only when a new release has shipped. To
+change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: release-notes-check
+    name: Release notes check
+    on:
+      cron: "0 0 * * * *"
+    run:
+      agent: release-notes
+      prompt: Load the changelog-sync skill and check owner/repo for any release published since the last checkpoint.`}
+/>
+
+</Step>
+<Step title="Open a PR, a person merges">
+
+The agent writes only CHANGELOG.md, on its own branch, and opens a pull
+request. It never merges, tags, publishes or announces a release. A person
+edits the wording and merges.
+
+</Step>
+<Step title="Review the changelog PR">
+
+Each new release gets one changelog PR. This is what a run looks like in the
+session:
+
+<ExampleRun
+  title="Release notes check · 15:00"
+  message="Load the changelog-sync skill and check owner/repo for any release published since the last checkpoint."
+  worked="Worked for 3m 44s"
+  tools={[
+    'gh · release list',
+    'gh · pr list --state merged',
+    'gh · pr view × 21',
+    'git · commit CHANGELOG.md',
+    'gh · pr create',
+  ]}
+  note="Illustrative example. Your counts depend on your release."
+>
+  Found **1** new release, v2.14.0. Read **21** merged PRs, dropped **9** as
+  internal work or dependency bumps, and wrote **12** lines under Features,
+  Fixes and Performance. Opened a PR against CHANGELOG.md for review.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -106,6 +171,25 @@ instead of assembling the notes from scratch.
   the repo. The notes playbook is encoded as **skills** and **memory**. The agent
   drafts a changelog PR and a human owns the wording and the merge.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Link each line to its PR"
+  code="End every changelog line with a link to the PR it came from."
+/>
+
+<CopyBlock
+  title="Draft the announcement"
+  code="Add a short release announcement to the changelog PR description, for a person to edit and post."
+/>
+
+<CopyBlock
+  title="Flag thin PR descriptions"
+  code="When a PR description is too thin to summarize, list it in the changelog PR description and mention its author so they can add one sentence."
+/>
 
 ## Guardrails
 

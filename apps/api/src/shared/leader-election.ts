@@ -23,6 +23,7 @@
  */
 
 import os from 'node:os';
+import { requiresTls } from '@kortix/db';
 import postgres from 'postgres';
 import { config } from '../config';
 import { logger } from '../lib/logger';
@@ -149,6 +150,10 @@ let handlerChain: Promise<void> = Promise.resolve();
 let handlersPending = 0;
 // Moves on every promote and demote: a failed onAcquire steps down only if no newer change came.
 let term = 0;
+// `bun --hot` re-evaluates this module but keeps globalThis. The last evaluation's
+// stop lives there, so a re-evaluated start first stops that election (its renew
+// loop, watchdog and lease client) and releases its lease, instead of running beside it.
+const hot = globalThis as typeof globalThis & { __kortixLeaderElectionStop?: () => Promise<void> };
 
 /** Run `fn` after every earlier handler call settled, in call order. */
 function serially(fn: () => Promise<void>): Promise<void> {
@@ -302,13 +307,19 @@ export function startLeaderElection(
   h: LeaderElectionHandlers,
   opts: { eligible?: boolean } = {},
 ): void {
+  const previous = hot.__kortixLeaderElectionStop;
+  hot.__kortixLeaderElectionStop = stopLeaderElection;
+  if (previous && previous !== stopLeaderElection) {
+    void previous().catch(() => {}).then(() => startLeaderElection(h, opts));
+    return;
+  }
   if (running) return;
   // A pod that runs no singleton workers must never hold the lease (see
   // runsSingletonWorkers): joining the election would let it become a
   // dead-weight leader and starve the scheduler. Skip election entirely —
   // isLeader() stays false and onAcquire is never called.
   if (opts.eligible === false) {
-    logger.info('[leader] API-only pod (singleton workers disabled) — not joining election', { ownerId });
+    logger.info('[leader] this process runs no scheduled jobs — not joining election', { ownerId });
     return;
   }
   running = true;
@@ -323,6 +334,7 @@ export function startLeaderElection(
   // Dedicated 1-connection client so lease traffic never contends with the app
   // pool. prepare:false matches the Supabase-pooler app client.
   sql = postgres(config.DATABASE_URL, {
+    ...(requiresTls(config.DATABASE_URL) ? { ssl: 'require' as const } : {}),
     prepare: false,
     max: LEADER_ELECTION_POOL_MAX,
     idle_timeout: 30,

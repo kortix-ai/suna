@@ -1,7 +1,22 @@
 'use client';
 
-import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
+import { Checkbox } from '@kortix/ui/checkbox';
+import { Switch } from '@kortix/ui/switch';
+import { plainGrantSwitch } from '@kortix/ui/customize/shared/agent-resource-scope';
+import { Badge } from '@kortix/ui/badge';
+// Leaf modules, never `customize/agents/agent-page`: that module is the whole
+// agent editor, and this screen is also the project-wide `/apps` route.
+import { appGrantRows } from '@kortix/ui/customize/agents/agent-apps-grant';
+import {
+  type AgentGrant,
+  GrantModeTabs,
+  withCatalog,
+  grantOrphans,
+  type ResourceScope,
+} from '@kortix/ui/customize/shared/agent-resource-scope';
+import { CapabilityPageShell } from '@kortix/ui/customize/shared/capability-page-shell';
+import { Hint } from '@kortix/ui/hint';
 
 import { Skeleton } from '@kortix/ui/skeleton';
 import { errorToast } from '@kortix/ui/toast';
@@ -13,8 +28,8 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { useDebounce, cn } from '@kortix/ui';
 import { createAppAccessSession, type App } from '@kortix/sdk';
-import { useAppAccess, useProjectApps } from '@kortix/sdk/react';
-import { ArrowUpRightIcon, HardDrivesIcon, PlusIcon } from '@phosphor-icons/react';
+import { useAppAccess, useProjectApps, useProjectTriggers } from '@kortix/sdk/react';
+import { HardDrivesIcon, InfoIcon, SquaresFourIcon } from '@phosphor-icons/react';
 
 import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
@@ -27,66 +42,66 @@ import {
   appStatus,
   cardPreviewApp,
   gridApps,
+  hiddenApps,
 } from '@kortix/ui/apps';
 import { APP_GRID_CONTAINER, APP_GRID_COLUMN_OPTIONS, AppGridColumnsControl, useAppGridColumns, type AppGridColumns } from './app-density';
 import { AppDetailModal } from './app-detail';
-import { AddExternalAppDialog } from './app-add-external';
+import { BackgroundApps } from './app-background-list';
 export { DEPLOYMENT_COPY, deployNotice, appHost } from '@kortix/ui/apps';
 export { AppPreview, AppPreviewOverlay, PREVIEW_SPINNER_DELAY_MS, scheduleSlowPreview, PREVIEW_VIEWPORT_WIDTH, PREVIEW_VIEWPORT_HEIGHT, PREVIEW_TILE_ASPECT, previewScale } from '@kortix/ui/apps';
 export { APP_GRID_CONTAINER, APP_GRID_DEFAULT_COLUMNS, APP_GRID_COLUMN_OPTIONS, APP_GRID_COLUMN_ORDER, APP_GRID_COLUMNS_STORAGE_KEY, parseAppGridColumns, type AppGridColumns } from './app-density';
 
-function AppsHeader({
-  projectId,
+function AppsControls({
   columns,
   onColumnsChange,
   showColumns,
-  onAdd,
 }: {
-  projectId: string;
   columns: AppGridColumns;
   onColumnsChange: (next: AppGridColumns) => void;
-  /** Absent: the viewer may not add Apps, and the control is not shown. */
-  onAdd?: () => void;
   /**
    * The control only exists to reshape a grid, so it is absent whenever there
    * is no grid — the feature gate, the error state and the empty state each
    * fill the page on their own, and a column picker over any of them is a dead
    * switch. It stays visible over the SKELETON: a control that appears once
-   * loading finishes moves the two beside it on every page load.
+   * loading finishes moves the header controls beside it on every page load.
    */
   showColumns: boolean;
 }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-
-  return (
-    <ProjectPageHeader title={tI18nComplete.raw('text89dd748442c1')}>
-      {showColumns ? (
-        <div className="flex shrink-0 items-center pr-1">
-          <AppGridColumnsControl value={columns} onChange={onColumnsChange} />
-        </div>
-      ) : null}
-      <Link
-        href="/docs/apps"
-        target="_blank"
-        rel="noopener noreferrer"
-        prefetch={false}
-        className="text-muted-foreground hover:text-foreground flex w-fit flex-none items-center gap-1 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors"
-      >
-        {tI18nComplete.raw('text7af023c43013')}
-        <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
-      </Link>
-      {onAdd ? (
-        <Button size="sm" variant="secondary" className="shrink-0 gap-1.5" onClick={onAdd} data-testid="apps-add-external">
-          <PlusIcon className="size-3.5 shrink-0" aria-hidden />
-          {tI18nComplete.raw('text3dd46a7b552c')}
-        </Button>
-      ) : null}
-    </ProjectPageHeader>
-  );
+  return showColumns ? (
+    <div className="flex shrink-0 items-center pr-1">
+      <AppGridColumnsControl value={columns} onChange={onColumnsChange} />
+    </div>
+  ) : null;
 }
 
-export function AppsView({ projectId }: { projectId: string }) {
+/**
+ * The Apps screen in two variants (the agent editor's resource-page contract,
+ * `packages/ui/src/customize/shared/agent-resource-scope.tsx`):
+ *
+ *  - `global` (default): `/projects/<id>/apps`, every App in the project.
+ *  - `agent`: the same screen on one agent's page, inside the agent editor's
+ *    pane. Every App carries a checkbox that grants it to the agent
+ *    (`agents.<name>.apps`, by slug), driven by `grant`; the page's All ·
+ *    Specific · None tabs set the mode. Everything else — the grid, the
+ *    background list, Add, the detail modal — is the global screen.
+ */
+export function AppsView({
+  projectId,
+  surface = { kind: 'global' },
+  grant,
+  needsAppRead = false,
+}: {
+  projectId: string;
+  surface?: ResourceScope;
+  /** Required in `agent` scope: the agent's `apps` grant. */
+  grant?: AgentGrant;
+  /** Agent scope: the agent's Kortix permissions lack `project.app.read`. */
+  needsAppRead?: boolean;
+}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tAgentApps = useTranslations('agentApps');
+  const tAgentScope = useTranslations('agentScope');
+  const agentGrant = surface.kind === 'agent' ? grant : undefined;
   const apps = useProjectApps(projectId);
   const searchParams = useSearchParams();
   // Apps own their leaves — the routes assert project.app.write for policy and
@@ -104,9 +119,62 @@ export function AppsView({ projectId }: { projectId: string }) {
   // opens one on arrival: the links the CLI prints and the retired
   // `/backends/<id>` routes land here.
   const [openAppId, setOpenAppId] = useState<string | null>(() => searchParams.get('app'));
+  // A link to `?app=<id>` followed while this page is open (the sidebar Apps
+  // card) does not remount it, so the initializer above never sees it. Only a
+  // new id opens: the mirror below writes the same key back, and removing it
+  // on close is not a request to open anything.
+  const requestedAppId = searchParams.get('app');
+  useEffect(() => {
+    if (requestedAppId) setOpenAppId(requestedAppId);
+  }, [requestedAppId]);
   const [gridColumns, setGridColumns] = useAppGridColumns();
-  const [adding, setAdding] = useState(false);
+  const triggers = useProjectTriggers(projectId);
+  const grid = apps.data ? gridApps(apps.data, canAdmin) : [];
+  const background = apps.data ? hiddenApps(apps.data, canAdmin) : [];
+  // Open or closed is the reader's call and survives a reload. Until they
+  // choose, it opens only when there is no grid above it to look at instead.
+  const backgroundKey = `kortix:apps:background-open:${projectId}`;
+  const [backgroundChoice, setBackgroundChoice] = useState<boolean | null>(null);
+  // Read after mount: the server render has no storage, and the first client
+  // render must match it.
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(backgroundKey);
+      if (stored !== null) setBackgroundChoice(stored === '1');
+    } catch {
+      // Blocked storage: keep the default.
+    }
+  }, [backgroundKey]);
+  const backgroundOpen = backgroundChoice ?? grid.length === 0;
+  const setBackgroundOpen = (next: boolean) => {
+    setBackgroundChoice(next);
+    try {
+      window.localStorage.setItem(backgroundKey, next ? '1' : '0');
+    } catch {
+      // Private window or blocked storage: the choice lasts until reload.
+    }
+  };
   const openApp = apps.data?.find((item) => item.app_id === openAppId) ?? null;
+  // Agent scope: the per-App grant control. The grant stores slugs
+  // (`appGrantRows`). An App whose access mode admits agents without it is
+  // still grantable, and its card says so.
+  const grantNeeded = new Set(appGrantRows(apps.data).filter((r) => r.needsGrant).map((r) => r.id));
+  // One switch per App in every mode, like every Access view: turning one off
+  // under All keeps the rest (`plainGrantSwitch`).
+  const grantSwitch = agentGrant?.set
+    ? plainGrantSwitch(agentGrant.value, (apps.data ?? []).map((item) => item.slug), agentGrant.set)
+    : null;
+  const selectFor = (app: App): AppSelect | undefined => {
+    if (!grantSwitch) return undefined;
+    const control = grantSwitch(app.slug);
+    return {
+      checked: control.checked ?? false,
+      disabled: false,
+      onToggle: () => control.onCheckedChange?.(!control.checked),
+      label: tI18nComplete('textd4170e74c3b0', { value0: app.name }),
+      note: grantNeeded.has(app.slug) ? null : tAgentApps('openWithoutGrant'),
+    };
+  };
   // Mirror the open App into `?app=` so a reload or a copied link reopens it.
   // Debounced so a fast open/close writes one history entry, not two.
   // `replaceState` touches only the `app` key and does not re-run the route.
@@ -131,6 +199,130 @@ export function AppsView({ projectId }: { projectId: string }) {
       );
   }, [apps.data, projectId, searchParams, tI18nComplete]);
 
+  const controls = (
+    <AppsControls
+      columns={gridColumns}
+      onColumnsChange={setGridColumns}
+      showColumns={apps.isLoading || grid.length > 0}
+    />
+  );
+  const body = (
+    <>
+          {apps.isLoading ? (
+            <AppGridSkeleton columns={gridColumns} />
+          ) : apps.isError ? (
+            <ErrorState
+              size="sm"
+              title={tI18nComplete.raw('text17168ad2af4a')}
+              description={(apps.error as Error).message}
+              action={
+                <Button size="sm" variant="outline" onClick={() => apps.refetch()}>
+                  {tI18nComplete.raw('text942087cc2d41')}
+                </Button>
+              }
+            />
+          ) : grid.length ? (
+            /* A gallery grid, sized by the space it has rather than by the
+               window (`APP_GRID_COLUMN_OPTIONS`). `gap-y` is larger than `gap-x`
+               because each tile's caption hangs BELOW it with no border to
+               close it off — an equal gap would let the next row's thumbnail
+               crowd the previous row's text. */
+            <ul className={cn('grid gap-6', APP_GRID_COLUMN_OPTIONS[gridColumns].grid)}>
+              {grid.map((app) => (
+                <AppCard
+                  key={app.app_id}
+                  projectId={projectId}
+                  app={app}
+                  shown={cardPreviewApp(apps.data!, app, canAdmin)}
+                  onOpen={() => setOpenAppId(app.app_id)}
+                  select={selectFor(app)}
+                />
+              ))}
+            </ul>
+          ) : background.length ? (
+            <p className="text-muted-foreground mb-7 text-sm text-pretty">{tI18nComplete.raw('text0d209cd1f377')}</p>
+          ) : (
+            <AppsEmptyState />
+          )}
+          {background.length && !apps.isLoading ? (
+            <section className={cn(grid.length && 'mt-10')} aria-label={tI18nComplete.raw('textea2b8a878841')} data-testid="apps-background">
+              <BackgroundApps
+                apps={background}
+                triggers={triggers.data?.triggers ?? []}
+                open={backgroundOpen}
+                onOpenChange={setBackgroundOpen}
+                onOpen={setOpenAppId}
+                select={agentGrant ? selectFor : undefined}
+              />
+            </section>
+          ) : null}
+    </>
+  );
+  const overlays = (
+    <>
+      {openApp ? (
+        <AppDetailModal
+          key={openApp.app_id}
+          projectId={projectId}
+          app={openApp}
+          canWrite={canWrite}
+          canDeploy={canDeploy}
+          canAdmin={canAdmin}
+          open
+          onOpenChange={(next) => {
+            if (!next) setOpenAppId(null);
+          }}
+        />
+      ) : null}
+    </>
+  );
+
+  if (agentGrant) {
+    // Granted slugs with no App behind them (deleted, or renamed): listed
+    // above the grid with a Missing mark, so the grant can be revoked.
+    const missing = apps.data ? grantOrphans(agentGrant.value, apps.data.map((app) => app.slug)) : [];
+    // Inside the agent editor's pane: the capability shell is the scroller and
+    // the heading, the grant mode its filter row. The grid measures the shell's
+    // column (`@container/apps`), as it measures the page's column below.
+    return (
+      <CapabilityPageShell
+        wide
+        title={tI18nComplete.raw('text89dd748442c1')}
+        description={tAgentApps('description')}
+        action={<div className="flex shrink-0 items-center">{controls}</div>}
+        filters={<GrantModeTabs grant={withCatalog(agentGrant, (apps.data ?? []).map((item) => item.slug))} label={tAgentScope('appsAccess')} />}
+      >
+        {needsAppRead ? <p className="text-muted-foreground mb-4 text-xs">{tAgentApps('grantNote')}</p> : null}
+        {missing.length > 0 ? (
+          <section className="mb-6 space-y-2">
+            <h2 className="text-sm font-medium">{tAgentScope('missingApps')}</h2>
+            <ul className="space-y-1.5">
+              {missing.map((slug) => (
+                <li key={slug} className="flex min-w-0 items-center gap-3">
+                  <Checkbox
+                    checked={agentGrant.isGranted(slug)}
+                    disabled={agentGrant.mode !== 'specific'}
+                    onCheckedChange={() => agentGrant.toggle(slug)}
+                    aria-label={tI18nComplete('textd4170e74c3b0', { value0: slug })}
+                  />
+                  <code className="text-foreground truncate font-mono text-xs">{slug}</code>
+                  <Badge variant="destructive" size="xs">
+                    {tI18nComplete.raw('text6be36ca49ee8')}
+                  </Badge>
+                  <span className="text-muted-foreground hidden truncate text-xs sm:block">
+                    {tI18nComplete.raw('textfecc36d012be')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+        <div className={cn('flex flex-col', APP_GRID_CONTAINER)}>{body}</div>
+        {overlays}
+      </CapabilityPageShell>
+    );
+  }
+
   return (
     // `h-svh`, for the same reason the `(capabilities)` layout carries it:
     // nothing above this box has a definite height (every ancestor from
@@ -142,14 +334,25 @@ export function AppsView({ projectId }: { projectId: string }) {
     // assumes mobile browser chrome is visible, so the bar can never be pushed
     // under a toolbar that reappears.
     <div className="flex h-svh flex-col overflow-hidden">
-      <AppsHeader
-        projectId={projectId}
-        columns={gridColumns}
-        onColumnsChange={setGridColumns}
-        showColumns={apps.isLoading || !!apps.data?.length}
-        onAdd={canWrite ? () => setAdding(true) : undefined}
-      />
-      <AddExternalAppDialog projectId={projectId} open={adding} onOpenChange={setAdding} onAdded={setOpenAppId} />
+      <ProjectPageHeader
+        title={tI18nComplete.raw('text89dd748442c1')}
+        titleAccessory={
+          <Hint label={tI18nComplete.raw('text7af023c43013')}>
+            <Link
+              href="/docs/developers#apps-reference"
+              target="_blank"
+              rel="noopener noreferrer"
+              prefetch={false}
+              aria-label={tI18nComplete.raw('text7af023c43013')}
+              className="text-muted-foreground hover:text-foreground flex shrink-0 items-center transition-colors"
+            >
+              <InfoIcon className="size-3.5" aria-hidden />
+            </Link>
+          </Hint>
+        }
+      >
+        {controls}
+      </ProjectPageHeader>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* `max-w-7xl px-4` — the gallery's column, and the CONTAINER the grid
@@ -172,56 +375,10 @@ export function AppsView({ projectId }: { projectId: string }) {
             APP_GRID_CONTAINER,
           )}
         >
-          {apps.isLoading ? (
-            <AppGridSkeleton columns={gridColumns} />
-          ) : apps.isError ? (
-            <ErrorState
-              size="sm"
-              title={tI18nComplete.raw('text17168ad2af4a')}
-              description={(apps.error as Error).message}
-              action={
-                <Button size="sm" variant="outline" onClick={() => apps.refetch()}>
-                  {tI18nComplete.raw('text942087cc2d41')}
-                </Button>
-              }
-            />
-          ) : apps.data && gridApps(apps.data, canAdmin).length ? (
-            /* A gallery grid, sized by the space it has rather than by the
-               window (`APP_GRID_COLUMN_OPTIONS`). `gap-y` is larger than `gap-x`
-               because each tile's caption hangs BELOW it with no border to
-               close it off — an equal gap would let the next row's thumbnail
-               crowd the previous row's text. */
-            <ul className={cn('grid gap-6', APP_GRID_COLUMN_OPTIONS[gridColumns].grid)}>
-              {gridApps(apps.data, canAdmin).map((app) => (
-                <AppCard
-                  key={app.app_id}
-                  projectId={projectId}
-                  app={app}
-                  shown={cardPreviewApp(apps.data!, app, canAdmin)}
-                  onOpen={() => setOpenAppId(app.app_id)}
-                />
-              ))}
-            </ul>
-          ) : (
-            <AppsEmptyState />
-          )}
+          {body}
         </div>
       </div>
-
-      {openApp ? (
-        <AppDetailModal
-          key={openApp.app_id}
-          projectId={projectId}
-          app={openApp}
-          canWrite={canWrite}
-          canDeploy={canDeploy}
-          canAdmin={canAdmin}
-          open
-          onOpenChange={(next) => {
-            if (!next) setOpenAppId(null);
-          }}
-        />
-      ) : null}
+      {overlays}
     </div>
   );
 }
@@ -267,13 +424,36 @@ function AppsEmptyState() {
   // hint points at an agent, not at a CLI command.
   return (
     <EmptyState
+      icon={SquaresFourIcon}
       title={tI18nComplete.raw('textdb4764b8b3e7')}
       description={tI18nComplete.raw('texta7a8d2a5fb25')}
     />
   );
 }
 
-function AppCard({ projectId, app, shown, onOpen }: { projectId: string; app: App; shown: App | null; onOpen: () => void }) {
+/** Agent scope: one App's grant checkbox, and the note for an App that
+ *  admits agents without a grant. */
+export interface AppSelect {
+  checked: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+  label: string;
+  note: string | null;
+}
+
+export function AppCard({
+  projectId,
+  app,
+  shown,
+  onOpen,
+  select,
+}: {
+  projectId: string;
+  app: App;
+  shown: App | null;
+  onOpen: () => void;
+  select?: AppSelect;
+}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // `shown` is the App whose live preview the card frames: the App itself, or
   // the first tab of one that hides its own (a backend shows its dashboard).
@@ -289,6 +469,15 @@ function AppCard({ projectId, app, shown, onOpen }: { projectId: string; app: Ap
   const canAccess = shown?.viewer_can_access !== false;
   const access = useAppAccess(projectId, shown?.app_id ?? app.app_id, { policy: false, session: canAccess && preview });
   const status = appStatus(app, tI18nComplete);
+  const captionText = (
+    <>
+      <h3 className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">{app.name}</h3>
+      <span className="text-muted-foreground flex shrink-0 items-center gap-1.5 text-xs">
+        {app.external_url ? null : <span aria-hidden className={cn('size-1.5 rounded-full', status.dot)} />}
+        {status.label}
+      </span>
+    </>
+  );
 
   return (
     <li>
@@ -337,15 +526,35 @@ function AppCard({ projectId, app, shown, onOpen }: { projectId: string; app: Ap
             App. The full URL is still one click away in the detail layer,
             beside the control that opens it, which is where someone who wants
             to copy it is already going. */}
-        <div className="mt-3 flex items-center gap-2">
-          <h3 className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
-            {app.name}
-          </h3>
-          <Badge variant={status.live ? 'success' : 'muted'} className="shrink-0">
-            {status.label}
-          </Badge>
-        </div>
+        {select ? null : <div className="mt-3 flex items-center gap-2">{captionText}</div>}
       </button>
+      {/* Agent scope: the checkbox is a sibling of the card's button, never
+          inside it, so the caption moves out beside it. The thumbnail still
+          opens the App. */}
+      {select ? (
+        <div className="mt-3 flex items-center gap-2">
+          {/* The caption opens the App as the thumbnail does: its own button,
+              a sibling of the switch. */}
+          <button
+            type="button"
+            onClick={onOpen}
+            className="focus-visible:ring-ring/50 flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left focus-visible:ring-2 focus-visible:outline-none"
+          >
+            {captionText}
+          </button>
+          {select.note ? (
+            <Badge variant="muted" size="xs">
+              {select.note}
+            </Badge>
+          ) : null}
+          <Switch
+            checked={select.checked}
+            disabled={select.disabled}
+            onCheckedChange={select.onToggle}
+            aria-label={select.label}
+          />
+        </div>
+      ) : null}
     </li>
   );
 }

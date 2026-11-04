@@ -1,9 +1,9 @@
-import type { MessageWithParts, ProjectSession } from '@kortix/sdk';
+import { type ProjectSession, type SessionLogMessage, classifySessionLogMessage } from '@kortix/sdk';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { ApiError } from '../api/client.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
-import { extractMessageError, sendAndWaitForReply } from './sessions-chat.ts';
+import { sendAndWaitForReply } from './sessions-chat.ts';
 import type { MeResponse, ProjectSummary } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
 import { resolveProjectContext, shortId, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
@@ -18,8 +18,7 @@ replies. Designed so coding agents can verify Kortix end-to-end before
 they start orchestrating real work.
 
 By default, doctor attempts to delete only its diagnostic session.
-With --keep-session, it leaves that session in place. UI-prepared warm
-sessions are left unchanged and may remain billed.
+With --keep-session, it leaves that session in place.
 
 Options:
   --no-session         Stop after auth + project checks. Don't create
@@ -91,10 +90,6 @@ export async function runDoctor(argv: string[]): Promise<number> {
     process.stdout.write(`\n${status.ok('all checks passed (no-session)')}\n\n`);
     return 0;
   }
-
-  process.stdout.write(
-    `  ${C.dim}UI-prepared warm sessions are left unchanged and may remain billed.${C.reset}\n`,
-  );
 
   // Resolve through the server's entitlement and provider checks, not the runtime's default.
   let model: string | null;
@@ -202,12 +197,12 @@ export async function runDoctor(argv: string[]): Promise<number> {
  *  error fails it even after partial text, and names the cause the way
  *  `sessions chat` does (KRTX-2918). */
 export function doctorReplyVerdict(
-  reply: MessageWithParts,
+  reply: SessionLogMessage,
 ): { ok: true; text: string } | { ok: false; reason: string } {
-  const error = extractMessageError(reply);
-  if (error) return { ok: false, reason: `reply failed — ${error}` };
-  const text = reply.parts
-    .map((p) => (p.type === 'text' ? p.text : ''))
+  const error = classifySessionLogMessage(reply).error;
+  if (error) return { ok: false, reason: `reply failed — ${error.name}: ${error.message}` };
+  const text = reply.blocks
+    .map((block) => (block.type === 'text' ? block.text : ''))
     .join(' ')
     .trim();
   return text ? { ok: true, text } : { ok: false, reason: 'reply had no text content' };

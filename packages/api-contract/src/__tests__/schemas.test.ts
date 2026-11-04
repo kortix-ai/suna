@@ -32,6 +32,13 @@ import {
   SessionCreateAcceptedSchema,
   SessionCreateInputSchema,
   SessionUpdateInputSchema,
+  SessionGroupAssignInputSchema,
+  SessionGroupCreateInputSchema,
+  SessionGroupListSchema,
+  SessionGroupOrderInputSchema,
+  SessionGroupSchema,
+  SessionGroupUpdateInputSchema,
+  SESSION_GROUP_NAME_MAX,
   SessionScopeInputSchema,
   SessionScopeSchema,
   SessionRuntimeContextSchema,
@@ -40,8 +47,6 @@ import {
   TriggerListSchema,
   TriggerSchema,
   UpdateConnectionCredentialInputSchema,
-  WarmProjectSessionResultSchema,
-  ClaimWarmProjectSessionInputSchema,
 } from '../index';
 
 const NOW = '2026-07-01T12:00:00.000Z';
@@ -134,24 +139,29 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     dashboard_url: 'https://kortix.com/projects/11111111-2222-4333-8444-555555555555',
     experimental: {
       marketplace: false,
-      connectors_api_discover: false,
-      agentmail_email: false,
-      meta_agent: false,
       monitors: false,
       reminders: false,
       warm_sessions: false,
       secrets_egress: false,
       pooled_provider_secrets: false,
-      genui: false,
       us_region: false,
       event_triggers: false,
       notification_center: false,
       volumes: false,
       drives: false,
       session_log_restore: false,
-      connectors_v2: false,
+      project_channels: false,
       agent_rooms: false,
+      shared_drives: false,
       goals: false,
+      workspace_volume: false,
+      artifacts: false,
+      artifact_comments: false,
+      email_channel: false,
+      session_groups: false,
+      chrome: false,
+      agent_teams: false,
+      voice_call: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -186,6 +196,10 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     owner_email: null,
     visibility: 'private',
     origin: 'user',
+    space_id: null,
+    group_id: null,
+    first_prompt: null,
+    reply_count: null,
     secrets_allowlist: null,
     sharing: { mode: 'private', ownerId: '' },
     is_owner: true,
@@ -327,7 +341,7 @@ describe('ProjectSchema', () => {
   });
 
   test('rejects an experimental map missing a registered key', () => {
-    const { meta_agent: _dropped, ...partial } = projectFixture().experimental as Record<
+    const { reminders: _dropped, ...partial } = projectFixture().experimental as Record<
       string,
       boolean
     >;
@@ -353,6 +367,29 @@ describe('ProjectSchema', () => {
     const experimental = projectFixture().experimental as Record<string, boolean>;
     expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, pi_harness: true } })).experimental.pi_harness).toBe(true);
     expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, pi_harness: false } }))).toThrow();
+  });
+
+  test('experimental carries the removed meta_agent key only as a constant true', () => {
+    // Wire compat: the API still sends `meta_agent: true`; My Kortix follows kortix.yaml `builtin_agents` alone.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(FEATURE_FLAG_KEYS as readonly string[]).not.toContain('meta_agent');
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, meta_agent: true } })).experimental.meta_agent).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, meta_agent: false } }))).toThrow();
+  });
+
+  test('experimental carries the graduated genui key only as a constant true', () => {
+    // Wire compat: the API still sends `genui: true`; older web, SDK and mobile clients render blocks only while it is true.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, genui: true } })).experimental.genui).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, genui: false } }))).toThrow();
+  });
+
+  test('experimental carries the graduated connectors_v2 and connectors_api_discover keys only as a constant true', () => {
+    // Wire compat: the API still sends both as `true` for older SDK and hosts.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, connectors_v2: true } })).experimental.connectors_v2).toBe(true);
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, connectors_api_discover: true } })).experimental.connectors_api_discover).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, connectors_v2: false } }))).toThrow();
   });
 
   test('accepts a null icon', () => {
@@ -419,35 +456,49 @@ describe('ProjectSessionSchema', () => {
   });
 });
 
-describe('warm project session schemas', () => {
-  test('accepts the ensure response with workspace refresh state', () => {
-    expect(
-      WarmProjectSessionResultSchema.parse({
-        session: sessionFixture(),
-        reused: true,
-        workspace_refresh: {
-          status: 'updated',
-          before_sha: 'abc123',
-          after_sha: 'def456',
-        },
-      }),
-    ).toMatchObject({
-      reused: true,
-      workspace_refresh: { status: 'updated' },
-    });
+describe('session group contracts', () => {
+  const GROUP = {
+    group_id: '22222222-3333-4444-8555-666666666666',
+    name: 'Store A',
+    position: 0,
+    created_by: '99999999-8888-4777-8666-555555555555',
+    created_at: NOW,
+    updated_at: NOW,
+  };
+
+  test('a session carries the group it is filed in, or null', () => {
+    expect(ProjectSessionSchema.parse(sessionFixture()).group_id).toBeNull();
+    expect(ProjectSessionSchema.parse(sessionFixture({ group_id: GROUP.group_id })).group_id).toBe(GROUP.group_id);
+    expect(ProjectSessionSchema.safeParse(sessionFixture({ group_id: 'store-a' })).success).toBe(false);
   });
 
-  test('requires an RFC 4122 v4 session_id for claims', () => {
-    expect(
-      ClaimWarmProjectSessionInputSchema.safeParse({
-        session_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
-        agent_name: 'default',
-        sandbox_slug: 'default',
-      }).success,
-    ).toBe(true);
-    expect(ClaimWarmProjectSessionInputSchema.safeParse({ session_id: 'not-a-uuid' }).success).toBe(
-      false,
-    );
+  test('a group and the list parse strictly', () => {
+    expect(SessionGroupSchema.parse(GROUP)).toEqual(GROUP);
+    expect(SessionGroupListSchema.parse({ groups: [GROUP] }).groups).toHaveLength(1);
+    expect(SessionGroupSchema.safeParse({ ...GROUP, color: 'red' }).success).toBe(false);
+  });
+
+  test('a name is trimmed and 1..SESSION_GROUP_NAME_MAX characters', () => {
+    expect(SessionGroupCreateInputSchema.parse({ name: '  Store A  ' })).toEqual({ name: 'Store A' });
+    expect(SessionGroupCreateInputSchema.safeParse({ name: '   ' }).success).toBe(false);
+    expect(SessionGroupCreateInputSchema.safeParse({ name: 'x'.repeat(SESSION_GROUP_NAME_MAX + 1) }).success).toBe(false);
+    expect(SessionGroupCreateInputSchema.safeParse({ name: 'x'.repeat(SESSION_GROUP_NAME_MAX) }).success).toBe(true);
+    expect(SessionGroupUpdateInputSchema.parse({ name: ' Store B ' })).toEqual({ name: 'Store B' });
+    expect(SessionGroupCreateInputSchema.safeParse({ name: 'Store A', position: 3 }).success).toBe(false);
+  });
+
+  test('an order names each group once, by id', () => {
+    const ids = ['22222222-3333-4444-8555-666666666666', '22222222-3333-4444-8555-777777777777'];
+    expect(SessionGroupOrderInputSchema.parse({ group_ids: ids }).group_ids).toEqual(ids);
+    expect(SessionGroupOrderInputSchema.safeParse({ group_ids: [ids[0], ids[0]] }).success).toBe(false);
+    expect(SessionGroupOrderInputSchema.safeParse({ group_ids: ['store-a'] }).success).toBe(false);
+  });
+
+  test('filing takes a group id, or null for no group', () => {
+    expect(SessionGroupAssignInputSchema.parse({ group_id: GROUP.group_id })).toEqual({ group_id: GROUP.group_id });
+    expect(SessionGroupAssignInputSchema.parse({ group_id: null })).toEqual({ group_id: null });
+    expect(SessionGroupAssignInputSchema.safeParse({}).success).toBe(false);
+    expect(SessionGroupAssignInputSchema.safeParse({ group_id: 'store-a' }).success).toBe(false);
   });
 });
 
@@ -506,7 +557,7 @@ describe('SessionStartResultSchema', () => {
 });
 
 describe('pending session prompt contract', () => {
-  test('accepts a durable prompt draft on normal create and warm claim', () => {
+  test('accepts a durable prompt draft on create', () => {
     const pendingPrompt = {
       text: 'Map the flood risk for this parcel.',
       agent: 'kortix',
@@ -517,12 +568,6 @@ describe('pending session prompt contract', () => {
 
     expect(
       SessionCreateInputSchema.strict().parse({ pending_prompt: pendingPrompt }).pending_prompt,
-    ).toEqual(pendingPrompt);
-    expect(
-      ClaimWarmProjectSessionInputSchema.strict().parse({
-        session_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
-        pending_prompt: pendingPrompt,
-      }).pending_prompt,
     ).toEqual(pendingPrompt);
   });
 
@@ -815,24 +860,25 @@ describe('envelopes', () => {
     // (TypeScript 7) sorts differently from tsc 5; the runtime order is the contract.
     expect(FEATURE_FLAG_KEYS as readonly string[]).toEqual([
       'marketplace',
-      'connectors_api_discover',
-      'agentmail_email',
-      'meta_agent',
-      'monitors',
       'reminders',
-      'warm_sessions',
       'secrets_egress',
       'pooled_provider_secrets',
-      'genui',
       'us_region',
       'event_triggers',
       'notification_center',
-      'volumes',
-      'drives',
       'session_log_restore',
-      'connectors_v2',
+      'project_channels',
       'agent_rooms',
+      'shared_drives',
       'goals',
+      'workspace_volume',
+      'artifacts',
+      'artifact_comments',
+      'email_channel',
+      'session_groups',
+      'chrome',
+      'agent_teams',
+      'voice_call',
     ]);
   });
 

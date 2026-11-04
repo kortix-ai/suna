@@ -12,7 +12,7 @@ name: Terraform Apply
 # CONTRACT
 #   - The caller pins the root, the region, the OIDC role, and the GitHub
 #     environment. The environment is part of the OIDC subject
-#     (repo:kortix-ai/suna:environment:<name>), so it must match the trust
+#     (repo:<repo>:environment:<name>, every name in security-baseline/github-repos.tf), so it must match the trust
 #     policy of `role_arn` — see security-baseline/iam-gha-tf-apply.tf.
 #   - Plan first, guard the plan, then apply THE SAME plan file. Never
 #     `apply -auto-approve` without a plan: that would re-resolve the diff after

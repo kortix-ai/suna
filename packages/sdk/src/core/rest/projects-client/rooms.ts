@@ -144,6 +144,16 @@ export async function listRooms(projectId: string, options: ListRoomsOptions = {
   );
 }
 
+/**
+ * The project room named `name`, archived included (check `archived_at`), or
+ * null. A space's room is the room named like the space's slug.
+ */
+export async function findRoomByName(projectId: string, name: string): Promise<Room | null> {
+  const { rooms: found } = await listRooms(projectId, { name, archived: true });
+  return found.find((room) => room.name === name) ?? null;
+}
+
+/** Creates the named room, or returns the existing room with that name. */
 export async function createRoom(projectId: string, input: { name: string; topic?: string | null }) {
   return unwrap(await backendApi.post<Room>(rooms(projectId), input));
 }

@@ -11,10 +11,9 @@ import { setCurrentRuntime } from '../../core/session/current-runtime';
 import { loadSessionExportMessages } from './session-sync-registry';
 
 /**
- * The export reads the session log first. Without one (`GET …/log` answers 404:
- * a server older than the log), KRTX-2525: it reads the runtime while the
- * computer runs, and the saved copy (every window of it) while the computer is
- * asleep, stopped or failed — the conversation the page shows meanwhile.
+ * The export reads the session log first. Without a page it reads the runtime while the
+ * computer runs (KRTX-2525). It never reads the v1 saved copy (`GET …/transcript`, P8.3): with
+ * no page and nothing from the runtime it fails, and the host keeps what it shows.
  */
 const base = 'http://export.test';
 const previousConfig = platformConfig();
@@ -73,19 +72,10 @@ afterEach(() => {
 
 const ids = (messages: Array<{ info: { id: string } }>) => messages.map((message) => message.info.id);
 
-test('no log (404, a server older than the log), asleep: every saved window, oldest first, from the session the page shows', async () => {
-  windows = {
-    '': { messages: [row('m3', 3), row('m4', 4)], next_cursor: 'm3' },
-    m3: { messages: [row('m1', 1), row('m2', 2)], next_cursor: null },
-  };
-  const messages = await loadSessionExportMessages('ses_root', 'p1/s1');
-  expect(ids(messages)).toEqual(['m1', 'm2', 'm3', 'm4']);
-  expect(calls).toHaveLength(3);
-  expect(calls[0]).toBe(`${base}/projects/p1/sessions/s1/log?limit=500`);
-  expect(calls[1]).toContain('/projects/p1/sessions/s1/transcript');
-  expect(calls[1]).toContain('shape=sync');
-  expect(calls[1]).toContain('history=true');
-  expect(calls[2]).toContain('before=m3');
+test('no log page (a 404 without a code), asleep: the export fails, and no /transcript (P8.3)', async () => {
+  windows = { '': { messages: [row('m1', 1)], next_cursor: null } };
+  await expect(loadSessionExportMessages('ses_root', 'p1/s1')).rejects.toThrow();
+  expect(calls).toEqual([`${base}/projects/p1/sessions/s1/log?limit=500`]);
 });
 
 test('running: the runtime history, and no saved-copy read', async () => {
@@ -96,19 +86,11 @@ test('running: the runtime history, and no saved-copy read', async () => {
   expect(calls.some((url) => url.includes('/transcript'))).toBe(false);
 });
 
-test('a runtime that answers empty is not an empty conversation: the saved copy answers', async () => {
+test('no log page, and a runtime that answers empty: the export fails, and no /transcript (P8.3)', async () => {
   setCurrentRuntime(`${base}/runtime`, 'sbx-1');
   windows = { '': { messages: [row('m1', 1)], next_cursor: null } };
-  expect(ids(await loadSessionExportMessages('ses_root', 'p1/s1'))).toEqual(['m1']);
-});
-
-test('a server cursor that does not advance ends the walk', async () => {
-  windows = {
-    '': { messages: [row('m2', 2)], next_cursor: 'm1' },
-    m1: { messages: [row('m1', 1)], next_cursor: 'm1' },
-  };
-  expect(ids(await loadSessionExportMessages('ses_root', 'p1/s1'))).toEqual(['m1', 'm2']);
-  expect(calls.filter((url) => url.includes('/transcript'))).toHaveLength(2);
+  await expect(loadSessionExportMessages('ses_root', 'p1/s1')).rejects.toThrow();
+  expect(calls.some((url) => url.includes('/transcript'))).toBe(false);
 });
 
 test('no saved scope: a runtime that is not ready still throws', async () => {

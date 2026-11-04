@@ -2,20 +2,18 @@
 
 import { useTranslations as useI18nTranslations } from '../../i18n';
 /**
- * The v1 fallback cards of the agent page, plus the scope-checklist helpers
- * the v2 editor shares with them.
+ * The read-only cards of the agent page, plus the scope-checklist helpers the
+ * editor shares with them.
  *
- * `AgentModel` and `AgentScope` are what a project on the legacy manifest
- * (kortix.toml, kortix_version 1) gets in place of the full editor — the
- * per-agent gateway model pin and the read-only/editable scope mirror. We
- * degrade, never blank the column. The v2 page
- * (`capabilities/agents/agent-page.tsx`) renders neither; its Model and Access
- * sections write the manifest block directly.
+ * `AgentModel` and `AgentScope` are what the read-only agent page shows in
+ * place of the full editor — the per-agent gateway model pin and the scope
+ * mirror. The editable page (`agent-page.tsx`) renders neither; its Model and
+ * Access sections write the manifest block directly.
  *
  * Historically this file was the whole right-hand aside of the agent detail
  * MODAL (assignments + configuration summary). The modal is gone — an agent
  * is a routed page now, Customize being agent-centric (Marko, 2026-09-01) —
- * and the assignments moved to `agent-people-section.tsx`.
+ * and the assignments moved to `agent-share-dialog.tsx`.
  */
 
 import { Badge } from '../../primitives/badge';
@@ -128,8 +126,7 @@ export function AgentModel({ projectId, agentName }: { projectId: string; agentN
 }
 
 /**
- * An agent's manifest allowlist (`agents:` in kortix.yaml, or the legacy
- * `[[agents]]` in kortix.toml) — which secrets it receives in $ENV, which
+ * An agent's manifest allowlist (`agents:` in kortix.yaml) — which secrets it receives in $ENV, which
  * connectors it may call, which Kortix permissions it has. Editors EDIT
  * secrets + connectors here (persisted straight to the manifest); everyone
  * else sees the read-only mirror. `kortix_permissions` stays read-only (a sharper

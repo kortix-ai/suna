@@ -36,6 +36,42 @@ export const PI_TOOL_GROUP: FixtureToolGroup = {
   summary: '`formatCurrency` now uses compact USD notation, as chosen. The decision is in `docs/currency.md`.',
   specs: [
     {
+      renderer: 'kortix-action-tool.tsx',
+      tool: 'send_message',
+      input: { to: 'researcher', text: 'Check the dashboard.' },
+      output: JSON.stringify({
+        ok: true, tool: 'send_message', action: 'send',
+        card: { title: 'Sent a message', status: 'done', rows: [], changes: [], links: [] },
+      }),
+      error: 'Could not send message: project access denied.',
+    },
+    {
+      renderer: 'multi-agent-tools.tsx',
+      tool: 'task_list',
+      input: { status: 'open' },
+      output: JSON.stringify({
+        ok: true, tool: 'task_list', action: 'list',
+        card: { title: 'Listed team tasks', status: 'done', rows: [], changes: [], links: [] },
+        data: { tasks: [] },
+      }),
+      error: 'Could not list team tasks: project access denied.',
+    },
+    {
+      renderer: 'workflow-tool.tsx',
+      tool: 'workflow',
+      input: { code: 'return { checked: true };' },
+      output: JSON.stringify({ checked: true }),
+      metadata: {
+        runId: 'fixture-workflow', title: 'Check the dashboard', status: 'done',
+        phases: [], agents: [], logs: ['Dashboard checked.'],
+      },
+      runningMetadata: {
+        runId: 'fixture-workflow', title: 'Check the dashboard', status: 'running',
+        phases: [], agents: [], logs: ['Checking the dashboard.'],
+      },
+      error: 'Workflow failed: dashboard check failed.',
+    },
+    {
       renderer: 'read-tool.tsx',
       tool: 'read',
       input: { path: 'src/lib/format.ts' },

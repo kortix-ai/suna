@@ -24,11 +24,11 @@ export async function createLocalGitRepository(
     await writeFile(join(work, "README.md"), `# ${name}\n`);
     await writeFile(
       join(work, "kortix.yaml"),
-      `kortix_version: 2\nproject:\n  name: ${name}\ndefault_agent: kortix\nagents:\n  kortix:${
-        opts?.allowAllSecrets || opts?.allowAllConnectors
-          ? `${opts.allowAllSecrets ? '\n    secrets: all' : ''}${opts.allowAllConnectors ? '\n    connectors: all' : ''}`
-          : ' {}'
-      }\n`,
+      // The starter's shape: My Kortix on and the default agent. Sessions of `worker`
+      // get the project checkout (a session branch), as every agent did before the one format.
+      `project:\n  name: ${name}\nbuiltin_agents:\n  my_kortix: true\ndefault_agent: mykortix\nagents:\n  worker:\n    tools: all\n    workspace:\n      project_repository: true${
+        opts?.allowAllSecrets ? '\n    secrets: all' : ''
+      }${opts?.allowAllConnectors ? '\n    connectors: all' : ''}\n`,
     );
     await git(["-C", work, "add", "README.md", "kortix.yaml"]);
     await git(["-C", work, "commit", "-m", "seed local e2e repository"]);

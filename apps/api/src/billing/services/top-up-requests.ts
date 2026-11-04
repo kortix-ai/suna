@@ -60,7 +60,6 @@ export async function requestTopUp(input: {
     subject: `${requester} asked you to add credits to ${accountName}`,
     category: 'billing-top-up-request',
     html: renderEmail({
-      kicker: 'Billing',
       title,
       body: `
         <p style="${S.p}">

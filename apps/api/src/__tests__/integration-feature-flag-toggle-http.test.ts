@@ -209,7 +209,7 @@ describe('PATCH /v1/projects/:projectId/features', () => {
     // the keys left the registry and the contract. A project manager — or
     // anyone with settings.write — PATCHing one gets the ordinary unknown-key
     // 400; the operator-only refusal is unreachable.
-    for (const feature of ['apps', 'llm_gateway', 'session_log']) {
+    for (const feature of ['apps', 'llm_gateway', 'session_log', 'connectors_v2', 'connectors_api_discover']) {
       for (const enabled of [true, false, null]) {
         const res = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature, enabled }));
         expect(res.status).toBe(400);
@@ -225,8 +225,18 @@ describe('PATCH /v1/projects/:projectId/features', () => {
     const res = await app.request(`/v1/projects/${PROJECT}`, { headers: { Authorization: `Bearer ${secret}` } });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.experimental).toMatchObject({ apps: true, llm_gateway: true, session_log: true });
+    // `connectors_v2` / `connectors_api_discover` (graduated 2026-10-24): older
+    // SDKs and hosts read false as "show the legacy catalog".
+    expect(body.experimental).toMatchObject({
+      apps: true,
+      llm_gateway: true,
+      session_log: true,
+      connectors_v2: true,
+      connectors_api_discover: true,
+    });
     const keys = body.experimental_features.map((f: { key: string }) => f.key);
+    expect(keys).not.toContain('connectors_v2');
+    expect(keys).not.toContain('connectors_api_discover');
     expect(keys).not.toContain('apps');
     expect(keys).not.toContain('llm_gateway');
     expect(keys).not.toContain('session_log');
@@ -234,7 +244,7 @@ describe('PATCH /v1/projects/:projectId/features', () => {
 });
 
 // `session_log_restore` is internal-only (catalogHidden): it changes what the
-// platform records, so only a platform operator writes it (D10). Off by default.
+// platform records, so only a platform operator writes it (D10). On by default (2026-10-28).
 describe('operator-only flags', () => {
   test('a project manager gets 403 feature_operator_only for enable, disable and clear; nothing is stored', async () => {
     for (const enabled of [true, false, null]) {
@@ -248,22 +258,22 @@ describe('operator-only flags', () => {
     expect(await storedOverrides(PROJECT)).toBeUndefined();
   });
 
-  test('off by default and unlisted; a platform operator who is a project member turns it on (listed read-only) and clears it (off again)', async () => {
+  test('on by default and listed read-only; a platform operator who is a project member turns it off (unlisted) and clears it (on again)', async () => {
     const res = await app.request(`/v1/projects/${PROJECT}`, { headers: { Authorization: `Bearer ${secret}` } });
     const before = await res.json();
-    expect(before.experimental.session_log_restore).toBe(false);
-    expect(before.experimental_features.map((f: { key: string }) => f.key)).not.toContain('session_log_restore');
-    const on = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'session_log_restore', enabled: true }), operatorSecret);
-    expect(on.status).toBe(200);
-    const body = await on.json();
-    expect(body.experimental.session_log_restore).toBe(true);
-    expect(body.experimental_features.find((f: { key: string }) => f.key === 'session_log_restore')).toMatchObject({ enabled: true, overridden: true, operator_only: true });
-    expect(await storedOverrides(PROJECT)).toEqual({ session_log_restore: true });
+    expect(before.experimental.session_log_restore).toBe(true);
+    expect(before.experimental_features.find((f: { key: string }) => f.key === 'session_log_restore')).toMatchObject({ enabled: true, overridden: false, operator_only: true });
+    const off = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'session_log_restore', enabled: false }), operatorSecret);
+    expect(off.status).toBe(200);
+    const body = await off.json();
+    expect(body.experimental.session_log_restore).toBe(false);
+    expect(body.experimental_features.map((f: { key: string }) => f.key)).not.toContain('session_log_restore');
+    expect(await storedOverrides(PROJECT)).toEqual({ session_log_restore: false });
     const cleared = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'session_log_restore', enabled: null }), operatorSecret);
     expect(cleared.status).toBe(200);
     const after = await cleared.json();
-    expect(after.experimental.session_log_restore).toBe(false);
-    expect(after.experimental_features.map((f: { key: string }) => f.key)).not.toContain('session_log_restore');
+    expect(after.experimental.session_log_restore).toBe(true);
+    expect(after.experimental_features.find((f: { key: string }) => f.key === 'session_log_restore')).toMatchObject({ enabled: true, overridden: false, operator_only: true });
     expect(await storedOverrides(PROJECT)).toBeUndefined();
   });
 });
@@ -289,10 +299,10 @@ describe('PUT /v1/admin/api/projects/:id/features', () => {
     expect(await on.json()).toMatchObject({ project_id: PROJECT, feature: 'session_log_restore', override: true, enabled: true });
     expect(await storedOverrides(PROJECT)).toEqual({ session_log_restore: true });
 
-    // Cleared: the platform default, off.
+    // Cleared: the platform default, on.
     const cleared = await put(PROJECT, { feature: 'session_log_restore', enabled: null }, operatorSecret);
     expect(cleared.status).toBe(200);
-    expect(await cleared.json()).toMatchObject({ override: null, enabled: false });
+    expect(await cleared.json()).toMatchObject({ override: null, enabled: true });
     expect(await storedOverrides(PROJECT)).toBeUndefined();
 
     expect((await put(PROJECT, { feature: 'nope', enabled: true }, operatorSecret)).status).toBe(400);

@@ -75,7 +75,9 @@ export function ConnectorAccounts({
 }: ConnectorAccountsProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isManagedProvider = isManagedConnectorProvider(connector.provider);
-  const isChannel = connector.provider === 'channel';
+  // Email's accounts are inboxes (ConnectionsList's `isEmail` branch); Slack and
+  // Teams are one install each.
+  const isChannel = connector.provider === 'channel' && connector.platform !== 'email';
   const showRoster =
     isManagedProvider && canManageConnections && connector.authorizationStrategy === 'user';
 

@@ -37,6 +37,8 @@ import {
   seedConnectionFromReadyStart,
 } from '../browser/stores/sandbox-connection-store';
 import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
+import { authenticatedFetch } from '../core/http/auth';
+import { RUNTIME_LOG_CAPABILITY, readRuntimeLogPage } from '../core/session/runtime-actions';
 import { getBackendUrl } from '../core/session/server-store/url-helpers';
 import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import { BillingError, parseBillingError } from '../core/http/api/errors';
@@ -46,6 +48,7 @@ import { formatRuntimeError } from '../core/http/runtime-errors';
 import {
   type CreateSessionPromptInput,
   type SessionPromptPart,
+  type SessionStartImageStep,
   type SessionStartResult,
   createSessionPrompt,
   isSessionStartError,
@@ -62,7 +65,6 @@ import { holdLiveStart, liveStartPollMode } from './hold-live-start';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
 import { seedModelDefaultsFromOpenBundle } from './prefetch-session-open';
-import { useSessionTranscriptHistory } from './use-session-transcript-history';
 import { useCanonicalRuntimeSession } from './use-canonical-opencode-session';
 import type { ModelKey } from './use-model-store';
 import { useRuntimeEventStream } from './use-opencode-events';
@@ -262,8 +264,14 @@ export function sessionPromptFromParts(
   options: SendOptions,
   clientMessageId?: string,
   nowMs: number = Date.now(),
+  /**
+   * The id the host drew its optimistic message under. It becomes the wire id, so the
+   * runtime's user message, the session log and the inbox row all carry it, and the log's
+   * put replaces the optimistic message by id. Omitted: a wire id is minted.
+   */
+  optimisticMessageId?: string,
 ): CreateSessionPromptInput {
-  const messageId = mintSessionWireMessageId(runtimeSessionId, clientMessageId);
+  const messageId = optimisticMessageId ?? mintSessionWireMessageId(runtimeSessionId, clientMessageId);
   const wireParts: SessionPromptPart[] = parts.map((part) => {
     if (part.type === 'file') {
       return {
@@ -486,6 +494,15 @@ export const SESSION_START_FRESH_MS = 30_000;
 
 /** At most one `/start` re-read per this window when the proxy reports the box gone. */
 const RUNTIME_GONE_REFETCH_MIN_MS = 3_000;
+
+/**
+ * The image step of a `/start` answer, only while its box provisions. A ready
+ * answer, any other boot phase, and an API without `boot.image` read `null`.
+ */
+function sessionBootImage(start: SessionStartResult | null): SessionStartImageStep | null {
+  if (!start || start.stage === 'ready' || start.boot?.phase !== 'provisioning') return null;
+  return start.boot.image ?? null;
+}
 
 /**
  * OUTCOME-AWARE `staleTime` for the `/start` query (TanStack's function
@@ -741,8 +758,14 @@ export function markDispatchedForPartIds(sessionId: string, parts: PromptPart[])
 export function beginOptimisticPlainTextSend(
   sessionId: string,
   text: string,
+  /**
+   * The prompt's wire id (`mintSessionWireMessageId`): the message is drawn under the id the
+   * runtime and the session log will hold it by. Omitted: a local id, which the server never
+   * keeps (`ascendingId` is not the wire codec's clock).
+   */
+  wireMessageId?: string,
 ): { messageId: string; parts: PromptPart[] } {
-  const messageId = ascendingId('msg');
+  const messageId = wireMessageId ?? ascendingId('msg');
   const partId = ascendingId('prt');
   const optimisticParts: Part[] = text.trim()
     ? [
@@ -1385,11 +1408,27 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // (`useSessionLogThread`). With the chat engine, the log OWNS the history from the first
   // render: the open asks the snapshot for no transcript window, no saved copy is read
   // (`useSessionSync` `sessionLog`), and older pages come from `GET …/log`. No project flag is
-  // read. A session the log refuses (404: a server older than the log, or no stored log yet)
-  // reads v1 as before.
-  const logDialect = useSessionLogSync(projectId, sessionId, { enabled: startEnabled });
-  // `'missing'`: v2, and the API holds no log for this session yet (a new session). Nothing saved
-  // is on its way, and no v1 copy is read.
+  // read, and no v1 transcript (`GET …/transcript`, P8.3) is read, whatever the log answers.
+  // The box's own page, while `/start` says the box is ready and serves it (`runtime.log.v1`):
+  // ahead of the API's copy (the reply it streams, a prompt waiting on it), and a new session's
+  // log before the API holds one.
+  const liveLogBoxId =
+    startData?.stage === 'ready' && startData.capabilities?.includes(RUNTIME_LOG_CAPABILITY) ? (startData.sandbox?.external_id ?? null) : null;
+  const livePage = useMemo(
+    () =>
+      liveLogBoxId
+        ? (query: { limit: number }) =>
+            readRuntimeLogPage(getSandboxUrlForExternalId(liveLogBoxId), authenticatedFetch as typeof globalThis.fetch, query)
+        : null,
+    [liveLogBoxId],
+  );
+  // The box serves its log: the session log is the only transcript read. No v1 transcript, session
+  // record, status, permission, question or diagnostics read goes to the box (see each gate below).
+  const logNative = liveLogBoxId !== null;
+  const logReloadRef = useRef<(() => void) | null>(null);
+  const logDialect = useSessionLogSync(projectId, sessionId, { enabled: startEnabled, livePage, reloadRef: logReloadRef });
+  // `'missing'`: no page yet (a new session, an unconverted mirror, a failed read). Nothing saved
+  // is on its way; the runtime's rows are the history.
   const logOwned = chatEngine && logDialect !== 'v1';
   const logRootRuntimeId = useSyncStore((state) => (logOwned ? (sessionLogRoot(state.sessionLogs[sessionId])?.runtimeSessionId ?? null) : null));
   // On v2 the session log is the saved copy: its page, or the device's saved v2 copy.
@@ -1404,6 +1443,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     return root?.empty ? root.runtimeSessionId : null;
   });
   const logOlder = useSessionLogOlder({ projectId, sessionId }, undefined, { enabled: logOwned });
+  // The log pages older history only while the store holds it. Without one (no page yet, a
+  // failed read) the runtime pages its own older messages.
+  const logPages = useSyncStore((state) => logOwned && state.sessionLogs[sessionId] !== undefined);
 
   // 1b. ONE read for the rest of the open.
   //
@@ -1552,18 +1594,18 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // StreamProvider); calling the underlying hook here means the host mounts
   // nothing. It self-gates on the connection store's healthy flag (seeded above).
   // R5.3: its events come from the session stream mounted in 1c.
-  useRuntimeEventStream({ enabled: switched, projectId, sessionId });
+  useRuntimeEventStream({ enabled: switched, projectId, sessionId, logNative });
 
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
   const transcriptHistoryEnabled = startEnabled && chatEngine;
-  const transcriptHistory = useSessionTranscriptHistory(projectId, sessionId, transcriptHistoryEnabled && !logOwned);
   const canonicalSession = useCanonicalRuntimeSession({
     projectId,
     sessionId,
     pinFromStart: startData?.runtime_session_id ?? startData?.opencode_session_id ?? null,
-    initialPin: transcriptHistory.rootSessionId ?? logRootRuntimeId ?? initialRuntimeSessionId,
-    listRuntimeSessions: switched,
+    initialPin: logRootRuntimeId ?? initialRuntimeSessionId,
+    // A box that serves its log: the pin comes from `/start` and the log; the box lists nothing.
+    listRuntimeSessions: switched && !logNative,
   });
   const { rootSessionId } = canonicalSession;
   const ocSessionId = rootSessionId ?? '';
@@ -1623,12 +1665,12 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const rawSync = useSessionSync(chatEngine ? ocSessionId : '', {
     kortixSessionScope: `${projectId}/${sessionId}`,
     streamConnected,
-    // The saved-history read above is this open's ONE transcript read: its
-    // copy, or `null` while it runs and when it found none. Never `undefined`,
-    // which would make the sync layer read the same window again (KRTX-189).
-    mirror: transcriptHistory.envelope,
+    // No saved copy: the session log is the only one (P8.3). Never `undefined`,
+    // which would make the sync layer read the log page a second time.
+    mirror: null,
     sessionLog: logOwned,
-    networkEnabled: switched,
+    // A box that serves its log: the rows come from the log, so no v1 read or liveness poll runs.
+    networkEnabled: switched && !logNative,
     working: working.state === 'working',
     // The control plane holding a turn open keeps the transcript verification
     // poll on even when the projection's answer is idle — the repair for a
@@ -1647,7 +1689,20 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       ? selectTranscriptShapeKey(state, ocSessionId)
       : '',
   );
-  const sync = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
+  const syncRows = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
+  // On a box that serves its log, loading, freshness and the retry are the log's.
+  const sync = useMemo(
+    () =>
+      logNative && chatEngine
+        ? {
+            ...syncRows,
+            isLoading: logHistory === 'loading',
+            freshness: (logHistory === 'loading' ? 'loading' : 'fresh') as typeof syncRows.freshness,
+            retryTranscript: () => logReloadRef.current?.(),
+          }
+        : syncRows,
+    [logNative, chatEngine, syncRows, logHistory],
+  );
   const runtimePhase = useRuntimePhase();
   // T22 — the revert record lives in the sync store, not component state.
   // Component state made the boundary math wrong in two ways at once: it
@@ -1698,7 +1753,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     openTurnToken: working.serverOpenTurnToken,
     lastEndedToken,
   });
-  const savedEmptyRoot = !transcriptHistoryEnabled ? null : logOwned ? logEmptyRoot : transcriptHistory.emptyRootSessionId;
+  const savedEmptyRoot = transcriptHistoryEnabled && logOwned ? logEmptyRoot : null;
   const emptyProvenForRoot = savedEmptyRoot !== null && savedEmptyRoot === ocSessionId;
   // 5a. Can this session show its saved conversation before the computer
   // wakes? A host paints placeholder rows while the answer is `loading` and
@@ -1706,15 +1761,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const savedTranscript = resolveSavedTranscript({
     enabled: startEnabled && chatEngine,
     hasMessages: sync.messages.length > 0 || (logOwned && logHistory === 'present'),
-    history: !transcriptHistoryEnabled
-      ? 'off'
-      : logOwned
-        ? logHistory
-        : transcriptHistory.isLoading
-          ? 'loading'
-          : transcriptHistory.envelope
-            ? 'present'
-            : 'absent',
+    history: !transcriptHistoryEnabled ? 'off' : logOwned ? logHistory : 'absent',
     mirror: logOwned ? (logHistory === 'present' ? 'painted' : logHistory) : sync.mirrorState,
     root: ocSessionId ? 'known' : canonicalSession.pinSettled ? 'unknown' : 'pending',
     emptyAwaitingTurnRead: emptyProvenForRoot && !turnRead,
@@ -1749,10 +1796,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // ring replays it on a reconnect and a resync re-reads the pending lists —
   // so these polls run only while the stream is down.
   useQuestionSelfHeal(ocSessionId, sync.messages, {
-    enabled: switched && chatEngine && !!ocSessionId && !streamConnected,
+    enabled: switched && chatEngine && !!ocSessionId && !streamConnected && !logNative,
   });
   usePermissionSelfHeal(ocSessionId, sync.messages, {
-    enabled: switched && chatEngine && !!ocSessionId && !streamConnected,
+    enabled: switched && chatEngine && !!ocSessionId && !streamConnected && !logNative,
   });
 
   // 6. Interactive prompts live in the pending store (the SSE writes them there,
@@ -1771,7 +1818,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // same cache entry `session.compacted` and `session.updated` already write
   // (`runtimeKeys.runtimeSession`), so reading it here costs no extra request
   // in a host that mounts the session row anyway.
-  const runtimeSessionRow = useRuntimeSession(switched ? ocSessionId : '');
+  // A box that serves its log reports compaction as `log.status` (the compaction store above).
+  const runtimeSessionRow = useRuntimeSession(switched && !logNative ? ocSessionId : '');
   const compactionInputs = {
     optimisticAtMs: optimisticCompactionAtMs,
     serverCompactingAtMs: runtimeSessionRow.data?.time?.compacting ?? null,
@@ -1909,6 +1957,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
        * a new submission. See `SendRuntimeMessageArgs.clientMessageId`.
        */
       clientMessageId?: string;
+      /** The id the host drew its optimistic message under; the prompt goes out under it. */
+      messageId?: string;
     },
   ): Promise<void> => {
     if (!runtimeActionReady) throw new RuntimeNotReadyError();
@@ -1931,7 +1981,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       // Every turn start goes through the session's durable prompt inbox, the
       // path the web composer and the CLI use: the server decides when it runs.
       const result = await sendMutation.mutateAsync(
-        sessionPromptFromParts(ocSessionId, parts, opts, override?.clientMessageId),
+        sessionPromptFromParts(ocSessionId, parts, opts, override?.clientMessageId, Date.now(), override?.messageId),
       );
       if (result.state === 'failed') {
         throw new Error('This prompt was refused: its earlier delivery already failed.');
@@ -1965,8 +2015,11 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // T15 — one user bubble: the optimistic message and the outgoing
     // part share one minted id, so the server's echo can be correlated back
     // to it instead of leaving both on screen until the idle sweep.
-    const { messageId, parts } = beginOptimisticPlainTextSend(ocSessionId, text);
-    void sendParts(parts, override).catch((error) => {
+    // One id from the optimistic message to the session log: minted by the wire codec, drawn
+    // here, sent as the prompt's wire id, kept by a runtime that keeps ids, and replaced by
+    // the log's put of the same id.
+    const { messageId, parts } = beginOptimisticPlainTextSend(ocSessionId, text, mintSessionWireMessageId(ocSessionId));
+    void sendParts(parts, { ...override, messageId }).catch((error) => {
       // The send never reached (or was refused by) the server — nothing to
       // rehydrate, so drop the optimistic message outright rather than leave
       // it stranded forever (mirrors `abandonOptimisticSend`).
@@ -2124,10 +2177,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     permissions,
     diffs: sync.diffs,
     todos: sync.todos,
-    // On v2 older history is the session log's (`GET …/log?before_seq=`).
-    hasOlder: logOwned ? logOlder.hasOlder : sync.hasOlder,
-    isLoadingOlder: logOwned ? logOlder.isLoadingOlder : sync.isLoadingOlder,
-    loadOlder: logOwned ? logOlder.loadOlder : sync.loadOlder,
+    // While the store holds the log, older history is the log's (`GET …/log?before_seq=`).
+    hasOlder: logPages ? logOlder.hasOlder : sync.hasOlder,
+    isLoadingOlder: logPages ? logOlder.isLoadingOlder : sync.isLoadingOlder,
+    loadOlder: logPages ? logOlder.loadOlder : sync.loadOlder,
 
     // lifecycle
     phase,
@@ -2161,6 +2214,13 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
      *  latest /start's `boot.actively_starting`? `false` while a `starting`
      *  stage is only waiting out a retry cooldown, not driving the box. */
     activelyStarting: startData?.boot?.actively_starting ?? false,
+    /** Where the box's sandbox image is while it provisions, per the latest
+     *  /start's `boot.image`: building, serving the last ready image while a
+     *  new one builds, copying to the region, or waiting on the provider. A
+     *  boot screen names this step instead of a bare "provisioning". `null`
+     *  outside the `provisioning` phase, once ready, and against an API that
+     *  does not send it. */
+    bootImage: sessionBootImage(startData),
     /** Terminal /start failure, for hosts to render instead of spinning forever. */
     startError,
     /** Typed provider-neutral terminal provisioning failure. */

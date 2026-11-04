@@ -1262,5 +1262,38 @@
     "waitingManagers": "Une personne qui gère ce projet peut approuver ou refuser l'appel.",
     "waitingTitle": "En attente d'approbation",
     "waitingWho": "La personne qui a démarré cette session ou une personne qui gère ce projet peut approuver ou refuser l'appel."
+  },
+  "imageGen": {
+    "generating": "Génération de l’image",
+    "editing": "Modification de l’image",
+    "openFullScreen": "Ouvrir en plein écran",
+    "openFullScreenPrompt": "Ouvrir en plein écran : {{prompt}}",
+    "generatingCount_one": "Génération de {{count}} image",
+    "generatingCount_other": "Génération de {{count}} images",
+    "editingCount_one": "Modification de {{count}} image",
+    "editingCount_other": "Modification de {{count}} images",
+    "loading": "Chargement de l’image",
+    "stopped": "Arrêté",
+    "failed": "L’image n’a pas été générée.",
+    "tapToLoad": "Touchez pour charger ({{size}})",
+    "retrySecond_one": "Réessayez dans {{count}} seconde.",
+    "retrySecond_other": "Réessayez dans {{count}} secondes.",
+    "retryMinute_one": "Réessayez dans {{count}} minute.",
+    "retryMinute_other": "Réessayez dans {{count}} minutes.",
+    "retryHour_one": "Réessayez dans {{count}} heure.",
+    "retryHour_other": "Réessayez dans {{count}} heures.",
+    "unavailable": "Image indisponible",
+    "details": "Détails de l'image"
+  },
+  "sessionImage": {
+    "title": "Préparation de l’image du sandbox",
+    "states": {
+      "resolving": "Choix de l’image pour cette session.",
+      "serving_last_ready": "Démarrage à partir de la dernière image prête. La nouvelle se construit en arrière-plan.",
+      "waiting_for_build": "La première image de ce projet est en cours de construction. La session démarre dès qu’elle est prête.",
+      "building": "Construction de la première image de ce projet. Cela n’arrive qu’une fois et prend quelques minutes.",
+      "copying_to_region": "Copie de l’image vers la région de cette session.",
+      "waiting_for_provider": "L’image est en cours de finalisation. La session démarre dès qu’elle est prête."
+    }
   }
 }

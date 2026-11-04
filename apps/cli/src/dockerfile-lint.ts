@@ -14,7 +14,7 @@
  * Emits `ManifestIssue`s so `validate` can merge them straight into the report
  * it already prints — `path` carries the Dockerfile's repo-relative path (not a
  * kortix.yaml dot-path) and `line` is the line WITHIN that Dockerfile, so
- * `formatIssues` renders `error path/to/Dockerfile: … (line 3)`.
+ * `kortix validate` prints `path/to/Dockerfile:3  error  path/to/Dockerfile  …`.
  */
 import type { ManifestIssue } from '@kortix/manifest-schema';
 
@@ -220,7 +220,7 @@ export function lintDockerfile(text: string, opts: LintDockerfileOpts): Manifest
         `Platinum provider builds with buildah's classic imagebuilder, which parses the heredoc ` +
         `body's first line as a Dockerfile instruction and aborts the build ("Unknown ` +
         `instruction: …"). Use a single-line equivalent (e.g. \`python3 -c '…'\`) — heredocs and ` +
-        `BuildKit-only \`# syntax\` directives work on Daytona but break every Platinum build.`,
+        `BuildKit-only \`# syntax\` directives break every Platinum build.`,
     });
   }
 

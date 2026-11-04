@@ -24,6 +24,7 @@ import { BootTimelineRelayBodySchema } from '@kortix/api-contract/runtime-relay'
 import { sessionSandboxes } from '@kortix/db';
 import { pinSandboxEgressIp, requestEgressIp } from '../services/sandbox-egress-pin';
 import { db } from '../../shared/db';
+import { publishSessionChanged } from '../../shared/pg-broadcast';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import type { AppEnv } from '../../types';
 import { recordBootTimeline } from '../services/boot-timeline-store';
@@ -92,6 +93,13 @@ bootTimelineRouter.openapi(
     void pinSandboxEgressIp(sandboxId, requestEgressIp(c)).catch((err) =>
       console.warn('[egress-pin] could not pin sandbox egress ip (ignored):', err?.message ?? err),
     );
+
+    // The daemon posts this at `runtime-ready`, so the session can take its
+    // first turn now. A delivery waiting for the box polls `openSession` every
+    // 500 ms after the box went active (deliver.ts ACTIVE_RECHECK_MS), and each
+    // poll costs a provider status call and a daemon probe. Wake those waiters
+    // on every replica. An optimisation only: a lost NOTIFY leaves the poll.
+    publishSessionChanged(sandbox.sessionId);
 
     // Fire-and-forget — this is telemetry, not a durability contract the
     // caller should wait on (see recordBootTimeline's doc comment).

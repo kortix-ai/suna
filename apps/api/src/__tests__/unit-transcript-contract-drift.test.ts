@@ -37,7 +37,7 @@ import { KORTIX_TRANSCRIPT_SCHEMA } from '@kortix/api-contract/transcript';
  * (`kortix.transcript.v1` keeps OpenCode 1.18's field names). These type
  * assertions fail `tsc` when an OpenCode release the sandbox runs
  * (`@opencode-ai/sdk` pinned to `OPENCODE_SDK_VERSION`) stops fitting the
- * Kortix types. Then `harness/open-code/` needs a real translator for the
+ * Kortix types. Then the reader of OpenCode frames needs a real translator for the
  * frame that changed; the Kortix types do not change.
  */
 type Fits<A, B> = [A] extends [B] ? true : false;

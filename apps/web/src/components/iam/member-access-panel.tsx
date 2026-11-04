@@ -9,7 +9,7 @@ import { useTranslations } from '@/i18n/use-translations';
  *
  * It used to be a standalone route (`accounts/[id]/members/[userId]/page.tsx`)
  * that dropped the hub's left rail on the way in. Same shell now, same
- * breadcrumb pattern, same stacked `AccessList` sections:
+ * breadcrumb pattern, the account tables (`member-table.tsx`) for its lists:
  *
  *   - back "All members" → the members list (drops the `member` query param)
  *   - header: `UserAvatar` · email · You / Super / 2FA badges · role · joined ·
@@ -31,6 +31,7 @@ import {
   DotsThreeIcon as MoreHorizontal,
   ArrowSquareOutIcon as OpenIcon,
   PencilSimpleIcon as PencilSimple,
+  InfoIcon as Info,
   ShieldIcon as Shield,
   ShieldSlashIcon as ShieldOff,
   TrashIcon,
@@ -53,7 +54,6 @@ import {
 import { EntityAvatar } from '@kortix/ui/entity-avatar';
 import { InfoBanner } from '@kortix/ui/info-banner';
 import { InlineMeta } from '@kortix/ui/inline-meta';
-import { Label } from '@kortix/ui/label';
 import {
   Modal,
   ModalBody,
@@ -69,7 +69,6 @@ import { EmptyState } from '@kortix/ui/empty-state';
 import { ErrorState } from '@kortix/ui/error-state';
 import {
   AccessDetailShell,
-  AccessList,
   builtinRole,
   builtinRoleLabel,
   customRole,
@@ -79,13 +78,11 @@ import {
   type KebabItem,
   type RoleValue,
 } from '@kortix/ui/access/access/index';
-import {
-  AccessDialog,
-  AccessRow,
-} from '@kortix/ui/access';
+import { AccessDialog } from '@kortix/ui/access';
 import {
   listMemberGroups,
   listMemberProjectAccess,
+  listProjectsForAccount,
   listPermissions,
   listPolicies,
   setMemberSuperAdmin,
@@ -102,8 +99,27 @@ import {
 } from '@kortix/sdk';
 import { contract, invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import { areaLabel, permissionLabel } from './role-capability-model';
+import Hint from '@kortix/ui/hint';
+import { ButtonGroup } from '@kortix/ui/button-group';
+import { useAccountHubSheet } from '@kortix/ui/internal/account-hub/hub-sheet';
+import { useRouter } from 'next/navigation';
+import { MemberTableHead, MemberTableRow, ROLE_TONE } from '@/features/accounts/hub/member-table';
 
-const PANEL = 'bg-popover rounded-md border';
+const TABLE_HEAD = 'text-muted-foreground truncate text-xs font-medium';
+/** A permission and its answer: the label wraps, the answer column is fixed. */
+const CAPABILITY_GRID = 'grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-4';
+
+/** A table's title: the name and a neutral count. */
+function TableTitle({ title, count }: { title: string; count?: number }) {
+  return (
+    <div className="flex min-h-8 items-center gap-2">
+      <h3 className="text-foreground text-sm font-medium">{title}</h3>
+      {count != null ? (
+        <span className="text-muted-foreground text-sm tabular-nums">{count}</span>
+      ) : null}
+    </div>
+  );
+}
 
 /** A single custom-role grant, as returned per-project (`custom_role_policies`)
  *  or once account-wide (`account_wide_policies`) by GET .../project-access. */
@@ -171,6 +187,7 @@ export function MemberAccessPanel({
   onOpenGroup,
 }: MemberAccessPanelProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const sheet = useAccountHubSheet();
   const queryClient = useQueryClient();
   const [grantConfirmOpen, setGrantConfirmOpen] = useState(false);
   const [revokeConfirmOpen, setRevokeConfirmOpen] = useState(false);
@@ -290,31 +307,46 @@ export function MemberAccessPanel({
   }
 
   return (
-    // No "‹ All members" here: the hub's breadcrumb bar reads
-    // Settings / <account> / Members / <member>, and Members is a link.
+    // "‹ Members" above the avatar, as the project page has "‹ Projects". The
+    // breadcrumb (Settings / <account> / Members / <member>) stays the other way.
     <AccessDetailShell
+      back={{ label: tI18nComplete.raw('text1044a4c056d0'), onClick: onBack }}
       loading={membersQuery.isLoading}
-      avatar={<UserAvatar email={memberLabel} name={member?.email ?? undefined} size="lg" />}
+      avatar={
+        <UserAvatar
+          email={memberLabel}
+          name={member?.email ?? undefined}
+          size="lg"
+          className="rounded-md after:rounded-md [&>*]:rounded-md"
+        />
+      }
       title={memberLabel}
       badges={
         member ? (
           <>
             {isSelf ? (
-              <Badge variant="secondary" size="sm">
+              <Badge variant="secondary" size="sm" className="rounded-sm ring-0">
                 {tI18nComplete.raw('text08b041935798')}
               </Badge>
             ) : null}
+            {/* Super admin is the top of the role ladder: the royal badge (R1). */}
             {member.is_super_admin ? (
               <Badge
+                variant="royal"
                 size="sm"
-                className="bg-kortix-orange/15 text-kortix-orange border-transparent"
+                className="rounded-sm ring-0"
                 title={tI18nComplete.raw('text3cafa764c6f9')}
               >
                 {tI18nComplete.raw('text8185c8ac4656')}
               </Badge>
             ) : null}
             {member.has_verified_mfa ? (
-              <Badge variant="success" size="sm" title={tI18nComplete.raw('textc56fc40bb882')}>
+              <Badge
+                variant="success"
+                size="sm"
+                className="rounded-sm normal-case ring-0"
+                title={tI18nComplete.raw('textc56fc40bb882')}
+              >
                 2FA
               </Badge>
             ) : null}
@@ -339,6 +371,27 @@ export function MemberAccessPanel({
       }
       actions={
         member ? (
+          <ButtonGroup>
+          {/* What they can do opens beside the page in the hub's split sheet. */}
+          {canReadRoles ? (
+            <Hint label={tI18nComplete.raw('text5161cce6217e')}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-muted-foreground hover:text-foreground size-7 shrink-0"
+                aria-label={tI18nComplete.raw('text5161cce6217e')}
+                onClick={() =>
+                  sheet.open({
+                    title: tI18nComplete.raw('text5161cce6217e'),
+                    description: `${memberLabel} · ${tI18nComplete.raw('textd668b28cfe55')}`,
+                    body: <CapabilitiesCard accountId={accountId} memberUserId={member.user_id} />,
+                  })
+                }
+              >
+                <Info className="size-3.5" />
+              </Button>
+            </Hint>
+          ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -397,6 +450,7 @@ export function MemberAccessPanel({
               ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
+          </ButtonGroup>
         ) : null
       }
     >
@@ -434,14 +488,6 @@ export function MemberAccessPanel({
           isLoading={memberGroupsQuery.isLoading}
           onOpenGroup={onOpenGroup}
         />
-      ) : null}
-
-      {/* The catalog read behind this card asserts `role.read`. A viewer
-          without it gets a 403 and an empty grid, so the card does not exist
-          for them — the hub's rail rule ("a pane that can only fail to load is
-          not a pane"), applied one level down. */}
-      {member && canReadRoles ? (
-        <CapabilitiesCard accountId={accountId} memberUserId={member.user_id} />
       ) : null}
 
       {member && accountRoleValue ? (
@@ -545,10 +591,22 @@ function MemberProjectAccessSection({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [editTarget, setEditTarget] = useState<ProjectEditTarget | null>(null);
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
 
   const items = useMemo(() => query.data?.projects ?? [], [query.data]);
+  // Each project's own tile (emoji or glyph), from the account's project list:
+  // the member-access route carries names only. Same cache as the Projects pane.
+  const projectsQuery = useQuery({
+    queryKey: qk.projects.list(accountId),
+    queryFn: () => listProjectsForAccount(accountId),
+    ...contract('inventory'),
+  });
+  const projectById = useMemo(
+    () => new Map((projectsQuery.data ?? []).map((project) => [project.project_id, project])),
+    [projectsQuery.data],
+  );
   const isAdminLike = accountRole === 'owner' || accountRole === 'admin';
 
   const sorted = useMemo(
@@ -628,60 +686,84 @@ function MemberProjectAccessSection({
           }
         />
       ) : (
-        <AccessList header={{ title: tI18nComplete.raw('text04e2a9728af7'), count: sorted.length }}>
-          {sorted.map((project) => {
-            const policy = directPolicy(project.custom_role_policies);
-            const inheritedOnly = project.sources.length === 1 && project.sources[0] === 'implicit';
-            const customNames = (project.custom_role_policies ?? []).map((p) => p.role_name);
+        <section className="space-y-1">
+          <TableTitle title={tI18nComplete.raw('text04e2a9728af7')} count={sorted.length} />
+          {/* `-ml-9`: the empty select gutter hangs outside the content edge. */}
+          <div role="table" aria-label={tI18nComplete.raw('text04e2a9728af7')} className="-ml-2 sm:-ml-9">
+            <MemberTableHead
+              nameHeader={tI18nComplete.raw('text985959785319')}
+              emailHeader={tI18nComplete.raw('textec5ba0abb717')}
+            />
+            <div role="rowgroup">
+              {sorted.map((project) => {
+                const policy = directPolicy(project.custom_role_policies);
+                const inheritedOnly =
+                  project.sources.length === 1 && project.sources[0] === 'implicit';
+                const customNames = (project.custom_role_policies ?? []).map((p) => p.role_name);
+                const tile = projectById.get(project.project_id);
+                // An owner or admin reaches every project through the account:
+                // their account role is the badge, as on the project's own page.
+                const accountRank =
+                  inheritedOnly && (accountRole === 'owner' || accountRole === 'admin')
+                    ? accountRole
+                    : null;
 
-            const kebab: KebabItem[] = [];
-            if (canEdit && !inheritedOnly) {
-              kebab.push({
-                label: tI18nComplete.raw('texta514a684676a'),
-                icon: <PencilSimple className="size-3.5" />,
-                onSelect: () => void openEdit(project),
-              });
-            }
-            kebab.push({
-              label: tI18nComplete.raw('text5e5eba7f41ab'),
-              icon: <OpenIcon className="size-3.5" />,
-              href: `/projects/${project.project_id}`,
-            });
+                const kebab: KebabItem[] = [];
+                if (canEdit && !inheritedOnly) {
+                  kebab.push({
+                    label: tI18nComplete.raw('texta514a684676a'),
+                    icon: <PencilSimple className="size-3.5" />,
+                    onSelect: () => void openEdit(project),
+                  });
+                }
+                kebab.push({
+                  label: tI18nComplete.raw('text5e5eba7f41ab'),
+                  icon: <OpenIcon className="size-3.5" />,
+                  onSelect: () => router.push(`/projects/${project.project_id}`),
+                });
 
-            return (
-              <AccessRow
-                key={project.project_id}
-                leading={<EntityAvatar label={project.project_name} icon={FolderOpen} size="md" />}
-                title={project.project_name}
-                meta={
-                  <span className="text-muted-foreground text-xs">
-                    <InlineMeta>
-                      <span>
-                        {tI18nComplete.raw('text4d327af41f96')}{' '}
-                        {project.sources.map((s) => SOURCE_LABEL[s]).join(' + ')}
-                      </span>
-                      {customNames.length > 0 ? <span>{formatList(customNames)}</span> : null}
-                    </InlineMeta>
-                  </span>
-                }
-                trailing={
-                  policy?.role_name ?? builtinRoleLabel('project', project.role, tI18nComplete)
-                }
-                href={`/projects/${project.project_id}`}
-                pending={openingProjectId === project.project_id}
-                kebab={kebab}
-                kebabLabel={tI18nComplete('text33da220b1a34', { value0: project.project_name })}
-                notEditable={
-                  inheritedOnly && canEdit
-                    ? {
-                        hint: tI18nComplete.raw('text4e6c3453b25d'),
-                      }
-                    : undefined
-                }
-              />
-            );
-          })}
-        </AccessList>
+                return (
+                  <MemberTableRow
+                    key={project.project_id}
+                    onOpen={() => router.push(`/projects/${project.project_id}`)}
+                    avatar={
+                      <EntityAvatar
+                        label={project.project_name}
+                        glyph={tile?.icon_glyph}
+                        emoji={tile?.icon}
+                        size="sm"
+                      />
+                    }
+                    name={project.project_name}
+                    // How the access arrives: "Account admin + Direct".
+                    email={[
+                      project.sources.map((source) => SOURCE_LABEL[source]).join(' + '),
+                      ...customNames,
+                    ].join(' · ')}
+                    role={
+                      accountRank
+                        ? builtinRoleLabel('account', accountRank, tI18nComplete)
+                        : (policy?.role_name ??
+                          builtinRoleLabel('project', project.role, tI18nComplete))
+                    }
+                    roleTone={
+                      accountRank
+                        ? ROLE_TONE[accountRank]
+                        : policy
+                          ? ROLE_TONE.custom
+                          : project.role === 'member'
+                            ? ROLE_TONE.member
+                            : ROLE_TONE.manager
+                    }
+                    pending={openingProjectId === project.project_id}
+                    kebab={kebab}
+                    kebabLabel={tI18nComplete('text33da220b1a34', { value0: project.project_name })}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        </section>
       )}
 
       {editTarget && editRole ? (
@@ -745,18 +827,30 @@ function MemberGroupsSection({
     );
   }
   return (
-    <AccessList
-      header={{ title: tI18nComplete.raw('text39bbb719fa2b'), count: memberGroups.length }}
-    >
-      {memberGroups.map((group) => (
-        <AccessRow
-          key={group.group_id}
-          leading={<EntityAvatar label={group.name} icon={Users} size="md" />}
-          title={group.name}
-          onClick={() => onOpenGroup(group.group_id)}
+    <section className="space-y-1">
+      <TableTitle title={tI18nComplete.raw('text39bbb719fa2b')} count={memberGroups.length} />
+      <div role="table" aria-label={tI18nComplete.raw('text39bbb719fa2b')} className="-ml-2 sm:-ml-9">
+        <MemberTableHead
+          nameHeader={tI18nComplete.raw('text34ca0e766088')}
+          emailHeader={tI18nComplete.raw('text6b02e0d363a4')}
+          roleHeader={<span aria-hidden />}
         />
-      ))}
-    </AccessList>
+        <div role="rowgroup">
+          {memberGroups.map((group) => (
+            <MemberTableRow
+              key={group.group_id}
+              onOpen={() => onOpenGroup(group.group_id)}
+              avatar={<EntityAvatar label={group.name} icon={Users} size="sm" />}
+              name={group.name}
+              email={formatDate(group.added_at)}
+              role={null}
+              roleCell={<span />}
+              kebabLabel={group.name}
+            />
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -829,21 +923,41 @@ function CapabilitiesCard({
   const results = usePermissionsFor(accountId, memberUserId, probes);
   const byAction = new Map(items.map((item, i) => [item.action, results[i]] as const));
 
+  const settled = items.length > 0 && items.every((item) => !byAction.get(item.action)?.isLoading);
+  const grantedCount = items.filter((item) => byAction.get(item.action)?.allowed).length;
+
   return (
-    <section className="space-y-2">
-      <div className="flex items-center justify-between gap-3 px-1">
-        <Label className="text-muted-foreground text-xs font-medium">
-          {tI18nComplete.raw('text5161cce6217e')}
-        </Label>
-        <span className="text-muted-foreground text-xs">
-          {tI18nComplete.raw('textd668b28cfe55')}
-        </span>
-      </div>
-      <div className={cn(PANEL, 'divide-border divide-y')}>
-        {groups.map((group) => (
-          <div key={group.heading} className="px-4 py-4">
-            <p className="text-muted-foreground mb-2 text-xs font-medium">{group.heading}</p>
-            <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+    <section className="space-y-1">
+      {/* The tally: how much of the catalog their access reaches. */}
+      <p className="text-muted-foreground text-xs tabular-nums">
+        {settled ? `${grantedCount}/${items.length} ${tI18nComplete.raw('text62026a42b239')}` : '\u00a0'}
+      </p>
+      {/* One column, one permission per row, its answer in words at the end:
+          a table to read top-down, not a two-column grid of ticks. Each area
+          is a quiet sub-heading with its own tally. */}
+      {/* `-mx-2`: each row pads `2`, so text sits on the sheet's edge. */}
+      <div role="table" aria-label={tI18nComplete.raw('text5161cce6217e')} className="-mx-2">
+        <div role="row" className={cn(CAPABILITY_GRID, 'h-9 px-2')}>
+          <span role="columnheader" className={TABLE_HEAD}>
+            {tI18nComplete.raw('textabccc78cc93c')}
+          </span>
+          <span role="columnheader" className={TABLE_HEAD}>
+            {tI18nComplete.raw('textec5ba0abb717')}
+          </span>
+        </div>
+        {groups.map((group) => {
+          const granted = group.items.filter((item) => byAction.get(item.action)?.allowed).length;
+          return (
+            <div key={group.heading} role="rowgroup" className="pt-3">
+              <div
+                role="row"
+                className="text-muted-foreground flex h-8 items-center gap-2 px-2 text-xs font-medium"
+              >
+                <span role="rowheader">{group.heading}</span>
+                <span className="tabular-nums">
+                  {granted}/{group.items.length}
+                </span>
+              </div>
               {group.items.map((item) => {
                 const probe = byAction.get(item.action);
                 return (
@@ -857,8 +971,8 @@ function CapabilitiesCard({
                 );
               })}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
@@ -875,23 +989,32 @@ function CapabilityRow({
   isLoading: boolean;
   reason: string | null;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const answer = isLoading ? (
+    <Skeleton className="h-4 w-16 rounded-sm" />
+  ) : allowed ? (
+    <span className="text-foreground inline-flex items-center gap-1.5">
+      <Check className="text-kortix-green size-3.5 shrink-0" />
+      {tI18nComplete.raw('text62026a42b239')}
+    </span>
+  ) : (
+    <span className="text-muted-foreground inline-flex items-center gap-1.5">
+      <X className="size-3.5 shrink-0" />
+      {tI18nComplete.raw('textda404deb110f')}
+    </span>
+  );
   return (
-    <div
-      className="flex items-center justify-between gap-3 text-sm"
-      title={reason ? `Reason: ${reason}` : undefined}
-    >
-      <span className="text-foreground truncate">{label}</span>
-      {isLoading ? (
-        <span className="bg-muted-foreground/20 size-3.5 animate-pulse rounded-full" />
-      ) : allowed ? (
-        <span className="bg-kortix-green/15 text-kortix-green inline-flex size-5 items-center justify-center rounded-full">
-          <Check className="size-3" />
-        </span>
-      ) : (
-        <span className="bg-muted text-muted-foreground inline-flex size-5 items-center justify-center rounded-full">
-          <X className="size-3" />
-        </span>
-      )}
+    <div role="row" className={cn(CAPABILITY_GRID, 'min-h-10 px-2 py-2')}>
+      <span
+        role="cell"
+        className={cn('text-sm text-pretty', allowed || isLoading ? 'text-foreground' : 'text-muted-foreground')}
+      >
+        {label}
+      </span>
+      <span role="cell" className="text-sm">
+        {/* Why, on hover: the engine's reason for the answer. */}
+        {reason && !isLoading ? <Hint label={reason}>{answer}</Hint> : answer}
+      </span>
     </div>
   );
 }

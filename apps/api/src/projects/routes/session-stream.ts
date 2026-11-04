@@ -47,9 +47,8 @@
  * ─── `?schema=v2`: THE SESSION LOG (P4.4) ──────────────────────────────────
  * The runtime channel carries `log.*` frames (`SESSION_LOG_EVENTS`) IN PLACE OF
  * the v1 transcript frames (`V1_TRANSCRIPT_EVENTS`); every other frame stays.
- * A box whose `/kortix/health` lists `session.log.v2` is attached with
- * `?schema=v2` and its stream relayed (its own seq and epoch); an older box is
- * attached on v1 and the API converts (`lib/session-log-relay.ts`). Absent,
+ * The box is attached with `?schema=v2` and its stream relayed (its own seq and
+ * epoch); every daemon since 2026-10-11 serves it (`session.log.v2`). Absent,
  * empty or `v1`: the stream is the v1 stream, byte for byte. Another value: 400.
  *
  * ─── BOUNDED, AND QUIET ON A STOPPED BOX ───────────────────────────────────
@@ -104,6 +103,8 @@ import {
   publishRuntimeStateFrame,
   type WakeLadderActor,
 } from '../lib/session-control-reconciler';
+import { sessionStreamAccessCheck } from '../../shared/space-access';
+import { recheckStreamAccess } from '../../shared/stream-access-recheck';
 import { refreshRuntimeProjection } from '../lib/session-runtime-projection-refresh';
 import { readRuntimeLeg } from '../lib/session-runtime-projection';
 import {
@@ -111,11 +112,7 @@ import {
   openRuntimeEventStream,
   parseSseFrames,
 } from '../lib/session-runtime-transport';
-import {
-  createV1LogConverter,
-  dropV1Transcript,
-  type RuntimeEnvelope,
-} from '../lib/session-log-relay';
+import { isV1TranscriptEvent } from '@kortix/api-contract/session-log';
 
 /** Our own keepalive cadence. Matches the daemon's, so a stream with no box
  *  attached still proves liveness on the same clock a healthy one does. */
@@ -455,6 +452,21 @@ export function registerSessionStreamRoutes(): void {
           // Our own TYPED heartbeat — not a `:` comment. An SSE parser swallows
           // comments without yielding anything, so a comment keeps TCP warm while
           // leaving every liveness watchdog blind (the 2026-08-26 prod defect).
+          // Access is re-checked every minute: a person removed from the
+          // thread's private channel, or whose share was revoked, stops
+          // receiving it.
+          const stopAccessRecheck = recheckStreamAccess(
+            sessionStreamAccessCheck(loaded.row.projectId, sessionId, async () => {
+              const still = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
+              return Boolean(still && !sessionIsTombstoned(still.row));
+            }),
+            () => {
+              writeMeta('kortix.stream.revoked', { type: 'kortix.stream.revoked', session_id: sessionId, at: Date.now() });
+              abort.abort();
+            },
+          );
+          abort.signal.addEventListener('abort', stopAccessRecheck, { once: true });
+
           heartbeat = setInterval(() => {
             writeMeta('kortix.stream.heartbeat', {
               type: 'kortix.stream.heartbeat',
@@ -563,10 +575,6 @@ export function registerSessionStreamRoutes(): void {
 interface PumpArgs {
   /** `?schema=v2`: the runtime channel carries `log.*` frames. */
   sessionLog: boolean;
-  /** Set per attachment on `schema=v2`: the envelopes to write for one daemon envelope. */
-  relay?: (envelope: RuntimeEnvelope) => RuntimeEnvelope[] | Promise<RuntimeEnvelope[]>;
-  /** The old-daemon converter, kept across re-attaches of one connection. */
-  converter?: ReturnType<typeof createV1LogConverter>;
   sessionId: string;
   projectId: string;
   accountId: string;
@@ -680,16 +688,12 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
     };
 
     const target = { externalId: sandbox.externalId, userId: args.userId };
-    const dialect = args.sessionLog ? await sessionLogDialect(args, target, attachment.signal) : null;
-    const opened =
-      dialect && !dialect.ok
-        ? dialect
-        : await openRuntimeEventStream(target, {
-            since: args.runtime.seq,
-            epoch: args.runtime.epoch,
-            ...(dialect?.native && { schema: 'v2' as const }),
-            signal: attachment.signal,
-          });
+    const opened = await openRuntimeEventStream(target, {
+      since: args.runtime.seq,
+      epoch: args.runtime.epoch,
+      ...(args.sessionLog && { schema: 'v2' as const }),
+      signal: attachment.signal,
+    });
     if (!opened.ok) {
       endAttachment();
       announceDown(opened.reason);
@@ -804,25 +808,6 @@ function watchRuntimeHealth(args: PumpArgs, externalId: string, signal: AbortSig
 }
 
 /**
- * How a `schema=v2` stream reads this box: its own `log.*` stream when its
- * health lists `session.log.v2`, else the v1 stream converted. Sets
- * `args.relay`. A failed health read fails the attach (the backoff ladder).
- */
-async function sessionLogDialect(
-  args: PumpArgs,
-  target: { externalId: string; userId: string },
-  signal: AbortSignal,
-): Promise<{ ok: true; native: boolean } | { ok: false; reason: string; status: null }> {
-  const health = await fetchRuntimeHealth(target, signal);
-  if (!health.ok) return { ok: false, reason: health.reason, status: null };
-  const capabilities = health.health.capabilities;
-  const native = Array.isArray(capabilities) && capabilities.includes('session.log.v2');
-  const harness = (health.health.harness as { id?: unknown } | undefined)?.id === 'pi' ? 'pi' : 'opencode';
-  args.relay = native ? dropV1Transcript : (args.converter ??= createV1LogConverter({ sessionId: args.sessionId, harness }));
-  return { ok: true, native };
-}
-
-/**
  * Forward ONE daemon frame.
  *
  * The envelope is written back out with exactly two additions — `channel` and
@@ -838,7 +823,7 @@ async function forwardRuntimeFrame(args: PumpArgs, event: string | null, data: s
     // A frame we cannot parse is still a frame the daemon sent. Pass the bytes
     // through under a name that says what happened rather than dropping them.
     // A v2 stream never carries a v1 transcript frame, parsed or not.
-    if (args.relay && dropV1Transcript({ type: event }).length === 0) return;
+    if (args.sessionLog && isV1TranscriptEvent(String(event))) return;
     args.writeRaw(`event: ${event ?? 'message'}\ndata: ${data}\n\n`);
     return;
   }
@@ -887,14 +872,10 @@ async function forwardRuntimeFrame(args: PumpArgs, event: string | null, data: s
 
   const id =
     seq === null ? null : encodeStreamId(args.runtime, CONTROL_EPOCH, args.controlCseq());
-  // `schema=v2`: the frames the relay answers, each at this frame's seq.
-  const frames = args.relay ? await args.relay({ ...parsed, type }) : [parsed];
-  for (const frame of frames) {
-    const envelope = { ...frame, channel: 'runtime', epoch: args.runtime.epoch };
-    args.writeRaw(
-      `event: ${typeof frame.type === 'string' ? frame.type : type}\n${id ? `id: ${id}\n` : ''}data: ${JSON.stringify(envelope)}\n\n`,
-    );
-  }
+  // A v2 stream never carries a v1 transcript frame; its seq still moves the cursor.
+  if (args.sessionLog && isV1TranscriptEvent(type)) return;
+  const envelope = { ...parsed, channel: 'runtime', epoch: args.runtime.epoch };
+  args.writeRaw(`event: ${type}\n${id ? `id: ${id}\n` : ''}data: ${JSON.stringify(envelope)}\n\n`);
 }
 
 /**
@@ -929,7 +910,7 @@ async function wakeLadderActorFor(
   c: Context,
   projectId: string,
   sessionId: string,
-  visible: { row: { agentName: string | null }; canManageLifecycle?: boolean },
+  visible: { row: { agentName: string | null; spaceId: string | null }; canManageLifecycle?: boolean },
 ): Promise<WakeLadderActor | null> {
   // A cheap pre-filter at open. The real decision is `authorize()`, asked
   // again right before every step (Strix CWE-863).
@@ -939,7 +920,7 @@ async function wakeLadderActorFor(
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return null;
-    await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
+    await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName, undefined, visible.row.spaceId);
     const actor = await actorOf(c, loaded.row.accountId);
     // An agent's own stream never drives restarts of its session.
     if (actor.credential.kind === 'agent_session') return null;

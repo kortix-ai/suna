@@ -57,3 +57,31 @@ describe('file preview modal source toggle', () => {
     expect(toggle).toContain('aria-pressed="true"');
   });
 });
+
+describe('file preview modal header', () => {
+  test('an editable file has one header: the path pill, one Download, no breadcrumb row', () => {
+    const html = renderToStaticMarkup(
+      <FilePreviewModal
+        selectedFilePath="/workspace/skills/xlsx/scripts/run.py"
+        panelMode="viewer"
+        filePathList={['/workspace/skills/xlsx/scripts/run.py']}
+        currentFileIndex={0}
+        onClose={() => {}}
+        onNext={() => {}}
+        onPrev={() => {}}
+        source={{
+          ...source,
+          editablePreview: true,
+          Breadcrumbs: () => <nav data-breadcrumbs />,
+        }}
+        HistoryContent={() => null}
+        renderFileIcon={() => null}
+        embedded
+      />,
+    );
+
+    expect(html).toContain('skills / xlsx / scripts /');
+    expect(html).not.toContain('data-breadcrumbs');
+    expect(html.match(/aria-label="Download"/g) ?? []).toHaveLength(1);
+  });
+});

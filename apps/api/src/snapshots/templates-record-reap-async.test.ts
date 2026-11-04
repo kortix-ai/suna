@@ -63,3 +63,21 @@ describe('recordTemplateBuilt reaps the predecessor off the caller path', () => 
     expect(deleted).toEqual(['kortix-default-old']);
   });
 });
+
+describe('recordTemplateBuilt across providers', () => {
+  test("a build on another provider never reaps the outgoing provider's last ready image", async () => {
+    deleted.length = 0;
+    releaseDelete = () => {};
+    answers.push(
+      [{ templateId: 'tpl', providerSnapshotName: 'kortix-default-old', provider: 'platinum', providerState: 'active' }],
+      [],
+    );
+    await recordTemplateBuilt('tpl', { snapshotName: 'kortix-default-new', contentHash: 'h', provider: 'daytona' });
+    for (let i = 0; i < 20; i++) {
+      releaseDelete();
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    await settlePredecessorReapsForTests();
+    expect(deleted).toEqual([]);
+  });
+});

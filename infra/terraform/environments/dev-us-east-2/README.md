@@ -20,6 +20,33 @@ definitions with `infra/scripts/ecs-deploy.sh dev-use2`. The env blob is
 `kortix-dev-env` in us-east-2. `TF_VAR_cloudflare_api_token` is
 `CLOUDFLARE_API_TOKEN` in `kortix-ci-env` (us-east-2).
 
+## Scheduled-job worker
+
+Every scheduled job runs on `kortix-dev-use2-worker`, an ECS service in the
+`kortix-dev-use2` cluster (`worker` on `module.api`, `modules/ecs-api`). The API
+tasks serve traffic only.
+
+| Item | Value |
+|---|---|
+| Service / task family / container | `kortix-dev-use2-worker` / `kortix-dev-use2-worker` / `worker` |
+| Size | 1 vCPU / 4 GiB, on-demand Fargate, 1 task, no load balancer |
+| Image and command | the API image, `bun run src/worker.ts` |
+| Environment | copied from the running API task definition by `ecs-deploy.sh --service worker`, without `KORTIX_PROCESS_ROLE` |
+| Logs | `/ecs/kortix-dev-use2`, streams `worker/worker/<task-id>` |
+| Alarms | `kortix-dev-use2-worker-not-running`, `kortix-dev-use2-worker-stale-jobs` → SNS `kortix-compliance-alerts` (us-east-2, owned by `compliance-monitoring/use2-security.tf`) |
+| Metric | `Kortix/Worker` `StaleJobs`, dimension `Environment = dev` |
+
+Deploy Dev's `deploy-api-ecs` job rolls the worker first, then the
+API. The API gets `KORTIX_PROCESS_ROLE=web` only when the worker runs a revision
+`ecs-deploy.sh` registered (it carries `KORTIX_WORKER_ENV_FROM`), on the same
+image, with a HEALTHY task; otherwise `all` (the API runs the jobs), and
+`ecs-deploy.sh` scales the worker to 0 after the API rollout. A failed worker roll never blocks
+the API: the run shows a `Worker deploy` error annotation.
+
+Kill switch: `bash infra/scripts/ecs-deploy.sh dev-use2 <api-image> --process-role all`
+redeploys the API with `all` and scales the worker to 0. The next worker roll
+starts it again.
+
 ## Gateway → API inside the VPC
 
 The gateway's control-plane calls (`/internal/gateway/*`, `/health`) go to

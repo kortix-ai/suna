@@ -16,14 +16,14 @@
 // immediately and the catalog's next config read sees it.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { slugifySlug, validateManifest } from '@kortix/manifest-schema';
+import { slugifySlug } from '@kortix/manifest-schema';
 import { stringify as stringifyYaml } from 'yaml';
 import type { Context } from 'hono';
 import type { AppEnv } from '../../types';
 
 import { PROJECT_ACTIONS } from '../../iam/actions';
-import { auth, errors, json } from '../../openapi';
-import { GitFileRevisionConflictError, commitFileToBranch, commitMultipleFilesToBranch } from '../git/branches';
+import { auth, boundedIssues, errors, json } from '../../openapi';
+import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
 import { isRepoFileNotFoundError, readRepoFile, listRepoFiles } from '../git/files';
 import { isRemotePushPolicyRejection } from '../git/mirror';
 import {
@@ -34,13 +34,14 @@ import {
 import { projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 
-import { readManifest, manifestWrites } from '../manifest-io';
+import { addedManifestErrors, readManifest, manifestWrites, synthesizeBlankManifest } from '../manifest-io';
 import { resolveBranchTip } from '../git/commits';
 import { refreshMirror } from '../git/mirror';
 import { invalidateProjectResourceConfig } from '../lib/project-resources';
 import { planSkillRemoval } from '../lib/skill-removal';
 import { logger } from '../../lib/logger';
 import { isRepositoryDisconnectedError } from '../../shared/repository-health';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 /** Longest name/description the route accepts. Bounds one line of YAML. */
 const SKILL_NAME_MAX = 100;
@@ -125,17 +126,15 @@ export function registerProjectSkillsRoutes(): void {
       if (!manifest || manifest.commit !== commit || manifest.revision === undefined) {
         return c.json({ error: 'A readable committed manifest is required; refresh and retry' }, 409);
       }
-      if (!validateManifest(manifest.raw, manifest.format).valid) {
-        return c.json({ error: 'Repair invalid project configuration before removing a skill' }, 409);
-      }
       let plan;
       try {
         plan = planSkillRemoval(manifest.raw, (await listRepoFiles(project, commit)).map((file) => file.path), body.data.folder);
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
       }
-      const validation = validateManifest(plan.raw, manifest.format);
-      if (!validation.valid) return c.json({ error: 'Removal would leave invalid project configuration', issues: validation.issues }, 409);
+      const added = addedManifestErrors(manifest.raw, plan.raw);
+      if (added.length > 0) return c.json({ error: 'Removal would leave invalid project configuration', ...boundedIssues(added) }, 409);
       manifest.raw = plan.raw;
       const writes = manifestWrites(manifest);
       // An imported manifest inside the removed folder would leave dangling imports.
@@ -143,7 +142,7 @@ export function registerProjectSkillsRoutes(): void {
         return c.json({ error: 'Skill folder contains manifest configuration' }, 409);
       }
       const result = await commitMultipleFilesToBranch(project, {
-        files: writes.files, deletes: plan.deletes, alsoExpect: writes.alsoExpect,
+        files: writes.files, deletes: [...plan.deletes, ...writes.deletes], alsoExpect: writes.alsoExpect,
         branch: project.defaultBranch, expectedCommit: commit,
         expectedFileRevision: { path: manifest.path || loaded.row.manifestPath || 'kortix.yaml', sha: manifest.revision, candidatePaths: manifest.candidatePaths },
         message: `chore: remove project skill ${body.data.folder}`,
@@ -208,7 +207,7 @@ export function registerProjectSkillsRoutes(): void {
     const parsed = CreateSkillSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       return c.json(
-        { error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues },
+        { error: 'Invalid body', code: 'invalid_body', ...boundedIssues(parsed.error.issues) },
         400,
       );
     }
@@ -246,44 +245,41 @@ export function registerProjectSkillsRoutes(): void {
       const message = `feat: add skill ${slug}`;
       await refreshMirror(gitProject, true);
       const commit = await resolveBranchTip(gitProject, gitProject.defaultBranch);
-      const manifest = await readManifest(gitProject, { rethrowReadErrors: true });
-      if (!manifest || manifest.schemaVersion < 3) {
-        await commitFileToBranch(gitProject, { path, content, message, branch: loaded.row.defaultBranch });
-      } else {
-        // kortix_version 3 lists a skill only when kortix.yaml registers it
-        // (`skills.<name>: <folder>`), so the SKILL.md and its registration land
-        // in one commit (KRTX-2543). Same guards as removal.
-        if (manifest.commit !== commit || manifest.revision === undefined) {
-          return c.json({ error: 'A readable committed manifest is required; refresh and retry' }, 409);
-        }
-        if (!validateManifest(manifest.raw, manifest.format).valid) {
-          return c.json({ error: 'Repair invalid project configuration before adding a skill', code: 'manifest_invalid' }, 409);
-        }
-        const registry = manifest.raw.skills;
-        const skills =
-          registry && typeof registry === 'object' && !Array.isArray(registry) ? (registry as Record<string, unknown>) : {};
-        if (slug in skills) {
-          return c.json({ error: `A skill named "${slug}" already exists`, code: 'skill_exists' }, 409);
-        }
-        manifest.raw = { ...manifest.raw, skills: { ...skills, [slug]: `skills/${slug}` } };
-        const validation = validateManifest(manifest.raw, manifest.format);
-        if (!validation.valid) {
-          return c.json({ error: 'The skill would leave invalid project configuration', code: 'manifest_invalid', issues: validation.issues }, 409);
-        }
-        const writes = manifestWrites(manifest);
-        await commitMultipleFilesToBranch(gitProject, {
-          files: [...writes.files, { path, content }],
-          alsoExpect: writes.alsoExpect,
-          branch: gitProject.defaultBranch,
-          expectedCommit: commit,
-          expectedFileRevision: {
-            path: manifest.path || loaded.row.manifestPath || 'kortix.yaml',
-            sha: manifest.revision,
-            candidatePaths: manifest.candidatePaths,
-          },
-          message,
-        });
+      // A project lists a skill only when kortix.yaml registers it
+      // (`skills.<name>: <folder>`), so the SKILL.md and its registration land
+      // in one commit (KRTX-2543). A project with no kortix.yaml gets the one
+      // it already runs as (`synthesizeBlankManifest`). Same guards as removal.
+      const read = await readManifest(gitProject, { rethrowReadErrors: true });
+      if (read && (read.commit !== commit || read.revision === undefined)) {
+        return c.json({ error: 'A readable committed manifest is required; refresh and retry' }, 409);
       }
+      const manifest = read ?? synthesizeBlankManifest({ name: loaded.row.name, manifestPath: loaded.row.manifestPath });
+      const registry = manifest.raw.skills;
+      const skills =
+        registry && typeof registry === 'object' && !Array.isArray(registry) ? (registry as Record<string, unknown>) : {};
+      if (slug in skills) {
+        return c.json({ error: `A skill named "${slug}" already exists`, code: 'skill_exists' }, 409);
+      }
+      const next = { ...manifest.raw, skills: { ...skills, [slug]: `skills/${slug}` } };
+      const added = addedManifestErrors(manifest.raw, next);
+      if (added.length > 0) {
+        return c.json({ error: 'The skill would leave invalid project configuration', code: 'manifest_invalid', ...boundedIssues(added) }, 409);
+      }
+      manifest.raw = next;
+      const writes = manifestWrites(manifest);
+      await commitMultipleFilesToBranch(gitProject, {
+        files: [...writes.files, { path, content }],
+        deletes: writes.deletes,
+        alsoExpect: writes.alsoExpect,
+        branch: gitProject.defaultBranch,
+        expectedCommit: commit,
+        expectedFileRevision: {
+          path: manifest.path || loaded.row.manifestPath || 'kortix.yaml',
+          sha: manifest.revision ?? null,
+          candidatePaths: manifest.candidatePaths,
+        },
+        message,
+      });
       invalidateProjectResourceConfig(projectId);
     } catch (err) {
       if (err instanceof GitFileRevisionConflictError) {
@@ -295,6 +291,7 @@ export function registerProjectSkillsRoutes(): void {
           409,
         );
       }
+      rethrowDatabaseError(err);
       return c.json(
         { error: `Failed to commit the skill: ${(err as Error).message || String(err)}` },
         502,

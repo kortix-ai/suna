@@ -25,7 +25,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { matchesBinding } from '../../../keymap.ts';
 import { theme } from '../../../theme.ts';
-import { type ListItem, filterItems } from '../../../ui/index.ts';
+import { type ListItem, filterItems, layoutRow, windowStart } from '../../../ui/index.ts';
 
 export interface InlinePickerProps {
   title: string;
@@ -34,6 +34,13 @@ export interface InlinePickerProps {
   headerIds?: ReadonlySet<string>;
   /** The row to start on. Falls back to the first choice. */
   initialId?: string | null;
+  /** Start with this filter typed (`/sessions fix` opens filtered to "fix"). */
+  initialQuery?: string;
+  /**
+   * Letter → row id. Set, the list has no filter: a letter picks its row
+   * (a confirm's `y` / `n`). Unset, letters filter.
+   */
+  shortcuts?: Readonly<Record<string, string>>;
   /** Enter on a choice. The picker does not close itself — the caller decides. */
   onPick: (item: ListItem) => void;
   onClose: () => void;
@@ -70,13 +77,15 @@ export function InlinePicker({
   items,
   headerIds = EMPTY_HEADERS,
   initialId = null,
+  initialQuery = '',
+  shortcuts,
   onPick,
   onClose,
   width,
   maxRows = 8,
   hint = 'Enter pick · Esc close',
 }: InlinePickerProps) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialQuery);
   const filtered = useMemo(() => {
     const matched = filterItems(items, query);
     if (!query.trim()) return matched;
@@ -137,6 +146,15 @@ export function InlinePicker({
       setQuery((value) => value.slice(0, -1));
       return;
     }
+    if (shortcuts) {
+      const target = key.sequence ? shortcuts[key.sequence.toLowerCase()] : undefined;
+      const item = target ? items.find((entry) => entry.id === target) : undefined;
+      if (item) {
+        key.preventDefault();
+        onPick(item);
+      }
+      return;
+    }
     // A printable character with no Ctrl/Alt extends the filter. `j`/`k` are
     // NOT navigation here: the query is the point, and the arrows move.
     if (!key.ctrl && !key.option && !key.meta && key.sequence && key.sequence.length === 1) {
@@ -150,44 +168,49 @@ export function InlinePicker({
 
   const inner = Math.max(width - 4, 10);
   const rows = Math.max(Math.min(maxRows, filtered.length || 1), 1);
-  const start = Math.max(Math.min(index - Math.floor(rows / 2), filtered.length - rows), 0);
+  const start = windowStart(index, filtered.length, rows);
   const visible = filtered.slice(start, start + rows);
 
   return (
     <box
       border
-      borderStyle="single"
-      borderColor={theme.borderFocus}
-      title={title}
-      titleColor={theme.fg}
-      bottomTitle={hint}
+      borderStyle="rounded"
+      borderColor={theme.border}
+      title={` ${title} `}
+      titleColor={theme.dim}
+      bottomTitle={` ${hint} `}
       bottomTitleAlignment="right"
-      backgroundColor={theme.surface}
+      backgroundColor={theme.bg}
       flexDirection="column"
       width={width}
       paddingLeft={1}
       paddingRight={1}
       overflow="hidden"
     >
-      <text fg={query ? theme.fg : theme.faint}>{query ? `/ ${query}` : 'Type to filter'}</text>
-      <text fg={theme.border}>{'─'.repeat(inner)}</text>
+      {shortcuts ? null : (
+        <>
+          <text fg={query ? theme.fg : theme.faint}>
+            <span fg={theme.faint}>{'› '}</span>
+            {query || 'Type to filter'}
+          </text>
+          <text fg={theme.border}>{'─'.repeat(inner)}</text>
+        </>
+      )}
       {visible.length === 0 ? (
         <text fg={theme.faint}>No match.</text>
       ) : (
         visible.map((item, offset) => {
           const isHeader = headerIds.has(item.id);
           const isSelected = start + offset === index && !isHeader;
-          const label = isHeader ? item.label : `  ${item.label}`;
+          const label = isHeader
+            ? item.label
+            : `${item.glyph ? `${item.glyph} ` : '  '}${item.label}`;
           const right = item.right ?? '';
-          const room = Math.max(inner - 1 - (right ? right.length + 1 : 0), 0);
-          const clipped = label.length > room ? `${label.slice(0, Math.max(room - 1, 0))}…` : label;
-          const padded = right
-            ? `${clipped}${' '.repeat(Math.max(room - clipped.length, 0))} ${right}`
-            : clipped;
+          const padded = layoutRow(label, right, inner - 1);
           const fg = isHeader ? theme.faint : isSelected ? theme.fg : theme.dim;
           return (
             <text key={item.id} fg={fg} bg={isSelected ? theme.bg : undefined}>
-              <span fg={theme.accent}>{isSelected ? '▌' : ' '}</span>
+              <span fg={theme.brand}>{isSelected ? '▌' : ' '}</span>
               {padded}
             </text>
           );

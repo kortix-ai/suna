@@ -27,6 +27,7 @@ export function readSourceParam(params: URLSearchParams): RepositorySource | nul
 export function newWorkspaceReturnPath(
   source: RepositorySource,
   accountId?: string | null,
+  connectComputer?: boolean,
 ): string {
   const params = new URLSearchParams();
   if (source !== 'managed') params.set('source', source);
@@ -34,6 +35,7 @@ export function newWorkspaceReturnPath(
   // came back to `/new` on their PERSONAL account and was told "No GitHub
   // account is connected" about the wrong account (dev, 2026-09-17).
   if (accountId) params.set('account', accountId);
+  if (connectComputer) params.set('connect', 'computer');
   const qs = params.toString();
   return qs ? `/new?${qs}` : '/new';
 }

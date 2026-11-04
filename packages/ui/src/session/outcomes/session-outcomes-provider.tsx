@@ -51,6 +51,9 @@ import {
   useSessionChangeRequests,
 } from '../../files/project/hooks/use-change-requests';
 
+import { usePublishSessionChangeRequests } from './session-outcomes-bridge';
+import { useProjectCan } from '../../internal/lib/use-project-can';
+import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { anchorOutcomes, type TurnSpan } from './anchor-outcomes';
 import { changeRequestOutcomes } from './change-request-outcomes';
 import type { Outcome } from '../../internal/outcomes/outcome-types';
@@ -73,6 +76,8 @@ export function SessionOutcomesProvider({
   busy,
   onOpen,
   children,
+  onJump,
+  jumping,
 }: {
   /** The git session id a change request records as `origin_session_id`. */
   projectSessionId: string | undefined;
@@ -81,6 +86,8 @@ export function SessionOutcomesProvider({
   busy: boolean;
   onOpen: (outcome: Outcome) => void;
   children: ReactNode;
+  onJump: (resolveTurn: () => string | undefined, createdAt: number) => Promise<void>;
+  jumping: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // No `projectId` argument: this hook reads it from `ProjectFilesProvider`,
@@ -89,7 +96,10 @@ export function SessionOutcomesProvider({
   // the turn that produced it — it just reads "Applied" or "Closed".
   // Only THIS session's change requests, filtered by the server; the key sits
   // under the project-files list scope the dialog's mutations invalidate.
-  const { data } = useSessionChangeRequests(projectSessionId, { refetchInterval: 60_000 });
+  const projectId = useProjectContext()?.projectId;
+  const { allowed } = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
+  const { data } = useSessionChangeRequests(projectSessionId, { refetchInterval: busy ? 5_000 : 60_000, enabled: allowed });
+  const requests = useMemo(() => allowed ? (data?.change_requests ?? []) : [], [allowed, data?.change_requests]);
   useRefreshChangeRequestsOnTurnEnd(busy);
 
   const all = useMemo(
@@ -97,11 +107,34 @@ export function SessionOutcomesProvider({
     // pipeline (files, schedules, background tasks, connector links) was built
     // and removed — see `OutcomeKind` for why each one could not be tied to the
     // turn that showed it.
-    () => changeRequestOutcomes(data?.change_requests ?? [], projectSessionId, tI18nComplete),
-    [data?.change_requests, projectSessionId, tI18nComplete],
+    () => changeRequestOutcomes(requests, projectSessionId, tI18nComplete),
+    [requests, projectSessionId, tI18nComplete],
   );
 
   const byTurn = useMemo(() => anchorOutcomes(all, turnSpans), [all, turnSpans]);
+
+  const anchorsRef = useRef(byTurn);
+  useEffect(() => { anchorsRef.current = byTurn; }, [byTurn]);
+  const publish = usePublishSessionChangeRequests();
+  const panelValue = useMemo(() => ({
+    requests,
+    onOpen: (crId: string) => {
+      const outcome = all.find((item) => item.id === `cr:${crId}`);
+      // Rows open this request, not a superseding request's detail.
+      if (outcome) onOpen({ ...outcome, action: { ...outcome.action, target: crId } });
+    },
+    onJump: (crId: string) => onJump(() => {
+      for (const [key, outcomes] of anchorsRef.current) {
+        if (outcomes.some((item) => item.id === `cr:${crId}`)) return key;
+      }
+      return undefined;
+    }, Date.parse(requests.find((cr) => cr.cr_id === crId)?.created_at ?? '')),
+    jumping,
+  }), [requests, all, onOpen, onJump, jumping]);
+  useEffect(() => {
+    publish?.(panelValue);
+    return () => publish?.(null);
+  }, [publish, panelValue]);
 
   const value = useMemo<OutcomesValue>(() => ({ byTurn, onOpen }), [byTurn, onOpen]);
 

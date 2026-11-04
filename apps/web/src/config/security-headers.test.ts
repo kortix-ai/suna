@@ -104,3 +104,9 @@ describe('Strict-Transport-Security header', () => {
     expect(block).toContain('Strict-Transport-Security');
   });
 });
+
+describe('framing', () => {
+  test('sends no X-Frame-Options: CSP frame-ancestors is the only framing gate', () => {
+    expect(nextConfig).not.toContain('X-Frame-Options');
+  });
+});

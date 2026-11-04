@@ -12,6 +12,7 @@ import {
 } from '../command-helpers.ts';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import { C, help, status } from '../style.ts';
+import { installationProven } from './marketplace-install-proof.ts';
 
 interface CatalogItem {
   id: string;
@@ -191,46 +192,12 @@ async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Prom
         );
       if (turn.turns.length === 0 && inbox.prompts.length === 0 && turn.last_ended) {
         if (turn.last_ended.end_reason === 'completed') {
-          try {
-            const item = await client.get<{
-              name: string;
-              type: string;
-              files: Array<{ target: string }>;
-            }>(`/marketplace/items/${encodeURIComponent(itemId)}`);
-            const targets = item.files.map((f) =>
-              f.target.replace(/^@(skills|agents|tools|commands)\//, '$1/'),
+          if (await installationProven(client, itemId, ctx, controller))
+            return finish(
+              0,
+              'installed',
+              `Installed ${itemId}: skill is configured and all catalog file targets are present on the default branch.`,
             );
-            const conventional =
-              targets.length > 0 &&
-              targets.every(
-                (t) =>
-                  !t.startsWith('/') && !t.includes('..') && !t.includes('@') && !t.includes('~'),
-              );
-            if (item.type === 'registry:skill' && conventional) {
-              const detail = await client.get<{ config: { skills: Array<{ name: string }> } }>(
-                `/projects/${ctx.projectId}/detail`,
-              );
-              let filesPresent = true;
-              for (const target of targets) {
-                const files = await client.get<Array<{ path: string; type: string }>>(
-                  `/projects/${ctx.projectId}/files?path=${encodeURIComponent(target)}`,
-                );
-                if (!files.some((file) => file.path === target && file.type === 'file')) {
-                  filesPresent = false;
-                  break;
-                }
-              }
-              if (detail.config.skills.some((skill) => skill.name === item.name) && filesPresent)
-                return finish(
-                  0,
-                  'installed',
-                  `Installed ${itemId}: skill is configured and all catalog file targets are present on the default branch.`,
-                );
-            }
-          } catch (error) {
-            if (controller.signal.aborted) throw error;
-            // Completion is not proof: unavailable catalog/files require review.
-          }
         }
         return finish(
           3,

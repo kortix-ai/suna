@@ -19,6 +19,7 @@ import {
 } from '../lib/github-installation-errors';
 import { normalizeString, serializeGitHubRepo } from '../lib/serializers';
 import { createRoute, z } from '@hono/zod-openapi';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 const RepositoryBranchesResponseSchema = z.object({
   account_id: z.string(),
@@ -104,6 +105,7 @@ export function registerGithubRepositoriesRoutes(): void {
             409,
           );
         }
+        rethrowDatabaseError(error);
         return c.json({
           error: (error as Error).message || 'Failed to list GitHub repositories',
         }, 502);
@@ -181,6 +183,7 @@ export function registerGithubRepositoriesRoutes(): void {
             409,
           );
         }
+        rethrowDatabaseError(error);
         return c.json({
           error: (error as Error).message || 'Failed to list GitHub repository branches',
         }, 502);

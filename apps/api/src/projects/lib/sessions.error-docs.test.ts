@@ -12,7 +12,17 @@ import { join, resolve } from 'node:path';
 const REPO_ROOT = resolve(import.meta.dir, '../../../../..');
 const API_SRC = join(REPO_ROOT, 'apps/api/src');
 
-const ERROR_TABLES = ['apps/web/content/docs/sdk/sessions.mdx'];
+const ERROR_TABLES = ['apps/web/content/docs/developers.mdx'];
+// The KaaB error table is in the "Sessions from code" section of the Developers page.
+const ERROR_SECTION = '## Sessions from code';
+
+function errorSection(relativePath: string): string {
+  const text = readFileSync(join(REPO_ROOT, relativePath), 'utf8');
+  const start = text.indexOf(ERROR_SECTION);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const end = text.indexOf('\n## ', start + ERROR_SECTION.length);
+  return text.slice(start, end === -1 ? undefined : end);
+}
 
 function apiSourceText(): string {
   const parts: string[] = [];
@@ -97,7 +107,7 @@ describe('KaaB error tables match the codes the API emits', () => {
 
   test('no table documents a code the API never returns', () => {
     for (const relativePath of ERROR_TABLES) {
-      const codes = documentedErrorCodes(readFileSync(join(REPO_ROOT, relativePath), 'utf8'));
+      const codes = documentedErrorCodes(errorSection(relativePath));
       expect(codes.length).toBeGreaterThan(5);
       const phantom = codes.filter((code) => !emitsCode(tokens, code));
       expect({ [relativePath]: phantom }).toEqual({ [relativePath]: [] });
@@ -109,7 +119,7 @@ describe('KaaB error tables match the codes the API emits', () => {
     // (2026-09-16). The guides mention it only as history, outside the error
     // tables; a table row would promise a refusal that can never happen.
     for (const relativePath of ERROR_TABLES) {
-      expect(documentedErrorCodes(readFileSync(join(REPO_ROOT, relativePath), 'utf8'))).not.toContain(
+      expect(documentedErrorCodes(errorSection(relativePath))).not.toContain(
         'CONNECTOR_CONNECTION_REQUIRED',
       );
     }

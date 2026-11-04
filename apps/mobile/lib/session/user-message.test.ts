@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import { serializePromptWithPastes } from '@kortix/shared';
+import { channelPromptText, channelPromptTail, parseChannelMessage, serializePromptWithPastes } from '@kortix/shared';
 
 import {
   WEB_SPACING_PX,
   buildSessionRefsBlock,
+  channelPlaceLabel,
   commandMessageText,
   editResendAttachments,
   extractReplyContexts,
   interruptedTurnIds,
+  messageAttachments,
   parseUserMessageText,
   parseUserMessageBlocks,
   queuedPromptStatusLabel,
@@ -504,6 +506,43 @@ describe('parseUserMessageBlocks — an upload ref keeps its path and saved copy
         attachment: SAVED_COPY,
       },
     ]);
+  });
+});
+
+describe('messageAttachments — the files of a Telegram message', () => {
+  const inbox = '/workspace/uploads/.kortix-inbox/cmd_1/1-photo.jpg';
+  const tag = `<file path="${inbox}" mime="image/jpeg" filename="photo.jpg" attachment="${SAVED_COPY}">x</file>`;
+  const prompt = (text: string) =>
+    `${channelPromptText({ platform: 'Telegram', sender: '@sample', where: 'direct message', text, reply: 'send', notes: [] })}\n${tag}`;
+  // pi records the image it read as an attachment block naming the tag's path.
+  const piImage = { type: 'attachment' as const, id: 'msg_1-n1', mime: 'image/jpeg', source_path: inbox };
+  const strip = (text: string) => {
+    const tail = channelPromptTail(prompt(text), parseChannelMessage(prompt(text))!.platform);
+    return messageAttachments([{ type: 'text', id: 'msg_1-n0', text: prompt(text) }, piImage], parseUserMessageText(tail));
+  };
+
+  test('a photo is one tile: its tag, not also pi’s image block', () => {
+    expect(strip('What is in this picture?').map((a) => a.key)).toEqual([`upload:0:${inbox}`]);
+  });
+
+  test('a `<file>` tag the sender typed is their text, not a tile', () => {
+    const typed = '<file path="/workspace/notes.txt" mime="text/plain" filename="notes.txt">x</file>';
+    expect(strip(`see ${typed}`).map((a) => a.filename)).toEqual(['photo.jpg']);
+  });
+});
+
+describe('channelPlaceLabel — the card row for where a channel message was sent', () => {
+  const placeOf = (platform: 'Email' | 'Telegram', where: string) => {
+    const info = parseChannelMessage(channelPromptText({ platform, sender: 'a@example.test', where, text: 'hi', reply: 'send', notes: [] }))!;
+    return [channelPlaceLabel(info.platform), info.context];
+  };
+
+  test("an email's row is its subject", () => {
+    expect(placeOf('Email', 'Q3 report')).toEqual(['Subject', 'Q3 report']);
+  });
+
+  test("a chat's row is its channel", () => {
+    expect(placeOf('Telegram', 'direct message')).toEqual(['Channel', 'direct message']);
   });
 });
 

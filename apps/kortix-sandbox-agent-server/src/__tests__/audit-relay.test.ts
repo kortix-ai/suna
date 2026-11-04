@@ -17,7 +17,6 @@ import {
   retryAfterMs,
   sanitizeRuntimeEvent,
 } from '@/harness/shared/audit-relay';
-import { migratePreW3AuditSpool } from '@/harness/open-code/runtime-state';
 import {
   SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
   noteControlPlaneResponse,
@@ -551,14 +550,14 @@ describe('audit relay backoff', () => {
 // /v1/projects/:p/sessions/:s/audit/events across 20 sessions in one hour,
 // 680 ms median, 2,265 s cumulative. One local session
 // shows the mechanism: 117,437 relayed
-// OpenCode events in 64 minutes, of which 107,394 (91.4%) are per-token
-// `message.part.delta` and 384 are `server.heartbeat`. At the old
+// runtime events in 64 minutes, of which 107,394 (91.4%) are per-token
+// `message.part.delta`. At the old
 // batchSize=50 that is 4,848 POSTs for ONE session.
 // ---------------------------------------------------------------------------
 describe('audit relay emission volume', () => {
   const drain = () => new Promise((resolve) => setTimeout(resolve, 40));
 
-  test('never relays or spools a per-token stream delta or a server heartbeat', async () => {
+  test('never relays or spools a per-token stream delta', async () => {
     // Dropped before sanitize and before the spool fsync this event would cost.
     const dir = mkdtempSync(join(tmpdir(), 'audit-drop-'));
     const spoolPath = join(dir, 'spool.json');
@@ -575,14 +574,13 @@ describe('audit relay emission volume', () => {
           type: 'message.part.delta',
           properties: { sessionID: 'ses_a', messageID: 'msg_a', partID: 'prt_a', delta: `t${i}` },
         });
-        relay.enqueue({ type: 'server.heartbeat', properties: { sessionID: 'ses_a' } });
       }
       relay.enqueue({ type: 'session.idle', properties: { sessionID: 'ses_a' } });
       const spool = JSON.parse(readFileSync(spoolPath, 'utf8')) as { queue: RuntimeAuditEvent[] };
       expect(spool.queue.map((event) => event.type)).toEqual(['session.idle']);
       await relay.stop();
       expect(sent.flat().map((event) => event.type)).toEqual(['session.idle']);
-      expect(relay.stats().dropped).toBe(1_000);
+      expect(relay.stats().dropped).toBe(500);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -737,16 +735,8 @@ describe('audit relay emission volume', () => {
     expect(auditRelayConfigFromEnv({})).toEqual({
       batchSize: 200,
       flushMs: 10_000,
-      dropTypes: ['message.part.delta', 'server.heartbeat'],
-      coalesceTypes: [
-        'message.updated',
-        'message.part.updated',
-        'session.status',
-        'session.updated',
-        'session.diff',
-        'catalog.updated',
-        'file.watcher.updated',
-      ],
+      dropTypes: ['message.part.delta'],
+      coalesceTypes: ['message.updated', 'message.part.updated', 'session.status', 'session.updated'],
     });
     expect(auditRelayConfigFromEnv({ KORTIX_AUDIT_RELAY_FLUSH_MS: '750' }).flushMs).toBe(750);
     // An explicitly empty list turns the filter off; unset keeps the default.
@@ -763,7 +753,7 @@ describe('audit relay emission volume', () => {
 
   test('replays a measured live-session event mix into one POST', async () => {
     // Ratios measured on kortix.audit_events for one session (117,437 relayed
-    // events in 64 min). 20 turns of 500 tokens each: 30,060 raw events.
+    // events in 64 min). 20 turns of 500 tokens each: 30,040 raw events.
     const sent: RuntimeAuditEvent[][] = [];
     const relay = createAuditRelay(
       async (events) => {
@@ -779,11 +769,10 @@ describe('audit relay emission volume', () => {
         relay.enqueue({ type: 'message.part.updated', properties: { sessionID: 'ses_a', part: { id: 'prt_t', type: 'text', messageID: messageId }, time: token } });
         relay.enqueue({ type: 'session.status', properties: { sessionID: 'ses_a', status: { type: 'busy' } } });
       }
-      relay.enqueue({ type: 'server.heartbeat', properties: { sessionID: 'ses_a' } });
       relay.enqueue({ type: 'session.idle', properties: { sessionID: 'ses_a' } });
     }
     await relay.stop();
-    // Before batching and coalescing: ceil(30060 / 50) = 602 POSTs.
+    // Before batching and coalescing: ceil(30040 / 50) = 601 POSTs.
     expect(sent).toHaveLength(1);
     const kept = sent.flat().map((event) => event.type);
     const count = (type: string) => kept.filter((t) => t === type).length;
@@ -795,7 +784,7 @@ describe('audit relay emission volume', () => {
     expect(count('session.idle')).toBe(20);
   });
 
-  // KRTX-446: a box that outlives its session keeps emitting OpenCode events,
+  // KRTX-446: a box that outlives its session keeps emitting runtime events,
   // and the relay re-POSTed `.../audit/events -> 401` on its retry ladder for
   // as long as the box lives. Once the shared breaker reports the credential
   // dead (here the revoked-token refusal — session delete revokes the token
@@ -887,27 +876,6 @@ describe('the runtime audit relay every harness runs (E12)', () => {
     expect(posted[0]!.body).toMatchObject({ source: 'runtime', harness: 'pi' });
     expect(posted[0]!.body.events[0]).toMatchObject({ runtime_session_id: 'ses_pi', tool_call_id: 'call_1' });
     expect(posted[0]!.body.events[0]).not.toHaveProperty('opencode_session_id');
-    await relay.stop({ flush: false });
-  });
-
-  test('a spool a pre-W3 daemon left behind loads after the migration renames its field', async () => {
-    const event = sanitizeRuntimeEvent({ type: 'tool.execute.after', properties: { sessionID: 'ses_old', callID: 'call_1' } })!;
-    const { runtime_session_id: id, ...rest } = event;
-    const spoolPath = join(dir, 'opencode-audit-spool.json');
-    // What a pre-W3 daemon wrote: a V2 spool whose events name `opencode_session_id`.
-    writeFileSync(spoolPath, JSON.stringify({ version: 2, queue: [{ ...rest, opencode_session_id: id }], lineage: [] }));
-    expect(() => createAuditRelay(async () => {}, { spoolPath })).toThrow('invalid audit spool');
-
-    migratePreW3AuditSpool(spoolPath);
-
-    const sent: RuntimeAuditEvent[] = [];
-    const relay = createAuditRelay(async (events) => { sent.push(...events); }, { spoolPath });
-    await relay.flush();
-    expect(sent).toEqual([event]);
-    // A spool without the old field is left byte-for-byte alone.
-    const before = readFileSync(spoolPath, 'utf8');
-    migratePreW3AuditSpool(spoolPath);
-    expect(readFileSync(spoolPath, 'utf8')).toBe(before);
     await relay.stop({ flush: false });
   });
 });

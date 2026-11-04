@@ -37,6 +37,10 @@ flow("ADM-1", { domain: "admin", routes: ["GET /v1/admin/api/accounts"] }, async
       const r = await ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN").get("/v1/admin/api/accounts", { query: { limit: "5" } });
       r.status(200);
     });
+    await ctx.step("a malformed accountId names the database fault, never the SQL statement or its parameters (KRTX-3422)", async () => {
+      const r = await ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN").get("/v1/admin/api/accounts", { query: { accountId: "not-a-uuid" } });
+      if (/Failed query|select |"kortix"\./i.test(r.text())) throw new Error(`admin error body leaks the statement: ${r.text().slice(0, 300)}`);
+    });
   }
 });
 

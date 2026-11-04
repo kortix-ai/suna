@@ -1,23 +1,11 @@
 /**
- * The project repository layout: where a project keeps its agents, skills,
- * memory and harness-specific files. The API, CLI, registry and starter
- * templates read every path from here. The sandbox daemon imports no
- * `@kortix/*` package: its OpenCode adapter keeps a copy
- * (apps/kortix-sandbox-agent-server/src/harness/open-code/project-layout.ts), and
- * the pi adapter lists its skill dirs itself (harness/pi/config.ts).
- *
- * Harness-neutral content sits at the repository root. A file that exactly
- * one harness reads sits under `harnesses/<harness>/`.
+ * The project repository layout. The API, CLI, registry and starter templates
+ * read every path from here.
  *
  *   kortix.yaml
- *   agents/<name>.md          agent frontmatter + prompt (`agents.<name>.file`)
- *   skills/<name>/SKILL.md    skills, any harness
+ *   agents/<name>.md          an agent's prompt (`agents.<name>.prompt_file`)
+ *   skills/<name>/SKILL.md    skills (`skills.<name>.path`)
  *   memory/                   project memory
- *   harnesses/opencode/       OpenCode only: opencode.jsonc, plugins/, tools/
- *   harnesses/pi/             pi only: skills/, extensions/, prompts/, settings.json
- *
- * Projects created before 2026-09 keep everything under `.kortix/opencode`
- * and `.kortix/memory`. Every reader still accepts that layout.
  *
  * Dependency-free on purpose: `index.v2.ts` and `json-schema.ts` both import
  * it, and neither may import the other.
@@ -26,20 +14,7 @@
 export const AGENTS_DIR = 'agents';
 export const SKILLS_DIR = 'skills';
 export const MEMORY_DIR = 'memory';
-export const HARNESSES_DIR = 'harnesses';
-/**
- * Default OpenCode config dir (`opencode.config_dir`).
- * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
- */
-export const OPENCODE_CONFIG_DIR = `${HARNESSES_DIR}/opencode`;
-/** OpenCode config dir of the pre-2026-09 layout; it also held agents/ and skills/. */
-export const LEGACY_OPENCODE_CONFIG_DIR = '.kortix/opencode';
-/** Default pi config dir (`pi.config_dir`). */
-export const PI_CONFIG_DIR = `${HARNESSES_DIR}/pi`;
-export const LEGACY_PI_CONFIG_DIR = '.kortix/pi';
-export const LEGACY_MEMORY_DIR = '.kortix/memory';
-
-/** The conventional `.md` of a new agent. Writers also record it as `agents.<name>.file`. */
+/** The conventional prompt file of a new agent (`agents.<name>.prompt_file`). */
 export function defaultAgentFile(agentName: string): string {
   return `${AGENTS_DIR}/${agentName}.md`;
 }
@@ -82,64 +57,3 @@ export function safeToolFile(value: unknown): string | null {
 
 /** JSON Schema twin of `safeToolFile`. */
 export const TOOL_FILE_PATTERN = String.raw`^(?!-)(?!(?:.*/)?\.\.?(?:/|$))(?:[\w .-]+/)*[\w .-]+\.[cm]?[jt]s$`;
-
-function table(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
-}
-
-/** The manifest's own `opencode.config_dir`, or null when it sets none (or an unsafe one). */
-export function manifestOpencodeConfigDir(manifest: unknown): string | null {
-  return safeRepoPath(table(table(manifest)?.opencode)?.config_dir);
-}
-
-/** A kortix_version 3 manifest: it reads no harness config folder. */
-function isV3(manifest: unknown): boolean {
-  return Number(table(manifest)?.kortix_version) === 3;
-}
-
-/**
- * OpenCode config dirs to try, in order. The first one that ships an
- * `opencode.json[c]` is the project's OpenCode config dir. None for v3.
- * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
- */
-export function opencodeConfigDirCandidates(manifest: unknown): string[] {
-  if (isV3(manifest)) return [];
-  const explicit = manifestOpencodeConfigDir(manifest);
-  return explicit ? [explicit] : [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR];
-}
-
-/**
- * pi config dirs to try, in order: the manifest's own `pi.config_dir` alone,
- * else `harnesses/pi` then `.kortix/pi`. The first one that exists is the
- * project's (the daemon's `resolvePiProjectConfigDir` applies the same rule).
- * None for v3.
- */
-export function piConfigDirCandidates(manifest: unknown): string[] {
-  if (isV3(manifest)) return [];
-  const explicit = safeRepoPath(table(table(manifest)?.pi)?.config_dir);
-  return explicit ? [explicit] : [PI_CONFIG_DIR, LEGACY_PI_CONFIG_DIR];
-}
-
-/** The dir that held agents/ and skills/ in the pre-2026-09 layout. */
-export function legacyConfigDir(manifest: unknown): string {
-  return manifestOpencodeConfigDir(manifest) ?? LEGACY_OPENCODE_CONFIG_DIR;
-}
-
-/**
- * Where an agent's `.md` may be, most specific first. An explicit
- * `agents.<name>.file` is the only candidate (an unsafe one yields none).
- * Otherwise `agents/<name>.md`, then the legacy `<opencode dir>/agents/<name>.md`.
- */
-export function agentFileCandidates(manifest: unknown, agentName: string): string[] {
-  const block = table(table(table(manifest)?.agents)?.[agentName]);
-  if (block && block.file !== undefined) {
-    const file = safeAgentFile(block.file);
-    return file ? [file] : [];
-  }
-  return [defaultAgentFile(agentName), `${legacyConfigDir(manifest)}/agents/${agentName}.md`];
-}
-
-/** Skill roots, most specific first. A skill name found in two roots resolves to the first. */
-export function skillDirs(manifest: unknown): string[] {
-  return [SKILLS_DIR, `${legacyConfigDir(manifest)}/skills`];
-}

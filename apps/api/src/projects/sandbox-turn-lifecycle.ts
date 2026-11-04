@@ -20,6 +20,7 @@
 import { randomUUID } from 'node:crypto';
 import { type SQL, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
+import { notifyTurnLost } from '../shared/turn-lost-notifier';
 import type { DeadlineTarget } from './sandbox-deadline';
 import { contractIdleDeadline } from './sandbox-deadline';
 import {
@@ -170,6 +171,7 @@ export async function beginSandboxTurn(
                    'runtimeSessionId', ${turn.runtimeSessionId}::text,
                    'opencodeSessionId', ${turn.runtimeSessionId}::text,
                    'messageId', ${turn.messageId}::text,
+                   'source', ${turn.source ?? null}::text,
                    'startedAtMs', floor(extract(epoch from ${observedAt}) * 1000))),
                true),
              deadline_at = GREATEST(
@@ -562,6 +564,8 @@ export async function clearSandboxTurn(
       ),
       `clear ${token} (${reason})`,
     );
+    // The box went away under this turn: a waiting parent hears it (subagent-notice.ts).
+    if (reason === 'runtime_gone') notifyTurnLost(owner.sessionId, token);
   }
   return true;
 }

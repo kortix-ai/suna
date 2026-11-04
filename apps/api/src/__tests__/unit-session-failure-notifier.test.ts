@@ -9,7 +9,7 @@ import {
 // own turn row. This held ONE notifier ("last wins") until 2026-09-28, and the
 // Slack relay took a Teams turn for its own in a project with both installed.
 const registered: Array<() => void> = [];
-const register = (fn: (id: string, msg: string) => unknown) => {
+const register = (fn: (id: string, msg: string, failure?: { transient: boolean }) => unknown) => {
   registered.push(registerSessionFailureNotifier(fn));
 };
 
@@ -23,6 +23,14 @@ describe('session-failure-notifier', () => {
     register((id, msg) => seen.push({ id, msg }));
     notifySessionProvisioningFailed('s1', 'at capacity');
     expect(seen).toEqual([{ id: 's1', msg: 'at capacity' }]);
+  });
+
+  test('forwards the background path\'s transient flag; the kick-off path sends none', () => {
+    const seen: unknown[] = [];
+    register((_id, _msg, failure) => seen.push(failure));
+    notifySessionProvisioningFailed('s1', 'x', { transient: true });
+    notifySessionProvisioningFailed('s2', 'y');
+    expect(seen).toEqual([{ transient: true }, undefined]);
   });
 
   test('every registered channel hears the failure', () => {

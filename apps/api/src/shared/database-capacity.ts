@@ -39,7 +39,33 @@ export const ROLLING_TASK_OVERLAP = 2;
  */
 export const PROD_DB_NON_API_RESERVE = 32;
 
+/**
+ * Long-lived connections of one web task (`KORTIX_PROCESS_ROLE=web`). It
+ * never joins the leader election, so it never opens that client.
+ */
+export const WEB_TASK_CONNECTIONS = DEFAULT_DB_POOL_MAX + DEFAULT_AUDIT_POOL_MAX + PG_BROADCAST_POOL_MAX;
+
+/** One worker task (`src/worker.ts`), or an API task with role `all`, also holds the leader-election client. */
+export const LEASE_TASK_CONNECTIONS = WEB_TASK_CONNECTIONS + LEADER_ELECTION_POOL_MAX;
+
+/** The worker service runs one task; a deploy overlaps a second. */
+export const PROD_WORKER_TASKS = 1;
+
+/**
+ * The rolling peak: every web task and every worker task overlapping its
+ * replacement. 10 × 2 × 9 + 1 × 2 × 10 = 200.
+ *
+ * Two rollouts reach the same 200 and no more, because ecs-deploy.sh rolls the
+ * worker before the API, one after the other:
+ * - the release that switches the API to `web`: 10 old `all` tasks × 10 + 10
+ *   new `web` tasks × 9 + the worker's 10 = 200;
+ * - a worker roll: 10 web tasks × 9 + 2 worker tasks × 10 = 110.
+ *
+ * One path goes over: a worker roll that fails while the API still runs `all`
+ * and sits at 10 tasks. The API then rolls as `all` (20 × 10) beside the old
+ * worker (10) = 210 until ecs-deploy.sh scales the worker to 0 after the API
+ * roll.
+ */
 export const PROD_DB_ROLLING_CONNECTION_CEILING =
-  PROD_API_MAX_TASKS *
-  ROLLING_TASK_OVERLAP *
-  (DEFAULT_DB_POOL_MAX + DEFAULT_AUDIT_POOL_MAX + LEADER_ELECTION_POOL_MAX + PG_BROADCAST_POOL_MAX);
+  PROD_API_MAX_TASKS * ROLLING_TASK_OVERLAP * WEB_TASK_CONNECTIONS +
+  PROD_WORKER_TASKS * ROLLING_TASK_OVERLAP * LEASE_TASK_CONNECTIONS;

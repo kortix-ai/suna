@@ -9,6 +9,7 @@ import {
   approvalNoticeRows,
   approvalLauncherName,
   approvalRequestFromAction,
+  auditPolicySet,
   previewArgsSummary,
   reviewArgsSummary,
 } from './session-approval-review';
@@ -322,5 +323,29 @@ describe('reviewArgsSummary', () => {
     expect(
       reviewArgsSummary({ from: 'ops@example.test', to: 'sam@example.test', subject: 'Draft' }, { draft_id: 'd-1' }),
     ).toBe('sam@example.test · Draft');
+  });
+});
+
+describe('auditPolicySet', () => {
+  test('reads the set and the agent the gateway recorded', () => {
+    expect(auditPolicySet({ policy_source: 'policy_set', policy_set: 'read_only', agent: 'support' })).toEqual({
+      name: 'read_only',
+      agent: 'support',
+    });
+  });
+  test('a row the base or project rules decided names no set', () => {
+    expect(auditPolicySet({ args_preview: {} })).toBeNull();
+    expect(auditPolicySet(null)).toBeNull();
+  });
+  test('a project or base rule decision never names the set', () => {
+    for (const source of ['project', 'connector', 'sensitive', 'default', undefined]) {
+      expect(auditPolicySet({ policy_source: source, policy_set: 'read_only', agent: 'support' })).toBeNull();
+    }
+  });
+  test('the approval card carries the set', () => {
+    const request = approvalRequestFromAction(
+      action({ result_summary: { args_preview: {}, policy_source: 'policy_set', policy_set: 'outreach', agent: 'sales' } }),
+    );
+    expect(request.policySet).toEqual({ name: 'outreach', agent: 'sales' });
   });
 });

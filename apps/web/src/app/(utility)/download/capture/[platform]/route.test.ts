@@ -7,7 +7,7 @@ import { GET } from './route';
 const realFetch = globalThis.fetch;
 const asset = (name: string) => ({
   name,
-  browser_download_url: `https://github.com/kortix-ai/suna/releases/download/v1.0.0/${name}`,
+  browser_download_url: `https://github.com/kortix-ai/CompanyOS/releases/download/v1.0.0/${name}`,
   size: 1,
 });
 let assets = [
@@ -72,12 +72,12 @@ describe('GET /download/capture/<platform>', () => {
       return Response.json({
         name: 'Kortix Capture 0.13.58-dev.33',
         tag_name: 'capture-dev-latest',
-        assets: [{ name: 'KortixCapture-universal.pkg', browser_download_url: 'https://github.com/kortix-ai/suna/releases/download/capture-dev-latest/KortixCapture-universal.pkg', size: 1 }],
+        assets: [{ name: 'KortixCapture-universal.pkg', browser_download_url: 'https://github.com/kortix-ai/CompanyOS/releases/download/capture-dev-latest/KortixCapture-universal.pkg', size: 1 }],
       });
     }) as unknown as typeof fetch;
     try {
       const res = await call('macos');
-      expect(res.headers.get('location')).toBe('https://github.com/kortix-ai/suna/releases/download/capture-dev-latest/KortixCapture-universal.pkg');
+      expect(res.headers.get('location')).toBe('https://github.com/kortix-ai/CompanyOS/releases/download/capture-dev-latest/KortixCapture-universal.pkg');
       expect(urls.some((u) => u.endsWith('/releases/tags/capture-dev-latest'))).toBe(true);
     } finally {
       if (backend === undefined) delete process.env.NEXT_PUBLIC_BACKEND_URL;

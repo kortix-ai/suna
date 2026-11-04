@@ -123,6 +123,10 @@ jobs:
           SHA10="${SHA:0:10}"
           BRANCH="promote/dev-$SHA10"
           rc=0
+          # GitHub merges the promotion PR with a plain 3-way merge and ignores the
+          # `merge=union` that .gitattributes sets on the learnings MEMORY.md. A check
+          # that honors it reports no conflict, and the PR merge then fails (v0.14.12).
+          printf '* merge\n' >> "$(git rev-parse --git-dir)/info/attributes"
           git merge-tree --write-tree origin/staging "$SHA" >/dev/null || rc=$?
           case "$rc" in
             0) CONFLICT=false ;;

@@ -36,6 +36,12 @@ export const config = {
   apiInternalUrl: process.env.KORTIX_API_INTERNAL_URL || undefined,
   apiToken: requiredApiToken(),
   internalEdgeKey: process.env.KORTIX_INTERNAL_EDGE_KEY || undefined,
+  // Requests per minute per credential on every model route (token-rate-limit.ts).
+  // The same setting as the API's /v1/llm limit, so one value covers both paths.
+  // A value of 0 or less falls back to 600, as in the API.
+  requestsPerMinutePerCredential: optionalInt('KORTIX_LLM_GATEWAY_REQS_PER_MIN', 600) > 0
+    ? optionalInt('KORTIX_LLM_GATEWAY_REQS_PER_MIN', 600)
+    : 600,
   langfuse: {
     publicKey: process.env.LANGFUSE_PUBLIC_KEY,
     secretKey: process.env.LANGFUSE_SECRET_KEY,
@@ -47,6 +53,10 @@ export const config = {
   // Inline-image cap per request (see @kortix/llm-gateway pipeline/image-window.ts).
   // Default 20 (Bedrock Converse's hard limit); on overflow the 12 most recent
   // images survive. GATEWAY_MAX_INLINE_IMAGES=0 disables pruning.
+  // Anthropic's origin for Claude Code's model calls on Claude accounts
+  // (@kortix/llm-gateway claude-code/passthrough.ts). A test points it at a
+  // local stand-in.
+  claudeCodeUpstream: process.env.CLAUDE_CODE_UPSTREAM_URL || 'https://api.anthropic.com',
   imageWindow: {
     maxImages: optionalInt('GATEWAY_MAX_INLINE_IMAGES', DEFAULT_IMAGE_WINDOW.maxImages),
     keepOnOverflow: optionalInt(

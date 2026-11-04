@@ -1,6 +1,7 @@
 /** Session prompt queue: enqueue, list, remove, retry, and hold. */
 import { parseSessionAttachmentRef } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
+import { claudeSubscriptionRequiredBody, missingClaudeSubscription, promptModelRef } from '../claude-subscription/gate';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
@@ -26,6 +27,7 @@ import { notificationsEnabled } from '../../notifications/enabled';
 import { autoWatchSession } from '../../notifications/watchers';
 import { logger } from '../../lib/logger';
 import { personUserId } from './session-watch';
+import { collectMessageLinksInBackground } from '../lib/project-space-links';
 import {
   deleteInboxPrompt,
   editInboxPrompt,
@@ -38,6 +40,7 @@ import {
   listInboxPrompts,
   retryInboxPrompt,
 } from '../session-lifecycle';
+import { listSentPrompts } from '../session-lifecycle/sent-prompts';
 import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
 import { markTurnStopRequested } from '../session-turn-ledger';
 import {
@@ -296,7 +299,7 @@ export function registerSessionPromptsRoutes(): void {
       // at create would let a member send the first message as their granted
       // agent and every one after it as any other agent in the manifest. Falls
       // back to the session's own agent when the prompt names none.
-      await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
+      await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName, undefined, visible.row.spaceId);
 
       // "Stop and send" ends the running turn, so it asks what Stop asks
       // (`turn-stop-authority.ts`). With no running turn it is a plain send.
@@ -319,6 +322,20 @@ export function registerSessionPromptsRoutes(): void {
       // The connector CALL denies instead (`connector_not_connected`), naming the
       // connector and carrying a connect link. The turn runs, the agent reports
       // what is missing, and the human fixes it in one click.
+
+      // A Claude subscription model needs a Claude account this turn may use:
+      // without one the turn is refused here, with a Connect code.
+      if (!isProjectSessionPrincipal(c)) {
+        const metadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
+        const missing = await missingClaudeSubscription({
+          accountId: loaded.row.accountId,
+          projectId,
+          sessionId,
+          userId: loaded.userId,
+          model: promptModelRef(overrides.model) ?? (typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null),
+        });
+        if (missing) return c.json(claudeSubscriptionRequiredBody(missing), 409);
+      }
 
       // Same gate as start/wake: a prompt spends compute.
       const billing = await checkBillingAdmission(loaded.row.accountId);
@@ -414,6 +431,19 @@ export function registerSessionPromptsRoutes(): void {
         );
       }
 
+      // A person's links join the Links tab of the thread's channel (`project_channels`).
+      if (!enqueued.deduped) {
+        collectMessageLinksInBackground({
+          projectId,
+          sessionId,
+          spaceId: visible.row.spaceId,
+          visibility: visible.row.visibility,
+          userId: personUserId(c, loaded),
+          text,
+          projectMetadata: loaded.row.metadata,
+        });
+      }
+
       const stored = (enqueued.row.payload ?? {}) as Record<string, unknown>;
       const response = {
         prompt_id: enqueued.row.commandId,
@@ -490,9 +520,9 @@ export function registerSessionPromptsRoutes(): void {
       // Scoped to INBOX rows — see `listInboxPrompts`. `continue_session` is also
       // how triggers, Slack and approval-resume deliver, and listing those put an
       // automation's internal prompt in the user's own queue.
-      const rows = await listInboxPrompts(sessionId, PROMPT_LIST_LIMIT);
+      const [rows, sent] = await Promise.all([listInboxPrompts(sessionId, PROMPT_LIST_LIMIT), listSentPrompts(sessionId)]);
 
-      return c.json({ prompts: rows.map(serializePrompt), observed_at: observedAt });
+      return c.json({ prompts: rows.map(serializePrompt), sent, observed_at: observedAt });
     },
   );
 

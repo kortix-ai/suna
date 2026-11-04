@@ -223,7 +223,7 @@ describe('EntityAvatar — the emoji tile’s surface', () => {
     // caller that passes a fill silently wins over `bg-emoji-fill-*` and the
     // tile loses its tint while keeping its ring. That is exactly what the
     // project card used to do with `bg-background`, and why that prop had to
-    // go when the tint landed (features/projects/project-card.tsx).
+    // go when the tint landed.
     const classes = classesOf(render({ label: 'Demo', emoji: '🌿', className: 'bg-background' }));
 
     expect(classes).toContain('bg-background');

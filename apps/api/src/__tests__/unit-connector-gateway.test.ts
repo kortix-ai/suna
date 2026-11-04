@@ -17,6 +17,7 @@ import {
 import type { DefaultMode, Policy } from '../connectors/policy';
 import { SecretUndecryptableError } from '../secrets/undecryptable';
 import type { ChannelWriteMisfire } from '../connectors/channel-write-scope';
+import { channelAuth, channelCatalog } from '../connectors/channels';
 
 const ALICE = 'user-alice';
 
@@ -297,7 +298,8 @@ describe('handleCall — upstream + errors', () => {
 
   test('a channel 401 is the platform token, not the account credential: plain upstream_401, no mark', async () => {
     const { deps } = makeDeps({
-      connector: { ...STRIPE, provider: 'channel', connectionId: 'cx-1' },
+      connector: { ...SLACK, connectionId: 'cx-1' },
+      action: POST_MESSAGE,
       fetchStatus: 401,
       fetchBody: '',
     });
@@ -305,7 +307,8 @@ describe('handleCall — upstream + errors', () => {
     deps.markCredentialRejected = async (id) => {
       marks.push(id);
     };
-    const res = await handleCall(deps, baseInput);
+    const res = await handleCall(deps, slackInput);
+    expect(res.status).toBe('error');
     expect((res as { reason: string }).reason.startsWith('credential_rejected')).toBe(false);
     expect(marks).toEqual([]);
   });
@@ -854,7 +857,7 @@ describe('handleCall — approval enrichment and content binding', () => {
 });
 
 describe('handleCall — layered policies (project → connector → default)', () => {
-  test('project [[policies]] block wins even when connector allows', async () => {
+  test('a project policies block wins even when connector allows', async () => {
     // Connector says "always_run *" — but project says "*.delete*" → block.
     // Project wins (admin trust property).
     const { deps, fetchCalls } = makeDeps({
@@ -872,7 +875,7 @@ describe('handleCall — layered policies (project → connector → default)', 
     expect(fetchCalls).toHaveLength(0);
   });
 
-  test('project [[policies]] sees the fully-qualified path (slug.path)', async () => {
+  test('project policies see the fully-qualified path (slug.path)', async () => {
     // Project pattern is "stripe.*" — must include connector slug.
     const { deps } = makeDeps({
       projectPolicies: [{ match: 'stripe.*', action: 'require_approval' }],
@@ -951,8 +954,8 @@ const SLACK: GatewayConnector = {
 };
 
 const POST_MESSAGE: GatewayAction = {
-  path: 'slack.chat.postMessage',
-  relPath: 'chat.postMessage',
+  path: 'slack.send_message',
+  relPath: 'send_message',
   inputSchema: { type: 'object', properties: { channel: {}, text: {} } },
   risk: 'write',
   binding: { kind: 'http', method: 'POST', path: '/chat.postMessage' },
@@ -969,7 +972,7 @@ const slackInput: CallInput = {
   subject: { userId: ALICE, groupIds: [] },
   sessionId: 'sess-1',
   connectorSlug: 'slack',
-  actionPath: 'chat.postMessage',
+  actionPath: 'send_message',
   args: { channel: 'C0ELSEWHERE', text: 'hi' },
 };
 
@@ -1035,5 +1038,151 @@ describe('handleCall — channel misfire undo', () => {
     expect(records.at(-1)).toMatchObject({ status: 'denied', resultSummary: { removed: true } });
     expect(fetchCalls).toHaveLength(2);
     expect(fetchCalls[1]!.url).toBe('https://slack.com/api/chat.delete');
+  });
+});
+
+// A channel call carries only the arguments its catalog action declares: the
+// channel gates check those, and `body` would replace the whole request they
+// checked (buildHttpRequest sends `args.body` verbatim).
+const OWN_CHAT = 111222333;
+const OTHER_CHAT = 444555666;
+
+function channelConnector(platform: 'slack' | 'teams' | 'email' | 'telegram', baseUrl: string): GatewayConnector {
+  return {
+    connectorId: `conn-${platform}`,
+    slug: `kortix_${platform}`,
+    provider: 'channel',
+    platform,
+    baseUrl,
+    auth: channelAuth(platform),
+    hasAuth: true,
+    credentialMode: 'shared',
+    enabled: true,
+  };
+}
+
+/** The action exactly as the catalog in code materializes it. */
+function channelAction(platform: string, path: string): GatewayAction {
+  const action = channelCatalog(platform).find((a) => a.path === path)!;
+  return {
+    path: `kortix_${platform}.${path}`,
+    relPath: path,
+    inputSchema: action.inputSchema,
+    risk: action.risk,
+    binding: action.binding,
+  };
+}
+
+async function channelCall(
+  connector: GatewayConnector,
+  actionPath: string,
+  args: Record<string, unknown>,
+  fetchBody = '{"ok":true}',
+) {
+  const made = makeDeps({
+    connector,
+    action: channelAction(connector.platform!, actionPath),
+    secret: '123456:synthetic',
+    fetchBody,
+  });
+  const res = await handleCall(made.deps, { ...baseInput, connectorSlug: connector.slug, actionPath, args });
+  return { res, ...made };
+}
+
+describe('handleCall — a channel call takes only the arguments its action declares', () => {
+  const TELEGRAM = channelConnector('telegram', 'https://api.telegram.org');
+  const SLACK_CHANNEL = channelConnector('slack', 'https://slack.com/api');
+
+  test('a `body` that would replace the checked Telegram request is refused before Telegram', async () => {
+    const cases: Array<[string, Record<string, unknown>, string]> = [
+      [
+        'send_message',
+        { chat_id: OWN_CHAT, text: 'x', body: { chat_id: OTHER_CHAT, text: 'sent to another chat' } },
+        'chat_id, text, reply_parameters, message_thread_id, parse_mode, reply_markup',
+      ],
+      [
+        'edit_message_text',
+        { chat_id: OWN_CHAT, message_id: 1, text: 'a', body: { chat_id: OTHER_CHAT, message_id: 77, text: 'edited elsewhere' } },
+        'chat_id, message_id, text, parse_mode',
+      ],
+      ['delete_message', { chat_id: OWN_CHAT, message_id: 1, body: { chat_id: OTHER_CHAT, message_id: 77 } }, 'chat_id, message_id'],
+    ];
+    for (const [actionPath, args, declared] of cases) {
+      const { res, records, fetchCalls } = await channelCall(TELEGRAM, actionPath, args);
+      const message = `${actionPath} takes no argument "body". It takes ${declared}.`;
+      expect(res).toEqual({ status: 'denied', reason: 'invalid_args', message });
+      expect(fetchCalls).toEqual([]);
+      expect(records.at(-1)).toMatchObject({ status: 'denied', resultSummary: { reason: 'invalid_args', message } });
+    }
+  });
+
+  test('an edit by `inline_message_id`, which names no chat, is refused', async () => {
+    const { res, fetchCalls } = await channelCall(TELEGRAM, 'edit_message_text', { inline_message_id: 'AAEC', text: 'a' });
+    expect(res).toMatchObject({ status: 'denied', reason: 'invalid_args' });
+    expect((res as { message: string }).message.startsWith('edit_message_text takes no argument "inline_message_id".')).toBe(true);
+    expect(fetchCalls).toEqual([]);
+  });
+
+  test('a Slack edit, delete or reaction with a `body` is refused before Slack', async () => {
+    const cases: Array<[string, Record<string, unknown>]> = [
+      ['update_message', { channel: 'C0MINE', ts: '1700000000.000100', text: 'a', body: { channel: 'C0ELSEWHERE', ts: '1700000900.000900', text: 'b' } }],
+      ['delete_message', { channel: 'C0MINE', ts: '1700000000.000100', body: { channel: 'C0ELSEWHERE', ts: '1700000900.000900' } }],
+      ['add_reaction', { channel: 'C0MINE', timestamp: '1700000000.000100', name: 'eyes', body: { channel: 'C0ELSEWHERE', timestamp: '1700000900.000900', name: 'eyes' } }],
+    ];
+    for (const [actionPath, args] of cases) {
+      const { res, fetchCalls } = await channelCall(SLACK_CHANNEL, actionPath, args);
+      expect(res).toMatchObject({ status: 'denied', reason: 'invalid_args' });
+      expect((res as { message: string }).message.startsWith(`${actionPath} takes no argument "body".`)).toBe(true);
+      expect(fetchCalls).toEqual([]);
+    }
+  });
+
+  test('a call with only declared arguments runs unchanged on Slack, Teams, Telegram and Email', async () => {
+    const telegram = await channelCall(TELEGRAM, 'send_message', {
+      chat_id: OWN_CHAT,
+      text: 'done',
+      reply_parameters: { message_id: 5 },
+      message_thread_id: 7,
+      parse_mode: 'HTML',
+    });
+    expect(telegram.res.status).toBe('ok');
+    expect(telegram.fetchCalls.map((c) => [c.url, JSON.parse(c.body!)])).toEqual([
+      [
+        'https://api.telegram.org/bot123456:synthetic/sendMessage',
+        { chat_id: OWN_CHAT, text: 'done', reply_parameters: { message_id: 5 }, message_thread_id: 7, parse_mode: 'HTML' },
+      ],
+    ]);
+
+    // The in-sandbox `slack send` adds `mrkdwn: true` to every post.
+    const slack = await channelCall(
+      SLACK_CHANNEL,
+      'send_message',
+      { channel: 'C0MINE', text: 'hi', thread_ts: '1700000000.000100', mrkdwn: true },
+      '{"ok":true,"channel":"C0MINE","ts":"1700000000.000200"}',
+    );
+    expect(slack.res.status).toBe('ok');
+    expect(slack.fetchCalls.map((c) => [c.url, JSON.parse(c.body!)])).toEqual([
+      ['https://slack.com/api/chat.postMessage', { channel: 'C0MINE', text: 'hi', thread_ts: '1700000000.000100', mrkdwn: true }],
+    ]);
+
+    const teams = await channelCall(
+      channelConnector('teams', 'https://graph.microsoft.com/v1.0'),
+      'get_message',
+      { 'team-id': 'team-1', 'channel-id': '19:abc', 'message-id': '42' },
+      '{"id":"42"}',
+    );
+    expect(teams.res.status).toBe('ok');
+    expect(teams.fetchCalls.map((c) => c.url)).toEqual([
+      'https://graph.microsoft.com/v1.0/teams/team-1/channels/19%3Aabc/messages/42',
+    ]);
+
+    const email = await channelCall(
+      channelConnector('email', 'https://api.resend.test'),
+      'get_thread',
+      { inbox_id: 'inbox-1', thread_id: 'thread-1' },
+      '{"data":[]}',
+    );
+    expect(email.res.status).toBe('ok');
+    expect(email.fetchCalls.map((c) => c.url)).toEqual(['https://api.resend.test/inboxes/inbox-1/threads/thread-1/emails']);
   });
 });

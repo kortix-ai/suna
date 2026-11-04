@@ -1,82 +1,138 @@
 import {
-  MANIFEST_FILENAME_YAML,
-  type ManifestFormat,
+  MANIFEST_FILENAME,
+  fixManifestText,
+  type ManifestIssue,
   ManifestImportError,
+  ManifestSyntaxError,
+  isManifestSyntaxError,
+  isTable,
   manifestCandidatePaths,
-  manifestFormatForPath,
   parseManifestText,
+  renderManifest,
+  rewriteManifestText,
   serializeManifestObject,
   splitManifestByOrigin,
+  usableManifest,
+  validateManifest,
 } from '@kortix/manifest-schema';
 import { isDeepStrictEqual } from 'node:util';
 import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml';
-import { type GitBackedProject, type MirrorRefresh, readManifestFromRepo } from './git';
-import type { ParsedManifest } from './trigger-types';
+import { type GitBackedProject, type MirrorRefresh, findLastGoodManifestCommit, readManifestFromRepo, resolveRemoteBranchTip } from './git';
+import type { ManifestFallback, ParsedManifest } from './trigger-types';
 
-/** Where the manifest lives. Same path the rest of the platform looks for.
- *  A project may instead use `kortix.yaml` ({@link MANIFEST_FILENAME_YAML}) —
- *  reads prefer it if present; this stays the canonical name for breadcrumbs
- *  and the toml/legacy default. */
-export const MANIFEST_FILENAME = 'kortix.toml';
-export { MANIFEST_FILENAME_YAML };
-
-/**
- * Schema version of the manifest. Bumped when we make a breaking change to
- * how the file is parsed. Manifests without `kortix_version` are treated as
- * v1 (backward compat). `KNOWN_SCHEMA_VERSION` deliberately stays `1` — it is
- * the version every v1 test fixture across this package stamps into its
- * `kortix_version` header and the version `parseAgentEntry`/`extractTriggers`'
- * v1 code paths were authored against; changing its VALUE would silently flip
- * every one of those v1-shaped fixtures onto the v2 reader below. See
- * `MAX_SCHEMA_VERSION` for the actual acceptance ceiling.
- */
-export const KNOWN_SCHEMA_VERSION = 1;
-
-/**
- * Highest schema version this reader (the one the session/trigger/grant
- * pipeline actually reads through — `readManifest`/`parseManifestString`)
- * accepts without throwing. `kortix_version: 2` (the `agents:` map + full
- * OpenCode `AgentConfig` parity + deny-by-default grants — see
- * `@kortix/manifest-schema`'s `ManifestV2`) is validated at write time by
- * `kortix validate` / the CR-merge gate; THIS reader must not also reject it,
- * or every v2 project's session grant resolution would fail closed/open
- * instead of reading the agent's declared grant (the runtime-wiring gap
- * fixed by `extractAgents` in `./agents.ts`, the v2-aware consumer). A version above
- * this ceiling is genuinely unknown to the platform and remains refused.
- * v3 retains the agents map and adds YAML-only behavior.
- */
-export const MAX_SCHEMA_VERSION = 3;
+/** Where the manifest lives (`kortix.yaml`, or `kortix.yml`). */
+export { MANIFEST_FILENAME };
 
 /* ─── Manifest IO ───────────────────────────────────────────────────────── */
+
+type ManifestRead = Awaited<ReturnType<typeof readManifestFromRepo>>;
+
+// replica-local: the connector sweep's last manifest read per project, keyed
+// by the default-branch tip it was read at. A new leader starts empty.
+const readsAtTip = new Map<string, { tip: string; candidates: string; found: ManifestRead }>();
+
+/**
+ * The connector sweep re-reads every project's manifest. Reading through the
+ * mirror forced a fetch per project, and a full clone once the mirror cache
+ * had evicted it: ~690 GB/day from GitHub on prod (2026-10-26). One
+ * `ls-remote` of the default branch proves an earlier read is still current.
+ */
+async function readManifestAtRemoteTip(project: GitBackedProject, candidates: string[]): Promise<ManifestRead> {
+  const tip = await resolveRemoteBranchTip(project, project.defaultBranch).catch(() => null);
+  const key = candidates.join('\u0000');
+  const hit = readsAtTip.get(project.projectId);
+  if (tip && hit?.tip === tip && hit.candidates === key) return hit.found;
+  const found = await readManifestFromRepo(project, candidates, project.defaultBranch, { forceRefresh: true });
+  // A push between the ls-remote and the read: keep nothing, the next sweep reads again.
+  if (tip && (found === null || found.commit === tip)) readsAtTip.set(project.projectId, { tip, candidates: key, found });
+  else readsAtTip.delete(project.projectId);
+  return found;
+}
+
+// replica-local: the last-good commit per broken default-branch commit
+// (`<projectId>:<commit>`). A commit never changes, so an entry never goes
+// stale; a fix is a new commit and a new key. Failed walks are not kept.
+const lastGoodCommits = new Map<string, Promise<string | null>>();
+const LAST_GOOD_CACHE_SIZE = 500;
+
+function parsesAsYaml(text: string): boolean {
+  try {
+    parseManifestText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The manifest of the newest commit before `brokenCommit` whose file parses,
+ * marked with `fallback`, or null when there is none.
+ */
+async function readLastGoodManifest(
+  project: GitBackedProject,
+  found: NonNullable<ManifestRead>,
+  brokenCommit: string,
+  error: ManifestSyntaxError,
+): Promise<ParsedManifest | null> {
+  const key = `${project.projectId}:${brokenCommit}`;
+  let pending = lastGoodCommits.get(key);
+  if (!pending) {
+    pending = findLastGoodManifestCommit(project, found.path, brokenCommit, parsesAsYaml);
+    lastGoodCommits.set(key, pending);
+    pending.catch(() => lastGoodCommits.delete(key));
+    if (lastGoodCommits.size > LAST_GOOD_CACHE_SIZE) lastGoodCommits.delete(lastGoodCommits.keys().next().value!);
+  }
+  const commit = await pending.catch(() => null);
+  if (!commit) return null;
+  const read = await readManifestFromRepo(project, [found.path], commit).catch(() => null);
+  if (!read) return null;
+  let manifest: ParsedManifest;
+  try {
+    manifest = parseManifestString(read.content, read.path, read.sha, found.candidatePaths, read.commit);
+  } catch {
+    return null;
+  }
+  if (read.imports) manifest.imports = read.imports;
+  if (read.legacy) {
+    manifest.legacy = read.legacy;
+    manifest.source = null;
+  }
+  const fallback: ManifestFallback = { error: error.message, brokenCommit, commit };
+  if (error.line !== undefined) fallback.line = error.line;
+  if (error.column !== undefined) fallback.column = error.column;
+  manifest.fallback = fallback;
+  return manifest;
+}
 
 /**
  * Read + parse the project's manifest. Returns null if no manifest file is
  * present (so the caller can treat the repo as "not a Kortix project yet").
- * Throws on parse errors so the caller can surface them up — we don't
- * silently swallow a malformed manifest.
+ * A file that is not YAML reads as the last commit's file that is, marked
+ * `fallback` (the error stays visible: `manifest_health`, and every write
+ * refuses). With no such commit it throws `ManifestSyntaxError`.
  *
- * DUAL-FORMAT: prefers `kortix.yaml` over `kortix.toml` when both exist, else
- * falls back to whichever is present (honoring a custom `manifest_path`). The
- * resolved file + format ride along on the ParsedManifest so the commit path
- * writes back to the exact same file in the same format.
+ * `kortix.yaml` wins over `kortix.yml`; a custom `manifest_path` keeps its
+ * directory. The resolved file rides along on the ParsedManifest so the commit
+ * path writes back to the exact same file.
  */
 export async function readManifest(
   project: GitBackedProject,
-  opts?: { forceRefresh?: MirrorRefresh; rethrowReadErrors?: boolean },
+  opts?: {
+    forceRefresh?: MirrorRefresh;
+    rethrowReadErrors?: boolean;
+    /** Reuse this replica's last read while the default branch tip is unchanged. */
+    reuseAtTip?: boolean;
+  },
 ): Promise<ParsedManifest | null> {
-  let found: Awaited<ReturnType<typeof readManifestFromRepo>>;
+  let found: ManifestRead;
   try {
-    // manifest_path can still say kortix.toml (an older project, or a stale
-    // default) even when the file actually on disk is kortix.yaml — so we
-    // can't rely on it to point at the right format. We actively probe the
-    // .yaml/.yml siblings first (manifestCandidatePaths), which also keeps
-    // per-agent env/connector scoping ON for a yaml-only project (a missing
-    // `agents:` read = grants resolve to null = unrestricted).
-    const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    found = await readManifestFromRepo(project, candidates, project.defaultBranch, {
-      forceRefresh: opts?.forceRefresh,
-      strictRef: opts?.rethrowReadErrors,
-    });
+    const candidates = manifestCandidatePaths(project.manifestPath);
+    found = opts?.reuseAtTip
+      ? await readManifestAtRemoteTip(project, candidates)
+      : await readManifestFromRepo(project, candidates, project.defaultBranch, {
+          forceRefresh: opts?.forceRefresh,
+          strictRef: opts?.rethrowReadErrors,
+        });
   } catch (err) {
     // `readManifestFromRepo` returns null for a genuinely ABSENT file and only
     // THROWS when the read itself failed (mirror refresh, git-proxy hop,
@@ -94,23 +150,32 @@ export async function readManifest(
     return null;
   }
   if (!found) return null;
-  const manifest = parseManifestString(
-    found.content,
-    manifestFormatForPath(found.path),
-    found.path,
-    found.sha,
-    found.candidatePaths,
-    found.commit,
-  );
+  let manifest: ParsedManifest;
+  try {
+    manifest = parseManifestString(found.content, found.path, found.sha, found.candidatePaths, found.commit);
+  } catch (err) {
+    // Not YAML: the project runs the last commit's file that is, so nothing
+    // stops. With no such commit the error propagates: repair mode
+    // (`loadProjectAgents`), where only My Kortix runs.
+    if (!isManifestSyntaxError(err) || !found.commit) throw err;
+    const lastGood = await readLastGoodManifest(project, found, found.commit, err);
+    if (!lastGood) throw err;
+    return lastGood;
+  }
   if (found.imports) manifest.imports = found.imports;
+  if (found.legacy) {
+    manifest.legacy = found.legacy;
+    // `source` is the legacy text: never splice an edit into it.
+    manifest.source = null;
+  }
   return manifest;
 }
 
 /**
- * The agent name a synthesized (no-manifest-yet) v2 manifest declares as its
+ * The agent name a synthesized (no-manifest-yet) manifest declares as its
  * default — same name `@kortix/starter`'s `base` template seeds (see
- * packages/starter/templates/base/kortix.yaml's `default_agent: kortix` +
- * `agents.kortix`). Keeping the two in sync means a blank managed-git project
+ * packages/starter/templates/base/kortix.yaml's `default_agent: worker` +
+ * `agents.worker`). Keeping the two in sync means a blank managed-git project
  * (provisioned WITHOUT `seed_starter:true`, so no kortix.yaml ever lands on
  * disk) self-heals into the exact shape a seeded one would already have.
  *
@@ -123,43 +188,34 @@ export async function readManifest(
  * literal `null` and 400'd AGENT_NOT_DECLARED on a blank project's very
  * first session).
  */
-export const SYNTHESIZED_DEFAULT_AGENT_NAME = 'kortix';
+export const SYNTHESIZED_DEFAULT_AGENT_NAME = 'worker';
 
 /**
- * Build the synthesized v2 manifest for a project with no kortix.yaml/
- * kortix.toml committed yet. Pure (no I/O) — callers decide when a `null`
- * `readManifest` result should be treated as this shape.
- *
- * MUST embed `kortix_version` INSIDE `raw` (not just carry it on the
- * `schemaVersion` wrapper) — `applyDefaultAgentV2`/`applyAgentBlockV2`
- * (lib/agent-config-v2.ts) call `validateManifest(manifest.raw, format)`
- * directly on this raw object (not through `serializeManifest`, which
- * re-injects `kortix_version` from `schemaVersion` on the way out). Without
- * the key present here, `validateRoot` reads the raw object as schema-version-
- * less and rejects it with "kortix_version is required" before ever reaching
- * the v2 body validators — the exact 400 a blank project's first
- * PUT /default-agent hit.
+ * Build the synthesized manifest for a project with no kortix.yaml committed
+ * yet: the starter's `worker` agent, granted everything, with the project
+ * checkout. Pure (no I/O) — callers decide when a `null` `readManifest`
+ * result should be treated as this shape.
  */
 export function synthesizeBlankManifest(project: {
   name?: string;
   manifestPath?: string | null;
 }): ParsedManifest {
-  const candidatePaths = manifestCandidatePaths(project.manifestPath ?? undefined).map(
-    (candidate) => candidate.path,
-  );
+  const candidatePaths = manifestCandidatePaths(project.manifestPath);
   return {
-    schemaVersion: 2,
     raw: {
-      kortix_version: 2,
       project: { name: project.name ?? '', description: '' },
-      env: { required: [], optional: [] },
       default_agent: SYNTHESIZED_DEFAULT_AGENT_NAME,
+      env: { required: [], optional: [] },
       agents: {
         [SYNTHESIZED_DEFAULT_AGENT_NAME]: {
+          mode: 'primary',
+          skills: 'all',
+          subagents: 'all',
+          commands: 'all',
+          extensions: 'all',
           connectors: 'all',
           secrets: 'all',
           kortix_permissions: 'all',
-          skills: 'all',
           // Nobody declared this agent, so it keeps the project checkout
           // (KRTX-165). Without it a blank project's first session boots with
           // no repo and fails to compile.
@@ -167,8 +223,7 @@ export function synthesizeBlankManifest(project: {
         },
       },
     },
-    format: 'yaml',
-    path: candidatePaths[0] ?? MANIFEST_FILENAME_YAML,
+    path: candidatePaths[0] ?? MANIFEST_FILENAME,
     revision: null,
     candidatePaths,
   };
@@ -177,59 +232,80 @@ export function synthesizeBlankManifest(project: {
 /**
  * Synchronous parse from a manifest string. Exported so the CRUD path can
  * round-trip (read existing string, parse, mutate, serialize) without touching
- * the network. `format`/`path` default to TOML/kortix.toml so an existing
- * caller passing only a string is unchanged.
+ * the network. Throws the YAML syntax error.
  */
 export function parseManifestString(
   raw: string,
-  format: ManifestFormat = 'toml',
-  path: string = format === 'yaml' ? MANIFEST_FILENAME_YAML : MANIFEST_FILENAME,
+  path: string = MANIFEST_FILENAME,
   revision?: string | null,
   candidatePaths?: string[],
   commit?: string | null,
 ): ParsedManifest {
-  const parsed = parseManifestText(raw, format);
-  const version =
-    typeof parsed.kortix_version === 'number'
-      ? parsed.kortix_version
-      : typeof parsed.kortix_version === 'string'
-        ? Number(parsed.kortix_version)
-        : KNOWN_SCHEMA_VERSION;
-
-  if (!Number.isFinite(version) || version < 1) {
-    throw new Error('kortix_version must be a positive integer');
-  }
-  if (Math.floor(version) > MAX_SCHEMA_VERSION) {
-    throw new Error(
-      `Unsupported ${path} schema version ${version}. This platform understands up to v${MAX_SCHEMA_VERSION}; upgrade the platform or pin the manifest.`,
-    );
-  }
-
-  const manifest: ParsedManifest = {
-    schemaVersion: Math.floor(version),
-    raw: parsed,
-    format,
-    path,
-  };
-  // Only YAML rides with its source: the yaml package's Document is lossless
-  // (comments + blank lines), so an edit can be spliced back into the text.
-  // A TOML parse is data-only — there is nothing to preserve.
-  if (format === 'yaml') manifest.source = raw;
+  // The yaml package's Document is lossless (comments + blank lines), so an
+  // edit can be spliced back into `source`.
+  const manifest: ParsedManifest = { raw: parseManifestText(raw), path, source: raw };
   if (revision !== undefined) manifest.revision = revision;
   if (candidatePaths !== undefined) manifest.candidatePaths = candidatePaths;
   if (commit !== undefined) manifest.commit = commit;
   return manifest;
 }
 
-/** Serialize a parsed manifest back to text (in its own format) for committing. */
-export function serializeManifest(manifest: ParsedManifest): string {
-  // Ensure kortix_version is the FIRST key so the manifest is self-describing at
-  // a glance. Both smol-toml and the yaml package emit keys in insertion order.
-  const out: Record<string, unknown> = { kortix_version: manifest.schemaVersion };
-  for (const [key, value] of Object.entries(manifest.raw)) {
-    if (key === 'kortix_version') continue;
-    out[key] = value;
+/**
+ * The manifest a running project applies, for the readers that keep state per
+ * agent or trigger (grants, session start, the trigger runtime). Every agent
+ * and trigger `usableManifest` turns off or drops is `enabled: false`, and a
+ * `default_agent` it resets is removed. Nothing is deleted: a reader that
+ * reconciles rows never prunes one on a typo, and an agent roster never reads
+ * as "no agents declared" (which means ungoverned). `issues` are the
+ * validator's errors, so a refusal can name them.
+ */
+export function runtimeManifest(manifest: ParsedManifest): ParsedManifest & { issues: ManifestIssue[] } {
+  // The root text carries line numbers; a merged `imports:` document, and a converted legacy file, have none to give.
+  const { issues } = validateManifest(!manifest.imports && !manifest.legacy && typeof manifest.source === 'string' ? manifest.source : manifest.raw);
+  const usable = usableManifest(manifest.raw, issues);
+  const raw = structuredClone(manifest.raw);
+  const on = (entry: unknown) => isTable(entry) && entry.enabled !== false;
+  const usableAgents = isTable(usable.agents) ? usable.agents : {};
+  if (isTable(raw.agents)) {
+    for (const [name, block] of Object.entries(raw.agents)) {
+      if (isTable(block) && !on(usableAgents[name])) block.enabled = false;
+    }
   }
+  const usableTriggers = Array.isArray(usable.triggers) ? usable.triggers : [];
+  if (Array.isArray(raw.triggers)) {
+    raw.triggers.forEach((entry, index) => {
+      if (isTable(entry) && !on(usableTriggers[index])) entry.enabled = false;
+    });
+  }
+  if (usable.default_agent === undefined) delete raw.default_agent;
+  return { ...manifest, raw, issues: issues.filter((issue) => issue.severity === 'error') };
+}
+
+/** Up to 3 issues as one sentence (`Fix kortix.yaml: agents.x.tools (line 4): …; +2 more.`). Empty for none. */
+export function manifestIssueSummary(issues: readonly ManifestIssue[], file: string = MANIFEST_FILENAME): string {
+  if (issues.length === 0) return '';
+  const shown = issues.slice(0, 3).map((issue) => `${issue.path}${issue.line ? ` (line ${issue.line})` : ''}: ${issue.message.replace(/\.$/, '')}`);
+  const more = issues.length > shown.length ? `; +${issues.length - shown.length} more` : '';
+  return `Fix ${file}: ${shown.join('; ')}${more}.`;
+}
+
+/**
+ * The errors `after` has that `before` does not (path + message). A Kortix
+ * write is refused only for these: a file that already carries an error stays
+ * editable, and no edit may add one. `after` is checked as it is written,
+ * without `kortix_version`: a retired-format file is refused until its body
+ * is valid.
+ */
+export function addedManifestErrors(before: Record<string, unknown>, after: Record<string, unknown>): ManifestIssue[] {
+  const key = (issue: ManifestIssue) => `${issue.path}\u0000${issue.message}`;
+  const existing = new Set(validateManifest(before).issues.filter((i) => i.severity === 'error').map(key));
+  const { kortix_version: _obsolete, ...written } = after;
+  return validateManifest(written).issues.filter((issue) => issue.severity === 'error' && !existing.has(key(issue)));
+}
+
+/** Serialize a parsed manifest back to text for committing. `kortix_version` is never written. */
+export function serializeManifest(manifest: ParsedManifest): string {
+  const { kortix_version: _obsolete, ...out } = manifest.raw;
   // Comment-preserving path for YAML trigger edits (KRTX-2742): a plain
   // re-serialize rebuilds the file from the parsed object and strips every
   // comment. When we still have the source text, splice the trigger diff
@@ -240,15 +316,18 @@ export function serializeManifest(manifest: ParsedManifest): string {
   // "triggers". Anything the splice cannot prove equivalent falls back to
   // the full re-serialize below, so this can only change COMMENT
   // preservation, never data.
-  if (
-    manifest.format === 'yaml' &&
-    typeof manifest.source === 'string' &&
-    Array.isArray(out.triggers)
-  ) {
-    const spliced = spliceTriggerEntriesIntoYaml(out, manifest.source);
+  if (typeof manifest.source === 'string' && Array.isArray(out.triggers)) {
+    // A write saves the latest shape: every deprecated shape is rewritten, comments kept.
+    const source = fixManifestText(manifest.source).text;
+    const spliced = spliceTriggerEntriesIntoYaml(out, source);
     if (spliced !== null) return spliced;
   }
-  return serializeManifestObject(out, manifest.format);
+  // Any other edit is written into the file's own text: comments and untouched lines keep their bytes.
+  if (typeof manifest.source === 'string') {
+    const rewritten = rewriteManifestText(manifest.source, out);
+    if (rewritten !== null) return rewritten;
+  }
+  return serializeManifestObject(out);
 }
 
 /* ─── Comment-preserving YAML trigger writes (KRTX-2742) ────────────────── */
@@ -453,21 +532,9 @@ function spliceTriggerEntriesIntoYaml(
  *  only change comment preservation, never data. */
 function dataVerified(desired: Record<string, unknown>, text: string): string | null {
   try {
-    let candidate = text;
-    const parsed = parseYaml(candidate);
-    // The reader defaults a kortix_version the source file omits and
-    // serializeManifest re-emits it first (today's behavior); the spliced
-    // text gains the same line at the top so the data check compares equal.
-    if (
-      isPlainObject(parsed) &&
-      parsed.kortix_version === undefined &&
-      desired.kortix_version !== undefined
-    ) {
-      candidate = `kortix_version: ${desired.kortix_version}\n${candidate}`;
-    }
-    const written = canonicalize(parseYaml(candidate));
+    const written = canonicalize(parseYaml(text));
     const expected = canonicalize(parseYaml(stringifyYaml(desired)));
-    return isDeepStrictEqual(written, expected) ? candidate : null;
+    return isDeepStrictEqual(written, expected) ? text : null;
   } catch {
     return null;
   }
@@ -478,6 +545,29 @@ function dataVerified(desired: Record<string, unknown>, text: string): string | 
 export interface ManifestWrites {
   files: Array<{ path: string; content: string }>;
   alsoExpect: Array<{ path: string; sha: string }>;
+  /** Files the same commit removes: the `kortix.toml` a healed legacy manifest replaces. */
+  deletes: string[];
+}
+
+/**
+ * Why Kortix may not write `manifest`, or null. A last-good manifest
+ * (`fallback`) stands in while the default branch's file is not YAML: an edit
+ * of it would revert every change since that commit.
+ */
+export function manifestWriteRefusal(manifest: ParsedManifest): ManifestWriteRefusedError | null {
+  if (!manifest.fallback) return null;
+  return new ManifestWriteRefusedError(
+    `${manifest.path || MANIFEST_FILENAME} on the default branch is not valid YAML (${manifest.fallback.error}). Kortix does not change it until it is fixed.`,
+  );
+}
+
+/** A write Kortix refuses because the default branch's manifest is not YAML (409 `manifest_invalid`). */
+export class ManifestWriteRefusedError extends Error {
+  readonly code = 'manifest_invalid';
+  constructor(message: string) {
+    super(message);
+    this.name = 'ManifestWriteRefusedError';
+  }
 }
 
 /**
@@ -490,21 +580,37 @@ export interface ManifestWrites {
  * entry into it and make the next read fail on duplicate names.
  */
 export function manifestWrites(manifest: ParsedManifest, fallbackPath?: string): ManifestWrites {
-  const rootPath = manifest.path || fallbackPath || MANIFEST_FILENAME;
+  // The last-good file stands in while the default branch's is not YAML. An
+  // edit of it would revert every change since that commit: refuse, and name
+  // the error (409 manifest_invalid).
+  const refusal = manifestWriteRefusal(manifest);
+  if (refusal) throw refusal;
+  // A legacy file's first write saves the latest shape: `kortix.toml` becomes `kortix.yaml`,
+  // and each prompt file loses its frontmatter (the overlay). Harness files left behind are no longer read.
+  const rootPath = (manifest.path || fallbackPath || MANIFEST_FILENAME).replace(/\.toml$/i, manifest.legacy ? '.yaml' : '.toml');
+  const healed = manifest.legacy ? Object.entries(manifest.legacy.overlay).map(([path, content]) => ({ path, content })) : [];
+  // The same conversion `kortix validate --fix` writes: the replaced files go in this commit.
+  const written = new Set([rootPath, ...healed.map((file) => file.path)]);
+  const deletes = (manifest.legacy?.deletes ?? []).filter((path) => !written.has(path));
+  // A healed legacy root is written exactly as `kortix validate --fix` writes it.
+  const rootContent = (raw: Record<string, unknown>) => (manifest.legacy ? renderManifest(raw) : serializeManifest({ ...manifest, raw }));
   if (!manifest.imports) {
-    return { files: [{ path: rootPath, content: serializeManifest(manifest) }], alsoExpect: [] };
+    return { files: [{ path: rootPath, content: rootContent(manifest.raw) }, ...healed], alsoExpect: [], deletes };
   }
   const [root, ...imported] = splitManifestByOrigin(manifest.imports, manifest.raw);
   const files: ManifestWrites['files'] = [];
   const changedImports = imported.filter((file) => file.changed);
   if (root && (root.changed || changedImports.length === 0)) {
-    files.push({ path: rootPath, content: serializeManifest({ ...manifest, raw: root.raw }) });
+    files.push({ path: rootPath, content: rootContent(root.raw) });
   }
   for (const file of changedImports) {
-    files.push({ path: file.path, content: serializeManifestObject(file.raw, 'yaml') });
+    const text = manifest.imports.files.find((source) => source.path === file.path)?.text;
+    const rewritten = typeof text === 'string' ? rewriteManifestText(text, file.raw) : null;
+    files.push({ path: file.path, content: rewritten ?? serializeManifestObject(file.raw) });
   }
+  files.push(...healed);
   const alsoExpect = imported.flatMap((file) =>
     typeof file.revision === 'string' ? [{ path: file.path, sha: file.revision }] : [],
   );
-  return { files, alsoExpect };
+  return { files, alsoExpect, deletes };
 }

@@ -3,7 +3,6 @@ import type { Config } from '@/lib/config/config'
 import type { HarnessControlOperations } from '@/harness/contract/control'
 import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
 import { logger } from '@/lib/log/logger'
-import { legacyEnvFields, legacyRuntimeEnv } from './legacy-names'
 import { bearerMatches } from './control-auth'
 
 export function createEnvRouter(
@@ -57,11 +56,11 @@ export function createEnvRouter(
           env: body.env as Record<string, unknown>,
           names: body.names,
           refreshModels: body.refreshModels,
-          runtimeEnv: body.runtimeEnv ?? legacyRuntimeEnv(body),
+          runtimeEnv: body.runtimeEnv,
           llmGatewayEnabled: body.llmGatewayEnabled,
           llmGatewayBaseUrl: body.llmGatewayBaseUrl,
         })
-        return c.json({ ...result, ...legacyEnvFields(result) })
+        return c.json(result)
       } catch (err) {
         const message = (err as Error).message || 'env sync failed'
         logger.error('[env] sync failed', err)

@@ -74,6 +74,8 @@ const InboxNotificationSchema = z
     session_id: z.string().nullable(),
     trigger_slug: z.string().nullable(),
     room_id: z.string().nullable().openapi({ description: 'The conversation, for `message`.' }),
+    artifact_id: z.string().nullable().openapi({ description: 'The Artifact, for `artifact_comment`.' }),
+    artifact_thread_id: z.string().nullable().openapi({ description: 'The comment thread, for `artifact_comment`.' }),
     actor_user_id: z.string().uuid().nullable().openapi({ description: 'Who caused it: the sharer or the prompter.' }),
     url: z.string().openapi({ description: 'Web path that opens the subject and marks the row read.' }),
     read: z.boolean(),

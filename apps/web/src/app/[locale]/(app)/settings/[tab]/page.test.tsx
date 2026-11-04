@@ -54,9 +54,15 @@ const uiButtonMock = () => ({
   Button: ({ onClick, children }: { onClick: () => void; children: React.ReactNode }) =>
     createElement('button', { onClick }, children),
 });
-mock.module('@kortix/ui/button', uiButtonMock);
+// The real module keeps exports such as buttonVariants that the page's imports read.
+const realButton = await import('@kortix/ui/button');
+mock.module('@kortix/ui/button', () => ({ ...realButton, ...uiButtonMock() }));
 mock.module('@/components/common/route-loading', () => ({
   RouteLoadingFallback: () => createElement('p', null, 'Loading'),
+}));
+mock.module('@/features/workspace/project-selector/project-selector', () => ({
+  ProjectSelector: ({ connectComputer }: { connectComputer?: boolean }) =>
+    createElement('main', null, connectComputer ? 'Choose a project for pairing' : 'Projects'),
 }));
 const { default: SettingsTabPage } = await import('./page');
 
@@ -161,9 +167,9 @@ test('a segment that needs a project opens in the last project, never Profile', 
   pending = false;
   failed = false;
   for (const [raw, remembered, expected] of [
-    ['computers', 'p1', '/projects/p1/customize/connectors'],
+    ['computers', 'p1', '/projects/p1/admin/connectors'],
     ['computer', 'p1', '/projects/p1/settings/computer'],
-    ['secrets', 'p1', '/projects/p1/customize/secrets'],
+    ['secrets', 'p1', '/projects/p1/admin/secrets'],
     ['computers', null, '/projects'],
   ] as const) {
     segment = raw;
@@ -203,8 +209,21 @@ test('a project segment waits for the signed-in user before it reads the last pr
   await act(async () => {
     root?.update(createElement(SettingsTabPage));
   });
-  expect(replacements).toEqual(['/projects/p1/customize/connectors']);
+  expect(replacements).toEqual(['/projects/p1/admin/connectors']);
   await act(async () => {
     root?.unmount();
   });
+});
+
+test('computer without a remembered project keeps the pairing destination in the chooser', async () => {
+  segment = 'computer';
+  authLoading = false;
+  lastProjectId = null;
+  replacements.length = 0;
+  let root: ReturnType<typeof create> | undefined;
+  await act(async () => { root = create(createElement(SettingsTabPage)); });
+  if (!root) throw new Error('Settings route did not render');
+  expect(JSON.stringify(root.toJSON())).toContain('Choose a project for pairing');
+  expect(replacements).toEqual([]);
+  await act(async () => { root?.unmount(); });
 });

@@ -25,6 +25,8 @@ describe('loadConfig env contract', () => {
     ['an explicit depth is honoured', { KORTIX_CLONE_DEPTH: '25' }, { cloneDepth: 25 }],
     ['the sandbox credential comes from KORTIX_TOKEN', { KORTIX_TOKEN: 'sandbox-token' }, { sandboxToken: 'sandbox-token' }],
     ['KORTIX_SESSION_BRANCH_RESTORE=1 arms the one-time branch restore', { KORTIX_SESSION_BRANCH_RESTORE: '1' }, { sessionBranchRestore: true }],
+    ['/workspace is the box disk by default', {}, { workspaceVolume: false }],
+    ['KORTIX_WORKSPACE_VOLUME=1 says /workspace is a volume', { KORTIX_WORKSPACE_VOLUME: '1' }, { workspaceVolume: true }],
     [
       'the fast-boot delta bundle and its parent commit reach the config',
       {
@@ -67,7 +69,9 @@ describe('resolveSandboxOnBoot', () => {
     ['kortix.yaml', 'sandbox:\n  on_boot: "pnpm dev"\n', 'pnpm dev'],
     ['kortix.yaml', 'sandbox:\n  on_boot: pnpm dev\n', 'pnpm dev'],
     ['kortix.yaml', 'sandbox:\n  on_boot: |\n    mkdir -p /mnt/data\n    printf ready > /mnt/data/status\n', 'mkdir -p /mnt/data\nprintf ready > /mnt/data/status'],
-    ['kortix.toml', '[sandbox]\non_boot = "pnpm dev"\n', 'pnpm dev'],
+    ['kortix.yml', 'sandbox:\n  on_boot: pnpm dev\n', 'pnpm dev'],
+    // TOML is not a manifest format: a kortix.toml is not read.
+    ['kortix.toml', '[sandbox]\non_boot = "pnpm dev"\n', null],
     ['kortix.yaml', 'sandbox:\n  cpu: 4\n', null],
   ])('%s %j → %j', async (file, body, expected) => {
     writeFileSync(join(workspace, file), body)

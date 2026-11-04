@@ -4,6 +4,7 @@
 // imports projects/ internals. Every export here is background-safe and never
 // throws: a failed read means "nobody extra", never a failed relay or route.
 import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
+import { CHANNEL_PLATFORM_IDS } from '@kortix/shared/channel-descriptors';
 import { and, desc, eq } from 'drizzle-orm';
 import type { SecretGrant, SharingIntent } from '../../connectors/share';
 import { accountGroupsAmong, groupMemberRows } from '../../iam/group-read';
@@ -21,8 +22,6 @@ import { triggerSlugOf } from './trigger-run-outcome';
 import { resolveTriggerWatchers } from './trigger-watchers';
 import { resolveUserIdentities } from './user-identity';
 
-const CHANNELS = ['slack', 'teams', 'email', 'telegram'] as const;
-
 export interface SessionClass {
   originClass: SessionOriginClass;
   /** A coordinator-spawned worker session. */
@@ -39,7 +38,7 @@ export interface SessionClass {
  */
 export function classifySession(metadata: unknown, origin: string | null | undefined): SessionClass {
   const meta = (metadata && typeof metadata === 'object' ? metadata : {}) as Record<string, unknown>;
-  const channel = CHANNELS.some((name) => meta.source === name || (meta[name] !== null && typeof meta[name] === 'object'));
+  const channel = CHANNEL_PLATFORM_IDS.some((name) => meta.source === name || (meta[name] !== null && typeof meta[name] === 'object'));
   const triggerSlug = triggerSlugOf(meta);
   const originClass: SessionOriginClass = channel
     ? 'channel'
@@ -81,6 +80,28 @@ export async function personPrompterOf(
   // neither is a team API key, which acts as the account id.
   const [person] = await personsAmong(accountId, [row.actorUserId]);
   return person ?? null;
+}
+
+/**
+ * The lifecycle source (`telegram`, `ui`, `trigger:reminder`, …) of the prompt the
+ * turn with this wire message id answers: the newest `continue_session` row the
+ * id names. Null when the turn names no message or no row matches.
+ */
+export async function turnPromptSource(sessionId: string, messageId: string | null | undefined): Promise<string | null> {
+  if (!messageId) return null;
+  const [row] = await db
+    .select({ source: sessionLifecycleCommands.source })
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        eq(sessionLifecycleCommands.sessionId, sessionId),
+        eq(sessionLifecycleCommands.commandType, 'continue_session'),
+        wireMessageIdMatches(messageId),
+      ),
+    )
+    .orderBy(desc(sessionLifecycleCommands.createdAt))
+    .limit(1);
+  return row?.source ?? null;
 }
 
 /** The person who prompted the session's running turn (the newest live turn). */

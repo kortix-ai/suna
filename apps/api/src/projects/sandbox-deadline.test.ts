@@ -50,7 +50,6 @@ const {
   extendSandboxDeadline,
   extendSandboxDeadlineForPresence,
   extendUnconfirmedTurnDeadline,
-  grantWarmPoolLifetime,
   idleGraceMs,
   isSandboxAuthored,
   isTurnStartRequest,
@@ -64,7 +63,6 @@ beforeEach(() => {
   executeResult = undefined;
   executeThrows = null;
   delete process.env.KORTIX_SANDBOX_TURN_GRANT_MINUTES;
-  delete process.env.KORTIX_SANDBOX_WARM_GRANT_MINUTES;
   delete process.env.KORTIX_SANDBOX_TURN_UNCONFIRMED_DRIP_MINUTES;
 });
 
@@ -202,51 +200,6 @@ describe('extendSandboxDeadlineForPresence — the idle grace, capped at the idl
     expect(await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' })).toBeNull();
     executeResult = undefined;
     expect(await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' })).toBeNull();
-  });
-});
-
-// ═══ THE FEATURE-DEFEATING BUG THIS CLOSES ═══
-// The warm exemption was deleted with no replacement. An unclaimed warm box has
-// no turns, no LLM calls and no human traffic, so it can NEVER receive an extend
-// — every warm box was reaped at its 15-minute boot floor before it could be
-// handed out, which defeats the warm pool outright.
-describe('grantWarmPoolLifetime — the one box that can never be observed', () => {
-  test('REGRESSION: a warm box is granted its bounded hour at bake time', async () => {
-    await grantWarmPoolLifetime('sb-1', {
-      warm: true, source: 'ui',
-    });
-
-    expect(executed).toHaveLength(1);
-    expect(executed[0]).toContain('3600'); // 60 minutes, in seconds
-    expect(executed[0]).toContain('GREATEST'); // still monotone
-    expect(executed[0]).toContain('86400'); // still under the same 24h cap
-  });
-
-  test('an ordinary box is untouched — no extra write on the provision hot path', async () => {
-    await grantWarmPoolLifetime('sb-1', { session_id: 'sess-1' });
-    await grantWarmPoolLifetime('sb-1', null);
-    await grantWarmPoolLifetime('sb-1', { warm_session: { state: 'available' } });
-
-    expect(executed).toEqual([]);
-  });
-
-  test('the warm lifetime is tunable', async () => {
-    process.env.KORTIX_SANDBOX_WARM_GRANT_MINUTES = '10';
-    await grantWarmPoolLifetime('sb-1', {
-      warm: true,
-    });
-
-    expect(executed[0]).toContain('600');
-  });
-
-  test('a failed grant never fails the provision', async () => {
-    executeThrows = new Error('db down');
-
-    expect(
-      await grantWarmPoolLifetime('sb-1', {
-        warm: true,
-      }),
-    ).toBeUndefined();
   });
 });
 

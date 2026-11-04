@@ -15,10 +15,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { materializeRelease, verifyRelease, verifyReleaseDetail, type ReleaseManifest } from '@/services/config-provider/boot-config'
-import { ensureInjectedManagedSkills } from '@/services/skills/managed-skills'
 import { overlayHash, reconcileRuntimeAssets, resetRuntimeConvergenceForTests } from '@/services/runtime-assets/runtime-assets'
 import { buildRelease, commitAll, initRepo, write, type BuiltRelease } from './helpers/config-release-fixtures'
-import type { HarnessAssetsService } from '@/services/runtime-assets/port'
 
 const REL = '.kortix/opencode'
 let root: string
@@ -37,7 +35,7 @@ function manifestOf(release: BuiltRelease): ReleaseManifest {
   return {
     release_id: d.release_id!,
     source_commit: d.source_commit!,
-    config_dir: d.config_dir,
+    config_dir: REL,
     config_tree_id: d.config_tree_id!,
     archive_url: d.archive!.url,
     archive_bytes: d.archive!.bytes,
@@ -54,7 +52,7 @@ async function oldStarterRelease() {
   write(repo, `${REL}/agents/kortix.md`, 'PROMPT\n')
   write(repo, `${REL}/skills/pdf/SKILL.md`, 'PDF\n')
   write(repo, `${REL}/skills/kortix-cli/SKILL.md`, 'STALE TRACKED COPY\n')
-  const built = buildRelease(repo, commitAll(repo, 'old starter'), REL, {})
+  const built = buildRelease(repo, commitAll(repo, 'old starter'), {})
   const { dir } = await materializeRelease({
     root: store,
     manifest: manifestOf(built),
@@ -88,19 +86,6 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-/** The harness assets service with only its overlay injection live. */
-function overlayAssets(
-  dir: string,
-  injectSkills: (configDir: string, bakedDir: string) => Promise<void>,
-): HarnessAssetsService {
-  return {
-    harness: 'test', componentNames: [],
-    resolveConfigDir: async () => dir,
-    injectSkills,
-    reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
-  }
-}
-
 describe('DEF-5: the overlay pass and release verification', () => {
   test('a verification failure names the file and the overlay names it used', async () => {
     const { built, dir, releaseRoot } = await oldStarterRelease()
@@ -115,62 +100,5 @@ describe('DEF-5: the overlay pass and release verification', () => {
       ok: false,
       problem: `${REL}/skills/kortix-apps/SKILL.md is not in the release (managed overlay names: 0)`,
     })
-  })
-
-  test('a verification never observes a half-applied overlay pass', async () => {
-    const { built, dir, releaseRoot } = await oldStarterRelease()
-    let releaseGate!: () => void
-    const gate = new Promise<void>((resolve) => (releaseGate = resolve))
-    let injected!: () => void
-    const injectedOnce = new Promise<void>((resolve) => (injected = resolve))
-    const pass = reconcileRuntimeAssets({
-      apiUrl: 'https://api.test.invalid',
-      token: 'kortix_pat_test',
-      cliPath: join(root, 'bin', 'kortix'),
-      managedSkillsDir: overlay,
-      statePath: join(root, 'opt', 'state.json'),
-      configDir: dir,
-      fetchImpl: stubApi(),
-      assets: overlayAssets(dir, async (configDir: string, bakedDir: string) => {
-        await ensureInjectedManagedSkills(configDir, { bakedDir, unsealManaged: true })
-        injected()
-        await gate
-      }),
-    })
-    await injectedOnce
-    let settled = false
-    const verification = verifyRelease({ dir: releaseRoot, files: built.descriptor.files!, configDir: REL, managedSkillsDir: overlay }).then((ok) => {
-      settled = true
-      return ok
-    })
-    await Bun.sleep(50)
-    expect(settled).toBe(false)
-    releaseGate()
-    await pass
-    expect(await verification).toBe(true)
-  })
-
-  test('the overlay replaces a sealed tracked copy and injects every managed skill', async () => {
-    const { built, dir, releaseRoot } = await oldStarterRelease()
-    const result = await reconcileRuntimeAssets({
-      apiUrl: 'https://api.test.invalid',
-      token: 'kortix_pat_test',
-      cliPath: join(root, 'bin', 'kortix'),
-      managedSkillsDir: overlay,
-      statePath: join(root, 'opt', 'state.json'),
-      configDir: dir,
-      fetchImpl: stubApi(),
-      assets: overlayAssets(dir, (configDir: string, bakedDir: string) =>
-        ensureInjectedManagedSkills(configDir, { bakedDir, unsealManaged: true }),
-      ),
-    })
-    expect(result.skills).toBe('updated')
-    expect(readFileSync(join(dir, 'skills/kortix-cli/SKILL.md'), 'utf8')).toBe('CLI v2\n')
-    expect(existsSync(join(dir, 'skills/kortix-system/SKILL.md'))).toBe(true)
-    expect(await verifyRelease({ dir: releaseRoot, files: built.descriptor.files!, configDir: REL, managedSkillsDir: overlay })).toBe(true)
-    // A project file outside the managed names stays sealed.
-    const pdf = spawnSync('stat', ['-f', '%Lp', join(dir, 'skills/pdf/SKILL.md')]).stdout.toString().trim()
-    const pdfLinux = spawnSync('stat', ['-c', '%a', join(dir, 'skills/pdf/SKILL.md')]).stdout.toString().trim()
-    expect([pdf, pdfLinux]).toContain('444')
   })
 })

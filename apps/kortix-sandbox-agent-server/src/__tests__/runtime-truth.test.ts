@@ -26,9 +26,7 @@ import {
   configureRuntimeTruth,
   detectedResume,
   deriveAssetsSignal,
-  deriveCatalogSignal,
   deriveConfigReleaseSignal,
-  fingerprintModelIds,
   isBlockedCause,
   nextComponentEntry,
   resetRuntimeTruthForTests,
@@ -36,6 +34,7 @@ import {
   runtimeTruthReport,
   startRuntimeTruthTicker,
   type RuntimeTruthComponent,
+  type RuntimeTruthConfigReleaseState,
 } from '@/services/runtime-assets/runtime-truth'
 import {
   noteRuntimeConvergence,
@@ -44,31 +43,29 @@ import {
   registerHarnessAssets,
   resetHarnessAssetsForTests,
 } from '@/services/runtime-assets/runtime-assets'
-import {
-  configReleaseReport,
-  resetConfigReleaseStateForTests,
-  setRunningConfig,
-} from '@/harness/open-code/config-release'
 import { resolveHarness } from '@/harness/harness'
 
 // Production registers this lookup in main.ts before anything runs.
 beforeAll(() => registerHarnessAssets((cfg) => resolveHarness(cfg).assets))
 afterAll(() => resetHarnessAssetsForTests())
 
+/** The running release the harness reports (pi: `harness.releases.report()`), as a test sets it. */
+const NO_RELEASE: RuntimeTruthConfigReleaseState = { release_id: null, desired_release_id: null, source: 'workspace', proven: false, fallback_reason: null }
+let running: RuntimeTruthConfigReleaseState = { ...NO_RELEASE }
+const setRunningConfig = (next: Partial<RuntimeTruthConfigReleaseState>) => { running = { ...running, ...next } }
+const resetConfigReleaseStateForTests = () => { running = { ...NO_RELEASE } }
+const configReleaseReport = (): RuntimeTruthConfigReleaseState => ({ ...running })
+
 /**
- * The fake wiring `harness/open-code/runtime-truth-glue.ts` would
- * install on a real box. Test files are exempt from the boundary lint
- * (eslint.config.mjs), so this can import the real config-release module
- * directly — the point is to prove `runReconcileTick` reads whatever the
- * closure reports, not to re-mock it.
+ * The wiring a harness boot installs on a real box, with only the config
+ * release live: the point is to prove `runReconcileTick` reads whatever the
+ * closure reports.
  */
 function wireConfigReleaseOnly(): void {
   configureRuntimeTruth({
     reconcileAssets: () => {},
     readConfigRelease: () => configReleaseReport(),
     reconcileConfigRelease: async () => {},
-    readCatalog: () => ({ configuredIds: null, liveKnown: false, missingIds: [] }),
-    reconcileCatalog: async () => {},
   })
 }
 
@@ -86,7 +83,7 @@ describe('runtime-truth: the shape (Rule 1)', () => {
     resetConfigReleaseStateForTests()
   })
 
-  test('every one of the five required components is present before any tick ever ran', async () => {
+  test('every required component is present before any tick ever ran', async () => {
     const report = await runtimeTruthReport()
     expect(Object.keys(report.components).sort()).toEqual([...RUNTIME_TRUTH_COMPONENT_NAMES].sort())
     for (const name of RUNTIME_TRUTH_COMPONENT_NAMES) {
@@ -94,10 +91,10 @@ describe('runtime-truth: the shape (Rule 1)', () => {
     }
   })
 
-  test('the exact five top-level fields the API is built against, nothing more, nothing less', async () => {
+  test('the exact top-level fields the API is built against, nothing more, nothing less', async () => {
     const report = await runtimeTruthReport()
     expect(Object.keys(report).sort()).toEqual(
-      ['catalog_fingerprint', 'cli_sha256', 'components', 'daemon_build', 'managed_skills_hash', 'release_id'].sort(),
+      ['cli_sha256', 'components', 'daemon_build', 'managed_skills_hash', 'release_id'].sort(),
     )
   })
 
@@ -160,28 +157,6 @@ describe('runtime-truth: per-component classification (pure)', () => {
 
   test('assets: no outcome at all (component absent from this pass) -> unknown', () => {
     expect(deriveAssetsSignal(undefined, undefined).outcome).toBe('unknown')
-  })
-
-  test('catalog: config not built yet -> unknown', () => {
-    const signal = deriveCatalogSignal({ configuredIds: null, liveKnown: false, missingIds: [] })
-    expect(signal.outcome).toBe('unknown')
-  })
-
-  test('catalog: configured, but the live managed set was never fetched -> attempted (failure #1, never silently current)', () => {
-    const signal = deriveCatalogSignal({ configuredIds: ['glm-5.3-flash'], liveKnown: false, missingIds: [] })
-    expect(signal.outcome).toBe('attempted')
-    expect(signal.cause).toMatch(/bundled|baked/)
-  })
-
-  test('catalog: configured and live known, nothing missing -> current', () => {
-    const signal = deriveCatalogSignal({ configuredIds: ['glm-5.3-flash'], liveKnown: true, missingIds: [] })
-    expect(signal).toEqual({ outcome: 'current', cause: null })
-  })
-
-  test('catalog: a managed id the picker offers is missing from the provider map -> attempted, names the id', () => {
-    const signal = deriveCatalogSignal({ configuredIds: ['glm-5.3-flash'], liveKnown: true, missingIds: ['kimi-k3'] })
-    expect(signal.outcome).toBe('attempted')
-    expect(signal.cause).toContain('kimi-k3')
   })
 })
 
@@ -282,21 +257,6 @@ describe('runtime-truth: resume detection (Rule 3.2)', () => {
   })
 })
 
-describe('runtime-truth: catalog_fingerprint (Rule 1.2)', () => {
-  test('is a stable hash of the SORTED live provider ids — order in the map must not change the fingerprint', () => {
-    const a = fingerprintModelIds(['glm-5.3-flash', 'kimi-k3'])
-    const b = fingerprintModelIds(['kimi-k3', 'glm-5.3-flash'])
-    expect(a).toBe(b)
-    expect(a).toMatch(/^[0-9a-f]{64}$/)
-  })
-
-  test('a different lineup hashes differently', () => {
-    const a = fingerprintModelIds(['glm-5.3-flash'])
-    const b = fingerprintModelIds(['glm-5.3-flash', 'kimi-k3'])
-    expect(a).not.toBe(b)
-  })
-})
-
 describe('runtime-truth: end-to-end tick, driving the real owner modules (integration)', () => {
   beforeEach(() => {
     resetRuntimeTruthForTests()
@@ -307,16 +267,6 @@ describe('runtime-truth: end-to-end tick, driving the real owner modules (integr
     resetRuntimeTruthForTests()
     resetRuntimeConvergenceReportForTests()
     resetConfigReleaseStateForTests()
-  })
-
-  test('failure #1 healed: a pass that could not reach the managed lineup, THEN one that could, converges catalog from attempted to current across two ticks — no new session', async () => {
-    // Tick 1: opencode has built a config (bundled ids), but the live fetch
-    // never succeeded — exactly the 2026-09-26 incident.
-    const first = await runReconcileTick('boot')
-    // No deps configured in this unit test (no real opencode/cfg) -> the
-    // catalog signal for THIS component is driven by whatever the real
-    // lifecycle module answers, which with no config built yet is `unknown`.
-    expect(first.components.catalog.state).toBe('unknown')
   })
 
   test('cli reconcile result flows straight through into the report (no private second opinion)', async () => {
@@ -351,7 +301,7 @@ describe('runtime-truth: end-to-end tick, driving the real owner modules (integr
 
   test('config release convergence: applied and proven flows to current; a fallback reason flows to converging', async () => {
     wireConfigReleaseOnly()
-    setRunningConfig({ release_id: 'r1', desired_release_id: 'r1', source: 'release', mode: 'follow-base', proven: true })
+    setRunningConfig({ release_id: 'r1', desired_release_id: 'r1', source: 'release', proven: true })
     const current = await runReconcileTick('periodic')
     expect(current.components.config_release.state).toBe('current')
     expect(current.release_id).toBe('r1')
@@ -389,7 +339,7 @@ describe('runtime-truth: the asset pass starts after the tick settles its conver
   beforeEach(() => resetRuntimeTruthForTests())
   afterEach(() => resetRuntimeTruthForTests())
 
-  test('reconcileAssets runs only after config release and catalog finished', async () => {
+  test('reconcileAssets runs only after the config release finished', async () => {
     const order: string[] = []
     configureRuntimeTruth({
       reconcileAssets: () => { order.push('assets') },
@@ -399,14 +349,8 @@ describe('runtime-truth: the asset pass starts after the tick settles its conver
         await new Promise((r) => setTimeout(r, 5))
         order.push('config:end')
       },
-      readCatalog: () => ({ configuredIds: null, liveKnown: false, missingIds: [] }),
-      reconcileCatalog: async () => {
-        await new Promise((r) => setTimeout(r, 5))
-        order.push('catalog:end')
-      },
     })
     await runReconcileTick('periodic')
     expect(order.indexOf('assets')).toBeGreaterThan(order.indexOf('config:end'))
-    expect(order.indexOf('assets')).toBeGreaterThan(order.indexOf('catalog:end'))
   })
 })

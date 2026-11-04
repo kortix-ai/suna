@@ -1,4 +1,5 @@
 import type { SessionSourceKind } from '../../session/actions/session-label';
+import { Discord } from '../../internal/icons/discord';
 import { Email } from '../../internal/icons/email';
 import { MicrosoftTeams } from '../../internal/icons/microsoft-teams';
 import { Schedule } from '../../internal/icons/schedule';
@@ -27,6 +28,7 @@ export const SOURCE_ICONS: Record<
 > = {
   slack: Slack,
   telegram: Telegram,
+  discord: Discord,
   teams: MicrosoftTeams,
   email: Email,
   schedule: Schedule,

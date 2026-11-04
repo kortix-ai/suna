@@ -28,7 +28,6 @@ export interface AuthEmailContent {
 
 interface Copy {
   subject: string;
-  kicker: string;
   title: string;
   lead: string;
   cta: string;
@@ -38,7 +37,6 @@ interface Copy {
 const COPY: Record<Exclude<AuthEmailActionType, 'reauthentication'>, Copy> = {
   signup: {
     subject: 'Confirm your email',
-    kicker: 'Confirm your email',
     title: 'Confirm your email address',
     lead: 'Confirm this address to finish creating your Kortix account.',
     cta: 'Confirm email',
@@ -46,7 +44,6 @@ const COPY: Record<Exclude<AuthEmailActionType, 'reauthentication'>, Copy> = {
   },
   invite: {
     subject: 'You have been invited to Kortix',
-    kicker: "You're invited",
     title: 'You have been invited',
     lead: 'Accept the invitation to create your Kortix account.',
     cta: 'Accept invite',
@@ -54,7 +51,6 @@ const COPY: Record<Exclude<AuthEmailActionType, 'reauthentication'>, Copy> = {
   },
   magiclink: {
     subject: 'Your Kortix sign-in link',
-    kicker: 'Sign in',
     title: 'Sign in to Kortix',
     lead: 'Use the link below to sign in. It expires shortly and can be used once.',
     cta: 'Sign in',
@@ -62,7 +58,6 @@ const COPY: Record<Exclude<AuthEmailActionType, 'reauthentication'>, Copy> = {
   },
   recovery: {
     subject: 'Reset your Kortix password',
-    kicker: 'Password reset',
     title: 'Reset your password',
     lead: 'Use the link below to choose a new password.',
     cta: 'Reset password',
@@ -70,7 +65,6 @@ const COPY: Record<Exclude<AuthEmailActionType, 'reauthentication'>, Copy> = {
   },
   email_change: {
     subject: 'Confirm your new email address',
-    kicker: 'Email change',
     title: 'Confirm your new email address',
     lead: 'Confirm this change to move your Kortix account to the new address.',
     cta: 'Confirm change',
@@ -78,7 +72,6 @@ const COPY: Record<Exclude<AuthEmailActionType, 'reauthentication'>, Copy> = {
   },
   email_change_current: {
     subject: 'Confirm your email change',
-    kicker: 'Email change',
     title: 'Confirm your email change',
     lead: 'Confirm from your current address to move your Kortix account.',
     cta: 'Confirm change',
@@ -86,7 +79,6 @@ const COPY: Record<Exclude<AuthEmailActionType, 'reauthentication'>, Copy> = {
   },
   email_change_new: {
     subject: 'Confirm your new email address',
-    kicker: 'Email change',
     title: 'Confirm your new email address',
     lead: 'Confirm this address to finish moving your Kortix account to it.',
     cta: 'Confirm change',
@@ -107,7 +99,7 @@ function renderCode(token: string): AuthEmailContent {
   const note = 'The code expires shortly. If you did not request it, you can ignore this email.';
   return {
     subject: 'Your Kortix confirmation code',
-    html: renderEmail({ kicker: 'Confirmation code', title, body }),
+    html: renderEmail({ title, body }),
     text: renderText({
       title,
       paragraphs: ['Enter this code to confirm it is you.'],
@@ -135,7 +127,7 @@ export function renderAuthEmail(input: {
   `;
   return {
     subject: copy.subject,
-    html: renderEmail({ kicker: copy.kicker, title: copy.title, body }),
+    html: renderEmail({ title: copy.title, body }),
     text: renderText({
       title: copy.title,
       paragraphs: [copy.lead],

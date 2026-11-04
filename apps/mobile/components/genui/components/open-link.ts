@@ -10,7 +10,7 @@ export function openGenuiLink(href: unknown): void {
 }
 
 /** Dials a written phone number: digits and a leading + only; nothing happens when it does not dial. */
-export function openGenuiCall(phone: string | undefined): void {
+function openGenuiCall(phone: string | undefined): void {
   const tel = telLink(phone);
   if (tel) openLink(tel).catch(() => {});
 }

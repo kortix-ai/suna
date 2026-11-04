@@ -96,14 +96,24 @@ describe('SubSessionSection loads a sub-agent thread once its row scrolls into v
 
   test('a row reads its saved window only once it is in view, once; a row behind a closed caret reads nothing', async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    const { configureKortix } = await import('@kortix/sdk');
-    configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+    const { createKortix } = await import('@kortix/sdk');
     const requests: string[] = [];
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async (url: unknown) => {
-      requests.push(String(url));
-      return Response.json({ available: false, reason: 'test', messages: [] });
+    // No session log (404) and no v1 copy (#11034): a row in view reads its thread from the runtime.
+    globalThis.fetch = (async (input: unknown) => {
+      const url = input instanceof Request ? input.url : String(input);
+      requests.push(url);
+      if (url.includes('/log?')) return Response.json({ error: 'Not found' }, { status: 404 });
+      return Response.json([]);
     }) as unknown as typeof fetch;
+    const kortix = createKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+    await kortix.session('p_lazy', 's_lazy').ensureReady({
+      session: {
+        session_id: 's_lazy', project_id: 'p_lazy', account_id: 'a', status: 'running',
+        sandbox_id: 'sbx_lazy', sandbox_provider: 'synthetic', sandbox_url: 'http://test.local/v1/p/sbx-lazy/8000/',
+        runtime_session_id: ROOT,
+      } as never,
+    });
     // A fake IntersectionObserver: `show(title)` reports the row with that title in view.
     type Row = { title: string };
     const observers = new Set<{ cb: IntersectionObserverCallback; rows: Set<Row> }>();
@@ -121,7 +131,7 @@ describe('SubSessionSection loads a sub-agent thread once its row scrolls into v
       });
       await settle();
     };
-    const loaded = () => [CHILD, GRAND, GREAT].filter((id) => requests.some((url) => url.includes(`child=${id}`)));
+    const loaded = () => [CHILD, GRAND, GREAT].filter((id) => requests.some((url) => url.includes(`/session/${id}/message`)));
     // Each row's button gets a node naming its title (react-test-renderer has no DOM).
     type El = { type: unknown; props: { children?: unknown } };
     const createNodeMock = (el: El) => {
@@ -242,21 +252,30 @@ describe('SubSessionSection totals while sub-agents load lazily', () => {
 
   async function setup(observer: typeof IntersectionObserver | undefined) {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    const { configureKortix } = await import('@kortix/sdk');
-    configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
-    useSessionStateStore.getState().hydrate(ROOT, [reply(ROOT, 'm_all_root', 2)] as never);
+    const { createKortix } = await import('@kortix/sdk');
     const loadedIds: string[] = [];
     const originalFetch = globalThis.fetch;
     const originalObserver = globalThis.IntersectionObserver;
-    // A sub-agent's saved-window read lands its thread in the store.
-    globalThis.fetch = (async (url: unknown) => {
-      const child = /child=([^&]+)/.exec(String(url))?.[1];
-      if (child && input[child] !== undefined && !loadedIds.includes(child)) {
-        loadedIds.push(child);
-        useSessionStateStore.getState().hydrate(child, [reply(child, `m_${child}`, input[child]!)] as never);
+    // No session log (404) and no v1 copy (#11034): a sub-agent's runtime read lands its thread.
+    globalThis.fetch = (async (request: unknown) => {
+      const url = request instanceof Request ? request.url : String(request);
+      if (url.includes('/log?')) return Response.json({ error: 'Not found' }, { status: 404 });
+      const child = /\/session\/(ses_[a-z_]+)\/message/.exec(url)?.[1];
+      if (child && input[child] !== undefined) {
+        if (!loadedIds.includes(child)) loadedIds.push(child);
+        return Response.json([reply(child, `m_${child}`, input[child]!)]);
       }
-      return Response.json({ available: false, reason: 'test', messages: [] });
+      return Response.json([]);
     }) as unknown as typeof fetch;
+    const kortix = createKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+    await kortix.session('p_all', 's_all').ensureReady({
+      session: {
+        session_id: 's_all', project_id: 'p_all', account_id: 'a', status: 'running',
+        sandbox_id: 'sbx_all', sandbox_provider: 'synthetic', sandbox_url: 'http://test.local/v1/p/sbx-all/8000/',
+        runtime_session_id: ROOT,
+      } as never,
+    });
+    useSessionStateStore.getState().hydrate(ROOT, [reply(ROOT, 'm_all_root', 2)] as never);
     (globalThis as { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver = observer;
     let renderer: ReturnType<typeof create>;
     await act(async () => {

@@ -17,9 +17,8 @@
  *   writes the saved conversation back under the same root, so the agent and
  *   the transcript keep the history.
  *
- * The saved conversation is checked first: a session with neither a session log
- * nor a v1 mirror to convert (`writeSessionLogFromMirror`) is refused and keeps
- * its lost row. Nothing here deletes a transcript.
+ * The saved conversation is checked first: a session without a session log is
+ * refused and keeps its lost row. Nothing here deletes a transcript.
  */
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
@@ -28,7 +27,6 @@ import { logger } from '../../lib/logger';
 import { RETIRED_EXTERNAL_ID_KEY } from '../../platform/services/retired-sandbox-row';
 import { db } from '../../shared/db';
 import { attemptArchivedBoxRemoval, PROVIDER_REMOVED_KEY } from '../reaping/archived-box-removal';
-import { writeSessionLogFromMirror } from '../session-log-capture';
 import { readSessionLogManifest } from '../session-log-ingest';
 import { transitionSandbox } from './status-transitions';
 
@@ -86,9 +84,7 @@ export async function recoverLostSession(input: {
   }
   const externalId = sandbox.externalId;
 
-  // The saved conversation: the log a journal wrote, or the v1 mirror
-  // converted now (a no-op when a journal owns the log).
-  await writeSessionLogFromMirror(sessionId);
+  // The saved conversation: the session log.
   const manifest = await readSessionLogManifest({ sessionId, projectId, accountId });
   if (!manifest?.messages.some((message) => !message.deleted)) return NO_TRANSCRIPT;
 

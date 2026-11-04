@@ -174,6 +174,10 @@ export const catalogModelForWireModel = (
   return catalogModelForWireModelCanonical(wireModel, catalog);
 };
 
+/** The catalog lists `image` among the model's output modalities (models.dev). */
+export const hasImageOutput = (wireModel: string): boolean =>
+  catalogModelForWireModel(wireModel)?.modalities?.output?.includes('image') === true;
+
 function managedCatalogModel(m: ManagedModel): CatalogModel {
   return {
     id: m.id,

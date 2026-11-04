@@ -3,6 +3,7 @@ import { qk } from './query-keys';
 import {
   driveConflictsQueryOptions,
   driveFolderQueryOptions,
+  agentMountsQueryOptions,
   folderAccessQueryOptions,
   folderPrincipalsQueryOptions,
   projectDriveQueryOptions,
@@ -28,6 +29,7 @@ describe('project Files queries', () => {
       folderPrincipalsQueryOptions(D),
       driveConflictsQueryOptions(D),
       sessionDrivesQueryOptions('p1', 's1', true),
+      agentMountsQueryOptions(D, 'support'),
     ]) {
       expect(options.queryKey.slice(0, scope.length)).toEqual([...scope]);
     }
@@ -35,6 +37,7 @@ describe('project Files queries', () => {
 
   test('nothing is fetched without the ids it needs, or with the session flag off', () => {
     expect(driveFolderQueryOptions(null, '/').enabled).toBe(false);
+    expect(agentMountsQueryOptions(null, 'support').enabled).toBe(false);
     expect(folderAccessQueryOptions(D, '/a', false).enabled).toBe(false);
     expect(sessionDrivesQueryOptions('p1', 's1', false).enabled).toBe(false);
     expect(sessionDrivesQueryOptions('p1', undefined, true).enabled).toBe(false);

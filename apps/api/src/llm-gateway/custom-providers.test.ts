@@ -117,6 +117,26 @@ describe('probeCustomModels', () => {
     expect(safeEgressFetch.mock.calls.at(-1)![1]!.headers).toEqual({ authorization: 'Bearer sk-1' });
   });
 
+  test.each([undefined, null, 42, 'text', true])('nested metadata %j keeps optional-chain behavior', async (metadata) => {
+    modelsResponse = () => Response.json({ data: [
+      { id: 'm', context_window: -1, max_model_len: '32', context_length: 0.5, max_output_tokens: 0, architecture: metadata, modalities: metadata, top_provider: metadata, supported_parameters: metadata },
+      { id: 'valid', context_window: 128, max_output_tokens: 16 },
+    ] });
+    expect(Object.fromEntries(await probeCustomModels('https://h.example/v1', null))).toEqual({
+      valid: { context: 128, output: 16, attachment: undefined, reasoning: undefined },
+    });
+  });
+  test('array checks and positive fallbacks keep their precedence', async () => {
+    modelsResponse = () => Response.json({ data: [
+      null, 42, 'text', { id: 12 },
+      { id: 'm', context_window: -1, max_model_len: 64, context_length: 128, max_output_tokens: '16', max_completion_tokens: 8,
+        architecture: { input_modalities: 'image' }, modalities: { input: ['image'] },
+        supported_parameters: [null, {}, 'reasoning_effort'] },
+    ] });
+    expect(Object.fromEntries(await probeCustomModels('https://h.example/v1', null))).toEqual({
+      m: { context: 64, output: 8, attachment: undefined, reasoning: true },
+    });
+  });
   test('a refused, failing or malformed endpoint yields no limits', async () => {
     modelsResponse = () => new Response('no', { status: 401 });
     expect((await probeCustomModels('https://h.example/v1', null)).size).toBe(0);

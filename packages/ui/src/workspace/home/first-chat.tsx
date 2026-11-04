@@ -1,19 +1,15 @@
 'use client';
 
 import {
-  CheckCircleIcon,
+  AppWindowIcon,
+  BriefcaseIcon,
+  ChatsCircleIcon,
+  ClockIcon,
   GrainsIcon,
   PlugsConnectedIcon,
-  UserPlusIcon,
   type Icon,
 } from '@phosphor-icons/react';
-import { useEffect, useId, useState, type ReactNode } from 'react';
-
-import Loading from '../../primitives/loading';
-import { HubLink } from '../../internal/account-hub/account-hub-location';
-import { Slack } from '../../internal/icons/slack';
-import { useSlackInstall, useSlackMode } from '../../internal/hooks/channels/use-channels-installations';
-import type { HubTarget } from '../../internal/stores/account-panel-store';
+import { useId, type ReactNode } from 'react';
 
 import { useUiViewer } from '../../providers/ui-provider';
 import { SESSION_TRANSCRIPT_CLASS } from '../../session/thread/session-transcript-class';
@@ -21,6 +17,16 @@ import { useTranslations } from '../../i18n';
 import { cn } from '../../internal/lib/utils';
 
 import { firstNameOf } from './first-chat-name';
+
+/** What Kortix does, in the order a new person meets it. Keys under `firstChat.can`. */
+const CAPABILITIES: ReadonlyArray<{ key: string; icon: Icon }> = [
+  { key: 'work', icon: BriefcaseIcon },
+  { key: 'memory', icon: GrainsIcon },
+  { key: 'tools', icon: PlugsConnectedIcon },
+  { key: 'chat', icon: ChatsCircleIcon },
+  { key: 'schedule', icon: ClockIcon },
+  { key: 'apps', icon: AppWindowIcon },
+];
 
 /**
  * "Your first chat with Kortix": what project home shows a new person instead
@@ -32,45 +38,24 @@ import { firstNameOf } from './first-chat-name';
  * composer already where it stays, so nothing jumps.
  *
  * The welcome is static text, and it stays: it is never replaced by a
- * session. Every send from here — typed, "Recommend tools", or "Update
- * memory" — starts a new session and opens it; coming back to project home
- * shows this welcome again.
+ * session. Every send from here starts a new session and opens it; coming
+ * back to project home shows this welcome again.
  *
- * The welcome reads as one short message: a greeting, one line of intro, then
- * the question as the label of the starter tiles it asks about. Two tiles act
- * in the product rather than filling the composer:
- * - "Invite teammate" opens the account hub's Access tab, only for someone who
- *   may manage members.
- * - "Connect Slack" runs the one-click Slack install in a popup and turns into
- *   a checked tile once the install lands.
+ * It reads as one short message: a greeting, one line of intro, then what
+ * Kortix can do — six items to read, not to click — and one line that points
+ * at the composer. A new project's composer holds "Onboard me" here
+ * (`project-home.tsx`); the agent's guided setup does the connecting and
+ * inviting the items describe.
  *
  * The welcome fades in once, over 300ms. It is opacity only, so reduced motion
  * needs no other variant.
  */
-export function FirstChat({
-  projectId,
-  inviteTo,
-  composer,
-  busy,
-  onRecommendTools,
-  onUpdateMemory,
-}: {
-  projectId: string;
-  /** Where "Invite teammate" opens; `null` hides the tile (no permission, or
-   *  the project's account is still loading). */
-  inviteTo: HubTarget | null;
-  /** The docked composer. Project home owns its wiring. */
-  composer: ReactNode;
-  /** A send is in flight: the starters wait with the composer. */
-  busy: boolean;
-  onRecommendTools: () => void;
-  onUpdateMemory: () => void;
-}) {
+export function FirstChat({ composer }: { composer: ReactNode }) {
   const t = useTranslations('firstChat');
   const user = useUiViewer();
   const name = firstNameOf(user?.metadata);
   const headingId = useId();
-  const questionId = useId();
+  const canId = useId();
 
   return (
     <div className="relative z-10 flex min-h-0 flex-1 flex-col">
@@ -97,148 +82,36 @@ export function FirstChat({
             </p>
           </div>
 
-          <div role="group" aria-labelledby={questionId} className="flex flex-col gap-4">
-            <p id={questionId} className="text-foreground text-base font-medium">
-              {t('question')}
-            </p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <StarterTile
-                icon={PlugsConnectedIcon}
-                label={t('recommendTools')}
-                disabled={busy}
-                onClick={onRecommendTools}
-              />
-              <StarterTile
-                icon={GrainsIcon}
-                label={t('updateMemory')}
-                disabled={busy}
-                onClick={onUpdateMemory}
-              />
-              {inviteTo && (
-                <HubLink to={inviteTo} className={tileClass}>
-                  <TileBody
-                    glyph={<UserPlusIcon className="size-4" />}
-                    label={t('inviteTeammate')}
-                  />
-                </HubLink>
-              )}
-              <SlackTile projectId={projectId} />
-            </div>
+          <div className="flex flex-col gap-4">
+            <h2 id={canId} className="text-foreground text-base font-medium">
+              {t('canTitle')}
+            </h2>
+            <ul aria-labelledby={canId} className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {CAPABILITIES.map(({ key, icon: Glyph }) => (
+                <li
+                  key={key}
+                  className="border-border bg-popover flex flex-col gap-3 rounded-md border p-4"
+                >
+                  <span className="bg-muted text-foreground flex size-8 items-center justify-center rounded-sm">
+                    <Glyph className="size-4" aria-hidden />
+                  </span>
+                  <span className="flex flex-col gap-1">
+                    <span className="text-foreground text-sm leading-5 font-medium">
+                      {t(`can.${key}.title`)}
+                    </span>
+                    <span className="text-muted-foreground text-sm leading-5 text-pretty">
+                      {t(`can.${key}.body`)}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-muted-foreground text-sm leading-5 text-pretty">{t('startHint')}</p>
           </div>
         </section>
       </div>
 
       {composer}
     </div>
-  );
-}
-
-const tileClass = cn(
-  'border-border bg-popover text-foreground relative flex h-30 w-auto flex-col justify-between rounded-md border p-4 text-left',
-  'transition-[background-color,border-color,scale] duration-(--duration-normal)',
-  'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
-  'hover:border-primary/20  cursor-pointer active:scale-[0.97] motion-reduce:active:scale-100',
-  'disabled:pointer-events-none disabled:opacity-50',
-  'aria-disabled:pointer-events-none',
-);
-
-/** The icon in its own chip at the top, the title at the bottom on one line. */
-function TileBody({ glyph, label, badge }: { glyph: ReactNode; label: string; badge?: ReactNode }) {
-  return (
-    <>
-      <span className="bg-muted text-foreground flex size-8 items-center justify-center rounded-sm">
-        {glyph}
-      </span>
-      <span className="truncate text-sm leading-5 font-medium whitespace-nowrap">{label}</span>
-      {badge && (
-        <span aria-hidden className="absolute top-4 right-4">
-          {badge}
-        </span>
-      )}
-    </>
-  );
-}
-
-/**
- * A square starter that fills the composer. The same tile shape as
- * onboarding's app grid, so the first screen after onboarding reads as its
- * continuation.
- */
-function StarterTile({
-  icon: Glyph,
-  label,
-  disabled,
-  onClick,
-}: {
-  icon: Icon;
-  label: string;
-  disabled: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button type="button" disabled={disabled} onClick={onClick} className={tileClass}>
-      <TileBody glyph={<Glyph className="size-4.5" aria-hidden />} label={label} />
-    </button>
-  );
-}
-
-/** How long a popup install may take before the tile stops waiting on it. */
-const SLACK_WAIT_MS = 5 * 60_000;
-const SLACK_POLL_MS = 2_500;
-
-/**
- * One click installs Kortix into Slack: the popup opens inside the click, and
- * the tile polls the installation until it lands, then shows a check. With no
- * managed Slack app on this deployment (`oauth_available` false) the tile is
- * hidden; the custom-app setup lives on the Channels page.
- */
-function SlackTile({ projectId }: { projectId: string }) {
-  const t = useTranslations('firstChat');
-  const mode = useSlackMode(projectId);
-  const install = useSlackInstall(projectId);
-  const [waitingSince, setWaitingSince] = useState<number | null>(null);
-  const connected = Boolean(install.data);
-  const waiting = waitingSince !== null && !connected;
-
-  const refetch = install.refetch;
-  useEffect(() => {
-    if (!waiting) return;
-    const poll = setInterval(() => void refetch(), SLACK_POLL_MS);
-    const stop = setTimeout(() => setWaitingSince(null), SLACK_WAIT_MS);
-    return () => {
-      clearInterval(poll);
-      clearTimeout(stop);
-    };
-  }, [waiting, refetch]);
-
-  const installUrl = mode.data?.oauth_available ? mode.data.install_url : null;
-  if (!installUrl && !connected) return null;
-
-  return (
-    <button
-      type="button"
-      aria-disabled={connected || undefined}
-      aria-busy={waiting || undefined}
-      aria-label={connected ? t('slackConnected') : t('connectSlack')}
-      onClick={() => {
-        if (connected || !installUrl) return;
-        window.open(installUrl, 'kortix-slack-install', 'width=640,height=780,noopener');
-        setWaitingSince(Date.now());
-      }}
-      className={cn(tileClass, connected && 'border-primary/40 bg-primary/[0.05] cursor-default')}
-    >
-      <TileBody
-        glyph={<Slack className="size-4" />}
-        label={connected ? t('slackConnected') : t('connectSlack')}
-        badge={
-          waiting ? (
-            // Inside a <button> the spinner defaults to `text-background`.
-            <Loading variant="spokes" className="text-foreground! size-4" />
-          ) : connected ? (
-            <CheckCircleIcon weight="fill" className="text-foreground size-4" />
-          ) : null
-        }
-      />
-    </button>
   );
 }

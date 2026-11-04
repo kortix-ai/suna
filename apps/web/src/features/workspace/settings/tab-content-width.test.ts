@@ -63,8 +63,6 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { uiSourcePath } from '@/test-utils/read-source';
 
-import { railItemForTab } from '@kortix/ui/customize/settings/rail';
-import type { SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
 
 
 // Account tabs live beside this file; project tabs render from @kortix/ui.
@@ -73,6 +71,8 @@ const TABS_DIRS = [join(import.meta.dir, 'tabs'), dirname(uiSourcePath('customiz
 /** Single-column settings. The design system's default container. */
 const FORM_TABS = [
   'appearance-tab.tsx',
+  // The Kortix in Chrome pane: a list of connected browsers, `max-w-2xl`.
+  'chrome-connections-tab.tsx',
   'computer-tab.tsx',
   'connected-tab.tsx',
   'experimental-tab.tsx',
@@ -115,7 +115,7 @@ const TABLE_TABS: string[] = [];
  * Empty since #10547 and kept rather than deleted: the rule still holds for
  * the next tab whose outermost element is a shell that owns the column.
  * `models-tab.tsx` was the last entry: a pass-through that rendered the
- * Customize Models page (`/projects/[id]/customize/models`) inside
+ * Customize Models page (`/projects/[id]/admin/models`) inside
  * `CapabilityPageShell`. #10547 deleted it; that page's chrome is pinned in
  * `settings/tabs/models-tab.test.tsx`. `members-tab.tsx` left earlier, when
  * Members graduated a FOURTH time (see the `TABLE_TABS` comment above).
@@ -284,7 +284,7 @@ describe('settings tab content width', () => {
  *
  * `gateway-routing.tsx` was its last member and left the same way Secrets and
  * Channels did — it stopped being panel content. Routing is a tab of
- * `/projects/[id]/customize/models` now, whose column is `CapabilityPageShell`'s
+ * `/projects/[id]/admin/models` now, whose column is `CapabilityPageShell`'s
  * `max-w-5xl`, so the wrapper's `max-w-2xl` was not "the panel column" for it
  * any more but 320px narrower than the six tabs beside it, plus a second
  * scroll container inside the page's one. It writes its own section heading
@@ -318,21 +318,22 @@ const PANEL_SECTIONS_VIA_WRAPPER: string[] = [];
  * sub-view, and the width rule still applies to it. (Playground sat beside it
  * until the gateway bar was cut from ten tabs to six; that file is deleted.)
  */
-const PANEL_SECTIONS_OWN_CONTAINER = [
-  'customize/migrate-to-v2/upgrade-view.tsx',
+const PANEL_SECTIONS_OWN_CONTAINER: string[] = [
+  // The Upgrades pane was here until the one-schema manifest deleted it.
+  //
   // `packages/ui/src/customize/triggers/schedule-view.tsx` was here until Schedules and
   // Webhooks graduated out of the settings overlay into their own capability
   // pages. It is no longer panel content, so the panel's two-width rule does
   // not govern it — the capability page that mounts it does.
   //
   // `secrets-view.tsx` left for the same reason and by the same route: it is
-  // the body of `/projects/[id]/customize/secrets`, it renders `CapabilityPageShell`,
+  // the body of `/projects/[id]/admin/secrets`, it renders `CapabilityPageShell`,
   // and its column is that shell's `max-w-5xl` — pinned by
   // `customize/sections/view/secrets-view.chrome.test.ts`, not here.
   //
   // `channels-view.tsx` left on 2026-08-17 by a different door. It is not a
   // pane and not a page: it is `ChannelsSection`, the body of the Channels
-  // scope of `/projects/[id]/customize/connectors`, and the shell, the heading and the
+  // scope of `/projects/[id]/admin/connectors`, and the shell, the heading and the
   // scroll container all belong to `connectors-page.tsx` one level up. Its own
   // column is pinned by `customize/sections/view/channels-view.chrome.test.ts`
   // beside the file.
@@ -347,7 +348,7 @@ const PANEL_SECTIONS_OWN_CONTAINER = [
  * it — silently, because nothing throws.
  *
  * Secrets shipped exactly that way. It graduated onto its own top-level
- * Customize tab and left both registries, so `/projects/[id]/customize/secrets` rendered
+ * Customize tab and left both registries, so `/projects/[id]/admin/secrets` rendered
  * no title, no description and no Add button. It writes its own heading now —
  * `CapabilityPageShell`'s `title`/`description` props, the same shell its four
  * sibling tabs use — and `secrets-view.chrome.test.ts` pins that it cannot
@@ -363,7 +364,7 @@ const PANEL_SECTIONS_OWN_CONTAINER = [
  * Repositories folded INTO General as a "Git repo" section, so it dropped the
  * lookup and the container both — it is `general-tab.test.tsx`'s pane now.
  */
-const PANES_WITH_REGISTRY_LOOKUP = ['customize/migrate-to-v2/upgrade-view.tsx'];
+const PANES_WITH_REGISTRY_LOOKUP: string[] = [];
 
 /**
  * The mirror image: a pane no registry answers for, where `SettingsTabHeader`
@@ -400,39 +401,6 @@ describe('customize sections mounted in the settings panel', () => {
       const props = source.slice(source.indexOf('<CustomizeSectionWrapper'));
       const firstElement = props.slice(0, props.indexOf('>'));
       expect(firstElement).not.toMatch(/max-w-/);
-    });
-  }
-
-  /**
-   * The tabs the sections above render a heading for.
-   *
-   * `SettingsTabHeader` returns `null` when NEITHER registry it reads knows the
-   * id, and renders no subtitle when the entry it finds has no `description`.
-   * Both failures are silent — the pane just loses its heading and nothing
-   * throws — which is exactly how the copy went missing on these panes in the
-   * first place. This is the guard.
-   *
-   * These two ids resolve through the project-settings registry, not the
-   * rail: both panes moved to `/projects/[id]/customize/settings` and their copy moved
-   * with them. Secrets and Channels used to be in this list too — they
-   * graduated a SECOND time, off this registry entirely and onto their own
-   * top-level Customize tab, so they no longer have an entry here to pin.
-   * Repositories left the same way Secrets and Channels did, but for a
-   * different reason: not a graduation, a merge into General — it never had
-   * its own heading to check once its content became a section of General's.
-   */
-  // Upgrades resolves through the RAIL since 2026-09-02, when it moved off
-  // `/config` and into the overlay's Workspace group. Same guard, other
-  // registry: the row must carry both the label and the description the pane
-  // renders through `SettingsTabHeader`.
-  const PANES_WITH_RAIL_HEADING: SettingsTab[] = ['upgrades'];
-
-  for (const key of PANES_WITH_RAIL_HEADING) {
-    test(`the '${key}' rail row carries the heading its pane renders`, () => {
-      const item = railItemForTab(key);
-      expect(item).toBeDefined();
-      expect(item?.label ?? '').not.toBe('');
-      expect(item?.description ?? '').not.toBe('');
     });
   }
 

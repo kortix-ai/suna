@@ -20,6 +20,23 @@ export interface SandboxProvisioningFailure {
   transient: boolean;
 }
 
+/** A /workspace volume that did not open because storage did not answer: the next `/start` retries it. */
+export const WORKSPACE_VOLUME_UNREACHABLE_MESSAGE =
+  '[workspace] This session’s workspace volume is not reachable right now, so the session did not start. Try again in a minute.';
+
+/**
+ * A sandbox template asks for a residential IP that cannot be served, so the
+ * session did not start. A configuration state: never transient, never a
+ * provider fault, and never a boot on the sandbox's own address.
+ */
+const RESIDENTIAL_PROXY_PREFIX = '[residential-proxy] ';
+export const RESIDENTIAL_PROXY_NOT_OFFERED_MESSAGE =
+  `${RESIDENTIAL_PROXY_PREFIX}This sandbox template asks for a residential IP, which this deployment does not offer, so the session did not start. ` +
+  'Turn off residential_proxy in the sandbox template, or ask Kortix to enable it.';
+export const RESIDENTIAL_PROXY_PLATINUM_ONLY_MESSAGE =
+  `${RESIDENTIAL_PROXY_PREFIX}This sandbox template asks for a residential IP, which runs on Platinum only, and this session's sandbox provider is not Platinum, so it did not start. ` +
+  'Switch the sandbox provider to Platinum, or turn off residential_proxy in the sandbox template.';
+
 export const SANDBOX_PROVIDER_CAPACITY_MESSAGE =
   'The sandbox provider is at capacity right now. Try again in a minute.';
 
@@ -101,11 +118,23 @@ export function classifySandboxProvisioningFailure(error: unknown): SandboxProvi
   const rawMessage = error instanceof Error ? error.message : String(error);
 
   // Kortix Drive: the session's drives did not mount, so it did not start.
-  // The message already says which drives and why (drives/service.ts).
-  if (rawMessage.startsWith('[drives] ')) {
+  // The message already says which drives and why (drives/service.ts). A
+  // /workspace volume that did not open is the same class: storage the box
+  // mounts (platform/services/workspace-volume.ts).
+  const storagePrefix = ['[drives] ', '[workspace] '].find((p) => rawMessage.startsWith(p));
+  if (storagePrefix) {
     return {
       category: 'drives-unavailable',
-      userMessage: rawMessage.slice('[drives] '.length),
+      userMessage: rawMessage.slice(storagePrefix.length),
+      isCapacity: false,
+      isGitAuth: false,
+      transient: rawMessage === WORKSPACE_VOLUME_UNREACHABLE_MESSAGE,
+    };
+  }
+  if (rawMessage.startsWith(RESIDENTIAL_PROXY_PREFIX)) {
+    return {
+      category: 'sandbox-provider',
+      userMessage: rawMessage.slice(RESIDENTIAL_PROXY_PREFIX.length),
       isCapacity: false,
       isGitAuth: false,
       transient: false,

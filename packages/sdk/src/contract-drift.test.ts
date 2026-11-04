@@ -18,11 +18,48 @@
 import { expect, test } from 'bun:test';
 import type * as C from '../../api-contract/src/index';
 import type * as SL from '../../api-contract/src/session-log';
+import type * as MA from '../../api-contract/src/multi-agent';
+import type * as TC from '../../api-contract/src/kortix-tool-card';
+import type {
+  PeerMessage,
+  PeerMessageSendBody,
+  PeerMessageSendResult,
+  ReachableAgents,
+  SessionTask,
+  SessionTaskCreateBody,
+  SessionTaskUpdateBody,
+  WorkflowControlBody,
+  WorkflowRunMetadata,
+} from './core/rest/projects-client/multi-agent';
 import type { SessionLogPage } from './core/session-log/source';
 import type { KortixAccount } from './core/rest/projects-client/accounts';
 import type { ChangeRequest } from './core/rest/projects-client/change-requests';
 import type { KortixProject } from './core/rest/projects-client/projects';
-import type { SessionStartResult } from './core/rest/projects-client/session-sandbox';
+import type {
+  SessionStartImageState,
+  SessionStartImageStep,
+  SessionStartResult,
+} from './core/rest/projects-client/session-sandbox';
+import type {
+  AddProjectMemoryNoteInput,
+  CreateProjectMemoryPageInput,
+  ProjectMemoryDeleteResult,
+  ProjectMemoryLayer,
+  ProjectMemoryPage,
+  ProjectMemoryPageSummary,
+  ProjectMemorySearchInput,
+  ProjectMemorySearchResult,
+  ProjectMemoryVersionList,
+  SessionMemoryUsage,
+  UpdateProjectMemoryPageInput,
+} from './core/rest/projects-client/memory';
+import type {
+  ChannelsOnboarding,
+  ChannelsOnboardingMark,
+  ProjectSpace,
+  ProjectSpaceGeneralNotice,
+  ProjectSpaceLink,
+} from './core/rest/projects-client/spaces';
 import type {
   CreateSessionPromptResult,
   ProjectSession,
@@ -36,7 +73,6 @@ import type {
   SessionTurnEnded,
   SessionTurnFailure,
   SessionTurnStatus,
-  WarmProjectSessionResult,
 } from './core/rest/projects-client/sessions';
 import type {
   ProjectTrigger,
@@ -70,11 +106,72 @@ export function contractDrift(): void {
   fits<ProjectSession>(wire<C.ProjectSession>());
   noPhantom<NoPhantom<ProjectSession, C.ProjectSession>>();
 
+  fits<ReachableAgents>(wire<MA.ReachableAgents>());
+  noPhantom<NoPhantom<ReachableAgents, MA.ReachableAgents>>();
+  fits<PeerMessage>(wire<MA.PeerMessage>());
+  noPhantom<NoPhantom<PeerMessage, MA.PeerMessage>>();
+  fits<PeerMessageSendResult>(wire<MA.PeerMessageSendResult>());
+  noPhantom<NoPhantom<PeerMessageSendResult, MA.PeerMessageSendResult>>();
+  fits<MA.PeerMessageSendBody>(wire<PeerMessageSendBody>());
+  noPhantom<NoPhantom<PeerMessageSendBody, MA.PeerMessageSendBody>>();
+  fits<SessionTask>(wire<MA.SessionTask>());
+  noPhantom<NoPhantom<SessionTask, MA.SessionTask>>();
+  fits<MA.SessionTaskCreateBody>(wire<SessionTaskCreateBody>());
+  noPhantom<NoPhantom<SessionTaskCreateBody, MA.SessionTaskCreateBody>>();
+  fits<MA.SessionTaskUpdateBody>(wire<SessionTaskUpdateBody>());
+  noPhantom<NoPhantom<SessionTaskUpdateBody, MA.SessionTaskUpdateBody>>();
+  fits<MA.WorkflowControlBody>(wire<WorkflowControlBody>());
+  noPhantom<NoPhantom<WorkflowControlBody, MA.WorkflowControlBody>>();
+  fits<WorkflowRunMetadata>(wire<TC.WorkflowRunMetadata>());
+  noPhantom<NoPhantom<WorkflowRunMetadata, TC.WorkflowRunMetadata>>();
+
+  fits<ProjectSpace>(wire<C.Space>());
+  noPhantom<NoPhantom<ProjectSpace, C.Space>>();
+
+  fits<ProjectSpaceLink>(wire<C.SpaceLink>());
+  noPhantom<NoPhantom<ProjectSpaceLink, C.SpaceLink>>();
+  // The fetched title and icon: the SDK declares every field the Links tab reads.
+  noPhantom<NoPhantom<C.SpaceLink, ProjectSpaceLink>>();
+  fits<ProjectSpaceGeneralNotice>(wire<NonNullable<C.SpaceList['general_notice']>>());
+  noPhantom<NoPhantom<ProjectSpaceGeneralNotice, C.SpaceGeneralNotice>>();
+  fits<ChannelsOnboarding>(wire<C.ChannelsOnboarding>());
+  noPhantom<NoPhantom<ChannelsOnboarding, C.ChannelsOnboarding>>();
+  noPhantom<NoPhantom<ChannelsOnboarding['get_started'], C.ChannelsOnboarding['get_started']>>();
+  fits<C.ChannelsOnboardingMark>(wire<ChannelsOnboardingMark>());
+  fits<ChannelsOnboardingMark>(wire<C.ChannelsOnboardingMark>());
+
+  // Memory (`/projects/:id/memory/*`, files in Drive). The inputs are checked the other way: what the SDK sends parses.
+  fits<ProjectMemoryLayer>(wire<C.MemoryLayer>());
+  noPhantom<NoPhantom<ProjectMemoryLayer, C.MemoryLayer>>();
+  fits<ProjectMemoryPageSummary>(wire<C.MemoryPageSummary>());
+  noPhantom<NoPhantom<ProjectMemoryPageSummary, C.MemoryPageSummary>>();
+  fits<ProjectMemoryPage>(wire<C.MemoryPage>());
+  noPhantom<NoPhantom<ProjectMemoryPage, C.MemoryPage>>();
+  fits<ProjectMemoryVersionList>(wire<C.MemoryVersionList>());
+  noPhantom<NoPhantom<ProjectMemoryVersionList['versions'][number], C.MemoryVersion>>();
+  fits<ProjectMemoryDeleteResult>(wire<C.MemoryDeleteResult>());
+  noPhantom<NoPhantom<ProjectMemoryDeleteResult, C.MemoryDeleteResult>>();
+  fits<C.MemoryPageCreateInput>(wire<CreateProjectMemoryPageInput>());
+  fits<C.MemoryPageUpdateInput>(wire<UpdateProjectMemoryPageInput>());
+  fits<C.MemoryNoteInput>(wire<AddProjectMemoryNoteInput>());
+  fits<ProjectMemorySearchResult>(wire<C.MemorySearchResult>());
+  noPhantom<NoPhantom<ProjectMemorySearchResult['hits'][number], C.MemorySearchHit>>();
+  fits<C.MemorySearchHit['type']>(wire<NonNullable<ProjectMemorySearchInput['type']>>());
+  fits<SessionMemoryUsage>(wire<C.MemoryUsage>());
+  noPhantom<NoPhantom<SessionMemoryUsage, C.MemoryUsage>>();
+  noPhantom<NoPhantom<SessionMemoryUsage['layers'][number], C.MemoryUsage['layers'][number]>>();
+  noPhantom<NoPhantom<SessionMemoryUsage['layers'][number]['pages'][number], C.MemoryUsage['layers'][number]['pages'][number]>>();
+
   fits<SessionStartResult>(wire<C.SessionStartResult>());
   noPhantom<NoPhantom<SessionStartResult, C.SessionStartResult>>();
-
-  fits<WarmProjectSessionResult>(wire<C.WarmProjectSessionResult>());
-  noPhantom<NoPhantom<WarmProjectSessionResult, C.WarmProjectSessionResult>>();
+  // `boot` both ways: a key the server adds to it (`image`) must reach the SDK type.
+  fits<NonNullable<SessionStartResult['boot']>>(wire<NonNullable<C.SessionStartResult['boot']>>());
+  noPhantom<NoPhantom<NonNullable<SessionStartResult['boot']>, NonNullable<C.SessionStartResult['boot']>>>();
+  noPhantom<NoPhantom<NonNullable<C.SessionStartResult['boot']>, NonNullable<SessionStartResult['boot']>>>();
+  fits<SessionStartImageStep>(wire<C.SessionStartImageStep>());
+  noPhantom<NoPhantom<SessionStartImageStep, C.SessionStartImageStep>>();
+  fits<SessionStartImageState>(wire<C.SessionStartImageState>());
+  fits<C.SessionStartImageState>(wire<SessionStartImageState>());
 
   fits<ProjectTrigger>(wire<C.Trigger>());
   noPhantom<NoPhantom<ProjectTrigger, C.Trigger>>();

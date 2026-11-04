@@ -32,7 +32,6 @@ import type { RuntimeCapability } from '@kortix/sdk';
 import {
   ActivityIcon as Activity,
   AlarmIcon as AlarmClock,
-  ArrowCircleUpIcon as ArrowUpCircle,
   SquaresFourIcon as Blocks,
   RobotIcon as Bot,
   CalendarIcon as Calendar,
@@ -49,6 +48,7 @@ import {
   GitDiffIcon as GitCompareArrows,
   GlobeIcon as Globe,
   HardDrivesIcon as HardDrives,
+  CardsThreeIcon as GalleryVerticalEnd,
   KeyIcon as KeyRound,
   StackIcon as Layers,
   SquaresFourIcon as LayoutDashboard,
@@ -527,7 +527,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/settings',
+    href: '/projects/{projectId}/admin/general',
     requiresProject: true,
     keywords:
       'settings general workspace rename delete danger zone name description git repo repository github clone branch remote',
@@ -539,7 +539,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/settings?section=sandbox',
+    href: '/projects/{projectId}/admin/sandbox',
     requiresProject: true,
     // Snapshots merged into this section — a snapshot is a sandbox template's
     // build history — so both vocabularies answer here.
@@ -552,20 +552,9 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/settings?section=feature-flags',
+    href: '/projects/{projectId}/admin/feature-flags',
     requiresProject: true,
     keywords: 'feature flags flag experimental labs beta toggle enable disable',
-  },
-  {
-    id: 'proj-config-upgrades',
-    label: 'Settings · Upgrades',
-    icon: ArrowUpCircle,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/customize/settings?section=upgrades',
-    requiresProject: true,
-    keywords: 'upgrades upgrade migrate migration manifest runner kortix yaml version bump',
   },
   {
     id: 'proj-models',
@@ -574,7 +563,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/models',
+    href: '/projects/{projectId}/admin/models',
     requiresProject: true,
     // The reported bug's row. `llm gateway providers budgets anthropic openai
     // openrouter` came off `proj-customize`'s bag, where they pointed at
@@ -605,17 +594,14 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/skills',
+    href: '/projects/{projectId}/admin/skills',
     requiresProject: true,
     keywords: 'skills abilities',
   },
   // Agents and Skills are declared BEFORE Connectors here, unlike the tab bar
   // order in `CAPABILITY_TABS`. Declaration order is the palette's tie-break
-  // (`filteredNavItems` maps in registry order), and the Channels row carries
-  // the keyword `agentmail` — a product name it genuinely owns, but one that
-  // contains the substring "agent". With Channels declared first, the query
-  // "agent" listed it above the row that IS the Agents page. Ordering is free;
-  // dropping a real synonym is not.
+  // (`filteredNavItems` maps in registry order): the query "agent" must list
+  // the row that IS the Agents page first.
   {
     id: 'proj-connectors',
     label: 'Connectors',
@@ -623,7 +609,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/connectors',
+    href: '/projects/{projectId}/admin/connectors',
     requiresProject: true,
     // 'apps' removed: it is the label of `proj-apps` (deployments), so the
     // one-word query for that page returned Connectors as well. 'connector' /
@@ -642,9 +628,9 @@ export const menuRegistry: MenuItemDef[] = [
     // "slack" and "inbox" are words people type, and the scope query lands
     // them on the inbound half rather than the outbound one.
     // 'connections' stays off this bag — it names `proj-connectors`.
-    href: '/projects/{projectId}/customize/connectors?scope=channels',
+    href: '/projects/{projectId}/admin/connectors?scope=channels',
     requiresProject: true,
-    keywords: 'channels channel slack teams discord email agentmail inbox inbound messaging',
+    keywords: 'channels channel slack teams discord email telegram inbox inbound messaging',
   },
   {
     id: 'proj-connectors-policies',
@@ -658,7 +644,7 @@ export const menuRegistry: MenuItemDef[] = [
     // `?rules=1` opens the Global rules sheet on arrival — the Connectors page
     // hosts `PoliciesPanel` and reads that param (`connectors-page.tsx`), so
     // this entry now reaches the destination its label names.
-    href: '/projects/{projectId}/customize/connectors?rules=1',
+    href: '/projects/{projectId}/admin/connectors?rules=1',
     requiresProject: true,
     keywords: 'policies approval block require_approval rules tools connector guardrails',
   },
@@ -674,24 +660,11 @@ export const menuRegistry: MenuItemDef[] = [
     // two ways to start it, not two separate rows. `/projects/{id}/settings/
     // schedules` and `/settings/webhooks` no longer resolve to a tab; both
     // redirect here via `legacySectionRedirect`.
-    href: '/projects/{projectId}/customize/triggers',
+    href: '/projects/{projectId}/admin/triggers',
     requiresProject: true,
     // The combined bag both retired rows carried, so neither query goes dark.
     keywords:
-      'schedules schedule cron scheduled tasks webhooks webhook http endpoint incoming request triggers timed recurring',
-  },
-  {
-    // The Customize Reminders tab (`remindersHref`, #10261). Gated in
-    // `command-palette.tsx` on the tab's own verdict (flag + trigger rule).
-    id: 'proj-reminders',
-    label: 'Reminders',
-    icon: Calendar,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/customize/reminders',
-    requiresProject: true,
-    keywords: 'reminders reminder remind follow up later nudge calendar',
+      'triggers trigger automations automation schedules schedule cron scheduled tasks webhooks webhook http endpoint incoming request triggers timed recurring loops loop reminders reminder remind check back later follow up repeat nudge change request merged',
   },
   {
     id: 'proj-secrets',
@@ -700,7 +673,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/secrets',
+    href: '/projects/{projectId}/admin/secrets',
     requiresProject: true,
     keywords: 'secrets secret env environment variables credentials vault egress store',
   },
@@ -737,8 +710,8 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'files repository drive browser explorer',
   },
   {
-    // The project's shared folders: the sidebar Drive row (`filesRow`). Only
-    // for projects with the `drives` flag on, like the row itself. The id
+    // The project's shared folders: the sidebar Drive row (`filesRow`). Drive
+    // is on for every project (the `drives` flag graduated in #11478). The id
     // predates the move from `/customize/files` to `/drive` (#10258).
     id: 'proj-shared-files',
     label: 'Drive',
@@ -748,12 +721,25 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/drive',
     requiresProject: true,
-    requiresFlag: 'drives',
     keywords: 'files folders drive shared company my folder access share',
   },
   {
-    // The repo browser under Customize → Repo, where it moves when the
-    // `drives` flag is on (#10258). `command-palette.tsx` gates the row on
+    // The project's artifacts (flag `artifacts`): docs, slides, boards and
+    // dashboards published as pages. Only where the sidebar row shows.
+    id: 'proj-artifacts',
+    label: 'Artifacts',
+    icon: GalleryVerticalEnd,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/artifacts',
+    requiresProject: true,
+    requiresFlag: 'artifacts',
+    keywords: 'artifacts docs doc slides deck presentation board design dashboard page published share',
+  },
+  {
+    // The repo browser under Customize → Repo, where it moved with Drive
+    // (#10258). `command-palette.tsx` gates the row on
     // the tab's own verdict, so it shows exactly when the tab does.
     id: 'proj-repo',
     label: 'Repo',
@@ -761,7 +747,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/repo',
+    href: '/projects/{projectId}/admin/repo',
     requiresProject: true,
     keywords: 'repo repository git files browser explorer code',
   },
@@ -786,7 +772,7 @@ export const menuRegistry: MenuItemDef[] = [
   //
   // `proj-config-feature-flags` outlived that sentence by a day. The row was
   // still here on 2026-09-03, twenty-five lines under its own obituary, with
-  // `href: '/projects/{projectId}/customize/settings?section=feature-flags'` — a route
+  // `href: '/projects/{projectId}/admin/feature-flags'` — a route
   // `app/` no longer contains. Typing "feature flag" returned TWO rows: this
   // one, under Navigation, labelled "Settings · Feature flags" and landing on
   // a dead URL, and the derived `settings-tab-feature-flags` under "Settings ·
@@ -935,18 +921,6 @@ export const menuRegistry: MenuItemDef[] = [
     tabType: 'browser',
   },
   {
-    id: 'desktop',
-    label: 'Desktop',
-    icon: MonitorIcon,
-    group: 'navigation',
-    subGroup: 'services',
-    showIn: ['rightSidebar'],
-    kind: 'navigate',
-    href: '/desktop',
-    tabId: 'desktop:main',
-    tabType: 'desktop',
-  },
-  {
     id: 'files',
     label: 'Files',
     icon: FolderOpen,
@@ -993,18 +967,6 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'internal browser preview iframe embedded web page',
   },
   {
-    id: 'desktop-cmd',
-    label: 'Desktop',
-    icon: MonitorIcon,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/desktop',
-    tabId: 'desktop:main',
-    tabType: 'desktop',
-    keywords: 'desktop selkies novnc full screen xfce sandbox vnc remote',
-  },
-  {
     id: 'changelog',
     label: 'Changelog',
     icon: ScrollText,
@@ -1020,7 +982,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/docs/credits',
+    href: '/docs/guide#billing',
     // `explained` stays in the keywords because /credits-explained was the
     // original public URL and is still what people type for this page.
     keywords: 'credits coins billing usage tokens cost explain explained',
@@ -1032,9 +994,9 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/support',
-    // "help" is the important one: this page absorbed /help, and that is still
-    // the word people reach for. Deliberately NOT "account", "delete" or
+    href: '/contact',
+    // "help" is the important one: it is still the word people reach for.
+    // Deliberately NOT "account", "delete" or
     // "billing" — those queries belong to the account sections and the
     // delete-account action, and a support row answering them would push the
     // real destination down the list (command-palette-search.test.ts pins the
@@ -1083,7 +1045,7 @@ export const menuRegistry: MenuItemDef[] = [
   // referral modal was removed with them.
   // ──────────────────────────────────────────────────────────────────────────
   // `pref-general` is gone. It declared `settingsTab: 'general'` — the project
-  // WORKSPACE tab — which is a `?section=` on `/projects/[id]/customize/settings` now, not
+  // WORKSPACE tab — which is a `?section=` on `/projects/[id]/admin/general` now, not
   // a settings tab at all. A `kind: 'settings'` row can only name a tab, and
   // there is no user-scoped tab this row meant, so it was removed rather than
   // repointed at an unrelated pane. Nothing rendered it: its only declared
@@ -1375,20 +1337,6 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'action',
     actionId: 'toggleSidebar',
     shortcut: 'Ctrl+B',
-  },
-  {
-    // Opens the Customize sidebar modal (`customize-sidebar-modal.tsx`),
-    // mounted by the project sidebar, so it needs a project.
-    id: 'customize-sidebar',
-    label: 'Customize Sidebar',
-    icon: PanelLeftClose,
-    group: 'view',
-    showIn: ['commandPalette'],
-    kind: 'action',
-    actionId: 'customizeSidebar',
-    requiresProject: true,
-    // No 'navigation': a group word, not one on screen (command-palette-search.test.ts).
-    keywords: 'sidebar customize reorder hide show rows',
   },
   {
     id: 'toggle-panel-mode',

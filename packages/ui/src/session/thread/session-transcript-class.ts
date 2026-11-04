@@ -15,5 +15,10 @@
  * Its own module with no imports, so a surface that only needs the column (the
  * first chat on project home) does not pull `session-body.tsx`'s action panel
  * into its bundle. `session-body.tsx` re-exports it for the session surfaces.
+ *
+ * Inside a compact `SessionThread` (a narrow side column) the conversation's
+ * gutters and top inset tighten; the composer keeps its own. The gutters then
+ * match the composer's (`px-4`), so messages line up with the input card's edges.
  */
-export const SESSION_TRANSCRIPT_CLASS = 'mx-auto w-full max-w-3xl min-w-0 px-7 pt-6';
+export const SESSION_TRANSCRIPT_CLASS =
+  'mx-auto w-full max-w-3xl min-w-0 px-7 pt-6 group-data-[density=compact]/thread:px-4 group-data-[density=compact]/thread:pt-4';

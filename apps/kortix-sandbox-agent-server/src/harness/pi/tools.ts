@@ -3,12 +3,11 @@
  * and shell. pi's built-in bash/read/write/edit run on `/workspace` in this
  * process, so every tool call is a local syscall — no RPC, no second box.
  *
- * glob/grep are Kortix additions on top of ripgrep, named exactly as
- * OpenCode's so `toolViewModel()` in the web client needs no remapping
+ * glob/grep are Kortix additions on top of ripgrep, with the names and
+ * arguments `toolViewModel()` in the web client renders without remapping
  * (pi's own `find`/`grep` take other arguments). `question` is the interactive
  * ask the product renders. The hosted tools (the Kortix tools the project
- * loads and the project's own, services/tools) run here exactly as every
- * other harness runs them.
+ * loads and the project's own, services/tools) run here in-process.
  */
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import {
@@ -207,7 +206,7 @@ function agentTool(definition: ToolDefinition<any, any, any>): AgentTool<any, an
 }
 
 /** A hosted tool as the pi `Agent` runs it: the call's context names this session and agent. */
-function hostedAgentTool(tool: HostedTool, cwd: string, caller: () => { sessionId: string; agent: string }): AgentTool<any, undefined> {
+function hostedAgentTool(tool: HostedTool, cwd: string, caller: () => { sessionId: string; agent: string; turnId?: string }): AgentTool<any, undefined> {
   return {
     name: tool.name,
     label: tool.name,
@@ -224,7 +223,7 @@ function hostedAgentTool(tool: HostedTool, cwd: string, caller: () => { sessionI
 export function createWorkspaceTools(
   cwd: string,
   hosted: readonly HostedTool[] = [],
-  caller: () => { sessionId: string; agent: string } = () => ({ sessionId: '', agent: '' }),
+  caller: () => { sessionId: string; agent: string; turnId?: string } = () => ({ sessionId: '', agent: '' }),
 ): AgentTool<any, any>[] {
   return [
     // PI_* session variables need an extension context; the agent env file carries the session's own.

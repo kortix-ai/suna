@@ -118,8 +118,6 @@ const notExpected = (name: string) => async () => {
 
 mock.module('../store', () => ({
   promoteNextInboxRow: async () => null,
-  loadLegacyPendingFirstPrompt: async () => null,
-  markLegacyInlineAttachmentsRepaired: async () => {},
   requeueUnlandedPrompt: notExpected('requeueUnlandedPrompt'),
   MAX_LANDING_RETRIES: 2,
   requeueForAdmission: notExpected('requeueForAdmission'),
@@ -140,6 +138,7 @@ mock.module('../store', () => ({
 }));
 
 const { continueSession } = await import('../continue-session');
+const { PromptDeliveryRefused } = await import('../prompt-delivery-refusal');
 
 /** An awake box: the delivery takes the fast path and posts the prompt. */
 function awakeSession(extra: Record<string, unknown> = {}) {
@@ -164,6 +163,21 @@ beforeEach(() => {
 });
 
 describe('continueSession — project default reasoning effort', () => {
+  test('the last authorization check replaces captured text and parts before the runtime receives them', async () => {
+    awakeSession();
+    expect(await continueSession({ sessionId: SESSION_ID, source: 'system:artifact-comment', text: 'Deleted snapshot.',
+      parts: [{ type: 'text', text: 'Deleted snapshot.' }] }, undefined, undefined, async () => ({ text: 'Current comment text.' }))).toBe('delivered');
+    expect(JSON.stringify(forwardedBodies)).toContain('Current comment text.');
+    expect(JSON.stringify(forwardedBodies)).not.toContain('Deleted snapshot.');
+  });
+
+  test('a revoked delivery never reaches the runtime prompt endpoint', async () => {
+    awakeSession();
+    await expect(continueSession({ sessionId: SESSION_ID, source: 'system:artifact-comment', text: 'Private feedback.' }, undefined, undefined,
+      async () => { throw new PromptDeliveryRefused(403, 'artifact_comment_agent_forbidden', 'Access was revoked'); })).rejects.toBeInstanceOf(PromptDeliveryRefused);
+    expect(forwardedBodies).toHaveLength(0);
+  });
+
   test('no project default: the prompt carries no variant (today\u2019s behavior)', async () => {
     awakeSession({ metadata: { opencode_model: 'kortix/gpt-5.6-sol' } });
     expect(await continueSession({ sessionId: SESSION_ID, text: 'hello', source: 'ui' })).toBe(

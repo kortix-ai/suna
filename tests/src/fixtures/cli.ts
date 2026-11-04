@@ -229,7 +229,7 @@ export class CliSandbox {
   }
 
   /** Write a file relative to the sandbox cwd (e.g. to set up a fixture state). */
-  writeFile(rel: string, content: string): void {
+  writeFile(rel: string, content: string | Uint8Array): void {
     const p = join(this.cwd, rel);
     mkdirSync(resolve(p, '..'), { recursive: true });
     writeFileSync(p, content, 'utf8');
@@ -295,16 +295,6 @@ export class CliSandbox {
     } catch {
       /* best-effort */
     }
-  }
-}
-
-/** Sugar: make a sandbox, run a single command, dispose, return the result. */
-export async function runCliOnce(args: string[], opts?: CliRunOptions): Promise<CliResult> {
-  const sb = new CliSandbox();
-  try {
-    return await sb.run(args, opts);
-  } finally {
-    sb.dispose();
   }
 }
 

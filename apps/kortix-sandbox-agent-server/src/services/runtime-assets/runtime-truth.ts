@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import type { HarnessAssetOutcome } from './port'
 import { logger } from '@/lib/log/logger'
 import { runtimeConvergenceReport } from './runtime-assets'
@@ -25,13 +24,12 @@ import type { ConfigReleaseReport } from '@/types/config-release'
  * with nobody told (the live 2026-09-26 incident this file answers).
  *
  * HARNESS BOUNDARY (eslint.config.mjs, ARCHITECTURE.md): this file is a
- * service, so it must never import a concrete adapter
- * (`harness/open-code/*`, `harness/pi/*`) directly. `cli`/`managed_skills`/
- * `daemon` read `./runtime-assets` directly because that module is already
- * harness-neutral. `config_release` and `catalog` are OpenCode-specific
- * concepts with no neutral contract of their own, so this file asks for them
- * through injected closures (`RuntimeTruthDeps`) instead. The adapter wires
- * those closures — `harness/open-code/runtime-truth-glue.ts` — and calls
+ * service, so it must never import a concrete adapter (`harness/pi/*`)
+ * directly. `cli`/`managed_skills`/`daemon` read `./runtime-assets` directly
+ * because that module is already harness-neutral. `config_release` has no
+ * neutral contract of its own, so this file asks for it through injected
+ * closures (`RuntimeTruthDeps`) instead. The adapter wires those closures
+ * (pi: `harness/pi/boot.ts`) and calls
  * `configureRuntimeTruth`/`startRuntimeTruthTicker` from its own boot path,
  * which is the ALLOWED import direction (an adapter may import host code).
  */
@@ -52,7 +50,6 @@ export interface RuntimeTruthComponent {
 
 export const RUNTIME_TRUTH_COMPONENT_NAMES = [
   'config_release',
-  'catalog',
   'daemon',
   'cli',
   'managed_skills',
@@ -62,7 +59,6 @@ export type RuntimeTruthComponentName = (typeof RUNTIME_TRUTH_COMPONENT_NAMES)[n
 
 export interface RuntimeTruthReport {
   release_id: string | null
-  catalog_fingerprint: string | null
   daemon_build: string | number
   cli_sha256: string | null
   managed_skills_hash: string | null
@@ -92,7 +88,7 @@ const NOT_WIRED_CAUSE = 'runtime-truth is not wired to a runtime on this box yet
  *    root-owned path (`/usr/local/bin/…`) — the live 2026-09-26 incident.
  *    Directory ownership does not change between reconciles on its own.
  *  - "pinned": the supervisor's own rollback latch
- *    (`agent.pinned` / `opencode.pinned`, see runtime-assets.ts). A crash-loop
+ *    (`agent.pinned`, see runtime-assets.ts). A crash-loop
  *    already happened and updates are latched off — this box needs a human,
  *    per that file's own comment on `RuntimeConvergenceReport.pinned`.
  */
@@ -148,9 +144,9 @@ export function nextComponentEntry(
 // ---------------------------------------------------------------------------
 
 /**
- * The fields of the box's config-release report this ledger reads. The OpenCode
- * adapter produces the full `ConfigReleaseReport` (src/types/config-release.ts,
- * shared so this service never imports the adapter).
+ * The fields of the box's config-release report this ledger reads. pi produces
+ * the full `ConfigReleaseReport` (src/types/config-release.ts, shared so this
+ * service never imports the adapter).
  */
 export type RuntimeTruthConfigReleaseState = Pick<
   ConfigReleaseReport,
@@ -188,50 +184,6 @@ export function deriveDaemonSignal(
     return { outcome: 'attempted', cause: cause ?? 'updates pinned after a rollback; this box needs a human' }
   }
   return deriveAssetsSignal(outcome, cause)
-}
-
-/**
- * The box's own catalog state — see `RuntimeTruthDeps.readCatalog`.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export interface RuntimeTruthCatalogState {
-  /** The ids this box's provider map currently serves. Null before a config has been built. */
-  configuredIds: readonly string[] | null
-  /** Whether a live managed-lineup fetch has EVER succeeded on this box. */
-  liveKnown: boolean
-  /** Managed ids the live set carries that the configured map lacks. */
-  missingIds: readonly string[]
-}
-
-/** @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
-export function deriveCatalogSignal(input: RuntimeTruthCatalogState): RuntimeTruthSignal {
-  if (input.configuredIds === null) {
-    return { outcome: 'unknown', cause: 'the runtime has not built a provider config yet' }
-  }
-  if (!input.liveKnown) {
-    // Failure #1, exactly: a box whose one fetch failed would otherwise read
-    // as "fine" forever because it has SOME catalog (bundled/baked). It must
-    // stay `attempted` — never `current` — until a real comparison succeeds,
-    // or the periodic floor has nothing left to fix.
-    return {
-      outcome: 'attempted',
-      cause: 'managed lineup fetch has not succeeded yet; serving the bundled/baked catalog',
-    }
-  }
-  if (input.missingIds.length === 0) return { outcome: 'current', cause: null }
-  return {
-    outcome: 'attempted',
-    cause: `managed model(s) missing from the provider map: ${input.missingIds.join(', ')}`,
-  }
-}
-
-// ---------------------------------------------------------------------------
-// catalog_fingerprint — Rule 1.2: a stable hash of the ids the box's OWN
-// provider map serves, not of a file it hoped to load.
-// ---------------------------------------------------------------------------
-
-export function fingerprintModelIds(ids: readonly string[]): string {
-  return createHash('sha256').update(JSON.stringify([...ids].sort())).digest('hex')
 }
 
 // ---------------------------------------------------------------------------
@@ -280,10 +232,6 @@ export interface RuntimeTruthDeps {
   readConfigRelease: () => RuntimeTruthConfigReleaseState
   /** Kick a config-release convergence attempt. Must swallow its own busy/error outcomes. */
   reconcileConfigRelease: () => Promise<void>
-  /** The box's current catalog state. Read-only, no I/O beyond memory. Absent on a runtime without a model catalog. */
-  readCatalog?: () => RuntimeTruthCatalogState
-  /** Kick a managed-catalog convergence attempt (fetch, and restart only if needed). Must swallow its own errors. */
-  reconcileCatalog?: () => Promise<void>
 }
 
 let deps: RuntimeTruthDeps | null = null
@@ -307,10 +255,8 @@ export function resetRuntimeTruthForTests(): void {
 
 async function actualValues(): Promise<Omit<RuntimeTruthReport, 'components'>> {
   const assets = await runtimeConvergenceReport()
-  const configuredIds = deps?.readCatalog?.().configuredIds ?? null
   return {
     release_id: deps?.readConfigRelease().release_id ?? null,
-    catalog_fingerprint: configuredIds ? fingerprintModelIds(configuredIds) : null,
     // `running.build` is null until this box's first asset-reconcile pass
     // completes (or forever, on a token/API-url-less local daemon). The type
     // this document reports is `string|number`, never null, so an
@@ -364,10 +310,7 @@ export async function runReconcileTick(trigger: RuntimeTruthTrigger): Promise<Ru
   // Kick every component's own convergence. Each swallows its own errors
   // (the injected closures are required to; `./runtime-assets` already does)
   // — a tick must never throw, or the ticker that calls it stops forever.
-  await Promise.allSettled([
-    deps?.reconcileConfigRelease().catch((err) => logger.warn('[runtime-truth] config-release tick failed', { err: String(err) })),
-    deps?.reconcileCatalog?.().catch((err) => logger.warn('[runtime-truth] catalog tick failed', { err: String(err) })),
-  ])
+  await deps?.reconcileConfigRelease().catch((err) => logger.warn('[runtime-truth] config-release tick failed', { err: String(err) }))
   // Assets LAST. Their pass ends in the staged-daemon swap request, and the
   // `config-convergence` swap blocker refuses it while a convergence runs.
   // Started before the await, the request raced this tick's own convergence
@@ -378,7 +321,6 @@ export async function runReconcileTick(trigger: RuntimeTruthTrigger): Promise<Ru
   const nowIso = new Date().toISOString()
   const assets = await runtimeConvergenceReport()
   const configRelease = deps?.readConfigRelease()
-  const catalog = deps?.readCatalog?.()
 
   ledger = {
     ...ledger,
@@ -398,13 +340,6 @@ export async function runReconcileTick(trigger: RuntimeTruthTrigger): Promise<Ru
       configRelease ? deriveConfigReleaseSignal(configRelease) : { outcome: 'unknown', cause: NOT_WIRED_CAUSE },
       nowIso,
     ),
-    catalog: nextComponentEntry(
-      ledger.catalog,
-      catalog
-        ? deriveCatalogSignal(catalog)
-        : { outcome: 'unknown', cause: deps ? 'this runtime has no managed model catalog' : NOT_WIRED_CAUSE },
-      nowIso,
-    ),
   }
 
   logger.info('[runtime-truth] reconcile tick complete', {
@@ -422,9 +357,7 @@ export async function runReconcileTick(trigger: RuntimeTruthTrigger): Promise<Ru
 // compare (it only downloads when something actually changed);
 // `convergeConfigRelease` short-circuits to `unchanged` when the box already
 // runs the desired release (its own doc: "the only place a convergence ends
-// with nothing to do"); the catalog fetch is bounded to 5s
-// (`MANAGED_MODELS_TOTAL_BUDGET_MS` in lifecycle.ts) and skips the restart
-// entirely once nothing is missing. 60s bounds this spec's
+// with nothing to do"). 60s bounds this spec's
 // "no failure is ever permanent" contract to a one-minute wait — short enough
 // that a support session never has to wait on it, long enough that an idle
 // box's steady-state cost is negligible next to its own prompt traffic.

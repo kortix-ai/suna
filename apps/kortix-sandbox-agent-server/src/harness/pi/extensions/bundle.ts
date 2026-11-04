@@ -1,7 +1,7 @@
 /**
  * The project's pi packages, delivered as one prebuilt bundle.
  *
- * The API installs kortix.yaml `harnesses.pi.packages` once per package list
+ * The API installs the agent's kortix.yaml `extensions` once per package list
  * (apps/api/src/pi-packages/bundle.ts) and stores two objects under one digest:
  * the pre-built bundle (`manifest.json` + one file per extension, see
  * prebuilt.ts), which every session downloads, and the installed `node_modules`,

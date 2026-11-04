@@ -1,5 +1,7 @@
 import * as React from 'react';
 
+import { useMediaQuery } from './use-media-query';
+
 export const MOBILE_BREAKPOINT = 768;
 
 export function useIsMobile() {
@@ -16,4 +18,12 @@ export function useIsMobile() {
   }, []);
 
   return !!isMobile;
+}
+
+/**
+ * Below Tailwind's `sm` (640px): a phone. The composer's attach / agent row
+ * moves under the card only here; a 720px desktop window keeps it inside.
+ */
+export function useIsPhone() {
+  return useMediaQuery('(max-width: 639px)');
 }

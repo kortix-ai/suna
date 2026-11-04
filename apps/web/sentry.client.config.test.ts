@@ -11,6 +11,34 @@ await Sentry.close();
 // that session as a third envelope. It belongs to the closed client: drop it.
 Sentry.getIsolationScope().setSession();
 
+test('client beforeSend drops injected Talisman onboarding but sends application failures', async () => {
+  const envelopes: unknown[] = [];
+  const client = new Sentry.NodeClient({
+    ...options,
+    dsn: 'https://public@example.test/1',
+    enabled: true,
+    stackParser: Sentry.defaultStackParser,
+    sendClientReports: false,
+    integrations: [],
+    transport: () => ({
+      send: async (envelope) => { envelopes.push(envelope); return {}; },
+      flush: async () => true,
+    }),
+  });
+  client.init();
+  const value = 'Talisman extension has not been configured yet. Please continue with onboarding.';
+  client.captureEvent({ exception: { values: [{ type: 'Error', value, stacktrace: { frames: [
+    { filename: 'app:///_next/static/immutable/chunks/synthetic.js', function: 'r' },
+    { filename: 'app:///page.js', function: 'ne.handleResponse' },
+  ] } }] } });
+  await client.flush();
+  expect(envelopes).toHaveLength(0);
+  client.captureException(new Error('Synthetic application failure'));
+  await client.flush();
+  expect(envelopes).toHaveLength(1);
+  await client.close();
+});
+
 test('client ignoreErrors drops non-Error rejection prefixes and keeps real errors', async () => {
   const envelopes: unknown[] = [];
   const client = new Sentry.NodeClient({

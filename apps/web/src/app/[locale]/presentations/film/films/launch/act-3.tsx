@@ -3,7 +3,7 @@
 import { Badge } from '@kortix/ui/badge';
 import { KortixLogo } from '@kortix/ui/kortix-logo';
 import { IconFrame } from '@/components/ui/marketing/icon-frame';
-import { APPS } from '@/features/marketing/how-it-work/step/step-connectors';
+import { APPS } from '@/features/marketing/how-it-work/app-domains';
 import { Github } from '@kortix/ui/internal/icons/github';
 import { Slack } from '@kortix/ui/internal/icons/slack';
 import { faviconUrlForHostname, cn } from '@kortix/ui';
@@ -346,7 +346,7 @@ export function EndCard() {
         <KortixLogo variant="brandmark" size={64} className="text-foreground" />
       </div>
       <p className="text-muted-foreground text-2xl" style={rise(f, 24)}>
-        The open-source AI Operating System
+        The open-source CompanyOS
       </p>
       <p className="text-foreground font-mono text-lg" style={rise(f, 48)}>
         kortix.com

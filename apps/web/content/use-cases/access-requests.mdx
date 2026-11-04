@@ -51,46 +51,123 @@ the grant. Every grant requires a human approval, and each one is logged.
 ## How it works
 
 <Steps>
-<Step title="Connect Slack as the trigger">
+<Step title="Copy the setup prompt into a new session">
 
-Slack is connected as a **channel**, so a request is the trigger. Post the access
-request and it spawns a fresh **session** in its own sandbox, seeded with who's
-asking and what they need. One request, one session, one disposable machine.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the access-policy skill and the 15-minute
+trigger, and opens a change request for you to review. Prefer clicks? Choose
+**Use this template** instead.
 
-</Step>
-<Step title="Give the agent the access policy">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up an access request agent in this project.
 
-Which roles map to which grants, what least privilege means for each system, and
-which requests need extra scrutiny are stored as **skills** and **memory** that
-load into every session. The agent checks requests against that policy rather
-than improvising, and it updates as the policy changes.
+1. Create the agent agents/access-requests.md. Its job is to turn access requests in Slack into least-privilege GitHub and AWS IAM grants. It may use the Okta, GitHub, AWS and Slack connectors.
 
-</Step>
-<Step title="Connect what a grant can touch">
+2. Create the skill skills/access-policy/SKILL.md with these rules:
+   - Look up the requester's role, team, manager and groups in Okta before you scope a grant. Never write to Okta.
+   - Prepare the narrowest grant that unblocks the task: read on a repo for off-team work, push on the owning team's repo, and a scoped IAM policy for one stated task.
+   - Flag any request for admin or maintain on a repo, AdministratorAccess, IAMFullAccess or production data stores, and address it to a security lead or the requester's manager.
+   - Post the prepared grant as a thread reply and stop. Apply it only after an approver on the list I give you replies to approve. The requester never approves their own request.
+   - Log every applied grant in the thread and in #access-audit: requester, system, grant, policy check and approver.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger access-request-sweep to kortix.yaml. It runs the access-requests agent every 15 minutes with the prompt "Load the access-policy skill and check #access-requests for new requests and new approvals."
 
-- **Read Okta** — the requester's role, team, and current group memberships.
-- **Prepare a GitHub grant** — repo or team access scoped to what the task needs.
-- **Prepare a cloud IAM grant** — the narrowest role or permission set that
-  unblocks the work.
+4. Tell me which of these connectors are not connected yet.
 
-</Step>
-<Step title="Set the guardrails">
-
-Granting access is the step that changes who can do what, so every grant stops at
-a **human approval gate** — no access is applied until a person signs off. Each
-approved grant is logged with the request, the policy check, and the scope.
-Credentials are encrypted in the secrets manager and injected at runtime, scoped to the agents you grant them to.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Let each request come back scoped and logged">
+<Step title="Connect your tools">
 
-With that in place, a request in Slack comes back as a policy-checked,
-least-privilege grant ready for a person to approve, with a record attached. "I
-need access to this repo" becomes a scoped GitHub grant; "I need this cloud role"
-becomes the narrowest IAM permission that fits, both held for sign-off.
+Open **Connectors** in your project and connect your identity provider, GitHub,
+AWS and Slack. Credentials are brokered server-side and never enter the
+agent's machine.
+
+<ToolList>
+  <ToolNeed name="Okta" domain="okta.com" tag="Required" alternatives={[['Microsoft Entra ID', 'entra.microsoft.com'], ['Google Workspace', 'workspace.google.com']]}>
+    Looks up the requester's role, team and group memberships.
+  </ToolNeed>
+  <ToolNeed name="GitHub" domain="github.com" tag="Required" alternatives={[['GitLab', 'gitlab.com'], ['AWS', 'aws.amazon.com'], ['Google Cloud', 'cloud.google.com'], ['Azure', 'azure.microsoft.com']]}>
+    Applies the narrowest approved grant and logs it.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Reads requests and posts prepared grants as thread replies.
+  </ToolNeed>
+</ToolList>
+
+</Step>
+<Step title="Run it once with this prompt">
+
+Merge the change request, then start a session with the **access-requests**
+agent and send this prompt. Check each prepared grant before you let the
+schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one access request sweep in #access-requests.
+
+1. Find requests with no reply from you yet, and earlier prepared grants with a new approval reply.
+2. For each new request, look up the requester's role, team and groups in Okta.
+3. Prepare the narrowest GitHub or AWS IAM grant that unblocks the task, and post it with its policy check as a thread reply. Do not apply it.
+4. Apply a prepared grant only when an approver on the list, never the requester, has replied to approve it. Apply exactly that grant.
+5. Log every applied grant in the thread and in #access-audit.`}
+/>
+
+</Step>
+<Step title="Let the 15-minute schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every 15 minutes, each run in a new session on its own cloud computer.
+To change the interval, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: access-request-sweep
+    name: Access request sweep
+    on:
+      cron: "0 */15 * * * *"
+    run:
+      agent: access-requests
+      prompt: Load the access-policy skill and check #access-requests for new requests and new approvals.`}
+/>
+
+</Step>
+<Step title="Apply a grant only after an approver signs off">
+
+The agent prepares every grant and stops. A later sweep applies it only when
+an approver on the list replies to approve, and never on a reply from the
+requester. A request without a valid approval stays pending, and each sweep
+checks it again.
+
+</Step>
+<Step title="Read the grant in the thread">
+
+Each request gets one thread reply with the prepared grant and its policy
+check. This is what a sweep looks like in the session:
+
+<ExampleRun
+  title="Access request sweep · 10:15"
+  message="Load the access-policy skill and check #access-requests for new requests and new approvals."
+  worked="Worked for 1m 48s"
+  tools={[
+    'slack · read channel → #access-requests',
+    'okta · get user × 3',
+    'okta · list groups × 3',
+    'slack · post reply × 3',
+    'github · add collaborator',
+    'slack · post message → #access-audit',
+  ]}
+  note="Illustrative example. Your counts depend on your request volume."
+>
+  Prepared **3** grants: **2** read-only GitHub grants and **1** scoped IAM
+  policy for one service's logs. Applied **1** earlier grant after an approver
+  signed off, and logged it in #access-audit. One request for **admin** on a
+  repo is flagged for a security lead.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -100,6 +177,25 @@ becomes the narrowest IAM permission that fits, both held for sign-off.
   into Okta, GitHub, and cloud IAM, encode the access policy as **skills** and
   **memory**, and gate every grant behind a human with a log left behind.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Time-box cloud grants"
+  code="For every AWS IAM grant, propose an expiry date, and on the first sweep after it passes, prepare a revoke for approval."
+/>
+
+<CopyBlock
+  title="Weekly access review"
+  code="Every Monday, post a list to #access-audit of every grant applied in the last 7 days, with its requester, scope and approver."
+/>
+
+<CopyBlock
+  title="Nudge pending approvals"
+  code="When a prepared grant has no approval after one working day, mention the eligible approvers once in its thread."
+/>
 
 ## Guardrails
 

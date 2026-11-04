@@ -37,12 +37,13 @@ const { canStopTurns, decideTurnStop, mayStopRunningTurn, readRunningTurn, turnP
   './turn-stop-authority'
 );
 
-const activeTurn = (messageId: string, startedAtMs: number) => ({
+const activeTurn = (messageId: string, startedAtMs: number, source?: string) => ({
   token: `t-${messageId}`,
   state: 'active',
   opencodeSessionId: 'ses_root',
   messageId,
   startedAtMs,
+  ...(source ? { source } : {}),
 });
 const runningBox = (...turns: ReturnType<typeof activeTurn>[]) => ({
   status: 'active',
@@ -104,7 +105,14 @@ describe('turnPrompterOf', () => {
 describe('readRunningTurn', () => {
   test('the newest active turn of a running box', async () => {
     boxRows = [runningBox(activeTurn('msg_old', 1), activeTurn('msg_new', 2))];
-    expect(await readRunningTurn(SESSION)).toEqual({ messageId: 'msg_new' });
+    expect(await readRunningTurn(SESSION)).toMatchObject({ messageId: 'msg_new' });
+  });
+
+  test('the prompt source every live turn recorded; null where a turn recorded none', async () => {
+    boxRows = [runningBox(activeTurn('msg_web', 1, 'ui'), activeTurn('msg_tg', 2, 'telegram'), activeTurn('msg_old', 0))];
+    const running = await readRunningTurn(SESSION);
+    expect(running?.messageId).toBe('msg_tg');
+    expect([...(running?.sources ?? [])].sort()).toEqual([null, 'telegram', 'ui'].sort());
   });
 
   test('a stopped box holds no turn whatever its metadata still says', async () => {

@@ -376,6 +376,38 @@ export function shouldSubmitPrefill({
   return prefillSubmit && prefillId !== undefined && prefillId !== submittedPrefillId;
 }
 
+export interface ShouldSubmitWhenReadyInput {
+  prefillId: number | undefined;
+  /** The id whose text is in the editor now, or null. */
+  landedPrefillId: number | null;
+  submittedPrefillId: number | null;
+  /** Send is refused right now: no model, no agent, a create in flight. */
+  submitDisabled: boolean;
+  /** The model catalog or entitlements are still loading. */
+  loading: boolean;
+}
+
+/**
+ * Whether a `submit: 'when-ready'` prefill sends now: its text has landed, a
+ * send is possible, and this id has not been sent before. The onboarding chat
+ * holds "Onboard me" this way until a model is connected.
+ */
+export function shouldSubmitWhenReady({
+  prefillId,
+  landedPrefillId,
+  submittedPrefillId,
+  submitDisabled,
+  loading,
+}: ShouldSubmitWhenReadyInput): boolean {
+  return (
+    prefillId !== undefined &&
+    landedPrefillId === prefillId &&
+    submittedPrefillId !== prefillId &&
+    !submitDisabled &&
+    !loading
+  );
+}
+
 /** One "Reply" on a transcript selection, waiting to join the quote list. */
 export interface QuoteRequest {
   id: number;

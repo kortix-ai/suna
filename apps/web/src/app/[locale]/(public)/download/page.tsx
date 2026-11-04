@@ -1,12 +1,12 @@
 import { ConsentGate } from '@/components/consent-gate';
 import { DownloadCloseButton } from '@/features/marketing/download/close-button';
 import { localizedDownloadContent } from '@/features/marketing/download/content';
-import type { DesktopOs } from '@/features/marketing/download/detect-os';
+import type { DesktopOs } from '@kortix/ui/internal/lib/detect-os';
 import {
   DESKTOP_ORDER,
   detectPlatform,
   normalizePlatform,
-} from '@/features/marketing/download/detect-os';
+} from '@kortix/ui/internal/lib/detect-os';
 import { DownloadOptions } from '@/features/marketing/download/download-options';
 import {
   formatSize,

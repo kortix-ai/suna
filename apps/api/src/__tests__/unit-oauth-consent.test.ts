@@ -79,7 +79,7 @@ mock.module('../config', () => ({
 const realDb = await import('../shared/db');
 mock.module('../shared/db', () => ({ ...realDb, db: fake.db }));
 
-const { oauthApp } = await import('../oauth');
+const { oauthApp, isSelfRegistered, KORTIX_EXTENSION_REDIRECT_URI, SELF_REGISTERED_DESCRIPTION } = await import('../oauth');
 
 function createApp() {
   const app = new Hono();
@@ -111,6 +111,37 @@ describe('OAuth authorization request persistence + consent', () => {
     consents = [];
     log.inserts.length = 0;
     log.updates.length = 0;
+  });
+
+  test('null stored scopes and state normalize in both consent routes', async () => {
+    const app = createApp();
+    await app.request(authRequestUrl());
+    const row = pendingRequests[0];
+    expect(row).toBeDefined();
+    Object.assign(row, { scopes: null, state: null });
+    const metadata = await app.request('/oauth/authorize/consent/synthetic-request', { headers: authed });
+    expect(metadata.status).toBe(200);
+    expect(await metadata.json()).toMatchObject({ scopes: [], scope: '' });
+    const denied = await app.request('/oauth/authorize/consent', {
+      method: 'POST', headers: authed,
+      body: JSON.stringify({ request_id: 'synthetic-request', approved: false }),
+    });
+    expect(denied.status).toBe(200);
+    const redirect = new URL((await denied.json()).redirect_uri);
+    expect(redirect.searchParams.get('state')).toBeNull();
+    expect(redirect.searchParams.get('error')).toBe('access_denied');
+  });
+
+  test('both consent routes reject expired requests', async () => {
+    const app = createApp();
+    await app.request(authRequestUrl());
+    Object.assign(pendingRequests[0], { expiresAt: new Date(0) });
+    expect((await app.request('/oauth/authorize/consent/synthetic-request', { headers: authed })).status).toBe(400);
+    expect((await app.request('/oauth/authorize/consent', {
+      method: 'POST', headers: authed,
+      body: JSON.stringify({ request_id: 'synthetic-request', approved: true }),
+    })).status).toBe(400);
+    expect(log.inserts.some((entry) => entry.table === oauthAuthorizationCodes)).toBe(false);
   });
 
   test('the pending request is persisted (hashed id) and the consent UI gets only an opaque request id', async () => {
@@ -149,6 +180,15 @@ describe('OAuth authorization request persistence + consent', () => {
       self_registered: false,
       redirect_to: 'client.example',
     });
+  });
+
+  test('the consent screen names the Kortix extension "Kortix in Chrome"', async () => {
+    const app = createApp();
+    const start = await app.request(authRequestUrl());
+    const requestId = new URL(start.headers.get('location')!).searchParams.get('request_id')!;
+    pendingRequests[0].redirectUri = KORTIX_EXTENSION_REDIRECT_URI;
+    const metadata = await app.request(`/oauth/authorize/consent/${requestId}`, { headers: authed });
+    expect((await metadata.json()).redirect_to).toBe('Kortix in Chrome');
   });
 
   test('approval mints a code from the STORED request, remembers the consent, and a replay is refused', async () => {
@@ -275,5 +315,19 @@ describe('OAuth authorization request persistence + consent', () => {
     const res = await createApp().request(authRequestUrl().replace('client.example', 'evil.example'));
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe('invalid_request');
+  });
+});
+
+describe('self-registered clients', () => {
+  const selfRegistered = { accountId: null, description: SELF_REGISTERED_DESCRIPTION };
+  test('an app that registered itself is shown as unverified', () => {
+    expect(isSelfRegistered({ ...selfRegistered, redirectUris: ['https://client.example/callback'] })).toBe(true);
+  });
+  test('the Kortix Chrome extension is not: only it serves its chrome-extension:// page', () => {
+    expect(isSelfRegistered({ ...selfRegistered, redirectUris: [KORTIX_EXTENSION_REDIRECT_URI] })).toBe(false);
+    // A second redirect target would let the code go elsewhere: unverified again.
+    expect(
+      isSelfRegistered({ ...selfRegistered, redirectUris: [KORTIX_EXTENSION_REDIRECT_URI, 'https://client.example/cb'] }),
+    ).toBe(true);
   });
 });

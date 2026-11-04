@@ -13,8 +13,8 @@
  *     rather than letting an ARM visitor download a binary that will not run.
  *  3. There is NO Windows CLI binary. The install script is bash-only, so the
  *     terminal block says "macOS & Linux · WSL on Windows".
- *  4. There is no Chrome extension in this repo — no manifest, no app. The page
- *     must not advertise one, not even as "coming soon".
+ *  4. The Chrome extension (apps/chrome-extension) is not public in the
+ *     Chrome Web Store yet. The page must not advertise it until it is.
  *  5. Both mobile apps are public: iOS on the App Store, Android on Google
  *     Play. The rows link the store listings — see MOBILE_ROWS.
  */
@@ -22,7 +22,7 @@
 import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
-import type { DesktopOs, MobileOs } from './detect-os';
+import type { DesktopOs, MobileOs } from '@kortix/ui/internal/lib/detect-os';
 import { APP_STORE_URL, GOOGLE_PLAY_URL } from '@kortix/ui/internal/lib/mobile-store-urls';
 
 export const hero = {

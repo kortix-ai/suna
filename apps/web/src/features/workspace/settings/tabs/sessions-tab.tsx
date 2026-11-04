@@ -25,7 +25,7 @@ import { Slider } from '@kortix/ui/slider';
 import { Switch } from '@kortix/ui/switch';
 import { NotificationToggle } from '@/features/accounts/settings/notifications-tab';
 import { ErrorState } from '@kortix/ui/error-state';
-import { useNotificationCenter } from '@kortix/ui/internal/hooks/use-notification-center';
+import { useNotificationCenter, useNotificationInboxEnabled } from '@kortix/ui/internal/hooks/use-notification-center';
 import { webPushSupported } from '@kortix/ui/internal/notifications/web-push';
 import { useAuth } from '@/features/providers/auth-provider';
 import { isDesktop } from '@kortix/ui/internal/lib/desktop';
@@ -146,6 +146,8 @@ export interface SessionsTabViewProps {
 
   /** The `notification_center` flag. Off: the four per-browser kind switches; on: the server record. */
   notificationCenter?: boolean;
+  /** The inbox can also be enabled by Artifact comments. */
+  notificationInbox?: boolean;
   // Notification types (the person's server record)
   notificationKinds?: NotificationPreferences['kinds'];
   /** False when the deployment sends no email: the Email column is hidden. */
@@ -181,6 +183,7 @@ export function SessionsTabView({
   onNotificationPreferenceChange = () => {},
   onSendTestNotification = () => {},
   notificationCenter = false,
+  notificationInbox = notificationCenter,
   notificationKinds = DEFAULT_KIND_PREFERENCES,
   emailAvailable = true,
   hiddenKinds = [],
@@ -300,7 +303,7 @@ export function SessionsTabView({
         )}
       </section>
 
-      {notificationCenter && (
+      {notificationInbox && (
         <>
           <Separator />
 
@@ -488,9 +491,10 @@ export function SessionsTab({ projectId }: { projectId?: string }) {
 
   const { user } = useAuth();
   const notificationCenter = useNotificationCenter(projectId);
+  const notificationInbox = useNotificationInboxEnabled(projectId);
   const kindPreferences = useNotificationPreferences({
     userId: user?.id,
-    enabled: notificationCenter,
+    enabled: notificationInbox,
   });
 
   const handleSendTestNotification = () => {
@@ -529,6 +533,7 @@ export function SessionsTab({ projectId }: { projectId?: string }) {
       onNotificationPreferenceChange={setNotificationPreference}
       onSendTestNotification={handleSendTestNotification}
       notificationCenter={notificationCenter}
+      notificationInbox={notificationInbox}
       notificationKinds={kindPreferences.data?.kinds}
       emailAvailable={kindPreferences.data?.email_available ?? true}
       // Room messages exist only with a project's `agent_rooms` flag on: an API

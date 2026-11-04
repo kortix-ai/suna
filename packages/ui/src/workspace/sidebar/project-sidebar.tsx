@@ -20,18 +20,25 @@ import { ComputerConnectModal } from '../../internal/tunnel/computer-connect';
 import { ConnectMcpModal } from '../../internal/layout/connect-mcp-modal';
 import { ProjectMcpNavItem } from './footer/project-mcp-nav';
 import { ProjectComputerNavItem } from './footer/project-computer-nav';
-import { ProjectManifestUpgradeAlert } from './footer/project-manifest-upgrade-alert';
+import { ProjectManifestIssuesAlert } from './footer/project-manifest-issues-alert';
 import { ProjectSandboxAlert } from './footer/project-sandbox-alert';
 import { ProjectRepositoryDisconnectedAlert } from '../repository-disconnected';
-import { CustomizeSidebarModal } from './customize-sidebar-modal';
+import { NewAgentModalProvider } from './new-agent-modal-provider';
+import { ProjectMemoryNavItem } from './footer/project-memory-nav';
 import { ProjectNavItems } from './project-nav-items';
 import { ProjectSessionList } from './project-session-list';
+import { ProjectSpacesNav } from './project-spaces-nav';
 import { useIsCreatingProjectSession } from '../../internal/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '../../internal/hooks/projects/use-new-project-session';
 import { useIsMobile } from '../../internal/hooks';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../internal/lib/utils';
 import { useBillingAccountId } from '../../internal/stores/billing-account-context';
+import { useFeatureFlag } from '@kortix/sdk/react';
+import { AppsModal } from '../../internal/apps-and-extensions/apps-modal';
+import { useAppsModalStore } from '../../internal/stores/apps-modal-store';
+import { ProjectChromeNavItem } from './footer/project-chrome-nav';
+import { CHROME_UI_ENABLED } from '../../internal/chrome/use-chrome-offered';
 import {
   MagnifyingGlassIcon,
   NavigationArrowIcon,
@@ -76,6 +83,10 @@ export function ProjectSidebar({
   const [connectMcpOpen, setConnectMcpOpen] = useState(false);
 
   const accountId = useBillingAccountId();
+  // Channels replace New session and the session list (fail-closed: off until the project answers).
+  const channels = useFeatureFlag(projectId, 'project_channels').enabled;
+  // The project flag and the web app's master switch (`CHROME_UI_ENABLED`) must both be on.
+  const chrome = useFeatureFlag(projectId, 'chrome').enabled && CHROME_UI_ENABLED;
 
   // Open the project composer without creating a durable session.
   const newSession = useNewProjectSession(projectId);
@@ -118,6 +129,7 @@ export function ProjectSidebar({
   }, [isMobile, setOpenMobile, onOpenSearch]);
 
   useEffect(() => {
+    if (channels) return;
     const handler = (event: KeyboardEvent) => {
       if (
         (event.metaKey || event.ctrlKey) &&
@@ -131,10 +143,11 @@ export function ProjectSidebar({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleNewSession]);
+  }, [channels, handleNewSession]);
 
   return (
-    <>
+    // The New agent modal mounts beside <Sidebar>, outside the mobile sheet.
+    <NewAgentModalProvider projectId={projectId}>
     <Sidebar
       collapsible="offcanvas"
       variant="inset"
@@ -272,36 +285,44 @@ export function ProjectSidebar({
         <div className="flex h-full min-h-0 flex-col space-y-2">
           <SidebarGroup className="py-0">
             <SidebarMenu>
-              <SidebarMenuItem>
-                {creatingSession ? (
-                  <SidebarMenuButton
-                    disabled
-                    aria-busy
-                    className="group/menu-button text-sidebar-foreground relative"
-                  >
-                    {newSessionRowBody}
-                  </SidebarMenuButton>
-                ) : (
-                  <SidebarMenuButton
-                    asChild
-                    className="group/menu-button text-sidebar-foreground relative"
-                  >
-                    <Link href={uiRoutes().project(projectId)} prefetch onClick={handleNewSessionClick}>
+              {channels ? null : (
+                <SidebarMenuItem>
+                  {creatingSession ? (
+                    <SidebarMenuButton
+                      disabled
+                      aria-busy
+                      className="group/menu-button text-sidebar-foreground relative"
+                    >
                       {newSessionRowBody}
-                    </Link>
-                  </SidebarMenuButton>
-                )}
-              </SidebarMenuItem>
+                    </SidebarMenuButton>
+                  ) : (
+                    <SidebarMenuButton
+                      asChild
+                      className="group/menu-button text-sidebar-foreground relative"
+                    >
+                      <Link href={uiRoutes().project(projectId)} prefetch onClick={handleNewSessionClick}>
+                        {newSessionRowBody}
+                      </Link>
+                    </SidebarMenuButton>
+                  )}
+                </SidebarMenuItem>
+              )}
 
               {/* Customize, Apps, Files: order and
                   visibility come from "Customize sidebar". They moved up here
                   from the footer (Jay, 2026-10-12) to keep the footer short. */}
+              {/* Channels on: the Company memory, the first row under the new-thread slot. */}
+              {channels ? <ProjectMemoryNavItem projectId={projectId} /> : null}
               <ProjectNavItems projectId={projectId} />
             </SidebarMenu>
           </SidebarGroup>
 
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
-            <ProjectSessionList projectId={projectId} />
+            {channels ? (
+              <ProjectSpacesNav projectId={projectId} />
+            ) : (
+              <ProjectSessionList projectId={projectId} />
+            )}
           </SidebarGroup>
 
           <SidebarGroup className="mt-auto">
@@ -311,7 +332,7 @@ export function ProjectSidebar({
                   left the sidebar: it stays in Settings → Connected. */}
               <ProjectRepositoryDisconnectedAlert projectId={projectId} />
               <ProjectSandboxAlert projectId={projectId} />
-              <ProjectManifestUpgradeAlert projectId={projectId} />
+              <ProjectManifestIssuesAlert projectId={projectId} />
               <SidebarBalanceWarning accountId={accountId} />
               {/* Connect MCP over Connect your computer: one block, 1px seam,
                   inner corners rounded-sm. Either row can be absent (dismissed,
@@ -326,6 +347,9 @@ export function ProjectSidebar({
                     projectId={projectId}
                     onOpenConnect={() => setComputerConnectOpen(true)}
                   />
+                  {chrome ? (
+                    <ProjectChromeNavItem onOpenConnect={() => useAppsModalStore.getState().setOpen(true)} />
+                  ) : null}
                 </SidebarMenu>
               </li>
               {/* Last (Jay, 2026-09-03). It is the only paid call to action in
@@ -344,8 +368,12 @@ export function ProjectSidebar({
       open={computerConnectOpen}
       onOpenChange={setComputerConnectOpen}
     />
+    <AppsModal
+      chrome={chrome}
+      onOpenComputer={() => setComputerConnectOpen(true)}
+      onOpenMcp={() => setConnectMcpOpen(true)}
+    />
     <ConnectMcpModal open={connectMcpOpen} onOpenChange={setConnectMcpOpen} />
-    <CustomizeSidebarModal projectId={projectId} />
-    </>
+    </NewAgentModalProvider>
   );
 }

@@ -28,13 +28,9 @@
  * re-read the transcript and the model catalogue every 15 s for the life of the
  * tab. Starting is the open path's decision; claiming is everyone else's.
  *
- * THE TRANSCRIPT LEG is claimed like every other leg, by the one saved-history
- * read (`loadSavedTranscript`). That read runs at mount, keyed by the Kortix
- * session, so it does not wait for the OpenCode root and fits the share window.
- * A snapshot never paints over a store the runtime filled:
- * `shouldHydrateFromMirror` refuses it. A host that read the window before the
- * bind (`readSavedSessionCopy`, a connecting view) leaves it held: the open
- * then asks for the pointer only, and the read answers from the held window.
+ * THE TRANSCRIPT LEG is not read: an open asks for the pointer only
+ * (`transcript: 0`). The session log's first page (`GET …/log`) is the saved
+ * history, and no client reads the v1 window (P8.3).
  *
  * EVERY LEG IS TRI-STATE. `known: false` projects to `null`, which sends the
  * consumer to its endpoint. It must never project to the NEGATIVE answer — an
@@ -46,7 +42,6 @@ import {
   type SessionAudit,
   type SessionOpenBundle,
   type SessionPrompt,
-  type SessionTranscriptSyncEnvelope,
   type SessionTurn,
   type SessionTurnEnded,
   type SessionTurnFailure,
@@ -62,64 +57,6 @@ import {
  * window sits just under the fastest of those cadences on purpose.
  */
 export const OPEN_BUNDLE_SHARE_MS = 5_000;
-
-/** The mirrored-message window an open asks for — the same span the sync
- *  controller's own first read covers. */
-export const OPEN_BUNDLE_TRANSCRIPT_LIMIT = 40;
-
-/**
- * How long the saved window a host read before `useSession` bound the session
- * (`readSavedSessionCopy`: a connecting view) answers that session's open. It
- * covers one wake: up to 240 s measured, and apps/mobile gives up at 4 min.
- * After the bind the runtime's own read outranks the window, so an older one
- * costs only the moment until that read lands.
- */
-export const SAVED_WINDOW_HOLD_MS = 5 * 60_000;
-
-/** How many sessions' holds live at once. A hold exists for the seconds
- *  between a connecting view's read and that session's bind; a handful is
- *  generous. The oldest hold gives its slot when the cap is hit, so the map
- *  stays bounded. */
-const HELD_WINDOW_CAP = 16;
-
-// One hold per session, not one global slot: a late hold for session B (its
-// connecting view still settling) must not evict session A's hold and send
-// A's bind back to a full-window snapshot read — the window downloaded twice
-// per open, the exact thing KRTX-189 forbids.
-const heldWindows = new Map<string, { envelope: SessionTranscriptSyncEnvelope; atMs: number }>();
-
-/** Keep the saved window a host read before `useSession` binds the session. */
-export function holdSavedWindow(
-  projectId: string,
-  sessionId: string,
-  envelope: SessionTranscriptSyncEnvelope,
-  nowMs: number = Date.now(),
-): void {
-  const key = scopeKey(projectId, sessionId);
-  heldWindows.delete(key);
-  heldWindows.set(key, { envelope, atMs: nowMs });
-  while (heldWindows.size > HELD_WINDOW_CAP) {
-    const oldest = heldWindows.keys().next().value;
-    if (oldest === undefined) break;
-    heldWindows.delete(oldest);
-  }
-}
-
-/** The held saved window of this session, or null when none is held or it is
- *  older than {@link SAVED_WINDOW_HOLD_MS}. */
-export function heldSavedWindow(
-  projectId: string,
-  sessionId: string,
-  nowMs: number = Date.now(),
-): SessionTranscriptSyncEnvelope | null {
-  const held = heldWindows.get(scopeKey(projectId, sessionId));
-  if (!held) return null;
-  if (nowMs - held.atMs > SAVED_WINDOW_HOLD_MS) {
-    heldWindows.delete(scopeKey(projectId, sessionId));
-    return null;
-  }
-  return held.envelope;
-}
 
 interface BundleEntry {
   /** Resolves to the bundle, or to `null` when the read failed. NEVER rejects:
@@ -143,13 +80,12 @@ function scopeKey(projectId: string, sessionId: string): string {
  *  the one before it. */
 export function resetSessionOpenBundles(): void {
   entries.clear();
-  heldWindows.clear();
 }
 
 export interface OpenSessionBundleOptions {
   /** v1 transcript messages to ask for. Default `0`: the POINTER only. An
-   *  open reads the session log first (`GET …/log`), so no host reads the
-   *  snapshot's v1 window; a v1 fallback reads its own window. */
+   *  open reads the session log (`GET …/log`), so no host reads the
+   *  snapshot's v1 window. */
   transcript?: number;
   /** Injected clock, for tests. */
   now?: () => number;
@@ -271,24 +207,4 @@ export function openBundleAudit(bundle: SessionOpenBundle): SessionAudit | null 
     count: audit.count,
     actions: audit.actions,
   };
-}
-
-/**
- * Project the transcript leg onto what the saved-history read
- * (`GET .../transcript?shape=sync&history=true`) answers: the same window, served
- * only for the session's CURRENT root. `null` when the leg is unknown or
- * pointer-only, and when a saved copy's root is not the root the session row
- * names. The route decides those.
- *
- * @deprecated The snapshot's v1 window. The snapshot's `log` leg is the session log's first page. Removed in the next major.
- */
-export function openBundleHistory(bundle: SessionOpenBundle): SessionTranscriptSyncEnvelope | null {
-  const transcript = bundle.transcript;
-  if (!transcript || transcript.known !== true || transcript.requested !== true) return null;
-  const { known: _known, requested: _requested, ...envelope } = transcript;
-  // "No saved copy" is the same answer with or without the root check.
-  if (!envelope.available) return envelope;
-  const root = bundle.session?.runtime_session_id ?? bundle.session?.opencode_session_id;
-  const savedRoot = envelope.runtime_session_id ?? envelope.opencode_session_id;
-  return root && savedRoot === root ? envelope : null;
 }

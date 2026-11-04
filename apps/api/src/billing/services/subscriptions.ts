@@ -90,6 +90,27 @@ export function parseMonthlyUsd(value: unknown): number {
   return n;
 }
 
+async function planChangeContext(accountId: string, priceId: string) {
+  const account = await getCreditAccount(accountId);
+  const stripe = getStripe();
+  const live = account?.stripeSubscriptionId
+    ? await stripe.subscriptions.retrieve(account.stripeSubscriptionId).catch(() => null)
+    : null;
+  const livePaid = live && !isDeadSubscriptionStatus(live.status) && planForSubscription(live) === 'credits'
+    ? live
+    : null;
+  const billedUsd = livePaid ? monthlyCreditsForSubscription(livePaid) : 0;
+  const onCreditsPrice = livePaid?.items.data.length === 1 && livePaid.items.data[0].price?.id === priceId;
+  const inEffectUsd = onCreditsPrice ? inEffectMonthlyUsd(account, billedUsd) : billedUsd;
+  return { account, stripe, live, livePaid, billedUsd, onCreditsPrice, inEffectUsd };
+}
+
+function planChangeItems(livePaid: Stripe.Subscription, onCreditsPrice: boolean, priceId: string, quantity: number) {
+  return onCreditsPrice
+    ? [{ id: livePaid.items.data[0].id, quantity }]
+    : [...livePaid.items.data.map((item) => ({ id: item.id, deleted: true })), { price: priceId, quantity }];
+}
+
 /**
  * THE plan change: put the account on the credits plan at `monthlyUsd` a month.
  *
@@ -119,15 +140,7 @@ export async function setPlan(params: {
   const { accountId, email, monthlyUsd, successUrl, cancelUrl, locale } = params;
   const priceId = resolveCreditsPriceId();
   const quantity = monthlyUsd * 100;
-  const account = await getCreditAccount(accountId);
-  const stripe = getStripe();
-
-  const live = account?.stripeSubscriptionId
-    ? await stripe.subscriptions.retrieve(account.stripeSubscriptionId).catch(() => null)
-    : null;
-  const livePaid = live && !isDeadSubscriptionStatus(live.status) && planForSubscription(live) === 'credits'
-    ? live
-    : null;
+  const { account, stripe, live, livePaid, billedUsd, onCreditsPrice, inEffectUsd } = await planChangeContext(accountId, priceId);
 
   if (!livePaid) {
     const customerId = await getOrCreateStripeCustomer(accountId, email);
@@ -157,9 +170,6 @@ export async function setPlan(params: {
     throw new SubscriptionError('Your yearly commitment has not ended yet');
   }
 
-  const billedUsd = monthlyCreditsForSubscription(livePaid);
-  const onCreditsPrice = livePaid.items.data.length === 1 && livePaid.items.data[0].price?.id === priceId;
-  const inEffectUsd = onCreditsPrice ? inEffectMonthlyUsd(account, billedUsd) : billedUsd;
   const metadata = { ...livePaid.metadata, tier_key: 'credits', plan_key: 'credits' };
   const effectiveAt = new Date(livePaid.current_period_end * 1000).toISOString();
 
@@ -202,9 +212,7 @@ export async function setPlan(params: {
   }
 
   const updated = await stripe.subscriptions.update(livePaid.id, {
-    items: onCreditsPrice
-      ? [{ id: livePaid.items.data[0].id, quantity }]
-      : [...livePaid.items.data.map((item) => ({ id: item.id, deleted: true })), { price: priceId, quantity }],
+    items: planChangeItems(livePaid, onCreditsPrice, priceId, quantity),
     proration_behavior: 'always_invoice',
     // A raise applies ONLY if its charge succeeds; on a failed payment Stripe
     // keeps the old items and returns a `pending_update` instead of throwing.
@@ -251,21 +259,11 @@ export async function setPlan(params: {
 export async function previewPlan(params: { accountId: string; monthlyUsd: number }) {
   const { accountId, monthlyUsd } = params;
   const priceId = resolveCreditsPriceId();
-  const account = await getCreditAccount(accountId);
-  const stripe = getStripe();
-  const live = account?.stripeSubscriptionId
-    ? await stripe.subscriptions.retrieve(account.stripeSubscriptionId).catch(() => null)
-    : null;
-  const livePaid = live && !isDeadSubscriptionStatus(live.status) && planForSubscription(live) === 'credits'
-    ? live
-    : null;
+  const { stripe, livePaid, billedUsd, onCreditsPrice, inEffectUsd } = await planChangeContext(accountId, priceId);
   if (!livePaid) {
     return { change: 'checkout' as const, monthly_usd: monthlyUsd, current_monthly_usd: null, due_now_usd: monthlyUsd, credits_now: monthlyUsd * 100, effective_at: null };
   }
 
-  const billedUsd = monthlyCreditsForSubscription(livePaid);
-  const onCreditsPrice = livePaid.items.data.length === 1 && livePaid.items.data[0].price?.id === priceId;
-  const inEffectUsd = onCreditsPrice ? inEffectMonthlyUsd(account, billedUsd) : billedUsd;
   const renewsAt = new Date(livePaid.current_period_end * 1000).toISOString();
   const base = { monthly_usd: monthlyUsd, current_monthly_usd: inEffectUsd };
 
@@ -277,9 +275,7 @@ export async function previewPlan(params: { accountId: string; monthlyUsd: numbe
   const upcoming = await stripe.invoices.retrieveUpcoming({
     customer: typeof livePaid.customer === 'string' ? livePaid.customer : livePaid.customer.id,
     subscription: livePaid.id,
-    subscription_items: onCreditsPrice
-      ? [{ id: livePaid.items.data[0].id, quantity: monthlyUsd * 100 }]
-      : [...livePaid.items.data.map((item) => ({ id: item.id, deleted: true })), { price: priceId, quantity: monthlyUsd * 100 }],
+    subscription_items: planChangeItems(livePaid, onCreditsPrice, priceId, monthlyUsd * 100),
     // No proration_date: Stripe's own "now" is the instant setPlan's update
     // will use (and follows a test clock).
     subscription_proration_behavior: 'always_invoice',

@@ -165,3 +165,20 @@ describe('draftToRules', () => {
     expect(Object.keys(rule!).sort()).toEqual(['action', 'match']);
   });
 });
+
+describe('conditions survive the Advanced editor', () => {
+  const conditional: ConnectorPolicyRule = {
+    match: 'send_*',
+    action: 'require_approval',
+    conditions: [{ arg: 'to', match: '*@example.com' }],
+  };
+  test('seed then save returns the rule with its conditions', () => {
+    let n = 0;
+    expect(draftToRules(seedPatternDraft([conditional], () => `r${++n}`))).toEqual([conditional]);
+  });
+  test('a condition change is a change to the signature', () => {
+    expect(signPatternRules([conditional])).not.toBe(
+      signPatternRules([{ match: 'send_*', action: 'require_approval' }]),
+    );
+  });
+});

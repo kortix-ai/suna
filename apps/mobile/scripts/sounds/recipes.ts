@@ -42,7 +42,7 @@ export type NoiseLayer = BaseLayer & {
   filterQ?: number;
 };
 
-export type SoundLayer = ToneLayer | NoiseLayer;
+type SoundLayer = ToneLayer | NoiseLayer;
 
 /** A feedback echo tail applied to the whole sound. */
 export type Shimmer = {

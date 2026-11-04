@@ -54,6 +54,8 @@ mock.module('../config', () => ({
 const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
   ...realInstallStore,
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   saveSlackOauthInstall: async (input: Record<string, unknown>) => {
     saveCalls.push(input);
     if (saveError) throw saveError;

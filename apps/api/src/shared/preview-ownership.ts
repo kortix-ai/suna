@@ -30,6 +30,7 @@ import type { KortixUserContext } from './kortix-user-context';
 import { setBounded } from './bounded-cache';
 import { registerPrincipalScopedMemo } from './principal-scoped-memos';
 import { isUuid } from './validate';
+import { hiddenSpaceIds, onSpaceAccessBust, spaceVisibleFor } from './space-access';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 // One entry per (sandbox, user) the proxy was asked about, denials included, so a
@@ -50,6 +51,9 @@ const PREVIEW_CONTEXT_MAX = 20_000;
 // membership cache trade-off).
 const SESSION_VISIBILITY_TTL_MS = 10_000;
 const sessionVisibilityCache = new Map<string, { allowed: boolean; expiresAt: number }>();
+// A membership change on any replica takes effect at once, not after 10 s (the bust crosses replicas).
+// ponytail: clears every verdict (keys carry no project id); a removal is rare.
+onSpaceAccessBust(() => sessionVisibilityCache.clear());
 /** Verdicts in flight, by the cache key. Per process; gone when the read settles. */
 // replica-local: single-flight dedup of one burst of concurrent reads; the
 // entry dies with its promise, so there is no state to share, and another
@@ -107,10 +111,13 @@ async function readSandboxSessionAccess(
   // this runs on the prompt path where each round trip is a full one.
   const subjectRead = resolveShareSubject(input.userId);
   const grantsRead = loadSessionGrants([input.sessionId]);
+  const hiddenRead = hiddenSpaceIds(input.projectId, input.userId, input.boundCredentialSessionId);
   subjectRead.catch(() => undefined);
   grantsRead.catch(() => undefined);
+  hiddenRead.catch(() => undefined);
   const [row] = await db
     .select({
+      spaceId: projectSessions.spaceId,
       visibility: projectSessions.visibility,
       createdBy: projectSessions.createdBy,
       origin: projectSessions.origin,
@@ -131,9 +138,10 @@ async function readSandboxSessionAccess(
   // Per-call, never module state: the write and the store both sit after awaits.
   let refusal: SessionAccessRefusal | null = null;
   if (row) {
-    const [subject, grantsBySession, managerVerdict] = await Promise.all([
+    const [subject, grantsBySession, hidden, managerVerdict] = await Promise.all([
       subjectRead,
       grantsRead,
+      hiddenRead,
       isTriggerRunSession(row)
         ? authorize(
             actorForUser(input.userId, input.accountId),
@@ -148,7 +156,9 @@ async function readSandboxSessionAccess(
         : Promise.resolve({ allowed: false as const, reason: 'not_trigger_session' }),
     ]);
     const grants = grantsBySession.get(input.sessionId) ?? [];
+    const spaceVisible = spaceVisibleFor(hidden, row.spaceId);
     refusal = {
+      spaceHidden: !spaceVisible,
       sessionId: input.sessionId,
       projectId: input.projectId,
       visibility: row.visibility,
@@ -172,6 +182,7 @@ async function readSandboxSessionAccess(
       metadata: row.metadata,
       initiatorType: row.initiatorType,
       canManageProject: managerVerdict.allowed,
+      spaceVisible,
     });
     // Account session oversight — the same rule `loadVisibleSession` applies,
     // so an admin who may open a session's transcript may also reach its
@@ -186,6 +197,7 @@ async function readSandboxSessionAccess(
         initiatorType: row.initiatorType,
         canManageProject: managerVerdict.allowed,
         accountSessionOversight: true,
+        spaceVisible,
       });
     }
   }
@@ -215,6 +227,8 @@ async function readSandboxSessionAccess(
  * and the map is capped, so it cannot grow with traffic.
  */
 export interface SessionAccessRefusal {
+  /** The session is in a private channel the caller is not in (branch `space_hidden`). */
+  spaceHidden: boolean;
   sessionId: string;
   projectId: string;
   visibility: string;

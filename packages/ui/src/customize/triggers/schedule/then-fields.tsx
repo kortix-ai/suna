@@ -54,11 +54,6 @@ export function ThenFields({
     });
   }
 
-  // An input-height field around the chat selectors, so Agent and Model line
-  // up with every other field. The selector's own button fills it, label left,
-  // caret right, like a Select trigger.
-  const panel =
-    'bg-popover border-border flex h-9 w-full items-center rounded-md border px-0.5 [&_button]:h-8 [&_button]:w-full [&_button]:justify-between';
   return (
     <div className="space-y-3">
       <div className="space-y-2">
@@ -84,27 +79,25 @@ export function ThenFields({
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label className="text-xs">{tI18nComplete.raw('text11b39c93777e')}</Label>
-          <div className={panel}>
-            <AgentSelector
-              agents={agents}
-              selectedAgent={draft.agent}
-              triggerLabelClassName="max-w-none"
-              onSelect={(agent) => patch({ agent })}
-            />
-          </div>
+          {/* `field`: the selector is the bordered h-9 box itself, like every
+              Select in this form, not a chat chip inside a frame. */}
+          <AgentSelector
+            agents={agents}
+            selectedAgent={draft.agent}
+            appearance="field"
+            onSelect={(agent) => patch({ agent })}
+          />
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">{tI18nComplete.raw('text5e2c614c23f0')}</Label>
-          <div className={panel}>
-            <ModelSelector
-              models={models}
-              providers={providers}
-              selectedModel={draft.model}
-              unsetLabel={tI18nComplete.raw('text57069bbd0d2e')}
-              triggerLabelClassName="max-w-none"
-              onSelect={(model) => patch({ model })}
-            />
-          </div>
+          <ModelSelector
+            models={models}
+            providers={providers}
+            selectedModel={draft.model}
+            unsetLabel={tI18nComplete.raw('text57069bbd0d2e')}
+            appearance="field"
+            onSelect={(model) => patch({ model })}
+          />
         </div>
       </div>
     </div>

@@ -1,18 +1,11 @@
 /**
- * Unit tests for the v2 agent-block GOVERNANCE read/write lib (the "agent
- * builder" backend's kortix.yaml half — redirected 2026-07-05: "one home per
- * concern"). Pure functions — no DB, no git — so they exercise the exact
- * read/mutate/validate contract the GET/PUT routes depend on:
- *   - readAgentBlockV2: v2 block round-trips verbatim; v1 → null block +
- *     schemaVersion 1 (the UI's degrade signal); a brand-new agent → null block.
- *   - applyAgentBlockV2: upserts the whole block, validates the RESULT through
- *     the real manifest-schema validator (bad enum / ungrantable action /
- *     behavioral field → rejected), refuses a v1 manifest.
- *
- * Behavior (mode/model/temperature/permission/…) is NOT covered here — it
- * lives in the agent's `.md` frontmatter, exercised by
- * `../projects/lib/compile-agent-config.test.ts` and
- * `@kortix/manifest-schema`'s `validateAgentMdFrontmatter` tests instead.
+ * Unit tests for the agent-block read/write lib (the "agent builder" backend's
+ * kortix.yaml half). Pure functions — no DB, no git — so they exercise the
+ * exact read/mutate/validate contract the GET/PUT routes depend on:
+ *   - readAgentBlockV2: a block round-trips verbatim; a brand-new agent → null block.
+ *   - applyAgentBlockV2: upserts the whole block and refuses a result that ADDS
+ *     a validation error (bad enum / ungrantable action) — an error the file
+ *     already had does not block an unrelated edit.
  */
 import { describe, expect, test } from 'bun:test';
 import {
@@ -25,8 +18,10 @@ import { parseManifestString, synthesizeBlankManifest } from '../projects/trigge
 import { extractAgents } from '../projects/agents';
 
 const V2 = `
-kortix_version: 2
 default_agent: support
+skills:
+  pdf-export: skills/pdf-export
+  web-research: skills/web-research
 agents:
   support:
     connectors: [github]
@@ -36,17 +31,8 @@ agents:
     workspace: runtime
 `;
 
-const V1 = `
-kortix_version = 1
-[project]
-name = "acme"
-[[agents]]
-name = "kortix"
-connectors = "all"
-`;
-
 function v2Manifest(body = V2) {
-  return parseManifestString(body, 'yaml', 'kortix.yaml');
+  return parseManifestString(body, 'kortix.yaml');
 }
 
 describe('readAgentBlockV2', () => {
@@ -54,7 +40,6 @@ describe('readAgentBlockV2', () => {
     const read = readAgentBlockV2(v2Manifest(), 'support');
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.schemaVersion).toBe(2);
     expect(read.defaultAgent).toBe('support');
     expect(read.block).toMatchObject({
       connectors: ['github'],
@@ -72,22 +57,12 @@ describe('readAgentBlockV2', () => {
     const read = readAgentBlockV2(v2Manifest(), 'ghost');
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.schemaVersion).toBe(2);
-    expect(read.block).toBeNull();
-  });
-
-  test('reports schemaVersion 1 + null block for a v1 manifest (the UI degrade signal)', () => {
-    const read = readAgentBlockV2(parseManifestString(V1, 'toml', 'kortix.toml'), 'kortix');
-    expect(read.ok).toBe(true);
-    if (!read.ok) return;
-    expect(read.schemaVersion).toBe(1);
     expect(read.block).toBeNull();
   });
 
   test('normalizes the deprecated input alias in the response block', () => {
     const read = readAgentBlockV2(
       v2Manifest(`
-kortix_version: 2
 default_agent: support
 agents:
   support:
@@ -105,7 +80,6 @@ agents:
   test('rejects conflicting aliases instead of returning an ambiguous block', () => {
     const read = readAgentBlockV2(
       v2Manifest(`
-kortix_version: 2
 default_agent: support
 agents:
   support:
@@ -172,22 +146,29 @@ describe('applyAgentBlockV2', () => {
     expect(applied.error).toContain('workspace');
   });
 
-  test('rejects a behavioral field on the block — it belongs in the .md frontmatter now', () => {
-    // `mode` is a behavioral field: the block must refuse it at runtime even
-    // when a caller's type allows it, so pass it through an untyped object.
-    const applied = applyAgentBlockV2(v2Manifest(), 'support', { mode: 'primary' } as never);
-    expect(applied.ok).toBe(false);
-    if (applied.ok) return;
-    expect(applied.error).toContain('.md');
+  test('refuses an edit that adds an error, accepts one that leaves an existing error alone', () => {
+    const broken = v2Manifest(`
+default_agent: support
+agents:
+  support: {}
+  other:
+    kortix_permissions: [billing.read]
+`);
+    // `other` already carries an error: editing `support` still saves.
+    expect(applyAgentBlockV2(broken, 'support', { connectors: ['github'] }).ok).toBe(true);
+    // A new error on `support` is refused, and only the new one is reported.
+    const refused = applyAgentBlockV2(broken, 'support', { kortix_permissions: ['member.invite'] });
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.issues?.every((issue) => issue.path.startsWith('agents.support'))).toBe(true);
   });
 
-  test('refuses a v1 manifest with an upgrade pointer (v2-only feature)', () => {
-    const applied = applyAgentBlockV2(parseManifestString(V1, 'toml', 'kortix.toml'), 'kortix', {
-      connectors: 'all',
-    });
-    expect(applied.ok).toBe(false);
-    if (applied.ok) return;
-    expect(applied.error).toContain('kortix_version 2');
+  test('a retired-format file (kortix_version: 2) is refused until its body is valid', () => {
+    const retired = v2Manifest('kortix_version: 2\nagents:\n  support: {}\n  other:\n    file: agents/other.md\n');
+    const refused = applyAgentBlockV2(retired, 'support', { connectors: ['github'] });
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.error).toContain('agents.other.file');
   });
 
   test('rejects an invalid agent name', () => {
@@ -201,7 +182,6 @@ describe('applyAgentBlockV2', () => {
 describe('applyDefaultAgentV2', () => {
   const twoAgentManifest = () =>
     v2Manifest(`
-kortix_version: 2
 default_agent: support
 agents:
   support: {}
@@ -223,63 +203,22 @@ agents:
     const applied = applyDefaultAgentV2(twoAgentManifest(), 'ghost');
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
-    expect(applied.error).toContain('does not match any declared agent');
+    expect(applied.error).toContain('"ghost" is not a declared agent');
   });
 
   test('rejects a disabled agent', () => {
     const applied = applyDefaultAgentV2(twoAgentManifest(), 'disabled');
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
-    expect(applied.error).toContain('disabled agent can never resolve as the default');
-  });
-
-  test('refuses a v1 manifest', () => {
-    const applied = applyDefaultAgentV2(parseManifestString(V1, 'toml', 'kortix.toml'), 'kortix');
-    expect(applied.ok).toBe(false);
-    if (applied.ok) return;
-    expect(applied.error).toContain('kortix_version 2');
+    expect(applied.error).toContain('the default agent must be enabled');
   });
 });
 
-// GAP 2 (dev-live repro): `applyDefaultAgentV2`/`applyAgentBlockV2` validate
-// via `validateManifest(manifest.raw, format)` — the RAW in-memory object,
-// never through `serializeManifest`/re-parse (which re-injects
-// `kortix_version` from `manifest.schemaVersion` on the way OUT — see that
-// function's doc comment). `loadManifestForEdit`'s synthesized "blank
-// project" manifest (no kortix.yaml/kortix.toml committed yet) is exactly
-// this raw, never-serialized shape. #4974's own regression test proved the
-// synthesis valid only via serialize→reparse→validate — never the raw path
-// these two functions actually run — so it missed that the synthesized
-// `.raw` never embedded `kortix_version`, and `validateRoot` (manifest-schema)
-// rejects an object with no `kortix_version` key as unversioned before ever
-// reaching the v2 body validators. PUT /default-agent and PUT
-// /agents/:name/config both 400'd `kortix_version is required` on a blank
-// project even after #4974 merged. `synthesizeBlankManifest` (../projects/
-// triggers.ts) now embeds it — these tests exercise the EXACT functions the
-// write routes call, on the EXACT object those routes hold (not a
-// hand-rolled fixture), so a future regression that drops the key again
-// fails here instead of shipping.
-describe('the raw path `loadManifestForEdit` actually produces for a blank project', () => {
-  test('applyDefaultAgentV2 validates against the synthesized manifest as-is (no serialize/reparse)', () => {
-    const manifest = synthesizeBlankManifest({
-      name: 'blank-project',
-      manifestPath: 'kortix.toml',
-    });
-    // Sanity: the bug this guards against — a raw object with no
-    // `kortix_version` key reads as unversioned to `validateRoot`.
-    expect(manifest.raw.kortix_version).toBe(2);
-
-    const applied = applyDefaultAgentV2(manifest, 'kortix');
-    expect(applied.ok).toBe(true);
-    if (!applied.ok) return;
-    expect(applied.raw.default_agent).toBe('kortix');
-  });
-
-  test('applyAgentBlockV2 validates a new agent block against the synthesized manifest as-is', () => {
-    const manifest = synthesizeBlankManifest({
-      name: 'blank-project',
-      manifestPath: 'kortix.toml',
-    });
+describe('the synthesized manifest `loadManifestForEdit` produces for a blank project', () => {
+  test('carries no kortix_version and accepts a default-agent and an agent-block write as-is', () => {
+    const manifest = synthesizeBlankManifest({ name: 'blank-project', manifestPath: 'kortix.yaml' });
+    expect(manifest.raw).not.toHaveProperty('kortix_version');
+    expect(manifest.path).toBe('kortix.yaml');
 
     const applied = applyAgentBlockV2(manifest, 'release-bot', {
       connectors: ['github'],
@@ -287,36 +226,15 @@ describe('the raw path `loadManifestForEdit` actually produces for a blank proje
     });
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
-    const agents = applied.raw.agents as Record<string, unknown>;
-    expect(Object.keys(agents).sort()).toEqual(['kortix', 'release-bot']);
-    // The write result still carries kortix_version — a second edit in the
-    // same request (or a subsequent PUT before the first commit lands) must
-    // keep validating too, not just the very first one.
-    expect(applied.raw.kortix_version).toBe(2);
-    const reapplied = applyDefaultAgentV2({ ...manifest, raw: applied.raw }, 'release-bot');
-    expect(reapplied.ok).toBe(true);
-  });
-
-  test('the synthesized manifest itself is schema-valid on the exact object identity applyDefaultAgentV2 spreads', () => {
-    // `applyDefaultAgentV2`/`applyAgentBlockV2` both do `{ ...manifest.raw, ... }`
-    // then `validateManifest(nextRaw, manifest.format)` directly — prove the
-    // UNMODIFIED synthesized raw already round-trips through the real
-    // validator with zero errors (a stricter check than the old test's
-    // serialize→reparse indirection).
-    const manifest = synthesizeBlankManifest({
-      name: 'blank-project',
-      manifestPath: 'kortix.toml',
-    });
-    const applied = applyDefaultAgentV2(manifest, manifest.raw.default_agent as string);
-    expect(applied.ok).toBe(true);
+    expect(Object.keys(applied.raw.agents as Record<string, unknown>).sort()).toEqual(['release-bot', 'worker']);
+    expect(applyDefaultAgentV2({ ...manifest, raw: applied.raw }, 'release-bot').ok).toBe(true);
   });
 });
 
 describe('connectors_required — the config route validation gate', () => {
   const manifestWith = (connectors: string[]) =>
     parseManifestString(
-      ['kortix_version: 2', 'default_agent: support', 'agents:', '  support:', `    connectors: [${connectors.join(', ')}]`, ''].join('\n'),
-      'yaml',
+      ['default_agent: support', 'agents:', '  support:', `    connectors: [${connectors.join(', ')}]`, ''].join('\n'),
       'kortix.yaml',
     );
 
@@ -378,14 +296,14 @@ describe('repository access', () => {
       expect(read.ok && read.block).toEqual({ repository_access: value });
     }
   });
-  test('writes an undeclared value explicitly as the v2 default (true) and reads it back', () => {
+  test('writes an undeclared value explicitly as the default (false) and reads it back', () => {
     const saved = applyAgentBlockV2(v2Manifest(), 'support', { connectors: 'none' });
     expect(saved.ok).toBe(true);
     if (!saved.ok) return;
-    expect((saved.raw.agents as any).support.workspace).toEqual({ project_repository: true });
-    expect(extractAgents({ ...v2Manifest(), raw: saved.raw }).specs[0]?.repositoryAccess).toBe(true);
+    expect((saved.raw.agents as any).support.workspace).toEqual({ project_repository: false });
+    expect(extractAgents({ ...v2Manifest(), raw: saved.raw }).specs[0]?.repositoryAccess).toBe(false);
     const read = readAgentBlockV2(v2Manifest(V2.replace('    workspace: runtime\n', '')), 'support');
-    expect(read.ok && read.block?.repository_access).toBe(true);
+    expect(read.ok && read.block?.repository_access).toBe(false);
   });
   test('rejects conflicting aliases and invalid boolean values', () => {
     for (const block of [

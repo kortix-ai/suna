@@ -60,9 +60,9 @@ CI. A diff that no test reads (docs, a skill, a standalone script) needs no run.
 the changed behaviour on your worktree's stack: `pnpm worktree start <slug>` prints the web
 and API ports. Exercise the real surface: the HTTP route with `curl`, the real CLI process,
 or the page with agent-browser. No CI lane runs these for you before the merge.
-No hook or merge gate requires a test run on a PR into `dev`. If a merge of `origin/dev`
-conflicts on a leftover `tests/attestations/` or `tests/test-attestation.json` file, delete it:
-the attestation system was removed on 2026-10-16.
+No hook or merge gate requires a test run on a PR into `dev`. The attestation system was
+removed on 2026-10-16: delete any `tests/attestations/` or `tests/test-attestation.json` file
+that an older branch or a merge brings back.
 
 Done when the commands you will list under "Verification" passed, with output
 captured.
@@ -112,7 +112,7 @@ Rules for the video:
 - `.mp4` plays in every browser. Keep each file under 100 MB (`ls -lh output/pr/`).
 - For a change with no UI (API, CLI, infra), record the terminal output or the rendered
   result on GitHub. For example, open the changed file on the branch at
-  `https://github.com/kortix-ai/suna/blob/<branch>/<path>`. Or state in the PR why a video
+  `https://github.com/kortix-ai/CompanyOS/blob/<branch>/<path>`. Or state in the PR why a video
   adds nothing.
 
 Look at the video before you attach it. Extract four frames and read them:

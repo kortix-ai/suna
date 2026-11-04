@@ -1,15 +1,10 @@
-import type { SessionMessageAuthor, SessionMessageAuthors } from '@kortix/sdk';
+import type { SessionMessageAuthor, SessionMessageAuthors, SessionParticipants } from '@kortix/sdk';
 
-/** One author, one key: two members never share it, nor do two sessions. */
-function authorKey(author: SessionMessageAuthor): string {
-  return author.kind === 'member' ? `member:${author.user_id}` : `session:${author.session_id}`;
-}
+import type { UiViewer } from '../../providers/ui-provider';
 
 interface TranscriptAuthors {
   /** The author of each user message that has one, by runtime message id. */
   byMessage: Map<string, SessionMessageAuthor>;
-  /** True when the transcript reads as a group chat: 2+ distinct authors. */
-  multiAuthor: boolean;
 }
 
 /**
@@ -29,8 +24,7 @@ export function resolveTranscriptAuthors(
     if (!data?.authors[id]) initial = null;
     byMessage.set(id, author);
   }
-  const distinct = new Set([...byMessage.values()].map(authorKey));
-  return { byMessage, multiAuthor: distinct.size >= 2 };
+  return { byMessage };
 }
 
 /** When to ask again for an author that is not recorded yet: 2 s, 5 s, 12 s. */
@@ -66,19 +60,42 @@ export function authorForTurn(
 }
 
 /**
- * Whether a bubble names its author. A one-person session draws no name. A
- * group chat names every author, and so does a session you read that someone
- * else wrote in. With no viewer id (the host passes no `useViewerId`, or auth
- * is still loading) a one-person session draws no name either.
+ * The signed-in viewer as a message author. A prompt sent from this tab has no
+ * recorded author until the ledger writes it, a moment after the bubble
+ * paints: the viewer's own avatar stands in, so the bubble does not move when
+ * the recorded author arrives. Undefined with no viewer.
  */
-export function showAuthorName(
-  author: SessionMessageAuthor | undefined,
-  multiAuthor: boolean,
-  viewerId: string | undefined,
-): boolean {
-  if (!author) return false;
-  if (multiAuthor) return true;
-  return author.kind === 'session' || (viewerId !== undefined && author.user_id !== viewerId);
+export function viewerAuthor(viewer: UiViewer | undefined): SessionMessageAuthor | undefined {
+  if (!viewer) return undefined;
+  const name = viewer.metadata?.full_name ?? viewer.metadata?.name;
+  const avatar = viewer.metadata?.avatar_url;
+  return {
+    kind: 'member',
+    user_id: viewer.id,
+    name: typeof name === 'string' ? name : '',
+    email: viewer.email ?? null,
+    avatar_url: typeof avatar === 'string' ? avatar : null,
+  };
+}
+
+/**
+ * A queued prompt's sender, from the people who can open the session: the
+ * prompt row names its `author_user_id` before the authors read lists it.
+ * Undefined when that person is not in the listed rows (the route lists 20).
+ */
+export function participantAuthor(
+  participants: SessionParticipants | undefined,
+  userId: string | null | undefined,
+): SessionMessageAuthor | undefined {
+  const person = userId ? participants?.participants.find((p) => p.user_id === userId) : undefined;
+  if (!person) return undefined;
+  return {
+    kind: 'member',
+    user_id: person.user_id,
+    name: person.name ?? '',
+    email: person.email,
+    avatar_url: person.avatar_url,
+  };
 }
 
 /**
@@ -100,4 +117,31 @@ export function stoppedByName(
 /** A prompt an agent will answer. A `no_reply` prompt runs no turn. */
 export function awaitsAgent(prompt: { no_reply?: boolean }): boolean {
   return !prompt.no_reply;
+}
+
+/**
+ * The user messages the viewer may edit and rewind to: their own, with no
+ * other person's message after it (a rewind deletes everything after the
+ * target). An agent's message, or one with no recorded author, belongs to the
+ * thread's starter and never blocks a later rewind. The server applies the same
+ * rule (`rewind-authority.ts`). Null with no viewer id: nothing to filter on.
+ */
+export function rewindableMessageIds(
+  messageIds: readonly string[],
+  authors: ReadonlyMap<string, SessionMessageAuthor>,
+  viewerId: string | undefined,
+  starterId: string | null | undefined,
+): Set<string> | null {
+  if (viewerId === undefined) return null;
+  const allowed = new Set<string>();
+  for (let i = messageIds.length - 1; i >= 0; i--) {
+    const author = authors.get(messageIds[i]!);
+    if (author?.kind === 'member') {
+      if (author.user_id !== viewerId) break;
+      allowed.add(messageIds[i]!);
+    } else if (!starterId || starterId === viewerId) {
+      allowed.add(messageIds[i]!);
+    }
+  }
+  return allowed;
 }

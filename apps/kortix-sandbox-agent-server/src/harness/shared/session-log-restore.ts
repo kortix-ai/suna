@@ -17,7 +17,7 @@
  * The boot decides what a truncated text means for the session (P6.4).
  */
 import { createHash } from 'node:crypto'
-import type { CompactionBlock, SessionLog, SessionLogMessage, SessionLogRestore, SessionLogThread } from '@kortix/api-contract/session-log'
+import type { SessionLog, SessionLogRestore } from '@kortix/api-contract/session-log'
 import type { SandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { mapLimit } from '@/lib/map-limit'
 import { logger } from '@/lib/log/logger'
@@ -117,21 +117,4 @@ export async function attachmentBytes(log: SessionLog, read: BytesReader | undef
     return bytes && (!want || createHash('sha256').update(bytes).digest('hex') === want) ? bytes : null
   })
   return new Map(entries.map(([ref], i) => [ref, got[i]!]))
-}
-
-/**
- * The messages of a thread that modelView shows next: in context, and not summarized away by
- * its last compaction. A restore counts a loss in `dropped` only inside one of these.
- */
-export function visibleMessageIds(thread: SessionLogThread): Set<string> {
-  const msgs = [...thread.messages].sort((a, b) => a.seq - b.seq)
-  const c = msgs.findLastIndex((m) => m.kind === 'compaction' && m.in_context)
-  const block = msgs[c]?.blocks.find((b): b is CompactionBlock => b.type === 'compaction')
-  const turn = (m: SessionLogMessage) => m.in_context && m.kind === 'turn'
-  if (!block) return new Set(msgs.filter(turn).map((m) => m.message_id))
-  const k = block.first_kept_message_id ? msgs.findIndex((m) => m.message_id === block.first_kept_message_id) : -1
-  const kept = block.layout
-    ? block.layout.flatMap((e) => ('message_id' in e ? [e.message_id] : []))
-    : k < 0 ? [] : msgs.slice(k, c).filter(turn).map((m) => m.message_id)
-  return new Set([...kept, ...msgs.slice(c + 1).filter(turn).map((m) => m.message_id)])
 }

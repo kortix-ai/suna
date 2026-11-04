@@ -140,3 +140,37 @@ test('fullscreen rotation and reopening preserve the reset', async () => {
   const resetImage = document.querySelector<HTMLElement>('.mermaid-container[style*="transform"]');
   expect(resetImage?.style.transform).toBe('translate(0px, 0px) scale(0.8) rotate(0deg)');
 });
+
+test('cached solid and dashed flowchart arrows follow theme tokens without rendering again', async () => {
+  const chart = 'flowchart LR\nThemeStart --> ThemeEnd';
+  cacheMermaidSvg(chart, `
+    <style>
+      :root { --muted-foreground: rgb(102, 102, 102); }
+      :root.dark { --muted-foreground: rgb(180, 180, 180); }
+      #theme-diagram .marker path { fill: black; stroke: black; }
+    </style>
+    <svg id="theme-diagram">
+      <defs><marker id="theme-arrow" class="marker flowchart-v2">
+        <path class="arrowMarkerPath" d="M0 0 L10 5 L0 10z" />
+      </marker></defs>
+      <path class="flowchart-link" d="M0 0L100 0" marker-end="url(#theme-arrow)" />
+      <path class="flowchart-link" d="M0 20L100 20" marker-end="url(#theme-arrow)" style="stroke-dasharray: 2px" />
+    </svg>`);
+  await mount(chart);
+  const arrow = host.querySelector('.arrowMarkerPath');
+  const edges = host.querySelectorAll('.flowchart-link');
+  if (!arrow || edges.length !== 2) throw new Error('missing connector shapes');
+  for (const dark of [false, true, false]) {
+    document.documentElement.classList.toggle('dark', dark);
+    const ink = dark ? 'rgb(180, 180, 180)' : 'rgb(102, 102, 102)';
+    for (const edge of edges) {
+      expect(getComputedStyle(edge).stroke).toBe(ink);
+      expect(edge.getAttribute('marker-end')).toBe('url(#theme-arrow)');
+    }
+    expect(getComputedStyle(arrow).fill).toBe(ink);
+    expect(getComputedStyle(arrow).stroke).toBe(ink);
+    expect(getComputedStyle(edges[1]).strokeDasharray).toBe('2px');
+  }
+  expect(render).not.toHaveBeenCalled();
+  document.documentElement.classList.remove('dark');
+});

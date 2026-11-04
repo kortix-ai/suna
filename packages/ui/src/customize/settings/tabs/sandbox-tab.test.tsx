@@ -211,16 +211,11 @@ describe('SandboxTabView', () => {
     expect(out).toContain('header-action-marker');
   });
 
-  test('reads the manifest hint from kortix.toml by default, kortix.yaml at manifest v2 and v3', () => {
-    const v1 = renderToStaticMarkup(<SandboxTabView manifestVersion={1} />);
-    expect(v1).toContain('kortix.toml');
-    expect(v1).not.toContain('kortix.yaml');
-
-    for (const version of [2, 3]) {
-      const yaml = renderToStaticMarkup(<SandboxTabView manifestVersion={version} />);
-      expect(yaml).toContain('kortix.yaml');
-      expect(yaml).not.toContain('kortix.toml');
-    }
+  test('the manifest hint names kortix.yaml, or the path the server read', () => {
+    expect(renderToStaticMarkup(<SandboxTabView />)).toContain('kortix.yaml');
+    expect(renderToStaticMarkup(<SandboxTabView manifestPath="config/kortix.yml" />)).toContain(
+      'config/kortix.yml',
+    );
   });
 
   test('surfaces a partial-read warning without failing the whole tab', () => {
@@ -353,15 +348,12 @@ describe('template card readability', () => {
   });
 
   test('the source tag reads as plain English, not a raw enum', () => {
-    expect(describeSource(template({ source: 'platform' }), 2).label).toBe('Kortix platform');
-    expect(describeSource(template({ source: 'ui' }), 2).label).toBe('This dashboard');
-    expect(describeSource(template({ source: 'toml' }), 2)).toMatchObject({
+    expect(describeSource(template({ source: 'platform' }), 'kortix.yaml').label).toBe('Kortix platform');
+    expect(describeSource(template({ source: 'ui' }), 'kortix.yaml').label).toBe('This dashboard');
+    expect(describeSource(template({ source: 'toml' }), 'kortix.yaml')).toMatchObject({
       label: 'kortix.yaml',
       mono: true,
     });
-    expect(describeSource(template({ source: 'toml' }), 3).label).toBe('kortix.yaml');
-    expect(describeSource(template({ source: 'toml' }), 1).label).toBe('kortix.toml');
-    expect(describeSource(template({ source: 'toml' }), null).label).toBe('kortix.toml');
   });
 
   test('the base cell states the real image even for the platform default', () => {

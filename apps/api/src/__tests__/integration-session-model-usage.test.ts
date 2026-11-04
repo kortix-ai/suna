@@ -14,7 +14,7 @@ import { accounts, gatewayRequestLogs, projectSessions, projects, sessionTurns }
 import { eq, sql } from 'drizzle-orm';
 
 import { projectSpendByModel, sessionModelUsage } from '../projects/lib/session-model-usage';
-import { db } from '../shared/db';
+import { db, withDbTransaction } from '../shared/db';
 
 const tag = crypto.randomUUID().slice(0, 8);
 const ACCOUNT = crypto.randomUUID();
@@ -90,6 +90,75 @@ describe('sessionModelUsage', () => {
   test('a session with no gateway request has no latest model, no cost and no turns', async () => {
     await session('empty');
     expect(await usageOf('empty')).toEqual({ latest: null, billed_cost: 0, turns: {} });
+  });
+
+  test('command-only turns do not multiply work for a long request ledger', async () => {
+    await session('commands');
+    await turn('commands', 'msg_commands', 0, 1);
+    await db.execute(sql`
+      insert into kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id, state, end_reason, started_at)
+      select 'command-' || ${tag} || '-' || n, ${sid('commands')}, ${SANDBOX}::uuid,
+             ${PROJECT}::uuid, ${ACCOUNT}::uuid, 'ended', 'completed', ${at(1).toISOString()}::timestamptz
+      from generate_series(1, 10000) n
+    `);
+    await db.execute(sql`
+      insert into kortix.gateway_request_logs
+        (request_id, account_id, project_id, session_id, requested_model, resolved_model,
+         provider, status, ok, final_cost, billing_mode, metadata, created_at)
+      select 'command-request-' || ${tag} || '-' || n, ${ACCOUNT}::uuid, ${PROJECT}::uuid,
+             ${sid('commands')}, 'test-model', 'test-model', 'kortix', 200, true, 0, 'none',
+             '{}'::jsonb, ${at(2).toISOString()}::timestamptz
+      from generate_series(1, 2000) n
+    `);
+    const usage = await withDbTransaction(async () => {
+      await db.execute(sql`set local statement_timeout = '500ms'`);
+      return usageOf('commands');
+    });
+    expect(usage.turns).toEqual({
+      msg_commands: { served_models: ['test-model'], fallback_from: null, billed_cost: 0 },
+    });
+  });
+
+  // 2026-10-30 prod: a session with 13,316 requests and 1,377 message turns took
+  // 7.8 s per read. Each request's turn lookup read and sorted every earlier turn,
+  // because its sort order did not match the session index.
+  test('a long session reads one turn per request, not every earlier turn', async () => {
+    await session('long');
+    await db.execute(sql`
+      insert into kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id, message_id, state, end_reason, started_at)
+      select 'long-' || ${tag} || '-' || n, ${sid('long')}, ${SANDBOX}::uuid, ${PROJECT}::uuid, ${ACCOUNT}::uuid,
+             'msg_long_' || n, 'ended', 'completed', ${at(0).toISOString()}::timestamptz + make_interval(secs => n)
+      from generate_series(1, 4000) n
+    `);
+    // Two fallback answers per turn, so both turn lookups (spend and fallbacks) run for every request.
+    await db.execute(sql`
+      insert into kortix.gateway_request_logs
+        (request_id, account_id, project_id, session_id, requested_model, resolved_model,
+         provider, status, ok, final_cost, billing_mode, metadata, created_at)
+      select 'long-request-' || ${tag} || '-' || n, ${ACCOUNT}::uuid, ${PROJECT}::uuid,
+             ${sid('long')}, 'model-a', 'model-b', 'kortix', 200, true, 0, 'none',
+             '{"servedModel":"model-b","fallbackFrom":"model-a"}'::jsonb,
+             ${at(0).toISOString()}::timestamptz + make_interval(secs => 0.75 + n * 0.5)
+      from generate_series(1, 8000) n
+    `);
+    const usage = await withDbTransaction(async () => {
+      await db.execute(sql`set local statement_timeout = '500ms'`);
+      return usageOf('long');
+    });
+    const turn = {
+      served_models: ['model-b'],
+      fallback_from: 'model-a',
+      billed_cost: 0,
+      fallbacks: [
+        { requested_model: 'model-a', served_model: 'model-b', error_code: 'upstream_error' },
+        { requested_model: 'model-a', served_model: 'model-b', error_code: 'upstream_error' },
+      ],
+    };
+    expect(Object.keys(usage.turns)).toHaveLength(4000);
+    expect(usage.turns.msg_long_1).toEqual(turn);
+    expect(usage.turns.msg_long_4000).toEqual(turn);
   });
 
   test('a turn its own model answered names that model and no fallback', async () => {
@@ -217,8 +286,8 @@ describe('projectSpendByModel', () => {
     await request({ ...row, at: 30, resolved: 'gpt-6.1-sol', provider: 'openai-codex', metadata: { servedModel: 'codex/gpt-6.1-sol' } });
 
     expect(await projectSpendByModel(SPEND_PROJECT, 30)).toEqual([
-      { model: 'glm-5.3-flash', provider: 'kortix', requests: 2, errors: 0, cost: 0.75, kortix_cost: 0.75, provider_cost: 0, tokens: 0 },
-      { model: 'codex/gpt-6.1-sol', provider: 'openai-codex', requests: 1, errors: 0, cost: 0, kortix_cost: 0, provider_cost: 0, tokens: 0 },
+      { estimated_usage_value: null, priced_requests: 0, unpriced_requests: 2, model: 'glm-5.3-flash', provider: 'kortix', requests: 2, errors: 0, cost: 0.75, kortix_cost: 0.75, provider_cost: 0, tokens: 0 },
+      { estimated_usage_value: 0, priced_requests: 1, unpriced_requests: 0, model: 'codex/gpt-6.1-sol', provider: 'openai-codex', requests: 1, errors: 0, cost: 0, kortix_cost: 0, provider_cost: 0, tokens: 0 },
     ]);
   });
 });

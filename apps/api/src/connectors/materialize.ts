@@ -10,7 +10,7 @@
 import type { ConnectorSpec } from '../projects/connectors';
 import type { ProjectPolicySpec } from '../projects/policies';
 import { channelApiBase, channelAuth } from './channels';
-import type { PolicyArgCondition } from './policy';
+import type { PolicyArgCondition } from '@kortix/manifest-schema';
 
 export interface DesiredPolicy {
   match: string;
@@ -89,6 +89,23 @@ export function toPolicyRows(spec: ConnectorSpec): DesiredPolicy[] {
     action: p.action,
     position: i,
     ...(p.conditions && p.conditions.length > 0 ? { conditions: p.conditions } : {}),
+  }));
+}
+
+/** Map `policy_sets:` → one row per set; rules keep their authoring order. */
+export function toPolicySetRows(spec: ConnectorSpec): Array<{
+  name: string;
+  description: string | null;
+  policies: Array<{ match: string; action: string; conditions?: PolicyArgCondition[] }>;
+}> {
+  return (spec.policySets ?? []).map((set) => ({
+    name: set.name,
+    description: set.description,
+    policies: set.policies.map((p) => ({
+      match: p.match,
+      action: p.action,
+      ...(p.conditions && p.conditions.length > 0 ? { conditions: p.conditions } : {}),
+    })),
   }));
 }
 

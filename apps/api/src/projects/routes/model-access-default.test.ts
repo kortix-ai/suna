@@ -35,7 +35,9 @@ mock.module('../../repositories/project-model-access', () => ({
     return { conflict: false, policy: { disabledProviders: [], disabledModels: [] } };
   },
 }));
+const realAccess = await import('../lib/access');
 mock.module('../lib/access', () => ({
+  ...realAccess,
   loadProjectForUser: async () => ({ userId: 'user-test', row: { accountId: 'account-test', metadata: {} } }),
   assertProjectCapability: async () => {},
 }));

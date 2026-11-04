@@ -370,6 +370,9 @@ export function FileViewer({
     blobError: imageError,
     blobTooLarge,
     blobUrl,
+    imageSource,
+    imageRatio,
+    dropImageSource,
     isLoading,
     error: hasError,
     size: previewSize,
@@ -554,6 +557,9 @@ export function FileViewer({
               filePath={file.path}
               sandboxUrl={sandboxUrl}
               size={previewSize}
+              imageSource={imageSource}
+              imageRatio={imageRatio}
+              onImageSourceError={dropImageSource}
             />
           )}
         </View>

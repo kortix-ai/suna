@@ -1,13 +1,13 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
-import { type SQL, eq } from 'drizzle-orm';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { type SQL, eq, sql } from 'drizzle-orm';
 /** One project: read, detail, and update. */
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { readJsonObject } from '../../shared/http-body';
 import { listRepoFiles, loadProjectConfig } from '../git';
+import { savedProjectConfig } from '../config-summary/service';
 import { disconnectedProjectConfig } from '../git/config';
 import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { allowStaleMirrorReads } from '../git/mirror';
@@ -22,7 +22,9 @@ import { ProjectSchema, projectsApp } from '../lib/app';
 import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
-import { addPlatformMetaAgent } from '../lib/platform-meta-agent';
+import { MANIFEST_PROJECT_NAME_KEY, commitProjectName } from '../lib/manifest-project-name';
+import { MANIFEST_SYNTAX_ISSUE_PATH } from '@kortix/manifest-schema';
+import { addMyKortixAgent, projectBuiltinAgents } from '../lib/my-kortix-agent';
 import { normalizeProjectGlyph } from '../lib/project-glyph';
 import { normalizeProjectIcon } from '../lib/project-icon';
 import { denierFromConfig, filterConfigResourcesForUser } from '../lib/project-resources';
@@ -65,7 +67,11 @@ export function registerProjectDetailRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const requestedProjectId = c.req.param('projectId');
+      const projectId = requestedProjectId === 'current'
+        ? c.get('tokenProjectId')
+        : requestedProjectId;
+      if (!projectId) return c.json({ error: 'Not found' }, 404);
 
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -127,29 +133,54 @@ export function registerProjectDetailRoutes(): void {
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
       // A page view: serve the warm git mirror, refresh it behind the response.
       allowStaleMirrorReads();
+      const ref = loaded.row.defaultBranch;
 
-      // A disconnected repository still renders the project shell: no files,
-      // and a config whose `manifest_version.unknown_reason` names the cause.
-      // `git_connection` below carries the reason and the fix.
-      const gitProject = await withProjectGitAuth(loaded.row).catch((error) => {
-        if (isRepositoryDisconnectedError(error)) return null;
-        throw error;
-      });
+      // The saved summary of the default branch: no git on this path
+      // (`config-summary/service.ts`). A moved tip rebuilds it behind the response.
+      const saved = await savedProjectConfig(loaded.row);
       let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
-      if (!gitProject) {
-        c.header('X-Kortix-Repo-Status', 'disconnected');
-      } else {
+      let rawConfig: Awaited<ReturnType<typeof loadProjectConfig>>;
+      const listLive = async (gitProject: Awaited<ReturnType<typeof withProjectGitAuth>>) => {
         try {
-          files = await listRepoFiles(gitProject, loaded.row.defaultBranch);
+          return await listRepoFiles(gitProject, ref);
         } catch (error) {
           console.warn('[projects] repo detail listing unavailable', {
             projectId,
             error: error instanceof Error ? error.message : String(error),
           });
           c.header('X-Kortix-Repo-Status', 'unavailable');
+          return [];
         }
+      };
+      if (saved) {
+        c.header('X-Kortix-Config-Source', `snapshot; commit=${saved.sourceCommit}`);
+        rawConfig = saved.config;
+        // Past the stored path cap the list comes from git, as before.
+        if (saved.filesComplete) files = saved.files;
+        else {
+          const gitProject = await withProjectGitAuth(loaded.row).catch((error) => {
+            if (isRepositoryDisconnectedError(error)) return null;
+            throw error;
+          });
+          if (gitProject) files = await listLive(gitProject);
+          else c.header('X-Kortix-Repo-Status', 'disconnected');
+        }
+      } else {
+        c.header('X-Kortix-Config-Source', 'live');
+        // A disconnected repository still renders the project shell: no files,
+        // and a config whose `manifest_version.unknown_reason` names the cause.
+        // `git_connection` below carries the reason and the fix.
+        const gitProject = await withProjectGitAuth(loaded.row).catch((error) => {
+          if (isRepositoryDisconnectedError(error)) return null;
+          throw error;
+        });
+        if (!gitProject) {
+          c.header('X-Kortix-Repo-Status', 'disconnected');
+        } else {
+          files = await listLive(gitProject);
+        }
+        rawConfig = gitProject ? await loadProjectConfig(gitProject, files) : disconnectedProjectConfig();
       }
-      const rawConfig = gitProject ? await loadProjectConfig(gitProject, files) : disconnectedProjectConfig();
       // Per-resource scoping: hide agents/skills this member isn't granted (owner/
       // admins/SAs see everything). No-op when the project has no resource grants.
       const denierCtx = {
@@ -159,12 +190,19 @@ export function registerProjectDetailRoutes(): void {
         actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
       };
       const filteredConfig = await filterConfigResourcesForUser(rawConfig, denierCtx);
-      // The platform coordinator appears in the agent list (and becomes the
-      // default) only for projects that opted into the `meta_agent` experimental
-      // feature. Flag off: the config is exactly the repo-declared surface.
-      const withAgents = resolveFeatureFlag(loaded.row.metadata, 'meta_agent')
-        ? addPlatformMetaAgent(filteredConfig)
-        : filteredConfig;
+      // My Kortix (slug `mykortix`) is listed first when kortix.yaml sets
+      // `builtin_agents.my_kortix: true`. Off: the config is exactly the
+      // repo-declared surface. A kortix.yaml that is not YAML runs the last
+      // version that parses (`rawConfig.manifest`); with none it is repair
+      // mode, where My Kortix runs so it can be fixed (`loadProjectAgents`).
+      const repairMode =
+        rawConfig.manifest_health.issues.some((issue) => issue.path === MANIFEST_SYNTAX_ISSUE_PATH) &&
+        Object.keys(rawConfig.manifest).length === 0;
+      const builtinAgents = repairMode ? { my_kortix: true } : projectBuiltinAgents(rawConfig.manifest);
+      const withAgents = {
+        ...(builtinAgents.my_kortix ? addMyKortixAgent(filteredConfig) : filteredConfig),
+        builtin_agents: builtinAgents,
+      };
       // A Kortix skill behind a feature flag is listed only while the flag is on: the box does
       // not have it either (feature-flag-env.ts → kortixd).
       const enabledFlags = new Set(featureFlagsEnvValue(loaded.row.metadata).split(','));
@@ -256,7 +294,7 @@ export function registerProjectDetailRoutes(): void {
       },
       responses: {
         200: json(ProjectSchema, 'The updated project'),
-        ...errors(404),
+        ...errors(400, 404, 409),
       },
     }),
     async (c) => {
@@ -336,6 +374,15 @@ export function registerProjectDetailRoutes(): void {
         if (iconGlyphPresent && body.icon_glyph === null) deleteKeys.push('icon_glyph');
         if (iconPresent && body.icon === null) deleteKeys.push('icon');
         if (deleteKeys.length > 0) metadataExpr = metadataMerge({}, deleteKeys);
+      }
+
+      // kortix.yaml owns project.name: commit the rename first; a refused commit renames nothing.
+      if (name && name !== loaded.row.name) {
+        const declared = await commitProjectName(loaded.row, name);
+        if (!declared.ok) return c.json({ error: declared.error, code: declared.code ?? 'manifest_write_failed' }, declared.status as 400 | 409);
+        metadataExpr = metadataExpr
+          ? sql`${metadataExpr} || ${JSON.stringify({ [MANIFEST_PROJECT_NAME_KEY]: name })}::jsonb`
+          : metadataMerge({ [MANIFEST_PROJECT_NAME_KEY]: name });
       }
 
       const [row] = await db

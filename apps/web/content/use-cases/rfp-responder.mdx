@@ -61,59 +61,122 @@ through whatever channel the RFP requires.
 ## How it works
 
 <Steps>
-<Step title="Poll the inbox every 15 minutes">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** checks Gmail every 15 minutes for a new RFP or proposal
-questionnaire. Each firing spawns a fresh **session** in its own sandbox — this
-is a fresh-session agent, so nothing carries over between checks; it finds new
-work from what's sitting in the inbox right now.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the rfp-response skill and the 15-minute
+trigger, and opens a change request for you to review. Prefer clicks? Choose
+**Use this template** instead.
 
-</Step>
-<Step title="Ground the agent in our vetted answers">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up an RFP responder agent in this project.
 
-Our past-answers library lives as **skills** and **memory** that travel with the
-agent: the vetted response to each recurring question — pricing tiers,
-implementation timeline, integrations, support model, security basics, company
-background, references — cross-checked against the current product docs so an
-answer that's gone stale doesn't get reused. The agent drafts only from this
-grounded set. When we win a deal with a better answer, we write it down and the
-next RFP gets the improved version.
+1. Create the agent agents/rfp-responder.md. Its job is to draft a full response to each new RFP or proposal questionnaire. It may use the Gmail, Google Drive and Google Docs connectors.
 
-</Step>
-<Step title="Connect the RFP source and the drafting surface">
+2. Create the skill skills/rfp-response/SKILL.md with these rules:
+   - A thread under the Gmail label RFPs with no draft reply is new. Work the oldest one first, and respect any stated deadline.
+   - Open the RFP document from Google Drive, read every section, and extract each question with its section, number and exact wording. Never edit, move or delete the source file.
+   - Answer only from the vetted answers in memory/rfp-answers.md. Check each product-capability answer against the current product docs.
+   - Write the response in a new Google Doc in the RFP Drafts folder, in the RFP's own order and headings.
+   - Mark every question without a confident match NEEDS REVIEW, and list them at the top of the doc. Never invent an answer.
+   - Leave an unsent Gmail draft reply on the thread that links the doc and lists what is flagged. Never send, submit or upload anything.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger rfp-check to kortix.yaml. It runs the rfp-responder agent every 15 minutes with the prompt "Load the rfp-response skill and draft a response to every new RFP under the RFPs label."
 
-- **Read the inbound RFP from Gmail** — the email that carries the RFP or
-  questionnaire and its deadline.
-- **Open the RFP document from Google Drive** — the attached or linked Word doc,
-  PDF, or spreadsheet, whatever format the buyer sent.
-- **Build the draft in Google Docs** — a new document with the full response,
-  mirroring the RFP's own question order and sections.
-- **Flag low-confidence questions** — anything without a confident match in the
-  library, called out for a person to answer.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent **drafts only**: it writes the response doc and flags what it's
-unsure of, and it never submits or sends anything back to the buyer — no portal
-upload, no email, no attachment sent on our behalf. Anything without a confident
-match in the vetted library is left for a person rather than guessed. The
-finished draft stops at a **human approval gate** — a person reviews it and
-submits it. Credentials are encrypted in the Secrets Manager and injected at
-runtime, scoped to the agents you grant them to.
+Open **Connectors** in your project and connect the inbox where RFPs arrive,
+Google Drive and Google Docs. Credentials are brokered server-side and never
+enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="Gmail" domain="gmail.com" tag="Required" alternatives={[['Microsoft Outlook', 'outlook.com']]}>
+    Reads each new RFP and leaves an unsent reply draft.
+  </ToolNeed>
+  <ToolNeed name="Google Drive" domain="drive.google.com" tag="Required" alternatives={[['Google Docs', 'docs.google.com'], ['Dropbox', 'dropbox.com']]}>
+    Opens the RFP document and saves the draft response Doc.
+  </ToolNeed>
+  <ToolNeed name="Notion" domain="notion.so" tag="Optional" alternatives={[['Confluence', 'atlassian.com']]}>
+    Supplies vetted past answers when the library lives there.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Return a completed draft for review">
+<Step title="Run it once with this prompt">
 
-With that in place, a new RFP comes back within 15 minutes as a fully drafted
-Google Doc, answers pulled from our vetted library and product docs, and the
-uncertain questions called out by name. The rep reviews the draft, answers the
-flagged questions, and submits it through the channel the RFP calls for. The
-research and first draft are done; the review and submission stay with a
-person.
+Merge the change request, then start a session with the **rfp-responder** agent
+and send this prompt. Read the first draft and its flagged questions before you
+let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Draft a response to every new RFP under the Gmail label RFPs.
+
+1. Find the threads under RFPs that have no draft reply.
+2. Open each RFP document from Google Drive and extract every question with its section and number.
+3. Answer each question from the vetted answers library, checked against the current product docs.
+4. Write the response in a new Google Doc in RFP Drafts, in the RFP's order, and mark every unmatched question NEEDS REVIEW.
+5. Leave an unsent Gmail draft reply on the thread with the doc link and the flagged list. Do not send or submit anything.`}
+/>
+
+</Step>
+<Step title="Let the 15-minute schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every 15 minutes, each run in a new session on its own cloud computer. To
+change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: rfp-check
+    name: RFP inbox check
+    on:
+      cron: "0 */15 * * * *"
+    run:
+      agent: rfp-responder
+      prompt: Load the rfp-response skill and draft a response to every new RFP under the RFPs label.`}
+/>
+
+</Step>
+<Step title="Flag what it cannot answer, never submit">
+
+The agent answers only from the vetted library and flags every question without
+a confident match. It never sends the reply, uploads to a buyer portal or
+contacts the buyer. A person resolves the flags and submits the response.
+
+</Step>
+<Step title="Read the draft response">
+
+Each new RFP gets one draft doc and one unsent reply on its thread. This is
+what a run looks like in the session:
+
+<ExampleRun
+  title="RFP inbox check · 09:45"
+  message="Load the rfp-response skill and draft a response to every new RFP under the RFPs label."
+  worked="Worked for 8m 12s"
+  tools={[
+    'gmail · search threads',
+    'gmail · list drafts',
+    'google drive · get file',
+    'google docs · create document',
+    'gmail · create draft',
+  ]}
+  note="Illustrative example. Your counts depend on the RFP and your answer library."
+>
+  Found **1** new RFP with **64** questions. Drafted **58** answers from the
+  vetted library in a new doc in RFP Drafts. **6** questions are marked NEEDS
+  REVIEW, most of them about data residency. An unsent reply with the doc link
+  is on the thread.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -124,6 +187,25 @@ person.
   **skills** and **memory**. The agent drafts every answer it can and flags what
   it can't; a human reviews and submits.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Grow the answer library"
+  code="After a person rewrites a flagged answer in a draft, ask me whether to add it to memory/rfp-answers.md."
+/>
+
+<CopyBlock
+  title="Show the deadline"
+  code="Read the submission deadline from each RFP, and put it in the doc title and the first line of the draft reply."
+/>
+
+<CopyBlock
+  title="Weekly RFP status"
+  code="Every Friday, list each open RFP draft with its deadline and the number of questions that still need review."
+/>
 
 ## Guardrails
 

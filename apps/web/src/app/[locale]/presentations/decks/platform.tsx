@@ -432,8 +432,6 @@ export function useSlides(): SlideDef[] {
             <Terminal
               title={tI18nHardcoded.raw('i18nComplete.text1965f383021e')}
               lines={[
-                { kind: 'comment', text: tI18nHardcoded.raw('i18nComplete.text61f28ba7b5a4') },
-                { kind: 'out', text: '' },
                 { kind: 'out', text: 'project:' },
                 { kind: 'out', text: tI18nHardcoded.raw('i18nComplete.textff874fb0b49f') },
                 { kind: 'out', text: '' },
@@ -626,7 +624,7 @@ export function useSlides(): SlideDef[] {
       ),
     },
 
-    /* 9 — AI OS OVERVIEW ──────────────────────────────────────────────── */
+    /* 9 — CompanyOS OVERVIEW ──────────────────────────────────────────────── */
     {
       id: 'command-center',
       label: tI18nHardcoded.raw('i18nComplete.text2522f9d16f3b'),

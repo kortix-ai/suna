@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-for (const scenario of ['failed-session', 'failed-turn', 'failed-prompt', 'approval', 'installed', 'files-only', 'large-repo', 'stopped-completed', 'stopped-failed', 'timeout', 'stalled', 'invalid']) {
+for (const scenario of ['failed-session', 'failed-turn', 'failed-prompt', 'approval', 'installed', 'files-only', 'large-repo', 'stopped-completed', 'stopped-failed', 'timeout', 'stalled', 'empty', 'nonconventional', 'non-skill', 'unavailable', 'unavailable-catalog', 'unavailable-detail', 'abort-proof', 'invalid']) {
   test(`install process: ${scenario}`, async () => {
     const calls: string[] = [];
     let polls = 0;
@@ -11,9 +11,11 @@ for (const scenario of ['failed-session', 'failed-turn', 'failed-prompt', 'appro
       const path = new URL(req.url).pathname;
       calls.push(`${req.method} ${path}`);
       if (scenario === 'stalled' && path.endsWith('/turn')) return new Promise<Response>(() => {});
+      if (scenario === 'abort-proof' && path.endsWith('/detail')) return new Promise<Response>(() => {});
+      if ((scenario === 'unavailable' && path.endsWith('/files')) || (scenario === 'unavailable-catalog' && path.includes('/marketplace/items/')) || (scenario === 'unavailable-detail' && path.endsWith('/detail'))) return new Response('unavailable', { status: 503 });
       let body: unknown = {};
       if (path.endsWith('/install-session')) body = { session_id: 'session-install' };
-      else if (path.includes('/marketplace/items/')) body = { name: 'pdf', type: 'registry:skill', files: [{ target: '@skills/pdf/SKILL.md', type: 'registry:file' }] };
+      else if (path.includes('/marketplace/items/')) body = { name: 'pdf', type: scenario === 'non-skill' ? 'registry:agent' : 'registry:skill', files: scenario === 'empty' ? [] : [{ target: scenario === 'nonconventional' ? '../pdf/SKILL.md' : '@skills/pdf/SKILL.md', type: 'registry:file' }] };
       else if (path.endsWith('/turn')) body = { turns: [], last_ended: scenario === 'timeout' || (scenario.startsWith('stopped-') && polls < 3) ? undefined : { turn_token: 'turn-install', end_reason: scenario === 'failed-turn' ? 'failed' : 'completed', error: { message: 'model rejected' } } };
       else if (path.endsWith('/prompts')) body = { prompts: scenario === 'failed-prompt' ? [{ prompt_id: 'prompt-install', state: 'failed', last_error: 'delivery rejected' }] : [] };
       else if (path.endsWith('/detail')) body = { config: { skills: scenario === 'files-only' ? [] : [{ name: 'pdf' }] } };
@@ -33,11 +35,11 @@ for (const scenario of ['failed-session', 'failed-turn', 'failed-prompt', 'appro
     try {
       const proc = Bun.spawn([process.execPath, resolve(import.meta.dir, '../index.ts'), 'marketplace', 'install', 'test:pdf', '--project', 'project-test', '--json', '--timeout', scenario === 'invalid' ? '0' : scenario.startsWith('stopped-') ? '4' : '1'], { cwd: dir, env, stdout: 'pipe', stderr: 'pipe' });
       const [code, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-      expect(code).toBe(['installed', 'large-repo', 'stopped-completed'].includes(scenario) ? 0 : ['approval', 'files-only'].includes(scenario) ? 3 : ['timeout', 'stalled'].includes(scenario) ? 124 : scenario === 'invalid' ? 2 : 1);
+      expect(code).toBe(['installed', 'large-repo', 'stopped-completed'].includes(scenario) ? 0 : ['approval', 'files-only', 'empty', 'nonconventional', 'non-skill', 'unavailable', 'unavailable-catalog', 'unavailable-detail'].includes(scenario) ? 3 : ['timeout', 'stalled', 'abort-proof'].includes(scenario) ? 124 : scenario === 'invalid' ? 2 : 1);
       if (scenario === 'invalid') expect(calls).toHaveLength(0);
       else {
         expect(JSON.parse(stdout)).toMatchObject({ session_id: 'session-install', project_id: 'project-test', item_id: 'test:pdf' });
-        if (!['installed', 'large-repo', 'stopped-completed'].includes(scenario)) expect(stderr).toContain(scenario === 'failed-turn' ? 'model rejected' : scenario === 'failed-prompt' ? 'delivery rejected' : ['failed-session', 'stopped-failed'].includes(scenario) ? 'sandbox rejected' : ['timeout', 'stalled'].includes(scenario) ? 'timed out' : 'approval');
+        if (!['installed', 'large-repo', 'stopped-completed'].includes(scenario)) expect(stderr).toContain(scenario === 'failed-turn' ? 'model rejected' : scenario === 'failed-prompt' ? 'delivery rejected' : ['failed-session', 'stopped-failed'].includes(scenario) ? 'sandbox rejected' : ['timeout', 'stalled', 'abort-proof'].includes(scenario) ? 'timed out' : 'approval');
         expect(calls.filter(c => !c.startsWith('GET') && !c.endsWith('/install-session'))).toEqual([]);
       }
     } finally { server.stop(true); rmSync(dir, { recursive: true, force: true }); }

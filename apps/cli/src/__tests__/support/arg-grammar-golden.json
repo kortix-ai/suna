@@ -62,7 +62,7 @@
       "--help"
     ],
     "code": 0,
-    "stdout": "\n  Usage: kortix providers login <provider> [options]\n  ────────────────────────────────────────────────────────\n\n  Start the OAuth device-code flow for openai, opencode, or opencode-go.\n\n  Options:\n  --project <id>      Operate on this project id (default: linked).\n  --host <name>       Operate against a non-default Kortix host.\n  -h, --help          Show this help without starting OAuth.\n\n",
+    "stdout": "\n  Usage: kortix providers login <provider> [options]\n  ────────────────────────────────────────────────────────\n\n  Start the OAuth device-code flow for openai, opencode, or opencode-go.\n  claude adds your own Claude Pro or Max subscription as a Claude account of the\n  project, private to you: Claude models (claude-agent/opus, fable, sonnet, haiku)\n  run through Claude Code on it. You approve on claude.com and paste the code it\n  shows. Share it with the project in the web under Models → Providers → Anthropic.\n\n  Options:\n  --project <id>      Operate on this project id (default: linked).\n  --host <name>       Operate against a non-default Kortix host.\n  --token-stdin       (claude) Read a token made with claude setup-token from stdin.\n  -h, --help          Show this help without starting OAuth.\n\n  Example:\n  kortix providers login claude\n  claude setup-token   # on your computer, then:\n  printf %s \"$TOKEN\" | kortix providers login claude --token-stdin\n\n",
     "stderr": "host test (http://127.0.0.1:9, <email> (user)) · account account_\n"
   },
   {

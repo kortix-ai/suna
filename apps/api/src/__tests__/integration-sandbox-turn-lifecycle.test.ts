@@ -160,6 +160,17 @@ describe('the turn record names its runtime session under both keys during W4', 
     });
   });
 
+  test("the record keeps its prompt's source through acceptance; a turn begun with none records null", async () => {
+    await setLifecycleState({});
+    const turns = async () =>
+      (await readRow()).metadata.activeTurns as Record<string, Record<string, unknown>>;
+    await beginSandboxTurn({ sandboxId: SANDBOX_ID }, { token: t('chat'), runtimeSessionId: 'ses_root', messageId: null, source: 'telegram' });
+    await beginSandboxTurn({ sandboxId: SANDBOX_ID }, { token: t('direct'), runtimeSessionId: 'ses_root', messageId: 'msg_direct' });
+    await acceptSandboxTurn({ sandboxId: SANDBOX_ID }, t('chat'));
+    expect((await turns())[t('chat')]).toMatchObject({ state: 'active', source: 'telegram' });
+    expect((await turns())[t('direct')]).toMatchObject({ state: 'delivering', source: null });
+  });
+
   test('a record with only the neutral key ends for its own runtime session, not another', async () => {
     const other = {
       token: t('other-root'),

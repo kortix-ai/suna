@@ -34,7 +34,7 @@ import { errorToast, successToast } from '@kortix/ui/toast';
 import { requestMfaStepUp } from '@/features/auth/mfa-step-up';
 import { Bun } from '@/features/icon/icons/bun';
 import { Chrome } from '@/features/icon/icons/chrome';
-import { Edge } from '@/features/icon/icons/edge';
+import { Edge } from '@kortix/ui/internal/icons/edge';
 import { Firefox } from '@/features/icon/icons/firefox';
 import { Linux } from '@/features/icon/icons/linux';
 import { Safari } from '@/features/icon/icons/safari';

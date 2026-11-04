@@ -82,7 +82,8 @@ export interface TerminalPanelProps {
   session: Pick<
     ReturnType<typeof useSession>,
     'switched' | 'phase' | 'runtimeUrl' | 'stage' | 'reason' | 'failure'
-  >;
+  > &
+    Partial<Pick<ReturnType<typeof useSession>, 'bootImage'>>;
   focused: boolean;
   /** Outer width in cells, border included. */
   width: number;
@@ -372,6 +373,7 @@ export function TerminalPanel({
             phase: 'starting',
             stage: session.stage,
             reason: session.reason,
+            image: session.bootImage,
             failure: session.failure,
             msInStage: 0,
             msTotal: 0,

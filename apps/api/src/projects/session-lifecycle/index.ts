@@ -1,4 +1,4 @@
-export { createSession } from './create-session';
+export { createCommandStatus, createSession } from './create-session';
 export { startSession } from './start-session';
 export { continueSession } from './continue-session';
 export { deliverThroughQueue, type FollowUpOutcome } from './follow-up-delivery';
@@ -15,7 +15,7 @@ export {
   releaseInboxHold,
   retryInboxPrompt,
 } from './inbox-rows';
-export { deleteSession, restartSession, retireWarmProjectSessions } from './actions';
+export { deleteSession, restartSession } from './actions';
 export { restoreSession } from './restore-session';
 export { stopSession } from './stop';
 export { reconcileUndeliveredPrompts } from './undelivered-prompts';

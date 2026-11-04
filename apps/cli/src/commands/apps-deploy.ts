@@ -183,6 +183,8 @@ interface DeployFlags {
   groupIds?: string[];
   /** `--always-on` / `--on-demand`: applied to a new App, or to the existing one. */
   alwaysOn?: boolean;
+  /** `--listed` / `--unlisted`: a card on the Apps page, or Background Apps. Beats kortix.yaml `display.listed`. */
+  listed?: boolean;
   /** A worker-only App (process groups, no http service): no port. */
   workerOnly?: boolean;
 }
@@ -190,8 +192,9 @@ interface DeployFlags {
 export function deployFlags(rest: string[]): DeployFlags {
   dropRetiredBudgetFlag(rest);
   const provider = takeFlagValue(rest, ['--provider']) as AppHostingProvider | undefined;
+  // `daytona` stays accepted, unlisted, for Apps that still run there.
   if (provider && !['platinum', 'daytona'].includes(provider)) {
-    throw new Error('--provider must be platinum or daytona (legacy fallback)');
+    throw new Error('--provider must be platinum');
   }
   const accessMode = takeFlagValue(rest, ['--access']) as AppAccessMode | undefined;
   if (
@@ -208,6 +211,9 @@ export function deployFlags(rest: string[]): DeployFlags {
   const alwaysOn = takeFlagBool(rest, ['--always-on']);
   const onDemand = takeFlagBool(rest, ['--on-demand']);
   if (alwaysOn && onDemand) throw new Error('Pass --always-on or --on-demand, not both');
+  const listed = takeFlagBool(rest, ['--listed']);
+  const unlisted = takeFlagBool(rest, ['--unlisted']);
+  if (listed && unlisted) throw new Error('Pass --listed or --unlisted, not both');
   return {
     app: takeFlagValue(rest, ['--app']),
     slug: takeFlagValue(rest, ['--slug']),
@@ -233,6 +239,7 @@ export function deployFlags(rest: string[]): DeployFlags {
     memberIds: csv(takeFlagValue(rest, ['--members'])),
     groupIds: csv(takeFlagValue(rest, ['--groups'])),
     alwaysOn: alwaysOn ? true : onDemand ? false : undefined,
+    listed: listed ? true : unlisted ? false : undefined,
   };
 }
 
@@ -242,10 +249,10 @@ export interface ManifestAppDefaults {
   block: AppBlockV2;
 }
 
-/** Every `apps.<name>` block of the kortix.yaml (kortix_version 2 or 3) above `cwd`, or null. */
+/** Every `apps.<name>` block of the kortix.yaml in `cwd`, or null. */
 export function loadManifestApps(cwd: string): { root: string; blocks: Record<string, AppBlockV2> } | null {
   const manifest = loadLocalManifest(cwd);
-  if (!manifest || !(Number(manifest.data.kortix_version) >= 2)) return null;
+  if (!manifest) return null;
   const rawApps = manifest.data.apps;
   if (!rawApps || typeof rawApps !== 'object' || Array.isArray(rawApps)) return null;
   return { root: dirname(manifest.path), blocks: rawApps as Record<string, AppBlockV2> };
@@ -274,7 +281,7 @@ export function loadManifestAppDefaults(
 ): ManifestAppDefaults | null {
   const loaded = loadManifestApps(cwd);
   if (!loaded) {
-    if (requestedName) throw new Error(`--manifest-app ${requestedName} needs a kortix.yaml (kortix_version 2 or 3) with an apps.${requestedName} block`);
+    if (requestedName) throw new Error(`--manifest-app ${requestedName} needs a kortix.yaml with an apps.${requestedName} block`);
     return null;
   }
   const entries = Object.entries(loaded.blocks);

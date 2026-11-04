@@ -354,20 +354,6 @@ describe('a session GRANTED project.gitops.ref.any', () => {
   });
 });
 
-describe('a monitor principal', () => {
-  beforeAll(() => {
-    principal = { kind: 'monitor' };
-  });
-
-  test('cannot push anything', async () => {
-    const { code, output } = await push('--force', 'origin', 'HEAD:refs/heads/whatever');
-    expect(code).not.toBe(0);
-    expect(output).toContain('[remote rejected]');
-    expect(output).toContain('read-only');
-    expect(upstreamReceived).toEqual([]);
-  });
-});
-
 // An upstream may answer a push before it has read the whole body (a
 // rejection, a size limit). Bun's fetch then pools the socket while the body is
 // still in flight, and the next request to that host (any project's) is written

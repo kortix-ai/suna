@@ -1,4 +1,4 @@
-import { eq, and, desc, gt, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { eq, and, desc, gt, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { SESSION_LEASE_REFUSAL } from '../shared/session-lease-refusal';
 import { accountTokens, accounts, projects, projectSessions, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
@@ -599,6 +599,65 @@ export async function validateAccountTokenById(
   return validateAccountTokenMatching(() => eq(accountTokens.tokenId, tokenId));
 }
 
+/**
+ * `validateAccountTokenById` without the sandbox-lease check, for the run of
+ * an approved held connector call only. A session token is refused while its
+ * sandbox is stopped, and a held call usually runs after the box stopped. Every
+ * other check stays: active, not revoked, not expired, idle-revoke.
+ *
+ * The id comes ONLY from the server-encrypted held input
+ * (`connectors/held-call-store.ts`). No route may call this with an id from a
+ * request: that would replay a token whose sandbox is gone.
+ */
+export async function validateAccountTokenByIdForHeldRun(
+  tokenId: string,
+): Promise<AccountTokenValidationResult> {
+  if (!isUuid(tokenId)) return { isValid: false, error: 'Invalid token id', credentialDead: true };
+  return validateAccountTokenMatching(() => eq(accountTokens.tokenId, tokenId), { skipSessionLease: true });
+}
+
+/**
+ * The newest active token that replaced a dead session token: the same
+ * session, project, user and service account (a re-mint after the sandbox was
+ * removed). Null when there is none, e.g. the session was deleted or the user
+ * offboarded. For the held-call run only, with an id from the held input.
+ */
+export async function findRemintedSessionTokenId(deadTokenId: string): Promise<string | null> {
+  if (!isUuid(deadTokenId)) return null;
+  const [dead] = await db
+    .select({
+      sessionId: accountTokens.sessionId,
+      projectId: accountTokens.projectId,
+      userId: accountTokens.userId,
+      accountId: accountTokens.accountId,
+      serviceAccountId: accountTokens.serviceAccountId,
+    })
+    .from(accountTokens)
+    .where(eq(accountTokens.tokenId, deadTokenId))
+    .limit(1);
+  if (!dead?.sessionId || !dead.projectId) return null;
+  const [next] = await db
+    .select({ tokenId: accountTokens.tokenId })
+    .from(accountTokens)
+    .where(
+      and(
+        eq(accountTokens.sessionId, dead.sessionId),
+        eq(accountTokens.projectId, dead.projectId),
+        eq(accountTokens.userId, dead.userId),
+        eq(accountTokens.accountId, dead.accountId),
+        dead.serviceAccountId
+          ? eq(accountTokens.serviceAccountId, dead.serviceAccountId)
+          : isNull(accountTokens.serviceAccountId),
+        eq(accountTokens.status, 'active'),
+        isNull(accountTokens.revokedAt),
+        ne(accountTokens.tokenId, deadTokenId),
+      ),
+    )
+    .orderBy(desc(accountTokens.createdAt))
+    .limit(1);
+  return next?.tokenId ?? null;
+}
+
 /** The re-read row is genuinely dead: revoked by column OR by status. Anything
  *  else (a row that flipped back to active between the two reads) is a race,
  *  not a naming case, and keeps the generic refusal. */
@@ -617,6 +676,7 @@ function deadTokenReason(row: { tokenId: string; projectId: string | null; sessi
 
 async function validateAccountTokenMatching(
   match: () => SQL,
+  options: { skipSessionLease?: boolean } = {},
 ): Promise<AccountTokenValidationResult> {
   try {
     // Join the owning account so we can apply idle-revoke without a
@@ -726,7 +786,7 @@ async function validateAccountTokenMatching(
     // project PAT. Refuse it whenever that sandbox is not provisioning or
     // active. This closes the stopped/deleted-session replay window without
     // affecting human CLI tokens, and permits the daemon's boot callbacks.
-    if (row.sessionId) {
+    if (row.sessionId && !options.skipSessionLease) {
       const [lease] = await db
         .select({ status: sessionSandboxes.status })
         .from(sessionSandboxes)

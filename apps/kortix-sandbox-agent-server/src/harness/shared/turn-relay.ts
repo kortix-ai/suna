@@ -43,31 +43,11 @@ export async function postTurnStream(frame: TurnStreamFrame, timeoutMs = 15_000)
 // ── The first turn ────────────────────────────────────────────────────────
 
 let claimedInitialTurn: InitialTurnClaim | null = null
-let claimedRootPin: string | null = null
 let claimInFlight: Promise<InitialTurnClaim | null> | null = null
-
-/**
- * The first turn this process claimed, once `claimInitialTurn` resolved one.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export function initialTurnClaim(): InitialTurnClaim | null {
-  return claimedInitialTurn
-}
-
-/**
- * The runtime root the control plane has pinned for this session, as the
- * initial-turn claim reported it. Null before the claim, when no root is
- * pinned, or from an API that predates the field.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export function claimedRuntimeSessionPin(): string | null {
-  return claimedRootPin
-}
 
 /** Test seam: a daemon process claims at most one initial turn. */
 export function resetInitialTurnClaimForTests(): void {
   claimedInitialTurn = null
-  claimedRootPin = null
   claimInFlight = null
 }
 
@@ -100,10 +80,7 @@ export function claimInitialTurn(): Promise<InitialTurnClaim | null> {
     }
     const body = (await response.json()) as {
       initial_turn?: { prompt?: unknown; context?: unknown; turn_token?: unknown; message_id?: unknown } | null
-      runtime_session_id?: unknown
     }
-    const pin = typeof body.runtime_session_id === 'string' ? body.runtime_session_id.trim() : ''
-    claimedRootPin = pin || null
     const turn = body.initial_turn
     if (!turn || typeof turn.prompt !== 'string' || typeof turn.turn_token !== 'string' || typeof turn.message_id !== 'string') {
       return null
@@ -137,20 +114,6 @@ export async function relayTurnAccepted(runtimeSessionId: string, messageId: str
   if (!response.ok) {
     const text = await response.text().catch(() => '')
     throw new Error(`initial turn acceptance rejected: ${response.status} ${text.slice(0, 200)}`)
-  }
-  return ((await response.json().catch(() => ({}))) as { ok?: boolean }).ok === true
-}
-
-/**
- * Remove only a pre-created initial-turn record the runtime never accepted.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export async function relayTurnAbandoned(turnToken: string): Promise<boolean> {
-  const response = await postTurnStream({ kind: 'turn_abandoned', turn_token: turnToken })
-  if (!response) throw new Error('initial turn abandonment relay context is unavailable')
-  if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    throw new Error(`initial turn abandonment rejected: ${response.status} ${text.slice(0, 200)}`)
   }
   return ((await response.json().catch(() => ({}))) as { ok?: boolean }).ok === true
 }
@@ -352,7 +315,7 @@ export async function relayTurnEnd(
         const settled = outcome === undefined || outcome === 'closed' || outcome === 'already_closed' || outcome === 'no_active_turn'
         if (settled) {
           if (data?.ok) logger.info('[turn-relay] turn end relayed', { status: current.status, errorName: current.error?.name, runtimeSessionId: current.runtimeSessionId, attempt })
-          // pi ends its turns here; OpenCode's own relay (open-code/turn-relay.ts) runs the hook too.
+          // pi ends its turns here.
           runOnIdleHook(current)
           return true
         }

@@ -7,16 +7,19 @@ import { useSyncStore } from '../browser/stores/sync-store';
 import { openSessionStream, type SessionControlStreamOptions } from '../core/session/control-stream';
 import { savedSessionLogCopies } from '../core/session-log/saved-log';
 import { sessionLogOfV1Rows, sessionLogThreadWithV1Rows } from '../core/session-log/v1-view';
+import { sessionLogThreadWithPrompts } from '../core/session-log/prompts-view';
+import type { SessionPrompt, SessionSentPrompt } from '../core/rest/projects-client/sessions';
 import {
   fetchSessionLogPage,
-  readFirstSessionLogAnswer,
+  readSessionLog,
   loadSessionLogPage,
   SESSION_LOG_FIRST_PAGE_LIMIT,
   SESSION_LOG_OLDER_PAGE_LIMIT,
   type LoadSessionLogPage,
   type SessionLogDialect,
-  type SessionLogSyncState,
   type SessionLogPage,
+  type SessionLogSyncState,
+  type SessionLogRead,
 } from '../core/session-log/source';
 import { currentSavedCopyStore } from '../core/session-sync/saved-copy-store';
 import { selectSessionLog, selectSessionLogThread } from '../core/session-log/store';
@@ -121,10 +124,20 @@ function readThread(projectId: string, sessionId: string, threadId: string): voi
  * failed read (the journal has not posted the thread yet) retries when the thread's next
  * message arrives, at most every 5 s.
  */
+export interface SessionLogThreadOptions extends SessionMessagesOptions {
+  /**
+   * The session's inbox (`useSessionPrompts`): its `prompts` and `sent`. The prompts the
+   * thread does not hold join it as provisional user messages under their own `message_id`
+   * (`sessionLogThreadWithPrompts`), and the log's put of that id replaces them. A booting
+   * session with no log yet shows its first prompt. Root thread only.
+   */
+  prompts?: { prompts: readonly SessionPrompt[]; sent: readonly SessionSentPrompt[] };
+}
+
 export function useSessionLogThread(
   session: SessionMessagesSource,
   threadId?: string | null,
-  options?: SessionMessagesOptions,
+  options?: SessionLogThreadOptions,
 ): SessionLogThread | null {
   const throttleMs = options?.throttleMs && options.throttleMs > 0 ? options.throttleMs : 0;
   const select = (state: ReturnType<typeof useSyncStore.getState>) => {
@@ -150,7 +163,25 @@ export function useSessionLogThread(
   useEffect(() => {
     if (unread >= 0 && projectId && threadId) readThread(projectId, sessionId, threadId);
   }, [unread, projectId, sessionId, threadId]);
-  return v2 !== undefined ? v2 : (v1?.threads[0] ?? null);
+  const thread = v2 !== undefined ? v2 : (v1?.threads[0] ?? null);
+  const inbox = threadId ? undefined : options?.prompts;
+  // The server can re-mint a prompt's id at delivery. The inbox row and `sent` name both ids,
+  // and the sync store keeps the pairing, so the log's message under the new id replaces the
+  // optimistic one sent under the old id, after the row leaves the inbox too.
+  const runtimeThreadId = thread?.thread_id ?? null;
+  useEffect(() => {
+    if (!inbox || !runtimeThreadId) return;
+    const store = useSyncStore.getState();
+    for (const p of [...inbox.prompts, ...inbox.sent]) {
+      const wire = p.wire_message_id;
+      if (wire && p.message_id && wire !== p.message_id) store.registerOptimisticEcho(runtimeThreadId, wire, p.message_id);
+    }
+  }, [inbox?.prompts, inbox?.sent, runtimeThreadId]);
+  const revs = useSyncStore((state) => (inbox ? state.sessionLogs[session.sessionId]?.revs : undefined));
+  return useMemo(
+    () => (inbox ? sessionLogThreadWithPrompts(session.sessionId, thread, inbox.prompts, inbox.sent, revs) : thread),
+    [inbox?.prompts, inbox?.sent, revs, thread, session.sessionId],
+  );
 }
 
 /**
@@ -203,7 +234,7 @@ export function useSessionLogOlder(
 /**
  * Internal (`useSession` mounts it). Negotiates the session's dialect from the API's answer
  * alone: no project flag, no runtime. `'v2'` from the first render, while the first page is
- * read; `useSession` reads no v1 saved copy then. On v2:
+ * read. On v2:
  *  1. the device's saved v2 copy paints first;
  *  2. the newest page of the root thread replaces it and is saved (the v1 copy goes);
  *  3. the session stream switches to `schema=v2` (`log.*` frames in place of the `message.*`
@@ -212,12 +243,26 @@ export function useSessionLogOlder(
  *     the tab becomes visible again.
  * Both kinds of thread read v2: a `fromV1` one (OpenCode) and a native one (pi). Hosts render
  * the blocks (`sessionLogTurns`); the v1 hooks read a native thread through `toV1`.
- * A 404 coded `session_log_missing` (a new session whose journal has not posted yet) answers
- * `'missing'`: still v2, with no log yet, so `useSession` reads no v1 saved copy and has nothing
- * saved to wait for. A 404 without that code (an API older than the log) or an invalid page
- * leaves the session on v1: no session log, no `schema=v2`. Either is retried at the next turn end
- * and after a stream reconnect (on the session stream without `schema=v2`), one request at a time.
- * Leaving v2 (or unmounting) drops the log, so the v1 hooks read the v1 store again.
+ * Any answer without a page answers `'missing'`, and the stream stays without `schema=v2`;
+ * `useSession` reads no v1 saved copy (`GET …/transcript`, P8.3). Two kinds:
+ *  - a 404 coded `session_log_missing` (a new session whose journal has not posted yet): the
+ *    session has no log, so a copy the device kept is dropped;
+ *  - a failed read (a 5xx, the network, a 404 without that code, an invalid page): the copy on
+ *    screen stays, and the page is read again after 2 s, 10 s and 30 s, or after the API's
+ *    `Retry-After` (503 `session_log_converting`), at most 60 s.
+ * Both are read again at the next turn end and after a stream reconnect, one request at a time.
+ * A session with no log is also read 6 s after each turn starts (pi journals mid-turn every
+ * 5 s): a new session's first prompt can run before this tab's runtime connection, which is
+ * live-only, so the user message frame was never seen.
+ * Unmounting drops the log and cancels a pending retry.
+ *
+ * `livePage`: the box's own page (`GET /kortix/runtime/log`), passed while the session's box is
+ * ready and serves it (`runtime.log.v1`). It is ahead of the API's: it holds the reply the box
+ * streams and a prompt waiting behind it. With it, the box page is read after the API page and
+ * on each re-read (a reconnect, a `kortix.resync`, a visible tab) in place of the API page, and a
+ * session the API holds no log for yet (a new session) reads it and switches to v2 at once. A
+ * loader that arrives later (the box got ready after the first read) reads the box page then.
+ * A box read that fails changes nothing.
  */
 export function useSessionLogSync(
   projectId: string,
@@ -225,21 +270,40 @@ export function useSessionLogSync(
   options: {
     enabled: boolean;
     loader?: LoadSessionLogPage | null;
+    /** The box's own newest page of the root thread; null while the box is not ready or does not serve it. */
+    livePage?: ((query: { limit: number }) => Promise<SessionLogPage | null>) | null;
+    /** Filled with a re-read of the newest page (the box's, else the API's) while the log is read. */
+    reloadRef?: { current: (() => void) | null };
     /** Test seam: joins the session stream. */
     joinStream?: (options: SessionControlStreamOptions) => { close: () => void };
+    /** Test seam: runs a timed retry after `ms`; returns its cancel. */
+    schedule?: (run: () => void, ms: number) => () => void;
+    /** Each first-page read's outcome: a page, no log yet (`missing`), or a failed read. */
+    onRead?: (outcome: 'page' | 'missing' | 'failed') => void;
+    /** A new value reads the log again from the start (a host's "Try again"). */
+    revision?: number;
   },
 ): SessionLogSyncState {
   const loader = options.loader === undefined ? loadSessionLogPage : options.loader;
   const joinStream = options.joinStream ?? openSessionStream;
+  const schedule = options.schedule ?? scheduleRetry;
   const active = options.enabled && !!loader && !!projectId && !!sessionId;
+  const onRead = useRef(options.onRead);
+  useEffect(() => {
+    onRead.current = options.onRead;
+  });
+  const revision = options.revision ?? 0;
   const key = `${projectId}/${sessionId}`;
   const negotiated: SessionLogDialect = active ? 'v2' : 'v1';
-  // The page answered that this session cannot read v2 (404 without a code, invalid): v1 from then on.
-  const [refusedKey, setRefusedKey] = useState<string | null>(null);
-  // The API serves the log and this session has none yet (404 `session_log_missing`).
+  // The last read answered no page: the session has no log to show yet.
   const [missingKey, setMissingKey] = useState<string | null>(null);
-  const state: SessionLogSyncState =
-    negotiated !== 'v2' || refusedKey === key ? 'v1' : missingKey === key ? 'missing' : 'v2';
+  const state: SessionLogSyncState = negotiated !== 'v2' ? 'v1' : missingKey === key ? 'missing' : 'v2';
+  // The box page loader as of this render; the effect reads it when it reads a page.
+  const livePageRef = useRef(options.livePage ?? null);
+  livePageRef.current = options.livePage ?? null;
+  // The running effect's box read, for a loader that arrives after its first read.
+  const readLiveRef = useRef<(() => void) | null>(null);
+  const reloadRef = options.reloadRef;
 
   useEffect(() => {
     if (negotiated !== 'v2' || !loader) return;
@@ -251,20 +315,41 @@ export function useSessionLogSync(
     let busy = false;
     // The last turn end the session stream reported, kept across re-joins: a different one is a turn end.
     let lastEnded: string | null | undefined;
+    // The running turns a mid-turn read was scheduled for, kept across re-joins: one read per turn.
+    const midTurn = new Set<string>();
     // The page answered: the stream is on `schema=v2`.
     let onV2 = false;
+    // Failed reads since the last answer, and the pending timed retry.
+    let failures = 0;
+    // Reads that answered "no log yet", for the backoff of the next one.
+    let missingReads = 0;
+    let cancelRetry: (() => void) | null = null;
     const join = (options: Omit<SessionControlStreamOptions, 'projectId' | 'sessionId'>) => {
       stream?.close();
       stream = joinStream({ projectId, sessionId, ...options });
     };
-    const load = async (): Promise<SessionLogPage | 'missing' | null> => {
-      const answer = await readFirstSessionLogAnswer(loader, projectId, sessionId, controller.signal);
-      if (stopped) return null;
+    const load = async (): Promise<SessionLogRead> => {
+      const read = await readSessionLog(loader, projectId, sessionId, { limit: SESSION_LOG_FIRST_PAGE_LIMIT }, controller.signal);
+      if (stopped) return { answer: null, retryAfterMs: null };
+      const { answer } = read;
       if (answer && answer !== 'missing') {
         store().applySessionLogPage(sessionId, answer);
         void copies?.write(projectId, sessionId, answer);
       }
-      return answer;
+      return read;
+    };
+    // The box's page, when the box serves one: true when it went in the store.
+    const loadLive = async (): Promise<boolean> => {
+      const live = livePageRef.current;
+      if (!live) return false;
+      const page = await live({ limit: SESSION_LOG_FIRST_PAGE_LIMIT }).catch(() => null);
+      if (stopped || !page) return false;
+      store().applySessionLogPage(sessionId, page);
+      return true;
+    };
+    // A re-read: the box's page while the box serves one, else the API's.
+    const reload = async (): Promise<void> => {
+      if (!(await loadLive())) await load();
     };
     // Re-read after a reconnect (`up` after a drop); the first report is the connection already up.
     const onReconnect = (run: () => void) => {
@@ -274,35 +359,80 @@ export function useSessionLogSync(
         connected = up;
       };
     };
+    const goV2 = () => {
+      failures = 0;
+      missingReads = 0;
+      cancelRetry?.();
+      cancelRetry = null;
+      setMissingKey(null);
+      // A v2 connection resumes at the v1 cursor; a server on another epoch answers
+      // `kortix.resync` and replays nothing, so the page is read again then, as after a reconnect.
+      // `runtime: true`: the `log.*` frames ride the runtime channel. A full session already has a
+      // runtime subscriber; a view (`useSessionView`) has none, and its thread froze at the first page.
+      join({ schema: 'v2', runtime: true, onConnectionChange: onReconnect(() => void reload()), onRuntimeResync: () => void reload() });
+    };
+    // A box loader that arrived after the first read: its page, and v2 if the API had none.
+    readLiveRef.current = () => {
+      if (busy || stopped) return;
+      void loadLive().then((live) => {
+        if (!live || stopped || onV2) return;
+        onV2 = true;
+        goV2();
+      });
+    };
     const attempt = async (): Promise<void> => {
       if (busy || stopped) return;
+      cancelRetry?.();
+      cancelRetry = null;
       busy = true;
-      const answer = await load();
+      const { answer, retryAfterMs } = await load();
+      const live = await loadLive();
       busy = false;
       if (stopped) return;
       const page = answer === 'missing' ? null : answer;
-      onV2 = !!page;
-      if (page) {
-        setRefusedKey(null);
-        setMissingKey(null);
-        // A v2 connection resumes at the v1 cursor; a server on another epoch answers
-        // `kortix.resync` and replays nothing, so the page is read again then, as after a reconnect.
-        join({ schema: 'v2', onConnectionChange: onReconnect(() => void load()), onRuntimeResync: () => void load() });
+      onV2 = !!page || live;
+      // The box's page is a page too: a new session the API holds no log for reads as one.
+      onRead.current?.(onV2 ? 'page' : answer === 'missing' ? 'missing' : 'failed');
+      if (onV2) {
+        goV2();
         return;
       }
-      store().dropSessionLog(sessionId);
-      if (answer === 'missing') setMissingKey(`${projectId}/${sessionId}`);
-      else setRefusedKey(`${projectId}/${sessionId}`);
-      // A missing log (a new session whose journal has not posted yet) or an invalid page is
-      // retried at the next turn end and after a stream reconnect, on the session stream
-      // without `schema=v2`.
+      setMissingKey(`${projectId}/${sessionId}`);
+      if (answer === 'missing') {
+        // The API holds no log for this session: a copy kept on the device is not its history.
+        failures = 0;
+        store().dropSessionLog(sessionId);
+        // A new session's journal posts within seconds of its first turn. A view
+        // (`useSessionView`) joins without the full control state and never sees that turn
+        // end, so the page is also read again on a backoff until the log exists.
+        const ms = SESSION_LOG_MISSING_DELAYS_MS[Math.min(missingReads, SESSION_LOG_MISSING_DELAYS_MS.length - 1)]!;
+        missingReads += 1;
+        cancelRetry = schedule(() => void attempt(), ms);
+      } else if (failures < SESSION_LOG_RETRY_DELAYS_MS.length) {
+        // A failed read is not "no log": the copy on screen stays, and the page is read again.
+        const ms = Math.min(retryAfterMs ?? SESSION_LOG_RETRY_DELAYS_MS[failures]!, SESSION_LOG_RETRY_MAX_MS);
+        failures += 1;
+        cancelRetry = schedule(() => void attempt(), ms);
+      }
+      // No page is also read again at the next turn end and after a stream reconnect, on the
+      // session stream without `schema=v2`.
       join({
         onControl: (frame) => {
           if (frame.type !== 'kortix.control.turn') return;
-          const ended = (frame.payload as { last_ended?: { turn_token?: string } | null })?.last_ended?.turn_token ?? null;
+          const payload = frame.payload as { turns?: { turn_token?: string }[]; last_ended?: { turn_token?: string } | null } | null;
+          const ended = payload?.last_ended?.turn_token ?? null;
           const seen = lastEnded;
           lastEnded = ended;
-          if (seen !== undefined && ended !== seen) void attempt();
+          if (seen !== undefined && ended !== seen) return void attempt();
+          // A running turn (also one the state at join holds): its user message frame may have
+          // passed before this tab's runtime connection, which is live-only. pi journals while a
+          // turn runs, so the page holds that message after the next mid-turn post.
+          for (const turn of payload?.turns ?? []) {
+            const token = turn?.turn_token;
+            if (!token || midTurn.has(token)) continue;
+            midTurn.add(token);
+            if (!cancelRetry) cancelRetry = schedule(() => void attempt(), SESSION_LOG_MID_TURN_READ_MS);
+          }
         },
         onConnectionChange: onReconnect(() => void attempt()),
       });
@@ -317,16 +447,43 @@ export function useSessionLogSync(
     // its stream silently): read the newest page again, as the v1 transcript reads its tail.
     // A refused session waits for its next turn end or reconnect instead.
     const stopVisible = onTabVisible(() => {
-      if (onV2) void load();
+      if (onV2) void reload();
     });
+    if (reloadRef) reloadRef.current = () => void (onV2 ? reload() : attempt());
     return () => {
+      readLiveRef.current = null;
+      if (reloadRef) reloadRef.current = null;
       stopVisible();
       stopped = true;
+      cancelRetry?.();
       controller.abort();
       stream?.close();
       store().dropSessionLog(sessionId);
     };
-  }, [negotiated, loader, joinStream, projectId, sessionId]);
+    // `revision` is read only as a dependency: a new value re-runs the whole read.
+  }, [negotiated, loader, joinStream, schedule, projectId, sessionId, revision]);
+
+  // A loader that arrives after mount: the first read already read the one present at mount.
+  const hasLivePage = !!options.livePage;
+  const hadLivePage = useRef(hasLivePage);
+  useEffect(() => {
+    if (hasLivePage && !hadLivePage.current) readLiveRef.current?.();
+    hadLivePage.current = hasLivePage;
+  }, [hasLivePage]);
 
   return state;
+}
+
+/** The waits before the timed re-reads of a page that failed: three tries in about 42 s. */
+const SESSION_LOG_RETRY_DELAYS_MS = [2_000, 10_000, 30_000];
+/** The waits before reading a session with no log yet again: then every 30 s until it has one. */
+const SESSION_LOG_MISSING_DELAYS_MS = [3_000, 5_000, 10_000, 15_000, 30_000];
+/** A running turn's read on a session with no log yet: after pi's mid-turn journal post (5 s). */
+const SESSION_LOG_MID_TURN_READ_MS = 6_000;
+/** The longest wait a `Retry-After` can set. */
+const SESSION_LOG_RETRY_MAX_MS = 60_000;
+
+function scheduleRetry(run: () => void, ms: number): () => void {
+  const timer = setTimeout(run, ms);
+  return () => clearTimeout(timer);
 }

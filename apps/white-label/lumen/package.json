@@ -42,7 +42,7 @@
     "@types/react-dom": "^19.1.0",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "convex-test": "0.0.60",
-    "happy-dom": "^20.14.5",
+    "happy-dom": "^21.0.4",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "4.1.12"

@@ -190,7 +190,8 @@ function ToolPartRendererImpl({
 
   if (call.name === 'todoread') return null;
 
-  if (partStatus(call) === 'error') {
+  // The image card draws its own failure and a stop in place of the image.
+  if (partStatus(call) === 'error' && call.name !== 'image_gen') {
     const { display, server } = toolDisplayName(call.name);
     return (
       <RowAmbient running={false} stale={false} turnLive={turnLive} outcome={outcome} durationMs={durationMs}>
@@ -246,6 +247,11 @@ function ToolPartRendererImpl({
   );
 }
 
+/** A block that is not a tool call (a harness block a host mistyped) renders nothing: the row must never throw. */
+function ToolPartRendererGuard(props: ToolPartRendererProps) {
+  return props.call?.type === 'tool_call' ? <ToolPartRendererImpl {...props} /> : null;
+}
+
 /** Default shallow compare: calls are replaced, not mutated, when they change. */
-export const ToolPartRenderer = memo(ToolPartRendererImpl);
+export const ToolPartRenderer = memo(ToolPartRendererGuard);
 ToolPartRenderer.displayName = 'ToolPartRenderer';

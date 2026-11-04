@@ -447,7 +447,7 @@ describe('missingAgentGrantNotice', () => {
     expect(notice.body).toContain('kortix.yaml');
     expect(notice.body).toContain('"secrets: all" does not grant this delivery mode');
     expect(notice.manifest).toBe(
-      'kortix_version: 3\nagents:\n  my-agent:\n    secrets: [ENFORCED_TEST]',
+      'agents:\n  my-agent:\n    secrets: [ENFORCED_TEST]',
     );
   });
 });
@@ -863,7 +863,7 @@ describe('enforcedEchoNotice', () => {
 
   test('points at the two-probe procedure in the docs', () => {
     const notice = enforcedEchoNotice('api.stripe.com', testUiTranslator);
-    expect(notice.docsHref).toBe('/docs/project/secrets#verify-it-with-two-probes');
+    expect(notice.docsHref).toBe('/docs/guide#verify-it-with-two-probes');
     expect(notice.docsLabel).toBe('Verify it with two probes');
   });
 

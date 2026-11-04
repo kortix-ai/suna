@@ -69,7 +69,11 @@ export interface ComposerUnderbarProps {
    * duplicated for it — same component, different packing.
    */
   variant?: 'row' | 'inline';
+  /** See `SessionChatInputProps.agentPickerCompact`. */
+  agentPickerCompact?: boolean;
   toolbarSlot?: React.ReactNode;
+  /** Right of the agent picker: the session's agents line. Same row, no added height. */
+  agentsSlot?: React.ReactNode;
 }
 
 export function ComposerUnderbar({
@@ -85,7 +89,9 @@ export function ComposerUnderbar({
   selectedModel,
   onContextClick,
   variant = 'row',
+  agentPickerCompact = false,
   toolbarSlot,
+  agentsSlot,
 }: ComposerUnderbarProps) {
   const t = useTranslations('threads');
   const { contextMeterEnabled } = useUiHostConfig();
@@ -127,7 +133,8 @@ export function ComposerUnderbar({
     <div
       className={
         inline
-          ? 'kortix-composer-underbar flex min-w-0 items-center gap-1'
+          ? // `shrink-0`: the model name truncates first (`ModelSelector`), never the agent.
+            'kortix-composer-underbar flex shrink-0 items-center gap-1'
           : 'kortix-composer-underbar flex items-center justify-between gap-2 px-px pt-1.5 pb-2'
       }
     >
@@ -148,6 +155,7 @@ export function ComposerUnderbar({
         </Hint>
 
         <AgentSelector
+          compact={agentPickerCompact}
           agents={noAccessibleAgents ? EMPTY_AGENTS : agents}
           selectedAgent={selectedAgent}
           open={agentMenuOpen}
@@ -156,6 +164,8 @@ export function ComposerUnderbar({
           triggerLabelClassName="max-w-[7rem]"
           unavailableHint={noAccessibleAgents ? NO_AGENT_ACCESS_MESSAGE : undefined}
         />
+
+        {agentsSlot}
       </div>
 
       <div className="flex items-center gap-1">

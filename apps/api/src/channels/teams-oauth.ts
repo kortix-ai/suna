@@ -208,7 +208,7 @@ export const teamsOauthApp = makeOpenApiApp();
  * Connectors), where the Teams row renders the persisted publish state.
  */
 function channelsUrl(projectId: string, status: TeamsInstallRedirectStatus): string {
-  return `${frontendBase()}/projects/${projectId}/customize/connectors?scope=channels&teams=${status}`;
+  return `${frontendBase()}/projects/${projectId}/admin/connectors?scope=channels&teams=${status}`;
 }
 
 // The registered redirect URI. It installs nothing: see install-completion.ts.

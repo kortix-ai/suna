@@ -30,7 +30,7 @@ const lastActivityWrite = new Map<string, number>();
  * after the response. The lease now simply expires, so the idle reaper sees an
  * App go idle at most 60 s after its last request.
  */
-async function recordAppActivity(app: LoadedApp['app'], runtimeId: string, now: Date): Promise<void> {
+export async function recordAppActivity(app: LoadedApp['app'], runtimeId: string, now: Date): Promise<void> {
   const last = lastActivityWrite.get(runtimeId) ?? 0;
   if (now.getTime() - last < ACTIVITY_WRITE_EVERY_MS) return;
   if (lastActivityWrite.size > 10_000) lastActivityWrite.clear();

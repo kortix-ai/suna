@@ -52,49 +52,125 @@ approval gate before anything is provisioned.
 ## How it works
 
 <Steps>
-<Step title="Connect the HR record as the trigger">
+<Step title="Copy the setup prompt into a new session">
 
-A signed webhook from our HR system points at the project. A new-hire record
-fires it, and each firing spawns a fresh **session** in its own sandbox, seeded
-with the role, team, and start date. One hire, one session, one disposable
-machine. Nothing carries over between runs.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the onboarding checklist skill and the hourly
+trigger, and opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Give the agent the onboarding standard">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up an employee onboarding agent in this project.
 
-Which groups a role belongs to, which channels a team joins, and what a good
-first week looks like are stored as **skills** and **memory** that load into
-every session. The agent works to that standard rather than guessing, and it
-updates as we refine the process.
+1. Create the agent agents/employee-onboarding.md. Its job is to prepare the accounts, channels and first-week checklist for each new hire. It may use the Google Workspace, Linear and Slack connectors.
 
-</Step>
-<Step title="Connect what onboarding can touch">
+2. Create the skill skills/onboarding-checklist/SKILL.md with these rules:
+   - A new hire is anyone newly added to the Pending Onboarding group in Google Workspace. Work each hire as its own case, so one failure never blocks another.
+   - Read memory/onboarding-standard.md for the groups, aliases, Slack channels and checklist of each role. If a role is missing, use the closest match and flag the gap.
+   - Plan the mailbox, aliases and group memberships. Creating the account and adding the groups need my approval first.
+   - Invite the hire to their team's Slack channels without approval.
+   - File a first-week checklist in the Onboarding project in Linear without approval.
+   - Post the result to #it-ops: what is done, what waits for approval and what failed.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent can:
+3. Add a cron trigger onboarding-check to kortix.yaml. It runs the employee-onboarding agent every hour, on the hour, with the prompt "Load the onboarding-checklist skill and onboard every new hire in the Pending Onboarding group."
 
-- **Create the Google Workspace account** — mailbox, aliases, and the group
-  memberships the role calls for.
-- **Add the hire to Slack** — the channels their team works in.
-- **File the checklist in Linear** — a first-week onboarding project with the
-  tasks their role needs.
+4. Tell me which of these connectors are not connected yet.
 
-</Step>
-<Step title="Set the guardrails">
-
-Account creation and group membership are the steps that grant access, so they
-stop at a **human approval gate** before anything is provisioned. A person
-confirms the account and the memberships in one place. Credentials are encrypted
-in the secrets manager and injected at runtime, scoped to the agents you grant them to or
-written to logs.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Let each new hire arrive set up">
+<Step title="Connect your tools">
 
-With that in place, a new-hire record prepares the mailbox, the group and channel
-memberships, and the first-week checklist, and holds the access-granting steps
-for a person. A new engineer's record becomes a Workspace account, the right
-Slack channels, and a Linear onboarding project, ready on day one.
+Open **Connectors** in your project and connect Google Workspace, your task
+tracker and Slack. Credentials are brokered server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="Google Workspace" domain="workspace.google.com" tag="Required">
+    Finds new hires and prepares accounts, aliases and groups.
+  </ToolNeed>
+  <ToolNeed name="Linear" domain="linear.app" tag="Required" alternatives={[['Jira', 'atlassian.com'], ['Asana', 'asana.com']]}>
+    Files the new hire's first-week checklist.
+  </ToolNeed>
+  <ToolNeed name="BambooHR" domain="bamboohr.com" tag="Optional" alternatives={[['Workday', 'workday.com']]}>
+    Marks the new hire who is ready to onboard.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Adds the hire to team channels and posts the prepared setup.
+  </ToolNeed>
+</ToolList>
+
+</Step>
+<Step title="Run it once with this prompt">
+
+Merge the change request, then start a session with the **employee-onboarding** agent
+and send this prompt. Check the planned account and the
+checklist before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run the onboarding check once.
+
+1. Find people newly added to the Pending Onboarding group in Google Workspace. Treat each one as its own case.
+2. Read memory/onboarding-standard.md for each hire's role and team.
+3. Plan the mailbox, aliases and group memberships, and ask me before you create the account or add any group.
+4. Invite each hire to their team's Slack channels.
+5. File a first-week checklist in the Onboarding project in Linear.
+6. Post the result to #it-ops with every step done, pending or failed.`}
+/>
+
+</Step>
+<Step title="Let the hourly schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every hour, on the hour, each run in a new session on its own cloud
+computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: onboarding-check
+    name: New-hire onboarding check
+    on:
+      cron: "0 0 * * * *"
+    run:
+      agent: employee-onboarding
+      prompt: Load the onboarding-checklist skill and onboard every new hire in the Pending Onboarding group.`}
+/>
+
+</Step>
+<Step title="Hold account creation for approval">
+
+Slack invites and the Linear checklist run on their own, because they grant no
+system access. Creating the Workspace account and adding groups stop for a
+person. An automated session waits at most 30 minutes for a person, then stops
+without creating the account, and the next run asks again.
+
+</Step>
+<Step title="Read the setup report">
+
+Each new hire ends as one report in #it-ops. This is what a run looks like in
+the session:
+
+<ExampleRun
+  title="New-hire onboarding check · 11:00"
+  message="Load the onboarding-checklist skill and onboard every new hire in the Pending Onboarding group."
+  worked="Worked for 2m 14s"
+  tools={[
+    'google workspace · list group members',
+    'slack · invite to channel × 8',
+    'linear · create issue × 6',
+    'slack · post message → #it-ops',
+  ]}
+  note="Illustrative example. Your roles and checklists differ."
+>
+  Found **2** new hires. Added each one to **4** team channels and filed **6**
+  first-week issues in Linear. Both Workspace accounts are waiting for approval,
+  each with a planned mailbox and **3** groups.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -105,6 +181,25 @@ Slack channels, and a Linear onboarding project, ready on day one.
   **skills** and **memory**, and gate account creation and group membership
   behind a human.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Day-one welcome"
+  code="On each hire's start date, send them a Slack DM with the link to their first-week checklist and the name of their manager."
+/>
+
+<CopyBlock
+  title="Request a laptop"
+  code="When a role needs a laptop, file a hardware request in the Onboarding project with the start date as the due date."
+/>
+
+<CopyBlock
+  title="Check in after week one"
+  code="Seven days after the start date, ask the manager in Slack which first-week items are still open, and update the Linear checklist."
+/>
 
 ## Guardrails
 

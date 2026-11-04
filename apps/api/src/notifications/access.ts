@@ -9,13 +9,17 @@
 //     owners/admins on every project, SSO-only enforcement. It skips the MFA
 //     step-up on purpose; the inbox READ applies that gate itself.
 //   - session: `isProjectSessionVisibleTo` — owner, project-visible, named or
-//     group grants, the trigger-run manager override, account oversight.
+//     group grants, the trigger-run manager override, account oversight, and
+//     the session's private channel (`hiddenSpaceIds`): a person not in it is
+//     never told, and one removed from it stops seeing earlier notifications.
 //   - a soft-deleted session (`metadata.deletedAt`) is never visible.
 // A recipient is also always a person: a member of the account
 // (`personsAmong`). A service account or any other non-person id that the IAM
 // lets in is never told.
-import { projectSessions } from '@kortix/db';
-import { inArray } from 'drizzle-orm';
+import { artifacts, projects, projectSessions } from '@kortix/db';
+import { and, eq, inArray } from 'drizzle-orm';
+import type { ArtifactRow } from '../artifacts/service';
+import { resolveFeatureFlag } from '../feature-flags/registry';
 import { PROJECT_ACTIONS } from '../iam/actions';
 import { listAccessible, type Accessible } from '../iam/authorize';
 import { groupIdsOfUser } from '../iam/group-read';
@@ -26,9 +30,75 @@ import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { isUuid } from '../shared/validate';
+import { hiddenSpaceIds, spaceVisibleFor } from '../shared/space-access';
 
 /** Recipient checks in flight at once: one check is up to ~7 queries on a 5-connection pool. */
 const RECIPIENT_CHECK_CONCURRENCY = 4;
+
+export type ArtifactAccessRow = ArtifactRow & { projectMetadata: unknown };
+
+export async function loadArtifactAccessRows(artifactIds: readonly string[]): Promise<Map<string, ArtifactAccessRow>> {
+  const ids = [...new Set(artifactIds)].filter(isUuid);
+  if (!ids.length) return new Map();
+  const rows = await db.select({ artifact: artifacts, projectMetadata: projects.metadata }).from(artifacts)
+    .innerJoin(projects, and(eq(projects.projectId, artifacts.projectId), eq(projects.accountId, artifacts.accountId)))
+    .where(inArray(artifacts.artifactId, ids));
+  return new Map(rows.map((row) => [row.artifact.artifactId, { ...row.artifact, projectMetadata: row.projectMetadata }]));
+}
+
+/** Current Artifact permission and folder visibility, also used before a digest. */
+export async function maySeeArtifacts(userId: string, rows: readonly ArtifactAccessRow[], strict = false): Promise<Set<string>> {
+  const visible = new Set<string>();
+  if (!userId || !rows.length) return visible;
+  try {
+    const live = rows.filter((row) => resolveFeatureFlag(row.projectMetadata, 'artifacts') && resolveFeatureFlag(row.projectMetadata, 'artifact_comments'));
+    if (!live.length) return visible;
+    const [{ canView }, { privateChannelFoldersFor }] = await Promise.all([import('../artifacts/service'), import('../drives/service')]);
+    const permissions = new Map<string, { read: Accessible; comment: Accessible }>();
+    const access = (accountId: string, action: string) => strict
+      ? listAccessible({ userId, accountId, credential: { kind: 'jwt' }, ctx: {} }, action, 'project')
+      : projectAccess(userId, accountId, action);
+    await Promise.all([...new Set(live.map((row) => row.accountId))].map(async (accountId) => {
+      const [read, comment] = await Promise.all([
+        access(accountId, PROJECT_ACTIONS.PROJECT_ARTIFACT_READ),
+        access(accountId, PROJECT_ACTIONS.PROJECT_ARTIFACT_COMMENT),
+      ]);
+      permissions.set(accountId, { read, comment });
+    }));
+    const folders = new Map<string, Awaited<ReturnType<typeof privateChannelFoldersFor>>>();
+    for (const row of live) {
+      const permission = permissions.get(row.accountId)!;
+      if (!allows(permission.read, row.projectId) && !allows(permission.comment, row.projectId)) continue;
+      if (!folders.has(row.projectId)) folders.set(row.projectId, await privateChannelFoldersFor(row.projectId, userId, null));
+      const paths = folders.get(row.projectId)!;
+      if (canView(row, { userId, privateFolders: paths.visible, allPrivateFolders: paths.all })) visible.add(row.artifactId);
+    }
+  } catch (error) {
+    if (strict) throw error;
+    logger.warn('[notify] Artifact access check failed', { error: error instanceof Error ? error.message : String(error) });
+  }
+  return visible;
+}
+
+export async function filterArtifactRecipients(artifact: ArtifactRow, userIds: readonly string[]): Promise<string[]> {
+  const current = (await loadArtifactAccessRows([artifact.artifactId])).get(artifact.artifactId);
+  if (!current || current.accountId !== artifact.accountId || current.projectId !== artifact.projectId) return [];
+  const candidates = [...new Set(userIds)].filter(isUuid);
+  if (!candidates.length) return [];
+  const members = new Set((await accountMembersAmong(current.accountId, candidates)).map((row) => row.userId));
+  const people = candidates.filter((id) => members.has(id));
+  const permitted = await mapWithConcurrency(people, RECIPIENT_CHECK_CONCURRENCY, async (userId) =>
+    (await maySeeArtifacts(userId, [current], true)).has(current.artifactId));
+  return people.filter((_, index) => permitted[index]);
+}
+
+export async function mayReadProjectArtifacts(userId: string, accountId: string, projectIds: readonly string[]): Promise<Set<string>> {
+  const [read, comment] = await Promise.all([
+    projectAccess(userId, accountId, PROJECT_ACTIONS.PROJECT_ARTIFACT_READ),
+    projectAccess(userId, accountId, PROJECT_ACTIONS.PROJECT_ARTIFACT_COMMENT),
+  ]);
+  return new Set(projectIds.filter((id) => allows(read, id) || allows(comment, id)));
+}
 
 export interface SessionAccessRow {
   sessionId: string;
@@ -39,6 +109,8 @@ export interface SessionAccessRow {
   metadata: unknown;
   origin: string | null;
   initiatorType: string | null;
+  /** The session's channel: a private one the person is not in hides the session. */
+  spaceId: string | null;
 }
 
 function allows(accessible: Accessible, projectId: string): boolean {
@@ -72,6 +144,7 @@ export async function loadSessionAccessRows(sessionIds: readonly string[]): Prom
       metadata: projectSessions.metadata,
       origin: projectSessions.origin,
       initiatorType: projectSessions.initiatorType,
+      spaceId: projectSessions.spaceId,
     })
     .from(projectSessions)
     .where(inArray(projectSessions.sessionId, ids));
@@ -83,7 +156,12 @@ export async function loadSessionAccessRows(sessionIds: readonly string[]): Prom
  * The ids of the sessions in `rows` that `userId` may open now. One project
  * listing per account, one group read, one grants read for the batch.
  */
-export async function maySeeSessions(userId: string, rows: readonly SessionAccessRow[]): Promise<Set<string>> {
+export async function maySeeSessions(
+  userId: string,
+  rows: readonly SessionAccessRow[],
+  /** `prompt`: account oversight reads a hidden private channel's thread, it never posts to one. */
+  purpose: 'read' | 'prompt' = 'read',
+): Promise<Set<string>> {
   const visible = new Set<string>();
   if (!userId || rows.length === 0) return visible;
   try {
@@ -105,9 +183,13 @@ export async function maySeeSessions(userId: string, rows: readonly SessionAcces
     }));
     const inProject = live.filter((row) => allows(read.get(row.accountId)!, row.projectId));
     if (inProject.length === 0) return visible;
-    const [groupRows, grants] = await Promise.all([
+    const projectIds = [...new Set(inProject.map((row) => row.projectId))];
+    const [groupRows, grants, hiddenByProject] = await Promise.all([
       groupIdsOfUser(userId),
       loadSessionGrants(inProject.map((row) => row.sessionId)),
+      Promise.all(projectIds.map((projectId) => hiddenSpaceIds(projectId, userId, null))).then(
+        (sets) => new Map(projectIds.map((projectId, i) => [projectId, sets[i]!])),
+      ),
     ]);
     const subject = { userId, groupIds: groupRows.map((g) => g.groupId) };
     for (const row of inProject) {
@@ -121,7 +203,10 @@ export async function maySeeSessions(userId: string, rows: readonly SessionAcces
           metadata: row.metadata,
           initiatorType: row.initiatorType,
           canManageProject: allows(manage.get(row.accountId)!, row.projectId),
-          accountSessionOversight: oversight.get(row.accountId) === true,
+          spaceVisible: spaceVisibleFor(hiddenByProject.get(row.projectId)!, row.spaceId),
+          accountSessionOversight:
+            oversight.get(row.accountId) === true &&
+            (purpose === 'read' || spaceVisibleFor(hiddenByProject.get(row.projectId)!, row.spaceId)),
         },
       );
       if (ok) visible.add(row.sessionId);
@@ -225,5 +310,5 @@ export async function mayPromptSessions(
   if (!userId || sessionIds.length === 0) return new Set();
   const accessible = await projectAccess(userId, accountId, PROJECT_ACTIONS.PROJECT_SESSION_START);
   const rows = [...(await loadSessionAccessRows(sessionIds)).values()].filter((row) => allows(accessible, row.projectId));
-  return maySeeSessions(userId, rows);
+  return maySeeSessions(userId, rows, 'prompt');
 }

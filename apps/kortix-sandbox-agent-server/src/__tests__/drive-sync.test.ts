@@ -4,14 +4,15 @@
  * port (helpers/fake-drive-sync-api.ts), with a temp dir standing in for
  * /drives. Each test names one sync rule and sets every other precondition.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { chmodSync, mkdirSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DriveSyncService } from '@/services/drive-sync/drive-sync'
 import { MountSync, conflictCopyName } from '@/services/drive-sync/engine'
-import { createHttpDriveSyncApi } from '@/services/drive-sync/remote'
+import { createHash } from 'node:crypto'
+import { createHttpDriveSyncApi, DriveSyncRefused, SINGLE_PUT_MAX } from '@/services/drive-sync/remote'
 import { type FakeDriveSyncApi, startFakeDriveSyncApi } from './helpers/fake-drive-sync-api'
 
 const DRIVE = 'aaaaaaaa-0000-0000-0000-000000000001'
@@ -427,5 +428,60 @@ describe('drive sync data safety', () => {
     } finally {
       chmodSync(locked, 0o755)
     }
+  })
+})
+
+
+describe('HTTP transfer characterization', () => {
+  test('the small PUT boundary includes exactly SINGLE_PUT_MAX bytes', async () => {
+    mount()
+    const bytes = Buffer.alloc(SINGLE_PUT_MAX, 97)
+    const src = join(dir, 'boundary.bin')
+    writeFileSync(src, bytes)
+    const result = await api().drive(DRIVE).upload('/boundary.bin', src, 'absent')
+    expect(result.sha256).toBe(createHash('sha256').update(bytes).digest('hex'))
+    expect(result.version).not.toBeNull()
+    expect(fake.calls).toEqual(['PUT /files/content /boundary.bin'])
+    expect(fake.read(DRIVE, '/boundary.bin')).toBe(bytes.toString())
+  })
+
+  test('repeated missing blocks are sent once and committed conditionally', async () => {
+    mount()
+    const bytes = Buffer.alloc(SINGLE_PUT_MAX + 1, 97)
+    const src = join(dir, 'blocks.bin')
+    writeFileSync(src, bytes)
+    const result = await api().drive(DRIVE).upload('/blocks.bin', src, 'absent')
+    expect(result.sha256).toBe(createHash('sha256').update(bytes).digest('hex'))
+    expect(fake.calls.filter((c) => c.startsWith('PUT /files/upload/'))).toHaveLength(2)
+    expect(fake.read(DRIVE, '/blocks.bin')).toBe(bytes.toString())
+    await expect(api().drive(DRIVE).upload('/blocks.bin', src, 'absent')).rejects.toThrow('changed on the drive')
+    expect(fake.read(DRIVE, '/blocks.bin')).toBe(bytes.toString())
+  })
+
+  test('a whole response after a partial response restarts instead of appending', async () => {
+    mount()
+    fake.write(DRIVE, '/restart.txt', 'complete bytes')
+    fake.cutNextRead = 3
+    const originalFetch = globalThis.fetch
+    const ranges: Array<string | null> = []
+    using fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(Object.assign((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      ranges.push(new Headers(init?.headers).get('range'))
+      return originalFetch(input, { ...init, headers: { Authorization: `Bearer ${fake.token}` } })
+    }, { preconnect: originalFetch.preconnect }))
+    const dest = join(dir, 'restart.txt')
+    await api().drive(DRIVE).download('/restart.txt', dest)
+    expect(ranges).toEqual([null, 'bytes=3-'])
+    expect(readFileSync(dest, 'utf8')).toBe('complete bytes')
+    expect(existsSync(`${dest}.part`)).toBe(false)
+  })
+
+  test('a final refusal removes the partial file and preserves the destination', async () => {
+    const dest = join(dir, 'refused.txt')
+    writeFileSync(dest, 'previous bytes')
+    writeFileSync(`${dest}.part`, 'stale bytes')
+    await expect(api().drive(DRIVE).download('/refused.txt', dest)).rejects.toBeInstanceOf(DriveSyncRefused)
+    expect(readFileSync(dest, 'utf8')).toBe('previous bytes')
+    expect(existsSync(`${dest}.part`)).toBe(false)
+    expect(fake.calls).toHaveLength(1)
   })
 })

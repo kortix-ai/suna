@@ -16,9 +16,15 @@ const STACK_LIMIT = 3;
 /** What an avatar needs: a participant, or a message's member author. */
 type AvatarPerson = Pick<SessionParticipant, 'name' | 'email'> & { avatar_url?: string | null };
 
-/** The display name, else the email local part. The viewer too: every row names a person. */
+/**
+ * The display name, else the email local part. The viewer too: every row names
+ * a person. The API sends the email as the name when the profile has none, so
+ * a name that is an email address reads as no name.
+ */
 export function participantLabel(person: AvatarPerson): string {
-  return person.name?.trim() || person.email?.split('@')[0] || '';
+  const name = person.name?.trim();
+  if (name && !name.includes('@')) return name;
+  return (person.email ?? name)?.split('@')[0] || '';
 }
 
 function ParticipantAvatar({ person, size }: { person: AvatarPerson; size: 'sm' | 'md' }) {
@@ -33,20 +39,31 @@ function ParticipantAvatar({ person, size }: { person: AvatarPerson; size: 'sm' 
 }
 
 /**
- * A message in a shared session: its member author's avatar above the
- * bubble, on the right edge, your own included. A message with no recorded
- * author, or any message in a single-user session, renders alone. The author
- * comes from `.../message-authors`.
+ * A member's message: its author's avatar above the bubble, on the right
+ * edge, your own included, in every session. A message with no recorded
+ * author renders alone. `reserve` keeps the avatar's space empty while the
+ * author loads, so the bubble does not move when it arrives. The author comes
+ * from `.../message-authors`.
  */
 export function MessageSenderAbove({
   sender,
+  reserve = false,
   children,
 }: {
   sender: AvatarPerson | null | undefined;
+  reserve?: boolean;
   children: ReactNode;
 }) {
   const t = useTranslations('sessionParticipants');
-  if (!sender) return children;
+  if (!sender) {
+    if (!reserve) return children;
+    return (
+      <div className="flex max-w-full flex-col items-end gap-1.5">
+        <span aria-hidden className="size-6 shrink-0" />
+        <div className="flex max-w-full min-w-0">{children}</div>
+      </div>
+    );
+  }
   const name = participantLabel(sender);
   return (
     <div className="flex max-w-full flex-col items-end gap-1.5">
@@ -75,8 +92,11 @@ export function hiddenParticipantCount(participants: SessionParticipants | undef
  */
 export function SessionParticipantStack({
   participants,
+  label: labelOverride,
 }: {
   participants: SessionParticipants | undefined;
+  /** The stack's accessible name, for a host that is not a session (an artifact's people with access). */
+  label?: string;
 }) {
   const t = useTranslations('sessionParticipants');
   const [open, setOpen] = useState(false);
@@ -88,7 +108,7 @@ export function SessionParticipantStack({
     .map((person) => participantLabel(person))
     .filter(Boolean)
     .join(', ');
-  const label = more > 0 ? t('peopleMore', { names, count: more }) : t('people', { names });
+  const label = labelOverride ?? (more > 0 ? t('peopleMore', { names, count: more }) : t('people', { names }));
 
   return (
     <HoverCard open={open} onOpenChange={setOpen} openDelay={300} closeDelay={100}>

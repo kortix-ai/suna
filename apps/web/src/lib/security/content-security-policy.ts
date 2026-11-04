@@ -4,7 +4,8 @@
  *
  * Two headers, on purpose:
  *
- * - `Content-Security-Policy` (enforced) holds `frame-ancestors 'self'`,
+ * - `Content-Security-Policy` (enforced) holds `frame-ancestors` (this origin
+ *   and the Kortix extension, whose side panel frames the app),
  *   `object-src 'none'`, `base-uri 'self'` and the `script-src` allowlist.
  *
  * - `Content-Security-Policy-Report-Only` carries the same `script-src`
@@ -19,7 +20,16 @@
  * is still required by the root layout's inline bootstrap, so this does not
  * yet protect against injected inline script, only against unlisted hosts.
  * Moving to nonces is the next step.
+ *
+ * `next dev` alone adds `'unsafe-eval'`: React rebuilds the call stacks of
+ * development errors with eval(), and without it every page logs "eval() is
+ * not supported" and the dev overlay counts an issue. A production build never
+ * calls eval(). Every deployed web app is a production build
+ * (`apps/web/Dockerfile` sets `NODE_ENV=production`), so the deployed header is
+ * unchanged.
  */
+
+import { KORTIX_EXTENSION_ID } from '@kortix/ui/internal/chrome/extension';
 
 export const CSP_REPORT_PATH = '/api/csp-report';
 
@@ -44,6 +54,11 @@ export const SCRIPT_SRC_HOSTS = [
   'https://vercel.live',
 ] as const;
 
+/** This origin and the Kortix extension's side panel, shared by both headers. */
+function frameAncestorsDirective(): string {
+  return `frame-ancestors 'self' chrome-extension://${KORTIX_EXTENSION_ID}`;
+}
+
 /** The complete `script-src` value, shared by the enforced and report-only headers. */
 function scriptSourceDirective(): string {
   const scriptSrc = [
@@ -52,6 +67,8 @@ function scriptSourceDirective(): string {
     "'unsafe-inline'",
     // Shiki's regex engine and the file viewers compile WebAssembly.
     "'wasm-unsafe-eval'",
+    // React's development call stacks; see the file comment.
+    ...(process.env.NODE_ENV === 'development' ? ["'unsafe-eval'"] : []),
     // Workers created from blob URLs (PDF and editor workers).
     'blob:',
     ...SCRIPT_SRC_HOSTS,
@@ -60,10 +77,12 @@ function scriptSourceDirective(): string {
 }
 
 export function enforcedContentSecurityPolicy(): string {
+  // The Kortix Chrome extension frames the app in its side panel. X-Frame-Options
+  // cannot allowlist an origin, so the app sends no XFO and this directive is the only gate.
   return (
     [
       scriptSourceDirective(),
-      "frame-ancestors 'self'",
+      frameAncestorsDirective(),
       "object-src 'none'",
       "base-uri 'self'",
       `report-uri ${CSP_REPORT_PATH}`,
@@ -86,7 +105,7 @@ export function reportOnlyContentSecurityPolicy(): string {
   return (
     [
       scriptSourceDirective(),
-      "frame-ancestors 'self'",
+      frameAncestorsDirective(),
       "object-src 'none'",
       "base-uri 'self'",
       `report-uri ${CSP_REPORT_PATH}`,

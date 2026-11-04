@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { accounts, baseTipChecks, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { dbBaseTipStore, expireBaseTips, sharedBaseTip } from './base-tip';
+import { dbBaseTipStore, expireBaseTips, publishBaseTipProof, sharedBaseTip, storedBaseTipProof } from './base-tip';
 
 const TIP_A = 'a'.repeat(40);
 const TIP_B = 'b'.repeat(40);
@@ -108,6 +108,27 @@ describe('sharedBaseTip', () => {
     expect(asks).toBe(2);
   });
 
+  test('the stored proof carries when its check asked; a re-check in flight keeps the old time; a base move clears it', async () => {
+    expect(await storedBaseTipProof(projectId, 'main')).toBeNull();
+    const firstAsked = clock;
+    await tip();
+    expect(await storedBaseTipProof(projectId, 'main')).toEqual({ tip: TIP_A, provenAt: firstAsked.getTime() });
+
+    // The re-check claims the row: `checked_at` moves, the stored tip and its
+    // proof time stay those of the first check until the answer lands.
+    clock = new Date(clock.getTime() + INTERVAL_MS + 1);
+    upstream = TIP_B;
+    const checking = new Promise<void>((resolve) => (asked = resolve));
+    const recheck = tip();
+    await checking;
+    expect(await storedBaseTipProof(projectId, 'main')).toEqual({ tip: TIP_A, provenAt: firstAsked.getTime() });
+    await recheck;
+    expect(await storedBaseTipProof(projectId, 'main')).toEqual({ tip: TIP_B, provenAt: clock.getTime() });
+
+    await expireBaseTips(projectId);
+    expect(await storedBaseTipProof(projectId, 'main')).toBeNull();
+  });
+
   test('a failed check does not stand for the interval', async () => {
     await tip();
     clock = new Date(clock.getTime() + INTERVAL_MS + 1);
@@ -116,5 +137,40 @@ describe('sharedBaseTip', () => {
     upstream = TIP_B;
     expect(await tip()).toBe(TIP_B);
     expect(asks).toBe(3);
+  });
+});
+
+describe('publishBaseTipProof (a mirror fetch shares the tip it saw)', () => {
+  const at = (offsetMs: number) => Date.now() + offsetMs;
+
+  test('a first proof creates the row; the shared check in the interval then reads it without asking', async () => {
+    const askedAt = at(-1_000);
+    clock = new Date(askedAt + 5_000);
+    await publishBaseTipProof(projectId, 'main', TIP_A, askedAt);
+
+    expect(await storedBaseTipProof(projectId, 'main')).toEqual({ tip: TIP_A, provenAt: askedAt });
+    expect(await tip()).toBe(TIP_A);
+    expect(asks).toBe(0);
+  });
+
+  test('a newer proof replaces an older one; an older one never replaces a newer one', async () => {
+    await publishBaseTipProof(projectId, 'main', TIP_A, at(-10_000));
+    await publishBaseTipProof(projectId, 'main', TIP_B, at(-5_000));
+    expect((await storedBaseTipProof(projectId, 'main'))?.tip).toBe(TIP_B);
+
+    await publishBaseTipProof(projectId, 'main', TIP_A, at(-8_000));
+    expect((await storedBaseTipProof(projectId, 'main'))?.tip).toBe(TIP_B);
+  });
+
+  test('an expired row stays expired: a base move still makes the next check ask', async () => {
+    await publishBaseTipProof(projectId, 'main', TIP_A, at(-10_000));
+    await expireBaseTips(projectId);
+    // A fetch that started before the move lands after it.
+    await publishBaseTipProof(projectId, 'main', TIP_A, at(-5_000));
+
+    expect(await storedBaseTipProof(projectId, 'main')).toBeNull();
+    upstream = TIP_B;
+    expect(await tip()).toBe(TIP_B);
+    expect(asks).toBe(1);
   });
 });

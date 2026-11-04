@@ -4,8 +4,8 @@ import Link from '@/components/site-link';
 
 import { DesktopCardImage, MobileCardImage } from './card-images';
 import { localizedDownloadContent } from './content';
-import type { DesktopOs, MobileOs, Platform } from './detect-os';
-import { DESKTOP_ORDER, MOBILE_ORDER, isMobilePlatform } from './detect-os';
+import type { DesktopOs, MobileOs, Platform } from '@kortix/ui/internal/lib/detect-os';
+import { DESKTOP_ORDER, MOBILE_ORDER, isMobilePlatform } from '@kortix/ui/internal/lib/detect-os';
 import { MobileQrRow } from './mobile-qr-row';
 import type { CardRow } from './platform-card';
 import { PlatformCard } from './platform-card';

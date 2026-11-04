@@ -227,6 +227,38 @@ describe('decideRemovedParkedOutcome', () => {
 });
 
 describe('recoverRemovedParkedRuntime', () => {
+  test.each([
+    { status: 'archived', metadata: {} },
+    { status: 'stopped', metadata: { kortixRemovalIntentAt: '2026-10-28T12:00:00Z' } },
+    { status: 'stopped', metadata: { providerRemovalPendingAt: '2026-10-28T12:00:00Z' } },
+  ] satisfies Array<Pick<typeof sessionSandboxes.$inferSelect, 'status' | 'metadata'>>)(
+    'does not recover a Kortix-initiated removal: %j',
+    async (removal) => {
+      const now = new Date('2026-10-28T12:00:00Z');
+      const row: typeof sessionSandboxes.$inferSelect = {
+        sandboxId: '00000000-0000-4000-8000-000000000001',
+        sessionId: 'ses_test',
+        accountId: '00000000-0000-4000-8000-000000000002',
+        projectId: '00000000-0000-4000-8000-000000000003',
+        provider: 'platinum',
+        externalId: 'sbx_test',
+        baseUrl: null,
+        config: {},
+        lastUsedAt: null,
+        activeSince: now,
+        deadlineAt: now,
+        createdAt: now,
+        updatedAt: now,
+        ...removal,
+      };
+
+      const result = await recoverRemovedParkedRuntime(row, 'sbx_test', now);
+
+      expect(result.outcome).toBe('preserve-lost');
+      expect(result.row).toBe(row);
+    },
+  );
+
   // The wake-maintenance reconcile reaches this helper with rows the preserve
   // path already condemned (`runtimeIdentityState: 'unavailable'`): the
   // cleanup-claim guard keeps such a row a candidate for the guard window. The

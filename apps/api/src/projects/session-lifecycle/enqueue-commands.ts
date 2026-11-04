@@ -20,6 +20,7 @@ function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreat
     apiKeyType: command.apiKeyType,
     inSession: command.inSession,
     callerSessionId: command.callerSessionId,
+    parentActor: command.parentActor,
   };
 }
 
@@ -30,6 +31,7 @@ function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreat
  * promise. `availableAt` in the future = a scheduled grace window.
  */
 export interface EnqueueContinueSessionCommandInput {
+  artifactId?: string;
   source: SessionInvocationSource;
   projectId: string;
   accountId: string;
@@ -103,6 +105,7 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     projectId: input.projectId,
     accountId: input.accountId,
     actorUserId: input.actorUserId,
+    ...(input.artifactId ? { artifactId: input.artifactId } : {}),
     sessionId: input.sessionId,
     idempotencyKey: input.idempotencyKey ?? null,
     payload: payload as unknown as Record<string, unknown>,
@@ -166,51 +169,6 @@ export async function enqueueContinueSessionCommand(
   return { row: existing, deduped: true };
 }
 
-/** Load the durable first prompt and every exact runtime message id it used. */
-export async function loadLegacyPendingFirstPrompt(sessionId: string): Promise<{
-  commandId: string;
-  deliveredMessageIds: string[];
-  parts: PromptPartWire[];
-} | null> {
-  const [row] = await db
-    .select({
-      commandId: sessionLifecycleCommands.commandId,
-      payload: sessionLifecycleCommands.payload,
-      result: sessionLifecycleCommands.result,
-    })
-    .from(sessionLifecycleCommands)
-    .where(eq(sessionLifecycleCommands.idempotencyKey, `prompt:${sessionId}:pending-first`))
-    .limit(1);
-  if (!row) return null;
-
-  const payload = row.payload as unknown as QueuedContinueSessionPayload;
-  const result = row.result as { forwarded_message_id?: unknown };
-  const deliveredMessageIds = [
-    result.forwarded_message_id,
-    payload.redeliveredMessageId,
-    ...(payload.redeliveredMessageIds ?? []).slice().reverse(),
-    payload.wireMessageId,
-  ].filter((value): value is string => typeof value === 'string' && value.length > 0);
-
-  return {
-    commandId: row.commandId,
-    deliveredMessageIds: [...new Set(deliveredMessageIds)],
-    parts: Array.isArray(payload.parts) ? payload.parts : [],
-  };
-}
-
-/** Record completion without replacing unrelated session metadata. */
-export async function markLegacyInlineAttachmentsRepaired(sessionId: string): Promise<void> {
-  await db
-    .update(projectSessions)
-    .set({
-      metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || ${JSON.stringify({
-        legacy_inline_attachments_repaired_at: new Date().toISOString(),
-      })}::jsonb`,
-    })
-    .where(eq(projectSessions.sessionId, sessionId));
-}
-
 /**
  * The row a create claim inserts. An inline create is claimed `running` by
  * THIS process, so it carries the same lock a drained row does: without one,
@@ -239,6 +197,7 @@ function buildCreateSessionCommandValues(
     projectId: command.project.projectId,
     accountId: command.project.accountId,
     actorUserId: command.userId,
+    ...(command.artifactId ? { artifactId: command.artifactId } : {}),
     idempotencyKey: command.idempotencyKey ?? null,
     payload: createSessionCommandPayload(command) as unknown as Record<string, unknown>,
     result: opts.reason ? { reason: opts.reason } : {},

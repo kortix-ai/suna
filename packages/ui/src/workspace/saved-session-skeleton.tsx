@@ -18,8 +18,8 @@ import { type ReactNode, useMemo } from 'react';
  * answers in one round trip; the computer takes 5-240 s to wake. So a session
  * that has a saved copy opens on this — its header, skeleton turns, and the
  * composer's outline — and the conversation replaces it in one step. A session
- * with nothing to read (`resolveResumeOverlay`) gets the same frame with a
- * `status` in place of the rows.
+ * with nothing to read (`resolveResumeOverlay`) gets the same frame and rows,
+ * with the wake's `status` centered above them.
  *
  * Built from the geometry the real chat uses (`SessionLayout`, `SessionBodyRow`,
  * `SESSION_TRANSCRIPT_CLASS`, `COMPOSER_SHELL_CLASS`), so the crossfade into
@@ -51,8 +51,8 @@ export function SavedSessionSkeleton({
   /** The route's session id. */
   sessionId: string;
   stage: SessionStartStage;
-  /** Drawn in place of the skeleton rows: there is no saved conversation to
-   *  stand in for, only the wake's status. */
+  /** The wake's status, centered above the skeleton rows. It may render
+   *  nothing (a routine wake); the rows show either way. */
   status?: ReactNode;
 }) {
   const t = useTranslations('sessionPage');
@@ -71,17 +71,25 @@ export function SavedSessionSkeleton({
         <SessionSiteHeader sessionId={sessionId} sessionTitle="" />
         <SessionBodyRow transient>
           <div className="relative z-10 min-h-0 flex-1 overflow-hidden">
-            {status ?? (
-              <div
-                role="status"
-                aria-busy="true"
-                aria-label={t('loadingConversation')}
-                data-testid="saved-session-skeleton"
-                className={cn(SESSION_TRANSCRIPT_CLASS, APPEAR_AFTER_A_MOMENT)}
-              >
-                <SavedSessionSkeletonRows shape={shape} />
+            <div
+              role="status"
+              aria-busy="true"
+              aria-label={t('loadingConversation')}
+              data-testid="saved-session-skeleton"
+              className={cn(SESSION_TRANSCRIPT_CLASS, APPEAR_AFTER_A_MOMENT)}
+            >
+              <SavedSessionSkeletonRows shape={shape} />
+            </div>
+            {/* The status may render nothing (`SessionStartingLoader` on a
+                routine wake), so its card hides itself while empty and,
+                when it speaks, keeps its text off the pulsing bars. */}
+            {status ? (
+              <div className="absolute inset-0 flex items-center justify-center px-4">
+                <div className="bg-background border-border rounded-xl border py-4 empty:hidden">
+                  {status}
+                </div>
               </div>
-            )}
+            ) : null}
           </div>
           {/* The card's outline, on the rails of the docked composer: its height
               and the gap the agent row keeps below it. */}

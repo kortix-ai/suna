@@ -63,7 +63,11 @@ export function GET(request: Request): Response {
     );
   }
 
-  const requestedLimit = Number(url.searchParams.get('limit') || DEFAULT_LIMIT);
+  // Decimal digits only: `Number()` also read `1e3`, `0x10` and `1 ` as page
+  // sizes (KRTX-3261). An empty `limit` is the default; above 50 is capped and
+  // `pagination.limit` reports the size applied.
+  const rawLimit = url.searchParams.get('limit');
+  const requestedLimit = !rawLimit ? DEFAULT_LIMIT : /^\d+$/.test(rawLimit) ? Number(rawLimit) : Number.NaN;
   if (!Number.isInteger(requestedLimit) || requestedLimit < 1) {
     return Response.json(
       { error: 'invalid_limit', max_limit: MAX_LIMIT },

@@ -85,7 +85,11 @@ mock.module('../../iam', () => ({
     return { allowed: true, reason: 'role' };
   },
 }));
+const realSandboxEnvSync = await import('../../projects/lib/sandbox-env-sync');
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
+  // Spread the real module: a hand-listed stub deletes every other export —
+  // the session-open graph imports `pushSessionAgentConfigToSandbox` from it.
+  ...realSandboxEnvSync,
   syncSandboxEnvForPrompt: async () => {},
 }));
 mock.module('../../projects/lib/session-token-grant', () => ({
@@ -102,6 +106,7 @@ mock.module('../../projects/session-activity', () => ({
   recordSessionActivity: async () => {},
 }));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
+const realSessionOpen = await import('../../projects/session-open');
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   beginSandboxTurn: async () => 'granted',
@@ -114,12 +119,26 @@ mock.module('../../projects/surface', () => ({
   registerRuntimeFork: async () => {
     counts.registerRuntimeFork += 1;
   },
+  // Imported at load by modules this graph pulls in (memory/layers.ts); never called here.
+  resolveUserIdentities: async () => new Map(),
+  // The pre-prompt Claude gate rides this module (#11335); no case in this
+  // suite prompts a Claude model, so both stay inert. A missing name is a
+  // module LINK error, not a null.
+  missingClaudeSubscription: async () => null,
+  sessionModelPin: async () => null,
 }));
+// A wake claimed by `/start` or another request leaves the row `stopped` until
+// the provider confirms the box; tests flip this to model that window.
+let wakePending = false;
 mock.module('../../projects/session-open', () => ({
+  // Spread the real module: a hand-listed stub deletes every other export —
+  // the lifecycle graph imports `openSession` from it.
+  ...realSessionOpen,
   resumeStoppedSandboxByExternalId: async (externalId: string) => {
     counts.resumeStopped += 1;
     return Boolean(externalId);
   },
+  stoppedSandboxWakePending: async () => wakePending,
 }));
 mock.module('../../shared/session-public-shares', () => ({
   ...realPublicShares,
@@ -157,7 +176,7 @@ mock.module('../backend', () => ({
   },
 }));
 
-const { forwardToSandbox, resolvePreviewWsUpstream } = await import('./preview');
+const { preview, forwardToSandbox, resolvePreviewWsUpstream } = await import('./preview');
 const { publicShareApp } = await import('./public-share');
 const { KORTIX_USER_CONTEXT_HEADER } = await import('../../shared/kortix-user-context');
 const { __resetPromptDedupe } = await import('../prompt-dedupe');
@@ -246,6 +265,7 @@ function forward(overrides?: {
 }
 
 beforeEach(() => {
+  wakePending = false;
   __resetPromptDedupe();
   currentRecord = { ...ACTIVE_RECORD };
   previewAccessAllowed = true;
@@ -376,10 +396,45 @@ describe('forwardToSandbox refusal branches', () => {
   });
 });
 
+// KRTX-3842: exercise the real route and forwarder. Ownership decisions are
+// stubbed here; integration-preview-access.test.ts covers the real IAM rules.
+const mountedPreview = new Hono<{ Variables: { userId: string } }>();
+mountedPreview.use('*', async (c, next) => {
+  c.set('userId', principal.userId);
+  await next();
+});
+mountedPreview.route('/v1/p', preview);
+
+for (const gate of ['account', 'session']) {
+  for (const method of ['GET', 'POST', 'DELETE']) {
+    for (const path of ['/file.txt', '/../../v1/health', '/%2e%2e/%2e%2e/v1/health']) {
+      test(`${gate} gate refuses ${method} ${path} before an upstream hop`, async () => {
+        previewAccessAllowed = gate !== 'account';
+        sessionAccessAllowed = gate !== 'session';
+        queueFetch(new Response('must not reach upstream'));
+        // Hono's string URL helper normalizes dot segments. Supply the raw
+        // request target so this covers server-side routing, not URL cleanup.
+        const request = new Request('http://localhost/v1/p/ext-1/3000/file.txt', { method });
+        Object.defineProperty(request, 'url', { value: `http://localhost/v1/p/ext-1/3000${path}` });
+        const response = await mountedPreview.request(request);
+        expect(response.status).toBe(403);
+        expect(await response.text()).toBe(gate === 'account'
+          ? 'Not authorized to access this sandbox, userId: u1, sandboxId: ext-1'
+          : 'Not authorized to access this session');
+        expect(fetchCalls).toBe(0);
+        expect(counts.wakeSandbox).toBe(0);
+        expect(counts.resumeStopped).toBe(0);
+      });
+    }
+  }
+}
+
 // ── the stopped-box policy at the forwarder ──────────────────────────────────
 
 describe('forwardToSandbox on a stopped sandbox', () => {
-  test('a passive read is 503 from the control plane, with no dial and no wake', async () => {
+  // KRTX-3140: a GET never wakes a stopped box, so `retry: true` kept every
+  // open tab re-reading a parked session's transcript every 15 s, forever.
+  test('a passive read is 503 from the control plane, with no dial, no wake and no retry', async () => {
     currentRecord = { ...ACTIVE_RECORD, status: 'stopped' };
     queueFetch(new Response('should never be fetched'));
     const res = await forward({ port: 8000, path: '/session' });
@@ -391,7 +446,7 @@ describe('forwardToSandbox on a stopped sandbox', () => {
       hop: 'control_plane',
       upstream_status: null,
       code: 'sandbox_not_ready',
-      retry: true,
+      retry: false,
     });
     expect(res.headers.get('x-kortix-proxy-hop')).toBe('control_plane');
     expect(res.headers.get('x-kortix-upstream-status')).toBeNull();
@@ -399,6 +454,27 @@ describe('forwardToSandbox on a stopped sandbox', () => {
     expect(fetchCalls).toBe(0);
     expect(counts.wakeSandbox).toBe(0);
     expect(counts.resumeStopped).toBe(0);
+  });
+
+  test('a passive read while a wake is in flight still says retry: true', async () => {
+    currentRecord = { ...ACTIVE_RECORD, status: 'stopped' };
+    wakePending = true;
+    const res = await forward({ port: 8000, path: '/session/sess-1/message' });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ code: 'sandbox_not_ready', retry: true });
+    expect(counts.resumeStopped).toBe(0);
+    expect(fetchCalls).toBe(0);
+  });
+
+  test('a passive read of a provisioning box still says retry: true', async () => {
+    currentRecord = { ...ACTIVE_RECORD, status: 'provisioning' };
+    const res = await forward({ port: 8000, path: '/session/sess-1/message' });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({
+      error: 'sandbox not ready (status: provisioning)',
+      code: 'sandbox_not_ready',
+      retry: true,
+    });
   });
 
   test.each([
@@ -463,6 +539,7 @@ describe('forwardToSandbox on a stopped sandbox', () => {
     queueFetch(new Response('should stay queued until the box answers'));
     const during = await forward(args);
     expect(during.status).toBe(503);
+    expect(await during.json()).toMatchObject({ code: 'sandbox_not_ready', retry: true });
     expect(counts.resumeStopped).toBe(1);
     expect(counts.wakeSandbox).toBe(0);
     expect(fetchCalls).toBe(0);
@@ -915,6 +992,7 @@ describe('resolvePreviewWsUpstream', () => {
       ok: true,
       url: 'ws://sandbox.local/kortix/pty/term-1?foo=1&user_ctx=signed-ctx&tier=free',
       headers: { [KORTIX_USER_CONTEXT_HEADER]: 'signed-ctx', authorization: 'Bearer svc-key' },
+      accessCheck: expect.any(Function),
     });
 
     const shadowed = await resolvePreviewWsUpstream(wsArgs({ queryString: '?pv=client' }));
@@ -922,6 +1000,7 @@ describe('resolvePreviewWsUpstream', () => {
       ok: true,
       url: 'ws://sandbox.local/kortix/pty/term-1?pv=tok&pv=client&user_ctx=signed-ctx&tier=free',
       headers: { [KORTIX_USER_CONTEXT_HEADER]: 'signed-ctx', authorization: 'Bearer svc-key' },
+      accessCheck: expect.any(Function),
     });
   });
 });

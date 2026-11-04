@@ -52,8 +52,9 @@ const LOCAL_FILE: AttachedFile = {
 };
 
 describe('draftScopeKey', () => {
-  test('project and session scopes produce distinct, prefixed keys', () => {
+  test('project, space and session scopes produce distinct, prefixed keys', () => {
     expect(draftScopeKey({ kind: 'project', projectId: 'p1' })).toBe('project:p1');
+    expect(draftScopeKey({ kind: 'space', spaceId: 'p1' })).toBe('space:p1');
     expect(draftScopeKey({ kind: 'session', sessionId: 'p1' })).toBe('session:p1');
   });
 });

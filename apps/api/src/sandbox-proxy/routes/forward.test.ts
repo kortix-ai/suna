@@ -54,7 +54,11 @@ mock.module('../../shared/preview-ownership', () => ({
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,
 }));
+const realSandboxEnvSync = await import('../../projects/lib/sandbox-env-sync');
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
+  // Spread the real module: a hand-listed stub deletes every other export —
+  // the session-open graph imports `pushSessionAgentConfigToSandbox` from it.
+  ...realSandboxEnvSync,
   syncSandboxEnvForPrompt: async () => {},
 }));
 // The real grant re-mint fails a prompt CLOSED when it cannot read the session
@@ -81,22 +85,27 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
+const realSessionOpen = await import('../../projects/session-open');
 // The ledger identity the proxy begins the turn under.
-let begunTurns: Array<{ runtimeSessionId: string; messageId: string | null }> = [];
+let begunTurns: Array<{ runtimeSessionId: string; messageId: string | null; source?: string }> = [];
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   beginSandboxTurn: async (
     _target: unknown,
-    turn: { runtimeSessionId: string; messageId: string | null },
+    turn: { runtimeSessionId: string; messageId: string | null; source?: string },
   ) => {
-    begunTurns.push({ runtimeSessionId: turn.runtimeSessionId, messageId: turn.messageId });
+    begunTurns.push({ runtimeSessionId: turn.runtimeSessionId, messageId: turn.messageId, source: turn.source });
     return 'granted';
   },
   acceptSandboxTurn: async () => true,
   abandonSandboxTurn: async () => true,
 }));
 mock.module('../../projects/session-open', () => ({
+  // Spread the real module: a hand-listed stub deletes every other export —
+  // the lifecycle graph imports `openSession` from it.
+  ...realSessionOpen,
   resumeStoppedSandboxByExternalId: async () => true,
+  stoppedSandboxWakePending: async () => false,
 }));
 // Daytona ingress is a pass-through: the effective port is the addressed port.
 mock.module('../backend', () => ({
@@ -122,6 +131,8 @@ mock.module('../forward/abort-authority', () => ({
     abortAsks.push({ userId: access.kind === 'principal' ? (access.userId ?? null) : null, sessionId: record.sessionId });
     return abortVerdict;
   },
+  // A rewind of the caller's own message (its rule is tested in rewind-authority.test.ts).
+  decideClientRewind: async () => true,
 }));
 const realTurnLedger = await import('../../projects/session-turn-ledger');
 mock.module('../../projects/session-turn-ledger', () => ({
@@ -129,6 +140,22 @@ mock.module('../../projects/session-turn-ledger', () => ({
   markTurnStopRequested: async (_sessionId: string, name: string, scope: unknown, by: unknown) => {
     stopLog.push({ name, scope, by });
   },
+}));
+
+// Whether the box lists `runtime.stable_message_id.v1` (pi), as the proxy's
+// placement asks the inbox's capability reader. False: an OpenCode box.
+let boxKeepsMessageIds = false;
+let keepsIdsAsks: Array<{ externalId: string; userId: string | null }> = [];
+mock.module('../../projects/surface', () => ({
+  sandboxKeepsMessageIds: async (externalId: string, userId: string | null) => {
+    keepsIdsAsks.push({ externalId, userId });
+    return boxKeepsMessageIds;
+  },
+  // The pre-prompt Claude gate rides this module (#11335); no case in this
+  // suite prompts a Claude model, so both stay inert. A missing name is a
+  // module LINK error, not a null.
+  missingClaudeSubscription: async () => null,
+  sessionModelPin: async () => null,
 }));
 
 const { forwardToSandbox } = await import('./preview');
@@ -164,6 +191,8 @@ function queueFetch(...responses: Response[]) {
 beforeEach(() => {
   __resetPromptDedupe();
   begunTurns = [];
+  boxKeepsMessageIds = false;
+  keepsIdsAsks = [];
 });
 // Restore per TEST: a case that fails before installing its own fetch would
 // otherwise run against the previous case's exhausted queue.
@@ -432,6 +461,11 @@ function installFetch(transcript: unknown | 'unreachable') {
 }
 
 const NOW = Date.now();
+// The pre-fix CLI's high-bits mint put ids ~40 days ahead of the clock
+// (WIRE_ID_CLOCK_TOLERANCE). Built from `ms * 16` instead, the fixture sat on
+// the 48-bit ring wherever that product fell, and read as ahead only part of
+// the time: it flipped to "behind" at 2026-11-03 12:37 UTC and failed every run.
+const farAheadClock = (nowMs: number) => mintWireMessageId({ nowMs: nowMs + 40 * 86_400_000 }).id.slice(0, 16);
 
 describe('forwardToSandbox — wire id placement on the direct prompt path', () => {
   test('a STALE client id into a streaming CHILD session is re-minted above the tip, ledger + echo agree', async () => {
@@ -481,6 +515,14 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
     expect(res.headers.get('X-Kortix-Effective-Message-Id')).toBe(client.id);
   });
 
+  test("a prompt the API forwards for a queued row begins its turn under the row's source; a client's names none", async () => {
+    installFetch([]);
+    const body = bodyOf({ parts: [{ type: 'text', text: 'from the chat' }] });
+    await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', jsonHeaders(), body, 'http://app.local', undefined, undefined, { promptSource: 'telegram' });
+    await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', jsonHeaders(), body, 'http://app.local');
+    expect(begunTurns.map((turn) => turn.source)).toEqual(['telegram', undefined]);
+  });
+
   test('a noReply prompt is forwarded with its flag and never begins a turn', async () => {
     const client = mintWireMessageId({ nowMs: NOW });
     installFetch([]);
@@ -517,7 +559,7 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
     // Any client can send `X-Kortix-Wire-Id-Placed: 1`; the inbox drain is the
     // only intended sender. A far-future id (the pre-fix CLI's high-bits
     // mint) is re-minted on the id alone, without the transcript read.
-    const farFuture = `msg_${((BigInt(NOW) * BigInt(0x1000)) >> BigInt(8)).toString(16).slice(0, 12)}SyntheticCli07`;
+    const farFuture = `${farAheadClock(NOW)}SyntheticCli07`;
     installFetch([]);
     const placedHeaders = jsonHeaders();
     placedHeaders.set('X-Kortix-Wire-Id-Placed', '1');
@@ -528,6 +570,33 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
     expect(delivered.messageID).not.toBe(farFuture);
     expect(delivered.messageID).toMatch(WIRE_MESSAGE_ID);
     expect(res.headers.get('X-Kortix-Effective-Message-Id')).toBe(delivered.messageID);
+  });
+
+  // pi keeps a prompt's id and orders by position: a stale id is no harm there.
+  test('on a runtime that keeps message ids, a STALE client id goes through unchanged and no transcript is read', async () => {
+    boxKeepsMessageIds = true;
+    const tip = mintWireMessageId({ nowMs: NOW - 500 });
+    const stale = mintWireMessageId({ nowMs: NOW - 120_000 });
+    installFetch([{ info: { id: tip.id, role: 'assistant' } }]);
+    const body = { messageID: stale.id, parts: [{ type: 'text', text: 'queued while busy' }] };
+    const res = await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', jsonHeaders(), bodyOf(body), 'http://app.local');
+    expect(res.status).toBe(200);
+    expect(keepsIdsAsks).toEqual([{ externalId: 'sb-1', userId: 'u1' }]);
+    expect(fetchLog.map((f) => f.method)).toEqual(['POST']);
+    expect(fetchLog[0].body).toBe(JSON.stringify(body));
+    expect(begunTurns[0]?.messageId).toBe(stale.id);
+    expect(res.headers.get('X-Kortix-Effective-Message-Id')).toBe(stale.id);
+  });
+
+  test('on a runtime that keeps message ids, a far-future id is still re-minted on the id alone', async () => {
+    boxKeepsMessageIds = true;
+    const farFuture = `${farAheadClock(NOW)}SyntheticCli08`;
+    installFetch([]);
+    await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', jsonHeaders(), bodyOf({ messageID: farFuture, parts: [{ type: 'text', text: 'hi' }] }), 'http://app.local');
+    expect(fetchLog.map((f) => f.method)).toEqual(['POST']);
+    const delivered = JSON.parse(fetchLog[0].body!) as { messageID: string };
+    expect(delivered.messageID).not.toBe(farFuture);
+    expect(delivered.messageID).toMatch(WIRE_MESSAGE_ID);
   });
 
   test('the "already placed" header still skips the read for an id near the clock', async () => {

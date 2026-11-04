@@ -58,7 +58,7 @@ export type AgentSwapDecision =
 /**
  * How long this process must have been up before it may ask to be replaced.
  *
- * The first reconcile fires moments after `opencode-ready` — which is exactly
+ * The first reconcile fires moments after the runtime is ready — which is exactly
  * when a user is about to send their first prompt, and when the frontend is
  * polling readiness. A restart there is not "free because the box is idle": it
  * is a readiness flap on the session-start hot path, in exchange for an update
@@ -177,15 +177,6 @@ export interface AgentSwapOptions {
   exit?: (code: number) => void
   /** Seconds this process has been up. Injected by tests. */
   uptimeMs?: number
-  /**
-   * This request comes from the box's own `session.idle` frame.
-   *
-   * It WAIVES {@link AGENT_SWAP_MIN_UPTIME_MS} and nothing else — see
-   * {@link applyStagedAssetsIfIdle} for why that floor does not apply here.
-   * Every other refusal (the rollback latch, a turn in flight, an unreadable
-   * turn state, a registered blocker) is unchanged.
-   */
-  atIdleBoundary?: boolean
 }
 
 /**
@@ -216,15 +207,12 @@ export async function requestAgentSwapIfIdle(
     if (!stagedPresent) return 'nothing-staged'
     if (await agentUpdatesPinned(stateDir)) return 'pinned'
 
-    // The floor is a BOOT-FLAP guard, not a general delay: it exists because the
-    // first reconcile fires moments after `opencode-ready`, which is exactly
-    // when a user is about to send their first prompt. A `session.idle` frame is
-    // the opposite situation — a turn has just FINISHED — so the floor is waived
-    // there and nowhere else. Without that waiver the boot pass answered
-    // `too-young` every time and no later pass existed, which is why a
-    // long-lived box staged a daemon and never installed it.
+    // The floor is a BOOT-FLAP guard, not a general delay: the first reconcile
+    // fires moments after the runtime is ready, which is exactly when a user is
+    // about to send their first prompt. The 60 s runtime-truth tick asks again
+    // after it, so a long-lived box still installs what it staged.
     const uptimeMs = options.uptimeMs ?? process.uptime() * 1000
-    if (!options.atIdleBoundary && uptimeMs < AGENT_SWAP_MIN_UPTIME_MS) return 'too-young'
+    if (uptimeMs < AGENT_SWAP_MIN_UPTIME_MS) return 'too-young'
 
     const probe = options.turnInFlight ?? swapConfig?.turnInFlight
     if (!probe) return 'not-configured'
@@ -263,32 +251,6 @@ export async function requestAgentSwapIfIdle(
   }
 }
 
-
-/**
- * Apply whatever this box has staged, at the one moment it is provably safe.
- *
- * THE SAFE BOUNDARY is the box's own `session.idle` frame, observed in the event
- * fan-out at `harness/open-code/boot.ts`. It is the only moment the box KNOWS no
- * turn is running — not a timer, deliberately: the config-releases lane forbids
- * a timer near a readiness decision and its AST tripwires enforce that. This
- * function is called FROM that frame; it does not schedule itself.
- *
- * WHAT A DAEMON SWAP COSTS, stated plainly because the caller is choosing to pay
- * it: this process exiting takes the reverse proxy, every PTY and OpenCode down
- * with it, and the box is unreachable for roughly 6-9 s while the supervisor
- * promotes the staged binary and the session runtime reboots. Open SSE streams
- * are severed and the client must reconnect; the event ring replays what it
- * missed. A prompt held by the API-side queue is unaffected — it is server-side,
- * and the turn-start gate runs before `claimPromptDelivery`, so no prompt of the
- * request in flight has been claimed or delivered at the moment of the swap.
- *
- * Every existing refusal still applies. Never throws.
- */
-export async function applyStagedAssetsIfIdle(
-  options: AgentSwapOptions = {},
-): Promise<AgentSwapDecision> {
-  return requestAgentSwapIfIdle({ ...options, atIdleBoundary: true })
-}
 
 // ---------------------------------------------------------------------------
 // Observability — convergence you can query.
@@ -360,28 +322,10 @@ export interface RunningRuntimeAssets {
   staged_agent_sha256: string | null
   /** The harness `harness_version` describes. Null before a pass or bake recorded one. */
   harness: string | null
-  /** That harness's release on disk. `routes/kortix/health.ts` adds the pre-W3 alias. */
+  /** That harness's release on disk. */
   harness_version: string | null
   /** Highest manifest epoch this box has converged to, from DISK. */
   build: number | null
-  /**
-   * Managed model ids this box currently believes are servable — the cheap
-   * freshness signal for the third convergeable "asset": the gateway model
-   * catalog. Unlike the fields above this is NOT read from the persisted
-   * state file (nothing here writes it there); it comes live from the
-   * opencode harness's in-process cache, via the optional `catalogSnapshot`
-   * hook on `runtimeConvergenceReport`. Null on a harness with no such
-   * concept (pi) or a box that has never confirmed a live fetch.
-   */
-  managed_model_ids: string[] | null
-  /**
-   * Why this box is not (or was not, last time it tried) confirmed against
-   * the control plane's live managed lineup. Null when the last attempt
-   * succeeded, or on a harness with no such concept. See
-   * `lifecycle.ts`'s `managedCatalogFallbackReason` for the NO-SILENT-
-   * STALENESS reasoning this exists for.
-   */
-  managed_catalog_fallback_reason: string | null
 }
 
 const NO_RUNNING_ASSETS: RunningRuntimeAssets = {
@@ -393,8 +337,6 @@ const NO_RUNNING_ASSETS: RunningRuntimeAssets = {
   harness: null,
   harness_version: null,
   build: null,
-  managed_model_ids: null,
-  managed_catalog_fallback_reason: null,
 }
 
 function str(value: unknown): string | null {
@@ -489,12 +431,6 @@ export async function runningRuntimeAssets(
     harness: str(state.harness),
     harness_version: str(state.harness_version),
     build: typeof state.build === 'number' && Number.isFinite(state.build) ? state.build : null,
-    // Never on disk — overlaid live by `runtimeConvergenceReport`'s
-    // `catalogSnapshot` hook. A direct caller of this function alone (there is
-    // none in production; `boot.ts`'s health reads always go through
-    // `runtimeConvergenceReport`) gets the safe "unconfirmed" default.
-    managed_model_ids: null,
-    managed_catalog_fallback_reason: null,
   }
 }
 
@@ -541,18 +477,6 @@ export function noteRuntimeConvergence(result: RuntimeAssetsResult): void {
 export async function runtimeConvergenceReport(
   stateDir: string = process.env.KORTIX_AGENT_STATE_DIR ?? DEFAULT_AGENT_STATE_DIR,
   statePath: string = DEFAULT_STATE_PATH,
-  /**
-   * The opencode harness's live catalog signal, injected rather than imported
-   * here directly: this module serves every harness (pi included), and
-   * `harness/open-code/lifecycle.ts` is opencode-specific — importing it here
-   * would put a gateway-model concept into a module that has none. The
-   * default answers "unconfirmed" for any caller that supplies nothing, which
-   * is exactly what a harness with no such concept should report.
-   */
-  catalogSnapshot: () => { ids: string[] | null; fallbackReason: string | null } = () => ({
-    ids: null,
-    fallbackReason: null,
-  }),
 ): Promise<RuntimeConvergenceReport> {
   // `running` is read from DISK on every call, for the same reason the rollback
   // latch is: it must survive this process. A daemon that restarted seconds ago
@@ -560,41 +484,15 @@ export async function runtimeConvergenceReport(
   // no digests at all — "cannot tell" — on exactly the health read the control
   // plane uses to decide whether to schedule a ~100 MB download.
   //
-  // BOTH latches, not just the daemon's. `pinned` answers one question — will
-  // this box heal itself — and the harness has a rollback latch of its own
-  // (`/opt/kortix/opencode.pinned`). Reading only `agent.pinned` reported a box
-  // that had latched OpenCode updates off as a box that was fine.
-  //
   // Never throws, all the way down: this is reporting, not control, and a
   // health read that 500s is worse than one that says "not pinned".
-  const harnessPinned = (async () => {
-    try {
-      const assets = swapConfig?.assets ?? harnessAssets()
-      return (await assets.updatesPinned?.()) === true
-    } catch {
-      return false
-    }
-  })()
-  const [agentPinned, harnessLatched, running] = await Promise.all([
-    agentUpdatesPinned(stateDir),
-    harnessPinned,
-    runningRuntimeAssets(statePath),
-  ])
-  const snap = catalogSnapshot()
-  return {
-    ...lastConvergence,
-    pinned: agentPinned || harnessLatched,
-    running: {
-      ...running,
-      managed_model_ids: snap.ids,
-      managed_catalog_fallback_reason: snap.fallbackReason,
-    },
-  }
+  const [pinned, running] = await Promise.all([agentUpdatesPinned(stateDir), runningRuntimeAssets(statePath)])
+  return { ...lastConvergence, pinned, running }
 }
 
 /**
  * How long a fully-converged pass is trusted before the NEXT call-site trigger
- * (boot, `/kortix/refresh`, idle) is allowed to run another one.
+ * (boot, `/kortix/refresh`, the runtime-truth tick) is allowed to run another one.
  *
  * 2026-09-27: a respawn-heavy box (see `env-sync-skip-decision.ts` for why
  * respawns were happening far more than once per session) fired this reconcile

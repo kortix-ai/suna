@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { accountGroupMembers, accounts, projectSessions } from '@kortix/db';
+import { accountGroupMembers, accounts, projectSessions, projectSpaces } from '@kortix/db';
 import * as realDb from '../../shared/db';
 
 // The sessions list is polled, and every statement is a full round trip. These
@@ -26,6 +26,9 @@ function query(table: unknown) {
       await shareSubjectGate;
       return [];
     }
+    // The project's private channels (`hiddenSpaceIds`): none. It starts with
+    // the caller reads and holds nothing back.
+    if (table === projectSpaces) return [];
     if (table === accounts) {
       started.push('oversight-policy');
       await oversightGate;

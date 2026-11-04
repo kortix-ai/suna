@@ -40,7 +40,7 @@ function catalog(overrides: Record<string, boolean | null> = {}) {
     // Internal-only: listed only while on, written only by a Kortix operator.
     { key: 'session_log', name: 'Session log', stability: 'experimental', available: true, def: false, operatorOnly: true },
     { key: 'marketplace', name: 'Marketplace', stability: 'beta', available: true, def: true },
-    { key: 'monitors', name: 'Monitors', stability: 'experimental', available: false, def: false },
+    { key: 'us_region', name: 'US Region', stability: 'experimental', available: false, def: false },
   ];
   return defs.flatMap((d) => {
     const o = overrides[d.key];
@@ -94,7 +94,7 @@ function startServer(initial: Record<string, boolean | null> = {}): string {
             { status: 403 },
           );
         }
-        if (!['reminders', 'marketplace', 'monitors'].includes(body.feature)) {
+        if (!['reminders', 'marketplace', 'us_region'].includes(body.feature)) {
           return Response.json({ error: `Unknown feature flag '${body.feature}'` }, { status: 400 });
         }
         if (body.enabled === null) delete state[body.feature];
@@ -164,12 +164,12 @@ describe('kortix projects features', () => {
     expect(r.stdout).toContain('reminders');
     expect(r.stdout).toMatch(/reminders\s+off\s+default/);
     expect(r.stdout).toMatch(/marketplace\s+on\s+default/);
-    expect(r.stdout).toMatch(/monitors\s+n\/a\s+unavailable/);
+    expect(r.stdout).toMatch(/us_region\s+n\/a\s+unavailable/);
 
     const j = await runCli(['projects', 'features', '--project', PROJECT, '--json'], config);
     expect(j.code).toBe(0);
     const rows = JSON.parse(j.stdout) as Array<{ key: string; enabled: boolean }>;
-    expect(rows.map((x) => x.key)).toEqual(['reminders', 'marketplace', 'monitors']);
+    expect(rows.map((x) => x.key)).toEqual(['reminders', 'marketplace', 'us_region']);
   });
 
   test('enable PATCHes /features {feature, enabled:true} and reports the effective state', async () => {
@@ -199,7 +199,7 @@ describe('kortix projects features', () => {
 
   test('enabling an unavailable flag warns; unknown flag surfaces the API 400', async () => {
     const config = writeConfig(startServer());
-    const u = await runCli(['projects', 'features', 'enable', 'monitors', '--project', PROJECT], config);
+    const u = await runCli(['projects', 'features', 'enable', 'us_region', '--project', PROJECT], config);
     expect(u.code).toBe(0);
     expect(u.stdout).toContain('not available on this host');
     const bad = await runCli(['projects', 'features', 'enable', 'nope', '--project', PROJECT], config);

@@ -5,10 +5,12 @@
  * is the glue to Postgres + the credential store + Pipedream.
  */
 import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../config';
+import { discordConfigured } from '../channels/discord/api';
 import { bindIntegrationPrincipal } from '../shared/audit-scope';
+import { isProjectSessionPrincipal } from '../middleware/agent-scope';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { invalidateProjectMirror } from '../projects/git';
 import {
@@ -39,12 +41,16 @@ import {
   type ConnectorDraft,
   deleteConnectorFromManifest,
   getProjectPoliciesFromManifest,
+  rulesMatrixFromManifest,
   setConnectorCredentialModeInManifest,
   setConnectorAuthorizationStrategyInManifest,
   setConnectorCredentialShared,
   setConnectorNameInManifest,
+  deleteConnectorPolicySetInManifest,
+  renameConnectorPolicySetInManifest,
   setConnectorPoliciesInManifest,
   setConnectorSensitiveInManifest,
+  upsertConnectorPolicySetInManifest,
   setProjectPoliciesInManifest,
   upsertConnectorInManifest,
 } from './manifest-crud';
@@ -59,13 +65,12 @@ import {
 } from './pipedream';
 import type { ConnectorRouterDeps } from './router-contract';
 import {
-  connectorCatalogSections,
-  getConnectorCatalogDetail,
   connectorCatalogDirectIds,
   connectorCatalogDirectMcpUrls,
-  listConnectorCatalog,
 } from './connector-catalog';
-import { kortixMcpCatalog, mcpAppForUrl } from './mcp-apps';
+import { catalogDegraded, kortixMcpCatalog, mcpAppForUrl } from './mcp-apps';
+import { connectorIdentity } from './catalog-install';
+import { catalogTools } from './catalog-tools';
 import { oauth2ConnectionStatus, startConnectionSignIn } from './oauth2-store';
 import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
 import {
@@ -73,6 +78,8 @@ import {
   deleteComputerConnectorProfile,
   getConnectorConfig,
   getConnectorPolicies,
+  listConnectorPolicySets,
+  policySetsUnsupportedFor,
   setComputerConnectorName,
   setComputerConnectorPolicies,
   setComputerConnectorSensitive,
@@ -125,6 +132,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   makeGatewayDeps: (principal) => makeDbGatewayDeps(principal),
   listCatalog,
   featureFlagEnabled: projectFeatureFlagEnabled,
+  discordAvailable: discordConfigured,
   resolveAdmin,
   resolveConnectionsManager,
   resolveReader,
@@ -173,14 +181,33 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     setConnectorNameInManifest(projectId, accountId, slug, name),
   getConnectorPolicies,
   getConnectorConfig,
-  setConnectorPolicies: async (projectId, accountId, slug, policies) =>
-    (await setComputerConnectorPolicies(projectId, accountId, slug, policies)) ??
-    setConnectorPoliciesInManifest(
-      projectId,
-      accountId,
-      slug,
-      policies as Parameters<typeof setConnectorPoliciesInManifest>[3],
-    ),
+  setConnectorPolicies: async (projectId, accountId, slug, policies, policySet) =>
+    policySet
+      ? ((await policySetsUnsupportedFor(projectId, slug)) ??
+        setConnectorPoliciesInManifest(
+          projectId,
+          accountId,
+          slug,
+          policies as Parameters<typeof setConnectorPoliciesInManifest>[3],
+          policySet,
+        ))
+      : ((await setComputerConnectorPolicies(projectId, accountId, slug, policies)) ??
+        setConnectorPoliciesInManifest(
+          projectId,
+          accountId,
+          slug,
+          policies as Parameters<typeof setConnectorPoliciesInManifest>[3],
+        )),
+  listConnectorPolicySets,
+  upsertConnectorPolicySet: async (projectId, accountId, slug, name, description, policies) =>
+    (await policySetsUnsupportedFor(projectId, slug)) ??
+    upsertConnectorPolicySetInManifest(projectId, accountId, slug, name, description, policies),
+  renameConnectorPolicySet: async (projectId, accountId, slug, from, to) =>
+    (await policySetsUnsupportedFor(projectId, slug)) ??
+    renameConnectorPolicySetInManifest(projectId, accountId, slug, from, to),
+  deleteConnectorPolicySet: async (projectId, accountId, slug, name) =>
+    (await policySetsUnsupportedFor(projectId, slug)) ??
+    deleteConnectorPolicySetInManifest(projectId, accountId, slug, name),
   pipedreamConnect: pipedreamConfigured()
     ? async (projectId, slug, _userId, redirects) => {
         const conn = await loadPipedreamConnector(projectId, slug);
@@ -507,6 +534,11 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     }
     const mcp = await loadMcpConnector(projectId, slug);
     if (mcp) {
+      // A server with nothing to sign in to is usable now: answer that, and
+      // never create an account row a refused sign-in would leave behind.
+      if (!mcp.needsSignIn) {
+        return { provider: 'mcp', app: mcpAppForUrl(mcp.url)?.slug ?? slug, connected: true, isNoAuth: true };
+      }
       // Kortix runs the sign-in itself: the link is the provider's consent page,
       // and the OAuth callback stores the token on the connection.
       if (!userId) return null;
@@ -743,15 +775,31 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     return { provider: 'pipedream', connected: r.connected, accountId: r.accountId };
   },
   discoverConnectorAuth: discoverDraftConnectorAuth,
-  listDiscoverConnectors: ({ catalogue, ...input }) =>
-    catalogue === 'kortix' ? kortixMcpCatalog.list(input) : listConnectorCatalog(input),
+  listDiscoverConnectors: async (input) => ({ ...(await kortixMcpCatalog.list(input)), degraded: catalogDegraded() }),
   catalogDirectIds: () => connectorCatalogDirectIds(),
   catalogDirectMcpUrls: () => connectorCatalogDirectMcpUrls(),
-  listDiscoverSections: ({ catalogue, ...input }) =>
-    catalogue === 'kortix' ? kortixMcpCatalog.sections(input) : connectorCatalogSections(input),
-  getDiscoverConnector: (id, catalogue) =>
-    catalogue === 'kortix' ? kortixMcpCatalog.detail(id) : getConnectorCatalogDetail(id),
+  listDiscoverSections: async (input) => ({ ...(await kortixMcpCatalog.sections(input)), degraded: catalogDegraded() }),
+  isAgentCaller: (c) => isProjectSessionPrincipal(c),
+  customConnectorSetupUrl: (projectId, draft) => {
+    const query = new URLSearchParams({ tab: 'browse', custom: '1' });
+    for (const key of ['provider', 'url', 'transport', 'endpoint', 'spec', 'baseUrl', 'name'] as const) {
+      if (typeof draft[key] === 'string' && draft[key]) query.set(key === 'baseUrl' ? 'base_url' : key, draft[key] as string);
+    }
+    return `${(config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')}/projects/${projectId}/admin/connectors?${query}`;
+  },
+  listConnectorIdentities: async (projectId) =>
+    (
+      await db
+        .select({ slug: connectors.slug, provider: connectors.providerType, config: connectors.config })
+        .from(connectors)
+        .where(eq(connectors.projectId, projectId))
+        // The oldest profile of a way is the one an install answers as `existing`.
+        .orderBy(asc(connectors.createdAt), asc(connectors.slug))
+    ).map((row) => ({ slug: row.slug, identity: connectorIdentity({ provider: row.provider, ...(row.config as Record<string, string>) }) })),
+  discoverConnectorTools: (variant) => catalogTools(variant),
+  getDiscoverConnector: (id) => kortixMcpCatalog.detail(id),
   getProjectPolicies: getProjectPoliciesFromManifest,
+  getRulesMatrix: rulesMatrixFromManifest,
   setProjectPolicies: (projectId, accountId, policies, defaultMode) =>
     setProjectPoliciesInManifest(projectId, accountId, policies, defaultMode),
 };

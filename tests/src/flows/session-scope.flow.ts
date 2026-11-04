@@ -272,7 +272,6 @@ flow(
       'email',
       'telegram',
       'teams',
-      'warm',
       'trigger_session_key',
       'deletedAt',
       'deletedBy',
@@ -285,7 +284,6 @@ flow(
       'workspace_mode',
       'repository_access',
       'sandbox_slug',
-      'warmSandboxLocation',
       // The gateway fallback record. The turn-end revert writes `_from` into
       // the model pin, so a client value would pick the session's model.
       'opencode_model_fallback_from',
@@ -295,6 +293,9 @@ flow(
       'opencode_model_fallback_until',
       'opencode_model_picked_at',
       'opencode_model_restored',
+      // Telegram write confinement follows a reminder successor to the
+      // session it replaces: a client value would add or drop a chat.
+      'reminder_successor_of',
     ]) {
       await ctx.step(`PATCH metadata.${key} → 400 (server-managed)`, async () => {
         (
@@ -341,7 +342,6 @@ flow(
       ['source', 'trigger:scheduler'],
       ['trigger_kind', 'git'],
       ['trigger_slug', 'forged-trigger'],
-      ['warmSandboxLocation', 'us-east'],
     ] as const) {
       await ctx.step(`POST /sessions with metadata.${key} → 400 (server-managed)`, async () => {
         (
@@ -381,7 +381,7 @@ flow(
       const read = await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params });
       read.status(200).body().has('$.metadata.kind', 'scope-probe');
       const metadata = read.json<{ metadata: Record<string, unknown> }>().metadata;
-      for (const key of ['legacy_migration', 'slack', 'email', 'warm']) {
+      for (const key of ['legacy_migration', 'slack', 'email']) {
         if (key in metadata) throw new Error(`metadata.${key} must not be stored, got ${JSON.stringify(metadata[key])}`);
       }
     });
@@ -422,16 +422,15 @@ flow(
     const sessionCount = async () =>
       (await db.query<{ n: number }>('SELECT count(*)::int AS n FROM kortix.project_sessions WHERE project_id = $1::uuid', [project.id])).rows[0]?.n ?? 0;
     try {
-      await ctx.step('the project opts into meta_agent; a meta coordinator and a worker each hold a session-bound credential', async () => {
-        (await owner.patch('/v1/projects/:projectId/features', { feature: 'meta_agent', enabled: true }, { params })).status(200);
+      await ctx.step('the project runs My Kortix (the seeded starter sets builtin_agents.my_kortix: true); a My Kortix session and a worker each hold a session-bound credential', async () => {
         meta = await seedBoundSession(ctx, db, project, 'SCOPE-8 meta');
-        await db.query(`UPDATE kortix.project_sessions SET agent_name = 'meta' WHERE session_id = $1`, [meta.sessionId]);
+        await db.query(`UPDATE kortix.project_sessions SET agent_name = 'mykortix' WHERE session_id = $1`, [meta.sessionId]);
         worker = await seedBoundSession(ctx, db, project, 'SCOPE-8 worker', 'scope-8-worker');
       });
 
       await ctx.step('the meta coordinator asking for another meta coordinator → 400 META_AGENT_RECURSION, no session row', async () => {
         const before = await sessionCount();
-        (await ctx.client.withBearer(meta!.token, 'SESSION_TOKEN').post('/v1/projects/:projectId/sessions', { agent_name: 'meta' }, { params }))
+        (await ctx.client.withBearer(meta!.token, 'SESSION_TOKEN').post('/v1/projects/:projectId/sessions', { agent_name: 'mykortix' }, { params }))
           .status(400)
           .body()
           .has('$.code', 'META_AGENT_RECURSION');
@@ -439,13 +438,13 @@ flow(
         if (after !== before) throw new Error(`a refused meta spawn wrote ${after - before} session row(s)`);
       });
 
-      await ctx.step('a non-meta session asking for the meta coordinator passes the recursion check', async () => {
+      await ctx.step('a non-meta session asking for My Kortix by its old slug `meta` passes the recursion check and gets `mykortix`', async () => {
         const r = await ctx.client.withBearer(worker!.token, 'SESSION_TOKEN').post('/v1/projects/:projectId/sessions', { agent_name: 'meta' }, { params });
         // Local: every create check passed and the loopback callback check answers.
         if (ctx.env.target === 'local') {
           r.status(503).body().has('$.code', 'KORTIX_URL_UNREACHABLE');
         } else {
-          r.status(201).body().has('$.agent_name', 'meta');
+          r.status(201).body().has('$.agent_name', 'mykortix');
           ctx.track('session', r.json<{ session_id: string }>().session_id, { projectId: project.id });
         }
       });

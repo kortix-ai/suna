@@ -1,11 +1,13 @@
 // Main exports
 export { createDb, connectRetry, instrumentSql, type Database, type DbHooks } from './client';
+export { requiresTls } from './tls';
 export * as schema from './schema';
 
 // Re-export frequently used schemas and types for convenience
 export {
   // Schema namespace
   kortixSchema,
+  salesEventOutbox,
   usedRefreshTokens,
   cliDeviceGrants,
   // Enums
@@ -49,6 +51,7 @@ export {
   configReleases,
   configReleaseFailures,
   configReleaseHeads,
+  projectConfigSummaries,
   baseTipChecks,
   projectMembers,
   projectAccessRequests,
@@ -85,6 +88,15 @@ export {
   chatEventDedup,
   chatUserIdentities,
   projectSessions,
+  projectSessionGroups,
+  projectSpaces,
+  projectSpaceLinks,
+  projectSpaceMembers,
+  projectSpaceKindEnum,
+  projectSpaceVisibilityEnum,
+  // Memory ("Used memory" records)
+  memoryThreadLoads,
+  projectUserMarks,
   sessionPresenceLeases,
   projectSessionRuntimeContexts,
   accountModelPreferences,
@@ -100,14 +112,11 @@ export {
   sessionSandboxes,
   sessionSandboxStatusEnum,
   sessionTurns,
-  sessionTranscriptMirrors,
-  sessionTranscriptMessages,
   sessionLogs,
   sessionLogThreads,
   sessionLogMessages,
   sessionLogBlobs,
   sessionContentPurges,
-  sessionLogBackfillState,
   accountSubscriptionEnds,
   sessionRuntimeProjections,
   providerEvents,
@@ -142,10 +151,14 @@ export {
   pushDeviceTokens,
   // Drives (shared folders backed by Platinum volumes)
   drives,
+  driveFolderAdminReads,
   driveGrants,
+  storageCharges,
+  providerOrphanBoxCosts,
   platinumVolumeDeletions,
   driveMountRevocations,
   driveConflicts,
+  driveIndexEntries,
   // Notification inbox, preferences, watchers, Web Push (KRTX-1742)
   notifications,
   notificationPreferences,
@@ -157,8 +170,26 @@ export {
   roomMessages,
   roomMembers,
   sessionIdleWatches,
+  // Cross-session messages and agent-team tasks (@kortix/api-contract/multi-agent)
+  sessionPeerMessages,
+  sessionTasks,
+  // Artifacts: published HTML pages (flag artifacts)
+  artifacts,
+  artifactCommentThreads,
+  artifactComments,
+  artifactCommentScreenshotObjects,
+  artifactCommentWriteLimits,
+  artifactEvents,
+  driveCommitAuthors,
+  sessionSandboxIdentities,
+  claudeSubscriptionLogins,
+  claudeSubscriptionLoginFlows,
   // Product feedback (POST /v1/feedback)
   feedback,
+  // Kortix in Chrome (apps/api/src/chrome)
+  chromeConnections,
+  chromeGrants,
+  chromeAttachments,
   // Billing v2 — per-seat + compute metering + per-member YOLO
   sandboxComputeSessions,
   apps,
@@ -275,10 +306,12 @@ export {
   connectorActions,
   connectionPolicies,
   connectorPolicies,
+  connectorPolicySets,
   connectorProjectPolicies,
   connectorProjectSettings,
   connectorSyncFences,
   connectorCalls,
+  connectorHeldCalls,
   connectorAttachments,
   promptAttachments,
   jobQueue,
@@ -299,9 +332,10 @@ export {
   connectorProjectPoliciesRelations,
   connectorProjectSettingsRelations,
 } from './schema/kortix';
-export type { AgentGrant, StoredAgentGrant } from './schema/kortix';
+export type { AgentGrant, StoredAgentGrant, ArtifactCommentMention } from './schema/kortix';
 export { readStoredAgentGrant } from './schema/kortix';
-export type { AccountBrandingRecord } from './schema/kortix';
+export type { AccountBrandingRecord, DriveVolumeMoveRecord } from './schema/kortix';
+export type { MemoryThreadLoadLayer } from './schema/kortix';
 export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from './schema/kortix';
 
 export type {
@@ -358,6 +392,8 @@ export type {
   NewGatewayApiKey,
   GatewayBudget,
   NewGatewayBudget,
+  MemoryThreadLoad,
+  NewMemoryThreadLoad,
 } from './types';
 
 export { userProviderConnections, projectUserProviderConnections, sessionUserProviderConnections } from './schema/kortix';

@@ -44,6 +44,14 @@ const allowFor = (routes: Array<[string, string]>, reason: string): AllowEntry[]
 
 export const uncoveredAllow: AllowEntry[] = [
     ...allowFor(DRIVE_SYNC_ROUTES, DRIVE_SYNC_REASON),
+  // Sales reconciliation (#11610): a machine route behind its own bearer
+  // (SALES_RECONCILIATION_TOKEN), not a user or PAT. Its paging, cursor and
+  // auth are proven in apps/api/src/accounts/sales-outbox.integration.test.ts.
+  {
+    method: "GET",
+    path: "/v1/system/confirmed-signups",
+    reason: "sales reconciliation export behind its own token; covered by sales-outbox.integration.test.ts",
+  },
   // The CLI device-login (RFC 8628-style) routes. Covered by the CLI's own
   // device flow rather than by a browser journey: start → poll → decide is a
   // terminal handshake, and the CLI is not in the flow-runner matrix. They
@@ -137,12 +145,6 @@ export const uncoveredAllow: AllowEntry[] = [
     path: "/v1/platform/runtime-projection",
     reason:
       "sandbox-only projection sink: the in-guest daemon pushes its own /kortix/opencode/state document with a sandbox token, and the handler re-checks that token's sandbox against session_sandboxes (sandbox -> session -> account) before storing. Not an end-user API route — same class as /v1/platform/boot-timeline. Credential, scoping, gzip decoding and the decompressed size cap are covered black-box in apps/api/src/platform/routes/runtime-projection.test.ts; the SERVED side is flow-covered through the snapshot runtime leg in SESS-20.",
-  },
-  {
-    method: "POST",
-    path: "/v1/projects/:*/monitors/ingest",
-    reason:
-      "monitor-box-only event intake: the runner posts with its own box's sandbox token, authenticated against project_monitor_boxes; not an end-user API route. Auth, dedup, truncation, and rate-limit behavior are covered source-level in apps/api/src/__tests__/unit-monitor-ingest-route.test.ts",
   },
   {
     method: "PUT",
@@ -239,6 +241,14 @@ export const externalRoutes: AllowEntry[] = [
   { method: "POST", path: "/v1/llm/v1/messages", reason: "main-API llm-gateway Anthropic compatibility alias mounted behind the dynamic /v1/llm bridge" },
   { method: "POST", path: "/v1/openai/chat/completions", reason: "llm-gateway OpenAI-compat chat alias" },
   { method: "POST", path: "/v1/messages", reason: "llm-gateway standalone service Anthropic-Messages ingress" },
+  { method: "POST", path: "/v1/responses", reason: "llm-gateway standalone service OpenAI Responses ingress" },
   { method: "POST", path: "/v1/openai/messages", reason: "llm-gateway standalone service Anthropic-Messages ingress, OpenAI-compat-namespace alias" },
+  { method: "POST", path: "/v1/audio/transcriptions", reason: "llm-gateway standalone service speech-to-text" },
+  { method: "POST", path: "/v1/audio/speech", reason: "llm-gateway standalone service text-to-speech" },
+  { method: "GET", path: "/v1/audio/voices", reason: "llm-gateway standalone service voice list" },
+  { method: "POST", path: "/v1/llm/audio/transcriptions", reason: "main-API bridge into the llm-gateway speech-to-text route" },
+  { method: "POST", path: "/v1/llm/audio/speech", reason: "main-API bridge into the llm-gateway text-to-speech route" },
+  { method: "GET", path: "/v1/llm/audio/voices", reason: "main-API bridge into the llm-gateway voice list" },
   ...allowFor(SETUP_ROUTES, SETUP_REASON),
+  { method: "POST", path: "/v1/webhooks/sandbox/platinum", reason: "mounted only when PLATINUM_WEBHOOK_SECRET is set; the cloud manifest profile sets none" },
 ];

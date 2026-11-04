@@ -383,7 +383,7 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     expect(env[OVERRIDE_KEY]).toBe('owner-val');
   });
 
-  test('the session_log_restore project flag reaches the box env as KORTIX_SESSION_LOG_RESTORE=1, and no key while it is off', async () => {
+  test('the session_log_restore project flag (on by default) reaches the box env as KORTIX_SESSION_LOG_RESTORE=1, and no key while it is off', async () => {
     const boot = () =>
       buildSessionSandboxEnvVars({
         accountId: ctx.accountId,
@@ -400,7 +400,7 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
         .set({ metadata: sql`jsonb_set(coalesce(${projects.metadata}, '{}'::jsonb), '{experimental}', ${JSON.stringify(on === null ? {} : { session_log_restore: on })}::jsonb)` })
         .where(eq(projects.projectId, ctx.projectId));
     try {
-      expect('KORTIX_SESSION_LOG_RESTORE' in (await boot())).toBe(false);
+      expect((await boot()).KORTIX_SESSION_LOG_RESTORE).toBe('1');
       await setFlag(true);
       expect((await boot()).KORTIX_SESSION_LOG_RESTORE).toBe('1');
       await setFlag(false);
@@ -430,6 +430,12 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
             : sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) - ${key}::text`,
         })
         .where(eq(projectSessions.sessionId, PRINCIPAL_SESSION));
+    const setProjectFlag = (experimental: Record<string, boolean>) =>
+      db
+        .update(projects)
+        .set({ metadata: sql`jsonb_set(coalesce(${projects.metadata}, '{}'::jsonb), '{experimental}', ${JSON.stringify(experimental)}::jsonb)` })
+        .where(eq(projects.projectId, ctx.projectId));
+    await setProjectFlag({ session_log_restore: false });
     for (const key of ['lostRecoveredAt', 'restoredAt']) {
       try {
         expect('KORTIX_SESSION_LOG_RESTORE' in (await boot(PRINCIPAL_SESSION))).toBe(false);
@@ -440,6 +446,7 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
         await mark(key, false);
       }
     }
+    await setProjectFlag({});
   });
 
   test('sandbox boot snapshots the latest committed backend-wrapper capability secrets without caching', async () => {

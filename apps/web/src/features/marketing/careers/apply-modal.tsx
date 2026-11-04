@@ -216,7 +216,7 @@ export function ApplyModal({
               <Button type="submit" disabled={submitting} className="w-full sm:w-auto">
                 {submitting ? (
                   <>
-                    <Loading className="animate-spin" />
+                    <Loading className="size-4 shrink-0" />
                     {applyForm.submitting}
                   </>
                 ) : (

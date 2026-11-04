@@ -226,6 +226,164 @@ flow(
   },
 );
 
+// GW-3c — a mistyped field is a 400 that names it, on all three ingresses
+// (KRTX-3410). `stream: "true"` used to answer a buffered JSON body, so an SSE
+// client waited forever; `max_tokens: -1` was dropped in silence.
+flow(
+  'GW-3c',
+  {
+    domain: 'llm-gateway',
+    routes: ['POST /v1/projects/:projectId/gateway/keys', 'POST /v1/chat/completions', 'POST /v1/messages', 'POST /v1/responses'],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const minted = await ctx.client.as(ctx.P.OWNER).post(
+      '/v1/projects/:projectId/gateway/keys',
+      { name: 'ke2e field types' },
+      { params: { projectId: project.id } },
+    );
+    minted.status(200);
+    const as = new Client(ctx.env.gatewayUrl).withBearer(minted.json<{ secret_key: string }>().secret_key, 'GATEWAY_KEY');
+    const chat = { model: 'gpt-5.5', messages: [{ role: 'user', content: 'ping' }] };
+    const cases = [
+      ['/v1/chat/completions', { ...chat, stream: 'true' }, '`stream` must be true or false'],
+      ['/v1/chat/completions', { ...chat, stream: 1 }, '`stream` must be true or false'],
+      ['/v1/chat/completions', { ...chat, max_tokens: -1 }, '`max_tokens` must be a positive integer'],
+      ['/v1/messages', { ...chat, max_tokens: 16, stream: 'true' }, '`stream` must be true or false'],
+      ['/v1/responses', { model: 'gpt-5.5', input: 'ping', max_output_tokens: 0 }, '`max_output_tokens` must be a positive integer'],
+    ] as const;
+    await ctx.step('a non-boolean stream or a non-positive token cap → 400 naming the field, on chat, messages and responses', async () => {
+      const wrong: string[] = [];
+      for (const [path, body, message] of cases) {
+        const r = await as.post(path, body);
+        if (r.statusCode !== 400 || !r.text().includes(message)) wrong.push(`${path} ${JSON.stringify(body)} → ${r.statusCode} ${r.text().slice(0, 160)}`);
+      }
+      if (wrong.length) throw new Error(wrong.join('\n'));
+    });
+    await ctx.step('the chat ingress names the refusal invalid_request', async () => {
+      (await as.post('/v1/chat/completions', { ...chat, stream: 'true' })).status(400).body().has('$.code', 'invalid_request');
+    });
+    // KRTX-3421: no user or assistant message used to reach the model's
+    // transport, so one body got different errors; a null element crashed it.
+    const none = 'The request has no user or assistant message to answer.';
+    const shape = '`messages` must be an array of message objects';
+    const conversation = [
+      ['/v1/chat/completions', { model: 'gpt-5.5', messages: [] }, none],
+      ['/v1/chat/completions', { model: 'gpt-5.5', messages: [{ role: 'system', content: 'be brief' }] }, none],
+      ['/v1/chat/completions', { model: 'gpt-5.5', messages: [null] }, shape],
+      ['/v1/messages', { model: 'gpt-5.5', max_tokens: 16, system: 'be brief', messages: [] }, none],
+      ['/v1/responses', { model: 'gpt-5.5', input: [] }, none],
+      ['/v1/responses', { model: 'gpt-5.5', input: [null] }, '`input` must be a string or an array of input items'],
+    ] as const;
+    await ctx.step('a body with no user or assistant message, or a malformed item → 400 before dispatch, on chat, messages and responses', async () => {
+      const wrong: string[] = [];
+      for (const [path, body, message] of conversation) {
+        const r = await as.post(path, body);
+        if (r.statusCode !== 400 || !r.text().includes(message)) wrong.push(`${path} ${JSON.stringify(body)} → ${r.statusCode} ${r.text().slice(0, 160)}`);
+      }
+      if (wrong.length) throw new Error(wrong.join('\n'));
+    });
+    await ctx.step('the chat refusal carries invalid_request and a request_id', async () => {
+      const body = (await as.post('/v1/chat/completions', { model: 'gpt-5.5', messages: [] })).status(400).json<{ error: { code: string; request_id: string } }>();
+      if (body.error.code !== 'invalid_request' || !body.error.request_id) throw new Error(`unexpected refusal ${JSON.stringify(body)}`);
+    });
+  },
+);
+
+// GW-AUDIO-1 — the OpenAI audio routes: speech-to-text, text-to-speech and the
+// voice list, on the standalone gateway and through the API bridge. The local
+// profile has no managed upstream, so the flow holds the part every deployment
+// shares: authentication, and the request checks answered before any model is
+// resolved, any credit is held or any upstream is called.
+flow(
+  'GW-AUDIO-1',
+  {
+    domain: 'llm-gateway',
+    routes: [
+      'POST /v1/projects/:projectId/gateway/keys',
+      'POST /v1/audio/transcriptions',
+      'POST /v1/audio/speech',
+      'GET /v1/audio/voices',
+      'POST /v1/llm/audio/transcriptions',
+      'POST /v1/llm/audio/speech',
+      'GET /v1/llm/audio/voices',
+    ],
+  },
+  async (ctx) => {
+    const gw = new Client(ctx.env.gatewayUrl);
+    const upload = (fields: Record<string, string | Blob>) => {
+      const form = new FormData();
+      for (const [name, value] of Object.entries(fields)) form.append(name, value);
+      return form;
+    };
+    const clip = () => new File([new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x00, 0x00])], 'turn.wav', { type: 'audio/wav' });
+    const speech = { model: 'ke2e-speech-model', input: 'Hello.', voice: 'ke2e-voice' };
+
+    await ctx.step('ANON cannot transcribe, speak or list voices, on the gateway and through the API bridge', async () => {
+      for (const [client, prefix] of [[gw.as(ctx.P.ANON), '/v1'], [ctx.client.as(ctx.P.ANON), '/v1/llm']] as const) {
+        (await client.post(`${prefix}/audio/transcriptions`, upload({ model: 'ke2e-stt-model', file: clip() }))).status(401);
+        (await client.post(`${prefix}/audio/speech`, speech)).status(401);
+        (await client.get(`${prefix}/audio/voices`, { query: { model: speech.model } })).status(401);
+      }
+    });
+
+    const project = await ctx.fixtures.project();
+    const minted = await ctx.client.as(ctx.P.OWNER).post(
+      '/v1/projects/:projectId/gateway/keys',
+      { name: 'ke2e audio' },
+      { params: { projectId: project.id } },
+    );
+    minted.status(200);
+    const key = minted.json<{ secret_key: string }>().secret_key;
+    const as = gw.withBearer(key, 'GATEWAY_KEY');
+
+    await ctx.step('a malformed transcription is a 400 that names what is missing', async () => {
+      const cases = [
+        [await as.post('/v1/audio/transcriptions', { model: 'ke2e-stt-model' }), 'Send a multipart/form-data body with `file` and `model`.'],
+        [await as.post('/v1/audio/transcriptions', upload({ model: 'ke2e-stt-model' })), '`file` is required.'],
+        [await as.post('/v1/audio/transcriptions', upload({ file: clip() })), '`model` is required.'],
+        [await as.post('/v1/audio/transcriptions', upload({ model: 'ke2e-stt-model', file: clip(), response_format: 'srt' })), '`response_format` must be json, verbose_json or text.'],
+      ] as const;
+      const wrong = cases
+        .filter(([r, message]) => r.statusCode !== 400 || r.json<{ code: string; message: string }>().message !== message)
+        .map(([r, message]) => `${message} → ${r.statusCode} ${r.text().slice(0, 160)}`);
+      if (wrong.length) throw new Error(wrong.join('\n'));
+    });
+
+    await ctx.step('a malformed speech request is a 400 that names the field', async () => {
+      const cases = [
+        [{ ...speech, input: '' }, '`input` is required.'],
+        [{ ...speech, voice: undefined }, '`voice` is required.'],
+        [{ ...speech, response_format: 'wav' }, '`response_format` must be pcm or mp3.'],
+        [{ ...speech, sample_rate: 1 }, '`sample_rate` must be an integer from 8000 to 48000.'],
+        [{ ...speech, speed: 3 }, '`speed` must be from 0.5 to 1.5.'],
+      ] as const;
+      const wrong: string[] = [];
+      for (const [body, message] of cases) {
+        const r = await as.post('/v1/audio/speech', body);
+        if (r.statusCode !== 400 || r.json<{ code: string; message: string }>().message !== message) {
+          wrong.push(`${JSON.stringify(body)} → ${r.statusCode} ${r.text().slice(0, 160)}`);
+        }
+      }
+      if (wrong.length) throw new Error(wrong.join('\n'));
+      (await as.post('/v1/audio/speech', { ...speech, input: '' })).status(400).body().has('$.code', 'invalid_request');
+    });
+
+    await ctx.step('the voice list needs the speech model it lists for', async () => {
+      (await as.get('/v1/audio/voices')).status(400).body().has('$.code', 'invalid_request');
+    });
+
+    await ctx.step('an audio model Kortix does not serve is a 400 with a request id, before any upstream call', async () => {
+      const r = await as.post('/v1/audio/speech', { ...speech, model: 'ke2e-not-an-audio-model' });
+      r.status(400);
+      const body = r.json<{ code: string; request_id: string }>();
+      if (!['model_not_found', 'model_disabled_on_deployment'].includes(body.code) || !body.request_id) {
+        throw new Error(`unexpected refusal ${JSON.stringify(body)}`);
+      }
+    });
+  },
+);
+
 flow(
   'GW-6',
   {

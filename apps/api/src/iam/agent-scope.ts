@@ -90,9 +90,34 @@ export function agentMayPerform(grant: AgentGrant | null, action: string): boole
  * Canonicalizing ONCE here means every gate can compare canonical-to-canonical.
  */
 export function canonicalizeGrantConnectors(grant: AgentGrant | null): AgentGrant | null {
-  if (!grant || grant.connectors === 'all') return grant;
-  const canonical = grant.connectors.map((slug) => canonicalConnectorAlias(slug));
-  return { ...grant, connectors: [...new Set(canonical)] };
+  if (!grant) return grant;
+  const policySets = canonicalPolicySets(grant.policySets);
+  const withSets = policySets ? { ...grant, policySets } : grant;
+  if (withSets.connectors === 'all') return withSets;
+  const canonical = withSets.connectors.map((slug) => canonicalConnectorAlias(slug));
+  return { ...withSets, connectors: [...new Set(canonical)] };
+}
+
+/** A policy-set map with canonical slug keys, on a null prototype. */
+function canonicalPolicySets(map: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!map) return undefined;
+  const out: Record<string, string> = Object.create(null);
+  for (const [slug, name] of Object.entries(map)) out[canonicalConnectorAlias(slug)] = name;
+  return out;
+}
+
+/**
+ * The policy set an agent grant assigns on connector `slug` (canonical), or
+ * null for the base rules (no grant, or no entry). `Object.hasOwn` only: a
+ * stored grant is parsed JSON on a normal prototype, and `constructor` is a
+ * valid slug.
+ */
+export function agentPolicySet(grant: AgentGrant | null | undefined, slug: string): string | null {
+  const map = grant?.policySets;
+  if (!map || typeof map !== 'object') return null;
+  if (Object.hasOwn(map, slug)) return String(map[slug]);
+  if (Object.hasOwn(map, '*')) return String(map['*']);
+  return null;
 }
 
 /**

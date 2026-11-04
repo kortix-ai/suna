@@ -14,6 +14,7 @@ import { sessionLifecycleCommands } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import {
   INBOX_ORDER_BACKOFF_MS,
+  INBOX_STALE_ORDER_BACKOFF_MS,
   admitInboxPrompt,
   hasLaterReleasedSibling,
   liveInboxAdmissionDeps,
@@ -483,10 +484,12 @@ describe('admitInboxPrompt against real rows', () => {
       retryAfterMs: INBOX_ORDER_BACKOFF_MS,
       interruptAtBoundary: { opencodeSessionId: 'ses_root', messageId: WIRE_ID },
     });
+    // Not the head: the head's progress wakes it, so it keeps only the
+    // one-minute fallback clock.
     expect(await admitInboxPrompt(queueList)).toEqual({
       admit: false,
       reason: 'turn_active',
-      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+      retryAfterMs: INBOX_STALE_ORDER_BACKOFF_MS,
     });
     // Only the HEAD Quick Queue entry arms the interrupt: a second one behind
     // it would stop the turn for a prompt that is not next.
@@ -1872,6 +1875,9 @@ describe('a dead-lettered prompt does not take the session down with it', () => 
     // Unchanged, and load-bearing: `findReusableTriggerSession` skips failed
     // sessions, so the next fire of a `session_mode: "reuse"` trigger creates a
     // fresh one instead of re-aiming at a wedged session.
+    await db.execute(sql`
+      INSERT INTO kortix.project_trigger_runtime (project_id, slug, last_status, updated_at)
+      VALUES (${PROJECT_ID}::uuid, 'daily-digest', 'queued', now())`);
     const automation = await enqueueAutomationPrompt('trigger prompt');
     const paged: Array<Record<string, unknown>> = [];
     const { error } = logger;

@@ -151,7 +151,8 @@ flow(
         },
         { until: (t) => t.includes('slug: nightly'), timeoutMs: 60_000, intervalMs: 2_000, description: 'kortix.yaml carries the trigger' },
       );
-      for (const needle of ['type: cron', 'model: anthropic/claude-sonnet-4-6', 'do nightly work']) {
+      // A new trigger is written in the on/run shape (on: cron, run: prompt + model).
+      for (const needle of ['on:', 'cron:', 'run:', 'model: anthropic/claude-sonnet-4-6', 'do nightly work']) {
         if (!text.includes(needle)) throw new Error(`kortix.yaml lacks "${needle}":\n${text}`);
       }
     });
@@ -1533,7 +1534,7 @@ flow(
     domain: 'triggers',
     requires: ['database'],
     timeoutMs: 300_000,
-    routes: ['POST /v1/projects/:projectId/triggers', 'GET /v1/projects/:projectId/triggers'],
+    routes: ['POST /v1/projects/:projectId/triggers', 'GET /v1/projects/:projectId/triggers', 'GET /v1/projects/:projectId/detail'],
   },
   async (ctx) => {
     if (ctx.env.target !== 'local') return; // pushes straight to the local bare repository, as PROJ-39
@@ -1573,7 +1574,7 @@ flow(
 
       await ctx.step('push a manifest with one good and one broken trigger → GET lists the good one and names the broken one in errors', async () => {
         push(
-          'kortix_version: 2\nproject:\n  name: trg19\ndefault_agent: kortix\nagents:\n  kortix: {}\ntriggers:\n' +
+          'project:\n  name: trg19\ndefault_agent: kortix\nagents:\n  kortix: {}\ntriggers:\n' +
             '  - slug: keep-me\n    name: Keep me\n    type: cron\n    cron: "0 0 3 * * *"\n    timezone: UTC\n    prompt: keep\n' +
             '  - slug: broken\n    type: cron\n    prompt: no cron field here\n',
           'ke2e: one broken trigger',
@@ -1588,15 +1589,24 @@ flow(
         if (!slugs.includes('keep-me') || slugs.includes('broken')) throw new Error(`parse error dropped or kept the wrong triggers: ${JSON.stringify(listed)}`);
       });
 
-      await ctx.step('push an unparseable manifest → GET 200 {triggers:[], errors:[(manifest)]}; the runtime row survives', async () => {
-        push('kortix_version: [invalid\n', 'ke2e: unparseable manifest');
-        const listed = await waitFor(list, {
-          until: (v) => v.errors.some((e) => e.slug === '(manifest)'),
-          timeoutMs: 90_000,
-          intervalMs: 2_000,
-          description: 'the unparseable manifest reaches the API mirror',
-        });
-        if (listed.triggers.length !== 0) throw new Error(`unparseable manifest still lists triggers: ${JSON.stringify(listed)}`);
+      await ctx.step('push an unparseable manifest → the project keeps running the last version that parses: /detail names the error and that commit, GET still lists keep-me, the runtime row survives', async () => {
+        push('agents: [invalid\n', 'ke2e: unparseable manifest');
+        type Detail = { config?: { manifest_health?: { issues?: Array<{ message?: string }> } } };
+        await waitFor(
+          async () => {
+            const r = await owner.get('/v1/projects/:projectId/detail', { params });
+            r.status(200);
+            return r.json<Detail>();
+          },
+          {
+            until: (d) => (d.config?.manifest_health?.issues ?? []).some((i) => /last version that parses/.test(i.message ?? '')),
+            timeoutMs: 90_000,
+            intervalMs: 2_000,
+            description: 'the unparseable manifest reaches the API mirror and /detail names the last good commit',
+          },
+        );
+        const listed = await list();
+        if (!listed.triggers.some((t) => t.slug === 'keep-me')) throw new Error(`the last good version's trigger is gone: ${JSON.stringify(listed)}`);
         if ((await runtimeRows()).length !== 1) throw new Error('an unparseable manifest pruned the trigger runtime row');
       });
     } finally {
@@ -1724,7 +1734,7 @@ flow(
   },
 );
 
-/** App event triggers sit behind the per-project `event_triggers` flag (off by default): turn it on. */
+/** Connector event triggers sit behind the per-project `event_triggers` flag (off by default): turn it on. */
 async function enableEventTriggers(
   ctx: { step: (name: string, fn: () => Promise<void>) => Promise<void> },
   owner: { patch: (path: string, body: unknown, opts: { params: Record<string, string> }) => Promise<any> },
@@ -1992,7 +2002,7 @@ flow(
       const unknown = await create({ name: 'Bad source', event_source: 'nope' });
       unknown.status(400);
       const text = JSON.stringify(unknown.json());
-      if (!text.includes('Unknown event source \\"nope\\". Sources: composio.')) throw new Error(`error text missing: ${text}`);
+      if (!text.includes('Unknown event source \\"nope\\". Sources: composio, mcp.')) throw new Error(`error text missing: ${text}`);
       (await create({ name: 'Blank source', event_source: ' ' })).status(400);
       const r = await owner.post(
         '/v1/projects/:projectId/triggers',
@@ -2021,7 +2031,7 @@ flow(
     await ctx.step('unknown source → 400 naming the sources', async () => {
       const r = await owner.get(url, { params, query: { app: 'github', source: 'nope' } });
       r.status(400);
-      if (!JSON.stringify(r.json()).includes('Unknown event source \\"nope\\". Sources: composio.')) throw new Error(`error text missing: ${JSON.stringify(r.json())}`);
+      if (!JSON.stringify(r.json()).includes('Unknown event source \\"nope\\". Sources: composio, mcp.')) throw new Error(`error text missing: ${JSON.stringify(r.json())}`);
     });
     await ctx.step('connector and app together → 400', async () => {
       (await owner.get(url, { params, query: { connector: 'inbox', app: 'github' } })).status(400);
@@ -2082,7 +2092,7 @@ flow(
       await setFlag(false);
       const listed = (await owner.get('/v1/projects/:projectId/triggers', { params })).json<{ triggers: EventTriggerRow[] }>();
       const row = listed.triggers.find((t) => t.slug === 'gated-mail');
-      if (row?.event?.status !== 'error' || !/App event triggers are off for this project/.test(row.event.error ?? '')) {
+      if (row?.event?.status !== 'error' || !/Composio event triggers are off for this project/.test(row.event.error ?? '')) {
         throw new Error(`expected status error with the off text — got ${JSON.stringify(row?.event)}`);
       }
       denied(await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Renamed' }, { params: { ...params, slug: 'gated-mail' } }));
@@ -2519,10 +2529,11 @@ flow(
   },
 );
 
-// TRG-34 — Kortix's own app-event source `mcp` (connectors_v2): the catalog apps
-// list as event apps with their MCP server, a project MCP server is an event app
-// of its own, an event the connector does not offer is refused, and a project
-// without connectors_v2 sees no `mcp` source at all.
+// TRG-34 — Kortix's own app-event source `mcp`: the catalog apps list as event
+// apps with their MCP server, a project MCP server is an event app of its own,
+// and an event the connector does not offer is refused. Every project with
+// event triggers has the source, including one that stored the retired
+// `connectors_v2: false`.
 flow(
   'TRG-34',
   {
@@ -2536,13 +2547,13 @@ flow(
   },
   async (ctx) => {
     const owner = ctx.client.as(ctx.P.OWNER);
-    const on = await ctx.fixtures.project({ managedGit: true, metadata: { experimental: { event_triggers: true, connectors_v2: true } } });
-    const off = await ctx.fixtures.project({ metadata: { experimental: { event_triggers: true } } });
+    const on = await ctx.fixtures.project({ managedGit: true, metadata: { experimental: { event_triggers: true } } });
+    const stored = await ctx.fixtures.project({ metadata: { experimental: { event_triggers: true, connectors_v2: false } } });
     type App = { source: string; app: string; event_count: number; connector: string | null; connected: boolean; mcp_url: string | null };
     const apps = async (projectId: string) =>
       (await owner.get('/v1/projects/:projectId/triggers/event-apps', { params: { projectId } })).status(200).json<{ apps: App[] }>().apps;
 
-    await ctx.step('connectors_v2 on: catalog apps with sign-in are event apps of source mcp, with the MCP server to install', async () => {
+    await ctx.step('catalog apps with sign-in are event apps of source mcp, with the MCP server to install', async () => {
       const list = await apps(on.id);
       const linear = list.find((a) => a.app === 'linear');
       if (!linear || linear.source !== 'mcp' || linear.mcp_url !== 'https://mcp.linear.app/mcp' || linear.connector !== null || linear.connected) {
@@ -2585,10 +2596,12 @@ flow(
       }
     });
 
-    await ctx.step('connectors_v2 off: no mcp source in the listing, and source=mcp → 400 that lists the sources', async () => {
-      if ((await apps(off.id)).some((a) => a.source === 'mcp')) throw new Error('mcp apps listed without connectors_v2');
-      const r = await owner.get('/v1/projects/:projectId/triggers/event-types', { params: { projectId: off.id }, query: { app: 'linear', source: 'mcp' } });
-      r.status(400).body().has('$.error', 'Unknown event source "mcp". Sources: composio.');
+    await ctx.step('a stored connectors_v2: false is inert: the mcp source is listed, and an unknown source → 400 that lists the sources', async () => {
+      if (!(await apps(stored.id)).some((a) => a.source === 'mcp' && a.app === 'linear')) throw new Error('mcp apps missing for a project with a stale stored flag');
+      const r = await owner.get('/v1/projects/:projectId/triggers/event-types', { params: { projectId: stored.id }, query: { app: 'linear', source: 'nope' } });
+      r.status(400);
+      const error = r.json<{ error?: string }>().error ?? '';
+      if (!error.startsWith('Unknown event source "nope". Sources: ') || !error.includes('mcp')) throw new Error(`unexpected refusal: ${r.text()}`);
     });
   },
 );
@@ -2722,7 +2735,7 @@ flow(
 );
 
 /**
- * TRG-36 — Pause all automations (KRTX-1721). One account switch stops every
+ * TRG-36 — Pause all triggers (KRTX-1721). One account switch stops every
  * automatic fire in every project of the account; a manual fire still runs.
  * On its own team account: the switch would otherwise pause every concurrent
  * flow on the shared one. Local only: a fire that runs answers 402 (no usable
@@ -2805,10 +2818,10 @@ flow(
         if (login.exitCode !== 0) throw new Error(`login failed: ${login.all}`);
         const pause = await sb.run(['triggers', 'pause', '--account-wide']);
         throwIfCliInfraFailure(pause, 'triggers pause --account-wide');
-        if (pause.exitCode !== 0 || !pause.stdout.includes('All automations PAUSED')) throw new Error(`pause --account-wide: exit ${pause.exitCode}: ${pause.all}`);
+        if (pause.exitCode !== 0 || !pause.stdout.includes('All triggers PAUSED')) throw new Error(`pause --account-wide: exit ${pause.exitCode}: ${pause.all}`);
         (await owner.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', true);
         const resume = await sb.run(['triggers', 'resume', '--account-wide']);
-        if (resume.exitCode !== 0 || !resume.stdout.includes('All automations RESUMED')) throw new Error(`resume --account-wide: exit ${resume.exitCode}: ${resume.all}`);
+        if (resume.exitCode !== 0 || !resume.stdout.includes('All triggers RESUMED')) throw new Error(`resume --account-wide: exit ${resume.exitCode}: ${resume.all}`);
         (await owner.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', false);
       } finally {
         sb.dispose();

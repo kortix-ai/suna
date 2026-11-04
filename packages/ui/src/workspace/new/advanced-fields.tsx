@@ -91,8 +91,10 @@ export function AdvancedFields({
   state,
   accountId,
   onChange,
+  connectComputer,
 }: {
   state: NewWorkspaceFormState;
+  connectComputer?: boolean;
   /** The account the create targets — resolved by the page, which owns the
    *  "one account, nothing to pick" fallback. The GitHub queries below are
    *  account-scoped, so they cannot run on `state.accountId` alone: that is
@@ -185,7 +187,7 @@ export function AdvancedFields({
       installUrl={installUrl}
       // Round trip: the setup page reads this path back on completion, so
       // the user lands on `/new` with the same source AND the same account.
-      returnPath={newWorkspaceReturnPath(state.source, accountId)}
+      returnPath={newWorkspaceReturnPath(state.source, accountId, connectComputer)}
     />
   ) : null;
 

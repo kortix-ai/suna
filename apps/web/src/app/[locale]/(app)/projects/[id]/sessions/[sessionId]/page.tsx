@@ -31,6 +31,11 @@ import { useOpenSessionRead } from '@/features/notifications/use-open-session-re
 import { useAuth } from '@/features/providers/auth-provider';
 import { MissingSessionBoundary } from '@/features/session/missing-session-boundary';
 import {
+  SessionImageBanner,
+  SessionImageStatus,
+  type SessionImageStep,
+} from '@/features/session/session-image-status';
+import {
   InstantSessionShell,
   SavedSessionSkeleton,
   SessionLayout,
@@ -44,6 +49,7 @@ import {
 import {
   pendingSessionPromptForRecovery,
   provisioningFailurePresentation,
+  recoveryPromptToSendOnRetry,
 } from '@kortix/ui/session/status/provisioning-failure';
 import { isFirstPromptRow } from '@kortix/ui/session/composer/queue-projection';
 import {
@@ -257,8 +263,12 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const { data: currentProjectSession } = useProjectSession(projectId, sessionId, {
     enabled: !!user && !!projectId,
   });
-  const pendingPrompt = pendingSessionPromptForRecovery(sessionId, currentProjectSession?.metadata);
   const initialRuntimeSessionId = findInitialSessionPin(currentProjectSession);
+  const pendingPrompt = pendingSessionPromptForRecovery(
+    sessionId,
+    currentProjectSession?.metadata,
+    initialRuntimeSessionId,
+  );
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the
   // server-resolved OpenCode pin), the sandbox switch, the SSE stream, readiness
@@ -303,6 +313,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   );
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';
+  // The sandbox image step while the box provisions (`/start`'s `boot.image`):
+  // a first image build takes minutes, and the screen must say so.
+  const bootImage = session.bootImage;
   // The immutable agent this session was created with — known BEFORE the
   // sandbox is ready (the sessions-list row is usually already cached from the
   // sidebar; `/start`'s first response carries it as well). Handed to every
@@ -353,14 +366,16 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // not re-stashed, so this retry is the last time it can be lost. A session
     // created by the current API needs nothing: its first prompt has been a
     // durable row since the create transaction, and the restart alone re-arms
-    // delivery.
-    if (pendingPrompt) {
+    // delivery. An `initial_prompt` (agent, trigger, channel sessions) is
+    // re-delivered by the restart itself, so it is shown but never sent here.
+    const promptToSend = recoveryPromptToSendOnRetry(pendingPrompt);
+    if (promptToSend) {
       void startSessionWithPrompt(projectId, sessionId, {
-        parts: [{ type: 'text' as const, text: pendingPrompt.text }],
+        parts: [{ type: 'text' as const, text: promptToSend.text }],
         overrides: {
-          ...(pendingPrompt.agent ? { agent: pendingPrompt.agent } : {}),
-          ...(pendingPrompt.model ? { model: pendingPrompt.model } : {}),
-          ...(pendingPrompt.variant ? { variant: pendingPrompt.variant } : {}),
+          ...(promptToSend.agent ? { agent: promptToSend.agent } : {}),
+          ...(promptToSend.model ? { model: promptToSend.model } : {}),
+          ...(promptToSend.variant ? { variant: promptToSend.variant } : {}),
         },
       })
         .then(() => {
@@ -634,10 +649,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const overlay = resolveSessionOverlay({ ...surface, shellShowsFirstPrompt });
   // WHICH overlay is settled above; this decides whether it may COVER the chat.
   //
-  // It may not, once there is a transcript under it. The server-side transcript
-  // mirror (`GET …/transcript?shape=sync`, hydrated by the SDK with
-  // `source: 'cache'`) means a hibernated session paints its history on the
-  // first frame, so a full-screen "Connecting…" would now be hiding a readable
+  // It may not, once there is a transcript under it. The stored session log
+  // (`GET …/log`, read by the SDK) means a hibernated session paints its
+  // history on the first frame, so a full-screen "Connecting…" would now be hiding a readable
   // conversation for the length of the wake — 5-240 s, the exact complaint.
   // Boot status becomes a compact banner above the thread instead.
   const bootPresentation = resolveBootPresentation({ overlay, hasTranscript });
@@ -655,6 +669,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       projectId={projectId}
       sessionId={sessionId}
       stage={authLoading || !user ? 'provisioning' : startStage}
+      status={bootImage ? <SessionImageStatus step={bootImage} /> : undefined}
     />
   );
 
@@ -889,6 +904,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           sessionId={switchingToSessionId ?? sessionId}
           reason={switchingToSessionId === sessionId ? session.reason : null}
           failure={switchingToSessionId === sessionId ? session.failure : null}
+          bootImage={switchingToSessionId === sessionId ? bootImage : null}
         />
       );
     }
@@ -989,6 +1005,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             note={wake.note}
             reason={session.reason}
             failure={session.failure}
+            bootImage={bootImage}
           />
         );
       }
@@ -1073,7 +1090,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
         // A deliberate stop with a readable transcript is not a dead end. The
         // conversation stays, the composer stays live (a sent message wakes the
         // box and is delivered — `deliver` carries the wake intent), and the
-        // composer's own notice says the computer is asleep. A human who left
+        // composer says nothing about sleep. A human who left
         // and came back re-opens the box themselves (`useSession` releases the
         // stop hold on the next presence return), so no explicit Restart
         // button is needed here — a `notice` would only freeze the composer
@@ -1145,6 +1162,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             note={wake.note}
             reason={session.reason}
             failure={session.failure}
+            bootImage={bootImage}
           />
         );
       }
@@ -1161,6 +1179,14 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
         />
       );
     }
+
+    // The boot surface and the resume skeleton show the image step as their
+    // own card; every other surface here gets it as a banner. A terminal
+    // notice outranks it.
+    const imageBanner =
+      bootImage && !notice && (!loaderMounted || overlayDismissed || overlay === 'new-session-shell')
+        ? bootImage
+        : null;
 
     // Dual-layer: the real chat mounts under the instant shell (fresh sessions) or
     // the staged loader (resumes) and crossfades in once it's ready. useSession
@@ -1266,6 +1292,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
                 note={wake.note}
                 reason={session.reason}
                 failure={session.failure}
+                bootImage={bootImage}
               />
             )}
           </div>
@@ -1278,11 +1305,16 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             comes up in the background and a send goes out once it is up. The
             banner speaks only for an escalation, a retry, or a stuck wake. */}
         {notice && !canMountChat ? <SessionNoticeBanner {...notice} /> : null}
+        {/* The sandbox image step over a surface with its own content: the
+            new-session shell, or a readable conversation. The boot surface and
+            the resume skeleton carry it as their centered card instead. */}
+        {imageBanner ? <SessionImageBanner step={imageBanner} /> : null}
         {/* Dormant with a transcript paints no boot strip: nothing is booting
             until a message or a returning human wakes the box, and the
             composer's asleep notice is the honest state. Once the wake is
             claimed the sandbox row reappears and this banner mounts for real. */}
         {!notice &&
+          !imageBanner &&
           !dormantWithoutRuntime &&
           bootPresentation === 'banner' &&
           (startStage !== 'ready' || !chatReady) && (
@@ -1409,24 +1441,32 @@ function HeaderlessSessionSurface({ children }: { children: ReactNode }) {
 }
 
 /**
- * A session with nothing saved to read yet: its frame (header and composer
- * outline) while the computer wakes in the background. The frame speaks only
- * when the wake needs attention (`SessionStartingLoader`).
+ * A session with nothing saved to read yet: its frame (header, skeleton rows,
+ * composer outline) while the computer wakes in the background. The frame
+ * speaks only when the wake needs attention (`SessionStartingLoader`), in a
+ * card above the rows.
  */
 function SessionBootSurface({
   stage,
+  bootImage,
   ...wake
 }: ComponentProps<typeof SessionStartingLoader> & {
   projectId: string;
   sessionId: string;
   stage: ComponentProps<typeof SavedSessionSkeleton>['stage'];
+  /** The sandbox image step while the box provisions. While set, the card
+   *  names it with a timer in place of the wake status: a first image build
+   *  takes minutes, and a restart offer would only start the wait again. */
+  bootImage?: SessionImageStep | null;
 }) {
   return (
     <SavedSessionSkeleton
       projectId={wake.projectId}
       sessionId={wake.sessionId}
       stage={stage}
-      status={<SessionStartingLoader {...wake} />}
+      status={
+        bootImage ? <SessionImageStatus step={bootImage} /> : <SessionStartingLoader {...wake} />
+      }
     />
   );
 }

@@ -87,7 +87,8 @@ import {
   offeredModelCount,
   pickerModelName,
 } from '@/lib/session/model-picker';
-import type { Agent } from '@/lib/session/runtime-data';
+import type { Agent, Command } from '@/lib/session/runtime-data';
+import { SlashCommandSuggestions } from '@/components/session/SessionChatInput';
 
 /** One identity while the project detail loads, so the sheet's agent memo does not churn. */
 const EMPTY_AGENTS: Agent[] = [];
@@ -217,6 +218,19 @@ export function ProjectHome({
     [projectConfig],
   );
   const defaultAgent = projectConfig?.default_agent ?? projectConfig?.open_code_default_agent ?? null;
+  // `/`: home has no session runtime, so the list is the project config's
+  // skills and commands, the same list web's home composer shows.
+  const homeCommands = React.useMemo<Command[]>(() => {
+    if (!projectConfig) return [];
+    const toCommand = (source: 'skill' | 'command') => (item: { name: string; description?: string | null }): Command => ({
+      name: item.name,
+      description: item.description ?? undefined,
+      source,
+      template: '',
+      hints: [],
+    });
+    return [...projectConfig.skills.map(toCommand('skill')), ...projectConfig.commands.map(toCommand('command'))];
+  }, [projectConfig]);
   const [pickedAgent, setPickedAgent] = React.useState<string | null>(null);
   const lastUsedAgent = useLocalConfigStore((s) => s.selectedAgent);
   const setLastUsedAgent = useLocalConfigStore((s) => s.setAgent);
@@ -443,6 +457,7 @@ export function ProjectHome({
             <HomeComposer
               projectId={projectId}
               initialText={initialDraft.text}
+              commands={homeCommands}
               onSubmit={submitNow}
               autoFocus={focusComposer}
               inputRef={composerInputRef}
@@ -490,12 +505,14 @@ export function ProjectHome({
 function HomeComposer({
   projectId,
   initialText,
+  commands,
   onSubmit,
   onPasteFile,
   ...composer
 }: {
   projectId: string;
   initialText: string;
+  commands: Command[];
   onSubmit: (draft: string, pastes: PastedContent[]) => Promise<void>;
   onPasteFile: (files: AttachedFile[]) => void;
   autoFocus: boolean;
@@ -545,17 +562,33 @@ function HomeComposer({
     }
   }, [onSubmit]);
 
+  // `/name` with no space yet opens the list, as in the thread composer. A pick
+  // writes `/name ` into the draft; the send starts a session with it, as web does.
+  const slashFilter = draft.match(/^\/(\S*)$/)?.[1]?.toLowerCase();
+  const slashMatches = React.useMemo(
+    () =>
+      slashFilter === undefined
+        ? []
+        : commands.filter((c) => c.name.toLowerCase().includes(slashFilter) || c.description?.toLowerCase().includes(slashFilter)),
+    [commands, slashFilter],
+  );
+
   return (
-    <Composer
-      {...composer}
-      value={draft}
-      onChangeText={handleChangeText}
-      onSelectionChange={pasted.onSelectionChange}
-      pastes={pasted.pastes}
-      onRemovePaste={pasted.remove}
-      onOpenPaste={openPastedText}
-      onSubmit={handleSubmit}
-      placeholder="Ask anything"
-    />
+    <View>
+      {slashMatches.length > 0 && (
+        <SlashCommandSuggestions commands={slashMatches} selectedIndex={0} onSelect={(c) => handleChangeText(`/${c.name} `)} />
+      )}
+      <Composer
+        {...composer}
+        value={draft}
+        onChangeText={handleChangeText}
+        onSelectionChange={pasted.onSelectionChange}
+        pastes={pasted.pastes}
+        onRemovePaste={pasted.remove}
+        onOpenPaste={openPastedText}
+        onSubmit={handleSubmit}
+        placeholder="Ask anything"
+      />
+    </View>
   );
 }

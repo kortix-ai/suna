@@ -77,6 +77,34 @@ describe('useSessionLog / useSessionLogThread', () => {
   });
 });
 
+describe('useSessionLogThread prompts: the prompts the log does not hold yet', () => {
+  const sentFirst = { message_id: 'msg_initialprompt0000001', prompt_id: null, text: 'first words', attachments: [], author_user_id: null, created_at: '2030-01-01T00:00:01.000Z' };
+
+  test('a booting session (no log, no rows) shows its initial prompt; the log put of the same id replaces it', () => {
+    const seen: Array<ReturnType<typeof useSessionLogThread>> = [];
+    render(() => {
+      seen.push(useSessionLogThread({ projectId: PROJECT, sessionId: SESSION }, undefined, { prompts: { prompts: [], sent: [sentFirst] } }));
+      return null;
+    });
+    expect(seen.at(-1)!.messages.map((m) => [m.message_id, m.role])).toEqual([['msg_initialprompt0000001', 'user']]);
+
+    const held = { ...log.threads[0]!.messages.find((m) => m.role === 'user')!, message_id: 'msg_initialprompt0000001' };
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, { ...page(), messages: [...page().messages, { ...held, seq: 999 }] }));
+    const ids = seen.at(-1)!.messages.map((m) => m.message_id);
+    expect(ids.filter((id) => id === 'msg_initialprompt0000001')).toHaveLength(1);
+    expect(seen.at(-1)!.messages.find((m) => m.message_id === 'msg_initialprompt0000001')!.seq).toBe(999);
+  });
+
+  test('without the option the thread is unchanged (null while nothing is stored)', () => {
+    const seen: Array<ReturnType<typeof useSessionLogThread>> = [];
+    render(() => {
+      seen.push(useSessionLogThread({ projectId: PROJECT, sessionId: SESSION }));
+      return null;
+    });
+    expect(seen.at(-1)).toBeNull();
+  });
+});
+
 describe('useSessionLogThread on v2: throttleMs paces the thread', () => {
   const put = (i: number) => ({ ...log.threads[0]!.messages.at(-1)!, message_id: `msg_zzzpaced${String(i).padStart(2, '0')}`, seq: 1000 + i });
   const apply = (i: number) => useSyncStore.getState().applySessionLogEvent(SESSION, { type: 'log.message', properties: { rev: i, message: put(i) } });
@@ -299,6 +327,31 @@ describe('useSessionLog / useSessionLogThread without v2: the fromV1 view of the
     expect(ids).not.toContain(stub.id);
   });
 
+  test('prompts option: the inbox row (and sent) names the re-mint, so the SDK pairs the optimistic send itself; the log copy shows once', () => {
+    act(() => useSyncStore.getState().hydrate(RS, rows as never));
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    const stub = { id: 'msg_zzzhost', sessionID: RS, role: 'user', time: { created: Date.now() }, agent: 'build', model: { providerID: 'p', modelID: 'm' } };
+    act(() => useSyncStore.getState().optimisticAdd(RS, stub as never, [{ id: 'prt_zzzhost', sessionID: RS, messageID: stub.id, type: 'text', text: 'sent' } as never]));
+    const at = new Date().toISOString();
+    // Delivered: the row left the inbox; `sent` names both ids until the log holds the new one.
+    const inbox = {
+      prompts: [],
+      sent: [{ message_id: 'msg_zzzreminted', wire_message_id: stub.id, prompt_id: 'p1', text: 'sent', attachments: [], author_user_id: null, created_at: at }],
+    };
+    const seen: Array<ReturnType<typeof useSessionLogThread>> = [];
+    render(() => {
+      seen.push(useSessionLogThread(session, undefined, { prompts: inbox }));
+      return null;
+    });
+    // One copy while the log lacks it: the optimistic one (the sent entry names its wire id).
+    expect(seen.at(-1)!.messages.filter((m) => m.role === 'user' && (m.blocks[0] as { text?: string })?.text === 'sent')).toHaveLength(1);
+    const put = { ...log.threads[0]!.messages.at(-1)!, message_id: 'msg_zzzreminted', seq: 999 };
+    act(() => useSyncStore.getState().applySessionLogEvent(SESSION, { type: 'log.message', properties: { rev: 1, message: put } }));
+    const ids = seen.at(-1)!.messages.map((m) => m.message_id);
+    expect(ids.at(-1)).toBe('msg_zzzreminted');
+    expect(ids).not.toContain(stub.id);
+  });
+
   test('null without a runtime session id; source v2 once a page is in the store', () => {
     act(() => useSyncStore.getState().hydrate(RS, rows as never));
     const seen: Array<{ none: unknown; log: ReturnType<typeof useSessionLog> }> = [];
@@ -330,14 +383,129 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     for (const t of p.threads) t.ext = { opencode: { version: 'kortix.transcript.v1', native_id: t.thread_id } };
     return p;
   };
-  function mount(options: { enabled?: boolean; loader?: ((...a: unknown[]) => Promise<unknown>) | null }) {
-    const state = { dialect: '' };
+  // Timed retries the hook scheduled, run by hand: no test waits on the real clock.
+  let timers: Array<{ ms: number; run: () => void; cancelled: boolean }> = [];
+  const schedule = (run: () => void, ms: number) => {
+    const timer = { ms, run, cancelled: false };
+    timers.push(timer);
+    return () => { timer.cancelled = true; };
+  };
+  const runTimers = async () => {
+    const due = timers.filter((t) => !t.cancelled);
+    timers = [];
+    for (const t of due) act(() => t.run());
+    await flush();
+  };
+  beforeEach(() => {
+    timers = [];
+  });
+  type LivePage = ((query: { limit: number }) => Promise<unknown>) | null;
+  function mount(options: { enabled?: boolean; loader?: ((...a: unknown[]) => Promise<unknown>) | null; livePage?: LivePage }) {
+    const state = { dialect: '', setLivePage: (_: LivePage) => {} };
     render(() => {
-      state.dialect = useSessionLogSync(PROJECT, SESSION, { enabled: options.enabled ?? true, loader: options.loader as never, joinStream: joinStream as never });
+      const [livePage, setLivePage] = useState<LivePage>(() => options.livePage ?? null);
+      state.setLivePage = (next) => setLivePage(() => next);
+      state.dialect = useSessionLogSync(PROJECT, SESSION, { enabled: options.enabled ?? true, loader: options.loader as never, livePage: livePage as never, joinStream: joinStream as never, schedule });
       return null;
     });
     return state;
   }
+  const failure = (status: number, fields: { code?: string; retryAfter?: string } = {}) =>
+    Object.assign(new Error(`HTTP ${status}`), {
+      status,
+      code: fields.code ?? String(status),
+      response: new Response(null, { status, headers: fields.retryAfter ? { 'retry-after': fields.retryAfter } : {} }),
+    });
+  async function paintDeviceCopy() {
+    const data = new Map<string, string>();
+    const store = createSavedCopyStore({ storage: { getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v), removeItem: (k) => void data.delete(k) }, userId: 'u1' });
+    setSavedCopyStore(store);
+    const saved = v1Page();
+    saved.messages = saved.messages.slice(0, 3);
+    await savedSessionLogCopies(store)!.write(PROJECT, SESSION, saved);
+  }
+
+  test('a failed read (500, a bare 404, the network) keeps the device copy painted and retries after 2 s, 10 s and 30 s, then only at a turn end', async () => {
+    await paintDeviceCopy();
+    let calls = 0;
+    const errors = [failure(500), failure(404), new TypeError('Failed to fetch'), failure(500)];
+    const state = mount({ loader: async () => { throw errors[calls++] ?? failure(500); } });
+    await flush();
+    expect(calls).toBe(1);
+    // The copy on screen stays: a failed read is not "this session has no log".
+    expect(useSyncStore.getState().sessionLogs[SESSION]!.messages[log.threads[0]!.thread_id]).toHaveLength(3);
+    expect(timers.map((t) => t.ms)).toEqual([2_000]);
+    await runTimers();
+    expect(calls).toBe(2);
+    expect(timers.map((t) => t.ms)).toEqual([10_000]);
+    await runTimers();
+    expect(calls).toBe(3);
+    expect(timers.map((t) => t.ms)).toEqual([30_000]);
+    await runTimers();
+    expect(calls).toBe(4);
+    // Bounded: no fourth timed retry. The copy is still painted.
+    expect(timers).toEqual([]);
+    expect(useSyncStore.getState().sessionLogs[SESSION]!.messages[log.threads[0]!.thread_id]).toHaveLength(3);
+    expect(state.dialect).not.toBe('v1');
+  });
+
+  test('a timed retry that lands: the page replaces the copy and the stream switches to schema v2', async () => {
+    await paintDeviceCopy();
+    let calls = 0;
+    const state = mount({ loader: async () => { calls++; if (calls === 1) throw failure(500); return v1Page(); } });
+    await flush();
+    expect(joined.some((j) => j.options.schema === 'v2')).toBe(false);
+    await runTimers();
+    expect(calls).toBe(2);
+    expect(state.dialect).toBe('v2');
+    expect(useSyncStore.getState().sessionLogs[SESSION]!.messages[log.threads[0]!.thread_id]).toHaveLength(log.threads[0]!.messages.length);
+    expect(joined.at(-1)!.options.schema).toBe('v2');
+  });
+
+  test('503 session_log_converting with Retry-After: the retry waits Retry-After, at most 60 s', async () => {
+    for (const [retryAfter, ms] of [['20', 20_000], ['600', 60_000]] as const) {
+      timers = [];
+      mount({ loader: async () => { throw failure(503, { code: 'session_log_converting', retryAfter }); } });
+      await flush();
+      expect(timers.map((t) => t.ms)).toEqual([ms]);
+      act(() => renderer?.unmount());
+      renderer = null;
+    }
+  });
+
+  test('404 session_log_missing (no log yet) is read again on a backoff, 3 s up to every 30 s, until the log exists', async () => {
+    // A view (`useSessionView`) joins the stream without the full control state, so it never
+    // sees the turn end that used to be the only re-read: a sub-agent's row stayed empty
+    // after the agent finished (measured in the TUI, 2026-11-02).
+    let calls = 0;
+    let stored = false;
+    const state = mount({ loader: async () => { calls++; if (!stored) throw failure(404, { code: 'session_log_missing' }); return v1Page(); } });
+    await flush();
+    expect(state.dialect).toBe('missing');
+    expect(timers.map((t) => t.ms)).toEqual([3_000]);
+    await runTimers();
+    expect(calls).toBe(2);
+    expect(timers.map((t) => t.ms)).toEqual([5_000]);
+    await runTimers();
+    await runTimers();
+    await runTimers();
+    expect(timers.map((t) => t.ms)).toEqual([30_000]);
+    await runTimers();
+    expect(timers.map((t) => t.ms)).toEqual([30_000]);
+    stored = true;
+    await runTimers();
+    expect(state.dialect).toBe('v2');
+    expect(timers).toEqual([]);
+  });
+
+  test('unmount cancels a pending timed retry', async () => {
+    mount({ loader: async () => { throw failure(500); } });
+    await flush();
+    expect(timers).toHaveLength(1);
+    act(() => renderer?.unmount());
+    renderer = null;
+    expect(timers[0]!.cancelled).toBe(true);
+  });
 
   test('v2 on a fromV1 thread: the page goes in the store, the stream switches to schema v2, and unmount drops both', async () => {
     const calls: unknown[][] = [];
@@ -347,6 +515,9 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(calls).toEqual([[PROJECT, SESSION, { limit: 40 }]]);
     expect(useSyncStore.getState().sessionLogs[SESSION]!.session.session_id).toBe(log.session_id);
     expect(joined.map((j) => [j.options.projectId, j.options.sessionId, j.options.schema])).toEqual([[PROJECT, SESSION, 'v2']]);
+    // The `log.*` frames ride the runtime channel: a view (`useSessionView`) has no other
+    // runtime subscriber, and without this its thread froze at the first page.
+    expect(joined[0]!.options.runtime).toBe(true);
     act(() => renderer?.unmount());
     renderer = null;
     expect(useSyncStore.getState().sessionLogs[SESSION]).toBeUndefined();
@@ -391,13 +562,14 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(useSyncStore.getState().sessionLogs[SESSION]!.messages[log.threads[0]!.thread_id]).toHaveLength(log.threads[0]!.messages.length);
   });
 
-  test('a 404 (a new session whose journal has not posted yet) is retried at the next turn end and on a stream reconnect', async () => {
+  test('a 404 without a code (a mirror the API has not converted yet) stays on the log, and is retried at the next turn end and on a stream reconnect', async () => {
     let calls = 0;
     let stored = false;
     const turn = (token: string) => ({ type: 'kortix.control.turn', cseq: 1, cepoch: 'c', at: 1, payload: { known: true, turns: [], last_ended: { turn_token: token } } });
     const state = mount({ loader: async () => { calls++; if (!stored) throw new Error('404'); return v1Page(); } });
     await flush();
-    expect(state.dialect).toBe('v1');
+    // Never v1: a current client reads no v1 transcript (P8.3).
+    expect(state.dialect).toBe('missing');
     expect(calls).toBe(1);
     // It waits on the session stream without schema v2.
     expect(joined.map((j) => j.options.schema)).toEqual([undefined]);
@@ -441,6 +613,89 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(joined.at(-1)!.options.schema).toBe('v2');
   });
 
+  describe('a box that serves its log (runtime.log.v1): the box page is the newest page', () => {
+    const missing = () => Object.assign(new Error('No session log for this session'), { status: 404, code: 'session_log_missing' });
+    /** The box's page: the API's, plus the reply it streams and a prompt waiting behind it. */
+    const boxPage = () => {
+      const p = page();
+      const last = p.messages.at(-1)!;
+      const streaming = { ...structuredClone(last), message_id: 'msg_box_streaming', role: 'assistant' as const, seq: last.seq + 1, status: 'streaming' as const, blocks: [] };
+      const queued = { ...structuredClone(last), message_id: 'msg_box_queued', role: 'user' as const, seq: Number.MAX_SAFE_INTEGER, status: 'complete' as const, blocks: [{ type: 'text' as const, id: 'q0', text: 'waiting' }] };
+      return { ...p, messages: [...p.messages, streaming, queued] };
+    };
+    const held = () => (useSyncStore.getState().sessionLogs[SESSION]?.messages[page().thread_id] ?? []).map((m) => m.message_id);
+
+    test('a new session the API holds no log for: the box page goes in the store and the stream switches to schema v2 at once', async () => {
+      let boxReads = 0;
+      const state = mount({ loader: async () => { throw missing(); }, livePage: async () => { boxReads++; return boxPage(); } });
+      await flush();
+      expect(boxReads).toBe(1);
+      expect(state.dialect).toBe('v2');
+      expect(held()).toContain('msg_box_streaming');
+      expect(joined.at(-1)!.options.schema).toBe('v2');
+    });
+
+    test('the box page adds the streaming reply and the waiting prompt the API page lacks; a reconnect re-reads the box page, not the API', async () => {
+      let apiReads = 0;
+      let boxReads = 0;
+      mount({ loader: async () => { apiReads++; return page(); }, livePage: async () => { boxReads++; return boxPage(); } });
+      await flush();
+      expect([apiReads, boxReads]).toEqual([1, 1]);
+      expect(held().slice(-2)).toEqual(['msg_box_streaming', 'msg_box_queued']);
+      const v2 = joined.at(-1)!;
+      act(() => v2.options.onConnectionChange(true));
+      act(() => v2.options.onConnectionChange(false));
+      act(() => v2.options.onConnectionChange(true));
+      await flush();
+      expect([apiReads, boxReads]).toEqual([1, 2]);
+    });
+
+    test('the box loader arriving after the first read (the box got ready later) reads the box page then, and a missing log turns v2', async () => {
+      let boxReads = 0;
+      const state = mount({ loader: async () => { throw missing(); } });
+      await flush();
+      expect(state.dialect).toBe('missing');
+      expect(joined.map((j) => j.options.schema)).toEqual([undefined]);
+      act(() => state.setLivePage(async () => { boxReads++; return boxPage(); }));
+      await flush();
+      expect(boxReads).toBe(1);
+      expect(state.dialect).toBe('v2');
+      expect(joined.at(-1)!.options.schema).toBe('v2');
+    });
+
+    test('a box read that fails changes nothing: the API page stays, and the stream stays on schema v2', async () => {
+      mount({ loader: async () => page(), livePage: async () => { throw new Error('daemon 503'); } });
+      await flush();
+      expect(held()).toEqual(page().messages.map((m) => m.message_id));
+      expect(joined.at(-1)!.options.schema).toBe('v2');
+    });
+  });
+
+  test('session_log_missing while a turn runs: the page is read again within seconds, one pending read at a time, not only at the turn end', async () => {
+    // A new session's first prompt can run before this tab's runtime connection exists: that
+    // connection is live-only, so the user message frame is gone, and pi journals mid-turn
+    // every 5 s. Measured in the TUI: the first message showed only at the turn end.
+    let calls = 0;
+    let stored = false;
+    const running = (token: string) => ({
+      type: 'kortix.control.turn', cseq: 1, cepoch: 'c', at: 1,
+      payload: { known: true, turns: [{ turn_token: token, state: 'active' }], last_ended: null },
+    });
+    const missing = () => Object.assign(new Error('No session log for this session'), { status: 404, code: 'session_log_missing' });
+    const state = mount({ loader: async () => { calls++; if (!stored) throw missing(); return v1Page(); } });
+    await flush();
+    expect(state.dialect).toBe('missing');
+    expect(timers.map((t) => t.ms)).toEqual([3_000]);
+    // The state at join already holds the running turn: it adds no second pending read.
+    act(() => joined[0]!.options.onControl(running('t1')));
+    act(() => joined[0]!.options.onControl(running('t1')));
+    expect(timers.map((t) => t.ms)).toEqual([3_000]);
+    stored = true;
+    await runTimers();
+    expect(calls).toBe(2);
+    expect(state.dialect).toBe('v2');
+  });
+
   test('a kortix.resync on the v2 connection re-reads the page once, with no duplicate messages', async () => {
     let calls = 0;
     mount({ loader: async () => { calls++; return v1Page(); } });
@@ -481,13 +736,14 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(calls).toBe(2);
   });
 
-  test('a 404 (no stored log) or an invalid page: v1, no session log, no schema v2', async () => {
+  test('a 404 without a code, a failed read or an invalid page: missing (never v1), no session log, no schema v2', async () => {
     const bad = v1Page();
     (bad.messages[0] as Record<string, unknown>).seq = 'x';
-    for (const loader of [async () => { throw new Error('404'); }, async () => bad]) {
+    const failed = Object.assign(new Error('Internal Server Error'), { status: 500 });
+    for (const loader of [async () => { throw new Error('404'); }, async () => { throw failed; }, async () => bad]) {
       const state = mount({ loader });
       await flush();
-      expect(state.dialect).toBe('v1');
+      expect(state.dialect).toBe('missing');
       expect(useSyncStore.getState().sessionLogs).toEqual({});
       expect(joined.some((j) => j.options.schema === 'v2')).toBe(false);
       act(() => renderer?.unmount());

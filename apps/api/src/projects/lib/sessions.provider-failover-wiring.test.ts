@@ -42,8 +42,12 @@ describe('provider failover wiring', () => {
     const helper = source.indexOf('nextFailoverProvider({');
     const failover = source.indexOf('failoverAttempted', helper);
     expect(helper).toBeGreaterThan(-1);
-    expect(source.slice(helper, helper + 400)).toContain('providerLocked: providerWasExplicitlySelected');
-    expect(source.slice(helper, helper + 400)).toContain('fallbackEnabled: providerFallbackSetting().enabled');
+    const options = source.slice(helper, source.indexOf('})', helper));
+    expect(options).toMatch(/providerLocked:\s*providerWasExplicitlySelected\s*\|\|/);
+    expect(options).toContain('(drivesRequirePlatinum && !drivesSyncAllowed)');
+    expect(options).toContain('!!state.workspaceVolume');
+    expect(options).toContain('state.residentialProxyRequested');
+    expect(options).toContain('fallbackEnabled: providerFallbackSetting().enabled');
     expect(failover).toBe(-1); // guard against a stray rename leaving two paths
   });
 

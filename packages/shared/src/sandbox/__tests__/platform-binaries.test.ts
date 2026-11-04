@@ -1,28 +1,18 @@
 /**
- * Two image invariants that make "the platform owns the binaries in a sandbox"
- * true rather than aspirational. Both are asserted on EVERY image definition,
+ * Image invariants that make "the platform owns the binaries in a sandbox"
+ * true rather than aspirational. Each is asserted on EVERY image definition,
  * because a fix that lands on one of the three is a fix that a customer
  * template or the meta-agent box silently does not get.
  *
- *  1. The daemon must be able to REPLACE the CLI. runtime-assets.ts converges
- *     /usr/local/bin/kortix by writing a temp file next to it and renaming it
- *     into place — an operation whose permission comes from the DIRECTORY, not
- *     the file. /usr/local/bin is root-owned by default while the daemon runs
- *     as `kortix`, so every digest mismatch failed with EACCES and the box
- *     reported `components.cli: failed`. `COPY --chown=kortix:kortix` on the
- *     file alone never fixed that, because the write is a directory write.
- *     The directory is safe to hand over: this image already grants `kortix`
- *     NOPASSWD:ALL sudo, so it buys no privilege that was not already there.
- *
- *  2. OpenCode's own autoupdate must be off for EVERY caller, not just the
- *     daemon's child. `autoupdate: false` reached opencode only through
- *     OPENCODE_CONFIG, which the daemon sets on the process it spawns. A human
- *     typing `opencode` in the Session terminal inherited no such var and ran
- *     with autoupdate ON — a plain `pnpm add -g` that skips the postinstall,
- *     leaves a 479-byte launcher stub and dangles /opt/kortix/opencode.current.
- *     That is the 2026-08-22 / 2026-08-25 incident shape. The global
- *     config file is read by every invocation, and (verified against opencode
- *     1.18.23) it is still loaded even when OPENCODE_CONFIG names another file.
+ * The daemon must be able to REPLACE the CLI. runtime-assets.ts converges
+ * /usr/local/bin/kortix by writing a temp file next to it and renaming it into
+ * place — an operation whose permission comes from the DIRECTORY, not the
+ * file. /usr/local/bin is root-owned by default while the daemon runs as
+ * `kortix`, so every digest mismatch failed with EACCES and the box reported
+ * `components.cli: failed`. `COPY --chown=kortix:kortix` on the file alone
+ * never fixed that, because the write is a directory write. The directory is
+ * safe to hand over: this image already grants `kortix` NOPASSWD:ALL sudo, so
+ * it buys no privilege that was not already there.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -31,14 +21,11 @@ import { describe, expect, test } from 'bun:test';
 // is import-free, and kortixd bundles the same one.
 import { MANAGED_SKILLS_DIR, RUNTIME_ASSETS_STATE_PATH } from '../../../../api-contract/src/sandbox-layout';
 
-import { OPENCODE_VERSION } from '../../runtime-versions';
 import { kortixArtifactLayer, kortixToolchainLayer } from '../dockerfile-layer';
-import { buildMetaSandboxDockerfile } from '../meta-dockerfile';
+import { buildMyKortixSandboxDockerfile } from '../my-kortix-dockerfile';
 import {
   SANDBOX_CLI_OWNERSHIP_COMMAND,
   SANDBOX_MANAGED_SKILLS_DIR,
-  SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND,
-  SANDBOX_OPENCODE_GLOBAL_CONFIG_PATH,
   SANDBOX_RUNTIME_ASSETS_STATE_COMMAND,
   SANDBOX_RUNTIME_ASSETS_STATE_PATH,
 } from '../platform-binaries';
@@ -52,7 +39,6 @@ const ARTIFACTS = kortixArtifactLayer({
   entrypointScriptPath: 'kortix-entrypoint',
   machineDocPath: 'MACHINE.md',
   slackCliPath: 'kortix-slack-cli',
-  catalogPath: 'llm-catalog.json',
   managedSkillsPath: 'managed-skills',
 });
 
@@ -60,15 +46,16 @@ const ARTIFACTS = kortixArtifactLayer({
 const IMAGES: Array<{ label: string; dockerfile: string }> = [
   {
     label: 'standard layer (platform default + custom templates)',
-    dockerfile: kortixToolchainLayer({ opencodeVersion: OPENCODE_VERSION }) + ARTIFACTS,
+    dockerfile: kortixToolchainLayer({}) + ARTIFACTS,
   },
   {
     label: 'meta-agent image',
-    dockerfile: buildMetaSandboxDockerfile({
+    dockerfile: buildMyKortixSandboxDockerfile({
       agentBinaryPath: 'a',
       cliBinaryPath: 'a',
       entrypointScriptPath: 'a',
-      catalogPath: 'a',
+      machineDocPath: 'MACHINE.md',
+      slackCliPath: 'kortix-slack-cli',
       managedSkillsPath: 'a',
     }),
   },
@@ -93,28 +80,12 @@ describe('platform-owned binaries', () => {
     expect(SANDBOX_CLI_OWNERSHIP_COMMAND).not.toContain('\n');
   });
 
-  test('the global OpenCode config pins autoupdate off at the path opencode reads', () => {
-    expect(SANDBOX_OPENCODE_GLOBAL_CONFIG_PATH).toBe(
-      '/home/kortix/.config/opencode/opencode.json',
-    );
-    expect(SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND).toContain('"autoupdate":false');
-    expect(SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND).toContain(
-      SANDBOX_OPENCODE_GLOBAL_CONFIG_PATH,
-    );
-    expect(SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND).not.toContain('<<');
-    expect(SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND).not.toContain('\n');
-  });
-
   for (const { label, dockerfile } of IMAGES) {
     test(`${label} lets the daemon replace /usr/local/bin/kortix`, () => {
       expect(dockerfile).toContain(SANDBOX_CLI_OWNERSHIP_COMMAND);
       // And no image re-chowns the CLI file itself. `toContain` above would
       // still pass on `chown kortix:kortix /usr/local/bin /usr/local/bin/kortix`.
       expect(dockerfile).not.toContain('chown kortix:kortix /usr/local/bin /usr/local/bin/kortix');
-    });
-
-    test(`${label} bakes the global opencode.json with autoupdate off`, () => {
-      expect(dockerfile).toContain(SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND);
     });
 
     // A box that boots without these cannot answer "which bytes am I running"
@@ -128,6 +99,12 @@ describe('platform-owned binaries', () => {
 
     test(`${label} bakes the runtime-asset bookkeeping beside it`, () => {
       expect(dockerfile).toContain(SANDBOX_RUNTIME_ASSETS_STATE_COMMAND);
+    });
+
+    // Every new box runs pi. OpenCode in an image is ~580 MB nobody runs.
+    test(`${label} installs no OpenCode`, () => {
+      const instructions = dockerfile.split('\n').filter((line) => !/^\s*#/.test(line)).join('\n');
+      expect(instructions).not.toMatch(/opencode/i);
     });
   }
 

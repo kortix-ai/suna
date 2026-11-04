@@ -16,8 +16,8 @@
  * module-level `requestAgentSwapIfIdle` — so it is a behavior assertion, not
  * a source-text one.
  *
- * `harness.control.convergenceInFlight` — not a direct import of
- * `harness/open-code/config-release` — is deliberate: `app/server.ts`
+ * `harness.control.convergenceInFlight` — not a direct import of the
+ * adapter's config-release module — is deliberate: `app/server.ts`
  * is host production code, and importing a concrete adapter from there is
  * exactly what the boundary lint (eslint.config.mjs, "only harness.ts imports
  * an adapter") forbids.
@@ -27,7 +27,7 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { Config } from '@/lib/config/config'
 import type { HarnessService } from '@/harness/harness'
 import type { HarnessQueryService } from '@/harness/contract/queries'
 import { startProxy } from '@/app/server'
@@ -44,15 +44,12 @@ const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 function baseConfig(over: Partial<Config> = {}): Config {
   return {
     servicePort: 0,
-    opencodeInternalPort: 4096,
-    opencodeStandbyPort: 4097,
     staticPort: 3213,
     workspace: '/tmp',
     projectTarget: '/tmp',
     defaultBranch: 'main',
     branchFetchAttempts: 60,
     branchFetchDelaySec: 0.25,
-    defaultOpencodeConfigDir: '/ephemeral/opencode',
     autoClone: false,
     projectId: undefined,
     apiUrl: undefined,
@@ -65,9 +62,6 @@ function baseConfig(over: Partial<Config> = {}): Config {
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
     cloneDepth: 1,
-    workload: '',
-    monitorsJson: '',
-    monitorBoxEpoch: '',
     ...over,
   }
 }
@@ -99,11 +93,10 @@ function fakeHarness(convergenceInFlight: () => boolean): HarnessService {
     },
     diagnostics: { capabilities: async () => [], health: unexpected, report: unexpected, logSources: () => [], readLog: unexpected },
     queries: { bind: () => queries },
-    turns: { prompt: unexpected, steer: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, retractMessage: unexpected, agents: unexpected },
+    turns: { prompt: unexpected, steer: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, retractMessage: unexpected, agents: unexpected, replyPermission: unexpected, replyQuestion: unexpected, rejectQuestion: unexpected, compact: unexpected, command: unexpected, setGrants: unexpected, commands: unexpected, pending: unexpected, readLog: unexpected, readLogMessage: unexpected, readBlob: unexpected, workflows: unexpected, controlWorkflow: unexpected },
     background: { start: () => ({ stop: () => {} }) as unknown as ReturnType<HarnessService['background']['start']> },
     assets: {
-      harness: 'test', componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
-      reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
+      harness: 'test', componentNames: [],        reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
     },
   }
 }

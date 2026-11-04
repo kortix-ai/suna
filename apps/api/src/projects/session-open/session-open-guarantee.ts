@@ -59,10 +59,9 @@ export async function enforceRuntimeGuarantee(
     // imports (transitively) this file's route registration, so a static
     // top-level import here closed a cycle that threw
     // `ReferenceError: Cannot access 'preview' before initialization` at
-    // server boot (CI run 36351579974: the whole stack never came up). Same
-    // pattern as `session-lifecycle/stop.ts`'s `captureJournallessSessionLog`
-    // dynamic import — this call site is already inside an async function,
-    // so the dynamic import costs nothing extra on the hot path.
+    // server boot (CI run 36351579974: the whole stack never came up). This
+    // call site is already inside an async function, so the dynamic import
+    // costs nothing extra on the hot path.
     const { guaranteeCurrentRuntimeOnOpen } = await import('../lib/legacy-runtime-bootstrap-wiring');
     const guarantee = await guaranteeCurrentRuntimeOnOpen({
       sandboxId: row.sandboxId,
@@ -197,7 +196,7 @@ export async function enforceAdmission(
   // "Before a box is handed to a session, it must prove its runtime identity…
   // A box that fails admission is replaced, not used." This is the ONE
   // chokepoint every session-open path shares — `runOpenSession` is what
-  // `/start`, warm-session adoption, restart, and resume-from-stopped all
+  // `/start`, restart, and resume-from-stopped all
   // funnel through (see the flows into `openSession` above) — so gating here
   // covers all of them without touching each caller.
   //

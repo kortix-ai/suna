@@ -34,10 +34,6 @@ export function clearOwnerEmailCache(): void {
   cache.clear();
 }
 
-export function ownerEmailCacheSize(): number {
-  return cache.size;
-}
-
 /**
  * Resolve emails for a batch of user ids using ONE query for everything not
  * already cached. Unknown ids resolve to `null`. Never throws: a failed lookup

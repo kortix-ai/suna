@@ -33,7 +33,7 @@
  * The new daemon then converges OpenCode, CLI and skills by itself — this
  * module installs a supervisor and a current daemon, nothing else.
  *
- * SAFETY. Only an idle runtime is touched (OpenCode `/session/status` must be
+ * SAFETY. Only an idle runtime is touched (health `turn_in_flight` must be
  * empty). Every attempt is stamped in sandbox metadata with a cooldown and a
  * budget, so a box that cannot be converged is retried a bounded number of
  * times per API build and then left for a human — visible in the metadata
@@ -577,8 +577,8 @@ export interface LegacyBootstrapDeps {
   manifestBuild: () => Promise<number | null>;
   /** Daemon /kortix/health JSON, or null when unreachable. */
   fetchHealth: () => Promise<unknown>;
-  /** OpenCode /session/status JSON (empty object = idle), or null when unreachable. */
-  fetchOpencodeStatus: () => Promise<Record<string, unknown> | null>;
+  /** Daemon `/kortix/health?turn=1` `turn_in_flight`, or null when unreachable or unreported. */
+  fetchTurnInFlight: () => Promise<boolean | null>;
   /**
    * Does the PROVIDER say this box is running right now? Asked only when the
    * daemon answers nothing, which is the one case where the two can disagree
@@ -753,9 +753,9 @@ export function bootstrapWouldSkip(
   return record?.state === 'staged' && record.manifestBuild === currentManifestBuild;
 }
 
-export function opencodeIdle(status: Record<string, unknown> | null): boolean {
-  if (!status) return false;
-  return Object.keys(status).length === 0;
+/** The runtime runs no turn. An unknown answer is not idle. */
+export function runtimeIdle(turnInFlight: boolean | null): boolean {
+  return turnInFlight === false;
 }
 
 export type LegacyBootstrapRetryStatus = 'idle' | 'running' | 'staged' | 'cooldown' | 'exhausted';
@@ -1090,13 +1090,13 @@ async function checkBootstrapBudget(
     return { result: { outcome: 'staged', detail: 'already staged; converges at next start', classification } };
   }
 
-  // Never under a running turn. OpenCode's own busy state is the authority —
-  // the ledger can hold a zombie turn on exactly the boxes this exists for.
-  // OpenCode is proxied BY the daemon, so a dead daemon is also why OpenCode
-  // says nothing. That is one fact, not two, and it cannot gate its own repair.
-  const status = deadDaemonOnRunningBox ? {} : await deps.fetchOpencodeStatus();
-  if (!opencodeIdle(status)) {
-    return { result: { outcome: 'skipped-busy', detail: status ? 'opencode busy' : 'opencode unreachable', classification } };
+  // Never under a running turn. The daemon's own turn state is the authority —
+  // the ledger can hold a zombie turn on exactly the boxes this exists for. A
+  // dead daemon is also why nothing answers. That is one fact, not two, and it
+  // cannot gate its own repair.
+  const turnInFlight = deadDaemonOnRunningBox ? false : await deps.fetchTurnInFlight();
+  if (!runtimeIdle(turnInFlight)) {
+    return { result: { outcome: 'skipped-busy', detail: turnInFlight ? 'turn in flight' : 'runtime unreachable', classification } };
   }
   return { build, attempts };
 }

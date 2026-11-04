@@ -40,26 +40,21 @@ test('every supported public surface accepts an explicit locale prefix', async (
   const routes = [
     '/',
     '/about',
-    '/agent-computer',
-    '/agents-and-skills',
-    '/automations',
     '/careers',
-    '/channels',
     '/changelog',
-    '/company-as-code',
-    '/connectors',
+    '/changelog/releases',
+    '/changelog/releases/page/2',
     '/contact',
     '/design-system',
     '/developers',
     '/download',
     '/enterprise',
+    '/compliance',
     '/legal',
     '/marketplace',
     '/pricing',
     '/security',
     '/self-hosted',
-    '/solutions',
-    '/support',
     '/use-cases',
     '/white-label',
   ];
@@ -73,5 +68,40 @@ test('every supported public surface accepts an explicit locale prefix', async (
     );
     expect(response.headers.get('x-locale')).toBe('de');
     expect(response.headers.get('x-middleware-request-x-locale')).toBe('de');
+  }
+});
+
+// KRTX-3234: `skipTrailingSlashRedirect` left /pricing/ a 200 duplicate of
+// /pricing. A NextURL clone re-adds the request's trailing slash, so the
+// destination is built from a plain URL; otherwise /pricing/ redirects to itself.
+test('a public page with a trailing slash redirects to the spelling without it', async () => {
+  const cases: Array<[string, string]> = [
+    ['/pricing/', 'http://localhost:3000/pricing'],
+    ['/de/pricing/?utm_source=x', 'http://localhost:3000/de/pricing?utm_source=x'],
+    ['/Pricing/', 'http://localhost:3000/pricing'],
+    ['/de/', 'http://localhost:3000/de'],
+  ];
+  for (const [path, location] of cases) {
+    const response = await middleware(new NextRequest(`http://localhost:3000${path}`));
+    expect(response.status).toBe(308);
+    expect(response.headers.get('location')).toBe(location);
+  }
+});
+
+// /slack and /teams are marketing pages AND app prefixes: the auth flows
+// under them (/cli/authorize, /slack/install, /slack/login/<token>,
+// /teams/install, /teams/login/<token>) must stay signed-in only. The pages
+// match the exact path; nothing under it becomes public.
+test('surface pages are public, and the auth flows that share their slug are not', async () => {
+  for (const path of ['/desktop', '/mobile', '/slack', '/teams', '/de/slack', '/de/teams']) {
+    const response = await middleware(new NextRequest(`http://localhost:3000${path}`));
+    expect(response.headers.get('x-middleware-rewrite')).toContain(path.startsWith('/de') ? path : `/en${path}`);
+  }
+  for (const path of ['/cli/authorize', '/slack/install', '/slack/login/tok', '/teams/install', '/teams/login/tok', '/discord/install']) {
+    const response = await middleware(new NextRequest(`https://dev.kortix.com${path}`));
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe(
+      `https://dev.kortix.com/auth?redirect=${encodeURIComponent(path)}`,
+    );
   }
 });

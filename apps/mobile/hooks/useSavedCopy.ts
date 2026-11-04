@@ -5,13 +5,11 @@
  * the web makes) and paints it into its session store, so the thread that opens
  * next starts from the same messages.
  *
- * - The session log first: its newest page (`GET …/log`). A sub-agent's thread
+ * - The session log: its newest page (`GET …/log`). A sub-agent's thread
  *   loads from the heads that page names (`useSessionLogThread`).
- * - Only when the log answers 404 (a server older than the log): the v1 copy
- *   (`useSessionSync` paints it). The SDK holds the copy for the open: the
- *   thread downloads the window no second time.
+ * - No page (a new session, a failed read): the copy this device kept, if any.
  *
- * No project flag is read.
+ * No project flag is read, and no v1 transcript (`GET …/transcript`).
  */
 import { useEffect, useMemo, useState } from 'react';
 import { readSavedSessionCopy, sessionLogOfV1Rows, type SavedSessionCopy, type SessionLogThread } from '@kortix/sdk';
@@ -34,7 +32,7 @@ export function useSavedCopy(target: SavedCopyTarget | null): {
   const key = target ? `${target.projectId}/${target.sessionId}/${target.rootId}/${target.child ? 'child' : 'root'}` : null;
   const [read, setRead] = useState<({ key: string } & SavedSessionCopy) | null>(null);
   useEffect(() => {
-    // A sub-agent: `useSessionSync` below reads it (the log first, else its v1 window by `child=`).
+    // A sub-agent: `useSessionSync` below reads the log.
     if (!target || !key || target.child) return;
     let current = true;
     void readSavedSessionCopy({
@@ -61,11 +59,11 @@ export function useSavedCopy(target: SavedCopyTarget | null): {
     kortixSessionScope: target ? `${target.projectId}/${target.sessionId}` : undefined,
     // The computer is not up yet: only the saved copies paint.
     networkEnabled: false,
-    // The root: the v1 copy read above (only when the log answered 404), `null`
-    // until it answers. A sub-agent: `undefined`, so the SDK reads its own copy.
-    mirror: target?.child ? undefined : (mine?.envelope ?? null),
+    // The root: no copy from the network (the read above put the log page in the
+    // store). A sub-agent: `undefined`, so the SDK reads the log itself.
+    mirror: target?.child ? undefined : null,
     savedChild: target?.child ?? false,
-    // The root: no v1 copy until the read answers that the session has no log.
+    // The root: no device copy until the read answers that the session has no log page.
     sessionLog: !target?.child && (!mine || !!mine.log),
   });
 

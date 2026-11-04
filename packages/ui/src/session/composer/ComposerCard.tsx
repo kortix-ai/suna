@@ -190,6 +190,7 @@ export function ComposerCard({
   onVariantChange,
   projectId,
   toolbarSlot,
+  underbarSlot,
   rewind,
   selectedAgent = null,
   onAgentChange,
@@ -197,6 +198,7 @@ export function ComposerCard({
   onContextClick,
   messages,
   underbarPlacement = 'below',
+  agentPickerCompact = false,
   slashMenuPlacement = 'above',
   cardClassName,
   onArrowUpAtStart,
@@ -225,7 +227,7 @@ export function ComposerCard({
         'duration-normal ease-default transition-[border-color]',
         'motion-reduce:transition-none',
         cardClassName,
-        isDragOver && 'border-kortix-blue/80 ring-primary/40 border ring',
+        isDragOver && 'border-ring ring-ring/15 border ring',
         // A layer above (`ComposerAboveCard`) owns the top corners: a notice,
         // or a visible strip (known only to CSS, through `data-composer-stack`).
         (notice || questionActive) &&
@@ -372,6 +374,7 @@ export function ComposerCard({
               inlineUnderbar ? (
                 <ComposerUnderbar
                   variant="inline"
+                  agentPickerCompact={agentPickerCompact}
                   onAttachClick={handleAttachClick}
                   agents={primaryAgents}
                   selectedAgent={selectedAgent}
@@ -383,6 +386,7 @@ export function ComposerCard({
                   models={models}
                   selectedModel={availableSelectedModel}
                   onContextClick={onContextClick}
+                  agentsSlot={underbarSlot}
                 />
               ) : null
             }
@@ -460,14 +464,15 @@ export function ComposerCard({
         agents={primaryAgents}
         selectedAgent={selectedAgent}
         onAgentChange={onAgentChange}
-                  agentMenuOpen={agentMenuOpen}
-                  onAgentMenuOpenChange={setAgentMenuOpen}
+        agentMenuOpen={agentMenuOpen}
+        onAgentMenuOpenChange={setAgentMenuOpen}
         noAccessibleAgents={noAccessibleAgents}
         messages={messages}
         models={models}
         selectedModel={availableSelectedModel}
         onContextClick={onContextClick}
         toolbarSlot={toolbarSlot}
+        agentsSlot={underbarSlot}
       />
     )}
 

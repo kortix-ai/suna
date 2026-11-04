@@ -5,14 +5,25 @@
  * import the other (a `index.ts` ⇄ `json-schema.ts` cycle broke bun's
  * bundler: circular top-level `const` access threw "Cannot access before
  * initialization"). `index.ts` re-exports everything here for backward
- * compatibility with existing consumers of `@kortix/manifest-schema`.
+ * compatibility with existing consumers of `@kortix/manifest-schema`. Its one
+ * import, the channel descriptor, has no imports of its own.
  */
+import { CHANNEL_PLATFORM_IDS, channelConnectorSlug } from '@kortix/shared/channel-descriptors';
 
 /** The slug reserved for the platform-shared default sandbox template. */
 export const RESERVED_SANDBOX_SLUG = 'default';
 
 /** Regex matching every user-defined slug (triggers, sandboxes, apps, connectors). */
 export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+
+/** Regex matching a space slug (a `spaces.<slug>` key, an agent's `space`, a binding's `space`). Tighter than SLUG_RE so every space slug is also a valid room name: the space's room is the project room with that name. */
+export const SPACE_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/;
+
+/** The tab types of a space. The room tab is implicit: always first, never listed. */
+export const SPACE_TAB_TYPES = ['goals', 'apps', 'artifacts', 'files', 'board', 'app', 'artifact', 'link'] as const;
+
+/** What a space header shows, in order. Absent = every item. */
+export const SPACE_HEADER_ITEMS = ['agents', 'members', 'needs_you', 'new_session', 'ask_my_kortix'] as const;
 
 /** Regex matching every legal env-var name. */
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
@@ -89,25 +100,18 @@ export function reservedEnvNameReason(name: string): string | null {
   return null;
 }
 
-export const TRIGGER_TYPES = ['cron', 'webhook', 'monitor', 'event'] as const;
+/** `change_request`: a merged change request of the project fires it (`filter.base` names the branch). */
+export const TRIGGER_TYPES = ['cron', 'webhook', 'event', 'app', 'change_request'] as const;
 
-/** Cron/webhook/monitor-only keys: hard-rejected on a `type: event` trigger. */
+/** What a `type: monitor` entry answers since the monitor box was removed. */
+export const MONITOR_REMOVED_MESSAGE =
+  'monitor triggers were removed. Run the watcher in an App (a process that POSTs to $KORTIX_APP_EVENTS_URL) and fire with a `type: app` trigger, or poll with a cron trigger whose `target` is the App.';
+
+/** Cron/webhook-only keys: hard-rejected on a `type: event` or `type: app` trigger. */
 export const EVENT_FORBIDDEN_KEYS = [
   'cron', 'schedule', 'run_at', 'runAt', 'timezone', 'secret_env', 'secretEnv',
-  'run', 'mode', 'interval', 'expect_event_within',
 ] as const;
 
-/**
- * A `type: monitor` trigger's shape. `poll` runs `run` every `interval` and
- * exits; `stream` runs it once and keeps it alive. Both emit events as stdout
- * lines — downstream (filter → prompt → session_mode) cannot tell them apart.
- */
-export const MONITOR_MODES = ['poll', 'stream'] as const;
-
-/** Floor for `interval` on a `mode: poll` monitor — the platform bound. */
-export const MONITOR_MIN_INTERVAL_SECONDS = 30;
-/** Floor for `expect_event_within` (the silence watchdog) — the platform bound. */
-export const MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS = 300;
 /** Floor for a cron trigger's `max_lateness` (the misfire bound, KRTX-1743). */
 export const TRIGGER_MIN_MAX_LATENESS_SECONDS = 60;
 /**
@@ -116,8 +120,6 @@ export const TRIGGER_MIN_MAX_LATENESS_SECONDS = 60;
  * trigger's hour in October 2026; the 60 s cron floor allows exactly this.
  */
 export const DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR = 60;
-/** Longest `run` command accepted. Bounds a hostile manifest out of the box config. */
-export const MONITOR_RUN_MAX_LENGTH = 1024;
 
 /**
  * Duration literal accepted by `interval` / `expect_event_within`: a positive
@@ -185,17 +187,16 @@ export const CONNECTOR_AUTH_TYPES = [
 ] as const;
 /** The exclusive owner model for connections under one connector. */
 export const CONNECTOR_AUTHORIZATION_STRATEGIES = ['project', 'user'] as const;
-/** Platforms a `channel` connector can target — mirrors connectors.ts CHANNEL_PLATFORMS. */
-export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email', 'telegram'] as const;
+/** Platforms a `channel` connector can target: the channel descriptor's ids (`@kortix/shared/channel-descriptors`). */
+export const CHANNEL_PLATFORMS = CHANNEL_PLATFORM_IDS;
 /**
- * Platform-owned slugs and the only provider allowed to use each — mirrors
- * connectors.ts RESERVED_SLUG_PROVIDERS so a user app can't shadow the built-in
- * catalog (the bug that made `slack thread` 404; see KORTIX-206).
+ * Platform-owned slugs and the only provider allowed to use each, so a user
+ * app can't shadow the built-in catalog (the bug that made `slack thread` 404;
+ * see KORTIX-206). Every `kortix_<platform>` of CHANNEL_PLATFORMS is here, in
+ * that order: the key order is the published JSON schema's order.
  */
 export const RESERVED_SLUG_PROVIDERS: Readonly<Record<string, string>> = {
-  kortix_slack: 'channel',
-  kortix_teams: 'channel',
-  kortix_email: 'channel',
+  ...Object.fromEntries(CHANNEL_PLATFORMS.map((platform) => [channelConnectorSlug(platform), 'channel'])),
   computer: 'computer',
 };
 export const CONNECTOR_POLICY_ACTIONS = ['always_run', 'require_approval', 'block'] as const;
@@ -287,6 +288,13 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   // Rooms: read = list rooms and read messages; write = post, join, leave.
   'project.room.read',
   'project.room.write',
+  // Artifacts: read = gallery and viewer; write = publish and edit; manage =
+  // anyone's sharing; public = public links.
+  'project.artifact.read',
+  'project.artifact.comment',
+  'project.artifact.write',
+  'project.artifact.manage',
+  'project.artifact.public',
   // Minting a project credential. Grantable so a manifest CAN hand it to an
   // agent explicitly, but note the two credential routes refuse an
   // agent-session token outright (projects/routes/secret-delivery.ts) — an agent that could
@@ -418,6 +426,9 @@ export const HARNESS_TOOL_NAMES = [
   'websearch',
   'skill',
   'lsp',
+  // pi: the subagent tool (`task` is its alias) and the codemode tool.
+  'agent',
+  'codemode',
   // OpenCode internals: the unknown-tool fallback, code mode, plan mode.
   'invalid',
   'execute',
@@ -425,21 +436,40 @@ export const HARNESS_TOOL_NAMES = [
 ] as const;
 /**
  * The Kortix tools (apps/kortix-sandbox-agent-server `src/services/tools/kortix/`).
- * A project lists one in `tools:` as `<name>: kortix:<name>`, or replaces it
- * with its own module under the same name.
+ * Every session loads them; an agent's `tools` grant names them like any
+ * other tool. A project replaces one with its own module under the same name
+ * in `tools:`.
  *
  * Connector access is the `kortix connectors` CLI, never a built-in tool. The
  * MCP-era `kortix-connectors_call` / `kortix-connectors_describe` meta-tools
  * were re-added once (#9902) and removed again; a test pins them out.
  */
-export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show'] as const;
+export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'image_gen', 'scrape_webpage', 'show'] as const;
+/** Kortix tools a v2 `tools:` map loaded without naming them. Only the legacy converter reads this. */
+export const DEFAULT_ON_KORTIX_TOOLS = ['image_gen'] as const;
+/** True for a `DEFAULT_ON_KORTIX_TOOLS` name. */
+export function isDefaultOnKortixTool(name: string): boolean {
+  return (DEFAULT_ON_KORTIX_TOOLS as readonly string[]).includes(name);
+}
 /**
  * Kortix tools that no longer exist. Manifests written while #9902 was live
- * still name them (the v2 starter, v3 agent excludes). Naming one is
- * a warning, not an error: no session can load it, so the name has no effect.
+ * still name the connector meta-tools (the v2 starter, v3 agent excludes);
+ * `memory` was a Kortix tool until 2026-10-30. Naming one is a warning, not
+ * an error: no session can load it, so the name has no effect. A project that
+ * registers its own module under the name (`tools.memory`, the ejected copy)
+ * keeps it as a project tool, and its grants stay valid.
  */
-export const RETIRED_KORTIX_TOOLS: readonly string[] = ['kortix-connectors_call', 'kortix-connectors_describe'];
-/** A `tools:` value that keeps a Kortix tool: `kortix:<name>`. */
+export const RETIRED_KORTIX_TOOLS: readonly string[] = ['kortix-connectors_call', 'kortix-connectors_describe', 'memory'];
+
+/** What to do instead of a retired Kortix tool: the validator's warning names it. */
+export const RETIRED_KORTIX_TOOL_HINTS: Readonly<Record<string, string>> = {
+  'kortix-connectors_call': 'Agents reach connectors with the `kortix connectors` CLI.',
+  'kortix-connectors_describe': 'Agents reach connectors with the `kortix connectors` CLI.',
+  memory:
+    'Agents read and write `memory/` with the file tools (the kortix-memory skill), and My Kortix remembers each person with `kortix_memory`. To keep the old tool, register a copy under `tools.memory`.',
+};
+
+/** A v2 `tools:` value that kept a Kortix tool: `kortix:<name>`. The current format rejects it. */
 export const KORTIX_TOOL_PREFIX = 'kortix:';
 
 /** The name a `kortix:<name>` value refers to, or null for any other value. */
@@ -448,32 +478,39 @@ export function kortixToolRef(value: unknown): string | null {
 }
 
 /**
- * The Kortix tools a project's sessions get. With no `tools` key (`undefined`):
+ * The Kortix tools a v2 project's sessions got (the legacy converter turns the
+ * rest into each agent's `exclude`). With no `tools` key (`undefined`):
  * all of them, so a project that never lists them keeps them. With a `tools`
- * key, even an empty one: only the ones it lists, as `kortix:<name>` or as a
- * module that replaces the tool.
+ * key, even an empty one: the ones it lists, as `kortix:<name>` or as a
+ * module that replaces the tool, plus each `DEFAULT_ON_KORTIX_TOOLS` name it
+ * does not name.
  */
 export function selectedKortixTools(tools: unknown): string[] {
   if (tools === undefined) return [...KORTIX_TOOL_NAMES];
   const listed = tools && typeof tools === 'object' && !Array.isArray(tools) ? tools : {};
-  return KORTIX_TOOL_NAMES.filter((name) => Object.hasOwn(listed, name));
+  return KORTIX_TOOL_NAMES.filter((name) => Object.hasOwn(listed, name) || isDefaultOnKortixTool(name));
 }
 
-// ─── kortix_version 3 registries ────────────────────────────────────────────
+// ─── Registries ─────────────────────────────────────────────────────────────
 
 /** A skill, command or extension name (the Agent Skills name rule). */
 export const REGISTRY_NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 export const REGISTRY_NAME_MAX = 64;
 /**
- * The Kortix skills (`KORTIX_MANAGED_SKILL_NAMES` in @kortix/starter: the
- * `kortix-cli` front door plus templates/managed/skills). Every v3 project has
- * them without a `skills` entry; an agent grants them by name.
+ * The Kortix skills: the `kortix-cli` front door plus
+ * @kortix/starter's templates/managed/skills. The one list; @kortix/starter
+ * re-exports it as `KORTIX_MANAGED_SKILL_NAMES`. Every v3 project has them
+ * without a `skills` entry; an agent grants them by name.
  */
 export const KORTIX_SKILL_NAMES = [
   'kortix-cli',
   'kortix-apps',
+  'kortix-artifacts',
+  'kortix-channel-memory',
+  'kortix-chrome',
   'kortix-computer',
   'kortix-connectors',
+  'kortix-design',
   'kortix-drives',
   'kortix-genui',
   'kortix-goals',
@@ -492,6 +529,8 @@ export const KORTIX_SKILL_NAMES = [
 export const KORTIX_SKILL_PREFIX = 'kortix-';
 /** `agents.<name>.codemode`: pi's codemode tool. `on` (default) keeps every tool declared; `only` declares codemode alone. */
 export const CODEMODE_VALUES = ['on', 'only', 'off'] as const;
+/** `agents.<name>.context`: what a full context does. `record` (default): a fresh context that searches the session's full record. `summary`: pi's own summary compaction. */
+export const CONTEXT_VALUES = ['record', 'summary'] as const;
 /** The harnesses an extension can implement. */
 export const EXTENSION_HARNESSES = ['opencode', 'pi'] as const;
 /**

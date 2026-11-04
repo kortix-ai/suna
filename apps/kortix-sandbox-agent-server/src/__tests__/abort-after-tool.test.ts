@@ -44,15 +44,14 @@ describe('abort after tool', () => {
       promptId: 'prompt-1', runtimeSessionId: 'ses_root', messageId: 'msg_running',
     }])
 
-    // An API built before W3 names the root `opencode_session_id`.
+    // The pre-W3 name `opencode_session_id` is not read.
     const legacy = await router.request('/after-tool', {
       method: 'POST',
       headers: { [KORTIX_USER_CONTEXT_HEADER]: signed, 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt_id: 'prompt-2', opencode_session_id: 'ses_root', turn_message_id: 'msg_running' }),
     })
-    expect(legacy.status).toBe(202)
-    expect(armed[1]).toEqual({ promptId: 'prompt-2', runtimeSessionId: 'ses_root', messageId: 'msg_running' })
-    armed.length = 1
+    expect(legacy.status).toBe(400)
+    expect(armed).toHaveLength(1)
 
     const removed = await router.request('/after-tool', {
       method: 'DELETE',

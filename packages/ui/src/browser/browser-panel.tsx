@@ -53,6 +53,7 @@ interface PreviewTabContentProps {
   tabId: string;
   projectId?: string;
   projectSessionId?: string;
+  targetUrl?: string;
 }
 
 function normalizePreviewLabel(value: unknown, fallback: string): string {
@@ -72,7 +73,7 @@ const subscribeNoop = () => () => {};
  * any localhost:PORT address to navigate within the sandbox. Visited URLs are
  * recorded and offered back as "Recents" on the empty landing state.
  */
-export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabContentProps) {
+export function BrowserPanel({ tabId, projectId, projectSessionId, targetUrl }: PreviewTabContentProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const appPreviewTitle = tI18nComplete.raw('text6026c1d8c92e');
@@ -101,7 +102,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   // reveal scroll shoves a permanent sideways offset onto the panel's
   // overflow-hidden ancestors. Mount-only on purpose (`autoFocus` semantics —
   // a later navigation clearing the URL must not steal the cursor).
-  const autoFocusAddressRef = useRef(!rawPreviewUrl);
+  const autoFocusAddressRef = useRef(!rawPreviewUrl && !targetUrl);
   useEffect(() => {
     if (autoFocusAddressRef.current) focusWithoutScroll(addressInputRef.current);
   }, []);
@@ -267,6 +268,15 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
     },
     [subdomainOpts, rewritePortPath, tabId, appPreviewTitle, updateTabMetadata, pushHistory, handleRefresh],
   );
+
+  const appliedTarget = useRef<{ tabId: string; url: string } | null>(null);
+  useEffect(() => {
+    if (!targetUrl || (appliedTarget.current?.tabId === tabId && appliedTarget.current.url === targetUrl)) return;
+    appliedTarget.current = { tabId, url: targetUrl };
+    // An external quick-view intent synchronizes the Browser tab and its navigation history.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (targetUrl !== rawPreviewUrl && targetUrl !== originalUrl) navigateTo(targetUrl);
+  }, [tabId, targetUrl, rawPreviewUrl, originalUrl, navigateTo]);
 
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < history.length - 1;

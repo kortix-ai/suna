@@ -35,8 +35,6 @@ import { type ProviderKeySelection, providerKeyOf, usableProviderKeys } from '..
 import { projectModelContext } from './slack/model-gate';
 import { channelTurnModel } from './vision-model';
 
-type AgentGrantEnv = () => Promise<readonly string[] | 'all' | null>;
-
 export interface ChannelModelScope {
   projectId: string;
   accountId: string;
@@ -176,51 +174,24 @@ export function selectionPools(selection: ChannelKeySelection | null): Record<st
   return selection ? { [selection.providerId]: selection.secretIds } : undefined;
 }
 
-/**
- * May the running agent use keys stored under `envVar`? The gateway refuses a
- * selected key the agent's secret grant leaves out. `null` / `'all'` = an
- * unrestricted agent; a grant that cannot be read allows nothing.
- */
-async function agentMayUseKeys(agentGrantEnv: AgentGrantEnv | undefined, envVar: string): Promise<boolean> {
-  if (!agentGrantEnv) return true;
-  const env = await agentGrantEnv().catch(() => [] as readonly string[]);
-  return env === null || env === 'all' || env.some((name) => name.toUpperCase() === envVar.toUpperCase());
-}
-
-/** `channelKeySelection`, or null when the running agent may not use those keys. */
-async function grantedKeySelection(
-  scope: ChannelModelScope,
-  model: string,
-  agentGrantEnv: AgentGrantEnv | undefined,
-): Promise<ChannelKeySelection | null> {
-  const keys = await channelKeySelection(scope, model);
-  return keys && (await agentMayUseKeys(agentGrantEnv, keys.envVar)) ? keys : null;
-}
-
 export type ChannelModelVerdict =
   | { ok: true; model: string; keys: ChannelKeySelection | null }
-  | { ok: false; reason: 'agent_grant'; envVar: string; providerId: string }
   | { ok: false; reason: 'not_servable' };
 
 /**
  * May this conversation run `model`? Checked as the gateway will run it: for
  * this member and personal scope, with the keys this conversation would
- * select, and the running agent's secret grant.
+ * select.
  */
 export async function checkChannelModel(
   scope: ChannelModelScope,
   model: string,
   options: {
-    /** The running agent's granted env names, resolved lazily; only read when keys are selected. */
-    agentGrantEnv?: AgentGrantEnv;
     /** A live session, whose saved selection counts when no new one is made. */
     sessionId?: string;
   } = {},
 ): Promise<ChannelModelVerdict> {
   const keys = await channelKeySelection(scope, model);
-  if (keys && !(await agentMayUseKeys(options.agentGrantEnv, keys.envVar))) {
-    return { ok: false, reason: 'agent_grant', envVar: keys.envVar, providerId: keys.providerId };
-  }
   const servable = await isModelServableForAccount({
     userId: scope.memberUserId,
     accountId: scope.accountId,
@@ -274,27 +245,6 @@ export async function applyChannelSessionKeys(input: {
     });
     return false;
   }
-}
-
-/**
- * The env names a conversation's agent may use, resolved once, on first use.
- * A failed read is `[]` — nothing allowed — so a model is never approved for
- * an agent whose grant could not be checked. `null` = an unrestricted agent.
- */
-export function agentGrantEnvFor(projectId: string, agentName: string | null | undefined): AgentGrantEnv {
-  let memo: Promise<readonly string[] | 'all' | null> | null = null;
-  return () => {
-    memo ??= (async () => {
-      const [project] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
-      if (!project) return [];
-      // Lazily imported: the manifest reader pulls in the git layer.
-      const { resolveAgentGrant } = await import('../projects/agents');
-      const grant = await resolveAgentGrant(agentName || 'default', project as never).catch(() => undefined);
-      if (grant === undefined) return [];
-      return (grant as { env?: readonly string[] | 'all' } | null)?.env ?? null;
-    })();
-    return memo;
-  };
 }
 
 /**
@@ -357,12 +307,11 @@ export async function planChannelSessionStart(input: {
   /** The agent the session will run, for its default model. */
   agentName: string | null | undefined;
   hasImage: boolean;
-  agentGrantEnv?: AgentGrantEnv;
 }): Promise<ChannelSessionStart> {
-  const { projectId, accountId, userId, scope, hasImage, agentGrantEnv } = input;
+  const { projectId, accountId, userId, scope, hasImage } = input;
   const chosen = input.chosenModel?.trim() || null;
   if (!scope) {
-    return { model: (await channelTurnModel({ projectId, accountId, userId, currentModel: chosen, hasImage, agentGrantEnv })) ?? chosen };
+    return { model: (await channelTurnModel({ projectId, accountId, userId, currentModel: chosen, hasImage })) ?? chosen };
   }
   let base = chosen;
   if (!base && scope.personalUserId !== userId) {
@@ -384,7 +333,7 @@ export async function planChannelSessionStart(input: {
       base = shared.model ?? (scope.freeManagedOnly ? null : platformDefaultModelId());
     }
   }
-  const keys = base ? await grantedKeySelection(scope, base, agentGrantEnv) : null;
+  const keys = base ? await channelKeySelection(scope, base) : null;
   const pools = selectionPools(keys);
   const replaced = await channelTurnModel({
     projectId,
@@ -392,14 +341,13 @@ export async function planChannelSessionStart(input: {
     userId,
     currentModel: base,
     hasImage,
-    agentGrantEnv,
     personalUserId: scope.personalUserId,
     ...(pools ? { providerSecretPools: pools } : {}),
   });
   const model = replaced ?? base;
   // Only reject an explicit selection; an unresolved default belongs to the
   // session lifecycle, which may resolve a different agent-level default.
-  const unavailableModel = chosen && !replaced && !keys && !(await checkChannelModel(scope, chosen, { agentGrantEnv })).ok
+  const unavailableModel = chosen && !replaced && !keys && !(await checkChannelModel(scope, chosen)).ok
     ? chosen : undefined;
   // The keys belong to the model they were selected for. A replacement on
   // another provider runs as that provider normally does.
@@ -432,17 +380,16 @@ export async function planChannelFollowUp(input: {
   /** The conversation's `/model` choice. */
   chosenModel: string | null | undefined;
   hasImage: boolean;
-  agentGrantEnv?: AgentGrantEnv;
 }): Promise<string | null> {
-  const { projectId, accountId, session, hasImage, agentGrantEnv } = input;
+  const { projectId, accountId, session, hasImage } = input;
   if (!input.scope) {
-    return channelTurnModel({ projectId, accountId, userId: input.userId, currentModel: session.pinnedModel, hasImage, agentGrantEnv });
+    return channelTurnModel({ projectId, accountId, userId: input.userId, currentModel: session.pinnedModel, hasImage });
   }
   const scope = await sessionModelScope(input.scope, session);
   const chosen = input.chosenModel?.trim() || null;
   const current = chosen ?? session.pinnedModel;
   if (current) {
-    const keys = await grantedKeySelection(scope, current, agentGrantEnv);
+    const keys = await channelKeySelection(scope, current);
     await applyChannelSessionKeys({ sessionId: session.sessionId, keys, replace: false });
   }
   return channelTurnModel({
@@ -451,7 +398,6 @@ export async function planChannelFollowUp(input: {
     userId: scope.memberUserId,
     currentModel: current,
     hasImage,
-    agentGrantEnv,
     personalUserId: scope.personalUserId,
     sessionId: session.sessionId,
   });

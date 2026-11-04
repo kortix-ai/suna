@@ -3,7 +3,7 @@
  * reads only the rows its viewer may see (KRTX-2316, scenarios A and B of
  * KRTX-1727).
  *
- * The page used to read fixed chunks and drop tombstones, warm drafts and
+ * The page used to read fixed chunks and drop tombstones and
  * other members' private sessions in JavaScript. After 8 chunks it gave up: a
  * member whose project had 1,000 newer private sessions got an empty page with
  * a cursor, and an owner who deleted 1,500 sessions got the same. The page
@@ -20,6 +20,7 @@ import {
   accounts,
   projectSessionGrants,
   projectSessions,
+  projectSpaces,
   projects,
 } from '@kortix/db';
 import { and, desc, eq, sql } from 'drizzle-orm';
@@ -31,7 +32,7 @@ import {
   type SessionListFilter,
   sessionListViewerSql,
 } from '../projects/lib/session-list';
-import { isWarmProjectSession } from '../projects/lib/warm-sessions';
+import { spaceVisibleFor } from '../shared/space-access';
 import { db } from '../shared/db';
 
 const ACCOUNT = crypto.randomUUID();
@@ -167,7 +168,7 @@ beforeAll(async () => {
   await grant('granted-other', 'group', GROUP_EMPTY);
 
   // Scenario B: the owner deleted 1,500 sessions newer than their 60 live
-  // ones, and 20 unprompted warm drafts are newer still.
+  // ones.
   for (let i = 0; i < 60; i += 1) {
     await seed({ project: PROJECT_B, id: `live-${i}`, createdBy: OWNER, visibility: 'private', minutesAgo: 60 + i });
   }
@@ -180,7 +181,6 @@ beforeAll(async () => {
     initiator: 'member',
     metadata: { deletedAt: new Date().toISOString(), deletedBy: OWNER },
   });
-  await seedMany({ project: PROJECT_B, prefix: 'warm', count: 20, newestSecondsAgo: 0, createdBy: OWNER, initiator: 'member', metadata: { warm: true } });
 
   // One row per rule of `isProjectSessionVisibleTo` and the scope filters.
   const rules: Array<Omit<Parameters<typeof seed>[0], 'project' | 'minutesAgo'>> = [
@@ -206,24 +206,14 @@ beforeAll(async () => {
       initiator: null,
       metadata: { source: 'trigger:nightly', trigger_kind: 'cron', trigger_slug: 'nightly' },
     },
-    { id: 'warm-private-a', createdBy: MEMBER_A, visibility: 'private', metadata: { warm: true } },
-    { id: 'warm-project-a', createdBy: MEMBER_A, visibility: 'project', metadata: { warm: true } },
-    { id: 'warm-false', createdBy: MEMBER_A, visibility: 'project', metadata: { warm: false } },
     { id: 'deleted-project-a', createdBy: MEMBER_A, visibility: 'project', metadata: { deletedAt: daysAgoIso(18) } },
-    {
-      id: 'deleted-warm-project-a',
-      createdBy: MEMBER_A,
-      visibility: 'project',
-      metadata: { deletedAt: daysAgoIso(18), warm: true },
-    },
     { id: 'deleted-private-b', createdBy: MEMBER_B, visibility: 'private', metadata: { deletedAt: daysAgoIso(18) } },
     // Recently deleted (KRTX-2853): restorable ones by owner and visibility,
-    // one past its restore window, and a deleted warm draft.
+    // and one past its restore window.
     { id: 'recent-project-a', createdBy: MEMBER_A, visibility: 'project', metadata: { deletedAt: daysAgoIso(2) } },
     { id: 'recent-project-b', createdBy: MEMBER_B, visibility: 'project', metadata: { deletedAt: daysAgoIso(3) } },
     { id: 'recent-private-b', createdBy: MEMBER_B, visibility: 'private', metadata: { deletedAt: daysAgoIso(4) } },
     { id: 'expired-project-a', createdBy: MEMBER_A, visibility: 'project', metadata: { deletedAt: daysAgoIso(31) } },
-    { id: 'recent-warm-project-a', createdBy: MEMBER_A, visibility: 'project', metadata: { deletedAt: daysAgoIso(1), warm: true } },
     { id: 'backend-project', createdBy: MEMBER_A, visibility: 'project', origin: 'backend' },
     { id: 'backend-own', createdBy: MEMBER_A, visibility: 'private', origin: 'backend' },
     { id: 'spawned-by-backend-own', createdBy: MEMBER_A, visibility: 'private', metadata: { spawned_by_session: sid('backend-own') } },
@@ -302,11 +292,10 @@ describe('scenario B: 1,500 tombstones newer than the owner’s live sessions', 
     expect(second.nextCursor).toBeNull();
   });
 
-  test('the manager inventory still lists the tombstones and the live warm drafts', async () => {
+  test('the manager inventory still lists the tombstones', async () => {
     const { ids, requests } = await walk({ project: PROJECT_B, viewer: OWNER, manager: true, scope: 'project', limit: 200 });
     expect(ids.filter((id) => id.startsWith('deleted-'))).toHaveLength(1500);
     expect(ids.filter((id) => id.startsWith('live-'))).toHaveLength(60);
-    expect(ids.filter((id) => id.startsWith('warm-'))).toHaveLength(20);
     expect(requests).toBe(8);
   });
 
@@ -325,6 +314,7 @@ describe('scenario B: 1,500 tombstones newer than the owner’s live sessions', 
             agentPrincipal: false,
             canManageProject: false,
             accountSessionOversight: false,
+            hiddenSpaceIds: new Set(),
           }),
         ),
       )
@@ -356,8 +346,37 @@ describe('scenario B: 1,500 tombstones newer than the owner’s live sessions', 
 describe('the page WHERE agrees with the JS fold on every rule', () => {
   const viewers = [MEMBER_A, MEMBER_B, crypto.randomUUID()];
   const bindings = [null, sid('backend-own'), sid('private-a')];
+  // A private channel holding every second session of the project: hidden
+  // (the viewer is not in it) or not, both sides must drop the same rows.
+  const PRIVATE_SPACE = crypto.randomUUID();
+  const hiddenSets: ReadonlySet<string>[] = [new Set(), new Set([PRIVATE_SPACE])];
 
-  test('for every viewer, binding, agent principal, standing and oversight', async () => {
+  // Filed for the two equivalence tests only: the walks below read the real
+  // `hiddenSpaceIds`, and none of their viewers is in the channel.
+  const filePrivateSpace = async () => {
+    await db.insert(projectSpaces).values({
+      spaceId: PRIVATE_SPACE,
+      accountId: ACCOUNT,
+      projectId: PROJECT_RULES,
+      kind: 'channel',
+      slug: `p-${tag}`,
+      name: 'p',
+      visibility: 'private',
+    });
+    const rows = await db.select({ sessionId: projectSessions.sessionId }).from(projectSessions)
+      .where(eq(projectSessions.projectId, PROJECT_RULES)).orderBy(projectSessions.sessionId);
+    for (const [index, row] of rows.entries()) {
+      if (index % 2 === 0) await db.update(projectSessions).set({ spaceId: PRIVATE_SPACE }).where(eq(projectSessions.sessionId, row.sessionId));
+    }
+  };
+  const unfilePrivateSpace = async () => {
+    await db.update(projectSessions).set({ spaceId: null }).where(eq(projectSessions.spaceId, PRIVATE_SPACE));
+    await db.delete(projectSpaces).where(eq(projectSpaces.spaceId, PRIVATE_SPACE));
+  };
+
+  test('for every viewer, binding, agent principal, standing, oversight and hidden private channel', async () => {
+    await filePrivateSpace();
+    try {
     const rows = await db.select().from(projectSessions).where(eq(projectSessions.projectId, PROJECT_RULES));
     const grantsBySession = await loadSessionGrants(rows.map((row) => row.sessionId));
     let compared = 0;
@@ -371,7 +390,8 @@ describe('the page WHERE agrees with the JS fold on every rule', () => {
               if (scope === 'project' && !canManageProject) continue;
               for (const accountSessionOversight of [false, true]) {
                for (const deleted of [false, true]) {
-                const viewer = { scope, viewerId, boundCredentialSessionId: bound, agentPrincipal, canManageProject, accountSessionOversight, deleted };
+                for (const hiddenSpaceIds of hiddenSets) {
+                const viewer = { scope, viewerId, boundCredentialSessionId: bound, agentPrincipal, canManageProject, accountSessionOversight, deleted, hiddenSpaceIds };
                 const fromSql = await db
                   .select({ sessionId: projectSessions.sessionId })
                   .from(projectSessions)
@@ -388,13 +408,15 @@ describe('the page WHERE agrees with the JS fold on every rule', () => {
                   accountSessionOversight,
                   agentPrincipal,
                   deleted,
+                  hiddenSpaceIds,
                 });
-                const label = JSON.stringify({ ...viewer, viewerId: viewers.indexOf(viewerId) });
+                const label = JSON.stringify({ ...viewer, hiddenSpaceIds: hiddenSpaceIds.size, viewerId: viewers.indexOf(viewerId) });
                 expect({ label, ids: fromSql.map((row) => short(row.sessionId)).sort() }).toEqual({
                   label,
                   ids: fromJs.items.map((item) => short(item.row.sessionId)).sort(),
                 });
                 compared += 1;
+                }
                }
               }
             }
@@ -402,53 +424,66 @@ describe('the page WHERE agrees with the JS fold on every rule', () => {
         }
       }
     }
-    expect(compared).toBe(3 * 3 * 2 * (2 + 1) * 2 * 2);
+    expect(compared).toBe(3 * 3 * 2 * (2 + 1) * 2 * 2 * 2);
+    } finally {
+      await unfilePrivateSpace();
+    }
   });
 
   // `projectReadView` (gateway logs and spend, change requests, the review
   // inbox, project files) filters a non-manager with the project scope. That
-  // viewer's WHERE is `case when <access> then <tombstone> else false end`:
-  // the rows a JS rule can open, deleted ones kept, deleted warm drafts out.
-  test('the non-manager project read keeps every session the viewer can open, deleted ones included, and drops deleted warm drafts', async () => {
+  // viewer's WHERE is the access rule alone: the rows a JS rule can open,
+  // deleted ones kept.
+  test('the non-manager project read keeps every session the viewer can open, deleted ones included', async () => {
+    await filePrivateSpace();
+    try {
     const rows = await db.select().from(projectSessions).where(eq(projectSessions.projectId, PROJECT_RULES));
     const grantsBySession = await loadSessionGrants(rows.map((row) => row.sessionId));
     let compared = 0;
     for (const viewerId of viewers) {
       const subject = await resolveShareSubject(viewerId);
-      for (const bound of [...bindings, sid('deleted-warm-project-a')]) {
+      for (const bound of [...bindings, sid('deleted-project-a')]) {
         for (const agentPrincipal of [false, true]) {
           for (const accountSessionOversight of [false, true]) {
-            const viewer = { scope: 'project' as const, viewerId, boundCredentialSessionId: bound, agentPrincipal, canManageProject: false, accountSessionOversight };
+           for (const hiddenSpaceIds of hiddenSets) {
+            const viewer = { scope: 'project' as const, viewerId, boundCredentialSessionId: bound, agentPrincipal, canManageProject: false, accountSessionOversight, hiddenSpaceIds };
             const fromSql = await db
               .select({ sessionId: projectSessions.sessionId })
               .from(projectSessions)
               .where(and(eq(projectSessions.projectId, PROJECT_RULES), sessionListViewerSql(viewer)));
             const fromJs = rows.filter((row) => {
-              const meta = (row.metadata ?? {}) as Record<string, unknown>;
-              if (typeof meta.deletedAt === 'string' && isWarmProjectSession(row.metadata)) return false;
               const canAccess = isProjectSessionVisibleTo(
                 row.visibility as Visibility,
                 row.createdBy,
                 grantsBySession.get(row.sessionId) ?? [],
                 subject,
                 { origin: row.origin ?? null, sessionId: row.sessionId, callerSessionId: bound, boundCredentialSessionId: bound },
-                { metadata: row.metadata, initiatorType: row.initiatorType, canManageProject: false, accountSessionOversight },
+                {
+                  metadata: row.metadata,
+                  initiatorType: row.initiatorType,
+                  canManageProject: false,
+                  accountSessionOversight,
+                  spaceVisible: spaceVisibleFor(hiddenSpaceIds, row.spaceId),
+                },
               );
-              return agentPrincipal ? agentSessionStanding(bound, row, canAccess).visible : canAccess;
+              return agentPrincipal ? spaceVisibleFor(hiddenSpaceIds, row.spaceId) && agentSessionStanding(bound, row, canAccess).visible : canAccess;
             });
-            const label = JSON.stringify({ ...viewer, viewerId: viewers.indexOf(viewerId) });
+            const label = JSON.stringify({ ...viewer, hiddenSpaceIds: hiddenSpaceIds.size, viewerId: viewers.indexOf(viewerId) });
             expect({ label, ids: fromSql.map((row) => short(row.sessionId)).sort() }).toEqual({
               label,
               ids: fromJs.map((row) => short(row.sessionId)).sort(),
             });
             compared += 1;
+           }
           }
         }
       }
     }
-    expect(compared).toBe(3 * 4 * 2 * 2);
-    // The fixture reaches both halves of the CASE: member A opens a deleted
-    // session (kept) and a deleted warm draft (dropped).
+    expect(compared).toBe(3 * 4 * 2 * 2 * 2);
+    } finally {
+      await unfilePrivateSpace();
+    }
+    // Member A opens a deleted session (kept).
     // Member B reaches a restricted session through a group grant.
     const readIds = async (viewerId: string) =>
       (await db
@@ -456,10 +491,10 @@ describe('the page WHERE agrees with the JS fold on every rule', () => {
         .from(projectSessions)
         .where(and(eq(projectSessions.projectId, PROJECT_RULES), sessionListViewerSql({
           scope: 'project', viewerId, boundCredentialSessionId: null, agentPrincipal: false, canManageProject: false, accountSessionOversight: false,
+          hiddenSpaceIds: new Set(),
         })))).map((row) => short(row.sessionId));
     const memberA = await readIds(MEMBER_A);
     expect(memberA).toContain('deleted-project-a');
-    expect(memberA).not.toContain('deleted-warm-project-a');
     expect(memberA).not.toContain('private-b');
     const memberB = await readIds(MEMBER_B);
     expect(memberB).toContain('restricted-group-b');
@@ -469,7 +504,7 @@ describe('the page WHERE agrees with the JS fold on every rule', () => {
   test('Recently deleted lists what each viewer may restore: their own, or every one they can open as a manager, inside the window', async () => {
     const deleted = async (viewer: string, manager: boolean) =>
       (await walk({ project: PROJECT_RULES, viewer, manager, limit: 200, filter: { deleted: true } })).ids.sort();
-    // Member A started recent-project-a; expired-project-a is past its window, and a deleted warm draft holds nothing.
+    // Member A started recent-project-a; expired-project-a is past its window.
     expect(await deleted(MEMBER_A, false)).toEqual(['deleted-project-a', 'recent-project-a'].sort());
     // Member B started three, including a private one.
     expect(await deleted(MEMBER_B, false)).toEqual(['deleted-private-b', 'recent-private-b', 'recent-project-b'].sort());
@@ -491,7 +526,6 @@ describe('the page WHERE agrees with the JS fold on every rule', () => {
         'restricted-b-no-grant',
         'restricted-group-b',
         'restricted-member-b',
-        'warm-false',
       ].sort(),
     );
   });

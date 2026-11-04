@@ -1,4 +1,4 @@
-import type { ProjectTriggerRun } from '@kortix/sdk';
+import type { ProjectTriggerType, ProjectTriggerRun } from '@kortix/sdk';
 
 /** The one label a run shows: the fire outcome, refined by the agent turn's outcome once it fired. */
 export type RunState =
@@ -126,7 +126,7 @@ export function inRunRange(
 
 /** The source a trigger's own runs come from; a row names any other one (manual, replay, reminder). */
 export function isDefaultSource(
-  triggerType: 'cron' | 'webhook' | 'event' | 'monitor',
+  triggerType: ProjectTriggerType,
   source: ProjectTriggerRun['source'],
 ): boolean {
   return source === triggerType;

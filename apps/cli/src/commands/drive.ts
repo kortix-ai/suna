@@ -1,12 +1,10 @@
-import { readFile } from 'node:fs/promises';
+import { openAsBlob } from 'node:fs';
 import {
   deleteDriveFile,
   type Drive,
-  type FolderPrincipalType,
   getFolderAccess,
   getProjectDrive,
   listDriveFolder,
-  listFolderPrincipals,
   makeDriveFolder,
   moveDriveFile,
   readDriveFile,
@@ -29,27 +27,30 @@ import { C, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix drive <subcommand> [options]
 
-The project's Files: one drive of folders (/Company, /Users/<name>, team
-folders). Every command acts as you, with your folder access. Inside a
-session it acts as the person who started the session, and works only in
-their own private session.
+The project's Files: one drive of folders. You reach your own folder
+(/Users/<name>) and the Drive of each agent you may use (/Agents/<agent>).
+Every command acts as you, with your folder access. Inside a session it acts
+as the person who started the session, and works only in their own private
+session.
 
 Subcommands:
   ls [<path>]                       List a folder (default: the top of Files).
   cat <path>                        Print a file's bytes.
-  put <local> <path>                Upload a local file to <path>.
+  put <local> <path>                Upload a local file to <path>. Any size: a file
+                                    over 64 MiB goes up in 1 MiB blocks, read from
+                                    disk as they are sent.
   mkdir <path>                      Create a folder.
   mv <from> <to>                    Move or rename a file or folder.
   rm <path> [-r]                    Delete a file, or a folder with -r.
   access <path>                     Show who has access to a folder.
-  share <path> (--everyone | --user <email> | --agent <name>) [--write]
-                                    Share a folder (read, or write with --write).
+  share <path> --agent <name> [--write]
+                                    Give an agent a folder (read, or write with
+                                    --write): its sessions mount it, and everyone
+                                    who may use the agent can open it.
   unshare <path> <grantId>          Stop one share (the id from \`access\`).
 
 Options:
   -r, --recursive    rm: delete a folder and everything in it.
-  --everyone         share: everyone in the project.
-  --user <email>     share: a member of the account.
   --agent <name>     share: one of the project's agents.
   --write            share: give write instead of read.
   --json             Emit the API payload as JSON.
@@ -57,10 +58,12 @@ Options:
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 
-Sharing from inside a session works only in your own private session.
+Nothing is shared with a person, a team or the whole project: a person
+reaches a folder through an agent they may use. Sharing from inside a session
+works only in your own private session.
 `;
 
-/** Paths in Files are absolute: `Company/x` means `/Company/x`. */
+/** Paths in Files are absolute: `Agents/sales/x` means `/Agents/sales/x`. */
 const abs = (p: string) => (p.startsWith('/') ? p : `/${p}`);
 
 export async function runDrive(argv: string[]): Promise<number> {
@@ -113,8 +116,10 @@ export async function runDrive(argv: string[]): Promise<number> {
         }
         case 'put': {
           if (!a || !b) return missing('a local file and a path in Files');
-          const result = await uploadDriveFile(id, abs(b), new Uint8Array(await readFile(a)));
-          return done(result, `Uploaded ${a} to ${abs(b)}`);
+          // A file-backed Blob: the SDK reads it one block at a time, never whole.
+          const file = await openAsBlob(a);
+          const result = await uploadDriveFile(id, abs(b), file, { onProgress: json ? undefined : uploadProgress(a) });
+          return done(result, `Uploaded ${a} to ${abs(b)} (${megabytes(file.size)})`);
         }
         case 'mkdir':
           if (!a) return missing('a folder path');
@@ -131,24 +136,13 @@ export async function runDrive(argv: string[]): Promise<number> {
           return driveAccess(id, abs(a), json);
         case 'share': {
           if (!a) return missing('a folder path');
-          if ([everyone, !!user, !!agent].filter(Boolean).length !== 1) {
-            return fail('Pass exactly one of --everyone, --user <email>, --agent <name>.');
+          if (everyone || user) {
+            return fail('Folders are shared with agents only: pass --agent <name>. A person reaches a folder through an agent they may use.');
           }
-          let principalType: FolderPrincipalType = 'project';
-          let principalId: string | undefined;
-          if (agent) {
-            principalType = 'agent';
-            principalId = agent;
-          } else if (user) {
-            const { people } = await listFolderPrincipals(id);
-            const person = people.find((p) => p.label.toLowerCase() === user!.toLowerCase());
-            if (!person) return fail(`No member ${user} in this account.`);
-            principalType = 'user';
-            principalId = person.id;
-          }
+          if (!agent) return fail('Pass --agent <name>.');
           const level = write ? 'write' : 'read';
-          const result = await shareFolder(id, { path: abs(a), principalType, principalId, level });
-          return done(result, `Shared ${abs(a)} with ${user ?? agent ?? 'everyone'} (${level})`);
+          const result = await shareFolder(id, { path: abs(a), principalType: 'agent', principalId: agent, level });
+          return done(result, `Shared ${abs(a)} with agent ${agent} (${level})`);
         }
         case 'unshare':
           if (!a || !b) return missing('a folder path and a grant id (from `kortix drive access`)');
@@ -161,6 +155,23 @@ export async function runDrive(argv: string[]): Promise<number> {
   } catch (err) {
     return surfaceApiError(err);
   }
+}
+
+const megabytes = (bytes: number) => `${(bytes / 1e6).toFixed(1)} MB`;
+
+/** Progress on stderr, one line redrawn at most every 200 ms; nothing when stderr is not a terminal. */
+function uploadProgress(local: string): ((sent: number, total: number) => void) | undefined {
+  if (!process.stderr.isTTY) return undefined;
+  const started = Date.now();
+  let drawn = 0;
+  return (sent, total) => {
+    const now = Date.now();
+    if (sent < total && now - drawn < 200) return;
+    drawn = now;
+    const rate = sent / Math.max(1, (now - started) / 1000);
+    const line = `  ${local}: ${megabytes(sent)} / ${megabytes(total)} (${Math.floor((sent / total) * 100)}%) ${megabytes(rate)}/s`;
+    process.stderr.write(`\r${line}\x1b[K${sent >= total ? '\n' : ''}`);
+  };
 }
 
 async function driveLs(drive: Drive, path: string, json: boolean): Promise<number> {

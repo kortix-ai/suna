@@ -14,7 +14,7 @@ export interface ProjectBranchSession {
   agent_name: string | null;
   /** The caller archived the session. */
   archived: boolean;
-  /** The session is in Recently deleted. Its branch is kept. */
+  /** The session is in Recently deleted. Its branch is kept until its restore window ends. */
   deleted: boolean;
 }
 

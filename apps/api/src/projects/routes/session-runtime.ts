@@ -18,13 +18,12 @@ import { SessionStartResultSchema, SessionTurnStatusSchema, projectsApp } from '
 import {
   sessionUsesCurrentRepository,
 } from '../lib/repository-generation';
-import { captureJournallessSessionLogOnWake } from '../lib/session-transcript-capture';
 import { isUuid } from '../../shared/validate';
 import { restartSession, startSession, stopSession } from '../session-lifecycle';
 import { START_AWAIT_MAX_MS } from '../session-lifecycle/await-stage';
 import { recoverLostSession } from '../session-lifecycle/recover-lost-session';
-import { isWarmProjectSession } from '../lib/warm-sessions';
-import { dropWarmSessionMarkerOnAdopt, warmSessionPlacement } from './warm-sessions';
+import { stoppedSubagentNotice } from '../subagent-notice';
+import { trackDetached } from '../../shared/drain';
 import { readSessionTurnState } from '../lib/session-turn-read';
 import { canStopTurns } from '../session-lifecycle/turn-stop-authority';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
@@ -99,42 +98,11 @@ export function registerSessionRuntimeRoutes(): void {
       // resumes a hibernated box days later. The session's stored `agent_name`
       // may also be the `default` sentinel, which resolves here to the manifest
       // default rather than being waved through unchecked.
-      await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
+      await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName, undefined, visible.row.spaceId);
       stl.mark('agent-authorized');
       // Booting a box needs the repository; a running box keeps working (its
       // keep-alive polls must not fail because GitHub went away under it).
       if (visible.row.status !== 'running') await assertRepositoryConnected(loaded.row);
-
-      // Adoption (JAY-599/T21): a still-warm row (pre-created, never prompted)
-      // stops being speculative the instant a user's tab calls /start on it —
-      // see dropWarmSessionMarkerOnAdopt for why this is safe unconditionally.
-      // Independent of billing/provisioning below: it is a metadata fact about
-      // this row, not a spend, so it lands even if the billing gate rejects the
-      // resume that follows.
-      if (isWarmProjectSession(visible.row.metadata)) {
-        // A held browser entry can predate the project's region preference.
-        // Wait for actual placement while creation is pending; never adopt an
-        // EU or unknown active box as US, and never move an existing box.
-        const placement = await warmSessionPlacement(sessionId, projectMetadata);
-        if (placement === 'pending') {
-          return c.json({
-            stage: 'provisioning' as const,
-            agent_name: visible.row.agentName ?? 'default',
-            sandbox: null,
-            opencode_session_id: null,
-            retriable: true,
-            runtime_transport: 'rest' as const,
-          }, 200);
-        }
-        if (placement === 'mismatch') {
-          return c.json({
-            error: 'The warm session does not match the project compute region',
-            code: 'WARM_SESSION_CONFIGURATION_MISMATCH',
-          }, 409);
-        }
-        await dropWarmSessionMarkerOnAdopt(sessionId);
-        stl.mark('warm-adopted');
-      }
 
       // Same gate as wake/create: resuming or provisioning spends compute.
       const billing = await checkBillingAdmission(loaded.row.accountId);
@@ -173,12 +141,6 @@ export function registerSessionRuntimeRoutes(): void {
         signal: c.req.raw.signal,
       });
       stl.mark(`open-session:${result.start.stage}`);
-      // THE RUNTIME IS UP. A box without a journal gets what is already in it
-      // into the session log, once: capture otherwise runs only at turn end.
-      // Fire-and-forget and self-limiting (at most 3 attempts per session per
-      // process, none for a session with a journal). It cannot fail or delay
-      // this response.
-      if (result.start.stage === 'ready') void captureJournallessSessionLogOnWake(sessionId);
       stl.log({
         waitMs,
         repositoryMode: usesCurrentRepository ? 'current' : 'previous',
@@ -342,6 +304,8 @@ export function registerSessionRuntimeRoutes(): void {
         );
       }
 
+      // Read before the stop ends the turn: a background subagent's parent hears it.
+      const parentNotice = await stoppedSubagentNotice(sessionId, callerKortixSessionId(c));
       const result = await stopSession({
         projectId,
         sessionId,
@@ -350,6 +314,7 @@ export function registerSessionRuntimeRoutes(): void {
         // The person the stopped turn names; an agent credential names nobody.
         stoppedBy: isProjectSessionPrincipal(c) ? null : loaded.userId,
       });
+      if (parentNotice && result.status === 200) trackDetached(parentNotice());
       return c.json(result.body, result.status as any);
     },
   );

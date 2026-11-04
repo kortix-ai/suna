@@ -195,7 +195,7 @@ describe('ComposerUnderbar — the denied roster looks like an ordinary picker',
     return /class="([^"]*)"/.exec(button ?? '')?.[1] ?? '';
   }
 
-  test('same chrome as the populated trigger, bar the muted text token', () => {
+  test('same chrome as the populated trigger: both wear the muted ink', () => {
     // Everything Button contributes (variant ghost, size sm, radius, hit area)
     // must match; a bespoke shape here is the thing that read as "too much".
     const populated = triggerClasses(
@@ -204,19 +204,19 @@ describe('ComposerUnderbar — the denied roster looks like an ordinary picker',
     const denied = triggerClasses(render({ noAccessibleAgents: true }));
 
     expect(populated).not.toBe('');
-    expect(denied.replace('text-muted-foreground', 'text-foreground/70')).toBe(populated);
+    expect(denied).toBe(populated);
   });
 
   test('keeps the caret, so it reads as a picker and not a notice', () => {
-    // Two <svg> in this row when denied: the paperclip and the caret. The
-    // populated state has the same two.
+    // The denied row has every <svg> of the populated row, the caret included,
+    // bar the agent's pixel mark: only a real agent has a face.
     const denied = render({ noAccessibleAgents: true });
     expect((denied.match(/<svg/g) ?? []).length).toBe(
       (
         render({ agents: [{ name: 'kortix', mode: 'primary' } as unknown as Agent] }).match(
           /<svg/g,
         ) ?? []
-      ).length,
+      ).length - 1,
     );
   });
 

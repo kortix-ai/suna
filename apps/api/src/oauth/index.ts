@@ -38,6 +38,15 @@ import {
   OAuthClientInputError,
 } from '../repositories/oauth-clients';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
+import { AUTH_REQUEST_TTL_MS, SELF_REGISTERED_DESCRIPTION } from './sweeper';
+
+// The housekeeping deletes live in sweeper.ts, so the scheduled job never loads
+// this module's routes and auth middleware.
+export {
+  SELF_REGISTERED_DESCRIPTION,
+  sweepAbandonedSelfRegisteredClients,
+  sweepExpiredAuthorizationRequests,
+} from './sweeper';
 import { requestClientKey } from '../middleware/client-ip';
 import {
   isOAuthAccessToken,
@@ -53,6 +62,7 @@ import { actsAsFullIdentity } from '../accounts/core/tokens';
 import { actorOf } from '../iam/actor';
 import { resolveAccountId } from '../shared/resolve-account';
 import { bearerToken } from '../shared/bearer-token';
+import { hasOnlyExtensionRedirect, KORTIX_EXTENSION_REDIRECT_URI } from './extension-client';
 
 // ─── Rate Limiter (per client_id) ───────────────────────────────────────────
 
@@ -203,7 +213,6 @@ export function basicClientAuth(
 
 // ─── Pending authorization requests (persisted) ─────────────────────────────
 
-const AUTH_REQUEST_TTL_MS = 10 * 60 * 1000;
 
 function hashRequestId(requestId: string): string {
   return createHash('sha256').update(requestId).digest('hex');
@@ -236,6 +245,18 @@ async function createAuthorizationRequest(
   return requestId;
 }
 
+function pendingAuthorizationRequest(row: typeof oauthAuthorizationRequests.$inferSelect): PendingAuthorizationRequest {
+  return {
+    id: row.id,
+    clientId: row.clientId,
+    redirectUri: row.redirectUri,
+    scopes: (row.scopes as string[] | null) ?? [],
+    state: row.state ?? '',
+    codeChallenge: row.codeChallenge,
+    codeChallengeMethod: row.codeChallengeMethod,
+  };
+}
+
 async function getAuthorizationRequest(
   requestId: string,
 ): Promise<PendingAuthorizationRequest | null> {
@@ -250,15 +271,7 @@ async function getAuthorizationRequest(
     )
     .limit(1);
   if (!row || row.expiresAt < new Date()) return null;
-  return {
-    id: row.id,
-    clientId: row.clientId,
-    redirectUri: row.redirectUri,
-    scopes: (row.scopes as string[] | null) ?? [],
-    state: row.state ?? '',
-    codeChallenge: row.codeChallenge,
-    codeChallengeMethod: row.codeChallengeMethod,
-  };
+  return pendingAuthorizationRequest(row);
 }
 
 /** Atomic consume: the row flips once, so a replayed decision is a 400. */
@@ -276,64 +289,7 @@ async function consumeAuthorizationRequest(
     )
     .returning();
   if (!row || row.expiresAt < new Date()) return null;
-  return {
-    id: row.id,
-    clientId: row.clientId,
-    redirectUri: row.redirectUri,
-    scopes: (row.scopes as string[] | null) ?? [],
-    state: row.state ?? '',
-    codeChallenge: row.codeChallenge,
-    codeChallengeMethod: row.codeChallengeMethod,
-  };
-}
-
-/** Housekeeping: drop expired or consumed requests older than the TTL, at most `limit` per run. */
-export async function sweepExpiredAuthorizationRequests(
-  now = new Date(),
-  limit = SWEEP_BATCH,
-): Promise<number> {
-  const cutoff = new Date(now.getTime() - AUTH_REQUEST_TTL_MS);
-  const rows = await db.execute(sql`
-    delete from kortix.oauth_authorization_requests
-     where id in (
-       select id from kortix.oauth_authorization_requests
-        where expires_at < ${now.toISOString()}::timestamptz or created_at < ${cutoff.toISOString()}::timestamptz
-        limit ${limit})
-    returning id`);
-  return countRows(rows);
-}
-
-/** A self-registered client that no person ever approved and that never got a token is dropped after this long. */
-const ABANDONED_CLIENT_AGE_MS = 7 * 24 * 3600 * 1000;
-const SWEEP_BATCH = 500;
-
-const countRows = (r: unknown): number =>
-  ((r as { rows?: unknown[] }).rows ?? (r as unknown[])).length;
-
-/**
- * Housekeeping (B-9): open dynamic registration (RFC 7591) lets anyone create
- * client rows. Delete those older than 7 days with no consent and no token
- * ever issued. Codes and requests cascade. One DELETE, bounded by `limit`;
- * concurrent runs on several API tasks delete disjoint-or-equal rows, and a row
- * already deleted by a peer is simply not matched, so the run is idempotent.
- */
-export async function sweepAbandonedSelfRegisteredClients(
-  now = new Date(),
-  limit = SWEEP_BATCH,
-): Promise<number> {
-  const cutoff = new Date(now.getTime() - ABANDONED_CLIENT_AGE_MS);
-  const rows = await db.execute(sql`
-    delete from kortix.oauth_clients
-     where client_id in (
-       select c.client_id from kortix.oauth_clients c
-        where c.description = ${SELF_REGISTERED_DESCRIPTION}
-          and c.account_id is null and c.app_id is null
-          and c.created_at < ${cutoff.toISOString()}::timestamptz
-          and not exists (select 1 from kortix.oauth_consents o where o.client_id = c.client_id)
-          and not exists (select 1 from kortix.oauth_access_tokens t where t.client_id = c.client_id)
-        limit ${limit})
-    returning client_id`);
-  return countRows(rows);
+  return pendingAuthorizationRequest(row);
 }
 
 // ─── Remembered consent ─────────────────────────────────────────────────────
@@ -713,13 +669,16 @@ oauthApp.openapi(
 // ─── POST /register (RFC 7591) ──────────────────────────────────────────────
 
 /** Stored on a self-registered client; nothing else marks one. */
-export const SELF_REGISTERED_DESCRIPTION = 'Self-registered (RFC 7591 dynamic client registration)';
 
-function isSelfRegistered(client: ClientRow): boolean {
-  return client.accountId === null && client.description === SELF_REGISTERED_DESCRIPTION;
+export { KORTIX_EXTENSION_REDIRECT_URI };
+
+export function isSelfRegistered(client: Pick<ClientRow, 'accountId' | 'description' | 'redirectUris'>): boolean {
+  const kortixExtension = hasOnlyExtensionRedirect(client.redirectUris);
+  return client.accountId === null && client.description === SELF_REGISTERED_DESCRIPTION && !kortixExtension;
 }
 
 function redirectTarget(redirectUri: string): string {
+  if (redirectUri === KORTIX_EXTENSION_REDIRECT_URI) return 'Kortix in Chrome';
   const url = parseRedirectUri(redirectUri);
   if (!url) return redirectUri;
   return url.protocol === 'http:' || url.protocol === 'https:' ? url.host : url.protocol;

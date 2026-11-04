@@ -126,4 +126,31 @@ describe('CodemodeTool', () => {
     );
     expect(html).toContain('3 tool calls · bash · read');
   });
+
+  test('a nested image_gen call reads as its first prompt, not as JSON; the image stays its own card', () => {
+    const args = { action: 'generate', prompts: ['A fox in a shuttle', 'An owl in a shuttle', 'A hare in a shuttle'] };
+    // pi's live record (JSON text) and the session log's record at rest read the same.
+    for (const call of [
+      { id: 'img', name: 'image_gen', args: JSON.stringify(args), status: 'ok', durationMs: 42_000 },
+      { call_id: 'img', name: 'image_gen', input: args, status: 'complete', duration_ms: 42_000 },
+    ]) {
+      expect(scriptCalls({ calls: [call] })[0]).toMatchObject({ name: 'image_gen', arg: 'A fox in a shuttle (+2)', status: 'ok' });
+    }
+    const block = toolCallBlock(
+      part({
+        status: 'completed',
+        output: 'Script completed\nOutput:\nok',
+        metadata: { calls: [{ id: 'img', name: 'image_gen', args: JSON.stringify(args), status: 'ok' }, { id: 'b', name: 'bash', status: 'ok' }] },
+      }),
+    );
+    const html = render(<CodemodeTool defaultOpen call={block} />);
+    const text = textOf(html);
+    expect(text).toContain('A fox in a shuttle (+2)');
+    expect(text).not.toContain('"prompts"');
+    // The closed row counts the image call as one call.
+    expect(render(<CodemodeTool call={block} />)).toContain('2 tool calls · image_gen · bash');
+    // The script card lists the call; it draws no image frame.
+    expect(html).not.toContain('aria-busy');
+    expect(html).not.toContain('<img');
+  });
 });

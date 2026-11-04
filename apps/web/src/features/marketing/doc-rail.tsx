@@ -4,18 +4,17 @@ import { cn } from '@kortix/ui';
 import type { ReactNode } from 'react';
 
 /**
- * The document rail shared by the long-form public pages (`/legal`,
- * `/support`).
+ * The document rail of the long-form public pages (`/legal`).
  *
  * One presentation per breakpoint, from one markup block: a horizontal
  * scroller below `lg` that bleeds to the viewport edge, and a sticky vertical
- * list from `lg` up. This is the shape every reference legal/support page
+ * list from `lg` up. This is the shape every reference legal page
  * converges on (Stripe, Mistral, Craft, Clay) and it is structurally the same
  * split `/changelog` already ships — a sticky identity column beside the body.
  *
- * `/legal` drives document switching with it (buttons + `?tab=`), `/support`
- * drives in-page anchors (links + scroll-spy). Both get the same geometry,
- * hit area, and selected state because both call the helpers here.
+ * `/legal` drives document switching with it (buttons + `?tab=`). The helpers
+ * also support in-page anchors (links + scroll-spy) with the same geometry,
+ * hit area, and selected state.
  */
 
 /**

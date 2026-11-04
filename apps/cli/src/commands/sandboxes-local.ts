@@ -32,7 +32,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared/runtime-versions';
+import { AGENT_BROWSER_VERSION } from '@kortix/shared/runtime-versions';
 import {
   DEFAULT_SANDBOX_SLUG,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
@@ -138,26 +138,18 @@ function userDockerfileForTemplate(
   }
   if (template.image)
     return { text: `FROM ${template.image}\n`, source: `(image: ${template.image})` };
-  return { error: `Template "${template.slug}" declares neither a dockerfile nor an image.` };
+  // Neither: the platform base, built for this template, as the server builds it.
+  return { text: PLATFORM_DEFAULT_USER_DOCKERFILE, source: '(platform base)' };
 }
 
 /**
  * Compose what gets built: the user's Dockerfile (normalized the same way the
  * snapshot builder normalizes it) plus the Kortix toolchain layer.
- *
- * `opencodeConfigPath` and `warmRepo` are deliberately OMITTED — both make the
- * layer emit steps that read staged context (`COPY <config>/ …`) or clone with
- * build-time credentials, neither of which exists locally. Everything they'd
- * add is a warm-up, not a correctness step, so their absence changes nothing
- * about whether the image BUILDS.
  */
 export function composeSandboxDockerfile(userDockerfile: string, opts: { layer: boolean }): string {
   const user = normalizeUserDockerfileForSnapshot(userDockerfile).trimEnd();
   if (!opts.layer) return `${user}\n`;
-  return `${user}\n${kortixToolchainLayer({
-    opencodeVersion: OPENCODE_VERSION,
-    agentBrowserVersion: AGENT_BROWSER_VERSION,
-  })}`;
+  return `${user}\n${kortixToolchainLayer({ agentBrowserVersion: AGENT_BROWSER_VERSION })}`;
 }
 
 /** The exact `docker build` argv. Pure, so a test can assert the shape. */
@@ -301,7 +293,7 @@ export function runSandboxBuildLocal(argv: string[], opts: { json: boolean }): n
     }
     process.stdout.write(
       flags.layer
-        ? `  ${C.dim}Kortix toolchain layer ${C.reset}on${C.dim} (apt + pip floor + opencode + chromium) — expect ${C.reset}10–25 min${C.dim} cold, minutes warm.${C.reset}\n`
+        ? `  ${C.dim}Kortix toolchain layer ${C.reset}on${C.dim} (apt + pip floor + chromium) — expect ${C.reset}10–25 min${C.dim} cold, minutes warm.${C.reset}\n`
         : `  ${C.dim}Kortix toolchain layer ${C.reset}off${C.dim} (--no-layer) — your Dockerfile alone; this skips the floor most build failures come from.${C.reset}\n`,
     );
     process.stdout.write(

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
   capabilityReadsImages,
   channelTurnModel,
-  grantAllowsCodex,
+  imageTurnModel,
   promptModelOverride,
   resetVisionProbeCacheForTest,
 } from '../channels/vision-model';
@@ -91,28 +91,6 @@ describe('promptModelOverride', () => {
  * so these also prove the fall-through: a target that is not servable must
  * never be pinned onto the prompt.
  */
-/**
- * A `codex/*` model needs `CODEX_AUTH_JSON` on the RUNNING AGENT's grant.
- * `isModelServableForAccount` probes without a grant, so it answers yes and
- * the turn then dies with "The running agent cannot use ChatGPT connections."
- * — seen live on dev 2026-09-21 after the reroute picked `codex/gpt-6-astra`.
- * Rerouting onto a guaranteed failure is worse than not rerouting at all.
- */
-describe('grantAllowsCodex', () => {
-  test('an unrestricted grant allows it', () => {
-    expect(grantAllowsCodex(null)).toBe(true);
-    expect(grantAllowsCodex(undefined)).toBe(true);
-    expect(grantAllowsCodex('all')).toBe(true);
-  });
-
-  test('a listed grant must name the secret, case-insensitively', () => {
-    expect(grantAllowsCodex(['CODEX_AUTH_JSON'])).toBe(true);
-    expect(grantAllowsCodex(['codex_auth_json'])).toBe(true);
-    expect(grantAllowsCodex(['OPENAI_API_KEY'])).toBe(false);
-    expect(grantAllowsCodex([])).toBe(false);
-  });
-});
-
 describe('channelTurnModel', () => {
   const base = { projectId: 'p1', accountId: 'a1', userId: 'u1' };
   beforeEach(() => resetVisionProbeCacheForTest());
@@ -193,42 +171,6 @@ describe('channelTurnModel', () => {
     );
   });
 
-  test('a codex model is skipped when the agent may not use ChatGPT connections', async () => {
-    expect(
-      await channelTurnModel({
-        ...base,
-        currentModel: 'deepseek-v4-flash',
-        hasImage: true,
-        agentGrantEnv: async () => ['OPENAI_API_KEY'],
-      }),
-    ).toBeNull();
-  });
-
-  test('a codex model is chosen when the agent grant names CODEX_AUTH_JSON', async () => {
-    expect(
-      await channelTurnModel({
-        ...base,
-        currentModel: 'deepseek-v4-flash',
-        hasImage: true,
-        agentGrantEnv: async () => ['CODEX_AUTH_JSON'],
-      }),
-    ).toBe('codex/gpt-6-astra');
-  });
-
-  // Not knowing the grant is not permission to use one.
-  test('a grant that cannot be resolved fails closed and skips codex', async () => {
-    expect(
-      await channelTurnModel({
-        ...base,
-        currentModel: 'deepseek-v4-flash',
-        hasImage: true,
-        agentGrantEnv: async () => {
-          throw new Error('manifest unreadable');
-        },
-      }),
-    ).toBeNull();
-  });
-
   test('an unauthenticated sender never moves the model', async () => {
     expect(
       await channelTurnModel({ ...base, userId: null, currentModel: 'retired-model-v1', hasImage: true }),
@@ -281,13 +223,51 @@ describe('channelTurnModel', () => {
   });
 });
 
+/**
+ * The model of a channel message that carries an image (the conversation core's file turns).
+ * Each case names the line of `imageTurnModel` it holds.
+ */
+describe('imageTurnModel', () => {
+  const turn = { projectId: 'p1', accountId: 'a1', userId: 'u1' };
+  beforeEach(() => {
+    resetVisionProbeCacheForTest();
+    platformDefault = 'deepseek-v4-flash';
+  });
+
+  // The gateway resolves a shared session with no one's personal keys (personal-resources.ts).
+  test('a shared session probes with no personal keys; a private one with its owner`s', async () => {
+    probeInputs.length = 0;
+    await imageTurnModel({ ...turn, currentModel: 'codex/gpt-6-astra', visibility: 'project' });
+    await imageTurnModel({ ...turn, currentModel: 'codex/gpt-6-astra', visibility: 'private' });
+    expect(probeInputs.map((input) => input.personalUserId)).toEqual([null, 'u1']);
+  });
+
+  // The running agent's secret grant does not gate a model login (the gateway
+  // serves it), so a codex model that reads images takes the image turn.
+  test('a codex model that reads images takes the turn', async () => {
+    expect(await imageTurnModel({ ...turn, currentModel: 'deepseek-v4-flash', visibility: 'project' })).toEqual({
+      model: 'codex/gpt-6-astra',
+      blind: false,
+    });
+  });
+
+  // No other model reads images, and none needs to: the session's own model does.
+  test('a session whose model reads images needs no replacement and is not told it is blind', async () => {
+    platformDefault = 'codex/gpt-6-astra';
+    expect(await imageTurnModel({ ...turn, currentModel: null, visibility: 'project' })).toEqual({ model: null, blind: false });
+  });
+});
+
+/** The platform default; a test that changes it sets it back in its beforeEach. */
+let platformDefault = 'deepseek-v4-flash';
+
 mock.module('../config', () => ({
   config: { LLM_GATEWAY_VISION_MODEL: 'gpt-5.6-luna' },
 }));
 
 mock.module('../llm-gateway/models/served-managed-models', () => ({
-  platformDefaultModelId: () => 'deepseek-v4-flash',
-  isPlatformDefaultModelId: (id: string) => id === 'deepseek-v4-flash',
+  platformDefaultModelId: () => platformDefault,
+  isPlatformDefaultModelId: (id: string) => id === platformDefault,
   servedManagedModels: () => [],
   platformVisionModelId: () => 'gpt-5.6-luna',
 }));

@@ -69,10 +69,46 @@ flow("SYS-10", { domain: "system", tags: ["smoke"], routes: ["GET /v1/clients/mo
   });
 });
 
+flow("SYS-11", { domain: "system", tags: ["smoke"], routes: ["GET /.well-known/security.txt", "GET /robots.txt", "GET /sitemap.xml"] }, async (ctx) => {
+  await ctx.step("GET /.well-known/security.txt (public) → 200 text naming the security contact and a future Expires", async () => {
+    const r = await ctx.client.get("/.well-known/security.txt");
+    r.status(200).headerEquals("content-type", /text\/plain/);
+    const expires = /^Expires: (.+)$/m.exec(r.text())?.[1];
+    if (!r.text().includes("Contact: mailto:security@kortix.com") || !expires || Date.parse(expires) <= Date.now()) throw new Error(`security.txt: ${r.text()}`);
+  });
+  await ctx.step("GET /robots.txt (public) → 200 text that disallows every crawler path", async () => {
+    const r = await ctx.client.get("/robots.txt");
+    r.status(200).headerEquals("content-type", /text\/plain/);
+    if (!/^User-agent: \*$/m.test(r.text()) || !/^Disallow: \/$/m.test(r.text())) throw new Error(`robots.txt: ${r.text()}`);
+  });
+  await ctx.step("GET /sitemap.xml (public) → 200 XML with an empty urlset", async () => {
+    const r = await ctx.client.get("/sitemap.xml");
+    r.status(200).headerEquals("content-type", /application\/xml/);
+    if (!r.text().includes('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"/>')) throw new Error(`sitemap.xml: ${r.text()}`);
+  });
+});
+
 flow("DOCS-1", { domain: "system", tags: ["smoke"], routes: ["GET /v1/openapi.json", "GET /v1/docs"] }, async (ctx) => {
   await ctx.step("GET /v1/openapi.json (public) → 200 OpenAPI 3.1 spec", async () => {
     const r = await ctx.client.get("/v1/openapi.json");
     r.status(200).body().has("$.openapi", "3.1.0").exists("$.info.title");
+  });
+  await ctx.step("every paged project list documents its paging parameters (KRTX-3393, KRTX-3389)", async () => {
+    type Op = { parameters?: Array<{ name: string; in: string; schema?: { description?: string } }> };
+    const spec = (await ctx.client.get("/v1/openapi.json")).json<{ paths: Record<string, { get?: Op }> }>();
+    const wrong: string[] = [];
+    for (const [path, names] of [
+      ["/v1/projects/{projectId}/change-requests", ["limit", "cursor"]],
+      ["/v1/projects/{projectId}/review/items", ["limit", "cursor"]],
+      ["/v1/projects/{projectId}/gateway/logs", ["limit", "offset"]],
+    ] as const) {
+      const query = (spec.paths[path]?.get?.parameters ?? []).filter((p) => p.in === "query");
+      for (const name of names) {
+        const param = query.find((p) => p.name === name);
+        if (!param?.schema?.description) wrong.push(`${path} lacks a described ${name}`);
+      }
+    }
+    if (wrong.length) throw new Error(wrong.join("\n"));
   });
   await ctx.step("GET /v1/docs (public) → 200 Scalar reference HTML", async () => {
     const r = await ctx.client.get("/v1/docs");

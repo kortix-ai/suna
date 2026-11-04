@@ -136,6 +136,9 @@ function startServer(): string {
           requests: 10,
           errors: 1,
           total_cost: 0.5,
+          estimated_usage_value: 0.02,
+          priced_requests: 9,
+          unpriced_requests: 1,
           input_tokens: 100,
           output_tokens: 50,
         });
@@ -386,6 +389,7 @@ describe('kortix gateway command', () => {
     expect(out.overview.total_cost).toBe(0.5);
     const human = await runCli(['gateway', 'usage', '--project', PROJECT], cfg);
     expect(human.code).toBe(0);
+    expect(human.stdout).toContain('LLM estimated usage value (not a bill): 2 credits · priced 9; unpriced 1');
     expect(human.stdout).toContain('10 req · 1 err · 50 credits · 100/50 tok');
     expect(human.stdout).toMatch(/openai\/gpt-5\.5\s+7 req  42 credits/);
   }, 15_000);

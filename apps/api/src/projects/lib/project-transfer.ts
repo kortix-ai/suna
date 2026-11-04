@@ -18,9 +18,16 @@
  * schema table carrying both columns is in neither list, so a future table
  * cannot be silently forgotten here.
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import {
+  artifacts,
+  artifactCommentThreads,
+  artifactEvents,
+  jobQueue,
+  sessionSandboxIdentities,
+  projectSessionGroups,
+  projectSpaces,
   rooms,
   sessionIdleWatches,
   accountModelPreferences,
@@ -32,6 +39,7 @@ import {
   changeRequests,
   connectorAttachments,
   connectorCalls,
+  connectorHeldCalls,
   connectorConnections,
   connectionOAuthApplications,
   connectionOAuthSessions,
@@ -63,14 +71,13 @@ import {
   sessionPendingQuestions,
   sessionRuntimeProjections,
   sessionSandboxes,
-  sessionTranscriptMirrors,
   sessionTurns,
 } from '@kortix/db';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
+import { isUuid } from '../../shared/validate';
 import { maxProjectsForAccount } from '../../shared/account-limits';
-import { mirrorDrained } from '../session-log-capture';
 
 /**
  * Tables the transfer UPDATES (`account_id` → the target account) for the
@@ -91,12 +98,15 @@ export const PROJECT_TRANSFER_TABLES: readonly PgTable[] = [
   projectTriggerEventSubscriptions,
   projectTriggerEventPolls,
   projectMonitorBoxes,
+  projectSessionGroups,
+  projectSpaces,
   rooms,
   sessionIdleWatches,
   sessionLifecycleCommands,
+  // Move receipts before the sandbox UPDATE trigger captures its destination identity.
+  sessionSandboxIdentities,
   sessionSandboxes,
   sessionTurns,
-  sessionTranscriptMirrors,
   sessionLogs,
   sessionContentPurges,
   sessionRuntimeProjections,
@@ -117,9 +127,12 @@ export const PROJECT_TRANSFER_TABLES: readonly PgTable[] = [
   connectionOAuthApplications,
   connectionOAuthSessions,
   connectorCalls,
+  connectorHeldCalls,
   promptAttachments,
   connectorAttachments,
   drives,
+  // An artifact is a path in the project drive: it moves with the drive.
+  artifacts,
 ];
 
 /**
@@ -136,6 +149,8 @@ export const PROJECT_TRANSFER_LEAVE_TABLES: Readonly<Record<string, string>> = {
     'billing ledger — spend stays with the account that consumed it',
   gateway_request_logs:
     'request log ledger — history stays with the account that paid for it',
+  storage_charges:
+    'storage billing ledger — a day already charged stays with the account that paid; later days attribute to the new owner',
   // Immutable audit evidence: the audit_events table's own comment says
   // account deletion must not rewrite forensic history; a transfer follows
   // the same rule for both audit tables.
@@ -144,6 +159,9 @@ export const PROJECT_TRANSFER_LEAVE_TABLES: Readonly<Record<string, string>> = {
   // Transient device-pairing requests; they expire on their own and the
   // approver's project access is re-checked at approval time.
   tunnel_device_auth_requests: 'transient pending device auth, self-expiring',
+  // A Claude sign-in lives 10 minutes (FLOW_TTL_MS), and its pasted code is
+  // sealed with the source account's key, so a moved row could not be read.
+  claude_subscription_login_flows: 'transient Claude sign-in, self-expiring, sealed with the source account key',
   // Per-user inbox items: what a user saw while the project lived in the
   // source account stays in the source account's view.
   notifications: 'user inbox history, not project-owned data',
@@ -178,6 +196,50 @@ export interface TransferProjectOwnershipInput {
   toAccountId: string;
 }
 
+const transferDeliveryError = 'Project ownership changed before Artifact comment delivery.';
+const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+async function cancelArtifactDeliveries(tx: Parameters<Parameters<typeof db.transaction>[0]>[0], projectId: string, accountId: string) {
+  const owned = await tx.select({ id: artifacts.artifactId }).from(artifacts)
+    .where(and(eq(artifacts.projectId, projectId), eq(artifacts.accountId, accountId))).for('update');
+  const ids = owned.map((row) => row.id);
+  if (!ids.length) return;
+  const [commands, jobs] = await Promise.all([
+    tx.select().from(sessionLifecycleCommands).where(and(eq(sessionLifecycleCommands.projectId, projectId), eq(sessionLifecycleCommands.accountId, accountId),
+      inArray(sessionLifecycleCommands.artifactId, ids), eq(sessionLifecycleCommands.source, 'system:artifact-comment'), inArray(sessionLifecycleCommands.status, ['queued', 'running']))),
+    tx.select().from(jobQueue).where(and(inArray(jobQueue.artifactId, ids), inArray(jobQueue.queue, ['artifact-comment-agents', 'artifact-comment-people']))),
+  ]);
+  const references = new Set<string>();
+  const keys = new Set<string>();
+  const add = (value: unknown) => {
+    if (!object(value)) return;
+    if (typeof value.job_id === 'string') references.add(value.job_id);
+    if (typeof value.target_key === 'string') keys.add(value.target_key);
+  };
+  for (const command of commands) {
+    if (command.idempotencyKey) keys.add(command.idempotencyKey);
+    add(command.payload.artifactCommentDelivery);
+    if (object(command.payload.metadata)) add(command.payload.metadata.artifactCommentDelivery);
+    const digest = command.payload.artifactCommentDigest;
+    if (object(digest) && Array.isArray(digest.deliveries)) for (const reference of digest.deliveries) add(reference);
+    if (object(digest) && Array.isArray(digest.keys)) for (const key of digest.keys) if (typeof key === 'string') keys.add(key);
+  }
+  const threadIds = new Set<string>();
+  for (const job of jobs) if (job.queue === 'artifact-comment-agents' && (job.status === 'queued' || references.has(job.jobId)) && Array.isArray(job.payload.threadIds)) {
+    for (const id of job.payload.threadIds) if (typeof id === 'string' && isUuid(id)) threadIds.add(id);
+  }
+  if (keys.size) {
+    const events = await tx.select({ data: artifactEvents.data }).from(artifactEvents).where(and(inArray(artifactEvents.artifactId, ids), eq(artifactEvents.type, 'sent_to_agent')));
+    for (const { data } of events) if (typeof data.delivery_key === 'string' && keys.has(data.delivery_key) && typeof data.thread_id === 'string' && isUuid(data.thread_id)) threadIds.add(data.thread_id);
+  }
+  await tx.update(jobQueue).set({ status: 'dead', lastError: transferDeliveryError, lockedUntil: null, updatedAt: new Date() })
+    .where(and(inArray(jobQueue.artifactId, ids), eq(jobQueue.status, 'queued'), inArray(jobQueue.queue, ['artifact-comment-agents', 'artifact-comment-people'])));
+  if (commands.length) await tx.update(sessionLifecycleCommands).set({ status: 'dead_lettered', result: sql`coalesce(${sessionLifecycleCommands.result}, '{}'::jsonb) || '{"status":"cancelled","reason":"project_transferred"}'::jsonb`, lastError: transferDeliveryError, lockedBy: null, lockedUntil: null, updatedAt: new Date() })
+    .where(and(inArray(sessionLifecycleCommands.commandId, commands.map((command) => command.commandId)), inArray(sessionLifecycleCommands.status, ['queued', 'running'])));
+  if (threadIds.size) await tx.update(artifactCommentThreads).set({ agentState: 'paused', agentError: transferDeliveryError, updatedAt: new Date() })
+    .where(and(inArray(artifactCommentThreads.artifactId, ids), inArray(artifactCommentThreads.threadId, [...threadIds]), inArray(artifactCommentThreads.agentState, ['pending', 'sent'])));
+}
+
 /**
  * Move `projectId` from `fromAccountId` to `toAccountId` in ONE transaction.
  *
@@ -196,9 +258,6 @@ export async function transferProjectOwnership(
   if (fromAccountId === toAccountId) {
     throw new ProjectTransferError('same_account', 'Project is already in that account');
   }
-  // Drained: the v1 mirror rows stay as they are until the Release B2 migration drops them.
-  const mirrorDone = await mirrorDrained();
-
   return db.transaction(async (tx) => {
     // Lock the row: the CAS against a concurrent move happens under this lock.
     const [row] = await tx.select({ account_id: projects.accountId, status: projects.status })
@@ -225,6 +284,8 @@ export async function transferProjectOwnership(
     if ((counted?.count ?? 0) >= limit) {
       throw new ProjectTransferError('project_limit_reached', 'Target account project limit reached');
     }
+
+    await cancelArtifactDeliveries(tx, projectId, fromAccountId);
 
     // Source directory objects and invitation activation remain account-scoped.
     // Custom roles must not let source admins retain control after the move.
@@ -258,7 +319,6 @@ export async function transferProjectOwnership(
       kortix.connection_oauth_applications_connection_tenant_fk DEFERRED`);
 
     for (const table of PROJECT_TRANSFER_TABLES) {
-      if (mirrorDone && table === sessionTranscriptMirrors) continue;
       await tx.execute(
         sql`UPDATE ${table} SET account_id = ${toAccountId}
              WHERE project_id = ${projectId} AND account_id = ${fromAccountId}`,

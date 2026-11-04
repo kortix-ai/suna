@@ -76,6 +76,7 @@ export function isScaffoldingOutput(output: Pick<OutputItem, 'name' | 'kind' | '
  * extension, never a path (W3). */
 export function deliverableKindLabel(output: Pick<OutputItem, 'name' | 'kind'>): string {
   if (output.kind === 'app') return 'Web app';
+  if (output.kind === 'artifact') return 'Artifact';
   if (output.kind === 'presentation') return 'Slides';
   if (output.kind === 'video') return 'Video';
   const ext = extensionOf(output.name);

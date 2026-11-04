@@ -36,7 +36,6 @@ export interface ObtainReleaseInput {
   signedArchive?: Promise<Buffer>
   /** The project remote (`KORTIX_REPO_URL`, the Kortix Git proxy): the last source. */
   git: Pick<Config, 'repoUrl' | 'apiUrl' | 'projectId' | 'sandboxToken'> | null
-  prepare?: (stagedDir: string) => Promise<void>
   managedSkillsDir?: string
   /** Test seam for the snapshot transfer. */
   fetchImpl?: typeof fetch
@@ -64,7 +63,7 @@ export interface ObtainReleaseInput {
 export async function obtainRelease(input: ObtainReleaseInput): Promise<{ dir: string; transport: ReleaseTransport }> {
   const { root, manifest } = input
   const dir = releaseDir(root, manifest.release_id)
-  const shared = { root, manifest, prepare: input.prepare, managedSkillsDir: input.managedSkillsDir }
+  const shared = { root, manifest, managedSkillsDir: input.managedSkillsDir }
   const reasons: string[] = []
   const done = (transport: ReleaseTransport) => ({ dir, transport })
 

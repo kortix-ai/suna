@@ -5,6 +5,7 @@ import { ErrorState } from '../../../primitives/error-state';
 import { useTranslations } from '../../../i18n';
 import type { ComponentProps } from 'react';
 import { ConnectorAccounts } from './connector-accounts';
+import { ConnectorAgents } from './connector-agents';
 import { ConnectorSettings } from './connector-settings';
 import { ConnectorTools } from './connector-tools';
 import { ConnectorTriggers } from './connector-triggers';
@@ -53,6 +54,10 @@ export function ConnectorDetailTabs({
           canWrite={canWrite}
           onChanged={onChanged}
         />
+      </TabsContent>
+
+      <TabsContent value="agents">
+        <ConnectorAgents projectId={projectId} connector={connector} />
       </TabsContent>
 
       <TabsContent value="triggers">

@@ -16,6 +16,7 @@ import * as realAccess from '../lib/access';
 import * as realLifecycle from '../session-lifecycle';
 import * as realHoldSettle from '../session-lifecycle/inbox-hold-settle';
 import * as realTurnLifecycle from '../sandbox-turn-lifecycle';
+import { mintWireMessageId } from '../wire-message-id';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -354,12 +355,6 @@ mock.module('../lib/agent-access', () => ({
     agentAccessCalls.push({ requested, sessionAgent });
     return { agentName: 'kortix', accessible: ['kortix'], memberTier: false };
   },
-  // Declared even though this suite never calls it: `warm-sessions.ts` imports
-  // it, and that module is pulled in with the rest of the app. A `mock.module`
-  // REPLACES the module, so any exported name an importer expects and the stub
-  // omits fails the whole isolate with
-  // `SyntaxError: Export named '…' not found`.
-  canUseAnyAgent: async () => true,
 }));
 
 // The Stop's first request is the hold, and the hold's background settle can
@@ -573,7 +568,10 @@ describe('POST .../prompts', () => {
   // would break every installed CLI; delivering it as-is renders every later
   // turn above it. The server places it instead.
   test('a far-future message_id is accepted and re-placed on delivery', async () => {
-    const cliId = `msg_${((BigInt(Date.now()) * BigInt(0x1000)) >> BigInt(8)).toString(16).slice(0, 12)}SyntheticCli03`;
+    // ~40 days ahead of the clock, as that CLI minted. Built from `ms * 16`, the
+    // id read as ahead on the 48-bit ring only part of the time (behind from
+    // 2026-11-03 12:37 UTC until 2026-11-08 12:37 UTC).
+    const cliId = `${mintWireMessageId({ nowMs: Date.now() + 40 * 86_400_000 }).id.slice(0, 16)}SyntheticCli03`;
     const res = await post({ ...validBody, message_id: cliId });
     expect(res.status).toBe(202);
     expect(enqueued[0].wireMessageId).toBe(cliId);
@@ -821,6 +819,8 @@ describe('GET .../prompts', () => {
         // client never has to distinguish "no attachments" from "old server".
         attachments: [],
         no_reply: false,
+        // A member's prompt; a transcript never draws a synthetic one (#11259).
+        synthetic: false,
         // The member it runs as.
         author_user_id: USER_ID,
         created_at: '2026-08-18T00:00:00.000Z',

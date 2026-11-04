@@ -324,22 +324,6 @@ export async function endDatabaseTurn(
   });
 }
 
-export async function setDatabaseTriggerRunFailed(
-  env: Env,
-  input: { projectId: string; slug: string; error: string },
-  open: OpenProjectDb = openProjectDb,
-): Promise<void> {
-  return withProjectDb(env, "fail a trigger run for", open, async (client) => {
-      await client.query(
-        `UPDATE kortix.project_trigger_runtime
-            SET last_status = 'failed', last_error = $3, last_attempt_at = now(), updated_at = now()
-          WHERE project_id = $1::uuid AND slug = $2`,
-        [input.projectId, input.slug, input.error],
-      );
-  
-  });
-}
-
 export async function fundDatabaseAccount(
   env: Env,
   accountId: string,

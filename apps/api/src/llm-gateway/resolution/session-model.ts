@@ -1,5 +1,3 @@
-import type { ManagedModel } from '../models/managed-models';
-
 export type SessionModelDecision =
   | { kind: 'kept' }
   | { kind: 'repoint'; to: string; reason: 'project_default' | 'platform_default' };
@@ -12,8 +10,7 @@ export type SessionModelDecision =
  * 2026-09-28 were a session pinned to an id the runtime lineup dropped).
  *
  * `storedWireModel` is the session's stored model, reduced to its bare
- * gateway wire id (`effective.ts`'s `toWireModel`). `served` is the runtime-
- * servable managed lineup (`servedManagedModels()`). `projectDefaultWireModel`
+ * gateway wire id (`effective.ts`'s `toWireModel`). `projectDefaultWireModel`
  * is the project's current declared default, also reduced to its wire id.
  * No successor is hardcoded: the platform default is the configured model when
  * Platinum serves it, else the first model Platinum lists.
@@ -25,7 +22,6 @@ export type SessionModelDecision =
  */
 export function resolveSessionManagedModel(
   storedWireModel: string,
-  served: readonly ManagedModel[],
   projectDefaultWireModel: string | null,
   platformDefaultWireModel: string | null = null,
 ): SessionModelDecision {

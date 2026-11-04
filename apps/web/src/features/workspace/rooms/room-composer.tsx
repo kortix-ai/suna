@@ -7,7 +7,7 @@ import { errorToast } from '@kortix/ui/toast';
 import { MenuCard, MenuRow, MenuSectionHeading } from '@kortix/ui/session/composer/menus/menu-shell';
 import { useTranslations } from '@/i18n/use-translations';
 import type { ProjectSession, RoomMember, RoomPerson } from '@kortix/sdk';
-import { AtIcon, MegaphoneSimpleIcon, PaperPlaneRightIcon } from '@phosphor-icons/react';
+import { ArrowUpIcon, AtIcon, MegaphoneSimpleIcon } from '@phosphor-icons/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
 import { ParticipantAvatar } from './room-identity';
@@ -271,7 +271,8 @@ export function RoomComposer({
             </MenuCard>
           </div>
         ) : null}
-        <div className="bg-popover border-border focus-within:border-ring focus-within:ring-ring/15 rounded-md border focus-within:ring-3">
+        {/* One row, like the session composer's card: the text grows upward, the two controls sit on its last line. */}
+        <div className="bg-background border-border focus-within:border-ring focus-within:ring-ring/15 flex items-end gap-1 rounded-xl border p-1.5 focus-within:ring-3">
           <textarea
             ref={textareaRef}
             value={text}
@@ -287,29 +288,25 @@ export function RoomComposer({
             placeholder={placeholder}
             aria-label={placeholder}
             aria-autocomplete="list"
-            className="text-foreground placeholder:text-muted-foreground block w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-sm outline-none"
+            className="text-foreground placeholder:text-muted-foreground block min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none"
           />
-          <div className="flex items-center gap-1 px-1.5 pb-1.5">
-            <Hint label={t('mentionSomeone')} side="top">
-              <Button variant="ghost" size="icon-xs" aria-label={t('mentionSomeone')} onClick={insertAt}>
-                <AtIcon />
-              </Button>
-            </Hint>
-            <span className="text-muted-foreground min-w-0 flex-1 truncate text-right text-xs">
-              {text.trim() ? t('newLineHint') : null}
-            </span>
-            <Hint label={t('send')} side="top">
-              <Button
-                size="icon-sm"
-                aria-label={t('send')}
-                disabled={!text.trim() || sending}
-                aria-busy={sending}
-                onClick={() => void send()}
-              >
-                {sending ? <Loading className="size-4 shrink-0" /> : <PaperPlaneRightIcon />}
-              </Button>
-            </Hint>
-          </div>
+          <Hint label={t('mentionSomeone')} side="top">
+            <Button variant="ghost" size="icon-sm" aria-label={t('mentionSomeone')} onClick={insertAt}>
+              <AtIcon />
+            </Button>
+          </Hint>
+          <Hint label={`${t('send')} · ${t('newLineHint')}`} side="top">
+            <Button
+              size="icon-sm"
+              aria-label={t('send')}
+              disabled={!text.trim() || sending}
+              aria-busy={sending}
+              onClick={() => void send()}
+              className="rounded-full"
+            >
+              {sending ? <Loading className="size-4 shrink-0" /> : <ArrowUpIcon />}
+            </Button>
+          </Hint>
         </div>
       </div>
     </div>

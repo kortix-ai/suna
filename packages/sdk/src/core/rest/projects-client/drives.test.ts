@@ -5,6 +5,8 @@ import {
   deleteDriveFile,
   downloadDriveFile,
   getFolderAccess,
+  listAgentMounts,
+  listProjectMounts,
   getDriveFileUrl,
   listDriveFiles,
   listDriveVersions,
@@ -16,6 +18,7 @@ import {
   uploadDriveFile,
 } from './drives';
 
+const realFetch = globalThis.fetch;
 type Call = { url: string; method: string; headers: Record<string, string>; body: unknown };
 let calls: Call[] = [];
 let next: { status: number; body: BodyInit | null; type: string } = { status: 200, body: '{}', type: 'application/json' };
@@ -122,6 +125,25 @@ test('stopping a share reports the sessions it has not reached yet', async () =>
 
   respond(202, { pendingSessions: 2 });
   expect(await unshareFolder(D, 'g1')).toEqual({ pendingSessions: 2 });
+});
+
+test("an agent's mounts are the folders a new session of it mounts", async () => {
+  respond(200, {
+    mounts: [{ path: '/Company', mountPath: '/drives/Company', readOnly: false, via: 'project', level: 'write' }],
+    skipped: [],
+    slots: 8,
+  });
+  const plan = await listAgentMounts(D, 'research bot');
+  expect(last().method).toBe('GET');
+  expect(last().url).toBe(`http://test.local/drives/${D}/agents/research%20bot/mounts`);
+  expect(plan.mounts[0]!.mountPath).toBe('/drives/Company');
+  expect(plan.slots).toBe(8);
+});
+
+test('the project mounts are the folders every session mounts', async () => {
+  respond(200, { mounts: [], skipped: [], slots: 8 });
+  await listProjectMounts(D);
+  expect(last().url).toBe(`http://test.local/drives/${D}/mounts`);
 });
 
 // ── Upload progress over XHR ──
@@ -261,5 +283,161 @@ test('a refused folder write or sharing read leaves the error to the caller: no 
     expect(reported).toEqual([]);
   } finally {
     configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError: undefined });
+  }
+});
+
+// Above the API's 64 MiB single-PUT cap, a file goes up in 1 MiB blocks:
+// plan (every block's sha256), only the blocks the store lacks, commit.
+const MiB = 1024 * 1024;
+const hex = async (b: Blob) =>
+  [...new Uint8Array(await crypto.subtle.digest('SHA-256', await b.arrayBuffer()))].map((x) => x.toString(16).padStart(2, '0')).join('');
+
+/** A 64 MiB + 1.5 MiB file: 66 blocks, the last one half a block. */
+function bigFile(): Blob {
+  const bytes = new Uint8Array(64 * MiB + 1.5 * MiB);
+  for (let i = 0; i < bytes.length; i += 4096) bytes[i] = (i / 4096) % 251;
+  return new Blob([bytes]);
+}
+
+type BlockServer = { calls: Call[]; plan?: { path: string; size: number; blocks: string[] }; failBlock?: (n: number) => number | null };
+function installBlockServer(missing: (blocks: string[]) => string[], server: BlockServer = { calls: [] }): BlockServer {
+  let blockCalls = 0;
+  globalThis.fetch = mock(async (input: unknown, init: RequestInit = {}) => {
+    const url = String(input instanceof Request ? input.url : input);
+    const headers: Record<string, string> = {};
+    new Headers(init.headers).forEach((v, k) => (headers[k] = v));
+    server.calls.push({ url, method: init.method ?? 'GET', headers, body: init.body });
+    const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+    if (url.endsWith('/files/upload')) {
+      server.plan = JSON.parse(String(init.body));
+      return json(200, { uploadId: 'up.1', missing: missing(server.plan!.blocks), expiresAt: '2030-01-01T00:00:00Z' });
+    }
+    if (url.includes('/blocks/')) {
+      const fail = server.failBlock?.(blockCalls++);
+      if (fail) return json(fail, { error: true, message: 'block refused' });
+      const sha = url.split('/blocks/')[1]!;
+      if ((await hex(new Blob([init.body as Uint8Array<ArrayBuffer>]))) !== sha) return json(400, { error: true, message: 'sha mismatch' });
+      return new Response(null, { status: 204 });
+    }
+    if (url.endsWith('/commit')) return json(200, { path: server.plan!.path, size: server.plan!.size });
+    return json(404, { error: true, message: 'no route' });
+  }) as unknown as typeof fetch;
+  return server;
+}
+
+test('a file above 64 MiB goes up in 1 MiB blocks: plan, only the missing blocks, commit', async () => {
+  const file = bigFile();
+  // The store already holds every second block.
+  const server = installBlockServer((blocks) => blocks.filter((_, i) => i % 2 === 0));
+  const progress: number[] = [];
+  const result = await uploadDriveFile(D, '/a/big.bin', file, { ifMatch: '"v1"', onProgress: (sent, total) => {
+    expect(total).toBe(file.size);
+    progress.push(sent);
+  } });
+
+  expect(result).toEqual({ path: '/a/big.bin', size: file.size });
+  const [plan, ...rest] = server.calls;
+  expect([plan!.method, plan!.url]).toEqual(['POST', `http://test.local/drives/${D}/files/upload`]);
+  expect(plan!.headers['if-match']).toBe('"v1"');
+  expect(server.plan!.path).toBe('/a/big.bin');
+  expect(server.plan!.size).toBe(file.size);
+  expect(server.plan!.blocks).toHaveLength(66);
+  expect(server.plan!.blocks[65]).toBe(await hex(file.slice(65 * MiB)));
+  const blocks = rest.filter((c) => c.url.includes('/blocks/'));
+  expect(blocks).toHaveLength(33);
+  expect(blocks.every((c) => c.method === 'PUT' && c.url.startsWith(`http://test.local/drives/${D}/files/upload/up.1/blocks/`))).toBe(true);
+  expect(new Set(blocks.map((c) => c.url)).size).toBe(33);
+  const commit = server.calls[server.calls.length - 1]!;
+  expect([commit.method, commit.url]).toEqual(['POST', `http://test.local/drives/${D}/files/upload/up.1/commit`]);
+  expect(progress[progress.length - 1]).toBe(file.size);
+  expect([...progress].sort((a, b) => a - b)).toEqual(progress);
+});
+
+test('the same input as bytes takes the block path too; at most 4 blocks are in flight', async () => {
+  const bytes = new Uint8Array(await bigFile().arrayBuffer());
+  let inFlight = 0;
+  let peak = 0;
+  const server = installBlockServer((blocks) => blocks);
+  const answer = globalThis.fetch;
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    inFlight++;
+    peak = Math.max(peak, inFlight);
+    await Promise.resolve();
+    try {
+      return await answer(input as Request, init);
+    } finally {
+      inFlight--;
+    }
+  }) as typeof fetch;
+  await uploadDriveFile(D, '/a/big.bin', bytes);
+  expect(server.calls.filter((c) => c.url.includes('/blocks/'))).toHaveLength(66);
+  expect(peak).toBeLessThanOrEqual(4);
+});
+
+test('a block that fails with 503 is sent again; a refused block (403) is not', async () => {
+  // ponytail: real 0.5 s backoff; bun's fake timers also freeze the test's own timeout.
+  const flaky = installBlockServer((blocks) => blocks.slice(0, 2), { calls: [], failBlock: (n) => (n === 0 ? 503 : null) });
+  await uploadDriveFile(D, '/a/big.bin', bigFile());
+  expect(flaky.calls.filter((c) => c.url.includes('/blocks/'))).toHaveLength(3);
+  expect(flaky.calls.some((c) => c.url.endsWith('/commit'))).toBe(true);
+
+  const refused = installBlockServer((blocks) => blocks.slice(0, 1), { calls: [], failBlock: () => 403 });
+  const error = await uploadDriveFile(D, '/a/big.bin', bigFile()).catch((e: unknown) => e);
+  expect(error).toBeInstanceOf(ApiError);
+  expect((error as ApiError).status).toBe(403);
+  expect(refused.calls.filter((c) => c.url.includes('/blocks/'))).toHaveLength(1);
+  expect(refused.calls.some((c) => c.url.endsWith('/commit'))).toBe(false);
+});
+
+test('an aborted block upload stops and throws an ABORTED ApiError', async () => {
+  const controller = new AbortController();
+  const server = installBlockServer((blocks) => {
+    controller.abort();
+    return blocks;
+  });
+  const error = await uploadDriveFile(D, '/a/big.bin', bigFile(), { signal: controller.signal }).catch((e: unknown) => e);
+  expect(error).toBeInstanceOf(ApiError);
+  expect((error as ApiError).code).toBe('ABORTED');
+  expect(server.calls.filter((c) => c.url.includes('/blocks/')).length).toBe(0);
+  expect(server.calls.some((c) => c.url.endsWith('/commit'))).toBe(false);
+});
+
+// Bun cannot send a slice of a file-backed Blob as a fetch body (the socket
+// closes): every block goes up as bytes. Over a real socket, from a real file.
+test('a file-backed Blob above 64 MiB uploads over a real socket', async () => {
+  const { openAsBlob } = await import('node:fs');
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const dir = await mkdtemp(join(tmpdir(), 'sdk-drive-upload-'));
+  const received = new Map<string, number>();
+  const server = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      const url = new URL(req.url);
+      const body = new Uint8Array(await req.arrayBuffer());
+      if (url.pathname.endsWith('/files/upload')) {
+        const plan = JSON.parse(new TextDecoder().decode(body)) as { blocks: string[] };
+        return Response.json({ uploadId: 'up.1', missing: plan.blocks, expiresAt: null });
+      }
+      if (url.pathname.includes('/blocks/')) {
+        const sha = url.pathname.split('/blocks/')[1]!;
+        if ((await hex(new Blob([body]))) !== sha) return Response.json({ message: 'sha mismatch' }, { status: 400 });
+        received.set(sha, body.byteLength);
+        return new Response(null, { status: 204 });
+      }
+      return Response.json({ path: '/a/big.bin', size: 1 });
+    },
+  });
+  try {
+    globalThis.fetch = realFetch;
+    configureKortix({ backendUrl: server.url.origin, getToken: async () => 'tok' });
+    await writeFile(join(dir, 'big.bin'), new Uint8Array(await bigFile().arrayBuffer()));
+    await uploadDriveFile(D, '/a/big.bin', await openAsBlob(join(dir, 'big.bin')));
+    expect([...received.values()].reduce((a, b) => a + b, 0)).toBe(64 * MiB + 1.5 * MiB);
+  } finally {
+    server.stop(true);
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+    await rm(dir, { recursive: true, force: true });
   }
 });

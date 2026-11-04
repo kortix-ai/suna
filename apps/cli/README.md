@@ -1,5 +1,7 @@
 # @kortix/cli
 
+The command line for Kortix CompanyOS, the open-source operating system for your company.
+
 Create a new Kortix project.
 
 ```sh
@@ -67,31 +69,39 @@ my-project/
 ├── .git/                              ← initialized on the `main` branch
 ├── .gitignore
 ├── README.md
-├── kortix.yaml                        ← kortix_version 3: registries + one block per agent
+├── kortix.yaml                        ← the manifest: registries + one block per agent
 ├── agents/*.md                        ← agent prompts, named by `prompt_file`
 ├── skills/<name>/SKILL.md             ← skills, registered under `skills:`
 └── memory/MEMORY.md                   ← project-wide memory for agents
 ```
 
-`kortix.yaml` is `kortix_version: 3`. The project registers skills, tools,
-commands and extensions; each agent block enables them by name. A v3 session
-reads no `harnesses/`, `.kortix/`, `.opencode/` or `.pi/` folder. Reference:
-<https://kortix.com/docs/project/manifest>.
+`kortix.yaml` is the only manifest. It has one format and no version key. The
+project registers skills, tools, commands and extensions; each agent block
+enables them by name. Every starter agent sets
+`workspace: { project_repository: true }`, so its sessions get a checkout of
+the repository. A session reads no `harnesses/`, `.kortix/`, `.opencode/` or
+`.pi/` folder. Reference:
+<https://kortix.com/docs/developers#kortixyaml-reference>.
 
-Projects on `kortix_version` 1 or 2 keep their layout (`agents/<name>.md` with
-frontmatter, `harnesses/opencode/`, `harnesses/pi/`, or `.kortix/opencode/`)
-and still run. `kortix migrate` prints the v3 manifest for a v2 project, and
-`kortix migrate --write` writes it.
+`kortix validate` checks the manifest and prints one line per issue:
+
+```
+kortix.yaml:5:5  error  agents.main.toolz  unknown agent key "toolz". Did you mean "tools"?
+```
+
+An error exits `1`; warnings alone exit `0`. `kortix ship` runs the same
+checks. A file with `kortix_version: 3` gets one warning: the key is obsolete
+and ignored. Any other `kortix_version` value is a retired format and one
+error. A running project never stops on the manifest: it applies the valid
+part. With `builtin_agents.my_kortix: true`, My Kortix still runs and can fix the file.
 
 The local coding tools you wire up (`--primary`/`--agents`, default Codex)
 receive native discovery links to the canonical sources. Claude Code uses
-`.claude/skills`, `.claude/agents`, and `.claude/commands`. Codex uses
-`.agents/skills`. Pi uses `.pi/skills`. Codex, Pi, and Cursor also get a root
-`AGENTS.md` pointer. Sessions in the cloud never read these links.
+`.claude/skills` and `.claude/agents`. Codex uses `.agents/skills`. Pi uses
+`.pi/skills`. Codex, Pi, and Cursor also get a root `AGENTS.md` pointer.
+Sessions in the cloud never read these links.
 
-A cloud session runs pi. OpenCode is deprecated: only a session that started
-on it before 2026-10-23 still runs it. The CLI talks to the same Kortix routes
-on both.
+A cloud session runs pi.
 
 Create a project with:
 

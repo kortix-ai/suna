@@ -144,7 +144,7 @@ async function makeFixture(): Promise<{
   await git(['init', '--initial-branch=main', seed]);
   await git(['-C', seed, 'config', 'user.name', 'Kortix Test']);
   await git(['-C', seed, 'config', 'user.email', 'test@kortix.invalid']);
-  await writeFile(join(seed, 'kortix.yaml'), 'kortix_version: 2\nconnectors: []\n');
+  await writeFile(join(seed, 'kortix.yaml'), 'connectors: []\n');
   await git(['-C', seed, 'add', 'kortix.yaml']);
   await git(['-C', seed, 'commit', '-m', 'seed manifest']);
   await git(['init', '--bare', remote]);
@@ -202,14 +202,14 @@ describe('commit push — transient retry', () => {
         files: [
           {
             path: 'kortix.yaml',
-            content: 'kortix_version: 2\nconnectors:\n  - slug: retry\n    provider: http\n',
+            content: 'connectors:\n  - slug: retry\n    provider: http\n',
           },
         ],
         message: 'add connector retry',
         expectedFileRevision: {
           path: 'kortix.yaml',
           sha: revision,
-          candidatePaths: ['kortix.yaml', 'kortix.yml', 'kortix.toml'],
+          candidatePaths: ['kortix.yaml', 'kortix.yml'],
         },
       });
 
@@ -239,12 +239,12 @@ describe('commit push — transient retry', () => {
 
       await expect(
         commitMultipleFilesToBranch(project, {
-          files: [{ path: 'kortix.yaml', content: 'kortix_version: 2\nconnectors: []\n' }],
+          files: [{ path: 'kortix.yaml', content: 'connectors: []\n' }],
           message: 'permanent failure',
           expectedFileRevision: {
             path: 'kortix.yaml',
             sha: revision,
-            candidatePaths: ['kortix.yaml', 'kortix.yml', 'kortix.toml'],
+            candidatePaths: ['kortix.yaml', 'kortix.yml'],
           },
         }),
       ).rejects.toThrow(/Authentication failed/);

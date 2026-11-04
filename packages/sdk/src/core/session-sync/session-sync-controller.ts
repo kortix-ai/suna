@@ -233,6 +233,20 @@ type HttpSessionSyncSourceOptions = Pick<
   'baseUrl' | 'sessionId' | 'getToken' | 'fetch'
 >;
 
+/**
+ * The proxy's `503 sandbox_not_ready` with `retry: false`: the box is parked and
+ * a read never wakes it, so retrying this read can never succeed (KRTX-3140).
+ * Still a `SandboxNotReadyError`, so every not-ready check reads it as before.
+ * Module-private: only the controller below acts on the difference.
+ */
+class SandboxParkedError extends SandboxNotReadyError {}
+
+/** True for the proxy's parked answer; false for any other 503, JSON or not. */
+async function proxySaysParked(response: Response): Promise<boolean> {
+  const body = (await response.json().catch(() => null)) as { retry?: unknown } | null;
+  return body !== null && typeof body === 'object' && body.retry === false;
+}
+
 function createHttpSessionSyncPageLoader(
   options: HttpSessionSyncSourceOptions,
 ): SessionSyncControllerOptions['loadPage'] {
@@ -254,6 +268,7 @@ function createHttpSessionSyncPageLoader(
       // the retryable, "loading" error so the controller keeps polling instead
       // of painting an error state over a session that is about to load.
       if (response.status === 503) {
+        if (await proxySaysParked(response)) throw new SandboxParkedError(`session ${response.status}`);
         throw new SandboxNotReadyError(`session ${response.status}`);
       }
       throw new ApiError(`Session synchronization failed: ${response.status}`, { status: response.status });
@@ -355,6 +370,12 @@ export class SessionSyncController {
   /** Consecutive failed tail reads, for the retry backoff. Reset by success. */
   private retryAttempt = 0;
   private tailUnavailable = false;
+  /**
+   * The last tail read was the proxy's parked answer. No retry and no liveness
+   * read follows it; any explicit read (`visible`, `turn-end`, `manual`, …)
+   * still runs once, and a read that lands clears it.
+   */
+  private tailParked = false;
   private tailRetryTimer: unknown;
   private snapshot: SessionSyncSnapshot = {
     freshness: 'idle',
@@ -587,6 +608,7 @@ export class SessionSyncController {
       this.options.markLoaded();
       this.retryAttempt = 0;
       this.tailUnavailable = false;
+      this.tailParked = false;
     } catch (error) {
       if (this.destroyed) return;
       // A superseded/cancelled read is not a failure and never hydrates — it
@@ -606,6 +628,12 @@ export class SessionSyncController {
       }
       if (error instanceof ApiError && (error.status === 404 || error.status === 410)) {
         this.tailUnavailable = true;
+        this.cancelTimer(this.tailRetryTimer);
+        this.tailRetryTimer = undefined;
+        return;
+      }
+      if (error instanceof SandboxParkedError) {
+        this.tailParked = true;
         this.cancelTimer(this.tailRetryTimer);
         this.tailRetryTimer = undefined;
         return;
@@ -819,7 +847,7 @@ export class SessionSyncController {
   }
 
   private async checkLiveness(): Promise<void> {
-    if (this.destroyed || this.tailUnavailable || this.streamReliable) return;
+    if (this.destroyed || this.tailUnavailable || this.tailParked || this.streamReliable) return;
     const nowMs = this.scheduler.now();
     const quiet = nowMs - this.lastActivityAt > this.livenessIntervalMs;
     // `noteActivity` proves frames are ARRIVING, not that none were lost. A

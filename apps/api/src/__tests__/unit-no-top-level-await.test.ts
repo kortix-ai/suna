@@ -6,9 +6,10 @@ import { join, relative } from 'node:path';
 // module evaluation: a seed-regeneration block (`if (import.meta.main) { await
 // fetch(...) }`) in llm-gateway/models/codex-models.ts turned an anonymous
 // POST /turn-permission from 401 into 403 (flow PROJ-38). Entry points that
-// nothing imports — src/index.ts and src/scripts/** — may await at top level.
+// nothing imports — src/index.ts, src/worker.ts and src/scripts/** — may await
+// at top level.
 const SRC = join(import.meta.dir, '..');
-const ENTRY_POINTS = [/^index\.ts$/, /^scripts\//];
+const ENTRY_POINTS = [/^(index|worker)\.ts$/, /^scripts\//];
 
 function modules(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

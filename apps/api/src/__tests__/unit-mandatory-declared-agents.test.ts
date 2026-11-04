@@ -11,14 +11,16 @@
  * granted the permissive null grant or silently default-denied-to-running.
  */
 import { describe, expect, test } from 'bun:test';
+import { isMyKortixAgentName } from '@kortix/shared';
 import { DEFAULT_STARTER_TEMPLATE_ID, getStarterFiles } from '@kortix/starter';
 import { extractAgents, projectRequiresDeclaredAgents, resolveGovernedAgentGrant } from '../projects/agents';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+import { projectBuiltinAgents } from '../projects/lib/my-kortix-agent';
+import { parseManifestString, runtimeManifest } from '../projects/triggers';
 
 /**
  * The manifest's own `default_agent`, asserted present. Every starter assertion
  * below is written against this instead of a hardcoded agent name, so the guard
- * survives a change of which starter (or which schema version) ships by default.
+ * survives a change of which starter ships by default.
  */
 function declaredDefaultAgent(loaded: ReturnType<typeof extractAgents>): string {
   const name = loaded.defaultAgent;
@@ -26,8 +28,9 @@ function declaredDefaultAgent(loaded: ReturnType<typeof extractAgents>): string 
   return name as string;
 }
 
-function loadAgents(body: string) {
-  return extractAgents(parseManifestString(`kortix_version = ${KNOWN_SCHEMA_VERSION}\n[project]\nname="t"\n${body}`));
+/** `agentsBody` is the indented body of an `agents:` map; empty declares none. */
+function loadAgents(agentsBody: string) {
+  return extractAgents(parseManifestString(`project:\n  name: t\n${agentsBody.trim() ? `agents:\n${agentsBody}` : ''}`));
 }
 
 describe('projectRequiresDeclaredAgents — subjectness', () => {
@@ -53,7 +56,7 @@ describe('projectRequiresDeclaredAgents — subjectness', () => {
 });
 
 describe('resolveGovernedAgentGrant — non-subject preserves today\'s exact behavior', () => {
-  test('no [[agents]] section → ok, null grant (unrestricted, back-compat)', () => {
+  test('no `agents` section → ok, null grant (unrestricted, back-compat)', () => {
     const result = resolveGovernedAgentGrant('default', loadAgents(''), {
       subject: false,
       projectDefaultAgent: null,
@@ -61,11 +64,10 @@ describe('resolveGovernedAgentGrant — non-subject preserves today\'s exact beh
     expect(result).toEqual({ ok: true, grant: null });
   });
 
-  test('governed project, unlisted concrete agent → ok, default-deny grant (unchanged v1 rule)', () => {
+  test('governed project, unlisted concrete agent → ok, default-deny grant', () => {
     const loaded = loadAgents(`
-[[agents]]
-name = "release-bot"
-kortix_permissions = ["project.trigger.create"]
+  release-bot:
+    kortix_permissions: [project.trigger.create]
 `);
     const result = resolveGovernedAgentGrant('rogue-agent', loaded, {
       subject: false,
@@ -77,12 +79,11 @@ kortix_permissions = ["project.trigger.create"]
     });
   });
 
-  test('`default` sentinel under governance, non-subject → ok, null (non-binding, unchanged v1 rule)', () => {
+  test('`default` sentinel under governance with no default_agent, non-subject → ok, null (non-binding)', () => {
     const loaded = loadAgents(`
-[[agents]]
-name = "veyris"
-connectors = "all"
-kortix_permissions = "all"
+  veyris:
+    connectors: all
+    kortix_permissions: all
 `);
     const result = resolveGovernedAgentGrant('default', loaded, {
       subject: false,
@@ -94,14 +95,12 @@ kortix_permissions = "all"
 
 describe('resolveGovernedAgentGrant — subject project rejects undeclared agents', () => {
   const loaded = loadAgents(`
-[[agents]]
-name = "support"
-connectors = ["github"]
-kortix_permissions = ["project.cr.open"]
-
-[[agents]]
-name = "disabled-one"
-enabled = false
+  support:
+    connectors: [github]
+    kortix_permissions: [project.cr.open]
+    secrets: all
+  disabled-one:
+    enabled: false
 `);
 
   test('declared, enabled agent → ok, its grant', () => {
@@ -135,7 +134,7 @@ enabled = false
     expect(result.ok).toBe(false);
   });
 
-  test('project with zero [[agents]] declared at all → rejected (no adopt-to-govern escape hatch)', () => {
+  test('project with zero agents declared at all → rejected (no adopt-to-govern escape hatch)', () => {
     const result = resolveGovernedAgentGrant('anything', loadAgents(''), {
       subject: true,
       projectDefaultAgent: null,
@@ -146,9 +145,9 @@ enabled = false
 
 describe('resolveGovernedAgentGrant — subject project: `default` sentinel must resolve to a declared default_agent', () => {
   const loaded = loadAgents(`
-[[agents]]
-name = "support"
-connectors = ["github"]
+  support:
+    connectors: [github]
+    secrets: all
 `);
 
   test('sentinel + a declared, enabled default_agent → ok, that agent\'s grant (not null)', () => {
@@ -180,26 +179,23 @@ connectors = ["github"]
   });
 });
 
-// kortix_version 2 — the runtime-wiring fix: extractAgents now reads a v2
-// `agents:` map (not just v1's `[[agents]]` array), and the manifest's own
-// top-level `default_agent` (captured on `LoadedAgents.defaultAgent`) backs
-// `opts.projectDefaultAgent` when the DB-side project.metadata mirror isn't
-// separately set — which is the common case for a v2 project, since nothing
-// syncs the manifest's `default_agent` into project metadata today.
-describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manifest', () => {
+// The manifest's own top-level `default_agent` (captured on
+// `LoadedAgents.defaultAgent`) backs `opts.projectDefaultAgent` when the
+// DB-side project.metadata mirror isn't separately set — the common case,
+// since nothing syncs the manifest's `default_agent` into project metadata.
+describe('resolveGovernedAgentGrant — subject project, the manifest\'s default_agent', () => {
   function loadV2(agentsBody: string, opts: { defaultAgent?: string } = {}) {
     const text = [
-      'kortix_version: 2',
       `default_agent: ${opts.defaultAgent ?? 'support'}`,
       'project:',
       '  name: t',
       'agents:',
       agentsBody,
     ].join('\n');
-    return extractAgents(parseManifestString(text, 'yaml', 'kortix.yaml'));
+    return extractAgents(parseManifestString(text, 'kortix.yaml'));
   }
 
-  test('a concrete declared v2 agent is FOUND, not rejected / default-denied', () => {
+  test('a concrete declared agent is FOUND, not rejected / default-denied', () => {
     const loaded = loadV2(`
   support:
     connectors: [github]
@@ -222,7 +218,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
 `);
     const result = resolveGovernedAgentGrant('default', loaded, {
       subject: true,
-      projectDefaultAgent: null, // no DB-side mirror set — the common case for v2
+      projectDefaultAgent: null, // no DB-side mirror set — the common case
     });
     expect(result).toEqual({
       ok: true,
@@ -247,7 +243,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
     });
   });
 
-  test('an undeclared v2 agent is rejected, not default-denied', () => {
+  test('an undeclared agent is rejected, not default-denied', () => {
     const loaded = loadV2(`
   support:
     connectors: [github]
@@ -259,6 +255,21 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('AGENT_NOT_DECLARED');
   });
+
+  test('an agent off because of a validation error is refused with a message naming the issue', () => {
+    const applied = runtimeManifest(
+      parseManifestString('default_agent: support\nagents:\n  support:\n    skills: [never-registered]\n', 'kortix.yaml'),
+    );
+    const loaded = { ...extractAgents(applied), issues: applied.issues };
+    expect(loaded.specs.find((spec) => spec.name === 'support')?.enabled).toBe(false);
+    const result = resolveGovernedAgentGrant('support', loaded, { subject: true, projectDefaultAgent: null });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('AGENT_NOT_DECLARED');
+    expect(result.error).toContain('Agent "support" is off');
+    expect(result.error).toContain('agents.support.skills');
+    expect(result.error).toContain('(line 4)');
+  });
 });
 
 // P0 REGRESSION GUARD: POST /projects/provision (projects.ts) stamps
@@ -267,7 +278,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
 // `metadata.default_agent` mirror set (sessions.ts's `projectDefaultAgent` is
 // `undefined`/null the very first time). The starter it seeds
 // (@kortix/starter, packages/starter/templates/base) MUST therefore ship a
-// v2 manifest with a `default_agent` that resolves — otherwise
+// manifest with a `default_agent` that resolves — otherwise
 // EVERY brand-new project's first session (agent 'default', the UI's
 // no-explicit-agent path) is rejected with AGENT_NOT_DECLARED before a sandbox
 // is ever provisioned. This exercises the REAL shipped starter (not a
@@ -279,48 +290,55 @@ describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its
   });
   const manifestFile = starterFiles.find((f) => f.path === 'kortix.yaml');
 
-  test('the starter ships a v2 kortix.yaml, not a v1 kortix.toml', () => {
+  test('the starter ships kortix.yaml, not kortix.toml', () => {
     expect(manifestFile).toBeDefined();
     expect(starterFiles.some((f) => f.path === 'kortix.toml')).toBe(false);
   });
 
-  test('a first session with no explicit agent ("default") RESOLVES — ok:true, not AGENT_NOT_DECLARED', () => {
-    const manifest = parseManifestString(manifestFile!.content, 'yaml', 'kortix.yaml');
-    expect(manifest.schemaVersion).toBe(2);
+  test('a first session with no explicit agent runs My Kortix, which the starter turns on', () => {
+    const manifest = parseManifestString(manifestFile!.content, 'kortix.yaml');
     const loaded = extractAgents(manifest);
     expect(loaded.errors).toEqual([]);
-    // The manifest must name a default agent, and must declare it.
-    const declaredDefault = declaredDefaultAgent(loaded);
-    expect(loaded.specs.map((spec) => spec.name)).toContain(declaredDefault);
+    // My Kortix is built in, never declared: session create runs it with the
+    // platform grant and skips the declared-agent check (`platformMetaAgent`).
+    expect(isMyKortixAgentName(declaredDefaultAgent(loaded))).toBe(true);
+    expect(projectBuiltinAgents(manifest.raw).my_kortix).toBe(true);
+  });
+
+  test('the worker My Kortix starts RESOLVES with the full grant — ok:true, not AGENT_NOT_DECLARED', () => {
+    const manifest = parseManifestString(manifestFile!.content, 'kortix.yaml');
+    const loaded = extractAgents(manifest);
+    expect(loaded.specs.map((spec) => spec.name)).toContain('worker');
 
     // Mirrors projects.ts /projects/provision exactly: subject=true (the metadata
     // stamp), and no project.metadata.default_agent mirror set yet.
-    const governed = resolveGovernedAgentGrant('default', loaded, {
+    const governed = resolveGovernedAgentGrant('worker', loaded, {
       subject: true,
       projectDefaultAgent: null,
     });
 
     expect(governed.ok).toBe(true);
     if (!governed.ok) return;
-    // The default agent is the one a new user drives from the UI with no
-    // configuration, so it must carry the full grant — a narrowed default is a
-    // silently crippled first session.
+    // The agent a new user's first task runs on, with no configuration, so it
+    // must carry the full grant — a narrowed one is a silently crippled first task.
     expect(governed.grant).toEqual({
-      agent: 'kortix',
+      agent: 'worker',
       connectors: 'all',
       permissions: 'all',
       env: 'all',
     });
   });
 
-  test('the starter\'s declared "kortix" agent also resolves when named explicitly', () => {
-    const manifest = parseManifestString(manifestFile!.content, 'yaml', 'kortix.yaml');
+  test('every agent the starter declares resolves when named explicitly', () => {
+    const manifest = parseManifestString(manifestFile!.content, 'kortix.yaml');
     const loaded = extractAgents(manifest);
-    const governed = resolveGovernedAgentGrant('kortix', loaded, {
-      subject: true,
-      projectDefaultAgent: null,
-    });
-    expect(governed.ok).toBe(true);
+    for (const spec of loaded.specs) {
+      const governed = resolveGovernedAgentGrant(spec.name, loaded, {
+        subject: true,
+        projectDefaultAgent: null,
+      });
+      expect(governed.ok).toBe(true);
+    }
   });
 
 });

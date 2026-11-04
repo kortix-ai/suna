@@ -186,16 +186,13 @@ describe('GET /gateway/logs pagination (characterization)', () => {
     expect(limitCalls).toEqual([{ limit: 3, offset: 0 }]);
   });
 
-  test('defaults to 50 and clamps a larger limit to 100', async () => {
+  test('defaults to 50 and refuses a limit over 100 without a query (#10962)', async () => {
     logRows = [];
     await request('/gateway/logs');
     expect(limitCalls).toEqual([{ limit: 51, offset: 0 }]);
 
-    await request('/gateway/logs?limit=999');
-    expect(limitCalls).toEqual([
-      { limit: 51, offset: 0 },
-      { limit: 101, offset: 0 },
-    ]);
+    expect((await request('/gateway/logs?limit=999')).status).toBe(400);
+    expect(limitCalls).toEqual([{ limit: 51, offset: 0 }]);
   });
 
   test('respects the offset query', async () => {

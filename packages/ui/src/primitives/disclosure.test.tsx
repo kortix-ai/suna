@@ -100,3 +100,41 @@ describe('render-time state', () => {
     expect(render(body(false))).not.toContain('details');
   });
 });
+
+// R38: the trigger composes its child's handlers. A tooltip around the trigger
+// closes on the child's onClick; a keyboard toggle is an activation, as a
+// native button's Enter is a click, so the tooltip closes after it too.
+describe('the trigger composes the child handlers', () => {
+  test('a click and Enter/Space run the child onClick and onKeyDown, then toggle', async () => {
+    const { act, create } = await import('react-test-renderer');
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const calls: string[] = [];
+    let root: ReturnType<typeof create> | undefined;
+    await act(async () => {
+      root = create(
+        <Disclosure>
+          <DisclosureTrigger>
+            <button type="button" onClick={() => calls.push('click')} onKeyDown={(e) => calls.push(`key:${e.key}`)}>
+              Details
+            </button>
+          </DisclosureTrigger>
+          <DisclosureContent>Body</DisclosureContent>
+        </Disclosure>,
+      );
+    });
+    const button = () => root!.root.findByType('button');
+    await act(async () => button().props.onClick({ defaultPrevented: false }));
+    expect(calls).toEqual(['click']);
+    expect(button().props['aria-expanded']).toBe(true);
+    let prevented = false;
+    await act(async () => button().props.onKeyDown({ key: 'Enter', defaultPrevented: false, preventDefault: () => (prevented = true) }));
+    expect(calls).toEqual(['click', 'key:Enter', 'click']);
+    expect(prevented).toBe(true);
+    expect(button().props['aria-expanded']).toBe(false);
+    // Another key is the child's alone.
+    await act(async () => button().props.onKeyDown({ key: 'Tab', defaultPrevented: false, preventDefault: () => {} }));
+    expect(calls).toEqual(['click', 'key:Enter', 'click', 'key:Tab']);
+    expect(button().props['aria-expanded']).toBe(false);
+    await act(async () => root?.unmount());
+  });
+});

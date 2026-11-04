@@ -15,7 +15,9 @@ function makeChain(result: unknown[]): any {
   return chain;
 }
 
+const realDb = await import('../shared/db');
 mock.module('../shared/db', () => ({
+  ...realDb,
   db: {
     select: () => makeChain([tenantRow]),
     insert: () => makeChain([]),
@@ -24,7 +26,9 @@ mock.module('../shared/db', () => ({
   },
 }));
 
+const realSecrets = await import('../projects/secrets');
 mock.module('../projects/secrets', () => ({
+  ...realSecrets,
   listProjectSecrets: async () => ({}),
   decryptProjectSecret: (_projectId: string, value: string) => value.replace(/^enc:/, ''),
   encryptProjectSecret: (_projectId: string, value: string) => `enc:${value}`,

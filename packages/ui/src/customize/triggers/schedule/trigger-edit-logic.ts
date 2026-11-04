@@ -17,9 +17,9 @@ import {
   humanizeEventType,
   schemaFields,
 } from './event-trigger-copy';
-import { conditionsToRows, rowsToConditions, sameConditions } from './schedule-fields';
+import { conditionsToRows, sameConditions } from './schedule-fields';
 import type { ComposerDraft } from './trigger-composer-logic';
-import { initialDraft, runCapFromInput } from './trigger-composer-logic';
+import { APP_EVENT_NAME_PATH, initialDraft, runCapFromInput, triggerFilter } from './trigger-composer-logic';
 
 /** The event type the catalog has no entry for: enough to name it and keep its saved config. */
 function stubEventType(event: NonNullable<ProjectTrigger['event']>): ProjectTriggerEventType {
@@ -40,6 +40,11 @@ export function draftFromTrigger(
   saved: { eventType: ProjectTriggerEventType | null; model: ModelKey | null },
 ): ComposerDraft {
   const event = trigger.event;
+  // An App event's event name is its `event.name` condition: the When block shows it, not the conditions.
+  const { [APP_EVENT_NAME_PATH]: appEvent, base: crBase } = trigger.filter ?? {};
+  const named = trigger.type === 'app' && typeof appEvent === 'string';
+  // A change request's branch is its `base` condition: the When block shows it, not the conditions.
+  const branch = trigger.type === 'change_request' && typeof crBase === 'string' ? crBase : null;
   const eventType = event ? (saved.eventType ?? stubEventType(event)) : null;
   return {
     ...initialDraft({ kind: trigger.type as ComposerDraft['kind'], agent: trigger.agent }),
@@ -54,16 +59,28 @@ export function draftFromTrigger(
     configDraft: eventType
       ? configToDraft(schemaFields(eventType.config_schema), event?.config ?? {})
       : {},
+    kortixApp: trigger.type === 'app' ? (trigger.app ?? null) : null,
+    appEvent: named ? (appEvent as string) : '',
+    crBase: branch ?? '',
     instruction: trigger.prompt_template,
     model: saved.model,
     nameOverride: trigger.name,
     mode: trigger.session_mode,
     pinnedSessionId: trigger.session_id,
     sessionKey: trigger.session_key ?? '',
-    conditions: conditionsToRows(trigger.filter),
+    conditions: conditionsToRows(
+      named || branch !== null
+        ? Object.fromEntries(
+            Object.entries(trigger.filter ?? {}).filter(
+              ([path]) => !(named && path === APP_EVENT_NAME_PATH) && !(branch !== null && path === 'base'),
+            ),
+          )
+        : trigger.filter,
+    ),
     secretName: trigger.secret_env ?? '',
     startActive: trigger.enabled,
     sessionAccess: trigger.session_access,
+    spaceId: trigger.space_id ?? null,
     maxRunsPerHour: trigger.max_runs_per_hour ? String(trigger.max_runs_per_hour) : '',
     maxRunsPerDay: trigger.max_runs_per_day ? String(trigger.max_runs_per_day) : '',
     overlap: trigger.overlap ?? 'default',
@@ -113,10 +130,12 @@ export function triggerPatch(
           : { cron: draft.cron.trim(), run_at: null, timezone: draft.timezone },
       );
     }
-  } else if (
-    !sameConditions(rowsToConditions(draft.conditions), rowsToConditions(saved.conditions))
-  ) {
-    out.filter = rowsToConditions(draft.conditions);
+  } else if (!sameConditions(triggerFilter(draft), triggerFilter(saved))) {
+    out.filter = triggerFilter(draft);
+  }
+
+  if (draft.kind === 'app' && draft.kortixApp && draft.kortixApp !== saved.kortixApp) {
+    out.app = draft.kortixApp;
   }
 
   if (draft.kind === 'webhook') {
@@ -146,6 +165,7 @@ export function triggerPatch(
     Object.assign(out, sessionPatch(draft));
   }
   if (!same(draft.sessionAccess, saved.sessionAccess)) out.session_access = draft.sessionAccess;
+  if (draft.spaceId !== saved.spaceId) out.space_id = draft.spaceId;
   // An emptied run limit sends null: the hourly default (60) or no daily cap.
   if (draft.maxRunsPerHour.trim() !== saved.maxRunsPerHour.trim()) {
     out.max_runs_per_hour = runCapFromInput(draft.maxRunsPerHour);

@@ -16,7 +16,8 @@ import type { ChannelPlatform } from '../../turn/channel-message';
 import { slackPlainText } from '@kortix/shared';
 
 export interface ChannelSend {
-  platform: ChannelPlatform;
+  /** A sandbox channel CLI: there is none for email. */
+  platform: Exclude<ChannelPlatform, 'Email'>;
   /** The message text, or null for a bare file send. */
   text: string | null;
   /** Basename of a `--file` attachment, when one was sent. */
@@ -25,7 +26,7 @@ export interface ChannelSend {
   channel: string | null;
 }
 
-const CLI_PLATFORM: Record<string, ChannelPlatform> = {
+const CLI_PLATFORM: Record<string, ChannelSend['platform']> = {
   teams: 'Teams',
   slack: 'Slack',
   telegram: 'Telegram',

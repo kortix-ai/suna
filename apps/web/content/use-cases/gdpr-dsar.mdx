@@ -60,53 +60,121 @@ emails the subject back.
 ## How it works
 
 <Steps>
-<Step title="Run on a daily cron">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the agent once a day. Each firing spawns a fresh
-**session** in its own sandbox, so every DSAR is worked from a clean read of the
-inbox and the database — nothing from a prior day's run carries over, and a stale
-verification never gets reused.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the dsar-fulfillment skill and the
+daily trigger, and opens a change request for you to review.
+Prefer clicks? Choose **Use this template** instead.
 
-</Step>
-<Step title="Verify before locating anything">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a daily GDPR data subject request agent in this project.
 
-Verification lives as a **skill** that travels with the agent: what counts as
-proof the requester is the subject (matching the request email against the account
-on file, or the identity details supplied), what to do when verification fails or
-is ambiguous, and what the SLA clock actually is under GDPR — one month from a
-verified request, extendable once for complex cases. Nothing is located until a
-request passes this check.
+1. Create the agent agents/gdpr-dsar.md. Its job is to turn each data subject access or deletion request into a verified report for legal review. It may use the Gmail, PostgreSQL and Google Docs connectors and the legal review email channel.
 
-</Step>
-<Step title="Connect the systems it needs">
+2. Create the skill skills/dsar-fulfillment/SKILL.md with these rules:
+   - Skip any Gmail thread already labeled dsar-compiled or dsar-flagged.
+   - Treat a request as verified only when its details match one account without ambiguity. Otherwise flag it as unverified and do not query any data.
+   - For a verified request, run read-only queries on every table keyed to the subject: account, orders, invoices, support history, consent and login records. Note any table you could not reach.
+   - Compile one Google Doc per request: header, data inventory, recommended action and verification notes. The SLA deadline is the verified date plus 30 days.
+   - Never run a delete or an update, and never reply to the requester. A lawyer decides.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent:
+3. Add a cron trigger daily-dsar-sweep to kortix.yaml. It runs the gdpr-dsar agent every day at 07:00 with the prompt "Load the dsar-fulfillment skill and run one complete DSAR sweep."
 
-- **Reads the DSAR out of Gmail** — the inbound request and any identity details
-  attached, and labels the thread once it's been actioned.
-- **Queries Postgres read-only** — every table keyed to the subject: account,
-  orders, invoices, support tickets, consent and login history — to build a
-  complete picture of what we hold.
-- **Writes the report to Google Docs** — a structured access report or deletion
-  inventory, one doc per request, ready for a lawyer to read start to finish.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent's only writes are the Google Doc it compiles and the label on the Gmail
-thread. Postgres access is read-only — there is no delete path the agent can reach,
-even for a request that explicitly asks for erasure. It never emails the requester.
-Credentials are encrypted in the Secrets Manager and injected at runtime, scoped to the agents you grant them to.
+Open **Connectors** in your project and connect Gmail, PostgreSQL and Google
+Docs, then connect the legal review inbox under **Channels**. Use a read-only
+database user for PostgreSQL. Credentials are brokered server-side and never
+enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="Gmail" domain="gmail.com" tag="Required" alternatives={[['Zendesk', 'zendesk.com']]}>
+    Reads incoming requests and verifies each requester.
+  </ToolNeed>
+  <ToolNeed name="PostgreSQL" domain="postgresql.org" tag="Required" alternatives={[['MySQL', 'mysql.com'], ['Snowflake', 'snowflake.com']]}>
+    Finds the subject's records across tables, read-only.
+  </ToolNeed>
+  <ToolNeed name="Google Docs" domain="docs.google.com" tag="Required" alternatives={[['Notion', 'notion.so']]}>
+    Writes the access or deletion report for legal review.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Flag it for legal review">
+<Step title="Run it once with this prompt">
 
-With the report compiled, the agent posts it to the legal team's review channel
-with a recommended action — fulfill the access request, or proceed with deletion —
-and the SLA deadline it's working against. Legal reviews the report, decides, and
-is the one who replies to the subject or authorizes any deletion. The agent's job
-ends at the flag.
+Merge the change request, then start a session with the **gdpr-dsar** agent
+and send this prompt. Read the first report end to end before
+you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one DSAR sweep.
+
+1. Find new access or deletion requests in Gmail that are not labeled dsar-compiled or dsar-flagged.
+2. Verify each requester against the account we hold. Flag weak or ambiguous matches as unverified and stop there.
+3. For each verified request, query PostgreSQL read-only across every table keyed to the subject.
+4. Compile one Google Doc per request with the data inventory, a recommended action and the deadline: verified date plus 30 days.
+5. Send the doc link and recommendation to the legal review channel and label the thread. Never delete data and never reply to the requester.`}
+/>
+
+</Step>
+<Step title="Let the daily schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every day at 07:00, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: daily-dsar-sweep
+    name: Daily DSAR sweep
+    on:
+      cron: "0 0 7 * * *"
+    run:
+      agent: gdpr-dsar
+      prompt: Load the dsar-fulfillment skill and run one complete DSAR sweep.`}
+/>
+
+</Step>
+<Step title="Never delete data or reply to the requester">
+
+Every database query is a read. Even an explicit erasure request ends as a
+recommendation in the report. The agent's only outbound message goes to the
+legal review channel. A lawyer approves the action, and a person runs any
+deletion and writes the reply to the requester.
+
+</Step>
+<Step title="Read the legal review flag">
+
+Each request ends with one flag in the legal review channel. This is what a run looks like in the session:
+
+<ExampleRun
+  title="Daily DSAR sweep · 07:00"
+  message="Load the dsar-fulfillment skill and run one complete DSAR sweep."
+  worked="Worked for 2m 46s"
+  tools={[
+    'gmail · search threads',
+    'postgresql · run query × 7',
+    'google_docs · create document',
+    'email · send → legal review',
+    'gmail · add label',
+  ]}
+  note="Illustrative example. Your counts depend on your inbox and schema."
+>
+  Found **2** new requests. Verified **1** deletion request, located the
+  subject in **6** tables and compiled the report, due in **30** days. Flagged
+  **1** access request as unverified: the sender address matches no account.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -117,6 +185,25 @@ ends at the flag.
   lives, and compiles a Google Doc report. The agent compiles and flags; legal
   decides, deletes, and replies.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Warn before the deadline"
+  code="Each run, list every compiled request with less than 7 days to its deadline and send that list to the legal review channel."
+/>
+
+<CopyBlock
+  title="Draft the reply for legal"
+  code="For each compiled access request, add a draft reply to the requester at the end of the report for legal to edit. Do not send it."
+/>
+
+<CopyBlock
+  title="Keep the table map current"
+  code="When a query finds subject data in a table the skill does not list, add that table to the skill in a change request for me to review."
+/>
 
 ## Guardrails
 

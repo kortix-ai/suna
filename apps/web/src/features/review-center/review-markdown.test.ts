@@ -1,7 +1,7 @@
 import type { ApiReviewItem } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
-import { looksLikeMarkdown } from '@/lib/markdown-detect';
+import { looksLikeMarkdown } from '@kortix/shared/tool-output';
 import { mapApiReviewItem } from '@kortix/ui/workspace/review/map';
 import type { ChangeDetail } from '@kortix/ui/workspace/review/types';
 
@@ -45,11 +45,11 @@ describe('mapApiReviewItem — change descriptions are plain lines', () => {
     }) as unknown as ApiReviewItem;
 
   test('a markdown-looking description is still line-split — no markdown branch', () => {
-    const md = '## What this changes\nMigrates `kortix.toml` to **kortix.yaml**.';
+    const md = '## What this changes\nMoves `agents/old.md` to **agents/new.md**.';
     const d = mapApiReviewItem(changeRow(md), 'proj').detail as ChangeDetail;
     expect(d.whatChanged).toEqual([
       '## What this changes',
-      'Migrates `kortix.toml` to **kortix.yaml**.',
+      'Moves `agents/old.md` to **agents/new.md**.',
     ]);
     expect('descriptionMarkdown' in d).toBe(false);
   });

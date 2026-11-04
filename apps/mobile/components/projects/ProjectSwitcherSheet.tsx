@@ -78,7 +78,7 @@ type Handoff = 'project' | 'account';
 
 /** The bottom tabs: the old root tab bar's items and icons, Account left, Projects right (Jay, 2026-09-23). */
 const SWITCHER_TABS: FloatingTabItem[] = [
-  { key: 'account', label: 'Account', icon: <Icon as={UserIcon} size={20} className="text-foreground" /> },
+  { key: 'account', label: 'Accounts', icon: <Icon as={UserIcon} size={20} className="text-foreground" /> },
   { key: 'projects', label: 'Projects', icon: <Icon as={FolderIcon} size={20} className="text-foreground" /> },
 ];
 

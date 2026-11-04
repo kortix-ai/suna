@@ -33,6 +33,7 @@ import { useEffect } from 'react';
 import { RouteLoadingFallback } from '@/components/common/route-loading';
 import { Button } from '@kortix/ui/button';
 import { ErrorState } from '@kortix/ui/error-state';
+import { ProjectSelector } from '@/features/workspace/project-selector/project-selector';
 import { useAuth } from '@/features/providers/auth-provider';
 import { PALETTE_ACCOUNT_SCOPED_TABS } from '@/features/workspace/settings-palette-items';
 import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
@@ -76,14 +77,20 @@ export default function SettingsTabPage() {
     graduated && accountId && !accounts.isError
       ? legacySectionRedirect('', params?.tab, accountId)
       : needsProject && !authLoading
-        ? (lastProjectId && legacySectionRedirect(lastProjectId, params?.tab)) || '/projects'
+        ? (lastProjectId && legacySectionRedirect(lastProjectId, params?.tab)) ||
+          (tab === 'computer' ? null : '/projects')
         : null;
 
   useEffect(() => {
     if (href) router.replace(href);
   }, [href, router]);
 
-  if (needsProject) return <RouteLoadingFallback />;
+  if (needsProject) {
+    if (tab === 'computer' && !authLoading && !lastProjectId) {
+      return <ProjectSelector connectComputer />;
+    }
+    return <RouteLoadingFallback />;
+  }
   if (graduated) {
     if (href || accounts.isPending) return <RouteLoadingFallback />;
     return (

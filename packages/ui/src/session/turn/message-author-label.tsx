@@ -10,6 +10,7 @@ import { useProjectSessionHref } from '../../internal/lib/navigation/session-hre
 import type { SessionMessageAuthor } from '@kortix/sdk';
 import { CheckIcon } from '@phosphor-icons/react';
 import { KortixLogo } from '../../primitives/kortix-logo';
+import { AgentMark } from '../../internal/components/agent-mark';
 import { SourceCard, SourcePill } from './source-pill';
 
 /** The sending session's name, as a link to it when the project route resolves. */
@@ -37,7 +38,7 @@ export function MessageAuthorLabel({ author }: { author: SessionMessageAuthor })
       className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium"
       data-testid="message-author"
     >
-      <UserAvatar email={author.email ?? ''} name={author.name} size="xs" />
+      <UserAvatar email={author.email ?? ''} name={author.name} hint={author.name} size="xs" />
       {author.name}
     </span>
   );
@@ -70,7 +71,15 @@ function SessionAuthorLabel({ author }: { author: Extract<SessionMessageAuthor, 
               label: tI18nComplete('text6959b4159575'),
               value: <SenderName sessionId={author.session_id} name={sessionName} />,
             },
-            { label: tI18nComplete('text11b39c93777e'), value: author.agent },
+            {
+              label: tI18nComplete('text11b39c93777e'),
+              value: author.agent ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <AgentMark slug={author.agent} />
+                  {author.agent}
+                </span>
+              ) : null,
+            },
             {
               label: tI18nComplete('textcb9ac5c561da'),
               value: author.session_id ? <CopySessionId sessionId={author.session_id} /> : null,

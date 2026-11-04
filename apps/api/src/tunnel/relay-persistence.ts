@@ -1,6 +1,6 @@
 // Tunnel relay persistence: the relay events that write a machine's state to
 // `tunnel_connections`. startTunnelService registers the handlers once per
-// process (workers/tunnel-worker.ts).
+// process (replica/tunnel.ts).
 
 import { isTunnelCapability } from 'agent-tunnel';
 import { and, eq, sql } from 'drizzle-orm';

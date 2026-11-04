@@ -424,6 +424,8 @@ function FilterBarItem({ className, ...props }: React.ComponentProps<'button'>) 
 }
 
 export {
+  tabsSegmentedChipClasses,
+  tabsSegmentedTrackClasses,
   FilterBar,
   FilterBarItem,
   Tabs,

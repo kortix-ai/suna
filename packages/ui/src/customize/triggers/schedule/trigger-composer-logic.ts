@@ -6,7 +6,7 @@
  */
 
 import type { UiTranslator } from '../../../i18n';
-import type { ProjectTriggerEventType } from '@kortix/sdk';
+import type { App, ProjectTriggerEventType, TriggerFilterValue } from '@kortix/sdk';
 import type { ModelKey } from '@kortix/sdk/react';
 
 import type { SharingSelection } from '../../../access/sharing-picker';
@@ -27,7 +27,7 @@ import {
   describeCadence,
   describeOneOff,
 } from './schedule-copy';
-import { type ConditionRow, conditionNeedsValue } from './schedule-fields';
+import { type ConditionRow, conditionNeedsValue, rowsToConditions } from './schedule-fields';
 
 /** A block of the composer. Problems point at one, in the order a person meets them. */
 export type ComposerBlock = 'when' | 'then' | 'name' | 'options';
@@ -54,6 +54,14 @@ export interface ComposerDraft {
   account: string | null;
   eventType: ProjectTriggerEventType | null;
   configDraft: ConfigDraft;
+  // When: Kortix App event
+  /** Slug of the project's App whose events fire the trigger. Null until one is picked. */
+  kortixApp: string | null;
+  /** The one event name the trigger fires on (`reply.received`). Empty = every event. */
+  appEvent: string;
+  // When: change request merged
+  /** The branch a merge must land on (kortix.yaml `filter.base`). Empty = any branch. */
+  crBase: string;
   // Then
   instruction: string;
   agent: string | null;
@@ -69,11 +77,44 @@ export interface ComposerDraft {
   secretName: string;
   startActive: boolean;
   sessionAccess: SharingSelection;
+  /** The channel or DM its runs post to (`project_channels`). Null = none: runs land in `#general`. */
+  spaceId: string | null;
   /** Run limits (KRTX-1721) as typed. Empty = unset: 60 an hour, no daily cap. */
   maxRunsPerHour: string;
   maxRunsPerDay: string;
   /** Overlap (KRTX-1721), fresh mode only. `default`: skip for a schedule, allow for the others. */
   overlap: 'default' | 'skip' | 'allow';
+}
+
+/** The sharing a space implies: a channel thread is project-visible; a DM thread is the viewer's. */
+export function spaceTriggerAccess(kind: 'channel' | 'dm', viewerId: string | undefined): SharingSelection {
+  return kind === 'dm' && viewerId
+    ? { mode: 'members', memberIds: [viewerId], groupIds: [] }
+    : { mode: 'project', memberIds: [], groupIds: [] };
+}
+
+const sameAccess = (a: SharingSelection, b: SharingSelection) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * "Post to" picks a space. The sharing follows the space only while the person
+ * has not chosen their own (it is still `base` or what the old space implied);
+ * a DM always sets its sharing and its agent, as the API requires. "No channel"
+ * gives back `base` when the sharing was only the space's.
+ */
+export function postToChange(
+  draft: Pick<ComposerDraft, 'sessionAccess'>,
+  next: { spaceId: string; kind: 'channel' | 'dm'; dmAgentName: string | null } | null,
+  context: { base: SharingSelection; current: { kind: 'channel' | 'dm' } | null; viewerId: string | undefined },
+): Partial<ComposerDraft> {
+  const implied = context.current ? spaceTriggerAccess(context.current.kind, context.viewerId) : null;
+  const untouched =
+    sameAccess(draft.sessionAccess, context.base) || (implied !== null && sameAccess(draft.sessionAccess, implied));
+  if (!next) return { spaceId: null, ...(untouched ? { sessionAccess: context.base } : {}) };
+  return {
+    spaceId: next.spaceId,
+    ...(next.kind === 'dm' || untouched ? { sessionAccess: spaceTriggerAccess(next.kind, context.viewerId) } : {}),
+    ...(next.kind === 'dm' && next.dmAgentName ? { agent: next.dmAgentName } : {}),
+  };
 }
 
 /** A run-limit input as the API wants it: empty → null (unset), else the number. */
@@ -88,6 +129,7 @@ export function initialDraft(init: {
   appSlug?: string | null;
   appSource?: string | null;
   profile?: string | null;
+  spaceId?: string | null;
 }): ComposerDraft {
   return {
     kind: init.kind ?? 'cron',
@@ -101,6 +143,9 @@ export function initialDraft(init: {
     account: null,
     eventType: null,
     configDraft: {},
+    kortixApp: null,
+    appEvent: '',
+    crBase: '',
     instruction: '',
     agent: init.agent ?? null,
     model: null,
@@ -113,6 +158,7 @@ export function initialDraft(init: {
     secretName: '',
     startActive: true,
     sessionAccess: { mode: 'private', memberIds: [], groupIds: [] },
+    spaceId: init.spaceId ?? null,
     maxRunsPerHour: '',
     maxRunsPerDay: '',
     overlap: 'default',
@@ -158,7 +204,7 @@ export function slugify(input: string): string {
       .replace(/[^a-z0-9_-]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .replace(/-{2,}/g, '-')
-      .slice(0, 128) || 'automation'
+      .slice(0, 128) || 'trigger'
   );
 }
 
@@ -168,6 +214,15 @@ export function slugify(input: string): string {
 export function autoName(draft: ComposerDraft, tI18nComplete: UiTranslator): string {
   if (draft.kind === 'event') return draft.eventType ? defaultEventName(draft.eventType) : '';
   if (draft.kind === 'webhook') return tI18nComplete.raw('text4814f62c108d');
+  if (draft.kind === 'change_request') {
+    const branch = draft.crBase.trim();
+    return branch ? tI18nComplete('texte608495c45ce', { branch }) : tI18nComplete.raw('text5ffd973e20ed');
+  }
+  if (draft.kind === 'app') {
+    if (!draft.kortixApp) return '';
+    const event = appEventName(draft);
+    return event ? `${draft.kortixApp}: ${event}` : tI18nComplete('texte9b6dc29c812', { app: draft.kortixApp });
+  }
   return draft.runAt ? describeOneOff(draft.runAt) : describeCadence(draft.cron);
 }
 
@@ -207,6 +262,17 @@ export function summarize(
   tI18nComplete: UiTranslator,
 ): string {
   if (draft.kind === 'webhook') return tI18nComplete('text18ae226f8a22', { agent });
+  if (draft.kind === 'change_request') {
+    const branch = draft.crBase.trim();
+    return branch ? tI18nComplete('text507c24b6792d', { branch, agent }) : tI18nComplete('text05ee1d6181f3', { agent });
+  }
+  if (draft.kind === 'app') {
+    if (!draft.kortixApp) return tI18nComplete.raw('textf60eb7723e40');
+    const event = appEventName(draft);
+    return event
+      ? tI18nComplete('text860e6ea2b98b', { app: draft.kortixApp, event, agent })
+      : tI18nComplete('text2def58884d12', { app: draft.kortixApp, agent });
+  }
   if (draft.kind === 'event') {
     if (!draft.eventType) return tI18nComplete.raw('textf60eb7723e40');
     return tI18nComplete('text8ebeeead4672', {
@@ -257,13 +323,15 @@ export function validate(
         if (message) add('when', message, field.key);
       }
     }
+  } else if (draft.kind === 'app') {
+    if (!draft.kortixApp) add('when', tI18nComplete.raw('text69de76117f00'));
   } else if (draft.kind === 'cron') {
     if (draft.runAt) {
       if (Number.isNaN(Date.parse(draft.runAt))) add('when', tI18nComplete.raw('text653989c59b4b'));
       else if (Date.parse(draft.runAt) <= (ctx.now ?? Date.now()))
         add('when', tI18nComplete.raw('textebfef07e2d2b'));
     } else if (!draft.cron.trim()) add('when', tI18nComplete.raw('texta1b7270dbe34'));
-  } else if (!ctx.edit && !draft.signingKey.trim()) {
+  } else if (draft.kind === 'webhook' && !ctx.edit && !draft.signingKey.trim()) {
     add('when', tI18nComplete.raw('textc10cd37e5462'));
   }
 
@@ -284,6 +352,44 @@ export function validate(
   )
     add('options', tI18nComplete.raw('text8f4597a69c3c'));
   return problems;
+}
+
+/* ─── Kortix App event ──────────────────────────────────────────────────── */
+
+/**
+ * The filter path that names an App event. The API stores an App event
+ * trigger's event as this one condition (`on.event` in kortix.yaml); without
+ * it the trigger fires on every event of the App.
+ */
+export const APP_EVENT_NAME_PATH = 'event.name';
+
+/**
+ * The Apps that can send events: every App Kortix runs. An external App
+ * (`external_url`) runs elsewhere and has no `KORTIX_APP_TOKEN`.
+ */
+export function eventSendingApps(apps: readonly App[] | undefined): App[] {
+  return (apps ?? []).filter((app) => !app.external_url);
+}
+
+/** The named event, trimmed. `*` means every event, as in kortix.yaml and the CLI. */
+export function appEventName(draft: Pick<ComposerDraft, 'appEvent'>): string {
+  const name = draft.appEvent.trim();
+  return name === '*' ? '' : name;
+}
+
+/**
+ * The filter Create and Save send: the conditions, plus `event.name` for an
+ * App event that names one event, plus `base` for a change request merged into
+ * one branch.
+ */
+export function triggerFilter(
+  draft: Pick<ComposerDraft, 'kind' | 'appEvent' | 'conditions' | 'crBase'>,
+): Record<string, TriggerFilterValue> | null {
+  const conditions = rowsToConditions(draft.conditions);
+  const event = draft.kind === 'app' ? appEventName(draft) : '';
+  const base = draft.kind === 'change_request' ? draft.crBase.trim() : '';
+  if (!event && !base) return conditions;
+  return { ...conditions, ...(event ? { [APP_EVENT_NAME_PATH]: event } : {}), ...(base ? { base } : {}) };
 }
 
 /* ─── Event pick ────────────────────────────────────────────────────────── */

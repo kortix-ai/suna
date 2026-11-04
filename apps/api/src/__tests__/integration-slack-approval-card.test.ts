@@ -4,7 +4,9 @@
  *
  * Real: the connector_calls row, the session and its chat thread, chat
  * identities, IAM roles, the decision core. Faked: only Slack's HTTP surface
- * (slack-api, response_url) and the follow-up turn spawn.
+ * (slack-api, response_url) and the follow-up turn spawn. An approved held
+ * call runs through the real held-call worker; its held input is a stand-in,
+ * since every path here settles before the input is read.
  */
 import { afterAll, beforeAll, beforeEach, expect, mock, test } from 'bun:test';
 import {
@@ -12,11 +14,13 @@ import {
   chatThreads,
   chatUserIdentities,
   connectorCalls,
+  connectorHeldCalls,
+  jobQueue,
   projectMembers,
   projectSessions,
   sessionLifecycleCommands,
 } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import * as realSlackApi from '../channels/slack-api';
 import * as realDispatch from '../channels/slack/dispatch';
 import * as realInstallStore from '../channels/install-store';
@@ -65,6 +69,8 @@ const { postApprovalCard, markApprovalCardDecided } = await import('../channels/
 const { handleBlockAction, handleViewSubmission } = await import('../channels/slack/interactivity');
 const { approvalActionId } = await import('../channels/slack/approval-card');
 const { decideConnectorApproval, loadApprovalRow } = await import('../projects/lib/connector-approval-decision');
+const { runHeldCall } = await import('../connectors/held-call-run');
+const { HELD_CALL_QUEUE } = await import('../connectors/held-call-store');
 
 const TEAM = 'T0APPROVAL';
 const CHANNEL = 'C0APPROVAL';
@@ -157,6 +163,7 @@ beforeEach(() => {
 
 afterAll(async () => {
   await db.delete(chatUserIdentities).where(eq(chatUserIdentities.workspaceId, TEAM));
+  await db.delete(jobQueue).where(eq(jobQueue.queue, HELD_CALL_QUEUE));
   await db.delete(connectorCalls).where(eq(connectorCalls.projectId, project.project_id));
   await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.projectId, project.project_id));
   await db.delete(chatThreads).where(eq(chatThreads.projectId, project.project_id));
@@ -287,7 +294,7 @@ test('the launcher replies with a message: approve plus note reaches the agent',
   expect((row?.resultSummary as Record<string, unknown>).decision_note).toBe('Send it, then tell me when she answers.');
   expect(spawned).toEqual([
     {
-      text: 'Your pending approval to run gmail.send_draft was approved — continue.\n\nMessage from the approver:\nSend it, then tell me when she answers.',
+      text: 'Your pending approval to run gmail.send_draft was approved. It has not run yet: repeat the exact same call now (same arguments and account), and it runs once. The approval lapses 15 minutes after the decision.\n\nMessage from the approver:\nSend it, then tell me when she answers.',
       user: SLACK.launcher,
     },
   ]);
@@ -354,4 +361,183 @@ test('a decision made in Kortix replaces the card buttons in the thread too', as
   expect(again).toBe('already_resolved');
   await Bun.sleep(100);
   expect(updated).toHaveLength(1);
+});
+
+test.each(['absent', 'revoked', 'other-workspace', 'expired'] as const)(
+  'a %s identity does not produce a Slack mention in the outcome',
+  async (scenario) => {
+    const actorUserId = crypto.randomUUID();
+    const workspaceId = scenario === 'other-workspace' ? `${TEAM}OTHER` : TEAM;
+    if (scenario !== 'absent') {
+      await db.insert(chatUserIdentities).values({
+        platform: 'slack', workspaceId, platformUserId: `U${scenario}`, userId: actorUserId,
+        revokedAt: scenario === 'revoked' ? new Date() : null,
+      });
+    }
+    try {
+      const executionId = await pending({
+        args_preview: { draft_id: 'r-1' }, args_preview_complete: true,
+        chat_card: { platform: 'slack', team_id: TEAM, channel: CHANNEL, ts: '200.0010' },
+      });
+      const row = await loadApprovalRow(project.project_id, executionId);
+      if (!row) throw new Error('seeded approval is missing');
+      await markApprovalCardDecided({
+        projectId: project.project_id, row, decision: scenario === 'expired' ? 'expired' : 'deny',
+        note: '', actorUserId,
+      });
+      expect(updated).toHaveLength(1);
+      const blocks = JSON.stringify(updated[0]?.blocks);
+      expect(blocks).not.toContain('<@');
+      if (scenario === 'expired') expect(blocks).toContain('Expired');
+      else expect(blocks).toContain('a teammate in Kortix');
+    } finally {
+      await db.delete(chatUserIdentities).where(eq(chatUserIdentities.userId, actorUserId));
+    }
+  },
+);
+
+/** A gate whose input the gateway held: approve runs it instead of asking the agent to repeat it. */
+async function pendingHeld(cardTs: string): Promise<string> {
+  const executionId = await pending({
+    args_preview: { draft_id: 'r-1' },
+    args_preview_complete: true,
+    chat_card: { platform: 'slack', team_id: TEAM, channel: CHANNEL, ts: cardTs },
+  });
+  await db.insert(connectorHeldCalls).values({
+    executionId,
+    projectId: project.project_id,
+    accountId: project.account_id,
+    inputEnc: 'held-input-stand-in',
+    state: 'held',
+  });
+  return executionId;
+}
+
+const resumesOf = (key: string) =>
+  db.select().from(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.idempotencyKey, key));
+
+test('approve of a held call in the thread: the card shows running, then the run; the session resumes once', async () => {
+  const executionId = await pendingHeld('200.0020');
+
+  await click('approve', executionId, SLACK.owner);
+
+  // Approve queues the run; Slack starts no turn and nothing resumes yet.
+  expect(await loadApprovalRow(project.project_id, executionId)).toMatchObject({ status: 'approved', approvedBy: OWNER });
+  expect(spawned).toHaveLength(0);
+  expect(await resumesOf(`approval-resume:${executionId}`)).toHaveLength(0);
+  const jobs = await db
+    .select()
+    .from(jobQueue)
+    .where(and(eq(jobQueue.queue, HELD_CALL_QUEUE), eq(jobQueue.jobKey, executionId)));
+  expect(jobs).toHaveLength(1);
+  await Bun.sleep(100);
+  expect(updated).toHaveLength(1);
+  expect(updated[0]).toMatchObject({ channel: CHANNEL, ts: '200.0020' });
+  const running = JSON.stringify(updated[0].blocks);
+  expect(running).toContain('*Approved*');
+  expect(running).toContain(`<@${SLACK.owner}>`);
+  expect(running).toContain('Running…');
+
+  // The worker picks the run up after its window closed: it settles `refused`
+  // without calling the provider, resumes the session once, and updates the card.
+  await db
+    .update(connectorHeldCalls)
+    .set({ runDeadline: new Date(Date.now() - 1_000) })
+    .where(eq(connectorHeldCalls.executionId, executionId));
+  await runHeldCall(executionId);
+  await runHeldCall(executionId);
+  await Bun.sleep(100);
+
+  const resumes = await resumesOf(`approval-run:${executionId}`);
+  expect(resumes).toHaveLength(1);
+  expect(resumes[0]).toMatchObject({ source: 'system:approval-resume', sessionId });
+  expect(spawned).toHaveLength(0);
+  expect(updated).toHaveLength(2);
+  expect(updated[1]).toMatchObject({ channel: CHANNEL, ts: '200.0020' });
+  const ran = JSON.stringify(updated[1].blocks);
+  expect(ran).toContain(`<@${SLACK.owner}>`);
+  expect(ran).toContain('Not run: Kortix refused it at run time.');
+  expect(ran).not.toContain('Running…');
+});
+
+test('the card after a run shows its status, never its output', async () => {
+  const executionId = await pendingHeld('200.0021');
+  await click('approve', executionId, SLACK.owner);
+  await Bun.sleep(100);
+  await db
+    .update(connectorHeldCalls)
+    .set({ state: 'ok', inputEnc: null, outcome: { status: 'ok', output_preview: '{"id":"held-card-output-7f1e"}' } })
+    .where(eq(connectorHeldCalls.executionId, executionId));
+
+  const { markApprovalCardRan } = await import('../channels/approval-card-relay');
+  await markApprovalCardRan(project.project_id, executionId);
+
+  const ran = JSON.stringify(updated.at(-1)?.blocks);
+  expect(ran).toContain('Ran once.');
+  expect(ran).not.toContain('held-card-output-7f1e');
+});
+
+test('approve of a call with no held input keeps the repeat-the-call turn in the thread', async () => {
+  const executionId = await pending({
+    args_preview: { draft_id: 'r-1' },
+    args_preview_complete: true,
+    chat_card: { platform: 'slack', team_id: TEAM, channel: CHANNEL, ts: '200.0022' },
+  });
+
+  await click('approve', executionId, SLACK.owner);
+
+  expect((await loadApprovalRow(project.project_id, executionId))?.status).toBe('ok');
+  expect(spawned).toHaveLength(1);
+  expect(spawned[0].text).toContain('repeat the exact same call now');
+  await Bun.sleep(100);
+  expect(JSON.stringify(updated[0].blocks)).not.toContain('Running…');
+});
+
+test('a held call approved from a follow-up thread resumes the agent with that thread as its reply target', async () => {
+  // The session serves a second thread; the card was posted into it.
+  const FOLLOW_UP = '400.0001';
+  await db.insert(chatThreads).values({
+    projectId: project.project_id,
+    platform: 'slack',
+    workspaceId: TEAM,
+    threadId: FOLLOW_UP,
+    sessionId,
+  });
+  const executionId = await pendingHeld('400.0002');
+
+  await click('approve', executionId, SLACK.owner, FOLLOW_UP);
+  expect((await loadApprovalRow(project.project_id, executionId))?.status).toBe('approved');
+  await db
+    .update(connectorHeldCalls)
+    .set({ runDeadline: new Date(Date.now() - 1_000) })
+    .where(eq(connectorHeldCalls.executionId, executionId));
+  await runHeldCall(executionId);
+
+  const [resume] = await resumesOf(`approval-run:${executionId}`);
+  const text = String((resume?.payload as Record<string, unknown>).text);
+  expect(text).toContain(`slack send --channel ${CHANNEL} --thread ${FOLLOW_UP} --text "<answer>"`);
+  expect(text).not.toContain(`--thread ${THREAD}`);
+});
+
+test('a held call approved in Kortix resumes with the plain text, no chat reply target', async () => {
+  const executionId = await pendingHeld('200.0023');
+  const row = await loadApprovalRow(project.project_id, executionId);
+  await decideConnectorApproval({
+    projectId: project.project_id,
+    accountId: project.account_id,
+    row: row!,
+    decision: 'approve',
+    note: '',
+    actorUserId: OWNER,
+    auditSource: 'human',
+    resume: 'queue',
+  });
+  await db
+    .update(connectorHeldCalls)
+    .set({ runDeadline: new Date(Date.now() - 1_000) })
+    .where(eq(connectorHeldCalls.executionId, executionId));
+  await runHeldCall(executionId);
+
+  const [resume] = await resumesOf(`approval-run:${executionId}`);
+  expect(String((resume?.payload as Record<string, unknown>).text)).not.toContain('slack send');
 });

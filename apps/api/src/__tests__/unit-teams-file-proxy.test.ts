@@ -42,6 +42,8 @@ mock.module('../channels/teams-auth', () => ({
   teamsConfigured: () => true,
 }));
 mock.module('../channels/install-store', () => ({
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   loadTeamsBotCredentials: async () => ({ appId: 'app-1', appPassword: 'secret' }),
   loadTeamsTenantForProject: async () => 'tenant-1',
   saveTeamsServiceUrl: async () => {},

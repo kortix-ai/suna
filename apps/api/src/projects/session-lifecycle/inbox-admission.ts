@@ -1,5 +1,5 @@
 import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
-import type { RuntimeCapability } from '@kortix/api-contract/runtime-relay';
+import { RUNTIME_STABLE_MESSAGE_ID_CAPABILITY, type RuntimeCapability } from '@kortix/api-contract/runtime-relay';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
@@ -84,6 +84,13 @@ export const INBOX_ORDER_MAX_BACKOFF_MS = 2_000;
  * reconcile, a `noReply` delivery, a dead-lettered head (`markCommandFailed`),
  * a removed head (`deleteInboxPrompt`), and a head closed without a post
  * (`executeQueuedContinue`: consumed in band, skipped).
+ */
+/*
+ * The same minute applies to a row that waits behind a live turn but is not the
+ * session's head. Prod 2026-11-03: 93 cron prompts queued behind turns in 4
+ * sessions were each re-polled every 2 s, 29 claims a second, each reading the
+ * sandbox row twice. Only the head can be admitted next, and the turn's end
+ * wakes the head, never a row behind it.
  */
 export const INBOX_STALE_ORDER_REFUSALS = 64;
 export const INBOX_STALE_ORDER_BACKOFF_MS = 60_000;
@@ -271,6 +278,33 @@ export interface SteerAdmissionDeps {
 
 const STEER_CAPABILITY: RuntimeCapability = 'session.steer';
 
+/** `/kortix/health` `capabilities` of a sandbox's runtime (memoized 5 min); null when the read failed. */
+function readRuntimeCapabilities(externalId: string | null | undefined, actorUserId: string | null): Promise<string[] | null> {
+  return runtimeCapabilities(externalId ?? undefined, () =>
+    sandboxOpencodeEndpoint(externalId!, actorUserId ?? undefined));
+}
+
+/**
+ * Does this sandbox's runtime keep a delivered prompt's message id
+ * (`RUNTIME_STABLE_MESSAGE_ID_CAPABILITY`)? Then a prompt goes out under the id
+ * it already has. False when the read fails or the box does not list it: the
+ * caller re-mints, as for OpenCode, which orders by id.
+ */
+export async function sandboxKeepsMessageIds(externalId: string | null | undefined, actorUserId: string | null): Promise<boolean> {
+  return (await readRuntimeCapabilities(externalId, actorUserId))?.includes(RUNTIME_STABLE_MESSAGE_ID_CAPABILITY) ?? false;
+}
+
+/** `sandboxKeepsMessageIds` for the session's box. False when the box cannot be read. */
+export async function sessionKeepsMessageIds(sessionId: string | null | undefined, actorUserId: string | null): Promise<boolean> {
+  if (!sessionId) return false;
+  try {
+    const box = await liveInboxAdmissionDeps.readSandbox(sessionId);
+    return await sandboxKeepsMessageIds(box?.externalId, actorUserId);
+  } catch {
+    return false;
+  }
+}
+
 export const liveInboxAdmissionDeps: InboxAdmissionDeps = {
   reconcileTurn: reconcileInboxTurn,
   // Dynamic: `turn-stop-authority.ts` imports this module.
@@ -327,9 +361,7 @@ export const liveInboxAdmissionDeps: InboxAdmissionDeps = {
     return !!running;
   },
   steer: {
-    capabilities: (externalId, actorUserId) =>
-      runtimeCapabilities(externalId ?? undefined, () =>
-        sandboxOpencodeEndpoint(externalId!, actorUserId ?? undefined)),
+    capabilities: readRuntimeCapabilities,
     async turnPrompter(sessionId, messageId) {
       const [prompt] = await db
         .select({ actorUserId: sessionLifecycleCommands.actorUserId })
@@ -508,7 +540,10 @@ export async function admitInboxPrompt(
       return {
         admit: false,
         reason: 'turn_active',
-        retryAfterMs: orderBackoffMs,
+        // Only the head needs the short clock. A row behind it is woken by the
+        // head's own progress (`promoteNextInboxRow` makes the next row due the
+        // moment the head goes out), so it re-polls once a minute as a fallback.
+        retryAfterMs: isHead ? orderBackoffMs : Math.max(orderBackoffMs, INBOX_STALE_ORDER_BACKOFF_MS),
         ...(interruptAtBoundary ? { interruptAtBoundary } : {}),
       };
     }

@@ -21,7 +21,7 @@
  */
 
 import { baseTipChecks } from '@kortix/db';
-import { and, eq, lt } from 'drizzle-orm';
+import { and, eq, isNull, lt, ne, or } from 'drizzle-orm';
 import { refreshIntervalMs, refreshMirror, resolveCommitShaAt, type GitBackedProject } from '../projects/surface';
 import { db } from '../shared/db';
 
@@ -62,7 +62,8 @@ export const dbBaseTipStore: BaseTipStore = {
   async record(projectId, ref, claimedAt, tip) {
     await db
       .update(baseTipChecks)
-      .set(tip ? { tip } : { checkedAt: EXPIRED })
+      // The claim time is when this check asked: the tip was current then or later.
+      .set(tip ? { tip, provenAt: claimedAt } : { checkedAt: EXPIRED })
       .where(
         and(eq(baseTipChecks.projectId, projectId), eq(baseTipChecks.ref, ref), eq(baseTipChecks.checkedAt, claimedAt)),
       );
@@ -104,5 +105,57 @@ export async function sharedBaseTip(
 
 /** A base ref of the project moved: the next request asks the upstream. Every ref, as `invalidateDesiredRelease` does. */
 export async function expireBaseTips(projectId: string): Promise<void> {
-  await db.update(baseTipChecks).set({ checkedAt: EXPIRED }).where(eq(baseTipChecks.projectId, projectId));
+  await db
+    .update(baseTipChecks)
+    .set({ checkedAt: EXPIRED, provenAt: null })
+    .where(eq(baseTipChecks.projectId, projectId));
+}
+
+/**
+ * The stored tip of `ref` and when its check asked the upstream, for the git
+ * mirror's tip proof (`useSharedTipProof`, projects/git/mirror.ts). The
+ * desired-release asks every running box makes keep it fresh for every active
+ * project, so a prompt's grant read on any API process needs no fetch. Null
+ * until a check lands and after a base move.
+ */
+export async function storedBaseTipProof(
+  projectId: string,
+  ref: string,
+): Promise<{ tip: string; provenAt: number } | null> {
+  const [row] = await db
+    .select({ tip: baseTipChecks.tip, provenAt: baseTipChecks.provenAt })
+    .from(baseTipChecks)
+    .where(and(eq(baseTipChecks.projectId, projectId), eq(baseTipChecks.ref, ref)))
+    .limit(1);
+  return row?.tip && row.provenAt ? { tip: row.tip, provenAt: row.provenAt.getTime() } : null;
+}
+
+/**
+ * Share a tip this process asked the upstream for outside the claim above: a
+ * session create, a prompt's grant read or a page view's mirror fetch
+ * (`publishTipProofsTo`, projects/git/mirror.ts). Another process then adopts
+ * it when its mirror holds the same commit, instead of asking GitHub itself
+ * (`adoptSharedTipProof`). Dev 2026-11-03: with 2 API processes, 3 of 4
+ * creates after a page view still fetched (455–590 ms, 4.0–6.8 s while GitHub
+ * was slow), because the page view had proven the tip on the other process.
+ *
+ * `askedAt` is when the ask started, so a base move announced after it still
+ * rejects this proof everywhere (`invalidatedAt`). Three rules keep the claim
+ * protocol intact: an expired row stays expired (a base move must make the
+ * next check ask), a newer proof is never replaced by an older one, and
+ * `checked_at` moves only for a new row.
+ */
+export async function publishBaseTipProof(projectId: string, ref: string, tip: string, askedAt: number): Promise<void> {
+  const at = new Date(askedAt);
+  await db
+    .insert(baseTipChecks)
+    .values({ projectId, ref, tip, checkedAt: at, provenAt: at })
+    .onConflictDoUpdate({
+      target: [baseTipChecks.projectId, baseTipChecks.ref],
+      set: { tip, provenAt: at },
+      setWhere: and(
+        ne(baseTipChecks.checkedAt, EXPIRED),
+        or(isNull(baseTipChecks.provenAt), lt(baseTipChecks.provenAt, at)),
+      ),
+    });
 }

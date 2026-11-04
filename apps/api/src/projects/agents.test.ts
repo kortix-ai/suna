@@ -4,9 +4,9 @@
  * `loadManifestForEdit` (lib/triggers.ts), which only backs the agent-config
  * EDIT endpoints.
  *
- * PR #4974 fixed `loadManifestForEdit` to synthesize a v2 manifest with a
- * declared default agent for a blank managed-git project (no kortix.yaml/
- * kortix.toml committed yet — provisioned without `seed_starter:true`), but
+ * PR #4974 fixed `loadManifestForEdit` to synthesize a manifest with a
+ * declared default agent for a blank managed-git project (no kortix.yaml
+ * committed yet — provisioned without `seed_starter:true`), but
  * left THIS path untouched: `loadProjectAgents` → `readManifest` (the plain
  * `../triggers.ts` reader, not the edit-time synthesis) returned a literal
  * `null` for a blank project, so `extractAgents` never ran and
@@ -44,21 +44,21 @@ const fakeProject = () => ({
   projectId: 'proj_blank',
   repoUrl: 'https://github.com/acme/blank.git',
   defaultBranch: 'main',
-  manifestPath: 'kortix.toml',
+  manifestPath: 'kortix.yaml',
   gitAuthToken: null,
 });
 
 describe('loadProjectAgents — blank managed project (no manifest committed yet)', () => {
-  test('synthesizes the same declared "kortix" default agent loadManifestForEdit promises', async () => {
+  test('synthesizes the same declared "worker" default agent loadManifestForEdit promises', async () => {
     manifestFile = null; // brand-new repo, nothing committed yet
 
     const loaded = await loadProjectAgents(fakeProject());
 
     expect(loaded.errors).toEqual([]);
-    expect(loaded.defaultAgent).toBe('kortix');
-    expect(loaded.specs.map((s) => s.name)).toEqual(['kortix']);
+    expect(loaded.defaultAgent).toBe('worker');
+    expect(loaded.specs.map((s) => s.name)).toEqual(['worker']);
     expect(loaded.specs[0]).toMatchObject({
-      name: 'kortix',
+      name: 'worker',
       enabled: true,
       connectors: 'all',
       permissions: 'all',
@@ -66,7 +66,7 @@ describe('loadProjectAgents — blank managed project (no manifest committed yet
       // KRTX-165: no human declared it, so it keeps the project checkout.
       repositoryAccess: true,
     });
-    expect(repositoryAccessFromLoadedAgents('kortix', loaded)).toBe(true);
+    expect(repositoryAccessFromLoadedAgents('worker', loaded)).toBe(true);
   });
 
   // GAP 1 (dev-live repro): sessions.ts resolves the launching agent through
@@ -88,18 +88,18 @@ describe('loadProjectAgents — blank managed project (no manifest committed yet
     expect(governed.ok).toBe(true);
     if (!governed.ok) return;
     expect(governed.grant).toEqual({
-      agent: 'kortix',
+      agent: 'worker',
       connectors: 'all',
       permissions: 'all',
       env: 'all',
     });
   });
 
-  test('the synthesized "kortix" agent also resolves when named explicitly', async () => {
+  test('the synthesized "worker" agent also resolves when named explicitly', async () => {
     manifestFile = null;
 
     const loaded = await loadProjectAgents(fakeProject());
-    const governed = resolveGovernedAgentGrant('kortix', loaded, {
+    const governed = resolveGovernedAgentGrant('worker', loaded, {
       subject: true,
       projectDefaultAgent: null,
     });
@@ -107,11 +107,22 @@ describe('loadProjectAgents — blank managed project (no manifest committed yet
     expect(governed.ok).toBe(true);
   });
 
+  test('an agent with a validation error is listed off, with the error in `issues`', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: ['default_agent: support', 'agents:', '  support:', '    skills: [never-registered]', ''].join('\n'),
+    };
+
+    const loaded = await loadProjectAgents(fakeProject());
+
+    expect(loaded.specs.find((s) => s.name === 'support')?.enabled).toBe(false);
+    expect(loaded.issues?.map((issue) => issue.path)).toContain('agents.support.skills');
+  });
+
   test('an already-committed manifest is read as-is — unaffected by the synthesis fallback', async () => {
     manifestFile = {
       path: 'kortix.yaml',
       content: [
-        'kortix_version: 2',
         'default_agent: support',
         'agents:',
         '  support:',
@@ -127,12 +138,11 @@ describe('loadProjectAgents — blank managed project (no manifest committed yet
   });
 });
 
-describe('connectors_required — v2 agent required-connector declaration', () => {
+describe('connectors_required — an agent\'s required-connector declaration', () => {
   test('parses a valid subset of the connectors grant, resolvable by name AND the default sentinel', async () => {
     manifestFile = {
       path: 'kortix.yaml',
       content: [
-        'kortix_version: 2',
         'default_agent: support',
         'agents:',
         '  support:',
@@ -146,29 +156,10 @@ describe('connectors_required — v2 agent required-connector declaration', () =
     expect(loaded.specs.find((s) => s.name === 'support')?.connectorsRequired).toEqual(['gmail']);
   });
 
-  test('normalizes the deprecated input alias to the canonical field', async () => {
-    manifestFile = {
-      path: 'kortix.yaml',
-      content: [
-        'kortix_version: 2',
-        'default_agent: support',
-        'agents:',
-        '  support:',
-        '    connectors: [gmail]',
-        '    connectors_personal: [gmail]',
-        '',
-      ].join('\n'),
-    };
-    const loaded = await loadProjectAgents(fakeProject());
-    expect(loaded.errors).toEqual([]);
-    expect(loaded.specs.find((s) => s.name === 'support')?.connectorsRequired).toEqual(['gmail']);
-  });
-
   test('rejects a required connector that is not in the connectors grant', async () => {
     manifestFile = {
       path: 'kortix.yaml',
       content: [
-        'kortix_version: 2',
         'default_agent: support',
         'agents:',
         '  support:',
@@ -182,29 +173,10 @@ describe('connectors_required — v2 agent required-connector declaration', () =
     expect(loaded.errors[0]?.error).toContain('subset of connectors');
   });
 
-  test('rejects conflicting canonical and deprecated fields', async () => {
-    manifestFile = {
-      path: 'kortix.yaml',
-      content: [
-        'kortix_version: 2',
-        'default_agent: support',
-        'agents:',
-        '  support:',
-        '    connectors: [gmail, slack]',
-        '    connectors_required: [gmail]',
-        '    connectors_personal: [slack]',
-        '',
-      ].join('\n'),
-    };
-    const loaded = await loadProjectAgents(fakeProject());
-    expect(loaded.errors[0]?.error).toContain('must match');
-  });
-
   test('an agent that declares none yields no required connectors', async () => {
     manifestFile = {
       path: 'kortix.yaml',
       content: [
-        'kortix_version: 2',
         'default_agent: support',
         'agents:',
         '  support:',
@@ -217,12 +189,11 @@ describe('connectors_required — v2 agent required-connector declaration', () =
   });
 });
 
-describe('workspace — v2 agent workspace declaration', () => {
+describe('workspace — an agent\'s workspace declaration', () => {
   test('resolves the selected and default agent workspace modes', async () => {
     manifestFile = {
       path: 'kortix.yaml',
       content: [
-        'kortix_version: 2',
         'default_agent: support',
         'agents:',
         '  support:',
@@ -242,23 +213,15 @@ describe('workspace — v2 agent workspace declaration', () => {
     expect(repositoryAccessFromLoadedAgents('missing', loaded)).toBe(true);
   });
 
-  test('reads workspace.project_repository, default true; a typo withholds the repository', async () => {
+  test('reads workspace.project_repository; a typo withholds the repository', async () => {
     manifestFile = {
       path: 'kortix.yaml',
       content: [
-        'kortix_version: 2',
         'agents:',
         '  support:',
         '    workspace: { project_repository: false }',
         '  engineer:',
         '    workspace: { project_repository: true }',
-        '  plain: {}',
-        '  aliased:',
-        '    repository_access: false',
-        '    workspace: { project_repository: false }',
-        '  conflict:',
-        '    repository_access: true',
-        '    workspace: { project_repository: false }',
         '  typo:',
         '    workspace: { project_repo: false }',
         '',
@@ -267,20 +230,16 @@ describe('workspace — v2 agent workspace declaration', () => {
 
     const loaded = await loadProjectAgents(fakeProject());
 
-    expect(loaded.errors.map((e) => e.name).sort()).toEqual(['conflict', 'typo']);
+    expect(loaded.errors.map((e) => e.name)).toEqual(['typo']);
     expect(repositoryAccessFromLoadedAgents('support', loaded)).toBe(false);
     expect(repositoryAccessFromLoadedAgents('engineer', loaded)).toBe(true);
-    expect(repositoryAccessFromLoadedAgents('plain', loaded)).toBe(true);
-    expect(repositoryAccessFromLoadedAgents('aliased', loaded)).toBe(false);
-    expect(repositoryAccessFromLoadedAgents('conflict', loaded)).toBe(false);
     expect(repositoryAccessFromLoadedAgents('typo', loaded)).toBe(false);
   });
 
-  test('kortix_version 3 defaults workspace.project_repository to false', async () => {
+  test('workspace.project_repository defaults to false', async () => {
     manifestFile = {
       path: 'kortix.yaml',
       content: [
-        'kortix_version: 3',
         'default_agent: engineer',
         'agents:',
         '  engineer:',
@@ -298,5 +257,17 @@ describe('workspace — v2 agent workspace declaration', () => {
     expect(repositoryAccessFromLoadedAgents('engineer', loaded)).toBe(true);
     expect(repositoryAccessFromLoadedAgents('plain', loaded)).toBe(false);
     expect(repositoryAccessFromLoadedAgents('empty', loaded)).toBe(false);
+  });
+
+  test('an agent off because of a validation error gets no repository', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: ['agents:', '  engineer:', '    workspace: { project_repository: true }', '    temperature: hot', ''].join('\n'),
+    };
+
+    const loaded = await loadProjectAgents(fakeProject());
+
+    expect(loaded.specs.find((spec) => spec.name === 'engineer')?.enabled).toBe(false);
+    expect(repositoryAccessFromLoadedAgents('engineer', loaded)).toBe(false);
   });
 });

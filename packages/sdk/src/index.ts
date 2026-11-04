@@ -130,7 +130,7 @@ export {
  * public surface — a session owns its runtime.
  */
 export type { RuntimeCapability, SessionHealthResponse, SessionHealthResult } from './core/session/health';
-export { runtimeSupports } from './core/session/health';
+export { hasSessionDesktop, runtimeSupports } from './core/session/health';
 
 /**
  * A session's resolved runtime (opencode session id + runtime URL + sandbox
@@ -514,6 +514,7 @@ export * from './core/http/runtime-errors';
 export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
 export * from './core/cache/persisted-query-cache';
+export * from './core/files/image-cache';
 export * from './core/attachments/limits';
 export * from './core/attachments/prompt-attachments';
 export * from './core/runtime/client';

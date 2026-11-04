@@ -8,10 +8,14 @@
  * created it or when its session is one they may open ("Who can open a
  * session": `loadVisibleSession`). Change requests, the review inbox, gateway
  * logs, gateway spend and git refs of sessions all ask this one question.
+ *
+ * Neither view reads a session of a private channel the caller is not in
+ * (`hiddenSpaceIds`): a manager outside the channel does not read its threads'
+ * work. Spend totals that name no session keep every row.
  */
 import type { Context } from 'hono';
 import { projectSessions } from '@kortix/db';
-import { type AnyColumn, type SQL, and, eq, exists, inArray, or, sql } from 'drizzle-orm';
+import { type AnyColumn, type SQL, and, eq, exists, inArray, notExists, or, sql } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { isAgentPrincipalActor } from '../../iam/actor';
 import { callerKortixSessionId } from '../../middleware/caller-session';
@@ -20,6 +24,7 @@ import { uuidsIn } from '../../shared/validate';
 import { loadProjectForUser, projectCapabilityAllowed } from './http-project-access';
 import { sessionListViewerSql } from './session-list';
 import { loadVisibleSession, viewerManagerStanding } from './session-visibility';
+import { hiddenSpaceIds } from '../../shared/space-access';
 
 type LoadedProject = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
 
@@ -67,6 +72,7 @@ export async function callerManagesProject(c: Context, loaded: LoadedProject): P
 
 export async function projectReadView(c: Context, loaded: LoadedProject): Promise<ProjectReadView> {
   const bound = callerKortixSessionId(c);
+  const hidden = [...(await hiddenSpaceIds(loaded.row.projectId, loaded.userId, bound))];
   // The sessions this caller may open, by the session list's SQL rules
   // (`sessionListViewerSql`, the twin of `isProjectSessionVisibleTo`).
   // Deleted sessions stay in: their work is still the caller's.
@@ -80,6 +86,7 @@ export async function projectReadView(c: Context, loaded: LoadedProject): Promis
       agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
       canManageProject: false,
       accountSessionOversight: false,
+      hiddenSpaceIds: new Set(hidden),
     }),
   );
   const visibleSessionIdsSql = db
@@ -105,12 +112,52 @@ export async function projectReadView(c: Context, loaded: LoadedProject): Promis
     return out;
   };
   if (await callerManagesProject(c, loaded)) {
+    if (hidden.length === 0) {
+      return {
+        full: true,
+        where: () => undefined,
+        allows: async () => true,
+        refsVisible: async () => true,
+        visibleSessionIds: async (ids) => new Set(ids),
+        openableSessionIds: visibleSessionIds,
+      };
+    }
+    // Every row but those of a hidden private channel's sessions.
+    const inHiddenSpace = and(eq(projectSessions.projectId, loaded.row.projectId), inArray(projectSessions.spaceId, hidden));
+    const hiddenAmong = async (ids: readonly string[]): Promise<Set<string>> => {
+      const out = new Set<string>();
+      for (let i = 0; i < ids.length; i += 5_000) {
+        const rows = await db
+          .select({ sessionId: projectSessions.sessionId })
+          .from(projectSessions)
+          .where(and(inArray(projectSessions.sessionId, ids.slice(i, i + 5_000)), inHiddenSpace));
+        for (const row of rows) out.add(row.sessionId);
+      }
+      return out;
+    };
+    const fullVisible = async (ids: readonly string[]): Promise<Set<string>> => {
+      const out = await hiddenAmong(ids);
+      return new Set(ids.filter((id) => !out.has(id)));
+    };
     return {
       full: true,
-      where: () => undefined,
-      allows: async () => true,
-      refsVisible: async () => true,
-      visibleSessionIds: async (ids) => new Set(ids),
+      where: (sessionColumn) => {
+        if (sessionColumn === projectSessions.sessionId) {
+          throw new Error('projectReadView.where needs the outer table\'s session column, not project_sessions.session_id');
+        }
+        return notExists(
+          db
+            .select({ one: sql`1` })
+            .from(projectSessions)
+            .where(and(eq(projectSessions.sessionId, sessionColumn), inHiddenSpace)),
+        );
+      },
+      allows: async (row) => !row.sessionId || (await fullVisible([row.sessionId])).has(row.sessionId),
+      refsVisible: async (...refs) => {
+        const ids = refs.flatMap((ref) => (ref ? uuidsIn(ref) : []));
+        return ids.length === 0 || (await hiddenAmong(ids)).size === 0;
+      },
+      visibleSessionIds: fullVisible,
       openableSessionIds: visibleSessionIds,
     };
   }

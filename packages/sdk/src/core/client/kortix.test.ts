@@ -278,35 +278,17 @@ test('project(id).sessions.list forwards manager inventory scope', async () => {
   expect(last().url).toContain('/projects/PID123/sessions?scope=project');
 });
 
-test('project(id).sessions exposes server-owned warm-session ensure and claim', async () => {
-  globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: unknown } = {}) => {
-    const requestUrl = String(url);
-    calls.push({
-      url: requestUrl,
-      method: opts.method ?? 'GET',
-      body: typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body,
-    });
-    const body = requestUrl.endsWith('/warm/claim')
-      ? { session_id: 'SID456' }
-      : {
-          session: { session_id: 'SID456' },
-          reused: true,
-          workspace_refresh: { status: 'unchanged' },
-        };
-    return new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
-  }) as unknown as typeof fetch;
-
-  await kortix.project('PID123').sessions.ensureWarm();
-  expect(last().url).toContain('/projects/PID123/sessions/warm');
-  expect(last().method).toBe('POST');
-
-  await kortix.project('PID123').sessions.claimWarm({ session_id: 'SID456' });
-  expect(last().url).toContain('/projects/PID123/sessions/warm/claim');
-  expect(last().method).toBe('POST');
-  expect(last().body).toEqual({ session_id: 'SID456' });
+// Warm sessions were removed on 2026-11-03: both verbs stay for semver and
+// reject as retired, with no request.
+test('project(id).sessions.ensureWarm and claimWarm reject with ENDPOINT_RETIRED and send no request', async () => {
+  const before = calls.length;
+  await expect(kortix.project('PID123').sessions.ensureWarm()).rejects.toMatchObject({
+    code: 'ENDPOINT_RETIRED',
+  });
+  await expect(
+    kortix.project('PID123').sessions.claimWarm({ session_id: 'SID456' }),
+  ).rejects.toMatchObject({ code: 'ENDPOINT_RETIRED' });
+  expect(calls.length).toBe(before);
 });
 
 test('top-level projects.list hits /projects', async () => {
@@ -432,6 +414,29 @@ test('project(id).channels covers slack and email', async () => {
 
   await kortix.project('PID123').channels.email.mode();
   expect(last().url).toContain('/projects/PID123/channels/email/mode');
+});
+
+test('project(id).channels.telegram binds the project id on every call', async () => {
+  const telegram = kortix.project('PID123').channels.telegram;
+  const base = 'http://test.local/projects/PID123/channels/telegram';
+  await telegram.installation();
+  expect(last()).toMatchObject({ method: 'GET', url: `${base}/installation` });
+  await telegram.connect({ bot_token: '123:abc' });
+  expect(last()).toMatchObject({ method: 'POST', url: `${base}/connect`, body: { bot_token: '123:abc' } });
+  await telegram.setAllowedUsers(['42']);
+  expect(last()).toMatchObject({ method: 'PUT', url: `${base}/allowed-users`, body: { user_ids: ['42'] } });
+  await telegram.users();
+  expect(last()).toMatchObject({ method: 'GET', url: `${base}/users` });
+  await telegram.allowUser('77');
+  expect(last()).toMatchObject({ method: 'POST', url: `${base}/allowed-users`, body: { user_id: '77' } });
+  await telegram.removeUser('42');
+  expect(last()).toMatchObject({ method: 'DELETE', url: `${base}/allowed-users/42` });
+  await telegram.dismissAccessRequest('77');
+  expect(last()).toMatchObject({ method: 'DELETE', url: `${base}/access-requests/77` });
+  await telegram.userPhoto('42', 'AQAD');
+  expect(last()).toMatchObject({ method: 'GET', url: `${base}/users/42/photo?v=AQAD` });
+  await telegram.disconnect();
+  expect(last()).toMatchObject({ method: 'DELETE', url: base });
 });
 
 test('project(id) exposes provider-neutral Apps without a generic deployments alias', () => {
@@ -594,6 +599,25 @@ test('project(id).secrets covers provider OAuth list, start, poll, and removal',
   expect(last().method).toBe('DELETE');
 });
 
+test('project(id).claudeSubscription covers status, sign-in, token and disconnect', async () => {
+  await kortix.project('PID123').claudeSubscription.get();
+  expect(last().url.endsWith('/projects/PID123/claude-subscription')).toBe(true);
+  expect(last().method).toBe('GET');
+
+  await kortix.project('PID123').claudeSubscription.startLogin();
+  expect(last().url.endsWith('/projects/PID123/claude-subscription/login/start')).toBe(true);
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').claudeSubscription.completeLogin({ flowId: 'F1', code: 'C1' });
+  expect(last().url.endsWith('/projects/PID123/claude-subscription/login/complete')).toBe(true);
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').claudeSubscription.setToken('sk-ant-oat01-x');
+  expect(last().url.endsWith('/projects/PID123/claude-subscription/token')).toBe(true);
+  expect(last().method).toBe('PUT');
+
+});
+
 test('project(id).connectors covers credential-mode/sensitive/policies/pipedream', async () => {
   await kortix.project('PID123').connectors.auth.discover({
     slug: 'hubspot',
@@ -630,6 +654,26 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
   expect(last().url).toContain('/connectors/projects/PID123/connectors/slack-1/policies');
   expect(last().method).toBe('PUT');
 
+  await kortix
+    .project('PID123')
+    .connectors.policies.get('gmail', { policySet: 'read_only' });
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail/policies?policy_set=read_only');
+
+  await kortix.project('PID123').connectors.policySets.list('gmail');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail/policy-sets');
+  expect(last().method).toBe('GET');
+
+  await kortix.project('PID123').connectors.policySets.upsert('gmail', 'read_only', { description: 'x' });
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail/policy-sets/read_only');
+  expect(last().method).toBe('PUT');
+
+  await kortix.project('PID123').connectors.policySets.rename('gmail', 'read_only', 'readers');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail/policy-sets/read_only/name');
+
+  await kortix.project('PID123').connectors.policySets.remove('gmail', 'readers');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail/policy-sets/readers');
+  expect(last().method).toBe('DELETE');
+
   await kortix.project('PID123').connectors.pipedream.listApps('gmail');
   expect(last().url).toContain('/connectors/projects/PID123/pipedream/apps?q=gmail');
 
@@ -641,6 +685,19 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
     '/connectors/projects/PID123/discover/connectors/detail?id=mcp%2Fnotion',
   );
 
+  await kortix.project('PID123').connectors.discover.list({ q: 'crm', kinds: ['mcp', 'composio'], oneClick: true });
+  expect(last().url).toContain('kind=mcp%2Ccomposio');
+  expect(last().url).toContain('oneClick=1');
+
+  await kortix.project('PID123').connectors.discover.tools('kortix:stripe', 'composio:stripe');
+  expect(last().url).toContain(
+    '/connectors/projects/PID123/discover/connectors/tools?id=kortix%3Astripe&way=composio%3Astripe',
+  );
+
+  await kortix.project('PID123').connectors.discover.install({ id: 'kortix:stripe', name: 'Billing' });
+  expect(last().url).toContain('/connectors/projects/PID123/discover/install');
+  expect(last().method).toBe('POST');
+
   await kortix.project('PID123').connectors.pipedream.connect('gmail-1');
   expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail-1/connect');
   expect(last().method).toBe('POST');
@@ -648,6 +705,14 @@ test('project(id).connectors covers credential-mode/sensitive/policies/pipedream
   await kortix.project('PID123').connectors.pipedream.finalize('gmail-1');
   expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail-1/connect/finalize');
   expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').connectors.agents('gmail');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/gmail/agents');
+  await kortix.project('PID123').connectors.rulesMatrix();
+  expect(last().url).toContain('/connectors/projects/PID123/rules-matrix');
+  await kortix.project('PID123').connectors.setOAuth2ClientCredentials('billing', { token_url: 'https://a.test/t', client_id: 'c' });
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/billing/oauth2/connection');
+  expect(last().method).toBe('PUT');
 });
 
 test('project(id).connectors exposes the connection lifecycle', async () => {
@@ -776,6 +841,16 @@ test('session(...).transcript hits the compact transcript endpoint with limit/ch
   expect(last().method).toBe('GET');
 });
 
+// The TUI's Repository screen reads a non-default branch's history: the facade
+// must forward the options `listProjectCommits` already takes.
+test('project(id).git.commits forwards ref, path and limit', async () => {
+  await kortix.project('PID123').git.commits();
+  expect(last().url).toMatch(/\/projects\/PID123\/commits$/);
+  await kortix.project('PID123').git.commits({ ref: 'feature', path: 'src', limit: 20 });
+  expect(last().url).toContain('/projects/PID123/commits?ref=feature&path=src&limit=20');
+  expect(last().method).toBe('GET');
+});
+
 // KRTX-2316: the list is one page; the facade passes the status and the cursor.
 test('project(id).changeRequests.list pages with status, limit and cursor', async () => {
   await kortix.project('PID123').changeRequests.list();
@@ -840,8 +915,8 @@ test('project(id).setupLinks mints secret-entry and connect-request links', asyn
   expect(last().method).toBe('POST');
 });
 
-test('project(id).validateManifest posts the raw TOML text', async () => {
-  await kortix.project('PID123').validateManifest('[project]\nname = "x"');
+test('project(id).validateManifest posts the raw manifest text', async () => {
+  await kortix.project('PID123').validateManifest('project:\n  name: x\n');
   expect(last().url).toContain('/projects/PID123/manifest/validate');
   expect(last().method).toBe('POST');
 });

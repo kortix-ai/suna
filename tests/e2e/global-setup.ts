@@ -4,7 +4,7 @@
  * `local-runner.ts` sets `E2E_REQUIRE_ALL_BROWSER=1` for the deployed lane and
  * `strict-skip-reporter.ts` then fails the lane if ANY journey skipped. But 11
  * specs decide to skip at RUNTIME on environment availability — a missing
- * `KE2E_DATABASE_URL`, or an AgentMail key that answers 403. So a single
+ * `KE2E_DATABASE_URL`, or a Resend key that answers 403. So a single
  * email-provider blip turned the whole lane red only after ~50 minutes of
  * running everything else first, and the failure named a skipped test rather
  * than the missing capability.

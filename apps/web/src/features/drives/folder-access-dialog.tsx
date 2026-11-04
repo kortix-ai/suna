@@ -1,5 +1,6 @@
 'use client';
 
+import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
 import { Button } from '@kortix/ui/button';
 import { EntityAvatar } from '@kortix/ui/entity-avatar';
 import { Field, FieldLabel } from '@kortix/ui/field';
@@ -26,11 +27,11 @@ import {
   type PrincipalSelection,
 } from '@kortix/ui/access/access/principal-picker';
 import { PrincipalPicker } from '@kortix/ui/access';
-import { useFolderAccess, useFolderPrincipals, useShareFolder, useUnshareFolder } from '@kortix/ui/files';
+import { useFolderAccess, useShareFolder, useUnshareFolder } from '@kortix/ui/files';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@kortix/ui';
 import type { FolderGrant, FolderLevel, FolderPrincipalType } from '@kortix/sdk';
-import { LockIcon, RobotIcon, UsersIcon, UsersThreeIcon, XIcon } from '@phosphor-icons/react';
+import { LockIcon, UsersIcon, UsersThreeIcon, XIcon } from '@phosphor-icons/react';
 import { type ReactNode, useId, useMemo, useState } from 'react';
 
 import {
@@ -51,8 +52,9 @@ export function folderName(path: string, root: string): string {
 /** A grant's avatar: a person's initials, or the team / agent / project glyph. */
 export function GrantAvatar({ type, label }: { type: FolderPrincipalType; label: string }) {
   if (type === 'user') return <UserAvatar email={label} size="sm" />;
-  const icon = type === 'group' ? UsersIcon : type === 'agent' ? RobotIcon : UsersThreeIcon;
-  return <EntityAvatar icon={icon} label={label} size="sm" />;
+  // An agent grant's label is the agent's name: its pixel mark, on the `sm` tile's 22px.
+  if (type === 'agent') return <AgentMark slug={label} size={14} tile={22} />;
+  return <EntityAvatar icon={type === 'group' ? UsersIcon : UsersThreeIcon} label={label} size="sm" />;
 }
 
 /** One row of an access list, the same row the agent and account share dialogs draw. */
@@ -112,11 +114,11 @@ function LevelSelect({
 }
 
 /**
- * Who can open one folder of Files, in the same shape as choosing who can use
- * an agent or a connector account: everyone in the project, admins only (in a
- * person's own folder, only them), or specific people, teams and agents, each
- * at view, edit or share. Nothing is written until Save, and the server
- * checks every write: only someone who may share the folder can change it.
+ * Which agents get one folder of Files: none (admins only; in a person's own
+ * folder, only them) or specific agents, each at view, edit or share. Every
+ * session of a picked agent mounts the folder, and everyone who may use that
+ * agent can open it. Nothing is shared with a person, a team or the whole
+ * project. Nothing is written until Save, and the server checks every write.
  */
 export function FolderAccessDialog({
   driveId,
@@ -185,11 +187,11 @@ function FolderAccessForm({
   const { user } = useAuth();
   const current = useMemo(() => folderAudience(grants), [grants]);
   const [draft, setDraft] = useState<FolderAccessDraft>(() => ({
-    mode: current.inheritedEveryone ? 'everyone' : current.mode,
+    // A grant to everyone is not served any more; a stale one reads as none.
+    mode: current.mode === 'everyone' ? 'restricted' : current.mode,
     everyoneLevel: current.everyoneLevel,
     named: current.named,
   }));
-  const principals = useFolderPrincipals(driveId, canManage);
   const identities = useProjectAgentIdentities(projectId, canManage);
   const share = useShareFolder();
   const unshare = useUnshareFolder();
@@ -198,7 +200,6 @@ function FolderAccessForm({
   const plan = planFolderAccess(current, draft);
   const dirty = plan.put.length + plan.remove.length > 0;
   const locked = !canManage || saving;
-  const inheritedEveryone = current.inheritedEveryone;
 
   const restrictedLabel = current.owner
     ? current.owner.principalId === user?.id
@@ -211,10 +212,6 @@ function FolderAccessForm({
   const onPick = (next: PrincipalSelection) => {
     const have = new Set(draft.named.map(namedKey));
     const added: NamedAccess[] = [];
-    const label = (list: Array<{ id: string; label: string }> | undefined, pickedId: string) =>
-      list?.find((x) => x.id === pickedId)?.label ?? pickedId;
-    for (const memberId of next.memberIds) added.push({ type: 'user', id: memberId, label: label(principals.data?.people, memberId), level: 'write' });
-    for (const groupId of next.groupIds) added.push({ type: 'group', id: groupId, label: label(principals.data?.teams, groupId), level: 'write' });
     const agentNames = new Map(identities.data?.map((a) => [a.service_account_id, a.agent_name]));
     for (const saId of next.agentIds ?? []) {
       // The picker names an agent by its service account; a folder share names it by the agent's name.
@@ -241,20 +238,11 @@ function FolderAccessForm({
 
   const showNamed = draft.mode !== 'restricted';
   const result =
-    draft.mode === 'everyone'
-      ? t('resultEveryone')
-      : draft.mode === 'restricted' || draft.named.length === 0
+    draft.mode === 'restricted' || draft.named.length === 0
         ? current.owner
           ? restrictedLabel
           : t('resultAdmins')
         : t('resultSpecific', { count: draft.named.length });
-  // Already listed, plus you and the folder's owner: picking yourself
-  // changes nothing (the person sharing and the owner keep their access).
-  const pickerExcludedUserIds = [
-    ...draft.named.filter((n) => n.type === 'user').map((n) => n.id),
-    ...(user?.id ? [user.id] : []),
-    ...(current.owner ? [current.owner.principalId] : []),
-  ];
 
   return (
     <>
@@ -271,22 +259,13 @@ function FolderAccessForm({
                 className="space-y-2"
               >
                 <RadioGroupItem
-                  value="everyone"
-                  id={`${id}-everyone`}
-                  label={t('everyoneInProject')}
-                  description={t('audienceEveryoneDescription')}
-                  size="lg"
-                  variant="outline"
-                  disabled={locked}
-                />
-                <RadioGroupItem
                   value="restricted"
                   id={`${id}-restricted`}
                   label={restrictedLabel}
                   description={restrictedDescription}
                   size="lg"
                   variant="outline"
-                  disabled={locked || !!inheritedEveryone}
+                  disabled={locked}
                 />
                 <RadioGroupItem
                   value="specific"
@@ -295,29 +274,14 @@ function FolderAccessForm({
                   description={t('audienceSpecificDescription')}
                   size="lg"
                   variant="outline"
-                  disabled={locked || !!inheritedEveryone}
+                  disabled={locked}
                 />
               </RadioGroup>
-              {inheritedEveryone ? (
-                <p className="text-muted-foreground text-xs">{t('inheritedEveryoneNote', { path: inheritedEveryone.path })}</p>
-              ) : null}
             </Field>
-
-            {draft.mode === 'everyone' && !inheritedEveryone ? (
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm">{t('everyoneCan')}</span>
-                <LevelSelect
-                  value={draft.everyoneLevel}
-                  onChange={(everyoneLevel) => setDraft((d) => ({ ...d, everyoneLevel }))}
-                  disabled={locked}
-                  label={t('everyoneCan')}
-                />
-              </div>
-            ) : null}
 
             {showNamed ? (
               <Field className="gap-1.5">
-                <FieldLabel>{draft.mode === 'everyone' ? t('alsoNamed') : t('peopleWithAccess')}</FieldLabel>
+                <FieldLabel>{t('peopleWithAccess')}</FieldLabel>
                 {draft.named.length > 0 ? (
                   <ul className="space-y-2">
                     {draft.named.map((n) => (
@@ -366,8 +330,7 @@ function FolderAccessForm({
                   <PrincipalPicker
                     scope={{ kind: 'project', projectId }}
                     selection="multi"
-                    kinds={['member', 'group', 'agent']}
-                    excludeUserIds={pickerExcludedUserIds}
+                    kinds={['agent']}
                     value={EMPTY_PRINCIPAL_SELECTION}
                     onChange={onPick}
                     disabled={locked}
@@ -387,7 +350,7 @@ function FolderAccessForm({
                       key={g.grantId}
                       muted
                       avatar={<GrantAvatar type={g.principalType} label={g.label} />}
-                      label={g.principalType === 'project' ? t('everyoneInProject') : g.principalType === 'agent' ? t('agentLabel', { name: g.label }) : g.label}
+                      label={g.principalType === 'agent' ? t('agentLabel', { name: g.label }) : g.label}
                       meta={t('inheritedFrom', { path: g.path })}
                       action={<span className="text-muted-foreground shrink-0 text-xs">{t(`level.${g.level}`)}</span>}
                     />
@@ -396,7 +359,7 @@ function FolderAccessForm({
               </Field>
             ) : null}
 
-            <InfoBanner tone="neutral" icon={draft.mode === 'everyone' ? UsersThreeIcon : LockIcon}>
+            <InfoBanner tone="neutral" icon={LockIcon}>
               <span data-testid="folder-access-result">{result}</span>
             </InfoBanner>
             {!canManage ? <p className="text-muted-foreground text-xs">{t('viewOnlyAccess')}</p> : null}

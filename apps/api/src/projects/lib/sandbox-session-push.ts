@@ -57,7 +57,7 @@ function nonActiveSandboxSkip(
  * Such a box receives compiled governance inside its config release. A separate
  * `KORTIX_COMPILED_AGENT_CONFIG` push through `/kortix/env` would restart
  * OpenCode on governance that does not match the release it runs — and the box
- * drops it anyway (`releaseGovernanceActive`, daemon `harness/open-code/control.ts`).
+ * drops it anyway (`releaseGovernanceActive`, the daemon's OpenCode adapter).
  *
  * This reads the box's STATE (`config.release_id`), not the binary's
  * `config.release.v1` capability. The capability is compiled in and is present
@@ -169,10 +169,8 @@ export async function pushSessionAgentConfigToSandbox(input: {
             input.baseRef,
           )
         : await resolveCompiledAgentConfigForSession(gitProject, input.baseRef);
-    // `null` is a v1 project or an unreadable manifest. Pushing an empty value
-    // would DELETE the agent config the box is running — a v1 project has none
-    // to begin with, and for a transient read failure that would be a silent
-    // downgrade to no agents at all. Leave the box as it is.
+    // `null` is a project with no manifest file. Pushing an empty value would
+    // DELETE the agent config the box is running. Leave the box as it is.
     if (!compiled) return { applied: false, reason: 'no compiled agent config' };
 
     // Selected WITHOUT the status filter so a non-active row can be NAMED. The

@@ -84,7 +84,9 @@ import {
   type ModelsPageSheetHost,
 } from './models-page-sheet';
 import { cn } from '../../internal/lib/utils';
+import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 import { ModelSelector } from '../../session/models/model-selector';
+import type { ResourceScope } from '../shared/agent-resource-scope';
 import { CapabilityPageShell } from '../shared/capability-page-shell';
 import { GatewayAccessTab } from './gateway-access-tab';
 import { CustomProviderPanel } from './llm-provider/custom-provider-panel';
@@ -105,7 +107,8 @@ type LlmTab =
   'providers' | 'models' | 'custom' | 'gateway' | 'routing' | 'overview' | 'logs';
 
 interface LlmTabEntry {
-  id: LlmTab;
+  /** `agent` exists only on the agent variant (`AGENT_LLM_TABS`). */
+  id: LlmTab | 'agent';
   label: string;
 }
 
@@ -349,10 +352,31 @@ export function LlmSections({
   );
 }
 
-export function LlmManagementView({ projectId }: { projectId: string }) {
+/** The agent variant's own tab, ahead of the seven project tabs. */
+const AGENT_TAB = 'agent';
+
+export function LlmManagementView({
+  projectId,
+  surface = { kind: 'global' },
+  agentSettings,
+}: {
+  projectId: string;
+  /** `agent` is the same page on one agent's editor: a leading "This agent"
+   *  tab holds the agent's own model, and the project default picker steps
+   *  aside — the project default is the global variant's control. */
+  surface?: ResourceScope;
+  /** The agent's model settings, rendered as the "This agent" tab. */
+  agentSettings?: ReactNode;
+}) {
   const { isOpen: open, activeTab: section } = useSettingsNav();
-  const [tab, setTab] = useState<LlmTab>(
-    () => TAB_BY_SECTION[section as LegacyLlmSubTab] ?? 'providers',
+  const agentScoped = surface.kind === 'agent' && agentSettings !== undefined;
+  const tAgentScope = useTranslations('agentScope');
+  const agentTabs = useMemo<LlmTabEntry[]>(
+    () => [{ id: AGENT_TAB, label: tAgentScope('thisAgent') }, ...LLM_TABS],
+    [tAgentScope],
+  );
+  const [tab, setTab] = useState<LlmTab | typeof AGENT_TAB>(
+    () => TAB_BY_SECTION[section as LegacyLlmSubTab] ?? (agentScoped ? AGENT_TAB : 'providers'),
   );
 
   // A role with the LLM section's READ leaf (project.read) but not
@@ -380,25 +404,45 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
     >
     <CapabilityPageShell
       title={MODELS_PAGE_TITLE}
-      description={MODELS_PAGE_DESCRIPTION}
+      description={
+        // Only "This agent" is the agent's own; every other tab edits state
+        // that all of the project's agents share, and the line says so.
+        agentScoped ? tAgentScope('modelsDescription') : MODELS_PAGE_DESCRIPTION
+      }
       filters={
         /* The tab strip on the left, the project default on the right of the
            same row. */
         <>
-          <LlmTabStrip value={tab} onValueChange={(v) => setTab(v as LlmTab)} />
-          {canWrite ? <ProjectDefaultPicker projectId={projectId} /> : null}
+          {agentScoped ? (
+            // Eight tabs in the editor's pane, beside the rail: the strip
+            // scrolls rather than push the row wider than the column.
+            <FadedScrollArea orientation="horizontal" fadeColor="from-background" className="min-w-0 max-w-full">
+              <LlmTabStrip
+                value={tab}
+                onValueChange={(v) => setTab(v as LlmTab | typeof AGENT_TAB)}
+                tabs={agentTabs}
+              />
+            </FadedScrollArea>
+          ) : (
+            <LlmTabStrip value={tab} onValueChange={(v) => setTab(v as LlmTab)} tabs={LLM_TABS} />
+          )}
+          {canWrite && !agentScoped ? <ProjectDefaultPicker projectId={projectId} /> : null}
         </>
       }
     >
-      <LlmSections
-        projectId={projectId}
-        tab={tab}
-        onTabChange={setTab}
-        canWrite={canWrite}
-        enabled={open}
-        selectedProviderId={providerId}
-        onSelectProvider={setProviderId}
-      />
+      {tab === AGENT_TAB ? (
+        agentSettings
+      ) : (
+        <LlmSections
+          projectId={projectId}
+          tab={tab}
+          onTabChange={setTab}
+          canWrite={canWrite}
+          enabled={open}
+          selectedProviderId={providerId}
+          onSelectProvider={setProviderId}
+        />
+      )}
     </CapabilityPageShell>
     </ProviderSheetSplit>
   );

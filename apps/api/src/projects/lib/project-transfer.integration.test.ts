@@ -550,6 +550,48 @@ withDb('project transfer', () => {
     expect(movedWatch.targetSessionId).toBe(SESSION_ID);
   });
 
+  test('artifacts and session groups follow the project, still on its drive', async () => {
+    const { artifacts, projectSessionGroups } = await import('@kortix/db');
+    const [artifact] = await db.insert(artifacts).values({
+      projectId: PROJECT_ID, accountId: SOURCE_ACCOUNT, driveId: DRIVE_ID, root: 'Artifacts/launch', entry: 'index.md',
+      folder: false, title: 'Launch plan', type: 'doc', createdByUserId: OWNER_A,
+    }).returning();
+    const [group] = await db.insert(projectSessionGroups).values({
+      projectId: PROJECT_ID, accountId: SOURCE_ACCOUNT, name: 'Store A', position: 0, createdBy: OWNER_A,
+    }).returning();
+    await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT });
+    const [movedArtifact] = await db.select().from(artifacts).where(eq(artifacts.artifactId, artifact.artifactId));
+    const [movedGroup] = await db.select().from(projectSessionGroups).where(eq(projectSessionGroups.groupId, group.groupId));
+    const [movedDrive] = await db.select().from(drives).where(eq(drives.driveId, DRIVE_ID));
+    expect(movedArtifact.accountId).toBe(TARGET_ACCOUNT);
+    expect(movedArtifact.driveId).toBe(DRIVE_ID);
+    expect(movedDrive.accountId).toBe(TARGET_ACCOUNT);
+    expect(movedGroup.accountId).toBe(TARGET_ACCOUNT);
+    expect(movedGroup.name).toBe('Store A');
+  });
+
+  test('box identities follow the project, a retired box\'s too, both ways', async () => {
+    const { sessionSandboxes } = await import('@kortix/db');
+    // A live box on the seeded session, and a retired one: retirement clears the runtime row's external_id, the identity stays.
+    await db.insert(projectSessions).values({ sessionId: 'transfer-test-session-2', accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID, branchName: 'transfer-test-session-2' });
+    await db.insert(sessionSandboxes).values([
+      { sandboxId: '00000000-0000-4000-a000-00000000a140', sessionId: SESSION_ID, accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID, provider: 'platinum', externalId: 'sbx-live' },
+      { sandboxId: '00000000-0000-4000-a000-00000000a141', sessionId: 'transfer-test-session-2', accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID, provider: 'platinum', externalId: 'sbx-retired' },
+    ]);
+    await db.update(sessionSandboxes).set({ externalId: null, status: 'stopped', metadata: { ephemeralRetiredExternalId: 'sbx-retired' } })
+      .where(eq(sessionSandboxes.externalId, 'sbx-retired'));
+    const identities = async () => (await db.execute<{ account_id: string; external_id: string }>(
+      sql`SELECT account_id, external_id FROM kortix.session_sandbox_identities WHERE project_id = ${PROJECT_ID} ORDER BY external_id`,
+    )).map((row) => [row.external_id, row.account_id]);
+    expect(await identities()).toEqual([['sbx-live', SOURCE_ACCOUNT], ['sbx-retired', SOURCE_ACCOUNT]]);
+
+    for (const [fromAccountId, toAccountId] of [[SOURCE_ACCOUNT, TARGET_ACCOUNT], [TARGET_ACCOUNT, SOURCE_ACCOUNT]] as const) {
+      await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId, toAccountId });
+      // One row per box, in the new account: the save-author read filters on the drive's account.
+      expect(await identities()).toEqual([['sbx-live', toAccountId], ['sbx-retired', toAccountId]]);
+    }
+  });
+
   test('every schema table carrying both account_id and project_id is classified', async () => {
     // The anti-drift guard: a new table that copies the owning account's id
     // next to the project id must be either moved by the transfer or kept

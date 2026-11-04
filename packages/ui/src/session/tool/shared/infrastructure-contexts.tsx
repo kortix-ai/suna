@@ -2,7 +2,7 @@
 
 import { createContext, useContext } from 'react';
 import { type ToolOutcome } from '@kortix/sdk';
-import { isEmptyShowPart } from '@kortix/sdk';
+import { isInvisibleActivityPart } from '@kortix/sdk';
 import { toolKind, type ToolCallBlock } from '@kortix/sdk';
 
 export const ToolRunningContext = createContext(false);
@@ -80,7 +80,40 @@ export const TurnLiveContext = createContext(false);
  */
 export const RecoveredCallsContext = createContext<ReadonlySet<string>>(new Set());
 
+/**
+ * The images the turn's `image_gen` calls already drew (`imagePathsShownByImageGen`).
+ * A `show` of the same file in that turn does not draw it a second time (D5).
+ */
+export const ImageGenPathsContext = createContext<ReadonlySet<string>>(new Set());
+
+/**
+ * The sha256 of the images the turn's `image_gen` calls already drew
+ * (`imageDigestsShownByImageGen`): a `show` of the same bytes at another path
+ * (a Drive copy) is not drawn a second time either (R38).
+ */
+export const ImageGenDigestsContext = createContext<ReadonlySet<string>>(new Set());
+
+/**
+ * The runs of the turn's `image_gen` calls that draw as one grid
+ * (`sessionLogImageGenRuns`), by block id: the first call draws the run, the
+ * others nothing (R38).
+ */
+export const ImageGenRunsContext = createContext<ReadonlyMap<string, ToolCallBlock[]>>(new Map());
+
+/**
+ * True inside a transcript turn's steps, where `TurnLiveContext` is a fact
+ * about the owning turn rather than its `false` default. The image card reads
+ * both to tell a stopped generation from one still running.
+ */
+export const InTranscriptTurnContext = createContext(false);
+
 export const ToolDurationContext = createContext<number | undefined>(undefined);
+
+/**
+ * True in a read-only session view (the sub-session modal): a tool card shows
+ * what happened and offers no fix (connect a model, reconnect ChatGPT).
+ */
+export const ReadOnlySessionContext = createContext(false);
 
 // Background memory plumbing (searches/gets and raw memory/ reads) stays
 // out of the Actions panel. The memory editor tool itself ('memory'/'oc-memory')
@@ -102,9 +135,9 @@ const MEMORY_LOOKUP_TOOL_NAMES = new Set([
 
 export function shouldShowToolPartInActionsPanel(call: ToolCallBlock): boolean {
   if (MEMORY_LOOKUP_TOOL_NAMES.has(call.name)) return false;
-  // A `show` that handed nothing over renders an empty card, so its stepper row
+  // A `show` that handed nothing over, or a read of an empty memory folder,
   // would open onto blank space. Same verdict the chat transcript reaches.
-  if (isEmptyShowPart(call)) return false;
+  if (isInvisibleActivityPart(call)) return false;
   // A skill row opens its SKILL.md in the detail panel, so it has no Actions
   // row of its own. (It used to raise a side sheet; that sheet is gone.)
   if (toolKind(call.name) === 'skill') return false;

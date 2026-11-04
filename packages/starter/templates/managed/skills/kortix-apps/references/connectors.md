@@ -50,6 +50,10 @@ export const syncDeals = internalAction({
 ```
 
 Anyone with the backend's admin key reads the bearer from the Convex
-environment. To start an agent from a Convex backend App, POST the project's
-webhook trigger from an action, with its secret in a Convex environment
-variable (kortix-system, scheduling).
+environment. To start an agent from a Convex backend App, post an App event
+from an action. Convex functions read the Convex environment, not the
+machine's: read `{token, url}` from
+`GET /v1/projects/<project_id>/apps/<app_id>/events/credentials` (a project
+admin), store them with `npx convex env set KORTIX_APP_TOKEN …` and
+`KORTIX_APP_EVENTS_URL …`, and declare `on: { event, app: backend }`
+(SKILL.md, "Start an agent from an App").

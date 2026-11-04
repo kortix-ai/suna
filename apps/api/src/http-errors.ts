@@ -5,6 +5,8 @@ import {
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { OpenAPIHono } from '@hono/zod-openapi';
+import { isManifestSyntaxError } from '@kortix/manifest-schema';
+import { ManifestWriteRefusedError } from './projects/surface';
 import { BillingError } from './errors';
 import { logger as appLogger } from './lib/logger';
 import { captureException, isSentryIgnoredError } from './lib/sentry';
@@ -374,7 +376,10 @@ function handleHttpException(
   // Unexpected server failures may contain SQL, upstream bodies or local paths.
   // Keep diagnostics in the log above, not in the client response. The typed
   // request deadline is a public retry contract, not an unexpected failure.
-  if (err.status >= 500 && !isRequestDeadlineHTTPException(err)) {
+  // So is a JSON body the thrower built (drives' 503 `drive_storage_unavailable`):
+  // it passes through below.
+  const typedBody = err.res?.headers.get('content-type')?.startsWith('application/json') ?? false;
+  if (err.status >= 500 && !isRequestDeadlineHTTPException(err) && !typedBody) {
     if (err.status === 503) c.header('Retry-After', '10');
     return c.json({ error: true, message: 'Internal server error', status: err.status }, err.status);
   }
@@ -441,6 +446,24 @@ function handleDatabaseOrUnknownError(
   // Database / postgres.js errors — extract the useful info, not the full SQL dump
   const databaseError = inspectDatabaseError(err);
   if (databaseError) {
+    // The statement timer can beat the HTTP deadline on long analytics reads.
+    // Keep the same typed unavailability contract whichever timer wins.
+    if (
+      databaseError.pgCode === '57014'
+      && method === 'GET'
+      && /^\/v1\/projects\/[^/]+\/gateway\/(overview|series|breakdown|sessions)\/?$/.test(path)
+    ) {
+      appLogger.warn(`${method} ${path} -> 503 [gateway-analytics-timeout]`, {
+        method, path, pgCode: databaseError.pgCode,
+      });
+      c.header('Retry-After', '10');
+      return c.json({
+        error: true,
+        message: 'Gateway analytics are temporarily unavailable. Retry shortly.',
+        status: 503,
+        code: 'analytics_unavailable',
+      }, 503);
+    }
     // Pool-exhaustion (Supabase pooler / PgBouncer session-mode saturation on
     // the us-east-2 shadow deployment) is a TRANSIENT infra/pooler-capacity
     // class, NOT a code bug — `(EMAXCONNSESSION) max clients reached in
@@ -639,6 +662,20 @@ function handleUnhandledError(err: Error, c: Context): Response {
   }
   const abort = handleSandboxProxyAbort(err, c, errName, path);
   if (abort) return abort;
+  if (err instanceof ManifestWriteRefusedError) {
+    return c.json({ error: err.message, code: err.code }, 409);
+  }
+  if (isManifestSyntaxError(err)) {
+    // kortix.yaml is not YAML: a repository state the caller can fix, never a
+    // server fault. Routes that read the manifest answer it themselves; this
+    // catches the rest, so none answers 500.
+    appLogger.warn(`${method} ${path} -> 409 [manifest_invalid] ${err.message.slice(0, 200)}`, {
+      method,
+      path,
+      errorType: 'manifest_invalid',
+    });
+    return c.json({ error: `kortix.yaml is not valid YAML (${err.message}).`, code: 'manifest_invalid' }, 409);
+  }
   if (err instanceof PlatinumExecOutcomeUnknownError) {
     // Preserve ambiguity without a retry hint: the provider may have executed the write.
     appLogger.warn('Sandbox exec outcome unknown after provider timeout', {

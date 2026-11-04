@@ -6,6 +6,8 @@ import { config } from '../../config';
 import { loadSlackTokenForProject } from '../install-store';
 import { openModal, updateMessage } from '../slack-api';
 import { dispatchSlackEvent, spawnAgentTurn } from './dispatch';
+import { parseQuestionButton } from '../core/question-token';
+import { QUESTION_EARLIER } from './questions';
 import { backfillSlackBindingLabel } from './binding-label';
 import { notifyAdminsOfAccessRequest } from './identity';
 import { chatUser, createChatAccessRequest, resolveChatActor } from '../core/identity';
@@ -121,10 +123,13 @@ async function handleAgentClick(
 }
 
 // A click on one of the agent's `question` options (rendered as buttons by
-// buildQuestionBlocks, action_id `qa_<q>_<o>`). Resolve the original message to a
-// confirmation so it can't be re-clicked, then resume the thread's session with
-// the chosen answer as a follow-up turn — the SAME path an in-thread reply takes,
-// so questions behave natively in Slack instead of dead-ending.
+// buildQuestionBlocks, action_id `qa_<q>_<o>`). A `kq:` value names the stored
+// question: the answer is the stored option, the message is edited to show who
+// gave it (other questions keep their buttons), and only the question's own
+// session hears it (dispatch.ts `answerSlackQuestion`). Any other value is a
+// button posted before that: its label goes to the thread's session as a
+// follow-up. Either way each click has its own follow-up key, so a second click
+// is never dropped, and a click never starts or revives a session.
 async function handleQuestionAnswer(
   payload: SlackInteractionPayload,
   action: NonNullable<SlackInteractionPayload['actions']>[number],
@@ -136,32 +141,35 @@ async function handleQuestionAnswer(
   const messageTs = payload.message?.ts ?? '';
   const threadTs = payload.message?.thread_ts ?? messageTs;
   if (!teamId || !channelId || !userId || !threadTs) return;
-
-  let parsed: { q?: string; a?: string } = {};
-  try {
-    parsed = JSON.parse(action.value ?? '{}') as { q?: string; a?: string };
-  } catch {
-    parsed = {};
-  }
-  const label = (parsed.a ?? action.text?.text ?? '').trim();
-  const question = (parsed.q ?? '').trim();
-
-  // Ephemeral ack only — NOT replace_original. A message may carry several
-  // questions; replacing it would wipe the sibling questions' buttons. (Matches
-  // handleAgentClick.) The buttons stay; a re-click just sends another follow-up.
-  await respondViaUrl(payload.response_url, {
-    response_type: 'ephemeral',
-    text: `On it — *${escapeMrkdwn(label)}*.`,
-  });
-
-  const thread = await findSlackThread(inbound, teamId, threadTs);
-  if (!thread) return;
+  const ephemeral = (text: string) => respondViaUrl(payload.response_url, { response_type: 'ephemeral', text });
+  // The click's own key: without it, this click could not be told from another.
+  if (!payload.trigger_id) return ephemeral("Couldn't record that click. Click the option again.");
+  const button = parseQuestionButton(action.value ?? '');
 
   const lines: string[] = [];
-  if (question) lines.push(`Answering your question "${question}":`);
-  lines.push(label || 'see the selection above');
-  lines.push('', 'Continue the turn based on this answer.');
+  if (!button) {
+    let parsed: { q?: string; a?: string } = {};
+    try {
+      parsed = JSON.parse(action.value ?? '{}') as { q?: string; a?: string };
+    } catch {
+      parsed = {};
+    }
+    const label = (parsed.a ?? action.text?.text ?? '').trim();
+    const question = (parsed.q ?? '').trim();
+    // Ephemeral ack only: this message is never edited.
+    await ephemeral(`On it — *${escapeMrkdwn(label)}*.`);
+    if (question) lines.push(`Answering your question "${question}":`);
+    lines.push(label || 'see the selection above');
+    lines.push('', 'Continue the turn based on this answer.');
+  }
 
+  const thread = await findSlackThread(inbound, teamId, threadTs);
+  if (!thread) {
+    if (button) await ephemeral(QUESTION_EARLIER);
+    return;
+  }
+
+  // A `kq:` click's text is the stored answer, set at delivery.
   const event: SlackEvent = {
     type: 'message',
     user: userId,
@@ -172,7 +180,15 @@ async function handleQuestionAnswer(
     team: teamId,
   };
   const envelope: SlackEnvelope = { type: 'event_callback', team_id: teamId, event };
-  await spawnAgentTurn(thread.projectId, envelope, event, turnScope(inbound));
+  await spawnAgentTurn(thread.projectId, envelope, event, {
+    ...turnScope(inbound),
+    press: {
+      key: `slack:${button ? 'kq' : 'qa'}:${teamId}:${channelId}:${messageTs}:${payload.trigger_id}`,
+      ...(button ? { button } : {}),
+      responseUrl: payload.response_url,
+      blocks: payload.message?.blocks,
+    },
+  });
 }
 
 // A click on a Review Center card button (rendered by buildReviewCardBlocks,

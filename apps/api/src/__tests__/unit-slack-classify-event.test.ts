@@ -54,6 +54,8 @@ mock.module('../channels/slack/turn', () => ({
 const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
   ...realInstallStore,
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   loadSlackBotUserIdForProject: async () => 'B1',
   loadSlackTokenForProject: async () => 'xoxb-test',
   loadSlackSigningSecretForProject: async () => null,

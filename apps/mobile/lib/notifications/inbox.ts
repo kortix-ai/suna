@@ -9,6 +9,7 @@
 
 import type { InboxNotification, InboxNotificationKind } from '@kortix/sdk';
 import { spokenRelative, UNTITLED_SESSION_LABEL } from '@/lib/session/session-list';
+import { artifactNotificationPath } from './push';
 
 /**
  * Rows the inbox reads: the API's largest page. ProjectScreen (the drawer's
@@ -33,6 +34,7 @@ export const KIND_LABEL: Record<InboxNotificationKind, string> = {
   capture_device_down: 'Capture computer stopped',
   capture_device_recovered: 'Capture computer recording again',
   message: 'Message',
+  artifact_comment: 'Artifact comments',
 };
 
 /** A kind a newer server sends that this app does not know yet. */
@@ -69,7 +71,16 @@ export function inboxRowLabel(row: InboxNotification, now: number): string {
 }
 
 /** Where a row opens: its session, else its project (an automation alert), else nowhere. */
-export function inboxOpenTarget(row: InboxNotification): { projectId: string; sessionId: string | null } | null {
+export function inboxOpenTarget(row: InboxNotification): { projectId: string; sessionId: string | null; artifactPath?: string } | null {
   if (!row.project_id) return null;
+  if (row.kind === 'artifact_comment') {
+    const artifactPath = artifactNotificationPath(row.url, row.project_id);
+    return artifactPath ? { projectId: row.project_id, sessionId: null, artifactPath } : null;
+  }
   return { projectId: row.project_id, sessionId: row.session_id };
+}
+
+export function notificationInboxEnabled(project: { experimental?: { notification_center?: unknown; artifacts?: unknown; artifact_comments?: unknown } } | null | undefined): boolean {
+  const flags = project?.experimental;
+  return flags?.notification_center === true || (flags?.artifacts === true && flags.artifact_comments === true);
 }

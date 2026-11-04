@@ -11,11 +11,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   clearConfigReleaseNotice,
-  configReleaseNoticePath,
+  manifestIssuesOf,
   renderConfigReleaseNotice,
   writeConfigReleaseNotice,
 } from '@/services/config-provider/notice'
-import { releaseSourcePaths } from '@/harness/open-code/project-layout'
+import { PI_RELEASE_SOURCE_PATHS } from '@/harness/pi/config-release'
 
 const COMMIT = '1234567890abcdef1234567890abcdef12345678'
 let dir: string
@@ -34,7 +34,7 @@ describe('the notice text', () => {
   test('names the commit, the checkout, and both ways to catch up', () => {
     const body = renderConfigReleaseNotice({
       sourceCommit: COMMIT,
-      sourcePaths: releaseSourcePaths('.kortix/opencode'),
+      sourcePaths: PI_RELEASE_SOURCE_PATHS,
       sessionId: 'ses-1',
     })
     expect(body).toContain('commit 1234567890ab')
@@ -57,7 +57,7 @@ describe('the notice text', () => {
     // agent say why and where to write instead.
     const body = renderConfigReleaseNotice({
       sourceCommit: COMMIT,
-      sourcePaths: releaseSourcePaths('.kortix/opencode'),
+      sourcePaths: PI_RELEASE_SOURCE_PATHS,
       releaseDir: '/opt/kortix/config/abc123',
     })
     expect(body).toContain('read-only from `/opt/kortix/config/abc123`')
@@ -65,58 +65,79 @@ describe('the notice text', () => {
   })
 
   test('without a known release dir it still names the store, never "null"', () => {
-    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths(null) })
+    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: PI_RELEASE_SOURCE_PATHS })
     expect(body).toContain('/opt/kortix/config/<release>')
     expect(body).not.toContain('null')
     expect(body).not.toContain('undefined')
   })
 
   test('stays factual when the commit or the session id is unknown', () => {
-    const body = renderConfigReleaseNotice({ sourceCommit: null, sourcePaths: releaseSourcePaths(null) })
+    const body = renderConfigReleaseNotice({ sourceCommit: null, sourcePaths: PI_RELEASE_SOURCE_PATHS })
     expect(body).toContain('may be behind the base branch')
     expect(body).toContain('kortix sessions reload <session id>')
-    expect(body).toContain('`/workspace/agents`, `/workspace/skills` or `/workspace/harnesses/opencode`')
+    expect(body).toContain('`/workspace/agents`, `/workspace/skills` or `/workspace/AGENTS.md`')
     expect(body).not.toContain('commit null')
     expect(body).not.toContain('undefined')
   })
 
-  test('a legacy project is told about its one config dir only', () => {
-    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths('.kortix/opencode') })
-    expect(body).toContain('Editing a file under `/workspace/.kortix/opencode` does NOT change')
-    expect(body).not.toContain('/workspace/skills')
-    expect(body).not.toContain('/workspace/kortix.yaml')
-    expect(body).toContain('edit `/workspace/.kortix/opencode`')
-  })
-
   test('names the manifest as the editable source for a root-layout project', () => {
-    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths(null) })
+    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: PI_RELEASE_SOURCE_PATHS })
     expect(body).toContain('`/workspace/kortix.yaml`')
     expect(body).toContain('`/workspace/agents`')
     expect(body).toContain('`/workspace/skills`')
   })
+})
 
-  test('a kortix.yaml v3 project is told about kortix.yaml only: it has no harness folder', () => {
-    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths('harnesses/opencode', '{"schema":3,"agent":{}}') })
-    expect(body).toContain('edit `/workspace/kortix.yaml`')
-    expect(body).not.toContain('/workspace/harnesses')
-    expect(body).not.toContain('/workspace/agents')
+describe('kortix.yaml issues (manifest_issues)', () => {
+  const ISSUES = manifestIssuesOf({
+    schema: 3,
+    manifest_issues: [
+      { path: 'agents.writer.model', message: 'Unknown model "x".\nPick one from `kortix models`.', severity: 'error', line: 12, column: 5 },
+      { path: 'kortix_version', message: '`kortix_version` is obsolete and ignored. Remove it.', severity: 'warning', line: 1, column: 1 },
+      { path: 'agents.reviewer', message: 'A warning with no position.', severity: 'warning' },
+      { path: 'not.an.issue', severity: 'fatal' },
+    ],
   })
 
-  test('names the project config dir when the manifest moved it', () => {
-    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths('config/agents') })
-    expect(body).toContain('/workspace/config/agents')
+  test('lists each issue as file:line:col severity path message, with the rule and the fix', () => {
+    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: PI_RELEASE_SOURCE_PATHS, manifestIssues: ISSUES })
+    expect(body).toContain('## kortix.yaml has issues')
+    expect(body).toContain('kortix.yaml on the base branch has 1 error and 2 warnings:')
+    expect(body).toContain('- kortix.yaml:12:5 error agents.writer.model Unknown model "x". Pick one from `kortix models`.')
+    expect(body).toContain('- kortix.yaml:1:1 warning kortix_version `kortix_version` is obsolete and ignored. Remove it.')
+    expect(body).toContain('- kortix.yaml warning agents.reviewer A warning with no position.')
+    // An entry of another shape is skipped, never rendered.
+    expect(body).not.toContain('not.an.issue')
+    expect(body).toContain('An agent or trigger with an error is off until the error is fixed.')
+    expect(body).toContain('run `kortix validate`')
+    expect(body).toContain('open a change request against the base branch')
+  })
+
+  test('no issues, or an API that sends none: no section', () => {
+    for (const set of [{ schema: 3, manifest_issues: [] }, { schema: 3 }, null]) {
+      const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: PI_RELEASE_SOURCE_PATHS, manifestIssues: manifestIssuesOf(set) })
+      expect(body).not.toContain('kortix.yaml has issues')
+      expect(body).not.toContain('kortix validate')
+    }
+  })
+
+  test('a change in the issues rewrites the notice; the same issues do not', () => {
+    const notice = { sourceCommit: COMMIT, sourcePaths: PI_RELEASE_SOURCE_PATHS, manifestIssues: ISSUES }
+    expect(writeConfigReleaseNotice(notice, path)).toBe('written')
+    expect(writeConfigReleaseNotice(notice, path)).toBe('unchanged')
+    expect(writeConfigReleaseNotice({ ...notice, manifestIssues: [] }, path)).toBe('written')
+    expect(readFileSync(path, 'utf8')).not.toContain('kortix.yaml has issues')
   })
 })
 
 describe('writing it', () => {
   test('a converged session is told once, with the right commit', () => {
-    expect(writeConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths('.kortix/opencode') }, path)).toBe('written')
+    expect(writeConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: PI_RELEASE_SOURCE_PATHS }, path)).toBe('written')
     expect(readFileSync(path, 'utf8')).toContain('commit 1234567890ab')
-    expect(configReleaseNoticePath(path)).toBe(path)
   })
 
   test('an unchanged convergence writes nothing at all', () => {
-    const notice = { sourceCommit: COMMIT, sourcePaths: releaseSourcePaths('.kortix/opencode') }
+    const notice = { sourceCommit: COMMIT, sourcePaths: PI_RELEASE_SOURCE_PATHS }
     writeConfigReleaseNotice(notice, path)
     const before = statSync(path).mtimeMs
     expect(writeConfigReleaseNotice(notice, path)).toBe('unchanged')
@@ -124,19 +145,18 @@ describe('writing it', () => {
   })
 
   test('a new release rewrites it with the new commit', () => {
-    writeConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths('.kortix/opencode') }, path)
+    writeConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: PI_RELEASE_SOURCE_PATHS }, path)
     const next = 'fedcba9876543210fedcba9876543210fedcba98'
-    expect(writeConfigReleaseNotice({ sourceCommit: next, sourcePaths: releaseSourcePaths('.kortix/opencode') }, path)).toBe('written')
+    expect(writeConfigReleaseNotice({ sourceCommit: next, sourcePaths: PI_RELEASE_SOURCE_PATHS }, path)).toBe('written')
     const body = readFileSync(path, 'utf8')
     expect(body).toContain('commit fedcba987654')
     expect(body).not.toContain('1234567890ab')
   })
 
   test('clearing it removes the file and the instruction path', () => {
-    writeConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths('.kortix/opencode') }, path)
+    writeConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: PI_RELEASE_SOURCE_PATHS }, path)
     clearConfigReleaseNotice(path)
     expect(existsSync(path)).toBe(false)
-    expect(configReleaseNoticePath(path)).toBeNull()
     // Clearing twice is not an error.
     clearConfigReleaseNotice(path)
   })

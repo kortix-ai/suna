@@ -30,10 +30,14 @@ compile_with_retry() {
   local delay=5
 
   while true; do
-    # The codemode worker is a second entrypoint: in a compiled binary pi starts it as
-    # `./src/extensions/codemode/worker.ts`, resolved against `--root` (default: the
-    # entrypoints' common folder, `src/`, which would not match).
-    if bun build --compile --root=. --target="$target" --tsconfig-override ./tsconfig.json --outfile=dist/kortix-agent src/main.ts src/extensions/codemode/worker.ts; then
+    # pi's two workers are extra entrypoints: in a compiled binary pi starts them as
+    # `./src/extensions/codemode/worker.ts` and `./src/utils/image-resize-worker.ts`, resolved
+    # against `--root` (default: the entrypoints' common folder, `src/`, which would not match).
+    # `--bytecode` ships the parsed modules, so a box does not parse ~2,500 modules on every daemon
+    # start: exec to the first line of `main()` measured 485 ms cold before, 134-334 ms after, on a
+    # Platinum box (2026-11-03). It needs `--format=esm`: the default CJS bytecode fails at runtime
+    # on `import.meta` ("import.meta is only valid inside modules").
+    if bun build --compile --bytecode --format=esm --root=. --target="$target" --tsconfig-override ./tsconfig.json --outfile=dist/kortix-agent src/main.ts src/extensions/codemode/worker.ts src/utils/image-resize-worker.ts; then
       return 0
     fi
 

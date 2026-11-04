@@ -1,16 +1,14 @@
 'use client';
 
-import { ChatGPT } from '@/features/icon/icons/chat-gpt';
 import { Claude } from '@kortix/ui/internal/icons/claude';
 import { Gemini } from '@/features/icon/icons/gemini';
-import { Kortix } from '@kortix/ui/internal/icons/kortix';
 import { OpenAI } from '@kortix/ui/internal/icons/open-ai';
-import { cn } from '@kortix/ui';
-import { GlobeIcon, KeyIcon } from '@phosphor-icons/react';
+import { GlobeIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
-import { useTranslations } from '@/i18n/use-translations';
 import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { cn } from '@kortix/ui';
+import { SandGlobe } from './sand-globe';
 
 /**
  * Layer 03 — the model is a SLOT, and the slot is yours.
@@ -54,6 +52,38 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 type Glyph = (props: { className?: string }) => ReactNode;
 
+/**
+ * A provider mark from `public/provider-icons`, drawn as a mask in the
+ * current text colour so every logo reads at one weight, like the works-with
+ * strip's marks.
+ */
+function iconGlyph(slug: string): Glyph {
+  function ProviderMark({ className }: { className?: string }) {
+    return (
+      <span
+        aria-hidden
+        className={cn('inline-block bg-current', className)}
+        style={{
+          maskImage: `url(/provider-icons/${slug}.svg)`,
+          maskSize: 'contain',
+          maskRepeat: 'no-repeat',
+          maskPosition: 'center',
+        }}
+      />
+    );
+  }
+  return ProviderMark;
+}
+
+/*
+ * Every provider below is a BYOK target the LLM gateway routes today: a
+ * models.dev catalog provider whose package maps to a transport
+ * (`providerKindForNpm`, packages/llm-gateway/src/catalog/compatibility.ts),
+ * with its base URL in `apps/api/src/llm-gateway/models/provider-registry.ts`
+ * or the catalog. Kimi, DeepSeek and GLM are also Kortix managed models.
+ * Families only, never version numbers (see the gate above). Names are
+ * short ("Bedrock", "Vercel") so they fit the Provider cell untruncated.
+ */
 const PROVIDERS: {
   id: string;
   glyph: Glyph;
@@ -62,21 +92,21 @@ const PROVIDERS: {
   /** Values the slot may settle on. An unwired provider gets no traffic. */
   connected: boolean;
 }[] = [
-  {
-    id: 'anthropic',
-    glyph: Claude as Glyph,
-    name: 'Anthropic',
-    models: 'Opus · Sonnet · Haiku',
-    connected: true,
-  },
+  { id: 'anthropic', glyph: Claude as Glyph, name: 'Anthropic', models: 'Opus · Sonnet · Haiku', connected: true },
   { id: 'openai', glyph: OpenAI as Glyph, name: 'OpenAI', models: 'GPT · Codex', connected: true },
-  {
-    id: 'google',
-    glyph: Gemini as Glyph,
-    name: 'Google',
-    models: 'Gemini Pro · Flash',
-    connected: true,
-  },
+  { id: 'google', glyph: Gemini as Glyph, name: 'Google', models: 'Gemini Pro · Flash', connected: true },
+  { id: 'deepseek', glyph: iconGlyph('deepseek'), name: 'DeepSeek', models: 'Chat · Reasoner', connected: true },
+  { id: 'mistral', glyph: iconGlyph('mistral'), name: 'Mistral', models: 'Large · Codestral', connected: true },
+  { id: 'xai', glyph: iconGlyph('xai'), name: 'xAI', models: 'Grok', connected: true },
+  { id: 'moonshotai', glyph: iconGlyph('moonshotai'), name: 'Moonshot', models: 'Kimi', connected: true },
+  { id: 'vercel', glyph: iconGlyph('vercel'), name: 'Vercel', models: 'AI Gateway', connected: true },
+  { id: 'openrouter', glyph: iconGlyph('openrouter'), name: 'OpenRouter', models: 'Every model', connected: true },
+  { id: 'amazon-bedrock', glyph: iconGlyph('amazon-bedrock'), name: 'Bedrock', models: 'Claude · Llama', connected: true },
+  { id: 'groq', glyph: iconGlyph('groq'), name: 'Groq', models: 'Llama · Qwen', connected: true },
+  { id: 'cerebras', glyph: iconGlyph('cerebras'), name: 'Cerebras', models: 'Llama · Qwen', connected: true },
+  { id: 'togetherai', glyph: iconGlyph('togetherai'), name: 'Together', models: 'Open models', connected: true },
+  { id: 'perplexity', glyph: iconGlyph('perplexity'), name: 'Perplexity', models: 'Sonar', connected: true },
+  { id: 'deepinfra', glyph: iconGlyph('deepinfra'), name: 'DeepInfra', models: 'Open models', connected: true },
   {
     id: 'custom',
     glyph: GlobeIcon as Glyph,
@@ -84,16 +114,6 @@ const PROVIDERS: {
     models: 'anything OpenAI-compatible',
     connected: false,
   },
-];
-
-/** Where the slot can be pinned. Three scopes, narrowest last. */
-const SCOPES = ['per agent', 'per session', 'per message'];
-
-/** How the model gets paid for. Three real paths, no aspirational fourth. */
-const BILLING: { id: string; glyph: Glyph; label: string }[] = [
-  { id: 'key', glyph: KeyIcon as Glyph, label: 'Your own API key' },
-  { id: 'chatgpt', glyph: ChatGPT as Glyph, label: 'Your ChatGPT subscription' },
-  { id: 'gateway', glyph: Kortix as Glyph, label: 'Kortix Gateway' },
 ];
 
 /** How long the slot rests on each provider. Slow on purpose: this is a value
@@ -146,11 +166,33 @@ function usePanelActivity() {
   return { ref, visible, drawn };
 }
 
+/** One cell of the spec strip: a mono label over its value. */
+function SpecCell({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        'border-border flex min-w-0 flex-col justify-center gap-0.5 border-r px-4 py-3',
+        className,
+      )}
+    >
+      <span className="text-muted-foreground font-mono text-xs tracking-wide uppercase">
+        {label}
+      </span>
+      <span className="relative block h-6 min-w-0 overflow-hidden">{children}</span>
+    </span>
+  );
+}
+
 export function StepModels(): ReactNode {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const billing = useLocalizedUiCatalog(BILLING);
   const providers = useLocalizedUiCatalog(PROVIDERS);
-  const scopes = useLocalizedUiCatalog(SCOPES);
   const routable = providers.filter((provider) => provider.connected);
   const reduced = useReducedMotion();
   const { ref, visible, drawn } = usePanelActivity();
@@ -178,185 +220,84 @@ export function StepModels(): ReactNode {
   });
 
   return (
-    <div ref={ref} className="flex h-full min-h-0 w-full flex-col overflow-hidden">
-      {/* ── The control (lg+, where the pinned pane gives it room) ────── */}
-      <div className="hidden h-full flex-col justify-center gap-5 px-8 py-7 lg:flex">
-        {/* The field's own label line. A rule between the name and the scopes,
-            because that is how a form labels a field — and reading this panel
-            as a form is the entire point. */}
-        <m.div {...band(0)} className="flex items-center gap-3">
-          <span className="text-muted-foreground font-mono text-[11px] tracking-wide">
-            {tI18nComplete.raw('text9372c470eead')}
-          </span>
-          <span className="bg-border h-px flex-1" />
-          <span className="text-muted-foreground/60 font-mono text-[11px] tracking-wide">
-            {scopes.join(' · ')}
-          </span>
-        </m.div>
+    <div ref={ref} className="relative h-full min-h-0 w-full">
+      {/* The sand globe (fourier-series studio), unframed: it runs past the
+          frame's padding at the sides and top, and stops where the slot card
+          starts, so the globe sits above the card and never under it. The
+          bottom edge is the card's top (the card sits on the bottom edge, ~65px tall);
+          the top edge moves up by the same amount, so the layer keeps its
+          original height and the globe its original size.
+          Each model gets its own spherical harmonic: when the slot moves to
+          the next provider, the grains flow into a new pattern. */}
+      <m.div
+        {...band(0)}
+        className="pointer-events-none absolute -inset-x-4 -top-34 bottom-18 sm:-inset-x-8 sm:-top-38 lg:-inset-x-12 lg:-top-50"
+      >
+        <SandGlobe mode={index} reduced={!!reduced} radius={0.46} />
+      </m.div>
 
-        {/* THE SLOT. One field, one value, and the value is what moves. */}
-        <m.div
-          {...band(1)}
-          className="border-border bg-background flex items-center gap-4 rounded-lg border px-5 py-4"
-        >
-          {/* Both children are `relative` boxes of a fixed size with their
-              contents absolutely stacked inside. That is what lets the outgoing
-              and incoming states overlap and blur into each other instead of
-              reflowing the row — a swap that changes its container's size is a
-              swap the eye reads as two separate events. */}
-          <span className="border-border bg-muted/50 relative flex size-16 shrink-0 items-center justify-center rounded-md border">
-            <AnimatePresence initial={false} mode="popLayout">
-              <m.span
-                key={active.id}
-                initial={SWAP_OUT}
-                animate={SWAP_IN}
-                exit={SWAP_OUT}
-                transition={SWAP}
-                className="text-foreground absolute inset-0 flex items-center justify-center"
-              >
-                <Glyph className="size-7" />
-              </m.span>
-            </AnimatePresence>
-          </span>
-
-          <span className="relative min-w-0 flex-1">
-            <AnimatePresence initial={false} mode="popLayout">
-              <m.span
-                key={active.id}
-                initial={RISE_FROM}
-                animate={RISE_IN}
-                exit={RISE_OUT}
-                transition={SWAP}
-                className="block min-w-0"
-              >
-                <span className="text-foreground block truncate text-xl leading-tight font-medium tracking-tight">
-                  {active.name}
-                </span>
-                <span className="text-muted-foreground mt-1 block truncate text-[12.5px] leading-tight">
-                  {active.models}
-                </span>
-              </m.span>
-            </AnimatePresence>
-          </span>
-
-          {/* `auto` is the real default and it never changes — which is the
-              quiet half of the claim. The value under it moved three times and
-              the session was never reconfigured once. */}
-          <span className="border-border bg-muted/40 text-muted-foreground shrink-0 rounded-full border px-2.5 py-1 font-mono text-[11px] leading-4">
-            auto
-          </span>
-        </m.div>
-
-        {/* The alternatives, as one segmented row. The indicator is a shared
-            `layoutId`, so it TRAVELS between cells rather than fading out here
-            and in there — the same primitive the section rail uses, and the
-            reason the row reads as one control with a position instead of four
-            independent chips taking turns lighting up. */}
-        <m.div {...band(2)} className="grid grid-cols-4 gap-1.5">
-          {providers.map((provider) => {
-            const isActive = provider.id === active.id;
-            return (
-              <div
-                key={provider.id}
-                className="relative flex items-center gap-2.5 rounded-md px-3 py-2.5"
-              >
-                {isActive && (
-                  <m.span
-                    layoutId="model-slot-indicator"
-                    transition={{ type: 'spring', stiffness: 400, damping: 34 }}
-                    className="border-foreground/15 bg-muted/60 absolute inset-0 rounded-md border"
-                  />
-                )}
-                <span
-                  className={cn(
-                    'relative flex size-6 shrink-0 items-center justify-center transition-colors duration-300',
-                    isActive ? 'text-foreground' : 'text-muted-foreground/60',
-                  )}
-                >
-                  <provider.glyph className="size-4" />
-                </span>
-                <span className="relative min-w-0">
-                  <span
-                    className={cn(
-                      'block truncate text-[12.5px] leading-tight font-medium transition-colors duration-300',
-                      isActive ? 'text-foreground' : 'text-muted-foreground',
-                    )}
-                  >
-                    {provider.name}
-                  </span>
-                  {/* Status lives here rather than as a coloured dot per row.
-                      "Connected" is the boring case and three green dots in a
-                      row is three pieces of decoration; the one row that says
-                      something different is the one worth reading. */}
-                  <span className="text-muted-foreground/60 block truncate text-[10.5px] leading-tight">
-                    {provider.connected
-                      ? tI18nComplete.raw('text12a7bd86e0a4')
-                      : tI18nComplete.raw('text620de3c1ab89')}
-                  </span>
-                </span>
-              </div>
-            );
-          })}
-        </m.div>
-
-        {/* The second half of the claim: whatever fills the slot, the bill is
-            still yours. Set as a sentence, not a table — three rows of chrome
-            for three short phrases is a panel arguing with itself. */}
-        <m.div {...band(3)} className="border-border flex items-center gap-3 border-t pt-4">
-          <span className="text-muted-foreground/60 shrink-0 font-mono text-[11px] tracking-wide">
-            {tI18nComplete.raw('text635d73b7566b')}
-          </span>
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-            {billing.map((option, i) => (
-              <span key={option.id} className="flex items-center gap-2">
-                {i > 0 && <span className="text-muted-foreground/30">·</span>}
-                <span className="text-muted-foreground flex items-center gap-1.5 text-[12.5px]">
-                  <option.glyph className="size-3.5 shrink-0" />
-                  {option.label}
-                </span>
-              </span>
-            ))}
-          </span>
-        </m.div>
-      </div>
-
-      {/* ── Below lg: the 256–304px frame cannot hold a hero field — same
-          content, one column, no swap. ─────────────────────────────────── */}
-      <div className="flex h-full flex-col justify-center gap-2 overflow-y-auto p-3 lg:hidden">
-        <div className="border-border bg-background flex items-center gap-3 rounded-md border px-3 py-2.5">
-          <span className="border-border bg-muted/50 text-foreground flex size-8 shrink-0 items-center justify-center rounded-sm border">
-            <Claude className="size-4" />
-          </span>
-          <span className="min-w-0">
-            <span className="text-foreground block font-mono text-[13px] leading-tight font-medium">
-              {tI18nComplete.raw('text6051259b6539')}
-            </span>
-            <span className="text-muted-foreground block text-[11px] leading-tight">
-              {scopes.join(' · ')}
-            </span>
-          </span>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          {providers.map((provider) => (
-            <div
-              key={provider.id}
-              className="border-border bg-background flex items-center gap-2.5 rounded-md border px-3 py-2"
+      {/* THE SLOT, as a spec strip: the mark in its own cell, then Provider,
+          Models and Mode, each a mono label over its value, split by
+          hairlines. Provider and Models move with the slot; Mode is `auto`
+          and never moves. */}
+      <m.div
+        {...band(1)}
+        className="border-border bg-background absolute inset-x-4 bottom-0 flex items-stretch rounded-lg border sm:inset-x-8"
+      >
+        {/* Fixed-size boxes with their contents stacked inside, so the
+            outgoing and incoming values overlap and blur into each other
+            instead of reflowing the row. */}
+        <span className="border-border relative flex w-14 shrink-0 items-center justify-center border-r">
+          <AnimatePresence initial={false} mode="popLayout">
+            <m.span
+              key={active.id}
+              initial={SWAP_OUT}
+              animate={SWAP_IN}
+              exit={SWAP_OUT}
+              transition={SWAP}
+              className="text-foreground absolute inset-0 flex items-center justify-center"
             >
-              <span className="text-muted-foreground flex size-5 shrink-0 items-center justify-center">
-                <provider.glyph className="size-4" />
-              </span>
-              <span className="min-w-0">
-                <span className="text-foreground block truncate text-[13px] leading-tight font-medium">
-                  {provider.name}
-                </span>
-                <span className="text-muted-foreground block truncate text-[11px] leading-tight">
-                  {provider.models}
-                </span>
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
+              <Glyph className="size-5" />
+            </m.span>
+          </AnimatePresence>
+        </span>
+
+        <SpecCell label="Provider" className="flex-1">
+          <AnimatePresence initial={false} mode="popLayout">
+            <m.span
+              key={active.id}
+              initial={RISE_FROM}
+              animate={RISE_IN}
+              exit={RISE_OUT}
+              transition={SWAP}
+              className="text-foreground block truncate text-base font-medium"
+            >
+              {active.name}
+            </m.span>
+          </AnimatePresence>
+        </SpecCell>
+
+        <SpecCell label="Models" className="hidden flex-[1.5] sm:flex">
+          <AnimatePresence initial={false} mode="popLayout">
+            <m.span
+              key={active.id}
+              initial={RISE_FROM}
+              animate={RISE_IN}
+              exit={RISE_OUT}
+              transition={SWAP}
+              className="text-foreground block truncate text-base"
+            >
+              {active.models}
+            </m.span>
+          </AnimatePresence>
+        </SpecCell>
+
+        {/* `auto` is the real default and it never changes: the value beside
+            it moved and the session was never reconfigured once. */}
+        <SpecCell label="Mode" className="w-24 shrink-0 border-r-0 sm:w-28">
+          <span className="text-foreground block font-mono text-sm">auto</span>
+        </SpecCell>
+      </m.div>
     </div>
   );
 }

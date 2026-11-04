@@ -491,20 +491,35 @@ const nextConfig = (): NextConfig => ({
         protocol: 'https',
         hostname: 'ke4pydspzeg0nm0o.public.blob.vercel-storage.com',
       },
-      // The desktop shell historically launched at /dashboard, which never
-      // existed and fell through to the marketing 404. The authed home is
-      // /projects (see middleware). Redirect so already-shipped desktop builds
-      // (URL baked in at compile time) recover instead of 404ing on launch.
-      // {
-      //   source: '/dashboard',
-      //   destination: '/projects',
-      //   permanent: false,
-      // },
     ],
   },
 
   async redirects() {
     return [
+      // The desktop shell historically launched at /dashboard, which never
+      // existed. The signed-in home is /projects (see middleware). Desktop
+      // builds that baked the old URL in, and old links, land there instead
+      // of on the 404 page (KRTX-3232).
+      {
+        source: '/dashboard',
+        destination: '/projects',
+        permanent: false,
+      },
+      // The paths people type to sign in or up (KRTX-3154). /auth asks for the
+      // email first and picks sign-in or sign-up itself.
+      {
+        source: '/:path(login|signin|sign-in|signup|sign-up|register)',
+        destination: '/auth',
+        permanent: false,
+      },
+      // The per-release changelog moved to /changelog/releases (2026-10-19);
+      // /changelog is the weekly summary now. Page 1 of the old list is
+      // /changelog itself, which stays valid.
+      {
+        source: '/changelog/page/:page',
+        destination: '/changelog/releases/page/:page',
+        permanent: true,
+      },
       // Capability tabs moved under /customize/ (2026-09-03). The old
       // top-level segments were shared in Slack, saved as bookmarks and baked
       // into agent transcripts, so every one keeps resolving. `agent` became
@@ -522,14 +537,55 @@ const nextConfig = (): NextConfig => ({
         destination: '/projects/:id/customize/agents',
         permanent: false,
       },
+      // The project-wide libraries and settings have one home, Project admin
+      // (`/projects/:id/admin/<section>`, 2026-10-27). Customize keeps Agents
+      // and Review. Every older address lands there in one hop: the
+      // top-level tabs, their `/customize/` successors, and the Project admin
+      // `?section=` form.
       {
         source: '/projects/:id/config',
-        destination: '/projects/:id/customize/settings',
+        destination: '/projects/:id/admin/general',
         permanent: false,
       },
       {
         source: '/projects/:id/:tab(skills|connectors|triggers|models|secrets)',
-        destination: '/projects/:id/customize/:tab',
+        destination: '/projects/:id/admin/:tab',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/customize/:tab(skills|tools|extensions|drives|triggers|models|secrets)',
+        destination: '/projects/:id/admin/:tab',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/customize/connectors/:path*',
+        destination: '/projects/:id/admin/connectors/:path*',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/customize/reminders',
+        destination: '/projects/:id/admin/triggers',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/customize/repo',
+        destination: '/projects/:id/admin/repo',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/customize/settings',
+        has: [{ type: 'query', key: 'section', value: '(?<section>[a-z-]+)' }],
+        destination: '/projects/:id/admin/:section',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/customize/settings',
+        destination: '/projects/:id/admin/general',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/:prefix(customize|admin)/apps',
+        destination: '/projects/:id/apps',
         permanent: false,
       },
       // Backends became Apps (2026-10-09), and a migrated
@@ -565,12 +621,256 @@ const nextConfig = (): NextConfig => ({
       // 404'd. The CLI, README and external links still use the old spellings.
       {
         source: '/docs/self-hosting',
-        destination: '/docs/host',
+        destination: '/docs/developers#self-hosting',
         permanent: true,
       },
       {
         source: '/docs/self-host',
-        destination: '/docs/host',
+        destination: '/docs/developers#self-hosting',
+        permanent: true,
+      },
+      // 2026-10-27: the Guide is one page; each former Guide page lands on its section.
+      // 2026-10-28: the docs are one page (founder). Every former page
+      // moves to its section of /docs.
+      {
+        source: '/docs/quickstart',
+        destination: '/docs/developers#quickstart',
+        permanent: true,
+      },
+      {
+        source: '/docs/git',
+        destination: '/docs/developers#git',
+        permanent: true,
+      },
+      {
+        source: '/docs/project/manifest',
+        destination: '/docs/developers#kortixyaml-reference',
+        permanent: true,
+      },
+      {
+        source: '/docs/cli',
+        destination: '/docs/developers#cli',
+        permanent: true,
+      },
+      {
+        source: '/docs/api',
+        destination: '/docs/developers#rest-api',
+        permanent: true,
+      },
+      {
+        source: '/docs/apps',
+        destination: '/docs/developers#apps-reference',
+        permanent: true,
+      },
+      {
+        source: '/docs/host',
+        destination: '/docs/developers#self-hosting',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk',
+        destination: '/docs/developers#sdk',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/auth',
+        destination: '/docs/developers#sdk-authentication',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/sessions',
+        destination: '/docs/developers#sessions-from-code',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/react',
+        destination: '/docs/developers#react',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/ui',
+        destination: '/docs/developers#kortix-ui',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/genui',
+        destination: '/docs/developers#generative-ui',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/reference',
+        destination: '/docs/developers#sdk-reference',
+        permanent: true,
+      },
+      // /docs opens the Guide (founder, 2026-10-28). The landing page stays
+      // in the build: the docs build check and the /docs Markdown mirror
+      // read it.
+      {
+        source: '/docs',
+        destination: '/docs/guide',
+        permanent: false,
+      },
+      {
+        source: '/docs/guide/get-started',
+        destination: '/docs/guide#get-started',
+        permanent: true,
+      },
+      {
+        source: '/docs/guide/agents',
+        destination: '/docs/guide#agents',
+        permanent: true,
+      },
+      {
+        source: '/docs/guide/skills',
+        destination: '/docs/guide#skills',
+        permanent: true,
+      },
+      {
+        source: '/docs/guide/memory-and-drive',
+        destination: '/docs/guide#drive',
+        permanent: true,
+      },
+      {
+        source: '/docs/guide/connectors',
+        destination: '/docs/guide#connectors',
+        permanent: true,
+      },
+      {
+        source: '/docs/guide/automations',
+        destination: '/docs/guide#automations',
+        permanent: true,
+      },
+      {
+        source: '/docs/guide/outcomes',
+        destination: '/docs/guide#outcomes',
+        permanent: true,
+      },
+      {
+        source: '/docs/guide/computers',
+        destination: '/docs/guide#computers',
+        permanent: true,
+      },
+      {
+        source: '/docs/guide/apps',
+        destination: '/docs/guide#apps',
+        permanent: true,
+      },
+      {
+        source: '/docs/guide/channels',
+        destination: '/docs/guide#channels',
+        permanent: true,
+      },
+      {
+        source: '/docs/guide/everywhere',
+        destination: '/docs/guide#everywhere',
+        permanent: true,
+      },
+      {
+        source: '/docs/guide/models',
+        destination: '/docs/guide#models',
+        permanent: true,
+      },
+      {
+        source: '/docs/guide/teams',
+        destination: '/docs/guide#teams',
+        permanent: true,
+      },
+      {
+        source: '/docs/guide/security',
+        destination: '/docs/guide#security',
+        permanent: true,
+      },
+      {
+        source: '/docs/guide/billing',
+        destination: '/docs/guide#billing',
+        permanent: true,
+      },
+      // The 2026-10-27 Guide rewrite (founder: "less is more"): the technical
+      // pages a business reader does not need are gone. Each lands on the Guide
+      // page that now explains it; the remaining reference is under Developers.
+      {
+        source: '/docs/accounts',
+        destination: '/docs/guide#teams',
+        permanent: true,
+      },
+      {
+        source: '/docs/accounts/identity',
+        destination: '/docs/guide#security',
+        permanent: true,
+      },
+      {
+        source: '/docs/clients',
+        destination: '/docs/guide#everywhere',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect/channels',
+        destination: '/docs/guide#channels',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect/computers',
+        destination: '/docs/guide#computers',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect/connectors',
+        destination: '/docs/guide#connectors',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect/mcp',
+        destination: '/docs/guide#connectors',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect/triggers',
+        destination: '/docs/guide#automations',
+        permanent: true,
+      },
+      {
+        source: '/docs/credits',
+        destination: '/docs/guide#billing',
+        permanent: true,
+      },
+      {
+        source: '/docs/project',
+        destination: '/docs',
+        permanent: true,
+      },
+      {
+        source: '/docs/project/agents',
+        destination: '/docs/guide#agents',
+        permanent: true,
+      },
+      {
+        source: '/docs/project/models',
+        destination: '/docs/guide#models',
+        permanent: true,
+      },
+      {
+        source: '/docs/project/secrets',
+        destination: '/docs/guide#security',
+        permanent: true,
+      },
+      {
+        source: '/docs/project/tools',
+        destination: '/docs/guide#agents',
+        permanent: true,
+      },
+      {
+        source: '/docs/tui',
+        destination: '/docs/guide#everywhere',
+        permanent: true,
+      },
+      {
+        source: '/docs/work/runtime',
+        destination: '/docs/guide#computers',
+        permanent: true,
+      },
+      {
+        source: '/docs/work/sessions',
+        destination: '/docs/guide#computers',
         permanent: true,
       },
       // The 2026-10 docs rewrite folded 45 pages into 31. Every removed page
@@ -587,117 +887,110 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/docs/project/legacy-toml',
-        destination: '/docs/project/manifest#migrate-from-kortixtoml',
+        destination: '/docs/developers#older-formats',
         permanent: true,
       },
       {
         source: '/docs/project/permissions',
-        destination: '/docs/project/agents#what-an-agent-may-do',
+        destination: '/docs/guide#agents',
         permanent: true,
       },
       {
         source: '/docs/work',
-        destination: '/docs/work/sessions',
+        destination: '/docs/guide#computers',
         permanent: true,
       },
       {
         source: '/docs/work/notifications',
-        destination: '/docs/work/sessions#notifications',
+        destination: '/docs/guide#computers',
         permanent: true,
       },
       {
         source: '/docs/work/change-requests',
-        destination: '/docs/git#change-requests',
+        destination: '/docs/developers#change-requests',
         permanent: true,
       },
       {
         source: '/docs/work/harnesses',
-        destination: '/docs/project/agents#harnesses-opencode-and-pi',
+        destination: '/docs/guide#agents',
         permanent: true,
       },
       {
         source: '/docs/connect',
-        destination: '/docs/connect/connectors',
+        destination: '/docs/guide#connectors',
         permanent: true,
       },
       {
         source: '/docs/connect/slack',
-        destination: '/docs/connect/channels#slack',
+        destination: '/docs/guide#channels',
         permanent: true,
       },
       {
         source: '/docs/connect/teams',
-        destination: '/docs/connect/channels#microsoft-teams',
+        destination: '/docs/guide#channels',
         permanent: true,
       },
       {
         source: '/docs/connect/reminders',
-        destination: '/docs/connect/triggers#reminders',
+        destination: '/docs/guide#automations',
         permanent: true,
       },
       {
         source: '/docs/feature-flags',
-        destination: '/docs/project#feature-flags',
+        destination: '/docs',
         permanent: true,
       },
       {
         source: '/docs/feature-flags/apps',
-        destination: '/docs/apps',
+        destination: '/docs/developers#apps-reference',
         permanent: true,
       },
       {
         source: '/docs/host/architecture',
-        destination: '/docs/host#what-runs-where',
+        destination: '/docs/developers#what-runs-where',
         permanent: true,
       },
       {
         source: '/docs/backend',
-        destination: '/docs/sdk/sessions#start-sessions-from-your-server',
+        destination: '/docs/developers#start-sessions-for-your-users',
         permanent: true,
       },
       {
         source: '/docs/sdk/example',
-        destination: '/docs/sdk#a-complete-script',
+        destination: '/docs/developers#your-first-session',
         permanent: true,
       },
       {
         source: '/docs/sdk/sign-in',
-        destination: '/docs/sdk/auth#sign-in-with-kortix',
+        destination: '/docs/developers#sign-in-with-kortix',
         permanent: true,
       },
       {
         source: '/docs/sdk/apps',
-        destination: '/docs/apps#build-on-apps-from-typescript',
+        destination: '/docs/developers#build-on-apps-from-typescript',
         permanent: true,
       },
       {
         source: '/docs/sdk/connectors',
-        destination: '/docs/connect/connectors#call-connectors-from-code',
+        destination: '/docs/guide#connectors',
         permanent: true,
       },
-      // The help centre was a second support surface: it wore the app sidebar
-      // and a ⌘K modal to host exactly one article, while /support carried the
-      // FAQ, the contact addresses and the account-deletion steps. They merged
-      // into /support, so every help URL lands on its counterpart there.
-      //
-      // Permanent (308), because these are indexed public URLs and the merge is
-      // not going to be undone. /help went to the hub; /help/credits went to
-      // the credits guide, which now lives in the docs tree. /help/:path*
-      // catches nothing today — the tree held only the index and credits — and
-      // exists so a stale deep link ends on the hub instead of the marketing 404.
+      // The help centre merged into /support, and /support was removed
+      // (2026-10-26). Every help URL lands on the contact page, except
+      // /help/credits, which has a counterpart in the docs tree.
       {
         source: '/help/credits',
-        destination: '/docs/credits',
+        destination: '/docs/guide#billing',
         permanent: true,
       },
       {
         source: '/help',
-        destination: '/support',
+        destination: '/contact',
         permanent: true,
       },
       {
         source: '/help/:path*',
-        destination: '/support',
+        destination: '/contact',
         permanent: true,
       },
       // The credits guide is reference material, so it lives in the docs tree
@@ -706,15 +999,46 @@ const nextConfig = (): NextConfig => ({
       // for preview links and review references, not for search indexes.
       {
         source: '/support/credits',
-        destination: '/docs/credits',
+        destination: '/docs/guide#billing',
         permanent: true,
       },
+      // Marketing pages removed on 2026-10-26. They are indexed public URLs,
+      // listed in the old sitemap and llms.txt, so each one keeps resolving:
+      // /support (and its locale copies) goes to the contact page, the rest
+      // go home. The Markdown twins go to the home page's twin.
+      ...['/support'].flatMap((page) => [
+        { source: page, destination: '/contact', permanent: true },
+        { source: `${page}/:path*`, destination: '/contact', permanent: true },
+        { source: `/:locale(${locales.join('|')})${page}`, destination: '/:locale/contact', permanent: true },
+        { source: `/:locale(${locales.join('|')})${page}/:path*`, destination: '/:locale/contact', permanent: true },
+      ]),
+      ...[
+        '/agent-computer',
+        '/agents-and-skills',
+        '/automations',
+        '/channels',
+        '/company-as-code',
+        '/connectors',
+        '/solutions',
+      ].flatMap((page) => [
+        { source: page, destination: '/', permanent: true },
+        { source: `${page}/:path*`, destination: '/', permanent: true },
+        { source: `/:locale(${locales.join('|')})${page}`, destination: '/:locale', permanent: true },
+        { source: `/:locale(${locales.join('|')})${page}/:path*`, destination: '/:locale', permanent: true },
+        { source: `/markdown${page}.md`, destination: '/markdown/index.md', permanent: true },
+        { source: `/markdown${page}/:path*`, destination: '/markdown/index.md', permanent: true },
+      ]),
+      // /cli was removed on 2026-10-29; the CLI is documented in the docs
+      // tree. Exact path only: /cli/authorize is the CLI sign-in flow.
+      { source: '/cli', destination: '/docs/developers#cli', permanent: true },
+      { source: `/:locale(${locales.join('|')})/cli`, destination: '/docs/developers#cli', permanent: true },
+      { source: '/markdown/cli.md', destination: '/markdown/index.md', permanent: true },
       // Removed pages that may live on in old links and search indexes.
       // /credits-explained became the credits guide in the docs tree; the
       // /compare section was retired with no direct replacement.
       {
         source: '/credits-explained',
-        destination: '/docs/credits',
+        destination: '/docs/guide#billing',
         permanent: true,
       },
       {
@@ -823,6 +1147,14 @@ const nextConfig = (): NextConfig => ({
         source: '/docs',
         destination: '/docs/index.html',
       },
+      // Blume links /docs/apple-touch-icon.png (it detects the app's
+      // public/apple-touch-icon.png) but never copies it into the docs build,
+      // so the directory rule below turned it into a 404 (KRTX-3226). Serve the
+      // app's one icon file.
+      {
+        source: '/docs/apple-touch-icon.png',
+        destination: '/apple-touch-icon.png',
+      },
       {
         source: '/docs/:path*',
         destination: '/docs/:path*/index.html',
@@ -863,17 +1195,20 @@ const nextConfig = (): NextConfig => ({
             key: 'Content-Security-Policy-Report-Only',
             value: reportOnlyContentSecurityPolicy(),
           },
-          {
-            key: 'X-Frame-Options',
-            value: 'SAMEORIGIN',
-          },
+          // No X-Frame-Options: it cannot allowlist the Kortix extension's side panel.
+          // CSP frame-ancestors above is the framing gate.
           {
             key: 'X-Content-Type-Options',
             value: 'nosniff',
           },
+          // The microphone for this origin only: a voice call (an agent page's
+          // Call button, project flag `voice_call`) asks for it, and the browser
+          // still asks the person. Set on every document, not the session route
+          // alone: a session opened by client-side navigation keeps the policy of
+          // the page the app first loaded. Frames from other origins stay without it.
           {
             key: 'Permissions-Policy',
-            value: 'camera=(), microphone=(), geolocation=()',
+            value: 'camera=(), microphone=(self), geolocation=()',
           },
           {
             key: 'Referrer-Policy',
@@ -945,6 +1280,21 @@ const nextConfig = (): NextConfig => ({
         source: '/:locale/projects/:projectId/sessions/:sessionId',
         headers: embedFrameHeaders(),
       },
+      // Apple reads this file as JSON (Universal Links for /share and
+      // /auth/callback, shared web credentials). It has no extension, so it
+      // was served as application/octet-stream (KRTX-3255). The static file
+      // server keeps a Content-Type that a rule already set.
+      {
+        source: '/.well-known/apple-app-site-association',
+        headers: [{ key: 'Content-Type', value: 'application/json' }],
+      },
+      // Kortix in Chrome is not launched: its docs page is reachable by link from the app on
+      // dev, and no search engine indexes it (content/docs/connect/chrome.mdx `noindex`).
+      // Remove with the page's `noindex` at launch.
+      ...['/docs/connect/chrome', '/docs/connect/chrome.md', '/docs/connect/chrome.mdx'].map((source) => ({
+        source,
+        headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
+      })),
       {
         source: '/fonts/:path*',
         headers: [

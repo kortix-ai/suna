@@ -1,6 +1,6 @@
 'use client';
 
-import { SubSessionModal } from '../../thread/sub-session-modal';
+import { SubagentDialog } from '../../agents/subagent-view';
 import {
   BasicTool,
   isErrorOutput,
@@ -57,7 +57,7 @@ export function AgentMessageTool({ call, defaultOpen, forceOpen }: ToolProps) {
       </BasicTool>
 
       {hasSession && (
-        <SubSessionModal
+        <SubagentDialog
           open={modalOpen}
           onOpenChange={setModalOpen}
           sessionId={childSessionId}

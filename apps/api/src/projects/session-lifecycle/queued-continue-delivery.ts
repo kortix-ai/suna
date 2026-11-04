@@ -10,15 +10,31 @@ import { PromptDeliveryRefused } from './prompt-delivery-refusal';
 import { assertInboxDeliveryActive, InboxDeliveryPaused, returnClaimToQueue } from './inbox-delivery-hold';
 import { SteerNotTaken, postPrompt, readInboxTranscriptState, retractStrandedMessage } from './runtime-client';
 import { awakeDeliveryTarget } from './deliver';
-import { sessionHoldsLiveTurn } from './inbox-admission';
+import { sandboxKeepsMessageIds, sessionHoldsLiveTurn } from './inbox-admission';
+import { keepsWireIdOnStableRuntime } from './forwarded-placement';
 import { recordSteerFallback } from './command-transitions';
 import { MAX_LIVE_PLACEMENT_REPAIRS, hasLaterForwardedSibling, recordRepairedForward, remintForRepair, remintWireMessageId, verifyLivePlacement } from './inbox-placement';
 import { MAX_RUNTIME_UNREACHABLE_RETRIES, markCommandFailed, parkPromptForUnreachableRuntime, markCommandForwarded, requeueForAdmission, requeueUnlandedPrompt, markCommandSucceeded, type SessionLifecycleCommandRow, type QueuedContinueSessionPayload } from './store';
-import type { PromptOverridesWire } from './prompt-payload';
+import type { PromptOverridesWire, PromptPartWire } from './prompt-payload';
 import { DELIVERY_FAILURE_COPY, type SessionDeliveryOutcome, type SessionInvocationSource } from './types';
 
 const NOT_LANDED_RETRY_DELAY_MS = 2_000;
 type Status = 'succeeded' | 'queued' | 'failed';
+
+export async function refreshArtifactCommentQueuedPrompt(row: SessionLifecycleCommandRow, modelOverride?: { providerID?: string; modelID?: string }): Promise<{ text: string; parts?: PromptPartWire[] }> {
+  const { ArtifactCommentDeliveryError } = await import('../../artifacts/comment-delivery');
+  const { rebuildArtifactCommentScreenshotMessage } = await import('../../artifacts/comment-screenshot-delivery');
+  const { ArtifactCommentScreenshotError } = await import('../../artifacts/comment-screenshot-validation');
+  const { ArtifactCommentAuthorityError } = await import('../../artifacts/comment-authority');
+  try {
+    return await rebuildArtifactCommentScreenshotMessage(row, modelOverride);
+  } catch (error) {
+    if (error instanceof ArtifactCommentDeliveryError || error instanceof ArtifactCommentAuthorityError || error instanceof ArtifactCommentScreenshotError && error.status !== 503) {
+      throw new PromptDeliveryRefused(error.status, error.code, error.message);
+    }
+    throw error;
+  }
+}
 
 async function settleDelivery(row: SessionLifecycleCommandRow, delivery: Exclude<SessionDeliveryOutcome, 'delivered'>): Promise<Status> {
   if (delivery === 'unreachable') {
@@ -107,8 +123,9 @@ export async function continuationOverrides(
   own: PromptOverridesWire | undefined,
 ): Promise<PromptOverridesWire | undefined> {
   if (own?.model) return own;
+  // Only the overrides: the newest row that names a model can hold megabytes of file parts.
   const [last] = await db
-    .select({ payload: sessionLifecycleCommands.payload })
+    .select({ overrides: sql<PromptOverridesWire | null>`${sessionLifecycleCommands.payload}->'overrides'` })
     .from(sessionLifecycleCommands)
     .where(and(
       eq(sessionLifecycleCommands.sessionId, sessionId),
@@ -118,7 +135,7 @@ export async function continuationOverrides(
     ))
     .orderBy(desc(sessionLifecycleCommands.createdAt))
     .limit(1);
-  const picked = (last?.payload as { overrides?: PromptOverridesWire } | undefined)?.overrides;
+  const picked = last?.overrides ?? undefined;
   if (!picked?.model) return own;
   return {
     ...(picked.agent ? { agent: picked.agent } : {}),
@@ -133,7 +150,6 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
   text: string, wireId: string | undefined, placedIntoLiveTurn: boolean, underPlaced: boolean,
   tl: ProvisionTimeline, noReply = false): Promise<Status> {
   let wireMessageId = wireId;
-  const isPendingFirstPrompt = row.idempotencyKey === `prompt:${row.sessionId}:pending-first`;
   try {
     const overrides = await continuationOverrides(row.sessionId!, payload.overrides ?? undefined);
     // Admission holds every other row until no turn is live. A direct
@@ -152,13 +168,16 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
         ...(payload.parts?.length ? { parts: payload.parts } : {}),
         ...(overrides ? { overrides } : {}),
         ...(wireMessageId ? { wireMessageId } : {}),
-        materializationKey: row.commandId, isPendingFirstPrompt,
+        materializationKey: row.commandId,
         ...(noReply ? { noReply } : {}),
         ...(payload.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
         ...(payload.opencodeEnv ? { opencodeEnv: payload.opencodeEnv } : {}),
         ...(payload.clientMessageId ? {} : { queuedAt: row.createdAt }),
       }, attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId, tl,
-      payload.clientMessageId ? () => assertInboxDeliveryActive(row) : undefined);
+      payload.clientMessageId || row.source === 'system:artifact-comment' ? async () => {
+        if (payload.clientMessageId) await assertInboxDeliveryActive(row);
+        if (row.source === 'system:artifact-comment') return refreshArtifactCommentQueuedPrompt(row, overrides?.model ?? undefined);
+      } : undefined);
       tl.mark('delivered');
       if (delivery !== 'delivered') break;
       // A repair round re-sends after round 0's forward closed the claim.
@@ -190,6 +209,17 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
   }
 }
 
+/** The id a `remintOnDelivery` steer goes out under: its own when the runtime keeps ids and the tip allows it, else a re-mint. */
+async function steerWireMessageId(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload, externalId: string): Promise<string> {
+  const [transcript, stableIds] = await Promise.all([
+    readInboxTranscriptState(row, []),
+    sandboxKeepsMessageIds(externalId, row.actorUserId),
+  ]);
+  if (stableIds && payload.wireMessageId && transcript.read && transcript.tip &&
+    keepsWireIdOnStableRuntime(transcript.tip, payload.wireMessageId)) return payload.wireMessageId;
+  return remintWireMessageId(row, payload, transcript);
+}
+
 /**
  * Hand one admitted `steer` row to the running turn (R10): `POST .../steer`
  * on the awake box, under the client's wire id. 202 or a deduplicated 200
@@ -210,7 +240,11 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
  * where no transcript was read (a server-minted id is dated 2 min back) or
  * passed by the turn's own steps while the row waited. Posted as is, the
  * message sorts above the turn that reads it, and the web groups the rest of
- * the turn under it (2026-10-10, the connector-connected notice).
+ * the turn under it (2026-10-10, the connector-connected notice). On a
+ * runtime that keeps message ids the row keeps its id when every user
+ * message on the tip, the running turn's prompt included, sorts below it
+ * (`keepsWireIdOnStableRuntime`): the web's order by user message id is the
+ * only reason left to re-mint.
  *
  * `turn_ended` (409 `no_active_turn`) and `unsupported` (501) fall back to
  * `queue` and requeue the row due now, with the claim's attempt given back.
@@ -219,14 +253,20 @@ export async function deliverSteer(row: SessionLifecycleCommandRow, payload: Que
   text: string, steerInto: string, tl: ProvisionTimeline): Promise<Status> {
   const sessionId = row.sessionId!;
   const attempt = Number(payload.deliveryAttempt ?? 0);
+  let promptText = text;
   try {
     if (payload.clientMessageId) await assertInboxDeliveryActive(row);
     const target = await awakeDeliveryTarget(sessionId);
     if (!target?.externalId || !target.opencodeSessionId) throw new SteerNotTaken('turn_ended');
+    if (row.source === 'system:artifact-comment') {
+      const fresh = await refreshArtifactCommentQueuedPrompt(row);
+      promptText = fresh.text;
+      payload.parts = fresh.parts;
+    }
     const wireMessageId = payload.remintOnDelivery
-      ? await remintWireMessageId(row, payload, await readInboxTranscriptState(row, []))
+      ? await steerWireMessageId(row, payload, target.externalId)
       : payload.wireMessageId!;
-    const delivery = await postPrompt(target.externalId, target.opencodeSessionId, text, row.actorUserId!, sessionId,
+    const delivery = await postPrompt(target.externalId, target.opencodeSessionId, promptText, row.actorUserId!, sessionId,
       `${attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId}:steer`, {
         ...(payload.parts?.length ? { parts: payload.parts } : {}),
         wireMessageId, materializationKey: row.commandId,

@@ -212,9 +212,16 @@ export function DisclosureTrigger({
 
         const typedChild = child as React.ReactElement<ButtonLikeProps>;
         const childClassName = typedChild.props.className;
+        // Composed, never replaced: a tooltip around the trigger closes on its
+        // own onClick. A keyboard toggle is an activation (a native button's
+        // Enter is a click), so it runs the child's onClick too.
+        const activate = (event: React.SyntheticEvent) => {
+          typedChild.props.onClick?.(event as React.MouseEvent);
+          toggle();
+        };
 
         return React.cloneElement(typedChild, {
-          onClick: toggle,
+          onClick: activate,
           role: 'button',
           'aria-expanded': open,
           // The region is unmounted while collapsed, so only promise an id that
@@ -222,9 +229,13 @@ export function DisclosureTrigger({
           'aria-controls': open ? contentId : undefined,
           tabIndex: 0,
           onKeyDown: (e: React.KeyboardEvent) => {
+            typedChild.props.onKeyDown?.(e);
+            if (e.defaultPrevented) return;
             if (e.key === 'Enter' || e.key === ' ') {
+              // Activate before preventing the default: a composed handler
+              // (Radix's tooltip close) skips a prevented event.
+              activate(e);
               e.preventDefault();
-              toggle();
             }
           },
           className: cn(

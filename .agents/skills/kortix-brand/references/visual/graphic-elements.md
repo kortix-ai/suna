@@ -38,7 +38,13 @@ Art is a sanctioned layer of the system. It is the only layer where raw color, g
 
 - **What:** the symbol sampled onto a 12 by 10 grid. `#` is a full cell and `+` is a partial cell drawn as a checker, so the curves read as dither (`packages/ui/src/primitives/pixel-kortix-mark.tsx`, `PixelKortixMark`). It is `aria-hidden` and uses `currentColor`.
 - **Where:** a first-run empty state, with one muted line below it (#7337: "Sessions you start will show up here"). Mobile has the same idea as a pixel flower (`apps/mobile/components/kortix/PixelDeadFlower.tsx`).
-- **Not:** as a logo substitute. It is art, not the brand mark.
+- **Not:** as a logo substitute. It is art, not the brand mark. Not the empty state of a tab, a folder or a list: that is `EmptyArt` (D14).
+
+### Empty-state art
+
+- **What:** two cards fanned behind a front card, drawn in `fill-card`, `fill-muted` and `stroke-foreground/*` (`packages/ui/src/primitives/empty-art.tsx`, `EmptyArt`). With `icon`, one Phosphor glyph sits on the front card in `text-muted-foreground`; without it, the front card is a document. It is `aria-hidden`.
+- **Where:** the `media` of `EmptyState` for an empty tab, folder or list (D14, 2026-10-25): a channel's Memory, Links, Triggers, Apps and Threads, and the Files folders.
+- **Not:** a tile beside a row, a status icon, or art on a page that is not empty.
 
 ### Dot-matrix busy glyphs
 

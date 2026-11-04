@@ -11,9 +11,9 @@ import { NextRequest, NextResponse } from 'next/server';
 // Browsers hitting this URL (Accept: text/html) get a 302 redirect to
 // the script's GitHub page so a human can review it before running.
 
-const REPO_URL = 'https://github.com/kortix-ai/suna';
+const REPO_URL = 'https://github.com/kortix-ai/CompanyOS';
 const REPO_SCRIPT_URL = `${REPO_URL}/blob/dev/scripts/install.sh`;
-const RAW_SCRIPT_URL = 'https://raw.githubusercontent.com/kortix-ai/suna/dev/scripts/install.sh';
+const RAW_SCRIPT_URL = 'https://raw.githubusercontent.com/kortix-ai/CompanyOS/dev/scripts/install.sh';
 
 function prefersHtml(request: NextRequest): boolean {
   const accept = request.headers.get('accept') || '';

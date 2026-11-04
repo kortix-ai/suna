@@ -317,3 +317,165 @@ describe('standalone chat and messages admission', () => {
     }
   });
 });
+
+describe('public discovery without credentials', () => {
+  const { app } = buildServer();
+  for (const path of ['/.well-known/security.txt', '/robots.txt', '/sitemap.xml']) {
+    test(path, async () => {
+      const res = await app.request(path);
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      expect(text).not.toContain('/admin');
+      if (path.endsWith('security.txt')) expect(text).toContain('Contact: mailto:security@kortix.com');
+      if (path === '/sitemap.xml') expect(text).not.toContain('<loc>');
+    });
+  }
+});
+
+const { registerRoutes } = await import('./routes');
+const { Hono } = await import('hono');
+
+describe('standalone image routes', () => {
+  function imageApp(inflight = new InflightBudget({ maxBytes: 1024 * 1024, perRequestMaxBytes: 1024 * 1024, amplification: 1 })) {
+    const calls: { authorization: string | undefined; rawBody: string; operation: string }[] = [];
+    const unused = async (): Promise<Response> => { throw new Error('not an image route'); };
+    const app = new Hono();
+    registerRoutes(app, {
+      chatCompletions: unused, messages: unused, responses: unused, listModels: unused, claudeCode: unused,
+      audio: unused, voices: unused,
+      images: async (request) => {
+        calls.push({ authorization: request.authorization, rawBody: request.rawBody, operation: request.operation });
+        return Response.json({ data: [{ b64_json: 'AAAA' }] });
+      },
+    }, inflight, () => {}, () => null);
+    return { app, calls, inflight };
+  }
+
+  test('POST /v1/images/generations reaches gateway.images with operation generations', async () => {
+    const { app, calls, inflight } = imageApp();
+    const body = JSON.stringify({ model: 'codex/gpt-image-2', prompt: 'a red cube' });
+    const res = await app.request('/v1/images/generations', {
+      method: 'POST', headers: { authorization: 'Bearer token', 'content-type': 'application/json' }, body,
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toHaveProperty('data.0.b64_json', 'AAAA');
+    expect(calls).toEqual([{ authorization: 'Bearer token', rawBody: body, operation: 'generations' }]);
+    expect(inflight.inflightBytes).toBe(0);
+    for (const path of ['/images/edits', '/v1/llm/images/edits', '/v1/openai/images/generations']) {
+      expect((await app.request(path, { method: 'POST', body })).status).toBe(200);
+    }
+    expect(calls.map((call) => call.operation)).toEqual(['generations', 'edits', 'edits', 'generations']);
+  });
+
+  test('an oversized image body is 413 before gateway.images runs', async () => {
+    const { app, calls, inflight } = imageApp(new InflightBudget({ maxBytes: 1024, perRequestMaxBytes: 1024, amplification: 1 }));
+    const res = await app.request('/v1/images/edits', {
+      method: 'POST', headers: { 'content-length': '1025' }, body: 'x'.repeat(1025),
+    });
+    expect(res.status).toBe(413);
+    expect((await res.json()) as Record<string, unknown>).toHaveProperty('code', 'request_too_large');
+    expect(calls).toHaveLength(0);
+    expect(inflight.inflightBytes).toBe(0);
+  });
+});
+
+describe('standalone audio routes', () => {
+  function audioApp(inflight = new InflightBudget({ maxBytes: 1024 * 1024, perRequestMaxBytes: 1024 * 1024, amplification: 1 })) {
+    const calls: { operation: string; authorization: string | undefined; contentType: string; body: Uint8Array<ArrayBuffer> }[] = [];
+    const voices: { authorization: string | undefined; model: string }[] = [];
+    const unused = async (): Promise<Response> => { throw new Error('not an audio route'); };
+    const app = new Hono();
+    registerRoutes(app, {
+      chatCompletions: unused, messages: unused, responses: unused, listModels: unused, images: unused, claudeCode: unused,
+      audio: async (request) => {
+        calls.push({ operation: request.operation, authorization: request.authorization, contentType: request.contentType, body: request.body });
+        return new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'audio/pcm' } });
+      },
+      voices: async (request) => {
+        voices.push({ authorization: request.authorization, model: request.model });
+        return Response.json({ object: 'list', data: [] });
+      },
+    }, inflight, () => {}, () => null);
+    return { app, calls, voices, inflight };
+  }
+
+  test('a multipart upload reaches gateway.audio byte for byte, on every alias prefix', async () => {
+    const { app, calls, inflight } = audioApp();
+    // Bytes that are not valid UTF-8: a text decode would replace them.
+    const audioBytes = new Uint8Array([0xff, 0xfe, 0x00, 0x80, 0xc3]);
+    const form = new FormData();
+    form.append('model', 'whisper-large-v3-turbo');
+    form.append('file', new File([audioBytes], 'clip.wav', { type: 'audio/wav' }));
+    const upload = new Request('http://gateway/v1/audio/transcriptions', { method: 'POST', body: form });
+    const contentType = upload.headers.get('content-type')!;
+    const bytes = new Uint8Array(await upload.arrayBuffer());
+    for (const path of ['/audio/transcriptions', '/v1/audio/transcriptions', '/v1/llm/audio/transcriptions', '/v1/openai/audio/transcriptions']) {
+      const res = await app.request(path, { method: 'POST', headers: { authorization: 'Bearer t', 'content-type': contentType }, body: bytes });
+      expect(res.status).toBe(200);
+      expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+    }
+    expect(calls).toHaveLength(4);
+    for (const call of calls) {
+      expect(call).toMatchObject({ operation: 'transcriptions', authorization: 'Bearer t', contentType });
+      expect(call.body).toEqual(bytes);
+    }
+    const parsed = await new Response(calls[0]!.body, { headers: { 'content-type': contentType } }).formData();
+    expect(new Uint8Array(await (parsed.get('file') as File).arrayBuffer())).toEqual(audioBytes);
+    expect(inflight.inflightBytes).toBe(0);
+  });
+
+  test('speech reaches gateway.audio with operation speech; voices reads ?model=', async () => {
+    const { app, calls, voices } = audioApp();
+    const body = JSON.stringify({ model: 'tts-x', input: 'hello', voice: 'v1' });
+    expect((await app.request('/v1/audio/speech', { method: 'POST', headers: { 'content-type': 'application/json' }, body })).status).toBe(200);
+    expect(calls.map((call) => [call.operation, new TextDecoder().decode(call.body)])).toEqual([['speech', body]]);
+    expect((await app.request('/v1/llm/audio/voices?model=tts-x', { headers: { authorization: 'Bearer t' } })).status).toBe(200);
+    expect(voices).toEqual([{ authorization: 'Bearer t', model: 'tts-x' }]);
+  });
+
+  test('an oversized upload is 413 before gateway.audio runs', async () => {
+    const { app, calls, inflight } = audioApp(new InflightBudget({ maxBytes: 1024, perRequestMaxBytes: 1024, amplification: 1 }));
+    const res = await app.request('/v1/audio/transcriptions', {
+      method: 'POST', headers: { 'content-length': '1025' }, body: 'x'.repeat(1025),
+    });
+    expect(res.status).toBe(413);
+    expect(calls).toHaveLength(0);
+    expect(inflight.inflightBytes).toBe(0);
+  });
+});
+
+describe('standalone Claude Code passthrough routes', () => {
+  function claudeApp() {
+    const calls: Array<{ method: string; path: string; search: string; body: string | null; auth: string | null }> = [];
+    const unused = async (): Promise<Response> => { throw new Error('not a Claude Code route'); };
+    const app = new Hono();
+    registerRoutes(app, {
+      chatCompletions: unused, messages: unused, responses: unused, listModels: unused, images: unused,
+      audio: unused, voices: unused,
+      claudeCode: async (request) => {
+        calls.push({ method: request.method, path: request.path, search: request.search,
+          body: request.body ? new TextDecoder().decode(request.body) : null, auth: request.headers.get('authorization') });
+        return new Response('data: ok\n\n', { headers: { 'content-type': 'text/event-stream' } });
+      },
+    }, new InflightBudget({ maxBytes: 1024 * 1024, perRequestMaxBytes: 1024 * 1024, amplification: 1 }), () => {}, () => null);
+    return { app, calls };
+  }
+
+  test('every alias prefix reaches the passthrough with the path after claude-code, the query and the exact body', async () => {
+    const { app, calls } = claudeApp();
+    const body = '{"model":"claude-haiku-5-5","messages":[{"role":"user","content":"é"}]}';
+    for (const prefix of ['', '/v1', '/v1/llm']) {
+      const res = await app.request(`${prefix}/claude-code/v1/messages?beta=true`, {
+        method: 'POST', headers: { authorization: 'Bearer t', 'content-type': 'application/json' }, body,
+      });
+      expect(res.status).toBe(200);
+    }
+    expect(calls).toEqual([0, 1, 2].map(() => ({ method: 'POST', path: '/v1/messages', search: '?beta=true', body, auth: 'Bearer t' })));
+  });
+
+  test('the connectivity check reaches the passthrough without a body', async () => {
+    const { app, calls } = claudeApp();
+    expect((await app.request('/claude-code/api/hello', { method: 'HEAD' })).status).toBe(200);
+    expect(calls).toEqual([{ method: 'HEAD', path: '/api/hello', search: '', body: null, auth: null }]);
+  });
+});

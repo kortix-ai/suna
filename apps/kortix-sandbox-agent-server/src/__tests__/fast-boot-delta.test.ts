@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'bun:test'
-import { loadOpenCodeConfig as loadConfig } from '@/harness/open-code/config'
+import { loadHostConfig as loadConfig } from '@/lib/config/config'
 import { isShallowRepo } from '@/services/workspace-provider/checkout'
 import { __setScaffoldRepoPathForTests, buildFastBootBundleUrl, materializeRepo } from '@/services/workspace-provider/git'
 

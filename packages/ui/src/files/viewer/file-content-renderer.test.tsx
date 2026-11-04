@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import { Window } from 'happy-dom';
+import { act, type ReactElement } from 'react';
+import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { FileSourceProvider, type FileSource } from './file-source';
-import { FileContentRenderer } from './file-content-renderer';
+import { captionMotion, FileContentRenderer } from './file-content-renderer';
+import { domMax, LazyMotion } from 'motion/react';
+import { useFilePreviewStore } from '../../internal/stores/file-preview-store';
 
 const source: FileSource = {
   id: 'characterization',
@@ -10,6 +15,35 @@ const source: FileSource = {
   download: async () => undefined,
   upload: async () => undefined,
 };
+
+/** Mounts `node` in a happy-dom document, hands it to `run`, then restores the globals. */
+async function inDom(node: ReactElement, run: (container: HTMLElement, act: (fn: () => Promise<void>) => Promise<void>) => Promise<void>) {
+  const win = new Window();
+  const globals: Record<string, unknown> = {
+    window: win, document: win.document, navigator: win.navigator, HTMLElement: win.HTMLElement, Element: win.Element,
+    Node: win.Node, MutationObserver: win.MutationObserver, getComputedStyle: win.getComputedStyle.bind(win),
+    requestAnimationFrame: win.requestAnimationFrame.bind(win), cancelAnimationFrame: win.cancelAnimationFrame.bind(win),
+    ResizeObserver: class { observe() {} unobserve() {} disconnect() {} },
+    IS_REACT_ACT_ENVIRONMENT: true,
+  };
+  const saved = new Map(Object.keys(globals).map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
+  const container = win.document.createElement('div') as unknown as HTMLElement;
+  win.document.body.appendChild(container as unknown as Parameters<typeof win.document.body.appendChild>[0]);
+  const root = createRoot(container);
+  const step = async (fn: () => Promise<void>) => { await act(fn); };
+  try {
+    await act(async () => root.render(node));
+    await run(container, step);
+  } finally {
+    await act(async () => root.unmount());
+    await win.happyDOM.abort();
+    for (const [key, descriptor] of saved) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else Reflect.deleteProperty(globalThis, key);
+    }
+  }
+}
 
 function view(path: string, targetLine?: number) {
   return renderToStaticMarkup(<FileSourceProvider value={source}><FileContentRenderer filePath={path} targetLine={targetLine} /></FileSourceProvider>);
@@ -45,5 +79,111 @@ describe('file content renderer at a target line', () => {
     const atLine = view('/workspace/a.csv', 2);
     expect(atLine).not.toContain('animate-spinner-orbit');
     expect(atLine).toContain('class="relative flex flex-col h-full"');
+  });
+});
+
+// The image card opens a generated image with its prompt and the model that
+// made it (`openPreview(path, line, caption)`). Only a full-screen viewer
+// (`showCaption`: the preview modal, the panel's file preview) shows it; a
+// Files grid tile and every other embedded renderer never do.
+describe('the full-screen view shows the caption section only when caption data is given', () => {
+  // One result object, as react-query hands back while the data is unchanged.
+  const pngRead = { data: { type: 'binary', encoding: 'base64', mimeType: 'image/png', content: 'iVBORw0KGgo=' }, isLoading: false, error: null, refetch: async () => undefined };
+  const imageSource = { ...source, useFileContent: () => pngRead } as FileSource;
+  const fullScreen = (path: string) =>
+    renderToStaticMarkup(<FileSourceProvider value={imageSource}><FileContentRenderer filePath={path} showCaption /></FileSourceProvider>);
+  const reset = () => useFilePreviewStore.setState({ isOpen: false, filePath: null, lineNumber: undefined, captions: {} });
+
+  test('an image opened without caption data renders as before', () => {
+    expect(fullScreen('/workspace/output/images/plain.png')).not.toContain('data-file-caption');
+  });
+
+  // Replaces "an image opened with its caption shows the prompt and the model under it" (Jay,
+  // 2026-10-28): the caption is hidden by default and opens from the zoom shelf's ⓘ toggle.
+  test('the caption is hidden until the info button is pressed', async () => {
+    useFilePreviewStore.getState().openPreview('/workspace/output/images/fox.png', undefined, { text: 'A fox in a shuttle', model: 'codex/gpt-image-2' });
+    try {
+      for (const path of ['/workspace/output/images/fox.png', 'output/images/fox.png']) {
+        const html = fullScreen(path);
+        expect(html).not.toContain('data-file-caption');
+        expect(html).not.toContain('A fox in a shuttle');
+        // The toggle sits right after rotate, off, named in the viewer's language.
+        expect(html).toMatch(/aria-label="Rotate[^"]*"[\s\S]*?<button[^>]*aria-label="Image details" aria-pressed="false"[^>]*data-image-info=""/);
+      }
+      // Inside the app's LazyMotion boundary (`UiProvider`), so the disclosure animates as it does live.
+      const viewer = (
+        <LazyMotion features={domMax}>
+          <FileSourceProvider value={imageSource}><FileContentRenderer filePath="/workspace/output/images/fox.png" showCaption /></FileSourceProvider>
+        </LazyMotion>
+      );
+      await inDom(viewer, async (container, act) => {
+        const info = () => container.querySelector('[data-image-info]') as HTMLButtonElement;
+        // The button carries the tooltip's own data-state: the disclosure root is the nearest div above it with one.
+        const disclosure = () => info().parentElement!.closest('div[data-state]') as HTMLElement;
+        expect(container.querySelector('[data-file-caption]')).toBeNull();
+        expect(disclosure().getAttribute('data-state')).toBe('closed');
+        expect(info().getAttribute('aria-expanded')).toBe('false');
+        await act(async () => info().click());
+        expect(info().getAttribute('aria-pressed')).toBe('true');
+        expect(info().getAttribute('aria-expanded')).toBe('true');
+        expect(disclosure().getAttribute('data-state')).toBe('open');
+        // The caption region is the disclosure content the trigger controls.
+        const controls = info().getAttribute('aria-controls');
+        const region = [...container.querySelectorAll('[id]')].find((node) => node.id === controls);
+        expect(region?.querySelector('[data-file-caption]')?.textContent).toContain('A fox in a shuttle');
+        expect(region?.textContent).toContain('codex/gpt-image-2');
+        // Keyboard: Enter on the trigger closes it again. The content then plays its exit
+        // (`AnimatePresence`, the primitive's own contract) and the trigger stops pointing at it.
+        await act(async () => {
+          info().dispatchEvent(new (window as unknown as { KeyboardEvent: typeof KeyboardEvent }).KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        });
+        expect(info().getAttribute('aria-pressed')).toBe('false');
+        expect(info().getAttribute('aria-expanded')).toBe('false');
+        expect(info().getAttribute('aria-controls')).toBeNull();
+        expect(disclosure().getAttribute('data-state')).toBe('closed');
+        // Open again by click: the same content returns.
+        await act(async () => info().click());
+        expect(disclosure().getAttribute('data-state')).toBe('open');
+        expect(container.querySelectorAll('[data-file-caption]')).toHaveLength(1);
+      });
+      // Another file, opened in the same viewer, carries no caption.
+      expect(fullScreen('/workspace/output/images/other.png')).not.toContain('data-file-caption');
+      expect(view('/workspace/notes.ts')).not.toContain('data-file-caption');
+    } finally {
+      reset();
+    }
+  });
+
+  test('the caption opens over duration-moderate and closes faster, ease-out; reduced motion skips the transition', () => {
+    const moving = captionMotion(false);
+    expect(moving.expanded).toEqual({ height: 'auto', opacity: 1, transition: { duration: 0.2, ease: [0, 0, 0.2, 1] } });
+    expect(moving.collapsed).toEqual({ height: 0, opacity: 0, transition: { duration: 0.15, ease: [0, 0, 0.2, 1] } });
+    const still = captionMotion(true);
+    expect(still.expanded).toMatchObject({ height: 'auto', opacity: 1, transition: { duration: 0 } });
+    expect(still.collapsed).toMatchObject({ height: 0, opacity: 0, transition: { duration: 0 } });
+  });
+
+  test('the info button is absent without caption data', () => {
+    const html = fullScreen('/workspace/output/images/plain.png');
+    expect(html).toContain('<img');
+    expect(html).not.toContain('data-image-info');
+    expect(html).not.toContain('Image details');
+  });
+
+  test('a Files grid tile of a captioned image shows no caption', () => {
+    useFilePreviewStore.getState().openPreview('/workspace/output/images/fox.png', undefined, { text: 'A fox in a shuttle', model: 'codex/gpt-image-2' });
+    try {
+      // `FileThumbnail` renders the image with exactly these props.
+      const tile = renderToStaticMarkup(
+        <FileSourceProvider value={imageSource}>
+          <FileContentRenderer filePath="/workspace/output/images/fox.png" readOnly showHeader={false} imageControls="none" />
+        </FileSourceProvider>,
+      );
+      expect(tile).toContain('<img');
+      expect(tile).not.toContain('data-file-caption');
+      expect(tile).not.toContain('A fox in a shuttle');
+    } finally {
+      reset();
+    }
   });
 });

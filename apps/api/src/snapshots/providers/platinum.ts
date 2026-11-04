@@ -24,7 +24,7 @@ import {
 import { SANDBOX_SPEC_LIMITS } from '../dockerfile-layer';
 import { tarBuildContext } from '../staging-tar';
 import { normalizeExistingProviderState } from './state';
-import { productionPlatinumClient, observeTemplates, findTemplateByName, findTemplateById, paginateTemplates, fetchAllTemplates, lookupTemplatesNamed, waitForActive, requireExternalTemplateId, isPlatinumAuthFailure, PlatinumTemplateBuildFailedError, PLATINUM_BUILD_FAILED_RE } from './platinum-templates';
+import { productionPlatinumClient, findTemplateByName, findTemplateById, paginateTemplates, fetchAllTemplates, lookupTemplatesNamed, waitForActive, requireExternalTemplateId, isPlatinumAuthFailure, PlatinumTemplateBuildFailedError, PLATINUM_BUILD_FAILED_RE } from './platinum-templates';
 import type { PlatinumClient, PlatinumTemplate } from './platinum-templates';
 import { uploadWithRetry, templateInUseCount } from './platinum-upload';
 export { PlatinumTemplateListingError, PlatinumTemplateBuildFailedError, summarizePlatinumBuildFailure, findTemplateByName, waitForActive, requireExternalTemplateId } from './platinum-templates';
@@ -243,16 +243,13 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
     let lastErr: unknown;
     for (let attempt = 1; attempt <= BUILD_ATTEMPTS; attempt++) {
-      observeTemplates.invalidate();
       try {
         // Return the EXACT external template id the build proved
         // (requireExternalTemplateId inside buildOnce) — threaded to the caller
         // so the transition runner pins THAT id, never a name-list re-derivation.
         const result = await this.buildOnce(input, userDockerfile, tap);
-        observeTemplates.invalidate();
         return result;
       } catch (err) {
-        observeTemplates.invalidate();
         lastErr = err;
         if (!isRetryablePlatinumBuildError(err) || attempt === BUILD_ATTEMPTS) throw err;
         const msg = err instanceof Error ? err.message : String(err);
@@ -275,7 +272,6 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
       userDockerfile,
       runtimeProfile: input.runtimeProfile,
       appContext: input.appContext,
-      isShared: input.isShared,
       containerRuntime: input.containerRuntime,
     });
     const tarPath = join(ctx.contextDir, '..', `${input.snapshotName.replace(/[^a-zA-Z0-9_.-]/g, '_')}.tar.gz`);
@@ -382,7 +378,6 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
     sourceSnapshotName: string,
     opts: { region?: string } = {},
   ): Promise<BuildSnapshotResult> {
-    observeTemplates.invalidate();
     const { gzPath, cleanup } = await stageAgentBinaryGz();
     try {
       // uploadWithRetry — streamed + retried on transient S3 failure; see buildOnce.
@@ -415,7 +410,6 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
       // FIX-B: return the exact patched-template id (same contract as buildSnapshot).
       return { externalTemplateId: externalId };
     } finally {
-      observeTemplates.invalidate();
       await cleanup();
     }
   }
@@ -525,40 +519,35 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
 
   async deleteSnapshot(snapshotName: string): Promise<void> {
     if (!this.client.isConfigured()) return;
-    observeTemplates.invalidate();
-    try {
-      // One exact-name request, not a walk of every template in the org: this
-      // runs on the first session after a deploy (reaping the predecessor).
-      const lookup = await lookupTemplatesNamed(snapshotName, this.client);
-      const matches =
-        'named' in lookup
-          ? lookup.named
-          : (await paginateTemplates(() => undefined, this.client, lookup.firstPage)).all.filter(
-              (template) => template.name === snapshotName,
-            );
-      let inUse = 0;
-      for (const template of matches) {
-        try {
-          await this.client.json(`/v1/templates/${template.id}`, { method: 'DELETE' });
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          // A lookup/delete race is equivalent to already gone.
-          if (/ -> 404(?:\s|$)/.test(message)) continue;
-          // Platinum refuses while sandboxes still pin the rootfs. Keep deleting
-          // free duplicates, then report the refusal as a typed error.
-          const pinned = templateInUseCount(message);
-          if (pinned !== null) {
-            inUse += pinned;
-            continue;
-          }
-          // Provider outages must propagate so fan-out reports this provider as failed.
-          throw err;
+    // One exact-name request, not a walk of every template in the org: this
+    // runs on the first session after a deploy (reaping the predecessor).
+    const lookup = await lookupTemplatesNamed(snapshotName, this.client);
+    const matches =
+      'named' in lookup
+        ? lookup.named
+        : (await paginateTemplates(() => undefined, this.client, lookup.firstPage)).all.filter(
+            (template) => template.name === snapshotName,
+          );
+    let inUse = 0;
+    for (const template of matches) {
+      try {
+        await this.client.json(`/v1/templates/${template.id}`, { method: 'DELETE' });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        // A lookup/delete race is equivalent to already gone.
+        if (/ -> 404(?:\s|$)/.test(message)) continue;
+        // Platinum refuses while sandboxes still pin the rootfs. Keep deleting
+        // free duplicates, then report the refusal as a typed error.
+        const pinned = templateInUseCount(message);
+        if (pinned !== null) {
+          inUse += pinned;
+          continue;
         }
+        // Provider outages must propagate so fan-out reports this provider as failed.
+        throw err;
       }
-      if (inUse > 0) throw new SnapshotInUseError(snapshotName, inUse);
-    } finally {
-      observeTemplates.invalidate();
     }
+    if (inUse > 0) throw new SnapshotInUseError(snapshotName, inUse);
   }
 
   async listSnapshots(): Promise<Array<{ name: string }>> {

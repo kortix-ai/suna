@@ -17,6 +17,8 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
+  statSync,
   readlinkSync,
   rmSync,
   symlinkSync,
@@ -24,14 +26,11 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { ensureInjectedManagedSkills } from '@/services/skills/managed-skills'
 import {
   activateBootConfig,
-  bootLinkPath,
   deactivateBootConfig,
   extractConfigArchive,
   materializeRelease,
-  pointBootLink,
   pruneBootConfigs,
   quarantineRelease,
   readBootConfigPointer,
@@ -39,6 +38,7 @@ import {
   readReleaseManifest,
   releaseDir,
   verifyRelease,
+  writeReleaseManifest,
   type ReleaseManifest,
 } from '@/services/config-provider/boot-config'
 import { buildRelease, commitAll, git, initRepo, write, type BuiltRelease } from './helpers/config-release-fixtures'
@@ -54,7 +54,7 @@ function manifestOf(release: BuiltRelease): ReleaseManifest {
   return {
     release_id: d.release_id!,
     source_commit: d.source_commit!,
-    config_dir: d.config_dir,
+    config_dir: REL,
     config_tree_id: d.config_tree_id!,
     archive_url: d.archive!.url,
     archive_bytes: d.archive!.bytes,
@@ -65,11 +65,11 @@ function manifestOf(release: BuiltRelease): ReleaseManifest {
 }
 
 function release(message: string, governance: string | null = null): BuiltRelease {
-  return buildRelease(repo, commitAll(repo, message), REL, { governance })
+  return buildRelease(repo, commitAll(repo, message), { governance })
 }
 
-async function materialize(built: BuiltRelease, prepare?: (dir: string) => Promise<void>) {
-  return materializeRelease({ root: store, manifest: manifestOf(built), archive: built.archive, prepare, managedSkillsDir: overlay })
+async function materialize(built: BuiltRelease) {
+  return materializeRelease({ root: store, manifest: manifestOf(built), archive: built.archive, managedSkillsDir: overlay })
 }
 
 const verify = (built: BuiltRelease, dir: string) =>
@@ -121,26 +121,6 @@ describe('materializeRelease', () => {
     expect(() => accessSync(join(dir, REL, 'agents/kortix.md'), constants.W_OK)).toThrow()
     expect(() => writeFileSync(join(dir, REL, 'agents/kortix.md'), 'EDIT\n')).toThrow()
     accessSync(join(dir, REL, 'skills/pdf/scripts/run.sh'), constants.X_OK)
-  })
-
-  test('the prepare hook runs on the staged directory before it is sealed', async () => {
-    let staged = ''
-    const { dir } = await materialize(release('v1'), async (path) => {
-      staged = path
-      cpSync(overlay, join(path, REL, 'skills'), { recursive: true, force: true })
-      writeFileSync(join(path, REL, 'bun.lock'), 'lock\n')
-    })
-    expect(staged).toMatch(/\.tmp$/)
-    expect(staged.startsWith(`${dir}.`)).toBe(true)
-    expect(existsSync(staged)).toBe(false)
-    expect(readFileSync(join(dir, REL, 'skills/kortix-cli/SKILL.md'), 'utf8')).toBe('OVERLAY\n')
-  })
-
-  test('a failing prepare leaves no release and no staging directory', async () => {
-    const built = release('v1')
-    await expect(materialize(built, async () => { throw new Error('deps failed') })).rejects.toThrow(/deps failed/)
-    expect(existsSync(releaseDir(store, built.descriptor.release_id!))).toBe(false)
-    expect(spawnSync('ls', [store]).stdout.toString().trim()).toBe('')
   })
 
   test('a tracked symlink is extracted as a link to its committed target', async () => {
@@ -247,21 +227,6 @@ describe('verifyRelease', () => {
     expect(await verify(built, dir)).toBe(true);
   });
 
-  test('the managed-skill overlay still injects into a sealed release', async () => {
-    // The one legitimate runtime writer. It unseals what it needs and puts the
-    // seal back, so the hole above does not reopen for everyone else.
-    const built = release('v1');
-    const { dir } = await materialize(built);
-    const baked = join(root, 'baked-overlay');
-    mkdirSync(join(baked, 'kortix-new'), { recursive: true });
-    writeFileSync(join(baked, 'kortix-new/SKILL.md'), 'NEW OVERLAY\n');
-
-    await ensureInjectedManagedSkills(join(dir, REL), { bakedDir: baked, unsealManaged: true });
-
-    expect(readFileSync(join(dir, REL, 'skills/kortix-new/SKILL.md'), 'utf8')).toBe('NEW OVERLAY\n');
-    expect(() => writeFileSync(join(dir, REL, 'rogue-after-inject.md'), 'x')).toThrow(/EACCES|EPERM|EROFS/);
-  });
-
   test('a swapped symlink is compared by its target, never followed', async () => {
     symlinkSync('kortix.md', join(repo, `${REL}/agents/alias.md`))
     const built = release('symlink')
@@ -351,27 +316,35 @@ describe('quarantine and pruning', () => {
     expect(Object.keys(await readQuarantine(store))).toEqual(['d'.repeat(64)])
   })
 })
+describe('JSON store publication characterization', () => {
+  test('all three records publish newline JSON at mode 0644 with no staged siblings', async () => {
+    const built = release('publication')
+    const manifest = manifestOf(built)
+    const pointer = { release_id: manifest.release_id, source_commit: manifest.source_commit, config_dir: REL, dir: join(store, manifest.release_id), proven: true }
+    await writeReleaseManifest(store, manifest)
+    await activateBootConfig(store, pointer)
+    await quarantineRelease(store, manifest.release_id, 'synthetic failure')
+    const records = [
+      [`${manifest.release_id}.json`, manifest],
+      ['current.json', pointer],
+      ['quarantine.json', await readQuarantine(store)],
+    ] as const
+    for (const [name, record] of records) {
+      expect(readFileSync(join(store, name), 'utf8')).toBe(`${JSON.stringify(record)}\n`)
+      expect(statSync(join(store, name)).mode & 0o777).toBe(0o644)
+    }
+    expect(readdirSync(store).sort()).toEqual(records.map(([name]) => name).sort())
+  })
 
-/**
- * The boot link: OpenCode spawns at once with OPENCODE_CONFIG_DIR = this fixed
- * path, and it is repointed to the chosen config before the workspace gate
- * opens. OpenCode reads the directory at Instance init, on the first
- * directory-scoped request (verified on real OpenCode 1.18.31: a repointed
- * link was honoured).
- */
-describe('the boot link', () => {
-  test('is repointed atomically and survives pruning', async () => {
-    const first = await materialize(release('v1'))
-    const second = join(root, 'workspace-config')
-    mkdirSync(second, { recursive: true })
-    const link = await pointBootLink(first.dir, store)
-    expect(link).toBe(bootLinkPath(store))
-    expect(readlinkSync(link)).toBe(first.dir)
-    expect(readFileSync(join(link, REL, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
-    await pointBootLink(second, store)
-    expect(readlinkSync(link)).toBe(second)
-    expect(spawnSync('ls', [store]).stdout.toString().split('\n').filter((name) => name.includes('.tmp'))).toEqual([])
-    await pruneBootConfigs(store, [])
-    expect(readlinkSync(link)).toBe(second)
+  test('invalid manifest IDs stage bytes before validation, but filesystem errors win', async () => {
+    const manifest = { ...manifestOf(release('invalid')), release_id: 'invalid' }
+    await expect(writeReleaseManifest(store, manifest)).rejects.toThrow()
+    const staged = readdirSync(store)
+    expect(staged).toHaveLength(1)
+    expect(staged[0]).toMatch(/^invalid\.json\.[0-9a-f-]+\.tmp$/)
+    expect(readFileSync(join(store, staged[0] ?? ''), 'utf8')).toBe(`${JSON.stringify(manifest)}\n`)
+    const file = join(root, 'not-directory')
+    writeFileSync(file, 'occupied')
+    await expect(writeReleaseManifest(file, manifest)).rejects.toMatchObject({ code: 'EEXIST' })
   })
 })

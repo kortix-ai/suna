@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import type { GatewayModelStat, GatewaySeriesPoint } from '@/lib/projects-gateway-client';
+import type { GatewayModelStat, GatewaySeriesPoint } from '@kortix/sdk';
 
 import { CostSection, MetricTab, ShareBar, fmtCredits, fmtMs, weightedP50 } from '@kortix/ui/customize/sections/view/gateway/_metrics';
 import { MemberRow } from '@kortix/ui/customize/sections/view/gateway/gateway-budgets';

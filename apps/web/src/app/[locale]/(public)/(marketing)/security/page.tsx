@@ -1,339 +1,269 @@
-import { Reveal } from '@/components/home/reveal';
-import { RowList, SectionDivider } from '@/features/marketing/component/public-route-helpers';
-import { CapabilityHero } from '@/features/marketing/component/capability-hero';
-import SectionHeader from '@/features/marketing/component/section-header';
-import { BoundaryDiagram } from '@/features/marketing/security-page/boundary-diagram';
-import { CodePanel } from '@/features/marketing/security-page/code-panel';
-import { getLocalizedSecurityContent } from '@/features/marketing/security-page/content';
-import { CredentialFlow } from '@/features/marketing/security-page/credential-flow';
-import { SecurityHeroVisual } from '@/features/marketing/security-page/hero-visual';
-import { PermissionMatrix } from '@/features/marketing/security-page/permission-matrix';
-import { cn } from '@kortix/ui';
+import Link from '@/components/site-link';
+import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { Band, Heading } from '@/features/marketing/kit/page-frame';
+import { Seal } from '@/features/marketing/kit/seal';
+import { FaqSection } from '@/features/marketing/landing-sections/faq-section';
+import { LayerTabs } from '@/features/marketing/security-page/layer-tabs';
+import {
+  enforcement as sourceenforcement,
+  faqItems as sourcefaqItems,
+  pillars as sourcepillars,
+  trust as sourcetrust,
+} from '@/features/marketing/security-page/model';
+import { SecurityHero } from '@/features/marketing/security-page/security-hero';
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
 import { useTranslations } from '@/i18n/use-translations';
-import type { ReactNode } from 'react';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import {
+  BuildingsIcon,
+  CheckIcon,
+  CloudIcon,
+  CodeIcon,
+  CpuIcon,
+  HardDrivesIcon,
+  IdentificationBadgeIcon,
+  KeyIcon,
+  ListChecksIcon,
+  UsersThreeIcon,
+} from '@phosphor-icons/react/dist/ssr';
+import type { ComponentType, ReactNode } from 'react';
 
 /**
- * Hairlines for a 4-up grid that reflows 1 → 2 → 4 columns. Written per index
- * because the divider a cell needs changes with the breakpoint: cell 3 is a new
- * row at `sm` (top rule) and a new column at `lg` (left rule).
- */
-const GRID_4_RULES = [
-  '',
-  'border-t sm:border-t-0 sm:border-l',
-  'border-t lg:border-t-0 lg:border-l',
-  'border-t sm:border-l lg:border-t-0',
-] as const;
-
-
-
-/**
- * `/security` — the page a security reviewer reads before they will let anyone
- * else in the building use Kortix.
+ * `/security`: the security model in the home page's rhythm. Hero with one
+ * walkthrough of the model, four pillars, one tab per layer, what enforces
+ * each rule, a trust band, then the security FAQ.
  *
- * Copy lives in `features/marketing/security-page/content.ts` and every claim on
- * it is traced to code in that file's header, including the seven places where
- * a neighbouring page or the `kortix-brand` skill says more than the code supports.
- * Read that header before editing a single line here.
+ * Copy: `features/marketing/security-page/model.ts`, which cites the code or
+ * doc behind every line. English only for now.
  */
-export default function SecurityPage(): ReactNode {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { audit, control, credentials, disclosure, hero, identity, isolation, landing, posture } =
-    getLocalizedSecurityContent(tI18nComplete);
+
+type Glyph = ComponentType<{ className?: string }>;
+
+const PILLAR_ICONS: Record<string, Glyph> = {
+  computer: CpuIcon,
+  identity: IdentificationBadgeIcon,
+  credentials: KeyIcon,
+  record: ListChecksIcon,
+};
+
+const TRUST_ICONS: Glyph[] = [
+  CloudIcon,
+  HardDrivesIcon,
+  BuildingsIcon,
+  CodeIcon,
+  UsersThreeIcon,
+  CpuIcon,
+];
+
+function Pillars() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { pillars } = localizeUiCatalog(
+    { pillars: sourcepillars },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+
   return (
-    <div className="bg-background relative">
-      <CapabilityHero
-        eyebrow={hero.eyebrow}
-        title={hero.title}
-        sub={hero.sub}
-        ctaPrimary={hero.ctaPrimary}
-        ctaPrimaryHref={hero.ctaPrimaryHref}
-        ctaSecondary={hero.ctaSecondary}
-        ctaSecondaryHref={hero.ctaSecondaryHref}
-        visual={<SecurityHeroVisual />}
-      />
-
-      {/* ── 1 · isolation ───────────────────────────────────────────────── */}
-      <section id="isolation" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader
-          eyebrow={isolation.eyebrow}
-          title={isolation.title}
-          description={isolation.sub}
-        />
-
-        <Reveal delay={0.06}>
-          <div className="mt-10">
-            <BoundaryDiagram />
-          </div>
-        </Reveal>
-
-        <Reveal delay={0.1}>
-          <div className="mt-4">
-            <RowList rows={isolation.rows} />
-          </div>
-        </Reveal>
-      </section>
-
-      <SectionDivider />
-
-      {/* ── 2 · credentials ─────────────────────────────────────────────── */}
-      <section id="credentials" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader
-          eyebrow={credentials.eyebrow}
-          title={credentials.title}
-          description={credentials.sub}
-        />
-
-        <Reveal delay={0.06}>
-          <div className="mt-10">
-            <CredentialFlow />
-          </div>
-        </Reveal>
-
-        <Reveal delay={0.1}>
-          <div className="mt-4">
-            <RowList rows={credentials.rows} />
-          </div>
-        </Reveal>
-      </section>
-
-      <SectionDivider />
-
-      {/* ── 3 · identity & permissions ──────────────────────────────────── */}
-      <section id="identity" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader
-          eyebrow={identity.eyebrow}
-          title={identity.title}
-          description={identity.sub}
-        />
-
-        <Reveal delay={0.06}>
-          <div className="mt-10">
-            <PermissionMatrix />
-          </div>
-        </Reveal>
-
-        <Reveal delay={0.1}>
-          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8">
-              <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-                {identity.presets.label}
-              </p>
-              <div className="mt-6 grid grid-cols-1 gap-8 sm:grid-cols-2">
-                {(
-                  [
-                    ['account', identity.presets.account],
-                    ['project', identity.presets.project],
-                  ] as const
-                ).map(([scope, roles]) => (
-                  <div key={scope}>
-                    <p className="text-muted-foreground/50 font-mono text-[10px] tracking-widest uppercase">
-                      {scope}
-                    </p>
-                    <ul className="mt-3 space-y-3">
-                      {roles.map((role) => (
-                        <li key={role.k} className="text-sm leading-relaxed">
-                          <span className="text-foreground font-medium">{role.k}.</span>{' '}
-                          <span className="text-muted-foreground">{role.v}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8">
-              <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-                {identity.enterprise.label}
-              </p>
-              <ul className="mt-6 space-y-3">
-                {identity.enterprise.items.map((item) => (
-                  <li key={item.k} className="text-sm leading-relaxed">
-                    <span className="text-foreground font-medium">{item.k}.</span>{' '}
-                    <span className="text-muted-foreground">{item.v}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="text-muted-foreground/60 border-border mt-auto border-t pt-5 text-[13px] leading-relaxed">
-                {identity.enterprise.note}
-              </p>
-            </div>
-          </div>
-        </Reveal>
-
-        <Reveal delay={0.14}>
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {[identity.agents, identity.scoping].map((card) => (
-              <div
-                key={card.title}
-                className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
-              >
-                <h3 className="text-foreground text-lg leading-tight font-medium">{card.title}</h3>
-                <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{card.body}</p>
-              </div>
-            ))}
-          </div>
-        </Reveal>
-      </section>
-
-      <SectionDivider />
-
-      {/* ── 4 · control ─────────────────────────────────────────────────── */}
-      <section id="control" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={control.eyebrow} title={control.title} description={control.sub} />
-
-        <Reveal delay={0.06}>
-          <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
-            <div className="lg:col-span-6">
-              <CodePanel title={control.yaml.title} lines={control.yaml.lines} lang="yaml" />
-            </div>
-            <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:col-span-6 lg:auto-rows-fr">
-              {control.notes.map((note) => (
-                <li
-                  key={note.id}
-                  className="border-border bg-card flex h-full flex-col rounded-sm border p-6"
-                >
-                  <p className="text-foreground font-mono text-[11px] tracking-widest uppercase">
-                    {note.k}
-                  </p>
-                  <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{note.v}</p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </Reveal>
-      </section>
-
-      <SectionDivider />
-
-      {/* ── 5 · how work lands ──────────────────────────────────────────── */}
-      <section id="change-requests" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={landing.eyebrow} title={landing.title} description={landing.sub} />
-
-        <Reveal delay={0.06}>
-          <ol className="border-border mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
-            {landing.steps.map((step, i) => (
-              <li
-                key={step.n}
-                className={cn('border-border bg-card flex flex-col p-6 sm:p-7', GRID_4_RULES[i])}
-              >
-                <span className="text-muted-foreground/45 font-mono text-xs tracking-widest tabular-nums">
-                  {step.n}
-                </span>
-                <h3 className="text-foreground mt-6 text-lg leading-tight font-medium">
-                  {step.title}
+    <section id="pillars" className="scroll-mt-16 py-14 lg:py-20">
+      <Heading title={pillars.title} titleMuted={pillars.titleMuted} />
+      <Band className="mt-12">
+        <ul className="bg-border grid grid-cols-1 gap-px sm:grid-cols-2 xl:grid-cols-4">
+          {pillars.items.map(({ id, name, line, facts }) => {
+            const Icon = PILLAR_ICONS[id];
+            return (
+              <li key={id} className="bg-background flex flex-col gap-5 p-6 lg:p-10">
+                <Icon className="text-foreground size-6" aria-hidden />
+                <h3 className="text-foreground text-2xl font-medium tracking-tight text-balance">
+                  {name}
+                  <span className="text-muted-foreground mt-1 block text-lg leading-snug">
+                    {line}
+                  </span>
                 </h3>
-                <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{step.body}</p>
+                <ul className="mt-auto flex flex-col gap-2 text-sm">
+                  {facts.map((fact) => (
+                    <li key={fact} className="text-foreground flex items-start gap-2">
+                      <CheckIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+                      {fact}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            );
+          })}
+        </ul>
+      </Band>
+    </section>
+  );
+}
+
+/** A rule with a permission name in it: the name in mono. */
+function Rule({ text }: { text: string }): ReactNode {
+  const [before, name, after] = text.split(/(project\.[\w.]+)/);
+  return name ? (
+    <>
+      {before}
+      <code className="font-mono text-sm">{name}</code>
+      {after}
+    </>
+  ) : (
+    text
+  );
+}
+
+/** Literal codes (403, connector_egress_blocked) in mono; plain words stay sans. */
+function Deny({ text }: { text: string }): ReactNode {
+  return /\d|_/.test(text) ? <code className="font-mono text-xs">{text}</code> : text;
+}
+
+function Enforcement() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { enforcement } = localizeUiCatalog(
+    { enforcement: sourceenforcement },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+
+  const [rule, by, deny] = enforcement.head;
+  return (
+    <section id="enforcement" className="scroll-mt-16 py-14 lg:py-20">
+      <Heading title={enforcement.title} titleMuted={enforcement.titleMuted} />
+      <Band className="mt-12">
+        <div className="px-4 py-6 lg:px-11 lg:py-10">
+          <table className="hidden w-full border-collapse text-left md:table">
+            <caption className="sr-only">{enforcement.title}</caption>
+            <thead>
+              <tr className="border-b">
+                <th
+                  scope="col"
+                  className="text-muted-foreground w-5/12 py-3 pr-4 text-sm font-normal"
+                >
+                  {rule}
+                </th>
+                <th
+                  scope="col"
+                  className="text-muted-foreground w-4/12 px-4 py-3 text-sm font-normal"
+                >
+                  {by}
+                </th>
+                <th scope="col" className="text-muted-foreground px-4 py-3 text-sm font-normal">
+                  {deny}
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {enforcement.rows.map(([r, b, d]) => (
+                <tr key={r}>
+                  <th scope="row" className="text-foreground py-4 pr-4 text-base font-normal">
+                    <Rule text={r} />
+                  </th>
+                  <td className="text-muted-foreground px-4 py-4 text-sm">{b}</td>
+                  <td className="text-foreground px-4 py-4 text-sm">
+                    <Deny text={d} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <ul className="divide-y md:hidden">
+            {enforcement.rows.map(([r, b, d]) => (
+              <li key={r} className="flex flex-col gap-1 py-4">
+                <span className="text-foreground text-base">
+                  <Rule text={r} />
+                </span>
+                <span className="text-muted-foreground text-sm">{b}</span>
+                <span className="text-foreground text-sm">
+                  <Deny text={d} />
+                </span>
               </li>
             ))}
-          </ol>
-        </Reveal>
-      </section>
+          </ul>
+        </div>
+      </Band>
+    </section>
+  );
+}
 
-      <SectionDivider />
+/** The home page's trust band, for hosting and compliance: dark in both themes. */
+function Trust() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { trust } = localizeUiCatalog(
+    { trust: sourcetrust },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
 
-      {/* ── 6 · audit ───────────────────────────────────────────────────── */}
-      <section id="audit" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={audit.eyebrow} title={audit.title} description={audit.sub} />
-
-        <Reveal delay={0.06}>
-          <div className="mt-10">
-            <RowList rows={audit.rows} />
-          </div>
-        </Reveal>
-      </section>
-
-      <SectionDivider />
-
-      {/* ── 7 · deployment & posture ────────────────────────────────────── */}
-      <section id="posture" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={posture.eyebrow} title={posture.title} description={posture.sub} />
-
-        <Reveal delay={0.06}>
-          <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {posture.deployments.map((item) => (
-              <div
-                key={item.id}
-                className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
-              >
-                <h3 className="text-foreground text-lg leading-tight font-medium">{item.k}</h3>
-                <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{item.v}</p>
+  return (
+    <section id="trust" className="scroll-mt-16 py-14 lg:py-20">
+      <div className="kx-rail-fade border-y px-4 lg:px-17">
+        <div className="dark bg-muted text-foreground px-6 py-10 lg:px-11 lg:py-16">
+          <h2 className="text-xl font-medium tracking-tight text-balance md:text-2xl lg:text-3xl">
+            {trust.title}
+            <span className="text-muted-foreground block">{trust.titleMuted}</span>
+          </h2>
+          <ul className="bg-border mt-10 grid grid-cols-1 gap-px border sm:grid-cols-2 lg:mt-12 lg:grid-cols-3">
+            {trust.cells.map(({ k, v }, i) => {
+              const Icon = TRUST_ICONS[i];
+              return (
+                <li key={k} className="bg-muted flex flex-col gap-3 p-5 lg:p-6">
+                  <Icon className="size-7" aria-hidden />
+                  <h3 className="mt-1 text-base font-medium">{k}</h3>
+                  <p className="text-muted-foreground text-sm text-pretty">{v}</p>
+                </li>
+              );
+            })}
+            <li className="bg-muted flex flex-col items-start justify-between gap-6 p-5 sm:col-span-2 sm:flex-row sm:items-center lg:col-span-3 lg:p-6">
+              <div className="flex items-center gap-5">
+                <Seal
+                  name="SOC 2"
+                  detail="Type I"
+                  note="Verified"
+                  ornament="double"
+                  className="text-foreground size-20 shrink-0"
+                />
+                <div>
+                  <p className="text-base font-medium">{trust.seal}</p>
+                  <p className="text-muted-foreground mt-1 text-sm">{trust.sealNote}</p>
+                </div>
               </div>
-            ))}
-          </div>
-        </Reveal>
+              <MarketingButton size="md" className="hit-area-y-1 shrink-0" asChild>
+                <Link href="/contact">Bring us your review</Link>
+              </MarketingButton>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
 
-        {/* The honest half. Nothing here moves without a report in hand. */}
-        <Reveal delay={0.1}>
-          <div className="border-border bg-card mt-4 rounded-sm border p-6 sm:p-8">
-            <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-              {posture.compliance.label}
-            </p>
-            <dl className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-              {posture.compliance.items.map((item) => (
-                <div
-                  key={item.k}
-                  className="border-border flex items-baseline justify-between gap-4 border-t pt-4"
-                >
-                  <dt className="text-foreground text-sm font-medium">{item.k}</dt>
-                  <dd className="text-muted-foreground shrink-0 font-mono text-[11px] tracking-wider uppercase">
-                    {item.v}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-            <p className="text-muted-foreground border-border mt-6 border-t pt-6 text-sm leading-relaxed">
-              {posture.compliance.note}
-            </p>
-          </div>
-        </Reveal>
-      </section>
+export default function SecurityPage(): ReactNode {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { faqItems } = localizeUiCatalog(
+    { faqItems: sourcefaqItems },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
 
-      <SectionDivider />
-
-      {/* ── disclosure ──────────────────────────────────────────────────── */}
-      <section id="disclosure" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader
-          eyebrow={disclosure.eyebrow}
-          title={disclosure.title}
-          description={disclosure.sub}
-        />
-
-        <Reveal delay={0.06}>
-          <div className="border-border bg-card mt-10 grid overflow-hidden rounded-sm border lg:grid-cols-12">
-            <div className="border-border flex flex-col justify-center p-6 sm:p-8 lg:col-span-5 lg:border-r">
-              <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-                {tI18nComplete.raw('text43c1eff02d17')}
-              </p>
-              <a
-                href={`mailto:${disclosure.email}`}
-                className="text-foreground mt-4 font-mono text-lg underline-offset-4 hover:underline sm:text-xl"
-              >
-                {disclosure.email}
-              </a>
-              <p className="text-muted-foreground mt-4 text-sm leading-relaxed">
-                {disclosure.credit}
-              </p>
-            </div>
-            <dl className="lg:col-span-7">
-              {disclosure.slas.map((sla, i) => (
-                <div
-                  key={sla.k}
-                  className={cn(
-                    'border-border flex flex-wrap items-baseline justify-between gap-3 px-6 py-5 sm:px-8',
-                    i > 0 ? 'border-t' : 'border-t lg:border-t-0',
-                  )}
-                >
-                  <dt className="text-foreground text-sm font-medium">{sla.k}</dt>
-                  <dd className="text-muted-foreground font-mono text-[11px] tracking-wider uppercase">
-                    {sla.v}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        </Reveal>
-      </section>
-    </div>
+  return (
+    <main className="bg-background relative mx-auto w-full max-w-[1440px]">
+      <div
+        aria-hidden
+        className="bg-border pointer-events-none absolute inset-y-0 left-4 z-10 w-px lg:left-17"
+      />
+      <div
+        aria-hidden
+        className="bg-border pointer-events-none absolute inset-y-0 right-4 z-10 w-px lg:right-17"
+      />
+      <SecurityHero />
+      <Pillars />
+      <LayerTabs />
+      <Enforcement />
+      <Trust />
+      <FaqSection
+        title="Security questions."
+        titleMuted="Answered from the code."
+        items={faqItems}
+      />
+    </main>
   );
 }

@@ -1,19 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
-import { orderPermissionRules } from '@kortix/api-contract/permission-rules'
-import { buildOpencodeConfigContent } from '@/harness/open-code/lifecycle'
-import { writePermissionOrderPlugin } from '@/harness/open-code/permission-order'
-import { compilePermissionPolicy, permissionSubject, resolvePolicyRule } from '@/harness/pi/interactions'
-import { openCodeAction } from './helpers/opencode-permission'
+import { compilePermissionPolicy, resolvePolicyRule, toolCapability } from '@/harness/pi/interactions'
 
 /**
- * Kortix guarantees one precedence on both harnesses: the most specific
- * matching rule wins, whatever order the keys are written in. pi resolves it
- * directly; OpenCode applies the last match in key order, so kortixd orders
- * every block first. Each row is evaluated both ways and must agree.
+ * Kortix guarantees one precedence: the most specific matching rule wins,
+ * whatever order the keys are written in.
  */
 const CASES: [string, Record<string, unknown>, string, Record<string, unknown>, string | undefined][] = [
   ['a trailing `*` does not override a specific bash rule', { bash: { 'git push *': 'ask', '*': 'allow' } }, 'bash', { command: 'git push origin main' }, 'ask'],
@@ -31,56 +21,18 @@ const CASES: [string, Record<string, unknown>, string, Record<string, unknown>, 
   ['a narrow allow above a broad deny', { read: { 'docs/*': 'allow', '*': 'deny' } }, 'read', { path: 'docs/a.md' }, 'allow'],
 ]
 
-describe('both harnesses resolve every rule the same way', () => {
+describe('the most specific rule wins, in any key order', () => {
   test.each(CASES)('%s', (_name, rules, tool, args, expected) => {
-    const pi = resolvePolicyRule(compilePermissionPolicy(rules), tool, args, '/workspace')
-    const openCode = openCodeAction([orderPermissionRules(rules)], tool, permissionSubject(tool, args, '/workspace')!)
-    expect(pi).toBe(expected as never)
-    expect(openCode).toBe(expected)
-  })
-
-  test('without ordering, OpenCode disagrees on the `*`-last rows (the bug class)', () => {
-    const [, rules, tool, args] = CASES[0]!
-    expect(openCodeAction([rules], tool, permissionSubject(tool, args, '/workspace')!)).toBe('allow')
+    expect(resolvePolicyRule(compilePermissionPolicy(rules), tool, args, '/workspace')).toBe(expected as never)
   })
 })
 
-describe('the composed OpenCode config is ordered', () => {
-  // A compiled config as an API without ordering sends it: `*` last in each block.
-  const env: NodeJS.ProcessEnv = {
-    KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({
-      default_agent: 'a',
-      agent: { a: { permission: { skill: { probe: 'allow', '*': 'deny' }, bash: { 'git push *': 'ask', '*': 'allow' }, '*': 'allow' } } },
-    }),
-  }
+/** The Kortix tools that write files in the checkout (`output/images/`, `memory/`). */
+const WORKSPACE_WRITERS = ['image_gen', 'memory']
 
-  test('global then agent block, OpenCode semantics: the specific rules win', async () => {
-    const out = JSON.parse((await buildOpencodeConfigContent(env))!)
-    const blocks = [out.permission, out.agent.a.permission]
-    expect(openCodeAction(blocks, 'skill', 'probe')).toBe('allow')
-    expect(openCodeAction(blocks, 'skill', 'other')).toBe('deny')
-    expect(openCodeAction(blocks, 'skill', 'customize-opencode')).toBe('deny')
-    expect(openCodeAction(blocks, 'bash', 'git push origin main')).toBe('ask')
-    expect(openCodeAction(blocks, 'bash', 'ls')).toBe('allow')
-  })
-
-  test('the permission-order plugin is loaded when written', async () => {
-    const out = JSON.parse((await buildOpencodeConfigContent(env, { permissionOrderSpec: 'file:///x/kortix-permission-order.js' }))!)
-    expect(out.plugin).toEqual(['file:///x/kortix-permission-order.js'])
-  })
-})
-
-describe('the permission-order plugin orders config kortixd did not compose', () => {
-  test('its config hook orders the global and every agent block exactly as orderPermissionRules', async () => {
-    const spec = writePermissionOrderPlugin(join(mkdtempSync(join(tmpdir(), 'kortix-perm-order-')), 'plugin.js'))
-    const { KortixPermissionOrder } = await import(pathToFileURL(new URL(spec).pathname).href)
-    const global = { bash: { 'git push *': 'ask', '*': 'allow' }, '*': 'ask', 'pty_*': 'deny' }
-    const agent = { skill: { b: 'allow', a: 'allow', '*': 'deny' }, webfetch: 'deny' }
-    const config = { permission: structuredClone(global), agent: { x: { permission: structuredClone(agent) }, y: { permission: 'allow' }, z: {} } }
-    await (await KortixPermissionOrder()).config(config)
-    expect(JSON.stringify(config.permission)).toBe(JSON.stringify(orderPermissionRules(global)))
-    expect(JSON.stringify(config.agent.x.permission)).toBe(JSON.stringify(orderPermissionRules(agent)))
-    expect(config.agent.y.permission).toBe('allow')
-    expect(config.agent.z).toEqual({})
+describe('`edit` governs every Kortix tool that writes the workspace', () => {
+  test.each(WORKSPACE_WRITERS)('%s answers to `edit`', (tool) => {
+    expect(toolCapability(tool, { command: 'create' })).toBe('edit')
+    expect(resolvePolicyRule(compilePermissionPolicy({ edit: 'deny' }), tool, { command: 'create' }, '/workspace')).toBe('deny')
   })
 })

@@ -2,7 +2,7 @@ import { ledgerExists } from '../src/ledger-exists';
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { withClient } from '../src/with-client';
+import { withClient, withTransaction } from '../src/with-client';
 
 /**
  * Idempotent CONCURRENTLY migrations that a targeted release applied before
@@ -51,8 +51,7 @@ export async function repairEarlyAppliedMigrations(
   return withClient(databaseUrl, async (client) => {
     if (!(await ledgerExists(client))) return [];
 
-    await client.query('begin');
-    try {
+    return withTransaction(client, async () => {
       await client.query('lock table kortix_migrations.pgmigrations in exclusive mode');
       const ledger = await client.query<{ name: string }>(
         'select name from kortix_migrations.pgmigrations',
@@ -70,11 +69,7 @@ export async function repairEarlyAppliedMigrations(
         }
         await client.query('delete from kortix_migrations.pgmigrations where name = $1', [name]);
       }
-      await client.query('commit');
       return release;
-    } catch (error) {
-      await client.query('rollback');
-      throw error;
-    }
+    });
   });
 }

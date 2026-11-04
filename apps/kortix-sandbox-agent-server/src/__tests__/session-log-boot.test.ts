@@ -1,8 +1,7 @@
 /**
  * When the boot restores a session log (P6.4, `harness/shared/session-log-boot.ts`), against a
- * fake native store and a fake API (`Bun.serve`: manifest, restore, attachments). The real
- * harnesses run the same reconcile in `pi-session-log-restore.test.ts` and
- * `opencode-session-log-restore-boot-reconcile.test.ts`.
+ * fake native store and a fake API (`Bun.serve`: manifest, restore, attachments). pi runs
+ * the same reconcile in `pi-session-log-restore.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
@@ -119,11 +118,12 @@ function fakeStore(initial: string[] | null, { drops = {} as Record<string, numb
 }
 
 
-/** The fake API. Each route answers from its queue (the last answer repeats); every request is recorded. */
-function fakeApi(routes: { manifest?: Response[]; restore?: Response[]; attachment?: (id: string) => Response }) {
+/** The fake API. Each route answers from its queue (the last answer repeats) or its function of the request count; every request is recorded. */
+function fakeApi(routes: { manifest?: Answers; restore?: Answers; attachment?: (id: string) => Response }) {
   const requests: string[] = []
   const journal: SessionLogJournalRequest[] = []
-  const take = (queue: Response[] | undefined, i: number): Response => queue?.[Math.min(i, queue.length - 1)]?.clone() as Response ?? new Response('no route', { status: 500 })
+  const take = (queue: Answers | undefined, i: number): Response =>
+    typeof queue === 'function' ? queue(i) : queue?.[Math.min(i, queue.length - 1)]?.clone() as Response ?? new Response('no route', { status: 500 })
   const count = { manifest: 0, restore: 0, claimed: 0 }
   /** The persisted `claiming` mark as each restore POST arrives. */
   const marks: unknown[] = []
@@ -133,13 +133,15 @@ function fakeApi(routes: { manifest?: Response[]; restore?: Response[]; attachme
     async fetch(request) {
       const url = new URL(request.url)
       requests.push(`${request.method} ${url.pathname}`)
-      expect(request.headers.get('authorization')).toBe('Bearer session-token')
+      // The credential the control-plane env holds when the request leaves the box.
+      expect(request.headers.get('authorization')).toBe(`Bearer ${process.env.KORTIX_TOKEN}`)
       if (url.pathname.endsWith('/log/manifest')) return take(routes.manifest, count.manifest++)
       if (url.pathname.endsWith('/log/restore')) {
         marks.push(existsSync(sessionLogBootStatePath()) ? state().claiming : undefined)
         // claimSessionLog commits the claim before the answer leaves the API, whatever the answer is.
+        // A 401 comes from the auth middleware, before the route: no claim.
         const answer = take(routes.restore, count.restore++)
-        if (answer.status !== 404 && answer.status !== 503) count.claimed++
+        if (answer.status !== 401 && answer.status !== 404 && answer.status !== 503) count.claimed++
         return answer
       }
       if (url.pathname.includes('/attachments/')) return routes.attachment?.(url.pathname.split('/').at(-1)!) ?? new Response('gone', { status: 404 })
@@ -155,6 +157,11 @@ function fakeApi(routes: { manifest?: Response[]; restore?: Response[]; attachme
   process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}`
   return { requests, journal, count, marks }
 }
+
+type Answers = Response[] | ((i: number) => Response)
+
+/** The API's answer to a session credential whose sandbox row is not `provisioning`/`active` yet. */
+const leaseRefused = (): Response => Response.json({ error: 'Session token is not active' }, { status: 401 })
 
 const manifest = (generation: number, messages: Array<[string, boolean?]>): Response =>
   Response.json({ generation, messages: messages.map(([id, deleted = false]) => ({ message_id: id, content_hash: `sha256:${id}`, rev: 1, deleted })) } satisfies SessionLogManifest)
@@ -207,6 +214,79 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
 
     resetSessionLogJournalForTests()
     const again = fakeApi({ manifest: [manifest(1, LIVE)] })
+    expect(await reconcileSessionLog(store.port, RETRY)).toMatchObject({ generation: 1, cursors: [] })
+    expect(again.count.restore).toBe(0)
+  })
+
+  /** A 413 that carries a part of the log (`kept`), as the API answers a log over its cap. */
+  const overCap = (l: SessionLog, kept: 'model_view' | 'newest', revs: Record<string, number>, seq_max: Record<string, number>, messages: number) =>
+    Response.json(
+      { generation: 1, log: l, revs, seq_max, blobs: [], error: 'session_log_too_large', bytes: 38_588_834, limit: 24 * 1024 * 1024, messages, kept } satisfies SessionLogRestoreTooLarge,
+      { status: 413 },
+    )
+
+  test('413 kept model_view: the box writes the threads as sent, adds no note and no dropped.message, and leaves the session grade alone; every other stored id is unwritten; the restart restores nothing', async () => {
+    const child = { ...STORED.threads[0]!, thread_id: 'thr_child', parent_thread_id: 'thr_root', messages: [message('c1', 1, 'child one', { thread_id: 'thr_child', role: 'user' })] }
+    const slice = { ...STORED, threads: [STORED.threads[0]!, child] }
+    const live: Array<[string]> = [['m0'], ['m1'], ['m2'], ['c0'], ['c1']]
+    const api = fakeApi({ manifest: [manifest(0, live)], restore: [overCap(slice, 'model_view', { m0: 1, m1: 1, m2: 1, c0: 1, c1: 1 }, { thr_root: 2, thr_child: 1 }, 2)] })
+    const store = fakeStore(null)
+
+    const boot = await reconcileSessionLog(store.port, RETRY)
+
+    expect(api.count.restore).toBe(1)
+    // One write: no note follows.
+    expect(store.restores).toHaveLength(1)
+    expect(store.restores[0]!.log.threads.map((t) => [t.thread_id, t.messages.map((m) => m.message_id)])).toEqual([['thr_root', ['m1', 'm2']], ['thr_child', ['c1']]])
+    expect(store.restores[0]!.seqMax).toEqual({ thr_root: 2, thr_child: 1 })
+    expect(boot).toEqual({
+      generation: 1,
+      cursors: [
+        { thread_id: 'thr_root', last_seq: 2, native_hashes: { m1: 'h-m1', m2: 'h-m2' } },
+        { thread_id: 'thr_child', last_seq: 1, native_hashes: { c1: 'h-c1' } },
+      ],
+      harness: carry(3),
+    })
+    expect(state()).toEqual({ version: 1, generation: 1, unwritten: ['m0', 'c0'], harness: carry(3) })
+
+    resetSessionLogJournalForTests()
+    const again = fakeApi({ manifest: [manifest(1, live)] })
+    expect(await reconcileSessionLog(store.port, RETRY)).toMatchObject({ generation: 1, cursors: [] })
+    expect(again.count.restore).toBe(0)
+  })
+
+  test('413 kept model_view keeps the writer\'s own losses: a dropped attachment still gets the D3 note, without dropped.message', async () => {
+    const api = fakeApi({ manifest: [manifest(0, [['m0'], ...LIVE])], restore: [overCap(STORED, 'model_view', { m0: 1, m1: 1, m2: 1 }, { thr_root: 2 }, 1)] })
+    const store = fakeStore(null, { drops: { attachment: 1 } })
+
+    const boot = await reconcileSessionLog(store.port, RETRY)
+
+    expect(api.count.restore).toBe(1)
+    expect((store.restores.at(-1)!.log.threads[0]!.messages.at(-1)!.blocks[0] as { text: string }).text).toBe(
+      'Kortix: this session was restored from its saved session log. Some earlier content could not be restored: 1 attachment. If you need it, ask the user to send it again.',
+    )
+    expect(boot?.session).toMatchObject({ restore_grade: 'partial', ext: { kortix: { data: { restore: { dropped: { attachment: 1 } } } } } })
+  })
+
+  test('413 kept newest: the box writes the newest turns and a D3 note that names the earlier messages left out; the session patch is partial', async () => {
+    const newest = log([message('m3', 3, 'three', { role: 'user' }), message('m4', 4, 'four')])
+    const api = fakeApi({ manifest: [manifest(0, [...LIVE, ['m3'], ['m4']])], restore: [overCap(newest, 'newest', { m1: 1, m2: 1, m3: 1, m4: 1 }, { thr_root: 4 }, 2)] })
+    const store = fakeStore(null)
+
+    const boot = await reconcileSessionLog(store.port, RETRY)
+
+    expect(api.count.restore).toBe(1)
+    const written = store.restores.at(-1)!.log.threads[0]!.messages
+    expect(written.map((m) => m.message_id).slice(0, 2)).toEqual(['m3', 'm4'])
+    expect(written[2]).toEqual(expect.objectContaining({ seq: 5, origin: 'notification', blocks: [expect.objectContaining({ id: 'prt_kortix_restore_g1' })] }))
+    expect((written[2]!.blocks[0] as { text: string }).text).toBe(
+      'Kortix: this session was restored from its saved session log. Its 2 earliest messages were not restored: the conversation (36.8 MiB) is above the 24 MiB restore limit, and the newest messages that fit were restored. If you need it, ask the user to send it again.',
+    )
+    expect(boot).toMatchObject({ generation: 1, session: { restore_grade: 'partial', ext: { kortix: { data: { restore: { generation: 1, dropped: { message: 2 }, truncated: 0 } } } } } })
+    expect(state()).toMatchObject({ generation: 1, unwritten: ['m1', 'm2'] })
+
+    resetSessionLogJournalForTests()
+    const again = fakeApi({ manifest: [manifest(1, [...LIVE, ['m3'], ['m4']])] })
     expect(await reconcileSessionLog(store.port, RETRY)).toMatchObject({ generation: 1, cursors: [] })
     expect(again.count.restore).toBe(0)
   })
@@ -350,6 +430,39 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
       expect(api.count.manifest).toBe(3)
       expect(store.restores).toHaveLength(0)
     }
+  })
+
+  test('a wake that beats the sandbox lease: 401 until the API marks the sandbox active, then the box restores (no claim on a 401)', async () => {
+    const api = fakeApi({ manifest: [leaseRefused(), leaseRefused(), manifest(0, LIVE)], restore: [leaseRefused(), restoreAnswer(1, STORED)] })
+    const store = fakeStore(null)
+
+    expect((await reconcileSessionLog(store.port, RETRY))?.generation).toBe(1)
+    expect(api.count).toEqual({ manifest: 3, restore: 2, claimed: 1 })
+    expect(store.restores).toHaveLength(1)
+  })
+
+  test('a new credential that arrives during the wait (KRTX-2545) goes out on the next attempt', async () => {
+    process.env.KORTIX_TOKEN = 'superseded-token'
+    const api = fakeApi({
+      manifest: (i) => {
+        if (i > 0) return manifest(0, LIVE)
+        process.env.KORTIX_TOKEN = 'session-token'
+        return leaseRefused()
+      },
+      restore: [restoreAnswer(1, STORED)],
+    })
+
+    expect((await reconcileSessionLog(fakeStore(null).port, RETRY))?.generation).toBe(1)
+    expect(api.count.manifest).toBe(2)
+  })
+
+  test('a 401 that outlasts the wait (15 attempts): a box with a store boots on it, without a restore', async () => {
+    const api = fakeApi({ manifest: [leaseRefused()] })
+    const store = fakeStore(['m1'])
+
+    expect(await reconcileSessionLog(store.port, RETRY)).toEqual({ generation: 0, cursors: [] })
+    expect(api.count.manifest).toBe(15)
+    expect(store.restores).toHaveLength(0)
   })
 
   test('a brand-new session (no store, the manifest 404s): the box boots empty, as before', async () => {

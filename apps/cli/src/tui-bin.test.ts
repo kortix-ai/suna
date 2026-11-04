@@ -105,7 +105,7 @@ describe('tui-bin — asset names and URLs', () => {
 
   test('the asset URL is <base>/<tag>/<asset>, the scheme scripts/install.sh uses', () => {
     expect(tuiAssetUrl('0.13.24', 'kortix-tui-darwin-arm64', {})).toBe(
-      'https://github.com/kortix-ai/suna/releases/download/v0.13.24/kortix-tui-darwin-arm64',
+      'https://github.com/kortix-ai/CompanyOS/releases/download/v0.13.24/kortix-tui-darwin-arm64',
     );
   });
 

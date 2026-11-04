@@ -365,8 +365,16 @@ async function crMerge(argv: string[], opts: CtxOpts): Promise<number> {
   const sha = result.merge.merge_commit_sha.slice(0, 7);
   const label = result.merge.fast_forward ? 'fast-forward' : '3-way merge';
   process.stdout.write(
-    `\n  ${C.green}✓${C.reset} Merged ${C.bold}CR #${cr.number}${C.reset} ${C.dim}(${label})${C.reset}  ${C.faded}${sha}${C.reset}\n\n`,
+    `\n  ${C.green}✓${C.reset} Merged ${C.bold}CR #${cr.number}${C.reset} ${C.dim}(${label})${C.reset}  ${C.faded}${sha}${C.reset}\n`,
   );
+  // The merge carried these requests' commits too, so they are merged (KRTX-3371).
+  const also = result.also_merged ?? [];
+  if (also.length > 0) {
+    process.stdout.write(
+      `  ${C.dim}Also merged ${also.map((other) => `#${other.number}`).join(', ')}: their commits landed with it.${C.reset}\n`,
+    );
+  }
+  process.stdout.write('\n');
   return 0;
 }
 

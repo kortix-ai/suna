@@ -12,6 +12,7 @@ import {
   type FeatureFlagView,
   type KortixProject,
   type ProjectInput,
+  type ProjectManifestHealth,
   type ProvisionPhase,
   type ProvisionProjectInput,
   type ProvisionStreamEvent,
@@ -269,6 +270,34 @@ test('normalizes the provider-neutral default_agent field from legacy project co
 
   expect(detail.config.default_agent).toBe('kortix');
   expect(detail.config.open_code_default_agent).toBe('kortix');
+});
+
+test('project detail carries the manifest health the API reports', async () => {
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+  const manifestHealth: ProjectManifestHealth = {
+    path: 'kortix.yaml',
+    state: 'issues',
+    errors: 1,
+    warnings: 1,
+    issues: [
+      { path: 'agents.helper.modle', message: 'Unknown key. Did you mean "model"?', severity: 'error', line: 4, column: 5 },
+      { path: 'kortix_version', message: 'obsolete and ignored. Remove it.', severity: 'warning', line: 1, column: 1 },
+    ],
+  };
+  nextResponse = () =>
+    new Response(
+      JSON.stringify({
+        project: { project_id: 'proj-1' },
+        config: { agents: [], commands: [], skills: [], env: { required: [], optional: [] }, manifest_health: manifestHealth },
+        file_count: 0,
+        files: [],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+
+  const detail = await getProjectDetail('proj-1');
+
+  expect(detail.config.manifest_health).toEqual(manifestHealth);
 });
 
 // getProjectDetail goes through backendApi/unwrap — the same parsing path
@@ -1000,25 +1029,26 @@ describe('provisionProjectStream', () => {
 
 test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
   const expected: FeatureFlagKey[] = [
-    'agentmail_email',
-    'connectors_api_discover',
-    'drives',
     'marketplace',
-    'meta_agent',
-    'monitors',
     'reminders',
     'secrets_egress',
     'pooled_provider_secrets',
-    'genui',
     'us_region',
     'event_triggers',
-    'warm_sessions',
     'notification_center',
     'session_log_restore',
-    'volumes',
-    'connectors_v2',
+    'workspace_volume',
+    'project_channels',
     'agent_rooms',
+    'shared_drives',
     'goals',
+    'artifacts',
+    'artifact_comments',
+    'email_channel',
+    'session_groups',
+    'chrome',
+    'agent_teams',
+    'voice_call',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());
   expect(new Set(FEATURE_FLAG_KEYS).size).toBe(FEATURE_FLAG_KEYS.length);
@@ -1028,7 +1058,7 @@ test('FEATURE_FLAG_KEYS members are assignable to FeatureFlagKey', () => {
   // A compile-time assertion with a runtime witness: if the runtime list and
   // the hand-written union drift, this stops typechecking.
   const keys: readonly FeatureFlagKey[] = FEATURE_FLAG_KEYS;
-  const one: FeatureFlagKey = 'monitors';
+  const one: FeatureFlagKey = 'reminders';
   expect(keys).toContain(one);
 });
 
@@ -1084,6 +1114,11 @@ test('llm_gateway graduated: the gateway is the only model path, the key still t
   expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
 });
 
+test('genui graduated: absent from the runtime list, the key still typechecks', () => {
+  const graduated: FeatureFlagKey = 'genui';
+  expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
+});
+
 test('pi_worker withdrawn: sessions run pi only in the sandbox, the key still typechecks', () => {
   // The worker/environment split left the product. The API no longer lists,
   // resolves, or accepts `pi_worker`; `pi_harness` is the pi path.
@@ -1097,7 +1132,7 @@ test('FeatureFlagView stability accepts stable, beta, and experimental', () => {
 });
 
 test('ExperimentalFeatureKey and ExperimentalFeatureView stay as aliases', () => {
-  const key: ExperimentalFeatureKey = 'monitors';
+  const key: ExperimentalFeatureKey = 'reminders';
   const legacy: ExperimentalFeatureView = {
     key,
     name: 'Monitors',
@@ -1108,7 +1143,7 @@ test('ExperimentalFeatureKey and ExperimentalFeatureView stay as aliases', () =>
     overridden: false,
   };
   const canonical: FeatureFlagView = legacy;
-  expect(canonical.key).toBe('monitors');
+  expect(canonical.key).toBe('reminders');
 });
 
 test('FeatureFlagView marks an operator-only flag; older servers omit the field', () => {
@@ -1122,7 +1157,7 @@ test('FeatureFlagView marks an operator-only flag; older servers omit the field'
     overridden: true,
     operator_only: true,
   };
-  const legacy: FeatureFlagView = { ...managed, key: 'monitors', operator_only: undefined };
+  const legacy: FeatureFlagView = { ...managed, key: 'reminders', operator_only: undefined };
   expect(managed.operator_only).toBe(true);
   expect(legacy.operator_only).toBeUndefined();
 });
@@ -1148,15 +1183,15 @@ async function captureFeatureCall(
 }
 
 test('updateFeatureFlag PATCHes the canonical /features route', async () => {
-  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'monitors', true));
+  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'reminders', true));
 
   expect(sent.method).toBe('PATCH');
   expect(sent.url).toBe('http://backend.test/v1/projects/proj-1/features');
-  expect(sent.parsed).toEqual({ feature: 'monitors', enabled: true });
+  expect(sent.parsed).toEqual({ feature: 'reminders', enabled: true });
 });
 
 test('updateFeatureFlag puts an explicit null enabled on the wire, not an absent key', async () => {
-  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'monitors', null));
+  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'reminders', null));
 
   // Both halves matter: `parsed.enabled === null` alone passes when the key was
   // dropped; `'enabled' in parsed` alone passes when the value was rewritten.
@@ -1168,10 +1203,10 @@ test('updateFeatureFlag puts an explicit null enabled on the wire, not an absent
 test('updateExperimentalFeature keeps its legacy /experimental wire path', async () => {
   // Older deployed APIs only serve `/experimental`. Repointing this alias at
   // the canonical route would break every consumer pinned to an old server.
-  const sent = await captureFeatureCall(() => updateExperimentalFeature('proj-1', 'monitors', false));
+  const sent = await captureFeatureCall(() => updateExperimentalFeature('proj-1', 'reminders', false));
 
   expect(sent.url).toBe('http://backend.test/v1/projects/proj-1/experimental');
-  expect(sent.parsed).toEqual({ feature: 'monitors', enabled: false });
+  expect(sent.parsed).toEqual({ feature: 'reminders', enabled: false });
 });
 
 /**

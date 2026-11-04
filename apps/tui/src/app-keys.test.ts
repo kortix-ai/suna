@@ -27,7 +27,6 @@ function state(overrides: Partial<AppKeyState> = {}): AppKeyState {
     route: 'session',
     overlay: null,
     quitArmed: false,
-    attaching: false,
     ...overrides,
   };
 }
@@ -67,11 +66,11 @@ describe('help is global only when nothing is typing', () => {
 
   test('`?` while an overlay is open does nothing — the overlay owns the keys', () => {
     expect(globalKeyAction(key('?'), state({ overlay: 'help' }))).toBeNull();
-    expect(globalKeyAction(key('?'), state({ overlay: 'switcher' }))).toBeNull();
+    expect(globalKeyAction(key('?'), state({ overlay: 'ports' }))).toBeNull();
   });
 
   test('quit still works through an open overlay — `?` is not a trap', () => {
-    for (const overlay of ['help', 'switcher'] as const) {
+    for (const overlay of ['help', 'ports'] as const) {
       expect(globalKeyAction(key('c', { ctrl: true }), state({ overlay }))).toEqual({
         kind: 'arm-quit',
       });
@@ -82,11 +81,6 @@ describe('help is global only when nothing is typing', () => {
         kind: 'quit',
       });
     }
-  });
-
-  test('attach mode stays opaque — Ctrl+C there belongs to opencode', () => {
-    expect(globalKeyAction(key('c', { ctrl: true }), state({ attaching: true }))).toBeNull();
-    expect(globalKeyAction(key('q', { ctrl: true }), state({ attaching: true }))).toBeNull();
   });
 });
 
@@ -168,14 +162,19 @@ describe('routes and navigation', () => {
     });
   });
 
-  test('Ctrl+P, Ctrl+N, Ctrl+H and Alt+O are global', () => {
-    expect(globalKeyAction(key('p', { ctrl: true }), state())).toEqual({
-      kind: 'overlay',
-      overlay: 'switcher',
-    });
+  test('Ctrl+P, Ctrl+N and Ctrl+H are global', () => {
+    expect(globalKeyAction(key('p', { ctrl: true }), state())).toEqual({ kind: 'sessions' });
     expect(globalKeyAction(key('n', { ctrl: true }), state())).toEqual({ kind: 'new-session' });
     expect(globalKeyAction(key('h', { ctrl: true }), state())).toEqual({ kind: 'switch-host' });
-    expect(globalKeyAction(key('o', { meta: true }), state())).toEqual({ kind: 'attach' });
+  });
+
+  test('while the slash menu is open, Tab, Ctrl+P and Ctrl+N belong to the menu', () => {
+    const open = state({ focus: 'composer', menuOpen: true });
+    expect(globalKeyAction(key('tab'), open)).toBeNull();
+    expect(globalKeyAction(key('p', { ctrl: true }), open)).toBeNull();
+    expect(globalKeyAction(key('n', { ctrl: true }), open)).toBeNull();
+    // Quit is never taken away.
+    expect(globalKeyAction(key('q', { ctrl: true }), open)).toEqual({ kind: 'quit' });
   });
 
   test('Ctrl+N still works while the composer is focused: it is not a bare key', () => {
@@ -207,14 +206,6 @@ describe('Esc', () => {
   });
 });
 
-describe('attach mode suspends the keyboard', () => {
-  test('nothing is dispatched while opencode owns the terminal', () => {
-    for (const event of [key('?'), key('escape'), key('c', { ctrl: true }), key('tab')]) {
-      expect(globalKeyAction(event, state({ attaching: true }))).toBeNull();
-    }
-  });
-});
-
 describe('sidebar toggle and the Links panel', () => {
   test('Alt+B toggles the sidebar from a list region and from the composer', () => {
     for (const focus of ['sidebar', 'transcript', 'composer', 'screen'] as Focus[]) {
@@ -240,5 +231,30 @@ describe('sidebar toggle and the Links panel', () => {
   test('an open overlay keeps both keys', () => {
     expect(globalKeyAction(key('b', { meta: true }), state({ overlay: 'links' }))).toBeNull();
     expect(globalKeyAction(key('l', { meta: true }), state({ overlay: 'help' }))).toBeNull();
+  });
+});
+
+describe('macOS Option keys (no "Option as Meta" setting)', () => {
+  test('Option+B, Option+T, Option+P, Option+[ and Option+] reach their Alt bindings', () => {
+    const base = state({ focus: 'composer' });
+    expect(globalKeyAction(key('∫'), base)).toEqual({ kind: 'toggle-sidebar' });
+    expect(globalKeyAction(key('†'), base)).toEqual({ kind: 'toggle-terminal' });
+    expect(globalKeyAction(key('π'), base)).toEqual({ kind: 'overlay', overlay: 'ports' });
+    expect(globalKeyAction(key('“'), base)).toEqual({ kind: 'tab', step: -1 });
+    expect(globalKeyAction(key('‘'), base)).toEqual({ kind: 'tab', step: 1 });
+  });
+
+  test('a plain letter is still a letter', () => {
+    expect(globalKeyAction(key('b'), state({ focus: 'composer' }))).toBeNull();
+  });
+
+  test('Ctrl alternates: Ctrl+T for the terminal, Ctrl+PageUp/PageDown for tabs', () => {
+    const base = state({ focus: 'composer' });
+    expect(globalKeyAction(key('t', { ctrl: true }), base)).toEqual({ kind: 'toggle-terminal' });
+    expect(globalKeyAction(key('pageup', { ctrl: true }), base)).toEqual({ kind: 'tab', step: -1 });
+    expect(globalKeyAction(key('pagedown', { ctrl: true }), base)).toEqual({
+      kind: 'tab',
+      step: 1,
+    });
   });
 });

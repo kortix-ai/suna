@@ -12,7 +12,7 @@ import type { TriggerKind } from './schedule-copy';
 export type TriggerFilter = 'all' | TriggerKind;
 
 /** Tab order on the page; the value is the `?type=` it writes. */
-export const TRIGGER_FILTERS: readonly TriggerFilter[] = ['all', 'cron', 'event', 'webhook'];
+export const TRIGGER_FILTERS: readonly TriggerFilter[] = ['all', 'cron', 'event', 'app', 'webhook'];
 
 /** An unknown or missing `?type=` is `all`, and so is one the page does not offer (`event` while events are off). */
 export function parseTriggerFilter(
@@ -20,6 +20,31 @@ export function parseTriggerFilter(
   offered: readonly TriggerFilter[] = TRIGGER_FILTERS,
 ): TriggerFilter {
   return offered.find((f) => f === value) ?? 'all';
+}
+
+/**
+ * Whether `trigger` starts `agentName`. A trigger that names no agent is
+ * stored as `default` (the manifest sentinel, `apps/api/src/projects/lib/
+ * triggers.ts`), which means "the project's default agent" — so the default
+ * agent's page owns those rows too, or a trigger created with the agent left
+ * on its default would show up nowhere.
+ */
+export function triggerStartsAgent(
+  trigger: Pick<ProjectTrigger, 'agent'>,
+  agentName: string,
+  defaultAgent: string | null | undefined,
+): boolean {
+  if (trigger.agent === agentName) return true;
+  return trigger.agent === 'default' && !!defaultAgent && defaultAgent === agentName;
+}
+
+/** The triggers that start `agentName` — the Triggers page in agent scope. */
+export function triggersForAgent<T extends Pick<ProjectTrigger, 'agent'>>(
+  triggers: readonly T[],
+  agentName: string,
+  defaultAgent: string | null | undefined = null,
+): T[] {
+  return triggers.filter((trigger) => triggerStartsAgent(trigger, agentName, defaultAgent));
 }
 
 export function filterTriggers(

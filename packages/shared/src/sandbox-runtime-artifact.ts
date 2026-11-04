@@ -15,8 +15,6 @@ export interface RuntimeArtifact {
 
 export interface RuntimeArtifactFingerprintInput {
   sandboxVersion: string;
-  /** @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
-  opencodeVersion: string;
   artifacts: RuntimeArtifact[];
 }
 
@@ -131,7 +129,6 @@ export async function buildRuntimeArtifactFingerprint(
 ): Promise<string> {
   const hash = createHash('sha256');
   hash.update(`sandbox_version\0${input.sandboxVersion}\0`);
-  hash.update(`opencode_version\0${input.opencodeVersion}\0`);
   await hashArtifacts(hash, input.artifacts);
   return `kortix-runtime:${input.sandboxVersion}:artifacts:${hash.digest('hex')}`;
 }

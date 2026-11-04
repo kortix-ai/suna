@@ -37,6 +37,7 @@ import {
   resolvePostWriteBindings,
   scopeResponseBody,
 } from './session-scope-decide';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 export function registerSessionScopeRoutes(): void {
   projectsApp.openapi(
@@ -85,6 +86,7 @@ export function registerSessionScopeRoutes(): void {
           sessionAgent: visible.row.agentName ?? DEFAULT_AGENT_SENTINEL,
         });
       } catch (err) {
+        rethrowDatabaseError(err);
         return c.json(
           {
             error: `could not resolve this agent's grant, so the current scope cannot be determined: ${

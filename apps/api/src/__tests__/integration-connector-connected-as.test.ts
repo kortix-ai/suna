@@ -373,3 +373,21 @@ describe('project-shared connection authorized through Composio', () => {
     ]);
   });
 });
+
+describe('connect on an MCP server that needs no sign-in', () => {
+  test('answers connected and isNoAuth, and writes no account row', async () => {
+    const wiki = crypto.randomUUID();
+    await db.insert(connectors).values({
+      connectorId: wiki,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      slug: 'wiki',
+      name: 'Wiki',
+      providerType: 'mcp',
+      config: { url: 'https://mcp.example.test/mcp', auth: { type: 'none', in: 'header' } },
+    });
+    const started = await dbConnectorRouterDeps.connectorConnect!(PROJECT, 'wiki', MEMBER, undefined, null, 'me');
+    expect(started).toMatchObject({ provider: 'mcp', connected: true, isNoAuth: true });
+    expect(await rowsOf(wiki)).toHaveLength(0);
+  });
+});

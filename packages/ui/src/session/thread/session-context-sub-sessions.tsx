@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../../primitives/button';
 import { useTranslations } from '../../i18n';
-import { formatUsdAsCredits } from '@kortix/shared';
+import { formatSessionCostUsd } from '../../internal/billing/session-cost-format';
 import { Label } from '../../primitives/label';
 import { cn } from '../../lib/utils';
 import { useSessionLogRecord, useSessionLogThread, useSessionSync, type SessionMessagesSource } from '@kortix/sdk/react';
@@ -97,7 +97,7 @@ function WithOneThread({
 
 /**
  * Loads a sub-agent's thread into the store, as the sub-agent's own view does (`useSessionSync`
- * with `savedChild`): its saved window, then the runtime's. The section mounts one per requested
+ * with `savedChild`): the session's log, then the runtime's. The section mounts one per requested
  * id (a row that scrolled into view, or "Load all"), outside the tree, so collapsing a row
  * does not unload its children. Reports whether its last runtime read failed.
  */
@@ -138,7 +138,6 @@ function SubSessionTreeNode({
   /** The row has been in view: load its thread (about 2 requests). */
   onSeen: (id: string) => void;
 }) {
-  const tCredits = useTranslations('settings.credits');
   const [expanded, setExpanded] = useState(depth < 1);
   const rowRef = useRef<HTMLButtonElement>(null);
   const isRequested = requested.has(id);
@@ -187,7 +186,7 @@ function SubSessionTreeNode({
               {own.messages.all} {messagesSuffix}
             </span>
             <span className="text-muted-foreground shrink-0 tabular-nums">
-              {tCredits('creditCount', { count: own.cost * 100, formatted: formatUsdAsCredits(own.cost) })}
+              {formatSessionCostUsd(own.cost)}
             </span>
           </>
         ) : (
@@ -227,7 +226,6 @@ export function SubSessionSection({ source, session, allSessions, pricingLookup,
   fmt: { number: (value: number | null | undefined) => string };
 }) {
   const t = useTranslations('hardcodedUi.componentsSessionSessionContextModal');
-  const tCredits = useTranslations('settings.credits');
   const childMap = useMemo(
     () => (allSessions ? childMapByParent(allSessions) : new Map<string, string[]>()),
     [allSessions],
@@ -293,14 +291,7 @@ export function SubSessionSection({ source, session, allSessions, pricingLookup,
               )}
             </div>
             <div className="bg-popover rounded-md border">
-              <div className="grid grid-cols-2 gap-4 px-4 py-4 lg:grid-cols-4">
-                <Stat
-                  label={t.raw('combinedCost')}
-                  value={tCredits('creditCount', {
-                    count: totals.cost * 100,
-                    formatted: formatUsdAsCredits(totals.cost),
-                  })}
-                />
+              <div className="grid grid-cols-3 gap-4 px-4 py-4">
                 <Stat label={t.raw('combinedMessages')} value={totals.messages.all.toLocaleString()} />
                 <Stat label={t.raw('tokensIn')} value={fmt.number(totals.tokens.input)} />
                 <Stat label={t.raw('tokensOut')} value={fmt.number(totals.tokens.output)} />

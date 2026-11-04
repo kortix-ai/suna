@@ -56,54 +56,121 @@ quarantined test. It never deletes a test and never merges its own PR.
 ## How it works
 
 <Steps>
-<Step title="Run on a daily cron, one persistent session">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires once a day against the same **session**, not a fresh
-sandbox each time. Because the trigger runs in reusable-session mode, the
-per-test flakiness history survives from one run to the next instead of being
-recomputed from scratch, so a test's score reflects weeks of runs, not just
-today's.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the flaky-test-quarantine skill and the
+daily trigger, and opens a change request for you to review.
+Prefer clicks? Choose **Use this template** instead.
 
-</Step>
-<Step title="Give the agent the quarantine playbook">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a daily flaky-test triage agent in this project.
 
-How we score flakiness, which skip syntax each test framework uses, and what
-a quarantine PR and tracking issue should contain live as **skills** and
-**memory** that travel with the agent. When we tune the threshold or learn a
-flaky test's root cause, we write it down and the next run picks it up.
+1. Create the agent agents/flaky-test-triage.md. Its job is to score CI tests in owner/repo for flakiness and quarantine the worst ones. It may use the GitHub connector, the Slack channel and the GH_TOKEN secret.
 
-</Step>
-<Step title="Connect the systems the triage needs">
+2. Create the skill skills/flaky-test-quarantine/SKILL.md with these rules:
+   - Read memory/flaky-test-ledger.md first, and process only CI runs newer than the last processed run.
+   - Score each test by flips between pass and fail on unchanged code over its last 20 runs. A single failure is not flakiness.
+   - Quarantine a test at 3 or more flips in the last 20 runs. Add a framework skip marker with a reason and a link to the evidence. Never delete a test, an assertion or a file.
+   - Batch the day's new quarantines into one pull request, and keep one running issue titled Flaky test quarantine tracker.
+   - Never edit CI config to force a pass, never push to the default branch, and never merge.
+   - Post a summary to #ci-health: newly quarantined, still flaky, and stable enough to de-quarantine.
 
-Through a scoped **connector**, brokered server-side so no raw token reaches
-the model, plus a **GH_TOKEN** secret for the `gh` CLI, the agent can:
+3. Add a cron trigger daily-flaky-test-sweep to kortix.yaml. It runs the flaky-test-triage agent every day at 06:00 with the prompt "Load the flaky-test-quarantine skill and run one triage pass on owner/repo."
 
-- **Read CI run history from GitHub** — every workflow run's per-test results
-  over a rolling window, to see which tests flip outcome on unchanged code.
-- **Open a quarantine PR on GitHub** — skip markers on the worst offenders,
-  each with a reason and a link to the run evidence.
-- **File a tracking issue on GitHub** — one running issue listing every
-  currently-quarantined test, its flakiness score, and its status.
-- **Post to Slack** — a summary of what changed this run: newly quarantined
-  tests, tests still flaky, and tests ready to be de-quarantined.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent can only **skip and mark**, never delete. It opens a PR and an
-issue and stops; it never merges its own PR and never pushes to the default
-branch. Credentials are encrypted in the Secrets Manager and injected at
-runtime, scoped to the agents you grant them to.
+Open **Connectors** in your project and connect GitHub, add a GitHub token as
+the `GH_TOKEN` secret, and connect Slack under **Channels**. Credentials are
+brokered server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="GitHub" domain="github.com" tag="Required" alternatives={[['GitLab', 'gitlab.com'], ['CircleCI', 'circleci.com'], ['Buildkite', 'buildkite.com']]}>
+    Reads CI history and opens quarantine pull requests and issues.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Posts the daily flaky-test summary.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Let the daily triage happen">
+<Step title="Run it once with this prompt">
 
-With that in place, each day the agent updates every test's flakiness score
-against the current run history, and when a test crosses the threshold,
-quarantines it in a PR with the evidence attached, rolls it into the tracking
-issue, and posts the day's summary to Slack. A human reviews the PR, merges
-it if the quarantine is warranted, and eventually removes the skip once the
-test is actually fixed.
+Merge the change request, then start a session with the **flaky-test-triage** agent
+and send this prompt. Check the scores and the quarantine pull request
+before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one flaky-test triage pass on owner/repo.
+
+1. Read memory/flaky-test-ledger.md, the open quarantine pull request and the Flaky test quarantine tracker issue.
+2. Pull CI run history since the last processed run and update each test's flip count and failure rate.
+3. For each test at 3 or more flips in the last 20 runs that is not quarantined yet, add a skip marker with a reason and an evidence link.
+4. Put those changes in one pull request and update the tracker issue. Do not merge it.
+5. Post a summary to #ci-health and update the ledger.`}
+/>
+
+</Step>
+<Step title="Let the daily schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every day at 06:00, each run in a new session on its own cloud computer. The ledger in
+`memory/flaky-test-ledger.md` carries the scores between runs.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: daily-flaky-test-sweep
+    name: Daily flaky-test sweep
+    on:
+      cron: "0 0 6 * * *"
+    run:
+      agent: flaky-test-triage
+      prompt: Load the flaky-test-quarantine skill and run one triage pass on owner/repo.`}
+/>
+
+</Step>
+<Step title="Skip tests, never delete them">
+
+The only change the agent makes to a test file is a skip marker with a
+reason. It never removes a test, an assertion or a file, and it never edits
+CI config to hide a failure. Deleting the marker restores the test. A person
+reviews and merges the pull request, and decides when to de-quarantine.
+
+</Step>
+<Step title="Read the daily summary">
+
+Each run ends with one message in the channel. This is what a run looks like in the session:
+
+<ExampleRun
+  title="Daily flaky-test sweep · 06:00"
+  message="Load the flaky-test-quarantine skill and run one triage pass on owner/repo."
+  worked="Worked for 5m 51s"
+  tools={[
+    'github · list workflow runs',
+    'github · download artifact × 9',
+    'shell · git commit skip markers',
+    'github · create pull request',
+    'github · update issue',
+    'slack · post message → #ci-health',
+  ]}
+  note="Illustrative example. Your counts depend on your CI history."
+>
+  Scored **1,240** tests across **9** new runs. Quarantined **2** tests that
+  flipped **4** and **5** times in their last 20 runs, in one pull request.
+  **3** tests are still watched, and **1** is stable enough to
+  de-quarantine.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -114,6 +181,25 @@ test is actually fixed.
   scores and ranks every test, and its only outputs are a quarantine PR, a
   tracking issue, and a Slack summary — never a merge, never a deletion.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Find the likely cause"
+  code="For each newly quarantined test, add a comment to the pull request with the most common error message across its failed runs."
+/>
+
+<CopyBlock
+  title="Weekly flakiness trend"
+  code="Every Monday, post the number of quarantined tests and the CI pass rate for the last 4 weeks to #ci-health."
+/>
+
+<CopyBlock
+  title="Propose de-quarantines"
+  code="When a quarantined test has passed 20 runs in a row on a branch with its skip removed, open a pull request that removes the skip marker."
+/>
 
 ## Guardrails
 

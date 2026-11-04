@@ -10,13 +10,15 @@ import { refusesSelfMerge } from '../change-request-policy';
 // barrel wholesale with `mock.module`.
 import { manifestChange } from '../change-request-governance';
 import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
-import { auth, errors, json, lenientBody } from '../../openapi';
+import { auth, boundedIssues, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { kickPiPackageBundle } from '../../pi-packages/bundle';
 import { resolveManifestPiPackageLists } from '../lib/compile-agent-config';
-import { getCrById, serializeChangeRequest } from '../change-requests';
+import { getCrById, markChangeRequestsLanded, serializeChangeRequest } from '../change-requests';
+import { wakeGoalForMergedChangeRequest } from '../lib/goal-wake';
 import {
+  headRefsLandedIn,
   invalidateProjectMirror,
   MergeConflictError,
   mergeBranches,
@@ -28,6 +30,7 @@ import { withProjectGitAuth } from '../lib/git';
 import { enqueueProjectSnapshot } from '../../git-proxy/project-snapshot';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 export function registerChangeRequestActionsRoutes(): void {
   // POST /v1/projects/:projectId/change-requests/:crId/merge
@@ -47,7 +50,7 @@ export function registerChangeRequestActionsRoutes(): void {
           }) } } },
       },
       responses: {
-        200: json(z.any(), 'OK'),
+        200: json(z.any(), '`{change_request, merge, also_merged}`. `also_merged` lists the other open requests on the same base whose commits the merge carried; each is now merged.'),
         ...errors(404, 409, 422, 502),
       },
     }),
@@ -146,20 +149,18 @@ export function registerChangeRequestActionsRoutes(): void {
 
       // Manifest gate: a CR cannot merge if the would-be-merged manifest doesn't
       // validate against the canonical schema. We read the manifest from the HEAD
-      // branch (what's about to be merged), preferring kortix.yaml over kortix.toml.
-      // If the head doesn't have a manifest, that's fine — projects with a
-      // `.kortix/`-only layout still merge. The same validator runs in the CLI's
+      // branch (what's about to be merged), preferring kortix.yaml over kortix.yml.
+      // If the head doesn't have a manifest, that's fine: it still merges. The same validator runs in the CLI's
       // `kortix ship` pre-flight, so CLI users see the same diagnostic before push.
       try {
-        const { validateManifest, manifestFormatForPath, manifestCandidatePaths, ManifestImportError } =
-          await import('@kortix/manifest-schema');
+        const { validateManifest, manifestCandidatePaths, ManifestImportError } = await import('@kortix/manifest-schema');
         // `found.content` is the MERGED document when the head declares
         // `imports:`, so the gate validates what the platform will actually run.
         // A broken import (missing file, duplicate name, cycle) blocks the merge
         // with the same 422 a schema violation gets.
         const found = await readManifestFromRepo(
           projectForGit,
-          manifestCandidatePaths(projectForGit.manifestPath).map((cand) => cand.path),
+          manifestCandidatePaths(projectForGit.manifestPath),
           cr.headRef,
         ).catch((err: unknown) => {
           if (err instanceof ManifestImportError) return { importError: err.message } as const;
@@ -170,19 +171,20 @@ export function registerChangeRequestActionsRoutes(): void {
             {
               error: 'Manifest validation failed — merge blocked.',
               code: 'MANIFEST_INVALID',
-              issues: [{ path: 'imports', message: found.importError, severity: 'error' }],
+              ...boundedIssues([{ path: 'imports', message: found.importError, severity: 'error' }]),
             },
             422,
           );
         }
         if (found && found.content.trim()) {
-          const verdict = validateManifest(found.content, manifestFormatForPath(found.path));
+          // The root text carries line numbers; a merged `imports:` document has none to give.
+          const verdict = validateManifest(found.imports ? found.imports.raw : found.content);
           if (!verdict.valid) {
             return c.json(
               {
                 error: 'Manifest validation failed — merge blocked.',
                 code: 'MANIFEST_INVALID',
-                issues: verdict.issues,
+                ...boundedIssues(verdict.issues),
               },
               422,
             );
@@ -215,6 +217,7 @@ export function registerChangeRequestActionsRoutes(): void {
             409,
           );
         }
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Merge failed',
@@ -261,7 +264,48 @@ export function registerChangeRequestActionsRoutes(): void {
         .where(eq(changeRequests.crId, cr.crId))
         .returning();
 
+      // The merge can carry other open requests' commits (the requests below
+      // it in a stack, or a second request on the same branch): they landed
+      // too (KRTX-3371). The merge is durable, so a failure here only logs.
+      const alsoMerged = await markChangeRequestsLanded({
+        projectId,
+        baseRef: cr.baseRef,
+        exceptCrId: cr.crId,
+        mergedBy: loaded.userId,
+        merge: result,
+        resolveLanded: (headRefs) => headRefsLandedIn(projectForGit, result.base_sha_after, headRefs),
+      }).catch((error: unknown) => {
+        logger.warn('[cr-merge] could not mark the requests the merge carried', {
+          projectId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return [];
+      });
+
       invalidateProjectMirror(projectId);
+      // SEAM (Triggers, "change request merged" source): a merge wakes the
+      // goal the CR's origin session works on (lib/goal-wake.ts). Best-effort.
+      void wakeGoalForMergedChangeRequest({ project: loaded.row, changeRequest: cr }).catch((error: unknown) =>
+        logger.warn('[cr-merge] goal wake failed', { projectId, error: error instanceof Error ? error.message : String(error) }),
+      );
+      // The `change_request` trigger source: every trigger this merge
+      // matches fires (lib/change-request-triggers.ts). Best-effort and not
+      // awaited: the merge is durable and its response must not wait on a fire.
+      void import('../lib/change-request-triggers')
+        .then(({ fireChangeRequestMergedTriggers }) =>
+          fireChangeRequestMergedTriggers(loaded.row, [
+            {
+              cr_id: cr.crId,
+              number: cr.number,
+              title: cr.title,
+              base_ref: cr.baseRef,
+              head_ref: cr.headRef,
+              merge_commit_sha: result.merge_commit_sha,
+            },
+            ...alsoMerged.map((other) => ({ cr_id: other.cr_id, number: other.number, base_ref: cr.baseRef, merge_commit_sha: result.merge_commit_sha })),
+          ]),
+        )
+        .catch(() => {});
       // The merge moved the CR's base branch. Sessions on it converge.
       void import('../lib/config-convergence-triggers')
         .then((triggers) => triggers.notifyBaseBranchMoved(projectId, cr.baseRef, 'change-request-merge'))
@@ -308,6 +352,7 @@ export function registerChangeRequestActionsRoutes(): void {
       return c.json({
         change_request: serializeChangeRequest(row),
         merge: result,
+        also_merged: alsoMerged,
       });
     },
   );

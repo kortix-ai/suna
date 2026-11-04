@@ -14,9 +14,9 @@
  * Admin-only, like roles: every read here asserts `policy.read`.
  */
 
+import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
 import { Badge } from '@kortix/ui/badge';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
-import { EntityAvatar } from '@kortix/ui/entity-avatar';
 import { errorToast, successToast } from '@kortix/ui/toast';
 import {
   AccessDialog,
@@ -39,7 +39,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@kortix/ui';
 import { listRoles, revokeAssignment, type ProjectRole, type RoleAssignment } from '@kortix/sdk';
 import { invalidatePermissionProbes } from '@kortix/sdk/react';
-import { PencilSimpleIcon, RobotIcon, TrashIcon } from '@phosphor-icons/react';
+import { PencilSimpleIcon, TrashIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
@@ -137,7 +137,7 @@ export function ProjectAgentAccessList({
           return (
             <AccessRow
               key={row.assignment.assignment_id}
-              leading={<EntityAvatar icon={RobotIcon} label={row.agentName} size="sm" />}
+              leading={<AgentMark slug={row.agentName} />}
               title={<span data-testid="agent-access-row">{row.agentName}</span>}
               badges={
                 <Badge variant="outline" size="sm">

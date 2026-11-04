@@ -149,10 +149,10 @@ export function createConnectionsRouter() {
       tags: ['tunnel'],
       summary: 'Get a single tunnel connection',
       security: [{ bearerAuth: [] }],
-      request: { params: z.object({ tunnelId: z.string() }) },
+      request: { params: z.object({ tunnelId: z.string().uuid() }) },
       responses: {
         200: json(ConnectionSchema, 'The connection (with an isLive flag)'),
-        ...errors(401, 403, 404),
+        ...errors(400, 401, 403, 404),
       },
     }),
     async (c: any) => {
@@ -182,7 +182,7 @@ export function createConnectionsRouter() {
         'Give `name`, `capabilities`, or both. `capabilities` is the full approved list, a subset of `filesystem`, `shell`, `desktop`. It applies to the next call.',
       security: [{ bearerAuth: [] }],
       request: {
-        params: z.object({ tunnelId: z.string() }),
+        params: z.object({ tunnelId: z.string().uuid() }),
         body: {
           content: {
             'application/json': {
@@ -255,13 +255,13 @@ export function createConnectionsRouter() {
       tags: ['tunnel'],
       summary: 'Rotate the setup token for a tunnel connection',
       security: [{ bearerAuth: [] }],
-      request: { params: z.object({ tunnelId: z.string() }) },
+      request: { params: z.object({ tunnelId: z.string().uuid() }) },
       responses: {
         200: json(
           z.object({ tunnelId: z.string(), setupToken: z.string() }),
           'The new one-time setup token',
         ),
-        ...errors(401, 403, 404),
+        ...errors(400, 401, 403, 404),
       },
     }),
     async (c: any) => {
@@ -306,7 +306,7 @@ export function createConnectionsRouter() {
         'Relays the owner\'s change to the machine, which applies it. A narrowing (Ask each time, Off, revoke, deny, keep awake) applies at once. A widening (Always, a longer grant) waits up to 20 s for the owner to confirm in the Kortix app on that machine, and fails with `computer_access_unconfirmed` otherwise. User credentials only.',
       security: [{ bearerAuth: [] }],
       request: {
-        params: z.object({ tunnelId: z.string() }),
+        params: z.object({ tunnelId: z.string().uuid() }),
         body: {
           content: {
             'application/json': {
@@ -348,10 +348,10 @@ export function createConnectionsRouter() {
       tags: ['tunnel'],
       summary: 'Unpair a machine: delete it and revoke its computer accounts',
       security: [{ bearerAuth: [] }],
-      request: { params: z.object({ tunnelId: z.string() }) },
+      request: { params: z.object({ tunnelId: z.string().uuid() }) },
       responses: {
         200: json(z.object({ success: z.boolean() }), 'Deletion result'),
-        ...errors(401, 403, 404),
+        ...errors(400, 401, 403, 404),
       },
     }),
     async (c: any) => {

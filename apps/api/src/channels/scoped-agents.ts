@@ -60,6 +60,17 @@ export async function scopedProjectAgents(
 }
 
 /**
+ * The agents anyone in a shared chat may pick (Telegram's `/agent`): launchable, and granted to no one
+ * in particular. Unlike `scopedProjectAgents`, a failed read throws: a pick must fail closed.
+ */
+export async function chatAgents(projectId: string): Promise<ProjectAgent[]> {
+  const agents = await listProjectAgents(projectId);
+  if (agents.length === 0) return agents;
+  const allow = new Set(await unscopedResourceIds(projectId, 'agent', agents.map((a) => a.name)));
+  return agents.filter((a) => allow.has(a.name));
+}
+
+/**
  * May `userId` start a session on `agentName`? The per-resource agent gate
  * the web session create and Slack apply, so a person scoped out of an agent
  * cannot launch it from a chat either. The non-binding `default` agent runs

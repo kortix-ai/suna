@@ -16,7 +16,7 @@
  */
 
 import { classifySessionLogMessage, sessionLogTurns } from '@kortix/sdk';
-import { type useSession, useSessionLogThread } from '@kortix/sdk/react';
+import { type UseSessionPromptsResult, type useSession, useSessionLogThread } from '@kortix/sdk/react';
 import type { ScrollBoxRenderable } from '@opentui/core';
 import { useKeyboard } from '@opentui/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -32,6 +32,7 @@ import { PermissionPrompt } from '../prompts/permission-prompt.tsx';
 import { QuestionPrompt } from '../prompts/question-prompt.tsx';
 import { ErrorBanner, describeSendError, describeStartError } from './error-banner.tsx';
 import { matchesTranscriptBinding } from './keys.ts';
+import { TranscriptSessionProvider } from './session-context.tsx';
 import { Turn } from './turn.tsx';
 import { WorkingLine } from './working-line.tsx';
 
@@ -41,6 +42,8 @@ export type SessionState = ReturnType<typeof useSession>;
 export interface TranscriptProps {
   session: SessionState;
   focused: boolean;
+  /** The input has focus: PgUp/PgDn still scroll the transcript. */
+  pageKeys?: boolean;
   width: number;
   height: number;
   onToast?(message: string, kind?: 'info' | 'error'): void;
@@ -51,6 +54,12 @@ export interface TranscriptProps {
    * `<PermissionPrompt/>` from `features/session/prompts` instead.
    */
   renderPrompts?: boolean;
+  /**
+   * The session's inbox (`useSessionPrompts`). Its prompts join the thread from the moment the
+   * API accepts them (queued, sending, or accepted while the box journals them), under the id
+   * the log will hold them by. Omitted: the log's messages only.
+   */
+  inbox?: Pick<UseSessionPromptsResult, 'prompts' | 'sent'>;
 }
 
 /** Rows the header clock re-renders on. One second is the finest unit any
@@ -60,10 +69,12 @@ const CLOCK_INTERVAL_MS = 1000;
 export function Transcript({
   session,
   focused,
+  pageKeys = false,
   width,
   height,
   onToast,
   renderPrompts = true,
+  inbox,
 }: TranscriptProps) {
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const [sticky, setSticky] = useState(true);
@@ -71,7 +82,7 @@ export function Transcript({
   const [cursorIndex, setCursorIndex] = useState(-1);
   const [now, setNow] = useState(() => Date.now());
 
-  const thread = useSessionLogThread(session);
+  const thread = useSessionLogThread(session, undefined, inbox ? { prompts: inbox } : undefined);
   const ordered = useMemo(() => (thread ? orderedMessages(sessionLogTurns(thread)) : []), [thread]);
 
   // Every collapsible row in the whole transcript, in document order. The
@@ -117,7 +128,20 @@ export function Transcript({
   useKeyboard((key) => {
     // An open prompt owns the keyboard: `j`/`k` must move its option cursor,
     // not scroll the transcript out from under the question.
-    if (!focused || promptOpen) return;
+    if (promptOpen) return;
+    // From the input (`pageKeys`), only PgUp/PgDn reach the transcript: every
+    // other key is a character being typed. Tab no longer enters the
+    // transcript while the sidebar is hidden, so this is how it scrolls.
+    if (!focused) {
+      if (!pageKeys) return;
+      if (
+        !matchesTranscriptBinding(key, 'transcript.older') &&
+        !matchesTranscriptBinding(key, 'transcript.pageDown')
+      ) {
+        return;
+      }
+      key.preventDefault();
+    }
 
     if (matchesTranscriptBinding(key, 'transcript.bottom')) {
       setSticky(true);
@@ -189,6 +213,7 @@ export function Transcript({
     // `overflow: hidden` is load-bearing, not tidiness: without it the
     // scrollbox's last row painted over the working line below it ("idle"
     // overwrote "◆ kortix · now" in a live frame).
+    <TranscriptSessionProvider projectId={session.projectId ?? null} sessionId={session.sessionId ?? null}>
     <box flexDirection="column" width={width} height={height} overflow="hidden">
       <scrollbox
         ref={scrollRef}
@@ -234,6 +259,7 @@ export function Transcript({
         phase={session.phase}
         stage={session.stage}
         reason={session.reason}
+        image={session.bootImage}
         failure={session.failure}
       />
 
@@ -241,6 +267,7 @@ export function Transcript({
         <SessionPrompts session={session} focused={focused} width={width} onToast={onToast} />
       ) : null}
     </box>
+    </TranscriptSessionProvider>
   );
 }
 

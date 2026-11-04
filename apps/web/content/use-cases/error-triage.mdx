@@ -63,56 +63,122 @@ and never assigns anything.
 ## How it works
 
 <Steps>
-<Step title="Run on an hourly cron">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the agent once an hour. Each firing spawns a fresh
-**session** in its own sandbox. One hour maps to one run on one disposable
-machine, so the backlog is re-read from Sentry's current state every time and
-nothing carries over between runs.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the triage skill and the hourly trigger, and
+opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Give the agent the grooming rules">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up an hourly error triage agent in this project.
 
-How we decide what's worth drafting lives as **skills** and **memory** that
-travel with the agent: what counts as a spike versus normal noise, how to rank
-by impact, the issue template we want the stack trace and impact written into,
-and labels/conventions specific to our tracker. When we tighten a threshold or
-change the template, we update the file and the next sweep follows it.
+1. Create the agent agents/error-triage.md. Its job is to groom the Sentry backlog into a short list of GitHub issues. It may use the Sentry and Slack connectors and a GH_TOKEN secret for GitHub.
 
-</Step>
-<Step title="Connect Sentry read-only and GitHub for drafts">
+2. Create the skill skills/error-backlog-triage/SKILL.md with these rules:
+   - Read the web project in Sentry. Pick issues first seen in the last hour, and issues at 3x or more of their trailing hourly baseline.
+   - Group issues by fingerprint. Rank the groups by event count times affected users.
+   - Before you draft, search owner/repo for an issue that already has the Sentry issue ID. Skip anything already tracked.
+   - Draft at most 5 GitHub issues per sweep, each with the stack trace and the impact. Never assign them.
+   - Never resolve, ignore, mute or merge anything in Sentry.
+   - Post one summary to #eng-errors: new, spiking, drafted and already tracked. Post nothing when the sweep finds nothing.
 
-Through a scoped **connector**, brokered server-side so no raw token reaches
-the model, the agent reads Sentry. A separate, narrowly scoped GitHub token
-lets it draft issues via the `gh` CLI:
+3. Add a cron trigger hourly-error-backlog-sweep to kortix.yaml. It runs the error-triage agent every hour, on the hour, with the prompt "Load the error-backlog-triage skill and run one complete sweep of the web project."
 
-- **Read the Sentry backlog** — new issues, and issues whose event frequency
-  has spiked over their trailing baseline, with the full stack trace, first
-  seen, and event/user counts.
-- **Check GitHub for an existing issue** — before drafting anything, search
-  for an issue already tracking this Sentry error, by its Sentry issue ID.
-- **Draft a GitHub issue** — for the top offenders that aren't already
-  tracked, with the stack trace and impact attached.
-- **Post to Slack** — a sweep summary: what's new, what's spiking, what got
-  drafted, what was already tracked.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent never resolves, ignores, or mutes an error in Sentry, and it never
-assigns a GitHub issue to anyone — those are decisions for the team, not the
-agent. Its only writes are the drafted issue and the Slack post. Credentials
-are encrypted in the Secrets Manager and injected at runtime, scoped to the agents you grant them to.
+Open **Connectors** in your project and connect your error tracker and Slack.
+Credentials are brokered server-side and never enter the agent's machine. Add a GitHub token as the `GH_TOKEN` secret so the agent can draft
+issues.
+
+<ToolList>
+  <ToolNeed name="Sentry" domain="sentry.io" tag="Required" alternatives={[['Datadog', 'datadoghq.com'], ['Rollbar', 'rollbar.com']]}>
+    Reads new and spiking errors, read-only.
+  </ToolNeed>
+  <ToolNeed name="GitHub" domain="github.com" tag="Required" alternatives={[['Linear', 'linear.app'], ['Jira', 'atlassian.com']]}>
+    Skips tracked errors and drafts issues for the rest.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Posts the sweep summary.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Let the backlog groom itself">
+<Step title="Run it once with this prompt">
 
-With that in place, every hour turns the raw Sentry stream into a short, ranked
-list of what actually needs a decision: new errors, real spikes, each one
-already checked against the tracker so nothing gets duplicated, and the ones
-that matter most already drafted as issues with the trace and impact attached.
-The team reads the Slack summary and decides what to prioritize; nothing is
-resolved, ignored, or assigned without them.
+Merge the change request, then start a session with the **error-triage** agent
+and send this prompt. Read the drafted issues before you let the
+schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one error-backlog sweep of the web project in Sentry.
+
+1. Pull issues first seen in the last hour, and issues at 3x or more of their trailing hourly baseline.
+2. Group them by fingerprint and rank the groups by event count times affected users.
+3. Search owner/repo for an issue that already has each Sentry issue ID, and skip those.
+4. Draft a GitHub issue for each of the top 5 that are not tracked, with the stack trace and impact. Do not assign them.
+5. Post one summary to #eng-errors. Change nothing in Sentry.`}
+/>
+
+</Step>
+<Step title="Let the hourly schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every hour, on the hour, each run in a new session on its own cloud
+computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: hourly-error-backlog-sweep
+    name: Hourly error-backlog sweep
+    on:
+      cron: "0 0 * * * *"
+    run:
+      agent: error-triage
+      prompt: Load the error-backlog-triage skill and run one complete sweep of the web project.`}
+/>
+
+</Step>
+<Step title="Never resolve, mute or assign">
+
+Sentry access is read-only. The agent never resolves, ignores or mutes an
+error, and a drafted GitHub issue has no assignee. It drafts at most 5 issues
+per sweep. The team decides priority and ownership.
+
+</Step>
+<Step title="Read the sweep summary">
+
+A sweep that finds new or spiking errors posts one summary, and a quiet sweep
+posts nothing. This is what a run looks like in the session:
+
+<ExampleRun
+  title="Hourly error-backlog sweep · 15:00"
+  message="Load the error-backlog-triage skill and run one complete sweep of the web project."
+  worked="Worked for 2m 03s"
+  tools={[
+    'sentry · list issues',
+    'sentry · get issue events × 7',
+    'github · search issues × 7',
+    'github · create issue × 3',
+    'slack · post message → #eng-errors',
+  ]}
+  note="Illustrative example. Your errors and traffic differ."
+>
+  Found **4** new and **3** spiking errors. **4** were already tracked, so the
+  agent drafted **3** issues. The top one, a TypeError in checkout, had
+  **1,240** events from **312** users this hour.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -124,6 +190,25 @@ resolved, ignored, or assigned without them.
   the top offenders, and alerts Slack — it never resolves, ignores, or assigns
   an error.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Link the suspect commit"
+  code="For each drafted issue, find the latest commit that touched the top frame of the stack trace and link it in the issue body."
+/>
+
+<CopyBlock
+  title="Morning error digest"
+  code="Every weekday at 09:00, post to #eng-errors the 5 errors with the most affected users in the last 24 hours and their issue links."
+/>
+
+<CopyBlock
+  title="Watch each release"
+  code="When a new release appears in Sentry, run a sweep right away and compare its error rate with the previous release."
+/>
 
 ## Guardrails
 

@@ -2,10 +2,9 @@
 
 Run your own private instance of Kortix — the full stack (frontend, API, LLM
 gateway, and the official Supabase distribution) as one Docker Compose
-project, on any box you control. Agent sessions still run on a cloud sandbox
-provider — Platinum, set with `PLATINUM_API_KEY` — and sandboxes are managed
-compute, not part of this box. Daytona is a legacy fallback: its removal is
-scheduled and it gets no support guarantee. E2B support is discontinued.
+project, on any box you control. Agent sessions still run on Platinum, a
+cloud sandbox provider set with `PLATINUM_API_KEY`. Sandboxes are managed
+compute, not part of this box.
 
 This is the whole self-contained distribution: a Terraform module for
 provisioning an AWS/EC2 box declaratively, plus this README.
@@ -23,7 +22,7 @@ for real use) running Linux, and a domain you control.
 2. **Run the bootstrap command** on the box (as root, or a user with sudo):
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/kortix-ai/suna/dev/scripts/kortix-selfhost-up.sh \
+   curl -fsSL https://raw.githubusercontent.com/kortix-ai/CompanyOS/dev/scripts/kortix-selfhost-up.sh \
      | bash -s -- --domain kortix.example.com --email ops@example.com
    ```
 
@@ -48,12 +47,11 @@ for real use) running Linux, and a domain you control.
       evaluation only; see the runbook for the tradeoffs).
    2. **Admin email** — which account gets platform-admin on first sign-up.
    3. **Deployment shape** — whether you hold an Enterprise license (SSO/SCIM/RBAC/audit).
-   4. **Sandbox provider** — `platinum` (the default) and its
-      `PLATINUM_API_KEY`. `daytona` remains only as a legacy fallback.
-   5. **Pipedream** (optional) — the 3,000+ app connector catalog; skip or
-      configure its OAuth app credentials.
-   6. **Update policy** — auto-update on/off, channel (`stable`/`latest`), and
-      the daily update window.
+   4. **Sandbox provider** — your Platinum API key (`PLATINUM_API_KEY`).
+   5. **Composio** (optional) — the 3,000+ app connector catalog; skip or
+      enter its API key.
+   6. **Update policy** — auto-update on/off and the daily update window.
+      Pin a channel with `--channel stable|latest`.
 
 3. **Start the stack:**
 
@@ -235,6 +233,56 @@ nothing more. The API image must be a release that includes the store
 passthrough and bucket creation. Until the compose file is re-rendered,
 devices get `503 capture_credentials_unavailable` and keep recording locally.
 
+### Project snapshots: the same store makes new sessions start fast
+
+The same `capture-store` holds a second bucket, `kortix-project-snapshots`.
+After each push or merge to a project's base branch, the API builds one archive
+of that commit and stores it there. A new session downloads that one archive
+instead of cloning the repository over Git, and its agents and skills come from
+the same archive. A repository over the 32 MiB config archive limit gets this
+too. Without it, such a repository cloned twice over Git on every new session.
+
+- **Same origin.** A sandbox downloads a presigned URL on the API origin,
+  `https://api.<your domain>/kortix-project-snapshots/…`. Caddy routes the
+  prefix to the store in domain mode; the API forwards it otherwise. The store
+  checks every signature.
+- **Data.** The API creates the bucket with a 30-day expiry rule. Each archive
+  is about the size of the repository's files, compressed. An expired archive
+  is built again on the next session that needs it.
+- **Failure.** Any download or verification failure falls back to Git, so a
+  session never fails because of a snapshot.
+- **Turn it off.** `kortix self-host env set KORTIX_PROJECT_SNAPSHOT_MODE=git`
+  sends the checkout back to Git. The config still uses an archive when one
+  exists, verified file by file against the commit.
+- **External Capture store.** `KORTIX_CAPTURE_STORE=external` removes the
+  on-box MinIO, so it also removes the snapshot wiring: new sessions clone over
+  Git again. To keep snapshots, give them a bucket of your own (on AWS):
+  1. Create a private bucket in the server's region with a 30-day expiry rule.
+     The API does not create it in this mode.
+  2. Grant the server's identity `s3:PutObject` and `s3:GetObject` on
+     `<bucket>/*`, and `s3:ListBucket` on `<bucket>` (a missing archive then
+     answers `404`, not `403`). On EC2 that is the instance role: the API uses
+     the default AWS credential chain when
+     `KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID` is unset.
+  3. Set three keys. This rolls `kortix-api`:
+     `kortix self-host env set KORTIX_PROJECT_SNAPSHOT_MODE=prefer-s3
+     KORTIX_PROJECT_SNAPSHOT_S3_BUCKET=<bucket>
+     KORTIX_PROJECT_SNAPSHOT_S3_REGION=<region>`
+
+  Sandboxes download over presigned AWS URLs, so the bucket stays private and
+  needs no Caddy route. `kortix-api` reads the keys from `.env` through
+  `env_file`, so they survive `kortix self-host update`. The API log prints
+  `[project-snapshot] ready` once the first archive is built, after the next
+  push to the base branch or the next new session.
+- **Upgrading.** `kortix self-host update` with a CLI that knows the bucket
+  adds the wiring, recreates `kortix-api` once, and reloads Caddy when the
+  Caddyfile changed.
+- **Check it.** With the bundled store,
+  `curl -s https://api.<your domain>/kortix-project-snapshots/` answers MinIO's
+  S3 XML error (`AccessDenied`), never the API's JSON `404`. With either store,
+  a new session's daemon log shows `[workspace-provider] complete` with
+  `"provider":"s3"` and `"fallback":null`.
+
 ## 4. Day-2 operations
 
 All of these run on the box itself (SSH, or `aws ssm start-session --target
@@ -263,6 +311,24 @@ kortix self-host uninstall         # stop + permanently delete this instance's d
    handles "volume has an existing filesystem" on boot, so it mounts as-is and
    `kortix self-host` reconciles against the restored state.
 4. `kortix self-host start` to bring the stack back up.
+
+**Scheduled jobs.** The API runs its scheduled jobs (cron triggers, project
+maintenance, retention, billing rotations and the rest) in the same
+`kortix-api` container that serves requests. You do not configure anything
+for this. If you run the API image on your own orchestration with more than
+one API process, you can move the jobs into their own process, which is what
+Kortix Cloud does:
+
+- web processes: the image's default command (`bun run src/index.ts`) with
+  `KORTIX_PROCESS_ROLE=web`. They serve requests and never run a scheduled job.
+- one worker process: the same image and the same environment, with the
+  command `bun run src/worker.ts` and no `KORTIX_PROCESS_ROLE`. It needs no
+  inbound traffic; its health check is `GET /health/ready` on `PORT`.
+
+Start the worker before you set `web` on the API processes, and keep at least
+one worker or one process without the `web` role running. With no such
+process, no scheduled job runs. The `kortix self-host` install runs one
+container and does not support this split.
 
 ## 5. Run a specific version or your own build
 

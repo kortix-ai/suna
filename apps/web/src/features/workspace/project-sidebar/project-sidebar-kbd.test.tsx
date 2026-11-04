@@ -7,6 +7,7 @@
  */
 import { afterEach, expect, mock, test } from 'bun:test';
 import React, { act } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
 
@@ -50,8 +51,33 @@ const translate = Object.assign((key: string) => key, { raw: (key: string) => ke
 const translationsMock = () => ({ useTranslations: () => translate });
 mock.module('@/i18n/use-translations', translationsMock);
 mock.module('@kortix/ui/i18n', translationsMock);
+let newSessionCalls = 0;
 mock.module('@kortix/ui/internal/hooks/projects/use-new-project-session', () => ({
-  useNewProjectSession: () => () => undefined,
+  useNewProjectSession: () => () => {
+    newSessionCalls += 1;
+  },
+}));
+// The `project_channels` flag, read by the sidebar through the SDK hook.
+let channelsOn = false;
+const realSdkReact = await import('@kortix/sdk/react');
+mock.module('@kortix/sdk/react', () => ({
+  ...realSdkReact,
+  useFeatureFlag: (_projectId: string, key: string) => ({
+    enabled: key === 'project_channels' && channelsOn,
+    isLoading: false,
+  }),
+  useProjectSpaces: () => ({
+    data: [
+      { space_id: 'S1', kind: 'channel', slug: 'general', name: 'general', is_default: true, archived_at: null },
+      { space_id: 'S2', kind: 'channel', slug: 'old', name: 'old', is_default: false, archived_at: '2026-01-01T00:00:00.000Z' },
+      { space_id: 'S3', kind: 'dm', slug: null, name: 'kortix', is_default: false, archived_at: null },
+    ],
+    isError: false,
+    refetch: () => undefined,
+  }),
+  useVisibleAgents: () => [{ name: 'kortix' }, { name: 'meta' }],
+  useCreateProjectSpace: () => ({ mutate: () => undefined, isPending: false }),
+  useUpdateProjectSpace: () => ({ mutate: () => undefined, isPending: false }),
 }));
 mock.module('@kortix/ui/internal/hooks/projects/new-session-guard', () => ({
   useIsCreatingProjectSession: () => false,
@@ -68,11 +94,10 @@ mock.module('@kortix/ui/workspace/sidebar/project-session-list', () => ({
 mock.module('@/features/workspace/project-sidebar/workspace-switcher', () => ({
   WorkspaceSwitcher: () => React.createElement('div', { 'data-testid': 'switcher' }),
 }));
-mock.module('@kortix/ui/workspace/sidebar/customize-sidebar-modal', () => ({
-  CustomizeSidebarModal: () => null,
-}));
 mock.module('@kortix/ui/internal/tunnel/computer-connect', () => ({
   ComputerConnectModal: () => null,
+  // The sidebar's Apps and extensions window reads it.
+  useOwnsPairedComputer: () => ({ isSuccess: true, owns: false, owned: [] }),
 }));
 mock.module('@kortix/ui/internal/layout/connect-mcp-modal', () => ({
   ConnectMcpModal: () => null,
@@ -83,8 +108,8 @@ mock.module('@kortix/ui/workspace/sidebar/footer/project-mcp-nav', () => ({
 mock.module('@kortix/ui/workspace/sidebar/footer/project-computer-nav', () => ({
   ProjectComputerNavItem: () => null,
 }));
-mock.module('@kortix/ui/workspace/sidebar/footer/project-manifest-upgrade-alert', () => ({
-  ProjectManifestUpgradeAlert: () => null,
+mock.module('@kortix/ui/workspace/sidebar/footer/project-manifest-issues-alert', () => ({
+  ProjectManifestIssuesAlert: () => null,
 }));
 mock.module('@kortix/ui/workspace/sidebar/footer/project-sandbox-alert', () => ({
   ProjectSandboxAlert: () => null,
@@ -130,20 +155,28 @@ async function mountSidebar(width: number) {
   win.document.body.appendChild(raw);
   root = createRoot(raw as unknown as Parameters<typeof createRoot>[0]);
   const mobile = width < 768;
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await act(async () => {
     root!.render(
+      // The channels nav's permission probe reads a QueryClient.
       React.createElement(
-        SidebarProvider,
-        null,
-        mobile
-          ? React.createElement(MobileOpenHarness, { projectId: 'synthetic-project' })
-          : React.createElement(ProjectSidebar, { projectId: 'synthetic-project' }),
+        QueryClientProvider,
+        { client: queryClient },
+        React.createElement(
+          SidebarProvider,
+          null,
+          mobile
+            ? React.createElement(MobileOpenHarness, { projectId: 'synthetic-project' })
+            : React.createElement(ProjectSidebar, { projectId: 'synthetic-project' }),
+        ),
       ),
     );
   });
 }
 
 afterEach(async () => {
+  channelsOn = false;
+  newSessionCalls = 0;
   if (root) {
     const r = root;
     root = undefined;
@@ -165,4 +198,37 @@ test('the mobile sheet renders no keyboard shortcut hint (KRTX-2005)', async () 
   // not into the test container the provider renders into.
   expect(document.body.innerHTML).toContain('newSession');
   expect(document.body.innerHTML).not.toContain('data-slot="kbd-group"');
+});
+
+test('with project_channels on, Channels replace New session, the session list and Cmd+J', async () => {
+  channelsOn = true;
+  await mountSidebar(1280);
+  const html = container!.innerHTML;
+  expect(html).not.toContain('data-testid="session-list"');
+  expect(html).not.toContain('newSession');
+  // Channels: live channels only, then the add row. Direct messages: one row per agent.
+  expect(html).toContain('spaces.channels');
+  expect(html).toContain('href="/projects/synthetic-project/c/general"');
+  expect(html).not.toContain('/c/old');
+  expect(html).toContain('spaces.addChannel');
+  expect(html).toContain('spaces.directMessages');
+  expect(html).toContain('href="/projects/synthetic-project/dm/kortix"');
+  expect(html).toContain('>Kortix<');
+  expect(html).toContain('>My Kortix<');
+  await act(async () => {
+    win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'j', metaKey: true }));
+  });
+  expect(newSessionCalls).toBe(0);
+});
+
+test('with project_channels off, the sidebar keeps New session, the session list and Cmd+J', async () => {
+  await mountSidebar(1280);
+  const html = container!.innerHTML;
+  expect(html).toContain('data-testid="session-list"');
+  expect(html).toContain('newSession');
+  expect(html).not.toContain('spaces.channels');
+  await act(async () => {
+    win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'j', metaKey: true }));
+  });
+  expect(newSessionCalls).toBe(1);
 });

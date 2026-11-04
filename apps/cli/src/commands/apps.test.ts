@@ -59,11 +59,10 @@ describe('Kortix Apps archive packaging', () => {
     expect(entries.some((entry) => entry.startsWith('.kortix/'))).toBe(false);
   });
 
-  test('loads one provider-neutral v2 App block relative to its manifest', async () => {
+  test('loads one provider-neutral App block relative to its manifest', async () => {
     const root = await mkdtemp(join(tmpdir(), 'kortix-app-manifest-test-'));
     temporaryRoots.push(root);
     await writeFile(join(root, 'kortix.yaml'), [
-      'kortix_version: 2',
       'default_agent: main',
       'agents:',
       '  main: {}',

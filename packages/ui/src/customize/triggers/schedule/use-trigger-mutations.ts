@@ -11,7 +11,7 @@ import { useMutation } from '@tanstack/react-query';
 /**
  * The run and delete mutations both trigger surfaces fire — the Triggers tab
  * (`schedule-view.tsx`) and the agent page's Triggers section
- * (`agent-triggers-section.tsx`) kept two copies that had already drifted (the
+ * (the former agent Triggers section) kept two copies that had already drifted (the
  * run-failure toast key differed). Both get this one lifecycle, against their
  * own `qk.project.triggers(projectId)` key through `invalidate`.
  *

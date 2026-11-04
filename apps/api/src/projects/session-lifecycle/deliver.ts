@@ -12,7 +12,7 @@ import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
 import { recordSessionActivity } from '../session-activity';
 import { deliveryCountsAsActivity } from './delivery-activity';
 import { DAEMON_PORT, PromptNeverLandedError } from './runtime-client';
-import { waitForSessionRuntimeActive } from './runtime-active-signal';
+import { armSessionRuntimeActive } from './runtime-active-signal';
 import { transitionSession } from './status-transitions';
 
 // After a session's runtime reports `ready` we still have to hand the prompt to
@@ -135,6 +135,8 @@ interface WakeDeliveryContext {
   session: { projectId: string; accountId: string };
   sessionId: string;
   userId: string;
+  /** The agent the prompt body names (`promptAgent`): the env prefetch keys on it. */
+  turnAgent?: string | null;
   awakeEarly: Promise<DeliveryTarget | null>;
   sendPrompt: (externalId: string, opencodeSessionId: string, record?: SandboxRecord) => Promise<SendOutcome>;
   beforeSend?: () => Promise<void>;
@@ -146,7 +148,7 @@ interface WakeDeliveryContext {
 }
 
 export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<SessionDeliveryOutcome> {
-  const { command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend, identityBound, tl } = ctx;
+  const { command, session, sessionId, userId, turnAgent, awakeEarly, sendPrompt, beforeSend, identityBound, tl } = ctx;
   // Loaded LAZILY: only `openSession` (the slow path that wakes a box) reads
   // the project row, and the session's foreign key already proves it exists.
   // On the fast path this saved a full round trip per delivery.
@@ -218,40 +220,57 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
 
     const deadline = Date.now() + READY_DEADLINE_MS;
     let opened: Awaited<ReturnType<typeof openOnce>>;
-    // The provision signals when the box goes active (`runtime-active-signal`),
-    // so this loop re-opens at once instead of up to 3 s later.
+    // The box going active wakes this loop on any replica
+    // (`runtime-active-signal`), so it re-opens at once instead of up to 3 s later.
+    // Armed BEFORE each open: a signal that lands while the open is in flight
+    // (the daemon's runtime-ready NOTIFY usually does) ends the next wait at once.
     let boxActive = false;
     for (;;) {
-      opened = await openOnce();
-      if (!opened) return 'no-session';
-      if (opened.stage === 'ready') {
-        tl?.mark('open-ready');
-        break;
+      const armed = armSessionRuntimeActive(sessionId);
+      try {
+        opened = await openOnce();
+        if (!opened) return 'no-session';
+        if (opened.stage === 'ready') {
+          tl?.mark('open-ready');
+          break;
+        }
+        // Runtime down, prompt fine. See `deliverWithRetry`'s identical branch.
+        if (opened.stage === 'failed' || opened.stage === 'stopped') return 'unreachable';
+        if (Date.now() >= deadline) {
+          console.warn('[session-lifecycle] runtime not ready before delivery deadline', {
+            sessionId,
+            stage: opened.stage,
+          });
+          return 'pending';
+        }
+        const signalled = await armed.wait(boxActive ? ACTIVE_RECHECK_MS : POLL_INTERVAL_MS);
+        // The box row just went active: its daemon is about a second from ready.
+        // Start the first prompt's env reads now (sandbox-env-push.ts
+        // `prefetchPromptEnv`); the proxy's sync takes them instead of reading
+        // after the box is ready. Best effort, and a dynamic import: the env
+        // graph stays out of this module's static imports, which suites that
+        // mock `sandbox-env-sync` rely on.
+        if (signalled && !boxActive) {
+          void import('../lib/sandbox-env-push')
+            .then(({ prefetchPromptEnv }) => prefetchPromptEnv(session.projectId, sessionId, turnAgent ?? null))
+            .catch(() => undefined);
+        }
+        boxActive = signalled || boxActive;
+      } finally {
+        armed.cancel();
       }
-      // Runtime down, prompt fine. See `deliverWithRetry`'s identical branch.
-      if (opened.stage === 'failed' || opened.stage === 'stopped') return 'unreachable';
-      if (Date.now() >= deadline) {
-        console.warn('[session-lifecycle] runtime not ready before delivery deadline', {
-          sessionId,
-          stage: opened.stage,
-        });
-        return 'pending';
-      }
-      boxActive =
-        (await waitForSessionRuntimeActive(sessionId, boxActive ? ACTIVE_RECHECK_MS : POLL_INTERVAL_MS)) ||
-        boxActive;
     }
 
-    // Converge the box BEFORE the prompt goes on the wire — every time, not only
-    // when this prompt carries an `opencodeEnv` override. The proxied
-    // `prompt_async` route has always done this (sandbox-proxy/pre-prompt-env-sync);
-    // this wake path did it only behind `if (command.opencodeEnv)`, so an ordinary
-    // `session.send()` prompt onto a box that had to be WOKEN reached OpenCode
-    // with whatever the box had at boot: a stale gateway base URL after a
-    // KORTIX_URL rotation, stale secrets, a stale model catalog. The sync is
-    // cheap and self-deduping (revision + model signature); an unchanged box
-    // costs one skipped push.
-    {
+    // The box converges before the prompt reaches it in the proxy:
+    // `sendPrompt` posts the Kortix turn route on the daemon port, which is a
+    // turn start (`isTurnStartEnvSync`), so `runPrePromptEnvSync` resolves and
+    // pushes the running agent's env first — the fast path above relies on it
+    // alone. Only an `opencodeEnv` override needs its own push here: the proxy
+    // never sees it. A second sync here cost every woken first prompt one
+    // more full env resolve (prod 2026-10-29: 1.0–1.3 s in the company project).
+    // It was added on 2026-08-23, when this POST went to OpenCode's own port and
+    // skipped the proxy's sync.
+    if (command.opencodeEnv) {
       const sandbox = opened.sandbox as {
         external_id?: string | null;
         provider?: string | null;

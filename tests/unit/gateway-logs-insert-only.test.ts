@@ -12,7 +12,11 @@ import { describe, expect, it } from 'vitest';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 const SINCE = '20261020122531072';
-const ALLOWED = new Set<string>();
+const ALLOWED = new Set<string>([
+  // The retention purge nulls `request` and `response` of a deleted session's rows.
+  // It changes no cost column, so the daily totals stay true.
+  'apps/api/src/projects/session-log-purge.ts',
+]);
 
 const MUTATION =
   /\b(update|delete\s+from|truncate(\s+table)?)\s+("?kortix"?\.)?"?gateway_request_logs\b|\.(update|delete)\(\s*gatewayRequestLogs\b/i;

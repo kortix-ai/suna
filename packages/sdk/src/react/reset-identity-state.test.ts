@@ -6,8 +6,6 @@ import { useDiagnosticsStore } from '../browser/stores/diagnostics-store';
 import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { useSyncStore } from '../browser/stores/sync-store';
-import type { SessionTranscriptSyncEnvelope } from '../core/rest/projects-client/sessions';
-import { heldSavedWindow, holdSavedWindow } from '../core/session/open-bundle';
 import { resetIdentityState } from './reset-identity-state';
 import { useModelStore } from './use-model-store';
 
@@ -129,24 +127,4 @@ test('resetIdentityState forgets the previous user\'s LSP diagnostics', () => {
   resetIdentityState();
 
   expect(useDiagnosticsStore.getState().byFile).toEqual({});
-});
-
-test("resetIdentityState forgets the previous user's held saved window (KRTX-189)", () => {
-  // A connecting view's saved window is held for the session's open, up to
-  // minutes. It is that user's conversation.
-  holdSavedWindow('p1', 's1', {
-    available: true,
-    reason: null,
-    source: 'mirror',
-    complete: true,
-    captured_at: '2026-09-26T10:00:00Z',
-    opencode_session_id: 'ses_root',
-    message_count: 0,
-    messages: [],
-  } as unknown as SessionTranscriptSyncEnvelope);
-  expect(heldSavedWindow('p1', 's1')).not.toBeNull();
-
-  resetIdentityState();
-
-  expect(heldSavedWindow('p1', 's1')).toBeNull();
 });

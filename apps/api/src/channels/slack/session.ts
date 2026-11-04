@@ -32,7 +32,6 @@ import { slackMessageLabels, type SlackMessageLabels } from './labels';
 import { modelReadsImages, NO_VISION_NOTE, promptModelOverride } from '../vision-model';
 import {
   type ChannelModelScope,
-  agentGrantEnvFor,
   planChannelFollowUp,
   planChannelSessionStart,
   projectChannelModelScope,
@@ -134,7 +133,6 @@ export async function slackFollowUpModel(input: {
     session: { sessionId: input.sessionId, ownerUserId: row?.createdBy ?? null, pinnedModel: pinned },
     chosenModel: null,
     hasImage,
-    agentGrantEnv: agentGrantEnvFor(input.project.projectId, row?.agentName),
   });
   return {
     model,
@@ -326,7 +324,6 @@ async function planSlackLaunch(
     chosenModel: selection?.opencodeModel,
     agentName: launchAgent,
     hasImage: slackMessageHasImage(event),
-    agentGrantEnv: agentGrantEnvFor(projectId, launchAgent),
   });
 
   if (start.unavailableModel) {
@@ -504,6 +501,11 @@ function labelled(label: string | null | undefined, id: string): string {
   return label ? `${label} (${id})` : id;
 }
 
+/** The `slack send` line that answers into one exact thread. */
+export function slackReplyCommand(channel: string, threadTs: string): string {
+  return `slack send --channel ${channel} --thread ${threadTs} --text "<answer>"`;
+}
+
 export function renderFollowUpPrompt(
   envelope: SlackEnvelope,
   event: SlackEvent,
@@ -517,7 +519,7 @@ export function renderFollowUpPrompt(
     // The session page reads this line back with `readSlackFollowUpHeader`.
     slackFollowUpHeader(user, channel, event.thread_ts ?? event.ts ?? 'unknown'),
     'This session may serve several threads. Reply to THIS message in its originating channel and thread:',
-    `slack send --channel ${event.channel ?? 'unknown'} --thread ${event.thread_ts ?? event.ts ?? 'unknown'} --text "<answer>"`,
+    slackReplyCommand(event.channel ?? 'unknown', event.thread_ts ?? event.ts ?? 'unknown'),
     'The live slack step stream follows this message automatically. Do not use the session\'s original Slack thread for this reply.',
     ...(event.channel_type !== 'im' && !event.channel?.startsWith('D') ? [readThreadInstruction(event)] : []),
     '',

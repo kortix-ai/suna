@@ -49,7 +49,7 @@ import { LIVE_SCHEMA_WAIVERS, type LiveSchemaWaivers } from './verify-live-schem
 const SCHEMA = 'kortix';
 
 /** Remove the schema qualification that renders differently per search_path. */
-export function unqualify(sql: string): string {
+function unqualify(sql: string): string {
   return sql.replace(/\b(?:kortix|public)\./g, '');
 }
 
@@ -59,7 +59,7 @@ export function normalizeIndexDef(def: string): string {
 }
 
 /** Drop schema qualification and a trailing NOT VALID (validity is compared separately). */
-export function normalizeConstraintDef(def: string): string {
+function normalizeConstraintDef(def: string): string {
   return unqualify(def).replace(/\s+NOT VALID$/, '');
 }
 
@@ -142,7 +142,7 @@ export function diffMissing(canonical: ComparedObjects, live: ComparedObjects): 
   return { missingTables, missingColumns, missingEnumValues };
 }
 
-export interface StructureDrift {
+interface StructureDrift {
   /** Canonical index definitions no live index has. `name: definition`. */
   missingIndexes: string[];
   /** Live indexes that are INVALID. */

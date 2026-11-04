@@ -2,6 +2,8 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { FIVE_MINUTES } from './app';
 import type { SlackEnvelope } from './types';
 
+export { dashboardBase, formatRelativeTime, sessionWebUrl } from '../core/display';
+
 export function parseEnvelope(rawBody: string): SlackEnvelope | null {
   try {
     return JSON.parse(rawBody) as SlackEnvelope;
@@ -64,19 +66,6 @@ export function repoLabel(repoUrl: string): string {
     .replace(/\.git$/, '');
 }
 
-export function formatRelativeTime(d: Date): string {
-  const ms = Date.now() - d.getTime();
-  const sec = Math.floor(ms / 1000);
-  if (sec < 60) return 'just now';
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.floor(hr / 24);
-  if (day < 7) return `${day}d ago`;
-  return d.toISOString().slice(0, 10);
-}
-
 export function escapeMrkdwn(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -119,14 +108,4 @@ export async function respondViaUrl(url: string | undefined, body: unknown): Pro
   } catch (err) {
     console.warn('[slack-webhook] response_url POST failed', err);
   }
-}
-
-/** Dashboard base URL (no trailing slash) for building project/session links. */
-export function dashboardBase(kortixUrl?: string): string {
-  return (kortixUrl || 'https://kortix.com').replace(/\/$/, '');
-}
-
-/** Web URL for a Kortix session. */
-export function sessionWebUrl(kortixUrl: string | undefined, projectId: string, sessionId: string): string {
-  return `${dashboardBase(kortixUrl)}/projects/${projectId}/sessions/${sessionId}`;
 }

@@ -3,6 +3,7 @@
 import { CommandPaletteBoundary } from '@/features/workspace/command-palette-boundary';
 import { DriveUploadTray } from '@kortix/ui/files';
 import { AppPreviewPoolLoader } from '@/features/apps/app-preview-pool-loader';
+import { ArtifactFramePreloader } from '@/features/artifacts/artifact-frame-preloader';
 import { useTranslations } from '@/i18n/use-translations';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -10,7 +11,6 @@ import { Suspense, lazy, useCallback, useEffect, useLayoutEffect } from 'react';
 
 import { TITLEBAR_CONTROL_CLASS } from '@kortix/ui/internal/desktop/titlebar-control';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
-import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import { Button } from '@kortix/ui/button';
 import Hint from '@kortix/ui/hint';
@@ -31,12 +31,10 @@ import {
 } from '@kortix/ui/customize/settings/settings-tabs';
 import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
 import { useNewProjectSession } from '@kortix/ui/internal/hooks/projects/use-new-project-session';
-import { useProjectCanRun } from '@kortix/ui/internal/hooks/projects/use-project-can-run';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
-import { useWarmProjectSession } from '@kortix/ui/internal/hooks/projects/use-warm-project-session';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { writeLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
-import { cn } from '@kortix/ui';
+import { cn, uiRoutes } from '@kortix/ui';
 import { BillingAccountProvider } from '@kortix/ui/internal/stores/billing-account-context';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProject, getProjectDetail } from '@kortix/sdk';
@@ -45,6 +43,7 @@ import {
   qk,
   useFeatureFlag,
   useGatewayCatalogSync,
+  useProjectSpaces,
 } from '@kortix/sdk/react';
 import { SidebarGlyph as PanelLeft } from '@kortix/ui/icons';
 
@@ -83,7 +82,8 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   const searchParams = useSearchParams();
   const { user, isLoading: authLoading, bootstrapError } = useAuth();
 
-  const { data: projectDetail, error: projectDetailError, isStale: projectDetailStale } = useQuery({
+  // Warms the config cache for the capability pages; nothing in the shell waits on it.
+  const { data: projectDetail } = useQuery({
     queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
     enabled: !!projectId,
@@ -92,7 +92,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   // The owning account rides the bare project row (~10 ms on the server).
   // `/detail` reads git (0.5–2.6 s on prod) and every billing read on the
   // page, the model picker's gate included, waited behind it.
-  const { data: projectRow } = useQuery({
+  const { data: projectRow, error: projectRowError, isStale: projectRowStale } = useQuery({
     queryKey: qk.project.summary(projectId),
     queryFn: () => getProject(projectId),
     enabled: !!projectId,
@@ -106,38 +106,20 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   useCustomizePrefetch(projectId);
   // GET needs-input is polled by the session lists (`useSessionNeedsYouCounts`), once per project.
 
-  // Presence: this shell is mounted for EVERY /projects/[id] route and survives
-  // in-project navigation, so mounting the warm hook here means "one ensure
-  // while the user is on this project", not one per page they click through.
-  // Gated on the `warm_sessions` flag (a warm sandbox is billed compute) and on
-  // the account being able to run at all. The server enforces the flag too —
-  // this is the client short-circuit that avoids a 403 on every project visit.
-  const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
-  const { canRun, isLoading: billingLoading } = useProjectCanRun(projectId);
-  // `params.sessionId` (read again below for the tabs store) doubles as the
-  // hook's adoption signal: navigating to a session — from ANY surface,
-  // including the manager inventory's unbadged warm rows or a direct URL —
-  // consumes a matching held warm entry and publishes the id cross-tab.
-  const routeParams = useParams<{ sessionId?: string }>();
-  useWarmProjectSession(
-    projectId,
-    warmSessions.enabled && !billingLoading && canRun,
-    routeParams?.sessionId ?? null,
-  );
-
   useSignedOutRedirect();
 
   // Remember the project so the next `/` hit and the next sign-in land straight
   // back here instead of going through the id-free landing door. Gated on a
-  // detail read the server confirmed: recording a project the user cannot
+  // project-row read the server confirmed (`GET /projects/:id` asserts read
+  // access, like the detail, without waiting on git): recording a project the user cannot
   // actually read would send them into a 404 bounce loop on their next visit.
   // A copy restored from this device's cache is stale until it refetches, and
   // it outlives a deleted project: never remember that stale copy again.
   // ProjectAccessBoundary owns terminal errors and forgetting unreadable projects.
   useEffect(() => {
-    if (!projectDetail || projectDetailError || projectDetailStale) return;
+    if (!projectRow || projectRowError || projectRowStale) return;
     writeLastProjectId(user?.id, projectId);
-  }, [projectDetail, projectDetailError, projectDetailStale, projectId, user?.id]);
+  }, [projectRow, projectRowError, projectRowStale, projectId, user?.id]);
 
   // The project's owning account, falling back to the app-wide selected one
   // — the same resolution every account-scoped surface uses. Feeds the
@@ -223,7 +205,18 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     newSession();
   }, [newSession]);
 
-  useProjectShellShortcuts({ projectId, onNewSession: handleNewSession });
+  // Channels on: "New session" (Mod+T, the desktop File menu) opens the
+  // default channel and focuses its composer, where a message starts a thread.
+  const channels = useFeatureFlag(projectId, 'project_channels').enabled;
+  const spaces = useProjectSpaces(projectId, { enabled: channels });
+  const defaultChannelSlug = spaces.data?.find((space) => space.kind === 'channel' && space.is_default)?.slug;
+  const openDefaultChannel = useCallback(() => {
+    if (!defaultChannelSlug) return;
+    router.push(uiRoutes().channel(projectId, defaultChannelSlug));
+    // Already on that channel the composer does not remount; ask it for focus.
+    window.dispatchEvent(new CustomEvent('focus-session-textarea'));
+  }, [defaultChannelSlug, projectId, router]);
+  useProjectShellShortcuts({ projectId, onNewSession: channels ? openDefaultChannel : handleNewSession });
 
   const params = useParams<{ sessionId?: string }>();
   const activeSessionId = params?.sessionId ?? null;
@@ -279,25 +272,12 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         {/* App previews load here in the background and stay loaded while
             the project is open, so the Apps page shows them at once. */}
         <AppPreviewPoolLoader projectId={projectId} />
+        {/* Artifact pages too, in the same frame pool (flag `artifacts`). */}
+        <ArtifactFramePreloader projectId={projectId} />
 
         <Suspense fallback={null}>
           <PresentationViewerWrapper />
         </Suspense>
-
-        {/* A fresh account's first project arrives unstamped (the create flow
-            stamps only later projects — KRTX-2092), so this wizard opens on
-            the landing. It must carry the skip control: in the browser there
-            is no other exit — the close button is desktop-shell-only, outside
-            clicks are dead and Escape is intercepted. The wizard's own skip
-            already opens the first chat and stamps the project, so the shell
-            adds no navigation of its own. */}
-        <ProjectOnboardingWizard
-          projectId={projectId}
-          onSkip={() => {
-            /* the wizard's skip closes it in place; nothing to navigate to */
-          }}
-        />
-
 
         <PersonalOnboardingWelcome projectId={projectId} />
       </AppProviders>

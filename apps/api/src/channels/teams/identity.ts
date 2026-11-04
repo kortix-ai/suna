@@ -41,6 +41,8 @@ export async function postTeamsIdentityPrompt(input: {
   reason: 'unlinked' | 'not_member';
   /** This person's own "Working on it…" card in a 1:1 chat, which the prompt replaces. */
   replaceActivityId?: string;
+  /** False: keep nothing to run once they link (resolveTeamsTurnActor). */
+  replay?: boolean;
 }): Promise<void> {
   const ref = conversationRef(input.activity, input.projectId);
   if (!ref) return;
@@ -48,12 +50,15 @@ export async function postTeamsIdentityPrompt(input: {
   if (!userId) return;
 
   if (input.reason === 'unlinked') {
-    const pendingId = await createPendingTeamsAuthMessage({
-      projectId: input.projectId,
-      tenantId: input.tenantId,
-      teamsUserId: userId,
-      activity: input.activity,
-    });
+    const pendingId =
+      input.replay === false
+        ? null
+        : await createPendingTeamsAuthMessage({
+            projectId: input.projectId,
+            tenantId: input.tenantId,
+            teamsUserId: userId,
+            activity: input.activity,
+          });
     await sendTeamsLoginPrompt({
       ref,
       activity: input.activity,

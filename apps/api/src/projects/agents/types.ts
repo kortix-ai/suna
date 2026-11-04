@@ -1,35 +1,42 @@
+import type { ManifestIssue } from '@kortix/manifest-schema';
+import type { BuiltinAgentKey } from '@kortix/shared';
 
-export const MANIFEST_FILENAME = 'kortix.toml';
+export { MANIFEST_FILENAME } from '@kortix/manifest-schema';
 
 /** `"all"` = every grantable action / every project connector (capped at the user). */
 export type GrantSet = string[] | 'all';
 
 export interface AgentSpec {
-  /** Agent name — unique per project. Matches projectSessions.agentName + the `.md` filename. */
+  /** Agent name — unique per project. Matches projectSessions.agentName. */
   name: string;
   /** e.g. `kortix.yaml#agents.<name>` (or the project's actual manifest filename) for UI / error reporting. */
   path: string;
-  /** When false the overlay is skipped (the agent still runs from its `.md`, with default-deny scope). */
+  /** False: the agent cannot start a session (`enabled: false`, or a validation error on its block). */
   enabled: boolean;
+  /** `mode: subagent`: the agent only runs as another agent's subagent. */
+  subagent?: true;
   /** Which connectors (by slug) this agent may use. `[]` = none (default). */
   connectors: GrantSet;
   /** Connectors that must resolve before the session starts. */
   connectorsRequired?: string[];
+  /** Connector slug → the policy set (`connectors[].policy_sets`) this agent
+   *  gets on that connector (`agents.<name>.policy_sets`). Absent key = the
+   *  base rules. Kept AS WRITTEN, even when the set does not exist: the
+   *  gateway then blocks that connector for this agent (`policy_set_missing`).
+   *  Dropping a bad entry would fall back to the base rules, which fails open.
+   *  Null-prototype object; see `readAgentPolicySets`. */
+  policySets?: Record<string, string>;
   /** Kortix permissions (project-scoped iam actions). `[]` = none (default). */
   permissions: GrantSet;
   /** Project-secret IDENTIFIERS (project_secrets.identifier, not raw env-var
    *  keys) this agent receives as sandbox env + may read via the secrets API.
-   *  `'all'` = every secret in the project (default when the `env` key is
-   *  omitted — a NEW dimension, so omitting it must not starve existing
-   *  agents); an explicit list narrows it; `[]` = none. */
+   *  `'all'` = every secret in the project; an explicit list narrows it;
+   *  `[]` = none (the default, `secrets` omitted). */
   env: GrantSet;
   /** Kortix Apps (by App slug) this agent may open when the App is
-   *  `restricted`/`private` (spec 2026-09-22 §2.5). `[]` = none (default, both
-   *  manifest versions). Optional so hand-built specs (tests, fixtures) need
+   *  `restricted`/`private` (spec 2026-09-22 §2.5). `[]` = none (default). Optional so hand-built specs (tests, fixtures) need
    *  not set it; absent reads as none. */
   apps?: GrantSet;
-  /** Optional behavior-file path override (defaults to the conventional `.md` by name). */
-  file: string | null;
   /**
    * The agent's declarative default model (wire form `provider/model`), or null
    * for "Default" — resolve project → account → platform (`auto`). A
@@ -62,14 +69,21 @@ export interface LoadedAgents {
    *  (`AgentGrant.manifestRevision` / `manifestCommit`). */
   manifest?: { revision: string | null; commit: string | null } | null;
   /**
-   * The manifest's own top-level `default_agent` (v2; v1 has no such
-   * field, so this is always `null` for a v1 manifest). Lets grant resolution
-   * make the non-binding `"default"` sentinel resolve to a concrete declared
-   * agent's grant for a governed project,
-   * instead of falling back to the permissive `null` (unrestricted) v1
-   * behavior — see `grantFromLoadedAgents` (spec §2.1).
+   * The manifest's own top-level `default_agent`. Lets grant resolution make
+   * the non-binding `"default"` sentinel resolve to a concrete declared
+   * agent's grant for a governed project — see `grantFromLoadedAgents`
+   * (spec §2.1).
    */
   defaultAgent?: string | null;
-  /** The manifest's `kortix_version` (2 or 3) for a map-shaped roster; absent for v1. */
-  schemaVersion?: number;
+  /** The manifest's validation errors (`runtimeManifest`): an agent one of
+   *  them names is off, and a refusal to start it names them. */
+  issues?: ManifestIssue[];
+  /** Which built-in agents the project runs, resolved by
+   *  `projectBuiltinAgents` (lib/my-kortix-agent.ts): `builtin_agents.<key>: true`
+   *  = on, anything else off. Unset = off. */
+  builtinAgents?: Record<BuiltinAgentKey, boolean>;
+  /** Set when kortix.yaml is not YAML: the parser's message. The project is in
+   *  repair mode: only My Kortix runs, and a session for any other agent is
+   *  refused with 422 `manifest_invalid`. */
+  manifestSyntaxError?: string;
 }

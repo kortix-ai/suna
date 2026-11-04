@@ -13,9 +13,9 @@
  *   CLI     kortix-{darwin,linux}-{arm64,x64} (no Windows binary)
  */
 
-import type { DesktopOs } from './detect-os';
+import type { DesktopOs } from '@kortix/ui/internal/lib/detect-os';
 
-const REPO = 'kortix-ai/suna';
+const REPO = 'kortix-ai/CompanyOS';
 const LATEST_API = `https://api.github.com/repos/${REPO}/releases/latest`;
 
 /** Where every download falls back to when the API is unreachable. */

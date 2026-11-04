@@ -101,6 +101,12 @@ export interface ToolView {
   answers?: string[][];
   /** The child session a delegating call (`task`) runs. */
   childSessionId?: string;
+  /**
+   * The tool state's own metadata, as the harness reported it: a `workflow` call's run
+   * document (`WorkflowRunMetadata`), an `agent` call's `{ sessionId, model, background, … }`.
+   * Absent when the state carries none.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 /** Never parse (or diff/pretty-print) an output blob larger than this — a
@@ -277,6 +283,7 @@ function classifyToolState(tool: string, state: ToolState): ToolView {
     diagnostics,
     answers: kind === 'question' ? toolAnswers(metadata) : undefined,
     childSessionId: getChildSessionId({ tool, state }),
+    ...(Object.keys(metadata).length ? { metadata } : {}),
   };
 }
 
@@ -366,6 +373,12 @@ export interface ClassifiedCompactionPart {
   auto: boolean;
   overflow: boolean;
   tailStartId?: string;
+  /** `record`: the context reset onto the session's searchable record, with nothing summarized. Absent: a summary. */
+  mode?: 'record';
+  /** The context size, in tokens, when it reset or compacted. */
+  tokensBefore?: number;
+  /** For `record`: the entries the record held at the reset. */
+  entries?: number;
 }
 
 export interface ClassifiedStepPart {
@@ -472,6 +485,9 @@ function classifyCompaction(part: CompactionPart): ClassifiedCompactionPart {
     auto: part.auto,
     overflow: !!part.overflow,
     tailStartId: part.tail_start_id,
+    ...(part.mode === 'record' ? { mode: 'record' as const } : {}),
+    ...(typeof part.tokens_before === 'number' ? { tokensBefore: part.tokens_before } : {}),
+    ...(typeof part.entries === 'number' ? { entries: part.entries } : {}),
   };
 }
 

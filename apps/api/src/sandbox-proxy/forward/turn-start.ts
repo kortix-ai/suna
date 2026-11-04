@@ -40,6 +40,12 @@ import {
   releasePromptDelivery,
 } from '../prompt-dedupe';
 import { recordSessionActivity } from '../../projects/session-activity';
+import { MEMORY_TURN_SYSTEM_MAX_CHARS } from '@kortix/api-contract';
+import { isMemoryTurnRoute, memoryChannelsOn, withMemoryTurn, withoutClientSystem } from '../../memory/turn-body';
+import { isMyKortixAgentName } from '@kortix/shared';
+import { logger } from '../../lib/logger';
+import { isPlatinumConfigured } from '../../shared/platinum';
+import { missingClaudeSubscription, sessionModelPin } from '../../projects/surface';
 import type { ForwardRequest, ForwardState } from './context';
 
 // Turn-start preparation on the forward path: runtime convergence before the
@@ -57,6 +63,14 @@ const REAL_PRE_PROMPT_DEPS: PrePromptEnvSyncDeps = {
   remintGrant: remintGrantForAgentSwitch,
   bindTurnIdentity: bindSessionTurnIdentity,
   generateTitle: generateSessionTitleFromFirstPrompt,
+  claudeSubscriptionMissing: async (input) =>
+    missingClaudeSubscription({
+      accountId: input.accountId,
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      userId: input.userId,
+      model: input.promptModel ?? (await sessionModelPin(input.sessionId)),
+    }),
 };
 
 export interface TurnLifecycle {
@@ -72,6 +86,7 @@ export interface TurnLifecycle {
 export function createTurnLifecycle(
   sandboxId: string,
   turnIdentity: SandboxTurnIdentity | null,
+  source?: string,
 ): TurnLifecycle {
   const turnToken = turnIdentity ? crypto.randomUUID() : null;
   let turnLifecycleBegun = false;
@@ -81,7 +96,7 @@ export function createTurnLifecycle(
     try {
       const outcome = await beginSandboxTurn(
         { externalId: sandboxId },
-        { token: turnToken, ...turnIdentity },
+        { token: turnToken, ...turnIdentity, source },
       );
       turnLifecycleBegun = outcome === 'granted';
       return outcome === 'no_box' ? 'unavailable' : outcome;
@@ -340,7 +355,56 @@ export async function syncEnvBeforeTurnStart(
     }
     return refusal;
   }
+  await addMemoryTurnLayers(req, state);
   return null;
+}
+
+/**
+ * `system` on a Kortix prompt body (`project_channels`): the list of the
+ * memory files the thread reads, at its mount paths, for the turn's system
+ * prompt. The first turn records the list ("Used memory"). A `system` the
+ * client sent is always dropped: only the API sets it. Flag off, no space, or
+ * any failure: the body goes on without memory. `/steer` never passes here
+ * (the API posts it to the box directly and never sets `system`).
+ */
+async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Promise<void> {
+  // Once per request: a retry attempt keeps the body the first attempt built.
+  if (state.memoryLayersChecked || !isMemoryTurnRoute(req.method, req.remainingPath)) return;
+  state.memoryLayersChecked = true;
+  state.requestBody = withoutClientSystem(state.requestBody);
+  const sessionId = req.record.sessionId;
+  try {
+    // My Kortix: the prompter's own memory index (kortix_memory), every turn, with Files on.
+    if (isMyKortixAgentName(req.record.agentName)) {
+      if (!isPlatinumConfigured()) return;
+      const { myKortixMemoryTurn } = await import('../../memory/my-memory');
+      const turn = await myKortixMemoryTurn(req.record.projectId, sessionId, req.userId);
+      if (turn) state.requestBody = withMemoryTurn(state.requestBody, turn);
+      return;
+    }
+    // Flag off: the memory and drives services are never loaded on this path.
+    if (!(await memoryChannelsOn(req.record.projectId))) return;
+    const { memoryTurnContext } = await import('../../memory/turn-context');
+    // The prompter decides whether the thread's personal layer is listed (its owner only).
+    const turn = await memoryTurnContext(req.record.projectId, sessionId, req.userId);
+    if (!turn) return;
+    state.requestBody = withMemoryTurn(state.requestBody, turn);
+    // "Used memory" is the first turn's list, recorded only when the list went out.
+    // ponytail: recorded before delivery; a refused prompt or a daemon older than the `system` field still records it.
+    if (!turn.firstTurn || turn.system.length > MEMORY_TURN_SYSTEM_MAX_CHARS) return;
+    // Off the turn's path: a lost record only hides the "Used memory" chip.
+    void import('../../memory/thread-loads').then(({ recordThreadLoad }) => recordThreadLoad(sessionId, turn.loaded)).catch((error: unknown) =>
+      logger.warn('[memory] the thread load was not recorded', {
+        session_id: sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  } catch (error) {
+    logger.warn('[memory] turn start forwarded without memory', {
+      session_id: sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 /**
@@ -354,6 +418,13 @@ export async function syncEnvBeforeTurnStart(
  * fewer round-trip. Any client can send that header, so it skips only
  * the READ: an id far ahead of the clock (the pre-fix CLI's high-bits
  * mint) is re-minted on the id alone either way.
+ *
+ * A runtime that keeps message ids (`RUNTIME_STABLE_MESSAGE_ID_CAPABILITY`,
+ * pi) orders by position, so a stale id is no harm there: the read is
+ * skipped and the client's id goes through. A far-ahead or malformed id is
+ * still re-minted on the id alone. The capability read is the inbox's own
+ * (`sandboxKeepsMessageIds`, memoized per box for 5 min); a failed read
+ * places the id against the transcript as before.
  */
 export async function placePromptWireId(
   req: ForwardRequest,
@@ -365,39 +436,50 @@ export async function placePromptWireId(
   const clientWireId = promptBodyMessageId(state.requestBody);
   const placedByInbox = incomingHeaders.get(WIRE_ID_PLACED_HEADER) === '1';
   if (
-    promptDelivery &&
-    !sandboxAuthored &&
-    state.effectiveMessageId === null &&
-    isPromptWireIdRepairPath(remainingPath) &&
+    !promptDelivery ||
+    sandboxAuthored ||
+    state.effectiveMessageId !== null ||
+    !isPromptWireIdRepairPath(remainingPath) ||
     // No client id, nothing to place — OpenCode mints, and the read is
     // skipped entirely so a plain body pays nothing.
-    clientWireId !== null &&
-    (!placedByInbox || isWireIdAheadOf(clientWireId, Date.now()))
-  ) {
-    const readUrl =
-      previewUrl.replace(/\/$/, '') +
-      promptTranscriptReadPath(remainingPath, PROMPT_TRANSCRIPT_READ_LIMIT);
-    const newestKnownTime = placedByInbox
-      ? null
-      : await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
-    ptl.mark('wire-id-read');
-    const placed = repairPromptWireId({
-      body: state.requestBody,
-      newestKnownTime,
-      nowMs: Date.now(),
+    clientWireId === null
+  ) return;
+  if (placedByInbox && !isWireIdAheadOf(clientWireId, Date.now())) return;
+  // No read: the inbox placed the id, or the runtime keeps ids. With no
+  // transcript, `repairPromptWireId` re-mints only an id that is wrong on its own.
+  let skipRead = placedByInbox;
+  if (!skipRead) {
+    try {
+      // Dynamic: the proxy's static graph stays out of projects/ (module-graph.test.ts).
+      const { sandboxKeepsMessageIds } = await import('../../projects/surface');
+      skipRead = await sandboxKeepsMessageIds(sandboxId, req.userId);
+    } catch {
+      skipRead = false;
+    }
+  }
+  const readUrl =
+    previewUrl.replace(/\/$/, '') +
+    promptTranscriptReadPath(remainingPath, PROMPT_TRANSCRIPT_READ_LIMIT);
+  const newestKnownTime = skipRead
+    ? null
+    : await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
+  ptl.mark('wire-id-read');
+  const placed = repairPromptWireId({
+    body: state.requestBody,
+    newestKnownTime,
+    nowMs: Date.now(),
+  });
+  if (placed.outcome === 'reminted') {
+    console.warn('[prompt-wire-id] re-minted a stale or malformed client wire id', {
+      sandboxId,
+      sessionId: record.sessionId,
+      path: remainingPath,
+      effectiveMessageId: placed.effectiveMessageId,
     });
-    if (placed.outcome === 'reminted') {
-      console.warn('[prompt-wire-id] re-minted a stale or malformed client wire id', {
-        sandboxId,
-        sessionId: record.sessionId,
-        path: remainingPath,
-        effectiveMessageId: placed.effectiveMessageId,
-      });
-      state.requestBody = placed.body;
-    }
-    state.effectiveMessageId = placed.effectiveMessageId ?? '';
-    if (turnIdentity && placed.effectiveMessageId) {
-      turnIdentity.messageId = placed.effectiveMessageId;
-    }
+    state.requestBody = placed.body;
+  }
+  state.effectiveMessageId = placed.effectiveMessageId ?? '';
+  if (turnIdentity && placed.effectiveMessageId) {
+    turnIdentity.messageId = placed.effectiveMessageId;
   }
 }

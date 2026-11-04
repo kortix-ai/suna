@@ -11,7 +11,6 @@ import { useTranslations } from '../../i18n';
 import { errorMessageOf, isDeliveredButDisconnected } from '../../internal/lib/delivered-but-disconnected';
 import { useQueuedDraftStore, useQueuedDrafts } from '../composer/stores/queued-draft-store';
 import {
-  type SandboxLifecycle,
   type SessionPrompt,
   type SessionPromptDelivery,
   type SessionPromptPart,
@@ -22,7 +21,6 @@ import {
   SESSION_LOG_MINOR,
   SESSION_LOG_SCHEMA,
   listSessionPrompts,
-  projectSessionConnection,
   sessionLogOfV1Rows,
   sessionLogPromptMessage,
   sessionLogRetrying,
@@ -39,8 +37,8 @@ import {
   useSessionLogRecord,
   useSessionLogThread,
   useSessionMessageAuthors,
-  useSessionModelUsage,
   useSessionParticipants,
+  useSessionModelUsage,
 } from '@kortix/sdk/react';
 import {
   ArrowBendUpLeftIcon,
@@ -48,24 +46,31 @@ import {
   StackIcon as Layers,
 } from '@phosphor-icons/react';
 import { m } from 'motion/react';
+import { jumpToOutcome } from '../outcomes/jump-to-outcome';
+import { useIsMobile, useIsPhone } from '../../hooks/use-mobile';
 import {
   useUiLink,
   useUiPathname,
   useUiRouter,
   useUiShallowNavigate,
   useUiSearchParams,
+  useUiViewer,
   useUiViewerId,
 } from '../../providers/ui-provider';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { TranscriptRowsContext, type TranscriptRows } from './transcript-rows';
+import { AgentBusyRow, PendingPromptRows } from './thread-boot-rows';
 import { createPortal } from 'react-dom';
 import {
   AUTHOR_RETRY_DELAYS_MS,
   authorForTurn,
   awaitsAgent,
   missingAuthorKey,
+  participantAuthor,
   resolveTranscriptAuthors,
-  showAuthorName,
+  rewindableMessageIds,
   stoppedByName,
+  viewerAuthor,
 } from '../turn/message-author';
 import { stopRefusalMessage } from '../status/stop-refusal';
 import { QueuedPromptList } from '../composer/queued-prompt-list';
@@ -105,7 +110,10 @@ import {
   Composer as SessionChatInput,
 } from '../composer/composer';
 import { ComposerDropZone } from '../composer/composer-drop-zone';
-import { resolveComposerAgent } from '../composer/composer-agent-access';
+import { AgentsLine } from '../agents/agent-strip';
+import { HeldMessages } from '../agents/held-messages';
+import { SessionPromptContext } from '../agents/session-prompt';
+import { channelRunnableAgents, resolveComposerAgent, withChannelAgents } from '../composer/composer-agent-access';
 import {
   acknowledgeQuoteRequests,
   type QuoteRequest,
@@ -117,6 +125,7 @@ import {
 } from './first-prompt-handover';
 import { CompactModal } from '../header/compact-modal';
 import { SessionSiteHeader } from '../header/session-site-header';
+import { VoiceCallSlot } from '../voice/voice-call';
 import { claimFirstTurnRow } from '../composer/inbox-row-claims';
 import { type ModelDefaultControls } from '../models/model-selector';
 import { OptimisticTurn } from './optimistic-turn';
@@ -162,6 +171,7 @@ import type { DraftScope } from '../composer/draft/composer-draft';
 import { usePlanInChat } from './plan-surface';
 import { SessionStartingLoader } from '../status/session-starting-loader';
 import { ToolActivateContext } from '../tool/tool-renderers';
+import { ReadOnlySessionContext } from '../tool/shared/infrastructure-contexts';
 import {
   firstPromptAttachments,
   retainSentAttachmentPreviews,
@@ -204,7 +214,7 @@ import { openTabAndNavigate, useTabStore } from '../../internal/stores/tab-store
 import { projectSessionHref } from '../../internal/lib/navigation/session-href';
 import { type Command, type QuestionRequest, getRetryInfo } from '../../internal/session-types';
 import { useModelPricingLookup } from '../../internal/lib/model-pricing';
-import { isAbortError, latestPromptModel, turnEndNotice } from '@kortix/sdk';
+import { isAbortError, latestPromptModel, SESSION_NOTICE, turnEndNotice } from '@kortix/sdk';
 import {
   failureShownByTurn,
   failureSupersededByTurn,
@@ -238,6 +248,7 @@ import {
   useExecuteRuntimeCommand,
   useProjectConfig,
   useRuntimeAgents,
+  useProjectSpaces,
   useRuntimeBootStalled,
   useRuntimeCommands,
   useRuntimeConfig,
@@ -284,6 +295,7 @@ import { RestoreNotice, hasOutOfContext, type FullTextState } from './session-hi
 
 import {
   TranscriptTurnRow,
+  isAgentNoticeTurn,
   strandedPromptIds,
   optimisticAnswersCache,
   promptTexts,
@@ -387,6 +399,8 @@ interface SessionChatProps {
   hideHeader?: boolean;
   /** Read-only mode — hides the chat input bar (used for sub-session modal viewer) */
   readOnly?: boolean;
+  /** The composer's placeholder (a channel thread says "Reply…"). Default: the composer's own. */
+  composerPlaceholder?: string;
   /**
    * Drawn in the composer's slot, in flow, when `readOnly`: a terminal
    * session state (stopped with no computer, lost computer, failed start)
@@ -445,6 +459,15 @@ const DETACHED_SESSION_MESSAGES = { projectId: '', sessionId: '', runtimeSession
 
 const NO_FULL_TEXTS: ReadonlyMap<string, string> = new Map();
 
+/** The composer notice in the host's words (`TranscriptRows.notices`), else the SDK's. */
+function hostNotice(notice: string | null, notices: TranscriptRows['notices']): string | null {
+  if (!notice || !notices) return notice;
+  const key = (Object.keys(SESSION_NOTICE) as (keyof typeof SESSION_NOTICE)[]).find(
+    (candidate) => SESSION_NOTICE[candidate] === notice,
+  );
+  return (key && notices[key]) || notice;
+}
+
 export function SessionChat({
   sessionId,
   projectSessionId,
@@ -454,6 +477,7 @@ export function SessionChat({
   headerLeadingAction,
   hideHeader,
   readOnly,
+  composerPlaceholder,
   inputReplacement,
   initialScrollTop,
   savedHistoryScope,
@@ -462,6 +486,11 @@ export function SessionChat({
   hostQuote,
 }: SessionChatProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  // A channel's thread panel: turns are message rows, full width, end-anchored.
+  const rowsContext = useContext(TranscriptRowsContext);
+  const transcriptRows = rowsContext !== null;
+  const isMobile = useIsMobile();
+  const isPhone = useIsPhone();
   const tQueue = useTranslations('threads');
   const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
   const onboardingActive = useOnboardingModeStore((s) => s.active);
@@ -642,7 +671,7 @@ export function SessionChat({
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
-  // A chat with no `useSession` (a sub-agent's: `sub-session-modal`, the `?rs=` route) runs
+  // A chat with no `useSession` (a sub-agent's: `legacy-subagent-chat`, the `?rs=` route) runs
   // inside the route's session. While that session reads its log (v2: the store holds it),
   // the sub-agent's thread and its older pages are the log's, and no saved copy is read.
   const [scopeProjectId = '', scopeSessionId = ''] = savedHistoryScope?.split('/') ?? [];
@@ -677,7 +706,7 @@ export function SessionChat({
     freshness: transcriptFreshness,
     retryTranscript,
   } = sessionState ?? localSync;
-  // A chat with no `useSession` (a sub-agent's, `sub-session-modal`) reads its
+  // A chat with no `useSession` (a sub-agent's, `legacy-subagent-chat`) reads its
   // runtime session's rows through `useSessionSync`: the same `fromV1` view.
   // On v2 that is the fallback while the log does not hold the sub-agent's thread yet.
   const detachedThread = useMemo(
@@ -722,8 +751,15 @@ export function SessionChat({
     threadRef.current = thread;
   }, [thread]);
   const messagesLoading = syncMessagesLoading;
-  // Who wrote each user message. A one-person session stays unlabelled.
+  // Who wrote each user message: every member message shows its sender's
+  // avatar from the first frame, one-person session included, so nothing
+  // moves when a second person joins.
   const viewerId = useUiViewerId();
+  const viewer = useUiViewer();
+  const viewerAsAuthor = useMemo(() => viewerAuthor(viewer), [viewer]);
+  // Wire ids this tab sent. Their recorded author arrives a moment after the
+  // bubble paints, so the viewer's avatar stands in until then.
+  const sentHereIds = useRef(new Set<string>());
   const Link = useUiLink();
   // Only a user message adds an author, so only user messages key the refetch.
   const userMessageIds = useMemo(
@@ -735,7 +771,11 @@ export function SessionChat({
   const turnOutcome = useSessionTurnOutcome(projectId ?? '', projectSessionId ?? '');
   // A stop adds no message but does add a name ("Stopped by"): the turn that
   // ended keys the read too, so the stopper shows when that turn ends.
-  const { data: messageAuthors, refetch: refetchMessageAuthors } = useSessionMessageAuthors(
+  const {
+    data: messageAuthors,
+    isLoading: messageAuthorsLoading,
+    refetch: refetchMessageAuthors,
+  } = useSessionMessageAuthors(
     projectId,
     projectSessionId,
     `${newestUserMessageId}|${turnOutcome.last_ended?.turn_token ?? ''}`,
@@ -744,15 +784,21 @@ export function SessionChat({
     () => resolveTranscriptAuthors(userMessageIds, messageAuthors),
     [userMessageIds, messageAuthors],
   );
-  // A session two or more people can open reads as a group chat from its first
-  // prompt: every author shows, the viewer included. Same cache as the header.
+  // The user messages on screen when this session's first authors read
+  // landed. A message after them arrived live: the drain may re-mint its id
+  // and the ledger records it a moment later, so its avatar slot is held.
+  const [loadedUserIds, setLoadedUserIds] = useState<{ sessionId: string; ids: ReadonlySet<string> } | null>(null);
+  if (messageAuthors && loadedUserIds?.sessionId !== sessionId) {
+    setLoadedUserIds({ sessionId, ids: new Set(userMessageIds) });
+  }
+  // Names a queued prompt's sender before the authors read lists it. Same
+  // cache as the header.
   const { data: sessionParticipants } = useSessionParticipants(projectId, projectSessionId);
-  const groupChat = transcriptAuthors.multiAuthor || !!sessionParticipants?.multi_user;
   // Project sessions use the server-side project agent roster. A sub-agent's
   // chat has no projectId, but runs inside the parent scope's project: its
   // roster is that project's. Only a chat with neither falls back to the
   // runtime's own agent list, which a pi box does not serve (KRTX-2887).
-  const { data: agents } = useRuntimeAgents({
+  const { data: rosterAgents } = useRuntimeAgents({
     directory: session?.directory,
     projectId: projectId ?? (scopeProjectId || undefined),
   });
@@ -781,11 +827,17 @@ export function SessionChat({
     ...promptInbox.prompts.flatMap((prompt) => [prompt.message_id, prompt.wire_message_id ?? '']),
   ]);
   const authorRetry = useRef<{ key: string; count: number }>({ key: '', count: 0 });
+  // The missing set the retries gave up on: a live message still unattributed
+  // then stops holding its avatar slot.
+  const [authorsGaveUp, setAuthorsGaveUp] = useState('');
   useEffect(() => {
     if (!missingAuthors) return;
     if (authorRetry.current.key !== missingAuthors) authorRetry.current = { key: missingAuthors, count: 0 };
     const delay = AUTHOR_RETRY_DELAYS_MS[authorRetry.current.count];
-    if (delay === undefined) return;
+    if (delay === undefined) {
+      setAuthorsGaveUp(missingAuthors);
+      return;
+    }
     const timer = setTimeout(() => {
       authorRetry.current.count += 1;
       void refetchMessageAuthors();
@@ -849,6 +901,25 @@ export function SessionChat({
   const projectSessionRow = useProjectSession(projectId, projectSessionId ?? undefined, {
     enabled: !!projectId && !!projectSessionId,
   }).data;
+  // A channel thread: whoever posts in the channel runs its agents, granted or
+  // not (the server applies the same rule).
+  const { data: projectSpaces } = useProjectSpaces(projectId, {
+    enabled: !!projectId && !!projectSessionRow?.space_id,
+  });
+  const threadChannelAgents = useMemo(
+    () =>
+      channelRunnableAgents(
+        projectSpaces?.find((space) => space.space_id === projectSessionRow?.space_id),
+        projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
+      ),
+    [projectSpaces, projectSessionRow?.space_id, projectConfig?.default_agent, projectConfig?.open_code_default_agent],
+  );
+  const agents = useMemo(() => withChannelAgents(rosterAgents, threadChannelAgents), [rosterAgents, threadChannelAgents]);
+  // Edit-and-rewind only on the viewer's own message with nobody else's after it.
+  const rewindable = useMemo(
+    () => rewindableMessageIds(userMessageIds, transcriptAuthors.byMessage, viewerId, projectSessionRow?.created_by),
+    [userMessageIds, transcriptAuthors.byMessage, viewerId, projectSessionRow?.created_by],
+  );
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
   // The composer opens on the model the session already runs (its pin, or its
@@ -1127,7 +1198,7 @@ export function SessionChat({
    * turn authority first (`GET .../turn`), the stream second, and this tab's
    * own send receipt only until either of them answers.
    */
-  // A child-session mount (`sub-session-modal.tsx` passes no project ids) has
+  // A child-session mount (`legacy-subagent-chat.tsx` passes no project ids) has
   // no Kortix session row for `/turn` to answer about, so the projection below
   // is disabled and every working read falls back to the raw stream slot —
   // the same split `session-layout.tsx` makes for its busy indicator.
@@ -1477,7 +1548,7 @@ export function SessionChat({
       const undoToastId = `queue-undo-${sessionId}-${removed.prompt_id}`;
       undoToast(tHardcodedUi.raw('i18nComplete.text2c6041fda32c'), {
         id: undoToastId,
-        duration: 5000,
+        duration: 5000, // audit:allow a toast lifetime in ms, not motion/react seconds
         undoLabel: tHardcodedUi.raw('i18nComplete.texta737e54996f8'),
         // The SAME `clientMessageId`, so an undo re-creates ONE row and a
             // double-click cannot create two. A FRESH wire id, because
@@ -1566,6 +1637,7 @@ export function SessionChat({
     startAtTop,
   } = useAutoScroll({
     hasContent: messageCount > 0,
+    room: !transcriptRows,
   });
   // Cmd/Ctrl+P prints the WHOLE conversation. The shortcut is intercepted
   // because neither half of what printing needs can be done in CSS: the
@@ -1762,6 +1834,17 @@ export function SessionChat({
   const awaitingUserInput = pendingQuestions.length > 0 || pendingPermissions.length > 0;
   const QUESTION_PROMPT_ANIMATION_MS = 320;
   const activePendingQuestion = pendingQuestions[0] ?? null;
+  // A new question docks over the bottom of the transcript, and answering it
+  // needs what the agent just wrote (a long tool run can leave the reader
+  // short of the end). Bring the end into view once per question; a reader
+  // who scrolls up afterwards stays where they are.
+  const shownQuestionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const id = activePendingQuestion?.id ?? null;
+    if (!id || id === shownQuestionIdRef.current) return;
+    shownQuestionIdRef.current = id;
+    smoothScrollToAbsoluteBottom();
+  }, [activePendingQuestion?.id, smoothScrollToAbsoluteBottom]);
   const [renderedQuestion, setRenderedQuestion] = useState<QuestionRequest | null>(null);
   const [questionPromptVisible, setQuestionPromptVisible] = useState(false);
   // A connector call waiting on a decision docks onto the composer the way a
@@ -2272,6 +2355,12 @@ export function SessionChat({
    * 1.5k "two children with the same key" errors in one churn). The origin
    * key goes to the FIRST claimant; any other turn falls back to its own id.
    */
+  // Turns whose prompt is another agent's notice: the work continues across
+  // them, so they sit a continuation's distance below the turn above.
+  const agentNoticeTurnIds = useMemo(
+    () => new Set(turns.filter((turn) => isAgentNoticeTurn(turn)).map((turn) => turn.id)),
+    [turns],
+  );
   const turnRenderKeys = useMemo(() => {
     const keys = new Map<string, string>();
     const used = new Set<string>();
@@ -2463,6 +2552,64 @@ export function SessionChat({
     clearJumpTarget();
   }, [targetMessageId, clearJumpTarget, contentRef, scrollRef]);
 
+  const tChangeRequests = useTranslations('sessionChangeRequests');
+  const mobileChangeRequests = useIsMobile();
+  const [jumpingToOutcome, setJumpingToOutcome] = useState(false);
+  const outcomeJumpRef = useRef({ sessionId, hasOlder, isLoadingOlder, loadOlder });
+  useEffect(() => {
+    outcomeJumpRef.current = { sessionId, hasOlder, isLoadingOlder, loadOlder };
+  }, [sessionId, hasOlder, isLoadingOlder, loadOlder]);
+  const handleJumpToOutcome = useCallback(async (resolveTurn: () => string | undefined, createdAt: number) => {
+    if (jumpingToOutcome) return;
+    setJumpingToOutcome(true);
+    const currentSession = sessionId;
+    const settle = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    try {
+      const earliest = Math.min(...turnSpans.flatMap((span) => span.startedAt === null ? [] : [span.startedAt]));
+      await jumpToOutcome({
+        needsHistory: hasOlder && (!Number.isFinite(createdAt) || createdAt < earliest),
+        history: {
+          readState: () => outcomeJumpRef.current.sessionId === currentSession
+            ? outcomeJumpRef.current : { hasOlder: false, isLoadingOlder: false },
+          loadOlder: () => outcomeJumpRef.current.loadOlder(),
+          settle,
+        },
+        resolve: () => outcomeJumpRef.current.sessionId === currentSession ? resolveTurn() : undefined,
+        loadError: () => errorToast(tChangeRequests('loadError')),
+        unavailable: () => {
+          if (outcomeJumpRef.current.sessionId === currentSession) errorToast(tChangeRequests('unavailable'));
+        },
+        scroll: async (key) => {
+          if (mobileChangeRequests) {
+            const store = useKortixComputerStore.getState();
+            if (store.isExpanded) store.toggleExpanded();
+            store.setIsSidePanelOpen(false);
+            store.setIsActionPanelOpen(false);
+          }
+          await settle();
+          await settle();
+          releaseOlderAnchor();
+          const target = key ? Array.from(contentRef.current?.querySelectorAll<HTMLElement>('[data-turn-id]') ?? [])
+            .find((node) => node.dataset.turnId === key) : undefined;
+          const scroll = scrollRef.current;
+          if (!target || !scroll) {
+            return false;
+          }
+          const top = target.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop;
+          scroll.scrollTo({ top: Math.max(0, top), behavior: 'instant' });
+          // Static feedback, not motion: keyboard and reduced-motion navigation stay instant.
+          target.classList.add('bg-accent');
+          window.setTimeout(() => target.classList.remove('bg-accent'), 1_000);
+          return true;
+        },
+      });
+    } catch {
+      errorToast(tChangeRequests('loadError'));
+    } finally {
+      setJumpingToOutcome(false);
+    }
+  }, [jumpingToOutcome, sessionId, hasOlder, turnSpans, mobileChangeRequests, releaseOlderAnchor, contentRef, scrollRef, tChangeRequests]);
+
   // Reset on session change
   useEffect(() => {
     clearSendReceipt();
@@ -2576,6 +2723,7 @@ export function SessionChat({
       const clientMessageId = overrides?.clientMessageId ?? ascendingId('msg');
       const sentAtMs = Date.now();
       const messageID = mintSessionWireMessageId(sessionId, clientMessageId);
+      sentHereIds.current.add(messageID);
 
       // Generate part IDs upfront so the optimistic message and the server
       // request use the SAME IDs. When the server echoes parts via
@@ -3353,6 +3501,9 @@ export function SessionChat({
           isComposing: e.isComposing,
         })
       ) {
+        // A press something else consumed breaks the run: three Escapes
+        // that each closed a viewer must never add up to a stop.
+        clearEscHint();
         return;
       }
 
@@ -3390,11 +3541,20 @@ export function SessionChat({
       }
     };
 
+    // A click anywhere also breaks the run. Esc, click an image, Esc, click
+    // the next, Esc is three separate intents, not one stop request — and it
+    // covers any layer whose Escape handler forgets to preventDefault.
+    const onPointerDown = () => {
+      if (escDeadlineRef.current) clearEscHint();
+    };
+
     window.addEventListener('keydown', onKeyDownCapture, true);
     window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('pointerdown', onPointerDown, true);
     return () => {
       window.removeEventListener('keydown', onKeyDownCapture, true);
       window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('pointerdown', onPointerDown, true);
     };
   }, [isActiveSessionTab, readOnly, isBusy, canStop, handleStop, clearEscHint, escCount]);
 
@@ -3772,33 +3932,46 @@ export function SessionChat({
     [projectId, projectSessionId, sessionScopeAgentName],
   );
 
+  // The agents this session started, as one line in the composer's under-row
+  // (Claude Code's agent panel). It reads its own lists and never holds the composer.
+  const agentsLineCompact = !!transcriptRows && !isPhone;
+  const chatUnderbarSlot = useMemo(
+    () => <AgentsLine projectId={projectId} sessionId={projectSessionId} compact={agentsLineCompact} />,
+    [projectId, projectSessionId, agentsLineCompact],
+  );
+
   // The queued messages and the one Resume while a Stop holds the queue: their
-  // own full-width card above the composer stack, not inside the strip.
+  // own full-width card above the composer stack, not inside the strip. A live
+  // voice call is the card above them (nothing unless a call is open).
   const chatAboveSlot = useMemo(
     () => (
-      <QueuedPromptList
-        rows={heldCommands.length > 0 ? [...queueRows.rows, ...heldCommandRows(heldCommands)] : queueRows.rows}
-        heldCount={queueRows.heldCount}
-        resumePending={resumePending}
-        onResume={() => void handleResumeQueue()}
-        onEdit={(id) => {
-          queueEdit.takeBack(id);
-        }}
-        onRemove={(id) => {
-          if (id.startsWith(HELD_COMMAND_ROW_PREFIX)) {
-            const heldId = id.slice(HELD_COMMAND_ROW_PREFIX.length);
-            setHeldCommands((held) => held.filter((entry) => entry.id !== heldId));
-            return;
-          }
-          void handleRemoveQueuedMessage(id);
-        }}
-        onRetry={handleRetryQueuedMessage}
-        onStopAndSend={effectiveBusy && canStop ? handleStopAndSendQueuedMessage : undefined}
-        editing={queueEdit.editing}
-        onCancelEdit={queueEdit.cancel}
-      />
+      <>
+        <VoiceCallSlot sessionId={projectSessionId} />
+        <QueuedPromptList
+          rows={heldCommands.length > 0 ? [...queueRows.rows, ...heldCommandRows(heldCommands)] : queueRows.rows}
+          heldCount={queueRows.heldCount}
+          resumePending={resumePending}
+          onResume={() => void handleResumeQueue()}
+          onEdit={(id) => {
+            queueEdit.takeBack(id);
+          }}
+          onRemove={(id) => {
+            if (id.startsWith(HELD_COMMAND_ROW_PREFIX)) {
+              const heldId = id.slice(HELD_COMMAND_ROW_PREFIX.length);
+              setHeldCommands((held) => held.filter((entry) => entry.id !== heldId));
+              return;
+            }
+            void handleRemoveQueuedMessage(id);
+          }}
+          onRetry={handleRetryQueuedMessage}
+          onStopAndSend={effectiveBusy && canStop ? handleStopAndSendQueuedMessage : undefined}
+          editing={queueEdit.editing}
+          onCancelEdit={queueEdit.cancel}
+        />
+      </>
     ),
     [
+      projectSessionId,
       heldCommands,
       queueEdit.editing,
       queueEdit.cancel,
@@ -3924,22 +4097,8 @@ export function SessionChat({
   // its cause attached instead of a shrug. An actionable cause reports to
   // Sentry; a routine browser tab discard only leaves a breadcrumb.
   useReloadForensics(projectSessionId);
-  // ONE answer for every surface that draws this session's runtime, and the
-  // reason the composer no longer guesses: `unknown` and `connecting` are
-  // waits, and a wait is not a fault. A routine wake says nothing either; only
-  // a parked box with no wake under way earns the asleep notice.
-  const sessionConnection = projectSessionConnection({
-    sandbox: (projectSessionRow?.status as SandboxLifecycle | undefined) ?? null,
-    runtimeReady,
-    unreachable: runtimePhase === 'unreachable' || runtimeUnreachable,
-    stalled: runtimeStalled,
-    activityFresh: working.state === 'working' && working.source === 'stream',
-  });
   const composerReadiness = sessionComposerReadiness({
     runtimeReady,
-    pendingPrompt: allowSendBeforeReady && working.state === 'working',
-    pendingDelivery: working.pendingDelivery,
-    connection: sessionConnection,
     // Only an OPEN TURN the control plane is holding counts here. This tab's
     // optimistic receipt and a stream frame both survive a box that died
     // mid-turn, and a durable inbox row (which the projection also sources to
@@ -3948,13 +4107,6 @@ export function SessionChat({
     serverTurnLive: serverHoldsOpenTurn(working),
     unreachable: runtimePhase === 'unreachable' || runtimeUnreachable,
     stalled: runtimeStalled,
-    // The route's `/start` is bringing the computer up (or has not answered):
-    // the same fact the boot pill above the thread shows.
-    starting:
-      !!sessionState &&
-      (sessionState.stage == null ||
-        sessionState.stage === 'provisioning' ||
-        sessionState.stage === 'starting'),
   });
   // #6509's `promptLikelyDropped` notice is deliberately NOT carried over: it
   // instrumented the deleted prompt-observation stall machinery to warn about
@@ -4031,7 +4183,7 @@ export function SessionChat({
   // about which ref backs a change request.
   const outcomesBaseRef = useSessionBaseRef(projectId, projectSessionId);
   const searchParams = useUiSearchParams();
-  // `readOnly` is the nested sub-session modal (`sub-session-modal.tsx`) — it
+  // `readOnly` is the nested sub-session modal (`legacy-subagent-chat.tsx`) — it
   // shares this component but must not rewrite the parent route's URL.
   const [openCrId, setOpenCrIdState] = useState<string | null>(() =>
     readOnly ? null : (searchParams?.get('cr') ?? null),
@@ -4079,6 +4231,13 @@ export function SessionChat({
   // the loader exists to avoid). The connection keeps running in the parent
   // ProjectSessionRuntimeConnection, so as soon as the runtime is ready
   // isDataLoading flips and the full shell renders in one shot.
+  // A control outside the composer ("Save as workflow" on a workflow card) sends through the
+  // same path as a typed prompt: a running turn is steered, an idle session starts a turn.
+  const sendSessionPrompt = useCallback(
+    (text: string) => handleSend(text, undefined, undefined, undefined, composerSendDelivery('transcript', isBusyRef.current)),
+    [handleSend],
+  );
+
   if (isDataLoading) {
     // A transcript read that genuinely FAILED (not a waking box — the SDK keeps
     // those on `loading` and retries them itself) gets an explicit retry, not
@@ -4115,11 +4274,14 @@ export function SessionChat({
   }
 
   return (
-    // Outcomes' cache coherence and the shareable `?cr=` link both hinge on
-    // ONE `ProjectFilesProvider`: `useChangeRequests` inside
-    // `SessionOutcomesProvider` and `ChangeRequestDetailDialog` below both read
-    // their project id from this context, which is what keeps them on the same
-    // React Query cache entry (see `outcomes/session-outcomes-provider.tsx`).
+    // A read-only view (the sub-session modal) offers no fix inside a tool card.
+    <ReadOnlySessionContext.Provider value={!!readOnly}>
+    <SessionPromptContext.Provider value={readOnly ? null : sendSessionPrompt}>
+    {/* Outcomes' cache coherence and the shareable `?cr=` link both hinge on
+        ONE `ProjectFilesProvider`: `useChangeRequests` inside
+        `SessionOutcomesProvider` and `ChangeRequestDetailDialog` below both read
+        their project id from this context, which is what keeps them on the same
+        React Query cache entry (see `outcomes/session-outcomes-provider.tsx`). */}
     <ProjectFilesProvider
       value={{ projectId: projectId ?? '', ref: outcomesBaseRef, defaultBranch: outcomesBaseRef }}
     >
@@ -4266,7 +4428,8 @@ export function SessionChat({
                   // message is the auto-scroll spacer's job alone. The `pb-32`
                   // that used to sit here stacked 128px of dead space on top of
                   // it — the "extra inset at the bottom of the session".
-                  className={SESSION_TRANSCRIPT_CLASS}
+                  // Rows run edge to edge: each row owns its gutters and its hover fill.
+                  className={transcriptRows ? 'w-full min-w-0 pt-4' : SESSION_TRANSCRIPT_CLASS}
                 >
                   <div className="flex min-w-0 flex-col">
                     {/* Print only — `print.css` keeps this hidden on screen.
@@ -4347,6 +4510,8 @@ export function SessionChat({
                       turnSpans={turnSpans}
                       busy={effectiveBusy}
                       onOpen={handleOpenOutcome}
+                      onJump={handleJumpToOutcome}
+                      jumping={jumpingToOutcome}
                     >
                       <ToolActivateContext.Provider value={toolActivate}>
                         {/* The first prompt's producer copy (`useFirstPromptPreviewStore`),
@@ -4366,7 +4531,24 @@ export function SessionChat({
                         only when a turn is already drawing its own. */}
                         {showFirstPromptPreview &&
                           firstPromptSource &&
-                          queuedSyntheticMessages.length === 0 && (
+                          queuedSyntheticMessages.length === 0 &&
+                          rowsContext && (
+                            // A channel thread draws the stand-in as rows, the same
+                            // rows its boot body drew (`ThreadBootRows`).
+                            <PendingPromptRows
+                              text={buildOptimisticPromptTextWithUploads(
+                                firstPromptSource.text,
+                                firstPromptSource.files,
+                              )}
+                              author={rowsContext.owner}
+                              sessionId={sessionId}
+                              busy={turns.length === 0 && (lastTurnWorking || promptInbox.prompts.some(isFirstPromptRow))}
+                            />
+                          )}
+                        {showFirstPromptPreview &&
+                          firstPromptSource &&
+                          queuedSyntheticMessages.length === 0 &&
+                          !rowsContext && (
                             <OptimisticTurn
                               text={buildOptimisticPromptTextWithUploads(
                                 firstPromptSource.text,
@@ -4439,12 +4621,27 @@ export function SessionChat({
                               : undefined;
                           // A queued prompt is not in the runtime transcript yet;
                           // its author still shows (`authorForTurn`).
-                          const turnAuthor = authorForTurn(
-                            transcriptAuthors,
-                            messageAuthors,
-                            turn.id,
-                            pendingPrompt?.wire_message_id,
-                          );
+                          const promptAuthorId = pendingPromptsByMessageId.get(turn.id)?.author_user_id;
+                          const turnAuthor =
+                            authorForTurn(
+                              transcriptAuthors,
+                              messageAuthors,
+                              turn.id,
+                              pendingPrompt?.wire_message_id,
+                            ) ??
+                            participantAuthor(sessionParticipants, promptAuthorId) ??
+                            (sentHereIds.current.has(turn.id) ||
+                            sentHereIds.current.has(turnRenderKeys.get(turn.id) ?? '') ||
+                            (viewerId !== undefined && promptAuthorId === viewerId) ||
+                            // The first prompt of a session the viewer started,
+                            // sent from another surface (project home), before
+                            // the first authors read lands.
+                            (messageAuthorsLoading &&
+                              viewerId !== undefined &&
+                              projectSessionRow?.created_by === viewerId &&
+                              turn.id === userMessageIds[0])
+                              ? viewerAsAuthor
+                              : undefined);
                           return (
                             <TranscriptTurnRow
                               // ONE element per prompt: keyed by the id the
@@ -4470,10 +4667,10 @@ export function SessionChat({
                               // (Failed compaction rows need no stacking rule any
                               // more — at most one is visible at a time.)
                               viewportClassName={
-                                turnIndex === 0
+                                turnIndex === 0 || transcriptRows
                                   ? ''
-                                  : // A compaction and the work after it continue the turn above.
-                                    turn.compaction || turn.continues
+                                  : // A compaction, the work after it and another agent's notice continue the turn above.
+                                    turn.compaction || turn.continues || agentNoticeTurnIds.has(turn.id)
                                     ? 'mt-6'
                                     : lastTurnWorking &&
                                       pendingTurnIds.has(turn.id) &&
@@ -4483,13 +4680,25 @@ export function SessionChat({
                               }
                               turn={turn}
                               author={turnAuthor}
-                              showAuthor={showAuthorName(turnAuthor, groupChat, viewerId)}
+                              // Reserve the sender row while the authors load,
+                              // for a queued prompt whose sender is known, and
+                              // for a live message until its author resolves.
+                              showAuthor={
+                                !!turnAuthor ||
+                                messageAuthorsLoading ||
+                                !!promptAuthorId ||
+                                (loadedUserIds?.sessionId === sessionId &&
+                                  !loadedUserIds.ids.has(turn.id) &&
+                                  authorsGaveUp !== missingAuthors)
+                              }
                               stoppedBy={stoppedByName(messageAuthors, turn.id, viewerId)}
                               servedModel={servedModelOfTurn(modelUsage, turn.id, turns[turnIndex - 1]?.id)}
                               turnOutcome={turnOutcome}
                               isLast={turn.id === lastUserMessageId}
                               ownsPlan={turn.id === planAnchorId}
                               sessionId={sessionId}
+                              projectId={projectId}
+                              projectSessionId={projectSessionId}
                               sessionStatus={sessionStatus}
                               permissions={pendingPermissions}
                               questions={pendingQuestions}
@@ -4533,13 +4742,21 @@ export function SessionChat({
                               // An idle send stays in the inbox until delivery,
                               // but nothing runs ahead of it: queued only while
                               // it waits behind a turn (`turnRendersQueued`).
-                              pending={turnRendersQueued({
-                                turnId: turn.id,
-                                resolution: workingTurn,
-                                sessionWorking: lastTurnWorking,
-                                confirmedActive,
-                                inboxPrompt: pendingPrompt,
-                              })}
+                              // The first turn, with no turn working, has
+                              // nothing ahead of it: a session's first prompt is
+                              // starting, not queued, while the computer comes up
+                              // and before the turn layer marks it queued or live.
+                              pending={
+                                turnIndex === 0 && workingTurn.workingTurnId === null && !confirmedActive
+                                  ? pendingPrompt?.state === 'waiting' || pendingPrompt?.state === 'failed'
+                                  : turnRendersQueued({
+                                      turnId: turn.id,
+                                      resolution: workingTurn,
+                                      sessionWorking: lastTurnWorking,
+                                      confirmedActive,
+                                      inboxPrompt: pendingPrompt,
+                                    })
+                              }
                               pendingPrompt={pendingPrompt}
                               onRetryQueued={stableRetryQueued}
                               onRemoveQueued={stableRemoveQueued}
@@ -4568,6 +4785,7 @@ export function SessionChat({
                               onEditSend={stableEditSend}
                               rewindDisabled={
                                 !!readOnly ||
+                                (rewindable !== null && !rewindable.has(turn.id)) ||
                                 !runtimeCanRewind ||
                                 !sessionState ||
                                 isBusy ||
@@ -4641,6 +4859,10 @@ export function SessionChat({
                     {/* Active runtime work can precede its transcript turn. Pending
                         delivery already has a queued status and shows no thinking row. */}
                     {showFallbackBusyRow && fallbackBusyRowTurnId === null && (
+                      rowsContext ? (
+                        // A channel thread waits in the agent's answer row.
+                        <AgentBusyRow sessionId={sessionId} />
+                      ) : (
                         <SessionBusyIndicator
                           sessionId={sessionId}
                           // Matches the stand-in's row spacing under a bubble
@@ -4649,7 +4871,8 @@ export function SessionChat({
                           // the transcript is empty, so no margin there.
                           className={turns.length === 0 ? undefined : 'mt-6'}
                         />
-                      )}
+                      )
+                    )}
                   </div>
                   {/* Spacer — the transcript's anchor space. It is sized from
                       the scroll container so the newest turn
@@ -4686,12 +4909,14 @@ export function SessionChat({
                 </div>
               )}
 
-              {/* Chat Minimap */}
-              <ChatMinimap
-                turns={turns}
-                scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
-                contentRef={contentRef as React.RefObject<HTMLDivElement>}
-              />
+              {/* Chat Minimap. Not in a thread panel: its rail would sit on the rows' avatars. */}
+              {transcriptRows ? null : (
+                <ChatMinimap
+                  turns={turns}
+                  scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
+                  contentRef={contentRef as React.RefObject<HTMLDivElement>}
+                />
+              )}
 
               <div
                 className={cn(
@@ -4749,8 +4974,9 @@ export function SessionChat({
                 // Up from the first row takes the queue back; the placeholder
                 // says so while there is something to take.
                 onArrowUpAtStart={() => queueEdit.takeBack()}
+                // A host placeholder ("Reply…") is static: the rotating tips would replace it.
                 hint={
-                  canTakeBackQueue ? tHardcodedUi.raw('i18nComplete.text03a01dd53ffa') : undefined
+                  canTakeBackQueue ? tHardcodedUi.raw('i18nComplete.text03a01dd53ffa') : composerPlaceholder
                 }
                 // Editing a queued message: the send saves it back into the
                 // queue, so the control says Submit, never Stop.
@@ -4821,20 +5047,37 @@ export function SessionChat({
                 aboveSlot={chatAboveSlot}
                 inputSlot={chatInputSlot}
                 toolbarSlot={chatToolbarSlot}
+                underbarSlot={chatUnderbarSlot}
                 // The shell can now render on a cached transcript alone, i.e. before
                 // the sandbox answers — so sending has to be gated separately from
                 // reading. See sessionComposerReadiness.
-                notice={composerReadiness.notice}
+                notice={hostNotice(composerReadiness.notice, rowsContext?.notices)}
+                // Inside the thread panel's bordered box, as the channel composer.
+                // A phone keeps the row under the card; a 720px desktop window does not.
+                underbarPlacement={transcriptRows && !isPhone ? 'inline' : undefined}
+                // The panel's toolbar is narrow: the agent is its tile, the model keeps its name.
+                agentPickerCompact={transcriptRows && !isPhone}
+                // A thread panel's rows run `px-5`, and the channel composer
+                // beside it sits `pb-4` off the window's bottom edge: the same
+                // margins, so the two boxes line up.
+                parentClassName={transcriptRows ? 'max-w-none px-5 pb-4' : undefined}
                 onNoticeRetry={
                   composerReadiness.notice && composerReadiness.retryable
                     ? requestRuntimeReconnect
                     : undefined
                 }
               />
+              {/* Messages from other sessions that wait for the person: one card each,
+                  under the composer. `empty:hidden` drops the gutter while none waits. */}
+              <div className={cn(COMPOSER_SHELL_CLASS, 'pb-3 empty:hidden', transcriptRows && 'max-w-none px-5')}>
+                <HeldMessages projectId={projectId} sessionId={projectSessionId} />
+              </div>
             </>
           )}
         </SessionBodyRow>
       </ComposerDropZone>
     </ProjectFilesProvider>
+    </SessionPromptContext.Provider>
+    </ReadOnlySessionContext.Provider>
   );
 }

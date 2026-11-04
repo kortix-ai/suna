@@ -46,7 +46,7 @@ export function getSessionContextMetrics(
     ? model.provider
     : undefined;
   const limit = model?.limit?.context;
-  const total = u.input + u.output + (u.reasoning ?? 0) + u.cache_read + u.cache_write;
+  const total = u.input + u.output + u.cache_read + u.cache_write; // reasoning is a subset of output
 
   // The gateway registers every model under the single synthetic `kortix`
   // opencode provider, so `provider.name` is always "Kortix" — even for a

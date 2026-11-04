@@ -64,3 +64,27 @@ test('file-write alone cannot move a branch without push authority', async () =>
     expect(committedPath).toBe('README.md');
   } finally { deniedPath = undefined; }
 });
+
+test('file writes reject absent or non-JSON bodies before committing', async () => {
+  caller = null; commits = 0;
+  for (const headers of [new Headers(), new Headers({ 'Content-Type': 'text/plain' })]) {
+    const response = await projectsApp.request('/project/files/content', {
+      method: 'PUT', headers,
+      body: JSON.stringify({ path: 'README.md', ref: 'main', content: 'synthetic', expected_revision: 'a'.repeat(40) }),
+    });
+    expect(response.status).toBe(400);
+  }
+  expect((await projectsApp.request('/project/files/content', { method: 'PUT' })).status).toBe(400);
+  expect(commits).toBe(0);
+});
+
+test('file writes reject malformed and incomplete JSON without committing', async () => {
+  caller = null; commits = 0;
+  for (const body of ['{', '{}', 'null', JSON.stringify({ path: 42 }), JSON.stringify({ path: '' })]) {
+    const response = await projectsApp.request('/project/files/content', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body,
+    });
+    expect(response.status).toBe(400);
+  }
+  expect(commits).toBe(0);
+});

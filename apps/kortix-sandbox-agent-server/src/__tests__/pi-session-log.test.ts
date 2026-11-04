@@ -17,6 +17,7 @@ import { join } from 'node:path'
 import {
   AdapterCapabilitiesSchema,
   SessionLogJournalRequestSchema,
+  toV1,
   upcast,
   type ExportCursor,
   type SessionLogJournalRequest,
@@ -133,7 +134,7 @@ describe('pi session-log export', () => {
     expect(log.threads.map((t) => [t.thread_id, t.messages.length])).toEqual([[ROOT, 12], [CHILD, 3]])
     expect(log).toMatchObject({ restore_grade: 'native', harness: { current: 'pi' }, session_id: 'session-pi-log' })
     expect(AdapterCapabilitiesSchema.parse(PI_CAPABILITIES)).toBeTruthy()
-    for (const m of log.threads.flatMap((t) => t.messages)) expect(m.producer).toEqual({ harness: 'pi', harness_version: PI_VERSION, adapter_version: '1.1.0' })
+    for (const m of log.threads.flatMap((t) => t.messages)) expect(m.producer).toEqual({ harness: 'pi', harness_version: PI_VERSION, adapter_version: '1.2.0' })
   })
 
   test('block ids are the pi part ids; a block with no part gets a position id', () => {
@@ -383,6 +384,69 @@ describe('pi session-log restore (P6.2)', () => {
     expect(result.dropped).toEqual({ attachment: 1 })
     // The store says what pi holds: the image is a file pi never received.
     expect(again.log.threads[0]!.messages[0]!.blocks.map((b) => (b.type === 'harness' ? `${b.kind}:${(b.data as { mime: string }).mime}` : b.type))).toEqual(['text', 'undelivered_file:image/png', 'undelivered_file:application/pdf'])
+  })
+
+  /** One codemode turn: the model's one script call, and the native parts its nested image_gen and show calls published (runtime.ts `onSessionEvent`). */
+  const scriptTurn = (busy = false) => {
+    const s = fixture()
+    n = 0
+    leaf = null
+    const prompt = user('Make two images.')
+    const call = assistant([{ type: 'toolCall', id: 'call_code', name: 'codemode', arguments: { code: 'await tools.image_gen(…)' } }], { stopReason: 'toolUse' })
+    const nestedCalls = {
+      calls: [
+        { id: 'call_code/1', name: 'image_gen', status: 'ok', arguments: { action: 'generate', prompts: ['cube'] } },
+        { id: 'call_code/2', name: 'image_gen', status: 'ok', arguments: { action: 'generate', prompts: ['sphere'] } },
+        { id: 'call_code/3', name: 'show', status: 'ok', arguments: { action: 'show', type: 'text', content: 'Two images' } },
+      ],
+      complete: true,
+    }
+    const entries = busy ? [prompt, call] : [prompt, call, toolResult('call_code', 'codemode', 'cube+sphere', { nestedCalls })]
+    const out = (prompt: string) => JSON.stringify({ action: 'generate', images: [{ path: `/workspace/output/images/${prompt}.png`, size: '1024x1024', prompt }] })
+    const nested = (n: number, tool: string, input: unknown, output: string) => ({
+      type: 'tool', tool, callID: `call_code/${n}`,
+      state: busy && n === 2 ? { status: 'running', input, time: { start: ts(20 + n) } } : { status: 'completed', input, output, title: tool, metadata: {}, time: { start: ts(20 + n), end: ts(21 + n) } },
+    })
+    Object.assign(s, {
+      entries, leafId: leaf, children: [], busy,
+      entryMessageIds: { [prompt.id]: 'msg_p', [call.id]: 'msg_s' },
+      transcript: [
+        v1('msg_p', 'user', [{ type: 'text', text: 'Make two images.' }]),
+        v1('msg_s', 'assistant', [
+          { type: 'tool', tool: 'codemode', callID: 'call_code', state: { status: 'completed', input: { code: 'await tools.image_gen(…)' }, output: 'cube+sphere', title: 'codemode', time: { start: ts(20), end: ts(30) } } },
+          nested(1, 'image_gen', { action: 'generate', prompts: ['cube'] }, out('cube')),
+          nested(2, 'image_gen', { action: 'generate', prompts: ['sphere'] }, out('sphere')),
+          nested(3, 'show', { action: 'show', type: 'text', content: 'Two images' }, '{"success":true}'),
+        ], { parentID: 'msg_p' }),
+      ],
+    })
+    return s
+  }
+  const v1Parts = (log: ReturnType<typeof exported>['log'], id: string) => toV1(log).rows.find((r) => r.info.id === id)!.parts as unknown as Array<Record<string, unknown>>
+
+  test('a nested script image_gen part survives a transcript round-trip', async () => {
+    const s = scriptTurn()
+    const { log } = piSessionLog(s)
+    const blocks = byId(log.threads[0]!.messages, 'msg_s').blocks
+    // The model made one call: one tool_call block. Each nested call is a model-invisible block after it, with its parent.
+    expect(blocks.map((b) => (b.type === 'harness' ? `${b.kind}:${(b.data as { parent_call_id: string }).parent_call_id}` : b.type))).toEqual(['tool_call', 'nested_part:call_code', 'nested_part:call_code', 'nested_part:call_code'])
+    expect(upcast(log)).toEqual(log)
+    // The saved transcript gives back each nested part exactly as it was published live: id, input, output, times.
+    const live = (s.transcript[1]!.parts as unknown as Array<Record<string, unknown>>).slice(1)
+    expect(v1Parts(log, 'msg_s').slice(1)).toEqual(live)
+    // Restored onto a fresh box and exported again: the same records, the same parts.
+    const { result, again } = await restore(log)
+    expect(again.log).toEqual(log)
+    expect(v1Parts(again.log, 'msg_s').map((p) => [p.tool, p.callID])).toEqual([['codemode', 'call_code'], ['image_gen', 'call_code/1'], ['image_gen', 'call_code/2'], ['show', 'call_code/3']])
+    expect(result.dropped).toEqual({})
+  })
+
+  test('a nested part still open at rest is closed with pi\'s text; while the script runs it stays open', () => {
+    const state = (busy: boolean) => (v1Parts(piSessionLog(scriptTurn(busy)).log, 'msg_s')[2]!.state as { status: string; error?: string })
+    expect(state(true).status).toBe('running')
+    const s = scriptTurn(true)
+    s.busy = false
+    expect(v1Parts(piSessionLog(s).log, 'msg_s')[2]!.state).toMatchObject({ status: 'error', error: 'No result provided' })
   })
 })
 

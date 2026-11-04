@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  ADMIN_MANAGED_TABS,
   CAPABILITY_TABS,
   PRIMARY_TABS,
   activeCapabilityTab,
   agentHref,
   capabilityTabHref,
   channelsHref,
+  customizeNavTabs,
   reviewHref,
 } from './capability-tab-routes';
 
@@ -52,7 +54,7 @@ describe('CAPABILITY_TABS', () => {
     // The one URL. `/projects/<id>/channels` redirects to it, `GRADUATED`
     // points at it, and the project-home Slack tile opens it — all through
     // this function, so none of them can drift from the param the page parses.
-    expect(channelsHref('p1')).toBe('/projects/p1/customize/connectors?scope=channels');
+    expect(channelsHref('p1')).toBe('/projects/p1/admin/connectors?scope=channels');
   });
 
 
@@ -61,6 +63,33 @@ describe('CAPABILITY_TABS', () => {
     // would 404 the route while the tab still rendered.
     const agents = CAPABILITY_TABS.find((t) => t.label === 'Agents');
     expect(agents?.key).toBe('agent');
+  });
+});
+
+describe('customizeNavTabs', () => {
+  // Agent-centric Customize (Marko, 2026-10-24): the libraries moved to
+  // `/admin` and Repo moved into Settings, so the nav keeps Agents, Review
+  // (its own standalone row) and Settings. The pages still resolve by URL —
+  // the gate reads the full access set — so the keys stay in CAPABILITY_TABS
+  // and only the nav drops them.
+  test('drops the admin-managed libraries and the settings-managed tabs', () => {
+    const all = CAPABILITY_TABS.map((t) => t.key);
+    expect(customizeNavTabs(all)).toEqual(['agent', 'review', 'config']);
+  });
+
+  test('the admin-managed set is exactly the six libraries', () => {
+    expect([...ADMIN_MANAGED_TABS]).toEqual([
+      'skills',
+      'connectors',
+      'triggers',
+      'reminders',
+      'models',
+      'secrets',
+    ]);
+  });
+
+  test('is a no-op when no admin-managed tab is present', () => {
+    expect(customizeNavTabs(['agent', 'config'])).toEqual(['agent', 'config']);
   });
 });
 
@@ -77,9 +106,9 @@ describe('the Settings tab', () => {
 
 describe('capabilityTabHref', () => {
   test('builds a project-scoped path', () => {
-    expect(capabilityTabHref('p1', 'skills')).toBe('/projects/p1/customize/skills');
+    expect(capabilityTabHref('p1', 'skills')).toBe('/projects/p1/admin/skills');
     expect(capabilityTabHref('p1', 'agent')).toBe('/projects/p1/customize/agents');
-    expect(capabilityTabHref('p1', 'triggers')).toBe('/projects/p1/customize/triggers');
+    expect(capabilityTabHref('p1', 'triggers')).toBe('/projects/p1/admin/triggers');
   });
 });
 
@@ -105,31 +134,36 @@ describe('activeCapabilityTab', () => {
     expect(activeCapabilityTab('/projects/p1/customize/agents/churn/')).toBe('agent');
     // Only the third segment `agent` earns the deeper match — a skill or a
     // trigger one level down is not a route and must not light a tab.
-    expect(activeCapabilityTab('/projects/p1/customize/skills/foo')).toBeNull();
+    expect(activeCapabilityTab('/projects/p1/admin/skills/foo')).toBeNull();
     expect(activeCapabilityTab('/projects/p1/customize/agents/a/b')).toBeNull();
   });
   test('lights Connectors on an app page and a connector page, and no deeper', () => {
-    expect(activeCapabilityTab('/projects/p1/customize/connectors/resend')).toBe('connectors');
-    expect(activeCapabilityTab('/projects/p1/customize/connectors/connected/resend-abc123')).toBe(
+    expect(activeCapabilityTab('/projects/p1/admin/connectors/resend')).toBe('connectors');
+    expect(activeCapabilityTab('/projects/p1/admin/connectors/connected/resend-abc123')).toBe(
       'connectors',
     );
-    expect(activeCapabilityTab('/projects/p1/customize/connectors/connected/resend-abc123/')).toBe(
+    expect(activeCapabilityTab('/projects/p1/admin/connectors/connected/resend-abc123/')).toBe(
       'connectors',
     );
     expect(
-      activeCapabilityTab('/projects/p1/customize/connectors/connected/resend-abc123/x'),
+      activeCapabilityTab('/projects/p1/admin/connectors/connected/resend-abc123/x'),
     ).toBeNull();
     // Only `connectors` earns the six-segment match.
-    expect(activeCapabilityTab('/projects/p1/customize/skills/a/b')).toBeNull();
+    expect(activeCapabilityTab('/projects/p1/admin/skills/a/b')).toBeNull();
   });
   test('matches the tab segment', () => {
     expect(activeCapabilityTab('/projects/p1/customize/agents')).toBe('agent');
-    expect(activeCapabilityTab('/projects/p1/customize/connectors')).toBe('connectors');
-    expect(activeCapabilityTab('/projects/p1/customize/skills')).toBe('skills');
-    expect(activeCapabilityTab('/projects/p1/customize/triggers')).toBe('triggers');
+    expect(activeCapabilityTab('/projects/p1/admin/connectors')).toBe('connectors');
+    expect(activeCapabilityTab('/projects/p1/admin/skills')).toBe('skills');
+    expect(activeCapabilityTab('/projects/p1/admin/triggers')).toBe('triggers');
+  });
+  test('tolerates a leading locale segment the host may not strip', () => {
+    expect(activeCapabilityTab('/en/projects/p1/customize/agents')).toBe('agent');
+    expect(activeCapabilityTab('/de/projects/p1/admin/connectors/resend')).toBe('connectors');
+    expect(activeCapabilityTab('/en/projects/p1/customize/agents/churn')).toBe('agent');
   });
   test('ignores a trailing slash', () => {
-    expect(activeCapabilityTab('/projects/p1/customize/skills/')).toBe('skills');
+    expect(activeCapabilityTab('/projects/p1/admin/skills/')).toBe('skills');
     expect(activeCapabilityTab('/projects/p1/customize/agents/')).toBe('agent');
   });
   test('returns null off the capability routes', () => {
@@ -150,7 +184,7 @@ describe('activeCapabilityTab', () => {
     // redirect, not this bar's tab.
     expect(activeCapabilityTab('/projects/p1/settings/review')).toBeNull();
     // The Settings tab's own path IS its tab; one level deeper is not.
-    expect(activeCapabilityTab('/projects/p1/customize/settings')).toBe('config');
-    expect(activeCapabilityTab('/projects/p1/customize/settings/general')).toBeNull();
+    expect(activeCapabilityTab('/projects/p1/admin/general')).toBe('config');
+    expect(activeCapabilityTab('/projects/p1/admin/general/general')).toBeNull();
   });
 });

@@ -5,6 +5,16 @@ each section. "Marko" = the decision owner.
 
 ## Decided
 
+- 2026-10-28 · **Goals engine plan approved** (goals-plan, "execute"): three
+  concepts (Agent = who, Trigger = when (called Automation until 2026-10-28), Goal = what done means); goals
+  are company-based, default `Goals/<slug>/`, shared or private by Files
+  sharing; `GOAL.md` + `log.md` + `evidence/`; no once/ongoing kind;
+  lifecycle draft → active ⇄ waiting_on_user → verifying → done, any →
+  stopped; only an independent verifier sets done; the assigned agent's
+  grants decide access; name stays Goals, flag `goals` off by default. Open
+  question "who sets interval and caps" defaulted: GOAL.md, with platform
+  defaults 4h / 12 wakes per UTC day / 10 sessions. As built: `system.md`
+  "Engine on GOAL.md". (Marko)
 - 2026-10-20 · **Ship the simple goal loop first, behind a flag; workflows
   next.** Stage 1 merged (#10314, #10589, #10591), flag `goals` off by
   default. (Marko)
@@ -58,7 +68,7 @@ each section. "Marko" = the decision owner.
 - Whether the API goal runtime can receive room messages and idle notices as
   events directly (asked the rooms session).
 - TypeScript-first Kortix (`kortix.config.ts` compiling to the manifest): a
-  separate initiative, related to the `kortix.yaml` v3 redesign.
+  separate initiative, related to the `kortix.yaml` format work.
 - Software factory as a workflow: one definition, one running copy per issue.
 - Node share on Platinum prod: a Kortix-org canary after all 6 prod hosts run
   the new host agent; Marko schedules.

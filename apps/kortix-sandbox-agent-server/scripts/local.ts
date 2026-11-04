@@ -7,21 +7,20 @@
  *   bun scripts/local.ts login                 sign in with ChatGPT once
  *   bun scripts/local.ts [options]             start a session in the current directory
  *
- *   --harness pi|opencode   the session harness (default: pi)
  *   --model <id>            gateway model id (default: codex/gpt-5.5)
  *   --workspace <dir>       the directory the agent works in (default: the current directory)
  *   --fresh                 forget this workspace's previous conversation
  *
  * The gateway is `packages/llm-gateway` with local hooks: every request goes to
  * ChatGPT's Codex backend with the token `login` stored. The daemon runs with
- * HOME set to ~/.kortix/local/home, so it never writes your own git or OpenCode
+ * HOME set to ~/.kortix/local/home, so it never writes your own git or pi
  * config. Its tools still run as you, inside the workspace: this is not a sandbox.
  */
 import { spawn } from 'node:child_process'
 import { createHash, createHmac, randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import { parseArgs } from 'node:util'
 import { openaiCodexProvider } from '@earendil-works/pi-ai/providers/openai-codex'
@@ -29,7 +28,6 @@ import { createGateway } from '../../../packages/llm-gateway/src/index.ts'
 import type { UpstreamDescriptor } from '../../../packages/llm-gateway/src/index.ts'
 import { OPENCODE_USER_AGENT } from '../../../packages/shared/src/runtime-versions.ts'
 import CODEX_MODELS from '../../api/src/llm-gateway/models/codex-models.seed.json'
-import { ensureOpencodeBin } from '../../cli/src/opencode-bin.ts'
 
 const ROOT = join(homedir(), '.kortix', 'local')
 const AUTH_FILE = join(ROOT, 'codex-auth.json')
@@ -43,7 +41,6 @@ const cyan = (s: string) => `\x1b[36m${s}\x1b[0m`
 const { values: opts, positionals } = parseArgs({
   allowPositionals: true,
   options: {
-    harness: { type: 'string', default: 'pi' },
     model: { type: 'string', default: 'codex/gpt-5.5' },
     workspace: { type: 'string', default: process.cwd() },
     fresh: { type: 'boolean', default: false },
@@ -161,7 +158,7 @@ async function startDaemon(token: string, gatewayUrl: string, workspace: string,
   const env: Record<string, string | undefined> = {
     ...process.env,
     HOME: join(ROOT, 'home'),
-    KORTIX_HARNESS: opts.harness,
+    KORTIX_HARNESS: 'pi',
     KORTIX_TOKEN: token,
     KORTIX_LLM_BASE_URL: gatewayUrl,
     KORTIX_LLM_PROXY_DISABLE: '1', // the gateway is already on localhost
@@ -170,19 +167,11 @@ async function startDaemon(token: string, gatewayUrl: string, workspace: string,
     KORTIX_PROJECT_TARGET: workspace,
     KORTIX_SERVICE_PORT: String(port),
     KORTIX_STATIC_PORT: String(freePort()),
-    KORTIX_OPENCODE_INTERNAL_PORT: String(freePort()),
-    KORTIX_OPENCODE_STANDBY_PORT: String(freePort()),
-    KORTIX_DEFAULT_OPENCODE_CONFIG_DIR: join(state, 'opencode-config'),
     KORTIX_BOOT_CONFIG_ROOT: join(state, 'config'), // default /opt/kortix/config: not writable on a Mac
     KORTIX_AGENT_STATE_DIR: join(state, 'agent'),
     KORTIX_RUNTIME_STATE_DIR: join(state, 'runtime'),
     KORTIX_PI_STATE_DIR: join(state, 'pi'),
     KORTIX_PI_AGENT_DIR: join(state, 'pi-agent'),
-  }
-  if (opts.harness === 'opencode') {
-    // The OpenCode version the sandbox image pins, from the Kortix CLI's cache (downloaded on first use).
-    const { bin } = await ensureOpencodeBin()
-    env.PATH = `${dirname(bin)}:${env.PATH}`
   }
   mkdirSync(env.HOME!, { recursive: true })
   const logFile = join(state, 'daemon.log')
@@ -207,7 +196,7 @@ async function startDaemon(token: string, gatewayUrl: string, workspace: string,
 
 type Frame = { type: string; payload: Record<string, any> }
 
-/** The signed user context the daemon's OpenCode-compatible routes require (apps/api mints it in the cloud). */
+/** The signed user context the daemon's raw runtime routes require (apps/api mints it in the cloud). */
 function userContext(token: string): string {
   const now = Math.floor(Date.now() / 1000)
   const payload = Buffer.from(JSON.stringify({ userId: 'local', sandboxId: 'local', sandboxRole: 'owner', scopes: [], iat: now, exp: now + 86_400 })).toString('base64url')
@@ -231,13 +220,13 @@ async function* events(base: string, token: string): AsyncGenerator<Frame> {
 
 async function main() {
   const workspace = resolve(opts.workspace!)
-  const state = join(ROOT, 'workspaces', `${opts.harness}-${createHash('sha256').update(workspace).digest('hex').slice(0, 12)}`)
+  const state = join(ROOT, 'workspaces', `pi-${createHash('sha256').update(workspace).digest('hex').slice(0, 12)}`)
   if (opts.fresh) rmSync(state, { recursive: true, force: true })
   mkdirSync(state, { recursive: true })
 
   const token = `kortix_local_${randomBytes(24).toString('hex')}`
   const gatewayUrl = startGateway(token, join(state, 'gateway.log'))
-  console.log(dim(`starting kortixd (${opts.harness}) in ${workspace} …`))
+  console.log(dim(`starting kortixd in ${workspace} …`))
   const { daemon, base, logFile } = await startDaemon(token, gatewayUrl, workspace, state)
   const stop = () => {
     daemon.kill('SIGTERM')
@@ -258,7 +247,7 @@ async function main() {
     ((await raw('/session', { method: 'POST', body: '{}' }).then((r) => r.json())) as { id: string }).id
 
   let model = opts.model!
-  console.log(`${cyan('kortixd')} ${opts.harness} · ${model} · session ${root}`)
+  console.log(`${cyan('kortixd')} pi · ${model} · session ${root}`)
   console.log(dim(`log ${logFile}\n/model <id> switches model · /models lists them · Ctrl-C aborts a turn · Ctrl-D quits\n`))
 
   // ── live rendering of the root session's events ──
@@ -389,6 +378,5 @@ if (positionals[0] === 'login') {
   await login()
   process.exit(0)
 }
-if (!['pi', 'opencode'].includes(opts.harness!)) fail(`--harness must be pi or opencode, got "${opts.harness}"`)
 if (!existsSync(AUTH_FILE)) fail(`not signed in. Run: bun ${import.meta.path} login`)
 await main()

@@ -2,8 +2,7 @@
  * The one sanitizer for prompt parts entering the durable inbox.
  *
  * Two producers accept caller-supplied parts — `POST .../prompts` (session-prompts.ts) and
- * `pending_prompt` on session create / warm claim (lib/sessions.ts,
- * warm-sessions.ts) — and both must apply the same repairs and the same caps,
+ * `pending_prompt` on session create (lib/sessions.ts) — and both must apply the same repairs and the same caps,
  * or the create path becomes the way around the prompt route's limits.
  *
  * File parts may carry `data:` URLs: that is how a brand-new session's first
@@ -12,10 +11,11 @@
  * not a blob store.
  */
 
-import { isModelNativeAttachmentMime, parseSessionAttachmentRef, MAX_PROMPT_ATTACHMENT_FILES } from '@kortix/shared';
+import { isModelNativeAttachmentMime, parseSessionAttachmentRef, MAX_PROMPT_ATTACHMENT_FILES, PROMPT_PARTS_MAX_BYTES as SERIALIZED_PROMPT_PARTS_MAX_BYTES } from '@kortix/shared';
 import { parseStagedPromptDataUrl } from './prompt-attachment-materializer';
 import type { PromptPartWire } from './store';
 import { isUuid } from '../../shared/validate';
+import { jsonbSafeValue } from '../../shared/jsonb-safe';
 
 export const PROMPT_MAX_PARTS = 64;
 export const PROMPT_TEXT_PREVIEW_CHARS = 2000;
@@ -25,7 +25,7 @@ export const PROMPT_TEXT_PREVIEW_CHARS = 2000;
  * under the API body limit, and small enough that the drain's re-POST to the
  * daemon stays an ordinary request.
  */
-export const PROMPT_PARTS_MAX_BYTES = 12 * 1024 * 1024;
+export const PROMPT_PARTS_MAX_BYTES = SERIALIZED_PROMPT_PARTS_MAX_BYTES;
 
 export type SanitizedPromptParts = { parts: PromptPartWire[] } | { error: string };
 
@@ -35,6 +35,8 @@ export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptPa
   if (rawParts.length < 1 || rawParts.length > PROMPT_MAX_PARTS) {
     return { error: `parts must hold 1..${PROMPT_MAX_PARTS} entries` };
   }
+  // Repair before flattening or measuring: both text and parts enter Postgres.
+  rawParts = jsonbSafeValue(rawParts);
   const parts = rawParts.map((part: any) => ({
     type: (part?.type === 'file' || part?.type === 'agent' ? part.type : 'text') as
       | 'file'

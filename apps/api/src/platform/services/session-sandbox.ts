@@ -14,7 +14,7 @@
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
+import { isMyKortixAgentName, isMyKortixSandboxSlug, MY_KORTIX_SANDBOX_SLUG } from '@kortix/shared';
 import type { SessionDriveMounts } from '../../drives/service';
 import { db } from '../../shared/db';
 import {
@@ -31,6 +31,7 @@ import {
   getProvider,
   SandboxTemplateNotFoundError,
   type CreateSandboxOpts,
+  type DroppedVolume,
   type ProvisionResult,
   type ProviderName,
 } from '../providers';
@@ -42,19 +43,22 @@ import {
   buildSandboxInitAttemptMetadata,
   buildSandboxInitFailureMetadata,
   buildSandboxInitSuccessMetadata,
+  isSnapshotStillBuilding,
   retrySandboxProvisionCreate,
   SANDBOX_INIT_MAX_ATTEMPTS,
   sandboxInitMetadataPatch,
 } from './sandbox-init-state';
 import {
-  ensureSandboxImage,
-  ensureMetaSandboxImage,
+  ensureSessionImage,
+  ensureMyKortixSandboxImage,
   deleteSandboxImage,
   resolveTemplate,
   DEFAULT_SANDBOX_SLUG,
   type EnsureSandboxImageResult,
+  type ImageStep,
   type SandboxImageSpec,
 } from '../../snapshots/builder';
+import { templateResidentialProxy } from '../../snapshots/templates';
 import { config } from '../../config';
 import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';
@@ -65,11 +69,11 @@ import { startComputeSession } from '../../billing/services/compute-metering';
 import { resolveAgentGrant } from '../../projects/agents';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
-import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { instanceStampMetadata } from '../../projects/instance-scope';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
-import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
+import { myKortixAgentGrant } from '../../projects/lib/my-kortix-agent';
+import { devTunnelStamp } from '../dev-tunnel-stamp';
 import { resolveSessionOnBehalfOf } from '../../projects/lib/on-behalf-of';
 import { agentPrincipalModeFor } from '../../iam/agent-principal';
 import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
@@ -77,7 +81,9 @@ import {
   type PreparedInitialSandboxTurn,
   initialSandboxTurnMetadata,
 } from '../../projects/session-turn-ledger';
-import { resolveSessionSandboxRegion } from './sandbox-region';
+import { resolveSessionPlacement } from './sandbox-region';
+import { resolveSessionResidentialProxy } from './residential-proxy';
+import type { WorkspaceVolume } from './workspace-volume';
 import { logger } from '../../lib/logger';
 
 /**
@@ -169,6 +175,33 @@ function isSnapshotMissingOnProvider(error: unknown): boolean {
  * credential. The grant is read from the default branch, so any `[[agents]]`
  * change activates only through a merged change request.
  */
+/**
+ * Each image step a session start waits on, written to its sandbox row
+ * (`metadata.imageStep`, read by `/start` into `boot.image`) and to the
+ * provision timeline. Writes run in order, off the provisioning path: a
+ * failed write costs the client one step label, never the session.
+ */
+function imageStepReporter(sandboxId: string, tl: ProvisionTimeline): (step: ImageStep) => void {
+  let writes: Promise<unknown> = Promise.resolve();
+  return (step) => {
+    tl.note(`image:${step.state}`);
+    const imageStep = { state: step.state, image: step.image, since: new Date().toISOString() };
+    writes = writes
+      .then(() =>
+        db
+          .update(sessionSandboxes)
+          .set({ metadata: patchedSandboxMetadata({ merge: { imageStep } }), updatedAt: new Date() })
+          .where(eq(sessionSandboxes.sandboxId, sandboxId)),
+      )
+      .catch((error: unknown) =>
+        logger.warn('[session-sandbox] image step write failed', {
+          sandboxId,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+  };
+}
+
 export async function mintSessionToken(opts: {
   accountId: string;
   userId: string;
@@ -177,12 +210,12 @@ export async function mintSessionToken(opts: {
   agentName: string;
   gitProject: GitBackedProject;
 }): Promise<string> {
-  const platformMetaAgent = isMetaAgentName(opts.agentName);
+  const platformMetaAgent = isMyKortixAgentName(opts.agentName);
   // The reserved coordinator uses a platform-owned full project grant. It acts
   // as the launching user and never resolves through a project-declared agent
   // or standing service account.
   const [agentGrant, serviceAccountId] = platformMetaAgent
-    ? [platformMetaAgentGrant(), null]
+    ? [myKortixAgentGrant(), null]
     : await Promise.all([
         // Resolve the per-session grant AND the agent's standing-identity
         // service account in parallel. Grant resolution must throw on failure.
@@ -350,12 +383,14 @@ interface SessionProvisionState {
   // Provider failover (one-shot, on init): set true once we've handed off to a
   // second provider, so a session never bounces between providers forever.
   fallbackAttempted: boolean;
+  /** The template asks for a residential IP: Platinum only, no failover. */
+  residentialProxyRequested: boolean;
   imageInfo: {
     snapshotName: string;
     slug: string;
     contentHash: string;
     isDefault: boolean;
-    runtimeProfile?: 'standard' | 'meta';
+    runtimeProfile?: 'standard' | 'mykortix';
     spec?: SandboxImageSpec;
   } | null;
   activeRouting: ActiveRouting | null;
@@ -368,6 +403,12 @@ interface SessionProvisionState {
   // provider drops them itself when Platinum refuses the create over them.
   driveMounts: SessionDriveMounts | undefined;
   driveMountsResolved: boolean;
+  // /workspace on a Platinum volume (workspace-volume.ts): undefined until the
+  // first attempt resolves it, null for a box-disk session.
+  workspaceVolume: WorkspaceVolume | null | undefined;
+  // Started with the provisioning, so the volume open runs alongside row+tokens
+  // and the env build instead of before the create. Read once.
+  workspaceVolumePromise: Promise<WorkspaceVolume | null> | undefined;
 }
 
 /** What the detached provisioning loop reads but never changes. */
@@ -380,6 +421,8 @@ interface SessionProvisionContext {
   providerWasExplicitlySelected: boolean;
   resolveGitProject: () => Promise<GitBackedProject>;
   resolveImage: (gitProject: GitBackedProject, targetProvider: string) => Promise<EnsureSandboxImageResult>;
+  /** Record the image step this session waits on (`imageStepReporter`). */
+  reportImageStep: (step: ImageStep) => void;
   /** The template slug this session boots. */
   slug: string;
   // Kortix Drive: a project with drives boots its sessions on Platinum only,
@@ -511,9 +554,11 @@ export async function provisionSessionSandbox(opts: {
   beforeActive?: (externalId: string) => Promise<void>;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType } = opts;
-  // An explicit caller location wins; otherwise the project's `us_region`
-  // flag decides (sandbox-region.ts). Only Platinum reads it.
-  const location = opts.location ?? resolveSessionSandboxRegion(opts.projectMetadata);
+  // An explicit caller location wins; otherwise where the project's Files
+  // live, else its `us_region` flag (sandbox-region.ts). Only Platinum reads it.
+  const placement = opts.location !== undefined
+    ? { location: opts.location, required: false }
+    : await resolveSessionPlacement(projectId, opts.projectMetadata);
   const providerWasExplicitlySelected = opts.providerLocked ?? opts.provider !== undefined;
   // Resolution order:
   //   1. Explicit per-request `opts.provider` (set by callers that need a
@@ -534,6 +579,7 @@ export async function provisionSessionSandbox(opts: {
     bgExternalId: null,
     healedStaleSnapshot: false,
     fallbackAttempted: false,
+    residentialProxyRequested: false,
     imageInfo: null,
     activeRouting: null,
     idBootDisabled: false,
@@ -542,8 +588,11 @@ export async function provisionSessionSandbox(opts: {
     platinumCreateAttempt: 0,
     driveMounts: undefined,
     driveMountsResolved: false,
+    workspaceVolume: undefined,
+    workspaceVolumePromise: undefined,
   };
   const tl = new ProvisionTimeline(sandboxId, 'provision');
+  const reportImageStep = imageStepReporter(sandboxId, tl);
 
   const slug = (opts.sandboxSlug ?? '').trim() || DEFAULT_SANDBOX_SLUG;
   // Resolve the project + fresh provider-neutral git access (the snapshot
@@ -553,9 +602,9 @@ export async function provisionSessionSandbox(opts: {
     return opts.resolveGitProject();
   };
   const drivesRequirePlatinum =
-    slug !== META_SANDBOX_SLUG &&
+    !isMyKortixSandboxSlug(slug) &&
     (await import('../../drives/service')
-      .then((m) => m.sessionDrivesEnabled(projectId))
+      .then((m) => m.sessionDriveMountEnabled())
       .catch(() => false));
   const drivesSyncAllowed =
     drivesRequirePlatinum && (await import('../../drives/sync').then((m) => m.driveSyncEnabled()).catch(() => false));
@@ -563,14 +612,16 @@ export async function provisionSessionSandbox(opts: {
     gitProject: GitBackedProject,
     targetProvider: string,
   ): Promise<EnsureSandboxImageResult> =>
-    slug === META_SANDBOX_SLUG
-      ? ensureMetaSandboxImage({ source: 'session-start', provider: targetProvider })
-      : ensureSandboxImage(gitProject, {
+    isMyKortixSandboxSlug(slug)
+      ? ensureMyKortixSandboxImage({ source: 'session-start', provider: targetProvider, projectId })
+      : ensureSessionImage(gitProject, {
           slug,
           accountId,
           source: 'session-start',
           provider: targetProvider,
           allowProjectImage: opts.allowProjectImage,
+          onStep: reportImageStep,
+          onTiming: (step) => tl.note(`image-step:${step}`),
         });
 
   // Kick image resolution off NOW, in parallel with the token round-trip below.
@@ -595,6 +646,14 @@ export async function provisionSessionSandbox(opts: {
   // Swallow the unhandled-rejection warning; the IIFE's try/catch owns the error
   // when it awaits the promise.
   state.firstImagePromise?.catch(() => {});
+
+  // The /workspace volume opens in parallel with row+tokens and the env build:
+  // it needs only the session row, which exists before provisioning starts.
+  // The first attempt awaits it (prepareAttemptVolumes).
+  state.workspaceVolumePromise = import('./workspace-volume').then(({ resolveWorkspaceVolume }) =>
+    resolveWorkspaceVolume(sandboxId),
+  );
+  state.workspaceVolumePromise.catch(() => {});
 
   // Sandbox-row insert + tokens + credit lookup all run in parallel. None of
   // them depend on the others — `sandboxId` is known up front, so even the
@@ -638,13 +697,6 @@ export async function provisionSessionSandbox(opts: {
   const sessionToken = tokenResult.value;
   const [sandbox] = sandboxRows;
   if (!sandbox) throw new RuntimeIdentityConflictError(sandboxId);
-  // A WARM-POOL box is the one box the control plane can never observe again
-  // until somebody claims it: no turns, no LLM calls, no human preview traffic.
-  // Under the bare 20-minute boot floor every warm box was therefore reaped
-  // before it could be handed out, which defeats the whole feature. Grant its
-  // (bounded) lifetime here, at the one moment we know it is warm. No-op for
-  // every other box, and fire-and-forget: the row already carries the floor.
-  void grantWarmPoolLifetime(sandboxId, sandbox.metadata);
   tl.mark('row+tokens');
 
   const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
@@ -680,10 +732,10 @@ export async function provisionSessionSandbox(opts: {
     // only at the specific "this is a genuinely new attempt" transitions.
     sandboxId: sandbox.sandboxId,
     serverType,
-    location,
-    // A warm (speculative) box never leaves its project's region: the warm
-    // marker of projects/sandbox-deadline-policy.ts isWarmPoolBox.
-    locationRequired: sandbox.metadata?.warm === true,
+    location: placement.location,
+    // A box that mounts the project's Files never leaves their region: the
+    // home region could not mount them.
+    locationRequired: placement.required,
     envVars: {
       ...extraEnvVars,
       // One sandbox, one session-scoped Kortix credential. Provider, connector,
@@ -716,6 +768,7 @@ export async function provisionSessionSandbox(opts: {
       providerWasExplicitlySelected,
       resolveGitProject,
       resolveImage,
+      reportImageStep,
       slug,
       drivesRequirePlatinum,
       drivesSyncAllowed,
@@ -791,6 +844,8 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
         sessionId: sandbox.sandboxId,
         bootingUserId: userId,
         agentName: opts.agentName ?? 'default',
+        // The /workspace volume takes one of the box's mount slots.
+        reservedSlots: state.workspaceVolume ? 1 : 0,
       }),
     );
   if (drivesRequirePlatinum && providerName !== 'platinum' && drivesSyncAllowed) {
@@ -810,45 +865,132 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
       [],
     );
   }
-  if (providerName !== 'platinum' || slug === META_SANDBOX_SLUG) {
+  const { applyWorkspaceVolume, resolveWorkspaceVolume } = await import('./workspace-volume');
+  if (state.workspaceVolume === undefined) {
+    // The early open is used once: a retry after it failed opens again.
+    const early = state.workspaceVolumePromise;
+    state.workspaceVolumePromise = undefined;
+    state.workspaceVolume = await (early ?? resolveWorkspaceVolume(sandbox.sandboxId));
+    if (state.workspaceVolume) ctx.tl.mark('workspace-volume');
+  }
+  if (state.workspaceVolume && (providerName !== 'platinum' || isMyKortixSandboxSlug(slug))) {
+    // A box anywhere else would boot without the session's files.
+    throw new Error('[workspace] This session’s files are on a Platinum volume, and this box would not mount it, so the session did not start.');
+  }
+  if (providerName !== 'platinum' || isMyKortixSandboxSlug(slug)) {
     providerCreateInput.volumes = undefined;
     return;
+  }
+  if (state.driveMountsResolved && state.driveMounts?.mounts.length) {
+    // A retry reuses the plan; a region move may have moved the Files since.
+    const { driveMountPlanCurrent } = await import('../../drives/service');
+    if (!(await driveMountPlanCurrent(state.driveMounts))) state.driveMountsResolved = false;
   }
   if (!state.driveMountsResolved) {
     state.driveMounts = await planDrives();
     state.driveMountsResolved = true;
   }
+  // A box mounts the project's Files only in their region. The placement read
+  // that region when provisioning started; a region move may have finished
+  // since. A box nothing else pins follows the Files. A box pinned by its
+  // session's /workspace volume in another region (a session older than the
+  // move) boots without the Files: no box mounts volumes of two regions, and
+  // the session's own files win. Never a create the provider would refuse.
+  const filesRegion = state.driveMounts?.mounts.length ? state.driveMounts.region : undefined;
+  if (state.driveMounts && filesRegion !== undefined) {
+    if (state.workspaceVolume && (state.workspaceVolume.location ?? null) !== filesRegion) {
+      logger.warn('[drives] the session’s /workspace volume and the project’s files live in different regions; the box boots without the files', {
+        sandboxId: sandbox.sandboxId,
+        workspaceRegion: state.workspaceVolume.location ?? 'home',
+        filesRegion: filesRegion ?? 'home',
+      });
+      const { withoutDriveMounts } = await import('../../drives/service');
+      state.driveMounts = withoutDriveMounts(state.driveMounts, 'region');
+    } else if (!state.workspaceVolume && (providerCreateInput.location ?? null) !== filesRegion) {
+      providerCreateInput.location = filesRegion ?? undefined;
+      providerCreateInput.locationRequired = filesRegion !== null;
+    }
+  }
   providerCreateInput.volumes = state.driveMounts?.volumes;
+  // The Files folders are optional: a box Platinum refuses one of them for
+  // boots without it and attaches it later. /workspace stays required.
+  const folders = Object.keys(state.driveMounts?.volumes ?? {});
+  providerCreateInput.optionalVolumes = folders.length ? folders : undefined;
+  if (state.workspaceVolume) applyWorkspaceVolume(providerCreateInput, state.workspaceVolume);
 }
 
 /** What the box mounted (its drives), for its row. */
 interface AttemptBoxMetadata {
   mountedDrives: NonNullable<SessionDriveMounts>['mounts'];
+  /** Folders storage refused at the create, which the drive worker attaches later. */
+  droppedFolders: number;
   box: Record<string, unknown>;
 }
 
-async function recordAttemptBoot(ctx: SessionProvisionContext, state: SessionProvisionState): Promise<AttemptBoxMetadata> {
+async function recordAttemptBoot(
+  ctx: SessionProvisionContext,
+  state: SessionProvisionState,
+  result: ProvisionResult,
+): Promise<AttemptBoxMetadata> {
   const { providerCreateInput, drivesSyncAllowed } = ctx;
-  const { providerName, driveMounts } = state;
+  const { providerName } = state;
+  // Folders storage refused at the create: the box booted without them.
+  const dropped = droppedFolderMounts(state.driveMounts, result);
+  const driveMounts = dropped.length ? withoutDroppedFolders(state.driveMounts!, dropped) : state.driveMounts;
   // What this sandbox really mounted: the session's drive chip reads it back.
   const mountedDrives =
     driveMounts && (providerCreateInput.volumes || (providerName !== 'platinum' && drivesSyncAllowed))
       ? driveMounts.mounts
       : [];
-  // And the drives that did not fit, which the chip and the agent's notes name.
+  // And the folders it does not mount (past its mount slots, Files in another
+  // region or moving, refused by storage), which the chip and the agent's notes name.
+  const unmounted = driveMounts?.skipped.some((d) => d.reason) ? driveMounts.skipped : [];
   const driveAdmission =
     mountedDrives.length && driveMounts
       ? { driveMountsSkipped: driveMounts.skipped, driveMountSlots: driveMounts.slots }
-      : { driveMountsSkipped: [] };
+      : { driveMountsSkipped: providerName === 'platinum' ? unmounted : [] };
   // A synced box: its daemon copies the drives in and keeps them in sync.
   const driveSyncMeta = providerName !== 'platinum' && mountedDrives.length ? { driveSync: true } : {};
   return {
     mountedDrives,
+    droppedFolders: dropped.length,
     box: {
       driveMounts: mountedDrives,
       ...driveAdmission,
       ...driveSyncMeta,
     },
+  };
+}
+
+/** The Files folder mounts a create left out (`metadata.droppedVolumes`). */
+function droppedFolderMounts(plan: SessionDriveMounts | undefined, result: ProvisionResult): DroppedVolume[] {
+  const raw = result.metadata?.droppedVolumes;
+  if (!plan || !Array.isArray(raw)) return [];
+  return (raw as DroppedVolume[]).filter((d) => d && typeof d.mountPath === 'string' && plan.mounts.some((m) => m.mountPath === d.mountPath));
+}
+
+/** The plan as the box booted it: the dropped folders move from `mounts` to `skipped`. */
+function withoutDroppedFolders(plan: SessionDriveMounts, dropped: DroppedVolume[]): SessionDriveMounts {
+  const byPath = new Map(dropped.map((d) => [d.mountPath, d]));
+  const left = plan.mounts.filter((m) => byPath.has(m.mountPath));
+  return {
+    ...plan,
+    volumes: Object.fromEntries(Object.entries(plan.volumes).filter(([path]) => !byPath.has(path))),
+    mounts: plan.mounts.filter((m) => !byPath.has(m.mountPath)),
+    skipped: [
+      ...left.map((m) => {
+        const d = byPath.get(m.mountPath)!;
+        return {
+          driveId: m.driveId,
+          name: m.subdir,
+          reason: d.code === 'sub_path_too_large' ? ('too_large' as const) : ('unavailable' as const),
+          detail: d.reason,
+          ...(d.bytes !== undefined ? { bytes: d.bytes } : {}),
+          ...(d.maxBytes !== undefined ? { maxBytes: d.maxBytes } : {}),
+        };
+      }),
+      ...plan.skipped,
+    ],
   };
 }
 
@@ -922,6 +1064,10 @@ async function createAttemptSandbox(
     onAttemptFailure: async (attempt, error, willRetry, maxAttempts) => {
       state.lastProvisionAttempt = attempt;
       state.lastProvisionMaxAttempts = maxAttempts;
+      // Retries of up to 10 s each while the provider finishes the image: say so.
+      if (willRetry && isSnapshotStillBuilding(error)) {
+        ctx.reportImageStep({ state: 'waiting_for_provider', image: state.imageInfo?.snapshotName ?? null });
+      }
       const snapshot = sandbox.metadata as Record<string, unknown> | null;
       await transitionSandbox(willRetry ? 'reprovision' : 'failProvisioning', sandbox.sandboxId, {
         metadata: sandboxInitMetadataPatch(
@@ -1107,6 +1253,8 @@ async function activateProvisionedSandbox(
       {
         ...result.metadata,
         provisioningStage: firstStage?.id,
+        // The box has its image: no image step is pending any more.
+        imageStep: null,
         provisionTimeline: timeline,
         providerExternalId: result.externalId,
         ...boot.box,
@@ -1117,6 +1265,9 @@ async function activateProvisionedSandbox(
           sandboxSlug: state.imageInfo!.slug,
           isPlatformDefault: state.imageInfo!.isDefault,
           runtimeProfile: state.imageInfo!.runtimeProfile ?? 'standard',
+          // The machine size the image boots with. A later session start that
+          // falls back to this image (`lastBootedImage`) meters compute from it.
+          ...(state.imageInfo!.spec ? { spec: state.imageInfo!.spec } : {}),
           branch,
           provider: providerName,
         },
@@ -1141,7 +1292,8 @@ async function activateProvisionedSandbox(
     columns: {
       externalId: result.externalId,
       baseUrl: result.baseUrl || null,
-      config: { serviceKey: sessionToken },
+      // On a quick-tunnel dev stack, the tunnel this box calls back to (platform/dev-tunnel-stamp.ts).
+      config: { serviceKey: sessionToken, ...devTunnelStamp() },
       lastUsedAt: new Date(),
     },
     metadata: sandboxInitMetadataPatch(snapshot, finishMetadata),
@@ -1198,8 +1350,15 @@ async function activateProvisionedSandbox(
     sessionId: sandbox.sandboxId, accountId,
   });
   // The agent's map of its drives (/drives/README.md). Detached, best effort.
-  if (boot.mountedDrives.length) {
+  if (boot.mountedDrives.length || boot.droppedFolders) {
     void import('../../drives/service').then(({ refreshDriveNotes }) => refreshDriveNotes(sandbox.sandboxId));
+  }
+  // Folders storage refused at the create: the drive worker attaches them to
+  // this running box, with backoff, as soon as storage can mount them.
+  if (boot.droppedFolders) {
+    void import('../../drives/service')
+      .then(({ queueDriveAttach }) => queueDriveAttach(sandbox.sandboxId, `${boot.droppedFolders} folder(s) refused at boot`))
+      .catch((err) => logger.error('[drives] queueing the attach of refused folders failed', { sandboxId: sandbox.sandboxId, error: err instanceof Error ? err.message : String(err) }));
   }
 
   // Billing v2 — open a compute metering row. No-op for legacy accounts.
@@ -1231,14 +1390,31 @@ async function runProvisionAttempt(
 ): Promise<'done' | 'retry'> {
   const { opts, sandbox, tl } = ctx;
   const branch = opts.baseRef || opts.gitProject.defaultBranch;
+  // The template's `residential_proxy` (residential-proxy.ts), read before the
+  // image so a deployment that cannot serve it fails fast. Fails closed: it
+  // throws instead of booting on the sandbox's own address, and once asked,
+  // the session never fails over to another provider.
+  const residentialProxyRequest = await templateResidentialProxy(opts.projectId, ctx.slug);
+  if (residentialProxyRequest) state.residentialProxyRequested = true;
+  const residentialProxy = await resolveSessionResidentialProxy(residentialProxyRequest, state.providerName);
+  if (residentialProxy) ctx.providerCreateInput.residentialProxy = residentialProxy;
+  else delete ctx.providerCreateInput.residentialProxy;
   // Resolved for its VALIDATION only: it re-reads the agent grant and
   // throws on a policy no session could serve, which is what turns a broken
   // secret config into `invalid-secret-boundary-policy` instead of a
   // generic provider fault. There is nothing to register with a provider —
   // one mechanism serves platinum and daytona alike: the guest gets a HANDLE
   // and the broker route substitutes the real value server-side.
-  await resolveSessionNetworkBoundary(opts.projectId, sandbox.sandboxId);
-  tl.note('network-boundary');
+  //
+  // It runs beside the image, the volumes and the provider create, and is
+  // awaited before the box goes active: a policy it refuses still fails the
+  // session, and the failure path removes the box (`state.bgExternalId`). It
+  // used to gate the create: 1.6 s on prod in a project with 150 secrets
+  // and 28 agents (2026-11-01).
+  const boundaryChecked = resolveSessionNetworkBoundary(opts.projectId, sandbox.sandboxId).then(() =>
+    tl.note('network-boundary'),
+  );
+  boundaryChecked.catch(() => undefined);
 
   const image = await resolveAttemptImage(ctx, state, branch);
   await prepareAttemptVolumes(ctx, state);
@@ -1249,7 +1425,8 @@ async function runProvisionAttempt(
   const { result, attempts } = created;
   state.bgExternalId = result.externalId;
   tl.mark(`provider-create:${attempts}x`);
-  const boot = await recordAttemptBoot(ctx, state);
+  await boundaryChecked;
+  const boot = await recordAttemptBoot(ctx, state, result);
   const timeline = tl.summary();
 
   if (await settleSandboxStoppedDuringCreate(ctx, state, result, attempts, timeline, boot)) return 'done';
@@ -1324,7 +1501,13 @@ async function failOverToNextProvider(
   // Drives run on Platinum only: no hand-off to another provider. (With drive
   // sync on, any provider can carry the drives.)
   const next = nextFailoverProvider({
-    providerLocked: providerWasExplicitlySelected || (drivesRequirePlatinum && !drivesSyncAllowed),
+    // A session whose /workspace is a Platinum volume runs on Platinum only.
+    // So does a session whose web traffic leaves through a residential IP.
+    providerLocked:
+      providerWasExplicitlySelected ||
+      (drivesRequirePlatinum && !drivesSyncAllowed) ||
+      !!state.workspaceVolume ||
+      state.residentialProxyRequested,
     fallbackAttempted: state.fallbackAttempted,
     fallbackEnabled: providerFallbackSetting().enabled,
     current: providerName,
@@ -1467,10 +1650,10 @@ async function failSessionSandboxProvisioning(
   } catch (markErr) {
     console.error(`[session-sandbox] Failed to mark sandbox ${sandbox.sandboxId} as error:`, markErr);
   }
-  // Tell the originating channel (Slack) so the live thread shows the friendly
-  // reason now instead of a stranded ⏳ until the 30-min GC. Fire-and-forget;
-  // a no-op for non-channel sessions.
-  notifySessionProvisioningFailed(sandbox.sandboxId, userMessage);
+  // Tell the originating channel (Slack, Teams, Telegram) so it shows the
+  // friendly reason now instead of a stranded ⏳ until the 30-min GC.
+  // Fire-and-forget; a no-op for non-channel sessions.
+  notifySessionProvisioningFailed(sandbox.sandboxId, userMessage, { transient: failureTransient });
   const errTl = tl.summary();
   recordProviderEvent({
     provider: providerName, kind: 'provision', outcome: 'error',

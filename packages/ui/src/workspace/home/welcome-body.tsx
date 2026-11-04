@@ -2,8 +2,19 @@
 
 import { useLayoutEffect, useState, type ReactNode } from 'react';
 
+import { HashIcon, XIcon } from '@phosphor-icons/react';
+
 import { SessionWelcome } from '../../session/thread/session-welcome';
-import { useProjectName } from '@kortix/sdk/react';
+import { agentsInSpace, listSpaces } from '@kortix/sdk';
+import { useProjectConfig, useProjectName } from '@kortix/sdk/react';
+
+import { useTranslations } from '../../i18n';
+import { AgentMark } from '../../internal/components/agent-mark';
+import { agentHref } from '../../internal/lib/capability-tab-routes';
+import { useActiveSpace } from '../../internal/stores/active-space-store';
+import { uiRoutes } from '../../lib/routes';
+import { Button } from '../../primitives/button';
+import { UiLink as Link } from '../../providers/ui-provider';
 import {
   HOME_GREETINGS,
   HOME_GREETING_STORAGE_KEY,
@@ -68,11 +79,24 @@ export function ProjectHomeWelcomeBody({
 }) {
   // One source for the project name — see `useProjectName`'s doc comment.
   const name = useProjectName(projectId) ?? '';
+  // The active space (the last space opened, or its New session). The heading
+  // names the space, its description reads as its brief, and the composer
+  // below starts only this space's agents. Leave clears it.
+  const [activeSpace, setActiveSpace] = useActiveSpace(projectId);
+  const config = useProjectConfig(projectId);
+  // Declared or only referenced by an agent; a stale selection (the space was
+  // removed) is no space.
+  const space = activeSpace
+    ? listSpaces(config).find((candidate) => candidate.name === activeSpace)
+    : undefined;
+  const spaceLabel = space ? space.label || space.name : null;
+  const spaceAgents = space ? agentsInSpace(space.name, config?.agents ?? []) : [];
+  const tSpaces = useTranslations('spaces');
   // One word, not two. The name sits inside the sentence in `text-foreground`
   // while the rest is muted, so the fallback has to read as a NAME in that
   // slot — "this project" is a description wearing a name's highlight, and it
   // stretches the line for a case where we know the least.
-  const displayName = name.trim() || 'it';
+  const displayName = spaceLabel ?? (name.trim() || 'it');
   // Variant 0 on the server and through hydration; the stored visit count
   // picks the real one before first paint. See `home-greeting.ts`.
   const [greeting, setGreeting] = useState(HOME_GREETINGS[0]);
@@ -120,8 +144,41 @@ export function ProjectHomeWelcomeBody({
               centred block, and this one is ragged-right by design; pretty just
               keeps the last line off a single orphan word.
             */}
+          {spaceLabel && !sentTurn ? (
+            <div className="flex items-center gap-1 px-4">
+              <Link
+                href={uiRoutes().space(projectId, space!.name) ?? uiRoutes().project(projectId)}
+                className="hover:bg-hover text-foreground flex min-w-0 items-center gap-1 rounded-sm px-1 text-sm font-medium transition-colors"
+              >
+                <HashIcon className="text-muted-foreground size-3.5 shrink-0" />
+                <span className="truncate">{spaceLabel}</span>
+              </Link>
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                onClick={() => setActiveSpace(null)}
+                aria-label={tSpaces('leave', { name: spaceLabel })}
+              >
+                <XIcon />
+              </Button>
+              {spaceAgents.length ? (
+                <span role="group" className="ml-auto flex items-center gap-1" aria-label={tSpaces('agents')}>
+                  {spaceAgents.map((name) => (
+                    <Link
+                      key={name}
+                      href={agentHref(projectId, name)}
+                      className="rounded-sm"
+                      aria-label={tSpaces('openAgent', { name })}
+                    >
+                      <AgentMark slug={name} />
+                    </Link>
+                  ))}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
           <h1
-            className="text-muted-foreground w-full px-4 text-3xl leading-[1.2] tracking-tight text-balance max-sm:text-2xl"
+            className="text-muted-foreground w-full px-4 text-2xl tracking-tight text-balance"
             hidden={!!sentTurn}
           >
             {greeting.before}{' '}
@@ -129,6 +186,11 @@ export function ProjectHomeWelcomeBody({
             {spaceBefore(greeting.after) ? ' ' : ''}
             {greeting.after}
           </h1>
+          {space?.description && !sentTurn ? (
+            <p className="text-muted-foreground w-full px-4 text-sm text-pretty">
+              {space.description}
+            </p>
+          ) : null}
 
           {/* The sent message takes the heading's slot — same column, same rail,
               so the bubble the instant shell paints a moment later is already
@@ -136,11 +198,12 @@ export function ProjectHomeWelcomeBody({
           {sentTurn ? <div className="w-full px-4">{sentTurn}</div> : null}
 
           {composer ? <div className="flex w-full flex-col gap-4">{composer}</div> : null}
+
         </div>
 
         {/* Nothing under the composer, on purpose (Marko, 2026-09-02: "just
-            have the chat input there & that's it"). The setup steps stay
-            reachable from Customize. */}
+            have the chat input there & that's it"). A space's room and tabs
+            live on its own page (`/spaces/<slug>`). */}
       </div>
     </div>
   );

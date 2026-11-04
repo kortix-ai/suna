@@ -62,7 +62,7 @@ export function useAddAccount({
     queryFn: () => listConnections(projectId),
     staleTime: 30_000,
     // A channel connector has no accounts: same guard as `useConnectorDetail`.
-    enabled: connector.provider !== 'channel',
+    enabled: connector.provider !== 'channel' || connector.platform === 'email',
   });
   const addManaged = useAddManagedAccount(projectId, connector.slug, accountId, onAdded);
   // Direct providers: create the account, narrow it before it holds a

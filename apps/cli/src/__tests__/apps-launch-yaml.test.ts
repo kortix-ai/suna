@@ -21,7 +21,6 @@ function onlyAdds(before: string, after: string): void {
 describe('kortix apps launch: adding App blocks to kortix.yaml', () => {
   test('inserts into an existing apps map and leaves every other byte alone (flow lists, aligned comments, section headers)', () => {
     const before = [
-      'kortix_version: 2',
       'env:',
       '  optional: [STRIPE_API_KEY]',
       'tools:',
@@ -56,14 +55,14 @@ describe('kortix apps launch: adding App blocks to kortix.yaml', () => {
   });
 
   test('appends an apps map to a file without one', () => {
-    const before = 'kortix_version: 2\nname: demo\n';
+    const before = 'default_agent: demo\n';
     const after = addAppBlocks(before, blocks);
     onlyAdds(before, after);
     expect(Object.keys(parse(after).apps)).toEqual(['db', 'db-dashboard']);
   });
 
   test('replaces an empty flow map (`apps: {}`)', () => {
-    const after = addAppBlocks('kortix_version: 2\napps: {}\nname: demo\n', blocks);
+    const after = addAppBlocks('apps: {}\nname: demo\n', blocks);
     const doc = parse(after);
     expect(Object.keys(doc.apps)).toEqual(['db', 'db-dashboard']);
     expect(doc.name).toBe('demo');

@@ -18,10 +18,7 @@ describe("init in an existing cloned project", () => {
   test("--force wires the current Kortix repo in place without creating a child project", () => {
     const repo = mkdtempSync(resolve(tmpdir(), "kortix-init-existing-"));
     mkdirSync(resolve(repo, ".kortix", "opencode"), { recursive: true });
-    writeFileSync(
-      resolve(repo, "kortix.yaml"),
-      "kortix_version: 2\nproject:\n  name: Existing\n",
-    );
+    writeFileSync(resolve(repo, "kortix.yaml"), "project:\n  name: Existing\n");
     writeFileSync(resolve(repo, "README.md"), "keep me\n");
     spawnSync("git", ["init", "-b", "main"], { cwd: repo });
     spawnSync("git", ["add", "."], { cwd: repo });
@@ -48,9 +45,9 @@ describe("init in an existing cloned project", () => {
     expect(result.stdout).toContain(
       `Configured this Kortix project in ${realpathSync(repo)}`,
     );
-    // A legacy checkout: every link points at .kortix/opencode, none dangles.
-    expect(readlinkSync(resolve(repo, ".agents", "skills"))).toBe("../.kortix/opencode/skills");
-    expect(readlinkSync(resolve(repo, ".opencode"))).toBe(".kortix/opencode");
+    // A .kortix/opencode folder is not read: every link points at the root folders.
+    expect(readlinkSync(resolve(repo, ".agents", "skills"))).toBe("../skills");
+    expect(() => lstatSync(resolve(repo, ".opencode"))).toThrow();
     expect(lstatSync(resolve(repo, ".claude")).isDirectory()).toBe(true);
     expect(
       lstatSync(resolve(repo, ".claude", "skills")).isSymbolicLink(),

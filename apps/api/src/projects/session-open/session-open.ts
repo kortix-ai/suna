@@ -11,6 +11,7 @@ import { type SandboxProviderName } from '../../config';
 import { db } from '../../shared/db';
 import { claimRetiredSandboxRow, isRetiredSandboxRow } from '../../platform/services/retired-sandbox-row';
 import { sandboxCallbackUnreachableReason } from '../lib/sessions';
+import { idleRetiredBoxRemoved } from '../reaping/idle-volume-retire';
 import { inspectSandboxRuntime } from '../runtime-inspection';
 import { createStartCallLog, withStartEnvelope, type StartCallLog } from '../session-lifecycle/start-envelope';
 import type {
@@ -144,7 +145,11 @@ async function runOpenSession(
     if (keepStoppedRefusesWake(args.keepStopped, row) || userStopFollowsIntent(args.wakeIntentAt, row)) {
       return keptStoppedAnswer(visible.row.agentName);
     }
-    const claim = sandboxCallbackUnreachableReason() ? null : await claimRetiredSandboxRow(row.sandboxId);
+    // An idle-retired volume session's old box goes first: a fresh box mounts its volume.
+    const claim =
+      sandboxCallbackUnreachableReason() || !(await idleRetiredBoxRemoved(row))
+        ? null
+        : await claimRetiredSandboxRow(row.sandboxId);
     if (claim) {
       await allocateRuntimeOnOpen(args.loaded, visible.row, projectId, sessionId, {
         platinumCreateAttempt: claim.nextCreateAttempt,

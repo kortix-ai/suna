@@ -4,7 +4,7 @@ import { logger } from '../../lib/logger';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { isMetaAgentName } from '@kortix/shared';
+import { isMyKortixAgentName } from '@kortix/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
 import { revokeAllPublicSharesForSession } from '../../shared/session-public-shares';
@@ -39,7 +39,6 @@ import {
   RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
 import { inspectSandboxRuntime } from '../runtime-inspection';
-import { WARM_SESSION_METADATA_KEY } from '../lib/warm-sessions';
 import { prepareInitialSandboxTurn } from '../session-turn-ledger';
 import { sessionRestoreUntil } from '../session-log-purge';
 import { claimInPlaceRestart } from './runtime-restart-claim';
@@ -55,10 +54,6 @@ import {
   restartClaimIsActive,
 } from './runtime-restart-fence';
 
-/** Warm (pre-created, never prompted) and not tombstoned. See ../lib/warm-sessions.ts. */
-const UNCLAIMED_WARM_SESSION = sql`${projectSessions.metadata}->>${WARM_SESSION_METADATA_KEY}::text = 'true'
-  AND coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`;
-
 /** The in-place restart claim. The restart finalize and failure writes drop it. */
 const RESTART_CLAIM_KEYS = [
   'runtimeRestartId',
@@ -72,10 +67,8 @@ export async function deleteSession(input: {
   sessionId: string;
   accountId: string;
   userId: string;
-  /** Delete only a still-warm, untombstoned session: the tombstone CAS loses to a claim. */
-  warmOnly?: boolean;
 }): Promise<{ ok: true; restore_until: string } | { error: string; status: number }> {
-  const { projectId, sessionId, accountId, userId, warmOnly } = input;
+  const { projectId, sessionId, accountId, userId } = input;
   const [sandbox] = await db
     .select()
     .from(sessionSandboxes)
@@ -91,12 +84,8 @@ export async function deleteSession(input: {
   // Release the session's prompt attachments before the tombstone, so a failed
   // release fails a delete that can still be retried. The cleanup sweep then
   // removes each unreferenced object before its metadata.
-  // A warm session holds no prompt yet. Skipped there, because a claim that wins
-  // the race below inserts its prompt first, and this release would drop it.
-  if (!warmOnly) {
-    const { releasePromptAttachmentsForSession } = await import('../prompt-attachments');
-    await releasePromptAttachmentsForSession({ sessionId, projectId, accountId });
-  }
+  const { releasePromptAttachmentsForSession } = await import('../prompt-attachments');
+  await releasePromptAttachmentsForSession({ sessionId, projectId, accountId });
 
   const deletedAt = new Date();
   // Merged in SQL: the tombstone must not write back a metadata object read
@@ -108,7 +97,6 @@ export async function deleteSession(input: {
     guard: and(
       eq(projectSessions.projectId, projectId),
       eq(projectSessions.accountId, accountId),
-      warmOnly ? UNCLAIMED_WARM_SESSION : undefined,
     ),
   });
 
@@ -209,33 +197,6 @@ export async function deleteSession(input: {
   });
 
   return { ok: true, restore_until: sessionRestoreUntil(tombstone.deletedAt)!.toISOString() };
-}
-
-/**
- * Delete every unclaimed warm session of a project, all users. A warm box boots
- * with the project's env of that moment (KORTIX_GENUI is boot-only), so a flag
- * change must not let a box provisioned before it be adopted. Deleting also
- * removes the box, so it stops billing.
- *
- * The tombstone keeps the `warm` marker, so the row stays out of every list, and
- * both adoption CASes (claim, `/start`) refuse a tombstoned row. A claim that
- * commits first keeps its session and the old value.
- */
-export async function retireWarmProjectSessions(projectId: string): Promise<void> {
-  const rows = await db
-    .select({ sessionId: projectSessions.sessionId, accountId: projectSessions.accountId })
-    .from(projectSessions)
-    .where(and(eq(projectSessions.projectId, projectId), UNCLAIMED_WARM_SESSION));
-  for (const row of rows) {
-    await deleteSession({
-      projectId,
-      sessionId: row.sessionId,
-      accountId: row.accountId,
-      // No user deleted it. The tombstone is hidden from every list anyway.
-      userId: 'system',
-      warmOnly: true,
-    });
-  }
 }
 
 type RestartSessionInput = {
@@ -378,11 +339,10 @@ async function provisionReplacementRuntime(
         opencodeModel,
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
-        // A restarted meta coordinator must keep its meta runtime: without
-        // this the rebuilt env loses KORTIX_PROJECT_AUTO_CLONE=0 and the
-        // meta agent config, so the daemon clones the project over the meta
-        // workspace and wipes /workspace/AGENTS.md.
-        platformMetaAgent: isMetaAgentName(session.agentName ?? ''),
+        // A restarted My Kortix session must keep its runtime: without this
+        // the rebuilt env loses KORTIX_PROJECT_AUTO_CLONE=0 and My Kortix's
+        // config, so the daemon clones the project into its empty workspace.
+        platformMetaAgent: isMyKortixAgentName(session.agentName ?? ''),
         repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata),
         restoreSessionBranch: true,
       }),

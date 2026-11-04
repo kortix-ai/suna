@@ -30,7 +30,7 @@ import { SQL_ONLY, type SqlOnlyList } from './schema-contract-sql-only';
 
 const SCHEMA = 'kortix';
 
-export interface IndexContract {
+interface IndexContract {
   relation: string;
   unique: boolean;
 }

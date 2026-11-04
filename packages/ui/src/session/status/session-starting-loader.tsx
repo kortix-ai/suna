@@ -8,7 +8,9 @@ import { cn } from '../../lib/utils';
 import { type SessionStartResult } from '@kortix/sdk';
 import { useProjectSession } from '@kortix/sdk/react';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useContext, useEffect, useRef, useState } from 'react';
+
+import { TranscriptRowsContext } from '../thread/transcript-rows';
 
 /**
  * What a session shows while its Kortix Computer comes up: nothing, unless the
@@ -38,6 +40,9 @@ type StartFailure = SessionStartResult['failure'];
  */
 const MAX_COUNTDOWN_SECONDS = 60 * 60;
 
+/** `failure.evidence.check` of a box whose agent did not start (apps/api `RUNTIME_BOOT_ERROR_PARK_REASON`). */
+const RUNTIME_BOOT_ERROR_CHECK = 'runtime_boot_error';
+
 /**
  * Keep the server's retry visible while `/start` waits for its retry clock.
  * The server re-attempts on its own, so this is a waiting state, not an error.
@@ -49,19 +54,26 @@ export function sessionWakeStatusNote(input: {
   now: number;
 }): string | null {
   if (input.reason !== 'runtime_wake_cooldown' || !input.failure) return input.note ?? null;
-  const attempts = Math.max(1, input.failure.evidence?.attempts ?? 1);
+  const evidence = input.failure.evidence;
+  // The computer ran and the agent in it did not start: say why, not "still starting".
+  const error = evidence?.check === RUNTIME_BOOT_ERROR_CHECK ? evidence.error : null;
+  let end = error?.length ?? 0;
+  while (error && end > 0 && /[.\s]/.test(error[end - 1])) end--;
+  const bootError = error?.slice(0, end);
+  const lead = bootError ? `Could not start the agent: ${bootError}.` : 'Still starting your computer.';
+  const attempts = Math.max(1, evidence?.attempts ?? 1);
   const nextAttempt = attempts + 1;
-  const retryAt = Date.parse(input.failure.evidence?.next_retry_at ?? '');
+  const retryAt = Date.parse(evidence?.next_retry_at ?? '');
   const seconds = Math.max(0, Math.ceil((retryAt - input.now) / 1_000));
   if (!Number.isFinite(seconds) || seconds > MAX_COUNTDOWN_SECONDS) {
-    return `Still starting your computer. Trying again automatically (attempt ${nextAttempt}).`;
+    return `${lead} Trying again automatically (attempt ${nextAttempt}).`;
   }
-  if (seconds === 0) return `Still starting your computer. Trying again now (attempt ${nextAttempt}).`;
+  if (seconds === 0) return `${lead} Trying again now (attempt ${nextAttempt}).`;
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
   // One unit: a line break never falls between the minutes and the seconds.
   const duration = minutes > 0 ? `${minutes}m\u00a0${remainder}s` : `${remainder}s`;
-  return `Still starting your computer. Trying again in ${duration} (attempt ${nextAttempt}).`;
+  return `${lead} Trying again in ${duration} (attempt ${nextAttempt}).`;
 }
 
 /** A 1 s tick: the retry countdown and the stuck clock read it. */
@@ -128,6 +140,8 @@ export function RestartFallback({
   buttonClassName?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // A channel's thread panel says "thread", not "session" (`TranscriptRows.labels`).
+  const labels = useContext(TranscriptRowsContext)?.labels;
   if (!show) return null;
 
   return (
@@ -148,7 +162,7 @@ export function RestartFallback({
         ) : (
           <RotateCcw className="size-3.5 shrink-0" />
         )}
-        {pending ? tI18nComplete.raw('text75d0f1469d16') : tI18nComplete.raw('textcb886371afc6')}
+        {pending ? tI18nComplete.raw('text75d0f1469d16') : (labels?.restart ?? tI18nComplete.raw('textcb886371afc6'))}
       </Button>
     </div>
   );
@@ -165,12 +179,15 @@ export function SessionStartingLoader({
   note,
   reason,
   failure,
+  fallback = null,
 }: {
   projectId?: string;
   sessionId?: string;
   note?: string | null;
   reason?: string | null;
   failure?: StartFailure;
+  /** What a routine wake shows. Default: nothing. */
+  fallback?: ReactNode;
 }) {
   const { data: session } = useProjectSession(projectId, sessionId);
   const restart = useRestartProjectSession(projectId ?? '', sessionId ?? '');
@@ -180,7 +197,7 @@ export function SessionStartingLoader({
   const restartable =
     now - clockStart >= STUCK_AFTER_MS && canOfferBootRestart(session, projectId, sessionId);
 
-  if (!statusNote && !restartable) return null;
+  if (!statusNote && !restartable) return fallback;
   return (
     <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center px-4 sm:px-8">
       <div role="status" aria-live="polite" className="flex w-full max-w-xs items-start gap-3">
@@ -199,6 +216,36 @@ export function SessionStartingLoader({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The body of a tool card (Terminal, Browser, Files) opened while the session's
+ * computer boots: the wake's status when it needs attention, else a spinner and
+ * one line, centered where the live tool will appear.
+ */
+export function SessionBootStatus({
+  projectId,
+  sessionId,
+}: {
+  projectId?: string;
+  sessionId?: string;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  return (
+    <SessionStartingLoader
+      projectId={projectId}
+      sessionId={sessionId}
+      fallback={
+        <div
+          role="status"
+          className="text-muted-foreground flex h-full min-h-0 w-full flex-1 items-center justify-center gap-2 px-4 text-xs"
+        >
+          <Loading variant="spokes" className="size-4 shrink-0 motion-reduce:animate-none" />
+          {tI18nComplete.raw('textac4e05b19878')}
+        </div>
+      }
+    />
   );
 }
 

@@ -46,6 +46,11 @@ describe('participantLabel', () => {
     expect(participantLabel(MEMBER)).toBe('member');
     expect(participantLabel(person('b', { email: null }))).toBe('');
   });
+
+  test('a name that is an email address reads as no name: the API sends the email when the profile has none', () => {
+    expect(participantLabel(person('c', { name: 'ada@example.test', email: 'ada@example.test' }))).toBe('ada');
+    expect(participantLabel(person('d', { name: 'ada@example.test', email: null }))).toBe('ada');
+  });
 });
 
 describe('MessageSenderAbove', () => {
@@ -67,6 +72,17 @@ describe('MessageSenderAbove', () => {
 
   test('no sender: the message renders alone', () => {
     expect(render(<MessageSenderAbove sender={null}><p>hello</p></MessageSenderAbove>)).toBe('<p>hello</p>');
+  });
+
+  test('reserve: no sender yet keeps an avatar-sized slot above the message', () => {
+    const markup = render(
+      <MessageSenderAbove sender={null} reserve>
+        <p>hello</p>
+      </MessageSenderAbove>,
+    );
+    expect(markup).toContain('size-6');
+    expect(markup).not.toContain('data-slot="avatar"');
+    expect(markup.indexOf('size-6')).toBeLessThan(markup.indexOf('hello'));
   });
 });
 

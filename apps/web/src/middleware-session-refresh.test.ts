@@ -97,7 +97,8 @@ describe('middleware leaves session refresh to the browser', () => {
       if (clearsCookie) {
         const cleared = response.cookies.get(KORTIX_SUPABASE_AUTH_COOKIE);
         expect(cleared?.value).toBe('');
-        expect(Number(cleared?.expires)).toBe(0); // ResponseCookie.expires is number | Date
+        // Cleared with Max-Age=0 and the cookie's own attributes, so a partitioned cookie goes too (#9745).
+        expect(cleared?.maxAge).toBe(0);
       } else {
         expectRetained(request, value, response);
       }

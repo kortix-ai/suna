@@ -302,8 +302,10 @@ function foldCompactionDrafts(list: Draft[], hint: string | null | undefined): {
   let liveHint = hint;
   for (const draft of list) {
     const previous = folded[folded.length - 1];
+    // A compaction the person started (`/summarize`, trigger `manual`) is a turn of its own: it stays a divider between turns.
+    const manual = draft.user.blocks.some((b) => b.type === 'compaction' && b.trigger === 'manual');
     const home = draft.continues ? homes.get(draft.continues.marker)
-      : draft.user.kind === 'compaction' && previous?.user.kind !== 'compaction' ? previous : undefined;
+      : draft.user.kind === 'compaction' && !manual && previous?.user.kind !== 'compaction' ? previous : undefined;
     if (!home) {
       folded.push({ ...draft, assistant: [...draft.assistant] });
       continue;

@@ -171,12 +171,11 @@ export function localizedAccountPaneMeta(tI18nComplete: UiTranslator) {
  * next step up, and the usage ledger needs the room a table with seven
  * columns takes.
  */
-/** `fluid`: the whole pane, Linear's members table — no centred column. */
+/** `fluid`: the whole pane, for the members and project tables — no centred column. */
 export type AccountPaneWidth = 'default' | 'wide' | 'full' | 'fluid';
 
 const WIDE_SECTIONS: readonly AccountSection[] = [
   'groups',
-  'access-projects',
   'roles',
   'identity',
   'help',
@@ -185,7 +184,9 @@ const WIDE_SECTIONS: readonly AccountSection[] = [
 ];
 
 const PANE_WIDTH: Partial<Record<AccountSection, AccountPaneWidth>> = {
+  // The Members table and the project tables share one width: the whole pane.
   members: 'fluid',
+  'access-projects': 'fluid',
   ...Object.fromEntries(WIDE_SECTIONS.map((section) => [section, 'wide' as const])),
   transactions: 'full',
 };

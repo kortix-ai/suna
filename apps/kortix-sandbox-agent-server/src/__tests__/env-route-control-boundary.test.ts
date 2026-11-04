@@ -69,7 +69,7 @@ describe('env controller control boundary', () => {
     } as RequestInit))
     await bodyRead
 
-    const payload = JSON.stringify({ revision: 'rev-1', env: {}, opencodeEnv: { MODEL_SETTING: 'value' } })
+    const payload = JSON.stringify({ revision: 'rev-1', env: {}, runtimeEnv: { MODEL_SETTING: 'value' } })
     try {
       const second = await router.request('/', { method: 'POST', headers, body: payload })
       expect(second.status).toBe(409)
@@ -82,27 +82,10 @@ describe('env controller control boundary', () => {
 
     const response = await first
     expect(response.status).toBe(200)
-    // The runtime* result, plus the pre-W3 opencode* names an older API reads.
-    expect(await response.json()).toEqual({
-      ...applied,
-      opencode_env_changed: false,
-      opencode_env_names: [],
-      opencode: 'ok',
-      opencode_pid: 123,
-      opencode_reload: null,
-      opencode_turn_ended: null,
-    })
+    expect(await response.json()).toEqual(applied)
     expect(calls).toHaveLength(1)
-    // An older API sends `opencodeEnv`; the control receives it as `runtimeEnv`.
     expect(calls[0]?.runtimeEnv).toEqual({ MODEL_SETTING: 'value' })
     expect((await router.request('/', { method: 'POST', headers, body: payload })).status).toBe(200)
     expect(calls).toHaveLength(2)
-  })
-
-  test('runtimeEnv is the request name; it wins over the pre-W3 opencodeEnv', async () => {
-    const { router, calls } = fixture()
-    const body = JSON.stringify({ revision: 'rev-2', env: {}, runtimeEnv: { A: '1' }, opencodeEnv: { A: 'old' } })
-    expect((await router.request('/', { method: 'POST', headers, body })).status).toBe(200)
-    expect(calls[0]?.runtimeEnv).toEqual({ A: '1' })
   })
 })

@@ -1,4 +1,4 @@
-import { isSandboxNotReadyError } from '@kortix/sdk';
+import { isRuntimeStartingError } from '@kortix/sdk';
 
 export const UPLOADED_FILE_READ_RETRY_DELAY_MS = 2_000;
 export const UPLOADED_FILE_READ_RETRY_WINDOW_MS = 60_000;
@@ -103,8 +103,30 @@ export const SANDBOX_PARKED_REFETCH_INTERVAL_MS = 30_000;
  * the file appears on its own in seconds. A parked box takes the slow lane.
  */
 export function sandboxWakingRefetchInterval(error: unknown, parked: boolean): number | false {
-  if (!isSandboxNotReadyError(error)) return false;
+  // Also the runtime URL not pinned yet ("Server URL not ready"): it clears on its own too.
+  if (!isRuntimeStartingError(error)) return false;
   return parked ? SANDBOX_PARKED_REFETCH_INTERVAL_MS : SANDBOX_WAKING_REFETCH_INTERVAL_MS;
+}
+
+/** The image wait's polls (R38): 1, 2, 4, 8 s, then every 10 s, about 2 min in all. */
+export const IMAGE_WAKING_ATTEMPTS = 15;
+
+/**
+ * The poll interval of an image read while the session runtime is still
+ * starting (`isRuntimeStartingError`), after its `failures`-th failed read:
+ * 1 s doubling to a 10 s cap; `false` (stop) after `IMAGE_WAKING_ATTEMPTS`,
+ * when the tile says the image is unavailable and offers Try again; `false`
+ * for any other error. A file viewer keeps `sandboxWakingRefetchInterval`
+ * (a parked box can take longer than an image tile should wait).
+ */
+export function imageWakingRefetchInterval(error: unknown, failures: number): number | false {
+  if (!isRuntimeStartingError(error) || failures > IMAGE_WAKING_ATTEMPTS) return false;
+  return Math.min(1000 * 2 ** Math.max(0, failures - 1), 10_000);
+}
+
+/** True once an image read gave up waiting for the runtime (`imageWakingRefetchInterval`). */
+export function imageWaitedOut(error: unknown, failures: number): boolean {
+  return isRuntimeStartingError(error) && failures > IMAGE_WAKING_ATTEMPTS;
 }
 
 export function shouldRetryFileRead(
@@ -116,7 +138,7 @@ export function shouldRetryFileRead(
   // retry loop so the viewer can render its "waking up" state immediately; the
   // query-level poll (SANDBOX_WAKING_REFETCH_INTERVAL_MS) re-reads until the
   // sandbox is back.
-  if (isSandboxNotReadyError(error)) return false;
+  if (isRuntimeStartingError(error)) return false;
 
   if (isUploadedWorkspacePath(filePath)) {
     if (isPermanentFileReadFailure(error) && !isMissingFileReadFailure(error)) return false;

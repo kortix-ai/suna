@@ -9,9 +9,10 @@ import { auth, errors, json } from '../../openapi';
 import { canonicalConnectorAlias } from '../../projects/lib/session-connector-bindings';
 import { ATTACHMENT_REF_KEY } from '../attachment-inline';
 import { MAX_CONNECTOR_ATTACHMENT_BYTES, type StageConnectorAttachmentInput } from '../attachments';
-import { handleCall } from '../gateway';
+import { INVALID_ARGS, handleCall } from '../gateway';
 import {
   type ConnectorDenialReason,
+  callPolicySetOf,
   connectorDenialBody,
   principalMayUseConnector,
 } from '../principal-access';
@@ -232,11 +233,17 @@ const callResponse = async (deps: ConnectorRouterDeps, c: any, p: ConnectorPrinc
     args,
     approvalExecutionId,
     approvalContext: typeof body?.approval_context === 'string' ? body.approval_context : null,
+    policySet: callPolicySetOf(p, connectorSlug),
   });
   switch (result.status) {
     case 'ok':
+      // The tool ran and reported a failure inside a 2xx (MCP `isError`, a
+      // JSON-RPC error, GraphQL `errors` with no data): HTTP 200, as the call
+      // reached it, but `ok: false` so no caller reads it as done.
+      // `upstream_error` stays for clients that predate `tool_error`.
       return c.json({
-        ok: true,
+        ok: !result.upstreamError,
+        ...(result.upstreamError ? { status: 'tool_error', error: result.upstreamError } : {}),
         data: result.data,
         risk: result.risk,
         ...(result.account ? { account: result.account } : {}),
@@ -258,6 +265,8 @@ const callResponse = async (deps: ConnectorRouterDeps, c: any, p: ConnectorPrinc
           approval_url: result.approvalUrl ?? null,
           approval_summary: result.approvalSummary ?? null,
           approval_instructions: result.approvalInstructions ?? null,
+          // Kortix runs the call after approval; the caller must not repeat it.
+          ...(result.runsOnApproval ? { runs_on_approval: true } : {}),
         },
         202,
       );
@@ -310,10 +319,13 @@ const callResponse = async (deps: ConnectorRouterDeps, c: any, p: ConnectorPrinc
               status: 'denied',
               reason: result.reason,
               ...(result.message ? { message: result.message } : {}),
+              ...(result.policySet ? { policy_set: result.policySet, agent: result.agent ?? null } : {}),
             },
         result.reason === 'connector_not_found' || result.reason === 'action_not_found'
           ? 404
-          : 403,
+          : result.reason === INVALID_ARGS
+            ? 400
+            : 403,
       );
     }
     default: {

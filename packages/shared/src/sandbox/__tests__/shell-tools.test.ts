@@ -2,9 +2,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
-import { OPENCODE_VERSION } from '../../runtime-versions';
 import { kortixToolchainLayer } from '../dockerfile-layer';
-import { buildMetaSandboxDockerfile } from '../meta-dockerfile';
+import { buildMyKortixSandboxDockerfile } from '../my-kortix-dockerfile';
 import {
   SANDBOX_SHELL_TOOL_APT_LIST,
   SANDBOX_SHELL_TOOL_LINK_COMMAND,
@@ -18,15 +17,16 @@ const repoFile = (path: string) =>
 const IMAGES: Array<{ label: string; dockerfile: string }> = [
   {
     label: 'standard layer (platform default + custom templates)',
-    dockerfile: kortixToolchainLayer({ opencodeVersion: OPENCODE_VERSION }),
+    dockerfile: kortixToolchainLayer({}),
   },
   {
     label: 'meta-agent image',
-    dockerfile: buildMetaSandboxDockerfile({
+    dockerfile: buildMyKortixSandboxDockerfile({
       agentBinaryPath: 'a',
       cliBinaryPath: 'a',
       entrypointScriptPath: 'a',
-      catalogPath: 'a',
+      machineDocPath: 'MACHINE.md',
+      slackCliPath: 'kortix-slack-cli',
       managedSkillsPath: 'a',
     }),
   },

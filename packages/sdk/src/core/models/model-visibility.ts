@@ -1,3 +1,4 @@
+import { CLAUDE_AGENT_PROVIDER_ID } from './model-key';
 import { defaultEnabledModelIds } from '@kortix/llm-catalog/lite';
 
 import type { FlatModel } from './model-flatten';
@@ -227,7 +228,8 @@ export function modelInDefaultView(
   },
 ): boolean {
   if (input.search.trim().length > 0) return true;
-  if (model.providerID === 'kortix') return true;
+  // The gateway's list and the Claude subscription list are curated server-side: show them whole.
+  if (model.providerID === 'kortix' || model.providerID === CLAUDE_AGENT_PROVIDER_ID) return true;
   if (
     input.selected &&
     input.selected.providerID === model.providerID &&

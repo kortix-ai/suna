@@ -11,25 +11,28 @@ import type {
   SessionListState,
   SessionManagedCatalogState,
   SessionModelUsage,
+  SessionUsage,
   SessionParticipants,
   SessionPrompt,
   SessionPublicShare,
   SessionReloadResult,
   SessionTurn,
   SessionTurnStatus,
+  TurnShare,
 } from './sessions';
 import {
   type UpdateProjectSessionInput,
-  claimWarmProjectSession,
   createProjectSession,
   createSessionPrompt,
   createSessionPublicShare,
   deleteProjectSession,
   deleteSessionPrompt,
   editSessionPrompt,
-  ensureWarmProjectSession,
   interruptSessionPrompt,
   findActiveTranscriptShare,
+  getTurnShare,
+  shareTurn,
+  unshareTurn,
   getProjectSession,
   getProjectSessionConfigState,
   getProjectSessionScope,
@@ -43,6 +46,7 @@ import {
   getSessionTranscriptSync,
   getSessionTurn,
   getSessionModelUsage,
+  getSessionUsage,
   getSessionWatch,
   holdSessionPrompts,
   listProjectSessions,
@@ -133,6 +137,19 @@ test('listProjectSessions keeps can_manage_sharing and can_manage_lifecycle apar
   const [session] = await listProjectSessions('P1');
   expect(session.can_manage_sharing).toBe(false);
   expect(session.can_manage_lifecycle).toBe(true);
+});
+
+test('getProjectSession carries can_publish_response apart from can_manage_sharing', async () => {
+  // A project manager may publish a response of a session a human owns
+  // (can_publish_response) without being allowed to re-share the session itself.
+  nextResponse = {
+    status: 200,
+    body: { session_id: 'S1', is_owner: false, can_manage_sharing: false, can_publish_response: true },
+  };
+  const session = await getProjectSession('P1', 'S1');
+  const publish: boolean | undefined = session.can_publish_response;
+  expect(publish).toBe(true);
+  expect(session.can_manage_sharing).toBe(false);
 });
 
 // ─── Paging ────────────────────────────────────────────────────────────────
@@ -371,6 +388,55 @@ test('revokeSessionPublicShare DELETEs the specific share', async () => {
   expect(last().method).toBe('DELETE');
 });
 
+const TURN_SHARE: TurnShare = {
+  share_id: 'SH9',
+  turn_id: 'msg_user_1',
+  token: 'kps_abc',
+  url: 'https://kortix.test/share/response/kps_abc',
+  created_at: '2026-10-23T00:00:00.000Z',
+  snapshot_at: '2026-10-23T00:00:00.000Z',
+  stale: false,
+  include_prompt: false,
+};
+
+test('getTurnShare GETs the share of one turn and answers null when none is live', async () => {
+  nextResponse = { status: 200, body: { share: null } };
+  const result = await getTurnShare('P1', 'S1', 'msg/user 1');
+  expect(last().url).toContain('/projects/P1/sessions/S1/turns/msg%2Fuser%201/share');
+  expect(last().method).toBe('GET');
+  expect(result).toEqual({ share: null });
+});
+
+test('shareTurn PUTs the turn share, prompt excluded by default, and returns the live share', async () => {
+  nextResponse = { status: 200, body: { share: TURN_SHARE } };
+  const result = await shareTurn('P1', 'S1', 'msg_user_1');
+  expect(last().url).toContain('/projects/P1/sessions/S1/turns/msg_user_1/share');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ include_prompt: false });
+  expect(result.share.url).toBe('https://kortix.test/share/response/kps_abc');
+});
+
+test('shareTurn sends include_prompt in the PUT body when asked', async () => {
+  nextResponse = { status: 200, body: { share: { ...TURN_SHARE, include_prompt: true } } };
+  const result = await shareTurn('P1', 'S1', 'msg_user_1', { include_prompt: true });
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ include_prompt: true });
+  expect(result.share.include_prompt).toBe(true);
+});
+
+test('shareTurn rejects with the status when the turn has no text yet', async () => {
+  nextResponse = { status: 409, body: { error: 'This response has no text to share yet' } };
+  await expect(shareTurn('P1', 'S1', 'msg_user_1')).rejects.toMatchObject({ status: 409 });
+});
+
+test('unshareTurn DELETEs the turn share', async () => {
+  nextResponse = { status: 200, body: { share: null } };
+  const result = await unshareTurn('P1', 'S1', 'msg_user_1');
+  expect(last().url).toContain('/projects/P1/sessions/S1/turns/msg_user_1/share');
+  expect(last().method).toBe('DELETE');
+  expect(result).toEqual({ share: null });
+});
+
 test('createProjectSession POSTs the input and marks the new session fresh', async () => {
   nextResponse = { status: 200, body: { session_id: 'NEW-1', name: null } };
   const result = await createProjectSession('P1', { base_ref: 'main' });
@@ -435,155 +501,46 @@ test('createProjectSession forwards initial_context beside initial_prompt', asyn
   });
 });
 
+test('createProjectSession files the session into a space and reads space_id and first_prompt back', async () => {
+  nextResponse = {
+    status: 201,
+    body: { session_id: 'NEW-SP', space_id: 'SPACE-1', first_prompt: 'Draft the launch post' },
+  };
+  const session = await createProjectSession('P1', { space_id: 'SPACE-1', initial_prompt: 'Draft the launch post' });
+  expect(last().body).toEqual({ space_id: 'SPACE-1', initial_prompt: 'Draft the launch post' });
+  expect(session.space_id).toBe('SPACE-1');
+  expect(session.first_prompt).toBe('Draft the launch post');
+});
+
+test('listProjectSessions sends spaceId as the space_id query parameter', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { spaceId: 'SPACE-1', parent: 'root' });
+  const url = new URL(last().url);
+  expect(url.searchParams.get('space_id')).toBe('SPACE-1');
+  expect(url.searchParams.get('parent')).toBe('root');
+});
+
+test('listProjectSessions sends createdBy, agent and updatedAfter as created_by, agent and updated_after', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', {
+    spaceId: 'SPACE-1',
+    createdBy: 'USER-1',
+    agent: 'researcher',
+    updatedAfter: '2026-10-18T00:00:00.000Z',
+  });
+  const url = new URL(last().url);
+  expect(url.searchParams.get('created_by')).toBe('USER-1');
+  expect(url.searchParams.get('agent')).toBe('researcher');
+  expect(url.searchParams.get('updated_after')).toBe('2026-10-18T00:00:00.000Z');
+  await listProjectSessions('P1', { spaceId: 'SPACE-1' });
+  const plain = new URL(last().url);
+  expect(['created_by', 'agent', 'updated_after'].map((k) => plain.searchParams.has(k))).toEqual([false, false, false]);
+});
+
 test('createProjectSession defaults the body to {} when no input is given', async () => {
   nextResponse = { status: 200, body: { session_id: 'NEW-3' } };
   await createProjectSession('P1');
   expect(last().body).toEqual({});
-});
-
-test('ensureWarmProjectSession POSTs the server-owned warm-session request', async () => {
-  nextResponse = {
-    status: 200,
-    body: {
-      session: { session_id: 'WARM-1' },
-      reused: true,
-      workspace_refresh: { status: 'unchanged' },
-    },
-  };
-  const result = await ensureWarmProjectSession('P1');
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/warm');
-  expect(last().method).toBe('POST');
-  expect(last().body).toEqual({});
-  expect(result.session.session_id).toBe('WARM-1');
-  expect(result.reused).toBe(true);
-});
-
-test('ensureWarmProjectSession does NOT mark a REUSED session fresh — a reused session is by definition not fresh', async () => {
-  clearSessionFresh('WARM-REUSED-1');
-  nextResponse = {
-    status: 200,
-    body: {
-      session: { session_id: 'WARM-REUSED-1' },
-      reused: true,
-      workspace_refresh: { status: 'unchanged' },
-    },
-  };
-  await ensureWarmProjectSession('P1');
-  expect(isSessionFresh('WARM-REUSED-1')).toBe(false);
-});
-
-test('ensureWarmProjectSession marks a freshly-created session fresh (reused: false)', async () => {
-  clearSessionFresh('WARM-NEW-1');
-  nextResponse = {
-    status: 200,
-    body: {
-      session: { session_id: 'WARM-NEW-1' },
-      reused: false,
-      workspace_refresh: { status: 'unchanged' },
-    },
-  };
-  await ensureWarmProjectSession('P1');
-  expect(isSessionFresh('WARM-NEW-1')).toBe(true);
-});
-
-test('ensureWarmProjectSession forwards exclude_session_id in the request body when given', async () => {
-  nextResponse = {
-    status: 200,
-    body: {
-      session: { session_id: 'WARM-2' },
-      reused: false,
-      workspace_refresh: { status: 'skipped' },
-    },
-  };
-  await ensureWarmProjectSession('P1', { excludeSessionId: 'JUST-TAKEN-1' });
-  expect(last().body).toEqual({ exclude_session_id: 'JUST-TAKEN-1' });
-});
-
-test('ensureWarmProjectSession omits exclude_session_id when not given', async () => {
-  nextResponse = {
-    status: 200,
-    body: {
-      session: { session_id: 'WARM-3' },
-      reused: false,
-      workspace_refresh: { status: 'skipped' },
-    },
-  };
-  await ensureWarmProjectSession('P1', {});
-  expect(last().body).toEqual({});
-});
-
-test('ensureWarmProjectSession keeps a declined warm session out of the global error sink', async () => {
-  const onError = mock(() => {});
-  configureKortix({
-    backendUrl: 'http://test.local',
-    getToken: async () => 'tok',
-    onError,
-  });
-  nextResponse = {
-    status: 409,
-    body: {
-      error: 'This project cannot prepare a warm session right now.',
-      code: 'WARM_SESSION_UNAVAILABLE',
-    },
-  };
-
-  try {
-    await expect(ensureWarmProjectSession('P1')).rejects.toMatchObject({
-      status: 409,
-      code: 'WARM_SESSION_UNAVAILABLE',
-    });
-    expect(onError).not.toHaveBeenCalled();
-  } finally {
-    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
-  }
-});
-
-test('claimWarmProjectSession POSTs the selected warm session and create options', async () => {
-  nextResponse = { status: 200, body: { session_id: 'WARM-1' } };
-  const result = await claimWarmProjectSession('P1', {
-    session_id: 'WARM-1',
-    agent_name: 'reviewer',
-    sandbox_slug: 'large',
-  });
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/warm/claim');
-  expect(last().method).toBe('POST');
-  expect(last().body).toEqual({
-    session_id: 'WARM-1',
-    agent_name: 'reviewer',
-    sandbox_slug: 'large',
-  });
-  expect(result.session_id).toBe('WARM-1');
-});
-
-test('claimWarmProjectSession keeps recoverable claim conflicts out of the global error sink', async () => {
-  const onError = mock(() => {});
-  configureKortix({
-    backendUrl: 'http://test.local',
-    getToken: async () => 'tok',
-    onError,
-  });
-  nextResponse = {
-    status: 409,
-    body: {
-      message: 'The warm session does not match the selected agent or sandbox',
-      code: 'WARM_SESSION_CONFIGURATION_MISMATCH',
-    },
-  };
-
-  try {
-    await expect(
-      claimWarmProjectSession('P1', {
-        session_id: 'WARM-1',
-        agent_name: 'reviewer',
-      }),
-    ).rejects.toMatchObject({
-      status: 409,
-      code: 'WARM_SESSION_CONFIGURATION_MISMATCH',
-    });
-    expect(onError).not.toHaveBeenCalled();
-  } finally {
-    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
-  }
 });
 
 test('getProjectSession hits GET /projects/:id/sessions/:sid and forwards showErrors', async () => {
@@ -1910,6 +1867,27 @@ test('getSessionModelUsage reads the model that answered, the billed cost and ea
   nextResponse = { status: 200, body };
   expect(await getSessionModelUsage('P1', 'S1')).toEqual(body);
   expect(new URL(last().url).pathname).toBe('/projects/P1/sessions/S1/model-usage');
+  expect(last().method).toBe('GET');
+});
+
+test('getSessionUsage reads the USD cost of a session and of every session it started', async () => {
+  const totals = {
+    cost: 0.5, kortix_cost: 0.2, provider_cost: 0.3, request_count: 3, error_count: 1,
+    input_tokens: 100, output_tokens: 10, cached_tokens: 50, cache_write_tokens: 0,
+  };
+  const body: SessionUsage = {
+    session_id: 'S1',
+    currency: 'USD',
+    total: totals,
+    sessions: [
+      { ...totals, session_id: 'S1', parent_session_id: null, depth: 0, title: 'Coordinator', agent_name: null, status: 'running', created_at: '2026-10-30T20:00:00.000Z' },
+    ],
+    hidden_sessions: 0,
+    truncated: false,
+  };
+  nextResponse = { status: 200, body };
+  expect(await getSessionUsage('P1', 'S1')).toEqual(body);
+  expect(new URL(last().url).pathname).toBe('/projects/P1/sessions/S1/usage');
   expect(last().method).toBe('GET');
 });
 

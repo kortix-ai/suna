@@ -354,6 +354,16 @@ esac
     expect(configured.KORTIX_PUBLIC_CONNECTORS_ENABLED).toBe('true');
   });
 
+  test('configure keeps an instance whose env still names the legacy sandbox provider', async () => {
+    await run(['init', '--yes']);
+    await run(['env', 'set', 'ALLOWED_SANDBOX_PROVIDERS=daytona', 'DAYTONA_API_KEY=not-a-real-key']);
+
+    const configured = await run(['configure', '--yes']);
+    expect(configured.code).toBe(0);
+    expect(configured.stdout).toContain('Agent sandbox runtime (daytona): configured');
+    expect(readEnv().ALLOWED_SANDBOX_PROVIDERS).toBe('daytona');
+  });
+
   test('KORTIX_APP_REPLICAS flips to 2 once a domain is configured, back to 1 without one', async () => {
     await run(['init', '--yes']);
     expect(readEnv().KORTIX_APP_REPLICAS).toBe('1');
@@ -690,8 +700,25 @@ esac
   // it quietly loses every root-absolute link. `doctor` is the gate that turns
   // that silence into a non-zero exit. It stays silent on a laptop instance,
   // where the path form (and the client-built *.localhost origin) is correct.
+  test('a new domain instance serves Apps and previews on their own origins from the start', async () => {
+    await run(['init', '--yes', '--domain', 'kortix.example.com']);
+    const env = readFileSync(join(configRoot, instance, '.env'), 'utf8');
+    expect(env).toMatch(/^KORTIX_APPS_BASE_DOMAIN=apps\.kortix\.example\.com$/m);
+    expect(env).toMatch(/^KORTIX_PREVIEW_BASE_DOMAIN=p\.kortix\.example\.com$/m);
+    expect(env).toMatch(/^KORTIX_PREVIEW_ALLOW_DIRECT_EDGE=true$/m);
+    const doctor = await run(['doctor', '--json']);
+    const checks = JSON.parse(doctor.stdout).checks as Array<{ name: string; ok: boolean; detail: string }>;
+    expect(checks.find((c) => c.name === 'preview-origins')?.ok).toBe(true);
+    // Per-host certificates list every App and preview host name in the public logs: doctor says so.
+    const wildcard = checks.find((c) => c.name === 'wildcard-tls');
+    expect(wildcard?.ok).toBe(false);
+    expect(wildcard?.detail).toContain('kortix self-host tls wildcard');
+  }, 60_000);
+
   test('doctor FAILS when a domain instance has no preview base domain, and passes once it is set', async () => {
     await run(['init', '--yes', '--domain', 'kortix.example.com']);
+    // An instance that predates the default, or an operator who turned previews off.
+    await run(['env', 'set', 'KORTIX_PREVIEW_BASE_DOMAIN=']);
 
     const missing = await run(['doctor', '--json']);
     const missingCheck = (JSON.parse(missing.stdout).checks as Array<{ name: string; ok: boolean; detail: string }>)
@@ -812,10 +839,15 @@ exit 0
       recreated: () => (existsSync(log) ? readFileSync(log, 'utf8') : '').split('\n')
         .filter((line) => line.includes(' up -d --force-recreate --no-deps '))
         .map((line) => line.split(' --no-deps ')[1]),
+      // The app services each `kortix-updater roll` call rolled start-first.
+      rolled: () => (existsSync(log) ? readFileSync(log, 'utf8') : '').split('\n')
+        .filter((line) => line.includes(' kortix-updater roll '))
+        .map((line) => line.split(' kortix-updater roll ')[1]),
+      calls: () => (existsSync(log) ? readFileSync(log, 'utf8') : ''),
     };
   }
 
-  test('env set DISABLE_SIGNUP recreates supabase-auth, and ENABLE_EMAIL_AUTOCONFIRM recreates supabase-auth with kortix-api', async () => {
+  test('env set DISABLE_SIGNUP recreates supabase-auth, and ENABLE_EMAIL_AUTOCONFIRM recreates supabase-auth and rolls kortix-api', async () => {
     const docker = runningStackDocker();
     expect((await run(['init', '--yes', '--domain', 'kortix.example.com'], docker.env)).code).toBe(0);
 
@@ -824,7 +856,21 @@ exit 0
     expect(signUp.stdout).toContain('restarted: supabase-auth');
     const autoconfirm = await run(['env', 'set', 'ENABLE_EMAIL_AUTOCONFIRM=false'], docker.env);
     expect(autoconfirm.code).toBe(0);
-    expect(docker.recreated()).toEqual(['supabase-auth', 'kortix-api supabase-auth']);
+    expect(docker.recreated()).toEqual(['supabase-auth', 'supabase-auth']);
+    // Behind Caddy the API runs 2 replicas: a config change rolls them start-first, never all at once.
+    expect(docker.rolled()).toEqual(['kortix-api']);
+  }, 60_000);
+
+  test('env set KORTIX_DOMAIN_ALIASES rolls the API and frontend, then reloads Caddy in place', async () => {
+    const docker = runningStackDocker();
+    expect((await run(['init', '--yes', '--domain', 'kortix.example.com'], docker.env)).code).toBe(0);
+
+    const { code, stdout } = await run(['env', 'set', 'KORTIX_DOMAIN_ALIASES=kortix.example.org'], docker.env);
+    expect(code).toBe(0);
+    expect(docker.rolled()).toEqual(['frontend kortix-api']);
+    expect(docker.recreated()).toEqual([]);
+    expect(docker.calls()).toContain('exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile');
+    expect(stdout).toContain('reloaded: caddy');
   }, 60_000);
 
   test('update --disable-signup recreates supabase-auth after the rollout', async () => {
@@ -839,6 +885,29 @@ exit 0
     // A flag that changes nothing recreates nothing.
     expect((await run(['update', '--disable-signup'], docker.env)).code).toBe(0);
     expect(docker.recreated()).toEqual(['supabase-auth']);
+  }, 60_000);
+
+  // Compose never recreates Caddy for a changed bind-mounted Caddyfile, so a
+  // version that adds a route (the project snapshots' `@snapshots`) must
+  // reload it, or the prefix answers the API's 404 (learnings 2026-10-20T071256Z).
+  test('update reloads Caddy when the new version changes the Caddyfile, and only then', async () => {
+    const docker = runningStackDocker();
+    expect((await run(['init', '--yes', '--domain', 'kortix.example.com'], docker.env)).code).toBe(0);
+    const caddyfile = join(configRoot, instance, 'Caddyfile');
+    const reloads = () => docker.calls().split('\n').filter((line) => line.includes('exec -T caddy caddy reload')).length;
+    // An instance rendered by a CLI from before the route.
+    writeFileSync(caddyfile, readFileSync(caddyfile, 'utf8').replace(/\n\t# Project snapshots:[\s\S]*?\n\t@snapshots path[\s\S]*?\n\t\}\n/, ''));
+    expect(readFileSync(caddyfile, 'utf8')).not.toContain('@snapshots');
+
+    const updated = await run(['update'], docker.env);
+    expect(updated.code).toBe(0);
+    expect(readFileSync(caddyfile, 'utf8')).toContain('@snapshots path /kortix-project-snapshots /kortix-project-snapshots/*');
+    expect(reloads()).toBe(1);
+    expect(updated.stdout).toContain('reloaded: caddy');
+
+    // Nothing changed in the Caddyfile: no reload.
+    expect((await run(['update'], docker.env)).code).toBe(0);
+    expect(reloads()).toBe(1);
   }, 60_000);
 
   test('doctor checks open sign-up on a tunnel instance, and not on a laptop instance', async () => {
@@ -865,10 +934,11 @@ exit 0
     writeFileSync(join(bin, 'docker'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
     const env = { PATH: `${bin}:${process.env.PATH}` };
     await run(['init', '--yes', '--domain', 'kortix.example.com'], env);
+    const envFile = join(configRoot, instance, '.env');
+    writeFileSync(envFile, readFileSync(envFile, 'utf8').replace(/^KORTIX_PREVIEW_BASE_DOMAIN=.*$/m, 'KORTIX_PREVIEW_BASE_DOMAIN='));
     const missing = await run(['status'], env);
     expect(missing.stdout).toContain('preview origins NOT configured');
 
-    const envFile = join(configRoot, instance, '.env');
     writeFileSync(
       envFile,
       readFileSync(envFile, 'utf8').replace(

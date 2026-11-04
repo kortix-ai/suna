@@ -184,7 +184,6 @@ mock.module('../session-turn-ledger', () => ({
 }));
 
 mock.module('../session-lifecycle', () => ({
-  retireWarmProjectSessions: async () => { throw new Error('retireWarmProjectSessions: not used by the turn-stream routes'); },
   continueSession: async () => { throw new Error('continueSession: not used by the turn-stream routes'); },
   startSession: async () => { throw new Error('startSession: not used by the turn-stream routes'); },
   buildContinueSessionCommandValues: async () => { throw new Error('buildContinueSessionCommandValues: not used by the turn-stream routes'); },
@@ -203,12 +202,6 @@ mock.module('../session-lifecycle/store', () => ({
 mock.module('../session-lifecycle/forwarded-strand-reconcile', () => ({
   reconcileForwardedTurnsAtEnd: async () => {
     order.push('reconcile');
-  },
-}));
-
-mock.module('../lib/session-transcript-capture', () => ({
-  captureJournallessSessionLog: () => {
-    order.push('mirror');
   },
 }));
 
@@ -253,8 +246,15 @@ mock.module('../lib/trigger-run-outcome', () => ({
 const notified: Array<Record<string, unknown>> = [];
 // The real notifier resolves the context thunk only for a flag-on project
 // (notifications/session-push.ts); this stand-in always resolves it.
+// The settle decision itself is unit-tested in session-push.test.ts; here the route hands its inputs over.
+const settlementInputs: Array<Record<string, unknown>> = [];
+let settlement: 'done' | 'failed' | 'stopped' | null = null;
 mock.module('../../notifications/session-push', () => ({
   turnEndPushType: () => pushType,
+  chatTurnSettlement: (input: Record<string, unknown>) => {
+    settlementInputs.push(input);
+    return settlement;
+  },
   notifySessionEvent: async (
     event: Record<string, unknown>,
     options: { context?: () => Promise<Record<string, unknown>> } = {},
@@ -271,6 +271,10 @@ mock.module('../lib/notification-recipients', () => ({
   turnEndNotificationContext: async (session: Record<string, unknown>, turnMessageId: string | null) => {
     contextLookups.push({ session, turnMessageId });
     return { prompterUserId: 'user-prompter', originClass: 'attended', isChild: false };
+  },
+  turnPromptSource: async (_sessionId: string, turnMessageId: string | null) => {
+    promptSourceLookups.push(turnMessageId);
+    return promptSource;
   },
 }));
 
@@ -297,6 +301,20 @@ function post(body: unknown, ctx: Record<string, unknown> = {}) {
   });
 }
 
+const channelNotices: unknown[] = [];
+const promptSourceLookups: Array<string | null> = [];
+let promptSource: string | null = 'telegram';
+const chatSettles: Array<{ sessionId: string; outcome: string }> = [];
+mock.module('../../channels/core/session-notice', () => ({
+  notifySessionChannel: async (notice: unknown) => {
+    order.push('channelNotice');
+    channelNotices.push(notice);
+  },
+  settleSessionChat: async (sessionId: string, outcome: string) => {
+    chatSettles.push({ sessionId, outcome });
+  },
+}));
+
 const sandboxCtx = { sessionId: SANDBOX_ID, sandboxId: SANDBOX_ID, accountId: ACCOUNT_ID };
 const session = (metadata: Record<string, unknown> = {}, createdBy: string | null = USER_ID) => ({
   sessionId: SESSION_ID,
@@ -321,6 +339,12 @@ beforeEach(() => {
   promotedId = null;
   relayEndResult = true;
   relayEndArgs = [];
+  channelNotices.length = 0;
+  chatSettles.length = 0;
+  settlementInputs.length = 0;
+  settlement = null;
+  promptSourceLookups.length = 0;
+  promptSource = 'telegram';
   stepResult = { ok: true };
   answerResult = { ok: true };
   formCardResult = { type: 'AdaptiveCard' };
@@ -815,7 +839,7 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
     const response = await post({ session_id: SESSION_ID, kind: 'end' });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ queue_promoted: false });
-    expect(order).toEqual(['complete', 'mirror', 'notify', 'relayEnd']);
+    expect(order).toEqual(['complete', 'notify', 'relayEnd']);
   });
 
   // KRTX-1742: the person who prompted the ended turn is told, not only the
@@ -862,6 +886,76 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
     expect(notified).toEqual([]);
   });
 
+  // A Telegram chat has no live turn, so a closed error end that no Slack or
+  // Teams turn carried is told to the session's chat (channels/core/session-notice.ts).
+  test('a closed error end that no channel turn carried tells the session chat, after the relay', async () => {
+    pushType = 'error';
+    relayEndResult = false;
+    const response = await post({
+      session_id: SESSION_ID,
+      kind: 'turn_end',
+      status: 'error',
+      turn_message_id: 'msg_turn',
+      error_name: 'APIError',
+      error_status: 402,
+      error_message: 'Payment Required: Insufficient credits.',
+    });
+    // The notice is sent after the prompt-source read, off the ack path.
+    await Bun.sleep(0);
+    expect(promptSourceLookups).toEqual(['msg_turn']);
+    expect(channelNotices).toEqual([
+      {
+        kind: 'run_failed',
+        sessionId: SESSION_ID,
+        error: { name: 'APIError', message: 'Payment Required: Insufficient credits.', statusCode: 402 },
+        promptSource: 'telegram',
+      },
+    ]);
+    expect(order.slice(-2)).toEqual(['relayEnd', 'channelNotice']);
+    expect(await response.json()).toEqual({
+      ok: false,
+      turn_completion: { outcome: 'closed', active_turn_count: 0, closed_turn_count: 1 },
+      queue_promoted: false,
+      promoted_prompt_id: null,
+    });
+  });
+
+  // Discord marks a person's message ⏳ while the agent works: the end that left the session idle clears it.
+  test("a turn end hands the chat's settle its outcome, with whether a queued prompt keeps the session running", async () => {
+    settlement = 'done';
+    promotedId = null;
+    await post({ session_id: SESSION_ID, kind: 'turn_end', status: 'idle', turn_message_id: 'msg_turn' }, sandboxCtx);
+    await Bun.sleep(0);
+    expect(settlementInputs.at(-1)).toMatchObject({ outcome: 'closed', status: 'idle', promoted: false });
+    expect(chatSettles).toEqual([{ sessionId: SESSION_ID, outcome: 'done' }]);
+
+    settlement = null;
+    await post({ session_id: SESSION_ID, kind: 'turn_end', status: 'idle', turn_message_id: 'msg_turn' }, sandboxCtx);
+    await Bun.sleep(0);
+    expect(chatSettles).toHaveLength(1);
+  });
+
+  test('no session-chat notice when a Slack or Teams turn carried the end, the end was no error, or it closed nothing', async () => {
+    pushType = 'error';
+    relayEndResult = true;
+    await post({ session_id: SESSION_ID, kind: 'turn_end', status: 'error', error_name: 'APIError', error_message: 'x' });
+    await Bun.sleep(0);
+    expect(channelNotices).toEqual([]);
+    expect(promptSourceLookups).toEqual([]);
+
+    pushType = 'completion';
+    relayEndResult = false;
+    await post({ session_id: SESSION_ID, kind: 'end' });
+    expect(channelNotices).toEqual([]);
+
+    pushType = null;
+    completionResult = { outcome: 'identity_mismatch', activeTurnCount: 1, closedTurnCount: 0 };
+    relayEndArgs = [];
+    await post({ session_id: SESSION_ID, kind: 'turn_end', status: 'error', error_name: 'APIError', error_message: 'x' });
+    expect(channelNotices).toEqual([]);
+    expect(relayEndArgs).toEqual([]);
+  });
+
   test('the end side effects fire in the pinned order, promotion awaited before the ack', async () => {
     sessionRow = session({ title_source: 'first prompt' });
     promotedId = 'prompt-9';
@@ -870,7 +964,6 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
     expect(order).toEqual([
       'complete',
       'reconcile',
-      'mirror',
       'drain',
       'notify',
       'title',

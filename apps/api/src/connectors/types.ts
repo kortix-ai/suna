@@ -91,7 +91,7 @@ export interface ComposioToolLike {
   };
 }
 
-/** A declared HTTP route (provider=http, from `.kortix/connectors/*.http.toml`). */
+/** A declared HTTP route (provider=http, from the connector's routes spec: a `.yaml`/`.yml` or JSON file, or URL). */
 export interface HttpRouteSpec {
   /** Relative tool path, e.g. `users.get`. */
   name: string;

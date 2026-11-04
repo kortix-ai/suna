@@ -52,6 +52,9 @@ import { Switch } from '../../primitives/switch';
 import { Copy } from '../../icons/copy';
 import { InputGroup, InputGroupInput } from '../../primitives/input-group';
 import Loading from '../../primitives/loading';
+import { ClaudeCodeStep } from '../sections/llm-provider/claude-code-step';
+
+export { ClaudeCodeStep };
 import {
   SplitSheetBody,
   SplitSheetDescription,
@@ -93,6 +96,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 /** The subscription each two-way provider signs in with, and how it is named. */
 export const SUBSCRIPTION_BY_PROVIDER: Record<string, { kind: SubscriptionKind; name: string; plan: string }> = {
   openai: { kind: 'chatgpt', name: 'ChatGPT', plan: 'ChatGPT Plus or Pro' },
+  // Claude models run through Claude Code on the member's own plan; the login is the member's own.
+  anthropic: { kind: 'claude', name: 'Claude', plan: 'Claude Pro or Max' },
   'opencode-go': { kind: 'opencode-go', name: 'OpenCode', plan: 'OpenCode Go' },
 };
 
@@ -369,7 +374,8 @@ export function ConnectChoice({
   plan: string;
   providerLabel: string;
   onSignIn: () => void;
-  onUseKey: () => void;
+  /** Absent: the viewer can only sign in (a Claude login is the member's own; a key is a project secret). */
+  onUseKey?: () => void;
 }) {
   const t = useTranslations('providerSheet');
   return (
@@ -386,7 +392,7 @@ export function ConnectChoice({
           {t('signInAction', { name })}
         </Button>
       </div>
-      <div className="border-border space-y-3 rounded-lg border p-4">
+      {onUseKey ? <div className="border-border space-y-3 rounded-lg border p-4">
         <div className="space-y-1.5">
           <Badge variant="muted" size="sm">
             {t('payPerUse')}
@@ -399,8 +405,8 @@ export function ConnectChoice({
         <Button type="button" size="sm" variant="secondary" className="w-full" onClick={onUseKey}>
           {t('keyOptionAction')}
         </Button>
-      </div>
-      <p className="text-muted-foreground text-xs text-pretty">{t('bothHint')}</p>
+      </div> : null}
+      {onUseKey ? <p className="text-muted-foreground text-xs text-pretty">{t('bothHint')}</p> : null}
     </div>
   );
 }
@@ -712,6 +718,8 @@ function SubscriptionBody({ projectId, entry, connected: keyConnected, canWrite,
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const waiting = sign.phase === 'waiting';
   const anyConnected = sign.connected || keyConnected;
+  // A Claude login is the member's own: any member signs in. A shared login or a key needs write access.
+  const canSignIn = canWrite || sign.pastesCode;
 
   const copyCode = () => {
     if (!sign.challenge?.code) return;
@@ -719,10 +727,12 @@ function SubscriptionBody({ projectId, entry, connected: keyConnected, canWrite,
   };
 
   let body: ReactNode;
-  if (!canWrite) {
+  if (!canSignIn) {
     body = anyConnected ? null : <p className="text-muted-foreground text-sm">{t('readOnly')}</p>;
   } else if (waiting) {
-    body = (
+    body = sign.pastesCode ? (
+      <ClaudeCodeStep url={sign.challenge?.url ?? null} checking={sign.checking} onSubmit={(code) => void sign.submitCode(code)} />
+    ) : (
       <DeviceCode
         name={sub.name}
         code={sign.challenge?.code ?? null}
@@ -752,7 +762,7 @@ function SubscriptionBody({ projectId, entry, connected: keyConnected, canWrite,
         plan={sub.plan}
         providerLabel={entry.label}
         onSignIn={() => void sign.start()}
-        onUseKey={() => setAddingKey(true)}
+        onUseKey={canWrite ? () => setAddingKey(true) : undefined}
       />
     );
   }
@@ -765,7 +775,7 @@ function SubscriptionBody({ projectId, entry, connected: keyConnected, canWrite,
             title={t('subscription', { plan: sub.plan })}
             detail={t('signedIn')}
             action={
-              canWrite ? (
+              canSignIn ? (
                 <Button
                   type="button"
                   size="sm"
@@ -804,7 +814,7 @@ function SubscriptionBody({ projectId, entry, connected: keyConnected, canWrite,
           />
         ) : null}
       </ul>
-      {canWrite && !(sign.connected && keyConnected) ? (
+      {(sign.connected ? canWrite && !keyConnected : canSignIn) ? (
         <Button
           type="button"
           size="sm"
@@ -955,6 +965,37 @@ export function ProviderSheet({
             oauth={{ projectId, onConnected: () => undefined }}
           />
           <ChatGptSubscriptionConnect projectId={projectId} onConnected={() => undefined} legacyOnly />
+        </div>
+        {models}
+      </SplitSheetBody>
+    );
+  } else if (pooled.pooledSecretsEnabled && pooled.accountId && entry.id === 'anthropic') {
+    // Claude accounts, exactly as OpenAI lists ChatGPT accounts; Anthropic API keys below them.
+    content = (
+      <SplitSheetBody className="space-y-7">
+        <div className="space-y-3">
+          <p className="text-foreground text-sm font-medium">{tPooled('claudeAccounts')}</p>
+          <p className="text-muted-foreground text-xs text-pretty">{tPooled('claudeOauthPrivateDescription')}</p>
+          <AccountSecretResourcesPanel
+            accountId={pooled.accountId}
+            projectId={projectId}
+            providerId="claude-agent"
+            providerName="Claude Pro/Max"
+            envVar="CLAUDE_CODE_OAUTH_TOKEN"
+            canWrite
+            oauth={{ projectId, onConnected: () => undefined, kind: 'claude' }}
+          />
+        </div>
+        <div className="space-y-3">
+          <p className="text-foreground text-sm font-medium">{tPooled('providerKeysFor', { provider: entry.label })}</p>
+          <AccountSecretResourcesPanel
+            accountId={pooled.accountId}
+            projectId={projectId}
+            providerId={entry.id}
+            providerName={entry.label}
+            envVar={entry.envVars[0]!}
+            canWrite
+          />
         </div>
         {models}
       </SplitSheetBody>

@@ -1,15 +1,15 @@
 /**
- * The monitor ingest write path: authenticate the box's sandbox token, then
- * append its batch to `project_monitor_events`.
+ * The event log's write path: append a batch to `project_monitor_events`.
+ * App events (./app-events.ts) are its only writer since the monitor box was
+ * removed; the table keeps its name.
  *
- * The log IS the queue (spec D2) — this module only writes; the observer
+ * The log IS the queue — this module only writes; the observer
  * (./monitor-observer.ts) drains. Every bound it enforces is platform-side:
- * the runner is repo code and cannot be trusted to police itself.
+ * the writer is App code and cannot be trusted to police itself.
  */
-import { projectMonitorBoxes, projectMonitorEvents, projectTriggerRuntime } from '@kortix/db';
-import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { projectMonitorEvents, projectTriggerRuntime } from '@kortix/db';
+import { and, asc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { MONITOR_LIVE_BOX_STATUSES } from './monitor-box-core';
 import {
   MONITOR_BURST_WINDOW_MS,
   MONITOR_RATE_WINDOW_MS,
@@ -17,50 +17,6 @@ import {
   monitorRateVerdict,
   nextMonitorSuppression,
 } from './monitor-events';
-
-export interface MonitorBoxRow {
-  boxId: string;
-  projectId: string;
-  boxEpoch: string;
-}
-
-/**
- * Resolve the monitor box a sandbox token belongs to.
- *
- * A monitor box is NOT a session sandbox — it has no `session_sandboxes` row —
- * so it authenticates against `project_monitor_boxes` alone, scoped by
- * project AND account so a token from another tenant's box can never ingest
- * here (spec §"Security model": "only accepts events for that box's own
- * project").
- *
- * The token's sandbox id is the `box_id`, NOT the provider's external id: the
- * token has to exist before `provider.create()` is called (it is injected as
- * the box's env), so at mint time there is no external id yet. This mirrors a
- * session, whose token is likewise minted against the internal `sandbox_id`.
- */
-export async function loadMonitorBoxForToken(input: {
-  projectId: string;
-  accountId: string;
-  sandboxId: string;
-}): Promise<MonitorBoxRow | null> {
-  const [box] = await db
-    .select({
-      boxId: projectMonitorBoxes.boxId,
-      projectId: projectMonitorBoxes.projectId,
-      boxEpoch: projectMonitorBoxes.boxEpoch,
-    })
-    .from(projectMonitorBoxes)
-    .where(
-      and(
-        eq(projectMonitorBoxes.boxId, input.sandboxId),
-        eq(projectMonitorBoxes.projectId, input.projectId),
-        eq(projectMonitorBoxes.accountId, input.accountId),
-        inArray(projectMonitorBoxes.status, [...MONITOR_LIVE_BOX_STATUSES]),
-      ),
-    )
-    .limit(1);
-  return box ?? null;
-}
 
 export interface MonitorIngestResult {
   accepted: number;
@@ -225,4 +181,27 @@ async function applyMonitorSuppression(
     .where(
       and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, slug)),
     );
+}
+
+/** Days an event stays in the log. */
+export const MONITOR_EVENT_RETENTION_DAYS = 30;
+/** Rows deleted per retention pass, so one sweep can never stampede the DB. */
+const MONITOR_RETENTION_BATCH = 5_000;
+
+/**
+ * Delete events past the retention horizon. Bounded per pass — the log is
+ * append-only and a busy App can produce thousands of rows a day, so an
+ * unbounded DELETE would be a lock-holding surprise on the maintenance tick.
+ */
+export async function purgeExpiredMonitorEvents(now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - MONITOR_EVENT_RETENTION_DAYS * 24 * 60 * 60_000);
+  const doomed = await db
+    .select({ eventId: projectMonitorEvents.eventId })
+    .from(projectMonitorEvents)
+    .where(lt(projectMonitorEvents.ingestedAt, cutoff))
+    .orderBy(asc(projectMonitorEvents.ingestedAt))
+    .limit(MONITOR_RETENTION_BATCH);
+  if (doomed.length === 0) return 0;
+  await db.delete(projectMonitorEvents).where(inArray(projectMonitorEvents.eventId, doomed.map((row) => row.eventId)));
+  return doomed.length;
 }

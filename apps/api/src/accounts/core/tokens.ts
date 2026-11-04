@@ -28,6 +28,7 @@ import {
   lookupEmailsByUserIds,
 } from './app';
 import { readJsonObject } from '../../shared/http-body';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 /**
  * A query flag arrives as a string or not at all. `?mine`, `?mine=true` and
@@ -192,6 +193,7 @@ accountsRouter.openapi(
   try {
     accountId = await resolveAccountForUser(userId, queryAccount);
   } catch (err) {
+    rethrowDatabaseError(err);
     return c.json({ error: (err as Error).message }, 403);
   }
 
@@ -269,6 +271,7 @@ accountsRouter.openapi(
   try {
     accountId = await resolveAccountForUser(userId, accountOverride);
   } catch (err) {
+    rethrowDatabaseError(err);
     return c.json({ error: (err as Error).message }, 403);
   }
 
@@ -368,6 +371,7 @@ accountsRouter.openapi(
   try {
     accountId = await resolveAccountForUser(userId, queryAccount);
   } catch (err) {
+    rethrowDatabaseError(err);
     return c.json({ error: (err as Error).message }, 403);
   }
 

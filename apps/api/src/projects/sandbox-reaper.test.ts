@@ -99,6 +99,9 @@ let huskOutcomeBySandbox: Record<
  *  so a test can assert the husk is closed BEFORE its record is deleted. */
 let lifecycleCallOrder: string[] = [];
 let promotedQueueSessions: string[] = [];
+// null: no queued prompt to promote, so the session goes idle.
+let nextPromotion: string | null | undefined;
+let chatSettles: Array<{ sessionId: string; outcome: string }> = [];
 let targetedQueueDrains: string[] = [];
 
 /**
@@ -482,7 +485,7 @@ const reapAndReconcileSandboxes = (
     },
     promoteNextInboxRow: async (sessionId: string) => {
       promotedQueueSessions.push(sessionId);
-      return `prompt:${sessionId}`;
+      return nextPromotion === undefined ? `prompt:${sessionId}` : nextPromotion;
     },
     observeTurnWaiting: async (_externalId: string, runtimeSessionId: string) => {
       turnWaitingCalls.push(runtimeSessionId);
@@ -495,6 +498,9 @@ const reapAndReconcileSandboxes = (
     drainSessionLifecycleQueue: async (input: { idempotencyKey?: string }) => {
       if (input.idempotencyKey) targetedQueueDrains.push(input.idempotencyKey);
       return { claimed: 1, completed: 1, failed: 0 };
+    },
+    settleSessionChat: async (sessionId: string, outcome: string) => {
+      chatSettles.push({ sessionId, outcome });
     },
   }, scope);
 
@@ -548,6 +554,8 @@ beforeEach(() => {
   huskOutcomeBySandbox = {};
   lifecycleCallOrder = [];
   promotedQueueSessions = [];
+  nextPromotion = undefined;
+  chatSettles = [];
   targetedQueueDrains = [];
   freshDeadlineBySandbox = {};
   stopClaimDeniedBySandbox = {};
@@ -1268,6 +1276,41 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(promptRedeliveries).toEqual([]);
     // The queued NEXT prompt (a trigger's queued continue_session) drains.
     expect(promotedQueueSessions).toEqual(['sess-1']);
+  });
+
+  // Discord marks the person's message ⏳ while the agent works; the turn end the
+  // runtime never reported must clear it too, or it stays forever.
+  test("a settled turn that leaves the session idle clears the chat's working mark; a promoted prompt keeps it", async () => {
+    const orphan = () =>
+      candidate({
+        deadlineAt: new Date(NOW.getTime() + 4 * HOUR),
+        metadata: {
+          activeTurns: {
+            'orphaned-token': {
+              token: 'orphaned-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: null,
+              startedAtMs: NOW.getTime() - 31 * 60_000,
+            },
+          },
+        },
+      });
+    candidates = [orphan()];
+    statusByExternal['ext-1'] = 'running';
+    turnObservationByToken['orphaned-token'] = 'active';
+    nextPromotion = null;
+    await reapAndReconcileSandboxes(NOW);
+    expect(chatSettles).toEqual([{ sessionId: 'sess-1', outcome: 'failed' }]);
+    expect(targetedQueueDrains).toEqual([]);
+
+    // A queued prompt promoted by the settle: the session keeps running, and so do its marks.
+    chatSettles = [];
+    candidates = [orphan()];
+    nextPromotion = 'prompt:sess-1';
+    await reapAndReconcileSandboxes(NOW);
+    expect(chatSettles).toEqual([]);
+    expect(targetedQueueDrains).toEqual(['prompt:sess-1']);
   });
 
   test('a turn with no messageId INSIDE its ceiling is left alone for observation to settle normally', async () => {
@@ -2819,17 +2862,6 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     statusByExternal['ext-1'] = 'running';
 
     expect((await reapAndReconcileSandboxes(NOW)).stopped).toBe(1);
-  });
-
-  // An unclaimed warm box used to be exempt from the idle TTL entirely, so it
-  // burned until the 240-min ceiling. It now dies at its 20-minute boot floor
-  // like anything else nobody prompted.
-  test('an expired WARM box is stopped like any other', async () => {
-    candidates = [candidate({ deadlineAt: new Date(NOW.getTime() - 60_000) })];
-    statusByExternal['ext-1'] = 'running';
-
-    expect((await reapAndReconcileSandboxes(NOW)).stopped).toBe(1);
-    expect(stops).toEqual(['ext-1']);
   });
 
   // ═══ TOCTOU: the snapshot is stale by a whole provider round-trip ═══

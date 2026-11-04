@@ -116,6 +116,7 @@ function mount(items: ReviewItem[], cans: Leaves) {
               calls.push(`bulk ${ids.join(',')} ${verdict}`);
             }}
             verdictAllowed={(item, verdict) => reviewVerdictAllowed(item, verdict, cans)}
+            onOpenSession={(sessionId) => calls.push(`open ${sessionId}`)}
           />
         </NextIntlClientProvider>
       </QueryClientProvider>,
@@ -191,6 +192,40 @@ describe('the row menu', () => {
   });
 });
 
+describe('an output opens in a modal over the inbox, like a connector approval', () => {
+  const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
+
+  test('the dialog holds the item, its files and its verdicts; the inbox stays behind it', () => {
+    search = `id=${OUTPUT.id}`;
+    mount([OUTPUT, CHANGE], MANAGER);
+    expect(dialog()?.textContent).toContain(OUTPUT.title);
+    expect(dialog()?.textContent).toContain('the page');
+    expect(dialog()?.textContent).toContain('Approve & publish');
+    // The inbox list is still drawn: the change request's row is under the dialog.
+    expect(text()).toContain(CHANGE.title);
+  });
+
+  test('an output that names nothing it made shows its note and no empty section', () => {
+    const bare = {
+      ...OUTPUT,
+      id: 'rv-output-bare',
+      detail: { ...OUTPUT.detail, files: undefined, preview: undefined, previewUrl: undefined },
+    } as ReviewItem;
+    search = `id=${bare.id}`;
+    mount([bare], MANAGER);
+    const { note } = OUTPUT.detail as Extract<ReviewItem['detail'], { note: string }>;
+    expect(dialog()?.textContent).toContain(note);
+    expect(dialog()?.querySelectorAll('section')).toHaveLength(0);
+  });
+
+  test('a change request keeps its page: no dialog', () => {
+    search = `id=${CHANGE.id}`;
+    mount([CHANGE], MANAGER);
+    expect(text()).toContain(CHANGE.title);
+    expect(dialog()).toBeNull();
+  });
+});
+
 describe('the review page of one item', () => {
   test('a built-in member gets no verdict on a native output', () => {
     search = `id=${OUTPUT.id}`;
@@ -219,6 +254,18 @@ describe('the review page of one item', () => {
     mount([CHANGE], REVIEWER);
     expect(buttons()).toContain('Ask for changes');
     expect(buttons()).not.toContain('Ship it');
+  });
+
+  test('a change request opens the session that proposed it, before Ask for changes', () => {
+    const fromSession = { ...CHANGE, sessionId: 'ses_origin' } as ReviewItem;
+    search = `id=${fromSession.id}`;
+    mount([fromSession], REVIEWER);
+    const labels = buttons();
+    expect(labels.indexOf('Open session')).toBeGreaterThan(-1);
+    expect(labels.indexOf('Open session')).toBeLessThan(labels.indexOf('Ask for changes'));
+    const open = [...host!.querySelectorAll('button')].find((b) => b.textContent === 'Open session');
+    act(() => open!.click());
+    expect(calls).toContain('open ses_origin');
   });
 
   test('a built-in member gets neither on a change request', () => {

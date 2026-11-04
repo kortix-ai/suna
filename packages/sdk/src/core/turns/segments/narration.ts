@@ -23,18 +23,8 @@ import type { ToolCallBlock } from '../../session-log/types';
 import { inputPath, type ToolKind, toolKind } from '../tool-kind';
 import { getToolPrimaryArg, normalizeName } from '../tools/tool-meta';
 import { parseWebSearchOutput, wsDomain } from '../tools/web-helpers';
+import { safeHttpUrl } from '../safe-url';
 import { stripTrailingSlashes } from '../text-scan';
-
-/** An absolute http(s) URL, normalised, or `null` for anything else. */
-function safeHttpUrl(value: unknown): string | null {
-  if (typeof value !== 'string' || !value.trim()) return null;
-  try {
-    const url = new URL(value.trim());
-    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null;
-  } catch {
-    return null;
-  }
-}
 
 export type StepFamily =
   | 'explore'
@@ -45,6 +35,8 @@ export type StepFamily =
   | 'create'
   | 'plan'
   | 'delegate'
+  | 'workflow'
+  | 'platform'
   | 'sessions'
   | 'memory'
   | 'connectors'
@@ -80,6 +72,10 @@ const FAMILY_OF_KIND: Record<ToolKind, StepFamily | 'hidden'> = {
   // an explicit delegation, so they narrate the same way.
   task: 'delegate',
   delegate: 'delegate',
+  // pi's workflow runs several agents at once: one sentence for the run, not one per agent.
+  workflow: 'workflow',
+  // My Kortix's platform tools: what it checked or changed in the project, by the tool's object.
+  platform: 'platform',
   sessions: 'sessions',
   // The model's own step checklist — nothing is delegated.
   todowrite: 'plan',
@@ -185,6 +181,8 @@ const DELEGATE_ACTION: Record<string, DelegateAction> = {
   agent_task_create: 'spawn',
   agent_task_start: 'spawn',
   task: 'spawn',
+  // pi's subagent tool; `task` is its deprecated alias.
+  agent: 'spawn',
   task_create: 'spawn',
   task_start: 'spawn',
   session_spawn: 'spawn',
@@ -239,6 +237,100 @@ function delegateAction(part: ToolPart): DelegateAction {
     }
   }
   return DELEGATE_ACTION[t] ?? 'message';
+}
+
+// ─── platform: what a My Kortix tool checked or changed, and whether it did ─
+
+/** The object each platform tool works on, as a sentence names it: when it reads, and when it changes. */
+const PLATFORM_OBJECT: Record<string, { read: string; change: string }> = {
+  kortix_agents: { read: 'your agents', change: 'your agents' },
+  kortix_sessions: { read: 'your sessions', change: 'your sessions' },
+  kortix_schedules: { read: 'your schedules', change: 'your schedules' },
+  kortix_connectors: { read: 'your connectors', change: 'your connectors' },
+  kortix_people: { read: 'the members', change: 'the members' },
+  kortix_access: { read: 'who has access', change: 'access' },
+  kortix_usage: { read: 'your usage', change: 'your usage' },
+  kortix_change_requests: { read: 'the change requests', change: 'a change request' },
+  send_message: { read: 'a message', change: 'a message' },
+  list_agents: { read: 'the other agents', change: 'the other agents' },
+  task_stop: { read: 'an agent', change: 'an agent' },
+};
+
+/** The multi-agent tools take no `action`: the tool itself reads or changes. */
+const PLATFORM_READ_TOOLS = new Set(['list_agents']);
+const PLATFORM_CHANGE_TOOLS = new Set(['send_message', 'task_stop']);
+
+/** A group of one tool that has its own sentence: a message is sent, an agent is stopped. */
+function platformToolSentence(parts: ToolPart[]): string | undefined {
+  const names = new Set(parts.map((p) => normalizeName(p.tool)));
+  if (names.size !== 1) return undefined;
+  const n = parts.length;
+  switch ([...names][0]) {
+    case 'send_message':
+      return n === 1 ? 'Sent a message' : `Sent ${n} messages`;
+    case 'task_stop':
+      return n === 1 ? 'Stopped an agent' : `Stopped ${n} agents`;
+    default:
+      return undefined;
+  }
+}
+
+/** The verb of a refused or failed single-tool group, where `update` would misname it. */
+const PLATFORM_FAILED_VERB: Record<string, string> = { send_message: 'send', task_stop: 'stop' };
+const PLATFORM_DENIED_VERB: Record<string, string> = { send_message: 'Sending', task_stop: 'Stopping' };
+const PROJECT_OBJECT = { read: 'your project', change: 'your project' };
+
+/** The actions that only read. Every other action changes something; an unknown one is never guessed a read. */
+const PLATFORM_READ_ACTIONS = new Set(['', 'list', 'get', 'read', 'find', 'show', 'view', 'events', 'runs', 'test', 'search', 'check', 'status', 'pending', 'who']);
+
+function platformChanges(part: ToolPart): boolean {
+  const tool = normalizeName(part.tool);
+  if (PLATFORM_READ_TOOLS.has(tool)) return false;
+  if (PLATFORM_CHANGE_TOOLS.has(tool)) return true;
+  const action = rawInput(part).action;
+  return !PLATFORM_READ_ACTIONS.has(typeof action === 'string' ? action : '');
+}
+
+/**
+ * The result a settled platform call returned: its `KortixToolResult` says `ok: false` with
+ * `error.kind` when Kortix refused or the action failed. The call itself completes, so the
+ * part status alone would narrate a refused invite as done.
+ */
+function platformRefusal(part: ToolPart): 'denied' | 'failed' | undefined {
+  const output = (part.state as { output?: unknown } | undefined)?.output;
+  if (typeof output !== 'string' || !output.trimStart().startsWith('{')) return undefined;
+  try {
+    const result = JSON.parse(output) as { ok?: unknown; error?: { kind?: unknown } } | null;
+    if (result?.ok !== false) return undefined;
+    return result.error?.kind === 'denied' ? 'denied' : 'failed';
+  } catch {
+    return undefined;
+  }
+}
+
+/** The object a group of platform calls worked on: one tool names its own, several name the project. */
+function platformObject(parts: ToolPart[], changes: boolean): string {
+  const names = new Set(parts.map((p) => normalizeName(p.tool)));
+  const object = names.size === 1 ? (PLATFORM_OBJECT[[...names][0]] ?? PROJECT_OBJECT) : PROJECT_OBJECT;
+  return changes ? object.change : object.read;
+}
+
+/** The one tool a group of platform calls used, or undefined for several. */
+function onlyPlatformTool(parts: ToolPart[]): string | undefined {
+  const names = new Set(parts.map((p) => normalizeName(p.tool)));
+  return names.size === 1 ? [...names][0] : undefined;
+}
+
+function platformFailedSentence(parts: ToolPart[]): string {
+  const changes = parts.some(platformChanges);
+  const verb = PLATFORM_FAILED_VERB[onlyPlatformTool(parts) ?? ''] ?? (changes ? 'update' : 'check');
+  return `Couldn't ${verb} ${platformObject(parts, changes)}`;
+}
+
+function platformDeniedSentence(parts: ToolPart[]): string {
+  const changes = parts.some(platformChanges);
+  const verb = PLATFORM_DENIED_VERB[onlyPlatformTool(parts) ?? ''] ?? (changes ? 'Updating' : 'Checking');
+  return `${verb} ${platformObject(parts, changes)} needs a permission`;
 }
 
 // ─── automations: create/update vs read vs delete vs pause/resume vs a test dry run ─
@@ -430,7 +522,26 @@ function truncate(s: string, max = 60): string {
   return trimmed.length > max ? trimmed.slice(0, max - 1) + '…' : trimmed;
 }
 
+/**
+ * The images one `image_gen` call made (its output's `images`), else the
+ * prompts it asked for, else 1. A call that failed as a whole made none it
+ * can claim: 1, so its sentence never counts the prompts it asked for.
+ */
+function imageCount(part: ToolPart): number {
+  if ((part.state as { status?: string } | undefined)?.status === 'error') return 1;
+  try {
+    const images = JSON.parse(String((part.state as { output?: unknown } | undefined)?.output)).images;
+    if (Array.isArray(images) && images.length) return images.length;
+  } catch {
+    // no output yet, or a one-image output
+  }
+  const prompts = rawInput(part).prompts;
+  return Array.isArray(prompts) && prompts.length ? prompts.length : 1;
+}
+
 function imageGenSentence(part: ToolPart): string {
+  const count = imageCount(part);
+  if (count > 1) return CREATE_GROUP_SENTENCE[createPartKey(part)](count);
   const action = rawInput(part).action as string | undefined;
   return (action && IMAGE_GEN_ACTION_SENTENCE[action]) || 'Worked on an image';
 }
@@ -574,9 +685,13 @@ const CREATE_MEDIA_NOUN: Record<CreateMedia, string> = {
 /** The group's actions (or its media types) genuinely differ — say only what
  * was touched, in neutral terms that hold no matter which specific action
  * each part turns out to be. Vague-but-true always beats specific-but-false. */
-function mixedCreateSentence(keys: string[]): string {
+function mixedCreateSentence(parts: ToolPart[], keys: string[]): string {
   const counts: Record<CreateMedia, number> = { image: 0, video: 0, presentation: 0, shown: 0 };
-  for (const key of keys) counts[createMediaOf(key)]++;
+  // One image_gen call can make up to four images: count images, not calls.
+  keys.forEach((key, i) => {
+    const media = createMediaOf(key);
+    counts[media] += media === 'image' ? imageCount(parts[i]!) : 1;
+  });
   const segments: string[] = [];
   (Object.keys(counts) as CreateMedia[]).forEach((media) => {
     const c = counts[media];
@@ -616,6 +731,15 @@ export function narrateStep(family: StepFamily, calls: ReadonlyArray<ToolPart | 
       return n === 1 ? 'Ran a command' : `Ran ${n} commands`;
     case 'script':
       return n === 1 ? 'Ran a script' : `Ran ${n} scripts`;
+    case 'workflow':
+      return n === 1 ? 'Ran a workflow' : `Ran ${n} workflows`;
+    case 'platform': {
+      const changes = parts.some(platformChanges);
+      const refusals = parts.map(platformRefusal);
+      if (refusals.includes('denied')) return platformDeniedSentence(parts);
+      if (refusals.includes('failed')) return platformFailedSentence(parts);
+      return platformToolSentence(parts) ?? `${changes ? 'Updated' : 'Checked'} ${platformObject(parts, changes)}`;
+    }
     case 'web': {
       const isSearch = (p: ToolPart) => {
         const t = normalizeName(p.tool);
@@ -658,8 +782,12 @@ export function narrateStep(family: StepFamily, calls: ReadonlyArray<ToolPart | 
       }
 
       const keys = parts.map(createPartKey);
-      if (allSame(keys)) return CREATE_GROUP_SENTENCE[keys[0]](n);
-      return mixedCreateSentence(keys);
+      if (allSame(keys)) {
+        // One image_gen call can make up to four images: count images, not calls.
+        const count = createMediaOf(keys[0]) === 'image' ? parts.reduce((sum, p) => sum + imageCount(p), 0) : n;
+        return CREATE_GROUP_SENTENCE[keys[0]](count);
+      }
+      return mixedCreateSentence(parts, keys);
     }
     case 'plan':
       return n === 1 ? 'Planned the work' : `Planned the work · ${n} steps`;
@@ -723,25 +851,25 @@ export function narrateStep(family: StepFamily, calls: ReadonlyArray<ToolPart | 
       if (allSame(actions)) {
         switch (actions[0]) {
           case 'create':
-            return n === 1 ? 'Set up an automation' : `Set up ${n} automations`;
+            return n === 1 ? 'Set up a trigger' : `Set up ${n} triggers`;
           case 'update':
-            return n === 1 ? 'Updated an automation' : `Updated ${n} automations`;
+            return n === 1 ? 'Updated a trigger' : `Updated ${n} triggers`;
           case 'delete':
-            return n === 1 ? 'Deleted an automation' : `Deleted ${n} automations`;
+            return n === 1 ? 'Deleted a trigger' : `Deleted ${n} triggers`;
           case 'control':
-            return n === 1 ? 'Adjusted an automation' : `Adjusted ${n} automations`;
+            return n === 1 ? 'Adjusted a trigger' : `Adjusted ${n} triggers`;
           case 'test':
             // A dry run — nothing is created, changed, or paused.
-            return n === 1 ? 'Tested an automation' : `Tested ${n} automations`;
+            return n === 1 ? 'Tested a trigger' : `Tested ${n} triggers`;
           case 'read':
-            return 'Checked your automations';
+            return 'Checked your triggers';
           case 'unknown':
             // An action neither this file nor the tool's own component
             // recognizes — never guess it's a harmless read.
-            return 'Worked with your automations';
+            return 'Worked with your triggers';
         }
       }
-      return 'Worked with your automations';
+      return 'Worked with your triggers';
     }
     case 'projects': {
       const actions = parts.map(projectAction);
@@ -808,6 +936,10 @@ export function narrateFailedStep(family: StepFamily, calls: ReadonlyArray<ToolP
       return 'A command failed';
     case 'script':
       return 'A script failed';
+    case 'workflow':
+      return 'A workflow hit a problem';
+    case 'platform':
+      return platformFailedSentence(parts);
     case 'web':
       return "Couldn't finish searching the web";
     case 'create':
@@ -823,7 +955,7 @@ export function narrateFailedStep(family: StepFamily, calls: ReadonlyArray<ToolP
     case 'connectors':
       return "Couldn't reach a connector";
     case 'automations':
-      return 'Hit a problem with your automations';
+      return 'Hit a problem with your triggers';
     case 'projects':
       return 'Hit a problem with your project';
     case 'skills':

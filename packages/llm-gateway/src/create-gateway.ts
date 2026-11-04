@@ -12,14 +12,22 @@ import {
   responsesToChat,
 } from './ingress/openai-responses';
 import {
+  type AudioRequest,
   type ChatCompletionRequest,
   type GatewayDeps,
   type HandlerRuntime,
+  type ImageRequest,
+  type VoicesRequest,
+  handleAudioRequest,
   handleChatCompletions,
+  handleImageRequest,
+  handleVoicesRequest,
 } from './pipeline';
 import { parseUpstreamErrorBody } from './http/parse-upstream-error';
 import { gatewayErrorResponse } from './pipeline/error-response';
+import { requestFieldError } from './pipeline/request-fields';
 import { createRouteMemory } from './pipeline/route-memory';
+import { createClaudeCodePassthrough, type ClaudeCodeRequest } from './claude-code/passthrough';
 
 // Anthropic Messages API error `type` values by HTTP status — used only to
 // shape the JSON envelope for clients speaking the Anthropic wire format; the
@@ -87,6 +95,19 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
 
   const jsonResponse = (data: unknown, status = 200): Response =>
     new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
+
+  /** An ingress that builds its own answer keeps the chat answer's model names (KRTX-3369). */
+  const withModelNames = (chat: Response, answer: Response): Response => {
+    for (const name of ['x-kortix-requested-model', 'x-kortix-model']) {
+      const value = chat.headers.get(name);
+      if (value) answer.headers.set(name, value);
+    }
+    return answer;
+  };
+
+  // `null`, a number, a string or an array parses but is no request body.
+  const isJsonObject = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value);
 
   const bearer = (header: string | undefined): string | null => {
     const match = header?.match(/^Bearer\s+(\S.*)$/i);
@@ -156,6 +177,9 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
       req.rawBody = '';
       return anthropicErrorResponse(400, 'Invalid JSON body');
     }
+    if (!isJsonObject(anthropicBody)) return anthropicErrorResponse(400, 'Invalid JSON body');
+    const anthropicFieldError = requestFieldError(anthropicBody);
+    if (anthropicFieldError) return anthropicErrorResponse(400, anthropicFieldError);
 
     const streaming = anthropicBody.stream === true;
     const chatBody = anthropicMessagesToChat(anthropicBody as unknown as AnthropicMessagesRequest);
@@ -183,19 +207,19 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
     const contentType = upstream.headers.get('content-type') ?? '';
     if (streaming && contentType.includes('text/event-stream') && upstream.body) {
       const anthropicStream = chatSseToAnthropicSse(upstream.body, { model });
-      return new Response(anthropicStream, {
+      return withModelNames(upstream, new Response(anthropicStream, {
         status: 200,
         headers: {
           'content-type': 'text/event-stream',
           'cache-control': 'no-cache',
           connection: 'keep-alive',
         },
-      });
+      }));
     }
 
     const data = await upstream.json().catch(() => null);
     if (!data) return anthropicErrorResponse(502, 'Invalid upstream response');
-    return jsonResponse(chatJsonToAnthropicMessage(data as Record<string, unknown>));
+    return withModelNames(upstream, jsonResponse(chatJsonToAnthropicMessage(data as Record<string, unknown>)));
   };
 
   // OpenAI Responses API ingress (`POST /responses`): Codex CLI >=0.157 only
@@ -215,6 +239,9 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
       req.rawBody = '';
       return responsesErrorResponse(400, 'Invalid JSON body');
     }
+    if (!isJsonObject(responsesBody)) return responsesErrorResponse(400, 'Invalid JSON body');
+    const responsesFieldError = requestFieldError(responsesBody);
+    if (responsesFieldError) return responsesErrorResponse(400, responsesFieldError);
 
     const streaming = responsesBody.stream === true;
     const chatBody = responsesToChat(responsesBody as unknown as ResponsesRequest);
@@ -236,26 +263,44 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
     const contentType = upstream.headers.get('content-type') ?? '';
     if (streaming && contentType.includes('text/event-stream') && upstream.body) {
       const responsesStream = chatSseToResponsesSse(upstream.body, { model });
-      return new Response(responsesStream, {
+      return withModelNames(upstream, new Response(responsesStream, {
         status: 200,
         headers: {
           'content-type': 'text/event-stream',
           'cache-control': 'no-cache',
           connection: 'keep-alive',
         },
-      });
+      }));
     }
 
     const data = await upstream.json().catch(() => null);
     if (!data) return responsesErrorResponse(502, 'Invalid upstream response');
-    return jsonResponse(chatJsonToResponsesObject(data as Record<string, unknown>));
+    return withModelNames(upstream, jsonResponse(chatJsonToResponsesObject(data as Record<string, unknown>)));
   };
 
+  // Claude Code's own Anthropic requests on a stored Claude account. Never
+  // translated and never through the chat pipeline: see claude-code/passthrough.ts.
+  const claudeCredentials = hooks.claudeCredentials;
+  const claudeCodePassthrough = claudeCredentials
+    ? createClaudeCodePassthrough({
+      authenticate: hooks.authenticate,
+      claudeCredentials,
+      claudeRefused: hooks.claudeRefused,
+      notePoolRateLimit: hooks.notePoolRateLimit,
+    }, { upstream: deps.claudeCodeUpstream, logger })
+    : null;
+  const claudeCode = (req: ClaudeCodeRequest): Promise<Response> =>
+    claudeCodePassthrough ? claudeCodePassthrough(req) : Promise.resolve(anthropicErrorResponse(404, 'Claude Code passthrough is not configured'));
+
   return {
+    claudeCode,
     chatCompletions: (req: ChatCompletionRequest): Promise<Response> =>
       handleChatCompletions(runtime, req),
     messages,
     responses,
     listModels,
+    images: (req: ImageRequest): Promise<Response> => handleImageRequest(runtime, req),
+    audio: (req: AudioRequest): Promise<Response> => handleAudioRequest(runtime, req),
+    voices: (req: VoicesRequest): Promise<Response> => handleVoicesRequest(runtime, req),
   };
 }

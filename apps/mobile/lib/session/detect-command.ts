@@ -4,10 +4,27 @@ import type { Command } from '@/lib/session/runtime-data';
 // detectCommandFromText — detect if a user message matches a command template
 // ---------------------------------------------------------------------------
 
+/**
+ * pi's `/skill` message: `<skill name="…" location="…">\n<SKILL.md>\n</skill>`, then
+ * `\n\n<args>`. pi lists a skill with an empty template, so only this envelope
+ * names it after a reload. Twin of `packages/ui/src/session/thread/detect-command.ts`.
+ */
+export function detectSkillEnvelope(rawText: string): { name: string; args?: string; source: 'skill' } | undefined {
+  const text = rawText.trim();
+  const open = /^<skill name="([^"]+)" location="[^"]*">\n/.exec(text);
+  if (!open) return undefined;
+  const close = text.lastIndexOf('\n</skill>');
+  if (close < open[0].length - 1) return undefined;
+  const args = text.slice(close + '\n</skill>'.length).trim();
+  return { name: open[1], args: args || undefined, source: 'skill' };
+}
+
 export function detectCommandFromText(
   rawText: string,
   commands?: Command[],
-): { name: string; args?: string } | undefined {
+): { name: string; args?: string; source?: 'skill' } | undefined {
+  const skill = rawText ? detectSkillEnvelope(rawText) : undefined;
+  if (skill) return skill;
   if (!commands || !rawText) return undefined;
 
   const trimmed = rawText.trim();

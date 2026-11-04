@@ -1,5 +1,5 @@
 // KRTX-1734: the Sessions page's bulk delete keeps every session restorable
-// for 30 days and keeps its branch. Its confirm says so, in the same words as
+// for 30 days; after that its content and branch go. Its confirm says so, in the same words as
 // the single-session delete.
 import { describe, expect, mock, test } from 'bun:test';
 import type { ReactNode } from 'react';
@@ -22,13 +22,13 @@ mock.module('../../primitives/confirm-dialog', uiConfirmDialogMock);
 const { SessionsBulkDeleteDialog } = await import('./sessions-bulk-delete-dialog');
 
 describe('SessionsBulkDeleteDialog', () => {
-  test('says each session can be restored for 30 days and that its branch is kept', () => {
+  test('says each session can be restored for 30 days and what goes after that', () => {
     const html = renderToStaticMarkup(
       <SessionsBulkDeleteDialog count={5} open isPending={false} onOpenChange={() => {}} onConfirm={() => {}} />,
     );
     expect(html).toContain('<h2>Delete 5 sessions?</h2>');
     expect(html).toContain(
-      '<p>Deletes each selected session and removes its sandbox. You can restore each one from Recently deleted for 30 days. After that, its messages and files are deleted. Its branch is kept.</p>',
+      '<p>Deletes each selected session and removes its sandbox. You can restore each one from Recently deleted for 30 days. After that, its messages, files and branch are deleted.</p>',
     );
     expect(html).not.toContain('cannot be undone');
     expect(html).toContain('>Delete 5</button>');

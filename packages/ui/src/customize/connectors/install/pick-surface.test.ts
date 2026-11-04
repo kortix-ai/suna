@@ -33,7 +33,7 @@ describe('installableVariants', () => {
   });
 
   test('a variant with no template is left out', () => {
-    expect(installableVariants([variant('cli', 'cli', false), variant('openapi', 'rest')])).toEqual(
+    expect(installableVariants([variant('http', 'http', false), variant('openapi', 'rest')])).toEqual(
       [{ id: 'rest', kind: 'openapi', name: 'rest surface', template: { provider: 'openapi' } }],
     );
   });
@@ -49,7 +49,7 @@ describe('pickSurface', () => {
     );
   });
   test('nothing installable is null', () => {
-    expect(pickSurface([variant('cli', 'cli', false)])).toBeNull();
+    expect(pickSurface([variant('http', 'http', false)])).toBeNull();
     expect(pickSurface([])).toBeNull();
   });
 });

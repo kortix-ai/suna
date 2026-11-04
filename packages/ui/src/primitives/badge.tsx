@@ -31,6 +31,8 @@ const badgeVariants = cva(
         info: 'bg-kortix-blue/15 text-foreground ring-1 ring-inset ring-kortix-blue/15 normal-case [&>svg]:text-kortix-blue',
         muted: 'bg-muted/50 text-muted-foreground ring-1 ring-inset ring-muted/50 normal-case',
         transparent: 'bg-transparent text-foreground ring-0 normal-case',
+        // The owner tier of the role badge hierarchy (decisions.md, R1).
+        royal: 'bg-kortix-purple/15 text-foreground ring-1 ring-inset ring-kortix-purple/15 normal-case',
       },
       size: {
         default: 'px-1.5',

@@ -65,8 +65,12 @@ import { createAccountToken } from '../repositories/account-tokens';
 //
 // +1 since #10544: /start checks the repository is still connected
 // (assertRepositoryConnected) before a session row or a sandbox exists.
-const ONE_SHOT_STATEMENT_BUDGET = 38;
-const LONG_POLL_STATEMENT_BUDGET = 49;
+//
+// +1 since #10893: the session visibility rule reads the project's private
+// channels (`hiddenSpaceIds`, one statement). In production it is
+// TTL-memoized for 10 s; under `bun test` ttlMemo is bypassed.
+const ONE_SHOT_STATEMENT_BUDGET = 39;
+const LONG_POLL_STATEMENT_BUDGET = 50;
 
 /** The long-poll the second suite runs. Ten ticks at the default 200 ms. */
 const LONG_POLL_MS = 2000;

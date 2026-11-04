@@ -14,7 +14,8 @@ const EXCLUDED: Array<{ route: RegExp; reason: string }> = [
   { route: /^ALL \/v1\/router\/[a-z0-9]+(\/\*)?$/, reason: 'third-party provider API passthrough' },
   { route: /^(ALL|GET|OPTIONS) \/v1\/p\//, reason: 'sandbox preview and public-share proxy: bytes of a sandbox port' },
   { route: /^POST \/internal\/gateway\//, reason: 'internal RPC between the LLM gateway and the API' },
-  { route: /^GET \/\.well-known\//, reason: 'OAuth/OIDC discovery documents (RFC 8414, RFC 9728)' },
+  { route: /^GET \/\.well-known\//, reason: 'OAuth/OIDC discovery documents (RFC 8414, RFC 9728) and security.txt (RFC 9116)' },
+  { route: /^GET \/(robots\.txt|sitemap\.xml)$/, reason: 'crawler discovery files (RFC 9309, sitemaps.org)' },
   { route: /^GET (\/v1)?\/health\/(live|ready)$|^GET \/metrics$/, reason: 'orchestrator probes and Prometheus scrape' },
   { route: /^GET \/v1\/(openapi\.json|docs)$/, reason: 'the spec and its reader' },
   { route: /^HEAD \/v1\/runtime-assets\//, reason: 'HEAD twin of a documented GET' },
@@ -22,6 +23,8 @@ const EXCLUDED: Array<{ route: RegExp; reason: string }> = [
   { route: /^POST \/v1\/webhooks\/teams\//, reason: 'Microsoft Bot Framework activity webhook' },
   { route: /^(GET|PUT|POST|DELETE) \/v1\/projects\/:projectId\/sessions\/:sessionId\/drive-sync\//, reason: "the session box's drive-sync daemon; takes only that sandbox's credential" },
   { route: /^(GET|POST|DELETE) \/v1\/mcp$/, reason: 'MCP streamable-HTTP endpoint, described by the MCP protocol' },
+  { route: /^GET \/v1\/artifacts\/(s|p)\//, reason: 'artifact content server: the bytes of an artifact, capability-gated' },
+  { route: /^GET \/v1\/artifacts\/meta\/:artifactId$/, reason: "the public artifact page's chrome (title, type), read only by that page" },
 ];
 
 /** Retired routes are 410 stubs (routes/retired.ts): served, never documented. */

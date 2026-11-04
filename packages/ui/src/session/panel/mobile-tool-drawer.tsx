@@ -20,11 +20,16 @@
 
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '../../primitives/drawer';
 import { BrowserPanel } from '../../browser/browser-panel';
+import { ArtifactPanelPreview } from '../../artifacts/artifact-session';
+import { parseArtifactUrl } from '../../artifacts/frame-policy';
 import { CloseButton } from './easy/detail-view';
 import { SessionAuditPanel } from './session-audit-panel';
 import { SessionRemindersPanel } from './session-reminders-panel';
+import { SessionDesktop } from './session-desktop';
 import { SessionFilesExplorer } from './session-files-explorer';
 import { SessionTerminalPanel } from '../../terminal/session-terminal-panel';
+import { SessionBootStatus } from '../status/session-starting-loader';
+import { useOptionalSessionPanel } from './session-panel-provider';
 import { useLocalizedUiCatalog } from '../../i18n/ui-catalog/use-localized-ui-catalog';
 import { useKortixComputerStore, type QuickView } from '../../internal/stores/kortix-computer-store';
 import { sessionPreviewTabId } from '../../internal/stores/session-browser-store';
@@ -32,6 +37,7 @@ import {
   AlarmIcon,
   FolderOpenIcon,
   GlobeIcon,
+  MonitorIcon,
   ScrollIcon,
   TerminalWindowIcon,
   type Icon,
@@ -42,7 +48,8 @@ const TOOL_META: Record<QuickView, { label: string; Icon: Icon }> = {
   browser: { label: 'Browser', Icon: GlobeIcon },
   files: { label: 'Files', Icon: FolderOpenIcon },
   audit: { label: 'Audit', Icon: ScrollIcon },
-  reminders: { label: 'Reminders', Icon: AlarmIcon },
+  reminders: { label: 'Loops', Icon: AlarmIcon },
+  desktop: { label: 'Desktop', Icon: MonitorIcon },
 };
 
 export function MobileToolDrawer({
@@ -55,9 +62,16 @@ export function MobileToolDrawer({
   projectSessionId?: string;
 }) {
   const view = useKortixComputerStore((s) => s.mobileToolView);
+  const target = useKortixComputerStore((s) => s.mobileToolTarget);
   const closeMobileTool = useKortixComputerStore((s) => s.closeMobileTool);
   const toolMeta = useLocalizedUiCatalog(TOOL_META);
   const meta = view ? toolMeta[view] : null;
+  const artifactUrl = view === 'browser' && target?.url && parseArtifactUrl(target.url) ? target.url : null;
+  // Terminal, Browser and Files need the computer: while it boots, the drawer
+  // shows the wake status in their place.
+  const booting =
+    !!useOptionalSessionPanel()?.booting && !artifactUrl &&
+    (view === 'terminal' || view === 'browser' || view === 'files' || view === 'desktop');
 
   return (
     <Drawer open={view !== null} onOpenChange={(next) => !next && closeMobileTool()}>
@@ -72,25 +86,35 @@ export function MobileToolDrawer({
           </DrawerTitle>
         </DrawerHeader>
         <div className="min-h-0 flex-1 overflow-hidden">
-          {view === 'terminal' && (
+          {booting && <SessionBootStatus projectId={projectId} sessionId={projectSessionId} />}
+          {!booting && view === 'terminal' && (
             <SessionTerminalPanel
               sessionId={sessionId}
               projectId={projectId}
               projectSessionId={projectSessionId}
             />
           )}
-          {view === 'browser' && (
+          {artifactUrl && <ArtifactPanelPreview key={artifactUrl} url={artifactUrl} onClose={closeMobileTool} />}
+          {!booting && view === 'browser' && !artifactUrl && (
             <BrowserPanel
               tabId={sessionPreviewTabId(sessionId)}
               projectId={projectId}
               projectSessionId={projectSessionId}
+              targetUrl={target?.url}
             />
           )}
-          {view === 'files' && (
+          {!booting && view === 'files' && (
             <SessionFilesExplorer
               chatSessionId={sessionId}
               projectId={projectId}
               projectSessionId={projectSessionId}
+            />
+          )}
+          {!booting && view === 'desktop' && (
+            <SessionDesktop
+              projectId={projectId}
+              projectSessionId={projectSessionId}
+              onClose={closeMobileTool}
             />
           )}
           {view === 'audit' && (

@@ -13,7 +13,7 @@ mock.module('@tanstack/react-query', () => ({
   }),
 }));
 
-const { useRooms, useRoomConversations, useRoom, useRoomMessages, useRoomThread } = await import('./use-rooms');
+const { useRooms, useRoomConversations, useRoom, useRoomMessages, useRoomThread, useSpaceRoom } = await import('./use-rooms');
 const { qk } = await import('./query-keys');
 
 beforeEach(() => {
@@ -53,6 +53,16 @@ describe('room hooks', () => {
     messages.post.onSuccess();
     messages.markRead.onSuccess();
     expect(invalidated).toEqual([[...qk.project.rooms('p1')], [...qk.project.rooms('p1')]]);
+  });
+
+  test('useSpaceRoom reads the room named like the space, and ensure creates it then refreshes every room read', () => {
+    const room = useSpaceRoom('p1', 'ops') as any;
+    const root = qk.project.rooms('p1');
+    expect(room.queryKey.slice(0, root.length)).toEqual([...root]);
+    expect(room.queryKey).toContain('ops');
+    expect((useSpaceRoom('p1', null) as any).enabled).toBe(false);
+    room.ensure.onSuccess();
+    expect(invalidated).toEqual([[...root]]);
   });
 
   test('the timeline and a thread are separate reads; a thread is off until a root is chosen', () => {

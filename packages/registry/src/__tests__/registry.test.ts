@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { parseItemAddress, parseRegistryAddress, rawGithubUrl } from '../address';
+import { assertFetchableUrl, parseItemAddress, parseRegistryAddress, rawGithubUrl } from '../address';
 import { validateRegistry } from '../validate';
-import { expandTarget } from '../paths';
 import { buildRegistry, type BuildSource } from '../build';
 import { loadItem, loadRegistry } from '../fetch';
 
@@ -100,32 +99,6 @@ describe('validateRegistry', () => {
   });
 });
 
-// --- target expansion ------------------------------------------------------
-
-describe('expandTarget', () => {
-  const ctx = { configDir: '.kortix/opencode' };
-  test('~ maps to repo root', () => {
-    expect(expandTarget('~/AGENTS.md', ctx)).toBe('AGENTS.md');
-  });
-  test('@skills and @agents install at the root, whatever the config dir', () => {
-    expect(expandTarget('@skills/pdf/SKILL.md', ctx)).toBe('skills/pdf/SKILL.md');
-    expect(expandTarget('@agents/researcher.md', ctx)).toBe('agents/researcher.md');
-    expect(expandTarget('@skills/pdf/SKILL.md', { configDir: 'harnesses/opencode' })).toBe('skills/pdf/SKILL.md');
-  });
-  test('@memory alias defaults to the root memory/', () => {
-    expect(expandTarget('@memory/MEMORY.md', ctx)).toBe('memory/MEMORY.md');
-    expect(expandTarget('@memory/MEMORY.md', { ...ctx, memoryDir: '.kortix/memory' })).toBe('.kortix/memory/MEMORY.md');
-  });
-  test('OpenCode-only aliases follow the config dir', () => {
-    expect(expandTarget('@tools/web.ts', { configDir: 'harnesses/opencode' })).toBe('harnesses/opencode/tools/web.ts');
-    expect(expandTarget('@commands/review.md', ctx)).toBe('.kortix/opencode/commands/review.md');
-    expect(expandTarget('@opencode/opencode.jsonc', { configDir: '.agent' })).toBe('.agent/opencode.jsonc');
-  });
-  test('rejects path traversal', () => {
-    expect(() => expandTarget('~/../escape', ctx)).toThrow();
-  });
-});
-
 // --- build -----------------------------------------------------------------
 
 function memSource(files: Record<string, string>): BuildSource {
@@ -144,19 +117,18 @@ function memSource(files: Record<string, string>): BuildSource {
 }
 
 describe('buildRegistry', () => {
-  test('detects skills (with nested files), agents, commands, tools', () => {
+  test('detects skills (with nested files) and agent prompts in the root layout', () => {
     const { registry, counts } = buildRegistry({
-      name: 'test',
       source: memSource({
-        '.kortix/opencode/skills/pdf/SKILL.md': '---\nname: pdf\ndescription: PDFs\n---\nbody',
-        '.kortix/opencode/skills/pdf/libraries/reportlab.md': 'ref',
-        '.kortix/opencode/skills/GROUP/research/SKILL.md': '---\nname: research\n---\nx',
-        '.kortix/opencode/agents/kortix.md': '---\nname: kortix\nmode: primary\n---\n',
-        '.kortix/opencode/commands/review.md': '---\ndescription: review\n---\n',
-        '.kortix/opencode/tools/web_search.ts': 'export const x = 1',
+        'kortix.yaml': 'project:\n  name: support-desk\nagents:\n  kortix:\n    prompt_file: agents/kortix.md\n',
+        'skills/pdf/SKILL.md': '---\nname: pdf\ndescription: PDFs\n---\nbody',
+        'skills/pdf/libraries/reportlab.md': 'ref',
+        'skills/GROUP/research/SKILL.md': '---\nname: research\n---\nx',
+        'agents/kortix.md': 'You are the front-door agent.\n',
       }),
     });
-    expect(counts).toMatchObject({ skill: 2, agent: 1, command: 1, tool: 1 });
+    expect(registry.name).toBe('support-desk');
+    expect(counts).toEqual({ skill: 2, agent: 1, extra: 0 });
 
     const pdf = registry.items!.find((i) => i.name === 'pdf')!;
     expect(pdf.type).toBe('registry:skill');
@@ -168,61 +140,25 @@ describe('buildRegistry', () => {
     // A grouped skill flattens to its leaf name on install.
     const research = registry.items!.find((i) => i.name === 'research')!;
     expect(research.files![0].target).toBe('@skills/research/SKILL.md');
-  });
 
-  test('detects the root layout, and a root skill or agent wins over the legacy one', () => {
-    const { registry, counts } = buildRegistry({
-      name: 'test',
-      source: memSource({
-        'kortix.yaml': 'kortix_version: 2\nopencode:\n  config_dir: harnesses/opencode\n',
-        'skills/pdf/SKILL.md': '---\nname: pdf\ndescription: root\n---\nbody',
-        'harnesses/opencode/skills/pdf/SKILL.md': '---\nname: pdf\ndescription: legacy\n---\nbody',
-        'agents/kortix.md': '---\ndescription: root agent\nmode: primary\n---\n',
-        'harnesses/opencode/tools/web_search.ts': 'export const x = 1',
-        'harnesses/opencode/commands/review.md': '---\ndescription: review\n---\n',
-      }),
-    });
-    expect(counts).toMatchObject({ skill: 1, agent: 1, command: 1, tool: 1 });
-    const pdf = registry.items!.find((i) => i.name === 'pdf')!;
-    expect(pdf.description).toBe('root');
-    expect(pdf.files!.map((f) => f.path)).toEqual(['skills/pdf/SKILL.md']);
     expect(registry.items!.find((i) => i.name === 'kortix')!.files![0]).toMatchObject({
       path: 'agents/kortix.md',
       target: '@agents/kortix.md',
     });
-    expect(registry.items!.find((i) => i.name === 'web_search')!.files![0].path).toBe(
-      'harnesses/opencode/tools/web_search.ts',
-    );
   });
 
-  test('a manifest with no opencode.config_dir finds OpenCode commands and tools in harnesses/opencode', () => {
+  test('reads no harness folder', () => {
     const { registry, counts } = buildRegistry({
       name: 'test',
       source: memSource({
-        'kortix.yaml': 'kortix_version: 2\n',
+        'harnesses/opencode/skills/pdf/SKILL.md': '---\nname: pdf\n---\nbody',
         'harnesses/opencode/tools/web_search.ts': 'export const x = 1',
         'harnesses/opencode/commands/review.md': '---\ndescription: review\n---\n',
         '.kortix/opencode/agents/legacy.md': '---\ndescription: legacy agent\n---\n',
       }),
     });
-    expect(counts).toMatchObject({ agent: 1, command: 1, tool: 1 });
-    expect(registry.items!.find((i) => i.name === 'web_search')!.files![0].path).toBe(
-      'harnesses/opencode/tools/web_search.ts',
-    );
-    expect(registry.items!.find((i) => i.name === 'review')!.files![0].path).toBe(
-      'harnesses/opencode/commands/review.md',
-    );
-  });
-
-  test('reads the config dir from kortix.yaml, not only kortix.toml', () => {
-    const { counts } = buildRegistry({
-      name: 'test',
-      source: memSource({
-        'kortix.yaml': 'kortix_version: 2\nopencode:\n  config_dir: custom/oc\n',
-        'custom/oc/tools/web.ts': 'export const x = 1',
-      }),
-    });
-    expect(counts.tool).toBe(1);
+    expect(counts).toEqual({ skill: 0, agent: 0, extra: 0 });
+    expect(registry.items).toEqual([]);
   });
 
   test('expands an author-declared folder into per-file entries', () => {
@@ -366,5 +302,26 @@ describe('loadRegistry — SKILL.md scan fallback (no registry.json)', () => {
     const bundle = resolved.registry.items!.find((i) => i.name === 'document-skills')!;
     expect(bundle.type).toBe('registry:bundle');
     expect(bundle.registryDependencies).toEqual(['xlsx', 'docx']); // leaf names, only the scanned ones
+  });
+});
+
+// Pin the string-only admission policy, including WHATWG bracketed IPv6.
+describe('registry URL host admission', () => {
+  test.each([
+    ['localhost', false], ['SUB.LOCALHOST.', false], ['127.2.3.4', false],
+    ['0.0.0.0', false], ['169.254.169.254', false], ['10.1.2.3', false],
+    ['192.168.1.2', false], ['172.16.0.1', false], ['172.31.255.1', false],
+    ['service.internal', false], ['service.LOCAL.', false],
+    ['example.com', true], ['EXAMPLE.COM.', true], ['172.15.0.1', true],
+    ['172.32.0.1', true], ['[::1]', true], ['[fd00::1]', true],
+  ])('%s admission is %s', (host, allowed) => {
+    const check = () => assertFetchableUrl(`https://${host}/registry.json`);
+    if (allowed) expect(check).not.toThrow();
+    else expect(check).toThrow('only https:// URLs on public hosts are allowed');
+  });
+  test('rejects HTTP on a public host', () => {
+    expect(() => assertFetchableUrl('http://example.com/registry.json')).toThrow(
+      'only https:// URLs on public hosts are allowed',
+    );
   });
 });

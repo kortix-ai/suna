@@ -142,15 +142,8 @@ describe('kortix doctor session create payload', () => {
     expect(output).not.toContain('agent reply skipped');
   });
 
-  test('discloses that UI-prepared warm sessions are left unchanged', async () => {
-    await runDoctor([]);
-    expect(output).toContain('UI-prepared warm sessions are left unchanged and may remain billed.');
-
-  });
-
-  test('keep-session still discloses warm sessions without claiming deletion', async () => {
+  test('keep-session does not claim deletion', async () => {
     await runDoctor(['--keep-session']);
-    expect(output).toContain('UI-prepared warm sessions are left unchanged and may remain billed.');
     expect(output).not.toContain('cleaned up');
   });
 

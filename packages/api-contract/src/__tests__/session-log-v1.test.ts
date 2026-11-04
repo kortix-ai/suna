@@ -285,6 +285,19 @@ describe('fromV1 mapping', () => {
     expect(log.selection).toEqual({ agent: 'build', model: { provider: 'prov', model: 'model-a' } });
   });
 
+  test('a context reset (mode record) keeps its mode, size and entries through fromV1 and back through toV1', () => {
+    const rows = [
+      user(ROOT, 'msg_1', T0, (m) => [text(ROOT, m, 'prt_1', 'hi')]),
+      user(ROOT, 'msg_2', T0 + 1_000, (m) => [{ ...base(ROOT, m, `${m}-p0`), type: 'compaction', auto: true, mode: 'record', tokens_before: 182_340, entries: 412 }]),
+      assistant(ROOT, 'msg_3', T0 + 1_001, 'msg_2', (m) => [text(ROOT, m, `${m}-p0`, 'You are continuing this conversation in a fresh context.')], { summary: true, mode: 'compaction', agent: 'compaction' }),
+    ];
+    const log = fromV1({ session_id: 's', root_id: ROOT, rows });
+    const block = log.threads[0]!.messages.flatMap((m) => m.blocks).find((b) => b.type === 'compaction');
+    expect(block).toMatchObject({ type: 'compaction', trigger: 'auto', mode: 'record', tokens_before: 182_340, entries: 412 });
+    const part = toV1(log).rows.flatMap((row) => row.parts as Array<Record<string, unknown>>).find((p) => p.type === 'compaction');
+    expect(part).toMatchObject({ type: 'compaction', auto: true, mode: 'record', tokens_before: 182_340, entries: 412 });
+  });
+
   test('a clean session is converted, with zero counts', () => {
     const clean = fromV1({ session_id: 's', root_id: ROOT, rows: [user(ROOT, 'msg_1', T0, (m) => [text(ROOT, m, 'prt_1', 'hi')])] });
     expect(clean.restore_grade).toBe('converted');
@@ -350,6 +363,18 @@ describe('fromV1 mapping', () => {
     expect(m02).toMatchObject({ status: 'complete', in_context: true, finish: 'tool_calls', reply_to: 'msg_r01', agent: 'build', error: null });
     expect(m02.usage).toEqual({ input: 10, output: 5, cache_read: 2, cache_write: 3, reasoning: 1, cost: 0.25 });
     expect(m02.model).toEqual({ provider: 'prov', model: 'model-a', variant: 'high' });
+  });
+
+  test("pi's subagent tool `agent` is a task call, like its deprecated alias `task`", () => {
+    const S = 'ses_agent0000000000000000001';
+    const rows: V1Row[] = [
+      user(S, 'msg_g01', T0, (m) => [text(S, m, `${m}-p0`, 'hand it off')]),
+      assistant(S, 'msg_g02', T0 + 100, 'msg_g01', (m) => [
+        tool(S, m, `${m}-p1`, 'agent', { status: 'completed', input: { description: 'sub', prompt: 'go' }, output: 'task_id: ses_x', title: 'sub', metadata: { sessionId: 'ses_x', background: true }, time: { start: T0 + 110, end: T0 + 120 } }),
+      ]),
+    ];
+    const log = fromV1({ session_id: 'sess-synthetic-agent', root_id: S, rows }, { harness: 'pi' });
+    expect(message(log, 'msg_g02').blocks.find((b) => b.type === 'tool_call')).toMatchObject({ name: 'agent', kind: 'task' });
   });
 
   test('tool calls: kinds, results, stripped inputs and cleared outputs', () => {
@@ -619,6 +644,30 @@ describe('toV1 on native v2 records', () => {
     m.blocks.push({ type: 'harness', id: 'h1', harness: 'pi', kind: 'custom', data: { anything: true }, model_visible: false });
     const row = toV1(log).rows.find((r) => r.info.id === m.message_id)!;
     expect(row.parts.some((p) => (p as { anything?: boolean }).anything)).toBe(false);
+  });
+
+  test('a nested_part block (a script\'s nested call, model-invisible) is its v1 part under the block\'s ids, in block order, on any harness', () => {
+    const log = json(fromV1(piFixture(), { harness: 'pi' }));
+    delete log.threads[0].ext;
+    const m = log.threads[0].messages[1];
+    m.producer = { harness: 'pi', harness_version: '1.2.0', adapter_version: '1.2.0' };
+    const part = { type: 'tool', callID: 'call_s/1', tool: 'image_gen', state: { status: 'completed', input: { prompts: ['a'] }, output: '{"images":[]}', title: 'image_gen', metadata: {}, time: { start: 1, end: 2 } } };
+    m.blocks.splice(1, 0, { type: 'harness', id: 'h_nested', harness: 'pi', kind: 'nested_part', data: { parent_call_id: 'call_s', part: { ...part, id: 'stale', messageID: 'stale' } }, model_visible: false });
+    const row = toV1(log).rows.find((r) => r.info.id === m.message_id)!;
+    const sessionID = (row.info as { sessionID?: string }).sessionID;
+    expect(row.parts[1] as unknown).toEqual({ ...part, id: 'h_nested', messageID: m.message_id, ...(sessionID !== undefined && { sessionID }) });
+  });
+
+  test('a nested_part block on a thread fromV1 marked is its v1 part too, never its raw data', () => {
+    const log = json(fromV1(piFixture(), { harness: 'pi' }));
+    const m = log.threads[0].messages[1];
+    const part = { type: 'tool', callID: 'call_s/1', tool: 'show', state: { status: 'completed', input: {}, output: 'ok', title: 'show', metadata: {}, time: { start: 1, end: 2 } } };
+    m.blocks.push({ type: 'harness', id: 'h_nested', harness: 'pi', kind: 'nested_part', data: { parent_call_id: 'call_s', part }, model_visible: false });
+    const row = toV1(log).rows.find((r) => r.info.id === m.message_id)!;
+    expect(row.parts.at(-1) as unknown).toMatchObject({ ...part, id: 'h_nested', messageID: m.message_id });
+    // A nested_part whose part is not a tool part gives no v1 part.
+    (m.blocks.at(-1) as { data: unknown }).data = { parent_call_id: 'call_s', part: { type: 'text', text: 'x' } };
+    expect(toV1(log).rows.find((r) => r.info.id === m.message_id)!.parts.some((p) => (p as { id: string }).id === 'h_nested')).toBe(false);
   });
 
   test('a native tool call: its display data is the v1 state.metadata, as the harness v1 part has it (result.details, else the adapter ext details)', () => {

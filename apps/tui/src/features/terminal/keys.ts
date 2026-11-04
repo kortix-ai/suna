@@ -28,7 +28,7 @@ export const TERMINAL_KEYMAP: readonly Binding[] = [
     id: 'terminal.copyConnect',
     scope: 'terminal',
     chords: [{ key: 'y', alt: true }],
-    description: 'Copy `kortix sessions connect <id>` to the clipboard.',
+    description: 'Copy `kortix sessions shell <id>` to the clipboard.',
   },
   {
     id: 'terminal.close',

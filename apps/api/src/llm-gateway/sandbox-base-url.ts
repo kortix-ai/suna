@@ -15,6 +15,9 @@
 import { config } from '../config';
 
 export function resolveLlmGatewayBaseUrl(origin: string): string {
+  // Set: sandboxes call the standalone gateway directly, not through this API
+  // (staging sets https://gateway-staging.kortix.com/v1/llm).
+  // The gateway authenticates every call itself through /internal/gateway/admit.
   if (config.LLM_GATEWAY_BASE_URL) return config.LLM_GATEWAY_BASE_URL;
   const trimmedOrigin = origin.replace(/\/+$/, '');
   const llmProxyMode =

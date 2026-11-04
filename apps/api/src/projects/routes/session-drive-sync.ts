@@ -1,10 +1,13 @@
 import type { Context } from 'hono';
+import { recordDriveCommitAuthor } from '../../artifacts/events-store';
 import { normalizeDrivePath } from '../../drives/access';
+import { assertDriveFilesFit, assertDriveWriteFits, forgetDriveUsage } from '../../drives/limits';
 import { noteDriveWrite } from '../../drives/conflicts';
 import {
   type DriveRow,
   type RecordedDriveMount,
   authorizedSyncMounts,
+  driveVolume,
   getDrive,
   openVolumeFor,
   readDriveVolume,
@@ -32,6 +35,7 @@ import {
   statVolumeFile,
   writeVolumeFile,
 } from '../../drives/volumes';
+import { parseVolumeWriteCommit } from '../../drives/volume-commit';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { isUuid } from '../../shared/validate';
 import { logger } from '../../lib/logger';
@@ -116,9 +120,29 @@ async function storage<T>(c: Ctx, op: () => Promise<T>): Promise<T | Response> {
   try {
     return await op();
   } catch (err) {
-    if (err instanceof DriveStorageError) return c.json({ error: err.message, code: err.code }, err.status);
+    if (err instanceof DriveStorageError) {
+      if (err.retryAfterSeconds !== undefined) c.header('Retry-After', String(err.retryAfterSeconds));
+      return c.json({ error: err.message, code: err.code, ...(err.detail ?? {}) }, err.status);
+    }
     throw err;
   }
+}
+
+/** The size of the file a synced write replaces, 0 when there is none. */
+async function syncedFileSize(drive: DriveRow, path: string): Promise<number> {
+  return readDriveVolume(
+    drive,
+    async (volume) => {
+      try {
+        const st = await statVolumeFile(volume, path);
+        return st.type === 'file' ? st.size : 0;
+      } catch (err) {
+        if (err instanceof DriveStorageError && err.status === 404) return 0;
+        throw err;
+      }
+    },
+    () => 0,
+  );
 }
 
 const notFound = (): never => {
@@ -274,6 +298,9 @@ export function registerSessionDriveSyncRoutes(): void {
     if (Number.isFinite(declared) && declared > MAX_PUT_BYTES) return refuse(c, 413, 'Use the block upload for files this large');
     const body = new Uint8Array(await c.req.arrayBuffer());
     if (body.byteLength > MAX_PUT_BYTES) return refuse(c, 413, 'Use the block upload for files this large');
+    // The same Files limits as a write from Files (drives/limits.ts).
+    const fits = await storage(c, () => assertDriveWriteFits(got.drive, { bytes: body.byteLength, replaces: () => syncedFileSize(got.drive, got.path) }));
+    if (fits instanceof Response) return fits;
     const written = await storage(c, () =>
       conditionalWrite(got.drive, got.path, c.req.query('expect'), () =>
         writeDriveVolume(got.drive, (volume) => writeVolumeFile(volume, got.path, body, { overwrite: true })),
@@ -281,8 +308,11 @@ export function registerSessionDriveSyncRoutes(): void {
     );
     if (written instanceof Response) return written;
     if (written === REMOTE_CHANGED) return remoteChanged(c);
+    const { commit, ...file } = written;
+    await recordDriveCommitAuthor(got.drive.driveId, commit, { sessionId: param(c, 'sessionId') });
     noteDriveWrite(got.drive.driveId);
-    return c.json(written);
+    forgetDriveUsage(got.drive.platinumVolumeName);
+    return c.json(file);
   });
 
   // Block upload, for large files: plan names every file it writes, each must be writable.
@@ -300,6 +330,17 @@ export function registerSessionDriveSyncRoutes(): void {
     const drive = target!.drive;
     const scope = await scopeOf(c);
     if (scope instanceof Response) return scope;
+    // The plan's files against the Files limits, before any block is sent.
+    // One commit lands every file at once, so the plan's total is what must
+    // fit, judged on what the drive holds now (not a cached figure). A file
+    // with no size, or a size that is not a whole number of bytes, is refused:
+    // the plan goes to storage whole either way.
+    const sized = (plan.files as Array<{ path: string; size?: unknown }>).map((f) => ({
+      path: f.path,
+      bytes: typeof f.size === 'number' ? f.size : Number.NaN,
+    }));
+    const fits = await storage(c, () => assertDriveFilesFit(drive, sized, { overwrite: true }));
+    if (fits instanceof Response) return fits;
     const r = await storage(c, async () => planVolumeUpload(await openVolumeFor(drive), { ...plan, overwrite: true }));
     if (r instanceof Response) return r;
     const uploadId = (r as { upload_id?: unknown }).upload_id;
@@ -321,7 +362,7 @@ export function registerSessionDriveSyncRoutes(): void {
     if (!/^[0-9a-f]{64}$/.test(sha)) return refuse(c, 400, 'Invalid block');
     const body = new Uint8Array(await c.req.arrayBuffer());
     if (body.byteLength > BLOCK_BYTES) return refuse(c, 413, 'A block is at most 1 MiB');
-    const r = await storage(c, () => putVolumeUploadBlock(drive.platinumVolumeName, param(c, 'uploadId'), sha, body));
+    const r = await storage(c, () => putVolumeUploadBlock(driveVolume(drive), param(c, 'uploadId'), sha, body));
     if (r instanceof Response) return r;
     return c.body(null, 204);
   });
@@ -338,16 +379,18 @@ export function registerSessionDriveSyncRoutes(): void {
       if (!path || !plan.paths.includes(path)) return refuse(c, 400, 'The upload plan does not write this path');
     }
     const uploadId = param(c, 'uploadId');
-    const commit = () => commitVolumeUpload(drive.platinumVolumeName, uploadId);
+    const commit = () => commitVolumeUpload(driveVolume(drive), uploadId);
     const r = await storage(c, () =>
       path ? conditionalWrite(drive, path, c.req.query('expect'), commit) : commit(),
     );
     if (r instanceof Response) return r;
     if (r === REMOTE_CHANGED) return remoteChanged(c);
+    await recordDriveCommitAuthor(drive.driveId, parseVolumeWriteCommit(r), { sessionId: param(c, 'sessionId') });
     await forgetUploadPlan(scope.sandboxId, uploadId).catch((err) =>
       logger.warn(`[drive-sync] forgetting upload ${uploadId} failed:`, { error: err instanceof Error ? err.message : String(err) }),
     );
     noteDriveWrite(drive.driveId);
+    forgetDriveUsage(drive.platinumVolumeName);
     return c.json(r as Record<string, unknown>);
   });
 

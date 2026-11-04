@@ -3,7 +3,6 @@ import { runGitCredentialHelper } from '@/lib/git/git'
 import { harnessProtectedPathSegments, loadConfig, resolveHarness, warmPiSystemPackages, type HarnessBootContext } from '@/harness/harness'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { enableDaemonLogFile, logger } from '@/lib/log/logger'
-import { runMonitorMode } from '@/app/monitor-mode'
 import { startStaticWebServer } from '@/services/static-web/static-web'
 import { startProxy } from '@/app/server'
 import { installShutdownHandlers } from '@/app/shutdown'
@@ -41,12 +40,6 @@ async function main() {
   }
   const context: HarnessBootContext = { cfg, bootTime, bootState, bootMark, serve }
 
-  // Warm-seed capture has always taken precedence over monitor selection.
-  if (await selected.runWarmSeed?.(context)) return
-  if (cfg.workload === 'monitor') {
-    await runMonitorMode(context, selected)
-    return
-  }
   await selected.run(context)
 }
 
@@ -73,12 +66,12 @@ if (import.meta.main) {
         process.exit(1)
       })
   } else if (subcommand === 'bake-runtime-assets-state') {
-    // Image build only: record which CLI, daemon, skill overlay and OpenCode
+    // Image build only: record which CLI, daemon, skill overlay and harness
     // this image carries, so a box booted from it states that on its FIRST
     // health read instead of after its first reconcile. A missing artifact
-    // fails the build rather than shipping a box that reports a lie. The
-    // image's harness (`KORTIX_HARNESS`, default OpenCode) reports its release.
-    registerHarnessAssets((cfg) => resolveHarness(cfg).assets)
+    // fails the build rather than shipping a box that reports a lie. Every
+    // box runs pi, so pi reports its release.
+    registerHarnessAssets(() => resolveHarness(undefined, 'pi').assets)
     bakeRuntimeAssetsState()
       .then((state) => {
         process.stdout.write(`${JSON.stringify(state)}\n`)

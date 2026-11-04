@@ -29,7 +29,6 @@ import {
   shareFolder,
   unshareFolder,
   updateAgentConfig,
-  updateFeatureFlag,
   updateProjectDefaultAgent,
   uploadDriveFile,
 } from "@kortix/sdk";
@@ -72,7 +71,6 @@ async function bootstrap(known: { projectId?: string; accountId?: string; driveI
     (await withRetry(() => kortix.projects.provision({ name: "lumen", idempotency_key: "lumen-deployment" }))).project_id;
   return await asOperator(async () => {
     const accountId = known.accountId ?? (await withRetry(() => getProject(projectId))).account_id;
-    await withRetry(() => updateFeatureFlag(projectId, "volumes", true));
     const driveId = known.driveId ?? (await withRetry(() => getProjectDrive(projectId))).driveId;
     // /Company is shared with the whole project by default and so mounts in every
     // session. In a project of many firms nothing may reach every session.

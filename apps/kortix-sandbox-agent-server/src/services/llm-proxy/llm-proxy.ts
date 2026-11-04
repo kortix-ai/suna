@@ -2,24 +2,20 @@ import { applyInlineImageWindow, imageWindowFromEnv, isChatRequestPath } from '.
 import { logger } from '@/lib/log/logger'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Localhost credential-injecting reverse proxy (the warm-fork "no restart on
-// restore" mechanism). One instance runs when KORTIX_LLM_HOTSWAP=1: the LLM
-// gateway proxy (opencode's kortix provider baseURL → here).
+// Localhost credential-injecting reverse proxy for the LLM gateway. pi starts
+// it at boot (harness/pi/boot.ts) when the session has a gateway, and its
+// `kortix` provider sends model requests here (model.ts).
 //
-// WHY: a stateful warm-fork session attach used to KILL + respawn
-// opencode purely to swap in the per-session tokens (LLM gateway key + connector
-// token) — re-paying ~8s of opencode init that the snapshot already baked.
-// opencode reads its config (provider.options.apiKey, mcp.environment) only at
-// spawn, so swapping a token forced a config rebuild + restart.
+// WHY: the session credential (KORTIX_TOKEN) and the gateway URL can change on
+// a running box (a control env push). pi points at THIS localhost proxy with a
+// fixed placeholder Bearer; the proxy holds the real token in memory and
+// rewrites the Authorization header on the way upstream. A change is one
+// setToken() call — the runtime is never rebuilt or restarted. The proxy also
+// applies the inline-image window (llm-image-window.ts) before a request
+// leaves the box.
 //
-// Fix: make those credentials SESSION-INDEPENDENT in the baked config. The config
-// points the relevant baseURL/api-url at THIS localhost proxy with a fixed
-// placeholder Bearer; the proxy holds the real per-session token in memory and
-// rewrites the Authorization header on the way upstream. On restore the daemon just
-// calls setToken() — opencode is never restarted.
-//
-// SCOPE: stateful warm-fork only (the caller gates it). Cold templates + Daytona
-// never start these proxies and keep their direct config unchanged.
+// `KORTIX_LLM_PROXY_DISABLE=1`, or a failed bind, leaves it off: pi then calls
+// the gateway directly.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -82,9 +78,9 @@ const STRIP_REQ_HEADERS = new Set([
 
 export type CredentialProxy = {
   /** Start on a fixed port (idempotent). Best-effort: bind failure → null (caller
-   *  falls back to the direct-config + restart path). Returns the localhost URL. */
+   *  then points the runtime at the gateway directly). Returns the localhost URL. */
   start(port: number, upstreamBase?: string, token?: string): string | null
-  /** Update the live token (+ optional upstream). Instant, NO opencode restart. */
+  /** Update the live token (+ optional upstream). Instant, NO runtime restart. */
   setToken(token: string | undefined, upstreamBase?: string | undefined): void
   /** True once listening AND a usable upstream + token are set. */
   ready(): boolean
@@ -230,7 +226,5 @@ export const startLlmProxy = (port: number, upstreamBase?: string, token?: strin
   llm.start(port, upstreamBase, token)
 export const setLlmProxyToken = (token: string | undefined, upstreamBase?: string | undefined) =>
   llm.setToken(token, upstreamBase)
-/** @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
-export const llmProxyReady = () => llm.ready()
 export const llmProxyBaseUrl = () => llm.baseUrl()
 export const stopLlmProxy = () => llm.stop()

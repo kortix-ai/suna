@@ -1,8 +1,8 @@
 /**
  * Blackbox parity coverage for the `kortix projects` write surfaces that used
  * to be dashboard-only — `set` / `rename` (PATCH /projects/:id), `cli-tokens`
- * (GET/POST/DELETE /projects/:id/cli-token) and `upgrade` (the Customize →
- * Upgrades session) — plus `ls --query` and `files download`.
+ * (GET/POST/DELETE /projects/:id/cli-token) — plus `ls --query` and
+ * `files download`.
  *
  * Every case spawns the real CLI against a Bun.serve fake API and asserts the
  * exit code, the stdout/stderr the user sees, AND the exact method + path +
@@ -166,9 +166,6 @@ function startServer(): string {
         req.method === 'DELETE'
       ) {
         return Response.json({ ok: true });
-      }
-      if (url.pathname === `/v1/projects/${PROJECT}/sessions` && req.method === 'POST') {
-        return Response.json({ session_id: 'sess_upgrade' }, { status: 201 });
       }
       if (url.pathname === `/v1/projects/${PROJECT}/files/archive` && req.method === 'GET') {
         return new Response(ZIP_BYTES, {
@@ -487,78 +484,6 @@ describe('kortix projects cli-tokens', () => {
     const r = await runCli(['projects', 'cli-tokens', 'new', '--project', PROJECT], config);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('Agent-session tokens cannot mint project tokens');
-  });
-});
-
-describe('kortix projects upgrade', () => {
-  test('--help explains that it opens a change request and never merges', async () => {
-    const r = await runCli(['projects', 'upgrade', '--help']);
-    expect(r.code).toBe(0);
-    expect(r.stdout).toContain('kortix.yaml');
-    expect(r.stdout).toContain('never');
-  });
-
-  test('creates a session seeded with the v1→v2 migration prompt', async () => {
-    const config = writeConfig(startServer());
-    const r = await runCli(['projects', 'upgrade', '--project', PROJECT], config);
-    expect(r.code).toBe(0);
-    const [call] = callsTo('POST', `/v1/projects/${PROJECT}/sessions`);
-    const body = call.body as {
-      initial_prompt: string;
-      name: string;
-      metadata: Record<string, unknown>;
-    };
-    expect(body.name).toBe('Migrate manifest to v2');
-    expect(body.metadata).toEqual({ kind: 'project-upgrade', upgrade_id: 'manifest-v2' });
-    expect(body.initial_prompt).toContain(
-      "Migrate this project's manifest from kortix_version 1",
-    );
-    // The landing contract is the load-bearing half of the prompt.
-    expect(body.initial_prompt).toContain('kortix cr open');
-    expect(body.initial_prompt).toContain('Do **not** run `kortix cr merge`');
-    expect(r.stdout).toContain('sess_upgrade');
-    expect(r.stdout).toContain('kortix connect sess_upgrade');
-  });
-
-  test('the seeded prompt is byte-identical to the dashboard\'s', async () => {
-    const webPrompt = readFileSync(
-      resolve(
-        CLI_ROOT,
-        '..',
-        '..',
-        'packages',
-        'ui',
-        'src',
-        'customize',
-        'migrate-to-v2',
-        'migration-prompt.ts',
-      ),
-      'utf8',
-    );
-    const marker = 'export const MIGRATE_TO_V2_PROMPT = `';
-    const start = webPrompt.indexOf(marker) + marker.length;
-    const end = webPrompt.lastIndexOf('`;');
-    // Unescape the template literal the same way the runtime does.
-    const expected = webPrompt.slice(start, end).replaceAll('\\`', '`').replaceAll('\\$', '$');
-
-    const config = writeConfig(startServer());
-    const r = await runCli(['projects', 'upgrade', '--project', PROJECT], config);
-    expect(r.code).toBe(0);
-    const body = callsTo('POST', `/v1/projects/${PROJECT}/sessions`)[0].body as {
-      initial_prompt: string;
-    };
-    expect(body.initial_prompt).toBe(expected);
-  });
-
-  test('--json emits the session and project ids', async () => {
-    const config = writeConfig(startServer());
-    const r = await runCli(['projects', 'upgrade', '--project', PROJECT, '--json'], config);
-    expect(r.code).toBe(0);
-    expect(JSON.parse(r.stdout)).toEqual({
-      session_id: 'sess_upgrade',
-      project_id: PROJECT,
-      upgrade_id: 'manifest-v2',
-    });
   });
 });
 

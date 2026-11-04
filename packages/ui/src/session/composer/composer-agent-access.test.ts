@@ -6,6 +6,7 @@ import {
   NO_AGENT_ACCESS_HINT,
   NO_AGENT_ACCESS_LABEL,
   resolveComposerAgent,
+  withChannelAgents,
 } from './composer-agent-access';
 
 /**
@@ -226,5 +227,30 @@ describe('resolveComposerAgent — bound session agent', () => {
     });
 
     expect(resolved).toEqual({ selected: 'meta', disabled: false, reason: 'first_accessible' });
+  });
+});
+
+describe('withChannelAgents — a channel member posts with the channel’s agents', () => {
+  test('an empty member roster gains the channel’s agents, so the composer sends', () => {
+    const roster = withChannelAgents([], ['legal']);
+    expect(roster?.map((a) => a.name)).toEqual(['legal']);
+    expect(resolveComposerAgent({ agents: roster, defaultAgent: 'legal' })).toEqual({
+      selected: 'legal',
+      disabled: false,
+      reason: 'default',
+    });
+  });
+
+  test('granted agents keep their entries; a name already there is not duplicated', () => {
+    const granted = agent('kortix', { description: 'granted' } as Partial<Agent>);
+    const roster = withChannelAgents([granted], ['kortix', 'legal']);
+    expect(roster?.map((a) => a.name)).toEqual(['kortix', 'legal']);
+    expect(roster?.[0]).toBe(granted);
+  });
+
+  test('a roster still loading stays loading; no channel agents leave it unchanged', () => {
+    expect(withChannelAgents(undefined, ['legal'])).toBeUndefined();
+    const roster = [agent('kortix')];
+    expect(withChannelAgents(roster, [])).toBe(roster);
   });
 });

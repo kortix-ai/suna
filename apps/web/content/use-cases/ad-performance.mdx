@@ -59,55 +59,117 @@ either ad platform.
 ## How it works
 
 <Steps>
-<Step title="Run on a daily cron">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the agent once a day. Each firing spawns a fresh
-**session** in its own sandbox. One day maps to one run on one disposable
-machine, so pacing and drift are recomputed from the current state of both
-platforms every time — nothing carries over.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the ad-performance-review skill and the daily
+trigger, and opens a change request for you to review. Prefer clicks? Choose
+**Use this template** instead.
 
-</Step>
-<Step title="Give the agent the optimization playbook">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a daily ad-performance agent in this project.
 
-What counts as off-pace, how much CPA or ROAS drift is worth flagging, what
-makes an ad or a keyword "underperforming," and how a good recommendation is
-worded live as a **skill** that travels with the agent. When we tighten a
-threshold or add a new anomaly pattern, it's a change to the skill, not a
-one-off instruction.
+1. Create the agent agents/ad-performance.md. Its job is to review Google Ads and Meta Ads spend and post ranked recommendations. It may use the Google Ads, Meta Ads and Slack connectors, and it only reads the two ad platforms.
 
-</Step>
-<Step title="Connect the ad platforms read-only">
+2. Create the skill skills/ad-performance-review/SKILL.md with these rules:
+   - A campaign is overpacing when spend-to-date is more than 15% ahead of linear pace, and underpacing when it is more than 20% behind.
+   - Flag CPA up more than 15% or ROAS down more than 15% against the 30-day baseline. Rank campaigns with both first.
+   - Flag a search term with 3 or more clicks and no conversions over 14 days as a negative-keyword candidate.
+   - Give every finding one concrete action: pause an ad, shift budget, or add a negative keyword. Never change a budget, pause a campaign or edit an ad.
+   - Post one ranked list to #marketing per run, with the numbers behind each finding.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches
-the model, the agent reads:
+3. Add a cron trigger daily-ad-performance-scan to kortix.yaml. It runs the ad-performance agent every day at 07:00 UTC with the prompt "Load the ad-performance-review skill and run one complete ad-performance scan."
 
-- **Campaign spend and performance from Google Ads** — daily spend, clicks,
-  conversions, and cost per acquisition per campaign, ad, and keyword.
-- **Campaign spend and performance from Meta Ads** — the same, across Facebook
-  and Instagram placements.
-- **Posts to Slack** — the ranked findings and recommendations, once a day.
+4. Tell me which of these connectors are not connected yet.
 
-It has no write access to either platform. It cannot change a budget, pause a
-campaign, or edit an ad.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent's only actions are reading two ad platforms and posting to Slack. It
-**recommends** pausing an ad, shifting budget toward a better performer, or
-adding a negative keyword — it never pauses, edits, or reallocates spend
-itself. That decision, and the click that executes it, stays with the
-marketing team. Credentials are encrypted in the Secrets Manager and injected
-at runtime, scoped to the agents you grant them to.
+Open **Connectors** in your project and connect Google Ads, Meta Ads and Slack.
+Credentials are brokered server-side and never enter the
+agent's machine.
+
+<ToolList>
+  <ToolNeed name="Google Ads" domain="ads.google.com" tag="Required" alternatives={[['Meta Ads', 'facebook.com'], ['LinkedIn Ads', 'linkedin.com'], ['Microsoft Advertising', 'ads.microsoft.com']]}>
+    Reads campaign spend and performance, read-only.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com'], ['Gmail', 'gmail.com']]}>
+    Posts the ranked list of optimization recommendations.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Post the ranked findings">
+<Step title="Run it once with this prompt">
 
-Each day's message lists what needs attention: campaigns off their budget
-pace, ads or keywords with CPA/ROAS drifting the wrong way, underperformers
-worth pausing, and anything that looks anomalous — each with the numbers
-behind it and a specific recommended action. The marketing team reads it and
-decides what to actually change.
+Merge the change request, then start a session with the **ad-performance**
+agent and send this prompt. Check the findings against your own dashboards
+before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one ad-performance scan on Google Ads and Meta Ads. Read only.
+
+1. Pull spend, clicks, conversions, CPA and ROAS for every active campaign, ad and keyword, with the 30-day baseline.
+2. Check each campaign's budget pacing against its monthly target.
+3. Flag CPA or ROAS drift of more than 15% against baseline, low-CTR ads, and keywords that spend without converting.
+4. Draft one recommended action per finding. Do not change anything in either platform.
+5. Post the ranked list to #marketing.`}
+/>
+
+</Step>
+<Step title="Let the daily schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every day at 07:00 UTC, each run in a new session on its own cloud computer. To change the time, edit the cron line, or open
+**Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: daily-ad-performance-scan
+    name: Daily ad-performance scan
+    on:
+      cron: "0 0 7 * * *"
+    run:
+      agent: ad-performance
+      prompt: Load the ad-performance-review skill and run one complete ad-performance scan.`}
+/>
+
+</Step>
+<Step title="Recommend changes, never make them">
+
+The agent reads both ad platforms and writes only the Slack post. Every pause,
+budget shift and negative keyword is a recommendation. A person on the
+marketing team decides and makes the change.
+
+</Step>
+<Step title="Read the ranked list">
+
+Each run ends with one message in the channel. This is what a run looks like
+in the session:
+
+<ExampleRun
+  title="Daily ad-performance scan · 07:00"
+  message="Load the ad-performance-review skill and run one complete ad-performance scan."
+  worked="Worked for 2m 36s"
+  tools={[
+    'google_ads · get campaign report',
+    'google_ads · get search terms report',
+    'facebook_ads · get insights',
+    'slack · post message → #marketing',
+  ]}
+  note="Illustrative example. Your findings depend on your accounts and spend."
+>
+  Found **7** findings across **12** active campaigns. **1** campaign is
+  overpacing and will spend its monthly budget **6 days** early, so the list
+  recommends a lower daily budget. **4** search terms spent without a
+  conversion in 14 days and are listed as negative-keyword candidates.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -119,6 +181,25 @@ decides what to actually change.
   the Slack post — every pause, budget shift, and keyword change is a
   recommendation, never an action.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Weekly pacing view"
+  code="Every Monday, post each campaign spend-to-date against its monthly target to #marketing, sorted by the largest gap."
+/>
+
+<CopyBlock
+  title="Catch creative fatigue"
+  code="Flag any ad whose click-through rate fell 7 days in a row, and name the ad in the same ad set to shift its budget to."
+/>
+
+<CopyBlock
+  title="Write the change list"
+  code="For each recommendation, write the exact setting to change in Google Ads or Meta Ads, so a person can apply all of them in one pass."
+/>
 
 ## Guardrails
 

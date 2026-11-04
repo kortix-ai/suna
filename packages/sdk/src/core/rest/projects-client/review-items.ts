@@ -381,6 +381,45 @@ function approvalDetail(detail: AnyRecord, row: ApiReviewItem): ReviewApprovalDe
   };
 }
 
+/** A file path an output names: under the session's drives or workspace, with an extension. */
+const OUTPUT_FILE_PATH = /^\/(drives|workspace)\/.+\.[A-Za-z0-9]+$/;
+
+/** `claimLedger` or `claim_ledger` → `Claim ledger`. */
+function keyLabel(key: string): string {
+  const words = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[\s._-]+/)
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+// `kortix review submit --detail` takes any JSON object, so an agent names its
+// files in keys of its own (`artifact`, `claimLedger: "/drives/…/ledger.json"`).
+// The deliverable comes first, then `files`, then every other path-valued key.
+function outputFiles(detail: AnyRecord): ReviewOutputDetail['files'] {
+  const files: NonNullable<ReviewOutputDetail['files']> = [];
+  const add = (value: unknown, label?: string) => {
+    const entry = asRecord(value);
+    const path = typeof value === 'string' ? value : asString(entry.path);
+    if (!path || files.some((f) => f.path === path)) return;
+    const note = asString(entry.note) ?? label;
+    files.push(note ? { path, note } : { path });
+  };
+  for (const value of [
+    detail.artifact,
+    ...(asArray<unknown>(detail.artifacts) ?? []),
+    ...(asArray<unknown>(detail.files) ?? []),
+  ]) {
+    add(value);
+  }
+  for (const [key, value] of Object.entries(detail)) {
+    if (typeof value === 'string' && OUTPUT_FILE_PATH.test(value)) add(value, keyLabel(key));
+  }
+  return files.length > 0 ? files : undefined;
+}
+
 function outputDetail(detail: AnyRecord, row: ApiReviewItem): ReviewOutputDetail {
   return {
     artifactKind:
@@ -388,8 +427,8 @@ function outputDetail(detail: AnyRecord, row: ApiReviewItem): ReviewOutputDetail
       'document',
     artifactLabel: asString(detail.artifactLabel) ?? 'Output',
     previewUrl: asString(detail.previewUrl) ?? asString(detail.preview_url),
-    preview: asString(detail.preview),
-    files: asArray<NonNullable<ReviewOutputDetail['files']>[number]>(detail.files),
+    preview: asString(detail.preview) ?? asString(detail.description),
+    files: outputFiles(detail),
     note: asString(detail.note) ?? row.summary ?? '',
   };
 }

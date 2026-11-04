@@ -19,25 +19,37 @@ export interface ManagedModel {
   // `reasoning_effort` values Platinum accepts; the thinking control's variants.
   reasoningOptions?: CatalogReasoningOption[];
   limit: { context: number; output: number };
+  /**
+   * Platinum serves it only to the orgs granted it (`private: true`): it
+   * answers by its id and is never listed (lineup, picker, default, fallback).
+   */
+  private?: true;
 }
 
 /** One entry of Platinum's `/models` list, as far as this file reads it. */
 type PlatinumModel = {
-  id?: unknown; name?: unknown; owned_by?: unknown;
+  id?: unknown; name?: unknown; owned_by?: unknown; private?: unknown;
   context_length?: unknown; max_output_tokens?: unknown;
-  pricing?: { input?: unknown; cached_input?: unknown; output?: unknown };
+  pricing?: { input?: unknown; cached_input?: unknown; output?: unknown; audio_hour?: unknown; characters_million?: unknown };
   modalities?: { input?: unknown };
   reasoning_efforts?: unknown;
 };
 
-const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined);
-
-/** Platinum's named models → the lineup, in Platinum's order. Entries without a price are skipped. */
-export function managedModelsFromPlatinum(body: unknown): ManagedModel[] {
+function platinumList(body: unknown): PlatinumModel[] {
   const data = (body as { data?: unknown })?.data;
   if (!Array.isArray(data)) throw new Error('Platinum /models answered without a data list');
+  return data as PlatinumModel[];
+}
+
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined);
+
+/**
+ * Platinum's named chat models, in Platinum's order. Entries without a token
+ * price are skipped: an audio model is priced per hour or per character.
+ */
+export function managedModelsFromPlatinum(body: unknown): ManagedModel[] {
   const out: ManagedModel[] = [];
-  for (const m of data as PlatinumModel[]) {
+  for (const m of platinumList(body)) {
     const input = num(m.pricing?.input);
     const output = num(m.pricing?.output);
     const context = num(m.context_length);
@@ -53,26 +65,46 @@ export function managedModelsFromPlatinum(body: unknown): ManagedModel[] {
       vision: Array.isArray(m.modalities?.input) && m.modalities.input.includes('image'),
       ...(efforts.length ? { reasoningOptions: [{ type: 'effort', values: efforts }] as CatalogReasoningOption[] } : {}),
       limit: { context, output: maxOutput },
+      ...(m.private === true ? { private: true as const } : {}),
     });
   }
   return out;
 }
 
+/**
+ * Platinum's audio models (`/audio/transcriptions`, `/audio/speech`), by id:
+ * priced per audio hour or per 1M characters. The gateway bills the price
+ * each audio answer reports.
+ */
+export function managedAudioModelIdsFromPlatinum(body: unknown): string[] {
+  return platinumList(body)
+    .filter((m) => m.owned_by === 'platinum' && typeof m.id === 'string' && m.id
+      && (num(m.pricing?.audio_hour) !== undefined || num(m.pricing?.characters_million) !== undefined))
+    .map((m) => m.id as string);
+}
+
+/** The last list read, private and audio models included: what a reload compares with. */
+let loaded: { models: readonly ManagedModel[]; audio: readonly string[] } = { models: [], audio: [] };
 let lineup: readonly ManagedModel[] = [];
 // replica-local: every replica loads the same Platinum list and refreshes it
-// every 5 min (workers/managed-lineup-worker.ts); a copy is at most that old.
+// every 5 min (replica/managed-lineup.ts); a copy is at most that old.
 let byId = new Map<string, ManagedModel>();
+// replica-local: read from the same Platinum list as `byId`, at the same time.
+let audioIds = new Set<string>();
 let revision = 0;
 
-function setLineup(models: readonly ManagedModel[]): void {
-  lineup = models;
+function setLineup(models: readonly ManagedModel[], audio: readonly string[] = []): void {
+  loaded = { models, audio };
+  lineup = models.filter((model) => !model.private);
   byId = new Map(models.map((model) => [model.id, model] as const));
+  audioIds = new Set(audio);
   revision++;
 }
 
 /**
- * The managed lineup: what Platinum Inference offers right now. Empty when the
- * managed provider is off (self-host) or Platinum was never reached.
+ * The managed lineup: what Platinum Inference offers every Kortix user right
+ * now, private models left out. Empty when the managed provider is off
+ * (self-host) or Platinum was never reached.
  */
 export function managedLineup(): readonly ManagedModel[] {
   return lineup;
@@ -83,16 +115,24 @@ export function managedLineupRevision(): number {
   return revision;
 }
 
+/** Any managed chat model Platinum serves Kortix, a private one included. */
 export function getRuntimeManagedModel(id: string): ManagedModel | undefined {
   return byId.get(id);
 }
 
+/** In the lineup: a private model is not. */
 export function isRuntimeManagedModelId(id: string): boolean {
-  return byId.has(id);
+  const model = byId.get(id);
+  return !!model && !model.private;
 }
 
-export function __setManagedLineupForTest(models: readonly ManagedModel[]): void {
-  setLineup(models);
+/** A managed audio model Platinum serves Kortix now. */
+export function isManagedAudioModelId(id: string): boolean {
+  return audioIds.has(id);
+}
+
+export function __setManagedLineupForTest(models: readonly ManagedModel[], audio: readonly string[] = []): void {
+  setLineup(models, audio);
 }
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -104,11 +144,11 @@ export class PlatinumModelsError extends Error {
 }
 
 /**
- * Platinum's named models for one key: `GET {baseUrl}/models`. The one reader
+ * Platinum's model list for one key: `GET {baseUrl}/models`. The one reader
  * for both the managed lineup (the deployment's key) and the Platinum BYOK
  * provider (a project's own key, platinum-byok-models.ts).
  */
-export async function fetchPlatinumModels(baseUrl: string, apiKey: string, fetchImpl: FetchLike = fetch): Promise<ManagedModel[]> {
+async function readPlatinumModels(baseUrl: string, apiKey: string, fetchImpl: FetchLike): Promise<unknown> {
   let res: Response;
   try {
     res = await fetchImpl(`${baseUrl.replace(/\/+$/, '')}/models`, {
@@ -119,7 +159,12 @@ export async function fetchPlatinumModels(baseUrl: string, apiKey: string, fetch
     throw new PlatinumModelsError(null, err instanceof Error ? err.message : String(err));
   }
   if (!res.ok) throw new PlatinumModelsError(res.status, `HTTP ${res.status}`);
-  return managedModelsFromPlatinum(await res.json());
+  return res.json();
+}
+
+/** Platinum's named chat models for one key. */
+export async function fetchPlatinumModels(baseUrl: string, apiKey: string, fetchImpl: FetchLike = fetch): Promise<ManagedModel[]> {
+  return managedModelsFromPlatinum(await readPlatinumModels(baseUrl, apiKey, fetchImpl));
 }
 
 /**
@@ -128,15 +173,16 @@ export async function fetchPlatinumModels(baseUrl: string, apiKey: string, fetch
  */
 export async function loadManagedLineup(fetchImpl: FetchLike = fetch): Promise<boolean> {
   if (!config.KORTIX_MANAGED_PROVIDER_ENABLED || !config.PLATINUM_INFERENCE_API_KEY) {
-    if (lineup.length) setLineup([]);
+    if (loaded.models.length || loaded.audio.length) setLineup([]);
     return true;
   }
   try {
-    const models = await fetchPlatinumModels(config.PLATINUM_INFERENCE_URL, config.PLATINUM_INFERENCE_API_KEY, fetchImpl);
-    const changed = JSON.stringify(models) !== JSON.stringify(lineup);
-    if (changed) {
-      setLineup(models);
-      logger.info('[managed-lineup] loaded from Platinum Inference', { models: models.map((m) => m.id) });
+    const body = await readPlatinumModels(config.PLATINUM_INFERENCE_URL, config.PLATINUM_INFERENCE_API_KEY, fetchImpl);
+    const models = managedModelsFromPlatinum(body);
+    const audio = managedAudioModelIdsFromPlatinum(body);
+    if (JSON.stringify({ models, audio }) !== JSON.stringify(loaded)) {
+      setLineup(models, audio);
+      logger.info('[managed-lineup] loaded from Platinum Inference', { models: models.map((m) => m.id), audio });
     }
     return true;
   } catch (err) {

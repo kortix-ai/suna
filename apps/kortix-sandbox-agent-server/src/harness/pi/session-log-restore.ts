@@ -65,6 +65,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { buildSessionProjection, type SessionEntry } from '@earendil-works/pi-coding-agent'
 import {
   toV1,
+  visibleMessageIds,
   type CompactionBlock,
   type ExportCursor,
   type SessionLog,
@@ -76,7 +77,7 @@ import type { KortixMessage } from '@kortix/api-contract/transcript'
 import { logger } from '@/lib/log/logger'
 import type { SessionLogRestoreResult } from '../contract/session-log'
 import { piDumpPath, type PiChildDump, type PiDump } from './runtime'
-import { attachmentBytes, visibleMessageIds, type BytesReader } from '../shared/session-log-restore'
+import { attachmentBytes, type BytesReader } from '../shared/session-log-restore'
 import { PI_NO_RESULT, piNestedCalls, piSessionLog, type CodemodeCall, type PiSessionSnapshot } from './session-log'
 
 export interface PiRestoreTarget {
@@ -241,7 +242,7 @@ function writeAssistant(m: SessionLogMessage, id: string, seq: number, chain: Ch
 /** One thread as pi entries. `nextSeq` numbers the entries a layout compaction renders, above `floor`. */
 function writeThread(thread: SessionLogThread, images: Ctx['images'], drop: Ctx['drop'], floor: number): Chain {
   const chain = new Chain()
-  const visible = visibleMessageIds(thread)
+  const visible = visibleMessageIds(thread.messages)
   let current = ''
   const ctx: Ctx = { images, drop: (kind) => void (visible.has(current) && drop(kind)) }
   const msgs = [...thread.messages].sort((a, b) => a.seq - b.seq)
@@ -397,7 +398,7 @@ export async function restorePiSessionLog(input: SessionLog, target: PiRestoreTa
     }
   })
   const dump: PiDump = {
-    version: 1, rootId, title: log.title ?? '', createdAt: ms(log.created_at), agentMessages: [],
+    version: 1, rootId, title: log.title ?? '', createdAt: ms(log.created_at),
     entries: main.entries as never, header: header as never, messageIds: main.ids, seqs: main.seqs,
     transcript: v1.get(rootId) ?? [], turns: [], children, ...contextOf(root),
   }

@@ -178,10 +178,9 @@ export function parseItemAddress(raw: string): ItemAddress {
 // User-supplied `url` registry/item addresses are fetched by this package
 // (loadRegistry/loadItem in fetch.ts) from contexts (hosted API, sandboxes)
 // where the target may be internal. Block loopback/link-local/RFC1918/
-// metadata hosts and anything not https. Mirrors `isPrivateHost` in
-// apps/api/src/marketplace/catalog.ts (kept in sync by hand — this package
-// cannot import across the package boundary).
-function isPrivateRegistryHost(host: string): boolean {
+// metadata hosts and anything not https. Shared with the source and connector
+// endpoint guards in apps/api/src/marketplace/catalog.ts.
+export function isPrivateRegistryHost(host: string): boolean {
   const h = host.toLowerCase().replace(/\.$/, '');
   if (!h || h === 'localhost' || h.endsWith('.localhost')) return true;
   if (h === '127.0.0.1' || h === '0.0.0.0' || h === '::1' || h.startsWith('127.')) return true;

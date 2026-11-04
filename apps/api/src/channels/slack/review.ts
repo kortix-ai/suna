@@ -1,4 +1,5 @@
 import { config } from '../../config';
+import { slackAgentPersona } from './persona';
 import { postBlocks, postMessage } from '../slack-api';
 import { type ReviewCardItem, buildReviewCardBlocks } from './review-cards';
 import { deleteTurn, finalizeTurn, loadTurn } from './turn';
@@ -34,19 +35,21 @@ export async function postReviewCard(
   const webUrl = sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId);
   const blocks = buildReviewCardBlocks(item, { webUrl });
   const fallback = item.title?.slice(0, 200) || 'A review item needs you';
+  const persona = await slackAgentPersona(handle).catch(() => null);
   const messageTs = await postBlocks(
     handle.token,
     handle.channel,
     fallback,
     blocks,
     handle.triggerTs,
+    persona,
   );
   if (!messageTs) {
     // The Block Kit render was rejected — don't silently lose the request. Post a
     // plain message with the title/summary + a deep link so the user can still act
     // in Kortix (the buttons are gone, but the request isn't a dead-end).
     const plain = `*${item.title}*\n${item.summary}\n\n<${webUrl}|Review in Kortix ↗>`;
-    const plainTs = await postMessage(handle.token, handle.channel, plain, handle.triggerTs);
+    const plainTs = await postMessage(handle.token, handle.channel, plain, handle.triggerTs, persona);
     if (!plainTs) return { ok: false, error: 'Failed to post the review card to Slack.' };
   }
   return { ok: true };

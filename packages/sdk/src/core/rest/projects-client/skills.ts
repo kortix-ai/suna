@@ -51,3 +51,38 @@ export async function removeProjectSkill(
     ),
   );
 }
+
+/** One reference file a built-in skill carries: its path under the skill, its size, and its text with `full`. */
+export interface BuiltinSkillReference {
+  path: string;
+  bytes: number;
+  /** Present when the skill was read with `full: true`. */
+  content?: string;
+}
+
+/**
+ * A skill Kortix ships (`GET /v1/skills/:name`): its frontmatter description,
+ * the full SKILL.md body an agent follows, the feature flag that gates it (or
+ * null), and the reference files beside it. Not a file in the project's repo.
+ */
+export interface BuiltinSkill {
+  name: string;
+  description: string;
+  body: string;
+  featureFlag: string | null;
+  references: BuiltinSkillReference[];
+}
+
+/**
+ * Read one Kortix built-in skill by name. `full: true` also inlines every
+ * reference file's text (large: `kortix-system` is ~230 KB). The caller shows
+ * a failure itself.
+ */
+export async function getBuiltinSkill(
+  name: string,
+  options?: ApiClientOptions & { full?: boolean },
+): Promise<BuiltinSkill> {
+  const { full, ...request } = options ?? {};
+  const path = `/skills/${encodeURIComponent(name)}${full ? '?full=1' : ''}`;
+  return unwrap(await backendApi.get<BuiltinSkill>(path, { showErrors: false, ...request }));
+}

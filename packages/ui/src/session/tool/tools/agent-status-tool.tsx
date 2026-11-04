@@ -3,7 +3,7 @@
 import { Badge } from '../../../primitives/badge';
 import Loading from '../../../primitives/loading';
 import { STATUS_TEXT } from '../../../primitives/status';
-import { SubSessionModal } from '../../thread/sub-session-modal';
+import { SubagentDialog } from '../../agents/subagent-view';
 import {
   BasicTool,
   isErrorOutput,
@@ -121,7 +121,7 @@ export function AgentStatusTool({ call, defaultOpen, forceOpen }: ToolProps) {
       </BasicTool>
 
       {modalSessionId && (
-        <SubSessionModal
+        <SubagentDialog
           open={!!modalSessionId}
           onOpenChange={(open) => {
             if (!open) setModalSessionId(null);

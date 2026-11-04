@@ -25,6 +25,8 @@ import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flag
 // The request reader `requestAuditContext` lives in `middleware/request-audit.ts`.
 // Re-exported here so every importer and mock keeps working.
 export { requestAuditContext } from '../../middleware/request-audit';
+import { CHANNEL_ACCESS_PLATFORMS } from '../../shared/channel-access-platforms';
+import { forRequestApiUrl } from '../../shared/domain-aliases';
 import { normalizeJsonObject } from '../../shared/json';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
@@ -43,6 +45,7 @@ import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
 import { probeProjectSecret } from '../secrets/envelope';
 import { isDeprecatedProvider } from '../../platform/providers/deprecated';
+import { isPlatinumConfigured } from '../../shared/platinum';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -83,7 +86,7 @@ export const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
  * metadata whole, so nothing loses access to them — only the inventory listing
  * stops shipping a copy per row. Keys clients DO read off the list —
  * `pending_prompt`, `session_name`, `last_activity_at`, `spawned_by_session`,
- * `legacy_migration`, `source`, `trigger_*`, `sandbox_slug`, `warm` — are
+ * `legacy_migration`, `source`, `trigger_*`, `sandbox_slug` — are
  * deliberately NOT here.
  */
 export const LIST_OMITTED_SESSION_METADATA_KEYS = [
@@ -95,6 +98,11 @@ export const LIST_OMITTED_SESSION_METADATA_KEYS = [
   'session_start_timeline',
   'audit_v2',
   'remote_branch',
+  // A channel thread's top message: the list already serves it as the
+  // top-level `first_prompt` field, so the metadata copy is a duplicate.
+  'first_prompt',
+  // Served as the top-level `result_excerpt` (lib/session-board.ts).
+  'result_excerpt',
 ] as const;
 
 function trimSessionMetadataForList(
@@ -116,6 +124,8 @@ export function serializeSession(
     grants?: SecretGrant[];
     /** Model selected by the durable conversation log, not the creation pin. */
     conversationModel?: string | null;
+    /** `reply_count`: set by a channel or DM thread list only. */
+    replyCount?: number | null;
     /** The viewing user, to compute is_owner / can_manage_*. */
     viewerId?: string;
     /** Viewer can manage the project (account owner/admin, or a project manager). */
@@ -138,6 +148,8 @@ export function serializeSession(
     ownerType?: 'user' | 'service_account' | 'unknown' | null;
     /** Whether the viewer may read/open the session, independent of inventory visibility. */
     canAccess?: boolean;
+    /** `mayPublishTurn` for the viewer (`turnPublishVerdict`). Single-session reads only; omitted elsewhere. */
+    canPublishResponse?: boolean;
     /** Exact state of the backing runtime resource, if one still exists. */
     runtimeStatus?: 'provisioning' | 'active' | 'stopped' | 'error' | 'archived' | null;
     /** Server-managed soft-deletion audit fields. */
@@ -194,16 +206,15 @@ export function serializeSession(
     // A legacy `e2b` row passes through as stored: E2B support is discontinued.
     sandbox_provider: row.sandboxProvider as ProjectSession['sandbox_provider'],
     sandbox_id: row.sandboxId,
-    sandbox_url: row.sandboxUrl,
+    sandbox_url: forRequestApiUrl(row.sandboxUrl),
     runtime_session_id: row.runtimeSessionId,
     opencode_session_id: row.runtimeSessionId,
     name: customName ?? runtimeTitle ?? autoName,
     custom_name: customName,
     labels: canAccess ? (row.labels ?? []) : [],
     agent_name: row.agentName,
-    // Lifecycle reads report the stored state. The visible inventory hides
-    // unused warm sessions; masking a ready runtime as provisioning leaves
-    // manager and CLI reads permanently showing Starting.
+    // Lifecycle reads report the stored state: masking a ready runtime as
+    // provisioning leaves manager and CLI reads permanently showing Starting.
     status: row.status,
     error: row.error,
     // Inventory filters inaccessible rows. Keep this boundary fail-closed for
@@ -225,6 +236,10 @@ export function serializeSession(
     visibility: row.visibility,
     origin: row.origin,
     parent_session_id: row.parentSessionId ?? null,
+    space_id: row.spaceId ?? null,
+    group_id: row.groupId ?? null,
+    first_prompt: canAccess && typeof row.metadata?.first_prompt === 'string' ? row.metadata.first_prompt : null,
+    reply_count: canAccess ? (ctx?.replyCount ?? null) : null,
     initiator: row.initiatorType
       ? {
           type: row.initiatorType,
@@ -254,6 +269,7 @@ export function serializeSession(
       ownerIsMachine: ctx?.ownerIsMachine ?? !row.createdBy,
     }),
     can_manage_lifecycle: isOwner || Boolean(ctx?.canManageProject),
+    ...(ctx?.canPublishResponse !== undefined ? { can_publish_response: ctx.canPublishResponse } : {}),
     can_access: canAccess,
     runtime_status: ctx?.runtimeStatus ?? null,
     deleted_at: ctx?.deletedAt ?? null,
@@ -329,8 +345,31 @@ export function serializeProject(
     // and SDKs from before then read false as the removed native model mode.
     // `session_log` graduated on 2026-10-22 and stays `true` too: older SDKs, CLIs
     // and mobile builds read false as "serve the v1 transcript". `pi_harness`
-    // graduated on 2026-10-23: every new session runs pi.
-    experimental: { ...resolveFeatureFlags(row.metadata), apps: true, llm_gateway: true, session_log: true, pi_harness: true },
+    // graduated on 2026-10-23: every new session runs pi. `genui` graduated on
+    // 2026-10-24: older web, SDK and mobile clients render blocks only while it is true.
+    // `connectors_v2` and `connectors_api_discover` graduated on 2026-10-24: older SDKs and
+    // hosts read false as "show the legacy catalog".
+    // `meta_agent` was removed on 2026-11-02: My Kortix follows kortix.yaml
+    // `builtin_agents.my_kortix` alone, and older SDKs and hosts still read the key.
+    // `warm_sessions` was removed on 2026-11-03 and stays `false`: older web, SDK
+    // and mobile builds pre-create a session only while they read true.
+    // `volumes` and `drives` graduated on 2026-11-02: every project has a Drive
+    // where the platform stores one. Both keys stay, equal to that availability,
+    // because older web, SDK, TUI and CLI builds show the Drive only while they read true.
+    experimental: {
+      ...resolveFeatureFlags(row.metadata),
+      apps: true,
+      llm_gateway: true,
+      session_log: true,
+      pi_harness: true,
+      genui: true,
+      connectors_v2: true,
+      connectors_api_discover: true,
+      meta_agent: true,
+      warm_sessions: false,
+      volumes: isPlatinumConfigured(),
+      drives: isPlatinumConfigured(),
+    },
     experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
     // is the current pin (null = follow the platform default/distribution);
@@ -369,7 +408,10 @@ export function serializeProject(
 
 export function publicProjectMetadata(metadata: unknown): Record<string, unknown> {
   if (!metadata || typeof metadata !== 'object') return {};
-  const source = metadata as Record<string, unknown>;
+  // Channel allowed user ids and access requests are personal data: only the
+  // channel access routes serve them.
+  const source = { ...(metadata as Record<string, unknown>) };
+  for (const platform of CHANNEL_ACCESS_PLATFORMS) delete source[platform];
   if (!source.git || typeof source.git !== 'object') return source;
   const git = source.git as Record<string, unknown>;
   if (!Object.hasOwn(git, 'fast_boot')) return source;
@@ -869,6 +911,7 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
     daytona_state: t.daytonaState,
     provider_state: t.providerState,
     ready: t.ready,
+    residential_proxy: t.residentialProxy,
     ...(t.providerCoverage ? { provider_coverage: t.providerCoverage } : {}),
   };
 }

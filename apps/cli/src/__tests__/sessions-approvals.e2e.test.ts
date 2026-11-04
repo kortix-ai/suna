@@ -89,14 +89,11 @@ describe('sessions pending/approve/answer', () => {
             opencode_session_id: 'ses_oc',
           });
         }
-        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/8000/session/status`) {
-          return Response.json({ ses_oc: { type: 'busy' } });
+        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/8000/kortix/health`) {
+          return Response.json({ capabilities: ['runtime.actions.v1'] });
         }
-        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/8000/permission`) {
-          return Response.json(pendingPermissions);
-        }
-        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/8000/question`) {
-          return Response.json(pendingQuestions);
+        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/8000/kortix/runtime/pending`) {
+          return Response.json({ statuses: { ses_oc: 'busy' }, permissions: pendingPermissions, questions: pendingQuestions });
         }
         if (
           req.method === 'GET' &&
@@ -105,14 +102,14 @@ describe('sessions pending/approve/answer', () => {
           return Response.json({ actions: auditActions });
         }
         const permReply = url.pathname.match(
-          new RegExp(`^/v1/p/${PROXY_ID}/8000/permission/([^/]+)/reply$`),
+          new RegExp(`^/v1/p/${PROXY_ID}/8000/kortix/runtime/permissions/([^/]+)/reply$`),
         );
         if (req.method === 'POST' && permReply) {
           permissionReplies.push({ id: permReply[1], body: await req.json() });
           return Response.json(true);
         }
         const qReply = url.pathname.match(
-          new RegExp(`^/v1/p/${PROXY_ID}/8000/question/([^/]+)/(reply|reject)$`),
+          new RegExp(`^/v1/p/${PROXY_ID}/8000/kortix/runtime/questions/([^/]+)/(reply|reject)$`),
         );
         if (req.method === 'POST' && qReply) {
           questionReplies.push({
@@ -183,20 +180,20 @@ describe('sessions pending/approve/answer', () => {
   function permission(id: string) {
     return {
       id,
-      sessionID: 'ses_oc',
-      permission: 'bash',
-      patterns: ['rm -rf *'],
-      metadata: {},
-      always: [],
-      tool: { messageID: 'msg_1', callID: 'call_1' },
+      thread_id: 'ses_oc',
+      call_id: 'call_1',
+      payload: { permission: 'bash', patterns: ['rm -rf *'], always: [], metadata: {} },
+      asked_at: '2026-01-01T00:00:00.000Z',
     };
   }
 
   function question(id: string) {
     return {
       id,
-      sessionID: 'ses_oc',
-      questions: [
+      thread_id: 'ses_oc',
+      call_id: 'call_2',
+      asked_at: '2026-01-01T00:00:00.000Z',
+      payload: { questions: [
         {
           question: 'Which environment should I deploy to?',
           header: 'Environment',
@@ -205,8 +202,7 @@ describe('sessions pending/approve/answer', () => {
             { label: 'Production', description: 'Deploy to production.' },
           ],
         },
-      ],
-      tool: { messageID: 'msg_2', callID: 'call_2' },
+      ] },
     };
   }
 
@@ -286,7 +282,7 @@ describe('sessions pending/approve/answer', () => {
     expect(err).toContain('perm_b');
   });
 
-  test('answer sends the selected OpenCode option label', async () => {
+  test('answer sends the selected option label', async () => {
     pendingQuestions = [question('q_1')];
 
     const code = await runSessions([

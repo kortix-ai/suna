@@ -99,12 +99,41 @@ test('a frame loads once, parks off screen, and moves between the card and the b
   expect(frame.parentElement).toBe(modalSlot);
   expect(frame.tabIndex).toBe(0);
   releaseModal();
+  // A release lands at the end of the task (see the next test).
+  await Promise.resolve();
   expect(frame.parentElement).toBe(cardSlot);
   releaseCard();
+  await Promise.resolve();
   expect(frame.parentElement?.dataset.testid).toBe('app-preview-parking');
 
   expect(frame.moves).toBe(4);
   expect(frame.loads).toBe(1);
+});
+
+test('a release and a claim in one task (a remount, a page handing the frame on) never park the frame', async () => {
+  const pool = await import('./app-preview-pool');
+  pool.ensureFrame('e:1', 'https://e.example.test/', attributes);
+  const frame = frames().find((node) => node.dataset.frameKey === 'e:1')!;
+  const first = new FakeElement('div');
+  const second = new FakeElement('div');
+  body.appendChild(first);
+  body.appendChild(second);
+  const release = pool.claimFrame('e:1', first as unknown as HTMLElement, card);
+  const moves = frame.moves;
+  // React Strict Mode: the effect is cleaned up and set up again in the same commit.
+  release();
+  const again = pool.claimFrame('e:1', first as unknown as HTMLElement, card);
+  await Promise.resolve();
+  expect(frame.parentElement).toBe(first);
+  expect(frame.moves).toBe(moves);
+  // Leaving a page for one that shows the same frame: straight from one slot to the other.
+  again();
+  const last = pool.claimFrame('e:1', second as unknown as HTMLElement, card);
+  await Promise.resolve();
+  expect(frame.parentElement).toBe(second);
+  expect(frame.moves).toBe(moves + 1);
+  last();
+  await Promise.resolve();
 });
 
 test('a new frame stays loading until its App loads, not on the about:blank insert', async () => {
@@ -135,6 +164,7 @@ test('prune drops frames of old releases unless a slot still shows them', async 
   pool.pruneFrames(new Set(['c:2']));
   expect(frames().map((node) => node.dataset.frameKey).sort()).toEqual(['c:1', 'c:2']);
   release();
+  await Promise.resolve();
   pool.pruneFrames(new Set(['c:2']));
   expect(frames().map((node) => node.dataset.frameKey)).toEqual(['c:2']);
 });

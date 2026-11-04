@@ -3,6 +3,7 @@
  * An App without the capability answers 409 `app_capability_unsupported`.
  *
  *   POST   /projects/:projectId/apps/:appId/token   member_tokens   read
+ *   GET    /projects/:projectId/apps/:appId/events/credentials   —   admin
  */
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json } from '../openapi';
@@ -11,6 +12,7 @@ import { projectsApp } from '../projects/surface';
 import { resolveAppViewerIdentity } from './viewer';
 import { authorizedProject, capabilityRefusal, visibleApp } from './route-access';
 import { TOKEN_TTL_SECONDS, mintAppToken } from './tokens';
+import { appEventToken, appEventsUrl } from './events';
 
 const AppParams = z.object({ projectId: z.string().uuid(), appId: z.string().uuid() });
 
@@ -53,6 +55,26 @@ export function registerAppCapabilityRoutes(): void {
       );
       c.header('Cache-Control', 'no-store');
       return c.json({ token: minted.token, expires_at: minted.expiresAt.toISOString() }, 200);
+    },
+  );
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get', path: '/{projectId}/apps/{appId}/events/credentials', tags: ['apps'], summary: "Read an App's event credentials", ...auth,
+      description:
+        'The URL and token an App uses to emit events (`KORTIX_APP_EVENTS_URL`, `KORTIX_APP_TOKEN`). Every App machine already ' +
+        'has both. Read them to emit from code that runs elsewhere, such as your laptop while you develop the App. Needs project.app.admin.',
+      request: { params: AppParams },
+      responses: { 200: json(z.object({ url: z.string(), token: z.string() }).openapi('KortixAppEventCredentials'), 'Credentials'), ...errors(403, 404) },
+    }),
+    async (c) => {
+      const { projectId, appId } = c.req.valid('param');
+      const loaded = await authorizedProject(c, projectId, 'admin');
+      if (loaded instanceof Response) return loaded;
+      const app = await visibleApp(projectId, appId, loaded.userId);
+      if (!app) return c.json({ error: 'Not found' }, 404);
+      c.header('Cache-Control', 'no-store');
+      return c.json({ url: appEventsUrl(app), token: appEventToken(app.appId) }, 200);
     },
   );
 }

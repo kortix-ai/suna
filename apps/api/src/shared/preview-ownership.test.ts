@@ -5,6 +5,7 @@ import {
   accounts,
   projectSessionGrants,
   projectSessions,
+  projectSpaces,
   serviceAccounts,
   sessionSandboxes,
 } from '@kortix/db';
@@ -36,6 +37,8 @@ let sandboxRefFailure: Error | null = null;
 let platformAdminGate: Promise<void> | null = null;
 let platformAdmins = new Set<string>();
 let projectSessionRow: Record<string, unknown> | null = null;
+/** The project's private channels, as `hiddenSpaceIds` reads them (`member`: the caller is in it). */
+let privateSpaceRows: Array<{ spaceId: string; kind: 'channel'; visibility: 'private'; isDefault: false; member: boolean }> = [];
 let projectSessionReads = 0;
 let projectSessionGate: Promise<void> | null = null;
 let projectSessionFailure: Error | null = null;
@@ -60,6 +63,8 @@ async function unlimitedRows(table: unknown): Promise<unknown[]> {
     return [];
   }
   if (table === projectSessionGrants) return [];
+  // The project's private channels: none here.
+  if (table === projectSpaces) return privateSpaceRows;
   throw new Error('preview-ownership.test.ts: unexpected table awaited without limit()');
 }
 
@@ -159,6 +164,7 @@ const privateSessionOf = (ownerId: string) => ({
 });
 
 beforeEach(() => {
+  privateSpaceRows = [];
   sandboxRefRow = {
     sandboxId: 'sbx-1',
     accountId: 'acct-1',
@@ -590,6 +596,7 @@ describe('concurrent refusals — each key stores its own context', () => {
         boundCredentialSessionId: null,
       });
     expect(refusalOf('caller-a')).toEqual({
+      spaceHidden: false,
       sessionId: 'sess-race-1',
       projectId: 'proj-1',
       visibility: 'private',
@@ -603,5 +610,39 @@ describe('concurrent refusals — each key stores its own context', () => {
       boundCredentialSessionId: null,
     });
     expect(refusalOf('caller-b')?.callerSessionId).toBe('caller-b');
+  });
+});
+
+describe('canAccessSandboxSession — private channels', () => {
+  test('L6: a project member not in the private channel is refused the thread\'s sandbox, branch space_hidden', async () => {
+    const P = '00000000-0000-4000-8000-00000000c0de';
+    projectSessionRow = { ...privateSessionOf('user-owner'), visibility: 'project', spaceId: P };
+    privateSpaceRows = [{ spaceId: P, kind: 'channel', visibility: 'private', isDefault: false, member: false }];
+    const input = {
+      sessionId: 'sess-private-channel-1',
+      projectId: 'proj-1',
+      accountId: 'acct-1',
+      userId: 'user-bob',
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+    };
+    expect(await canAccessSandboxSession(input)).toBe(false);
+    expect(takeSessionAccessRefusal(input)?.spaceHidden).toBe(true);
+  });
+
+  test('L6: a member of the channel reaches it', async () => {
+    const P = '00000000-0000-4000-8000-00000000c0df';
+    projectSessionRow = { ...privateSessionOf('user-owner'), visibility: 'project', spaceId: P };
+    privateSpaceRows = [{ spaceId: P, kind: 'channel', visibility: 'private', isDefault: false, member: true }];
+    expect(
+      await canAccessSandboxSession({
+        sessionId: 'sess-private-channel-2',
+        projectId: 'proj-1',
+        accountId: 'acct-1',
+        userId: 'user-alice',
+        callerSessionId: null,
+        boundCredentialSessionId: null,
+      }),
+    ).toBe(true);
   });
 });

@@ -18,13 +18,14 @@ import { useCallback, useState } from 'react';
 import type { PendingSessionPrompt } from '@kortix/sdk';
 import { useNewProjectSession } from '../internal/hooks/projects/use-new-project-session';
 import { useSettingsPanelStore } from '../internal/stores/settings-panel-store';
+import { useGuardedLeave } from './shared/leave-guard';
 
 export { editConfigPrompt, newConfigPrompt, type ConfigureKind } from '@kortix/shared';
 
 export interface ConfigureThread {
   /** Spin up a configure session for `prompt`, then close Customize + navigate.
    *  A bare string becomes the default durable payload; a `PendingSessionPrompt`
-   *  (see `pendingUpgradePrompt`) is passed through unchanged. */
+   *  (an agent pick, as `ProjectManifestIssuesAlert` sends) is passed through unchanged. */
   start: (prompt: string | PendingSessionPrompt) => void;
   /**
    * True while a session is being created. Creating one is a network round-trip
@@ -34,10 +35,15 @@ export interface ConfigureThread {
   pending: boolean;
 }
 
-export function useConfigureThread(projectId: string): ConfigureThread {
+/**
+ * `resetOnNavigate`: free the button once the new session opens. For a control that
+ * stays on screen (the sidebar); an overlay closes instead, so it keeps `pending`.
+ */
+export function useConfigureThread(projectId: string, { resetOnNavigate = false }: { resetOnNavigate?: boolean } = {}): ConfigureThread {
   const closeCustomize = useSettingsPanelStore((s) => s.close);
   const [pending, setPending] = useState(false);
   const newSession = useNewProjectSession(projectId);
+  const guardedLeave = useGuardedLeave();
 
   const start = useCallback(
     (prompt: string | PendingSessionPrompt) => {
@@ -46,25 +52,30 @@ export function useConfigureThread(projectId: string): ConfigureThread {
       // Guard re-entry: ignore extra clicks while a session is being minted so
       // we don't fire two creates (two billed sessions for one click).
       if (pending) return;
-      setPending(true);
-      // Optimistic, identical to the project-home composer: mint the session,
-      // stash the seed prompt, close the overlay, and drop into the instant shell
-      // — which shows the prompt + inline boot status and auto-sends it once the
-      // runtime is ready (the hook persists + bounces on a terminal failure).
-      // Leave `pending` true: we're navigating away and the overlay is closing,
-      // so flipping it back would only flash the idle button.
-      newSession({
-        // The prompt is a durable inbox row from the create itself — the API
-        // converts `pending_prompt` inside the session-create transaction, so
-        // a closed tab between here and the workbench cannot lose it. No
-        // start-stash: there are no picks to hand off.
-        create: { pending_prompt: pendingPrompt },
-        onNavigate: () => {
-          closeCustomize();
-        },
+      // Under a page with unsaved edits (the agent editor), the new session
+      // waits until the person chooses to leave them.
+      guardedLeave(() => {
+        setPending(true);
+        // Optimistic, identical to the project-home composer: mint the session,
+        // stash the seed prompt, close the overlay, and drop into the instant shell
+        // — which shows the prompt + inline boot status and auto-sends it once the
+        // runtime is ready (the hook persists + bounces on a terminal failure).
+        // Leave `pending` true: we're navigating away and the overlay is closing,
+        // so flipping it back would only flash the idle button.
+        newSession({
+          // The prompt is a durable inbox row from the create itself — the API
+          // converts `pending_prompt` inside the session-create transaction, so
+          // a closed tab between here and the workbench cannot lose it. No
+          // start-stash: there are no picks to hand off.
+          create: { pending_prompt: pendingPrompt },
+          onNavigate: () => {
+            closeCustomize();
+            if (resetOnNavigate) setPending(false);
+          },
+        });
       });
     },
-    [pending, newSession, closeCustomize],
+    [pending, newSession, closeCustomize, guardedLeave, resetOnNavigate],
   );
 
   return { start, pending };

@@ -54,54 +54,122 @@ postmortem on its own.
 ## How it works
 
 <Steps>
-<Step title="Trigger on the resolved incident">
+<Step title="Copy the setup prompt into a new session">
 
-The incident channel is connected as a **channel**, so marking an incident
-resolved is the trigger. That fires a fresh **session** in its own isolated
-sandbox, seeded with the incident. One incident maps to one session on one
-disposable machine, and the draft starts while the details are fresh.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the postmortem-draft skill and the
+15-minute trigger, and opens a change request for you to review.
+Prefer clicks? Choose **Use this template** instead.
 
-</Step>
-<Step title="Give the agent the postmortem format">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up an incident postmortem agent in this project.
 
-What a good postmortem contains and how we structure it lives as **skills** and
-**memory** that travel with the agent: the section layout (timeline, root cause,
-impact, action items), the house style, and patterns from past incidents worth
-checking against. When we change how we write postmortems, we update the file and
-the next draft follows it.
+1. Create the agent agents/incident-postmortem.md. Its job is to draft a postmortem for each resolved incident in #incidents and open it as a pull request in owner/repo. It may use the GitHub and Datadog connectors, the Slack channel and the GH_TOKEN secret.
 
-</Step>
-<Step title="Connect the channel, the logs, and GitHub">
+2. Create the skill skills/postmortem-draft/SKILL.md with these rules:
+   - Skip an incident that already has a postmortem pull request or branch. One pull request per incident.
+   - Use the incident thread in #incidents as the timeline, from declaration to resolution.
+   - Line up GitHub merges and Datadog error-rate and latency spikes against the same window on one clock.
+   - Write under postmortems/ in the format of past postmortems: summary, timeline, proposed root cause, impact and candidate action items.
+   - Mark the root cause as an inference. Never assign owners, close the incident or merge the pull request.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches the
-model, the agent reads:
+3. Add a cron trigger resolved-incident-sweep to kortix.yaml. It runs the incident-postmortem agent every 15 minutes with the prompt "Load the postmortem-draft skill and check #incidents for incidents marked resolved since the last sweep."
 
-- **The incident channel** — the message timeline, who did what, and when the
-  incident opened and resolved.
-- **The logs** — error-rate and latency spikes over the incident window, to line
-  up against the timeline.
-- **GitHub** — the deploys and merges in the same window, to correlate what
-  shipped with when things broke.
+4. Tell me which of these connectors are not connected yet.
 
-The agent reads these to reconstruct the sequence; its one write is the doc PR.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent produces a **draft, not a decision**. Its output is a doc PR that a
-human reviews, edits, and merges: root cause and action items are proposed, never
-finalized by the agent. It doesn't publish a postmortem or assign owners on its
-own. Credentials are encrypted in the Secrets Manager and injected at runtime,
-scoped to the agents you grant them to.
+Open **Connectors** in your project and connect GitHub and Datadog, add a
+GitHub token as the `GH_TOKEN` secret, and connect Slack under **Channels**.
+Credentials are brokered server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="GitHub" domain="github.com" tag="Required" alternatives={[['GitLab', 'gitlab.com']]}>
+    Reads deploys and merges and opens the postmortem pull request.
+  </ToolNeed>
+  <ToolNeed name="Datadog" domain="datadoghq.com" tag="Required" alternatives={[['Sentry', 'sentry.io'], ['PagerDuty', 'pagerduty.com']]}>
+    Reads log spikes over the incident window.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Reads the incident channel timeline for resolved incidents.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Open the draft for review">
+<Step title="Run it once with this prompt">
 
-With that in place, a resolved incident produces a first draft on its own: a
-timeline built from the channel and lined up against the deploys and log spikes, a
-proposed root cause with the evidence behind it, and a list of candidate action
-items. The team opens the PR, corrects what the agent inferred, adds the context
-only they have, and merges the version they stand behind.
+Merge the change request, then start a session with the **incident-postmortem** agent
+and send this prompt. Pick a recently resolved incident and read the
+draft before you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Check #incidents for incidents marked resolved and draft their postmortems.
+
+1. For each resolved incident, check owner/repo for an existing postmortem pull request or branch, and skip it if there is one.
+2. Read the full incident thread as the timeline.
+3. List the GitHub merges and the Datadog error-rate and latency spikes in the incident window.
+4. Draft the postmortem under postmortems/ in our format, with the root cause marked as proposed.
+5. Open one pull request per incident. Do not assign owners, close the incident or merge.`}
+/>
+
+</Step>
+<Step title="Let the 15-minute schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every 15 minutes, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: resolved-incident-sweep
+    name: Resolved incident sweep
+    on:
+      cron: "0 */15 * * * *"
+    run:
+      agent: incident-postmortem
+      prompt: Load the postmortem-draft skill and check #incidents for incidents marked resolved since the last sweep.`}
+/>
+
+</Step>
+<Step title="Propose the root cause, never finalize it">
+
+The draft states the root cause and the action items as proposals, with the
+evidence listed. The action items have no owners. The channel, GitHub history
+and Datadog are read-only sources, and the pull request is the one write. The
+team corrects the draft, sets owners and merges the version they stand
+behind.
+
+</Step>
+<Step title="Read the postmortem draft">
+
+Each resolved incident ends with one pull request. This is what a run looks like in the session:
+
+<ExampleRun
+  title="Resolved incident sweep · 16:15"
+  message="Load the postmortem-draft skill and check #incidents for incidents marked resolved since the last sweep."
+  worked="Worked for 6m 03s"
+  tools={[
+    'slack · read channel history → #incidents',
+    'github · list pull requests',
+    'github · search merged pull requests',
+    'datadog · query metrics × 2',
+    'github · create pull request',
+  ]}
+  note="Illustrative example. Your timeline depends on your incident."
+>
+  Found **1** newly resolved incident, open for **42** minutes. The error rate
+  rose **3** minutes after a merge to the checkout service, so the draft
+  proposes that merge as the root cause. Opened one pull request with **4**
+  candidate action items and no owners.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -112,6 +180,25 @@ only they have, and merges the version they stand behind.
   **skills** and **memory**. The agent correlates the timeline and opens a doc
   PR; humans finalize.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Share the draft"
+  code="When you open a postmortem pull request, post its link and the one-paragraph summary in the incident thread."
+/>
+
+<CopyBlock
+  title="Find repeat causes"
+  code="Each month, read the merged postmortems and list root causes that appeared more than once, with links."
+/>
+
+<CopyBlock
+  title="Track action items"
+  code="After a postmortem pull request merges, file each action item as an unassigned GitHub issue linked to it."
+/>
 
 ## Guardrails
 

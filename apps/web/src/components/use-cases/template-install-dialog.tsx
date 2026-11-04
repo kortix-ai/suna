@@ -1,33 +1,32 @@
 'use client';
 
-import { SparkleIcon as Sparkles } from '@phosphor-icons/react';
+import { ArrowRightIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
-import { Button } from '@/components/ui/marketing/button';
+import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { TemplateSessionInstallDialog } from './template-session-install-dialog';
 
+/** "Use this template": the marketing button (the navbar's Projects look) at
+ *  the in-page size, with the trailing arrow the landing CTAs carry, opening
+ *  the install dialog. */
 export function UseTemplateButton({
   templateId,
   title,
   className,
-  variant,
-  size,
   label = 'Use this template',
 }: {
   templateId: string;
   title?: string;
   className?: string;
-  variant?: React.ComponentProps<typeof Button>['variant'];
-  size?: React.ComponentProps<typeof Button>['size'];
   label?: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button className={className} variant={variant} size={size} onClick={() => setOpen(true)}>
-        <Sparkles weight="duotone" className="size-4" />
+      <MarketingButton size="md" className={className} onClick={() => setOpen(true)}>
         {label}
-      </Button>
+        <ArrowRightIcon weight="fill" aria-hidden />
+      </MarketingButton>
       <TemplateSessionInstallDialog
         templateId={templateId}
         title={title}

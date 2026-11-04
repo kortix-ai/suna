@@ -2,9 +2,16 @@
  * Terminal design tokens.
  *
  * The rule from CLAUDE.md's frontend standard, translated to a terminal:
- * monochrome surfaces, one earned accent, no decorative color. Every color a
- * component draws comes from this file — a component never writes a hex
- * literal inline, exactly as a web surface never writes `bg-emerald-500`.
+ * monochrome surfaces, one earned accent, no decorative color. `accent` is
+ * the monochrome emphasis (white on dark). `brand` is the terminal turquoise
+ * the `kortix` CLI banner prints (`apps/cli/src/banner.ts`, ANSI cyan; brand
+ * decisions D32, D33), rationed to two marks: the one-column `▌` selection
+ * marker and the text cursor. The Kortix symbol, focus borders, prompts and
+ * highlights stay monochrome: turquoise on every focused frame was too much.
+ *
+ * Every color a component draws comes from this file — a component never
+ * writes a hex literal inline, exactly as a web surface never writes
+ * `bg-emerald-500`.
  *
  * Values are 24-bit hex strings. OpenTUI parses them through `RGBA.fromHex`
  * (`@opentui/core` `lib/RGBA.d.ts`), so any renderable prop that takes a color
@@ -18,8 +25,10 @@ export interface Theme {
   dim: string;
   /** Tertiary text: disabled, placeholder. */
   faint: string;
-  /** The one accent. Selection, focus, the active row marker. */
+  /** Monochrome emphasis: highlighted text, the prompt glyph, key names. */
   accent: string;
+  /** The terminal turquoise (D32, D33). Only the `▌` selection marker and the text cursor. */
+  brand: string;
   /** Text drawn on top of `accent`. */
   onAccent: string;
   /** Panel border, unfocused. */
@@ -43,9 +52,10 @@ const DARK: Theme = {
   dim: '#9b9b9b',
   faint: '#6b6b6b',
   accent: '#ffffff',
+  brand: '#2ec4c4',
   onAccent: '#0b0b0b',
-  border: '#3a3a3a',
-  borderFocus: '#8a8a8a',
+  border: '#2e2e2e',
+  borderFocus: '#6b6b6b',
   bg: '#0b0b0b',
   surface: '#1a1a1a',
   danger: '#e06c6c',
@@ -58,9 +68,10 @@ const LIGHT: Theme = {
   dim: '#5c5c5c',
   faint: '#8a8a8a',
   accent: '#0b0b0b',
+  brand: '#0f7f80',
   onAccent: '#ffffff',
   border: '#cfcfcf',
-  borderFocus: '#6b6b6b',
+  borderFocus: '#8a8a8a',
   bg: '#fbfbfb',
   surface: '#eeeeee',
   danger: '#b23c3c',

@@ -125,10 +125,10 @@ export const SECRET_DEFS: SecretDef[] = [
   // IdP until re-registered.
   { key: 'SAML_PRIVATE_KEY', category: 'auth_email', kind: 'generated', required: false, rotatable: false },
 
-  // Agent sandbox — Platinum (the reference) or the legacy Daytona fallback,
-  // whose removal is scheduled (SandboxProviderName in apps/api/src/config.ts).
-  // `init`/`configure` ask which ONE this instance runs on (default platinum)
-  // and only collect that provider's key(s); the actual required-secret gate
+  // Agent sandbox — Platinum. `init`/`configure` collect only its key.
+  // DAYTONA_API_KEY stays listed for an instance whose env still names the
+  // legacy provider (SandboxProviderName in apps/api/src/config.ts), so
+  // `env ls`/`env set` still reach it. The actual required-secret gate
   // is the composite sandboxProviderConfigured() check in
   // commands/self-host.ts (whichever provider ALLOWED_SANDBOX_PROVIDERS
   // names), not a blanket `required` flag per key here — Platinum stays
@@ -346,6 +346,21 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   // Same shape as the Apps domain: the API builds preview hostnames from it and
   // Caddy's *.<preview base domain> site block is added/removed by it.
   KORTIX_PREVIEW_BASE_DOMAIN: ['kortix-api', 'caddy'],
+  // A domain change reaches every service that holds a public URL: Caddy's site
+  // addresses, the frontend's runtime config, the API's links/CORS/callbacks,
+  // the gateway, and GoTrue's SITE_URL/API_EXTERNAL_URL. `domain move` sets
+  // these keys together (see selfHostDomain in commands/self-host.ts).
+  KORTIX_DOMAIN: ['caddy', 'frontend', 'kortix-api', 'llm-gateway', 'supabase-auth'],
+  KORTIX_API_DOMAIN: ['caddy', 'frontend', 'kortix-api', 'llm-gateway', 'supabase-auth'],
+  KORTIX_ACME_EMAIL: ['caddy'],
+  // Alias hosts: Caddy serves them, the frontend and API build URLs on them.
+  KORTIX_DOMAIN_ALIASES: ['kortix-api', 'frontend', 'caddy'],
+  // Wildcard TLS (wildcard-tls.ts). `kortix self-host tls wildcard` writes
+  // these; the base list changes only the rendered Caddyfile (a reload).
+  KORTIX_WILDCARD_TLS_BASES: ['caddy'],
+  KORTIX_ACME_DNS_ZONE: ['acme-dns', 'caddy'],
+  KORTIX_ACME_DNS_PUBLIC_IP: ['acme-dns'],
+  KORTIX_ACME_DNS_LISTEN_IP: ['acme-dns'],
   KORTIX_PREVIEW_ALLOW_DIRECT_EDGE: ['kortix-api'],
   KORTIX_APPS_ALLOW_DIRECT_EDGE: ['kortix-api'],
   KORTIX_FRONTEND_MEMORY_LIMIT: ['frontend'],

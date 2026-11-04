@@ -102,13 +102,14 @@ export interface InstallDeps {
   createConnector(
     projectId: string,
     draft: ConnectorDraftInput,
-  ): Promise<{ sync?: ConnectorSyncResult }>;
+  ): Promise<{ sync?: ConnectorSyncResult; existing?: boolean; slug?: string }>;
   /** Slug suffix source; injectable so tests are deterministic. */
   random?: () => string;
 }
 
 export type InstallResult =
-  | { status: 'installed'; slug: string }
+  /** `existing`: the project already had this profile, and Install opened it. */
+  | { status: 'installed'; slug: string; existing?: boolean }
   /** The profile exists; its page shows the error and Retry. */
   | { status: 'sync_failed'; slug: string; name: string; error: string };
 
@@ -118,7 +119,9 @@ export type InstallResult =
  * A profile is always the project's: the app, its config and its rules (a
  * `kortix.yaml` entry). Who may use it is a property of each ACCOUNT, chosen
  * when one is added (`useAddAccount`), never here. When the project already
- * has a profile for this app and surface, Install reuses it.
+ * has a profile for this app and surface, Install reuses it, unless the user
+ * asked for another profile (`asNewProfile`). A server that finds the profile
+ * itself answers `existing: true` with its slug.
  */
 export async function runInstall(
   deps: InstallDeps,
@@ -126,17 +129,23 @@ export async function runInstall(
     projectId: string;
     target: InstallTarget;
     connectors: readonly Pick<AdminConnector, 'slug' | 'provider' | 'name'>[];
+    /** The profile's name, as the user chose it. Default: the app's name. */
+    name?: string;
+    /** Add a second profile of the same app and way (Settings → Install as another profile). */
+    asNewProfile?: boolean;
   },
 ): Promise<InstallResult> {
-  const { projectId, target, connectors } = input;
+  const { projectId, connectors } = input;
+  const target = input.name?.trim() ? { ...input.target, appName: input.name.trim() } : input.target;
   const existing = connectors.find((connector) =>
     connectorInstalledFrom(connector, target.appName, target.provider),
   );
-  if (existing) return { status: 'installed', slug: existing.slug };
+  if (existing && !input.asNewProfile) return { status: 'installed', slug: existing.slug, existing: true };
   const slugs = connectors.map((connector) => connector.slug);
   const slug = proposeConnectorConnectionSlug(target.appName, slugs, deps.random);
   const name = proposeConnectorConnectionName(target.appName, slugs);
   const result = await deps.createConnector(projectId, target.buildDraft({ slug, name }));
+  if (result.existing && result.slug) return { status: 'installed', slug: result.slug, existing: true };
   const syncError = connectorSyncErrorForSlug(result, slug);
   // An MCP server that signs in with OAuth answers its first tools/list with
   // 401 or 403: that is the sign-in still to do, not a broken install.

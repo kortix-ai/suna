@@ -1,5 +1,5 @@
 import type { Config } from '@/lib/config/config'
-import type { ConfigDirSyncResult, RepoInfo } from '@/lib/git/git'
+import type { RepoInfo } from '@/lib/git/git'
 import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 
 /** HTTP-independent control input. Native environment names remain adapter-owned. */
@@ -14,8 +14,7 @@ export interface HarnessEnvironmentInput {
 }
 
 /**
- * Response of `POST /kortix/env`. `runtime*` describes the session runtime of
- * either harness; `routes/kortix/env.ts` adds the pre-W3 `opencode*` aliases.
+ * Response of `POST /kortix/env`. `runtime*` describes the session runtime.
  */
 export interface HarnessEnvironmentResult {
   ok: true
@@ -37,42 +36,13 @@ export interface HarnessEnvironmentResult {
 }
 
 export interface HarnessRefreshInput {
-  syncBase: boolean
-  /** @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
-  skipRestart: boolean
   /** Leave the checkout exactly as it is — no pull of the session branch. */
   skipRepo?: boolean
-  /**
-   * Bring the base branch's OpenCode config dir into the checkout
-   * (`syncConfigDirToBase`: file by file over what base changed, keeps the
-   * session's own edits and commits, never moves a ref). The runtime reloads
-   * its config when files changed, even with `skipRestart`, because it reads
-   * those files only when it loads its config.
-   * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
-   */
-  syncBaseConfig?: boolean
-  baseSha?: string
-  forceFail: boolean
 }
 
 export interface HarnessRefreshResult {
   ok: true
   repo: { before: RepoInfo; after: RepoInfo }
-  reload?: {
-    outcome: 'swapped' | 'kept-old'
-    port?: number
-    pid?: number | null
-    turn_ended?: boolean | null
-    reason?: string
-  }
-  /**
-   * Present when `syncBaseConfig` was asked and the runtime supports it.
-   * `reload` is the config reload the sync caused under `skipRestart`.
-   */
-  config_dir?: ConfigDirSyncResult & {
-    reload?: 'disposed' | 'restarted' | 'kept-old'
-    turn_ended?: boolean | null
-  }
   runtime: string
   runtime_pid: number | null
 }
@@ -128,25 +98,6 @@ export interface HarnessConfigConvergeOptions {
   delayBeforeSwapMs?: number
 }
 
-/**
- * Response of `POST /kortix/catalog/converge`. See `convergeManagedModelCatalog`.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export interface HarnessCatalogConvergeResult {
-  /** false only for `outcome: 'no-gateway'` — every other outcome is a real
-   *  answer, including 'declined', which the caller must still read the reason
-   *  of rather than treat as a failure. */
-  ok: boolean
-  outcome: 'unchanged' | 'file-updated' | 'reloaded' | 'restarted' | 'declined' | 'no-gateway'
-  /** The ids this call set out to register. */
-  missing: string[]
-  managed: number
-  reason: string | null
-  /** Present when the request named a `model`: whether the running OpenCode
-   *  registers it now. Absent from older daemons, which ignore `model`. */
-  model_present?: boolean
-}
-
 export interface HarnessControlOperations {
   applyEnvironment(input: HarnessEnvironmentInput): Promise<HarnessEnvironmentResult>
   refresh(input: HarnessRefreshInput): Promise<HarnessRefreshResult>
@@ -156,14 +107,6 @@ export interface HarnessControlOperations {
    * `ConvergeBusyError` while another convergence runs.
    */
   convergeConfig?(options?: HarnessConfigConvergeOptions): Promise<HarnessConfigConvergeResult>
-  /**
-   * Register the models the running harness lacks: the one a turn names, or
-   * everything the project's listing serves. One in-place config reload when
-   * idle, never across a running turn. Absent on a runtime that keeps no
-   * model list (pi). See `convergeManagedModelCatalog`.
-   * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
-   */
-  convergeCatalog?(options?: { model?: string }): Promise<HarnessCatalogConvergeResult>
   abort(): Promise<HarnessAbortResult>
   armAbortAfterTool(input: HarnessAbortAfterToolInput): Promise<void>
   /** Without a prompt id, disarm every pending interrupt. */
@@ -180,15 +123,14 @@ export interface HarnessControlService {
   /** Bind the current app's configuration; rebuild this view on warm adoption. */
   bind(context: HarnessControlContext): HarnessControlOperations
   /**
-   * Is a config convergence in flight RIGHT NOW — fetch, download, candidate
-   * spawn, proven check, promotion?
+   * Is a config convergence in flight RIGHT NOW — fetch, download, verify,
+   * swap?
    *
-   * DEF-B 2026-09-26: `proxy.ts` registers this as a swap blocker
+   * DEF-B 2026-09-26: `app/server.ts` registers this as a swap blocker
    * (`registerAgentSwapBlocker('config-convergence', ...)`) so a staged
-   * daemon update never exits mid-verify and kills the candidate
-   * `reloadVerified` is proving — this process exiting takes every OpenCode
-   * it spawned down with it, standby port included, and the candidate's own
-   * SIGTERM is indistinguishable from a release that never starts.
+   * daemon update never exits mid-convergence. The convergence runs inside
+   * this process, so the exit cuts it off part-way, before the release could
+   * prove itself.
    *
    * Lives on the CONTRACT, not called through an adapter import from
    * `app/server.ts`: the harness ownership boundary (eslint.config.mjs,

@@ -14,6 +14,7 @@
 // There is no expiry field here on purpose: when the last narrowing grant
 // expires, the account silently widens to everyone.
 
+import { AgentMark } from '../../internal/components/agent-mark';
 import { Button } from '../../primitives/button';
 import { EntityAvatar } from '../../primitives/entity-avatar';
 import { Field, FieldLabel } from '../../primitives/field';
@@ -277,7 +278,7 @@ export function ShareAccessBody({
             <ul className="space-y-2" data-testid="share-audience">
               {privateOwner ? (
                 <AudienceRow
-                  avatar={<UserAvatar email={privateOwner.label} size="sm" />}
+                  avatar={<UserAvatar email={privateOwner.label} hint={privateOwner.label} size="sm" />}
                   label={privateOwner.label}
                   meta={keepOwner ? t('ownerMeta') : t('removedMeta')}
                   removed={!keepOwner}
@@ -309,7 +310,7 @@ export function ShareAccessBody({
                 />
               ) : current.length === 0 ? (
                 <AudienceRow
-                  avatar={<EntityAvatar icon={UsersThreeIcon} label={everyoneLabel} size="sm" />}
+                  avatar={<EntityAvatar icon={UsersThreeIcon} label={everyoneLabel} hint={everyoneLabel} size="sm" />}
                   label={everyoneLabel}
                   meta={t('everyoneDefaultMeta')}
                 />
@@ -323,17 +324,14 @@ export function ShareAccessBody({
                       key={grant.grant_id}
                       avatar={
                         grant.principal_type === 'member' ? (
-                          <UserAvatar email={grant.label} size="sm" />
+                          <UserAvatar email={grant.label} hint={grant.label} size="sm" />
+                        ) : grant.principal_type === 'agent' ? (
+                          <AgentMark slug={grant.label} />
                         ) : (
                           <EntityAvatar
-                            icon={
-                              grant.principal_type === 'group'
-                                ? UsersIcon
-                                : grant.principal_type === 'agent'
-                                  ? RobotIcon
-                                  : UsersThreeIcon
-                            }
+                            icon={grant.principal_type === 'group' ? UsersIcon : UsersThreeIcon}
                             label={label}
+                            hint={label}
                             size="sm"
                           />
                         )

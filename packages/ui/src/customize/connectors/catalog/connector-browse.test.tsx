@@ -20,8 +20,6 @@ function searchingEmptyState(): CatalogState {
     entries: [],
     total: 0,
     activeQuery: 'dogfood',
-    source: 'discover',
-    excludedNoActions: 0,
     sections: [],
     isLoading: false,
     isRefreshing: false,
@@ -40,8 +38,7 @@ function renderBrowse(suppressNoMatch: boolean): string {
       <ConnectorBrowse
         state={searchingEmptyState()}
         connectedKeys={new Set()}
-        hrefFor={() => null}
-        onOpen={() => {}}
+        hrefFor={() => '/app'}
         install={{ ready: true, canWrite: false, pendingKey: null, onInstall: () => {} }}
         emptyTitle="Nothing here yet"
         emptyDescription="Browse the catalogue."

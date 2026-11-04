@@ -1,6 +1,6 @@
 /**
  * Session lifecycle verbs the dashboard has and the CLI did not: pause a
- * session, wake one back up, pre-warm one, change its model mid-flight,
+ * session, wake one back up, change its model mid-flight,
  * compact its conversation, restore a deleted one, and continue a lost one.
  *
  * `restart` (re-provision) already lives in sessions.ts and is a different
@@ -20,7 +20,12 @@ import {
   takeFlagValue,
 } from '../command-helpers.ts';
 import { withKortixScope } from '../api/sdk.ts';
-import type { ProjectSession } from '../api/types.ts';
+import {
+  type SessionStartPayload,
+  describeStartProgress,
+  startPollIntervalMs,
+  startProgressTracker,
+} from '../session-boot.ts';
 import { readRuntimeCapabilities } from '../session-runtime.ts';
 import { C, help, status } from '../style.ts';
 import { loadSessionForChat } from './sessions-chat.ts';
@@ -28,16 +33,8 @@ import { sessionPromptDefaults } from './sessions-files.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
-/** Readiness stages `/start` reports. Poll until `ready`. */
-type StartStage = 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
-
-interface StartResult {
-  stage: StartStage;
-  agent_name?: string;
-  retriable?: boolean;
-  opencode_session_id?: string | null;
-  reason?: string;
-}
+/** The `/start` readiness payload. Poll until `stage` is `ready`. */
+type StartResult = SessionStartPayload;
 
 const STOP_HELP = help`Usage: kortix sessions stop <session-id> [options]
 
@@ -58,8 +55,8 @@ const RESTORE_HELP = help`Usage: kortix sessions restore <session-id> [options]
 
 Restore a deleted session. A deleted session stays restorable for 30 days:
 its messages, stored files and branch come back, and its next start boots a
-fresh sandbox from the branch. After 30 days its messages and files are
-deleted, and only the branch remains. Public links stay revoked.
+fresh sandbox from the branch. After 30 days its messages, files and branch
+are deleted. Public links stay revoked.
 
 Pass the full session id: a deleted session is not in \`sessions ls\`, so a
 short id cannot be expanded, and no other project is searched for it.
@@ -105,30 +102,14 @@ call and exits 0.
 
 Options:
   --wait           Block until the runtime is ready (up to ~5 min). Exit 1 if
-                   the session ends up failed or stopped.
+                   the session ends up failed or stopped. Each step prints
+                   one stderr line, e.g. \`provisioning · building the first
+                   image for this project (0:42)\`. --json prints the last
+                   /start payload, its boot.image step included.
   --project <id>   Operate on this project id (default: linked).
   --host <name>    Operate against a non-default Kortix host.
   --json           Machine-readable output.
   -h, --help       Show this help.
-
-Needs project.session.start.
-`;
-
-const WARM_HELP = help`Usage: kortix sessions warm [options]
-
-Pre-create the session you are about to use, so the sandbox is already up when
-the first prompt lands. Speculative by contract: it reuses an existing unused
-warm session when there is one, and every failure is recoverable — fall back to
-\`kortix sessions new\`. A warm session stays hidden from \`sessions ls\` until
-its first prompt.
-
-Options:
-  --exclude <session-id>   Never hand back this session — pass the warm one you
-                           just took, so a replenish creates a fresh box.
-  --project <id>           Operate on this project id (default: linked).
-  --host <name>            Operate against a non-default Kortix host.
-  --json                   Machine-readable output.
-  -h, --help               Show this help.
 
 Needs project.session.start.
 `;
@@ -156,11 +137,13 @@ for the account. Run \`kortix gateway models\` to see what is.
 
 const COMPACT_HELP = help`Usage: kortix sessions compact <session-id> [options]
 
-Summarize the conversation so far and continue from the summary — what the
-dashboard's "Compact" does. Use it when a long session starts losing the
-thread or hits its context ceiling. The model is the session's own; the
-runtime's configured default is the fallback. A session whose runtime cannot
-compact on demand exits 1 and nothing changes. A stopped session is started first.
+Start a fresh context now — what the dashboard's "Start a fresh context" does.
+The agent continues with an empty context and searches the session's full
+record when it needs a detail; nothing is summarized. An agent whose kortix.yaml
+sets \`context: summary\` instead summarizes the conversation and continues from
+the summary, with the session's own model (the runtime's default as fallback).
+A full context does the same by itself. A session whose runtime cannot do this
+on demand exits 1 and nothing changes. A stopped session is started first.
 
 Options:
   --project <id>   Operate on this project id (default: linked).
@@ -325,17 +308,19 @@ export async function runSessionsStart(argv: string[]): Promise<number> {
   const path = `/projects/${projectId}/sessions/${session.session_id}/start`;
 
   // Same idempotent readiness call the dashboard polls, and the same budget
-  // `sessions new --wait` uses: 75 attempts, 4s apart (~5 min).
+  // `sessions new --wait` uses: 75 attempts, 4s apart (~5 min). One stderr
+  // line per change of stage or image step; --json prints only the payload.
+  const progress = startProgressTracker();
+  const intervalMs = startPollIntervalMs();
   let result: StartResult;
   try {
     result = await client.post<StartResult>(path, {});
     if (wait) {
       for (let i = 1; i < 75 && result.stage !== 'ready'; i += 1) {
         if (result.stage === 'failed' || result.stage === 'stopped') break;
-        if (!json) {
-          process.stderr.write(`${C.dim}  ${result.stage}…${C.reset}\r`);
-        }
-        await new Promise((r) => setTimeout(r, 4000));
+        const line = json ? null : progress(result);
+        if (line) process.stderr.write(`Session ${short(session.session_id)}: ${line}\n`);
+        await new Promise((r) => setTimeout(r, intervalMs));
         result = await client.post<StartResult>(path, {});
       }
     }
@@ -365,60 +350,13 @@ export async function runSessionsStart(argv: string[]): Promise<number> {
   }
   if (wait) {
     process.stderr.write(
-      `${status.err(`Timed out waiting for readiness after ~5 min (stage: ${result.stage}).`)}\n`,
+      `${status.err(`Timed out waiting for readiness after ~5 min (stage: ${describeStartProgress(result)}).`)}\n`,
     );
     return 1;
   }
   process.stdout.write(
-    `${status.info(`${short(session.session_id)} is ${result.stage} — re-run with --wait to block until it is ready.`)}\n`,
+    `${status.info(`${short(session.session_id)} is ${describeStartProgress(result)} — re-run with --wait to block until it is ready.`)}\n`,
   );
-  return 0;
-}
-
-export async function runSessionsWarm(argv: string[]): Promise<number> {
-  const rest = [...argv];
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(WARM_HELP);
-    return 0;
-  }
-  let opts: CtxOpts;
-  let exclude: string | undefined;
-  let json = false;
-  try {
-    opts = { projectArg: takeFlagValue(rest, ['--project']), hostArg: takeFlagValue(rest, ['--host']) };
-    exclude = takeFlagValue(rest, ['--exclude']);
-    json = takeFlagBool(rest, ['--json']);
-  } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
-  }
-
-  const ctx = await resolveProjectContext(opts);
-  if (!ctx) return 1;
-
-  let result: { session: ProjectSession; reused: boolean; workspace_refresh?: { status: string } };
-  try {
-    result = await ctx.client.post(
-      `/projects/${ctx.projectId}/sessions/warm`,
-      exclude ? { exclude_session_id: exclude } : {},
-    );
-  } catch (err) {
-    return surfaceApiError(err);
-  }
-
-  if (json) {
-    emitJson(result);
-    return 0;
-  }
-  process.stdout.write(
-    `\n${status.ok(`${result.reused ? 'Reusing' : 'Warmed'} ${C.bold}${short(result.session.session_id)}${C.reset}`)}\n`,
-  );
-  process.stdout.write(`  ${C.dim}session_id ${C.reset}${result.session.session_id}\n`);
-  process.stdout.write(`  ${C.dim}status     ${C.reset}${result.session.status}\n`);
-  if (result.workspace_refresh) {
-    process.stdout.write(`  ${C.dim}workspace  ${C.reset}${result.workspace_refresh.status}\n`);
-  }
-  process.stdout.write('\n');
   return 0;
 }
 
@@ -503,7 +441,10 @@ export async function runSessionsCompact(argv: string[]): Promise<number> {
     },
   });
   if (!resolved) return 1;
-  if (!runtimeSupports(await readRuntimeCapabilities(resolved), 'session.compact')) {
+  const capabilities = await readRuntimeCapabilities(resolved);
+  // A runtime with the context record resets onto it: no summary is written.
+  const record = (capabilities ?? []).includes('session.context_record');
+  if (!runtimeSupports(capabilities, 'session.compact')) {
     process.stderr.write(
       `${status.err("This session's runtime does not support compacting the conversation.")}\n`,
     );
@@ -514,7 +455,7 @@ export async function runSessionsCompact(argv: string[]): Promise<number> {
   // same split the prompt path uses. Without one, the runtime's configured
   // default applies; with neither, `compact` refuses instead of guessing.
   let model: { providerID: string; modelID: string };
-  process.stderr.write('Checking session and compacting conversation…\n');
+  process.stderr.write(record ? 'Checking session and starting a fresh context…\n' : 'Checking session and compacting conversation…\n');
   try {
     model = await withKortixScope(resolved.auth, () =>
       resolved.handle.compact(sessionPromptDefaults(resolved.session).model),
@@ -536,7 +477,14 @@ export async function runSessionsCompact(argv: string[]): Promise<number> {
       opencode_session_id: resolved.runtimeSessionId,
       model: `${model.providerID}/${model.modelID}`,
       compacted: true,
+      mode: record ? 'record' : 'summary',
     });
+    return 0;
+  }
+  if (record) {
+    process.stdout.write(
+      `${status.ok(`Started a fresh context for ${C.bold}${short(resolved.session.session_id)}${C.reset}${C.dim} — nothing was summarized; the agent searches the full record when it needs a detail${C.reset}`)}\n`,
+    );
     return 0;
   }
   process.stdout.write(

@@ -229,6 +229,30 @@ function appWithSandboxDescriptorProbe() {
   return app;
 }
 
+describe('current project alias', () => {
+  test('alias does not allow writes or nested routes', async () => {
+    for (const [method, path] of [
+      ['PATCH', '/v1/projects/current'],
+      ['GET', '/v1/projects/current/detail'],
+      ['GET', '/v1/connectors/projects/current/catalog'],
+    ]) {
+      const response = await appWithProbe().request(path, {
+        method,
+        headers: { Authorization: 'Bearer kortix_pat_project_a' },
+      });
+      expect(response.status).toBe(403);
+    }
+  });
+  for (const token of ['kortix_pat_project_a', 'kortix_pat_session_bound_a']) {
+    test('GET current accepts ' + token, async () => {
+      const response = await appWithProbe().request('/v1/projects/current', {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      expect(response.status).toBe(200);
+    });
+  }
+});
+
 describe('project-scoped PAT on the sandbox-proxy path', () => {
   beforeEach(() => {});
 

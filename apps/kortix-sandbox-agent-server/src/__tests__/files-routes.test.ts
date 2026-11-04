@@ -1,14 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { RUNTIME_CAPABILITIES } from '@kortix/api-contract/runtime-relay'
 import { createHmac } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
-import type { Opencode } from '@/harness/open-code/lifecycle'
-import { buildOpenCodeTestApp } from './helpers/open-code-harness'
+import type { Config } from '@/lib/config/config'
+import { buildDaemonApp } from '@/app/server'
+import { fakeHarness } from './helpers/daemon-test-app'
 import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
 
 const TEST_TOKEN = 'files-test-kortix-token'
@@ -20,15 +19,12 @@ let WORKSPACE: string
 function baseConfig(): Config {
   return {
     servicePort: 8000,
-    opencodeInternalPort: 4096,
-    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: WORKSPACE,
     projectTarget: WORKSPACE,
     defaultBranch: 'main',
     branchFetchAttempts: 60,
     branchFetchDelaySec: 0.25,
-    defaultOpencodeConfigDir: '/ephemeral/opencode',
     autoClone: false,
     projectId: 'project-1',
     apiUrl: 'http://api.test/v1',
@@ -41,23 +37,11 @@ function baseConfig(): Config {
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
     cloneDepth: 1,
-    workload: '',
-    monitorsJson: '',
-    monitorBoxEpoch: '',
   }
 }
 
-// opencode that always reports "ok" but points at a dead port — proves the
-// file write routes never touch opencode (they're handled by the daemon).
-function fakeOpencode(): Opencode {
-  return {
-    getState: () => 'ok',
-    getPid: () => 123,
-    getActivePort: () => 4096,
-    getInternalUrl: () => 'http://127.0.0.1:1',
-    restart: async () => {},
-  } as unknown as Opencode
-}
+// The file routes are the daemon's own: no test here may reach the harness.
+const buildApp = (cfg: Config) => buildDaemonApp(cfg, fakeHarness(), Date.now())
 
 function b64url(s: string): string {
   return Buffer.from(s).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
@@ -91,7 +75,7 @@ describe('daemon file write routes', () => {
 
   beforeAll(async () => {
     WORKSPACE = await fs.mkdtemp(path.join(os.tmpdir(), 'kortix-files-test-'))
-    const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode(), Date.now())
+    const app = buildApp(baseConfig())
     server = Bun.serve({ port: 0, fetch: app.fetch })
     base = `http://127.0.0.1:${server.port}`
   })
@@ -106,52 +90,32 @@ describe('daemon file write routes', () => {
     'kortix',
     'kortix/refresh',
     'kortix/pty',
-    'kortix/opencode',
   ]) {
-    it(`unknown /${namespace} routes terminate before the OpenCode proxy`, async () => {
-      const upstream = Bun.serve({
-        port: 0,
-        fetch: () =>
-          new Response('<html>OpenCode</html>', { headers: { 'content-type': 'text/html' } }),
+    it(`unknown /${namespace} routes terminate before the harness proxy`, async () => {
+      const harness = fakeHarness({
+        proxy: {
+          blockedPorts: () => [],
+          readiness: async () => ({ ready: true }),
+          forward: async () => ({ status: 200, statusText: 'OK', headers: new Headers({ 'content-type': 'text/html' }), body: '<html>harness</html>' }),
+        },
       })
-      try {
-        const opencode = fakeOpencode()
-        opencode.getInternalUrl = () => `http://127.0.0.1:${upstream.port}`
-        const app = buildOpenCodeTestApp(baseConfig(), opencode, Date.now())
-        const response = await app.request(`http://daemon.test/${namespace}/missing/route`, {
-          method: 'POST',
-          headers: authHeaders(),
-        })
-        expect(response.status).toBe(404)
-        expect(response.headers.get('content-type')).toContain('application/json')
-        expect(await response.json()).toHaveProperty('error')
-      } finally {
-        upstream.stop(true)
-      }
+      const app = buildDaemonApp(baseConfig(), harness, Date.now())
+      const response = await app.request(`http://daemon.test/${namespace}/missing/route`, {
+        method: 'POST',
+        headers: authHeaders(),
+      })
+      expect(response.status).toBe(404)
+      expect(response.headers.get('content-type')).toContain('application/json')
+      expect(await response.json()).toHaveProperty('error')
     })
   }
 
-  it('health advertises file import, append and config releases while preserving existing health fields', async () => {
+  it('health advertises the host-owned file import and append', async () => {
     const response = await fetch(`${base}/kortix/health`)
     expect(response.status).toBe(200)
-    const body = (await response.json()) as Record<string, unknown>
-    expect(body).toMatchObject({
-      daemon: 'ok',
-      opencode: 'ok',
-      // The fake OpenCode reports no version, so steering (1.18.15 and later) is not listed.
-      capabilities: ['file.import', 'file.append', 'agent-config.env-gz.v1', 'runtime.turns.v1', 'runtime.retract.v1', 'config.release.v1', ...RUNTIME_CAPABILITIES.filter((capability) => capability !== 'session.steer')],
-    })
-    // The config block and the legacy config_dir_sha field.
-    expect(Object.keys(body.config as object).sort()).toEqual([
-      'desired_release_id',
-      'failed_release_id',
-      'fallback_reason',
-      'mode',
-      'proven',
-      'release_id',
-      'source',
-    ])
-    expect(body).toHaveProperty('config_dir_sha')
+    const body = (await response.json()) as { daemon: string; capabilities: string[] }
+    expect(body.daemon).toBe('ok')
+    expect(body.capabilities.slice(0, 2)).toEqual(['file.import', 'file.append'])
   })
 
   it('uploads a file via the `path` + `file` convention', async () => {
@@ -453,6 +417,31 @@ describe('daemon file write routes', () => {
     await expect(fs.stat(`${WORKSPACE}/gone.txt`)).rejects.toThrow()
   })
 
+  // A pi box's /workspace is not a git repository, so `git check-ignore --stdin`
+  // exits 128 before it reads the paths the list writes to it. On Bun 1.4 that
+  // write fails with EPIPE; with no listener on the pipe the daemon died, and
+  // the next call on the box got `502 upstream unreachable: Failed to connect`
+  // (release gate FILE-9: upload 200, read 200, list 200, delete 503).
+  it('lists a workspace that is not a git repository and keeps serving the next call', async () => {
+    const names = Array.from({ length: 1500 }, (_, i) => `listed-${String(i).padStart(4, '0')}.txt`)
+    await fs.mkdir(`${WORKSPACE}/plain-dir`)
+    await Promise.all(names.map((name) => fs.writeFile(`${WORKSPACE}/plain-dir/${name}`, 'x')))
+
+    const list = await fetch(`${base}/file?path=plain-dir`, { headers: authHeaders() })
+    expect(list.status).toBe(200)
+    const nodes = (await list.json()) as Array<{ name: string; ignored: boolean }>
+    expect(nodes).toHaveLength(names.length)
+    expect(nodes.every((node) => node.ignored === false)).toBe(true)
+
+    const del = await fetch(`${base}/file`, {
+      method: 'DELETE',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ path: 'plain-dir' }),
+    })
+    expect(del.status).toBe(200)
+    await expect(fs.stat(`${WORKSPACE}/plain-dir`)).rejects.toThrow()
+  })
+
   it('delete returns 404 for a missing path', async () => {
     const res = await fetch(`${base}/file`, {
       method: 'DELETE',
@@ -462,9 +451,9 @@ describe('daemon file write routes', () => {
     expect(res.status).toBe(404)
   })
 
-  it('GET /file/content is now daemon-served (404 for missing, not an opencode 502)', async () => {
-    // The daemon owns reads now — a missing file is a daemon 404, NOT a proxied
-    // 502/503 from the dead opencode upstream. Proves reads are intercepted.
+  it('GET /file/content is daemon-served (404 for missing, never proxied to the harness)', async () => {
+    // The daemon owns reads — a missing file is a daemon 404; the fake harness
+    // throws on any forward. Proves reads are intercepted.
     const res = await fetch(`${base}/file/content?path=does-not-exist.md`, { headers: authHeaders() })
     expect(res.status).toBe(404)
   })
@@ -575,7 +564,7 @@ describe('daemon file read + list + status + find routes', () => {
     await fs.writeFile(`${WS}/ignored.txt`, 'do not track\n') // gitignored
 
     const cfg: Config = { ...baseConfig(), workspace: WS, projectTarget: WS }
-    const app = buildOpenCodeTestApp(cfg, fakeOpencode(), Date.now())
+    const app = buildApp(cfg)
     server = Bun.serve({ port: 0, fetch: app.fetch })
     base = `http://127.0.0.1:${server.port}`
   })

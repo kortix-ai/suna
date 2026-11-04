@@ -6,7 +6,7 @@
  * Kortix tile, the dotted bridge, a plug tile — no provider is chosen yet)
  * over a title and one muted line, then a primary "Continue to kortix.com"
  * pill (opens
- * `/projects/:id/customize/models?return_to=kortix://providers/connected` in
+ * `/projects/:id/admin/models?return_to=kortix://providers/connected` in
  * an in-app auth session that closes itself once a provider is connected)
  * and a secondary
  * "Not now".

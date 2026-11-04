@@ -17,6 +17,11 @@ const libSrc = readdirSync(LIB_DIR)
   .join('\n');
 const depBins = new Set(DEPS.map((d) => d.bin));
 
+test('the API launcher passes database mode to preserve branch worker defaults', () => {
+  const cli = readFileSync(join(REPO, 'scripts/worktree/cli.ts'), 'utf8');
+  expect(cli).toMatch(/apiLaunchEnv\(e\.ports,\s*creds,\s*\{[^}]*\bdbMode\b/);
+});
+
 describe('migrate contract — the worktree migrate must reference real things', () => {
   test('every `pnpm --filter @kortix/db <script>` the worktree runs exists in @kortix/db', () => {
     const calls = [...libSrc.matchAll(/'@kortix\/db',\s*'([a-z0-9:-]+)'/g)].map((m) => m[1]);

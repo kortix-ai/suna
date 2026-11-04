@@ -26,6 +26,7 @@ import { join } from 'node:path';
  */
 import { runner } from 'node-pg-migrate';
 import pg from 'pg';
+import { requiresTls } from '../src/tls';
 import { repairLocalAuditV2Ledger } from './local-audit-v2-ledger-repair';
 import { repairEarlyAppliedMigrations } from './early-applied-migration-repair';
 import { dropLocalInvalidIndexes } from './local-invalid-index-repair';
@@ -33,7 +34,6 @@ import {
   migrationLedgerRepairConnectorName,
   repairMigrationLedger,
 } from './migration-ledger-repair';
-import { repairLocalWarmSessionIndex } from './local-warm-session-index-repair';
 import { withMigrationRetry } from './migration-retry';
 import { materializeMigrationRuntimeDirectory } from './migration-runtime-overrides';
 import { readMigrationStatus } from './migration-status';
@@ -211,7 +211,10 @@ async function selfHostBootstrapIfFresh(databaseUrl: string): Promise<void> {
 
 async function main() {
   const [cmd = 'up', ...rest] = process.argv.slice(2);
-  const databaseUrl = resolveUrl(rest);
+  // pg connects in plaintext unless the URL asks for TLS. `no-verify`: Supabase
+  // certificates chain to Supabase's own CA, which Node does not trust.
+  const resolvedUrl = resolveUrl(rest);
+  const databaseUrl = requiresTls(resolvedUrl) ? `${resolvedUrl}${resolvedUrl.includes('?') ? '&' : '?'}sslmode=no-verify` : resolvedUrl;
   const checkOrder = migrationCheckOrder(cmd, databaseUrl, process.env.KORTIX_PREVIEW_MIGRATION);
   const countArg = rest.find((a) => a.startsWith('--count='))?.slice('--count='.length);
   const runtimeMigrations = materializeMigrationRuntimeDirectory(MIGRATIONS_DIR);
@@ -284,12 +287,6 @@ async function main() {
         return;
       case 'local-up': {
         await autoBaselineIfNeeded(base, databaseUrl);
-        const warmIndexRepair = await repairLocalWarmSessionIndex(databaseUrl);
-        if (warmIndexRepair.repaired) {
-          console.warn(
-            `[migrate] repaired local warm-session index; discarded ${warmIndexRepair.discardedDuplicates} duplicate row(s).`,
-          );
-        }
         if (await repairLocalAuditV2Ledger(databaseUrl, MIGRATIONS_DIR)) {
           console.warn('[migrate] recorded the complete untracked local audit-v2 schema.');
         }

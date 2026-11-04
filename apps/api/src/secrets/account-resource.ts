@@ -299,6 +299,17 @@ export async function loadCodexAccountLogin(accountId: string, secretId: string)
  * instead of sending to an account that will refuse.
  */
 export async function resolveDefaultCodexAccountSecret(accountId: string, projectId: string, userId: string): Promise<(ResolvedAccountSecret & { restingSeconds?: number }) | null> {
+  return resolveDefaultProviderAccountSecret(accountId, projectId, userId, { providerId: 'codex', name: 'CODEX_AUTH_JSON' });
+}
+
+/** `resolveDefaultCodexAccountSecret` for any subscription login kind. `needsReauth`
+ * is set when the chosen connection was refused and waits for its owner. */
+export async function resolveDefaultProviderAccountSecret(
+  accountId: string,
+  projectId: string,
+  userId: string,
+  kind: { providerId: string; name: string },
+): Promise<(ResolvedAccountSecret & { restingSeconds?: number; needsReauth?: boolean }) | null> {
   if (!(await memberMayReadProject(accountId, projectId, userId))) return null;
   const [found] = await db.select({
     secretId: accountSecretResources.secretId,
@@ -307,13 +318,14 @@ export async function resolveDefaultCodexAccountSecret(accountId: string, projec
     updatedAt: accountSecretResources.updatedAt,
     cooldownUntil: accountSecretResources.cooldownUntil,
     cooldownProbeAt: accountSecretResources.cooldownProbeAt,
+    needsReauthAt: accountSecretResources.needsReauthAt,
   }).from(accountSecretResources)
     .innerJoin(accountSecretGrants, and(eq(accountSecretGrants.secretId, accountSecretResources.secretId), eq(accountSecretGrants.accountId, accountId)))
     .innerJoin(...accountMemberJoin(accountId, userId))
     .where(and(
       eq(accountSecretResources.accountId, accountId),
-      eq(accountSecretResources.providerId, 'codex'),
-      eq(accountSecretResources.name, 'CODEX_AUTH_JSON'),
+      eq(accountSecretResources.providerId, kind.providerId),
+      eq(accountSecretResources.name, kind.name),
       eq(accountSecretResources.consumer, 'llm_gateway'),
       eq(accountSecretResources.active, true),
       eq(accountSecretResources.createdBy, userId),
@@ -333,6 +345,7 @@ export async function resolveDefaultCodexAccountSecret(accountId: string, projec
   return {
     secretId: row!.secretId, label: row!.label, value: readAccountSecret(accountId, row!.secretId, row!.valueEnc), updatedAt: row!.updatedAt,
     ...(restingMs > 0 ? { restingSeconds: Math.ceil(restingMs / 1000) } : {}),
+    ...(found.needsReauthAt ? { needsReauth: true } : {}),
   };
 }
 

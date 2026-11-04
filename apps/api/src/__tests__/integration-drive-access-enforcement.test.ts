@@ -77,7 +77,7 @@ mock.module('../drives/volumes', () => ({
 const { app } = await import('../index');
 const { createAccountToken } = await import('../repositories/account-tokens');
 const { ensureProjectDrive, setFolderGrant, listFolderGrants, reconcileSessionDrives } = await import('../drives/service');
-const { retryPendingRevocations } = await import('../workers/drive-worker');
+const { retryPendingRevocations } = await import('../worker/jobs/drive');
 const { clearAuthorizeCaches } = await import('../iam/authorize');
 
 const ACCOUNT = crypto.randomUUID();
@@ -93,6 +93,14 @@ let ownerToken = '';
 const sessionTokens: Record<string, string> = {};
 let driveId = '';
 let researchGrant = '';
+/** A second shared Drive added to the researcher agent (write): it stays granted when /Research is revoked. */
+const AGENT_DRIVE = '/Sales';
+/** Files follows the project's own Volumes flag; shared Drives (folders granted to an agent) need `shared_drives`. */
+const metadataWith = (flags: { volumes?: boolean; shared_drives?: boolean }) => ({
+  experimental: { volumes: true, shared_drives: true, ...flags },
+});
+const setFlags = (flags: { volumes?: boolean; shared_drives?: boolean }) =>
+  db.update(projects).set({ metadata: metadataWith(flags) }).where(eq(projects.projectId, PROJECT));
 
 const mount = (subdir: string, readOnly = false) => ({
   driveId,
@@ -159,8 +167,7 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'drive-enforcement',
     repoUrl: 'https://example.test/drive-enforcement.git',
-    // Files follows the project's own Volumes flag.
-    metadata: { experimental: { volumes: true } },
+    metadata: metadataWith({}),
   });
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: ACCOUNT, accountRole: 'owner' });
   await db.insert(serviceAccounts).values({
@@ -182,10 +189,11 @@ beforeAll(async () => {
     level: 'write',
     grantedBy: OWNER,
   });
+  await setFolderGrant({ drive, path: AGENT_DRIVE, principal: { type: 'agent', id: RESEARCHER }, level: 'write', grantedBy: OWNER });
   ownerToken = (await createAccountToken({ accountId: ACCOUNT, userId: OWNER, name: 'drive-enforcement-owner' })).secretKey;
-  await box(NATIVE, { provider: 'platinum', externalId: 'box-native', mounts: [mount('/Research'), mount('/Company')] });
-  await box(SYNCED, { provider: 'daytona', externalId: 'box-synced', mounts: [mount('/Research'), mount('/Company')] });
-  await box(FENCED, { provider: 'daytona', externalId: 'box-fenced', mounts: [mount('/Research'), mount('/Company')] });
+  await box(NATIVE, { provider: 'platinum', externalId: 'box-native', mounts: [mount('/Research'), mount(AGENT_DRIVE)] });
+  await box(SYNCED, { provider: 'daytona', externalId: 'box-synced', mounts: [mount('/Research'), mount(AGENT_DRIVE)] });
+  await box(FENCED, { provider: 'daytona', externalId: 'box-fenced', mounts: [mount('/Research'), mount(AGENT_DRIVE)] });
   await box(RESUMED, { provider: 'platinum', externalId: 'box-resumed', mounts: [] });
 });
 
@@ -204,11 +212,11 @@ describe('a block upload is authorized by the paths its plan writes', () => {
     });
     expect(plan.status).toBe(200);
 
-    // The folder turns read-only for this box; /Company stays writable.
+    // The folder turns read-only for this box; the agent's Drive stays writable.
     await db
       .update(sessionSandboxes)
       .set({
-        metadata: sql`${sessionSandboxes.metadata} || ${JSON.stringify({ driveMounts: [mount('/Research', true), mount('/Company')] })}::jsonb`,
+        metadata: sql`${sessionSandboxes.metadata} || ${JSON.stringify({ driveMounts: [mount('/Research', true), mount(AGENT_DRIVE)] })}::jsonb`,
       })
       .where(eq(sessionSandboxes.sandboxId, SYNCED));
     calls.length = 0;
@@ -217,7 +225,7 @@ describe('a block upload is authorized by the paths its plan writes', () => {
     expect(block.status).toBe(403);
     const commit = await asBox(SYNCED, '/files/upload/up-1/commit', { method: 'POST' });
     expect(commit.status).toBe(403);
-    const elsewhere = await asBox(SYNCED, `/files/upload/up-1/commit?path=${encodeURIComponent('/Company/big.bin')}`, { method: 'POST' });
+    const elsewhere = await asBox(SYNCED, `/files/upload/up-1/commit?path=${encodeURIComponent(`${AGENT_DRIVE}/big.bin`)}`, { method: 'POST' });
     expect(elsewhere.status).not.toBe(200);
     expect(calls).toEqual([]);
   });
@@ -240,7 +248,7 @@ describe('a revocation whose detach fails', () => {
     await db.update(driveMountRevocations).set({ notBefore: new Date(0) });
     await retryPendingRevocations();
     expect(await pending(NATIVE)).toBe(false);
-    expect(await recordedMounts(NATIVE)).toEqual([['/Company', false]]);
+    expect(await recordedMounts(NATIVE)).toEqual([[AGENT_DRIVE, false]]);
   });
 
   test('while pending, the sync routes refuse the folder the session lost', async () => {
@@ -248,7 +256,7 @@ describe('a revocation whose detach fails', () => {
     // landed), but no grant reaches the folder any more.
     await db
       .update(sessionSandboxes)
-      .set({ metadata: sql`${sessionSandboxes.metadata} || ${JSON.stringify({ driveMounts: [mount('/Research'), mount('/Company')] })}::jsonb` })
+      .set({ metadata: sql`${sessionSandboxes.metadata} || ${JSON.stringify({ driveMounts: [mount('/Research'), mount(AGENT_DRIVE)] })}::jsonb` })
       .where(eq(sessionSandboxes.sandboxId, FENCED));
     const research = encodeURIComponent('/Research');
     // Not pending: the record is what the box was given, and is honored as such.
@@ -258,12 +266,27 @@ describe('a revocation whose detach fails', () => {
     expect(
       (await asBox(FENCED, `/files/content?path=${encodeURIComponent('/Research/a.md')}`, { method: 'PUT', body: 'x' })).status,
     ).toBe(404);
-    expect((await asBox(FENCED, `/files?path=${encodeURIComponent('/Company')}`)).status).toBe(200);
+    expect((await asBox(FENCED, `/files?path=${encodeURIComponent(AGENT_DRIVE)}`)).status).toBe(200);
     const answer = await app.request(`/v1/projects/${PROJECT}/sessions/${FENCED}/drive-sync/mounts`, {
       headers: { Authorization: `Bearer ${sessionTokens[FENCED]}` },
     });
     const mounts = (await answer.json()) as { mounts: Array<{ subdir?: string }> };
-    expect(mounts.mounts.map((m) => m.subdir)).toEqual(['/Company']);
+    expect(mounts.mounts.map((m) => m.subdir)).toEqual([AGENT_DRIVE]);
+
+    // shared_drives off: the agent's grant on the Drive no longer reaches the session either.
+    await setFlags({ shared_drives: false });
+    try {
+      expect((await asBox(FENCED, `/files?path=${encodeURIComponent(AGENT_DRIVE)}`)).status).toBe(404);
+      expect(
+        (await asBox(FENCED, `/files/content?path=${encodeURIComponent(`${AGENT_DRIVE}/a.md`)}`, { method: 'PUT', body: 'x' })).status,
+      ).toBe(404);
+      const off = await app.request(`/v1/projects/${PROJECT}/sessions/${FENCED}/drive-sync/mounts`, {
+        headers: { Authorization: `Bearer ${sessionTokens[FENCED]}` },
+      });
+      expect(((await off.json()) as { mounts: Array<{ subdir?: string }> }).mounts.map((m) => m.subdir)).not.toContain(AGENT_DRIVE);
+    } finally {
+      await setFlags({});
+    }
   });
 });
 
@@ -295,14 +318,15 @@ describe('a resumed sandbox whose guest kept mounts Platinum ended', () => {
   test('reconcile clears the stale mounts and attaches the folders, and records them', async () => {
     staleGuest.clear();
     staleGuest.add('/drives/me');
-    staleGuest.add('/drives/company');
+    staleGuest.add('/drives/sales');
     calls.length = 0;
     await reconcileSessionDrives(RESUMED);
     const attached = calls.filter((c) => c.startsWith('attach ')).map((c) => c.slice('attach '.length));
     expect(attached.length).toBeGreaterThan(0);
-    expect(attached.some((p) => p === '/drives/me' || p === '/drives/company')).toBe(true);
+    // A trigger session of the researcher agent (the /Research grant was revoked above): the Drive still added to it.
+    expect(attached).toEqual(['/drives/sales']);
     for (const p of attached) {
-      if (p === '/drives/me' || p === '/drives/company') expect(calls.indexOf(`unmount ${p}`)).toBeLessThan(calls.indexOf(`attach ${p}`));
+      if (p === '/drives/me' || p === '/drives/sales') expect(calls.indexOf(`unmount ${p}`)).toBeLessThan(calls.indexOf(`attach ${p}`));
     }
     expect((await recordedMounts(RESUMED)).length).toBe(attached.length);
     expect(await pending(RESUMED)).toBe(false);
@@ -319,35 +343,22 @@ describe('drive download ranges', () => {
   });
 });
 
-describe('Volumes turned off for the project', () => {
-  test('hides Files and refuses writes, but a file a session already wrote still reads', async () => {
-    const setVolumes = (on: boolean) =>
-      db.update(projects).set({ metadata: { experimental: { volumes: on } } }).where(eq(projects.projectId, PROJECT));
-    // A read by drive id answers the same with Volumes on and off. (Storage is
-    // not configured in this suite, so that answer is its own 503.)
+describe('Drive no longer depends on the old Volumes flag', () => {
+  test('a project whose metadata still says volumes: false lists, reads and writes its Drive', async () => {
+    const setVolumes = (on: boolean) => setFlags({ volumes: on });
+    // Storage is not configured in this suite, so a folder read answers its own
+    // 503; what matters is that the answer does not change with the old flag.
     const readFolder = async () => {
       const res = await asOwner(`/v1/drives/${driveId}/files?path=${encodeURIComponent('/Company')}`);
       return { status: res.status, code: ((await res.json()) as { code?: string }).code };
     };
     const readWithVolumesOn = await readFolder();
-    expect(readWithVolumesOn.code).not.toBe('feature_disabled');
     await setVolumes(false);
     try {
       const files = await asOwner(`/v1/drives?projectId=${PROJECT}`);
-      expect(files.status).toBe(403);
-      expect(((await files.json()) as { code: string }).code).toBe('feature_disabled');
-
-      const write = await asOwner(`/v1/drives/${driveId}/files/content?path=${encodeURIComponent('/Company/new.txt')}`, {
-        method: 'PUT',
-        body: 'x',
-      });
-      expect(write.status).toBe(403);
-      expect(((await write.json()) as { code: string; message: string })).toMatchObject({
-        code: 'feature_disabled',
-        message: 'Files is not enabled for this project. Turn on Volumes in Settings → Feature flags.',
-      });
-
+      expect(files.status).toBe(200);
       expect(await readFolder()).toEqual(readWithVolumesOn);
+      expect(readWithVolumesOn.code).not.toBe('feature_disabled');
     } finally {
       await setVolumes(true);
     }

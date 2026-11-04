@@ -1,7 +1,7 @@
 /**
  * Config releases on pi, at the decision level: `createPiConfigReleases` with a
- * fake runtime (`idle`, `reconfigure`) against the fake API of the OpenCode
- * suites — real Git repositories, real archives, a real release store on disk.
+ * fake runtime (`idle`, `reconfigure`) against a fake API — real Git
+ * repositories, real archives, a real release store on disk.
  * The black-box path through the daemon's HTTP surface is in pi-harness.test.ts.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
@@ -35,8 +35,7 @@ import {
 } from './helpers/config-release-fixtures'
 
 const TOKEN = 'sandbox-token'
-const DIR = '.kortix/opencode'
-const PROVISIONED = '{"default_agent":"build","agent":{"build":{"prompt":"provisioned at boot"}}}'
+const PROVISIONED = '{"schema":3,"default_agent":"build","agent":{"build":{"prompt":"provisioned at boot"}}}'
 
 let api: FakeApi
 let tmp: string
@@ -63,14 +62,14 @@ afterEach(() => {
   rmSync(tmp, { recursive: true, force: true })
 })
 
-const governance = (prompt: string) => JSON.stringify({ default_agent: 'build', agent: { build: { prompt } } })
+const governance = (prompt: string) => JSON.stringify({ schema: 3, default_agent: 'build', agent: { build: { prompt } } })
 
-/** Commit a config dir with one skill and serve its release with `prompt` as the agent. */
+/** Commit kortix.yaml with one registered skill and serve its release with `prompt` as the agent. */
 function release(skill: string, prompt: string): BuiltRelease {
-  write(repo, `${DIR}/opencode.json`, '{}\n')
-  write(repo, `${DIR}/skills/${skill}/SKILL.md`, `---\nname: ${skill}\ndescription: ${skill} skill\n---\nBody.\n`)
+  write(repo, 'kortix.yaml', `skills:\n  ${skill}: skills/${skill}\n`)
+  write(repo, `skills/${skill}/SKILL.md`, `---\nname: ${skill}\ndescription: ${skill} skill\n---\nBody.\n`)
   const commit = commitAll(repo, skill)
-  return buildRelease(repo, commit, DIR, { projectId: 'proj-1', governance: governance(prompt) })
+  return buildRelease(repo, commit, { projectId: 'proj-1', governance: governance(prompt) })
 }
 
 function create(
@@ -106,8 +105,6 @@ function fakeRuntime(opts: { refuse?: string } = {}) {
   }
 }
 
-const skillsOf = (releases: PiConfigReleases) => releases.skillDirs()?.map((dir) => dir.replace(`${root}/`, '')) ?? null
-
 describe('pi config releases: boot', () => {
   test('the desired release decides the governance and the skills, and it is proven on disk', async () => {
     const one = release('deploy', 'from release one')
@@ -128,16 +125,17 @@ describe('pi config releases: boot', () => {
     })
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(governance('from release one'))
     expect(env.KORTIX_COMPILED_AGENT_CONFIG_ETAG).toBe(one.descriptor.compiled_governance_etag!)
-    expect(skillsOf(releases)).toEqual([`${id}/skills`, `${id}/.kortix/opencode/skills`])
-    expect(existsSync(join(releaseDir(root, id), DIR, 'skills', 'deploy', 'SKILL.md'))).toBe(true)
+    expect(releases.projectRoot()).toBe(releaseDir(root, id))
+    expect(existsSync(join(releaseDir(root, id), 'skills', 'deploy', 'SKILL.md'))).toBe(true)
     // Sealed: an agent's write fails where it happens.
-    expect(statSync(join(releaseDir(root, id), DIR, 'skills', 'deploy', 'SKILL.md')).mode & 0o222).toBe(0)
+    expect(statSync(join(releaseDir(root, id), 'skills', 'deploy', 'SKILL.md')).mode & 0o222).toBe(0)
     expect((await readBootConfigPointer(root))?.release_id).toBe(id)
     expect(releases.sourceCommit()).toBe(one.descriptor.source_commit)
     expect(releases.governanceOwned()).toBe(true)
     const notice = releases.notice()!
     expect(notice).toContain(one.descriptor.source_commit!.slice(0, 12))
-    expect(notice).toContain('`/workspace/.kortix/opencode`')
+    expect(notice).toContain('`/workspace/kortix.yaml`')
+    expect(notice).not.toContain('kortix.yaml has issues')
     // A second call joins the first; nothing is fetched again.
     const requests = api.descriptorRequests.length
     await releases.boot()
@@ -174,7 +172,7 @@ describe('pi config releases: boot', () => {
     const id = one.descriptor.release_id!
     expect(releases.report()).toMatchObject({ release_id: id, desired_release_id: id, source: 'release', proven: true, fallback_reason: null })
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(governance('published'))
-    expect(existsSync(join(releaseDir(root, id), DIR, 'skills', 'deploy', 'SKILL.md'))).toBe(true)
+    expect(existsSync(join(releaseDir(root, id), 'skills', 'deploy', 'SKILL.md'))).toBe(true)
     expect(marks).toEqual(['config-release-published', 'config-release-archive', 'config-release-proven'])
     expect(api.descriptorRequests).toHaveLength(0)
     expect(api.archiveRequests).toHaveLength(0)
@@ -230,7 +228,7 @@ describe('pi config releases: boot', () => {
     const id = one.descriptor.release_id!
     expect(releases.report()).toMatchObject({ release_id: id, source: 'release', proven: true, fallback_reason: null })
     expect(marks).toContain('config-release-git')
-    expect(existsSync(join(releaseDir(root, id), DIR, 'skills', 'deploy', 'SKILL.md'))).toBe(true)
+    expect(existsSync(join(releaseDir(root, id), 'skills', 'deploy', 'SKILL.md'))).toBe(true)
     expect(existsSync(join(releaseDir(root, id), '.git'))).toBe(false)
     expect(readdirSync(root).filter((name) => name.endsWith('.git'))).toEqual([])
   })
@@ -260,7 +258,7 @@ describe('pi config releases: boot', () => {
 
     const id = one.descriptor.release_id!
     expect(releases.report()).toMatchObject({ release_id: id, source: 'release', proven: true, fallback_reason: null })
-    expect(existsSync(join(releaseDir(root, id), DIR, 'skills', 'deploy', 'SKILL.md'))).toBe(true)
+    expect(existsSync(join(releaseDir(root, id), 'skills', 'deploy', 'SKILL.md'))).toBe(true)
     expect(existsSync(join(releaseDir(root, id), '.git'))).toBe(false)
     expect(api.archiveRequests).toEqual([])
     expect(api.storageRequests).toHaveLength(1)
@@ -274,7 +272,7 @@ describe('pi config releases: boot', () => {
     await releases.boot()
 
     expect(releases.report()).toMatchObject({ source: 'workspace', release_id: null, desired_release_id: null, proven: true })
-    expect(releases.skillDirs()).toBeNull()
+    expect(releases.projectRoot()).toBeUndefined()
     expect(existsSync(noticePath)).toBe(false)
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(PROVISIONED)
     expect(releases.governanceOwned()).toBe(false)
@@ -319,7 +317,7 @@ describe('pi config releases: boot', () => {
     await empty.releases.boot()
     expect(empty.releases.report()).toMatchObject({ source: 'image-default', release_id: null, proven: true })
     expect(empty.releases.report().fallback_reason).toContain('could not be built')
-    expect(empty.releases.skillDirs()).toEqual([])
+    expect(empty.releases.projectRoot()).toBeNull()
     expect(empty.releases.notice()).toBeNull()
     expect(empty.env.KORTIX_COMPILED_AGENT_CONFIG).toBe(PROVISIONED)
   })
@@ -333,7 +331,6 @@ describe('pi config releases: boot', () => {
         release_id: null,
         mode: 'follow-base',
         source_commit: null,
-        config_dir: null,
         config_tree_id: null,
         archive: null,
         files: null,
@@ -347,7 +344,7 @@ describe('pi config releases: boot', () => {
     expect(releases.report()).toMatchObject({ source: 'image-default', proven: true, fallback_reason: null })
     expect(releases.report().release_id).toMatch(/^[0-9a-f]{64}$/)
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(gov)
-    expect(releases.skillDirs()).toEqual([])
+    expect(releases.projectRoot()).toBeNull()
   })
 })
 
@@ -367,7 +364,7 @@ describe('pi config releases: convergence', () => {
     expect(applied.config).toMatchObject({ release_id: two.descriptor.release_id, desired_release_id: two.descriptor.release_id, source: 'release', proven: true })
     expect(runtime.state.reconfigures).toBe(1)
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(governance('from release two'))
-    expect(skillsOf(releases)).toEqual([`${two.descriptor.release_id}/skills`, `${two.descriptor.release_id}/.kortix/opencode/skills`])
+    expect(releases.projectRoot()).toBe(releaseDir(root, two.descriptor.release_id!))
     expect(releases.notice()).toContain(two.descriptor.source_commit!.slice(0, 12))
     expect((await readBootConfigPointer(root))?.release_id).toBe(two.descriptor.release_id!)
 
@@ -437,7 +434,7 @@ describe('pi config releases: convergence', () => {
     // The refused config was tried, then the previous one was put back.
     expect(runtime.state.reconfigures).toBe(2)
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(governance('from release one'))
-    expect(skillsOf(releases)).toEqual([`${one.descriptor.release_id}/skills`, `${one.descriptor.release_id}/.kortix/opencode/skills`])
+    expect(releases.projectRoot()).toBe(releaseDir(root, one.descriptor.release_id!))
     expect(releases.notice()).toContain(one.descriptor.source_commit!.slice(0, 12))
     expect(Object.keys(await readQuarantine(root))).toEqual([two.descriptor.release_id!])
 
@@ -452,8 +449,8 @@ describe('pi config releases: convergence', () => {
     serveRelease(api, one)
     const { releases } = create()
     await releases.boot()
-    write(repo, `${DIR}/skills/broken/SKILL.md`, '---\nname: broken\ndescription: b\n---\n')
-    const broken = buildRelease(repo, commitAll(repo, 'broken'), DIR, { projectId: 'proj-1', governance: '["not", "an", "object"]' })
+    write(repo, 'skills/broken/SKILL.md', '---\nname: broken\ndescription: b\n---\n')
+    const broken = buildRelease(repo, commitAll(repo, 'broken'), { projectId: 'proj-1', governance: '["not", "an", "object"]' })
     serveRelease(api, broken)
     const runtime = fakeRuntime()
 
@@ -477,10 +474,10 @@ describe('pi config releases: convergence', () => {
 
     expect(reverted.outcome).toBe('applied')
     expect(reverted.config).toMatchObject({ source: 'workspace', release_id: null, proven: true })
-    expect(releases.skillDirs()).toBeNull()
+    expect(releases.projectRoot()).toBeUndefined()
     expect(existsSync(noticePath)).toBe(false)
     expect(await readBootConfigPointer(root)).toBeNull()
-    // The working tree may carry a pi dir with extensions: only a start reads them.
+    // The working tree's tools and `./` packages load only at a start.
     expect(runtime.state.restarts).toBe(1)
     // Already there: nothing to do.
     expect((await releases.converge(runtime)).outcome).toBe('unchanged')
@@ -498,35 +495,11 @@ describe('pi config releases: convergence', () => {
     expect((await first).outcome).toBe('applied')
   })
 
-  test("the release's harnesses/pi is pi's config dir: a pi skill reconfigures, an extension restarts", async () => {
-    write(repo, 'harnesses/pi/extensions/hello.ts', 'export default function () {}\n')
-    const one = release('deploy', 'from release one')
-    serveRelease(api, one)
-    const { releases } = create()
-    await releases.boot()
-    expect(releases.piConfigDir()).toBe(join(releaseDir(root, one.descriptor.release_id!), 'harnesses/pi'))
-    const runtime = fakeRuntime()
-
-    write(repo, 'harnesses/pi/skills/native/SKILL.md', '---\nname: native\ndescription: a pi-native skill\n---\nBody.\n')
-    const two = buildRelease(repo, commitAll(repo, 'pi skill'), DIR, { projectId: 'proj-1', governance: governance('two') })
-    serveRelease(api, two)
-    expect((await releases.converge(runtime)).outcome).toBe('applied')
-    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 0 })
-    expect(releases.piConfigDir()).toBe(join(releaseDir(root, two.descriptor.release_id!), 'harnesses/pi'))
-
-    write(repo, 'harnesses/pi/extensions/hello.ts', 'export default function () { return 2 }\n')
-    const three = buildRelease(repo, commitAll(repo, 'extension v2'), DIR, { projectId: 'proj-1', governance: governance('two') })
-    serveRelease(api, three)
-    expect((await releases.converge(runtime)).outcome).toBe('applied')
-    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 1 })
-  })
-
   test('project tools load from the release root; a change to one restarts, an unrelated change reconfigures', async () => {
     const withTools = (prompt: string) => JSON.stringify({ ...JSON.parse(governance(prompt)), project_tools: { lookup_order: 'tools/lookup.ts' } })
     write(repo, 'tools/lookup.ts', 'export default {}\n')
     write(repo, 'tools/lib/client.ts', 'export const v = 1\n')
-    write(repo, `${DIR}/opencode.json`, '{}\n')
-    const one = buildRelease(repo, commitAll(repo, 'tools'), DIR, { projectId: 'proj-1', governance: withTools('one') })
+    const one = buildRelease(repo, commitAll(repo, 'tools'), { projectId: 'proj-1', governance: withTools('one') })
     serveRelease(api, one)
     const { releases } = create()
     await releases.boot()
@@ -534,43 +507,42 @@ describe('pi config releases: convergence', () => {
     const runtime = fakeRuntime()
 
     write(repo, 'README.md', 'unrelated\n')
-    const two = buildRelease(repo, commitAll(repo, 'readme'), DIR, { projectId: 'proj-1', governance: withTools('one') })
+    const two = buildRelease(repo, commitAll(repo, 'readme'), { projectId: 'proj-1', governance: withTools('one') })
     serveRelease(api, two)
     expect((await releases.converge(runtime)).outcome).toBe('applied')
     expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 0 })
 
     // A helper beside the module is part of the tool.
     write(repo, 'tools/lib/client.ts', 'export const v = 2\n')
-    const three = buildRelease(repo, commitAll(repo, 'tool helper'), DIR, { projectId: 'proj-1', governance: withTools('one') })
+    const three = buildRelease(repo, commitAll(repo, 'tool helper'), { projectId: 'proj-1', governance: withTools('one') })
     serveRelease(api, three)
     expect((await releases.converge(runtime)).outcome).toBe('applied')
     expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 1 })
 
     // So is the declaration itself.
     write(repo, 'README.md', 'still unrelated\n')
-    const four = buildRelease(repo, commitAll(repo, 'no tools'), DIR, { projectId: 'proj-1', governance: governance('one') })
+    const four = buildRelease(repo, commitAll(repo, 'no tools'), { projectId: 'proj-1', governance: governance('one') })
     serveRelease(api, four)
     expect((await releases.converge(runtime)).outcome).toBe('applied')
     expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 2 })
   })
 
-  test('a ./ pi package outside harnesses/pi restarts the runtime when its folder changes', async () => {
+  test('a ./ pi package restarts the runtime when its folder changes', async () => {
     write(repo, 'extensions/hello.ts', 'export default function () {}\n')
     write(repo, 'extensions/lib.ts', 'export const v = 1\n')
-    write(repo, `${DIR}/opencode.json`, '{}\n')
-    serveRelease(api, buildRelease(repo, commitAll(repo, 'extension'), DIR, { projectId: 'proj-1', governance: governance('one') }))
+    serveRelease(api, buildRelease(repo, commitAll(repo, 'extension'), { projectId: 'proj-1', governance: governance('one') }))
     const { releases } = create({ KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED, KORTIX_PI_PACKAGES: JSON.stringify(['./extensions/hello.ts', 'npm:pi-web-access@0.30.0']) })
     await releases.boot()
     const runtime = fakeRuntime()
 
     write(repo, 'README.md', 'unrelated\n')
-    serveRelease(api, buildRelease(repo, commitAll(repo, 'readme'), DIR, { projectId: 'proj-1', governance: governance('one') }))
+    serveRelease(api, buildRelease(repo, commitAll(repo, 'readme'), { projectId: 'proj-1', governance: governance('one') }))
     expect((await releases.converge(runtime)).outcome).toBe('applied')
     expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 0 })
 
     // A helper beside the extension file is part of it, as a tool's folder is.
     write(repo, 'extensions/lib.ts', 'export const v = 2\n')
-    serveRelease(api, buildRelease(repo, commitAll(repo, 'extension helper'), DIR, { projectId: 'proj-1', governance: governance('one') }))
+    serveRelease(api, buildRelease(repo, commitAll(repo, 'extension helper'), { projectId: 'proj-1', governance: governance('one') }))
     expect((await releases.converge(runtime)).outcome).toBe('applied')
     expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 1 })
   })
@@ -580,42 +552,44 @@ describe('pi config releases: convergence', () => {
       JSON.stringify({ ...JSON.parse(governance(prompt)), ...(kortixTools ? { kortix_tools: kortixTools } : {}) })
     const all = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show']
     write(repo, 'README.md', 'all five\n')
-    const one = buildRelease(repo, commitAll(repo, 'all five'), DIR, { projectId: 'proj-1', governance: withKortix('one', all) })
+    const one = buildRelease(repo, commitAll(repo, 'all five'), { projectId: 'proj-1', governance: withKortix('one', all) })
     serveRelease(api, one)
     const { releases } = create()
     await releases.boot()
     const runtime = fakeRuntime()
 
     write(repo, 'README.md', 'prompt only\n')
-    const two = buildRelease(repo, commitAll(repo, 'prompt only'), DIR, { projectId: 'proj-1', governance: withKortix('two', all) })
+    const two = buildRelease(repo, commitAll(repo, 'prompt only'), { projectId: 'proj-1', governance: withKortix('two', all) })
     serveRelease(api, two)
     expect((await releases.converge(runtime)).outcome).toBe('applied')
     expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 0 })
 
     write(repo, 'README.md', 'show removed\n')
-    const three = buildRelease(repo, commitAll(repo, 'no show'), DIR, { projectId: 'proj-1', governance: withKortix('two', all.slice(0, 4)) })
+    const three = buildRelease(repo, commitAll(repo, 'no show'), { projectId: 'proj-1', governance: withKortix('two', all.slice(0, 4)) })
     serveRelease(api, three)
     expect((await releases.converge(runtime)).outcome).toBe('applied')
     expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 1 })
 
     // No list (a config compiled without a `tools` key) is a change too: every Kortix tool loads again.
     write(repo, 'README.md', 'tools key removed\n')
-    const four = buildRelease(repo, commitAll(repo, 'no tools key'), DIR, { projectId: 'proj-1', governance: withKortix('two') })
+    const four = buildRelease(repo, commitAll(repo, 'no tools key'), { projectId: 'proj-1', governance: withKortix('two') })
     serveRelease(api, four)
     expect((await releases.converge(runtime)).outcome).toBe('applied')
     expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 2 })
   })
 
-  test('a release without a pi config dir leaves pi none; with releases off pi resolves the working tree', async () => {
-    serveRelease(api, release('deploy', 'from release one'))
-    const on = create()
-    await on.releases.boot()
-    expect(on.releases.piConfigDir()).toBeNull()
+  test("the governance's manifest_issues reach the notice, and leave it once kortix.yaml is fixed", async () => {
+    const issue = { path: 'agents.build.model', message: 'Unknown model "x".', severity: 'error', line: 3, column: 5 }
+    write(repo, 'kortix.yaml', 'agents:\n  build:\n    model: x\n')
+    const broken = JSON.stringify({ ...JSON.parse(governance('one')), manifest_issues: [issue] })
+    serveRelease(api, buildRelease(repo, commitAll(repo, 'bad model'), { projectId: 'proj-1', governance: broken }))
+    const { releases } = create()
+    await releases.boot()
+    expect(releases.notice()).toContain('- kortix.yaml:3:5 error agents.build.model Unknown model "x".')
 
-    api.respond(FEATURE_DISABLED)
-    const off = create()
-    await off.releases.boot()
-    expect(off.releases.piConfigDir()).toBeUndefined()
+    serveRelease(api, release('deploy', 'fixed'))
+    expect((await releases.converge(fakeRuntime())).outcome).toBe('applied')
+    expect(releases.notice()).not.toContain('kortix.yaml has issues')
   })
 
   test('no runtime yet: nothing to apply, and it says so', async () => {

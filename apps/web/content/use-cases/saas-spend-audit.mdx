@@ -57,58 +57,121 @@ already flagged so the same unresolved item doesn't repeat every week.
 ## How it works
 
 <Steps>
-<Step title="Run on a weekly, reusable session">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires every week, but unlike a one-shot daily check this
-agent runs in a **reusable session** — the same session is re-prompted each
-week rather than starting fresh. That's what lets it remember which
-subscriptions it has already flagged and what it recommended last time, so a
-duplicate tool that's still unresolved gets one line in the digest, not a new
-alert every Monday.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the subscription-audit skill and the weekly
+trigger, and opens a change request for you to review. Prefer clicks? Choose
+**Use this template** instead.
 
-</Step>
-<Step title="Give the agent the audit rules">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a weekly SaaS spend audit agent in this project.
 
-What counts as a duplicate, an unused seat, a meaningful price hike, or a
-renewal worth flagging lives as a **skill** that travels with the agent. It
-defines the matching logic between a bank charge and a register row, the
-threshold for a price change worth reporting, and the format of a
-recommendation. When we tune a threshold, it's a change to the skill, not a
-one-off instruction.
+1. Create the agent agents/saas-spend-audit.md. Its job is to reconcile recurring charges against the subscription register and recommend where to cut. It may use the Plaid, Google Sheets and Slack connectors. Plaid and Google Sheets are read-only.
 
-</Step>
-<Step title="Connect the systems read-only">
+2. Create the skill skills/subscription-audit/SKILL.md with these rules:
+   - Pull card and bank transactions for the last 60 to 90 days from Plaid. A charge is recurring only when it repeats by merchant and amount.
+   - Match each recurring charge to a row in the SaaS Subscriptions sheet by vendor and amount. A recurring charge with no row is shadow IT.
+   - Flag duplicate or overlapping tools, unused seats, price rises above 5%, and renewals in the next 30 days.
+   - Keep the last price and the last recommendation for each vendor in memory/saas-spend-audit-log.md. Report only new or changed findings.
+   - Post one report to #finance per run, grouped by signal, with the evidence and a suggested action on each line.
+   - Recommend only. Never cancel, pause, downgrade or change a subscription or a payment method, and never write to Plaid or the sheet.
 
-Through scoped **connectors**, brokered server-side so no raw token reaches
-the model, the agent reads:
+3. Add a cron trigger weekly-spend-audit to kortix.yaml. It runs the saas-spend-audit agent every Monday at 09:00 with the prompt "Load the subscription-audit skill and run this week's SaaS spend audit."
 
-- **Recurring charges from Plaid** — the card and bank feed, grouped into
-  recurring merchants over a trailing window.
-- **The subscription register from Google Sheets** — what finance believes
-  we're paying for, and at what price.
-- **Posts to Slack** — the weekly digest of findings, new and still-open.
+4. Tell me which of these connectors are not connected yet.
 
-It has no write access to Plaid or the register. It cannot add a line, remove
-one, or change a price in either system.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent's only actions are reading two systems and posting to Slack. It
-**recommends** cancellations, downgrades, and consolidations — it never
-cancels, pauses, downgrades, or otherwise modifies a subscription or a payment
-method itself. That decision, and the click that executes it, stays with a
-person. Credentials are encrypted in the Secrets Manager and injected at
-runtime, scoped to the agents you grant them to.
+Open **Connectors** in your project and connect your bank or card data, the
+sheet that holds your subscription register, and Slack. Credentials are
+brokered server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="Plaid" domain="plaid.com" tag="Required" alternatives={[['Brex', 'brex.com'], ['Ramp', 'ramp.com']]}>
+    Pulls recurring card and bank charges, read-only.
+  </ToolNeed>
+  <ToolNeed name="Google Sheets" domain="sheets.google.com" tag="Required" alternatives={[['Airtable', 'airtable.com']]}>
+    Reads the subscription register to reconcile charges against.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Posts the weekly digest of flags and recommendations.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Post the weekly digest">
+<Step title="Run it once with this prompt">
 
-Each week's message lists what's new — a fresh shadow-IT charge, a price that
-just moved, a renewal coming up — and what's still open from a prior week,
-without repeating anything unchanged. Every line carries the evidence (the
-charge, the register row, or the absence of one) and a suggested action. The
-finance team reads it and decides what to actually cancel or renegotiate.
+Merge the change request, then start a session with the **saas-spend-audit**
+agent and send this prompt. Check its matches against the register before you
+let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run this week's SaaS spend audit.
+
+1. Read memory/saas-spend-audit-log.md for what you already flagged.
+2. Pull recurring card and bank charges for the last 90 days from Plaid.
+3. Match them to the SaaS Subscriptions sheet. Find duplicate tools, unused seats, price rises above 5%, renewals in the next 30 days, and charges with no row.
+4. Post a ranked report to #finance with the evidence and a suggested action for each finding. Skip anything unchanged since last week.
+5. Update the ledger. Do not cancel or change any subscription.`}
+/>
+
+</Step>
+<Step title="Let the weekly schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every Monday at 09:00, each run on its own cloud computer. It reads its
+ledger first, so an open item from last week does not come back as new. To
+change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: weekly-spend-audit
+    name: Weekly SaaS spend audit
+    on:
+      cron: "0 0 9 * * 1"
+    run:
+      agent: saas-spend-audit
+      prompt: Load the subscription-audit skill and run this week's SaaS spend audit.`}
+/>
+
+</Step>
+<Step title="Recommend, never cancel">
+
+Plaid and the register are read-only, and the agent has no write access to
+billing. Every line in the report is a suggestion. A person decides what to
+cancel, downgrade or renegotiate, and does it.
+
+</Step>
+<Step title="Read the weekly report">
+
+Each run ends with one report in the channel. This is what a run looks like in
+the session:
+
+<ExampleRun
+  title="Weekly SaaS spend audit · Mon 09:00"
+  message="Load the subscription-audit skill and run this week's SaaS spend audit."
+  worked="Worked for 2m 57s"
+  tools={[
+    'plaid · get transactions',
+    'google sheets · read range',
+    'slack · post message → #finance',
+  ]}
+  note="Illustrative example. Your findings depend on your charges and your register."
+>
+  Reconciled **47** recurring charges against the register. Found **3** new
+  items: **2** charges with no register row, and a design tool whose price rose
+  **12%** this month. An annual plan renews in **21** days, and the suggested
+  action is to confirm its seat count before then.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -119,6 +182,25 @@ finance team reads it and decides what to actually cancel or renegotiate.
   rules live as a **skill**, a **ledger** tracks what's already been flagged,
   and the agent only ever recommends — a person owns every cancellation.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Draft register rows"
+  code="For each shadow-IT charge, write the row you would add to the SaaS Subscriptions sheet in the report, so a person can paste it in."
+/>
+
+<CopyBlock
+  title="Monthly spend by team"
+  code="On the first Monday of each month, add the total recurring spend per owning team from the register to the report."
+/>
+
+<CopyBlock
+  title="Renewal reminders"
+  code="30 days before each annual renewal, post a reminder to #finance with the current price, the seat count and the owning team."
+/>
 
 ## Guardrails
 

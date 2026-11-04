@@ -6,9 +6,9 @@ import { Button } from '../../../primitives/button';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../../primitives/hover-card';
 import { useTranslations } from '../../../i18n';
 
-/** The Provider value: Kortix for a managed app, else the app itself. */
+/** The Provider value: the managed partner (Composio), else the app itself. */
 export function providerName(appName: string, managedBy: string | null): string {
-  return managedBy ? 'Kortix' : appName;
+  return managedBy ?? appName;
 }
 
 /**

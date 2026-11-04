@@ -218,8 +218,11 @@ start_tunnel_watchdog() {
         sleep 5; curl -fsS -m 8 "$url/health" >/dev/null 2>&1 && continue
       fi
       echo "[dev] ⚠️  tunnel ${url:-<none>} DEAD/MISSING (cloudflared $(pgrep -fc 'cloudflared tunnel' 2>/dev/null || echo 0) procs) — (re)establishing + restarting API..."
+      # Kill ONLY this stack's cloudflared (our own TUNNEL_PID). The old
+      # `pkill -f 'cloudflared tunnel --no-autoupdate'` matched every worktree's
+      # tunnel, so one stack's rotation tore down other sessions' tunnels too
+      # (2026-10-24, same class as the API pkill below).
       [[ -n "${TUNNEL_PID:-}" ]] && kill "$TUNNEL_PID" 2>/dev/null || true
-      pkill -f 'cloudflared tunnel --no-autoupdate' 2>/dev/null || true
       TUNNEL_LOG="$(mktemp -t kortix-tunnel.XXXXXX)"
       cloudflared tunnel --no-autoupdate --url "http://localhost:${PORT:-8008}" >"$TUNNEL_LOG" 2>&1 &
       TUNNEL_PID=$!
@@ -239,14 +242,17 @@ start_tunnel_watchdog() {
       printf '%s' "$newurl" > "$TUNNEL_URL_FILE"
       touch "$TUNNEL_URL_FILE.rotated"
       echo "[dev] ✅ tunnel rotated: KORTIX_URL=$newurl (API restarting)"
-      # Match on the script path ONLY. `pnpm --filter kortix-api dev` runs
-      # `dotenvx run … -- bun --no-env-file run --hot src/index.ts`, so the
-      # old `bun run --hot …` pattern stopped matching when #6260 inserted
-      # `--no-env-file` (2026-08-10). pkill -f matches a SUBSTRING of the
-      # full command line and exits 1 silently, so rotation printed
-      # "API restarting" while restarting nothing — every sandbox created
-      # after a rotation got a dead KORTIX_URL callback.
-      pkill -f -- '--hot src/index.ts' 2>/dev/null || true
+      # Bounce ONLY this stack's API — the listener on THIS worktree's PORT —
+      # so the supervised loop restarts it with the rotated KORTIX_URL. The old
+      # `pkill -f -- '--hot src/index.ts'` matched the API in EVERY worktree
+      # (they all run `bun --hot src/index.ts`), so one stack's tunnel rotation
+      # SIGTERM'd every other session's API ~every minute, breaking their
+      # supervised loops and reaping their whole stacks (2026-10-24). Port is
+      # the one thing unique to this worktree, so kill by it — never by a
+      # command pattern that matches other checkouts (cf. cleanup()'s note).
+      while IFS= read -r _apipid; do
+        [[ -n "$_apipid" ]] && kill "$_apipid" 2>/dev/null || true
+      done < <(lsof -tiTCP:"${PORT:-8008}" -sTCP:LISTEN 2>/dev/null || true)
     done
   ) &
 }

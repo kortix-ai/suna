@@ -8,7 +8,9 @@
 // packages/ui/src/styles/theme.css and apps/mobile/global.css, whole-file
 // outputs under references/visual/, packages/ui/src/styles/tokens.css and
 // fonts.css, and
-// apps/api/src/lib/email/brand-tokens.generated.ts.
+// apps/api/src/lib/email/brand-tokens.generated.ts, and
+// packages/shared/src/brand-css.generated.ts (the kit tokens and the Roobert
+// faces as strings, for pages a server renders: a doc artifact).
 // Stdlib only.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
@@ -22,6 +24,7 @@ const UI_THEME_CSS = join(ROOT, 'packages/ui/src/styles/theme.css');
 const UI_TOKENS_CSS = join(ROOT, 'packages/ui/src/styles/tokens.css');
 const UI_FONTS_CSS = join(ROOT, 'packages/ui/src/styles/fonts.css');
 const EMAIL_TS = join(ROOT, 'apps/api/src/lib/email/brand-tokens.generated.ts');
+const SHARED_CSS_TS = join(ROOT, 'packages/shared/src/brand-css.generated.ts');
 
 const EDIT_HINT =
   'edit .agents/skills/kortix-brand/references/visual/visual-system.json, then run generate-tokens.ts';
@@ -309,15 +312,20 @@ function emailLayout() {
   const e = vs.email;
   return {
     containerWidth: e.container_width_px as number,
-    sidePadding: e.side_padding_px as number,
+    framePadding: e.frame_padding as string,
+    cardPadding: e.card_padding as string,
+    mobileFramePadding: e.mobile_frame_padding as string,
+    mobileCardPadding: e.mobile_card_padding as string,
     cardRadius: vs.radius.web[e.card_radius].px as number,
     buttonRadius: vs.radius.web[e.button_radius].px as number,
     buttonPadding: e.button_padding as string,
-    logoHeight: e.logo_height_px as number,
     logoUrl: e.logo_url as string,
-    fontSize: e.font_size_px as { title: number; body: number; kicker: number; small: number },
-    lineHeight: e.line_height as { title: number; body: number },
-    gap: e.gap_px as { kicker_before: number; kicker_after: number; title_after: number; block_after: number },
+    logoWidth: e.logo_width_px as number,
+    fontSize: e.font_size_px as { title: number; body: number; label: number; small: number },
+    fontWeight: e.font_weight as { title: number; body: number; strong: number },
+    lineHeight: e.line_height as { title: number; body: number; label: number },
+    letterSpacing: e.letter_spacing_px as { title: number; body: number; label: number; small: number },
+    gap: e.gap_px as { title_after: number; block_after: number; button_before: number; note_before: number },
   };
 }
 
@@ -357,21 +365,25 @@ function kitTokens(): string {
   const em = emailLayout();
   shared.push(
     `  --email-container-width: ${em.containerWidth}px;`,
-    `  --email-side-padding: ${em.sidePadding}px;`,
+    `  --email-frame-padding: ${em.framePadding};`,
+    `  --email-card-padding: ${em.cardPadding};`,
     `  --email-card-radius: ${em.cardRadius}px;`,
     `  --email-button-radius: ${em.buttonRadius}px;`,
     `  --email-button-padding: ${em.buttonPadding};`,
-    `  --email-logo-height: ${em.logoHeight}px;`,
+    `  --email-logo-width: ${em.logoWidth}px;`,
     `  --email-title-size: ${em.fontSize.title}px;`,
     `  --email-body-size: ${em.fontSize.body}px;`,
-    `  --email-kicker-size: ${em.fontSize.kicker}px;`,
+    `  --email-label-size: ${em.fontSize.label}px;`,
     `  --email-small-size: ${em.fontSize.small}px;`,
+    `  --email-title-weight: ${em.fontWeight.title};`,
+    `  --email-strong-weight: ${em.fontWeight.strong};`,
     `  --email-title-line-height: ${em.lineHeight.title};`,
     `  --email-body-line-height: ${em.lineHeight.body};`,
-    `  --email-gap-kicker-before: ${em.gap.kicker_before}px;`,
-    `  --email-gap-kicker-after: ${em.gap.kicker_after}px;`,
+    `  --email-title-tracking: ${em.letterSpacing.title}px;`,
     `  --email-gap-title: ${em.gap.title_after}px;`,
-    `  --email-gap-block: ${em.gap.block_after}px;`
+    `  --email-gap-block: ${em.gap.block_after}px;`,
+    `  --email-gap-button: ${em.gap.button_before}px;`,
+    `  --email-gap-note: ${em.gap.note_before}px;`
   );
   for (const [k, v] of Object.entries<any>(vs.motion.duration)) shared.push(`  --duration-${k}: ${v.ms}ms;`);
   for (const [k, v] of Object.entries<any>(vs.motion.easing))
@@ -507,6 +519,19 @@ function rewriteRegions(file: string, bodies: Record<string, string>): string {
   return out.join('\n');
 }
 
+/** The kit tokens (light, dark by prefers-color-scheme) and the Roobert faces
+ *  (absolute kortix.com URLs) as strings, for a page a server renders. */
+function sharedCss(): string {
+  return [
+    '// GENERATED from visual-system.json by .agents/skills/kortix-brand/scripts/generate-tokens.ts. Do not edit.',
+    '// The brand tokens and fonts for a page a server renders (a doc artifact): the',
+    '// kit tokens.css (light, dark by prefers-color-scheme) and @kortix/ui fonts.css.',
+    `export const BRAND_TOKENS_CSS = ${JSON.stringify(kitTokens())};`,
+    `export const BRAND_FONTS_CSS = ${JSON.stringify(uiFonts())};`,
+    '',
+  ].join('\n');
+}
+
 // ───────────────────────── main ─────────────────────────
 const errors = validate();
 if (errors.length) {
@@ -527,6 +552,7 @@ const outputs: Record<string, string> = {
   [join(VISUAL, 'tokens.css')]: kitTokens(),
   [join(VISUAL, 'fonts.css')]: kitFonts(),
   [EMAIL_TS]: emailTokens(),
+  [SHARED_CSS_TS]: sharedCss(),
 };
 
 const check = process.argv.includes('--check');

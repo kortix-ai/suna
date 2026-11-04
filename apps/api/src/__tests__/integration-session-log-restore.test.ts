@@ -12,9 +12,9 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { createHash, randomBytes } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
-import { SessionLogRestoreSchema, SessionLogRestoreTooLargeSchema, type SessionLogRestore } from '@kortix/api-contract/session-log';
+import { SessionLogRestoreSchema, SessionLogRestoreTooLargeSchema, threadView, type SessionLog, type SessionLogRestore } from '@kortix/api-contract/session-log';
 import { accountMembers, sessionLogMessages, sessionLogs, sessionSandboxes } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, sql, type SQL } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
@@ -40,6 +40,7 @@ let bare = '';
 let big = '';
 let empty = '';
 let ordered = '';
+let compacted = '';
 const tokens: Record<string, string> = {};
 let ownerToken = '';
 
@@ -77,6 +78,13 @@ const restore = (sessionId: string, token = tokens[sessionId]!, headers: Record<
   app.request(`${base(sessionId)}/log/restore`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, ...headers } });
 const generationOf = async (sessionId: string) =>
   (await db.select({ generation: sessionLogs.generation }).from(sessionLogs).where(eq(sessionLogs.sessionId, sessionId)))[0]?.generation;
+/** The stored JSON bytes of a session's live messages, or of the live messages `where` selects. */
+const recordBytes = async (sessionId: string, where: SQL | string = sql`true`) => {
+  const [row] = await db.execute<{ bytes: string }>(
+    sql`select sum(octet_length(record::text)) as bytes from kortix.session_log_messages where session_id = ${sessionId} and deleted_at is null and ${typeof where === 'string' ? sql.raw(where) : where}`,
+  );
+  return Number(row!.bytes);
+};
 const stored = async (sessionId: string, id: string) =>
   (await db.select().from(sessionLogMessages).where(and(eq(sessionLogMessages.sessionId, sessionId), eq(sessionLogMessages.messageId, id))))[0]!;
 
@@ -96,8 +104,8 @@ const revOf: Record<string, number> = { msg_u4: REV + 5, msg_c1: REV + 7, msg_a1
 beforeAll(async () => {
   project = await seedProject('session-log-restore');
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: project.account_id, accountRole: 'owner' });
-  [session, bare, big, empty, ordered] = await Promise.all(Array.from({ length: 5 }, () => seedSession(project, OWNER)));
-  for (const sessionId of [session, bare, big, empty, ordered]) {
+  [session, bare, big, empty, ordered, compacted] = await Promise.all(Array.from({ length: 6 }, () => seedSession(project, OWNER)));
+  for (const sessionId of [session, bare, big, empty, ordered, compacted]) {
     // A session PAT authenticates only while its sandbox row is live (the session lease).
     await db.insert(sessionSandboxes).values({ sandboxId: sessionId, sessionId, accountId: project.account_id, projectId: project.project_id, status: 'active', config: {}, metadata: {} });
     tokens[sessionId] = (await createAccountToken({ accountId: project.account_id, userId: OWNER, projectId: project.project_id, sessionId, name: `restore-${sessionId.slice(0, 8)}` })).secretKey;
@@ -253,11 +261,10 @@ describe('POST .../log/restore', () => {
     expect({ ...plainBody, generation: 1 }).toEqual(body);
   });
 
-  test('the cap: a log at SESSION_LOG_RESTORE_MAX_BYTES answers 200; one byte over → 413 session_log_too_large, claimed, every thread, rev and seq, no message', async () => {
+  test('the cap: a log at SESSION_LOG_RESTORE_MAX_BYTES answers 200; one byte over → 413 session_log_too_large, claimed, with the newest whole turns that fit (no compaction), every thread, rev and seq', async () => {
     // The 500-message session of the gzip test: 1 tombstone more, which the size leaves out.
     expect((await journal(big, { generation: 2, puts: [], threads: [], tombstones: [{ message_id: 'msg_q0', rev: REV + 1_000 }] })).status).toBe(200);
-    const [row] = await db.execute<{ bytes: string }>(sql`select sum(octet_length(record::text)) as bytes from kortix.session_log_messages where session_id = ${big} and deleted_at is null`);
-    const bytes = Number(row!.bytes);
+    const bytes = await recordBytes(big);
     expect(bytes).toBeGreaterThan(100_000);
     try {
       config.SESSION_LOG_RESTORE_MAX_BYTES = bytes;
@@ -266,6 +273,7 @@ describe('POST .../log/restore', () => {
       expect(SessionLogRestoreSchema.parse(await at.json()).log.threads[0]!.messages).toHaveLength(499);
       expect(await generationOf(big)).toBe(3);
 
+      // One byte over: every message but the oldest (msg_r0) fits, and the newest run starts at a user turn (msg_q1).
       config.SESSION_LOG_RESTORE_MAX_BYTES = bytes - 1;
       const over = await restore(big, tokens[big]!, { 'Accept-Encoding': 'gzip' });
       expect(over.status).toBe(413);
@@ -273,16 +281,92 @@ describe('POST .../log/restore', () => {
       const text = gunzipSync(new Uint8Array(await over.arrayBuffer())).toString('utf8');
       const body = SessionLogRestoreTooLargeSchema.parse(JSON.parse(text));
       console.info(`[restore size] over the cap: ${text.length} bytes for a ${bytes}-byte log`);
-      expect(body).toMatchObject({ error: 'session_log_too_large', bytes, limit: bytes - 1, messages: 499, generation: 4, seq_max: { main: 499 }, blobs: [] });
+      expect(body).toMatchObject({ error: 'session_log_too_large', kept: 'newest', bytes, limit: bytes - 1, messages: 1, generation: 4, seq_max: { main: 499 }, blobs: [] });
       // The claim stands: the box journals at 4, and the old claimant gets 409.
       expect(await generationOf(big)).toBe(4);
       expect(body.log.session_id).toBe(big);
       expect(body.log.title).toBe('Synthetic session');
-      expect(body.log.threads).toEqual([{ ...main, messages: [] }] as never);
+      const kept = body.log.threads[0]!.messages;
+      expect(body.log.threads.map((t) => t.thread_id)).toEqual(['main']);
+      expect(kept).toHaveLength(498);
+      expect(kept[0]).toMatchObject({ message_id: 'msg_q1', role: 'user' });
+      expect(kept.at(-1)!.message_id).toBe('msg_r249');
       expect(Object.keys(body.revs)).toHaveLength(500);
       expect(body.revs.msg_q0).toBe(REV + 1_000);
       expect((await journal(big, { generation: 3, puts: [{ rev: REV + 2_000, message: message('msg_late', 'main', 500) }], tombstones: [], threads: [] })).status).toBe(409);
-      expect((await journal(big, { generation: 4, puts: [{ rev: REV + 2_001, message: message('msg_note', 'main', 500) }], tombstones: [], threads: [] })).status).toBe(200);
+
+      // The run that fits starts at a reply (msg_r1): it starts at the next user turn instead (msg_q2), so no turn is cut.
+      config.SESSION_LOG_RESTORE_MAX_BYTES = await recordBytes(big, `seq >= 3`);
+      const cut = SessionLogRestoreTooLargeSchema.parse(await (await restore(big)).json());
+      expect(cut).toMatchObject({ kept: 'newest', messages: 3 });
+      expect(cut.log.threads[0]!.messages[0]).toMatchObject({ message_id: 'msg_q2', role: 'user', seq: 4 });
+
+      // Not even the newest message fits: the answer is the claim alone, as before (no `kept`, no message).
+      config.SESSION_LOG_RESTORE_MAX_BYTES = (await recordBytes(big, `seq = 499`)) - 1;
+      const none = await restore(big);
+      expect(none.status).toBe(413);
+      const bare413 = SessionLogRestoreTooLargeSchema.parse(await none.json());
+      expect(bare413).toMatchObject({ messages: 499, generation: 6, seq_max: { main: 499 }, blobs: [] });
+      expect(bare413.kept).toBeUndefined();
+      expect(bare413.log.threads).toEqual([{ ...main, messages: [] }] as never);
+      expect(Object.keys(bare413.revs)).toHaveLength(500);
+      expect((await journal(big, { generation: 6, puts: [{ rev: REV + 2_001, message: message('msg_note', 'main', 500) }], tombstones: [], threads: [] })).status).toBe(200);
+    } finally {
+      config.SESSION_LOG_RESTORE_MAX_BYTES = MAX_BYTES;
+    }
+  });
+
+  test('over the cap with a compaction: 413 kept model_view with the context record, the cut point, the kept run, the marker and the turns after it; the newest sub-agent thread that fits; the slice texts only', async () => {
+    const leftOut = randomBytes(300_000).toString('base64');
+    const keptText = randomBytes(300_000).toString('base64');
+    const k = (id: string, seq: number, over: Record<string, unknown> = {}) => message(`msg_k_${id}`, 'kmain', seq, over);
+    const root = [
+      k('s0', 0, { role: 'system', kind: 'context' }),
+      k('u1', 1),
+      k('a2', 2, { role: 'assistant', finish: 'stop', blocks: [toolCall('prt_k_left', leftOut)] }),
+      k('u3', 3),
+      k('a4', 4, { role: 'assistant', finish: 'stop', blocks: [toolCall('prt_k_kept', keptText)] }),
+      k('a5', 5, { role: 'assistant', finish: 'stop', in_context: false, hidden_reason: 'superseded' }),
+      k('c6', 6, { kind: 'compaction', blocks: [{ type: 'compaction', id: 'prt_k_c6', summary: 'Synthetic summary of turns 1 and 2.', first_kept_message_id: 'msg_k_u3' }] }),
+      k('u7', 7),
+      k('a8', 8, { role: 'assistant', finish: 'stop' }),
+    ];
+    const older = [message('msg_ko_0', 'ses_k_older', 0), message('msg_ko_1', 'ses_k_older', 1, { role: 'assistant', finish: 'stop' })];
+    const newer = [message('msg_kn_0', 'ses_k_newer', 0), message('msg_kn_1', 'ses_k_newer', 1, { role: 'assistant', finish: 'stop' })];
+    const kmain = threadRecord('kmain', null);
+    const put = (messages: Array<{ message_id: string }>) => messages.map((m, i) => ({ rev: REV + i, message: m }));
+    expect((await journal(compacted, { generation: 0, session: sessionPatch(compacted), threads: [kmain], puts: put(root), tombstones: [] })).status).toBe(200);
+    // Separate batches: the newer sub-agent thread is stored after the older one.
+    expect((await journal(compacted, { generation: 0, threads: [threadRecord('ses_k_older', 'kmain')], puts: put(older), tombstones: [] })).status).toBe(200);
+    expect((await journal(compacted, { generation: 0, threads: [threadRecord('ses_k_newer', 'kmain')], puts: put(newer), tombstones: [] })).status).toBe(200);
+
+    const whole = SessionLogRestoreSchema.parse(await (await restore(compacted)).json());
+    const sliceIds = ['msg_k_s0', 'msg_k_u3', 'msg_k_a4', 'msg_k_c6', 'msg_k_u7', 'msg_k_a8'];
+    // 2/5 of the kept 400 kB text; the left-out one does not count.
+    const rootSlice = (await recordBytes(compacted, sql`message_id IN (${sql.join(sliceIds.map((id) => sql`${id}`), sql`, `)})`)) + 160_000;
+    const newerBytes = await recordBytes(compacted, sql`thread_id = 'ses_k_newer'`);
+    try {
+      config.SESSION_LOG_RESTORE_MAX_BYTES = rootSlice + newerBytes;
+      const res = await restore(compacted);
+      expect(res.status).toBe(413);
+      const body = SessionLogRestoreTooLargeSchema.parse(await res.json());
+      expect(body).toMatchObject({ error: 'session_log_too_large', kept: 'model_view', limit: rootSlice + newerBytes, messages: 5, generation: 2, seq_max: { kmain: 8, ses_k_older: 1, ses_k_newer: 1 } });
+      expect(body.bytes).toBeGreaterThan(body.limit);
+      expect(body.log.threads.map((t) => [t.thread_id, t.messages.map((m) => m.message_id)])).toEqual([
+        ['kmain', sliceIds],
+        ['ses_k_newer', ['msg_kn_0', 'msg_kn_1']],
+      ]);
+      expect(Object.keys(body.revs).sort()).toEqual(Object.keys(whole.revs).sort());
+      expect(body.blobs).toEqual([expect.objectContaining({ message_id: 'msg_k_a4', block_id: 'prt_k_kept', bytes: 400_000, sha256: createHash('sha256').update(keptText).digest('hex') })]);
+      // The oracle: the model's view of each restored thread is the whole log's.
+      const target = { provider: 'nobody', model: 'nothing' };
+      for (const t of body.log.threads) expect(threadView(body.log as SessionLog, t.thread_id, target)).toEqual(threadView(whole.log as SessionLog, t.thread_id, target));
+
+      // One byte less: the newer sub-agent thread no longer fits whole, and the older one (same size) neither.
+      config.SESSION_LOG_RESTORE_MAX_BYTES = rootSlice + newerBytes - 1;
+      const tight = SessionLogRestoreTooLargeSchema.parse(await (await restore(compacted)).json());
+      expect(tight).toMatchObject({ kept: 'model_view', messages: 7 });
+      expect(tight.log.threads.map((t) => t.thread_id)).toEqual(['kmain']);
     } finally {
       config.SESSION_LOG_RESTORE_MAX_BYTES = MAX_BYTES;
     }
@@ -316,7 +400,7 @@ describe('POST .../log/restore', () => {
     const parsed = SessionLogRestoreSchema.parse(JSON.parse(text)).log.threads[0]!.messages[0]!.blocks[1]!;
     expect(JSON.stringify((parsed as { input: unknown }).input)).toBe(JSON.stringify(input));
   });
-  test('the cap counts the blobs the box pulls at 2/5: records + 2/5 of the 400 kB stored text at the cap → 200, one byte over → 413; the switch preflight reports the history lost', async () => {
+  test('the cap counts the blobs the box pulls at 2/5: records + 2/5 of the 400 kB stored text at the cap → 200, one byte over → 413 with the model view; the switch preflight reports the history lost only when the model view does not fit', async () => {
     const [row] = await db.execute<{ records: string; blobs: string }>(sql`select
       (select sum(octet_length(record::text)) from kortix.session_log_messages where session_id = ${session} and deleted_at is null) as records,
       (select sum(bytes) from kortix.session_log_blobs where session_id = ${session} and deleted_at is null) as blobs`);
@@ -338,10 +422,20 @@ describe('POST .../log/restore', () => {
       expect(fits.restores).toBe(true);
       expect(fits.losses.some((l) => l.feature === 'history')).toBe(false);
 
+      // One byte over: the out-of-context message is left out, and the model's view (with the text it names) fits.
       config.SESSION_LOG_RESTORE_MAX_BYTES = records + 159_999;
       const over = await restore(session);
       expect(over.status).toBe(413);
-      expect(SessionLogRestoreTooLargeSchema.parse(await over.json())).toMatchObject({ bytes: records + 160_000, limit: records + 159_999, blobs: [] });
+      const body = SessionLogRestoreTooLargeSchema.parse(await over.json());
+      expect(body).toMatchObject({ bytes: records + 160_000, limit: records + 159_999, kept: 'model_view', messages: 1 });
+      expect(body.blobs.map((b) => b.message_id)).toEqual(['msg_a1']);
+      expect(body.log.threads.flatMap((t) => t.messages.map((m) => m.message_id))).not.toContain('msg_old2');
+      const keeps = await preflight();
+      expect(keeps.restores).toBe(true);
+      expect(keeps.losses.some((l) => l.feature === 'history')).toBe(false);
+
+      // The model's view does not fit: only the newest turns would restore, and the preflight reports the history lost.
+      config.SESSION_LOG_RESTORE_MAX_BYTES = 1_000;
       const lost = await preflight();
       expect(lost.restores).toBe(false);
       expect(lost.losses[0]).toEqual({ feature: 'history', used: expect.any(Number), status: 'lost' });

@@ -35,8 +35,6 @@ const envNames = [
   'KORTIX_SNAPSHOT_CLI_ATTESTATION_PATH',
   'KORTIX_SNAPSHOT_ENTRYPOINT_PATH',
   'KORTIX_SNAPSHOT_SLACK_CLI_PATH',
-  'KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH',
-  'KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH',
   'KORTIX_SNAPSHOT_MACHINE_DOC_PATH',
 ] as const;
 const originalEnv = Object.fromEntries(envNames.map((name) => [name, process.env[name]]));
@@ -46,19 +44,16 @@ async function createStagingFixture(): Promise<{ tempBase: string }> {
   testRoots.push(root);
   const tempBase = join(root, 'tmp');
   const slackDir = join(root, 'slack-cli');
-  const badConfigDir = join(root, 'opencode-config');
-  await Promise.all([mkdir(tempBase), mkdir(slackDir), mkdir(badConfigDir)]);
+  await Promise.all([mkdir(tempBase), mkdir(slackDir)]);
   const agentPath = join(root, 'kortix-agent');
   const cliPath = join(root, 'kortix');
   const attestationPath = join(root, 'kortix.attestation.json');
   const entrypointPath = join(root, 'entrypoint.sh');
-  const warmupPath = join(root, 'opencode-warmup.sh');
   const machinePath = join(root, 'MACHINE.md');
   await Promise.all([
     writeFile(agentPath, 'agent-fixture\n'),
     writeFile(cliPath, 'cli-fixture\n'),
     writeFile(entrypointPath, '#!/bin/sh\n'),
-    writeFile(warmupPath, '#!/bin/sh\n'),
     writeFile(machinePath, 'fixture\n'),
     writeFile(join(slackDir, 'index.js'), 'export {};\n'),
   ]);
@@ -78,8 +73,6 @@ async function createStagingFixture(): Promise<{ tempBase: string }> {
   process.env.KORTIX_SNAPSHOT_CLI_ATTESTATION_PATH = attestationPath;
   process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH = entrypointPath;
   process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH = slackDir;
-  process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH = badConfigDir;
-  process.env.KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH = warmupPath;
   process.env.KORTIX_SNAPSHOT_MACHINE_DOC_PATH = machinePath;
   return { tempBase };
 }

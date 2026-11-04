@@ -8,7 +8,7 @@ import {
   startPortForward,
 } from '../port-forward.ts';
 import { type SessionRuntime, SessionRuntimeError } from '../session-runtime.ts';
-import { auth, session } from './support/attach-fixtures.ts';
+import { auth, session } from './support/session-fixtures.ts';
 
 function runtimeFor(overrides: Partial<SessionRuntime> = {}): SessionRuntime {
   return {

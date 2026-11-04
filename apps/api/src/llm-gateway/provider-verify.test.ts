@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { GatewayResolutionError } from '@kortix/llm-gateway';
 import type { AuthedPrincipal, UpstreamDescriptor } from '@kortix/llm-gateway';
-import { verifyProviderConnection, type ProviderVerifyDeps } from './provider-verify';
+import { verifyProviderConnection, type ProviderVerifyDeps, type ProviderVerifyResult } from './provider-verify';
 
 const PRINCIPAL: AuthedPrincipal = { userId: 'user-1', accountId: 'acct-1', projectId: 'project-1' };
 
@@ -46,13 +46,6 @@ const ANTHROPIC_DEPS = deps({
   resolveCandidates: async () => [ANTHROPIC],
 });
 
-function anthropicError(status: number, type: string, message: string): Response {
-  return new Response(JSON.stringify({ type: 'error', error: { type, message } }), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
-}
-
 function deps(overrides: Partial<ProviderVerifyDeps> = {}): Partial<ProviderVerifyDeps> {
   return {
     pickVerificationModel: () => 'openai/gpt-4o-mini',
@@ -60,8 +53,6 @@ function deps(overrides: Partial<ProviderVerifyDeps> = {}): Partial<ProviderVeri
     ...overrides,
   };
 }
-
-const errorBody = (message: string) => JSON.stringify({ error: { message } });
 
 afterEach(() => {
   globalThis.fetch = realFetch;
@@ -133,33 +124,6 @@ describe('verifyProviderConnection upstream verdicts', () => {
     expect(fetchCalls[0]?.signal).toBeInstanceOf(AbortSignal);
   });
 
-  test.each([
-    ['a 401 with a provider message is invalid', 401, errorBody('Incorrect API key provided'), 'invalid', 'Incorrect API key provided'],
-    ['a 403 without a body is invalid', 403, '', 'invalid', 'The provider rejected the key (HTTP 403).'],
-    ['a 429 is unknown', 429, errorBody('slow down'), 'unknown', "Rate limited while verifying — couldn't confirm the key."],
-    ['a 400 with a provider message is unknown', 400, errorBody('model requires more tokens'), 'unknown', 'model requires more tokens'],
-    ['a 500 without a body is unknown', 500, '', 'unknown', "The provider returned HTTP 500 — couldn't confirm."],
-  ] as const)('an openai-compatible upstream answering %s', async (_name, status, body, verdict, message) => {
-    stubFetch(() => new Response(body, { status }));
-
-    expect(await verifyProviderConnection(PRINCIPAL, 'openai', deps())).toEqual({ status: verdict, message });
-  });
-
-  // The AI SDK transport THROWS an UpstreamHttpError for a non-2xx answer, so
-  // these rows reach the thrown-error verdicts, not the `!response.ok` ones.
-  test.each([
-    ['a 401 is invalid', 401, 'authentication_error', 'invalid x-api-key', 'invalid', 'invalid x-api-key'],
-    ['a 403 is invalid', 403, 'permission_error', 'key lacks model access', 'invalid', 'key lacks model access'],
-    ['a 429 is unknown', 429, 'rate_limit_error', 'slow down', 'unknown', "Rate limited while verifying — couldn't confirm the key."],
-    ['a 400 is unknown', 400, 'invalid_request_error', 'max_tokens too small', 'unknown', 'max_tokens too small'],
-    ['a 500 is unknown', 500, 'api_error', 'internal failure', 'unknown', 'internal failure'],
-  ] as const)('an AI SDK upstream answering %s', async (_name, status, type, upstreamMessage, verdict, message) => {
-    stubFetch(() => anthropicError(status, type, upstreamMessage));
-
-    expect(await verifyProviderConnection(PRINCIPAL, 'anthropic', ANTHROPIC_DEPS)).toEqual({ status: verdict, message });
-    expect(fetchCalls).toHaveLength(1);
-  });
-
   // The verification timeout fires while the fetch is in flight. The direct
   // transport rejects with the signal's TimeoutError; the AI SDK transport
   // rethrows a ClientAbortError. Both are the same verdict.
@@ -195,4 +159,25 @@ describe('verifyProviderConnection upstream verdicts', () => {
       message: 'fetch failed: connection refused',
     });
   });
+});
+
+// The AI SDK transport THROWS an UpstreamHttpError for a non-2xx answer, so
+// these rows reach the thrown-error verdicts, not the `!response.ok` ones.
+describe('HTTP verdict parity', () => {
+  for (const status of [401, 403, 429, 400, 500]) {
+    for (const body of ['', ' plain failure ', '{"error":{"message":" nested failure "}}', '{"message":" top failure "}', '{}']) {
+      test(`${status} with ${JSON.stringify(body)} keeps response/thrown parity`, async () => {
+        const message = status === 429
+          ? "Rate limited while verifying — couldn't confirm the key."
+          : (body.includes('nested failure') ? 'nested failure' : body.includes('top failure') ? 'top failure' : body.includes('plain failure') ? 'plain failure' : undefined)
+            ?? (status === 401 || status === 403 ? `The provider rejected the key (HTTP ${status}).` : `The provider returned HTTP ${status} — couldn't confirm.`);
+        const expected: ProviderVerifyResult = { status: status === 401 || status === 403 ? 'invalid' : 'unknown', message };
+        stubFetch(() => new Response(body, { status }));
+        expect(await verifyProviderConnection(PRINCIPAL, 'openai', deps())).toEqual(expected);
+        stubFetch(() => new Response(body, { status, headers: { 'content-type': 'application/json' } }));
+        expect(await verifyProviderConnection(PRINCIPAL, 'anthropic', ANTHROPIC_DEPS)).toEqual(expected);
+        expect(fetchCalls).toHaveLength(1);
+      });
+    }
+  }
 });

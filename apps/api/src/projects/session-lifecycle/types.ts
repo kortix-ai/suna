@@ -1,3 +1,4 @@
+import type { Actor } from '../../iam/actor';
 import type { ProjectRow, ProjectSessionRow, RequestAuditContext } from '../lib/serializers';
 import type { PromptOverridesWire, PromptPartWire } from './prompt-payload';
 import type { SessionCreateError } from '../lib/sessions';
@@ -11,18 +12,26 @@ export type SessionInvocationSource =
   | 'email'
   | 'telegram'
   | 'teams'
+  | 'discord'
   | 'trigger:webhook'
   | 'trigger:cron'
   | 'trigger:manual'
   | 'trigger:monitor'
   | 'trigger:event'
+  | 'trigger:app'
   | 'trigger:reminder'
+  | 'trigger:change_request'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
   | 'system:secret-submitted'
   | 'system:connector-connected'
+  | 'system:artifact-comment'
   /** A message another participant posted in a room the session joined (`projects/rooms`). */
   | 'system:room-message'
+  /** A background subagent finished a turn: its report, delivered into the parent (`projects/subagent-notice.ts`). */
+  | 'system:subagent-finished'
+  /** A cross-session message (`send_message`) or its idle notice (`projects/peer-messages`). */
+  | 'system:peer-message'
   /** The continuation of a turn a provider-originated `runtime_gone` cut short
    *  when no `continue_session` row took the turn over — the session's own
    *  initial prompt, or an unattended session's row that could not be requeued
@@ -38,12 +47,22 @@ export type SessionLifecyclePostCreateAction =
       platform: 'slack' | 'telegram' | string;
       workspaceId: string;
       threadId: string;
+      /**
+       * The thread-create claim this create holds (`channels/core/threads.ts`):
+       * its `chat_event_dedup` key and owner token (the claim's `expires_at`,
+       * ISO). Freed after the bind or when the create is given up. Absent on
+       * Slack and Teams binds, and on commands queued before it existed.
+       */
+      createClaim?: { key: string; token: string };
     }
   | {
       type: 'deliver_prompt';
       source: SessionInvocationSource;
       text: string;
       userId?: string | null;
+      /** A channel message's files, and the model its image needs. Absent on older rows and on text. */
+      parts?: PromptPartWire[];
+      overrides?: PromptOverridesWire;
     }
   | {
       /** Resolve at execution time so queued creates never capture stale access. */
@@ -72,6 +91,7 @@ export type SessionLifecycleStatus =
   | 'deleted';
 
 export interface CreateSessionCommand {
+  artifactId?: string;
   /** Internal retained-upload authority from an already accepted create command. */
   attachmentSourceCommandId?: string;
   /**
@@ -102,6 +122,7 @@ export interface CreateSessionCommand {
   apiKeyType?: string | null;
   inSession?: boolean | null;
   callerSessionId?: string | null;
+  parentActor?: Actor;
 }
 
 export interface QueuedCreateSessionPayload {
@@ -120,6 +141,7 @@ export interface QueuedCreateSessionPayload {
   apiKeyType?: string | null;
   inSession?: boolean | null;
   callerSessionId?: string | null;
+  parentActor?: Actor;
 }
 
 export interface ContinueSessionCommand {
@@ -154,8 +176,6 @@ export interface ContinueSessionCommand {
   materializationKey?: string;
   /** Persist the message without starting an agent loop (OpenCode `noReply`). */
   noReply?: boolean;
-  /** Skip legacy first-message repair only for the pending-first row itself. */
-  isPendingFirstPrompt?: boolean;
   /** `userId` is the person who sent this prompt: the session token acts as
    *  them from this turn on (`bindSessionTurnIdentity`). Set by the prompt
    *  route for a non-agent caller; absent keeps the token's identity. */
@@ -167,14 +187,6 @@ export interface ContinueSessionCommand {
    * the Stop itself (`holdInboxPrompts`) and released by the next send.
    */
   queuedAt?: Date;
-}
-
-/** JSON metadata used to gate the one-time repair of pre-materialization prompts. */
-export interface LegacyInlineAttachmentRepairMetadata extends Record<string, unknown> {
-  pending_prompt?: {
-    attachment_names?: unknown;
-  };
-  legacy_inline_attachments_repaired_at?: unknown;
 }
 
 export interface StartSessionCommand {

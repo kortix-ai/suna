@@ -1,6 +1,8 @@
 # Dependencies
 node_modules/
 **/node_modules/
+# A node_modules symlink is a file, which the patterns above miss.
+**/node_modules
 .pnpm-store/
 
 # Build outputs
@@ -189,3 +191,11 @@ core.[0-9]*
 
 # Kortix Capture (apps/capture): Cargo build output
 apps/capture/target/
+
+# Local planning notes at the repo root: never committed (specs go in a skill reference or the PR body)
+/plan.md
+/memory-plan.md
+
+# Python bytecode (starter skill scripts write it during tests)
+__pycache__/
+*.pyc

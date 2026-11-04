@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  IMAGE_WAKING_ATTEMPTS,
+  imageWaitedOut,
+  imageWakingRefetchInterval,
   UPLOADED_FILE_READ_MAX_RETRIES,
   UPLOADED_FILE_READ_RETRY_DELAY_MS,
   fileReadRetryDelayMs,
@@ -138,5 +141,24 @@ describe('sandboxWakingRefetchInterval', () => {
   test('no error means nothing to poll for', () => {
     expect(sandboxWakingRefetchInterval(null, false)).toBe(false);
     expect(sandboxWakingRefetchInterval(undefined, true)).toBe(false);
+  });
+});
+
+describe('the image wait backs off and gives up (R38)', () => {
+  const notReady = new Error('[kortix-runtime] Server URL not ready — sandbox is still loading');
+  test('a runtime still starting is polled at 1, 2, 4, 8, then every 10 s, and given up after about 2 min', () => {
+    const intervals = Array.from({ length: 17 }, (_, i) => imageWakingRefetchInterval(notReady, i + 1));
+    expect(intervals.slice(0, 6)).toEqual([1000, 2000, 4000, 8000, 10_000, 10_000]);
+    const waited = intervals.filter((ms): ms is number => typeof ms === 'number').reduce((sum, ms) => sum + ms, 0);
+    expect(waited).toBeGreaterThanOrEqual(120_000);
+    expect(waited).toBeLessThanOrEqual(130_000);
+    expect(intervals.at(-1)).toBe(false);
+    expect(imageWaitedOut(notReady, IMAGE_WAKING_ATTEMPTS)).toBe(false);
+    expect(imageWaitedOut(notReady, IMAGE_WAKING_ATTEMPTS + 1)).toBe(true);
+  });
+  test('any other error, or none, is never polled', () => {
+    expect(imageWakingRefetchInterval(new Error('Failed to read file (500)'), 1)).toBe(false);
+    expect(imageWakingRefetchInterval(null, 0)).toBe(false);
+    expect(imageWaitedOut(new Error('Failed to read file (500)'), 99)).toBe(false);
   });
 });

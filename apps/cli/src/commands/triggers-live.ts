@@ -12,7 +12,7 @@ import {
 } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
 import { checkEventConfig, eventNextStep, surfaceEventTriggerError } from './triggers-events.ts';
-import { parseEventFlags, parseFilterFlags, parseMonitorFlags, parseRunCapFlags, strayEventFlag } from './triggers-manifest.ts';
+import { appFlagProblem, scheduleFlagProblem, parseEventFlags, parseFilterFlags, parseRunCapFlags, MONITOR_REMOVED, strayEventFlag } from './triggers-manifest.ts';
 
 // ── The LIVE path (--apply, and every `set`) ───────────────────────────────
 //
@@ -73,17 +73,20 @@ export async function triggersAddLive(
 ): Promise<number> {
   if (!slug) return missing('a trigger slug');
   const type = (tf.type ?? 'cron').toLowerCase();
-  if (type !== 'cron' && type !== 'webhook' && type !== 'monitor' && type !== 'event') {
-    return fail('--type must be cron, webhook, monitor, or event.');
+  if (type === 'monitor') return fail(MONITOR_REMOVED);
+  if (type !== 'cron' && type !== 'webhook' && type !== 'event' && type !== 'app') {
+    return fail('--type must be cron, webhook, event, or app.');
   }
-  if (!tf.prompt) return fail('--prompt is required.');
+  if (!tf.prompt && !tf.targetApp) return fail('--prompt is required (or --target-app).');
   if (type !== 'event') {
-    const stray = strayEventFlag(tf);
+    const stray = strayEventFlag(tf, type);
     if (stray) return fail(stray);
   }
+  const appProblem = appFlagProblem(type, tf) ?? scheduleFlagProblem(type, tf);
+  if (appProblem) return fail(appProblem);
   if (tf.cron && tf.runAt) return fail('--cron and --run-at are exclusive — pass one.');
-  if (type === 'cron' && !tf.cron && !tf.runAt) {
-    return fail('cron triggers need --cron "<6-field expr>" or --run-at <iso>.');
+  if (type === 'cron' && !tf.cron && !tf.runAt && !tf.every) {
+    return fail('cron triggers need --cron "<6-field expr>", --every <dur> or --run-at <iso>.');
   }
   if (type === 'webhook' && !tf.secretEnv) {
     return fail('webhook triggers need --secret-env <NAME>.');
@@ -104,7 +107,8 @@ export async function triggersAddLive(
     slug,
     name: tf.name ?? slug,
     type,
-    prompt_template: tf.prompt,
+    ...(tf.prompt ? { prompt_template: tf.prompt } : {}),
+    ...(tf.targetApp ? { target: { app: tf.targetApp, ...(tf.targetPath ? { path: tf.targetPath } : {}) } } : {}),
     enabled: !disabled,
     ...(tf.agent ? { agent: tf.agent } : {}),
     ...(tf.model ? { model: tf.model } : {}),
@@ -112,12 +116,17 @@ export async function triggersAddLive(
     ...(access ? { session_access: access } : {}),
     ...(filter ? { filter } : {}),
   };
-  if (type === 'cron') {
+  if (type === 'cron' && tf.every) {
+    body.every = tf.every;
+  } else if (type === 'cron') {
     if (tf.runAt) body.run_at = tf.runAt;
     else body.cron = tf.cron;
     body.timezone = tf.timezone ?? 'UTC';
   } else if (type === 'webhook') {
     body.secret_env = tf.secretEnv;
+  } else if (type === 'app') {
+    body.app = tf.app;
+    if (tf.event && tf.event !== '*') body.filter = { ...(filter ?? {}), 'event.name': tf.event };
   } else if (type === 'event') {
     const parsed = parseEventFlags(tf);
     if ('error' in parsed) return fail(parsed.error);
@@ -126,19 +135,6 @@ export async function triggersAddLive(
     if (parsed.account) body.event_account = parsed.account;
     if (parsed.source) body.event_source = parsed.source;
     body.event = parsed.event;
-  } else {
-    // A monitor rejects cron/webhook wiring outright, so send only its own
-    // fields — the same validation `kortix triggers add` runs locally.
-    const monitor = parseMonitorFlags(tf);
-    if ('error' in monitor) return fail(monitor.error);
-    body.run = monitor.run;
-    body.mode = monitor.mode;
-    if (monitor.intervalSeconds !== null) {
-      body.interval = formatDurationSeconds(monitor.intervalSeconds);
-    }
-    if (monitor.expectEventWithinSeconds !== null) {
-      body.expect_event_within = formatDurationSeconds(monitor.expectEventWithinSeconds);
-    }
   }
 
   const ctx = await resolveProjectContext(opts);

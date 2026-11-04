@@ -33,8 +33,8 @@ type SessionRouteProps = {
 export async function generateMetadata({ params }: SessionRouteProps): Promise<Metadata> {
   const { id: projectId, sessionId } = await params;
   return {
-    // `absolute` bypasses the root layout's `%s | Kortix` template: the tab
-    // reads "<session name> — Kortix", and a session named "Kortix" must not
+    // `absolute` bypasses the root layout's `%s | Kortix CompanyOS` template: the tab
+    // reads "<session name> — Kortix CompanyOS", and a session named "Kortix" must not
     // come out as "Kortix | Kortix".
     title: { absolute: await resolveSessionTabTitle(projectId, sessionId) },
   };

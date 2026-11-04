@@ -10,7 +10,8 @@
 export type Step = ({ text: string } | { tool: string; args: Record<string, unknown> }) & { reasoning?: number; thinking?: string }
 export type ChatBody = { messages: unknown[]; tools?: unknown[] }
 
-export function startFakeModel(modelId = 'test-model') {
+/** `catalog` is what `GET /models?scope=picker` serves: the live catalog pi sizes models from. */
+export function startFakeModel(modelId = 'test-model', catalog: Record<string, unknown> = {}) {
   let script: Step[] = []
   let calls = 0
   const bodies: ChatBody[] = []
@@ -21,7 +22,9 @@ export function startFakeModel(modelId = 'test-model') {
     hostname: '127.0.0.1',
     idleTimeout: 0,
     async fetch(req) {
-      if (req.method !== 'POST' || !new URL(req.url).pathname.endsWith('/chat/completions')) return new Response('not found', { status: 404 })
+      const url = new URL(req.url)
+      if (req.method === 'GET' && url.pathname.endsWith('/models') && url.searchParams.get('scope') === 'picker') return Response.json({ models: catalog })
+      if (req.method !== 'POST' || !url.pathname.endsWith('/chat/completions')) return new Response('not found', { status: 404 })
       bodies.push((await req.json()) as ChatBody)
       const step = script.shift() ?? { text: 'OK' }
       calls += 1

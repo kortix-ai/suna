@@ -206,7 +206,7 @@ Enter starts a new session with that prompt. The same bar opens from
   main process, brings the app window forward, and pokes it
   (`kortix:quick-entry`, no text). The web app pulls the prompt once with the
   sender-gated `quick_entry_take` command and submits it from the project home
-  composer: the same agent, model, billing gate and warm session as a typed
+  composer: the same agent, model and billing gate as a typed
   message (`apps/web/src/components/desktop/desktop-quick-entry.tsx`). A
   window that is still loading, or signed out, takes it when the app mounts.
   An untaken prompt expires after 10 minutes.
@@ -441,7 +441,7 @@ section "Windows signing setup".
 
 The installed app self-updates via **electron-updater**, reading the `vX.Y.Z`
 **GitHub Releases** as its feed (the `publish: github` block in
-`electron-builder.yml` bakes an `app-update.yml` pointing at `kortix-ai/suna`).
+`electron-builder.yml` bakes an `app-update.yml` pointing at `kortix-ai/CompanyOS`).
 
 Flow (`src/updater.js`, wired from `src/main.js`):
 
@@ -460,6 +460,30 @@ Squirrel.Mac installs from. The dmg/exe/AppImage is the first-install download;
 the zip + yml are what the updater consumes. CI (`deploy-prod.yml` for prod,
 `desktop.yml` for dev and staging) builds the mac zip target and uploads all of
 these to the release.
+
+### A release ships a desktop update only when the desktop changed
+
+The desktop version is the release version of the last release that **built**
+the app, not of every release. `deploy-prod.yml` `desktop-plan` computes the
+desktop fingerprint (`scripts/release-fingerprint.mjs`) and compares it with
+the `DESKTOP-FINGERPRINT` asset of the latest `vX.Y.Z` release:
+
+| Fingerprint | Release gets | Installed apps |
+|---|---|---|
+| equal | the previous installers, `latest*.yml` and `DESKTOP-SHA256SUMS`, copied byte for byte | keep their version, no update prompt |
+| different, missing, or the previous set is partial | new signed installers stamped with this release's version | update and prompt "Restart now" |
+
+The fingerprint covers every tracked file here and in `packages/agent-tunnel`
+except tests and READMEs, the dependency closure both resolve in
+`pnpm-lock.yaml` (`@types/*` excluded), the `build-desktop` job, and `.npmrc`.
+A lockfile change elsewhere in the monorepo does not change it. Replayed over
+v0.14.0–v0.14.12, 6 of the 12 releases would have shipped no desktop update.
+
+Secrets baked at build time (the Sentry DSN, the signing certificates) are
+outside the fingerprint. After rotating one, force a build:
+`gh workflow run deploy-prod.yml --ref prod -f rebuild_desktop=true`. Print the
+fingerprint and its parts locally with
+`bun apps/desktop-electron/scripts/release-fingerprint.mjs --explain`.
 
 Each deployment's `/download` hands out the build that opens it. The web app keys
 the channel on its backend host (`deploymentChannel()` in

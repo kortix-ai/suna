@@ -35,7 +35,7 @@ mock.module('./git', () => ({
 }));
 
 const { loadManifestForEdit } = await import('./triggers');
-const { serializeManifest } = await import('../triggers');
+const { parseManifestString, serializeManifest } = await import('../triggers');
 const { findProjectTriggerBySlug } = await import('../triggers');
 const { DEFAULT_AGENT_SENTINEL, extractAgents, resolveGovernedAgentGrant, loadProjectAgents } =
   await import('../agents');
@@ -45,25 +45,18 @@ const fakeProject = (overrides: Record<string, unknown> = {}) =>
   ({
     projectId: 'proj_blank',
     name: 'blank-project',
-    manifestPath: 'kortix.toml',
+    manifestPath: 'kortix.yaml',
     defaultBranch: 'main',
     metadata: { require_declared_agents: true },
     ...overrides,
   }) as unknown as Parameters<typeof loadManifestForEdit>[0];
 
 describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk yet)', () => {
-  test('synthesizes a valid v2 manifest with a declared, resolvable default agent', async () => {
+  test('synthesizes a valid manifest with a declared, resolvable default agent', async () => {
     manifestFile = null; // "brand-new repo" — nothing committed yet
 
     const manifest = await loadManifestForEdit(fakeProject());
-
-    // The bug: this used to synthesize schemaVersion 1 (KNOWN_SCHEMA_VERSION),
-    // which the v2-only agent-config writers (applyAgentBlockV2 /
-    // applyDefaultAgentV2) hard-refuse — every write 400'd before a real
-    // manifest could ever land in git, so the project was permanently stuck
-    // un-declarable.
-    expect(manifest.schemaVersion).toBe(2);
-    expect(manifest.format).toBe('yaml');
+    expect(manifest.path).toBe('kortix.yaml');
 
     const defaultAgent = manifest.raw.default_agent;
     expect(typeof defaultAgent).toBe('string');
@@ -73,26 +66,17 @@ describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk 
     expect(agents).toBeTruthy();
     expect(agents?.[defaultAgent as string]).toBeTruthy();
 
-    // `kortix_version` must be embedded INSIDE `raw`, not just carried on the
-    // `schemaVersion` wrapper — `applyDefaultAgentV2`/`applyAgentBlockV2`
-    // (./agent-config-v2.ts) call `validateManifest(manifest.raw, format)`
-    // directly on THIS object (never through `serializeManifest`, which
-    // re-injects `kortix_version` from `schemaVersion` on the way OUT). A
-    // synthesized manifest missing this key validates as unversioned and
-    // 400s "kortix_version is required" the moment a caller tries to set the
-    // default agent or edit an agent block — the exact bug this regression
-    // guard exists for (see unit-agent-config-v2.test.ts's "raw path"
-    // describe block for the write-side proof).
-    expect(manifest.raw.kortix_version).toBe(2);
+    // The manifest has no version: nothing writes `kortix_version`.
+    expect(manifest.raw.kortix_version).toBeUndefined();
 
     // Also prove it end-to-end through the serialize → re-parse → validate
-    // pipeline `commitManifest` runs once the manifest is actually committed
-    // — a v2 manifest must declare >=1 agent AND a default_agent that
-    // resolves to one of them (validateAgentsV2 / validateDefaultAgentV2) —
-    // exactly the two facts the declared-agent session-create check needs.
+    // pipeline `commitManifest` runs once the manifest is actually committed:
+    // the default_agent resolves to a declared agent, the fact the
+    // declared-agent session-create check needs.
     const committedText = serializeManifest(manifest);
-    const reparsed = parseManifestText(committedText, manifest.format);
-    const result = validateManifest(reparsed, manifest.format);
+    expect(committedText).not.toContain('kortix_version');
+    const reparsed = parseManifestText(committedText);
+    const result = validateManifest(reparsed);
     const errors = result.issues.filter((issue) => issue.severity === 'error');
     expect(errors).toEqual([]);
 
@@ -122,7 +106,7 @@ describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk 
       projectId: 'proj_blank',
       repoUrl: 'https://github.com/acme/blank.git',
       defaultBranch: 'main',
-      manifestPath: 'kortix.toml',
+      manifestPath: 'kortix.yaml',
       gitAuthToken: null,
     });
     const governed = resolveGovernedAgentGrant(DEFAULT_AGENT_SENTINEL, loaded, {
@@ -132,7 +116,7 @@ describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk 
     expect(governed.ok).toBe(true);
     if (!governed.ok) return;
     expect(governed.grant).toEqual({
-      agent: 'kortix',
+      agent: 'worker',
       connectors: 'all',
       permissions: 'all',
       env: 'all',
@@ -140,17 +124,16 @@ describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk 
   });
 
   // GAP 2 (dev-live repro): `applyDefaultAgentV2`/`applyAgentBlockV2` validate
-  // `manifest.raw` DIRECTLY (`validateManifest(manifest.raw, format)`), never
-  // through `serializeManifest`/re-parse. Runs the actual write functions
-  // PUT /default-agent and PUT /agents/:name/config call, against the actual
-  // object `loadManifestForEdit` hands them for a blank project — the exact
-  // path that 400'd `kortix_version is required` even after #4974 merged.
+  // `manifest.raw` DIRECTLY, never through `serializeManifest`/re-parse. Runs
+  // the actual write functions PUT /default-agent and PUT /agents/:name/config
+  // call, against the actual object `loadManifestForEdit` hands them for a
+  // blank project.
   test('gap 2: applyDefaultAgentV2 and applyAgentBlockV2 both validate the raw manifest loadManifestForEdit hands them', async () => {
     manifestFile = null;
 
     const manifest = await loadManifestForEdit(fakeProject());
 
-    const defaultAgentWrite = applyDefaultAgentV2(manifest, 'kortix');
+    const defaultAgentWrite = applyDefaultAgentV2(manifest, 'worker');
     expect(defaultAgentWrite.ok).toBe(true);
 
     const blockWrite = applyAgentBlockV2(manifest, 'release-bot', {
@@ -160,22 +143,53 @@ describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk 
     expect(blockWrite.ok).toBe(true);
     if (!blockWrite.ok) return;
     expect(Object.keys(blockWrite.raw.agents as Record<string, unknown>).sort()).toEqual([
-      'kortix',
       'release-bot',
+      'worker',
     ]);
   });
 
-  test('an already-committed manifest is read as-is, untouched (v1 stays v1)', async () => {
-    manifestFile = {
-      path: 'kortix.toml',
-      content: 'kortix_version = 1\n\n[project]\nname = "legacy"\n',
-    };
+  test('an already-committed manifest is read as-is, untouched', async () => {
+    manifestFile = { path: 'kortix.yml', content: 'project:\n  name: existing\n' };
 
     const manifest = await loadManifestForEdit(fakeProject({ metadata: {} }));
 
-    expect(manifest.schemaVersion).toBe(1);
-    expect(manifest.format).toBe('toml');
-    expect(manifest.raw.agents).toBeUndefined();
+    expect(manifest.path).toBe('kortix.yml');
+    expect(manifest.raw).toEqual({ project: { name: 'existing' } });
+  });
+});
+
+describe('serializeManifest — the obsolete kortix_version line', () => {
+  test('a trigger write drops `kortix_version: 3` and keeps the comments', () => {
+    const manifest = parseManifestString(
+      [
+        '# Project manifest: keep this comment.',
+        'kortix_version: 3',
+        'project:',
+        '  name: existing',
+        'triggers:',
+        '  # The nightly report.',
+        '  - slug: nightly',
+        '    type: cron',
+        '    cron: "0 0 3 * * *"',
+        '    prompt: Report status',
+        '',
+      ].join('\n'),
+    );
+    const triggers = manifest.raw.triggers as Array<Record<string, unknown>>;
+    manifest.raw.triggers = [...triggers, { slug: 'weekly', type: 'cron', cron: '0 0 3 * * 1', prompt: 'Weekly report' }];
+
+    const written = serializeManifest(manifest);
+
+    expect(written).not.toContain('kortix_version');
+    expect(written).toContain('# Project manifest: keep this comment.');
+    expect(written).toContain('  # The nightly report.');
+    expect(parseManifestText(written)).toEqual({
+      project: { name: 'existing' },
+      triggers: [
+        { slug: 'nightly', type: 'cron', cron: '0 0 3 * * *', prompt: 'Report status' },
+        { slug: 'weekly', type: 'cron', cron: '0 0 3 * * 1', prompt: 'Weekly report' },
+      ],
+    });
   });
 });
 
@@ -188,7 +202,7 @@ describe('findProjectTriggerBySlug — replica mirror convergence', () => {
       return {
         path: 'kortix.yaml',
         content:
-          'kortix_version: 2\nproject:\n  name: current\ntriggers:\n  - slug: daily\n    name: Daily\n    type: cron\n    cron: "0 0 3 * * *"\n    prompt: Report status\n',
+          'project:\n  name: current\ntriggers:\n  - slug: daily\n    name: Daily\n    type: cron\n    cron: "0 0 3 * * *"\n    prompt: Report status\n',
       };
     };
 
@@ -209,13 +223,13 @@ describe('findProjectTriggerBySlug — replica mirror convergence', () => {
       if (!opts?.forceRefresh) {
         return {
           path: 'kortix.yaml',
-          content: 'kortix_version: 2\nproject:\n  name: stale\ntriggers: []\n',
+          content: 'project:\n  name: stale\ntriggers: []\n',
         };
       }
       return {
         path: 'kortix.yaml',
         content:
-          'kortix_version: 2\nproject:\n  name: fresh\ntriggers:\n  - slug: daily\n    name: Daily\n    type: cron\n    cron: "0 0 3 * * *"\n    prompt: Report status\n',
+          'project:\n  name: fresh\ntriggers:\n  - slug: daily\n    name: Daily\n    type: cron\n    cron: "0 0 3 * * *"\n    prompt: Report status\n',
       };
     };
 
@@ -235,7 +249,7 @@ describe('findProjectTriggerBySlug — replica mirror convergence', () => {
       forceRefreshValues.push(opts?.forceRefresh);
       return {
         path: 'kortix.yaml',
-        content: 'kortix_version: 2\nproject:\n  name: stale\ntriggers: []\n',
+        content: 'project:\n  name: stale\ntriggers: []\n',
       };
     };
 

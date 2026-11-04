@@ -251,6 +251,28 @@ export function isInjectedWalletProviderWriteNoise(input: {
   );
 }
 
+/**
+ * A tag that calls Google Publisher Tag (`googletag`) before its library
+ * loads: `googletag is not defined` (V8, Gecko) or `Can't find variable:
+ * googletag` (WebKit). Better Stack, Kortix Frontend prod, 2026-10-27
+ * (KRTX-3549): 71 events in 2 s from one `<anonymous>` frame, 0 users. Kortix
+ * never loads or calls `googletag`; its Google Tag Manager writes only to
+ * `dataLayer`. A frame in our bundles or resolved first-party source keeps
+ * reporting.
+ */
+const GOOGLETAG_UNDEFINED_MESSAGE = /^(?:googletag is not defined|Can't find variable: googletag)$/;
+
+export function isGoogletagUndefinedNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  return (
+    GOOGLETAG_UNDEFINED_MESSAGE.test(stripErrorWrappers(normalizeString(input.message))) &&
+    !sourcesOf(input).some((source) => isBrowserBundleSource(source) || isFirstPartyResolvedSource(source))
+  );
+}
+
 /** Vercel toolbar frames have a reserved source path outside app bundles. */
 export function isVercelLiveFeedbackNoise(input: {
   filename?: unknown;
@@ -268,5 +290,6 @@ export const INJECTED_SCRIPT_RULES: readonly NoiseRule[] = [
   { id: 'redefine-webdriver', appliesTo: 'both', match: isRedefineWebdriverNoise },
   { id: 'redefine-wallet-provider', appliesTo: 'both', match: isRedefineInjectedWalletNoise },
   { id: 'wallet-provider-write', appliesTo: 'both', match: isInjectedWalletProviderWriteNoise },
+  { id: 'googletag-undefined', appliesTo: 'both', match: isGoogletagUndefinedNoise },
   { id: 'vercel-live-feedback', appliesTo: 'both', match: isVercelLiveFeedbackNoise },
 ];

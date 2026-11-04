@@ -380,7 +380,7 @@ describe('group labels are plain language', () => {
     'bash',
     'web_search',
     'scrape_webpage',
-    'image_gen',
+    'video_gen', // image_gen stands alone (NO_GROUP_ACTIVITY_TOOLS): it never forms a group row
     'todo_write',
     'agent_task_create',
     'session_list',

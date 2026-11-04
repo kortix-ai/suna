@@ -68,6 +68,17 @@ export function normalizeGoTrueError(status: number, raw: unknown): { error: str
   return { error, error_description: description };
 }
 
+async function decodeResponseBody(res: Response): Promise<unknown> {
+  const text = await res.text().catch(() => '');
+  let parsed: unknown = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    parsed = text;
+  }
+  return parsed;
+}
+
 export async function gotrue<T = Record<string, unknown>>(
   path: string,
   init: {
@@ -104,13 +115,7 @@ export async function gotrue<T = Record<string, unknown>>(
       body: { error: 'auth_upstream_unreachable', error_description: (err as Error).message } as GoTrueResult<T>['body'],
     };
   }
-  const text = await res.text().catch(() => '');
-  let parsed: unknown = null;
-  try {
-    parsed = text ? JSON.parse(text) : null;
-  } catch {
-    parsed = text;
-  }
+  const parsed = await decodeResponseBody(res);
   if (res.ok) return { ok: true, status: res.status, body: (parsed ?? {}) as GoTrueResult<T>['body'] };
   return { ok: false, status: res.status, body: normalizeGoTrueError(res.status, parsed) as GoTrueResult<T>['body'] };
 }
@@ -133,13 +138,7 @@ export async function gotrueAuthorizeUrl(query: Record<string, string | undefine
   if ((res.status === 302 || res.status === 303 || res.status === 301) && location) {
     return { ok: true, status: 200, body: { url: location } };
   }
-  const text = await res.text().catch(() => '');
-  let parsed: unknown = null;
-  try {
-    parsed = text ? JSON.parse(text) : null;
-  } catch {
-    parsed = text;
-  }
+  const parsed = await decodeResponseBody(res);
   return { ok: false, status: res.ok ? 502 : res.status, body: normalizeGoTrueError(res.status, parsed) as never };
 }
 

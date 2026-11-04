@@ -60,56 +60,123 @@ issue. It never closes a ticket, and it never tells the customer anything.
 ## How it works
 
 <Steps>
-<Step title="Run every 15 minutes, from scratch">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires every 15 minutes. Each firing spawns a fresh
-**session** with no memory of the last one — the agent re-checks the entire
-open queue against Plain's current state rather than trusting what it
-concluded 15 minutes ago. Nothing carries over, and nothing is missed because
-a prior run's notes went stale.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the escalation-routing skill and the
+15-minute trigger, and opens a change request for you to review.
+Prefer clicks? Choose **Use this template** instead.
 
-</Step>
-<Step title="Give the agent the escalation rules">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a support escalation agent in this project.
 
-What counts as an escalation lives as a **skill**: the SLA targets per
-severity tier, the VIP account list, what qualifies as high severity, and the
-routing table mapping ticket type to owning team. When we tighten an SLA
-target or add an account to the VIP list, we update the skill and the next
-sweep applies it.
+1. Create the agent agents/escalation-manager.md. Its job is to find open Plain tickets that need to jump the line, route them to the right team, and alert the escalation channel. It may use the Linear connector, the Slack channel, and the PLAIN_API_KEY secret.
 
-</Step>
-<Step title="Connect the queue, the tracker, and the channel">
+2. Create the skill skills/escalation-routing/SKILL.md with these rules:
+   - A ticket escalates when any one of three criteria matches: an SLA breach, a VIP account, or high severity. Record every reason that matches.
+   - The SLA targets are: Urgent 1h first response and 4h resolution, High 4h first response and 1 business day resolution, Normal 1 business day first response.
+   - High severity means an outage, data loss, a security issue, or a paying customer blocked in a core workflow.
+   - Route billing disputes to Billing, security concerns to Security, bugs and outages to Engineering, and VIP issues with no technical fault to Customer Success.
+   - For Engineering escalations, check for an existing linked issue first, then open one in the Engineering Linear team and link it back to the Plain ticket.
+   - Never close or resolve a ticket, and never write anything the customer can see.
 
-Through scoped **connectors** and **secrets**, brokered server-side so no raw
-credential reaches the model, the agent:
+3. Add a cron trigger escalation-sweep to kortix.yaml. It runs the escalation-manager agent every 15 minutes with the prompt "Load the escalation-routing skill and run one complete escalation sweep over the open Plain queue."
 
-- **Reads and routes tickets in Plain** — pulls the open queue, checks SLA
-  timers and account metadata, and tags or assigns a qualifying ticket to the
-  right internal team. It never resolves or closes a ticket.
-- **Opens a linked issue in Linear** — when a ticket needs engineering work,
-  it files an issue in the engineering team's tracker with the ticket's
-  context attached, and links the two records to each other.
-- **Posts to Slack** — one alert per escalation in the escalation channel:
-  which ticket, why it escalated, which team it went to, and the linked issue
-  if one was opened.
+4. Tell me which of these connectors are not connected yet.
+
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Set the guardrails">
+<Step title="Connect your tools">
 
-The agent's write access to Plain is scoped to **routing, not resolving** — it
-can tag and assign a ticket, but it cannot close one or mark it resolved. It
-never drafts or sends anything to the customer, and it never states or
-implies a resolution timeline. The only things that are written back out are the
-Plain routing update, the linked Linear issue, and the Slack alert.
+Open **Connectors** in your project and connect Linear, then add your Plain API
+key as the `PLAIN_API_KEY` secret and connect Slack under **Channels**.
+Credentials are brokered server-side and never enter the agent's machine.
+
+<ToolList>
+  <ToolNeed name="Plain" domain="plain.com" tag="Required" alternatives={[['Zendesk', 'zendesk.com'], ['Intercom', 'intercom.com']]}>
+    Reads the open queue and routes each escalated ticket.
+  </ToolNeed>
+  <ToolNeed name="Linear" domain="linear.app" tag="Required" alternatives={[['Jira', 'atlassian.com'], ['GitHub', 'github.com']]}>
+    Opens a linked issue when a ticket needs engineering.
+  </ToolNeed>
+  <ToolNeed name="Slack" domain="slack.com" tag="Required" alternatives={[['Microsoft Teams', 'teams.microsoft.com']]}>
+    Posts one alert per escalation with the reason and links.
+  </ToolNeed>
+</ToolList>
 
 </Step>
-<Step title="Route, link, and alert">
+<Step title="Run it once with this prompt">
 
-With that in place, every 15 minutes the queue gets rechecked against the
-current SLA clock, the current VIP list, and the current severity of every
-open ticket. Whatever qualifies gets routed to the right team, gets a linked
-Linear issue if engineering needs to see it, and shows up in the escalation
-channel with the reason attached. The team decides what happens from there.
+Merge the change request, then start a session with the **escalation-manager** agent
+and send this prompt. Check the routing and the linked issues before
+you let the schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one escalation sweep over the open Plain queue.
+
+1. Check every open ticket against the SLA targets, the VIP list and the high-severity bar in the escalation-routing skill.
+2. Tag or assign each qualifying ticket to the team that owns it. Leave every other ticket alone.
+3. For each Engineering escalation, check for an existing linked issue. If there is none, open one in the Engineering Linear team and link it back to the ticket.
+4. Post one alert per escalation to #support-escalations: the ticket link, every matching reason, the routed team, and the Linear issue if you opened one.
+5. Never close or resolve a ticket, and never reply to the customer.`}
+/>
+
+</Step>
+<Step title="Let the 15-minute schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every 15 minutes, each run in a new session on its own cloud computer.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: escalation-sweep
+    name: Escalation sweep
+    on:
+      cron: "0 */15 * * * *"
+    run:
+      agent: escalation-manager
+      prompt: Load the escalation-routing skill and run one complete escalation sweep over the open Plain queue.`}
+/>
+
+</Step>
+<Step title="Route and alert, never close a ticket">
+
+The agent can tag and assign a ticket, open a linked Linear issue and post to
+Slack. It cannot close a ticket, change its status or mark it resolved. It
+never drafts or sends anything to the customer, and never states when or how
+an issue will be fixed. The team decides what happens next.
+
+</Step>
+<Step title="Read the escalation alerts">
+
+Each escalation gets one message in the channel. This is what a sweep looks like in the session:
+
+<ExampleRun
+  title="Escalation sweep · 09:45"
+  message="Load the escalation-routing skill and run one complete escalation sweep over the open Plain queue."
+  worked="Worked for 1m 08s"
+  tools={[
+    'plain · list open tickets',
+    'plain · assign ticket × 3',
+    'linear · search issues',
+    'linear · create issue',
+    'plain · add internal note',
+    'slack · post message × 3 → #support-escalations',
+  ]}
+  note="Illustrative example. Your counts depend on your queue."
+>
+  Checked **47** open tickets and escalated **3**. Two breached the Urgent
+  SLA, and one is a VIP account reporting failed exports. Opened **1** linked
+  Linear issue in Engineering and routed the other two to Billing and
+  Customer Success.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -120,6 +187,25 @@ channel with the reason attached. The team decides what happens from there.
   routes the ticket, opens a **linked Linear issue** for engineering work, and
   posts to Slack — it never closes a ticket or promises the customer anything.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Warn before the breach"
+  code="Also alert #support-escalations when a ticket has less than 25 percent of its SLA window left, marked as at risk rather than breached."
+/>
+
+<CopyBlock
+  title="Daily escalation digest"
+  code="Every weekday at 17:00, post a summary to #support-escalations of today's escalations by reason and by team, with any ticket still unassigned."
+/>
+
+<CopyBlock
+  title="Keep the VIP list current"
+  code="Each Monday, list the accounts in the VIP list with no tickets in the last 90 days and ask me in Slack whether to keep them."
+/>
 
 ## Guardrails
 

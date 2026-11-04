@@ -1,6 +1,5 @@
 /**
- * Reporting a question and RESOLVING it are separate decisions, for both
- * harness adapters.
+ * Reporting a question and RESOLVING it are separate decisions.
  *
  * - Every session REPORTS `question.asked` to apps/api (`POST …/turn-question`),
  *   so the ask is persisted and survives the box being parked.
@@ -12,16 +11,14 @@
  * - A Teams session is a channel. Reading only the Slack keys once left every
  *   Teams question blocked until the box parked.
  *
- * One fake server plays apps/api and OpenCode, so each row asserts the real
- * requests the adapter sends.
+ * One fake server plays apps/api, so each row asserts the real requests the
+ * relay sends.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 
-import type { OpenCodeConfig } from '@/harness/open-code/config'
-import { relayQuestionToApi } from '@/harness/open-code/question-relay'
 import { relayQuestion } from '@/harness/shared/turn-relay'
 
-type Recorded = { method: string; path: string; search: string; auth: string | null; body: any }
+type Recorded = { method: string; path: string; auth: string | null; body: any }
 
 let server: ReturnType<typeof Bun.serve>
 let requests: Recorded[] = []
@@ -35,7 +32,6 @@ beforeAll(() => {
       requests.push({
         method: req.method,
         path: url.pathname,
-        search: url.search,
         auth: req.headers.get('authorization'),
         body: text ? JSON.parse(text) : null,
       })
@@ -88,48 +84,6 @@ const ROWS: Array<[string, Record<string, string>, 'Slack' | 'Teams' | null]> = 
   ['Teams conversation', { MS_TEAMS_CONVERSATION_ID: 'conv-test' }, 'Teams'],
   ['Teams tenant', { MS_TEAMS_TENANT_ID: 'tenant-test' }, 'Teams'],
 ]
-
-describe('OpenCode adapter: relayQuestionToApi', () => {
-  const opencode = { getInternalUrl: () => `http://127.0.0.1:${server.port}` }
-  const cfg = { workspace: '/work space' } as OpenCodeConfig
-
-  test.each(ROWS)('%s: reports the question; releases it only in a channel', async (_name, env, channel) => {
-    Object.assign(process.env, env)
-
-    await relayQuestionToApi(REQUEST, cfg, opencode)
-
-    const reported = requests.filter((r) => r.path === '/v1/projects/proj-1/turn-question')
-    expect(reported).toHaveLength(1)
-    expect(reported[0]!.auth).toBe('Bearer sandbox-token')
-    expect(reported[0]!.body).toEqual({
-      session_id: 'sess-1',
-      request_id: 'que_1',
-      runtime_session_id: 'ses_root',
-      questions: REQUEST.questions,
-    })
-
-    const replies = requests.filter((r) => r.path === '/question/que_1/reply')
-    if (channel === null) {
-      expect(replies).toHaveLength(0)
-      return
-    }
-    expect(replies).toHaveLength(1)
-    expect(replies[0]!.search).toBe('?directory=%2Fwork%20space')
-    const answers = replies[0]!.body.answers as string[][]
-    expect(answers).toHaveLength(REQUEST.questions.length)
-    expect(answers[0]![0]).toContain(`Posted to the ${channel} conversation`)
-    expect(answers[0]![0]).not.toContain(channel === 'Teams' ? 'Slack' : 'Teams')
-  })
-
-  test('without a control plane nothing is reported or released', async () => {
-    delete process.env.KORTIX_API_URL
-    process.env.SLACK_THREAD_TS = '1700000000.000100'
-
-    await relayQuestionToApi(REQUEST, cfg, opencode)
-
-    expect(requests).toHaveLength(0)
-  })
-})
 
 describe('shared relay (pi calls it directly): relayQuestion', () => {
   test.each(ROWS)('%s: reports the question; answers it only in a channel', async (_name, env, channel) => {

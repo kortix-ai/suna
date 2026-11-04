@@ -57,9 +57,9 @@ const TEST_INTERVAL_SECS: Option<&str> = option_env!("KORTIX_CAPTURE_UPDATE_TEST
 const TEST_HEALTH_SECS: Option<&str> = option_env!("KORTIX_CAPTURE_UPDATE_TEST_HEALTH_SECS");
 
 pub const STABLE_URL: &str =
-    "https://github.com/kortix-ai/suna/releases/latest/download/capture-update.json";
+    "https://github.com/kortix-ai/CompanyOS/releases/latest/download/capture-update.json";
 pub const DEV_URL: &str =
-    "https://github.com/kortix-ai/suna/releases/download/capture-dev-latest/capture-update.json";
+    "https://github.com/kortix-ai/CompanyOS/releases/download/capture-dev-latest/capture-update.json";
 
 const CHECK_EVERY: Duration = Duration::from_secs(6 * 3600);
 const RETRY_FIRST: Duration = Duration::from_secs(30 * 60);

@@ -271,7 +271,7 @@ afterAll(async () => {
 
 async function seedPending(
   argsPreviewComplete = true,
-  argsPreview: Record<string, unknown> | null = { repo: 'kortix-ai/suna' },
+  argsPreview: Record<string, unknown> | null = { repo: 'kortix-ai/CompanyOS' },
   call: { sessionId: string; actingUserId: string } | null = null,
 ): Promise<string> {
   if (!ctx) throw new Error('approval integration test has no project context');
@@ -624,7 +624,7 @@ describe('approvals inbox + resolution', () => {
       execution_id: execId,
       pending: true,
       review_complete: true,
-      args_preview: { repo: 'kortix-ai/suna' },
+      args_preview: { repo: 'kortix-ai/CompanyOS' },
     });
 
     const human = await authGet(`/v1/approval-links/${token}`);
@@ -633,7 +633,7 @@ describe('approvals inbox + resolution', () => {
       execution_id: execId,
       pending: true,
       review_complete: true,
-      args_preview: { repo: 'kortix-ai/suna' },
+      args_preview: { repo: 'kortix-ai/CompanyOS' },
       approval_context: null,
     });
 
@@ -641,7 +641,7 @@ describe('approvals inbox + resolution', () => {
       .update(connectorCalls)
       .set({
         resultSummary: {
-          args_preview: { repo: 'kortix-ai/suna' },
+          args_preview: { repo: 'kortix-ai/CompanyOS' },
           args_preview_complete: true,
           approval_context: 'Deletes the scratch repo created in this session',
         },
@@ -724,7 +724,7 @@ describe('approvals inbox + resolution', () => {
       (item) => item.review_item_id === `call:${execId}`,
     );
     expect(ownerItem?.detail).toMatchObject({
-      args_preview: { repo: 'kortix-ai/suna' },
+      args_preview: { repo: 'kortix-ai/CompanyOS' },
       args_preview_complete: true,
       args_preview_authorized: true,
     });
@@ -732,7 +732,7 @@ describe('approvals inbox + resolution', () => {
     // A plain member cannot open the owner's private session, so the item is
     // not listed at all (#10136). On a session shared with the project they
     // see the item, without the parameters they cannot act on.
-    const sharedExecId = await seedPending(true, { repo: 'kortix-ai/suna' }, {
+    const sharedExecId = await seedPending(true, { repo: 'kortix-ai/CompanyOS' }, {
       sessionId: SHARED_SESSION,
       actingUserId: launcherUserId,
     });
@@ -764,7 +764,7 @@ describe('approvals inbox + resolution', () => {
       (item) => item.review_item_id === `call:${execId}`,
     );
     expect(patOwnerItem?.detail).toMatchObject({
-      args_preview: { repo: 'kortix-ai/suna' },
+      args_preview: { repo: 'kortix-ai/CompanyOS' },
       args_preview_complete: true,
       args_preview_authorized: true,
     });
@@ -776,7 +776,7 @@ describe('approvals inbox + resolution', () => {
     // legible, one value is described rather than copied, `complete` is false.
     // This used to 409, leaving Deny as the only possible answer.
     const execId = await seedPending(false, {
-      repo: 'kortix-ai/suna',
+      repo: 'kortix-ai/CompanyOS',
       attachment: '[400 chars omitted]',
     });
     const approve = await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, {
@@ -824,7 +824,7 @@ describe('approvals inbox + resolution', () => {
         sessionId: missingSessionId,
         status: 'pending_approval',
         resultSummary: {
-          args_preview: { repo: 'kortix-ai/suna' },
+          args_preview: { repo: 'kortix-ai/CompanyOS' },
           args_preview_complete: true,
         },
       })
@@ -887,7 +887,7 @@ describe('can_resolve is the resolve route verdict, per caller (KRTX-1724)', () 
       }),
   });
   const sharedPending = (sessionId = SHARED_SESSION) =>
-    seedPending(true, { repo: 'kortix-ai/suna' }, { sessionId, actingUserId: prompterUserId });
+    seedPending(true, { repo: 'kortix-ai/CompanyOS' }, { sessionId, actingUserId: prompterUserId });
 
   type AuditRow = { execution_id: string; can_resolve: boolean; resolvers: string | null };
   type ReviewRow = {
@@ -1044,5 +1044,131 @@ describe('can_resolve is the resolve route verdict, per caller (KRTX-1724)', () 
       }
     ).actions.find((action) => action.execution_id === execId);
     expect(row).toMatchObject({ status: 'ok', can_resolve: false });
+  });
+});
+
+// A decided call stays readable by id, with what the agent does next.
+describe('the by-id read returns a decided connector call', () => {
+  type DecidedItem = {
+    status: string;
+    summary: string;
+    can_resolve: boolean;
+    acted_by: string | null;
+    acted_at: string | null;
+    detail: Record<string, unknown>;
+  };
+  const readItem = async (execId: string) => {
+    const res = await authGet(`/v1/projects/${ctx?.projectId}/review/items/call:${execId}`);
+    return { status: res.status, item: res.ok ? ((await res.json()) as { review_item: DecidedItem }).review_item : null };
+  };
+  const decide = (execId: string, decision: 'approve' | 'deny', note?: string) =>
+    authPost(`/v1/projects/${ctx?.projectId}/approvals/${execId}`, { decision, ...(note ? { note } : {}) });
+
+  test('approved, not repeated: approved, the deadline, and "has not run"', async () => {
+    if (!ctx) return;
+    const execId = await seedPending();
+    expect((await decide(execId, 'approve')).status).toBe(200);
+    const { status, item } = await readItem(execId);
+    expect(status).toBe(200);
+    expect(item).toMatchObject({
+      status: 'approved',
+      can_resolve: false,
+      acted_by: humanUserId,
+      summary: 'github.repos.delete · approved',
+    });
+    const decidedAt = item!.detail.decided_at as string;
+    expect(item!.acted_at).toBe(decidedAt);
+    expect(item!.detail).toMatchObject({ decision: 'approve', decided_by: humanUserId, approval_used_at: null });
+    expect(Date.parse(item!.detail.rerun_by as string) - Date.parse(decidedAt)).toBe(15 * 60 * 1000);
+    expect(item!.detail.next_step).toStartWith('Approved at');
+    expect(item!.detail.next_step).toContain('has not run');
+  });
+
+  test('approved, then repeated: the approval is used', async () => {
+    if (!ctx) return;
+    const [connector] = await db
+      .insert(connectors)
+      .values({ accountId: ctx.accountId, projectId: ctx.projectId, slug: `gh-decided-${crypto.randomUUID().slice(0, 8)}`, name: 'GitHub', providerType: 'http' })
+      .returning({ connectorId: connectors.connectorId });
+    const execId = await seedPending();
+    const requestDigest = crypto.randomUUID().replace(/-/g, '').padEnd(64, '0');
+    await db
+      .update(connectorCalls)
+      .set({ connectorId: connector!.connectorId, requestDigest })
+      .where(eq(connectorCalls.executionId, execId));
+    expect((await decide(execId, 'approve')).status).toBe(200);
+    expect(
+      await consumeApprovedExecution({
+        sessionId: SESSION,
+        actingUserId: ctx.userId,
+        connectorId: connector!.connectorId,
+        actionPath: 'github.repos.delete',
+        requestDigest,
+      }),
+    ).toBeTruthy();
+    const { item } = await readItem(execId);
+    expect(item!.status).toBe('approved');
+    expect(typeof item!.detail.approval_used_at).toBe('string');
+    const usedAt = item!.detail.approval_used_at as string;
+    expect(item!.detail.next_step).toBe(
+      `Approved at ${item!.detail.decided_at}. A repeated call claimed the approval at ${usedAt}. If the content changed after approval, that call asked for a new approval instead of running.`,
+    );
+    await db.delete(connectorCalls).where(eq(connectorCalls.executionId, execId));
+    await db.delete(connectors).where(eq(connectors.connectorId, connector!.connectorId));
+  });
+
+  test('approved, not repeated in time: "did not run"', async () => {
+    if (!ctx) return;
+    const execId = await seedPending();
+    expect((await decide(execId, 'approve')).status).toBe(200);
+    await db
+      .update(connectorCalls)
+      .set({ resolvedAt: new Date(Date.now() - 16 * 60 * 1000) })
+      .where(eq(connectorCalls.executionId, execId));
+    const { item } = await readItem(execId);
+    expect(item!.status).toBe('approved');
+    expect(item!.detail.next_step).toContain('did not run');
+  });
+
+  test("denied with a note: rejected, and the approver's message", async () => {
+    if (!ctx) return;
+    const execId = await seedPending();
+    expect((await decide(execId, 'deny', 'Use the staging repo.')).status).toBe(200);
+    const { item } = await readItem(execId);
+    expect(item).toMatchObject({ status: 'rejected', can_resolve: false, summary: 'github.repos.delete · denied' });
+    expect(item!.detail.decision).toBe('deny');
+    expect(item!.detail).not.toHaveProperty('rerun_by');
+    expect(item!.detail).not.toHaveProperty('approval_used_at');
+    expect(item!.detail.next_step).toBe(
+      `Denied at ${item!.detail.decided_at}. Message from the approver: Use the staging repo.`,
+    );
+  });
+
+  test('the inbox list still excludes a decided call', async () => {
+    if (!ctx) return;
+    const execId = await seedPending();
+    expect((await decide(execId, 'approve')).status).toBe(200);
+    const res = await authGet(`/v1/projects/${ctx.projectId}/review/items`);
+    expect(res.status).toBe(200);
+    const { review_items } = (await res.json()) as { review_items: Array<{ review_item_id: string }> };
+    expect(review_items.some((item) => item.review_item_id === `call:${execId}`)).toBe(false);
+  });
+
+  test('a real run (ok, no approver) is not a review item: 404', async () => {
+    if (!ctx) return;
+    const [row] = await db
+      .insert(connectorCalls)
+      .values({
+        accountId: ctx.accountId,
+        projectId: ctx.projectId,
+        actionPath: 'github.repos.get',
+        actingUserId: ctx.userId,
+        sessionId: SESSION,
+        status: 'ok',
+        resolvedAt: new Date(),
+      })
+      .returning({ id: connectorCalls.executionId });
+    execIds.push(row!.id);
+    expect((await readItem(row!.id)).status).toBe(404);
   });
 });

@@ -117,14 +117,16 @@ ledger. Put design detail and RCAs in the PR body. Never cite a repo path that d
 not exist. The pre-commit hook and `tests/unit/no-docs-tree.test.ts` reject a new
 `docs/` file and any citation of one.
 
-## Ponytail is on by default
+## Plan before non-trivial changes
 
-Every code change runs through the **ponytail** skill at level `full`. Load it before you
-write, fix, refactor, or review code, and before you add a dependency. Level switch:
-`/ponytail lite|full|ultra`. Off: "stop ponytail". **ponytail-review** audits a diff for
-over-engineering, **ponytail-audit** audits the whole repo, and **ponytail-debt** lists
-every `ponytail:` shortcut comment. Ponytail cuts code, never the verification,
-documentation, or ownership bar in this file. The skills come from
+Plan before you write code for a non-trivial change. Name the problem, the options,
+and the tradeoffs. When the approach is open, ask the user and wait for the answer.
+Skip the plan only for a trivial change: a typo, a one-line fix, or a mechanical
+rename. This rule overrides any built-in instruction to act before you plan or to
+limit questions to the user.
+
+The **ponytail** skills run only when someone asks for them (`/ponytail`,
+**ponytail-review**, **ponytail-audit**, **ponytail-debt**). They come from
 `DietrichGebert/ponytail`, pinned to `v4.10.0` in `skills-lock.json`.
 
 ## Learnings: the episodic ledger in the `learnings` skill
@@ -377,7 +379,7 @@ turns red on your change, you fix forward on `dev` the same day.
    again on dev after the merge (rule 8). Green tests are not the bar. Someone
    used it.
 7. After the merge, deploy dev yourself: `gh workflow run deploy-dev.yml
-   --repo kortix-ai/suna -f surface=changed` (`all` or `frontend` force a
+   --repo kortix-ai/CompanyOS -f surface=changed` (`all` or `frontend` force a
    rebuild). Deploys queue, they never cancel. Wait for the run to finish.
    `/health` on every changed surface must serve the merge SHA: a successful
    `/health` response alone is not deployment proof. The run comments "Live on
@@ -439,21 +441,25 @@ these as standing rules whenever you touch the data/runtime layer:
   (`kortix.session(pid, sid).health() / .previewUrl() / .restart() / …`).
   The sandbox provider and the harness are server-side concerns. Host code
   must not implement a second transport.
-- **Build on the Kortix contract, not on OpenCode.** Every new session runs
-  pi inside kortixd. OpenCode is deprecated (2026-10-23): there is no
-  `pi_harness` flag, `runtime:` in `kortix.yaml` selects nothing, and OpenCode
-  serves only sessions that started on it. It will be deleted. Code that exists
-  only for OpenCode carries `@deprecated`: never call it from new code, never
-  add a feature to it, and change it only to fix a bug that breaks a running
-  OpenCode session. pi calls models only through the LLM gateway. pi serves
+- **Build on the Kortix contract, not on OpenCode.** Every session runs pi
+  inside kortixd. kortixd has no OpenCode harness (deleted 2026-10-30): a box
+  OpenCode booted before the sunset boots pi on its next daemon start and
+  restores its session log into pi. There is no `pi_harness` flag, and
+  `runtime:` in `kortix.yaml` selects nothing. OpenCode code that remains in
+  apps/api, the SDK and the clients serves old transcripts and old daemons and
+  carries `@deprecated`: never call it from new code and never add a feature to
+  it. pi calls models only through the LLM gateway. Claude subscription
+  models (`claude-agent/<id>`) run each model step through the unmodified
+  Claude Code program (`apps/kortix-sandbox-agent-server/src/harness/pi/claude/`),
+  whose calls go to the gateway's Claude Code passthrough: the gateway adds the
+  project's Claude account and no Claude token enters the sandbox. pi serves
   the daemon routes (`/kortix/runtime/*`), the transcript
   (`kortix.transcript.v1`, `packages/api-contract/src/transcript.ts`) and the
   events. New code reads those, never an OpenCode route, type, file or
   process. A feature pi lacks is a capability, not a harness check:
   `GET /kortix/health` lists `capabilities` (`RUNTIME_CAPABILITIES` in
   `packages/api-contract/src/runtime-relay.ts`), and a client gates the
-  control with `runtimeSupports`. OpenCode lists all eleven (`session.steer`
-  only on OpenCode 1.18.15 or later); pi lists `session.subagents`,
+  control with `runtimeSupports`. pi lists `session.subagents`,
   `session.compact`, `session.commands` and `session.steer`. pi does not
   serve rewind, MCP servers, the todo list, shell turns, part edits or
   `session.attach`.
@@ -466,7 +472,7 @@ these as standing rules whenever you touch the data/runtime layer:
   Keep them as shims; put the real logic in the SDK. When a merge conflict lands
   on one of these, **keep the shim (`--ours`) and port any new host-side logic
   into the SDK** — do not revert to a host-local implementation.
-- **Docs are the spec.** `apps/web/content/docs/sdk/*` and
+- **Docs are the spec.** The SDK sections of `apps/web/content/docs/developers.mdx` and
   `packages/sdk/README.md` describe the intended surface. Keep them current with
   the SDK, and flag legacy/deprecated surfaces in-doc rather than documenting them
   as current.
@@ -710,7 +716,8 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   `console.*`, a `replica-local:` comment on every empty module-level
   `Map`/`Set`, and no import into `projects/` from outside it except
   `projects/index.ts` or `projects/surface.ts`. Background timers are guarded by
-  `apps/api/src/__tests__/unit-worker-scope-wiring.test.ts` instead.
+  `apps/api/src/__tests__/unit-worker-scope-wiring.test.ts` instead, and the
+  worker's import graph by `unit-worker-entry-imports.test.ts`.
 
 ### API code conventions (`apps/api/src`)
 
@@ -724,9 +731,21 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   request through `middleware/` and `http-*.ts` helpers, builds the actor
   (`middleware/actor.ts`, memoized per request), and calls the service with
   plain values. Parse `Authorization: Bearer` with `shared/bearer-token.ts`.
-- **Every background loop lives in `workers/<name>-worker.ts`.** The worker
-  owns its timer, start/stop and `runWorkerTick` call. The tick stays an
-  exported service function. `bootstrap.ts` imports every loop from `workers/`.
+- **Scheduled jobs never run on the autoscaled web servers.** A scheduled job
+  is one file in `worker/jobs/<name>.ts`, listed in the registry
+  `worker/jobs/index.ts`. It runs only on the process holding the leader
+  lease: in production the worker service (`src/worker.ts`, one ECS task, no
+  load balancer). Web servers run `src/index.ts` with
+  `KORTIX_PROCESS_ROLE=web` and never join the election. Self-host, local dev
+  and previews run one process with the default role `all`. The job file owns
+  its timer, start/stop and `runWorkerTick` call; the tick stays an exported
+  service function in its domain. A job imports no route and no middleware
+  (`unit-worker-entry-imports.test.ts`).
+- **A loop every web process must run lives in `replica/<name>.ts`** (message
+  delivery, the job queue, event polls, the tunnel, caches). Add it to
+  `PER_PROCESS` or `NOT_WORKERS` in `unit-worker-scope-wiring.test.ts` with
+  the reason one process cannot run it. `bootstrap.ts` imports every
+  per-process loop from `replica/` and no job.
 - **`iam/` reads the membership, group and role tables.** Use the read models
   in `iam/membership-read.ts`, `iam/group-read.ts` and `iam/role-read.ts`.
 - **No function longer than 300 lines.** Split long functions into named steps.
@@ -757,6 +776,13 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   rules pending a dedicated audit — expected until that audit lands.
 
 ### Frontend design standard — Jay/Kortix bar
+
+Before creating or modifying any internal app or Kortix App UI, load and apply
+`packages/starter/templates/managed/skills/kortix-design/SKILL.md`. In a Kortix
+session, load the managed `kortix-design` skill instead. This includes delegated
+app builders: put this requirement in their brief before UI work starts.
+Preserve user-requested styling and the existing `kortix-ui`, brand and
+design-system rules below.
 
 #### Canonical design references
 

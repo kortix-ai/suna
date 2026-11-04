@@ -3,19 +3,24 @@
  *
  * Pure git plumbing over the API's bare mirror: resolve a commit's tree, list
  * its files, compose the release tree (the commit's whole tree, minus the
- * plugin entry files an agent variant did not select) in a scratch
- * repository, and build its `tar.gz`. No caches, no store, no governance: the release orchestration
+ * files it leaves out) in a scratch repository, and build its `tar.gz`. No caches, no store, no governance: the release orchestration
  * lives in `builder.ts`, which re-exports this module's public names. It never
  * calls into a sandbox.
+ *
+ * The mirror is a partial object store: it holds commits, and trees and files
+ * only once a read asks for them. The scratch repository reads the mirror
+ * through alternates and cannot fetch, so every read here first makes its
+ * objects present: the trees of the commit, the `.gitattributes` files, the
+ * tool modules it parses, and the files an archive packs.
  */
 
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, posix, resolve } from 'node:path';
-import { execFileAsync, runGitCapture, spawn } from '../projects/git/mirror';
-import { LEGACY_OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_DIR } from '@kortix/manifest-schema';
-import { readManifestAtSha, resolveOpencodeConfigDirAtSha } from '../projects/git/opencode-config-dir';
+import { childProcessEnv } from '../config';
+import { ensureCommitTrees, ensureStoreObjects, ensureTreeContents, execFileAsync, runGitCapture, spawn } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
+import { isObjectFetchTooLarge } from '../shared/over-limit-memo';
 
 /**
  * The release archive cap. A release is the repository's whole tree at the
@@ -38,27 +43,54 @@ export const HEX40 = /^[0-9a-f]{40}$/;
  * config dir. Its box holds no project checkout and its image has no `bun`,
  * so a project config dir with tool dependencies can never load there.
  */
-export type ConfigReleaseVariant = 'project' | 'none' | 'meta' | `agent:${string}`;
+export type ConfigReleaseVariant = 'project' | 'none' | 'mykortix' | `agent:${string}`;
 
 /** One tracked file: `[path relative to the repository root, git mode, blob ID]`. */
 export type ConfigReleaseFile = [path: string, mode: string, blob: string];
 
 export class ConfigArchiveTooLargeError extends Error {
-  constructor(readonly limit: number) {
+  constructor(
+    readonly limit: number,
+    /** The size that tripped a cap, when one was measured. */
+    readonly actualBytes?: number,
+  ) {
     super(`config archive exceeds ${limit} bytes`);
     this.name = 'ConfigArchiveTooLargeError';
   }
 }
 
-/** Resolve `git rev-parse <commit>:<config dir>` to a tree ID, or null. */
-async function resolveConfigTreeId(
-  mirror: string,
-  commit: string,
-  configDir: string,
-): Promise<string | null> {
-  // `<commit>:<path>^{tree}` would read `^{tree}` as part of the path, so the
-  // object type is checked separately.
-  const result = await runGitCapture(['rev-parse', '--verify', '--quiet', `${commit}:${configDir}`], mirror);
+/**
+ * The bound on the files an archive downloads into the mirror: the tar bound,
+ * scaled with the archive cap (128 MiB for 32 MiB) so a test's smaller cap
+ * needs no 128 MiB fixture. A pack is compressed and a tar is not, so a
+ * download over this bound means a tar over `MAX_CONFIG_TAR_BYTES`.
+ */
+function archiveFetchLimit(limit: number): number {
+  return Math.min(MAX_CONFIG_TAR_BYTES, limit * 4);
+}
+
+/**
+ * Run `fetch` (an `ensure*` call bounded by `maxBytes`) before an archive.
+ * A download over the bound keeps nothing and means the archive is too large.
+ */
+async function ensureArchiveObjects(limit: number, fetch: (maxBytes: number) => Promise<unknown>): Promise<void> {
+  try {
+    await fetch(archiveFetchLimit(limit));
+  } catch (error) {
+    if (isObjectFetchTooLarge(error)) throw new ConfigArchiveTooLargeError(limit, error.receivedBytes);
+    throw error;
+  }
+}
+
+/**
+ * The root tree ID of `commit`, or null. Every tree of the commit is present
+ * in the mirror afterwards, and no file: what `ls-tree -r` and `read-tree`
+ * read. The ID comes from the commit object, because `rev-parse
+ * <commit>^{tree}` fails while the tree has not arrived.
+ */
+export async function commitRootTree(mirror: string, commit: string): Promise<string | null> {
+  await ensureCommitTrees(mirror, [commit]);
+  const result = await runGitCapture(['log', '--no-walk', '--format=%T', commit, '--'], mirror);
   const tree = result.stdout.trim();
   if (result.exitCode !== 0 || !HEX40.test(tree)) return null;
   return (await isTreeObject(mirror, tree)) ? tree : null;
@@ -146,6 +178,7 @@ export async function buildConfigArchive(
   limit = MAX_CONFIG_ARCHIVE_BYTES,
 ): Promise<Buffer> {
   if (!HEX40.test(treeId)) throw new Error(`invalid config tree id: ${treeId}`);
+  await ensureArchiveObjects(limit, (maxBytes) => ensureTreeContents(mirror, treeId, { maxBytes }));
   return withScratchRepo(mirror, (repo, env) => archiveTree(repo, env, treeId, limit));
 }
 
@@ -165,31 +198,26 @@ async function archiveTree(
 
 /**
  * What a release ships: the commit's whole tree, the same files and folders a
- * checkout of the base branch holds in `/workspace`. Nothing is moved: each
- * harness reads its own dirs inside the release exactly as it reads them in
- * the working tree (`harnesses/opencode`, `skills/`, `harnesses/pi`, …), and a
- * file a config refers to by a relative path is where the repository put it.
+ * checkout of the base branch holds in `/workspace`. Nothing is moved: a file a
+ * config refers to by a relative path (`skills/`, a tool or extension module)
+ * is where the repository put it. The daemon reads the agents from the
+ * compiled set, never from a harness config folder.
  *
- * The changes: per-agent plugin selection (v2 `harnesses.opencode.plugins`
- * in kortix.yaml) drops the unselected plugin entry files from
- * `<config dir>/plugins`; files `.gitattributes` marks `export-ignore` are left
- * out; and a kortix_version 3 tree has no OpenCode config dir — its leftover
- * v2 `opencode.json[c]` files are left out, and `configDir` is null. A v3
- * session's plugins come from `extensions`, compiled per session agent.
+ * Left out: files `.gitattributes` marks `export-ignore`, and a leftover
+ * OpenCode config file (`LEFTOVER_OPENCODE_CONFIGS`), which would make the
+ * release look like one a harness reads.
  */
 interface ReleaseTreeSource {
-  /** The OpenCode config dir inside the tree, or null when the commit has none. */
-  configDir: string | null;
   /** The commit's root tree ID in the mirror. */
   rootTree: string;
-  /**
-   * Selected plugins; null keeps the legacy, globally auto-discovered set.
-   * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
-   */
-  plugins: string[] | null;
-  /** Files left out of the release: `export-ignore`d ones, and a v3 tree's leftover `opencode.json[c]`. */
+  /** Files left out of the release. */
   exportIgnored: string[];
 }
+
+/** OpenCode config files of a retired project layout. A release never ships one. */
+const LEFTOVER_OPENCODE_CONFIGS = ['harnesses/opencode', '.kortix/opencode'].flatMap((dir) =>
+  ['opencode.jsonc', 'opencode.json'].map((name) => `${dir}/${name}`),
+);
 
 /**
  * Is the release tree composed, rather than the commit's own tree? A composed
@@ -197,22 +225,7 @@ interface ReleaseTreeSource {
  * archive route rebuilds it from there.
  */
 export function isComposedSource(source: ReleaseTreeSource): boolean {
-  return source.plugins !== null || source.exportIgnored.length > 0;
-}
-
-/** `git ls-tree -z <tree>`: the tree's records, keyed by entry name. */
-async function treeRecords(
-  repo: string,
-  treeId: string,
-  env?: Record<string, string>,
-): Promise<Map<string, string>> {
-  const result = await runGitCapture(['ls-tree', '-z', treeId], repo, null, env);
-  if (result.exitCode !== 0) throw new Error(`git ls-tree ${treeId} failed: ${result.stderr.trim()}`);
-  const records = new Map<string, string>();
-  for (const record of result.stdout.split('\0')) {
-    if (record) records.set(record.slice(record.indexOf('\t') + 1), record);
-  }
-  return records;
+  return source.exportIgnored.length > 0;
 }
 
 /** `git <args>` in `repo` with NUL-terminated `records` on stdin. Throws on a non-zero exit. */
@@ -224,7 +237,8 @@ async function gitWithInput(
 ): Promise<string> {
   const child = spawn('git', args, {
     cwd: repo,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...env },
+    // It may read the mirror (alternates), which must never fetch on its own.
+    env: childProcessEnv({ GIT_TERMINAL_PROMPT: '0', ...env, GIT_NO_LAZY_FETCH: '1' }),
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   const stdout: Buffer[] = [];
@@ -242,13 +256,6 @@ async function gitWithInput(
   return Buffer.concat(stdout).toString('utf8');
 }
 
-/** `git mktree -z` in `repo` (never the mirror). mktree sorts the entries itself. */
-async function mktree(repo: string, env: Record<string, string>, records: string[]): Promise<string> {
-  const tree = (await gitWithInput(repo, env, ['mktree', '-z'], records)).trim();
-  if (!HEX40.test(tree)) throw new Error(`git mktree returned no tree: ${tree}`);
-  return tree;
-}
-
 /** `tree` without `paths`, through a throwaway index in `repo`. */
 async function pruneTree(repo: string, env: Record<string, string>, tree: string, paths: string[]): Promise<string> {
   const indexEnv = { ...env, GIT_INDEX_FILE: join(repo, 'release.index') };
@@ -256,61 +263,25 @@ async function pruneTree(repo: string, env: Record<string, string>, tree: string
   if (read.exitCode !== 0) throw new Error(`git read-tree ${tree} failed: ${read.stderr.trim()}`);
   // Mode 0 removes the entry. `--index-info` needs no work tree; `--force-remove` does.
   await gitWithInput(repo, indexEnv, ['update-index', '-z', '--index-info'], paths.map((path) => `0 ${'0'.repeat(40)}\t${path}`));
-  const written = await runGitCapture(['write-tree'], repo, null, indexEnv);
+  // The tree ID needs the entries, not the files: the mirror may not hold them yet.
+  const written = await runGitCapture(['write-tree', '--missing-ok'], repo, null, indexEnv);
   const pruned = written.stdout.trim();
   if (written.exitCode !== 0 || !HEX40.test(pruned)) throw new Error(`git write-tree failed: ${written.stderr.trim()}`);
   return pruned;
 }
 
-/** The tree record's object ID. */
-function recordObject(record: string): string {
-  return record.slice(0, record.indexOf('\t')).split(' ')[2]!;
-}
-
-/**
- * `tree` with the subtree at `path` replaced by `edit(its records)`; an entry
- * left with no records is dropped. Every tree on the way down is rewritten.
- */
-async function editTreeAt(
-  repo: string,
-  env: Record<string, string>,
-  tree: string,
-  path: string[],
-  edit: (records: Map<string, string>) => Map<string, string>,
-): Promise<string> {
-  const records = await treeRecords(repo, tree, env);
-  const [name, ...rest] = path;
-  if (name === undefined) return mktree(repo, env, [...edit(records).values()]);
-  const record = records.get(name);
-  if (!record || record.split(' ')[1] !== 'tree') return tree;
-  const edited = await editTreeAt(repo, env, recordObject(record), rest, edit);
-  if ((await treeRecords(repo, edited, env)).size === 0) records.delete(name);
-  else records.set(name, `040000 tree ${edited}\t${name}`);
-  return mktree(repo, env, [...records.values()]);
-}
-
 /**
  * The release tree ID of `source`, written into `repo` (a scratch repository
- * that reads the mirror through alternates). Without a plugin selection it is
- * the commit's own root tree.
+ * that reads the mirror through alternates). With nothing left out it is the
+ * commit's own root tree.
  */
 async function composeReleaseTree(
   repo: string,
   env: Record<string, string>,
   source: ReleaseTreeSource,
 ): Promise<string> {
-  let tree = source.rootTree;
-  if (source.plugins !== null && source.configDir !== null) {
-    const selected = new Set(source.plugins);
-    tree = await editTreeAt(repo, env, tree, [...source.configDir.split('/'), 'plugins'], (entries) => {
-      for (const [name, record] of entries) {
-        if (/\.[cm]?[jt]s$/.test(name) && record.split(' ')[1] === 'blob' && !selected.has(name)) entries.delete(name);
-      }
-      return entries;
-    });
-  }
-  if (source.exportIgnored.length > 0) tree = await pruneTree(repo, env, tree, source.exportIgnored);
-  return tree;
+  if (source.exportIgnored.length === 0) return source.rootTree;
+  return pruneTree(repo, env, source.rootTree, source.exportIgnored);
 }
 
 /**
@@ -329,6 +300,8 @@ async function exportIgnoredPaths(
 ): Promise<string[]> {
   const files = await listConfigFiles(mirror, rootTree);
   const attributeFiles = files.filter(([path]) => path === '.gitattributes' || path.endsWith('/.gitattributes'));
+  // The attribute files are read here and by `check-attr` below.
+  await ensureStoreObjects(mirror, attributeFiles.map(([, , blob]) => blob));
   // The common case is no rule at all: no index, no scratch repository.
   let named = false;
   for (const [, , blob] of attributeFiles) {
@@ -377,10 +350,11 @@ export async function readComposedRelease(
     const treeId = await composeReleaseTree(repo, env, source);
     const files = await listConfigFiles(repo, treeId, env);
     const wanted = typeof options.archive === 'function' ? options.archive(treeId) : options.archive;
-    const archive = wanted
-      ? await archiveTree(repo, env, treeId, options.limit ?? MAX_CONFIG_ARCHIVE_BYTES)
-      : null;
-    return { treeId, files, archive };
+    if (!wanted) return { treeId, files, archive: null };
+    const limit = options.limit ?? MAX_CONFIG_ARCHIVE_BYTES;
+    // Exactly the files that ship: an `export-ignore` path is never downloaded.
+    await ensureArchiveObjects(limit, (maxBytes) => ensureStoreObjects(mirror, files.map(([, , blob]) => blob), { maxBytes }));
+    return { treeId, files, archive: await archiveTree(repo, env, treeId, limit) };
   });
 }
 
@@ -393,11 +367,15 @@ export async function readFileTree(
   return withScratchRepo(mirror, async (repo, env) => {
     const indexEnv = { ...env, GIT_INDEX_FILE: join(repo, 'release.index') };
     await gitWithInput(repo, indexEnv, ['update-index', '-z', '--add', '--index-info'], files.map(([path, mode, blob]) => `${mode} ${blob}\t${path}`));
-    const written = await runGitCapture(['write-tree'], repo, null, indexEnv);
+    // The tree ID needs the entries, not the files: the mirror may not hold them yet.
+    const written = await runGitCapture(['write-tree', '--missing-ok'], repo, null, indexEnv);
     const treeId = written.stdout.trim();
     if (written.exitCode !== 0 || !HEX40.test(treeId)) throw new Error(`git write-tree failed: ${written.stderr.trim()}`);
     const wanted = typeof options.archive === 'function' ? options.archive(treeId) : options.archive;
-    return { treeId, archive: wanted ? await archiveTree(repo, env, treeId, options.limit ?? MAX_CONFIG_ARCHIVE_BYTES) : null };
+    if (!wanted) return { treeId, archive: null };
+    const limit = options.limit ?? MAX_CONFIG_ARCHIVE_BYTES;
+    await ensureArchiveObjects(limit, (maxBytes) => ensureStoreObjects(mirror, files.map(([, , blob]) => blob), { maxBytes }));
+    return { treeId, archive: await archiveTree(repo, env, treeId, limit) };
   });
 }
 
@@ -413,46 +391,38 @@ const IMPORT_SUFFIXES = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs
 export async function toolModuleFiles(mirror: string, rootTree: string, modules: readonly string[]): Promise<ConfigReleaseFile[]> {
   const tree = new Map((await listConfigFiles(mirror, rootTree)).map((file) => [file[0], file]));
   const found = new Map<string, ConfigReleaseFile>();
-  const queue = [...modules];
+  let queue = [...modules];
+  // One round per import depth: one download for the modules the round parses.
   while (queue.length > 0) {
-    const path = queue.pop()!;
-    const file = tree.get(path);
-    if (!file || found.has(path)) continue;
-    found.set(path, file);
-    if (file[1] === '120000' || path.endsWith('.json')) continue;
-    const source = await runGitCapture(['cat-file', 'blob', file[2]], mirror);
-    const loader = path.endsWith('.tsx') ? 'tsx' : path.endsWith('.jsx') ? 'jsx' : /\.[cm]?ts$/.test(path) ? 'ts' : 'js';
-    let imports: Array<{ path: string }> = [];
-    try {
-      imports = new Bun.Transpiler({ loader }).scanImports(source.stdout);
-    } catch {
-      // A syntax error: the box reports it when it imports the module.
+    const round: ConfigReleaseFile[] = [];
+    for (const path of queue) {
+      const file = tree.get(path);
+      if (!file || found.has(path)) continue;
+      found.set(path, file);
+      if (file[1] !== '120000' && !path.endsWith('.json')) round.push(file);
     }
-    for (const { path: specifier } of imports) {
-      if (!specifier.startsWith('./') && !specifier.startsWith('../')) continue;
-      const base = posix.normalize(posix.join(posix.dirname(path), specifier));
-      // `./x.js` names `x.ts` in TypeScript, and Bun resolves it so.
-      const candidates = [...IMPORT_SUFFIXES.map((suffix) => base + suffix), base.replace(/js$/, 'ts'), ...IMPORT_SUFFIXES.slice(1).map((suffix) => `${base}/index${suffix}`)];
-      const target = candidates.find((candidate) => tree.has(candidate));
-      if (target) queue.push(target);
+    queue = [];
+    await ensureStoreObjects(mirror, round.map(([, , blob]) => blob));
+    for (const [path, , blob] of round) {
+      const source = await runGitCapture(['cat-file', 'blob', blob], mirror);
+      const loader = path.endsWith('.tsx') ? 'tsx' : path.endsWith('.jsx') ? 'jsx' : /\.[cm]?ts$/.test(path) ? 'ts' : 'js';
+      let imports: Array<{ path: string }> = [];
+      try {
+        imports = new Bun.Transpiler({ loader }).scanImports(source.stdout);
+      } catch {
+        // A syntax error: the box reports it when it imports the module.
+      }
+      for (const { path: specifier } of imports) {
+        if (!specifier.startsWith('./') && !specifier.startsWith('../')) continue;
+        const base = posix.normalize(posix.join(posix.dirname(path), specifier));
+        // `./x.js` names `x.ts` in TypeScript, and Bun resolves it so.
+        const candidates = [...IMPORT_SUFFIXES.map((suffix) => base + suffix), base.replace(/js$/, 'ts'), ...IMPORT_SUFFIXES.slice(1).map((suffix) => `${base}/index${suffix}`)];
+        const target = candidates.find((candidate) => tree.has(candidate));
+        if (target) queue.push(target);
+      }
     }
   }
   return [...found.values()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
-}
-
-/**
- * v2 only: filename references, the implementation stays in the repository. v3 has no plugin variants.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
- */
-export function selectedOpenCodePlugins(manifest: Record<string, unknown> | null, agent: string): string[] | null {
-  if (manifest?.kortix_version !== 2) return null;
-  const global = (manifest.harnesses as { opencode?: { plugins?: string[] } } | undefined)?.opencode?.plugins;
-  const agents = manifest.agents as Record<string, { harnesses?: { opencode?: { plugins?: string[]; exclude?: string[] } } }> | undefined;
-  const local = agents?.[agent]?.harnesses?.opencode;
-  if (!agents?.[agent]) return null;
-  if (!global && !local) return null;
-  const excluded = new Set(local?.exclude ?? []);
-  return [...new Set([...(global ?? []).filter((name) => !excluded.has(name)), ...(local?.plugins ?? [])])];
 }
 
 /**
@@ -463,42 +433,18 @@ export async function resolveReleaseTreeSource(
   mirror: string,
   project: Pick<GitBackedProject, 'manifestPath'>,
   commit: string,
-  variant: ConfigReleaseVariant = 'project',
-): Promise<{ source: ReleaseTreeSource } | { configDir: string | null; reason: string }> {
-  const rootTree = await resolveConfigTreeId(mirror, commit, '');
-  if (!rootTree) return { configDir: null, reason: `commit ${commit} has no tree` };
-  const manifest = await readManifestAtSha(mirror, project, commit);
-  const configDir = await resolveOpencodeConfigDirAtSha(mirror, project, commit, manifest);
-  const plugins = configDir && variant.startsWith('agent:') ? selectedOpenCodePlugins(manifest, variant.slice(6)) : null;
-  // The config dir keeps everything, as before (CFG-2): its own `.gitattributes`
-  // must not drop or rewrite what the harness loads. So does the manifest.
-  const exportIgnored = await exportIgnoredPaths(
-    mirror,
-    rootTree,
-    (path) => path === project.manifestPath || (configDir !== null && path.startsWith(`${configDir}/`)),
-  );
-  // v3 reads no harness config dir (the daemon reads only the compiled set):
-  // a leftover v2 `opencode.json[c]` would make the release look like one.
-  if (Number(manifest?.kortix_version) === 3) {
-    for (const dir of [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR]) {
-      for (const name of ['opencode.jsonc', 'opencode.json']) {
-        const path = `${dir}/${name}`;
-        const exists = await runGitCapture(['cat-file', '-e', `${commit}:${path}`], mirror);
-        if (exists.exitCode === 0 && !exportIgnored.includes(path)) exportIgnored.push(path);
-      }
-    }
+): Promise<{ source: ReleaseTreeSource } | { reason: string }> {
+  const rootTree = await commitRootTree(mirror, commit);
+  if (!rootTree) return { reason: `commit ${commit} has no tree` };
+  // The manifest's own `.gitattributes` entry must not drop it.
+  const exportIgnored = await exportIgnoredPaths(mirror, rootTree, (path) => path === project.manifestPath);
+  for (const path of LEFTOVER_OPENCODE_CONFIGS) {
+    // Resolved from the tree alone: `cat-file -e` also needs the file, which
+    // a partial mirror may not hold, and would answer "absent".
+    const exists = await runGitCapture(['rev-parse', '--verify', '--quiet', `${commit}:${path}`], mirror);
+    if (exists.exitCode === 0 && !exportIgnored.includes(path)) exportIgnored.push(path);
   }
-  if (configDir && plugins !== null) {
-    const configTree = await resolveConfigTreeId(mirror, commit, configDir);
-    const available = configTree
-      ? (await listConfigFiles(mirror, configTree))
-          .filter(([path]) => /^plugins\/[^/]+\.[cm]?[jt]s$/.test(path))
-          .map(([path]) => path.slice(8))
-      : [];
-    const missing = plugins.filter((name) => !available.includes(name));
-    if (missing.length) throw new Error(`OpenCode plugin not found in ${configDir}/plugins: ${missing.join(', ')}`);
-  }
-  return { source: { configDir, rootTree, plugins, exportIgnored } };
+  return { source: { rootTree, exportIgnored } };
 }
 
 /**
@@ -516,7 +462,8 @@ async function archiveThroughGzip(
   const tarPath = join(repo, 'config.tar');
   const archived = await runGitCapture(['archive', '--format=tar', '-o', tarPath, commit], repo, null, env);
   if (archived.exitCode !== 0) throw new Error(`git archive ${commit} failed: ${archived.stderr.trim()}`);
-  if ((await stat(tarPath)).size > MAX_CONFIG_TAR_BYTES) throw new ConfigArchiveTooLargeError(limit);
+  const tarBytes = (await stat(tarPath)).size;
+  if (tarBytes > MAX_CONFIG_TAR_BYTES) throw new ConfigArchiveTooLargeError(limit, tarBytes);
   try {
     await execFileAsync('gzip', ['-n', '-f', tarPath], { timeout: 60_000 });
   } catch (error) {
@@ -525,6 +472,6 @@ async function archiveThroughGzip(
   // Read once and measure the bytes read: a stat followed by a read can see
   // two different files (CodeQL js/file-system-race).
   const gz = await readFile(`${tarPath}.gz`);
-  if (gz.length > limit) throw new ConfigArchiveTooLargeError(limit);
+  if (gz.length > limit) throw new ConfigArchiveTooLargeError(limit, gz.length);
   return gz;
 }

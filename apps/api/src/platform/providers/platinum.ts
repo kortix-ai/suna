@@ -52,7 +52,7 @@
  * off means the legacy body (no `name`, no header), unchanged from before.
  */
 
-import type { SandboxExecOptions, SandboxExecResult } from './contract';
+import type { DroppedVolume, SandboxExecOptions, SandboxExecResult } from './contract';
 import { isProviderNotFound } from './status';
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
@@ -85,6 +85,7 @@ import {
 import { providerAutoStopBackstopMinutes } from './contract';
 import { classifyPtyWebSocketPath } from './pty-ingress';
 import { sandboxOwnershipMarker } from '../sandbox-ownership';
+import { RESIDENTIAL_PROXY_NOT_OFFERED_MESSAGE } from '../services/sandbox-provisioning-error';
 
 const AGENT_PORT = 8000;
 const START_CONFLICT_GRACE_MS = 30_000;
@@ -165,6 +166,23 @@ interface PlatinumSandbox {
   metadata?: Record<string, unknown>;
   created_at?: string | null;
   createdAt?: string | null;
+  /**
+   * The create answer's mounts (Platinum #2427): an optional mount Platinum
+   * could not attach yet is held `pending` (it retries it) or `failed`, with
+   * its `code`. Absent from an older Platinum.
+   */
+  volume_mounts?: Array<Record<string, unknown>>;
+  /** Optional mounts whose volume did not resolve: no mount row (#2427). */
+  volume_mount_failures?: Array<Record<string, unknown>>;
+  /**
+   * The ports the create body's `expose` opened, when the box reached
+   * `running` inside the wait. Absent on a wait timeout (202), on an
+   * Idempotency-Key replay (Platinum stores no tokens twice) and on a Platinum
+   * without inline expose: the caller then calls `POST /:id/expose`.
+   */
+  exposed?: PlatinumExposedPort[];
+  /** `restore` (memory snapshot) or `cold-boot`. Absent on older Platinum. */
+  via?: string;
 }
 
 /** `GET /v1/sandboxes?paginated=true` — Platinum's list envelope. */
@@ -273,13 +291,142 @@ function isDefinitiveTemplateNotFound(error: unknown): boolean {
 
 /**
  * Platinum refused a create because of its `volumes` (a volume it cannot
- * find, no host that can mount volumes, a mount limit): a definite refusal,
- * so no box exists, and the same body can never succeed.
+ * find, no host that can mount volumes, a mount limit, a folder whose
+ * sub_path image cannot be made): a definite refusal, so no box exists. A
+ * sub_path refusal names neither "volume" nor "mount" (prod 2026-11-01:
+ * `503 unavailable "deriving the sub_path image failed: volgw: subimage …"`).
  */
 function isVolumeRejection(error: unknown): boolean {
   const { status, code, body } = platinumHttp(error);
   if (typeof status !== 'number' || !((status >= 400 && status < 500) || status === 503)) return false;
-  return /volume|mount/i.test(`${code ?? ''} ${body ?? ''}`);
+  if (code && MOUNT_REFUSAL_CODES.has(code)) return true;
+  return /volume|mount|sub_?path|subdir|subimage/i.test(`${code ?? ''} ${body ?? ''}`);
+}
+
+/**
+ * Platinum's codes for a create it refused over one of its mounts. Not every
+ * body names a volume: `409 not_a_directory` says only "<folder> exists and
+ * is not a directory".
+ */
+const MOUNT_REFUSAL_CODES = new Set([
+  'not_a_directory',
+  'sub_path_not_found',
+  'sub_path_too_large',
+  'volume_not_found',
+  'volume_in_other_region',
+  'volume_busy',
+  'volume_in_use',
+  'volume_flushing',
+  'root_volume_in_use',
+  'ref_not_found',
+  'ref_expired',
+]);
+
+/**
+ * Platinum's "the last box's writes on this volume are still being saved;
+ * retry shortly" (`409 volume_flushing`, `retry_after` in seconds): the box a
+ * session had a moment ago is still departing. Transient, so a create waits
+ * and tries again with the same mounts. Prod 2026-11-01: 33 sessions failed
+ * on it in one day, because a create treated it as a refusal.
+ */
+const FLUSHING_CODES = new Set(['volume_flushing', 'root_volume_flushing', 'exclusive_volume_flushing']);
+/** How long a create waits out a departing box's final save. Platinum measured 26 s, and 107 s at worst (rig 2026-11-01). */
+export const VOLUME_FLUSH_WAIT_MS = 120_000;
+
+/** The wait before the next create when `error` is a volume still saving, else null: `retry_after`, 1 to 15 s. */
+export function volumeFlushRetryMs(error: unknown): number | null {
+  const { status, code, body } = platinumHttp(error);
+  if (status !== 409 || !code || !FLUSHING_CODES.has(code)) return null;
+  let seconds = 5;
+  try {
+    const after = (JSON.parse(body ?? '') as { retry_after?: unknown }).retry_after;
+    if (typeof after === 'number' && after > 0) seconds = after;
+  } catch {
+    // not JSON: the default
+  }
+  return Math.min(15, Math.max(1, seconds)) * 1000;
+}
+
+/**
+ * The optional mounts a refused create boots without, and why
+ * (`metadata.droppedVolumes`): the ones the refusal names, else every
+ * optional mount. The next create keeps the rest optional, so each refused
+ * create drops at least one mount and the fallback ends.
+ */
+function droppedOptionalVolumes(opts: CreateSandboxOpts, error: unknown): DroppedVolume[] {
+  const optional = (opts.optionalVolumes ?? []).filter((path) => opts.volumes?.[path]);
+  if (!optional.length) return [];
+  const { status, code, body } = platinumHttp(error);
+  if (typeof status !== 'number' || !((status >= 400 && status < 500) || status === 503)) return [];
+  // A full fleet is capacity, not a mount: it is retried with every mount.
+  if (/no capacity/i.test(body ?? '')) return [];
+  // A box that must run in its region fails fast, so a box
+  // placed where the files live is booted instead of one without them.
+  if (opts.locationRequired && code === 'volume_in_other_region') return [];
+  let reason = body ?? '';
+  let refusedPath: unknown;
+  try {
+    const parsed = JSON.parse(reason) as { error?: unknown; path?: unknown };
+    if (typeof parsed.error === 'string') reason = parsed.error;
+    refusedPath = parsed.path;
+  } catch {
+    // not JSON: the raw body is the reason
+  }
+  const names = (subdir: string | undefined) => {
+    if (!subdir || subdir === '/') return false;
+    if (refusedPath === subdir) return true;
+    const quoted = subdir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[\\s"'(])${quoted}($|[\\s"':),])`).test(reason);
+  };
+  const named = optional.filter((path) => names(opts.volumes![path]!.subdir));
+  const dropped = named.length ? named : isVolumeRejection(error) ? optional : [];
+  return dropped.map((mountPath) => ({
+    mountPath,
+    status,
+    code: code ?? null,
+    reason: reason.slice(0, 300),
+  }));
+}
+
+/**
+ * The optional mounts a create answered without attaching (Platinum #2427):
+ * held `pending` (Platinum retries it; `code` says why) or `failed` (a folder
+ * over the folder-mount cap, gone, or a file), and those in
+ * `volume_mount_failures` (no volume). A mount still on its way in, with no
+ * failure code, is not held. Nothing on an older Platinum.
+ */
+export function heldOptionalVolumes(
+  opts: Pick<CreateSandboxOpts, 'optionalVolumes' | 'volumes'>,
+  sandbox: Pick<PlatinumSandbox, 'volume_mounts' | 'volume_mount_failures'>,
+): DroppedVolume[] {
+  const optional = new Set((opts.optionalVolumes ?? []).filter((path) => opts.volumes?.[path]));
+  if (!optional.size) return [];
+  const rows: Array<Record<string, unknown>> = [
+    ...(Array.isArray(sandbox.volume_mounts) ? sandbox.volume_mounts : []),
+    ...(Array.isArray(sandbox.volume_mount_failures) ? sandbox.volume_mount_failures : []).map((f) => ({ ...f, state: f.state ?? 'failed' })),
+  ];
+  const held: DroppedVolume[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const mountPath = typeof row.mount_path === 'string' ? row.mount_path : '';
+    if (!optional.has(mountPath) || seen.has(mountPath)) continue;
+    const state = String(row.state ?? '');
+    const code = typeof row.code === 'string' && row.code ? row.code : null;
+    const isHeld = state === 'failed' || (state === 'pending' && (code !== null || typeof row.retry_at === 'string'));
+    if (!isHeld) continue;
+    seen.add(mountPath);
+    const bytes = Number(row.bytes);
+    const maxBytes = Number(row.max_bytes);
+    held.push({
+      mountPath,
+      status: null,
+      code: code ?? (state === 'failed' ? 'failed' : 'pending'),
+      reason: String(row.error ?? `${state} ${code ?? ''}`).slice(0, 300),
+      ...(Number.isFinite(bytes) && row.bytes !== null ? { bytes } : {}),
+      ...(Number.isFinite(maxBytes) && row.max_bytes !== null ? { maxBytes } : {}),
+    });
+  }
+  return held;
 }
 
 /** The `status`, `code` and `body` of the `PlatinumHttpError` `platinumJson` throws. */
@@ -473,6 +620,7 @@ export class PlatinumProvider implements SandboxProvider {
   ): Promise<ProvisionResult> {
     const _t0 = Date.now();
     const workloadType = sandboxWorkloadType(opts);
+    const ingressPort = workloadType === 'app' ? 8080 : AGENT_PORT;
     const sandboxApiBase = config.KORTIX_URL
       .replace(/\/+$/, '')
       .replace(/\/v1\/router$/, '')
@@ -536,6 +684,10 @@ export class PlatinumProvider implements SandboxProvider {
       // (`api_url`), and every later call by id goes straight to it
       // (shared/platinum.ts).
       ...(opts.location ? { region: opts.location } : {}),
+      // The sandbox template's `residential_proxy` (platform/services/residential-proxy.ts).
+      // Platinum answers 400 residential_proxy_unavailable when it has no
+      // residential provider; the session then does not start.
+      ...(opts.residentialProxy ? { network: { residential_proxy: opts.residentialProxy } } : {}),
       // Database + instance ownership. The versioned marker also excludes
       // these boxes from older clients' environment-wide orphan sweeps.
       metadata: {
@@ -550,6 +702,10 @@ export class PlatinumProvider implements SandboxProvider {
         // environments.
         ...(currentInstanceId() ? { 'kortix.instance': currentInstanceId()! } : {}),
       },
+      // Open the ingress port in the create's own round trip (Platinum's inline
+      // expose: the same token and route as `POST /:id/expose`). The separate
+      // call below stays as the fallback for an answer without `exposed`.
+      expose: [{ port: ingressPort, public: false, ttl_seconds: PREVIEW_TOKEN_TTL_SECONDS }],
     };
     if (dedup) {
       createBody.name = dedup.name;
@@ -561,7 +717,15 @@ export class PlatinumProvider implements SandboxProvider {
       createBody.disk_gb = opts.resourceSpec.diskGb;
     }
     if (opts.volumes && Object.keys(opts.volumes).length > 0) {
-      createBody.volumes = opts.volumes;
+      // A Files folder is optional (`required: false`, Platinum #2427): a
+      // folder Platinum cannot mount yet never fails the create; it holds it
+      // and the answer says so (heldOptionalVolumes). An older Platinum
+      // ignores the field and refuses the create, which the fallback below
+      // boots without the folder. /workspace and App volumes stay required.
+      const optional = new Set(opts.optionalVolumes ?? []);
+      createBody.volumes = Object.fromEntries(
+        Object.entries(opts.volumes).map(([path, mount]) => [path, optional.has(path) ? { ...mount, required: false } : mount]),
+      );
     }
     if (opts.volumesRequired) {
       // The box's state lives on its volumes, so Platinum's periodic
@@ -591,12 +755,28 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       sandbox = await postCreate();
     } catch (err) {
+      // Before the optional-mount fallback: a volume still saving is not a
+      // folder to drop, and dropping folders would not make it finish sooner.
+      const flushWait = volumeFlushRetryMs(err);
+      const flushUntil = opts.volumeFlushDeadline ?? Date.now() + VOLUME_FLUSH_WAIT_MS;
+      if (flushWait !== null && Date.now() + flushWait <= flushUntil) {
+        // Stable message: alert on it.
+        logger.warn('[platinum] a volume still saves the last box\'s writes: the create waits and tries again', {
+          template,
+          sandboxId: opts.sandboxId ?? opts.name,
+          waitMs: flushWait,
+          code: platinumHttp(err).code,
+        });
+        await Bun.sleep(flushWait);
+        // A new attempt (a new name and Idempotency-Key), with the same mounts.
+        return this.provisionFromTemplate(template, { ...opts, createAttempt: dedupAttempt + 1, volumeFlushDeadline: flushUntil });
+      }
       const elsewhere = opts.location && createBody.volumes ? volumeRegionRefusal(err) : null;
       if (elsewhere && !opts.locationRequired) {
         // A box must run where its drives live. With no region the create goes
         // to the home control plane, which holds the drive (or routes the
         // create to the region that does). A drive missing everywhere still
-        // fails loudly there. A warm box keeps its region and fails below.
+        // fails loudly there. A box that must run in its region fails below.
         const fallback = {
           requested: opts.location!,
           state: 'volume_in_other_region',
@@ -612,6 +792,43 @@ export class PlatinumProvider implements SandboxProvider {
         const home = await this.provisionFromTemplate(template, { ...opts, location: undefined });
         return { ...home, metadata: { ...home.metadata, regionFallback: fallback } };
       }
+      // A Files folder Platinum cannot mount (its sub_path image does not
+      // build, it is too large, busy or gone) never stops the box: it boots
+      // once more without the optional mounts, as a new attempt (the body
+      // differs, so a new name and Idempotency-Key), and the result names what
+      // it left out for the session to attach later. Prod 2026-11-01: one
+      // folder failed every create of every session that mounted it for ~5 h.
+      const dropped = droppedOptionalVolumes(opts, err);
+      if (dropped.length) {
+        const left = new Set(dropped.map((d) => d.mountPath));
+        const kept = Object.entries(opts.volumes ?? {}).filter(([path]) => !left.has(path));
+        // Stable message: alert on it.
+        logger.warn('[platinum] optional volumes dropped: the box boots without the mounts Platinum refused', {
+          template,
+          sandboxId: opts.sandboxId ?? opts.name,
+          dropped,
+        });
+        const bare = await this.provisionFromTemplate(template, {
+          ...opts,
+          volumes: kept.length ? Object.fromEntries(kept) : undefined,
+          optionalVolumes: (opts.optionalVolumes ?? []).filter((path) => !left.has(path)),
+          createAttempt: dedupAttempt + 1,
+        });
+        const earlier = Array.isArray(bare.metadata?.droppedVolumes) ? (bare.metadata.droppedVolumes as DroppedVolume[]) : [];
+        return { ...bare, metadata: { ...bare.metadata, droppedVolumes: [...dropped, ...earlier] } };
+      }
+      const refusal = platinumHttp(err);
+      // Before the volume refusal below, which this body also matches: a
+      // required folder whose image is still being made is waited for.
+      if (refusal.status === 503 && refusal.code === 'unavailable' && refusal.body) {
+        const body: unknown = JSON.parse(refusal.body);
+        if (body && typeof body === 'object' && 'error' in body &&
+          body.error === 'the sub_path image is still being derived; retry shortly') {
+          throw new SnapshotStillBuildingError(
+            `Sandbox image snapshot ${template} is building: Platinum is deriving the sub_path image`,
+          );
+        }
+      }
       // A full fleet stays a capacity error (retried, "try again in a minute").
       if (createBody.volumes && isVolumeRejection(err) && !/no capacity/i.test(platinumHttp(err).body ?? '')) {
         // Mounts a session cannot run without (its drives, its state): fail
@@ -620,9 +837,17 @@ export class PlatinumProvider implements SandboxProvider {
         if (workloadType === 'app') {
           throw new Error(`[apps] The machine's volume could not be mounted (storage refused: ${reason}). The machine did not start without it.`);
         }
+        if (opts.volumes?.['/workspace']) {
+          throw new Error(
+            `[workspace] This session’s workspace volume or drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,
+          );
+        }
         throw new Error(
           `[drives] This session’s drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,
         );
+      }
+      if (refusal.status === 400 && refusal.code === 'residential_proxy_unavailable') {
+        throw new Error(RESIDENTIAL_PROXY_NOT_OFFERED_MESSAGE);
       }
       const regional = regionalTemplateRefusal(err);
       if (regional?.state === 'replicating') {
@@ -635,8 +860,7 @@ export class PlatinumProvider implements SandboxProvider {
         // No copy is running, so waiting cannot help. `us_region` chooses
         // compute placement only: boot this session in the home region now.
         // The next regional create after Platinum's cooldown retries the copy.
-        // A speculative (warm) box must match its project's region, so it
-        // fails fast instead (warm-sessions.ts warmSessionPlacement).
+        // A box that must run in its region fails fast instead.
         // The recursion sends no region, so it cannot come back here.
         // ponytail: an ambiguous home create that fails, followed by a later
         // regional create that succeeds, leaves the home box orphaned for the
@@ -751,7 +975,16 @@ export class PlatinumProvider implements SandboxProvider {
       );
     }
 
-    const ingressPort = workloadType === 'app' ? 8080 : AGENT_PORT;
+    const held = heldOptionalVolumes(opts, sandbox);
+    if (held.length) {
+      // Stable message: alert on it.
+      logger.warn('[platinum] optional volumes held: the box runs without the mounts Platinum could not attach yet', {
+        template,
+        sandboxId: opts.sandboxId ?? opts.name,
+        held,
+      });
+    }
+
     const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/${ingressPort}`;
 
     // Eagerly expose the agent port so the *.sbx edge route is LIVE the moment
@@ -760,9 +993,15 @@ export class PlatinumProvider implements SandboxProvider {
     // /agent, /session, /global/events calls hit an un-routed edge → 504s right
     // after runtime-ready. Best-effort: a failure here just falls back to the
     // lazy expose in resolveEndpoint.
-    let exposedUrl = '';
+    //
+    // The create body asked for it inline (`expose` above), so a create that
+    // answered `running` already opened the port and this costs no round trip.
+    // The standalone call runs only when the answer has no URL for it: a wait
+    // timeout, an Idempotency-Key replay, or a Platinum without inline expose.
+    const inlineExposed = sandbox.exposed?.find((port) => port.port === ingressPort && !!port.url);
+    let exposedUrl = (inlineExposed?.url ?? '').replace(/\/$/, '');
     const _tExpose0 = Date.now();
-    try {
+    if (!exposedUrl) try {
       const exposed = await platinumJson<PlatinumExposedPort>(
         `/v1/sandboxes/${externalId}/expose`,
         {
@@ -800,7 +1039,7 @@ export class PlatinumProvider implements SandboxProvider {
     // becomes usable without any create-path hang.
     console.log(
       `[platinum-timing] ${externalId} ` +
-        `vm-running=${_vmMs}ms expose=${_exposeMs}ms ` +
+        `vm-running=${_vmMs}ms expose=${inlineExposed ? 'inline' : `${_exposeMs}ms`} via=${sandbox.via ?? 'unknown'} ` +
         `edge=${exposedUrl ? 'ready' : 'lazy'} total=${Date.now() - _t0}ms (runtime-ready deferred to FE poll, like daytona)` +
         (sandbox.replayed ? ' [S1: Idempotency-Key replay — adopted an already-committed box]' : ''),
     );
@@ -818,6 +1057,13 @@ export class PlatinumProvider implements SandboxProvider {
         // we asked for — so an operator reading the session row sees the truth.
         ...(sandbox.region ? { platinumRegion: sandbox.region } : {}),
         ...(sandbox.api_url ? { platinumApiUrl: sandbox.api_url } : {}),
+        // Always written, so a rebuilt box never keeps its predecessor's value
+        // (the row's metadata is merged).
+        residentialProxy: Boolean(opts.residentialProxy),
+        // Optional folders Platinum holds (pending or failed) instead of
+        // refusing the create: the session records them like the folders a
+        // refused create dropped, and the drive worker attaches them.
+        ...(held.length ? { droppedVolumes: held } : {}),
         // Persisted into session_sandboxes.metadata by the caller
         // (buildSandboxInitSuccessMetadata spreads this in verbatim) so a
         // LATER top-level provisioning call's restorePlatinumCreateAttempt
@@ -1310,12 +1556,17 @@ export class PlatinumProvider implements SandboxProvider {
       // reload the live half may be the standby, and matching only 4096 would
       // send it upstream unrewritten (see shared/opencode-ports).
       effectivePort: isOpencodePort(request.port) || ptyWebsocket ? AGENT_PORT : request.port,
+      // Platinum's edge drops custom headers on a WebSocket upgrade, so every
+      // daemon socket (PTY, the Kortix in Chrome bridge) carries the signed user
+      // context in the query instead.
       websocket: ptyWebsocket
         ? {
             userContextQueryParam: '__kortix_user_context',
             queryDefaults: { cursor: '0' },
           }
-        : undefined,
+        : request.transport === 'websocket' && request.port === AGENT_PORT
+          ? { userContextQueryParam: '__kortix_user_context' }
+          : undefined,
     };
   }
 

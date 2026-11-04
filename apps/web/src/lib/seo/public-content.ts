@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
-import { ROLES } from '@/features/marketing/solutions/registry';
 import { CANONICAL_ORIGIN, siteMetadata } from '@kortix/ui/internal/lib/site-metadata';
 
 // The blog is not listed here: it is its own app (kortix-ai/marketing), served
@@ -52,28 +51,31 @@ export const STATIC_PUBLIC_ROUTES = [
   '/',
   '/a1o',
   '/about',
-  '/agent-computer',
-  '/agents-and-skills',
-  '/automations',
   '/careers',
   '/changelog',
-  '/channels',
-  '/company-as-code',
+  '/changelog/releases',
   '/contact',
   '/developers',
   '/docs',
   '/download',
   '/enterprise',
-  '/connectors',
   '/legal',
   '/marketplace',
   '/pricing',
   '/security',
   '/self-hosted',
-  '/solutions',
-  '/support',
+  '/services',
+  '/case-studies',
+  '/framework',
+  '/multiplayer',
+  '/sovereign',
+  '/compliance',
   '/use-cases',
   '/white-label',
+  '/desktop',
+  '/mobile',
+  '/slack',
+  '/teams',
 ] as const;
 
 const MARKETING_RECORDS: PublicContentRecord[] = [
@@ -130,15 +132,14 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'careers',
     title: 'Careers',
     description:
-      'Open positions at Kortix — Marketing / Content, Sales, FDE / Services, Product / Eng, Product / R&D. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.',
+      'Open positions at Kortix — FDE, GTM and MTS. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.',
     htmlPath: '/careers',
   },
   {
     kind: 'marketing',
     slug: 'changelog',
     title: 'Changelog',
-    description:
-      'Every Kortix release, straight from the source. New features, fixes, and improvements — versioned and dated.',
+    description: 'What shipped in Kortix each week, straight from our production releases.',
     htmlPath: '/changelog',
   },
   {
@@ -159,8 +160,9 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'enterprise',
-    title: 'Enterprise AI agents: SSO, SCIM, audit, your VPC',
-    description: PRICING_PLANS.find((plan) => plan.id === 'enterprise')?.note,
+    title: 'Kortix for Enterprise',
+    description:
+      'One CompanyOS for every team: agents, skills and memory in one place you own, on Kortix Cloud, your VPC or on-prem, with any model.',
     htmlPath: '/enterprise',
     markdownPath: '/markdown/enterprise.md',
   },
@@ -172,74 +174,12 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     htmlPath: '/pricing',
     markdownPath: '/markdown/pricing.md',
   },
-  {
-    kind: 'marketing',
-    slug: 'support',
-    title: 'Support',
-    description:
-      'Reach Kortix support by email or Discord, read the answers to the questions people ask most, and find the account deletion steps.',
-    htmlPath: '/support',
-  },
   // The product pages. Each one's layout.tsx reads its title/description back
   // through `marketingMetadata(htmlPath)`, so this record is the single place
   // the copy lives. Adding a record here is only half the change: the slug also
   // needs an entry in `MARKETING_SOURCES` in
   // apps/web/scripts/build-content-timestamps.mjs, or the record ships without
   // a `lastModified` and public-content.test.ts fails.
-  {
-    kind: 'marketing',
-    slug: 'agent-computer',
-    title: 'Agent Computer: a cloud computer per session',
-    description:
-      'Every Kortix session gets its own computer: an isolated Linux machine that clones your repo, cuts a branch named after the session, and runs OpenCode. Work lands through a change request a person approves.',
-    htmlPath: '/agent-computer',
-    markdownPath: '/markdown/agent-computer.md',
-  },
-  {
-    kind: 'marketing',
-    slug: 'agents-and-skills',
-    title: 'AI agents and skills as files in git',
-    description:
-      'A Kortix agent is a markdown persona with a deny-by-default reach into connectors, secrets and skills. A skill is the markdown that encodes how your company does one job. Both are files in your repo, versioned and reviewed.',
-    htmlPath: '/agents-and-skills',
-    markdownPath: '/markdown/agents-and-skills.md',
-  },
-  {
-    kind: 'marketing',
-    slug: 'automations',
-    title: 'AI agent automations on cron and webhooks',
-    description:
-      'Cron schedules and signed webhooks start Kortix sessions with nobody present. Each trigger names the agent it runs as, carries a prompt template, and lands its work through a change request a person approves.',
-    htmlPath: '/automations',
-    markdownPath: '/markdown/automations.md',
-  },
-  {
-    kind: 'marketing',
-    slug: 'channels',
-    title: 'AI agents in Slack and Microsoft Teams',
-    description:
-      'Connect Slack or Microsoft Teams to a Kortix project and a message in a thread starts a session. The agent works on its own cloud computer and replies in the same thread. Email is in preview.',
-    htmlPath: '/channels',
-    markdownPath: '/markdown/channels.md',
-  },
-  {
-    kind: 'marketing',
-    slug: 'company-as-code',
-    title: 'Company as Code: your company in one git repo',
-    description:
-      'A Kortix project is a git repo, and that repo is the company. kortix.yaml and the OpenCode config define it; agents, skills and memory are files beside your code. Every change is a commit a person approves.',
-    htmlPath: '/company-as-code',
-    markdownPath: '/markdown/company-as-code.md',
-  },
-  {
-    kind: 'marketing',
-    slug: 'connectors',
-    title: 'Connectors: 3,000+ apps for AI agents',
-    description:
-      'Connect 3,000+ apps, MCP servers, OpenAPI, GraphQL and raw HTTP once for the whole company. Agents reach them through one scoped token — credentials stay server-side, every action is allowed, gated, or blocked, and every call is logged.',
-    htmlPath: '/connectors',
-    markdownPath: '/markdown/connectors.md',
-  },
   {
     kind: 'marketing',
     slug: 'security',
@@ -253,6 +193,55 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
       'How Kortix is built to survive a security review: an isolated machine per session, connector credentials brokered server-side that never enter that machine, permissions for people and agents, human approval gates, and a change request between an agent and main.',
     htmlPath: '/security',
     markdownPath: '/markdown/security.md',
+  },
+  {
+    kind: 'marketing',
+    slug: 'services',
+    // "AI Transformation" is allowed here only (kortix-brand decisions.md D15).
+    title: 'AI Transformation, done for you',
+    description:
+      'AI strategy, transformation and education: we map how your company works, unify your data, automate the work, build your software and train your team.',
+    htmlPath: '/services',
+  },
+  {
+    kind: 'marketing',
+    slug: 'case-studies',
+    title: 'Case studies',
+    description:
+      'What runs on CompanyOS: a science agent at City University of Hong Kong, and agents that evaluate every deal, write software, analyze credit and match invoices.',
+    htmlPath: '/case-studies',
+  },
+  {
+    kind: 'marketing',
+    slug: 'framework',
+    title: 'The Kortix framework',
+    description:
+      'Kortix is a backend framework for AI agents: a project is a git repository, kortix.yaml declares the agents, skills, tools and triggers, every session runs the open-source pi coding agent on its own computer, and @kortix/sdk and @kortix/ui compose your own experience.',
+    htmlPath: '/framework',
+  },
+  {
+    kind: 'marketing',
+    slug: 'multiplayer',
+    title: 'Multiplayer AI',
+    description:
+      'One AI for the whole team: the same agents, skills, Drive and connectors for everyone, in the web, desktop and mobile apps, Slack and Microsoft Teams, with people reviewing and approving what agents do.',
+    htmlPath: '/multiplayer',
+  },
+  {
+    kind: 'marketing',
+    slug: 'sovereign',
+    title: 'Sovereign and open',
+    description:
+      'Kortix is open source. Run it on Kortix Cloud, in your VPC or on-prem, with any model and your own keys, and keep your agents, skills and files in a git repo you own.',
+    htmlPath: '/sovereign',
+  },
+  {
+    kind: 'marketing',
+    slug: 'compliance',
+    title: 'Compliance',
+    description:
+      'SAML 2.0 single sign-on, SCIM 2.0 directory sync, roles and groups, approval rules you set, and an audit log you can export or stream. SOC 2 Type I verified.',
+    htmlPath: '/compliance',
   },
   {
     kind: 'marketing',
@@ -272,30 +261,38 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     htmlPath: '/white-label',
     markdownPath: '/markdown/white-label.md',
   },
-  // The Solutions section: one hub plus one page per role. The role records are
-  // derived from the role registry so the page copy and the SEO record cannot
-  // drift apart — `marketingMetadata()` throws for a path with no record, so a
-  // role added to the registry without a record here would 500 its own page.
-  // Each slug also needs an entry in `MARKETING_SOURCES` in
-  // apps/web/scripts/build-content-timestamps.mjs, or the record ships without
-  // a `lastModified` and public-content.test.ts fails.
   {
     kind: 'marketing',
-    slug: 'solutions',
-    title: 'AI agents for every team',
+    slug: 'desktop',
+    title: 'Kortix desktop app for Mac, Windows and Linux',
     description:
-      'One platform, eight teams with completely different work. What sales, marketing, product, engineering, finance, people, IT and data science can each hand off — and what comes back.',
-    htmlPath: '/solutions',
-    markdownPath: '/markdown/solutions.md',
+      'The Kortix desktop app: Quick Entry over any app (⌘⇧Space), a badge for finished work, and an opt-in connection that lends an agent this computer. macOS universal, Windows 64-bit, Linux AppImage.',
+    htmlPath: '/desktop',
   },
-  ...ROLES.map((role) => ({
-    kind: 'marketing' as const,
-    slug: `solutions/${role.slug}`,
-    title: role.seoTitle,
-    description: role.seoDescription,
-    htmlPath: `/solutions/${role.slug}`,
-    markdownPath: `/markdown/solutions/${role.slug}.md`,
-  })),
+  {
+    kind: 'marketing',
+    slug: 'mobile',
+    title: 'Kortix mobile app for iPhone, iPad and Android',
+    description:
+      'Start, steer and approve Kortix sessions from your phone: live streaming, dictation, attachments, tool approvals, change-request review and push notifications. On the App Store and Google Play.',
+    htmlPath: '/mobile',
+  },
+  {
+    kind: 'marketing',
+    slug: 'slack',
+    title: 'Kortix in Slack: one thread, one session',
+    description:
+      'Mention Kortix in a Slack thread. An agent runs the session on its own machine, streams progress into the thread, and asks for approval in the thread before it acts. Kortix checks the sender is a member; the agent acts with its own permissions.',
+    htmlPath: '/slack',
+  },
+  {
+    kind: 'marketing',
+    slug: 'teams',
+    title: 'Kortix in Microsoft Teams',
+    description:
+      'Kortix agent sessions in Teams chats, group chats and channels: a live progress card, approval cards with feedback, and per-person identity. A tenant admin grants consent once.',
+    htmlPath: '/teams',
+  },
 ];
 
 // Stamps each marketing record with a `lastModified` timestamp sourced from
@@ -398,8 +395,19 @@ const MDX_WRAPPER_TAGS = new Set([
   'StatGrid',
   'Steps',
   'Tabs',
+  'ToolList',
 ]);
-const MDX_BLOCK_TAGS = new Set(['AccordionItem', 'Callout', 'Card', 'Fact', 'Step', 'Tab']);
+const MDX_BLOCK_TAGS = new Set([
+  'AccordionItem',
+  'Callout',
+  'Card',
+  'ExampleRun',
+  'Expandable',
+  'Fact',
+  'Step',
+  'Tab',
+  'ToolNeed',
+]);
 
 // `:::warning[Title]` opens a container directive; a bare `:::` closes it.
 // Agent-facing markdown has no directive syntax, so both render as a
@@ -442,6 +450,16 @@ function renderCard(attrs: Record<string, string>, body?: string): string {
   return body && body !== title ? `- ${link}: ${body.trim()}` : `- ${link}`;
 }
 
+/** A copyable prompt or file: its title, then the text as a fenced block. */
+function renderCopyBlock(attrs: Record<string, string>): string {
+  const title = attrs.title ? `**${attrs.title}**\n\n` : '';
+  return `${title}\`\`\`${attrs.lang ?? ''}\n${(attrs.code ?? '').trim()}\n\`\`\``;
+}
+
+function renderToolNeed(attrs: Record<string, string>): string {
+  return `- **${attrs.name || 'Tool'}**${attrs.tag ? ` (${attrs.tag})` : ''}`;
+}
+
 function renderMdxTagLine(line: string, stack: MdxRenderContext[]): string | null | undefined {
   if (/^\s*<a\b[^>]*\/?>\s*$/.test(line)) return null;
 
@@ -473,6 +491,8 @@ function renderMdxTagLine(line: string, stack: MdxRenderContext[]): string | nul
     if (tag === 'Figure') return attrs.caption ? `> Figure: ${attrs.caption}` : null;
     if (tag === 'Stat') return `- **${attrs.value || 'Stat'}:** ${attrs.label || ''}`.trimEnd();
     if (tag === 'Card') return renderCard(attrs);
+    if (tag === 'CopyBlock') return renderCopyBlock(attrs);
+    if (tag === 'ToolNeed') return renderToolNeed(attrs);
     return undefined;
   }
 
@@ -496,15 +516,25 @@ function renderMdxTagLine(line: string, stack: MdxRenderContext[]): string | nul
     stack.push({ tag });
     return attrs.title ? `### ${attrs.title}` : null;
   }
-  // A tab or an accordion item shows one of several panels. Markdown shows
-  // every panel in order, each under its label.
-  if (tag === 'Tab' || tag === 'AccordionItem') {
+  // A tab, an accordion item or an expandable shows one panel at a time.
+  // Markdown shows every panel in order, each under its label.
+  if (tag === 'Tab' || tag === 'AccordionItem' || tag === 'Expandable') {
     stack.push({ tag });
     return attrs.title ? `**${attrs.title}**` : null;
   }
   if (tag === 'Fact') {
     stack.push({ tag });
     return attrs.label ? `- **${attrs.label}:**` : '-';
+  }
+  if (tag === 'ToolNeed') {
+    stack.push({ tag });
+    return `${renderToolNeed(attrs)}:`;
+  }
+  // An illustrative run: its title and prompt, then the summary, as a quote.
+  if (tag === 'ExampleRun') {
+    stack.push({ tag, quote: true });
+    const prompt = attrs.message ? `\n>\n> Prompt: ${attrs.message}` : '';
+    return `> **${attrs.title || 'Example run'}**${prompt}\n>`;
   }
 
   return undefined;
@@ -550,6 +580,12 @@ export function renderPlainMarkdownFromMdx(source: string): string {
       continue;
     }
 
+    // An MDX comment ({/* … */}) is a note for editors and generators, never content.
+    if (line.includes('{/*')) {
+      line = line.replace(/\s*\{\/\*[\s\S]*?\*\/\}/g, '');
+      if (!line.trim()) continue;
+    }
+
     const directiveClose = stack.length && stack[stack.length - 1].tag === 'directive';
     if (directiveClose && DIRECTIVE_CLOSE.test(line)) {
       stack.pop();
@@ -569,12 +605,14 @@ export function renderPlainMarkdownFromMdx(source: string): string {
     }
 
     if (/^\s*<[A-Z][A-Za-z0-9_.]*\b/.test(line) && !closesTag(line)) {
+      // A CopyBlock's code keeps its line breaks and indentation.
+      const copyBlock = /^\s*<CopyBlock\b/.test(line);
       const tagLines = [line.trim()];
       while (index + 1 < lines.length && !closesTag(tagLines.join(' '))) {
         index += 1;
-        tagLines.push(lines[index].trim());
+        tagLines.push(copyBlock ? lines[index] : lines[index].trim());
       }
-      line = tagLines.join(' ');
+      line = tagLines.join(copyBlock ? '\n' : ' ');
     }
 
     const transformed = renderMdxTagLine(line, stack);
@@ -600,6 +638,9 @@ function sourceDocuments(kind: 'docs' | 'use-case'): SourceDocument[] {
     const source = fs.readFileSync(sourcePath, 'utf8');
     const frontmatter = parseFrontmatter(source);
     if (frontmatter.draft === 'true' && process.env.NODE_ENV === 'production') return [];
+    // A `noindex` page is built and reachable by link, and nothing indexes it: not the sitemap,
+    // llms.txt, the Markdown copies or the agent APIs.
+    if (frontmatter.noindex === 'true') return [];
 
     const relative = path
       .relative(root, sourcePath)
@@ -658,7 +699,7 @@ function renderMarketingMarkdown(record: PublicContentRecord): string {
     `- [Documentation](${CANONICAL_ORIGIN}/docs)`,
     `- [Blog](${CANONICAL_ORIGIN}/blog)`,
     `- [Use cases](${CANONICAL_ORIGIN}/use-cases)`,
-    `- [GitHub](https://github.com/kortix-ai/suna)`,
+    `- [GitHub](https://github.com/kortix-ai/CompanyOS)`,
   ];
 
   if (record.slug === 'pricing' || record.slug === 'enterprise') {

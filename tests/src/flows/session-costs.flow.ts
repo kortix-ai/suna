@@ -132,6 +132,8 @@ flow(
         .body()
         .exists('$.totals.llm_cost')
         .exists('$.totals.compute_cost')
+        .exists('$.totals.storage_cost')
+        .exists('$.totals.storage_gib_hours')
         .exists('$.totals.total_cost')
         .exists('$.totals.session_count')
         .exists('$.totals.project_count')

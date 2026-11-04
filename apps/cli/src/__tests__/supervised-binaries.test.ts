@@ -7,27 +7,22 @@
  * the Session terminal carries it, and it is the one reliable "you are inside a
  * box we manage" signal available to a compiled CLI.
  *
- * Two self-update paths must die on that signal:
- *
- *  1. `kortix update` / the bare-`kortix` "Update to vX now?" prompt. Both run
- *     kortix.com/install, which installs into ~/.local/bin — FIRST on the image
- *     PATH — while runtime-assets.ts only ever converges /usr/local/bin/kortix.
- *     One accepted prompt therefore leaves a PUBLIC CLI permanently shadowing
- *     the platform's, pointed at the public API, that the platform cannot heal.
- *     The prompt defaults to YES and the Session terminal is a real PTY, so the
- *     TTY check protects nobody.
- *
- *  2. `opencode-bin.ts` downloading ~40 MB from registry.npmjs.org. That one has
- *     no TTY gate and no prompt at all.
+ * The self-update path must die on that signal: `kortix update` / the
+ * bare-`kortix` "Update to vX now?" prompt. Both run kortix.com/install, which
+ * installs into ~/.local/bin — FIRST on the image PATH — while
+ * runtime-assets.ts only ever converges /usr/local/bin/kortix. One accepted
+ * prompt therefore leaves a PUBLIC CLI permanently shadowing the platform's,
+ * pointed at the public API, that the platform cannot heal. The prompt
+ * defaults to YES and the Session terminal is a real PTY, so the TTY check
+ * protects nobody.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { runTui } from '../commands/tui.ts';
 import { runUpdate } from '../commands/update.ts';
-import { ensureOpencodeBin } from '../opencode-bin.ts';
 import { downloadTuiBin } from '../tui-bin.ts';
 import { isSupervised } from '../supervised.ts';
 import { getUpdateNotice, resolveUpdateStatus } from '../update-check.ts';
@@ -57,10 +52,8 @@ function releaseOutput(): void {
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'kortix-supervised-'));
   process.env.KORTIX_CONFIG_FILE = join(dir, 'config.json');
-  process.env.KORTIX_OPENCODE_DIR = join(dir, 'managed');
   delete process.env.KORTIX_NO_UPDATE_CHECK;
   delete process.env.KORTIX_SKIP_UPDATE_CHECK;
-  delete process.env.KORTIX_OPENCODE_BIN;
   delete process.env.CI;
   // The update notifier bails on a non-TTY stdout, which is what `bun test`
   // gives us. Force it on: the point of these tests is that the supervised
@@ -129,63 +122,6 @@ describe('kortix update inside a managed sandbox', () => {
     releaseOutput();
     expect(code).toBe(0);
     expect(out).toContain('Usage: kortix update');
-  });
-});
-
-describe('ensureOpencodeBin inside a managed sandbox', () => {
-  const neverFetch: typeof fetch = (() => {
-    throw new Error('unexpected network call');
-  }) as unknown as typeof fetch;
-
-  test('never downloads from the public registry; falls back to the PATH binary', async () => {
-    process.env.KORTIX_SUPERVISED = '1';
-    const res = await ensureOpencodeBin({
-      version: '1.18.23',
-      fetchImpl: neverFetch,
-      probePathVersion: () => '1.18.19',
-    });
-    expect(res).toEqual({ bin: 'opencode', source: 'path-fallback', version: '1.18.19' });
-  });
-
-  test('never downloads when there is no PATH binary either — it throws instead', async () => {
-    process.env.KORTIX_SUPERVISED = '1';
-    await expect(
-      ensureOpencodeBin({
-        version: '1.18.23',
-        fetchImpl: neverFetch,
-        probePathVersion: () => null,
-      }),
-    ).rejects.toThrow(/platform/i);
-  });
-
-  test('an exact PATH match is still used, with no download', async () => {
-    process.env.KORTIX_SUPERVISED = '1';
-    const res = await ensureOpencodeBin({
-      version: '1.18.23',
-      fetchImpl: neverFetch,
-      probePathVersion: () => '1.18.23',
-    });
-    expect(res).toEqual({ bin: 'opencode', source: 'path', version: '1.18.23' });
-  });
-
-  test('an already-cached managed binary is still used, with no download', async () => {
-    process.env.KORTIX_SUPERVISED = '1';
-    const managed = join(dir, 'managed', '1.18.23');
-    mkdirSync(managed, { recursive: true });
-    writeFileSync(join(managed, 'opencode'), '#!/bin/sh\n');
-    const res = await ensureOpencodeBin({
-      version: '1.18.23',
-      fetchImpl: neverFetch,
-      probePathVersion: () => null,
-    });
-    expect(res.source).toBe('managed');
-  });
-
-  test('KORTIX_OPENCODE_BIN still wins — an explicit operator override is not a download', async () => {
-    process.env.KORTIX_SUPERVISED = '1';
-    process.env.KORTIX_OPENCODE_BIN = '/opt/kortix/opencode.current';
-    const res = await ensureOpencodeBin({ version: '1.18.23', fetchImpl: neverFetch });
-    expect(res).toEqual({ bin: '/opt/kortix/opencode.current', source: 'env', version: null });
   });
 });
 

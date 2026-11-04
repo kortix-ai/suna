@@ -3,6 +3,7 @@ import { Suspense } from 'react';
 import { DesktopQuickEntry } from '@/components/desktop/desktop-quick-entry';
 import { AccountHubPanel } from '@/features/accounts/hub/account-hub-panel';
 import { BillingReturnWatcher } from '@/features/billing/billing-return';
+import { ExtensionPanelIdentity } from '@/features/chrome/extension-panel-identity';
 import { MfaGate } from '@/features/auth/mfa-step-up';
 import { ProjectSwitchWatcher } from '@/features/workspace/project-switch-watcher';
 
@@ -34,6 +35,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <BillingReturnWatcher />
       </Suspense>
       <ProjectSwitchWatcher />
+      <ExtensionPanelIdentity />
       {/* Desktop app only: starts a session from the Quick Entry bar the global
           shortcut opens over any app. */}
       <DesktopQuickEntry />

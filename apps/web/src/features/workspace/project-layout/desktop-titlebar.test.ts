@@ -529,9 +529,13 @@ describe('page-level sidebar openers are all the one SidebarToggle', () => {
       repoRoot,
       'packages/ui/src/workspace/sessions/project-sessions-view.tsx',
     ),
-    'capability-tabs.tsx': join(
+    'agent-page-chrome.tsx': join(
       repoRoot,
-      'packages/ui/src/customize/shared/capability-tabs.tsx',
+      'packages/ui/src/customize/agents/agent-page-chrome.tsx',
+    ),
+    'capability-page-shell.tsx': join(
+      repoRoot,
+      'packages/ui/src/customize/shared/capability-page-shell.tsx',
     ),
     'session-site-header.tsx': join(
       repoRoot,

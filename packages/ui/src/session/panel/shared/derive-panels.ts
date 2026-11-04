@@ -13,6 +13,7 @@
  * for the same call.
  */
 
+import { parseArtifactUrl } from '../../../artifacts/frame-policy';
 import { toWorkspaceRelative } from '../../../internal/files/runtime-files';
 import { parseImageOutput } from '../../media/image-output-path';
 import type { PatchFileLite } from '../../tool/shared/patch-helpers';
@@ -32,7 +33,7 @@ import {
   familyForTool,
   narrationToolName as humanizeToolName,
 } from '@kortix/sdk';
-import { toolCallMetadata, toolKind, type ToolCallBlock } from '@kortix/sdk';
+import { imageGenView, toolCallMetadata, toolKind, type ToolCallBlock } from '@kortix/sdk';
 
 export interface OutputItemBase {
   callID: string;
@@ -75,7 +76,15 @@ type AppOutputItem = OutputItemBase & {
   presentationName?: never;
 };
 
-export type OutputItem = ArtifactOutputItem | AppOutputItem;
+/** A Kortix artifact the agent handed over (its app link): opens as the artifact, not as a website. */
+type ArtifactLinkOutputItem = OutputItemBase & {
+  kind: 'artifact';
+  path?: never;
+  url: string;
+  presentationName?: never;
+};
+
+export type OutputItem = ArtifactOutputItem | AppOutputItem | ArtifactLinkOutputItem;
 
 export interface ContextItem {
   callID: string;
@@ -191,7 +200,7 @@ function createArtifactName(call: ToolCallBlock): { name: string; path?: string 
       const name = basename(imagePath);
       if (name) return { name, path: imagePath };
     }
-    const prompt = typeof input.prompt === 'string' ? input.prompt : '';
+    const prompt = imageGenView(call).prompts[0] ?? '';
     return { name: prompt ? truncate(prompt) : 'Image' };
   }
 
@@ -289,6 +298,12 @@ export function deriveOutputs(calls: ToolCallBlock[], opts?: { latestRun?: Set<s
       // every call to these tool names did.
       const kind = createArtifactKind(call);
       if (!kind) continue;
+      // One image_gen call makes up to four images: one row per file.
+      const images = kind === 'image' ? imageGenView(call).images.flatMap((image) => (image.imagePath ? [image.imagePath] : [])) : [];
+      if (images.length) {
+        for (const path of images) push({ callID: call.call_id, name: basename(path), path, kind });
+        continue;
+      }
       const { name, path } = createArtifactName(call);
       const presentationName =
         kind === 'presentation'
@@ -318,6 +333,7 @@ interface ShowPayload {
 function showPayloadToOutput(payload: ShowPayload, callID: string): OutputItem | null {
   const url = typeof payload.url === 'string' ? payload.url.trim() : '';
   if (url && /^https?:\/\//i.test(url)) {
+    if (parseArtifactUrl(url)) return { ...appOutput(url, payload.title, payload.description, callID), kind: 'artifact', shown: true };
     return { ...appOutput(url, payload.title, payload.description, callID), shown: true };
   }
 

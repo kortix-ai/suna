@@ -11,6 +11,7 @@ mock.module('../config', () => ({
     KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: 2,
     KORTIX_PROXY_REQS_PER_MIN: 1,
     KORTIX_PROJECT_WEBHOOK_REQS_PER_MIN: 1,
+    KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN: 1,
   },
 }));
 
@@ -28,6 +29,7 @@ const {
   createCheckEmailRateLimitMiddleware,
   createInviteAcceptRateLimitMiddleware,
   createSandboxProxyRateLimitMiddleware,
+  createPublicResponseRateLimitMiddleware,
   createProjectWebhookRateLimitMiddleware,
   resetRateLimiters,
 } = await import('../middleware/rate-limit');
@@ -99,6 +101,41 @@ describe('audited rate limits', () => {
       resourceId: 'sandbox-1',
       metadata: { limiter: 'sandbox_proxy' },
     });
+  });
+
+  test('limits shared-response reads per share, with Retry-After and no audit row', async () => {
+    const app = new Hono();
+    app.use('/v1/public/responses/:token', createPublicResponseRateLimitMiddleware());
+    app.get('/v1/public/responses/:token', (c) => c.json({ ok: true }));
+
+    const tokenA = 'kps_11111111111141118111111111111111';
+    const tokenB = 'kps_22222222222242228222222222222222';
+    const headers = { 'X-Forwarded-For': '203.0.113.21' };
+
+    expect((await app.request(`/v1/public/responses/${tokenA}`, { headers })).status).toBe(200);
+    const denied = await app.request(`/v1/public/responses/${tokenA}`, { headers });
+    expect(denied.status).toBe(429);
+    expect(denied.headers.get('Retry-After')).toBe('60');
+    // Another share from the same IP is its own bucket.
+    expect((await app.request(`/v1/public/responses/${tokenB}`, { headers })).status).toBe(200);
+    // A flood must not become a write amplifier, and the token is a bearer secret.
+    expect(auditRows).toEqual([]);
+  });
+
+  test('the per-share shared-response limit defaults to 3000 per minute', async () => {
+    const { config } = await import('../config');
+    const configured = Reflect.get(config, 'KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN');
+    Reflect.set(config, 'KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN', undefined);
+    try {
+      const app = new Hono();
+      app.use('/v1/public/responses/:token', createPublicResponseRateLimitMiddleware());
+      app.get('/v1/public/responses/:token', (c) => c.json({ ok: true }));
+      const res = await app.request('/v1/public/responses/kps_33333333333343338333333333333333');
+      expect(res.status).toBe(200);
+      expect(res.headers.get('X-RateLimit-Limit')).toBe('3000');
+    } finally {
+      Reflect.set(config, 'KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN', configured);
+    }
   });
 
   test('limits public check-email probes by client IP and writes an audit event on hit', async () => {

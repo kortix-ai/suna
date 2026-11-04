@@ -22,6 +22,7 @@ import { THEME, withAlpha } from '@/lib/utils/theme';
 import { CSV_MAX_COLUMNS, JSON_PRETTY_PRINT_MAX_CHARS, TEXT_TRUNCATE_DISPLAY_BYTES, previewDecision, truncateForPreview } from '@/lib/files/preview-limits';
 import { generateHighlightedCodeHtml } from './file-preview-html';
 import { FilePreviewType, getLanguageFromFilename } from '@/lib/files/preview-type';
+import type { SharedImageSource } from '@/lib/files/shared-image';
 import {
   constructHtmlPreviewUrl,
   FilePreviewBottomInsetContext,
@@ -420,6 +421,10 @@ interface FilePreviewProps {
   sandboxUrl?: string;
   /** File size in bytes, when known. Files over the preview limits are not rendered. */
   size?: number;
+  /** An image already loaded elsewhere (`useFilePreviewData`, R38): drawn at once, in place of `blobUrl`. */
+  imageSource?: SharedImageSource;
+  imageRatio?: number | null;
+  onImageSourceError?: () => void;
 }
 
 /**
@@ -433,6 +438,9 @@ export function FilePreview({
   filePath,
   sandboxUrl,
   size,
+  imageSource,
+  imageRatio,
+  onImageSourceError,
 }: FilePreviewProps) {
   // Size gate for text content. Memoized so a parent re-render does not hand
   // the renderers a new truncated string (which would rebuild WebView HTML).
@@ -460,7 +468,9 @@ export function FilePreview({
 
   // For images, we need the blob URL
   if (previewType === FilePreviewType.IMAGE) {
-    return <ImagePreview blobUrl={blobUrl} fileName={fileName} />;
+    return (
+      <ImagePreview blobUrl={blobUrl} source={imageSource} initialRatio={imageRatio} onSourceError={onImageSourceError} fileName={fileName} />
+    );
   }
 
   // For PDFs, we need the blob URL

@@ -40,9 +40,9 @@ interface AgentDecl {
   secrets?: Grant;
 }
 
-/** A v2 kortix.yaml. `kortix` stays declared with no grant (deny by default). */
+/** A kortix.yaml. `kortix` stays declared with no grant (deny by default). */
 function manifest(agents: Record<string, AgentDecl>, tail = ''): string {
-  let text = 'kortix_version: 2\nproject:\n  name: example-org-agp\ndefault_agent: kortix\nagents:\n  kortix: {}\n';
+  let text = 'project:\n  name: example-org-agp\ndefault_agent: kortix\nagents:\n  kortix: {}\n';
   for (const [name, decl] of Object.entries(agents)) {
     const entries = Object.entries(decl);
     if (entries.length === 0) {
@@ -115,7 +115,7 @@ async function eventually(description: string, probe: () => Promise<{ ok: boolea
   throw new Error(`${description} did not hold within 20 s: ${detail}`);
 }
 
-// ── AGP-1 — `kortix_permissions` is canonical; `kortix_cli` is a deprecated alias ──
+// ── AGP-1 — `kortix_permissions` is the grant; `kortix_cli` is a retired key ──
 flow(
   'AGP-1',
   {
@@ -135,91 +135,63 @@ flow(
   async (ctx) => {
     const { world } = await governedWorld(ctx);
     const validate = (raw: string) =>
-      world.owner.post(
-        '/v1/projects/:projectId/manifest/validate',
-        { raw, format: 'yaml' },
-        { params: { projectId: world.projectId } },
-      );
+      world.owner.post('/v1/projects/:projectId/manifest/validate', { raw }, { params: { projectId: world.projectId } });
     type Issue = { path: string; message: string; severity: 'error' | 'warning' };
-    const alias = manifest({ legacy: { kortix_cli: ['project.file.read'] } });
     const canonical = manifest({ modern: { kortix_permissions: ['project.file.read'] } });
-    const conflict = manifest({ both: { kortix_cli: ['project.file.read'], kortix_permissions: ['project.secret.read'] } });
+    const retired = manifest({ legacy: { kortix_cli: ['project.file.read'] } });
     const sandbox = new CliSandbox('agp1');
     try {
       // Runtime first: the agent-config PUT below reads kortix.yaml through the
       // project mirror, and GET /iam/agent-identities reads that mirror without
-      // forcing a refresh (up to 60 s stale). Committing the agents after the
-      // PUT made the fixture's service-account lookup see the pre-commit
-      // manifest. Same assertions, order only.
-
-      let legacy!: AgentSession;
+      // forcing a refresh (up to 60 s stale).
       let modern!: AgentSession;
-      await ctx.step('commit both spellings; the server stores the canonical `permissions` grant for each agent', async () => {
-        await world.writeManifest(manifest({
-          legacy: { kortix_cli: ['project.file.read'] },
-          modern: { kortix_permissions: ['project.file.read'] },
-        }));
-        legacy = await world.mintAgentSession({ agent: 'legacy', launcher: ctx.P.OWNER });
+      await ctx.step('commit `modern` with kortix_permissions [project.file.read]; the server stores it as the `permissions` grant', async () => {
+        await world.writeManifest(canonical);
         modern = await world.mintAgentSession({ agent: 'modern', launcher: ctx.P.OWNER });
-        for (const s of [legacy, modern]) {
-          if (JSON.stringify(s.grant?.permissions) !== JSON.stringify(['project.file.read'])) {
-            throw new Error(`${s.agent}: stored grant lacks permissions ["project.file.read"]: ${JSON.stringify(s.grant)}`);
-          }
+        if (JSON.stringify(modern.grant?.permissions) !== JSON.stringify(['project.file.read'])) {
+          throw new Error(`stored grant lacks permissions ["project.file.read"]: ${JSON.stringify(modern.grant)}`);
         }
       });
 
-      await ctx.step('both agents read files (200) and are refused secrets with 403 agent_scope_insufficient', async () => {
-        for (const s of [legacy, modern]) {
-          (await filesOf(s, world.projectId)).status(200);
-          assertDenial(await secretsOf(s, world.projectId), 'agent_scope_insufficient', 'project.secret.read');
-        }
-      });
-
-      await ctx.step('the deprecated kortix_cli key validates, with one warning on agents.legacy.kortix_cli', async () => {
-        const r = await validate(alias);
-        r.status(200).body().has('$.valid', true);
-        const issues = r.json<{ issues: Issue[] }>().issues;
-        const warning = issues.find((i) => i.severity === 'warning' && i.path === 'agents.legacy.kortix_cli');
-        if (!warning || !/kortix_permissions/.test(warning.message)) {
-          throw new Error(`expected a deprecation warning naming kortix_permissions, got ${JSON.stringify(issues)}`);
-        }
+      await ctx.step('the agent reads files (200) and is refused secrets with 403 agent_scope_insufficient', async () => {
+        (await filesOf(modern, world.projectId)).status(200);
+        assertDenial(await secretsOf(modern, world.projectId), 'agent_scope_insufficient', 'project.secret.read');
       });
 
       await ctx.step('kortix_permissions validates with no issue on the agent', async () => {
         const r = await validate(canonical);
         r.status(200).body().has('$.valid', true);
-        const issues = r.json<{ issues: Issue[] }>().issues.filter((i) => i.path.startsWith('agents.modern'));
+        const issues = r.json<{ issues: Issue[] }>().issues.filter((i) => i.path.startsWith('agents.modern.kortix_permissions'));
         if (issues.length) throw new Error(`canonical key produced issues: ${JSON.stringify(issues)}`);
       });
 
-      await ctx.step('both keys with different values is a validation error; the agent-config write answers 400', async () => {
-        const r = await validate(conflict);
-        r.status(200).body().has('$.valid', false);
-        const errors = r.json<{ issues: Issue[] }>().issues.filter(
-          (i) => i.severity === 'error' && i.path.startsWith('agents.both'),
-        );
-        if (!errors.length) throw new Error(`no error on agents.both: ${r.text()}`);
+      await ctx.step('kortix_cli is deprecated: valid, one warning at agents.legacy.kortix_cli with fix agent-kortix-cli; a write that sets it against a different kortix_permissions answers 400', async () => {
+        const r = await validate(retired);
+        r.status(200).body().has('$.valid', true);
+        const issues = r.json<{ issues: Array<Issue & { fix?: string }> }>().issues;
+        const warning = issues.find((i) => i.path === 'agents.legacy.kortix_cli');
+        if (!warning || warning.severity !== 'warning' || warning.fix !== 'agent-kortix-cli' || !/kortix_permissions/.test(warning.message)) {
+          throw new Error(`expected a deprecation warning naming kortix_permissions, got ${JSON.stringify(issues)}`);
+        }
         const put = await world.owner.put(
           '/v1/projects/:projectId/agents/:agentName/config',
           { kortix_cli: ['project.file.read'], kortix_permissions: ['project.secret.read'] },
-          { params: { projectId: world.projectId, agentName: 'both' }, timeoutMs: 60_000 },
+          { params: { projectId: world.projectId, agentName: 'modern' }, timeoutMs: 60_000 },
         );
         put.status(400);
       });
 
-      await ctx.step('real CLI `kortix validate --json`: alias exits 0 with the warning; conflicting keys exit 1', async () => {
-        // `kortix validate` lints that each agent's file exists (KRTX-174).
-        for (const agent of ['kortix', 'legacy', 'both']) sandbox.writeFile(`agents/${agent}.md`, `# ${agent}\n`);
-        sandbox.writeFile('kortix.yaml', alias);
+      await ctx.step('real CLI `kortix validate --json`: kortix_permissions exits 0; kortix_cli exits 0 with the deprecation warning', async () => {
+        sandbox.writeFile('kortix.yaml', canonical);
         const ok = await sandbox.run(['validate', '--json', '--no-dockerfile-lint']);
-        if (ok.exitCode !== 0) throw new Error(`alias: exit ${ok.exitCode}: ${ok.all.slice(0, 600)}`);
-        const report = JSON.parse(ok.stdout.trim()) as { valid: boolean; issues: Issue[] };
-        if (!report.issues.some((i) => i.severity === 'warning' && i.path === 'agents.legacy.kortix_cli')) {
-          throw new Error(`CLI report lacks the deprecation warning: ${ok.stdout.slice(0, 600)}`);
+        if (ok.exitCode !== 0) throw new Error(`canonical: exit ${ok.exitCode}: ${ok.all.slice(0, 600)}`);
+        sandbox.writeFile('kortix.yaml', retired);
+        const old = await sandbox.run(['validate', '--json', '--no-dockerfile-lint']);
+        if (old.exitCode !== 0) throw new Error(`kortix_cli: expected exit 0, got ${old.exitCode}: ${old.all.slice(0, 600)}`);
+        const report = JSON.parse(old.stdout.trim()) as { valid: boolean; issues: Array<Issue & { fix?: string }> };
+        if (!report.issues.some((i) => i.severity === 'warning' && i.path === 'agents.legacy.kortix_cli' && i.fix === 'agent-kortix-cli')) {
+          throw new Error(`CLI report lacks the kortix_cli deprecation warning: ${old.stdout.slice(0, 600)}`);
         }
-        sandbox.writeFile('kortix.yaml', conflict);
-        const bad = await sandbox.run(['validate', '--json', '--no-dockerfile-lint']);
-        if (bad.exitCode !== 1) throw new Error(`conflict: expected exit 1, got ${bad.exitCode}: ${bad.all.slice(0, 600)}`);
       });
     } finally {
       sandbox.dispose();
@@ -1400,7 +1372,7 @@ flow(
       let run!: AgentSession;
       await ctx.step('commit default_agent `nightly` and a trigger that names no agent, pinned to a run of it', async () => {
         await world.writeManifest(
-          'kortix_version: 2\nproject:\n  name: example-org-agp\ndefault_agent: nightly\nagents:\n  kortix: {}\n'
+          'project:\n  name: example-org-agp\ndefault_agent: nightly\nagents:\n  kortix: {}\n'
             + `  nightly:\n    kortix_permissions: ${permissions}\n`
             + `  decoy:\n    kortix_permissions: ${permissions}\n`
             + 'triggers:\n  - slug: agp-default\n    type: cron\n    cron: "0 9 * * *"\n    prompt: summarize open work\n'

@@ -1,5 +1,6 @@
-// The pre-2026 channel prompt header: `[Slack · #general · message from <user>]`.
-// New prompts no longer carry it, and old transcripts still do.
+// The channel prompt header: `[Slack · #general · message from <user>]`.
+// Prompts before 2026 carried it, and `channelPromptText` (`channel-message.ts`)
+// writes it again, so every client build that reads it renders a new prompt.
 //
 // Written as `/^\[(\w+)\s*·\s*([^·]+?)\s*·\s*message from\s+([^\]]+)\]\s*/`,
 // the regex matched the same text but tried every split of a long space run

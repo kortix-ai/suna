@@ -269,6 +269,26 @@ export function patchKortixSessionTitleMirrors(
   });
 }
 
+/** The name the session list shows for a Kortix session. A rename wins. */
+export function cachedSessionName(
+  queryClient: QueryClient,
+  projectId: string,
+  sessionId: string,
+): string | undefined {
+  const row = findCachedProjectSession(queryClient, projectId, (session) => session.session_id === sessionId);
+  return row?.custom_name || row?.name || undefined;
+}
+
+/**
+ * The `extra` of a live-stream notification: the session's project. The
+ * route's project and the host's URL may already show another one.
+ */
+export function notificationExtra(ctx: {
+  notificationProjectId?: string | null;
+}): { projectId: string } | undefined {
+  return ctx.notificationProjectId ? { projectId: ctx.notificationProjectId } : undefined;
+}
+
 /**
  * The Kortix session a notification about runtime session `runtimeId` names.
  * A session stream's events carry the runtime's id (`ses_…`); the app's pages,

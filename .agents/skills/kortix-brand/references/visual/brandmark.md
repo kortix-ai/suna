@@ -91,11 +91,11 @@ Duplicate files to delete in a cleanup change (not an agent decision): `apps/web
 
 | | app | marketing | mobile | deck | image | email | CLI |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Mark | `KortixLogo` | symbol or logo in the nav; one hero mark at most | `KortixLogo`; hero symbol 88 to 150pt | symbol, top-left | one mark, composited | logo PNG, hosted | ASCII wordmark: OPEN |
+| Mark | `KortixLogo` | symbol or logo in the nav; one hero mark at most | `KortixLogo`; hero symbol 88 to 150pt | symbol, top-left | one mark, composited | logo PNG, hosted | CLI: ASCII wordmark in `terminal-accent` (landing, D32). TUI: the pixel symbol, monochrome (boot and empty state, D33) |
 | Light | black file or `currentColor` | same | `color` prop picks the file | follow the theme | by background | black PNG | n/a |
 | Dark | white file or `currentColor` | same | same | same | white file | n/a: email ships light only (Q34) | n/a |
 
-The email wordmark is the logo PNG, hosted, not bold text. The CLI banner is a block-letter ASCII "KORTIX" with the tagline. It ignores `NO_COLOR` today, and the same art ships inside customer-site templates. Whether the ASCII wordmark is a sanctioned treatment is OPEN (`decisions.md`).
+The email wordmark is the logo PNG, hosted, not bold text. The CLI banner is a block-letter ASCII "KORTIX" with the tagline. It ignores `NO_COLOR` today, and the same art ships inside customer-site templates. The ASCII wordmark is sanctioned on the CLI landing screen (D32). The TUI draws the pixel symbol from `@kortix/shared/pixel-mark` instead, monochrome (D33). On customer output it stays OPEN (D8c).
 
 ## App icons, favicons, share images
 
@@ -124,4 +124,4 @@ The email wordmark is the logo PNG, hosted, not bold text. The CLI banner is a b
 
 ## Email
 
-**Rule.** Host the email logo at the URL in `visual-system.json` (`email.logo_url`), which `template.ts` reads as `EMAIL_LAYOUT.logoUrl`: `https://kortix.com/brandkit/Logo/Logomark/PNG/Logomark%20Black.png`. Set `height` from `--email-logo-height` in `tokens.css`. Ship the black PNG only, on the light card. — *Why:* email clients cannot read CSS variables, and the logo is the lockup asset (symbol and wordmark in one PNG), so there is no separate wordmark file. Verified with `curl` on 2026-10-01: the URL returns 200 `image/png`, and so do `Logomark%20White.png` and `Brandmark%20Black.svg` at the same host. Email ships light only, so the earlier two-logo swap is superseded (Q34, Q10, Q27). — *Where:* email. — *When silent:* the URL above, one logo.
+**Rule.** Host the email logo at the URL in `visual-system.json` (`email.logo_url`), which `template.tsx` reads as `EMAIL_LAYOUT.logoUrl`: `https://kortix.com/brandkit/Logo/Brandmark/PNG/Brandmark%20Black.png` (the symbol). Draw it once, in the header row, at `--email-logo-width`, with both `width` and `height` attributes (D26). Ship the black PNG only, on the light surfaces. — *Why:* email clients cannot read CSS variables, Outlook desktop draws an `<img>` at its attribute size, and the header label and title already say the name. Verified with `curl` on 2026-10-29: the URL returns 200. Email ships light only (Q34, Q10, Q27). — *Where:* email. — *When silent:* the URL above, one logo.

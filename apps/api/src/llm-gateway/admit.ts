@@ -82,6 +82,10 @@ async function admit(token: unknown, input: unknown) {
     route = await resolveGatewayRoute(principal, routeInput);
     step('route');
   } catch (err) {
+    // A refused image route is the request's answer, not a failed step.
+    if (err instanceof GatewayResolutionError) {
+      return done({ admission, route: null, candidates: [], resolutionError: resolutionErrorBody(err) });
+    }
     logger.warn('[gateway-internal] admit: route left to the gateway', { error: err instanceof Error ? err.message : String(err) });
     return done({ admission });
   }

@@ -31,7 +31,12 @@ describe('channelOfSessionMetadata', () => {
 
   test('a null per-channel block is not mistaken for one', () => {
     // `typeof null === "object"`; the guard must not treat null as a block.
-    expect(channelOfSessionMetadata({ teams: null, slack: null })).toBeNull();
+    expect(channelOfSessionMetadata({ teams: null, slack: null, telegram: null, email: null })).toBeNull();
+  });
+
+  test('Telegram and Email sessions are channels too: nobody answers their question in a UI', () => {
+    expect(channelOfSessionMetadata({ source: 'telegram', telegram: { chat_id: 1 } })).toBe('telegram');
+    expect(channelOfSessionMetadata({ source: 'email', email: { thread_id: 't' } })).toBe('email');
   });
 });
 
@@ -58,6 +63,26 @@ describe('questionReleaseSentinel', () => {
         expect(questionReleaseSentinel(channel, posted)).not.toMatch(/rather than the question tool/);
       }
     }
+  });
+
+  test('the Slack and Teams copy is unchanged, word for word', () => {
+    const posted = (where: string) =>
+      `(Posted to ${where}. Questions here are async — the user answers with a tap or a reply, and that reaches you as a NEW turn with full context. Do NOT wait for an answer, and post nothing else: the question is your reply. Just finish this turn now.)`;
+    const unposted = (where: string, send: string) =>
+      `(This question could NOT be posted to ${where}, so the user has not seen it. Ask it in plain words with ${send}, then finish this turn — their reply reaches you as a NEW turn.)`;
+    expect(questionReleaseSentinel('slack', true)).toBe(posted('the Slack thread'));
+    expect(questionReleaseSentinel('teams', true)).toBe(posted('the Teams conversation'));
+    expect(questionReleaseSentinel('slack', false)).toBe(unposted('the Slack thread', '`slack send`'));
+    expect(questionReleaseSentinel('teams', false)).toBe(unposted('the Teams conversation', '`teams send`'));
+  });
+
+  test('a Telegram or Email question was never shown: ask it through the channel connector', () => {
+    const telegram = questionReleaseSentinel('telegram', false);
+    expect(telegram).toContain('could NOT be posted to the Telegram chat');
+    expect(telegram).toContain('`kortix connectors call kortix_telegram.send_message`');
+    const email = questionReleaseSentinel('email', false);
+    expect(email).toContain('could NOT be posted to the email thread');
+    expect(email).toContain('`kortix connectors call email.reply_message`');
   });
 
   test('an UNposted question says so, and points at the channel`s own send', () => {
@@ -138,6 +163,22 @@ describe('releaseRuntimeQuestion — the runtime contract', () => {
 
     await releaseRuntimeQuestion('sess-1', 'a/b?c', [['x']]);
     expect(calls[0].url).toContain('/question/a%2Fb%3Fc/reply');
+  });
+
+  test('a box with the session-log actions is released on the native question route', async () => {
+    resolved = { endpoint: { url: 'http://sandbox.internal', headers: { 'X-Sandbox-Token': 't' } }, externalId: 'ext-actions' } as never;
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      if (url.endsWith('/kortix/health')) return Response.json({ capabilities: ['runtime.turns.v1', 'runtime.actions.v1'] });
+      calls.push({ url, init });
+      return Response.json({ ok: true }, { status });
+    }) as unknown as typeof fetch;
+    const { releaseRuntimeQuestion } = await load();
+
+    expect(await releaseRuntimeQuestion('sess-1', 'que_abc', [['a sentinel']])).toBe('released');
+    expect(calls.map((c) => c.url)).toEqual(['http://sandbox.internal/kortix/runtime/questions/que_abc/reply']);
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({ answers: [['a sentinel']] });
+    status = 404;
+    expect(await releaseRuntimeQuestion('sess-1', 'que_abc', [['x']])).toBe('already_answered');
   });
 });
 

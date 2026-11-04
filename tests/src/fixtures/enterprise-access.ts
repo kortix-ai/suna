@@ -13,9 +13,6 @@ import type { FlowContext } from '../core/types';
 
 export const ADMIN_TOKEN_LABEL = 'ADMIN_TOKEN';
 
-/** The route a fixture turns Enterprise on through. */
-export const ENTERPRISE_DEMO_ROUTE = 'PUT /v1/accounts/:accountId/iam/enterprise-demo';
-
 export const NO_ADMIN_TOKEN_HINT =
   'Turning the Enterprise demo on for a fixture account uses the platform admin. ' +
   'Provide KE2E_ADMIN_TOKEN, or run against a non-prod target with KE2E_SUPABASE_SERVICE_ROLE_KEY + database access ' +

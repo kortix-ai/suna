@@ -139,12 +139,12 @@ export async function cancelForwardedPrompt(
   // it back from there (R10).
   const copies =
     present.length === 0 && typeof result.steered_into_message_id === 'string'
-      ? targetIds.map((id) => ({ id, partIds: [] as string[] }))
-      : present.map((message) => ({ id: message.id, partIds: message.partIds ?? [] }));
+      ? targetIds.map((id) => ({ id }))
+      : present.map((message) => ({ id: message.id }));
   for (const copy of copies) {
     let retracted: RetractOutcome;
     try {
-      retracted = await retractRuntimeMessage(resolved, copy.id, copy.partIds);
+      retracted = await retractRuntimeMessage(resolved, copy.id);
     } catch (err) {
       logger.warn('[cancel-forwarded] retract threw', {
         session_id: sessionId,

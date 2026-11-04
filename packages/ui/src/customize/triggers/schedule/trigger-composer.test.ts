@@ -3,20 +3,25 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { testUiTranslator as t } from '../../../test-utils/intl';
-import type { ProjectTriggerEventApp, ProjectTriggerEventType } from '@kortix/sdk';
+import type { App, ProjectTriggerEventApp, ProjectTriggerEventType } from '@kortix/sdk';
 
 import { defaultConfigDraft, oneLineDescription, schemaFields } from './event-trigger-copy';
+import { COMPOSER_KINDS } from './schedule-copy';
+import { draftFromTrigger } from './trigger-edit-logic';
 import type { ConditionRow } from './schedule-fields';
 import {
   type ComposerDraft,
   autoName,
   connectionView,
+  eventSendingApps,
   findDraftApp,
   initialDraft,
+  postToChange,
   resolveProfile,
   runCreate,
   summarize,
   triggerConnection,
+  triggerFilter,
   triggerName,
   validate,
   withAppPicked,
@@ -528,5 +533,149 @@ describe('composer layout: three groups, one summary', () => {
   test('the timezone sits in the schedule row as its last field', () => {
     expect(read('when-schedule.tsx')).toContain('trailing={');
     expect(read('when-schedule.tsx')).toContain('inline');
+  });
+});
+
+describe('postToChange: Post to and the sharing it implies', () => {
+  const base = { mode: 'private' as const, memberIds: [], groupIds: [] };
+  const project = { mode: 'project' as const, memberIds: [], groupIds: [] };
+  const mine = { mode: 'members' as const, memberIds: ['me'], groupIds: [] };
+  const channel = { spaceId: 'C1', kind: 'channel' as const, dmAgentName: null };
+  const dm = { spaceId: 'D1', kind: 'dm' as const, dmAgentName: 'kortix' };
+
+  test('a channel picked while the sharing is untouched shares later runs with the project', () => {
+    expect(postToChange({ sessionAccess: base }, channel, { base, current: null, viewerId: 'me' })).toEqual({
+      spaceId: 'C1',
+      sessionAccess: project,
+    });
+  });
+
+  test('sharing the person chose survives a channel pick', () => {
+    const chosen = { mode: 'members' as const, memberIds: ['u2'], groupIds: [] };
+    expect(postToChange({ sessionAccess: chosen }, channel, { base, current: null, viewerId: 'me' })).toEqual({
+      spaceId: 'C1',
+    });
+  });
+
+  test('a DM always sets its sharing and its agent', () => {
+    const chosen = { mode: 'members' as const, memberIds: ['u2'], groupIds: [] };
+    expect(postToChange({ sessionAccess: chosen }, dm, { base, current: null, viewerId: 'me' })).toEqual({
+      spaceId: 'D1',
+      sessionAccess: mine,
+      agent: 'kortix',
+    });
+  });
+
+  test('No channel gives back the base sharing when the sharing was only the space’s', () => {
+    expect(postToChange({ sessionAccess: mine }, null, { base, current: { kind: 'dm' }, viewerId: 'me' })).toEqual({
+      spaceId: null,
+      sessionAccess: base,
+    });
+    const chosen = { mode: 'members' as const, memberIds: ['u2'], groupIds: [] };
+    expect(postToChange({ sessionAccess: chosen }, null, { base, current: { kind: 'channel' }, viewerId: 'me' })).toEqual({
+      spaceId: null,
+    });
+  });
+});
+
+describe('App event draft', () => {
+  const appDraft = (over: Partial<ComposerDraft> = {}): ComposerDraft => ({
+    ...initialDraft({ kind: 'app' }),
+    instruction: 'Answer the reply',
+    ...over,
+  });
+  const name = 'Reply received';
+
+  test('blocks Create until an App is picked', () => {
+    expect(validate(appDraft(), { name, configFields: [], app: null }, t).map((p) => p.block)).toEqual(['when']);
+    expect(validate(appDraft({ kortixApp: 'outreach' }), { name, configFields: [], app: null }, t)).toEqual([]);
+  });
+
+  test('the filter Create sends: event.name for one event, none for any event', () => {
+    expect(triggerFilter(appDraft({ kortixApp: 'outreach', appEvent: ' reply.received ' }))).toEqual({
+      'event.name': 'reply.received',
+    });
+    expect(triggerFilter(appDraft({ kortixApp: 'outreach', appEvent: '' }))).toBeNull();
+    expect(triggerFilter(appDraft({ kortixApp: 'outreach', appEvent: '*' }))).toBeNull();
+    const conditions: ConditionRow[] = [{ path: 'event.data.lead', operator: 'exists', value: '' }];
+    expect(triggerFilter(appDraft({ kortixApp: 'outreach', appEvent: 'reply.received', conditions }))).toEqual({
+      'event.data.lead': { exists: true },
+      'event.name': 'reply.received',
+    });
+    // Another kind never sends an event name typed before the switch.
+    expect(triggerFilter(withKind(appDraft({ appEvent: 'reply.received' }), 'webhook'))).toBeNull();
+  });
+
+  test('the name and the sentence follow the App and the event', () => {
+    expect(autoName(appDraft(), t)).toBe('');
+    expect(autoName(appDraft({ kortixApp: 'outreach' }), t)).toBe('outreach event');
+    expect(autoName(appDraft({ kortixApp: 'outreach', appEvent: 'reply.received' }), t)).toBe(
+      'outreach: reply.received',
+    );
+    expect(summarize(appDraft({ kortixApp: 'outreach' }), null, 'Kortix', t)).toBe(
+      'When outreach sends an event, Kortix runs your instruction.',
+    );
+    expect(summarize(appDraft({ kortixApp: 'outreach', appEvent: 'reply.received' }), null, 'Kortix', t)).toBe(
+      'When outreach sends reply.received, Kortix runs your instruction.',
+    );
+  });
+
+  test('only Apps Kortix runs can send events', () => {
+    const hosted = { slug: 'outreach', external_url: null } as App;
+    const external = { slug: 'site', external_url: 'https://example.com' } as App;
+    expect(eventSendingApps([hosted, external])).toEqual([hosted]);
+    expect(eventSendingApps(undefined)).toEqual([]);
+  });
+});
+
+describe('every source shows, always', () => {
+  test('the picker offers all five sources in one order', () => {
+    expect(COMPOSER_KINDS).toEqual(['cron', 'app', 'event', 'webhook', 'change_request']);
+    // No source is hidden behind a flag or an App: an unusable one explains itself in its panel.
+    expect(composer).not.toContain("kortixApps.length > 0 || draft.kind === 'app' ? (");
+    expect(composer).toContain("tComposer('eventsOff')");
+    expect(composer).toContain("tComposer.rich('noApps'");
+    expect(composer).toContain("projectSettingsSectionHref(projectId, 'feature-flags')");
+  });
+});
+
+describe('Change request merged draft', () => {
+  const crDraft = (over: Partial<ComposerDraft> = {}): ComposerDraft => ({
+    ...initialDraft({ kind: 'change_request' }),
+    instruction: 'Verify prod',
+    ...over,
+  });
+
+  test('filter.base is the branch; empty means any branch', () => {
+    expect(triggerFilter(crDraft({ crBase: ' main ' }))).toEqual({ base: 'main' });
+    expect(triggerFilter(crDraft())).toBeNull();
+    // Another kind never sends a branch typed before the switch.
+    expect(triggerFilter(withKind(crDraft({ crBase: 'main' }), 'webhook'))).toBeNull();
+    expect(validate(crDraft(), { name: 'x', configFields: [], app: null }, t)).toEqual([]);
+  });
+
+  test('the name and the sentence follow the branch', () => {
+    expect(autoName(crDraft(), t)).toBe('Change request merged');
+    expect(autoName(crDraft({ crBase: 'main' }), t)).toBe('Merged into main');
+    expect(summarize(crDraft({ crBase: 'main' }), null, 'Kortix', t)).toBe(
+      'When a change request merges into main, Kortix runs your instruction.',
+    );
+    expect(summarize(crDraft(), null, 'Kortix', t)).toBe('When a change request merges, Kortix runs your instruction.');
+  });
+
+  test('a saved trigger edits its branch in the When block, not as a condition', () => {
+    const draft = draftFromTrigger(
+      {
+        slug: 'verify', path: 'kortix.yaml#triggers.verify', name: 'Verify', type: 'change_request', agent: 'default',
+        model: null, enabled: true, cron: null, run_at: null, timezone: 'UTC', secret_env: null,
+        prompt_template: 'Verify prod', session_mode: 'fresh', session_id: null, session_key: null,
+        filter: { base: 'main', 'change_request.title': { prefix: ['fix'] } },
+        session_access: { mode: 'private', memberIds: [], groupIds: [] }, last_fired_at: null, webhook_url: null, event: null,
+      } as unknown as Parameters<typeof draftFromTrigger>[0],
+      { eventType: null, model: null },
+    );
+    expect(draft.crBase).toBe('main');
+    expect(draft.conditions.map((row) => row.path)).toEqual(['change_request.title']);
+    expect(triggerFilter(draft)).toEqual({ 'change_request.title': { prefix: ['fix'] }, base: 'main' });
   });
 });

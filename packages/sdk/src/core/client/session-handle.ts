@@ -10,6 +10,7 @@ import { bindSessionFiles } from './session-files';
 import { bindSessionLifecycleResources } from './session-lifecycle-resources';
 import { bindSessionLifecycleSecurity } from './session-lifecycle-security';
 import { bindSessionPreview } from './session-preview';
+import { bindSessionMultiAgent } from './session-multi-agent';
 
 import { getClientForUrl } from '../runtime/client';
 
@@ -75,6 +76,7 @@ export function session(
     ...bindSessionActionsSecurity(context),
     ...bindSessionActionsServices(context),
     files: bindSessionFiles(ensureReady),
+    ...bindSessionMultiAgent(context),
     ...bindSessionRuntime(context),
     /**
      * The raw runtime REST client of THIS session's own sandbox.

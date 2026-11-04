@@ -59,7 +59,7 @@ const uiSheetMock = () => ({
 });
 mock.module('../../../primitives/sheet', uiSheetMock);
 mock.module('../../../primitives/sheet', uiSheetMock);
-const uiHintMock = () => ({ default: Passthrough });
+const uiHintMock = () => ({ default: Passthrough, Hint: Passthrough });
 mock.module('../../../primitives/hint', uiHintMock);
 mock.module('../../../primitives/hint', uiHintMock);
 // Radix Tabs schedules a requestAnimationFrame this DOM-less renderer lacks. The
@@ -710,11 +710,11 @@ describe('an app event', () => {
 
   test('events off: the catalog is not used, the saved event is shown and other fields still save', async () => {
     const sheet = mountEvent(
-      { event: { ...(eventOverrides.event as NonNullable<ProjectTrigger['event']>), status: 'error', error: 'App event triggers are off for this project.' } },
+      { event: { ...(eventOverrides.event as NonNullable<ProjectTrigger['event']>), status: 'error', error: 'Composio event triggers are off for this project.' } },
       false,
     );
     const text = JSON.stringify(sheet.renderer.toJSON());
-    expect(text).toContain('App event triggers are off');
+    expect(text).toContain('Composio event triggers are off');
     expect(sheet.buttonsWithin('Change')).toHaveLength(0);
     await type(sheet.instruction(), 'Still editable');
     await sheet.save();
@@ -779,5 +779,39 @@ describe('header controls follow one leaf each', () => {
     expect(sheet.buttonsWithin('Pause')).toHaveLength(0);
     expect(sheet.renderer.root.findAll((n) => n.type === 'input' && n.props?.id === 'trigger-name')).toHaveLength(0);
     expect(JSON.stringify(sheet.renderer.toJSON())).toContain('Triage the inbox');
+  });
+});
+
+describe('an App event trigger', () => {
+  const appTrigger: TriggerOverrides = {
+    type: 'app',
+    cron: null,
+    app: 'outreach',
+    filter: { 'event.name': 'reply.received', 'event.data.lead': 'x' },
+  };
+
+  test('opens on its App and its event name; the event name is not a condition row', async () => {
+    const sheet = mountSheet(appTrigger);
+    expect(sheet.inputById('trigger-app-event').props.value).toBe('reply.received');
+    expect(JSON.stringify(sheet.renderer.toJSON())).toContain('outreach');
+    await sheet.openOptions();
+    const editor = at(sheet.renderer.root.findAll((n) => typeof n.type !== 'string' && Array.isArray(n.props?.rows)));
+    expect(editor.props.rows).toEqual([{ path: 'event.data.lead', operator: 'equals', value: 'x' }]);
+  });
+
+  test('a new event name saves as the event.name condition, beside the other conditions', async () => {
+    const sheet = mountSheet(appTrigger);
+    await type(sheet.inputById('trigger-app-event'), 'reply.bounced');
+    await sheet.save();
+    await sheet.flush();
+    expectPatch({ filter: { 'event.data.lead': 'x', 'event.name': 'reply.bounced' } });
+  });
+
+  test('an emptied event name saves as any event: no event.name', async () => {
+    const sheet = mountSheet(appTrigger);
+    await type(sheet.inputById('trigger-app-event'), '');
+    await sheet.save();
+    await sheet.flush();
+    expectPatch({ filter: { 'event.data.lead': 'x' } });
   });
 });

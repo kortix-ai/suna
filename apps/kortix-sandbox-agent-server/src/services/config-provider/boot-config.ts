@@ -17,8 +17,8 @@ import { withReleaseStoreLock } from '@/lib/release-store-lock'
 /**
  * The store of config releases, OUTSIDE the repository.
  *
- * WHY IT EXISTS. OpenCode reads its agents, skills, tools and plugins from
- * `OPENCODE_CONFIG_DIR`. That used to be the working tree's config dir: the
+ * WHY IT EXISTS. The runtime used to read its agents, skills, tools and
+ * plugins from the working tree's config dir: the
  * project's tracked source, the session's scratch space, and the runtime's
  * config, in one directory. A config reload then wrote the base branch's files
  * into the session's tracked tree. An agent's `git add -A` swept them into a
@@ -37,7 +37,8 @@ import { withReleaseStoreLock } from '@/lib/release-store-lock'
  * compared to the descriptor, and a file the descriptor does not list is
  * refused. The in-box agent runs as the same user with sudo, so read-only
  * mode bits only stop accidents. The guarantee is `verifyRelease`, which runs
- * before every spawn: a copy that does not match is rebuilt or skipped.
+ * at boot and before a convergence keeps the running release: a copy that
+ * does not match is rebuilt or skipped.
  */
 
 /**
@@ -57,10 +58,11 @@ const RELEASE_ID = /^[0-9a-f]{64}$/
 const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
 
 /**
- * Written by the platform INTO a release's OpenCode config dir after
- * extraction, so neither sealed nor verified afterwards: OpenCode's installer
- * rewrites the plugin pin and the lockfile at spawn, and dependencies are
- * linked in from the image's baked set. Extraction itself verifies these files
+ * Written INTO a release's OpenCode config dir after extraction by a daemon
+ * built before the sunset: OpenCode's installer rewrote the plugin pin and the
+ * lockfile at spawn, and dependencies were linked in from the image's baked
+ * set. A release that daemon built still holds them, so they are neither
+ * sealed nor verified after extraction. Extraction itself verifies these files
  * like every other file. At the repository root they are project files.
  */
 const PLATFORM_WRITTEN = new Set(['package.json', 'bun.lock', 'bun.lockb', 'package-lock.json'])
@@ -70,7 +72,11 @@ const PLATFORM_WRITTEN_DIRS = new Set(['node_modules'])
 export interface ReleaseManifest {
   release_id: string
   source_commit: string
-  /** The OpenCode config dir inside the release, or null when the repository has none. */
+  /**
+   * The OpenCode config dir a daemon built before the sunset recorded for the
+   * release; its platform-written files there still verify (`isPlatformWritten`).
+   * Null for every release this daemon builds: it reads no harness config dir.
+   */
   config_dir: string | null
   config_tree_id: string
   /** The API path of the archive, to rebuild a tampered copy. '' when the release has none (v3, over the cap). */
@@ -110,28 +116,6 @@ export function releaseDir(root: string, releaseId: string): string {
   return join(root, releaseId)
 }
 
-/**
- * The release root `path` is in (a release is a checkout of the repository at
- * one commit), or null when `path` is not inside a release in the store.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export function releaseRootOf(path: string, root: string = bootConfigRoot()): string | null {
-  const rel = relative(resolve(root), resolve(path))
-  if (!rel || rel.startsWith('..') || isAbsolute(rel)) return null
-  const first = rel.split(sep)[0]!
-  return isReleaseId(first) ? join(resolve(root), first) : null
-}
-
-/**
- * The release's files under its OpenCode config dir, relative to that dir.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export function configDirFiles(files: readonly ConfigReleaseFile[], configDir: string | null): ConfigReleaseFile[] {
-  if (!configDir) return []
-  const prefix = `${configDir}/`
-  return files.filter(([path]) => path.startsWith(prefix)).map(([path, mode, blob]) => [path.slice(prefix.length), mode, blob])
-}
-
 function manifestPath(root: string, releaseId: string): string {
   return `${releaseDir(root, releaseId)}.json`
 }
@@ -153,17 +137,10 @@ async function managedSkillNames(dir: string | undefined): Promise<Set<string>> 
 }
 
 /**
- * Is `dir` a release in the store (the platform's own copy)?
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export function isInReleaseStore(dir: string, root: string = bootConfigRoot()): boolean {
-  return insideRoot(root, dir)
-}
-
-/**
- * A path inside a release the platform writes after extraction: the
- * dependencies and lockfiles of the OpenCode config dir, and the managed-skill
- * overlay in the `skills/` it lands in (the root's, or the config dir's own).
+ * A path inside a release that a daemon built before the sunset wrote after
+ * extraction: the dependencies and lockfiles of the OpenCode config dir, and
+ * the managed-skill overlay in the `skills/` it lands in (the root's, or the
+ * config dir's own). Such a release still verifies on this daemon.
  */
 function isPlatformWritten(path: string, managed: Set<string>, configDir: string | null): boolean {
   const inConfig = configDir && path.startsWith(`${configDir}/`) ? path.slice(configDir.length + 1) : null
@@ -305,11 +282,15 @@ export async function extractConfigArchive(
   for (const [target, linkText] of symlinks) await symlink(linkText.toString('utf8'), target)
 }
 
-export async function writeReleaseManifest(root: string, manifest: ReleaseManifest): Promise<void> {
+async function writeStoreJson(root: string, name: string, value: unknown, destination = () => join(root, name)): Promise<void> {
   await mkdir(root, { recursive: true })
-  const staged = join(root, `${manifest.release_id}.json.${randomUUID()}.tmp`)
-  await writeFile(staged, `${JSON.stringify(manifest)}\n`, { mode: 0o644 })
-  await rename(staged, manifestPath(root, manifest.release_id))
+  const staged = join(root, `${name}.${randomUUID()}.tmp`)
+  await writeFile(staged, `${JSON.stringify(value)}\n`, { mode: 0o644 })
+  await rename(staged, destination())
+}
+
+export async function writeReleaseManifest(root: string, manifest: ReleaseManifest): Promise<void> {
+  await writeStoreJson(root, `${manifest.release_id}.json`, manifest, () => manifestPath(root, manifest.release_id))
 }
 
 /** The manifest of a release in the store, or null when it is missing or malformed. */
@@ -339,15 +320,13 @@ export async function readReleaseManifest(root: string, releaseId: string): Prom
 /**
  * Build `<root>/<release_id>` from a downloaded archive.
  *
- * Extract and verify into `<release_id>.<uuid>.tmp`, run `prepare` there
- * (dependencies, the managed-skill overlay), seal the project files, then
- * rename into place. A reader never sees a half-built release.
+ * Extract and verify into `<release_id>.<uuid>.tmp`, seal the project files,
+ * then rename into place. A reader never sees a half-built release.
  */
 export async function materializeRelease(input: {
   root?: string
   manifest: ReleaseManifest
   archive: Buffer
-  prepare?: (stagedDir: string) => Promise<void>
   managedSkillsDir?: string
 }): Promise<{ dir: string }> {
   return install(input, 'archive', (staged) => extractConfigArchive(input.archive, input.manifest.files, staged))
@@ -366,15 +345,14 @@ export async function materializeReleaseFromTree(input: {
   manifest: ReleaseManifest
   source: string
   transport: 'snapshot' | 'git'
-  prepare?: (stagedDir: string) => Promise<void>
   managedSkillsDir?: string
 }): Promise<{ dir: string }> {
   return install(input, input.transport, (staged) => stageFromTree(input.source, input.manifest.files, staged))
 }
 
-/** Stage, prepare, seal, rename into place, write the manifest. */
+/** Stage, seal, rename into place, write the manifest. */
 async function install(
-  input: { root?: string; manifest: ReleaseManifest; prepare?: (stagedDir: string) => Promise<void>; managedSkillsDir?: string },
+  input: { root?: string; manifest: ReleaseManifest; managedSkillsDir?: string },
   transport: 'archive' | 'snapshot' | 'git',
   stage: (staged: string) => Promise<void>,
 ): Promise<{ dir: string }> {
@@ -385,9 +363,8 @@ async function install(
   const staged = `${dir}.${randomUUID()}.tmp`
   try {
     await stage(staged)
-    // The overlay injected by `prepare` and the names `seal` skips must be the same set.
+    // The managed-skill names `seal` skips are read under the lock the overlay is written under.
     await withReleaseStoreLock(async () => {
-      await input.prepare?.(staged)
       await seal(staged, manifest.files, await managedSkillNames(input.managedSkillsDir), manifest.config_dir)
     })
     if (existsSync(dir)) await removeTree(dir)
@@ -484,27 +461,20 @@ async function stageFromTree(source: string, files: readonly ConfigReleaseFile[]
  * session): an agent's `write` tool answered "Wrote file successfully."
  * for `<release>/skills/<name>/SKILL.md` and for a root-level file, and the
  * next convergence then failed `verifyRelease`, rebuilt the release and
- * respawned OpenCode. The user got a success message, the file vanished, and
- * the runtime restarted with nothing said. Reproduced 4 times.
+ * restarted the runtime. The user got a success message, the file vanished,
+ * and the runtime restarted with nothing said. Reproduced 4 times.
  *
  * A write that will be reverted must fail where it happens, so both are
- * sealed now. The two writers that legitimately need them:
- *
- *  - the dependency pass (`ensureOpencodeConfigDeps`) runs on the STAGED
- *    directory, before this seal, so it is unaffected;
- *  - the managed-skill overlay re-injects into a LIVE release, and unseals
- *    what it needs through `unsealManaged` (`managed-skills.ts`).
+ * sealed now. No writer needs them today: pi installs no dependencies into a
+ * release and reads the managed-skill overlay from its own dir. What a daemon
+ * built before the sunset wrote there stays out of the seal
+ * (`isPlatformWritten`).
  *
  * The ROOT is sealed by `materializeRelease` after the rename, not here:
  * renaming a directory needs write permission on the directory itself.
  *
  * `pruneBootConfigs` already runs `chmod -R u+w` before deleting a release,
  * so the root's mode does not strand an old copy.
- *
- * Verified on the same box: with the root at `0555` OpenCode starts and
- * serves normally. It writes one file there at every spawn, a `.gitignore`
- * of its own bookkeeping, and skips it silently when it cannot — no
- * `EACCES`/`EROFS` in the daemon log or OpenCode's own log.
  */
 async function seal(
   dir: string,
@@ -532,7 +502,7 @@ export interface ReleaseVerifyInput {
   /** The release root. */
   dir: string
   files: readonly ConfigReleaseFile[]
-  /** The release's OpenCode config dir, where the platform writes dependencies. */
+  /** The release's OpenCode config dir, where a daemon built before the sunset wrote dependencies. */
   configDir?: string | null
   managedSkillsDir?: string
 }
@@ -595,7 +565,7 @@ async function verifyReleaseUnlocked(
       if (content === null) return { ok: false, problem: `${path} has the wrong type` }
       if (gitBlobId(content, blob.length) !== blob) return { ok: false, problem: `${path} does not match its blob ID` }
     }
-    // Nothing may be ADDED either: a new agent, tool or second `opencode.json`
+    // Nothing may be ADDED either: a new skill, extension or project tool
     // beside the listed files would be loaded like any other.
     const listed = new Set(input.files.map(([path]) => path))
     for (const path of await walkFiles(input.dir, managed, configDir, listed)) {
@@ -612,9 +582,10 @@ async function verifyReleaseUnlocked(
 /**
  * Every file in a release that the platform did not write, relative to `dir`.
  * Dot entries at the root and at the top of the OpenCode config dir that hold
- * no listed file are left out: they are installer and OpenCode output
- * (`.package-lock.json`, `.gitignore`) that no harness reads as config. A
- * tracked dot entry (`.kortix/`, a committed `.gitignore`) is walked like any other.
+ * no listed file are left out: they are installer and OpenCode output that a
+ * daemon built before the sunset left there (`.package-lock.json`,
+ * `.gitignore`), and pi reads none of them as config. A tracked dot entry
+ * (`.kortix/`, a committed `.gitignore`) is walked like any other.
  */
 async function walkFiles(
   dir: string,
@@ -657,7 +628,7 @@ export async function readBootConfigPointer(root: string = bootConfigRoot()): Pr
     if (typeof parsed.dir !== 'string' || typeof parsed.proven !== 'boolean') return null
     // The file sits in a directory the in-box agent can write. A pointer is only
     // honoured when it names the release's own directory inside the store, so it
-    // cannot aim OpenCode at an arbitrary directory.
+    // cannot aim the runtime at an arbitrary directory.
     if (!insideRoot(root, parsed.dir) || resolve(parsed.dir) !== resolve(releaseDir(root, parsed.release_id))) return null
     return {
       release_id: parsed.release_id,
@@ -671,81 +642,9 @@ export async function readBootConfigPointer(root: string = bootConfigRoot()): Pr
   }
 }
 
-/**
- * `<root>/boot`: the fixed `OPENCODE_CONFIG_DIR` of the process spawned at
- * boot. It is spawned at once, before the checkout and the release exist, and
- * the link is repointed to the chosen config before the workspace gate opens.
- * OpenCode reads the directory at Instance init, on the first
- * directory-scoped request, so the repointed target is what it loads.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export function bootLinkPath(root: string = bootConfigRoot()): string {
-  return join(root, 'boot')
-}
-
-/**
- * The directory the boot link names right now, or null when there is no link.
- *
- * `OPENCODE_CONFIG_DIR` is the link and only the link, so this is how anything
- * asks "which config dir does OpenCode read?" without keeping a second copy of
- * the answer in memory.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export async function readBootLinkTarget(root: string = bootConfigRoot()): Promise<string | null> {
-  try {
-    return resolve(await readlink(bootLinkPath(root)))
-  } catch {
-    return null
-  }
-}
-
-/**
- * `<root>/boot-release`: the release the boot link's config dir comes from,
- * where project tools load from. Absent when no release is served. A release
- * with no OpenCode config dir serves the image default, so the boot link
- * alone cannot name it.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export function bootReleaseLinkPath(root: string = bootConfigRoot()): string {
-  return join(root, 'boot-release')
-}
-
-/**
- * The release root the boot link serves from, or null.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export async function readBootReleaseRoot(root: string = bootConfigRoot()): Promise<string | null> {
-  try {
-    return resolve(await readlink(bootReleaseLinkPath(root)))
-  } catch {
-    return null
-  }
-}
-
-/**
- * Point the boot link at `target` with one atomic rename. Returns the link path.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
- */
-export async function pointBootLink(target: string, root: string = bootConfigRoot(), link: string = bootLinkPath(root)): Promise<string> {
-  await mkdir(root, { recursive: true })
-  const staged = `${link}.${randomUUID()}.tmp`
-  await symlink(resolve(target), staged)
-  try {
-    // rename(2) replaces the link itself; it never follows it.
-    await rename(staged, link)
-  } catch (err) {
-    await rm(staged, { force: true }).catch(() => undefined)
-    throw err
-  }
-  return link
-}
-
 /** Written only after a proven promotion. */
 export async function activateBootConfig(root: string, pointer: BootConfigPointer): Promise<void> {
-  await mkdir(root, { recursive: true })
-  const staged = join(root, `${POINTER_FILE}.${randomUUID()}.tmp`)
-  await writeFile(staged, `${JSON.stringify(pointer)}\n`, { mode: 0o644 })
-  await rename(staged, join(root, POINTER_FILE))
+  await writeStoreJson(root, POINTER_FILE, pointer)
 }
 
 export async function deactivateBootConfig(root: string = bootConfigRoot()): Promise<void> {
@@ -774,10 +673,7 @@ export async function quarantineRelease(root: string, releaseId: string, reason:
   if (!isReleaseId(releaseId)) return
   const entries = await readQuarantine(root)
   entries[releaseId] = { reason: reason.slice(0, 500), at: new Date().toISOString() }
-  await mkdir(root, { recursive: true })
-  const staged = join(root, `${QUARANTINE_FILE}.${randomUUID()}.tmp`)
-  await writeFile(staged, `${JSON.stringify(entries)}\n`, { mode: 0o644 })
-  await rename(staged, join(root, QUARANTINE_FILE))
+  await writeStoreJson(root, QUARANTINE_FILE, entries)
 }
 
 async function removeTree(dir: string): Promise<void> {

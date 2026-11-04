@@ -13,6 +13,7 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { renderSchemaFile, SCHEMA_FILES, SCHEMA_OUT_DIR } from '../../scripts/generate-schema';
 
 describe('apps/web/public/schema/*.json — committed files match the generated export', () => {
@@ -24,4 +25,14 @@ describe('apps/web/public/schema/*.json — committed files match the generated 
       expect(onDisk).toBe(renderSchemaFile(schema));
     });
   }
+});
+
+test('a RegExp pattern renders as its source string, never as {}', () => {
+  expect(renderSchemaFile({ pattern: /^\s*(?:a|b)\s*$/ })).toBe('{\n  "pattern": "^\\\\s*(?:a|b)\\\\s*$"\n}\n');
+});
+
+test('a RegExp from another realm renders as its source string too', () => {
+  const foreign = runInNewContext('/^x$/') as RegExp;
+  expect(foreign instanceof RegExp).toBe(false);
+  expect(renderSchemaFile({ pattern: foreign })).toBe('{\n  "pattern": "^x$"\n}\n');
 });

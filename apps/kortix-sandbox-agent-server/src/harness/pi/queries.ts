@@ -1,7 +1,8 @@
 /**
- * The `/kortix/opencode/*` namespace for a pi session: state, transcript pages,
- * the sequenced event stream and attachment bytes. Same shapes as the OpenCode
- * adapter serves — the web client is not namespace-parameterized.
+ * The `/kortix/runtime/*` namespace for a pi session: state, transcript pages,
+ * the sequenced event stream and attachment bytes. Messages and events have
+ * the v1 wire shape (`kortix.transcript.v1`); the state document is
+ * `kortix.runtime.v1`.
  */
 import { KORTIX_RUNTIME_SCHEMA } from '@kortix/api-contract/runtime-relay'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'

@@ -24,6 +24,19 @@ It writes one JSON line per session (real ids: keep it in the gitignored
 again; with `BENCH_API_LOG` set it re-reads the delivery lines first.
 The header of the script lists every `BENCH_*` variable.
 
+`BENCH_FLOW=web` measures what a person waits for after Enter in the project
+composer: the first prompt rides `POST /sessions` (`pending_prompt`), `/events`
+attaches at once, and `/start` is long-polled. Its rows `web: create→ready`,
+`web: create→busy` and `web: create→first token` are timed from that POST, and
+its prompt asks for a reply of many tokens, so the first token is not the last.
+Use it for any new-session latency claim. The default flow creates, waits for
+ready, then POSTs a one-word prompt: a different path, and on it `first token`
+and `idle` land together. Add `BENCH_AGENT=<declared agent>` to measure a project
+agent. The default agent of a fresh project is the platform agent, which skips
+the project's git reads and Drive mounts. `busy` is the number for an
+infrastructure change: `first token` adds the model's own variance (0.9 s to 8 s
+on 2026-11-02).
+
 `apps/api/scripts/latency-proxy.ts` is a TCP relay that delays each chunk by a
 fixed one-way time. At 25 ms one-way it gives the local API the 50 ms RTT to its
 database that the dev API had on 2026-09-19. postgres.js pays 2 round trips per
@@ -110,7 +123,7 @@ in a HAR.
    replaced. The first load in a fresh browser adds CORS preflights
    (53 `OPTIONS` in the first local load, which also ran the onboarding); the
    counts below exclude them (preflight cache warm).
-5. Stop the kept session and the warm session the page started (`POST …/sessions/warm`).
+5. Stop the kept session.
 
 ## Baseline, 2026-09-29
 
@@ -185,8 +198,8 @@ unfiltered), `GET …/sessions/:id/transcript` ×4 locally and ×3 on dev (the s
 `GET …/change-requests`, `GET …/turn` and `GET …/prompts` (`…/turn` and
 `…/prompts` once in 1 of the 2 dev loads). The in-app open repeats
 `…/transcript` (×3–4), `…/sessions` (×3) and `…/sessions/:id` (×2); locally also
-`…/turn` and `…/prompts` (×2). A session page also calls `POST …/sessions/warm`, which starts
-a new warm session with a sandbox: stop it after a capture.
+`…/turn` and `…/prompts` (×2). On that date a session page also called `POST …/sessions/warm`
+(warm sessions, removed on 2026-11-03).
 
 Comparison with 2026-09-19 (same method and 50 ms RTT, before / after PR #7430,
 which is merged): POST /prompts 1,057 / 562 ms, delivery 5,516 / 3,617 ms,

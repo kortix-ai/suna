@@ -1,14 +1,17 @@
+import { MagnifyingGlassIcon } from '@phosphor-icons/react';
+
 import { useTranslations } from '../../../i18n';
+import { EmptyState } from '../../../primitives/empty-state';
 import type { ReactNode } from 'react';
 
 /**
- * The "nothing here" line every catalog uses, so five hand-typed copies of one
- * class string cannot drift into five different-looking messages. `CatalogGrid`
- * owns loading/error/empty; this is what callers put IN the empty slot when the
+ * The "nothing here" state every catalog uses: the shared `EmptyState`, so a
+ * catalog's empty slot looks like every other empty view. `CatalogGrid` owns
+ * loading/error/empty; this is what callers put IN the empty slot when the
  * cause is the search box rather than an empty project.
  */
 export function CatalogEmptyNote({ children }: { children: ReactNode }) {
-  return <p className="text-muted-foreground px-3 py-6 text-center text-xs">{children}</p>;
+  return <EmptyState size="sm" icon={MagnifyingGlassIcon} title={children} />;
 }
 
 /**
@@ -18,31 +21,12 @@ export function CatalogEmptyNote({ children }: { children: ReactNode }) {
  * spaces inside a monospace span, which reads as a rendering bug rather than as
  * a report of what was searched for.
  */
-export function CatalogNoMatch({
-  query,
-  excludedNoActions = 0,
-}: {
-  query: string;
-  /**
-   * Apps that matched but expose no actions, so the catalogue does not offer
-   * them.
-   *
-   * Without this the page reports a flat "No matches for SAP" — which is wrong
-   * twice, because `sap_s_4hana_cloud` and `sap_s_4hana_cloud_sandbox` both
-   * exist upstream and the reason they are absent is one we can state.
-   * Reporting a bare zero is what made the catalogue look broken rather than
-   * selective.
-   */
-  excludedNoActions?: number;
-}) {
+export function CatalogNoMatch({ query }: { query: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <CatalogEmptyNote>
       {tI18nComplete.raw('texta8897de42124')}{' '}
       <span className="text-foreground font-mono">{query.trim()}</span>.
-      {excludedNoActions > 0 ? (
-        <> {tI18nComplete('catalogExcludedNoActions', { count: excludedNoActions })}</>
-      ) : null}
     </CatalogEmptyNote>
   );
 }

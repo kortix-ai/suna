@@ -4,6 +4,7 @@ import * as React from 'react';
 import * as ResizablePrimitive from 'react-resizable-panels';
 
 import { cn } from '../lib/utils';
+import { RESIZE_SEAM_CLASS } from './resize-seam';
 
 function ResizablePanelGroup({
   className,
@@ -44,7 +45,13 @@ function ResizableHandle({
     <ResizablePrimitive.PanelResizeHandle
       data-slot="resizable-handle"
       className={cn(
-        'focus-visible:ring-ring relative flex cursor-col-resize items-center justify-center focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:outline-hidden data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:cursor-row-resize [&[data-panel-group-direction=vertical]>div]:rotate-90',
+        'relative flex cursor-col-resize items-center justify-center focus-visible:outline-hidden data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:cursor-row-resize [&[data-panel-group-direction=vertical]>div]:rotate-90',
+        // The sidebar rail's seam on hover, keyboard focus and drag: one look
+        // for every drag-to-resize edge. Horizontal groups only; a vertical
+        // handle keeps its plain row cursor.
+        RESIZE_SEAM_CLASS,
+        'data-[panel-group-direction=vertical]:before:hidden',
+        'data-[resize-handle-state=hover]:before:opacity-100 data-[resize-handle-state=drag]:before:opacity-100 focus-visible:before:opacity-100',
         className,
       )}
       {...props}

@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   mayManageSessionSharing,
+  mayPublishTurn,
+  isHumanCaller,
   sharingChangeKeepsEditorAccess,
   type SecretGrant,
   type ShareSubject,
@@ -111,5 +113,54 @@ describe('sharingChangeKeepsEditorAccess', () => {
         subject: subject('manager', ['platform']),
       }),
     ).toBe(true);
+  });
+});
+
+describe('mayPublishTurn', () => {
+  const base = { isHuman: true, canRead: true, isOwner: false, isManager: false };
+
+  test('the owner who reads the session may publish', () => {
+    expect(mayPublishTurn({ ...base, isOwner: true })).toBe('allow');
+  });
+
+  test('a project manager who reads the session may publish', () => {
+    expect(mayPublishTurn({ ...base, isManager: true })).toBe('allow');
+  });
+
+  test('a plain member who reads the session is refused', () => {
+    expect(mayPublishTurn(base)).toBe('not_owner_or_manager');
+  });
+
+  test('a session the caller cannot read is not found, even for a manager or the owner', () => {
+    expect(mayPublishTurn({ ...base, canRead: false, isManager: true })).toBe('not_found');
+    expect(mayPublishTurn({ ...base, canRead: false, isOwner: true })).toBe('not_found');
+  });
+
+  test('an agent credential is refused even on its own session', () => {
+    expect(mayPublishTurn({ ...base, isHuman: false, isOwner: true })).toBe('not_human');
+    expect(mayPublishTurn({ ...base, isHuman: false, isManager: true })).toBe('not_human');
+  });
+
+  test('an agent credential that cannot read the session gets not found, not a hint it exists', () => {
+    expect(mayPublishTurn({ ...base, isHuman: false, canRead: false })).toBe('not_found');
+  });
+});
+
+describe('isHumanCaller', () => {
+  test('a browser login (jwt) or a human PAT with no session binding is human', () => {
+    expect(isHumanCaller({ credentialKind: 'jwt', boundSessionId: null })).toBe(true);
+    expect(isHumanCaller({ credentialKind: 'pat', boundSessionId: null })).toBe(true);
+  });
+
+  test('a PAT bound to a session (a sandbox credential) is not human', () => {
+    expect(isHumanCaller({ credentialKind: 'pat', boundSessionId: 'S1' })).toBe(false);
+  });
+
+  test('service accounts, agent sessions (bound or not), sandbox tokens and an unknown actor are not human', () => {
+    expect(isHumanCaller({ credentialKind: 'service_account', boundSessionId: null })).toBe(false);
+    expect(isHumanCaller({ credentialKind: 'agent_session', boundSessionId: null })).toBe(false);
+    expect(isHumanCaller({ credentialKind: 'agent_session', boundSessionId: 'S1' })).toBe(false);
+    expect(isHumanCaller({ credentialKind: 'sandbox', boundSessionId: null })).toBe(false);
+    expect(isHumanCaller({ credentialKind: undefined, boundSessionId: null })).toBe(false);
   });
 });

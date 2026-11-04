@@ -78,6 +78,13 @@ data "aws_secretsmanager_secret" "env" {
   name = "kortix-staging-env"
 }
 
+# The regional alert topic. infra/terraform/compliance-monitoring owns it
+# (monitoring.tf, data.aws_sns_topic.euw2_alerts). The worker alarms of
+# module.api publish to it.
+data "aws_sns_topic" "alerts" {
+  name = "kortix-compliance-alerts"
+}
+
 # ── Project snapshot object store (S3 config provider) ────────────────────────
 # Snapshots are derived data, so this bucket started empty. The old us-west-2
 # cache "kortix-staging-project-snapshots" was deleted on 2026-10-12.
@@ -151,7 +158,10 @@ module "api" {
     module.network.public_subnet_ids[0],
     module.network.public_subnet_ids[1],
   ]
-  private_subnet_ids = module.network.private_subnet_ids
+  # Egress subnets: the internet without NAT processing, GitHub still from
+  # the NAT EIPs that the GitHub App publishes (modules/network).
+  private_subnet_ids = module.network.egress_subnet_ids
+  assign_public_ip   = true
 
   image           = var.api_image
   container_port  = var.container_port
@@ -192,6 +202,18 @@ module "api" {
   memory_target              = 65
   requests_per_target_target = 600
   tags                       = local.tags
+
+  # Scheduled jobs run on kortix-staging-euw2-worker, not on the API tasks
+  # (modules/ecs-api var.worker). The worker task opens database connections
+  # like one API task: count it in the staging database's 120 (README.md).
+  # ecs-deploy.sh --service worker rolls it before the API, and the API gets
+  # KORTIX_PROCESS_ROLE=web only while that worker is healthy on its image.
+  worker = {
+    task_cpu           = 1024
+    task_memory        = 4096
+    metric_environment = "staging"
+    alarm_topic_arn    = data.aws_sns_topic.alerts.arn
+  }
 }
 
 # ── Gateway (LLM proxy) as its own ECS Fargate service ────────────────────────

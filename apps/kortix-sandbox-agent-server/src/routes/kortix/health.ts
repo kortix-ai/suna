@@ -1,8 +1,9 @@
+import { existsSync } from 'node:fs'
 import { Hono } from 'hono'
 import type { HarnessDiagnosticsContext, HarnessDiagnosticsService } from '@/harness/contract/diagnostics'
 import { readHostHealth } from '@/harness/shared/host-health'
-import { legacyHealthFields, legacyRunningFields } from './legacy-names'
 import { COMPILED_AGENT_CONFIG_GZ_CAPABILITY } from '@kortix/api-contract/compiled-agent-config-env'
+import { MACHINE_DESKTOP_CAPABILITY } from '@kortix/api-contract/runtime-relay'
 
 /**
  * `GET /kortix/health`: the host facts, the selected harness's closed `harness`
@@ -16,6 +17,9 @@ export function createHealthRouter(
   controlCapabilities: readonly string[] = [],
 ): Hono {
   const router = new Hono()
+  // The image installs the desktop at build time, so one read at boot holds.
+  // The entrypoint starts it from the same file.
+  const machineCapabilities = existsSync('/usr/local/bin/kortix-desktop') ? [MACHINE_DESKTOP_CAPABILITY] : []
   router.get('/', async (c) => {
     const turn = c.req.query('turn') === '1'
       ? {
@@ -24,7 +28,7 @@ export function createHealthRouter(
         }
       : undefined
     const [host, report, runtimeCapabilities] = await Promise.all([
-      readHostHealth(context, diagnostics.catalogSnapshot),
+      readHostHealth(context),
       diagnostics.health(context, { turn }),
       diagnostics.capabilities(),
     ])
@@ -38,14 +42,21 @@ export function createHealthRouter(
     const runtimeReady = host.repo_ready && !repoError && harness.ready
     return c.json({
       daemon: 'ok',
-      // Host-owned `/file` routes and the compiled agent config's gzip env form,
-      // for every harness, then what the control and the runtime serve.
-      capabilities: ['file.import', 'file.append', COMPILED_AGENT_CONFIG_GZ_CAPABILITY, ...controlCapabilities, ...runtimeCapabilities],
+      // Host-owned `/file` routes, the compiled agent config's gzip env form and
+      // the machine's desktop, for every harness, then what the control and the
+      // runtime serve.
+      capabilities: [
+        'file.import',
+        'file.append',
+        COMPILED_AGENT_CONFIG_GZ_CAPABILITY,
+        ...machineCapabilities,
+        ...controlCapabilities,
+        ...runtimeCapabilities,
+      ],
       status: runtimeReady ? 'ok' : repoError || harness.error ? 'error' : harness.state,
       runtimeReady,
       boot_error: repoError ?? harness.error,
       ...host,
-      runtime: { ...host.runtime, running: { ...running, ...legacyRunningFields(running) } },
       harness,
       ...(report.config ? { config: report.config } : {}),
       ...(report.configDirSha !== undefined ? { config_dir_sha: report.configDirSha } : {}),
@@ -57,7 +68,6 @@ export function createHealthRouter(
             turn_orphaned_prompt: harness.turn.orphaned_prompt,
           }
         : {}),
-      ...legacyHealthFields(harness),
     })
   })
   return router

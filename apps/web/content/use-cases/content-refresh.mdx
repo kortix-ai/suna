@@ -61,45 +61,123 @@ merges its own work.
 ## How it works
 
 <Steps>
-<Step title="Run on a weekly reusable session">
+<Step title="Copy the setup prompt into a new session">
 
-A **cron trigger** fires the agent once a week, and it re-prompts a **reusable
-session** rather than starting fresh. That matters here: refreshing every
-decaying page at once would be disruptive, so the agent works through a
-rotation, and the only way to rotate fairly is to remember what it already
-touched.
+Open your Kortix project, start a new session, paste this prompt and send it.
+The agent writes the agent file, the refresh skill and the weekly trigger, and
+opens a change request for you to review. Prefer clicks? Choose **Use this
+template** instead.
 
-</Step>
-<Step title="Find what's decaying">
+<CopyBlock
+  title="Setup prompt"
+  code={`Set up a weekly content refresh agent in this project.
 
-Through a scoped **connector**, the agent reads Google Search Console for the
-site: impressions and clicks per page over the trailing window compared to the
-window before it. Pages with the sharpest decline, weighted by how much
-traffic they still carry, become candidates.
+1. Create the agent agents/content-refresh.md. Its job is to keep the marketing and blog pages in owner/repo from decaying in search. It may use the Google Search Console connector and a GH_TOKEN secret for GitHub.
 
-</Step>
-<Step title="Cross-reference the content repo and rotate coverage">
+2. Create the skill skills/content-decay-refresh/SKILL.md with these rules:
+   - Compare impressions and clicks per page under apps/web/content for the last 28 days with the 28 days before. Rank pages by decay, weighted by traffic.
+   - Read memory/content-refresh-log.md first. A page refreshed in the last two weeks drops in priority. A page never refreshed moves up.
+   - Take the top 3 to 5 pages as the week's batch.
+   - Refresh only dated copy, aged-out stats and internal links to renamed or retired pages. If no current figure exists, soften the claim.
+   - Edit only files under apps/web/content, on a new branch. Open one pull request per run. Never merge it.
+   - If nothing is stale enough, update the ledger and stop without a pull request.
 
-The agent checks its **ledger** — which pages it refreshed and when — before
-picking this week's targets. A page that was refreshed three weeks ago drops
-in priority even if it's still declining; a page that's never been touched
-moves up. This is what keeps the rotation from fixating on the same few
-high-traffic pages every week.
+3. Add a cron trigger weekly-content-refresh to kortix.yaml. It runs the content-refresh agent every Monday at 09:00 with the prompt "Load the content-decay-refresh skill and run one complete refresh pass for sc-domain:example.com."
 
-</Step>
-<Step title="Refresh the copy, stats, and internal links">
+4. Tell me which of these connectors are not connected yet.
 
-For each page in this week's batch, the agent opens the source in
-**GitHub**, updates copy that reads as dated, refreshes numbers and stats that
-have gone stale, and repoints internal links that reference renamed or
-retired pages. It works on an isolated branch, never on the live one.
+5. Open a change request with all of it. Do not merge it.`}
+/>
 
 </Step>
-<Step title="Open a PR and stop">
+<Step title="Connect your tools">
 
-The agent opens one PR per run summarizing what changed on which pages and
-why, using the **`gh` CLI** authenticated with a scoped `GH_TOKEN`. It never
-publishes and never merges. A human reviews the diff and decides what ships.
+Open **Connectors** in your project and connect Google Search Console.
+Connector credentials are brokered server-side and never enter the agent's
+machine. Add a GitHub token as the `GH_TOKEN` secret so the agent can open the
+pull request.
+
+<ToolList>
+  <ToolNeed name="Google Search Console" domain="search.google.com" tag="Required" alternatives={[['Google Analytics', 'analytics.google.com'], ['Ahrefs', 'ahrefs.com'], ['Semrush', 'semrush.com']]}>
+    Reads impressions and clicks to rank decaying pages.
+  </ToolNeed>
+  <ToolNeed name="GitHub" domain="github.com" tag="Required" alternatives={[['GitLab', 'gitlab.com']]}>
+    Refreshes stale pages on a branch and opens one PR.
+  </ToolNeed>
+</ToolList>
+
+</Step>
+<Step title="Run it once with this prompt">
+
+Merge the change request, then start a session with the **content-refresh** agent
+and send this prompt. Read the pull request before you let the
+schedule take over.
+
+<CopyBlock
+  title="Prompt"
+  code={`Run one content refresh pass for sc-domain:example.com.
+
+1. Read memory/content-refresh-log.md and check for an open content refresh pull request.
+2. Pull impressions and clicks per page under apps/web/content for the last 28 days and the 28 days before. Rank pages by decay, weighted by traffic.
+3. Move pages refreshed in the last two weeks down the list. Take the top 3 to 5 as this week's batch.
+4. On a new branch, update dated copy, aged-out stats and internal links to renamed pages. Change nothing else.
+5. Open one pull request in owner/repo with the decay signal and the change for each page. Do not merge it.
+6. Add what you refreshed to the ledger.`}
+/>
+
+</Step>
+<Step title="Let the weekly schedule take over">
+
+The change request added this trigger to `kortix.yaml`. From now on the agent
+runs every Monday at 09:00, each run in a new session on its own cloud
+computer. The ledger in memory carries the rotation from one week to the next.
+To change the time, edit the cron line, or open **Triggers** in the project.
+
+<CopyBlock
+  title="kortix.yaml"
+  lang="yaml"
+  code={`triggers:
+  - slug: weekly-content-refresh
+    name: Weekly content refresh
+    on:
+      cron: "0 0 9 * * 1"
+    run:
+      agent: content-refresh
+      prompt: Load the content-decay-refresh skill and run one complete refresh pass for sc-domain:example.com.`}
+/>
+
+</Step>
+<Step title="Open a pull request, never publish">
+
+The agent edits only files under the content path, on its own branch. It
+opens one pull request per run and stops. A person reviews the diff and merges
+it. Search Console access is read-only, so the agent cannot change anything
+there.
+
+</Step>
+<Step title="Review the pull request">
+
+Each run ends with one pull request and a ledger entry. This is what a run
+looks like in the session:
+
+<ExampleRun
+  title="Weekly content refresh · Mon 09:00"
+  message="Load the content-decay-refresh skill and run one complete refresh pass for sc-domain:example.com."
+  worked="Worked for 6m 41s"
+  tools={[
+    'github · list pull requests',
+    'search console · query pages',
+    'github · read file × 4',
+    'github · create branch',
+    'github · commit files',
+    'github · open pull request',
+  ]}
+  note="Illustrative example. Your pages and traffic differ."
+>
+  Refreshed **4** pages from **27** decaying candidates. Updated **9**
+  aged-out stats and repointed **6** internal links to renamed pages. The pull
+  request is open for review, and **2** pages move up the ledger for next week.
+</ExampleRun>
 
 </Step>
 </Steps>
@@ -110,6 +188,25 @@ publishes and never merges. A human reviews the diff and decides what ships.
   content on an isolated branch. The only output is a PR — never a push to the
   live branch.
 </Callout>
+
+## Make it do more
+
+Once it works, paste any of these into the same session.
+
+<CopyBlock
+  title="Fix titles that lose clicks"
+  code="For each page in the batch, also rewrite the meta title and description when clicks fell faster than impressions."
+/>
+
+<CopyBlock
+  title="Flag pages that compete"
+  code="When two pages rank for the same query in Search Console, list them in the pull request body as candidates to merge, and edit neither one."
+/>
+
+<CopyBlock
+  title="Monthly decay table"
+  code="On the first Monday of each month, add a table to the pull request body with the 10 pages that lost the most clicks and whether each one was refreshed."
+/>
 
 ## Guardrails
 

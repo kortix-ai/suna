@@ -237,8 +237,8 @@ describe('status and links', () => {
   });
 
   test('links to the connector detail on the Connectors page', () => {
-    expect(connectorHref('p1', 'github')).toBe('/projects/p1/customize/connectors?c=github');
-    expect(connectorHref('p1')).toBe('/projects/p1/customize/connectors');
+    expect(connectorHref('p1', 'github')).toBe('/projects/p1/admin/connectors?c=github');
+    expect(connectorHref('p1')).toBe('/projects/p1/admin/connectors');
   });
 });
 

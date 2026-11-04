@@ -114,14 +114,14 @@
       "passwordTooShort": "Password must be at least 8 characters"
     },
     "drawer": {
-      "defaultTitle": "Welcome to Kortix",
-      "defaultMessage": "The AI Super Mega Giga app.",
-      "signInToChat": "Welcome to Kortix",
-      "signInToChatMessage": "The AI Super Mega Giga app.",
-      "signUpUnlock": "Welcome to Kortix",
-      "signUpUnlockMessage": "The AI Super Mega Giga app.",
-      "welcomeBack": "Welcome to Kortix",
-      "welcomeBackMessage": "The AI Super Mega Giga app.",
+      "defaultTitle": "Welcome to Kortix CompanyOS",
+      "defaultMessage": "The open-source CompanyOS.",
+      "signInToChat": "Welcome to Kortix CompanyOS",
+      "signInToChatMessage": "The open-source CompanyOS.",
+      "signUpUnlock": "Welcome to Kortix CompanyOS",
+      "signUpUnlockMessage": "The open-source CompanyOS.",
+      "welcomeBack": "Welcome to Kortix CompanyOS",
+      "welcomeBackMessage": "The open-source CompanyOS.",
       "signUpToContinue": "Sign up to continue",
       "signUpToContinueMessage": "Please sign up or sign in to create and select workers, connect apps and much more"
     },
@@ -1264,5 +1264,38 @@
     "waitingManagers": "Anyone who manages this project can approve or deny it.",
     "waitingTitle": "Waiting on approval",
     "waitingWho": "The person who started this session or anyone who manages this project can approve or deny it."
+  },
+  "imageGen": {
+    "generating": "Generating image",
+    "editing": "Editing image",
+    "openFullScreen": "Open full screen",
+    "openFullScreenPrompt": "Open full screen: {{prompt}}",
+    "generatingCount_one": "Generating {{count}} image",
+    "generatingCount_other": "Generating {{count}} images",
+    "editingCount_one": "Editing {{count}} image",
+    "editingCount_other": "Editing {{count}} images",
+    "loading": "Loading image",
+    "stopped": "Stopped",
+    "failed": "The image was not generated.",
+    "tapToLoad": "Tap to load ({{size}})",
+    "retrySecond_one": "Try again in {{count}} second.",
+    "retrySecond_other": "Try again in {{count}} seconds.",
+    "retryMinute_one": "Try again in {{count}} minute.",
+    "retryMinute_other": "Try again in {{count}} minutes.",
+    "retryHour_one": "Try again in {{count}} hour.",
+    "retryHour_other": "Try again in {{count}} hours.",
+    "unavailable": "Image unavailable",
+    "details": "Image details"
+  },
+  "sessionImage": {
+    "title": "Preparing the sandbox image",
+    "states": {
+      "resolving": "Choosing the image for this session.",
+      "serving_last_ready": "Starting from the last ready image. The new one builds in the background.",
+      "waiting_for_build": "The first image for this project is building. The session starts when it is ready.",
+      "building": "Building the first image for this project. This happens once and takes a few minutes.",
+      "copying_to_region": "Copying the image to this session's region.",
+      "waiting_for_provider": "The image is finishing. The session starts when it is ready."
+    }
   }
 }

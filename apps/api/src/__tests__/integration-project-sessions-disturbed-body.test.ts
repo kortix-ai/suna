@@ -72,7 +72,7 @@ beforeAll(async () => {
     on conflict do nothing`);
   await db.execute(sql`
     insert into kortix.projects (project_id, account_id, name, repo_url)
-    values (${PROJECT}, ${ACCOUNT}, 'krtx2736-disturbed', 'https://github.com/kortix-ai/suna')
+    values (${PROJECT}, ${ACCOUNT}, 'krtx2736-disturbed', 'https://github.com/kortix-ai/CompanyOS')
     on conflict (project_id) do nothing`);
   const values = Array.from(
     { length: SESSIONS },

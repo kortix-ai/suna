@@ -10,11 +10,29 @@ metadata:
 Fast browser automation CLI for AI agents. Chrome/Chromium via CDP with
 accessibility-tree snapshots and compact `@eN` element refs.
 
-The `agent-browser` CLI and a headless Chromium are **already installed** in this
-Kortix sandbox and on `$PATH` — you do not need to run any install step. The
+The `agent-browser` CLI and Chromium are **already installed** in this Kortix
+sandbox and on `$PATH` — you do not need to run any install step. The
 browser is pre-wired via `AGENT_BROWSER_EXECUTABLE_PATH`, so `agent-browser open`
 works out of the box. (For reference, outside this sandbox it installs with
 `npm i -g agent-browser && agent-browser install`.)
+
+## The desktop browser
+
+On the session desktop, `agent-browser` runs headed in the one browser the user
+shares with you. They watch each page in the **Desktop** panel, open the same
+window from the dock, and can take over to sign in for you. Leave it open when
+you finish: `agent-browser close` closes the user's window and drops its
+logins. Browse only in the default session: a named `--session` starts a
+second browser the user does not share. A sandbox without a desktop runs the
+browser headless.
+
+## The user's own browser
+
+This sandbox browser is a cloud Chrome without the user's logins. To work in the
+**user's own Chrome** (their logins, their real session, sites that block cloud
+browsers), load the `kortix-chrome` skill: run `kortix chrome use`, then add
+`--cdp 9333` to every `agent-browser` command, and run `kortix chrome release`
+when done.
 
 ## Start here
 

@@ -13,7 +13,8 @@
  *
  * Signature header/format specifics for each provider are confirmed against a
  * live delivery at deploy time — see verify* below. Until the matching secret is
- * configured the endpoints are inert (503) and the reaper alone keeps billing
+ * configured Platinum ingress is not registered (Daytona stays inert with 503),
+ * and the reaper alone keeps billing
  * correct, so enabling webhooks is purely an upgrade in latency, never a
  * correctness dependency.
  */

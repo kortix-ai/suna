@@ -450,8 +450,9 @@ flow(
       });
 
       await ctx.step('all:true marks every unread row of the reader → unread_count 0; a repeat → updated 0', async () => {
-        // The hidden row is still the reader's own: `all` marks it too.
-        (await read({ all: true })).status(200).body().has('$.updated', 2).has('$.unread_count', 0);
+        // `all` marks the hidden row too, but `updated` counts only rows the
+        // reader may see, so it does not disclose hidden rows (#10893).
+        (await read({ all: true })).status(200).body().has('$.updated', 1).has('$.unread_count', 0);
         (await read({ all: true })).status(200).body().has('$.updated', 0).has('$.unread_count', 0);
       });
 
@@ -462,7 +463,7 @@ flow(
         (await read({ all: true }, ctx.client.as(ctx.P.ANON))).status(401);
       });
 
-      await ctx.step('GET preferences → the documented defaults for all seven kinds, and email_available', async () => {
+      await ctx.step('GET preferences → the documented defaults for all eleven kinds, and email_available', async () => {
         const r = await asReader.get('/v1/notifications/preferences');
         r.status(200);
         const prefs = r.json<{ kinds: Record<string, { push: boolean; email: boolean }>; email_available: unknown }>();
@@ -477,6 +478,7 @@ flow(
           capture_device_down: { push: true, email: true },
           capture_device_recovered: { push: true, email: false },
           message: { push: true, email: true },
+          artifact_comment: { push: true, email: true },
         };
         if (JSON.stringify(prefs.kinds) !== JSON.stringify(defaults)) throw new Error(`defaults ${JSON.stringify(prefs.kinds)}`);
         if (typeof prefs.email_available !== 'boolean') throw new Error(`email_available ${prefs.email_available}`);
@@ -767,7 +769,7 @@ flow(
 
       await ctx.step('the creator gets exactly one automation_failed row titled with the trigger; OWNER gets none', async () => {
         const [row] = await waitForInbox(ctx, creator, alert);
-        if (row.title !== name || row.session_id !== null || row.url !== `/projects/${project.id}/customize/triggers?notification=${row.id}`) {
+        if (row.title !== name || row.session_id !== null || row.url !== `/projects/${project.id}/admin/triggers?notification=${row.id}`) {
           throw new Error(JSON.stringify(row));
         }
         await settle();
@@ -787,7 +789,7 @@ flow(
         const mailpit = ctx.env.mailpitUrl;
         if (!mailpit && ctx.env.target === 'local') throw new Error('the local profile always has Mailpit: KE2E_MAILPIT_URL is missing');
         if (!mailpit) return; // a deployed target without Mailpit proves the send by the stamp alone
-        const subject = (message: { Subject: string }) => message.Subject === `Automation failing: ${name}`;
+        const subject = (message: { Subject: string }) => message.Subject === `Trigger failing: ${name}`;
         await waitForMailpit(mailpit, creator.email!, (messages) => messages.some(subject));
         expectCount((await mailpitMessagesTo(mailpit, creator.email!)).filter(subject).length, 1, "the creator's alert emails");
         expectCount((await mailpitMessagesTo(mailpit, ctx.P.OWNER.email!)).filter(subject).length, 0, "OWNER's alert emails");
@@ -1209,7 +1211,7 @@ flow(
           expectCount(await storedCount(db, who.userId!, { projectId: triggers.id }), 0, `${label}'s rows for the trigger project`);
           if (!ctx.env.mailpitUrl) continue; // the row count above already proves it: an alert email follows its row
           const mails = await mailpitMessagesTo(ctx.env.mailpitUrl, who.email!);
-          expectCount(mails.filter((m) => m.Subject === `Automation failing: ${name}`).length, 0, `${label}'s alert emails`);
+          expectCount(mails.filter((m) => m.Subject === `Trigger failing: ${name}`).length, 0, `${label}'s alert emails`);
         }
       });
 

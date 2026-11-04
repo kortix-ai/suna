@@ -46,6 +46,7 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useSandboxFileContent } from '@/lib/files/hooks';
+import { useSharedImage } from '@/lib/files/shared-image';
 import {
   ArrowSquareOutIcon,
   FileIcon,
@@ -92,6 +93,11 @@ export interface ShowContentProps {
   content?: string;
   language?: string;
   aspectRatio?: string;
+  /**
+   * The sha256 of the file's bytes, from the `show` output (R38): an image the
+   * card already loaded under another path (a Drive copy) draws its source at once.
+   */
+  sha256?: string;
   /** Renders a localhost / static-file preview. The caller provides it. */
   LocalhostPreview?: ComponentType<{ url: string; label?: string }>;
   /** Fill the available height (panel surface) instead of the inline card. */
@@ -357,6 +363,7 @@ export function ShowContentRenderer({
   content = '',
   language = '',
   aspectRatio = '',
+  sha256,
   LocalhostPreview,
   fill = false,
   onStatusChange,
@@ -380,13 +387,20 @@ export function ShowContentRenderer({
 
   // ── Loads — unconditional hooks, gated by branch ──
   const imagePath = branch === 'image' && isLocalSandboxFilePath(path) ? path : '';
-  const image = useSandboxImage(imagePath, Boolean(imagePath));
+  // The app's shared image store first (R38): the source the card loaded, by
+  // sha256 or path, with no probe. A failed draw (an expired token) falls back
+  // to the file's own load.
+  const shared = useSharedImage(sandboxUrl, imagePath || null, sha256);
+  const [sharedFailed, setSharedFailed] = useState(false);
+  const sharedSource = shared && !sharedFailed ? shared.source : null;
+  const image = useSandboxImage(imagePath, Boolean(imagePath) && !sharedSource);
 
   const textPath = branch === 'sandbox-file' && !isShowBinaryPath(path) ? path : undefined;
   const textFile = useSandboxFileContent(sandboxUrl, textPath, { enabled: Boolean(sandboxUrl && textPath) });
 
   const ownStatus: ShowLoadStatus = (() => {
     if (imagePath) {
+      if (sharedSource) return 'ready';
       if (image.phase === 'error') return 'error';
       return image.phase === 'probing' ? 'loading' : 'ready';
     }
@@ -435,9 +449,9 @@ export function ShowContentRenderer({
           </PressableSurface>,
         );
       }
-      if (image.phase === 'probing') return <RendererFallback height={mediaHeight} />;
-      if (image.phase === 'error') return <LoadError message="Failed to load image" />;
-      if (image.phase === 'tap-to-load') {
+      if (!sharedSource && image.phase === 'probing') return <RendererFallback height={mediaHeight} />;
+      if (!sharedSource && image.phase === 'error') return <LoadError message="Failed to load image" />;
+      if (!sharedSource && image.phase === 'tap-to-load') {
         return framed(
           <View style={{ height: mediaHeight, alignItems: 'center', justifyContent: 'center' }}>
             <Button variant="secondary" size="sm" onPress={image.loadAnyway}>
@@ -446,8 +460,8 @@ export function ShowContentRenderer({
           </View>,
         );
       }
-      if (image.source) {
-        const source = image.source;
+      if (sharedSource || image.source) {
+        const source = sharedSource || image.source;
         return framed(
           <PressableSurface
             accessibilityRole="imagebutton"
@@ -457,9 +471,10 @@ export function ShowContentRenderer({
             style={({ pressed }) => ({ opacity: pressed ? PRESSED_OPACITY : 1 })}
           >
             <Image
-              key={image.attempt}
+              key={sharedSource ? undefined : image.attempt}
+              testID={sharedSource ? 'show-shared-image' : undefined}
               source={source}
-              onError={image.handleError}
+              onError={sharedSource ? () => setSharedFailed(true) : image.handleError}
               resizeMode="contain"
               resizeMethod="resize"
               style={{ width: '100%', height: mediaHeight ?? '100%' }}

@@ -42,8 +42,9 @@ test('a billing-write burst is refused before upstream work, across operations, 
   expect(auditEvents[0]).toMatchObject({ accountId: 'account-a', action: 'api.rate_limit.exceeded', metadata: { limiter: 'billing_write' } });
   const denied = responses.find((r) => r.status === 429);
   expect(denied).toBeDefined();
-  expect(denied?.headers.get('Retry-After')).toBe('60');
-  expect(await denied?.json()).toMatchObject({ error: 'rate_limit_exceeded', retry_after_seconds: 60 });
+  // 5 per minute returns a token every 12 s (KRTX-3408).
+  expect(denied?.headers.get('Retry-After')).toBe('12');
+  expect(await denied?.json()).toMatchObject({ error: 'rate_limit_exceeded', retry_after_seconds: 12 });
   expect((await app.request('/read')).status).toBe(200);
   expect((await app.request('/plan', { method: 'POST', headers: { 'x-test-account': 'account-b' } })).status).toBe(200);
   jest.advanceTimersByTime(60_000);

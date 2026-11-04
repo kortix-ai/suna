@@ -4,8 +4,10 @@ import { resolve } from 'node:path';
 
 import { testUiTranslator } from '../../test-utils/intl';
 import {
+  pendingSessionPromptForRecovery,
   pendingSessionPromptFromMetadata,
   provisioningFailurePresentation,
+  recoveryPromptToSendOnRetry,
 } from './provisioning-failure';
 
 describe('provisioningFailurePresentation', () => {
@@ -114,5 +116,74 @@ describe('pendingSessionPromptFromMetadata', () => {
         pending_prompt: { text: 'Map this parcel.', attachment_names: [42] },
       }),
     ).toBeNull();
+  });
+});
+
+describe('pendingSessionPromptForRecovery', () => {
+  const SESSION_ID = '00000000-0000-4000-8000-000000000001';
+  const AGENT_PROMPT = 'Summarize the open pull requests and post the summary.';
+
+  test('shows the initial_prompt of a session an agent, trigger or channel created', () => {
+    // Spawned, trigger, channel, MCP and marketplace sessions store their
+    // first prompt as `metadata.initial_prompt`, never as `pending_prompt`.
+    expect(
+      pendingSessionPromptForRecovery(SESSION_ID, { source: 'agent', initial_prompt: AGENT_PROMPT }),
+    ).toEqual({
+      text: AGENT_PROMPT,
+      agent: null,
+      model: null,
+      variant: null,
+      attachment_names: [],
+      redeliveredOnRestart: true,
+    });
+  });
+
+  test('hides the initial_prompt once the runtime ran it', () => {
+    // The restart re-delivers `initial_prompt` only while the session has no
+    // runtime session id. After that it is history, not a saved prompt.
+    expect(
+      pendingSessionPromptForRecovery(SESSION_ID, { initial_prompt: AGENT_PROMPT }, 'ses_runtime'),
+    ).toBeNull();
+  });
+
+  test('ignores a blank initial_prompt', () => {
+    expect(pendingSessionPromptForRecovery(SESSION_ID, { initial_prompt: '  ' })).toBeNull();
+    expect(pendingSessionPromptForRecovery(SESSION_ID, { initial_prompt: 42 })).toBeNull();
+  });
+
+  test('a legacy pending_prompt.text wins and stays client-delivered', () => {
+    expect(
+      pendingSessionPromptForRecovery(SESSION_ID, {
+        pending_prompt: { text: 'legacy hand-off' },
+        initial_prompt: AGENT_PROMPT,
+      }),
+    ).toMatchObject({ text: 'legacy hand-off', redeliveredOnRestart: false });
+  });
+});
+
+describe('recoveryPromptToSendOnRetry', () => {
+  test('sends nothing for an initial_prompt: the restart re-delivers it', () => {
+    const prompt = pendingSessionPromptForRecovery('00000000-0000-4000-8000-000000000002', {
+      initial_prompt: 'Run the nightly report.',
+    });
+    expect(prompt?.text).toBe('Run the nightly report.');
+    expect(recoveryPromptToSendOnRetry(prompt)).toBeNull();
+  });
+
+  test('sends a legacy pending_prompt.text once, as before', () => {
+    const prompt = pendingSessionPromptForRecovery('00000000-0000-4000-8000-000000000003', {
+      pending_prompt: { text: 'legacy hand-off', agent: 'builder' },
+    });
+    expect(recoveryPromptToSendOnRetry(prompt)).toEqual({
+      text: 'legacy hand-off',
+      agent: 'builder',
+      model: null,
+      variant: null,
+      attachment_names: [],
+    });
+  });
+
+  test('sends nothing when there is no prompt', () => {
+    expect(recoveryPromptToSendOnRetry(null)).toBeNull();
   });
 });

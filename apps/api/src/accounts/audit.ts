@@ -12,6 +12,8 @@
 //   - PATCH  /:accountId/audit/webhooks/:id
 //   - DELETE /:accountId/audit/webhooks/:id
 
+import { callerKortixSessionId } from '../middleware/caller-session';
+import { redactHiddenChannelAuditRows } from '../shared/space-access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { auditEventsAll, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
@@ -31,6 +33,7 @@ import {
   deliverTestEvent,
   generateWebhookSecret,
   replayAuditWebhookDelivery,
+  wakeAuditWebhookDelivery,
 } from '../shared/audit-webhooks';
 import { db } from '../shared/db';
 import {
@@ -40,7 +43,6 @@ import {
   parseAuditLimit,
   serializeAuditEvent,
 } from '../shared/audit-query';
-import { wakeAuditWebhookWorker } from '../workers/audit-webhook-worker';
 import { AuditActorTypeSchema, AuditListSchema } from '../shared/audit-schema';
 import { readExportPage } from '../shared/audit-archive/export-page';
 import { auditArchiveStore } from '../shared/audit-archive/store';
@@ -217,9 +219,15 @@ auditRouter.openapi(
       .limit(limit + 1);
 
     const hasMore = rows.length > limit;
-    const page = hasMore ? rows.slice(0, limit) : rows;
-    const last = page[page.length - 1];
+    const fetchedPage = hasMore ? rows.slice(0, limit) : rows;
+    const last = fetchedPage[fetchedPage.length - 1];
     const nextCursor = hasMore && last ? `${last.occurredAt.toISOString()}|${last.eventId}` : null;
+    // A private channel's threads the reader is not in: metadata only.
+    const page = await redactHiddenChannelAuditRows(
+      fetchedPage,
+      { userId: String(c.get('userId')), bound: callerKortixSessionId(c) },
+      { searching: Boolean(q) },
+    );
     const names = await auditCredentialNames(page);
 
     return c.json({
@@ -508,7 +516,11 @@ auditRouter.openapi(
         },
       },
     );
-    const rows = page.rows;
+    const rows = await redactHiddenChannelAuditRows(
+      page.rows,
+      { userId: String(c.get('userId')), bound: callerKortixSessionId(c) },
+      { searching: Boolean(q) },
+    );
     const hasMore = page.nextCursor !== null;
     const nextCursor = page.nextCursor;
 
@@ -912,7 +924,7 @@ auditRouter.openapi(
     if (!hook) return c.json({ error: 'webhook not found' }, 404);
     const replayed = await replayAuditWebhookDelivery(deliveryId, webhookId);
     if (!replayed) return c.json({ error: 'delivery not found' }, 404);
-    wakeAuditWebhookWorker();
+    wakeAuditWebhookDelivery();
     await recordAuditEvent({
       accountId,
       actorUserId: userId,

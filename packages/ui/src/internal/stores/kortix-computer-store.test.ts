@@ -425,6 +425,34 @@ describe('mobile tool drawer state', () => {
     useKortixComputerStore.getState().reset();
     expect(useKortixComputerStore.getState().mobileToolView).toBeNull();
   });
+
+  test('browser targets replace each other and close cannot resurrect the previous target', () => {
+    const state = useKortixComputerStore.getState();
+    state.openMobileTool('browser', { url: 'https://example.test/a', title: 'A' });
+    expect(useKortixComputerStore.getState().mobileToolTarget).toEqual({ url: 'https://example.test/a', title: 'A' });
+    state.openMobileTool('browser', { url: 'https://example.test/b' });
+    expect(useKortixComputerStore.getState().mobileToolTarget).toEqual({ url: 'https://example.test/b' });
+    state.closeMobileTool();
+    expect(useKortixComputerStore.getState().mobileToolTarget).toBeNull();
+    state.openMobileTool('browser');
+    expect(useKortixComputerStore.getState().mobileToolTarget).toBeNull();
+  });
+
+  test('target belongs to its session and clears on reset or another tool', () => {
+    const state = useKortixComputerStore.getState();
+    state.setActiveSession('a');
+    state.openMobileTool('browser', { url: 'https://example.test/a' });
+    state.setActiveSession('a');
+    expect(useKortixComputerStore.getState().mobileToolTarget?.url).toBe('https://example.test/a');
+    state.setActiveSession('b');
+    expect(useKortixComputerStore.getState().mobileToolTarget).toBeNull();
+    state.openMobileTool('browser', { url: 'https://example.test/b' });
+    state.openMobileTool('terminal');
+    expect(useKortixComputerStore.getState().mobileToolTarget).toBeNull();
+    state.openMobileTool('browser', { url: 'https://example.test/b' });
+    state.reset();
+    expect(useKortixComputerStore.getState().mobileToolTarget).toBeNull();
+  });
 });
 
 describe('floating action panel vs detail side panel — two flags, zero coupling', () => {
@@ -831,6 +859,38 @@ describe('detailOpen never survives its content', () => {
     expect(state().detailOpen).toBe(false);
   });
 
+  // The layout shows the right side on `isSidePanelOpen` alone. Closing only
+  // `detailOpen` left the side open over an empty provider: leave a session
+  // with an artifact open, come back, and the right side was white.
+  test('the provider unmounting closes the side panel and keeps what it showed for the way back', () => {
+    state().setActiveSession('s1');
+    state().setIsSidePanelOpen(true);
+    state().setDetailContent('s1', true);
+    state().setDetailOpen(true);
+    useSessionPanelMemoryStore.setState({ bySession: { s1: { kind: 'view', view: 'terminal' } } });
+
+    state().setDetailContent('s1', null);
+
+    expect(state().isSidePanelOpen).toBe(false);
+    expect(state().detailOpen).toBe(false);
+    // The arrival restore reopens it: the person did not close it.
+    expect(useSessionPanelMemoryStore.getState().bySession.s1).toEqual({ kind: 'view', view: 'terminal' });
+    // Back on the same session id: `setActiveSession` changes nothing, and the side stays closed.
+    state().setActiveSession('s1');
+    expect(state().isSidePanelOpen).toBe(false);
+  });
+
+  test('a BACKGROUND session losing its detail leaves the active side panel open', () => {
+    state().setActiveSession('s1');
+    state().setIsSidePanelOpen(true);
+    state().setDetailContent('s1', true);
+    state().setDetailOpen(true);
+
+    state().setDetailContent('s2', null);
+
+    expect(state().isSidePanelOpen).toBe(true);
+  });
+
   test('a provider reporting it has no detail closes it too', () => {
     state().setActiveSession('s1');
     state().setDetailContent('s1', true);
@@ -1001,6 +1061,21 @@ describe('setActiveSession — boot quick-view replant', () => {
     expect(after.pendingQuickView?.sessionId).toBe('oc-1');
     expect(after.consumeQuickView('oc-1')?.view).toBe('terminal');
     expect(after._bootQuickView).toBeNull();
+  });
+
+  test('a tool closed during boot is not replanted for the real layout', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('kortix-1', { projectSessionId: 'kortix-1', transient: true });
+    useKortixComputerStore.getState().requestQuickView('terminal');
+    useKortixComputerStore.getState().consumeQuickView('kortix-1');
+    // The person closes the Terminal card while the computer still boots.
+    useKortixComputerStore.getState().setIsSidePanelOpen(false);
+    useKortixComputerStore
+      .getState()
+      .setActiveSession('oc-1', { projectSessionId: 'kortix-1', transient: false });
+    const after = useKortixComputerStore.getState();
+    expect(after.isSidePanelOpen).toBe(false);
+    expect(after.pendingQuickView).toBeNull();
   });
 
   test('the remembered boot view dies with a real session change', () => {

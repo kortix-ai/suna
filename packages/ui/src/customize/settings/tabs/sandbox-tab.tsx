@@ -16,10 +16,7 @@ import { Skeleton } from '../../../primitives/skeleton';
 import { errorToast, successToast } from '../../../primitives/toast';
 import { EmptyState } from '../../../primitives/empty-state';
 import { ErrorState } from '../../../primitives/error-state';
-import {
-  manifestFilename,
-  useProjectManifestVersion,
-} from '../../../internal/lib/manifest-version';
+import { useProjectManifestHealth } from '../../../internal/lib/manifest-health';
 import type { UiTranslator } from '../../../i18n';
 import { useLocale, useTranslations } from '../../../i18n';
 import { PROJECT_ACTIONS } from '../../../internal/lib/project-actions';
@@ -109,7 +106,7 @@ export function describeState(
  *  that used to sit last in the bullet-separated meta line. */
 export function describeSource(
   template: SandboxTemplate,
-  manifestVersion: number | null,
+  manifestPath: string,
   labels: { platform?: string; dashboard?: string } = {},
 ): { label: string; icon: PhosphorIcon; mono: boolean } {
   if (template.source === 'platform')
@@ -121,7 +118,7 @@ export function describeSource(
   if (template.source === 'ui')
     return { label: labels.dashboard ?? 'This dashboard', icon: SquaresFourIcon, mono: false };
   return {
-    label: manifestFilename(manifestVersion),
+    label: manifestPath,
     icon: FileCodeIcon,
     mono: true,
   };
@@ -233,7 +230,7 @@ function TemplateCard({
   const t = useTranslations('settings.sandbox');
   const locale = useLocale();
   const queryClient = useQueryClient();
-  const { version: manifestVersion } = useProjectManifestVersion(projectId);
+  const manifestPath = useProjectManifestHealth(projectId)?.path ?? 'kortix.yaml';
   const [confirmDelete, setConfirmDelete] = useState(false);
   const templateId = template.template_id ?? null;
   const requireTemplateId = () => {
@@ -269,7 +266,7 @@ function TemplateCard({
     missing: t('states.notBuilt'),
     unknown: t('states.unknown'),
   });
-  const source = describeSource(template, manifestVersion, {
+  const source = describeSource(template, manifestPath, {
     platform: t('sources.platform'),
     dashboard: t('sources.dashboard'),
   });
@@ -432,10 +429,8 @@ export interface SandboxTabViewProps {
    *  by the container from the same `canManage` gate as everything else in
    *  this tab. `undefined` (not rendered) for a non-manager. */
   headerAction?: ReactNode;
-  /** `1 | 2 | null` — drives whether the manifest hint below reads
-   *  `kortix.toml` or `kortix.yaml`. `null`/anything else falls back to
-   *  `kortix.toml`, matching `sandbox-view.tsx`'s own ternary default. */
-  manifestVersion?: number | null;
+  /** The manifest's repository path the hint below names. */
+  manifestPath?: string;
   /** `data.templates_error` from `listProjectSnapshots` — a partial-read
    *  warning, not a hard error (the hard-error path is `isError` above). */
   templatesError?: string | null;
@@ -469,7 +464,7 @@ export function SandboxTabView({
   errorMessage = '',
   onRetry = () => {},
   headerAction,
-  manifestVersion = null,
+  manifestPath = 'kortix.yaml',
   templatesError = null,
   isEmpty = true,
   emptyAction,
@@ -513,19 +508,9 @@ export function SandboxTabView({
             <p className="text-muted-foreground text-sm text-pretty">
               {copy.descriptionStart} <code className="font-mono">/workspace</code>.{' '}
               {copy.descriptionEnd}{' '}
-              {manifestFilename(manifestVersion) === 'kortix.yaml' ? (
-                <>
-                  <code className="font-mono">sandbox.templates</code>{' '}
-                  {tI18nComplete.raw('text582967534d0f')}{' '}
-                  <code className="font-mono">kortix.yaml</code>
-                </>
-              ) : (
-                <>
-                  <code className="font-mono">[[sandbox.templates]]</code>{' '}
-                  {tI18nComplete.raw('text582967534d0f')}{' '}
-                  <code className="font-mono">kortix.toml</code>
-                </>
-              )}
+              <code className="font-mono">sandbox.templates</code>{' '}
+              {tI18nComplete.raw('text582967534d0f')}{' '}
+              <code className="font-mono">{manifestPath}</code>
               .
             </p>
 
@@ -563,7 +548,7 @@ export function SandboxTab({ projectId }: { projectId: string }) {
   const t = useTranslations('settings.sandbox');
   const caps = useProjectCans(projectId, SANDBOX_TAB_ACTIONS);
   const canManage = caps[PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE]?.allowed === true;
-  const { version: manifestVersion } = useProjectManifestVersion(projectId);
+  const manifestPath = useProjectManifestHealth(projectId)?.path ?? 'kortix.yaml';
 
   const snapshotsQuery = useQuery({
     queryKey: qk.project.snapshots(projectId),
@@ -630,7 +615,7 @@ export function SandboxTab({ projectId }: { projectId: string }) {
             </Button>
           ) : undefined
         }
-        manifestVersion={manifestVersion}
+        manifestPath={manifestPath}
         templatesError={data?.templates_error ?? null}
         isEmpty={templates.length === 0}
         emptyAction={newTemplateAction}

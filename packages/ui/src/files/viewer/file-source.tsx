@@ -111,6 +111,20 @@ export interface FileSource {
    * `reloadKey` goes to `<FileContentRenderer reloadKey>`.
    */
   useRefresh?: (filePath: string | null) => FileRefreshResult;
+  /**
+   * The page's shared image store (R38), for a source whose paths are the live
+   * sandbox's: a raster image draws from the bytes another surface (the image
+   * card, a `show` card) already loaded, else is read once as bytes. A source
+   * with other paths (a git ref, a Drive, a share) omits it.
+   */
+  useSharedImage?: (filePath: string | null, sha256?: string | null) => SharedImageResult;
+}
+
+export interface SharedImageResult {
+  url: string | null;
+  loading: boolean;
+  error: string | null;
+  retry: () => void;
 }
 
 export interface FileRefreshResult {

@@ -46,6 +46,9 @@ export interface ExplorerCapabilities {
   /** True for a folder that holds the tree together (Files' `Company`, `Users`,
    *  a person's own folder): no rename, cut or delete. Absent means none. */
   fixedAt?: (path: string) => boolean;
+  /** Largest file an upload takes, in bytes; null takes any size. Absent means
+   *  `MAX_UPLOAD_BYTES` (50 MB), the limit of a sandbox's own upload. */
+  maxUploadBytes?: number | null;
 }
 
 export interface ExplorerQueryResult<T> {

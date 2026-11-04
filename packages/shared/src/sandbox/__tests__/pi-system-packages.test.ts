@@ -45,7 +45,7 @@ describe('pi system packages', () => {
 
   test('the committed list is valid and lands in the toolchain layer', () => {
     for (const source of PI_SYSTEM_PACKAGES) assertPiSystemPackage(source);
-    const layer = kortixToolchainLayer({ opencodeConfigPath: 'oc.json', opencodeWarmupScriptPath: 'warm.sh', isSharedDefault: true } as never);
+    const layer = kortixToolchainLayer({});
     for (const line of piSystemPackageLines(PI_SYSTEM_PACKAGES)) expect(layer).toContain(line);
   });
 });

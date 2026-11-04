@@ -39,6 +39,9 @@ const SessionFilesExplorer = lazy(() =>
 const SessionAuditPanel = lazy(() =>
   import('./session-audit-panel').then((m) => ({ default: m.SessionAuditPanel })),
 );
+const SessionDesktop = lazy(() =>
+  import('./session-desktop').then((m) => ({ default: m.SessionDesktop })),
+);
 const SessionRemindersPanel = lazy(() =>
   import('./session-reminders-panel').then((m) => ({ default: m.SessionRemindersPanel })),
 );
@@ -86,6 +89,8 @@ function PanelViewModal({ projectId, projectSessionId, runtimeSessionId }: Sessi
           ? tI18nComplete.raw('textbb6aea287396')
           : view === 'reminders'
             ? tReminders('title')
+          : view === 'desktop'
+            ? 'Desktop'
           : target?.changes
             ? 'Changes'
             : 'Files';
@@ -97,6 +102,12 @@ function PanelViewModal({ projectId, projectSessionId, runtimeSessionId }: Sessi
         name={title}
         projectId={projectId}
         shareContext={{ projectId, sessionId: projectSessionId }}
+        onClose={closePanelFallbackView}
+      />
+    ) : view === 'desktop' ? (
+      <SessionDesktop
+        projectId={projectId}
+        projectSessionId={projectSessionId}
         onClose={closePanelFallbackView}
       />
     ) : view === 'audit' ? (
@@ -128,8 +139,8 @@ function PanelViewModal({ projectId, projectSessionId, runtimeSessionId }: Sessi
   return (
     <Modal open onOpenChange={(open) => !open && closePanelFallbackView()}>
       <ModalContent
-        // The browser has its own close button in its toolbar.
-        showCloseButton={view !== 'browser'}
+        // The browser and the desktop have their own close button in their toolbar.
+        showCloseButton={view !== 'browser' && view !== 'desktop'}
         // A single full-bleed pane: no stacked header/body/footer spacing.
         className="flex h-[85vh] flex-col gap-0 space-y-0 overflow-hidden p-0 lg:max-h-[85vh] lg:max-w-5xl"
         data-slot="session-panel-fallback"

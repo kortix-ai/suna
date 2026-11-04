@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { slackAgentPersona } from './persona';
 import { and, asc, eq, isNull, lt } from 'drizzle-orm';
 import { chatEventDedup, chatTurnStreams, projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
@@ -191,7 +192,6 @@ export async function sweepStaleSlackTurns(): Promise<void> {
   }
 }
 
-export { startSlackTurnGc, stopSlackTurnGc } from '../../workers/slack-turn-gc-worker';
 
 /**
  * Does the runtime's turn authority still hold a live turn for this session?
@@ -266,7 +266,7 @@ export async function openPlanMessage(handle: LiveTurn, firstStep: StreamTaskChu
   const ev = handle.originatingEvent;
   const threadTs = ev.thread_ts ?? ev.ts;
   if (!ev.channel || !ev.user || !threadTs) return false;
-  const ts = await startStream(handle.token, ev.channel, threadTs, ev.user, handle.teamId, [firstStep]);
+  const ts = await startStream(handle.token, ev.channel, threadTs, ev.user, handle.teamId, [firstStep], await slackAgentPersona(handle).catch(() => null));
   if (!ts) return false;
   handle.ts = ts;
   handle.steps = [firstStep];
@@ -366,6 +366,8 @@ export async function finalizeTurn(
   // block render fails — a long answer dropped into one Block Kit section can be
   // rejected (sections cap at 3000 chars), and that must not silently vanish.
   let rendered = false;
+  // The session's agent is the author of anything posted fresh below.
+  const persona = await slackAgentPersona(handle).catch(() => null);
 
   // Render the result — BEST-EFFORT. The row is already claimed-finalized by the
   // time we get here, so a Slack API hiccup while rendering must not throw: that
@@ -385,22 +387,12 @@ export async function finalizeTurn(
         planTitleFor(opts),
         buildFinalPlanBlocks(handle, body, opts, truncated),
       );
-      // chat.update rejected the blocks (e.g. invalid_blocks) — don't lose real
-      // content; post it fresh as plain text so it still lands in the thread.
-      if (!rendered && hasContent) {
-        const ts = await postMessage(handle.token, handle.channel, plainFallback(handle, body), threadRoot);
-        rendered = ts != null;
-      }
     } else if (hasContent) {
       // The agent posted no `slack step` (no plan message) but we have a reply or
       // an error to surface — post it fresh in-thread.
       if (opts.blocks && opts.blocks.length > 0) {
-        const ts = await postBlocks(handle.token, handle.channel, body, opts.blocks, threadRoot);
+        const ts = await postBlocks(handle.token, handle.channel, body, opts.blocks, threadRoot, persona);
         rendered = ts != null;
-        if (!rendered) {
-          const f = await postMessage(handle.token, handle.channel, plainFallback(handle, body), threadRoot);
-          rendered = f != null;
-        }
       } else if (opts.error && handle.projectId && handle.sessionId) {
         // An error with no plan stream: post the failure copy WITH an "Open
         // session" footer so the thread always has a way to see what went wrong
@@ -415,18 +407,21 @@ export async function finalizeTurn(
             { type: 'context', elements: [{ type: 'mrkdwn', text: `<${url}|Open session in Kortix ↗>` }] },
           ],
           threadRoot,
+          persona,
         );
         rendered = ts != null;
-        if (!rendered) {
-          const f = await postMessage(handle.token, handle.channel, plainFallback(handle, body), threadRoot);
-          rendered = f != null;
-        }
       } else {
         // Plain post already — slackApiCall retries transient failures, so there's
         // no block-vs-text fallback to add here.
-        const ts = await postMessage(handle.token, handle.channel, body, threadRoot);
+        const ts = await postMessage(handle.token, handle.channel, body, threadRoot, persona);
         rendered = ts != null;
       }
+    }
+    // chat.update rejected the blocks (e.g. invalid_blocks) — don't lose real
+    // content; post it fresh as plain text so it still lands in the thread.
+    if (!rendered && hasContent && (handle.ts && handle.steps.length > 0 || opts.blocks && opts.blocks.length > 0 || opts.error && handle.projectId && handle.sessionId)) {
+      const ts = await postMessage(handle.token, handle.channel, plainFallback(handle, body), threadRoot, persona);
+      rendered = ts != null;
     }
     // A silent finalize with no plan message and no content leaves the thread
     // untouched — we just clear the ⏳ below. The ✅ is reserved for a real answer
@@ -747,10 +742,11 @@ export async function postAnswerWithoutTurnDetailed(
   const finalBlocks =
     blocks && blocks.length > 0 ? [...blocks, footer] : [...toSectionBlocks(body, truncated), footer];
 
-  const ts = await postBlocks(token, channel, body, finalBlocks, threadTs);
+  const persona = await slackAgentPersona({ sessionId, projectId: row.projectId, token }).catch(() => null);
+  const ts = await postBlocks(token, channel, body, finalBlocks, threadTs, persona);
   if (ts) return { ok: true };
   // Block render rejected (a section caps at 3000 chars) — never lose the answer.
-  const fallback = await postMessage(token, channel, `${body}\n\n<${url}|Open session in Kortix ↗>`, threadTs);
+  const fallback = await postMessage(token, channel, `${body}\n\n<${url}|Open session in Kortix ↗>`, threadTs, persona);
   return fallback != null ? { ok: true } : { ok: false, reason: 'post_failed' };
 }
 

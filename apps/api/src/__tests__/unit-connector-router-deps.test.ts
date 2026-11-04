@@ -43,9 +43,8 @@ describe('dbConnectorRouterDeps wiring', () => {
     });
   }
 
-  test('imports the integration catalogue that Discover reads from', () => {
-    expect(DB_DEPS_SOURCE).toContain('./connector-catalog');
-    expect(DB_DEPS_SOURCE).toContain('listConnectorCatalog');
-    expect(DB_DEPS_SOURCE).toContain('getConnectorCatalogDetail');
+  test('Discover reads the one Kortix catalog', () => {
+    expect(DB_DEPS_SOURCE).toContain('kortixMcpCatalog.list(');
+    expect(DB_DEPS_SOURCE).toContain('kortixMcpCatalog.detail(');
   });
 });

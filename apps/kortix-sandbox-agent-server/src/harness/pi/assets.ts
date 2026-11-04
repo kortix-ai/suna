@@ -6,7 +6,7 @@
  *
  * The overlay can still change under a running pi: runtime-assets writes it
  * from the API after boot (on a real box, ~1 s after `pi runtime ready`).
- * `injectSkills` is the hook it calls then, and pi answers by reloading its
+ * `skillsUpdated` is the hook it calls then, and pi answers by reloading its
  * skills, or the session never sees the managed `kortix-*` family.
  */
 import { logger } from '@/lib/log/logger'
@@ -25,8 +25,7 @@ export function createPiAssetsService(): HarnessAssetsService {
     harness: 'pi',
     componentNames: [],
     bakedVersion: async () => PI_HARNESS_VERSION,
-    resolveConfigDir: async (cfg) => cfg.projectTarget || cfg.workspace || '/workspace',
-    injectSkills: async () => {
+    skillsUpdated: async () => {
       await reloadLiveSkills?.().catch((err) =>
         logger.warn('[pi] skill reload after a managed-skill overlay update failed', { err: String(err) }),
       )

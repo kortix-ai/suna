@@ -26,6 +26,10 @@
  *   attachment: the model never saw it, so a restore must not present it.
  * - Reasoning is display only (C3); its signature stays in `ext.pi`.
  * - A call with no result, at rest, is closed (C2/F11) with pi-ai's own text.
+ * - A codemode script's nested call to a native-part tool (`show`, `image_gen`)
+ *   is a harness block `{ kind: 'nested_part', data: { parent_call_id, part },
+ *   model_visible: false }` after its parent's block: `part` is its v1 part
+ *   without ids, which `toV1` gives back, so a reload draws its card (1.2.0).
  * - An errored or aborted reply is out of context: pi-ai never replays one.
  *   A context edit with no replacement takes a message out of context
  *   (`failed_attempt` for a reply, `retracted` for a user message).
@@ -73,6 +77,13 @@
  * record then carries a higher seq than its streaming puts, and replaces
  * them (higher rev). A user message has no seq until pi appends its entry,
  * when its turn starts.
+ *
+ * The queued seq (`RUNTIME_LOG_CAPABILITY`). Until then an admitted prompt is in
+ * the log at a provisional seq above every real one: the last of n queued
+ * prompts at `Number.MAX_SAFE_INTEGER`, the one before it one lower, in run
+ * order. Only the box's own reads and the v2 stream carry it (`piQueued`,
+ * `piLive`); the journal never sends it, so apps/api stores only real seqs. Its
+ * turn-start record, at its real seq and a higher rev, replaces it.
  */
 import { createHash } from 'node:crypto'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
@@ -81,6 +92,7 @@ import {
   SESSION_LOG_MINOR,
   SESSION_LOG_SCHEMA,
   PI_CAPABILITIES,
+  liveMessageFromV1,
   type ExportCursor,
   type SessionLog,
   type SessionLogBlock,
@@ -98,6 +110,7 @@ import { restorePiSessionLog, type PiRestoreTarget } from './session-log-restore
 import { assistantMessageError } from './turn-events'
 import { PI_HARNESS_VERSION } from './version'
 import { imageTagPaths } from './images'
+import type { PendingRecord } from './interactions'
 
 export interface PiChildSnapshot {
   id: string
@@ -140,16 +153,20 @@ export interface PiSessionSnapshot {
   reply: { id: string; timestamp: number } | null
   agent: string | null
   model: { provider: string; model: string } | null
+  /** The permission requests and questions waiting for an answer. Absent: none. */
+  pending?: { questions: PendingRecord[]; permissions: PendingRecord[] }
+  /** Admitted root prompts pi has not appended yet, in run order (the queued seq). Absent: none. */
+  queued?: string[]
 }
 
 export const PI_VERSION = PI_HARNESS_VERSION.split('@').pop() ?? PI_HARNESS_VERSION
-export const PI_ADAPTER_VERSION = '1.1.0'
+export const PI_ADAPTER_VERSION = '1.2.0'
 const PRODUCER = { harness: 'pi', harness_version: PI_VERSION, adapter_version: PI_ADAPTER_VERSION }
 const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const
 /** What pi-ai sends for a call whose result is missing. */
 export const PI_NO_RESULT = 'No result provided'
 const DIALECT: Record<string, string> = { 'openai-completions': 'openai-chat', 'openai-responses': 'openai-responses', 'anthropic-messages': 'anthropic-messages' }
-const KIND: Record<string, string> = { bash: 'shell', read: 'read', write: 'write', edit: 'edit', glob: 'glob', grep: 'grep', task: 'task', question: 'question', web_search: 'web_search', codemode: 'code' }
+const KIND: Record<string, string> = { bash: 'shell', read: 'read', write: 'write', edit: 'edit', glob: 'glob', grep: 'grep', agent: 'task', task: 'task', question: 'question', web_search: 'web_search', codemode: 'code' }
 const toolKind = (name: string) => KIND[name] ?? (name.includes('__') || name.startsWith('mcp_') ? 'mcp' : 'other')
 
 /**
@@ -213,6 +230,10 @@ const iso = (ms: unknown): string => new Date(typeof ms === 'number' && Number.i
 const isoOf = (value: unknown): string => (typeof value === 'string' ? value : iso(value))
 
 /** Takes v1 parts of one message in order, by type. */
+/** A compaction `details` of the context record: a reset with nothing summarized. */
+const isRecordReset = (details: unknown): details is { kind: 'record'; entries: number } =>
+  !!details && typeof details === 'object' && (details as { kind?: unknown }).kind === 'record' && typeof (details as { entries?: unknown }).entries === 'number'
+
 function partPool(v1: KortixMessage | undefined) {
   const parts = [...(v1?.parts ?? [])] as J[]
   return {
@@ -311,6 +332,8 @@ function deriveThread(input: {
         first_kept_message_id: firstKept(entries, e, idOf),
         tokens_before: e.tokensBefore,
         ...(part ? { trigger: part.overflow ? 'overflow' : part.auto ? 'auto' : 'manual' } : {}),
+        // A reset onto the record (extensions/context-record.ts): nothing was summarized.
+        ...(isRecordReset(e.details) ? { mode: 'record' as const, entries: e.details.entries } : {}),
       }]
       m.ext = { pi: { version: PI_VERSION, native_id: e.id, data: { firstKeptEntryId: e.firstKeptEntryId, ...(e.details !== undefined ? { details: e.details } : {}), ...(e.fromHook ? { fromHook: true } : {}) } } }
       out.push({ message: m, native: [e, marker ?? null] })
@@ -404,7 +427,8 @@ function deriveThread(input: {
         const signed = c.thinkingSignature || c.redacted
         m.blocks.push({ type: 'reasoning', id: blockId('reasoning', i), text: c.thinking ?? '', ...(c.redacted ? { redacted: true } : {}), ...(signed ? { ext: { pi: { version: PI_VERSION, data: { thinkingSignature: c.thinkingSignature } } } } : {}) })
       } else if (c.type === 'toolCall') {
-        const part = pool.take('tool', (p) => p.tool === c.name)
+        // By call id first: a script's nested call to a native-part tool has a part of its own (runtime.ts `onSessionEvent`) that a name match could take.
+        const part = pool.take('tool', (p) => p.callID === c.id) ?? pool.take('tool', (p) => p.tool === c.name)
         const block = toolCall(c, part, results.get(c.id), edits, `${id}-n${i}`, input.images)
         if (!block.result) {
           if (streaming) block.status = 'running'
@@ -416,6 +440,19 @@ function deriveThread(input: {
         m.blocks.push(block)
       }
     })
+    // A script's nested call to a native-part tool keeps the part the runtime published for it, after its parent (`toV1` gives it back).
+    for (const part of pool.rest('tool')) {
+      const parent = m.blocks.findLastIndex((b) => b.type === 'tool_call' && String(part.callID).startsWith(`${b.call_id}/`))
+      if (parent < 0) continue
+      let at = parent + 1
+      while (m.blocks[at]?.type === 'harness' && (m.blocks[at] as { kind: string }).kind === 'nested_part') at++
+      const { id, sessionID: _s, messageID: _m, ...rest } = part
+      // At rest, a nested call that never ended is closed like its parent (C2).
+      if (!streaming && (rest.state?.status === 'pending' || rest.state?.status === 'running')) {
+        rest.state = { status: 'error', input: rest.state.input ?? {}, error: PI_NO_RESULT, time: { start: rest.state.time?.start ?? 0, end: rest.state.time?.start ?? 0 } }
+      }
+      m.blocks.splice(at, 0, { type: 'harness', id, harness: 'pi', kind: 'nested_part', data: { parent_call_id: (m.blocks[parent] as ToolCallBlock).call_id, part: rest }, model_visible: false })
+    }
     if (open) {
       m.status = 'streaming'
       m.completed_at = null
@@ -508,7 +545,7 @@ export function piSessionLog(s: PiSessionSnapshot): { log: SessionLog; hashes: M
     ...V, session_id: s.sessionId, title: s.title, created_at: created, restore_grade: 'native',
     harness: { current: 'pi', history: [{ harness: 'pi', version: PI_VERSION, from_seq: 1, at: created }] },
     selection: { agent: s.agent, model: s.model },
-    todos: [], pending: { questions: [], permissions: [] },
+    todos: [], pending: s.pending ?? { questions: [], permissions: [] },
     threads: [root, ...children],
   }
   return { log, hashes, images }
@@ -543,15 +580,35 @@ function spawnedBy(messages: SessionLogMessage[], childId: string): SessionLogTh
   return null
 }
 
-/** A live message's seq (see the header) and pi timestamp; null for a message pi has not appended that is not the reply it streams. */
-export function piLive(s: PiSessionSnapshot, threadId: string, messageId: string): { seq: number; created_at: string } | null {
+/** A queued prompt's provisional seq and admission time (the queued seq, see the header); null for any other message. */
+function queuedSeq(s: PiSessionSnapshot, messageId: string): { seq: number; created_at: string } | null {
+  const queued = s.queued ?? []
+  const at = queued.indexOf(messageId)
+  if (at < 0) return null
+  const row = s.transcript.find((m) => m.info.id === messageId)
+  return { seq: Number.MAX_SAFE_INTEGER - (queued.length - 1 - at), created_at: iso(row?.info.time.created) }
+}
+
+/** The root's queued prompts as log records, at their queued seqs, in run order (see the header). */
+export function piQueued(s: PiSessionSnapshot): SessionLogMessage[] {
+  return (s.queued ?? []).flatMap((id) => {
+    const row = s.transcript.find((m) => m.info.id === id && m.info.sessionID === s.rootId)
+    const known = queuedSeq(s, id)
+    return row && known ? [liveMessageFromV1({ info: row.info, parts: row.parts }, known, 'pi')] : []
+  })
+}
+
+/** A live message's seq (see the header) and pi timestamp; null for a message pi has not appended that is not the reply it streams or a queued prompt. */
+export function piLive(s: PiSessionSnapshot, threadId: string, messageId: string): { seq: number; created_at: string; queued?: true } | null {
   // As deriveThread times each record.
   const at = (m: J | undefined) => iso(m?.timestamp)
   if (threadId === s.rootId) {
     const seqOf = rootSeqs(s)
     const e = s.entries.find((x) => s.entryMessageIds[x.id] === messageId) as J | undefined
     if (e) return { seq: seqOf(e.id), created_at: e.type === 'compaction' ? isoOf(e.timestamp) : at(e.type === 'message' ? e.message : e) }
-    return messageId === s.reply?.id ? { seq: seqOf(), created_at: at(s.reply) } : null
+    if (messageId === s.reply?.id) return { seq: seqOf(), created_at: at(s.reply) }
+    const queued = queuedSeq(s, messageId)
+    return queued ? { ...queued, queued: true } : null
   }
   const child = s.children.find((c) => c.id === threadId)
   if (!child) return null

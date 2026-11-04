@@ -84,7 +84,6 @@ export function AuthMobileLogo() {
 
 export function StepHeader({
   title,
-  tagline,
   description,
   mark,
   markOnMobile = false,
@@ -100,8 +99,6 @@ export function StepHeader({
   /** Show the mark below `md` too. For a header outside `AuthFrame` (a modal),
    *  where no corner logo stands in for it on mobile. */
   markOnMobile?: boolean;
-  /** Second line in the same size as the title, dimmed (entry step only). */
-  tagline?: string;
   description?: React.ReactNode;
 }) {
   return (
@@ -119,9 +116,6 @@ export function StepHeader({
       >
         {title}
       </h1>
-      {tagline ? (
-        <p className="text-muted-foreground text-2xl font-medium tracking-tight text-balance">{tagline}</p>
-      ) : null}
       {description ? (
         <p className="text-muted-foreground mt-2 text-sm text-pretty">{description}</p>
       ) : null}

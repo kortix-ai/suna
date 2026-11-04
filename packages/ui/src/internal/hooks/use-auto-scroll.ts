@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
+  BOTTOM_GAP_PX,
   OWN_SCROLL_MS,
   chevronVisible,
   isAtEnd,
@@ -110,6 +111,13 @@ interface UseAutoScrollOptions {
    *  until then (the area is conditionally rendered), so the observers and
    *  listeners attach on this edge. */
   hasContent?: boolean;
+  /**
+   * FACT 1's room under the newest turn. False keeps only the bottom gap: the
+   * end is the end of the content, as in a chat thread (a channel's thread
+   * panel). A transcript shorter than the viewport then rests at the top,
+   * never below an empty screen. Default true.
+   */
+  room?: boolean;
 }
 
 interface UseAutoScrollReturn {
@@ -145,6 +153,7 @@ interface Glide {
 
 export function useAutoScroll({
   hasContent = false,
+  room = true,
 }: UseAutoScrollOptions = {}): UseAutoScrollReturn {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -226,7 +235,7 @@ export function useAutoScroll({
     const span = anchor
       ? spacer.getBoundingClientRect().top - anchor.getBoundingClientRect().top
       : null;
-    const h = roomUnderNewestTurn(el.clientHeight, span);
+    const h = room ? roomUnderNewestTurn(el.clientHeight, span) : BOTTOM_GAP_PX;
     if (spacer.style.height !== `${h}px`) spacer.style.height = `${h}px`;
     const anchorChanged = previous !== null && anchor !== previous.el;
     lastAnchorRef.current = anchor
@@ -237,7 +246,7 @@ export function useAutoScroll({
         }
       : null;
     return { room: h, anchorChanged };
-  }, []);
+  }, [room]);
 
   const settleRef = useRef<(() => void) | null>(null);
 

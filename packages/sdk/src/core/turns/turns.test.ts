@@ -225,6 +225,11 @@ describe('getToolInfo agent/session tool mappings', () => {
     expect(getToolInfo('agent-task-get', { task_id: 't-2' }).title).toBe('Task Details');
   });
 
+  test('an image_gen card names its first prompt, from a batch or a Phase 1 call', () => {
+    expect(getToolInfo('image_gen', { prompts: ['A fox in a shuttle', 'An owl'] }).subtitle).toBe('A fox in a shuttle');
+    expect(getToolInfo('image_gen', { prompt: 'A paper-cutout fox' }).subtitle).toBe('A paper-cutout fox');
+  });
+
   test('maps session_spawn variants to worker cards', () => {
     for (const tool of [
       'session_spawn',
@@ -356,6 +361,20 @@ describe('getChildSessionId', () => {
       state: { status: 'running', metadata: { sessionId: 'ses_meta1' } },
     };
     expect(getChildSessionId(part)).toBe('ses_meta1');
+  });
+
+  test("reads sessionId from pi's agent tool metadata, running and settled", () => {
+    const running: ToolPartLike = {
+      type: 'tool',
+      tool: 'agent',
+      callID: 'c1',
+      state: { status: 'running', metadata: { sessionId: 'ses_agent1', model: { providerID: 'p', modelID: 'm' } } },
+    };
+    expect(getChildSessionId(running)).toBe('ses_agent1');
+    // A background hand-off returns at once: the settled call still names its child.
+    const settled = { ...running, state: { status: 'completed', metadata: { sessionId: 'ses_agent1', background: true } } } as ToolPartLike;
+    expect(getChildSessionId(settled)).toBe('ses_agent1');
+    expect(getChildSessionId({ ...running, state: { status: 'error', error: 'The subagent was aborted. task_id: ses_agent2' } })).toBe('ses_agent2');
   });
 
   test('reads a failed task child from its task_id error when metadata is absent', () => {

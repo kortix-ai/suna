@@ -1,0 +1,89 @@
+name: Self-host Caddy image
+
+# Publishes kortix/caddy: Caddy plus the acme-dns DNS module, the image a
+# self-host runs once it turns on wildcard certificates
+# (`kortix self-host tls wildcard`). The tag names the Caddy and module
+# versions and never moves: a new version is a new tag in the Dockerfile, the
+# CLI (WILDCARD_CADDY_IMAGE in apps/cli/src/self-host/wildcard-tls.ts) and here.
+# Each architecture builds on its own native runner; a last job joins them
+# into one multi-arch tag.
+
+# Dispatch only: a push to dev runs no image build (Actions minutes, 2026-10-03).
+# Run it after a merge that changes the Dockerfile:
+#   gh workflow run selfhost-caddy-image.yml --repo kortix-ai/CompanyOS --ref dev
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: selfhost-caddy-image
+  cancel-in-progress: false
+
+env:
+  IMAGE: kortix/caddy
+  TAG: 2.10.2-acmedns-0.7.0
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+          - arch: arm64
+            runner: ${{ vars.CI_RUNNER_L_ARM || 'ubuntu-24.04-arm' }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.github/actions/aws-env
+        with:
+          keys: |
+            DOCKERHUB_USERNAME
+            DOCKERHUB_TOKEN
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: apps/cli/src/self-host/caddy
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ${{ env.IMAGE }}:${{ env.TAG }}-${{ matrix.arch }}
+
+  publish:
+    name: Publish multi-arch tag
+    needs: build
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/actions
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.github/actions/aws-env
+        with:
+          keys: |
+            DOCKERHUB_USERNAME
+            DOCKERHUB_TOKEN
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
+      - name: Join the architectures into one tag
+        run: |
+          docker buildx imagetools create -t "$IMAGE:$TAG" "$IMAGE:$TAG-amd64" "$IMAGE:$TAG-arm64"
+          docker buildx imagetools inspect "$IMAGE:$TAG"
+      - name: Check the module is in the image
+        run: docker run --rm "$IMAGE:$TAG" caddy list-modules | grep -x dns.providers.acmedns

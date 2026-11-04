@@ -35,14 +35,21 @@ import {
 import {
   CliError,
   connectorErrorPayload,
+  ExitAfterOutput,
   out,
   parseExecArgs,
   stringValue,
 } from '../connector-gateway/io.ts';
 import { saveResult } from '../connector-gateway/result-spill.ts';
 import { resolveProjectId } from '../project-link.ts';
+import { tokenRejectedLine } from '../command-helpers.ts';
 
 const PROVIDERS = ['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
+
+// Mirrors APPROVAL_RERUN_RULE in apps/api/src/connectors/approval-expiry.ts:
+// the rule for a gate that holds no input (`runs_on_approval` absent).
+const APPROVAL_RERUN_RULE =
+  'Approval alone does not run the call: after approval, repeat this exact call (same arguments and account) within 15 minutes, and it runs once.';
 
 // Built-in channels are never added/connected through the connector — the
 // platform materializes their connectors automatically after the channel is
@@ -297,13 +304,28 @@ async function call({ args, flags, repeated }: Invocation): Promise<void> {
     result.approval_url = undefined;
     const projectId = resolveProjectId(stringValue(flags.project));
     const scope = projectId ? ` --project ${projectId}` : '';
+    // `runs_on_approval`: the gate holds the input, so Kortix runs the call
+    // once after approval (mirrors heldRunRule in approval-expiry.ts).
+    const runsOnApproval = (result as { runs_on_approval?: boolean }).runs_on_approval === true;
+    const rule =
+      runsOnApproval && result.execution_id
+        ? `Kortix runs this exact call once a human approves. Do not repeat the call. In a session, stop this turn: Kortix resumes it with the result. Otherwise read the outcome with kortix review show call:${result.execution_id}${scope}.`
+        : APPROVAL_RERUN_RULE;
     result.approval_instructions = result.execution_id
-      ? `Have an authorized human review the call and use their personal CLI credentials to run kortix review act call:${result.execution_id} approve${scope} or kortix review act call:${result.execution_id} reject${scope}.`
-      : 'Ask a human to review the pending call in the project Review Center.';
+      ? `Have an authorized human review the call and use their personal CLI credentials to run kortix review act call:${result.execution_id} approve${scope} or kortix review act call:${result.execution_id} reject${scope}. ${rule}`
+      : `Ask a human to review the pending call in the project Review Center. ${rule}`;
   }
   // `--out <file>`: the full result goes to the file, a summary to stdout
   // (bytes, the shape of `data`, the path). Large results stay out of the
   // agent's context, where OpenCode would truncate them.
+  // The tool ran and reported a failure (MCP `isError`, GraphQL `errors`):
+  // the call did not do its job, so the exit code says so.
+  const raw = result as typeof result & { upstream_error?: string; error?: string };
+  const toolError = raw.status === 'tool_error' || typeof raw.upstream_error === 'string';
+  if (toolError) {
+    out({ ...result, ok: false, status: 'tool_error', error: raw.error ?? raw.upstream_error ?? 'the tool reported an error' });
+    throw new ExitAfterOutput(1);
+  }
   const outPath = stringValue(flags.out);
   out(outPath ? await saveResult(result, resolve(outPath)) : result);
 }
@@ -500,6 +522,14 @@ export async function runConnector(argv: string[]): Promise<number> {
     await dispatch(command, args, flags, repeated);
     return 0;
   } catch (err) {
+    if (err instanceof ExitAfterOutput) return err.exitCode;
+    // A rejected token is the human's to fix: say it in a sentence. --json keeps the payload.
+    if (err instanceof ApiError && err.status === 401) {
+      const payload: Record<string, unknown> = { ...connectorErrorPayload(err), code: 'unauthorized' };
+      if (flags.json === true) out(payload);
+      else process.stderr.write(`${tokenRejectedLine(typeof payload.error === 'string' ? payload.error : null)}\n`);
+      return 1;
+    }
     if (err instanceof ApiError) {
       // VERBATIM: a 403 denial carries the remedy (available_accounts, hint,
       // connect_url). Printing only `err.message` threw all of it away.

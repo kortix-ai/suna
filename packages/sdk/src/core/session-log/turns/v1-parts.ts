@@ -7,9 +7,9 @@
  * residual restores every v1 field), the builder's part for a native one. Each is cached on the
  * block object, so a part keeps its identity while its block does.
  */
-import type { Part } from '../../runtime/runtime-types';
+import type { Part, ToolPart } from '../../runtime/runtime-types';
 import type { SessionLogThreadHead } from '../store';
-import { blockPartOf } from '../tool-call';
+import { blockPartOf, toolCallBlock } from '../tool-call';
 import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type SessionLogBlock, type SessionLogMessage } from '../types';
 import { rowsOf, type V1MessageRow } from '../v1-view';
 
@@ -28,15 +28,28 @@ export function partOf(block: SessionLogBlock): Part | undefined {
   const message = messageOfBlock.get(block);
   // With its message known, the part comes from the message's own rows (message time and session id included).
   if (message) part = partsById(message).get(block.id);
-  if (part) return blocks.set(part, block), part;
-  if (block.type !== 'harness') part = blockPartOf(block);
+  if (part) return blocks.set(part, shownBlock(block, part, message)), part;
+  if (block.type !== 'harness' || block.kind === 'nested_part') part = blockPartOf(block);
   else if (typeof (block.data as { type?: unknown } | null)?.type === 'string') part = block.data as Part;
   else if (block.model_visible && block.fallback_text !== undefined) {
     part = fallbacks.get(block) ?? ({ id: block.id, type: 'text', text: block.fallback_text, synthetic: true } as unknown as Part);
     fallbacks.set(block, part);
   }
-  if (part) blocks.set(part, block);
+  if (part) blocks.set(part, shownBlock(block, part, message));
   return part;
+}
+
+/**
+ * The block a host draws for `part`: `block` itself, except a `nested_part` harness block (a
+ * codemode script's call, model-invisible), which draws as the tool call of its part, so a
+ * reload renders the same card as the live turn. One call per part object; it reads back to
+ * the same part.
+ */
+function shownBlock(block: SessionLogBlock, part: Part, message: SessionLogMessage | undefined): SessionLogBlock {
+  if (block.type !== 'harness' || block.kind !== 'nested_part') return block;
+  const call = toolCallBlock(part as ToolPart);
+  if (message) messageOfBlock.set(call, message);
+  return call;
 }
 
 /** The block `partOf` built `part` from. */

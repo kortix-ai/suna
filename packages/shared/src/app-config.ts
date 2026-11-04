@@ -312,16 +312,57 @@ export function appServicesFor(config: AppReleaseConfig, group: string): AppServ
  * only: nothing about how the App runs or who may open it changes.
  */
 export interface AppDisplay {
-  /** A card in the Apps grid. Default true; an App with a `parent` has none. */
+  /** A card in the Apps grid. Default false: an App is on the Apps page only when registered with `listed: true`. A `parent` puts it in that App's tabs instead. */
   listed?: boolean;
   /** The card thumbnail: `live` frames the App, `none` shows an icon. Default `live`. */
   preview?: 'live' | 'none';
   /** The App, by slug, whose detail shows this one as a tab (a backend's admin dashboard). */
   parent?: string;
+  /** The space (a `spaces.<slug>` key) the App is grouped in. Grouping only, never a grant. Null or absent: project-wide. */
+  space?: string | null;
+  /** The agent that owns the App. Grouping only, never a grant. With no `space`, the App sits in this agent's space. */
+  agent?: string | null;
 }
 
-const DISPLAY_KEYS = new Set(['listed', 'preview', 'parent']);
+/** What the Apps grid reads of an App: the web's `App` and the API's App JSON both fit. */
+export interface GridApp {
+  slug: string;
+  display?: AppDisplay | null;
+  services?: ReadonlyArray<{ name: string; access?: string | null }> | null;
+}
+
+/**
+ * Its primary service is `access: admins` (a backend's admin dashboard): only
+ * project admins can open it, so nobody else is shown a card or tab for it.
+ */
+export function appAdminsOnly(app: GridApp): boolean {
+  return app.services?.find((service) => service.name === 'http')?.access === 'admins';
+}
+
+/**
+ * The Apps the grid shows as cards (`display`): registered with `listed: true`,
+ * not a tab of a parent in the same list, and not admins-only for a non-admin.
+ * A tab whose parent is gone stays reachable as a card. Background Apps (a
+ * poller, a bot, a backend) stay out of the grid unless their author registers
+ * them. The Apps page, a channel's Apps tab and the channel's Apps count all
+ * apply this one rule.
+ */
+export function gridApps<T extends GridApp>(apps: readonly T[], canAdmin = true): T[] {
+  const slugs = new Set(apps.map((app) => app.slug));
+  return apps.filter(
+    (app) =>
+      app.display?.listed === true &&
+      !(app.display?.parent && slugs.has(app.display.parent)) &&
+      (canAdmin || !appAdminsOnly(app)),
+  );
+}
+
+const DISPLAY_KEYS = new Set(['listed', 'preview', 'parent', 'space', 'agent']);
 const APP_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+/** A space slug is also a valid room name (the space's room is the room with its slug). */
+export const SPACE_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/;
+/** An agent name in a binding: the manifest's agent-name rule. */
+export const BINDING_AGENT_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
 /** What is wrong with an authored `display` block of the App `slug`. Paths are relative to the block. */
 export function appDisplayIssues(display: unknown, slug: string): AppConfigIssue[] {
@@ -329,13 +370,19 @@ export function appDisplayIssues(display: unknown, slug: string): AppConfigIssue
   const issues: AppConfigIssue[] = [];
   const value = display as Record<string, unknown>;
   for (const key of Object.keys(value)) {
-    if (!DISPLAY_KEYS.has(key)) issues.push({ path: key, message: 'is not a display field (listed, preview, parent).' });
+    if (!DISPLAY_KEYS.has(key)) issues.push({ path: key, message: 'is not a display field (listed, preview, parent, space, agent).' });
   }
   if (value.listed !== undefined && typeof value.listed !== 'boolean') issues.push({ path: 'listed', message: 'must be true or false.' });
   if (value.preview !== undefined && value.preview !== 'live' && value.preview !== 'none') issues.push({ path: 'preview', message: 'must be live or none.' });
   if (value.parent !== undefined) {
     if (typeof value.parent !== 'string' || !APP_SLUG.test(value.parent)) issues.push({ path: 'parent', message: 'must be an App slug.' });
     else if (value.parent === slug) issues.push({ path: 'parent', message: 'an App cannot be its own parent.' });
+  }
+  if (value.space != null && (typeof value.space !== 'string' || !SPACE_SLUG_RE.test(value.space))) {
+    issues.push({ path: 'space', message: 'must be a space slug (lowercase letters, digits, "-" or "_", at most 63 characters).' });
+  }
+  if (value.agent != null && (typeof value.agent !== 'string' || !BINDING_AGENT_RE.test(value.agent))) {
+    issues.push({ path: 'agent', message: 'must be an agent name.' });
   }
   return issues;
 }

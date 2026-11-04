@@ -52,23 +52,37 @@
  * can ever prefix-match the other. Do not "tidy" this back to `'kortix'`.
  */
 import type { ReviewItemsQuery } from '../core/rest/projects-client/review';
+import type { ProjectMemoryPageListOptions, ProjectMemorySearchInput } from '../core/rest/projects-client/memory';
+import type { ProjectSearchInput } from '../core/rest/projects-client/project-search';
 import type { ListProjectSessionsOptions } from '../core/rest/projects-client/sessions';
 
-type SessionListFilters = Pick<ListProjectSessionsOptions, 'parent' | 'startedBy' | 'q' | 'labels' | 'view'>;
+type SessionListFilters = Pick<
+  ListProjectSessionsOptions,
+  'parent' | 'startedBy' | 'q' | 'labels' | 'view' | 'spaceId' | 'group' | 'createdBy' | 'agent' | 'updatedAfter'
+>;
 
 /** The filter fields that change the server response, or undefined when none is set. */
 function normalizeSessionListFilters(filters?: SessionListFilters) {
   const q = filters?.q?.trim();
   const labels = filters?.labels?.length ? [...filters.labels].sort() : null;
   const view = filters?.view;
-  if (!filters?.parent && !filters?.startedBy && !q && !labels && !view) return undefined;
+  const spaceId = filters?.spaceId;
+  const { group, createdBy, agent, updatedAfter } = filters ?? {};
+  if (!filters?.parent && !filters?.startedBy && !q && !labels && !view && !spaceId && !group && !createdBy && !agent && !updatedAfter) {
+    return undefined;
+  }
   return {
     parent: filters?.parent ?? null,
     startedBy: filters?.startedBy ?? null,
     q: q ?? null,
-    // Only present when set, so pre-label and pre-view keys stay byte-identical.
+    // Only present when set, so pre-label, pre-view and pre-space keys stay byte-identical.
     ...(labels ? { labels } : {}),
     ...(view ? { view } : {}),
+    ...(spaceId ? { spaceId } : {}),
+    ...(group ? { group } : {}),
+    ...(createdBy ? { createdBy } : {}),
+    ...(agent ? { agent } : {}),
+    ...(updatedAfter ? { updatedAfter } : {}),
   };
 }
 
@@ -245,6 +259,10 @@ export const qk = {
     versions: (driveId: string) => [...qk.drives.drive(driveId), 'versions'] as const,
     grants: (driveId: string) => [...qk.drives.drive(driveId), 'grants'] as const,
     conflicts: (driveId: string) => [...qk.drives.drive(driveId), 'conflicts'] as const,
+    /** What the drive holds against its limits. Under the drive, so a write's invalidation refreshes it. */
+    usage: (driveId: string) => [...qk.drives.drive(driveId), 'usage'] as const,
+    /** An account's Files per project. */
+    accountUsage: (accountId: string | null | undefined) => [...qk.drives.scope(), 'account-usage', accountId ?? 'primary'] as const,
     session: (projectId: string, sessionId: string) =>
       [...qk.drives.scope(), 'session', projectId, sessionId] as const,
   },
@@ -411,6 +429,25 @@ export const qk = {
       [...qk.project.sessionsScope(id), 'list-children', parentSessionId, q?.trim() ?? ''] as const,
 
     /**
+     * A session's multi-agent reads: who it can reach, its messages, its
+     * team's tasks and teammates, its workflow runs. Each nests under
+     * `session(id, sessionId)`, so a session invalidation refreshes them, and
+     * under `sessionAgents(id, sessionId)`, so one call refreshes all of them.
+     */
+    sessionAgents: (id: string, sessionId: string) =>
+      [...qk.project.session(id, sessionId), 'agents'] as const,
+    sessionReachable: (id: string, sessionId: string, scope: string) =>
+      [...qk.project.sessionAgents(id, sessionId), 'reachable', scope] as const,
+    peerMessages: (id: string, sessionId: string, direction: string) =>
+      [...qk.project.sessionAgents(id, sessionId), 'peer-messages', direction] as const,
+    teamTasks: (id: string, leadSessionId: string) =>
+      [...qk.project.sessionAgents(id, leadSessionId), 'tasks'] as const,
+    teammates: (id: string, leadSessionId: string) =>
+      [...qk.project.sessionAgents(id, leadSessionId), 'teammates'] as const,
+    sessionWorkflows: (id: string, sessionId: string) =>
+      [...qk.project.sessionAgents(id, sessionId), 'workflows'] as const,
+
+    /**
      * One session, by id. Nests directly under the scope-LESS
      * `sessionsScope` prefix, not under a specific `sessions(id, scope)`
      * slot: a session is not "owned" by whichever list scope happened to
@@ -537,6 +574,8 @@ export const qk = {
     roomList: (id: string) => [...qk.project.rooms(id), 'list'] as const,
     /** `listRooms({ mine: true })` — the caller's conversations with unread counts. */
     roomConversations: (id: string) => [...qk.project.rooms(id), 'mine'] as const,
+    /** `findRoomByName` — the room of a space (named like its slug), or null. */
+    spaceRoom: (id: string, name: string) => [...qk.project.rooms(id), 'name', name] as const,
     /** `getRoom` — one conversation and its members. */
     room: (id: string, roomId: string) => [...qk.project.rooms(id), 'room', roomId] as const,
     /** `listRoomMessages` — the newest messages of one conversation. */
@@ -548,6 +587,66 @@ export const qk = {
      *  of every `sessionReminders` key, so invalidating it refreshes the
      *  project page and every session's reminder chip together. */
     reminders: (id: string) => [...qk.project.scope(id), 'reminders'] as const,
+    /** `listUnifiedTriggers` — `GET /projects/:id/triggers/all`: kortix.yaml and runtime triggers in one list. */
+    unifiedTriggers: (id: string) => [...qk.project.scope(id), 'unified-triggers'] as const,
+    /** `listProjectSpaces` — the project's channels and the caller's DMs. */
+    spaces: (id: string) => [...qk.project.scope(id), 'spaces'] as const,
+    /** `listProjectSessionGroups` — the project's session groups, in order. */
+    sessionGroups: (id: string) => [...qk.project.scope(id), 'session-groups'] as const,
+    /** `listProjectSpaceApps` — one channel's Apps. Under `apps`, so every App mutation's invalidation refetches it. */
+    spaceApps: (id: string, spaceId: string) => [...qk.project.apps(id), 'space', spaceId] as const,
+    /** `listProjectSpaceLinks` — one channel's links. */
+    spaceLinks: (id: string, spaceId: string) => [...qk.project.spaces(id), spaceId, 'links'] as const,
+    /** `listProjectSpaceMembers` — a channel's people (the header roster, the Members tab). Under `spaces`, so a spaces refresh refreshes it. */
+    spaceMembers: (id: string, spaceId: string) => [...qk.project.spaces(id), spaceId, 'members'] as const,
+    /** `getProjectSpaceGeneralNotice` — `#general`'s turned-on-again line. Under `spaces`, so a spaces refresh refreshes it. */
+    spaceGeneralNotice: (id: string) => [...qk.project.spaces(id), 'general-notice'] as const,
+    /** `getPrivateChannelsAvailable`. Under `spaces`, so a spaces refresh refreshes it. */
+    privateChannelsAvailable: (id: string) => [...qk.project.spaces(id), 'private-available'] as const,
+    privateChannelsNotIn: (id: string) => [...qk.project.spaces(id), 'private-not-in'] as const,
+    /** `getChannelsOnboarding` — the caller's intro and "Get started" state. */
+    channelsOnboarding: (id: string) => [...qk.project.scope(id), 'onboarding', 'channels'] as const,
+    /** Every memory read of the project. Memory writes invalidate it: one change can touch two pages, even in two layers. */
+    memory: (id: string) => [...qk.project.scope(id), 'memory'] as const,
+    /** `getProjectMemoryLayer` — one layer (`company` or a space id) and its counts. */
+    memoryLayer: (id: string, layerKey: string) => [...qk.project.memory(id), 'layer', layerKey] as const,
+    /** `listProjectMemoryPages` — the layer's pages; with a filter, one type of them. */
+    memoryPages: (id: string, layerKey: string, filter?: ProjectMemoryPageListOptions) =>
+      // The filter only when set, so the live list's key stays byte-identical.
+      filter?.type
+        ? ([...qk.project.memoryLayer(id, layerKey), 'pages', filter] as const)
+        : ([...qk.project.memoryLayer(id, layerKey), 'pages'] as const),
+    /** `getProjectMemoryPage` — one page, by id: its route has no layer. */
+    memoryPage: (id: string, pageId: string) => [...qk.project.memory(id), 'page', pageId] as const,
+    /** `listProjectMemoryHistory` — one page's versions. */
+    memoryHistory: (id: string, pageId: string) => [...qk.project.memoryPage(id, pageId), 'history'] as const,
+    /** `searchProjectMemory` — one query (`q` trimmed). Under `memory`, so a write refreshes the hits. */
+    memorySearch: (id: string, input: ProjectMemorySearchInput) => [...qk.project.memory(id), 'search', input] as const,
+    /** `searchProject` — one query over the project's Files (`q` trimmed). */
+    search: (id: string, input: ProjectSearchInput) => [...qk.project.scope(id), 'search', input] as const,
+    /**
+     * `getSessionMemoryUsage` — one thread's "Used memory". Outside `memory` on
+     * purpose: the record is fixed at the thread's first turn, so no write refreshes it.
+     */
+    sessionMemoryUsage: (id: string, sessionId: string) => [...qk.project.scope(id), 'memory-usage', sessionId] as const,
+    /** Every artifact read of a project (flag `artifacts`): the prefix of the
+     *  keys below, so a publish refreshes the gallery and the open artifact. */
+    artifacts: (id: string) => [...qk.project.scope(id), 'artifacts'] as const,
+    /** `listArtifacts` — the gallery, per scope/type/search. */
+    artifactList: (id: string, filter: string) => [...qk.project.artifacts(id), 'list', filter] as const,
+    /** `getArtifact` — one artifact now (`current`) or at a Files commit. */
+    artifact: (id: string, artifactId: string, version: string = 'current') => [...qk.project.artifacts(id), 'one', artifactId, version] as const,
+    /** `listArtifactVersions`. */
+    artifactVersions: (id: string, artifactId: string) => [...qk.project.artifacts(id), 'versions', artifactId] as const,
+    artifactComments: (id: string, artifactId: string, status?: string, version?: string) => [...qk.project.artifacts(id), 'comments', artifactId, ...(status ? [status] : []), ...(version ? [{ version }] : [])] as const,
+    artifactCommentContext: (id: string, artifactId: string, options: { version?: string; agent?: string } = {}) => [...qk.project.artifactComments(id, artifactId), 'context', JSON.stringify(options)] as const,
+    artifactActivity: (id: string, artifactId: string, options?: { limit?: number; cursor?: string }) => [...qk.project.artifacts(id), 'activity', artifactId, ...(options ? [JSON.stringify(options)] : [])] as const,
+    artifactActivityInfinite: (id: string, artifactId: string, limit: number) => [...qk.project.artifactActivity(id, artifactId), 'infinite', limit] as const,
+    /** `readArtifactFile` of a doc's Markdown at one entry version. Immutable,
+     *  so outside the `artifacts` prefix: a write never refetches it. */
+    artifactText: (id: string, artifactId: string, entryVersion: string) => [...qk.project.scope(id), 'artifact-text', artifactId, entryVersion] as const,
+    /** `listArtifactTypes`. */
+    artifactTypes: (id: string) => [...qk.project.artifacts(id), 'types'] as const,
     /** `listProjectGoals` — the goal folders in Files with their heartbeats. */
     goals: (id: string) => [...qk.project.scope(id), 'goals'] as const,
     /** `getProjectGoalFiles` — one goal folder's log, notes and verification. */
@@ -561,6 +660,9 @@ export const qk = {
     /** `getSessionModelUsage` — `GET /projects/:id/sessions/:sid/model-usage`. */
     sessionModelUsage: (id: string, sessionId: string) =>
       [...qk.project.scope(id), 'session-model-usage', sessionId] as const,
+    /** `getSessionUsage` — `GET /projects/:id/sessions/:sid/usage`. */
+    sessionUsage: (id: string, sessionId: string) =>
+      [...qk.project.scope(id), 'session-usage', sessionId] as const,
 
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the

@@ -238,12 +238,16 @@ export interface App {
  * only: how the App runs and who may open it do not change.
  */
 export interface AppDisplay {
-  /** A card in the Apps grid. Default true; an App with a `parent` has none. */
+  /** A card in the Apps grid. Default false: an unlisted App sits under Background Apps. An App with a `parent` is a tab instead. */
   listed?: boolean;
   /** The card thumbnail: `live` frames the App, `none` shows an icon. Default `live`. */
   preview?: 'live' | 'none';
   /** The App, by slug, whose detail shows this one as a tab (a backend's admin dashboard). */
   parent?: string;
+  /** The space the App is grouped in (see `ResourceBinding`). Grouping only. */
+  space?: string | null;
+  /** The agent that owns the App (see `ResourceBinding`). Grouping only. */
+  agent?: string | null;
 }
 
 export interface CreateAppInput {

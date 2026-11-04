@@ -53,6 +53,21 @@ const ICON_POOL: readonly LucideIcon[] = [
   Zap,
 ];
 
+// A skill built for one app shows that app's logo instead of a pooled icon,
+// keyed by the first segment of the skill name (`instagram-reels` → instagram).
+const APP_LOGOS: Record<string, string> = {
+  instagram: '/media/landing/logos/color/instagram.svg',
+};
+
+// Same box as the EntityAvatar size it stands in for; a white tile with no
+// border in both themes, like the Kortix source tile.
+const LOGO_TILE_COLORS = 'bg-white';
+const LOGO_TILE: Record<'sm' | 'md' | 'lg', { box: string; logo: string }> = {
+  sm: { box: 'size-8 rounded-md', logo: 'size-6' },
+  md: { box: 'size-10 rounded-md', logo: 'size-7' },
+  lg: { box: 'size-14 rounded-md', logo: 'size-10' },
+};
+
 const SIZE_TO_ENTITY: Record<'sm' | 'md' | 'lg', EntityAvatarSize> = {
   sm: 'md',
   md: 'lg',
@@ -94,13 +109,23 @@ export function MarketplaceItemAvatar({
   const seed = item.name || item.id;
   const Icon = ICON_POOL[hashOf(seed) % ICON_POOL.length];
   const hasSource = !!(item.owner || item.sourceUrl);
+  const appLogo = APP_LOGOS[seed.split('-')[0]];
 
   return (
     <span
       className={cn('relative inline-flex shrink-0', className)}
       data-marketplace-avatar-name={item.name}
     >
-      <EntityAvatar label={seed} icon={Icon} size={SIZE_TO_ENTITY[size]} />
+      {appLogo ? (
+        <span
+          className={cn('flex items-center justify-center', LOGO_TILE_COLORS, LOGO_TILE[size].box)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={appLogo} alt="" className={LOGO_TILE[size].logo} />
+        </span>
+      ) : (
+        <EntityAvatar label={seed} icon={Icon} size={SIZE_TO_ENTITY[size]} />
+      )}
       {showSource && hasSource && (
         <span className="ring-card group-hover:ring-muted absolute -right-1 -bottom-1 inline-flex rounded-sm ring-1 transition-colors duration-(--duration-normal)">
           <MarketplaceAvatar

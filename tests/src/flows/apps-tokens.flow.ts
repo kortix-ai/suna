@@ -41,7 +41,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    const project = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
     let webAppId = "";
@@ -194,8 +194,8 @@ flow(
     ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
-    const otherProject = await ctx.fixtures.project();
+    const project = await ctx.fixtures.project({ managedGit: true });
+    const otherProject = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const anon = ctx.client.as(ctx.P.ANON);
     const apiOrigin = ctx.env.apiUrl.replace(/\/v1$/, "");
@@ -337,7 +337,7 @@ flow(
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    const project = await team.project();
+    const project = await team.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const readerPrincipal = await team.addMember("member");
     await team.grantProjectRole(project.id, readerPrincipal.userId!, "member");

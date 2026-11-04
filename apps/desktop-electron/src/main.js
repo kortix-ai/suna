@@ -318,7 +318,7 @@ function createSplash() {
     show: true,
     hasShadow: true,
     backgroundColor: currentBackgroundColor(),
-    title: 'Kortix',
+    title: 'Kortix CompanyOS',
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
   splashWindow.loadFile(path.join(__dirname, '..', 'assets', 'splash.html'));
@@ -350,7 +350,7 @@ function createMainWindow() {
     minHeight: MIN_HEIGHT,
     show: false, // revealed once the remote app finishes loading (splash covers the gap)
     backgroundColor: currentBackgroundColor(),
-    title: 'Kortix',
+    title: 'Kortix CompanyOS',
     // macOS: hidden title bar, traffic lights centered in the title-bar band
     // the web app's first row shares with them. The band height and every
     // offset derived from it live in ONE table (window-chrome.js →

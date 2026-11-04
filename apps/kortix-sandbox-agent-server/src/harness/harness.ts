@@ -10,13 +10,12 @@ import type { HarnessControlService } from './contract/control'
 import type { HarnessDiagnosticsService } from './contract/diagnostics'
 import type { HarnessQueryFactory } from './contract/queries'
 import type { HarnessTurnService } from './contract/turns'
-import { openCodeDefinition } from './open-code/service'
 import { piDefinition } from './pi/service'
 
 import type { HarnessLifecycleService } from './contract/lifecycle-contract'
 
 // The lifecycle port lives in a leaf module so adapters can import it without
-// dragging this resolver (and the OpenCode definition) into their importers.
+// dragging this resolver (and the adapter definition) into their importers.
 export type { HarnessLifecycleService, HarnessState } from './contract/lifecycle-contract'
 
 export interface HarnessService {
@@ -64,7 +63,12 @@ export interface HarnessDefinition {
   bootDetails(cfg: Config): Record<string, unknown>
   createService(cfg: Config, projectEnv?: ProjectEnvStore, options?: HarnessStartupOptions): HarnessService
   run(context: HarnessBootContext): Promise<void>
-  runWarmSeed?(context: HarnessBootContext): Promise<boolean>
+}
+
+/** Did OpenCode boot this box before the sunset? apps/api set `opencode`, or nothing before pi existed. */
+const isOpenCodeBox = (id: string | undefined): boolean => {
+  const selected = (id ?? '').trim().toLowerCase()
+  return selected === '' || selected === 'opencode'
 }
 
 /**
@@ -75,46 +79,40 @@ export interface HarnessDefinition {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const host = loadHostConfig(env)
   const definition = resolveHarness(host)
+  // apps/api never set the restore key on a box OpenCode booted, and pi starts there on an empty
+  // store: ask for the session-log restore (`reconcileSessionLog`), as apps/api does on a new box.
+  if (isOpenCodeBox(host.harness)) env.KORTIX_SESSION_LOG_RESTORE = '1'
   return { ...definition.loadConfig(env), ...host, harness: definition.id }
 }
 
 /**
  * The daemon's only implementation-selection boundary.
  *
- * The id comes from `cfg.harness` (`KORTIX_HARNESS`, set by apps/api from the
- * manifest's `runtime:` field) unless a caller names one explicitly. OpenCode
- * stays the default; an unknown id fails the boot instead of booting something
- * else. Registering a harness is one line here plus its own folder.
+ * The id comes from `cfg.harness` (`KORTIX_HARNESS`, set by apps/api) unless a
+ * caller names one explicitly. Every box runs pi: a box OpenCode booted before
+ * the sunset (`isOpenCodeBox`) boots pi too. An unknown id fails the boot
+ * instead of booting something else.
  */
-/** The harness an unset `KORTIX_HARNESS` selects. pi becomes the default in H4. */
-const DEFAULT_HARNESS = 'opencode'
-
 export function resolveHarness(cfg?: Pick<Config, 'harness'>, id?: string): HarnessDefinition {
-  const selected = (id ?? cfg?.harness ?? '').trim().toLowerCase() || DEFAULT_HARNESS
-  if (selected === 'opencode') return openCodeDefinition
-  if (selected === 'pi') return piDefinition
+  const selected = (id ?? cfg?.harness ?? '').trim().toLowerCase()
+  if (selected === 'pi' || isOpenCodeBox(selected)) return piDefinition
   throw new Error(`Unsupported harness: ${selected}`)
 }
 
 /**
- * Every registered harness. Built on call, not at module load: the adapters
- * import this module back, so a module-level list could read a definition
- * before it is initialized.
- */
-const registeredHarnesses = (): readonly HarnessDefinition[] => [openCodeDefinition, piDefinition]
-
-/**
- * Paths the static web server refuses for every registered harness. Every
- * harness's, on every box: the image ships all of them, so a pi box still
- * holds OpenCode's data directory.
+ * Paths the static web server refuses. A box OpenCode booted before the sunset
+ * still holds OpenCode's data directory (its session database and auth).
  */
 export function harnessProtectedPathSegments(): string[] {
-  return registeredHarnesses().flatMap((definition) => [...definition.environment.protectedPathSegments])
+  return [...piDefinition.environment.protectedPathSegments, '/.local/share/opencode/']
 }
 
-/** Is `name` internal to any registered harness? The agent env file never writes one. */
+/**
+ * Is `name` internal to the harness? The agent env file never writes one. A box
+ * OpenCode booted before the sunset still carries its `OPENCODE_*` variables.
+ */
 export function isHarnessInternalVariable(name: string): boolean {
-  return registeredHarnesses().some((definition) => definition.environment.isInternalVariable(name))
+  return piDefinition.environment.isInternalVariable(name) || name.startsWith('OPENCODE_')
 }
 
 /**

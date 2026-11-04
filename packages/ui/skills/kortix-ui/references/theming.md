@@ -95,7 +95,7 @@ Shared values (both modes):
 | `durations.<step>`, `easing.<curve>` | `--duration-*`, `--ease-*` | Motion: `fast` … `slower`; `default`, `in`, `out`, `inOut` |
 | `vars` | any `--name` | Anything else |
 
-Defaults and the fixed values (scrims, 10–12px captions, a few keyframe durations): https://kortix.com/docs/sdk/ui#tokens.
+Defaults and the fixed values (scrims, 10–12px captions, a few keyframe durations): https://kortix.com/docs/developers#tokens.
 
 ## 5. Rules
 

@@ -137,6 +137,11 @@ async function readDeliveredWireIdFloor(
  * two minutes, which is the exact silent drop this function exists to prevent.
  * The un-backdated clock is the floor instead. An unreadable box is also the
  * commonest trigger for a redelivery, so this path is not the exotic one.
+ *
+ * A box that lists `RUNTIME_STABLE_MESSAGE_ID_CAPABILITY` (pi) orders by
+ * position, and its callers keep the id they have instead
+ * (`keepsWireIdOnStableRuntime`); they still call this for a continuation, an
+ * unreadable transcript, and an id that tip refuses.
  */
 export async function remintWireMessageId(
   row: SessionLifecycleCommandRow,
@@ -144,8 +149,8 @@ export async function remintWireMessageId(
   transcript: InboxTranscriptState,
 ): Promise<string> {
   // THE TRANSCRIPT IS NOT THE ONLY FLOOR — it lags. OpenCode persists a
-  // mid-turn user message ~4s after the POST (measured against a real sandbox
-  // in `inbox-midturn-forward.live.test.ts`), and two prompts sent
+  // mid-turn user message ~4s after the POST (measured against a real
+  // sandbox), and two prompts sent
   // inside that window read the SAME `newest` and mint the SAME clock. The
   // user's own two messages then sort by 14 random base62 characters: either
   // they run in the wrong order, or the loser sorts under an assistant reply

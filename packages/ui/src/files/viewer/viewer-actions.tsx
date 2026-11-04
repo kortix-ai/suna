@@ -118,11 +118,14 @@ export function ViewerPathPill({
   icon,
   path,
   fileName,
+  nameRef,
   children,
 }: {
   icon: React.ReactNode;
   path?: string;
   fileName: string;
+  /** The name element, for a host that measures whether it is still readable. */
+  nameRef?: React.Ref<HTMLSpanElement>;
   /** The file's actions — `RefreshButton`, `ViewerActions`. */
   children?: React.ReactNode;
 }) {
@@ -136,7 +139,9 @@ export function ViewerPathPill({
             {crumbs.join(' / ')} /
           </span>
         )}
-        <span className="text-foreground min-w-0 truncate font-medium">{fileName}</span>
+        <span ref={nameRef} className="text-foreground min-w-0 truncate font-medium">
+          {fileName}
+        </span>
       </span>
       {children && <ButtonGroup className="shrink-0">{children}</ButtonGroup>}
     </span>

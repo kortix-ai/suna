@@ -91,7 +91,12 @@ flow('GW-CUSTOM-1', {
       const minted = await owner.post('/v1/projects/:projectId/gateway/keys', { name: 'custom provider' }, { params });
       minted.status(200);
       key = minted.json<{ secret_key: string }>().secret_key;
-      (await chat(`${id}/m1`)).status(200).body().has('$.choices[0].message.content', 'CUSTOM-OK');
+      // KRTX-3369: the answer names the requested and the serving model.
+      (await chat(`${id}/m1`))
+        .status(200)
+        .headerEquals('x-kortix-requested-model', `${id}/m1`)
+        .headerEquals('x-kortix-model', `${id}/m1`)
+        .body().has('$.choices[0].message.content', 'CUSTOM-OK');
       const last = received.at(-1);
       if (last?.path !== '/v1/chat/completions' || last.authorization !== 'Bearer sk-stub-key' || last.model !== 'm1') {
         throw new Error(`stub saw ${JSON.stringify(last)}`);

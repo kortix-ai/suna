@@ -146,7 +146,7 @@ Pattern can clone the project-level OAuth device flow already in
 | `kortix sessions new [--prompt "..."]`          | Start a session                                                      | `POST /v1/projects/:id/sessions`                                    |
 | `kortix sessions open <session-id>`             | Print / open the dashboard URL for one session                       | none                                                                |
 | `kortix sessions logs <session-id> [-f]`        | Stream session output                                                | `GET /v1/projects/:id/sessions/:sid/events` (SSE — exists)          |
-| `kortix sessions rm <session-id>`               | Stop + delete; restorable for 30 days, branch kept                   | `DELETE /v1/projects/:id/sessions/:sid`                             |
+| `kortix sessions rm <session-id>`               | Stop + delete; restorable for 30 days, then content + branch deleted | `DELETE /v1/projects/:id/sessions/:sid`                             |
 | `kortix sessions restore <session-id>`          | Restore a deleted session within 30 days (full id)                  | `POST /v1/projects/:id/sessions/:sid/restore`                       |
 | `kortix sessions pin/unpin <session-id>...`     | Pin or unpin sessions in your own list                               | `PUT /v1/projects/:id/sessions/:sid/pin`                            |
 | `kortix sessions archive/unarchive <session-id>...` | Take sessions out of your own list, or put them back; archiving unpins | `PUT /v1/projects/:id/sessions/:sid/archive`                    |

@@ -133,6 +133,62 @@ export async function getOpenQuestion(sessionId: string): Promise<PendingQuestio
   };
 }
 
+/** A stored question by its row id, in its project: a chat button names it. */
+export async function getPendingQuestion(
+  projectId: string,
+  id: string,
+): Promise<{
+  sessionId: string;
+  requestId: string;
+  questions: RuntimeQuestion[];
+  answeredAt: string | null;
+  answers: unknown;
+  chatSteps: unknown;
+} | null> {
+  const [row] = await db
+    .select({
+      sessionId: sessionPendingQuestions.sessionId,
+      requestId: sessionPendingQuestions.requestId,
+      questions: sessionPendingQuestions.questions,
+      answeredAt: sessionPendingQuestions.answeredAt,
+      answers: sessionPendingQuestions.answers,
+      chatSteps: sessionPendingQuestions.chatSteps,
+    })
+    .from(sessionPendingQuestions)
+    .where(and(eq(sessionPendingQuestions.id, id), eq(sessionPendingQuestions.projectId, projectId)))
+    .limit(1);
+  return row ? { ...row, questions: row.questions as RuntimeQuestion[] } : null;
+}
+
+/**
+ * Move a chat's answers so far (`chat_steps`) from `from`, the value read, to
+ * `to`. False: another press moved them first, and nothing is written.
+ */
+export async function advancePendingQuestionSteps(projectId: string, id: string, from: unknown, to: unknown): Promise<boolean> {
+  const rows = await db
+    .update(sessionPendingQuestions)
+    .set({ chatSteps: to as never, updatedAt: new Date().toISOString() })
+    .where(
+      and(
+        eq(sessionPendingQuestions.id, id),
+        eq(sessionPendingQuestions.projectId, projectId),
+        sql`${sessionPendingQuestions.chatSteps} IS NOT DISTINCT FROM ${from == null ? null : JSON.stringify(from)}::jsonb`,
+      ),
+    )
+    .returning({ id: sessionPendingQuestions.id });
+  return rows.length > 0;
+}
+
+/** The session's stored question whose chat steps `by` wrote: a retried message finds its own answer. */
+export async function pendingQuestionStepsBy(sessionId: string, by: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: sessionPendingQuestions.id })
+    .from(sessionPendingQuestions)
+    .where(and(eq(sessionPendingQuestions.sessionId, sessionId), sql`${sessionPendingQuestions.chatSteps}->>'by' = ${by}`))
+    .limit(1);
+  return row?.id ?? null;
+}
+
 /**
  * Mark a question answered.
  *
@@ -208,33 +264,35 @@ export async function clearOpenQuestions(
  * So the answer arrives as a new turn, and it has to carry its own context: the
  * fresh opencode has no memory of asking. Quoting the question is what makes
  * the reply legible instead of a bare "yes" with nothing to attach it to.
+ *
+ * Several questions are paired by position: each answer under its own
+ * question, so an answer to only some of them says which.
  */
 export function renderAnswerPrompt(questions: unknown, answers: unknown): string {
-  const asked = Array.isArray(questions)
-    ? questions
-        .map((q) => {
-          const text =
-            q && typeof q === 'object'
-              ? ((q as { text?: unknown; question?: unknown }).text ??
-                (q as { question?: unknown }).question)
-              : q;
-          return typeof text === 'string' ? text.trim() : null;
-        })
-        .filter((t): t is string => !!t)
-    : [];
-
-  const given = Array.isArray(answers)
-    ? answers
-        .map((a) => (Array.isArray(a) ? a.join(', ') : typeof a === 'string' ? a : null))
-        .filter((t): t is string => !!t && t.trim().length > 0)
-    : [];
+  const asked = Array.isArray(questions) ? questions.map(questionText) : [];
+  const given = Array.isArray(answers) ? answers.map(answerText) : [];
+  if (asked.length > 1) {
+    return `You asked:\n${asked.map((q, i) => [...(q ? [`> ${q}`] : []), given[i] ?? '(no answer given)'].join('\n')).join('\n\n')}`;
+  }
 
   const lines: string[] = [];
-  if (asked.length > 0) {
+  if (asked[0]) {
     lines.push('You asked:');
-    for (const q of asked) lines.push(`> ${q}`);
+    lines.push(`> ${asked[0]}`);
     lines.push('');
   }
-  lines.push(given.length > 0 ? given.join('\n') : '(no answer given)');
+  const said = given.filter((t): t is string => t !== null);
+  lines.push(said.length > 0 ? said.join('\n') : '(no answer given)');
   return lines.join('\n');
+}
+
+function questionText(q: unknown): string | null {
+  const text =
+    q && typeof q === 'object' ? ((q as { text?: unknown }).text ?? (q as { question?: unknown }).question) : q;
+  return typeof text === 'string' && text.trim() ? text.trim() : null;
+}
+
+function answerText(a: unknown): string | null {
+  const text = Array.isArray(a) ? a.join(', ') : typeof a === 'string' ? a : null;
+  return text?.trim() ? text : null;
 }

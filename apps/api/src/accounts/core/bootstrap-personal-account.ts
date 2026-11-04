@@ -3,7 +3,6 @@ import { accountMemberships, accounts } from '@kortix/db';
 import { initializeFreeTierAccount } from '../../billing/services/free-tier';
 import { config } from '../../config';
 import { syncSignupContactToMailtrap } from '../mailtrap-contacts';
-import { sendSignupWebhook } from '../signup-webhook';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { anyAccountMembershipOf } from '../../iam/membership-read';
 import { db } from '../../shared/db';
@@ -72,7 +71,7 @@ export async function bootstrapPersonalAccount(
       try {
         await initializeFreeTierAccount(userId);
       } catch (err) {
-        console.warn(`[accounts] Failed to initialize free tier for ${userId}:`, err);
+        console.warn('[accounts] Failed to initialize free tier for %s:', userId, err);
       }
     }
 
@@ -80,10 +79,8 @@ export async function bootstrapPersonalAccount(
     // that reach resolveAccount with an existing account never get here.
     // Fire-and-forget: Mailtrap being down must never affect signup.
     void syncSignupContactToMailtrap(email).catch((err) =>
-      console.warn(`[accounts] Mailtrap contact sync failed for ${userId}:`, err),
+      console.warn('[accounts] Mailtrap contact sync failed for %s:', userId, err),
     );
-    // Same contract for the sales factory's signup webhook (inert when unset).
-    if (email) void sendSignupWebhook({ userId, email, name: profile });
 
     return { accountId: userId, created: true };
   }

@@ -4,6 +4,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, sta
 import { platform } from 'os';
 import { isAbsolute, join } from 'path';
 
+import { isAlive } from './process-liveness';
 import { agentTunnelHome } from './service-paths';
 
 /**
@@ -269,16 +270,6 @@ export function readAccessRequest(home = agentTunnelHome()): AccessRequest | nul
 
 export function clearAccessRequest(id: string, home = agentTunnelHome()): void {
   if (readAccessRequest(home)?.id === id) rmSync(accessRequestPath(home), { force: true });
-}
-
-function isAlive(pid: unknown): boolean {
-  if (typeof pid !== 'number' || !Number.isSafeInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
 }
 
 /**

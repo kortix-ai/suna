@@ -37,7 +37,6 @@ beforeEach(() => {
 
 const SESSION_ID = 'sess-1';
 const session: GitPrincipal = { kind: 'session', sessionId: SESSION_ID, branch: SESSION_ID, userId: 'u1', tokenId: 'tok-1' };
-const monitor: GitPrincipal = { kind: 'monitor' };
 const user: GitPrincipal = { kind: 'user', userId: 'u1', tokenId: 'tok-1' };
 const internal: GitPrincipal = { kind: 'internal' };
 
@@ -131,11 +130,6 @@ describe('principalHoldsRefScope — other principals', () => {
     expect(await principalHoldsRefScope(ctxWithGrant(null), internal, PROJECT, ANY)).toBe(true);
   });
 
-  test('a monitor holds nothing — there is no principal behind it', async () => {
-    const c = ctxWithGrant({ agent: 'main', permissions: 'all' });
-    expect(await principalHoldsRefScope(c, monitor, PROJECT, ANY)).toBe(false);
-    expect(await principalHoldsRefScope(c, monitor, PROJECT, DEL)).toBe(false);
-  });
 });
 
 describe('denialsAfterScopes', () => {

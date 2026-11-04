@@ -25,6 +25,7 @@ describe('session inventory working reader', () => {
   });
   test('live inbox uses canonical queued, held, failed and forwarded wire semantics per session', async () => {
     const row: PromptRow = {
+      artifactId: null,
       commandId: 'prompt', sessionId: 'visible-a', projectId: 'project', accountId: 'account',
       actorUserId: 'user', commandType: 'continue_session', source: 'user', status: 'queued', idempotencyKey: null,
       payload: { clientMessageId: 'message', clientSentAtMs: 1000 }, result: {},

@@ -20,6 +20,7 @@ import {
   shouldApplyPrefill,
   shouldFocusEditorFromPadding,
   shouldSubmitPrefill,
+  shouldSubmitWhenReady,
   textToDocument,
   textToParagraphs,
   withReplyQuotes,
@@ -28,6 +29,31 @@ import type { AttachedFile } from './types';
 
 /** A one-paragraph document holding exactly this text. */
 const docOf = (text: string): JSONContent => textToDocument(text);
+
+describe('shouldSubmitWhenReady', () => {
+  const ready = {
+    prefillId: 7,
+    landedPrefillId: 7,
+    submittedPrefillId: null,
+    submitDisabled: false,
+    loading: false,
+  };
+
+  test('sends once the text landed and a send is possible', () => {
+    expect(shouldSubmitWhenReady(ready)).toBe(true);
+  });
+
+  test('holds while there is no model, the catalog loads, or the text has not landed', () => {
+    expect(shouldSubmitWhenReady({ ...ready, submitDisabled: true })).toBe(false);
+    expect(shouldSubmitWhenReady({ ...ready, loading: true })).toBe(false);
+    expect(shouldSubmitWhenReady({ ...ready, landedPrefillId: null })).toBe(false);
+    expect(shouldSubmitWhenReady({ ...ready, prefillId: undefined })).toBe(false);
+  });
+
+  test('never sends the same prefill twice', () => {
+    expect(shouldSubmitWhenReady({ ...ready, submittedPrefillId: 7 })).toBe(false);
+  });
+});
 
 describe('shouldSubmitPrefill', () => {
   test('submits a prefill that asks for it, once', () => {

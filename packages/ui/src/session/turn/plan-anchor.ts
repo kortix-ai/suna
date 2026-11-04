@@ -20,7 +20,7 @@
  * is live, and `chatPlanAnchorId` turns this whole module off for the other.
  * See `action-panel/easy/plan-card.tsx`.
  *
- * No React import. Every rule here is unit-tested in plan-anchor.test.ts.
+ * No React import.
  */
 import { shouldShowToolPart, toolKind, type SessionLogTurn } from '@kortix/sdk';
 

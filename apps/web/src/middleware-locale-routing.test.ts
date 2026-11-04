@@ -88,9 +88,36 @@ describe('locale rewrite onto app/[locale]', () => {
       '/scim/v2/Users',
       '/blog',
       '/blog/some-post',
+      '/blog/rss.xml',
+      '/blog/some-post.md',
     ]) {
       const response = await middleware(request(path));
       expect(response.headers.get('x-middleware-rewrite')).toBeNull();
+    }
+  });
+
+  test('a /blog request reaches the blog app without the session cookie or Authorization', async () => {
+    // next.config.ts proxies /blog to another deployment; a kortix.com session
+    // must never cross to it. Next forwards the headers listed in
+    // x-middleware-override-headers, each as x-middleware-request-<name>.
+    for (const path of ['/blog', '/blog/some-post', '/blog/rss.xml', '/blog/some-post.md']) {
+      const response = await middleware(
+        new NextRequest(
+          new Request(`${ORIGIN}${path}`, {
+            headers: {
+              accept: 'text/html',
+              cookie: `${KORTIX_SUPABASE_AUTH_COOKIE}=${GERMAN_SESSION}; other=1`,
+              authorization: 'Bearer token',
+            },
+          }),
+        ),
+      );
+      const forwarded = (response.headers.get('x-middleware-override-headers') ?? '').split(',');
+      expect(forwarded, path).toContain('accept');
+      expect(forwarded, path).not.toContain('cookie');
+      expect(forwarded, path).not.toContain('authorization');
+      expect(response.headers.get('x-middleware-request-cookie'), path).toBeNull();
+      expect(response.headers.get('x-middleware-request-authorization'), path).toBeNull();
     }
   });
 });
@@ -232,7 +259,8 @@ describe('docs Markdown negotiation without the middleware', () => {
     expect(source).toContain("destination: '/markdown/docs/index.md'");
     expect(source).toContain("destination: '/markdown/docs/:path*.md'");
     const docs = getPublicContentRecords().filter((record) => record.htmlPath.startsWith('/docs'));
-    expect(docs.length).toBeGreaterThan(5);
+    // One docs page, plus the unlisted Capture and audit-actions pages.
+    expect(docs.length).toBeGreaterThan(1);
     for (const record of docs.slice(0, 20)) {
       const target =
         record.htmlPath === '/docs'

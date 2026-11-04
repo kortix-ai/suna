@@ -1,7 +1,8 @@
 import type { FileTreeNode } from '@kortix/ui/file-tree';
 import { buildFileTree } from '@kortix/ui/customize/shared/entity/entity-files';
 import type { UiTranslator } from '@/i18n/translator';
-import type { DependencyItem, ItemCapabilities } from '@/lib/marketplace-client';
+import type { DependencyItem, ItemCapabilities, MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
+import { groupMarketplaceItemsByType } from './marketplace-grid';
 import { typeMeta } from './marketplace-meta';
 
 /** Type-aware copy for the "no description" state. Every item type reads as
@@ -114,4 +115,67 @@ export function marketplaceFileNodes(targets: readonly string[]): FileTreeNode[]
     return [...targets].sort().map((path) => ({ path, name: path, depth: 0 }));
   }
   return buildFileTree(targets, dir);
+}
+
+export function projectContentGroups(data: MarketplaceItemDetail, tI18nComplete: UiTranslator) {
+  if (data.type !== 'registry:project') return [];
+  const toItem = (
+    name: string,
+    title: string,
+    description: string | null,
+    type: string,
+    id: string,
+  ): MarketplaceItem => ({
+    id,
+    registry: data.registry,
+    name,
+    type,
+    title,
+    description,
+    categories: [],
+    capabilities: { secrets: [], connectors: [], tools: [], network: [] },
+    dependencies: [],
+    fileCount: 0,
+    external: data.external,
+    marketplaceId: data.marketplaceId,
+    marketplaceLabel: data.marketplaceLabel,
+    owner: data.owner,
+    sourceUrl: data.sourceUrl,
+  });
+  // A project shows its README first, then its contents rendered as the SAME
+  // marketplace cards, in the SAME typed grid, as the main gallery — so a skill
+  // inside the project looks exactly like a skill listed on the marketplace.
+  // Each content item is a full catalog id, so we synthesize a MarketplaceItem
+  // from the resolved dependency metadata + the project's own source identity.
+  const byName = new Map(data.dependencyItems.map((d) => [d.name, d]));
+  const items: MarketplaceItem[] = data.dependencies
+    .map((name) => byName.get(name))
+    .filter((d): d is MarketplaceItemDetail['dependencyItems'][number] => Boolean(d))
+    .map((d) => toItem(d.name, d.title, d.description, d.type, d.id));
+  const memberItemGroups = groupMarketplaceItemsByType(items);
+  // A project's agents + triggers (parsed from kortix.yaml) rendered with the
+  // SAME card + name-based icon heuristic as its skills — just non-navigable,
+  // since they aren't their own catalog items.
+  const groups: { label: string; items: MarketplaceItem[] }[] = [];
+  if (data.projectAgents?.length) {
+    groups.push({
+      label: tI18nComplete.raw('text279b44d2ab4b'),
+      items: data.projectAgents.map((a) =>
+        toItem(a.name, a.title.replaceAll('-', ' '), a.description, 'registry:agent', `agent:${a.name}`),
+      ),
+    });
+  }
+  if (data.projectTriggers?.length) {
+    groups.push({
+      label: tI18nComplete.raw('texte62f2148a64d'),
+      items: data.projectTriggers.map((t) =>
+        toItem(t.slug, t.slug.replaceAll('-', ' '), t.description, 'registry:trigger', `trigger:${t.slug}`),
+      ),
+    });
+  }
+
+  return [
+    ...memberItemGroups.map((g) => ({ ...g, navigable: true })),
+    ...groups.map((g) => ({ ...g, navigable: false })),
+  ];
 }

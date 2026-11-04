@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { DEFAULT_DB_POOL_MAX } from './connection-defaults';
 import * as schema from './schema';
+import { requiresTls } from './tls';
 
 function intFromEnv(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -303,6 +304,7 @@ export function createDb(databaseUrl: string, options?: postgres.Options<{}>, ho
   // uses the DIRECT connection, where prepared statements work.
   const prepare = options?.prepare ?? PREPARE_STATEMENTS;
   const client = postgres(databaseUrl, {
+    ...(requiresTls(databaseUrl) ? { ssl: 'require' as const } : {}),
     max: POOL_MAX,
     idle_timeout: IDLE_TIMEOUT_S,
     connect_timeout: CONNECT_TIMEOUT_S,

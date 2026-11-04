@@ -243,6 +243,8 @@ export interface ShowCarouselItem {
   content?: string;
   language?: string;
   aspect_ratio?: string;
+  /** The bytes' sha256 from the `show` output (R38, `showItemDigest`). */
+  sha256?: string;
 }
 
 /** `input.items` as an array (or a JSON string of one); `null` when empty or invalid. */

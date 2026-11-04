@@ -133,6 +133,7 @@ export function NewWorkspacePage() {
   const searchParams = useSearchParams();
   const cloneItemId = readCloneParam(new URLSearchParams(searchParams?.toString() ?? ''));
   const router = useRouter();
+  const connectComputer = searchParams?.get('connect') === 'computer';
 
   useSignedOutRedirect();
 
@@ -178,7 +179,11 @@ export function NewWorkspacePage() {
     canRetry,
     limitReached,
     phase,
-  } = useCreateWorkspace();
+  } = useCreateWorkspace({
+    enterProject: connectComputer
+      ? (projectId) => router.replace(`/projects/${encodeURIComponent(projectId)}/settings/computer`)
+      : undefined,
+  });
   const openUpgradeDialog = useUpgradeDialogStore((store) => store.openUpgradeDialog);
   const submitting = status === 'creating';
 
@@ -553,7 +558,12 @@ export function NewWorkspacePage() {
                     />
                   </div>
                 ) : null}
-                <AdvancedFields state={state} accountId={effectiveAccountId} onChange={setState} />
+                <AdvancedFields
+                  connectComputer={connectComputer}
+                  state={state}
+                  accountId={effectiveAccountId}
+                  onChange={setState}
+                />
               </div>
 
               <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">

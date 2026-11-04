@@ -27,6 +27,8 @@ describe('locale routing', () => {
       '/ingest/e',
       '/blog',
       '/blog/some-post',
+      '/blog/rss.xml',
+      '/blog/some-post.md',
       '/docs',
       '/docs/quickstart',
       '/mcp',

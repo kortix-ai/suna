@@ -21,9 +21,12 @@ describe('prod deploy trust', () => {
     const tf = read('infra/terraform/security-baseline/iam-gha-ecs-deploy.tf');
     const block = tf.slice(tf.indexOf('resource "aws_iam_role" "gha_ecs_deploy_prod"'));
     const trust = block.slice(0, block.indexOf('tags = {'));
-    expect(trust).toContain('"repo:kortix-ai/suna:environment:prod"');
+    // Every trusted repository name (github-repos.tf), each pinned to the prod environment.
+    expect(trust).toContain('"repo:${repo}:environment:prod"');
     expect(trust).not.toContain('StringLike');
-    expect(trust).not.toContain('suna:*');
+    expect(trust).not.toMatch(/:\*"/);
+    const names = read('infra/terraform/security-baseline/github-repos.tf');
+    expect(names).toContain('"kortix-ai/CompanyOS"');
   });
 
   it.each(['.github/workflows/deploy-prod.yml'])(
@@ -71,6 +74,14 @@ describe('promote green gate', () => {
     for (const name of ['API', 'gateway', 'frontend']) {
       expect(gate).toContain(`Publish ${name} manifest (staging)`);
     }
+  });
+
+  // v0.14.12: merge-tree honored the learnings MEMORY.md `merge=union`, said "no
+  // conflict", and GitHub (no union driver) then refused the promotion PR merge.
+  it('checks the staging merge for conflicts the way GitHub merges, without merge drivers', () => {
+    const override = promote.indexOf(`printf '* merge\\n' >> "$(git rev-parse --git-dir)/info/attributes"`);
+    expect(override).toBeGreaterThan(-1);
+    expect(override).toBeLessThan(promote.indexOf('git merge-tree --write-tree origin/staging'));
   });
 });
 

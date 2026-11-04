@@ -8,7 +8,7 @@
 #
 # Profiles. Every path is audited in one of two profiles:
 #   app        apps/web product chrome and @kortix/ui (packages/ui/src). Every rule applies.
-#   marketing  paths under /marketing/, /(marketing)/, /(seo)/, /presentations/, /components/home/.
+#   marketing  paths under /marketing/, /(marketing)/, /(sales)/, /(seo)/, /presentations/, /components/home/.
 #              Color, dark:, spacing, bracket, easing, weight and motion-property rules
 #              still apply. The type-size ceiling, the radius ceiling and large shadows
 #              are relaxed. The duration ceiling is 500ms. Mono-uppercase eyebrows are allowed.
@@ -65,7 +65,7 @@ CONST_RE=':[0-9]+: *(export )?const [A-Z][A-Z0-9_]* ='
 LOADING_RE='(/primitives/(loading|kortix-loader)\.)'
 BADGE_RE='(/primitives/badge\.)'
 
-MKT_RE='(/marketing/|/\(marketing\)/|/\(seo\)/|/presentations/|/components/home/)'
+MKT_RE='(/marketing/|/\(marketing\)/|/\(sales\)/|/\(seo\)/|/presentations/|/components/home/)'
 
 # A comment line is prose about the rules, not a violation of them.
 COMMENT_RE=':[0-9]+: *(//|\*|/\*|\{/\*)'
@@ -75,7 +75,7 @@ COMMENT_RE=':[0-9]+: *(//|\*|/\*|\{/\*)'
 scan() {
   local label="$1" pattern="$2" fix="$3" scope="${4:-all}" skip="${5:-}"
   local hits
-  hits=$(grep -raEn --include='*.tsx' --include='*.ts' --include='*.css' "$pattern" "${TARGETS[@]}" 2>/dev/null \
+  hits=$(grep -raEnH --include='*.tsx' --include='*.ts' --include='*.css' "$pattern" "${TARGETS[@]}" 2>/dev/null \
     | grep -avE "$EXCLUDE_RE" \
     | grep -avE "$ART_RE" \
     | grep -avE "$LOGO_RE" \
@@ -104,7 +104,7 @@ scan() {
 scan_files() {
   local label="$1" pattern="$2" fix="$3" files="$4"
   local hits
-  hits=$(grep -raEn --include='*.tsx' --include='*.ts' "$pattern" "${TARGETS[@]}" 2>/dev/null \
+  hits=$(grep -raEnH --include='*.tsx' --include='*.ts' "$pattern" "${TARGETS[@]}" 2>/dev/null \
     | grep -aE "^[^:]*($files)[^/:]*:" \
     | grep -avE "$EXCLUDE_RE" \
     | grep -avE "$COMMENT_RE" \

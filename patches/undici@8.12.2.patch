@@ -1,0 +1,11 @@
+diff --git a/lib/interceptor/decompress.js b/lib/interceptor/decompress.js
+--- a/lib/interceptor/decompress.js
++++ b/lib/interceptor/decompress.js
+@@ -75,6 +75,6 @@ const supportedEncodings = {
+   deflate: createInflate,
+   // https://www.rfc-editor.org/rfc/rfc9659.html#section-3
+-  zstd: createZstdDecompress.bind(null, { params: { [constants.ZSTD_d_windowLogMax]: 23 } })
++  zstd: createZstdDecompress?.bind(null, { params: { [constants.ZSTD_d_windowLogMax]: 23 } })
+ }
+ 
+ const defaultSkipStatusCodes = /** @type {const} */ ([204, 304])

@@ -18,9 +18,13 @@
  * (`useEnsureSelectedAccount`, `AccountSwitcher`, …), so branding
  * costs no extra request. It renders nothing itself; `KortixLogo` swaps its
  * SVG for the org marks, and `BrandingDocumentEffect` (below) swaps the tab
- * icon and title once the account resolves. Before that — and on every
- * unauthenticated surface — the app is Kortix, by design: there is no account
- * to be branded as until someone signs in.
+ * icon and title once the account resolves.
+ *
+ * Before an account resolves — on every signed-out surface, the sign-in page
+ * included — and for an account with no branding of its own, the provider
+ * serves `instanceBranding`: a self-host instance's own branding
+ * (`GET /v1/access/branding`), read by the root layout on the server so it is
+ * in the first paint. It is null on the Kortix cloud, which is then Kortix.
  */
 
 import { type AccountBranding } from '@kortix/sdk';
@@ -78,7 +82,14 @@ export function useBrandingScope(accountId: string | null | undefined): void {
   }, [accountId]);
 }
 
-export function BrandingProvider({ children }: { children: React.ReactNode }) {
+export function BrandingProvider({
+  children,
+  instanceBranding = null,
+}: {
+  children: React.ReactNode;
+  /** The instance's branding: the fallback when no account branding applies. */
+  instanceBranding?: AccountBranding | null;
+}) {
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
   const { scopedAccountId } = useBrandingScopeState();
 
@@ -87,10 +98,9 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
 
   const branding = useMemo<AccountBranding | null>(() => {
     const accounts = accountsQuery.data;
-    if (!accounts?.length) return null;
-    const activeId = scopedAccountId ?? selectedAccountId ?? accounts[0]?.account_id ?? null;
-    const active = accounts.find((a) => a.account_id === activeId) ?? null;
-    const b = active?.branding ?? null;
+    const activeId = scopedAccountId ?? selectedAccountId ?? accounts?.[0]?.account_id ?? null;
+    const active = accounts?.find((a) => a.account_id === activeId) ?? null;
+    const b = active?.branding ?? instanceBranding;
     if (!b) return null;
     // Normalize once so consumers can rely on every slot being present.
     return {
@@ -102,7 +112,7 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
       icon_dark_url: b.icon_dark_url ?? null,
       favicon_dark_url: b.favicon_dark_url ?? null,
     };
-  }, [accountsQuery.data, scopedAccountId, selectedAccountId]);
+  }, [accountsQuery.data, scopedAccountId, selectedAccountId, instanceBranding]);
 
   return (
     <BrandingContext.Provider value={branding}>
@@ -120,6 +130,14 @@ export function useBranding(): AccountBranding | null {
   return useContext(BrandingContext);
 }
 
+/**
+ * The product name to show in copy ("Welcome to {name}"): the branded name,
+ * else "Kortix CompanyOS". A branding with a logo but no name keeps Kortix.
+ */
+export function useBrandName(): string {
+  return useBranding()?.app_name ?? siteMetadata.name;
+}
+
 // ─── Document effect: favicon + title ───────────────────────────────────────
 
 /** What Next rendered for each icon link before we touched it, kept OFF the
@@ -134,8 +152,8 @@ const originals = new WeakMap<HTMLLinkElement, { href: string; media: string | n
  * trade-off (host-based tenancy would be the way to remove it).
  *
  * Title: Next writes `<title>` on every navigation from the route's metadata:
- * the site default (`Kortix – The open-source AI Operating System`) on
- * routes with no title of their own, `<page> | Kortix` elsewhere. A
+ * the site default (`Kortix CompanyOS – the open-source operating system for your company`) on
+ * routes with no title of their own, `<page> | Kortix CompanyOS` elsewhere. A
  * `MutationObserver` on `<head>` rewrites whatever Next just wrote, so the
  * swap survives navigation without touching every page's metadata: the site
  * default collapses to the org name alone (its tagline is Kortix's, not
@@ -237,7 +255,7 @@ function BrandingDocumentEffect({ branding }: { branding: AccountBranding | null
       const current = document.title;
       if (!current.includes('Kortix')) return;
       const next =
-        current === siteMetadata.title ? appName : current.replace(/\bKortix\b/g, appName);
+        current === siteMetadata.title ? appName : current.replace(/\bKortix(?: CompanyOS)?\b/g, appName);
       if (next !== current) document.title = next;
     };
     rewrite();

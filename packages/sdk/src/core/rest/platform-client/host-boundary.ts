@@ -8,8 +8,10 @@
  */
 
 import { retiredEndpointError } from '../../http/api/errors';
+import type { AccountBranding } from '../projects-client/accounts';
 import { auditFilterQuery } from '../projects-client/audit-filter';
 import { platformApiBase } from './shared';
+import { getBackendUrl } from '../../session/server-store/url-helpers';
 
 export interface HostRequestOptions {
   /** Kortix API base URL. Both `https://host` and `https://host/v1` are valid. */
@@ -156,6 +158,18 @@ export function checkAccessEmail<T = Record<string, unknown>>(
   });
 }
 
+/**
+ * The branding of the whole instance, for pages that show before anyone signs
+ * in (the sign-in page, the browser tab) and for an account with no branding
+ * of its own. Public: no token. `branding` is `null` on every instance
+ * without one, which includes the Kortix cloud.
+ */
+export function getInstanceBranding(
+  options: HostRequestOptions,
+): Promise<{ branding: AccountBranding | null }> {
+  return requestJson('/access/branding', options);
+}
+
 export function submitAccessRequest(
   input: { email: string; company?: string; useCase?: string },
   options: HostRequestOptions,
@@ -297,6 +311,50 @@ export function finalizeConnectorSetupLink(
   });
 }
 
+/** @deprecated The app form was removed; the server answers 404. Removed in the next major. */
+export interface ConnectorAppFormInfo {
+  app: string;
+  name: string;
+  connector: string;
+  connected: boolean;
+  connected_as: string | null;
+  expires_at: string;
+}
+
+/** @deprecated The app form was removed; the server answers 404. Removed in the next major. */
+export interface ConnectorAppFormInput {
+  store: string;
+  clientId: string;
+  clientSecret: string;
+}
+
+/** @deprecated The app form was removed; the server answers 404. Removed in the next major. */
+export interface ConnectorAppFormResult {
+  connected: true;
+  connected_as: string;
+  success_redirect_uri?: string;
+}
+
+/** @deprecated The app form was removed; the server answers 404. Removed in the next major. */
+export function getConnectorAppForm(
+  token: string,
+  options: HostRequestOptions,
+): Promise<ConnectorAppFormInfo> {
+  return requestJson(`/connectors/app-form/${encodeURIComponent(token)}`, options);
+}
+
+/** @deprecated The app form was removed; the server answers 404. Removed in the next major. */
+export function submitConnectorAppForm(
+  token: string,
+  input: ConnectorAppFormInput,
+  options: HostRequestOptions,
+): Promise<ConnectorAppFormResult> {
+  return requestJson(`/connectors/app-form/${encodeURIComponent(token)}`, options, {
+    method: 'POST',
+    body: { store: input.store, client_id: input.clientId, client_secret: input.clientSecret },
+  });
+}
+
 export interface SecretSetupLinkInfo {
   /** Signed delivery scope. Absent on older servers. */
   scope?: 'runtime' | 'connector';
@@ -369,6 +427,57 @@ export function getPublicShareByToken<T = Record<string, unknown>>(
   options: HostRequestOptions,
 ): Promise<T> {
   return requestJson<T>(`/p/public-share/${encodeURIComponent(token)}`, options);
+}
+
+/** One shared assistant response, as the anonymous `/share/response/:token` page reads it. */
+export interface PublicResponse {
+  title: string;
+  /** The prompt's text, when the sharer chose to publish it; else null. */
+  prompt: string | null;
+  markdown: string;
+  agent_name: string | null;
+  model_id: string | null;
+  responded_at: string;
+  shared_at: string;
+}
+
+/**
+ * Read a shared response anonymously (no token is sent). Throws
+ * `HostBoundaryError` with `status` 404 for an unknown link and 410 for a
+ * revoked one. `options.backendUrl` defaults to the configured backend.
+ */
+export async function getPublicResponse(
+  token: string,
+  options: HostRequestOptions = { backendUrl: getBackendUrl() },
+): Promise<PublicResponse> {
+  const body = await requestJson<{ response: PublicResponse }>(
+    `/public/responses/${encodeURIComponent(token)}`,
+    { ...options, accessToken: null },
+  );
+  return body.response;
+}
+
+/** A public artifact's title and type, and the URL of its page. */
+export interface PublicArtifact {
+  artifact_id: string;
+  title: string;
+  description: string | null;
+  type: 'doc' | 'html';
+  updated_at: string;
+  /** The page itself, served as a CSP sandbox: embed it in an iframe. */
+  content_url: string;
+}
+
+/**
+ * A public artifact, without a login (`GET /artifacts/meta/:id`). Throws a
+ * `HostBoundaryError` with `status` 404 when the artifact does not exist or is
+ * not public. `options.backendUrl` defaults to the configured backend.
+ */
+export async function getPublicArtifact(
+  artifactId: string,
+  options: HostRequestOptions = { backendUrl: getBackendUrl() },
+): Promise<PublicArtifact> {
+  return requestJson<PublicArtifact>(`/artifacts/meta/${encodeURIComponent(artifactId)}`, { ...options, accessToken: null });
 }
 
 export function startSessionWithToken(

@@ -30,6 +30,7 @@ import { registerProjectCredentialsRoutes } from './routes/project-credentials';
 import { registerSecretsRoutes } from './routes/secrets';
 import { registerSecretDeliveryRoutes } from './routes/secret-delivery';
 import { registerProviderOauthRoutes } from './routes/provider-oauth';
+import { registerClaudeSubscriptionRoutes } from './routes/claude-subscription';
 import { registerRepositoryReplacementRoutes } from './routes/repository-replacement';
 import { registerSecretBrokerRoutes } from './routes/secret-broker';
 import { registerSecretRelayRoutes } from './routes/secret-relay';
@@ -40,6 +41,7 @@ import { registerComputersRoutes } from './routes/computers';
 import { registerTriggersRoutes } from './routes/triggers';
 import { registerChannelSlackRoutes } from './routes/channel-slack';
 import { registerChannelTelegramRoutes } from './routes/channel-telegram';
+import { registerChannelDiscordRoutes } from './routes/channel-discord';
 import { registerChannelTeamsRoutes } from './routes/channel-teams';
 import { registerChannelEmailRoutes } from './routes/channel-email';
 import { registerTurnStreamRoutes } from './routes/turn-stream';
@@ -56,7 +58,6 @@ import { registerProjectAccessRoutes } from './routes/project-access';
 import { registerAccessRequestsRoutes } from './routes/access-requests';
 import { registerProjectInvitesRoutes } from './routes/project-invites';
 import { registerGroupGrantsRoutes } from './routes/group-grants';
-import { registerWarmSessionsRoutes } from './routes/warm-sessions';
 import { registerProviderSecretPoolsRoutes } from './routes/provider-secret-pools';
 import { registerProjectSessionsRoutes, registerSessionLookupRoutes } from './routes/project-sessions';
 import { registerSessionTranscriptsRoutes } from './routes/session-transcripts';
@@ -76,22 +77,34 @@ import { registerSessionLogRoutes } from './routes/session-log';
 import { registerSessionRuntimeRoutes } from './routes/session-runtime';
 import { registerSessionPresenceRoutes } from './routes/session-presence';
 import { registerSessionWatchRoutes } from './routes/session-watch';
+import { registerSessionListFreshnessMiddleware } from './routes/session-list-freshness';
+import { registerSessionGroupsRoutes } from './routes/session-groups';
 import { registerSessionListStateRoutes } from './routes/session-list-state';
 import { registerSessionParticipantsRoutes } from './routes/session-participants';
 import { registerSessionPromptsRoutes } from './routes/session-prompts';
 import { registerRoomsRoutes } from './routes/rooms';
+import { registerPeerMessagesRoutes } from './routes/peer-messages';
+import { registerTeamTasksRoutes } from './routes/team-tasks';
+import { registerArtifactRoutes } from './routes/artifacts';
+import { registerArtifactCommentRoutes } from './routes/artifact-comments';
+import { registerLinkPreviewRoutes } from './routes/link-preview';
 import { registerSessionRemindersRoutes } from './routes/session-reminders';
+import { registerRuntimeTriggersRoutes } from './routes/runtime-triggers';
+import { registerProjectSpacesRoutes } from './routes/project-spaces';
+import { registerProjectMemoryRoutes } from './routes/project-memory';
+import { registerProjectSearchRoutes } from './routes/project-search';
+import { registerProjectMyMemoryRoutes } from './routes/project-my-memory';
 import { registerChangeRequestsRoutes } from './routes/change-requests';
 import { registerPromptAttachmentsRoutes } from './routes/prompt-attachments';
 import { registerChangeRequestActionsRoutes } from './routes/change-request-actions';
 import { registerMarketplaceInstallSessionRoutes } from './routes/marketplace-install-session';
 import { registerReviewItemsRoutes } from './routes/review-items';
 import { registerAgentScopeRoutes } from './routes/agent-scope';
+import { registerAgentCapabilitiesRoutes } from './routes/agent-capabilities';
 import { registerAgentConfigRoutes } from './routes/agent-config';
 import { registerProjectSkillsRoutes } from './routes/project-skills';
 import { registerGatewayRoutes } from './routes/gateway';
 import { registerChannelBindingsRoutes } from './routes/channel-bindings';
-import { registerMonitorsRoutes } from './routes/monitors';
 import { registerAppsRoutes } from '../apps/routes';
 
 /**
@@ -105,6 +118,8 @@ export function registerAllProjectRoutes(): void {
   // route order. registerProjectsRoutes() registers the global `/*` auth
   // middleware first (its first statement), then the remaining route groups.
   registerProjectsRoutes();
+  // Before every session route: a successful session write forgets the list's memoized pages.
+  registerSessionListFreshnessMiddleware();
   registerTriggerWebhooksRoutes();
   registerEventIngressRoutes();
   registerProjectGitRoutes();
@@ -119,6 +134,7 @@ export function registerAllProjectRoutes(): void {
   registerSecretsRoutes();
   registerSecretDeliveryRoutes();
   registerProviderOauthRoutes();
+  registerClaudeSubscriptionRoutes();
   registerRepositoryReplacementRoutes();
   registerSecretBrokerRoutes();
   registerSecretRelayRoutes();
@@ -129,6 +145,7 @@ export function registerAllProjectRoutes(): void {
   registerTriggersRoutes();
   registerChannelSlackRoutes();
   registerChannelTelegramRoutes();
+  registerChannelDiscordRoutes();
   registerChannelTeamsRoutes();
   registerChannelEmailRoutes();
   registerTurnStreamRoutes();
@@ -145,7 +162,6 @@ export function registerAllProjectRoutes(): void {
   registerAccessRequestsRoutes();
   registerProjectInvitesRoutes();
   registerGroupGrantsRoutes();
-  registerWarmSessionsRoutes();
   registerProviderSecretPoolsRoutes();
   registerProjectSessionsRoutes();
   registerSessionTranscriptsRoutes();
@@ -166,10 +182,21 @@ export function registerAllProjectRoutes(): void {
   registerSessionPresenceRoutes();
   registerSessionWatchRoutes();
   registerSessionListStateRoutes();
+  registerSessionGroupsRoutes();
   registerSessionParticipantsRoutes();
   registerSessionPromptsRoutes();
   registerRoomsRoutes();
+  registerPeerMessagesRoutes();
+  registerTeamTasksRoutes();
+  registerArtifactRoutes();
+  registerArtifactCommentRoutes();
+  registerLinkPreviewRoutes();
   registerSessionRemindersRoutes();
+  registerRuntimeTriggersRoutes();
+  registerProjectSpacesRoutes();
+  registerProjectMemoryRoutes();
+  registerProjectSearchRoutes();
+  registerProjectMyMemoryRoutes();
   registerChangeRequestsRoutes();
   registerPromptAttachmentsRoutes();
   registerChangeRequestActionsRoutes();
@@ -177,10 +204,10 @@ export function registerAllProjectRoutes(): void {
   registerReviewItemsRoutes();
   registerAgentScopeRoutes();
   registerAgentConfigRoutes();
+  registerAgentCapabilitiesRoutes();
   registerProjectSkillsRoutes();
   registerGatewayRoutes();
   registerChannelBindingsRoutes();
-  registerMonitorsRoutes();
   registerAppsRoutes();
 }
 

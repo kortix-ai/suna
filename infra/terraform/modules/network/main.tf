@@ -22,6 +22,7 @@ locals {
   # /20 public + /20 private per AZ carved out of the VPC /16.
   public_subnets  = [for i in range(var.az_count) : cidrsubnet(var.cidr, 4, i)]
   private_subnets = [for i in range(var.az_count) : cidrsubnet(var.cidr, 4, i + 8)]
+  egress_subnets  = [for i in range(var.az_count) : cidrsubnet(var.cidr, 4, i + 4)]
   # One NAT in dev (cost), one-per-AZ in prod (HA) — controlled by single_nat_gateway.
   nat_count = var.single_nat_gateway ? 1 : var.az_count
 
@@ -256,4 +257,135 @@ resource "aws_route_table_association" "private" {
   count          = var.az_count
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = aws_route_table.private[count.index].id
+}
+
+# ── Egress subnets (internet direct, GitHub through the NAT) ─────────────────
+# A task in a private subnet sends every byte through the NAT gateway, which
+# bills processing per GB in both directions. Prod took 809 GB/day through it
+# on 2026-11-02: GitHub, Platinum boxes, Supabase Postgres, CloudFront and
+# Cloudflare. A task in an egress subnet has a public IP and reaches the
+# internet through the internet gateway, which bills no processing.
+#
+# GitHub stays on the NAT. The `kortix-managed` GitHub App publishes the NAT
+# EIPs as its IP allow list, and an organization that enforces a GitHub IP
+# allow list imports them; a request from a task's own public IP would be
+# refused there. The route table sends every GitHub API, git and web range
+# (github-ipv4-ranges.json, from api.github.com/meta) to the NAT, so those
+# requests keep the EIP. A range GitHub adds before the next refresh leaves
+# from the task's own IP until then.
+#
+# The service security group admits only the load balancer, so the public IP
+# opens no inbound path.
+resource "aws_subnet" "egress" {
+  count             = var.az_count
+  vpc_id            = aws_vpc.this.id
+  cidr_block        = local.egress_subnets[count.index]
+  availability_zone = local.azs[count.index]
+  # The ECS service assigns the public IP (`assign_public_ip`); nothing else
+  # launched here gets one by default.
+  map_public_ip_on_launch = false
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${var.name}-egress-${local.azs[count.index]}"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Platform    = lookup(var.tags, "Platform", "network")
+    Tier        = "egress"
+  }
+}
+
+locals {
+  # Committed, not fetched at plan time: api.github.com/meta allows 60
+  # unauthenticated requests an hour per IP, and a refused fetch would fail
+  # the deploy that plans it. scripts/refresh-github-ranges.sh regenerates the
+  # file; the weekly `github-ranges-refresh` workflow merges any change.
+  github_ipv4_cidrs = jsondecode(file("${path.module}/github-ipv4-ranges.json")).cidrs
+}
+
+resource "aws_ec2_managed_prefix_list" "github" {
+  name           = "${var.name}-github"
+  address_family = "IPv4"
+  # A route that names a prefix list counts its max_entries against the route
+  # table quota (`L-93826ACB`; above 200 in eu-west-2 and us-east-2, which a
+  # request for 200 proved on 2026-11-03: "value less than current"). 81 ranges
+  # on 2026-11-03.
+  max_entries = 150
+
+  dynamic "entry" {
+    for_each = local.github_ipv4_cidrs
+    content {
+      cidr        = entry.value
+      description = "GitHub (api.github.com/meta)"
+    }
+  }
+
+  lifecycle {
+    # An empty or truncated list would send GitHub past the NAT, from an IP no
+    # allow list knows. Fail the plan instead.
+    precondition {
+      condition     = length(local.github_ipv4_cidrs) >= 20 && length(local.github_ipv4_cidrs) <= 150
+      error_message = "github-ipv4-ranges.json holds ${length(local.github_ipv4_cidrs)} IPv4 ranges; expected 20 to 150."
+    }
+  }
+
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${var.name}-github"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Platform    = lookup(var.tags, "Platform", "network")
+  }
+}
+
+resource "aws_route_table" "egress" {
+  count  = var.az_count
+  vpc_id = aws_vpc.this.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.this.id
+  }
+  route {
+    destination_prefix_list_id = aws_ec2_managed_prefix_list.github.id
+    nat_gateway_id             = aws_nat_gateway.this[var.single_nat_gateway ? 0 : count.index].id
+  }
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${var.name}-egress-rt-${count.index}"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Platform    = lookup(var.tags, "Platform", "network")
+    Tier        = "egress"
+  }
+}
+
+resource "aws_route_table_association" "egress" {
+  count          = var.az_count
+  subnet_id      = aws_subnet.egress[count.index].id
+  route_table_id = aws_route_table.egress[count.index].id
+}
+
+# ── S3 gateway endpoint ───────────────────────────────────────────────────────
+# Without it, every S3 request from a private or egress subnet (project snapshots, ECR
+# image layers, which ECR serves from S3) leaves through the NAT gateway and
+# pays NAT processing per GB. A gateway endpoint adds a route for the region's
+# S3 prefix list to each private and egress route table; it has no hourly or per-GB
+# charge. Buckets in other regions still route through the NAT.
+data "aws_region" "current" {}
+
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.this.id
+  service_name      = "com.amazonaws.${data.aws_region.current.region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = concat(aws_route_table.private[*].id, aws_route_table.egress[*].id)
+  tags = {
+    ManagedBy   = "terraform"
+    Name        = "${var.name}-s3-gateway"
+    Environment = lookup(var.tags, "Environment", "managed")
+    Project     = lookup(var.tags, "Project", "kortix")
+    Service     = lookup(var.tags, "Service", var.name)
+    Platform    = lookup(var.tags, "Platform", "network")
+  }
 }

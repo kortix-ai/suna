@@ -1,10 +1,19 @@
 'use client';
 
-import { startSessionWithPrompt, writeStartStash } from '@kortix/sdk/react';
+import type { ProjectSession } from '@kortix/sdk';
+import {
+  qk,
+  removeCachedProjectSession,
+  startSessionWithPrompt,
+  upsertCachedProjectSession,
+  writeStartStash,
+} from '@kortix/sdk/react';
+import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 
 import { useTranslations } from '../../i18n';
 import { useNewProjectSession } from '../../internal/hooks/projects/use-new-project-session';
+import { type UiViewer, useUiViewer } from '../../providers/ui-provider';
 import { errorToast } from '../../primitives/toast';
 import {
   postWhenUploaded,
@@ -23,6 +32,11 @@ export interface UseProjectHomeSendOptions {
    * apps/web checks the account's billing state here.
    */
   beforeSend?: () => Promise<void>;
+  /**
+   * A channel or DM composer: file each send in this space as a new thread.
+   * The page stays: `onOpen(sessionId)` runs instead of the navigation.
+   */
+  space?: { spaceId: string; onOpen: (sessionId: string) => void };
 }
 
 /**
@@ -31,10 +45,12 @@ export interface UseProjectHomeSendOptions {
  * message on its first frame. `ProjectHome` uses it when the host passes no
  * `onSend`.
  */
-export function useProjectHomeSend(projectId: string, { beforeSend }: UseProjectHomeSendOptions = {}) {
+export function useProjectHomeSend(projectId: string, { beforeSend, space }: UseProjectHomeSendOptions = {}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
   const newSession = useNewProjectSession(projectId);
+  const queryClient = useQueryClient();
+  const viewer = useUiViewer();
   // Composer sending state: spans Enter → create confirmed → navigation. Reset
   // only on create failure (success navigates this page away).
   const [sending, setSending] = useState(false);
@@ -107,10 +123,28 @@ export function useProjectHomeSend(projectId: string, { beforeSend }: UseProject
       // creates it with these same options. By then the Promise below has
       // rejected, so nothing after the `await` runs.
       let refused = false;
+      let optimisticId: string | null = null;
       const sessionId = await new Promise<string>((resolve, reject) => {
         newSession({
+          // A space draws the new thread the instant Enter is pressed; the
+          // create's server row replaces it in place (same id).
+          onCreating: space
+            ? (id) => {
+                optimisticId = id;
+                seedOptimisticThread(queryClient, {
+                  projectId,
+                  spaceId: space.spaceId,
+                  sessionId: id,
+                  text,
+                  agent: options?.agent ?? null,
+                  viewer,
+                  sentAtMs,
+                });
+              }
+            : undefined,
           create: {
             ...buildNewSessionCreateInput(options),
+            ...(space ? { space_id: space.spaceId } : {}),
             ...(heldAttachments
               ? {}
               : {
@@ -131,6 +165,7 @@ export function useProjectHomeSend(projectId: string, { beforeSend }: UseProject
           // composer restores its submitted draft and keeps every handle.
           onError: () => {
             refused = true;
+            if (optimisticId) removeCachedProjectSession(queryClient, projectId, optimisticId);
             setSending(false);
             reject(new Error('Session creation failed'));
           },
@@ -153,18 +188,93 @@ export function useProjectHomeSend(projectId: string, { beforeSend }: UseProject
               heldAttachments.resubmit();
               startHeldPost(heldAttachments, sessionId);
             }
+            // A space opens the thread beside its timeline (a gate Retry too).
+            space?.onOpen(sessionId);
             resolve(sessionId);
           },
         });
       });
+      // A space composer stays on screen: it is ready for the next message.
+      if (space) setSending(false);
       if (!heldAttachments) {
         attachments?.release();
         return;
       }
       startHeldPost(heldAttachments, sessionId);
     },
-    [beforeSend, newSession, projectId, tI18nComplete, tComposerAttachments],
+    [beforeSend, space, newSession, projectId, tI18nComplete, tComposerAttachments, queryClient, viewer],
   );
 
   return { send, sending };
+}
+
+/**
+ * The new thread's row in its space's cached list, before the create POST: the
+ * viewer as its author (avatar and name, never only an email), the prompt as
+ * its message, and `provisioning`, so the "is working" line shows at once. An
+ * in-flight read of that list is cancelled first: it was sent before this row
+ * existed and would drop it when it lands.
+ */
+function seedOptimisticThread(
+  queryClient: QueryClient,
+  {
+    projectId,
+    spaceId,
+    sessionId,
+    text,
+    agent,
+    viewer,
+    sentAtMs,
+  }: {
+    projectId: string;
+    spaceId: string;
+    sessionId: string;
+    text: string;
+    agent: string | null;
+    viewer: UiViewer | undefined;
+    sentAtMs: number;
+  },
+): void {
+  const prefix = qk.project.sessionsScope(projectId);
+  void queryClient.cancelQueries({
+    queryKey: prefix,
+    predicate: (query) =>
+      query.queryKey[prefix.length] === 'list-paged' &&
+      (query.queryKey[prefix.length + 2] as { spaceId?: string } | undefined)?.spaceId === spaceId,
+  });
+  const name = viewer?.metadata?.full_name ?? viewer?.metadata?.name;
+  const avatar = viewer?.metadata?.avatar_url;
+  const at = new Date(sentAtMs).toISOString();
+  const row: ProjectSession = {
+    session_id: sessionId,
+    account_id: '',
+    project_id: projectId,
+    space_id: spaceId,
+    branch_name: '',
+    base_ref: '',
+    sandbox_provider: null,
+    sandbox_id: null,
+    sandbox_url: null,
+    opencode_session_id: null,
+    opencode_sessions: [],
+    name: null,
+    custom_name: null,
+    agent_name: agent,
+    status: 'provisioning',
+    error: null,
+    metadata: {},
+    first_prompt: text,
+    reply_count: 0,
+    parent_session_id: null,
+    created_by: viewer?.id ?? null,
+    owner_email: viewer?.email ?? null,
+    owner_name: typeof name === 'string' ? name : null,
+    owner_avatar_url: typeof avatar === 'string' ? avatar : null,
+    owner_type: 'user',
+    initiator: { type: 'member', id: viewer?.id ?? null, label: null },
+    is_owner: true,
+    created_at: at,
+    updated_at: at,
+  };
+  upsertCachedProjectSession(queryClient, projectId, row);
 }

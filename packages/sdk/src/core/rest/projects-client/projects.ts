@@ -1,6 +1,8 @@
-// Projects — project CRUD, detail, feature flags, warm pool, onboarding.
+// Projects — project CRUD, detail, feature flags, onboarding.
 
 import type { CatalogModel } from '@kortix/llm-catalog';
+import type { ManifestIssue } from './change-request-recovery';
+import type { ManifestSpace } from './manifest-spaces';
 import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
 import { retiredEndpointError } from '../../http/api/errors';
 import type { SandboxProviderName } from '../platform-client/types';
@@ -25,7 +27,7 @@ import {
  * the same list, so other packages can assert the two have not drifted.
  *
  * `review_center`, `agent_tunnel`, `session_transcript_history`, `teams`,
- * `config_releases`, `apps`, `llm_gateway` and `pi_harness` are deprecated. `agent_tunnel` graduated like
+ * `config_releases`, `apps`, `llm_gateway`, `pi_harness`, `genui`, `agentmail_email`, `connectors_v2` and `connectors_api_discover` are deprecated. `agent_tunnel` graduated like
  * `review_center` below: a paired computer is a connector account and needs no
  * flag. So did `session_transcript_history`: every session saves its
  * transcript and shows it while its computer is off. And `teams`: every
@@ -33,7 +35,12 @@ import {
  * runs its base branch's config release. And `apps`: Apps is generally
  * available — every project can create and deploy Apps. And `llm_gateway`:
  * the LLM gateway is the only model path for every project. And `pi_harness`:
- * every new session runs pi.
+ * every new session runs pi. And `genui`: generative UI is on for every
+ * project, and every session lists the kortix-genui system skill.
+ * And `agentmail_email`: every project can
+ * connect an email inbox. And `connectors_v2` with `connectors_api_discover`:
+ * the Kortix connectors catalog is the only connectors path; the API sends a
+ * constant `true` for both.
  *
  * `review_center` is deprecated. Review Center graduated out of the flag
  * system: it is on for every project, and the API no longer lists, resolves,
@@ -46,7 +53,9 @@ export type FeatureFlagKey =
   /** @deprecated Graduated — computers need no flag (the platform's `TUNNEL_ENABLED` is the only gate). Removed in the next major. */
   | 'agent_tunnel'
   | 'marketplace'
+  /** @deprecated Graduated — integrations.sh is part of the one Kortix catalog. Removed in the next major. */
   | 'connectors_api_discover'
+  /** @deprecated Graduated — every project can connect an email inbox. Removed in the next major. */
   | 'agentmail_email'
   /** @deprecated Graduated — every project can connect Microsoft Teams. Removed in the next major. */
   | 'teams'
@@ -54,11 +63,14 @@ export type FeatureFlagKey =
   | 'llm_gateway'
   /** @deprecated Graduated — Review Center is on for every project. Removed in the next major. */
   | 'review_center'
+  /** @deprecated Graduated — My Kortix follows kortix.yaml `builtin_agents.my_kortix` alone. The API sends `true` for every project. Removed in the next major. */
   | 'meta_agent'
   /** @deprecated Graduated — Apps is on for every project. Removed in the next major. */
   | 'apps'
+  /** @deprecated Withdrawn — the monitor box was removed; an App with a schedule or a `type: app` trigger replaces it. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'monitors'
   | 'reminders'
+  /** @deprecated Withdrawn — warm sessions were removed; a session boots on its own. The API sends `false` for every project. Removed in the next major. */
   | 'warm_sessions'
   | 'secrets_egress'
   /** @deprecated Withdrawn — the pi worker split left the product; pi runs in the session sandbox. The API no longer lists, resolves, or accepts it. Removed in the next major. */
@@ -68,6 +80,7 @@ export type FeatureFlagKey =
   | 'pooled_provider_secrets'
   /** @deprecated Graduated — every new session runs pi; OpenCode is sunset. The API sends `true` for every project. Removed in the next major. */
   | 'pi_harness'
+  /** @deprecated Graduated — generative UI is on for every project. The API sends `true` for every project. Removed in the next major. */
   | 'genui'
   /** @deprecated Graduated — every session runs its base branch's config release. Removed in the next major. */
   | 'config_releases'
@@ -76,22 +89,41 @@ export type FeatureFlagKey =
   | 'us_region'
   | 'event_triggers'
   | 'notification_center'
+  /** @deprecated Graduated 2026-11-02 — every project has a Drive. The API sends `true` wherever the platform stores a Drive (Platinum). Removed in the next major. */
   | 'volumes'
   /** @deprecated Withdrawn — stateless sessions left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'stateless_sessions'
+  /** @deprecated Graduated 2026-11-02 with `volumes` — every project has a Drive. The API sends `true` wherever the platform stores a Drive (Platinum), so `useFeatureFlag(id, 'drives')` reads Drive availability. Removed in the next major. */
   | 'drives'
   /** @deprecated Withdrawn with `stateless_sessions`. The API no longer lists or resolves it. Removed in the next major. */
   | 'ephemeral_sandboxes'
   /** Not a flag since P8.2 (2026-10-22): the session log is every session's saved history, and the API sends `true` for every project. Absent from {@link FEATURE_FLAG_KEYS}. */
   | 'session_log'
   | 'session_log_restore'
+  /** @deprecated Graduated — the Kortix connectors catalog is the only connectors path. Removed in the next major. */
   | 'connectors_v2'
+  | 'project_channels'
   | 'agent_rooms'
+  /** Shared Drives: an admin makes a Drive and adds agents to it. Off by default: people have only My files. */
+  | 'shared_drives'
   | 'goals'
+  | 'workspace_volume'
+  | 'artifacts'
+  | 'artifact_comments'
+  /** The email channel: a Resend inbox that starts and continues sessions. Experimental, off by default. */
+  | 'email_channel'
+  /** Session groups: named folders of the project's sessions that every member shares. Experimental, off by default. */
+  | 'session_groups'
+  /** Kortix in Chrome: a session drives its owner's own Chrome through the extension. Experimental; on where the platform offers it. */
+  | 'chrome'
+  /** Agent teams: a lead session with named teammates and a shared task list. Experimental, off by default. */
+  | 'agent_teams'
+  /** Voice calls: talk with the session's agent from the session page, with screen share. Off by default. */
+  | 'voice_call'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
-/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `pi_harness`) sends a constant `true`. */
+/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `pi_harness`, `genui`, `meta_agent`) sends a constant `true`, or (`volumes`, `drives`) sends whether the platform stores a Drive. */
 type GraduatedFeatureFlagKey =
   | 'agent_tunnel'
   | 'teams'
@@ -106,7 +138,16 @@ type GraduatedFeatureFlagKey =
   | 'stateless_sessions'
   | 'ephemeral_sandboxes'
   | 'session_log'
-  | 'pi_harness';
+  | 'pi_harness'
+  | 'genui'
+  | 'agentmail_email'
+  | 'monitors'
+  | 'connectors_v2'
+  | 'connectors_api_discover'
+  | 'meta_agent'
+  | 'warm_sessions'
+  | 'volumes'
+  | 'drives';
 /** The keys `KortixProject.experimental` carries on every response. */
 type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
@@ -117,24 +158,25 @@ type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
  */
 export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'marketplace',
-  'connectors_api_discover',
-  'agentmail_email',
-  'meta_agent',
-  'monitors',
   'reminders',
-  'warm_sessions',
   'secrets_egress',
   'pooled_provider_secrets',
-  'genui',
   'us_region',
   'event_triggers',
   'notification_center',
-  'volumes',
-  'drives',
   'session_log_restore',
-  'connectors_v2',
+  'project_channels',
   'agent_rooms',
+  'shared_drives',
   'goals',
+  'workspace_volume',
+  'artifacts',
+  'artifact_comments',
+  'email_channel',
+  'session_groups',
+  'chrome',
+  'agent_teams',
+  'voice_call',
 ] as const;
 
 /**
@@ -157,12 +199,15 @@ export interface FeatureFlagView {
   /** True when this project set an explicit choice (vs inheriting the default). */
   overridden: boolean;
   /**
-   * True for an internal-only flag (`session_log`, `session_log_restore`). The
+   * True for an internal-only flag (`session_log`, `session_log_restore`,
+   * `workspace_volume`). The
    * catalog lists one only while it is on, so agents and people can see it.
    * Only a Kortix platform operator can change it: `PATCH /features` answers
    * `403` with `feature_operator_only`. Absent on servers older than this field.
    */
   operator_only?: boolean;
+  /** Work in progress: not recommended yet. Absent on servers older than this field. */
+  wip?: boolean;
   /**
    * Always `project`: every flag is set per project. A server from
    * 2026-10-12 sent `organization` for `volumes` and the withdrawn `stateless_sessions`.
@@ -240,12 +285,18 @@ export interface ProjectConfigSummary {
   is_kortix_repo: boolean;
   signals: Record<string, boolean>;
   manifest_raw: string | null;
+  /** kortix.yaml problems for this project. Absent from an API released before the one-schema manifest. */
+  manifest_health?: ProjectManifestHealth;
   /** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
   open_code_raw: string | null;
   /** Provider-neutral project default. The SDK derives this from legacy servers. */
   default_agent?: string | null;
   /** @deprecated Use `default_agent`. */
   open_code_default_agent: string | null;
+  /** Which built-in agents the project runs (`builtin_agents` in kortix.yaml;
+   *  `true` = on, absent = off). `my_kortix` is My Kortix, the agent named `mykortix`.
+   *  Absent from an older API. */
+  builtin_agents?: { my_kortix: boolean };
   agent_discovery: 'opencode' | 'declarative';
   agents: Array<{
     name: string;
@@ -257,7 +308,8 @@ export interface ProjectConfigSummary {
     /** The agent's `model:` frontmatter (`provider/model`); absent on older
      *  servers, null when it follows the project default. */
     model?: string | null;
-    source?: 'opencode' | 'kortix.toml';
+    /** The server sends `kortix.yaml`. `kortix.toml` is never sent; it stays in the union until the next major. */
+    source?: 'opencode' | 'kortix.yaml' | 'kortix.toml';
     enabled?: boolean;
     /** True for a platform-owned agent (SUNA — the coordinator) that the API
      *  injects, not one declared in `kortix.yaml`. Its configuration is fixed:
@@ -266,6 +318,9 @@ export interface ProjectConfigSummary {
     platform?: boolean;
     /** Agent-specific sandbox template. null or absent inherits the project default. */
     sandbox?: string | null;
+    /** The space from `kortix.yaml` `agents.<name>.space`. Grouping only.
+     *  null/absent is Project-wide (see `groupBySpace`). */
+    space?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
      *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
      *  OpenCode-discovered agents (not governed by `agents:`). */
@@ -285,6 +340,24 @@ export interface ProjectConfigSummary {
   skills: Array<{ name: string; path: string; description: string | null }>;
   commands: Array<{ name: string; path: string; description: string | null }>;
   env: { required: string[]; optional: string[] };
+  /** The spaces from `kortix.yaml` top-level `spaces:`. Absent on older
+   *  servers. `listSpaces(config)` adds the ones agents name. */
+  spaces?: ManifestSpace[];
+}
+
+/**
+ * What the server found in the project's `kortix.yaml`. `ok`: no issues.
+ * `issues`: one or more; a running project still applies the valid rest, and
+ * an agent or trigger with an error is off. `missing`: no manifest, built-in
+ * agents only. `issues` lists errors first, at most 50.
+ */
+export interface ProjectManifestHealth {
+  /** Repository path of the manifest. null when none was read. */
+  path: string | null;
+  state: 'ok' | 'issues' | 'missing' | 'unreadable' | 'restricted' | 'repository_disconnected';
+  errors: number;
+  warnings: number;
+  issues: ManifestIssue[];
 }
 
 export interface ProjectDetail {
@@ -342,8 +415,33 @@ export interface GatewayCatalogModel {
   enabled?: boolean;
 }
 
+/**
+ * The Claude subscription models `/model-picker` lists apart from the gateway's
+ * (`claude-agent/<id>`): they run through Claude Code on the caller's own Claude
+ * plan. `connected` is whether the caller signed in to Claude.
+ */
+export interface ClaudeSubscriptionPickerGroup {
+  providerId: string;
+  name: string;
+  connected: boolean;
+  models: Array<{
+    /** `claude-agent/<id>`. */
+    id: string;
+    name: string;
+    description: string;
+    limit: { context: number; output: number };
+    efforts: string[];
+    requires: 'claude_subscription';
+    connected: boolean;
+    /** The project's on/off switch for the model (Models tab). Absent from an older API: on. */
+    enabled?: boolean;
+  }>;
+}
+
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
+  /** Absent from an API without Claude subscription models. */
+  claudeSubscription?: ClaudeSubscriptionPickerGroup;
   /** Kortix's platform fee on managed model usage, in percent of each model's `cost`. */
   platformFeePercent?: number;
   /**
@@ -533,7 +631,7 @@ export interface ManifestValidationResult {
 }
 
 /**
- * Validate a `kortix.toml` manifest's raw TOML text server-side — the same
+ * Validate a `kortix.yaml` manifest's raw text server-side — the same
  * schema the CLI (`kortix ship` pre-flight / `kortix validate`) and the CR-merge
  * gate exercise. Always resolves (never throws on an invalid manifest) — the
  * verdict is in the body.

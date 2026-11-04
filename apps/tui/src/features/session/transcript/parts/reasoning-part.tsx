@@ -21,7 +21,7 @@ export function ReasoningPart({ text, expanded, cursor, width }: ReasoningPartPr
   return (
     <box flexDirection="column">
       <text fg={theme.faint}>
-        <span fg={theme.accent}>{marker}</span>
+        <span fg={theme.dim}>{marker}</span>
         {`${arrow} Thinking`}
         {expanded ? '' : ` · ${clip(firstLine, Math.max(width - 14, 4))}`}
       </text>

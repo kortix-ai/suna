@@ -27,6 +27,7 @@ import { SidebarGlyph as PanelLeft } from '../../../icons/sidebar-toggle';
 import { isPlanWriteTool } from '../../turn/plan-anchor';
 import { useIsMobile } from '../../../internal/hooks';
 import { cn } from '../../../lib/utils';
+import { hasOpenFloatingLayer } from '../../../lib/z-stack';
 import { focusWithoutScroll } from '../../../internal/lib/utils/focus-without-scroll';
 import { useKortixComputerStore } from '../../../internal/stores/kortix-computer-store';
 import type { ToolCallBlock } from '@kortix/sdk';
@@ -256,6 +257,18 @@ function useDetailKeyboard(
       // its own Arrow/Escape handling — e.g. its Escape resets-and-blurs.
       if (isTypingTarget(event.target)) return;
       if (event.key === 'Escape') {
+        if (event.defaultPrevented || hasOpenFloatingLayer()) return;
+        const dialog = detailRef.current;
+        const coveringDialog = Array.from(
+          document.querySelectorAll(
+            '[role="dialog"][data-state="open"],[role="alertdialog"][data-state="open"]',
+          ),
+        ).some((layer) => !dialog || !layer.contains(dialog));
+        if (coveringDialog) return;
+        // Mark the press consumed: the page-wide triple-ESC-to-stop
+        // (`session-chat.tsx`) skips a `defaultPrevented` Escape. Without it,
+        // closing three full-screen images in a row stopped a running turn.
+        event.preventDefault();
         onBack();
         return;
       }

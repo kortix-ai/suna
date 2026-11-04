@@ -14,6 +14,15 @@ function jobBody(name: string): string {
   return next < 0 ? workflow.slice(start) : workflow.slice(start, start + 2 + next);
 }
 
+describe('Deploy Dev post-deploy verification', () => {
+  // deploy-gateway-ecs runs after a skipped terraform-dev-api; a plain `if:` here inherits that skip.
+  test('verify-gateway-dev-parity runs after a skipped Terraform apply', () => {
+    const body = jobBody('verify-gateway-dev-parity');
+    expect(body).toContain('if: ${{ always()');
+    expect(body).toContain("needs.deploy-gateway-ecs.result == 'success'");
+  });
+});
+
 describe('Deploy Dev self-host channel promotions', () => {
   for (const [job, prerequisites] of [
     ['promote-dev-channel-api', ['build-api', 'deploy-api-ecs']],

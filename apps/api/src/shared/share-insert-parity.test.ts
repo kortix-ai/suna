@@ -35,6 +35,9 @@ const collaborator = {
           expiresAt: value.expiresAt ?? null,
           revokedAt: null,
           lastUsedAt: null,
+          messageId: null,
+          snapshot: null,
+          snapshotAt: null,
           createdAt: new Date(0),
           updatedAt: new Date(0),
         };

@@ -54,7 +54,7 @@ import { useTranslations as useI18nTranslations } from '../../../i18n';
  * in `settings-panel.tsx` guarantees happens only while this tab is active.
  */
 
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { Button } from '../../../primitives/button';
 import {
@@ -65,6 +65,7 @@ import {
 } from '../../../primitives/input-group';
 import Loading from '../../../primitives/loading';
 import { Skeleton } from '../../../primitives/skeleton';
+import { Badge } from '../../../primitives/badge';
 import { Switch } from '../../../primitives/switch';
 import { errorToast } from '../../../primitives/toast';
 import { EmptyState } from '../../../primitives/empty-state';
@@ -83,6 +84,7 @@ import {
 import { contract, invalidateProject, qk } from '@kortix/sdk/react';
 import { FlagIcon, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ChannelsSwitchDialog } from '../../shared/channels-switch-dialog';
 import { SettingsTabHeader } from '../settings-tab-header';
 
 /**
@@ -105,6 +107,9 @@ export interface ExperimentalCopy {
   emptyTitle: string;
   emptyDescription: string;
   permission: string;
+  /** The badge on a work-in-progress flag, and what it means. */
+  wip: string;
+  wipNote: string;
 }
 
 export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
@@ -119,6 +124,8 @@ export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
   emptyTitle: 'No experimental features',
   emptyDescription: 'This deployment exposes no per-project feature flags.',
   permission: "You need the project's settings permission to change a feature flag.",
+  wip: 'Work in progress',
+  wipNote: 'Not recommended yet: it can change or break.',
 };
 
 function originLabel(feature: FeatureFlagView, copy: ExperimentalCopy): string {
@@ -167,8 +174,8 @@ export function localizeFeatureFlag<T extends FeatureFlagView>(
  *
  * Matches `key` as well as `name` and `description`, and the key is the one
  * that earns its place: flags get turned on from docs, changelogs and support
- * threads that name the raw key (`warm_sessions`), not the display name ("Warm
- * sessions"). A search reading only `name` would miss the exact term the reader
+ * threads that name the raw key (`us_region`), not the display name ("US
+ * Region"). A search reading only `name` would miss the exact term the reader
  * was handed.
  *
  * A blank or whitespace-only query returns the input unchanged — same array,
@@ -219,9 +226,17 @@ function ExperimentalFeatureRow({
           <p id={nameId} className="text-foreground text-sm font-medium">
             {feature.name}
           </p>
+          {feature.wip ? (
+            <Badge variant="warning" size="xs">
+              {copy.wip}
+            </Badge>
+          ) : null}
           <span className="text-muted-foreground text-xs">{originLabel(feature, copy)}</span>
         </div>
-        <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{feature.description}</p>
+        <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+          {feature.wip ? `${copy.wipNote} ` : null}
+          {feature.description}
+        </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {pending ? <Loading className="text-muted-foreground size-3.5" /> : null}
@@ -471,40 +486,64 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
     enabled: pendingValues[f.key] ?? f.enabled,
   }));
 
-  const features = useMemo(() => filterFeatures(withPending, query), [withPending, query]);
+  // the Channels switch changes the sidebar for everyone, so only a
+  // viewer who may flip it sees it (hidden while that answer loads).
+  const visible = canEdit ? withPending : withPending.filter((f) => f.key !== 'project_channels');
+  const features = filterFeatures(visible, query);
 
-  const handleToggle = (key: string, next: boolean) => {
+  const apply = (key: string, next: boolean) => {
     setPendingValues((prev) => ({ ...prev, [key]: next }));
     toggleMutation.mutate({ key: key as FeatureFlagKey, next });
   };
+  // Channels asks first: the dialog says what changes for everyone.
+  const [channelsTarget, setChannelsTarget] = useState<boolean | null>(null);
+  const handleToggle = (key: string, next: boolean) => {
+    if (key === 'project_channels') setChannelsTarget(next);
+    else apply(key, next);
+  };
 
   return (
-    <ExperimentalTabView
-      isLoading={projectQuery.isLoading}
-      isError={projectQuery.isError}
-      errorMessage={(projectQuery.error as Error)?.message ?? ''}
-      onRetry={() => projectQuery.refetch()}
-      features={features}
-      pendingKeys={Object.keys(pendingValues)}
-      canManage={canEdit}
-      canManageOperatorOnly={isOperator}
-      onToggle={handleToggle}
-      showPermissionNotice={!canEdit && !writeCap.isLoading}
-      query={query}
-      onQueryChange={setQuery}
-      copy={{
-        overridden: t('origin.overridden'),
-        managedByKortix: tI18nComplete.raw('texte9ec6c0ad396'),
-        defaultOn: t('origin.defaultOn'),
-        defaultOff: t('origin.defaultOff'),
-        search: t('search'),
-        loadFailed: t('loadFailed'),
-        retry: t('retry'),
-        noMatches: (value) => t('noMatches', { query: value }),
-        emptyTitle: t('emptyTitle'),
-        emptyDescription: t('emptyDescription'),
-        permission: t('permission'),
-      }}
-    />
+    <>
+      <ChannelsSwitchDialog
+        open={channelsTarget !== null}
+        onOpenChange={(open) => !open && setChannelsTarget(null)}
+        turningOn={channelsTarget === true}
+        projectName={project?.name ?? ''}
+        onConfirm={() => {
+          const target = channelsTarget === true;
+          setChannelsTarget(null);
+          apply('project_channels', target);
+        }}
+      />
+      <ExperimentalTabView
+        isLoading={projectQuery.isLoading}
+        isError={projectQuery.isError}
+        errorMessage={(projectQuery.error as Error)?.message ?? ''}
+        onRetry={() => projectQuery.refetch()}
+        features={features}
+        pendingKeys={Object.keys(pendingValues)}
+        canManage={canEdit}
+        canManageOperatorOnly={isOperator}
+        onToggle={handleToggle}
+        showPermissionNotice={!canEdit && !writeCap.isLoading}
+        query={query}
+        onQueryChange={setQuery}
+        copy={{
+          overridden: t('origin.overridden'),
+          managedByKortix: tI18nComplete.raw('texte9ec6c0ad396'),
+          defaultOn: t('origin.defaultOn'),
+          defaultOff: t('origin.defaultOff'),
+          search: t('search'),
+          loadFailed: t('loadFailed'),
+          retry: t('retry'),
+          noMatches: (value) => t('noMatches', { query: value }),
+          emptyTitle: t('emptyTitle'),
+          emptyDescription: t('emptyDescription'),
+          permission: t('permission'),
+          wip: t('wip'),
+          wipNote: t('wipNote'),
+        }}
+      />
+    </>
   );
 }

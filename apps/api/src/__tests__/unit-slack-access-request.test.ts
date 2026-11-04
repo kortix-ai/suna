@@ -49,6 +49,8 @@ mock.module('../iam/read-models', () => ({
   isAccountManagerRole: (role: string | null | undefined) => role === 'owner' || role === 'admin',
 }));
 mock.module('../channels/install-store', () => ({
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   loadSlackTokenForProject: async () => 'xoxb-test',
 }));
 mock.module('../channels/slack-api', () => ({

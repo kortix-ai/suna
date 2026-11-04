@@ -21,27 +21,42 @@ export const EMAIL_FONT_MONO = "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, 
 
 // Whole pixels, from visual-system.json "email".
 export const EMAIL_LAYOUT = {
-  "containerWidth": 520,
-  "sidePadding": 32,
-  "cardRadius": 14,
+  "containerWidth": 640,
+  "framePadding": "16px 24px",
+  "cardPadding": "40px",
+  "mobileFramePadding": "16px 8px",
+  "mobileCardPadding": "32px 24px",
+  "cardRadius": 8,
   "buttonRadius": 8,
-  "buttonPadding": "12px 28px",
-  "logoHeight": 22,
-  "logoUrl": "https://kortix.com/brandkit/Logo/Logomark/PNG/Logomark%20Black.png",
+  "buttonPadding": "12px 20px",
+  "logoUrl": "https://kortix.com/brandkit/Logo/Brandmark/PNG/Brandmark%20Black.png",
+  "logoWidth": 20,
   "fontSize": {
-    "title": 22,
-    "body": 14,
-    "kicker": 13,
+    "title": 24,
+    "body": 15,
+    "label": 13,
     "small": 12
+  },
+  "fontWeight": {
+    "title": 600,
+    "body": 400,
+    "strong": 500
   },
   "lineHeight": {
     "title": 1.25,
-    "body": 1.6
+    "body": 1.6,
+    "label": 1.5
+  },
+  "letterSpacing": {
+    "title": -0.48,
+    "body": 0,
+    "label": 0,
+    "small": 0
   },
   "gap": {
-    "kicker_before": 24,
-    "kicker_after": 8,
     "title_after": 12,
-    "block_after": 24
+    "block_after": 16,
+    "button_before": 8,
+    "note_before": 16
   }
 } as const;

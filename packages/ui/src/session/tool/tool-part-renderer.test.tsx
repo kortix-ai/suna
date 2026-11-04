@@ -10,7 +10,7 @@ import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { ToolSurfaceContext } from './shared/infrastructure';
-import { toolCallBlock } from '@kortix/sdk';
+import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, sessionLogTurnSegments, sessionLogTurns, toolCallBlock, type SessionLogBlock, type SessionLogMessage, type ToolCallBlock } from '@kortix/sdk';
 import { ToolPartRenderer } from './tool-part-renderer';
 
 /**
@@ -313,5 +313,45 @@ describe('a command saved before tool calls were kept 1:1', () => {
     expect(html).toContain('-la');
     expect(html).toContain('dist');
     expect(html).toContain('bundle.min.js');
+  });
+});
+
+describe('a codemode script\'s nested image_gen call on v2 (a pi nested_part block)', () => {
+  const nestedImage = {
+    type: 'harness', id: 'n1', harness: 'pi', kind: 'nested_part', model_visible: false,
+    data: {
+      parent_call_id: 'call_code',
+      part: {
+        type: 'tool', callID: 'call_code/1', tool: 'image_gen',
+        state: { status: 'completed', input: { action: 'generate', prompts: ['cube'] }, output: '{"action":"generate","model":"m","provider":"p","images":[{"path":"/workspace/output/images/cube.png","size":"1024x1024","prompt":"cube"}]}', title: 'image_gen', metadata: {}, time: { start: 1, end: 2 } },
+      },
+    },
+  } as const;
+  const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const;
+  const message = (id: string, role: 'user' | 'assistant', blocks: SessionLogBlock[], seq: number): SessionLogMessage => ({
+    ...V, message_id: id, thread_id: 't', seq, role, kind: 'turn', status: 'complete', in_context: true, model: null, usage: null,
+    finish: null, error: null, created_at: new Date(1_700_000_000_000 + seq * 1000).toISOString(), completed_at: null,
+    producer: { harness: 'pi', harness_version: '1', adapter_version: '1.2.0' }, blocks, ...(role === 'assistant' && { reply_to: 'u' }),
+  });
+
+  test('the transcript\'s segment for the block renders the image card without throwing', () => {
+    const turn = sessionLogTurns({
+      ...V, thread_id: 't', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '',
+      messages: [
+        message('u', 'user', [{ type: 'text', id: 'q', text: 'go' }], 1),
+        message('a', 'assistant', [{ type: 'tool_call', id: 'c', call_id: 'call_code', name: 'codemode', kind: 'code', input: { code: 'x' }, status: 'complete', result: { content: [{ type: 'text', text: 'ok' }], is_error: false } }, nestedImage as unknown as SessionLogBlock], 2),
+      ],
+    })[0]!;
+    const segment = sessionLogTurnSegments(turn.blocks).find((s) => s.kind === 'standalone') as { block: ToolCallBlock };
+    expect(segment.block.name).toBe('image_gen');
+    const html = renderToStaticMarkup(withProviders(<ToolPartRenderer call={segment.block} sessionId="s1" />));
+    // The image card (its file loads on the client): a figure, not the generic row or an error.
+    expect(html).toContain('<figure');
+    expect(html).toContain('Loading image');
+  });
+
+  test('a block that is not a tool call (no state) renders nothing and never throws', () => {
+    const html = renderToStaticMarkup(withProviders(<ToolPartRenderer call={nestedImage as unknown as ToolCallBlock} sessionId="s1" />));
+    expect(html).toBe('');
   });
 });

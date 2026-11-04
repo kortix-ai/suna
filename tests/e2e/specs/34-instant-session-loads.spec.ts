@@ -247,11 +247,8 @@ async function firstShown(page: Page): Promise<Record<string, number>> {
 
 type SavedMessages = Parameters<typeof seedSessionTranscript>[1]['messages'];
 
-/**
- * A user, a project and a stopped session with saved history. `store`: the session log, or an
- * old session's v1 mirror, which the first read converts into the log (P8.2).
- */
-async function setup(page: Page, label: string, messages?: SavedMessages, store: 'log' | 'mirror' = 'log') {
+/** A user, a project and a stopped session with saved history in its session log. */
+async function setup(page: Page, label: string, messages?: SavedMessages) {
   const env = loadEnv();
   const email = `instant-${label}-${Date.now()}@example.test`;
   const user = await createAuthUser(email, authOptions);
@@ -281,7 +278,7 @@ async function setup(page: Page, label: string, messages?: SavedMessages, store:
     accountId,
     sessionId,
     messages,
-    ...(store === 'log' && { log: { bearer: auth.access_token } }),
+    bearer: auth.access_token,
   });
   await runDatabaseSql(
     "UPDATE kortix.project_sessions SET agent_name='kortix' WHERE session_id=$1",
@@ -404,13 +401,9 @@ test('34 — a stopped session with no computer shows its conversation and a liv
     await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
 
     await expect(page.getByText(SAVED_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
-    // The SDK's `SESSION_NOTICE.idle`: a sent message wakes the computer and
-    // is delivered, so the composer stays and no terminal banner replaces it.
-    await expect(
-      page.getByText("This session's computer is asleep. Your next message wakes it up and is delivered.", {
-        exact: true,
-      }),
-    ).toBeVisible();
+    // A sent message wakes the computer and is delivered, so the composer
+    // stays live and says nothing about sleep.
+    await expect(page.getByText("computer is asleep", { exact: false })).toHaveCount(0);
     await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible();
     await expect(page.locator('[data-session-notice-banner]')).toHaveCount(0);
     await expect(page.getByText('This session is stopped', { exact: false })).toHaveCount(0);
@@ -1072,7 +1065,7 @@ test('34 — loading older messages leaves the turn the reader is reading where 
   page,
 }, testInfo) => {
   test.setTimeout(300_000);
-  const { project, sessionId, root } = await setup(page, 'older', savedTurns(60), 'mirror');
+  const { project, sessionId, root } = await setup(page, 'older', savedTurns(60));
   try {
     await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
       if (route.request().method() !== 'POST') return route.continue();

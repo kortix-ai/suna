@@ -153,7 +153,7 @@ export interface FlowMeta {
   todo?: string;
   /**
    * The spec id this flow implements when it is a variant of another flow
-   * (`SESS-31-log` implements `SESS-31`). Absent: the flow id.
+   * (a variant `<id>-x` implements `<id>`). Absent: the flow id.
    */
   specId?: string;
 }

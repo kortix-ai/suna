@@ -2,10 +2,11 @@
  * What a request to a session runtime does, read from its method and path.
  *
  * The one place the API recognizes a runtime's turn routes. Two spellings reach
- * it: the daemon's Kortix routes (`/kortix/runtime/sessions/:id/prompt|abort`,
- * also mounted at the pre-W3 `/kortix/opencode`) and OpenCode's REST routes
- * (`/session/:id/prompt_async|message|command|summarize|abort`), which web
- * and older API instances still send. Every proxy guard (turn ledger, dedupe,
+ * it: the daemon's Kortix routes (`/kortix/runtime/sessions/:id/prompt|command|
+ * compact|abort` and `/kortix/runtime/questions/:id/reply|reject`; the session
+ * routes are also mounted at the pre-W3 `/kortix/opencode`) and OpenCode's REST
+ * routes (`/session/:id/prompt_async|message|command|summarize|abort`), which
+ * web and older API instances still send. Every proxy guard (turn ledger, dedupe,
  * env sync, deadline, client stop, retry budget) asks this function instead of
  * keeping its own regex.
  *
@@ -25,6 +26,8 @@ export type RuntimeRequest =
       prefix: string;
     }
   | { kind: 'abort'; runtimeSessionId: string; prefix: string }
+  /** OpenCode's rewind: drops `messageID` and every message after it. pi answers 501. */
+  | { kind: 'revert'; runtimeSessionId: string; prefix: string }
   | { kind: 'message-list'; runtimeSessionId: string; prefix: string }
   /** A client answers (`reply`) or dismisses (`reject`) an agent question. Both harnesses serve it. */
   | { kind: 'question-answer'; requestId: string; prefix: string }
@@ -32,8 +35,10 @@ export type RuntimeRequest =
 
 const OTHER: RuntimeRequest = { kind: 'other' };
 const PREFIX = /^\/proxy\/\d+(?=\/)/;
-const KORTIX = /^\/kortix\/(?:runtime|opencode)\/sessions\/([^/?#]+)\/(prompt|abort)\/?$/;
+const KORTIX = /^\/kortix\/(?:runtime|opencode)\/sessions\/([^/?#]+)\/(prompt|command|compact|abort)\/?$/;
+const KORTIX_QUESTION = /^\/kortix\/runtime\/questions\/([^/?#]+)\/(?:reply|reject)\/?$/;
 const NATIVE = /^\/session\/([^/?#]+)\/(prompt_async|message|command|summarize|abort)(?=$|[/?#])(.*)$/;
+const REVERT = /^\/session\/([^/?#]+)\/revert\/?(?:$|[?#])/;
 const QUESTION = /^\/question\/([^/?#]+)\/(?:reply|reject)\/?(?:$|[?#])/;
 
 /**
@@ -62,15 +67,22 @@ export function classifyRuntimeRequest(method: string, path: string): RuntimeReq
   if (kortix) {
     const runtimeSessionId = decodeSegment(kortix[1]!);
     if (verb !== 'POST' || !runtimeSessionId) return OTHER;
-    return kortix[2] === 'prompt'
-      ? { kind: 'turn-start', verb: 'prompt', runtimeSessionId, prefix }
-      : { kind: 'abort', runtimeSessionId, prefix };
+    if (kortix[2] === 'abort') return { kind: 'abort', runtimeSessionId, prefix };
+    // A compaction starts a turn the way OpenCode's `/summarize` did.
+    const turnVerb = kortix[2] === 'compact' ? 'summarize' : (kortix[2] as 'prompt' | 'command');
+    return { kind: 'turn-start', verb: turnVerb, runtimeSessionId, prefix };
   }
 
-  const question = QUESTION.exec(bare);
+  const question = QUESTION.exec(bare) ?? KORTIX_QUESTION.exec(bare);
   if (question) {
     const requestId = decodeSegment(question[1]!);
     return verb === 'POST' && requestId ? { kind: 'question-answer', requestId, prefix } : OTHER;
+  }
+
+  const revert = REVERT.exec(bare);
+  if (revert) {
+    const runtimeSessionId = decodeSegment(revert[1]!);
+    return verb === 'POST' && runtimeSessionId ? { kind: 'revert', runtimeSessionId, prefix } : OTHER;
   }
 
   const native = NATIVE.exec(bare);

@@ -11,7 +11,8 @@
  * machine's `__dirname`. On a box that read failed, photon never loaded, and pi dropped every
  * image ("[Image omitted: could not be resized below the inline image size limit.]"). pi's own
  * fallback looks next to the executable, where a box has no copy. So the binary embeds the wasm
- * (the import below), and a read of that file name goes to the embedded copy.
+ * (the import below), and a read of that file name goes to the embedded copy. pi resizes in a worker
+ * thread, which imports this module for the same redirect (src/utils/image-resize-worker.ts).
  */
 import { createRequire } from 'node:module'
 import { open, realpath } from 'node:fs/promises'

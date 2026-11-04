@@ -5,7 +5,8 @@ import {
   deriveEnvironmentAccessCookie,
   ENVIRONMENT_ACCESS_COOKIE,
 } from '@/lib/environment-protection';
-import { legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
+import { legalShortPathRedirectUrl, legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
+import { canonicalPublicPath } from '@/lib/canonical-public-path';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import {
@@ -25,6 +26,7 @@ import {
   type MiddlewareUser,
 } from '@/lib/supabase/middleware-identity';
 import { readUnverifiedSession } from '@/lib/supabase/session-cookie';
+import { authCookieOptions, hasPanelMarker, panelAuthUrl } from '@/lib/supabase/panel-cookies';
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
@@ -41,14 +43,9 @@ const NEXT_INTL_LOCALE_HEADER = 'X-NEXT-INTL-LOCALE';
 const MARKETING_ROUTES = [
   '/',
   '/about',
-  '/agent-computer',
-  '/agents-and-skills',
-  '/automations',
+  '/blog',
   '/careers',
-  '/channels',
   '/changelog',
-  '/company-as-code',
-  '/connectors',
   '/contact',
   '/design-system',
   '/developers',
@@ -59,37 +56,62 @@ const MARKETING_ROUTES = [
   '/pricing',
   '/security',
   '/self-hosted',
-  '/solutions',
-  '/support',
+  '/services',
+  '/case-studies',
+  '/framework',
+  '/multiplayer',
+  '/sovereign',
+  '/compliance',
   '/use-cases',
   '/white-label',
+  // Surface pages: where Kortix runs. /cli, /slack and /teams are also app
+  // prefixes (auth flows under them), so they are EXACT_MARKETING_ROUTES.
+  '/desktop',
+  '/mobile',
 ];
+
+// Marketing pages whose slug is ALSO an app prefix: /slack/install, /slack/login/<token>, /teams/install and /teams/login/<token>
+// are signed-in flows (PROTECTED_APP_PREFIXES). Every other list here matches
+// by prefix, which would make those flows public. These match the exact path
+// only, with or without a locale prefix, and nothing under it.
+const EXACT_MARKETING_ROUTES = ['/slack', '/teams'];
+
+function isExactMarketingPath(pathname: string): boolean {
+  if (EXACT_MARKETING_ROUTES.includes(pathname)) return true;
+  const [, first = '', ...rest] = pathname.split('/');
+  return (
+    rest.length === 1 &&
+    (locales as readonly string[]).includes(first) &&
+    EXACT_MARKETING_ROUTES.includes(`/${rest[0]}`)
+  );
+}
 
 // Pure marketing/promo routes that a self-host with the landing page disabled
 // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE) should NOT serve — they bounce to the
-// app. Functional public routes (/auth, /docs, /legal, /support,
+// app. Functional public routes (/auth, /docs, /legal,
 // /marketplace, /share, /download, /maintenance, …) stay reachable; only the
 // marketing site itself is deactivated.
 const SELF_HOST_MARKETING_ONLY = [
   '/about',
   '/launch',
-  '/agent-computer',
-  '/agents-and-skills',
-  '/automations',
-  '/channels',
   '/self-hosted',
-  '/company-as-code',
   '/careers',
   '/changelog',
   '/contact',
   '/developers',
   '/enterprise',
   '/pricing',
+  '/services',
+  '/case-studies',
+  '/framework',
+  '/multiplayer',
+  '/sovereign',
+  '/compliance',
   '/use-cases',
-  '/solutions',
-  '/connectors',
   '/security',
   '/white-label',
+  '/desktop',
+  '/mobile',
 ];
 
 // Top-level segments that render the signed-in app. Anonymous traffic to one
@@ -108,6 +130,8 @@ const PROTECTED_APP_PREFIXES = [
   '/cli',
   '/connections',
   '/debug',
+  // The Add to Discord completion page (/discord/install).
+  '/discord',
   '/github',
   '/oauth',
   '/preview',
@@ -119,6 +143,8 @@ const PROTECTED_APP_PREFIXES = [
   '/maintenance',
   '/new',
   '/p',
+  // The Kortix in Chrome side panel's new chat (features/chrome/panel).
+  '/panel',
   '/presentations',
   '/projects',
   '/rauch',
@@ -149,16 +175,12 @@ const PUBLIC_ROUTES = [
   '/connect', // Agent-minted Pipedream Quick Connect links — token-gated, MUST be openable with no login (distinct from authed /connectors)
   '/master-login', // Master password admin login
   '/checkout', // Public checkout wrapper for Apple compliance
-  '/support', // Support hub — FAQ, contact channels, account deletion
   '/docs', // Product documentation (Fumadocs) should be public
   '/about', // About page should be public
-  '/agent-computer', // Agent computer marketing page should be public
-  '/agents-and-skills', // marketing page should be public
-  '/automations', // marketing page should be public
-  '/channels', // marketing page should be public
   '/self-hosted', // marketing page should be public
   '/white-label', // marketing page should be public
-  '/company-as-code', // marketing page should be public
+  '/desktop', // surface page: the desktop app
+  '/mobile', // surface page: the mobile app
   '/careers', // Careers page should be public
   '/changelog', // Public release notes (sourced from GitHub Releases)
   '/install',
@@ -175,10 +197,15 @@ const PUBLIC_ROUTES = [
   '/developers', // Developer walkthrough landing page should be public
   '/countryerror', // Country restriction error page should be public
   '/enterprise', // Enterprise page should be public
+  '/services', // Services (AI Transformation) sales page should be public
   '/pricing', // Pricing page should be public
+  '/case-studies', // Case studies page should be public
+  '/framework', // Framework page should be public
+  '/multiplayer', // Multiplayer AI page should be public
+  '/sovereign', // Sovereign and open page should be public
+  '/compliance', // Compliance page should be public
   '/use-cases', // Use cases page should be public
-  '/solutions', // Solutions / persona landing pages should be public
-  '/connectors', // Connector directory + per-tool pages should be public
+  '/blog', // Blog index and posts should be public
   '/security', // Security & trust page should be public
   '/maintenance', // Maintenance page must be accessible without auth
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
@@ -248,12 +275,27 @@ const DESKTOP_ALLOWED_ROUTES = [
   '/debug',
 ];
 
+function isDecodablePath(pathname: string): boolean {
+  try {
+    decodeURIComponent(pathname);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function middleware(request: NextRequest) {
   let { pathname } = request.nextUrl;
   // These are probes for server files, not product routes. A plain response also
   // avoids rendering the translated application shell for sensitive-file probes.
   if (/^\/(?:\.env(?:[./]|$)|\.git(?:\/|$)|package\.json$|etc\/passwd$)/i.test(pathname)) {
     return new NextResponse('Not found', { status: 404 });
+  }
+  // A path whose percent-encoding does not decode (`/%ff`, an overlong
+  // `/%c0%af`) matches no route. The router answered it with a bare 500 or a
+  // 200 "Page not found" page (KRTX-3239).
+  if (!isDecodablePath(pathname)) {
+    return new NextResponse('Bad request', { status: 400 });
   }
 
   // Dev and staging run behind one shared HTTP Basic credential. Read through
@@ -357,9 +399,10 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  // /blog is proxied to a separate deployment (the blog app, next.config.ts
-  // rewrites). It serves public pages only, so a kortix.com session never
-  // crosses to it: the Supabase cookie and any Authorization header stay here.
+  // /blog is the blog app: next.config.ts proxies /blog and /blog/:path* to
+  // KORTIX_BLOG_ORIGIN. That deployment serves public pages and files only, so
+  // a kortix.com session never crosses to it: the Supabase cookie and any
+  // Authorization header stay here.
   if (pathname === '/blog' || pathname.startsWith('/blog/')) {
     const requestHeaders = new Headers(request.headers);
     requestHeaders.delete('cookie');
@@ -419,14 +462,37 @@ export async function middleware(request: NextRequest) {
   if (termsDestination) {
     return finalizeEnvironmentAccess(NextResponse.redirect(termsDestination, 308));
   }
+  // /privacy, /terms, /imprint, /subprocessors (and each locale prefix) were
+  // 200 "Page not found" pages; each is a real legal page (KRTX-3256).
+  const legalDestination = legalShortPathRedirectUrl(pathname, request.nextUrl.searchParams, request.nextUrl);
+  if (legalDestination) {
+    return finalizeEnvironmentAccess(NextResponse.redirect(legalDestination, 308));
+  }
+  // /Pricing, /DOCS, /DE/Pricing: a public page in another letter case was a
+  // 200 "Page not found" page (KRTX-3312). /pricing/ was a 200 duplicate of
+  // /pricing (KRTX-3234).
+  const canonicalPath = canonicalPublicPath(
+    pathname,
+    [...MARKETING_ROUTES, ...EXACT_MARKETING_ROUTES, '/docs'],
+    locales,
+  );
+  if (canonicalPath) {
+    // A plain URL: a NextURL clone re-adds the request's trailing slash, and
+    // /pricing/ would redirect to itself.
+    const destination = new URL(request.url);
+    destination.pathname = canonicalPath;
+    return finalizeEnvironmentAccess(NextResponse.redirect(destination, 308));
+  }
 
   // Normalize app paths before maintenance, desktop and authentication gates.
   const pathSegments = pathname.split('/').filter(Boolean);
   const explicitLocale = locales.find((locale) => locale === pathSegments[0]);
   const remainingPath = '/' + pathSegments.slice(1).join('/');
-  const isRemainingPathMarketing = MARKETING_ROUTES.some(
-    (route) => remainingPath === route || (route !== '/' && remainingPath.startsWith(route + '/')),
-  );
+  const isRemainingPathMarketing =
+    EXACT_MARKETING_ROUTES.includes(remainingPath) ||
+    MARKETING_ROUTES.some(
+      (route) => remainingPath === route || (route !== '/' && remainingPath.startsWith(route + '/')),
+    );
   if (explicitLocale && !isRemainingPathMarketing) pathname = remainingPath;
 
   // ── Blocking maintenance mode ──────────────────────────────────────────
@@ -439,9 +505,9 @@ export async function middleware(request: NextRequest) {
   // (so admins can disable the lockdown). Everything else — /projects,
   // /accounts, /invites and the other authed product routes — still gets the
   // maintenance takeover.
-  const isPublicMaintenanceRoute = PUBLIC_ROUTES.some(
-    (route) => pathname === route || pathname.startsWith(route + '/'),
-  );
+  const isPublicMaintenanceRoute =
+    isExactMarketingPath(pathname) ||
+    PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'));
   const isAdminMaintenanceRoute = pathname === '/admin' || pathname.startsWith('/admin/');
   const bypassesMaintenance = isPublicMaintenanceRoute || isAdminMaintenanceRoute;
 
@@ -575,7 +641,7 @@ export async function middleware(request: NextRequest) {
   // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE — default ON for self-host), the WHOLE
   // marketing surface is deactivated: the homepage and every marketing route
   // bounce straight to the app — authenticated users to /projects, everyone
-  // else to /auth. Functional public routes (/docs, /legal, /support,
+  // else to /auth. Functional public routes (/docs, /legal,
   // /marketplace, /share, …) are unaffected. Read via process.env directly —
   // NEXT_PUBLIC_ vars are inlined at build time, so in Docker containers they'd
   // carry the image's placeholder value; the runtime container env
@@ -586,12 +652,25 @@ export async function middleware(request: NextRequest) {
       process.env.NEXT_PUBLIC_DISABLE_LANDING_PAGE) === 'true';
   const isMarketingContent =
     pathname === '/' ||
+    isExactMarketingPath(pathname) ||
     SELF_HOST_MARKETING_ONLY.some(
       (route) => pathname === route || pathname.startsWith(`${route}/`),
     );
-  const isPublicRoute = PUBLIC_ROUTES.some(
-    (route) => pathname === route || pathname.startsWith(route + '/'),
-  );
+  const isPublicRoute =
+    isExactMarketingPath(pathname) ||
+    PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'));
+
+  // The Kortix in Chrome side panel keeps its session in partitioned cookies
+  // and has no password form: `/auth` there hands over to `/auth/panel`, which
+  // asks the extension for a session.
+  const panelRequest = hasPanelMarker(request.cookies);
+  if (panelRequest && pathname === '/auth') {
+    const target = new URL(
+      panelAuthUrl(request.nextUrl.searchParams.get('redirect')),
+      request.url,
+    );
+    return finalizeEnvironmentAccess(NextResponse.redirect(target));
+  }
 
   // Identity only where it changes the response: protected routes, `/` (a
   // signed-in visitor goes to a project), and marketing pages a self-host has
@@ -666,13 +745,12 @@ export async function middleware(request: NextRequest) {
     );
     if (plan === 'fresh') {
       const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+        // `@supabase/ssr` never sets `secure` itself — see the doc comment in
+        // `lib/supabase/client.ts`. A Kortix in Chrome side panel request gets
+        // partitioned cookies (`lib/supabase/panel-cookies.ts`).
         cookieOptions: {
           name: KORTIX_SUPABASE_AUTH_COOKIE,
-          path: '/',
-          sameSite: 'lax',
-          // `@supabase/ssr` never sets this itself — see the doc comment in
-          // `lib/supabase/client.ts`.
-          secure: process.env.NODE_ENV === 'production',
+          ...authCookieOptions(panelRequest, process.env.NODE_ENV === 'production'),
         },
         cookies: {
           getAll() {
@@ -740,7 +818,11 @@ export async function middleware(request: NextRequest) {
         name === KORTIX_SUPABASE_AUTH_COOKIE ||
         name.startsWith(`${KORTIX_SUPABASE_AUTH_COOKIE}.`)
       ) {
-        supabaseResponse.cookies.delete(name);
+        // Deleting a partitioned cookie needs the same attributes it was set with.
+        supabaseResponse.cookies.set(name, '', {
+          ...authCookieOptions(panelRequest, process.env.NODE_ENV === 'production'),
+          maxAge: 0,
+        });
       }
     }
     user = null;

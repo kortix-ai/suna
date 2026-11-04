@@ -60,6 +60,8 @@ const tableStubs = Object.fromEntries(tables.map((name) => [name, { __table: nam
 mock.module('@kortix/db', () => ({
   ...tableStubs,
   readStoredAgentGrant: (raw: unknown) => raw ?? null,
+  // Imported by shared/pg-broadcast.ts (#10934); a stub without it breaks a later file in the same process.
+  requiresTls: () => false,
 }));
 
 mock.module('../lib/server-timing', () => ({
