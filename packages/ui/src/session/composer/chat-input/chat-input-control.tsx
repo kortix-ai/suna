@@ -2,15 +2,7 @@
 
 import type { Agent, FlatModel, ProviderListResponse } from '@kortix/sdk/react';
 import { isMyKortixAgentName } from '@kortix/shared';
-import {
-  ArrowCounterClockwiseIcon,
-  CaretDownIcon,
-  CaretRightIcon,
-  CheckIcon,
-  CpuIcon,
-  GaugeIcon,
-  MagnifyingGlassIcon,
-} from '@phosphor-icons/react';
+import { CaretDownIcon, CaretRightIcon, CheckIcon, MagnifyingGlassIcon, XIcon } from '@phosphor-icons/react';
 import { useCallback, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 import { useTranslations } from '../../../i18n';
@@ -20,21 +12,14 @@ import { Button } from '../../../primitives/button';
 import Hint from '../../../primitives/hint';
 import { InputGroupSearch, InputGroupSearchIcon, InputGroupSearchInput } from '../../../primitives/input-group';
 import Loading from '../../../primitives/loading';
-import { MENU_INDICATOR, MENU_INDICATOR_ICON, MENU_LABEL, MENU_SEPARATOR, menuRow } from '../../../primitives/menu-recipe';
+import { MENU_INDICATOR, MENU_INDICATOR_ICON, MENU_SEPARATOR, menuRow } from '../../../primitives/menu-recipe';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../primitives/popover';
 import { ModelSelector, type ModelDefaultControls } from '../../models/model-selector';
 import type { SessionOverrideRow } from '../../overrides/session-overrides-control';
 import { AgentSelector, resolveDisplayedAgentName, useComposerAgentChoices } from '../agent-selector';
 import { EffortIcon, effortLabel, reasoningEffortChoices } from '../reasoning-effort-selector';
 import { useChatInputOverrides } from './chat-input-overrides';
-import {
-  chatInputAgents,
-  chatInputSummary,
-  modelIsOverridden,
-  sameModel,
-  type ChatInputModelKey,
-  type ChatInputOverride,
-} from './chat-input-summary';
+import { chatInputAgents, chatInputTriggerParts, modelIsOverridden, sameModel, type ChatInputModelKey } from './chat-input-summary';
 
 /** Same threshold as `AgentSelector`: past six agents scanning turns into scrolling. */
 const SEARCH_MIN_AGENTS = 7;
@@ -76,8 +61,9 @@ export interface ChatInputControlProps {
   onVariantChange?: (variant: string | null) => void;
 }
 
-interface ControlRow {
-  id: ChatInputRowId;
+/** One "More settings" row: secrets, provider keys, sandbox, files. */
+interface ExtraRow {
+  id: string;
   name: string;
   icon: SessionOverrideRow['icon'];
   value: string;
@@ -87,23 +73,35 @@ interface ControlRow {
   editor: ReactNode;
 }
 
+/** A pill whose trigger is another component's button (the model picker): the arrow keys still reach it. */
+const PILL_ATTR = 'data-chat-input-pill';
+const NAV_SELECTOR = `[${NAV_ATTR}], [${PILL_ATTR}] > button`;
+
+function isNavItem(element: HTMLElement): boolean {
+  return element.hasAttribute(NAV_ATTR) || element.parentElement?.hasAttribute(PILL_ATTR) === true;
+}
+
 /**
- * The `chat_input` flag's composer control: the agent and every setting a
- * session can override, behind one trigger.
+ * The `chat_input` flag's composer control: the agent, its model and its
+ * effort behind one trigger, and every other session override one step away.
  *
- * Closed, it names the agent and what overrides it ("My Kortix · Auto",
- * "My Kortix · GLM 5.3 Flash · High", "My Kortix · 2 overrides" — see
- * `chat-input-summary.ts`). Open, the agent list comes first, then one row per
- * setting this session may override. A row reads "Auto (from <agent>)" until
- * something overrides it, expands in place to the setting's existing editor,
- * and carries a one-click "Reset to auto".
+ * Closed, it names the agent and the model ("My Kortix · GLM 5.3 Flash"),
+ * plus the effort when it is overridden and a count of the other overrides
+ * (`chatInputTriggerParts`). Open, it is one compact panel:
+ *
+ *   - the agents (none when the agent is fixed: a DM);
+ *   - a hairline, then two pills: the model (the model picker's own trigger)
+ *     and the effort (its choices open in place). An overridden pill carries
+ *     an × that resets it to the agent's default;
+ *   - "More settings", collapsed: secrets, provider keys, sandbox and files,
+ *     each expanding in place to its existing editor. "More settings · N"
+ *     says how many of them are overridden.
  *
  * It owns no setting. Agent, model and effort write through the composer's
  * own handlers (the same ones the three pickers call with the flag off);
  * secrets, provider keys and the sandbox are the rows `SessionOverridesToolbar`
  * publishes, with its drafts and its Save. Picking another agent therefore
- * resets what that agent does not allow exactly as before: the model is kept
- * per agent, and the scope draft is re-read under the new agent's grant.
+ * resets what that agent does not allow exactly as before.
  */
 export function ChatInputControl({
   agents,
@@ -147,16 +145,24 @@ export function ChatInputControl({
     [onOpenChange, openProp, saving],
   );
 
-  const [expanded, setExpanded] = useState<ChatInputRowId | null>(null);
+  // What is open inside the panel: the effort choices, "More settings", one of its rows, the model picker.
+  const [effortOpen, setEffortOpen] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  // Each open starts collapsed, or on the row the `/` palette asked for.
+  // Each open starts collapsed, or on the control the `/` palette asked for.
   // Adjusted during render (React's "storing information from previous
   // renders"), not in an effect, so the first open frame already shows it.
   const [seen, setSeen] = useState({ open, initialRow });
   if (seen.open !== open || seen.initialRow !== initialRow) {
     setSeen({ open, initialRow });
-    if (open) setExpanded(initialRow);
-    else setSearch('');
+    setEffortOpen(open && initialRow === 'effort');
+    setModelOpen(open && initialRow === 'model');
+    const extra = open && initialRow && initialRow !== 'model' && initialRow !== 'effort' ? initialRow : null;
+    setMoreOpen(extra !== null);
+    setExpanded(extra);
+    if (!open) setSearch('');
   }
 
   // A fixed agent (a DM): name it and offer no other.
@@ -169,127 +175,45 @@ export function ChatInputControl({
   );
   const displayedName = agentChoice.name ?? undefined;
   const agentLabel = displayedName ? label(displayedName) : 'Agent';
-  const autoFrom = t('chatInputAutoFrom', { agent: agentLabel });
 
   const effortChoices = useMemo(() => reasoningEffortChoices(variants, !!onVariantChange), [variants, onVariantChange]);
   const currentEffort = selectedVariant && effortChoices.includes(selectedVariant) ? selectedVariant : null;
   const currentModel = models.find((model) => sameModel(model, selectedModel));
-  const modelOverridden = showModel && modelIsOverridden(selectedModel, inheritedModel);
+  const modelShown = showModel && !!onModelChange;
+  const modelOverridden = modelShown && modelIsOverridden(selectedModel, inheritedModel);
   const inheritedOffered = !!inheritedModel && models.some((model) => sameModel(model, inheritedModel));
+  const modelName = currentModel?.modelName ?? selectedModel?.modelID ?? null;
+  const resetModel = modelOverridden && inheritedOffered && inheritedModel && onModelChange ? () => onModelChange(inheritedModel) : undefined;
+  const effortShown = effortChoices.length > 0 && !!onVariantChange;
 
-  const rows = useMemo<ControlRow[]>(() => {
-    const list: ControlRow[] = [];
-    if (showModel && onModelChange) {
-      list.push({
-        id: 'model',
-        name: t('chatInputModel'),
-        icon: CpuIcon,
-        value: modelOverridden ? (currentModel?.modelName ?? selectedModel?.modelID ?? t('noModel')) : autoFrom,
-        overridden: modelOverridden,
-        onReset: modelOverridden && inheritedOffered && inheritedModel
-          ? () => onModelChange(inheritedModel)
-          : undefined,
-        editor: (
-          <ModelSelector
-            appearance="field"
-            models={models}
-            modelsLoading={modelsLoading}
-            selectedModel={selectedModel}
-            onSelect={onModelChange}
-            providers={providers}
-            defaultControls={modelDefaultControls}
-            projectId={projectId}
-            offerProviderAccounts
-          />
-        ),
-      });
-    }
-    if (effortChoices.length > 0 && onVariantChange) {
-      list.push({
-        id: 'effort',
-        name: t('chatInputEffort'),
-        icon: GaugeIcon,
-        value: currentEffort ? effortLabel(currentEffort) : autoFrom,
-        overridden: currentEffort !== null,
-        onReset: currentEffort !== null ? () => onVariantChange(null) : undefined,
-        editor: (
-          <div role="radiogroup" aria-label={t('thinkingEffort')} className="flex flex-col gap-px">
-            {[null, ...effortChoices].map((value) => {
-              const checked = value === currentEffort;
-              return (
-                <button
-                  key={value ?? 'auto'}
-                  type="button"
-                  role="radio"
-                  aria-checked={checked}
-                  {...{ [NAV_ATTR]: '' }}
-                  onClick={() => onVariantChange(value)}
-                  className={menuRow('sm', 'default', checked ? 'text-foreground' : undefined)}
-                >
-                  <EffortIcon value={value} className="size-4 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate text-left">
-                    {value ? effortLabel(value) : t('auto')}
-                  </span>
-                  <span className={MENU_INDICATOR}>
-                    {checked ? <CheckIcon className={MENU_INDICATOR_ICON} /> : null}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        ),
-      });
-    }
-    for (const row of overrides?.rows ?? []) {
-      const overridden = row.overridden === true;
-      list.push({
-        id: row.id,
-        name: row.name,
-        icon: row.icon,
-        value: !overridden && row.inheritsFromAgent ? autoFrom : row.summary,
-        overridden,
-        onReset: overridden && overrides ? () => overrides.onResetRow(row.id) : undefined,
-        description: row.description,
-        editor: row.editor,
-      });
-    }
-    return list;
-  }, [
-    autoFrom,
-    currentEffort,
-    currentModel?.modelName,
-    effortChoices,
-    inheritedModel,
-    inheritedOffered,
-    modelDefaultControls,
-    modelOverridden,
-    models,
-    modelsLoading,
-    onModelChange,
-    onVariantChange,
-    overrides,
-    projectId,
-    providers,
-    selectedModel,
-    showModel,
-    t,
-  ]);
-
-  const summary = chatInputSummary(
-    rows
-      .filter((row) => row.overridden)
-      .map((row): ChatInputOverride => ({
-        id: row.id,
-        value: row.value,
-        glanceable: row.id === 'model' || row.id === 'effort',
-      })),
+  const extras = useMemo<ExtraRow[]>(
+    () =>
+      (overrides?.rows ?? []).map((row) => {
+        const overridden = row.overridden === true;
+        return {
+          id: row.id,
+          name: row.name,
+          icon: row.icon,
+          value: !overridden && row.inheritsFromAgent ? t('auto') : row.summary,
+          overridden,
+          onReset: overridden && overrides ? () => overrides.onResetRow(row.id) : undefined,
+          description: row.description,
+          editor: row.editor,
+        };
+      }),
+    [overrides, t],
   );
-  const summaryText =
-    summary.kind === 'auto'
-      ? t('auto')
-      : summary.kind === 'values'
-        ? summary.values.join(' · ')
-        : t('chatInputOverrideCount', { count: summary.count });
+  const extrasOverridden = extras.filter((row) => row.overridden).length;
+
+  const parts = chatInputTriggerParts({
+    model: modelShown ? modelName : null,
+    effort: currentEffort ? effortLabel(currentEffort) : null,
+    extras: extrasOverridden,
+  });
+  // The count reads as a bare number on the trigger; its accessible name spells it out.
+  const spokenParts = parts.map((part, i) =>
+    i === parts.length - 1 && extrasOverridden > 0 ? t('chatInputOverrideCount', { count: extrasOverridden }) : part,
+  );
 
   const offeredKey = agentChoice.offered.join('\n');
   const filteredAgents = useMemo(() => {
@@ -309,26 +233,29 @@ export function ChatInputControl({
 
   const panelRef = useRef<HTMLDivElement>(null);
   const onPanelKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
-    const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End'];
-    if (!keys.includes(event.key)) return;
     const target = event.target as HTMLElement;
-    // Only the panel's own rows and the agent search walk. An editor inside
-    // an expanded row (a select, a checkbox list) keeps its own arrow keys.
+    const inPills = target.closest('[data-chat-input-pills]') !== null;
+    // Left and right walk the pill row; up and down walk the whole panel.
+    const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End', ...(inPills ? ['ArrowLeft', 'ArrowRight'] : [])];
+    if (!keys.includes(event.key)) return;
+    // Only the panel's own rows, the pills and the agent search walk. An
+    // editor inside an expanded row (a select, a checkbox list) keeps its own arrow keys.
     const searchField = target.dataset.chatInputSearch !== undefined;
-    if (!target.hasAttribute(NAV_ATTR) && !searchField) return;
+    if (!isNavItem(target) && !searchField) return;
     if (searchField && (event.key === 'Home' || event.key === 'End')) return;
-    const items = Array.from(panelRef.current?.querySelectorAll<HTMLElement>(`[${NAV_ATTR}]`) ?? []).filter(
+    const items = Array.from(panelRef.current?.querySelectorAll<HTMLElement>(NAV_SELECTOR) ?? []).filter(
       (item) => !item.hasAttribute('disabled'),
     );
     if (items.length === 0) return;
     event.preventDefault();
     const index = items.indexOf(target);
+    const forward = event.key === 'ArrowDown' || event.key === 'ArrowRight';
     const next =
       event.key === 'Home'
         ? 0
         : event.key === 'End'
           ? items.length - 1
-          : event.key === 'ArrowDown'
+          : forward
             ? (index + 1) % items.length
             : (index <= 0 ? items.length : index) - 1;
     items[next]?.focus();
@@ -351,13 +278,16 @@ export function ChatInputControl({
     );
   }
 
-  const expandedRow = rows.find((row) => row.id === expanded);
-  const showSave = !!overrides && !!expandedRow && overrides.saveRowIds.includes(expandedRow.id);
+  const expandedRow = extras.find((row) => row.id === expanded);
+  const showSave = moreOpen && !!overrides && !!expandedRow && overrides.saveRowIds.includes(expandedRow.id);
   const saveAndClose = async () => {
     if (!overrides) return;
     const saved = await overrides.onSave();
     if (saved) setOpen(false);
   };
+  const resetLabel = t('chatInputResetToAuto');
+  const showAgents = !agentFixed;
+  const showPills = modelShown || effortShown;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -366,13 +296,17 @@ export function ChatInputControl({
           type="button"
           variant="ghost"
           size="sm"
-          aria-label={`${t('chatInput')}: ${agentLabel} · ${summaryText}`}
+          aria-label={[`${t('chatInput')}: ${agentLabel}`, ...spokenParts].join(' · ')}
           className="text-muted-foreground data-[state=open]:text-foreground min-w-0 rounded-lg hit-area-y-3"
         >
           <AgentMark slug={displayedName ?? agentLabel} />
           <span className={cn('max-w-[7rem] truncate', triggerLabelClassName)}>{agentLabel}</span>
-          <span aria-hidden>·</span>
-          <span className="max-w-[12rem] min-w-0 truncate">{summaryText}</span>
+          {parts.map((part, i) => (
+            <span key={i} className="contents">
+              <span aria-hidden>·</span>
+              <span className={cn('min-w-0 truncate', i === 0 && modelShown ? 'max-w-[10rem]' : 'shrink-0')}>{part}</span>
+            </span>
+          ))}
           <CaretDownIcon
             className={cn('size-3 shrink-0 transition-transform duration-moderate ease-out', open && 'rotate-180')}
           />
@@ -384,14 +318,14 @@ export function ChatInputControl({
         align="start"
         sideOffset={8}
         collisionPadding={12}
-        className="w-[min(380px,calc(100vw-1.5rem))] overflow-hidden p-0"
+        className="w-[min(320px,calc(100vw-1.5rem))] overflow-hidden p-0"
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           const panel = panelRef.current;
           const target =
             panel?.querySelector<HTMLElement>('[data-chat-input-search]') ??
             panel?.querySelector<HTMLElement>(`[${NAV_ATTR}][aria-checked="true"]`) ??
-            panel?.querySelector<HTMLElement>(`[${NAV_ATTR}]`);
+            panel?.querySelector<HTMLElement>(NAV_SELECTOR);
           target?.focus();
         }}
         onEscapeKeyDown={(event) => {
@@ -412,8 +346,7 @@ export function ChatInputControl({
           className="flex max-h-[min(36rem,var(--radix-popover-content-available-height,36rem))] flex-col"
         >
           <div className="min-h-0 flex-1 overflow-y-auto p-1">
-            {agentFixed ? null : <p className={MENU_LABEL}>{t('chatInputAgent')}</p>}
-            {!agentFixed && primaryAgents.length >= SEARCH_MIN_AGENTS ? (
+            {showAgents && primaryAgents.length >= SEARCH_MIN_AGENTS ? (
               <InputGroupSearch className="px-1 pb-1">
                 <InputGroupSearchIcon>
                   <MagnifyingGlassIcon />
@@ -429,54 +362,149 @@ export function ChatInputControl({
                 />
               </InputGroupSearch>
             ) : null}
-            {agentFixed ? null : (
-            <div role="radiogroup" aria-label={t('chatInputAgent')} className="flex flex-col gap-px">
-              {filteredAgents.map((agent) => {
-                const checked = agent.name === displayedName;
-                return (
-                  <button
-                    key={agent.name}
-                    type="button"
-                    role="radio"
-                    aria-checked={checked}
-                    {...{ [NAV_ATTR]: '' }}
-                    onClick={() => onAgentChange?.(agent.name)}
-                    className={menuRow('md', 'default', checked ? 'bg-primary/[0.06] text-foreground' : undefined)}
-                  >
-                    <AgentMark slug={agent.name} />
-                    <span className="min-w-0 flex-1 truncate text-left">{label(agent.name)}</span>
-                    <span className={MENU_INDICATOR}>
-                      {checked ? <CheckIcon className="text-foreground size-4" /> : null}
-                    </span>
-                  </button>
-                );
-              })}
-              {filteredAgents.length === 0 ? (
-                <p className="text-muted-foreground px-2 py-3 text-xs">
-                  {tHardcodedUi.raw('componentsSessionSessionChatInput.line273JsxTextNoAgentsMatchLdquo')}
-                  {search.trim()}
-                  {tHardcodedUi.raw('componentsSessionSessionChatInput.line273JsxTextRdquo')}
-                </p>
-              ) : null}
-            </div>
-            )}
+            {showAgents ? (
+              <div role="radiogroup" aria-label={t('chatInputAgent')} className="flex flex-col gap-px">
+                {filteredAgents.map((agent) => {
+                  const checked = agent.name === displayedName;
+                  return (
+                    <button
+                      key={agent.name}
+                      type="button"
+                      role="radio"
+                      aria-checked={checked}
+                      {...{ [NAV_ATTR]: '' }}
+                      onClick={() => onAgentChange?.(agent.name)}
+                      className={menuRow('sm', 'default', checked ? 'text-foreground' : undefined)}
+                    >
+                      <AgentMark slug={agent.name} />
+                      <span className="min-w-0 flex-1 truncate text-left">{label(agent.name)}</span>
+                      <span className={MENU_INDICATOR}>
+                        {checked ? <CheckIcon className={MENU_INDICATOR_ICON} /> : null}
+                      </span>
+                    </button>
+                  );
+                })}
+                {filteredAgents.length === 0 ? (
+                  <p className="text-muted-foreground px-2 py-3 text-xs">
+                    {tHardcodedUi.raw('componentsSessionSessionChatInput.line273JsxTextNoAgentsMatchLdquo')}
+                    {search.trim()}
+                    {tHardcodedUi.raw('componentsSessionSessionChatInput.line273JsxTextRdquo')}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
 
-            {rows.length > 0 ? (
+            {showPills ? (
               <>
-                {agentFixed ? null : <div className={MENU_SEPARATOR} />}
-                <p className={MENU_LABEL}>{t('chatInputSettings')}</p>
-                <ul className="flex flex-col gap-px">
-                  {rows.map((row) => (
-                    <ChatInputRow
-                      key={row.id}
-                      row={row}
-                      expanded={row.id === expanded}
-                      disabled={saving}
-                      resetLabel={t('chatInputResetToAuto')}
-                      onToggle={() => setExpanded((current) => (current === row.id ? null : row.id))}
-                    />
-                  ))}
-                </ul>
+                {showAgents ? <div className={MENU_SEPARATOR} /> : null}
+                <div data-chat-input-pills="" className="flex flex-wrap items-center gap-1 px-1 py-1">
+                  {modelShown && onModelChange ? (
+                    <span className="flex min-w-0 items-center">
+                      <span {...{ [PILL_ATTR]: '' }} className="flex min-w-0">
+                        <ModelSelector
+                          models={models}
+                          modelsLoading={modelsLoading}
+                          selectedModel={selectedModel}
+                          onSelect={onModelChange}
+                          providers={providers}
+                          defaultControls={modelDefaultControls}
+                          projectId={projectId}
+                          offerProviderAccounts
+                          triggerVariant="secondary"
+                          triggerLabelClassName="max-w-40"
+                          open={modelOpen}
+                          onOpenChange={setModelOpen}
+                        />
+                      </span>
+                      {resetModel ? (
+                        <PillReset label={`${resetLabel}: ${t('chatInputModel')}`} disabled={saving} onReset={resetModel} />
+                      ) : null}
+                    </span>
+                  ) : null}
+                  {effortShown ? (
+                    <span className="flex items-center">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        aria-label={t('chatInputEffort')}
+                        aria-expanded={effortOpen}
+                        {...{ [NAV_ATTR]: '' }}
+                        onClick={() => setEffortOpen((current) => !current)}
+                        className="gap-1.5 rounded-lg"
+                      >
+                        <EffortIcon value={currentEffort} className="size-4 shrink-0" />
+                        <span>{currentEffort ? effortLabel(currentEffort) : t('auto')}</span>
+                        <CaretDownIcon
+                          className={cn('size-3 opacity-50 transition-transform duration-moderate ease-out', effortOpen && 'rotate-180')}
+                        />
+                      </Button>
+                      {currentEffort && onVariantChange ? (
+                        <PillReset label={`${resetLabel}: ${t('chatInputEffort')}`} disabled={saving} onReset={() => onVariantChange(null)} />
+                      ) : null}
+                    </span>
+                  ) : null}
+                </div>
+                {effortOpen && effortShown && onVariantChange ? (
+                  <div role="radiogroup" aria-label={t('thinkingEffort')} className="flex flex-col gap-px pb-1">
+                    {[null, ...effortChoices].map((value) => {
+                      const checked = value === currentEffort;
+                      return (
+                        <button
+                          key={value ?? 'auto'}
+                          type="button"
+                          role="radio"
+                          aria-checked={checked}
+                          {...{ [NAV_ATTR]: '' }}
+                          onClick={() => {
+                            onVariantChange(value);
+                            setEffortOpen(false);
+                          }}
+                          className={menuRow('sm', 'default', checked ? 'text-foreground' : undefined)}
+                        >
+                          <EffortIcon value={value} className="size-4 shrink-0" />
+                          <span className="min-w-0 flex-1 truncate text-left">{value ? effortLabel(value) : t('auto')}</span>
+                          <span className={MENU_INDICATOR}>
+                            {checked ? <CheckIcon className={MENU_INDICATOR_ICON} /> : null}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+
+            {extras.length > 0 ? (
+              <>
+                {showAgents || showPills ? <div className={MENU_SEPARATOR} /> : null}
+                <button
+                  type="button"
+                  aria-expanded={moreOpen}
+                  {...{ [NAV_ATTR]: '' }}
+                  onClick={() => setMoreOpen((current) => !current)}
+                  className={menuRow('sm', 'default', 'text-muted-foreground w-full')}
+                >
+                  <span className="min-w-0 flex-1 truncate text-left text-xs">
+                    {t('chatInputMoreSettings')}
+                    {extrasOverridden > 0 ? ` · ${extrasOverridden}` : ''}
+                  </span>
+                  <CaretRightIcon className={cn('size-3 shrink-0 transition-transform duration-moderate ease-out', moreOpen && 'rotate-90')} />
+                </button>
+                {moreOpen ? (
+                  <ul className="flex flex-col gap-px">
+                    {extras.map((row) => (
+                      <ChatInputRow
+                        key={row.id}
+                        row={row}
+                        expanded={row.id === expanded}
+                        disabled={saving}
+                        resetLabel={resetLabel}
+                        onToggle={() => setExpanded((current) => (current === row.id ? null : row.id))}
+                      />
+                    ))}
+                  </ul>
+                ) : null}
               </>
             ) : null}
             {overrides?.notice && showSave ? <div className="px-2 pt-2">{overrides.notice}</div> : null}
@@ -509,6 +537,26 @@ export function ChatInputControl({
   );
 }
 
+/** The × beside an overridden pill: back to the agent's default in one click. */
+function PillReset({ label, disabled, onReset }: { label: string; disabled: boolean; onReset: () => void }) {
+  return (
+    <Hint side="top" label={label}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        aria-label={label}
+        disabled={disabled}
+        {...{ [NAV_ATTR]: '' }}
+        onClick={onReset}
+        className="text-muted-foreground hover:text-foreground shrink-0"
+      >
+        <XIcon className="size-3" />
+      </Button>
+    </Hint>
+  );
+}
+
 function ChatInputRow({
   row,
   expanded,
@@ -516,14 +564,13 @@ function ChatInputRow({
   resetLabel,
   onToggle,
 }: {
-  row: ControlRow;
+  row: ExtraRow;
   expanded: boolean;
   disabled: boolean;
   resetLabel: string;
   onToggle: () => void;
 }) {
   const RowIcon = row.icon;
-  const Caret = expanded ? CaretDownIcon : CaretRightIcon;
   return (
     <li>
       <div className="flex items-center gap-0.5">
@@ -532,7 +579,7 @@ function ChatInputRow({
           aria-expanded={expanded}
           {...{ [NAV_ATTR]: '' }}
           onClick={onToggle}
-          className={menuRow('md', 'default', 'min-w-0 flex-1')}
+          className={menuRow('sm', 'default', 'min-w-0 flex-1')}
         >
           <RowIcon className="text-muted-foreground size-4" />
           <span className="text-foreground shrink-0">{row.name}</span>
@@ -544,24 +591,8 @@ function ChatInputRow({
           >
             {row.value}
           </span>
-          <Caret className="text-muted-foreground size-3 shrink-0" />
         </button>
-        {row.onReset ? (
-          <Hint side="top" label={resetLabel}>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`${resetLabel}: ${row.name}`}
-              disabled={disabled}
-              {...{ [NAV_ATTR]: '' }}
-              onClick={row.onReset}
-              className="text-muted-foreground hover:text-foreground shrink-0"
-            >
-              <ArrowCounterClockwiseIcon className="size-3.5" />
-            </Button>
-          </Hint>
-        ) : null}
+        {row.onReset ? <PillReset label={`${resetLabel}: ${row.name}`} disabled={disabled} onReset={row.onReset} /> : null}
       </div>
       {expanded ? (
         <div className="px-2 pt-1 pb-2">

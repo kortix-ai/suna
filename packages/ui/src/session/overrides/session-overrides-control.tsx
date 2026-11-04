@@ -43,7 +43,7 @@ export interface SessionOverrideRow {
   readOnly?: boolean;
   /**
    * Not overridden, and its default is the agent's grant. The `chat_input`
-   * control then reads "Auto (from <agent>)" instead of `summary`.
+   * control then reads "Auto" instead of `summary`.
    */
   inheritsFromAgent?: boolean;
 }

@@ -2,40 +2,35 @@
  * What the `chat_input` control says at rest, as pure functions so the rule
  * is testable without React.
  *
- * The control names the agent, then what overrides it:
+ * The control names the agent and the model it runs on, then only what is
+ * overridden beyond that:
  *
- *   nothing overridden          → "My Kortix · Auto"
- *   only model and/or effort    → "My Kortix · GLM 5.3 Flash · High"
- *   anything else overridden    → "My Kortix · 2 overrides"
+ *   nothing overridden            → "My Kortix · GLM 5.3 Flash"
+ *   effort overridden             → "My Kortix · GLM 5.3 Flash · High"
+ *   secrets / keys / sandbox set  → "My Kortix · GLM 5.3 Flash · 2"
  *
- * Model and effort are the two values a person reads at a glance (they were
- * the two chips beside the agent before this control). Secrets, provider keys
- * and the sandbox have no one-word value, so once one of them is set the
- * label counts instead of naming.
+ * The model is always named: it is what a person checks at a glance. Effort
+ * is named only when it is not the model's own. The settings behind "More
+ * settings" (secrets, provider keys, sandbox, files) have no one-word value,
+ * so they are counted.
  */
 
 export type ChatInputModelKey = { providerID: string; modelID: string };
 
-/** One overridden setting, as the trigger names it. */
-export interface ChatInputOverride {
-  id: string;
-  /** The value the trigger shows when it names overrides. */
-  value: string;
-  /** Model and effort: named on the trigger. Anything else: counted. */
-  glanceable: boolean;
-}
-
-export type ChatInputSummary =
-  | { kind: 'auto' }
-  | { kind: 'values'; values: string[] }
-  | { kind: 'count'; count: number };
-
-export function chatInputSummary(overrides: readonly ChatInputOverride[]): ChatInputSummary {
-  if (overrides.length === 0) return { kind: 'auto' };
-  if (overrides.every((override) => override.glanceable)) {
-    return { kind: 'values', values: overrides.map((override) => override.value) };
-  }
-  return { kind: 'count', count: overrides.length };
+/** The parts after the agent on the closed trigger, in order. */
+export function chatInputTriggerParts(input: {
+  /** The model's name; null when the composer shows no model. */
+  model: string | null;
+  /** The effort's label when it is overridden; null on Auto. */
+  effort: string | null;
+  /** How many "More settings" rows are overridden. */
+  extras: number;
+}): string[] {
+  return [
+    ...(input.model ? [input.model] : []),
+    ...(input.effort ? [input.effort] : []),
+    ...(input.extras > 0 ? [String(input.extras)] : []),
+  ];
 }
 
 export function sameModel(

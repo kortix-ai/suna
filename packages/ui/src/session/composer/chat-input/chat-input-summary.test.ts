@@ -1,35 +1,27 @@
 import { describe, expect, test } from 'bun:test';
 
-import { chatInputAgents, chatInputSummary, inheritedModelFor, modelIsOverridden } from './chat-input-summary';
+import { chatInputAgents, chatInputTriggerParts, inheritedModelFor, modelIsOverridden } from './chat-input-summary';
 
 const glm = { providerID: 'kortix', modelID: 'glm-5.3-flash' };
 const kimi = { providerID: 'kortix', modelID: 'kimi-k3' };
 
-describe('chatInputSummary — what the closed chat-input control says after the agent', () => {
-  test('nothing overridden → Auto', () => {
-    expect(chatInputSummary([])).toEqual({ kind: 'auto' });
+describe('chatInputTriggerParts — what the closed chat-input control says after the agent', () => {
+  test('nothing overridden → the model alone', () => {
+    expect(chatInputTriggerParts({ model: 'GLM 5.3 Flash', effort: null, extras: 0 })).toEqual(['GLM 5.3 Flash']);
   });
 
-  test('only model and effort → their values, in row order', () => {
-    expect(
-      chatInputSummary([
-        { id: 'model', value: 'GLM 5.3 Flash', glanceable: true },
-        { id: 'effort', value: 'High', glanceable: true },
-      ]),
-    ).toEqual({ kind: 'values', values: ['GLM 5.3 Flash', 'High'] });
+  test('effort is named only when overridden', () => {
+    expect(chatInputTriggerParts({ model: 'GLM 5.3 Flash', effort: 'High', extras: 0 })).toEqual(['GLM 5.3 Flash', 'High']);
   });
 
-  test('a setting with no one-word value (secrets) → a count of every override', () => {
-    expect(
-      chatInputSummary([
-        { id: 'model', value: 'GLM 5.3 Flash', glanceable: true },
-        { id: 'secrets', value: '2 selected', glanceable: false },
-      ]),
-    ).toEqual({ kind: 'count', count: 2 });
-    expect(chatInputSummary([{ id: 'sandbox', value: 'gpu', glanceable: false }])).toEqual({
-      kind: 'count',
-      count: 1,
-    });
+  test('overridden "More settings" rows are counted, never named', () => {
+    expect(chatInputTriggerParts({ model: 'GLM 5.3 Flash', effort: null, extras: 2 })).toEqual(['GLM 5.3 Flash', '2']);
+    expect(chatInputTriggerParts({ model: 'GLM 5.3 Flash', effort: 'Low', extras: 1 })).toEqual(['GLM 5.3 Flash', 'Low', '1']);
+  });
+
+  test('no model shown (a host without models) → only what is overridden', () => {
+    expect(chatInputTriggerParts({ model: null, effort: null, extras: 0 })).toEqual([]);
+    expect(chatInputTriggerParts({ model: null, effort: null, extras: 3 })).toEqual(['3']);
   });
 });
 
