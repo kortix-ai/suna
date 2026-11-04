@@ -2274,7 +2274,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           windowSize={11}
           updateCellsBatchingPeriod={32}
           contentContainerStyle={{ paddingTop: listTopInset }}
-          ListHeaderComponent={olderHistoryHeader}
+          ListHeaderComponent={olderHistoryHeader ?? undefined}
           maintainVisibleContentPosition={holdPosition ? MAINTAIN_FIRST_VISIBLE : undefined}
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}

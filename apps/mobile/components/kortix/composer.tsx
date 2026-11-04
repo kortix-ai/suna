@@ -30,7 +30,8 @@ import {
   TextInput,
   View,
   type NativeSyntheticEvent,
-  type TextInputSelectionChangeEventData,
+  type TextInputSelectionChangeEvent,
+  type TextInputInstance
 } from 'react-native';
 import { requireOptionalNativeModule } from 'expo';
 import { BlurView } from 'expo-blur';
@@ -142,8 +143,8 @@ interface ComposerProps {
   /** `nativeID` of the text field. The thread's `KeyboardGestureArea` names it. */
   inputNativeID?: string;
   maxLength?: number;
-  inputRef?: React.Ref<TextInput>;
-  onSelectionChange?: (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => void;
+  inputRef?: React.Ref<TextInputInstance>;
+  onSelectionChange?: (e: TextInputSelectionChangeEvent) => void;
   /** Inside the card, above the files and the text: the thread's queue and staged command. */
   header?: React.ReactNode;
   /** In the control row after the chip: the thread's AutoContinue state. */

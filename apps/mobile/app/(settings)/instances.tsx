@@ -120,7 +120,7 @@ export default function InstancesScreen() {
         className="flex-1 bg-background"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
-        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={() => void refetch()} />}
       >
         <View className="px-4 pt-1">
           {/* Instances */}

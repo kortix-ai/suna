@@ -45,7 +45,7 @@ import {
   splitPastedContent,
   type PastedContent,
 } from '@kortix/shared';
-import { Keyboard, Pressable, View, type TextInput } from 'react-native';
+import { Keyboard, Pressable, View, type TextInput, type TextInputInstance } from 'react-native';
 import { useIsFocused, useRouter } from 'expo-router';
 import {
   KeyboardAvoidingView,
@@ -172,7 +172,7 @@ export function ProjectHome({
   // never opens behind a route that is still popping. Home is "on top" from
   // the start of the pop, and the drawer is still closing then: a focus in
   // that window can be dropped, so it is retried until the field has it.
-  const composerInputRef = React.useRef<TextInput>(null);
+  const composerInputRef = React.useRef<TextInputInstance>(null);
   const isScreenFocused = useIsFocused();
   const [focusRequest, setFocusRequest] = React.useState(0);
   const handledFocusRequest = React.useRef(0);
@@ -516,7 +516,7 @@ function HomeComposer({
   onSubmit: (draft: string, pastes: PastedContent[]) => Promise<void>;
   onPasteFile: (files: AttachedFile[]) => void;
   autoFocus: boolean;
-  inputRef: React.Ref<TextInput>;
+  inputRef: React.Ref<TextInputInstance>;
   disabled: boolean;
   sending: boolean;
   attachments: AttachedFile[];
