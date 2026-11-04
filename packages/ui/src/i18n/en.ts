@@ -1588,7 +1588,8 @@ const catalog = {
     "hintNewLine": "Press Shift+Enter for a new line",
     "hintSettings": "Press {modifier}, to open settings",
     "hintCompact": "Ask to compact the session when it gets long",
-    "myKortixRoutes": "Routes each task to the right agent"
+    "myKortixRoutes": "Routes each task to the right agent",
+    "chatInputReset": "Reset"
   },
   "auth": {
     "haveReferralCode": "Have a referral code?",

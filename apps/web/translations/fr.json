@@ -2302,7 +2302,8 @@
     "submitEdit": "Valider",
     "collapseQueue": "Réduire la file",
     "expandQueue": "Développer la file",
-    "myKortixRoutes": "Confie chaque tâche au bon agent"
+    "myKortixRoutes": "Confie chaque tâche au bon agent",
+    "chatInputReset": "Reset"
   },
   "billing": {
     "plan": {

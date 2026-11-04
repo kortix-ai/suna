@@ -12,7 +12,7 @@ import { Button } from '../../../primitives/button';
 import Hint from '../../../primitives/hint';
 import { InputGroupSearch, InputGroupSearchIcon, InputGroupSearchInput } from '../../../primitives/input-group';
 import Loading from '../../../primitives/loading';
-import { MENU_INDICATOR, MENU_INDICATOR_ICON, MENU_SEPARATOR, menuRow } from '../../../primitives/menu-recipe';
+import { MENU_INDICATOR, MENU_INDICATOR_ICON, menuRow } from '../../../primitives/menu-recipe';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../primitives/popover';
 import { ModelSelector, type ModelDefaultControls } from '../../models/model-selector';
 import type { SessionOverrideRow } from '../../overrides/session-overrides-control';
@@ -396,53 +396,63 @@ export function ChatInputControl({
 
             {showPills ? (
               <>
-                {showAgents ? <div className={MENU_SEPARATOR} /> : null}
-                <div data-chat-input-pills="" className="flex flex-wrap items-center gap-1 px-1 py-1">
+                {/* The settings band: one quiet strip under the agents, no hairline. A single
+                    "Reset" at its end appears only while the model or effort is overridden. */}
+                <div
+                  data-chat-input-pills=""
+                  className={cn('bg-muted/60 flex items-center gap-0.5 rounded-lg p-0.5', showAgents && 'mt-1')}
+                >
                   {modelShown && onModelChange ? (
-                    <span className="flex min-w-0 items-center">
-                      <span {...{ [PILL_ATTR]: '' }} className="flex min-w-0">
-                        <ModelSelector
-                          models={models}
-                          modelsLoading={modelsLoading}
-                          selectedModel={selectedModel}
-                          onSelect={onModelChange}
-                          providers={providers}
-                          defaultControls={modelDefaultControls}
-                          projectId={projectId}
-                          offerProviderAccounts
-                          triggerVariant="secondary"
-                          triggerLabelClassName="max-w-40"
-                          open={modelOpen}
-                          onOpenChange={setModelOpen}
-                        />
-                      </span>
-                      {resetModel ? (
-                        <PillReset label={`${resetLabel}: ${t('chatInputModel')}`} disabled={saving} onReset={resetModel} />
-                      ) : null}
+                    <span {...{ [PILL_ATTR]: '' }} className="flex min-w-0">
+                      <ModelSelector
+                        models={models}
+                        modelsLoading={modelsLoading}
+                        selectedModel={selectedModel}
+                        onSelect={onModelChange}
+                        providers={providers}
+                        defaultControls={modelDefaultControls}
+                        projectId={projectId}
+                        offerProviderAccounts
+                        triggerVariant="ghost"
+                        triggerLabelClassName="max-w-40 text-foreground"
+                        open={modelOpen}
+                        onOpenChange={setModelOpen}
+                      />
                     </span>
                   ) : null}
                   {effortShown ? (
-                    <span className="flex items-center">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        aria-label={t('chatInputEffort')}
-                        aria-expanded={effortOpen}
-                        {...{ [NAV_ATTR]: '' }}
-                        onClick={() => setEffortOpen((current) => !current)}
-                        className="gap-1.5 rounded-lg"
-                      >
-                        <EffortIcon value={currentEffort} className="size-4 shrink-0" />
-                        <span>{currentEffort ? effortLabel(currentEffort) : t('auto')}</span>
-                        <CaretDownIcon
-                          className={cn('size-3 opacity-50 transition-transform duration-moderate ease-out', effortOpen && 'rotate-180')}
-                        />
-                      </Button>
-                      {currentEffort && onVariantChange ? (
-                        <PillReset label={`${resetLabel}: ${t('chatInputEffort')}`} disabled={saving} onReset={() => onVariantChange(null)} />
-                      ) : null}
-                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-label={t('chatInputEffort')}
+                      aria-expanded={effortOpen}
+                      {...{ [NAV_ATTR]: '' }}
+                      onClick={() => setEffortOpen((current) => !current)}
+                      className="gap-1.5 rounded-lg"
+                    >
+                      <EffortIcon value={currentEffort} className="text-muted-foreground size-4 shrink-0" />
+                      <span>{currentEffort ? effortLabel(currentEffort) : t('auto')}</span>
+                      <CaretDownIcon
+                        className={cn('size-3 opacity-50 transition-transform duration-moderate ease-out', effortOpen && 'rotate-180')}
+                      />
+                    </Button>
+                  ) : null}
+                  {resetModel || (currentEffort && onVariantChange) ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={saving}
+                      {...{ [NAV_ATTR]: '' }}
+                      onClick={() => {
+                        resetModel?.();
+                        if (currentEffort && onVariantChange) onVariantChange(null);
+                      }}
+                      className="text-muted-foreground hover:text-foreground ml-auto rounded-lg text-xs"
+                    >
+                      {t('chatInputReset')}
+                    </Button>
                   ) : null}
                 </div>
                 {effortOpen && effortShown && onVariantChange ? (
@@ -477,13 +487,12 @@ export function ChatInputControl({
 
             {extras.length > 0 ? (
               <>
-                {showAgents || showPills ? <div className={MENU_SEPARATOR} /> : null}
                 <button
                   type="button"
                   aria-expanded={moreOpen}
                   {...{ [NAV_ATTR]: '' }}
                   onClick={() => setMoreOpen((current) => !current)}
-                  className={menuRow('sm', 'default', 'text-muted-foreground w-full')}
+                  className={menuRow('sm', 'default', cn('text-muted-foreground w-full', (showAgents || showPills) && 'mt-0.5'))}
                 >
                   <span className="min-w-0 flex-1 truncate text-left text-xs">
                     {t('chatInputMoreSettings')}

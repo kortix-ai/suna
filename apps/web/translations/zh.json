@@ -2302,7 +2302,8 @@
     "submitEdit": "提交",
     "collapseQueue": "收起队列",
     "expandQueue": "展开队列",
-    "myKortixRoutes": "把每个任务交给合适的智能体"
+    "myKortixRoutes": "把每个任务交给合适的智能体",
+    "chatInputReset": "Reset"
   },
   "billing": {
     "plan": {

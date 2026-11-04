@@ -2302,7 +2302,8 @@
     "submitEdit": "Pošalji",
     "collapseQueue": "Skupi red",
     "expandQueue": "Proširi red",
-    "myKortixRoutes": "Сваки задатак шаље правом агенту"
+    "myKortixRoutes": "Сваки задатак шаље правом агенту",
+    "chatInputReset": "Reset"
   },
   "billing": {
     "plan": {

@@ -2302,7 +2302,8 @@
     "submitEdit": "Invia",
     "collapseQueue": "Comprimi coda",
     "expandQueue": "Espandi coda",
-    "myKortixRoutes": "Affida ogni attività all’agente giusto"
+    "myKortixRoutes": "Affida ogni attività all’agente giusto",
+    "chatInputReset": "Reset"
   },
   "billing": {
     "plan": {

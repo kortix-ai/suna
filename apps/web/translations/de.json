@@ -2302,7 +2302,8 @@
     "submitEdit": "Absenden",
     "collapseQueue": "Warteschlange einklappen",
     "expandQueue": "Warteschlange ausklappen",
-    "myKortixRoutes": "Leitet jede Aufgabe an den passenden Agenten"
+    "myKortixRoutes": "Leitet jede Aufgabe an den passenden Agenten",
+    "chatInputReset": "Reset"
   },
   "billing": {
     "plan": {
