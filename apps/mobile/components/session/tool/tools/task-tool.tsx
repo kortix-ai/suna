@@ -1,31 +1,25 @@
 /**
- * `task` / `agent` — a sub-agent call as one card. Port of apps/web
+ * `task` / `agent` — a sub-agent call as one agent row. Port of apps/web
  * `tool/tools/task-tool.tsx`:
  *
- *   ◠  Read the market report   Researcher        Working   Open
+ *   [face] Researcher  Read the market report             ◠ Working
+ *          │ the brief · why it did not finish · Open ↗
  *
- * status mark (the child session's state; fallback: the call's) · what it was
- * asked · the agent · its state · Open. The whole card opens the child
- * session; its steps and transcript are there, never folded under the row.
- * A failed dispatch shows why under the card.
+ * The state is the child session's (fallback: the call's), as a glyph and a muted word.
  */
 
 import { useContext, useMemo } from 'react';
-import { View } from 'react-native';
 import { getChildSessionId } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
-import { SessionStatusMark } from '@/components/session/SessionStatusMark';
 import { useProjectSession } from '@/lib/projects/hooks';
 import { agentDisplayName } from '@/lib/session/composer-config';
 import { useSessionStatus } from '@/lib/session/session-store';
 import { AGENT_CALL_GLYPH, AGENT_CALL_LABEL, agentCallState, agentSessionDisplay, taskRowModel } from '@/lib/session/tools/agents-task';
-import { webSpace } from '@/lib/session/user-message';
-import { ToolError } from '../tool-error';
-import { AgentCard } from '../shared/agent-surface';
+import { AgentFailure, AgentRow, AgentRowBody, OpenAgentAction } from '../shared/message-row';
 import { ConnectorHandoffContext } from '../shared/connector-handoff-context';
 import { partError, partInput, partMetadata, partStatus, useToolNavigation } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
-import { FONT_MEDIUM, TURN_TYPE, useTurnPalette } from '../shared/styles';
+import { TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 import { SubAgentStatusBanner, useChildSession } from './sub-agent';
 
@@ -55,37 +49,37 @@ export function TaskTool({ call }: ToolProps) {
     childReplied: !!lastReply && lastReply.completed_at !== null,
   });
   const agentName = agentDisplayName(model.subagentType);
-  const title = model.description || `Agent · ${agentName}`;
-  // Inside a sub-agent list navigation is off (web `disableNavigation`): nothing to open.
+  const handle = typeof input.name === 'string' && input.name ? input.name : null;
+  const title = handle ?? agentName;
+  const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : '';
   const canOpen = navigationEnabled && !!childSessionId;
+  const hasBody = (!!prompt && prompt !== model.description) || !!errorText || canOpen;
 
+  // One agent row (web `TaskTool`): face · who · what it was asked · state. Open, the brief,
+  // why it did not finish, and Open for the agent's own session.
   return (
     <>
-      <AgentCard
-        testID="agent-call-card"
-        label={`Open ${title}, ${AGENT_CALL_LABEL[state]}`}
-        onPress={canOpen ? () => openSession(childSessionId!) : undefined}
-        style={[{ marginTop: webSpace(1.5) }, !canOpen && { flexDirection: 'row', alignItems: 'center', gap: webSpace(2.5), paddingHorizontal: webSpace(3.5), minHeight: 44 }]}
-      >
-        <SessionStatusMark status={AGENT_CALL_GLYPH[state]} />
-        <Text numberOfLines={1} style={[TURN_TYPE.sm, { flexShrink: 1, fontFamily: FONT_MEDIUM, color: palette.foreground }]}>
-          {title}
-        </Text>
-        <Text numberOfLines={1} style={[TURN_TYPE.xs, { flexShrink: 0, color: palette.mutedForeground }]}>
-          {agentName}
-        </Text>
-        <View style={{ flex: 1 }} />
-        <Text
-          style={[
-            TURN_TYPE.xs,
-            { color: state === 'failed' ? palette.destructive : state === 'needs_input' ? palette.info : palette.mutedForeground },
-          ]}
-        >
-          {AGENT_CALL_LABEL[state]}
-        </Text>
-        {canOpen ? <Text style={[TURN_TYPE.xs, { color: palette.foreground }]}>Open</Text> : null}
-      </AgentCard>
-      {errorText ? <ToolError error={errorText} toolName={call.name} /> : null}
+      <AgentRow
+        testID="agent-call-row"
+        handle={handle ?? model.subagentType}
+        title={title}
+        subtitle={model.description || null}
+        state={AGENT_CALL_LABEL[state]}
+        glyph={AGENT_CALL_GLYPH[state]}
+        body={
+          hasBody ? (
+            <AgentRowBody>
+              {prompt && prompt !== model.description ? (
+                <Text numberOfLines={4} style={[TURN_TYPE.sm, { color: palette.mutedForeground }]}>
+                  {prompt}
+                </Text>
+              ) : null}
+              {errorText ? <AgentFailure sentence="The agent stopped before it finished." raw={errorText} toolName={call.name} /> : null}
+              {canOpen ? <OpenAgentAction label={`Open ${title}`} onPress={() => openSession(childSessionId!)} /> : null}
+            </AgentRowBody>
+          ) : undefined
+        }
+      />
       <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />
     </>
   );

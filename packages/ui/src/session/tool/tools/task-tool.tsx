@@ -1,29 +1,21 @@
 'use client';
 
 import { SubagentDialog } from '../../agents/subagent-view';
-import {
-  firstMeaningfulLine,
-  partInput,
-  partMetadata,
-  partStatus,
-  partError,
-} from '../shared/infrastructure';
+import { BasicTool, firstMeaningfulLine, partInput, partMetadata, partOutput, partStatus, partError } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
-import { SubAgentStatusBanner, useSubAgentThread } from '../shared/sub-agent';
+import { SubAgentActivity, SubAgentStatusBanner, useSubAgentThread } from '../shared/sub-agent';
 import type { ToolProps } from '../shared/types';
-import { ToolError } from '../tool-error';
 import { useTranslations } from '../../../i18n';
 import { getChildSessionId } from '../../../internal/session-types';
 import { useMemo, useState } from 'react';
-import type { SessionLogThread } from '@kortix/sdk';
+import { subAgentCalls, type ProjectSession, type SessionLogThread } from '@kortix/sdk';
 import { useProjectSession, useSessionStateStore } from '@kortix/sdk/react';
-import type { ProjectSession } from '@kortix/sdk';
 import { agentDisplayName } from '../../../internal/components/agent-mark';
-import { cn } from '../../../lib/utils';
+import { UnifiedMarkdown } from '../../../markdown/unified-markdown';
 import { useSessionIds } from '../../../providers/session-ids';
 import type { SessionDisplayStatus } from '../../actions/session-label';
 import { agentRowOf, type AgentRowState } from '../../agents/agent-model';
-import { AgentCard, AgentGlyph } from '../../agents/agent-surface';
+import { AgentFace, AgentFailure, AgentRowBody, AgentRowScope, AgentStatus, AgentTrigger, OpenAgentButton } from '../../agents/agent-surface';
 
 /**
  * Whether a background hand-off's child still works. The child's status is
@@ -38,39 +30,26 @@ function useBackgroundWorking(childSessionId: string | undefined, childThread: S
   return !last || last.completed_at === null;
 }
 
-
 /**
- * A task call is a disclosure row: what the sub-agent is doing, in place.
+ * An agent call (`agent`, `task`, Codex `spawn_agent`) is one tool row, the
+ * grammar of every other tool row:
  *
- * This row used to be a plain button that opened `SubagentDialog` on any
- * click. That put the only view of a running sub-agent behind a modal — the
- * reader had to leave the transcript to learn what the agent they just
- * dispatched was up to, and had to close it again to get back — while the
- * `SubAgentActivity` list this component already assembled was unreachable dead
- * code on that path. The steps are the answer to the question the row raises,
- * so they belong under the row, and the modal is now an explicit action on the
- * row rather than the row's whole behaviour.
+ *   [face] Researcher  Research competitor pricing…          ◔ Working
+ *          │ what it was asked
+ *          │ its steps, live
+ *          │ its answer, or why it did not finish
+ *          │ Open ↗
  *
- * The trigger is unchanged: while the sub-agent runs its subtitle is that
- * agent's LAST step, so a collapsed row still reports live progress.
- *
- * The body is the sub-agent's steps and NOTHING else, so it is passed only when
- * there are steps. A disclosure whose body is empty is a caret that promises a
- * body and opens onto nothing — the same verdict `ActivityBurst` reaches for a
- * burst that merges to zero rows. Before the full view moved to the trigger,
- * that button was the sole occupant of the body of a just-started sub-agent,
- * which is what kept the empty case from being empty.
+ * The row opens in place. "Open" shows the agent's whole conversation in the
+ * agent dialog; nothing opens beside the chat on its own.
  */
 export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const tAgent = useTranslations('tools.agent');
+  const t = useTranslations('tools.agent');
+  const tNotice = useTranslations('multiAgent.notice');
   const input = partInput(call);
   const status = partStatus(call);
 
-  const subagentType = (input.subagent_type as string) || 'general';
-  // `firstMeaningfulLine` splits its argument on every newline and trims each
-  // segment. A sub-agent prompt is the longest string this row ever sees, and
-  // this ran over it on every render of a row that is mostly collapsed.
+  const subagentType = (input.subagent_type as string) || (input.agent as string) || 'general';
   const description = useMemo(
     () =>
       (input.description as string) ||
@@ -80,10 +59,11 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
       firstMeaningfulLine(input.title, 80),
     [input],
   );
+  const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : typeof input.message === 'string' ? input.message.trim() : '';
 
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(call), [call]);
-
   const childThread = useSubAgentThread(childSessionId);
+  const childCalls = useMemo(() => subAgentCalls(childThread), [childThread]);
 
   // `agent(…, { background: true })` returns as soon as the child exists. The call is
   // over; the work goes on in the child's own session, and the row says so.
@@ -91,54 +71,52 @@ export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const backgroundWorking = useBackgroundWorking(background ? childSessionId : undefined, childThread);
 
   const [modalOpen, setModalOpen] = useState(false);
-  const openModal = () => setModalOpen(true);
-
   const isRunning = status === 'running' || status === 'pending';
-  const isCompleted = status === 'completed';
-
-  // The task tool's failure reason, drawn in the body. The renderer routes
-  // errored dispatches back here (they keep their row and their child thread),
-  // and this row must still say WHY it failed — before it only announced the
-  // dispatch, never the error (KRTX-1746).
   const errorText = partError(call);
 
   // The child's own session row says how it is doing; the call's status is the fallback.
   const ids = useSessionIds();
   const childRow = useProjectSession(ids.projectId, childSessionId, { enabled: !!ids.projectId && !!childSessionId });
-  const childState: AgentRowState | null = childRow.data ? agentRowOf(childRow.data as ProjectSession).state : null;
+  const child = childRow.data ? agentRowOf(childRow.data as ProjectSession) : null;
   const state: AgentRowState = errorText
     ? 'failed'
-    : (childState ?? (isRunning || (background && backgroundWorking) ? 'working' : isCompleted ? 'completed' : 'idle'));
-  const agentName = agentDisplayName(subagentType);
-  const title = description || tI18nComplete('text9471197a871a', { value0: agentName });
+    : (child?.state ?? (isRunning || (background && backgroundWorking) ? 'working' : status === 'completed' ? 'completed' : 'idle'));
+  // The name its parent gave it (`agent({ name })`) reads best; else the kind of agent.
+  const handle = (input.name as string) || (child?.named ? child.handle : '') || subagentType;
+  const title = (input.name as string) || (child?.named ? child.handle : '') || agentDisplayName(subagentType);
+  // A foreground call returns the agent's answer as its output; a background call returns only that it started.
+  const answer = !background && status === 'completed' ? partOutput(call).trim() : '';
 
-  // One card, one way in (Paper F2): the agent's live state, what it was asked, and Open. Its
-  // steps and its transcript are in the agent pane, a click away; they never fold under the row.
+  const hasBody = !!prompt || childCalls.length > 0 || !!answer || !!errorText || !!childSessionId;
   return (
-    <>
-      <AgentCard
-        testId="agent-call-card"
-        label={tAgent('openAgent', { name: title })}
-        onClick={childSessionId ? openModal : undefined}
-        className="mt-1.5"
+    <AgentRowScope>
+      <BasicTool
+        icon={<AgentFace handle={handle} />}
+        trigger={<AgentTrigger title={title} subtitle={description} />}
+        triggerAction={<AgentStatus status={STATE_GLYPH[state]} label={t(`state.${state}`)} opens={hasBody} />}
+        defaultOpen={defaultOpen}
+        forceOpen={forceOpen}
+        locked={locked}
       >
-        <AgentGlyph status={STATE_GLYPH[state]} />
-        <span className="text-foreground min-w-0 truncate font-medium" title={title}>
-          {title}
-        </span>
-        <span className="text-muted-foreground shrink-0 text-xs">{agentName}</span>
-        <span className="flex-1" />
-        <span className={cn('shrink-0 text-xs', state === 'failed' ? 'text-kortix-red' : state === 'needs_input' ? 'text-kortix-blue' : 'text-muted-foreground')}>
-          {tAgent(`state.${state}`)}
-        </span>
-        {childSessionId && <span className="text-foreground shrink-0 text-xs">{tAgent('open')}</span>}
-      </AgentCard>
-      {errorText ? <ToolError error={errorText} toolName={call.name} /> : null}
+        {hasBody ? (
+          <AgentRowBody>
+            {prompt && prompt !== description && (
+              <p className="text-muted-foreground line-clamp-4 whitespace-pre-wrap wrap-break-word">{prompt}</p>
+            )}
+            {childCalls.length > 0 && <SubAgentActivity childSessionId={childSessionId} calls={childCalls} />}
+            {answer && (
+              <div className="max-h-96 min-w-0 overflow-y-auto">
+                <UnifiedMarkdown content={answer} trust="agent" isStreaming={false} />
+              </div>
+            )}
+            {errorText && <AgentFailure sentence={tNotice('failedSentence')} raw={errorText} />}
+            {childSessionId && <OpenAgentButton label={t('openAgent', { name: description || title })} onClick={() => setModalOpen(true)} />}
+          </AgentRowBody>
+        ) : undefined}
+      </BasicTool>
       <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />
-      {childSessionId && (
-        <SubagentDialog open={modalOpen} onOpenChange={setModalOpen} sessionId={childSessionId} title={title} />
-      )}
-    </>
+      {childSessionId && <SubagentDialog open={modalOpen} onOpenChange={setModalOpen} sessionId={childSessionId} title={title} />}
+    </AgentRowScope>
   );
 }
 

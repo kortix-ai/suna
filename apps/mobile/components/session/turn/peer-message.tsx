@@ -1,58 +1,49 @@
 /**
  * A message one agent sent another, delivered into this session as a prompt.
  * Nobody here typed it, so it is never a user bubble. Port of apps/web
- * `session/turn/peer-message-row.tsx`:
- *
- *   message, shutdown request/answer  a plain tool row: the sender's face, who sent it,
- *                                     the first line; the whole text unfolds under it
- *   idle notice                       an event, not a message: the finish line
+ * `session/turn/peer-message-row.tsx`: one agent row, the sender's face and
+ * handle; a message's text shows on the rail, open. An idle notice is a
+ * finish row that opens to the rest.
  */
 
 import { peerHandleLabel, type PeerMessagePromptInfo } from '@kortix/shared';
-import { Text } from '@/components/ui/text';
-import { SessionStatusMark } from '@/components/session/SessionStatusMark';
-import { peerHeadline, peerMessagePreview } from '@/lib/session/multi-agent';
 import { View } from 'react-native';
-import { FinishLine } from '@/components/session/tool/shared/agent-surface';
-import { MessageRow } from '@/components/session/tool/shared/message-row';
-import { TURN_TYPE, useTurnPalette } from '@/components/session/tool/shared/styles';
+import { peerMessagePreview } from '@/lib/session/multi-agent';
+import { AgentRow } from '@/components/session/tool/shared/message-row';
+
+const KIND_WORD: Record<PeerMessagePromptInfo['kind'], string> = {
+  message: 'Message',
+  idle_notice: 'Finished',
+  shutdown_request: 'Asks to stop',
+  shutdown_response: 'Stop answer',
+};
+
+/** An idle notice's text without the line that repeats the state word, and its answer without its label (web `idleNoticeBody`). */
+function idleBody(text: string): string {
+  // Only the platform's two lines change; the answer itself keeps its Markdown (indents, blank lines).
+  return text
+    .split('\n')
+    .filter((line) => !/finished its turn and is idle\.?\s*$/.test(line))
+    .map((line) => line.replace(/^(\s*)Its last answer:\s?/, '$1'))
+    .join('\n')
+    .trim();
+}
 
 export function PeerMessage({ info }: { info: PeerMessagePromptInfo }) {
-  const palette = useTurnPalette();
-  const from = peerHandleLabel(info.from);
-  const headline = peerHeadline(info.kind, from);
+  const idle = info.kind === 'idle_notice';
   const preview = peerMessagePreview(info);
-  const expandable = info.text.trim().length > 0 && info.text.trim() !== preview;
-
-  if (info.kind === 'idle_notice') {
-    return (
-      <View testID="peer-message" className="px-4">
-        <FinishLine mark={<SessionStatusMark status="done" />}>
-          <Text numberOfLines={1} style={[TURN_TYPE.xs, { flexShrink: 0, color: palette.foreground }]}>
-            {headline}
-          </Text>
-          {preview ? (
-            <>
-              <Text style={[TURN_TYPE.xs, { color: palette.mutedForeground }]}>·</Text>
-              <Text numberOfLines={1} style={[TURN_TYPE.xs, { flexShrink: 1, color: palette.mutedForeground }]}>
-                {preview}
-              </Text>
-            </>
-          ) : null}
-        </FinishLine>
-      </View>
-    );
-  }
-
-  // One plain tool row: the sender's face, who sent it, the first line; open, the whole text.
+  const text = info.text.trim();
   return (
     <View testID="peer-message" className="px-4">
-      <MessageRow
+      <AgentRow
         testID="peer-message-row"
         handle={info.from}
-        title={headline}
-        subtitle={preview}
-        text={expandable ? info.text : null}
+        title={peerHandleLabel(info.from).replace(/^@/, '')}
+        subtitle={idle ? preview || null : info.summary?.trim() || null}
+        state={KIND_WORD[info.kind]}
+        glyph={idle ? 'done' : undefined}
+        text={idle ? idleBody(text) : text}
+        defaultOpen={!idle}
       />
     </View>
   );

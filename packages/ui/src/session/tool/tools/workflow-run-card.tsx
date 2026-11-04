@@ -1,13 +1,14 @@
 'use client';
 
 import { useId, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
-import { CaretDownIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, CaretDownIcon, SquareIcon } from '@phosphor-icons/react';
+import { Button } from '../../../primitives/button';
+import { Hint } from '../../../primitives/hint';
 
 import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
 import { SessionStatusMark } from '../../../workspace/sidebar/session-status-mark';
 import { runGlyphStatus } from '../../agents/agent-state-mark';
-import { useViewingAgent } from '../../agents/agent-pane-store';
 import { RunProgressRing, type AgentStopState } from './workflow-progress';
 import {
   countAgents,
@@ -25,14 +26,14 @@ import {
  *      Research 2 of 5 done · 6:10
  *   ─────────────────────────────────────────────────────────────────
  *   ●  Acquisition and public footprint          Didn’t finish · Retry
- *   ◠  Audience and demand                              Viewing  6:08
+ *   ◠  Audience and demand                                     6:08  ↻ ■
  *   ✺  Product and positioning                                   4:51
  *   ○  Strategy synthesis                            Waits for 3 more
  *
  * The ring and the second line say the progress once. Rows are flat, sorted by
  * what needs the person first (failed, then working, then done), with the
  * phases that have not started as one muted row each. A row opens its agent in
- * the agent pane; Stop and Restart live there, not on every row.
+ * the agent dialog; a running row keeps Restart and Stop beside it.
  */
 
 /** Failed first: it waits on a decision. Then the work in flight, then the finished. */
@@ -49,7 +50,6 @@ export function WorkflowRunCard({
   now,
   actions,
   chips,
-  tone = 'default',
   result,
   onOpen,
   stop,
@@ -63,8 +63,6 @@ export function WorkflowRunCard({
   actions?: ReactNode;
   /** Warnings beside the title: "Large workflow", "Resumed". */
   chips?: ReactNode;
-  /** The second line's tone: `failed` paints it red. */
-  tone?: 'default' | 'failed';
   /** The run's result: a "Result" toggle at the header's right opens it inside the card, under the header. */
   result?: ReactNode;
   onOpen: (agent: WorkflowRunAgent) => void;
@@ -74,9 +72,6 @@ export function WorkflowRunCard({
   const [showResult, setShowResult] = useState(false);
   const resultId = useId();
   const counts = countAgents(run.agents);
-  // Ended, the card is its header when the rows have a home to open (a background run's own
-  // session). A foreground run has none, so its rows stay: they are the only record of who did what.
-  const ended = run.status !== 'running' && !!run.background;
 
   return (
     <section
@@ -85,17 +80,21 @@ export function WorkflowRunCard({
       // Flush with the reply's text column: the card is the turn's content, not a tool row's body.
       className="border-border mt-1.5 flex min-w-0 flex-col rounded-lg border text-xs"
     >
-      {/* Once the run ended the card is its header: the outcome, and Open run for the rows. */}
-      <header className={cn('border-border flex min-w-0 items-center gap-2.5 px-3.5 py-3', !ended && 'border-b')}>
-        {counts.total > 0 && (
-          <RunProgressRing
-            size={28}
-            done={counts.done}
-            failed={counts.failed}
-            total={counts.total}
-            ended={run.status === 'done' ? 'done' : run.status === 'stopped' ? 'stopped' : undefined}
-          />
-        )}
+      {/* One left edge for the header and the rows (px-4); the ring sits in the rows' 16px glyph lane. */}
+      <header className="border-border flex min-w-0 items-start gap-2.5 border-b px-4 py-3">
+        <span className="flex h-5 shrink-0 items-center">
+          {counts.total > 0 ? (
+            <RunProgressRing
+              size={16}
+              done={counts.done}
+              failed={counts.failed}
+              total={counts.total}
+              ended={run.status === 'done' ? 'done' : run.status === 'stopped' ? 'stopped' : undefined}
+            />
+          ) : (
+            <SessionStatusMark status={runGlyphStatus(run.status === 'running' ? 'starting' : run.status)} />
+          )}
+        </span>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex min-w-0 items-center gap-1.5">
             <h3 className="text-foreground min-w-0 truncate text-sm font-medium" title={title}>
@@ -104,13 +103,13 @@ export function WorkflowRunCard({
             {chips}
           </div>
           {subtitle && (
-            <p className={cn('min-w-0 truncate tabular-nums', tone === 'failed' ? 'text-kortix-red' : 'text-muted-foreground')} title={subtitle}>
+            <p className="text-muted-foreground min-w-0 truncate tabular-nums" title={subtitle}>
               {subtitle}
             </p>
           )}
         </div>
         {(actions || result) && (
-          <div className="flex shrink-0 items-center">
+          <div className="-my-1 flex shrink-0 items-center">
             {actions}
             {result && (
               <button
@@ -131,11 +130,12 @@ export function WorkflowRunCard({
         )}
       </header>
       {result && showResult && (
-        <div id={resultId} className="border-border max-h-96 overflow-y-auto border-b px-3.5 py-3 text-sm">
+        <div id={resultId} className="border-border max-h-96 overflow-y-auto border-b px-4 py-3 text-sm">
           {result}
         </div>
       )}
-      {!ended && <WorkflowRunRows run={run} live={live} now={now} onOpen={onOpen} stop={stop} />}
+      {/* Never a fold: running or ended, the rows are the record of who did what. */}
+      <WorkflowRunRows run={run} live={live} now={now} onOpen={onOpen} stop={stop} />
     </section>
   );
 }
@@ -177,16 +177,15 @@ export function WorkflowRunRows({
           const divider = index > 0 && 'border-border border-t border-dashed';
           if (group.phase?.status === 'pending' && group.agents.length === 0) {
             const after = groups[index - 1]?.phase?.title;
+            // One phrase for why it has not started: the agents it waits on, else the phase before it.
+            const waits = unfinished > 0 ? t('waitsFor', { count: unfinished }) : after ? t('startsAfter', { phase: after }) : null;
             return (
               <div key={`phase:${group.phase.title}`} className={cn('flex min-h-10 min-w-0 items-center gap-2.5 px-4', divider)}>
-                <span className="flex shrink-0 opacity-45">
-                  <SessionStatusMark status="stopped" />
+                <span className="flex shrink-0">
+                  <SessionStatusMark status="starting" />
                 </span>
-                <span className="text-muted-foreground min-w-0 flex-1 truncate text-sm">
-                  {group.phase.title}
-                  {after && <span className="text-xs"> · {t('startsAfter', { phase: after })}</span>}
-                </span>
-                {unfinished > 0 && <span className="text-muted-foreground shrink-0">{t('waitsFor', { count: unfinished })}</span>}
+                <span className="text-muted-foreground min-w-0 flex-1 truncate text-sm">{group.phase.title}</span>
+                {waits && <span className="text-muted-foreground shrink-0">{waits}</span>}
               </div>
             );
           }
@@ -263,7 +262,6 @@ function AgentRow({
   stop: AgentStopState;
 }) {
   const t = useTranslations('tools.workflow');
-  const viewing = useViewingAgent(agent.sessionId);
   const working = agent.status === 'running' || agent.status === 'starting';
   const elapsed = elapsedMs(agent, live && working, now);
   const state =
@@ -274,10 +272,12 @@ function AgentRow({
         : agent.status === 'stopped'
           ? t('status.stopped')
           : null;
-  // Working and finished rows are one line: status, name, Viewing, time. Only a failure says why.
+  // Working and finished rows are one line: status, name, time. Only a failure says why.
   const detail = agent.status === 'failed' ? (agent.summary ?? null) : null;
   const canRetry = agent.status === 'failed' && live && !!agent.sessionId && !!stop.restart;
   const retrying = !!agent.sessionId && stop.restart?.pending === agent.sessionId;
+  const stopping = !!agent.sessionId && stop.pending.has(agent.sessionId);
+  const tm = useTranslations('multiAgent.workflow');
 
   const body = (
     <>
@@ -289,14 +289,13 @@ function AgentRow({
           <span className={cn('text-foreground min-w-0 flex-1 truncate text-sm', agent.status !== 'done' && 'font-medium')} title={agent.label}>
             {agent.label}
           </span>
-          {state && <span className={cn('shrink-0', agent.status === 'failed' ? 'text-kortix-red' : 'text-muted-foreground')}>{state}</span>}
-          {viewing && <span className="text-muted-foreground shrink-0">{t('viewingAgent')}</span>}
+          {state && <span className="text-muted-foreground shrink-0">{state}</span>}
           {elapsed !== undefined && agent.status !== 'failed' && (
-            <span className="text-muted-foreground min-w-9 shrink-0 text-right font-mono tabular-nums">{formatElapsed(elapsed)}</span>
+            <span className="text-muted-foreground min-w-9 shrink-0 text-right tabular-nums">{formatElapsed(elapsed)}</span>
           )}
         </span>
         {detail && (
-          <span className={cn('min-w-0 truncate', agent.status === 'failed' ? 'text-kortix-red/80' : 'text-muted-foreground')} title={detail}>
+          <span className="text-muted-foreground min-w-0 whitespace-normal wrap-anywhere">
             {detail}
           </span>
         )}
@@ -306,16 +305,16 @@ function AgentRow({
 
   const rowClass = cn(
     'flex min-h-9 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 py-2',
-    viewing ? 'bg-muted' : agent.sessionId && 'hover:bg-muted/40',
+    agent.sessionId && 'hover:bg-muted/40',
   );
 
   return (
-    <li data-viewing={viewing || undefined} className="flex min-w-0 items-start">
+    <li className="flex min-w-0 items-start">
       {agent.sessionId ? (
         <button
           type="button"
           data-workflow-row
-          aria-label={t('openAgent', { label: agent.label })}
+          aria-label={[t('openAgent', { label: agent.label }), state ?? t(`status.${agent.status === 'done' ? 'done' : agent.status === 'running' ? 'running' : 'starting'}`), elapsed !== undefined && agent.status !== 'failed' ? formatElapsed(elapsed) : null].filter(Boolean).join(', ')}
           onClick={() => onOpen(agent)}
           className={cn(rowClass, 'cursor-pointer')}
         >
@@ -324,13 +323,48 @@ function AgentRow({
       ) : (
         <div className={rowClass}>{body}</div>
       )}
+      {/* A running agent keeps Restart and Stop beside its row (Claude Code's `r` and `x`): the row opens it. */}
+      {live && working && !!agent.sessionId && stop.enabled && (
+        <span className="flex shrink-0 items-center py-1.5">
+          {stop.restart && (
+            <Hint label={tm('restartHint')} side="top">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label={tm('restartAgent', { label: agent.label })}
+                disabled={retrying || stopping}
+                aria-busy={retrying}
+                onClick={() => stop.restart?.run(agent)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <ArrowClockwiseIcon className="size-3" />
+              </Button>
+            </Hint>
+          )}
+          <Hint label={t('stopHint')} side="top">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label={t('stopAgent', { label: agent.label })}
+              disabled={stopping}
+              aria-busy={stopping}
+              onClick={() => stop.stop(agent)}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <SquareIcon weight="fill" className="size-2.5" />
+            </Button>
+          </Hint>
+        </span>
+      )}
       {canRetry && (
         <button
           type="button"
           aria-label={t('retryAgent', { label: agent.label })}
           disabled={retrying}
           onClick={() => stop.restart?.run(agent)}
-          className="text-kortix-red shrink-0 cursor-pointer px-2.5 py-2 underline-offset-2 hover:underline disabled:opacity-50"
+          className="text-foreground hover:bg-muted/60 my-1 flex h-7 shrink-0 cursor-pointer items-center rounded-md px-2 disabled:opacity-50"
         >
           {t('retryNow')}
         </button>

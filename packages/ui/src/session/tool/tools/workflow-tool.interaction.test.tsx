@@ -129,7 +129,7 @@ describe('WorkflowTool — keyboard and folds', () => {
     );
     expect(host.querySelector('[aria-expanded]')).toBeNull();
     // Each agent under its phase, in phase order.
-    expect(rowLabels(host)).toEqual(['Read docs', 'Draft']);
+    expect(rowLabels(host)).toEqual(['Read docs, Done', 'Draft, Running']);
     await unmount();
   });
 

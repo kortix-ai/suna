@@ -3201,7 +3201,8 @@
       "stopFailed": "无法停止 {label}",
       "json": "JSON",
       "jsonKeys": "{count, plural, other {JSON · # 个键}}",
-      "jsonItems": "{count, plural, other {JSON · # 项}}"
+      "jsonItems": "{count, plural, other {JSON · # 项}}",
+      "failedSentence": "该工作流在完成前停止了。"
     },
     "agent": {
       "backgroundWorking": "正在后台工作",
@@ -25160,7 +25161,13 @@
       "shutdownRequest": "来自 {from} 的关闭请求",
       "shutdownResponse": "{from} 的关闭请求答复",
       "expand": "显示完整消息",
-      "collapse": "收起消息"
+      "collapse": "收起消息",
+      "kind": {
+        "message": "消息",
+        "finished": "已完成",
+        "shutdownRequest": "请求停止",
+        "shutdownResponse": "停止回复"
+      }
     },
     "notice": {
       "completed": "{name} 已完成",
@@ -25174,7 +25181,14 @@
       "expand": "显示完整结果",
       "collapse": "收起结果",
       "batchTitle": "{count, plural, other {# 个智能体已完成}}",
-      "ownsTasks": "仍负责 {tasks}"
+      "ownsTasks": "仍负责 {tasks}",
+      "details": "详情",
+      "failedSentence": "该智能体在完成前停止了。",
+      "state": {
+        "completed": "已完成",
+        "failed": "未完成",
+        "stopped": "已停止"
+      }
     },
     "tools": {
       "running": {
@@ -25219,7 +25233,8 @@
       "blockedBy": "被 {tasks} 阻塞",
       "stopped": "已停止",
       "alreadyEnded": "已结束",
-      "openSession": "打开会话"
+      "openSession": "打开会话",
+      "messageToName": "发给 {to}"
     },
     "strip": {
       "label": "智能体",
@@ -25303,7 +25318,10 @@
       "deny": "拒绝",
       "approve": "批准",
       "approveFailed": "无法送达消息",
-      "denyFailed": "无法拒绝消息"
+      "denyFailed": "无法拒绝消息",
+      "wantsToSend": "想给这个智能体发消息",
+      "asksStop": "请求这个智能体停止",
+      "needsApproval": "需要你批准"
     },
     "workflow": {
       "large": "大型工作流",

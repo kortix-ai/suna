@@ -22,12 +22,15 @@ const render = (pending: 'approve' | 'deny' | null = null) =>
   );
 
 describe('HeldMessageCard', () => {
-  test('a held message is the message card waiting on the person: who, what, Deny and Approve', () => {
+  test('a held message waits on the person: who, what, Needs your approval, Deny and Approve', () => {
     const html = render();
     expect(html).toContain('data-testid="held-message-card"');
     expect(html).toContain('data-held-message="pm_1"');
-    expect(html).toContain('Message from @scout');
-    expect(html).toContain('Waiting for your approval');
+    expect(html).toContain('data-tone="agent"');
+    expect(html).toContain('>scout</span>');
+    expect(html).toContain('wants to send this agent a message');
+    expect(html).toContain('data-agent-status="needs-you"');
+    expect(html).toContain('Needs your approval');
     expect(html).toContain('Can I post the launch thread?');
     expect(html).toContain('>Deny<');
     expect(html).toContain('>Approve<');

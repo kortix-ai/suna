@@ -1,12 +1,9 @@
 'use client';
 
 import { Button } from '../../primitives/button';
-import { SessionDotMatrix } from '../../primitives/dot-matrix/session-dot-matrix';
 import { errorToast } from '../../primitives/toast';
 import { useTranslations } from '../../i18n';
-import { cn } from '../../lib/utils';
-import { AgentMarkGlyph, agentMarkTileClass, agentMarkVars } from '../../internal/components/agent-mark';
-import { AgentCard } from './agent-surface';
+import { AgentFace, AgentStatus } from './agent-surface';
 import { peerHandleLabel } from '@kortix/shared';
 import type { PeerMessage } from '@kortix/sdk';
 import { usePeerMessages } from '@kortix/sdk/react';
@@ -36,40 +33,43 @@ export interface HeldMessageCardProps {
 
 export function HeldMessageCard({ message, pending, onApprove, onDeny }: HeldMessageCardProps) {
   const t = useTranslations('multiAgent.held');
-  const kind = message.type === 'shutdown_request' ? 'titleShutdown' : 'title';
   const handle = message.from_handle;
-  const slug = /^(mykortix|meta)-[0-9a-f]{8}$/.test(handle) ? 'mykortix' : handle;
-  // The same message card a delivered message draws, waiting on the person: who, what, and the two answers.
+  const name = peerHandleLabel(handle).replace(/^@/, '');
+  const shutdown = message.type === 'shutdown_request';
+  // A decision, so a card: who, what it would deliver, and the two answers. The rest of the
+  // agent surfaces are rows; this one waits on the person.
   return (
-    <div data-held-message={message.id}>
-    <AgentCard testId="held-message-card">
-      <div className="flex min-w-0 items-center gap-2.5 px-3.5 py-2.5">
-        <span
-          aria-hidden
-          style={agentMarkVars(slug)}
-          className={cn('flex size-5 shrink-0 items-center justify-center rounded-sm bg-(--mark-tile)', agentMarkTileClass(slug))}
-        >
-          <AgentMarkGlyph slug={slug} size={14} />
-        </span>
-        <span className="text-foreground min-w-0 truncate font-medium">{t(kind, { from: peerHandleLabel(handle) })}</span>
-        <span className="flex-1" />
-        <span className="text-kortix-blue shrink-0 text-xs">{t('waitingShort')}</span>
-      </div>
-      <div className="border-border flex flex-col gap-2.5 border-t px-3.5 py-2.5">
-        <p className="text-foreground line-clamp-3 wrap-break-word">{heldPreview(message)}</p>
-        <div className="flex items-center gap-1.5">
+    <div
+      data-held-message={message.id}
+      data-testid="held-message-card"
+      className="border-border bg-background flex min-w-0 gap-1.5 rounded-lg border p-3 text-sm"
+    >
+      <span className="flex h-5 shrink-0 items-center">
+        <AgentFace handle={handle} />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+          <span className="text-foreground max-w-40 min-w-0 truncate font-medium" title={name}>
+            {name}
+          </span>
+          <span className="text-muted-foreground min-w-0 flex-1">{shutdown ? t('asksStop') : t('wantsToSend')}</span>
+          <AgentStatus status="needs-you" label={t('needsApproval')} />
+        </div>
+        {/* The whole message: a person approves only what they can read. */}
+        {message.summary?.trim() && <p className="text-muted-foreground">{message.summary.trim()}</p>}
+        <p data-slot="held-message-body" className="text-foreground max-h-60 overflow-y-auto whitespace-pre-wrap wrap-anywhere">
+          {message.message.trim()}
+        </p>
+        <div className="flex min-w-0 items-center gap-2">
           <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">{t('expires')}</span>
-          <Button type="button" size="xs" variant="secondary" disabled={pending !== null} onClick={onDeny}>
-            {pending === 'deny' ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
+          <Button type="button" size="xs" variant="secondary" disabled={pending !== null} aria-busy={pending === 'deny'} onClick={onDeny}>
             {t('deny')}
           </Button>
-          <Button type="button" size="xs" disabled={pending !== null} onClick={onApprove}>
-            {pending === 'approve' ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
+          <Button type="button" size="xs" disabled={pending !== null} aria-busy={pending === 'approve'} onClick={onApprove}>
             {t('approve')}
           </Button>
         </div>
       </div>
-    </AgentCard>
     </div>
   );
 }

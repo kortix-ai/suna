@@ -450,8 +450,9 @@ describe('held messages', () => {
     expect(heldPreview(message('m', 'held', { summary: 'Migration done' }))).toBe('Migration done');
     const approve = { mutate: noop, isPending: false } as never;
     const text = textOf(renderToStaticMarkup(wrap(<HeldMessageList messages={[message('m1', 'held')]} approve={approve} deny={approve} />)));
-    expect(text).toContain('Message from @reviewer');
-    expect(text).toContain('Waiting for your approval');
+    expect(text).toContain('reviewer');
+    expect(text).toContain('wants to send this agent a message');
+    expect(text).toContain('Needs your approval');
   });
 
   test('nothing renders when no message waits', () => {

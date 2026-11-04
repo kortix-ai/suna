@@ -3201,7 +3201,8 @@
       "stopFailed": "{label} konnte nicht gestoppt werden",
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # Schlüssel} other {JSON · # Schlüssel}}",
-      "jsonItems": "{count, plural, one {JSON · # Eintrag} other {JSON · # Einträge}}"
+      "jsonItems": "{count, plural, one {JSON · # Eintrag} other {JSON · # Einträge}}",
+      "failedSentence": "Der Workflow hat aufgehört, bevor er fertig war."
     },
     "agent": {
       "backgroundWorking": "Arbeitet im Hintergrund",
@@ -25160,7 +25161,13 @@
       "shutdownRequest": "Beenden-Anfrage von {from}",
       "shutdownResponse": "Antwort auf die Beenden-Anfrage von {from}",
       "expand": "Ganze Nachricht anzeigen",
-      "collapse": "Nachricht ausblenden"
+      "collapse": "Nachricht ausblenden",
+      "kind": {
+        "message": "Nachricht",
+        "finished": "Fertig",
+        "shutdownRequest": "Bittet um Stopp",
+        "shutdownResponse": "Antwort auf Stopp"
+      }
     },
     "notice": {
       "completed": "{name} ist fertig",
@@ -25174,7 +25181,14 @@
       "expand": "Ganzes Ergebnis anzeigen",
       "collapse": "Ergebnis ausblenden",
       "batchTitle": "{count, plural, one {# Agent ist fertig} other {# Agenten sind fertig}}",
-      "ownsTasks": "Hat noch {tasks}"
+      "ownsTasks": "Hat noch {tasks}",
+      "details": "Details",
+      "failedSentence": "Der Agent hat aufgehört, bevor er fertig war.",
+      "state": {
+        "completed": "Fertig",
+        "failed": "Nicht fertig",
+        "stopped": "Gestoppt"
+      }
     },
     "tools": {
       "running": {
@@ -25219,7 +25233,8 @@
       "blockedBy": "blockiert durch {tasks}",
       "stopped": "Gestoppt",
       "alreadyEnded": "Bereits beendet",
-      "openSession": "Sitzung öffnen"
+      "openSession": "Sitzung öffnen",
+      "messageToName": "An {to}"
     },
     "strip": {
       "label": "Agenten",
@@ -25303,7 +25318,10 @@
       "deny": "Ablehnen",
       "approve": "Genehmigen",
       "approveFailed": "Die Nachricht konnte nicht zugestellt werden",
-      "denyFailed": "Die Nachricht konnte nicht abgelehnt werden"
+      "denyFailed": "Die Nachricht konnte nicht abgelehnt werden",
+      "wantsToSend": "möchte diesem Agenten eine Nachricht senden",
+      "asksStop": "bittet diesen Agenten zu stoppen",
+      "needsApproval": "Braucht deine Freigabe"
     },
     "workflow": {
       "large": "Großer Workflow",

@@ -3201,7 +3201,8 @@
       "stopFailed": "Impossibile interrompere {label}",
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # chiave} other {JSON · # chiavi}}",
-      "jsonItems": "{count, plural, one {JSON · # elemento} other {JSON · # elementi}}"
+      "jsonItems": "{count, plural, one {JSON · # elemento} other {JSON · # elementi}}",
+      "failedSentence": "Il workflow si è fermato prima di finire."
     },
     "agent": {
       "backgroundWorking": "Al lavoro in background",
@@ -25160,7 +25161,13 @@
       "shutdownRequest": "Richiesta di chiusura da {from}",
       "shutdownResponse": "Risposta alla richiesta di chiusura di {from}",
       "expand": "Mostra tutto il messaggio",
-      "collapse": "Nascondi il messaggio"
+      "collapse": "Nascondi il messaggio",
+      "kind": {
+        "message": "Messaggio",
+        "finished": "Finito",
+        "shutdownRequest": "Chiede di fermarsi",
+        "shutdownResponse": "Risposta allo stop"
+      }
     },
     "notice": {
       "completed": "{name} ha finito",
@@ -25174,7 +25181,14 @@
       "expand": "Mostra tutto il risultato",
       "collapse": "Nascondi il risultato",
       "batchTitle": "{count, plural, one {# agente ha finito} other {# agenti hanno finito}}",
-      "ownsTasks": "Ha ancora {tasks}"
+      "ownsTasks": "Ha ancora {tasks}",
+      "details": "Dettagli",
+      "failedSentence": "L’agente si è fermato prima di finire.",
+      "state": {
+        "completed": "Finito",
+        "failed": "Non finito",
+        "stopped": "Fermato"
+      }
     },
     "tools": {
       "running": {
@@ -25219,7 +25233,8 @@
       "blockedBy": "bloccata da {tasks}",
       "stopped": "Interrotto",
       "alreadyEnded": "Già terminato",
-      "openSession": "Apri sessione"
+      "openSession": "Apri sessione",
+      "messageToName": "A {to}"
     },
     "strip": {
       "label": "Agenti",
@@ -25303,7 +25318,10 @@
       "deny": "Nega",
       "approve": "Approva",
       "approveFailed": "Impossibile consegnare il messaggio",
-      "denyFailed": "Impossibile negare il messaggio"
+      "denyFailed": "Impossibile negare il messaggio",
+      "wantsToSend": "vuole inviare un messaggio a questo agente",
+      "asksStop": "chiede a questo agente di fermarsi",
+      "needsApproval": "Serve la tua approvazione"
     },
     "workflow": {
       "large": "Workflow grande",

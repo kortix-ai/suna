@@ -3201,7 +3201,8 @@
       "stopFailed": "Não foi possível parar {label}",
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # chave} other {JSON · # chaves}}",
-      "jsonItems": "{count, plural, one {JSON · # item} other {JSON · # itens}}"
+      "jsonItems": "{count, plural, one {JSON · # item} other {JSON · # itens}}",
+      "failedSentence": "O fluxo de trabalho parou antes de terminar."
     },
     "agent": {
       "backgroundWorking": "Trabalhando em segundo plano",
@@ -25160,7 +25161,13 @@
       "shutdownRequest": "Pedido de encerramento de {from}",
       "shutdownResponse": "Resposta ao pedido de encerramento de {from}",
       "expand": "Mostrar a mensagem inteira",
-      "collapse": "Ocultar a mensagem"
+      "collapse": "Ocultar a mensagem",
+      "kind": {
+        "message": "Mensagem",
+        "finished": "Concluído",
+        "shutdownRequest": "Pede para parar",
+        "shutdownResponse": "Resposta à parada"
+      }
     },
     "notice": {
       "completed": "{name} terminou",
@@ -25174,7 +25181,14 @@
       "expand": "Mostrar o resultado inteiro",
       "collapse": "Ocultar o resultado",
       "batchTitle": "{count, plural, one {# agente terminou} other {# agentes terminaram}}",
-      "ownsTasks": "Ainda tem {tasks}"
+      "ownsTasks": "Ainda tem {tasks}",
+      "details": "Detalhes",
+      "failedSentence": "O agente parou antes de terminar.",
+      "state": {
+        "completed": "Concluído",
+        "failed": "Não terminou",
+        "stopped": "Parado"
+      }
     },
     "tools": {
       "running": {
@@ -25219,7 +25233,8 @@
       "blockedBy": "bloqueada por {tasks}",
       "stopped": "Parado",
       "alreadyEnded": "Já terminou",
-      "openSession": "Abrir sessão"
+      "openSession": "Abrir sessão",
+      "messageToName": "Para {to}"
     },
     "strip": {
       "label": "Agentes",
@@ -25303,7 +25318,10 @@
       "deny": "Negar",
       "approve": "Aprovar",
       "approveFailed": "Não foi possível entregar a mensagem",
-      "denyFailed": "Não foi possível negar a mensagem"
+      "denyFailed": "Não foi possível negar a mensagem",
+      "wantsToSend": "quer enviar uma mensagem a este agente",
+      "asksStop": "pede a este agente para parar",
+      "needsApproval": "Precisa da sua aprovação"
     },
     "workflow": {
       "large": "Fluxo de trabalho grande",

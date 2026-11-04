@@ -20,7 +20,9 @@ mock.module('react-native', () => ({
 mock.module('react-native-svg', () => ({ default: host('svg'), Circle: host('circle'), Path: host('path'), Rect: host('rect') }));
 mock.module('@/components/ui/text', () => ({ Text: host('text') }));
 mock.module('@/components/ui/icon', () => ({ Icon: none }));
-mock.module('@/lib/icons', () => ({ ChatCircleIcon: none, ListChecksIcon: none, StopCircleIcon: none, UsersThreeIcon: none }));
+mock.module('@/lib/icons', () => ({ ArrowUpRightIcon: none, ChatCircleIcon: none, ListChecksIcon: none, StopCircleIcon: none, UsersThreeIcon: none }));
+mock.module('@/components/ui/button', () => ({ Button: host('button') }));
+mock.module('../tool-error', () => ({ ToolError: none }));
 mock.module('@/lib/session/user-message', () => ({ webSpace: (n: number) => n * 4 }));
 mock.module('@/components/session/SessionStatusMark', () => ({
   SessionStatusMark: ({ status }: { status: string }) => <mark data-status={status} />,
@@ -90,7 +92,7 @@ test('send_message is one plain tool row: the receiver, the message, delivered',
   );
   expect(t.root.findAll((node) => node.props?.testID === 'peer-send-row').length).toBeGreaterThan(0);
   expect(t.root.findAll((node) => node.props?.testID === 'peer-send-card')).toHaveLength(0);
-  expect(texts(t)).toContain('Message to @scout');
+  expect(texts(t)).toContain('To scout');
   expect(texts(t)).toContain('Delivered');
   expect(texts(t)).toContain('Migration finished');
 });

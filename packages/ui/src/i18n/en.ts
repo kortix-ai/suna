@@ -1994,7 +1994,8 @@ const catalog = {
       "stopFailed": "Could not stop {label}",
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # key} other {JSON · # keys}}",
-      "jsonItems": "{count, plural, one {JSON · # item} other {JSON · # items}}"
+      "jsonItems": "{count, plural, one {JSON · # item} other {JSON · # items}}",
+      "failedSentence": "The workflow stopped before it finished."
     },
     "agent": {
       "backgroundWorking": "Working in the background",
@@ -9465,7 +9466,13 @@ const catalog = {
       "shutdownRequest": "Shutdown request from {from}",
       "shutdownResponse": "Shutdown answer from {from}",
       "expand": "Show the whole message",
-      "collapse": "Hide the message"
+      "collapse": "Hide the message",
+      "kind": {
+        "message": "Message",
+        "finished": "Finished",
+        "shutdownRequest": "Asks to stop",
+        "shutdownResponse": "Stop answer"
+      }
     },
     "notice": {
       "completed": "{name} finished",
@@ -9479,7 +9486,14 @@ const catalog = {
       "expand": "Show the whole result",
       "collapse": "Hide the result",
       "batchTitle": "{count, plural, one {# agent finished} other {# agents finished}}",
-      "ownsTasks": "Still owns {tasks}"
+      "ownsTasks": "Still owns {tasks}",
+      "details": "Details",
+      "failedSentence": "The agent stopped before it finished.",
+      "state": {
+        "completed": "Finished",
+        "failed": "Didn’t finish",
+        "stopped": "Stopped"
+      }
     },
     "tools": {
       "running": {
@@ -9524,7 +9538,8 @@ const catalog = {
       "blockedBy": "blocked by {tasks}",
       "stopped": "Stopped",
       "alreadyEnded": "Already ended",
-      "openSession": "Open session"
+      "openSession": "Open session",
+      "messageToName": "To {to}"
     },
     "strip": {
       "label": "Agents",
@@ -9608,7 +9623,10 @@ const catalog = {
       "deny": "Deny",
       "approve": "Approve",
       "approveFailed": "Could not deliver the message",
-      "denyFailed": "Could not deny the message"
+      "denyFailed": "Could not deny the message",
+      "wantsToSend": "wants to send this agent a message",
+      "asksStop": "asks this agent to stop",
+      "needsApproval": "Needs your approval"
     },
     "workflow": {
       "large": "Large workflow",

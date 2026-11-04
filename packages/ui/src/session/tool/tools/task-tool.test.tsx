@@ -159,27 +159,35 @@ function render(
 
 const { ToolRegistry } = await import('../shared/registry');
 
-describe('TaskTool — one card, one way in', () => {
-  test('a call with a child session is one card button: what it was asked, the agent, its state, Open', () => {
+describe('TaskTool — one agent row, opened in place', () => {
+  test('a call with a child session is one row: the agent face, its name, what it was asked, its state, Open in the body', () => {
     childMessages = undefined;
-    const markup = render(taskPart({}));
-    expect(markup).toContain('data-testid="agent-call-card"');
-    expect(markup).toContain('aria-label="Open Find the bug"');
-    expect(markup).toContain('>Find the bug</span>');
+    const markup = render(taskPart({}), { open: true });
+    expect(markup).toContain('data-tone="agent"');
     expect(markup).toContain('>Explorer</span>');
+    expect(markup).toContain('>Find the bug</span>');
+    expect(markup).toContain('data-agent-status="done"');
     expect(markup).toContain('>Done</span>');
-    expect(markup).toContain('>Open</span>');
-    // No disclosure: the steps and the transcript are in the agent pane.
-    expect(markup).not.toContain('aria-expanded');
+    expect(markup).toContain('aria-label="Open Find the bug"');
     expect(markup).toContain(`data-session-id="${CHILD_SESSION_ID}"`);
+    expect(markup).not.toContain('text-kortix-red');
+  });
+
+  test('closed, the row is a disclosure: nothing opens beside the chat', () => {
+    childMessages = undefined;
+    const markup = render(taskPart({}), { activatable: true });
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).toContain('data-open="false"');
   });
 
   test('a running call reads Working', () => {
     childMessages = CHILD_MESSAGES;
-    expect(render(taskPart({ status: 'running' }))).toContain('>Working</span>');
+    const markup = render(taskPart({ status: 'running' }));
+    expect(markup).toContain('data-agent-status="running"');
+    expect(markup).toContain('>Working</span>');
   });
 
-  test('no child session: a plain card, nothing to open, no dialog', () => {
+  test('no child session: nothing to open, no dialog', () => {
     childMessages = undefined;
     const markup = render(taskPart({ childSessionId: null }));
     expect(markup).not.toContain('<button');
@@ -187,13 +195,17 @@ describe('TaskTool — one card, one way in', () => {
     expect(markup).not.toContain('data-subagent-dialog');
   });
 
-  test('a failed dispatch reads Didn’t finish and shows why under the card', () => {
+  test('a failed dispatch reads Didn’t finish: one sentence, the raw error only behind Details, no red word', () => {
     childMessages = undefined;
     const failed = taskPart({ status: 'error' }) as ToolPart & { state: { error?: string } };
     failed.state.error = 'Subagent failed: This model does not support assistant message prefill.';
-    const markup = render(failed as ToolPart);
+    const markup = render(failed as ToolPart, { open: true });
+    expect(markup).toContain('data-agent-status="failed"');
     expect(markup).toContain('>Didn’t finish</span>');
-    expect(markup).toContain('assistant message prefill');
+    expect(markup).toContain('The agent stopped before it finished.');
+    expect(markup).toMatch(/aria-expanded="false"[^>]*>(<svg[\s\S]*?<\/svg>)?Details<\/button>/);
+    expect(markup).not.toContain('assistant message prefill');
+    expect(markup).not.toContain('text-kortix-red');
   });
 });
 
@@ -212,7 +224,7 @@ describe('TaskTool — pi agent tool', () => {
     } as unknown as ToolPart;
   }
 
-  test('`agent` resolves to the call card and opens its child session', () => {
+  test('`agent` resolves to the agent row and opens its child session', () => {
     expect(ToolRegistry.get('agent')).toBe(TaskTool);
     childMessages = undefined;
     const markup = render(agentPart({ status: 'completed', metadata: { sessionId: CHILD_SESSION_ID } }));

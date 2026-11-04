@@ -5,7 +5,6 @@
  * `tool/tools/workflow-progress.tsx`:
  *
  *   AgentCard        a bordered, rounded card; one Pressable when it leads somewhere
- *   FinishLine       the quiet line between two hairlines that marks an end
  *   DashedRule       the dashed separator between workflow phases
  *   RunProgressRing  done (green) and failed (red) over a grey track; a check when
  *                    the run is done, a square when it was stopped. It never turns.
@@ -74,22 +73,6 @@ export function DashedRule() {
   return (
     <View style={{ height: 1, overflow: 'hidden' }} accessible={false}>
       <View style={{ height: 2, borderWidth: 1, borderStyle: 'dashed', borderColor: palette.border }} />
-    </View>
-  );
-}
-
-/** The end of an agent's or a run's work, an event in the reply above it: rule · mark · words · rule. */
-export function FinishLine({ mark, children }: { mark: ReactNode; children: ReactNode }) {
-  const palette = useTurnPalette();
-  const rule = <View style={{ flex: 1, minWidth: webSpace(6), height: 1, backgroundColor: palette.border }} />;
-  return (
-    <View testID="finish-line" style={{ flexDirection: 'row', alignItems: 'center', gap: webSpace(2.5) }}>
-      {rule}
-      <View style={{ flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: webSpace(1.5) }}>
-        {mark}
-        {children}
-      </View>
-      {rule}
     </View>
   );
 }

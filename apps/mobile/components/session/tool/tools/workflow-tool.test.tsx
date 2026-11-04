@@ -2,7 +2,7 @@ import { afterEach, expect, mock, test } from 'bun:test';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { toolCallBlock, type ToolCallBlock, type ToolPart } from '@kortix/sdk';
-import { partInput, partMetadata, partOutput, partStatus } from '@/lib/session/tool-part-accessors';
+import { partError, partInput, partMetadata, partOutput, partStatus } from '@/lib/session/tool-part-accessors';
 
 type HostProps = React.PropsWithChildren<Record<string, unknown>>;
 const host =
@@ -28,7 +28,11 @@ mock.module('@/components/session/SessionStatusMark', () => ({
   SessionStatusMark: ({ status }: { status: string }) => <mark data-status={status} />,
 }));
 mock.module('../shared/connector-handoff-context', () => ({ ConnectorHandoffContext: React.createContext(null) }));
+mock.module('../shared/message-row', () => ({
+  AgentFailure: ({ sentence }: { sentence: string }) => <p>{sentence}</p>,
+}));
 mock.module('../shared/infrastructure', () => ({
+  partError,
   partInput,
   partMetadata,
   partOutput,
@@ -118,4 +122,28 @@ test('before a run document it is the plain "Starting the workflow…" row, with
     tree = create(<WorkflowTool call={call({})} />);
   });
   expect(tree!.root.findByType('summary' as never).children).toEqual(['Starting the workflow…']);
+});
+
+test('a call that failed says so under the card, even when its last run document still reads running', async () => {
+  const failed = (metadata: unknown) =>
+    toolCallBlock({
+      type: 'tool',
+      id: 'p-1',
+      tool: 'workflow',
+      callID: 'call-1',
+      state: { status: 'error', input: { script: 'await agent("go")' }, metadata, error: 'Runner lost its sandbox' },
+    } as unknown as ToolPart);
+  const sentences = (renderer: ReactTestRenderer) => renderer.root.findAllByType('p' as never).map((node) => node.props.children);
+  // The card keeps its rows, and the failure sits under it.
+  await act(async () => {
+    tree = create(<WorkflowTool call={failed(RUN)} />);
+  });
+  expect(texts(tree!)).toContain('Customers and demand');
+  expect(sentences(tree!)).toEqual(['The workflow stopped before it finished.']);
+  // A background run with no rows yet: the link line, and the failure under it.
+  await act(async () => tree?.unmount());
+  await act(async () => {
+    tree = create(<WorkflowTool call={failed({ ...RUN, agents: [], background: { sessionId: 'ses_runner' } })} />);
+  });
+  expect(sentences(tree!)).toEqual(['The workflow stopped before it finished.']);
 });

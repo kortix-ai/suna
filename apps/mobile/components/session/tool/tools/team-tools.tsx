@@ -134,11 +134,11 @@ export function PeerSendRow({ send }: { send: PeerSendSummary }) {
     <MessageRow
       testID="peer-send-row"
       handle={send.to}
-      title={send.to ? `Message to ${peerHandleLabel(send.to)}` : 'Message sent'}
-      subtitle={(!delivered && send.note) || send.summary || send.message}
+      title={send.to ? `To ${peerHandleLabel(send.to).replace(/^@/, '')}` : 'Message sent'}
+      subtitle={send.summary || send.message}
       state={PEER_STATUS_LABEL[send.status]}
-      stateTone={delivered ? 'muted' : 'failed'}
-      text={send.message}
+      glyph={delivered ? 'done' : send.status === 'held' ? 'needs-you' : 'stopped'}
+      text={[send.message, !delivered ? send.note : null].filter(Boolean).join('\n\n')}
     />
   );
 }

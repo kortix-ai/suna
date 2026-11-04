@@ -19,10 +19,9 @@ import {
 import { OutputBlock } from '../shared/output-block';
 import { ToolRegistry } from '../shared/registry';
 import type { ToolProps } from '../shared/types';
-import { ToolError } from '../tool-error';
 import { useTranslations } from '../../../i18n';
-import { cn } from '../../../lib/utils';
-import { TreeStructureIcon } from '@phosphor-icons/react';
+import { ArrowUpRightIcon, TreeStructureIcon } from '@phosphor-icons/react';
+import { AgentFailure } from '../../agents/agent-surface';
 import { Button } from '../../../primitives/button';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -278,35 +277,44 @@ export function WorkflowTool(props: ToolProps) {
     const openRunner = () => setOpen({ sessionId: runnerSession, title });
     return (
       <>
-        {/* One card, one way in: its progress and its result live in the run's own session. */}
+        {/* The run card's header, alone: its progress and its result live in the run's own session. */}
         <button
           type="button"
           data-testid="workflow-run-link"
           aria-label={t('openRunLabel')}
           onClick={openRunner}
-          className="border-border bg-card hover:bg-muted/40 mt-1.5 flex w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-left text-sm transition-colors"
+          className="border-border bg-background hover:bg-muted/40 mt-1.5 flex w-full min-w-0 cursor-pointer items-start gap-2.5 rounded-lg border px-4 py-3 text-left text-xs transition-colors"
         >
-          {/* One line: what runs, how it ended, and the way in. Where it runs is the run's own business. */}
-          {runnerEnded === 'done' ? (
-            <RunProgressRing done={1} failed={0} total={1} ended="done" />
-          ) : runnerEnded === 'stopped' ? (
-            <RunProgressRing done={0} failed={0} total={1} ended="stopped" />
-          ) : runnerEnded === 'failed' ? (
-            <RunProgressRing done={0} failed={1} total={1} />
-          ) : tally.total > 0 ? (
-            <RunProgressRing done={tally.done} failed={tally.failed} total={tally.total} />
-          ) : (
-            <TreeStructureIcon aria-hidden className="text-muted-foreground size-4 shrink-0" />
-          )}
-          <span className="text-foreground min-w-0 truncate font-medium">{title}</span>
-          <RunChips run={run} />
-          {runnerEnded && (
-            <span className={cn('shrink-0 text-xs', runnerEnded === 'failed' ? 'text-kortix-red' : 'text-muted-foreground')}>
-              {runnerEnded === 'done' ? t('status.done') : runnerEnded === 'failed' ? t('didntFinish') : t('status.stopped')}
+          <span className="flex h-5 shrink-0 items-center">
+            {runnerEnded === 'done' ? (
+              <RunProgressRing done={1} failed={0} total={1} ended="done" />
+            ) : runnerEnded === 'stopped' ? (
+              <RunProgressRing done={0} failed={0} total={1} ended="stopped" />
+            ) : runnerEnded === 'failed' ? (
+              <RunProgressRing done={0} failed={1} total={1} />
+            ) : (
+              <RunProgressRing done={tally.done} failed={tally.failed} total={Math.max(tally.total, 1)} />
+            )}
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="text-foreground min-w-0 truncate text-sm font-medium">{title}</span>
+              <RunChips run={run} />
             </span>
-          )}
-          <span className="flex-1" />
-          <span className="text-muted-foreground hover:text-foreground shrink-0 text-xs">{t('openRun')}</span>
+            <span className="text-muted-foreground min-w-0 truncate">
+              {runnerEnded === 'done'
+                ? t('status.done')
+                : runnerEnded === 'failed'
+                  ? t('didntFinish')
+                  : runnerEnded === 'stopped'
+                    ? t('status.stopped')
+                    : [t('status.running'), tally.total > 0 ? t('progress', { done: tally.done, total: tally.total }) : null].filter(Boolean).join(' · ')}
+            </span>
+          </span>
+          <span className="text-foreground flex h-5 shrink-0 items-center gap-1">
+            {t('openRun')}
+            <ArrowUpRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+          </span>
         </button>
         {modal}
       </>
@@ -368,7 +376,6 @@ export function WorkflowTool(props: ToolProps) {
         onOpen={onOpen}
         stop={stop}
         chips={<RunChips run={run} />}
-        tone={run.status === 'failed' ? 'failed' : 'default'}
         result={result ? <OutputBlock text={result.text} markdown={result.kind === 'markdown'} /> : undefined}
         actions={
           <>
@@ -396,7 +403,12 @@ export function WorkflowTool(props: ToolProps) {
           </>
         }
       />
-      {runError && run.status !== 'running' && <ToolError error={runError} toolName={call.name} />}
+      {runError && run.status !== 'running' && (
+        <div className="mt-2 px-4 text-sm">
+          {/* One sentence; the run's raw error (script or platform words) folds behind Details. */}
+          <AgentFailure sentence={t('failedSentence')} raw={runError} />
+        </div>
+      )}
       {modal}
     </ToolOutcomeContext.Provider>
   );

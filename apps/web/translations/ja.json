@@ -3201,7 +3201,8 @@
       "stopFailed": "{label} を停止できませんでした",
       "json": "JSON",
       "jsonKeys": "{count, plural, other {JSON · # 個のキー}}",
-      "jsonItems": "{count, plural, other {JSON · # 個の項目}}"
+      "jsonItems": "{count, plural, other {JSON · # 個の項目}}",
+      "failedSentence": "ワークフローは完了前に停止しました。"
     },
     "agent": {
       "backgroundWorking": "バックグラウンドで作業中",
@@ -25160,7 +25161,13 @@
       "shutdownRequest": "{from} からの終了リクエスト",
       "shutdownResponse": "{from} からの終了リクエストへの返答",
       "expand": "メッセージ全体を表示",
-      "collapse": "メッセージを隠す"
+      "collapse": "メッセージを隠す",
+      "kind": {
+        "message": "メッセージ",
+        "finished": "完了",
+        "shutdownRequest": "停止の依頼",
+        "shutdownResponse": "停止への回答"
+      }
     },
     "notice": {
       "completed": "{name} が完了しました",
@@ -25174,7 +25181,14 @@
       "expand": "結果全体を表示",
       "collapse": "結果を隠す",
       "batchTitle": "{count, plural, other {# 個のエージェントが完了しました}}",
-      "ownsTasks": "未完了のタスク: {tasks}"
+      "ownsTasks": "未完了のタスク: {tasks}",
+      "details": "詳細",
+      "failedSentence": "エージェントは完了前に停止しました。",
+      "state": {
+        "completed": "完了",
+        "failed": "未完了",
+        "stopped": "停止"
+      }
     },
     "tools": {
       "running": {
@@ -25219,7 +25233,8 @@
       "blockedBy": "{tasks} によりブロック中",
       "stopped": "停止",
       "alreadyEnded": "すでに終了しています",
-      "openSession": "セッションを開く"
+      "openSession": "セッションを開く",
+      "messageToName": "{to} へ"
     },
     "strip": {
       "label": "エージェント",
@@ -25303,7 +25318,10 @@
       "deny": "拒否",
       "approve": "承認",
       "approveFailed": "メッセージを配信できませんでした",
-      "denyFailed": "メッセージを拒否できませんでした"
+      "denyFailed": "メッセージを拒否できませんでした",
+      "wantsToSend": "がこのエージェントにメッセージを送ろうとしています",
+      "asksStop": "がこのエージェントに停止を依頼しています",
+      "needsApproval": "承認が必要です"
     },
     "workflow": {
       "large": "大規模なワークフロー",

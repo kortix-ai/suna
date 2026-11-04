@@ -3201,7 +3201,8 @@
       "stopFailed": "Није могуће зауставити {label}",
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # кључ} few {JSON · # кључа} other {JSON · # кључева}}",
-      "jsonItems": "{count, plural, one {JSON · # ставка} few {JSON · # ставке} other {JSON · # ставки}}"
+      "jsonItems": "{count, plural, one {JSON · # ставка} few {JSON · # ставке} other {JSON · # ставки}}",
+      "failedSentence": "Tok rada je stao pre nego što je završio."
     },
     "agent": {
       "backgroundWorking": "Ради у позадини",
@@ -25160,7 +25161,13 @@
       "shutdownRequest": "Захтев за гашење од {from}",
       "shutdownResponse": "Одговор на захтев за гашење од {from}",
       "expand": "Прикажи целу поруку",
-      "collapse": "Сакриј поруку"
+      "collapse": "Сакриј поруку",
+      "kind": {
+        "message": "Poruka",
+        "finished": "Završeno",
+        "shutdownRequest": "Traži zaustavljanje",
+        "shutdownResponse": "Odgovor na zaustavljanje"
+      }
     },
     "notice": {
       "completed": "{name} је завршио",
@@ -25174,7 +25181,14 @@
       "expand": "Прикажи цео резултат",
       "collapse": "Сакриј резултат",
       "batchTitle": "{count, plural, one {# агент је завршио} few {# агента су завршила} other {# агената је завршило}}",
-      "ownsTasks": "Још има {tasks}"
+      "ownsTasks": "Још има {tasks}",
+      "details": "Detalji",
+      "failedSentence": "Agent je stao pre nego što je završio.",
+      "state": {
+        "completed": "Završeno",
+        "failed": "Nije završeno",
+        "stopped": "Zaustavljeno"
+      }
     },
     "tools": {
       "running": {
@@ -25219,7 +25233,8 @@
       "blockedBy": "чека на {tasks}",
       "stopped": "Заустављено",
       "alreadyEnded": "Већ је завршено",
-      "openSession": "Отвори сесију"
+      "openSession": "Отвори сесију",
+      "messageToName": "Za {to}"
     },
     "strip": {
       "label": "Агенти",
@@ -25303,7 +25318,10 @@
       "deny": "Одбиј",
       "approve": "Одобри",
       "approveFailed": "Није могуће испоручити поруку",
-      "denyFailed": "Није могуће одбити поруку"
+      "denyFailed": "Није могуће одбити поруку",
+      "wantsToSend": "želi da pošalje poruku ovom agentu",
+      "asksStop": "traži da se ovaj agent zaustavi",
+      "needsApproval": "Potrebno je tvoje odobrenje"
     },
     "workflow": {
       "large": "Велики ток рада",

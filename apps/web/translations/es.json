@@ -3201,7 +3201,8 @@
       "stopFailed": "No se pudo detener {label}",
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # clave} other {JSON · # claves}}",
-      "jsonItems": "{count, plural, one {JSON · # elemento} other {JSON · # elementos}}"
+      "jsonItems": "{count, plural, one {JSON · # elemento} other {JSON · # elementos}}",
+      "failedSentence": "El flujo de trabajo se detuvo antes de terminar."
     },
     "agent": {
       "backgroundWorking": "Trabajando en segundo plano",
@@ -25160,7 +25161,13 @@
       "shutdownRequest": "Solicitud de cierre de {from}",
       "shutdownResponse": "Respuesta a la solicitud de cierre de {from}",
       "expand": "Mostrar el mensaje completo",
-      "collapse": "Ocultar el mensaje"
+      "collapse": "Ocultar el mensaje",
+      "kind": {
+        "message": "Mensaje",
+        "finished": "Terminado",
+        "shutdownRequest": "Pide detenerse",
+        "shutdownResponse": "Respuesta de parada"
+      }
     },
     "notice": {
       "completed": "{name} ha terminado",
@@ -25174,7 +25181,14 @@
       "expand": "Mostrar el resultado completo",
       "collapse": "Ocultar el resultado",
       "batchTitle": "{count, plural, one {# agente ha terminado} other {# agentes han terminado}}",
-      "ownsTasks": "Aún tiene {tasks}"
+      "ownsTasks": "Aún tiene {tasks}",
+      "details": "Detalles",
+      "failedSentence": "El agente se detuvo antes de terminar.",
+      "state": {
+        "completed": "Terminado",
+        "failed": "No terminó",
+        "stopped": "Detenido"
+      }
     },
     "tools": {
       "running": {
@@ -25219,7 +25233,8 @@
       "blockedBy": "bloqueada por {tasks}",
       "stopped": "Detenido",
       "alreadyEnded": "Ya terminó",
-      "openSession": "Abrir sesión"
+      "openSession": "Abrir sesión",
+      "messageToName": "Para {to}"
     },
     "strip": {
       "label": "Agentes",
@@ -25303,7 +25318,10 @@
       "deny": "Denegar",
       "approve": "Aprobar",
       "approveFailed": "No se pudo entregar el mensaje",
-      "denyFailed": "No se pudo denegar el mensaje"
+      "denyFailed": "No se pudo denegar el mensaje",
+      "wantsToSend": "quiere enviar un mensaje a este agente",
+      "asksStop": "pide a este agente que se detenga",
+      "needsApproval": "Necesita tu aprobación"
     },
     "workflow": {
       "large": "Flujo de trabajo grande",

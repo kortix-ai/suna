@@ -79,7 +79,7 @@ const textOf = (html: string) =>
   html.replace(/<[^>]*>/g, '').replaceAll('&#x27;', "'").replaceAll('&quot;', '"').replaceAll('&amp;', '&');
 
 describe('NoticeBatchGroup', () => {
-  test('one header with the count, then one compact row per notice', () => {
+  test('each notice is the row it would be alone, drawn exactly once', () => {
     const items = parseNoticeBatch(
       batch(subagent(1), subagent(2, { teammate: { handle: 'reviewer', tasks: '#3 Write the fix (in progress)' } }), peerIdle('archivist', 'All 12 files indexed.')),
     )!;
@@ -87,22 +87,15 @@ describe('NoticeBatchGroup', () => {
     const text = textOf(html);
     expect(html).toContain('data-testid="notice-batch"');
     expect(html).toContain('data-notice-count="3"');
-    expect(text).toContain('3 agents finished');
-    // One finish line, then one row per notice in one card.
-    expect(html.match(/data-testid="finish-line"/g)).toHaveLength(1);
-    expect(html.match(/data-batch-row/g)).toHaveLength(3);
-    expect(text).toContain('Task 1 finished');
-    expect(text).toContain('reviewer finished');
+    expect(html.match(/data-testid="subagent-notice"/g)).toHaveLength(2);
+    expect(html.match(/data-testid="peer-message-turn"/g)).toHaveLength(1);
+    expect(text).toContain('reviewer');
     expect(text).toContain('Still owns #3 Write the fix (in progress)');
-    // The peer idle row previews its last answer, not the line that repeats the headline.
-    expect(text).toContain('@archivist finished');
+    // The peer idle row previews its last answer, not the line that repeats its state.
+    expect(text).toContain('archivist');
     expect(text).toContain('All 12 files indexed.');
     expect(text).not.toContain('finished its turn and is idle');
-  });
-
-  test('one notice counts as one agent', () => {
-    const html = render(<NoticeBatchGroup items={parseNoticeBatch(batch(subagent(1), subagent(2)))!.slice(0, 1)} />);
-    expect(textOf(html)).toContain('1 agent finished');
+    expect(html).not.toContain('text-kortix-red');
   });
 });
 
@@ -158,22 +151,23 @@ describe('in the thread', () => {
     });
     const html = turnHtml(prompt, { synthetic: true });
     expect(html.match(/data-testid="peer-message-turn"/g)).toHaveLength(1);
-    expect(textOf(html)).toContain('@builder');
+    expect(textOf(html)).toContain('builder');
+    expect(textOf(html)).toContain('Build passed');
     expect(textOf(html)).not.toContain('carries no authority');
   });
 
-  test('a batch turn draws the group, not one row per first notice or a bubble', () => {
+  test('a batch turn draws the group, one row per notice, not a bubble', () => {
     const html = turnHtml(batch(subagent(1), subagent(2)));
     expect(html.match(/data-testid="notice-batch"/g)).toHaveLength(1);
-    expect(textOf(html)).toContain('2 agents finished');
+    expect(html.match(/data-testid="subagent-notice"/g)).toHaveLength(2);
     expect(textOf(html)).not.toContain('A background subagent you started has finished');
   });
 
   test('a batch of peer idle notices only (no session report) is a group too', () => {
     const html = turnHtml(batch(peerIdle('archivist', 'Indexed.'), peerIdle('scout', 'Mapped.')));
     expect(html.match(/data-testid="notice-batch"/g)).toHaveLength(1);
-    expect(html.match(/data-batch-row/g)).toHaveLength(2);
-    expect(textOf(html)).toContain('2 agents finished');
+    expect(html.match(/data-testid="peer-message-turn"/g)).toHaveLength(2);
+    expect(html).not.toContain('data-testid="subagent-notice"');
   });
 
   test('a single notice still draws today’s row, and a single peer idle notice today’s peer row', () => {
@@ -189,6 +183,7 @@ describe('in the thread', () => {
     const html = render(<UserMessage message={logOf(batch(peerIdle('archivist', 'Indexed.'), subagent(1)))} sessionId="session-1" ownsPlan={false} />);
     expect(html).toContain('data-testid="notice-batch"');
     // One row per notice, the peer's and the sub-agent's.
-    expect(html.match(/data-batch-row/g)).toHaveLength(2);
+    expect(html.match(/data-testid="peer-message-turn"/g)).toHaveLength(1);
+    expect(html.match(/data-testid="subagent-notice"/g)).toHaveLength(1);
   });
 });

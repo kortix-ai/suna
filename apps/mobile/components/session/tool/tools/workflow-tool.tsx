@@ -5,7 +5,7 @@
  *   header  28pt progress ring · title · one-line subtitle · "Result" toggle
  *   rows    grouped by phase, a dashed rule between phases; status mark · name ·
  *           state · time; a failed row adds its reason in red
- *   pending a phase not started is one muted row ("starts after …", "Waits for N more")
+ *   pending a phase not started is one muted row: "Waits for N more", else "Starts after …"
  *
  * A run that ended in its own runner session is the header alone. A background
  * run whose run document is not here yet is one line: ring · title · how it
@@ -33,11 +33,12 @@ import {
 import { webSpace } from '@/lib/session/user-message';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
 import { ConnectorHandoffContext } from '../shared/connector-handoff-context';
-import { BasicTool, partMetadata, partOutput, partStatus, ToolOutputFallback, useToolNavigation } from '../shared/infrastructure';
+import { BasicTool, partError, partMetadata, partOutput, partStatus, ToolOutputFallback, useToolNavigation } from '../shared/infrastructure';
 import { OutputBlock } from '../shared/output-block';
 import { ToolRegistry } from '../shared/registry';
 import { AgentCard, DashedRule, RunProgressRing } from '../shared/agent-surface';
-import { FONT_MEDIUM, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
+import { AgentFailure } from '../shared/message-row';
+import { FONT_MEDIUM, TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
 /** The current time, every second while `active`: a live run's elapsed labels tick. */
@@ -73,9 +74,30 @@ export function WorkflowTool({ call, defaultOpen, forceOpen, locked }: ToolProps
       </BasicTool>
     );
   }
-  if (run.background && run.agents.length === 0) return <WorkflowRunLink run={run} />;
+  // A run that ended in an error, or a call that failed (whatever its last run document said),
+  // says so under the card; its raw text folds behind Details (web `WorkflowTool`).
+  const runError = run.error ?? (status === 'error' ? partError(call) : undefined);
+  const failure =
+    runError && (run.status !== 'running' || status === 'error') ? (
+      <View style={{ marginTop: webSpace(2), paddingHorizontal: webSpace(4) }}>
+        <AgentFailure sentence="The workflow stopped before it finished." raw={runError} toolName={call.name} />
+      </View>
+    ) : null;
+  if (run.background && run.agents.length === 0) {
+    return (
+      <>
+        <WorkflowRunLink run={run} />
+        {failure}
+      </>
+    );
+  }
   const result = status === 'completed' && run.status === 'done' ? parseWorkflowResult(partOutput(call)) : null;
-  return <WorkflowRunCard run={run} live={live} now={now} settled={settled} result={result} />;
+  return (
+    <>
+      <WorkflowRunCard run={run} live={live} now={now} settled={settled} result={result} />
+      {failure}
+    </>
+  );
 }
 
 /** A background run whose rows live in its runner session: one line, how it ended, Open run. */
@@ -108,7 +130,7 @@ function WorkflowRunLink({ run }: { run: WorkflowRun }) {
         {title}
       </Text>
       {ended ? (
-        <Text style={[TURN_TYPE.xs, { color: ended === 'failed' ? palette.destructive : palette.mutedForeground }]}>
+        <Text style={[TURN_TYPE.xs, { color: palette.mutedForeground }]}>
           {RUNNER_OUTCOME_LABEL[ended]}
         </Text>
       ) : null}
@@ -142,12 +164,15 @@ function WorkflowRunCard({
     <AgentCard testID="workflow-card" style={{ marginTop: webSpace(1.5) }}>
       <View
         style={[
-          { flexDirection: 'row', alignItems: 'center', gap: webSpace(2.5), paddingHorizontal: webSpace(3.5), paddingVertical: webSpace(3) },
-          !model.headerOnly && { borderBottomWidth: 1, borderBottomColor: palette.border },
+          // One left edge for the header and the rows (web px-4); the ring sits in the rows' 16pt glyph lane.
+          { flexDirection: 'row', alignItems: 'flex-start', gap: webSpace(2.5), paddingHorizontal: webSpace(4), paddingVertical: webSpace(3) },
+          { borderBottomWidth: 1, borderBottomColor: palette.border },
         ]}
       >
         {model.ring.total > 0 ? (
-          <RunProgressRing size={28} done={model.ring.done} failed={model.ring.failed} total={model.ring.total} ended={model.ring.ended} />
+          <View style={{ height: 20, justifyContent: 'center' }}>
+            <RunProgressRing size={16} done={model.ring.done} failed={model.ring.failed} total={model.ring.total} ended={model.ring.ended} />
+          </View>
         ) : (
           <Icon as={TreeStructureIcon} size={16} className="text-muted-foreground" />
         )}
@@ -156,7 +181,7 @@ function WorkflowRunCard({
             {model.title}
           </Text>
           {model.subtitle ? (
-            <Text numberOfLines={1} style={[TURN_TYPE.xs, { color: model.failedTone ? palette.destructive : palette.mutedForeground }]}>
+            <Text numberOfLines={1} style={[TURN_TYPE.xs, { color: palette.mutedForeground, fontVariant: ['tabular-nums'] }]}>
               {model.subtitle}
             </Text>
           ) : null}
@@ -178,18 +203,17 @@ function WorkflowRunCard({
         ) : null}
       </View>
       {result && showResult ? (
-        <View style={{ paddingHorizontal: webSpace(3.5), paddingVertical: webSpace(3), borderBottomWidth: model.headerOnly ? 0 : 1, borderBottomColor: palette.border }}>
+        <View style={{ paddingHorizontal: webSpace(4), paddingVertical: webSpace(3), borderBottomWidth: 1, borderBottomColor: palette.border }}>
           <OutputBlock text={result.text} markdown={result.kind === 'markdown'} />
         </View>
       ) : null}
-      {model.headerOnly
-        ? null
-        : model.groups.map((group, index) => (
-            <View key={group.kind === 'pending' ? `pending:${group.title}` : `phase:${group.title ?? ''}`}>
-              {index > 0 ? <DashedRule /> : null}
-              <GroupView group={group} open={open} />
-            </View>
-          ))}
+      {/* Never a fold (web `WorkflowRunCard`): running or ended, the rows are the record of who did what. */}
+      {model.groups.map((group, index) => (
+        <View key={group.kind === 'pending' ? `pending:${group.title}` : `phase:${group.title ?? ''}`}>
+          {index > 0 ? <DashedRule /> : null}
+          <GroupView group={group} open={open} />
+        </View>
+      ))}
     </AgentCard>
   );
 }
@@ -199,14 +223,12 @@ function GroupView({ group, open }: { group: WorkflowGroupModel; open: (sessionI
   if (group.kind === 'pending') {
     return (
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: webSpace(2.5), paddingHorizontal: webSpace(4), minHeight: 44 }}>
-        <View style={{ opacity: 0.45 }}>
-          <SessionStatusMark status="stopped" />
-        </View>
+        <SessionStatusMark status="starting" />
         <Text numberOfLines={1} style={[TURN_TYPE.sm, { flex: 1, color: palette.mutedForeground }]}>
           {group.title}
-          {group.after ? <Text style={[TURN_TYPE.xs, { color: palette.mutedForeground }]}>{` · starts after ${group.after}`}</Text> : null}
         </Text>
-        <Text style={[TURN_TYPE.xs, { color: palette.mutedForeground }]}>{group.waits}</Text>
+        {/* One phrase for why it has not started: the agents it waits on, else the phase before it. */}
+        <Text style={[TURN_TYPE.xs, { color: palette.mutedForeground }]}>{group.waits || (group.after ? `Starts after ${group.after}` : '')}</Text>
       </View>
     );
   }
@@ -241,12 +263,12 @@ function AgentRowView({ row, onPress }: { row: WorkflowAgentRowModel; onPress?: 
             {row.label}
           </Text>
           {row.state ? (
-            <Text style={[TURN_TYPE.xs, { color: row.failed ? palette.destructive : palette.mutedForeground }]}>{row.state}</Text>
+            <Text style={[TURN_TYPE.xs, { color: palette.mutedForeground }]}>{row.state}</Text>
           ) : null}
-          {row.time ? <Text style={[TURN_TYPE.xs, { fontFamily: monoFont, color: palette.mutedForeground }]}>{row.time}</Text> : null}
+          {row.time ? <Text style={[TURN_TYPE.xs, { fontVariant: ['tabular-nums'], color: palette.mutedForeground }]}>{row.time}</Text> : null}
         </View>
         {row.reason ? (
-          <Text numberOfLines={1} style={[TURN_TYPE.xs, { color: palette.destructive }]}>
+          <Text numberOfLines={1} style={[TURN_TYPE.xs, { color: palette.mutedForeground }]}>
             {row.reason}
           </Text>
         ) : null}

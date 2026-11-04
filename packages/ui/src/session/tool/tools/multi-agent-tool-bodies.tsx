@@ -9,8 +9,9 @@ import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
 import { AgentStateMark } from '../../agents/agent-state-mark';
 import { subagentTitle } from '../../agents/agent-model';
-import { AgentMarkGlyph, agentDisplayName, agentMarkTileClass, agentMarkVars } from '../../../internal/components/agent-mark';
-import { AgentHandle, SmallGlyph, taskGlyphStatus } from '../../agents/agent-surface';
+import { agentDisplayName } from '../../../internal/components/agent-mark';
+import { AgentFace, AgentHandle, AgentRowBody, AgentRowScope, AgentStatus, AgentTrigger, SmallGlyph, taskGlyphStatus } from '../../agents/agent-surface';
+import type { SessionDisplayStatus } from '../../actions/session-label';
 import { BasicTool } from '../shared/infrastructure';
 import {
   ArrowSquareOutIcon,
@@ -74,15 +75,6 @@ export function runningKey(tool: MultiAgentTool): 'sending' | 'checkingAgents' |
   }
 }
 
-const PEER_VARIANT: Record<PeerSendStatus, BadgeVariant> = {
-  delivered: 'success',
-  held: 'warning',
-  refused: 'warning',
-  denied: 'warning',
-  expired: 'muted',
-  dropped: 'muted',
-};
-
 const TASK_VARIANT: Record<TeamTaskStatus, BadgeVariant> = {
   pending: 'muted',
   in_progress: 'info',
@@ -107,60 +99,55 @@ const TASK_KEY: Record<TeamTaskStatus, string> = {
 const ROW_CLASS = 'flex min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-xs';
 
 /** An agent's face as a tool row's 16px icon: its pixel mark on its own tile. */
-export function AgentAvatarIcon({ handle }: { handle: string }) {
-  const slug = /^(mykortix|meta)-[0-9a-f]{8}$/.test(handle) ? 'mykortix' : handle;
-  return (
-    <span
-      aria-hidden
-      data-tone="agent"
-      style={agentMarkVars(slug)}
-      className={cn('flex size-4 shrink-0 items-center justify-center rounded-sm bg-(--mark-tile)', agentMarkTileClass(slug))}
-    >
-      <AgentMarkGlyph slug={slug} size={14} />
-    </span>
-  );
-}
+export const AgentAvatarIcon = AgentFace;
+
+/** The state a send ended in, as a session-list glyph: delivered is done, held waits on a person. */
+const PEER_GLYPH: Record<PeerSendStatus, SessionDisplayStatus> = {
+  delivered: 'done',
+  held: 'needs-you',
+  refused: 'stopped',
+  denied: 'stopped',
+  expired: 'stopped',
+  dropped: 'stopped',
+};
 
 /**
- * `send_message`: one plain tool row, the receiver's face as its icon (Claude
- * Code's message row): "Message to @scout · the message · Delivered". Open, the
- * whole message, and why it did not arrive when it did not. A failed send is the
- * same row in red, never a card of its own.
+ * `send_message`: one agent row, the receiver's face as its icon:
+ *
+ *   [face] To reviewer  Migration finished                  ✓ Delivered
+ *          │ the whole message
+ *          │ why it did not arrive, when it did not
+ *
+ * The state is a glyph and a muted word: a held message waits on a person, it did not fail.
  */
 export function PeerSendRow({ send, defaultOpen, forceOpen, locked }: { send: PeerSendSummary; defaultOpen?: boolean; forceOpen?: boolean; locked?: boolean }) {
   const t = useTranslations('multiAgent.tools');
   const delivered = send.status === 'delivered';
-  // Not delivered, the row says why; the message itself is one click away.
-  const preview = (!delivered && send.note) || send.summary || send.message || undefined;
-  const body = send.message ? (
-    <div className="text-muted-foreground border-border ml-1.5 space-y-1 border-l pl-3 text-sm whitespace-pre-wrap wrap-break-word">
-      {send.message && <p className="text-foreground">{send.message}</p>}
-
-    </div>
-  ) : undefined;
+  const preview = send.summary || firstLineOf(send.message) || undefined;
+  const hasBody = !!send.message || (!delivered && !!send.note);
   return (
-    <BasicTool
-      icon={send.to ? <AgentAvatarIcon handle={send.to} /> : undefined}
-      trigger={
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-sm">
-          <span className="text-foreground shrink-0">{send.to ? t('messageTo', { to: send.to }) : t('messageSent')}</span>
-          {preview && (
-            <span className="text-muted-foreground min-w-0 flex-1 truncate" title={preview}>
-              {preview}
-            </span>
-          )}
-          <span className={cn('ml-auto shrink-0 text-xs', delivered ? 'text-muted-foreground' : 'text-kortix-red')}>
-            {t(`peerStatus.${send.status}`)}
-          </span>
-        </div>
-      }
-      defaultOpen={defaultOpen}
-      forceOpen={forceOpen}
-      locked={locked}
-    >
-      {body}
-    </BasicTool>
+    <AgentRowScope>
+      <BasicTool
+        icon={send.to ? <AgentFace handle={send.to} /> : undefined}
+        trigger={<AgentTrigger title={send.to ? t('messageToName', { to: send.to }) : t('messageSent')} subtitle={preview} />}
+        triggerAction={<AgentStatus status={PEER_GLYPH[send.status]} label={t(`peerStatus.${send.status}`)} opens={hasBody} />}
+        defaultOpen={defaultOpen}
+        forceOpen={forceOpen}
+        locked={locked}
+      >
+        {hasBody ? (
+          <AgentRowBody>
+            {send.message && <p className="text-foreground whitespace-pre-wrap wrap-break-word">{send.message}</p>}
+            {!delivered && send.note && <p className="text-muted-foreground">{send.note}</p>}
+          </AgentRowBody>
+        ) : undefined}
+      </BasicTool>
+    </AgentRowScope>
   );
+}
+
+function firstLineOf(text: string | null): string {
+  return text?.split('\n').find((line) => line.trim())?.trim() ?? '';
 }
 
 /** Row actions: shown on hover and on keyboard focus, always on a touch screen (as in the agents line). */
