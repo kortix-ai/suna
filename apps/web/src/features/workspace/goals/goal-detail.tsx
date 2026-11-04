@@ -437,7 +437,11 @@ function Activity({ projectId, goal, files, onChanged }: { projectId: string; go
           </DisclosureTrigger>
           <DisclosureContent>
             <div className="flex flex-col gap-6 pt-3">
-              {files?.log ? <UnifiedMarkdown content={withoutTitle(files.log)} trust="untrusted" variant="document" className="text-sm" /> : null}
+              {files?.log ? (
+                <div className="max-w-prose">
+                  <UnifiedMarkdown content={withoutTitle(files.log)} trust="untrusted" variant="document" className="text-sm" />
+                </div>
+              ) : null}
               {files?.notes ? (
                 <div className="flex flex-col gap-2">
                   <SectionTitle>{t('notes')}</SectionTitle>
@@ -506,7 +510,7 @@ function GoalRail({ projectId, goal }: { projectId: string; goal: ProjectGoal })
         <SectionTitle>{t('properties')}</SectionTitle>
         <dl className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5 text-sm">
           <Property label={t('stateLabel')}>
-            <GoalStatusBadge status={doc?.status} paused={paused} />
+            {doc?.status ? <GoalStatusBadge status={doc.status} paused={paused} /> : <span className="text-muted-foreground">—</span>}
           </Property>
           <Property label={t('assignedAgent')}>
             {doc?.agent ? (
@@ -747,8 +751,11 @@ function EvidenceFile({ path, folder, driveHref }: { path: string; folder: strin
 function urlLabel(link: string): { name: string; host: string } {
   try {
     const url = new URL(link);
-    const last = url.pathname.split('/').filter(Boolean).at(-1);
-    return { name: last ? decodeURIComponent(last) : url.host, host: url.host };
+    const segments = url.pathname.split('/').filter(Boolean).map((p) => decodeURIComponent(p));
+    const last = segments.at(-1);
+    // A bare number or id ("1") says nothing alone: then the name is the host and the path stays beside it.
+    if (last && /\p{L}/u.test(last)) return { name: last, host: url.host };
+    return { name: url.host, host: segments.length ? `/${segments.join('/')}` : '' };
   } catch {
     return { name: link, host: '' };
   }
@@ -765,7 +772,7 @@ function LinkTarget({ link, folder, driveHref }: { link: string; folder: string;
     return (
       <a href={link} target="_blank" rel="noreferrer" title={link} className="flex min-w-0 items-center gap-2 underline-offset-2 hover:underline">
         <LinkIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
-        <span className="text-foreground shrink-0">{urlLabel(link).name}</span>
+        <span className="text-foreground min-w-0 truncate">{urlLabel(link).name}</span>
         <span className="text-muted-foreground min-w-0 truncate text-xs">{urlLabel(link).host}</span>
       </a>
     );
@@ -777,7 +784,9 @@ function LinkTarget({ link, folder, driveHref }: { link: string; folder: string;
   return (
     <span className="flex min-w-0 items-center gap-2">
       <FileIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
-      <span className={inFiles ? 'text-foreground shrink-0' : 'text-muted-foreground shrink-0'}>{name}</span>
+      <span title={link} className={inFiles ? 'text-foreground min-w-0 truncate' : 'text-muted-foreground min-w-0 truncate'}>
+        {name}
+      </span>
       <span className="text-muted-foreground min-w-0 truncate text-xs">{link.startsWith('/') ? parent : link.split('/').slice(0, -1).join('/')}</span>
       {inFiles ? <OpenFolderAction href={`${driveHref}?path=${encodeURIComponent(parent)}`} file={name} /> : null}
     </span>
