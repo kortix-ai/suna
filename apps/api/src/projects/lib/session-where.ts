@@ -3,6 +3,7 @@
 // filed in, the surface it was started from, the person who started it and
 // its parent session, so an agent always knows where it was launched from.
 // One DB read per turn start; no box call.
+import { isMyKortixAgentName } from '@kortix/shared';
 import { sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { memberDisplayName } from './project-space-members';
@@ -65,6 +66,17 @@ export function sessionSourceText(source: string | null, triggerSlug: string | n
 }
 
 /**
+ * A `dm` space as people see it (flag `chat`): the person's personal space
+ * when its agent is My Kortix, else their private space with that agent.
+ * Agents say "space", never "direct message".
+ */
+export function privateSpaceText(agentName: string): string {
+  return isMyKortixAgentName(agentName)
+    ? "the person's personal space (private: only they and you)"
+    : `the person's private space with ${oneLine(agentName, 40)}`;
+}
+
+/**
  * The block's text (pure). Member-written values (names, titles) are one line
  * each, so none can start a heading, and the space name and parent title are
  * JSON-quoted, so none can close its quote and read as a directive. The person is named by display name,
@@ -75,7 +87,7 @@ export function sessionWhereText(row: SessionWhereRow): string {
     row.space_id && row.space_kind === 'channel'
       ? `#${oneLine(row.space_slug ?? row.space_name ?? '', 40)}${row.space_name && row.space_name !== row.space_slug ? ` (${JSON.stringify(oneLine(row.space_name, 60))})` : ''}, space ${row.space_id}`
       : row.space_id && row.space_kind === 'dm'
-        ? `the direct message with ${oneLine(row.space_dm_agent ?? row.space_name ?? 'an agent', 40)}, space ${row.space_id}`
+        ? `${privateSpaceText(row.space_dm_agent ?? row.space_name ?? 'an agent')}, space ${row.space_id}`
         : null;
   const name = row.person_name || row.person_full_name || row.person_email ? memberDisplayName({ displayName: row.person_name ?? row.person_full_name, email: row.person_email }) : '';
   const from = sessionSourceText(row.source, row.trigger_slug);
