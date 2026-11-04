@@ -385,6 +385,9 @@ function ThreadPrompt({ session, onOpen }: { session: ProjectSession; onOpen: ()
   );
 }
 
+/** `RESULT_EXCERPT_MAX_CHARS` in `apps/api/src/projects/lib/session-board.ts`. */
+const ANSWER_EXCERPT_MAX_CHARS = 280;
+
 /**
  * The agent's latest answer, under the message: the last assistant text of the
  * session's last finished turn (`result_excerpt`, at most 280 characters,
@@ -404,6 +407,8 @@ function ThreadAnswer({
   const t = useTranslations('spaces.view');
   const excerpt = session.result_excerpt?.trim();
   if (!excerpt || threadIsWorking(session)) return null;
+  // The server cuts the answer at ANSWER_EXCERPT_MAX_CHARS: say it goes on.
+  const cut = (session.result_excerpt?.length ?? 0) >= ANSWER_EXCERPT_MAX_CHARS;
   const agentName = session.agent_name ?? space.dm_agent_name;
   const agent = agentName ? agentLabel(agentName) : t('agentFallback');
   return (
@@ -417,7 +422,7 @@ function ThreadAnswer({
       <span className="min-w-0 flex-1">
         <span className="text-foreground text-xs font-medium">{agent}</span>
         <span className={cn(MESSAGE_TEXT_CLASS, 'text-muted-foreground line-clamp-4 block text-pretty whitespace-pre-wrap wrap-anywhere')}>
-          {excerpt}
+          {cut ? `${excerpt}…` : excerpt}
         </span>
       </span>
     </button>
