@@ -1,5 +1,10 @@
 'use client';
 
+import { appLink } from './app-links';
+import { Github } from '../internal/icons/github';
+import { SlackLogoIcon } from '@phosphor-icons/react';
+import { LinearMark, FigmaMark, NotionMark, GoogleDocsMark, GoogleSheetsMark, GoogleSlidesMark } from './app-link-icons';
+
 import { toSandboxAbsolutePath } from '@kortix/sdk';
 
 import { useTranslations } from '../i18n';
@@ -52,6 +57,10 @@ import { useUiLink } from '../providers/ui-provider';
 import React, { useCallback, useContext, useMemo, useState } from 'react';
 import { parseMarkdownIntoBlocks, Streamdown } from 'streamdown';
 
+function SlackMark({ className }: { className?: string }) {
+  return <SlackLogoIcon weight="fill" className={className} />;
+}
+
 const LINK_CLASS = cn(
   'font-medium text-kortix-blue',
   'underline decoration-kortix-blue/40 decoration-[1px] underline-offset-[3px]',
@@ -88,7 +97,14 @@ const MarkdownRenderContext = React.createContext<MarkdownRenderContextValue>({
   genui: false,
 });
 
-export function MarkdownLink({ href, children }: { href?: string; children?: React.ReactNode }) {
+export function MarkdownLink({
+  href,
+  children,
+}: {
+  href?: string;
+  children?: React.ReactNode;
+}) {
+  const tAppLink = useTranslations('markdownAppLinks');
   const Link = useUiLink();
   const { proxy, policy, variant } = useContext(MarkdownRenderContext);
   const openPreview = useOpenPreviewLink();
@@ -105,7 +121,9 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
 
   // A setup link whose URL is still streaming: the card it will
   // become, with nothing to click yet (see `holdPendingSetupLink`).
-  const pendingSetupLink = policy.setupLinks ? parsePendingSetupLinkHref(href) : null;
+  const pendingSetupLink = policy.setupLinks
+    ? parsePendingSetupLinkHref(href)
+    : null;
   if (pendingSetupLink) {
     return (
       <SetupLinkButton kind={pendingSetupLink} token={null}>
@@ -117,13 +135,15 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
   // A file in the session's workspace opens the file preview, the same
   // as a path in prose (see `remarkWorkspaceFileLinks`).
   const decodedFilePath = policy.fileLinks ? parseFileLinkHref(href) : null;
-  const filePath = policy.fileLinks ? parseFileLinkHref(href, variant === 'document') : null;
+  const filePath = policy.fileLinks
+    ? parseFileLinkHref(href, variant === 'document')
+    : null;
   if (decodedFilePath && !filePath) {
-    return <span className={LINK_CLASS}>{children}</span>;
+    return <span className={cn(LINK_CLASS, 'group')}>{children}</span>;
   }
   if (filePath) {
     return (
-      <ClickablePath filePath={filePath} className={LINK_CLASS}>
+      <ClickablePath filePath={filePath} className={cn(LINK_CLASS, 'group')}>
         {children}
       </ClickablePath>
     );
@@ -132,10 +152,41 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
   // The URL is still streaming: show the label in link style, with
   // nothing to click until the real href arrives.
   if (isStreamingLinkPlaceholder(href)) {
-    return <span className={LINK_CLASS}>{children}</span>;
+    return <span className={cn(LINK_CLASS, 'group')}>{children}</span>;
   }
 
   const resolvedHref = proxy(href) ?? href ?? '#';
+  const presentation = href === resolvedHref ? appLink(resolvedHref) : null;
+  const Mark = presentation
+    ? {
+        github: Github,
+        slack: SlackMark,
+        linear: LinearMark,
+        figma: FigmaMark,
+        notion: NotionMark,
+        google: presentation.kind === 'googleDoc' ? GoogleDocsMark : presentation.kind === 'googleSheet' ? GoogleSheetsMark : GoogleSlidesMark,
+      }[presentation.app]
+    : null;
+  const plainText = React.Children.toArray(children).every(
+    (child) => typeof child === 'string',
+  )
+    ? React.Children.toArray(children).join('')
+    : null;
+  const compactLabel = presentation?.name ?? (presentation &&
+    presentation.kind !== 'commit' && presentation.kind !== 'linearIssue'
+      ? tAppLink(presentation.kind, { number: presentation.number ?? '' }) : '');
+  const appName = presentation ? {
+    github: 'GitHub', linear: 'Linear', slack: 'Slack', figma: 'Figma', notion: 'Notion', google: 'Google',
+  }[presentation.app] : '';
+  const labelNamesApp = plainText === href && !presentation?.name && presentation && ['slack', 'notion', 'figma', 'google'].includes(presentation.app);
+  const labelClass = 'underline decoration-kortix-blue/40 decoration-[1px] underline-offset-[3px] group-hover:decoration-kortix-blue';
+  const linkContent = presentation && Mark ? (
+    <span className={plainText === href ? 'inline-flex max-w-full items-baseline align-baseline' : undefined}>
+      <span aria-hidden="true" className="mr-1 inline-block shrink-0 self-center align-text-bottom text-muted-foreground pointer-events-none"><Mark className="size-3.5" /></span>
+      {!labelNamesApp && <span className="sr-only">{appName}: </span>}
+      <span className={cn('min-w-0', labelClass)}>{plainText === href ? compactLabel : children}</span>
+    </span>
+  ) : children;
   const isHash = resolvedHref.startsWith('#');
   const isExternal = !isInternalUrl(resolvedHref);
   // A sandbox address under a host preview resolver: the proxied href would
@@ -144,12 +195,15 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
     return (
       <a
         href={href}
-        className={LINK_CLASS}
+        className={cn(LINK_CLASS, 'group')}
+        title={presentation ? resolvedHref : undefined}
         target="_blank"
         rel="noopener noreferrer"
         onClick={(e) => openPreview(e, href, resolvedHref)}
       >
-        <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
+        <InsideLinkContext.Provider value={true}>
+          {linkContent}
+        </InsideLinkContext.Provider>
       </a>
     );
   }
@@ -162,10 +216,13 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
     return (
       <a
         href={resolvedHref}
-        className={LINK_CLASS}
+        className={cn(LINK_CLASS, 'group')}
+        title={presentation ? resolvedHref : undefined}
         {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
       >
-        <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
+        <InsideLinkContext.Provider value={true}>
+          {linkContent}
+        </InsideLinkContext.Provider>
       </a>
     );
   }
@@ -174,10 +231,13 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
     <Link
       href={resolvedHref}
       onClick={isHash ? (e) => handleHashClick(e, resolvedHref) : undefined}
-      className={LINK_CLASS}
+      className={cn(LINK_CLASS, 'group')}
+      title={presentation ? resolvedHref : undefined}
       {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
     >
-      <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
+      <InsideLinkContext.Provider value={true}>
+        {linkContent}
+      </InsideLinkContext.Provider>
     </Link>
   );
 }

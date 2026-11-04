@@ -25444,5 +25444,18 @@
     "dialogTitle": "开始新的上下文？",
     "dialogDescription": "智能体在新的上下文中继续，需要细节时会搜索完整历史。不会进行任何总结，对话会原样保留在这里。",
     "dialogAction": "开始新的上下文"
+  },
+  "markdownAppLinks": {
+    "slackMessage": "Slack 消息",
+    "slackConversation": "Slack 对话",
+    "notionPage": "Notion 页面",
+    "figmaDesign": "Figma 设计",
+    "figjamBoard": "FigJam 白板",
+    "figmaSlides": "Figma Slides",
+    "googleDoc": "Google 文档",
+    "googleSheet": "Google 表格",
+    "googleSlides": "Google 幻灯片",
+    "pullRequest": "PR #{number}",
+    "issue": "议题 #{number}"
   }
 }

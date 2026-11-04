@@ -25444,5 +25444,18 @@
     "dialogTitle": "Покренути нови контекст?",
     "dialogDescription": "Агент наставља у новом контексту и претражује целу историју када му треба неки детаљ. Ништа се не сажима, а разговор остаје овде какав јесте.",
     "dialogAction": "Покрени нови контекст"
+  },
+  "markdownAppLinks": {
+    "slackMessage": "Slack порука",
+    "slackConversation": "Slack разговор",
+    "notionPage": "Notion страница",
+    "figmaDesign": "Figma дизајн",
+    "figjamBoard": "FigJam табла",
+    "figmaSlides": "Figma Slides",
+    "googleDoc": "Google документ",
+    "googleSheet": "Google табела",
+    "googleSlides": "Google слајдови",
+    "pullRequest": "PR #{number}",
+    "issue": "Проблем #{number}"
   }
 }

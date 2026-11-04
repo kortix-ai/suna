@@ -25444,5 +25444,18 @@
     "dialogTitle": "¿Iniciar un contexto nuevo?",
     "dialogDescription": "El agente continúa en un contexto nuevo y busca en el historial completo cuando necesita un detalle. No se resume nada y la conversación queda aquí tal como está.",
     "dialogAction": "Iniciar un contexto nuevo"
+  },
+  "markdownAppLinks": {
+    "slackMessage": "Mensaje de Slack",
+    "slackConversation": "Conversación de Slack",
+    "notionPage": "Página de Notion",
+    "figmaDesign": "Diseño de Figma",
+    "figjamBoard": "Tablero de FigJam",
+    "figmaSlides": "Figma Slides",
+    "googleDoc": "Documento de Google",
+    "googleSheet": "Hoja de Google",
+    "googleSlides": "Google Slides",
+    "pullRequest": "PR #{number}",
+    "issue": "Incidencia #{number}"
   }
 }
