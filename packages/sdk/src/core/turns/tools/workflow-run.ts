@@ -309,11 +309,94 @@ export function parseWorkflowResult(output: string): WorkflowResult | null {
   const body = (close === -1 ? output.slice(start) : output.slice(start, close)).trim();
   if (!body) return null;
   if (body.startsWith('{') || body.startsWith('[')) {
+    let parsed: unknown;
     try {
-      return { kind: 'json', text: JSON.stringify(JSON.parse(body), null, 2) };
+      parsed = JSON.parse(body);
     } catch {
-      // A cut or hand-written block: show it as text.
+      // A cut block: a document inside it still reads as the document.
+      const recovered = body.startsWith('{') ? documentOf(cutStringFields(body)) : null;
+      return { kind: 'markdown', text: recovered ?? body };
     }
+    const document = isRecord(parsed) ? documentOf(Object.entries(parsed)) : null;
+    if (document) return { kind: 'markdown', text: document };
+    return { kind: 'json', text: JSON.stringify(parsed, null, 2) };
   }
   return { kind: 'markdown', text: body };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** A string a person reads, not a value: it spans lines or runs long. */
+function isProse(value: string): boolean {
+  return value.includes('\n') || value.length >= 120;
+}
+
+/** `growthPlan` / `growth_plan` → `Growth plan`. */
+function fieldTitle(key: string): string {
+  const words = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').trim().toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * A JSON result whose values are all strings, at least one of them prose, is a
+ * document: one field is the text itself, several are `## Field` sections in order.
+ * Anything else (numbers, arrays, short labels) is data and stays JSON.
+ */
+function documentOf(fields: [string, unknown][]): string | null {
+  if (fields.length === 0) return null;
+  if (!fields.every((entry): entry is [string, string] => typeof entry[1] === 'string')) return null;
+  if (!fields.some(([, value]) => isProse(value))) return null;
+  if (fields.length === 1) return fields[0]![1].trim();
+  return fields.map(([key, value]) => `## ${fieldTitle(key)}\n\n${value.trim()}`).join('\n\n');
+}
+
+/**
+ * The `"key": "value"` pairs of a JSON object cut short, in order, with the
+ * escapes decoded; the last value runs to the cut. Linear time, no regex backtracking.
+ */
+function cutStringFields(body: string): [string, string][] {
+  const fields: [string, string][] = [];
+  const pair = /\s*"((?:[^"\\]|\\.)*)"\s*:\s*"/y;
+  let at = 1;
+  while (at < body.length) {
+    pair.lastIndex = at;
+    const head = pair.exec(body);
+    if (!head) break;
+    let value = '';
+    let i = pair.lastIndex;
+    let closed = false;
+    while (i < body.length) {
+      const char = body[i]!;
+      if (char === '"') {
+        closed = true;
+        i += 1;
+        break;
+      }
+      if (char !== '\\') {
+        value += char;
+        i += 1;
+        continue;
+      }
+      const next = body[i + 1];
+      if (next === undefined) break;
+      if (next === 'u') {
+        const code = body.slice(i + 2, i + 6);
+        if (!/^[0-9a-fA-F]{4}$/.test(code)) break;
+        value += String.fromCharCode(Number.parseInt(code, 16));
+        i += 6;
+        continue;
+      }
+      value += ({ n: '\n', t: '\t', r: '\r', b: '\b', f: '\f' } as Record<string, string>)[next] ?? next;
+      i += 2;
+    }
+    fields.push([head[1]!, value]);
+    if (!closed) break;
+    const comma = /\s*,/y;
+    comma.lastIndex = i;
+    if (!comma.exec(body)) break;
+    at = comma.lastIndex;
+  }
+  return fields;
 }

@@ -184,3 +184,38 @@ describe('parseWorkflowResult', () => {
     expect(parseWorkflowResult('plain text')).toBeNull();
   });
 });
+
+describe('parseWorkflowResult — a JSON result that carries a document', () => {
+  // Synthetic values. A workflow script may return `{ report: '# …' }`: the person reads the
+  // document, never the JSON that wraps it.
+  const doc = '# Growth plan\n\nOne pack. Ten pilots.\n\n## Priorities\n\n1. **Prove it.** Ten paid pilots.';
+
+  test('one prose field is the result itself, as Markdown', () => {
+    expect(parseWorkflowResult(`<workflow_result>\n${JSON.stringify({ strategy: doc })}\n</workflow_result>`)).toEqual({
+      kind: 'markdown',
+      text: doc,
+    });
+  });
+
+  test('several prose fields read as sections in their order', () => {
+    const body = JSON.stringify({ summary: 'Two of nine blockers are real.\nThe rest are fixed.', risks: '- Safari 17 checkout\n- Export drops a row' });
+    expect(parseWorkflowResult(`<workflow_result>${body}</workflow_result>`)).toEqual({
+      kind: 'markdown',
+      text: '## Summary\n\nTwo of nine blockers are real.\nThe rest are fixed.\n\n## Risks\n\n- Safari 17 checkout\n- Export drops a row',
+    });
+  });
+
+  test('data stays JSON: short strings, numbers and arrays are not a document', () => {
+    expect(parseWorkflowResult('<workflow_result>{"status":"ok","count":3}</workflow_result>')?.kind).toBe('json');
+    expect(parseWorkflowResult('<workflow_result>{"status":"ok"}</workflow_result>')?.kind).toBe('json');
+  });
+
+  test('a result cut inside its document still reads as the document, escapes decoded', () => {
+    const full = JSON.stringify({ strategy: doc });
+    const cut = full.slice(0, full.indexOf('Ten paid'));
+    expect(parseWorkflowResult(`<workflow_result>\n${cut}`)).toEqual({
+      kind: 'markdown',
+      text: '# Growth plan\n\nOne pack. Ten pilots.\n\n## Priorities\n\n1. **Prove it.**',
+    });
+  });
+});
