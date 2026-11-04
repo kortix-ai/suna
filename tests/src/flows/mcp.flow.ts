@@ -859,7 +859,7 @@ flow(
     domain: "mcp",
     requires: ["database"],
     timeoutMs: 180_000,
-    routes: ["POST /v1/accounts/tokens", "POST /v1/mcp", "GET /v1/projects/:projectId/detail", "GET /v1/projects/:projectId/files/content"],
+    routes: ["POST /v1/accounts/tokens", "POST /v1/mcp", "GET /v1/projects/:projectId/detail", "GET /v1/projects/:projectId/files", "GET /v1/projects/:projectId/files/content"],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();

@@ -379,6 +379,15 @@ const envSchema = z.object({
       message: 'Must be major.minor.patch',
     },
   ),
+  // A Kortix CLI older than CLI_MIN_VERSION (`major.minor.patch`) gets `426`
+  // with the update command on every /v1 request (middleware/cli-min-version.ts).
+  // Unset: no gate. A malformed value is a boot error, as above.
+  CLI_MIN_VERSION: optStr.refine(
+    (v) => v.trim() === '' || /^v?\d+(\.\d+){0,2}$/.test(v.trim()),
+    {
+      message: 'Must be major.minor.patch',
+    },
+  ),
   MOBILE_STORE_URL_IOS: optUrl(''),
   MOBILE_STORE_URL_ANDROID: optUrl(''),
   // Self-host enterprise license: when the operator has purchased/holds a
@@ -1423,6 +1432,7 @@ export const config = {
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
+  CLI_MIN_VERSION: env.CLI_MIN_VERSION.trim(),
   MOBILE_STORE_URL_IOS: env.MOBILE_STORE_URL_IOS,
   MOBILE_STORE_URL_ANDROID: env.MOBILE_STORE_URL_ANDROID,
   ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,

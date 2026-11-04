@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { useClearFocusedToolCall, useFocusedToolCallId, useKortixComputerStore } from '../../../internal/stores/kortix-computer-store';
+import { useClearFocusedToolCall, useFocusedAgent, useFocusedToolCallId, useKortixComputerStore } from '../../../internal/stores/kortix-computer-store';
+import { SubagentPanel } from '../../agents/subagent-view';
+import { DetailSidebarToggle } from '../easy/detail-view';
 import { useSessionBrowserStore } from '../../../internal/stores/session-browser-store';
 import { pathOutput, shouldAutoExpandOutputs, shouldAutoOpenPayoff, stepForCallId } from '../easy/easy-panel-logic';
 import { StepDetailBody } from '../easy/step-detail-body';
@@ -10,12 +12,12 @@ import type { usePanelDerivations } from './use-panel-derivations';
 
 type Handoffs = Pick<SessionPanelValue,
   'sessionId' | 'projectId' | 'projectSessionId' | 'detail' | 'handleOpenOutput' |
-  'openDetail' | 'openTerminal' | 'openAudit' | 'openReminders' | 'openDesktop' | 'openBrowser' | 'openFiles'
+  'openDetail' | 'closeDetail' | 'openTerminal' | 'openAudit' | 'openReminders' | 'openDesktop' | 'openBrowser' | 'openFiles'
 > & Pick<ReturnType<typeof usePanelDerivations>, 'isRunning' | 'outcome' | 'apps' | 'files' | 'steps'>;
 
 export function usePanelHandoffs({
   sessionId, projectId, projectSessionId, isRunning, outcome, apps, files, steps,
-  detail, handleOpenOutput, openDetail, openTerminal, openAudit, openReminders, openDesktop, openBrowser, openFiles,
+  detail, handleOpenOutput, openDetail, closeDetail, openTerminal, openAudit, openReminders, openDesktop, openBrowser, openFiles,
 }: Handoffs) {
   // Auto-expand Outputs the moment a run finishes with something to show —
   // never on every render of an already-finished (or still-running) run, and
@@ -150,6 +152,34 @@ export function usePanelHandoffs({
     }
     clearFocusedToolCall();
   }, [focusedToolCallId, steps, clearFocusedToolCall, sessionId, openDetail]);
+
+  // An agent clicked in the CHAT (its row, its finish notice, a workflow agent,
+  // the agents line) opens that agent's session here, beside the chat: its face,
+  // name and state, its conversation, a box to message it. One request, consumed
+  // once, the same shape as the tool focus above.
+  const focusedAgent = useFocusedAgent();
+  useEffect(() => {
+    if (!focusedAgent) return;
+    useKortixComputerStore.getState().clearFocusedAgent();
+    openDetail({
+      key: `agent:${focusedAgent.sessionId}`,
+      title: focusedAgent.title,
+      hideHeader: true,
+      padded: false,
+      body: (
+        <SubagentPanel
+          sessionId={focusedAgent.sessionId}
+          title={focusedAgent.title || undefined}
+          handle={focusedAgent.handle || undefined}
+          task={focusedAgent.task}
+          failure={focusedAgent.failure}
+          projectId={projectId ?? undefined}
+          onClose={closeDetail}
+          leading={<DetailSidebarToggle className="size-7" />}
+        />
+      ),
+    });
+  }, [focusedAgent, openDetail, closeDetail, projectId]);
 
   // Command palette / header "Open Terminal"/"Open Audit"/"Open Browser"/
   // "Open Files" (W1→W2-shaped handoff): subscribe to the pending request

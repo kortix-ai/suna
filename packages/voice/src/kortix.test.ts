@@ -33,7 +33,7 @@ test('sessions sharing a box each get their own calls, one relay serves them, a 
   attach(b.pi, 'ses_b')
   await a.emit('session_start')
   await b.emit('session_start')
-  const every = [...META_TOOLS.map((t) => t.name), 'voice_join_meet', 'voice_leave_meet']
+  const every = [...META_TOOLS.map((t) => t.name), 'voice_join_meet', 'voice_join_call', 'voice_leave_meet']
   expect(a.tools).toEqual(every)
   expect(b.tools).toEqual(every)
   expect(await brain.session('ses_a')).toBe('ses_a')

@@ -2,7 +2,7 @@
 
 import type { CSSProperties, ReactNode } from 'react';
 
-import { UiLink as Link } from '../../../providers/ui-provider';
+import { HoverPrefetchLink } from '../../../internal/components/hover-prefetch-link';
 
 import { Checkbox } from '../../../primitives/checkbox';
 import { cn } from '../../../internal/lib/utils';
@@ -26,10 +26,15 @@ export interface CatalogCardProps {
    *  then renders the link and the control as siblings: a button inside an
    *  anchor is invalid HTML and a hydration error. */
   trailingInteractive?: boolean;
-  /** A card that NAVIGATES renders as a real `next/link` — prefetched, middle-
-   *  clickable, and a client transition rather than a `router.push` from a
-   *  button (see the no-hard-refresh nav contract). Cards that open a modal
-   *  in place keep `onClick`. Exactly one of the two. */
+  /** A card that NAVIGATES renders as a real `next/link` — middle-clickable,
+   *  and a client transition rather than a `router.push` from a button (see
+   *  the no-hard-refresh nav contract). Cards that open a modal in place keep
+   *  `onClick`. Exactly one of the two.
+   *
+   *  The link prefetches its page on intent (hover, focus, touch), never on
+   *  sight. A grid shows hundreds of cards, and every prefetch is a dynamic
+   *  server render. On 2026-11-02 one visit to the connector catalogue
+   *  prefetched 372 connector pages: 937 renders on Vercel in 10 minutes. */
   href?: string;
   /** Pointer or keyboard intent on a navigating card, before the click. Used
    *  to start the destination's data read ~200–500 ms early. */
@@ -151,7 +156,7 @@ export function CatalogCard({
           'has-[a:focus-visible]:ring-ring/50 relative has-[a:focus-visible]:ring-2',
         )}
       >
-        <Link
+        <HoverPrefetchLink
           href={href}
           prefetch
           aria-disabled={disabled || undefined}
@@ -160,14 +165,14 @@ export function CatalogCard({
           className="flex min-w-0 flex-1 items-start gap-3 text-left after:absolute after:inset-0 after:content-[''] focus-visible:outline-none"
         >
           {content}
-        </Link>
+        </HoverPrefetchLink>
         {trailing ? <span className="relative shrink-0">{trailing}</span> : null}
       </div>
     );
   }
   if (href) {
     return (
-      <Link
+      <HoverPrefetchLink
         href={href}
         prefetch
         aria-disabled={disabled || undefined}
@@ -177,7 +182,7 @@ export function CatalogCard({
         className={classes}
       >
         {body}
-      </Link>
+      </HoverPrefetchLink>
     );
   }
   return (
