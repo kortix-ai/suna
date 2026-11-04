@@ -68,6 +68,19 @@ const LINK_CLASS = cn(
   '[overflow-wrap:anywhere]',
 );
 
+// No underline: the app mark is the link affordance. Hover tints the mark
+// with the link color, so the label keeps its full contrast.
+const APP_LINK_CLASS = cn(
+  'group font-medium text-kortix-blue no-underline',
+  '[overflow-wrap:anywhere]',
+);
+
+/** `"PR #123 follow-up"` → `["PR", " #123 follow-up"]`. */
+function splitFirstWord(text: string): [string, string] {
+  const i = text.indexOf(' ');
+  return i < 0 ? [text, ''] : [text.slice(0, i), text.slice(i)];
+}
+
 function handleHashClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
   if (!href.startsWith('#')) return;
   e.preventDefault();
@@ -189,14 +202,28 @@ export function MarkdownLink({
     github: 'GitHub', linear: 'Linear', slack: 'Slack', figma: 'Figma', notion: 'Notion', google: 'Google',
   }[presentation.app] : '';
   const labelNamesApp = plainText === href && !presentation?.name && presentation && ['slack', 'notion', 'figma', 'google'].includes(presentation.app);
-  const labelClass = 'underline decoration-kortix-blue/40 decoration-[1px] underline-offset-[3px] group-hover:decoration-kortix-blue';
+  // A compact app link is the app mark plus a short label, never underlined.
+  // The mark is 1em and sits at -0.15em: Roobert cap height is 0.7em, so the
+  // mark centers on the cap height at every text size. Only the mark and the
+  // first word are kept together; a long label (a Notion or Figma title of up
+  // to 48 characters, a custom label) wraps after them like plain text.
+  const label = plainText === href ? compactLabel : children;
+  const labelText = typeof label === 'string' ? label
+    : Array.isArray(label) && label.length === 1 && typeof label[0] === 'string' ? label[0] : null;
+  const [firstWord, rest] = labelText === null ? [null, null] : splitFirstWord(labelText);
   const linkContent = presentation && Mark ? (
-    <span className={plainText === href ? 'inline-flex max-w-full items-baseline align-baseline' : undefined}>
-      <span aria-hidden="true" className="mr-1 inline-block shrink-0 self-center align-text-bottom text-muted-foreground pointer-events-none"><Mark className="size-3.5" /></span>
-      {!labelNamesApp && <span className="sr-only">{appName}: </span>}
-      <span className={cn('min-w-0', labelClass)}>{plainText === href ? compactLabel : children}</span>
-    </span>
+    <>
+      <span className="whitespace-nowrap">
+        <span aria-hidden="true" className="pointer-events-none mr-1 inline-block size-[1em] align-[-0.15em] text-muted-foreground transition-colors group-hover:text-kortix-blue">
+          <Mark className="block size-full" />
+        </span>
+        {!labelNamesApp && <span className="sr-only">{appName}: </span>}
+        {firstWord}
+      </span>
+      {firstWord === null ? label : rest}
+    </>
   ) : children;
+  const anchorClass = presentation && Mark ? APP_LINK_CLASS : LINK_CLASS;
   const isHash = resolvedHref.startsWith('#');
   const isExternal = !isInternalUrl(resolvedHref);
   // A sandbox address under a host preview resolver: the proxied href would
@@ -205,7 +232,7 @@ export function MarkdownLink({
     return (
       <a
         href={href}
-        className={cn(LINK_CLASS, 'group')}
+        className={anchorClass}
         title={presentation ? resolvedHref : undefined}
         target="_blank"
         rel="noopener noreferrer"
@@ -226,7 +253,7 @@ export function MarkdownLink({
     return (
       <a
         href={resolvedHref}
-        className={cn(LINK_CLASS, 'group')}
+        className={anchorClass}
         title={presentation ? resolvedHref : undefined}
         {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
       >
@@ -241,7 +268,7 @@ export function MarkdownLink({
     <Link
       href={resolvedHref}
       onClick={isHash ? (e) => handleHashClick(e, resolvedHref) : undefined}
-      className={cn(LINK_CLASS, 'group')}
+      className={anchorClass}
       title={presentation ? resolvedHref : undefined}
       {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
     >

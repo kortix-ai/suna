@@ -27,7 +27,8 @@ for (const [href, label] of cases) {
         <UnifiedMarkdown trust="untrusted" content={href} />
       </IntlTestProvider>,
     );
-    expect(html).toContain(label);
+    // The visible text, without tags: the mark and first word wrap together.
+    expect(html.replace(/<[^>]+>/g, '')).toContain(label);
     expect(html).toContain(`href="${href.replaceAll('&', '&amp;')}"`);
     expect(html).toContain('aria-hidden="true"');
   });
@@ -68,8 +69,9 @@ test('compacts streaming word wrappers and preserves formatted custom labels', (
       <MarkdownLink href={href}>{children}</MarkdownLink>
     </IntlTestProvider>,
   );
+  const text = (html: string) => html.replace(/<[^>]+>/g, '');
   const streaming = render(<span className="kx-stream-word">{href}</span>);
-  expect(streaming).toContain('PR #123');
+  expect(text(streaming)).toContain('PR #123');
   expect(streaming).toContain(`href="${href}"`);
-  expect(render(<strong><span className="kx-stream-word">{href}</span></strong>)).not.toContain('PR #123');
+  expect(text(render(<strong><span className="kx-stream-word">{href}</span></strong>))).not.toContain('PR #123');
 });

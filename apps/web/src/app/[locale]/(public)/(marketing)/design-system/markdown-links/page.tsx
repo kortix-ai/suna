@@ -10,6 +10,8 @@ Discuss in https://example.slack.com/archives/C123/p1234567890123456 or review h
 
 Notes: https://www.notion.so/Example-0123456789abcdef0123456789abcdef and https://docs.google.com/document/d/example/edit
 
+Long titles wrap: https://www.notion.so/Engineering-Onboarding-Guide-for-New-Hires-2026-0123456789abcdef0123456789abcdef
+
 Custom labels stay intact: [Review the changes](https://github.com/example/project/pull/123).
 
 Other links stay readable: https://example.com/reference
