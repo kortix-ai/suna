@@ -7,7 +7,10 @@ import StarterKit from '@tiptap/starter-kit';
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import { markdownToHtml } from '@kortix/ui/markdown/doc-editor/markdown';
-import { docLiveDecorations, docLivePeers } from './doc-live-decorations';
+import { ARTIFACT_REANCHOR_READ_UNITS, type ArtifactReanchorBudget } from '@kortix/shared/artifact-comments';
+import { EditorState } from '@tiptap/pm/state';
+import type { DecorationSet } from '@tiptap/pm/view';
+import { createDocLivePlugin, docLiveDecorations, docLivePeers, docLivePluginKey } from './doc-live-decorations';
 import {
   cachedDocMarkdownPositions,
   docLiveCursor,
@@ -15,7 +18,11 @@ import {
   docPositionForSource,
   docSourceOffset,
   resolveDocLiveCursor,
+  resolveDocLivePlaces,
   resolveDocLiveRange,
+  type DocLivePeerAnchors,
+  type DocLiveReanchor,
+  type DocLiveResolution,
 } from './doc-live-positions';
 
 const window = new Window();
@@ -187,13 +194,13 @@ describe('doc live peers and decorations', () => {
       },
     ]);
     const doc = parse(MARKDOWN);
-    const set = docLiveDecorations({ markdown: MARKDOWN, peers }, doc);
+    const { set } = docLiveDecorations({ markdown: MARKDOWN, peers }, doc);
     const found = set.find();
     expect(found).toHaveLength(1);
     expect(found[0]!.from).toBe(at(doc, 'expansion revenue'));
   });
 
-  test('a person draws a caret and a tinted selection; budgets are per participant', () => {
+  test('a person draws a caret and a tinted selection', () => {
     const start = MARKDOWN.indexOf('Pricing');
     const peers = docLivePeers(
       [
@@ -207,9 +214,161 @@ describe('doc live peers and decorations', () => {
       () => '',
     );
     const doc = parse(MARKDOWN);
-    const found = docLiveDecorations({ markdown: MARKDOWN, peers }, doc).find();
+    const found = docLiveDecorations({ markdown: MARKDOWN, peers }, doc).set.find();
     const selection = found.find((item) => item.from !== item.to)!;
     expect(doc.textBetween(selection.from, selection.to)).toBe('Pricing moved');
     expect(found.some((item) => item.from === item.to && item.from === at(doc, 'Pricing'))).toBe(true);
+  });
+
+  test('the plugin draws each frame, keeps its resolution for the next, and maps between frames', () => {
+    const start = MARKDOWN.indexOf('Pricing');
+    const peers = docLivePeers(
+      [participant({ id: 'ana', cursor: docLiveCursor(MARKDOWN, start) })],
+      [],
+      () => '',
+    );
+    const plugin = createDocLivePlugin();
+    let state = EditorState.create({ doc: parse(MARKDOWN), plugins: [plugin] });
+    const carets = () => (plugin.props.decorations!.call(plugin, state) as DecorationSet).find();
+    for (const pass of [1, 2]) {
+      state = state.apply(state.tr.setMeta(docLivePluginKey, { markdown: MARKDOWN, peers }));
+      expect(carets().map((item) => item.from)).toEqual([at(state.doc, 'Pricing')]);
+      expect(docLivePluginKey.getState(state)!.resolution!.pass).toBe(pass);
+    }
+    // A local edit before the caret moves it with the text.
+    state = state.apply(state.tr.insertText('Q3 ', 1));
+    expect(carets().map((item) => item.from)).toEqual([at(state.doc, 'Pricing')]);
+  });
+});
+
+describe('doc live resolution: the cost of one presence pass', () => {
+  // A large doc: one read budget (ARTIFACT_REANCHOR_READ_UNITS) would buy 16 whole-document scans of it.
+  const LARGE = 'x'.repeat(1 << 20);
+  /** A presence pass may spend 4 × the Markdown length: 4 whole-document scans. */
+  const PASS_UNITS = 4 * LARGE.length;
+  const HONEST = 'expansion revenue grew in every region';
+  const MOVED = 'Pricing moved to seats';
+  /** The honest caret's words on frame `frame`: it moves every frame. */
+  const honestAt = (frame: number) => `${HONEST} (${frame})`;
+
+  /**
+   * A fake re-anchor: one whole-document scan per call the budget lets through, tested
+   * before it is charged (as `reanchorArtifactText` does). Only `found` quotes match. A found
+   * quote costs `foundShare` of a scan: a real exact match is two native scans, about a quarter.
+   */
+  function countingReanchor(found: ReadonlyMap<string, number>, foundShare = 1) {
+    const spent = { scans: 0, units: 0 };
+    const scan = (markdown: string, quote: string, budget: ArtifactReanchorBudget) => {
+      if (budget.remaining <= 0) return null;
+      const units = found.has(quote) ? markdown.length * foundShare : markdown.length;
+      budget.remaining -= units;
+      spent.scans++;
+      spent.units += units;
+      return found.get(quote) ?? null;
+    };
+    const reanchor: DocLiveReanchor = {
+      cursor: (markdown, at, budget) => scan(markdown, at.quote, budget),
+      range: (markdown, range, budget) => {
+        const start = scan(markdown, range.quote, budget);
+        return start === null ? null : { start, end: start + range.quote.length };
+      },
+    };
+    return { reanchor, spent };
+  }
+
+  /** A participant whose caret and selection are 64 code units that occur nowhere, new each frame. */
+  const crafted = (n: number, frame: number): DocLivePeerAnchors => ({
+    id: `crafted-${n}`,
+    cursor: { quote: `${n}:${frame}:caret:`.padEnd(64, 'q'), prefix: '', offset: 0 },
+    selection: { quote: `${n}:${frame}:selection:`.padEnd(64, 'q'), prefix: '', suffix: '' },
+  });
+  const craftedRoom = (frame: number) => Array.from({ length: 8 }, (_, n) => crafted(n, frame));
+  const honest: DocLivePeerAnchors = {
+    id: 'honest',
+    cursor: { quote: HONEST, prefix: '', offset: 0 },
+    selection: null,
+  };
+
+  test('one pass spends at most 4 × the Markdown length, however many participants send unmatched quotes', () => {
+    expect(ARTIFACT_REANCHOR_READ_UNITS / LARGE.length).toBe(16);
+    const { reanchor, spent } = countingReanchor(new Map());
+    const { places } = resolveDocLivePlaces(LARGE, craftedRoom(1), null, reanchor);
+    // 8 participants × (selection + caret) is 16 scans: the pass buys 4.
+    expect(spent.units).toBeLessThanOrEqual(PASS_UNITS);
+    expect(spent.scans).toBe(4);
+    // Quotes that match nothing never draw anything.
+    for (const place of places.values()) expect(place).toEqual({ selection: null, cursor: null });
+  });
+
+  test('an unchanged participant costs no scan on the next pass; an edit re-anchors everyone', () => {
+    const { reanchor, spent } = countingReanchor(new Map([[HONEST, 1000]]));
+    const peers = [honest, crafted(0, 1)];
+    const first = resolveDocLivePlaces(LARGE, peers, null, reanchor);
+    expect(spent.scans).toBe(3);
+    expect(first.places.get('honest')).toEqual({ selection: null, cursor: 1000 });
+    const second = resolveDocLivePlaces(LARGE, peers, first.resolution, reanchor);
+    expect(spent.scans).toBe(3);
+    expect(second.places).toEqual(first.places);
+    // The same positions in edited Markdown: the cache no longer holds.
+    resolveDocLivePlaces(`${LARGE}y`, peers, second.resolution, reanchor);
+    expect(spent.scans).toBe(6);
+  });
+
+  test('8 participants with a new unmatched quote every frame: an honest moving caret is drawn every ≤ 3 passes', () => {
+    const FRAMES = 12;
+    const found = new Map(Array.from({ length: FRAMES }, (_, i) => [honestAt(i + 1), 1000 + i + 1] as const));
+    const { reanchor, spent } = countingReanchor(found);
+    let resolution: DocLiveResolution | null = null;
+    const drawnOn: number[] = [];
+    for (let frame = 1; frame <= FRAMES; frame++) {
+      const before = spent.units;
+      // Listed last, behind 8 participants whose work is new every frame; its own caret moves too.
+      const moving = { ...honest, cursor: { quote: honestAt(frame), prefix: '', offset: 0 } };
+      const result = resolveDocLivePlaces(LARGE, [...craftedRoom(frame), moving], resolution, reanchor);
+      expect(spent.units - before).toBeLessThanOrEqual(PASS_UNITS);
+      resolution = result.resolution;
+      const place = result.places.get('honest');
+      // Drawn means drawn at this frame's place, never an older one.
+      if (place) expect(place.cursor).toBe(1000 + frame);
+      if (place) drawnOn.push(frame);
+    }
+    // Every 3 consecutive passes draw the honest caret at least once.
+    for (let frame = 1; frame + 2 <= FRAMES; frame++)
+      expect(drawnOn.some((drawn) => drawn >= frame && drawn <= frame + 2)).toBe(true);
+  });
+
+  test('a moved participant the pass cannot afford draws nothing, never its old place', () => {
+    const { reanchor } = countingReanchor(new Map([[HONEST, 1000], [MOVED, 2000]]));
+    const first = resolveDocLivePlaces(LARGE, [honest, ...craftedRoom(1)], null, reanchor);
+    expect(first.places.get('honest')).toEqual({ selection: null, cursor: 1000 });
+    const moved = { ...honest, cursor: { quote: MOVED, prefix: '', offset: 0 } };
+    // Five crafted participants have cost less: they spend this pass before the moved caret.
+    const second = resolveDocLivePlaces(LARGE, [moved, ...craftedRoom(2)], first.resolution, reanchor);
+    expect(second.places.has('honest')).toBe(false);
+  });
+
+  test('a caret present before 8 participants join with a new unmatched quote every frame is drawn on every pass', () => {
+    const FRAMES = 12;
+    const found = new Map(Array.from({ length: FRAMES + 1 }, (_, frame) => [honestAt(frame), 1000 + frame] as const));
+    const { reanchor, spent } = countingReanchor(found, 1 / 4);
+    const movingAt = (frame: number) => ({ ...honest, cursor: { quote: honestAt(frame), prefix: '', offset: 0 } });
+    let resolution = resolveDocLivePlaces(LARGE, [movingAt(0)], null, reanchor).resolution;
+    for (let frame = 1; frame <= FRAMES; frame++) {
+      const before = spent.units;
+      const result = resolveDocLivePlaces(LARGE, [...craftedRoom(frame), movingAt(frame)], resolution, reanchor);
+      // The budget, plus the one scan that crosses it.
+      expect(spent.units - before).toBeLessThanOrEqual(PASS_UNITS + LARGE.length);
+      resolution = result.resolution;
+      expect(result.places.get('honest')).toEqual({ selection: null, cursor: 1000 + frame });
+    }
+  });
+
+  test('participants that join go behind those present: a present caret is drawn on the pass they arrive', () => {
+    const { reanchor } = countingReanchor(new Map([[HONEST, 1000], [MOVED, 2000]]));
+    const first = resolveDocLivePlaces(LARGE, [honest], null, reanchor);
+    const moved = { ...honest, cursor: { quote: MOVED, prefix: '', offset: 0 } };
+    // Eight participants arrive, listed first, and the present caret moves in the same frame.
+    const second = resolveDocLivePlaces(LARGE, [...craftedRoom(2), moved], first.resolution, reanchor);
+    expect(second.places.get('honest')).toEqual({ selection: null, cursor: 2000 });
   });
 });

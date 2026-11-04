@@ -9,6 +9,7 @@ import type { ArtifactLivePosition, ArtifactLiveRange } from '@kortix/sdk';
 import {
   ARTIFACT_TEXT_CONTEXT_MAX,
   ARTIFACT_TEXT_QUOTE_MAX,
+  ARTIFACT_REANCHOR_READ_UNITS,
   reanchorArtifactText,
   type ArtifactReanchorBudget,
 } from '@kortix/shared/artifact-comments';
@@ -175,4 +176,147 @@ export function resolveDocLiveRange(
     budget,
   );
   return found.start === null || found.end === null ? null : { start: found.start, end: found.end };
+}
+
+type DocLiveCursorAnchor = Pick<Extract<ArtifactLivePosition, { kind: 'doc' }>, 'quote' | 'prefix' | 'offset'>;
+type DocLiveRangeAnchor = Pick<Extract<ArtifactLiveRange, { kind: 'doc' }>, 'quote' | 'prefix' | 'suffix'>;
+
+/** The anchors one remote participant reports in the doc. */
+export interface DocLivePeerAnchors {
+  id: string;
+  cursor: DocLiveCursorAnchor | null;
+  selection: DocLiveRangeAnchor | null;
+}
+
+/** Where one participant is in this viewer's Markdown. Null parts: nothing to draw. */
+export interface DocLivePlace {
+  selection: { start: number; end: number } | null;
+  cursor: number | null;
+}
+
+/** The re-anchoring a pass spends its budget on. Tests count its scans. */
+export interface DocLiveReanchor {
+  cursor: (markdown: string, at: DocLiveCursorAnchor, budget: ArtifactReanchorBudget) => number | null;
+  range: (
+    markdown: string,
+    range: DocLiveRangeAnchor,
+    budget: ArtifactReanchorBudget,
+  ) => { start: number; end: number } | null;
+}
+
+export const DOC_LIVE_REANCHOR: DocLiveReanchor = { cursor: resolveDocLiveCursor, range: resolveDocLiveRange };
+
+/** A presence pass never spends less than this: a small doc still affords one fuzzy 500-unit quote. */
+const DOC_LIVE_PASS_FLOOR = 1 << 19;
+
+/**
+ * The re-anchoring one presence pass may spend: 4 × the Markdown length, about four
+ * whole-document fuzzy scans. Never below DOC_LIVE_PASS_FLOOR, never above one read budget.
+ */
+export function docLivePassBudget(markdown: string): ArtifactReanchorBudget {
+  return {
+    remaining: Math.min(ARTIFACT_REANCHOR_READ_UNITS, Math.max(DOC_LIVE_PASS_FLOOR, 4 * markdown.length)),
+  };
+}
+
+/** A resolved part of a participant, and the position value it was resolved from. */
+interface Resolved<T> {
+  key: string;
+  value: T | null;
+}
+
+interface DocLiveCacheEntry {
+  selection?: Resolved<{ start: number; end: number }>;
+  cursor?: Resolved<number>;
+}
+
+/** What one pass hands the next. */
+export interface DocLiveResolution {
+  /** The Markdown the cache was resolved in: an edit empties it. */
+  markdown: string;
+  /** Each participant's resolved parts, by participant id. */
+  cache: ReadonlyMap<string, DocLiveCacheEntry>;
+  /** The budget units each participant has cost so far: the cheapest goes next. */
+  cost: ReadonlyMap<string, number>;
+  /** The number of passes so far. */
+  pass: number;
+}
+
+/** A part the participant does not report: nothing to draw, nothing to re-anchor. */
+const NO_PART: Resolved<never> = { key: '', value: null };
+
+/** A part's last result while its position value is unchanged. Undefined: it needs a re-anchor. */
+function reuse<T>(anchor: object | null, last: Resolved<T> | undefined): Resolved<T> | undefined {
+  if (!anchor) return NO_PART;
+  return last?.key === JSON.stringify(anchor) ? last : undefined;
+}
+
+/**
+ * Where each remote participant is in `markdown`, for one presence pass.
+ *
+ * The cost of a pass is bounded, whatever the room holds:
+ * - A part (caret or selection) whose position value is unchanged reuses its last result while
+ *   the Markdown is unchanged. It costs no scan, even when its words are gone.
+ * - All other work shares one pass budget (`docLivePassBudget`: 4 × the Markdown length).
+ *   `reanchorArtifactText` tests the budget before it charges a scan, so a pass spends at most
+ *   that budget plus the one scan that crosses it.
+ * - Work goes one part at a time to the participant that has cost the least so far. One that
+ *   sends a fresh unmatched quote every frame pays for each, falls behind, and cannot starve
+ *   the others. A participant that joins starts one pass budget behind everyone present:
+ *   joining or rejoining buys no turn, and a burst of joiners cannot crowd out the
+ *   participants already drawn. Without contention every participant is served at once.
+ *
+ * A participant missing from `places` was not resolved in this pass: draw nothing for it,
+ * never its last place.
+ */
+export function resolveDocLivePlaces(
+  markdown: string,
+  peers: readonly DocLivePeerAnchors[],
+  previous: DocLiveResolution | null,
+  reanchor: DocLiveReanchor = DOC_LIVE_REANCHOR,
+): { places: Map<string, DocLivePlace>; resolution: DocLiveResolution } {
+  const cached = previous?.markdown === markdown ? previous.cache : new Map<string, DocLiveCacheEntry>();
+  const budget = docLivePassBudget(markdown);
+  // A participant that joins starts one pass budget behind the costliest one present.
+  let joining = 0;
+  for (const value of previous?.cost.values() ?? []) joining = Math.max(joining, value + budget.remaining);
+  const cost = new Map<string, number>();
+  const entries = new Map<string, DocLiveCacheEntry>();
+  const work: { peer: DocLivePeerAnchors; part: 'selection' | 'cursor' }[] = [];
+  for (const peer of peers) {
+    cost.set(peer.id, previous?.cost.get(peer.id) ?? joining);
+    const last = cached.get(peer.id);
+    const entry = { selection: reuse(peer.selection, last?.selection), cursor: reuse(peer.cursor, last?.cursor) };
+    if (!entry.selection) work.push({ peer, part: 'selection' });
+    if (!entry.cursor) work.push({ peer, part: 'cursor' });
+    entries.set(peer.id, entry);
+  }
+  // A miss with budget left means the words are gone. A miss that emptied the budget may be the
+  // budget's doing, so it is not kept: a later pass tries again.
+  const kept = (value: unknown) => value !== null || budget.remaining > 0;
+  while (work.length && budget.remaining > 0) {
+    // The cheapest participant so far; equal costs keep the room's order.
+    let next = 0;
+    for (let i = 1; i < work.length; i++)
+      if (cost.get(work[i]!.peer.id)! < cost.get(work[next]!.peer.id)!) next = i;
+    const { peer, part } = work.splice(next, 1)[0]!;
+    const entry = entries.get(peer.id)!;
+    const before = budget.remaining;
+    if (part === 'selection') {
+      const value = reanchor.range(markdown, peer.selection!, budget);
+      if (kept(value)) entry.selection = { key: JSON.stringify(peer.selection), value };
+    } else {
+      const value = reanchor.cursor(markdown, peer.cursor!, budget);
+      if (kept(value)) entry.cursor = { key: JSON.stringify(peer.cursor), value };
+    }
+    cost.set(peer.id, cost.get(peer.id)! + before - budget.remaining);
+  }
+  const cache = new Map<string, DocLiveCacheEntry>();
+  const places = new Map<string, DocLivePlace>();
+  for (const [id, entry] of entries) {
+    if (entry.selection || entry.cursor) cache.set(id, entry);
+    if (entry.selection && entry.cursor)
+      places.set(id, { selection: entry.selection.value, cursor: entry.cursor.value });
+  }
+  return { places, resolution: { markdown, cache, cost, pass: (previous?.pass ?? 0) + 1 } };
 }

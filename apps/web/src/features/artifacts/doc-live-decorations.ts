@@ -4,7 +4,6 @@ import type {
   ArtifactLiveParticipant,
   ArtifactLiveStatus,
 } from '@kortix/sdk';
-import { createArtifactReanchorBudgets } from '@kortix/shared/artifact-comments';
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
@@ -13,11 +12,11 @@ import { docRangesForSource } from './doc-comment-positions';
 import {
   cachedDocMarkdownPositions,
   docPositionForSource,
-  resolveDocLiveCursor,
-  resolveDocLiveRange,
+  resolveDocLivePlaces,
+  type DocLiveResolution,
 } from './doc-live-positions';
 
-export const docLivePluginKey = new PluginKey<DecorationSet>('artifactDocLive');
+export const docLivePluginKey = new PluginKey<DocLiveState>('artifactDocLive');
 
 /** Someone else in the doc: a caret, a selection, or an agent's place. */
 export interface DocLivePeer {
@@ -144,59 +143,66 @@ function caret(peer: DocLivePeer): HTMLElement {
   return root;
 }
 
-/** The decorations of one presence frame: selections first (under), then carets. */
-export function docLiveDecorations(input: DocLivePresence, doc: Parameters<typeof DecorationSet.create>[0]) {
+/** The plugin's state: what it draws, and what the last pass resolved. */
+export interface DocLiveState {
+  set: DecorationSet;
+  resolution: DocLiveResolution | null;
+}
+
+/**
+ * The decorations of one presence frame: selections first (under), then carets.
+ * `previous` is the last pass's resolution: unchanged peers reuse it
+ * (`resolveDocLivePlaces`), and a peer that pass did not resolve draws nothing.
+ */
+export function docLiveDecorations(
+  input: DocLivePresence,
+  doc: Parameters<typeof DecorationSet.create>[0],
+  previous: DocLiveResolution | null = null,
+): DocLiveState {
   const map = cachedDocMarkdownPositions(input.markdown, doc);
-  if (!map) return DecorationSet.empty;
-  // One re-anchoring budget per pass, split per participant: one crafted quote cannot
-  // freeze the tab or hide the other carets.
-  const budgetFor = createArtifactReanchorBudgets(input.peers.map((peer) => peer.id));
+  if (!map) return { set: DecorationSet.empty, resolution: previous };
+  const { places, resolution } = resolveDocLivePlaces(input.markdown, input.peers, previous);
   const decorations: Decoration[] = [];
   const size = doc.content.size;
   for (const peer of input.peers) {
-    const budget = budgetFor(peer.id);
-    if (peer.selection) {
-      const span = resolveDocLiveRange(input.markdown, peer.selection, budget);
-      if (span)
-        for (const range of docRangesForSource(map, span.start, span.end))
-          decorations.push(
-            Decoration.inline(range.from, range.to, {
-              class: LIVE_TINT[peer.color],
-              'data-live-selection': peer.id,
-            }),
-          );
-    }
-    if (peer.cursor) {
-      const offset = resolveDocLiveCursor(input.markdown, peer.cursor, budget);
-      const pos = offset === null ? null : docPositionForSource(map, offset);
-      if (pos !== null && pos >= 0 && pos <= size)
+    const place = places.get(peer.id);
+    if (!place) continue;
+    if (place.selection)
+      for (const range of docRangesForSource(map, place.selection.start, place.selection.end))
         decorations.push(
-          Decoration.widget(pos, () => caret(peer), {
-            // Equal keys keep the DOM (and its fade); a move or a rename draws it again.
-            key: JSON.stringify([peer.id, peer.name, peer.color, peer.status, peer.cursor]),
-            side: 1,
-            ignoreSelection: true,
+          Decoration.inline(range.from, range.to, {
+            class: LIVE_TINT[peer.color],
+            'data-live-selection': peer.id,
           }),
         );
-    }
+    const pos = place.cursor === null ? null : docPositionForSource(map, place.cursor);
+    if (pos !== null && pos >= 0 && pos <= size)
+      decorations.push(
+        Decoration.widget(pos, () => caret(peer), {
+          // Equal keys keep the DOM (and its fade); a move or a rename draws it again.
+          key: JSON.stringify([peer.id, peer.name, peer.color, peer.status, peer.cursor]),
+          side: 1,
+          ignoreSelection: true,
+        }),
+      );
   }
-  return DecorationSet.create(doc, decorations);
+  return { set: DecorationSet.create(doc, decorations), resolution };
 }
 
-export function createDocLivePlugin(): Plugin<DecorationSet> {
+export function createDocLivePlugin(): Plugin<DocLiveState> {
   return new Plugin({
     key: docLivePluginKey,
     state: {
-      init: () => DecorationSet.empty,
-      apply(transaction, decorations) {
+      init: (): DocLiveState => ({ set: DecorationSet.empty, resolution: null }),
+      apply(transaction, state): DocLiveState {
         const input = transaction.getMeta(docLivePluginKey) as DocLivePresence | undefined;
         // Between frames, local edits move the carets with the text.
-        if (!input) return decorations.map(transaction.mapping, transaction.doc);
-        return docLiveDecorations(input, transaction.doc);
+        if (!input) return { ...state, set: state.set.map(transaction.mapping, transaction.doc) };
+        return docLiveDecorations(input, transaction.doc, state.resolution);
       },
     },
     props: {
-      decorations: (state) => docLivePluginKey.getState(state) ?? DecorationSet.empty,
+      decorations: (state) => docLivePluginKey.getState(state)?.set ?? DecorationSet.empty,
     },
   });
 }
