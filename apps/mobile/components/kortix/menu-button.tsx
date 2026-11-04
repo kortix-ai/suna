@@ -11,7 +11,7 @@
  * Liquid Glass (Jay, 2026-10-20; every hamburger: the floating header,
  * `PageHeader`, `SettingsHeader`): on iOS 26+ the same ghost button draws its
  * icon inside the system glass (`GlassButtons`; 44pt on iOS,
- * `header-button.ts`), which grows and stretches under the finger. It is not
+ * `header-button.ts`), which runs the system press response. It is not
  * the SwiftUI glass button Jay rejected on 2026-09-17 (white disc, wide grey
  * halo, bars off centre): the button, icon and centring stay React Native. The visible circle
  * then sits on the page's padding edge, so the `-ml-2.5` pull goes. Android

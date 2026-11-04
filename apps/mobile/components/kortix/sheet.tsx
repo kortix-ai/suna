@@ -242,8 +242,8 @@ function TitledHandle({
  *
  * iOS 26+ (Jay, 2026-10-20): the close button, `leading` and `trailing` each
  * sit on the system Liquid Glass (`GlassSlot`): each `Button` in the slot
- * draws its content inside the glass, so it grows and stretches under the
- * finger. The visible glass then sits on the 16pt
+ * draws its content inside the glass, so it gets the system press
+ * response. The visible glass then sits on the 16pt
  * edge, so the `-ml-2.5` / `-mr-2.5` pulls go and the balance spacer is the
  * full 40pt. `trailingGlass={false}` keeps a trailing slot that is not a
  * button (the participants count) off the glass. Android and older iOS keep

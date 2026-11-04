@@ -2489,7 +2489,7 @@ const SCROLL_BUTTON_EASING = ReanimatedEasing.bezier(0.23, 1, 0.32, 1);
  * in, `duration-fast` out. Tapping glides to the end and follows from there.
  *
  * iOS 26+: the ghost button draws its caret inside the system glass
- * (`GlassButtons`, 40pt circle, grows under the finger), the same recipe as every hamburger (`MenuButton`) and the
+ * (`GlassButtons`, 40pt circle, system press response), the same recipe as every hamburger (`MenuButton`) and the
  * composer card it sits above (Jay, 2026-10-20). Android, older iOS and a
  * binary without `ExpoUI` keep the `secondary` round button with a 1pt
  * `border-border` ring (Jay, 2026-09-22), so it separates from the prose

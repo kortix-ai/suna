@@ -129,7 +129,7 @@ export interface FloatingTabItem {
  *
  * `glass` (KRTX-2928): on iOS 26+ the capsule is Liquid Glass
  * (`LiquidGlass`, the system material wrapped around the capsule, so it
- * stretches with a drag) instead of the opaque `background`/`card` fill, its
+ * responds to touch) instead of the opaque `background`/`card` fill, its
  * shadow and its border. Android and older iOS keep the opaque capsule. The
  * switcher sheets (account/project, agent/model) and Review's segment bar pass it.
  */

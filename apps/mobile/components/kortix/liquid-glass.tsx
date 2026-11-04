@@ -6,13 +6,12 @@
  * with a `UIGlassEffect`. The React Native children mount inside the effect
  * view's `contentView`, so a touch on the button is a touch on the glass.
  * With `interactive` (the default), `UIGlassEffect.isInteractive` lets the
- * system run its own press response: the glass grows under the finger,
- * stretches with a drag and settles with a spring.
+ * system run its own press response.
  *
  * Why not the earlier `LiquidGlassCapsule`: it drew SwiftUI `glassEffect` on
  * an empty `Spacer` in a separate `Host` behind the button, with
  * `pointerEvents="none"` and without `.interactive()`. The material was real,
- * but no touch ever reached it, so it never scaled, stretched or bounced. It
+ * but no touch ever reached it, so it never responded to a press. It
  * also drew nothing inside a `FullWindowOverlay` (no view controller), where
  * `GlassView` works.
  *
@@ -57,7 +56,7 @@ export function LiquidGlass({
   children: React.ReactNode;
   /** Fixed corner radius. Omit for a capsule. */
   radius?: number;
-  /** System press response (scale, stretch, spring). */
+  /** The system press response. */
   interactive?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
