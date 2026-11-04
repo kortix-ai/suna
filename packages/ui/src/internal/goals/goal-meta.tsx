@@ -11,6 +11,7 @@ import type { ProjectGoal, ProjectGoalDocument, ProjectGoalIssue, ProjectGoalIte
 import { formatFireTime } from '../reminders/reminder-format';
 import { useTranslations } from '../../i18n';
 import { ProgressRing } from '../../primitives/progress-ring';
+import { UserAvatar } from '../../primitives/user-avatar';
 import { StatusBadge, StatusDot, type StatusTone } from '../../primitives/status';
 import { uiRoutes } from '../../lib/routes';
 import { useUiViewerId } from '../../providers/ui-provider';
@@ -151,6 +152,22 @@ export function useGoalPerson(projectId: string) {
     (userId: string | null | undefined): string | null =>
       !userId ? null : userId === viewerId ? t('you') : (emails.get(userId) ?? t('anotherMember')),
     [emails, viewerId, t],
+  );
+}
+
+/** The person a goal is for, as an avatar and a name ("You", their email, else "A teammate"). */
+export function GoalPersonChip({ projectId, userId }: { projectId: string; userId: string | null | undefined }) {
+  const t = useTranslations('goals');
+  const viewerId = useUiViewerId();
+  const members = useAccountMembers(useProjectAccountId(projectId) ?? undefined);
+  if (!userId) return <span className="text-muted-foreground">{t('none')}</span>;
+  const email = (members.data ?? []).find((m) => m.user_id === userId)?.email ?? '';
+  const label = userId === viewerId ? t('you') : email || t('anotherMember');
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <UserAvatar email={email || userId} size="xs" />
+      <span className="text-foreground truncate">{label}</span>
+    </span>
   );
 }
 

@@ -76,6 +76,7 @@ export {
   goalOpenAsks,
   goalPaused,
   GoalCriteriaProgress,
+  GoalPersonChip,
   useGoalStateText,
   goalProgress,
   GoalStatusBadge,
