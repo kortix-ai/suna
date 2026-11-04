@@ -75,6 +75,8 @@ export interface ScreenProps {
   onToast(message: string, kind?: ToastKind): void;
   /** `/providers <id>`: the provider whose sheet opens first. */
   providerId?: string;
+  /** The screen holds Esc (a pane to go back from, an input open). The app then leaves Esc to it. */
+  onHoldsBack?(holds: boolean): void;
 }
 
 /**
@@ -177,6 +179,7 @@ export function Screen(props: ScreenProps) {
           width={width}
           height={height}
           initialProviderId={props.providerId}
+          onHoldsBack={props.onHoldsBack}
           onBack={onBack}
           onToast={onToast}
         />

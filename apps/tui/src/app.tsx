@@ -246,6 +246,12 @@ export function App({
   const [route, setRoute] = useState<Route>('session');
   /** `/providers <id>`: the sheet the providers screen opens on. */
   const [providerTarget, setProviderTarget] = useState<string | undefined>(undefined);
+  /**
+   * The open screen holds Esc (`ScreenProps.onHoldsBack`). The screen clears it
+   * when it unmounts. Not reset on route change here: a parent effect runs after
+   * the child's, so it would erase what a screen reports on its first render.
+   */
+  const [screenHoldsBack, setScreenHoldsBack] = useState(false);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const bootTerminal = initialTerminalOpen && Boolean(initialSessionId);
   const [focus, setFocus] = useState<Focus>(bootTerminal ? 'terminal' : 'composer');
@@ -805,7 +811,7 @@ export function App({
   useKeyboard((key) => {
     // The decision is a pure function (`app-keys.ts`); this handler only
     // performs it. That is what makes the gating rules assertable.
-    const action = globalKeyAction(key, { focus, route, overlay, quitArmed, menuOpen });
+    const action = globalKeyAction(key, { focus, route, overlay, quitArmed, menuOpen, screenHoldsBack });
     if (!action) return;
     if (action.kind !== 'quit' && action.kind !== 'arm-quit') key.preventDefault();
     if (quitArmed && action.kind !== 'quit' && action.kind !== 'arm-quit') setQuitArmed(false);
@@ -1053,6 +1059,7 @@ export function App({
               onOpenSession={openSession}
               onToast={pushToast}
               providerId={providerTarget}
+              onHoldsBack={setScreenHoldsBack}
             />
           </Panel>
         ) : null}

@@ -94,6 +94,13 @@ export interface AppKeyState {
    * (new session) from it.
    */
   menuOpen?: boolean;
+  /**
+   * The open screen holds Esc: it has a pane to go back from, or an input,
+   * a filter or a confirm open. OpenTUI calls key handlers in the order they
+   * registered and the app's registered first, so a screen cannot stop this
+   * handler by `preventDefault`; it reports instead (`onHoldsBack`).
+   */
+  screenHoldsBack?: boolean;
 }
 
 /** True when the app must not steal this key from the region that has focus. */
@@ -167,7 +174,7 @@ export function globalKeyAction(key: KeyEvent, state: AppKeyState): AppKeyAction
   }
 
   if (matchesBinding(key, 'back')) {
-    if (state.route !== 'session') return { kind: 'back' };
+    if (state.route !== 'session') return state.screenHoldsBack ? null : { kind: 'back' };
     if (globalKeyBlocked(state.focus)) return null;
     if (state.focus === 'transcript') return { kind: 'focus-composer' };
   }

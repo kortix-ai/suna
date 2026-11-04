@@ -102,6 +102,19 @@ type Flow =
 
 const VIEW: Flow = { kind: 'view' };
 
+// Keys inside one frame run before React renders: every edit reads the flow it changes.
+const editField =
+  (change: (value: string) => string) =>
+  (flow: Flow): Flow => {
+    if (flow.kind !== 'key') return flow;
+    const field = flow.fields[flow.index]!;
+    return { ...flow, values: { ...flow.values, [field]: change(flow.values[field] ?? '') } };
+  };
+const editCode =
+  (change: (code: string) => string) =>
+  (flow: Flow): Flow =>
+    flow.kind === 'signin' ? { ...flow, code: change(flow.code) } : flow;
+
 function errorText(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
@@ -362,13 +375,9 @@ export function ProviderSheet({
     if (!focused || pending) return;
     const text = decodePasteBytes(event.bytes).replace(/[\r\n]+/g, '').trim();
     if (!text) return;
-    if (flow.kind === 'key') {
-      const field = flow.fields[flow.index]!;
-      setFlowState({ ...flow, values: { ...flow.values, [field]: (flow.values[field] ?? '') + text } });
-      return;
-    }
+    if (flow.kind === 'key') return setFlowState(editField((value) => value + text));
     if (flow.kind === 'signin' && subscription?.kind === 'claude' && signIn.state.phase === 'waiting') {
-      setFlowState({ ...flow, code: flow.code + text });
+      setFlowState(editCode((code) => code + text));
     }
   });
 
@@ -409,10 +418,10 @@ export function ProviderSheet({
       // Claude: the pasted code. Device flows read nothing here.
       if (subscription?.kind === 'claude' && state.phase === 'waiting') {
         if (is(key, 'providers.submit')) return void signIn.submitCode(flow.code);
-        if (key.name === 'backspace') return setFlowState({ ...flow, code: flow.code.slice(0, -1) });
+        if (key.name === 'backspace') return setFlowState(editCode((code) => code.slice(0, -1)));
         const char = printable(key);
         if (char && !(char === 'c' && !flow.code) && !(char === 'o' && !flow.code)) {
-          setFlowState({ ...flow, code: flow.code + char });
+          setFlowState(editCode((code) => code + char));
         }
       }
       return;
@@ -427,12 +436,9 @@ export function ProviderSheet({
         if (flow.index < flow.fields.length - 1) return setFlowState({ ...flow, index: flow.index + 1 });
         return saveKey(flow);
       }
-      if (key.name === 'backspace') {
-        setFlowState({ ...flow, values: { ...flow.values, [field]: value.slice(0, -1) } });
-        return;
-      }
+      if (key.name === 'backspace') return setFlowState(editField((text) => text.slice(0, -1)));
       const char = printable(key);
-      if (char) setFlowState({ ...flow, values: { ...flow.values, [field]: value + char } });
+      if (char) setFlowState(editField((text) => text + char));
       return;
     }
 

@@ -12,7 +12,7 @@
  */
 
 import { useKeyboard } from '@opentui/react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { theme } from '../../theme.ts';
 import { Spinner, layoutRow } from '../../ui/index.ts';
@@ -31,6 +31,8 @@ export interface ProvidersScreenProps {
   initialProviderId?: string;
   onBack(): void;
   onToast(message: string, kind?: 'info' | 'error'): void;
+  /** True while Esc is ours: the sheet is open, a search or a flow is active. */
+  onHoldsBack?(holds: boolean): void;
 }
 
 const SPLIT_MIN_WIDTH = 90;
@@ -51,6 +53,7 @@ function ProvidersScreenBody({
   initialProviderId,
   onBack,
   onToast,
+  onHoldsBack,
 }: ProvidersScreenProps & { projectId: string }) {
   const data = useProviders(projectId, accountId);
   const [search, setSearch] = useState('');
@@ -76,19 +79,29 @@ function ProvidersScreenBody({
   const selected: ProviderRow | undefined = ordered[selectedIndex];
   const entry = selected ? data.byId.get(selected.id) : undefined;
 
+  const holdsBack = pane === 'sheet' || filtering || search.length > 0 || sheetBusy;
+  useEffect(() => {
+    onHoldsBack?.(holdsBack);
+  }, [holdsBack, onHoldsBack]);
+  useEffect(() => () => onHoldsBack?.(false), [onHoldsBack]);
+
   // The first row is the selection until the reader moves.
   useEffect(() => {
     if (!selectedId && ordered[0]) setSelectedId(ordered[0].id);
   }, [selectedId, ordered]);
 
-  const move = useCallback(
-    (delta: number) => {
-      if (ordered.length === 0) return;
-      const next = Math.min(Math.max(selectedIndex + delta, 0), ordered.length - 1);
-      setSelectedId(ordered[next]!.id);
-    },
-    [ordered, selectedIndex],
-  );
+  // Two keys inside one frame (a fast `jj`, a held key) both run before React
+  // renders, so each step reads the selection it is moving from, not the render's.
+  const orderedRef = useRef(ordered);
+  orderedRef.current = ordered;
+  const move = useCallback((delta: number) => {
+    setSelectedId((previous) => {
+      const rows = orderedRef.current;
+      if (rows.length === 0) return previous;
+      const from = Math.max(rows.findIndex((row) => row.id === previous), 0);
+      return rows[Math.min(Math.max(from + delta, 0), rows.length - 1)]!.id;
+    });
+  }, []);
 
   useKeyboard((key) => {
     if (!focused) return;
@@ -255,11 +268,14 @@ function ProviderList({
       </box>
       {note ? <text fg={theme.faint}>{note.length > inner ? `${note.slice(0, inner - 1)}…` : note}</text> : null}
       {lines.length === 0 ? <text fg={theme.faint}>{`No provider matches “${search.trim()}”`}</text> : null}
-      {visible.map((line) => (
-        <text key={line.key} fg={line.fg}>
-          {line.bold ? <strong>{line.text}</strong> : line.text}
-        </text>
-      ))}
+      {visible.map((line) => {
+        const text = line.text.length > inner ? `${line.text.slice(0, inner - 1)}…` : line.text;
+        return (
+          <text key={line.key} fg={line.fg}>
+            {line.bold ? <strong>{text}</strong> : text}
+          </text>
+        );
+      })}
       <box flexGrow={1} />
       <text fg={theme.faint}>{active ? 'j/k move · / search · Enter open · Esc close' : 'Esc list'}</text>
     </box>
