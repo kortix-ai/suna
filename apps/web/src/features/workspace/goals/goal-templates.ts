@@ -58,7 +58,7 @@ export const GOAL_TEMPLATES: readonly GoalTemplate[] = [
   { id: 'competitorBrief', category: 'reporting', featured: false, icon: MagnifyingGlassIcon, accent: 'purple', steps: [GlobeIcon, FileTextIcon] },
   { id: 'metricsDashboard', category: 'reporting', featured: false, icon: ChartBarIcon, accent: 'blue', steps: [StackIcon, GlobeIcon] },
   { id: 'vulnerabilitySweep', category: 'security', featured: true, icon: ShieldWarningIcon, accent: 'red', steps: [MagnifyingGlassIcon, CodeIcon] },
-  { id: 'scanSecrets', category: 'security', featured: false, icon: KeyIcon, accent: 'yellow', steps: [MagnifyingGlassIcon, FileTextIcon] },
+  { id: 'scanSecrets', category: 'security', featured: true, icon: KeyIcon, accent: 'yellow', steps: [MagnifyingGlassIcon, FileTextIcon] },
   { id: 'accessReview', category: 'security', featured: false, icon: ShieldCheckIcon, accent: 'green', steps: [UsersThreeIcon, FileTextIcon] },
   { id: 'reviewWorkflow', category: 'security', featured: false, icon: CodeIcon, accent: 'purple', steps: [MagnifyingGlassIcon, FileTextIcon] },
   { id: 'supportBacklog', category: 'support', featured: true, icon: TrayIcon, accent: 'blue', steps: [ChatsCircleIcon, FileTextIcon] },
