@@ -765,14 +765,13 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
                 {t('live')}
               </Button>
             </Hint>
-            {area.canManage || device.user_id === people.viewerId ? (
-              <DeviceActionsMenu
-                accountId={accountId}
-                device={device}
-                name={name}
-                onRevoked={() => router.push(captureHref(accountId, 'devices'))}
-              />
-            ) : null}
+            <DeviceActionsMenu
+              accountId={accountId}
+              device={device}
+              name={name}
+              canRevoke={area.canManage || device.user_id === people.viewerId}
+              onRevoked={() => router.push(captureHref(accountId, 'devices'))}
+            />
           </div>
         </div>
       </div>

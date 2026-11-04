@@ -52,8 +52,10 @@ Download the installer for the computer: [Windows](/download/capture/windows)
 
 Every Kortix release carries the installers, under the same version. The
 [releases page](https://github.com/kortix-ai/CompanyOS/releases/latest) lists them
-with their checksums in `CAPTURE-SHA256SUMS`. To update, install a newer
-installer over the old one. The configuration stays.
+with their checksums in `CAPTURE-SHA256SUMS`. A computer with the machine service
+(every installer) updates itself: it checks for a signed release every 6 hours,
+installs it, and goes back to the previous version when the new one does not record.
+To update by hand, install a newer installer over the old one. The configuration stays.
 
 To sign in with Kortix:
 
@@ -76,7 +78,7 @@ Forgetting a time range on the device removes it from Kortix too.
 
 ## Link a computer to a person
 
-Every computer is a device in **Devices**. The list shows each device's state (**Recording**, **Paused**, **Offline**, **Needs permission** and others), when it last recorded, and a fleet summary. Kortix sends a notification to the people who manage Capture when a computer stops recording, and again when it recovers. A computer you signed in
+Every computer is a device in **Devices**. The list shows each device's state (**Recording**, **Paused**, **Offline**, **Needs permission** and others), its Capture version (with **Update available** or **Update failed**), when it last recorded, and a fleet summary. **Device details** in a device's `...` menu shows what the computer reports: the version, the update state and why an update failed, the OS and build, CPU, memory, free disk, sync and policy. **Copy diagnostics** copies it as text for a support request. Kortix sends a notification to the people who manage Capture when a computer stops recording, and again when it recovers. A computer you signed in
 records for you. A computer IT enrolled with a personal token records for the
 member the token names. A computer IT enrolled with a company token records for
 the account, **linked to no one**. That is a normal state: link it to a person
@@ -211,7 +213,7 @@ read outside your permissions answers `403`
 | `PUT devices/<device_id>/link` `{ "user_id" }` | links the device to a member, or unlinks it with `null`; needs `capture.manage` |
 | `POST devices/<device_id>/sync` | reads the device's status and index now and queues new items for indexing |
 | `GET storage` · `PUT storage` | where the account keeps recordings; needs `capture.manage`; the secret is never returned |
-| `GET devices?user_id=&scope=account` | devices with their live state: what the device last reported (for example `recording`, `paused`), or `offline` after 2 minutes of silence |
+| `GET devices?user_id=&scope=account` | devices with their live state: what the device last reported (for example `recording`, `paused`), or `offline` after 2 minutes of silence, their `health`, and `diagnostics` (OS, update state and failure reason, sync, policy, hardware) |
 | `DELETE devices/<device_id>` | revokes the device: its token stops working at once |
 | `GET devices/<device_id>/assets/<name>` | a signed URL of one action screenshot (5 minutes) |
 | `GET policy` · `PUT policy` `{ "policy": { … } }` | the account policy; writing needs `capture.manage` |
