@@ -105,15 +105,6 @@ export function isPrivatePath(pathname: string): boolean {
 }
 
 /**
- * Pages where a replay may record: everything public except the token pages,
- * which `isPrivatePath` already covers. Replays also need consent; the client
- * checks that.
- */
-export function isReplayAllowedPath(pathname: string): boolean {
-  return !isPrivatePath(pathname);
-}
-
-/**
  * Path segments a private route may keep. Every other segment is an id, a
  * slug, an agent or file name, or a token, and becomes `:id`.
  */

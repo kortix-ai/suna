@@ -21,6 +21,7 @@ import { claimTriggerCreate, releaseTriggerCreate, triggerCreateKey } from './tr
 import { alertTriggerAutoPaused, alertTriggerThrottled, clearTriggerAlert } from './trigger-alerts';
 import { autoPauseTrigger, readTriggerAutoPause, triggerAutoPauseReason, triggerRunCapVerdict } from './trigger-run-caps';
 import { triggerChecksOverlap, triggerOverlapReason } from './trigger-overlap';
+import { captureAccountProductEvent } from '../../iam/account-analytics';
 
 /**
  * Find a user we can attribute trigger-spawned sessions to. Git-backed
@@ -348,9 +349,31 @@ async function enqueueTriggerPrompt(input: {
  * Fire a git-backed trigger. Triggers are file-defined (kortix.yaml), so there
  * is no DB trigger/event row — the project_sessions row carries `trigger_slug`
  * in metadata so audits can still reconstruct the firing path.
+ *
+ * Every source (cron, webhook, manual, monitor, …) fires through here, so this
+ * is where `trigger_fired` is reported: one event per fire that started or
+ * queued a run, attributed to the account owner (a fire has no person).
  */
+export async function fireGitTrigger(
+  input: Parameters<typeof fireGitTriggerOnce>[0],
+): ReturnType<typeof fireGitTriggerOnce> {
+  const result = await fireGitTriggerOnce(input);
+  if (result.status === 'fired' || result.status === 'queued') {
+    captureAccountProductEvent({
+      accountId: input.project.accountId,
+      event: 'trigger_fired',
+      properties: {
+        project_id: input.project.projectId,
+        fire_source: input.source,
+        status: result.status,
+        deduped: Boolean(result.deduped),
+      },
+    });
+  }
+  return result;
+}
 
-export async function fireGitTrigger(input: {
+async function fireGitTriggerOnce(input: {
   spec: GitTriggerSpec;
   project: ProjectRow;
   payload: Record<string, unknown>;

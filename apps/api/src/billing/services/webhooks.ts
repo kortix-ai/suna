@@ -19,7 +19,7 @@ import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 import { isUuid } from '../../shared/validate';
 import { handleChargeRefunded, handleDisputeClosed, handleDisputeCreated } from './refund-clawback';
 import { planKeyFromMetadata, activateSubscriptionForAccount, allowanceForSubscription } from './stripe-checkout-webhooks';
-import { captureAccountProductEvent } from './billing-analytics';
+import { captureAccountProductEvent } from '../../iam/account-analytics';
 
 export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const accountId = session.metadata?.account_id;
@@ -93,7 +93,7 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session, accountId:
   if (!granted.replayed) {
     captureAccountProductEvent({
       accountId,
-      event: 'credits_purchased',
+      event: 'credits_topped_up',
       dedupeKey: session.id,
       properties: { store: 'stripe', amount_usd: amountTotal },
     });
@@ -406,7 +406,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     if (account?.tier && account.tier !== 'free') {
       captureAccountProductEvent({
         accountId,
-        event: 'subscription_canceled',
+        event: 'subscription_cancelled',
         dedupeKey: subscription.id,
         properties: {
           store: 'stripe',

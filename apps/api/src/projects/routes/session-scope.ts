@@ -44,6 +44,7 @@ import { drainSessionLifecycleQueue } from '../session-lifecycle';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { capturePersonEvent } from './product-events';
 
 export function registerSessionScopeRoutes(): void {
   projectsApp.openapi(
@@ -471,7 +472,14 @@ export function registerSessionScopeRoutes(): void {
           if (missing) return c.json(claudeSubscriptionRequiredBody(missing), 409);
         }
         const billing = await checkBillingAdmission(loaded.row.accountId);
-        if (!billing.ok) return c.json({ error: billing.message, code: billing.reason }, 402);
+        if (!billing.ok) {
+          capturePersonEvent(c, loaded, projectId, 'billing_gate_hit', {
+            reason: billing.reason,
+            where: 'model_switch',
+            session_id: sessionId,
+          });
+          return c.json({ error: billing.message, code: billing.reason }, 402);
+        }
       }
       const stored = await storeSessionModelSwitch({
         projectId, accountId: loaded.row.accountId, sessionId, actorUserId: loaded.userId,
@@ -485,6 +493,14 @@ export function registerSessionScopeRoutes(): void {
       if (stored.kind === 'limited') return c.json({ error: 'At most three self model switches per hour' }, 409);
       if (switchInput.kind === 'switch') {
         void drainSessionLifecycleQueue({ idempotencyKey: `model-switch:${sessionId}:${switchInput.key}` }).catch(() => undefined);
+      }
+      if (!stored.deduped && stored.model !== currentModel) {
+        capturePersonEvent(c, loaded, projectId, 'model_changed', {
+          session_id: sessionId,
+          from: currentModel,
+          to: stored.model,
+          live_push: Boolean(stored.push?.applied),
+        });
       }
       return c.json({ ...modelChangeResult({ model: stored.model, needsPush: stored.needsPush,
         push: stored.deduped ? undefined : stored.push, current: stored.deduped ? stored.model : currentModel }),
