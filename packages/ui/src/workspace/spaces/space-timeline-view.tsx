@@ -54,6 +54,7 @@ import {
   type TimelineDay,
 } from './space-timeline';
 import { oneLineWithoutEmails, spaceDisplayName } from './space-identity';
+import { useMentionNames } from './space-people';
 import { type Principal, PrincipalHover, useMemberIdByName } from './principal-card';
 import { usePersonalSpaceName } from './use-personal-space-name';
 
@@ -419,10 +420,26 @@ function ThreadReplyLine({
   const agent = agentName ? agentLabel(agentName) : t('agentFallback');
   const working = threadIsWorking(session);
   const replies = session.reply_count ?? 0;
-  // An agent's own post: its reply line starts with the first reply.
-  const reply = showReply || replies > 0 ? oneLineWithoutEmails(session.result_excerpt ?? '') || null : null;
+  const names = useMentionNames(projectId);
+  // An agent's own post: its reply line starts with the first reply. Mentions read as names; no address shows.
+  const reply = showReply || replies > 0 ? oneLineWithoutEmails(names(session.result_excerpt ?? '')) || null : null;
   // Nothing to say yet (no reply, no work, nothing waiting): no line, as in Slack.
   if (!needsYou && !working && !reply && replies === 0) return null;
+  const time = <time dateTime={session.updated_at}>{relativeTime(session.updated_at, locale)}</time>;
+  // Replies without a text to show: the count and the time alone, no empty face.
+  if (!needsYou && !working && !reply) {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        className="hover:bg-hover focus-visible:ring-ring text-muted-foreground -mx-1 mt-1 flex w-fit items-center gap-1 rounded-md px-1 py-1 text-xs tabular-nums outline-none focus-visible:ring-2"
+      >
+        <span className="text-foreground font-medium">{t('replies', { count: replies })}</span>
+        <span aria-hidden>·</span>
+        {time}
+      </button>
+    );
+  }
   return (
     // The agent's tile opens its card; the rest of the line opens the thread (two controls, never one inside the other).
     <div className="-mx-1 mt-1 flex w-full max-w-2xl min-w-0 items-center gap-1 rounded-md pl-1">
@@ -448,7 +465,7 @@ function ThreadReplyLine({
         ) : null}
         <span className="text-muted-foreground ml-auto shrink-0 pl-2 text-xs tabular-nums">
           {replies > 0 ? `${t('replies', { count: replies })} · ` : ''}
-          <time dateTime={session.updated_at}>{relativeTime(session.updated_at, locale)}</time>
+          {time}
         </span>
       </button>
     </div>

@@ -85,7 +85,7 @@ export function SpaceDetailsPanel({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col items-center gap-2 px-6 pt-2 pb-6 text-center">
-          <SpaceAvatar space={space} size="xl" label={name} />
+          <SpaceAvatar space={space} size="xl" label={name} projectId={projectId} />
           <div className="flex min-w-0 items-center gap-1.5">
             <h3 className="truncate text-lg font-semibold">{name}</h3>
             {isPrivateSpace(space) ? (

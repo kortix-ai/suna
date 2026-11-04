@@ -27,6 +27,7 @@ import {
 } from '../spaces/space-identity';
 import { SpaceAvatar } from '../spaces/space-avatar';
 import { usePersonalSpaceName } from '../spaces/use-personal-space-name';
+import { useMentionNames, useOtherPerson } from '../spaces/space-people';
 
 /** ↑/↓ move between the rows (Review, the spaces, New space), as in a list. */
 function moveFocus(event: KeyboardEvent<HTMLUListElement>) {
@@ -65,6 +66,8 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
   const pathname = useUiPathname();
   const spaces = useProjectSpaces(projectId);
   const personalName = usePersonalSpaceName();
+  // Mentions in previews read as names.
+  const names = useMentionNames(projectId);
   const [createOpen, setCreateOpen] = useState(false);
   const { personal, others } = useMemo(() => orderSpaces(spaces.data ?? []), [spaces.data]);
   const chatHref = `${uiRoutes().project(projectId)}/chat`;
@@ -98,6 +101,7 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
           name={personalName}
           personal
           isPrivate
+          names={names}
         />
         {spaces.isError && !spaces.data ? (
           <li className="space-y-1.5 px-2 py-2">
@@ -119,6 +123,7 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
               name={spaceDisplayName(space, personalName)}
               personal={isPersonalSpace(space)}
               isPrivate={isPrivateSpace(space)}
+              names={names}
             />
           );
         })}
@@ -150,7 +155,9 @@ function SpaceRow({
   name,
   personal,
   isPrivate,
+  names,
 }: {
+  names: (text: string) => string;
   projectId: string;
   /** Null: the personal space before its first open. */
   space: ProjectSpace | null;
@@ -165,14 +172,17 @@ function SpaceRow({
   const { setOpenMobile } = useSidebar();
   // The same list the space's Chat tab reads (one cache entry); this row adds no poll of its own.
   const threads = useProjectSessions(projectId, { spaceId: space?.space_id, parent: 'root', enabled: !!space });
-  const preview = useMemo(() => spacePreview(threads.sessions), [threads.sessions]);
+  const preview = useMemo(() => spacePreview(threads.sessions, names), [threads.sessions, names]);
+  // A two-person private space reads as the other person.
+  const other = useOtherPerson(projectId, space);
+  const shown = other?.name ?? name;
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
         asChild
         size="lg"
         isActive={active}
-        tooltip={name}
+        tooltip={shown}
         // The row's svgs are forced to size-4: the lock beside the name stays at 12px.
         className="text-sidebar-foreground gap-2.5 px-2 [&_[data-slot=space-lock]]:size-3! [&_[data-slot=agent-mark]>svg]:size-auto!"
       >
@@ -182,10 +192,10 @@ function SpaceRow({
             if (isMobile) setOpenMobile(false);
           }}
         >
-          <SpaceAvatar space={space} personal={personal} label={name} />
+          <SpaceAvatar space={space} personal={personal} label={shown} projectId={projectId} />
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="flex min-w-0 items-center gap-1">
-              <span className="truncate">{name}</span>
+              <span className="truncate">{shown}</span>
               {isPrivate ? (
                 <LockSimpleIcon data-slot="space-lock" role="img" aria-label={t('private')} className="text-muted-foreground" />
               ) : null}

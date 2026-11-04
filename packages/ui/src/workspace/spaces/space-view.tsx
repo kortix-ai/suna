@@ -57,6 +57,7 @@ import { SpaceDetailsPanel } from './space-details-panel';
 import { CurrentSpaceContext, parseProfileParam, type Principal, PrincipalHover, ProfileContext, ProfilePanel, profileParam } from './principal-card';
 import { SpaceAvatar } from './space-avatar';
 import { useSpaceMentionSource } from './space-mention-source';
+import { useOtherPerson } from './space-people';
 import { SpaceMentionContext } from '../../session/composer/menus/space-mentions';
 import { isPrivateSpace, spaceDisplayName } from './space-identity';
 import { usePersonalSpaceName } from './use-personal-space-name';
@@ -240,7 +241,11 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderFile
 
   // Spaces only: the person's DM with My Kortix is their personal space, another DM a private space named by its agent.
   const personalName = usePersonalSpaceName();
-  const title = space
+  // A two-person private space reads as the other person, from the viewer's side.
+  const otherPerson = useOtherPerson(projectId, space);
+  const title = otherPerson
+    ? otherPerson.name
+    : space
     ? spaceDisplayName(space, personalName)
     : target.kind === 'channel'
       ? target.slug
@@ -632,7 +637,7 @@ function SpaceHeader({
             disabled={!space}
             onClick={onToggleDetails}
           >
-            <SpaceAvatar space={space ?? null} personal={target.kind === 'dm' && isMyKortixAgentName(target.agentName)} size="sm" label={title} />
+            <SpaceAvatar space={space ?? null} personal={target.kind === 'dm' && isMyKortixAgentName(target.agentName)} size="sm" label={title} projectId={projectId} />
             <span className="truncate text-base font-semibold">{title}</span>
             {space && isPrivateSpace(space) ? <LockSimpleIcon className="text-muted-foreground size-3.5 shrink-0" /> : null}
             <CaretDownIcon weight="bold" className="text-muted-foreground size-3 shrink-0" />

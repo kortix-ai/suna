@@ -7,6 +7,7 @@ import { cn } from '../../lib/utils';
 import { UserAvatar } from '../../primitives/user-avatar';
 import { useUiViewer } from '../../providers/ui-provider';
 import { isPersonalSpace, viewerDisplayName } from './space-identity';
+import { useOtherPerson } from './space-people';
 
 /**
  * Tile edge in px and the pixel mark inside it, per density. The edges match
@@ -34,18 +35,29 @@ export function SpaceAvatar({
   personal,
   label,
   className,
+  projectId,
 }: {
   /** Null: the personal space before its first open. */
-  space: Pick<ProjectSpace, 'space_id' | 'kind' | 'dm_agent_name'> | null;
+  space: (Pick<ProjectSpace, 'space_id' | 'kind' | 'dm_agent_name'> & Partial<ProjectSpace>) | null;
   size?: SpaceAvatarSize;
   /** Draw the personal space without its row (the sidebar's first row before `/chat` created it). */
   personal?: boolean;
   /** The hover hint: the space's name. */
   label: string;
   className?: string;
+  /** Set: a two-person private space wears the other person's avatar (`useOtherPerson`). */
+  projectId?: string;
 }) {
   const viewer = useUiViewer();
   const s = SIZES[size];
+  const other = useOtherPerson(projectId ?? '', projectId && space?.kind === 'channel' ? (space as ProjectSpace) : null);
+  if (other) {
+    return (
+      <span aria-hidden data-slot="space-avatar" className={cn('inline-flex shrink-0 [&_[data-slot=avatar]]:rounded-md [&_[data-slot=avatar]]:after:rounded-md', className)}>
+        <UserAvatar email="" name={other.name} avatarUrl={other.avatar_url} colorKey={other.user_id} size={s.person} />
+      </span>
+    );
+  }
   if (personal || (space && isPersonalSpace(space))) {
     const meta = viewer?.metadata;
     const avatarUrl = typeof meta?.avatar_url === 'string' ? meta.avatar_url : null;

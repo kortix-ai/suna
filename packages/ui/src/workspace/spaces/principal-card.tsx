@@ -477,7 +477,7 @@ function SpaceLinkRow({ projectId, space, name, tag }: { projectId: string; spac
         href={href}
         className="hover:bg-hover focus-visible:ring-ring flex min-h-9 items-center gap-2.5 rounded-md px-2 outline-none focus-visible:ring-2"
       >
-        <SpaceAvatar space={space} size="sm" label={name} />
+        <SpaceAvatar space={space} size="sm" label={name} projectId={projectId} />
         <span className="min-w-0 flex-1 truncate text-sm">{name}</span>
         {tag ? <span className="text-muted-foreground shrink-0 text-xs">{tag}</span> : null}
       </Link>

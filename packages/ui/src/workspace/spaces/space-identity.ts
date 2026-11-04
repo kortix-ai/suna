@@ -86,7 +86,7 @@ export function oneLineWithoutEmails(text: string): string {
  * The sidebar's one-line preview: the newest thread's latest reply, else its
  * first message. Null for a space with no thread.
  */
-export function spacePreview(sessions: readonly ProjectSession[]): string | null {
+export function spacePreview(sessions: readonly ProjectSession[], names: (text: string) => string = (text) => text): string | null {
   let newest: ProjectSession | null = null;
   for (const session of sessions) {
     if (!newest || Date.parse(session.updated_at) > Date.parse(newest.updated_at)) newest = session;
@@ -94,7 +94,8 @@ export function spacePreview(sessions: readonly ProjectSession[]): string | null
   if (!newest) return null;
   const reply = newest.result_excerpt?.trim();
   const text = reply || threadMessageText(newest);
-  const line = oneLineWithoutEmails(text);
+  // Mentions read as names (`@Ana Lima`), and no address is ever shown.
+  const line = oneLineWithoutEmails(names(text));
   return line || null;
 }
 
