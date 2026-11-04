@@ -1852,7 +1852,7 @@
       "moved": "Sessão movida",
       "noGroup": "Sem grupo",
       "moveFailed": "Não foi possível mover a sessão",
-      "empty": "As sessões que você mover para cá aparecerão aqui.",
+      "empty": "Arraste uma sessão para cá",
       "groupOptions": "Opções do grupo"
     },
     "recentlyDeleted": {
