@@ -123,11 +123,13 @@ const report = [];
 function note(level, text, changed = false) {
   report.push({ level, text, changed });
   console.log(`::${level}::${text}`);
+  //codeql[js/http-to-file-access] Non-exploit: internal release tooling run in CI — writes the run's own report lines (including Expo API error text) to GITHUB_STEP_SUMMARY, the CI run's trusted log file.
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `- ${text}\n`);
 }
 
 async function expoApi(query, variables) {
   const res = await fetch('https://api.expo.dev/graphql', {
+    //codeql[js/file-access-to-http] Non-exploit: internal release tooling run in CI — posts local build metadata as the query/variables to the fixed https://api.expo.dev host; nothing data-derived chooses the request.
     method: 'POST',
     headers: { authorization: `Bearer ${process.env.EXPO_TOKEN}`, 'content-type': 'application/json' },
     body: JSON.stringify({ query, variables }),
@@ -358,6 +360,7 @@ async function postToSlack() {
   const res = await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json; charset=utf-8' },
+    //codeql[js/file-access-to-http] Non-exploit: internal release tooling run in CI — posts the run's own report to the fixed https://slack.com host; nothing data-derived chooses the request.
     body: JSON.stringify({ channel, text, unfurl_links: false }),
   });
   const body = await res.json().catch(() => ({}));
