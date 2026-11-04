@@ -193,7 +193,8 @@ export const workspaceMap = () => (repo ? repoMap(repo) : '')
 // and its root folders (a Kortix project's memory notes are files there: a question on them is a workspace question,
 // answered from the files in a second, not handed to the agent).
 /** Text for inside a data envelope's attribute or body: no quote to close the attribute, no data tag to close it. */
-const envelope = (s: string) => s.replace(/"/g, "'").replace(/<\/?data\b[^>]*>/gi, '')
+// No angle bracket at all: stripping "</data>" alone left one from a nested "</da</data>ta>" (Strix on #11771).
+const envelope = (s: string) => s.replace(/"/g, "'").replace(/[<>]/g, '')
 // Read when asked, kept 30 s: in a Kortix box the voice loads with kortixd, before the project's files are in /workspace
 // (read at load, the name was the folder's, "workspace", and the router was told no folders and no notes).
 let known: { at: number; named: string; project: string } | undefined
