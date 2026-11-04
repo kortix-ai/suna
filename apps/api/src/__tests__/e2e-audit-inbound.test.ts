@@ -39,7 +39,7 @@ mock.module('../shared/db', () => ({
 }));
 
 const { auditApiRequest } = await import('../middleware/audit');
-const { isIncrementalDocPull } = await import('../artifacts/doc-rules');
+const { DocReadAuditThrottle, isIncrementalDocPull } = await import('../artifacts/doc-rules');
 const { annotateAuditEvent, attachInboundAuditScope, bindAuditPrincipal, markInboundAuditHeartbeat } = await import(
   '../shared/audit-scope'
 );
@@ -159,25 +159,29 @@ describe('a co-edited doc’s successful pushes and pulls write no row (KRTX-367
       (c as any).set('accountId', ACCOUNT);
       return c.json({}, status as 200);
     };
-    // As `routes/artifact-doc.ts`: an incremental pull marks itself a heartbeat; a full read does not.
+    // As `routes/artifact-doc.ts`: a catch-up pull past the first one in 10 min marks itself a heartbeat; a full read never does.
     app.get('/v1/projects/:projectId/artifacts/:artifactId/doc', (c) => {
-      if (isIncrementalDocPull({ after: Number(c.req.query('after') ?? 0), base: c.req.query('base') === 'true' })) markInboundAuditHeartbeat();
+      const query = { after: Number(c.req.query('after') ?? 0), base: c.req.query('base') === 'true' };
+      if (isIncrementalDocPull(query) && !catchUp.shouldRecord(`${USER}:${PROJECT}`, Date.now())) markInboundAuditHeartbeat();
       return answer(c);
     });
     for (const route of ['seed', 'updates', 'lease', 'flushed']) app.post(`/v1/projects/:projectId/artifacts/:artifactId/doc/${route}`, answer);
     return app;
   };
+  let catchUp = new DocReadAuditThrottle();
   const push = (status: number) => docApp(status).request(`${DOC}/updates`, { method: 'POST', body: '{}' });
   const rows = () => auditRows.map((row) => [row.action, row.httpStatus]);
 
   beforeEach(() => {
     auditRows = [];
+    catchUp = new DocReadAuditThrottle();
   });
 
-  test('a 200 push and a 200 incremental pull (after > 0, no base) write no row', async () => {
+  test('a 200 push writes no row; of three 200 catch-up pulls (after > 0, no base) only the first writes one', async () => {
     expect((await push(200)).status).toBe(200);
-    expect((await docApp(200).request(`${DOC}?after=3`)).status).toBe(200);
     expect(auditRows).toHaveLength(0);
+    for (const after of [3, 4, 5]) expect((await docApp(200).request(`${DOC}?after=${after}`)).status).toBe(200);
+    expect(rows()).toEqual([['project.artifact.doc.read', 200]]);
   });
 
   test('a 200 full read keeps its row: from seq 0, or with the file text (base=true), as a file read does', async () => {

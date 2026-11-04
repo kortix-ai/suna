@@ -10,6 +10,8 @@ import {
   decideLease,
   decideReset,
   isIncrementalDocPull,
+  DocReadAuditThrottle,
+  DOC_CATCH_UP_AUDIT_MS,
   pageCut,
   type DocLease,
 } from './doc-rules';
@@ -206,5 +208,31 @@ describe('isIncrementalDocPull (an incremental pull writes no audit row; a full 
     expect(isIncrementalDocPull({ after: 0, base: false })).toBe(false);
     expect(isIncrementalDocPull({ after: 3, base: true })).toBe(false);
     expect(isIncrementalDocPull({ after: 0, base: true })).toBe(false);
+  });
+});
+
+describe('DocReadAuditThrottle (one catch-up pull audit row per person and Artifact per 10 min)', () => {
+  test('the first catch-up pull of a key is recorded; the next ones inside the window are not; after it, one more is', () => {
+    const throttle = new DocReadAuditThrottle();
+    expect(throttle.shouldRecord('u1:a1', 0)).toBe(true);
+    expect(throttle.shouldRecord('u1:a1', 1_000)).toBe(false);
+    expect(throttle.shouldRecord('u1:a1', DOC_CATCH_UP_AUDIT_MS - 1)).toBe(false);
+    expect(throttle.shouldRecord('u1:a1', DOC_CATCH_UP_AUDIT_MS)).toBe(true);
+    expect(throttle.shouldRecord('u1:a1', DOC_CATCH_UP_AUDIT_MS + 1)).toBe(false);
+  });
+
+  test('another person or another Artifact has its own window', () => {
+    const throttle = new DocReadAuditThrottle();
+    expect(throttle.shouldRecord('u1:a1', 0)).toBe(true);
+    expect(throttle.shouldRecord('u2:a1', 0)).toBe(true);
+    expect(throttle.shouldRecord('u1:a2', 0)).toBe(true);
+  });
+
+  test('the map is bounded: past maxKeys the oldest keys go, and a forgotten key is recorded again (never fewer rows)', () => {
+    const throttle = new DocReadAuditThrottle(DOC_CATCH_UP_AUDIT_MS, 100);
+    for (let i = 0; i < 1_000; i++) throttle.shouldRecord(`u${i}:a1`, i);
+    expect(throttle.size).toBeLessThanOrEqual(100);
+    expect(throttle.shouldRecord('u0:a1', 2_000)).toBe(true);
+    expect(throttle.shouldRecord('u999:a1', 2_000)).toBe(false);
   });
 });

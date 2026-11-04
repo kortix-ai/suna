@@ -179,11 +179,49 @@ export class DocByteBudget {
 
 /**
  * `GET …/doc` past seq 0 without `base`: a tab catching up on updates it was
- * pinged about. It changed nothing and returns no whole document, so it
- * writes no audit row (`markInboundAuditHeartbeat`). A read from seq 0, or
- * one with the file text (`base`), returns the document: it keeps its row,
- * as a file read does.
+ * pinged about, up to ~10 a second per tab. It returns no whole document: it
+ * writes one audit row per person and Artifact per 10 min
+ * (`DocReadAuditThrottle`), the rest are heartbeats. A read from seq 0, or
+ * one with the file text (`base`), returns the document: it always keeps its
+ * row, as a file read does.
  */
 export function isIncrementalDocPull(query: { after: number; base: boolean }): boolean {
   return query.after > 0 && !query.base;
+}
+
+/** A person's catch-up pulls of one Artifact write one audit row per this window. */
+export const DOC_CATCH_UP_AUDIT_MS = 10 * 60_000;
+
+/**
+ * Which catch-up pull writes its audit row: the first per key (person and
+ * Artifact) in each `windowMs`. Per process: with N API replicas a person
+ * may get up to N rows per window. The map is bounded; a key it forgot is
+ * recorded again, so it can only write more rows, never fewer.
+ */
+export class DocReadAuditThrottle {
+  // replica-local: each API process remembers its own last rows; at most `maxKeys` entries.
+  private readonly last = new Map<string, number>();
+
+  constructor(private readonly windowMs = DOC_CATCH_UP_AUDIT_MS, private readonly maxKeys = 50_000) {}
+
+  get size(): number {
+    return this.last.size;
+  }
+
+  shouldRecord(key: string, nowMs: number): boolean {
+    const at = this.last.get(key);
+    if (at !== undefined && nowMs - at < this.windowMs) return false;
+    if (at === undefined && this.last.size >= this.maxKeys) {
+      // The oldest-inserted tenth goes.
+      let drop = Math.ceil(this.maxKeys / 10);
+      for (const old of this.last.keys()) {
+        this.last.delete(old);
+        if (--drop <= 0) break;
+      }
+    }
+    // Re-inserted, so the map stays in order of the last recorded row.
+    this.last.delete(key);
+    this.last.set(key, nowMs);
+    return true;
+  }
 }

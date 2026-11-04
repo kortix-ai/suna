@@ -31,6 +31,7 @@ import {
   DOC_SEED_UPDATE_MAX_BYTES,
   DOC_UPDATE_MAX_BYTES,
   DocByteBudget,
+  DocReadAuditThrottle,
   isIncrementalDocPull,
 } from '../../artifacts/doc-rules';
 import { DOC_MAX_DELETES, DOC_MAX_STRUCTS, checkDocUpdate } from '../../artifacts/doc-yjs';
@@ -89,6 +90,8 @@ const pushLimiter = new TokenBucketRateLimiter('artifact_doc_push');
 const PUSH_POLICY = { limit: 240, windowMs: 4_000 };
 // replica-local: pushed bytes per person in this process (2 MiB/s, bursts of 4 MiB).
 const pushBytes = new DocByteBudget(DOC_BYTE_RATE);
+// replica-local: the last catch-up pull audit row per person and Artifact in this process (bounded map).
+const catchUpAudit = new DocReadAuditThrottle();
 
 /** A body over `maxSize` bytes answers 413 with `code` before it is parsed. */
 function limitBody(path: string, maxSize: number, code: string) {
@@ -170,8 +173,8 @@ export function registerArtifactDocRoutes(): void {
     if (!access.ok) return access.response;
     const q = c.req.valid('query');
     const query = { after: q.after ?? 0, base: q.base === 'true' || q.base === '1' };
-    // A catch-up pull writes no audit row; a full read (from seq 0, or with the file text) keeps it.
-    if (isIncrementalDocPull(query)) markInboundAuditHeartbeat();
+    // A full read (from seq 0, or with the file text) always keeps its audit row; catch-up pulls write one per person and Artifact per 10 min.
+    if (isIncrementalDocPull(query) && !catchUpAudit.shouldRecord(`${access.viewer.userId}:${access.row.artifactId}`, Date.now())) markInboundAuditHeartbeat();
     const doc = await readArtifactDoc(access.row.artifactId, query);
     c.header('Cache-Control', 'private, no-store');
     return c.json({

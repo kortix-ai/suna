@@ -276,7 +276,7 @@ flow('ART-10', {
       if ((await read()).latest_seq !== 4) throw new Error('a refused push was stored');
     });
 
-    await ctx.step('audit: no row for a successful push, a lease renewal or a catch-up pull; a contested lease call, every refused push and a full read keep theirs', async () => {
+    await ctx.step('audit: no row for a successful push or a lease renewal, one per person per 10 min for catch-up pulls; a contested lease call, every refused push and every full read keep theirs', async () => {
       const stable = async (action: string, clause?: string) => {
         let last = -1;
         return waitFor(async () => {
@@ -294,10 +294,14 @@ flow('ART-10', {
       const okPushes = await auditCount('project.artifact.doc.push', 'http_status < 400');
       const refusedPushes = await auditCount('project.artifact.doc.push', 'http_status >= 400');
       if (okPushes !== 0 || refusedPushes < 5) throw new Error(`push audit rows: ${okPushes} successful, ${refusedPushes} refused`);
-      // Reads: a catch-up pull writes no row; a full read (from seq 0) writes one, as a file read does.
+      // Reads: catch-up pulls write one row per person and Artifact per 10 min; a full read (from seq 0) always writes one, as a file read does.
+      // The member pulled once (after=1): one row.
+      const memberReads = (await stable('project.artifact.doc.read', `http_status = 200 AND actor_user_id = '${member.userId}'`)).now;
+      if (memberReads !== 1) throw new Error(`the member's one catch-up pull wrote ${memberReads} doc.read rows, expected 1`);
+      // OWNER's first catch-up pull was minutes ago, inside the window: this one writes none.
       const reads = (await stable('project.artifact.doc.read', 'http_status = 200')).now;
       await read({ after: '3' });
-      if ((await stable('project.artifact.doc.read', 'http_status = 200')).now !== reads) throw new Error('an incremental pull wrote an audit row');
+      if ((await stable('project.artifact.doc.read', 'http_status = 200')).now !== reads) throw new Error('a second catch-up pull inside 10 min wrote an audit row');
       await read({ after: '0' });
       const full = (await stable('project.artifact.doc.read', 'http_status = 200')).now;
       if (full !== reads + 1) throw new Error(`doc.read rows went ${reads} → ${full} after one full read; expected one more`);
