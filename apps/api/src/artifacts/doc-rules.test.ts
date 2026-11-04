@@ -3,7 +3,8 @@ import {
   DOC_COMPACT_ROWS,
   DOC_BYTE_RATE,
   DOC_LEASE_TTL_MS,
-  DOC_PAGE_MAX_BYTES,
+  DOC_COMPACT_WINDOW_BYTES,
+  DOC_COMPACT_WINDOW_STRUCTS,
   DocByteBudget,
   compactionWindow,
   decideFlush,
@@ -141,29 +142,35 @@ describe('pageCut', () => {
   });
 });
 
-describe('compactionWindow', () => {
-  const rows = (count: number, size: (i: number) => number) => Array.from({ length: count }, (_, i) => ({ seq: 100 + i, size: size(i) }));
+describe('compactionWindow (one small step, on the worker)', () => {
+  const rows = (count: number, size: (i: number) => number, structs: (i: number) => number = () => 1) =>
+    Array.from({ length: count }, (_, i) => ({ seq: 100 + i, size: size(i), structs: structs(i) }));
 
   test(`${DOC_COMPACT_ROWS} rows or fewer → no compaction`, () => {
     expect(compactionWindow(rows(DOC_COMPACT_ROWS, () => 50))).toBeNull();
   });
 
-  test('more rows than the threshold → every row merges into the highest seq', () => {
+  test('more rows than the threshold, all small → every row merges into the highest seq', () => {
     expect(compactionWindow(rows(DOC_COMPACT_ROWS + 1, () => 50))).toEqual({ fromSeq: 100, toSeq: 100 + DOC_COMPACT_ROWS, rows: DOC_COMPACT_ROWS + 1 });
   });
 
-  test('the window stops at the byte budget', () => {
-    const half = Math.floor(DOC_PAGE_MAX_BYTES / 2);
+  test(`the window stops at ${DOC_COMPACT_WINDOW_BYTES / 1024} KiB`, () => {
+    const half = Math.floor(DOC_COMPACT_WINDOW_BYTES / 2);
     expect(compactionWindow(rows(DOC_COMPACT_ROWS + 1, () => half))).toEqual({ fromSeq: 100, toSeq: 101, rows: 2 });
   });
 
-  test('a first row past the budget is skipped, the rows after it still merge', () => {
-    const plan = compactionWindow(rows(DOC_COMPACT_ROWS + 1, (i) => (i === 0 ? DOC_PAGE_MAX_BYTES + 1 : 50)));
+  test(`the window stops at ${DOC_COMPACT_WINDOW_STRUCTS} structs, whatever the bytes`, () => {
+    // The review's shape: 33 KB pushes of 8,250 four-byte structs.
+    expect(compactionWindow(rows(DOC_COMPACT_ROWS + 1, () => 33_000, () => 8_250))).toEqual({ fromSeq: 100, toSeq: 105, rows: 6 });
+  });
+
+  test('a first row too large to pair is skipped, the rows after it still merge', () => {
+    const plan = compactionWindow(rows(DOC_COMPACT_ROWS + 1, (i) => (i === 0 ? DOC_COMPACT_WINDOW_BYTES + 1 : 50)));
     expect(plan).toEqual({ fromSeq: 101, toSeq: 100 + DOC_COMPACT_ROWS, rows: DOC_COMPACT_ROWS });
   });
 
-  test('when no two neighbours fit the budget → no compaction', () => {
-    expect(compactionWindow(rows(DOC_COMPACT_ROWS + 1, () => DOC_PAGE_MAX_BYTES))).toBeNull();
+  test('when no two neighbours fit → no compaction', () => {
+    expect(compactionWindow(rows(DOC_COMPACT_ROWS + 1, () => 50, () => DOC_COMPACT_WINDOW_STRUCTS))).toBeNull();
   });
 });
 

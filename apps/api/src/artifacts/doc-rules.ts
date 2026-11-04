@@ -22,8 +22,16 @@ export const DOC_PAGE_MAX_BYTES = 8 * 1024 * 1024;
 export const DOC_PAGE_MAX_ROWS = 1_000;
 /** Structs in one page (a viewer integrates at most this many per pull): the cap of one push. */
 export const DOC_PAGE_MAX_STRUCTS = 200_000;
-/** An Artifact with more update rows than this is compacted. */
+/** An Artifact with more update rows than this is compacted (by the worker, `doc-compaction.ts`). */
 export const DOC_COMPACT_ROWS = 500;
+/**
+ * One compaction step merges at most this many bytes and structs. `Y.mergeUpdates`
+ * costs per struct: 0.07-0.35 µs measured here on crafted shapes (4-byte items,
+ * interleaved clocks), up to ~2 µs reported elsewhere. 50,000 structs keep one
+ * step near 100 ms in the slowest case and near 20 ms here.
+ */
+export const DOC_COMPACT_WINDOW_BYTES = 256 * 1024;
+export const DOC_COMPACT_WINDOW_STRUCTS = 50_000;
 /** After a compaction that threw (or would pass the page limit), none for this long. */
 export const DOC_COMPACTION_BACKOFF_MS = 10 * 60_000;
 /** Stored update bytes per Artifact; past it a push answers 413 `doc_too_large` and clients fall back to autosave. */
@@ -140,20 +148,28 @@ export function pageCut(
 }
 
 /**
- * The rows one compaction merges, given every row of an Artifact (ascending
- * seq): null at `DOC_COMPACT_ROWS` rows or fewer. Otherwise the longest run of
- * neighbours from the oldest that fits `DOC_PAGE_MAX_BYTES`; a first row
- * too large to pair (an earlier merge) is skipped. Any run of neighbours may
- * merge into its highest seq: a client past part of the run gets the merged
- * row, and Yjs applies the part it knows as a no-op.
+ * The rows one compaction step merges, given every row of an Artifact
+ * (ascending seq, with the struct count each row stored): null at
+ * `DOC_COMPACT_ROWS` rows or fewer. Otherwise the longest run of neighbours
+ * from the oldest that fits `DOC_COMPACT_WINDOW_BYTES` and
+ * `DOC_COMPACT_WINDOW_STRUCTS`; a first row too large to pair (a seed, an
+ * earlier merge) is skipped. Any run of neighbours may merge into its highest
+ * seq: a client past part of the run gets the merged row, and Yjs applies the
+ * part it knows as a no-op.
  */
-export function compactionWindow(rows: ReadonlyArray<{ seq: number; size: number }>) {
+export function compactionWindow(rows: ReadonlyArray<{ seq: number; size: number; structs: number }>) {
   if (rows.length <= DOC_COMPACT_ROWS) return null;
   for (let start = 0; start < rows.length - 1; start++) {
-    let total = 0;
+    let bytes = 0;
+    let structs = 0;
     let end = start;
-    while (end < rows.length && total + rows[end]!.size <= DOC_PAGE_MAX_BYTES) {
-      total += rows[end]!.size;
+    while (
+      end < rows.length
+      && bytes + rows[end]!.size <= DOC_COMPACT_WINDOW_BYTES
+      && structs + rows[end]!.structs <= DOC_COMPACT_WINDOW_STRUCTS
+    ) {
+      bytes += rows[end]!.size;
+      structs += rows[end]!.structs;
       end += 1;
     }
     if (end - start >= 2) return { fromSeq: rows[start]!.seq, toSeq: rows[end - 1]!.seq, rows: end - start };

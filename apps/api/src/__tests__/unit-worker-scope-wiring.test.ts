@@ -66,6 +66,7 @@ const WORKERS: Record<string, string> = {
   'slack-turn-gc': 'worker/jobs/slack-turn-gc.ts',
   'teams-turn-gc': 'worker/jobs/teams-turn-gc.ts',
   'artifact-doc-gc': 'worker/jobs/artifact-doc-gc.ts',
+  'artifact-doc-compaction': 'worker/jobs/artifact-doc-compaction.ts',
   'discord-gateway': 'worker/jobs/discord-gateway.ts',
   'job-queue': 'replica/job-queue.ts',
   'trigger-event-poll': 'replica/trigger-event-poll.ts',

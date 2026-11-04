@@ -9118,6 +9118,8 @@ export const artifactDocState = kortixSchema.table('artifact_doc_state', {
   epoch: uuid('epoch').defaultRandom().notNull(),
   bytesTotal: bigint('bytes_total', { mode: 'number' }).default(0).notNull(),
   compactionFailedAt: timestamp('compaction_failed_at', { withTimezone: true }),
+  /** A push found more rows than the compaction threshold: the worker compacts this doc (`doc-compaction.ts`). */
+  compactionRequestedAt: timestamp('compaction_requested_at', { withTimezone: true }),
   /** Everyone whose push is not yet named by a flush (distinct): the flush writes one audit row per person. */
   pendingContributors: uuid('pending_contributors').array().default(sql`'{}'::uuid[]`).notNull(),
   nextSeq: bigint('next_seq', { mode: 'number' }).default(1).notNull(),

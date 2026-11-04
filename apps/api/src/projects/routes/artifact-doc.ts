@@ -18,13 +18,11 @@ import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { auth, errors, json } from '../../openapi';
-import { logger } from '../../lib/logger';
 import { markInboundAuditHeartbeat } from '../../shared/audit-scope';
 import { TokenBucketRateLimiter } from '../../shared/rate-limit';
 import { publishArtifactLiveChange } from '../../artifacts/live-publish';
 import {
   DOC_BYTE_RATE,
-  DOC_COMPACT_ROWS,
   DOC_MARKDOWN_MAX_BYTES,
   DOC_MAX_BYTES_TOTAL,
   DOC_PAGE_MAX_BYTES,
@@ -38,7 +36,6 @@ import { DOC_MAX_DELETES, DOC_MAX_STRUCTS, measureDocUpdate } from '../../artifa
 import {
   ArtifactDocError,
   appendArtifactDocUpdate,
-  compactArtifactDoc,
   leaseArtifactDoc,
   markArtifactDocFlushed,
   readArtifactDoc,
@@ -89,6 +86,9 @@ const body = <T extends z.ZodTypeAny>(schema: T) => ({ required: true, content: 
 // second sustained, bursts up to 240. A client batches its pushes every 50 ms.
 const pushLimiter = new TokenBucketRateLimiter('artifact_doc_push');
 const PUSH_POLICY = { limit: 240, windowMs: 4_000 };
+// replica-local: resets per person in this process (10 a minute): a reset ends every tab's session on the doc.
+const resetLimiter = new TokenBucketRateLimiter('artifact_doc_reset');
+const RESET_POLICY = { limit: 10, windowMs: 60_000 };
 // replica-local: pushed bytes per person in this process (2 MiB/s, bursts of 4 MiB).
 const pushBytes = new DocByteBudget(DOC_BYTE_RATE);
 // replica-local: the last catch-up pull audit row per person and Artifact in this process (bounded map).
@@ -232,12 +232,8 @@ export function registerArtifactDocRoutes(): void {
     try {
       const artifactId = access.row.artifactId;
       const appended = await appendArtifactDocUpdate(artifactId, { update: update.bytes, structs: update.structs, userId: access.viewer.userId, epoch: input.epoch });
+      // Past the row threshold the service marks the doc; the worker compacts it (never this replica).
       publishArtifactLiveChange(artifactId, 'doc', String(appended.seq));
-      if (appended.rows > DOC_COMPACT_ROWS) {
-        void compactArtifactDoc(artifactId).catch((error) => logger.warn('[artifact-doc] compaction failed', {
-          artifactId, error: error instanceof Error ? error.message : String(error),
-        }));
-      }
       return c.json({ seq: appended.seq }, 200);
     } catch (err) {
       return failure(c, err);
@@ -302,13 +298,18 @@ export function registerArtifactDocRoutes(): void {
   projectsApp.openapi(createRoute({
     method: 'post', path: '/{projectId}/artifacts/{artifactId}/doc/reset', tags: ['artifacts'],
     summary: 'Reset the live document: delete its state and every update',
-    description: 'For a doc whose live state a client cannot apply (a poisoned update). The lease holder may reset, and anyone while the lease is free or expired; another live holder → 409 `not_leader`. Deletes the state and every update in one transaction and pings every live socket with `changed {what: "doc", version: "0"}`; every client then rebuilds, and the next open seeds from the file with a new epoch. A doc with no live state answers 200 as well.',
+    description: 'For a doc whose live state a client cannot apply (a poisoned update). The lease holder may reset, and anyone while the lease is free or expired; another live holder → 409 `not_leader`. Deletes the state and every update in one transaction and pings every live socket with `changed {what: "doc", version: "0"}`; every client then rebuilds, and the next open seeds from the file with a new epoch. A doc with no live state answers 200 as well. 429 `rate_limited` past 10 resets a minute per person.',
     ...auth,
     request: { params: ArtifactParams, body: body(z.object({ holder: Holder })) },
     responses: { 200: json(z.object({ reset: z.literal(true) }), 'Reset'), ...responses },
   }), async (c) => {
     const access = await loadDoc(c, 'write');
     if (!access.ok) return access.response;
+    const limited = resetLimiter.check(access.viewer.userId, RESET_POLICY);
+    if (!limited.allowed) {
+      c.header('Retry-After', String(Math.max(1, Math.ceil((limited.retryAfterMs ?? 6_000) / 1000))));
+      return c.json({ error: 'Too many resets: retry shortly', code: 'rate_limited' }, 429);
+    }
     try {
       const reset = await resetArtifactDoc(access.row.artifactId, { holder: c.req.valid('json').holder, userId: access.viewer.userId });
       publishArtifactLiveChange(access.row.artifactId, 'doc', '0');

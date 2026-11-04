@@ -1,5 +1,5 @@
 {
-  "id": "b0eae201-7a47-480f-895d-80cd88c7bd14",
+  "id": "9de71b38-6631-4984-852e-12739a7451a5",
   "prevId": "9fa9d509-9967-49ea-b606-7e7e73fec713",
   "version": "7",
   "dialect": "postgresql",
@@ -5207,6 +5207,12 @@
         },
         "compaction_failed_at": {
           "name": "compaction_failed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "compaction_requested_at": {
+          "name": "compaction_requested_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false

@@ -375,6 +375,21 @@ flow('ART-10', {
       if ([...statuses.keys()].some((status) => status !== 400 && status !== 429)) throw new Error(`unexpected statuses ${JSON.stringify([...statuses])}`);
       if ((await read()).latest_seq !== 4) throw new Error('a refused push was stored');
     });
+
+    // Last again: it ends the live state. A reset ends every tab's session on the doc, so it is rate-limited per person.
+    await ctx.step('resets past 10 a minute from one person → 429 rate_limited with Retry-After', async () => {
+      const statuses: number[] = [];
+      let limited: Awaited<ReturnType<typeof owner.post>> | undefined;
+      for (let i = 0; i < 12 && !limited; i++) {
+        const answer = await owner.post(RESET, { holder: 'tab-x' }, { params });
+        statuses.push(answer.statusCode);
+        if (answer.statusCode === 429) limited = answer;
+      }
+      if (!limited) throw new Error(`no 429 after ${statuses.length} resets: ${JSON.stringify(statuses)}`);
+      limited.status(429).body().has('$.code', 'rate_limited');
+      if (!/^[1-9]\d*$/.test(limited.header('retry-after') ?? '')) throw new Error(`Retry-After ${limited.header('retry-after')}`);
+      if (statuses.some((s) => s !== 200 && s !== 429)) throw new Error(`reset statuses ${JSON.stringify(statuses)}`);
+    });
   } finally {
     for (const socket of sockets) socket.close();
   }

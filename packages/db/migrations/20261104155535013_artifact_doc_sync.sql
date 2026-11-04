@@ -26,6 +26,7 @@ CREATE TABLE "kortix"."artifact_doc_state" (
 	"epoch" uuid DEFAULT gen_random_uuid() NOT NULL,
 	"bytes_total" bigint DEFAULT 0 NOT NULL,
 	"compaction_failed_at" timestamp with time zone,
+	"compaction_requested_at" timestamp with time zone,
 	"pending_contributors" uuid[] DEFAULT '{}'::uuid[] NOT NULL,
 	"next_seq" bigint DEFAULT 1 NOT NULL,
 	"flushed_seq" bigint DEFAULT 0 NOT NULL,

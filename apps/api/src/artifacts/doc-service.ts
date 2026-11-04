@@ -192,8 +192,8 @@ export async function seedArtifactDoc(
 /**
  * Append one update: the next seq, under the state row's lock until COMMIT.
  * 413 `doc_too_large` when the stored bytes would pass `DOC_MAX_BYTES_TOTAL`.
- * `rows`: the rows the Artifact holds now; past `DOC_COMPACT_ROWS` the caller
- * runs `compactArtifactDoc` after this returns.
+ * `rows`: the rows the Artifact holds now; past `DOC_COMPACT_ROWS` the doc is
+ * marked (`compaction_requested_at`) for the worker to compact.
  */
 export async function appendArtifactDocUpdate(
   artifactId: string,
@@ -225,7 +225,14 @@ export async function appendArtifactDocUpdate(
     await tx.insert(artifactDocUpdates).values({ artifactId, seq, bytes: input.update, createdBy: input.userId, structs: input.structs ?? 0 });
     const [count] = await tx.select({ rows: sql<number>`count(*)::int` }).from(artifactDocUpdates)
       .where(and(eq(artifactDocUpdates.artifactId, artifactId), isNull(artifactDocUpdates.quarantinedAt)));
-    return { seq, rows: Number(count?.rows ?? 0) };
+    const rows = Number(count?.rows ?? 0);
+    // Past the threshold the push only marks the doc: the worker compacts it (`doc-compaction.ts`), never a web replica.
+    if (rows > DOC_COMPACT_ROWS) {
+      await tx.update(artifactDocState)
+        .set({ compactionRequestedAt: sql`coalesce(${artifactDocState.compactionRequestedAt}, now())` })
+        .where(eq(artifactDocState.artifactId, artifactId));
+    }
+    return { seq, rows };
   });
 }
 
@@ -247,11 +254,13 @@ function mergeRows(rows: Array<{ bytes: Buffer }>): Uint8Array | null | 'failed'
 }
 
 /**
- * Merge the oldest update rows into one row that keeps the highest of their
- * seqs (`compactionWindow`), when the Artifact holds more than the threshold
- * (quarantined rows do not count). `Y.mergeUpdates` only
- * (`compactDocUpdates`): never integration. The window reads at most
- * `DOC_PAGE_MAX_BYTES`, and a merged row larger than that is dropped.
+ * ONE compaction step, run by the worker (`doc-compaction.ts`), never by a web
+ * replica: merge the oldest update rows of one small window
+ * (`compactionWindow`: at most 256 KiB and 50,000 structs) into one row that
+ * keeps the highest of their seqs, when the Artifact holds more than the
+ * threshold (quarantined rows do not count). `Y.mergeUpdates` only
+ * (`compactDocUpdates`): never integration. A merged row past the caps of a
+ * push is dropped.
  *
  * When the merge fails, the rows no Yjs reader takes (`mergesAlone`: they fail
  * the scan, or fail a merge with an empty update) are quarantined: they stay
@@ -273,12 +282,16 @@ export async function compactArtifactDoc(artifactId: string): Promise<ArtifactDo
     if (!state) return { done: false, reason: 'below_threshold' };
     if (state.backoff) return { done: false, reason: 'backoff' };
     const live = and(eq(artifactDocUpdates.artifactId, artifactId), isNull(artifactDocUpdates.quarantinedAt));
-    const sizes = await tx.select({ seq: artifactDocUpdates.seq, size: sql<number>`octet_length(${artifactDocUpdates.bytes})` })
+    const sizes = await tx.select({
+      seq: artifactDocUpdates.seq,
+      size: sql<number>`octet_length(${artifactDocUpdates.bytes})`,
+      structs: artifactDocUpdates.structs,
+    })
       .from(artifactDocUpdates)
       .where(live)
       .orderBy(asc(artifactDocUpdates.seq));
     if (sizes.length <= DOC_COMPACT_ROWS) return { done: false, reason: 'below_threshold' };
-    const plan = compactionWindow(sizes.map((row) => ({ seq: row.seq, size: Number(row.size) })));
+    const plan = compactionWindow(sizes.map((row) => ({ seq: row.seq, size: Number(row.size), structs: row.structs })));
     if (!plan) return { done: false, reason: 'too_large' };
     let rows = await tx.select({ seq: artifactDocUpdates.seq, bytes: artifactDocUpdates.bytes }).from(artifactDocUpdates)
       .where(and(live, gte(artifactDocUpdates.seq, plan.fromSeq), lte(artifactDocUpdates.seq, plan.toSeq)))

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
+import { DOC_COMPACT_WINDOW_BYTES, DOC_COMPACT_WINDOW_STRUCTS, compactionWindow } from './doc-rules';
 import { DOC_MAX_STRUCTS, checkDocUpdate, compactDocUpdates, measureDocUpdate } from './doc-yjs';
 
 /** A doc shaped like tiptap's: paragraphs of text in the `default` fragment. */
@@ -242,4 +243,57 @@ describe('a merged row meets the caps of a push', () => {
     // Past the byte cap: refused as well.
     expect(compactDocUpdates(rows, { maxBytes: 64 * 1024, maxStructs: DOC_MAX_STRUCTS })).toBeNull();
   });
+});
+
+describe('one compaction step is bounded', () => {
+  function deletedRow(client: number, clock0: number, count: number): Uint8Array {
+    const w = new V1().uint(1).uint(count).uint(client).uint(clock0);
+    for (let i = 0; i < count; i++) {
+      const clock = clock0 + i;
+      if (clock === 0) w.byte(1).uint(0).uint(42).uint(0).uint(1);
+      else w.byte(0x80 | 1).uint(client).uint(clock - 1).uint(1);
+    }
+    return w.uint(0).done();
+  }
+  /** Interleaved clocks of one client across rows: the most decoder re-sorting per struct. */
+  function interleaved(rows: number, perRow: number): Uint8Array[] {
+    return Array.from({ length: rows }, (_, r) => {
+      const w = new V1().uint(1).uint(perRow * 2 - 1).uint(7).uint(r);
+      for (let k = 0; k < perRow; k++) {
+        if (k > 0) w.byte(10).uint(rows - 1);
+        w.byte(1).uint(0).uint(42).uint(0).uint(1);
+      }
+      return w.uint(0).done();
+    });
+  }
+  const window = (updates: Uint8Array[]) => {
+    const rows = updates.map((u, i) => {
+      const measured = measureDocUpdate(u, 'seed');
+      if (!measured.ok) throw new Error(`row ${i} refused: ${measured.reason}`);
+      return { seq: i + 1, size: u.length, structs: measured.structs };
+    });
+    // Pad past the threshold with empty rows so a window is chosen.
+    const padded = [...rows, ...Array.from({ length: 501 }, (_, i) => ({ seq: rows.length + i + 1, size: 2, structs: 0 }))];
+    const plan = compactionWindow(padded)!;
+    return updates.slice(plan.fromSeq - 1, Math.min(plan.toSeq, updates.length));
+  };
+
+  for (const [name, updates] of [
+    ['the review’s shape: 64 pushes of 8,250 four-byte ContentDeleted items', Array.from({ length: 64 }, (_, p) => deletedRow(5, p * 8_250, 8_250))],
+    ['500 rows of one client with interleaved clocks', interleaved(500, 200)],
+  ] as const) {
+    test(`${name}: the window holds at most ${DOC_COMPACT_WINDOW_STRUCTS} structs and ${DOC_COMPACT_WINDOW_BYTES / 1024} KiB, and merges in < 100 ms`, () => {
+      const chosen = window(updates);
+      const structs = chosen.reduce((n, u) => n + (measureDocUpdate(u, 'seed') as { structs: number }).structs, 0);
+      expect(structs).toBeLessThanOrEqual(DOC_COMPACT_WINDOW_STRUCTS);
+      expect(chosen.reduce((n, u) => n + u.length, 0)).toBeLessThanOrEqual(DOC_COMPACT_WINDOW_BYTES);
+      let best = Infinity;
+      for (let i = 0; i < 3; i++) {
+        const started = performance.now();
+        expect(compactDocUpdates(chosen, { maxBytes: 512 * 1024, maxStructs: DOC_MAX_STRUCTS })).not.toBeNull();
+        best = Math.min(best, performance.now() - started);
+      }
+      expect(best).toBeLessThan(100);
+    });
+  }
 });
