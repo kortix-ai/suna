@@ -1,6 +1,13 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
-import { SANDBOX_BASE_IMAGE, kortixDefaultsSetup, kortixDefaultsTail } from '../defaults';
+import {
+  SANDBOX_BASE_IMAGE,
+  SANDBOX_RUNTIME_USER_COMMAND,
+  kortixDefaultsSetup,
+  kortixDefaultsTail,
+} from '../defaults';
 import {
   PLATFORM_DEFAULT_USER_DOCKERFILE,
   buildLayeredDockerfile,
@@ -50,5 +57,13 @@ describe('the Kortix defaults', () => {
     const workstation = image.indexOf(kortixWorkstationTooling({}));
     expect(workstation).toBeGreaterThan(image.indexOf(kortixDefaultsSetup()));
     expect(workstation).toBeLessThan(image.indexOf(kortixDefaultsTail(ARTIFACTS)));
+  });
+
+  test('every image and apps/sandbox/Dockerfile create the runtime user with the same command', () => {
+    // Boxes share Drive folders: two images with two `kortix` uids re-own the
+    // same files back and forth (the drive-owner helper in entrypoint.sh).
+    const selfHost = readFileSync(resolve(import.meta.dir, '../../../../../apps/sandbox/Dockerfile'), 'utf8');
+    expect(selfHost).toContain(`RUN ${SANDBOX_RUNTIME_USER_COMMAND} \\\n`);
+    for (const { dockerfile } of IMAGES) expect(dockerfile).toContain(`RUN ${SANDBOX_RUNTIME_USER_COMMAND} \\\n`);
   });
 });

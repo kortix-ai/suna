@@ -1036,6 +1036,8 @@ export interface SessionDriveView extends RecordedDriveMount {
   /** The folder's name, for people. */
   name: string;
   openConflicts: number;
+  /** When the newest of `openConflicts` was detected (ISO 8601), or null with none. */
+  latestConflictAt: string | null;
 }
 
 /** The folders the session's current sandbox mounts, with their open conflicts. */
@@ -1045,14 +1047,19 @@ export async function readSessionDriveMounts(sessionId: string): Promise<Session
   if (!mounts.length) return [];
   const driveIds = [...new Set(mounts.map((m) => m.driveId))];
   const open = await db
-    .select({ driveId: driveConflicts.driveId, path: driveConflicts.path })
+    .select({ driveId: driveConflicts.driveId, path: driveConflicts.path, detectedAt: driveConflicts.detectedAt })
     .from(driveConflicts)
     .where(and(inArray(driveConflicts.driveId, driveIds), isNull(driveConflicts.resolvedAt), isNull(driveConflicts.dismissedAt)));
-  return mounts.map((m) => ({
-    ...m,
-    name: m.subdir && m.subdir !== '/' ? m.subdir.split('/').filter(Boolean).join(' / ') : PROJECT_DRIVE_NAME,
-    openConflicts: open.filter((c) => c.driveId === m.driveId && pathWithinFolder(c.path, m.subdir || '/')).length,
-  }));
+  return mounts.map((m) => {
+    const mine = open.filter((c) => c.driveId === m.driveId && pathWithinFolder(c.path, m.subdir || '/'));
+    const latest = mine.reduce<Date | null>((at, c) => (!at || c.detectedAt > at ? c.detectedAt : at), null);
+    return {
+      ...m,
+      name: m.subdir && m.subdir !== '/' ? m.subdir.split('/').filter(Boolean).join(' / ') : PROJECT_DRIVE_NAME,
+      openConflicts: mine.length,
+      latestConflictAt: latest ? latest.toISOString() : null,
+    };
+  });
 }
 
 /** Folders the session's current sandbox should have but does not mount, and the message for them. */
