@@ -5,9 +5,11 @@ description: "Kortix product analytics and campaign attribution in PostHog (EU C
 
 # Product analytics
 
-One PostHog project on EU Cloud collects kortix.com. The web app and the API
-send to it with the same distinct id, the Supabase user id, so the browser
-journey, the server events and the first-touch campaign meet on one person.
+One PostHog project on EU Cloud collects kortix.com: **Kortix**, project
+`334925` (https://eu.posthog.com/project/334925, free plan). The web app and
+the API send to it with the same distinct id, the Supabase user id, so the
+browser journey, the server events and the first-touch campaign meet on one
+person.
 
 | Part | File |
 |---|---|
@@ -95,8 +97,53 @@ Examples:
 - A paid Meta ad: `?utm_source=meta&utm_medium=paid_social&utm_campaign=launch_2026_11&utm_content=cut_30s`
 
 A viewer who types `kortix.com` by hand arrives as `$direct`. The PostHog
-survey "How did you hear about us?" (shown once to new users) catches them;
-its answers are in the survey's results and on the person.
+survey "Acquisition: how did you hear about us" catches them: one question,
+shown once, 15 s after an app page (`/projects…`) loads, to people whose
+`signed_up_at` is within 7 days. The answer is the event property
+`$survey_response_709452a5-5925-4704-a85a-0618d2f78ed3` on `survey sent`.
+
+## Where to look
+
+| Question | Place |
+|---|---|
+| Which campaign brings accounts and revenue | dashboard "Acquisition: campaign to revenue" (`/project/334925/dashboard/1085118`) |
+| Do new accounts start sessions and come back | dashboard "Activation and usage" (`/project/334925/dashboard/1085119`) |
+| Visitors, sources, UTM tables | PostHog → Web analytics |
+| One person's journey | PostHog → People → the person → Events |
+
+Every dashboard insight uses the project's test-account filter, on by
+default: `environment = production`, no `@kortix.ai` / `@kortix.com` email,
+not the internal cohort. Local, dev and staging events never reach the charts.
+
+## PostHog project settings (set 2026-11-04)
+
+- Session replay on, only from `https://kortix.com` (`recording_domains`),
+  minimum 2 s, console logs off, network timings off, a URL blocklist for
+  every private path (a second guard behind the client rule). Free plan:
+  5,000 web recordings a month.
+- Surveys on. Authorized URL `https://kortix.com` (toolbar, heatmaps).
+- IP anonymization on; GeoIP country and city still resolve.
+- Free plan hard limits: 1 M events a month. Past it PostHog drops events until
+  the next cycle; nothing is billed. Add a card and a billing limit before
+  traffic approaches it.
+- A survey created through the API with `start_date` keeps its targeting flag
+  inactive. Activate the flag (`PATCH /api/projects/334925/feature_flags/<id>/
+  {"active": true}`) or launch from the UI.
+
+## Where the key lives
+
+- Web: `POSTHOG_PROJECT_KEY` in `posthog-config.ts`, selected by host. No
+  hosting setting is involved.
+- API: `POSTHOG_PROJECT_KEY` in the Secrets Manager blob of each deployed env
+  (`kortix-dev-env` us-east-2, `kortix-staging-env` and `kortix-prod-env`
+  eu-west-2), mirrored in `apps/api/.env.dev` / `.env.staging` / `.env.prod`
+  (the dotenvx-secrets skill). Unset = no server events.
+
+## PostHog MCP
+
+`claude mcp add --transport http posthog https://mcp.posthog.com/mcp -s user`,
+then `/mcp` in Claude Code to log in (OAuth, picks the EU region). It answers
+analytics questions and edits insights, dashboards and surveys directly.
 
 ## Verify an event
 

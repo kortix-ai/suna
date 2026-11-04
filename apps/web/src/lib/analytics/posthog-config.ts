@@ -19,8 +19,8 @@
 import { locales } from '@/i18n/catalog.mjs';
 import { analyticsLocation, isAnalyticsExcludedPath } from '@/lib/analytics/gtm';
 
-/** The EU Cloud project that collects kortix.com. */
-export const POSTHOG_PROJECT_KEY = 'phc_REPLACE_WITH_PROJECT_KEY';
+/** EU Cloud project 334925, which collects kortix.com. Public: a write-only client key. */
+export const POSTHOG_PROJECT_KEY = 'phc_nPL2v9FLjKUyXvaabr4tdvCCRTCUw4nUt6GqsnAeTAHs';
 export const POSTHOG_UI_HOST = 'https://eu.posthog.com';
 /** Same-origin reverse proxy (next.config.ts rewrites to eu.i.posthog.com). */
 export const POSTHOG_API_HOST = '/ingest';
