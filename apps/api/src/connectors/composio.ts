@@ -15,6 +15,11 @@ import {
   type ComposioCatalogClient,
 } from './composio-catalog-search';
 import { composioFileUpload, type ComposioFilesLike, uploadFileArgs } from './composio-files';
+import {
+  type ComposioProxyRequest,
+  type ComposioProxyResponse,
+  kortixComposioTool,
+} from './composio-youtube-upload';
 import type { ComposioToolLike } from './types';
 
 // Re-exported so `db-deps` reaches it through the lazily imported adapter module.
@@ -101,6 +106,8 @@ export interface ComposioSessionLike {
     args?: Record<string, unknown>,
     options?: { account?: string },
   ): Promise<ToolRouterSessionExecuteResponse>;
+  /** An API request on the session's connected account (`composio-youtube-upload.ts`). */
+  proxyExecute?(request: ComposioProxyRequest): Promise<ComposioProxyResponse>;
 }
 
 export interface ComposioExecuteInput {
@@ -723,6 +730,11 @@ export async function executeComposio(
       throw new Error('composio_connected_account_mismatch');
     }
   }
+
+  // A tool Kortix runs itself (`youtube.upload_video`) uses the same verified
+  // account through Composio's proxy. Composio's tool of that name never runs.
+  const kortixTool = kortixComposioTool(input.toolkit, input.toolSlug);
+  if (kortixTool) return kortixTool.run(session, input.args, input.toolkit);
 
   // The resumed Tool Router session already owns the toolkit → connected-account
   // binding, and the state check above proves it is the expected account. Passing
