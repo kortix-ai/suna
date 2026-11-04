@@ -15,6 +15,7 @@ import {
   type ArtifactLiveRange,
   type ArtifactLiveServerFrame,
   type ArtifactLiveTyping,
+  type ArtifactLiveWireChange,
 } from './protocol';
 
 // `@kortix/sdk` is published and cannot import the private `@kortix/shared`.
@@ -44,6 +45,8 @@ const SERVER_FRAMES: unknown[] = [
   { v: 1, t: 'changed', what: 'comments', version: null },
   { v: 1, t: 'changed', what: 'activity', version: 'etag-1' },
   { v: 1, t: 'changed', what: 'content', version: 'x'.repeat(512) },
+  // A co-editing ping: the version is the doc update's seq (KRTX-3670).
+  { v: 1, t: 'changed', what: 'doc', version: '42' },
   { v: 1, t: 'pong' },
   // invalid
   { v: 2, t: 'pong' },
@@ -122,7 +125,7 @@ describe('the SDK live protocol equals @kortix/shared/artifact-live', () => {
 
   test('the corpus holds valid and invalid frames, so the parity check is not vacuous', () => {
     const results = SERVER_FRAMES.map((frame) => shared.parseArtifactLiveServerFrame(JSON.stringify(frame)));
-    expect(results.filter((result) => result !== null)).toHaveLength(9);
+    expect(results.filter((result) => result !== null)).toHaveLength(10);
     expect(results.filter((result) => result === null).length).toBeGreaterThan(40);
   });
 
@@ -172,10 +175,29 @@ describe('the SDK live protocol equals @kortix/shared/artifact-live', () => {
     same((x: ArtifactLivePosition): shared.ArtifactLivePosition => x, (x: shared.ArtifactLivePosition): ArtifactLivePosition => x);
     same((x: ArtifactLiveRange): shared.ArtifactLiveRange => x, (x: shared.ArtifactLiveRange): ArtifactLiveRange => x);
     same((x: ArtifactLiveTyping): shared.ArtifactLiveTyping => x, (x: shared.ArtifactLiveTyping): ArtifactLiveTyping => x);
-    same((x: ArtifactLiveChange): shared.ArtifactLiveChange => x, (x: shared.ArtifactLiveChange): ArtifactLiveChange => x);
+    // The wire carries `doc`; the public `ArtifactLiveChange` does not (see the next test).
+    same((x: ArtifactLiveWireChange): shared.ArtifactLiveChange => x, (x: shared.ArtifactLiveChange): ArtifactLiveWireChange => x);
     same((x: ArtifactLiveServerFrame): shared.ArtifactLiveServerFrame => x, (x: shared.ArtifactLiveServerFrame): ArtifactLiveServerFrame => x);
     same((x: ArtifactLiveClientFrame): shared.ArtifactLiveClientFrame => x, (x: shared.ArtifactLiveClientFrame): ArtifactLiveClientFrame => x);
     same((x: ArtifactLiveAgentSignal): shared.ArtifactLiveAgentSignal => x, (x: shared.ArtifactLiveAgentSignal): ArtifactLiveAgentSignal => x);
     expect(shared.artifactLiveAgentSignalSchema.safeParse({ status: 'writing', thread_id: THREAD } satisfies ArtifactLiveAgentSignal).success).toBe(true);
+  });
+
+  test('the public ArtifactLiveChange stays comments | activity | content: a consumer\'s Record and exhaustive switch still compile', () => {
+    // A compile-time pin (`typecheck` fails when the union widens): a `doc` member would be missing here, and reach `never` below.
+    const labels: Record<ArtifactLiveChange, string> = { comments: 'Comments', activity: 'Activity', content: 'Content' };
+    const exhaustive = (change: ArtifactLiveChange): string => {
+      switch (change) {
+        case 'comments':
+        case 'activity':
+        case 'content':
+          return labels[change];
+        default: {
+          const unreachable: never = change;
+          return unreachable;
+        }
+      }
+    };
+    expect(['comments', 'activity', 'content'].map((change) => exhaustive(change as ArtifactLiveChange))).toEqual(['Comments', 'Activity', 'Content']);
   });
 });

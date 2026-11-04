@@ -753,6 +753,25 @@ function anonymousSummaryEvent(summary: AnonymousAuditSummary): AuditEventInput 
 const AUDIT_INGEST_ACTION = 'audit.session.ingest';
 
 /**
+ * Route-label actions whose SUCCESSFUL requests write no row of their own
+ * (packages/shared audit-route-labels). A refused or failed one (status >= 400)
+ * keeps its row.
+ *   audit.session.ingest       the sandbox relay's delivery of audit events:
+ *                              the events it carries are the record
+ *   project.artifact.doc.push  a co-edited doc's push (KRTX-3670): one per
+ *                              keystroke batch, up to 20 a second per typist.
+ *                              Who wrote is recorded at the flush: one
+ *                              `project.artifact.doc.edit` row per writer.
+ * The seed, the lease, the flush and every pull that returns the document
+ * keep their rows; an incremental pull marks itself a heartbeat
+ * (`isIncrementalDocPull`, `markInboundAuditHeartbeat`).
+ */
+const UNAUDITED_ON_SUCCESS: ReadonlySet<string> = new Set([
+  AUDIT_INGEST_ACTION,
+  'project.artifact.doc.push',
+]);
+
+/**
  * Write the one row for an inbound request. Idempotent per scope, and never
  * throws: an audit failure must not fail the request it describes.
  */
@@ -768,11 +787,14 @@ export async function emitInboundAuditRow(scope: InboundAuditScope, status: numb
     // failed or refused request keeps its own row, with the status.
     const standIns = [input.action, ...(routeLabel(scope)?.events ?? [])];
     if (status < 400 && standIns.some((action) => scope.recordedActions.has(action))) return;
-    // The sandbox relay's own delivery of audit events is not an action: the
-    // events it carries are the record. A row per batch (one per 10 s per busy
-    // session) only added load on the table it writes to. A refused or failed
-    // batch (status >= 400) keeps its row.
-    if (status < 400 && input.action === AUDIT_INGEST_ACTION) return;
+    // High-frequency transport that is not an action (`UNAUDITED_ON_SUCCESS`):
+    // the sandbox relay's audit batches (one per 10 s per busy session) and a
+    // co-edited doc's pushes and pulls. A row per request only added load on
+    // the table it writes to. A refused or failed one (status >= 400) keeps its row.
+    if (status < 400 && UNAUDITED_ON_SUCCESS.has(input.action)) return;
+    // A heartbeat the handler marked (`markInboundAuditHeartbeat`): a lease
+    // renewal changed nothing that was not already in force.
+    if (status < 400 && scope.heartbeat) return;
     // A deployed app's public traffic is the customer's end users, not a
     // principal acting on the account. A signed-in viewer is still audited.
     if (scope.entrypoint === 'app_origin' && input.actorType === 'anonymous') return;

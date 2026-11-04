@@ -23606,8 +23606,16 @@
     "messageError": "Não foi possível enviar a nota. Tente de novo.",
     "messageSent": "Nota enviada. O agente a recebe agora.",
     "sendMessage": "Enviar nota",
-    "showLog": "Mostrar log completo",
-    "hideLog": "Ocultar log completo",
+    "send": "Enviar",
+    "agentLog": "Log do agente",
+    "shareAccessLabel": "Quem tem acesso",
+    "shareOwner": "Proprietário",
+    "shareAdminsRole": "Pode abrir",
+    "shareLoadError": "Não foi possível carregar quem tem acesso.",
+    "shareVisibility": "Visível para: {scope}. Compartilhar meta",
+    "copyLink": "Copiar link",
+    "linkCopied": "Link copiado",
+    "linkCopyError": "Não foi possível copiar o link",
     "properties": "Propriedades",
     "stateLabel": "Estado",
     "nextCheck": "Próxima verificação",
@@ -24291,6 +24299,14 @@
       "typingTwo": "{first} e {second} estão digitando…",
       "typingMany": "{count, plural, one {# pessoa está digitando…} other {# pessoas estão digitando…}}",
       "writing": "{name} está escrevendo…"
+    },
+    "coedit": {
+      "offLarge": "A edição ao vivo está desativada: este documento tem mais de 1 MiB. As alterações são salvas enquanto você digita.",
+      "offLineEndings": "A edição ao vivo está desativada: este documento mistura finais de linha CRLF e LF. As alterações são salvas enquanto você digita.",
+      "offShape": "A edição ao vivo está desativada: o editor reescreveria parte do Markdown. As alterações são salvas enquanto você digita.",
+      "stoppedLarge": "A edição ao vivo parou: uma alteração era grande demais para compartilhar. As alterações são salvas enquanto você digita.",
+      "stoppedFailed": "A edição ao vivo parou: a conexão falhou. As alterações são salvas enquanto você digita.",
+      "stoppedHistory": "A edição ao vivo parou: o histórico de edições deste documento é grande demais. As alterações são salvas enquanto você digita."
     }
   },
   "emailConnect": {
