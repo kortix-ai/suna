@@ -41,7 +41,6 @@ import { ProjectChromeNavItem } from './footer/project-chrome-nav';
 import { CHROME_UI_ENABLED } from '../../internal/chrome/use-chrome-offered';
 import {
   MagnifyingGlassIcon,
-  ChatCircleIcon,
   NavigationArrowIcon,
 } from '@phosphor-icons/react';
 import { UiLink as Link } from '../../providers/ui-provider';
@@ -287,18 +286,8 @@ export function ProjectSidebar({
         <div className="flex h-full min-h-0 flex-col space-y-2">
           <SidebarGroup className="py-0">
             <SidebarMenu>
-              {chat ? (
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild className="text-sidebar-foreground">
-                    <Link href={`${uiRoutes().project(projectId)}/chat`} prefetch onClick={handleNewSessionClick}>
-                      <span className="shrink-0">
-                        <ChatCircleIcon />
-                      </span>
-                      <span>{t('oneChat')}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ) : (
+              {/* Chat on: no New session row; the person's chat with Kortix is the My Kortix DM row below. */}
+              {chat ? null : (
                 <SidebarMenuItem>
                   {creatingSession ? (
                     <SidebarMenuButton
@@ -324,7 +313,7 @@ export function ProjectSidebar({
               {/* Customize, Apps, Files: order and
                   visibility come from "Customize sidebar". They moved up here
                   from the footer (Jay, 2026-10-12) to keep the footer short. */}
-              {/* Chat on: the Company memory, the first row under the Chat row. */}
+              {/* Chat on: the Company memory, the first row of the nav items. */}
               {chat ? <ProjectMemoryNavItem projectId={projectId} /> : null}
               <ProjectNavItems projectId={projectId} />
             </SidebarMenu>

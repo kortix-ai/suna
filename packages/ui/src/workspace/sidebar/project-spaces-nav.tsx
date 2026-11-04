@@ -44,8 +44,13 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
   const pathname = useUiPathname();
   const router = useUiRouter();
   const spaces = useProjectSpaces(projectId);
-  // My Kortix's DM is the person's Chat (the row above this list): it is not listed again here.
-  const agents = useVisibleAgents({ projectId }).filter((agent) => !isMyKortixAgentName(agent.name));
+  // My Kortix first: its DM is the person's chat with Kortix (`/chat` opens it too).
+  const visible = useVisibleAgents({ projectId });
+  const agents = useMemo(
+    () => [...visible.filter((agent) => isMyKortixAgentName(agent.name)), ...visible.filter((agent) => !isMyKortixAgentName(agent.name))],
+    [visible],
+  );
+  const chatHref = `${uiRoutes().project(projectId)}/chat`;
   const [createOpen, setCreateOpen] = useState(false);
   const collapsedSections = useSessionFilterStore(selectCollapsedSections(projectId));
   const collapsed = useMemo(() => new Set(collapsedSections), [collapsedSections]);
@@ -109,7 +114,7 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
               <ProjectNavRow
                 key={agent.name}
                 href={href}
-                active={isAt(pathname, href)}
+                active={isAt(pathname, href) || (isMyKortixAgentName(agent.name) && isAt(pathname, chatHref))}
                 label={name}
                 // The row forces every svg to size-4: the pixel mark keeps its 14px glyph.
                 className="[&_[data-slot=agent-mark]>svg]:size-[14px]!"

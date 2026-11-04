@@ -1860,8 +1860,7 @@
       "addChannel": "Нови простор",
       "loadError": "Учитавање простора није успело.",
       "newAgent": "Нови агент"
-    },
-    "oneChat": "Chat"
+    }
   },
   "dashboard": {
     "title": "Контролна табла",

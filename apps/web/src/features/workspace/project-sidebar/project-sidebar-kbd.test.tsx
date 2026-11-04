@@ -200,24 +200,25 @@ test('the mobile sheet renders no keyboard shortcut hint (KRTX-2005)', async () 
   expect(document.body.innerHTML).not.toContain('data-slot="kbd-group"');
 });
 
-test('with chat on, the Chat row and the spaces list replace New session, the session list and Cmd+J', async () => {
+test('with chat on, the spaces list replaces New session, the session list and Cmd+J; My Kortix is the first DM, no Chat row', async () => {
   channelsOn = true;
   await mountSidebar(1280);
   const html = container!.innerHTML;
   expect(html).not.toContain('data-testid="session-list"');
   expect(html).not.toContain('newSession');
-  // The Chat row comes first, above the spaces list.
-  expect(html).toContain('href="/projects/synthetic-project/chat"');
-  expect(html.indexOf('href="/projects/synthetic-project/chat"')).toBeLessThan(html.indexOf('spaces.channels'));
-  // Channels: live channels only, then the add row. Direct messages: one row per agent.
+  // No separate Chat row: the person's chat with Kortix is the My Kortix DM.
+  expect(html).not.toContain('oneChat');
+  expect(html).not.toContain('href="/projects/synthetic-project/chat"');
+  // Channels: live channels only, then the add row. Direct messages: one row per agent, My Kortix first.
   expect(html).toContain('spaces.channels');
   expect(html).toContain('href="/projects/synthetic-project/c/general"');
   expect(html).not.toContain('/c/old');
   expect(html).toContain('spaces.addChannel');
   expect(html).toContain('spaces.directMessages');
   expect(html).toContain('href="/projects/synthetic-project/dm/kortix"');
-  expect(html).toContain('>Kortix<');
-  expect(html).toContain('>My Kortix<');
+  expect(html).toContain('href="/projects/synthetic-project/dm/meta"');
+  expect(html.indexOf('>My Kortix<')).toBeGreaterThan(-1);
+  expect(html.indexOf('>My Kortix<')).toBeLessThan(html.indexOf('>Kortix<'));
   await act(async () => {
     win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'j', metaKey: true }));
   });

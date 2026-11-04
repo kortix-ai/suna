@@ -1860,8 +1860,7 @@
       "addChannel": "新しいスペース",
       "loadError": "スペースを読み込めませんでした。",
       "newAgent": "新しいエージェント"
-    },
-    "oneChat": "Chat"
+    }
   },
   "dashboard": {
     "title": "ダッシュボード",

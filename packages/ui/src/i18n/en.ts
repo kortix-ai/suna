@@ -1339,8 +1339,7 @@ const catalog = {
       "addChannel": "New space",
       "loadError": "Could not load spaces.",
       "newAgent": "New agent"
-    },
-    "oneChat": "Chat"
+    }
   },
   "sessionPage": {
     "backToProject": "Back to project",

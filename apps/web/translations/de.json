@@ -1860,8 +1860,7 @@
       "addChannel": "Neuer Space",
       "loadError": "Spaces konnten nicht geladen werden.",
       "newAgent": "Neuer Agent"
-    },
-    "oneChat": "Chat"
+    }
   },
   "dashboard": {
     "title": "Dashboard",

@@ -1860,8 +1860,7 @@
       "addChannel": "新建空间",
       "loadError": "无法加载空间。",
       "newAgent": "新建智能体"
-    },
-    "oneChat": "Chat"
+    }
   },
   "dashboard": {
     "title": "仪表板",
