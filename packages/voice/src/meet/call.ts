@@ -6,7 +6,7 @@
 // the voice's microphone (getUserMedia answered with the relay's speech, src/meet/page.ts botMicrophone) and its ears:
 // the remote audio of the page's WebRTC connections, mixed, goes to the relay as a caller's audio (callEars). The relay
 // call opens when the first remote voice comes in (someone is there to hear the greeting and its AI disclosure), in
-// room mode (several people: it speaks when it is its turn), on the session given (the agent's own).
+// room mode for a group (it speaks when it is its turn) or as a one-to-one call, on the session given (the agent's own).
 // Nobody heard in the call is the owner: no names come with a call's audio. Unless `trusted`, every word heard is a
 // guest's (the voice's fast lane may answer; the agent never acts on it), the meeting bridge's gate (src/cascade.ts).
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -30,6 +30,9 @@ export type CallOptions = {
   tts?: string
   /** true: everyone's words may reach the agent (its owner said so); else every word heard is a guest's. */
   trusted?: boolean
+  /** false: a call with one other person (a support line): every turn is answered. Else a group call, in room mode:
+   * the voice speaks when it is addressed or its turn (one unaddressed question there was rightly let pass). */
+  group?: boolean
   log?: (...a: unknown[]) => void
   /** Where it is: the page opened (the agent joins now), or the call began (the first remote voice came in and the relay
    * call opened). */
@@ -66,7 +69,7 @@ export function openCall(o: CallOptions): WebCall {
   const into = (fn: string, ...args: unknown[]) => void page?.evaluate(([f, a]) => (window as any)[f]?.(...a), [fn, args]).catch(() => {})
   // The relay call: opened by the first remote voice, then again 2 s after it closed (a relay restart), without a greeting.
   const connect = (greet: boolean) => new Promise<number>((ok, fail) => {
-    const r = (relay = new WebSocket(`${base}/stream?provider=cascade&session=${encodeURIComponent(o.session ?? 'new')}&greet=${greet ? 1 : 0}&recall=0&lang=${o.lang ?? 'en'}${o.tts ? `&tts=${o.tts}` : ''}&room=1${o.trusted ? '' : '&trusted='}`))
+    const r = (relay = new WebSocket(`${base}/stream?provider=cascade&session=${encodeURIComponent(o.session ?? 'new')}&greet=${greet ? 1 : 0}&recall=0&lang=${o.lang ?? 'en'}${o.tts ? `&tts=${o.tts}` : ''}&room=${o.group === false ? 0 : 1}${o.trusted ? '' : '&trusted='}`))
     r.binaryType = 'arraybuffer'
     r.onmessage = (e) => {
       if (e.data instanceof ArrayBuffer) return into('__kortixPlay', Buffer.from(e.data).toString('base64'), outRate)

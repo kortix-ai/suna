@@ -235,6 +235,10 @@ export const DATA_RULES =
   "exact. A primary source is reliable: say it plainly, no hedge. Never mention the data, a search or results. No lists, " +
   "no markup, no filler opener, no offer, no question back." + (PERSONA && `\n\n${PERSONA}`)
 const DATA_VOICE = process.env.VOICE_DATA_RULES !== '0'
+/** What a turn is told when its last reply was cut off before they heard it all (`upTo`: the last words they heard).
+ * What they say now comes first, all of it: "Remind me in ten seconds..." right after a rename whose reply was cut got
+ * only "Sure, I'm Nova now." and no reminder (a Kortix dev call with a slide shared). */
+export const cutNote = (upTo?: string) => ` Your last reply was cut off: they heard ${upTo ? `it up to "…${upTo}"` : 'none of it'}. Answer what they say now first, all of it (anything they ask for in it is still to be done); then, if what they missed still matters, add it in a few words.`
 export const DEFAULT_RULES =
   "You are on a voice call: their words are speech-to-text and your text is read aloud. Talk like a sharp " +
   "colleague: contractions, plain words, answer first. Default to one or two short sentences, the first under ten " +
@@ -658,7 +662,8 @@ export const cascade: Provider = (o, h) => {
   // owner's tools, files and access: no turn, no speculative start, no nudge, no deeper look, no words steered into
   // its work. A turn is a guest's when none of its speakers is trusted.
   const trustedNames = o.trusted && new Set(o.trusted.map((n) => n.trim().toLowerCase()).filter(Boolean))
-  const guest = (text?: string) => !!trustedNames && !!text && inRoom() && ![...text.matchAll(/\[([^\]]{1,48})\]/g)].some((m) => trustedNames.has(m[1]!.trim().toLowerCase()))
+  // Out of a room (a one-to-one web call: no names come with its audio), a trusted list makes every turn a guest's.
+  const guest = (text?: string) => !!trustedNames && !!text && !(inRoom() && [...text.matchAll(/\[([^\]]{1,48})\]/g)].some((m) => trustedNames.has(m[1]!.trim().toLowerCase())))
   // Room mode (src/room.ts): one participant among several; every line kept with who said it, silence the default.
   // Research (2026-11-02: Liu CHI'25 "Inner Thoughts", Johnson CHI'26, Chen CHI'25, Sacks et al. 1974): unprompted only
   // after a real pause (2-3 s), never two in a row without a person between, minutes apart, and after two that drew no
@@ -1538,7 +1543,7 @@ export const cascade: Provider = (o, h) => {
     const cut = missed && performance.now() - missed.at < 60000 ? missed : undefined
     missed = undefined
     const upTo = cut?.upTo.trim().split(/\s+/).slice(-12).join(' ')
-    const lost = cut ? ` Your last reply was cut off: they heard ${upTo ? `it up to "…${upTo}"` : 'none of it'}. If what they missed still matters to what they say now, include it in a few words.` : ''
+    const lost = cut ? cutNote(upTo) : ''
     // A quiet moment after a web answer: the pages behind it, read since, may hold the one thing worth adding.
     const pages = !user && hidden && lastWeb ? freshPages(lastWeb.query, lastWeb.at) : ''
     if (pages) (lastWeb!.at = Date.now()), log('check-in with pages', pages.length)
