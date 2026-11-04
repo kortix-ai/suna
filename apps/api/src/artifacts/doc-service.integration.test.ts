@@ -179,7 +179,7 @@ describe('compaction', () => {
     // New pushes continue above the compacted row.
     addParagraph(source, 'next');
     const next = await appendArtifactDocUpdate(artifactId, { update: Buffer.from(pushed.shift()!), userId });
-    expect(next).toEqual({ seq: latest + 1, rows: 2 });
+    expect(next).toMatchObject({ seq: latest + 1, rows: 2 });
     expect(await compactArtifactDoc(artifactId)).toEqual({ done: false, reason: 'below_threshold' });
     const caughtUp = new Y.Doc();
     for (const u of (await readArtifactDoc(artifactId, { after: 0, base: false })).updates) Y.applyUpdate(caughtUp, u.bytes);
@@ -740,5 +740,87 @@ describe('the per-doc budget charges every row a writer makes the server store',
     await seedArtifactDoc(artifactId, { ...placed(EDITOR_BLOCK_SEED, 'seed'), markdown: '', version: 'v1', userId });
     accounting = await accounted(artifactId);
     expect(accounting!.total).toBe(accounting!.stored);
+  }, 60_000);
+});
+
+describe('the root and clients checks cost bounded database work under the state lock', () => {
+  const placed = (update: Uint8Array, kind: 'push' | 'seed') => {
+    const scanned = placeDocUpdate(update, kind);
+    if (!scanned.ok) throw new Error(`scan refused: ${scanned.reason}`);
+    return { update: Buffer.from(update), structs: scanned.structs, placement: scanned.placement };
+  };
+  const varuint = (n: number, out: number[]) => {
+    while (n > 0x7f) {
+      out.push(0x80 | (n & 0x7f));
+      n = Math.floor(n / 128);
+    }
+    out.push(n);
+  };
+  const TEXT = 130_000;
+  /**
+   * A seed at the root cap: client 9, 50,000 paragraphs at the root (each placed after the previous one),
+   * an XML text inside the last one, and 130,000 characters inside that (clocks 50,001 to 180,000).
+   */
+  function seedAtRootCap(): Uint8Array {
+    const out: number[] = [1];
+    varuint(DOC_MAX_ROOTS + 2, out);
+    out.push(9, 0);
+    out.push(7, 1, 7, ...Buffer.from('default'), 3, 1, 0x70);
+    for (let i = 1; i < DOC_MAX_ROOTS; i++) {
+      out.push(0x87, 9);
+      varuint(i - 1, out);
+      out.push(3, 1, 0x70);
+    }
+    out.push(7, 0, 9);
+    varuint(DOC_MAX_ROOTS - 1, out);
+    out.push(6);
+    out.push(4, 0, 9);
+    varuint(DOC_MAX_ROOTS, out);
+    varuint(TEXT, out);
+    for (let i = 0; i < TEXT; i++) out.push(0x61);
+    out.push(0);
+    return new Uint8Array(out);
+  }
+  /** ~512 KiB: 52,000 deleted items by client 5, each between two distinct characters of `client` (104,000 distinct IDs). */
+  function crafted(client: number): Uint8Array {
+    const count = 52_000;
+    const out: number[] = [1];
+    varuint(count, out);
+    out.push(5, 0);
+    for (let i = 0; i < count; i++) {
+      const left = DOC_MAX_ROOTS + 1 + 2 * i;
+      out.push(0xc1);
+      varuint(client, out);
+      varuint(left, out);
+      varuint(client, out);
+      varuint(left + 1, out);
+      out.push(1);
+    }
+    out.push(0);
+    return new Uint8Array(out);
+  }
+
+  test(`a ~512 KiB push naming 104,000 distinct stored IDs, on a doc at the ${DOC_MAX_ROOTS}-root cap: at most 2 root queries and ${DOC_MAX_ROOTS} root rows read, in bounded time`, async () => {
+    const artifactId = await newDoc();
+    await seedArtifactDoc(artifactId, { ...placed(seedAtRootCap(), 'seed'), markdown: '', version: 'v1', userId });
+    const push = placed(crafted(9), 'push');
+    expect(push.update.length).toBeLessThanOrEqual(512 * 1024);
+    const started = performance.now();
+    const appended = await appendArtifactDocUpdate(artifactId, { ...push, userId });
+    const ms = performance.now() - started;
+    expect(appended.index.rootQueries).toBeLessThanOrEqual(2);
+    expect(appended.index.rootRows).toBeLessThanOrEqual(DOC_MAX_ROOTS);
+    expect(appended.index.clientRows).toBeLessThanOrEqual(2);
+    expect(ms).toBeLessThan(3_000);
+  }, 60_000);
+
+  test('the same shape naming a client this doc never had → 400 unknown_origin, with no root query, in bounded time', async () => {
+    const artifactId = await newDoc();
+    await seedArtifactDoc(artifactId, { ...placed(seedAtRootCap(), 'seed'), markdown: '', version: 'v1', userId });
+    const started = performance.now();
+    const error = await appendArtifactDocUpdate(artifactId, { ...placed(crafted(77), 'push'), userId }).then(() => null, (e: unknown) => e as ArtifactDocError);
+    const ms = performance.now() - started;
+    expect({ status: error?.status, code: error?.code, reason: error?.detail?.reason }).toEqual({ status: 400, code: 'invalid_update', reason: 'unknown_origin' });
+    expect(ms).toBeLessThan(3_000);
   }, 60_000);
 });

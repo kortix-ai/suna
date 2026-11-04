@@ -64,6 +64,13 @@ export const DOC_INDEX_ROW_BYTES = 128;
 export const DOC_MAX_ROOTS = 50_000;
 /** Yjs clients (tab sessions that wrote) one live doc indexes at most; past it → 413 `doc_too_large`. */
 export const DOC_MAX_CLIENTS = 1_000;
+/**
+ * Stored IDs one update's root check looks up by key, in one batched query.
+ * Past it the check reads the doc's whole root index in one range scan
+ * instead (at most `DOC_MAX_ROOTS` rows) and decides in memory: the database
+ * work per push stays bounded whatever the payload names.
+ */
+export const DOC_ROOT_LOOKUP_BATCH = 4_096;
 /** Pushed bytes per person per API process. */
 export const DOC_BYTE_RATE = { bytesPerSecond: 2 * 1024 * 1024, burstBytes: 4 * 1024 * 1024 } as const;
 /** The GC job deletes a doc state idle this long, with its lease free or expired this long, and everything flushed. */

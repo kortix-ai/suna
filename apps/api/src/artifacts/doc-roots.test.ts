@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { EDITOR_BLOCK_PUSHES, EDITOR_BLOCK_SEED, EDITOR_PUSHES, EDITOR_SEED } from './doc-editor-updates.fixture';
-import { decideRoots, rootLookups, type DocRootDecision } from './doc-roots';
+import { collectRefs, decideRoots, rootLookups, type DocRootDecision } from './doc-roots';
 import { placeDocUpdate, type DocPlacement } from './doc-scan';
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, 'base64'));
@@ -234,6 +234,10 @@ describe('the index stays exact: every ID a push names is known, and each clock 
     const lookups = rootLookups(scanned.placement, 0);
     expect(lookups.refs.length).toBe(10);
     expect(lookups.refs.length).toBeLessThanOrEqual(2 * count);
+    // Deduplicated once, before the service takes the lock: 10 distinct IDs, 2 clients (its own and 9).
+    const refs = collectRefs(scanned.placement);
+    expect({ ids: refs.ids.length, clients: [...refs.clients].sort((a, b) => a - b) }).toEqual({ ids: 10, clients: [5, 9] });
+    expect(rootLookups(scanned.placement, 0, refs)).toEqual(lookups);
   });
 });
 

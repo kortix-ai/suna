@@ -49,31 +49,53 @@ export interface DocStoredRoots {
 
 const isRef = (client: number) => client >= 0;
 
+/** The IDs one update names, deduplicated once, before any lock: what the index is read for. */
+export interface DocRefs {
+  /** Every distinct origin and right-origin ID, in first-seen order. */
+  ids: Array<[client: number, clock: number]>;
+  /** The distinct clients those IDs name, and the update's own client. */
+  clients: number[];
+}
+
+/** Linear in the structs; at most two IDs per struct. */
+export function collectRefs(p: DocPlacement): DocRefs {
+  const ids = new Map<string, [number, number]>();
+  const clients = new Set<number>();
+  if (p.client !== null) clients.add(p.client);
+  const s = p.structs;
+  for (let i = 0; i < s.length; i += DOC_PLACEMENT_FIELDS) {
+    for (const at of [i + 3, i + 5]) {
+      const client = s[at]!;
+      if (!isRef(client)) continue;
+      const clock = s[at + 1]!;
+      const key = `${client}:${clock}`;
+      if (!ids.has(key)) ids.set(key, [client, clock]);
+      clients.add(client);
+    }
+  }
+  return { ids: [...ids.values()], clients: [...clients] };
+}
+
 /**
  * What to read for `update`: the distinct origin and right-origin IDs outside
  * it (another client's, or its own client's stored clocks), and the range of
  * stored clocks it sends again. `limit`: the structs in that range, plus one:
- * more stored roots than that is already a mismatch.
+ * more stored roots than that is already a mismatch. `refs`: `collectRefs(p)`,
+ * computed before the caller takes a lock.
  */
 export function rootLookups(
   p: DocPlacement,
   nextClock: number,
+  refs: DocRefs = collectRefs(p),
 ): { refs: Array<[client: number, clock: number]>; overlap: { from: number; to: number; limit: number } | null } {
   if (p.client === null || p.gap || p.start > nextClock) return { refs: [], overlap: null };
-  const refs = new Map<string, [number, number]>();
-  const s = p.structs;
+  const own = p.client;
+  const outside = refs.ids.filter(([client, clock]) => client !== own || clock < nextClock);
   let overlapStructs = 0;
-  for (let i = 0; i < s.length; i += DOC_PLACEMENT_FIELDS) {
-    if (s[i]! < nextClock) overlapStructs += 1;
-    for (const at of [i + 3, i + 5]) {
-      const client = s[at]!;
-      const clock = s[at + 1]!;
-      if (!isRef(client) || (client === p.client && clock >= nextClock)) continue;
-      refs.set(`${client}:${clock}`, [client, clock]);
-    }
-  }
+  const s = p.structs;
+  for (let i = 0; i < s.length && s[i]! < nextClock; i += DOC_PLACEMENT_FIELDS) overlapStructs += 1;
   const to = Math.min(nextClock, p.end);
-  return { refs: [...refs.values()], overlap: p.start < to ? { from: p.start, to, limit: overlapStructs + 1 } : null };
+  return { refs: outside, overlap: p.start < to ? { from: p.start, to, limit: overlapStructs + 1 } : null };
 }
 
 /**

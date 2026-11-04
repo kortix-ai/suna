@@ -31,6 +31,7 @@ import {
   DOC_PAGE_MAX_BYTES,
   DOC_PAGE_MAX_ROWS,
   DOC_PAGE_MAX_STRUCTS,
+  DOC_ROOT_LOOKUP_BATCH,
   DOC_UPDATE_MAX_BYTES,
   DOC_UPDATE_ROW_BYTES,
   compactionWindow,
@@ -43,7 +44,7 @@ import {
   type DocLease,
   type DocLeaseKind,
 } from './doc-rules';
-import { decideRoots, rootLookups, type DocRootReason } from './doc-roots';
+import { collectRefs, decideRoots, rootLookups, type DocRefs, type DocRootReason } from './doc-roots';
 import type { DocPlacement } from './doc-scan';
 import { DOC_MAX_STRUCTS, checkDocUpdate, compactDocUpdates, measureDocUpdate, mergesAlone } from './doc-yjs';
 
@@ -94,66 +95,119 @@ const ROOT_REFUSALS: Record<DocRootReason, string> = {
 /** A Postgres bigint[] literal of integers (every value is a Yjs client or clock, at most 2^53). */
 const bigints = (values: readonly number[]) => `{${values.join(',')}}`;
 
+/** What the root check read under the lock: its bound is the point (`DOC_ROOT_LOOKUP_BATCH`, `DOC_MAX_ROOTS`, `DOC_MAX_CLIENTS`). */
+export interface DocIndexReads {
+  /** Queries on `artifact_doc_roots`: at most 2 (the batched lookup and the re-sent range), or 1 range scan. */
+  rootQueries: number;
+  /** Rows they returned: at most 2 × `DOC_ROOT_LOOKUP_BATCH` + 1, or `DOC_MAX_ROOTS`. */
+  rootRows: number;
+  /** Rows of `artifact_doc_clients` read: one per distinct client the update names, at most `DOC_MAX_CLIENTS` + 1. */
+  clientRows: number;
+}
+
+/**
+ * The index rows one update needs, read under the state row's lock with
+ * bounded work whatever the payload names (`refs`: deduplicated before the
+ * lock, `collectRefs`):
+ *   - clients: one query, one row per distinct client. An ID is stored when
+ *     its clock is below its client's next clock: one comparison per ID in
+ *     memory. More distinct clients than the doc may hold → one of them is
+ *     unknown; nothing is read and every ID of a client not read is unknown;
+ *   - roots, only for stored IDs: up to `DOC_ROOT_LOOKUP_BATCH` of them (and a
+ *     re-sent range of at most that many structs) → one batched lookup and
+ *     one range read. More → one range scan of the doc's whole root index
+ *     (at most `DOC_MAX_ROOTS` rows, the cap), checked in memory.
+ */
+async function readDocIndex(tx: Tx, artifactId: string, placement: DocPlacement & { client: number }, refs: DocRefs) {
+  const own = placement.client;
+  const reads: DocIndexReads = { rootQueries: 0, rootRows: 0, clientRows: 0 };
+  const nextClocks = new Map<number, number>();
+  if (refs.clients.length <= DOC_MAX_CLIENTS + 1) {
+    const rows = await tx.select({ client: artifactDocClients.client, nextClock: artifactDocClients.nextClock }).from(artifactDocClients)
+      .where(and(eq(artifactDocClients.artifactId, artifactId), inArray(artifactDocClients.client, refs.clients)));
+    reads.clientRows = rows.length;
+    for (const row of rows) nextClocks.set(row.client, row.nextClock);
+  }
+  const current = nextClocks.has(own);
+  const nextClock = nextClocks.get(own) ?? 0;
+  const lookups = rootLookups(placement, nextClock, refs);
+  const known = (client: number, clock: number) => clock < (nextClocks.get(client) ?? 0);
+  const stored = lookups.refs.filter(([client, clock]) => known(client, clock));
+  const roots = new Set<string>();
+  const storedRoots = new Set<number>();
+  const batched = stored.length <= DOC_ROOT_LOOKUP_BATCH && (!lookups.overlap || lookups.overlap.limit <= DOC_ROOT_LOOKUP_BATCH);
+  if (!batched) {
+    // One range scan of the primary key: the whole index of this doc, at most DOC_MAX_ROOTS rows.
+    const rows = await tx.select({ client: artifactDocRoots.client, clock: artifactDocRoots.clock }).from(artifactDocRoots)
+      .where(eq(artifactDocRoots.artifactId, artifactId));
+    reads.rootQueries += 1;
+    reads.rootRows += rows.length;
+    for (const row of rows) {
+      roots.add(`${row.client}:${row.clock}`);
+      if (lookups.overlap && row.client === own && row.clock >= lookups.overlap.from && row.clock < lookups.overlap.to) storedRoots.add(row.clock);
+    }
+  } else {
+    if (stored.length > 0) {
+      const rows = await tx.execute(sql`select r.client::text as client, r.clock::text as clock
+          from kortix.artifact_doc_roots r
+          join unnest(${bigints(stored.map(([client]) => client))}::bigint[], ${bigints(stored.map(([, clock]) => clock))}::bigint[]) as q(client, clock)
+            on r.client = q.client and r.clock = q.clock
+         where r.artifact_id = ${artifactId}::uuid`) as unknown as Array<{ client: string; clock: string }>;
+      reads.rootQueries += 1;
+      reads.rootRows += rows.length;
+      for (const row of rows) roots.add(`${row.client}:${row.clock}`);
+    }
+    if (lookups.overlap) {
+      const rows = await tx.select({ clock: artifactDocRoots.clock }).from(artifactDocRoots)
+        .where(and(
+          eq(artifactDocRoots.artifactId, artifactId),
+          eq(artifactDocRoots.client, own),
+          gte(artifactDocRoots.clock, lookups.overlap.from),
+          lt(artifactDocRoots.clock, lookups.overlap.to),
+        ))
+        .orderBy(asc(artifactDocRoots.clock))
+        .limit(lookups.overlap.limit);
+      reads.rootQueries += 1;
+      reads.rootRows += rows.length;
+      for (const row of rows) storedRoots.add(row.clock);
+    }
+  }
+  return {
+    current,
+    nextClock,
+    stored: { nextClock, known, root: (client: number, clock: number) => roots.has(`${client}:${clock}`), storedRoots },
+    reads,
+  };
+}
+
 /**
  * The root rule for one seed or push (`doc-roots.ts`), under the state row's
- * lock: read the index for the IDs the update names (one query for the
- * origins, one for a re-sent range), decide, and write the update's new
- * root-level IDs and its client's clock. 400 `invalid_update` with the
- * `reason` otherwise. Without `placement` (a caller that did not scan the
- * bytes) nothing is checked or indexed.
+ * lock: read the index for the IDs the update names (`readDocIndex`, bounded),
+ * decide, and write the update's new root-level IDs and its client's clock.
+ * 400 `invalid_update` with the `reason` otherwise. Without `placement` (a
+ * caller that did not scan the bytes) nothing is checked or indexed. `refs`:
+ * `collectRefs(placement)`, computed before the caller took the lock.
  *
  * The index rows are the doc's storage too: each new row costs
  * `DOC_INDEX_ROW_BYTES` of `budget.bytesTotal` (the doc's total with this
  * update's row already charged), the roots stay within `DOC_MAX_ROOTS` and the
  * clients within `DOC_MAX_CLIENTS`; otherwise 413 `doc_too_large` and nothing
- * is written. Returns the rows added and their cost, for the state row.
+ * is written. Returns the rows added and their cost, for the state row, and
+ * what the check read.
  */
 async function placeRoots(
   tx: Tx,
   artifactId: string,
   placement: DocPlacement | undefined,
+  refs: DocRefs | null,
   budget: { bytesTotal: number; rootRows: number; clientRows: number },
-): Promise<{ roots: number; clients: number; bytes: number }> {
-  const none = { roots: 0, clients: 0, bytes: 0 };
+): Promise<{ roots: number; clients: number; bytes: number; reads: DocIndexReads }> {
+  const none = { roots: 0, clients: 0, bytes: 0, reads: { rootQueries: 0, rootRows: 0, clientRows: 0 } };
   if (!placement || placement.client === null) return none;
   const own = placement.client;
-  const [current] = await tx.select({ nextClock: artifactDocClients.nextClock }).from(artifactDocClients)
-    .where(and(eq(artifactDocClients.artifactId, artifactId), eq(artifactDocClients.client, own)));
-  const nextClock = current?.nextClock ?? 0;
-  const lookups = rootLookups(placement, nextClock);
-  const known = new Set<string>();
-  const roots = new Set<string>();
-  if (lookups.refs.length > 0) {
-    const rows = await tx.execute(sql`select r.client::text as client, r.clock::text as clock,
-        exists (select 1 from kortix.artifact_doc_clients c
-                 where c.artifact_id = ${artifactId}::uuid and c.client = r.client and c.next_clock > r.clock) as known,
-        exists (select 1 from kortix.artifact_doc_roots o
-                 where o.artifact_id = ${artifactId}::uuid and o.client = r.client and o.clock = r.clock) as root
-      from unnest(${bigints(lookups.refs.map(([client]) => client))}::bigint[], ${bigints(lookups.refs.map(([, clock]) => clock))}::bigint[]) as r(client, clock)`);
-    for (const row of rows as unknown as Array<{ client: string; clock: string; known: boolean; root: boolean }>) {
-      if (row.known) known.add(`${row.client}:${row.clock}`);
-      if (row.root) roots.add(`${row.client}:${row.clock}`);
-    }
-  }
-  const storedRoots = new Set<number>();
-  if (lookups.overlap) {
-    const rows = await tx.select({ clock: artifactDocRoots.clock }).from(artifactDocRoots)
-      .where(and(
-        eq(artifactDocRoots.artifactId, artifactId),
-        eq(artifactDocRoots.client, own),
-        gte(artifactDocRoots.clock, lookups.overlap.from),
-        lt(artifactDocRoots.clock, lookups.overlap.to),
-      ))
-      .orderBy(asc(artifactDocRoots.clock))
-      .limit(lookups.overlap.limit);
-    for (const row of rows) storedRoots.add(row.clock);
-  }
-  const decision = decideRoots(placement, {
-    nextClock,
-    known: (client, clock) => known.has(`${client}:${clock}`),
-    root: (client, clock) => roots.has(`${client}:${clock}`),
-    storedRoots,
-  });
+  const index = await readDocIndex(tx, artifactId, { ...placement, client: own }, refs ?? collectRefs(placement));
+  const { current, nextClock } = index;
+  const decision = decideRoots(placement, index.stored);
   if (!decision.ok) throw new ArtifactDocError(400, ROOT_REFUSALS[decision.reason], 'invalid_update', { reason: decision.reason });
   const newClient = !current && decision.nextClock > nextClock ? 1 : 0;
   if (budget.rootRows + decision.roots.length > DOC_MAX_ROOTS) {
@@ -187,7 +241,7 @@ async function placeRoots(
       .returning({ inserted: sql<boolean>`(xmax = 0)` });
     addedClients = upserted?.inserted ? 1 : 0;
   }
-  return { roots: addedRoots, clients: addedClients, bytes: (addedRoots + addedClients) * DOC_INDEX_ROW_BYTES };
+  return { roots: addedRoots, clients: addedClients, bytes: (addedRoots + addedClients) * DOC_INDEX_ROW_BYTES, reads: index.reads };
 }
 
 export interface ArtifactDocRead {
@@ -286,6 +340,8 @@ export async function seedArtifactDoc(
   artifactId: string,
   input: { update: Buffer; markdown: string; version: string; userId: string; structs?: number; placement?: DocPlacement },
 ): Promise<{ seq: number; epoch: string }> {
+  // Deduplicated before the transaction: under the lock only bounded reads run.
+  const refs = input.placement ? collectRefs(input.placement) : null;
   return db.transaction(async (tx) => {
     await lockArtifact(tx, artifactId);
     // The seed's row is charged like any update row (`DOC_UPDATE_ROW_BYTES`); its index rows are added below.
@@ -298,7 +354,7 @@ export async function seedArtifactDoc(
       flushedMarkdown: input.markdown,
     }).onConflictDoNothing({ target: artifactDocState.artifactId }).returning({ epoch: artifactDocState.epoch });
     if (!created) throw new ArtifactDocError(409, 'This doc already has a live state: read it instead', 'doc_seeded');
-    const index = await placeRoots(tx, artifactId, input.placement, { bytesTotal: input.update.length + DOC_UPDATE_ROW_BYTES, rootRows: 0, clientRows: 0 });
+    const index = await placeRoots(tx, artifactId, input.placement, refs, { bytesTotal: input.update.length + DOC_UPDATE_ROW_BYTES, rootRows: 0, clientRows: 0 });
     if (index.bytes > 0) {
       await tx.update(artifactDocState).set({
         bytesTotal: sql`${artifactDocState.bytesTotal} + ${index.bytes}`,
@@ -320,7 +376,9 @@ export async function seedArtifactDoc(
 export async function appendArtifactDocUpdate(
   artifactId: string,
   input: { update: Buffer; userId: string; epoch?: string; structs?: number; placement?: DocPlacement },
-): Promise<{ seq: number; rows: number }> {
+): Promise<{ seq: number; rows: number; index: DocIndexReads }> {
+  // Deduplicated before the transaction: under the lock only bounded reads run (`readDocIndex`).
+  const refs = input.placement ? collectRefs(input.placement) : null;
   return db.transaction(async (tx) => {
     await lockArtifact(tx, artifactId);
     const [state] = await tx.select({
@@ -336,7 +394,7 @@ export async function appendArtifactDocUpdate(
     if (state.bytesTotal + charge > DOC_MAX_BYTES_TOTAL) {
       throw new ArtifactDocError(413, `This doc's live state holds at most ${DOC_MAX_BYTES_TOTAL / 1048576} MiB`, 'doc_too_large');
     }
-    const index = await placeRoots(tx, artifactId, input.placement, { bytesTotal: state.bytesTotal + charge, rootRows: state.rootRows, clientRows: state.clientRows });
+    const index = await placeRoots(tx, artifactId, input.placement, refs, { bytesTotal: state.bytesTotal + charge, rootRows: state.rootRows, clientRows: state.clientRows });
     const [next] = await tx.update(artifactDocState)
       .set({
         nextSeq: sql`${artifactDocState.nextSeq} + 1`,
@@ -363,7 +421,7 @@ export async function appendArtifactDocUpdate(
         .set({ compactionRequestedAt: sql`coalesce(${artifactDocState.compactionRequestedAt}, now())` })
         .where(eq(artifactDocState.artifactId, artifactId));
     }
-    return { seq, rows };
+    return { seq, rows, index: index.reads };
   });
 }
 
