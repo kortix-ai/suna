@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { formatReset, shownUsage, usageTone, weeklyModel } from './subscription-usage';
+import { accountLine, formatReset, shownUsage, usageTone, weeklyModel } from './subscription-usage';
 
 const window = (used_percent: number) => ({ id: 'five_hour', window_minutes: 300, used_percent, resets_at: null });
 const snapshot = (observed_at: string, percent: number) => ({
@@ -36,5 +36,12 @@ describe('subscription usage meters', () => {
     expect(formatReset('2026-11-04T16:10:00', now, 'en-GB')).toBe('16:10');
     expect(formatReset('2026-11-06T09:00:00', now, 'en-GB')).toBe('Fri 09:00');
     expect(formatReset('2026-11-20T09:00:00', now, 'en-GB')).toBe('20 Nov');
+  });
+
+  test('the account line names the email and the plan, without repeating an email the label shows', () => {
+    expect(accountLine({ email: 'person@example.test', plan: 'pro' }, 'ChatGPT · Work')).toBe('person@example.test · Pro');
+    expect(accountLine({ email: 'Person@Example.test', plan: 'max' }, 'Claude · person@example.test')).toBe('Max');
+    expect(accountLine({ email: null, plan: null }, 'Claude')).toBeNull();
+    expect(accountLine(null, 'Claude')).toBeNull();
   });
 });

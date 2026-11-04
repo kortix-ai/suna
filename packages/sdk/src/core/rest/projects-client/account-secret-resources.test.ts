@@ -52,9 +52,11 @@ test('usage refresh is a body-less POST on the secret and returns the snapshot',
   };
   globalThis.fetch = mock(async (url: unknown, init: RequestInit = {}) => {
     calls.push({ url: String(url), method: init.method ?? 'GET', body: init.body ? JSON.parse(String(init.body)) : null });
-    return new Response(JSON.stringify({ usage }), { status: 200, headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify({ usage, provider_account: { email: 'person@example.test', plan: 'pro' } }), { status: 200, headers: { 'content-type': 'application/json' } });
   }) as unknown as typeof fetch;
-  expect(await refreshAccountSecretUsage('account', 'secret')).toEqual({ usage });
+  const result = await refreshAccountSecretUsage('account', 'secret');
+  expect(result).toEqual({ usage, provider_account: { email: 'person@example.test', plan: 'pro' } });
+  expect(result.provider_account?.email).toBe('person@example.test');
   expect(calls.map((call) => [call.method, call.url, call.body])).toEqual([
     ['POST', 'http://test.local/accounts/account/secret-resources/secret/usage', null],
   ]);
