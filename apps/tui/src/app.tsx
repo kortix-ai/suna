@@ -759,6 +759,9 @@ export function App({
           return openScreen(command);
         case 'providers':
           return openScreen('providers', args.trim().toLowerCase() || null);
+        case 'connectors':
+        case 'connect':
+          return openScreen(command, args.trim() || null);
         case 'life':
           return setLifeSignal((value) => value + 1);
         case 'help':
@@ -1065,6 +1068,7 @@ export function App({
               onOpenSession={openSession}
               onToast={pushToast}
               onHoldsBack={setScreenHoldsBack}
+              onOpenScreen={openScreen}
             />
           </Panel>
         ) : null}

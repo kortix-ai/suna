@@ -19,6 +19,7 @@ import { ArtifactsScreen } from './features/artifacts/index.ts';
 import { AuditScreen } from './features/audit/index.ts';
 import { CustomizeScreen } from './features/customize/index.ts';
 import { ProvidersScreen } from './features/providers/index.ts';
+import { ConnectScreen, ConnectorsScreen } from './features/connectors/index.ts';
 import { DriveScreen } from './features/drive/index.ts';
 import { FilesScreen } from './features/files/index.ts';
 import { GoalsScreen } from './features/goals/index.ts';
@@ -42,6 +43,8 @@ export const SCREEN_TITLE: Record<ScreenRoute, string> = {
   apps: 'Apps',
   customize: 'Customize',
   providers: 'Model providers',
+  connectors: 'Connectors',
+  connect: 'Connect',
   account: 'Account',
   drive: 'Drive',
   repo: 'Repository',
@@ -77,6 +80,8 @@ export interface ScreenProps {
   onToast(message: string, kind?: ToastKind): void;
   /** The screen holds Esc (a pane to go back from, an input open). The app then leaves Esc to it. */
   onHoldsBack?(holds: boolean): void;
+  /** Open another screen (`/connect` routes to `/providers` or `/connectors`). */
+  onOpenScreen?(route: ScreenRoute, target: string | null): void;
 }
 
 /**
@@ -183,6 +188,31 @@ export function Screen(props: ScreenProps) {
           onHoldsBack={props.onHoldsBack}
           onBack={onBack}
           onToast={onToast}
+        />
+      );
+    case 'connectors':
+      return (
+        <ConnectorsScreen
+          projectId={projectId}
+          accountId={accountId}
+          focused={focused}
+          width={width}
+          height={height}
+          webBaseUrl={props.webBaseUrl}
+          initialQuery={props.target ?? undefined}
+          onHoldsBack={props.onHoldsBack}
+          onBack={onBack}
+          onToast={onToast}
+        />
+      );
+    case 'connect':
+      return (
+        <ConnectScreen
+          projectId={projectId}
+          focused={focused}
+          width={width}
+          query={props.target ?? undefined}
+          onOpen={(screen, target) => props.onOpenScreen?.(screen, target)}
         />
       );
     case 'account':

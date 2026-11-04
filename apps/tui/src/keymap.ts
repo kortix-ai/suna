@@ -30,6 +30,7 @@ import { ARTIFACTS_KEYS } from './features/artifacts/keys.ts';
 import { AUDIT_KEYS } from './features/audit/keys.ts';
 import { CUSTOMIZE_KEYS } from './features/customize/keys.ts';
 import { PROVIDERS_KEYS } from './features/providers/keys.ts';
+import { CONNECT_KEYS, CONNECTORS_KEYS } from './features/connectors/keys.ts';
 import { DRIVE_KEYS } from './features/drive/keys.ts';
 import { FILES_KEYS } from './features/files/keys.ts';
 import { GOALS_KEYS } from './features/goals/keys.ts';
@@ -80,6 +81,8 @@ export type KeyScope =
   | 'apps'
   | 'customize'
   | 'providers'
+  | 'connectors'
+  | 'connect'
   | 'login'
   | 'account'
   | 'ports'
@@ -110,6 +113,8 @@ export const SCOPE_ORDER: readonly KeyScope[] = [
   'apps',
   'customize',
   'providers',
+  'connectors',
+  'connect',
   'account',
   'login',
   'ports',
@@ -140,6 +145,8 @@ export const SCOPE_TITLE: Record<KeyScope, string> = {
   apps: 'Apps',
   customize: 'Customize',
   providers: 'Model providers',
+  connectors: 'Connectors',
+  connect: 'Connect',
   account: 'Account',
   login: 'Login',
   ports: 'Ports panel',
@@ -366,6 +373,8 @@ function featureTables(): readonly (readonly Binding[])[] {
     APPS_KEYS,
     CUSTOMIZE_KEYS,
     PROVIDERS_KEYS,
+    CONNECTORS_KEYS,
+    CONNECT_KEYS,
     ACCOUNT_KEYS,
     LOGIN_KEYS,
     PORTS_KEYS,

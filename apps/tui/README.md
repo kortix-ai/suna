@@ -402,8 +402,10 @@ is `/feedback`.
 | `/audit` | `/activity` | Screens: What happened in this session, and approvals waiting. |
 | `/review` | `/changes` `/pr-comments` `Alt+r` | Screens: Review change requests. |
 | `/apps` | `Alt+a` | Screens: List and deploy Apps. |
-| `/customize` | `/settings` `/config` `/mcp` `/connectors` `Alt+c` | Screens: Agents, skills, secrets, triggers, connectors. |
+| `/customize` | `/settings` `/config` `/mcp` `Alt+c` | Screens: Agents, skills, secrets, triggers, connectors. |
 | `/providers [provider]` | `/provider` | Screens: Connect model providers: ChatGPT, Claude, API keys, and who can use them. |
+| `/connectors [app]` | `/connector` `/integrations` | Screens: Connect apps and tools: browse the catalogue, add accounts, sign in, and share them. |
+| `/connect [provider or app]` |  | Screens: Connect a model provider or a connector. |
 | `/account` | `/members` `/billing` `/usage` `Alt+u` | Screens: Members, invites, roles, credits. |
 | `/status` | `/doctor` `/whoami` | App: Host, account, project, session, runtime and version. |
 | `/feedback` | `/bug` | App: Report a bug or an idea on GitHub. |
@@ -411,7 +413,7 @@ is `/feedback`.
 | `/help` | `/keys` `/?` `?` | App: Show every command and key. |
 | `/quit` | `/exit` `/q` `Ctrl+c / Ctrl+q` | App: Leave the TUI. |
 
-_60 commands._
+_62 commands._
 
 ### Anywhere
 
@@ -831,6 +833,44 @@ _60 commands._
 | `Esc` | Cancel. |
 | `Space /  ` | Select or clear a member. |
 
+### Connectors
+
+| Keys | Action |
+| --- | --- |
+| `j / ↓` | Move down. |
+| `k / ↑` | Move up. |
+| `g` | Go to the first row. |
+| `G` | Go to the last row. |
+| `/` | Search your connectors and the catalogue. |
+| `Enter / → / l` | Open the selected connector or app; on an app, install it. |
+| `Esc / ← / h` | Back one step, or close the screen. |
+| `a` | Add an account to the connector. |
+| `s` | Sign the selected account in, or reconnect it. |
+| `n` | Rename the selected account. |
+| `m` | Change who can use the selected account. |
+| `u` | Use the selected account by default. |
+| `x` | Set the credential of the selected account. |
+| `d` | Disconnect the selected account (asks first). |
+| `Shift+d / D` | Remove the connector from the project (asks first). |
+| `i` | Copy the selected account’s connection ID. |
+| `w` | Open the connector in the web app. |
+| `o` | Open the sign-in link in the browser. |
+| `c` | Copy the sign-in code, or the link. |
+| `y` | Confirm. |
+| `Enter` | Submit. |
+| `Esc` | Cancel. |
+| `Space /  ` | Select or clear a person, group or agent. |
+
+### Connect
+
+| Keys | Action |
+| --- | --- |
+| `j / ↓` | Move down. |
+| `k / ↑` | Move up. |
+| `Enter / → / l` | Open the selected choice. |
+| `1` | Open model providers. |
+| `2` | Open connectors. |
+
 ### Account
 
 | Keys | Action |
@@ -900,7 +940,7 @@ _60 commands._
 | `PgUp` | Page up. |
 | `Enter` | Open the row. |
 
-_352 bindings._
+_380 bindings._
 
 ## Tests
 
