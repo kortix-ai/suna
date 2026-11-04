@@ -11,8 +11,8 @@ const DOTS = [0, 1, 2] as const;
 
 /**
  * The agent's busy line in a messages-only thread (`TranscriptRows.messagesOnly`):
- * "Kortix is typing…" after three dots that pulse one after another, the way a
- * person's chat reads. It never names a tool or a step. Opacity only, so the
+ * three dots that pulse one after another under the agent's name, the way a
+ * person's chat reads; "Kortix is typing…" is only its accessible label. It never names a tool or a step. Opacity only, so the
  * reduced-motion variant is the same animation (`kortix-brand` motion.md).
  * The offset between dots is a loader's wave, not an entrance stagger: it
  * delays no content, and the three dots read as one moving thing.
@@ -21,24 +21,25 @@ export function TypingIndicator({ name, className }: { name: string; className?:
   const t = useTranslations('sessionUi.turn');
   const label = t('typing', { name });
   return (
+    // Three dots under the name the row already shows: the label is for screen readers only.
     <div
       role="status"
       aria-live="polite"
+      aria-label={label}
       data-testid="typing-indicator"
-      className={cn('text-muted-foreground flex min-w-0 items-center gap-2 py-0.5 text-sm', className)}
+      className={cn('flex h-6 items-center', className)}
     >
-      <span aria-hidden className="flex shrink-0 items-center gap-1">
+      <span aria-hidden className="flex items-center gap-1">
         {DOTS.map((dot) => (
           <m.span
             key={dot}
-            className="bg-muted-foreground size-1.5 rounded-full"
+            className="bg-muted-foreground size-1 rounded-full"
             initial={{ opacity: 0.3 }}
             animate={{ opacity: [0.3, 1, 0.3] }}
             transition={{ duration: DOT_CYCLE_S, repeat: Infinity, ease: 'easeInOut', delay: (dot * DOT_CYCLE_S) / 3 }}
           />
         ))}
       </span>
-      <span className="truncate">{label}</span>
     </div>
   );
 }
