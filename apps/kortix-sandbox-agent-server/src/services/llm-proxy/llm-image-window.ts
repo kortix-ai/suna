@@ -61,8 +61,21 @@ export function applyInlineImageWindow(
     }
   }
   const total = slots.length;
+  const dropped = imagesToDrop(total, options);
+  for (let i = 0; i < dropped; i += 1) {
+    const slot = slots[i];
+    if (slot) slot.content[slot.index] = { type: 'text', text: NOTICE };
+  }
+  return { total, dropped };
+}
+
+// No count: a dropped image reads the same at every step, so the prefix before the cut stays cached.
+const NOTICE = '[image omitted by sandbox: an older image was removed; the most recent are kept]';
+
+/** How many of `total` images, oldest first, the window drops. */
+function imagesToDrop(total: number, options: ImageWindowOptions): number {
   const max = Math.max(0, Math.trunc(options.maxImages));
-  if (max === 0 || total <= max) return { total, dropped: 0 };
+  if (max === 0 || total <= max) return 0;
   const keep = Math.min(max, Math.max(0, Math.trunc(options.keepOnOverflow)));
   // Stateless hysteresis: a client re-sends its whole history every request, so the cut
   // moves in steps of `max - keep` images and every request until the next step drops the
@@ -70,14 +83,158 @@ export function applyInlineImageWindow(
   // `total - keep` moved the cut, and the notice's count, on every new image.) Between
   // `keep + 1` and `max` images survive.
   const step = max - keep;
-  const dropped = step > 0 ? Math.ceil((total - max) / step) * step : total - keep;
-  // No count: a dropped image reads the same at every step, so the prefix before the cut stays cached.
-  const notice = '[image omitted by sandbox: an older image was removed; the most recent are kept]';
+  return step > 0 ? Math.ceil((total - max) / step) * step : total - keep;
+}
+
+/**
+ * The same window on the request's raw JSON, without parsing it: one pass that jumps over
+ * every string (base64 has no quote), recording where each image part of
+ * `messages[*].content[*]` (else `input[*].content[*]`) starts and ends, then splices the
+ * notice in. A Claude Code request re-sends every screenshot of the session; parsing and
+ * re-serializing it cost about four copies of a 15 MB body per model call. Null when the text
+ * is not a shape this reads (escaped keys, a duplicate `messages`, not an object): the caller
+ * parses it instead.
+ */
+export function applyInlineImageWindowToText(
+  text: string,
+  options: ImageWindowOptions = DEFAULT_IMAGE_WINDOW,
+): (ImageWindowResult & { text: string }) | null {
+  const spans = imagePartSpans(text);
+  if (!spans) return null;
+  const total = spans.length;
+  const dropped = imagesToDrop(total, options);
+  if (dropped === 0) return { text, total, dropped };
+  const replacement = JSON.stringify({ type: 'text', text: NOTICE });
+  const pieces: string[] = [];
+  let at = 0;
   for (let i = 0; i < dropped; i += 1) {
-    const slot = slots[i];
-    if (slot) slot.content[slot.index] = { type: 'text', text: notice };
+    const [start, end] = spans[i]!;
+    pieces.push(text.slice(at, start), replacement);
+    at = end;
   }
-  return { total, dropped };
+  pieces.push(text.slice(at));
+  return { text: pieces.join(''), total, dropped };
+}
+
+class Unreadable extends Error {}
+
+/** Image part spans, `[start, end)`, in the order a parse would visit them. */
+function imagePartSpans(text: string): Array<[number, number]> | null {
+  let i = 0;
+  const ws = () => {
+    while (i < text.length) {
+      const c = text.charCodeAt(i);
+      if (c !== 32 && c !== 10 && c !== 13 && c !== 9) return;
+      i += 1;
+    }
+  };
+  /** Past a string starting at `i`; its raw contents (only when `keep`), escapes refused for kept ones. */
+  const string = (keep: boolean): string | undefined => {
+    if (text[i] !== '"') throw new Unreadable();
+    let j = i;
+    for (;;) {
+      j = text.indexOf('"', j + 1);
+      if (j === -1) throw new Unreadable();
+      let slashes = 0;
+      for (let k = j - 1; text.charCodeAt(k) === 92; k -= 1) slashes += 1;
+      if (slashes % 2 === 0) break;
+    }
+    const raw = keep ? text.slice(i + 1, j) : undefined;
+    if (raw !== undefined && raw.includes('\\')) throw new Unreadable();
+    i = j + 1;
+    return raw;
+  };
+  const scalar = () => {
+    while (i < text.length && !',}]'.includes(text[i]!) && text.charCodeAt(i) > 32) i += 1;
+  };
+  type Role = 'other' | 'items' | 'item' | 'content' | 'part';
+  /** Past one value; for a `part`, whether it is an image part. */
+  const value = (role: Role, onPart?: (start: number, end: number, image: boolean) => void): void => {
+    ws();
+    const c = text[i];
+    if (c === '"') return void string(false);
+    if (c === '[') {
+      i += 1;
+      ws();
+      if (text[i] === ']') return void (i += 1);
+      for (;;) {
+        value(role === 'items' ? 'item' : role === 'content' ? 'part' : 'other', onPart);
+        ws();
+        if (text[i] === ',') { i += 1; continue; }
+        if (text[i] === ']') return void (i += 1);
+        throw new Unreadable();
+      }
+    }
+    if (c === '{') {
+      const start = i;
+      let type: string | undefined;
+      const seen = new Set<string>();
+      i += 1;
+      ws();
+      if (text[i] === '}') {
+        i += 1;
+      } else {
+        for (;;) {
+          ws();
+          const key = string(true)!;
+          if (seen.has(key)) throw new Unreadable();
+          seen.add(key);
+          ws();
+          if (text[i] !== ':') throw new Unreadable();
+          i += 1;
+          ws();
+          if (role === 'part' && key === 'type' && text[i] === '"') type = string(true);
+          else value(role === 'item' && key === 'content' ? 'content' : 'other', onPart);
+          ws();
+          if (text[i] === ',') { i += 1; continue; }
+          if (text[i] === '}') { i += 1; break; }
+          throw new Unreadable();
+        }
+      }
+      if (role === 'part') onPart?.(start, i, type !== undefined && IMAGE_PART_TYPES.has(type));
+      return;
+    }
+    scalar();
+  };
+  try {
+    ws();
+    if (text[i] !== '{') return null;
+    i += 1;
+    const lists: Record<'messages' | 'input', { array: boolean; spans: Array<[number, number]> }> = {
+      messages: { array: false, spans: [] },
+      input: { array: false, spans: [] },
+    };
+    const seen = new Set<string>();
+    ws();
+    if (text[i] === '}') return [];
+    for (;;) {
+      ws();
+      const key = string(true)!;
+      if (seen.has(key)) return null;
+      seen.add(key);
+      ws();
+      if (text[i] !== ':') return null;
+      i += 1;
+      ws();
+      if (key === 'messages' || key === 'input') {
+        const list = lists[key];
+        list.array = text[i] === '[';
+        value(list.array ? 'items' : 'other', (start, end, image) => image && list.spans.push([start, end]));
+      } else {
+        value('other');
+      }
+      ws();
+      if (text[i] === ',') { i += 1; continue; }
+      if (text[i] === '}') { i += 1; break; }
+      return null;
+    }
+    ws();
+    if (i !== text.length) return null;
+    return lists.messages.array ? lists.messages.spans : lists.input.array ? lists.input.spans : [];
+  } catch (err) {
+    if (err instanceof Unreadable) return null;
+    throw err;
+  }
 }
 
 export function imageWindowFromEnv(
