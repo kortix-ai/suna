@@ -1073,7 +1073,7 @@ function SessionSectionMenu({
   );
 }
 
-/** Tree icon + count of everything this session started: its sub-agents and
+/** Count + caret for everything this session started: its sub-agents and
  *  the sessions it spawned. A `span`, not a button: it lives inside the row's
  *  link, so it stops the click before it navigates. Without an indicator strip
  *  beside it, it keeps the `⋯` slot free at rest, so hovering the row never
@@ -1837,10 +1837,12 @@ function ProjectSubsessionRow({
             isActive ? 'bg-sidebar-accent text-sidebar-foreground font-medium' : '',
           )}
         >
-          {/* No leading glyph: the connector elbow already marks the row as a
-              sub-agent, and a runtime sub-session carries no agent identity
-              to draw a pixel mark from (pi titles it with the task alone).
-              Same as the mobile drawer's sub-session rows. */}
+          {/* An empty slot, no glyph: the connector elbow already marks the
+              row as a sub-agent, and a runtime sub-session carries no agent
+              identity to draw a pixel mark from (pi titles it with the task
+              alone). The slot keeps its title on the same column as a spawned
+              sibling's, which leads with a status mark. */}
+          <span aria-hidden className="size-4 shrink-0" />
           <span className={cn('flex-1 truncate', isActive && 'font-medium')}>{title}</span>
           {relative && <span className={SESSION_RELATIVE_TIME_CLASS}>{relative}</span>}
         </div>
