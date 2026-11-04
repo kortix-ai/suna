@@ -102,8 +102,8 @@ function ActivityBurstImpl({
    * 'normal' — the burst opens itself while it runs: steps and streaming
    * thinking appear live. 'minimal' — the live view is the one-line summary
    * ("Working · N steps"); nothing auto-expands, including the thought rows
-   * a bare burst pins open. A finished turn renders identically in both
-   * modes (both auto-collapse to one row), and a click always wins.
+   * a bare burst pins open. A history turn renders identically in both
+   * modes on initial load; a live burst stays open, and a click always wins.
    */
   density?: ConversationDensity;
 }) {
@@ -112,12 +112,11 @@ function ActivityBurstImpl({
   const [open, setOpen] = useState(autoExpand && running);
   const userToggled = useRef(false);
 
-  // Auto-collapse the moment the burst settles — unless the user has taken
-  // control, in which case their choice wins permanently. Under minimal
-  // density the burst never opens itself in the first place.
+  // Open live work automatically, but never hide details on completion.
+  // A reader’s explicit choice always wins; minimal density never auto-opens.
   useEffect(() => {
-    if (userToggled.current) return;
-    setOpen(autoExpand && running);
+    if (userToggled.current || !autoExpand || !running) return;
+    setOpen(true);
   }, [running, autoExpand]);
 
   const steps = useMemo(() => sessionLogBurstSteps(blocks), [blocks]);
