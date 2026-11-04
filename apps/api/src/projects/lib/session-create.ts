@@ -1877,7 +1877,28 @@ export async function createProjectSession(input: {
   if (templateCheck) return templateCheck;
 
   const billingCheck = await checkSessionBillingAdmission(accountId);
-  if (billingCheck) return billingCheck;
+  if (billingCheck) {
+    // A person's create only (the same surfaces `session_created` counts).
+    const createSource = (input.metadata as Record<string, unknown> | undefined)?.source;
+    if (
+      input.requestingPrincipalType === 'human' &&
+      !input.callerSessionId &&
+      (createSource === 'ui' || createSource === 'mobile' || createSource === 'cli')
+    ) {
+      captureProductEvent({
+        userId: input.userId,
+        accountId,
+        event: 'billing_gate_hit',
+        properties: {
+          project_id: projectId,
+          reason: String((billingCheck.error.body as { code?: unknown }).code ?? 'unknown'),
+          where: 'session_create',
+          source: createSource === 'ui' ? 'web' : createSource,
+        },
+      });
+    }
+    return billingCheck;
+  }
 
   if (typeof body.fork_from_session_id === 'string') {
     if (!config.SESSION_LOG_RESTORE_ENABLED || !config.SESSION_LOG_INGEST_ENABLED) {
@@ -2002,7 +2023,8 @@ export async function createProjectSession(input: {
       properties: {
         project_id: projectId,
         session_id: sessionId,
-        source: typeof source === 'string' ? source : null,
+        // The analytics surface names: the web app's `ui` is `web`.
+        source: source === 'ui' ? 'web' : typeof source === 'string' ? source : null,
         with_prompt: Boolean(body.pending_prompt ?? body.initial_prompt),
       },
     });
