@@ -76,6 +76,11 @@ describe('deviceDiagnostics', () => {
     expect(d.recording.missing_permissions).toEqual(['screen_recording']);
     expect(d.recording).toMatchObject({ reason: 'error', last_error: 'capture_failed: AcquireNextFrame' });
   });
+
+  test('answers null for a timestamp past the Date range instead of throwing', () => {
+    const d = deviceDiagnostics(row({ status: { lastFrameMs: 1e21, pausedUntilMs: 8.64e15 + 1, host: { awakeSinceMs: 1e300 } } }));
+    expect(d.recording).toMatchObject({ last_frame_at: null, paused_until: null, awake_since: null });
+  });
 });
 
 describe('OS names', () => {

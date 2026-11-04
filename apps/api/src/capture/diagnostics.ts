@@ -97,7 +97,9 @@ const num = (value: unknown): number | null => (typeof value === 'number' && Num
 const bool = (value: unknown): boolean | null => (typeof value === 'boolean' ? value : null);
 const iso = (ms: unknown): string | null => {
   const n = num(ms);
-  return n !== null && n > 0 ? new Date(n).toISOString() : null;
+  // A device sends these: past the Date range (8.64e15 ms) toISOString throws and
+  // one bad status.json would fail the whole devices answer.
+  return n !== null && n > 0 && n <= 8.64e15 ? new Date(n).toISOString() : null;
 };
 const strings = (value: unknown, max = 20): string[] =>
   Array.isArray(value) ? value.map((v) => text(v, 200)).filter((v): v is string => v !== null).slice(0, max) : [];
