@@ -4,7 +4,7 @@ export function ModelSwitchEvent({ summary }: { summary: Record<string, unknown>
   return (
     <div className="text-muted-foreground mt-1 space-y-1 text-xs">
       <p>{typeof summary.from === 'string' ? summary.from : '—'} → {summary.to}</p>
-      <p>{typeof summary.actor_session_id === 'string' ? summary.actor_session_id : 'user'}</p>
+      <p>{typeof summary.actor_session_id === 'string' ? `Agent session · ${summary.actor_session_id}` : 'Human'}</p>
       {typeof summary.prompt === 'string' ? <p className="whitespace-pre-wrap">{summary.prompt}</p> : null}
     </div>
   );

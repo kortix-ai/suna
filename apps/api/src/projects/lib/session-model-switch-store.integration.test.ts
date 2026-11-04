@@ -27,6 +27,16 @@ test('concurrent retry stores one continuation and refuses a changed payload', a
     expect((await storeSessionModelSwitch({ ...input, key: 'retry-3' })).kind).toBe('stored');
     expect(await storeSessionModelSwitch({ ...input, key: 'retry-4' })).toEqual({ kind: 'limited' });
     expect((await storeSessionModelSwitch(input)).kind).toBe('stored');
+    // A human plain set is audited/history-recorded but creates no runnable prompt.
+    const human = { ...input, actorSessionId: null, prompt: undefined, key: 'human-set', model: 'kortix/newer' };
+    expect((await storeSessionModelSwitch(human)).kind).toBe('stored');
+    const retry = await storeSessionModelSwitch(input);
+    expect(retry).toMatchObject({ kind: 'stored', deduped: true, model: human.model, needsPush: false });
+    const [latest] = await db.select().from(projectSessions).where(eq(projectSessions.sessionId, sessionId));
+    expect(latest?.metadata?.opencode_model).toBe(human.model);
+    const [plain] = await db.select().from(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.idempotencyKey, `model-switch:${sessionId}:human-set`));
+    expect(plain?.status).toBe('succeeded');
+
   } finally {
     await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, sessionId));
     await db.delete(projectSessions).where(eq(projectSessions.sessionId, sessionId));

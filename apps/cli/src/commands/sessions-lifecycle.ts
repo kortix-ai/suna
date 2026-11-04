@@ -371,10 +371,11 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
   if (typeof parsed === 'number') return parsed;
   const { rest, opts, json } = parsed;
 
+  const explicitSession = takeFlagValue(rest, ['--session']);
   const prompt = takeFlagValue(rest, ['--prompt']);
   const retryKey = takeFlagValue(rest, ['--idempotency-key']);
   const positional = rest.filter((a) => !a.startsWith('-'));
-  const { action, sessionId, model } = sessionModelTarget(positional, process.env.KORTIX_SESSION_ID);
+  const { action, sessionId, model } = sessionModelTarget(positional, explicitSession ?? process.env.KORTIX_SESSION_ID);
   if (!sessionId || (action !== 'get' && !model)) {
     process.stderr.write(`${status.err('Pass a session id and model, or use get/set/switch inside a session.')}\n`);
     return 2;

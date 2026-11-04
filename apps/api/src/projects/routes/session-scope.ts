@@ -21,10 +21,9 @@ import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
-import { canChangeSessionModel, mayChangeSessionModel, modelChangeNeedsLivePush, modelChangeResult, validateModelChangeShape } from '../lib/session-model-change';
+import { canChangeSessionModel, mayChangeSessionModel, modelChangeResult, validateModelChangeShape } from '../lib/session-model-change';
 import { pushSessionModelToSandbox, pushSessionScopeToSandbox } from '../lib/sandbox-env-sync';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
-import { pickedModelMetadata } from '../../llm-gateway/resolution/session-model-fallback';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { admitSessionModelChange } from '../lib/session-model-keys';
 import { validateProviderSecretPool } from './provider-secret-pools';
@@ -462,12 +461,6 @@ export function registerSessionScopeRoutes(): void {
       const currentMetadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
       const currentModel =
         typeof currentMetadata.opencode_model === 'string' ? currentMetadata.opencode_model : null;
-      const needsPush = modelChangeNeedsLivePush({
-        current: currentModel,
-        next: nextModel,
-        status: visible.row.status,
-      });
-
       if (switchInput.kind === 'switch') {
         assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
         await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_START);
@@ -479,36 +472,23 @@ export function registerSessionScopeRoutes(): void {
         }
         const billing = await checkBillingAdmission(loaded.row.accountId);
         if (!billing.ok) return c.json({ error: billing.message, code: billing.reason }, 402);
-        const stored = await storeSessionModelSwitch({
+      }
+      const stored = await storeSessionModelSwitch({
           projectId, accountId: loaded.row.accountId, sessionId, actorUserId: loaded.userId,
           actorSessionId: isProjectSessionPrincipal(c) ? callerKortixSessionId(c) : null,
-          model: nextModel, prompt: switchInput.prompt, key: switchInput.key,
+          model: nextModel,
+          ...(switchInput.kind === 'switch' ? { prompt: switchInput.prompt } : {}),
+          key: switchInput.kind === 'switch' ? switchInput.key : crypto.randomUUID(),
+          push: (model) => pushSessionModelToSandbox({ projectId, sessionId, model }),
         });
         if (stored.kind === 'conflict') return c.json({ error: 'Retry key belongs to a different model switch' }, 409);
         if (stored.kind === 'limited') return c.json({ error: 'At most three self model switches per hour' }, 409);
-        const push = needsPush && !stored.deduped ? await pushSessionModelToSandbox({ projectId, sessionId, model: nextModel }) : undefined;
+      if (switchInput.kind === 'switch') {
         void drainSessionLifecycleQueue({ idempotencyKey: `model-switch:${sessionId}:${switchInput.key}` }).catch(() => undefined);
-        return c.json({ ...modelChangeResult({ model: nextModel, needsPush, push, current: currentModel }),
-          prompt_id: stored.promptId, deduped: stored.deduped });
       }
-
-      await db
-        .update(projectSessions)
-        .set({
-          // A pick ends any fallback; a late fallback trace skips it.
-          metadata: pickedModelMetadata(currentMetadata, nextModel),
-          updatedAt: new Date(),
-        })
-        .where(eq(projectSessions.sessionId, sessionId));
-
-      if (!needsPush) {
-        return c.json(
-          modelChangeResult({ model: nextModel, needsPush: false, current: currentModel }),
-        );
-      }
-
-      const push = await pushSessionModelToSandbox({ projectId, sessionId, model: nextModel });
-      return c.json(modelChangeResult({ model: nextModel, needsPush: true, push }));
+      return c.json({ ...modelChangeResult({ model: stored.model, needsPush: stored.needsPush,
+        push: stored.deduped ? undefined : stored.push, current: stored.deduped ? stored.model : currentModel }),
+        ...(switchInput.kind === 'switch' ? { prompt_id: stored.promptId, deduped: stored.deduped } : {}) });
     },
   );
 }
