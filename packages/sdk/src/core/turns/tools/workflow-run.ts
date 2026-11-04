@@ -320,9 +320,41 @@ export function parseWorkflowResult(output: string): WorkflowResult | null {
     }
     const document = isRecord(parsed) ? documentOf(Object.entries(parsed)) : null;
     if (document) return { kind: 'markdown', text: document };
-    return { kind: 'json', text: JSON.stringify(parsed, null, 2) };
+    return { kind: 'json', text: prettyJson(parsed, body) };
   }
   return { kind: 'markdown', text: body };
+}
+
+/**
+ * JSON pretty-printed, or the body as it came when that cannot be done safely:
+ * deep nesting overflows `JSON.stringify`'s stack, and its indentation grows with
+ * the square of the depth, so the printed text is capped against the input.
+ */
+function prettyJson(value: unknown, body: string): string {
+  if (nestingDepth(body) > 64) return body;
+  try {
+    const pretty = JSON.stringify(value, null, 2);
+    return pretty.length <= body.length * 4 + 10_000 ? pretty : body;
+  } catch {
+    return body;
+  }
+}
+
+/** How deep the brackets of a JSON text nest, strings skipped. Linear time. */
+function nestingDepth(body: string): number {
+  let depth = 0;
+  let max = 0;
+  let inString = false;
+  for (let i = 0; i < body.length; i += 1) {
+    const char = body[i];
+    if (inString) {
+      if (char === '\\') i += 1;
+      else if (char === '"') inString = false;
+    } else if (char === '"') inString = true;
+    else if (char === '{' || char === '[') max = Math.max(max, ++depth);
+    else if (char === '}' || char === ']') depth -= 1;
+  }
+  return max;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

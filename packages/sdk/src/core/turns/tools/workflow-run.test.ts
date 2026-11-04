@@ -215,6 +215,15 @@ describe('parseWorkflowResult — a JSON result that carries a document', () => 
     expect(parseWorkflowResult(`<workflow_result>${full.slice(0, -10)}`)?.text.startsWith('{')).toBe(true);
   });
 
+  test('deeply nested JSON never throws and never blows up: it falls back to the raw body', () => {
+    for (const depth of [10_000, 100_000]) {
+      const body = '['.repeat(depth) + ']'.repeat(depth);
+      const result = parseWorkflowResult(`<workflow_result>${body}</workflow_result>`);
+      expect(result?.kind).toBe('json');
+      expect(result!.text.length).toBeLessThanOrEqual(body.length * 4 + 10_000);
+    }
+  });
+
   test('a long token or URL is data, not prose', () => {
     expect(parseWorkflowResult(`<workflow_result>${JSON.stringify({ download_url: `https://example.com/${'a'.repeat(140)}` })}</workflow_result>`)?.kind).toBe('json');
   });
